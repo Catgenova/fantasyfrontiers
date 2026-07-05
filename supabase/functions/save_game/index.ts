@@ -34,19 +34,24 @@ Deno.serve(async (req) => {
   const userId = user.id;
 
   // Parse.
-  let body: { data?: unknown; client_saved_at?: unknown };
+  let body: { data?: unknown; client_saved_at?: unknown; progress?: unknown; force?: unknown };
   try { body = await req.json(); } catch { return json({ ok: false, error: "Invalid request." }, 400); }
   const data = body.data;
   if (typeof data !== "object" || data === null) return json({ ok: false, error: "Invalid save." }, 400);
-  const incoming = typeof body.client_saved_at === "number" && Number.isFinite(body.client_saved_at)
+  const savedAt = typeof body.client_saved_at === "number" && Number.isFinite(body.client_saved_at)
     ? Math.floor(body.client_saved_at) : 0;
+  const progress = typeof body.progress === "number" && Number.isFinite(body.progress) && body.progress >= 0
+    ? Math.floor(body.progress) : 0;
+  const force = body.force === true;
   if (JSON.stringify(data).length > MAX_BYTES) return json({ ok: false, error: "Save too large." }, 413);
 
-  // Freshness guard: don't let an older save overwrite a newer cloud save.
+  // Forward-only PROGRESS guard: never let a lower-progress state overwrite a higher one
+  // (this is what stops an empty/regressed save from clobbering real progress). A deliberate
+  // reset passes force:true to override it.
   const { data: prev } = await admin.from("saves")
-    .select("client_saved_at, version").eq("user_id", userId).maybeSingle();
-  if (prev && incoming < (prev.client_saved_at ?? 0)) {
-    return json({ ok: false, stale: true, server_saved_at: prev.client_saved_at }, 409);
+    .select("progress, version").eq("user_id", userId).maybeSingle();
+  if (prev && !force && progress < (prev.progress ?? 0)) {
+    return json({ ok: false, stale: true, server_progress: prev.progress }, 409);
   }
 
   const nextVersion = (prev?.version ?? 0) + 1;
@@ -54,7 +59,8 @@ Deno.serve(async (req) => {
     user_id: userId,
     data,
     version: nextVersion,
-    client_saved_at: incoming,
+    progress,
+    client_saved_at: savedAt,
     updated_at: new Date().toISOString(),
   }, { onConflict: "user_id" });
   if (upErr) {

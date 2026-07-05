@@ -4888,6 +4888,7 @@
     currentCategory = 'gathering'; currentSub = 'digging';
     addLog('A new adventure begins.');
     saveGame();
+    cloudSave(true);   // force-propagate the reset so the cloud backup doesn't restore old progress
     render();
   }
 
@@ -8137,20 +8138,39 @@
   function localSaveOwner(){ try{ return window.localStorage.getItem(SAVE_OWNER_KEY) || ''; }catch(e){ return ''; } }
   function setLocalSaveOwner(id){ try{ if(id){ window.localStorage.setItem(SAVE_OWNER_KEY, id); } else { window.localStorage.removeItem(SAVE_OWNER_KEY); } }catch(e){} }
 
-  async function cloudSave(force){
+  // Monotonic progress metric = total XP (skills + physique). Reconciliation compares THIS,
+  // never wall-clock timestamps, so an empty newGame() (score 0) can never win and overwrite
+  // real progress. XP only grows barring an explicit reset.
+  function saveProgressScore(s){
+    if(!s) return 0;
+    var total = 0, k;
+    if(s.xp){ for(k in s.xp){ if(typeof s.xp[k] === 'number') total += s.xp[k]; } }
+    if(s.physique){ for(k in s.physique){ if(typeof s.physique[k] === 'number') total += s.physique[k]; } }
+    return Math.floor(total) || 0;
+  }
+  var cloudNewerAvailable = false; // higher-progress cloud save exists but local also has progress
+
+  // force = intentional overwrite (reset only): bypasses the empty guard and tells the server
+  //         to override its forward-only progress guard.
+  // flush = push now, skipping the debounce, but STILL subject to the empty + forward guards.
+  async function cloudSave(force, flush){
     if(!CLOUD_SYNC_ENABLED) return;
     if(!CHAT_ENABLED || !authUser || !authUser.id || cloudReloading) return;
+    var score = saveProgressScore(state);
+    // Never push an empty/zero-progress state (unless a deliberate, forced reset) -- this is
+    // belt-and-suspenders on top of the server's forward-only progress guard.
+    if(!force && score <= 0) return;
     var now = Date.now();
-    if(!force && now - cloudLastPush < CLOUD_PUSH_INTERVAL) return;
+    if(!force && !flush && now - cloudLastPush < CLOUD_PUSH_INTERVAL) return;
     cloudLastPush = now;
     if(!chatClient){ if(!(await authEnsureClient())) return; }
     try{
       var res = await chatClient.functions.invoke('save_game', {
-        body: { data: state, client_saved_at: state.lastSaved || 0 }
+        body: { data: state, client_saved_at: state.lastSaved || 0, progress: score, force: !!force }
       });
-      // A 'stale' rejection means the cloud already holds a newer save (another device);
-      // we skip overwriting and adopt the newer one on the next login/reload.
       if(res && res.data && res.data.ok){ setLocalSaveOwner(authUser.id); }
+      // A non-ok/'stale' result means the cloud holds a higher-progress save; leave both
+      // sides untouched (non-destructive) and reconcile on the next load.
     }catch(e){}
   }
 
@@ -8159,35 +8179,35 @@
     if(!CHAT_ENABLED || !authUser || !authUser.id || cloudReloading) return;
     if(!chatClient){ if(!(await authEnsureClient())) return; }
     try{
-      var res = await chatClient.from('saves').select('data,client_saved_at').eq('user_id', authUser.id).maybeSingle();
-      var cloud = res && res.data;
+      var res = await chatClient.from('saves').select('data,progress').eq('user_id', authUser.id).maybeSingle();
+      var cloud = (res && res.data) || null;
+      var hasCloud = !!(cloud && cloud.data);
+      var cloudScore = hasCloud ? (cloud.progress || 0) : -1;
+      var localScore = saveProgressScore(state);
       var owner = localSaveOwner();
-      var foreign = owner && owner !== authUser.id;       // local save belongs to another account
-      var localSavedAt = (state && state.lastSaved) || 0;
-      if(cloud && cloud.data){
-        var cloudSavedAt = cloud.client_saved_at || 0;
-        if(cloudSavedAt > localSavedAt || foreign){
-          // Cloud is newer (or local isn't ours): adopt it. Write to the local cache and
-          // reload so the normal load path (with all migrations) applies it cleanly.
-          cloudReloading = true;
-          setLocalSaveOwner(authUser.id);
-          writeSave(JSON.stringify(cloud.data));
-          addLog('Loading your cloud save…');
-          setTimeout(function(){ location.reload(); }, 500);
-          return;
-        }
-        setLocalSaveOwner(authUser.id);
-        cloudSave(true);                                   // local is newer & ours -> push up
-      } else if(foreign){
-        // No cloud yet, but local belongs to another account: don't upload it here. Start
-        // this account fresh locally; it will then claim the cloud on the next push.
+      var ownedByUs = !owner || owner === authUser.id;    // anonymous (claimable) or already ours
+      function adoptCloud(){
         cloudReloading = true;
         setLocalSaveOwner(authUser.id);
-        writeSave(JSON.stringify(newGame()));
+        writeSave(JSON.stringify(cloud.data));
+        addLog('Loaded your cloud save.');
         setTimeout(function(){ location.reload(); }, 500);
-      } else {
+      }
+      if(hasCloud && cloudScore > localScore){
+        // Cloud has MORE progress. Adopt it only when there's no OWN progress to lose (local
+        // empty, or it belongs to a different account). Otherwise it's a genuine conflict --
+        // keep local untouched and just notify (never silently replace real local progress).
+        if(localScore <= 0 || !ownedByUs){ adoptCloud(); return; }
+        cloudNewerAvailable = true;
+        addLog('A cloud save with more progress exists on your account; your current progress was kept. Contact support to merge.', 'danger');
+      } else if(hasCloud && !ownedByUs){
+        // Local isn't ours and our cloud is >= it: load our own cloud instead of keeping theirs.
+        adoptCloud(); return;
+      } else if(ownedByUs && localScore > 0){
+        // Our local is >= cloud (or there is no cloud yet): push it forward as the backup.
+        // Non-forced, so the server's forward-only guard still protects against regressions.
         setLocalSaveOwner(authUser.id);
-        cloudSave(true);                                   // first time for this account -> claim local
+        cloudSave();
       }
     }catch(e){}
   }
@@ -9824,7 +9844,7 @@
   }
 
   document.addEventListener('visibilitychange', function(){
-    if(document.visibilityState==='hidden'){ saveGame(); cloudSave(true); }
+    if(document.visibilityState==='hidden'){ saveGame(); cloudSave(false, true); }
   });
 
   initGame().then(function(){
