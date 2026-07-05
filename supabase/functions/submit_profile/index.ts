@@ -22,7 +22,7 @@ const GOLD_ABS_CAP = 1_000_000_000_000; // 1e12 sanity ceiling
 // Rate limits. Allowed increase = BURST + PER_HOUR * hoursElapsed.
 // Long gaps (incl. offline idle) grant proportionally larger allowances, so returning
 // players are never falsely rejected; only implausibly fast jumps are blocked.
-const LEVELS_PER_HOUR = 500;      // total-level gain/hour (ranking metric — the strict one)
+const LEVELS_PER_HOUR = 200;      // total-level gain/hour (ranking metric — the strict one)
 const BURST_LEVELS = 400;
 const GOLD_PER_HOUR = 20_000_000; // loose; gold is secondary display, not the rank key
 const BURST_GOLD = 10_000_000;
