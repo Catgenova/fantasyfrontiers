@@ -8125,6 +8125,11 @@
   // Reconciliation is newest-wins by state.lastSaved, guarded server-side against stale
   // overwrites, with owner-tagging so a save synced under one account isn't pushed into
   // another on a shared browser.
+  // KILL SWITCH: disabled after a data-loss bug — newGame()'s lastSaved=Date.now() made
+  // empty states look "newest", so timestamp-based reconciliation overwrote real cloud
+  // saves. Cloud sync is fully off (localStorage only) until reconciliation is redesigned
+  // to be progress-aware and non-destructive.
+  var CLOUD_SYNC_ENABLED = false;
   var SAVE_OWNER_KEY = 'ff-save-owner';
   var CLOUD_PUSH_INTERVAL = 30000;
   var cloudLastPush = 0;
@@ -8133,6 +8138,7 @@
   function setLocalSaveOwner(id){ try{ if(id){ window.localStorage.setItem(SAVE_OWNER_KEY, id); } else { window.localStorage.removeItem(SAVE_OWNER_KEY); } }catch(e){} }
 
   async function cloudSave(force){
+    if(!CLOUD_SYNC_ENABLED) return;
     if(!CHAT_ENABLED || !authUser || !authUser.id || cloudReloading) return;
     var now = Date.now();
     if(!force && now - cloudLastPush < CLOUD_PUSH_INTERVAL) return;
@@ -8149,6 +8155,7 @@
   }
 
   async function cloudLoad(){
+    if(!CLOUD_SYNC_ENABLED) return;
     if(!CHAT_ENABLED || !authUser || !authUser.id || cloudReloading) return;
     if(!chatClient){ if(!(await authEnsureClient())) return; }
     try{
