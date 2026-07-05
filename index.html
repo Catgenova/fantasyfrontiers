@@ -8126,11 +8126,11 @@
   // Reconciliation is newest-wins by state.lastSaved, guarded server-side against stale
   // overwrites, with owner-tagging so a save synced under one account isn't pushed into
   // another on a shared browser.
-  // KILL SWITCH: disabled after a data-loss bug — newGame()'s lastSaved=Date.now() made
-  // empty states look "newest", so timestamp-based reconciliation overwrote real cloud
-  // saves. Cloud sync is fully off (localStorage only) until reconciliation is redesigned
-  // to be progress-aware and non-destructive.
-  var CLOUD_SYNC_ENABLED = false;
+  // Kill switch for cloud sync. Re-enabled after the reconciliation was rebuilt to be
+  // progress-aware (compares total-XP score, never timestamps) with a server-side
+  // forward-only guard, so an empty/lower-progress state can never overwrite real data.
+  // Flip to false to instantly disable all cloud reads/writes (localStorage-only) if needed.
+  var CLOUD_SYNC_ENABLED = true;
   var SAVE_OWNER_KEY = 'ff-save-owner';
   var CLOUD_PUSH_INTERVAL = 30000;
   var cloudLastPush = 0;
