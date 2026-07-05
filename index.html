@@ -8235,11 +8235,12 @@
     if(!chatClient){ if(!(await authEnsureClient())) return; }
     var stats = computeProfileStats();
     try{
-      await chatClient.from('profiles').upsert({
-        id: authUser.id, username: authUser.username,
-        total_level: stats.total_level, gold: stats.gold, skills: stats.skills,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
+      // Writes go through the server-validated 'submit_profile' function (the profiles
+      // table is no longer client-writable). id + username are derived server-side from
+      // the auth token; a rejected submission just leaves the last accepted row intact.
+      await chatClient.functions.invoke('submit_profile', {
+        body: { total_level: stats.total_level, gold: stats.gold, skills: stats.skills }
+      });
     }catch(e){}
   }
   async function leaderboardFetch(force){
