@@ -4457,7 +4457,7 @@
   }
   function stopFaithActivity(){ state.faithActivity = { type:null, tier:0 }; }
   function sacrificeItem(category, id){
-    var STACKABLE_SAC_CATEGORIES = ['stackweapon','stackshield','ring','amulet','relic','tool'];
+    var STACKABLE_SAC_CATEGORIES = ['stackweapon','stackshield','ring','amulet','relic','tool','belt'];
     if(STACKABLE_SAC_CATEGORIES.indexOf(category)!==-1 && state.lockedItems[id]){
       addLog('That item is locked. Unlock it first to sacrifice it.', 'danger');
       return;
@@ -4515,6 +4515,12 @@
       if(!toolItem || (state.inventory[id]||0) <= 0) return;
       tier = toolItem.tierIndex + 1;
       label = toolItem.name;
+      state.inventory[id] -= 1;
+    } else if(category==='belt'){
+      var beltItem = BELT_ITEMS[id];
+      if(!beltItem || (state.inventory[id]||0) <= 0) return;
+      tier = beltItem.tierIndex + 1;
+      label = beltItem.name;
       state.inventory[id] -= 1;
     } else {
       return;
@@ -8030,30 +8036,30 @@
 
   function renderSacrificeTab(){
     var lvl = getLevel(state.xp.sacrifice);
-    var html = '<div class="section-intro">Level '+lvl+' Sacrifice &mdash; destroy owned weapons, shields, tools, rings, amulets, and relics to restore Faith and gain a flat 30 XP. Higher-tier items restore more Faith, but the item is consumed entirely. Equipped Tools and Armor can\'t be sacrificed.</div>';
+    var html = '<div class="section-intro">Level '+lvl+' Sacrifice &mdash; destroy owned weapons, shields, tools, belts, rings, amulets, and relics to restore Faith and gain a flat 30 XP. Higher-tier items restore more Faith, but the item is consumed entirely. Equipped Tools and Armor can\'t be sacrificed.</div>';
     html += renderSkillProgressBar('sacrifice');
     html += renderFaithBar();
     var rows = [];
     Object.keys(STACKABLE_WEAPON_ITEMS).forEach(function(id){
-      if((state.inventory[id]||0)>0){
+      if((state.inventory[id]||0)>0 && !state.lockedItems[id]){
         var item = STACKABLE_WEAPON_ITEMS[id];
         rows.push({category:'stackweapon', id:id, icon:item.icon, item:item, tier:item.tierIndex+1});
       }
     });
     Object.keys(STACKABLE_SHIELD_ITEMS).forEach(function(id){
-      if((state.inventory[id]||0)>0){
+      if((state.inventory[id]||0)>0 && !state.lockedItems[id]){
         var item = STACKABLE_SHIELD_ITEMS[id];
         rows.push({category:'stackshield', id:id, icon:item.icon, item:item, tier:item.tierIndex+1});
       }
     });
     Object.keys(RING_ITEMS).forEach(function(id){
-      if((state.inventory[id]||0)>0){
+      if((state.inventory[id]||0)>0 && !state.lockedItems[id]){
         var item = RING_ITEMS[id];
         rows.push({category:'ring', id:id, icon:item.icon, item:item, tier:item.tierIndex+1, jewelryBoost:true});
       }
     });
     Object.keys(AMULET_ITEMS).forEach(function(id){
-      if((state.inventory[id]||0)>0){
+      if((state.inventory[id]||0)>0 && !state.lockedItems[id]){
         var item = AMULET_ITEMS[id];
         rows.push({category:'amulet', id:id, icon:item.icon, item:item, tier:item.tierIndex+1, jewelryBoost:true});
       }
@@ -8064,12 +8070,18 @@
     });
     BROKEN_RELIC_ITEMS.forEach(function(relic, i){
       var qty = state.inventory[relic.id]||0;
-      if(qty>0) rows.push({category:'relic', id:relic.id, icon:svgIcon('urn','#9a8560'), item:relic, tier:qty, relicTierIndex:i});
+      if(qty>0 && !state.lockedItems[relic.id]) rows.push({category:'relic', id:relic.id, icon:svgIcon('urn','#9a8560'), item:relic, tier:qty, relicTierIndex:i});
     });
     Object.keys(TOOL_ITEMS).forEach(function(id){
-      if((state.inventory[id]||0)>0){
+      if((state.inventory[id]||0)>0 && !state.lockedItems[id]){
         var item = TOOL_ITEMS[id];
         rows.push({category:'tool', id:id, icon:item.icon, item:item, tier:item.tierIndex+1});
+      }
+    });
+    Object.keys(BELT_ITEMS).forEach(function(id){
+      if((state.inventory[id]||0)>0 && !state.lockedItems[id]){
+        var item = BELT_ITEMS[id];
+        rows.push({category:'belt', id:id, icon:item.icon, item:item, tier:item.tierIndex+1});
       }
     });
     if(rows.length===0){
