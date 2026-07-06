@@ -8762,6 +8762,7 @@
         guildState.guild=null; guildState.members=[]; guildState.myRank=null; guildState.applications=[];
         guildBrowseState.status='idle'; guildBankState.status='idle'; guildBankState.guildId=null;
         guildEstateState.status='idle'; guildEstateState.guildId=null;
+        guildBossState.status='idle'; guildBossState.guildId=null; guildBossState.active=null; guildBossState.claimable=null;
         guildTeardownChat(); guildReload(true); return;
       }
       guildReload(true);
@@ -8816,7 +8817,7 @@
     if(guildSub==='roster') html += renderGuildRoster();
     else if(guildSub==='bank') html += renderGuildBank();
     else if(guildSub==='estate') html += renderGuildEstate();
-    else if(guildSub==='bosses') html += '<div class="empty-note">Guild <b>Bosses</b> are coming soon &mdash; whittle down a shared boss together; everyone who deals damage shares the loot.</div>';
+    else if(guildSub==='bosses') html += renderGuildBoss();
     return html;
   }
   function renderGuildRoster(){
@@ -9109,6 +9110,146 @@
       if(label) label.textContent = done ? 'Ready to collect' : guildEstateRemain(fin-nowMs);
       if(done && !t._wasDone){ t._wasDone=true; needsRender=true; } // just finished -> rebuild to reveal Collect
     });
+  }
+
+  // ---- Guild Bosses (Phase 4): async damage-pool raids ----
+  // Server-authoritative HP/gold/duration live in the guild_boss function; this roster
+  // mirrors them for display and holds the loot table (loot is granted client-side on claim).
+  var GUILD_BOSSES = {
+    gorehoof:{ name:'Gorehoof the Trampler', icon:svgIcon('hornedskull','#8a5a3a'), hp:100000, gold:50000, hours:24, loot:[{key:'coal',qty:200},{key:'gem_ruby',qty:5}] },
+    embermaw:{ name:'Embermaw Wyrm', icon:svgIcon('flame','#c0453a'), hp:500000, gold:200000, hours:24, loot:[{key:'gem_ruby',qty:10},{key:'gem_diamond',qty:5}] },
+    hollowking:{ name:'The Hollow King', icon:svgIcon('ghost','#6a5a9a'), hp:2000000, gold:1000000, hours:48, loot:[{key:'gem_diamond',qty:10},{key:'gem_voidcrystal',qty:3}] }
+  };
+  var GUILD_BOSS_ORDER = ['gorehoof','embermaw','hollowking'];
+  var guildBossState = { status:'idle', guildId:null, active:null, claimable:null, mine:null, contributors:[], busy:false, pinging:false, error:'', joined:false, lastPing:0 };
+  function guildBossInvoke(action, payload){
+    if(!chatClient || !authUser) return Promise.resolve({ ok:false, error:'Sign in first.' });
+    var body={action:action}; if(payload){ for(var k in payload){ if(payload.hasOwnProperty(k)) body[k]=payload[k]; } }
+    return chatClient.functions.invoke('guild_boss', { body: body }).then(function(r){
+      if(r && r.data) return r.data;
+      return { ok:false, error:(r && r.error && r.error.message) || 'Request failed.' };
+    }, function(){ return { ok:false, error:'Network error.' }; });
+  }
+  function guildBossApply(res){
+    guildBossState.status='ready';
+    guildBossState.active = res.active || null;
+    guildBossState.claimable = res.claimable || null;
+    guildBossState.mine = res.mine || null;
+    guildBossState.contributors = res.contributors || [];
+    if(guildBossState.mine && guildBossState.mine.damage>0) guildBossState.joined = true;
+    if(!guildBossState.active) guildBossState.joined = false;
+  }
+  function guildBossLoad(){
+    if(!guildState.guild) return;
+    guildBossState.status='loading'; guildBossState.guildId = guildState.guild.id;
+    guildBossInvoke('get', {}).then(function(res){
+      if(!res.ok){ guildBossState.status='error'; guildBossState.error=res.error||'Could not load bosses.'; if(currentCategory==='guild') render(); return; }
+      guildBossApply(res); guildBossState.error=''; if(currentCategory==='guild') render();
+    });
+  }
+  // A representative DPS proxy: avg weapon damage / attack interval, folding the always-on
+  // multipliers. The server clamps this, so an inflated value can't dump impossible damage.
+  function guildBossPower(){
+    var weapon = getEquippedWeaponItem(state);
+    var style = getWeaponStyle(state.equippedMainhand);
+    var attackSpeed = (style && style.attackSpeed) ? style.attackSpeed : 4;
+    var avg = (((weapon&&weapon.dmgMin)||1) + ((weapon&&weapon.dmgMax)||1))/2;
+    var prof = state.equippedMainhand ? (1 + getLevel(state.xp[state.equippedMainhand]||0)/100) : 1;
+    var relic = getEquippedRelicBonus(state)||0;
+    var fam = getFamiliarDamageMult ? getFamiliarDamageMult() : 1;
+    return Math.max(1, Math.round(avg * prof * (1+relic) * fam / attackSpeed));
+  }
+  function guildBossBar(cur, max){ return max>0 ? Math.max(0,Math.min(100,cur/max*100)) : 0; }
+  function guildBossSummon(key){
+    if(guildBossState.busy) return;
+    guildBossState.busy=true; guildBossState.error=''; render();
+    guildBossInvoke('summon', { boss_key:key }).then(function(res){
+      guildBossState.busy=false;
+      if(!res.ok){ guildBossState.error=res.error||'Could not summon.'; render(); return; }
+      guildBossApply(res); render();
+    });
+  }
+  function guildBossAssault(manual){
+    if(!guildBossState.active || guildBossState.pinging) return;
+    guildBossState.pinging=true; guildBossState.lastPing=Date.now();
+    guildBossInvoke('assault', { power:guildBossPower() }).then(function(res){
+      guildBossState.pinging=false;
+      if(!res.ok){ if(manual){ guildBossState.error=res.error||'Assault failed.'; render(); } guildBossLoad(); return; }
+      guildBossState.joined = true;
+      var justDied = res.result && res.result.defeated;
+      guildBossApply(res);
+      if(justDied){ addLog('The guild boss has fallen! Claim your loot share in the Bosses tab.','important'); render(); }
+      else if(manual){ render(); }
+    });
+  }
+  function guildBossClaim(){
+    if(!guildBossState.claimable || guildBossState.busy) return;
+    var boss = guildBossState.claimable;
+    guildBossState.busy=true; guildBossState.error=''; render();
+    guildBossInvoke('claim', { boss_id:boss.id }).then(function(res){
+      guildBossState.busy=false;
+      if(!res.ok){ guildBossState.error=res.error||'Claim failed.'; render(); return; }
+      var c=res.claim, roster=GUILD_BOSSES[c.boss_key];
+      var frac = c.total_damage>0 ? c.my_damage/c.total_damage : 0, lines=[];
+      if(roster && roster.loot){
+        roster.loot.forEach(function(l){
+          var qty = Math.floor(l.qty * frac);
+          if(qty>0){ addItem(l.key, qty); var it=ALL_SELLABLE[l.key]; lines.push(qty+'x '+((it&&it.name)||l.key)); }
+        });
+      }
+      saveGame();
+      addLog('Claimed your boss loot ('+Math.round(frac*100)+'%): '+(lines.length?lines.join(', '):'no items at this damage share')+'. Boss gold went to the guild treasury.','important');
+      guildBossApply(res); render();
+    });
+  }
+  function renderGuildBoss(){
+    if(guildBossState.status==='idle' || guildBossState.guildId !== (guildState.guild&&guildState.guild.id)) guildBossLoad();
+    var html='';
+    if(guildBossState.error){ html += '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad);">'+escapeHtml(guildBossState.error)+'</div>'; }
+    if(guildBossState.status==='loading'||guildBossState.status==='idle'){ return html+'<div class="empty-note">Scouting for threats&hellip;</div>'; }
+    var canManage = guildState.myRank==='leader'||guildState.myRank==='officer';
+    if(guildBossState.claimable){
+      var cb=guildBossState.claimable, cros=GUILD_BOSSES[cb.boss_key];
+      html += '<div class="guild-card" style="border-color:var(--gold);">';
+      html += '<div class="char-row" style="align-items:center;gap:8px;">'+(cros?cros.icon:'')+'<b>'+escapeHtml(cb.name)+' defeated!</b></div>';
+      html += '<div class="item-meta" style="margin:4px 0 8px;">Your damage: '+fmt(cb.my_damage)+' of '+fmt(cb.total_damage)+' ('+Math.round((cb.my_damage/Math.max(1,cb.total_damage))*100)+'%).</div>';
+      html += '<button class="action-btn" data-action="guildBossClaim" '+(guildBossState.busy?'disabled':'')+' style="width:auto;flex:0 0 auto;">Claim loot</button></div>';
+    }
+    var b=guildBossState.active;
+    if(!b){
+      html += '<div class="guild-section-title" style="margin-top:0;">Summon a boss</div>';
+      if(!canManage){ return html + '<div class="empty-note">No boss is active. An officer or the leader can summon one.</div>'; }
+      GUILD_BOSS_ORDER.forEach(function(key){
+        var d=GUILD_BOSSES[key];
+        html += '<div class="guild-card"><div class="char-row" style="justify-content:space-between;align-items:center;"><div style="display:flex;align-items:center;gap:8px;">'+d.icon+'<b>'+escapeHtml(d.name)+'</b></div><button class="mini-btn" data-action="guildBossSummon" data-key="'+key+'" '+(guildBossState.busy?'disabled':'')+'>Summon</button></div>';
+        html += '<div class="item-meta" style="margin-top:4px;">'+fmt(d.hp)+' HP &bull; '+fmt(d.gold)+'g to treasury &bull; loot: '+d.loot.map(function(l){ var it=ALL_SELLABLE[l.key]; return ((it&&it.name)||l.key)+' x'+l.qty; }).join(', ')+' &bull; '+d.hours+'h</div></div>';
+      });
+      return html;
+    }
+    var ros=GUILD_BOSSES[b.boss_key], pct=guildBossBar(b.hp_current,b.hp_max);
+    html += '<div class="guild-card">';
+    html += '<div class="char-row" style="align-items:center;gap:8px;">'+(ros?ros.icon:'')+'<b>'+escapeHtml(b.name)+'</b></div>';
+    html += '<div class="gest-bar" style="height:12px;"><div class="gest-fill" id="gboss-fill" style="width:'+pct.toFixed(1)+'%;background:linear-gradient(90deg,var(--hp-bad),var(--cat-combat));"></div></div>';
+    html += '<div class="char-row" style="justify-content:space-between;"><span class="item-meta" id="gboss-hp">'+fmt(b.hp_current)+' / '+fmt(b.hp_max)+' HP</span><span class="item-meta">'+guildEstateRemain(new Date(b.expires_at).getTime()-Date.now())+'</span></div>';
+    var myDmg = guildBossState.mine ? guildBossState.mine.damage : 0;
+    html += '<div class="item-meta" style="margin:6px 0;">Your damage: <b>'+fmt(myDmg)+'</b> ('+Math.round((myDmg/Math.max(1,b.total_damage))*100)+'%) &bull; power ~'+fmt(guildBossPower())+' dps</div>';
+    html += '<button class="action-btn" data-action="guildBossAssault" style="width:auto;flex:0 0 auto;">'+(guildBossState.joined?'Keep attacking':'Join the assault')+'</button>';
+    html += '</div>';
+    if(guildBossState.contributors.length){
+      html += '<div class="guild-section-title">Top damage</div>';
+      guildBossState.contributors.forEach(function(c){
+        html += '<div class="guild-member-row"><b>'+escapeHtml(c.username)+'</b><span class="item-meta">'+fmt(c.damage)+' ('+Math.round((c.damage/Math.max(1,b.total_damage))*100)+'%)</span></div>';
+      });
+    }
+    html += '<div class="empty-note" style="margin-top:6px;">While this tab is open you keep attacking automatically; damage is rate-capped per tick.</div>';
+    return html;
+  }
+  function updateGuildBossLive(){
+    if(currentCategory!=='guild' || guildSub!=='bosses') return;
+    var b=guildBossState.active; if(!b) return;
+    var fill=document.getElementById('gboss-fill'); if(fill) fill.style.width = guildBossBar(b.hp_current,b.hp_max).toFixed(1)+'%';
+    var hpl=document.getElementById('gboss-hp'); if(hpl) hpl.textContent = fmt(b.hp_current)+' / '+fmt(b.hp_max)+' HP';
+    if(Date.now() - guildBossState.lastPing > 12000 && !guildBossState.pinging && !guildBossState.busy) guildBossAssault(false);
   }
 
   // ---- Guild chat (a second channel in the Chat tab) ----
@@ -9831,6 +9972,7 @@
     updateHeader();
     updateGlobalActionBarLive();
     updateGuildEstateLive();
+    updateGuildBossLive();
 
     if(state.activity.type==='gather' || state.activity.type==='craft'){
       var fill = document.getElementById('liveActionFill');
@@ -10423,6 +10565,12 @@
       guildEstateCollect(parseInt(btn.getAttribute('data-slot'),10));
     } else if(action==='guildEstateCancel'){
       if(confirm('Cancel this estate task? Materials already spent are not refunded.')) guildEstateCancel(parseInt(btn.getAttribute('data-slot'),10));
+    } else if(action==='guildBossSummon'){
+      guildBossSummon(btn.getAttribute('data-key'));
+    } else if(action==='guildBossAssault'){
+      guildBossAssault(true);
+    } else if(action==='guildBossClaim'){
+      guildBossClaim();
     }
     render();
     needsRender = false;
