@@ -2604,7 +2604,7 @@
   function sleightOfHandCraftSpeedBonus(state){ return Math.min(0.15, getLevel(state.physique.sleightOfHand||0)*0.003); }
   function curiosityGatherXpBonus(state){ return Math.min(0.15, getLevel(state.physique.curiosity||0)*0.003); }
   function craftSuccessRate(state, skillId){ var b = BASE_CRAFT_SUCCESS + craftToolSuccessBonus(state, skillId) + grossMotorCraftSuccessBonus(state); if(PHYS_ALCH_GROUP.indexOf(skillId)!==-1) b += criticalThinkingCraftSuccessBonus(state); return Math.min(1, b); }
-  function toolSpeedMultiplier(state, skillId){ var sp = craftToolSpeedMultiplier(state, skillId) - sleightOfHandCraftSpeedBonus(state); if(PHYS_HAND_CRAFT.indexOf(skillId)!==-1) sp -= handStrengthCraftSpeedBonus(state); if(PHYS_ESTATE_CRAFT.indexOf(skillId)!==-1) sp -= coreStrengthCraftSpeedBonus(state); if(PHYS_MENTAL_CRAFT.indexOf(skillId)!==-1) sp -= solvingCraftSpeedBonus(state); return Math.max(0.1, sp); }
+  function toolSpeedMultiplier(state, skillId){ var sp = craftToolSpeedMultiplier(state, skillId) - sleightOfHandCraftSpeedBonus(state); if(PHYS_HAND_CRAFT.indexOf(skillId)!==-1) sp -= handStrengthCraftSpeedBonus(state); if(PHYS_ESTATE_CRAFT.indexOf(skillId)!==-1) sp -= coreStrengthCraftSpeedBonus(state); if(PHYS_MENTAL_CRAFT.indexOf(skillId)!==-1) sp -= solvingCraftSpeedBonus(state); sp -= workshopSpeedBonus(state, skillId); return Math.max(0.1, sp); }
   // Jewelry (Rings/Amulets): 50% base success, lower than Twine's standard 70% -- setting
   // fine gems into Twine is a fussier job than braiding the Twine itself.
   var BASE_JEWELRY_SUCCESS = 0.5;
@@ -3887,9 +3887,11 @@
           }
         } else if(Math.random() < craftSuccessRate(state, act.skill)){
           addXp(act.skill, recipe.xp*1.5);
-          addItem(act.itemId, recipe.outputQty || 1);
+          var _wq = recipe.outputQty || 1;
+          addItem(act.itemId, _wq);
+          if(Math.random() < workshopDoubleChance(state, act.skill)){ addItem(act.itemId, _wq); spawnFloatingText('Workshop: double output!', 'ft-rare'); }
           addPhysiqueXp(CRAFT_PHYSIQUE[act.skill]);
-          spawnFloatingText('+' + (recipe.outputQty||1) + ' ' + recipe.name, 'ft-success');
+          spawnFloatingText('+' + _wq + ' ' + recipe.name, 'ft-success');
         } else {
           spawnFloatingText('Craft failed', 'ft-fail');
         }
@@ -3943,7 +3945,7 @@
   // Workshops live in the Estate inventory category (like paving/masonry goods).
   var WORKSHOP_SKILL_IDS = CRAFT_SKILL_IDS.slice();
   function workshopBonusPct(tierIndex){ return 0.05 + (tierIndex/(TIER_COUNT-1))*0.25; } // t0=5%, t20=30%
-  function workshopSkillColor(skillId){ return (CRAFTING_SKILLS[skillId] && CRAFTING_SKILLS[skillId].color) || '#8a6a45'; }
+  function workshopSkillColor(skillId){ var i = WORKSHOP_SKILL_IDS.indexOf(skillId); return SUB_PALETTE[(i<0?0:i) % SUB_PALETTE.length]; } // hex, works for both SVG icons and the canvas model
   function getWorkshopTierData(skillId, tierIndex){
     var pct = workshopBonusPct(tierIndex);
     var inputs = {};
@@ -4181,7 +4183,7 @@
         var wave = Math.sin(rx*0.55)*1.4 + Math.cos(ry*0.5)*1.4 + Math.sin((rx+ry)*0.35)*1.1;
         var height = Math.round(ESTATE_BASE_HEIGHT + wave);
         height = Math.max(0, Math.min(ESTATE_MAX_HEIGHT-1, height));
-        col.push({ height:height, buildingId:null, type:'dirt', paveTileId:null, owned:estateIsCoreTile(x,y), obstacle: generateEstateObstacle() });
+        col.push({ height:height, buildingId:null, type:'dirt', paveTileId:null, workshopId:null, owned:estateIsCoreTile(x,y), obstacle: generateEstateObstacle() });
       }
       grid.push(col);
     }
@@ -5273,6 +5275,7 @@
                   if(typeof cell.type !== 'string') cell.type = 'dirt';
                   if(cell.buildingId === undefined) cell.buildingId = null;
                   if(cell.paveTileId === undefined) cell.paveTileId = null;
+                  if(cell.workshopId === undefined) cell.workshopId = null;
                   if(typeof cell.owned !== 'boolean') cell.owned = estateIsCoreTile(gx, gy);
                   if(cell.obstacle === undefined) cell.obstacle = cell.owned ? null : generateEstateObstacle();
                 });
@@ -5310,6 +5313,7 @@
     }catch(e){
       addLog('Welcome to Fantasy Frontiers! Gather, craft, fight and grow to become a legend.');
     }
+    recomputePlacedWorkshops(); // build the workshop-bonus cache from the loaded estate
     render();
   }
 
@@ -7012,6 +7016,7 @@
           buildingId: oldCell.buildingId!==undefined ? oldCell.buildingId : null,
           type: typeof oldCell.type==='string' ? oldCell.type : 'dirt',
           paveTileId: oldCell.paveTileId!==undefined ? oldCell.paveTileId : null,
+          workshopId: oldCell.workshopId!==undefined ? oldCell.workshopId : null,
           owned: true,
           obstacle: null
         };
@@ -7038,6 +7043,7 @@
   var estateHoveredTile = null;
   var estateSelectedTile = null;
   var estatePavingMenuOpen = false;
+  var estateWorkshopMenuOpen = false;
   // Terraforming: Raise Layer needs Digging 20 (the same level Digging's own Dirt tier
   // requires) and consumes 100 Dirt. Lower Layer gives back 20 Dirt, but gets harder the
   // deeper you dig -- level 10 at height 19 (and still 10 at 18), then +3 per height
@@ -7241,9 +7247,66 @@
       return;
     }
     cell.type = 'dirt';
+    if(cell.workshopId){ addItem(cell.workshopId, 1); cell.workshopId = null; recomputePlacedWorkshops(); } // eject any placed workshop
     cell.paveTileId = null;
     addLog('You broke the pavement at (' + x + ', ' + y + '), returning it to Dirt.', 'important');
     spawnFloatingText('Pavement Broken', 'ft-success');
+    needsRender = true;
+  }
+
+  // ---- Carpentry Workshops: placement on paved tiles + the crafting bonuses ----
+  // placedWorkshops caches skillId -> tierIndex of the ONE placed workshop for that skill
+  // (recomputed on place/remove/load), so the bonus lookups in toolSpeedMultiplier /
+  // processCraftActivity are O(1) instead of scanning the 20x20 grid every craft tick.
+  var placedWorkshops = {};
+  function recomputePlacedWorkshops(){
+    placedWorkshops = {};
+    if(!state.estate || !state.estate.grid) return;
+    state.estate.grid.forEach(function(col){ col.forEach(function(cell){
+      if(cell && cell.workshopId){
+        var it = WORKSHOP_ITEMS[cell.workshopId];
+        if(it) placedWorkshops[it.skillId] = it.tierIndex;
+      }
+    }); });
+  }
+  function workshopSpeedBonus(state, skillId){ var t = placedWorkshops[skillId]; return (t===undefined) ? 0 : workshopBonusPct(t); }
+  function workshopDoubleChance(state, skillId){ var t = placedWorkshops[skillId]; return (t===undefined) ? 0 : workshopBonusPct(t); }
+  function pavementTierOf(cell){ if(!cell || cell.type!=='paved' || !cell.paveTileId) return -1; var m=/paving_t(\d+)/.exec(cell.paveTileId); return m ? parseInt(m[1],10) : -1; }
+  // Workshops owned in inventory whose tier fits on this tile's pavement and whose skill
+  // isn't already placed elsewhere (one per skill).
+  function placeableWorkshopsFor(cell){
+    var pave = pavementTierOf(cell), out = [];
+    Object.keys(WORKSHOP_ITEMS).forEach(function(id){
+      var it = WORKSHOP_ITEMS[id];
+      if((state.inventory[id]||0) > 0 && it.tierIndex <= pave && placedWorkshops[it.skillId] === undefined) out.push(it);
+    });
+    out.sort(function(a,b){ return a.name.localeCompare(b.name); });
+    return out;
+  }
+  function estatePlaceWorkshop(x, y, workshopId){
+    var cell = state.estate.grid[x] && state.estate.grid[x][y];
+    if(!cell || cell.type!=='paved'){ addLog('Workshops can only be placed on paved tiles.', 'danger'); return; }
+    if(cell.workshopId){ addLog('That tile already has a workshop.', 'danger'); return; }
+    var it = WORKSHOP_ITEMS[workshopId];
+    if(!it || (state.inventory[workshopId]||0) <= 0){ addLog('You don\'t own that workshop.', 'danger'); return; }
+    if(it.tierIndex > pavementTierOf(cell)){ addLog('That workshop needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
+    if(placedWorkshops[it.skillId] !== undefined){ addLog('You already have a ' + ((CRAFTING_SKILLS[it.skillId]||{}).label||it.skillId) + ' Workshop placed — only one per skill.', 'danger'); return; }
+    state.inventory[workshopId] -= 1;
+    cell.workshopId = workshopId;
+    recomputePlacedWorkshops();
+    estateWorkshopMenuOpen = false;
+    addLog('Placed a ' + it.name + '.', 'important');
+    spawnFloatingText(it.name + ' placed', 'ft-success');
+    needsRender = true;
+  }
+  function estateRemoveWorkshop(x, y){
+    var cell = state.estate.grid[x] && state.estate.grid[x][y];
+    if(!cell || !cell.workshopId) return;
+    var wid = cell.workshopId;
+    addItem(wid, 1);
+    cell.workshopId = null;
+    recomputePlacedWorkshops();
+    addLog('Removed the ' + ((WORKSHOP_ITEMS[wid]||{}).name||'workshop') + ' (returned to inventory).', '');
     needsRender = true;
   }
   var ESTATE_PAVING_MATERIAL_COLORS = {
@@ -7475,6 +7538,24 @@
   }
   // Trees, rocks and ore render at 2x scale (100% larger); berries and herbs stay base size.
   var ESTATE_MODEL_TYPE_SCALE = { trees:2, rocks:2, ore:2, berries:1, herbs:1 };
+  // A shared low-poly Workshop building (plank walls + a per-skill coloured roof), built
+  // from the same iso prism/pyramid primitives as the resource models so it presents four
+  // sides as the estate rotates. Skinned per crafting skill via the roof colour.
+  function estateDrawWorkshop(ctx, cx, cy, workshop, rot){
+    if(!workshop) return;
+    var roof = workshopSkillColor(workshop.skillId);
+    var wall = '#c19a63';
+    var body = estateSquareFootprint(0.6);
+    estateDrawPrism(ctx, cx, cy, body, body, 0, 1.05, rot, estateShadeColor(wall,0.8), estateShadeColor(wall,0.96)); // walls
+    estateDrawPyramid(ctx, cx, cy, estateSquareFootprint(0.76), [0,0], 1.05, 1.95, rot, roof);                      // roof
+    estateDrawPyramid(ctx, cx, cy, estateSquareFootprint(0.5), [0,0], 1.5, 2.15, rot, estateShadeColor(roof,1.12)); // ridge cap
+  }
+  function drawEstateWorkshopModel(ctx, cx, cy, workshop, rot){
+    if(!workshop) return;
+    estateModelScale = 1.7; // buildings sit a bit larger than the base resource models
+    estateDrawWorkshop(ctx, cx, cy, workshop, rot);
+    estateModelScale = 1;
+  }
   function drawEstateObstacleModel(ctx, cx, cy, obs, rot){
     if(!obs) return;
     estateModelScale = ESTATE_MODEL_TYPE_SCALE[obs.type] || 1;
@@ -7698,6 +7779,9 @@
       if(cell.obstacle){
         drawEstateObstacleModel(ctx, pos.x, pos.y + ESTATE_TILE_H/2, cell.obstacle, estateRotation);
       }
+      if(cell.workshopId){
+        drawEstateWorkshopModel(ctx, pos.x, pos.y + ESTATE_TILE_H/2, WORKSHOP_ITEMS[cell.workshopId], estateRotation);
+      }
     }
     // Draw every border on top of the tile faces so built structures and selection/hover
     // highlights are always visible and clickable, even over a busy tile surface.
@@ -7784,6 +7868,7 @@
         estateSelectedTile = estateFindTileAt(p.x, p.y, originX, originY);
         estateSelectedEdge = null;
         estatePavingMenuOpen = false;
+        estateWorkshopMenuOpen = false;
       }
       render();
     }
@@ -7982,6 +8067,30 @@
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Currently Paved:</b> '+(pavedRecipe?pavedRecipe.icon+' '+pavedRecipe.name:'Unknown')+'</div>';
       html += '</div>';
+      // Workshop placement / removal on this paved tile
+      if(cell.workshopId){
+        var wIt = WORKSHOP_ITEMS[cell.workshopId];
+        var wPct = Math.round(workshopBonusPct(wIt?wIt.tierIndex:0)*100);
+        html += '<div class="estate-action-row">';
+        html += '<div class="estate-action-info"><b>Workshop:</b> '+(wIt?wIt.icon+' '+escapeHtml(wIt.name):'Unknown')+'<br>+'+wPct+'% '+escapeHtml((CRAFTING_SKILLS[wIt.skillId]||{}).label||'')+' crafting speed &bull; '+wPct+'% double output</div>';
+        html += '<button class="action-btn stop" data-action="estateRemoveWorkshop" data-x="'+x+'" data-y="'+y+'">Remove</button>';
+        html += '</div>';
+      } else {
+        var placeable = placeableWorkshopsFor(cell);
+        html += '<div class="estate-action-row">';
+        html += '<div class="estate-action-info"><b>Place Workshop</b><br>Boosts a crafting skill’s speed &amp; grants a chance to double its output. Workshop tier must be ≤ this pavement ('+TIER_NAMES[Math.max(0,pavementTierOf(cell))]+'). One workshop per skill.</div>';
+        html += '<button class="action-btn" data-action="estateToggleWorkshopMenu" '+(placeable.length?'':'disabled')+'>'+(placeable.length?(estateWorkshopMenuOpen?'Close List':'Choose'):'None ready')+'</button>';
+        html += '</div>';
+        if(estateWorkshopMenuOpen && placeable.length){
+          html += '<div class="estate-paving-library">';
+          placeable.forEach(function(it){
+            html += '<button class="estate-paving-option" data-action="estatePlaceWorkshop" data-x="'+x+'" data-y="'+y+'" data-workshop="'+it.id+'">';
+            html += '<span>'+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">x'+(state.inventory[it.id]||0)+'</span>';
+            html += '</button>';
+          });
+          html += '</div>';
+        }
+      }
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Break Pavement</b><br>Requires Digging '+ESTATE_BREAK_PAVEMENT_LEVEL+' &bull; Returns the tile to Dirt (no materials given back)</div>';
       html += '<button class="action-btn stop" data-action="estateBreakPavement" data-x="'+x+'" data-y="'+y+'" '+(breakLevelOk?'':'disabled')+'>'+(breakLevelOk?'Break':'Lv '+ESTATE_BREAK_PAVEMENT_LEVEL+' Req.')+'</button>';
@@ -10734,6 +10843,12 @@
       estatePaveTile(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-tile'));
     } else if(action==='estateBreakPavement'){
       estateBreakPavement(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
+    } else if(action==='estateToggleWorkshopMenu'){
+      estateWorkshopMenuOpen = !estateWorkshopMenuOpen;
+    } else if(action==='estatePlaceWorkshop'){
+      estatePlaceWorkshop(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-workshop'));
+    } else if(action==='estateRemoveWorkshop'){
+      estateRemoveWorkshop(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
     } else if(action==='estateToggleBorderMenu'){
       var borderTypeKey = btn.getAttribute('data-type');
       estateBorderMenuOpen = estateBorderMenuOpen===borderTypeKey ? null : borderTypeKey;
