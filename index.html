@@ -7581,17 +7581,91 @@
   }
   // Trees, rocks and ore render at 2x scale (100% larger); berries and herbs stay base size.
   var ESTATE_MODEL_TYPE_SCALE = { trees:2, rocks:2, ore:2, berries:1, herbs:1 };
-  // A shared low-poly Workshop building (plank walls + a per-skill coloured roof), built
-  // from the same iso prism/pyramid primitives as the resource models so it presents four
-  // sides as the estate rotates. Skinned per crafting skill via the roof colour.
+  // ===== Per-skill Workshop models =====
+  // Each crafting skill gets a distinct low-poly building silhouette (roof style + optional
+  // chimney + a rooftop accent that signals the craft). COLOUR encodes only the tier -- dark
+  // for low tiers, light for high -- so two different skills at the same tier share a shade
+  // and read apart by SHAPE. Built from the same iso primitives as the resource models, so
+  // each presents four sides as the estate rotates.
+  function workshopTierColor(tier){
+    var t = Math.max(0, Math.min(1, tier/(TIER_COUNT-1)));
+    return estateLerpRgb([82,71,60],[228,216,195], t); // dark (low tier) -> light (high tier)
+  }
+  function estateRectFp(hw, hd){ return [[hw,-hd],[hw,hd],[-hw,hd],[-hw,-hd]]; }
+  function wsRoof(ctx, cx, cy, style, hw, hd, wz, rot, col){
+    var oh=0.08, bfp=estateRectFp(hw+oh, hd+oh), r1=estateShadeColor(col,0.72), r2=estateShadeColor(col,0.9);
+    if(style==='flat'){ estateDrawPrism(ctx,cx,cy, bfp, bfp, wz, wz+0.12, rot, r1, r2); return wz+0.12; }
+    if(style==='hip'){ estateDrawPrism(ctx,cx,cy, bfp, estateRectFp(hw*0.28, hd*0.28), wz, wz+0.62, rot, r1, r2); return wz+0.62; }
+    if(style==='gable'){ estateDrawPrism(ctx,cx,cy, bfp, [[hw+oh,0],[hw+oh,0],[-(hw+oh),0],[-(hw+oh),0]], wz, wz+0.7, rot, r1, r2); return wz+0.7; }
+    if(style==='dome'){ estateDrawPyramid(ctx,cx,cy, estateHexFootprint((hw+hd)*0.55), [0,0], wz, wz+0.34, rot, r1); estateDrawPyramid(ctx,cx,cy, estateHexFootprint((hw+hd)*0.38), [0,0], wz+0.26, wz+0.7, rot, r2); return wz+0.7; }
+    if(style==='cone'){ estateDrawPyramid(ctx,cx,cy, estateHexFootprint((hw+hd)*0.58), [0,0], wz, wz+1.05, rot, r1); return wz+1.05; }
+    estateDrawPyramid(ctx,cx,cy, bfp, [0,0], wz, wz+0.85, rot, r1); return wz+0.85; // 'peak'
+  }
+  function wsChimney(ctx, cx, cy, hw, hd, wz, rot, col){
+    var px=hw*0.55, py=-hd*0.55, s=0.11, fp=[[px+s,py-s],[px+s,py+s],[px-s,py+s],[px-s,py-s]];
+    estateDrawPrism(ctx,cx,cy, fp, fp, wz*0.3, wz+0.95, rot, estateShadeColor(col,0.55), estateShadeColor(col,0.72));
+  }
+  function wsAccent(ctx, cx, cy, type, z, rot, base){
+    var d=estateShadeColor(base,0.58), m=estateShadeColor(base,0.85), l=estateShadeColor(base,1.15);
+    function box(hw,hd,z0,h,c1,c2){ var f=estateRectFp(hw,hd); estateDrawPrism(ctx,cx,cy,f,f,z0,z0+h,rot,c1||d,c2||m); }
+    function spike(r,z0,h,c){ estateDrawPyramid(ctx,cx,cy, estateRectFp(r,r), [0,0], z0, z0+h, rot, c||l); }
+    function disc(r,z0,h,c1,c2){ estateDrawPrism(ctx,cx,cy, estateHexFootprint(r), estateHexFootprint(r), z0, z0+h, rot, c1||d, c2||l); }
+    function orb(r,z0){ estateDrawPyramid(ctx,cx,cy, estateHexFootprint(r), [0,0], z0, z0+r, rot, l); estateDrawPyramid(ctx,cx,cy, estateHexFootprint(r), [0,0], z0, z0-r*0.7, rot, d); }
+    switch(type){
+      case 'log':    box(0.32,0.1,z,0.12); box(0.26,0.08,z+0.12,0.1,m,l); break;
+      case 'ingot':  box(0.26,0.16,z,0.1,estateShadeColor(base,1.25),l); break;
+      case 'skewer': box(0.05,0.05,z,0.5,d,m); disc(0.1,z+0.42,0.08,m,l); break;
+      case 'pot':    disc(0.2,z,0.26,d,m); disc(0.24,z+0.24,0.05,m,l); break;
+      case 'flask':  box(0.06,0.06,z,0.16,d,m); orb(0.15,z+0.32); break;
+      case 'bow':    spike(0.05,z,0.5,m); box(0.03,0.22,z+0.16,0.04,l,l); break;
+      case 'arrow':  spike(0.05,z,0.58,l); break;
+      case 'loaf':   disc(0.24,z,0.18,estateShadeColor(base,1.2),l); break;
+      case 'spool':  disc(0.16,z,0.04,m,l); disc(0.09,z+0.04,0.2,d,m); disc(0.16,z+0.24,0.04,m,l); break;
+      case 'block':  box(0.22,0.22,z,0.22); break;
+      case 'hide':   box(0.02,0.24,z,0.5,d,d); box(0.2,0.02,z+0.42,0.02,m,m); break;
+      case 'gem':    orb(0.17,z+0.24); break;
+      case 'battlement': [[0.5,0.5],[-0.5,0.5],[0.5,-0.5],[-0.5,-0.5]].forEach(function(p){ var f=estateRectFp(0.12,0.12).map(function(q){return [q[0]+p[0],q[1]+p[1]];}); estateDrawPrism(ctx,cx,cy,f,f,z,z+0.16,rot,d,m); }); break;
+      case 'tile':   box(0.34,0.34,z,0.04,m,l); break;
+      case 'bottle': box(0.07,0.07,z,0.18,d,m); box(0.14,0.14,z+0.18,0.16,d,m); disc(0.05,z+0.34,0.1,m,l); break;
+      case 'urn':    disc(0.17,z,0.1,d,m); disc(0.22,z+0.1,0.22,d,m); disc(0.14,z+0.32,0.06,m,l); break;
+      case 'anvil':  box(0.2,0.12,z,0.14,d,m); box(0.32,0.08,z+0.14,0.08,m,l); break;
+      case 'blade':  box(0.16,0.05,z,0.05,d,d); spike(0.06,z,0.55,l); break;
+      case 'plate':  box(0.04,0.22,z,0.42,m,l); break;
+      case 'shield': disc(0.22,z,0.07,d,l); break;
+    }
+  }
+  var WORKSHOP_MODEL = {
+    carpentry:{roof:'gable', accent:'log', hw:0.66, hd:0.5},
+    metallurgy:{roof:'flat', chimney:true, accent:'ingot'},
+    roasting:{roof:'peak', chimney:true, accent:'skewer'},
+    cooking:{roof:'hip', chimney:true, accent:'pot'},
+    alchemy:{roof:'dome', accent:'flask'},
+    bowyer:{roof:'peak', accent:'bow'},
+    fletching:{roof:'gable', accent:'arrow'},
+    baking:{roof:'hip', chimney:true, accent:'loaf', hw:0.68, hd:0.52},
+    tailoring:{roof:'gable', accent:'spool'},
+    stonecutting:{roof:'flat', accent:'block'},
+    leatherworking:{roof:'peak', accent:'hide'},
+    jewelrycrafting:{roof:'dome', accent:'gem'},
+    masonry:{roof:'flat', accent:'battlement', hw:0.66, hd:0.62},
+    paving:{roof:'flat', accent:'tile', hw:0.72, hd:0.6, wallH:0.6},
+    mixology:{roof:'cone', accent:'bottle'},
+    archaeology:{roof:'cone', accent:'urn', wallH:0.7},
+    blacksmithing:{roof:'hip', chimney:true, accent:'anvil'},
+    weaponsmithing:{roof:'peak', chimney:true, accent:'blade'},
+    armorsmithing:{roof:'hip', chimney:true, accent:'plate'},
+    shieldsmithing:{roof:'peak', chimney:true, accent:'shield'}
+  };
   function estateDrawWorkshop(ctx, cx, cy, workshop, rot){
     if(!workshop) return;
-    var roof = workshopSkillColor(workshop.skillId);
-    var wall = '#c19a63';
-    var body = estateSquareFootprint(0.6);
-    estateDrawPrism(ctx, cx, cy, body, body, 0, 1.05, rot, estateShadeColor(wall,0.8), estateShadeColor(wall,0.96)); // walls
-    estateDrawPyramid(ctx, cx, cy, estateSquareFootprint(0.76), [0,0], 1.05, 1.95, rot, roof);                      // roof
-    estateDrawPyramid(ctx, cx, cy, estateSquareFootprint(0.5), [0,0], 1.5, 2.15, rot, estateShadeColor(roof,1.12)); // ridge cap
+    var cfg = WORKSHOP_MODEL[workshop.skillId] || {roof:'peak'};
+    var base = workshopTierColor(workshop.tierIndex);
+    var hw = cfg.hw||0.58, hd = cfg.hd||0.58, wz = cfg.wallH||1.0;
+    var body = estateRectFp(hw, hd);
+    estateDrawPrism(ctx, cx, cy, body, body, 0, wz, rot, estateShadeColor(base,0.82), estateShadeColor(base,0.96)); // walls
+    var roofTop = wsRoof(ctx, cx, cy, cfg.roof, hw, hd, wz, rot, base);
+    if(cfg.chimney) wsChimney(ctx, cx, cy, hw, hd, wz, rot, base);
+    if(cfg.accent) wsAccent(ctx, cx, cy, cfg.accent, roofTop, rot, base);
   }
   function drawEstateWorkshopModel(ctx, cx, cy, workshop, rot){
     if(!workshop) return;
