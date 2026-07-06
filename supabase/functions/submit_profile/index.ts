@@ -109,6 +109,25 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: "Gold increased faster than possible." }, 422);
   }
 
+  // Sanitize optional equipment (weapons/armor loadout for the profile view). Cosmetic, so
+  // never reject the whole submission over it -- coerce to bounded strings or drop it.
+  const cleanEquipList = (list: unknown) => {
+    if (!Array.isArray(list)) return [];
+    const out: { slot: string; name: string; rarity: string }[] = [];
+    for (const it of list.slice(0, 16)) {
+      if (!it || typeof it !== "object") continue;
+      const o = it as Record<string, unknown>;
+      const name = String(o.name ?? "").slice(0, 60);
+      if (!name) continue;
+      out.push({ slot: String(o.slot ?? "").slice(0, 24), name, rarity: String(o.rarity ?? "normal").slice(0, 16) });
+    }
+    return out;
+  };
+  const eqRaw = (body as { equipment?: unknown }).equipment;
+  const equipment = (eqRaw && typeof eqRaw === "object")
+    ? { weapons: cleanEquipList((eqRaw as Record<string, unknown>).weapons), armor: cleanEquipList((eqRaw as Record<string, unknown>).armor) }
+    : null;
+
   // 4. Accept.
   const { error: upErr } = await admin.from("profiles").upsert({
     id: userId,
@@ -116,6 +135,7 @@ Deno.serve(async (req) => {
     total_level: totalLevel,
     gold,
     skills,
+    equipment,
     updated_at: new Date(nowMs).toISOString(),
   }, { onConflict: "id" });
   if (upErr) return json({ ok: false, error: "Could not save profile." }, 500);
