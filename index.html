@@ -8671,6 +8671,14 @@
         .select('id,username,total_level,gold,skills,equipment,stats,updated_at')
         .order('total_level', { ascending:false })
         .limit(LEADERBOARD_LIMIT);
+      if(res.error){
+        // The stats column may not be migrated yet -- fall back so the board still loads
+        // (lifetime-stat rankings just read as 0 until the migration + a profile re-sync).
+        res = await chatClient.from('profiles')
+          .select('id,username,total_level,gold,skills,equipment,updated_at')
+          .order('total_level', { ascending:false })
+          .limit(LEADERBOARD_LIMIT);
+      }
       if(res.error) throw res.error;
       leaderboardData = res.data || [];
       leaderboardLastFetch = Date.now();
