@@ -386,6 +386,7 @@
   .log-entry:last-child{border-bottom:none;}
   .log-entry.important{color:var(--gold);}
   .log-entry.danger{color:var(--hp-bad);}
+  .log-entry.chronicle{color:var(--cat-chat);}   /* global broadcast events from other players */
 
   .shop-block{margin-bottom:16px;}
   .shop-current{display:flex;align-items:center;gap:10px;font-family:var(--font-mono);font-size:12px;color:var(--text-dim);margin-bottom:8px;}
@@ -2097,6 +2098,7 @@
       addLog('The gods smiled upon you! Forged a ' + r.label + baseName + '!', 'important');
       spawnFloatingText('Forged ' + r.label + baseName + '!', 'ft-rare');
       maybeShowRarityPopup(rarityId, r.label + baseName);
+      chronicleBroadcast('craft', r.label + baseName);   // rare/supreme/fantastic -> global feed
     } else {
       addLog('You forged ' + baseName + '.', 'important');
       spawnFloatingText('Forged ' + baseName, 'ft-success');
@@ -2452,6 +2454,7 @@
         state.familiars[skillId] = { owned:true, level:1 };
         addLog(fam.icon + ' A familiar has joined you! ' + fam.name + ' (' + (SKILL_LABELS[skillId]||skillId) + ') answered your call.', 'important');
         spawnFloatingText('Familiar summoned: ' + fam.name + '!', 'ft-rare');
+        chronicleBroadcast('familiar', fam.name);   // new summon -> global feed
         if(state.settings.popupFamiliar){ state.popupQueue.push({ type:'familiar', skillId:skillId, leveledUp:false }); state.popupBatchTotal = (state.popupBatchTotal||0) + 1; }
       }
       needsRender = true;
@@ -2616,12 +2619,10 @@
     if(Math.random() < diggingCoalChance(state)){
       var coalQty = randInt(1,5);
       addItem('coal', coalQty);
-      if(diggingCoalChance(state) < 0.03) addLog('You struck a small coal deposit!', 'important');
       spawnFloatingText('+' + coalQty + ' Coal', 'ft-bonus');
     }
     if(Math.random() < diggingArtifactChance(state)){
       addItem('muddyartifact_t'+tierIndex, 1);
-      addLog('You unearthed a Muddy Artifact!', 'important');
       spawnFloatingText('+1 Artifact!', 'ft-rare');
     }
   }
@@ -2684,7 +2685,6 @@
       var gemId = getGemForTier(tierIndex);
       addItem(gemId, 1);
       var gemObj = GEM_ITEMS.filter(function(g){ return g.id===gemId; })[0];
-      addLog('You found a ' + gemObj.name + '!', 'important');
       spawnFloatingText('+1 ' + gemObj.name + '!', 'ft-rare');
     }
   }
@@ -2773,7 +2773,6 @@
     if(Math.random() < grainSeedChance(state)){
       var seedId = 'grainseed_t'+tierIndex;
       addItem(seedId, 1);
-      addLog('You found a ' + GRAIN_SEED_ITEMS[seedId].name + ' while gathering herbs!', 'important');
       spawnFloatingText('+1 ' + GRAIN_SEED_ITEMS[seedId].name + '!', 'ft-rare');
     }
   }
@@ -2896,7 +2895,6 @@
   function maybeDropCritterCache(){
     if(Math.random() < critterCacheChance(state)){
       addItem('critter_cache', 1);
-      addLog('You found a Critter Cache in the branches!', 'important');
       spawnFloatingText('+1 Critter Cache!', 'ft-rare');
     }
   }
@@ -2909,7 +2907,6 @@
     if(Math.random() < seedDropChance(state)){
       var seedId = 'seed_t'+tierIndex;
       addItem(seedId, 1);
-      addLog('You found a ' + SEED_ITEMS[seedId].name + ' while gathering!', 'important');
       spawnFloatingText('+1 ' + SEED_ITEMS[seedId].name + '!', 'ft-rare');
     }
   }
@@ -2933,7 +2930,6 @@
     if(Math.random() < seedDropChance(state)){
       var herbSeedId = 'herbseed_t'+tierIndex;
       addItem(herbSeedId, 1);
-      addLog('You found a ' + HERB_SEED_ITEMS[herbSeedId].name + ' while gathering!', 'important');
       spawnFloatingText('+1 ' + HERB_SEED_ITEMS[herbSeedId].name + '!', 'ft-rare');
     }
   }
@@ -2970,7 +2966,6 @@
   function maybeDropForagingArtifact(tierIndex){
     if(Math.random() < foragingArtifactChance(state)){
       addItem('muddyartifact_t'+tierIndex, 1);
-      addLog('You unearthed a Muddy Artifact while foraging!', 'important');
       spawnFloatingText('+1 Artifact!', 'ft-rare');
     }
   }
@@ -4339,6 +4334,7 @@
     var after = getLevel(state.xp[skill]);
     if(after > before){
       addLog('Your ' + skill + ' level increased to ' + after + '!', 'important');
+      if(after % 5 === 0 && after >= 20) chronicleBroadcast('level', (SKILL_LABELS[skill] || skill) + ' level ' + after);
       needsRender = true;
     }
     if(resolveActionBarSkill().skillId === skill) spawnBarXpText('gabSkillTrack', amount);
@@ -8094,6 +8090,7 @@
       authUser = { username: (u && u.user_metadata && u.user_metadata.username) || username, id: u && u.id };
       authError = ''; authUsernameDraft = '';
       chatEnsureSubscribed();
+      chronicleEnsureSubscribed();
       profileSync(true); leaderboardFetch(true); cloudLoad();
     }catch(err){ authError = authFriendlyError(err, authMode); }
     authBusy = false; render();
@@ -8239,6 +8236,37 @@
       .on('postgres_changes', { event:'INSERT', schema:'public', table:CHAT_CONFIG.table }, function(payload){ chatOnIncoming(payload.new); })
       .subscribe();
   }
+
+  // ---- Global Chronicle feed: broadcasts notable cross-player events into everyone's
+  // Chronicle log. You post your own events locally (personal flavour); others receive the
+  // broadcast. Untrusted fields (username, body) are escaped before rendering.
+  var chronicleSubscribed = false;
+  function chronicleEnsureSubscribed(){
+    if(chronicleSubscribed || !chatClient) return;
+    chronicleSubscribed = true;
+    chatClient.channel('global-chronicle')
+      .on('postgres_changes', { event:'INSERT', schema:'public', table:'chronicle' }, function(payload){ chronicleOnIncoming(payload.new); })
+      .subscribe();
+  }
+  function chronicleBroadcast(kind, body){
+    if(!CHAT_ENABLED || !chatClient || !authUser || !authUser.id) return;
+    var text = String(body == null ? '' : body).slice(0, 120);
+    if(!text) return;
+    try{ chatClient.from('chronicle').insert({ username: chatName(), kind: kind, body: text }).then(function(){}, function(){}); }catch(e){}
+  }
+  function chronicleOnIncoming(ev){
+    if(!ev || !ev.kind) return;
+    if(authUser && ev.username === authUser.username) return; // own event -- already shown locally
+    var name = '<b>' + escapeHtml(ev.username || 'Someone') + '</b>';
+    var body = escapeHtml(ev.body || '');
+    var msg;
+    if(ev.kind === 'craft') msg = name + ' forged a ' + body + '!';
+    else if(ev.kind === 'level') msg = name + ' reached ' + body + '!';
+    else if(ev.kind === 'familiar') msg = name + ' summoned ' + body + '!';
+    else return;
+    addLog(msg, 'chronicle');
+    needsRender = true;
+  }
   async function chatInit(){
     if(!CHAT_ENABLED){ await authRestore(); if(currentCategory==='chat') render(); return; }
     try{
@@ -8253,6 +8281,7 @@
       chatMessages = (res.data || []).slice().reverse();
       chatStatus = 'online';
       chatEnsureSubscribed();
+      chronicleEnsureSubscribed();
     }catch(e){ chatStatus = 'error'; }
     if(currentCategory==='chat') render();
   }
