@@ -384,6 +384,15 @@
   .gab-physique-label b{color:var(--text-dim);}
   .gab-physique-track{height:4px;border-radius:2px;background:var(--bg-deep);border:1px solid var(--border);overflow:hidden;}
   .gab-physique-fill{height:100%;background:var(--cat-physique);transition:width .25s;}
+  /* Concurrent extra craft tasks shown under the primary action bar */
+  .gab-extra-tasks{margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);}
+  .gab-extra-title{font-family:var(--font-mono);font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;color:var(--text-faint);margin-bottom:5px;}
+  .gab-extra-row{display:flex;align-items:center;gap:8px;margin-bottom:5px;}
+  .gab-extra-row:last-child{margin-bottom:0;}
+  .gab-extra-name{flex:0 0 42%;max-width:42%;display:flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .gab-extra-name .game-icon{width:13px;height:13px;flex-shrink:0;}
+  .gab-extra-track{flex:1 1 auto;height:9px;border-radius:3px;background:var(--bg-deep);border:1px solid var(--border);overflow:hidden;}
+  .gab-extra-fill{height:100%;background:var(--cat-crafting);}
 
   .inv-list{max-height:220px;overflow-y:auto;}
   .inv-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px dotted var(--border);font-size:12px;gap:6px;}
@@ -9807,12 +9816,47 @@
     document.getElementById('hdrLevel').textContent = totalLevel;
   }
 
+  // Display info for a concurrent (non-primary) craft slot -- mirrors the effTime formula
+  // the loop uses to advance it, so the header bar tracks the same progress.
+  function extraCraftSlotInfo(slot){
+    if(slot.craftKind){
+      var d = getSpecialTierData(slot), sk = getSpecialSkillId(slot);
+      return { name: d?d.name:slot.craftKind, icon: svgIcon('hammer','var(--cat-crafting)'),
+        effTime: d ? d.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, sk) : 1000, progress: slot.progress||0 };
+    }
+    var r = ALL_CRAFT_RECIPES[slot.itemId];
+    return { name: r?r.name:slot.itemId, icon: r?r.icon:svgIcon('hammer','var(--cat-crafting)'),
+      effTime: r ? r.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, slot.skill) : 1000, progress: slot.progress||0 };
+  }
+  function activeExtraCraftSlots(){
+    var out = [];
+    for(var i=0;i<state.extraCraftSlots.length;i++){
+      var s = state.extraCraftSlots[i];
+      if(s && s.type==='craft') out.push({ idx:i, slot:s });
+    }
+    return out;
+  }
+  // Compact progress bars for concurrent craft tasks running alongside the primary action.
+  function gabExtraTasksHtml(){
+    var extras = activeExtraCraftSlots();
+    if(!extras.length) return '';
+    var html = '<div class="gab-extra-tasks"><div class="gab-extra-title">Also crafting &bull; '+extras.length+'</div>';
+    extras.forEach(function(e){
+      var info = extraCraftSlotInfo(e.slot);
+      var pct = clamp(info.progress/info.effTime*100, 0, 100);
+      html += '<div class="gab-extra-row"><span class="gab-extra-name">'+info.icon+' '+escapeHtml(info.name)+'</span>';
+      html += '<div class="gab-extra-track"><div class="gab-extra-fill" id="gabExtraFill-'+e.idx+'" style="width:'+pct+'%"></div></div></div>';
+    });
+    return html + '</div>';
+  }
+
   function renderGlobalActionBar(){
     var act = state.activity;
     var html = '';
     if(!act || act.type===null || act.type===undefined){
       html += '<div class="global-action-bar idle">';
       html += '<div class="gab-top"><span class="gab-action-name">&#128308; Idle</span><span class="gab-timer-text">Pick an action from any tab to begin</span></div>';
+      html += gabExtraTasksHtml();
       html += '</div>';
       return html;
     }
@@ -9888,12 +9932,25 @@
       });
       html += '</div>';
     }
+    html += gabExtraTasksHtml();
     html += '</div>';
     return html;
   }
 
+  var gabExtraSig = '';
   function updateGlobalActionBarLive(){
     var act = state.activity;
+    // Concurrent craft-slot bars: live-update widths, and force a re-render whenever the
+    // set of running extra crafts changes so bars appear/disappear promptly.
+    var extras = activeExtraCraftSlots();
+    var sig = extras.map(function(e){ return e.idx+':'+(e.slot.craftKind||e.slot.itemId); }).join(',');
+    if(sig !== gabExtraSig){ gabExtraSig = sig; needsRender = true; }
+    extras.forEach(function(e){
+      var el = document.getElementById('gabExtraFill-'+e.idx);
+      if(!el) return;
+      var info = extraCraftSlotInfo(e.slot);
+      el.style.width = clamp(info.progress/info.effTime*100, 0, 100) + '%';
+    });
     var fillEl = document.getElementById('gabActionFill');
     var skillFillEl = document.getElementById('gabSkillFill');
     var skillPctEl = document.getElementById('gabSkillPctText');
