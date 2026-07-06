@@ -9332,7 +9332,7 @@
         guildState.guild=null; guildState.members=[]; guildState.myRank=null; guildState.applications=[];
         guildBrowseState.status='idle'; guildBankState.status='idle'; guildBankState.guildId=null;
         guildEstateState.status='idle'; guildEstateState.guildId=null;
-        guildEstateMap.status='idle'; guildEstateMap.guildId=null; guildEstateMap.data=null; guildPlacedWorkshops={};
+        guildEstateMap.status='idle'; guildEstateMap.guildId=null; guildEstateMap.data=null; guildPlacedWorkshops={}; guildEstateSel=null;
         guildBossState.status='idle'; guildBossState.guildId=null; guildBossState.active=null; guildBossState.claimable=null;
         guildTeardownChat(); guildReload(true); return;
       }
@@ -9673,6 +9673,7 @@
     chatClient.from('guild_estate').select('data,version').eq('guild_id',gid).maybeSingle().then(function(res){
       if(res && res.data){
         guildEstateMap.data=res.data.data; guildEstateMap.version=res.data.version; guildEstateMap.status='ready';
+        if(!guildEstateMap.data.jobs) guildEstateMap.data.jobs=[];
         recomputeGuildWorkshops(); if(currentCategory==='guild') render();
       } else {
         var blob = { grid: generateGuildEstateGrid(gid) };
@@ -9684,15 +9685,74 @@
     }, function(){ guildEstateMap.status='error'; guildEstateMap.error='Could not load the guild estate.'; if(currentCategory==='guild') render(); });
   }
   // Version-guarded save; on conflict, reload (the losing edit is discarded).
-  function guildEstateMapSave(){
+  function guildEstateMapSave(onOk){
     if(!chatClient || !guildEstateMap.data || !guildState.guild) return;
     var expected = guildEstateMap.version, gid = guildState.guild.id;
     guildEstateMap.version = expected + 1;
     chatClient.from('guild_estate').update({ data:guildEstateMap.data, version:guildEstateMap.version, updated_at:new Date().toISOString() }).eq('guild_id',gid).eq('version',expected).select('version').then(function(res){
       if(!res || res.error || !res.data || !res.data.length){
         guildEstateMap.status='idle'; guildEstateMap.error='Another member edited the estate first — reloaded.'; guildEstateMapEnsure(); if(currentCategory==='guild') render();
-      }
+      } else if(onOk){ onOk(); }
     }, function(){});
+  }
+  // ---- Guild estate activities: up to 5 concurrent jobs (one per member), stored in the
+  // shared blob. Each member completes their OWN job; the grid change is shared, rewards go
+  // to the doer and are granted only after a successful save (guarded so a save-conflict
+  // reload can't double-reward). ----
+  var guildEstateSel = null;      // {x,y} selected tile on the guild canvas
+  var guildJobRewarded = {};      // job signature -> true (reward-once guard)
+  function guildJobSig(j){ return j.owner+':'+j.kind+':'+j.x+':'+j.y+':'+j.startAt; }
+  function guildEstateMyJob(){ var js=guildEstateMap.data&&guildEstateMap.data.jobs; return js ? js.filter(function(j){ return authUser && j.owner===authUser.id; })[0] : null; }
+  function guildEstateStartClear(x, y){
+    if(guildEstateMap.status!=='ready' || !authUser) return;
+    var grid=guildEstateMap.data.grid, cell=grid[x]&&grid[x][y];
+    if(!cell || !cell.obstacle) return;
+    var jobs = guildEstateMap.data.jobs || (guildEstateMap.data.jobs=[]);
+    if(jobs.some(function(j){ return j.owner===authUser.id; })){ guildEstateMap.error='You already have an activity running on the guild estate.'; render(); return; }
+    if(jobs.length>=5){ guildEstateMap.error='All 5 guild activity slots are busy right now.'; render(); return; }
+    var info = estateObstacleInfo(cell.obstacle); if(!info) return;
+    if(getLevel(state.xp[info.def.skill]) < info.reqLevel){ guildEstateMap.error='Clearing this needs '+SKILL_LABELS[info.def.skill]+' level '+info.reqLevel+'.'; render(); return; }
+    var now=Date.now();
+    jobs.push({ owner:authUser.id, ownerName:(authUser.username||'member'), kind:'clear', x:x, y:y, startAt:now, readyAt:now+info.durationMs });
+    guildEstateMap.error='';
+    guildEstateMapSave();
+    addLog('Started clearing '+info.def.label+' on the guild estate.','important');
+    render();
+  }
+  function processGuildEstateJobs(){
+    if(guildEstateMap.status!=='ready' || !authUser || !guildEstateMap.data) return;
+    var mine = guildEstateMyJob();
+    if(!mine || Date.now() < mine.readyAt) return;
+    var sig = guildJobSig(mine), grid=guildEstateMap.data.grid, cell=grid[mine.x]&&grid[mine.x][mine.y];
+    var reward = null;
+    if(cell && mine.kind==='clear' && cell.obstacle){
+      var oi = estateObstacleInfo(cell.obstacle);
+      if(oi) reward = { skill:oi.def.skill, itemId:oi.itemId, amount:oi.resourceAmount, xp:oi.xp, label:oi.def.label, itemName:oi.itemName };
+      cell.obstacle = null;
+    }
+    guildEstateMap.data.jobs = guildEstateMap.data.jobs.filter(function(j){ return j!==mine; });
+    guildEstateMapSave(function(){
+      if(reward && !guildJobRewarded[sig]){
+        guildJobRewarded[sig] = true;
+        addItem(reward.itemId, reward.amount); addXp(reward.skill, reward.xp); saveGame();
+        addLog('Cleared '+reward.label+' on the guild estate. +'+reward.amount+' '+reward.itemName+', +'+reward.xp+' '+SKILL_LABELS[reward.skill]+' XP.','important');
+        if(currentCategory==='guild') render();
+      }
+    });
+    needsRender = true;
+  }
+  function guildEstateFindTile(rawX, rawY){
+    var grid=guildEstateMapGrid(); if(!grid) return null;
+    var W=guildEstateMap._cw||580, H=guildEstateMap._ch||360;
+    var wx=(rawX-W/2)/estateZoom+W/2, wy=(rawY-H/2)/estateZoom+H/2;
+    var ox=guildEstateMap._ox||0, oy=guildEstateMap._oy||0, tiles=[];
+    for(var x=0;x<grid.length;x++){ for(var y=0;y<grid[x].length;y++){ var c=grid[x][y]; if(c&&c.owned){ var r=estateRotateCoord(x,y); tiles.push({x:x,y:y,depth:r.x+r.y}); } } }
+    tiles.sort(function(a,b){ return b.depth-a.depth; });
+    for(var i=0;i<tiles.length;i++){ var t=tiles[i];
+      if(estateTopDown){ var p=estateTdTilePos(t.x,t.y,ox,oy); if(Math.abs(wx-p.x)<=ESTATE_TD_TILE/2 && Math.abs(wy-p.y)<=ESTATE_TD_TILE/2) return {x:t.x,y:t.y}; }
+      else { var pos=estateTileScreenPos(t.x,t.y,grid[t.x][t.y].height,ox,oy); if(estatePointInDiamond(wx,wy,pos.x,pos.y)) return {x:t.x,y:t.y}; }
+    }
+    return null;
   }
   function guildEstateFreePavedTile(){
     var grid = guildEstateMap.data && guildEstateMap.data.grid; if(!grid) return null;
@@ -9756,27 +9816,41 @@
       else { var pp=estateTileScreenPos(t.x,t.y,grid[t.x][t.y].height,0,0); minX=Math.min(minX,pp.x-ESTATE_TILE_W/2);maxX=Math.max(maxX,pp.x+ESTATE_TILE_W/2);minY=Math.min(minY,pp.y-20);maxY=Math.max(maxY,pp.y+ESTATE_TILE_H); }
     });
     var originX = W/2 - (minX+maxX)/2, originY = H/2 - (minY+maxY)/2;
+    guildEstateMap._ox=originX; guildEstateMap._oy=originY; guildEstateMap._cw=W; guildEstateMap._ch=H; // for click hit-testing
+    var jobSet = {}; ((guildEstateMap.data&&guildEstateMap.data.jobs)||[]).forEach(function(j){ jobSet[j.x+'_'+j.y]=j; });
     ctx.clearRect(0,0,W,H);
     ctx.save();
     ctx.translate(W/2,H/2); ctx.scale(estateZoom,estateZoom); ctx.translate(-W/2,-H/2);
     tiles.forEach(function(t){
       var cell=grid[t.x][t.y];
       var col = cell.type==='paved' ? estatePavedTileColor(cell.paveTileId) : estateHeightColor(cell.height/(ESTATE_MAX_HEIGHT-1));
+      var isSel = guildEstateSel && guildEstateSel.x===t.x && guildEstateSel.y===t.y;
+      var job = jobSet[t.x+'_'+t.y];
       if(td){
         var p=estateTdTilePos(t.x,t.y,originX,originY);
         ctx.fillStyle=col; ctx.fillRect(p.x-ts/2,p.y-ts/2,ts,ts);
-        ctx.strokeStyle='rgba(0,0,0,0.22)'; ctx.lineWidth=1; ctx.strokeRect(p.x-ts/2,p.y-ts/2,ts,ts);
+        ctx.strokeStyle = isSel?'#ffffff':'rgba(0,0,0,0.22)'; ctx.lineWidth = isSel?2:1; ctx.strokeRect(p.x-ts/2,p.y-ts/2,ts,ts);
         if(cell.obstacle) estateDrawTdObstacle(ctx,p.x,p.y,cell.obstacle,ts);
         if(cell.workshopId) estateDrawTdWorkshop(ctx,p.x,p.y,WORKSHOP_ITEMS[cell.workshopId],ts);
+        if(job){ ctx.fillStyle='rgba(232,193,90,0.85)'; ctx.beginPath(); ctx.arc(p.x,p.y-ts*0.3,3,0,Math.PI*2); ctx.fill(); }
       } else {
         var pos=estateTileScreenPos(t.x,t.y,cell.height,originX,originY);
         ctx.beginPath(); ctx.moveTo(pos.x,pos.y); ctx.lineTo(pos.x+ESTATE_TILE_W/2,pos.y+ESTATE_TILE_H/2); ctx.lineTo(pos.x,pos.y+ESTATE_TILE_H); ctx.lineTo(pos.x-ESTATE_TILE_W/2,pos.y+ESTATE_TILE_H/2); ctx.closePath();
-        ctx.fillStyle=col; ctx.fill(); ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=1; ctx.stroke();
+        ctx.fillStyle=col; ctx.fill(); ctx.strokeStyle = isSel?'#ffffff':'rgba(0,0,0,0.3)'; ctx.lineWidth = isSel?2:1; ctx.stroke();
         if(cell.obstacle) drawEstateObstacleModel(ctx,pos.x,pos.y+ESTATE_TILE_H/2,cell.obstacle,estateRotation);
         if(cell.workshopId) drawEstateWorkshopModel(ctx,pos.x,pos.y+ESTATE_TILE_H/2,WORKSHOP_ITEMS[cell.workshopId],estateRotation);
+        if(job){ ctx.fillStyle='rgba(232,193,90,0.9)'; ctx.beginPath(); ctx.arc(pos.x,pos.y+ESTATE_TILE_H/2,4,0,Math.PI*2); ctx.fill(); }
       }
     });
     ctx.restore();
+    if(!canvas._guildBound){
+      canvas._guildBound = true;
+      canvas.addEventListener('click', function(e){
+        var rect=canvas.getBoundingClientRect(), sx=canvas.width/rect.width, sy=canvas.height/rect.height;
+        guildEstateSel = guildEstateFindTile((e.clientX-rect.left)*sx, (e.clientY-rect.top)*sy);
+        render();
+      });
+    }
   }
   function renderGuildEstate(){
     if(guildEstateState.status==='idle' || guildEstateState.guildId !== (guildState.guild&&guildState.guild.id)) guildEstateLoad();
@@ -9813,6 +9887,30 @@
       } else if(!placed.length){
         html += '<div class="empty-note">Build Workshops in Carpentry, then place them here for the whole guild.</div>';
       }
+      // Selected-tile actions (click a tile on the canvas)
+      if(guildEstateSel){
+        var gg = guildEstateMapGrid();
+        var gcell = gg && gg[guildEstateSel.x] && gg[guildEstateSel.x][guildEstateSel.y];
+        if(gcell){
+          html += '<div class="guild-section-title">Tile ('+guildEstateSel.x+', '+guildEstateSel.y+')</div>';
+          if(gcell.obstacle){
+            var goi = estateObstacleInfo(gcell.obstacle);
+            var canClear = goi && getLevel(state.xp[goi.def.skill]) >= goi.reqLevel;
+            var hasJobHere = ((guildEstateMap.data&&guildEstateMap.data.jobs)||[]).some(function(j){ return j.x===guildEstateSel.x && j.y===guildEstateSel.y; });
+            html += '<div class="guild-member-row"><div class="item-meta">'+(goi?goi.def.label+' &bull; needs '+SKILL_LABELS[goi.def.skill]+' '+goi.reqLevel+' &bull; ~'+Math.round((goi.durationMs||0)/60000)+' min':'Obstacle')+'</div>';
+            if(hasJobHere) html += '<span class="item-meta">being cleared…</span>';
+            else html += '<button class="mini-btn" data-action="guildEstateStartClear" data-x="'+guildEstateSel.x+'" data-y="'+guildEstateSel.y+'" '+(canClear?'':'disabled')+'>Clear</button>';
+            html += '</div>';
+          } else {
+            html += '<div class="empty-note">'+(gcell.type==='paved'?'Paved tile — place a Workshop above.':'Cleared ground.')+' Terraform &amp; paving on the shared estate are coming next.</div>';
+          }
+        }
+      }
+      // Activity slots (up to 5 concurrent, one per member)
+      var gjobs = (guildEstateMap.data && guildEstateMap.data.jobs) || [];
+      html += '<div class="guild-section-title">Activities <span class="item-meta">('+gjobs.length+'/5)</span></div>';
+      if(!gjobs.length){ html += '<div class="empty-note">No activities running. Click a tile with an obstacle, then Clear it — up to 5 members can work the estate at once.</div>'; }
+      else gjobs.forEach(function(j){ var rem=j.readyAt-Date.now(); html += '<div class="guild-member-row"><div><b>'+escapeHtml(j.ownerName||'member')+'</b> <span class="item-meta">clearing ('+j.x+','+j.y+')</span></div><span class="item-meta">'+(rem<=0?'finishing…':guildEstateRemain(rem))+'</span></div>'; });
     }
     var nowMs = Date.now(), canManage = guildState.myRank==='leader'||guildState.myRank==='officer';
     for(var i=0;i<5;i++){
@@ -11427,6 +11525,8 @@
       guildEstatePlaceWorkshop();
     } else if(action==='guildEstateRemoveWorkshop'){
       guildEstateRemoveWorkshop(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
+    } else if(action==='guildEstateStartClear'){
+      guildEstateStartClear(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
     } else if(action==='guildBossSummon'){
       guildBossSummon(btn.getAttribute('data-key'));
     } else if(action==='guildBossAssault'){
@@ -11530,6 +11630,7 @@
     // Estate terraforming runs entirely in the background, independent of state.activity,
     // so it keeps progressing (and can finish) no matter what the player is actively doing.
     processEstateJob();
+    processGuildEstateJobs(); // complete this member's guild-estate activity when its timer elapses
 
     // Meditation is trained purely by being completely idle -- no gathering, crafting,
     // combat, faith activity or background craft slot running.
