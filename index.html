@@ -1417,7 +1417,6 @@
         var list = [];
         MINING_STONE_INDICES.forEach(function(stoneIdx, k){
           var stoneName = MINING_STONE_NAMES[k];
-          var stoneLevel = TIER_LEVELS[stoneIdx];
           itemTypes.forEach(function(it, j){
             var v = k*3 + j;
             var inputs = {};
@@ -1425,7 +1424,9 @@
             list.push({
               id:'stonecutting_t'+v,
               name: stoneName + ' ' + it.name,
-              levelReq: stoneLevel,
+              // Staggered every 5 levels by tier index (1,5,10,...100), matching paving/masonry,
+              // so there's a level-1 craft. (Previously gated on the stone's mining tier.)
+              levelReq: TIER_LEVELS[v],
               xp: tierXp(10,v),
               time: tierTime(7,0.3,v),
               sell: tierSell(3,v),
