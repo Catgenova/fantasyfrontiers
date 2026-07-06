@@ -7206,7 +7206,13 @@
   function estateCancelJob(){
     var job = state.estate && state.estate.job;
     if(!job) return;
-    if(job.kind === 'raise'){
+    if(job.kind === 'pave'){
+      addItem(job.paveTileId, ESTATE_PAVE_TILE_COST); // refund the paving tiles
+      addLog('You cancelled paving (' + job.x + ', ' + job.y + ') and recovered your ' + ESTATE_PAVE_TILE_COST + ' tiles.', 'important');
+    } else if(job.kind === 'workshop'){
+      addItem(job.workshopId, 1); // refund the workshop
+      addLog('You cancelled building the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'workshop') + ' (returned to inventory).', 'important');
+    } else if(job.kind === 'raise'){
       addItem(ESTATE_DIRT_ITEM_ID, ESTATE_RAISE_DIRT_COST); // refund the reserved Dirt
       addLog('You cancelled raising (' + job.x + ', ' + job.y + ') and recovered your ' + ESTATE_RAISE_DIRT_COST + ' Dirt.', 'important');
     } else if(job.kind === 'clear'){
@@ -7238,6 +7244,19 @@
         needsRender = true;
         return;
       }
+      if(job.kind === 'pave'){
+        cell.type = 'paved'; cell.paveTileId = job.paveTileId;
+        var pr = getPavingRecipe(job.paveTileId);
+        addLog('Finished paving (' + job.x + ', ' + job.y + ')' + (pr?' with '+pr.name:'') + '.', 'important');
+        spawnFloatingText('Tile Paved!', 'ft-success');
+        state.estate.job = null; needsRender = true; return;
+      }
+      if(job.kind === 'workshop'){
+        cell.workshopId = job.workshopId; recomputePlacedWorkshops();
+        addLog('Finished building the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'workshop') + '.', 'important');
+        spawnFloatingText('Workshop built!', 'ft-bonus');
+        state.estate.job = null; needsRender = true; return;
+      }
       if(job.kind === 'raise'){
         cell.height = Math.min(ESTATE_MAX_HEIGHT-1, cell.height + 1);
         addLog('Finished raising (' + job.x + ', ' + job.y + ') to height ' + cell.height + '. +' + ESTATE_TERRAFORM_XP + ' Digging XP.', 'important');
@@ -7261,6 +7280,8 @@
   // Digging 20, no materials returned.
   var ESTATE_PAVE_TILE_COST = 20;
   var ESTATE_BREAK_PAVEMENT_LEVEL = 20;
+  var ESTATE_PAVE_MS_PER_TIER = 10*60*1000;      // paving takes 10 min per tier
+  var ESTATE_WORKSHOP_MS_PER_TIER = 30*60*1000;  // building a workshop takes 30 min per tier
   function getPavingRecipe(paveTileId){
     return CRAFTING_SKILLS.paving.recipes.filter(function(r){ return r.id===paveTileId; })[0] || null;
   }
@@ -7268,10 +7289,7 @@
     var cell = state.estate.grid[x] && state.estate.grid[x][y];
     if(!cell || cell.type !== 'dirt') return;
     if(cell.obstacle){ addLog('Clear the obstacle on this tile before paving it.', 'danger'); return; }
-    if(state.estate.job && state.estate.job.x===x && state.estate.job.y===y){
-      addLog('That tile is being terraformed -- wait for the job to finish or cancel it first.', 'danger');
-      return;
-    }
+    if(estateJobActive()){ addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger'); return; }
     var recipe = getPavingRecipe(paveTileId);
     if(!recipe) return;
     if(getLevel(state.xp.paving) < recipe.levelReq){
@@ -7283,11 +7301,12 @@
       return;
     }
     state.inventory[paveTileId] -= ESTATE_PAVE_TILE_COST;
-    cell.type = 'paved';
-    cell.paveTileId = paveTileId;
+    var pTier = (parseInt(paveTileId.split('_t')[1],10)||0) + 1; // 10 min per tier
+    var nowP = Date.now();
+    state.estate.job = { kind:'pave', x:x, y:y, paveTileId:paveTileId, startAt:nowP, readyAt:nowP + pTier*ESTATE_PAVE_MS_PER_TIER };
     estatePavingMenuOpen = false;
-    addLog('You paved the tile at (' + x + ', ' + y + ') with ' + recipe.name + '.', 'important');
-    spawnFloatingText('Tile Paved!', 'ft-success');
+    addLog('You began paving (' + x + ', ' + y + ') with ' + recipe.name + ' — finishes in ' + (pTier*10) + ' minutes.', 'important');
+    spawnFloatingText('Paving…', 'ft-success');
     needsRender = true;
   }
   function estateBreakPavement(x, y){
@@ -7343,12 +7362,14 @@
     if(!it || (state.inventory[workshopId]||0) <= 0){ addLog('You don\'t own that workshop.', 'danger'); return; }
     if(it.tierIndex > pavementTierOf(cell)){ addLog('That workshop needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
     if(placedWorkshops[it.skillId] !== undefined){ addLog('You already have a ' + ((CRAFTING_SKILLS[it.skillId]||{}).label||it.skillId) + ' Workshop placed — only one per skill.', 'danger'); return; }
+    if(estateJobActive()){ addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger'); return; }
     state.inventory[workshopId] -= 1;
-    cell.workshopId = workshopId;
-    recomputePlacedWorkshops();
+    var wTier = it.tierIndex + 1; // 30 min per tier
+    var nowW = Date.now();
+    state.estate.job = { kind:'workshop', x:x, y:y, workshopId:workshopId, startAt:nowW, readyAt:nowW + wTier*ESTATE_WORKSHOP_MS_PER_TIER };
     estateWorkshopMenuOpen = false;
-    addLog('Placed a ' + it.name + '.', 'important');
-    spawnFloatingText(it.name + ' placed', 'ft-success');
+    addLog('You began building a ' + it.name + ' at (' + x + ', ' + y + ') — finishes in ' + (wTier*30) + ' minutes.', 'important');
+    spawnFloatingText('Building…', 'ft-success');
     needsRender = true;
   }
   function estateRemoveWorkshop(x, y){
@@ -8357,6 +8378,14 @@
       var ci = jobCell && estateObstacleInfo(jobCell.obstacle);
       headLabel = 'Clearing &bull; '+(ci ? ci.def.emoji+' '+ci.def.label : 'Obstacle')+' ('+job.x+', '+job.y+')';
       rewardNote = ci ? ('Runs in the background &bull; +'+ci.resourceAmount+' '+ci.itemName+' &amp; +'+ci.xp+' XP when it finishes') : 'Runs in the background';
+    } else if(job.kind === 'pave'){
+      var pvr = getPavingRecipe(job.paveTileId);
+      headLabel = 'Paving &bull; '+(pvr ? pvr.name : 'Tile')+' ('+job.x+', '+job.y+')';
+      rewardNote = 'Runs in the background &bull; the tile becomes paved when it finishes';
+    } else if(job.kind === 'workshop'){
+      var wsi = WORKSHOP_ITEMS[job.workshopId];
+      headLabel = 'Building &bull; '+(wsi ? wsi.name : 'Workshop')+' ('+job.x+', '+job.y+')';
+      rewardNote = 'Runs in the background &bull; the Workshop is placed when it finishes';
     } else {
       headLabel = 'Terraforming &bull; '+(job.kind === 'raise' ? 'Raising' : 'Digging down')+' ('+job.x+', '+job.y+')';
       rewardNote = 'Runs in the background &bull; +'+ESTATE_TERRAFORM_XP+' Digging XP when it finishes';
@@ -8375,8 +8404,10 @@
   // ================= RENDER: FARMING =================
   function formatDuration(ms){
     var totalSec = Math.max(0, Math.ceil(ms/1000));
-    var m = Math.floor(totalSec/60);
+    var h = Math.floor(totalSec/3600);
+    var m = Math.floor((totalSec%3600)/60);
     var s = totalSec%60;
+    if(h > 0) return h+':'+(m<10?'0':'')+m+':'+(s<10?'0':'')+s;
     return m+':'+(s<10?'0':'')+s;
   }
   function renderFarmingTab(){
