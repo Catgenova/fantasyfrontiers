@@ -8502,8 +8502,10 @@
     else if(ev.kind === 'level') msg = name + ' reached ' + body + '!';
     else if(ev.kind === 'familiar') msg = name + ' summoned ' + body + '!';
     else return;
+    // addLog refreshes the Chronicle log on its own (via logVersion in updateDynamic). Do NOT
+    // set needsRender here -- a full render per incoming event rebuilds #content and slams shut
+    // any open <select> (e.g. a smithing tier dropdown) whenever the community is active.
     addLog(msg, 'chronicle');
-    needsRender = true;
   }
   async function chatInit(){
     if(!CHAT_ENABLED){ await authRestore(); if(currentCategory==='chat') render(); return; }
