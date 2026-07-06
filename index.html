@@ -8631,6 +8631,7 @@
   function buildProfileStats(){
     var s = state.stats || {}, out = {};
     LB_STAT_METRICS.forEach(function(m){ out[m.key] = Math.max(0, Math.floor(s[m.key]||0)); });
+    out.combat_score = Math.max(0, Math.floor(combatLevelEquivalent(state))); // for the leaderboard (not a lifetime stat)
     return out;
   }
   function computeProfileStats(){
@@ -8714,8 +8715,10 @@
     }catch(e){ leaderboardStatus = 'error'; }
     if(currentCategory==='leaderboard' && !profileView) render();
   }
+  function lbCombatScore(p){ return (p.stats && p.stats.combat_score) || 0; }
   function lbMetricValue(p, metric){
     if(metric==='gold') return p.gold||0;
+    if(metric==='combat') return lbCombatScore(p);
     if(metric.indexOf('skill:')===0) return (p.skills && p.skills[metric.slice(6)])||0;
     if(metric.indexOf('stat:')===0) return (p.stats && p.stats[metric.slice(5)])||0;
     return p.total_level||0; // 'total'
@@ -8723,6 +8726,7 @@
   function lbMetricLabel(metric){
     if(metric==='total') return 'Total Level';
     if(metric==='gold') return 'Gold';
+    if(metric==='combat') return 'Combat Score';
     if(metric.indexOf('skill:')===0){ var s=metric.slice(6); return SKILL_LABELS[s]||s; }
     if(metric.indexOf('stat:')===0){ var k=metric.slice(5); var m=LB_STAT_METRICS.filter(function(x){return x.key===k;})[0]; return m?m.label:k; }
     return 'Total Level';
@@ -8731,13 +8735,15 @@
   function lbPrimaryText(p, metric){
     var v = lbMetricValue(p, metric);
     if(metric==='gold') return fmt(v)+'g';
+    if(metric==='combat') return 'CS '+fmt(v);
     if(metric==='total' || metric.indexOf('skill:')===0) return 'Lv '+fmt(v);
     return fmt(v); // lifetime stat -> raw count
   }
   function lbRow(rank, p, isMe, metric){
     var medals = { 1:'\uD83E\uDD47', 2:'\uD83E\uDD48', 3:'\uD83E\uDD49' };
-    // Secondary column gives context: show Total Level unless that's already the metric (then gold).
-    var secondary = (metric==='total') ? (fmt(p.gold||0)+'g') : ('Lv '+fmt(p.total_level||0));
+    // Secondary column gives context: on the Total-Level board show Combat Score; otherwise
+    // show Total Level (so it stays visible when ranking by a skill/stat/combat).
+    var secondary = (metric==='total') ? ('CS '+fmt(lbCombatScore(p))) : ('Lv '+fmt(p.total_level||0));
     return '<button class="lb-row'+(isMe?' me':'')+'" data-action="viewProfile" data-id="'+escapeHtml(String(p.id||''))+'">'
       +'<span class="lb-rank">'+(medals[rank]||('#'+rank))+'</span>'
       +'<span class="lb-name">'+escapeHtml(p.username||'anon')+'</span>'
@@ -8748,7 +8754,7 @@
   function lbMetricOptions(){
     var cur = leaderboardMetric;
     var opt = function(val,label){ return '<option value="'+val+'"'+(cur===val?' selected':'')+'>'+escapeHtml(label)+'</option>'; };
-    var html = '<optgroup label="Overall">'+opt('total','Total Level')+opt('gold','Gold')+'</optgroup>';
+    var html = '<optgroup label="Overall">'+opt('total','Total Level')+opt('combat','Combat Score')+opt('gold','Gold')+'</optgroup>';
     html += '<optgroup label="Lifetime Stats">'+LB_STAT_METRICS.map(function(m){ return opt('stat:'+m.key, m.label); }).join('')+'</optgroup>';
     (typeof SKILL_GROUPS !== 'undefined' ? SKILL_GROUPS : []).forEach(function(g){
       html += '<optgroup label="'+escapeHtml(g.label)+'">'+g.skills.map(function(sk){ return opt('skill:'+sk, SKILL_LABELS[sk]||sk); }).join('')+'</optgroup>';
@@ -8759,7 +8765,7 @@
     var html = '<div class="chat-wrap">';
     html += '<button class="action-btn" data-action="closeProfile" style="width:auto;flex:0 0 auto;">\u2039 Back</button>';
     html += '<div class="profile-head"><div class="profile-name">'+escapeHtml(p.username||'anon')+'</div>'
-      +'<div class="profile-stats"><span>Total Level <b>'+fmt(p.total_level||0)+'</b></span><span>Gold <b>'+fmt(p.gold||0)+'</b></span></div></div>';
+      +'<div class="profile-stats"><span>Total Level <b>'+fmt(p.total_level||0)+'</b></span><span>Combat Score <b>'+fmt(lbCombatScore(p))+'</b></span><span>Gold <b>'+fmt(p.gold||0)+'</b></span></div></div>';
     var pst = p.stats || {};
     if(LB_STAT_METRICS.some(function(m){ return (pst[m.key]||0)>0; })){
       html += '<div class="profile-skills"><div class="profile-group"><div class="profile-group-head">Lifetime</div><div class="profile-group-body">';
