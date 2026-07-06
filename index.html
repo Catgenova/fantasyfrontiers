@@ -393,6 +393,11 @@
   .gab-extra-name .game-icon{width:13px;height:13px;flex-shrink:0;}
   .gab-extra-track{flex:1 1 auto;height:9px;border-radius:3px;background:var(--bg-deep);border:1px solid var(--border);overflow:hidden;}
   .gab-extra-fill{height:100%;background:var(--cat-crafting);}
+  /* Character-tab lifetime stats */
+  .lifetime-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin-bottom:14px;}
+  .lifetime-stat{background:rgba(255,255,255,0.42);border:1px solid var(--border);border-radius:8px;padding:9px 12px;display:flex;flex-direction:column;gap:1px;}
+  .ls-num{font-family:var(--font-display,var(--font-body));font-size:20px;font-weight:800;line-height:1.1;color:var(--gold);}
+  .ls-label{font-family:var(--font-mono);font-size:10px;letter-spacing:0.3px;text-transform:uppercase;color:var(--text-faint);}
 
   .inv-list{max-height:220px;overflow-y:auto;}
   .inv-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px dotted var(--border);font-size:12px;gap:6px;}
@@ -2129,7 +2134,9 @@
     needsRender = true;
   }
   function logForgeResult(rarityId, baseName){
+    bumpStat('crafted');
     if(rarityId && rarityId!=='normal'){
+      bumpStat('crafted' + rarityId.charAt(0).toUpperCase() + rarityId.slice(1)); // craftedRare/Supreme/Fantastic
       var r = getRarity(rarityId);
       addLog('The gods smiled upon you! Forged a ' + r.label + baseName + '!', 'important');
       spawnFloatingText('Forged ' + r.label + baseName + '!', 'ft-rare');
@@ -3813,6 +3820,7 @@
         needsRender = true;
       } else {
         consumeInputs(actualInputs);
+        bumpStat('crafted');
         if(recipe.shaftCraft){
           var shaftsCreated = shaftOutputFor(act.logTierIndex);
           if(Math.random() < shaftSuccessRate(state)){
@@ -4256,6 +4264,7 @@
       dungeonProgress: {},
       estate: Object.assign({ grid: generateEstateGrid(), expansionsPurchased: 0, job: null }, generateEstateEdges()),
       lockedItems: {},
+      stats: { kills:0, deaths:0, gathered:0, crafted:0, craftedRare:0, craftedSupreme:0, craftedFantastic:0 },
       familiarCastIndex: 0,
       familiarCastAccum: 0,
       familiarBuffs: { armorMult:1, armorUntil:0, damageMult:1, damageUntil:0, enemySlowPct:0, enemySlowUntil:0, enemyWeakenPct:0, enemyWeakenUntil:0, poisonDps:0, poisonUntil:0 },
@@ -4406,6 +4415,10 @@
       if(relevantPhysiqueIds.indexOf(id) !== -1) spawnBarXpText('gabPhysiqueTrack-'+id, amount);
     });
   }
+  // Lifetime character stats (kills/deaths/items gathered/crafted/rarities). Displayed
+  // in the Character tab; accrues during offline progress too, since the sim runs the
+  // same tick functions.
+  function bumpStat(key, n){ if(!state.stats) state.stats = {}; state.stats[key] = (state.stats[key]||0) + (n||1); }
   function addItem(id, qty){
     if(offlineCapture){ offlineCapture.items[id] = (offlineCapture.items[id]||0) + qty; }
     var wasZero = !(state.inventory[id] > 0);
@@ -4712,6 +4725,7 @@
     addPhysiqueXp(atkFeed);
     if(state.equippedMainhand) addXp(state.equippedMainhand, Math.round(monster.xp * 0.6));
     if(act.monsterHp <= 0){
+      bumpStat('kills');
       var goldWon = randInt(monster.goldMin, monster.goldMax);
       state.gold += goldWon;
       addPhysiqueXp([['resolve',3]]);
@@ -4768,6 +4782,7 @@
       if(profId) addXp(profId, Math.round(monster.xp * 0.3));
     });
     if(state.playerHp <= 0){
+      bumpStat('deaths');
       state.playerHp = 0;
       state.activity = { type:null };
       addLog('You were defeated by the ' + monster.name + ' and retreat to recover.', 'danger');
@@ -5141,6 +5156,8 @@
           state.inventory = loaded.inventory || {};
           if(typeof state.playerHp !== 'number') state.playerHp = maxHp(state);
           if(typeof state.autoEatThreshold !== 'number') state.autoEatThreshold = 0;
+          if(!state.stats || typeof state.stats !== 'object') state.stats = {};
+          ['kills','deaths','gathered','crafted','craftedRare','craftedSupreme','craftedFantastic'].forEach(function(k){ if(typeof state.stats[k] !== 'number') state.stats[k] = 0; });
           if(!state.activeTea || typeof state.activeTea !== 'object') state.activeTea = { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 };
           if(!state.familiars || typeof state.familiars !== 'object') state.familiars = {};
           Object.keys(state.familiars).forEach(function(fid){
@@ -6482,8 +6499,26 @@
     html += '</div>';
     return html;
   }
+  function renderLifetimeStatsPanel(){
+    var s = state.stats || {};
+    var items = [
+      ['Monsters slain', s.kills||0, 'var(--gold)'],
+      ['Deaths', s.deaths||0, 'var(--hp-bad)'],
+      ['Items gathered', s.gathered||0, 'var(--cat-gathering)'],
+      ['Items crafted', s.crafted||0, 'var(--cat-crafting)'],
+      ['Rare crafts', s.craftedRare||0, 'var(--rarity-rare)'],
+      ['Supreme crafts', s.craftedSupreme||0, 'var(--rarity-superior)'],
+      ['Fantastic crafts', s.craftedFantastic||0, 'var(--rarity-fantastic)']
+    ];
+    var html = '<h3>Lifetime Stats</h3><div class="lifetime-stats">';
+    items.forEach(function(it){
+      html += '<div class="lifetime-stat"><span class="ls-num" style="color:'+it[2]+'">'+fmt(it[1])+'</span><span class="ls-label">'+it[0]+'</span></div>';
+    });
+    return html + '</div>';
+  }
   function renderCharacterTab(){
     var html = '<div class="section-intro">Your full loadout in one place -- see exactly what every piece of gear is doing, and equip or unequip anything you own. Forge new gear from the various Crafting skills; it\'ll show up here to equip once it\'s in your inventory.</div>';
+    html += renderLifetimeStatsPanel();
     html += renderCombatStatsPanel();
     html += renderMainhandEquipSection();
     html += renderOffhandEquipFullSection();
@@ -10754,6 +10789,7 @@
       var effTime = item.time*1000*speedMultiplier(state)*gatherToolSpeedMultiplier(state, state.activity.skill)*(PHYS_LONG_GATHER.indexOf(state.activity.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1);
       while(state.activity.type==='gather' && state.activity.progress >= effTime){
         state.activity.progress -= effTime;
+        bumpStat('gathered');
         addXp(state.activity.skill, item.xp * (1 + curiosityGatherXpBonus(state)));
         if(state.activity.skill === 'digging'){
           processDiggingRoll(state.activity.itemId);
