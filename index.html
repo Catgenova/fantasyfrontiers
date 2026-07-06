@@ -2975,14 +2975,15 @@
   function getStackableWeaponTierData(typeId, tierIndex){
     var w = STACKABLE_WEAPON_TYPE_MAP[typeId];
     var handBonus = w.hand==='2h' ? 1.3 : 1.0;
+    var is2h = w.hand==='2h';
     var inputs = {};
-    inputs[w.matPrefix+'_t'+tierIndex] = 3;
+    inputs[w.matPrefix+'_t'+tierIndex] = is2h ? 6 : 3;   // two-handed weapons cost twice the ingots
     if(tierIndex > 0) inputs['stweapon_'+typeId+'_t'+(tierIndex-1)+'_normal'] = 1;
     return {
       tierIndex: tierIndex,
       name: stackableWeaponTierNames(w)[tierIndex] + ' ' + w.name,
       levelReq: TIER_LEVELS[tierIndex],
-      xp: tierXp(25, tierIndex),
+      xp: tierXp(25, tierIndex) * (is2h ? 2 : 1),   // two-handed weapons grant twice the crafting XP
       dmgMin: Math.max(1, Math.round(tierStat(2,tierIndex)*handBonus)),
       dmgMax: Math.max(2, Math.round(tierStat(5,tierIndex)*handBonus)),
       inputs: inputs,
