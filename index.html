@@ -6636,6 +6636,23 @@
     {key:'popupFantastic', label:'Fantastic item popup', desc:'Show a popup when a Fantastic item is forged'},
     {key:'popupFamiliar', label:'Familiar popup', desc:'Show a popup when a familiar is summoned or levels up'}
   ];
+  var pwChangeMsg = '', pwChangeOk = false, pwChangeBusy = false;
+  async function changePassword(){
+    if(pwChangeBusy) return;
+    var p1 = document.getElementById('newPassword'), p2 = document.getElementById('newPasswordConfirm');
+    var pw = p1 ? p1.value : '', pw2 = p2 ? p2.value : '';
+    var err = validatePassword(pw);
+    if(err){ pwChangeMsg = err; pwChangeOk = false; renderSettingsModal(); return; }
+    if(pw !== pw2){ pwChangeMsg = 'Passwords do not match.'; pwChangeOk = false; renderSettingsModal(); return; }
+    if(!chatClient || !authUser){ pwChangeMsg = 'Not signed in.'; pwChangeOk = false; renderSettingsModal(); return; }
+    pwChangeBusy = true; pwChangeMsg = ''; renderSettingsModal();
+    try{
+      var res = await chatClient.auth.updateUser({ password: pw });
+      if(res.error) throw res.error;
+      pwChangeMsg = 'Password updated.'; pwChangeOk = true;
+    }catch(e){ pwChangeMsg = 'Could not update password. Please try again.'; pwChangeOk = false; }
+    pwChangeBusy = false; renderSettingsModal();
+  }
   function renderSettingsModal(){
     var overlay = document.getElementById('settingsOverlay');
     if(!settingsOpen){ overlay.className = ''; overlay.innerHTML = ''; return; }
@@ -6646,6 +6663,18 @@
       html += '<div class="settings-row"><div><div class="settings-row-label">'+t.label+'</div><div class="settings-row-desc">'+t.desc+'</div></div>';
       html += '<div class="settings-toggle'+(on?' on':'')+'" data-action="toggleSetting" data-key="'+t.key+'"><div class="settings-toggle-knob"></div></div></div>';
     });
+    if(authUser){
+      html += '<div style="border-top:1px solid var(--border);margin:12px 0 4px;padding-top:10px;">';
+      html += '<div class="settings-row"><div><div class="settings-row-label">Account</div><div class="settings-row-desc">Signed in as <b>'+escapeHtml(authUser.username||'')+'</b></div></div>';
+      html += '<button class="action-btn" data-action="authLogout" style="width:auto;flex:0 0 auto;">Log out</button></div>';
+      html += '<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px;">';
+      html += '<div class="settings-row-label">Change password</div>';
+      html += '<input id="newPassword" class="chat-input" type="password" placeholder="New password" autocomplete="new-password">';
+      html += '<input id="newPasswordConfirm" class="chat-input" type="password" placeholder="Confirm new password" autocomplete="new-password">';
+      if(pwChangeMsg){ html += '<div style="font-size:12px;'+(pwChangeOk?'color:var(--hp-good)':'color:var(--hp-bad)')+'">'+escapeHtml(pwChangeMsg)+'</div>'; }
+      html += '<button class="action-btn" data-action="changePassword"'+(pwChangeBusy?' disabled':'')+'>'+(pwChangeBusy?'Saving…':'Update password')+'</button>';
+      html += '</div></div>';
+    }
     html += '<button class="action-btn" data-action="closeSettings" style="margin-top:14px">Close</button>';
     html += '</div>';
     overlay.className = 'familiar-popup-overlay';
@@ -9691,6 +9720,8 @@
     } else if(action==='toggleSetting'){
       var setKey = btn.getAttribute('data-key');
       state.settings[setKey] = !state.settings[setKey];
+    } else if(action==='changePassword'){
+      changePassword();
     }
     render();
     needsRender = false;
