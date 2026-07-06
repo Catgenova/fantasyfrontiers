@@ -393,6 +393,19 @@
   .gab-extra-name .game-icon{width:13px;height:13px;flex-shrink:0;}
   .gab-extra-track{flex:1 1 auto;height:9px;border-radius:3px;background:var(--bg-deep);border:1px solid var(--border);overflow:hidden;}
   .gab-extra-fill{height:100%;background:var(--cat-crafting);}
+  /* Tea buff widget in the global action header */
+  .gab-tea{margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);}
+  .gab-tea-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+  .gab-tea-name{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);display:inline-flex;align-items:center;gap:5px;}
+  .gab-tea-name .game-icon{width:15px;height:15px;}
+  .gab-tea-name b{color:var(--rarity-rare);}
+  .gab-tea-btn{font-family:var(--font-body);font-size:12px;font-weight:600;background:linear-gradient(180deg,#ffffff,rgba(47,127,176,0.10));border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;}
+  .gab-tea-btn:hover{border-color:var(--rarity-rare);}
+  .gab-tea-btn .game-icon{width:15px;height:15px;}
+  .gab-tea-auto{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);cursor:pointer;user-select:none;white-space:nowrap;}
+  .gab-tea-track{height:8px;border-radius:5px;background:var(--bg-deep);border:1px solid var(--border);overflow:hidden;margin:6px 0 3px;}
+  .gab-tea-fill{height:100%;background:var(--rarity-rare);transition:none;}
+  .gab-tea-time{font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint);text-align:right;}
   /* Character-tab lifetime stats */
   .lifetime-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin-bottom:14px;}
   .lifetime-stat{background:rgba(255,255,255,0.42);border:1px solid var(--border);border-radius:8px;padding:9px 12px;display:flex;flex-direction:column;gap:1px;}
@@ -4337,6 +4350,7 @@
       playerHp: 50,
       autoEatThreshold: 0,
       activeTea: { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 },
+      autoTea: false,
       familiars: {},
       activeCompanion: null,
       popupQueue: [],
@@ -4935,6 +4949,19 @@
   // ---- Teas (Mixology): manually-drunk consumables that temporarily boost all skill
   // XP gain. Unlike food, they don't stack -- drinking a new tea replaces the current
   // buff outright, resetting both its strength and remaining time.
+  function ownedTeas(){ return CRAFTING_SKILLS.mixology.recipes.filter(function(r){ return (state.inventory[r.id]||0) > 0; }); }
+  // Best owned tea = highest XP boost, tie-broken by longest duration.
+  function bestAvailableTea(){
+    var teas = ownedTeas();
+    if(!teas.length) return null;
+    return teas.slice().sort(function(a,b){ return (b.xpBoost-a.xpBoost) || (b.teaDurationMs-a.teaDurationMs); })[0];
+  }
+  function drinkBestTea(){ var t = bestAvailableTea(); if(t) drinkTea(t.id); }
+  function toggleAutoTea(){
+    state.autoTea = !state.autoTea;
+    if(state.autoTea && !isTeaActive()) drinkBestTea(); // start immediately if a tea is on hand
+    needsRender = true;
+  }
   function drinkTea(itemId){
     var recipe = ALL_CRAFT_RECIPES[itemId];
     if(!recipe || !recipe.teaDurationMs) return;
@@ -5248,6 +5275,7 @@
           if(!state.stats || typeof state.stats !== 'object') state.stats = {};
           ['kills','deaths','gathered','crafted','craftedRare','craftedSupreme','craftedFantastic'].forEach(function(k){ if(typeof state.stats[k] !== 'number') state.stats[k] = 0; });
           if(!state.activeTea || typeof state.activeTea !== 'object') state.activeTea = { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 };
+          if(typeof state.autoTea !== 'boolean') state.autoTea = false;
           if(!state.familiars || typeof state.familiars !== 'object') state.familiars = {};
           Object.keys(state.familiars).forEach(function(fid){
             var f = state.familiars[fid];
@@ -10218,6 +10246,25 @@
     });
     return html + '</div>';
   }
+  // Tea buff widget in the header: drink an available tea (or the active one's countdown),
+  // plus an Auto-drink toggle. Shown whenever a tea is active or one is owned.
+  function gabTeaHtml(){
+    var active = isTeaActive();
+    var best = active ? null : bestAvailableTea();
+    if(!active && !best) return '';
+    var auto = '<span class="gab-tea-auto" data-action="toggleAutoTea">'+(state.autoTea?'☑':'☐')+' Auto-drink next</span>';
+    var html = '<div class="gab-tea">';
+    if(active){
+      var t = state.activeTea;
+      var pct = clamp((t.expiresAt-Date.now())/t.durationMs*100, 0, 100);
+      html += '<div class="gab-tea-row"><span class="gab-tea-name">'+t.icon+' '+escapeHtml(t.name)+' <b>+'+Math.round(t.xpBoost*100)+'% XP</b></span>'+auto+'</div>';
+      html += '<div class="gab-tea-track"><div class="gab-tea-fill" id="gabTeaFill" style="width:'+pct.toFixed(1)+'%"></div></div>';
+      html += '<div class="gab-tea-time" id="gabTeaTime">'+formatDuration(t.expiresAt-Date.now())+' left</div>';
+    } else {
+      html += '<div class="gab-tea-row"><button class="gab-tea-btn" data-action="drinkBestTea">'+best.icon+' Drink '+escapeHtml(best.name)+' &bull; +'+Math.round(best.xpBoost*100)+'% XP</button>'+auto+'</div>';
+    }
+    return html + '</div>';
+  }
 
   function renderGlobalActionBar(){
     var act = state.activity;
@@ -10225,6 +10272,7 @@
     if(!act || act.type===null || act.type===undefined){
       html += '<div class="global-action-bar idle">';
       html += '<div class="gab-top"><span class="gab-action-name">&#128308; Idle</span><span class="gab-timer-text">Pick an action from any tab to begin</span></div>';
+      html += gabTeaHtml();
       html += gabExtraTasksHtml();
       html += '</div>';
       return html;
@@ -10301,12 +10349,14 @@
       });
       html += '</div>';
     }
+    html += gabTeaHtml();
     html += gabExtraTasksHtml();
     html += '</div>';
     return html;
   }
 
   var gabExtraSig = '';
+  var gabTeaWasActive = false;
   function updateGlobalActionBarLive(){
     var act = state.activity;
     // Concurrent craft-slot bars: live-update widths, and rebuild ONLY the header bar when
@@ -10326,6 +10376,16 @@
       var info = extraCraftSlotInfo(e.slot);
       el.style.width = clamp(info.progress/info.effTime*100, 0, 100) + '%';
     });
+    // Tea buff: live countdown; rebuild the header when the buff starts or expires so the
+    // widget flips between the drink button and the countdown (works on any tab).
+    var teaNow = isTeaActive();
+    if(teaNow !== gabTeaWasActive){ gabTeaWasActive = teaNow; needsRender = true; }
+    if(teaNow){
+      var _tf = document.getElementById('gabTeaFill');
+      if(_tf) _tf.style.width = clamp((state.activeTea.expiresAt-Date.now())/state.activeTea.durationMs*100, 0, 100) + '%';
+      var _tt = document.getElementById('gabTeaTime');
+      if(_tt) _tt.textContent = formatDuration(state.activeTea.expiresAt-Date.now()) + ' left';
+    }
     var fillEl = document.getElementById('gabActionFill');
     var skillFillEl = document.getElementById('gabSkillFill');
     var skillPctEl = document.getElementById('gabSkillPctText');
@@ -10941,6 +11001,10 @@
       setAutoEatThreshold(parseFloat(btn.getAttribute('data-value')));
     } else if(action==='drinkTea'){
       drinkTea(btn.getAttribute('data-item'));
+    } else if(action==='drinkBestTea'){
+      drinkBestTea();
+    } else if(action==='toggleAutoTea'){
+      toggleAutoTea();
     } else if(action==='toggleFamiliar'){
       var famSkill = btn.getAttribute('data-skill');
       menagerieExpanded[famSkill] = !menagerieExpanded[famSkill];
@@ -11102,6 +11166,10 @@
 
     ensureCraftSlotCapacity();
     state.extraCraftSlots.forEach(function(slot){ processCraftActivity(slot, dt); });
+
+    // Auto-drink: if enabled and no tea buff is running, brew-and-drink the best one on hand
+    // (fires once per expiry since drinking makes isTeaActive() true again).
+    if(state.autoTea && !isTeaActive()) drinkBestTea();
 
     // Estate terraforming runs entirely in the background, independent of state.activity,
     // so it keeps progressing (and can finish) no matter what the player is actively doing.
