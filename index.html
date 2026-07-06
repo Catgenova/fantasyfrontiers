@@ -11007,13 +11007,21 @@
       cloudSave();
     }
 
-    if(needsRender){
+    // A full render() rebuilds #content, which slams shut any open <select> (e.g. a smithing
+    // tier dropdown) mid-interaction -- brutal on a single click, and on mobile pickers. So
+    // while a content dropdown is focused/open, defer the render (keep needsRender set) and
+    // just run the light live-update pass; it flushes as soon as the dropdown is dismissed.
+    if(needsRender && !isContentSelectFocused()){
       needsRender = false;
       render();
     } else {
       updateDynamic();
     }
     requestAnimationFrame(loop);
+  }
+  function isContentSelectFocused(){
+    var ae = document.activeElement;
+    return !!(ae && ae.tagName === 'SELECT' && ae.closest && ae.closest('#content'));
   }
 
   document.addEventListener('visibilitychange', function(){
