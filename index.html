@@ -9626,12 +9626,87 @@
       else { guildEstateState.error=res.error||'Could not cancel.'; render(); }
     });
   }
+  // ---- Shared guild estate map: deterministically generated from the guild id, so every
+  // member sees the same unique territory. View-only for now (Phase 2 adds collaborative
+  // workshop placement, which needs server-stored shared state). Reuses the estate draw
+  // helpers + view vars (rotation/zoom/top-down), so its controls match the personal estate.
+  function estateSeedFromStr(s){ var h=2166136261; s=String(s); for(var i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
+  function estateSeededRng(seed){ return function(){ seed|=0; seed=seed+0x6D2B79F5|0; var t=Math.imul(seed^seed>>>15,1|seed); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+  function generateGuildEstateGrid(guildId){
+    var rng = estateSeededRng(estateSeedFromStr('guild-estate:'+guildId));
+    var N = ESTATE_GRID_SIZE, cx=N/2, cy=N/2, grid=[];
+    var obsTypes=['trees','rocks','ore','berries','herbs'];
+    for(var x=0;x<N;x++){ var col=[]; for(var y=0;y<N;y++){
+      var dcx=x-cx+0.5, dcy=y-cy+0.5, dist=Math.sqrt(dcx*dcx+dcy*dcy);
+      var owned = dist < 7.2;
+      var cell = { height: owned?1:0, buildingId:null, type:'dirt', paveTileId:null, workshopId:null, owned:owned, obstacle:null };
+      if(owned){
+        if(dist < 3.3){ cell.type='paved'; cell.paveTileId='paving_t'+(3+Math.floor(rng()*3)); } // central plaza
+        else if(rng() < 0.26){ cell.obstacle = { type: obsTypes[Math.floor(rng()*obsTypes.length)], tierIndex: Math.floor(rng()*11) }; }
+      }
+      col.push(cell);
+    } grid.push(col); }
+    return grid;
+  }
+  var guildEstateMapCache = { guildId:null, grid:null };
+  function guildEstateMapGrid(){
+    if(!guildState.guild) return null;
+    if(guildEstateMapCache.guildId !== guildState.guild.id){ guildEstateMapCache.guildId = guildState.guild.id; guildEstateMapCache.grid = generateGuildEstateGrid(guildState.guild.id); }
+    return guildEstateMapCache.grid;
+  }
+  function renderGuildEstateCanvas(){
+    var canvas = document.getElementById('guildEstateCanvas');
+    if(!canvas || !canvas.getContext) return;
+    var grid = guildEstateMapGrid(); if(!grid) return;
+    var ctx = canvas.getContext('2d'), W=canvas.width, H=canvas.height, N=ESTATE_GRID_SIZE;
+    var td = estateTopDown, ts = ESTATE_TD_TILE;
+    var tiles=[];
+    for(var x=0;x<N;x++){ for(var y=0;y<N;y++){ var c=grid[x][y]; if(c&&c.owned){ var r=estateRotateCoord(x,y); tiles.push({x:x,y:y,depth:r.x+r.y}); } } }
+    tiles.sort(function(a,b){ return a.depth-b.depth; });
+    // Auto-center: bounding box of the owned tiles projected at origin (0,0), then offset so
+    // its centre lands at the canvas centre (works at any rotation / in either view).
+    var minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9;
+    tiles.forEach(function(t){
+      if(td){ var p=estateTdTilePos(t.x,t.y,0,0); minX=Math.min(minX,p.x-ts/2);maxX=Math.max(maxX,p.x+ts/2);minY=Math.min(minY,p.y-ts/2);maxY=Math.max(maxY,p.y+ts/2); }
+      else { var pp=estateTileScreenPos(t.x,t.y,grid[t.x][t.y].height,0,0); minX=Math.min(minX,pp.x-ESTATE_TILE_W/2);maxX=Math.max(maxX,pp.x+ESTATE_TILE_W/2);minY=Math.min(minY,pp.y-20);maxY=Math.max(maxY,pp.y+ESTATE_TILE_H); }
+    });
+    var originX = W/2 - (minX+maxX)/2, originY = H/2 - (minY+maxY)/2;
+    ctx.clearRect(0,0,W,H);
+    ctx.save();
+    ctx.translate(W/2,H/2); ctx.scale(estateZoom,estateZoom); ctx.translate(-W/2,-H/2);
+    tiles.forEach(function(t){
+      var cell=grid[t.x][t.y];
+      var col = cell.type==='paved' ? estatePavedTileColor(cell.paveTileId) : estateHeightColor(cell.height/(ESTATE_MAX_HEIGHT-1));
+      if(td){
+        var p=estateTdTilePos(t.x,t.y,originX,originY);
+        ctx.fillStyle=col; ctx.fillRect(p.x-ts/2,p.y-ts/2,ts,ts);
+        ctx.strokeStyle='rgba(0,0,0,0.22)'; ctx.lineWidth=1; ctx.strokeRect(p.x-ts/2,p.y-ts/2,ts,ts);
+        if(cell.obstacle) estateDrawTdObstacle(ctx,p.x,p.y,cell.obstacle,ts);
+        if(cell.workshopId) estateDrawTdWorkshop(ctx,p.x,p.y,WORKSHOP_ITEMS[cell.workshopId],ts);
+      } else {
+        var pos=estateTileScreenPos(t.x,t.y,cell.height,originX,originY);
+        ctx.beginPath(); ctx.moveTo(pos.x,pos.y); ctx.lineTo(pos.x+ESTATE_TILE_W/2,pos.y+ESTATE_TILE_H/2); ctx.lineTo(pos.x,pos.y+ESTATE_TILE_H); ctx.lineTo(pos.x-ESTATE_TILE_W/2,pos.y+ESTATE_TILE_H/2); ctx.closePath();
+        ctx.fillStyle=col; ctx.fill(); ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=1; ctx.stroke();
+        if(cell.obstacle) drawEstateObstacleModel(ctx,pos.x,pos.y+ESTATE_TILE_H/2,cell.obstacle,estateRotation);
+        if(cell.workshopId) drawEstateWorkshopModel(ctx,pos.x,pos.y+ESTATE_TILE_H/2,WORKSHOP_ITEMS[cell.workshopId],estateRotation);
+      }
+    });
+    ctx.restore();
+  }
   function renderGuildEstate(){
     if(guildEstateState.status==='idle' || guildEstateState.guildId !== (guildState.guild&&guildState.guild.id)) guildEstateLoad();
     var html='';
     if(guildEstateState.error){ html += '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad);">'+escapeHtml(guildEstateState.error)+'</div>'; }
     if(guildEstateState.status==='loading'||guildEstateState.status==='idle'){ return html+'<div class="empty-note">Loading the estate&hellip;</div>'; }
-    html += '<div class="section-intro">Five shared work slots. Each member can run one estate-crafting task; finished goods flow into the guild bank.</div>';
+    html += '<div class="section-intro">Your guild’s shared territory — a unique estate every member sees. Below, five shared work slots let members run estate-crafting tasks; finished goods flow into the guild bank.</div>';
+    html += '<div class="estate-canvas-wrap">'+
+      '<button class="estate-zoom-btn estate-zoom-out" data-action="estateZoomOut" title="Zoom out">−</button>'+
+      '<button class="estate-rotate-btn estate-rotate-left" data-action="estateRotateLeft" title="Rotate 90° left">↺</button>'+
+      '<canvas id="guildEstateCanvas" width="580" height="360"></canvas>'+
+      '<button class="estate-zoom-btn estate-zoom-in" data-action="estateZoomIn" title="Zoom in">+</button>'+
+      '<button class="estate-rotate-btn estate-rotate-right" data-action="estateRotateRight" title="Rotate 90° right">↻</button>'+
+      '<button class="estate-view-btn'+(estateTopDown?' on':'')+'" data-action="estateToggleTopDown" title="Toggle top-down view">'+(estateTopDown?'▦ 2D':'◈ 3D')+'</button>'+
+      '</div>';
     var nowMs = Date.now(), canManage = guildState.myRank==='leader'||guildState.myRank==='officer';
     for(var i=0;i<5;i++){
       var t = guildEstateState.tasks.filter(function(x){ return x.slot===i; })[0];
@@ -9888,6 +9963,7 @@
     else if(currentCategory==='leaderboard'){ leaderboardFetch(); html = renderLeaderboardTab(); }
     document.getElementById('content').innerHTML = html;
     if(currentCategory==='estate') renderEstateCanvas();
+    if(currentCategory==='guild' && guildSub==='estate') renderGuildEstateCanvas();
     if(currentCategory==='chat'){ var _cm=document.getElementById('chatMessages'); if(_cm) _cm.scrollTop=_cm.scrollHeight; }
   }
 
