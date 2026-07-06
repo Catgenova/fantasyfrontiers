@@ -4347,7 +4347,15 @@
       var before = getLevel(state.physique[id]||0);
       state.physique[id] = (state.physique[id]||0) + amount;
       var after = getLevel(state.physique[id]);
-      if(after > before) needsRender = true;
+      if(after > before){
+        needsRender = true;
+        if(after % 5 === 0 && after >= 20){
+          var pmeta = PHYSIQUE_SKILLS.filter(function(p){ return p.id === id; })[0];
+          var plabel = (pmeta && pmeta.name) || id;
+          addLog('Your ' + plabel + ' level increased to ' + after + '!', 'important');
+          chronicleBroadcast('level', plabel + ' level ' + after);
+        }
+      }
       maybeSummonFamiliar(id);
       if(relevantPhysiqueIds.indexOf(id) !== -1) spawnBarXpText('gabPhysiqueTrack-'+id, amount);
     });
