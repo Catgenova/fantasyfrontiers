@@ -2964,9 +2964,11 @@
   // Botany, Herbalism, and Foraging: flat 1% chance per action for a seed matching that tier.
   var SEED_DROP_SKILLS = ['botany','foraging'];
   var BASE_SEED_DROP_CHANCE = 0.01;
+  var BOTANY_SEED_DROP_CHANCE = 0.15; // Botany is the dedicated seed source; higher base than Foraging's.
   function maybeDropSeed(skillId, tierIndex){
     if(SEED_DROP_SKILLS.indexOf(skillId)===-1) return;
-    if(Math.random() < seedDropChance(state)){
+    var chance = (skillId==='botany') ? (BOTANY_SEED_DROP_CHANCE + mentalitySeedChanceBonus(state)) : seedDropChance(state);
+    if(Math.random() < chance){
       var seedId = 'seed_t'+tierIndex;
       addItem(seedId, 1);
       spawnFloatingText('+1 ' + SEED_ITEMS[seedId].name + '!', 'ft-rare');
@@ -5366,7 +5368,7 @@
       html += '<div class="physique-bonus">Critter Cache Chance: <b>'+nestPct+'%</b> (base 1%, Balance adds more, caps at 11%) &mdash; open one from your Inventory (or the Farming tab) for 3 Seeds</div>';
     }
     if(skillKey==='botany'){
-      var botSeedPct = Math.round(BASE_SEED_DROP_CHANCE*100);
+      var botSeedPct = Math.round(BOTANY_SEED_DROP_CHANCE*100);
       html += '<div class="physique-bonus">Seed Chance: <b>'+botSeedPct+'%</b> (flat, matches the tier you\'re working)</div>';
     }
     if(skillKey==='herbalism'){
@@ -5398,7 +5400,7 @@
       } else if(skillKey==='forestry'){
         html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> &nbsp;|&nbsp; Bonus: Critter Cache <b>'+Math.round(critterCacheChance(state)*100)+'%</b></div>';
       } else if(skillKey==='botany'){
-        html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> &nbsp;|&nbsp; Bonus: Seed <b>'+Math.round(BASE_SEED_DROP_CHANCE*100)+'%</b></div>';
+        html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> &nbsp;|&nbsp; Bonus: Seed <b>'+Math.round(BOTANY_SEED_DROP_CHANCE*100)+'%</b></div>';
       } else if(skillKey==='herbalism'){
         var itemTierIdx = parseInt(item.id.split('_t')[1], 10);
         var grainNote = itemTierIdx >= GRAIN_TIER_COUNT ? 'none at this tier' : Math.round(grainSeedChance(state)*100)+'%';
