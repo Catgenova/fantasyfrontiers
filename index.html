@@ -7037,22 +7037,23 @@
   }
 
   function estateExpand(){
-    var purchased = state.estate.expansionsPurchased||0;
+    var purchased = estActive.expansionsPurchased||0;
     if(purchased >= ESTATE_EXPANSION_ORDER.length){
-      addLog('Your estate is already fully expanded.', 'danger');
+      addLog((estIsGuild?'The guild estate':'Your estate') + ' is already fully expanded.', 'danger');
       return;
     }
     var cost = getEstateExpansionCost(purchased);
     if(state.gold < cost){
-      addLog('Expanding your estate costs ' + cost + ' gold -- you don\'t have enough.', 'danger');
+      addLog('Expanding the estate costs ' + cost + ' gold -- you don\'t have enough.', 'danger');
       return;
     }
     state.gold -= cost;
     var next = ESTATE_EXPANSION_ORDER[purchased];
-    state.estate.grid[next.x][next.y].owned = true;
-    state.estate.expansionsPurchased = purchased + 1;
-    addLog('You expanded your estate for ' + cost + ' gold.', 'important');
+    estActive.grid[next.x][next.y].owned = true;
+    estActive.expansionsPurchased = purchased + 1;
+    addLog('You expanded ' + (estIsGuild?'the guild estate':'your estate') + ' for ' + cost + ' gold.', 'important');
     spawnFloatingText('+1 Tile', 'ft-success');
+    estPersist();
     needsRender = true;
   }
   function estateMigrateOldGridToNew(oldEstate){
@@ -7139,14 +7140,37 @@
   function estateLowerRequiredLevel(currentHeight){
     return ESTATE_LOWER_BASE_LEVEL + ESTATE_LOWER_LEVEL_STEP * Math.max(0, 18-currentHeight);
   }
-  function estateJobActive(){ return !!(state.estate && state.estate.job); }
+  // ---- Active-estate context ----------------------------------------------------------
+  // The estate engine (interaction + rendering below) operates on whichever estate is
+  // currently on screen. Personal "My Estate" and the shared guild estate are never visible
+  // at once (different top-level tabs), so a single active pointer lets both reuse the exact
+  // same code. estActive points at state.estate (personal) or guildEstate (shared); estIsGuild
+  // routes the few mutation branches that must persist to the server / use the guild workshop
+  // map / own per-member jobs.
+  var estActive = null, estIsGuild = false;
+  function estUse(guild){
+    guild = !!guild;
+    if(guild !== estIsGuild){ // switching estates -- clear selection/menus so they don't bleed across maps
+      estateSelectedTile = null; estateSelectedEdge = null; estateHoveredTile = null; estateHoveredEdge = null;
+      estatePavingMenuOpen = false; estateWorkshopMenuOpen = false; estateBorderMenuOpen = null;
+    }
+    estIsGuild = guild; estActive = guild ? guildEstate : state.estate;
+  }
+  function estMyId(){ return (typeof authUser !== 'undefined' && authUser && authUser.id) || '_local'; }
+  function estPersist(){ if(estIsGuild) guildEstatePersist(); }                       // personal autosaves; guild pushes to server
+  function estRecomputeWorkshops(){ if(estIsGuild) recomputeGuildWorkshops(); else recomputePlacedWorkshops(); }
+  function estAllJobs(){ if(!estActive) return []; return estIsGuild ? (estActive.jobs||[]) : (estActive.job ? [estActive.job] : []); }
+  function estJobOnTile(x, y){ return estAllJobs().some(function(j){ return j.x===x && j.y===y; }); }
+
+  function estateJobActive(){ return !!(estActive && estActive.job); }               // MY job (guild getter returns my own)
   function estateClearObstacle(x, y){
-    var cell = state.estate.grid[x] && state.estate.grid[x][y];
+    var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || !cell.obstacle) return;
     if(estateJobActive()){
       addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger');
       return;
     }
+    if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
     var info = estateObstacleInfo(cell.obstacle);
     if(!info) return;
     if(getLevel(state.xp[info.def.skill]) < info.reqLevel){
@@ -7154,19 +7178,21 @@
       return;
     }
     var nowC = Date.now();
-    state.estate.job = { kind:'clear', x:x, y:y, startAt:nowC, readyAt:nowC + info.durationMs };
+    estActive.job = { kind:'clear', x:x, y:y, startAt:nowC, readyAt:nowC + info.durationMs };
     addLog('You began clearing the ' + info.def.label + ' at (' + x + ', ' + y + ').', 'important');
     spawnFloatingText('Clearing\u2026', 'ft-success');
+    estPersist();
     needsRender = true;
   }
   function estateRaiseLayer(x, y){
-    var cell = state.estate.grid[x] && state.estate.grid[x][y];
+    var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || cell.type !== 'dirt') return;
     if(cell.obstacle){ addLog('Clear the obstacle on this tile before terraforming it.', 'danger'); return; }
     if(estateJobActive()){
       addLog('You can only terraform one tile at a time -- finish or cancel the current job first.', 'danger');
       return;
     }
+    if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
     if(cell.height >= ESTATE_MAX_HEIGHT-1) return;
     if(getLevel(state.xp.digging) < ESTATE_RAISE_LEVEL){
       addLog('Raising this tile requires Digging level ' + ESTATE_RAISE_LEVEL + '.', 'danger');
@@ -7178,19 +7204,21 @@
     }
     state.inventory[ESTATE_DIRT_ITEM_ID] -= ESTATE_RAISE_DIRT_COST;
     var nowR = Date.now();
-    state.estate.job = { kind:'raise', x:x, y:y, startAt:nowR, readyAt:nowR + ESTATE_TERRAFORM_MS };
+    estActive.job = { kind:'raise', x:x, y:y, startAt:nowR, readyAt:nowR + ESTATE_TERRAFORM_MS };
     addLog('You began raising the tile at (' + x + ', ' + y + '). It will finish in 10 minutes.', 'important');
     spawnFloatingText('Raising\u2026', 'ft-success');
+    estPersist();
     needsRender = true;
   }
   function estateLowerLayer(x, y){
-    var cell = state.estate.grid[x] && state.estate.grid[x][y];
+    var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || cell.type !== 'dirt') return;
     if(cell.obstacle){ addLog('Clear the obstacle on this tile before terraforming it.', 'danger'); return; }
     if(estateJobActive()){
       addLog('You can only terraform one tile at a time -- finish or cancel the current job first.', 'danger');
       return;
     }
+    if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
     if(cell.height <= 0) return;
     var reqLevel = estateLowerRequiredLevel(cell.height);
     if(getLevel(state.xp.digging) < reqLevel){
@@ -7198,13 +7226,14 @@
       return;
     }
     var nowL = Date.now();
-    state.estate.job = { kind:'lower', x:x, y:y, startAt:nowL, readyAt:nowL + ESTATE_TERRAFORM_MS };
+    estActive.job = { kind:'lower', x:x, y:y, startAt:nowL, readyAt:nowL + ESTATE_TERRAFORM_MS };
     addLog('You began digging down the tile at (' + x + ', ' + y + '). It will finish in 10 minutes.', 'important');
     spawnFloatingText('Digging\u2026', 'ft-success');
+    estPersist();
     needsRender = true;
   }
   function estateCancelJob(){
-    var job = state.estate && state.estate.job;
+    var job = estActive && estActive.job;
     if(!job) return;
     if(job.kind === 'pave'){
       addItem(job.paveTileId, ESTATE_PAVE_TILE_COST); // refund the paving tiles
@@ -7220,55 +7249,73 @@
     } else {
       addLog('You cancelled digging down (' + job.x + ', ' + job.y + ').', 'important');
     }
-    state.estate.job = null;
+    estActive.job = null;
+    estPersist();
     needsRender = true;
   }
-  // Completes the active terraforming job once its timer elapses. Runs every loop tick (and
+  // Applies one completed estate job to its grid. The grid change is ALWAYS applied (idempotent),
+  // so on a shared guild estate every member's client converges on the same map. Rewards, XP,
+  // logs and floating text are gated behind `giveRewards` -- true only for the member who owns
+  // the job (personal jobs are always yours). `isGuild` picks which workshop-bonus cache to
+  // refresh when a Workshop finishes. Returns true if it touched the grid.
+  function applyEstateJobCompletion(estate, job, giveRewards, isGuild){
+    var cell = estate.grid[job.x] && estate.grid[job.x][job.y];
+    if(!cell) return false;
+    if(job.kind === 'clear'){
+      var oinfo = estateObstacleInfo(cell.obstacle);
+      if(giveRewards && oinfo){
+        addItem(oinfo.itemId, oinfo.resourceAmount);
+        addXp(oinfo.def.skill, oinfo.xp);
+        addLog('Cleared the ' + oinfo.def.label + ' at (' + job.x + ', ' + job.y + '). +' + oinfo.resourceAmount + ' ' + oinfo.itemName + ', +' + oinfo.xp + ' ' + SKILL_LABELS[oinfo.def.skill] + ' XP.', 'important');
+        spawnFloatingText('+' + oinfo.resourceAmount + ' ' + oinfo.itemName, 'ft-success');
+      }
+      cell.obstacle = null;
+      return true;
+    }
+    if(job.kind === 'pave'){
+      cell.type = 'paved'; cell.paveTileId = job.paveTileId;
+      if(giveRewards){
+        var pr = getPavingRecipe(job.paveTileId);
+        addLog('Finished paving (' + job.x + ', ' + job.y + ')' + (pr?' with '+pr.name:'') + '.', 'important');
+        spawnFloatingText('Tile Paved!', 'ft-success');
+      }
+      return true;
+    }
+    if(job.kind === 'workshop'){
+      cell.workshopId = job.workshopId;
+      if(isGuild) recomputeGuildWorkshops(); else recomputePlacedWorkshops();
+      if(giveRewards){
+        addLog('Finished building the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'workshop') + '.', 'important');
+        spawnFloatingText('Workshop built!', 'ft-bonus');
+      }
+      return true;
+    }
+    if(job.kind === 'raise'){
+      cell.height = Math.min(ESTATE_MAX_HEIGHT-1, cell.height + 1);
+      if(giveRewards){
+        addXp('digging', ESTATE_TERRAFORM_XP);
+        addLog('Finished raising (' + job.x + ', ' + job.y + ') to height ' + cell.height + '. +' + ESTATE_TERRAFORM_XP + ' Digging XP.', 'important');
+        spawnFloatingText('+1 Layer', 'ft-success');
+      }
+      return true;
+    }
+    // lower
+    cell.height = Math.max(0, cell.height - 1);
+    if(giveRewards){
+      addItem(ESTATE_DIRT_ITEM_ID, ESTATE_LOWER_DIRT_REWARD);
+      addXp('digging', ESTATE_TERRAFORM_XP);
+      addLog('Finished digging down (' + job.x + ', ' + job.y + ') to height ' + cell.height + ', recovering ' + ESTATE_LOWER_DIRT_REWARD + ' Dirt. +' + ESTATE_TERRAFORM_XP + ' Digging XP.', 'important');
+      spawnFloatingText('+' + ESTATE_LOWER_DIRT_REWARD + ' Dirt', 'ft-success');
+    }
+    return true;
+  }
+  // Completes the personal estate job once its timer elapses. Runs every loop tick (and
   // therefore also on load), so a job started before the tab was closed finishes offline.
   function processEstateJob(){
     var job = state.estate && state.estate.job;
     if(!job) return;
     if(Date.now() < job.readyAt) return;
-    var cell = state.estate.grid[job.x] && state.estate.grid[job.x][job.y];
-    if(cell){
-      if(job.kind === 'clear'){
-        var oinfo = estateObstacleInfo(cell.obstacle);
-        if(oinfo){
-          addItem(oinfo.itemId, oinfo.resourceAmount);
-          addXp(oinfo.def.skill, oinfo.xp);
-          addLog('Cleared the ' + oinfo.def.label + ' at (' + job.x + ', ' + job.y + '). +' + oinfo.resourceAmount + ' ' + oinfo.itemName + ', +' + oinfo.xp + ' ' + SKILL_LABELS[oinfo.def.skill] + ' XP.', 'important');
-          spawnFloatingText('+' + oinfo.resourceAmount + ' ' + oinfo.itemName, 'ft-success');
-        }
-        cell.obstacle = null;
-        state.estate.job = null;
-        needsRender = true;
-        return;
-      }
-      if(job.kind === 'pave'){
-        cell.type = 'paved'; cell.paveTileId = job.paveTileId;
-        var pr = getPavingRecipe(job.paveTileId);
-        addLog('Finished paving (' + job.x + ', ' + job.y + ')' + (pr?' with '+pr.name:'') + '.', 'important');
-        spawnFloatingText('Tile Paved!', 'ft-success');
-        state.estate.job = null; needsRender = true; return;
-      }
-      if(job.kind === 'workshop'){
-        cell.workshopId = job.workshopId; recomputePlacedWorkshops();
-        addLog('Finished building the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'workshop') + '.', 'important');
-        spawnFloatingText('Workshop built!', 'ft-bonus');
-        state.estate.job = null; needsRender = true; return;
-      }
-      if(job.kind === 'raise'){
-        cell.height = Math.min(ESTATE_MAX_HEIGHT-1, cell.height + 1);
-        addLog('Finished raising (' + job.x + ', ' + job.y + ') to height ' + cell.height + '. +' + ESTATE_TERRAFORM_XP + ' Digging XP.', 'important');
-        spawnFloatingText('+1 Layer', 'ft-success');
-      } else {
-        cell.height = Math.max(0, cell.height - 1);
-        addItem(ESTATE_DIRT_ITEM_ID, ESTATE_LOWER_DIRT_REWARD);
-        addLog('Finished digging down (' + job.x + ', ' + job.y + ') to height ' + cell.height + ', recovering ' + ESTATE_LOWER_DIRT_REWARD + ' Dirt. +' + ESTATE_TERRAFORM_XP + ' Digging XP.', 'important');
-        spawnFloatingText('+' + ESTATE_LOWER_DIRT_REWARD + ' Dirt', 'ft-success');
-      }
-      addXp('digging', ESTATE_TERRAFORM_XP);
-    }
+    applyEstateJobCompletion(state.estate, job, true, false);
     state.estate.job = null;
     needsRender = true;
   }
@@ -7286,10 +7333,11 @@
     return CRAFTING_SKILLS.paving.recipes.filter(function(r){ return r.id===paveTileId; })[0] || null;
   }
   function estatePaveTile(x, y, paveTileId){
-    var cell = state.estate.grid[x] && state.estate.grid[x][y];
+    var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || cell.type !== 'dirt') return;
     if(cell.obstacle){ addLog('Clear the obstacle on this tile before paving it.', 'danger'); return; }
     if(estateJobActive()){ addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger'); return; }
+    if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
     var recipe = getPavingRecipe(paveTileId);
     if(!recipe) return;
     if(getLevel(state.xp.paving) < recipe.levelReq){
@@ -7303,24 +7351,27 @@
     state.inventory[paveTileId] -= ESTATE_PAVE_TILE_COST;
     var pTier = (parseInt(paveTileId.split('_t')[1],10)||0) + 1; // 10 min per tier
     var nowP = Date.now();
-    state.estate.job = { kind:'pave', x:x, y:y, paveTileId:paveTileId, startAt:nowP, readyAt:nowP + pTier*ESTATE_PAVE_MS_PER_TIER };
+    estActive.job = { kind:'pave', x:x, y:y, paveTileId:paveTileId, startAt:nowP, readyAt:nowP + pTier*ESTATE_PAVE_MS_PER_TIER };
     estatePavingMenuOpen = false;
     addLog('You began paving (' + x + ', ' + y + ') with ' + recipe.name + ' — finishes in ' + (pTier*10) + ' minutes.', 'important');
     spawnFloatingText('Paving…', 'ft-success');
+    estPersist();
     needsRender = true;
   }
   function estateBreakPavement(x, y){
-    var cell = state.estate.grid[x] && state.estate.grid[x][y];
+    var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || cell.type !== 'paved') return;
+    if(estJobOnTile(x, y)){ addLog('Finish or cancel the activity on that tile first.', 'danger'); return; }
     if(getLevel(state.xp.digging) < ESTATE_BREAK_PAVEMENT_LEVEL){
       addLog('Breaking pavement requires Digging level ' + ESTATE_BREAK_PAVEMENT_LEVEL + '.', 'danger');
       return;
     }
     cell.type = 'dirt';
-    if(cell.workshopId){ addItem(cell.workshopId, 1); cell.workshopId = null; recomputePlacedWorkshops(); } // eject any placed workshop
+    if(cell.workshopId){ addItem(cell.workshopId, 1); cell.workshopId = null; estRecomputeWorkshops(); } // eject any placed workshop
     cell.paveTileId = null;
     addLog('You broke the pavement at (' + x + ', ' + y + '), returning it to Dirt.', 'important');
     spawnFloatingText('Pavement Broken', 'ft-success');
+    estPersist();
     needsRender = true;
   }
 
@@ -7343,43 +7394,47 @@
   function workshopSpeedBonus(state, skillId){ var s=0, p=placedWorkshops[skillId], g=guildPlacedWorkshops[skillId]; if(p!==undefined) s+=workshopBonusPct(p); if(g!==undefined) s+=workshopBonusPct(g); return s; }
   function workshopDoubleChance(state, skillId){ var s=0, p=placedWorkshops[skillId], g=guildPlacedWorkshops[skillId]; if(p!==undefined) s+=workshopBonusPct(p); if(g!==undefined) s+=workshopBonusPct(g); return Math.min(0.95, s); }
   function pavementTierOf(cell){ if(!cell || cell.type!=='paved' || !cell.paveTileId) return -1; var m=/paving_t(\d+)/.exec(cell.paveTileId); return m ? parseInt(m[1],10) : -1; }
+  function estWorkshopMap(){ return estIsGuild ? guildPlacedWorkshops : placedWorkshops; } // "one per skill" set for the active estate
   // Workshops owned in inventory whose tier fits on this tile's pavement and whose skill
-  // isn't already placed elsewhere (one per skill).
+  // isn't already placed elsewhere on this estate (one per skill).
   function placeableWorkshopsFor(cell){
-    var pave = pavementTierOf(cell), out = [];
+    var pave = pavementTierOf(cell), out = [], map = estWorkshopMap();
     Object.keys(WORKSHOP_ITEMS).forEach(function(id){
       var it = WORKSHOP_ITEMS[id];
-      if((state.inventory[id]||0) > 0 && it.tierIndex <= pave && placedWorkshops[it.skillId] === undefined) out.push(it);
+      if((state.inventory[id]||0) > 0 && it.tierIndex <= pave && map[it.skillId] === undefined) out.push(it);
     });
     out.sort(function(a,b){ return a.name.localeCompare(b.name); });
     return out;
   }
   function estatePlaceWorkshop(x, y, workshopId){
-    var cell = state.estate.grid[x] && state.estate.grid[x][y];
+    var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || cell.type!=='paved'){ addLog('Workshops can only be placed on paved tiles.', 'danger'); return; }
     if(cell.workshopId){ addLog('That tile already has a workshop.', 'danger'); return; }
     var it = WORKSHOP_ITEMS[workshopId];
     if(!it || (state.inventory[workshopId]||0) <= 0){ addLog('You don\'t own that workshop.', 'danger'); return; }
     if(it.tierIndex > pavementTierOf(cell)){ addLog('That workshop needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
-    if(placedWorkshops[it.skillId] !== undefined){ addLog('You already have a ' + ((CRAFTING_SKILLS[it.skillId]||{}).label||it.skillId) + ' Workshop placed — only one per skill.', 'danger'); return; }
+    if(estWorkshopMap()[it.skillId] !== undefined){ addLog('This estate already has a ' + ((CRAFTING_SKILLS[it.skillId]||{}).label||it.skillId) + ' Workshop — only one per skill.', 'danger'); return; }
     if(estateJobActive()){ addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger'); return; }
+    if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
     state.inventory[workshopId] -= 1;
     var wTier = it.tierIndex + 1; // 30 min per tier
     var nowW = Date.now();
-    state.estate.job = { kind:'workshop', x:x, y:y, workshopId:workshopId, startAt:nowW, readyAt:nowW + wTier*ESTATE_WORKSHOP_MS_PER_TIER };
+    estActive.job = { kind:'workshop', x:x, y:y, workshopId:workshopId, startAt:nowW, readyAt:nowW + wTier*ESTATE_WORKSHOP_MS_PER_TIER };
     estateWorkshopMenuOpen = false;
     addLog('You began building a ' + it.name + ' at (' + x + ', ' + y + ') — finishes in ' + (wTier*30) + ' minutes.', 'important');
     spawnFloatingText('Building…', 'ft-success');
+    estPersist();
     needsRender = true;
   }
   function estateRemoveWorkshop(x, y){
-    var cell = state.estate.grid[x] && state.estate.grid[x][y];
+    var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || !cell.workshopId) return;
     var wid = cell.workshopId;
     addItem(wid, 1);
     cell.workshopId = null;
-    recomputePlacedWorkshops();
+    estRecomputeWorkshops();
     addLog('Removed the ' + ((WORKSHOP_ITEMS[wid]||{}).name||'workshop') + ' (returned to inventory).', '');
+    estPersist();
     needsRender = true;
   }
   var ESTATE_PAVING_MATERIAL_COLORS = {
@@ -7438,6 +7493,7 @@
     estateBorderMenuOpen = null;
     addLog('You built a ' + recipe.name + ' at this border.', 'important');
     spawnFloatingText(ESTATE_BORDER_TYPE_LABEL[borderType] + ' Built!', 'ft-success');
+    estPersist();
     needsRender = true;
   }
   function estateDestroyBorder(orient, x, y){
@@ -7453,6 +7509,7 @@
     cell.type = null;
     cell.masonryTileId = null;
     spawnFloatingText(label + ' Destroyed', 'ft-success');
+    estPersist();
     needsRender = true;
   }
   var ESTATE_TILE_W = 56, ESTATE_TILE_H = 28, ESTATE_Z_UNIT = 10;
@@ -7772,7 +7829,7 @@
     var list = [];
     for(var x=0; x<ESTATE_GRID_SIZE; x++){
       for(var y=0; y<ESTATE_GRID_SIZE; y++){
-        var cell = state.estate.grid[x][y];
+        var cell = estActive.grid[x][y];
         if(!cell || !cell.owned) continue;
         var r = estateRotateCoord(x, y);
         list.push({ x:x, y:y, depth:r.x + r.y });
@@ -7790,7 +7847,7 @@
     var tiles = estateTilesByDepth(true); // front-to-back
     for(var i=0; i<tiles.length; i++){
       var x = tiles[i].x, y = tiles[i].y;
-      var cell = state.estate.grid[x][y];
+      var cell = estActive.grid[x][y];
       if(estateTopDown){
         var c = estateTdTilePos(x, y, originX, originY);
         if(Math.abs(px-c.x) <= ESTATE_TD_TILE/2 && Math.abs(py-c.y) <= ESTATE_TD_TILE/2) return { x:x, y:y, height:cell.height };
@@ -7805,15 +7862,15 @@
   // owned -- this makes the interactable boundary track the player's owned region as it
   // grows, without needing to touch the edge system itself when expanding.
   function estateEdgeYActive(x, y){
-    if(y<=0) return !!(state.estate.grid[x][0] && state.estate.grid[x][0].owned);
-    if(y>=ESTATE_GRID_SIZE) return !!(state.estate.grid[x][ESTATE_GRID_SIZE-1] && state.estate.grid[x][ESTATE_GRID_SIZE-1].owned);
-    var a = state.estate.grid[x][y-1], b = state.estate.grid[x][y];
+    if(y<=0) return !!(estActive.grid[x][0] && estActive.grid[x][0].owned);
+    if(y>=ESTATE_GRID_SIZE) return !!(estActive.grid[x][ESTATE_GRID_SIZE-1] && estActive.grid[x][ESTATE_GRID_SIZE-1].owned);
+    var a = estActive.grid[x][y-1], b = estActive.grid[x][y];
     return !!((a && a.owned) || (b && b.owned));
   }
   function estateEdgeXActive(x, y){
-    if(x<=0) return !!(state.estate.grid[0][y] && state.estate.grid[0][y].owned);
-    if(x>=ESTATE_GRID_SIZE) return !!(state.estate.grid[ESTATE_GRID_SIZE-1][y] && state.estate.grid[ESTATE_GRID_SIZE-1][y].owned);
-    var a = state.estate.grid[x-1][y], b = state.estate.grid[x][y];
+    if(x<=0) return !!(estActive.grid[0][y] && estActive.grid[0][y].owned);
+    if(x>=ESTATE_GRID_SIZE) return !!(estActive.grid[ESTATE_GRID_SIZE-1][y] && estActive.grid[ESTATE_GRID_SIZE-1][y].owned);
+    var a = estActive.grid[x-1][y], b = estActive.grid[x][y];
     return !!((a && a.owned) || (b && b.owned));
   }
   // Each tile's 4 diamond edges border a specific neighbor: Top-Right borders (x,y-1),
@@ -7824,7 +7881,7 @@
   // Right-Bottom. This keeps every shared border stored exactly once.
   function estateEdgeYEndpoints(x, y, originX, originY){
     var ty = Math.min(y, ESTATE_GRID_SIZE-1);
-    var cell = state.estate.grid[x][ty];
+    var cell = estActive.grid[x][ty];
     var pos = estateTileScreenPos(x, ty, cell.height, originX, originY);
     var se = ESTATE_Y_SCREEN_EDGE[estateRotation & 3];
     if(y >= ESTATE_GRID_SIZE) se = (se + 2) & 3; // outer boundary uses the opposite face
@@ -7832,7 +7889,7 @@
   }
   function estateEdgeXEndpoints(x, y, originX, originY){
     var tx = Math.min(x, ESTATE_GRID_SIZE-1);
-    var cell = state.estate.grid[tx][y];
+    var cell = estActive.grid[tx][y];
     var pos = estateTileScreenPos(tx, y, cell.height, originX, originY);
     var se = ESTATE_X_SCREEN_EDGE[estateRotation & 3];
     if(x >= ESTATE_GRID_SIZE) se = (se + 2) & 3; // outer boundary uses the opposite face
@@ -7870,7 +7927,7 @@
   }
   function estateGetEdgeCell(edge){
     if(!edge) return null;
-    return edge.orient==='y' ? state.estate.edgesY[edge.x][edge.y] : state.estate.edgesX[edge.x][edge.y];
+    return edge.orient==='y' ? estActive.edgesY[edge.x][edge.y] : estActive.edgesX[edge.x][edge.y];
   }
   var estateHoveredEdge = null;
   var estateSelectedEdge = null;
@@ -7960,7 +8017,7 @@
     ctx.save();
     ctx.translate(estatePanX, estatePanY);
     ctx.scale(estateZoom, estateZoom);
-    var grid = state.estate.grid;
+    var grid = estActive.grid;
     if(estateTopDown){ estateDrawTopDown(ctx, grid, originX, originY); } else {
     var drawTiles = estateTilesByDepth(false); // back-to-front
     // Base level the side walls drop to: a few units below the lowest owned tile, so the
@@ -8041,7 +8098,7 @@
         if(!estateEdgeYActive(ex,ey)) continue;
         var isHe = estateHoveredEdge && estateHoveredEdge.orient==='y' && estateHoveredEdge.x===ex && estateHoveredEdge.y===ey;
         var isSe = estateSelectedEdge && estateSelectedEdge.orient==='y' && estateSelectedEdge.x===ex && estateSelectedEdge.y===ey;
-        drawEdge(estateEdgeYEndpoints(ex, ey, originX, originY), state.estate.edgesY[ex][ey], isHe, isSe);
+        drawEdge(estateEdgeYEndpoints(ex, ey, originX, originY), estActive.edgesY[ex][ey], isHe, isSe);
       }
     }
     for(var ex2=0; ex2<=ESTATE_GRID_SIZE; ex2++){
@@ -8049,7 +8106,7 @@
         if(!estateEdgeXActive(ex2,ey2)) continue;
         var isHe2 = estateHoveredEdge && estateHoveredEdge.orient==='x' && estateHoveredEdge.x===ex2 && estateHoveredEdge.y===ey2;
         var isSe2 = estateSelectedEdge && estateSelectedEdge.orient==='x' && estateSelectedEdge.x===ex2 && estateSelectedEdge.y===ey2;
-        drawEdge(estateEdgeXEndpoints(ex2, ey2, originX, originY), state.estate.edgesX[ex2][ey2], isHe2, isSe2);
+        drawEdge(estateEdgeXEndpoints(ex2, ey2, originX, originY), estActive.edgesX[ex2][ey2], isHe2, isSe2);
       }
     }
     } // end iso draw branch
@@ -8077,7 +8134,7 @@
         estateHoveredTile = tile;
         if(info){
           if(tile){
-            var hcell = state.estate.grid[tile.x] && state.estate.grid[tile.x][tile.y];
+            var hcell = estActive.grid[tile.x] && estActive.grid[tile.x][tile.y];
             var oi = hcell && estateObstacleInfo(hcell.obstacle);
             info.textContent = 'Tile ('+tile.x+', '+tile.y+') \u2014 height '+tile.height+' / '+(ESTATE_MAX_HEIGHT-1) + (oi ? ' \u2014 '+oi.def.label+' obstacle (needs '+SKILL_LABELS[oi.def.skill]+' '+oi.reqLevel+' to clear)' : '');
           } else {
@@ -8238,7 +8295,7 @@
   function renderEstateTileOptions(){
     if(!estateSelectedTile) return '<div class="estate-hover-info">Click a tile or its border to see options.</div>';
     var x = estateSelectedTile.x, y = estateSelectedTile.y;
-    var cell = state.estate.grid[x] && state.estate.grid[x][y];
+    var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell) return '';
     var digLvl = getLevel(state.xp.digging);
     var dirtOwned = state.inventory[ESTATE_DIRT_ITEM_ID] || 0;
@@ -8246,37 +8303,40 @@
     html += '<h3 style="margin-top:0">Tile ('+x+', '+y+') &bull; Height '+cell.height+' / '+(ESTATE_MAX_HEIGHT-1)+' &bull; '+cell.type.charAt(0).toUpperCase()+cell.type.slice(1)+'</h3>';
     if(cell.type === 'dirt' && cell.obstacle){
       var oinfo = estateObstacleInfo(cell.obstacle);
-      var oJob = (state.estate && state.estate.job) || null;
+      var oJob = (estActive && estActive.job) || null;
       var oJobActive = !!oJob, oJobHere = oJobActive && oJob.x===x && oJob.y===y;
+      var oTileBusy = estJobOnTile(x, y); // includes other guild members' jobs
       var oLevelOk = getLevel(state.xp[oinfo.def.skill]) >= oinfo.reqLevel;
-      var clearLabel = oJobHere ? 'Clearing\u2026' : (oJobActive ? 'Busy' : (!oLevelOk ? 'Lv '+oinfo.reqLevel+' Req.' : 'Clear'));
+      var clearLabel = oJobHere ? 'Clearing\u2026' : (oTileBusy ? 'In use' : (oJobActive ? 'Busy' : (!oLevelOk ? 'Lv '+oinfo.reqLevel+' Req.' : 'Clear')));
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Obstacle: '+oinfo.def.emoji+' '+oinfo.def.label+'</b> &mdash; '+oinfo.icon+' '+oinfo.itemName+' (Tier '+oinfo.tierNum+')<br>Requires '+SKILL_LABELS[oinfo.def.skill]+' '+oinfo.reqLevel+' &bull; Takes '+(oinfo.durationMs/60000)+' min<br>Yields +'+oinfo.resourceAmount+' '+oinfo.itemName+' &amp; +'+oinfo.xp+' '+SKILL_LABELS[oinfo.def.skill]+' XP<br><span style="color:var(--text-faint)">Must be cleared before this tile can be raised, lowered, or paved.</span></div>';
-      html += '<button class="action-btn" data-action="estateClearObstacle" data-x="'+x+'" data-y="'+y+'" '+((oLevelOk && !oJobActive)?'':'disabled')+'>'+clearLabel+'</button>';
+      html += '<button class="action-btn" data-action="estateClearObstacle" data-x="'+x+'" data-y="'+y+'" '+((oLevelOk && !oJobActive && !oTileBusy)?'':'disabled')+'>'+clearLabel+'</button>';
       html += '</div>';
     } else if(cell.type === 'dirt'){
-      var job = (state.estate && state.estate.job) || null;
+      var job = (estActive && estActive.job) || null;
       var jobActive = !!job;
       var jobHere = jobActive && job.x===x && job.y===y;
+      var tileBusy = estJobOnTile(x, y);            // any member's job on this tile
+      var otherHere = tileBusy && !jobHere;          // a different member is working here
       var canRaise = cell.height < ESTATE_MAX_HEIGHT-1;
       var raiseLevelOk = digLvl >= ESTATE_RAISE_LEVEL;
       var raiseDirtOk = dirtOwned >= ESTATE_RAISE_DIRT_COST;
-      var raiseLabel = jobHere&&job.kind==='raise' ? 'Working\u2026' : (jobActive ? 'Busy' : (!canRaise?'Max Height':(!raiseLevelOk?'Lv '+ESTATE_RAISE_LEVEL+' Req.':(!raiseDirtOk?'Need Dirt':'Raise'))));
+      var raiseLabel = jobHere&&job.kind==='raise' ? 'Working\u2026' : (otherHere ? 'In use' : (jobActive ? 'Busy' : (!canRaise?'Max Height':(!raiseLevelOk?'Lv '+ESTATE_RAISE_LEVEL+' Req.':(!raiseDirtOk?'Need Dirt':'Raise')))));
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Raise Layer</b><br>Requires Digging '+ESTATE_RAISE_LEVEL+' &bull; Costs '+ESTATE_RAISE_DIRT_COST+' Dirt (have '+dirtOwned+')<br>Takes 10 min &bull; +'+ESTATE_TERRAFORM_XP+' Digging XP on completion</div>';
-      html += '<button class="action-btn" data-action="estateRaiseLayer" data-x="'+x+'" data-y="'+y+'" '+((canRaise&&raiseLevelOk&&raiseDirtOk&&!jobActive)?'':'disabled')+'>'+raiseLabel+'</button>';
+      html += '<button class="action-btn" data-action="estateRaiseLayer" data-x="'+x+'" data-y="'+y+'" '+((canRaise&&raiseLevelOk&&raiseDirtOk&&!jobActive&&!tileBusy)?'':'disabled')+'>'+raiseLabel+'</button>';
       html += '</div>';
       var canLower = cell.height > 0;
       var lowerReq = estateLowerRequiredLevel(cell.height);
       var lowerLevelOk = digLvl >= lowerReq;
-      var lowerLabel = jobHere&&job.kind==='lower' ? 'Working\u2026' : (jobActive ? 'Busy' : (!canLower?'Bedrock':(!lowerLevelOk?'Lv '+lowerReq+' Req.':'Lower')));
+      var lowerLabel = jobHere&&job.kind==='lower' ? 'Working\u2026' : (otherHere ? 'In use' : (jobActive ? 'Busy' : (!canLower?'Bedrock':(!lowerLevelOk?'Lv '+lowerReq+' Req.':'Lower'))));
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Lower Layer</b><br>Requires Digging '+lowerReq+' &bull; Recovers '+ESTATE_LOWER_DIRT_REWARD+' Dirt<br>Takes 10 min &bull; +'+ESTATE_TERRAFORM_XP+' Digging XP on completion</div>';
-      html += '<button class="action-btn" data-action="estateLowerLayer" data-x="'+x+'" data-y="'+y+'" '+((canLower&&lowerLevelOk&&!jobActive)?'':'disabled')+'>'+lowerLabel+'</button>';
+      html += '<button class="action-btn" data-action="estateLowerLayer" data-x="'+x+'" data-y="'+y+'" '+((canLower&&lowerLevelOk&&!jobActive&&!tileBusy)?'':'disabled')+'>'+lowerLabel+'</button>';
       html += '</div>';
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Pave Tile</b><br>Change this tile to a stone paving finish -- requires 20 of the matching Paving Tile and its Paving level.</div>';
-      html += '<button class="action-btn" data-action="estateTogglePavingMenu" '+(jobHere?'disabled':'')+'>'+(jobHere?'Busy':(estatePavingMenuOpen?'Close List':'Choose Finish'))+'</button>';
+      html += '<button class="action-btn" data-action="estateTogglePavingMenu" '+((jobHere||otherHere)?'disabled':'')+'>'+(jobHere?'Busy':(otherHere?'In use':(estatePavingMenuOpen?'Close List':'Choose Finish')))+'</button>';
       html += '</div>';
       if(estatePavingMenuOpen){
         var pavingLvl = getLevel(state.xp.paving);
@@ -8295,6 +8355,7 @@
     } else if(cell.type === 'paved'){
       var pavedRecipe = getPavingRecipe(cell.paveTileId);
       var breakLevelOk = digLvl >= ESTATE_BREAK_PAVEMENT_LEVEL;
+      var pTileBusy = estJobOnTile(x, y); // a Workshop build in progress on this paved tile
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Currently Paved:</b> '+(pavedRecipe?pavedRecipe.icon+' '+pavedRecipe.name:'Unknown')+'</div>';
       html += '</div>';
@@ -8310,7 +8371,7 @@
         var placeable = placeableWorkshopsFor(cell);
         html += '<div class="estate-action-row">';
         html += '<div class="estate-action-info"><b>Place Workshop</b><br>Boosts a crafting skill’s speed &amp; grants a chance to double its output. Workshop tier must be ≤ this pavement ('+TIER_NAMES[Math.max(0,pavementTierOf(cell))]+'). One workshop per skill.</div>';
-        html += '<button class="action-btn" data-action="estateToggleWorkshopMenu" '+(placeable.length?'':'disabled')+'>'+(placeable.length?(estateWorkshopMenuOpen?'Close List':'Choose'):'None ready')+'</button>';
+        html += '<button class="action-btn" data-action="estateToggleWorkshopMenu" '+((placeable.length&&!pTileBusy)?'':'disabled')+'>'+(pTileBusy?'In use':(placeable.length?(estateWorkshopMenuOpen?'Close List':'Choose'):'None ready'))+'</button>';
         html += '</div>';
         if(estateWorkshopMenuOpen && placeable.length){
           html += '<div class="estate-paving-library">';
@@ -8324,7 +8385,7 @@
       }
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Break Pavement</b><br>Requires Digging '+ESTATE_BREAK_PAVEMENT_LEVEL+' &bull; Returns the tile to Dirt (no materials given back)</div>';
-      html += '<button class="action-btn stop" data-action="estateBreakPavement" data-x="'+x+'" data-y="'+y+'" '+(breakLevelOk?'':'disabled')+'>'+(breakLevelOk?'Break':'Lv '+ESTATE_BREAK_PAVEMENT_LEVEL+' Req.')+'</button>';
+      html += '<button class="action-btn stop" data-action="estateBreakPavement" data-x="'+x+'" data-y="'+y+'" '+((breakLevelOk&&!pTileBusy)?'':'disabled')+'>'+(pTileBusy?'In use':(breakLevelOk?'Break':'Lv '+ESTATE_BREAK_PAVEMENT_LEVEL+' Req.'))+'</button>';
       html += '</div>';
     }
     html += '</div>';
@@ -8332,12 +8393,15 @@
   }
   function renderEstateTab(){
     var tilesOwned = 0;
-    state.estate.grid.forEach(function(col){ col.forEach(function(cell){ if(cell.owned) tilesOwned++; }); });
-    var purchased = state.estate.expansionsPurchased||0;
+    estActive.grid.forEach(function(col){ col.forEach(function(cell){ if(cell.owned) tilesOwned++; }); });
+    var purchased = estActive.expansionsPurchased||0;
     var fullyExpanded = purchased >= ESTATE_EXPANSION_ORDER.length;
     var nextCost = fullyExpanded ? 0 : getEstateExpansionCost(purchased);
     var canAfford = !fullyExpanded && state.gold >= nextCost;
-    var html = '<div class="section-intro">Your home plot -- terraformable up to 20 layers tall, and expandable one tile at a time with gold. Click a tile to see what you can do with it, or click one of its 4 borders (highlighted along its edges) to select that border instead -- this is where fences, walls, and doors will eventually go. Drag to pan the view, use the +/- buttons to zoom, and the turn arrows to rotate the estate 90\u00b0 at a time. Each tile starts covered by a natural obstacle (trees, berries, herbs, rocks, or ore) that must be cleared with the matching Gathering skill before you can raise, lower, or pave it. Foundations and buildings (which will grant buffs to chosen skills) are coming in future updates.</div>';
+    var html = '<div class="section-intro">'+(estIsGuild
+      ? 'Your <b>guild\u2019s shared estate</b> \u2014 the same map for every member. Anyone can clear, terraform, pave, build Workshops and borders here, and each member can run their own activity at the same time. Workshops placed on the guild estate boost every member\u2019s crafting and stack with the ones on your own My Estate. '
+      : 'Your home plot -- terraformable up to 20 layers tall, and expandable one tile at a time with gold. ')
+      + 'Click a tile to see what you can do with it, or click one of its 4 borders (highlighted along its edges) to select that border instead -- this is where fences, walls, and doors will eventually go. Drag to pan the view, use the +/- buttons to zoom, and the turn arrows to rotate the estate 90\u00b0 at a time. Each tile starts covered by a natural obstacle (trees, berries, herbs, rocks, or ore) that must be cleared with the matching Gathering skill before you can raise, lower, or pave it.</div>';
     html += '<div class="estate-canvas-wrap">'+
       '<button class="estate-zoom-btn estate-zoom-out" data-action="estateZoomOut" title="Zoom out">\u2212</button>'+
       '<button class="estate-rotate-btn estate-rotate-left" data-action="estateRotateLeft" title="Rotate estate 90\u00b0 left">\u21ba</button>'+
@@ -8350,7 +8414,7 @@
     html += '<div class="estate-options-panel">';
     html += '<h3 style="margin-top:0">Estate Size &bull; '+tilesOwned+' tiles owned</h3>';
     if(fullyExpanded){
-      html += '<div class="estate-action-info">Your estate is fully expanded.</div>';
+      html += '<div class="estate-action-info">'+(estIsGuild?'The guild estate':'Your estate')+' is fully expanded.</div>';
     } else {
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Expand Estate</b><br>Purchases the next tile along the boundary, starting from the top-left and circling outward. Cost rises 25% with each purchase.</div>';
@@ -8366,13 +8430,13 @@
   // when a different tile (or none) is selected. The fill width and countdown are refreshed
   // every frame by updateDynamic without rebuilding the button, so the Cancel click is safe.
   function renderEstateJobStatus(){
-    var job = state.estate && state.estate.job;
-    if(!job) return '';
+    var job = estActive && estActive.job;
+    if(!job) return estIsGuild ? renderGuildOtherJobs() : '';
     var now = Date.now();
     var total = job.readyAt - job.startAt;
     var pct = clamp((now - job.startAt) / total * 100, 0, 100);
     var remaining = Math.max(0, job.readyAt - now);
-    var jobCell = state.estate.grid[job.x] && state.estate.grid[job.x][job.y];
+    var jobCell = estActive.grid[job.x] && estActive.grid[job.x][job.y];
     var headLabel, rewardNote;
     if(job.kind === 'clear'){
       var ci = jobCell && estateObstacleInfo(jobCell.obstacle);
@@ -8397,6 +8461,21 @@
     html += '</div>';
     html += '<div class="progress-track"><div class="progress-fill" id="estateJobFill" style="width:'+pct+'%"></div></div>';
     html += '<div class="estate-action-info" style="text-align:center;font-family:var(--font-mono);" id="estateJobTimer">Finishes in '+formatDuration(remaining)+'</div>';
+    html += '</div>';
+    return html + (estIsGuild ? renderGuildOtherJobs() : '');
+  }
+  // On the shared guild estate, list the activities OTHER members currently have running, so
+  // the whole guild can see who's working where. Read-only (no Cancel on someone else's job).
+  function renderGuildOtherJobs(){
+    var jobs = (guildEstate.jobs||[]).filter(function(j){ return j.owner !== estMyId(); });
+    if(!jobs.length) return '';
+    var kindLabel = { clear:'clearing', pave:'paving', workshop:'building', raise:'raising', lower:'digging down' };
+    var html = '<div class="estate-action-row" style="flex-direction:column;align-items:stretch;gap:4px;border-top:1px dashed var(--border-light);padding-top:10px;">';
+    html += '<div class="estate-action-info"><b>Guild members working</b></div>';
+    jobs.forEach(function(j){
+      var rem = Math.max(0, j.readyAt - Date.now());
+      html += '<div class="estate-action-info" style="display:flex;justify-content:space-between;gap:8px;"><span>'+escapeHtml(j.ownerName||'A member')+' &bull; '+(kindLabel[j.kind]||'working')+' ('+j.x+', '+j.y+')</span><span style="font-family:var(--font-mono);">'+formatDuration(rem)+'</span></div>';
+    });
     html += '</div>';
     return html;
   }
@@ -9309,7 +9388,7 @@
       guildState.myRank = res.myRank || null;
       guildState.applications = res.applications || [];
       if(!guildState.guild){ if(guildBrowseState.status==='idle') guildBrowseLoad(); guildTeardownChat(); }
-      else { guildChatMaybeSubscribe(); guildEstateMapEnsure(); } // load the shared estate so its workshop bonuses apply on any tab
+      else { guildChatMaybeSubscribe(); guildEstateEnsure(); } // load the shared estate so its workshop bonuses apply on any tab
       if(currentCategory==='guild'||currentCategory==='chat') render();
     });
   }
@@ -9362,8 +9441,7 @@
       if(res.left || res.disbanded){
         guildState.guild=null; guildState.members=[]; guildState.myRank=null; guildState.applications=[];
         guildBrowseState.status='idle'; guildBankState.status='idle'; guildBankState.guildId=null;
-        guildEstateState.status='idle'; guildEstateState.guildId=null;
-        guildEstateMap.status='idle'; guildEstateMap.guildId=null; guildEstateMap.data=null; guildPlacedWorkshops={}; guildEstateSel=null;
+        guildEstateReset();
         guildBossState.status='idle'; guildBossState.guildId=null; guildBossState.active=null; guildBossState.claimable=null;
         guildTeardownChat(); guildReload(true); return;
       }
@@ -9582,414 +9660,136 @@
     return html;
   }
 
-  // ---- Guild Estate (Phase 3): 5 shared estate-crafting task slots ----
-  var GUILD_ESTATE_SKILLS = ['stonecutting','masonry','paving'];
-  var guildEstateState = { status:'idle', guildId:null, tasks:[], busy:false, error:'', pickSkill:'stonecutting', pickBatches:10 };
-  function guildEstateInvoke(action, payload){
-    if(!chatClient || !authUser) return Promise.resolve({ ok:false, error:'Sign in first.' });
-    var body={action:action}; if(payload){ for(var k in payload){ if(payload.hasOwnProperty(k)) body[k]=payload[k]; } }
-    return chatClient.functions.invoke('guild_estate', { body: body }).then(function(r){
-      if(r && r.data) return r.data;
-      return { ok:false, error:(r && r.error && r.error.message) || 'Request failed.' };
-    }, function(){ return { ok:false, error:'Network error.' }; });
-  }
-  function guildEstateApply(res){ guildEstateState.status='ready'; guildEstateState.tasks = res.tasks || []; }
-  function guildEstateLoad(){
-    if(!guildState.guild) return;
-    guildEstateState.status='loading'; guildEstateState.guildId = guildState.guild.id;
-    guildEstateInvoke('get', {}).then(function(res){
-      if(!res.ok){ guildEstateState.status='error'; guildEstateState.error=res.error||'Could not load the estate.'; if(currentCategory==='guild') render(); return; }
-      guildEstateApply(res); guildEstateState.error=''; if(currentCategory==='guild') render();
-    });
-  }
-  function guildEstateMyTask(){ return guildEstateState.tasks.filter(function(t){ return authUser && t.user_id===authUser.id; })[0]; }
-  function guildEstateFreeSlot(){ for(var i=0;i<5;i++){ if(!guildEstateState.tasks.some(function(t){ return t.slot===i; })) return i; } return -1; }
-  function guildEstateRecipesFor(skill){
-    var sk = CRAFTING_SKILLS[skill]; if(!sk) return [];
-    var lvl = getLevel(state.xp[skill]||0);
-    return sk.recipes.filter(function(r){ return r.levelReq <= lvl; });
-  }
-  function guildEstateInputsLabel(inputs){ return Object.keys(inputs).map(function(k){ var it=ALL_SELLABLE[k]; return (it?it.name:k)+' x'+inputs[k]; }).join(', '); }
-  function guildEstateRemain(ms){ if(ms<=0) return 'Ready'; var s=Math.ceil(ms/1000); if(s<60) return '~'+s+'s left'; var m=Math.ceil(s/60); if(m<60) return '~'+m+'m left'; var h=Math.floor(m/60); return '~'+h+'h '+(m%60)+'m left'; }
-  function guildEstateStart(){
-    if(guildEstateState.busy) return;
-    var skill=guildEstateState.pickSkill;
-    var recipeSel=document.getElementById('guildEstateRecipe'), batchEl=document.getElementById('guildEstateBatches');
-    var recipeId = recipeSel ? recipeSel.value : '';
-    var batches = parseInt((batchEl&&batchEl.value)||'0',10);
-    if(!(batches>0)) batches=1; if(batches>100) batches=100;
-    var recipe = ALL_CRAFT_RECIPES[recipeId];
-    if(!recipe){ guildEstateState.error='Pick a recipe.'; render(); return; }
-    if(getLevel(state.xp[skill]||0) < recipe.levelReq){ guildEstateState.error='Your level is too low for that recipe.'; render(); return; }
-    if(!hasInputs(recipe.inputs, batches)){ guildEstateState.error='Not enough materials for '+batches+'x '+recipe.name+'.'; render(); return; }
-    if(guildEstateMyTask()){ guildEstateState.error='You already have an active estate task.'; render(); return; }
-    var slot = guildEstateFreeSlot();
-    if(slot<0){ guildEstateState.error='All 5 estate slots are busy.'; render(); return; }
-    guildEstateState.busy=true; guildEstateState.error=''; guildEstateState.pickBatches=batches; render();
-    guildEstateInvoke('start', { slot:slot, skill_id:skill, output_key:recipe.id, batches:batches, time_per_batch_ms:Math.round(recipe.time*1000) }).then(function(res){
-      guildEstateState.busy=false;
-      if(!res.ok){ guildEstateState.error=res.error||'Could not start the task.'; render(); return; }
-      consumeInputs(recipe.inputs, batches); saveGame(); guildEstateApply(res); render();
-    });
-  }
-  function guildEstateCollect(slot){
-    if(guildEstateState.busy) return;
-    guildEstateState.busy=true; guildEstateState.error=''; render();
-    guildEstateInvoke('collect', { slot:slot }).then(function(res){
-      guildEstateState.busy=false;
-      if(!res.ok){ guildEstateState.error=res.error||'Collect failed.'; render(); return; }
-      var c=res.collected;
-      if(c){
-        var nm = (ALL_SELLABLE[c.output_key] && ALL_SELLABLE[c.output_key].name) || c.output_key;
-        if(authUser && c.owner===authUser.id){
-          var recipe=ALL_CRAFT_RECIPES[c.output_key];
-          if(recipe) addXp(c.skill, recipe.xp*(c.batches||1));
-          addLog('Collected '+(c.qty||0)+'x '+nm+' into the guild bank (+'+c.skill+' XP).','chronicle');
-          saveGame();
-        } else {
-          addLog('Collected '+(c.qty||0)+'x '+nm+' into the guild bank.','chronicle');
-        }
-      }
-      guildEstateApply(res); guildBankState.status='idle'; render();
-    });
-  }
-  function guildEstateCancel(slot){
-    guildEstateInvoke('cancel', { slot:slot }).then(function(res){
-      if(res.ok){ guildEstateApply(res); render(); }
-      else { guildEstateState.error=res.error||'Could not cancel.'; render(); }
-    });
-  }
-  // ---- Shared guild estate map: deterministically generated from the guild id, so every
-  // member sees the same unique territory. View-only for now (Phase 2 adds collaborative
-  // workshop placement, which needs server-stored shared state). Reuses the estate draw
-  // helpers + view vars (rotation/zoom/top-down), so its controls match the personal estate.
-  function estateSeedFromStr(s){ var h=2166136261; s=String(s); for(var i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
-  function estateSeededRng(seed){ return function(){ seed|=0; seed=seed+0x6D2B79F5|0; var t=Math.imul(seed^seed>>>15,1|seed); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
-  function generateGuildEstateGrid(guildId){
-    var rng = estateSeededRng(estateSeedFromStr('guild-estate:'+guildId));
-    var N = ESTATE_GRID_SIZE, cx=N/2, cy=N/2, grid=[];
-    var obsTypes=['trees','rocks','ore','berries','herbs'];
-    for(var x=0;x<N;x++){ var col=[]; for(var y=0;y<N;y++){
-      var dcx=x-cx+0.5, dcy=y-cy+0.5, dist=Math.sqrt(dcx*dcx+dcy*dcy);
-      var owned = dist < 7.2;
-      var cell = { height: owned?1:0, buildingId:null, type:'dirt', paveTileId:null, workshopId:null, owned:owned, obstacle:null };
-      if(owned){
-        if(dist < 3.3){ cell.type='paved'; cell.paveTileId='paving_t'+(3+Math.floor(rng()*3)); } // central plaza
-        else if(rng() < 0.26){ cell.obstacle = { type: obsTypes[Math.floor(rng()*obsTypes.length)], tierIndex: Math.floor(rng()*11) }; }
-      }
-      col.push(cell);
-    } grid.push(col); }
-    return grid;
-  }
-  // The shared guild estate is stored server-side (guild_estate blob) so edits (placed
-  // workshops) are shared by all members. Client-authoritative like the personal estate;
-  // a version guard reconciles concurrent writes (conflict -> reload).
-  var guildEstateMap = { status:'idle', guildId:null, data:null, version:0, busy:false, error:'' };
-  var guildPlacedWorkshops = {}; // skillId -> best placed tier on the GUILD estate (stacks w/ personal)
+  // ---- Shared Guild Estate ------------------------------------------------------------
+  // The guild estate is a 1:1 duplicate of the personal "My Estate": the SAME engine and UI
+  // (renderEstateTab / renderEstateCanvas -- terraform, clear, pave, Workshops, borders),
+  // driven through the estActive context pointer. The only difference is the map is shared by
+  // every guild member and stored server-side (the guild_estate jsonb blob), reconciled with an
+  // optimistic version guard + realtime. Jobs are per-member concurrent: each member runs their
+  // own activity in parallel, and whoever starts a job gets its rewards.
+
+  // Guild workshop bonus cache (skillId -> best placed tier on the GUILD estate). Stacks with
+  // the personal estate in workshopSpeedBonus / workshopDoubleChance.
+  var guildPlacedWorkshops = {};
   function recomputeGuildWorkshops(){
     guildPlacedWorkshops = {};
-    var grid = guildEstateMap.data && guildEstateMap.data.grid;
+    var grid = guildEstate.grid;
     if(!grid) return;
     grid.forEach(function(col){ col.forEach(function(cell){
       if(cell && cell.workshopId){ var it = WORKSHOP_ITEMS[cell.workshopId]; if(it && (guildPlacedWorkshops[it.skillId]===undefined || it.tierIndex>guildPlacedWorkshops[it.skillId])) guildPlacedWorkshops[it.skillId] = it.tierIndex; }
     }); });
   }
-  function guildEstateMapGrid(){ return (guildEstateMap.status==='ready' && guildEstateMap.data) ? guildEstateMap.data.grid : null; }
-  function guildEstateMapEnsure(){
+
+  // The live shared-estate object. Shaped like state.estate (grid + edges + expansionsPurchased)
+  // so the whole estate engine operates on it unchanged. `job` is a computed accessor mapping to
+  // MY entry in the shared jobs[] (keyed by user id), so estActive.job behaves like personal.
+  var guildEstate = { status:'idle', guildId:null, version:0, error:'', grid:null, jobs:[], expansionsPurchased:0, edgesX:null, edgesY:null, _sub:null, _subGuild:null };
+  Object.defineProperty(guildEstate, 'job', {
+    get: function(){ var id=estMyId(); return (this.jobs||[]).filter(function(j){ return j.owner===id; })[0] || null; },
+    set: function(j){ var id=estMyId(); this.jobs=(this.jobs||[]).filter(function(x){ return x.owner!==id; }); if(j){ j.owner=id; j.ownerName=guildMyName(); this.jobs.push(j); } }
+  });
+  function guildMyName(){ return (typeof authUser!=='undefined' && authUser && authUser.username) || 'A member'; }
+  function guildEstateReset(){
+    if(guildEstate._sub && chatClient){ try{ chatClient.removeChannel(guildEstate._sub); }catch(e){} }
+    guildEstate._sub=null; guildEstate._subGuild=null;
+    guildEstate.status='idle'; guildEstate.guildId=null; guildEstate.grid=null; guildEstate.jobs=[]; guildEstate.version=0; guildEstate.error='';
+    guildPlacedWorkshops={};
+  }
+  // Countdown label reused by the Bosses UI too.
+  function guildEstateRemain(ms){ if(ms<=0) return 'Ready'; var s=Math.ceil(ms/1000); if(s<60) return '~'+s+'s left'; var m=Math.ceil(s/60); if(m<60) return '~'+m+'m left'; var h=Math.floor(m/60); return '~'+h+'h '+(m%60)+'m left'; }
+
+  // A fresh guild estate starts identical to a new personal estate (same core layout, so gold
+  // expansion along the spiral works the same); the random obstacles make each guild's map its own.
+  function guildEstateDefaultBlob(gid){
+    var edges = generateEstateEdges();
+    return { grid: generateEstateGrid(), jobs:[], expansionsPurchased:0, edgesX:edges.edgesX, edgesY:edges.edgesY };
+  }
+  // Load a server blob into the live object. Preserves MY in-flight job if the incoming snapshot
+  // predates it (a member spent materials starting a job; a concurrent write shouldn't drop it),
+  // and back-fills edges for older rows written before the estate stored them.
+  function guildEstateHydrate(data, version){
+    data = data || {};
+    var myId = estMyId();
+    var myJob = (guildEstate.jobs||[]).filter(function(j){ return j.owner===myId; })[0] || null;
+    guildEstate.grid = data.grid || guildEstate.grid;
+    guildEstate.jobs = (data.jobs || []).slice();
+    guildEstate.expansionsPurchased = data.expansionsPurchased || 0;
+    if(data.edgesX && data.edgesY){ guildEstate.edgesX = data.edgesX; guildEstate.edgesY = data.edgesY; }
+    else if(!guildEstate.edgesX){ var e = generateEstateEdges(); guildEstate.edgesX = e.edgesX; guildEstate.edgesY = e.edgesY; }
+    guildEstate.version = version;
+    guildEstate.status = 'ready';
+    if(myJob && !guildEstate.jobs.some(function(j){ return j.owner===myJob.owner && j.x===myJob.x && j.y===myJob.y && j.readyAt===myJob.readyAt; })) guildEstate.jobs.push(myJob);
+  }
+  function guildEstateEnsure(){
     if(!chatClient || !guildState.guild || !authUser) return;
-    if(guildEstateMap.status==='loading') return;
-    if(guildEstateMap.status==='ready' && guildEstateMap.guildId===guildState.guild.id) return;
-    guildEstateMap.status='loading'; guildEstateMap.guildId=guildState.guild.id;
+    if(guildEstate.status==='loading') return;
+    if(guildEstate.status==='ready' && guildEstate.guildId===guildState.guild.id) return;
+    guildEstate.status='loading'; guildEstate.guildId=guildState.guild.id;
     var gid = guildState.guild.id;
     chatClient.from('guild_estate').select('data,version').eq('guild_id',gid).maybeSingle().then(function(res){
       if(res && res.data){
-        guildEstateMap.data=res.data.data; guildEstateMap.version=res.data.version; guildEstateMap.status='ready';
-        if(!guildEstateMap.data.jobs) guildEstateMap.data.jobs=[];
-        recomputeGuildWorkshops(); if(currentCategory==='guild') render();
+        guildEstateHydrate(res.data.data, res.data.version); guildEstateSubscribe(); recomputeGuildWorkshops();
+        if(currentCategory==='guild') render();
       } else {
-        var blob = { grid: generateGuildEstateGrid(gid) };
+        var blob = guildEstateDefaultBlob(gid);
         chatClient.from('guild_estate').insert({ guild_id:gid, data:blob, version:0 }).select('version').then(function(ins){
-          if(ins && !ins.error){ guildEstateMap.data=blob; guildEstateMap.version=0; guildEstateMap.status='ready'; recomputeGuildWorkshops(); if(currentCategory==='guild') render(); }
-          else { guildEstateMap.status='idle'; if(currentCategory==='guild') render(); } // insert race -> reload next view
-        }, function(){ guildEstateMap.status='idle'; });
+          if(ins && !ins.error){ guildEstateHydrate(blob, 0); guildEstateSubscribe(); recomputeGuildWorkshops(); if(currentCategory==='guild') render(); }
+          else { guildEstate.status='idle'; if(currentCategory==='guild') render(); } // insert race -> reload next view
+        }, function(){ guildEstate.status='idle'; });
       }
-    }, function(){ guildEstateMap.status='error'; guildEstateMap.error='Could not load the guild estate.'; if(currentCategory==='guild') render(); });
+    }, function(){ guildEstate.status='error'; guildEstate.error='Could not load the guild estate.'; if(currentCategory==='guild') render(); });
   }
-  // Version-guarded save; on conflict, reload (the losing edit is discarded).
-  function guildEstateMapSave(onOk){
-    if(!chatClient || !guildEstateMap.data || !guildState.guild) return;
-    var expected = guildEstateMap.version, gid = guildState.guild.id;
-    guildEstateMap.version = expected + 1;
-    chatClient.from('guild_estate').update({ data:guildEstateMap.data, version:guildEstateMap.version, updated_at:new Date().toISOString() }).eq('guild_id',gid).eq('version',expected).select('version').then(function(res){
+  // Version-guarded save. On conflict, reload (guildEstateHydrate preserves my in-flight job so
+  // spent materials aren't lost); otherwise fire onOk.
+  function guildEstatePersist(onOk){
+    if(!chatClient || guildEstate.status!=='ready' || !guildState.guild) return;
+    var expected = guildEstate.version, gid = guildState.guild.id;
+    var blob = { grid:guildEstate.grid, jobs:guildEstate.jobs, expansionsPurchased:guildEstate.expansionsPurchased, edgesX:guildEstate.edgesX, edgesY:guildEstate.edgesY };
+    guildEstate.version = expected + 1;
+    chatClient.from('guild_estate').update({ data:blob, version:guildEstate.version, updated_at:new Date().toISOString() }).eq('guild_id',gid).eq('version',expected).select('version').then(function(res){
       if(!res || res.error || !res.data || !res.data.length){
-        guildEstateMap.status='idle'; guildEstateMap.error='Another member edited the estate first — reloaded.'; guildEstateMapEnsure(); if(currentCategory==='guild') render();
-      } else if(onOk){ onOk(); }
+        guildEstate.status='idle'; guildEstate.error='Another member edited the estate first — reloaded.'; guildEstateEnsure(); if(currentCategory==='guild') render();
+      } else { guildEstate.error=''; if(onOk) onOk(); }
     }, function(){});
   }
-  // ---- Guild estate activities: up to 5 concurrent jobs (one per member), stored in the
-  // shared blob. Each member completes their OWN job; the grid change is shared, rewards go
-  // to the doer and are granted only after a successful save (guarded so a save-conflict
-  // reload can't double-reward). ----
-  var guildEstateSel = null;      // {x,y} selected tile on the guild canvas
-  var guildJobRewarded = {};      // job signature -> true (reward-once guard)
-  function guildJobSig(j){ return j.owner+':'+j.kind+':'+j.x+':'+j.y+':'+j.startAt; }
-  function guildEstateMyJob(){ var js=guildEstateMap.data&&guildEstateMap.data.jobs; return js ? js.filter(function(j){ return authUser && j.owner===authUser.id; })[0] : null; }
-  function guildEstateStartClear(x, y){
-    if(guildEstateMap.status!=='ready' || !authUser) return;
-    var grid=guildEstateMap.data.grid, cell=grid[x]&&grid[x][y];
-    if(!cell || !cell.obstacle) return;
-    var jobs = guildEstateMap.data.jobs || (guildEstateMap.data.jobs=[]);
-    if(jobs.some(function(j){ return j.owner===authUser.id; })){ guildEstateMap.error='You already have an activity running on the guild estate.'; render(); return; }
-    if(jobs.length>=5){ guildEstateMap.error='All 5 guild activity slots are busy right now.'; render(); return; }
-    var info = estateObstacleInfo(cell.obstacle); if(!info) return;
-    if(getLevel(state.xp[info.def.skill]) < info.reqLevel){ guildEstateMap.error='Clearing this needs '+SKILL_LABELS[info.def.skill]+' level '+info.reqLevel+'.'; render(); return; }
-    var now=Date.now();
-    jobs.push({ owner:authUser.id, ownerName:(authUser.username||'member'), kind:'clear', x:x, y:y, startAt:now, readyAt:now+info.durationMs });
-    guildEstateMap.error='';
-    guildEstateMapSave();
-    addLog('Started clearing '+info.def.label+' on the guild estate.','important');
-    render();
+  // Realtime: apply other members' edits as they happen (payload carries the new blob + version).
+  function guildEstateSubscribe(){
+    if(!chatClient || !guildState.guild) return;
+    var gid = guildState.guild.id;
+    if(guildEstate._subGuild === gid && guildEstate._sub) return;
+    if(guildEstate._sub){ try{ chatClient.removeChannel(guildEstate._sub); }catch(e){} guildEstate._sub=null; }
+    guildEstate._subGuild = gid;
+    guildEstate._sub = chatClient.channel('guild_estate_'+gid)
+      .on('postgres_changes', { event:'UPDATE', schema:'public', table:'guild_estate', filter:'guild_id=eq.'+gid }, function(payload){
+        var row = payload && payload.new;
+        if(!row || typeof row.version !== 'number' || row.version <= guildEstate.version) return; // already have it (incl. our own write)
+        guildEstateHydrate(row.data, row.version); recomputeGuildWorkshops();
+        if(currentCategory==='guild' && guildSub==='estate') needsRender = true;
+      }).subscribe();
   }
+  // Complete MY guild-estate job when its timer elapses (runs every loop tick, incl. on load).
+  // Only the job's owner finalizes it, so rewards always reach the doer and there's no write
+  // contention; the grid change is shared with everyone on the next save + realtime push.
+  var guildJobDone = {}; // "owner|x|y|readyAt" -> 1, so a conflict-reload can't double-apply
   function processGuildEstateJobs(){
-    if(guildEstateMap.status!=='ready' || !authUser || !guildEstateMap.data) return;
-    var mine = guildEstateMyJob();
+    if(guildEstate.status!=='ready') return;
+    var mine = guildEstate.job;
     if(!mine || Date.now() < mine.readyAt) return;
-    var sig = guildJobSig(mine), grid=guildEstateMap.data.grid, cell=grid[mine.x]&&grid[mine.x][mine.y];
-    var reward = null;
-    if(cell && mine.kind==='clear' && cell.obstacle){
-      var oi = estateObstacleInfo(cell.obstacle);
-      if(oi) reward = { skill:oi.def.skill, itemId:oi.itemId, amount:oi.resourceAmount, xp:oi.xp, label:oi.def.label, itemName:oi.itemName };
-      cell.obstacle = null;
-    }
-    guildEstateMap.data.jobs = guildEstateMap.data.jobs.filter(function(j){ return j!==mine; });
-    guildEstateMapSave(function(){
-      if(reward && !guildJobRewarded[sig]){
-        guildJobRewarded[sig] = true;
-        addItem(reward.itemId, reward.amount); addXp(reward.skill, reward.xp); saveGame();
-        addLog('Cleared '+reward.label+' on the guild estate. +'+reward.amount+' '+reward.itemName+', +'+reward.xp+' '+SKILL_LABELS[reward.skill]+' XP.','important');
-        if(currentCategory==='guild') render();
-      }
-    });
+    var key = mine.owner+'|'+mine.x+'|'+mine.y+'|'+mine.readyAt;
+    if(!guildJobDone[key]){ applyEstateJobCompletion(guildEstate, mine, true, true); guildJobDone[key]=1; }
+    guildEstate.jobs = (guildEstate.jobs||[]).filter(function(j){ return j!==mine; });
+    recomputeGuildWorkshops();
+    guildEstatePersist();
     needsRender = true;
   }
-  function guildEstateFindTile(rawX, rawY){
-    var grid=guildEstateMapGrid(); if(!grid) return null;
-    var W=guildEstateMap._cw||580, H=guildEstateMap._ch||360;
-    var wx=(rawX-W/2)/estateZoom+W/2, wy=(rawY-H/2)/estateZoom+H/2;
-    var ox=guildEstateMap._ox||0, oy=guildEstateMap._oy||0, tiles=[];
-    for(var x=0;x<grid.length;x++){ for(var y=0;y<grid[x].length;y++){ var c=grid[x][y]; if(c&&c.owned){ var r=estateRotateCoord(x,y); tiles.push({x:x,y:y,depth:r.x+r.y}); } } }
-    tiles.sort(function(a,b){ return b.depth-a.depth; });
-    for(var i=0;i<tiles.length;i++){ var t=tiles[i];
-      if(estateTopDown){ var p=estateTdTilePos(t.x,t.y,ox,oy); if(Math.abs(wx-p.x)<=ESTATE_TD_TILE/2 && Math.abs(wy-p.y)<=ESTATE_TD_TILE/2) return {x:t.x,y:t.y}; }
-      else { var pos=estateTileScreenPos(t.x,t.y,grid[t.x][t.y].height,ox,oy); if(estatePointInDiamond(wx,wy,pos.x,pos.y)) return {x:t.x,y:t.y}; }
-    }
-    return null;
-  }
-  function guildEstateFreePavedTile(){
-    var grid = guildEstateMap.data && guildEstateMap.data.grid; if(!grid) return null;
-    for(var x=0;x<grid.length;x++){ for(var y=0;y<grid[x].length;y++){ var c=grid[x][y]; if(c && c.owned && c.type==='paved' && !c.workshopId) return {x:x,y:y}; } }
-    return null;
-  }
-  function guildEstatePlacedList(){
-    var out=[], grid=guildEstateMap.data && guildEstateMap.data.grid; if(!grid) return out;
-    grid.forEach(function(col,x){ col.forEach(function(cell,y){ if(cell && cell.workshopId) out.push({x:x,y:y,it:WORKSHOP_ITEMS[cell.workshopId]}); }); });
-    return out;
-  }
-  function guildPlaceableWorkshops(){
-    var out=[];
-    Object.keys(WORKSHOP_ITEMS).forEach(function(id){ var it=WORKSHOP_ITEMS[id]; if((state.inventory[id]||0)>0 && guildPlacedWorkshops[it.skillId]===undefined) out.push(it); });
-    out.sort(function(a,b){ return a.name.localeCompare(b.name); });
-    return out;
-  }
-  function guildEstatePlaceWorkshop(){
-    if(guildEstateMap.busy || guildEstateMap.status!=='ready') return;
-    var sel=document.getElementById('guildEstateWorkshopSel'); if(!sel || !sel.value) return;
-    var id=sel.value, it=WORKSHOP_ITEMS[id];
-    if(!it || (state.inventory[id]||0)<=0){ guildEstateMap.error='You no longer own that workshop.'; render(); return; }
-    if(guildPlacedWorkshops[it.skillId]!==undefined){ guildEstateMap.error='The guild already has a '+((CRAFTING_SKILLS[it.skillId]||{}).label||it.skillId)+' Workshop placed.'; render(); return; }
-    var free = guildEstateFreePavedTile();
-    if(!free){ guildEstateMap.error='No free paved tile on the guild estate.'; render(); return; }
-    state.inventory[id]-=1; saveGame();
-    guildEstateMap.data.grid[free.x][free.y].workshopId = id;
-    recomputeGuildWorkshops();
-    guildEstateMap.error='';
-    guildEstateMapSave();
-    addLog('Placed a '+it.name+' on the guild estate — it now boosts every member.','important');
-    render();
-  }
-  function guildEstateRemoveWorkshop(x, y){
-    if(guildEstateMap.status!=='ready') return;
-    var cell = guildEstateMap.data && guildEstateMap.data.grid[x] && guildEstateMap.data.grid[x][y];
-    if(!cell || !cell.workshopId) return;
-    var wid = cell.workshopId;
-    addItem(wid, 1); saveGame();
-    cell.workshopId = null;
-    recomputeGuildWorkshops();
-    guildEstateMap.error='';
-    guildEstateMapSave();
-    addLog('Removed the '+((WORKSHOP_ITEMS[wid]||{}).name||'workshop')+' from the guild estate (returned to your inventory).','');
-    render();
-  }
-  function renderGuildEstateCanvas(){
-    var canvas = document.getElementById('guildEstateCanvas');
-    if(!canvas || !canvas.getContext) return;
-    var grid = guildEstateMapGrid(); if(!grid) return;
-    var ctx = canvas.getContext('2d'), W=canvas.width, H=canvas.height, N=ESTATE_GRID_SIZE;
-    var td = estateTopDown, ts = ESTATE_TD_TILE;
-    var tiles=[];
-    for(var x=0;x<N;x++){ for(var y=0;y<N;y++){ var c=grid[x][y]; if(c&&c.owned){ var r=estateRotateCoord(x,y); tiles.push({x:x,y:y,depth:r.x+r.y}); } } }
-    tiles.sort(function(a,b){ return a.depth-b.depth; });
-    // Auto-center: bounding box of the owned tiles projected at origin (0,0), then offset so
-    // its centre lands at the canvas centre (works at any rotation / in either view).
-    var minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9;
-    tiles.forEach(function(t){
-      if(td){ var p=estateTdTilePos(t.x,t.y,0,0); minX=Math.min(minX,p.x-ts/2);maxX=Math.max(maxX,p.x+ts/2);minY=Math.min(minY,p.y-ts/2);maxY=Math.max(maxY,p.y+ts/2); }
-      else { var pp=estateTileScreenPos(t.x,t.y,grid[t.x][t.y].height,0,0); minX=Math.min(minX,pp.x-ESTATE_TILE_W/2);maxX=Math.max(maxX,pp.x+ESTATE_TILE_W/2);minY=Math.min(minY,pp.y-20);maxY=Math.max(maxY,pp.y+ESTATE_TILE_H); }
-    });
-    var originX = W/2 - (minX+maxX)/2, originY = H/2 - (minY+maxY)/2;
-    guildEstateMap._ox=originX; guildEstateMap._oy=originY; guildEstateMap._cw=W; guildEstateMap._ch=H; // for click hit-testing
-    var jobSet = {}; ((guildEstateMap.data&&guildEstateMap.data.jobs)||[]).forEach(function(j){ jobSet[j.x+'_'+j.y]=j; });
-    ctx.clearRect(0,0,W,H);
-    ctx.save();
-    ctx.translate(W/2,H/2); ctx.scale(estateZoom,estateZoom); ctx.translate(-W/2,-H/2);
-    tiles.forEach(function(t){
-      var cell=grid[t.x][t.y];
-      var col = cell.type==='paved' ? estatePavedTileColor(cell.paveTileId) : estateHeightColor(cell.height/(ESTATE_MAX_HEIGHT-1));
-      var isSel = guildEstateSel && guildEstateSel.x===t.x && guildEstateSel.y===t.y;
-      var job = jobSet[t.x+'_'+t.y];
-      if(td){
-        var p=estateTdTilePos(t.x,t.y,originX,originY);
-        ctx.fillStyle=col; ctx.fillRect(p.x-ts/2,p.y-ts/2,ts,ts);
-        ctx.strokeStyle = isSel?'#ffffff':'rgba(0,0,0,0.22)'; ctx.lineWidth = isSel?2:1; ctx.strokeRect(p.x-ts/2,p.y-ts/2,ts,ts);
-        if(cell.obstacle) estateDrawTdObstacle(ctx,p.x,p.y,cell.obstacle,ts);
-        if(cell.workshopId) estateDrawTdWorkshop(ctx,p.x,p.y,WORKSHOP_ITEMS[cell.workshopId],ts);
-        if(job){ ctx.fillStyle='rgba(232,193,90,0.85)'; ctx.beginPath(); ctx.arc(p.x,p.y-ts*0.3,3,0,Math.PI*2); ctx.fill(); }
-      } else {
-        var pos=estateTileScreenPos(t.x,t.y,cell.height,originX,originY);
-        ctx.beginPath(); ctx.moveTo(pos.x,pos.y); ctx.lineTo(pos.x+ESTATE_TILE_W/2,pos.y+ESTATE_TILE_H/2); ctx.lineTo(pos.x,pos.y+ESTATE_TILE_H); ctx.lineTo(pos.x-ESTATE_TILE_W/2,pos.y+ESTATE_TILE_H/2); ctx.closePath();
-        ctx.fillStyle=col; ctx.fill(); ctx.strokeStyle = isSel?'#ffffff':'rgba(0,0,0,0.3)'; ctx.lineWidth = isSel?2:1; ctx.stroke();
-        if(cell.obstacle) drawEstateObstacleModel(ctx,pos.x,pos.y+ESTATE_TILE_H/2,cell.obstacle,estateRotation);
-        if(cell.workshopId) drawEstateWorkshopModel(ctx,pos.x,pos.y+ESTATE_TILE_H/2,WORKSHOP_ITEMS[cell.workshopId],estateRotation);
-        if(job){ ctx.fillStyle='rgba(232,193,90,0.9)'; ctx.beginPath(); ctx.arc(pos.x,pos.y+ESTATE_TILE_H/2,4,0,Math.PI*2); ctx.fill(); }
-      }
-    });
-    ctx.restore();
-    if(!canvas._guildBound){
-      canvas._guildBound = true;
-      canvas.addEventListener('click', function(e){
-        var rect=canvas.getBoundingClientRect(), sx=canvas.width/rect.width, sy=canvas.height/rect.height;
-        guildEstateSel = guildEstateFindTile((e.clientX-rect.left)*sx, (e.clientY-rect.top)*sy);
-        render();
-      });
-    }
-  }
+  // The guild estate subtab IS the My Estate UI, pointed at the shared object.
   function renderGuildEstate(){
-    if(guildEstateState.status==='idle' || guildEstateState.guildId !== (guildState.guild&&guildState.guild.id)) guildEstateLoad();
-    var html='';
-    if(guildEstateState.error){ html += '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad);">'+escapeHtml(guildEstateState.error)+'</div>'; }
-    if(guildEstateState.status==='loading'||guildEstateState.status==='idle'){ return html+'<div class="empty-note">Loading the estate&hellip;</div>'; }
-    html += '<div class="section-intro">Your guild’s shared territory — a unique estate every member sees. Below, five shared work slots let members run estate-crafting tasks; finished goods flow into the guild bank.</div>';
-    html += '<div class="estate-canvas-wrap">'+
-      '<button class="estate-zoom-btn estate-zoom-out" data-action="estateZoomOut" title="Zoom out">−</button>'+
-      '<button class="estate-rotate-btn estate-rotate-left" data-action="estateRotateLeft" title="Rotate 90° left">↺</button>'+
-      '<canvas id="guildEstateCanvas" width="580" height="360"></canvas>'+
-      '<button class="estate-zoom-btn estate-zoom-in" data-action="estateZoomIn" title="Zoom in">+</button>'+
-      '<button class="estate-rotate-btn estate-rotate-right" data-action="estateRotateRight" title="Rotate 90° right">↻</button>'+
-      '<button class="estate-view-btn'+(estateTopDown?' on':'')+'" data-action="estateToggleTopDown" title="Toggle top-down view">'+(estateTopDown?'▦ 2D':'◈ 3D')+'</button>'+
-      '</div>';
-    // Shared Guild Workshops -- placed on the guild estate, boost every member, stack with personal.
-    guildEstateMapEnsure();
-    html += '<div class="guild-section-title">Guild Workshops</div>';
-    if(guildEstateMap.error){ html += '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad);">'+escapeHtml(guildEstateMap.error)+'</div>'; }
-    html += '<div class="empty-note" style="margin-bottom:6px;">Workshops placed on the guild estate speed up crafting &amp; add double-output for <b>every member</b>, stacking with your personal estate. One per skill.</div>';
-    if(guildEstateMap.status!=='ready'){
-      html += '<div class="empty-note">Loading the shared estate&hellip;</div>';
-    } else {
-      var placed = guildEstatePlacedList();
-      placed.forEach(function(p){
-        var pct = Math.round(workshopBonusPct(p.it?p.it.tierIndex:0)*100);
-        html += '<div class="guild-member-row"><div style="display:flex;align-items:center;gap:8px;">'+(p.it?p.it.icon:'')+'<b>'+escapeHtml(p.it?p.it.name:'Workshop')+'</b> <span class="item-meta">+'+pct+'% speed &amp; double</span></div><button class="mini-btn danger" data-action="guildEstateRemoveWorkshop" data-x="'+p.x+'" data-y="'+p.y+'">Remove</button></div>';
-      });
-      var placeable = guildPlaceableWorkshops();
-      if(placeable.length){
-        html += '<div class="char-row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px;">';
-        html += '<select id="guildEstateWorkshopSel" class="chat-input" style="flex:1 1 180px;min-width:140px;">'+placeable.map(function(it){ return '<option value="'+it.id+'">'+escapeHtml(it.name)+' (x'+fmt(state.inventory[it.id]||0)+')</option>'; }).join('')+'</select>';
-        html += '<button class="action-btn" data-action="guildEstatePlaceWorkshop" style="width:auto;flex:0 0 auto;">Place on estate</button></div>';
-      } else if(!placed.length){
-        html += '<div class="empty-note">Build Workshops in Carpentry, then place them here for the whole guild.</div>';
-      }
-      // Selected-tile actions (click a tile on the canvas)
-      if(guildEstateSel){
-        var gg = guildEstateMapGrid();
-        var gcell = gg && gg[guildEstateSel.x] && gg[guildEstateSel.x][guildEstateSel.y];
-        if(gcell){
-          html += '<div class="guild-section-title">Tile ('+guildEstateSel.x+', '+guildEstateSel.y+')</div>';
-          if(gcell.obstacle){
-            var goi = estateObstacleInfo(gcell.obstacle);
-            var canClear = goi && getLevel(state.xp[goi.def.skill]) >= goi.reqLevel;
-            var hasJobHere = ((guildEstateMap.data&&guildEstateMap.data.jobs)||[]).some(function(j){ return j.x===guildEstateSel.x && j.y===guildEstateSel.y; });
-            html += '<div class="guild-member-row"><div class="item-meta">'+(goi?goi.def.label+' &bull; needs '+SKILL_LABELS[goi.def.skill]+' '+goi.reqLevel+' &bull; ~'+Math.round((goi.durationMs||0)/60000)+' min':'Obstacle')+'</div>';
-            if(hasJobHere) html += '<span class="item-meta">being cleared…</span>';
-            else html += '<button class="mini-btn" data-action="guildEstateStartClear" data-x="'+guildEstateSel.x+'" data-y="'+guildEstateSel.y+'" '+(canClear?'':'disabled')+'>Clear</button>';
-            html += '</div>';
-          } else {
-            html += '<div class="empty-note">'+(gcell.type==='paved'?'Paved tile — place a Workshop above.':'Cleared ground.')+' Terraform &amp; paving on the shared estate are coming next.</div>';
-          }
-        }
-      }
-      // Activity slots (up to 5 concurrent, one per member)
-      var gjobs = (guildEstateMap.data && guildEstateMap.data.jobs) || [];
-      html += '<div class="guild-section-title">Activities <span class="item-meta">('+gjobs.length+'/5)</span></div>';
-      if(!gjobs.length){ html += '<div class="empty-note">No activities running. Click a tile with an obstacle, then Clear it — up to 5 members can work the estate at once.</div>'; }
-      else gjobs.forEach(function(j){ var rem=j.readyAt-Date.now(); html += '<div class="guild-member-row"><div><b>'+escapeHtml(j.ownerName||'member')+'</b> <span class="item-meta">clearing ('+j.x+','+j.y+')</span></div><span class="item-meta">'+(rem<=0?'finishing…':guildEstateRemain(rem))+'</span></div>'; });
-    }
-    var nowMs = Date.now(), canManage = guildState.myRank==='leader'||guildState.myRank==='officer';
-    for(var i=0;i<5;i++){
-      var t = guildEstateState.tasks.filter(function(x){ return x.slot===i; })[0];
-      html += '<div class="guild-card">';
-      if(!t){
-        html += '<div class="char-row" style="justify-content:space-between;"><b>Slot '+(i+1)+'</b> <span class="item-meta">empty</span></div>';
-      } else {
-        var it = ALL_SELLABLE[t.output_key], nm = it?it.name:t.output_key, icon = it?it.icon:svgIcon('question','var(--text-faint)');
-        var start = new Date(t.started_at).getTime(), fin = new Date(t.finish_at).getTime();
-        var pct = fin>start ? Math.max(0,Math.min(100,(nowMs-start)/(fin-start)*100)) : 100;
-        var done = nowMs >= fin, mine = authUser && t.user_id===authUser.id;
-        html += '<div class="char-row" style="justify-content:space-between;align-items:center;"><div style="display:flex;align-items:center;gap:8px;">'+icon+'<b>'+escapeHtml(nm)+'</b> <span class="item-meta">x'+t.batches+'</span></div><span class="item-meta">'+escapeHtml(t.username)+(mine?' (you)':'')+'</span></div>';
-        html += '<div class="gest-bar"><div class="gest-fill" id="gest-fill-'+i+'" style="width:'+pct.toFixed(1)+'%"></div></div>';
-        html += '<div class="char-row" style="justify-content:space-between;align-items:center;margin-top:2px;"><span class="item-meta" id="gest-label-'+i+'">'+(done?'Ready to collect':guildEstateRemain(fin-nowMs))+'</span><span class="guild-row-actions">';
-        if(done) html += '<button class="mini-btn" data-action="guildEstateCollect" data-slot="'+i+'" '+(guildEstateState.busy?'disabled':'')+'>Collect</button>';
-        if(mine || canManage) html += '<button class="mini-btn danger" data-action="guildEstateCancel" data-slot="'+i+'">Cancel</button>';
-        html += '</span></div>';
-      }
-      html += '</div>';
-    }
-    html += '<div class="guild-section-title">Start a task</div>';
-    if(guildEstateMyTask()){ return html + '<div class="empty-note">You already have an active task (one per member). Collect or cancel it to start another.</div>'; }
-    if(guildEstateFreeSlot()<0){ return html + '<div class="empty-note">All five slots are busy right now.</div>'; }
-    html += '<div class="char-row" style="gap:4px;flex-wrap:wrap;margin-bottom:6px;">'+GUILD_ESTATE_SKILLS.map(function(sk){ return '<button class="mini-btn'+(guildEstateState.pickSkill===sk?' active':'')+'" data-action="guildEstatePickSkill" data-skill="'+sk+'">'+escapeHtml(CRAFTING_SKILLS[sk].label)+'</button>'; }).join('')+'</div>';
-    var recs = guildEstateRecipesFor(guildEstateState.pickSkill);
-    if(!recs.length){ return html + '<div class="empty-note">You don’t meet the level for any '+escapeHtml(CRAFTING_SKILLS[guildEstateState.pickSkill].label)+' recipe yet.</div>'; }
-    html += '<div class="char-row" style="gap:6px;flex-wrap:wrap;align-items:center;">';
-    html += '<select id="guildEstateRecipe" class="chat-input" style="flex:1 1 200px;min-width:150px;">'+recs.map(function(r){ var afford=hasInputs(r.inputs,1); return '<option value="'+r.id+'">'+escapeHtml(r.name)+' — '+escapeHtml(guildEstateInputsLabel(r.inputs))+(afford?'':' (need mats)')+'</option>'; }).join('')+'</select>';
-    html += '<input id="guildEstateBatches" class="chat-input" type="number" min="1" max="100" value="'+guildEstateState.pickBatches+'" style="width:70px;flex:0 0 auto;">';
-    html += '<button class="action-btn" data-action="guildEstateStart" '+(guildEstateState.busy?'disabled':'')+' style="width:auto;flex:0 0 auto;">Start</button>';
-    html += '</div><div class="empty-note" style="margin-top:6px;">Inputs come from your inventory; you earn the skill XP and the output goes to the guild bank.</div>';
-    return html;
-  }
-  function updateGuildEstateLive(){
-    if(currentCategory!=='guild' || guildSub!=='estate') return;
-    var nowMs = Date.now();
-    guildEstateState.tasks.forEach(function(t){
-      var fill=document.getElementById('gest-fill-'+t.slot);
-      if(!fill) return;
-      var start=new Date(t.started_at).getTime(), fin=new Date(t.finish_at).getTime();
-      var pct = fin>start ? Math.max(0,Math.min(100,(nowMs-start)/(fin-start)*100)) : 100;
-      fill.style.width = pct.toFixed(1)+'%';
-      var label=document.getElementById('gest-label-'+t.slot);
-      var done = nowMs>=fin;
-      if(label) label.textContent = done ? 'Ready to collect' : guildEstateRemain(fin-nowMs);
-      if(done && !t._wasDone){ t._wasDone=true; needsRender=true; } // just finished -> rebuild to reveal Collect
-    });
+    estUse(true);
+    guildEstateEnsure();
+    var html = '';
+    if(guildEstate.error){ html += '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad);">'+escapeHtml(guildEstate.error)+'</div>'; }
+    if(guildEstate.status !== 'ready') return html + '<div class="empty-note">Loading the shared guild estate&hellip;</div>';
+    return html + renderEstateTab();
   }
 
   // ---- Guild Bosses (Phase 4): async damage-pool raids ----
@@ -10188,7 +9988,7 @@
     var html = '';
     if(currentCategory==='gathering') html = renderGatherTab(currentSub);
     else if(currentCategory==='crafting') html = '<div class="'+(craftOnlyAffordable?'craft-filtering':'')+'"><div class="craft-filter-bar"><button class="craft-filter-btn'+(craftOnlyAffordable?' on':'')+'" data-action="toggleCraftFilter">'+(craftOnlyAffordable?'\u2611':'\u2610')+' Only show items I have materials for</button></div>'+renderCraftTab(currentSub)+'</div>';
-    else if(currentCategory==='estate') html = renderEstateTab();
+    else if(currentCategory==='estate'){ estUse(false); html = renderEstateTab(); }
     else if(currentCategory==='farming') html = renderFarmingTab();
     else if(currentCategory==='combat') html = renderCombatTab();
     else if(currentCategory==='faith') html = renderFaithTab(currentSub);
@@ -10198,8 +9998,8 @@
     else if(currentCategory==='chat') html = renderChatTab();
     else if(currentCategory==='leaderboard'){ leaderboardFetch(); html = renderLeaderboardTab(); }
     document.getElementById('content').innerHTML = html;
-    if(currentCategory==='estate') renderEstateCanvas();
-    if(currentCategory==='guild' && guildSub==='estate') renderGuildEstateCanvas();
+    if(currentCategory==='estate'){ estUse(false); renderEstateCanvas(); }
+    if(currentCategory==='guild' && guildSub==='estate' && guildEstate.status==='ready'){ estUse(true); renderEstateCanvas(); }
     if(currentCategory==='chat'){ var _cm=document.getElementById('chatMessages'); if(_cm) _cm.scrollTop=_cm.scrollHeight; }
   }
 
@@ -10942,7 +10742,6 @@
   function updateDynamic(){
     updateHeader();
     updateGlobalActionBarLive();
-    updateGuildEstateLive();
     updateGuildBossLive();
 
     if(state.activity.type==='gather' || state.activity.type==='craft'){
@@ -11019,8 +10818,8 @@
       }
     }
 
-    if(currentCategory==='estate' && state.estate && state.estate.job){
-      var ejob = state.estate.job;
+    if(estActive && estActive.job && document.getElementById('estateJobFill')){
+      var ejob = estActive.job;
       var ejNow = Date.now();
       var ejFill = document.getElementById('estateJobFill');
       if(ejFill) ejFill.style.width = clamp((ejNow-ejob.startAt)/(ejob.readyAt-ejob.startAt)*100,0,100) + '%';
@@ -11544,20 +11343,6 @@
       guildBankWithdraw(btn.getAttribute('data-item'));
     } else if(action==='guildBankSetWithdrawRank'){
       guildBankSetWithdrawRank(btn.getAttribute('data-rank'));
-    } else if(action==='guildEstatePickSkill'){
-      guildEstateState.pickSkill = btn.getAttribute('data-skill');
-    } else if(action==='guildEstateStart'){
-      guildEstateStart();
-    } else if(action==='guildEstateCollect'){
-      guildEstateCollect(parseInt(btn.getAttribute('data-slot'),10));
-    } else if(action==='guildEstateCancel'){
-      if(confirm('Cancel this estate task? Materials already spent are not refunded.')) guildEstateCancel(parseInt(btn.getAttribute('data-slot'),10));
-    } else if(action==='guildEstatePlaceWorkshop'){
-      guildEstatePlaceWorkshop();
-    } else if(action==='guildEstateRemoveWorkshop'){
-      guildEstateRemoveWorkshop(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
-    } else if(action==='guildEstateStartClear'){
-      guildEstateStartClear(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
     } else if(action==='guildBossSummon'){
       guildBossSummon(btn.getAttribute('data-key'));
     } else if(action==='guildBossAssault'){
