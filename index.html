@@ -8099,11 +8099,16 @@
       authError = ''; authUsernameDraft = '';
       chatEnsureSubscribed();
       chronicleEnsureSubscribed();
-      profileSync(true); leaderboardFetch(true); cloudLoad();
+      // Pull the cloud save FIRST (source of truth). If it adopts, the page reloads and the
+      // profile push happens afterwards with the correct data -- so a stale device can't
+      // overwrite your leaderboard profile with an empty/behind state.
+      await cloudLoad();
+      if(!cloudReloading){ profileSync(true); leaderboardFetch(true); }
     }catch(err){ authError = authFriendlyError(err, authMode); }
     authBusy = false; render();
   }
   async function authLogout(){
+    try{ await cloudSave(false, true); }catch(e){}   // flush the latest save up before signing out
     try{ if(chatClient && chatClient.auth) await chatClient.auth.signOut(); }catch(e){}
     authUser = null;
     setLocalSaveOwner('');   // local save becomes anonymous again until next login
@@ -8120,7 +8125,7 @@
       if(!chatClient) return;
       var res = await chatClient.auth.getSession();
       var sess = res.data && res.data.session;
-      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; profileSync(true); cloudLoad(); }
+      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; await cloudLoad(); if(!cloudReloading) profileSync(true); }
     }catch(e){}
   }
 
@@ -8198,21 +8203,23 @@
         addLog('Loaded your cloud save.');
         setTimeout(function(){ location.reload(); }, 500);
       }
-      if(hasCloud && cloudScore > localScore){
-        // Cloud has MORE progress. Adopt it only when there's no OWN progress to lose (local
-        // empty, or it belongs to a different account). Otherwise it's a genuine conflict --
-        // keep local untouched and just notify (never silently replace real local progress).
-        if(localScore <= 0 || !ownedByUs){ adoptCloud(); return; }
-        cloudNewerAvailable = true;
-        addLog('A cloud save with more progress exists on your account; your current progress was kept. Contact support to merge.', 'danger');
-      } else if(hasCloud && !ownedByUs){
-        // Local isn't ours and our cloud is >= it: load our own cloud instead of keeping theirs.
-        adoptCloud(); return;
+      if(hasCloud){
+        // The cloud save is the source of truth. On login we PULL it so your character
+        // follows you across devices. We keep local instead only when OUR OWN local is
+        // STRICTLY further along (e.g. you played more on this device while offline) -- then
+        // push it up so newer progress isn't lost. A different account's local never
+        // overwrites the cloud; we always load our own cloud in that case. The server's
+        // forward-only progress guard still blocks any empty/stale push.
+        if(ownedByUs && localScore > cloudScore){
+          setLocalSaveOwner(authUser.id);
+          cloudSave();                  // local is ahead & ours -> push forward (becomes truth)
+        } else if(!ownedByUs || cloudScore > localScore){
+          adoptCloud(); return;         // cloud is ahead, or local isn't ours -> pull the cloud
+        }
+        // else: ours and already in sync (equal progress) -> nothing to do
       } else if(ownedByUs && localScore > 0){
-        // Our local is >= cloud (or there is no cloud yet): push it forward as the backup.
-        // Non-forced, so the server's forward-only guard still protects against regressions.
         setLocalSaveOwner(authUser.id);
-        cloudSave();
+        cloudSave();                    // no cloud yet -> seed it from our current local
       }
     }catch(e){}
   }
@@ -8401,7 +8408,7 @@
     return { weapons: weapons, armor: armor };
   }
   async function profileSync(force){
-    if(!CHAT_ENABLED || !authUser || !authUser.id) return;
+    if(!CHAT_ENABLED || !authUser || !authUser.id || cloudReloading) return;  // don't push a pre-pull state
     var now = Date.now();
     if(!force && now - profileLastSync < 90000) return;
     profileLastSync = now;
