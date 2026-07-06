@@ -4262,7 +4262,7 @@
       activeCompanion: null,
       popupQueue: [],
       popupBatchTotal: 0,
-      settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true },
+      settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true },
       dungeonProgress: {},
       estate: Object.assign({ grid: generateEstateGrid(), expansionsPurchased: 0, job: null }, generateEstateEdges()),
       lockedItems: {},
@@ -5178,6 +5178,7 @@
           if(typeof state.settings.popupSupreme !== 'boolean') state.settings.popupSupreme = true;
           if(typeof state.settings.popupFantastic !== 'boolean') state.settings.popupFantastic = true;
           if(typeof state.settings.popupFamiliar !== 'boolean') state.settings.popupFamiliar = true;
+          if(typeof state.settings.chatFlash !== 'boolean') state.settings.chatFlash = true;
           if(!state.dungeonProgress || typeof state.dungeonProgress !== 'object') state.dungeonProgress = {};
           if(!state.lockedItems || typeof state.lockedItems !== 'object') state.lockedItems = {};
           try {
@@ -5253,10 +5254,12 @@
     return false;
   }
   function renderCatTabs(){
+    if(currentCategory==='chat') chatHasUnread = false; // viewing chat clears the unread flash
     var farmReady = hasReadyFarmingPlot();
+    var chatFlashOn = chatHasUnread && (!state.settings || state.settings.chatFlash !== false);
     var html = CATEGORIES.map(function(c){
       var active = c.id===currentCategory ? ' active' : '';
-      var flash = (c.id==='farming' && farmReady) ? ' flash' : '';
+      var flash = ((c.id==='farming' && farmReady) || (c.id==='chat' && chatFlashOn)) ? ' flash' : '';
       return '<button class="cat-btn'+active+flash+'" data-cat="'+c.id+'" style="--cat-color:'+c.color+'"><span class="seal">'+c.icon+'</span>'+c.label+'</button>';
     }).join('');
     document.getElementById('catTabs').innerHTML = html;
@@ -6764,7 +6767,8 @@
     {key:'popupRare', label:'Rare item popup', desc:'Show a popup when a Rare item is forged'},
     {key:'popupSupreme', label:'Supreme item popup', desc:'Show a popup when a Supreme item is forged'},
     {key:'popupFantastic', label:'Fantastic item popup', desc:'Show a popup when a Fantastic item is forged'},
-    {key:'popupFamiliar', label:'Familiar popup', desc:'Show a popup when a familiar is summoned or levels up'}
+    {key:'popupFamiliar', label:'Familiar popup', desc:'Show a popup when a familiar is summoned or levels up'},
+    {key:'chatFlash', label:'Chat tab flash', desc:'Flash the Chat tab when a new message arrives'}
   ];
   var pwChangeMsg = '', pwChangeOk = false, pwChangeBusy = false;
   async function changePassword(){
@@ -8194,6 +8198,7 @@
   };
   var CHAT_ENABLED = !!(CHAT_CONFIG.supabaseUrl && CHAT_CONFIG.supabaseAnonKey);
   var chatMessages = [];
+  var chatHasUnread = false;   // set when a message arrives while off the Chat tab -> flashes the tab
   var chatClient = null;
   var chatStatus = CHAT_ENABLED ? 'connecting' : 'unconfigured'; // unconfigured|connecting|online|error
   var chatLastSentAt = 0;
@@ -8503,6 +8508,7 @@
     chatMessages.push(msg);
     if(chatMessages.length > 120) chatMessages = chatMessages.slice(-120);
     if(currentCategory==='chat') chatRenderMessagesOnly();
+    else { chatHasUnread = true; renderCatTabs(); } // flash the Chat tab (tab bar only; won't disturb inputs)
   }
   async function chatSend(){
     var input = document.getElementById('chatInput');
@@ -9392,6 +9398,7 @@
     guildChatMessages.push(m);
     if(guildChatMessages.length>120) guildChatMessages=guildChatMessages.slice(-120);
     if(currentCategory==='chat' && chatChannel==='guild') guildChatRenderOnly();
+    else if(currentCategory!=='chat'){ chatHasUnread = true; renderCatTabs(); } // flash the Chat tab (tab bar only)
   }
   function guildChatMaybeSubscribe(){
     if(!chatClient || !guildState.guild) return;
