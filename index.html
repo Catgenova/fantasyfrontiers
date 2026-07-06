@@ -8332,7 +8332,36 @@
       var lv = getLevel(state.xp[ALL_MAIN_SKILL_IDS[i]]||0);
       skills[ALL_MAIN_SKILL_IDS[i]] = lv; total += lv;
     }
-    return { total_level: total, gold: Math.floor(state.gold||0), skills: skills };
+    return { total_level: total, gold: Math.floor(state.gold||0), skills: skills, equipment: computeEquipment() };
+  }
+  // Currently-equipped weapons + armor (NOT tools), captured as display-ready
+  // {slot,name,rarity} entries for a player's public leaderboard profile. Names are
+  // escaped and rarity is resolved locally at render time, so none of this is trusted HTML.
+  function computeEquipment(){
+    var weapons = [], armor = [];
+    if(state.equippedMainhand){
+      var w = getEquippedWeaponItem(state);
+      if(w && w !== WEAPON_BASE && w.name){ weapons.push({ slot:'Mainhand', name:w.name, rarity:state.equippedMainhandRarity||w.rarity||'normal' }); }
+    }
+    if(state.equippedOffhand){
+      var off = getEquippedOffhandItem(state);
+      if(off && off.name){ weapons.push({ slot:'Offhand', name:off.name, rarity:state.equippedOffhandRarity||off.rarity||'normal' }); }
+    }
+    ARMOR_SLOTS.forEach(function(slot){
+      var tier = (state.armorSlots && state.armorSlots[slot.id]) || 0;
+      if(tier > 0){
+        var a = getEquippedSlotItem(slot, tier, state.armorRarities[slot.id]);
+        if(a && a.name){ armor.push({ slot:slot.label, name:a.name, rarity:(state.armorRarities&&state.armorRarities[slot.id])||'normal' }); }
+      }
+    });
+    BODY_ARMOR_SLOTS.forEach(function(slot){
+      var s = state.bodyArmor && state.bodyArmor[slot];
+      if(s && s.tier > 0){
+        var item = BODY_ARMOR_ITEMS['bodyarmor_'+s.material+'_'+slot+'_t'+(s.tier-1)+'_'+s.rarity];
+        if(item && item.name){ armor.push({ slot:(BODY_ARMOR_LABELS[slot]||slot), name:item.name, rarity:s.rarity||'normal' }); }
+      }
+    });
+    return { weapons: weapons, armor: armor };
   }
   async function profileSync(force){
     if(!CHAT_ENABLED || !authUser || !authUser.id) return;
@@ -8346,7 +8375,7 @@
       // table is no longer client-writable). id + username are derived server-side from
       // the auth token; a rejected submission just leaves the last accepted row intact.
       await chatClient.functions.invoke('submit_profile', {
-        body: { total_level: stats.total_level, gold: stats.gold, skills: stats.skills }
+        body: { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, equipment: stats.equipment }
       });
     }catch(e){}
   }
@@ -8360,7 +8389,7 @@
     if(!chatClient){ if(!(await authEnsureClient())){ leaderboardStatus='error'; if(currentCategory==='leaderboard') render(); return; } }
     try{
       var res = await chatClient.from('profiles')
-        .select('id,username,total_level,gold,skills,updated_at')
+        .select('id,username,total_level,gold,skills,equipment,updated_at')
         .order('total_level', { ascending:false })
         .limit(LEADERBOARD_LIMIT);
       if(res.error) throw res.error;
@@ -8383,6 +8412,23 @@
     html += '<button class="action-btn" data-action="closeProfile" style="width:auto;flex:0 0 auto;">\u2039 Back</button>';
     html += '<div class="profile-head"><div class="profile-name">'+escapeHtml(p.username||'anon')+'</div>'
       +'<div class="profile-stats"><span>Total Level <b>'+fmt(p.total_level||0)+'</b></span><span>Gold <b>'+fmt(p.gold||0)+'</b></span></div></div>';
+    // Currently-equipped weapons + armor. Names/slots are escaped; rarity is a lookup key
+    // into a fixed colour map -- nothing from the stored profile is injected as HTML.
+    var eq = p.equipment;
+    if(eq && ((eq.weapons && eq.weapons.length) || (eq.armor && eq.armor.length))){
+      var rarityColor = { rare:'var(--rarity-rare)', supreme:'var(--rarity-superior)', fantastic:'var(--rarity-fantastic)' };
+      var eqGroup = function(title, items){
+        if(!items || !items.length) return '';
+        var h = '<div class="profile-group"><div class="profile-group-head">'+title+'</div><div class="profile-group-body">';
+        items.forEach(function(it){
+          if(!it || !it.name) return;
+          var c = rarityColor[it.rarity] || 'var(--text)';
+          h += '<span class="profile-skill" style="color:'+c+'">'+escapeHtml(String(it.slot||''))+': '+escapeHtml(String(it.name||''))+'</span>';
+        });
+        return h + '</div></div>';
+      };
+      html += '<div class="profile-skills">'+eqGroup('Weapons', eq.weapons)+eqGroup('Armor', eq.armor)+'</div>';
+    }
     var skills = p.skills || {};
     html += '<div class="profile-skills">';
     SKILL_GROUPS.forEach(function(g){
