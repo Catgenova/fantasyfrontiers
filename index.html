@@ -4252,7 +4252,13 @@
   var selectedAmuletTier = null;
 
   var logVersion = 0;
+  // When set (only during applyOfflineProgress), gained XP/items/gold accumulate here and
+  // the noisy per-event log + floating text + chronicle broadcasts are suppressed; the
+  // results are shown in one "while you were away" summary popup instead.
+  var offlineCapture = null;
+  var offlineSummaryData = null;   // holds the "while you were away" summary until dismissed
   function addLog(msg, cls){
+    if(offlineCapture) return;
     state.log.push({msg:msg, cls:cls||''});
     if(state.log.length > 40) state.log.shift();
     logVersion++;
@@ -4275,6 +4281,7 @@
 
   var floatingTextCount = 0;
   function spawnFloatingText(text, cls){
+    if(offlineCapture) return;
     var layer = document.getElementById('floatLayer');
     var gab = document.getElementById('globalActionBar');
     if(!layer || !gab) return;
@@ -4293,6 +4300,7 @@
   // Floating text anchored to a specific on-screen bar (e.g. the global action bar's
   // skill/physique tracks) rather than jittered around the center of the whole screen.
   function spawnBarXpText(targetElId, amount){
+    if(offlineCapture) return;
     var target = document.getElementById(targetElId);
     var layer = document.getElementById('floatLayer');
     if(!target || !layer) return;
@@ -4330,6 +4338,7 @@
     var before = getLevel(state.xp[skill]);
     if(isTeaActive()) amount = amount * (1 + state.activeTea.xpBoost);
     state.xp[skill] += amount;
+    if(offlineCapture){ offlineCapture.xp[skill] = (offlineCapture.xp[skill]||0) + amount; }
     var after = getLevel(state.xp[skill]);
     if(after > before){
       addLog('Your ' + skill + ' level increased to ' + after + '!', 'important');
@@ -4345,6 +4354,7 @@
       var id = pair[0], amount = pair[1];
       var before = getLevel(state.physique[id]||0);
       state.physique[id] = (state.physique[id]||0) + amount;
+      if(offlineCapture){ offlineCapture.physique[id] = (offlineCapture.physique[id]||0) + amount; }
       var after = getLevel(state.physique[id]);
       if(after > before){
         needsRender = true;
@@ -4360,6 +4370,7 @@
     });
   }
   function addItem(id, qty){
+    if(offlineCapture){ offlineCapture.items[id] = (offlineCapture.items[id]||0) + qty; }
     var wasZero = !(state.inventory[id] > 0);
     state.inventory[id] = (state.inventory[id]||0) + qty;
     if(wasZero) needsRender = true;
@@ -4931,11 +4942,15 @@
   }
 
   function applyOfflineProgress(elapsedMs){
-    var capped = Math.min(elapsedMs, 8*3600*1000);
+    var capped = Math.min(elapsedMs, 12*3600*1000);   // offline progress caps at 12 hours
     if(capped < 3000) return;
     var regenSeconds = Math.floor(capped/1000/15);
     if(regenSeconds > 0) state.playerHp = Math.min(maxHp(state), state.playerHp + regenSeconds);
     var act = state.activity;
+    if(!act || (act.type !== 'gather' && act.type !== 'craft' && act.type !== 'combat')) return;
+    var goldBefore = state.gold;
+    offlineCapture = { xp:{}, physique:{}, items:{}, gold:0, elapsedMs:capped, activityType:act.type };
+    try{
     if(act.type === 'gather'){
       var item = ALL_GATHER_ITEMS[act.itemId];
       var ticks = Math.floor(capped/1000 / item.time);
@@ -4989,9 +5004,25 @@
       }
       state.activity = { type:null };
     } else if(act.type === 'combat'){
-      state.activity = { type:null };
-      addLog('While away, you stepped back from battle to rest.', '');
+      // Fast-forward the real combat ticks: same player/monster attack timing and auto-eat
+      // as live, so kills, XP, gold and drops match. Stops early if food runs out (retreat).
+      var _pStyle = getWeaponStyle(state.equippedMainhand);
+      var _monster = MONSTERS.filter(function(x){ return x.id===act.monsterId; })[0];
+      if(_pStyle && _monster){
+        var _pInt = Math.max(200, _pStyle.attackSpeed*1000);
+        var _mInt = Math.max(200, _monster.attackSpeed*1000*(1+getFamiliarEnemySlowPct()));
+        var _nextP = _pInt, _nextM = _mInt, _guard = 0;
+        while(state.activity.type==='combat' && _guard++ < 300000){
+          if(_nextP <= _nextM){ if(_nextP > capped) break; playerAttackTick(); _nextP += _pInt; }
+          else { if(_nextM > capped) break; monsterAttackTick(); autoEatCheck(); _nextM += _mInt; }
+        }
+      }
     }
+    }catch(e){}
+    offlineCapture.gold = state.gold - goldBefore;
+    var _sum = offlineCapture;
+    offlineCapture = null;
+    if(Object.keys(_sum.xp).length || Object.keys(_sum.physique).length || Object.keys(_sum.items).length || _sum.gold > 0){ offlineSummaryData = _sum; }
   }
 
   async function initGame(){
@@ -6653,6 +6684,35 @@
     }catch(e){ pwChangeMsg = 'Could not update password. Please try again.'; pwChangeOk = false; }
     pwChangeBusy = false; renderSettingsModal();
   }
+  function offlineItemName(id){
+    var m = ALL_SELLABLE[id] || CORPSE_ITEM_MAP[id] || BROKEN_RELIC_MAP[id];
+    return (m && m.name) || id;
+  }
+  function renderOfflineSummary(){
+    var existing = document.getElementById('offlineOverlay');
+    if(!offlineSummaryData){ if(existing && existing.parentNode) existing.parentNode.removeChild(existing); return; }
+    var s = offlineSummaryData;
+    var ov = existing;
+    if(!ov){ ov = document.createElement('div'); ov.id = 'offlineOverlay'; ov.className = 'familiar-popup-overlay'; document.getElementById('app').appendChild(ov); }
+    var mins = Math.max(1, Math.round(s.elapsedMs/60000));
+    var timeStr = mins>=60 ? (Math.floor(mins/60)+'h '+(mins%60)+'m') : (mins+'m');
+    var actLabel = s.activityType==='combat' ? 'battle' : (s.activityType==='craft' ? 'crafting' : 'gathering');
+    var html = '<div class="familiar-popup-card" style="max-width:420px;text-align:left;max-height:80vh;overflow:auto;">';
+    html += '<div class="familiar-popup-title">While You Were Away</div>';
+    html += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">You were gone for about <b>'+timeStr+'</b>. Your '+actLabel+' continued:</div>';
+    var xpRows = '';
+    Object.keys(s.xp).forEach(function(sk){ if(s.xp[sk]>=1) xpRows += '<span class="profile-skill">'+escapeHtml(SKILL_LABELS[sk]||sk)+' <b>+'+fmt(Math.floor(s.xp[sk]))+' xp</b></span>'; });
+    Object.keys(s.physique).forEach(function(pid){ if(s.physique[pid]>=1){ var pm=PHYSIQUE_SKILLS.filter(function(p){return p.id===pid;})[0]; xpRows += '<span class="profile-skill">'+escapeHtml((pm&&pm.name)||pid)+' <b>+'+fmt(Math.floor(s.physique[pid]))+' xp</b></span>'; } });
+    if(xpRows){ html += '<div class="profile-group"><div class="profile-group-head">Experience</div><div class="profile-group-body">'+xpRows+'</div></div>'; }
+    var itemRows = '';
+    Object.keys(s.items).forEach(function(id){ if(s.items[id]>=1) itemRows += '<span class="profile-skill">'+escapeHtml(offlineItemName(id))+' <b>x'+fmt(s.items[id])+'</b></span>'; });
+    if(s.gold>0) itemRows += '<span class="profile-skill">Gold <b>+'+fmt(s.gold)+'</b></span>';
+    if(itemRows){ html += '<div class="profile-group"><div class="profile-group-head">Gains</div><div class="profile-group-body">'+itemRows+'</div></div>'; }
+    if(!xpRows && !itemRows){ html += '<div style="font-size:12px;color:var(--text-faint);">Nothing was produced &mdash; you likely ran out of materials or food.</div>'; }
+    html += '<button class="action-btn" data-action="closeOfflineSummary" style="margin-top:12px;">Collect</button>';
+    html += '</div>';
+    ov.innerHTML = html;
+  }
   function renderSettingsModal(){
     var overlay = document.getElementById('settingsOverlay');
     if(!settingsOpen){ overlay.className = ''; overlay.innerHTML = ''; return; }
@@ -8295,6 +8355,7 @@
       .subscribe();
   }
   function chronicleBroadcast(kind, body){
+    if(offlineCapture) return;   // don't broadcast events accrued offline
     if(!CHAT_ENABLED || !chatClient || !authUser || !authUser.id) return;
     var text = String(body == null ? '' : body).slice(0, 120);
     if(!text) return;
@@ -9192,6 +9253,7 @@
     renderPopupQueue();
     renderSettingsModal();
     renderSkillInfoPopup();
+    renderOfflineSummary();
   }
 
   // Lightweight per-tick refresh: only touches text/width of existing
@@ -9733,6 +9795,8 @@
       if(state.popupQueue.length === 0) state.popupBatchTotal = 0;
     } else if(action==='openSettings'){
       settingsOpen = true;
+    } else if(action==='closeOfflineSummary'){
+      offlineSummaryData = null;
     } else if(action==='closeSettings'){
       settingsOpen = false;
     } else if(action==='toggleSetting'){
