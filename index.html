@@ -145,6 +145,8 @@
   .mini-btn:hover{border-color:var(--gold);}
   .mini-btn.danger{color:var(--hp-bad);border-color:rgba(166,58,47,0.4);}
   .mini-btn.active{background:var(--cat-guild);border-color:var(--cat-guild);color:#fff;}
+  .gest-bar{height:8px;border-radius:5px;background:rgba(0,0,0,0.10);overflow:hidden;margin:6px 0 2px;}
+  .gest-fill{height:100%;background:linear-gradient(90deg,var(--cat-estate),var(--cat-guild));border-radius:5px;transition:none;}
   .chat-channel-bar{display:flex;gap:4px;margin-bottom:8px;}
   .chat-channel-btn{font-family:var(--font-body);font-size:12px;font-weight:600;background:rgba(255,255,255,0.35);border:1px solid var(--border);color:var(--text-faint);border-radius:6px;padding:5px 12px;cursor:pointer;}
   .chat-channel-btn.active{background:var(--cat-chat);border-color:var(--cat-chat);color:#fff;}
@@ -8759,6 +8761,7 @@
       if(res.left || res.disbanded){
         guildState.guild=null; guildState.members=[]; guildState.myRank=null; guildState.applications=[];
         guildBrowseState.status='idle'; guildBankState.status='idle'; guildBankState.guildId=null;
+        guildEstateState.status='idle'; guildEstateState.guildId=null;
         guildTeardownChat(); guildReload(true); return;
       }
       guildReload(true);
@@ -8812,7 +8815,7 @@
     html += '<div class="guild-subtabs">'+GUILD_SUBS.map(function(s){ return '<button class="guild-subtab'+(s.id===guildSub?' active':'')+'" data-action="guildSubtab" data-sub="'+s.id+'">'+s.icon+' '+s.label+'</button>'; }).join('')+'</div>';
     if(guildSub==='roster') html += renderGuildRoster();
     else if(guildSub==='bank') html += renderGuildBank();
-    else if(guildSub==='estate') html += '<div class="empty-note">The shared <b>Guild Estate</b> is coming soon &mdash; up to 5 concurrent build tasks (one per member) feeding the guild bank and guild-wide upgrades.</div>';
+    else if(guildSub==='estate') html += renderGuildEstate();
     else if(guildSub==='bosses') html += '<div class="empty-note">Guild <b>Bosses</b> are coming soon &mdash; whittle down a shared boss together; everyone who deals damage shares the loot.</div>';
     return html;
   }
@@ -8974,6 +8977,138 @@
       html += '<div class="empty-note" style="margin-top:8px;">Withdrawals are restricted to '+(guildBankState.minWithdrawRank==='leader'?'the leader':'officers and above')+'.</div>';
     }
     return html;
+  }
+
+  // ---- Guild Estate (Phase 3): 5 shared estate-crafting task slots ----
+  var GUILD_ESTATE_SKILLS = ['stonecutting','masonry','paving'];
+  var guildEstateState = { status:'idle', guildId:null, tasks:[], busy:false, error:'', pickSkill:'stonecutting', pickBatches:10 };
+  function guildEstateInvoke(action, payload){
+    if(!chatClient || !authUser) return Promise.resolve({ ok:false, error:'Sign in first.' });
+    var body={action:action}; if(payload){ for(var k in payload){ if(payload.hasOwnProperty(k)) body[k]=payload[k]; } }
+    return chatClient.functions.invoke('guild_estate', { body: body }).then(function(r){
+      if(r && r.data) return r.data;
+      return { ok:false, error:(r && r.error && r.error.message) || 'Request failed.' };
+    }, function(){ return { ok:false, error:'Network error.' }; });
+  }
+  function guildEstateApply(res){ guildEstateState.status='ready'; guildEstateState.tasks = res.tasks || []; }
+  function guildEstateLoad(){
+    if(!guildState.guild) return;
+    guildEstateState.status='loading'; guildEstateState.guildId = guildState.guild.id;
+    guildEstateInvoke('get', {}).then(function(res){
+      if(!res.ok){ guildEstateState.status='error'; guildEstateState.error=res.error||'Could not load the estate.'; if(currentCategory==='guild') render(); return; }
+      guildEstateApply(res); guildEstateState.error=''; if(currentCategory==='guild') render();
+    });
+  }
+  function guildEstateMyTask(){ return guildEstateState.tasks.filter(function(t){ return authUser && t.user_id===authUser.id; })[0]; }
+  function guildEstateFreeSlot(){ for(var i=0;i<5;i++){ if(!guildEstateState.tasks.some(function(t){ return t.slot===i; })) return i; } return -1; }
+  function guildEstateRecipesFor(skill){
+    var sk = CRAFTING_SKILLS[skill]; if(!sk) return [];
+    var lvl = getLevel(state.xp[skill]||0);
+    return sk.recipes.filter(function(r){ return r.levelReq <= lvl; });
+  }
+  function guildEstateInputsLabel(inputs){ return Object.keys(inputs).map(function(k){ var it=ALL_SELLABLE[k]; return (it?it.name:k)+' x'+inputs[k]; }).join(', '); }
+  function guildEstateRemain(ms){ if(ms<=0) return 'Ready'; var s=Math.ceil(ms/1000); if(s<60) return '~'+s+'s left'; var m=Math.ceil(s/60); if(m<60) return '~'+m+'m left'; var h=Math.floor(m/60); return '~'+h+'h '+(m%60)+'m left'; }
+  function guildEstateStart(){
+    if(guildEstateState.busy) return;
+    var skill=guildEstateState.pickSkill;
+    var recipeSel=document.getElementById('guildEstateRecipe'), batchEl=document.getElementById('guildEstateBatches');
+    var recipeId = recipeSel ? recipeSel.value : '';
+    var batches = parseInt((batchEl&&batchEl.value)||'0',10);
+    if(!(batches>0)) batches=1; if(batches>100) batches=100;
+    var recipe = ALL_CRAFT_RECIPES[recipeId];
+    if(!recipe){ guildEstateState.error='Pick a recipe.'; render(); return; }
+    if(getLevel(state.xp[skill]||0) < recipe.levelReq){ guildEstateState.error='Your level is too low for that recipe.'; render(); return; }
+    if(!hasInputs(recipe.inputs, batches)){ guildEstateState.error='Not enough materials for '+batches+'x '+recipe.name+'.'; render(); return; }
+    if(guildEstateMyTask()){ guildEstateState.error='You already have an active estate task.'; render(); return; }
+    var slot = guildEstateFreeSlot();
+    if(slot<0){ guildEstateState.error='All 5 estate slots are busy.'; render(); return; }
+    guildEstateState.busy=true; guildEstateState.error=''; guildEstateState.pickBatches=batches; render();
+    guildEstateInvoke('start', { slot:slot, skill_id:skill, output_key:recipe.id, batches:batches, time_per_batch_ms:Math.round(recipe.time*1000) }).then(function(res){
+      guildEstateState.busy=false;
+      if(!res.ok){ guildEstateState.error=res.error||'Could not start the task.'; render(); return; }
+      consumeInputs(recipe.inputs, batches); saveGame(); guildEstateApply(res); render();
+    });
+  }
+  function guildEstateCollect(slot){
+    if(guildEstateState.busy) return;
+    guildEstateState.busy=true; guildEstateState.error=''; render();
+    guildEstateInvoke('collect', { slot:slot }).then(function(res){
+      guildEstateState.busy=false;
+      if(!res.ok){ guildEstateState.error=res.error||'Collect failed.'; render(); return; }
+      var c=res.collected;
+      if(c){
+        var nm = (ALL_SELLABLE[c.output_key] && ALL_SELLABLE[c.output_key].name) || c.output_key;
+        if(authUser && c.owner===authUser.id){
+          var recipe=ALL_CRAFT_RECIPES[c.output_key];
+          if(recipe) addXp(c.skill, recipe.xp*(c.batches||1));
+          addLog('Collected '+(c.qty||0)+'x '+nm+' into the guild bank (+'+c.skill+' XP).','chronicle');
+          saveGame();
+        } else {
+          addLog('Collected '+(c.qty||0)+'x '+nm+' into the guild bank.','chronicle');
+        }
+      }
+      guildEstateApply(res); guildBankState.status='idle'; render();
+    });
+  }
+  function guildEstateCancel(slot){
+    guildEstateInvoke('cancel', { slot:slot }).then(function(res){
+      if(res.ok){ guildEstateApply(res); render(); }
+      else { guildEstateState.error=res.error||'Could not cancel.'; render(); }
+    });
+  }
+  function renderGuildEstate(){
+    if(guildEstateState.status==='idle' || guildEstateState.guildId !== (guildState.guild&&guildState.guild.id)) guildEstateLoad();
+    var html='';
+    if(guildEstateState.error){ html += '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad);">'+escapeHtml(guildEstateState.error)+'</div>'; }
+    if(guildEstateState.status==='loading'||guildEstateState.status==='idle'){ return html+'<div class="empty-note">Loading the estate&hellip;</div>'; }
+    html += '<div class="section-intro">Five shared work slots. Each member can run one estate-crafting task; finished goods flow into the guild bank.</div>';
+    var nowMs = Date.now(), canManage = guildState.myRank==='leader'||guildState.myRank==='officer';
+    for(var i=0;i<5;i++){
+      var t = guildEstateState.tasks.filter(function(x){ return x.slot===i; })[0];
+      html += '<div class="guild-card">';
+      if(!t){
+        html += '<div class="char-row" style="justify-content:space-between;"><b>Slot '+(i+1)+'</b> <span class="item-meta">empty</span></div>';
+      } else {
+        var it = ALL_SELLABLE[t.output_key], nm = it?it.name:t.output_key, icon = it?it.icon:svgIcon('question','var(--text-faint)');
+        var start = new Date(t.started_at).getTime(), fin = new Date(t.finish_at).getTime();
+        var pct = fin>start ? Math.max(0,Math.min(100,(nowMs-start)/(fin-start)*100)) : 100;
+        var done = nowMs >= fin, mine = authUser && t.user_id===authUser.id;
+        html += '<div class="char-row" style="justify-content:space-between;align-items:center;"><div style="display:flex;align-items:center;gap:8px;">'+icon+'<b>'+escapeHtml(nm)+'</b> <span class="item-meta">x'+t.batches+'</span></div><span class="item-meta">'+escapeHtml(t.username)+(mine?' (you)':'')+'</span></div>';
+        html += '<div class="gest-bar"><div class="gest-fill" id="gest-fill-'+i+'" style="width:'+pct.toFixed(1)+'%"></div></div>';
+        html += '<div class="char-row" style="justify-content:space-between;align-items:center;margin-top:2px;"><span class="item-meta" id="gest-label-'+i+'">'+(done?'Ready to collect':guildEstateRemain(fin-nowMs))+'</span><span class="guild-row-actions">';
+        if(done) html += '<button class="mini-btn" data-action="guildEstateCollect" data-slot="'+i+'" '+(guildEstateState.busy?'disabled':'')+'>Collect</button>';
+        if(mine || canManage) html += '<button class="mini-btn danger" data-action="guildEstateCancel" data-slot="'+i+'">Cancel</button>';
+        html += '</span></div>';
+      }
+      html += '</div>';
+    }
+    html += '<div class="guild-section-title">Start a task</div>';
+    if(guildEstateMyTask()){ return html + '<div class="empty-note">You already have an active task (one per member). Collect or cancel it to start another.</div>'; }
+    if(guildEstateFreeSlot()<0){ return html + '<div class="empty-note">All five slots are busy right now.</div>'; }
+    html += '<div class="char-row" style="gap:4px;flex-wrap:wrap;margin-bottom:6px;">'+GUILD_ESTATE_SKILLS.map(function(sk){ return '<button class="mini-btn'+(guildEstateState.pickSkill===sk?' active':'')+'" data-action="guildEstatePickSkill" data-skill="'+sk+'">'+escapeHtml(CRAFTING_SKILLS[sk].label)+'</button>'; }).join('')+'</div>';
+    var recs = guildEstateRecipesFor(guildEstateState.pickSkill);
+    if(!recs.length){ return html + '<div class="empty-note">You don’t meet the level for any '+escapeHtml(CRAFTING_SKILLS[guildEstateState.pickSkill].label)+' recipe yet.</div>'; }
+    html += '<div class="char-row" style="gap:6px;flex-wrap:wrap;align-items:center;">';
+    html += '<select id="guildEstateRecipe" class="chat-input" style="flex:1 1 200px;min-width:150px;">'+recs.map(function(r){ var afford=hasInputs(r.inputs,1); return '<option value="'+r.id+'">'+escapeHtml(r.name)+' — '+escapeHtml(guildEstateInputsLabel(r.inputs))+(afford?'':' (need mats)')+'</option>'; }).join('')+'</select>';
+    html += '<input id="guildEstateBatches" class="chat-input" type="number" min="1" max="100" value="'+guildEstateState.pickBatches+'" style="width:70px;flex:0 0 auto;">';
+    html += '<button class="action-btn" data-action="guildEstateStart" '+(guildEstateState.busy?'disabled':'')+' style="width:auto;flex:0 0 auto;">Start</button>';
+    html += '</div><div class="empty-note" style="margin-top:6px;">Inputs come from your inventory; you earn the skill XP and the output goes to the guild bank.</div>';
+    return html;
+  }
+  function updateGuildEstateLive(){
+    if(currentCategory!=='guild' || guildSub!=='estate') return;
+    var nowMs = Date.now();
+    guildEstateState.tasks.forEach(function(t){
+      var fill=document.getElementById('gest-fill-'+t.slot);
+      if(!fill) return;
+      var start=new Date(t.started_at).getTime(), fin=new Date(t.finish_at).getTime();
+      var pct = fin>start ? Math.max(0,Math.min(100,(nowMs-start)/(fin-start)*100)) : 100;
+      fill.style.width = pct.toFixed(1)+'%';
+      var label=document.getElementById('gest-label-'+t.slot);
+      var done = nowMs>=fin;
+      if(label) label.textContent = done ? 'Ready to collect' : guildEstateRemain(fin-nowMs);
+      if(done && !t._wasDone){ t._wasDone=true; needsRender=true; } // just finished -> rebuild to reveal Collect
+    });
   }
 
   // ---- Guild chat (a second channel in the Chat tab) ----
@@ -9695,6 +9830,7 @@
   function updateDynamic(){
     updateHeader();
     updateGlobalActionBarLive();
+    updateGuildEstateLive();
 
     if(state.activity.type==='gather' || state.activity.type==='craft'){
       var fill = document.getElementById('liveActionFill');
@@ -10279,6 +10415,14 @@
       guildBankWithdraw(btn.getAttribute('data-item'));
     } else if(action==='guildBankSetWithdrawRank'){
       guildBankSetWithdrawRank(btn.getAttribute('data-rank'));
+    } else if(action==='guildEstatePickSkill'){
+      guildEstateState.pickSkill = btn.getAttribute('data-skill');
+    } else if(action==='guildEstateStart'){
+      guildEstateStart();
+    } else if(action==='guildEstateCollect'){
+      guildEstateCollect(parseInt(btn.getAttribute('data-slot'),10));
+    } else if(action==='guildEstateCancel'){
+      if(confirm('Cancel this estate task? Materials already spent are not refunded.')) guildEstateCancel(parseInt(btn.getAttribute('data-slot'),10));
     }
     render();
     needsRender = false;
