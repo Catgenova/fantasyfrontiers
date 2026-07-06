@@ -2746,6 +2746,10 @@
     if(Math.random() < fishingCatchChance(state)){
       addItem(mainItemId, 1);
       spawnFloatingText('+1 ' + (ALL_SELLABLE[mainItemId]||{}).name, 'ft-success');
+    } else if(Math.random() < FISHING_TREASURE_CHANCE){
+      // The catch got away, but the hook snagged something better.
+      addItem('treasure_chest', 1);
+      spawnFloatingText('+1 Treasure Chest!', 'ft-rare');
     } else {
       spawnFloatingText('It got away!', 'ft-fail');
     }
@@ -2771,6 +2775,9 @@
   Object.assign(ALL_SELLABLE, SEED_ITEMS, FARMING_ITEMS);
   var CRITTER_CACHE_ITEM = { id:'critter_cache', name:'Critter Cache', icon:svgIcon('chest','#8a6a42'), sell:25 };
   ALL_SELLABLE.critter_cache = CRITTER_CACHE_ITEM;
+  var TREASURE_CHEST_ITEM = { id:'treasure_chest', name:'Treasure Chest', icon:svgIcon('chest','#c9a227'), sell:25 };
+  ALL_SELLABLE.treasure_chest = TREASURE_CHEST_ITEM;
+  var FISHING_TREASURE_CHANCE = 0.05; // chance a *failed* cast snags a Treasure Chest instead
   var FARMING_PHYSIQUE = [['handStrength',1],['zen',1],['mentality',1]];
   // Farming is split into three harvesting sub-skills, one per crop line. Each seed type is
   // gated by its own sub-skill level, and a harvest grants XP to that sub-skill.
@@ -2915,6 +2922,16 @@
     var r = Math.random()*total;
     for(i=0;i<TIER_COUNT;i++){ r -= weights[i]; if(r<=0) return i; }
     return 0;
+  }
+  function openTreasureChest(){
+    if((state.inventory.treasure_chest||0) <= 0) return;
+    state.inventory.treasure_chest -= 1;
+    // 1-10000 gold, weighted toward the low end (cubic skew), like the Critter Cache's roll.
+    var gold = Math.max(1, Math.min(10000, Math.floor(Math.pow(Math.random(), 3) * 10000) + 1));
+    state.gold += gold;
+    addLog('You pried open a Treasure Chest and found ' + fmt(gold) + ' gold!', 'important');
+    spawnFloatingText('+' + fmt(gold) + ' gold', 'ft-bonus');
+    needsRender = true;
   }
   function openCritterCache(){
     if((state.inventory.critter_cache||0) <= 0) return;
@@ -5377,7 +5394,7 @@
       } else if(skillKey==='mining'){
         html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> at <b>'+Math.round(miningMainChance(state)*100)+'%</b> &nbsp;|&nbsp; Bonus: Coal (1-5x) <b>'+Math.round(miningCoalChance(state)*100)+'%</b>, Gem <b>'+Math.round(miningGemChance(state)*100)+'%</b></div>';
       } else if(skillKey==='fishing'){
-        html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> at <b>'+Math.round(fishingCatchChance(state)*100)+'%</b> catch chance</div>';
+        html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> at <b>'+Math.round(fishingCatchChance(state)*100)+'%</b> catch chance &nbsp;|&nbsp; On a miss: Treasure Chest <b>'+Math.round(FISHING_TREASURE_CHANCE*100)+'%</b></div>';
       } else if(skillKey==='forestry'){
         html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> &nbsp;|&nbsp; Bonus: Critter Cache <b>'+Math.round(critterCacheChance(state)*100)+'%</b></div>';
       } else if(skillKey==='botany'){
@@ -9826,7 +9843,7 @@
   function getInventoryCategory(itemId){
     if(getEquipActionForItem(itemId)) return 'equipment';
     if(itemId.indexOf('paving_t')===0 || itemId.indexOf('masonry_t')===0) return 'estate';
-    if(itemId==='coal' || itemId==='critter_cache') return 'gathering';
+    if(itemId==='coal' || itemId==='critter_cache' || itemId==='treasure_chest') return 'gathering';
     for(var i=0;i<GATHER_BUCKET_PREFIXES.length;i++){
       if(itemId.indexOf(GATHER_BUCKET_PREFIXES[i])===0) return 'gathering';
     }
@@ -9855,6 +9872,9 @@
       h += '<button class="sell-btn lock-btn'+(isLocked?' locked-on':'')+'" data-action="toggleItemLock" data-item="'+r.item.id+'" title="'+(isLocked?'Unlock':'Lock')+'">'+svgIcon('lock', isLocked?'var(--gold)':'var(--text-faint)')+'</button>';
       if(r.item.id==='critter_cache'){
         h += '<button class="sell-btn" data-action="openCritterCache">Open</button>';
+      }
+      if(r.item.id==='treasure_chest'){
+        h += '<button class="sell-btn" data-action="openTreasureChest">Open</button>';
       }
       var equipAction = getEquipActionForItem(r.item.id);
       if(equipAction){
@@ -10620,6 +10640,8 @@
       toggleItemLock(btn.getAttribute('data-item'));
     } else if(action==='openCritterCache'){
       openCritterCache();
+    } else if(action==='openTreasureChest'){
+      openTreasureChest();
     } else if(action==='startShaftCraft'){
       startShaftCraft(parseInt(btn.getAttribute('data-tier'),10));
     } else if(action==='forgeTool'){
