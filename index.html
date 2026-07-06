@@ -398,6 +398,8 @@
   .lifetime-stat{background:rgba(255,255,255,0.42);border:1px solid var(--border);border-radius:8px;padding:9px 12px;display:flex;flex-direction:column;gap:1px;}
   .ls-num{font-family:var(--font-display,var(--font-body));font-size:20px;font-weight:800;line-height:1.1;color:var(--gold);}
   .ls-label{font-family:var(--font-mono);font-size:10px;letter-spacing:0.3px;text-transform:uppercase;color:var(--text-faint);}
+  .lb-metric{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);flex:0 0 auto;}
+  .lb-metric select{width:auto;flex:0 0 auto;padding:4px 8px;font-size:12px;}
 
   .inv-list{max-height:220px;overflow-y:auto;}
   .inv-row{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px dotted var(--border);font-size:12px;gap:6px;}
@@ -8583,17 +8585,33 @@
   // fine for a showcase board, but a competitive one would need server-side progression checks.
   var LEADERBOARD_LIMIT = 50;
   var leaderboardData = [];
+  var leaderboardMetric = 'total'; // 'total' | 'gold' | 'skill:<id>' | 'stat:<key>'
   var leaderboardStatus = CHAT_ENABLED ? 'idle' : 'unconfigured'; // idle|loading|ready|error|unconfigured
   var leaderboardLastFetch = 0;
   var profileLastSync = 0;
   var profileView = null;
+  // Lifetime-stat metrics available as leaderboard rankings (must match the state.stats keys).
+  var LB_STAT_METRICS = [
+    {key:'kills', label:'Kills'},
+    {key:'deaths', label:'Deaths'},
+    {key:'gathered', label:'Items Gathered'},
+    {key:'crafted', label:'Items Crafted'},
+    {key:'craftedRare', label:'Rare Crafts'},
+    {key:'craftedSupreme', label:'Supreme Crafts'},
+    {key:'craftedFantastic', label:'Fantastic Crafts'}
+  ];
+  function buildProfileStats(){
+    var s = state.stats || {}, out = {};
+    LB_STAT_METRICS.forEach(function(m){ out[m.key] = Math.max(0, Math.floor(s[m.key]||0)); });
+    return out;
+  }
   function computeProfileStats(){
     var skills = {}, total = 0;
     for(var i=0;i<ALL_MAIN_SKILL_IDS.length;i++){
       var lv = getLevel(state.xp[ALL_MAIN_SKILL_IDS[i]]||0);
       skills[ALL_MAIN_SKILL_IDS[i]] = lv; total += lv;
     }
-    return { total_level: total, gold: Math.floor(state.gold||0), skills: skills, equipment: computeEquipment() };
+    return { total_level: total, gold: Math.floor(state.gold||0), skills: skills, equipment: computeEquipment(), stats: buildProfileStats() };
   }
   // Currently-equipped weapons + armor (NOT tools), captured as display-ready
   // {slot,name,rarity} entries for a player's public leaderboard profile. Names are
@@ -8636,7 +8654,7 @@
       // table is no longer client-writable). id + username are derived server-side from
       // the auth token; a rejected submission just leaves the last accepted row intact.
       await chatClient.functions.invoke('submit_profile', {
-        body: { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, equipment: stats.equipment }
+        body: { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, equipment: stats.equipment, stats: stats.stats }
       });
     }catch(e){}
   }
@@ -8650,7 +8668,7 @@
     if(!chatClient){ if(!(await authEnsureClient())){ leaderboardStatus='error'; if(currentCategory==='leaderboard') render(); return; } }
     try{
       var res = await chatClient.from('profiles')
-        .select('id,username,total_level,gold,skills,equipment,updated_at')
+        .select('id,username,total_level,gold,skills,equipment,stats,updated_at')
         .order('total_level', { ascending:false })
         .limit(LEADERBOARD_LIMIT);
       if(res.error) throw res.error;
@@ -8660,19 +8678,58 @@
     }catch(e){ leaderboardStatus = 'error'; }
     if(currentCategory==='leaderboard' && !profileView) render();
   }
-  function lbRow(rank, p, isMe){
+  function lbMetricValue(p, metric){
+    if(metric==='gold') return p.gold||0;
+    if(metric.indexOf('skill:')===0) return (p.skills && p.skills[metric.slice(6)])||0;
+    if(metric.indexOf('stat:')===0) return (p.stats && p.stats[metric.slice(5)])||0;
+    return p.total_level||0; // 'total'
+  }
+  function lbMetricLabel(metric){
+    if(metric==='total') return 'Total Level';
+    if(metric==='gold') return 'Gold';
+    if(metric.indexOf('skill:')===0){ var s=metric.slice(6); return SKILL_LABELS[s]||s; }
+    if(metric.indexOf('stat:')===0){ var k=metric.slice(5); var m=LB_STAT_METRICS.filter(function(x){return x.key===k;})[0]; return m?m.label:k; }
+    return 'Total Level';
+  }
+  // Primary (ranked) value shown for a row under the current metric.
+  function lbPrimaryText(p, metric){
+    var v = lbMetricValue(p, metric);
+    if(metric==='gold') return fmt(v)+'g';
+    if(metric==='total' || metric.indexOf('skill:')===0) return 'Lv '+fmt(v);
+    return fmt(v); // lifetime stat -> raw count
+  }
+  function lbRow(rank, p, isMe, metric){
     var medals = { 1:'\uD83E\uDD47', 2:'\uD83E\uDD48', 3:'\uD83E\uDD49' };
+    // Secondary column gives context: show Total Level unless that's already the metric (then gold).
+    var secondary = (metric==='total') ? (fmt(p.gold||0)+'g') : ('Lv '+fmt(p.total_level||0));
     return '<button class="lb-row'+(isMe?' me':'')+'" data-action="viewProfile" data-id="'+escapeHtml(String(p.id||''))+'">'
       +'<span class="lb-rank">'+(medals[rank]||('#'+rank))+'</span>'
       +'<span class="lb-name">'+escapeHtml(p.username||'anon')+'</span>'
-      +'<span class="lb-lvl">Lv '+fmt(p.total_level||0)+'</span>'
-      +'<span class="lb-gold">'+fmt(p.gold||0)+'g</span></button>';
+      +'<span class="lb-lvl">'+lbPrimaryText(p, metric)+'</span>'
+      +'<span class="lb-gold">'+secondary+'</span></button>';
+  }
+  // <select> options for the "Rank by" filter: Total Level, Gold, lifetime stats, then skills by group.
+  function lbMetricOptions(){
+    var cur = leaderboardMetric;
+    var opt = function(val,label){ return '<option value="'+val+'"'+(cur===val?' selected':'')+'>'+escapeHtml(label)+'</option>'; };
+    var html = '<optgroup label="Overall">'+opt('total','Total Level')+opt('gold','Gold')+'</optgroup>';
+    html += '<optgroup label="Lifetime Stats">'+LB_STAT_METRICS.map(function(m){ return opt('stat:'+m.key, m.label); }).join('')+'</optgroup>';
+    (typeof SKILL_GROUPS !== 'undefined' ? SKILL_GROUPS : []).forEach(function(g){
+      html += '<optgroup label="'+escapeHtml(g.label)+'">'+g.skills.map(function(sk){ return opt('skill:'+sk, SKILL_LABELS[sk]||sk); }).join('')+'</optgroup>';
+    });
+    return html;
   }
   function renderProfileDetail(p){
     var html = '<div class="chat-wrap">';
     html += '<button class="action-btn" data-action="closeProfile" style="width:auto;flex:0 0 auto;">\u2039 Back</button>';
     html += '<div class="profile-head"><div class="profile-name">'+escapeHtml(p.username||'anon')+'</div>'
       +'<div class="profile-stats"><span>Total Level <b>'+fmt(p.total_level||0)+'</b></span><span>Gold <b>'+fmt(p.gold||0)+'</b></span></div></div>';
+    var pst = p.stats || {};
+    if(LB_STAT_METRICS.some(function(m){ return (pst[m.key]||0)>0; })){
+      html += '<div class="profile-skills"><div class="profile-group"><div class="profile-group-head">Lifetime</div><div class="profile-group-body">';
+      LB_STAT_METRICS.forEach(function(m){ html += '<span class="profile-skill">'+escapeHtml(m.label)+' <b>'+fmt(pst[m.key]||0)+'</b></span>'; });
+      html += '</div></div></div>';
+    }
     // Currently-equipped weapons + armor. Names/slots are escaped; rarity is a lookup key
     // into a fixed colour map -- nothing from the stored profile is injected as HTML.
     var eq = p.equipment;
@@ -8705,23 +8762,25 @@
   }
   function renderLeaderboardTab(){
     if(profileView) return renderProfileDetail(profileView);
-    var html = '<div class="section-intro">Leaderboard &mdash; the realm\'s top adventurers ranked by Total Level. Tap a name to view their profile.</div>';
+    var html = '<div class="section-intro">Leaderboard &mdash; ranked by <b>'+escapeHtml(lbMetricLabel(leaderboardMetric))+'</b>. Use <b>Rank by</b> to sort by a skill or lifetime stat. Tap a name to view their profile.</div>';
     html += '<div class="chat-wrap">';
     if(!CHAT_ENABLED){
       var me = computeProfileStats();
       html += '<div class="empty-note">Local preview &mdash; connect a backend to see a real global leaderboard. Here\'s your own profile as a sample:</div>';
-      html += '<div class="lb-list">'+lbRow(1, { id:'', username: chatName()||'You', total_level: me.total_level, gold: me.gold, skills: me.skills }, true)+'</div>';
+      html += '<div class="lb-list">'+lbRow(1, { id:'', username: chatName()||'You', total_level: me.total_level, gold: me.gold, skills: me.skills, stats: me.stats }, true, leaderboardMetric)+'</div>';
       html += '</div>'; return html;
     }
     html += '<div class="lb-controls"><button class="action-btn" data-action="leaderboardRefresh" style="width:auto;flex:0 0 auto;">Refresh</button>';
     if(authUser) html += '<button class="action-btn" data-action="viewMyProfile" style="width:auto;flex:0 0 auto;">My Profile</button>';
+    html += '<label class="lb-metric"><span>Rank by</span><select id="lbMetricSelect" class="chat-input">'+lbMetricOptions()+'</select></label>';
     html += '</div>';
     if(leaderboardStatus==='loading' && !leaderboardData.length){ html += '<div class="empty-note">Loading the rankings\u2026</div>'; }
     else if(leaderboardStatus==='error'){ html += '<div class="empty-note">Couldn\'t load the leaderboard. Make sure the <code>profiles</code> table and its read policy exist.</div>'; }
     else if(!leaderboardData.length){ html += '<div class="empty-note">No ranked players yet &mdash; be the first to make your mark!</div>'; }
     else {
+      var sorted = leaderboardData.slice().sort(function(a,b){ return lbMetricValue(b, leaderboardMetric) - lbMetricValue(a, leaderboardMetric); });
       html += '<div class="lb-list">';
-      leaderboardData.forEach(function(p, i){ html += lbRow(i+1, p, authUser && p.id===authUser.id); });
+      sorted.forEach(function(p, i){ html += lbRow(i+1, p, authUser && p.id===authUser.id, leaderboardMetric); });
       html += '</div>';
     }
     html += '</div>';
@@ -10694,6 +10753,9 @@
   });
 
   document.getElementById('app').addEventListener('change', function(e){
+    if(e.target && e.target.id === 'lbMetricSelect'){
+      leaderboardMetric = e.target.value; render(); return;
+    }
     var toolSel = e.target.closest('[data-action="selectToolTier"]');
     if(toolSel){
       selectedToolTier[toolSel.getAttribute('data-skill')] = parseInt(toolSel.value, 10);

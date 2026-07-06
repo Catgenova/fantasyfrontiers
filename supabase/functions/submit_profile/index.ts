@@ -128,6 +128,21 @@ Deno.serve(async (req) => {
     ? { weapons: cleanEquipList((eqRaw as Record<string, unknown>).weapons), armor: cleanEquipList((eqRaw as Record<string, unknown>).armor) }
     : null;
 
+  // Lifetime stats for the leaderboard filters. Bounded to non-negative integers; a known
+  // key set only. Cosmetic + client-authoritative, so never reject the submission over it.
+  const STAT_KEYS = ["kills", "deaths", "gathered", "crafted", "craftedRare", "craftedSupreme", "craftedFantastic"];
+  const STAT_CAP = 1_000_000_000_000;
+  const cleanStats = (raw: unknown) => {
+    const out: Record<string, number> = {};
+    const o = (raw && typeof raw === "object" && !Array.isArray(raw)) ? raw as Record<string, unknown> : {};
+    for (const k of STAT_KEYS) {
+      const v = o[k];
+      out[k] = (typeof v === "number" && Number.isFinite(v) && v >= 0) ? Math.min(STAT_CAP, Math.floor(v)) : 0;
+    }
+    return out;
+  };
+  const stats = cleanStats((body as { stats?: unknown }).stats);
+
   // 4. Accept.
   const { error: upErr } = await admin.from("profiles").upsert({
     id: userId,
@@ -136,6 +151,7 @@ Deno.serve(async (req) => {
     gold,
     skills,
     equipment,
+    stats,
     updated_at: new Date(nowMs).toISOString(),
   }, { onConflict: "id" });
   if (upErr) return json({ ok: false, error: "Could not save profile." }, 500);
