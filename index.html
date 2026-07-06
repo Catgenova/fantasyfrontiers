@@ -2776,11 +2776,10 @@
     }
   }
 
-  function getPlotSlots(level){ return Math.min(10, 3 + Math.floor(level/75*7)); }
+  function getPlotSlots(level){ return Math.min(40, 10 + Math.floor(level/100*30)); }
   function getPlotUnlockLevel(plotIndex){
-    if(plotIndex < 3) return 1; // first 3 plots are unlocked from the start
-    var k = plotIndex - 2; // this is the k-th of the 7 additional slots (1..7)
-    return Math.ceil(k*75/7);
+    if(plotIndex < 10) return 1; // first 10 plots are unlocked from the start
+    return Math.ceil((plotIndex - 9) * 10 / 3); // remaining 30 open up, reaching all 40 at level 100
   }
 
   function plantSeed(plotIndex, seedId){
@@ -4192,7 +4191,7 @@
       },
       farmingPlots: (function(){
         var plots = [];
-        for(var i=0;i<10;i++) plots.push({cropType:null, tierIndex:-1, plantedAt:0, readyAt:0});
+        for(var i=0;i<40;i++) plots.push({cropType:null, tierIndex:-1, plantedAt:0, readyAt:0});
         return plots;
       })(),
       equippedBeltTier: 0,
@@ -5070,7 +5069,8 @@
             }
           });
           state.bodyArmor = Object.assign(newGame().bodyArmor, loaded.bodyArmor||{});
-          state.farmingPlots = (loaded.farmingPlots && loaded.farmingPlots.length===10) ? loaded.farmingPlots : newGame().farmingPlots;
+          state.farmingPlots = (loaded.farmingPlots && Array.isArray(loaded.farmingPlots)) ? loaded.farmingPlots.slice(0,40) : newGame().farmingPlots;
+          while(state.farmingPlots.length < 40) state.farmingPlots.push({cropType:null, tierIndex:-1, plantedAt:0, readyAt:0});
           try {
             state.farmingPlots = state.farmingPlots.map(function(plot){
               if(!plot || typeof plot !== 'object'){ return { cropType:null, tierIndex:-1, plantedAt:0, readyAt:0 }; }
@@ -7849,7 +7849,7 @@
     var herbLvl = getLevel(state.xp.herbharvesting);
     var farmLvl = farmingLevel(state);
     var unlockedSlots = getPlotSlots(farmLvl);
-    var html = '<div class="section-intro">Farming is three harvesting sub-skills, one per crop line. Plant Seeds in your Plot Slots and wait for them to grow, then harvest. Each seed type needs its own sub-skill to plant higher tiers: Fiber Seeds (Fiber Harvesting) grow fiber for Tailoring, Grain Seeds (Grain Harvesting) grow Grain for Baking\'s Dough, and Herb Seeds (Herb Harvesting) grow Herbs for Cooking\'s Meals. Harvesting is worth a lot of XP. No tool is used, and time passes even while you\'re away. '+unlockedSlots+' of 10 plots unlocked (all 10 open up once any sub-skill reaches level 75).</div>';
+    var html = '<div class="section-intro">Farming is three harvesting sub-skills, one per crop line. Plant Seeds in your Plot Slots and wait for them to grow, then harvest. Each seed type needs its own sub-skill to plant higher tiers: Fiber Seeds (Fiber Harvesting) grow fiber for Tailoring, Grain Seeds (Grain Harvesting) grow Grain for Baking\'s Dough, and Herb Seeds (Herb Harvesting) grow Herbs for Cooking\'s Meals. Harvesting is worth a lot of XP. No tool is used, and time passes even while you\'re away. '+unlockedSlots+' of 40 plots unlocked (more open as your Farming level rises, reaching all 40 at level 100).</div>';
     html += renderSkillProgressBar('fiberharvesting');
     html += renderSkillProgressBar('grainharvesting');
     html += renderSkillProgressBar('herbharvesting');
@@ -7862,7 +7862,7 @@
       .sort(function(a,b){ return HERB_SEED_ITEMS[a].tierIndex - HERB_SEED_ITEMS[b].tierIndex; });
 
     html += '<div class="card-grid">';
-    for(var i=0;i<10;i++){
+    for(var i=0;i<40;i++){
       var locked = i >= unlockedSlots;
       var plot = state.farmingPlots[i];
       html += '<div class="item-card'+(locked?' locked':'')+'">';
