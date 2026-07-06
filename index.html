@@ -7320,8 +7320,9 @@
       }
     }); });
   }
-  function workshopSpeedBonus(state, skillId){ var t = placedWorkshops[skillId]; return (t===undefined) ? 0 : workshopBonusPct(t); }
-  function workshopDoubleChance(state, skillId){ var t = placedWorkshops[skillId]; return (t===undefined) ? 0 : workshopBonusPct(t); }
+  // Personal estate workshop + guild estate workshop STACK (added together) per skill.
+  function workshopSpeedBonus(state, skillId){ var s=0, p=placedWorkshops[skillId], g=guildPlacedWorkshops[skillId]; if(p!==undefined) s+=workshopBonusPct(p); if(g!==undefined) s+=workshopBonusPct(g); return s; }
+  function workshopDoubleChance(state, skillId){ var s=0, p=placedWorkshops[skillId], g=guildPlacedWorkshops[skillId]; if(p!==undefined) s+=workshopBonusPct(p); if(g!==undefined) s+=workshopBonusPct(g); return Math.min(0.95, s); }
   function pavementTierOf(cell){ if(!cell || cell.type!=='paved' || !cell.paveTileId) return -1; var m=/paving_t(\d+)/.exec(cell.paveTileId); return m ? parseInt(m[1],10) : -1; }
   // Workshops owned in inventory whose tier fits on this tile's pavement and whose skill
   // isn't already placed elsewhere (one per skill).
@@ -9277,7 +9278,7 @@
       guildState.myRank = res.myRank || null;
       guildState.applications = res.applications || [];
       if(!guildState.guild){ if(guildBrowseState.status==='idle') guildBrowseLoad(); guildTeardownChat(); }
-      else { guildChatMaybeSubscribe(); }
+      else { guildChatMaybeSubscribe(); guildEstateMapEnsure(); } // load the shared estate so its workshop bonuses apply on any tab
       if(currentCategory==='guild'||currentCategory==='chat') render();
     });
   }
@@ -9331,6 +9332,7 @@
         guildState.guild=null; guildState.members=[]; guildState.myRank=null; guildState.applications=[];
         guildBrowseState.status='idle'; guildBankState.status='idle'; guildBankState.guildId=null;
         guildEstateState.status='idle'; guildEstateState.guildId=null;
+        guildEstateMap.status='idle'; guildEstateMap.guildId=null; guildEstateMap.data=null; guildPlacedWorkshops={};
         guildBossState.status='idle'; guildBossState.guildId=null; guildBossState.active=null; guildBossState.claimable=null;
         guildTeardownChat(); guildReload(true); return;
       }
@@ -9648,11 +9650,94 @@
     } grid.push(col); }
     return grid;
   }
-  var guildEstateMapCache = { guildId:null, grid:null };
-  function guildEstateMapGrid(){
-    if(!guildState.guild) return null;
-    if(guildEstateMapCache.guildId !== guildState.guild.id){ guildEstateMapCache.guildId = guildState.guild.id; guildEstateMapCache.grid = generateGuildEstateGrid(guildState.guild.id); }
-    return guildEstateMapCache.grid;
+  // The shared guild estate is stored server-side (guild_estate blob) so edits (placed
+  // workshops) are shared by all members. Client-authoritative like the personal estate;
+  // a version guard reconciles concurrent writes (conflict -> reload).
+  var guildEstateMap = { status:'idle', guildId:null, data:null, version:0, busy:false, error:'' };
+  var guildPlacedWorkshops = {}; // skillId -> best placed tier on the GUILD estate (stacks w/ personal)
+  function recomputeGuildWorkshops(){
+    guildPlacedWorkshops = {};
+    var grid = guildEstateMap.data && guildEstateMap.data.grid;
+    if(!grid) return;
+    grid.forEach(function(col){ col.forEach(function(cell){
+      if(cell && cell.workshopId){ var it = WORKSHOP_ITEMS[cell.workshopId]; if(it && (guildPlacedWorkshops[it.skillId]===undefined || it.tierIndex>guildPlacedWorkshops[it.skillId])) guildPlacedWorkshops[it.skillId] = it.tierIndex; }
+    }); });
+  }
+  function guildEstateMapGrid(){ return (guildEstateMap.status==='ready' && guildEstateMap.data) ? guildEstateMap.data.grid : null; }
+  function guildEstateMapEnsure(){
+    if(!chatClient || !guildState.guild || !authUser) return;
+    if(guildEstateMap.status==='loading') return;
+    if(guildEstateMap.status==='ready' && guildEstateMap.guildId===guildState.guild.id) return;
+    guildEstateMap.status='loading'; guildEstateMap.guildId=guildState.guild.id;
+    var gid = guildState.guild.id;
+    chatClient.from('guild_estate').select('data,version').eq('guild_id',gid).maybeSingle().then(function(res){
+      if(res && res.data){
+        guildEstateMap.data=res.data.data; guildEstateMap.version=res.data.version; guildEstateMap.status='ready';
+        recomputeGuildWorkshops(); if(currentCategory==='guild') render();
+      } else {
+        var blob = { grid: generateGuildEstateGrid(gid) };
+        chatClient.from('guild_estate').insert({ guild_id:gid, data:blob, version:0 }).select('version').then(function(ins){
+          if(ins && !ins.error){ guildEstateMap.data=blob; guildEstateMap.version=0; guildEstateMap.status='ready'; recomputeGuildWorkshops(); if(currentCategory==='guild') render(); }
+          else { guildEstateMap.status='idle'; if(currentCategory==='guild') render(); } // insert race -> reload next view
+        }, function(){ guildEstateMap.status='idle'; });
+      }
+    }, function(){ guildEstateMap.status='error'; guildEstateMap.error='Could not load the guild estate.'; if(currentCategory==='guild') render(); });
+  }
+  // Version-guarded save; on conflict, reload (the losing edit is discarded).
+  function guildEstateMapSave(){
+    if(!chatClient || !guildEstateMap.data || !guildState.guild) return;
+    var expected = guildEstateMap.version, gid = guildState.guild.id;
+    guildEstateMap.version = expected + 1;
+    chatClient.from('guild_estate').update({ data:guildEstateMap.data, version:guildEstateMap.version, updated_at:new Date().toISOString() }).eq('guild_id',gid).eq('version',expected).select('version').then(function(res){
+      if(!res || res.error || !res.data || !res.data.length){
+        guildEstateMap.status='idle'; guildEstateMap.error='Another member edited the estate first — reloaded.'; guildEstateMapEnsure(); if(currentCategory==='guild') render();
+      }
+    }, function(){});
+  }
+  function guildEstateFreePavedTile(){
+    var grid = guildEstateMap.data && guildEstateMap.data.grid; if(!grid) return null;
+    for(var x=0;x<grid.length;x++){ for(var y=0;y<grid[x].length;y++){ var c=grid[x][y]; if(c && c.owned && c.type==='paved' && !c.workshopId) return {x:x,y:y}; } }
+    return null;
+  }
+  function guildEstatePlacedList(){
+    var out=[], grid=guildEstateMap.data && guildEstateMap.data.grid; if(!grid) return out;
+    grid.forEach(function(col,x){ col.forEach(function(cell,y){ if(cell && cell.workshopId) out.push({x:x,y:y,it:WORKSHOP_ITEMS[cell.workshopId]}); }); });
+    return out;
+  }
+  function guildPlaceableWorkshops(){
+    var out=[];
+    Object.keys(WORKSHOP_ITEMS).forEach(function(id){ var it=WORKSHOP_ITEMS[id]; if((state.inventory[id]||0)>0 && guildPlacedWorkshops[it.skillId]===undefined) out.push(it); });
+    out.sort(function(a,b){ return a.name.localeCompare(b.name); });
+    return out;
+  }
+  function guildEstatePlaceWorkshop(){
+    if(guildEstateMap.busy || guildEstateMap.status!=='ready') return;
+    var sel=document.getElementById('guildEstateWorkshopSel'); if(!sel || !sel.value) return;
+    var id=sel.value, it=WORKSHOP_ITEMS[id];
+    if(!it || (state.inventory[id]||0)<=0){ guildEstateMap.error='You no longer own that workshop.'; render(); return; }
+    if(guildPlacedWorkshops[it.skillId]!==undefined){ guildEstateMap.error='The guild already has a '+((CRAFTING_SKILLS[it.skillId]||{}).label||it.skillId)+' Workshop placed.'; render(); return; }
+    var free = guildEstateFreePavedTile();
+    if(!free){ guildEstateMap.error='No free paved tile on the guild estate.'; render(); return; }
+    state.inventory[id]-=1; saveGame();
+    guildEstateMap.data.grid[free.x][free.y].workshopId = id;
+    recomputeGuildWorkshops();
+    guildEstateMap.error='';
+    guildEstateMapSave();
+    addLog('Placed a '+it.name+' on the guild estate — it now boosts every member.','important');
+    render();
+  }
+  function guildEstateRemoveWorkshop(x, y){
+    if(guildEstateMap.status!=='ready') return;
+    var cell = guildEstateMap.data && guildEstateMap.data.grid[x] && guildEstateMap.data.grid[x][y];
+    if(!cell || !cell.workshopId) return;
+    var wid = cell.workshopId;
+    addItem(wid, 1); saveGame();
+    cell.workshopId = null;
+    recomputeGuildWorkshops();
+    guildEstateMap.error='';
+    guildEstateMapSave();
+    addLog('Removed the '+((WORKSHOP_ITEMS[wid]||{}).name||'workshop')+' from the guild estate (returned to your inventory).','');
+    render();
   }
   function renderGuildEstateCanvas(){
     var canvas = document.getElementById('guildEstateCanvas');
@@ -9707,6 +9792,28 @@
       '<button class="estate-rotate-btn estate-rotate-right" data-action="estateRotateRight" title="Rotate 90° right">↻</button>'+
       '<button class="estate-view-btn'+(estateTopDown?' on':'')+'" data-action="estateToggleTopDown" title="Toggle top-down view">'+(estateTopDown?'▦ 2D':'◈ 3D')+'</button>'+
       '</div>';
+    // Shared Guild Workshops -- placed on the guild estate, boost every member, stack with personal.
+    guildEstateMapEnsure();
+    html += '<div class="guild-section-title">Guild Workshops</div>';
+    if(guildEstateMap.error){ html += '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad);">'+escapeHtml(guildEstateMap.error)+'</div>'; }
+    html += '<div class="empty-note" style="margin-bottom:6px;">Workshops placed on the guild estate speed up crafting &amp; add double-output for <b>every member</b>, stacking with your personal estate. One per skill.</div>';
+    if(guildEstateMap.status!=='ready'){
+      html += '<div class="empty-note">Loading the shared estate&hellip;</div>';
+    } else {
+      var placed = guildEstatePlacedList();
+      placed.forEach(function(p){
+        var pct = Math.round(workshopBonusPct(p.it?p.it.tierIndex:0)*100);
+        html += '<div class="guild-member-row"><div style="display:flex;align-items:center;gap:8px;">'+(p.it?p.it.icon:'')+'<b>'+escapeHtml(p.it?p.it.name:'Workshop')+'</b> <span class="item-meta">+'+pct+'% speed &amp; double</span></div><button class="mini-btn danger" data-action="guildEstateRemoveWorkshop" data-x="'+p.x+'" data-y="'+p.y+'">Remove</button></div>';
+      });
+      var placeable = guildPlaceableWorkshops();
+      if(placeable.length){
+        html += '<div class="char-row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px;">';
+        html += '<select id="guildEstateWorkshopSel" class="chat-input" style="flex:1 1 180px;min-width:140px;">'+placeable.map(function(it){ return '<option value="'+it.id+'">'+escapeHtml(it.name)+' (x'+fmt(state.inventory[it.id]||0)+')</option>'; }).join('')+'</select>';
+        html += '<button class="action-btn" data-action="guildEstatePlaceWorkshop" style="width:auto;flex:0 0 auto;">Place on estate</button></div>';
+      } else if(!placed.length){
+        html += '<div class="empty-note">Build Workshops in Carpentry, then place them here for the whole guild.</div>';
+      }
+    }
     var nowMs = Date.now(), canManage = guildState.myRank==='leader'||guildState.myRank==='officer';
     for(var i=0;i<5;i++){
       var t = guildEstateState.tasks.filter(function(x){ return x.slot===i; })[0];
@@ -11316,6 +11423,10 @@
       guildEstateCollect(parseInt(btn.getAttribute('data-slot'),10));
     } else if(action==='guildEstateCancel'){
       if(confirm('Cancel this estate task? Materials already spent are not refunded.')) guildEstateCancel(parseInt(btn.getAttribute('data-slot'),10));
+    } else if(action==='guildEstatePlaceWorkshop'){
+      guildEstatePlaceWorkshop();
+    } else if(action==='guildEstateRemoveWorkshop'){
+      guildEstateRemoveWorkshop(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
     } else if(action==='guildBossSummon'){
       guildBossSummon(btn.getAttribute('data-key'));
     } else if(action==='guildBossAssault'){
