@@ -4918,15 +4918,17 @@
     try{ if(window.storage && window.storage.set){ window.storage.set(SAVE_KEY, str).catch(function(){}); } }catch(e){}
   }
   async function readSave(){
-    if(localStorageAvailable()){
-      try{ var v = window.localStorage.getItem(SAVE_KEY); if(v != null) return v; }catch(e){}
-    }
-    try{ if(window.storage && window.storage.get){ var res = await window.storage.get(SAVE_KEY); if(res && res.value != null) return res.value; } }catch(e){}
+    // ONLINE-ONLY: the save lives in the backend and requires an authenticated session.
+    if(!chatClient || !authUser || !authUser.id) return null;
+    try{
+      var res = await chatClient.from('saves').select('data').eq('user_id', authUser.id).maybeSingle();
+      if(res && res.data && res.data.data) return JSON.stringify(res.data.data);
+    }catch(e){}
     return null;
   }
   function saveGame(){
     state.lastSaved = Date.now();
-    writeSave(JSON.stringify(state));
+    cloudSave();   // ONLINE-ONLY: persistence goes to the backend (debounced); no localStorage
   }
 
   function applyOfflineProgress(elapsedMs){
@@ -8059,6 +8061,7 @@
       return true;
     }catch(e){ return false; }
   }
+  function authRender(){ if(gameStarted) render(); else renderLoginGate(); }
   async function authSubmit(){
     if(authBusy) return;
     var uEl = document.getElementById('authUsername');
@@ -8068,52 +8071,37 @@
     var password = pEl ? pEl.value : '';
     authUsernameDraft = username;
     var uErr = validateUsername(username);
-    if(uErr){ authError = uErr; render(); return; }
+    if(uErr){ authError = uErr; authRender(); return; }
     var pErr = validatePassword(password);
-    if(pErr){ authError = pErr; render(); return; }
-    if(authMode==='register' && cEl && cEl.value !== password){ authError = 'Passwords do not match.'; render(); return; }
+    if(pErr){ authError = pErr; authRender(); return; }
+    if(authMode==='register' && cEl && cEl.value !== password){ authError = 'Passwords do not match.'; authRender(); return; }
     authError = '';
-    if(!CHAT_ENABLED){ // local preview -- no real accounts
-      authUser = { username: username };
-      try{ window.localStorage.setItem('ff-chat-name', username); }catch(e){}
-      render(); return;
-    }
-    authBusy = true; render();
+    authBusy = true; authRender();
     var ok = await authEnsureClient();
-    if(!ok){ authBusy = false; authError = 'Could not reach the server.'; render(); return; }
+    if(!ok){ authBusy = false; authError = 'Could not reach the server.'; authRender(); return; }
     try{
       var email = authEmailFor(username), res;
       if(authMode==='register'){
-        // Registration goes through the server-side 'register' Edge Function, which re-runs
-        // the username filter with the service role -- so the profanity/format rules can't be
-        // bypassed by editing the client. On success we then sign the new account in.
         var reg = await chatClient.functions.invoke('register', { body: { username: username, password: password } });
         if(reg.error) throw reg.error;
-        if(!reg.data || !reg.data.ok){ authError = (reg.data && reg.data.error) || 'Registration failed.'; authBusy = false; render(); return; }
+        if(!reg.data || !reg.data.ok){ authError = (reg.data && reg.data.error) || 'Registration failed.'; authBusy = false; authRender(); return; }
       }
       res = await chatClient.auth.signInWithPassword({ email: email, password: password });
       if(res.error) throw res.error;
       var u = res.data && res.data.user;
       if(!u || !res.data.session) throw new Error('invalid credentials');
       authUser = { username: (u && u.user_metadata && u.user_metadata.username) || username, id: u && u.id };
-      authError = ''; authUsernameDraft = '';
-      chatEnsureSubscribed();
-      chronicleEnsureSubscribed();
-      // Pull the cloud save FIRST (source of truth). If it adopts, the page reloads and the
-      // profile push happens afterwards with the correct data -- so a stale device can't
-      // overwrite your leaderboard profile with an empty/behind state.
-      await cloudLoad();
-      if(!cloudReloading){ profileSync(true); leaderboardFetch(true); }
+      authError = ''; authUsernameDraft = ''; authBusy = false;
+      await startGameOnline();     // ONLINE-ONLY: load state from the backend and begin play
+      return;
     }catch(err){ authError = authFriendlyError(err, authMode); }
-    authBusy = false; render();
+    authBusy = false; authRender();
   }
   async function authLogout(){
     try{ await cloudSave(false, true); }catch(e){}   // flush the latest save up before signing out
     try{ if(chatClient && chatClient.auth) await chatClient.auth.signOut(); }catch(e){}
     authUser = null;
-    setLocalSaveOwner('');   // local save becomes anonymous again until next login
-    try{ window.localStorage.removeItem('ff-chat-name'); }catch(e){}
-    render();
+    location.reload();   // ONLINE-ONLY: fresh boot shows the login gate
   }
   async function authRestore(){
     if(!CHAT_ENABLED){
@@ -8185,6 +8173,7 @@
   }
 
   async function cloudLoad(){
+    return;   // ONLINE-ONLY: loading is handled by initGame()/readSave() from the backend
     if(!CLOUD_SYNC_ENABLED) return;
     if(!CHAT_ENABLED || !authUser || !authUser.id || cloudReloading) return;
     if(!chatClient){ if(!(await authEnsureClient())) return; }
@@ -8286,7 +8275,7 @@
     if(!CHAT_ENABLED){ await authRestore(); if(currentCategory==='chat') render(); return; }
     try{
       if(!window.supabase){ await chatLoadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'); }
-      chatClient = window.supabase.createClient(CHAT_CONFIG.supabaseUrl, CHAT_CONFIG.supabaseAnonKey);
+      if(!chatClient){ chatClient = window.supabase.createClient(CHAT_CONFIG.supabaseUrl, CHAT_CONFIG.supabaseAnonKey); }
       await authRestore();
       var res = await chatClient.from(CHAT_CONFIG.table)
         .select('id,created_at,username,body')
@@ -9594,7 +9583,7 @@
     } else if(action==='authSubmit'){
       authSubmit();
     } else if(action==='authMode'){
-      authMode = btn.getAttribute('data-mode')==='login' ? 'login' : 'register'; authError=''; render();
+      authMode = btn.getAttribute('data-mode')==='login' ? 'login' : 'register'; authError=''; authRender();
     } else if(action==='authLogout'){
       authLogout();
     } else if(action==='leaderboardRefresh'){
@@ -9937,11 +9926,56 @@
     if(document.visibilityState==='hidden'){ saveGame(); cloudSave(false, true); }
   });
 
-  initGame().then(function(){
-    lastTick = Date.now();
-    requestAnimationFrame(loop);
-    chatInit();
-  });
+  // ================= ONLINE-ONLY BOOT =================
+  // The game requires a signed-in account; the save lives only in the backend. Boot restores
+  // the session first: if signed in, load the save from the server and start; otherwise show
+  // a login gate and start only after a successful sign-in.
+  var gameStarted = false;
+  async function onlineAuthInit(){
+    if(!CHAT_ENABLED) return;
+    try{
+      if(!window.supabase){ await chatLoadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'); }
+      if(!chatClient){ chatClient = window.supabase.createClient(CHAT_CONFIG.supabaseUrl, CHAT_CONFIG.supabaseAnonKey); }
+      var res = await chatClient.auth.getSession();
+      var sess = res.data && res.data.session;
+      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; }
+    }catch(e){}
+  }
+  function renderLoginGate(){
+    var app = document.getElementById('app');
+    var gate = document.getElementById('loginGate');
+    if(!gate){
+      gate = document.createElement('div');
+      gate.id = 'loginGate';
+      gate.style.cssText = 'position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;background:var(--paper);padding:24px;overflow:auto;';
+      app.appendChild(gate);
+    }
+    gate.innerHTML = '<div style="max-width:380px;width:100%;text-align:center;">'
+      + '<div style="font-family:var(--font-display);font-weight:700;font-size:28px;color:var(--gold);letter-spacing:1.5px;margin-bottom:6px;">Fantasy Frontiers</div>'
+      + '<div style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">Sign in to play &mdash; your adventure is saved to your account and follows you across every device.</div>'
+      + '<div style="text-align:left;">' + renderAuthPanel() + '</div>'
+      + '</div>';
+  }
+  function removeLoginGate(){
+    var gate = document.getElementById('loginGate');
+    if(gate && gate.parentNode) gate.parentNode.removeChild(gate);
+  }
+  async function startGameOnline(){
+    removeLoginGate();
+    await initGame();                 // readSave() now fetches this account's save from the backend
+    if(!gameStarted){
+      gameStarted = true;
+      lastTick = Date.now();
+      requestAnimationFrame(loop);
+    }
+    chatInit();                       // chat + chronicle subscriptions
+    profileSync(true); leaderboardFetch(true);
+  }
+  (async function onlineBoot(){
+    await onlineAuthInit();
+    if(authUser && authUser.id){ await startGameOnline(); }
+    else { renderLoginGate(); }
+  })();
 })();
 </script>
 </body>
