@@ -8071,6 +8071,14 @@
   var authError = '';
   var authBusy = false;
   var authUsernameDraft = '';
+  // Login-screen conveniences (localStorage). 'Remember username' stores the username only;
+  // 'auto-login' relies on the persisted Supabase session (no password is ever stored).
+  var authRememberUser = false, authAutoLogin = true;
+  (function(){ try{
+    var ru = localStorage.getItem('ff-remember-username');
+    authRememberUser = !!ru; if(ru) authUsernameDraft = ru;
+    authAutoLogin = localStorage.getItem('ff-autologin') !== '0';
+  }catch(e){} })();
   function chatName(){ return authUser ? authUser.username : ''; }
   function authEmailFor(name){ return String(name).trim().toLowerCase() + '@' + CHAT_CONFIG.authEmailDomain; }
   function authFriendlyError(err, mode){
@@ -8119,6 +8127,10 @@
       var u = res.data && res.data.user;
       if(!u || !res.data.session) throw new Error('invalid credentials');
       authUser = { username: (u && u.user_metadata && u.user_metadata.username) || username, id: u && u.id };
+      try{
+        if(authRememberUser) localStorage.setItem('ff-remember-username', username); else localStorage.removeItem('ff-remember-username');
+        localStorage.setItem('ff-autologin', authAutoLogin ? '1' : '0');
+      }catch(e){}
       authError = ''; authUsernameDraft = ''; authBusy = false;
       await startGameOnline();     // ONLINE-ONLY: load state from the backend and begin play
       return;
@@ -8247,6 +8259,8 @@
     html += '<input id="authUsername" class="chat-input" maxlength="'+USERNAME_MAX+'" placeholder="Username" autocomplete="off" spellcheck="false" value="'+escapeHtml(authUsernameDraft)+'">';
     html += '<input id="authPassword" class="chat-input" type="password" placeholder="Password" autocomplete="'+(isReg?'new-password':'current-password')+'">';
     if(isReg) html += '<input id="authConfirm" class="chat-input" type="password" placeholder="Confirm password" autocomplete="new-password">';
+    html += '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);cursor:pointer;margin:4px 2px 0;"><input type="checkbox" data-action="authToggleRemember"'+(authRememberUser?' checked':'')+'> Remember my username</label>';
+    html += '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);cursor:pointer;margin:2px 2px 4px;"><input type="checkbox" data-action="authToggleAutoLogin"'+(authAutoLogin?' checked':'')+'> Automatically log me in</label>';
     if(authError) html += '<div class="auth-error">'+escapeHtml(authError)+'</div>';
     html += '<button class="action-btn" data-action="authSubmit" '+(authBusy?'disabled':'')+'>'+(authBusy?'Please wait\u2026':(isReg?'Create Account':'Log In'))+'</button>';
     html += '<div class="auth-note">'+(isReg?'Choose a username and password &mdash; no email required.':'Welcome back, adventurer.')+(CHAT_ENABLED?'':' <b>Local preview:</b> accounts aren\'t real until a backend is connected.')+'</div>';
@@ -9610,6 +9624,10 @@
       chatSend();
     } else if(action==='authSubmit'){
       authSubmit();
+    } else if(action==='authToggleRemember'){
+      authRememberUser = !authRememberUser; authRender();
+    } else if(action==='authToggleAutoLogin'){
+      authAutoLogin = !authAutoLogin; authRender();
     } else if(action==='authMode'){
       authMode = btn.getAttribute('data-mode')==='login' ? 'login' : 'register'; authError=''; authRender();
     } else if(action==='authLogout'){
@@ -10002,8 +10020,15 @@
   }
   (async function onlineBoot(){
     await onlineAuthInit();
-    if(authUser && authUser.id){ await startGameOnline(); }
-    else { renderLoginGate(); }
+    if(authUser && authUser.id){
+      // A session was restored. Only auto-login if the player opted in; otherwise sign out
+      // and show the gate (their remembered username still autofills).
+      var autoOn = (function(){ try{ return localStorage.getItem('ff-autologin') !== '0'; }catch(e){ return true; } })();
+      if(autoOn){ await startGameOnline(); return; }
+      try{ if(chatClient && chatClient.auth) await chatClient.auth.signOut(); }catch(e){}
+      authUser = null;
+    }
+    renderLoginGate();
   })();
 })();
 </script>
