@@ -6525,7 +6525,7 @@
       var m = MONSTERS.filter(function(x){return x.id===act.monsterId;})[0];
       var hpPct = clamp(act.monsterHp/m.hp*100,0,100);
       var pPct = clamp(state.playerHp/maxHp(state)*100,0,100);
-      var monsterAtkIntervalMs = m.attackSpeed*1000;
+      var monsterAtkIntervalMs = m.attackSpeed*1000*(1+getFamiliarEnemySlowPct());
       var monsterAtkPct = clamp((act.monsterTickAccum||0)/monsterAtkIntervalMs*100,0,100);
       var playerAtkIntervalMs = weaponStyle.attackSpeed*1000;
       var playerAtkPct = clamp((act.tickAccum||0)/playerAtkIntervalMs*100,0,100);
@@ -6542,6 +6542,22 @@
       html += '<div class="hp-label"><span>Your Attack</span><span>'+weaponStyle.attackSpeed+'s</span></div>';
       html += '<div class="hp-track" style="margin-top:6px"><div class="hp-fill" id="arenaPlayerFill" style="width:'+pPct+'%;background:var(--hp-bad)"></div></div>';
       html += '<div class="hp-label"><span>Your HP</span><span id="arenaPlayerLabel">'+fmt(state.playerHp)+' / '+maxHp(state)+'</span></div>';
+      if(state.activeCompanion && FAMILIAR_DATA[state.activeCompanion]){
+        var _comp = FAMILIAR_DATA[state.activeCompanion];
+        var _castPct = clamp((state.familiarCastAccum||0)/10000*100,0,100);
+        var _spells = _comp.spells;
+        var _nextIdx = (state.familiarCastIndex||0) % _spells.length;
+        html += '<div style="height:12px"></div>';
+        html += '<div class="arena-row"><span class="arena-name">'+_comp.icon+' '+escapeHtml(_comp.name)+' <span style="font-size:10px;color:var(--text-faint);font-family:var(--font-body)">('+escapeHtml(SKILL_LABELS[state.activeCompanion]||state.activeCompanion)+' familiar)</span></span></div>';
+        html += '<div class="hp-track" style="height:8px"><div class="hp-fill" id="arenaFamiliarCastFill" style="width:'+_castPct+'%;background:var(--cat-menagerie);transition:none"></div></div>';
+        html += '<div class="hp-label"><span>Familiar Spell</span><span>every 10s</span></div>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px" id="arenaFamiliarCycle">';
+        _spells.forEach(function(sp, si){
+          var _isNext = si===_nextIdx;
+          html += '<span style="font-size:10px;font-family:var(--font-mono);padding:2px 6px;border-radius:3px;border:1px solid '+(_isNext?'var(--cat-menagerie)':'var(--border)')+';'+(_isNext?'background:color-mix(in srgb, var(--cat-menagerie) 22%, var(--bg-panel));color:var(--text);':'color:var(--text-dim);')+'">'+(_isNext?'▸ ':'')+escapeHtml(sp.name)+'</span>';
+        });
+        html += '</div>';
+      }
       html += '<button class="action-btn stop" data-action="stop" style="margin-top:12px">Retreat</button>';
       html += '</div>';
     } else if(state.playerHp <= 0){
@@ -9406,7 +9422,7 @@
       if(ml && m) ml.textContent = fmt(state.activity.monsterHp) + ' / ' + m.hp;
       var maf = document.getElementById('arenaMonsterAtkFill');
       if(maf && m){
-        var monsterAtkPct = clamp((state.activity.monsterTickAccum||0)/(m.attackSpeed*1000)*100,0,100);
+        var monsterAtkPct = clamp((state.activity.monsterTickAccum||0)/(m.attackSpeed*1000*(1+getFamiliarEnemySlowPct()))*100,0,100);
         maf.style.width = monsterAtkPct+'%';
       }
       var pf = document.getElementById('arenaPlayerFill');
@@ -9423,6 +9439,8 @@
         var playerAtkPct = clamp((state.activity.tickAccum||0)/(playerAtkStyle.attackSpeed*1000)*100,0,100);
         paf.style.width = playerAtkPct+'%';
       }
+      var faf = document.getElementById('arenaFamiliarCastFill');
+      if(faf) faf.style.width = clamp((state.familiarCastAccum||0)/10000*100,0,100)+'%';
     }
 
     var autoEatNextEl = document.getElementById('autoEatNextFoodText');
@@ -10002,6 +10020,7 @@
             var companionSpells = FAMILIAR_DATA[state.activeCompanion].spells;
             castFamiliarSpell(companionSpells[state.familiarCastIndex % companionSpells.length], getFamiliarLevel(state.activeCompanion));
             state.familiarCastIndex = (state.familiarCastIndex + 1) % companionSpells.length;
+            needsRender = true;   // refresh the spell-cycle highlight in the combat UI
           }
         }
       }
