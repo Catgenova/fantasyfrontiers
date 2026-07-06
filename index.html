@@ -10084,11 +10084,17 @@
   var gabExtraSig = '';
   function updateGlobalActionBarLive(){
     var act = state.activity;
-    // Concurrent craft-slot bars: live-update widths, and force a re-render whenever the
-    // set of running extra crafts changes so bars appear/disappear promptly.
+    // Concurrent craft-slot bars: live-update widths, and rebuild ONLY the header bar when
+    // the set of running extra crafts changes so the bars appear/disappear. Must not trigger
+    // a full render() -- that rebuilds #content and would slam shut any open <select> (e.g. a
+    // smithing tier dropdown) mid-interaction, which reads as "the dropdown is broken".
     var extras = activeExtraCraftSlots();
     var sig = extras.map(function(e){ return e.idx+':'+(e.slot.craftKind||e.slot.itemId); }).join(',');
-    if(sig !== gabExtraSig){ gabExtraSig = sig; needsRender = true; }
+    if(sig !== gabExtraSig){
+      gabExtraSig = sig;
+      var gabEl = document.getElementById('globalActionBar');
+      if(gabEl) gabEl.innerHTML = renderGlobalActionBar();
+    }
     extras.forEach(function(e){
       var el = document.getElementById('gabExtraFill-'+e.idx);
       if(!el) return;
