@@ -9728,8 +9728,18 @@
     var gid = guildState.guild.id;
     chatClient.from('guild_estate').select('data,version').eq('guild_id',gid).maybeSingle().then(function(res){
       if(res && res.data){
-        guildEstateHydrate(res.data.data, res.data.version); guildEstateSubscribe(); recomputeGuildWorkshops();
-        if(currentCategory==='guild') render();
+        var d = res.data.data || {};
+        if(!d.edgesX){
+          // Legacy map from the old disc generator (flat dirt, pre-paved centre, sparse
+          // obstacles, no edges). Wipe & regenerate in place so it matches a fresh My Estate.
+          guildEstateHydrate(guildEstateDefaultBlob(gid), res.data.version);
+          guildEstateSubscribe(); recomputeGuildWorkshops();
+          guildEstatePersist(); // version-guarded overwrite with the fresh map
+          if(currentCategory==='guild') render();
+        } else {
+          guildEstateHydrate(d, res.data.version); guildEstateSubscribe(); recomputeGuildWorkshops();
+          if(currentCategory==='guild') render();
+        }
       } else {
         var blob = guildEstateDefaultBlob(gid);
         chatClient.from('guild_estate').insert({ guild_id:gid, data:blob, version:0 }).select('version').then(function(ins){
