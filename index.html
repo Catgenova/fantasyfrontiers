@@ -8092,6 +8092,7 @@
   var chatClient = null;
   var chatStatus = CHAT_ENABLED ? 'connecting' : 'unconfigured'; // unconfigured|connecting|online|error
   var chatLastSentAt = 0;
+  var chatDraft = '';   // in-progress chat message, preserved across re-renders so popups don't wipe it
 
   function escapeHtml(s){
     return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -8409,6 +8410,7 @@
     var now = Date.now();
     if(now - chatLastSentAt < 1200) return; // client-side rate limit
     input.value = '';
+    chatDraft = '';
     if(!CHAT_ENABLED || !chatClient){
       chatOnIncoming({ id:'local-'+now, created_at:new Date().toISOString(), username:name, body:text });
       return;
@@ -8438,7 +8440,7 @@
     html += '<div id="chatMessages" class="chat-messages">'+chatMessagesHtml()+'</div>';
     if(name){
       html += '<div class="chat-account">Signed in as <b>'+escapeHtml(name)+'</b></div>';
-      html += '<div class="chat-send-row"><input id="chatInput" class="chat-input" maxlength="'+CHAT_CONFIG.maxLen+'" placeholder="Say something\u2026"><button class="action-btn" data-action="chatSend" style="flex:0 0 auto;width:auto;">Send</button></div>';
+      html += '<div class="chat-send-row"><input id="chatInput" class="chat-input" maxlength="'+CHAT_CONFIG.maxLen+'" placeholder="Say something\u2026" value="'+escapeHtml(chatDraft)+'"><button class="action-btn" data-action="chatSend" style="flex:0 0 auto;width:auto;">Send</button></div>';
     } else {
       html += renderAuthPanel();
     }
@@ -9242,6 +9244,12 @@
   }
 
   function render(){
+    // Preserve the in-progress chat message + focus/cursor across full re-renders -- otherwise
+    // a popup (or any needsRender) mid-typing rebuilds the input and wipes the draft.
+    var _ci = document.getElementById('chatInput');
+    var _chatFocused = !!(_ci && document.activeElement === _ci);
+    var _chatSel = _ci ? _ci.selectionStart : null;
+    if(_ci) chatDraft = _ci.value;
     updateHeader();
     document.getElementById('globalActionBar').innerHTML = renderGlobalActionBar();
     renderCatTabs();
@@ -9254,6 +9262,10 @@
     renderSettingsModal();
     renderSkillInfoPopup();
     renderOfflineSummary();
+    if(_chatFocused){
+      var _ci2 = document.getElementById('chatInput');
+      if(_ci2){ _ci2.focus(); if(_chatSel != null){ try{ _ci2.setSelectionRange(_chatSel, _chatSel); }catch(e){} } }
+    }
   }
 
   // Lightweight per-tick refresh: only touches text/width of existing
