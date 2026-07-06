@@ -3696,6 +3696,7 @@
     if(craftKind==='armorslot') return act.slotId===params.slotId;
     if(craftKind==='ring') return act.typeId===params.typeId && act.tierIndex===params.tierIndex;
     if(craftKind==='amulet') return act.tierIndex===params.tierIndex;
+    if(craftKind==='workshop') return act.skillId===params.skillId && act.tierIndex===params.tierIndex;
     return false;
   }
   function findActiveSpecialCraftSlotFor(craftKind, params){
@@ -3740,6 +3741,7 @@
     if(act.craftKind==='armorslot') return 'armorsmithing';
     if(act.craftKind==='ring') return 'jewelrycrafting';
     if(act.craftKind==='amulet') return 'jewelrycrafting';
+    if(act.craftKind==='workshop') return 'carpentry'; // Carpentry builds every Workshop
     return null;
   }
   function getSpecialTierData(act){
@@ -3765,6 +3767,7 @@
     }
     if(act.craftKind==='ring') return getRingTierData(act.typeId, act.tierIndex);
     if(act.craftKind==='amulet') return getAmuletTierData(act.tierIndex);
+    if(act.craftKind==='workshop') return getWorkshopTierData(act.skillId, act.tierIndex);
     return null;
   }
   function completeSpecialCraft(act, tierData){
@@ -3799,6 +3802,9 @@
         addItem('ring_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
       } else if(act.craftKind==='amulet'){
         addItem('amulet_t'+act.tierIndex+'_'+rarity, 1);
+      } else if(act.craftKind==='workshop'){
+        addItem('workshop_'+act.skillId+'_t'+act.tierIndex, 1);
+        rarity = 'normal'; // Workshops have no rarity variants
       }
       logForgeResult(rarity, tierData.name);
     } else {
@@ -3930,6 +3936,42 @@
   // ---- Unified Tools: every Gathering and Crafting tool is now one Equipment category.
   // Forging produces a stackable inventory item (type, tier, rarity); a separate equip
   // step decides which owned stack is actually active for that skill. Sorted alphabetically.
+  // ===== Carpentry Workshops =====
+  // One Workshop per crafting skill, crafted by Carpentry from planks. A Workshop is placed
+  // on a Paved estate tile of equal-or-higher tier and boosts that skill's crafting SPEED and
+  // grants a % chance to DOUBLE its output. Tiers 0..20 scale the bonus linearly 5%..30%.
+  // Workshops live in the Estate inventory category (like paving/masonry goods).
+  var WORKSHOP_SKILL_IDS = CRAFT_SKILL_IDS.slice();
+  function workshopBonusPct(tierIndex){ return 0.05 + (tierIndex/(TIER_COUNT-1))*0.25; } // t0=5%, t20=30%
+  function workshopSkillColor(skillId){ return (CRAFTING_SKILLS[skillId] && CRAFTING_SKILLS[skillId].color) || '#8a6a45'; }
+  function getWorkshopTierData(skillId, tierIndex){
+    var pct = workshopBonusPct(tierIndex);
+    var inputs = {};
+    inputs['carpentry_t'+tierIndex] = 10 + tierIndex*3; // planks of the matching tier
+    return {
+      tierIndex: tierIndex,
+      name: TIER_NAMES[tierIndex] + ' ' + ((CRAFTING_SKILLS[skillId]||{}).label || skillId) + ' Workshop',
+      levelReq: TIER_LEVELS[tierIndex],   // Carpentry level, staggered every 5
+      xp: tierXp(30, tierIndex),
+      time: tierTime(15, 0.5, tierIndex),
+      speedPct: pct,
+      doublePct: pct,
+      inputs: inputs
+    };
+  }
+  var WORKSHOP_ITEMS = {};
+  WORKSHOP_SKILL_IDS.forEach(function(skillId){
+    for(var _wt=0; _wt<TIER_COUNT; _wt++){
+      var _wid = 'workshop_'+skillId+'_t'+_wt;
+      WORKSHOP_ITEMS[_wid] = {
+        id:_wid, name: TIER_NAMES[_wt] + ' ' + ((CRAFTING_SKILLS[skillId]||{}).label || skillId) + ' Workshop',
+        icon: svgIcon('castle', workshopSkillColor(skillId)), sell: tierSell(30, _wt),
+        tierIndex:_wt, skillId:skillId
+      };
+    }
+  });
+  Object.assign(ALL_SELLABLE, WORKSHOP_ITEMS);
+
   var TOOL_TYPES = [];
   GATHER_SKILL_IDS.forEach(function(id){ TOOL_TYPES.push({skillId:id, name:GATHER_TOOL_NAMES[id], icon:GATHERING_SKILLS[id].icon, isGather:true}); });
   CRAFT_SKILL_IDS.forEach(function(id){ TOOL_TYPES.push({skillId:id, name:CRAFT_TOOL_NAMES[id], icon:CRAFTING_SKILLS[id].icon, isGather:false}); });
@@ -4311,6 +4353,7 @@
   var menagerieExpanded = {};
   var settingsOpen = false;
   var selectedToolTier = {};
+  var selectedWorkshopTier = {};
   var selectedBodyArmorTier = {};
   var selectedShaftLogTier = null;
   var selectedBeltTier = null;
@@ -4943,6 +4986,13 @@
     if(!hasInputs(data.inputs)){ addLog('Not enough materials to forge ' + data.name + '.', 'danger'); return; }
     placeNewCraftActivity('blacksmithing', null, 'tool', { type:'craft', craftKind:'tool', skillId:skillId, tierIndex:tierIndex, progress:0 });
   }
+  function craftWorkshop(skillId, tierIndex){
+    if(WORKSHOP_SKILL_IDS.indexOf(skillId)===-1) return;
+    var data = getWorkshopTierData(skillId, tierIndex);
+    if(getLevel(state.xp.carpentry) < data.levelReq){ addLog('Carpentry level too low to build ' + data.name + '.', 'danger'); return; }
+    if(!hasInputs(data.inputs)){ addLog('Not enough planks to build ' + data.name + '.', 'danger'); return; }
+    placeNewCraftActivity('carpentry', null, 'workshop', { type:'craft', craftKind:'workshop', skillId:skillId, tierIndex:tierIndex, progress:0 });
+  }
   function equipTool(itemId){
     var item = TOOL_ITEMS[itemId];
     if(!item || (state.inventory[itemId]||0) <= 0) return;
@@ -5530,6 +5580,49 @@
     html += renderSkillProgressBar(skillKey);
     html += craftStatsLine(skillKey);
     html += renderRecipeGrid(skillKey, skill.recipes);
+    if(skillKey==='carpentry') html += renderWorkshopForge();
+    return html;
+  }
+  function renderWorkshopForge(){
+    var lvl = getLevel(state.xp.carpentry);
+    var maxUnlocked = 0;
+    for(var mi=0; mi<TIER_COUNT; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
+    var html = '<h3 style="margin-top:16px">Workshops</h3>';
+    html += '<div class="section-intro">Build a Workshop for any crafting skill from planks, then place it on a Paved estate tile (of equal or higher tier) to speed up that skill\'s crafting and gain a chance to double its output. Tier 0 grants +5% speed &amp; 5% double output, scaling to +30% / 30% at Tier 20. Placed workshops appear in your Estate; only your best workshop per skill applies.</div>';
+    html += '<div class="card-grid">';
+    WORKSHOP_SKILL_IDS.forEach(function(skillId){
+      if(selectedWorkshopTier[skillId] === undefined) selectedWorkshopTier[skillId] = maxUnlocked;
+      var sel = Math.min(selectedWorkshopTier[skillId], maxUnlocked);
+      var data = getWorkshopTierData(skillId, sel);
+      var activeSlot = findActiveSpecialCraftSlotFor('workshop', {skillId:skillId, tierIndex:sel});
+      var isActive = !!activeSlot;
+      var effTime = data.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, 'carpentry');
+      var pct = isActive ? clamp(activeSlot.act.progress/effTime*100,0,100) : 0;
+      var ready = lvl >= data.levelReq && hasInputs(data.inputs);
+      var owned = state.inventory['workshop_'+skillId+'_t'+sel]||0;
+      var lbl = (CRAFTING_SKILLS[skillId]||{}).label || skillId;
+      var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
+      html += '<div class="item-card'+(isActive?' active-item':'')+'">';
+      html += '<div class="item-top"><div class="item-icon">'+svgIcon('castle', workshopSkillColor(skillId))+'</div><div><div class="item-name">'+escapeHtml(lbl)+' Workshop</div><div class="item-meta">Owned this tier: '+owned+'</div></div></div>';
+      html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Boosts <b>'+escapeHtml(lbl)+'</b> &mdash; +'+Math.round(data.speedPct*100)+'% speed, '+Math.round(data.doublePct*100)+'% double output</div>';
+      html += '<div class="inputs-line">Tier: <select data-action="selectWorkshopTier" data-skill="'+skillId+'"'+(isActive?' disabled':'')+'>';
+      for(var i=0;i<=maxUnlocked;i++){
+        html += '<option value="'+i+'"'+(i===sel?' selected':'')+'>'+TIER_NAMES[i]+' (Lv'+TIER_LEVELS[i]+')</option>';
+      }
+      html += '</select></div>';
+      html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>Req. Lv '+data.levelReq+'</span></div>';
+      html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-workshop-'+skillId)+'</div>';
+      html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
+      if(isActive){
+        html += activeSlot.primary
+          ? '<button class="action-btn stop" data-action="stop">Stop</button>'
+          : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
+      } else {
+        html += '<button class="action-btn" data-action="buildWorkshop" data-skill="'+skillId+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Build</button>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
     return html;
   }
 
@@ -9852,7 +9945,7 @@
     'muddyartifact_t','brokenrelic_t','powder_t','seed_t','grainseed_t','herbseed_t','farming_t','grain_t','herb_t','corpse_t','gem_'];
   function getInventoryCategory(itemId){
     if(getEquipActionForItem(itemId)) return 'equipment';
-    if(itemId.indexOf('paving_t')===0 || itemId.indexOf('masonry_t')===0) return 'estate';
+    if(itemId.indexOf('paving_t')===0 || itemId.indexOf('masonry_t')===0 || itemId.indexOf('workshop_')===0) return 'estate';
     if(itemId==='coal' || itemId==='critter_cache' || itemId==='treasure_chest') return 'gathering';
     for(var i=0;i<GATHER_BUCKET_PREFIXES.length;i++){
       if(itemId.indexOf(GATHER_BUCKET_PREFIXES[i])===0) return 'gathering';
@@ -10662,6 +10755,8 @@
       startShaftCraft(parseInt(btn.getAttribute('data-tier'),10));
     } else if(action==='forgeTool'){
       craftTool(btn.getAttribute('data-skill'), parseInt(btn.getAttribute('data-tier'),10));
+    } else if(action==='buildWorkshop'){
+      craftWorkshop(btn.getAttribute('data-skill'), parseInt(btn.getAttribute('data-tier'),10));
     } else if(action==='equipTool'){
       equipTool(btn.getAttribute('data-item'));
     } else if(action==='unequipTool'){
@@ -10813,6 +10908,12 @@
     var toolSel = e.target.closest('[data-action="selectToolTier"]');
     if(toolSel){
       selectedToolTier[toolSel.getAttribute('data-skill')] = parseInt(toolSel.value, 10);
+      render();
+      return;
+    }
+    var wshopSel = e.target.closest('[data-action="selectWorkshopTier"]');
+    if(wshopSel){
+      selectedWorkshopTier[wshopSel.getAttribute('data-skill')] = parseInt(wshopSel.value, 10);
       render();
       return;
     }
