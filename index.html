@@ -3770,43 +3770,58 @@
     if(act.craftKind==='workshop') return getWorkshopTierData(act.skillId, act.tierIndex);
     return null;
   }
+  // Item-producing special crafts a Workshop can double (tier-UPGRADE kinds -- offhand,
+  // armorslot -- can't be doubled). Each doubled output rolls its rarity independently.
+  var SPECIAL_DOUBLEABLE_KINDS = ['tool','stackweapon','stackshield','bodyarmor','belt','ring','amulet','workshop'];
+  // Produce ONE output for this special craft at the given rarity; returns the rarity
+  // actually used (bodyarmor clamps to its material's allowed set; workshops are always normal).
+  function produceSpecialOutput(act, rarity){
+    if(act.craftKind==='tool'){
+      addItem('tool_'+act.skillId+'_t'+act.tierIndex+'_'+rarity, 1);
+    } else if(act.craftKind==='stackweapon'){
+      addItem('stweapon_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
+    } else if(act.craftKind==='stackshield'){
+      addItem('stshield_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
+    } else if(act.craftKind==='bodyarmor'){
+      var mat = BODY_ARMOR_MATERIALS[act.material];
+      if(mat.rarityIds.indexOf(rarity)===-1) rarity = mat.rarityIds[mat.rarityIds.length-1];
+      addItem('bodyarmor_'+act.material+'_'+act.slot+'_t'+act.tierIndex+'_'+rarity, 1);
+    } else if(act.craftKind==='belt'){
+      addItem('belt_t'+act.tierIndex+'_'+rarity, 1);
+    } else if(act.craftKind==='offhand'){
+      var oTier2 = state.offhandTiers[act.typeId]||0;
+      state.offhandTiers[act.typeId] = oTier2+1;
+      state.offhandRarities[act.typeId] = rarity;
+    } else if(act.craftKind==='armorslot'){
+      var aTier2 = state.armorSlots[act.slotId]||0;
+      state.armorSlots[act.slotId] = aTier2+1;
+      state.armorRarities[act.slotId] = rarity;
+      armorPanelExpanded = true;
+    } else if(act.craftKind==='ring'){
+      addItem('ring_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
+    } else if(act.craftKind==='amulet'){
+      addItem('amulet_t'+act.tierIndex+'_'+rarity, 1);
+    } else if(act.craftKind==='workshop'){
+      addItem('workshop_'+act.skillId+'_t'+act.tierIndex, 1);
+      rarity = 'normal';
+    }
+    return rarity;
+  }
   function completeSpecialCraft(act, tierData){
     var skillId = getSpecialSkillId(act);
     var successRate = (act.craftKind==='ring' || act.craftKind==='amulet') ? jewelrySuccessRate(state) : craftSuccessRate(state, skillId);
     if(Math.random() < successRate){
       addXp(skillId, tierData.xp*1.5);
       addPhysiqueXp(CRAFT_PHYSIQUE[skillId]);
-      var rarity = rollCraftRarity(state);
-      if(act.craftKind==='tool'){
-        addItem('tool_'+act.skillId+'_t'+act.tierIndex+'_'+rarity, 1);
-      } else if(act.craftKind==='stackweapon'){
-        addItem('stweapon_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
-      } else if(act.craftKind==='stackshield'){
-        addItem('stshield_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
-      } else if(act.craftKind==='bodyarmor'){
-        var mat = BODY_ARMOR_MATERIALS[act.material];
-        if(mat.rarityIds.indexOf(rarity)===-1) rarity = mat.rarityIds[mat.rarityIds.length-1];
-        addItem('bodyarmor_'+act.material+'_'+act.slot+'_t'+act.tierIndex+'_'+rarity, 1);
-      } else if(act.craftKind==='belt'){
-        addItem('belt_t'+act.tierIndex+'_'+rarity, 1);
-      } else if(act.craftKind==='offhand'){
-        var oTier2 = state.offhandTiers[act.typeId]||0;
-        state.offhandTiers[act.typeId] = oTier2+1;
-        state.offhandRarities[act.typeId] = rarity;
-      } else if(act.craftKind==='armorslot'){
-        var aTier2 = state.armorSlots[act.slotId]||0;
-        state.armorSlots[act.slotId] = aTier2+1;
-        state.armorRarities[act.slotId] = rarity;
-        armorPanelExpanded = true;
-      } else if(act.craftKind==='ring'){
-        addItem('ring_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
-      } else if(act.craftKind==='amulet'){
-        addItem('amulet_t'+act.tierIndex+'_'+rarity, 1);
-      } else if(act.craftKind==='workshop'){
-        addItem('workshop_'+act.skillId+'_t'+act.tierIndex, 1);
-        rarity = 'normal'; // Workshops have no rarity variants
+      // A placed Workshop can double item-producing crafts. Each output rolls its OWN rarity,
+      // so a double never clones a Rare/Supreme/Fantastic.
+      var outputs = (SPECIAL_DOUBLEABLE_KINDS.indexOf(act.craftKind)!==-1 && Math.random() < workshopDoubleChance(state, skillId)) ? 2 : 1;
+      for(var o=0;o<outputs;o++){
+        var rarity = (act.craftKind==='workshop') ? 'normal' : rollCraftRarity(state);
+        rarity = produceSpecialOutput(act, rarity);
+        logForgeResult(rarity, tierData.name);
       }
-      logForgeResult(rarity, tierData.name);
+      if(outputs===2) spawnFloatingText('Workshop: double output!', 'ft-rare');
     } else {
       logForgeFailure(tierData.name);
     }
