@@ -1,5 +1,11 @@
 # Tests
 
+Two layers:
+- **Unit tests** (`selftest.js`) — pure game logic, run in the browser (below).
+- **Integration tests** (`integration.sh`) — the live Supabase backend end-to-end (bottom).
+
+## Unit tests
+
 The game is a single-file browser app (one IIFE in `index.html`, no bundler, no Node build),
 so the unit tests run **in the browser** against a small test seam rather than via a Node runner.
 
@@ -34,3 +40,29 @@ guild bank slot cost (kept in lock-step with the server RPC formula), estate exp
 workshop bonus % + the tier-N-consumes-tier-N-1 upgrade chain, paving recipes (all Slabs, 2/3/4
 by finish), the combat damage-type advantage triangle + weighting, estate obstacle yields,
 duration formatting, and that `monster.xp` is fully sunset.
+
+## Integration tests (backend)
+
+`integration.sh` drives the **real Supabase backend** (Edge Functions + SECURITY DEFINER RPCs +
+RLS) with `curl` and asserts the actual JSON responses. Coverage:
+
+- **Registration & auth** — register, duplicate/short-username/short-password rejection, sign-in token.
+- **Guild lifecycle** — create, already-in-a-guild + duplicate-name rejection; open/close;
+  apply → accept; roster promote/demote and leader-only enforcement.
+- **Guild bank (items)** — slot count, deposit fills a slot, withdraw remainder, over-withdraw rejected.
+- **Guild treasury** — donate, `buy_slot` and `spend_gold` deduct the coffers, leader `withdraw_gold`,
+  over-spend → `code:"poor"`, withdraw-rank enforcement, members can donate but not buy slots.
+- **Guild estate** — RLS (member reads the shared blob, non-member can't) + the optimistic
+  version guard (guarded update succeeds once, a stale re-update matches no rows).
+- **submit_profile** — valid accepted; `total_level != sum(skills)` and out-of-range skill rejected.
+
+Run:
+
+```
+bash tests/integration.sh
+```
+
+Override the target with `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` env vars. Exits non-zero on
+any failure. **Note:** it hits the live project and creates throwaway `it_<runid>_*` accounts; it
+disbands the test guild (cascade cleanup) but Auth users can't be deleted with the publishable key,
+so it prints the accounts it created for manual removal under Authentication → Users.
