@@ -5,21 +5,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fantasy Frontiers — Idle Adventure</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Spectral:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Spectral:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
   :root{
-    --paper:#efe5cf;
-    --bg-deep:#d8c5a0;        /* recessed wells: tracks, inputs */
-    --bg-panel:#e6d9bd;
-    --bg-panel-raised:#f2e9d5;
-    --bg-card:#f6efe0;
-    --border:#c7b287;
-    --border-light:#a17c4c;
-    --gold:#0f7d74;          /* primary accent = teal */
-    --gold-bright:#0fa093;
-    --text:#3a2c17;
-    --text-dim:#6a5735;
-    --text-faint:#93805a;
+    /* Ivy Castle redesign palette: black-and-tan stone UI, teal->green accents, gold for coin only */
+    --paper:#e7d7b0;          /* tan panel */
+    --bg-deep:#d3bd8f;        /* recessed wells: tracks, inputs */
+    --bg-panel:#e7d7b0;
+    --bg-panel-raised:#eeddb6;
+    --bg-card:#dcc79c;        /* tan card inset */
+    --border:#141210;         /* ink — borders are dark on nearly everything */
+    --border-light:#a98f5e;   /* muted tan / dashed borders */
+    --gold:#4a6b2c;          /* primary accent = green */
+    --gold-bright:#6f9538;   /* bright green */
+    --green-deep:#3c5a24;
+    --coin:#e0b84a;          /* currency / faith / rare-loot highlight only */
+    --stone-dk:#26241d;      /* dark stone chrome (top bar) */
+    --stone-rail:#292620;    /* dark mossy stone (rail) */
+    --stone-card:#8f857a;    /* card stone frame */
+    --grass:#4f7233;         /* grass exterior */
+    --ink:#141210;
+    --input-fill:#f5eecf;
+    --text:#2a2114;
+    --text-dim:#6b5a38;
+    --text-faint:#8a7850;
 
     --hp-good:#5c8a3c;
     --hp-mid:#c0891d;
@@ -27,17 +36,17 @@
 
     --cat-gathering:#5d7a34;
     --cat-crafting:#a85b1f;
-    --cat-estate:#4a7986;
+    --cat-estate:#4a6b2c;
     --cat-combat:#a63a2f;
     --cat-physique:#7b4fb3;
-    --cat-faith:#a9832a;
-    --cat-farming:#7f6a1f;
-    --cat-menagerie:#1f857a;
+    --cat-faith:#c79a2a;
+    --cat-farming:#6f9538;
+    --cat-menagerie:#3c5a24;
     --cat-guild:#9a6a3a;
-    --cat-market:#2f8a6a;
-    --cat-chat:#3f78b0;
-    --cat-leaderboard:#c78b2c;
-    --cat-character:#7a5a2c;
+    --cat-market:#4a6b2c;
+    --cat-chat:#3c5a24;
+    --cat-leaderboard:#c79a2a;
+    --cat-character:#6b5a38;
     --rarity-rare:#2f7fb0;
     --rarity-superior:#8a4fb0;
     --rarity-fantastic:#c07d1e;
@@ -58,19 +67,90 @@
     --font-mono:'JetBrains Mono',monospace;
   }
   *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;max-width:100%;overflow-x:hidden;}
+  html,body{margin:0;padding:0;height:100%;max-width:100%;overflow:hidden;}
   body{
-    background:
-      radial-gradient(ellipse at 18% -5%, rgba(15,125,116,0.10), transparent 55%),
-      radial-gradient(ellipse at 100% 100%, rgba(123,79,179,0.09), transparent 52%),
-      radial-gradient(ellipse at 50% 45%, rgba(255,252,244,0.4), transparent 60%),
-      var(--paper);
+    background-color:var(--grass);
+    background-image:
+      repeating-linear-gradient(84deg, rgba(255,255,255,.05) 0 2px, transparent 2px 7px),
+      repeating-linear-gradient(96deg, rgba(0,0,0,.06) 0 1px, transparent 1px 6px);
     color:var(--text);
     font-family:var(--font-body);
-    min-height:100vh;
+    padding:8px;
   }
-  #app{max-width:1220px;margin:0 auto;padding:14px 14px 40px;}
-  .sticky-header{position:sticky; top:0; z-index:600; background:var(--paper);}
+  /* ===== Ivy Castle shell: grass frame -> top bar / rail / content / dock ===== */
+  #app{
+    position:relative;height:100%;display:flex;flex-direction:column;
+    border-radius:14px;border:2px solid var(--ink);overflow:hidden;
+    background-color:var(--grass);
+    background-image:
+      repeating-linear-gradient(84deg, rgba(255,255,255,.05) 0 2px, transparent 2px 7px),
+      repeating-linear-gradient(96deg, rgba(0,0,0,.06) 0 1px, transparent 1px 6px),
+      radial-gradient(circle at 30% 18%, rgba(255,255,255,.06), transparent 45%),
+      radial-gradient(circle at 70% 85%, rgba(0,0,0,.10), transparent 45%);
+    box-shadow:inset 0 0 0 2px rgba(0,0,0,.3), 0 14px 34px rgba(20,18,16,.45);
+  }
+  .ff-topbar{
+    display:flex;align-items:center;gap:12px;padding:9px 14px;flex-wrap:wrap;z-index:8;flex-shrink:0;
+    background-color:var(--stone-dk);
+    background-image:radial-gradient(circle at 20% 30%, rgba(120,140,90,.08), transparent 30%),repeating-linear-gradient(90deg, rgba(0,0,0,.28) 0 2px, transparent 2px 28px);
+    border-bottom:2px solid #000;box-shadow:inset 0 -2px 4px rgba(0,0,0,.35);
+  }
+  .ff-brand{display:flex;align-items:center;gap:9px;}
+  .ff-brand-word{font-family:var(--font-display);font-weight:700;font-size:14px;letter-spacing:1px;color:var(--coin);white-space:nowrap;}
+  .ff-brand-crest{width:26px;height:26px;flex-shrink:0;}
+  .ff-tb-div{width:1px;height:20px;background:#48432f;}
+  .ff-coin{font-family:var(--font-mono);font-size:15px;color:var(--coin);font-weight:600;white-space:nowrap;}
+  .ff-buffchip{display:flex;align-items:center;gap:6px;font-size:11px;color:#d7c9a6;white-space:nowrap;}
+  .ff-buffchip .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .ff-buffchip .t{font-family:var(--font-mono);color:#8a7850;}
+  .ff-tb-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+  .ff-track-top{font-family:var(--font-mono);font-size:11px;color:#b3a37e;white-space:nowrap;}
+  .ff-gear{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid #48432f;color:#c4ccae;cursor:pointer;font-size:14px;flex-shrink:0;}
+  .ff-mid{flex:1;display:flex;min-height:0;}
+  .ff-rail{
+    position:relative;width:194px;flex-shrink:0;padding:12px 10px;display:flex;flex-direction:column;overflow-y:auto;
+    background-color:var(--stone-rail);
+    background-image:radial-gradient(circle at 32% 10%, rgba(120,140,90,.12), transparent 28%),radial-gradient(circle at 70% 62%, rgba(0,0,0,.4), transparent 42%),repeating-linear-gradient(0deg, rgba(0,0,0,.32) 0 2px, transparent 2px 26px),repeating-linear-gradient(90deg, rgba(255,255,255,.03) 0 1px, transparent 1px 22px);
+    box-shadow:inset -2px 0 0 rgba(0,0,0,.4);
+  }
+  .ff-area-btn{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:10px 11px;margin-bottom:2px;border-radius:7px;cursor:pointer;font-family:var(--font-display);font-size:13px;font-weight:600;background:none;border:1px solid transparent;color:#d7c9a6;}
+  .ff-area-btn .ico{width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;}
+  .ff-area-btn.on{background:linear-gradient(180deg,#5c7f34,#3c5a24);color:#f2f8e6;border:1px solid #24380f;box-shadow:0 1px 4px rgba(0,0,0,.35);}
+  .ff-subnest{margin:4px 0 8px 13px;border-left:1px solid #48432f;padding-left:10px;display:flex;flex-direction:column;gap:1px;}
+  .ff-sub-btn{text-align:left;padding:5px 8px;border-radius:5px;border:none;cursor:pointer;font-family:var(--font-body);font-size:11.5px;color:#b3a37e;background:none;}
+  .ff-sub-btn.on{color:#a9c47e;background:rgba(111,149,56,.16);}
+  .ff-sub-btn.flash{color:#f2d98a;animation:ffChipFlash 1s ease-in-out infinite;}
+  .ff-rail-settings{margin-top:auto;background:none;border:none;border-top:1px solid #48432f;text-align:left;display:flex;align-items:center;gap:9px;padding:9px 11px;color:#8a7850;font-size:12px;font-family:var(--font-body);cursor:pointer;}
+  .ff-main{flex:1;min-width:0;overflow-y:auto;padding:16px;display:flex;flex-direction:column;}
+  .ff-subchips{display:none;}
+  .ff-dock{width:206px;flex-shrink:0;padding:14px 12px 14px 0;display:flex;flex-direction:column;gap:12px;overflow-y:auto;}
+  .ff-dock .panel{background:var(--bg-panel);border:2px solid var(--ink);border-radius:8px;padding:11px 12px;box-shadow:inset 0 0 0 2px rgba(143,133,122,.35);margin:0;}
+  .ff-chatpanel{display:flex;flex-direction:column;}
+  .ff-dock-title{font-family:var(--font-display);font-size:11px;letter-spacing:1px;color:var(--green-deep);margin-bottom:8px;text-transform:uppercase;border-bottom:1px solid #c3ab77;padding-bottom:5px;}
+  .ff-bottomdock{display:none;}
+  .ff-chatfab{display:none;}
+  .ff-ivy{position:absolute;top:-8px;z-index:9;pointer-events:none;width:70px;height:60px;}
+  .ff-ivy-l{left:-4px;} .ff-ivy-r{right:-4px;transform:scaleX(-1);}
+  @keyframes ffChipFlash{0%,100%{opacity:1;}50%{opacity:.45;}}
+  /* dock chat */
+  .ff-chat-msgs{height:150px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;margin-bottom:8px;}
+  .ff-chat-inputrow{display:flex;gap:6px;}
+  .ff-chat-inputrow input{flex:1;min-width:0;font-family:var(--font-body);font-size:12px;padding:6px 8px;border-radius:6px;border:2px solid var(--ink);background:var(--input-fill);color:var(--text);}
+  /* mobile chat drawer */
+  .ff-drawer-overlay{position:absolute;inset:0;z-index:28;background:rgba(20,18,12,.5);display:flex;align-items:flex-end;}
+  .ff-drawer{width:100%;max-height:72%;display:flex;flex-direction:column;background:var(--bg-panel);border-top:2px solid var(--ink);border-radius:16px 16px 0 0;padding:14px;box-shadow:0 -10px 28px rgba(0,0,0,.45), inset 0 0 0 2px rgba(143,133,122,.4);}
+  @media (max-width:860px){
+    .ff-rail{display:none;}
+    .ff-dock{display:none;}
+    .ff-subchips{display:flex;gap:6px;overflow-x:auto;margin:-2px 0 14px;padding-bottom:2px;}
+    .ff-subchips .chip{flex:none;padding:6px 12px;border-radius:16px;cursor:pointer;font-family:var(--font-body);font-size:11.5px;font-weight:600;background:var(--bg-card);color:var(--text-dim);border:1px solid var(--border-light);white-space:nowrap;}
+    .ff-subchips .chip.on{background:linear-gradient(180deg,#5c7f34,#3c5a24);color:#f2f8e6;border:1px solid #24380f;}
+    .ff-bottomdock{display:flex;background-color:var(--stone-dk);background-image:repeating-linear-gradient(90deg, rgba(0,0,0,.28) 0 2px, transparent 2px 28px);border-top:2px solid #000;flex-shrink:0;}
+    .ff-dock-btn{flex:1;text-align:center;padding:9px 0;cursor:pointer;font-family:var(--font-body);border:none;background:transparent;color:#b3a37e;border-top:3px solid transparent;}
+    .ff-dock-btn .ico{font-size:18px;display:block;} .ff-dock-btn .lbl{font-family:var(--font-display);font-size:10px;letter-spacing:.5px;margin-top:2px;}
+    .ff-dock-btn.on{background:rgba(111,149,56,.14);color:#a9c47e;border-top:3px solid var(--gold-bright);}
+    .ff-chatfab{display:flex;align-items:center;justify-content:center;position:absolute;right:14px;bottom:66px;z-index:22;width:50px;height:50px;border-radius:50%;background:linear-gradient(180deg,#5c7f34,#3c5a24);border:2px solid #24380f;color:#f2f8e6;font-size:20px;cursor:pointer;box-shadow:0 5px 14px rgba(0,0,0,.45);}
+  }
 
   .topbar{
     display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;
@@ -268,14 +348,16 @@
 
   .content{min-height:320px;}
   .section-intro{font-size:13px;color:var(--text-dim);margin-bottom:14px;line-height:1.5;}
-  .card-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(260px, 1fr));gap:10px;}
+  .card-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(230px, 1fr));gap:16px;}
   @media (max-width:600px){.card-grid{grid-template-columns:1fr;}}
+  /* Parapet card: tan inset + ink border wrapped in a stone-frame ring (via layered box-shadows) */
   .item-card{
-    background:linear-gradient(160deg, #ffffff, var(--bg-card) 85%);border:1px solid var(--border);border-radius:var(--radius);
-    padding:12px;position:relative;overflow:hidden;box-shadow:0 2px 5px rgba(120,92,44,0.13), 0 1px 0 rgba(255,255,255,0.6) inset;
+    background:var(--bg-card);border:2px solid var(--ink);border-radius:6px;
+    padding:12px;position:relative;overflow:hidden;
+    box-shadow:0 0 0 2px var(--stone-card), 0 0 0 4px var(--ink), inset 0 2px 6px rgba(0,0,0,.16), 0 5px 12px rgba(20,18,16,.28);
   }
   .item-card.locked{opacity:0.5;}
-  .item-card.active-item{border-color:var(--gold);box-shadow:0 2px 5px rgba(120,92,44,0.13), 0 0 0 1px rgba(15,125,116,0.4) inset, 0 0 16px rgba(15,125,116,0.14);}
+  .item-card.active-item{box-shadow:0 0 0 2px var(--stone-card), 0 0 0 4px var(--ink), inset 0 0 0 2px rgba(74,107,44,0.55), 0 0 16px rgba(111,149,56,0.22);}
   .item-top{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
   .item-icon{font-size:26px;line-height:1;}
   .game-icon{width:1em;height:1em;vertical-align:-0.15em;flex-shrink:0;display:inline-block;}
@@ -331,18 +413,18 @@
   .chance-line{font-family:var(--font-mono);font-size:11px;margin:4px 0;line-height:1.6;color:var(--text-faint);}
   .chance-line b{color:var(--text);}
   .progress-track{
-    height:8px;border-radius:2px;background:var(--bg-deep);border:1px solid var(--border);
-    overflow:hidden;margin:8px 0;box-shadow:0 1px 2px rgba(120,92,44,0.25) inset;
+    height:8px;border-radius:4px;background:#000;border:1px solid #48432f;
+    overflow:hidden;margin:8px 0;
   }
   .progress-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-bright));width:0%;}
   .action-btn{
-    width:100%;font-family:var(--font-display);font-size:12px;letter-spacing:0.5px;
-    background:linear-gradient(180deg, var(--bg-panel-raised), var(--bg-panel));border:1px solid var(--border-light);color:var(--gold);
-    padding:8px;border-radius:var(--radius);cursor:pointer;margin-top:4px;box-shadow:0 1px 0 rgba(120,92,44,0.16), 0 1px 0 rgba(255,255,255,0.5) inset;
+    width:100%;font-family:var(--font-display);font-size:12px;font-weight:600;letter-spacing:0.5px;
+    background:linear-gradient(180deg,#5c7f34,#3c5a24);border:1px solid #24380f;color:#f2f8e6;
+    padding:8px;border-radius:6px;cursor:pointer;margin-top:4px;box-shadow:0 1px 0 rgba(0,0,0,0.25);
   }
-  .action-btn:hover{border-color:var(--gold);background:linear-gradient(180deg, #ffffff, rgba(15,125,116,0.10));}
-  .action-btn.stop{color:var(--hp-bad);}
-  .action-btn:disabled{opacity:0.4;cursor:not-allowed;}
+  .action-btn:hover{background:linear-gradient(180deg,#6f9538,#4a6b2c);}
+  .action-btn.stop{background:linear-gradient(180deg,#b0503f,#7f2f24);border-color:#5a1f16;color:#fbeae4;}
+  .action-btn:disabled{background:#b8a374;border-color:#a98f5e;color:#8a7850;cursor:not-allowed;}
   .lock-note{font-family:var(--font-mono);font-size:11px;color:var(--hp-bad);margin-top:6px;}
 
   .arena{background:linear-gradient(160deg, #ffffff, var(--bg-card) 85%);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:0 2px 6px rgba(120,92,44,0.14);}
@@ -979,8 +1061,12 @@
   <div id="settingsOverlay"></div>
   <div id="trackerPickerOverlay"></div>
   <div id="peonPickerOverlay"></div>
-  <div class="sticky-header" id="stickyHeader">
-    <div class="topbar">
+  <div class="ff-topbar" id="ffTopbar"></div>
+  <div class="ff-mid">
+    <nav class="ff-rail" id="ffRail"></nav>
+    <div class="ff-main" id="ffMain">
+      <div class="ff-subchips" id="ffSubchips"></div>
+    <div class="topbar" style="position:absolute;left:-9999px;width:0;height:0;overflow:hidden;">
       <div class="brand"><svg class="brand-crest" viewBox="0 0 100 100" role="img" aria-label="Fantasy Frontiers crest: a plate-armored knight battles a dragon while a familiar casts lightning from above"><defs><clipPath id="ffClip"><circle cx="50" cy="50" r="43"/></clipPath><linearGradient id="ffSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34425c"/><stop offset="1" stop-color="#1b2432"/></linearGradient><linearGradient id="ffGround" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#43533b"/><stop offset="1" stop-color="#25301e"/></linearGradient></defs><circle cx="50" cy="50" r="48" fill="#161d2b"/><g clip-path="url(#ffClip)"><rect x="6" y="6" width="88" height="88" fill="url(#ffSky)"/><circle cx="67" cy="30" r="17" fill="#43516a" opacity="0.55"/><path d="M6,73 Q38,63 60,71 Q80,77 94,71 L94,94 L6,94 Z" fill="url(#ffGround)"/><ellipse cx="30" cy="86" rx="14" ry="3.4" fill="#141a0f" opacity="0.55"/><ellipse cx="66" cy="86" rx="18" ry="4" fill="#141a0f" opacity="0.55"/><!-- DRAGON --><path d="M64,50 L92,22 Q86,34 89,42 Q82,39 82,47 Q75,45 75,53 Q69,50 66,60 Z" fill="#6f2018" stroke="#4f1410" stroke-width="1" stroke-linejoin="round"/><path d="M66,52 L88,27 M75,51 L85,39 M80,50 L86,45" stroke="#4f1410" stroke-width="0.9" fill="none" stroke-linecap="round"/><path d="M64,62 Q75,68 79,80 Q81,86 89,85" fill="none" stroke="#9c3327" stroke-width="6" stroke-linecap="round"/><path d="M87,85 l7,-1 l-4,7 z" fill="#9c3327"/><path d="M63,66 C67,58 63,52 60,48 C56,42 54,38 55,34 C56,40 61,46 66,52 C71,58 72,62 71,68 Z" fill="#b0402f"/><path d="M60,66 C64,58 60,50 57,46 C53,40 51,37 52,33 C49,38 50,45 54,51 C58,57 60,60 59,66 Z" fill="#b0402f"/><path d="M55,63 C52,55 50,49 49,44" stroke="#d76b52" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M53,33 C50,30 45,29 41,31 L37,34 L42,35 L39,38 L45,37 C47,39 50,39 53,37 Z" fill="#b0402f"/><path d="M41,31 L37,34 L42,35 Z" fill="#8a2c22"/><path d="M42,36 L37,39 L44,39 Z" fill="#5e1712"/><path d="M54,31 L57,24 M51,31 L52,25" stroke="#7a271f" stroke-width="2.3" stroke-linecap="round"/><circle cx="47" cy="33" r="1.5" fill="#f5d24a"/><circle cx="47" cy="33" r="0.6" fill="#3a0f0b"/><path d="M58,58 L50,63 M50,63 l-3,-1 M50,63 l-1,3 M50,63 l2,3" stroke="#8a2c22" stroke-width="2.1" fill="none" stroke-linecap="round"/><!-- KNIGHT --><path d="M24,72 L23,84 L28,84 L28,72 Z" fill="#5c6678"/><path d="M28,72 L30,84 L35,84 L33,72 Z" fill="#79879b"/><path d="M21,83 h9 v3 h-10 z" fill="#41475a"/><path d="M29,83 h9 v3 h-10 z" fill="#41475a"/><path d="M20,54 Q28,50 36,54 L34,73 L22,73 Z" fill="#aab6c6"/><path d="M28,52 L27,73 L34,73 L34,54 Z" fill="#8b98ab"/><rect x="21.5" y="66" width="13" height="3" fill="#d8b24a"/><path d="M33,56 L44,45" stroke="#9aa6b8" stroke-width="4" stroke-linecap="round"/><path d="M42,46 L58,30" stroke="#e7eef6" stroke-width="3" stroke-linecap="round"/><path d="M42,46 L58,30" stroke="#b9c6d6" stroke-width="0.9" stroke-linecap="round"/><path d="M39,45 L47,49" stroke="#d8b24a" stroke-width="2.6" stroke-linecap="round"/><circle cx="41.5" cy="47" r="1.7" fill="#d8b24a"/><path d="M14,58 Q13,52 19,51 Q25,52 24,58 Q24,66 19,70 Q14,66 14,58 Z" fill="#7d8699" stroke="#474e60" stroke-width="1"/><path d="M19,53 L19,68 M15,60 L23,60" stroke="#d8b24a" stroke-width="1.3"/><circle cx="19" cy="60" r="2" fill="#d8b24a"/><path d="M23,45 Q28,41 33,45 L33,53 Q28,56 23,53 Z" fill="#c2ccd9"/><rect x="24.5" y="48" width="7" height="1.6" fill="#2c313d"/><path d="M23,46 L33,46" stroke="#8b98ab" stroke-width="0.9"/><path d="M28,41 Q26,35 30,33 Q29,38 31,41 Z" fill="#b23a34"/><!-- LIGHTNING --><path d="M33,28 L40,34 L36,36 L46,44 L42,45 L52,52" fill="none" stroke="#f6e08a" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" opacity="0.5"/><path d="M33,28 L40,34 L36,36 L46,44 L42,45 L52,52" fill="none" stroke="#fff6c8" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/><!-- FAMILIAR --><circle cx="30" cy="23" r="8" fill="#6b7fd6" opacity="0.28"/><path d="M30,23 Q23,18 20,22 Q25,23 24,26 Q28,24 30,26 Z" fill="#8fa0ec"/><path d="M31,23 Q38,18 41,22 Q36,23 37,26 Q33,24 31,26 Z" fill="#6d7fd6"/><ellipse cx="30.5" cy="24" rx="3.1" ry="4" fill="#b9c4f7"/><circle cx="30.5" cy="20.6" r="2.6" fill="#cfd7fb"/><circle cx="29.6" cy="20.5" r="0.6" fill="#2a2f52"/><circle cx="31.4" cy="20.5" r="0.6" fill="#2a2f52"/><circle cx="33" cy="27" r="1.9" fill="#fff6c8"/></g><circle cx="50" cy="50" r="48" fill="none" stroke="#c9a227" stroke-width="3.2"/><circle cx="50" cy="50" r="44" fill="none" stroke="#e8c15a" stroke-width="0.8" opacity="0.55"/></svg><span class="brand-word">Fantasy Frontiers<small>An Idle Frontier to Gather, Craft, Build &amp; Battle</small></span></div>
       <div class="stats-summary">
         <span>Gold <b id="hdrGold">0</b></span>
@@ -990,23 +1076,24 @@
     </div>
 
     <div id="globalActionBar"></div>
-
-    <nav class="cat-tabs" id="catTabs"></nav>
-    <nav class="sub-tabs" id="subTabs"></nav>
-  </div>
-
-  <main class="layout">
-    <div class="content-wrap">
-      <section class="content panel" id="content"></section>
-      <div class="floating-text-layer" id="floatLayer"></div>
+      <nav class="sub-tabs" id="subTabs"></nav>
+      <div class="content-wrap">
+        <section class="content" id="content"></section>
+        <div class="floating-text-layer" id="floatLayer"></div>
+      </div>
     </div>
-    <aside>
+    <aside class="ff-dock" id="ffDock">
       <div class="panel" id="characterPanel"></div>
       <div class="panel" id="trackerPanel"></div>
-      <div class="panel" id="inventoryPanel"></div>
       <div class="panel" id="logPanel"></div>
+      <div class="panel ff-chatpanel" id="chatDockPanel"></div>
     </aside>
-  </main>
+  </div>
+  <nav class="ff-bottomdock" id="ffBottomDock"></nav>
+  <button class="ff-chatfab" id="ffChatFab" data-action="toggleChatDrawer">💬</button>
+  <div class="ff-ivy ff-ivy-l" id="ffIvyL"></div>
+  <div class="ff-ivy ff-ivy-r" id="ffIvyR"></div>
+  <div id="chatDrawerOverlay"></div>
 </div>
 
 <script>
@@ -4441,6 +4528,15 @@
   var state = newGame();
   var currentCategory = 'gathering';
   var currentSub = 'digging';
+  // Ivy Castle IA: 3 areas -> sub-views (each maps to an existing content category).
+  var AREAS = [
+    { id:'resources', label:'Resources', icon:'⛏', subs:[['crafting','Crafting'],['gathering','Gathering'],['peons','Peon Queues'],['inventory','Inventory'],['faith','Faith']] },
+    { id:'lands', label:'Lands', icon:'🏰', subs:[['estate','My Estate'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
+    { id:'battle', label:'Battle', icon:'⚔', subs:[['combat','Combat'],['character','Equipment & Stats'],['menagerie','Menagerie']] }
+  ];
+  function areaOf(cat){ for(var i=0;i<AREAS.length;i++){ if(AREAS[i].subs.some(function(s){ return s[0]===cat; })) return AREAS[i].id; } return 'resources'; }
+  var currentArea = areaOf(currentCategory);
+  var chatDrawerOpen = false;
   var craftOnlyAffordable = false; // Crafting: hide recipe cards the player lacks materials for
   var saveAccum = 0;
   var needsRender = false;
@@ -5554,16 +5650,54 @@
     }
     return false;
   }
+  function railSubFlash(cat){ return (cat==='farming' && hasReadyFarmingPlot()); } // draw attention when a plot is ready
+  // Renders the left rail (areas + nested sub-views), the mobile bottom dock, and the mobile sub-view chip row.
   function renderCatTabs(){
-    if(currentCategory==='chat') chatHasUnread = false; // viewing chat clears the unread flash
-    var farmReady = hasReadyFarmingPlot();
-    var chatFlashOn = chatHasUnread && (!state.settings || state.settings.chatFlash !== false);
-    var html = CATEGORIES.map(function(c){
-      var active = c.id===currentCategory ? ' active' : '';
-      var flash = ((c.id==='farming' && farmReady) || (c.id==='chat' && chatFlashOn)) ? ' flash' : '';
-      return '<button class="cat-btn'+active+flash+'" data-cat="'+c.id+'" style="--cat-color:'+c.color+'"><span class="seal">'+c.icon+'</span>'+c.label+'</button>';
-    }).join('');
-    document.getElementById('catTabs').innerHTML = html;
+    var railHtml = '', dockHtml = '', chipHtml = '';
+    AREAS.forEach(function(a){
+      var aon = a.id===currentArea;
+      railHtml += '<button class="ff-area-btn'+(aon?' on':'')+'" data-area="'+a.id+'"><span class="ico">'+a.icon+'</span>'+a.label+'</button>';
+      if(aon){
+        railHtml += '<div class="ff-subnest">';
+        a.subs.forEach(function(s){ railHtml += '<button class="ff-sub-btn'+(s[0]===currentCategory?' on':'')+(railSubFlash(s[0])?' flash':'')+'" data-cat="'+s[0]+'">'+escapeHtml(s[1])+'</button>'; });
+        railHtml += '</div>';
+      }
+      dockHtml += '<button class="ff-dock-btn'+(aon?' on':'')+'" data-area="'+a.id+'"><span class="ico">'+a.icon+'</span><span class="lbl">'+a.label+'</span></button>';
+    });
+    railHtml += '<button class="ff-rail-settings" data-action="openSettings">⚙ Settings</button>';
+    var area = AREAS.filter(function(x){ return x.id===currentArea; })[0];
+    if(area) area.subs.forEach(function(s){ chipHtml += '<button class="chip'+(s[0]===currentCategory?' on':'')+(railSubFlash(s[0])?' flash':'')+'" data-cat="'+s[0]+'">'+escapeHtml(s[1])+'</button>'; });
+    var railEl = document.getElementById('ffRail'); if(railEl) railEl.innerHTML = railHtml;
+    var dockEl = document.getElementById('ffBottomDock'); if(dockEl) dockEl.innerHTML = dockHtml;
+    var chipEl = document.getElementById('ffSubchips'); if(chipEl) chipEl.innerHTML = chipHtml;
+  }
+  // Persistent top bar HUD: crest, gold, event/tea buff chips, tracking, settings gear. Rebuilt each
+  // tick (via updateHeader) so gold + buff countdowns stay live.
+  function renderTopbar(){
+    var el = document.getElementById('ffTopbar'); if(!el) return;
+    var html = '<div class="ff-brand"><svg class="ff-brand-crest" viewBox="0 0 24 24"><path fill="#6f9538" d="M12 3C7 6 4 11 5 18c6-1 10-5 12-10-3 2-7 4-9 7 2-5 5-9 4-12Z"/></svg><span class="ff-brand-word">FANTASY FRONTIERS</span></div>';
+    html += '<div class="ff-tb-div"></div><div class="ff-coin">◆ '+fmt(state.gold)+'</div>';
+    if(serverBuffActive()) html += '<div class="ff-buffchip"><span class="dot" style="background:var(--coin)"></span>+50% EXP <span class="t">'+formatDuration(serverBuff.expUntil-Date.now())+'</span></div>';
+    if(isTeaActive()) html += '<div class="ff-buffchip"><span class="dot" style="background:#6f9538"></span>+'+Math.round(state.activeTea.xpBoost*100)+'% XP <span class="t">'+formatDuration(state.activeTea.expiresAt-Date.now())+'</span></div>';
+    var tk = state.trackedSkills && state.trackedSkills[0];
+    var trackTxt = tk ? ('Tracking: '+trackSkillMeta(tk).label+' Lv '+getLevel(trackedXpOf(tk))) : '';
+    html += '<div class="ff-tb-right">'+(trackTxt?'<span class="ff-track-top">'+escapeHtml(trackTxt)+'</span>':'')+'<button class="ff-gear" data-action="openSettings">⚙</button></div>';
+    el.innerHTML = html;
+  }
+  function renderChatDock(){
+    var el = document.getElementById('chatDockPanel'); if(!el) return;
+    el.innerHTML = '<div class="ff-dock-title">Chat</div>' + renderChatTab();
+  }
+  // Inventory as its own content view (Resources > Inventory); #inventoryPanel is filled by
+  // renderInventoryPanel() later in render().
+  function renderInventoryTab(){
+    return '<div class="section-intro">Everything you’ve gathered, crafted, and looted — search, sell, equip, or open.</div><div id="inventoryPanel"></div>';
+  }
+  function renderChatDrawer(){
+    var ov = document.getElementById('chatDrawerOverlay'); if(!ov) return;
+    if(!chatDrawerOpen){ ov.className = ''; ov.removeAttribute('data-action'); ov.innerHTML = ''; return; }
+    ov.className = 'ff-drawer-overlay'; ov.setAttribute('data-action','toggleChatDrawer');
+    ov.innerHTML = '<div class="ff-drawer" data-action="noop"><div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #c3ab77;padding-bottom:8px;margin-bottom:10px;"><div style="font-family:var(--font-display);font-size:14px;color:var(--green-deep);letter-spacing:1px;text-transform:uppercase;">Chat</div><button class="ff-gear" data-action="toggleChatDrawer" style="color:#8a7850;background:none;border:none;font-size:18px;">✕</button></div>' + renderChatTab() + '</div>';
   }
 
   var FAITH_SKILLS = {
@@ -11179,6 +11313,7 @@
     else if(currentCategory==='crafting') html = '<div class="'+(craftOnlyAffordable?'craft-filtering':'')+'"><div class="craft-filter-bar"><button class="craft-filter-btn'+(craftOnlyAffordable?' on':'')+'" data-action="toggleCraftFilter">'+(craftOnlyAffordable?'\u2611':'\u2610')+' Only show items I have materials for</button></div>'+renderCraftTab(currentSub)+'</div>';
     else if(currentCategory==='estate'){ estUse(false); html = renderEstateTab(); }
     else if(currentCategory==='peons') html = renderPeonsTab();
+    else if(currentCategory==='inventory') html = renderInventoryTab();
     else if(currentCategory==='market') html = renderMarketTab();
     else if(currentCategory==='farming') html = renderFarmingTab();
     else if(currentCategory==='combat') html = renderCombatTab();
@@ -11645,7 +11780,8 @@
         });
       }
     }
-    document.getElementById('inventoryPanel').innerHTML = html;
+    var _invEl = document.getElementById('inventoryPanel'); if(!_invEl) return; // only present on the Inventory view
+    _invEl.innerHTML = html;
 
     if(hadFocus){
       var newInput = document.getElementById('invSearchInput');
@@ -11682,11 +11818,12 @@
   }
 
   function updateHeader(){
-    document.getElementById('hdrGold').textContent = fmt(state.gold);
+    var hg = document.getElementById('hdrGold'); if(hg) hg.textContent = fmt(state.gold);
     var totalLevel = ALL_MAIN_SKILL_IDS.reduce(function(sum,sk){
       return sum + getLevel(state.xp[sk]);
     }, 0);
-    document.getElementById('hdrLevel').textContent = totalLevel;
+    var hl = document.getElementById('hdrLevel'); if(hl) hl.textContent = totalLevel;
+    renderTopbar(); // live coin + buff countdowns in the new HUD
   }
 
   // Display info for a concurrent (non-primary) craft slot -- mirrors the effTime formula
@@ -11996,6 +12133,7 @@
     var _chatFocused = !!(_ci && document.activeElement === _ci);
     var _chatSel = _ci ? _ci.selectionStart : null;
     if(_ci){ if(currentCategory==='chat' && chatChannel==='guild') guildChatDraft = _ci.value; else chatDraft = _ci.value; }
+    currentArea = areaOf(currentCategory); // keep the rail's active area in sync with the content
     updateHeader();
     document.getElementById('globalActionBar').innerHTML = renderGlobalActionBar();
     renderCatTabs();
@@ -12005,6 +12143,8 @@
     renderTrackerPanel();
     renderInventoryPanel();
     renderLogPanel();
+    renderChatDock();
+    renderChatDrawer();
     renderPopupQueue();
     renderTrackerPicker();
     renderPeonPicker();
@@ -12413,14 +12553,28 @@
   }
 
   // ================= EVENTS =================
-  document.getElementById('catTabs').addEventListener('click', function(e){
-    var btn = e.target.closest('[data-cat]');
-    if(!btn) return;
-    currentCategory = btn.getAttribute('data-cat');
+  function navPickCat(cat){
+    currentCategory = cat;
+    currentArea = areaOf(cat);
     profileView = null;
-    if(DEFAULT_SUB[currentCategory]) currentSub = DEFAULT_SUB[currentCategory];
-    if(currentCategory==='market') marketState.status = 'idle'; // reload + auto-collect on each entry
+    chatDrawerOpen = false;
+    if(DEFAULT_SUB[cat]) currentSub = DEFAULT_SUB[cat];
+    if(cat==='market') marketState.status = 'idle'; // reload + auto-collect on each entry
     render();
+  }
+  function navPickArea(area){
+    currentArea = area;
+    var a = AREAS.filter(function(x){ return x.id===area; })[0];
+    if(a && a.subs.length) navPickCat(a.subs[0][0]); else render();
+  }
+  // The left rail, the mobile bottom dock, and the mobile sub-view chip row all delegate here.
+  ['ffRail','ffBottomDock','ffSubchips'].forEach(function(id){
+    var el = document.getElementById(id);
+    if(!el) return;
+    el.addEventListener('click', function(e){
+      var ab = e.target.closest('[data-area]'); if(ab){ navPickArea(ab.getAttribute('data-area')); return; }
+      var cb = e.target.closest('[data-cat]'); if(cb){ navPickCat(cb.getAttribute('data-cat')); return; }
+    });
   });
 
   document.getElementById('subTabs').addEventListener('click', function(e){
@@ -12429,6 +12583,9 @@
     currentSub = btn.getAttribute('data-sub');
     render();
   });
+
+  var _ffResizeT = null;
+  window.addEventListener('resize', function(){ if(_ffResizeT) return; _ffResizeT = setTimeout(function(){ _ffResizeT = null; render(); }, 180); });
 
   document.getElementById('app').addEventListener('click', function(e){
     var btn = e.target.closest('[data-action]');
@@ -12707,6 +12864,10 @@
       serverBuffFetch(); // refresh the buff status when the menu opens
     } else if(action==='buyExpBuff'){
       buyServerExpBuff();
+    } else if(action==='toggleChatDrawer'){
+      chatDrawerOpen = !chatDrawerOpen; renderChatDrawer();
+    } else if(action==='noop'){
+      /* swallow clicks inside the chat drawer so the backdrop tap doesn't close it */
     } else if(action==='closeOfflineSummary'){
       offlineSummaryData = null;
     } else if(action==='closeSettings'){
