@@ -2,12 +2,13 @@ name: tests
 
 # Unit tests (headless Chrome) run on every push/PR — they have no side effects.
 # Integration tests hit the LIVE Supabase backend and create throwaway accounts, so they run
-# only on pushes to main + manual dispatch (never on PRs/forks). If the per-push account churn
-# becomes a nuisance, switch the integration trigger to `schedule:` or `workflow_dispatch` only.
+# nightly (schedule) + manual dispatch only — never on push/PR — to keep account churn low.
 on:
   push:
     branches: [ main ]
   pull_request:
+  schedule:
+    - cron: '0 8 * * *'   # nightly ~08:00 UTC — integration tests only
   workflow_dispatch:
 
 concurrency:
@@ -18,6 +19,7 @@ jobs:
   unit:
     name: Unit tests (browser)
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'   # push / PR / manual dispatch (the nightly slot is integration-only)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,7 +35,7 @@ jobs:
   integration:
     name: Integration tests (live backend)
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'   # nightly + manual only
     steps:
       - uses: actions/checkout@v4
       - name: Run backend integration tests

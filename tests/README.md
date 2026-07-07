@@ -10,9 +10,10 @@ Two layers:
 - **`unit`** — on every push and PR. Uses `tests/run-unit.mjs` to serve the repo and drive
   `index.html?selftest` in headless Chrome (Puppeteer's bundled Chromium), failing the job on any
   failed assertion.
-- **`integration`** — on pushes to `main` + manual `workflow_dispatch` (skipped on PRs, since it
-  creates live accounts). Reads optional `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` repo secrets;
-  with none set it uses the built-in defaults (the publishable key is already public).
+- **`integration`** — **nightly** (`schedule`, ~08:00 UTC) + manual `workflow_dispatch` only; it
+  never runs on push/PR because it creates live accounts. Reads optional `SUPABASE_URL` /
+  `SUPABASE_PUBLISHABLE_KEY` repo secrets; with none set it uses the built-in defaults (the
+  publishable key is already public).
 
 Run the unit harness locally with `cd tests && npm install && node run-unit.mjs`.
 
