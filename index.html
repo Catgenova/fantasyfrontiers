@@ -5627,6 +5627,14 @@
     });
     return parts.join(', ');
   }
+  // A live "Owned" total that re-sums a fixed set of inventory ids each tick. The exact ids are
+  // baked into the element (they only change when a tier dropdown re-renders the card), so
+  // updateDynamic just re-sums them -- keeps forge cards' Owned counts current without a full render.
+  function ownedSpan(ids){
+    var arr = [].concat(ids);
+    var sum = arr.reduce(function(s,id){ return s + (state.inventory[id]||0); }, 0);
+    return '<span class="owned-live" data-owned-ids="'+arr.join(',')+'">'+fmt(sum)+'</span>';
+  }
 
   function renderRecipeGrid(skillKey, recipes){
     var lvl = getLevel(state.xp[skillKey]);
@@ -5825,7 +5833,7 @@
       var relicPreview = getRelicBonusPct(recipe.tierIndex, 'normal');
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
-      var relicOwnedTotal = ['normal','rare','supreme','fantastic'].reduce(function(sum,r){ return sum + (state.inventory['relic_t'+recipe.tierIndex+'_'+r]||0); }, 0);
+      var relicOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'relic_t'+recipe.tierIndex+'_'+r; }));
       html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: '+relicOwnedTotal+'</div></div></div>';
       html += '<div class="item-stats"><span>+'+Math.round(recipe.xp*1.5)+' XP</span><span>'+recipe.time+'s</span><span>Normal: +'+Math.round(relicPreview*100)+'% dmg/armor</span></div>';
       html += '<div class="chance-line">Output: <b>1x Relic</b> at <b>'+successPct+'%</b> success (else a Broken Relic) &nbsp;|&nbsp; Rare <b>'+(chances.rare*100).toFixed(2)+'%</b>, Supreme <b>'+(chances.supreme*100).toFixed(2)+'%</b>, Fantastic <b>'+(chances.fantastic*100).toFixed(2)+'%</b></div>';
@@ -5912,7 +5920,7 @@
       var equippedTier = (tt.isGather ? state.gatherTools : state.craftTools)[tt.skillId]||0;
       var equippedRarity = (tt.isGather ? state.gatherToolRarities : state.craftToolRarities)[tt.skillId];
       var equippedLabel = equippedTier>0 ? (tt.isGather?getEquippedGatherTool(tt.skillId,equippedTier,equippedRarity):getEquippedCraftTool(tt.skillId,equippedTier,equippedRarity)).name : 'None equipped';
-      var toolOwnedTotal = ['normal','rare','supreme','fantastic'].reduce(function(sum,r){ return sum + (state.inventory['tool_'+tt.skillId+'_t'+sel+'_'+r]||0); }, 0);
+      var toolOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'tool_'+tt.skillId+'_t'+sel+'_'+r; }));
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+tt.icon+'</div><div><div class="item-name">'+tt.name+'</div><div class="item-meta">Equipped: '+equippedLabel+' &bull; Owned: '+toolOwnedTotal+'</div></div></div>';
@@ -5971,7 +5979,7 @@
         var rarityNote = mat.rarityIds.length>2 ? 'Normal/Rare/Supreme/Fantastic' : 'Normal/Rare only';
         var names = mat.tierNames();
         var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
-        var armorOwnedTotal = mat.rarityIds.reduce(function(sum,r){ return sum + (state.inventory['bodyarmor_'+material+'_'+slot+'_t'+sel+'_'+r]||0); }, 0);
+        var armorOwnedTotal = ownedSpan(mat.rarityIds.map(function(r){ return 'bodyarmor_'+material+'_'+slot+'_t'+sel+'_'+r; }));
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
         html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.label+' '+BODY_ARMOR_LABELS[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+armorOwnedTotal+'</div></div></div>';
         html += '<div class="inputs-line">Tier: <select data-action="selectBodyArmorTier" data-material="'+material+'" data-slot="'+slot+'"'+(isActive?' disabled':'')+'>';
@@ -6089,7 +6097,7 @@
         var successPct = Math.round(craftSuccessRate(state, mat.skillId)*100);
         var names = mat.tierNames();
         var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
-        var leatherOwnedTotal = mat.rarityIds.reduce(function(sum,r){ return sum + (state.inventory['bodyarmor_'+material+'_'+slot+'_t'+sel+'_'+r]||0); }, 0);
+        var leatherOwnedTotal = ownedSpan(mat.rarityIds.map(function(r){ return 'bodyarmor_'+material+'_'+slot+'_t'+sel+'_'+r; }));
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
         html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.slotLabels[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+leatherOwnedTotal+'</div></div></div>';
         html += '<div class="inputs-line">Wildlife: <select data-action="selectBodyArmorTier" data-material="'+material+'" data-slot="'+slot+'"'+(isActive?' disabled':'')+'>';
@@ -6125,7 +6133,7 @@
     var beltReady = lvl >= beltData.levelReq && hasInputs(beltData.inputs);
     var beltSuccessPct = Math.round(craftSuccessRate(state, 'leatherworking')*100);
     var beltFillId = beltIsActive ? (beltActiveSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+beltActiveSlot.index) : '';
-    var beltOwnedTotal = ['normal','rare','supreme','fantastic'].reduce(function(sum,r){ return sum + (state.inventory['belt_t'+beltSel+'_'+r]||0); }, 0);
+    var beltOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'belt_t'+beltSel+'_'+r; }));
     html += '<div class="card-grid"><div class="item-card'+(beltIsActive?' active-item':'')+'">';
     html += '<div class="item-top"><div class="item-icon">'+svgIcon('belt','#8a6a42')+'</div><div><div class="item-name">Belt</div><div class="item-meta">Rarity grants extra craft slots, not just more defense &bull; Owned: '+beltOwnedTotal+'</div></div></div>';
     html += '<div class="inputs-line">Wildlife: <select data-action="selectBeltTier"'+(beltIsActive?' disabled':'')+'>';
@@ -6173,7 +6181,7 @@
         var successPct = Math.round(craftSuccessRate(state, mat.skillId)*100);
         var names = mat.tierNames();
         var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
-        var tailorOwnedTotal = mat.rarityIds.reduce(function(sum,r){ return sum + (state.inventory['bodyarmor_'+material+'_'+slot+'_t'+sel+'_'+r]||0); }, 0);
+        var tailorOwnedTotal = ownedSpan(mat.rarityIds.map(function(r){ return 'bodyarmor_'+material+'_'+slot+'_t'+sel+'_'+r; }));
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
         html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.slotLabels[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+tailorOwnedTotal+'</div></div></div>';
         html += '<div class="inputs-line">Fiber: <select data-action="selectBodyArmorTier" data-material="'+material+'" data-slot="'+slot+'"'+(isActive?' disabled':'')+'>';
@@ -6298,7 +6306,7 @@
       var successPct = Math.round(craftSuccessRate(state, skillId)*100);
       var names = stackableWeaponTierNames(w);
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
-      var stwOwnedTotal = ['normal','rare','supreme','fantastic'].reduce(function(sum,r){ return sum + (state.inventory['stweapon_'+w.id+'_t'+sel+'_'+r]||0); }, 0);
+      var stwOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stweapon_'+w.id+'_t'+sel+'_'+r; }));
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">'+w.weaponClass+' &bull; '+formatTypeMix(w.attackTypes)+' &bull; '+w.attackSpeed+'s attack &bull; Owned: '+stwOwnedTotal+'</div></div></div>';
       html += '<div class="inputs-line">Tier: <select data-action="selectMeleeWeaponTier" data-type="'+w.id+'"'+(isActive?' disabled':'')+'>';
@@ -6420,7 +6428,7 @@
       var successPct = Math.round(craftSuccessRate(state, s.skillId)*100);
       var names = shieldTierNames();
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
-      var stsOwnedTotal = ['normal','rare','supreme','fantastic'].reduce(function(sum,r){ return sum + (state.inventory['stshield_'+s.id+'_t'+sel+'_'+r]||0); }, 0);
+      var stsOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stshield_'+s.id+'_t'+sel+'_'+r; }));
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+s.icon+'</div><div><div class="item-name">'+s.name+'</div><div class="item-meta">Counters '+s.countersType+' &bull; Owned: '+stsOwnedTotal+'</div></div></div>';
       html += '<div class="inputs-line">Tier: <select data-action="selectShieldTier" data-type="'+s.id+'"'+(isActive?' disabled':'')+'>';
@@ -11872,6 +11880,16 @@
       var startBtn = document.querySelector('[data-action="craft"][data-item="'+rid+'"]');
       if(startBtn) startBtn.disabled = !hasInputs(recipe.inputs);
     });
+
+    // Forge cards (tools/weapons/shields/body armor/belts/relics): live "Owned" totals. Each
+    // span carries the exact inventory ids to sum, so this just re-sums them every tick.
+    var ownedLive = document.getElementsByClassName('owned-live');
+    for(var oli=0; oli<ownedLive.length; oli++){
+      var osp = ownedLive[oli];
+      var oids = (osp.getAttribute('data-owned-ids')||'').split(',');
+      var osum = 0; for(var oj=0; oj<oids.length; oj++){ if(oids[oj]) osum += (state.inventory[oids[oj]]||0); }
+      osp.textContent = fmt(osum);
+    }
 
     // Blacksmithing: owned counts + ok/bad state + Forge button availability for the
     // currently-selected tier of each unified tool type.
