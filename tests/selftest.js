@@ -104,6 +104,21 @@
     near(FF.workshopBonusPct(FF.TIER_COUNT - 1), 0.30, 'gathering workshop top tier = 30%');
   });
 
+  // ---- Cottages + peon speed (Peons feature) --------------------------------------------
+  suite('cottages + peons', function(){
+    var c = FF.COTTAGE_ITEMS;
+    ok(c['cottage_t0'] && c['cottage_t20'], 'cottage items exist across tiers');
+    eq(c['cottage_t0'].tierIndex, 0, 'cottage tierIndex');
+    var d0 = FF.getCottageTierData(0), d3 = FF.getCottageTierData(3);
+    eq(d0.inputs['carpentry_t0'], 100, 'cottage t0 costs 100 planks');
+    ok(!('cottage_t-1' in d0.inputs), 'cottage t0 has no prior-cottage input');
+    eq(d3.inputs['carpentry_t3'], 100, 'cottage t3 costs 100 planks');
+    eq(d3.inputs['cottage_t2'], 1, 'cottage t3 consumes the previous-tier cottage');
+    near(FF.peonSpeedFactor(0), 0.05, 'peon speed 5% at t0');
+    near(FF.peonSpeedFactor(FF.TIER_COUNT - 1), 1.0, 'peon speed 100% at t20');
+    ok(FF.peonSpeedFactor(10) > FF.peonSpeedFactor(0) && FF.peonSpeedFactor(10) < FF.peonSpeedFactor(20), 'peon speed scales with tier');
+  });
+
   // ---- Combat damage-type advantage triangle --------------------------------------------
   suite('weaponAdvantage', function(){
     FF.DAMAGE_TYPES.forEach(function(t){ eq(FF.weaponAdvantageMultiplier(t, t), 1.0, 'same type is neutral: ' + t); });
