@@ -4558,10 +4558,70 @@
   }
   // A familiar linked to a skill grants +1% XP for that skill per familiar level.
   function familiarXpMult(skillId){ var f = state.familiars && state.familiars[skillId]; return (f && f.owned) ? (1 + f.level * 0.01) : 1; }
+  // ---- Server-wide buffs: gold-bought boosts that help EVERY player (a revenue feature). ----
+  // Shared timer lives server-side; every client reads it and applies the effect while it's live.
+  var SERVER_BUFF_EXP_COST = 100000;    // gold per 1-hour purchase
+  var SERVER_BUFF_EXP_MULT = 1.5;       // +50% XP to all players
+  var serverBuff = { expUntil: 0 };     // ms epoch; 0 = inactive
+  var _serverBuffBusy = false, _lastBuffPoll = 0;
+  function expBuffMultFor(nowMs, until){ return (until && nowMs < until) ? SERVER_BUFF_EXP_MULT : 1; } // pure (unit-tested)
+  function serverBuffXpMult(){ return expBuffMultFor(Date.now(), serverBuff.expUntil); }
+  function serverBuffActive(){ return Date.now() < serverBuff.expUntil; }
+  function serverBuffApply(buffs){
+    var iso = buffs && buffs.exp, until = iso ? Date.parse(iso) : 0;
+    if(isNaN(until)) until = 0;
+    var was = serverBuffActive();
+    serverBuff.expUntil = until;
+    if(serverBuffActive() !== was) needsRender = true; // buff flipped on/off -> refresh
+  }
+  function serverBuffFetch(){
+    if(!chatClient || !authUser) return;
+    chatClient.functions.invoke('server_buff', { body:{ action:'get' } }).then(function(r){
+      if(r && r.data && r.data.ok) serverBuffApply(r.data.buffs);
+    }, function(){});
+  }
+  function serverBuffRemainLabel(){
+    var ms = serverBuff.expUntil - Date.now();
+    return ms > 0 ? ('Active — ' + formatDuration(ms) + ' left') : 'Inactive';
+  }
+  function buyServerExpBuff(){
+    if(!authUser){ addLog('Sign in to buy a server buff.', 'danger'); return; }
+    if(_serverBuffBusy) return;
+    if(state.gold < SERVER_BUFF_EXP_COST){ addLog('You need ' + fmt(SERVER_BUFF_EXP_COST) + 'g to buy the EXP buff.', 'danger'); return; }
+    _serverBuffBusy = true;
+    state.gold -= SERVER_BUFF_EXP_COST; // client-authoritative economy (like guild treasury)
+    bumpStat('hoursBuffed', 1);
+    saveGame();
+    chatClient.functions.invoke('server_buff', { body:{ action:'buy', kind:'exp' } }).then(function(r){
+      _serverBuffBusy = false;
+      var res = r && r.data;
+      if(res && res.ok){
+        serverBuffApply(res.buffs);
+        addLog('You activated a server-wide +50% EXP buff for 1 hour — every player benefits. Thanks for supporting the server!', 'important');
+      } else {
+        state.gold += SERVER_BUFF_EXP_COST; bumpStat('hoursBuffed', -1); saveGame();
+        addLog('The buff purchase failed: ' + ((res && res.error) || 'try again') + '. Your gold was refunded.', 'danger');
+      }
+      renderSettingsModal(); render();
+    }, function(){
+      _serverBuffBusy = false;
+      state.gold += SERVER_BUFF_EXP_COST; bumpStat('hoursBuffed', -1); saveGame();
+      addLog('The buff purchase failed (network). Your gold was refunded.', 'danger');
+      renderSettingsModal(); render();
+    });
+  }
+  function renderServerBuffSettings(){
+    var html = '<div style="border-top:1px solid var(--border);margin:12px 0 4px;padding-top:10px;">';
+    html += '<div class="settings-row-label">Server Buffs</div>';
+    html += '<div class="settings-row-desc" style="margin-bottom:6px;">Spend gold on a boost that helps <b>every</b> player on the server.</div>';
+    html += '<div class="settings-row"><div><div class="settings-row-label">+50% EXP · 1 hour</div><div class="settings-row-desc">' + serverBuffRemainLabel() + ' &bull; ' + fmt(SERVER_BUFF_EXP_COST) + 'g</div></div>';
+    html += '<button class="action-btn" data-action="buyExpBuff" style="width:auto;flex:0 0 auto;"' + ((state.gold < SERVER_BUFF_EXP_COST || _serverBuffBusy) ? ' disabled' : '') + '>' + (_serverBuffBusy ? 'Buying…' : 'Buy') + '</button></div>';
+    return html + '</div>';
+  }
   function addXp(skill, amount){
     var before = getLevel(state.xp[skill]);
     if(isTeaActive()) amount = amount * (1 + state.activeTea.xpBoost);
-    amount = amount * familiarXpMult(skill);
+    amount = amount * familiarXpMult(skill) * serverBuffXpMult();
     state.xp[skill] += amount;
     if(offlineCapture){ offlineCapture.xp[skill] = (offlineCapture.xp[skill]||0) + amount; }
     var after = getLevel(state.xp[skill]);
@@ -4577,7 +4637,7 @@
     if(!pairs) return;
     var relevantPhysiqueIds = resolveActionBarSkill().physiqueIds;
     pairs.forEach(function(pair){
-      var id = pair[0], amount = pair[1] * familiarXpMult(id);
+      var id = pair[0], amount = pair[1] * familiarXpMult(id) * serverBuffXpMult();
       var before = getLevel(state.physique[id]||0);
       state.physique[id] = (state.physique[id]||0) + amount;
       if(offlineCapture){ offlineCapture.physique[id] = (offlineCapture.physique[id]||0) + amount; }
@@ -5385,7 +5445,7 @@
           if(typeof state.playerHp !== 'number') state.playerHp = maxHp(state);
           if(typeof state.autoEatThreshold !== 'number') state.autoEatThreshold = 0;
           if(!state.stats || typeof state.stats !== 'object') state.stats = {};
-          ['kills','deaths','gathered','crafted','craftedRare','craftedSupreme','craftedFantastic'].forEach(function(k){ if(typeof state.stats[k] !== 'number') state.stats[k] = 0; });
+          ['kills','deaths','gathered','crafted','craftedRare','craftedSupreme','craftedFantastic','hoursBuffed'].forEach(function(k){ if(typeof state.stats[k] !== 'number') state.stats[k] = 0; });
           if(!state.activeTea || typeof state.activeTea !== 'object') state.activeTea = { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 };
           if(typeof state.autoTea !== 'boolean') state.autoTea = false;
           if(!state.familiars || typeof state.familiars !== 'object') state.familiars = {};
@@ -6841,7 +6901,8 @@
       ['Items crafted', s.crafted||0, 'var(--cat-crafting)'],
       ['Rare crafts', s.craftedRare||0, 'var(--rarity-rare)'],
       ['Supreme crafts', s.craftedSupreme||0, 'var(--rarity-superior)'],
-      ['Fantastic crafts', s.craftedFantastic||0, 'var(--rarity-fantastic)']
+      ['Fantastic crafts', s.craftedFantastic||0, 'var(--rarity-fantastic)'],
+      ['Hours buffed', s.hoursBuffed||0, 'var(--cat-market)']
     ];
     var html = '<h3>Lifetime Stats</h3><div class="lifetime-stats">';
     items.forEach(function(it){
@@ -7167,6 +7228,7 @@
       html += '</div>';
       html += renderRecoverySettings();
       html += '</div>';
+      html += renderServerBuffSettings();
     }
     html += '<button class="action-btn" data-action="closeSettings" style="margin-top:14px">Close</button>';
     html += '</div>';
@@ -9960,7 +10022,8 @@
     {key:'crafted', label:'Items Crafted'},
     {key:'craftedRare', label:'Rare Crafts'},
     {key:'craftedSupreme', label:'Supreme Crafts'},
-    {key:'craftedFantastic', label:'Fantastic Crafts'}
+    {key:'craftedFantastic', label:'Fantastic Crafts'},
+    {key:'hoursBuffed', label:'Hours Buffed'}
   ];
   function buildProfileStats(){
     var s = state.stats || {}, out = {};
@@ -12619,6 +12682,9 @@
       marketReload();
     } else if(action==='openSettings'){
       settingsOpen = true; recoveryStatus = null; recoveryEditing = false; recoveryMsg = '';
+      serverBuffFetch(); // refresh the buff status when the menu opens
+    } else if(action==='buyExpBuff'){
+      buyServerExpBuff();
     } else if(action==='closeOfflineSummary'){
       offlineSummaryData = null;
     } else if(action==='closeSettings'){
@@ -12788,6 +12854,7 @@
     processGuildEstateJobs(); // complete this member's guild-estate activity when its timer elapses
     if(guildPeonOfflineMs) maybeGuildPeonCatchup(); // apply deferred guild-peon offline work once the estate loads
     processPeons(dt);         // cottage peons work in the background, independent of the player
+    if(CHAT_ENABLED && authUser && chatClient && now - _lastBuffPoll > 60000){ _lastBuffPoll = now; serverBuffFetch(); } // refresh the server-wide buff timer
 
     // Meditation is trained purely by being completely idle -- no gathering, crafting,
     // combat, faith activity or background craft slot running.
@@ -13021,6 +13088,7 @@
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
+      expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, LB_STAT_METRICS:LB_STAT_METRICS,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       DAMAGE_TYPES:DAMAGE_TYPES

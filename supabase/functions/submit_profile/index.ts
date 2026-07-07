@@ -130,7 +130,7 @@ Deno.serve(async (req) => {
 
   // Lifetime stats for the leaderboard filters. Bounded to non-negative integers; a known
   // key set only. Cosmetic + client-authoritative, so never reject the submission over it.
-  const STAT_KEYS = ["kills", "deaths", "gathered", "crafted", "craftedRare", "craftedSupreme", "craftedFantastic", "combat_score"];
+  const STAT_KEYS = ["kills", "deaths", "gathered", "crafted", "craftedRare", "craftedSupreme", "craftedFantastic", "combat_score", "hoursBuffed"];
   const STAT_CAP = 1_000_000_000_000;
   const cleanStats = (raw: unknown) => {
     const out: Record<string, number> = {};

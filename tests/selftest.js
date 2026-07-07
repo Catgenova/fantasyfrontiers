@@ -147,6 +147,16 @@
     eq((3+1)*FF.ESTATE_COTTAGE_MS_PER_TIER, 2400000, 'tier-3 cottage builds in 40 min');
   });
 
+  // ---- Server-wide EXP buff -------------------------------------------------------------
+  suite('server exp buff', function(){
+    eq(FF.SERVER_BUFF_EXP_COST, 100000, 'exp buff costs 100,000 gold');
+    eq(FF.SERVER_BUFF_EXP_MULT, 1.5, 'exp buff is +50% XP');
+    eq(FF.expBuffMultFor(1000, 2000), 1.5, 'buff active (now < until) -> 1.5x');
+    eq(FF.expBuffMultFor(3000, 2000), 1, 'buff expired (now >= until) -> 1x');
+    eq(FF.expBuffMultFor(1000, 0), 1, 'no buff (until 0) -> 1x');
+    ok(FF.LB_STAT_METRICS.some(function(m){ return m.key === 'hoursBuffed'; }), 'hoursBuffed is a leaderboard metric');
+  });
+
   // ---- Marketplace pricing helpers (must match the server RPC's tax math) --------------
   suite('marketplace pricing', function(){
     eq(FF.MARKET_TAX, 0.05, 'market tax is 5%');

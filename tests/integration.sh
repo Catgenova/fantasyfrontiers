@@ -202,6 +202,17 @@ assert_err "$(fn marketplace "$TOK_MA" "{\"action\":\"place\",\"side\":\"sideway
 assert_err "$(fn marketplace "$TOK_MA" "{\"action\":\"place\",\"side\":\"buy\",\"item_key\":\"$IKEY\",\"unit_price\":9999999999,\"qty\":1}")" "over-max price rejected"
 
 # --------------------------------------------------------------------------------------------
+sect "Server buff"
+# Uses the 1s 'test' kind so we don't switch on the real +50% EXP buff for every live player.
+SBG=$(fn server_buff "$TOK_MA" '{"action":"get"}')
+assert_ok  "$SBG" "buff status is readable"
+assert_has "$SBG" "\"exp\"" "status includes the exp buff key"
+SBB=$(fn server_buff "$TOK_MA" '{"action":"buy","kind":"test"}')
+assert_ok  "$SBB" "buy a buff (test kind)"
+assert_has "$SBB" "\"active_until\"" "buy returns the new active_until"
+assert_err "$(fn server_buff "$TOK_MA" '{"action":"buy","kind":"nope"}')" "unknown buff kind rejected"
+
+# --------------------------------------------------------------------------------------------
 sect "Cleanup"
 # Demote-free path: leader disband cascades members/apps/messages/bank/estate for the test guild.
 DIS=$(fn guild_action "$TOK_A" '{"action":"disband"}')
