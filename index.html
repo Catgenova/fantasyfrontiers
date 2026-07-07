@@ -187,6 +187,12 @@
   .market-item-name{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .market-item-owned{color:var(--text-faint); font-size:11px; white-space:nowrap;}
   .market-listing-info{color:var(--cat-market); font-size:11px; white-space:nowrap; font-family:var(--font-mono);}
+  .market-listing-row{display:flex; align-items:stretch; gap:6px;}
+  .market-buynow{font-family:inherit; font-size:12px; font-weight:600; padding:0 12px; border:1px solid var(--cat-market); border-radius:8px; background:rgba(47,138,106,0.12); color:var(--cat-market); cursor:pointer; white-space:nowrap;}
+  .market-buynow:hover{background:rgba(47,138,106,0.22);}
+  .market-buynow:disabled{opacity:0.4; cursor:not-allowed;}
+  .market-form-btns{display:flex; gap:8px; flex-wrap:wrap;}
+  .action-btn.buynow{background:var(--cat-market); border-color:var(--cat-market);}
   .market-trade-head{display:flex; align-items:center; gap:12px; margin-bottom:10px;}
   .market-trade-head .market-item-ico svg{width:34px; height:34px;}
   .market-trade-name{font-family:var(--font-display); font-size:16px;}
@@ -10863,7 +10869,9 @@
       }
       var html = '';
       rows.slice(0,80).forEach(function(r){ var m = marketItemMeta(r.item_key);
-        html += '<button class="market-item-row" data-action="marketPickItem" data-item="'+r.item_key+'"><span class="market-item-ico">'+m.icon+'</span><span class="market-item-name">'+escapeHtml(m.name)+'</span><span class="market-listing-info">from '+fmt(r.min_ask)+'g • '+fmt(r.qty)+' available</span></button>';
+        var afford = state.gold >= r.min_ask;
+        html += '<div class="market-listing-row"><button class="market-item-row" style="flex:1;min-width:0;" data-action="marketPickItem" data-item="'+r.item_key+'"><span class="market-item-ico">'+m.icon+'</span><span class="market-item-name">'+escapeHtml(m.name)+'</span><span class="market-listing-info">from '+fmt(r.min_ask)+'g • '+fmt(r.qty)+' available</span></button>';
+        html += '<button class="market-buynow" data-action="marketQuickBuy" data-item="'+r.item_key+'" data-price="'+r.min_ask+'"'+(afford?'':' disabled')+' title="Buy 1 at '+fmt(r.min_ask)+'g">Buy 1</button></div>';
       });
       return html;
     }
@@ -10917,7 +10925,9 @@
     html += '<button class="action-btn" data-action="marketPlaceSell"'+(owned<=0?' disabled':'')+'>Place Sell Order</button></div>';
     html += '<div class="market-form"><div class="market-form-h">Buy</div><div class="market-form-row"><input id="marketBuyQty" class="market-num" type="number" min="1" placeholder="Qty"><input id="marketBuyPrice" class="market-num" type="number" min="1" placeholder="Max price each"></div>';
     html += '<div class="item-meta" id="marketBuyPreview">Your gold: '+fmt(state.gold)+'.</div>';
-    html += '<button class="action-btn" data-action="marketPlaceBuy">Place Buy Order</button></div>';
+    html += '<div class="market-form-btns"><button class="action-btn" data-action="marketPlaceBuy">Place Buy Order</button>';
+    if(book && book.best_ask!=null) html += '<button class="action-btn buynow" data-action="marketBuyNow" title="Fill from the cheapest sellers now">Buy Now @ '+fmt(book.best_ask)+'g</button>';
+    html += '</div></div>';
     html += '</div>';
     return html;
   }
@@ -11007,22 +11017,43 @@
       marketReload();
     });
   }
-  function marketPlaceBuy(){
-    var item = marketState.selectedItem; if(!item || marketState.busy) return;
-    var q = document.getElementById('marketBuyQty'), p = document.getElementById('marketBuyPrice');
-    var qty = parseInt(q&&q.value,10), price = parseInt(p&&p.value,10);
-    if(!(qty>0) || !(price>0)){ addLog('Enter a quantity and max price to buy.','danger'); return; }
+  // Shared buy path (used by the limit-buy form, a listing's quick "Buy 1", and detail "Buy Now").
+  // `instant` just changes the log wording; matching/escrow is identical.
+  function marketSubmitBuy(item, price, qty, instant){
+    if(!item || marketState.busy) return;
+    if(!(qty>0) || !(price>0)){ addLog('Enter a quantity and price to buy.','danger'); return; }
     if(price>MARKET_MAX_PRICE || qty>MARKET_MAX_QTY){ addLog('Price or quantity is too large.','danger'); return; }
     var cost = marketBuyCost(price, qty);
-    if(state.gold < cost){ addLog('You need '+fmt(cost)+'g for that buy order.','danger'); return; }
+    if(state.gold < cost){ addLog('You need '+fmt(cost)+'g for that.','danger'); return; }
     marketState.busy = true;
-    state.gold -= cost; saveGame(); // escrow gold
+    state.gold -= cost; saveGame(); // escrow gold (price-improvement is refunded via collect)
     marketInvoke('place', { side:'buy', item_key:item, unit_price:price, qty:qty }).then(function(res){
       marketState.busy = false;
-      if(!res || !res.ok){ state.gold += cost; saveGame(); addLog('Buy order failed: '+((res&&res.error)||'try again')+'.','danger'); render(); return; }
-      addLog('Placed buy order for '+fmt(qty)+' '+marketItemName(item)+' @ up to '+fmt(price)+'g'+(res.filled>0? ' — '+fmt(res.filled)+' bought instantly':'')+'.', 'chronicle');
+      if(!res || !res.ok){ state.gold += cost; saveGame(); addLog('Buy failed: '+((res&&res.error)||'try again')+'.','danger'); render(); return; }
+      var filled = res.filled||0, rest = res.rest||0;
+      if(instant){
+        addLog(filled>0 ? ('Bought '+fmt(filled)+' '+marketItemName(item)+(rest>0? ' — bid '+fmt(rest)+' more @ '+fmt(price)+'g':'')+'.') : ('Nothing available to buy now — bid '+fmt(rest)+' '+marketItemName(item)+' @ '+fmt(price)+'g.'), 'chronicle');
+      } else {
+        addLog('Placed buy order for '+fmt(qty)+' '+marketItemName(item)+' @ up to '+fmt(price)+'g'+(filled>0? ' — '+fmt(filled)+' bought instantly':'')+'.', 'chronicle');
+      }
       marketReload();
     });
+  }
+  function marketPlaceBuy(){
+    var q = document.getElementById('marketBuyQty'), p = document.getElementById('marketBuyPrice');
+    marketSubmitBuy(marketState.selectedItem, parseInt(p&&p.value,10), parseInt(q&&q.value,10), false);
+  }
+  // Quick buy 1 unit at a listing's advertised lowest ask (from the For Sale row).
+  function marketQuickBuy(item, price){ marketSubmitBuy(item, price, 1, true); }
+  // Buy Now: sweep the ask ladder to fill the requested qty (default 1) instantly, no resting remainder.
+  function marketBuyNow(){
+    var item = marketState.selectedItem; if(!item) return;
+    var book = (marketState.book && marketState.bookItem===item) ? marketState.book : null;
+    if(!book || !book.asks.length){ addLog('Nothing is for sale to buy right now.','danger'); return; }
+    var q = document.getElementById('marketBuyQty'); var want = parseInt(q&&q.value,10); if(!(want>0)) want = 1;
+    var acc = 0, sweep = book.asks[0].price;
+    for(var i=0;i<book.asks.length;i++){ sweep = book.asks[i].price; acc += book.asks[i].qty; if(acc>=want) break; }
+    marketSubmitBuy(item, sweep, Math.min(want, acc), true); // limit=sweep covers every unit taken -> fully fills
   }
   function marketCancelOrder(orderId){
     marketInvoke('cancel', { order_id:orderId }).then(function(res){
@@ -12535,6 +12566,10 @@
       marketPlaceSell();
     } else if(action==='marketPlaceBuy'){
       marketPlaceBuy();
+    } else if(action==='marketQuickBuy'){
+      marketQuickBuy(btn.getAttribute('data-item'), parseInt(btn.getAttribute('data-price'),10));
+    } else if(action==='marketBuyNow'){
+      marketBuyNow();
     } else if(action==='marketCancel'){
       marketCancelOrder(parseInt(btn.getAttribute('data-order'),10));
     } else if(action==='marketCollect'){
