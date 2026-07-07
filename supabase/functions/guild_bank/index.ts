@@ -10,6 +10,8 @@
 //   withdraw { item_key, qty }       -> requires rank >= guild's min_withdraw_rank
 //   buy_slot                         -> (leader/officer) +1 slot; returns the gold cost
 //   set_withdraw_rank { rank }       -> (leader) set the minimum rank allowed to withdraw
+//   donate_gold   { amount }         -> member; add gold to the shared treasury
+//   withdraw_gold { amount }         -> requires rank >= guild's min_withdraw_rank
 //
 // Verify JWT must be OFF (publishable key isn't a JWT; token validated internally).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -54,7 +56,7 @@ Deno.serve(async (req) => {
   const isOfficer = myRank === "officer" || myRank === "leader";
 
   async function snapshot() {
-    const { data: g } = await admin.from("guilds").select("bank_slots, bank_min_withdraw_rank").eq("id", guildId).maybeSingle();
+    const { data: g } = await admin.from("guilds").select("bank_slots, bank_min_withdraw_rank, treasury").eq("id", guildId).maybeSingle();
     const { data: items } = await admin.from("guild_bank")
       .select("item_key, qty").eq("guild_id", guildId).order("updated_at", { ascending: false });
     const list = items || [];
@@ -63,6 +65,7 @@ Deno.serve(async (req) => {
       used: list.length,
       items: list,
       min_withdraw_rank: g?.bank_min_withdraw_rank ?? "member",
+      treasury: Number(g?.treasury ?? 0),
     };
   }
 
@@ -105,6 +108,29 @@ Deno.serve(async (req) => {
     if (res?.status === "max") return json({ ok: false, error: "The bank is already at the 500-slot maximum." }, 409);
     if (res?.status !== "ok") return json({ ok: false, error: "Purchase rejected." }, 400);
     return json({ ok: true, cost: res.cost, ...(await snapshot()) });
+  }
+
+  if (action === "donate_gold") {
+    const amount = Number(body.amount);
+    if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_QTY) return json({ ok: false, error: "Invalid amount." }, 400);
+    const { data: r, error } = await admin.rpc("guild_treasury_donate", { p_guild: guildId, p_amount: amount });
+    if (error) return json({ ok: false, error: "Donation failed." }, 500);
+    if ((r as { status?: string })?.status !== "ok") return json({ ok: false, error: "Donation rejected." }, 400);
+    return json({ ok: true, ...(await snapshot()) });
+  }
+
+  if (action === "withdraw_gold") {
+    if (RANKVAL[myRank] < RANKVAL[(await snapshot()).min_withdraw_rank]) {
+      return json({ ok: false, error: "Your rank can't withdraw from the bank." }, 403);
+    }
+    const amount = Number(body.amount);
+    if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_QTY) return json({ ok: false, error: "Invalid amount." }, 400);
+    const { data: r, error } = await admin.rpc("guild_treasury_withdraw", { p_guild: guildId, p_amount: amount });
+    if (error) return json({ ok: false, error: "Withdraw failed." }, 500);
+    const res = r as { status?: string; granted?: number };
+    if (res?.status === "short") return json({ ok: false, error: "Not enough gold in the treasury.", code: "short" }, 409);
+    if (res?.status !== "ok") return json({ ok: false, error: "Withdraw rejected." }, 400);
+    return json({ ok: true, granted: Number(res.granted), ...(await snapshot()) });
   }
 
   if (action === "set_withdraw_rank") {

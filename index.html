@@ -9536,7 +9536,7 @@
   var BANK_SLOT_BASE = 10000;
   function bankSlotCost(slots){ return Math.round(BANK_SLOT_BASE * Math.pow(1.25, Math.max(0, slots-5))); }
   var RANK_VAL = { member:1, officer:2, leader:3 };
-  var guildBankState = { status:'idle', guildId:null, slots:5, used:0, items:[], minWithdrawRank:'member', busy:false, error:'' };
+  var guildBankState = { status:'idle', guildId:null, slots:5, used:0, items:[], minWithdrawRank:'member', treasury:0, busy:false, error:'' };
   function guildBankInvoke(action, payload){
     if(!chatClient || !authUser) return Promise.resolve({ ok:false, error:'Sign in first.' });
     var body = { action: action };
@@ -9550,6 +9550,7 @@
     guildBankState.status='ready';
     guildBankState.slots = res.slots; guildBankState.used = res.used;
     guildBankState.items = res.items || []; guildBankState.minWithdrawRank = res.min_withdraw_rank || 'member';
+    guildBankState.treasury = Number(res.treasury) || 0;
   }
   function guildBankLoad(){
     if(!guildState.guild) return;
@@ -9613,6 +9614,36 @@
       else { guildBankState.error=res.error||'Could not update.'; render(); }
     });
   }
+  function guildBankDonateGold(){
+    if(guildBankState.busy) return;
+    var el=document.getElementById('guildBankDonateGoldAmt');
+    var amt=parseInt((el&&el.value)||'0',10);
+    if(!(amt>0)){ guildBankState.error='Enter an amount of gold to donate.'; render(); return; }
+    if(amt>(state.gold||0)){ guildBankState.error='You only have '+fmt(state.gold||0)+' gold.'; render(); return; }
+    guildBankState.busy=true; guildBankState.error=''; render();
+    guildBankInvoke('donate_gold', { amount:amt }).then(function(res){
+      guildBankState.busy=false;
+      if(!res.ok){ guildBankState.error=res.error||'Donation failed.'; render(); return; }
+      state.gold = Math.max(0, (state.gold||0) - amt); // only after the server accepted it
+      saveGame(); guildBankApply(res); render();
+    });
+  }
+  function guildBankWithdrawGold(){
+    if(guildBankState.busy) return;
+    var max = guildBankState.treasury||0;
+    if(max<=0) return;
+    var ans = prompt('Withdraw how much gold from the treasury? (1–'+max+')', String(max));
+    if(ans===null) return;
+    var amt = parseInt(ans,10);
+    if(!(amt>0)) return;
+    if(amt>max) amt=max;
+    guildBankState.busy=true; guildBankState.error=''; render();
+    guildBankInvoke('withdraw_gold', { amount:amt }).then(function(res){
+      guildBankState.busy=false;
+      if(!res.ok){ guildBankState.error=res.error||'Withdraw failed.'; render(); return; }
+      state.gold = (state.gold||0) + (Number(res.granted)||amt); saveGame(); guildBankApply(res); render();
+    });
+  }
   function renderGuildBank(){
     if(guildBankState.status==='idle' || guildBankState.guildId !== (guildState.guild&&guildState.guild.id)){ guildBankLoad(); }
     var canManage = guildState.myRank==='leader' || guildState.myRank==='officer';
@@ -9629,6 +9660,17 @@
         html += '<button class="action-btn" data-action="guildBankBuySlot" '+((afford&&!guildBankState.busy)?'':'disabled')+' style="width:auto;flex:0 0 auto;margin-bottom:10px;">'+(afford?'Buy slot '+(guildBankState.slots+1)+' &mdash; '+fmt(cost)+'g':'Next slot needs '+fmt(cost)+'g')+'</button>';
       }
     }
+    // Gold treasury -- a shared gold pool. Anyone can donate; withdrawing follows the same rank rule as items.
+    html += '<div class="guild-section-title">Gold Treasury</div>';
+    html += '<div class="guild-member-row"><div style="display:flex;align-items:center;gap:8px;">'+svgIcon('coin','var(--gold)')+'<b>'+fmt(guildBankState.treasury)+' gold</b></div>';
+    if(canWithdraw && guildBankState.treasury>0) html += '<button class="mini-btn" data-action="guildBankWithdrawGold" '+(guildBankState.busy?'disabled':'')+'>Withdraw</button>';
+    html += '</div>';
+    html += '<div class="char-row" style="gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0 2px;">';
+    html += '<input id="guildBankDonateGoldAmt" class="chat-input" type="number" min="1" placeholder="amount" style="width:120px;flex:0 0 auto;">';
+    html += '<button class="action-btn" data-action="guildBankDonateGold" '+(guildBankState.busy?'disabled':'')+' style="width:auto;flex:0 0 auto;">Donate gold</button>';
+    html += '<span class="item-meta">You have '+fmt(state.gold||0)+'g</span>';
+    html += '</div>';
+    if(!canWithdraw){ html += '<div class="empty-note" style="margin:2px 0 4px;">Gold withdrawals follow the same rank rule as item withdrawals below.</div>'; }
     var owned=[];
     Object.keys(ALL_SELLABLE).forEach(function(id){ if((state.inventory[id]||0)>0 && !state.lockedItems[id]) owned.push(id); });
     owned.sort(function(a,b){ return ALL_SELLABLE[a].name.localeCompare(ALL_SELLABLE[b].name); });
@@ -11353,6 +11395,10 @@
       guildBankWithdraw(btn.getAttribute('data-item'));
     } else if(action==='guildBankSetWithdrawRank'){
       guildBankSetWithdrawRank(btn.getAttribute('data-rank'));
+    } else if(action==='guildBankDonateGold'){
+      guildBankDonateGold();
+    } else if(action==='guildBankWithdrawGold'){
+      guildBankWithdrawGold();
     } else if(action==='guildBossSummon'){
       guildBossSummon(btn.getAttribute('data-key'));
     } else if(action==='guildBossAssault'){
