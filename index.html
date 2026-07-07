@@ -7290,10 +7290,16 @@
     if(job.kind === 'clear'){
       var oinfo = estateObstacleInfo(cell.obstacle);
       if(giveRewards && oinfo){
-        addItem(oinfo.itemId, oinfo.resourceAmount);
-        addXp(oinfo.def.skill, oinfo.xp);
-        addLog('Cleared the ' + oinfo.def.label + ' at (' + job.x + ', ' + job.y + '). +' + oinfo.resourceAmount + ' ' + oinfo.itemName + ', +' + oinfo.xp + ' ' + SKILL_LABELS[oinfo.def.skill] + ' XP.', 'important');
-        spawnFloatingText('+' + oinfo.resourceAmount + ' ' + oinfo.itemName, 'ft-success');
+        addXp(oinfo.def.skill, oinfo.xp); // the clearer always earns the XP
+        if(isGuild){
+          // Shared estate: the harvested resources belong to the guild -> deposit into the bank.
+          guildBankDepositCleared(oinfo.itemId, oinfo.resourceAmount, oinfo.itemName, oinfo.def.label, job);
+          addLog('Cleared the ' + oinfo.def.label + ' on the guild estate. +' + oinfo.xp + ' ' + SKILL_LABELS[oinfo.def.skill] + ' XP.', 'important');
+        } else {
+          addItem(oinfo.itemId, oinfo.resourceAmount);
+          addLog('Cleared the ' + oinfo.def.label + ' at (' + job.x + ', ' + job.y + '). +' + oinfo.resourceAmount + ' ' + oinfo.itemName + ', +' + oinfo.xp + ' ' + SKILL_LABELS[oinfo.def.skill] + ' XP.', 'important');
+          spawnFloatingText('+' + oinfo.resourceAmount + ' ' + oinfo.itemName, 'ft-success');
+        }
       }
       cell.obstacle = null;
       return true;
@@ -9604,6 +9610,23 @@
     guildBankState.slots = res.slots; guildBankState.used = res.used;
     guildBankState.items = res.items || []; guildBankState.minWithdrawRank = res.min_withdraw_rank || 'member';
     guildBankState.treasury = Number(res.treasury) || 0;
+  }
+  // Deposit resources harvested by clearing a guild-estate tile straight into the guild bank
+  // (they belong to the guild, not the clearer). If the vault is full or the call fails, fall
+  // back to the clearer's inventory so nothing is lost.
+  function guildBankDepositCleared(itemId, amount, itemName, label, job){
+    spawnFloatingText('+' + amount + ' ' + itemName + ' → Bank', 'ft-success');
+    guildBankInvoke('deposit', { item_key: itemId, qty: amount }).then(function(res){
+      if(res && res.ok){
+        guildBankApply(res);
+        addLog('Deposited ' + amount + ' ' + itemName + ' from the cleared ' + label + ' into the guild bank.', 'chronicle');
+        if(currentCategory==='guild' && guildSub==='bank') render();
+      } else {
+        addItem(itemId, amount); saveGame();
+        var why = (res && res.code === 'full') ? 'the guild bank is full (buy more slots)' : ((res && res.error) || 'the deposit failed');
+        addLog('Kept ' + amount + ' ' + itemName + ' in your inventory — ' + why + '.', 'danger');
+      }
+    });
   }
   function guildBankLoad(){
     if(!guildState.guild) return;
