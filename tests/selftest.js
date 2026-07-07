@@ -141,6 +141,10 @@
   // ---- PEON_MAX_SLOTS must be a defined constant (its absence blanked the Peons tab) ---
   suite('peon slot constant', function(){
     eq(FF.PEON_MAX_SLOTS, 5, 'PEON_MAX_SLOTS defined = 5 (10 total: 5 personal + 5 guild)');
+    // Cottage build timer: 10 minutes per tier (tier index T -> (T+1)*10 min).
+    eq(FF.ESTATE_COTTAGE_MS_PER_TIER, 10*60*1000, 'cottage build = 10 min per tier');
+    eq((0+1)*FF.ESTATE_COTTAGE_MS_PER_TIER, 600000, 'tier-0 cottage builds in 10 min');
+    eq((3+1)*FF.ESTATE_COTTAGE_MS_PER_TIER, 2400000, 'tier-3 cottage builds in 40 min');
   });
 
   // ---- Marketplace pricing helpers (must match the server RPC's tax math) --------------

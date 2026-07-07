@@ -4467,6 +4467,18 @@
   // results are shown in one "while you were away" summary popup instead.
   var offlineCapture = null;
   var offlineSummaryData = null;   // holds the "while you were away" summary until dismissed
+  var guildPeonOfflineMs = 0;      // deferred guild-peon offline catch-up (applied once the guild estate loads)
+  function maybeGuildPeonCatchup(){
+    if(guildPeonOfflineMs < 3000){ guildPeonOfflineMs = 0; return; }
+    if(!peonGridFor('guild')) return;                  // guild grid not ready yet -> keep waiting
+    var ms = guildPeonOfflineMs; guildPeonOfflineMs = 0;
+    var tasks = peonTasksFor('guild');
+    if(tasks && tasks.length){
+      processPeonScope('guild', ms, 300000);
+      saveGame();
+      addLog('Your guild-estate Peons worked through ' + formatDuration(ms) + ' of your time away.', 'chronicle');
+    }
+  }
   function addLog(msg, cls){
     if(offlineCapture) return;
     state.log.push({msg:msg, cls:cls||''});
@@ -5212,11 +5224,10 @@
     var regenSeconds = Math.floor(capped/1000/15);
     if(regenSeconds > 0) state.playerHp = Math.min(maxHp(state), state.playerHp + regenSeconds);
     var act = state.activity;
-    if(!act || (act.type !== 'gather' && act.type !== 'craft' && act.type !== 'combat')) return;
     var goldBefore = state.gold;
-    offlineCapture = { xp:{}, physique:{}, items:{}, gold:0, elapsedMs:capped, activityType:act.type };
+    offlineCapture = { xp:{}, physique:{}, items:{}, gold:0, elapsedMs:capped, activityType:(act&&act.type)||null };
     try{
-    if(act.type === 'gather'){
+    if(act && act.type === 'gather'){
       var item = ALL_GATHER_ITEMS[act.itemId];
       var ticks = Math.floor(capped/1000 / item.time);
       if(ticks > 0){
@@ -5252,7 +5263,7 @@
           addLog('While away, you gathered ' + ticks + ' ' + item.name + '.', 'important');
         }
       }
-    } else if(act.type === 'craft'){
+    } else if(act && act.type === 'craft'){
       var recipe = ALL_CRAFT_RECIPES[act.itemId];
       var maxByTime = Math.floor(capped/1000 / recipe.time);
       var maxByMats = Math.min.apply(null, Object.keys(recipe.inputs).map(function(k){
@@ -5268,7 +5279,7 @@
         addLog('While away, your ' + act.skill + ' work ran out of materials.', '');
       }
       state.activity = { type:null };
-    } else if(act.type === 'combat'){
+    } else if(act && act.type === 'combat'){
       // Fast-forward the real combat ticks: same player/monster attack timing and auto-eat
       // as live, so kills, XP, gold and drops match. Stops early if food runs out (retreat).
       var _pStyle = getWeaponStyle(state.equippedMainhand);
@@ -5283,7 +5294,17 @@
         }
       }
     }
+    // Concurrent craft queue (belt-granted extra slots) runs offline too — reuse the live
+    // effTime/consume logic; addItem/addXp are captured into the summary automatically.
+    ensureCraftSlotCapacity();
+    for(var _es=0; _es<state.extraCraftSlots.length; _es++){ var _slot = state.extraCraftSlots[_es]; if(_slot && _slot.type==='craft') processCraftActivity(_slot, capped); }
+    // Personal-estate Peons produce/consume through the whole away period (big iter cap so a
+    // fast peon isn't truncated by the live 200-tick guard).
+    processPeonScope('personal', capped, 300000);
     }catch(e){}
+    // Guild-estate peons run client-side against the shared grid, which isn't loaded yet at
+    // login — defer their catch-up until the guild estate becomes ready (see the loop).
+    if(state.guildPeons && state.guildPeons.length) guildPeonOfflineMs = capped;
     offlineCapture.gold = state.gold - goldBefore;
     var _sum = offlineCapture;
     offlineCapture = null;
@@ -5423,10 +5444,14 @@
               });
               if(typeof state.estate.expansionsPurchased !== 'number') state.estate.expansionsPurchased = 0;
               var ej = state.estate.job;
-              var ejOk = ej && (ej.kind==='raise'||ej.kind==='lower'||ej.kind==='clear') &&
+              var ejOk = ej &&
                 typeof ej.x==='number' && ej.x>=0 && ej.x<ESTATE_GRID_SIZE &&
                 typeof ej.y==='number' && ej.y>=0 && ej.y<ESTATE_GRID_SIZE &&
-                typeof ej.startAt==='number' && typeof ej.readyAt==='number';
+                typeof ej.startAt==='number' && typeof ej.readyAt==='number' &&
+                (ej.kind==='raise' || ej.kind==='lower' || ej.kind==='clear' ||
+                 (ej.kind==='pave'     && typeof ej.paveTileId==='string') ||
+                 (ej.kind==='workshop' && typeof ej.workshopId==='string') ||
+                 (ej.kind==='cottage'  && typeof ej.cottageId==='string'));
               if(!ejOk) state.estate.job = null;
               var edgesYOk = state.estate.edgesY && state.estate.edgesY.length === ESTATE_GRID_SIZE &&
                 state.estate.edgesY.every(function(col){ return Array.isArray(col) && col.length === ESTATE_GRID_SIZE+1 && col.every(function(e){ return !!e; }); });
@@ -7406,6 +7431,9 @@
     } else if(job.kind === 'workshop'){
       addItem(job.workshopId, 1); // refund the workshop
       addLog('You cancelled building the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'workshop') + ' (returned to inventory).', 'important');
+    } else if(job.kind === 'cottage'){
+      addItem(job.cottageId, 1); // refund the cottage
+      addLog('You cancelled building the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + ' (returned to inventory).', 'important');
     } else if(job.kind === 'raise'){
       addItem(ESTATE_DIRT_ITEM_ID, ESTATE_RAISE_DIRT_COST); // refund the reserved Dirt
       addLog('You cancelled raising (' + job.x + ', ' + job.y + ') and recovered your ' + ESTATE_RAISE_DIRT_COST + ' Dirt.', 'important');
@@ -7461,6 +7489,15 @@
       }
       return true;
     }
+    if(job.kind === 'cottage'){
+      cell.cottageId = job.cottageId;
+      if(giveRewards){
+        var cadj = estateAdjacentWorkshop(estate.grid, job.x, job.y);
+        addLog('Finished building the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + (cadj ? ' — linked to the adjacent ' + workshopSkillLabel(WORKSHOP_ITEMS[cadj.workshopId].skillId) + ' Workshop.' : ' — place it beside a single Workshop to house a Peon.'), 'important');
+        spawnFloatingText('Cottage built!', 'ft-bonus');
+      }
+      return true;
+    }
     if(job.kind === 'raise'){
       cell.height = Math.min(ESTATE_MAX_HEIGHT-1, cell.height + 1);
       if(giveRewards){
@@ -7500,6 +7537,7 @@
   var ESTATE_BREAK_PAVEMENT_LEVEL = 20;
   var ESTATE_PAVE_MS_PER_TIER = 10*60*1000;      // paving takes 10 min per tier
   var ESTATE_WORKSHOP_MS_PER_TIER = 30*60*1000;  // building a workshop takes 30 min per tier
+  var ESTATE_COTTAGE_MS_PER_TIER = 10*60*1000;   // building a cottage takes 10 min per tier
   function getPavingRecipe(paveTileId){
     return CRAFTING_SKILLS.paving.recipes.filter(function(r){ return r.id===paveTileId; })[0] || null;
   }
@@ -7609,8 +7647,8 @@
     estPersist();
     needsRender = true;
   }
-  // ---- Cottages: placed on paved tiles beside a Workshop, they let Peons work that skill. Placement
-  // is instant (unlike the timed Workshop build). The cottage->workshop link is computed on demand.
+  // ---- Cottages: placed on paved tiles beside a Workshop, they let Peons work that skill. Building
+  // takes 10 min per tier (like the timed Workshop build). The cottage->workshop link is computed on demand.
   var estateCottageMenuOpen = false;
   // The single Workshop cell orthogonally adjacent to (x,y), or null if there are 0 or 2+ (a cottage
   // links to exactly one workshop). Works on any estate grid (personal or guild).
@@ -7635,14 +7673,15 @@
     var it = COTTAGE_ITEMS[cottageId];
     if(!it || (state.inventory[cottageId]||0) <= 0){ addLog('You don\'t own that cottage.', 'danger'); return; }
     if(it.tierIndex > pavementTierOf(cell)){ addLog('That cottage needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
-    if(estateJobActive()){ addLog('Finish or cancel your current estate task first.', 'danger'); return; }
+    if(estateJobActive()){ addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger'); return; }
     if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
     state.inventory[cottageId] -= 1;
-    cell.cottageId = cottageId;
+    var cTier = it.tierIndex + 1; // 10 min per tier
+    var nowCot = Date.now();
+    estActive.job = { kind:'cottage', x:x, y:y, cottageId:cottageId, startAt:nowCot, readyAt:nowCot + cTier*ESTATE_COTTAGE_MS_PER_TIER };
     estateCottageMenuOpen = false;
-    var adj = estateAdjacentWorkshop(estActive.grid, x, y);
-    addLog('Placed a ' + it.name + ' at (' + x + ', ' + y + ')' + (adj ? ' — linked to the adjacent ' + workshopSkillLabel(WORKSHOP_ITEMS[adj.workshopId].skillId) + ' Workshop.' : ' — place it beside a single Workshop to house a Peon.'), 'important');
-    spawnFloatingText('Cottage placed', 'ft-success');
+    addLog('You began building a ' + it.name + ' at (' + x + ', ' + y + ') — finishes in ' + (cTier*10) + ' minutes.', 'important');
+    spawnFloatingText('Building…', 'ft-success');
     estPersist();
     needsRender = true;
   }
@@ -7728,7 +7767,7 @@
     return (ALL_SELLABLE[task.itemId] || conf || {}).name || task.itemId;
   }
   function processPeons(dt){ processPeonScope('personal', dt); processPeonScope('guild', dt); }
-  function processPeonScope(scope, dt){
+  function processPeonScope(scope, dt, maxIters){
     var tasks = peonTasksFor(scope);
     if(!tasks || !tasks.length) return;
     var grid = peonGridFor(scope);
@@ -7751,8 +7790,8 @@
       var effTime = Math.max(200, (baseTime*1000) / peonSpeedFactor(tierCap) * (1 - workshopSpeedBonus(state, task.skillId)));
       var succ = (task.skillId==='jewelrycrafting') ? BASE_JEWELRY_SUCCESS : BASE_CRAFT_SUCCESS;
       task.progress = (task.progress||0) + dt;
-      var guard = 0, stopped = false;
-      while(task.progress >= effTime && guard < 200){
+      var guard = 0, stopped = false, iterCap = maxIters || 200; // offline catch-up passes a big cap
+      while(task.progress >= effTime && guard < iterCap){
         guard++; task.progress -= effTime;
         if(task.kind==='gather'){
           if(peonGatherSuccess(task.skillId)) addItem(task.itemId, 1 + ((Math.random() < workshopDoubleChance(state, task.skillId)) ? 1 : 0));
@@ -9066,6 +9105,10 @@
       var wsi = WORKSHOP_ITEMS[job.workshopId];
       headLabel = 'Building &bull; '+(wsi ? wsi.name : 'Workshop')+' ('+job.x+', '+job.y+')';
       rewardNote = 'Runs in the background &bull; the Workshop is placed when it finishes';
+    } else if(job.kind === 'cottage'){
+      var cti = COTTAGE_ITEMS[job.cottageId];
+      headLabel = 'Building &bull; '+(cti ? cti.name : 'Cottage')+' ('+job.x+', '+job.y+')';
+      rewardNote = 'Runs in the background &bull; the Cottage is placed when it finishes';
     } else {
       headLabel = 'Terraforming &bull; '+(job.kind === 'raise' ? 'Raising' : 'Digging down')+' ('+job.x+', '+job.y+')';
       rewardNote = 'Runs in the background &bull; +'+ESTATE_TERRAFORM_XP+' Digging XP when it finishes';
@@ -12743,6 +12786,7 @@
     // so it keeps progressing (and can finish) no matter what the player is actively doing.
     processEstateJob();
     processGuildEstateJobs(); // complete this member's guild-estate activity when its timer elapses
+    if(guildPeonOfflineMs) maybeGuildPeonCatchup(); // apply deferred guild-peon offline work once the estate loads
     processPeons(dt);         // cottage peons work in the background, independent of the player
 
     // Meditation is trained purely by being completely idle -- no gathering, crafting,
@@ -12976,6 +13020,7 @@
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
+      ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       DAMAGE_TYPES:DAMAGE_TYPES
