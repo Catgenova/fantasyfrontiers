@@ -28,7 +28,7 @@ alter table public.account_recovery enable row level security;
 
 -- Store (or replace) a user's questions, hashing each already-normalized answer with bcrypt.
 create or replace function public.recovery_set(p_user uuid, p_username text, p_items jsonb)
-returns void language plpgsql security definer set search_path = public as $$
+returns void language plpgsql security definer set search_path = public, extensions as $$
 declare v_out jsonb := '[]'::jsonb; it jsonb;
 begin
   for it in select * from jsonb_array_elements(p_items) loop
@@ -44,7 +44,7 @@ end $$;
 -- null/empty for unanswered) against the stored hashes. Applies lockout after too many failures.
 -- Returns { status: ok | fail | locked | none, ... }.
 create or replace function public.recovery_verify(p_user uuid, p_answers jsonb, p_needed int, p_max_fail int, p_lock_minutes int)
-returns jsonb language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 declare v_q jsonb; v_lock timestamptz; v_fail int; n int; correct int := 0; i int; ans text; h text;
 begin
   select questions, locked_until, fail_count into v_q, v_lock, v_fail
