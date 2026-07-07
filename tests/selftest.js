@@ -131,6 +131,13 @@
     ok(ttd && ttd.inputs, 'peon tool act resolves at top tier (tierIndex+1 offset in-bounds)');
   });
 
+  // ---- Tracked Skills now includes physiques -------------------------------------------
+  suite('trackable physiques', function(){
+    var ids = FF.TRACKABLE_SKILL_IDS;
+    FF.PHYSIQUE_SKILLS.forEach(function(p){ ok(ids.indexOf(p.id) !== -1, 'physique trackable: ' + p.id); });
+    ok(ids.indexOf('mining') !== -1 && ids.indexOf('carpentry') !== -1, 'regular skills still trackable');
+  });
+
   // ---- Combat damage-type advantage triangle --------------------------------------------
   suite('weaponAdvantage', function(){
     FF.DAMAGE_TYPES.forEach(function(t){ eq(FF.weaponAdvantageMultiplier(t, t), 1.0, 'same type is neutral: ' + t); });

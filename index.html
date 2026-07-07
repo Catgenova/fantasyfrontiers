@@ -4542,6 +4542,7 @@
       }
       maybeSummonFamiliar(id);
       if(relevantPhysiqueIds.indexOf(id) !== -1) spawnBarXpText('gabPhysiqueTrack-'+id, amount);
+      if(state.trackedSkills && state.trackedSkills.indexOf(id) !== -1) spawnBarXpText('trackRow-'+id, amount);
     });
   }
   // Lifetime character stats (kills/deaths/items gathered/crafted/rarities). Displayed
@@ -11503,9 +11504,15 @@
     ['fiberharvesting','grainharvesting','herbharvesting'].forEach(function(id){ ids.push(id); });
     CRAFT_SKILL_IDS.forEach(function(id){ ids.push(id); });
     ids.push('prayer');
+    PHYSIQUE_SKILLS.forEach(function(p){ ids.push(p.id); }); // physiques track too (XP lives in state.physique)
     return ids;
   })();
+  // Tracked ids span two XP stores: regular skills (state.xp) and physiques (state.physique).
+  function trackedXpOf(id){ return PHYSIQUE_SKILL_MAP[id] ? (state.physique[id]||0) : (state.xp[id]||0); }
+  function trackedExists(id){ return PHYSIQUE_SKILL_MAP[id] ? (state.physique && state.physique[id] !== undefined) : (state.xp[id] !== undefined); }
   function trackSkillMeta(id){
+    var phys = PHYSIQUE_SKILL_MAP[id];
+    if(phys) return { icon:phys.icon, label:phys.name };
     var g = (typeof GATHERING_SKILLS!=='undefined') ? GATHERING_SKILLS[id] : null;
     var c = (typeof CRAFTING_SKILLS!=='undefined') ? CRAFTING_SKILLS[id] : null;
     var icon = (g && g.icon) || (c && c.icon) || (id==='prayer' ? svgIcon('potion','#b48ce0') : svgIcon('question','var(--text-faint)'));
@@ -11523,7 +11530,7 @@
   }
   function renderTrackerPanel(){
     var el = document.getElementById('trackerPanel'); if(!el) return;
-    var tracked = (state.trackedSkills||[]).filter(function(id){ return state.xp[id] !== undefined; });
+    var tracked = (state.trackedSkills||[]).filter(function(id){ return trackedExists(id); });
     var html = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">';
     html += '<h3 style="margin:0;">Tracked Skills</h3>';
     html += '<button class="mini-btn" data-action="openTrackerPicker">Edit</button></div>';
@@ -11532,8 +11539,8 @@
     } else {
       tracked.forEach(function(id){
         var meta = trackSkillMeta(id);
-        var lvl = getLevel(state.xp[id]||0);
-        var pct = Math.round(levelProgress(state.xp[id]||0));
+        var lvl = getLevel(trackedXpOf(id));
+        var pct = Math.round(levelProgress(trackedXpOf(id)));
         html += '<div class="tracker-row" id="trackRow-'+id+'">';
         html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">';
         html += '<span style="display:flex;align-items:center;gap:6px;min-width:0;">'+meta.icon+'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(meta.label)+'</span></span>';
@@ -11552,7 +11559,9 @@
     html += '<div class="familiar-popup-title">Track Skills ('+sel.length+'/'+TRACK_MAX+')</div>';
     html += '<div class="empty-note" style="margin-bottom:10px;">Choose up to '+TRACK_MAX+' skills to pin to the sidebar. Their rows flash a floating +XP tick every time they gain experience.</div>';
     html += '<div class="tracker-picker-grid">';
+    var physDivided = false;
     TRACKABLE_SKILL_IDS.forEach(function(id){
+      if(PHYSIQUE_SKILL_MAP[id] && !physDivided){ physDivided = true; html += '</div><div class="empty-note" style="margin:6px 0 8px;">Physiques</div><div class="tracker-picker-grid">'; }
       var meta = trackSkillMeta(id);
       var on = sel.indexOf(id) !== -1;
       var disabled = !on && sel.length >= TRACK_MAX;
@@ -11602,9 +11611,9 @@
       for(var _ti=0; _ti<state.trackedSkills.length; _ti++){
         var _tid = state.trackedSkills[_ti];
         var _tf = document.getElementById('trackFill-'+_tid);
-        if(_tf) _tf.style.width = Math.round(levelProgress(state.xp[_tid]||0)) + '%';
+        if(_tf) _tf.style.width = Math.round(levelProgress(trackedXpOf(_tid))) + '%';
         var _tl = document.getElementById('trackLvl-'+_tid);
-        if(_tl) _tl.textContent = 'Lv ' + getLevel(state.xp[_tid]||0);
+        if(_tl) _tl.textContent = 'Lv ' + getLevel(trackedXpOf(_tid));
       }
     }
     if(currentCategory==='peons'){ // live-tick the peon progress bars
@@ -12624,6 +12633,7 @@
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS,
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,
+      TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       DAMAGE_TYPES:DAMAGE_TYPES
