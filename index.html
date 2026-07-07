@@ -7021,6 +7021,7 @@
       return;
     }
     var cost = getEstateExpansionCost(purchased);
+    if(estIsGuild){ guildEstateExpandFromTreasury(cost); return; } // guild estate is funded by the coffers
     if(state.gold < cost){
       addLog('Expanding the estate costs ' + cost + ' gold -- you don\'t have enough.', 'danger');
       return;
@@ -7029,10 +7030,30 @@
     var next = ESTATE_EXPANSION_ORDER[purchased];
     estActive.grid[next.x][next.y].owned = true;
     estActive.expansionsPurchased = purchased + 1;
-    addLog('You expanded ' + (estIsGuild?'the guild estate':'your estate') + ' for ' + cost + ' gold.', 'important');
+    addLog('You expanded your estate for ' + cost + ' gold.', 'important');
     spawnFloatingText('+1 Tile', 'ft-success');
     estPersist();
     needsRender = true;
+  }
+  // Expanding the shared guild estate is a guild expense: burn the cost from the treasury
+  // (server-authoritative + atomic), then add the next boundary tile to the shared blob.
+  function guildEstateExpandFromTreasury(cost){
+    if(guildEstate.busy) return;
+    guildEstate.busy = true; guildEstate.error = ''; needsRender = true;
+    guildBankInvoke('spend_gold', { amount: cost }).then(function(res){
+      guildEstate.busy = false;
+      if(!res || !res.ok){ guildEstate.error = (res && res.code==='poor') ? ('The guild treasury needs '+fmt(cost)+'g to expand the estate.') : ((res&&res.error)||'Could not spend from the treasury.'); if(currentCategory==='guild') render(); return; }
+      guildBankApply(res); // refresh the treasury balance from the snapshot
+      var purchased = guildEstate.expansionsPurchased||0; // re-read in case a teammate expanded meanwhile
+      var next = ESTATE_EXPANSION_ORDER[purchased];
+      if(!next){ addLog('The guild estate was already fully expanded — '+fmt(cost)+'g spent with no tile added.', 'danger'); if(currentCategory==='guild') render(); return; }
+      guildEstate.grid[next.x][next.y].owned = true;
+      guildEstate.expansionsPurchased = purchased + 1;
+      addLog('Expanded the guild estate for ' + fmt(cost) + ' gold from the treasury.', 'important');
+      spawnFloatingText('+1 Tile', 'ft-success');
+      guildEstatePersist();
+      if(currentCategory==='guild') render();
+    });
   }
   function estateMigrateOldGridToNew(oldEstate){
     var newGrid = generateEstateGrid();
@@ -8401,7 +8422,11 @@
     var purchased = estActive.expansionsPurchased||0;
     var fullyExpanded = purchased >= ESTATE_EXPANSION_ORDER.length;
     var nextCost = fullyExpanded ? 0 : getEstateExpansionCost(purchased);
-    var canAfford = !fullyExpanded && state.gold >= nextCost;
+    // Guild estate expansion is a coffers expense: funded by the treasury, officers/leader only.
+    if(estIsGuild && (guildBankState.status==='idle' || guildBankState.guildId !== (guildState.guild&&guildState.guild.id))) guildBankLoad();
+    var canManageGuild = guildState.myRank==='leader' || guildState.myRank==='officer';
+    var expandFunds = estIsGuild ? (guildBankState.treasury||0) : (state.gold||0);
+    var canAfford = !fullyExpanded && expandFunds >= nextCost && (!estIsGuild || (canManageGuild && !guildEstate.busy));
     var html = '<div class="section-intro">'+(estIsGuild
       ? 'Your <b>guild\u2019s shared estate</b> \u2014 the same map for every member. Anyone can clear, terraform, pave, build Workshops and borders here, and each member can run their own activity at the same time. Workshops placed on the guild estate boost every member\u2019s crafting and stack with the ones on your own My Estate. '
       : 'Your home plot -- terraformable up to 20 layers tall, and expandable one tile at a time with gold. ')
@@ -8421,8 +8446,9 @@
       html += '<div class="estate-action-info">'+(estIsGuild?'The guild estate':'Your estate')+' is fully expanded.</div>';
     } else {
       html += '<div class="estate-action-row">';
-      html += '<div class="estate-action-info"><b>Expand Estate</b><br>Purchases the next tile along the boundary, starting from the top-left and circling outward. Cost rises 25% with each purchase.</div>';
-      html += '<button class="action-btn" data-action="estateExpand" style="width:auto;flex-shrink:0" '+(canAfford?'':'disabled')+'>'+(canAfford?'Expand: '+nextCost+'g':nextCost+'g Req.')+'</button>';
+      html += '<div class="estate-action-info"><b>Expand Estate</b><br>Purchases the next tile along the boundary, starting from the top-left and circling outward. Cost rises 25% with each purchase.'+(estIsGuild?' <b>Paid from the guild treasury</b> ('+fmt(guildBankState.treasury||0)+'g) &mdash; officers &amp; the leader only.':'')+'</div>';
+      var expandLabel = canAfford ? ('Expand: '+fmt(nextCost)+'g'+(estIsGuild?' from treasury':'')) : (estIsGuild && !canManageGuild ? 'Officers only' : fmt(nextCost)+'g Req.');
+      html += '<button class="action-btn" data-action="estateExpand" style="width:auto;flex-shrink:0" '+(canAfford?'':'disabled')+'>'+expandLabel+'</button>';
       html += '</div>';
     }
     html += renderEstateJobStatus();
@@ -9634,12 +9660,12 @@
   function guildBankBuySlot(){
     if(guildBankState.busy) return;
     var cost = bankSlotCost(guildBankState.slots);
-    if((state.gold||0) < cost){ guildBankState.error='You need '+fmt(cost)+' gold for the next slot.'; render(); return; }
+    if((guildBankState.treasury||0) < cost){ guildBankState.error='The guild treasury needs '+fmt(cost)+' gold for the next slot.'; render(); return; }
     guildBankState.busy=true; guildBankState.error=''; render();
     guildBankInvoke('buy_slot', {}).then(function(res){
       guildBankState.busy=false;
       if(!res.ok){ guildBankState.error=res.error||'Purchase failed.'; render(); return; }
-      state.gold -= (res.cost||cost); saveGame(); guildBankApply(res); render();
+      guildBankApply(res); render(); // paid from the treasury (snapshot returns the new balance); no personal gold spent
     });
   }
   function guildBankSetWithdrawRank(rank){
@@ -9690,8 +9716,9 @@
     if(canManage){
       if(guildBankState.slots>=500){ html += '<div class="empty-note" style="margin-bottom:8px;">Maxed at the 500-slot limit.</div>'; }
       else {
-        var cost=bankSlotCost(guildBankState.slots), afford=(state.gold||0)>=cost;
-        html += '<button class="action-btn" data-action="guildBankBuySlot" '+((afford&&!guildBankState.busy)?'':'disabled')+' style="width:auto;flex:0 0 auto;margin-bottom:10px;">'+(afford?'Buy slot '+(guildBankState.slots+1)+' &mdash; '+fmt(cost)+'g':'Next slot needs '+fmt(cost)+'g')+'</button>';
+        var cost=bankSlotCost(guildBankState.slots), afford=(guildBankState.treasury||0)>=cost;
+        html += '<button class="action-btn" data-action="guildBankBuySlot" '+((afford&&!guildBankState.busy)?'':'disabled')+' style="width:auto;flex:0 0 auto;margin-bottom:6px;">'+(afford?'Buy slot '+(guildBankState.slots+1)+' &mdash; '+fmt(cost)+'g from treasury':'Treasury needs '+fmt(cost)+'g for next slot')+'</button>';
+        html += '<div class="item-meta" style="margin-bottom:10px;">Paid from the guild treasury ('+fmt(guildBankState.treasury||0)+'g available).</div>';
       }
     }
     // Gold treasury -- a shared gold pool. Anyone can donate; withdrawing follows the same rank rule as items.
@@ -9759,7 +9786,7 @@
   // The live shared-estate object. Shaped like state.estate (grid + edges + expansionsPurchased)
   // so the whole estate engine operates on it unchanged. `job` is a computed accessor mapping to
   // MY entry in the shared jobs[] (keyed by user id), so estActive.job behaves like personal.
-  var guildEstate = { status:'idle', guildId:null, version:0, error:'', grid:null, jobs:[], expansionsPurchased:0, edgesX:null, edgesY:null, _sub:null, _subGuild:null };
+  var guildEstate = { status:'idle', guildId:null, version:0, error:'', busy:false, grid:null, jobs:[], expansionsPurchased:0, edgesX:null, edgesY:null, _sub:null, _subGuild:null };
   Object.defineProperty(guildEstate, 'job', {
     get: function(){ var id=estMyId(); return (this.jobs||[]).filter(function(j){ return j.owner===id; })[0] || null; },
     set: function(j){ var id=estMyId(); this.jobs=(this.jobs||[]).filter(function(x){ return x.owner!==id; }); if(j){ j.owner=id; j.ownerName=guildMyName(); this.jobs.push(j); } }

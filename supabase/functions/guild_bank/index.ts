@@ -8,10 +8,11 @@
 //   get                              -> { slots, used, items:[{item_key,qty}], min_withdraw_rank }
 //   deposit  { item_key, qty }       -> member; add to the vault (respects the slot cap)
 //   withdraw { item_key, qty }       -> requires rank >= guild's min_withdraw_rank
-//   buy_slot                         -> (leader/officer) +1 slot; returns the gold cost
+//   buy_slot                         -> (leader/officer) +1 slot; PAID FROM THE TREASURY
 //   set_withdraw_rank { rank }       -> (leader) set the minimum rank allowed to withdraw
 //   donate_gold   { amount }         -> member; add gold to the shared treasury
 //   withdraw_gold { amount }         -> requires rank >= guild's min_withdraw_rank
+//   spend_gold    { amount }         -> (leader/officer) burn treasury gold for a guild expense
 //
 // Verify JWT must be OFF (publishable key isn't a JWT; token validated internally).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -106,8 +107,21 @@ Deno.serve(async (req) => {
     if (error) return json({ ok: false, error: "Purchase failed." }, 500);
     const res = r as { status?: string; cost?: number; slots?: number };
     if (res?.status === "max") return json({ ok: false, error: "The bank is already at the 500-slot maximum." }, 409);
+    if (res?.status === "poor") return json({ ok: false, error: "The guild treasury doesn't have enough gold for the next slot.", code: "poor" }, 409);
     if (res?.status !== "ok") return json({ ok: false, error: "Purchase rejected." }, 400);
     return json({ ok: true, cost: res.cost, ...(await snapshot()) });
+  }
+
+  if (action === "spend_gold") {
+    if (!isOfficer) return json({ ok: false, error: "Only officers or the leader can spend the guild treasury." }, 403);
+    const amount = Number(body.amount);
+    if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_QTY) return json({ ok: false, error: "Invalid amount." }, 400);
+    const { data: r, error } = await admin.rpc("guild_treasury_spend", { p_guild: guildId, p_amount: amount });
+    if (error) return json({ ok: false, error: "Spend failed." }, 500);
+    const res = r as { status?: string; spent?: number };
+    if (res?.status === "poor") return json({ ok: false, error: "The guild treasury doesn't have enough gold.", code: "poor" }, 409);
+    if (res?.status !== "ok") return json({ ok: false, error: "Spend rejected." }, 400);
+    return json({ ok: true, spent: Number(res.spent), ...(await snapshot()) });
   }
 
   if (action === "donate_gold") {
