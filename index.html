@@ -3375,6 +3375,10 @@
   // dodge and Plate block bonuses above, plus two new mechanics of their own.
   var CRIT_DAMAGE_MULT = 1.5;        // base crit damage multiplier
   var MAX_CRIT_DAMAGE_MULT = 2.5;    // hard cap on crit damage
+  // Weapon proficiency XP is earned parallel to the damage you actually inflict (1 XP per
+  // point of damage dealt), rather than a flat per-hit share of the enemy's inherent XP --
+  // the old model compounded hits x monster.xp and ran away at high tiers. Tunable here.
+  var WEAPON_PROF_XP_PER_DMG = 1.0;
   var BASE_CRIT_CHANCE = 0.05;       // everyone crits at least this often
   var MAX_CRIT_CHANCE = 0.50;        // hard cap on crit chance
   function agilityDodgeBonus(state){ return Math.min(0.10, getLevel(state.physique.agility||0)*0.002); }
@@ -4819,6 +4823,7 @@
     var critMult = isCrit ? Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) : 1;
 
     var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * critMult);
+    var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     if(isCrit) spawnFloatingText('Critical Hit!', 'ft-rare');
     var atkFeed = [['agility',2]];
@@ -4827,7 +4832,12 @@
     if(isCrit){ atkFeed.push(['criticalEye',2]); atkFeed.push(['exploitation',2]); }
     if(state.playerHp < maxHp(state)*0.25) atkFeed.push(['tenacity',2]);
     addPhysiqueXp(atkFeed);
-    if(state.equippedMainhand) addXp(state.equippedMainhand, Math.round(monster.xp * 0.6));
+    // Weapon proficiency XP scales with damage actually inflicted (capped at the monster's
+    // remaining HP so overkill isn't over-rewarded) -- no inherent per-hit enemy XP.
+    if(state.equippedMainhand){
+      var effDmg = Math.min(dmgToMonster, monsterHpBeforeHit);
+      addXp(state.equippedMainhand, Math.max(1, Math.round(effDmg * WEAPON_PROF_XP_PER_DMG)));
+    }
     if(act.monsterHp <= 0){
       bumpStat('kills');
       var goldWon = randInt(monster.goldMin, monster.goldMax);
