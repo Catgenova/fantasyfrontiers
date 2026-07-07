@@ -4,6 +4,18 @@ Two layers:
 - **Unit tests** (`selftest.js`) — pure game logic, run in the browser (below).
 - **Integration tests** (`integration.sh`) — the live Supabase backend end-to-end (bottom).
 
+## CI (GitHub Actions)
+
+`.github/workflows/tests.yml` runs both on GitHub:
+- **`unit`** — on every push and PR. Uses `tests/run-unit.mjs` to serve the repo and drive
+  `index.html?selftest` in headless Chrome (Puppeteer's bundled Chromium), failing the job on any
+  failed assertion.
+- **`integration`** — on pushes to `main` + manual `workflow_dispatch` (skipped on PRs, since it
+  creates live accounts). Reads optional `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` repo secrets;
+  with none set it uses the built-in defaults (the publishable key is already public).
+
+Run the unit harness locally with `cd tests && npm install && node run-unit.mjs`.
+
 ## Unit tests
 
 The game is a single-file browser app (one IIFE in `index.html`, no bundler, no Node build),

@@ -1,0 +1,46 @@
+name: tests
+
+# Unit tests (headless Chrome) run on every push/PR — they have no side effects.
+# Integration tests hit the LIVE Supabase backend and create throwaway accounts, so they run
+# only on pushes to main + manual dispatch (never on PRs/forks). If the per-push account churn
+# becomes a nuisance, switch the integration trigger to `schedule:` or `workflow_dispatch` only.
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Unit tests (browser)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Puppeteer (+ bundled Chromium)
+        working-directory: tests
+        run: npm install --no-audit --no-fund
+      - name: Run unit tests
+        working-directory: tests
+        run: node run-unit.mjs
+
+  integration:
+    name: Integration tests (live backend)
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run backend integration tests
+        # SUPABASE_* are optional repo secrets. The publishable key is already public (it ships
+        # in index.html), so if the secrets are unset the script falls back to the built-in
+        # defaults. Set them to point the tests at a dedicated/staging project instead.
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: bash tests/integration.sh
