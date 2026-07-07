@@ -1078,24 +1078,6 @@
     }
     return items;
   }
-  function makeCraftLine(craftId, noun, opts){
-    var recipes = [];
-    for(var i=0;i<TIER_COUNT;i++){
-      var r = {
-        id: craftId+'_t'+i,
-        name: TIER_NAMES[i]+' '+noun,
-        levelReq: TIER_LEVELS[i],
-        xp: tierXp(opts.xp, i),
-        time: tierTime(opts.time, opts.timeStep, i),
-        sell: tierSell(opts.sell, i),
-        icon: opts.icon,
-        inputs: opts.inputs(i)
-      };
-      if(opts.heal) r.heal = tierXp(opts.heal, i);
-      recipes.push(r);
-    }
-    return recipes;
-  }
 
   var BUTCHERING_COLORS = ['#c8a878','#8a8378','#c87a3a','#6a5040','#8a7a6a','#5a3a2a','#4a3020','#2a2422','#3a3530','#9a8a70','#6a6a6a','#c8a848','#c87a2a','#5a4a3a','#7a7a70','#4a4a44','#c8983a','#4a5a6a','#e8c848','#3a3a30','#2a2020'];
   var CORPSE_COLORS = ['#8a7a6a','#6a6258','#7a6248','#5a5248','#4a4038','#3a3630','#3a2a24','#2a2622','#403830','#4a4438','#302a24','#282420','#241e1a','#201c18','#1c1814','#181410','#141210','#100e0c','#0e0c0a','#0a0908','#080706'];
@@ -1588,7 +1570,6 @@
   })();
 
   var WEAPON_BASE = {tier:0, name:'Fists', dmgMin:1, dmgMax:3};
-  var SHIELD_BASE = {tier:0, name:'No Shield', defense:0};
 
   // ---- 14-slot armor system ----
   // Each slot progresses through the same 21 tiers (levels 1,5,10...100).
@@ -1726,12 +1707,6 @@
     mixology:'Shaker', archaeology:'Excavation Brush', weaponsmithing:'Smithing Hammer',
     armorsmithing:"Armorer's Hammer", shieldsmithing:"Shieldwright's Hammer", blacksmithing:'Forge Tongs',
     jewelrycrafting:"Jeweler's Loupe"
-  };
-  var CRAFT_TOOL_ICONS = {
-    carpentry:svgIcon('dowel','#9a9a94'), metallurgy:svgIcon('gear','#9a9a94'), roasting:svgIcon('dowel','#9a9a94'), cooking:svgIcon('sword','#9a9a94'), alchemy:svgIcon('potion','#9a9a94'), bowyer:svgIcon('sword','#9a9a94'), fletching:svgIcon('dowel','#9a9a94'),
-    baking:svgIcon('dowel','#9a9a94'), tailoring:svgIcon('handpoint','#9a9a94'), stonecutting:svgIcon('hammer','#9a9a94'), leatherworking:svgIcon('handpoint','#9a9a94'), masonry:svgIcon('hammer','#9a9a94'), paving:svgIcon('hammer','#9a9a94'),
-    mixology:svgIcon('tea','#9a9a94'), archaeology:svgIcon('handpoint','#9a9a94'), weaponsmithing:svgIcon('hammer','#9a9a94'), armorsmithing:svgIcon('hammer','#9a9a94'), shieldsmithing:svgIcon('hammer','#9a9a94'), blacksmithing:svgIcon('gear','#9a9a94'),
-    jewelrycrafting:svgIcon('magnify','#9a9a94')
   };
   var CRAFT_TOOL_SPEED = [];
   var CRAFT_TOOL_SUCCESS = [];
@@ -2048,11 +2023,6 @@
     // attacker it only mitigates the slice of damage that's actually that type.
     return 1 + w*0.6;
   }
-  function dominantType(typeMix){
-    var best = null, bestW = -1;
-    DAMAGE_TYPES.forEach(function(t){ if((typeMix[t]||0) > bestW){ bestW = typeMix[t]||0; best = t; } });
-    return best;
-  }
   function weightedMatchupLabel(attackerTypes, defenderTypes){
     var adv = weightedAdvantage(attackerTypes, defenderTypes);
     if(adv > 1.05) return 'strong';
@@ -2098,7 +2068,6 @@
   // flat XP reward and refills Faith. Devotion/Blessing/Miracle are continuous background
   // activities that drain Faith per second while active and give a rolling chance for any
   // equipment you forge in that window to come out Rare / Rare-Superior / Rare-Fantastic.
-  function resolveFaithBonus(state){ return Math.min(50, getLevel(state.physique.resolve||0)*2); }
   function faithMax(state){ return 100 + getLevel(state.xp.prayer)*20 + faithPhysiqueBonus(state); }
   var PRAYER_TIERS = [];
   for(var _pi=0; _pi<TIER_COUNT; _pi++){
@@ -2354,12 +2323,8 @@
 
   // ===== Physique category groups (activity buckets used by the input/output remap) =====
   // Each physique gains XP from at most three of these buckets and affects at most three.
-  var PHYS_HAND_GATHER  = ['herbalism','botany','foraging','butchering','farming']; // gathered by hand
   var PHYS_PLANT_GATHER = ['herbalism','botany','foraging','farming'];              // plant life
   var PHYS_LONG_GATHER  = ['fishing','mining','forestry'];                          // long, exhausting
-  var PHYS_MENTAL_GATHER= ['fishing','foraging'];                                   // needs attention
-  var PHYS_PRECISE_CRAFT= ['jewelrycrafting','fletching','bowyer','tailoring','leatherworking','alchemy','mixology','cooking','baking','archaeology'];
-  var PHYS_ROUGH_CRAFT  = ['metallurgy','blacksmithing','weaponsmithing','armorsmithing','shieldsmithing','carpentry','roasting','stonecutting','masonry','paving'];
   var PHYS_HAND_CRAFT   = ['tailoring','leatherworking','jewelrycrafting','baking'];
   var PHYS_ESTATE_CRAFT = ['masonry','paving','stonecutting'];
   var PHYS_MENTAL_CRAFT = ['alchemy','mixology','cooking','archaeology'];
@@ -2622,7 +2587,6 @@
   function maxHp(state){ return 50 + getLevel(state.physique.fortitude||0)*5; }
   function fmt(n){ return Math.floor(n).toLocaleString(); }
   var BASE_CRAFT_SUCCESS = 0.7;
-  function tenacityCraftSuccessBonus(state){ return Math.min(0.15, getLevel(state.physique.tenacity||0)*0.003); }
   function sleightOfHandCraftSpeedBonus(state){ return Math.min(0.15, getLevel(state.physique.sleightOfHand||0)*0.003); }
   function curiosityGatherXpBonus(state){ return Math.min(0.15, getLevel(state.physique.curiosity||0)*0.003); }
   function craftSuccessRate(state, skillId){ var b = BASE_CRAFT_SUCCESS + craftToolSuccessBonus(state, skillId) + grossMotorCraftSuccessBonus(state); if(PHYS_ALCH_GROUP.indexOf(skillId)!==-1) b += criticalThinkingCraftSuccessBonus(state); return Math.min(1, b); }
@@ -2805,7 +2769,6 @@
   // gated by its own sub-skill level, and a harvest grants XP to that sub-skill.
   var FARMING_SUBSKILLS = ['fiberharvesting','grainharvesting','herbharvesting'];
   var FARMING_CROP_SKILL = { fiber:'fiberharvesting', grain:'grainharvesting', herb:'herbharvesting' };
-  var FARMING_SKILL_LABEL = { fiberharvesting:'Fiber Harvesting', grainharvesting:'Grain Harvesting', herbharvesting:'Herb Harvesting' };
   // Plot slots (and the 'farm ready' flash) key off overall farming progress = the highest
   // of the three sub-skills.
   function farmingLevel(state){
@@ -3387,7 +3350,6 @@
   function agilityDodgeBonus(state){ return Math.min(0.10, getLevel(state.physique.agility||0)*0.002); }
   function blockingBlockBonus(state){ return Math.min(0.10, getLevel(state.physique.blocking||0)*0.002); }
   function criticalEyeCritChance(state){ return Math.min(MAX_CRIT_CHANCE, BASE_CRIT_CHANCE + getLevel(state.physique.criticalEye||0)*0.0045); }
-  function exploitationGoldBonus(state){ return Math.min(0.30, getLevel(state.physique.exploitation||0)*0.005); }
   var CLOTH_SLOT_SPELL_BONUS = 0.05;
   function getClothArmorSpellBonus(state){
     var spellBonus = 0;
@@ -3747,7 +3709,6 @@
     }
     return null;
   }
-  function craftSlotAvailable(skill, itemId){ return !!findFreeCraftSlot(skill, itemId); }
   // Places a newly-started craft into a free Belt-granted slot if one legitimately
   // fits (preserving parallel same-category crafting); otherwise it always wins,
   // stopping whatever the primary slot was doing and taking it over.
@@ -4133,9 +4094,6 @@
   }
   function speedMultiplier(state){
     return 1 - Math.min(0.20, physiqueAvgLevel(state)*0.003);
-  }
-  function combatBonus(state){
-    return 1 + Math.min(0.25, physiqueAvgLevel(state)*0.003);
   }
 
   // ===== Physique OUTPUTS (remapped). Each function turns one physique's level into a
@@ -8960,7 +8918,6 @@
     if(s.physique){ for(k in s.physique){ if(typeof s.physique[k] === 'number') total += s.physique[k]; } }
     return Math.floor(total) || 0;
   }
-  var cloudNewerAvailable = false; // higher-progress cloud save exists but local also has progress
 
   // force = intentional overwrite (reset only): bypasses the empty guard and tells the server
   //         to override its forward-only progress guard.
