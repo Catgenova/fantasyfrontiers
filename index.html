@@ -1810,7 +1810,6 @@
         hp: Math.max(5, Math.round(20*Math.pow(1.40,i)*hpMult)),
         atkMin: Math.max(1, Math.round(1*Math.pow(1.32,i)*atkMult)),
         atkMax: Math.max(2, Math.round(3*Math.pow(1.32,i)*atkMult)),
-        xp: Math.max(5, Math.round(15*Math.pow(1.40,i))),
         goldMin: Math.max(1, Math.round(3*Math.pow(1.40,i)*goldMult)),
         goldMax: Math.max(2, Math.round(6*Math.pow(1.40,i)*goldMult)),
         damageType: DAMAGE_TYPE_CYCLE[i%3],
@@ -1888,7 +1887,6 @@
         hp: Math.max(5, Math.round(20*Math.pow(1.40, virtualTier)*hpMult)),
         atkMin: Math.max(1, Math.round(1*Math.pow(1.32, virtualTier)*atkMult)),
         atkMax: Math.max(2, Math.round(3*Math.pow(1.32, virtualTier)*atkMult)),
-        xp: Math.max(5, Math.round(15*Math.pow(1.40, virtualTier)*(isBoss?2:1))),
         goldMin: Math.max(1, Math.round(3*Math.pow(1.40, virtualTier)*goldMult)),
         goldMax: Math.max(2, Math.round(6*Math.pow(1.40, virtualTier)*goldMult)),
         damageType: DAMAGE_TYPE_CYCLE[stageIdx%3],
@@ -3375,10 +3373,12 @@
   // dodge and Plate block bonuses above, plus two new mechanics of their own.
   var CRIT_DAMAGE_MULT = 1.5;        // base crit damage multiplier
   var MAX_CRIT_DAMAGE_MULT = 2.5;    // hard cap on crit damage
-  // Weapon proficiency XP is earned parallel to the damage you actually inflict (1 XP per
-  // point of damage dealt), rather than a flat per-hit share of the enemy's inherent XP --
-  // the old model compounded hits x monster.xp and ran away at high tiers. Tunable here.
-  var WEAPON_PROF_XP_PER_DMG = 1.0;
+  // All combat proficiency XP is now earned parallel to damage, not a flat per-hit share of
+  // the enemy's inherent XP (the old monster.xp model compounded hits x monster.xp and ran
+  // away at high tiers). Offensive gear (weapon, quiver) trains on damage inflicted; defensive
+  // gear (shields, worn armor) trains on damage mitigated. Both rates tunable here.
+  var WEAPON_PROF_XP_PER_DMG = 1.0; // XP per point of damage inflicted
+  var DEF_PROF_XP_PER_DMG = 1.0;    // XP per point of damage mitigated (prevented by armor/shield/block)
   var BASE_CRIT_CHANCE = 0.05;       // everyone crits at least this often
   var MAX_CRIT_CHANCE = 0.50;        // hard cap on crit chance
   function agilityDodgeBonus(state){ return Math.min(0.10, getLevel(state.physique.agility||0)*0.002); }
@@ -4832,12 +4832,13 @@
     if(isCrit){ atkFeed.push(['criticalEye',2]); atkFeed.push(['exploitation',2]); }
     if(state.playerHp < maxHp(state)*0.25) atkFeed.push(['tenacity',2]);
     addPhysiqueXp(atkFeed);
-    // Weapon proficiency XP scales with damage actually inflicted (capped at the monster's
-    // remaining HP so overkill isn't over-rewarded) -- no inherent per-hit enemy XP.
-    if(state.equippedMainhand){
-      var effDmg = Math.min(dmgToMonster, monsterHpBeforeHit);
-      addXp(state.equippedMainhand, Math.max(1, Math.round(effDmg * WEAPON_PROF_XP_PER_DMG)));
-    }
+    // Offensive proficiency XP scales with damage actually inflicted (capped at the monster's
+    // remaining HP so overkill isn't over-rewarded) -- no inherent per-hit enemy XP. Both the
+    // mainhand weapon and a Quiver offhand (which boosts your bow damage) train off it.
+    var effDmg = Math.min(dmgToMonster, monsterHpBeforeHit);
+    var atkProfXp = Math.max(1, Math.round(effDmg * WEAPON_PROF_XP_PER_DMG));
+    if(state.equippedMainhand) addXp(state.equippedMainhand, atkProfXp);
+    if(state.equippedOffhand && offhandStyle && offhandStyle.type==='quiver') addXp(state.equippedOffhand, atkProfXp);
     if(act.monsterHp <= 0){
       bumpStat('kills');
       var goldWon = randInt(monster.goldMin, monster.goldMax);
@@ -4871,6 +4872,7 @@
     var playerArmorMix = getPlayerArmorTypeMix(state);
     var monsterAdvantage = weightedAdvantage(monster.attackTypes || {blunt:1/3, slashing:1/3, piercing:1/3}, playerArmorMix);
     var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * (1 - getFamiliarEnemyWeakenPct()));
+    var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
     var blockChance = getPlateArmorBlockChance(state) + blockingBlockBonus(state) + reflexesBlockBonus(state);
     var blocked = blockChance > 0 && Math.random() < blockChance;
     if(blocked){
@@ -4885,7 +4887,11 @@
     var hitFeed = [['fortitude', dmgToPlayer]];
     if(blocked || (armorDefense + effectiveShieldDefense) > 0) hitFeed.push(['blocking', blocked?2:1]);
     addPhysiqueXp(hitFeed);
-    if(state.equippedOffhand) addXp(state.equippedOffhand, Math.round(monster.xp * 0.3));
+    // Defensive proficiency XP scales with damage MITIGATED (prevented by block/armor/shield),
+    // not the enemy's inherent XP. Shields and each worn armor material train off it.
+    var mitigated = Math.max(0, incomingBeforeDefense - dmgToPlayer);
+    var defProfXp = Math.max(1, Math.round(mitigated * DEF_PROF_XP_PER_DMG));
+    if(state.equippedOffhand && offhandStyle && offhandStyle.type==='shield') addXp(state.equippedOffhand, defProfXp);
     var wornMaterials = {};
     BODY_ARMOR_SLOTS.forEach(function(slot){
       var s = state.bodyArmor[slot];
@@ -4893,7 +4899,7 @@
     });
     Object.keys(wornMaterials).forEach(function(material){
       var profId = MATERIAL_TO_PROFICIENCY[material];
-      if(profId) addXp(profId, Math.round(monster.xp * 0.3));
+      if(profId) addXp(profId, defProfXp);
     });
     if(state.playerHp <= 0){
       bumpStat('deaths');
@@ -6763,7 +6769,7 @@
         var matchup = weightedMatchupLabel(weaponStyle.attackTypes || {blunt:1}, m.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
         html += '<div class="item-card'+(stageLocked?' locked':'')+(isActive?' active-item':'')+'">';
         html += '<div class="item-top"><div class="item-icon">'+m.icon+'</div><div><div class="item-name">'+m.name+(m.isBoss?' &bull; <span style="color:var(--gold)">BOSS</span>':'')+'</div><div class="item-meta">'+m.hp+' HP &bull; '+m.attackSpeed+'s attack</div></div></div>';
-        html += '<div class="item-stats"><span>+'+m.xp+' XP</span><span>'+m.goldMin+'-'+m.goldMax+'g</span><span>'+m.atkMin+'-'+m.atkMax+' dmg</span><span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
+        html += '<div class="item-stats"><span>'+m.goldMin+'-'+m.goldMax+'g</span><span>'+m.atkMin+'-'+m.atkMax+' dmg</span><span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
         html += '<div class="chance-line" style="font-size:11px">Attack: '+formatTypeMix(m.attackTypes)+'<br>Armor: '+formatTypeMix(m.armorTypes)+'</div>';
         if(m.isBoss) html += '<div class="chance-line" style="font-size:11px">Defeating this Boss guarantees an equipment drop plus bonus gold.</div>';
         if(stageLocked){
@@ -6844,7 +6850,7 @@
       var matchup = weightedMatchupLabel(weaponStyle.attackTypes || {blunt:1}, m.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+m.icon+'</div><div><div class="item-name">'+m.name+'</div><div class="item-meta">Req. Lv '+m.levelReq+' &bull; '+m.hp+' HP &bull; '+m.attackSpeed+'s attack</div></div></div>';
-      html += '<div class="item-stats"><span>+'+m.xp+' XP</span><span>'+m.goldMin+'-'+m.goldMax+'g</span><span>'+m.atkMin+'-'+m.atkMax+' dmg</span><span>'+getMonsterLootChance(m)+'% '+getMonsterLootLabel(m)+'</span><span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
+      html += '<div class="item-stats"><span>'+m.goldMin+'-'+m.goldMax+'g</span><span>'+m.atkMin+'-'+m.atkMax+' dmg</span><span>'+getMonsterLootChance(m)+'% '+getMonsterLootLabel(m)+'</span><span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
       html += '<div class="chance-line" style="font-size:11px">Attack: '+formatTypeMix(m.attackTypes)+'<br>Armor: '+formatTypeMix(m.armorTypes)+'</div>';
       if(locked){
         html += '<div class="lock-note">Locked until level '+m.levelReq+'</div>';
