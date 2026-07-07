@@ -3993,6 +3993,7 @@
     var pct = workshopBonusPct(tierIndex);
     var inputs = {};
     inputs['carpentry_t'+tierIndex] = 10 + tierIndex*3; // planks of the matching tier
+    if(tierIndex > 0) inputs['workshop_'+skillId+'_t'+(tierIndex-1)] = 1; // upgrades consume the previous-tier Workshop
     return {
       tierIndex: tierIndex,
       name: TIER_NAMES[tierIndex] + ' ' + ((CRAFTING_SKILLS[skillId]||{}).label || skillId) + ' Workshop',
@@ -5662,7 +5663,7 @@
     var maxUnlocked = 0;
     for(var mi=0; mi<TIER_COUNT; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
     var html = '<h3 style="margin-top:16px">Workshops</h3>';
-    html += '<div class="section-intro">Build a Workshop for any crafting skill from planks, then place it on a Paved estate tile (of equal or higher tier) to speed up that skill\'s crafting and gain a chance to double its output. Tier 0 grants +5% speed &amp; 5% double output, scaling to +30% / 30% at Tier 20. Placed workshops appear in your Estate; only your best workshop per skill applies.</div>';
+    html += '<div class="section-intro">Build a Workshop for any crafting skill from planks, then place it on a Paved estate tile (of equal or higher tier) to speed up that skill\'s crafting and gain a chance to double its output. Tier 0 grants +5% speed &amp; 5% double output, scaling to +30% / 30% at Tier 20. Each tier above Basic also consumes one of the previous-tier Workshop, so upgrade up through the tiers. Placed workshops appear in your Estate; only your best workshop per skill applies.</div>';
     html += '<div class="card-grid">';
     WORKSHOP_SKILL_IDS.forEach(function(skillId){
       if(selectedWorkshopTier[skillId] === undefined) selectedWorkshopTier[skillId] = maxUnlocked;
