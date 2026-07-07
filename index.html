@@ -7177,6 +7177,13 @@
   function estRecomputeWorkshops(){ if(estIsGuild) recomputeGuildWorkshops(); else recomputePlacedWorkshops(); }
   function estAllJobs(){ if(!estActive) return []; return estIsGuild ? (estActive.jobs||[]) : (estActive.job ? [estActive.job] : []); }
   function estJobOnTile(x, y){ return estAllJobs().some(function(j){ return j.x===x && j.y===y; }); }
+  // Map "x_y" -> the job on that tile, used to paint occupied guild-estate tiles red so
+  // members can see a tile is being worked and can't be claimed. Empty off the guild estate.
+  function estJobTileMap(){
+    var m = {};
+    if(estIsGuild) (estActive && estActive.jobs || []).forEach(function(j){ m[j.x+'_'+j.y] = j; });
+    return m;
+  }
 
   function estateJobActive(){ return !!(estActive && estActive.job); }               // MY job (guild getter returns my own)
   function estateClearObstacle(x, y){
@@ -8010,12 +8017,14 @@
   }
   function estateDrawTopDown(ctx, grid, ox, oy){
     var ts = ESTATE_TD_TILE;
+    var jobTiles = estJobTileMap(); // occupied guild-estate tiles -> paint red
     estateTilesByDepth(false).forEach(function(t){
       var x=t.x, y=t.y, cell=grid[x][y];
       var p = estateTdTilePos(x, y, ox, oy);
       ctx.fillStyle = cell.type==='paved' ? estatePavedTileColor(cell.paveTileId) : estateHeightColor(cell.height/(ESTATE_MAX_HEIGHT-1));
       ctx.fillRect(p.x-ts/2, p.y-ts/2, ts, ts);
       ctx.strokeStyle='rgba(0,0,0,0.22)'; ctx.lineWidth=1; ctx.strokeRect(p.x-ts/2, p.y-ts/2, ts, ts);
+      if(jobTiles[x+'_'+y]){ ctx.fillStyle='rgba(206,52,52,0.38)'; ctx.fillRect(p.x-ts/2, p.y-ts/2, ts, ts); ctx.strokeStyle='#d23a3a'; ctx.lineWidth=2; ctx.strokeRect(p.x-ts/2+1, p.y-ts/2+1, ts-2, ts-2); }
       if(cell.obstacle) estateDrawTdObstacle(ctx, p.x, p.y, cell.obstacle, ts);
       if(cell.workshopId) estateDrawTdWorkshop(ctx, p.x, p.y, WORKSHOP_ITEMS[cell.workshopId], ts);
       var isSel = estateSelectedTile && estateSelectedTile.x===x && estateSelectedTile.y===y;
@@ -8034,6 +8043,7 @@
     ctx.translate(estatePanX, estatePanY);
     ctx.scale(estateZoom, estateZoom);
     var grid = estActive.grid;
+    var jobTiles = estJobTileMap(); // occupied guild-estate tiles -> paint red
     if(estateTopDown){ estateDrawTopDown(ctx, grid, originX, originY); } else {
     var drawTiles = estateTilesByDepth(false); // back-to-front
     // Base level the side walls drop to: a few units below the lowest owned tile, so the
@@ -8077,6 +8087,16 @@
       ctx.strokeStyle = isSelected ? '#ffffff' : (isHovered ? '#e8c15a' : 'rgba(0,0,0,0.35)');
       ctx.lineWidth = (isSelected || isHovered) ? 2 : 1;
       ctx.stroke();
+      if(jobTiles[x+'_'+y]){ // occupied by a guild member -> translucent red top + red outline
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+        ctx.lineTo(pos.x+ESTATE_TILE_W/2, pos.y+ESTATE_TILE_H/2);
+        ctx.lineTo(pos.x, pos.y+ESTATE_TILE_H);
+        ctx.lineTo(pos.x-ESTATE_TILE_W/2, pos.y+ESTATE_TILE_H/2);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(206,52,52,0.38)'; ctx.fill();
+        ctx.strokeStyle = '#d23a3a'; ctx.lineWidth = 2; ctx.stroke();
+      }
       if(cell.obstacle){
         drawEstateObstacleModel(ctx, pos.x, pos.y + ESTATE_TILE_H/2, cell.obstacle, estateRotation);
       }
@@ -8480,18 +8500,32 @@
     html += '</div>';
     return html + (estIsGuild ? renderGuildOtherJobs() : '');
   }
-  // On the shared guild estate, list the activities OTHER members currently have running, so
-  // the whole guild can see who's working where. Read-only (no Cancel on someone else's job).
+  var GUILD_JOB_KIND_LABEL = { clear:'clearing', pave:'paving', workshop:'building', raise:'raising', lower:'digging down' };
+  function guildJobTimerId(owner){ return 'gjobtimer_' + String(owner).replace(/[^a-zA-Z0-9]/g,''); }
+  // On the shared guild estate, show who else is doing what: each working member's action,
+  // tile coords and (live) timer -- matching the red tiles on the canvas -- plus a compact
+  // list of allies who are idle. Read-only (no Cancel on someone else's job).
   function renderGuildOtherJobs(){
-    var jobs = (guildEstate.jobs||[]).filter(function(j){ return j.owner !== estMyId(); });
-    if(!jobs.length) return '';
-    var kindLabel = { clear:'clearing', pave:'paving', workshop:'building', raise:'raising', lower:'digging down' };
+    var myId = estMyId();
+    var jobs = (guildEstate.jobs||[]).filter(function(j){ return j.owner !== myId; });
+    var busy = {}; (guildEstate.jobs||[]).forEach(function(j){ busy[j.owner] = 1; });
+    var idle = (guildState.members||[]).filter(function(m){ return m.user_id !== myId && !busy[m.user_id]; });
+    if(!jobs.length && !idle.length) return ''; // nobody else in the guild / nothing to report
     var html = '<div class="estate-action-row" style="flex-direction:column;align-items:stretch;gap:4px;border-top:1px dashed var(--border-light);padding-top:10px;">';
-    html += '<div class="estate-action-info"><b>Guild members working</b></div>';
-    jobs.forEach(function(j){
-      var rem = Math.max(0, j.readyAt - Date.now());
-      html += '<div class="estate-action-info" style="display:flex;justify-content:space-between;gap:8px;"><span>'+escapeHtml(j.ownerName||'A member')+' &bull; '+(kindLabel[j.kind]||'working')+' ('+j.x+', '+j.y+')</span><span style="font-family:var(--font-mono);">'+formatDuration(rem)+'</span></div>';
-    });
+    html += '<div class="estate-action-info"><b>Guild activity</b></div>';
+    if(!jobs.length){
+      html += '<div class="estate-action-info" style="color:var(--text-faint);">No other members are working the estate right now.</div>';
+    } else {
+      jobs.forEach(function(j){
+        var rem = Math.max(0, j.readyAt - Date.now());
+        html += '<div class="estate-action-info" style="display:flex;justify-content:space-between;gap:8px;align-items:center;">'
+          + '<span><span style="color:#d23a3a;" title="This tile is locked to other members">&#9632;</span> <b>'+escapeHtml(j.ownerName||'A member')+'</b> &bull; '+(GUILD_JOB_KIND_LABEL[j.kind]||'working')+' ('+j.x+', '+j.y+')</span>'
+          + '<span style="font-family:var(--font-mono);" id="'+guildJobTimerId(j.owner)+'">'+(rem<=0?'finishing…':formatDuration(rem))+'</span></div>';
+      });
+    }
+    if(idle.length){
+      html += '<div class="estate-action-info" style="margin-top:4px;color:var(--text-faint);"><b>Idle:</b> '+idle.map(function(m){ return escapeHtml(m.username); }).join(', ')+'</div>';
+    }
     html += '</div>';
     return html;
   }
@@ -10900,6 +10934,16 @@
       } else if(ejTimer){
         ejTimer.textContent = 'Finishes in ' + formatDuration(ejob.readyAt - ejNow);
       }
+    }
+    // Live-tick the "Guild activity" list timers for other members' jobs (their rows persist
+    // until a realtime update removes the finished job).
+    if(estIsGuild && currentCategory==='guild' && guildSub==='estate'){
+      var gNow = Date.now(), gMyId = estMyId();
+      (guildEstate.jobs||[]).forEach(function(j){
+        if(j.owner===gMyId) return;
+        var gEl = document.getElementById(guildJobTimerId(j.owner));
+        if(gEl){ var gRem = j.readyAt - gNow; gEl.textContent = gRem<=0 ? 'finishing…' : formatDuration(gRem); }
+      });
     }
 
     var faithFill = document.getElementById('faithBarFill');
