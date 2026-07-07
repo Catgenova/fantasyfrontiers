@@ -186,6 +186,7 @@
   .market-item-ico{display:inline-flex;} .market-item-ico svg, .market-item-ico .game-icon{width:20px; height:20px;}
   .market-item-name{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .market-item-owned{color:var(--text-faint); font-size:11px; white-space:nowrap;}
+  .market-listing-info{color:var(--cat-market); font-size:11px; white-space:nowrap; font-family:var(--font-mono);}
   .market-trade-head{display:flex; align-items:center; gap:12px; margin-bottom:10px;}
   .market-trade-head .market-item-ico svg{width:34px; height:34px;}
   .market-trade-name{font-family:var(--font-display); font-size:16px;}
@@ -1018,7 +1019,7 @@
     {id:'faith', label:'Faith', icon:svgIcon('prayinghands','var(--cat-faith)'), color:'var(--cat-faith)'},
     {id:'menagerie', label:'Menagerie', icon:svgIcon('paw','var(--cat-menagerie)'), color:'var(--cat-menagerie)'},
     {id:'guild', label:'Guild', icon:svgIcon('shield','var(--cat-guild)'), color:'var(--cat-guild)'},
-    {id:'market', label:'Market', icon:svgIcon('coin','var(--cat-market)'), color:'var(--cat-market)'},
+    {id:'market', label:'Auction House', icon:svgIcon('coin','var(--cat-market)'), color:'var(--cat-market)'},
     {id:'chat', label:'Chat', icon:svgIcon('chat','var(--cat-chat)'), color:'var(--cat-chat)'},
     {id:'leaderboard', label:'Leaderboard', icon:svgIcon('trophy','var(--cat-leaderboard)'), color:'var(--cat-leaderboard)'}
   ];
@@ -10823,7 +10824,7 @@
   function marketTax(gold){ return Math.floor(gold * MARKET_TAX); }
   function marketSellNet(price, qty){ var g = price * qty; return g - marketTax(g); }
   function marketBuyCost(price, qty){ return price * qty; }
-  var marketState = { sub:'browse', status:'idle', selectedItem:null, book:null, bookItem:null, orders:[], proceeds:{gold:0,items:[]}, search:'', busy:false };
+  var marketState = { mode:'forsale', status:'idle', selectedItem:null, book:null, bookItem:null, orders:[], proceeds:{gold:0,items:[]}, listings:[], search:'', busy:false };
   function marketInvoke(action, payload){
     if(!chatClient || !authUser) return Promise.resolve({ ok:false, error:'Sign in first.' });
     var body = { action:action };
@@ -10840,37 +10841,58 @@
     if(!_marketTradeable){ _marketTradeable = Object.keys(ALL_SELLABLE).filter(function(k){ return k!=='gold' && /^[A-Za-z0-9_]{1,64}$/.test(k); }); }
     return _marketTradeable;
   }
-  function marketSearchResults(){
+  function marketMatchesSearch(id){
     var q = (marketState.search||'').trim().toLowerCase();
-    var ids = marketTradeableIds(), out = [];
-    if(!q){ // default view: things you currently own, most-held first
-      ids.forEach(function(id){ if((state.inventory[id]||0) > 0) out.push(id); });
-      out.sort(function(a,b){ return (state.inventory[b]||0) - (state.inventory[a]||0); });
-      return out.slice(0, 60);
+    if(!q) return true;
+    return (marketItemName(id)||'').toLowerCase().indexOf(q)!==-1 || id.toLowerCase().indexOf(q)!==-1;
+  }
+  function marketOwnedIds(){
+    var out = []; marketTradeableIds().forEach(function(id){ if((state.inventory[id]||0) > 0) out.push(id); });
+    out.sort(function(a,b){ return (state.inventory[b]||0) - (state.inventory[a]||0); });
+    return out;
+  }
+  // The list body for the current mode (For Sale listings / Buy item-picker / Sell inventory-picker).
+  function marketListHtml(){
+    if(marketState.mode==='forsale'){
+      var rows = (marketState.listings||[]).filter(function(r){ return marketMatchesSearch(r.item_key); });
+      rows.sort(function(a,b){ return marketItemName(a.item_key).localeCompare(marketItemName(b.item_key)); });
+      if(!rows.length){
+        var msg = (marketState.search||'').trim() ? 'No items for sale match “'+escapeHtml(marketState.search)+'”.'
+          : (marketState.status==='ready' ? 'Nothing is listed for sale right now — be the first (tap <b>Sell</b>).' : 'Loading listings…');
+        return '<div class="empty-note">'+msg+'</div>';
+      }
+      var html = '';
+      rows.slice(0,80).forEach(function(r){ var m = marketItemMeta(r.item_key);
+        html += '<button class="market-item-row" data-action="marketPickItem" data-item="'+r.item_key+'"><span class="market-item-ico">'+m.icon+'</span><span class="market-item-name">'+escapeHtml(m.name)+'</span><span class="market-listing-info">from '+fmt(r.min_ask)+'g • '+fmt(r.qty)+' available</span></button>';
+      });
+      return html;
     }
-    ids.forEach(function(id){ var nm = ((ALL_SELLABLE[id].name)||'').toLowerCase(); if(nm.indexOf(q)!==-1 || id.toLowerCase().indexOf(q)!==-1) out.push(id); });
-    out.sort(function(a,b){ return ((ALL_SELLABLE[a].name)||a).localeCompare((ALL_SELLABLE[b].name)||b); });
-    return out.slice(0, 60);
-  }
-  function marketResultsHtml(){
-    var ids = marketSearchResults();
-    if(!ids.length) return '<div class="empty-note">'+(marketState.search ? 'No items match “'+escapeHtml(marketState.search)+'”.' : 'You have nothing to sell yet — search to find something to buy.')+'</div>';
-    var html = '';
-    ids.forEach(function(id){ var m = marketItemMeta(id), owned = state.inventory[id]||0;
-      html += '<button class="market-item-row" data-action="marketPickItem" data-item="'+id+'"><span class="market-item-ico">'+m.icon+'</span><span class="market-item-name">'+escapeHtml(m.name)+'</span><span class="market-item-owned">'+(owned>0? fmt(owned)+' owned':'')+'</span></button>';
+    var ids;
+    if(marketState.mode==='sell'){ ids = marketOwnedIds().filter(marketMatchesSearch); }
+    else { // buy: search any tradeable item to bid on
+      if(!(marketState.search||'').trim()) return '<div class="empty-note">Search any item to place a buy order (bid) — even ones nobody is selling yet.</div>';
+      ids = marketTradeableIds().filter(marketMatchesSearch).sort(function(a,b){ return marketItemName(a).localeCompare(marketItemName(b)); });
+    }
+    if(!ids.length){
+      var m2 = marketState.mode==='sell' ? ((marketState.search||'').trim() ? 'None of your items match.' : 'You have nothing to sell right now.') : 'No items match “'+escapeHtml(marketState.search)+'”.';
+      return '<div class="empty-note">'+m2+'</div>';
+    }
+    var h = '';
+    ids.slice(0,80).forEach(function(id){ var m = marketItemMeta(id), owned = state.inventory[id]||0;
+      h += '<button class="market-item-row" data-action="marketPickItem" data-item="'+id+'"><span class="market-item-ico">'+m.icon+'</span><span class="market-item-name">'+escapeHtml(m.name)+'</span><span class="market-item-owned">'+(owned>0? fmt(owned)+' owned':'')+'</span></button>';
     });
-    return html;
+    return h;
   }
-  function renderMarketResults(){ var el = document.getElementById('marketResults'); if(el) el.innerHTML = marketResultsHtml(); }
-  function renderMarketBrowse(){
-    if(marketState.selectedItem) return renderMarketTradePanel(marketState.selectedItem);
-    var html = '<div class="market-search"><input id="marketSearch" class="market-search-input" type="text" placeholder="Search items to trade…" value="'+escapeHtml(marketState.search)+'" autocomplete="off"></div>';
-    html += '<div id="marketResults" class="market-results">'+marketResultsHtml()+'</div>';
+  function renderMarketResults(){ var el = document.getElementById('marketResults'); if(el) el.innerHTML = marketListHtml(); }
+  function renderMarketList(){
+    var ph = marketState.mode==='sell' ? 'Search your items to sell…' : (marketState.mode==='buy' ? 'Search any item to bid on…' : 'Search items for sale…');
+    var html = '<div class="market-search"><input id="marketSearch" class="market-search-input" type="text" placeholder="'+ph+'" value="'+escapeHtml(marketState.search)+'" autocomplete="off"></div>';
+    html += '<div id="marketResults" class="market-results">'+marketListHtml()+'</div>';
     return html;
   }
   function renderMarketTradePanel(item){
     var m = marketItemMeta(item), owned = state.inventory[item]||0, base = (ALL_SELLABLE[item]||{}).sell || 0;
-    var html = '<button class="mini-btn" data-action="marketClearItem" style="margin-bottom:10px;">← All items</button>';
+    var html = '<button class="mini-btn" data-action="marketClearItem" style="margin-bottom:10px;">← Back</button>';
     html += '<div class="market-trade-head"><span class="market-item-ico">'+m.icon+'</span><div><div class="market-trade-name">'+escapeHtml(m.name)+'</div><div class="item-meta">You own '+fmt(owned)+' • Your gold: '+fmt(state.gold)+'</div></div></div>';
     html += '<div class="market-book">';
     var book = (marketState.book && marketState.bookItem===item) ? marketState.book : null;
@@ -10916,7 +10938,7 @@
     }
     html += '</div>';
     html += '<h3 style="margin-top:14px;">Open Orders</h3>';
-    if(!marketState.orders.length) return html + '<div class="empty-note">No open orders. Place one from <b>Browse &amp; Trade</b>.</div>';
+    if(!marketState.orders.length) return html + '<div class="empty-note">No open orders. Place one from <b>Buy</b> or <b>Sell</b>.</div>';
     html += '<div class="card-grid">';
     marketState.orders.forEach(function(o){
       var m = marketItemMeta(o.item_key), filled = o.qty_original - o.qty_remaining;
@@ -10926,15 +10948,14 @@
     return html + '</div>';
   }
   function renderMarketTab(){
-    if(!authUser) return '<div class="section-intro">Sign in to trade on the Marketplace.</div>';
+    if(!authUser) return '<div class="section-intro">Sign in to use the Auction House.</div>';
     marketEnsureLoaded();
-    var html = '<div class="section-intro">A shared order book. Place buy &amp; sell orders priced in gold; crossing orders fill automatically (partial fills allowed). A '+Math.round(MARKET_TAX*100)+'% tax is burned on every sale. Gold from sales and items from purchases wait under <b>My Orders → Collect</b>.</div>';
-    html += '<div class="market-subtabs"><button class="market-subtab'+(marketState.sub==='browse'?' on':'')+'" data-action="marketSub" data-sub="browse">Browse &amp; Trade</button>';
-    html += '<button class="market-subtab'+(marketState.sub==='orders'?' on':'')+'" data-action="marketSub" data-sub="orders">My Orders'+(marketState.orders.length? ' ('+marketState.orders.length+')':'')+'</button>';
-    html += '<button class="mini-btn" data-action="marketRefresh" style="margin-left:auto;">Refresh</button></div>';
-    if(marketState.status==='loading' && !marketState.orders.length && !marketState.selectedItem && marketState.sub==='orders') html += '<div class="empty-note">Loading…</div>';
-    else if(marketState.sub==='orders') html += renderMarketOrders();
-    else html += renderMarketBrowse();
+    var html = '<div class="section-intro">A shared auction house. Browse everything players have listed, then place a <b>buy</b> or <b>sell</b> order priced in gold — matching orders fill automatically (partial fills allowed). A '+Math.round(MARKET_TAX*100)+'% tax is burned on every sale. Gold and items you’re owed wait under <b>My Orders</b>.</div>';
+    function nav(mode, label){ return '<button class="market-subtab'+((marketState.mode===mode && !marketState.selectedItem)?' on':'')+'" data-action="marketMode" data-mode="'+mode+'">'+label+'</button>'; }
+    html += '<div class="market-subtabs">'+nav('forsale','For Sale')+nav('buy','Buy')+nav('sell','Sell')+nav('orders','My Orders'+(marketState.orders.length? ' ('+marketState.orders.length+')':''))+'<button class="mini-btn" data-action="marketRefresh" style="margin-left:auto;">Refresh</button></div>';
+    if(marketState.selectedItem) html += renderMarketTradePanel(marketState.selectedItem);
+    else if(marketState.mode==='orders') html += renderMarketOrders();
+    else html += renderMarketList();
     return html;
   }
   // ---- Market engine (async network + client-side escrow reconciliation) ----
@@ -10945,7 +10966,7 @@
         var got=false, parts=[];
         if(res.gold>0){ state.gold += res.gold; got=true; parts.push(fmt(res.gold)+'g'); }
         (res.items||[]).forEach(function(it){ if(it.amount>0){ addItem(it.item_key, it.amount); got=true; parts.push(fmt(it.amount)+'× '+marketItemName(it.item_key)); } });
-        if(got){ saveGame(); addLog('Collected from the Market: '+parts.join(', ')+'.', 'chronicle'); }
+        if(got){ saveGame(); addLog('Collected from the Auction House: '+parts.join(', ')+'.', 'chronicle'); }
       }
       return res;
     });
@@ -10953,6 +10974,9 @@
   function marketReload(){
     marketCollectNow().then(function(){ return marketInvoke('mine'); }).then(function(res){
       if(res && res.ok){ marketState.orders = res.orders||[]; marketState.proceeds = res.proceeds||{gold:0,items:[]}; }
+      return marketInvoke('listings');
+    }).then(function(lres){
+      if(lres && lres.ok){ marketState.listings = lres.listings||[]; }
       marketState.status = 'ready';
       return marketState.selectedItem ? marketInvoke('book', { item_key: marketState.selectedItem }) : null;
     }).then(function(bres){
@@ -12499,8 +12523,8 @@
       peonAssignSpecial(parseInt(btn.getAttribute('data-tier'),10));
     } else if(action==='peonStop'){
       peonStop(btn.getAttribute('data-scope'), parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
-    } else if(action==='marketSub'){
-      marketState.sub = btn.getAttribute('data-sub'); render();
+    } else if(action==='marketMode'){
+      marketState.mode = btn.getAttribute('data-mode'); marketState.selectedItem = null; marketState.search = ''; render();
     } else if(action==='marketRefresh'){
       marketReload();
     } else if(action==='marketPickItem'){

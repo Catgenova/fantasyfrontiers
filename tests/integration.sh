@@ -164,6 +164,10 @@ assert_ok "$MS1" "A places a sell order (10 @ 100)"
 assert_eq "sell rests fully (0 filled)" "$(field "$MS1" filled)" "0"
 assert_eq "sell rests 10"               "$(field "$MS1" rest)"   "10"
 
+# The global "For Sale" listings feed includes A's resting sell.
+LS=$(fn marketplace "$TOK_MB" '{"action":"listings"}')
+assert_has "$LS" "\"item_key\":\"$IKEY\"" "listings feed shows the item for sale"
+
 MB1=$(fn marketplace "$TOK_MB" "{\"action\":\"place\",\"side\":\"buy\",\"item_key\":\"$IKEY\",\"unit_price\":100,\"qty\":10}")
 assert_ok "$MB1" "B places a crossing buy (10 @ 100)"
 assert_eq "buy fills all 10 instantly" "$(field "$MB1" filled)" "10"

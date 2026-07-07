@@ -10,6 +10,7 @@
 // Only item_key + numbers are stored; the client rebuilds names/icons, so no HTML is trusted.
 //
 // Actions (POST { action, ... }):
+//   listings                                       -> everything for sale, aggregated by item (min ask, qty, #)
 //   book    { item_key }                          -> aggregated ask/bid ladders + best ask/bid for one item
 //   mine                                           -> caller's open orders + proceeds inbox summary
 //   place   { side, item_key, unit_price, qty }    -> match + rest; returns { filled, rest, refund, order_id }
@@ -69,6 +70,21 @@ Deno.serve(async (req) => {
     const askL = ladder(asks || []).sort((a, b) => a.price - b.price);
     const bidL = ladder(bids || []).sort((a, b) => b.price - a.price);
     return json({ ok: true, item_key: key, asks: askL, bids: bidL, best_ask: askL.length ? askL[0].price : null, best_bid: bidL.length ? bidL[0].price : null });
+  }
+
+  if (action === "listings") {
+    // Everything currently for sale, aggregated by item (cheapest ask + total qty + # listings).
+    // Scans the cheapest asks first so a huge book still surfaces the best prices.
+    const { data } = await admin.from("market_orders").select("item_key, unit_price, qty_remaining")
+      .eq("side", "sell").order("unit_price", { ascending: true }).limit(3000);
+    const agg = new Map<string, { item_key: string; min_ask: number; qty: number; count: number }>();
+    for (const r of data || []) {
+      const k = r.item_key as string, price = Number(r.unit_price), qty = Number(r.qty_remaining);
+      const cur = agg.get(k);
+      if (!cur) agg.set(k, { item_key: k, min_ask: price, qty, count: 1 });
+      else { cur.qty += qty; cur.count += 1; if (price < cur.min_ask) cur.min_ask = price; }
+    }
+    return json({ ok: true, listings: Array.from(agg.values()) });
   }
 
   if (action === "mine") {
