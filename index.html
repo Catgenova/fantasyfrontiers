@@ -10925,7 +10925,10 @@
       if(teaTrack) teaTrack.style.display = 'block';
       if(teaLabelRow) teaLabelRow.style.display = 'flex';
       if(teaFill) teaFill.style.width = teaPctNow + '%';
-      if(teaNameEl) teaNameEl.textContent = state.activeTea.icon + ' ' + state.activeTea.name + ' (+' + Math.round(state.activeTea.xpBoost*100) + '% XP)';
+      if(teaNameEl){ // contains an SVG icon -> innerHTML, and only re-parse when the tea actually changes
+        var teaNameHtml = state.activeTea.icon + ' ' + state.activeTea.name + ' (+' + Math.round(state.activeTea.xpBoost*100) + '% XP)';
+        if(teaNameEl._html !== teaNameHtml){ teaNameEl._html = teaNameHtml; teaNameEl.innerHTML = teaNameHtml; }
+      }
       if(teaLabelEl) teaLabelEl.textContent = formatDuration(teaRemainingMs);
       if(teaTabTimerEl) teaTabTimerEl.textContent = formatDuration(teaRemainingMs);
     } else {
@@ -10967,7 +10970,10 @@
 
     var autoEatNextEl = document.getElementById('autoEatNextFoodText');
     var autoEatTotalEl = document.getElementById('autoEatTotalFoodText');
-    if(autoEatNextEl) autoEatNextEl.textContent = autoEatNextFoodLabel();
+    if(autoEatNextEl){ // label contains a food SVG icon -> innerHTML, re-parsed only on change
+      var autoEatHtml = autoEatNextFoodLabel();
+      if(autoEatNextEl._html !== autoEatHtml){ autoEatNextEl._html = autoEatHtml; autoEatNextEl.innerHTML = autoEatHtml; }
+    }
     if(autoEatTotalEl) autoEatTotalEl.textContent = getTotalAutoEatFoodQty();
 
     var charHpFill = document.getElementById('charHpFill');
