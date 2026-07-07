@@ -11796,7 +11796,29 @@
     }
     renderLoginGate();
   })();
+
+  // ---- Test seam: expose pure logic to the browser test suite (tests/selftest.js), only when
+  // the page is opened with ?selftest. Production loads never touch this. ----
+  if(typeof location !== 'undefined' && /[?&]selftest\b/.test(location.search)){
+    window.__FF = {
+      getLevel:getLevel, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
+      bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
+      workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
+      getPavingRecipe:getPavingRecipe, weightedAdvantage:weightedAdvantage,
+      weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
+      pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
+      CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
+      TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
+      DAMAGE_TYPES:DAMAGE_TYPES
+    };
+  }
 })();
+</script>
+<script>
+  // Load the unit test suite only when ?selftest is present (keeps it out of normal play).
+  if(/[?&]selftest\b/.test(location.search)){
+    var _t = document.createElement('script'); _t.src = 'tests/selftest.js'; document.body.appendChild(_t);
+  }
 </script>
 </body>
 </html>
