@@ -167,6 +167,12 @@
   @media (max-width:820px){.layout{grid-template-columns:1fr;}}
   .content-wrap{position:relative;}
   .floating-text-layer{position:fixed; top:0; left:0; width:100vw; height:100vh; pointer-events:none; overflow:hidden; z-index:9999;}
+  .tracker-row{margin:7px 0;}
+  .tracker-picker-grid{display:flex; flex-wrap:wrap; gap:6px;}
+  .tracker-chip{display:inline-flex; align-items:center; gap:5px; font-size:12px; padding:5px 9px; border:1px solid var(--border); border-radius:14px; background:rgba(255,255,255,0.45); cursor:pointer; color:var(--text); font-family:inherit;}
+  .tracker-chip.on{border-color:var(--gold); background:linear-gradient(180deg,#ffffff,rgba(200,162,39,0.14)); font-weight:600;}
+  .tracker-chip:disabled{opacity:0.4; cursor:not-allowed;}
+  .tracker-chip .game-icon, .tracker-chip svg{width:14px; height:14px;}
   .familiar-popup-overlay{position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(52,38,18,0.55); z-index:10000; display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box;}
   .skill-info-btn{
     display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;
@@ -933,6 +939,7 @@
   <div id="familiarPopupOverlay"></div>
   <div id="skillInfoOverlay" class="skill-info-overlay" data-action="closeSkillInfo" style="display:none"></div>
   <div id="settingsOverlay"></div>
+  <div id="trackerPickerOverlay"></div>
   <div class="sticky-header" id="stickyHeader">
     <div class="topbar">
       <div class="brand"><svg class="brand-crest" viewBox="0 0 100 100" role="img" aria-label="Fantasy Frontiers crest: a plate-armored knight battles a dragon while a familiar casts lightning from above"><defs><clipPath id="ffClip"><circle cx="50" cy="50" r="43"/></clipPath><linearGradient id="ffSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34425c"/><stop offset="1" stop-color="#1b2432"/></linearGradient><linearGradient id="ffGround" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#43533b"/><stop offset="1" stop-color="#25301e"/></linearGradient></defs><circle cx="50" cy="50" r="48" fill="#161d2b"/><g clip-path="url(#ffClip)"><rect x="6" y="6" width="88" height="88" fill="url(#ffSky)"/><circle cx="67" cy="30" r="17" fill="#43516a" opacity="0.55"/><path d="M6,73 Q38,63 60,71 Q80,77 94,71 L94,94 L6,94 Z" fill="url(#ffGround)"/><ellipse cx="30" cy="86" rx="14" ry="3.4" fill="#141a0f" opacity="0.55"/><ellipse cx="66" cy="86" rx="18" ry="4" fill="#141a0f" opacity="0.55"/><!-- DRAGON --><path d="M64,50 L92,22 Q86,34 89,42 Q82,39 82,47 Q75,45 75,53 Q69,50 66,60 Z" fill="#6f2018" stroke="#4f1410" stroke-width="1" stroke-linejoin="round"/><path d="M66,52 L88,27 M75,51 L85,39 M80,50 L86,45" stroke="#4f1410" stroke-width="0.9" fill="none" stroke-linecap="round"/><path d="M64,62 Q75,68 79,80 Q81,86 89,85" fill="none" stroke="#9c3327" stroke-width="6" stroke-linecap="round"/><path d="M87,85 l7,-1 l-4,7 z" fill="#9c3327"/><path d="M63,66 C67,58 63,52 60,48 C56,42 54,38 55,34 C56,40 61,46 66,52 C71,58 72,62 71,68 Z" fill="#b0402f"/><path d="M60,66 C64,58 60,50 57,46 C53,40 51,37 52,33 C49,38 50,45 54,51 C58,57 60,60 59,66 Z" fill="#b0402f"/><path d="M55,63 C52,55 50,49 49,44" stroke="#d76b52" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M53,33 C50,30 45,29 41,31 L37,34 L42,35 L39,38 L45,37 C47,39 50,39 53,37 Z" fill="#b0402f"/><path d="M41,31 L37,34 L42,35 Z" fill="#8a2c22"/><path d="M42,36 L37,39 L44,39 Z" fill="#5e1712"/><path d="M54,31 L57,24 M51,31 L52,25" stroke="#7a271f" stroke-width="2.3" stroke-linecap="round"/><circle cx="47" cy="33" r="1.5" fill="#f5d24a"/><circle cx="47" cy="33" r="0.6" fill="#3a0f0b"/><path d="M58,58 L50,63 M50,63 l-3,-1 M50,63 l-1,3 M50,63 l2,3" stroke="#8a2c22" stroke-width="2.1" fill="none" stroke-linecap="round"/><!-- KNIGHT --><path d="M24,72 L23,84 L28,84 L28,72 Z" fill="#5c6678"/><path d="M28,72 L30,84 L35,84 L33,72 Z" fill="#79879b"/><path d="M21,83 h9 v3 h-10 z" fill="#41475a"/><path d="M29,83 h9 v3 h-10 z" fill="#41475a"/><path d="M20,54 Q28,50 36,54 L34,73 L22,73 Z" fill="#aab6c6"/><path d="M28,52 L27,73 L34,73 L34,54 Z" fill="#8b98ab"/><rect x="21.5" y="66" width="13" height="3" fill="#d8b24a"/><path d="M33,56 L44,45" stroke="#9aa6b8" stroke-width="4" stroke-linecap="round"/><path d="M42,46 L58,30" stroke="#e7eef6" stroke-width="3" stroke-linecap="round"/><path d="M42,46 L58,30" stroke="#b9c6d6" stroke-width="0.9" stroke-linecap="round"/><path d="M39,45 L47,49" stroke="#d8b24a" stroke-width="2.6" stroke-linecap="round"/><circle cx="41.5" cy="47" r="1.7" fill="#d8b24a"/><path d="M14,58 Q13,52 19,51 Q25,52 24,58 Q24,66 19,70 Q14,66 14,58 Z" fill="#7d8699" stroke="#474e60" stroke-width="1"/><path d="M19,53 L19,68 M15,60 L23,60" stroke="#d8b24a" stroke-width="1.3"/><circle cx="19" cy="60" r="2" fill="#d8b24a"/><path d="M23,45 Q28,41 33,45 L33,53 Q28,56 23,53 Z" fill="#c2ccd9"/><rect x="24.5" y="48" width="7" height="1.6" fill="#2c313d"/><path d="M23,46 L33,46" stroke="#8b98ab" stroke-width="0.9"/><path d="M28,41 Q26,35 30,33 Q29,38 31,41 Z" fill="#b23a34"/><!-- LIGHTNING --><path d="M33,28 L40,34 L36,36 L46,44 L42,45 L52,52" fill="none" stroke="#f6e08a" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" opacity="0.5"/><path d="M33,28 L40,34 L36,36 L46,44 L42,45 L52,52" fill="none" stroke="#fff6c8" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/><!-- FAMILIAR --><circle cx="30" cy="23" r="8" fill="#6b7fd6" opacity="0.28"/><path d="M30,23 Q23,18 20,22 Q25,23 24,26 Q28,24 30,26 Z" fill="#8fa0ec"/><path d="M31,23 Q38,18 41,22 Q36,23 37,26 Q33,24 31,26 Z" fill="#6d7fd6"/><ellipse cx="30.5" cy="24" rx="3.1" ry="4" fill="#b9c4f7"/><circle cx="30.5" cy="20.6" r="2.6" fill="#cfd7fb"/><circle cx="29.6" cy="20.5" r="0.6" fill="#2a2f52"/><circle cx="31.4" cy="20.5" r="0.6" fill="#2a2f52"/><circle cx="33" cy="27" r="1.9" fill="#fff6c8"/></g><circle cx="50" cy="50" r="48" fill="none" stroke="#c9a227" stroke-width="3.2"/><circle cx="50" cy="50" r="44" fill="none" stroke="#e8c15a" stroke-width="0.8" opacity="0.55"/></svg><span class="brand-word">Fantasy Frontiers<small>An Idle Frontier to Gather, Craft, Build &amp; Battle</small></span></div>
@@ -956,6 +963,7 @@
     </div>
     <aside>
       <div class="panel" id="characterPanel"></div>
+      <div class="panel" id="trackerPanel"></div>
       <div class="panel" id="inventoryPanel"></div>
       <div class="panel" id="logPanel"></div>
     </aside>
@@ -4330,6 +4338,7 @@
       popupQueue: [],
       popupBatchTotal: 0,
       settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true },
+      trackedSkills: [],
       dungeonProgress: {},
       estate: Object.assign({ grid: generateEstateGrid(), expansionsPurchased: 0, job: null }, generateEstateEdges()),
       lockedItems: {},
@@ -4462,6 +4471,7 @@
       needsRender = true;
     }
     if(resolveActionBarSkill().skillId === skill) spawnBarXpText('gabSkillTrack', amount);
+    if(state.trackedSkills && state.trackedSkills.indexOf(skill) !== -1) spawnBarXpText('trackRow-'+skill, amount);
   }
   function addPhysiqueXp(pairs){
     if(!pairs) return;
@@ -5282,6 +5292,8 @@
           if(typeof state.settings.chatFlash !== 'boolean') state.settings.chatFlash = true;
           if(!state.dungeonProgress || typeof state.dungeonProgress !== 'object') state.dungeonProgress = {};
           if(!state.lockedItems || typeof state.lockedItems !== 'object') state.lockedItems = {};
+          if(!Array.isArray(state.trackedSkills)) state.trackedSkills = [];
+          state.trackedSkills = state.trackedSkills.filter(function(id){ return typeof id === 'string'; }).slice(0, 5);
           try {
             var gridOk = state.estate && state.estate.grid && state.estate.grid.length === ESTATE_GRID_SIZE &&
               state.estate.grid.every(function(col){ return Array.isArray(col) && col.length === ESTATE_GRID_SIZE &&
@@ -10966,6 +10978,78 @@
     });
   }
 
+  // ======== Tracked Skills card ========
+  // A persistent sidebar card of up to TRACK_MAX chosen skills. Each row flashes a floating
+  // "+N XP" tick whenever that skill gains experience (see the hook in addXp). The selection
+  // lives in state.trackedSkills, so it persists with the save.
+  var TRACK_MAX = 5;
+  var TRACKABLE_SKILL_IDS = (function(){
+    var ids = [];
+    GATHER_SKILL_IDS.forEach(function(id){ ids.push(id); });
+    ['fiberharvesting','grainharvesting','herbharvesting'].forEach(function(id){ ids.push(id); });
+    CRAFT_SKILL_IDS.forEach(function(id){ ids.push(id); });
+    ids.push('prayer');
+    return ids;
+  })();
+  function trackSkillMeta(id){
+    var g = (typeof GATHERING_SKILLS!=='undefined') ? GATHERING_SKILLS[id] : null;
+    var c = (typeof CRAFTING_SKILLS!=='undefined') ? CRAFTING_SKILLS[id] : null;
+    var icon = (g && g.icon) || (c && c.icon) || (id==='prayer' ? svgIcon('potion','#b48ce0') : svgIcon('question','var(--text-faint)'));
+    var label = SKILL_LABELS[id] || (g && g.label) || (c && c.label) || id;
+    return { icon:icon, label:label };
+  }
+  var trackerPickerOpen = false;
+  function toggleTrackedSkill(id){
+    if(!Array.isArray(state.trackedSkills)) state.trackedSkills = [];
+    var i = state.trackedSkills.indexOf(id);
+    if(i !== -1){ state.trackedSkills.splice(i, 1); }
+    else { if(state.trackedSkills.length >= TRACK_MAX) return; state.trackedSkills.push(id); }
+    saveGame();
+    renderTrackerPanel(); renderTrackerPicker();
+  }
+  function renderTrackerPanel(){
+    var el = document.getElementById('trackerPanel'); if(!el) return;
+    var tracked = (state.trackedSkills||[]).filter(function(id){ return state.xp[id] !== undefined; });
+    var html = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">';
+    html += '<h3 style="margin:0;">Tracked Skills</h3>';
+    html += '<button class="mini-btn" data-action="openTrackerPicker">Edit</button></div>';
+    if(!tracked.length){
+      html += '<div class="empty-note" style="margin-top:8px;">Pin up to '+TRACK_MAX+' skills here to see a floating +XP tick whenever they gain experience. Tap <b>Edit</b> to choose.</div>';
+    } else {
+      tracked.forEach(function(id){
+        var meta = trackSkillMeta(id);
+        var lvl = getLevel(state.xp[id]||0);
+        var pct = Math.round(levelProgress(state.xp[id]||0));
+        html += '<div class="tracker-row" id="trackRow-'+id+'">';
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">';
+        html += '<span style="display:flex;align-items:center;gap:6px;min-width:0;">'+meta.icon+'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(meta.label)+'</span></span>';
+        html += '<span class="item-meta" id="trackLvl-'+id+'">Lv '+lvl+'</span></div>';
+        html += '<div class="progress-track" style="height:5px;margin-top:3px;"><div class="progress-fill" id="trackFill-'+id+'" style="width:'+pct+'%"></div></div>';
+        html += '</div>';
+      });
+    }
+    el.innerHTML = html;
+  }
+  function renderTrackerPicker(){
+    var ov = document.getElementById('trackerPickerOverlay'); if(!ov) return;
+    if(!trackerPickerOpen){ ov.className=''; ov.innerHTML=''; return; }
+    var sel = state.trackedSkills || [];
+    var html = '<div class="familiar-popup-card" style="max-width:440px;text-align:left;max-height:82vh;overflow:auto;">';
+    html += '<div class="familiar-popup-title">Track Skills ('+sel.length+'/'+TRACK_MAX+')</div>';
+    html += '<div class="empty-note" style="margin-bottom:10px;">Choose up to '+TRACK_MAX+' skills to pin to the sidebar. Their rows flash a floating +XP tick every time they gain experience.</div>';
+    html += '<div class="tracker-picker-grid">';
+    TRACKABLE_SKILL_IDS.forEach(function(id){
+      var meta = trackSkillMeta(id);
+      var on = sel.indexOf(id) !== -1;
+      var disabled = !on && sel.length >= TRACK_MAX;
+      html += '<button class="tracker-chip'+(on?' on':'')+'" data-action="toggleTrackedSkill" data-skill="'+id+'"'+(disabled?' disabled':'')+'>'+meta.icon+' '+escapeHtml(meta.label)+'</button>';
+    });
+    html += '</div>';
+    html += '<button class="action-btn" data-action="closeTrackerPicker" style="margin-top:12px;">Done</button>';
+    html += '</div>';
+    ov.className = 'familiar-popup-overlay';
+    ov.innerHTML = html;
+  }
   function render(){
     // Preserve the in-progress chat message + focus/cursor across full re-renders -- otherwise
     // a popup (or any needsRender) mid-typing rebuilds the input and wipes the draft.
@@ -10979,9 +11063,11 @@
     renderSubTabs();
     renderContent();
     renderCharacterPanel();
+    renderTrackerPanel();
     renderInventoryPanel();
     renderLogPanel();
     renderPopupQueue();
+    renderTrackerPicker();
     renderSettingsModal();
     renderSkillInfoPopup();
     renderOfflineSummary();
@@ -10997,6 +11083,15 @@
     updateHeader();
     updateGlobalActionBarLive();
     updateGuildBossLive();
+    if(state.trackedSkills){ // live-tick the Tracked Skills card's bars + level labels
+      for(var _ti=0; _ti<state.trackedSkills.length; _ti++){
+        var _tid = state.trackedSkills[_ti];
+        var _tf = document.getElementById('trackFill-'+_tid);
+        if(_tf) _tf.style.width = Math.round(levelProgress(state.xp[_tid]||0)) + '%';
+        var _tl = document.getElementById('trackLvl-'+_tid);
+        if(_tl) _tl.textContent = 'Lv ' + getLevel(state.xp[_tid]||0);
+      }
+    }
 
     if(state.activity.type==='gather' || state.activity.type==='craft'){
       var fill = document.getElementById('liveActionFill');
@@ -11578,6 +11673,12 @@
     } else if(action==='dismissPopup'){
       state.popupQueue.shift();
       if(state.popupQueue.length === 0) state.popupBatchTotal = 0;
+    } else if(action==='openTrackerPicker'){
+      trackerPickerOpen = true; renderTrackerPicker();
+    } else if(action==='closeTrackerPicker'){
+      trackerPickerOpen = false; renderTrackerPicker();
+    } else if(action==='toggleTrackedSkill'){
+      toggleTrackedSkill(btn.getAttribute('data-skill'));
     } else if(action==='openSettings'){
       settingsOpen = true; recoveryStatus = null; recoveryEditing = false; recoveryMsg = '';
     } else if(action==='closeOfflineSummary'){
