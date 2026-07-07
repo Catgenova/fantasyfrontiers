@@ -23,8 +23,8 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
-const QUESTION_COUNT = 5;   // users author this many
-const NEEDED = 3;           // ...and must answer at least this many correctly to recover
+const QUESTION_COUNT = 3;   // users author this many
+const NEEDED = 1;           // ...and must answer at least this many correctly to recover
 const MAX_FAIL = 5;         // failed recovery attempts before a temporary lock
 const LOCK_MINUTES = 15;
 const Q_MIN = 3, Q_MAX = 120;
