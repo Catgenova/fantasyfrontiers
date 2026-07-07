@@ -6982,7 +6982,9 @@
       html += '<input id="newPasswordConfirm" class="chat-input" type="password" placeholder="Confirm new password" autocomplete="new-password">';
       if(pwChangeMsg){ html += '<div style="font-size:12px;'+(pwChangeOk?'color:var(--hp-good)':'color:var(--hp-bad)')+'">'+escapeHtml(pwChangeMsg)+'</div>'; }
       html += '<button class="action-btn" data-action="changePassword"'+(pwChangeBusy?' disabled':'')+'>'+(pwChangeBusy?'Saving…':'Update password')+'</button>';
-      html += '</div></div>';
+      html += '</div>';
+      html += renderRecoverySettings();
+      html += '</div>';
     }
     html += '<button class="action-btn" data-action="closeSettings" style="margin-top:14px">Close</button>';
     html += '</div>';
@@ -9020,7 +9022,146 @@
     html += '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);cursor:pointer;margin:2px 2px 4px;"><input type="checkbox" data-action="authToggleAutoLogin"'+(authAutoLogin?' checked':'')+'> Automatically log me in</label>';
     if(authError) html += '<div class="auth-error">'+escapeHtml(authError)+'</div>';
     html += '<button class="action-btn" data-action="authSubmit" '+(authBusy?'disabled':'')+'>'+(authBusy?'Please wait\u2026':(isReg?'Create Account':'Log In'))+'</button>';
+    if(!isReg) html += '<div class="auth-note" style="text-align:center;"><a href="#" data-action="recoverOpen" style="color:var(--gold);">Forgot your password?</a></div>';
     html += '<div class="auth-note">'+(isReg?'Choose a username and password &mdash; no email required.':'Welcome back, adventurer.')+(CHAT_ENABLED?'':' <b>Local preview:</b> accounts aren\'t real until a backend is connected.')+'</div>';
+    html += '</div>';
+    return html;
+  }
+  // ======== Account recovery: user-authored security questions ========
+  // We store no email/PII, so these are the self-service password-reset path. Answers are hashed
+  // + verified server-side (account_recovery Edge Function); the client only ever sends plaintext
+  // answers over TLS to be checked, never stores them. Users author RECOVERY_Q_COUNT questions and
+  // must answer at least RECOVERY_NEEDED correctly to reset their password.
+  var RECOVERY_Q_COUNT = 5, RECOVERY_NEEDED = 3;
+  var recoveryStatus = null, recoveryStatusLoading = false;    // settings: {has_questions, questions:[q,...]}
+  var recoveryBusy = false, recoveryMsg = '', recoveryOk = false, recoveryEditing = false;
+  var recoverOpen = false, recoverStep = 'username', recoverUsername = '', recoverQuestions = null, recoverBusy = false, recoverMsg = '';
+  function accountRecoveryInvoke(action, payload){
+    if(!chatClient) return Promise.resolve({ ok:false, error:'Not connected.' });
+    var b = { action:action }; if(payload){ for(var k in payload){ if(payload.hasOwnProperty(k)) b[k]=payload[k]; } }
+    return chatClient.functions.invoke('account_recovery', { body:b }).then(function(r){
+      if(r && r.data) return r.data;
+      return { ok:false, error:(r && r.error && r.error.message) || 'Request failed.' };
+    }, function(){ return { ok:false, error:'Network error.' }; });
+  }
+  function recoveryLoadStatus(){
+    if(!authUser || recoveryStatusLoading) return;
+    recoveryStatusLoading = true;
+    accountRecoveryInvoke('status', null).then(function(res){
+      recoveryStatusLoading = false;
+      recoveryStatus = (res && res.ok) ? res : { has_questions:false, count:0, questions:[], unavailable:true };
+      if(settingsOpen) renderSettingsModal();
+    });
+  }
+  function toggleRecoveryEdit(){ recoveryEditing = !recoveryEditing; recoveryMsg = ''; renderSettingsModal(); }
+  function saveRecoveryQuestions(){
+    if(recoveryBusy) return;
+    var qs = [];
+    for(var i=0;i<RECOVERY_Q_COUNT;i++){
+      var qEl = document.getElementById('recQ'+i), aEl = document.getElementById('recA'+i);
+      var q = qEl ? qEl.value.trim() : '', a = aEl ? aEl.value : '';
+      if(q.length < 3){ recoveryMsg = 'Question '+(i+1)+' is too short.'; recoveryOk = false; renderSettingsModal(); return; }
+      if(!a.trim()){ recoveryMsg = 'Question '+(i+1)+' needs an answer.'; recoveryOk = false; renderSettingsModal(); return; }
+      qs.push({ q:q, a:a });
+    }
+    recoveryBusy = true; recoveryMsg = ''; renderSettingsModal();
+    accountRecoveryInvoke('set', { questions:qs }).then(function(res){
+      recoveryBusy = false;
+      if(res && res.ok){ recoveryMsg = 'Recovery questions saved.'; recoveryOk = true; recoveryEditing = false; recoveryStatus = null; recoveryLoadStatus(); }
+      else { recoveryMsg = (res && res.error) || 'Could not save recovery questions.'; recoveryOk = false; }
+      renderSettingsModal();
+    });
+  }
+  function renderRecoverySettings(){
+    if(!authUser) return '';
+    if(recoveryStatus === null){ recoveryLoadStatus(); }
+    var html = '<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px;">';
+    html += '<div class="settings-row-label">Account recovery</div>';
+    var setState = !recoveryStatus ? 'Loading…' : (recoveryStatus.unavailable ? 'Unavailable — try again shortly' : (recoveryStatus.has_questions ? 'Set — '+recoveryStatus.count+' questions' : 'Not set'));
+    html += '<div class="settings-row-desc">Security questions let you reset a forgotten password without email. Status: <b>'+setState+'</b>. Answer '+RECOVERY_NEEDED+' of '+RECOVERY_Q_COUNT+' correctly to recover.</div>';
+    if(!recoveryEditing){
+      html += '<button class="action-btn" data-action="toggleRecoveryEdit" style="width:auto;flex:0 0 auto;">'+((recoveryStatus && recoveryStatus.has_questions)?'Replace recovery questions':'Set up recovery questions')+'</button>';
+      if(recoveryMsg){ html += '<div style="font-size:12px;'+(recoveryOk?'color:var(--hp-good)':'color:var(--hp-bad)')+'">'+escapeHtml(recoveryMsg)+'</div>'; }
+    } else {
+      html += '<div class="settings-row-desc">Write '+RECOVERY_Q_COUNT+' questions only you can answer, and their answers. Answers ignore case and extra spaces. Keep them memorable — there is no email backup.</div>';
+      var existingQs = (recoveryStatus && recoveryStatus.questions) || [];
+      for(var i=0;i<RECOVERY_Q_COUNT;i++){
+        html += '<input id="recQ'+i+'" class="chat-input" maxlength="120" placeholder="Question '+(i+1)+'" value="'+escapeHtml(existingQs[i]||'')+'">';
+        html += '<input id="recA'+i+'" class="chat-input" maxlength="80" placeholder="Answer '+(i+1)+'" autocomplete="off">';
+      }
+      if(recoveryMsg){ html += '<div style="font-size:12px;'+(recoveryOk?'color:var(--hp-good)':'color:var(--hp-bad)')+'">'+escapeHtml(recoveryMsg)+'</div>'; }
+      html += '<div style="display:flex;gap:8px;"><button class="action-btn" data-action="saveRecoveryQuestions"'+(recoveryBusy?' disabled':'')+'>'+(recoveryBusy?'Saving…':'Save recovery questions')+'</button>';
+      html += '<button class="action-btn stop" data-action="toggleRecoveryEdit" style="width:auto;flex:0 0 auto;">Cancel</button></div>';
+    }
+    html += '</div>';
+    return html;
+  }
+  // ---- Login-gate "forgot password" flow ----
+  function recoverFindQuestions(){
+    if(recoverBusy) return;
+    var uEl = document.getElementById('recoverUsername');
+    var u = uEl ? uEl.value.trim() : '';
+    if(!u){ recoverMsg = 'Enter your username.'; renderLoginGate(); return; }
+    recoverUsername = u; recoverBusy = true; recoverMsg = ''; renderLoginGate();
+    authEnsureClient().then(function(){
+      accountRecoveryInvoke('get_questions', { username:u }).then(function(res){
+        recoverBusy = false;
+        if(res && res.ok){ recoverQuestions = res.questions || []; recoverStep = 'answers'; recoverMsg = ''; }
+        else { recoverMsg = (res && res.error) || 'No recovery questions found for that account.'; }
+        renderLoginGate();
+      });
+    });
+  }
+  function recoverSubmit(){
+    if(recoverBusy) return;
+    var n = (recoverQuestions || []).length;
+    var answers = [];
+    for(var i=0;i<n;i++){ var el = document.getElementById('recoverA'+i); answers.push(el ? el.value : ''); }
+    var pw = (document.getElementById('recoverNewPw')||{}).value || '';
+    var pw2 = (document.getElementById('recoverNewPw2')||{}).value || '';
+    var pErr = validatePassword(pw);
+    if(pErr){ recoverMsg = pErr; renderLoginGate(); return; }
+    if(pw !== pw2){ recoverMsg = 'Passwords do not match.'; renderLoginGate(); return; }
+    var answered = answers.filter(function(a){ return a && a.trim(); }).length;
+    if(answered < RECOVERY_NEEDED){ recoverMsg = 'Answer at least '+RECOVERY_NEEDED+' questions.'; renderLoginGate(); return; }
+    recoverBusy = true; recoverMsg = ''; renderLoginGate();
+    accountRecoveryInvoke('recover', { username:recoverUsername, answers:answers, new_password:pw }).then(function(res){
+      if(res && res.ok){
+        // Password reset -- sign in with it and start playing.
+        chatClient.auth.signInWithPassword({ email:authEmailFor(recoverUsername), password:pw }).then(function(r){
+          recoverBusy = false;
+          if(r.error || !r.data || !r.data.session){ recoverMsg = 'Password reset. Please log in with your new password.'; recoverOpen = false; recoverStep = 'username'; renderLoginGate(); return; }
+          var u = r.data.user; authUser = { username:(u && u.user_metadata && u.user_metadata.username) || recoverUsername, id:u && u.id };
+          try{ localStorage.setItem('ff-remember-username', recoverUsername); localStorage.setItem('ff-autologin', '1'); }catch(e){}
+          recoverOpen = false; recoverStep = 'username'; startGameOnline();
+        }, function(){ recoverBusy = false; recoverMsg = 'Password reset. Please log in with your new password.'; recoverOpen = false; renderLoginGate(); });
+      } else {
+        recoverBusy = false;
+        recoverMsg = (res && res.error) || 'Recovery failed.';
+        renderLoginGate();
+      }
+    });
+  }
+  function renderRecoverPanel(){
+    var html = '<div class="auth-card">';
+    html += '<div class="auth-tabs"><button class="auth-tab on">Recover account</button></div>';
+    if(recoverStep === 'username'){
+      html += '<div class="auth-note" style="margin:2px 0 6px;">Forgot or locked out of your password? Enter your username to answer your security questions.</div>';
+      html += '<input id="recoverUsername" class="chat-input" maxlength="'+USERNAME_MAX+'" placeholder="Username" autocomplete="off" spellcheck="false" value="'+escapeHtml(recoverUsername||'')+'">';
+      if(recoverMsg) html += '<div class="auth-error">'+escapeHtml(recoverMsg)+'</div>';
+      html += '<button class="action-btn" data-action="recoverFind"'+(recoverBusy?' disabled':'')+'>'+(recoverBusy?'Please wait…':'Find my questions')+'</button>';
+    } else {
+      html += '<div class="auth-note" style="margin:2px 0 6px;">Answer at least '+RECOVERY_NEEDED+' of your '+(recoverQuestions||[]).length+' questions, then choose a new password.</div>';
+      (recoverQuestions||[]).forEach(function(q, i){
+        html += '<div style="font-size:12px;color:var(--text-dim);margin:4px 2px 2px;">'+escapeHtml(q)+'</div>';
+        html += '<input id="recoverA'+i+'" class="chat-input" maxlength="80" placeholder="Your answer" autocomplete="off">';
+      });
+      html += '<input id="recoverNewPw" class="chat-input" type="password" placeholder="New password" autocomplete="new-password">';
+      html += '<input id="recoverNewPw2" class="chat-input" type="password" placeholder="Confirm new password" autocomplete="new-password">';
+      if(recoverMsg) html += '<div class="auth-error">'+escapeHtml(recoverMsg)+'</div>';
+      html += '<button class="action-btn" data-action="recoverSubmit"'+(recoverBusy?' disabled':'')+'>'+(recoverBusy?'Please wait…':'Recover account')+'</button>';
+    }
+    html += '<div class="auth-note"><a href="#" data-action="recoverBack" style="color:var(--gold);">&larr; Back to log in</a></div>';
     html += '</div>';
     return html;
   }
@@ -11307,6 +11448,21 @@
       authAutoLogin = !authAutoLogin; authRender();
     } else if(action==='authMode'){
       authMode = btn.getAttribute('data-mode')==='login' ? 'login' : 'register'; authError=''; authRender();
+    } else if(action==='recoverOpen'){
+      e.preventDefault(); recoverOpen = true; recoverStep = 'username'; recoverMsg = ''; recoverQuestions = null; renderLoginGate();
+    } else if(action==='recoverBack'){
+      e.preventDefault();
+      if(recoverStep === 'answers'){ recoverStep = 'username'; recoverMsg = ''; }
+      else { recoverOpen = false; }
+      renderLoginGate();
+    } else if(action==='recoverFind'){
+      recoverFindQuestions();
+    } else if(action==='recoverSubmit'){
+      recoverSubmit();
+    } else if(action==='toggleRecoveryEdit'){
+      toggleRecoveryEdit();
+    } else if(action==='saveRecoveryQuestions'){
+      saveRecoveryQuestions();
     } else if(action==='authLogout'){
       authLogout();
     } else if(action==='leaderboardRefresh'){
@@ -11423,7 +11579,7 @@
       state.popupQueue.shift();
       if(state.popupQueue.length === 0) state.popupBatchTotal = 0;
     } else if(action==='openSettings'){
-      settingsOpen = true;
+      settingsOpen = true; recoveryStatus = null; recoveryEditing = false; recoveryMsg = '';
     } else if(action==='closeOfflineSummary'){
       offlineSummaryData = null;
     } else if(action==='closeSettings'){
@@ -11766,7 +11922,7 @@
     gate.innerHTML = '<div style="max-width:380px;width:100%;text-align:center;">'
       + '<div style="font-family:var(--font-display);font-weight:700;font-size:28px;color:var(--gold);letter-spacing:1.5px;margin-bottom:6px;">Fantasy Frontiers</div>'
       + '<div style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">Sign in to play &mdash; your adventure is saved to your account and follows you across every device.</div>'
-      + '<div style="text-align:left;">' + renderAuthPanel() + '</div>'
+      + '<div style="text-align:left;">' + (recoverOpen ? renderRecoverPanel() : renderAuthPanel()) + '</div>'
       + '</div>';
   }
   function removeLoginGate(){
