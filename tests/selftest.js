@@ -91,6 +91,19 @@
     eq(FF.getPavingRecipe('nope_t99'), null, 'getPavingRecipe returns null on miss');
   });
 
+  // ---- Gathering workshops (parallel to crafting workshops) -----------------------------
+  suite('gathering workshops', function(){
+    var w = FF.WORKSHOP_ITEMS;
+    ok(w['workshop_forestry_t0'], 'forestry gathering workshop item exists');
+    eq(w['workshop_forestry_t0'].skillId, 'forestry', 'forestry workshop carries its gather skillId');
+    ok(w['workshop_mining_t5'] && w['workshop_fishing_t10'], 'mining/fishing workshop tiers exist');
+    var d = FF.getWorkshopTierData('fishing', 3);
+    ok(d.inputs['carpentry_t3'] > 0, 'gathering workshop needs planks');
+    eq(d.inputs['workshop_fishing_t2'], 1, 'gathering workshop consumes the previous tier');
+    near(FF.workshopBonusPct(0), 0.05, 'gathering workshop t0 = 5%');
+    near(FF.workshopBonusPct(FF.TIER_COUNT - 1), 0.30, 'gathering workshop top tier = 30%');
+  });
+
   // ---- Combat damage-type advantage triangle --------------------------------------------
   suite('weaponAdvantage', function(){
     FF.DAMAGE_TYPES.forEach(function(t){ eq(FF.weaponAdvantageMultiplier(t, t), 1.0, 'same type is neutral: ' + t); });

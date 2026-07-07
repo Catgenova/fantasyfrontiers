@@ -1702,7 +1702,8 @@
   }
   function gatherToolSpeedMultiplier(state, skillId){
     var tier = (state.gatherTools && state.gatherTools[skillId]) || 0;
-    return 1 - getEquippedGatherTool(skillId, tier, state.gatherToolRarities[skillId]).speedBonus;
+    var sp = 1 - getEquippedGatherTool(skillId, tier, state.gatherToolRarities[skillId]).speedBonus - workshopSpeedBonus(state, skillId);
+    return Math.max(0.1, sp);
   }
 
   // ---- Per-crafting-skill tools (no more universal Master Toolset) ----
@@ -2648,11 +2649,21 @@
   }
   function diggingCoalChance(state){ return diggingSideChance(BASE_COAL_CHANCE, COAL_PHYSIQUE, COAL_PHYSIQUE_CAP, 0.0015); }
   function diggingArtifactChance(state){ return diggingSideChance(BASE_ARTIFACT_CHANCE, ARTIFACT_PHYSIQUE, ARTIFACT_PHYSIQUE_CAP, 0.001); }
+  // Gathering-workshop double output: when a base resource is produced, roll a chance (from any
+  // placed workshop for this skill) to yield one more of it. Only doubles the base gather, not the
+  // rare bonus drops (coal/gems/treasure/seeds).
+  function gatherDoubleRoll(itemId, skillId){
+    if(Math.random() < workshopDoubleChance(state, skillId)){
+      addItem(itemId, 1);
+      spawnFloatingText('Workshop: double output!', 'ft-rare');
+    }
+  }
   function processDiggingRoll(mainItemId){
     var tierIndex = parseInt(mainItemId.split('_t')[1], 10);
     if(Math.random() < diggingMainChance(state)){
       addItem(mainItemId, 1);
       spawnFloatingText('+1 ' + (ALL_SELLABLE[mainItemId]||{}).name, 'ft-success');
+      gatherDoubleRoll(mainItemId, 'digging');
     } else {
       spawnFloatingText('Nothing found', 'ft-fail');
     }
@@ -2713,6 +2724,7 @@
     if(Math.random() < miningMainChance(state)){
       addItem(mainItemId, 1);
       spawnFloatingText('+1 ' + (ALL_SELLABLE[mainItemId]||{}).name, 'ft-success');
+      gatherDoubleRoll(mainItemId, 'mining');
     } else {
       spawnFloatingText('Nothing found', 'ft-fail');
     }
@@ -2740,6 +2752,7 @@
     if(Math.random() < fishingCatchChance(state)){
       addItem(mainItemId, 1);
       spawnFloatingText('+1 ' + (ALL_SELLABLE[mainItemId]||{}).name, 'ft-success');
+      gatherDoubleRoll(mainItemId, 'fishing');
     } else if(Math.random() < FISHING_TREASURE_CHANCE){
       // The catch got away, but the hook snagged something better.
       addItem('treasure_chest', 1);
@@ -3955,7 +3968,13 @@
   // on a Paved estate tile of equal-or-higher tier and boosts that skill's crafting SPEED and
   // grants a % chance to DOUBLE its output. Tiers 0..20 scale the bonus linearly 5%..30%.
   // Workshops live in the Estate inventory category (like paving/masonry goods).
-  var WORKSHOP_SKILL_IDS = CRAFT_SKILL_IDS.slice();
+  // Workshops exist for every CRAFTING skill AND every GATHERING skill. Crafting workshops speed
+  // up crafting + double crafted output; gathering workshops speed up gathering + double gathered
+  // output. Both are built in Carpentry and placed the same way; only the models differ.
+  var WORKSHOP_SKILL_IDS = CRAFT_SKILL_IDS.concat(GATHER_SKILL_IDS);
+  var WORKSHOP_GATHER_SET = {}; GATHER_SKILL_IDS.forEach(function(id){ WORKSHOP_GATHER_SET[id] = true; });
+  function isGatherWorkshop(skillId){ return !!WORKSHOP_GATHER_SET[skillId]; }
+  function workshopSkillLabel(skillId){ return ((CRAFTING_SKILLS[skillId] || GATHERING_SKILLS[skillId] || {}).label) || (typeof SKILL_LABELS!=='undefined' && SKILL_LABELS[skillId]) || skillId; }
   function workshopBonusPct(tierIndex){ return 0.05 + (tierIndex/(TIER_COUNT-1))*0.25; } // t0=5%, t20=30%
   function workshopSkillColor(skillId){ var i = WORKSHOP_SKILL_IDS.indexOf(skillId); return SUB_PALETTE[(i<0?0:i) % SUB_PALETTE.length]; } // hex, works for both SVG icons and the canvas model
   function getWorkshopTierData(skillId, tierIndex){
@@ -3965,7 +3984,7 @@
     if(tierIndex > 0) inputs['workshop_'+skillId+'_t'+(tierIndex-1)] = 1; // upgrades consume the previous-tier Workshop
     return {
       tierIndex: tierIndex,
-      name: TIER_NAMES[tierIndex] + ' ' + ((CRAFTING_SKILLS[skillId]||{}).label || skillId) + ' Workshop',
+      name: TIER_NAMES[tierIndex] + ' ' + workshopSkillLabel(skillId) + ' Workshop',
       levelReq: TIER_LEVELS[tierIndex],   // Carpentry level, staggered every 5
       xp: tierXp(30, tierIndex),
       time: tierTime(15, 0.5, tierIndex),
@@ -3979,8 +3998,8 @@
     for(var _wt=0; _wt<TIER_COUNT; _wt++){
       var _wid = 'workshop_'+skillId+'_t'+_wt;
       WORKSHOP_ITEMS[_wid] = {
-        id:_wid, name: TIER_NAMES[_wt] + ' ' + ((CRAFTING_SKILLS[skillId]||{}).label || skillId) + ' Workshop',
-        icon: svgIcon('castle', workshopSkillColor(skillId)), sell: tierSell(30, _wt),
+        id:_wid, name: TIER_NAMES[_wt] + ' ' + workshopSkillLabel(skillId) + ' Workshop',
+        icon: isGatherWorkshop(skillId) ? (GATHERING_SKILLS[skillId].icon) : svgIcon('castle', workshopSkillColor(skillId)), sell: tierSell(30, _wt),
         tierIndex:_wt, skillId:skillId
       };
     }
@@ -5633,40 +5652,46 @@
     var maxUnlocked = 0;
     for(var mi=0; mi<TIER_COUNT; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
     var html = '<h3 style="margin-top:16px">Workshops</h3>';
-    html += '<div class="section-intro">Build a Workshop for any crafting skill from planks, then place it on a Paved estate tile (of equal or higher tier) to speed up that skill\'s crafting and gain a chance to double its output. Tier 0 grants +5% speed &amp; 5% double output, scaling to +30% / 30% at Tier 20. Each tier above Basic also consumes one of the previous-tier Workshop, so upgrade up through the tiers. Placed workshops appear in your Estate; only your best workshop per skill applies.</div>';
-    html += '<div class="card-grid">';
-    WORKSHOP_SKILL_IDS.forEach(function(skillId){
-      if(selectedWorkshopTier[skillId] === undefined) selectedWorkshopTier[skillId] = maxUnlocked;
-      var sel = Math.min(selectedWorkshopTier[skillId], maxUnlocked);
-      var data = getWorkshopTierData(skillId, sel);
-      var activeSlot = findActiveSpecialCraftSlotFor('workshop', {skillId:skillId, tierIndex:sel});
-      var isActive = !!activeSlot;
-      var effTime = data.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, 'carpentry');
-      var pct = isActive ? clamp(activeSlot.act.progress/effTime*100,0,100) : 0;
-      var ready = lvl >= data.levelReq && hasInputs(data.inputs);
-      var owned = state.inventory['workshop_'+skillId+'_t'+sel]||0;
-      var lbl = (CRAFTING_SKILLS[skillId]||{}).label || skillId;
-      var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
-      html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+svgIcon('castle', workshopSkillColor(skillId))+'</div><div><div class="item-name">'+escapeHtml(lbl)+' Workshop</div><div class="item-meta">Owned this tier: '+owned+'</div></div></div>';
-      html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Boosts <b>'+escapeHtml(lbl)+'</b> &mdash; +'+Math.round(data.speedPct*100)+'% speed, '+Math.round(data.doublePct*100)+'% double output</div>';
-      html += '<div class="inputs-line">Tier: <select data-action="selectWorkshopTier" data-skill="'+skillId+'"'+(isActive?' disabled':'')+'>';
-      for(var i=0;i<=maxUnlocked;i++){
-        html += '<option value="'+i+'"'+(i===sel?' selected':'')+'>'+TIER_NAMES[i]+' (Lv'+TIER_LEVELS[i]+')</option>';
-      }
-      html += '</select></div>';
-      html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>Req. Lv '+data.levelReq+'</span></div>';
-      html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-workshop-'+skillId)+'</div>';
-      html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
-      if(isActive){
-        html += activeSlot.primary
-          ? '<button class="action-btn stop" data-action="stop">Stop</button>'
-          : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
-      } else {
-        html += '<button class="action-btn" data-action="buildWorkshop" data-skill="'+skillId+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Build</button>';
-      }
-      html += '</div>';
-    });
+    html += '<div class="section-intro">Build a Workshop for any Crafting or Gathering skill from planks, then place it on a Paved estate tile (of equal or higher tier) to speed up that skill and gain a chance to double its output. Tier 0 grants +5% speed &amp; 5% double output, scaling to +30% / 30% at Tier 20. Each tier above Basic also consumes one of the previous-tier Workshop, so upgrade up through the tiers. Placed workshops appear on your (and your guild\'s) Estate; only your best per skill applies, and personal + guild stack.</div>';
+    function group(title, ids){
+      var g = '<div class="guild-section-title" style="margin-top:10px;">'+title+'</div><div class="card-grid">';
+      ids.forEach(function(skillId){ g += renderWorkshopCard(skillId, maxUnlocked, lvl); });
+      return g + '</div>';
+    }
+    return html + group('Crafting Workshops', CRAFT_SKILL_IDS) + group('Gathering Workshops', GATHER_SKILL_IDS);
+  }
+  function renderWorkshopCard(skillId, maxUnlocked, lvl){
+    if(selectedWorkshopTier[skillId] === undefined) selectedWorkshopTier[skillId] = maxUnlocked;
+    var sel = Math.min(selectedWorkshopTier[skillId], maxUnlocked);
+    var data = getWorkshopTierData(skillId, sel);
+    var activeSlot = findActiveSpecialCraftSlotFor('workshop', {skillId:skillId, tierIndex:sel});
+    var isActive = !!activeSlot;
+    var effTime = data.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, 'carpentry');
+    var pct = isActive ? clamp(activeSlot.act.progress/effTime*100,0,100) : 0;
+    var ready = lvl >= data.levelReq && hasInputs(data.inputs);
+    var owned = state.inventory['workshop_'+skillId+'_t'+sel]||0;
+    var lbl = workshopSkillLabel(skillId);
+    var isGather = isGatherWorkshop(skillId);
+    var wIcon = isGather ? GATHERING_SKILLS[skillId].icon : svgIcon('castle', workshopSkillColor(skillId));
+    var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
+    var html = '<div class="item-card'+(isActive?' active-item':'')+'">';
+    html += '<div class="item-top"><div class="item-icon">'+wIcon+'</div><div><div class="item-name">'+escapeHtml(lbl)+' Workshop</div><div class="item-meta">Owned this tier: '+owned+'</div></div></div>';
+    html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Boosts <b>'+escapeHtml(lbl)+'</b> &mdash; +'+Math.round(data.speedPct*100)+'% '+(isGather?'gathering':'crafting')+' speed, '+Math.round(data.doublePct*100)+'% double output</div>';
+    html += '<div class="inputs-line">Tier: <select data-action="selectWorkshopTier" data-skill="'+skillId+'"'+(isActive?' disabled':'')+'>';
+    for(var i=0;i<=maxUnlocked;i++){
+      html += '<option value="'+i+'"'+(i===sel?' selected':'')+'>'+TIER_NAMES[i]+' (Lv'+TIER_LEVELS[i]+')</option>';
+    }
+    html += '</select></div>';
+    html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>Req. Lv '+data.levelReq+'</span></div>';
+    html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-workshop-'+skillId)+'</div>';
+    html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
+    if(isActive){
+      html += activeSlot.primary
+        ? '<button class="action-btn stop" data-action="stop">Stop</button>'
+        : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
+    } else {
+      html += '<button class="action-btn" data-action="buildWorkshop" data-skill="'+skillId+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Build</button>';
+    }
     html += '</div>';
     return html;
   }
@@ -7770,8 +7795,70 @@
     armorsmithing:{roof:'hip', chimney:true, accent:'plate'},
     shieldsmithing:{roof:'peak', chimney:true, accent:'shield'}
   };
+  // Gathering workshops render as themed outdoor scenes (a tree farm, quarry, pond, ...) rather
+  // than buildings, so they read apart from the crafting workshops. Composed from the same iso
+  // primitives + resource palettes; tier tints the man-made wood/stone (dark low -> light high).
+  function gwPropsByDepth(ctx, cx, cy, rot, list, drawFn){
+    list.map(function(p){ var pr = estateModelProject(cx, cy, p.ox, p.oy, 0, rot); return { p:p, d:pr.rx+pr.ry }; })
+        .sort(function(a,b){ return a.d - b.d; })
+        .forEach(function(o){ drawFn(o.p); });
+  }
+  function estateDrawGatherWorkshop(ctx, cx, cy, workshop, rot){
+    var skill = workshop.skillId, tier = workshop.tierIndex;
+    var wood = workshopTierColor(tier);
+    var soil = '#6a4a30';
+    var green = estateFoliageGreen(Math.min(18, 6 + Math.round(tier*0.6)));
+    var stone = MINING_ALL_COLORS[Math.min(20, tier)] || '#8a8a8a';
+    function plot(col, hw, hd, z){ var f = estateRectFp(hw, hd); estateDrawPrism(ctx, cx, cy, f, f, 0, z, rot, estateShadeColor(col,0.72), estateShadeColor(col,0.98)); }
+    function boxAt(ox, oy, hw, hd, z0, z1, c){ var f = estateRectFp(hw, hd).map(function(p){ return [p[0]+ox, p[1]+oy]; }); estateDrawPrism(ctx, cx, cy, f, f, z0, z1, rot, estateShadeColor(c,0.66), estateShadeColor(c,0.92)); }
+    function post(ox, oy, h, c){ boxAt(ox, oy, 0.05, 0.05, 0, h, c); }
+    function tree(ox, oy, sc){ boxAt(ox, oy, 0.05*sc, 0.05*sc, 0.16, 0.16+0.34*sc, '#6a4a30'); estateDrawPyramid(ctx, cx, cy, estateHexFootprint(0.3*sc).map(function(p){ return [p[0]+ox, p[1]+oy]; }), [ox,oy], 0.16+0.14*sc, 0.16+1.05*sc, rot, green); }
+    function bush(ox, oy, berryCol){ estateDrawPrism(ctx, cx, cy, estateHexFootprint(0.24).map(function(p){ return [p[0]+ox, p[1]+oy]; }), estateHexFootprint(0.17).map(function(p){ return [p[0]+ox, p[1]+oy]; }), 0.16, 0.52, rot, estateShadeColor(green,0.8), green); var pr = estateModelProject(cx, cy, ox, oy, 0.56, rot); ctx.fillStyle = berryCol; ctx.beginPath(); ctx.arc(pr.x, pr.y, 2, 0, Math.PI*2); ctx.fill(); }
+    function sprig(ox, oy, col){ var b = estateModelProject(cx, cy, ox, oy, 0.14, rot), a = estateModelProject(cx, cy, ox, oy, 0.58, rot); ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(a.x, a.y); ctx.stroke(); }
+
+    if(skill === 'forestry'){
+      plot(soil, 0.72, 0.72, 0.16);
+      gwPropsByDepth(ctx, cx, cy, rot, [{ox:-0.34,oy:-0.28},{ox:0.32,oy:-0.34},{ox:0.36,oy:0.3},{ox:-0.3,oy:0.34},{ox:0.0,oy:0.02}], function(p){ tree(p.ox, p.oy, 0.9); });
+    } else if(skill === 'mining'){
+      plot(stone, 0.72, 0.72, 0.5);                       // quarry: stepped stone terraces
+      boxAt(0, 0, 0.48, 0.48, 0.5, 0.84, estateShadeColor(stone,1.04));
+      boxAt(0, 0, 0.26, 0.26, 0.84, 1.12, estateShadeColor(stone,1.12));
+      var oc = estateShadeColor(stone, 1.35);
+      [[0.22,-0.12],[-0.16,0.22]].forEach(function(p){ var pr = estateModelProject(cx, cy, p[0], p[1], 0.9, rot); ctx.fillStyle = oc; ctx.beginPath(); ctx.arc(pr.x, pr.y, 1.7, 0, Math.PI*2); ctx.fill(); });
+    } else if(skill === 'digging'){
+      plot(soil, 0.74, 0.74, 0.3);                        // dig site: raised earth + dark pit + stake
+      boxAt(0, 0, 0.4, 0.4, 0.3, 0.34, estateShadeColor('#3f2a14', 0.85));
+      post(0.5, 0.44, 0.72, wood);
+    } else if(skill === 'fishing'){
+      var water = '#2f6ea3';                              // pond: water + dock post + plank
+      plot(water, 0.72, 0.72, 0.16);
+      ctx.strokeStyle = estateShadeColor(water, 1.5); ctx.lineWidth = 1;
+      [0.28, 0.5].forEach(function(rr){ var c = estateModelProject(cx, cy, 0.04, -0.04, 0.17, rot); ctx.beginPath(); ctx.arc(c.x, c.y, rr*24, 0, Math.PI*2); ctx.stroke(); });
+      post(0.52, 0.52, 0.6, wood);
+      boxAt(0.0, 0.5, 0.5, 0.07, 0.3, 0.36, wood);
+    } else if(skill === 'herbalism'){
+      plot(soil, 0.72, 0.72, 0.16);                       // herb garden: grid of sprigs
+      var hl = HERBALISM_COLORS[Math.min(20, tier)] || '#5a9e5a';
+      for(var r = -1; r <= 1; r++){ for(var c2 = -1; c2 <= 1; c2++){ sprig(r*0.34, c2*0.34, hl); } }
+    } else if(skill === 'botany'){
+      plot(soil, 0.72, 0.72, 0.1);                        // planter beds with sprouts
+      [-0.36, 0.0, 0.36].forEach(function(ox){ boxAt(ox, 0, 0.12, 0.6, 0.1, 0.32, wood); });
+      [-0.36, 0, 0.36].forEach(function(ox){ [-0.36, 0, 0.36].forEach(function(oy){ sprig(ox, oy, '#6aa84a'); }); });
+    } else if(skill === 'foraging'){
+      plot(soil, 0.72, 0.72, 0.16);                       // berry patch
+      var bc = FORAGING_COLORS[Math.min(20, tier)] || '#9e1a2a';
+      gwPropsByDepth(ctx, cx, cy, rot, [{ox:-0.32,oy:-0.24},{ox:0.3,oy:-0.3},{ox:0.32,oy:0.3},{ox:-0.28,oy:0.32}], function(p){ bush(p.ox, p.oy, bc); });
+    } else if(skill === 'butchering'){
+      plot(soil, 0.72, 0.72, 0.1);                        // game pen: corner posts + a small rack
+      [[-0.62,-0.62],[0.62,-0.62],[0.62,0.62],[-0.62,0.62]].forEach(function(p){ post(p[0], p[1], 0.5, wood); });
+      boxAt(0, 0, 0.2, 0.2, 0.1, 0.56, wood);
+    } else {
+      plot(soil, 0.7, 0.7, 0.2);
+    }
+  }
   function estateDrawWorkshop(ctx, cx, cy, workshop, rot){
     if(!workshop) return;
+    if(isGatherWorkshop(workshop.skillId)){ estateDrawGatherWorkshop(ctx, cx, cy, workshop, rot); return; }
     var cfg = WORKSHOP_MODEL[workshop.skillId] || {roof:'peak'};
     var base = workshopTierColor(workshop.tierIndex);
     var hw = cfg.hw||0.58, hd = cfg.hd||0.58, wz = cfg.wallH||1.0;
@@ -8003,8 +8090,23 @@
       ctx.fillStyle=oreCol; [[0.3,0],[-0.2,0.32],[0.06,-0.34]].forEach(function(d){ ctx.beginPath(); ctx.arc(cx+d[0]*r,cy+d[1]*r,r*0.16,0,Math.PI*2); ctx.fill(); });
     }
   }
+  function estateDrawTdGatherWorkshop(ctx, cx, cy, workshop, ts){
+    var skill = workshop.skillId, tier = workshop.tierIndex, h = ts*0.74/2;
+    var green = estateFoliageGreen(Math.min(18, 6 + Math.round(tier*0.6)));
+    function bg(col){ ctx.fillStyle = col; ctx.fillRect(cx-h, cy-h, h*2, h*2); ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1; ctx.strokeRect(cx-h, cy-h, h*2, h*2); }
+    if(skill === 'forestry'){ bg('#6a4a30'); ctx.fillStyle = green; [[-0.42,-0.42],[0.42,-0.42],[-0.42,0.42],[0.42,0.42],[0,0]].forEach(function(d){ ctx.beginPath(); ctx.arc(cx+d[0]*h, cy+d[1]*h, h*0.26, 0, Math.PI*2); ctx.fill(); }); }
+    else if(skill === 'mining'){ var st = MINING_ALL_COLORS[Math.min(20,tier)]||'#8a8a8a'; bg(estateShadeColor(st,0.82)); ctx.fillStyle = estateShadeColor(st,0.58); ctx.fillRect(cx-h*0.56, cy-h*0.56, h*1.12, h*1.12); ctx.fillStyle = estateShadeColor(st,1.06); ctx.fillRect(cx-h*0.28, cy-h*0.28, h*0.56, h*0.56); }
+    else if(skill === 'digging'){ bg('#6a4a30'); ctx.fillStyle = '#3f2a14'; ctx.beginPath(); ctx.arc(cx, cy, h*0.5, 0, Math.PI*2); ctx.fill(); }
+    else if(skill === 'fishing'){ var water = '#2f6ea3'; bg(water); ctx.strokeStyle = estateShadeColor(water,1.5); ctx.lineWidth = 1.2; [0.3,0.56,0.82].forEach(function(rr){ ctx.beginPath(); ctx.arc(cx, cy, h*rr, 0, Math.PI*2); ctx.stroke(); }); }
+    else if(skill === 'herbalism'){ bg('#6a4a30'); ctx.fillStyle = HERBALISM_COLORS[Math.min(20,tier)]||'#5a9e5a'; for(var a=-1;a<=1;a++){ for(var b=-1;b<=1;b++){ ctx.beginPath(); ctx.arc(cx+a*h*0.5, cy+b*h*0.5, h*0.13, 0, Math.PI*2); ctx.fill(); } } }
+    else if(skill === 'botany'){ bg('#6a4a30'); ctx.fillStyle = estateShadeColor(workshopTierColor(tier),0.78); [-0.46,0,0.46].forEach(function(ox){ ctx.fillRect(cx+ox*h-h*0.13, cy-h*0.78, h*0.26, h*1.56); }); ctx.fillStyle = '#6aa84a'; [-0.46,0,0.46].forEach(function(ox){ [-0.42,0,0.42].forEach(function(oy){ ctx.beginPath(); ctx.arc(cx+ox*h, cy+oy*h, h*0.08, 0, Math.PI*2); ctx.fill(); }); }); }
+    else if(skill === 'foraging'){ bg('#6a4a30'); var bc = FORAGING_COLORS[Math.min(20,tier)]||'#9e1a2a'; var pts=[[-0.4,-0.34],[0.4,-0.4],[0.4,0.4],[-0.4,0.4]]; ctx.fillStyle = estateShadeColor(green,0.9); pts.forEach(function(d){ ctx.beginPath(); ctx.arc(cx+d[0]*h, cy+d[1]*h, h*0.24, 0, Math.PI*2); ctx.fill(); }); ctx.fillStyle = bc; pts.forEach(function(d){ ctx.beginPath(); ctx.arc(cx+d[0]*h, cy+d[1]*h, h*0.1, 0, Math.PI*2); ctx.fill(); }); }
+    else if(skill === 'butchering'){ bg('#6a4a30'); var wc = workshopTierColor(tier); ctx.strokeStyle = estateShadeColor(wc,0.6); ctx.lineWidth = 2; ctx.strokeRect(cx-h*0.82, cy-h*0.82, h*1.64, h*1.64); ctx.fillStyle = estateShadeColor(wc,0.78); ctx.fillRect(cx-h*0.18, cy-h*0.18, h*0.36, h*0.36); }
+    else { bg('#6a4a30'); }
+  }
   function estateDrawTdWorkshop(ctx, cx, cy, workshop, ts){
     if(!workshop) return;
+    if(isGatherWorkshop(workshop.skillId)){ estateDrawTdGatherWorkshop(ctx, cx, cy, workshop, ts); return; }
     var cfg = WORKSHOP_MODEL[workshop.skillId] || {roof:'peak'};
     var base = workshopTierColor(workshop.tierIndex);
     var s = ts*0.74, h = s/2;
@@ -11878,6 +11980,7 @@
         } else {
           addItem(state.activity.itemId, 1);
           spawnFloatingText('+1 ' + item.name, 'ft-success');
+          gatherDoubleRoll(state.activity.itemId, state.activity.skill);
           if(state.activity.skill === 'forestry'){
             maybeDropCritterCache();
           } else if(SEED_DROP_SKILLS.indexOf(state.activity.skill) !== -1){
