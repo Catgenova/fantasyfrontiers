@@ -5641,7 +5641,7 @@
       var successPctCard = Math.round(craftSuccessRate(state, skillKey)*100);
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: '+(state.inventory[recipe.id]||0)+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: <span id="craftOwned-'+recipe.id+'">'+fmt(state.inventory[recipe.id]||0)+'</span></div></div></div>';
       html += '<div class="item-stats"><span>+'+Math.round(recipe.xp*1.5)+' XP</span><span>'+recipe.time+'s</span><span>'+recipe.sell+'g each</span></div>';
       html += '<div class="chance-line">Output: <b>'+(recipe.outputQty||1)+'x '+recipe.name+'</b> &nbsp;|&nbsp; Success Chance: <b>'+successPctCard+'%</b></div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(recipe.inputs, 'inp-'+recipe.id)+'</div>';
@@ -11856,6 +11856,8 @@
     // Crafting: owned counts + ok/bad state + Start button availability on every recipe
     Object.keys(ALL_CRAFT_RECIPES).forEach(function(rid){
       var recipe = ALL_CRAFT_RECIPES[rid];
+      var oEl = document.getElementById('craftOwned-'+rid);
+      if(oEl) oEl.textContent = fmt(state.inventory[rid]||0);
       if(!recipe.inputs) return;
       Object.keys(recipe.inputs).forEach(function(k){
         var el = document.getElementById('inp-'+rid+'-'+k);
