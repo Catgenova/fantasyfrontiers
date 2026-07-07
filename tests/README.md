@@ -67,6 +67,10 @@ RLS) with `curl` and asserts the actual JSON responses. Coverage:
   over-spend → `code:"poor"`, withdraw-rank enforcement, members can donate but not buy slots.
 - **Guild estate** — RLS (member reads the shared blob, non-member can't) + the optimistic
   version guard (guarded update succeeds once, a stale re-update matches no rows).
+- **Marketplace** — sell rests, a crossing buy fills instantly, both sides collect (buyer gets the
+  item, seller gets `price*qty*0.95` after the 5% tax is burned); partial fill leaves a resting
+  remainder; best-bid book read; cancel refunds the remainder; no self-trade; invalid side / over-max
+  price rejected.
 - **submit_profile** — valid accepted; `total_level != sum(skills)` and out-of-range skill rejected.
 
 Run:

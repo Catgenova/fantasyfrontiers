@@ -152,6 +152,51 @@ assert_err "$(fn submit_profile "$TOK_A" '{"total_level":5,"gold":100,"skills":{
 assert_err "$(fn submit_profile "$TOK_A" '{"total_level":999,"gold":100,"skills":{"mining":999}}')" "out-of-range skill level rejected"
 
 # --------------------------------------------------------------------------------------------
+sect "Marketplace"
+# Uses a random item_key so parallel/nightly runs don't share a book.
+IKEY="itest_${RANDOM}${RANDOM}"
+mkuser mkt_a; TOK_MA="$TOK"
+mkuser mkt_b; TOK_MB="$TOK"
+
+MS1=$(fn marketplace "$TOK_MA" "{\"action\":\"place\",\"side\":\"sell\",\"item_key\":\"$IKEY\",\"unit_price\":100,\"qty\":10}")
+assert_ok "$MS1" "A places a sell order (10 @ 100)"
+assert_eq "sell rests fully (0 filled)" "$(field "$MS1" filled)" "0"
+assert_eq "sell rests 10"               "$(field "$MS1" rest)"   "10"
+
+MB1=$(fn marketplace "$TOK_MB" "{\"action\":\"place\",\"side\":\"buy\",\"item_key\":\"$IKEY\",\"unit_price\":100,\"qty\":10}")
+assert_ok "$MB1" "B places a crossing buy (10 @ 100)"
+assert_eq "buy fills all 10 instantly" "$(field "$MB1" filled)" "10"
+assert_eq "buy rests 0"                "$(field "$MB1" rest)"   "0"
+
+BC=$(fn marketplace "$TOK_MB" '{"action":"collect"}')
+assert_ok  "$BC" "B collects proceeds"
+assert_has "$BC" "\"item_key\":\"$IKEY\"" "B receives the bought item"
+
+AC=$(fn marketplace "$TOK_MA" '{"action":"collect"}')
+assert_ok "$AC" "A collects proceeds"
+assert_eq "A receives 950g after 5% tax burned (1000-50)" "$(field "$AC" gold)" "950"
+
+fn marketplace "$TOK_MA" "{\"action\":\"place\",\"side\":\"sell\",\"item_key\":\"$IKEY\",\"unit_price\":50,\"qty\":5}" >/dev/null
+MB2=$(fn marketplace "$TOK_MB" "{\"action\":\"place\",\"side\":\"buy\",\"item_key\":\"$IKEY\",\"unit_price\":50,\"qty\":8}")
+assert_eq "partial buy fills 5" "$(field "$MB2" filled)" "5"
+assert_eq "partial buy rests 3" "$(field "$MB2" rest)"   "3"
+
+BK=$(fn marketplace "$TOK_MB" "{\"action\":\"book\",\"item_key\":\"$IKEY\"}")
+assert_eq "book best bid = 50 (B's resting order)" "$(field "$BK" best_bid)" "50"
+
+OID=$(field "$MB2" order_id)
+CX=$(fn marketplace "$TOK_MB" "{\"action\":\"cancel\",\"order_id\":$OID}")
+assert_ok "$CX" "B cancels the resting buy order"
+assert_eq "cancel refunds qty 3" "$(field "$CX" qty)" "3"
+
+# No self-trade: A's buy must NOT fill against A's own resting sell.
+fn marketplace "$TOK_MA" "{\"action\":\"place\",\"side\":\"sell\",\"item_key\":\"$IKEY\",\"unit_price\":10,\"qty\":1}" >/dev/null
+MSELF=$(fn marketplace "$TOK_MA" "{\"action\":\"place\",\"side\":\"buy\",\"item_key\":\"$IKEY\",\"unit_price\":10,\"qty\":1}")
+assert_eq "own order not self-traded (buy rests)" "$(field "$MSELF" filled)" "0"
+assert_err "$(fn marketplace "$TOK_MA" "{\"action\":\"place\",\"side\":\"sideways\",\"item_key\":\"$IKEY\",\"unit_price\":1,\"qty\":1}")" "invalid side rejected"
+assert_err "$(fn marketplace "$TOK_MA" "{\"action\":\"place\",\"side\":\"buy\",\"item_key\":\"$IKEY\",\"unit_price\":9999999999,\"qty\":1}")" "over-max price rejected"
+
+# --------------------------------------------------------------------------------------------
 sect "Cleanup"
 # Demote-free path: leader disband cascades members/apps/messages/bank/estate for the test guild.
 DIS=$(fn guild_action "$TOK_A" '{"action":"disband"}')

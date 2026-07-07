@@ -34,6 +34,7 @@
     --cat-farming:#7f6a1f;
     --cat-menagerie:#1f857a;
     --cat-guild:#9a6a3a;
+    --cat-market:#2f8a6a;
     --cat-chat:#3f78b0;
     --cat-leaderboard:#c78b2c;
     --cat-character:#7a5a2c;
@@ -173,6 +174,36 @@
   .tracker-chip.on{border-color:var(--gold); background:linear-gradient(180deg,#ffffff,rgba(200,162,39,0.14)); font-weight:600;}
   .tracker-chip:disabled{opacity:0.4; cursor:not-allowed;}
   .tracker-chip .game-icon, .tracker-chip svg{width:14px; height:14px;}
+  /* Marketplace */
+  .market-subtabs{display:flex; align-items:center; gap:8px; margin:10px 0 12px; flex-wrap:wrap;}
+  .market-subtab{font-family:inherit; font-size:13px; padding:6px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text); cursor:pointer;}
+  .market-subtab.on{border-color:var(--cat-market); color:var(--cat-market); font-weight:600;}
+  .market-search{margin-bottom:8px;}
+  .market-search-input, .market-num{font-family:inherit; font-size:13px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text); width:100%; box-sizing:border-box;}
+  .market-results{display:flex; flex-direction:column; gap:4px; max-height:60vh; overflow:auto;}
+  .market-item-row{display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text); cursor:pointer; font-family:inherit; font-size:13px;}
+  .market-item-row:hover{border-color:var(--cat-market);}
+  .market-item-ico{display:inline-flex;} .market-item-ico svg, .market-item-ico .game-icon{width:20px; height:20px;}
+  .market-item-name{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .market-item-owned{color:var(--text-faint); font-size:11px; white-space:nowrap;}
+  .market-trade-head{display:flex; align-items:center; gap:12px; margin-bottom:10px;}
+  .market-trade-head .market-item-ico svg{width:34px; height:34px;}
+  .market-trade-name{font-family:var(--font-display); font-size:16px;}
+  .market-book{background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:10px; margin-bottom:12px;}
+  .market-book-cols{display:flex; gap:14px;}
+  .market-book-col{flex:1; min-width:0;}
+  .market-book-h{font-size:11px; font-weight:600; margin-bottom:4px;}
+  .market-book-h.ask{color:var(--cat-combat);} .market-book-h.bid{color:var(--cat-market);}
+  .market-book-row{display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:12px; padding:1px 0;}
+  .market-book-empty{color:var(--text-faint); font-size:11px;}
+  .market-forms{display:flex; gap:12px; flex-wrap:wrap;}
+  .market-form{flex:1 1 220px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:12px;}
+  .market-form-h{font-family:var(--font-display); font-size:14px; margin-bottom:8px;}
+  .market-form-row{display:flex; gap:8px; margin-bottom:8px;}
+  .market-collect{background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:12px; display:flex; flex-direction:column; gap:8px;}
+  .market-side{font-size:10px; font-weight:700; padding:1px 5px; border-radius:4px;}
+  .market-side.buy{background:rgba(47,138,106,0.18); color:var(--cat-market);}
+  .market-side.sell{background:rgba(166,58,47,0.18); color:var(--cat-combat);}
   .familiar-popup-overlay{position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(52,38,18,0.55); z-index:10000; display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box;}
   .skill-info-btn{
     display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;
@@ -987,6 +1018,7 @@
     {id:'faith', label:'Faith', icon:svgIcon('prayinghands','var(--cat-faith)'), color:'var(--cat-faith)'},
     {id:'menagerie', label:'Menagerie', icon:svgIcon('paw','var(--cat-menagerie)'), color:'var(--cat-menagerie)'},
     {id:'guild', label:'Guild', icon:svgIcon('shield','var(--cat-guild)'), color:'var(--cat-guild)'},
+    {id:'market', label:'Market', icon:svgIcon('coin','var(--cat-market)'), color:'var(--cat-market)'},
     {id:'chat', label:'Chat', icon:svgIcon('chat','var(--cat-chat)'), color:'var(--cat-chat)'},
     {id:'leaderboard', label:'Leaderboard', icon:svgIcon('trophy','var(--cat-leaderboard)'), color:'var(--cat-leaderboard)'}
   ];
@@ -10782,6 +10814,202 @@
     }, function(){ addLog('Guild message failed to send.','danger'); });
   }
 
+  // ======== Marketplace: player-to-player order-book exchange ========
+  // Client-authoritative escrow (like the guild bank): placing a sell removes items locally,
+  // placing a buy removes gold; the server holds the resting order + settles fills into a proceeds
+  // inbox we collect. Server guarantees matching/tax integrity; names/icons come from ALL_SELLABLE.
+  var MARKET_TAX = 0.05;
+  var MARKET_MAX_PRICE = 1000000000, MARKET_MAX_QTY = 1000000, MARKET_MAX_ORDERS = 40;
+  function marketTax(gold){ return Math.floor(gold * MARKET_TAX); }
+  function marketSellNet(price, qty){ var g = price * qty; return g - marketTax(g); }
+  function marketBuyCost(price, qty){ return price * qty; }
+  var marketState = { sub:'browse', status:'idle', selectedItem:null, book:null, bookItem:null, orders:[], proceeds:{gold:0,items:[]}, search:'', busy:false };
+  function marketInvoke(action, payload){
+    if(!chatClient || !authUser) return Promise.resolve({ ok:false, error:'Sign in first.' });
+    var body = { action:action };
+    if(payload){ for(var k in payload){ if(payload.hasOwnProperty(k)) body[k]=payload[k]; } }
+    return chatClient.functions.invoke('marketplace', { body:body }).then(function(r){
+      if(r && r.data) return r.data;
+      return { ok:false, error:(r && r.error && r.error.message) || 'Request failed.' };
+    }, function(){ return { ok:false, error:'Network error.' }; });
+  }
+  function marketItemMeta(id){ var it = ALL_SELLABLE[id] || {}; return { name: it.name || id, icon: it.icon || svgIcon('chest','var(--text-faint)') }; }
+  function marketItemName(id){ return (ALL_SELLABLE[id]||{}).name || id; }
+  var _marketTradeable = null;
+  function marketTradeableIds(){
+    if(!_marketTradeable){ _marketTradeable = Object.keys(ALL_SELLABLE).filter(function(k){ return k!=='gold' && /^[A-Za-z0-9_]{1,64}$/.test(k); }); }
+    return _marketTradeable;
+  }
+  function marketSearchResults(){
+    var q = (marketState.search||'').trim().toLowerCase();
+    var ids = marketTradeableIds(), out = [];
+    if(!q){ // default view: things you currently own, most-held first
+      ids.forEach(function(id){ if((state.inventory[id]||0) > 0) out.push(id); });
+      out.sort(function(a,b){ return (state.inventory[b]||0) - (state.inventory[a]||0); });
+      return out.slice(0, 60);
+    }
+    ids.forEach(function(id){ var nm = ((ALL_SELLABLE[id].name)||'').toLowerCase(); if(nm.indexOf(q)!==-1 || id.toLowerCase().indexOf(q)!==-1) out.push(id); });
+    out.sort(function(a,b){ return ((ALL_SELLABLE[a].name)||a).localeCompare((ALL_SELLABLE[b].name)||b); });
+    return out.slice(0, 60);
+  }
+  function marketResultsHtml(){
+    var ids = marketSearchResults();
+    if(!ids.length) return '<div class="empty-note">'+(marketState.search ? 'No items match “'+escapeHtml(marketState.search)+'”.' : 'You have nothing to sell yet — search to find something to buy.')+'</div>';
+    var html = '';
+    ids.forEach(function(id){ var m = marketItemMeta(id), owned = state.inventory[id]||0;
+      html += '<button class="market-item-row" data-action="marketPickItem" data-item="'+id+'"><span class="market-item-ico">'+m.icon+'</span><span class="market-item-name">'+escapeHtml(m.name)+'</span><span class="market-item-owned">'+(owned>0? fmt(owned)+' owned':'')+'</span></button>';
+    });
+    return html;
+  }
+  function renderMarketResults(){ var el = document.getElementById('marketResults'); if(el) el.innerHTML = marketResultsHtml(); }
+  function renderMarketBrowse(){
+    if(marketState.selectedItem) return renderMarketTradePanel(marketState.selectedItem);
+    var html = '<div class="market-search"><input id="marketSearch" class="market-search-input" type="text" placeholder="Search items to trade…" value="'+escapeHtml(marketState.search)+'" autocomplete="off"></div>';
+    html += '<div id="marketResults" class="market-results">'+marketResultsHtml()+'</div>';
+    return html;
+  }
+  function renderMarketTradePanel(item){
+    var m = marketItemMeta(item), owned = state.inventory[item]||0, base = (ALL_SELLABLE[item]||{}).sell || 0;
+    var html = '<button class="mini-btn" data-action="marketClearItem" style="margin-bottom:10px;">← All items</button>';
+    html += '<div class="market-trade-head"><span class="market-item-ico">'+m.icon+'</span><div><div class="market-trade-name">'+escapeHtml(m.name)+'</div><div class="item-meta">You own '+fmt(owned)+' • Your gold: '+fmt(state.gold)+'</div></div></div>';
+    html += '<div class="market-book">';
+    var book = (marketState.book && marketState.bookItem===item) ? marketState.book : null;
+    if(!book){ html += '<div class="empty-note">Loading order book…</div>'; }
+    else {
+      html += '<div class="market-book-cols"><div class="market-book-col"><div class="market-book-h ask">Sell orders (asks)</div>';
+      if(!book.asks.length) html += '<div class="market-book-empty">none</div>';
+      book.asks.slice(0,8).forEach(function(r){ html += '<div class="market-book-row"><span>'+fmt(r.price)+'g</span><span>×'+fmt(r.qty)+'</span></div>'; });
+      html += '</div><div class="market-book-col"><div class="market-book-h bid">Buy orders (bids)</div>';
+      if(!book.bids.length) html += '<div class="market-book-empty">none</div>';
+      book.bids.slice(0,8).forEach(function(r){ html += '<div class="market-book-row"><span>'+fmt(r.price)+'g</span><span>×'+fmt(r.qty)+'</span></div>'; });
+      html += '</div></div>';
+      var sp = [];
+      if(book.best_bid!=null) sp.push('best bid '+fmt(book.best_bid)+'g');
+      if(book.best_ask!=null) sp.push('best ask '+fmt(book.best_ask)+'g');
+      if(sp.length) html += '<div class="item-meta" style="margin-top:6px;">'+sp.join(' • ')+'</div>';
+    }
+    html += '</div>';
+    html += '<div class="market-forms">';
+    html += '<div class="market-form"><div class="market-form-h">Sell</div><div class="market-form-row"><input id="marketSellQty" class="market-num" type="number" min="1" placeholder="Qty (own '+fmt(owned)+')"><input id="marketSellPrice" class="market-num" type="number" min="1" placeholder="Price each"></div>';
+    html += '<div class="item-meta" id="marketSellPreview">'+(base? 'Vendor pays '+fmt(base)+'g each.':'Enter a price to preview your take.')+'</div>';
+    html += '<button class="action-btn" data-action="marketPlaceSell"'+(owned<=0?' disabled':'')+'>Place Sell Order</button></div>';
+    html += '<div class="market-form"><div class="market-form-h">Buy</div><div class="market-form-row"><input id="marketBuyQty" class="market-num" type="number" min="1" placeholder="Qty"><input id="marketBuyPrice" class="market-num" type="number" min="1" placeholder="Max price each"></div>';
+    html += '<div class="item-meta" id="marketBuyPreview">Your gold: '+fmt(state.gold)+'.</div>';
+    html += '<button class="action-btn" data-action="marketPlaceBuy">Place Buy Order</button></div>';
+    html += '</div>';
+    return html;
+  }
+  function marketUpdatePreview(){
+    var sp=document.getElementById('marketSellPrice'), sq=document.getElementById('marketSellQty'), spv=document.getElementById('marketSellPreview');
+    if(spv){ var p=parseInt(sp&&sp.value,10), q=parseInt(sq&&sq.value,10); if(p>0&&q>0) spv.textContent='You receive ~'+fmt(marketSellNet(p,q))+'g after '+Math.round(MARKET_TAX*100)+'% tax (gross '+fmt(p*q)+'g).'; }
+    var bp=document.getElementById('marketBuyPrice'), bq=document.getElementById('marketBuyQty'), bpv=document.getElementById('marketBuyPreview');
+    if(bpv){ var p2=parseInt(bp&&bp.value,10), q2=parseInt(bq&&bq.value,10); if(p2>0&&q2>0){ var cost=marketBuyCost(p2,q2); bpv.textContent='Escrows '+fmt(cost)+'g up front'+(state.gold<cost? ' — you only have '+fmt(state.gold)+'g.':'.'); } }
+  }
+  function renderMarketOrders(){
+    var html = '<div class="market-collect">';
+    var pg = marketState.proceeds.gold||0, pi = marketState.proceeds.items||[];
+    if(pg>0 || pi.length){
+      var parts=[]; if(pg>0) parts.push(fmt(pg)+'g'); pi.forEach(function(it){ parts.push(fmt(it.amount)+'× '+escapeHtml(marketItemName(it.item_key))); });
+      html += '<div class="item-meta">Ready to collect: '+parts.join(', ')+'</div><button class="action-btn" data-action="marketCollect">Collect</button>';
+    } else {
+      html += '<div class="item-meta">Nothing to collect right now. Gold from sales and items from purchases land here.</div>';
+    }
+    html += '</div>';
+    html += '<h3 style="margin-top:14px;">Open Orders</h3>';
+    if(!marketState.orders.length) return html + '<div class="empty-note">No open orders. Place one from <b>Browse &amp; Trade</b>.</div>';
+    html += '<div class="card-grid">';
+    marketState.orders.forEach(function(o){
+      var m = marketItemMeta(o.item_key), filled = o.qty_original - o.qty_remaining;
+      html += '<div class="item-card"><div class="item-top"><div class="item-icon">'+m.icon+'</div><div><div class="item-name"><span class="market-side '+o.side+'">'+(o.side==='buy'?'BUY':'SELL')+'</span> '+escapeHtml(m.name)+'</div><div class="item-meta">'+fmt(o.qty_remaining)+' left @ '+fmt(o.unit_price)+'g'+(filled>0? ' • '+fmt(filled)+' filled':'')+'</div></div></div>';
+      html += '<button class="action-btn stop" data-action="marketCancel" data-order="'+o.id+'">Cancel</button></div>';
+    });
+    return html + '</div>';
+  }
+  function renderMarketTab(){
+    if(!authUser) return '<div class="section-intro">Sign in to trade on the Marketplace.</div>';
+    marketEnsureLoaded();
+    var html = '<div class="section-intro">A shared order book. Place buy &amp; sell orders priced in gold; crossing orders fill automatically (partial fills allowed). A '+Math.round(MARKET_TAX*100)+'% tax is burned on every sale. Gold from sales and items from purchases wait under <b>My Orders → Collect</b>.</div>';
+    html += '<div class="market-subtabs"><button class="market-subtab'+(marketState.sub==='browse'?' on':'')+'" data-action="marketSub" data-sub="browse">Browse &amp; Trade</button>';
+    html += '<button class="market-subtab'+(marketState.sub==='orders'?' on':'')+'" data-action="marketSub" data-sub="orders">My Orders'+(marketState.orders.length? ' ('+marketState.orders.length+')':'')+'</button>';
+    html += '<button class="mini-btn" data-action="marketRefresh" style="margin-left:auto;">Refresh</button></div>';
+    if(marketState.status==='loading' && !marketState.orders.length && !marketState.selectedItem && marketState.sub==='orders') html += '<div class="empty-note">Loading…</div>';
+    else if(marketState.sub==='orders') html += renderMarketOrders();
+    else html += renderMarketBrowse();
+    return html;
+  }
+  // ---- Market engine (async network + client-side escrow reconciliation) ----
+  function marketEnsureLoaded(){ if(marketState.status==='idle'){ marketState.status='loading'; marketReload(); } }
+  function marketCollectNow(){
+    return marketInvoke('collect').then(function(res){
+      if(res && res.ok){
+        var got=false, parts=[];
+        if(res.gold>0){ state.gold += res.gold; got=true; parts.push(fmt(res.gold)+'g'); }
+        (res.items||[]).forEach(function(it){ if(it.amount>0){ addItem(it.item_key, it.amount); got=true; parts.push(fmt(it.amount)+'× '+marketItemName(it.item_key)); } });
+        if(got){ saveGame(); addLog('Collected from the Market: '+parts.join(', ')+'.', 'chronicle'); }
+      }
+      return res;
+    });
+  }
+  function marketReload(){
+    marketCollectNow().then(function(){ return marketInvoke('mine'); }).then(function(res){
+      if(res && res.ok){ marketState.orders = res.orders||[]; marketState.proceeds = res.proceeds||{gold:0,items:[]}; }
+      marketState.status = 'ready';
+      return marketState.selectedItem ? marketInvoke('book', { item_key: marketState.selectedItem }) : null;
+    }).then(function(bres){
+      if(bres && bres.ok){ marketState.book = bres; marketState.bookItem = marketState.selectedItem; }
+      if(currentCategory==='market') render();
+    });
+  }
+  function marketLoadBook(item){
+    return marketInvoke('book', { item_key:item }).then(function(res){
+      if(res && res.ok){ marketState.book = res; marketState.bookItem = item; }
+      if(currentCategory==='market') render();
+    });
+  }
+  function marketPickItem(item){ marketState.selectedItem = item; marketState.book = null; marketState.bookItem = null; render(); marketLoadBook(item); }
+  function marketPlaceSell(){
+    var item = marketState.selectedItem; if(!item || marketState.busy) return;
+    var q = document.getElementById('marketSellQty'), p = document.getElementById('marketSellPrice');
+    var qty = parseInt(q&&q.value,10), price = parseInt(p&&p.value,10);
+    if(!(qty>0) || !(price>0)){ addLog('Enter a quantity and price to sell.','danger'); return; }
+    if(price>MARKET_MAX_PRICE || qty>MARKET_MAX_QTY){ addLog('Price or quantity is too large.','danger'); return; }
+    if((state.inventory[item]||0) < qty){ addLog('You don’t have that many to sell.','danger'); return; }
+    marketState.busy = true;
+    state.inventory[item] = (state.inventory[item]||0) - qty; saveGame(); // escrow items
+    marketInvoke('place', { side:'sell', item_key:item, unit_price:price, qty:qty }).then(function(res){
+      marketState.busy = false;
+      if(!res || !res.ok){ addItem(item, qty); saveGame(); addLog('Sell order failed: '+((res&&res.error)||'try again')+'.','danger'); render(); return; }
+      addLog('Listed '+fmt(qty)+' '+marketItemName(item)+' to sell @ '+fmt(price)+'g'+(res.filled>0? ' — '+fmt(res.filled)+' sold instantly':'')+'.', 'chronicle');
+      marketReload();
+    });
+  }
+  function marketPlaceBuy(){
+    var item = marketState.selectedItem; if(!item || marketState.busy) return;
+    var q = document.getElementById('marketBuyQty'), p = document.getElementById('marketBuyPrice');
+    var qty = parseInt(q&&q.value,10), price = parseInt(p&&p.value,10);
+    if(!(qty>0) || !(price>0)){ addLog('Enter a quantity and max price to buy.','danger'); return; }
+    if(price>MARKET_MAX_PRICE || qty>MARKET_MAX_QTY){ addLog('Price or quantity is too large.','danger'); return; }
+    var cost = marketBuyCost(price, qty);
+    if(state.gold < cost){ addLog('You need '+fmt(cost)+'g for that buy order.','danger'); return; }
+    marketState.busy = true;
+    state.gold -= cost; saveGame(); // escrow gold
+    marketInvoke('place', { side:'buy', item_key:item, unit_price:price, qty:qty }).then(function(res){
+      marketState.busy = false;
+      if(!res || !res.ok){ state.gold += cost; saveGame(); addLog('Buy order failed: '+((res&&res.error)||'try again')+'.','danger'); render(); return; }
+      addLog('Placed buy order for '+fmt(qty)+' '+marketItemName(item)+' @ up to '+fmt(price)+'g'+(res.filled>0? ' — '+fmt(res.filled)+' bought instantly':'')+'.', 'chronicle');
+      marketReload();
+    });
+  }
+  function marketCancelOrder(orderId){
+    marketInvoke('cancel', { order_id:orderId }).then(function(res){
+      if(res && res.ok){
+        if(res.side==='sell'){ addItem(res.item_key, res.qty); addLog('Cancelled sell order — recovered '+fmt(res.qty)+' '+marketItemName(res.item_key)+'.', 'chronicle'); }
+        else { state.gold += res.qty * res.unit_price; addLog('Cancelled buy order — refunded '+fmt(res.qty*res.unit_price)+'g.', 'chronicle'); }
+        saveGame(); marketReload();
+      } else { addLog('Cancel failed: '+((res&&res.error)||'try again')+'.','danger'); }
+    });
+  }
+
   // ================= RENDER: CONTENT DISPATCH =================
   function renderContent(){
     var html = '';
@@ -10789,6 +11017,7 @@
     else if(currentCategory==='crafting') html = '<div class="'+(craftOnlyAffordable?'craft-filtering':'')+'"><div class="craft-filter-bar"><button class="craft-filter-btn'+(craftOnlyAffordable?' on':'')+'" data-action="toggleCraftFilter">'+(craftOnlyAffordable?'\u2611':'\u2610')+' Only show items I have materials for</button></div>'+renderCraftTab(currentSub)+'</div>';
     else if(currentCategory==='estate'){ estUse(false); html = renderEstateTab(); }
     else if(currentCategory==='peons') html = renderPeonsTab();
+    else if(currentCategory==='market') html = renderMarketTab();
     else if(currentCategory==='farming') html = renderFarmingTab();
     else if(currentCategory==='combat') html = renderCombatTab();
     else if(currentCategory==='faith') html = renderFaithTab(currentSub);
@@ -12007,6 +12236,7 @@
     currentCategory = btn.getAttribute('data-cat');
     profileView = null;
     if(DEFAULT_SUB[currentCategory]) currentSub = DEFAULT_SUB[currentCategory];
+    if(currentCategory==='market') marketState.status = 'idle'; // reload + auto-collect on each entry
     render();
   });
 
@@ -12269,6 +12499,22 @@
       peonAssignSpecial(parseInt(btn.getAttribute('data-tier'),10));
     } else if(action==='peonStop'){
       peonStop(btn.getAttribute('data-scope'), parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
+    } else if(action==='marketSub'){
+      marketState.sub = btn.getAttribute('data-sub'); render();
+    } else if(action==='marketRefresh'){
+      marketReload();
+    } else if(action==='marketPickItem'){
+      marketPickItem(btn.getAttribute('data-item'));
+    } else if(action==='marketClearItem'){
+      marketState.selectedItem = null; render();
+    } else if(action==='marketPlaceSell'){
+      marketPlaceSell();
+    } else if(action==='marketPlaceBuy'){
+      marketPlaceBuy();
+    } else if(action==='marketCancel'){
+      marketCancelOrder(parseInt(btn.getAttribute('data-order'),10));
+    } else if(action==='marketCollect'){
+      marketReload();
     } else if(action==='openSettings'){
       settingsOpen = true; recoveryStatus = null; recoveryEditing = false; recoveryMsg = '';
     } else if(action==='closeOfflineSummary'){
@@ -12344,6 +12590,11 @@
     if(e.target.id === 'invSearchInput'){
       inventorySearchQuery = e.target.value;
       renderInventoryPanel();
+    } else if(e.target.id === 'marketSearch'){
+      marketState.search = e.target.value;
+      renderMarketResults(); // update only the results list so the search box keeps focus
+    } else if(e.target.classList && e.target.classList.contains('market-num')){
+      marketUpdatePreview(); // live cost/net preview without a re-render (keeps input focus)
     }
   });
 
@@ -12665,6 +12916,7 @@
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS,
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS,
+      marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       DAMAGE_TYPES:DAMAGE_TYPES

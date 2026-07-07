@@ -143,6 +143,17 @@
     eq(FF.PEON_MAX_SLOTS, 5, 'PEON_MAX_SLOTS defined = 5 (10 total: 5 personal + 5 guild)');
   });
 
+  // ---- Marketplace pricing helpers (must match the server RPC's tax math) --------------
+  suite('marketplace pricing', function(){
+    eq(FF.MARKET_TAX, 0.05, 'market tax is 5%');
+    eq(FF.marketTax(1000), 50, '5% of 1000 = 50');
+    eq(FF.marketTax(999), 49, 'tax floors (999 -> 49, not 49.95)');
+    eq(FF.marketBuyCost(7, 9), 63, 'buy cost = price*qty');
+    eq(FF.marketSellNet(100, 10), 950, 'sell net = gross - 5% tax (1000 -> 950)');
+    eq(FF.marketSellNet(1, 1), 1, 'tiny sale: floor(0.05)=0 tax, net = 1');
+    ok(FF.marketSellNet(50, 3) === 50*3 - FF.marketTax(50*3), 'sell net stays consistent with marketTax');
+  });
+
   // ---- Combat damage-type advantage triangle --------------------------------------------
   suite('weaponAdvantage', function(){
     FF.DAMAGE_TYPES.forEach(function(t){ eq(FF.weaponAdvantageMultiplier(t, t), 1.0, 'same type is neutral: ' + t); });
