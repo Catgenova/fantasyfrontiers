@@ -2405,8 +2405,8 @@
   // action. Familiars never cast magic themselves through the player; only the familiar
   // itself casts, and only one can accompany the player in combat at a time.
   var FAMILIAR_SUMMON_CHANCE = 1/3000; // 1/3000 per completed action -- keeps rolling even after a familiar is owned
-  var FAMILIAR_MAX_LEVEL = 10;
-  var FAMILIAR_POTENCY_PER_LEVEL = 0.05; // +5% spell potency per level above 1, capped at level 10 (+45%)
+  var FAMILIAR_MAX_LEVEL = 100;
+  var FAMILIAR_POTENCY_PER_LEVEL = 0.05; // +5% spell potency per level above 1 (+495% at level 100)
   var FAMILIAR_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['farming']).concat(FAITH_SKILL_IDS).concat(PHYSIQUE_SKILLS.map(function(p){ return p.id; }));
 
   function healSpell(name, amount){ return { name:name, type:'heal', amount:amount }; }
@@ -2506,7 +2506,7 @@
   // ---- Combat buffs cast by the active companion familiar. Only one effect per type is
   // tracked at a time (refreshed on recast, not stacked), matching a single companion
   // casting one spell at a time. Spell potency scales gently with the familiar's own
-  // level (independent of the linked skill's level), +5%/level, capping at level 10.
+  // level (independent of the linked skill's level), +5%/level, up to level 100.
   function isFamiliarBuffActive(kind){ return state.familiarBuffs[kind+'Until'] > Date.now(); }
   function getFamiliarArmorMult(){ return isFamiliarBuffActive('armor') ? state.familiarBuffs.armorMult : 1; }
   function getFamiliarDamageMult(){ return isFamiliarBuffActive('damage') ? state.familiarBuffs.damageMult : 1; }
