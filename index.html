@@ -7654,6 +7654,30 @@
     if(skillId==='fishing') return Math.random() < BASE_FISH_CHANCE;
     return true; // simple gathers never miss
   }
+  // Equipment producers a crafting workshop can staff. Each makes tiers 0..cap at NORMAL rarity
+  // (no rarity roll for peons). These are the item-producing special-craft kinds -- the tier-upgrade
+  // kinds (offhand/armorslot, which modify worn gear) are intentionally excluded.
+  function peonSpecialProducers(workshopSkillId){
+    var out = [];
+    STACKABLE_WEAPON_TYPES.forEach(function(w){ if(w.skillId===workshopSkillId) out.push({ craftKind:'stackweapon', params:{typeId:w.id}, label:w.name, icon:w.icon }); });
+    if(workshopSkillId==='shieldsmithing') STACKABLE_SHIELD_TYPES.forEach(function(s){ out.push({ craftKind:'stackshield', params:{typeId:s.id}, label:s.name, icon:s.icon }); });
+    Object.keys(BODY_ARMOR_MATERIALS).forEach(function(mk){ var m=BODY_ARMOR_MATERIALS[mk]; if(m.skillId===workshopSkillId) (m.slots||[]).forEach(function(sl){ var slotLabel=(m.slotLabels&&m.slotLabels[sl])||sl; out.push({ craftKind:'bodyarmor', params:{material:mk, slot:sl}, label:(m.label?m.label+' ':'')+slotLabel, icon:m.icon }); }); });
+    if(workshopSkillId==='leatherworking') out.push({ craftKind:'belt', params:{}, label:'Belt', icon:svgIcon('belt','#8a6a42') });
+    if(workshopSkillId==='jewelrycrafting'){ RING_TYPES.forEach(function(rt){ out.push({ craftKind:'ring', params:{typeId:rt.id}, label:rt.name, icon:rt.icon }); }); out.push({ craftKind:'amulet', params:{}, label:'Amulet', icon:svgIcon('amulet','#c9a227') }); }
+    if(workshopSkillId==='blacksmithing') TOOL_TYPES.forEach(function(tt){ out.push({ craftKind:'tool', params:{skillId:tt.skillId}, label:tt.name, icon:tt.icon }); });
+    return out;
+  }
+  function peonSpecialAct(craftKind, params, tierIndex){
+    var a = { craftKind:craftKind, tierIndex:tierIndex };
+    if(params){ if(params.typeId!==undefined) a.typeId=params.typeId; if(params.material!==undefined) a.material=params.material; if(params.slot!==undefined) a.slot=params.slot; if(params.skillId!==undefined) a.skillId=params.skillId; }
+    return a;
+  }
+  function peonSpecialTierName(producer, tierIndex){ var td = getSpecialTierData(peonSpecialAct(producer.craftKind, producer.params, tierIndex)); return (td && td.name) || (TIER_NAMES[tierIndex]+' '+producer.label); }
+  function peonTaskName(task){
+    if(task.kind==='special'){ var td = getSpecialTierData(peonSpecialAct(task.craftKind, task.params, task.tierIndex)); return (td && td.name) || task.craftKind; }
+    var conf = task.kind==='gather' ? ALL_GATHER_ITEMS[task.itemId] : ALL_CRAFT_RECIPES[task.itemId];
+    return (ALL_SELLABLE[task.itemId] || conf || {}).name || task.itemId;
+  }
   function processPeons(dt){ processPeonScope('personal', dt); processPeonScope('guild', dt); }
   function processPeonScope(scope, dt){
     var tasks = peonTasksFor(scope);
@@ -7668,24 +7692,33 @@
       var w = adj ? WORKSHOP_ITEMS[adj.workshopId] : null;
       var cot = (cell && cell.cottageId) ? COTTAGE_ITEMS[cell.cottageId] : null;
       if(!w || !cot || w.skillId !== task.skillId){ changed = true; continue; } // source gone/changed -> drop task
-      var conf = task.kind==='gather' ? ALL_GATHER_ITEMS[task.itemId] : ALL_CRAFT_RECIPES[task.itemId];
-      if(!conf){ changed = true; continue; }
+      // Resolve the action's base time. Gather/standard-craft read the recipe table; special crafts
+      // (equipment) rebuild a special-craft act and read getSpecialTierData (produced at NORMAL rarity).
+      var baseTime = 0, act = null, conf = null;
+      if(task.kind==='gather'){ conf = ALL_GATHER_ITEMS[task.itemId]; if(!conf){ changed = true; continue; } baseTime = conf.time; }
+      else if(task.kind==='special'){ act = peonSpecialAct(task.craftKind, task.params, task.tierIndex); var std = getSpecialTierData(act); if(!std || !std.inputs){ changed = true; continue; } baseTime = std.time; }
+      else { conf = ALL_CRAFT_RECIPES[task.itemId]; if(!conf){ changed = true; continue; } baseTime = conf.time; }
       var tierCap = Math.min(cot.tierIndex, w.tierIndex);
-      var effTime = Math.max(200, (conf.time*1000) / peonSpeedFactor(tierCap) * (1 - workshopSpeedBonus(state, task.skillId)));
+      var effTime = Math.max(200, (baseTime*1000) / peonSpeedFactor(tierCap) * (1 - workshopSpeedBonus(state, task.skillId)));
+      var succ = (task.skillId==='jewelrycrafting') ? BASE_JEWELRY_SUCCESS : BASE_CRAFT_SUCCESS;
       task.progress = (task.progress||0) + dt;
       var guard = 0, stopped = false;
       while(task.progress >= effTime && guard < 200){
         guard++; task.progress -= effTime;
         if(task.kind==='gather'){
           if(peonGatherSuccess(task.skillId)) addItem(task.itemId, 1 + ((Math.random() < workshopDoubleChance(state, task.skillId)) ? 1 : 0));
+        } else if(task.kind==='special'){
+          var sd = getSpecialTierData(act);
+          if(!sd || !hasInputs(sd.inputs)){ stopped = true; break; }
+          consumeInputs(sd.inputs);
+          if(Math.random() < succ){ var reps = 1 + ((Math.random() < workshopDoubleChance(state, task.skillId)) ? 1 : 0); for(var rr=0; rr<reps; rr++) produceSpecialOutput(act, 'normal'); }
         } else {
           if(!hasInputs(conf.inputs)){ stopped = true; break; }
           consumeInputs(conf.inputs);
-          var succ = (task.skillId==='jewelrycrafting') ? BASE_JEWELRY_SUCCESS : BASE_CRAFT_SUCCESS;
           if(Math.random() < succ) addItem(conf.id, 1 + ((Math.random() < workshopDoubleChance(state, task.skillId)) ? 1 : 0));
         }
       }
-      if(stopped){ changed = true; addLog('A Peon ran out of materials for ' + ((ALL_SELLABLE[task.itemId]||{}).name || task.itemId) + '.', ''); continue; }
+      if(stopped){ changed = true; addLog('A Peon ran out of materials for ' + peonTaskName(task) + '.', ''); continue; }
       keep.push(task);
     }
     if(changed){ peonSetTasks(scope, keep); needsRender = true; }
@@ -7695,13 +7728,17 @@
     var cell = grid[task.x] && grid[task.x][task.y];
     var adj = cell && cell.cottageId ? estateAdjacentWorkshop(grid, task.x, task.y) : null;
     var w = adj ? WORKSHOP_ITEMS[adj.workshopId] : null, cot = cell && cell.cottageId ? COTTAGE_ITEMS[cell.cottageId] : null;
-    var conf = task.kind==='gather' ? ALL_GATHER_ITEMS[task.itemId] : ALL_CRAFT_RECIPES[task.itemId];
-    if(!w || !cot || !conf) return 0;
-    return Math.max(200, (conf.time*1000) / peonSpeedFactor(Math.min(cot.tierIndex, w.tierIndex)) * (1 - workshopSpeedBonus(state, task.skillId)));
+    if(!w || !cot) return 0;
+    var baseTime;
+    if(task.kind==='gather'){ var gi = ALL_GATHER_ITEMS[task.itemId]; if(!gi) return 0; baseTime = gi.time; }
+    else if(task.kind==='special'){ var td = getSpecialTierData(peonSpecialAct(task.craftKind, task.params, task.tierIndex)); if(!td) return 0; baseTime = td.time; }
+    else { var rc = ALL_CRAFT_RECIPES[task.itemId]; if(!rc) return 0; baseTime = rc.time; }
+    return Math.max(200, (baseTime*1000) / peonSpeedFactor(Math.min(cot.tierIndex, w.tierIndex)) * (1 - workshopSpeedBonus(state, task.skillId)));
   }
 
   // ---- Peons UI (a category tab: PEON_MAX_SLOTS personal + PEON_MAX_SLOTS guild slots) ----
-  var peonPicker = { open:false, scope:null, x:null, y:null };
+  var peonPicker = { open:false, scope:null, x:null, y:null, producer:null };
+  var peonPickerProducers = []; // equipment producers for the current cottage's skill, indexed for dispatch
   function peonSkillIcon(skillId){ return (GATHERING_SKILLS[skillId] && GATHERING_SKILLS[skillId].icon) || (CRAFTING_SKILLS[skillId] && CRAFTING_SKILLS[skillId].icon) || svgIcon('person','var(--text-faint)'); }
   function renderPeonsTab(){
     var html = '<div class="section-intro">Peons are idle workers. Build a <b>Cottage</b> on paved estate ground next to a <b>Workshop</b> (both crafted in Carpentry), then assign a Peon here to gather or craft that skill automatically. Peons are slow (5%→100% of normal by tier), take no bonuses beyond the workshop’s own speed &amp; double-output, give <b>no XP</b>, and roll <b>no rarity or bonus drops</b> (crafts still fail at the base rate). Up to '+PEON_MAX_SLOTS+' on your estate and '+PEON_MAX_SLOTS+' on your guild’s.</div>';
@@ -7723,8 +7760,7 @@
       html += '<div class="item-card">';
       if(i < tasks.length){
         var t = tasks[i];
-        var conf = t.kind==='gather' ? ALL_GATHER_ITEMS[t.itemId] : ALL_CRAFT_RECIPES[t.itemId];
-        var nm = (ALL_SELLABLE[t.itemId]||conf||{}).name || t.itemId;
+        var nm = peonTaskName(t);
         html += '<div class="item-top"><div class="item-icon">'+peonSkillIcon(t.skillId)+'</div><div><div class="item-name">'+escapeHtml(workshopSkillLabel(t.skillId))+' Peon</div><div class="item-meta">'+(t.kind==='gather'?'Gathering ':'Crafting ')+escapeHtml(nm)+' &bull; ('+t.x+','+t.y+')</div></div></div>';
         html += '<div class="progress-track"><div class="progress-fill" id="peonFill-'+scope+'-'+i+'" style="width:0%"></div></div>';
         html += '<button class="action-btn stop" data-action="peonStop" data-scope="'+scope+'" data-x="'+t.x+'" data-y="'+t.y+'">Stop</button>';
@@ -7740,18 +7776,26 @@
     html += '</div>';
     return html;
   }
-  function peonAssign(kind, itemId){
+  function peonAssignCore(){ // shared validation; returns { tasks, skillId } or null (closes picker on failure)
     var scope = peonPicker.scope, grid = peonGridFor(scope);
-    if(!grid || peonPicker.x === null){ peonPicker.open = false; renderPeonPicker(); return; }
+    if(!grid || peonPicker.x === null){ peonPicker.open = false; renderPeonPicker(); return null; }
     var adj = estateAdjacentWorkshop(grid, peonPicker.x, peonPicker.y);
-    if(!adj){ addLog('That cottage is no longer next to a workshop.', 'danger'); peonPicker.open = false; render(); return; }
+    if(!adj){ addLog('That cottage is no longer next to a workshop.', 'danger'); peonPicker.open = false; render(); return null; }
     var tasks = peonTasksFor(scope);
-    if(tasks.length >= PEON_MAX_SLOTS){ addLog('All '+PEON_MAX_SLOTS+' peon slots are in use.', 'danger'); peonPicker.open = false; render(); return; }
-    if(peonTaskAt(scope, peonPicker.x, peonPicker.y)){ addLog('That cottage already has a peon.', 'danger'); peonPicker.open = false; render(); return; }
-    tasks.push({ x:peonPicker.x, y:peonPicker.y, skillId:WORKSHOP_ITEMS[adj.workshopId].skillId, kind:kind, itemId:itemId, progress:0 });
-    saveGame();
-    peonPicker.open = false;
-    render();
+    if(tasks.length >= PEON_MAX_SLOTS){ addLog('All '+PEON_MAX_SLOTS+' peon slots are in use.', 'danger'); peonPicker.open = false; render(); return null; }
+    if(peonTaskAt(scope, peonPicker.x, peonPicker.y)){ addLog('That cottage already has a peon.', 'danger'); peonPicker.open = false; render(); return null; }
+    return { tasks:tasks, skillId:WORKSHOP_ITEMS[adj.workshopId].skillId };
+  }
+  function peonAssign(kind, itemId){
+    var c = peonAssignCore(); if(!c) return;
+    c.tasks.push({ x:peonPicker.x, y:peonPicker.y, skillId:c.skillId, kind:kind, itemId:itemId, progress:0 });
+    saveGame(); peonPicker.open = false; render();
+  }
+  function peonAssignSpecial(tierIndex){
+    var p = peonPicker.producer; if(!p) return;
+    var c = peonAssignCore(); if(!c) return;
+    c.tasks.push({ x:peonPicker.x, y:peonPicker.y, skillId:c.skillId, kind:'special', craftKind:p.craftKind, params:p.params, tierIndex:tierIndex, progress:0 });
+    saveGame(); peonPicker.open = false; render();
   }
   function peonStop(scope, x, y){ peonSetTasks(scope, peonTasksFor(scope).filter(function(t){ return !(t.x===x && t.y===y); })); saveGame(); render(); }
   function renderPeonPicker(){
@@ -7773,13 +7817,31 @@
     } else {
       var src = sources.filter(function(s){ return s.x===peonPicker.x && s.y===peonPicker.y; })[0];
       if(!src){ html += '<div class="empty-note">That cottage is no longer available.</div>'; }
-      else {
-        var opts = peonOptionsFor(src);
-        html += '<div class="empty-note" style="margin-bottom:10px;"><b>'+escapeHtml(workshopSkillLabel(src.skillId))+'</b> cottage at ('+src.x+','+src.y+') &mdash; choose an action (tier ≤ '+TIER_NAMES[src.tierCap]+').</div>';
-        if(!opts.length) html += '<div class="empty-note">This skill has no peon-runnable '+(isGatherWorkshop(src.skillId)?'gather':'recipe')+' (equipment-forging skills can’t be run by peons).</div>';
+      else if(peonPicker.producer){
+        // Step 3: pick a tier for the chosen equipment producer (tier <= cap).
+        var prod = peonPicker.producer;
+        html += '<div class="empty-note" style="margin-bottom:10px;">'+(prod.icon||'')+' <b>'+escapeHtml(prod.label)+'</b> &mdash; pick a tier to forge (≤ '+TIER_NAMES[src.tierCap]+', always <b>Normal</b> quality).</div>';
         html += '<div class="tracker-picker-grid">';
-        opts.forEach(function(o){ html += '<button class="tracker-chip" data-action="peonPickTask" data-kind="'+o.kind+'" data-item="'+escapeHtml(o.itemId)+'">'+escapeHtml(o.name)+'</button>'; });
-        html += '</div><button class="mini-btn" data-action="peonPickBack" style="margin-top:8px;">&larr; Back to cottages</button>';
+        for(var pt=0; pt<=src.tierCap; pt++){ html += '<button class="tracker-chip" data-action="peonPickTier" data-tier="'+pt+'">'+escapeHtml(peonSpecialTierName(prod, pt))+'</button>'; }
+        html += '</div><button class="mini-btn" data-action="peonPickBack" style="margin-top:8px;">&larr; Back to actions</button>';
+      }
+      else {
+        // Step 2: gather items / standard recipes (assign directly) + equipment producers (open a tier submenu).
+        var opts = peonOptionsFor(src);
+        peonPickerProducers = peonSpecialProducers(src.skillId);
+        html += '<div class="empty-note" style="margin-bottom:10px;"><b>'+escapeHtml(workshopSkillLabel(src.skillId))+'</b> cottage at ('+src.x+','+src.y+') &mdash; choose an action (tier ≤ '+TIER_NAMES[src.tierCap]+').</div>';
+        if(!opts.length && !peonPickerProducers.length) html += '<div class="empty-note">This skill has no peon-runnable '+(isGatherWorkshop(src.skillId)?'gather':'recipe')+'.</div>';
+        if(opts.length){
+          html += '<div class="tracker-picker-grid">';
+          opts.forEach(function(o){ html += '<button class="tracker-chip" data-action="peonPickTask" data-kind="'+o.kind+'" data-item="'+escapeHtml(o.itemId)+'">'+escapeHtml(o.name)+'</button>'; });
+          html += '</div>';
+        }
+        if(peonPickerProducers.length){
+          html += '<div class="empty-note" style="margin:8px 0 4px;">Equipment (Normal quality, forged tier-by-tier):</div><div class="tracker-picker-grid">';
+          peonPickerProducers.forEach(function(p, pi){ html += '<button class="tracker-chip" data-action="peonPickProducer" data-idx="'+pi+'">'+(p.icon||'')+' '+escapeHtml(p.label)+' &rsaquo;</button>'; });
+          html += '</div>';
+        }
+        html += '<button class="mini-btn" data-action="peonPickBack" style="margin-top:8px;">&larr; Back to cottages</button>';
       }
     }
     html += '<div style="margin-top:12px;"><button class="action-btn" data-action="peonClosePicker">Close</button></div>';
@@ -12152,15 +12214,19 @@
     } else if(action==='toggleTrackedSkill'){
       toggleTrackedSkill(btn.getAttribute('data-skill'));
     } else if(action==='peonOpenPicker'){
-      peonPicker = { open:true, scope:btn.getAttribute('data-scope'), x:null, y:null }; renderPeonPicker();
+      peonPicker = { open:true, scope:btn.getAttribute('data-scope'), x:null, y:null, producer:null }; renderPeonPicker();
     } else if(action==='peonClosePicker'){
       peonPicker.open = false; renderPeonPicker();
     } else if(action==='peonPickSource'){
-      peonPicker.x = parseInt(btn.getAttribute('data-x'),10); peonPicker.y = parseInt(btn.getAttribute('data-y'),10); renderPeonPicker();
+      peonPicker.x = parseInt(btn.getAttribute('data-x'),10); peonPicker.y = parseInt(btn.getAttribute('data-y'),10); peonPicker.producer = null; renderPeonPicker();
     } else if(action==='peonPickBack'){
-      peonPicker.x = null; peonPicker.y = null; renderPeonPicker();
+      if(peonPicker.producer){ peonPicker.producer = null; } else { peonPicker.x = null; peonPicker.y = null; } renderPeonPicker();
     } else if(action==='peonPickTask'){
       peonAssign(btn.getAttribute('data-kind'), btn.getAttribute('data-item'));
+    } else if(action==='peonPickProducer'){
+      peonPicker.producer = peonPickerProducers[parseInt(btn.getAttribute('data-idx'),10)] || null; renderPeonPicker();
+    } else if(action==='peonPickTier'){
+      peonAssignSpecial(parseInt(btn.getAttribute('data-tier'),10));
     } else if(action==='peonStop'){
       peonStop(btn.getAttribute('data-scope'), parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
     } else if(action==='openSettings'){
@@ -12557,6 +12623,7 @@
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS,
+      peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       DAMAGE_TYPES:DAMAGE_TYPES

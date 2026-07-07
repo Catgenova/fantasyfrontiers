@@ -117,6 +117,18 @@
     near(FF.peonSpeedFactor(0), 0.05, 'peon speed 5% at t0');
     near(FF.peonSpeedFactor(FF.TIER_COUNT - 1), 1.0, 'peon speed 100% at t20');
     ok(FF.peonSpeedFactor(10) > FF.peonSpeedFactor(0) && FF.peonSpeedFactor(10) < FF.peonSpeedFactor(20), 'peon speed scales with tier');
+    // Peons can also run equipment (special) crafts, at NORMAL rarity only.
+    var ws = FF.peonSpecialProducers('weaponsmithing');
+    ok(ws.length > 0 && ws.every(function(p){ return p.craftKind === 'stackweapon'; }), 'weaponsmithing offers stackweapon producers');
+    ok(FF.peonSpecialProducers('jewelrycrafting').some(function(p){ return p.craftKind === 'amulet'; }), 'jewelrycrafting offers an amulet producer');
+    ok(FF.peonSpecialProducers('blacksmithing').some(function(p){ return p.craftKind === 'tool'; }), 'blacksmithing offers tool producers');
+    eq(FF.peonSpecialProducers('mining').length, 0, 'gather skills have no special producers');
+    // A built special-craft act resolves to real tier data (inputs + time) at every tier <= cap.
+    var wp = ws[0], td0 = FF.getSpecialTierData({ craftKind: wp.craftKind, typeId: wp.params.typeId, tierIndex: 0 });
+    ok(td0 && td0.inputs && td0.time > 0, 'peon special-craft act resolves to tier data');
+    var toolP = FF.peonSpecialProducers('blacksmithing').filter(function(p){ return p.craftKind === 'tool'; })[0];
+    var ttd = FF.getSpecialTierData({ craftKind: 'tool', skillId: toolP.params.skillId, tierIndex: FF.TIER_COUNT - 1 });
+    ok(ttd && ttd.inputs, 'peon tool act resolves at top tier (tierIndex+1 offset in-bounds)');
   });
 
   // ---- Combat damage-type advantage triangle --------------------------------------------
