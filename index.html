@@ -1517,7 +1517,10 @@
       recipes: (function(){
         var list = [];
         var PAVING_TILE_TYPES = ['Plain Tile','Decorative Tile','Ornate Tile'];
+        var PAVING_SLAB_QTY = [2,3,4]; // Plain / Decorative / Ornate -- all cost Slabs of the matching stone
         for(var i=0;i<TIER_COUNT;i++){
+          var slabId = 'stonecutting_t'+(Math.floor(i/3)*3+1); // Slab is type index 1 of each stone's 3 cuts
+          var pInputs = {}; pInputs[slabId] = PAVING_SLAB_QTY[i%3];
           list.push({
             id:'paving_t'+i,
             name: MINING_STONE_NAMES[Math.floor(i/3)]+' '+PAVING_TILE_TYPES[i%3],
@@ -1526,7 +1529,7 @@
             time: tierTime(7,0.3,i),
             sell: tierSell(10,i),
             icon: svgIcon('tile',MINING_STONE_COLORS[Math.floor(i/3)]),
-            inputs: tierInput('stonecutting',2)(i)
+            inputs: pInputs
           });
         }
         return list;
