@@ -154,9 +154,10 @@ assert_err "$(fn submit_profile "$TOK_A" '{"total_level":999,"gold":100,"skills"
 # --------------------------------------------------------------------------------------------
 sect "Marketplace"
 # Uses a random item_key so parallel/nightly runs don't share a book.
+# Single-char suffixes keep the username within the 20-char cap (${RUN} is already ~18 chars).
 IKEY="itest_${RANDOM}${RANDOM}"
-mkuser mkt_a; TOK_MA="$TOK"
-mkuser mkt_b; TOK_MB="$TOK"
+mkuser d; TOK_MA="$TOK"
+mkuser e; TOK_MB="$TOK"
 
 MS1=$(fn marketplace "$TOK_MA" "{\"action\":\"place\",\"side\":\"sell\",\"item_key\":\"$IKEY\",\"unit_price\":100,\"qty\":10}")
 assert_ok "$MS1" "A places a sell order (10 @ 100)"
