@@ -7154,17 +7154,17 @@
     guildEstate.busy = true; guildEstate.error = ''; needsRender = true;
     guildBankInvoke('spend_gold', { amount: cost }).then(function(res){
       guildEstate.busy = false;
-      if(!res || !res.ok){ guildEstate.error = (res && res.code==='poor') ? ('The guild treasury needs '+fmt(cost)+'g to expand the estate.') : ((res&&res.error)||'Could not spend from the treasury.'); if(currentCategory==='guild') render(); return; }
+      if(!res || !res.ok){ guildEstate.error = (res && res.code==='poor') ? ('The guild treasury needs '+fmt(cost)+'g to expand the estate.') : ((res&&res.error)||'Could not spend from the treasury.'); if(currentCategory==='guild'||currentCategory==='peons') render(); return; }
       guildBankApply(res); // refresh the treasury balance from the snapshot
       var purchased = guildEstate.expansionsPurchased||0; // re-read in case a teammate expanded meanwhile
       var next = ESTATE_EXPANSION_ORDER[purchased];
-      if(!next){ addLog('The guild estate was already fully expanded — '+fmt(cost)+'g spent with no tile added.', 'danger'); if(currentCategory==='guild') render(); return; }
+      if(!next){ addLog('The guild estate was already fully expanded — '+fmt(cost)+'g spent with no tile added.', 'danger'); if(currentCategory==='guild'||currentCategory==='peons') render(); return; }
       guildEstate.grid[next.x][next.y].owned = true;
       guildEstate.expansionsPurchased = purchased + 1;
       addLog('Expanded the guild estate for ' + fmt(cost) + ' gold from the treasury.', 'important');
       spawnFloatingText('+1 Tile', 'ft-success');
       guildEstatePersist();
-      if(currentCategory==='guild') render();
+      if(currentCategory==='guild'||currentCategory==='peons') render();
     });
   }
   function estateMigrateOldGridToNew(oldEstate){
@@ -7745,14 +7745,22 @@
   function renderPeonsTab(){
     var html = '<div class="section-intro">Peons are idle workers. Build a <b>Cottage</b> on paved estate ground next to a <b>Workshop</b> (both crafted in Carpentry), then assign a Peon here to gather or craft that skill automatically. Peons are slow (5%→100% of normal by tier), take no bonuses beyond the workshop’s own speed &amp; double-output, give <b>no XP</b>, and roll <b>no rarity or bonus drops</b> (crafts still fail at the base rate). Up to '+PEON_MAX_SLOTS+' on your estate and '+PEON_MAX_SLOTS+' on your guild’s.</div>';
     html += renderPeonSection('personal', 'My Estate');
+    guildEnsureLoaded(); // populate guildState.guild even if the Guild tab hasn't been opened this session
     if(guildState.guild) guildEstateEnsure();
     html += renderPeonSection('guild', 'Guild Estate');
     return html;
   }
   function renderPeonSection(scope, title){
     var html = '<h3 style="margin-top:14px">'+title+'</h3>';
-    if(scope==='guild' && !guildState.guild) return html + '<div class="empty-note">Join a guild to run peons on the shared guild estate.</div>';
-    if(scope==='guild' && guildEstate.status!=='ready') return html + '<div class="empty-note">Loading the guild estate&hellip;</div>';
+    if(scope==='guild'){
+      // guildState.guild is only meaningful once the guild state has finished loading; until then
+      // show a loading note rather than wrongly claiming the player isn't in a guild.
+      if(!guildState.guild){
+        if(guildState.status==='ready') return html + '<div class="empty-note">Join a guild to run peons on the shared guild estate.</div>';
+        return html + '<div class="empty-note">Loading your guild&hellip;</div>';
+      }
+      if(guildEstate.status!=='ready') return html + '<div class="empty-note">Loading the guild estate&hellip;</div>';
+    }
     var sources = estatePeonSources(peonGridFor(scope) || []);
     var tasks = peonTasksFor(scope);
     var occupied = {}; tasks.forEach(function(t){ occupied[t.x+'_'+t.y] = 1; });
@@ -10094,7 +10102,7 @@
     if(!chatClient || !authUser || !authUser.id){ guildState.status='idle'; return; } // not ready yet; retry on next view
     if(!silent) guildState.status='loading';
     guildInvoke('get_state', {}).then(function(res){
-      if(!res || !res.ok){ guildState.status='error'; guildState.error=(res&&res.error)||'Could not load guild.'; if(currentCategory==='guild'||currentCategory==='chat') render(); return; }
+      if(!res || !res.ok){ guildState.status='error'; guildState.error=(res&&res.error)||'Could not load guild.'; if(currentCategory==='guild'||currentCategory==='chat'||currentCategory==='peons') render(); return; }
       guildState.status='ready';
       guildState.guild = res.guild || null;
       guildState.members = res.members || [];
@@ -10102,7 +10110,7 @@
       guildState.applications = res.applications || [];
       if(!guildState.guild){ if(guildBrowseState.status==='idle') guildBrowseLoad(); guildTeardownChat(); }
       else { guildChatMaybeSubscribe(); guildEstateEnsure(); } // load the shared estate so its workshop bonuses apply on any tab
-      if(currentCategory==='guild'||currentCategory==='chat') render();
+      if(currentCategory==='guild'||currentCategory==='chat'||currentCategory==='peons') render();
     });
   }
   function guildBrowseLoad(){
@@ -10113,9 +10121,9 @@
       chatClient.from('guild_applications').select('guild_id').eq('user_id', authUser.id).maybeSingle().then(function(a){
         guildBrowseState.appliedTo = (a && a.data && a.data.guild_id) || null;
         guildBrowseState.status='ready';
-        if(currentCategory==='guild') render();
+        if(currentCategory==='guild'||currentCategory==='peons') render();
       });
-    }, function(){ guildBrowseState.status='error'; if(currentCategory==='guild') render(); });
+    }, function(){ guildBrowseState.status='error'; if(currentCategory==='guild'||currentCategory==='peons') render(); });
   }
   function guildCreate(){
     if(guildState.busy) return;
@@ -10286,8 +10294,8 @@
     if(!guildState.guild) return;
     guildBankState.status='loading'; guildBankState.guildId = guildState.guild.id;
     guildBankInvoke('get', {}).then(function(res){
-      if(!res.ok){ guildBankState.status='error'; guildBankState.error=res.error||'Could not load the bank.'; if(currentCategory==='guild') render(); return; }
-      guildBankApply(res); guildBankState.error=''; if(currentCategory==='guild') render();
+      if(!res.ok){ guildBankState.status='error'; guildBankState.error=res.error||'Could not load the bank.'; if(currentCategory==='guild'||currentCategory==='peons') render(); return; }
+      guildBankApply(res); guildBankState.error=''; if(currentCategory==='guild'||currentCategory==='peons') render();
     });
   }
   function guildBankItemName(key){ var it=ALL_SELLABLE[key]; return it ? it.name : key; }
@@ -10508,19 +10516,19 @@
           guildEstateHydrate(guildEstateDefaultBlob(gid), res.data.version);
           guildEstateSubscribe(); recomputeGuildWorkshops();
           guildEstatePersist(); // version-guarded overwrite with the fresh map
-          if(currentCategory==='guild') render();
+          if(currentCategory==='guild'||currentCategory==='peons') render();
         } else {
           guildEstateHydrate(d, res.data.version); guildEstateSubscribe(); recomputeGuildWorkshops();
-          if(currentCategory==='guild') render();
+          if(currentCategory==='guild'||currentCategory==='peons') render();
         }
       } else {
         var blob = guildEstateDefaultBlob(gid);
         chatClient.from('guild_estate').insert({ guild_id:gid, data:blob, version:0 }).select('version').then(function(ins){
-          if(ins && !ins.error){ guildEstateHydrate(blob, 0); guildEstateSubscribe(); recomputeGuildWorkshops(); if(currentCategory==='guild') render(); }
-          else { guildEstate.status='idle'; if(currentCategory==='guild') render(); } // insert race -> reload next view
+          if(ins && !ins.error){ guildEstateHydrate(blob, 0); guildEstateSubscribe(); recomputeGuildWorkshops(); if(currentCategory==='guild'||currentCategory==='peons') render(); }
+          else { guildEstate.status='idle'; if(currentCategory==='guild'||currentCategory==='peons') render(); } // insert race -> reload next view
         }, function(){ guildEstate.status='idle'; });
       }
-    }, function(){ guildEstate.status='error'; guildEstate.error='Could not load the guild estate.'; if(currentCategory==='guild') render(); });
+    }, function(){ guildEstate.status='error'; guildEstate.error='Could not load the guild estate.'; if(currentCategory==='guild'||currentCategory==='peons') render(); });
   }
   // Version-guarded save. On conflict, reload (guildEstateHydrate preserves my in-flight job so
   // spent materials aren't lost); otherwise fire onOk.
@@ -10531,7 +10539,7 @@
     guildEstate.version = expected + 1;
     chatClient.from('guild_estate').update({ data:blob, version:guildEstate.version, updated_at:new Date().toISOString() }).eq('guild_id',gid).eq('version',expected).select('version').then(function(res){
       if(!res || res.error || !res.data || !res.data.length){
-        guildEstate.status='idle'; guildEstate.error='Another member edited the estate first — reloaded.'; guildEstateEnsure(); if(currentCategory==='guild') render();
+        guildEstate.status='idle'; guildEstate.error='Another member edited the estate first — reloaded.'; guildEstateEnsure(); if(currentCategory==='guild'||currentCategory==='peons') render();
       } else { guildEstate.error=''; if(onOk) onOk(); }
     }, function(){});
   }
@@ -10606,8 +10614,8 @@
     if(!guildState.guild) return;
     guildBossState.status='loading'; guildBossState.guildId = guildState.guild.id;
     guildBossInvoke('get', {}).then(function(res){
-      if(!res.ok){ guildBossState.status='error'; guildBossState.error=res.error||'Could not load bosses.'; if(currentCategory==='guild') render(); return; }
-      guildBossApply(res); guildBossState.error=''; if(currentCategory==='guild') render();
+      if(!res.ok){ guildBossState.status='error'; guildBossState.error=res.error||'Could not load bosses.'; if(currentCategory==='guild'||currentCategory==='peons') render(); return; }
+      guildBossApply(res); guildBossState.error=''; if(currentCategory==='guild'||currentCategory==='peons') render();
     });
   }
   // A representative DPS proxy: avg weapon damage / attack interval, folding the always-on
