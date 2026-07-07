@@ -5686,6 +5686,9 @@
   }
   function renderChatDock(){
     var el = document.getElementById('chatDockPanel'); if(!el) return;
+    // When signed out, renderChatTab() shows the auth form -- rendering it here would duplicate the
+    // login inputs' ids and break the real login gate. Show a placeholder instead.
+    if(!authUser){ el.innerHTML = '<div class="ff-dock-title">Chat</div><div class="empty-note">Sign in to chat with the realm.</div>'; return; }
     el.innerHTML = '<div class="ff-dock-title">Chat</div>' + renderChatTab();
   }
   // Inventory as its own content view (Resources > Inventory); #inventoryPanel is filled by
@@ -5697,7 +5700,8 @@
     var ov = document.getElementById('chatDrawerOverlay'); if(!ov) return;
     if(!chatDrawerOpen){ ov.className = ''; ov.removeAttribute('data-action'); ov.innerHTML = ''; return; }
     ov.className = 'ff-drawer-overlay'; ov.setAttribute('data-action','toggleChatDrawer');
-    ov.innerHTML = '<div class="ff-drawer" data-action="noop"><div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #c3ab77;padding-bottom:8px;margin-bottom:10px;"><div style="font-family:var(--font-display);font-size:14px;color:var(--green-deep);letter-spacing:1px;text-transform:uppercase;">Chat</div><button class="ff-gear" data-action="toggleChatDrawer" style="color:#8a7850;background:none;border:none;font-size:18px;">✕</button></div>' + renderChatTab() + '</div>';
+    var chatInner = authUser ? renderChatTab() : '<div class="empty-note">Sign in to chat with the realm.</div>';
+    ov.innerHTML = '<div class="ff-drawer" data-action="noop"><div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #c3ab77;padding-bottom:8px;margin-bottom:10px;"><div style="font-family:var(--font-display);font-size:14px;color:var(--green-deep);letter-spacing:1px;text-transform:uppercase;">Chat</div><button class="ff-gear" data-action="toggleChatDrawer" style="color:#8a7850;background:none;border:none;font-size:18px;">✕</button></div>' + chatInner + '</div>';
   }
 
   var FAITH_SKILLS = {
