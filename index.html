@@ -4478,9 +4478,12 @@
   function isTeaActive(){
     return !!(state.activeTea && state.activeTea.itemId && state.activeTea.expiresAt > Date.now());
   }
+  // A familiar linked to a skill grants +1% XP for that skill per familiar level.
+  function familiarXpMult(skillId){ var f = state.familiars && state.familiars[skillId]; return (f && f.owned) ? (1 + f.level * 0.01) : 1; }
   function addXp(skill, amount){
     var before = getLevel(state.xp[skill]);
     if(isTeaActive()) amount = amount * (1 + state.activeTea.xpBoost);
+    amount = amount * familiarXpMult(skill);
     state.xp[skill] += amount;
     if(offlineCapture){ offlineCapture.xp[skill] = (offlineCapture.xp[skill]||0) + amount; }
     var after = getLevel(state.xp[skill]);
@@ -4496,7 +4499,7 @@
     if(!pairs) return;
     var relevantPhysiqueIds = resolveActionBarSkill().physiqueIds;
     pairs.forEach(function(pair){
-      var id = pair[0], amount = pair[1];
+      var id = pair[0], amount = pair[1] * familiarXpMult(id);
       var before = getLevel(state.physique[id]||0);
       state.physique[id] = (state.physique[id]||0) + amount;
       if(offlineCapture){ offlineCapture.physique[id] = (offlineCapture.physique[id]||0) + amount; }
