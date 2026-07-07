@@ -4562,6 +4562,7 @@
   // Shared timer lives server-side; every client reads it and applies the effect while it's live.
   var SERVER_BUFF_EXP_COST = 100000;    // gold per 1-hour purchase
   var SERVER_BUFF_EXP_MULT = 1.5;       // +50% XP to all players
+  var SERVER_BUFF_EXP_MS = 3600*1000;   // one purchase = 1 hour (also the progress-bar reference)
   var serverBuff = { expUntil: 0 };     // ms epoch; 0 = inactive
   var _serverBuffBusy = false, _lastBuffPoll = 0;
   function expBuffMultFor(nowMs, until){ return (until && nowMs < until) ? SERVER_BUFF_EXP_MULT : 1; } // pure (unit-tested)
@@ -11416,6 +11417,12 @@
     var teaPct = teaOn ? clamp((state.activeTea.expiresAt-Date.now())/state.activeTea.durationMs*100,0,100) : 0;
     html += '<div class="hp-track" id="charTeaTrack" style="display:'+(teaOn?'block':'none')+'"><div class="hp-fill" id="charTeaFill" style="width:'+teaPct+'%;background:var(--rarity-rare)"></div></div>';
     html += '<div class="hp-label" id="charTeaLabelRow" style="display:'+(teaOn?'flex':'none')+'"><span id="charTeaName">'+(teaOn?state.activeTea.icon+' '+state.activeTea.name+' (+'+Math.round(state.activeTea.xpBoost*100)+'% XP)':'')+'</span><span id="charTeaLabel">'+(teaOn?formatDuration(state.activeTea.expiresAt-Date.now()):'')+'</span></div>';
+    // Server-wide event buff (bar shown only while active; the 1-hour purchase is the fill reference).
+    var buffOn = serverBuffActive();
+    var buffRemain0 = buffOn ? (serverBuff.expUntil - Date.now()) : 0;
+    var buffPct0 = clamp(buffRemain0 / SERVER_BUFF_EXP_MS * 100, 0, 100);
+    html += '<div class="hp-track" id="charBuffTrack" style="display:'+(buffOn?'block':'none')+'"><div class="hp-fill" id="charBuffFill" style="width:'+buffPct0+'%;background:var(--gold)"></div></div>';
+    html += '<div class="hp-label" id="charBuffLabelRow" style="display:'+(buffOn?'flex':'none')+'"><span id="charBuffName">'+svgIcon('lightning','var(--gold)')+' Server EXP +50%</span><span id="charBuffLabel">'+(buffOn?formatDuration(buffRemain0):'')+'</span></div>';
     html += '<div style="height:10px"></div>';
     html += '<div class="char-row"><span>Combat Score</span><b id="charCombatScore">'+combatLevelEquivalent(state)+'</b></div>';
     html += '<div class="empty-note" style="font-size:10px;margin-top:-2px;padding-bottom:4px;overflow-wrap:anywhere;">Sum of proficiency levels across everything equipped &mdash; determines which foes you can fight</div>';
@@ -12169,6 +12176,21 @@
     } else {
       if(teaTrack && teaTrack.style.display !== 'none'){ teaTrack.style.display = 'none'; needsRender = true; }
       if(teaLabelRow) teaLabelRow.style.display = 'none';
+    }
+
+    var buffTrack = document.getElementById('charBuffTrack');
+    var buffLabelRow = document.getElementById('charBuffLabelRow');
+    var buffFill = document.getElementById('charBuffFill');
+    var buffLabelEl = document.getElementById('charBuffLabel');
+    if(serverBuffActive()){
+      var buffRemainMs = serverBuff.expUntil - Date.now();
+      if(buffTrack) buffTrack.style.display = 'block';
+      if(buffLabelRow) buffLabelRow.style.display = 'flex';
+      if(buffFill) buffFill.style.width = clamp(buffRemainMs/SERVER_BUFF_EXP_MS*100,0,100) + '%';
+      if(buffLabelEl) buffLabelEl.textContent = formatDuration(buffRemainMs);
+    } else {
+      if(buffTrack && buffTrack.style.display !== 'none'){ buffTrack.style.display = 'none'; needsRender = true; }
+      if(buffLabelRow) buffLabelRow.style.display = 'none';
     }
 
     if(state.activity.type==='combat'){
