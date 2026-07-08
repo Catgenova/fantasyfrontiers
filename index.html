@@ -1929,54 +1929,21 @@
 
   var WEAPON_BASE = {tier:0, name:'Fists', dmgMin:1, dmgMax:3};
 
-  // ---- 14-slot armor system ----
-  // Each slot progresses through the same 21 tiers (levels 1,5,10...100).
-  // Slot "weight" determines how much defense that tier is worth: heavy body pieces
-  // give the most, medium pieces give a moderate amount, and small accessories (rings,
-  // amulet) give a little each but there are a lot of them.
-  // Relic used to live here as a 15th slot, but is now its own equipment type (see
-  // the Relic system below) fed by Archaeology instead of Armorsmithing. Gauntlets,
-  // Boots, Chest, and Helmet have similarly moved out -- they're now Chain Mail / Plate
-  // Armor equipment (see below), the first proper body-armor equipment type.
-  var ARMOR_SLOTS = [
-    {id:'back', label:'Back', icon:svgIcon('cloak','#6a5a8a'), weight:'heavy'},
-    {id:'tabard', label:'Tabard', icon:svgIcon('tabard','#8a3a3a'), weight:'heavy'},
-    {id:'mask', label:'Mask', icon:svgIcon('mask','#9a8a6a'), weight:'medium'}
-  ];
-  var ARMOR_SLOT_IDS = ARMOR_SLOTS.map(function(s){ return s.id; });
+  // ---- Shared crafting tier curve (21 tiers, levels 1,5,10...100) ----
+  // This once fed a legacy "armor slot" accessory system (Back / Tabard / Mask), which has been
+  // retired. These per-tier level/xp/material arrays now serve only the per-skill Tools below,
+  // which borrow the same progression. Body armour (Chain / Plate / Leather / Cloth) and Relics
+  // are their own equipment types (see below).
   var ARMOR_TIER_LEVELS = TIER_LEVELS;
   var ARMOR_TIER_NAMES  = TIER_NAMES;
   var ARMOR_TIER_XP = [];
   var ARMOR_TIER_INPUTS = [];
-  var ARMOR_WEIGHT_DEFENSE = { heavy:[], medium:[], minor:[] };
   for(var _ai=0; _ai<TIER_COUNT; _ai++){
-    ARMOR_TIER_XP.push(craftXp(_ai)); // armorsmithing armor + blacksmithing tools share the crafting curve
+    ARMOR_TIER_XP.push(craftXp(_ai)); // tools share the crafting curve
     ARMOR_TIER_INPUTS.push(tierInput('metallurgy', 3)(_ai));
-    ARMOR_WEIGHT_DEFENSE.heavy.push(tierStat(1.5, _ai));
-    ARMOR_WEIGHT_DEFENSE.medium.push(tierStat(1.0, _ai));
-    ARMOR_WEIGHT_DEFENSE.minor.push(tierStat(0.5, _ai));
-  }
-  function getSlotTierData(slot, tier){
-    var t = tier - 1;
-    return {
-      tier: tier,
-      name: ARMOR_TIER_NAMES[t] + ' ' + slot.label,
-      levelReq: ARMOR_TIER_LEVELS[t],
-      xp: ARMOR_TIER_XP[t],
-      defense: ARMOR_WEIGHT_DEFENSE[slot.weight][t],
-      inputs: ARMOR_TIER_INPUTS[t],
-      time: tierTime(7,0.3,t)
-    };
-  }
-  function getEquippedSlotItem(slot, tier, rarityId){
-    if(tier<=0) return {tier:0, name:'Empty', defense:0};
-    return applyRarity(getSlotTierData(slot, tier), rarityId);
   }
   function getTotalArmorDefense(state){
-    var sum = ARMOR_SLOTS.reduce(function(s, slot){
-      return s + getEquippedSlotItem(slot, state.armorSlots[slot.id]||0, state.armorRarities[slot.id]).defense;
-    }, 0);
-    return sum + getBodyArmorDefenseTotal(state) + getAmuletDefenseBonus(state);
+    return getBodyArmorDefenseTotal(state) + getAmuletDefenseBonus(state);
   }
 
   // ---- Per-gathering-skill tools (Digging shovel, Mining pickaxe, etc.) ----
@@ -4200,8 +4167,8 @@
     }
     return null;
   }
-  // Same idea as findActiveCraftSlotFor, but for the six "special" instant-turned-timed
-  // craft kinds (tool, stackweapon, bodyarmor, belt, offhand, armorslot), which are
+  // Same idea as findActiveCraftSlotFor, but for the "special" instant-turned-timed
+  // craft kinds (tool, stackweapon, bodyarmor, belt, offhand, ...), which are
   // identified by their own param shape rather than a fixed recipe id.
   function matchesSpecialCraft(act, craftKind, params){
     if(!act || act.type!=='craft' || act.craftKind!==craftKind) return false;
@@ -4211,7 +4178,6 @@
     if(craftKind==='bodyarmor') return act.material===params.material && act.slot===params.slot && act.tierIndex===params.tierIndex;
     if(craftKind==='belt') return act.tierIndex===params.tierIndex;
     if(craftKind==='offhand') return act.typeId===params.typeId;
-    if(craftKind==='armorslot') return act.slotId===params.slotId;
     if(craftKind==='ring') return act.typeId===params.typeId && act.tierIndex===params.tierIndex;
     if(craftKind==='amulet') return act.tierIndex===params.tierIndex;
     if(craftKind==='workshop') return act.skillId===params.skillId && act.tierIndex===params.tierIndex;
@@ -4255,7 +4221,6 @@
     if(act.craftKind==='bodyarmor') return BODY_ARMOR_MATERIALS[act.material].skillId;
     if(act.craftKind==='belt') return 'leatherworking';
     if(act.craftKind==='offhand') return 'shieldsmithing';
-    if(act.craftKind==='armorslot') return 'armorsmithing';
     if(act.craftKind==='ring') return 'jewelrycrafting';
     if(act.craftKind==='amulet') return 'jewelrycrafting';
     if(act.craftKind==='workshop') return 'carpentry'; // Carpentry builds every Workshop
@@ -4277,20 +4242,14 @@
       if(oTier >= TIER_COUNT) return null;
       return OFFHAND_TYPE_RECIPES[act.typeId][oTier];
     }
-    if(act.craftKind==='armorslot'){
-      var aSlot = ARMOR_SLOTS.filter(function(s){ return s.id===act.slotId; })[0];
-      var aTier = state.armorSlots[act.slotId]||0;
-      if(!aSlot || aTier >= TIER_COUNT) return null;
-      return getSlotTierData(aSlot, aTier+1);
-    }
     if(act.craftKind==='ring') return getRingTierData(act.typeId, act.tierIndex);
     if(act.craftKind==='amulet') return getAmuletTierData(act.tierIndex);
     if(act.craftKind==='workshop') return getWorkshopTierData(act.skillId, act.tierIndex);
     if(act.craftKind==='cottage') return getCottageTierData(act.tierIndex);
     return null;
   }
-  // Item-producing special crafts a Workshop can double (tier-UPGRADE kinds -- offhand,
-  // armorslot -- can't be doubled). Each doubled output rolls its rarity independently.
+  // Item-producing special crafts a Workshop can double (tier-UPGRADE kinds like offhand
+  // can't be doubled). Each doubled output rolls its rarity independently.
   var SPECIAL_DOUBLEABLE_KINDS = ['tool','stackweapon','stackshield','bodyarmor','belt','ring','amulet','workshop'];
   // Produce ONE output for this special craft at the given rarity; returns the rarity
   // actually used (bodyarmor clamps to its material's allowed set; workshops are always normal).
@@ -4311,11 +4270,6 @@
       var oTier2 = state.offhandTiers[act.typeId]||0;
       state.offhandTiers[act.typeId] = oTier2+1;
       state.offhandRarities[act.typeId] = rarity;
-    } else if(act.craftKind==='armorslot'){
-      var aTier2 = state.armorSlots[act.slotId]||0;
-      state.armorSlots[act.slotId] = aTier2+1;
-      state.armorRarities[act.slotId] = rarity;
-      armorPanelExpanded = true;
     } else if(act.craftKind==='ring'){
       addItem('ring_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
     } else if(act.craftKind==='amulet'){
@@ -4884,10 +4838,6 @@
   function newGame(){
     var physique = {};
     PHYSIQUE_SKILLS.forEach(function(p){ physique[p.id] = 0; });
-    var armorSlots = {};
-    ARMOR_SLOT_IDS.forEach(function(id){ armorSlots[id] = 0; });
-    var armorRarities = {};
-    ARMOR_SLOT_IDS.forEach(function(id){ armorRarities[id] = 'normal'; });
     var gatherTools = {};
     GATHER_SKILL_IDS.forEach(function(id){ gatherTools[id] = 0; });
     var gatherToolRarities = {};
@@ -4921,8 +4871,6 @@
       xp: xpObj,
       physique: physique,
       inventory: {},
-      armorSlots: armorSlots,
-      armorRarities: armorRarities,
       gatherTools: gatherTools,
       gatherToolRarities: gatherToolRarities,
       craftTools: craftTools,
@@ -5520,7 +5468,6 @@
     var pool = [];
     WEAPON_STYLE_IDS.forEach(function(id){ pool.push({cat:'weapon', id:id}); });
     OFFHAND_STYLES.forEach(function(o){ if(!o.stackable) pool.push({cat:'offhand', id:o.id}); }); // shields are stackable now; only non-stackable types (Quiver) have OFFHAND_TYPE_RECIPES entries
-    ARMOR_SLOT_IDS.forEach(function(id){ pool.push({cat:'armor', id:id}); });
     var pick = pool[randInt(0, pool.length-1)];
     var targetTier = tierIndex+1;
     var name = null;
@@ -5535,13 +5482,6 @@
         state.offhandTiers[pick.id] = targetTier;
         state.offhandRarities[pick.id] = 'normal';
         name = OFFHAND_TYPE_RECIPES[pick.id][targetTier-1].name;
-      }
-    } else {
-      var slot = ARMOR_SLOTS.filter(function(s){ return s.id===pick.id; })[0];
-      if((state.armorSlots[pick.id]||0) < targetTier){
-        state.armorSlots[pick.id] = targetTier;
-        state.armorRarities[pick.id] = 'normal';
-        name = getSlotTierData(slot, targetTier).name;
       }
     }
     if(name){
@@ -5820,17 +5760,6 @@
     if(total>0){ state.gold += total; addLog('Sold your goods for ' + total + ' gold.'); needsRender = true; }
   }
 
-  function craftArmorSlot(slotId){
-    var slot = ARMOR_SLOTS.filter(function(s){ return s.id===slotId; })[0];
-    if(!slot) return;
-    var tier = state.armorSlots[slotId]||0;
-    if(tier >= TIER_COUNT) return;
-    var nextData = getSlotTierData(slot, tier+1);
-    if(getLevel(state.xp.armorsmithing) < nextData.levelReq) return;
-    if(!hasInputs(nextData.inputs)){ addLog('Not enough materials to forge ' + nextData.name + '.', 'danger'); return; }
-    placeNewCraftActivity('armorsmithing', null, 'armorslot', { type:'craft', craftKind:'armorslot', slotId:slotId, progress:0 });
-  }
-
   // Tools are now Equipment: forging produces a stackable inventory item for whatever
   // tier you choose (not just "the next tier"), and a separate equip step picks which
   // owned (type, tier, rarity) combo is actually active for that skill.
@@ -6042,11 +5971,9 @@
             ['fiberharvesting','grainharvesting','herbharvesting'].forEach(function(sk){ if(!state.xp[sk]) state.xp[sk] = loaded.xp.farming; });
           }
           state.physique = Object.assign(newGame().physique, loaded.physique||{});
-          state.armorSlots = Object.assign(newGame().armorSlots, loaded.armorSlots||{});
           state.gatherTools = Object.assign(newGame().gatherTools, loaded.gatherTools||{});
           state.weaponTiers = Object.assign(newGame().weaponTiers, loaded.weaponTiers||{});
           state.offhandTiers = Object.assign(newGame().offhandTiers, loaded.offhandTiers||{});
-          state.armorRarities = Object.assign(newGame().armorRarities, loaded.armorRarities||{});
           state.gatherToolRarities = Object.assign(newGame().gatherToolRarities, loaded.gatherToolRarities||{});
           state.craftTools = Object.assign(newGame().craftTools, loaded.craftTools||{});
           state.craftToolRarities = Object.assign(newGame().craftToolRarities, loaded.craftToolRarities||{});
@@ -6843,7 +6770,6 @@
   function renderArmorSmithTab(){
     var lvl = getLevel(state.xp.armorsmithing);
     var totalDefense = getTotalArmorDefense(state);
-    var equippedSlots = ARMOR_SLOTS.filter(function(s){ return (state.armorSlots[s.id]||0) > 0; }).length;
     var maxUnlocked = 0;
     for(var mi=0; mi<TIER_COUNT; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
     var html = '';
@@ -6885,42 +6811,6 @@
         }
         html += '</div>';
       });
-    });
-    html += '</div>';
-
-    html += '<h3>Accessories</h3>';
-    html += '<div class="physique-bonus">Slots Equipped: <b>'+equippedSlots+' / '+ARMOR_SLOTS.length+'</b></div>';
-    html += '<div class="card-grid">';
-    ARMOR_SLOTS.forEach(function(slot){
-      var tier = state.armorSlots[slot.id]||0;
-      var current2 = getEquippedSlotItem(slot, tier, state.armorRarities[slot.id]);
-      html += '<div class="item-card">';
-      html += '<div class="item-top"><div class="item-icon">'+slot.icon+'</div><div><div class="item-name">'+slot.label+'</div><div class="item-meta">'+(tier>0 ? current2.name+' &bull; defense '+current2.defense : 'Empty')+'</div></div></div>';
-      var slotActiveSlot = findActiveSpecialCraftSlotFor('armorslot', {slotId:slot.id});
-      var slotIsActive = !!slotActiveSlot;
-      if(slotIsActive){
-        var nextDataActive = getSpecialTierData(slotActiveSlot.act);
-        var effTimeA = nextDataActive.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, 'armorsmithing');
-        var pctA = clamp(slotActiveSlot.act.progress/effTimeA*100,0,100);
-        var fillIdA = slotActiveSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+slotActiveSlot.index;
-        html += '<div class="item-stats"><span>+'+Math.round(nextDataActive.xp*1.5)+' XP</span><span>Forging: '+nextDataActive.name+'</span><span>defense '+nextDataActive.defense+'</span></div>';
-        html += '<div class="progress-track"><div class="progress-fill" id="'+fillIdA+'" style="width:'+pctA+'%"></div></div>';
-        html += slotActiveSlot.primary
-          ? '<button class="action-btn stop" data-action="stop">Stop</button>'
-          : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+slotActiveSlot.index+'">Stop</button>';
-      } else if(tier < TIER_COUNT){
-        var nextData = getSlotTierData(slot, tier+1);
-        var ready2 = lvl >= nextData.levelReq && hasInputs(nextData.inputs);
-        var armorSuccessPct = Math.round(craftSuccessRate(state, 'armorsmithing')*100);
-        html += '<div class="item-stats"><span>Next: '+nextData.name+'</span><span>defense '+nextData.defense+'</span><span>Req. Lv '+nextData.levelReq+'</span></div>';
-        html += '<div class="chance-line">Output: <b>1x '+nextData.name+'</b> at <b>'+armorSuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
-        html += '<div class="inputs-line">Needs: '+inputsLine(nextData.inputs, 'inp-armor-'+slot.id)+'</div>';
-        html += '<div class="progress-track"><div class="progress-fill" style="width:0%"></div></div>';
-        html += '<button class="action-btn" data-action="forgeArmorSlot" data-slot="'+slot.id+'" '+(ready2?'':'disabled')+'>Forge</button>';
-      } else {
-        html += '<div class="empty-note">Maxed out.</div>';
-      }
-      html += '</div>';
     });
     html += '</div>';
     return html;
@@ -7579,21 +7469,6 @@
     html += '</div></div>';
     return html;
   }
-  function renderAccessorySlotsSection(){
-    var lvl = getLevel(state.xp.armorsmithing);
-    var html = '<h3>Accessory Slots</h3>';
-    html += '<div class="section-intro">These 10 slots upgrade sequentially when you forge the next tier in Crafting &rarr; Armorsmithing -- there\'s no separate equip step, the newly forged piece simply replaces the old one.</div>';
-    html += '<div class="card-grid">';
-    ARMOR_SLOTS.forEach(function(slot){
-      var tier = state.armorSlots[slot.id]||0;
-      var current = getEquippedSlotItem(slot, tier, state.armorRarities[slot.id]);
-      html += '<div class="item-card">';
-      html += '<div class="item-top"><div class="item-icon">'+slot.icon+'</div><div><div class="item-name">'+slot.label+'</div><div class="item-meta">'+(tier>0 ? current.name.replace(' '+slot.label,'')+' &bull; '+current.defense+' def' : 'Empty')+'</div></div></div>';
-      html += '</div>';
-    });
-    html += '</div>';
-    return html;
-  }
   // A single skill's tool-equip card, shown at the bottom of that skill's own tab (moved out of
   // the Equipment tab). Returns '' for skills with no tool.
   function renderToolCardFor(skillKey){
@@ -7652,7 +7527,6 @@
     html += renderBeltEquipSection();
     html += renderRingsEquipSection();
     html += renderAmuletEquipSection();
-    html += renderAccessorySlotsSection();
     return html;
   }
 
@@ -11008,13 +10882,6 @@
       var off = getEquippedOffhandItem(state);
       if(off && off.name){ weapons.push({ slot:'Offhand', name:off.name, rarity:state.equippedOffhandRarity||off.rarity||'normal' }); }
     }
-    ARMOR_SLOTS.forEach(function(slot){
-      var tier = (state.armorSlots && state.armorSlots[slot.id]) || 0;
-      if(tier > 0){
-        var a = getEquippedSlotItem(slot, tier, state.armorRarities[slot.id]);
-        if(a && a.name){ armor.push({ slot:slot.label, name:a.name, rarity:(state.armorRarities&&state.armorRarities[slot.id])||'normal' }); }
-      }
-    });
     BODY_ARMOR_SLOTS.forEach(function(slot){
       var s = state.bodyArmor && state.bodyArmor[slot];
       if(s && s.tier > 0){
@@ -12236,7 +12103,7 @@
     blacksmithing: 'Forge tools for every Gathering and Crafting skill. Tools are Equipment: forge as many of any unlocked tier as you like, then choose which one to equip from your stock. Tool tiers are named after Metallurgy’s metals and alloys (Copper up to Tungsten).',
     weaponsmithing: 'Forge any of the 12 named melee weapons as Equipment — any unlocked tier repeatedly, then equip whichever one you want from your stock.',
     bowyer: 'Forge Short, Medium, and Long Bows as Equipment from Forestry’s logs. Any unlocked tier, any time, then equip whichever one you want from your stock.',
-    armorsmithing: 'Forge Chain Mail or Plate Armor for Gauntlets, Boots, Chest, and Helmet (forge any unlocked tier repeatedly, then choose which to equip), plus your accessory slots below.',
+    armorsmithing: 'Forge Chain Mail or Plate Armor for Gauntlets, Boots, Chest, and Helmet -- forge any unlocked tier repeatedly, then choose which to equip.',
     shieldsmithing: 'Forge Small, Medium, and Large Shields from Metallurgy’s bars, plus Quivers. Which type you can equip in Combat depends on your equipped weapon’s handedness.',
     leatherworking: 'Forge Leather Armor (Coif, Gambison, Gauntlets, Boots) and Belts directly from animal Hides. Belts grant extra simultaneous task slots (crafting, gathering, or faith) at higher rarity.',
     tailoring: 'Forge Cloth Armor (Hood, Tunic, Gloves, Shoes, Cloak) — light protection woven from Farming’s fibers.',
@@ -12442,7 +12309,6 @@
     var offhandStyle = getOffhandStyle(state.equippedOffhand);
     var offhand = getEquippedOffhandItem(state);
     var totalArmorDefense = getTotalArmorDefense(state);
-    var equippedSlots = ARMOR_SLOTS.filter(function(s){ return (state.armorSlots[s.id]||0) > 0; }).length;
     var gatherToolsEquipped = GATHER_SKILL_IDS.filter(function(id){ return (state.gatherTools[id]||0) > 0; }).length;
     var craftToolsEquipped = CRAFT_SKILL_IDS.filter(function(id){ return (state.craftTools[id]||0) > 0; }).length;
     var hpPct = clamp(state.playerHp/maxHp(state)*100,0,100);
@@ -13384,26 +13250,6 @@
       if(oBtn) oBtn.disabled = !(shieldsmithLvl >= nextData.levelReq && hasInputs(nextData.inputs));
     });
 
-    // Armorsmithing: owned counts + ok/bad state + Forge button availability for each of the 15 slots
-    var armorLvl = getLevel(state.xp.armorsmithing);
-    ARMOR_SLOTS.forEach(function(slot){
-      var tier = state.armorSlots[slot.id]||0;
-      if(tier >= TIER_COUNT) return;
-      var nextData = getSlotTierData(slot, tier+1);
-      Object.keys(nextData.inputs).forEach(function(k){
-        var el = document.getElementById('inp-armor-'+slot.id+'-'+k);
-        if(el){
-          var have = state.inventory[k]||0;
-          var need = nextData.inputs[k];
-          var name = (ALL_SELLABLE[k]||{}).name || k;
-          el.textContent = need+'x '+name+' ('+have+' owned)';
-          el.className = have>=need ? 'ok' : 'bad';
-        }
-      });
-      var slotBtn = document.querySelector('[data-action="forgeArmorSlot"][data-slot="'+slot.id+'"]');
-      if(slotBtn) slotBtn.disabled = !(armorLvl >= nextData.levelReq && hasInputs(nextData.inputs));
-    });
-
     if(logVersion !== lastRenderedLogVersion){ chronicleRenderOnly(); lastRenderedLogVersion = logVersion; }
   }
 
@@ -13494,8 +13340,6 @@
       sellItem(btn.getAttribute('data-item'));
     } else if(action==='sellAll'){
       sellAll();
-    } else if(action==='forgeArmorSlot'){
-      craftArmorSlot(btn.getAttribute('data-slot'));
     } else if(action==='forgeBodyArmor'){
       craftBodyArmor(btn.getAttribute('data-material'), btn.getAttribute('data-slot'), parseInt(btn.getAttribute('data-tier'),10));
     } else if(action==='equipBodyArmor'){
