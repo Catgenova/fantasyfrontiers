@@ -668,6 +668,10 @@
   .skill-info-section{text-align:left; margin-bottom:14px;}
   .skill-info-section-label{font-family:var(--font-display); font-size:11px; letter-spacing:0.5px; text-transform:uppercase; color:var(--gold); margin-bottom:5px;}
   .skill-info-section-body{color:var(--text-dim); font-size:12.5px; line-height:1.55;}
+  .skill-info-stats{font-family:var(--font-mono); font-size:12px;}
+  .skill-info-stats div{margin-bottom:5px;}
+  .skill-info-stats div:last-child{margin-bottom:0;}
+  .skill-info-stats b{color:var(--cat-physique);}
   .skill-info-chips{display:flex; flex-wrap:wrap; gap:5px;}
   .skill-info-chip{display:inline-flex; align-items:center; gap:4px; font-size:11.5px; color:var(--text); background:var(--bg-panel); border:1px solid var(--border); border-radius:12px; padding:3px 9px;}
   .skill-info-chip .game-icon{width:13px; height:13px;}
@@ -5892,54 +5896,17 @@
     var skill = GATHERING_SKILLS[skillKey];
     var lvl = getLevel(state.xp[skillKey]);
     var act = state.activity;
-    var toolPct = Math.round(getEquippedGatherTool(skillKey, state.gatherTools[skillKey]||0, state.gatherToolRarities[skillKey]).speedBonus*100);
-    var toolName = getEquippedGatherTool(skillKey, state.gatherTools[skillKey]||0, state.gatherToolRarities[skillKey]).name;
     var html = '';
     if(skillKey==='butchering'){
       html += '<div class="section-intro">Level '+lvl+' Butchering &mdash; Wildlife you defeat in Combat drop Corpses. Process one here for an independent chance at both Meat (for Roasting) and Hide (for Leatherworking).</div>';
       html += renderSkillProgressBar(skillKey);
-      html += '<div class="physique-bonus">Tool: <b>'+toolName+'</b> &nbsp;|&nbsp; Meat Chance Bonus: <b>+'+Math.round((toolPct))+'%</b> from tool, Hand Strength adds more &nbsp;|&nbsp; Hide Chance Bonus: <b>+'+Math.round((toolPct))+'%</b> from tool, Fine Motor Control adds more</div>';
       html += renderButcherGrid(skillKey, skill.recipes);
       return html;
     }
-    html += '<div class="section-intro">Level '+lvl+' '+skill.label+' &mdash; select a resource to work. Progress continues automatically, even briefly while you are away.</div>';
+    html += '<div class="section-intro">Level '+lvl+' '+skill.label+' &mdash; select a resource to work. Progress continues automatically, even briefly while you are away. Tap the <b>?</b> by the level bar for your tool and drop-chance stats.</div>';
     html += renderSkillProgressBar(skillKey);
-    html += '<div class="physique-bonus">Tool: <b>'+toolName+'</b> &nbsp;|&nbsp; Tool Speed Bonus: <b>+'+toolPct+'%</b> &nbsp;<span style="color:var(--text-faint)">(forge one in Crafting &rarr; Blacksmithing)</span></div>';
-    if(skillKey==='digging'){
-      var mainPct = Math.round(diggingMainChance(state)*100);
-      var coalPct = Math.round(diggingCoalChance(state)*100);
-      var artifactPct = Math.round(diggingArtifactChance(state)*100);
-      html += '<div class="physique-bonus">Main Find Chance: <b>'+mainPct+'%</b> (base 70%, your Shovel adds up to +28%, caps at 98%) &nbsp;|&nbsp; Coal Chance: <b>'+coalPct+'%</b> (Focus adds more) &nbsp;|&nbsp; Muddy Artifact Chance: <b>'+artifactPct+'%</b> (Critical Thinking adds more)</div>';
-    }
     if(skillKey==='mining'){
-      var mMainPct = Math.round(miningMainChance(state)*100);
-      var mCoalPct = Math.round(miningCoalChance(state)*100);
-      var mGemPct = Math.round(miningGemChance(state)*100);
-      html += '<div class="physique-bonus">Main Find Chance: <b>'+mMainPct+'%</b> (base 70%, your Pickaxe adds the rest) &nbsp;|&nbsp; Coal Chance: <b>'+mCoalPct+'%</b> (Endurance adds more) &nbsp;|&nbsp; Gem Chance: <b>'+mGemPct+'%</b> (Solving adds more)</div>';
       html += '<div class="section-intro">14 ore tiers and 7 stone tiers (Limestone, Sandstone, Andesite, Soapstone, Granite, Slate, Marble) share this ladder. Stones feed Stone Cutting; ore feeds Metallurgy.</div>';
-    }
-    if(skillKey==='fishing'){
-      var fCatchPct = Math.round(fishingCatchChance(state)*100);
-      html += '<div class="physique-bonus">Catch Chance: <b>'+fCatchPct+'%</b> (base 60%, your Fishing Rod adds the rest)</div>';
-    }
-    if(skillKey==='forestry'){
-      var nestPct = Math.round(critterCacheChance(state)*100);
-      html += '<div class="physique-bonus">Critter Cache Chance: <b>'+nestPct+'%</b> (base 1%, Balance adds more, caps at 11%) &mdash; open one from your Inventory (or the Farming tab) for 3 Seeds</div>';
-    }
-    if(skillKey==='botany'){
-      var botSeedPct = Math.round(BOTANY_SEED_DROP_CHANCE*100);
-      html += '<div class="physique-bonus">Seed Chance: <b>'+botSeedPct+'%</b> (flat, matches the tier you\'re working)</div>';
-    }
-    if(skillKey==='herbalism'){
-      var herbSeedPct = Math.round(BASE_SEED_DROP_CHANCE*100);
-      var grainPct = Math.round(grainSeedChance(state)*100);
-      html += '<div class="physique-bonus">Herb Seed Chance: <b>'+herbSeedPct+'%</b> (flat, matches the tier you\'re working) &nbsp;|&nbsp; Grain Seed Chance: <b>'+grainPct+'%</b> (base 5%, Fine Motor adds more, caps at 10%; none from the top tier)</div>';
-    }
-    if(skillKey==='foraging'){
-      var forSeedPct = Math.round(BASE_SEED_DROP_CHANCE*100);
-      var powderPct = Math.round(foragingPowderChance(state)*100);
-      var forArtifactPct = Math.round(foragingArtifactChance(state)*100);
-      html += '<div class="physique-bonus">Seed Chance: <b>'+forSeedPct+'%</b> (flat, matches the tier you\'re working) &nbsp;|&nbsp; Powder Chance: <b>'+powderPct+'%</b> (base 3%, Solving adds more, caps at 8%) &nbsp;|&nbsp; Artifact Chance: <b>'+forArtifactPct+'%</b> (flat)</div>';
     }
     html += '<div class="card-grid">';
     skill.items.forEach(function(item){
@@ -6090,12 +6057,10 @@
     return html;
   }
 
-  function craftStatsLine(skillId){
-    var successPct = Math.round(craftSuccessRate(state, skillId)*100);
-    var toolSpeedPct = Math.round(getEquippedCraftTool(skillId, state.craftTools[skillId]||0, state.craftToolRarities[skillId]).speedBonus*100);
-    var toolName = getEquippedCraftTool(skillId, state.craftTools[skillId]||0, state.craftToolRarities[skillId]).name;
-    return '<div class="physique-bonus">Tool: <b>'+toolName+'</b> &nbsp;|&nbsp; Crafting Success Rate: <b>'+successPct+'%</b> &nbsp;|&nbsp; Tool Speed Bonus: <b>+'+toolSpeedPct+'%</b> &nbsp;<span style="color:var(--text-faint)">(forge one in Crafting &rarr; Blacksmithing)</span></div>';
-  }
+  // A crafting skill's live stats (tool, success rate, speed) now live in the (?) popup next to
+  // the level bar (see skillLiveStats), keeping the page compact. Kept as a no-op so its callers
+  // stay untouched.
+  function craftStatsLine(){ return ''; }
 
   function renderCraftTab(skillKey){ return renderCraftTabBody(skillKey) + renderToolCardFor(skillKey); }
   function renderCraftTabBody(skillKey){
@@ -11613,6 +11578,53 @@
   function skillInfoBtn(skillId){
     return '<button class="skill-info-btn" data-action="showSkillInfo" data-skill="'+skillId+'" title="What is this?">?</button>';
   }
+  // Live per-skill stats (equipped tool + drop/success chances) shown in the (?) popup instead of
+  // taking up boxes on the skill page. Returns an array of stat lines (HTML), empty if none apply.
+  function skillLiveStats(skillId){
+    var lines = [];
+    if(GATHERING_SKILLS[skillId]){
+      var gt = getEquippedGatherTool(skillId, state.gatherTools[skillId]||0, state.gatherToolRarities[skillId]);
+      var gp = Math.round(gt.speedBonus*100);
+      if(skillId==='butchering'){
+        lines.push('Tool: <b>'+gt.name+'</b>');
+        lines.push('Meat Chance Bonus: <b>+'+gp+'%</b> from tool (Hand Strength adds more)');
+        lines.push('Hide Chance Bonus: <b>+'+gp+'%</b> from tool (Fine Motor Control adds more)');
+        return lines;
+      }
+      lines.push('Tool: <b>'+gt.name+'</b> &bull; Speed Bonus: <b>+'+gp+'%</b> <span style="color:var(--text-faint)">(forge one in Blacksmithing)</span>');
+      if(skillId==='digging'){
+        lines.push('Main Find Chance: <b>'+Math.round(diggingMainChance(state)*100)+'%</b> (base 70%, your Shovel adds up to +28%, caps at 98%)');
+        lines.push('Coal Chance: <b>'+Math.round(diggingCoalChance(state)*100)+'%</b> (Focus adds more)');
+        lines.push('Muddy Artifact Chance: <b>'+Math.round(diggingArtifactChance(state)*100)+'%</b> (Critical Thinking adds more)');
+      } else if(skillId==='mining'){
+        lines.push('Main Find Chance: <b>'+Math.round(miningMainChance(state)*100)+'%</b> (base 70%, your Pickaxe adds the rest)');
+        lines.push('Coal Chance: <b>'+Math.round(miningCoalChance(state)*100)+'%</b> (Endurance adds more)');
+        lines.push('Gem Chance: <b>'+Math.round(miningGemChance(state)*100)+'%</b> (Solving adds more)');
+      } else if(skillId==='fishing'){
+        lines.push('Catch Chance: <b>'+Math.round(fishingCatchChance(state)*100)+'%</b> (base 60%, your Fishing Rod adds the rest)');
+      } else if(skillId==='forestry'){
+        lines.push('Critter Cache Chance: <b>'+Math.round(critterCacheChance(state)*100)+'%</b> (base 1%, Balance adds more, caps at 11%) &mdash; open one from your Inventory for 3 Seeds');
+      } else if(skillId==='botany'){
+        lines.push('Seed Chance: <b>'+Math.round(BOTANY_SEED_DROP_CHANCE*100)+'%</b> (flat, matches the tier you\'re working)');
+      } else if(skillId==='herbalism'){
+        lines.push('Herb Seed Chance: <b>'+Math.round(BASE_SEED_DROP_CHANCE*100)+'%</b> (flat)');
+        lines.push('Grain Seed Chance: <b>'+Math.round(grainSeedChance(state)*100)+'%</b> (base 5%, Fine Motor adds more, caps at 10%; none from the top tier)');
+      } else if(skillId==='foraging'){
+        lines.push('Seed Chance: <b>'+Math.round(BASE_SEED_DROP_CHANCE*100)+'%</b> (flat)');
+        lines.push('Powder Chance: <b>'+Math.round(foragingPowderChance(state)*100)+'%</b> (base 3%, Solving adds more, caps at 8%)');
+        lines.push('Artifact Chance: <b>'+Math.round(foragingArtifactChance(state)*100)+'%</b> (flat)');
+      }
+      return lines;
+    }
+    if(CRAFTING_SKILLS[skillId]){
+      var ct = getEquippedCraftTool(skillId, state.craftTools[skillId]||0, state.craftToolRarities[skillId]);
+      lines.push('Tool: <b>'+ct.name+'</b>');
+      lines.push('Crafting Success Rate: <b>'+Math.round(craftSuccessRate(state, skillId)*100)+'%</b>');
+      lines.push('Tool Speed Bonus: <b>+'+Math.round(ct.speedBonus*100)+'%</b> <span style="color:var(--text-faint)">(forge one in Blacksmithing)</span>');
+      return lines;
+    }
+    return lines;
+  }
   function renderSkillInfoPopup(){
     var overlay = document.getElementById('skillInfoOverlay');
     if(!overlay) return;
@@ -11635,6 +11647,10 @@
       var label = SKILL_LABELS[openId] || (openId.charAt(0).toUpperCase()+openId.slice(1));
       body += '<div class="skill-info-title">'+label+'</div>';
       body += '<div class="skill-info-desc">'+SKILL_INFO[openId]+'</div>';
+      var _stats = skillLiveStats(openId);
+      if(_stats.length){
+        body += '<div class="skill-info-section"><div class="skill-info-section-label">Your current stats</div><div class="skill-info-section-body skill-info-stats">'+_stats.map(function(l){ return '<div>'+l+'</div>'; }).join('')+'</div></div>';
+      }
       body += '<div class="skill-info-section"><div class="skill-info-section-label">Physique trained by these actions</div><div class="skill-info-chips">'+renderPhysiqueChipList(physiqueTrainedBySkill(openId))+'</div></div>';
       body += '<div class="skill-info-section"><div class="skill-info-section-label">Physique that benefits these actions</div><div class="skill-info-chips">'+renderPhysiqueChipList(physiqueBenefitsForSkill(openId))+'</div></div>';
     }
