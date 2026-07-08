@@ -68,7 +68,13 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ ok: false, error: "Invalid request." }, 400); }
   const action = String(body.action || "");
 
-  const me = await loadMembership(admin, userId);
+  let me = await loadMembership(admin, userId);
+  // Self-heal: if my membership row points to a guild that no longer exists, clear the orphan so
+  // I'm treated as guildless (can apply/create again) instead of being stuck "in" a dead guild.
+  if (me) {
+    const { data: myGuild } = await admin.from("guilds").select("id").eq("id", me.guild_id).maybeSingle();
+    if (!myGuild) { await admin.from("guild_members").delete().eq("user_id", userId); me = null; }
+  }
 
   // ---- Aggregated state for the Guild tab ----
   if (action === "get_state") {
@@ -178,13 +184,24 @@ Deno.serve(async (req) => {
       await admin.from("guild_applications").delete().eq("id", app.id);
       return json({ ok: true });
     }
-    // accept: make sure they aren't already in a guild (race), then add.
-    const existing = await loadMembership(admin, targetId);
-    await admin.from("guild_applications").delete().eq("user_id", targetId); // clear all their apps
-    if (existing) return json({ ok: false, error: "That player already joined a guild." }, 409);
+    // accept: add the member FIRST, then clear the application. Deleting the app before a
+    // successful insert could strand the applicant (no member row AND no application).
+    let existing = await loadMembership(admin, targetId);
+    if (existing) {
+      // Self-heal an orphaned membership (points to a deleted guild) so it doesn't block joining.
+      const { data: eg } = await admin.from("guilds").select("id").eq("id", existing.guild_id).maybeSingle();
+      if (!eg) { await admin.from("guild_members").delete().eq("user_id", targetId); existing = null; }
+    }
+    if (existing && existing.guild_id === me.guild_id) {
+      // Already a member here (e.g. a retried/duplicate accept) -> idempotent success; just tidy the app.
+      await admin.from("guild_applications").delete().eq("user_id", targetId);
+      return json({ ok: true });
+    }
+    if (existing) return json({ ok: false, error: "That player already joined another guild." }, 409); // keep their app
     const { error: jErr } = await admin.from("guild_members")
       .insert({ user_id: targetId, guild_id: me.guild_id, username: app.username, rank: "member" });
-    if (jErr) return json({ ok: false, error: "Could not add member." }, 500);
+    if (jErr) return json({ ok: false, error: "Could not add member — try again." }, 500); // application preserved
+    await admin.from("guild_applications").delete().eq("user_id", targetId); // clear apps only after a successful join
     await admin.from("guilds").update({ member_count: await countMembers(admin, me.guild_id) }).eq("id", me.guild_id);
     return json({ ok: true });
   }

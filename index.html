@@ -10437,8 +10437,8 @@
     guildBrowseState.status='loading';
     chatClient.from('guilds').select('id,name,tag,description,member_count,min_total_level').eq('open',true).order('member_count',{ascending:false}).limit(50).then(function(res){
       guildBrowseState.list = (res && res.data) || [];
-      chatClient.from('guild_applications').select('guild_id').eq('user_id', authUser.id).maybeSingle().then(function(a){
-        guildBrowseState.appliedTo = (a && a.data && a.data.guild_id) || null;
+      chatClient.from('guild_applications').select('guild_id').eq('user_id', authUser.id).limit(1).then(function(a){
+        guildBrowseState.appliedTo = (a && a.data && a.data[0] && a.data[0].guild_id) || null;
         guildBrowseState.status='ready';
         if(currentCategory==='guild'||currentCategory==='peons') render();
       });
