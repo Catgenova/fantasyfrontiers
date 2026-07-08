@@ -401,10 +401,13 @@
   .craft-filter-btn.on{background:color-mix(in srgb, var(--cat-crafting) 22%, var(--bg-panel-raised));border-color:var(--cat-crafting);color:var(--text);}
   .craft-filtering .item-card:not(.active-item):has(.inputs-line .bad){display:none;}
   .chat-wrap{display:flex;flex-direction:column;gap:8px;}
-  .chat-status{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}
-  .chat-status .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle;background:var(--text-faint);}
+  .chat-status{display:flex;align-items:center;font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}
+  .chat-status .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle;background:var(--text-faint);flex-shrink:0;}
   .chat-status.online .dot{background:var(--hp-good);}
   .chat-status.error .dot,.chat-status.unconfigured .dot{background:var(--hp-bad);}
+  .chat-online{margin-left:auto;display:inline-flex;align-items:center;gap:4px;color:var(--text-dim);}
+  .chat-online .game-icon{width:12px;height:12px;opacity:.75;}
+  .chat-online b{color:var(--hp-good);font-weight:700;}
   .chat-name-row,.chat-send-row{display:flex;gap:8px;}
   .chat-input{flex:1;min-width:0;font-family:var(--font-body);font-size:13px;padding:8px 10px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-panel-raised);color:var(--text);}
   .chat-input:disabled{opacity:0.5;}
@@ -10109,12 +10112,32 @@
     });
   }
   var chatSubscribed = false;
+  // Live "who's online" count via Supabase Presence on the global-chat channel. Keyed by account
+  // id so a player counts once no matter how many tabs they have open; guests get a random key.
+  var chatPresenceKey = null;
+  var chatOnlineCount = 0;
+  function chatPresenceId(){
+    if(!chatPresenceKey) chatPresenceKey = (authUser && authUser.id) ? ('u_'+authUser.id) : ('guest_'+Math.random().toString(36).slice(2));
+    return chatPresenceKey;
+  }
+  function onlineCountText(){ return chatOnlineCount > 0 ? String(chatOnlineCount) : '…'; }
+  // Update the "N online" badge in place wherever chat is shown (rail dock, drawer, content tab).
+  function updateOnlineCount(){
+    var els = document.querySelectorAll('.chat-online-count');
+    for(var i=0;i<els.length;i++) els[i].textContent = onlineCountText();
+  }
   function chatEnsureSubscribed(){
     if(chatSubscribed || !chatClient) return;
     chatSubscribed = true;
-    chatClient.channel('global-chat')
-      .on('postgres_changes', { event:'INSERT', schema:'public', table:CHAT_CONFIG.table }, function(payload){ chatOnIncoming(payload.new); })
-      .subscribe();
+    var ch = chatClient.channel('global-chat', { config:{ presence:{ key: chatPresenceId() } } });
+    ch.on('postgres_changes', { event:'INSERT', schema:'public', table:CHAT_CONFIG.table }, function(payload){ chatOnIncoming(payload.new); })
+      .on('presence', { event:'sync' }, function(){
+        try{ chatOnlineCount = Object.keys(ch.presenceState()).length; }catch(e){ chatOnlineCount = 0; }
+        updateOnlineCount();
+      })
+      .subscribe(function(status){
+        if(status === 'SUBSCRIBED'){ try{ ch.track({ at: Date.now() }); }catch(e){} }
+      });
   }
 
   // ---- Global Chronicle feed: broadcasts notable cross-player events into everyone's
@@ -10243,7 +10266,9 @@
     }
     var html = bar;
     html += '<div class="chat-wrap">';
-    html += '<div class="chat-status '+chatStatus+'"><span class="dot"></span>'+statusMap[chatStatus]+'</div>';
+    html += '<div class="chat-status '+chatStatus+'"><span class="dot"></span>'+statusMap[chatStatus]
+      + (chatStatus==='online' ? '<span class="chat-online" title="Players connected to global chat">'+shellIcon('person')+'<b class="chat-online-count">'+onlineCountText()+'</b> online</span>' : '')
+      + '</div>';
     html += '<div id="chatMessages" class="chat-messages">'+chatMessagesHtml()+'</div>';
     if(name){
       html += '<div class="chat-account">Signed in as <b>'+escapeHtml(name)+'</b></div>';
