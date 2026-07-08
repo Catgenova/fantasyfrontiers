@@ -3275,28 +3275,41 @@
     for(i=0;i<TIER_COUNT;i++){ r -= weights[i]; if(r<=0) return i; }
     return 0;
   }
-  function openTreasureChest(){
-    if((state.inventory.treasure_chest||0) <= 0) return;
-    state.inventory.treasure_chest -= 1;
-    // 1-10000 gold, weighted toward the low end (cubic skew), like the Critter Cache's roll.
-    var gold = Math.max(1, Math.min(10000, Math.floor(Math.pow(Math.random(), 3) * 10000) + 1));
-    state.gold += gold;
-    addLog('You pried open a Treasure Chest and found ' + fmt(gold) + ' gold!', 'important');
-    spawnFloatingText('+' + fmt(gold) + ' gold', 'ft-bonus');
-    needsRender = true;
-  }
-  function openCritterCache(){
-    if((state.inventory.critter_cache||0) <= 0) return;
-    state.inventory.critter_cache -= 1;
-    var gained = [];
-    for(var i=0;i<3;i++){
-      var tierIndex = pickWeightedFarmingTier();
-      addItem('seed_t'+tierIndex, 1);
-      gained.push(SEED_ITEMS['seed_t'+tierIndex].name);
+  var lootPopupData = null;   // aggregated results of a chest/cache open, shown in a popup until dismissed
+  function openTreasureChests(n){
+    var have = state.inventory.treasure_chest||0;
+    n = Math.min(n|0, have);
+    if(n <= 0) return;
+    var gold = 0;
+    for(var i=0;i<n;i++){
+      state.inventory.treasure_chest -= 1;
+      // 1-10000 gold, weighted toward the low end (cubic skew), like the Critter Cache's roll.
+      gold += Math.max(1, Math.min(10000, Math.floor(Math.pow(Math.random(), 3) * 10000) + 1));
     }
-    addLog('You opened a Critter Cache and found: ' + gained.join(', ') + '.', 'important');
-    gained.forEach(function(name){ spawnFloatingText('+1 ' + name, 'ft-bonus'); });
+    state.gold += gold;
+    addLog('You pried open ' + n + ' Treasure Chest' + (n===1?'':'s') + ' and found ' + fmt(gold) + ' gold!', 'important');
+    spawnFloatingText('+' + fmt(gold) + ' gold', 'ft-bonus');
+    lootPopupData = { title:'Treasure Chest'+(n===1?'':'s'), icon:(ALL_SELLABLE.treasure_chest||{}).icon, opened:n, gold:gold, items:{} };
+    saveGame(); needsRender = true;
   }
+  function openCritterCaches(n){
+    var have = state.inventory.critter_cache||0;
+    n = Math.min(n|0, have);
+    if(n <= 0) return;
+    var items = {};
+    for(var i=0;i<n;i++){
+      state.inventory.critter_cache -= 1;
+      for(var j=0;j<3;j++){ var sid = 'seed_t'+pickWeightedFarmingTier(); addItem(sid, 1); items[sid] = (items[sid]||0) + 1; }
+    }
+    addLog('You opened ' + n + ' Critter Cache' + (n===1?'':'s') + ' and found ' + (n*3) + ' seeds.', 'important');
+    spawnFloatingText('+' + (n*3) + ' Seeds', 'ft-bonus');
+    lootPopupData = { title:'Critter Cache'+(n===1?'':'s'), icon:(ALL_SELLABLE.critter_cache||{}).icon, opened:n, gold:0, items:items };
+    saveGame(); needsRender = true;
+  }
+  function openTreasureChest(){ openTreasureChests(1); }
+  function openCritterCache(){ openCritterCaches(1); }
+  function openAllTreasureChests(){ openTreasureChests(state.inventory.treasure_chest||0); }
+  function openAllCritterCaches(){ openCritterCaches(state.inventory.critter_cache||0); }
 
   // Critter Caches: 1% base chance per Forestry action, boosted by Balance.
   var BASE_NEST_CHANCE = 0.05;
@@ -7756,6 +7769,26 @@
     html += '</div>';
     ov.innerHTML = html;
   }
+  // Loot results popup for opening Treasure Chests / Critter Caches (single or "Open All").
+  function renderLootPopup(){
+    var existing = document.getElementById('lootOverlay');
+    if(!lootPopupData){ if(existing && existing.parentNode) existing.parentNode.removeChild(existing); return; }
+    var d = lootPopupData;
+    var ov = existing;
+    if(!ov){ ov = document.createElement('div'); ov.id = 'lootOverlay'; ov.className = 'familiar-popup-overlay'; ov.style.zIndex = '10006'; ov.setAttribute('data-action','closeLootPopup'); document.getElementById('app').appendChild(ov); }
+    var html = '<div class="familiar-popup-card" data-action="noop" style="max-width:420px;text-align:center;max-height:80vh;overflow:auto;">';
+    html += '<div class="familiar-popup-icon">'+(d.icon||'')+'</div>';
+    html += '<div class="familiar-popup-title">Opened '+fmt(d.opened)+' '+escapeHtml(d.title)+'</div>';
+    var rows = '';
+    if(d.gold>0) rows += '<span class="profile-skill">'+shellIcon('coin')+' Gold <b>+'+fmt(d.gold)+'</b></span>';
+    Object.keys(d.items).sort(function(a,b){ return itemTierFromId(a)-itemTierFromId(b); }).forEach(function(id){
+      var meta = ALL_SELLABLE[id]||{}; rows += '<span class="profile-skill">'+(meta.icon||'')+' '+escapeHtml(meta.name||id)+' <b>x'+fmt(d.items[id])+'</b></span>';
+    });
+    html += rows ? ('<div class="profile-group"><div class="profile-group-head">You found</div><div class="profile-group-body" style="text-align:left">'+rows+'</div></div>') : '<div style="font-size:12px;color:var(--text-faint);">Nothing.</div>';
+    html += '<button class="action-btn" data-action="closeLootPopup" style="margin-top:14px">Nice!</button>';
+    html += '</div>';
+    ov.innerHTML = html;
+  }
   function renderSettingsModal(){
     var overlay = document.getElementById('settingsOverlay');
     if(!settingsOpen){ overlay.className = ''; overlay.innerHTML = ''; return; }
@@ -9980,7 +10013,8 @@
     var nestQty = state.inventory.critter_cache||0;
     html += '<div class="card-grid"><div class="item-card">';
     html += '<div class="item-top"><div class="item-icon">'+svgIcon('chest','#8a6a42')+'</div><div><div class="item-name">Critter Cache</div><div class="item-meta">Owned: '+nestQty+'</div></div></div>';
-    html += '<button class="action-btn" data-action="openCritterCache" '+(nestQty>0?'':'disabled')+'>Open</button>';
+    html += '<div class="style-row"><button class="action-btn" data-action="openCritterCache" '+(nestQty>0?'':'disabled')+' style="width:auto;flex:1 1 auto">Open</button>';
+    html += '<button class="action-btn" data-action="openAllCritterCaches" '+(nestQty>1?'':'disabled')+' style="width:auto;flex:1 1 auto">Open All ('+fmt(nestQty)+')</button></div>';
     html += '</div></div>';
     return html;
   }
@@ -12465,8 +12499,8 @@
     body += '<div class="inv-detail-meta">'+(cat?cat.label:'Item')+' &bull; Owned <b>'+fmt(qty)+'</b> &bull; '+item.sell+'g each</div>';
 
     var acts = '';
-    if(id==='critter_cache') acts += '<button class="action-btn" data-action="openCritterCache">Open</button>';
-    if(id==='treasure_chest') acts += '<button class="action-btn" data-action="openTreasureChest">Open</button>';
+    if(id==='critter_cache'){ acts += '<button class="action-btn" data-action="openCritterCache">Open</button>'; if(qty>1) acts += '<button class="action-btn" data-action="openAllCritterCaches">Open All ('+fmt(qty)+')</button>'; }
+    if(id==='treasure_chest'){ acts += '<button class="action-btn" data-action="openTreasureChest">Open</button>'; if(qty>1) acts += '<button class="action-btn" data-action="openAllTreasureChests">Open All ('+fmt(qty)+')</button>'; }
     var equipAction = getEquipActionForItem(id);
     if(equipAction) acts += '<button class="action-btn" data-action="'+equipAction+'" data-item="'+id+'">Equip</button>';
     acts += '<button class="action-btn'+(isLocked?' stop':'')+'" data-action="toggleItemLock" data-item="'+id+'">'+(isLocked?'Unlock':'Lock')+'</button>';
@@ -12805,6 +12839,7 @@
     renderSkillInfoPopup();
     renderInvDetailOverlay();  // item detail modal for the grid inventory
     renderOfflineSummary();
+    renderLootPopup();
     if(_chatFocused){
       var _ci2 = document.getElementById('chatInput');
       // Only restore focus if the input was actually rebuilt (lost focus). With chat panels now
@@ -13403,6 +13438,12 @@
       openCritterCache();
     } else if(action==='openTreasureChest'){
       openTreasureChest();
+    } else if(action==='openAllCritterCaches'){
+      openAllCritterCaches();
+    } else if(action==='openAllTreasureChests'){
+      openAllTreasureChests();
+    } else if(action==='closeLootPopup'){
+      lootPopupData = null;
     } else if(action==='startShaftCraft'){
       startShaftCraft(parseInt(btn.getAttribute('data-tier'),10));
     } else if(action==='forgeTool'){
