@@ -1379,6 +1379,11 @@
   ];
 
   function tierXp(base, i){ return Math.round(base * Math.pow(1.4, i)); }
+  // Skill XP now uses flat LINEAR curves (the old exponential base*1.4^i made t20 grant absurd XP).
+  // Gathering: (tier+1)*10 -> 10,20,...,210 (t0..t20). Crafting: 25 + tier*15 -> 25,40,...,325.
+  // Same curve for every gathering (resp. crafting) skill; see the rebalance pass after itemTierFromId.
+  function gatherXp(t){ return (Math.max(0, t|0) + 1) * 10; }
+  function craftXp(t){ return 25 + Math.max(0, t|0) * 15; }
   function tierSell(base, i){ return Math.round(base * Math.pow(1.45, i)); }
   function tierTime(base, step, i){ return Math.round((base + step*i)*10)/10; }
   function tierStat(base, i){ return Math.max(1, Math.round(base * Math.pow(1.32, i))); }
@@ -1921,7 +1926,7 @@
   var ARMOR_TIER_INPUTS = [];
   var ARMOR_WEIGHT_DEFENSE = { heavy:[], medium:[], minor:[] };
   for(var _ai=0; _ai<TIER_COUNT; _ai++){
-    ARMOR_TIER_XP.push(tierXp(20, _ai));
+    ARMOR_TIER_XP.push(craftXp(_ai)); // armorsmithing armor + blacksmithing tools share the crafting curve
     ARMOR_TIER_INPUTS.push(tierInput('metallurgy', 3)(_ai));
     ARMOR_WEIGHT_DEFENSE.heavy.push(tierStat(1.5, _ai));
     ARMOR_WEIGHT_DEFENSE.medium.push(tierStat(1.0, _ai));
@@ -2373,7 +2378,7 @@
         tier: i+1,
         name: TIER_NAMES[i]+' '+w.name,
         levelReq: TIER_LEVELS[i],
-        xp: tierXp(25,i),
+        xp: craftXp(i),
         dmgMin: Math.max(1, Math.round(tierStat(2,i)*handBonus)),
         dmgMax: Math.max(2, Math.round(tierStat(5,i)*handBonus)),
         inputs: tierInput('metallurgy',3)(i)
@@ -2386,7 +2391,7 @@
     if(o.stackable) return; // shields are stackable Equipment now -- see STACKABLE_SHIELD_TYPES below
     var list = [];
     for(var i=0;i<TIER_COUNT;i++){
-      var obj = { tier:i+1, name:TIER_NAMES[i]+' '+o.name, levelReq:TIER_LEVELS[i], xp:tierXp(25,i), inputs:tierInput('metallurgy', o.type==='shield'?4:3)(i), time:tierTime(7,0.3,i) };
+      var obj = { tier:i+1, name:TIER_NAMES[i]+' '+o.name, levelReq:TIER_LEVELS[i], xp:craftXp(i), inputs:tierInput('metallurgy', o.type==='shield'?4:3)(i), time:tierTime(7,0.3,i) };
       if(o.type==='shield') obj.defense = tierStat(2,i);
       else obj.dmgBonus = tierCappedBonus(0.05,0.014,0.35,i);
       list.push(obj);
@@ -2699,6 +2704,21 @@
     return pairs.map(function(p){ return [p[0], amt]; });
   }
   function itemTierFromId(id){ var m = /_t(\d+)/.exec(id||''); return m ? parseInt(m[1],10) : 0; }
+  // Rebalance every gathering item/recipe and crafting recipe onto the flat linear XP curves
+  // (gatherXp / craftXp), keyed by the tier parsed from each id. Runs once after the skill data is
+  // built, so a single curve replaces the old per-skill exponential bases. (Equipment forges --
+  // weapons, armor, shields, tools, belts, rings -- are handled at their own generators above.)
+  (function rebalanceSkillXp(){
+    Object.keys(GATHERING_SKILLS).forEach(function(sk){
+      var b = GATHERING_SKILLS[sk];
+      (b.items||[]).forEach(function(it){ if(it && it.id) it.xp = gatherXp(itemTierFromId(it.id)); });
+      (b.recipes||[]).forEach(function(r){ if(r && r.id) r.xp = gatherXp(itemTierFromId(r.id)); });
+    });
+    Object.keys(CRAFTING_SKILLS).forEach(function(sk){
+      var b = CRAFTING_SKILLS[sk];
+      (b.recipes||[]).forEach(function(r){ if(r && r.id) r.xp = craftXp(itemTierFromId(r.id)); });
+    });
+  })();
   // Tier for a craft recipe: use an explicit tierIndex when present (archaeology/relic), otherwise
   // derive it from the output item id's _t<n> suffix. Standard recipes (cooking_t3, stonecutting_t5,
   // twine_t2, ...) carry no tierIndex field, so without this fallback physTierPairs saw undefined->0
@@ -3401,7 +3421,7 @@
       tierIndex: tierIndex,
       name: stackableWeaponTierNames(w)[tierIndex] + ' ' + w.name,
       levelReq: TIER_LEVELS[tierIndex],
-      xp: tierXp(25, tierIndex) * (is2h ? 2 : 1),   // two-handed weapons grant twice the crafting XP
+      xp: craftXp(tierIndex) * (is2h ? 2 : 1),   // two-handed weapons grant twice the crafting XP
       dmgMin: Math.max(1, Math.round(tierStat(2,tierIndex)*handBonus)),
       dmgMax: Math.max(2, Math.round(tierStat(5,tierIndex)*handBonus)),
       inputs: inputs,
@@ -3491,7 +3511,7 @@
       tierIndex: tierIndex,
       name: shieldTierNames()[tierIndex] + ' ' + s.name,
       levelReq: TIER_LEVELS[tierIndex],
-      xp: tierXp(25, tierIndex),
+      xp: craftXp(tierIndex),
       defense: tierStat(2, tierIndex),
       inputs: inputs,
       time: tierTime(7,0.3,tierIndex)
@@ -3621,7 +3641,7 @@
       tierIndex: tierIndex,
       name: fullName,
       levelReq: TIER_LEVELS[tierIndex],
-      xp: tierXp(20, tierIndex),
+      xp: craftXp(tierIndex),
       defense: tierStat(mat.baseDefense[slot], tierIndex),
       inputs: inputs,
       time: tierTime(7,0.3,tierIndex)
@@ -3787,7 +3807,7 @@
       tierIndex: tierIndex,
       name: WILDLIFE_NAMES[tierIndex] + ' Belt',
       levelReq: TIER_LEVELS[tierIndex],
-      xp: tierXp(20, tierIndex),
+      xp: craftXp(tierIndex),
       defense: tierStat(1, tierIndex),
       inputs: inputs,
       time: tierTime(7,0.3,tierIndex)
@@ -3873,7 +3893,7 @@
       tierIndex: tierIndex,
       name: TIER_NAMES[tierIndex] + ' ' + rt.name,
       levelReq: TIER_LEVELS[tierIndex],
-      xp: tierXp(20, tierIndex),
+      xp: craftXp(tierIndex),
       dmgBonus: tierCappedBonus(0.02, 0.007, 0.16, tierIndex),
       inputs: inputs,
       time: tierTime(7,0.3,tierIndex)
@@ -13599,7 +13619,7 @@
       getLevel:getLevel, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
-      getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, weightedAdvantage:weightedAdvantage,
+      getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, weightedAdvantage:weightedAdvantage,
       tierStepper:tierStepper, tierRange:tierRange,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,

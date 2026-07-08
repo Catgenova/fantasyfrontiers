@@ -35,6 +35,16 @@
   suite('tier formulas', function(){
     eq(FF.tierXp(10, 0), 10, 'tierXp base');
     eq(FF.tierXp(10, 1), 14, 'tierXp x1.4');
+    // Skill XP is linear now: gathering (t+1)*10 -> 10..210; crafting 25+t*15 -> 25..325.
+    eq(FF.gatherXp(0), 10, 'gatherXp t0 = 10');
+    eq(FF.gatherXp(20), 210, 'gatherXp t20 = 210');
+    eq(FF.craftXp(0), 25, 'craftXp t0 = 25');
+    eq(FF.craftXp(1), 40, 'craftXp t1 = 40');
+    eq(FF.craftXp(20), 325, 'craftXp t20 = 325');
+    // The rebalance pass should have applied these to real skill data (Stone Cutting is crafting).
+    var scut = FF.CRAFTING_SKILLS.stonecutting.recipes;
+    eq(scut[0].xp, 25, 'stonecutting t0 recipe xp = 25 (linear)');
+    eq(scut[20].xp, 325, 'stonecutting t20 recipe xp = 325 (linear, was ~12951)');
     eq(FF.tierSell(3, 0), 3, 'tierSell base');
     eq(FF.tierSell(3, 1), 4, 'tierSell x1.45');
     eq(FF.tierTime(7, 0.3, 0), 7, 'tierTime base');
