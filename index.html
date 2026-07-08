@@ -5958,16 +5958,11 @@
     var act = state.activity;
     var html = '';
     if(skillKey==='butchering'){
-      html += '<div class="section-intro">Level '+lvl+' Butchering &mdash; Wildlife you defeat in Combat drop Corpses. Process one here for an independent chance at both Meat (for Roasting) and Hide (for Leatherworking).</div>';
       html += renderSkillProgressBar(skillKey);
       html += renderButcherGrid(skillKey, skill.recipes);
       return html;
     }
-    html += '<div class="section-intro">Level '+lvl+' '+skill.label+' &mdash; select a resource to work. Progress continues automatically, even briefly while you are away. Tap the <b>?</b> by the level bar for your tool and drop-chance stats.</div>';
     html += renderSkillProgressBar(skillKey);
-    if(skillKey==='mining'){
-      html += '<div class="section-intro">14 ore tiers and 7 stone tiers (Limestone, Sandstone, Andesite, Soapstone, Granite, Slate, Marble) share this ladder. Stones feed Stone Cutting; ore feeds Metallurgy.</div>';
-    }
     html += '<div class="card-grid">';
     skill.items.forEach(function(item){
       var locked = lvl < item.levelReq;
@@ -6137,8 +6132,7 @@
     if(skillKey==='mixology') return renderMixologyTab();
     var skill = CRAFTING_SKILLS[skillKey];
     var lvl = getLevel(state.xp[skillKey]);
-    var html = '<div class="section-intro">Level '+lvl+' '+skill.label+' &mdash; turn raw materials into refined goods. Crafting pauses automatically if you run out of inputs, and a failed attempt still costs the materials.</div>';
-    html += renderSkillProgressBar(skillKey);
+    var html = renderSkillProgressBar(skillKey);
     html += craftStatsLine(skillKey);
     html += renderRecipeGrid(skillKey, skill.recipes);
     if(skillKey==='carpentry') html += renderWorkshopForge();
@@ -6247,7 +6241,7 @@
 
   function renderMixologyTab(){
     var lvl = getLevel(state.xp.mixology);
-    var html = '<div class="section-intro">Level '+lvl+' Mixology &mdash; brew Teas named after Foraging\'s berries. Drinking a Tea temporarily boosts all skill XP gain; it must be drunk manually from the section below and pauses for no one -- even if you close the game, its timer keeps counting down against the clock.</div>';
+    var html = '';
     html += renderSkillProgressBar('mixology');
     html += craftStatsLine('mixology');
     html += renderRecipeGrid('mixology', CRAFTING_SKILLS.mixology.recipes);
@@ -6260,7 +6254,7 @@
     var act = state.activity;
     var successPct = Math.round(archaeologySuccessRate(state)*100);
     var chances = relicRarityChances(state);
-    var html = '<div class="section-intro">Level '+lvl+' Archaeology &mdash; extract a Muddy Artifact into a Relic. Success grants a Relic (with a small chance of Rare/Supreme/Fantastic); failure leaves a Broken Relic you can Sacrifice for Faith.</div>';
+    var html = '';
     html += renderSkillProgressBar('archaeology');
     html += '<div class="physique-bonus">Success Rate: <b>'+successPct+'%</b> (base 10%, Focus &amp; Critical Thinking add up to +10% each, Excavation Brush adds up to +30%)<br>Rarity Odds: <b>'+(chances.rare*100).toFixed(2)+'%</b> Rare, <b>'+(chances.supreme*100).toFixed(2)+'%</b> Supreme, <b>'+(chances.fantastic*100).toFixed(2)+'%</b> Fantastic &mdash; only a Faith activity (Devotion/Blessing/Miracle) raises these.</div>';
     html += '<div class="card-grid">';
@@ -6298,7 +6292,7 @@
   function renderFletchingTab(){
     var lvl = getLevel(state.xp.fletching);
     var act = state.activity;
-    var html = '<div class="section-intro">Level '+lvl+' Fletching &mdash; cut any Log into Shafts, then fletch 15 Shafts plus a matching Ingot into 15 tiered Arrows.</div>';
+    var html = '';
     html += renderSkillProgressBar('fletching');
 
     html += '<h3>Make Shafts</h3>';
@@ -6340,7 +6334,7 @@
     var lvl = getLevel(state.xp.blacksmithing);
     var maxUnlocked = 0;
     for(var mi=0; mi<TIER_COUNT; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
-    var html = '<div class="section-intro">Level '+lvl+' Blacksmithing &mdash; forge tools for every Gathering and Crafting skill, all in one alphabetical list. Tools are Equipment: forge as many of any unlocked tier as you like -- 40 Copper, 10 Bronze, 1 Supreme Zinc, whatever you want -- then choose which one to equip from your stock. Tool tiers are named after Metallurgy\'s metals and alloys (Copper up to Tungsten).</div>';
+    var html = '';
     html += renderSkillProgressBar('blacksmithing');
     html += '<h3 style="margin-top:14px">Forge Tools</h3>';
     html += '<div class="card-grid">';
@@ -6390,7 +6384,7 @@
     var equippedSlots = ARMOR_SLOTS.filter(function(s){ return (state.armorSlots[s.id]||0) > 0; }).length;
     var maxUnlocked = 0;
     for(var mi=0; mi<TIER_COUNT; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
-    var html = '<div class="section-intro">Level '+lvl+' Armorsmithing &mdash; forge Chain Mail or Plate Armor for Gauntlets, Boots, Chest, and Helmet (Equipment: forge any unlocked tier repeatedly, then choose which to equip), plus your remaining 10 accessory slots below.</div>';
+    var html = '';
     html += renderSkillProgressBar('armorsmithing');
     html += '<div class="physique-bonus">Total Armor Defense: <b>'+(Math.round(totalDefense*100)/100)+'</b></div>';
 
@@ -6505,7 +6499,7 @@
     var lvl = getLevel(state.xp.leatherworking);
     var maxUnlocked = 0;
     for(var mi=0; mi<TIER_COUNT; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
-    var html = '<div class="section-intro">Level '+lvl+' Leatherworking &mdash; forge Leather Armor (Coif, Gambison, Gauntlets, Boots -- lighter than Chain or Plate but still real protection) and Belts directly from animal Hides. Belts grant extra simultaneous task slots (crafting, gathering, or faith) at higher rarity.</div>';
+    var html = '';
     html += renderSkillProgressBar('leatherworking');
     html += craftStatsLine('leatherworking');
 
@@ -6581,7 +6575,7 @@
     var lvl = getLevel(state.xp.tailoring);
     var maxUnlocked = 0;
     for(var mi=0; mi<TIER_COUNT; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
-    var html = '<div class="section-intro">Level '+lvl+' Tailoring &mdash; forge Cloth Armor (Hood, Tunic, Gloves, Shoes, Cloak -- light protection woven from Farming\'s fibers) directly from Cotton, Silk, Wispweave, and everything between.</div>';
+    var html = '';
     html += renderSkillProgressBar('tailoring');
     html += craftStatsLine('tailoring');
 
@@ -6629,7 +6623,7 @@
     var maxUnlocked = 0;
     for(var mi=0; mi<TIER_COUNT; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
     var jewelrySuccessPct = Math.round(jewelrySuccessRate(state)*100);
-    var html = '<div class="section-intro">Level '+lvl+' Jewelrycrafting &mdash; braid Hide into Twine, then set a matching Gem into that Twine to make Rings and Amulets. Twine uses the standard 70% success rate; Rings and Amulets are fussier work at 50%.</div>';
+    var html = '';
     html += renderSkillProgressBar('jewelrycrafting');
     html += craftStatsLine('jewelrycrafting');
 
@@ -6765,7 +6759,7 @@
 
   function renderWeaponSmithTab(){
     var lvl = getLevel(state.xp.weaponsmithing);
-    var html = '<div class="section-intro">Level '+lvl+' Weaponsmithing &mdash; forge any of the 12 named melee weapons as Equipment: any unlocked tier repeatedly, then equip whichever one you want from your stock.</div>';
+    var html = '';
     html += renderSkillProgressBar('weaponsmithing');
     html += renderStackableWeaponForgeSection(MELEE_WEAPON_TYPES, 'weaponsmithing', 'Forge Melee Weapons',
       '20 tiers each, Copper up to Tool Steel, named after the ingot -- e.g. a Normal Tier 1 Full-Moon Axe is a Copper Full-Moon Axe. Damage types shown below are placeholders pending manual assignment.');
@@ -6774,7 +6768,7 @@
 
   function renderBowyerTab(){
     var lvl = getLevel(state.xp.bowyer);
-    var html = '<div class="section-intro">Level '+lvl+' Bowyer &mdash; forge Short, Medium, and Long Bows as Equipment from Forestry\'s logs instead of Metallurgy\'s bars. Any unlocked tier, any time, then equip whichever one you want from your stock.</div>';
+    var html = '';
     html += renderSkillProgressBar('bowyer');
     html += renderStackableWeaponForgeSection(BOW_WEAPON_TYPES, 'bowyer', 'Forge Bows',
       TIER_COUNT+' tiers each, Willow up to Sequoia, named after the tree -- e.g. a Normal Tier 1 Long Bow is a Willow Long Bow.');
@@ -6814,7 +6808,7 @@
 
   function renderOffhandSmithTab(){
     var lvl = getLevel(state.xp.shieldsmithing);
-    var html = '<div class="section-intro">Level '+lvl+' Shieldsmithing &mdash; forge Small, Medium, and Large Shields from Metallurgy\'s bars (Equipment: forge any unlocked tier repeatedly, then choose which to equip below), plus Quivers, which upgrade sequentially. Which type you can equip in Combat depends on your equipped weapon\'s handedness.</div>';
+    var html = '';
     html += renderSkillProgressBar('shieldsmithing');
 
     html += '<h3 style="margin-top:14px">Forge Shields</h3>';
@@ -9504,7 +9498,7 @@
     var herbLvl = getLevel(state.xp.herbharvesting);
     var farmLvl = farmingLevel(state);
     var unlockedSlots = getPlotSlots(farmLvl);
-    var html = '<div class="section-intro">Farming is three harvesting sub-skills, one per crop line. Plant Seeds in your Plot Slots and wait for them to grow, then harvest. Each seed type needs its own sub-skill to plant higher tiers: Fiber Seeds (Fiber Harvesting) grow fiber for Tailoring, Grain Seeds (Grain Harvesting) grow Grain for Baking\'s Dough, and Herb Seeds (Herb Harvesting) grow Herbs for Cooking\'s Meals. Harvesting is worth a lot of XP. No tool is used, and time passes even while you\'re away. '+unlockedSlots+' of 40 plots unlocked (more open as your Farming level rises, reaching all 40 at level 100).</div>';
+    var html = '<div class="section-intro">'+unlockedSlots+' of 40 plots unlocked (more open as your Farming level rises, reaching all 40 at level 100). Tap the <b>?</b> by each bar for how that crop line works.</div>';
     html += renderSkillProgressBar('fiberharvesting');
     html += renderSkillProgressBar('grainharvesting');
     html += renderSkillProgressBar('herbharvesting');
@@ -11565,6 +11559,39 @@
     chainmailarmor: 'Proficiency wearing Armorsmithing\'s chain mail at higher tiers.',
     platearmor: 'Proficiency wearing Armorsmithing\'s plate armor at higher tiers.'
   };
+  // Longer "How it works" blurbs, shown in each skill's (?) info popup (see renderSkillInfoPopup).
+  // These used to sit as .section-intro banners at the top of every Resources skill tab; they were
+  // moved here so the tab content stays compact. SKILL_INFO stays the one-line summary; SKILL_INTRO
+  // is the fuller explanation. Generic gathering/crafting skills share one blurb apiece.
+  var GATHER_INTRO_GENERIC = 'Select a resource to work — progress continues automatically, even briefly while you’re away. Your tool and drop-chance stats are listed above.';
+  var CRAFT_INTRO_GENERIC = 'Turn raw materials into refined goods. Crafting pauses automatically if you run out of inputs, and a failed attempt still costs the materials.';
+  var SKILL_INTRO = {
+    // Gathering
+    digging: GATHER_INTRO_GENERIC, forestry: GATHER_INTRO_GENERIC, fishing: GATHER_INTRO_GENERIC,
+    herbalism: GATHER_INTRO_GENERIC, botany: GATHER_INTRO_GENERIC, foraging: GATHER_INTRO_GENERIC,
+    mining: GATHER_INTRO_GENERIC + ' 14 ore tiers and 7 stone tiers (Limestone, Sandstone, Andesite, Soapstone, Granite, Slate, Marble) share this ladder — stones feed Stone Cutting, ore feeds Metallurgy.',
+    butchering: 'Wildlife you defeat in Combat drop Corpses. Process one here for an independent chance at both Meat (for Roasting) and Hide (for Leatherworking).',
+    // Generic crafting
+    carpentry: CRAFT_INTRO_GENERIC, metallurgy: CRAFT_INTRO_GENERIC, roasting: CRAFT_INTRO_GENERIC,
+    cooking: CRAFT_INTRO_GENERIC, alchemy: CRAFT_INTRO_GENERIC, baking: CRAFT_INTRO_GENERIC,
+    stonecutting: CRAFT_INTRO_GENERIC, paving: CRAFT_INTRO_GENERIC, masonry: CRAFT_INTRO_GENERIC,
+    // Specialized crafting
+    mixology: 'Brew Teas named after Foraging’s berries. Drinking a Tea temporarily boosts all skill XP gain; it must be drunk manually from the section below and its timer keeps counting down even if you close the game.',
+    archaeology: 'Extract a Muddy Artifact into a Relic. Success grants a Relic (small chance of Rare/Supreme/Fantastic); failure leaves a Broken Relic you can Sacrifice for Faith.',
+    fletching: 'Cut any Log into Shafts, then fletch 15 Shafts plus a matching Ingot into 15 tiered Arrows.',
+    blacksmithing: 'Forge tools for every Gathering and Crafting skill. Tools are Equipment: forge as many of any unlocked tier as you like, then choose which one to equip from your stock. Tool tiers are named after Metallurgy’s metals and alloys (Copper up to Tungsten).',
+    weaponsmithing: 'Forge any of the 12 named melee weapons as Equipment — any unlocked tier repeatedly, then equip whichever one you want from your stock.',
+    bowyer: 'Forge Short, Medium, and Long Bows as Equipment from Forestry’s logs. Any unlocked tier, any time, then equip whichever one you want from your stock.',
+    armorsmithing: 'Forge Chain Mail or Plate Armor for Gauntlets, Boots, Chest, and Helmet (forge any unlocked tier repeatedly, then choose which to equip), plus your accessory slots below.',
+    shieldsmithing: 'Forge Small, Medium, and Large Shields from Metallurgy’s bars, plus Quivers. Which type you can equip in Combat depends on your equipped weapon’s handedness.',
+    leatherworking: 'Forge Leather Armor (Coif, Gambison, Gauntlets, Boots) and Belts directly from animal Hides. Belts grant extra simultaneous task slots (crafting, gathering, or faith) at higher rarity.',
+    tailoring: 'Forge Cloth Armor (Hood, Tunic, Gloves, Shoes, Cloak) — light protection woven from Farming’s fibers.',
+    jewelrycrafting: 'Braid Hide into Twine, then set a matching Gem into that Twine to make Rings and Amulets. Twine uses the standard 70% success rate; Rings and Amulets are fussier at 50%.',
+    // Farming sub-skills
+    fiberharvesting: 'Plant Fiber Seeds in your Plot Slots and harvest them once grown into fiber for Tailoring. Higher-tier Fiber Seeds need a higher Fiber Harvesting level. No tool is used, and time passes even while you’re away.',
+    grainharvesting: 'Plant Grain Seeds in your Plot Slots and harvest them once grown into Grain for Baking’s Dough. Higher-tier Grain Seeds need a higher Grain Harvesting level. No tool is used, and time passes even while you’re away.',
+    herbharvesting: 'Plant Herb Seeds in your Plot Slots and harvest them once grown into Herbs for Cooking’s Meals. Higher-tier Herb Seeds need a higher Herb Harvesting level. No tool is used, and time passes even while you’re away.'
+  };
   // ---- Physique relationships surfaced in the skill/physique tooltips ----
   // Which physiques a skill's actions TRAIN. Gathering, crafting and farming read straight
   // from the same feed tables the loop uses; faith and combat use the small maps below.
@@ -11707,6 +11734,9 @@
       var label = SKILL_LABELS[openId] || (openId.charAt(0).toUpperCase()+openId.slice(1));
       body += '<div class="skill-info-title">'+label+'</div>';
       body += '<div class="skill-info-desc">'+SKILL_INFO[openId]+'</div>';
+      if(SKILL_INTRO[openId]){
+        body += '<div class="skill-info-section"><div class="skill-info-section-label">How it works</div><div class="skill-info-section-body">'+SKILL_INTRO[openId]+'</div></div>';
+      }
       var _stats = skillLiveStats(openId);
       if(_stats.length){
         body += '<div class="skill-info-section"><div class="skill-info-section-label">Your current stats</div><div class="skill-info-section-body skill-info-stats">'+_stats.map(function(l){ return '<div>'+l+'</div>'; }).join('')+'</div></div>';
