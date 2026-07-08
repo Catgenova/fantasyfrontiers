@@ -45,6 +45,10 @@
     var scut = FF.CRAFTING_SKILLS.stonecutting.recipes;
     eq(scut[0].xp, 25, 'stonecutting t0 recipe xp = 25 (linear)');
     eq(scut[20].xp, 325, 'stonecutting t20 recipe xp = 325 (linear, was ~12951)');
+    // Estate building reward: 500 XP per tier (tier number = tierIndex + 1).
+    eq(FF.estateBuildXp(0), 500, 'estate build t0 -> 500 XP');
+    eq(FF.estateBuildXp(4), 2500, 'estate build t4 -> 2500 XP');
+    eq(FF.estateBuildXp(20), 10500, 'estate build t20 -> 10500 XP');
     eq(FF.tierSell(3, 0), 3, 'tierSell base');
     eq(FF.tierSell(3, 1), 4, 'tierSell x1.45');
     eq(FF.tierTime(7, 0.3, 0), 7, 'tierTime base');

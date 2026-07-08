@@ -7816,6 +7816,11 @@
   // timestamp-based (like farming), so a running job also completes while you're away.
   var ESTATE_TERRAFORM_MS = 10 * 60 * 1000;
   var ESTATE_TERRAFORM_XP = 500;
+  // Building on an estate (personal or guild) rewards the builder 500 XP per tier of the thing placed
+  // (tier number = tierIndex + 1): Workshops/Cottages -> Carpentry, Paving tiles -> Paving,
+  // Walls/Fences/Curbs -> Masonry.
+  var ESTATE_BUILD_XP_PER_TIER = 500;
+  function estateBuildXp(tierIndex){ return ESTATE_BUILD_XP_PER_TIER * ((tierIndex|0) + 1); }
   // Clearing an obstacle scales with its resource tier (tier number = tierIndex + 1):
   // 10 min, 50 resource, and 500 skill XP per tier. It uses the same single estate job slot,
   // so it can't run alongside a raise/lower job.
@@ -7994,8 +7999,10 @@
       cell.type = 'paved'; cell.paveTileId = job.paveTileId;
       if(giveRewards){
         var pr = getPavingRecipe(job.paveTileId);
-        addLog('Finished paving (' + job.x + ', ' + job.y + ')' + (pr?' with '+pr.name:'') + '.', 'important');
-        spawnFloatingText('Tile Paved!', 'ft-success');
+        var pavXp = estateBuildXp(itemTierFromId(job.paveTileId));
+        addXp('paving', pavXp);
+        addLog('Finished paving (' + job.x + ', ' + job.y + ')' + (pr?' with '+pr.name:'') + '. +' + pavXp + ' Paving XP.', 'important');
+        spawnFloatingText('Tile Paved! +' + pavXp + ' Paving XP', 'ft-success');
       }
       return true;
     }
@@ -8003,8 +8010,10 @@
       cell.workshopId = job.workshopId;
       if(isGuild) recomputeGuildWorkshops(); else recomputePlacedWorkshops();
       if(giveRewards){
-        addLog('Finished building the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'workshop') + '.', 'important');
-        spawnFloatingText('Workshop built!', 'ft-bonus');
+        var wsXp = estateBuildXp((WORKSHOP_ITEMS[job.workshopId]||{}).tierIndex);
+        addXp('carpentry', wsXp);
+        addLog('Finished building the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'workshop') + '. +' + wsXp + ' Carpentry XP.', 'important');
+        spawnFloatingText('Workshop built! +' + wsXp + ' Carpentry XP', 'ft-bonus');
       }
       return true;
     }
@@ -8012,8 +8021,10 @@
       cell.cottageId = job.cottageId;
       if(giveRewards){
         var cadj = estateAdjacentWorkshop(estate.grid, job.x, job.y);
-        addLog('Finished building the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + (cadj ? ' — linked to the adjacent ' + workshopSkillLabel(WORKSHOP_ITEMS[cadj.workshopId].skillId) + ' Workshop.' : ' — place it beside a single Workshop to house a Peon.'), 'important');
-        spawnFloatingText('Cottage built!', 'ft-bonus');
+        var cotXp = estateBuildXp((COTTAGE_ITEMS[job.cottageId]||{}).tierIndex);
+        addXp('carpentry', cotXp);
+        addLog('Finished building the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + '. +' + cotXp + ' Carpentry XP.' + (cadj ? ' Linked to the adjacent ' + workshopSkillLabel(WORKSHOP_ITEMS[cadj.workshopId].skillId) + ' Workshop.' : ' Place it beside a single Workshop to house a Peon.'), 'important');
+        spawnFloatingText('Cottage built! +' + cotXp + ' Carpentry XP', 'ft-bonus');
       }
       return true;
     }
@@ -8519,8 +8530,10 @@
     cell.type = borderType;
     cell.masonryTileId = masonryTileId;
     estateBorderMenuOpen = null;
-    addLog('You built a ' + recipe.name + ' at this border.', 'important');
-    spawnFloatingText(ESTATE_BORDER_TYPE_LABEL[borderType] + ' Built!', 'ft-success');
+    var masXp = estateBuildXp(v);
+    addXp('masonry', masXp);
+    addLog('You built a ' + recipe.name + ' at this border. +' + masXp + ' Masonry XP.', 'important');
+    spawnFloatingText(ESTATE_BORDER_TYPE_LABEL[borderType] + ' Built! +' + masXp + ' Masonry XP', 'ft-success');
     estPersist();
     needsRender = true;
   }
@@ -13619,7 +13632,7 @@
       getLevel:getLevel, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
-      getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, weightedAdvantage:weightedAdvantage,
+      getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, weightedAdvantage:weightedAdvantage,
       tierStepper:tierStepper, tierRange:tierRange,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
