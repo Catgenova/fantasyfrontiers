@@ -342,6 +342,19 @@
     eq(FF.craftBodyRarity(''), null, 'empty body -> null');
   });
 
+  // ---- Faith XP reworked from exponential to the linear Crafting curve ----
+  suite('faith xp linear', function(){
+    var P = FF.PRAYER_TIERS;
+    eq(P[0].xp, FF.craftXp(0), 'prayer t0 xp = craftXp(0) = 25');
+    eq(P[20].xp, FF.craftXp(20), 'prayer t20 xp = craftXp(20) = 325');
+    eq(P[5].xp - P[4].xp, P[15].xp - P[14].xp, 'prayer xp step is constant (linear, not exponential)');
+    // channeled faith activities: xp/s ramps linearly, not by 1.25^i
+    var D = FF.FAITH_ACTIVITY_TIERS.devotion;
+    eq(D[0].xpPerSec, 2, 'devotion t0 xp/s = base 2');
+    eq(D[20].xpPerSec, 26, 'devotion t20 xp/s = 2*(1+0.6*20) = 26');
+    eq(Math.round((D[10].xpPerSec - D[9].xpPerSec)*100), Math.round((D[20].xpPerSec - D[19].xpPerSec)*100), 'devotion xp/s step is constant (linear)');
+  });
+
   // ---- Familiar companion avatars: every familiar has a bespoke avatar with its skill crest ----
   suite('familiar avatars', function(){
     var ids = Object.keys(FF.FAMILIAR_DATA);

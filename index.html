@@ -2429,7 +2429,7 @@
   function faithMax(state){ return 100 + getLevel(state.xp.prayer)*20 + faithPhysiqueBonus(state); }
   var PRAYER_TIERS = [];
   for(var _pi=0; _pi<TIER_COUNT; _pi++){
-    PRAYER_TIERS.push({ id:'prayer_t'+_pi, name:TIER_NAMES[_pi]+' Prayer', levelReq:TIER_LEVELS[_pi], xp:tierXp(10,_pi), time:tierTime(3,0.3,_pi) });
+    PRAYER_TIERS.push({ id:'prayer_t'+_pi, name:TIER_NAMES[_pi]+' Prayer', levelReq:TIER_LEVELS[_pi], xp:craftXp(_pi), time:tierTime(3,0.3,_pi) }); // linear XP curve (same as Crafting) -- the old exponential tierXp made high tiers level far too fast
   }
   function makeFaithActivityTiers(baseFaithPerSec, faithStep, baseXpPerSec, chanceBase, chanceStep, chanceCap){
     var list = [];
@@ -2437,7 +2437,7 @@
       list.push({
         levelReq: TIER_LEVELS[i],
         faithPerSec: Math.round((baseFaithPerSec + faithStep*i)*100)/100,
-        xpPerSec: Math.round(baseXpPerSec * Math.pow(1.25,i) * 100)/100,
+        xpPerSec: Math.round(baseXpPerSec * (1 + 0.6*i) * 100)/100, // linear ramp (matches Crafting's 25+15t shape), not the old exponential 1.25^i
         chance: Math.min(chanceCap, chanceBase + chanceStep*i)
       });
     }
@@ -14049,7 +14049,7 @@
       startGather:startGather, startCraft:startCraft, startPray:startPray,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
-      GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS,
+      GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS,
       renderGlobalActionBar:renderGlobalActionBar, describeTask:describeTask,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
