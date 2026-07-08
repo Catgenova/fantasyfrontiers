@@ -290,6 +290,15 @@
     eq(FF.physTierPairs([['grossMotor',2],['sleightOfHand',1],['logic',1]], FF.recipeTier({}, 'carpentry_t4'))[2][1], 5, 'carpentry t4 -> logic gains 5');
   });
 
+  // ---- Inventory grid: rarity parsing for cell accents / detail tag ----------------------
+  suite('inventory rarity', function(){
+    eq(FF.itemRarityId('bodyarmor_chain_chest_t20_normal'), 'normal', 'normal suffix');
+    eq(FF.itemRarityId('stweapon_rapier_t5_rare'), 'rare', 'rare suffix');
+    eq(FF.itemRarityId('relic_t8_supreme'), 'supreme', 'supreme suffix');
+    eq(FF.itemRarityId('amulet_t3_fantastic'), 'fantastic', 'fantastic suffix');
+    eq(FF.itemRarityId('mining_t7'), 'normal', 'no rarity suffix -> normal');
+  });
+
   // ---- Marketplace pricing helpers (must match the server RPC's tax math) --------------
   suite('marketplace pricing', function(){
     eq(FF.MARKET_TAX, 0.05, 'market tax is 5%');
