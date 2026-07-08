@@ -299,6 +299,18 @@
     eq(FF.itemRarityId('mining_t7'), 'normal', 'no rarity suffix -> normal');
   });
 
+  // ---- Inventory category sort: group each item's tiers by family, then order by tier -----
+  suite('inventory family sort', function(){
+    eq(FF.invFamilyKey('digging_t2'), 'digging', 'strips tier -> family');
+    eq(FF.invFamilyKey('bodyarmor_chain_chest_t5_rare'), 'bodyarmor_chain_chest', 'strips tier+rarity -> family');
+    eq(FF.invFamilyKey('coal'), 'coal', 'no tier -> whole id');
+    var ids = ['forestry_t1','digging_t2','digging_t0','forestry_t0'];
+    var sorted = ids.slice().sort(function(a,b){
+      return FF.invFamilyKey(a).localeCompare(FF.invFamilyKey(b)) || (FF.itemTierFromId(a)-FF.itemTierFromId(b));
+    });
+    eq(sorted.join(','), 'digging_t0,digging_t2,forestry_t0,forestry_t1', 'family then tier ordering');
+  });
+
   // ---- Marketplace pricing helpers (must match the server RPC's tax math) --------------
   suite('marketplace pricing', function(){
     eq(FF.MARKET_TAX, 0.05, 'market tax is 5%');
