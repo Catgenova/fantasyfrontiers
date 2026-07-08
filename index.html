@@ -2872,6 +2872,7 @@
         addLog(fam.icon + ' A familiar has joined you! ' + fam.name + ' (' + (SKILL_LABELS[skillId]||skillId) + ') answered your call.', 'important');
         spawnFloatingText('Familiar summoned: ' + fam.name + '!', 'ft-rare');
         chronicleBroadcast('familiar', fam.name);   // new summon -> global feed
+        if(!offlineCapture) serverBuffGrant('familiar'); // finding a familiar gifts a 5min server +50% EXP buff
         if(state.settings.popupFamiliar){ state.popupQueue.push({ type:'familiar', skillId:skillId, leveledUp:false }); state.popupBatchTotal = (state.popupBatchTotal||0) + 1; }
       }
       needsRender = true;
@@ -5109,6 +5110,20 @@
       addLog('The buff purchase failed (network). Your gold was refunded.', 'danger');
       renderSettingsModal(); render();
     });
+  }
+  // Auto-granted server buffs (no gold): registering gifts 1h of +50% EXP to everyone; finding a
+  // familiar gifts 5min. Fire-and-forget; the server extends the shared timer and we apply the result.
+  function serverBuffGrant(reason){
+    if(!CHAT_ENABLED || !chatClient || !authUser) return;
+    chatClient.functions.invoke('server_buff', { body:{ action:'grant', reason:reason } }).then(function(r){
+      var res = r && r.data;
+      if(res && res.ok){
+        serverBuffApply(res.buffs);
+        if(reason==='register') addLog('Welcome! Your registration set off a server-wide +50% EXP buff (1 hour) for every player.', 'important');
+        else if(reason==='familiar') addLog('Finding a familiar sparked a server-wide +50% EXP buff (+5 min) for everyone!', 'important');
+        needsRender = true;
+      }
+    }, function(){});
   }
   function renderServerBuffSettings(){
     var html = '<div style="border-top:1px solid var(--border);margin:12px 0 4px;padding-top:10px;">';
@@ -10136,6 +10151,7 @@
       if(!u || !res.data.session) throw new Error('invalid credentials');
       authUser = { username: (u && u.user_metadata && u.user_metadata.username) || username, id: u && u.id };
       if(res.data.session.access_token) cloudAccessToken = res.data.session.access_token;
+      if(authMode==='register') serverBuffGrant('register'); // new player -> gift the server a 1h +50% EXP buff
       try{
         if(authRememberUser) localStorage.setItem('ff-remember-username', username); else localStorage.removeItem('ff-remember-username');
         localStorage.setItem('ff-autologin', authAutoLogin ? '1' : '0');

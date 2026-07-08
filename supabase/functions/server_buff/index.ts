@@ -26,6 +26,11 @@ function json(body: unknown, status = 200): Response {
 // `exp` buff for the whole server; no client reads it.
 const BUFF_SECONDS: Record<string, number> = { exp: 3600, test: 1 };
 
+// Auto-granted (no gold) extensions to the shared `exp` buff, keyed by reason. A fresh registration
+// gifts 1h; finding a familiar gifts 5min. Server-side extension only -- same trust model as `buy`
+// (the client can already extend for free there), so this doesn't widen the abuse surface.
+const GRANT_SECONDS: Record<string, number> = { register: 3600, familiar: 300 };
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ ok: false, error: "Method not allowed." }, 405);
@@ -62,6 +67,15 @@ Deno.serve(async (req) => {
     const { data: until, error } = await admin.rpc("server_buff_extend", { p_kind: kind, p_seconds: secs });
     if (error || !until) return json({ ok: false, error: "Purchase failed." }, 500);
     return json({ ok: true, kind, active_until: until, buffs: await snapshot() });
+  }
+
+  if (action === "grant") {
+    const reason = String(body.reason || "");
+    const secs = GRANT_SECONDS[reason];
+    if (!secs) return json({ ok: false, error: "Unknown grant." }, 400);
+    const { data: until, error } = await admin.rpc("server_buff_extend", { p_kind: "exp", p_seconds: secs });
+    if (error || !until) return json({ ok: false, error: "Grant failed." }, 500);
+    return json({ ok: true, kind: "exp", reason, active_until: until, buffs: await snapshot() });
   }
 
   return json({ ok: false, error: "Unknown action." }, 400);
