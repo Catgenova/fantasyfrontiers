@@ -5765,7 +5765,8 @@
   }
 
   // ================= RENDER: GATHERING =================
-  function renderGatherTab(skillKey){
+  function renderGatherTab(skillKey){ return renderGatherTabBody(skillKey) + renderToolCardFor(skillKey); }
+  function renderGatherTabBody(skillKey){
     var skill = GATHERING_SKILLS[skillKey];
     var lvl = getLevel(state.xp[skillKey]);
     var act = state.activity;
@@ -5956,7 +5957,8 @@
     return '<div class="physique-bonus">Tool: <b>'+toolName+'</b> &nbsp;|&nbsp; Crafting Success Rate: <b>'+successPct+'%</b> &nbsp;|&nbsp; Tool Speed Bonus: <b>+'+toolSpeedPct+'%</b> &nbsp;<span style="color:var(--text-faint)">(forge one in Crafting &rarr; Blacksmithing)</span></div>';
   }
 
-  function renderCraftTab(skillKey){
+  function renderCraftTab(skillKey){ return renderCraftTabBody(skillKey) + renderToolCardFor(skillKey); }
+  function renderCraftTabBody(skillKey){
     if(skillKey==='weaponsmithing') return renderWeaponSmithTab();
     if(skillKey==='armorsmithing') return renderArmorSmithTab();
     if(skillKey==='shieldsmithing') return renderOffhandSmithTab();
@@ -7017,35 +7019,33 @@
     html += '</div>';
     return html;
   }
-  function renderToolsEquipSection(){
-    var html = '<h3>Tools</h3>';
-    html += '<div class="section-intro">Pick which owned tool is active for each skill. Forged tools sit in inventory, stacked by tier and rarity, until equipped here.</div>';
-    html += '<div class="card-grid">';
-    TOOL_TYPES.forEach(function(tt){
-      var tiers = tt.isGather ? state.gatherTools : state.craftTools;
-      var rarities = tt.isGather ? state.gatherToolRarities : state.craftToolRarities;
-      var tier = tiers[tt.skillId]||0;
-      var current = tier>0 ? (tt.isGather?getEquippedGatherTool(tt.skillId,tier,rarities[tt.skillId]):getEquippedCraftTool(tt.skillId,tier,rarities[tt.skillId])) : null;
-      var currentStat = current ? (tt.isGather ? ('+'+Math.round(current.speedBonus*100)+'% speed') : ('+'+Math.round(current.speedBonus*100)+'% spd, +'+Math.round(current.successBonus*100)+'% success')) : '';
-      var owned = Object.keys(TOOL_ITEMS).filter(function(id){ return TOOL_ITEMS[id].skillId===tt.skillId && (state.inventory[id]||0)>0; })
-        .sort(function(a,b){ return TOOL_ITEMS[a].tierIndex - TOOL_ITEMS[b].tierIndex; });
-      html += '<div class="item-card">';
-      html += '<div class="item-top"><div class="item-icon">'+tt.icon+'</div><div><div class="item-name">'+tt.name+'</div><div class="item-meta">'+(current ? current.name+' &bull; '+currentStat : 'Not equipped')+'</div></div></div>';
-      if(owned.length===0){
-        html += '<div class="empty-note">No '+tt.name+' in inventory. Forge one in Crafting &rarr; Blacksmithing.</div>';
-      } else {
-        html += '<div class="style-row">';
-        owned.forEach(function(id){
-          var item = TOOL_ITEMS[id];
-          var qty = state.inventory[id]||0;
-          html += '<button class="style-btn" data-action="equipTool" data-item="'+id+'">'+tt.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span></button>';
-        });
-        html += '</div>';
-      }
-      if(current) html += '<button class="action-btn stop" data-action="unequipTool" data-skill="'+tt.skillId+'">Unequip</button>';
+  // A single skill's tool-equip card, shown at the bottom of that skill's own tab (moved out of
+  // the Equipment tab). Returns '' for skills with no tool.
+  function renderToolCardFor(skillKey){
+    var tt = TOOL_TYPES.filter(function(t){ return t.skillId===skillKey; })[0];
+    if(!tt) return '';
+    var tiers = tt.isGather ? state.gatherTools : state.craftTools;
+    var rarities = tt.isGather ? state.gatherToolRarities : state.craftToolRarities;
+    var tier = tiers[tt.skillId]||0;
+    var current = tier>0 ? (tt.isGather?getEquippedGatherTool(tt.skillId,tier,rarities[tt.skillId]):getEquippedCraftTool(tt.skillId,tier,rarities[tt.skillId])) : null;
+    var currentStat = current ? (tt.isGather ? ('+'+Math.round(current.speedBonus*100)+'% speed') : ('+'+Math.round(current.speedBonus*100)+'% spd, +'+Math.round(current.successBonus*100)+'% success')) : '';
+    var owned = Object.keys(TOOL_ITEMS).filter(function(id){ return TOOL_ITEMS[id].skillId===tt.skillId && (state.inventory[id]||0)>0; })
+      .sort(function(a,b){ return TOOL_ITEMS[a].tierIndex - TOOL_ITEMS[b].tierIndex; });
+    var html = '<h3 style="margin-top:16px">Tool</h3><div class="card-grid"><div class="item-card">';
+    html += '<div class="item-top"><div class="item-icon">'+tt.icon+'</div><div><div class="item-name">'+tt.name+'</div><div class="item-meta">'+(current ? current.name+' &bull; '+currentStat : 'Not equipped')+'</div></div></div>';
+    if(owned.length===0){
+      html += '<div class="empty-note">No '+tt.name+' in inventory. Forge one in Crafting &rarr; Blacksmithing.</div>';
+    } else {
+      html += '<div class="style-row">';
+      owned.forEach(function(id){
+        var item = TOOL_ITEMS[id];
+        var qty = state.inventory[id]||0;
+        html += '<button class="style-btn" data-action="equipTool" data-item="'+id+'">'+tt.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span></button>';
+      });
       html += '</div>';
-    });
-    html += '</div>';
+    }
+    if(current) html += '<button class="action-btn stop" data-action="unequipTool" data-skill="'+tt.skillId+'">Unequip</button>';
+    html += '</div></div>';
     return html;
   }
   function renderLifetimeStatsPanel(){
@@ -7078,7 +7078,6 @@
     html += renderRingsEquipSection();
     html += renderAmuletEquipSection();
     html += renderAccessorySlotsSection();
-    html += renderToolsEquipSection();
     return html;
   }
 
