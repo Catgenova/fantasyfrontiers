@@ -49,6 +49,10 @@
     eq(FF.estateBuildXp(0), 500, 'estate build t0 -> 500 XP');
     eq(FF.estateBuildXp(4), 2500, 'estate build t4 -> 2500 XP');
     eq(FF.estateBuildXp(20), 10500, 'estate build t20 -> 10500 XP');
+    // Fishing treasure-on-miss chance: 5% base + 2% per action tier (fishing_t<n>).
+    eq(FF.fishingTreasureChance('fishing_t0'), 0.05, 'fishing t0 treasure = 5%');
+    eq(Math.round(FF.fishingTreasureChance('fishing_t5')*100), 15, 'fishing t5 treasure = 15%');
+    eq(Math.round(FF.fishingTreasureChance('fishing_t20')*100), 45, 'fishing t20 treasure = 45%');
     eq(FF.tierSell(3, 0), 3, 'tierSell base');
     eq(FF.tierSell(3, 1), 4, 'tierSell x1.45');
     eq(FF.tierTime(7, 0.3, 0), 7, 'tierTime base');

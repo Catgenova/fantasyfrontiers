@@ -3129,8 +3129,8 @@
       addItem(mainItemId, 1);
       spawnFloatingText('+1 ' + (ALL_SELLABLE[mainItemId]||{}).name, 'ft-success');
       gatherDoubleRoll(mainItemId, 'fishing');
-    } else if(Math.random() < FISHING_TREASURE_CHANCE){
-      // The catch got away, but the hook snagged something better.
+    } else if(Math.random() < fishingTreasureChance(mainItemId)){
+      // The catch got away, but the hook snagged something better (better odds in higher-tier waters).
       addItem('treasure_chest', 1);
       spawnFloatingText('+1 Treasure Chest!', 'ft-rare');
     } else {
@@ -3160,7 +3160,10 @@
   ALL_SELLABLE.critter_cache = CRITTER_CACHE_ITEM;
   var TREASURE_CHEST_ITEM = { id:'treasure_chest', name:'Treasure Chest', icon:svgIcon('chest','#c9a227'), sell:25 };
   ALL_SELLABLE.treasure_chest = TREASURE_CHEST_ITEM;
-  var FISHING_TREASURE_CHANCE = 0.05; // chance a *failed* cast snags a Treasure Chest instead
+  var FISHING_TREASURE_CHANCE = 0.05;       // base chance a *failed* cast snags a Treasure Chest instead
+  var FISHING_TREASURE_PER_TIER = 0.02;     // +2% per action tier -- deeper waters hide better loot
+  // Treasure-on-miss chance for a given fish, scaling with the fished item's tier (fishing_t<n>).
+  function fishingTreasureChance(itemId){ return Math.min(1, FISHING_TREASURE_CHANCE + FISHING_TREASURE_PER_TIER * itemTierFromId(itemId)); }
   var FARMING_PHYSIQUE = [['handStrength',1],['zen',1],['mentality',1]];
   // Farming is split into three harvesting sub-skills, one per crop line. Each seed type is
   // gated by its own sub-skill level, and a harvest grants XP to that sub-skill.
@@ -5825,8 +5828,11 @@
           addLog('While away, you mined ' + oreGain + ' ' + item.name + (mCoalGain>0 ? ', ' + mCoalGain + ' Coal' : '') + (gemGain>0 ? ', ' + gemGain + ' gem(s)' : '') + '.', 'important');
         } else if(act.skill === 'fishing'){
           var catchGain = Math.round(ticks * fishingCatchChance(state));
+          var missTicks = Math.max(0, ticks - catchGain);
+          var chestGain = Math.round(missTicks * fishingTreasureChance(act.itemId)); // tier-scaled treasure on misses
           if(catchGain > 0) addItem(act.itemId, catchGain);
-          addLog('While away, you caught ' + catchGain + ' ' + item.name + '.', 'important');
+          if(chestGain > 0) addItem('treasure_chest', chestGain);
+          addLog('While away, you caught ' + catchGain + ' ' + item.name + (chestGain>0 ? ', and snagged ' + chestGain + ' Treasure Chest' + (chestGain===1?'':'s') : '') + '.', 'important');
         } else {
           addItem(act.itemId, ticks);
           addLog('While away, you gathered ' + ticks + ' ' + item.name + '.', 'important');
@@ -6270,7 +6276,7 @@
       } else if(skillKey==='mining'){
         html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> at <b>'+Math.round(miningMainChance(state)*100)+'%</b> &nbsp;|&nbsp; Bonus: Coal (1-5x) <b>'+Math.round(miningCoalChance(state)*100)+'%</b>, Gem <b>'+Math.round(miningGemChance(state)*100)+'%</b></div>';
       } else if(skillKey==='fishing'){
-        html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> at <b>'+Math.round(fishingCatchChance(state)*100)+'%</b> catch chance &nbsp;|&nbsp; On a miss: Treasure Chest <b>'+Math.round(FISHING_TREASURE_CHANCE*100)+'%</b></div>';
+        html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> at <b>'+Math.round(fishingCatchChance(state)*100)+'%</b> catch chance &nbsp;|&nbsp; On a miss: Treasure Chest <b>'+Math.round(fishingTreasureChance(item.id)*100)+'%</b></div>';
       } else if(skillKey==='forestry'){
         html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> &nbsp;|&nbsp; Bonus: Critter Cache <b>'+Math.round(critterCacheChance(state)*100)+'%</b></div>';
       } else if(skillKey==='botany'){
@@ -13745,7 +13751,7 @@
       getLevel:getLevel, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
-      getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, weightedAdvantage:weightedAdvantage,
+      getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
       tierStepper:tierStepper, tierRange:tierRange,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
