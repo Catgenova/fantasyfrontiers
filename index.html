@@ -3797,6 +3797,10 @@
       time: tierTime(7,0.3,tierIndex)
     };
   }
+  // Per-slot silhouette so a helmet looks like a helm, gauntlets like gloves, boots like boots, etc.
+  // (previously every piece borrowed the material's generic chestplate icon), tinted by material.
+  var BODY_ARMOR_SLOT_SHAPE = { helmet:'helm', chest:'chestarmor', gauntlets:'gauntlet', boots:'boots', back:'cloak' };
+  var BODY_ARMOR_MATERIAL_COLOR = { chain:'#6a6a72', plate:'#a8aeb6', leather:'#8a6a42', tailoring:'#c8b088' };
   var BODY_ARMOR_ITEMS = {};
   BODY_ARMOR_MATERIAL_IDS.forEach(function(material){
     var mat = BODY_ARMOR_MATERIALS[material];
@@ -3809,7 +3813,7 @@
           BODY_ARMOR_ITEMS[id] = {
             id: id,
             name: r.label + data.name,
-            icon: mat.icon,
+            icon: svgIcon(BODY_ARMOR_SLOT_SHAPE[slot] || 'chestarmor', BODY_ARMOR_MATERIAL_COLOR[material] || '#8a8a8a'),
             sell: tierSell(10, i) * r.mult,
             material: material,
             slot: slot,
