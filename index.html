@@ -5691,21 +5691,14 @@
         }
       }
     } else if(act && act.type === 'craft'){
-      var recipe = ALL_CRAFT_RECIPES[act.itemId];
-      var maxByTime = Math.floor(capped/1000 / recipe.time);
-      var maxByMats = Math.min.apply(null, Object.keys(recipe.inputs).map(function(k){
-        return Math.floor((state.inventory[k]||0) / recipe.inputs[k]);
-      }));
-      var t2 = Math.max(0, Math.min(maxByTime, maxByMats));
-      if(t2 > 0){
-        consumeInputs(recipe.inputs, t2);
-        addXp(act.skill, t2*recipe.xp*1.5*craftXpBonus(act.skill));
-        addItem(act.itemId, t2);
-        addLog('While away, you crafted ' + t2 + ' ' + recipe.name + '.', 'important');
-      } else {
-        addLog('While away, your ' + act.skill + ' work ran out of materials.', '');
-      }
-      state.activity = { type:null };
+      // Resume the PRIMARY craft through the away period with the same engine the live loop and the
+      // extra belt slots use: it keeps crafting while materials last and only stops (act.type=null)
+      // when it genuinely runs out. Previously this credited the offline output but then always did
+      // state.activity = {type:null}, so the primary craft appeared to STOP on every refresh while
+      // the belt slots kept going. Using processCraftActivity also correctly handles special crafts
+      // (workshops/weapons/etc.) as the primary activity -- they have no ALL_CRAFT_RECIPES entry, so
+      // the old recipe.time lookup threw and aborted the whole offline pass.
+      processCraftActivity(act, capped);
     } else if(act && act.type === 'combat'){
       // Fast-forward the real combat ticks: same player/monster attack timing and auto-eat
       // as live, so kills, XP, gold and drops match. Stops early if food runs out (retreat).
