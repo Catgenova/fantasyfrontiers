@@ -1128,7 +1128,7 @@
     {id:'leaderboard', label:'Leaderboard', icon:svgIcon('trophy','var(--cat-leaderboard)'), color:'var(--cat-leaderboard)'}
   ];
 
-  var DEFAULT_SUB = { gathering:'digging', crafting:'carpentry', faith:'prayer', combat:'wildlife' };
+  var DEFAULT_SUB = { gathering:'digging', crafting:'metallurgy', building:'carpentry', outfitting:'weaponsmithing', faith:'prayer', combat:'wildlife' };
 
   var SUB_PALETTE = ['#8a6a45','#6f8a4a','#4a7a8a','#9a6a8a','#7a8a45','#8a5a5a','#5a7a9a','#8a7a3a','#4a8a6a','#9a7a5a','#6a5a9a','#8a4a6a','#4a9a7a','#9a5a4a','#5a9a8a'];
 
@@ -2540,6 +2540,15 @@
 
   var GATHER_SKILL_IDS = Object.keys(GATHERING_SKILLS);
   var CRAFT_SKILL_IDS = Object.keys(CRAFTING_SKILLS);
+  // Cosmetic sub-navigation grouping only: Building and Outfitting split off from the Crafting
+  // category in the Resources nav. These skills remain crafting skills functionally --
+  // CRAFT_SKILL_IDS (tools, workshops, XP, familiars, saves, etc.) is deliberately left whole;
+  // the split just reorganizes which sub-tab bar each skill appears under.
+  var BUILDING_SKILL_IDS = ['carpentry','masonry','paving','stonecutting'];
+  var OUTFITTING_SKILL_IDS = ['weaponsmithing','armorsmithing','tailoring','shieldsmithing','fletching','bowyer'];
+  var CRAFTING_TAB_SKILL_IDS = CRAFT_SKILL_IDS.filter(function(id){
+    return BUILDING_SKILL_IDS.indexOf(id)===-1 && OUTFITTING_SKILL_IDS.indexOf(id)===-1;
+  });
   var ALL_MAIN_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['fiberharvesting','grainharvesting','herbharvesting']).concat(WEAPON_STYLE_IDS).concat(OFFHAND_STYLE_IDS).concat(ARMOR_PROFICIENCY_IDS).concat(['prayer','sacrifice','devotion','blessing','miracle']);
   var FAITH_SKILL_IDS = ['prayer','sacrifice','devotion','blessing','miracle'];
 
@@ -4548,7 +4557,7 @@
   var currentSub = 'digging';
   // Ivy Castle IA: 3 areas -> sub-views (each maps to an existing content category).
   var AREAS = [
-    { id:'resources', label:'Resources', icon:'pickaxe', subs:[['crafting','Crafting'],['gathering','Gathering'],['peons','Peon Queues'],['inventory','Inventory'],['faith','Faith']] },
+    { id:'resources', label:'Resources', icon:'pickaxe', subs:[['peons','Peon Queues'],['gathering','Gathering'],['crafting','Crafting'],['building','Building'],['outfitting','Outfitting'],['faith','Faith'],['inventory','Inventory']] },
     { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
     { id:'battle', label:'Battle', icon:'crossedswords', subs:[['combat','Combat'],['character','Equipment & Stats'],['menagerie','Menagerie']] }
   ];
@@ -5745,9 +5754,12 @@
         var active = sk===currentSub ? ' active' : '';
         return '<button class="sub-btn'+active+'" data-sub="'+sk+'" style="--sub-color:'+s.color+'">'+s.icon+' '+s.label+'</button>';
       }).join('');
-    } else if(currentCategory==='crafting'){
+    } else if(currentCategory==='crafting' || currentCategory==='building' || currentCategory==='outfitting'){
       el.style.display = 'flex';
-      el.innerHTML = CRAFT_SKILL_IDS.map(function(sk){
+      var craftIds = currentCategory==='building' ? BUILDING_SKILL_IDS
+                   : currentCategory==='outfitting' ? OUTFITTING_SKILL_IDS
+                   : CRAFTING_TAB_SKILL_IDS;
+      el.innerHTML = craftIds.map(function(sk){
         var s = CRAFTING_SKILLS[sk];
         var active = sk===currentSub ? ' active' : '';
         return '<button class="sub-btn'+active+'" data-sub="'+sk+'" style="--sub-color:'+s.color+'">'+s.icon+' '+s.label+'</button>';
@@ -11318,7 +11330,7 @@
   function renderContent(){
     var html = '';
     if(currentCategory==='gathering') html = renderGatherTab(currentSub);
-    else if(currentCategory==='crafting') html = '<div class="'+(craftOnlyAffordable?'craft-filtering':'')+'"><div class="craft-filter-bar"><button class="craft-filter-btn'+(craftOnlyAffordable?' on':'')+'" data-action="toggleCraftFilter">'+(craftOnlyAffordable?'\u2611':'\u2610')+' Only show items I have materials for</button></div>'+renderCraftTab(currentSub)+'</div>';
+    else if(currentCategory==='crafting' || currentCategory==='building' || currentCategory==='outfitting') html = '<div class="'+(craftOnlyAffordable?'craft-filtering':'')+'"><div class="craft-filter-bar"><button class="craft-filter-btn'+(craftOnlyAffordable?' on':'')+'" data-action="toggleCraftFilter">'+(craftOnlyAffordable?'\u2611':'\u2610')+' Only show items I have materials for</button></div>'+renderCraftTab(currentSub)+'</div>';
     else if(currentCategory==='estate'){ estUse(false); html = renderEstateTab(); }
     else if(currentCategory==='peons') html = renderPeonsTab();
     else if(currentCategory==='inventory') html = renderInventoryTab();
@@ -13168,6 +13180,7 @@
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, weightedAdvantage:weightedAdvantage,
       tierStepper:tierStepper, tierRange:tierRange,
+      CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS,

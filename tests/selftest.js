@@ -112,6 +112,23 @@
     ok(html.indexOf('Iron (Lv15)') !== -1, 'shows the current tier label');
     ok(html.indexOf('data-tier-dir="-1"') !== -1 && html.indexOf('data-tier-dir="1"') !== -1, 'has both directions');
   });
+  // ---- Building / Outfitting are cosmetic sub-nav groups carved out of Crafting -----------
+  suite('building and outfitting split the crafting skills without gaps or overlap', function(){
+    var building = FF.BUILDING_SKILL_IDS, outfitting = FF.OUTFITTING_SKILL_IDS, craftTab = FF.CRAFTING_TAB_SKILL_IDS;
+    eq(building.join(','), 'carpentry,masonry,paving,stonecutting', 'building holds the estate-build skills');
+    eq(outfitting.join(','), 'weaponsmithing,armorsmithing,tailoring,shieldsmithing,fletching,bowyer', 'outfitting holds the gear skills');
+    // Every crafting skill lands in exactly one of the three sub-tab groups.
+    var union = building.concat(outfitting).concat(craftTab).slice().sort();
+    eq(union.length, FF.CRAFT_SKILL_IDS.length, 'the three groups cover every crafting skill exactly once');
+    eq(union.join(','), FF.CRAFT_SKILL_IDS.slice().sort().join(','), 'union of the groups equals CRAFT_SKILL_IDS');
+    building.concat(outfitting).forEach(function(id){
+      ok(craftTab.indexOf(id) === -1, id + ' is not also in the Crafting tab');
+    });
+    // The functional list is untouched -- these are still crafting skills.
+    ['carpentry','paving','weaponsmithing','fletching'].forEach(function(id){
+      ok(FF.CRAFT_SKILL_IDS.indexOf(id) !== -1, id + ' remains a crafting skill functionally');
+    });
+  });
   suite('tierStepper disables at the ends and when locked', function(){
     var lowest = FF.tierStepper('ring', 'r', FF.tierRange(4), 0, 'x', false);
     // The − button (dir=-1) sits before the + button; at the lowest tier only − is disabled.
