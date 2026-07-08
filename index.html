@@ -373,6 +373,11 @@
   .inputs-line{font-family:var(--font-mono);font-size:11px;margin:6px 0;line-height:1.6;}
   .inputs-line .ok{color:var(--hp-good);}
   .inputs-line .bad{color:var(--hp-bad);}
+  .tier-stepper{display:inline-flex;align-items:center;gap:6px;vertical-align:middle;}
+  .tier-step-btn{width:24px;height:24px;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;padding:0;font-family:var(--font-mono);font-size:15px;font-weight:700;line-height:1;background:var(--bg-panel-raised);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;}
+  .tier-step-btn:hover:not(:disabled){border-color:var(--gold);color:var(--gold);}
+  .tier-step-btn:disabled{opacity:0.35;cursor:not-allowed;}
+  .tier-step-label{min-width:118px;text-align:center;color:var(--text);}
   .craft-filter-bar{display:flex;justify-content:flex-end;margin:2px 0 10px;}
   .craft-filter-btn{font-family:var(--font-body);font-size:12px;font-weight:600;padding:5px 12px;border-radius:var(--radius);cursor:pointer;background:var(--bg-panel-raised);border:1px solid var(--border);color:var(--text-dim);}
   .craft-filter-btn.on{background:color-mix(in srgb, var(--cat-crafting) 22%, var(--bg-panel-raised));border-color:var(--cat-crafting);color:var(--text);}
@@ -5910,6 +5915,23 @@
     });
     return parts.join(', ');
   }
+  // Tier picker rendered as a "− value +" stepper (replaces the old <select> dropdowns).
+  // `target` names the state bucket in TIER_STEP_TARGETS; `sub` keys within it ('' for
+  // scalars). `values` is the ordered list of selectable tier indices, `cur` the current
+  // one, `label` the text shown between the buttons. Buttons disable at the ends of the list
+  // or when `disabled` (an active craft locks the tier). tierRange builds a 0..max list.
+  function tierRange(max){ var a=[]; for(var i=0;i<=max;i++) a.push(i); return a; }
+  function tierStepper(target, sub, values, cur, label, disabled){
+    var idx = values.indexOf(cur);
+    var d = ' data-tier-target="'+target+'" data-tier-sub="'+sub+'" data-tier-values="'+values.join(',')+'"';
+    var decOff = disabled || idx<=0;
+    var incOff = disabled || idx>=values.length-1;
+    return '<span class="tier-stepper">'
+      + '<button type="button" class="tier-step-btn" data-action="tierStep" data-tier-dir="-1"'+d+(decOff?' disabled':'')+' aria-label="Lower tier">&minus;</button>'
+      + '<span class="tier-step-label">'+label+'</span>'
+      + '<button type="button" class="tier-step-btn" data-action="tierStep" data-tier-dir="1"'+d+(incOff?' disabled':'')+' aria-label="Higher tier">+</button>'
+      + '</span>';
+  }
   // A live "Owned" total that re-sums a fixed set of inventory ids each tick. The exact ids are
   // baked into the element (they only change when a tier dropdown re-renders the card), so
   // updateDynamic just re-sums them -- keeps forge cards' Owned counts current without a full render.
@@ -6011,9 +6033,7 @@
     html += '<div class="card-grid"><div class="item-card'+(isActive?' active-item':'')+'">';
     html += '<div class="item-top"><div class="item-icon">'+svgIcon('log', cottageTierColor(sel))+'</div><div><div class="item-name">'+escapeHtml(TIER_NAMES[sel])+' Cottage</div><div class="item-meta">Owned this tier: '+owned+'</div></div></div>';
     html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Houses a Peon &mdash; place next to a Workshop of tier '+ (sel+1) +' or higher</div>';
-    html += '<div class="inputs-line">Tier: <select data-action="selectCottageTier"'+(isActive?' disabled':'')+'>';
-    for(var i=0;i<=maxUnlocked;i++){ html += '<option value="'+i+'"'+(i===sel?' selected':'')+'>'+TIER_NAMES[i]+' (Lv'+TIER_LEVELS[i]+')</option>'; }
-    html += '</select></div>';
+    html += '<div class="inputs-line">Tier: '+tierStepper('cottage','',tierRange(maxUnlocked),sel,TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
     html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>Req. Lv '+data.levelReq+'</span></div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-cottage')+'</div>';
     html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -6042,11 +6062,7 @@
     var html = '<div class="item-card'+(isActive?' active-item':'')+'">';
     html += '<div class="item-top"><div class="item-icon">'+wIcon+'</div><div><div class="item-name">'+escapeHtml(lbl)+' Workshop</div><div class="item-meta">Owned this tier: '+owned+'</div></div></div>';
     html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Boosts <b>'+escapeHtml(lbl)+'</b> &mdash; +'+Math.round(data.speedPct*100)+'% '+(isGather?'gathering':'crafting')+' speed, '+Math.round(data.doublePct*100)+'% double output</div>';
-    html += '<div class="inputs-line">Tier: <select data-action="selectWorkshopTier" data-skill="'+skillId+'"'+(isActive?' disabled':'')+'>';
-    for(var i=0;i<=maxUnlocked;i++){
-      html += '<option value="'+i+'"'+(i===sel?' selected':'')+'>'+TIER_NAMES[i]+' (Lv'+TIER_LEVELS[i]+')</option>';
-    }
-    html += '</select></div>';
+    html += '<div class="inputs-line">Tier: '+tierStepper('workshop',skillId,tierRange(maxUnlocked),sel,TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
     html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>Req. Lv '+data.levelReq+'</span></div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-workshop-'+skillId)+'</div>';
     html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -6157,12 +6173,8 @@
     if(ownedLogTiers.length===0){
       html += '<div class="empty-note">No logs owned. Gather some in Forestry first.</div>';
     } else {
-      html += '<div class="inputs-line">Log: <select data-action="selectShaftLogTier">';
-      ownedLogTiers.forEach(function(t){
-        var logItem = GATHERING_SKILLS.forestry.items[t];
-        html += '<option value="'+t+'"'+(t===selectedShaftLogTier?' selected':'')+'>'+logItem.name+' (owned '+state.inventory[logItem.id]+')</option>';
-      });
-      html += '</select></div>';
+      var selLog = GATHERING_SKILLS.forestry.items[selectedShaftLogTier];
+      html += '<div class="inputs-line">Log: '+tierStepper('shaft','',ownedLogTiers,selectedShaftLogTier,selLog.name+' (owned '+state.inventory[selLog.id]+')',false)+'</div>';
       var expectedShafts = shaftOutputFor(selectedShaftLogTier);
       html += '<div class="item-stats"><span>+'+Math.round(expectedShafts*2*1.5)+' XP</span></div>';
       html += '<div class="chance-line">Output: <b>'+expectedShafts+'x Shaft</b> at <b>'+shaftPct+'%</b> success (base 70%, Fletching Jig adds more)</div>';
@@ -6210,11 +6222,7 @@
       html += '<div class="item-top"><div class="item-icon">'+tt.icon+'</div><div><div class="item-name">'+tt.name+'</div><div class="item-meta">Equipped: '+equippedLabel+' &bull; Owned: '+toolOwnedTotal+'</div></div></div>';
       var benefitLabel = (tt.isGather ? (GATHERING_SKILLS[tt.skillId]||{}).label : (CRAFTING_SKILLS[tt.skillId]||{}).label) || SKILL_LABELS[tt.skillId] || tt.skillId;
       html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Boosts your <b>'+escapeHtml(benefitLabel)+'</b> '+(tt.isGather?'gathering':'crafting')+'</div>';
-      html += '<div class="inputs-line">Tier: <select data-action="selectToolTier" data-skill="'+tt.skillId+'"'+(isActive?' disabled':'')+'>';
-      for(var i=0;i<=maxUnlocked;i++){
-        html += '<option value="'+i+'"'+(i===sel?' selected':'')+'>'+METAL_TIER_NAMES[i]+' (Lv'+TIER_LEVELS[i]+')</option>';
-      }
-      html += '</select></div>';
+      html += '<div class="inputs-line">Tier: '+tierStepper('tool',tt.skillId,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       var statLine = tt.isGather
         ? ('+'+Math.round(data.speedBonus*100)+'% speed')
         : ('+'+Math.round(data.speedBonus*100)+'% spd, +'+Math.round(data.successBonus*100)+'% success');
@@ -6266,11 +6274,7 @@
         var armorOwnedTotal = ownedSpan(mat.rarityIds.map(function(r){ return 'bodyarmor_'+material+'_'+slot+'_t'+sel+'_'+r; }));
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
         html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.label+' '+BODY_ARMOR_LABELS[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+armorOwnedTotal+'</div></div></div>';
-        html += '<div class="inputs-line">Tier: <select data-action="selectBodyArmorTier" data-material="'+material+'" data-slot="'+slot+'"'+(isActive?' disabled':'')+'>';
-        for(var i=0;i<=maxUnlocked;i++){
-          html += '<option value="'+i+'"'+(i===sel?' selected':'')+'>'+names[i]+' (Lv'+TIER_LEVELS[i]+')</option>';
-        }
-        html += '</select></div>';
+        html += '<div class="inputs-line">Tier: '+tierStepper('armor',key,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
         html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>defense '+data.defense+'</span></div>';
         html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare'+(mat.rarityIds.length>2?'/supreme/fantastic':'')+' odds)</div>';
         html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-bodyarmor-'+key)+'</div>';
@@ -6384,11 +6388,7 @@
         var leatherOwnedTotal = ownedSpan(mat.rarityIds.map(function(r){ return 'bodyarmor_'+material+'_'+slot+'_t'+sel+'_'+r; }));
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
         html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.slotLabels[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+leatherOwnedTotal+'</div></div></div>';
-        html += '<div class="inputs-line">Wildlife: <select data-action="selectBodyArmorTier" data-material="'+material+'" data-slot="'+slot+'"'+(isActive?' disabled':'')+'>';
-        for(var i=0;i<=maxUnlocked;i++){
-          html += '<option value="'+i+'"'+(i===sel?' selected':'')+'>'+names[i]+' (Lv'+TIER_LEVELS[i]+')</option>';
-        }
-        html += '</select></div>';
+        html += '<div class="inputs-line">Wildlife: '+tierStepper('armor',key,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
         html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>defense '+data.defense+'</span></div>';
         html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
         html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-bodyarmor-'+key)+'</div>';
@@ -6420,11 +6420,7 @@
     var beltOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'belt_t'+beltSel+'_'+r; }));
     html += '<div class="card-grid"><div class="item-card'+(beltIsActive?' active-item':'')+'">';
     html += '<div class="item-top"><div class="item-icon">'+svgIcon('belt','#8a6a42')+'</div><div><div class="item-name">Belt</div><div class="item-meta">Rarity grants extra craft slots, not just more defense &bull; Owned: '+beltOwnedTotal+'</div></div></div>';
-    html += '<div class="inputs-line">Wildlife: <select data-action="selectBeltTier"'+(beltIsActive?' disabled':'')+'>';
-    for(var bi=0; bi<=maxUnlocked; bi++){
-      html += '<option value="'+bi+'"'+(bi===beltSel?' selected':'')+'>'+WILDLIFE_NAMES[bi]+' (Lv'+TIER_LEVELS[bi]+')</option>';
-    }
-    html += '</select></div>';
+    html += '<div class="inputs-line">Wildlife: '+tierStepper('belt','',tierRange(maxUnlocked),beltSel,WILDLIFE_NAMES[beltSel]+' (Lv'+TIER_LEVELS[beltSel]+')',beltIsActive)+'</div>';
     html += '<div class="item-stats"><span>+'+Math.round(beltData.xp*1.5)+' XP</span><span>'+beltData.name+'</span><span>defense '+beltData.defense+'</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+beltData.name+'</b> at <b>'+beltSuccessPct+'%</b> success &mdash; Rare = 2 slots, Supreme = 3, Fantastic = 4</div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(beltData.inputs, 'inp-belt')+'</div>';
@@ -6468,11 +6464,7 @@
         var tailorOwnedTotal = ownedSpan(mat.rarityIds.map(function(r){ return 'bodyarmor_'+material+'_'+slot+'_t'+sel+'_'+r; }));
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
         html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.slotLabels[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+tailorOwnedTotal+'</div></div></div>';
-        html += '<div class="inputs-line">Fiber: <select data-action="selectBodyArmorTier" data-material="'+material+'" data-slot="'+slot+'"'+(isActive?' disabled':'')+'>';
-        for(var i=0;i<=maxUnlocked;i++){
-          html += '<option value="'+i+'"'+(i===sel?' selected':'')+'>'+names[i]+' (Lv'+TIER_LEVELS[i]+')</option>';
-        }
-        html += '</select></div>';
+        html += '<div class="inputs-line">Fiber: '+tierStepper('armor',key,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
         html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>defense '+data.defense+'</span></div>';
         html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
         html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-bodyarmor-'+key)+'</div>';
@@ -6518,11 +6510,7 @@
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+rt.icon+'</div><div><div class="item-name">'+rt.name+'</div><div class="item-meta">'+TYPE_ICON[rt.damageType]+' +'+Math.round(data.dmgBonus*100)+'% '+rt.damageType+' dmg (Normal)</div></div></div>';
-      html += '<div class="inputs-line">Tier: <select data-action="selectRingTier" data-type="'+rt.id+'"'+(isActive?' disabled':'')+'>';
-      for(var i=0;i<=maxUnlocked;i++){
-        html += '<option value="'+i+'"'+(i===sel?' selected':'')+'>'+TIER_NAMES[i]+' (Lv'+TIER_LEVELS[i]+')</option>';
-      }
-      html += '</select></div>';
+      html += '<div class="inputs-line">Tier: '+tierStepper('ring',rt.id,tierRange(maxUnlocked),sel,TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>+'+Math.round(data.dmgBonus*100)+'% (Normal)</span><span>+'+Math.round(data.dmgBonus*800)+'% (Fantastic)</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+jewelrySuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-ring-'+rt.id)+'</div>';
@@ -6551,11 +6539,7 @@
     var amFillId = amIsActive ? (amActiveSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+amActiveSlot.index) : '';
     html += '<div class="card-grid"><div class="item-card'+(amIsActive?' active-item':'')+'">';
     html += '<div class="item-top"><div class="item-icon">'+svgIcon('amulet','#c9a227')+'</div><div><div class="item-name">Amulet</div><div class="item-meta">Flat armor bonus</div></div></div>';
-    html += '<div class="inputs-line">Tier: <select data-action="selectAmuletTier"'+(amIsActive?' disabled':'')+'>';
-    for(var ai=0; ai<=maxUnlocked; ai++){
-      html += '<option value="'+ai+'"'+(ai===amSel?' selected':'')+'>'+TIER_NAMES[ai]+' (Lv'+TIER_LEVELS[ai]+')</option>';
-    }
-    html += '</select></div>';
+    html += '<div class="inputs-line">Tier: '+tierStepper('amulet','',tierRange(maxUnlocked),amSel,TIER_NAMES[amSel]+' (Lv'+TIER_LEVELS[amSel]+')',amIsActive)+'</div>';
     html += '<div class="item-stats"><span>+'+Math.round(amData.xp*1.5)+' XP</span><span>'+amData.name+'</span><span>defense '+amData.defense+'</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+amData.name+'</b> at <b>'+jewelrySuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(amData.inputs, 'inp-amulet')+'</div>';
@@ -6593,11 +6577,7 @@
       var stwOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stweapon_'+w.id+'_t'+sel+'_'+r; }));
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">'+w.weaponClass+' &bull; '+formatTypeMix(w.attackTypes)+' &bull; '+w.attackSpeed+'s attack &bull; Owned: '+stwOwnedTotal+'</div></div></div>';
-      html += '<div class="inputs-line">Tier: <select data-action="selectMeleeWeaponTier" data-type="'+w.id+'"'+(isActive?' disabled':'')+'>';
-      for(var i=0;i<=maxUnlocked;i++){
-        html += '<option value="'+i+'"'+(i===sel?' selected':'')+'>'+names[i]+' (Lv'+TIER_LEVELS[i]+')</option>';
-      }
-      html += '</select></div>';
+      html += '<div class="inputs-line">Tier: '+tierStepper('melee',w.id,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>'+data.dmgMin+'-'+data.dmgMax+' dmg</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-stw-'+w.id)+'</div>';
@@ -6715,11 +6695,7 @@
       var stsOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stshield_'+s.id+'_t'+sel+'_'+r; }));
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+s.icon+'</div><div><div class="item-name">'+s.name+'</div><div class="item-meta">Counters '+s.countersType+' &bull; Owned: '+stsOwnedTotal+'</div></div></div>';
-      html += '<div class="inputs-line">Tier: <select data-action="selectShieldTier" data-type="'+s.id+'"'+(isActive?' disabled':'')+'>';
-      for(var i=0;i<=maxUnlocked;i++){
-        html += '<option value="'+i+'"'+(i===sel?' selected':'')+'>'+names[i]+' (Lv'+TIER_LEVELS[i]+')</option>';
-      }
-      html += '</select></div>';
+      html += '<div class="inputs-line">Tier: '+tierStepper('shield',s.id,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>defense '+data.defense+'</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-sts-'+s.id)+'</div>';
@@ -10057,7 +10033,7 @@
     else return;
     // addLog refreshes the Chronicle log on its own (via logVersion in updateDynamic). Do NOT
     // set needsRender here -- a full render per incoming event rebuilds #content and slams shut
-    // any open <select> (e.g. a smithing tier dropdown) whenever the community is active.
+    // any open <select> (e.g. the guild-bank deposit dropdown) whenever the community is active.
     addLog(msg, 'chronicle');
   }
   async function chatInit(){
@@ -11936,8 +11912,8 @@
     var act = state.activity;
     // Concurrent craft-slot bars: live-update widths, and rebuild ONLY the header bar when
     // the set of running extra crafts changes so the bars appear/disappear. Must not trigger
-    // a full render() -- that rebuilds #content and would slam shut any open <select> (e.g. a
-    // smithing tier dropdown) mid-interaction, which reads as "the dropdown is broken".
+    // a full render() -- that rebuilds #content and would slam shut any open <select> (e.g. the
+    // guild-bank deposit dropdown) mid-interaction, which reads as "the dropdown is broken".
     var extras = activeExtraCraftSlots();
     var sig = extras.map(function(e){ return e.idx+':'+(e.slot.craftKind||e.slot.itemId); }).join(',');
     if(sig !== gabExtraSig){
@@ -12546,6 +12522,20 @@
   var _ffResizeT = null;
   window.addEventListener('resize', function(){ if(_ffResizeT) return; _ffResizeT = setTimeout(function(){ _ffResizeT = null; render(); }, 180); });
 
+  // Maps a tier-stepper's data-tier-target to the state it reads/writes. Scalars ignore `sub`.
+  var TIER_STEP_TARGETS = {
+    tool:     { get:function(sub){ return selectedToolTier[sub]; },        set:function(sub,v){ selectedToolTier[sub]=v; } },
+    workshop: { get:function(sub){ return selectedWorkshopTier[sub]; },    set:function(sub,v){ selectedWorkshopTier[sub]=v; } },
+    cottage:  { get:function(){ return selectedCottageTier; },             set:function(sub,v){ selectedCottageTier=v; } },
+    armor:    { get:function(sub){ return selectedBodyArmorTier[sub]; },   set:function(sub,v){ selectedBodyArmorTier[sub]=v; } },
+    shaft:    { get:function(){ return selectedShaftLogTier; },            set:function(sub,v){ selectedShaftLogTier=v; } },
+    belt:     { get:function(){ return selectedBeltTier; },                set:function(sub,v){ selectedBeltTier=v; } },
+    melee:    { get:function(sub){ return selectedMeleeWeaponTier[sub]; }, set:function(sub,v){ selectedMeleeWeaponTier[sub]=v; } },
+    shield:   { get:function(sub){ return selectedShieldTier[sub]; },      set:function(sub,v){ selectedShieldTier[sub]=v; } },
+    ring:     { get:function(sub){ return selectedRingTier[sub]; },        set:function(sub,v){ selectedRingTier[sub]=v; } },
+    amulet:   { get:function(){ return selectedAmuletTier; },              set:function(sub,v){ selectedAmuletTier=v; } }
+  };
+
   document.getElementById('app').addEventListener('click', function(e){
     var btn = e.target.closest('[data-action]');
     if(!btn) return;
@@ -12554,6 +12544,18 @@
       startGather(btn.getAttribute('data-skill'), btn.getAttribute('data-item'));
     } else if(action==='craft'){
       startCraft(btn.getAttribute('data-skill'), btn.getAttribute('data-item'));
+    } else if(action==='tierStep'){
+      var _tt = TIER_STEP_TARGETS[btn.getAttribute('data-tier-target')];
+      var _vals = (btn.getAttribute('data-tier-values')||'').split(',').map(function(v){ return parseInt(v,10); }).filter(function(v){ return !isNaN(v); });
+      if(_tt && _vals.length){
+        var _sub = btn.getAttribute('data-tier-sub')||'';
+        var _dir = parseInt(btn.getAttribute('data-tier-dir'),10);
+        var _i = _vals.indexOf(_tt.get(_sub));
+        if(_i===-1) _i = 0;
+        _i = Math.max(0, Math.min(_vals.length-1, _i+_dir));
+        _tt.set(_sub, _vals[_i]);
+        render();
+      }
     } else if(action==='fight'){
       startCombat(btn.getAttribute('data-monster'));
     } else if(action==='navToActivity'){
@@ -12910,69 +12912,10 @@
   });
 
   document.getElementById('app').addEventListener('change', function(e){
+    // Crafting-tier pickers are now − value + steppers (handled in the click listener above).
+    // The only remaining <select> is the leaderboard "Rank by" metric.
     if(e.target && e.target.id === 'lbMetricSelect'){
       leaderboardMetric = e.target.value; render(); return;
-    }
-    var toolSel = e.target.closest('[data-action="selectToolTier"]');
-    if(toolSel){
-      selectedToolTier[toolSel.getAttribute('data-skill')] = parseInt(toolSel.value, 10);
-      render();
-      return;
-    }
-    var wshopSel = e.target.closest('[data-action="selectWorkshopTier"]');
-    if(wshopSel){
-      selectedWorkshopTier[wshopSel.getAttribute('data-skill')] = parseInt(wshopSel.value, 10);
-      render();
-      return;
-    }
-    var cottSel = e.target.closest('[data-action="selectCottageTier"]');
-    if(cottSel){
-      selectedCottageTier = parseInt(cottSel.value, 10);
-      render();
-      return;
-    }
-    var armorSel = e.target.closest('[data-action="selectBodyArmorTier"]');
-    if(armorSel){
-      var key = armorSel.getAttribute('data-material')+'_'+armorSel.getAttribute('data-slot');
-      selectedBodyArmorTier[key] = parseInt(armorSel.value, 10);
-      render();
-      return;
-    }
-    var shaftSel = e.target.closest('[data-action="selectShaftLogTier"]');
-    if(shaftSel){
-      selectedShaftLogTier = parseInt(shaftSel.value, 10);
-      render();
-      return;
-    }
-    var beltSel = e.target.closest('[data-action="selectBeltTier"]');
-    if(beltSel){
-      selectedBeltTier = parseInt(beltSel.value, 10);
-      render();
-      return;
-    }
-    var meleeSel = e.target.closest('[data-action="selectMeleeWeaponTier"]');
-    if(meleeSel){
-      selectedMeleeWeaponTier[meleeSel.getAttribute('data-type')] = parseInt(meleeSel.value, 10);
-      render();
-      return;
-    }
-    var shieldSel = e.target.closest('[data-action="selectShieldTier"]');
-    if(shieldSel){
-      selectedShieldTier[shieldSel.getAttribute('data-type')] = parseInt(shieldSel.value, 10);
-      render();
-      return;
-    }
-    var ringSel = e.target.closest('[data-action="selectRingTier"]');
-    if(ringSel){
-      selectedRingTier[ringSel.getAttribute('data-type')] = parseInt(ringSel.value, 10);
-      render();
-      return;
-    }
-    var amuletSel = e.target.closest('[data-action="selectAmuletTier"]');
-    if(amuletSel){
-      selectedAmuletTier = parseInt(amuletSel.value, 10);
-      render();
-      return;
     }
   });
 
@@ -13137,8 +13080,8 @@
       cloudSave();
     }
 
-    // A full render() rebuilds #content, which slams shut any open <select> (e.g. a smithing
-    // tier dropdown) mid-interaction -- brutal on a single click, and on mobile pickers. So
+    // A full render() rebuilds #content, which slams shut any open <select> (e.g. the guild-bank
+    // deposit dropdown) mid-interaction -- brutal on a single click, and on mobile pickers. So
     // while a content dropdown is focused/open, defer the render (keep needsRender set) and
     // just run the light live-update pass; it flushes as soon as the dropdown is dismissed.
     if(needsRender && !isContentSelectFocused()){
@@ -13224,6 +13167,7 @@
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, weightedAdvantage:weightedAdvantage,
+      tierStepper:tierStepper, tierRange:tierRange,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS,
