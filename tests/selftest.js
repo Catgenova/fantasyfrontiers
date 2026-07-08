@@ -96,6 +96,40 @@
     eq(FF.craftXpBonus('stonecutting'), 1, 'stonecutting crafting gets no XP bonus');
   });
 
+  // ---- Belt extra slots accept craft / gather / faith, freely mixed --------------------
+  suite('belt extra slots run gather + faith alongside crafting', function(){
+    var S = FF._state;
+    var savedActivity = S.activity, savedExtra = S.extraCraftSlots, savedBt = S.equippedBeltTier, savedBr = S.equippedBeltRarity;
+    try {
+      S.equippedBeltTier = 1; S.equippedBeltRarity = 'fantastic'; // 4 concurrent slots
+      S.activity = { type:null }; S.extraCraftSlots = [{type:null},{type:null},{type:null}];
+      FF.ensureCraftSlotCapacity();
+      ok(FF.getMaxCraftSlots(S) >= 4, 'fantastic belt grants >= 4 task slots');
+      var miningId = FF.GATHERING_SKILLS.mining.items[0].id;
+      var fishId = FF.GATHERING_SKILLS.fishing.items[0].id;
+      var prayId = FF.PRAYER_TIERS[0].id;
+      FF.startGather('mining', miningId);
+      ok(S.activity.type === 'gather' && S.activity.skill === 'mining', 'first gather takes the primary slot');
+      FF.startGather('fishing', fishId);
+      var g2 = FF.findActiveGatherSlot('fishing', fishId);
+      ok(g2 && !g2.primary, 'a second gather goes to an extra belt slot');
+      FF.startPray(prayId);
+      var p1 = FF.findActivePraySlot(prayId);
+      ok(p1 && !p1.primary, 'faith (prayer) runs in an extra belt slot, mixed with gathering');
+      var types = [S.activity].concat(S.extraCraftSlots).filter(function(s){ return s && s.type; }).map(function(s){ return s.type; });
+      ok(types.indexOf('gather') !== -1 && types.indexOf('pray') !== -1, 'gather and faith run at the same time');
+      var beforeF = S.xp.fishing || 0;
+      FF.processGatherActivity(S.extraCraftSlots[g2.index], 3600000);
+      ok((S.xp.fishing || 0) > beforeF, 'extra-slot gathering accrues XP when processed');
+      var beforeP = S.xp.prayer || 0;
+      FF.processPrayActivity(S.extraCraftSlots[p1.index], 3600000);
+      ok((S.xp.prayer || 0) > beforeP, 'extra-slot prayer accrues XP when processed');
+    } finally {
+      S.activity = savedActivity; S.extraCraftSlots = savedExtra;
+      S.equippedBeltTier = savedBt; S.equippedBeltRarity = savedBr;
+    }
+  });
+
   // ---- Tier steppers replaced the crafting-tier <select> dropdowns -----------------------
   suite('tierRange builds a contiguous 0..max list', function(){
     var r = FF.tierRange(3);

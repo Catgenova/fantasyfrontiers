@@ -2770,7 +2770,7 @@
   function shaftOutputFor(logTierIndex){ return 15*(logTierIndex+1); }
   function startShaftCraft(logTierIndex){
     if((state.inventory['forestry_t'+logTierIndex]||0) <= 0) return;
-    var slot = findFreeCraftSlot('fletching', 'fletching_shaft');
+    var slot = findFreeCraftSlot();
     if(slot && !slot.primary){
       state.extraCraftSlots[slot.index] = { type:'craft', skill:'fletching', itemId:'fletching_shaft', progress:0, logTierIndex: logTierIndex };
     } else {
@@ -3588,9 +3588,8 @@
 
   // ---- Belts: also leather (Leatherworking), but rarity does something completely
   // different from every other equipment type. Instead of scaling stats harder, a
-  // higher-rarity Belt unlocks additional simultaneous Crafting slots, as long as every
-  // active slot shares the same category (e.g. two different ingots, or two different
-  // armors -- never an ingot alongside an armor).
+  // higher-rarity Belt unlocks additional simultaneous task slots that can each run any
+  // task -- crafting, gathering, or Faith (prayer) -- freely mixed.
   var BELT_RARITY_SLOTS = { normal:1, rare:2, supreme:3, fantastic:4 };
   function getBeltTierData(tierIndex){
     var inputs = {};
@@ -3825,29 +3824,30 @@
     return amulet ? amulet.defense : 0;
   }
 
-  // Crafting "categories": what counts as the same kind of task for the Belt's extra
-  // slots. Metallurgy's bars all share "ingots"; body armor, belts, and accessory armor
-  // all share "armor". Every other crafting skill defaults to its own name as its category.
-  function getCraftCategory(skillId, itemId, craftKind){
-    if(craftKind==='bodyarmor' || craftKind==='belt' || craftKind==='armorslot') return 'armor';
-    if(itemId && itemId.indexOf('bodyarmor_')===0) return 'armor';
-    if(itemId && itemId.indexOf('belt_t')===0) return 'armor';
-    if(skillId==='metallurgy') return 'ingots';
-    return skillId;
-  }
-  function getActiveCraftCategory(state){
-    if(state.activity.type==='craft') return getCraftCategory(state.activity.skill, state.activity.itemId, state.activity.craftKind);
-    for(var i=0;i<state.extraCraftSlots.length;i++){
-      var s = state.extraCraftSlots[i];
-      if(s.type==='craft') return getCraftCategory(s.skill, s.itemId, s.craftKind);
-    }
-    return null;
-  }
   function findActiveCraftSlotFor(skill, itemId){
     if(state.activity.type==='craft' && state.activity.skill===skill && state.activity.itemId===itemId) return {primary:true, act:state.activity};
     for(var i=0;i<state.extraCraftSlots.length;i++){
       var s = state.extraCraftSlots[i];
       if(s.type==='craft' && s.skill===skill && s.itemId===itemId) return {primary:false, index:i, act:s};
+    }
+    return null;
+  }
+  // Belt slots now hold gathering tasks too, so a gather resource card must know whether it's
+  // running in the primary slot or one of the extra slots (same idea as findActiveCraftSlotFor).
+  function findActiveGatherSlot(skill, itemId){
+    if(state.activity.type==='gather' && state.activity.skill===skill && state.activity.itemId===itemId) return {primary:true, act:state.activity};
+    for(var i=0;i<state.extraCraftSlots.length;i++){
+      var s = state.extraCraftSlots[i];
+      if(s.type==='gather' && s.skill===skill && s.itemId===itemId) return {primary:false, index:i, act:s};
+    }
+    return null;
+  }
+  // Prayer (a Faith task) can also run in an extra belt slot.
+  function findActivePraySlot(itemId){
+    if(state.activity.type==='pray' && state.activity.itemId===itemId) return {primary:true, act:state.activity};
+    for(var i=0;i<state.extraCraftSlots.length;i++){
+      var s = state.extraCraftSlots[i];
+      if(s.type==='pray' && s.itemId===itemId) return {primary:false, index:i, act:s};
     }
     return null;
   }
@@ -3876,30 +3876,29 @@
     }
     return null;
   }
-  function findFreeCraftSlot(skill, itemId, craftKind){
+  // Finds a slot for a new task. Belt (+ Logic) grants extra concurrent slots that accept ANY
+  // task type -- crafting, gathering, or Faith (prayer) -- freely mixed. Returns the primary
+  // slot when idle, else the first free extra slot, else null (all slots busy).
+  function findFreeCraftSlot(){
     ensureCraftSlotCapacity();
-    // Primary slot first.
-    if(state.activity.type===null) return {primary:true};
-    var category = getCraftCategory(skill, itemId, craftKind);
-    var activeCategory = getActiveCraftCategory(state);
-    if(activeCategory !== null && activeCategory !== category) return null;
+    if(!state.activity.type) return {primary:true};
     var maxSlots = getMaxCraftSlots(state);
     for(var i=0;i<state.extraCraftSlots.length && i<maxSlots-1;i++){
-      if(state.extraCraftSlots[i].type===null) return {primary:false, index:i};
+      if(!state.extraCraftSlots[i].type) return {primary:false, index:i};
     }
     return null;
   }
-  // Places a newly-started craft into a free Belt-granted slot if one legitimately
-  // fits (preserving parallel same-category crafting); otherwise it always wins,
-  // stopping whatever the primary slot was doing and taking it over.
-  function placeNewCraftActivity(skill, itemId, craftKind, newAct){
-    var slot = findFreeCraftSlot(skill, itemId, craftKind);
+  // Places a newly-started task (craft/gather/pray) into a free Belt-granted slot if one is
+  // available; otherwise it always wins, stopping whatever the primary slot was doing.
+  function placeNewActivity(newAct){
+    var slot = findFreeCraftSlot();
     if(slot && !slot.primary){
       state.extraCraftSlots[slot.index] = newAct;
     } else {
       state.activity = newAct;
     }
   }
+  function placeNewCraftActivity(skill, itemId, craftKind, newAct){ placeNewActivity(newAct); }
   function getSpecialSkillId(act){
     if(act.craftKind==='tool') return 'blacksmithing';
     if(act.craftKind==='stackweapon') return STACKABLE_WEAPON_TYPE_MAP[act.typeId].skillId;
@@ -4096,6 +4095,63 @@
           effTimeC = recipe.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, act.skill);
         }
       }
+    }
+  }
+  // Advances one gathering task (the primary slot or a belt-granted extra slot). Operates on the
+  // passed activity object so the same logic drives every slot; dt may be a live frame or the
+  // whole offline window (the while-loop batches accordingly).
+  function processGatherActivity(act, dt){
+    if(act.type !== 'gather') return;
+    var item = ALL_GATHER_ITEMS[act.itemId];
+    if(!item){ act.type = null; needsRender = true; return; }
+    act.progress += dt;
+    var effTime = item.time*1000*speedMultiplier(state)*gatherToolSpeedMultiplier(state, act.skill)*(PHYS_LONG_GATHER.indexOf(act.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1);
+    while(act.type==='gather' && act.progress >= effTime){
+      act.progress -= effTime;
+      bumpStat('gathered');
+      addXp(act.skill, item.xp * (1 + curiosityGatherXpBonus(state)));
+      if(act.skill === 'digging'){
+        processDiggingRoll(act.itemId);
+      } else if(act.skill === 'mining'){
+        processMiningRoll(act.itemId);
+      } else if(act.skill === 'fishing'){
+        processFishingRoll(act.itemId);
+      } else {
+        addItem(act.itemId, 1);
+        spawnFloatingText('+1 ' + item.name, 'ft-success');
+        gatherDoubleRoll(act.itemId, act.skill);
+        if(act.skill === 'forestry'){
+          maybeDropCritterCache();
+        } else if(SEED_DROP_SKILLS.indexOf(act.skill) !== -1){
+          maybeDropSeed(act.skill, parseInt(act.itemId.split('_t')[1], 10));
+        }
+        if(act.skill === 'herbalism'){
+          maybeDropGrainSeed(parseInt(act.itemId.split('_t')[1], 10));
+          maybeDropHerbSeed(parseInt(act.itemId.split('_t')[1], 10));
+        }
+        if(act.skill === 'foraging'){
+          maybeDropPowder(parseInt(act.itemId.split('_t')[1], 10));
+          maybeDropForagingArtifact(parseInt(act.itemId.split('_t')[1], 10));
+        }
+      }
+      addPhysiqueXp(GATHER_PHYSIQUE[act.skill]);
+      maybeSummonFamiliar(act.skill);
+      effTime = item.time*1000*speedMultiplier(state)*gatherToolSpeedMultiplier(state, act.skill)*(PHYS_LONG_GATHER.indexOf(act.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1);
+    }
+  }
+  // Advances one Prayer task (primary or extra slot). Prayer costs only time and raises Prayer XP.
+  function processPrayActivity(act, dt){
+    if(act.type !== 'pray') return;
+    var prayerTier = PRAYER_TIERS.filter(function(t){ return t.id===act.itemId; })[0];
+    if(!prayerTier){ act.type = null; needsRender = true; return; }
+    act.progress += dt;
+    var effTimeP = prayerTier.time*1000*speedMultiplier(state);
+    while(act.type==='pray' && act.progress >= effTimeP){
+      act.progress -= effTimeP;
+      addXp('prayer', prayerTier.xp);
+      addPhysiqueXp([['focus',3]]);
+      maybeSummonFamiliar('prayer');
+      effTimeP = prayerTier.time*1000*speedMultiplier(state);
     }
   }
   function equipBodyArmor(itemId){
@@ -4832,26 +4888,19 @@
   function startGather(skill, itemId){
     var item = ALL_GATHER_ITEMS[itemId];
     if(getLevel(state.xp[skill]) < item.levelReq) return;
-    state.activity = { type:'gather', skill:skill, itemId:itemId, progress:0 };
+    placeNewActivity({ type:'gather', skill:skill, itemId:itemId, progress:0 });
   }
   function startCraft(skill, recipeId){
     var recipe = ALL_CRAFT_RECIPES[recipeId];
     if(getLevel(state.xp[skill]) < recipe.levelReq) return;
     if(!hasInputs(recipe.inputs)){ addLog('Not enough materials to craft ' + recipe.name + '.', 'danger'); return; }
-    var slot = findFreeCraftSlot(skill, recipeId);
-    if(slot && !slot.primary){
-      state.extraCraftSlots[slot.index] = { type:'craft', skill:skill, itemId:recipeId, progress:0 };
-    } else {
-      // No free slot (or the free slot IS the primary): starting this task always wins,
-      // stopping whatever the primary slot was doing and taking it over.
-      state.activity = { type:'craft', skill:skill, itemId:recipeId, progress:0 };
-    }
+    placeNewActivity({ type:'craft', skill:skill, itemId:recipeId, progress:0 });
   }
   function startPray(tierId){
     var tierDef = PRAYER_TIERS.filter(function(t){ return t.id===tierId; })[0];
     if(!tierDef) return;
     if(getLevel(state.xp.prayer) < tierDef.levelReq) return;
-    state.activity = { type:'pray', itemId:tierId, progress:0 };
+    placeNewActivity({ type:'pray', itemId:tierId, progress:0 });
   }
   function startFaithActivity(kind, tierIndex){
     var tiers = FAITH_ACTIVITY_TIERS[kind];
@@ -5510,7 +5559,13 @@
     // Concurrent craft queue (belt-granted extra slots) runs offline too — reuse the live
     // effTime/consume logic; addItem/addXp are captured into the summary automatically.
     ensureCraftSlotCapacity();
-    for(var _es=0; _es<state.extraCraftSlots.length; _es++){ var _slot = state.extraCraftSlots[_es]; if(_slot && _slot.type==='craft') processCraftActivity(_slot, capped); }
+    for(var _es=0; _es<state.extraCraftSlots.length; _es++){
+      var _slot = state.extraCraftSlots[_es];
+      if(!_slot) continue;
+      if(_slot.type==='craft') processCraftActivity(_slot, capped);
+      else if(_slot.type==='gather') processGatherActivity(_slot, capped);
+      else if(_slot.type==='pray') processPrayActivity(_slot, capped);
+    }
     // Personal-estate Peons produce/consume through the whole away period (big iter cap so a
     // fast peon isn't truncated by the live 200-tick guard).
     processPeonScope('personal', capped, 300000);
@@ -5882,9 +5937,10 @@
     html += '<div class="card-grid">';
     skill.items.forEach(function(item){
       var locked = lvl < item.levelReq;
-      var isActive = act.type==='gather' && act.skill===skillKey && act.itemId===item.id;
+      var gslot = findActiveGatherSlot(skillKey, item.id);
+      var isActive = !!gslot;
       var effTime = item.time*1000*speedMultiplier(state)*gatherToolSpeedMultiplier(state, skillKey)*(PHYS_LONG_GATHER.indexOf(skillKey)!==-1?(1-enduranceGatherSpeedBonus(state)):1);
-      var pct = isActive ? clamp(act.progress/effTime*100,0,100) : 0;
+      var pct = isActive ? clamp((gslot.act.progress||0)/effTime*100,0,100) : 0;
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+item.icon+'</div><div><div class="item-name">'+item.name+'</div><div class="item-meta">Req. Lv '+item.levelReq+'</div></div></div>';
       html += '<div class="item-stats"><span>+'+item.xp+' XP</span><span>'+item.time+'s</span><span>'+item.sell+'g each</span></div>';
@@ -5908,11 +5964,11 @@
         html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> &nbsp;|&nbsp; Chance: <b>100%</b></div>';
       }
       html += '<div class="inputs-line">Owned: <span id="owned-'+item.id+'">'+fmt(state.inventory[item.id]||0)+'</span></div>';
-      html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="liveActionFill"':'')+' style="width:'+pct+'%"></div></div>';
+      html += '<div class="progress-track"><div class="progress-fill"'+(isActive?(gslot.primary?' id="liveActionFill"':' id="extraSlotFill-'+gslot.index+'"'):'')+' style="width:'+pct+'%"></div></div>';
       if(locked){
         html += '<div class="lock-note">Locked until level '+item.levelReq+'</div>';
       } else if(isActive){
-        html += '<button class="action-btn stop" data-action="stop">Stop</button>';
+        html += gslot.primary ? '<button class="action-btn stop" data-action="stop">Stop</button>' : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+gslot.index+'">Stop</button>';
       } else {
         html += '<button class="action-btn" data-action="gather" data-skill="'+skillKey+'" data-item="'+item.id+'">Start</button>';
       }
@@ -6417,7 +6473,7 @@
     var lvl = getLevel(state.xp.leatherworking);
     var maxUnlocked = 0;
     for(var mi=0; mi<TIER_COUNT; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
-    var html = '<div class="section-intro">Level '+lvl+' Leatherworking &mdash; forge Leather Armor (Coif, Gambison, Gauntlets, Boots -- lighter than Chain or Plate but still real protection) and Belts directly from animal Hides. Belts grant extra simultaneous Crafting slots at higher rarity.</div>';
+    var html = '<div class="section-intro">Level '+lvl+' Leatherworking &mdash; forge Leather Armor (Coif, Gambison, Gauntlets, Boots -- lighter than Chain or Plate but still real protection) and Belts directly from animal Hides. Belts grant extra simultaneous task slots (crafting, gathering, or faith) at higher rarity.</div>';
     html += renderSkillProgressBar('leatherworking');
     html += craftStatsLine('leatherworking');
 
@@ -6459,7 +6515,7 @@
     html += '</div>';
 
     html += '<h3>Forge Belts</h3>';
-    html += '<div class="section-intro">Belts work differently: rarity doesn\'t just scale their (small) defense -- Rare lets you run 2 Crafting tasks at once, Supreme 3, Fantastic 4, as long as every simultaneous task shares the same category (e.g. two different ingots, or two different armors, but never an ingot alongside an armor).</div>';
+    html += '<div class="section-intro">Belts work differently: rarity doesn\'t just scale their (small) defense -- Rare lets you run 2 tasks at once, Supreme 3, Fantastic 4. Each extra slot can be any task -- crafting, gathering, or Faith (prayer) -- and they can be freely mixed (e.g. mine while you smith while you pray).</div>';
     if(selectedBeltTier===null) selectedBeltTier = maxUnlocked;
     var beltSel = Math.min(selectedBeltTier, maxUnlocked);
     var beltData = getBeltTierData(beltSel);
@@ -6472,7 +6528,7 @@
     var beltFillId = beltIsActive ? (beltActiveSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+beltActiveSlot.index) : '';
     var beltOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'belt_t'+beltSel+'_'+r; }));
     html += '<div class="card-grid"><div class="item-card'+(beltIsActive?' active-item':'')+'">';
-    html += '<div class="item-top"><div class="item-icon">'+svgIcon('belt','#8a6a42')+'</div><div><div class="item-name">Belt</div><div class="item-meta">Rarity grants extra craft slots, not just more defense &bull; Owned: '+beltOwnedTotal+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+svgIcon('belt','#8a6a42')+'</div><div><div class="item-name">Belt</div><div class="item-meta">Rarity grants extra task slots (craft/gather/faith), not just more defense &bull; Owned: '+beltOwnedTotal+'</div></div></div>';
     html += '<div class="inputs-line">Wildlife: '+tierStepper('belt','',tierRange(maxUnlocked),beltSel,WILDLIFE_NAMES[beltSel]+' (Lv'+TIER_LEVELS[beltSel]+')',beltIsActive)+'</div>';
     html += '<div class="item-stats"><span>+'+Math.round(beltData.xp*1.5)+' XP</span><span>'+beltData.name+'</span><span>defense '+beltData.defense+'</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+beltData.name+'</b> at <b>'+beltSuccessPct+'%</b> success &mdash; Rare = 2 slots, Supreme = 3, Fantastic = 4</div>';
@@ -9519,17 +9575,18 @@
     html += '<div class="card-grid">';
     PRAYER_TIERS.forEach(function(t){
       var locked = lvl < t.levelReq;
-      var isActive = act.type==='pray' && act.itemId===t.id;
+      var pslot = findActivePraySlot(t.id);
+      var isActive = !!pslot;
       var effTime = t.time*1000*speedMultiplier(state);
-      var pct = isActive ? clamp(act.progress/effTime*100,0,100) : 0;
+      var pct = isActive ? clamp((pslot.act.progress||0)/effTime*100,0,100) : 0;
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+svgIcon('prayinghands','#c9a84a')+'</div><div><div class="item-name">'+t.name+'</div><div class="item-meta">Req. Lv '+t.levelReq+'</div></div></div>';
       html += '<div class="item-stats"><span>+'+t.xp+' XP</span><span>'+t.time+'s</span></div>';
-      html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="liveActionFill"':'')+' style="width:'+pct+'%"></div></div>';
+      html += '<div class="progress-track"><div class="progress-fill"'+(isActive?(pslot.primary?' id="liveActionFill"':' id="extraSlotFill-'+pslot.index+'"'):'')+' style="width:'+pct+'%"></div></div>';
       if(locked){
         html += '<div class="lock-note">Locked until level '+t.levelReq+'</div>';
       } else if(isActive){
-        html += '<button class="action-btn stop" data-action="stop">Stop</button>';
+        html += pslot.primary ? '<button class="action-btn stop" data-action="stop">Stop</button>' : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+pslot.index+'">Stop</button>';
       } else {
         html += '<button class="action-btn" data-action="pray" data-item="'+t.id+'">Start</button>';
       }
@@ -11658,13 +11715,14 @@
 
     var maxCraftSlotsSidebar = getMaxCraftSlots(state);
     if(maxCraftSlotsSidebar > 1){
-      html += '<div class="skill-group-header" style="--group-color:var(--gold)">Craft Slots</div>';
-      var usedSlots = (state.activity.type==='craft' ? 1 : 0) + state.extraCraftSlots.filter(function(s){ return s.type==='craft'; }).length;
-      html += '<div class="empty-note" style="margin:-2px 0 6px">'+usedSlots+' / '+maxCraftSlotsSidebar+' in use (Belt + Logic)</div>';
+      html += '<div class="skill-group-header" style="--group-color:var(--gold)">Task Slots</div>';
+      var primaryUses = (state.activity.type==='craft' || state.activity.type==='gather' || state.activity.type==='pray') ? 1 : 0;
+      var usedSlots = primaryUses + state.extraCraftSlots.filter(function(s){ return s.type; }).length;
+      html += '<div class="empty-note" style="margin:-2px 0 6px">'+usedSlots+' / '+maxCraftSlotsSidebar+' in use (Belt + Logic) &bull; craft, gather, or faith</div>';
       state.extraCraftSlots.forEach(function(s, idx){
-        if(s.type !== 'craft') return;
-        var r = ALL_CRAFT_RECIPES[s.itemId];
-        html += '<div class="char-row"><span>'+(r?r.name:s.itemId)+'</span><button class="action-btn stop" style="padding:2px 8px;font-size:10px" data-action="stopExtraSlot" data-slot="'+idx+'">Stop</button></div>';
+        if(!s.type) return;
+        var info = extraCraftSlotInfo(s);
+        html += '<div class="char-row"><span>'+escapeHtml(info.name)+'</span><button class="action-btn stop" style="padding:2px 8px;font-size:10px" data-action="stopExtraSlot" data-slot="'+idx+'">Stop</button></div>';
       });
     }
 
@@ -11819,7 +11877,19 @@
 
   // Display info for a concurrent (non-primary) craft slot -- mirrors the effTime formula
   // the loop uses to advance it, so the header bar tracks the same progress.
+  // Name/icon/effTime for any belt-slot task (craft, gather, or Faith/prayer), used by the
+  // "Also running" header bars and the live fill updates.
   function extraCraftSlotInfo(slot){
+    if(slot.type==='gather'){
+      var gi = ALL_GATHER_ITEMS[slot.itemId];
+      return { name: gi?gi.name:slot.itemId, icon: gi?gi.icon:svgIcon('chest','var(--cat-gathering)'),
+        effTime: gi ? gi.time*1000*speedMultiplier(state)*gatherToolSpeedMultiplier(state, slot.skill)*(PHYS_LONG_GATHER.indexOf(slot.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1) : 1000, progress: slot.progress||0 };
+    }
+    if(slot.type==='pray'){
+      var pt = PRAYER_TIERS.filter(function(t){ return t.id===slot.itemId; })[0];
+      return { name: pt?pt.name:'Prayer', icon: svgIcon('prayinghands','var(--cat-faith)'),
+        effTime: pt ? pt.time*1000*speedMultiplier(state) : 1000, progress: slot.progress||0 };
+    }
     if(slot.craftKind){
       var d = getSpecialTierData(slot), sk = getSpecialSkillId(slot);
       return { name: d?d.name:slot.craftKind, icon: svgIcon('hammer','var(--cat-crafting)'),
@@ -11833,15 +11903,15 @@
     var out = [];
     for(var i=0;i<state.extraCraftSlots.length;i++){
       var s = state.extraCraftSlots[i];
-      if(s && s.type==='craft') out.push({ idx:i, slot:s });
+      if(s && s.type) out.push({ idx:i, slot:s });
     }
     return out;
   }
-  // Compact progress bars for concurrent craft tasks running alongside the primary action.
+  // Compact progress bars for concurrent tasks (craft/gather/faith) running alongside the primary.
   function gabExtraTasksHtml(){
     var extras = activeExtraCraftSlots();
     if(!extras.length) return '';
-    var html = '<div class="gab-extra-tasks"><div class="gab-extra-title">Also crafting &bull; '+extras.length+'</div>';
+    var html = '<div class="gab-extra-tasks"><div class="gab-extra-title">Also running &bull; '+extras.length+'</div>';
     extras.forEach(function(e){
       var info = extraCraftSlotInfo(e.slot);
       var pct = clamp(info.progress/info.effTime*100, 0, 100);
@@ -12172,45 +12242,22 @@
       });
     }
 
-    if(state.activity.type==='gather' || state.activity.type==='craft'){
+    // Primary action card bar (gather/craft/pray share the same slot shape via extraCraftSlotInfo).
+    if(state.activity.type==='gather' || state.activity.type==='craft' || state.activity.type==='pray'){
       var fill = document.getElementById('liveActionFill');
       if(fill){
-        if(state.activity.type==='craft' && state.activity.craftKind){
-          var specialData = getSpecialTierData(state.activity);
-          if(specialData){
-            var specialSkill = getSpecialSkillId(state.activity);
-            var effTimeSpecial2 = specialData.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, specialSkill);
-            fill.style.width = clamp(state.activity.progress/effTimeSpecial2*100,0,100) + '%';
-          }
-        } else {
-          var conf = state.activity.type==='gather' ? ALL_GATHER_ITEMS[state.activity.itemId] : ALL_CRAFT_RECIPES[state.activity.itemId];
-          if(conf){
-            var toolMult = state.activity.type==='craft' ? toolSpeedMultiplier(state, state.activity.skill) : gatherToolSpeedMultiplier(state, state.activity.skill);
-            var effTime = conf.time*1000*speedMultiplier(state)*toolMult;
-            fill.style.width = clamp(state.activity.progress/effTime*100,0,100) + '%';
-          }
-        }
+        var pInfo = extraCraftSlotInfo(state.activity);
+        if(pInfo && pInfo.effTime) fill.style.width = clamp((state.activity.progress||0)/pInfo.effTime*100,0,100) + '%';
       }
     }
 
+    // Extra belt-slot card bars -- any task type (craft/gather/pray).
     state.extraCraftSlots.forEach(function(slot, idx){
-      if(slot.type !== 'craft') return;
+      if(!slot.type) return;
       var extraFill = document.getElementById('extraSlotFill-'+idx);
       if(!extraFill) return;
-      if(slot.craftKind){
-        var extraSpecialData = getSpecialTierData(slot);
-        if(extraSpecialData){
-          var extraSpecialSkill = getSpecialSkillId(slot);
-          var effTimeExtraSpecial = extraSpecialData.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, extraSpecialSkill);
-          extraFill.style.width = clamp(slot.progress/effTimeExtraSpecial*100,0,100) + '%';
-        }
-      } else {
-        var recipe = ALL_CRAFT_RECIPES[slot.itemId];
-        if(recipe){
-          var effTimeExtra = recipe.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, slot.skill);
-          extraFill.style.width = clamp(slot.progress/effTimeExtra*100,0,100) + '%';
-        }
-      }
+      var eInfo = extraCraftSlotInfo(slot);
+      if(eInfo && eInfo.effTime) extraFill.style.width = clamp((slot.progress||0)/eInfo.effTime*100,0,100) + '%';
     });
 
     if(currentCategory==='farming'){
@@ -12981,7 +13028,11 @@
     lastTick = now;
 
     ensureCraftSlotCapacity();
-    state.extraCraftSlots.forEach(function(slot){ processCraftActivity(slot, dt); });
+    state.extraCraftSlots.forEach(function(slot){
+      if(slot.type==='craft') processCraftActivity(slot, dt);
+      else if(slot.type==='gather') processGatherActivity(slot, dt);
+      else if(slot.type==='pray') processPrayActivity(slot, dt);
+    });
 
     // Auto-drink: if enabled and no tea buff is running, brew-and-drink the best one on hand
     // (fires once per expiry since drinking makes isTeaActive() true again).
@@ -12999,7 +13050,7 @@
     // combat, faith activity or background craft slot running.
     var _medIdle = !state.activity.type
       && !(state.faithActivity && state.faithActivity.type)
-      && !state.extraCraftSlots.some(function(sl){ return sl.type==='craft'; });
+      && !state.extraCraftSlots.some(function(sl){ return sl.type; });
     if(_medIdle){
       state._medAccum = (state._medAccum||0) + dt;
       while(state._medAccum >= 3000){ state._medAccum -= 3000; addPhysiqueXp([['meditation',1]]); }
@@ -13019,54 +13070,11 @@
     }
 
     if(state.activity.type==='gather'){
-      var item = ALL_GATHER_ITEMS[state.activity.itemId];
-      state.activity.progress += dt;
-      var effTime = item.time*1000*speedMultiplier(state)*gatherToolSpeedMultiplier(state, state.activity.skill)*(PHYS_LONG_GATHER.indexOf(state.activity.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1);
-      while(state.activity.type==='gather' && state.activity.progress >= effTime){
-        state.activity.progress -= effTime;
-        bumpStat('gathered');
-        addXp(state.activity.skill, item.xp * (1 + curiosityGatherXpBonus(state)));
-        if(state.activity.skill === 'digging'){
-          processDiggingRoll(state.activity.itemId);
-        } else if(state.activity.skill === 'mining'){
-          processMiningRoll(state.activity.itemId);
-        } else if(state.activity.skill === 'fishing'){
-          processFishingRoll(state.activity.itemId);
-        } else {
-          addItem(state.activity.itemId, 1);
-          spawnFloatingText('+1 ' + item.name, 'ft-success');
-          gatherDoubleRoll(state.activity.itemId, state.activity.skill);
-          if(state.activity.skill === 'forestry'){
-            maybeDropCritterCache();
-          } else if(SEED_DROP_SKILLS.indexOf(state.activity.skill) !== -1){
-            maybeDropSeed(state.activity.skill, parseInt(state.activity.itemId.split('_t')[1], 10));
-          }
-          if(state.activity.skill === 'herbalism'){
-            maybeDropGrainSeed(parseInt(state.activity.itemId.split('_t')[1], 10));
-            maybeDropHerbSeed(parseInt(state.activity.itemId.split('_t')[1], 10));
-          }
-          if(state.activity.skill === 'foraging'){
-            maybeDropPowder(parseInt(state.activity.itemId.split('_t')[1], 10));
-            maybeDropForagingArtifact(parseInt(state.activity.itemId.split('_t')[1], 10));
-          }
-        }
-        addPhysiqueXp(GATHER_PHYSIQUE[state.activity.skill]);
-        maybeSummonFamiliar(state.activity.skill);
-        effTime = item.time*1000*speedMultiplier(state)*gatherToolSpeedMultiplier(state, state.activity.skill)*(PHYS_LONG_GATHER.indexOf(state.activity.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1);
-      }
+      processGatherActivity(state.activity, dt);
     } else if(state.activity.type==='craft'){
       processCraftActivity(state.activity, dt);
     } else if(state.activity.type==='pray'){
-      var prayerTier = PRAYER_TIERS.filter(function(t){ return t.id===state.activity.itemId; })[0];
-      state.activity.progress += dt;
-      var effTimeP = prayerTier.time*1000*speedMultiplier(state);
-      while(state.activity.type==='pray' && state.activity.progress >= effTimeP){
-        state.activity.progress -= effTimeP;
-        addXp('prayer', prayerTier.xp);
-        addPhysiqueXp([['focus',3]]);
-        maybeSummonFamiliar('prayer');
-        effTimeP = prayerTier.time*1000*speedMultiplier(state);
-      }
+      processPrayActivity(state.activity, dt);
     } else if(state.activity.type==='combat'){
       state.activity.tickAccum += dt;
       var attackIntervalMs = getWeaponStyle(state.equippedMainhand).attackSpeed * 1000;
@@ -13222,6 +13230,11 @@
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, weightedAdvantage:weightedAdvantage,
       tierStepper:tierStepper, tierRange:tierRange,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
+      _state:state, getMaxCraftSlots:getMaxCraftSlots, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
+      startGather:startGather, startCraft:startCraft, startPray:startPray,
+      processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
+      findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
+      GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS,
