@@ -3962,6 +3962,8 @@
     }
     return rarity;
   }
+  // Paving crafts yield double the experience of any other crafting skill.
+  function craftXpBonus(skill){ return skill === 'paving' ? 2 : 1; }
   function completeSpecialCraft(act, tierData){
     var skillId = getSpecialSkillId(act);
     var successRate = (act.craftKind==='ring' || act.craftKind==='amulet') ? jewelrySuccessRate(state) : craftSuccessRate(state, skillId);
@@ -4056,7 +4058,7 @@
             spawnFloatingText('Relic crumbled', 'ft-fail');
           }
         } else if(Math.random() < craftSuccessRate(state, act.skill)){
-          addXp(act.skill, recipe.xp*1.5);
+          addXp(act.skill, recipe.xp*1.5*craftXpBonus(act.skill));
           var _wq = recipe.outputQty || 1;
           addItem(act.itemId, _wq);
           if(Math.random() < workshopDoubleChance(state, act.skill)){ addItem(act.itemId, _wq); spawnFloatingText('Workshop: double output!', 'ft-rare'); }
@@ -5441,7 +5443,7 @@
       var t2 = Math.max(0, Math.min(maxByTime, maxByMats));
       if(t2 > 0){
         consumeInputs(recipe.inputs, t2);
-        addXp(act.skill, t2*recipe.xp*1.5);
+        addXp(act.skill, t2*recipe.xp*1.5*craftXpBonus(act.skill));
         addItem(act.itemId, t2);
         addLog('While away, you crafted ' + t2 + ' ' + recipe.name + '.', 'important');
       } else {
@@ -13221,7 +13223,7 @@
       getLevel:getLevel, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
-      getPavingRecipe:getPavingRecipe, weightedAdvantage:weightedAdvantage,
+      getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, weightedAdvantage:weightedAdvantage,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS,
