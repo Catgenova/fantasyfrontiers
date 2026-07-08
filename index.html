@@ -376,16 +376,40 @@
 
   .content{min-height:320px;}
   .section-intro{font-size:13px;color:var(--text-dim);margin-bottom:14px;line-height:1.5;}
-  .card-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(230px, 1fr));gap:16px;}
+  .card-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(230px, 1fr));gap:22px;}
   @media (max-width:600px){.card-grid{grid-template-columns:1fr;}}
-  /* Parapet card: tan inset + ink border wrapped in a stone-frame ring (via layered box-shadows) */
+  /* Parapet card (design pkg 3a): tan inner panel, mottled stone frame behind (::before),
+     bolted wood corner braces (::after). */
   .item-card{
-    background:var(--bg-card);border:2px solid var(--ink);border-radius:6px;
-    padding:12px;position:relative;overflow:hidden;
-    box-shadow:0 0 0 2px var(--stone-card), 0 0 0 4px var(--ink), inset 0 2px 6px rgba(0,0,0,.16), 0 5px 12px rgba(20,18,16,.28);
+    position:relative;overflow:visible;
+    background:var(--bg-card);border:2px solid var(--ink);border-radius:5px;
+    padding:12px;box-shadow:inset 0 2px 6px rgba(0,0,0,.18), 0 6px 15px rgba(20,18,16,.32);
+  }
+  .item-card::before{ /* mottled mortared-stone frame behind the tan card */
+    content:'';position:absolute;inset:-7px;z-index:-1;border-radius:9px;border:2px solid var(--ink);
+    background-color:var(--stone-card);
+    background-image:
+      radial-gradient(circle at 24% 22%, rgba(255,255,255,.18), transparent 20%),
+      radial-gradient(circle at 74% 34%, rgba(0,0,0,.22), transparent 24%),
+      radial-gradient(circle at 58% 82%, rgba(255,255,255,.10), transparent 18%),
+      radial-gradient(circle at 14% 76%, rgba(0,0,0,.18), transparent 22%),
+      repeating-linear-gradient(0deg, rgba(0,0,0,.28) 0 2px, transparent 2px 23px),
+      repeating-linear-gradient(90deg, rgba(0,0,0,.24) 0 2px, transparent 2px 29px);
+    box-shadow:inset 0 0 0 2px rgba(0,0,0,.30), inset 0 2px 5px rgba(255,255,255,.22);
+  }
+  .item-card::after{ /* four diagonal bolted wood corner braces */
+    content:'';position:absolute;inset:-7px;z-index:3;pointer-events:none;background-repeat:no-repeat;
+    background-image:
+      linear-gradient(-45deg, transparent 44%, #2f1c0d 44% 45.5%, #8a5227 45.5% 49%, #5a3316 49% 53%, #2f1c0d 53% 54.5%, transparent 54.5%),
+      linear-gradient( 45deg, transparent 44%, #2f1c0d 44% 45.5%, #8a5227 45.5% 49%, #5a3316 49% 53%, #2f1c0d 53% 54.5%, transparent 54.5%),
+      linear-gradient( 45deg, transparent 44%, #2f1c0d 44% 45.5%, #8a5227 45.5% 49%, #5a3316 49% 53%, #2f1c0d 53% 54.5%, transparent 54.5%),
+      linear-gradient(-45deg, transparent 44%, #2f1c0d 44% 45.5%, #8a5227 45.5% 49%, #5a3316 49% 53%, #2f1c0d 53% 54.5%, transparent 54.5%);
+    background-size:38px 38px;
+    background-position:top left, top right, bottom left, bottom right;
+    filter:drop-shadow(0 1px 2px rgba(0,0,0,.4));
   }
   .item-card.locked{opacity:0.5;}
-  .item-card.active-item{box-shadow:0 0 0 2px var(--stone-card), 0 0 0 4px var(--ink), inset 0 0 0 2px rgba(74,107,44,0.55), 0 0 16px rgba(111,149,56,0.22);}
+  .item-card.active-item{border-color:var(--gold);box-shadow:inset 0 0 0 2px rgba(74,107,44,0.5), 0 0 16px rgba(111,149,56,0.28), 0 6px 15px rgba(20,18,16,.32);}
   .item-top{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
   .item-icon{font-size:26px;line-height:1;}
   .game-icon{width:1em;height:1em;vertical-align:-0.15em;flex-shrink:0;display:inline-block;}
