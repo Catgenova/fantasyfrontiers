@@ -92,9 +92,12 @@
   .ff-brand-crest{width:34px;height:34px;flex-shrink:0;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));}
   .ff-tb-div{width:1px;height:20px;background:#48432f;}
   .ff-coin{font-family:var(--font-mono);font-size:15px;color:var(--coin);font-weight:600;white-space:nowrap;}
-  .ff-buffchip{display:flex;align-items:center;gap:6px;font-size:11px;color:#d7c9a6;white-space:nowrap;}
+  .ff-buffchip{display:flex;flex-direction:column;gap:3px;font-size:11px;color:#d7c9a6;white-space:nowrap;min-width:98px;}
+  .ff-buffchip-top{display:flex;align-items:center;gap:6px;}
   .ff-buffchip .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
-  .ff-buffchip .t{font-family:var(--font-mono);color:#8a7850;}
+  .ff-buffchip .t{font-family:var(--font-mono);color:#8a7850;margin-left:auto;}
+  .ff-buffbar{height:3px;border-radius:2px;background:#000;border:1px solid #48432f;overflow:hidden;}
+  .ff-buffbar-fill{display:block;height:100%;border-radius:2px;}
   .ff-tb-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
   .ff-track-top{font-family:var(--font-mono);font-size:11px;color:#b3a37e;white-space:nowrap;}
   .ff-track-btn{display:flex;flex-direction:column;align-items:stretch;gap:3px;background:none;border:none;padding:3px 6px;margin:-2px 0;cursor:pointer;border-radius:6px;min-width:132px;text-align:center;}
@@ -5778,8 +5781,17 @@
     var el = document.getElementById('ffTopbar'); if(!el) return;
     var html = '<div class="ff-brand"><svg class="ff-brand-crest" viewBox="0 0 100 100"><use href="#shape-crest"></use></svg><span class="ff-brand-word">FANTASY FRONTIERS</span></div>';
     html += '<div class="ff-tb-div"></div><div class="ff-coin">'+shellIcon('coin')+' '+fmt(state.gold)+'</div>';
-    if(serverBuffActive()) html += '<div class="ff-buffchip"><span class="dot" style="background:var(--coin)"></span>+50% EXP <span class="t">'+formatDuration(serverBuff.expUntil-Date.now())+'</span></div>';
-    if(isTeaActive()) html += '<div class="ff-buffchip"><span class="dot" style="background:#6f9538"></span>+'+Math.round(state.activeTea.xpBoost*100)+'% XP <span class="t">'+formatDuration(state.activeTea.expiresAt-Date.now())+'</span></div>';
+    // Event/tea buff chips, each with a slim depleting time-remaining bar (rebuilt live each tick).
+    if(serverBuffActive()){
+      var buffPct = clamp((serverBuff.expUntil-Date.now())/SERVER_BUFF_EXP_MS*100, 0, 100);
+      html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:var(--coin)"></span>+50% EXP <span class="t">'+formatDuration(serverBuff.expUntil-Date.now())+'</span></span>'
+        + '<span class="ff-buffbar"><span class="ff-buffbar-fill" style="width:'+buffPct+'%;background:var(--coin)"></span></span></div>';
+    }
+    if(isTeaActive()){
+      var teaBuffPct = clamp((state.activeTea.expiresAt-Date.now())/state.activeTea.durationMs*100, 0, 100);
+      html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:#6f9538"></span>+'+Math.round(state.activeTea.xpBoost*100)+'% XP <span class="t">'+formatDuration(state.activeTea.expiresAt-Date.now())+'</span></span>'
+        + '<span class="ff-buffbar"><span class="ff-buffbar-fill" style="width:'+teaBuffPct+'%;background:#6f9538"></span></span></div>';
+    }
     var tk = state.trackedSkills && state.trackedSkills[0];
     var trackBtn;
     if(tk && trackedExists(tk)){
