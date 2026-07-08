@@ -180,7 +180,7 @@
   // ---- Building / Outfitting are cosmetic sub-nav groups carved out of Crafting -----------
   suite('building and outfitting split the crafting skills without gaps or overlap', function(){
     var building = FF.BUILDING_SKILL_IDS, outfitting = FF.OUTFITTING_SKILL_IDS, craftTab = FF.CRAFTING_TAB_SKILL_IDS;
-    eq(building.join(','), 'carpentry,masonry,paving,stonecutting', 'building holds the estate-build skills');
+    eq(building.join(','), 'carpentry,stonecutting,paving,masonry', 'building holds the estate-build skills');
     eq(outfitting.join(','), 'weaponsmithing,armorsmithing,tailoring,shieldsmithing,fletching,bowyer,leatherworking,jewelrycrafting', 'outfitting holds the gear skills');
     // Every crafting skill lands in exactly one of the three sub-tab groups.
     var union = building.concat(outfitting).concat(craftTab).slice().sort();
