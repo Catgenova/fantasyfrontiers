@@ -4167,7 +4167,9 @@
     return rarity;
   }
   // Paving crafts yield double the experience of any other crafting skill.
-  function craftXpBonus(skill){ return skill === 'paving' ? 2 : 1; }
+  // Paving is XP-boosted vs other crafting skills (it's slow, estate-only output). Doubled again by
+  // request -> now 4x base craft XP.
+  function craftXpBonus(skill){ return skill === 'paving' ? 4 : 1; }
   function completeSpecialCraft(act, tierData){
     var skillId = getSpecialSkillId(act);
     var successRate = (act.craftKind==='ring' || act.craftKind==='amulet') ? jewelrySuccessRate(state) : craftSuccessRate(state, skillId);
@@ -5922,6 +5924,11 @@
     }
     recomputePlacedWorkshops(); // build the workshop-bonus cache from the loaded estate
     render();
+    // Persist immediately after boot/offline-catch-up so the freshly credited items + updated
+    // lastSaved reach Supabase right away -- a quick second refresh can't lose or re-run them.
+    cloudRefreshToken();
+    state.lastSaved = Date.now();
+    cloudSave(false, true);
   }
 
   // ================= RENDER: NAV =================
@@ -5957,20 +5964,28 @@
   }
   // Persistent top bar HUD: crest, gold, event/tea buff chips, tracking, settings gear. Rebuilt each
   // tick (via updateHeader) so gold + buff countdowns stay live.
+  // Signature of everything that changes the topbar's STRUCTURE (which chips/buttons exist). The live
+  // countdowns/levels are NOT in it -- those update text in place. This lets updateHeader avoid
+  // rebuilding the bar (and its buttons) every frame, which was eating clicks on Settings/Tracker.
+  function topbarSignature(){
+    var tk = state.trackedSkills && state.trackedSkills[0];
+    return [authUser?1:0, serverBuffActive()?1:0, isTeaActive()?1:0, tk||'', (tk&&trackedExists(tk))?1:0].join('|');
+  }
+  var _topbarSig = null;
   function renderTopbar(){
     var el = document.getElementById('ffTopbar'); if(!el) return;
     var html = '<div class="ff-brand"><svg class="ff-brand-crest" viewBox="0 0 100 100"><use href="#shape-crest"></use></svg><span class="ff-brand-word">FANTASY FRONTIERS</span></div>';
-    html += '<div class="ff-tb-div"></div><div class="ff-coin">'+shellIcon('coin')+' '+fmt(state.gold)+'</div>';
-    // Event/tea buff chips, each with a slim depleting time-remaining bar (rebuilt live each tick).
+    html += '<div class="ff-tb-div"></div><div class="ff-coin">'+shellIcon('coin')+' <span id="ffCoinVal">'+fmt(state.gold)+'</span></div>';
+    // Event/tea buff chips, each with a slim depleting time-remaining bar (updated live in place).
     if(serverBuffActive()){
       var buffPct = clamp((serverBuff.expUntil-Date.now())/SERVER_BUFF_EXP_MS*100, 0, 100);
-      html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:var(--coin)"></span>+50% EXP <span class="t">'+formatDuration(serverBuff.expUntil-Date.now())+'</span></span>'
-        + '<span class="ff-buffbar"><span class="ff-buffbar-fill" style="width:'+buffPct+'%;background:var(--coin)"></span></span></div>';
+      html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:var(--coin)"></span>+50% EXP <span class="t" id="ffSrvBuffT">'+formatDuration(serverBuff.expUntil-Date.now())+'</span></span>'
+        + '<span class="ff-buffbar"><span class="ff-buffbar-fill" id="ffSrvBuffBar" style="width:'+buffPct+'%;background:var(--coin)"></span></span></div>';
     }
     if(isTeaActive()){
       var teaBuffPct = clamp((state.activeTea.expiresAt-Date.now())/state.activeTea.durationMs*100, 0, 100);
-      html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:#6f9538"></span>+'+Math.round(state.activeTea.xpBoost*100)+'% XP <span class="t">'+formatDuration(state.activeTea.expiresAt-Date.now())+'</span></span>'
-        + '<span class="ff-buffbar"><span class="ff-buffbar-fill" style="width:'+teaBuffPct+'%;background:#6f9538"></span></span></div>';
+      html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:#6f9538"></span>+'+Math.round(state.activeTea.xpBoost*100)+'% XP <span class="t" id="ffTeaBuffT">'+formatDuration(state.activeTea.expiresAt-Date.now())+'</span></span>'
+        + '<span class="ff-buffbar"><span class="ff-buffbar-fill" id="ffTeaBuffBar" style="width:'+teaBuffPct+'%;background:#6f9538"></span></span></div>';
     }
     var tk = state.trackedSkills && state.trackedSkills[0];
     var trackBtn;
@@ -5978,17 +5993,38 @@
       var tMeta = trackSkillMeta(tk);
       var tLvl = getLevel(trackedXpOf(tk));
       var tPct = Math.round(levelProgress(trackedXpOf(tk)));
-      // Tapping the tracker opens the skill picker; the slim bar under the label shows how far
-      // the tracked skill is through its current level (updated live each tick by renderTopbar).
-      trackBtn = '<button class="ff-track-btn" id="topTrackerBtn" data-action="openTrackerPicker" title="Change tracked skill">'
-        + '<span class="ff-track-top">Tracking: '+escapeHtml(tMeta.label)+' Lv '+tLvl+'</span>'
-        + '<span class="ff-track-bar"><span class="ff-track-bar-fill" style="width:'+tPct+'%"></span></span>'
+      // Tapping the tracker opens the picker (skills AND physiques); the slim bar shows level progress.
+      trackBtn = '<button class="ff-track-btn" id="topTrackerBtn" data-action="openTrackerPicker" title="Change what you\'re tracking">'
+        + '<span class="ff-track-top" id="ffTrackTop">Tracking: '+escapeHtml(tMeta.label)+' Lv '+tLvl+'</span>'
+        + '<span class="ff-track-bar"><span class="ff-track-bar-fill" id="ffTrackBarFill" style="width:'+tPct+'%"></span></span>'
         + '</button>';
     } else {
-      trackBtn = '<button class="ff-track-btn ff-track-empty" id="topTrackerBtn" data-action="openTrackerPicker" title="Track a skill">Track a skill</button>';
+      trackBtn = '<button class="ff-track-btn ff-track-empty" id="topTrackerBtn" data-action="openTrackerPicker" title="Track a skill or physique">Track a skill</button>';
     }
     html += '<div class="ff-tb-right">'+trackBtn+'<button class="ff-settings-btn" data-action="openSettings" title="Settings">'+shellIcon('gear')+'<span class="ff-settings-lbl">Settings</span></button></div>';
     el.innerHTML = html;
+    _topbarSig = topbarSignature();
+  }
+  // Per-tick live refresh of the topbar's dynamic text/bars WITHOUT rebuilding it (so the Settings and
+  // Tracker buttons survive between a click's mousedown and mouseup). Only a structural change (a buff
+  // starting/ending, the tracked skill changing, sign-in) triggers a full renderTopbar rebuild.
+  function updateTopbarLive(){
+    if(topbarSignature() !== _topbarSig){ renderTopbar(); return; }
+    var cv = document.getElementById('ffCoinVal'); if(cv) cv.textContent = fmt(state.gold);
+    if(serverBuffActive()){
+      var st = document.getElementById('ffSrvBuffT'); if(st) st.textContent = formatDuration(serverBuff.expUntil-Date.now());
+      var sbar = document.getElementById('ffSrvBuffBar'); if(sbar) sbar.style.width = clamp((serverBuff.expUntil-Date.now())/SERVER_BUFF_EXP_MS*100,0,100)+'%';
+    }
+    if(isTeaActive()){
+      var tt = document.getElementById('ffTeaBuffT'); if(tt) tt.textContent = formatDuration(state.activeTea.expiresAt-Date.now());
+      var tbar = document.getElementById('ffTeaBuffBar'); if(tbar) tbar.style.width = clamp((state.activeTea.expiresAt-Date.now())/state.activeTea.durationMs*100,0,100)+'%';
+    }
+    var tk = state.trackedSkills && state.trackedSkills[0];
+    if(tk && trackedExists(tk)){
+      var tMeta = trackSkillMeta(tk), tLvl = getLevel(trackedXpOf(tk)), tPct = Math.round(levelProgress(trackedXpOf(tk)));
+      var top = document.getElementById('ffTrackTop'); if(top) top.textContent = 'Tracking: '+tMeta.label+' Lv '+tLvl;
+      var tbf = document.getElementById('ffTrackBarFill'); if(tbf) tbf.style.width = tPct+'%';
+    }
   }
   function renderChatDock(){
     var el = document.getElementById('chatDockPanel'); if(!el) return;
@@ -9976,6 +10012,7 @@
       var u = res.data && res.data.user;
       if(!u || !res.data.session) throw new Error('invalid credentials');
       authUser = { username: (u && u.user_metadata && u.user_metadata.username) || username, id: u && u.id };
+      if(res.data.session.access_token) cloudAccessToken = res.data.session.access_token;
       try{
         if(authRememberUser) localStorage.setItem('ff-remember-username', username); else localStorage.removeItem('ff-remember-username');
         localStorage.setItem('ff-autologin', authAutoLogin ? '1' : '0');
@@ -10019,9 +10056,31 @@
   // Flip to false to instantly disable all cloud reads/writes (localStorage-only) if needed.
   var CLOUD_SYNC_ENABLED = true;
   var SAVE_OWNER_KEY = 'ff-save-owner';
-  var CLOUD_PUSH_INTERVAL = 30000;
+  var CLOUD_PUSH_INTERVAL = 8000;   // debounce between cloud pushes (was 30s -> tightened so inventory/gold changes reach Supabase quickly)
   var cloudLastPush = 0;
   var cloudReloading = false;
+  var cloudAccessToken = null;      // cached bearer token so the unload beacon can authenticate synchronously
+  function cloudRefreshToken(){
+    try{ if(!chatClient) return; chatClient.auth.getSession().then(function(r){ var s = r && r.data && r.data.session; if(s && s.access_token) cloudAccessToken = s.access_token; }); }catch(e){}
+  }
+  // Best-effort save that survives page unload (hard refresh / tab close): a keepalive fetch straight
+  // to the save_game function with the cached token, so the LATEST state (inventory, gold, everything)
+  // reaches Supabase even if a change happened inside the debounce window. keepalive request bodies
+  // are capped near 64KB, so an oversized save falls back to the normal async flush instead.
+  function cloudSaveBeacon(){
+    try{
+      if(!CLOUD_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id || !cloudAccessToken) return;
+      var score = saveProgressScore(state); if(score <= 0) return;
+      state.lastSaved = Date.now();
+      var body = JSON.stringify({ data: state, client_saved_at: state.lastSaved, progress: score });
+      if(body.length > 60000) return; // over the keepalive cap -> the async flush (visibilitychange) handles it
+      fetch(CHAT_CONFIG.supabaseUrl.replace(/\/+$/,'') + '/functions/v1/save_game', {
+        method:'POST', keepalive:true,
+        headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+cloudAccessToken, 'apikey': CHAT_CONFIG.supabaseAnonKey },
+        body: body
+      });
+    }catch(e){}
+  }
   function localSaveOwner(){ try{ return window.localStorage.getItem(SAVE_OWNER_KEY) || ''; }catch(e){ return ''; } }
   function setLocalSaveOwner(id){ try{ if(id){ window.localStorage.setItem(SAVE_OWNER_KEY, id); } else { window.localStorage.removeItem(SAVE_OWNER_KEY); } }catch(e){} }
 
@@ -10042,6 +10101,7 @@
   async function cloudSave(force, flush){
     if(!CLOUD_SYNC_ENABLED) return;
     if(!CHAT_ENABLED || !authUser || !authUser.id || cloudReloading) return;
+    cloudRefreshToken(); // keep the cached token fresh for the unload beacon
     var score = saveProgressScore(state);
     // Never push an empty/zero-progress state (unless a deliberate, forced reset) -- this is
     // belt-and-suspenders on top of the server's forward-only progress guard.
@@ -12206,7 +12266,7 @@
       return sum + getLevel(state.xp[sk]);
     }, 0);
     var hl = document.getElementById('hdrLevel'); if(hl) hl.textContent = totalLevel;
-    renderTopbar(); // live coin + buff countdowns in the new HUD
+    updateTopbarLive(); // refresh coin/buff/tracker text in place; only rebuilds on a structural change
   }
 
   // Display info for a concurrent (non-primary) craft slot -- mirrors the effTime formula
@@ -13459,8 +13519,11 @@
   }
 
   document.addEventListener('visibilitychange', function(){
-    if(document.visibilityState==='hidden'){ saveGame(); cloudSave(false, true); }
+    if(document.visibilityState==='hidden'){ saveGame(); cloudSave(false, true); cloudSaveBeacon(); }
   });
+  // pagehide fires on hard refresh / close / navigate (more reliably than beforeunload, and works with
+  // bfcache); the keepalive beacon carries the latest state to Supabase so nothing recent is lost.
+  window.addEventListener('pagehide', function(){ cloudSaveBeacon(); });
 
   // ================= ONLINE-ONLY BOOT =================
   // The game requires a signed-in account; the save lives only in the backend. Boot restores
@@ -13474,7 +13537,7 @@
       if(!chatClient){ chatClient = window.supabase.createClient(CHAT_CONFIG.supabaseUrl, CHAT_CONFIG.supabaseAnonKey); }
       var res = await chatClient.auth.getSession();
       var sess = res.data && res.data.session;
-      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; }
+      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; if(sess.access_token) cloudAccessToken = sess.access_token; }
     }catch(e){}
   }
   function renderLoginGate(){
