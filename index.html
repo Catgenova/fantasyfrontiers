@@ -13284,7 +13284,14 @@
     ov.className = 'familiar-popup-overlay';
     ov.innerHTML = html;
   }
-  function render(){
+  function render(force){
+    // A full render rebuilds #content (and the rail/drawer chat), destroying whatever field is
+    // focused -- on mobile that drops focus and closes the keyboard mid-type (impossible to enter
+    // an amount, price, or chat message). Involuntary renders (game loop, realtime/poll callbacks)
+    // therefore DEFER while any input/select is focused; only user gestures force through (the
+    // central click handler calls render(true), and tapping a button consumes the field anyway).
+    // The deferred render flushes via the loop the moment the field blurs.
+    if(!force && isEditingField()){ needsRender = true; return; }
     // Preserve the in-progress chat message + focus/cursor across full re-renders -- otherwise
     // a popup (or any needsRender) mid-typing rebuilds the input and wipes the draft.
     var _ci = document.getElementById('chatInput');
@@ -14093,7 +14100,7 @@
     } else if(action==='guildBossClaim'){
       guildBossClaim();
     }
-    render();
+    render(true); // user gesture -- rebuild even if a field was focused (the tap consumes it)
     needsRender = false;
   });
 
