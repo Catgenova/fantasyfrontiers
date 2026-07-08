@@ -532,6 +532,10 @@
   .lb-row:hover{border-color:var(--cat-leaderboard);}
   .lb-row.me{border-color:var(--cat-leaderboard);background:color-mix(in srgb, var(--cat-leaderboard) 12%, var(--bg-panel));}
   .lb-rank{flex:0 0 34px;font-family:var(--font-mono);font-weight:700;color:var(--text-dim);}
+  /* Online/offline indicator between rank and name: green when the player is present on the
+     global-chat presence channel, red otherwise. */
+  .lb-online{flex:0 0 auto;width:9px;height:9px;border-radius:50%;background:var(--hp-bad);box-shadow:0 0 0 1px rgba(0,0,0,.15) inset;}
+  .lb-online.on{background:var(--hp-good);box-shadow:0 0 5px color-mix(in srgb, var(--hp-good) 70%, transparent);}
   .lb-name{flex:1;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .lb-lvl{flex:0 0 auto;font-family:var(--font-mono);color:var(--cat-leaderboard);}
   .lb-gold{flex:0 0 auto;font-family:var(--font-mono);color:var(--gold);}
@@ -582,6 +586,10 @@
   .style-btn .style-lvl{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);}
   .style-btn.active .style-lvl{color:var(--cat-combat);}
   .style-btn .style-type{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-transform:capitalize;}
+  /* Visible unlock requirement on a locked equip button (replaces a hover-only title, which never
+     appears on touch). */
+  .style-btn .style-req{display:inline-flex;align-items:center;gap:3px;font-family:var(--font-mono);font-size:10px;color:var(--hp-bad);}
+  .style-btn .style-req svg{width:11px;height:11px;}
 
   .matchup-badge{font-family:var(--font-mono);font-size:10px;padding:2px 6px;border-radius:10px;text-transform:uppercase;letter-spacing:0.5px;}
   .matchup-strong{background:rgba(92,138,60,0.2);color:var(--hp-good);}
@@ -7090,7 +7098,7 @@
           var qty = state.inventory[id]||0;
           var profId = MATERIAL_TO_PROFICIENCY[item.material];
           var canEquip = meetsProficiencyRequirement(profId ? state.xp[profId] : 0, item.tierIndex);
-          html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipBodyArmor" data-item="'+id+'" '+(canEquip?'':'disabled title="Requires '+(ARMOR_PROFICIENCY_LABELS[profId]||item.material)+' level '+TIER_LEVELS[item.tierIndex]+'"')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">def '+item.defense+'</span>'+(canEquip?'':' '+svgIcon('lock','currentColor'))+'</button>';
+          html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipBodyArmor" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">def '+item.defense+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(ARMOR_PROFICIENCY_LABELS[profId]||item.material)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
         });
         html += '</div>';
       }
@@ -7354,7 +7362,7 @@
         var item = STACKABLE_WEAPON_ITEMS[id];
         var qty = state.inventory[id]||0;
         var canEquip = meetsProficiencyRequirement(state.xp[item.typeId], item.tierIndex);
-        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipStackableWeapon" data-item="'+id+'" '+(canEquip?'':'disabled title="Requires '+(SKILL_LABELS[item.typeId]||item.typeId)+' level '+TIER_LEVELS[item.tierIndex]+'"')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">'+item.dmgMin+'-'+item.dmgMax+' dmg &bull; '+STACKABLE_WEAPON_TYPE_MAP[item.typeId].attackSpeed+'s</span>'+(canEquip?'':' '+svgIcon('lock','currentColor'))+'</button>';
+        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipStackableWeapon" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">'+item.dmgMin+'-'+item.dmgMax+' dmg &bull; '+STACKABLE_WEAPON_TYPE_MAP[item.typeId].attackSpeed+'s</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS[item.typeId]||item.typeId)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
       });
       html += '</div>';
     }
@@ -7403,7 +7411,7 @@
         var item = STACKABLE_SHIELD_ITEMS[id];
         var qty = state.inventory[id]||0;
         var canEquip = meetsProficiencyRequirement(state.xp[item.typeId], item.tierIndex);
-        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipStackableShield" data-item="'+id+'" '+(canEquip?'':'disabled title="Requires '+(SKILL_LABELS[item.typeId]||item.typeId)+' level '+TIER_LEVELS[item.tierIndex]+'"')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">defense '+item.defense+'</span>'+(canEquip?'':' '+svgIcon('lock','currentColor'))+'</button>';
+        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipStackableShield" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">defense '+item.defense+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS[item.typeId]||item.typeId)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
       });
       html += '</div>';
     }
@@ -7984,8 +7992,9 @@
       html += '<div class="inputs-line" style="margin-top:8px">'+POTION_TYPES[type].label+'s</div><div class="style-row">';
       owned.forEach(function(id){
         var it = ALL_SELLABLE[id] || {}; var qty = state.inventory[id]||0; var active = state.activePotion===id;
-        html += '<button class="style-btn'+(active?' active':'')+'" data-action="activatePotion" data-item="'+id+'" title="'+escapeHtml(potionEffectDesc(id))+'">'
-          + (it.icon||'') + ' ' + escapeHtml(it.name||id) + ' <span class="style-lvl">x'+qty+'</span></button>';
+        html += '<button class="style-btn'+(active?' active':'')+'" data-action="activatePotion" data-item="'+id+'">'
+          + '<span>' + (it.icon||'') + ' ' + escapeHtml(it.name||id) + ' <span class="style-lvl">x'+qty+'</span></span>'
+          + '<span class="style-type" style="text-transform:none;">'+escapeHtml(potionEffectDesc(id))+'</span></button>';
       });
       html += '</div>';
     });
@@ -11059,15 +11068,29 @@
   // id so a player counts once no matter how many tabs they have open; guests get a random key.
   var chatPresenceKey = null;
   var chatOnlineCount = 0;
+  var chatOnlineKeys = {}; // presence keys currently online, e.g. { 'u_<id>':1, 'guest_...':1 }
   function chatPresenceId(){
     if(!chatPresenceKey) chatPresenceKey = (authUser && authUser.id) ? ('u_'+authUser.id) : ('guest_'+Math.random().toString(36).slice(2));
     return chatPresenceKey;
   }
+  // A leaderboard/profile player counts as online if their account id is present on the global-chat
+  // channel (keyed 'u_<id>'). Guests can't be matched to an account so they never light up here.
+  function isPlayerOnline(id){ return !!(id && chatOnlineKeys['u_'+id]); }
   function onlineCountText(){ return chatOnlineCount > 0 ? String(chatOnlineCount) : '…'; }
   // Update the "N online" badge in place wherever chat is shown (rail dock, drawer, content tab).
   function updateOnlineCount(){
     var els = document.querySelectorAll('.chat-online-count');
     for(var i=0;i<els.length;i++) els[i].textContent = onlineCountText();
+  }
+  // Repaint the leaderboard's online/offline dots in place when presence changes, so the board
+  // doesn't need a full re-render (which would fight any open field / scroll position).
+  function updateLeaderboardPresence(){
+    var dots = document.querySelectorAll('.lb-online[data-uid]');
+    for(var i=0;i<dots.length;i++){
+      var on = isPlayerOnline(dots[i].getAttribute('data-uid'));
+      dots[i].classList.toggle('on', on);
+      dots[i].setAttribute('title', on ? 'Online' : 'Offline');
+    }
   }
   function chatEnsureSubscribed(){
     if(chatSubscribed || !chatClient) return;
@@ -11075,8 +11098,9 @@
     var ch = chatClient.channel('global-chat', { config:{ presence:{ key: chatPresenceId() } } });
     ch.on('postgres_changes', { event:'INSERT', schema:'public', table:CHAT_CONFIG.table }, function(payload){ chatOnIncoming(payload.new); })
       .on('presence', { event:'sync' }, function(){
-        try{ chatOnlineCount = Object.keys(ch.presenceState()).length; }catch(e){ chatOnlineCount = 0; }
+        try{ var st = ch.presenceState(); chatOnlineKeys = st || {}; chatOnlineCount = Object.keys(chatOnlineKeys).length; }catch(e){ chatOnlineKeys = {}; chatOnlineCount = 0; }
         updateOnlineCount();
+        updateLeaderboardPresence(); // repaint the online/offline dots without a full re-render
       })
       .subscribe(function(status){
         if(status === 'SUBSCRIBED'){ try{ ch.track({ at: Date.now() }); }catch(e){} }
@@ -11387,8 +11411,11 @@
     // Secondary column gives context: on the Total-Level board show Combat Score; otherwise
     // show Total Level (so it stays visible when ranking by a skill/stat/combat).
     var secondary = (metric==='total') ? ('CS '+fmt(lbCombatScore(p))) : ('Lv '+fmt(p.total_level||0));
+    var online = isMe || isPlayerOnline(p.id);
+    var dot = '<span class="lb-online'+(online?' on':'')+'"'+(p.id?' data-uid="'+escapeHtml(String(p.id))+'"':'')+' title="'+(online?'Online':'Offline')+'"></span>';
     return '<button class="lb-row'+(isMe?' me':'')+'" data-action="viewProfile" data-id="'+escapeHtml(String(p.id||''))+'">'
       +'<span class="lb-rank">'+(medals[rank]||('#'+rank))+'</span>'
+      +dot
       +'<span class="lb-name">'+escapeHtml(p.username||'anon')+'</span>'
       +'<span class="lb-lvl">'+lbPrimaryText(p, metric)+'</span>'
       +'<span class="lb-gold">'+secondary+'</span></button>';
