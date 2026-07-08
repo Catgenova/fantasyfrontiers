@@ -280,6 +280,14 @@
     eq(JSON.stringify(FF.physTierPairs(pairs, 0)), JSON.stringify([['bodyStrength', 1], ['curiosity', 1]]), 't0 -> 1 xp each');
     eq(JSON.stringify(FF.physTierPairs(pairs, 20)), JSON.stringify([['bodyStrength', 21], ['curiosity', 21]]), 't20 -> 21 xp each');
     eq(FF.physTierPairs(pairs, 5)[0][1], 6, 't5 -> 6 xp');
+    // recipeTier: explicit tierIndex wins; otherwise fall back to the output id's _t<n> suffix so
+    // standard recipes (no tierIndex field) still scale physique XP (regression: Logic stuck at 1).
+    eq(FF.recipeTier({tierIndex:7}, 'cooking_t3'), 7, 'recipeTier prefers explicit tierIndex');
+    eq(FF.recipeTier({}, 'stonecutting_t5'), 5, 'recipeTier falls back to item id tier');
+    eq(FF.recipeTier({id:'twine_t2'}, null), 2, 'recipeTier falls back to recipe.id tier');
+    eq(FF.recipeTier({}, 'metallurgy_glass'), 0, 'recipeTier no-tier -> 0');
+    // A standard carpentry recipe at t4 -> logic (and every associated physique) gains 5.
+    eq(FF.physTierPairs([['grossMotor',2],['sleightOfHand',1],['logic',1]], FF.recipeTier({}, 'carpentry_t4'))[2][1], 5, 'carpentry t4 -> logic gains 5');
   });
 
   // ---- Marketplace pricing helpers (must match the server RPC's tax math) --------------
