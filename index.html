@@ -405,6 +405,12 @@
   .floating-text.ft-rare{color:#8a4fb0;}
   .floating-text.ft-bonus{color:#0f9b8e;}
   .floating-text.ft-xp{color:#a9832a; animation:floatUpFade 2s ease-out forwards;}
+  /* Action-bar reward floats: items gained (right of the progress bar) + a fail X. */
+  .floating-text.gab-ft-reward{color:var(--hp-good);font-family:var(--font-mono);font-size:13px;font-weight:700;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;animation:floatUpFade 2s ease-out forwards;}
+  .gab-ft-item{display:inline-flex;align-items:center;gap:3px;}
+  .gab-ft-item .game-icon{width:15px;height:15px;}
+  .gab-ft-double{color:#8a4fb0;}
+  .floating-text.gab-ft-x{color:var(--hp-bad);font-size:18px;font-weight:800;animation:floatUpFade 2s ease-out forwards;}
   @keyframes floatUpFade{
     0%{opacity:0; transform:translate(-50%,4px) scale(0.9);}
     12%{opacity:1; transform:translate(-50%,0) scale(1.05);}
@@ -589,6 +595,9 @@
   .global-action-bar.idle{opacity:0.7;}
   .gab-idle{display:flex;align-items:center;gap:8px;font-family:var(--font-display);font-size:16px;letter-spacing:0.5px;color:var(--gold);padding:6px 0;}
   .gab-idle .game-icon{width:16px;height:16px;}
+  /* Notice when some action slots aren't in use (shown under the running-task rows). */
+  .gab-idle-note{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:6px;border-top:1px dashed var(--border-light);font-family:var(--font-body);font-size:11.5px;color:#8a6a2a;}
+  .gab-idle-note .dot{width:7px;height:7px;border-radius:50%;background:#c8902a;box-shadow:0 0 5px rgba(200,144,42,.6);flex-shrink:0;}
   .gab-tasks{display:flex;flex-direction:column;gap:5px;max-height:340px;overflow-y:auto;}
   .gab-task{display:flex;align-items:center;gap:11px;min-height:26px;}
   .gab-task.gab-clickable{cursor:pointer;border-radius:6px;}
@@ -4228,8 +4237,11 @@
           break;
         }
         consumeInputs(tierData.inputs);
+        gabCapture = { xp:0, items:{} };
         completeSpecialCraft(act, tierData);
         maybeSummonFamiliar(specialSkillId);
+        gabEmitReward(gabKeyForAct(act), gabCapture, null, Object.keys(gabCapture.items).length > 0);
+        gabCapture = null;
         tierData = getSpecialTierData(act);
         if(!tierData){ act.type = null; needsRender = true; break; }
         effTimeSpecial = tierData.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, specialSkillId);
@@ -4249,6 +4261,7 @@
       } else {
         consumeInputs(actualInputs);
         bumpStat('crafted');
+        gabCapture = { xp:0, items:{} };
         if(recipe.shaftCraft){
           var shaftsCreated = shaftOutputFor(act.logTierIndex);
           if(Math.random() < shaftSuccessRate(state)){
@@ -4296,6 +4309,9 @@
           spawnFloatingText('Craft failed', 'ft-fail');
         }
         maybeSummonFamiliar(recipe.shaftCraft ? 'fletching' : recipe.relicCraft ? 'archaeology' : act.skill);
+        // Success = the craft produced any output (a plain craft fail yields nothing -> red X).
+        gabEmitReward(gabKeyForAct(act), gabCapture, act.itemId, Object.keys(gabCapture.items).length > 0);
+        gabCapture = null;
         var recheckInputs = recipe.shaftCraft ? makeShaftInputs(act.logTierIndex) : recipe.inputs;
         if(!hasInputs(recheckInputs)){
           addLog('Ran out of materials for ' + recipe.name + '.', 'danger');
@@ -4319,6 +4335,7 @@
     while(act.type==='gather' && act.progress >= effTime){
       act.progress -= effTime;
       bumpStat('gathered');
+      gabCapture = { xp:0, items:{} };
       addXp(act.skill, item.xp * (1 + curiosityGatherXpBonus(state)));
       if(act.skill === 'digging'){
         processDiggingRoll(act.itemId);
@@ -4346,6 +4363,9 @@
       }
       addPhysiqueXp(physTierPairs(GATHER_PHYSIQUE[act.skill], itemTierFromId(act.itemId)));
       maybeSummonFamiliar(act.skill);
+      // Success = the main resource dropped (digging/mining/fishing can whiff; other gathers always hit).
+      gabEmitReward(gabKeyForAct(act), gabCapture, act.itemId, (gabCapture.items[act.itemId]||0) > 0);
+      gabCapture = null;
       effTime = item.time*1000*speedMultiplier(state)*gatherToolSpeedMultiplier(state, act.skill)*(PHYS_LONG_GATHER.indexOf(act.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1);
     }
   }
@@ -4966,6 +4986,72 @@
     setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 2000);
   }
 
+  // ===== Action-bar reward floats: per gather/craft cycle, +XP floats to the LEFT of that task's
+  // row and the items gained float to the RIGHT of its progress bar (a doubled main output shows in
+  // purple; a failed success-roll shows a red X). A capture buffer records the cycle's XP + items
+  // (addXp/addItem feed it) so we don't have to thread results through every drop helper. =====
+  var gabCapture = null;      // {xp, items} for the cycle currently being processed
+  var gabRewardQueue = [];    // {key, xp, items, mainId, success} awaiting anchored floating text
+  function gabKeyForAct(act){
+    if(act === state.activity) return 'p';
+    var i = state.extraCraftSlots.indexOf(act);
+    return i >= 0 ? ('e'+i) : null;
+  }
+  function gabEmitReward(key, cap, mainId, success){
+    if(!key || !cap || !FLOATING_TEXT_ENABLED || offlineCapture) return;
+    if(!(cap.xp > 0) && !Object.keys(cap.items).length && success) return; // nothing to show
+    gabRewardQueue.push({ key:key, xp:cap.xp||0, items:cap.items||{}, mainId:mainId||null, success:!!success });
+  }
+  function gabAnchorFloat(html, cls, topY){
+    var layer = document.getElementById('floatLayer'); if(!layer) return null;
+    var el = document.createElement('div');
+    el.className = 'floating-text ' + (cls||'');
+    el.innerHTML = html;
+    el.style.top = topY + 'px';
+    layer.appendChild(el);
+    setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 2000);
+    return el;
+  }
+  function gabItemsHtml(items, mainId){
+    var ids = Object.keys(items).filter(function(id){ return items[id] > 0; });
+    ids.sort(function(a,b){ return (a===mainId?-1:(b===mainId?1:0)); }); // main output first
+    return ids.map(function(id){
+      var meta = ALL_SELLABLE[id] || {};
+      var icon = meta.icon || svgIcon('chest','var(--text-faint)');
+      var dbl = (id===mainId && items[id] >= 2); // a doubled main output reads purple
+      return '<span class="gab-ft-item'+(dbl?' gab-ft-double':'')+'">+'+items[id]+' '+icon+'</span>';
+    }).join('');
+  }
+  function flushGabRewardQueue(){
+    if(!gabRewardQueue.length) return;
+    var q = gabRewardQueue; gabRewardQueue = [];
+    if(!FLOATING_TEXT_ENABLED) return;
+    q.forEach(function(ev){
+      var fill = document.getElementById('gabFill-'+ev.key); if(!fill) return;
+      var track = fill.parentNode;                              // .gab-task-track (fixed-width bar)
+      var row = fill.closest ? fill.closest('.gab-task') : null;
+      if(ev.xp > 0 && row){
+        var rr = row.getBoundingClientRect();
+        if(rr.width || rr.height){
+          var xel = gabAnchorFloat('+'+(Math.round(ev.xp*10)/10)+' XP', 'ft-xp', rr.top + rr.height/2);
+          if(xel){ xel.style.left = rr.left + 'px'; var w = xel.getBoundingClientRect().width; xel.style.left = (rr.left - 8 - w/2) + 'px'; }
+        }
+      }
+      if(track){
+        var tr = track.getBoundingClientRect();
+        if(tr.width || tr.height){
+          if(ev.success){
+            var ih = gabItemsHtml(ev.items, ev.mainId);
+            if(ih){ var iel = gabAnchorFloat(ih, 'gab-ft-reward', tr.top + tr.height/2); if(iel){ iel.style.left = tr.right + 'px'; var iw = iel.getBoundingClientRect().width; iel.style.left = (tr.right + 8 + iw/2) + 'px'; } }
+          } else {
+            var fel = gabAnchorFloat('✕', 'ft-fail gab-ft-x', tr.top + tr.height/2);
+            if(fel){ fel.style.left = tr.right + 'px'; var fw = fel.getBoundingClientRect().width; fel.style.left = (tr.right + 10 + fw/2) + 'px'; }
+          }
+        }
+      }
+    });
+  }
+
   function isTeaActive(){
     return !!(state.activeTea && state.activeTea.itemId && state.activeTea.expiresAt > Date.now());
   }
@@ -5038,6 +5124,7 @@
     amount = amount * familiarXpMult(skill) * serverBuffXpMult();
     state.xp[skill] += amount;
     if(offlineCapture){ offlineCapture.xp[skill] = (offlineCapture.xp[skill]||0) + amount; }
+    if(gabCapture){ gabCapture.xp += amount; }
     var after = getLevel(state.xp[skill]);
     if(after > before){
       addLog('Your ' + skill + ' level increased to ' + after + '!', 'important');
@@ -5075,6 +5162,7 @@
   function bumpStat(key, n){ if(!state.stats) state.stats = {}; state.stats[key] = (state.stats[key]||0) + (n||1); }
   function addItem(id, qty){
     if(offlineCapture){ offlineCapture.items[id] = (offlineCapture.items[id]||0) + qty; }
+    if(gabCapture){ gabCapture.items[id] = (gabCapture.items[id]||0) + qty; }
     var wasZero = !(state.inventory[id] > 0);
     state.inventory[id] = (state.inventory[id]||0) + qty;
     if(wasZero) needsRender = true;
@@ -12432,8 +12520,11 @@
 
   function renderGlobalActionBar(){
     var tasks = collectTasks();
+    var slotCap = getMaxCraftSlots(state);              // total concurrent action slots
+    var idleSlots = Math.max(0, slotCap - tasks.length); // how many aren't producing right now
     if(!tasks.length){
-      return '<div class="global-action-bar idle"><div class="gab-idle">Idle</div>'+gabTeaHtml()+'</div>';
+      var idleMsg = slotCap > 1 ? ('Idle — all ' + slotCap + ' action slots free') : 'Idle';
+      return '<div class="global-action-bar idle"><div class="gab-idle">'+idleMsg+'</div>'+gabTeaHtml()+'</div>';
     }
     // One row per running task; rows share ~156px of height, shrinking (down to 26px, then
     // scrolling) as more tasks run so the card stays compact regardless of count (max 14).
@@ -12453,13 +12544,18 @@
       html += '<span class="gab-task-chance" id="gabChance-'+t.key+'">'+gabTaskChanceText(d.successPct)+'</span>';
       html += '</div>';
     });
-    html += '</div>' + gabTeaHtml() + '</div>';
+    html += '</div>';
+    if(idleSlots > 0){
+      html += '<div class="gab-idle-note"><span class="dot"></span>' + idleSlots + ' of ' + slotCap + ' action slots idle — put ' + (idleSlots===1?'it':'them') + ' to work</div>';
+    }
+    html += gabTeaHtml() + '</div>';
     return html;
   }
 
   var gabSig = '';
   var gabTeaWasActive = false;
   function updateGlobalActionBarLive(){
+    flushGabRewardQueue(); // anchor any pending reward floats to the current task rows
     var tasks = collectTasks();
     // Rebuild the whole card only when the SET of running tasks (or tea availability) changes,
     // so bars appear/disappear and the row-height rescales. Otherwise just live-update widths and
@@ -12580,6 +12676,7 @@
     currentArea = areaOf(currentCategory); // keep the rail's active area in sync with the content
     updateHeader();
     document.getElementById('globalActionBar').innerHTML = renderGlobalActionBar();
+    flushGabRewardQueue(); // reward floats on render frames too (loop uses render OR updateDynamic)
     renderCatTabs();
     renderSubTabs();
     renderContent();
