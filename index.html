@@ -6069,7 +6069,10 @@
     railHtml += '<div class="panel ff-rail-panel ff-chatpanel ff-rail-chat" id="chatDockPanel"></div>';
     var area = AREAS.filter(function(x){ return x.id===currentArea; })[0];
     if(area) area.subs.forEach(function(s){ chipHtml += '<button class="chip'+(s[0]===currentCategory?' on':'')+(railSubFlash(s[0])?' flash':'')+'" data-cat="'+s[0]+'">'+escapeHtml(s[1])+'</button>'; });
-    var railEl = document.getElementById('ffRail'); if(railEl) railEl.innerHTML = railHtml;
+    // Rebuilding the rail HTML recreates an EMPTY #chatDockPanel node; invalidate the dock signature
+    // so renderChatDock() (called right after this in render()) refills it. Without this reset the
+    // sig-gate sees "no structural change" and skips the refill, leaving chat permanently blank.
+    var railEl = document.getElementById('ffRail'); if(railEl){ railEl.innerHTML = railHtml; _chatDockSig = null; }
     var dockEl = document.getElementById('ffBottomDock'); if(dockEl) dockEl.innerHTML = dockHtml;
     var chipEl = document.getElementById('ffSubchips'); if(chipEl) chipEl.innerHTML = chipHtml;
   }
