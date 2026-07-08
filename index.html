@@ -10072,14 +10072,13 @@
       chatEnsureSubscribed();
       chronicleEnsureSubscribed();
     }catch(e){ chatStatus = 'error'; }
-    if(currentCategory==='chat') render();
+    if(gameStarted) render(); // chat panel is always present now; show the loaded history + status
   }
   function chatOnIncoming(msg){
     if(!msg || chatMessages.some(function(m){ return m.id===msg.id; })) return;
     chatMessages.push(msg);
     if(chatMessages.length > 120) chatMessages = chatMessages.slice(-120);
-    if(currentCategory==='chat') chatRenderMessagesOnly();
-    else { chatHasUnread = true; renderCatTabs(); } // flash the Chat tab (tab bar only; won't disturb inputs)
+    if(chatChannel==='global') chatRenderMessagesOnly(); // chat lives in the rail/drawer; refresh in place
   }
   async function chatSend(){
     var input = document.getElementById('chatInput');
@@ -11058,8 +11057,7 @@
     if(!m || guildChatMessages.some(function(x){ return x.id===m.id; })) return;
     guildChatMessages.push(m);
     if(guildChatMessages.length>120) guildChatMessages=guildChatMessages.slice(-120);
-    if(currentCategory==='chat' && chatChannel==='guild') guildChatRenderOnly();
-    else if(currentCategory!=='chat'){ chatHasUnread = true; renderCatTabs(); } // flash the Chat tab (tab bar only)
+    if(chatChannel==='guild') guildChatRenderOnly();
   }
   function guildChatMaybeSubscribe(){
     if(!chatClient || !guildState.guild) return;
