@@ -90,6 +90,11 @@
     ok(r && r.id === 'paving_t0', 'getPavingRecipe returns the matching recipe');
     eq(FF.getPavingRecipe('nope_t99'), null, 'getPavingRecipe returns null on miss');
   });
+  suite('paving crafts yield double XP', function(){
+    eq(FF.craftXpBonus('paving'), 2, 'paving crafting gets a 2x XP bonus');
+    eq(FF.craftXpBonus('masonry'), 1, 'masonry crafting gets no XP bonus');
+    eq(FF.craftXpBonus('stonecutting'), 1, 'stonecutting crafting gets no XP bonus');
+  });
 
   // ---- Gathering workshops (parallel to crafting workshops) -----------------------------
   suite('gathering workshops', function(){
