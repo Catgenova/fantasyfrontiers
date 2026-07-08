@@ -120,7 +120,10 @@
   .ff-coin svg{width:15px;height:15px;vertical-align:-2px;}
   .ff-area-btn .ico svg{width:16px;height:16px;}
   .ff-rail-settings svg{width:15px;height:15px;}
-  .ff-mid{flex:1;display:flex;min-height:0;}
+  .ff-mid{flex:1;display:flex;min-height:0;position:relative;}
+  /* Hand-drawn ivy draped down the rail/content seam. Inline SVG <pattern> so it stays crisp at any
+     zoom/DPI and tiles seamlessly to any rail height. Sits above both columns; never eats clicks. */
+  .ff-railvine{position:absolute;top:0;left:226px;width:64px;height:100%;z-index:6;pointer-events:none;overflow:visible;filter:drop-shadow(0 3px 5px rgba(12,20,8,.28));}
   .ff-rail{
     position:relative;width:260px;flex-shrink:0;padding:12px 12px;display:flex;flex-direction:column;overflow-y:auto;
     /* Subtle black-slate brick wall (running bond), drawn as an inline SVG tile: dark slate
@@ -183,6 +186,7 @@
   .ff-drawer{width:100%;max-height:72%;display:flex;flex-direction:column;background:var(--bg-panel);border-top:2px solid var(--ink);border-radius:16px 16px 0 0;padding:14px;box-shadow:0 -10px 28px rgba(0,0,0,.45), inset 0 0 0 2px rgba(143,133,122,.4);}
   @media (max-width:860px){
     .ff-rail{display:none;}
+    .ff-railvine{display:none;}
     .ff-dock{display:none;}
     /* Category selector for the current area. Wraps so every category is visible at once
        (no hidden horizontal scroll), and styled as clear raised chips. */
@@ -1186,6 +1190,61 @@
   <div class="ff-topbar" id="ffTopbar"></div>
   <div class="ff-mid">
     <nav class="ff-rail" id="ffRail"></nav>
+    <svg class="ff-railvine" id="ffRailVine" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <linearGradient id="ivLeaf" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#8ec155"/>
+          <stop offset=".5" stop-color="#4d7a28"/>
+          <stop offset="1" stop-color="#254318"/>
+        </linearGradient>
+        <radialGradient id="ivHi" cx=".4" cy=".28" r=".72">
+          <stop offset="0" stop-color="#cbe793" stop-opacity=".9"/>
+          <stop offset="1" stop-color="#cbe793" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="ivStem" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#6f5329"/>
+          <stop offset=".5" stop-color="#4a3a1e"/>
+          <stop offset="1" stop-color="#31230f"/>
+        </linearGradient>
+        <filter id="ivDs" x="-40%" y="-40%" width="180%" height="180%">
+          <feDropShadow dx="1.3" dy="2.2" stdDeviation="1.2" flood-color="#0d1a07" flood-opacity=".5"/>
+        </filter>
+        <!-- One classic 5-lobed ivy leaf: petiole, shaded body, glossy highlight, light veins.
+             Fixed top-left light source (gradient + highlight) so every placed copy reads consistently. -->
+        <g id="ivLf">
+          <path d="M-1.5,-28 C-1,-35 -.6,-40 0,-44 C.6,-40 1,-35 1.5,-28 Z" fill="#493620"/>
+          <path d="M0,-30 C4,-18 8,-15 16,-16 C26,-17 30,-9 25,-1 C33,-3 36,4 30,11 C24,18 14,16 9,22 C5,27 2,31 0,38 C-2,31 -5,27 -9,22 C-14,16 -24,18 -30,11 C-36,4 -33,-3 -25,-1 C-30,-9 -26,-17 -16,-16 C-8,-15 -4,-18 0,-30 Z" fill="url(#ivLeaf)"/>
+          <ellipse cx="-2.5" cy="-7" rx="10.5" ry="13.5" fill="url(#ivHi)"/>
+          <path d="M0,-27 Q2,6 0,35 M0,-4 Q9,-11 18,-14 M0,-4 Q-9,-11 -18,-14 M1,9 Q14,7 27,10 M-1,9 Q-14,7 -27,10" fill="none" stroke="#c9e692" stroke-width="1.1" stroke-opacity=".38" stroke-linecap="round"/>
+        </g>
+        <!-- One repeating vine segment (64 x 240): woody stem crossing top&bottom at the same x with a
+             matching tangent, so the pattern tiles with no visible seam; leaves + tendrils hang off it. -->
+        <g id="ivUnit">
+          <path d="M30,-8 C39,26 20,44 30,74 C40,104 20,124 30,156 C40,190 21,208 30,248" fill="none" stroke="#2a1e0e" stroke-width="6.5" stroke-linecap="round"/>
+          <path d="M30,-8 C39,26 20,44 30,74 C40,104 20,124 30,156 C40,190 21,208 30,248" fill="none" stroke="url(#ivStem)" stroke-width="3.6" stroke-linecap="round"/>
+          <path d="M30,-8 C39,26 20,44 30,74 C40,104 20,124 30,156 C40,190 21,208 30,248" fill="none" stroke="#9c774a" stroke-width="1" stroke-opacity=".55" stroke-linecap="round"/>
+          <path d="M35,58 q11,3 9,12 q-2,7 -9,4.5" fill="none" stroke="#6a5028" stroke-width="1.4" stroke-linecap="round"/>
+          <path d="M24,140 q-11,3 -9,12 q2,7 9,4.5" fill="none" stroke="#6a5028" stroke-width="1.4" stroke-linecap="round"/>
+          <g filter="url(#ivDs)">
+            <use href="#ivLf" transform="translate(34,20) rotate(46) scale(.82)"/>
+            <use href="#ivLf" transform="translate(26,52) rotate(-128) scale(.66)"/>
+            <use href="#ivLf" transform="translate(35,88) rotate(112) scale(.95)"/>
+            <use href="#ivLf" transform="translate(25,120) rotate(-56) scale(.78)"/>
+            <use href="#ivLf" transform="translate(36,152) rotate(150) scale(.72)"/>
+            <use href="#ivLf" transform="translate(24,186) rotate(-118) scale(.9)"/>
+            <use href="#ivLf" transform="translate(34,214) rotate(58) scale(.8)"/>
+            <use href="#ivLf" transform="translate(40,40) rotate(18) scale(.4)"/>
+            <use href="#ivLf" transform="translate(19,104) rotate(202) scale(.42)"/>
+            <use href="#ivLf" transform="translate(41,170) rotate(28) scale(.38)"/>
+            <use href="#ivLf" transform="translate(20,232) rotate(-150) scale(.5)"/>
+          </g>
+        </g>
+        <pattern id="ivPat" x="0" y="0" width="64" height="240" patternUnits="userSpaceOnUse" overflow="visible">
+          <use href="#ivUnit"/>
+        </pattern>
+      </defs>
+      <rect width="64" height="100%" fill="url(#ivPat)"/>
+    </svg>
     <div class="ff-main" id="ffMain">
       <div class="ff-subchips" id="ffSubchips"></div>
     <div class="topbar" style="position:absolute;left:-9999px;width:0;height:0;overflow:hidden;">
