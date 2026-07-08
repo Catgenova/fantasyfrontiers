@@ -96,6 +96,33 @@
     eq(FF.craftXpBonus('stonecutting'), 1, 'stonecutting crafting gets no XP bonus');
   });
 
+  // ---- Tier steppers replaced the crafting-tier <select> dropdowns -----------------------
+  suite('tierRange builds a contiguous 0..max list', function(){
+    var r = FF.tierRange(3);
+    eq(r.length, 4, 'tierRange(3) has 4 entries');
+    eq(r[0], 0, 'tierRange starts at 0');
+    eq(r[3], 3, 'tierRange ends at max');
+  });
+  suite('tierStepper renders − value + buttons', function(){
+    var html = FF.tierStepper('workshop', 'carpentry', FF.tierRange(5), 2, 'Iron (Lv15)', false);
+    ok(html.indexOf('data-action="tierStep"') !== -1, 'emits tierStep buttons');
+    ok(html.indexOf('data-tier-target="workshop"') !== -1, 'carries the target');
+    ok(html.indexOf('data-tier-sub="carpentry"') !== -1, 'carries the sub key');
+    ok(html.indexOf('data-tier-values="0,1,2,3,4,5"') !== -1, 'carries the value list');
+    ok(html.indexOf('Iron (Lv15)') !== -1, 'shows the current tier label');
+    ok(html.indexOf('data-tier-dir="-1"') !== -1 && html.indexOf('data-tier-dir="1"') !== -1, 'has both directions');
+  });
+  suite('tierStepper disables at the ends and when locked', function(){
+    var lowest = FF.tierStepper('ring', 'r', FF.tierRange(4), 0, 'x', false);
+    // The − button (dir=-1) sits before the + button; at the lowest tier only − is disabled.
+    ok(/data-tier-dir="-1"[^>]*disabled/.test(lowest), 'minus disabled at lowest tier');
+    ok(!/data-tier-dir="1"[^>]*disabled/.test(lowest), 'plus enabled at lowest tier');
+    var highest = FF.tierStepper('ring', 'r', FF.tierRange(4), 4, 'x', false);
+    ok(/data-tier-dir="1"[^>]*disabled/.test(highest), 'plus disabled at highest tier');
+    var locked = FF.tierStepper('ring', 'r', FF.tierRange(4), 2, 'x', true);
+    ok(/data-tier-dir="-1"[^>]*disabled/.test(locked) && /data-tier-dir="1"[^>]*disabled/.test(locked), 'both disabled when locked');
+  });
+
   // ---- Gathering workshops (parallel to crafting workshops) -----------------------------
   suite('gathering workshops', function(){
     var w = FF.WORKSHOP_ITEMS;
