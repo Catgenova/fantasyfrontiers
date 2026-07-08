@@ -481,6 +481,8 @@
   .chat-msg{font-family:var(--font-body);font-size:13px;line-height:1.45;}
   .chat-user{font-weight:700;color:var(--cat-chat);margin-right:5px;}
   .chat-user::after{content:':';color:var(--text-faint);}
+  .chat-time{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);margin-right:6px;}
+  .log-entry .chat-time{margin-right:5px;}
   .chat-body{color:var(--text);word-break:break-word;}
   .chat-empty{margin:auto;color:var(--text-faint);font-style:italic;}
   .chat-account{display:flex;align-items:center;gap:8px;font-family:var(--font-body);font-size:12px;color:var(--text-dim);}
@@ -4882,9 +4884,13 @@
   }
   function addLog(msg, cls){
     if(offlineCapture) return;
-    state.log.push({msg:msg, cls:cls||''});
+    state.log.push({msg:msg, cls:cls||'', t:Date.now()});
     if(state.log.length > 40) state.log.shift();
     logVersion++;
+  }
+  // Local-time HH:MM for chat/chronicle timestamps. Accepts a ms epoch or an ISO/date string.
+  function msgTime(x){
+    try{ var d = (typeof x === 'number') ? new Date(x) : new Date(x); if(isNaN(d.getTime())) return ''; return d.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }); }catch(e){ return ''; }
   }
 
   // Some embedded/sandboxed environments silently block window.confirm() (it returns
@@ -5080,6 +5086,7 @@
       if(res && res.ok){
         serverBuffApply(res.buffs);
         addLog('You activated a server-wide +50% EXP buff for 1 hour — every player benefits. Thanks for supporting the server!', 'important');
+        chronicleBroadcast('buff', 'bought a +50% EXP server buff (1 hour) for the whole server!');
       } else {
         state.gold += SERVER_BUFF_EXP_COST; bumpStat('hoursBuffed', -1); saveGame();
         addLog('The buff purchase failed: ' + ((res && res.error) || 'try again') + '. Your gold was refunded.', 'danger');
@@ -5100,8 +5107,8 @@
       var res = r && r.data;
       if(res && res.ok){
         serverBuffApply(res.buffs);
-        if(reason==='register') addLog('Welcome! Your registration set off a server-wide +50% EXP buff (1 hour) for every player.', 'important');
-        else if(reason==='familiar') addLog('Finding a familiar sparked a server-wide +50% EXP buff (+5 min) for everyone!', 'important');
+        if(reason==='register'){ addLog('Welcome! Your registration set off a server-wide +50% EXP buff (1 hour) for every player.', 'important'); chronicleBroadcast('buff', 'registered — a +50% EXP server buff (1 hour) is on for everyone!'); }
+        else if(reason==='familiar'){ addLog('Finding a familiar sparked a server-wide +50% EXP buff (+5 min) for everyone!', 'important'); chronicleBroadcast('buff', 'found a familiar — a +50% EXP server buff (+5 min) is on for everyone!'); }
         needsRender = true;
       }
     }, function(){});
@@ -10588,6 +10595,7 @@
     if(ev.kind === 'craft') msg = name + ' forged a ' + body + '!';
     else if(ev.kind === 'level') msg = name + ' reached ' + body + '!';
     else if(ev.kind === 'familiar') msg = name + ' summoned ' + body + '!';
+    else if(ev.kind === 'buff') msg = name + ' ' + body;   // body is self-contained (server-buff event)
     else return;
     // addLog refreshes the Chronicle log on its own (via logVersion in updateDynamic). Do NOT
     // set needsRender here -- a full render per incoming event rebuilds #content and slams shut
@@ -10643,7 +10651,7 @@
   function chatMessagesHtml(){
     if(chatMessages.length===0) return '<div class="chat-empty">No messages yet &mdash; say hello!</div>';
     return chatMessages.map(function(m){
-      return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-body">'+escapeHtml(m.body||'')+'</span></div>';
+      return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+escapeHtml(m.body||'')+'</span></div>';
     }).join('');
   }
   function chatRenderMessagesOnly(){
@@ -10653,7 +10661,7 @@
   // Chronicle now lives as a tab inside the Chat panel (read-only event feed).
   function chronicleFeedHtml(){
     if(!state.log || !state.log.length) return '<div class="chat-empty">No events yet.</div>';
-    return state.log.slice(-60).map(function(e){ return '<div class="log-entry '+e.cls+'">'+e.msg+'</div>'; }).join('');
+    return state.log.slice(-60).map(function(e){ return '<div class="log-entry '+e.cls+'">'+(e.t?'<span class="chat-time">'+msgTime(e.t)+'</span> ':'')+e.msg+'</div>'; }).join('');
   }
   function chronicleRenderOnly(){
     var el = document.getElementById('chronicleFeed');
@@ -11589,7 +11597,7 @@
   var guildChatLastSentAt = 0;
   function guildChatMessagesHtml(){
     if(!guildChatMessages.length) return '<div class="chat-empty">No guild messages yet &mdash; say hello to your guildmates!</div>';
-    return guildChatMessages.map(function(m){ return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-body">'+escapeHtml(m.body||'')+'</span></div>'; }).join('');
+    return guildChatMessages.map(function(m){ return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+escapeHtml(m.body||'')+'</span></div>'; }).join('');
   }
   function guildChatRenderOnly(){ var el=document.getElementById('chatMessages'); if(el){ el.innerHTML=guildChatMessagesHtml(); el.scrollTop=el.scrollHeight; } }
   function guildChatOnIncoming(m){
