@@ -4197,7 +4197,7 @@
     while(act.type==='pray' && act.progress >= effTimeP){
       act.progress -= effTimeP;
       addXp('prayer', prayerTier.xp);
-      addPhysiqueXp([['focus',3]]);
+      addPhysiqueXp(physTierPairs([['focus',1]], itemTierFromId(act.itemId)));
       maybeSummonFamiliar('prayer');
       effTimeP = prayerTier.time*1000*speedMultiplier(state);
     }
@@ -5025,7 +5025,7 @@
     var before = state.faith;
     state.faith = Math.min(faithMax(state), state.faith + restore);
     addXp('sacrifice', 30);
-    addPhysiqueXp([['focus',2]]);
+    addPhysiqueXp(physTierPairs([['focus',1]], tier-1));
     maybeSummonFamiliar('sacrifice');
     addLog('You sacrificed your ' + label + ' and restored ' + Math.round(state.faith-before) + ' Faith.', 'important');
     needsRender = true;
@@ -5204,7 +5204,7 @@
     else if(weaponStyle.hand==='2h') atkFeed.push(['balance',2]);
     if(isCrit){ atkFeed.push(['criticalEye',2]); atkFeed.push(['exploitation',2]); }
     if(state.playerHp < maxHp(state)*0.25) atkFeed.push(['tenacity',2]);
-    addPhysiqueXp(atkFeed);
+    addPhysiqueXp(physTierPairs(atkFeed, monster.tierIndex)); // each combat physique earns monsterTier+1
     // Offensive proficiency XP scales with damage actually inflicted (capped at the monster's
     // remaining HP so overkill isn't over-rewarded) -- no inherent per-hit enemy XP. Both the
     // mainhand weapon and a Quiver offhand (which boosts your bow damage) train off it.
@@ -5216,7 +5216,7 @@
       bumpStat('kills');
       var goldWon = randInt(monster.goldMin, monster.goldMax);
       state.gold += goldWon;
-      addPhysiqueXp([['resolve',3]]);
+      addPhysiqueXp(physTierPairs([['resolve',1]], monster.tierIndex));
       addLog('Defeated the ' + monster.name + '! +' + goldWon + ' gold.', 'important');
       applyMonsterCategoryLoot(monster);
       if(monster.category==='dungeon') handleDungeonVictory(monster);
@@ -5257,8 +5257,8 @@
     var effectiveShieldDefense = (offhandStyle && offhandStyle.type==='shield' && offhandItem) ? offhandItem.defense * shieldCounter * offhandProficiency * (1 + shieldProfMult(state)) : 0;
     var dmgToPlayer = Math.max(1, Math.round((rawDmg - armorDefense - effectiveShieldDefense) / tenacityLowHpMult(state)));
     state.playerHp -= dmgToPlayer;
-    var hitFeed = [['fortitude', dmgToPlayer]];
-    if(blocked || (armorDefense + effectiveShieldDefense) > 0) hitFeed.push(['blocking', blocked?2:1]);
+    var hitFeed = [['fortitude', dmgToPlayer]]; // fortitude keeps scaling with damage taken
+    if(blocked || (armorDefense + effectiveShieldDefense) > 0) hitFeed.push(['blocking', monster.tierIndex+1]);
     addPhysiqueXp(hitFeed);
     // Defensive proficiency XP scales with damage MITIGATED (prevented by block/armor/shield),
     // not the enemy's inherent XP. Shields and each worn armor material train off it.
@@ -13151,7 +13151,7 @@
         while(state._faithFamiliarAccum >= 1000){
           state._faithFamiliarAccum -= 1000;
           maybeSummonFamiliar(state.faithActivity.type);
-          addPhysiqueXp([['focus',1]]);
+          addPhysiqueXp(physTierPairs([['focus',1]], state.faithActivity.tier));
         }
         if(state.faith <= 0){
           addLog('Your ' + state.faithActivity.type + ' faded as your Faith ran dry.', 'danger');
