@@ -342,6 +342,21 @@
     eq(FF.craftBodyRarity(''), null, 'empty body -> null');
   });
 
+  // ---- Familiar companion avatars: every familiar has a bespoke avatar with its skill crest ----
+  suite('familiar avatars', function(){
+    var ids = Object.keys(FF.FAMILIAR_DATA);
+    var missing = ids.filter(function(id){ return !FF.FAM_SKIN[id]; });
+    eq(missing.length, 0, 'every familiar has an avatar skin' + (missing.length?': missing '+missing.join(','):''));
+    var svgOk = ids.every(function(id){ var s = FF.familiarAvatar(id); return typeof s==='string' && s.indexOf('<svg')===0 && s.indexOf('fam-avatar')>-1; });
+    ok(svgOk, 'familiarAvatar returns a fam-avatar svg for every familiar');
+    // each avatar embeds its skill emblem shape
+    var emblemOk = ids.every(function(id){ return FF.familiarAvatar(id).indexOf('#shape-'+FF.FAM_SKIN[id].s) > -1; });
+    ok(emblemOk, 'each avatar holds its skill emblem shape');
+    eq(FF.familiarAvatar('mining').indexOf('#shape-ore') > -1, true, 'mining familiar holds the ore crest');
+    // famMix midpoint of black and white is grey
+    eq(FF.famMix('#000000','#ffffff',0.5), '#808080', 'famMix 50% black/white -> grey');
+  });
+
   // ---- Inventory category sort: group each item's tiers by family, then order by tier -----
   suite('inventory family sort', function(){
     eq(FF.invFamilyKey('digging_t2'), 'digging', 'strips tier -> family');
