@@ -604,6 +604,31 @@
   .stat-label{color:var(--text-dim);}
   .stat-value{font-family:var(--font-mono);color:var(--text);font-weight:600;}
   .stat-row.soon .stat-label,.stat-row.soon .stat-value{color:var(--text-faint);font-style:italic;font-weight:400;}
+  /* ===== Paper-doll equipment screen ===== */
+  .equip-layout{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px;}
+  .equip-doll-col{flex:1 1 440px;min-width:300px;}
+  .equip-stats-col{flex:1 1 300px;min-width:280px;}
+  .equip-stats-col .stats-panel{grid-template-columns:1fr;margin-bottom:0;}
+  .equip-doll{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center;justify-items:center;
+    background:radial-gradient(ellipse at 50% 38%, rgba(70,60,44,.5), rgba(26,22,16,.78));
+    border:12px solid transparent;border-image:var(--ivy-frame) 30 round;border-radius:8px;padding:16px 6px;}
+  .equip-col{display:flex;flex-direction:column;gap:16px;}
+  .equip-slot{position:relative;width:58px;height:58px;border-radius:10px;background:rgba(18,15,11,.55);
+    border:2px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;
+    box-shadow:inset 0 2px 6px rgba(0,0,0,.35);transition:border-color .12s,box-shadow .12s,transform .12s;}
+  .equip-slot:hover{border-color:var(--gold);transform:translateY(-1px);}
+  .equip-slot.on{border-color:var(--gold);box-shadow:0 0 0 2px rgba(201,162,39,.35),0 0 12px rgba(201,162,39,.3);}
+  .equip-slot.empty .equip-slot-ico{opacity:.42;filter:grayscale(.4);}
+  .equip-slot-ico{display:flex;}
+  .equip-slot-ico svg,.equip-slot-ico .game-icon{width:36px;height:36px;}
+  .equip-slot-label{position:absolute;bottom:-13px;left:50%;transform:translateX(-50%);font-size:8.5px;letter-spacing:.3px;
+    text-transform:uppercase;color:var(--text-faint);white-space:nowrap;font-family:var(--font-body);pointer-events:none;}
+  .equip-slot.filled .equip-slot-label{color:var(--text-dim);}
+  .equip-figure{width:100%;display:flex;align-items:center;justify-content:center;padding:4px 0;}
+  .equip-figure-svg{width:100%;max-width:172px;height:auto;filter:drop-shadow(0 6px 12px rgba(0,0,0,.45));}
+  .equip-rings{display:flex;gap:18px;justify-content:center;margin:22px 0 6px;flex-wrap:wrap;}
+  .equip-picker{margin-top:18px;border-top:1px solid var(--border);padding-top:12px;}
+  @media(max-width:560px){ .equip-slot{width:50px;height:50px;} .equip-slot-ico svg,.equip-slot-ico .game-icon{width:30px;height:30px;} .equip-col{gap:14px;} }
   /* Persistent action HUD: a single card that lists every running task as its own bar. It
      grows with the number of tasks (rows shrink to share the space) and scrolls past ~13. */
   .global-action-bar{margin:0 0 12px;padding:8px 14px;background:var(--bg-card);border-radius:4px;border:12px solid transparent;border-image:var(--ivy-frame) 30 round;box-shadow:0 4px 12px rgba(20,18,16,.24);}
@@ -4958,6 +4983,7 @@
   var needsRender = false;
   var armorPanelExpanded = false;
   var toolPanelExpanded = false;
+  var equipPickerSlot = 'mainhand'; // which paper-doll slot's equip picker is open on the Equipment tab
   var skillGroupExpanded = {};
   var physiquePanelExpanded = false;
   var menagerieExpanded = {};
@@ -7516,16 +7542,92 @@
     });
     return html + '</div>';
   }
+  // ---- Paper-doll equipment screen: slots arranged around an androgynous silhouette. Each slot
+  // shows what's equipped (or a faded placeholder); clicking one opens that slot's equip picker
+  // below (reusing the detailed equip sections). Stats sit in a column to the side.
+  var EQUIP_DOLL_LEFT  = ['helmet','chest','gauntlets','belt','boots'];
+  var EQUIP_DOLL_RIGHT = ['mainhand','offhand','back','amulet','relic'];
+  function equipSlotState(slotId){
+    var EMPTY = '#7a6f5a';
+    if(slotId==='mainhand'){
+      var stl = getWeaponStyle(state.equippedMainhand), w = getEquippedWeaponItem(state);
+      var filled = !!state.equippedMainhand && w !== WEAPON_BASE;
+      return { label:'Weapon', filled:filled, icon: filled ? (stl.icon||svgIcon('sword',EMPTY)) : svgIcon('sword',EMPTY), name: filled ? stl.name : 'Empty' };
+    }
+    if(slotId==='offhand'){
+      var oh = getEquippedOffhandItem(state), os = getOffhandStyle(state.equippedOffhand);
+      return { label:'Offhand', filled:!!oh, icon: (oh && os && os.icon) ? os.icon : svgIcon('shield',EMPTY), name: oh && os ? os.name : 'Empty' };
+    }
+    if(slotId==='relic'){
+      var rf = state.equippedRelicTier > 0;
+      return { label:'Relic', filled:rf, icon: svgIcon('trophy', rf ? '#c9a227' : EMPTY), name: rf ? 'Relic' : 'Empty' };
+    }
+    if(slotId==='belt'){
+      var bf = state.equippedBeltTier > 0;
+      var bi = bf ? BELT_ITEMS['belt_t'+(state.equippedBeltTier-1)+'_'+state.equippedBeltRarity] : null;
+      return { label:'Belt', filled:bf, icon: (bi && bi.icon) ? bi.icon : svgIcon('belt',EMPTY), name: bi ? bi.name : 'Empty' };
+    }
+    if(slotId==='amulet'){
+      var am = getEquippedAmuletItem(state);
+      return { label:'Amulet', filled:!!am, icon: (am && am.icon) ? am.icon : svgIcon('amulet',EMPTY), name: am ? am.name : 'Empty' };
+    }
+    if(slotId.indexOf('ring')===0){
+      var r = getRingItemInSlot(state, slotId), idx = RING_SLOT_IDS.indexOf(slotId)+1;
+      return { label:'Ring '+idx, filled:!!r, icon: (r && r.icon) ? r.icon : svgIcon('ring',EMPTY), name: r ? r.name : 'Empty' };
+    }
+    // body armour slot (helmet / chest / gauntlets / boots / back)
+    var s = state.bodyArmor && state.bodyArmor[slotId];
+    var af = !!(s && s.tier > 0);
+    var it = af ? BODY_ARMOR_ITEMS['bodyarmor_'+s.material+'_'+slotId+'_t'+(s.tier-1)+'_'+s.rarity] : null;
+    return { label: BODY_ARMOR_LABELS[slotId] || slotId, filled:af, icon: (it && it.icon) ? it.icon : (BODY_ARMOR_ICONS[slotId] || svgIcon('chestarmor',EMPTY)), name: it ? it.name : 'Empty' };
+  }
+  function equipSlotBtn(slotId){
+    var s = equipSlotState(slotId);
+    var on = equipPickerSlot === slotId;
+    return '<button class="equip-slot'+(s.filled?' filled':' empty')+(on?' on':'')+'" data-action="openEquipPicker" data-slot="'+slotId+'" title="'+escapeHtml(s.label+': '+s.name)+'">'
+      + '<span class="equip-slot-ico">'+s.icon+'</span>'
+      + '<span class="equip-slot-label">'+escapeHtml(s.label)+'</span></button>';
+  }
+  function androgynousSilhouette(){
+    return '<svg class="equip-figure-svg" viewBox="0 0 140 320" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
+      + '<defs><linearGradient id="equipFig" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#544b3b"/><stop offset="0.55" stop-color="#37311f"/><stop offset="1" stop-color="#211d14"/></linearGradient></defs>'
+      + '<g fill="url(#equipFig)">'
+      + '<ellipse cx="70" cy="40" rx="21" ry="24"/>'                                              // head
+      + '<path d="M61 60 h18 v11 q-9 5 -18 0 z"/>'                                                 // neck
+      + '<path d="M44 78 Q70 66 96 78 Q101 102 94 130 Q92 152 86 170 L54 170 Q48 152 46 130 Q39 102 44 78 Z"/>' // torso
+      + '<path d="M46 82 Q28 88 26 114 L31 180 Q35 190 43 182 L49 120 Q50 96 50 86 Z"/>'           // left arm
+      + '<path d="M94 82 Q112 88 114 114 L109 180 Q105 190 97 182 L91 120 Q90 96 90 86 Z"/>'       // right arm
+      + '<path d="M54 168 L86 168 L84 196 L56 196 Z"/>'                                            // pelvis
+      + '<path d="M55 194 L69 194 L67 290 Q62 300 56 290 L53 214 Z"/>'                             // left leg
+      + '<path d="M71 194 L85 194 L87 214 L84 290 Q78 300 73 290 Z"/>'                             // right leg
+      + '<path d="M50 288 Q62 285 68 290 L68 299 Q59 303 50 299 Z"/>'                              // left foot
+      + '<path d="M90 288 Q78 285 72 290 L72 299 Q81 303 90 299 Z"/>'                              // right foot
+      + '</g></svg>';
+  }
+  function equipPickerHtml(slotId){
+    if(slotId==='mainhand') return renderMainhandEquipSection();
+    if(slotId==='offhand')  return renderOffhandEquipFullSection();
+    if(slotId==='relic')    return renderRelicEquipSection();
+    if(slotId==='belt')     return renderBeltEquipSection();
+    if(slotId==='amulet')   return renderAmuletEquipSection();
+    if(slotId && slotId.indexOf('ring')===0) return renderRingsEquipSection();
+    if(['helmet','chest','gauntlets','boots','back'].indexOf(slotId) >= 0) return renderEquipBodyArmorSection();
+    return renderMainhandEquipSection();
+  }
   function renderCharacterTab(){
-    var html = '<div class="section-intro">Your full loadout in one place -- see exactly what every piece of gear is doing, and equip or unequip anything you own. Forge new gear from the various Crafting skills; it\'ll show up here to equip once it\'s in your inventory.</div>';
-    html += renderCombatStatsPanel();
-    html += renderMainhandEquipSection();
-    html += renderOffhandEquipFullSection();
-    html += renderRelicEquipSection();
-    html += renderEquipBodyArmorSection();
-    html += renderBeltEquipSection();
-    html += renderRingsEquipSection();
-    html += renderAmuletEquipSection();
+    var html = '<div class="section-intro">Your loadout at a glance -- every slot shows what\'s equipped. Tap a slot to change it. Forge new gear from the Crafting skills; it shows up here once it\'s in your inventory.</div>';
+    html += '<div class="equip-layout">';
+    html += '<div class="equip-doll-col">';
+    html += '<div class="equip-doll">';
+    html += '<div class="equip-col">'+EQUIP_DOLL_LEFT.map(equipSlotBtn).join('')+'</div>';
+    html += '<div class="equip-figure">'+androgynousSilhouette()+'</div>';
+    html += '<div class="equip-col">'+EQUIP_DOLL_RIGHT.map(equipSlotBtn).join('')+'</div>';
+    html += '</div>';
+    html += '<div class="equip-rings">'+RING_SLOT_IDS.map(equipSlotBtn).join('')+'</div>';
+    html += '<div class="equip-picker">'+equipPickerHtml(equipPickerSlot)+'</div>';
+    html += '</div>';
+    html += '<div class="equip-stats-col">'+renderCombatStatsPanel()+'</div>';
+    html += '</div>';
     return html;
   }
 
@@ -13348,6 +13450,8 @@
       unequipBodyArmor(btn.getAttribute('data-slot'));
     } else if(action==='forgeBelt'){
       craftBelt(parseInt(btn.getAttribute('data-tier'),10));
+    } else if(action==='openEquipPicker'){
+      equipPickerSlot = btn.getAttribute('data-slot'); render();
     } else if(action==='equipBelt'){
       equipBelt(btn.getAttribute('data-item'));
     } else if(action==='unequipBelt'){
