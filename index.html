@@ -6149,19 +6149,27 @@
     var mobile = isMobileView();
     var sig = 'dock|'+mobile+'|'+chatExpanded+'|'+chatStructSig();
     if(sig === _chatDockSig) return;   // structure unchanged -> keep the live input/messages
-    _chatDockSig = sig;
-    // On mobile the rail is hidden and chat lives in the drawer; leave this panel empty so the
-    // drawer's #chatInput/#chatMessages ids aren't duplicated by this (hidden) copy.
-    if(mobile){ el.innerHTML = ''; return; }
-    // When signed out, renderChatTab() shows the auth form -- rendering it here would duplicate the
-    // login inputs' ids and break the real login gate. Show a placeholder instead.
-    if(!authUser){ el.innerHTML = '<div class="ff-dock-title">Chat</div><div class="empty-note">Sign in to chat with the realm.</div>'; return; }
-    var head = '<div class="ff-dock-title ff-chat-head"><span>Chat</span>'
-      + '<button class="ff-chat-expand-btn" data-action="toggleChatExpand" title="Expand chat to full screen" aria-label="Expand chat">'+CHAT_EXPAND_ICON+'</button></div>';
-    // While full-screen chat is open, the overlay owns the live #chatInput/#chatMessages; keep this
-    // rail copy inert (no duplicate ids) and just point back to the expanded view.
-    if(chatExpanded){ el.innerHTML = head + '<div class="empty-note">Chat is open in full screen.</div>'; return; }
-    el.innerHTML = head + renderChatTab();
+    // Build the HTML BEFORE recording the signature. If renderChatTab() throws even once, the sig
+    // must stay stale so the next render retries -- otherwise a one-off hiccup would poison the sig
+    // and leave the panel permanently blank until a full reload.
+    var html;
+    if(mobile){
+      // On mobile the rail is hidden and chat lives in the drawer; leave this panel empty so the
+      // drawer's #chatInput/#chatMessages ids aren't duplicated by this (hidden) copy.
+      html = '';
+    } else if(!authUser){
+      // When signed out, renderChatTab() shows the auth form -- rendering it here would duplicate the
+      // login inputs' ids and break the real login gate. Show a placeholder instead.
+      html = '<div class="ff-dock-title">Chat</div><div class="empty-note">Sign in to chat with the realm.</div>';
+    } else {
+      var head = '<div class="ff-dock-title ff-chat-head"><span>Chat</span>'
+        + '<button class="ff-chat-expand-btn" data-action="toggleChatExpand" title="Expand chat to full screen" aria-label="Expand chat">'+CHAT_EXPAND_ICON+'</button></div>';
+      // While full-screen chat is open, the overlay owns the live #chatInput/#chatMessages; keep this
+      // rail copy inert (no duplicate ids) and just point back to the expanded view.
+      html = chatExpanded ? (head + '<div class="empty-note">Chat is open in full screen.</div>') : (head + renderChatTab());
+    }
+    el.innerHTML = html;
+    _chatDockSig = sig;   // only record the sig once the panel is successfully built
     var sc = el.querySelector('#chatMessages, #chronicleFeed'); if(sc) sc.scrollTop = sc.scrollHeight; // start at newest
   }
   // Optional full-screen chat: a centered panel over the whole app. Reuses renderChatTab(), so it is
@@ -6171,13 +6179,16 @@
     if(chatExpanded && !authUser) chatExpanded = false; // can't expand the login form
     var sig = 'expand|'+chatExpanded+'|'+chatStructSig();
     if(sig === _chatExpandSig) return;   // structure unchanged -> keep the live input/messages
-    _chatExpandSig = sig;
-    if(!chatExpanded){ ov.className = ''; ov.removeAttribute('data-action'); ov.innerHTML = ''; return; }
-    ov.className = 'ff-chat-expand-overlay'; ov.setAttribute('data-action','toggleChatExpand'); // click backdrop to close
-    ov.innerHTML = '<div class="ff-chat-expand" data-action="noop">'
+    if(!chatExpanded){ ov.className = ''; ov.removeAttribute('data-action'); ov.innerHTML = ''; _chatExpandSig = sig; return; }
+    // Build the inner HTML (which calls renderChatTab) BEFORE touching the overlay or the sig, so a
+    // one-off throw leaves the sig stale and the next render retries instead of sticking blank.
+    var inner = '<div class="ff-chat-expand" data-action="noop">'
       + '<div class="ff-chat-expand-hd"><span class="t">Chat</span>'
       + '<button class="ff-chat-expand-btn" data-action="toggleChatExpand" title="Exit full screen" aria-label="Exit full screen">'+CHAT_COLLAPSE_ICON+'</button></div>'
       + renderChatTab() + '</div>';
+    ov.className = 'ff-chat-expand-overlay'; ov.setAttribute('data-action','toggleChatExpand'); // click backdrop to close
+    ov.innerHTML = inner;
+    _chatExpandSig = sig;
     var sc = ov.querySelector('#chatMessages, #chronicleFeed'); if(sc) sc.scrollTop = sc.scrollHeight;
   }
   // Inventory as its own content view (Resources > Inventory); #inventoryPanel is filled by
@@ -6191,12 +6202,16 @@
     var open = chatDrawerOpen && !chatExpanded;
     var sig = 'drawer|'+open+'|'+chatStructSig();
     if(sig === _chatDrawerSig) return;   // structure unchanged -> keep the live input (crucial on mobile)
-    _chatDrawerSig = sig;
-    if(!open){ ov.className = ''; ov.removeAttribute('data-action'); ov.innerHTML = ''; return; }
-    ov.className = 'ff-drawer-overlay'; ov.setAttribute('data-action','toggleChatDrawer');
+    if(!open){ ov.className = ''; ov.removeAttribute('data-action'); ov.innerHTML = ''; _chatDrawerSig = sig; return; }
+    // Build the drawer HTML (which calls renderChatTab) BEFORE recording the sig, so a one-off throw
+    // can't poison the sig and leave the drawer permanently blank until reload (critical on mobile,
+    // where the drawer is the ONLY chat surface).
     var chatInner = authUser ? renderChatTab() : '<div class="empty-note">Sign in to chat with the realm.</div>';
     var expandBtn = authUser ? '<button class="ff-chat-expand-btn" data-action="toggleChatExpand" title="Expand chat to full screen" aria-label="Expand chat">'+CHAT_EXPAND_ICON+'</button>' : '';
-    ov.innerHTML = '<div class="ff-drawer" data-action="noop"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid #c3ab77;padding-bottom:8px;margin-bottom:10px;"><div style="font-family:var(--font-display);font-size:14px;color:var(--green-deep);letter-spacing:1px;text-transform:uppercase;">Chat</div><div style="display:flex;align-items:center;gap:8px;">' + expandBtn + '<button class="ff-gear" data-action="toggleChatDrawer" style="color:#8a7850;background:none;border:none;font-size:18px;">✕</button></div></div>' + chatInner + '</div>';
+    var html = '<div class="ff-drawer" data-action="noop"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid #c3ab77;padding-bottom:8px;margin-bottom:10px;"><div style="font-family:var(--font-display);font-size:14px;color:var(--green-deep);letter-spacing:1px;text-transform:uppercase;">Chat</div><div style="display:flex;align-items:center;gap:8px;">' + expandBtn + '<button class="ff-gear" data-action="toggleChatDrawer" style="color:#8a7850;background:none;border:none;font-size:18px;">✕</button></div></div>' + chatInner + '</div>';
+    ov.className = 'ff-drawer-overlay'; ov.setAttribute('data-action','toggleChatDrawer');
+    ov.innerHTML = html;
+    _chatDrawerSig = sig;
     var sc2 = ov.querySelector('#chatMessages, #chronicleFeed'); if(sc2) sc2.scrollTop = sc2.scrollHeight; // start at newest
   }
 
