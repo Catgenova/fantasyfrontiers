@@ -372,6 +372,26 @@
     eq(Math.round((D[10].xpPerSec - D[9].xpPerSec)*100), Math.round((D[20].xpPerSec - D[19].xpPerSec)*100), 'devotion xp/s step is constant (linear)');
   });
 
+  // ---- Familiar spell kits: every familiar has a unique 4-spell kit, all describable ----
+  suite('familiar kits', function(){
+    var ids = Object.keys(FF.FAMILIAR_DATA);
+    var sigs = {}, dupe = null, allFour = true, allDesc = true;
+    ids.forEach(function(id){
+      var sp = FF.FAMILIAR_DATA[id].spells || [];
+      if(sp.length !== 4) allFour = false;
+      sp.forEach(function(s){ if(!FF.describeSpell(s, 5)) allDesc = false; });
+      var sig = sp.map(function(s){ return s.type + (s.kind?(':'+s.kind):'') + (s.dmgType?(':'+s.dmgType):''); }).sort().join('|');
+      if(sigs[sig]) dupe = sigs[sig] + ' & ' + id; else sigs[sig] = id;
+    });
+    ok(allFour, 'every familiar has exactly 4 spells');
+    ok(allDesc, 'every spell produces a non-empty description');
+    ok(!dupe, 'every familiar kit is a unique effect combination' + (dupe ? ' -- dupe: ' + dupe : ''));
+    // spot-check a couple of new spell types describe sensibly
+    ok(/damage/.test(FF.describeSpell({type:'hit',dmgType:'piercing',amount:14}, 1)), 'hit spell describes damage');
+    ok(/HP\/s/.test(FF.describeSpell({type:'regen',hps:4,durationMs:6000}, 1)), 'regen spell describes HP/s');
+    ok(/killing blow/.test(FF.describeSpell({type:'bubble',durSec:3}, 1)), 'bubble spell describes killing blow');
+  });
+
   // ---- Familiar companion avatars: every familiar has a bespoke avatar with its skill crest ----
   suite('familiar avatars', function(){
     var ids = Object.keys(FF.FAMILIAR_DATA);

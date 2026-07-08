@@ -2826,6 +2826,19 @@
   function dmgSpell(name, mult, durSec){ return { name:name, type:'damageBuff', mult:mult, durationMs:durSec*1000 }; }
   function weakenSpell(name, pct, durSec){ return { name:name, type:'weakenEnemy', pct:pct, durationMs:durSec*1000 }; }
   function poisonSpell(name, dps, durSec){ return { name:name, type:'poison', dps:dps, durationMs:durSec*1000 }; }
+  // ---- Expanded spell kit -------------------------------------------------------------------
+  // regen: heal-over-time; bubble: negate one killing blow while up; hit: direct typed damage
+  // (pierce/slash/blunt, or "void" which ignores enemy armour); siphon: damage + heal the player;
+  // buffSpell: a timed self-buff of a given kind. The magnitude (val/amount/hps) is the "x" that
+  // scales with familiar level, cloth-armour spell bonus, and Catalyst potions (via potency).
+  function regenSpell(name, hps, durSec){ return { name:name, type:'regen', hps:hps, durationMs:durSec*1000 }; }
+  function bubbleSpell(name, durSec){ return { name:name, type:'bubble', durSec:durSec }; } // durSec is the "x" (scales with potency)
+  function hitSpell(name, dmgType, amount){ return { name:name, type:'hit', dmgType:dmgType, amount:amount }; } // dmgType: piercing|slashing|blunt|void
+  function siphonSpell(name, amount){ return { name:name, type:'siphon', amount:amount }; }
+  // Timed self-buff kinds: critChance, critDmg, block, dodge, resistBlunt/Slash/Pierce (incoming dmg
+  // reduction of that type), dmgBlunt/Slash/Pierce (outgoing dmg of that type), firebomb (+Firebomb
+  // potion dmg), potionPoison (+Toxin potion dmg), haste (-player attack time).
+  function buffSpell(name, kind, val, durSec){ return { name:name, type:'timedBuff', kind:kind, val:val, durationMs:durSec*1000 }; }
 
   // name, icon, and 4 spells (cast in this fixed order, looping) per skill.
   var FAMILIAR_DATA = {
@@ -2887,6 +2900,70 @@
     meditation:       { name:'Lotus',    icon:svgIcon('lotusflower','#c87a9a'), spells:[healSpell('Inner Peace',18), healSpell('Inner Peace',18), armorSpell('Meditative Ward',1.5,6), armorSpell('Meditative Ward',1.5,6)] },
     fortitude:        { name:'Vitality', icon:svgIcon('heart','#c8302a'), spells:[healSpell('Vital Surge',18), healSpell('Vital Surge',18), armorSpell('Life Ward',1.6,6), armorSpell('Life Ward',1.6,6)] }
   };
+
+  // Diverse, unique per-familiar spell kits drawn from the expanded pool. Reassigned onto FAMILIAR_DATA
+  // so each familiar has its own flavour of offense, control, sustain, and buffs. "x" values scale with
+  // familiar level, cloth-armour spell bonus, and Catalyst potions.
+  var FAMILIAR_SPELLS = {
+    // -- Gathering --
+    digging:    [ hitSpell('Boulder Smash','blunt',15), buffSpell('Stone Skin','resistBlunt',0.3,8), regenSpell('Burrow Rest',4,6), hitSpell('Cave-In','void',9) ],
+    forestry:   [ hitSpell('Thorn Lash','slashing',14), slowSpell('Entangle',0.4,10), buffSpell("Woodcutter's Edge",'dmgSlash',0.3,8), regenSpell('Sap Mend',4,6) ],
+    mining:     [ hitSpell('Ore Crush','blunt',15), armorSpell('Ore Skin',1.6,6), buffSpell('Deep Strike','critDmg',0.35,8), buffSpell('Bedrock Guard','resistBlunt',0.3,8) ],
+    fishing:    [ siphonSpell('Tidal Drain',12), slowSpell('Riptide',0.4,10), buffSpell('Slippery','dodge',0.14,8), regenSpell('Bubble Heal',4,6) ],
+    herbalism:  [ healSpell('Soothing Balm',18), regenSpell('Herbal Renewal',4,7), poisonSpell('Toxic Spores',5,6), buffSpell('Potent Brew','potionPoison',0.4,10) ],
+    botany:     [ poisonSpell('Creeping Rot',5,6), slowSpell('Vine Grasp',0.35,10), buffSpell('Thornmail','dmgPierce',0.3,8), healSpell('Photosynthesis',15) ],
+    foraging:   [ healSpell('Wildflower Heal',15), buffSpell('Camouflage','dodge',0.14,8), hitSpell('Bramble Rake','slashing',13), siphonSpell('Leech Berry',11) ],
+    butchering: [ hitSpell('Rend','slashing',15), buffSpell('Bloodlust','dmgSlash',0.32,8), siphonSpell('Feast',13), buffSpell("Predator's Eye",'critChance',0.1,8) ],
+    // -- Crafting --
+    carpentry:      [ hitSpell('Splinter Shot','piercing',13), armorSpell('Splinter Shield',1.6,6), buffSpell('Bark Guard','resistPierce',0.3,8), regenSpell('Sap Flow',4,6) ],
+    metallurgy:     [ hitSpell('Molten Strike','void',10), buffSpell('Forge Fire','firebomb',0.45,10), weakenSpell('Slag',0.28,8), buffSpell('Heavy Hand','dmgBlunt',0.3,8) ],
+    roasting:       [ buffSpell('Blazing Fuel','firebomb',0.5,10), hitSpell('Sear','void',9), healSpell('Warm Embrace',16), buffSpell('Searing Crit','critDmg',0.32,8) ],
+    cooking:        [ healSpell('Hearty Meal',18), regenSpell('Nourish',4,7), armorSpell('Seasoned Guard',1.5,6), weakenSpell('Spice Burn',0.26,8) ],
+    alchemy:        [ buffSpell('Volatile Mix','potionPoison',0.45,10), buffSpell('Incendiary Blend','firebomb',0.45,10), poisonSpell('Corrosive Brew',5,6), healSpell('Elixir',18) ],
+    bowyer:         [ hitSpell('Piercing Volley','piercing',15), buffSpell('True Aim','dmgPierce',0.32,8), buffSpell('Steady Draw','critChance',0.1,8), buffSpell('Wing Step','dodge',0.12,8) ],
+    fletching:      [ hitSpell('Featherfall','piercing',13), buffSpell('Featherweight','haste',0.18,8), regenSpell('Nest Rest',4,6), buffSpell('Fletched Point','dmgPierce',0.3,8) ],
+    baking:         [ healSpell('Comfort Food',18), regenSpell('Warm Loaf',4,7), buffSpell('Sugar Rush','critDmg',0.3,8), armorSpell('Golden Crust',1.5,6) ],
+    tailoring:      [ slowSpell('Silk Bind',0.4,10), armorSpell('Woven Ward',1.6,6), buffSpell('Padded Guard','block',0.15,8), regenSpell('Mend',4,6) ],
+    stonecutting:   [ hitSpell('Fracture','blunt',15), armorSpell('Rock Wall',1.7,6), buffSpell('Chiseled Guard','resistSlash',0.3,8), buffSpell('Stonewall','block',0.16,8) ],
+    leatherworking: [ armorSpell('Toughen',1.6,6), buffSpell('Rawhide Weave','dodge',0.13,8), buffSpell('Cured Hide','resistPierce',0.3,8), regenSpell('Tanning Rest',4,6) ],
+    jewelrycrafting:[ buffSpell('Dazzle','critChance',0.12,8), buffSpell('Flawless Facet','critDmg',0.35,8), armorSpell('Gem Ward',1.5,6), healSpell('Sparkle Heal',15) ],
+    masonry:        [ armorSpell('Fortify',1.7,6), buffSpell('Shield Wall','block',0.18,8), buffSpell('Mortared','resistBlunt',0.3,8), weakenSpell('Crumble',0.26,8) ],
+    paving:         [ slowSpell('Stumble',0.35,10), armorSpell('Steady Ground',1.5,6), buffSpell('Paved Guard','resistSlash',0.28,8), hitSpell('Cobblestone','blunt',13) ],
+    mixology:       [ healSpell('Tonic',18), regenSpell('Slow Brew',4,7), buffSpell('Fermented Venom','potionPoison',0.45,10), buffSpell('Dutch Courage','dmgBlunt',0.3,8) ],
+    archaeology:    [ armorSpell('Ancient Ward',1.6,6), weakenSpell('Curse of Ages',0.3,8), hitSpell('Relic Blast','void',10), healSpell('Restore',15) ],
+    blacksmithing:  [ hitSpell('Hammer Down','blunt',15), buffSpell('Heavy Blows','dmgBlunt',0.32,8), armorSpell('Tempered Skin',1.5,6), buffSpell('Anvil Might','critChance',0.11,8) ],
+    weaponsmithing: [ hitSpell('Keen Edge','slashing',15), buffSpell('Whetstone','dmgSlash',0.32,8), buffSpell('Duelist','critChance',0.11,8), buffSpell('Quick Draw','haste',0.16,8) ],
+    armorsmithing:  [ armorSpell('Iron Wall',1.8,6), buffSpell('Bulwark','block',0.18,8), buffSpell('Plated','resistBlunt',0.3,8), buffSpell('Deflection','resistSlash',0.3,8) ],
+    shieldsmithing: [ buffSpell('Shield Wall','block',0.2,8), armorSpell('Aegis',1.7,6), buffSpell('Braced','resistPierce',0.3,8), hitSpell('Shield Bash','blunt',13) ],
+    // -- Farming --
+    farming:        [ healSpell('Bountiful Harvest',16), regenSpell('Root Growth',5,7), armorSpell('Growth Ward',1.5,6), slowSpell('Overgrowth',0.35,10) ],
+    // -- Faith --
+    prayer:         [ healSpell('Blessing of Light',18), regenSpell('Grace',4,7), bubbleSpell('Divine Shield',3), armorSpell('Sanctuary',1.6,6) ],
+    sacrifice:      [ siphonSpell('Soul Drain',14), hitSpell('Spectral Rend','void',11), weakenSpell('Hex',0.3,8), poisonSpell('Withering',5,6) ],
+    devotion:       [ healSpell('Devout Heal',16), regenSpell('Benediction',4,7), bubbleSpell("Guardian's Vow",3), buffSpell('Faithful Guard','block',0.16,8) ],
+    blessing:       [ healSpell('Radiant Heal',18), armorSpell('Radiant Ward',1.7,6), buffSpell('Divine Focus','critChance',0.12,8), regenSpell('Halo Light',5,7) ],
+    miracle:        [ buffSpell('Time Warp','haste',0.2,8), slowSpell('Time Slow',0.45,10), bubbleSpell('Fate Ward',4), regenSpell('Rewind',5,7) ],
+    // -- Physique --
+    bodyStrength:   [ hitSpell('Crushing Blow','blunt',16), buffSpell('Brute Force','dmgBlunt',0.34,8), armorSpell("Titan's Skin",1.6,6), buffSpell('Devastate','critDmg',0.35,8) ],
+    bodyControl:    [ buffSpell('Graceful Step','dodge',0.15,8), buffSpell('Fleet','haste',0.18,8), weakenSpell('Redirect',0.26,8), hitSpell('Gale Slash','slashing',13) ],
+    fineMotor:      [ buffSpell('Precision','critChance',0.13,8), hitSpell('Precise Strike','piercing',15), buffSpell('Deft Hands','haste',0.16,8), buffSpell('Pinpoint','dmgPierce',0.3,8) ],
+    grossMotor:     [ hitSpell('Power Swing','blunt',15), buffSpell('Haymaker','dmgBlunt',0.32,8), buffSpell('Bone Breaker','critDmg',0.32,8), siphonSpell('Bruising Blow',12) ],
+    endurance:      [ regenSpell('Second Wind',5,8), armorSpell('Endure',1.6,6), buffSpell('Iron Body','resistBlunt',0.32,8), bubbleSpell('Unbreakable',3) ],
+    focus:          [ buffSpell('Clarity','critChance',0.13,8), buffSpell('Lethal Focus','critDmg',0.35,8), buffSpell('Focused Strike','dmgPierce',0.3,8), weakenSpell('Expose',0.28,8) ],
+    balance:        [ buffSpell('Steady Stance','dodge',0.14,8), buffSpell('Poised Guard','block',0.15,8), buffSpell('Sidestep','resistSlash',0.3,8), weakenSpell('Off-Balance',0.26,8) ],
+    reflexes:       [ buffSpell('Evasion','dodge',0.16,8), buffSpell('Flicker','haste',0.2,8), buffSpell('Quick Strike','critChance',0.12,8), hitSpell('Flick Shot','piercing',13) ],
+    stamina:        [ regenSpell('Rally',5,8), armorSpell('Fortitude',1.5,6), buffSpell('Enduring Hide','resistPierce',0.3,8), healSpell('Second Breath',16) ],
+    handStrength:   [ hitSpell('Crushing Grip','blunt',15), buffSpell('Powerful Grasp','dmgBlunt',0.3,8), buffSpell('Iron Grip','block',0.15,8), siphonSpell('Wring',12) ],
+    armStrength:    [ hitSpell('Mighty Swing','blunt',15), hitSpell('Bone Break','void',10), buffSpell('Overpower','dmgBlunt',0.32,8), weakenSpell('Stagger',0.26,8) ],
+    coreStrength:   [ armorSpell('Unshakeable',1.6,6), buffSpell('Rooted','resistPierce',0.3,8), buffSpell('Core Surge','dmgBlunt',0.3,8), bubbleSpell('Immovable',3) ],
+    solving:        [ weakenSpell('Insight',0.3,8), buffSpell('Find Weakness','critChance',0.13,8), hitSpell('Mind Blast','void',10), slowSpell('Confound',0.35,10) ],
+    criticalThinking:[ weakenSpell('Exploit Weakness',0.3,8), buffSpell('Calculated Blow','critDmg',0.35,8), buffSpell('Precise Logic','dmgPierce',0.3,8), armorSpell('Tactical Guard',1.5,6) ],
+    mentality:      [ armorSpell('Iron Will',1.6,6), buffSpell('Unbreakable Will','dmgBlunt',0.3,8), bubbleSpell('Steel Resolve',3), buffSpell('Grim Determination','critDmg',0.3,8) ],
+    zen:            [ healSpell('Tranquility',18), regenSpell('Serenity',4,7), buffSpell('Inner Calm','resistBlunt',0.3,8), buffSpell('Flow','dodge',0.13,8) ],
+    meditation:     [ healSpell('Inner Peace',18), regenSpell('Lotus Bloom',5,7), armorSpell('Meditative Ward',1.5,6), buffSpell('Serene Flow','dodge',0.13,8) ],
+    fortitude:      [ healSpell('Vital Surge',18), regenSpell('Lifebloom',5,8), bubbleSpell('Life Ward',3), siphonSpell('Vitality Drain',13) ]
+  };
+  Object.keys(FAMILIAR_SPELLS).forEach(function(id){ if(FAMILIAR_DATA[id]) FAMILIAR_DATA[id].spells = FAMILIAR_SPELLS[id]; });
 
   // ===================== FAMILIAR AVATARS =====================
   // Each familiar gets a bespoke, cohesive "cute combat companion": a chibi spirit tinted to its
@@ -3055,6 +3132,24 @@
   function getFamiliarEnemySlowPct(){ return isFamiliarBuffActive('enemySlow') ? state.familiarBuffs.enemySlowPct : 0; }
   function getFamiliarEnemyWeakenPct(){ return isFamiliarBuffActive('enemyWeaken') ? state.familiarBuffs.enemyWeakenPct : 0; }
   function getFamiliarPoisonDps(){ return isFamiliarBuffActive('poison') ? state.familiarBuffs.poisonDps : 0; }
+  // Generic timed-buff value: familiarBuffs[kind+'Val'] while familiarBuffs[kind+'Until'] is future.
+  function getFamBuff(kind){ return isFamiliarBuffActive(kind) ? (state.familiarBuffs[kind+'Val']||0) : 0; }
+  var TYPE_CAP = { slashing:'Slash', piercing:'Pierce', blunt:'Blunt' };
+  // Outgoing damage multiplier from active dmgSlash/dmgPierce/dmgBlunt buffs, weighted by the weapon's
+  // own damage-type mix (a +50% slash buff on a pure-slash weapon = +50%; on a 50/50 weapon = +25%).
+  function famOutgoingDmgMult(mix){
+    mix = mix || {}; var add = 0;
+    for(var t in TYPE_CAP){ if(mix[t]) add += mix[t] * getFamBuff('dmg'+TYPE_CAP[t]); }
+    return 1 + add;
+  }
+  // Incoming damage multiplier from active resistBlunt/Slash/Pierce buffs, weighted by the monster's
+  // attack-type mix. Capped at 90% mitigation.
+  function famResistMult(mix){
+    mix = mix || {}; var red = 0;
+    for(var t in TYPE_CAP){ if(mix[t]) red += mix[t] * getFamBuff('resist'+TYPE_CAP[t]); }
+    return 1 - Math.min(0.9, red);
+  }
+  function famRegenHps(){ return isFamiliarBuffActive('regen') ? (state.familiarBuffs.regenHps||0) : 0; }
   function castFamiliarSpell(spell, level){
     var now = Date.now();
     var potency = familiarPotencyMult(level) * (1 + catalystFamiliarBonus()); // active Catalyst potion boosts spell power
@@ -3083,6 +3178,33 @@
       state.familiarBuffs.poisonDps = spell.dps*potency;
       state.familiarBuffs.poisonUntil = now + spell.durationMs;
       spawnFloatingText(spell.name + '!', 'ft-rare');
+    } else if(spell.type==='regen'){
+      state.familiarBuffs.regenHps = spell.hps*potency;
+      state.familiarBuffs.regenUntil = now + spell.durationMs;
+      spawnFloatingText(spell.name + '!', 'ft-success');
+    } else if(spell.type==='bubble'){
+      state.familiarBuffs.bubbleUntil = now + Math.round(spell.durSec*potency*1000);
+      spawnFloatingText(spell.name + '!', 'ft-rare');
+    } else if(spell.type==='timedBuff'){
+      state.familiarBuffs[spell.kind+'Val'] = spell.val*potency;
+      state.familiarBuffs[spell.kind+'Until'] = now + spell.durationMs;
+      spawnFloatingText(spell.name + '!', 'ft-rare');
+    } else if(spell.type==='hit' || spell.type==='siphon'){
+      // Direct damage to the enemy (only in combat). Typed hits are mitigated by the monster's armour
+      // of that type; "void" ignores armour. Chips HP but never lands the finishing blow.
+      var cact = state.activity;
+      if(cact && cact.type==='combat'){
+        var cmon = MONSTERS.filter(function(x){return x.id===cact.monsterId;})[0];
+        var dmg = spell.amount * potency;
+        if(spell.type==='hit' && spell.dmgType!=='void' && cmon){ var atkMix={}; atkMix[spell.dmgType]=1; dmg *= weightedAdvantage(atkMix, cmon.armorTypes || {blunt:1/3,slashing:1/3,piercing:1/3}); }
+        dmg = Math.round(dmg);
+        cact.monsterHp = Math.max(1, cact.monsterHp - dmg);
+        spawnFloatingText('-'+dmg+' ('+spell.name+')', 'ft-rare');
+        if(spell.type==='siphon'){
+          var stolen = Math.min(dmg, maxHp(state) - state.playerHp);
+          if(stolen>0){ state.playerHp += stolen; spawnFloatingText('+'+stolen+' HP', 'ft-success'); }
+        }
+      }
     }
     addLog((FAMILIAR_DATA[state.activeCompanion]||{}).name + ' casts ' + spell.name + '!', 'important');
   }
@@ -5627,11 +5749,11 @@
   function firePotionOnAttack(act, monster){
     var e = activePotionEffect(); if(!e) return;
     if(e.type==='firebomb'){
-      var fb = randInt(Math.round(e.dmg*0.5), Math.round(e.dmg*1.5)); // wide range of flat damage
+      var fb = Math.round(randInt(Math.round(e.dmg*0.5), Math.round(e.dmg*1.5)) * (1 + getFamBuff('firebomb'))); // wide range, + familiar firebomb buff
       act.monsterHp -= fb;
       spawnFloatingText('🔥 '+fb, 'ft-rare');
     } else if(e.type==='toxin'){
-      act.potionPoisonDps = combatLevelEquivalent(state) * e.pct;   // % of combat score per second
+      act.potionPoisonDps = combatLevelEquivalent(state) * e.pct * (1 + getFamBuff('potionPoison')); // % of combat score per second, + familiar poison buff
       act.potionPoisonUntil = Date.now() + POTION_POISON_DURATION_MS;
     }
     state.potionCharges = (state.potionCharges||0) - 1;
@@ -5658,13 +5780,13 @@
     var ringBonus = getRingDamageMultiplier(state, weaponStyle.attackTypes || {blunt:1});
     var leatherBowBonus = weaponStyle.hand==='bow' ? (1 + getLeatherArmorBonuses(state).bowDmgBonus) : 1;
     var chainMeleeBonus = weaponStyle.hand!=='bow' ? (1 + getChainArmorMeleeBonus(state)) : 1;
-    var isCrit = Math.random() < criticalEyeCritChance(state);
+    var isCrit = Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance')); // familiar crit-chance buff
     var physDmgMult = (weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1));
     physDmgMult *= tenacityLowHpMult(state);
-    // Elixir potions stack their crit-damage bonus on top of the (capped) base+exploitation crit.
-    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus()) : 1;
+    // Elixir potions + familiar crit-damage buffs stack on top of the (capped) base+exploitation crit.
+    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg')) : 1;
 
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * critMult);
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}) * critMult);
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
@@ -5700,7 +5822,7 @@
     var monster = MONSTERS.filter(function(x){return x.id===act.monsterId;})[0];
     if(!monster) return;
     var lb = getLeatherArmorBonuses(state);
-    var dodgeChance = lb.dodgeBonus * (1 + agilityLeatherMult(state)) + agilityDodgeBonus(state) + reflexesDodgeBonus(state);
+    var dodgeChance = lb.dodgeBonus * (1 + agilityLeatherMult(state)) + agilityDodgeBonus(state) + reflexesDodgeBonus(state) + getFamBuff('dodge');
     if(dodgeChance > 0 && Math.random() < dodgeChance){
       addLog('You dodged the ' + monster.name + '\'s attack!', 'important');
       spawnFloatingText('Dodged!', 'ft-success');
@@ -5714,9 +5836,9 @@
 
     var playerArmorMix = getPlayerArmorTypeMix(state);
     var monsterAdvantage = weightedAdvantage(monster.attackTypes || {blunt:1/3, slashing:1/3, piercing:1/3}, playerArmorMix);
-    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * (1 - getFamiliarEnemyWeakenPct()));
+    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes)); // familiar type-resistance buffs
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
-    var blockChance = getPlateArmorBlockChance(state) + blockingBlockBonus(state) + reflexesBlockBonus(state);
+    var blockChance = getPlateArmorBlockChance(state) + blockingBlockBonus(state) + reflexesBlockBonus(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
     if(blocked){
       rawDmg = Math.round(rawDmg * 0.5);
@@ -5727,6 +5849,12 @@
     var effectiveShieldDefense = (offhandStyle && offhandStyle.type==='shield' && offhandItem) ? offhandItem.defense * shieldCounter * offhandProficiency * (1 + shieldProfMult(state)) : 0;
     var dmgToPlayer = Math.max(1, Math.round((rawDmg - armorDefense - effectiveShieldDefense) / tenacityLowHpMult(state)));
     state.playerHp -= dmgToPlayer;
+    // Bubble: negate a would-be killing blow (consumed once), while the buff is up.
+    if(state.playerHp <= 0 && isFamiliarBuffActive('bubble')){
+      state.playerHp = 1; state.familiarBuffs.bubbleUntil = 0;
+      addLog('A protective bubble absorbed a fatal blow!', 'important');
+      spawnFloatingText('Bubble saved you!', 'ft-rare');
+    }
     var hitFeed = [['fortitude', dmgToPlayer]]; // fortitude keeps scaling with damage taken
     if(blocked || (armorDefense + effectiveShieldDefense) > 0) hitFeed.push(['blocking', monster.tierIndex+1]);
     addPhysiqueXp(hitFeed);
@@ -7943,6 +8071,22 @@
     if(spell.type==='slowEnemy') return 'Slows enemy attack speed by '+Math.round(Math.min(0.9,spell.pct*potency)*100)+'% for '+(spell.durationMs/1000)+'s';
     if(spell.type==='weakenEnemy') return 'Reduces enemy damage by '+Math.round(Math.min(0.9,spell.pct*potency)*100)+'% for '+(spell.durationMs/1000)+'s';
     if(spell.type==='poison') return 'Deals '+(Math.round(spell.dps*potency*10)/10)+' dmg/s to the enemy for '+(spell.durationMs/1000)+'s';
+    if(spell.type==='regen') return 'Regenerates '+(Math.round(spell.hps*potency*10)/10)+' HP/s for '+(spell.durationMs/1000)+'s';
+    if(spell.type==='bubble') return 'Negates a killing blow for '+(Math.round(spell.durSec*potency*10)/10)+'s';
+    if(spell.type==='hit'){ var tl = spell.dmgType==='void'?'armour-ignoring':spell.dmgType; return 'Deals '+Math.round(spell.amount*potency)+' '+tl+' damage'; }
+    if(spell.type==='siphon') return 'Siphons '+Math.round(spell.amount*potency)+' HP from the enemy to you';
+    if(spell.type==='timedBuff'){
+      var v = spell.val*potency, s = (spell.durationMs/1000);
+      var pct = Math.round(v*100);
+      var K = {
+        critChance:'+'+pct+'% crit chance', critDmg:'+'+pct+'% crit damage',
+        block:'+'+pct+'% block chance', dodge:'+'+pct+'% dodge chance',
+        resistBlunt:'-'+pct+'% blunt damage taken', resistSlash:'-'+pct+'% slash damage taken', resistPierce:'-'+pct+'% pierce damage taken',
+        dmgBlunt:'+'+pct+'% blunt damage', dmgSlash:'+'+pct+'% slash damage', dmgPierce:'+'+pct+'% pierce damage',
+        firebomb:'+'+pct+'% Firebomb damage', potionPoison:'+'+pct+'% Toxin poison', haste:'-'+pct+'% attack time'
+      };
+      return (K[spell.kind]||('+'+pct+'%'))+' for '+s+'s';
+    }
     return '';
   }
   function renderFamiliarCard(skillId){
@@ -14040,11 +14184,11 @@
       processPrayActivity(state.activity, dt);
     } else if(state.activity.type==='combat'){
       state.activity.tickAccum += dt;
-      var attackIntervalMs = getWeaponStyle(state.equippedMainhand).attackSpeed * 1000;
+      var attackIntervalMs = getWeaponStyle(state.equippedMainhand).attackSpeed * 1000 * (1 - Math.min(0.9, getFamBuff('haste')));
       while(state.activity.tickAccum >= attackIntervalMs && state.activity.type==='combat'){
         state.activity.tickAccum -= attackIntervalMs;
         playerAttackTick();
-        attackIntervalMs = getWeaponStyle(state.equippedMainhand).attackSpeed * 1000;
+        attackIntervalMs = getWeaponStyle(state.equippedMainhand).attackSpeed * 1000 * (1 - Math.min(0.9, getFamBuff('haste')));
       }
       if(state.activity.type==='combat'){
         var monsterForSpeed = MONSTERS.filter(function(x){return x.id===state.activity.monsterId;})[0];
@@ -14065,6 +14209,9 @@
         if((state.activity.potionPoisonUntil||0) > Date.now() && state.activity.type==='combat'){
           state.activity.monsterHp = Math.max(1, state.activity.monsterHp - (state.activity.potionPoisonDps||0)*dt/1000);
         }
+        // Regen: familiar heal-over-time restores player HP while the buff is up.
+        var regenHps = famRegenHps();
+        if(regenHps > 0 && state.playerHp > 0){ state.playerHp = Math.min(maxHp(state), state.playerHp + regenHps*dt/1000); }
         // Familiar spell casting: one spell every 10 seconds, cycling through its list.
         if(state.activeCompanion && FAMILIAR_DATA[state.activeCompanion]){
           state.familiarCastAccum = (state.familiarCastAccum||0) + dt;
@@ -14224,7 +14371,7 @@
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey,
       craftBodyRarity:craftBodyRarity, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix,
-      potionEffect:potionEffect, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy,
+      potionEffect:potionEffect, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       DAMAGE_TYPES:DAMAGE_TYPES
