@@ -342,6 +342,23 @@
     eq(FF.craftBodyRarity(''), null, 'empty body -> null');
   });
 
+  // ---- Alchemy combat potions: 4 types, linear t0->t20 effect scaling ----
+  suite('alchemy potions', function(){
+    eq(Math.round(FF.potionEffect('toxin_t0').pct*100), 1, 'toxin t0 = 1% combat score/s');
+    eq(Math.round(FF.potionEffect('toxin_t20').pct*100), 10, 'toxin t20 = 10% combat score/s');
+    eq(FF.potionEffect('firebomb_t0').dmg, 5, 'firebomb t0 = 5 dmg');
+    eq(FF.potionEffect('firebomb_t20').dmg, 210, 'firebomb t20 = 210 dmg');
+    eq(Math.round(FF.potionEffect('elixir_t0').crit*100), 5, 'elixir t0 = +5% crit dmg');
+    eq(Math.round(FF.potionEffect('elixir_t20').crit*100), 110, 'elixir t20 = +110% crit dmg');
+    eq(Math.round(FF.potionEffect('catalyst_t0').fam*100), 5, 'catalyst t0 = +5% familiar');
+    eq(Math.round(FF.potionEffect('catalyst_t20').fam*100), 110, 'catalyst t20 = +110% familiar');
+    eq(FF.potionEffect('mining_t0'), null, 'non-potion id -> null');
+    // every alchemy recipe requires a glass bottle + covers all 4 types x tiers
+    var alc = FF.CRAFTING_SKILLS_ALCHEMY.recipes;
+    ok(alc.every(function(r){ return r.inputs['metallurgy_glass'] === 1; }), 'every alchemy recipe needs 1 glass bottle');
+    ok(FF.POTION_TYPE_IDS.every(function(t){ return alc.some(function(r){ return r.id===t+'_t0'; }) && alc.some(function(r){ return r.id===t+'_t20'; }); }), 'all 4 potion lines span t0..t20');
+  });
+
   // ---- Faith XP reworked from exponential to the linear Crafting curve ----
   suite('faith xp linear', function(){
     var P = FF.PRAYER_TIERS;

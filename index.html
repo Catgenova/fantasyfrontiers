@@ -1679,16 +1679,17 @@
             inputs: inputs
           });
         }
-        // A t0-level side-recipe: smelt Sand (Digging's tier1) into Glass. Placed at the
-        // front of the metallurgy cards rather than occupying one of its 21 tier slots.
+        // A t0-level side-recipe: smelt Sand (Digging's tier1) into a Glass Bottle -- the vessel
+        // every Alchemy potion is bottled in. Placed at the front of the metallurgy cards rather
+        // than occupying one of its 21 tier slots.
         list.unshift({
           id:'metallurgy_glass',
-          name:'Glass',
+          name:'Glass Bottle',
           levelReq: 1,
           xp: 50,
           time: tierTime(7,0.3,0),
           sell: tierSell(6,0),
-          icon: svgIcon('gem','#cfe8ea'),
+          icon: svgIcon('potion','#cfe8ea'),
           inputs: { digging_t0: 2 }
         });
         return list;
@@ -1748,27 +1749,33 @@
         return list;
       })() },
     alchemy: { label:'Alchemy', icon:svgIcon('potion','#6a8a3a'),
-      // Offensive debuff Toxins -- Powder (Foraging's rare side-drop) is the key
-      // reagent here, topped up with a little Herbalism. Crafting-side only for now;
-      // applying the debuff in combat is a separate mechanic to build later.
+      // Four combat-potion lines -- Toxins (poison the enemy), Firebombs (flat damage), Elixirs
+      // (+crit damage), Catalysts (+familiar spell power). Each is ground from Powder (Foraging's
+      // rare side-drop) + Herbalism and bottled in a Glass Bottle, then used in the Battle tab
+      // (10 charges, spent one per attack). Named after the reagent powder, like the old Toxins.
       recipes: (function(){
         var list = [];
-        for(var i=0;i<TIER_COUNT;i++){
-          var inputs = {};
-          inputs['powder_t'+i] = 2;
-          inputs['herbalism_t'+i] = 1;
-          list.push({
-            id:'toxin_t'+i,
-            name: POWDER_NAMES[i]+' Toxin',
-            levelReq: TIER_LEVELS[i],
-            xp: tierXp(14,i),
-            time: tierTime(7,0.3,i),
-            sell: tierSell(16,i),
-            icon: svgIcon('potion',POWDER_COLORS[i]),
-            inputs: inputs,
-            debuffPotion: true
-          });
-        }
+        var POTION_LINES = [
+          { type:'toxin',    suffix:'Toxin',    shape:'potion' },
+          { type:'firebomb', suffix:'Firebomb', shape:'flame' },
+          { type:'elixir',   suffix:'Elixir',   shape:'starburst' },
+          { type:'catalyst', suffix:'Catalyst', shape:'wing' }
+        ];
+        POTION_LINES.forEach(function(line){
+          for(var i=0;i<TIER_COUNT;i++){
+            list.push({
+              id: line.type+'_t'+i,
+              name: POWDER_NAMES[i]+' '+line.suffix,
+              levelReq: TIER_LEVELS[i],
+              xp: tierXp(14,i),
+              time: tierTime(7,0.3,i),
+              sell: tierSell(16,i),
+              icon: svgIcon(line.shape, POWDER_COLORS[i]),
+              inputs: (function(){ var o={}; o['powder_t'+i]=2; o['herbalism_t'+i]=1; o['metallurgy_glass']=1; return o; })(),
+              potionType: line.type
+            });
+          }
+        });
         return list;
       })() },
     bowyer: { label:'Bowyer', icon:svgIcon('bow','#a87a4a'), recipes: [] },
@@ -3050,7 +3057,8 @@
   function getFamiliarPoisonDps(){ return isFamiliarBuffActive('poison') ? state.familiarBuffs.poisonDps : 0; }
   function castFamiliarSpell(spell, level){
     var now = Date.now();
-    var potency = familiarPotencyMult(level);
+    var potency = familiarPotencyMult(level) * (1 + catalystFamiliarBonus()); // active Catalyst potion boosts spell power
+
     if(spell.type==='heal'){
       var healed = Math.min(Math.round(spell.amount*potency), maxHp(state) - state.playerHp);
       state.playerHp += healed;
@@ -4961,6 +4969,8 @@
       autoTea: false,
       familiars: {},
       activeCompanion: null,
+      activePotion: null,   // Alchemy combat potion currently in use (item id) + its remaining charges
+      potionCharges: 0,
       popupQueue: [],
       popupBatchTotal: 0,
       settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true },
@@ -5578,6 +5588,59 @@
     }
   }
 
+  // ---- Alchemy combat potions ----
+  // Four types x 21 tiers, crafted in Alchemy. Pick one active in the Battle tab; it fires on every
+  // player attack, spending one of its 10 charges and auto-reloading the next from inventory.
+  var POTION_TYPES = {
+    toxin:    { label:'Toxin',    shape:'potion',    color:'#7a9e4a' },
+    firebomb: { label:'Firebomb', shape:'flame',     color:'#d0532a' },
+    elixir:   { label:'Elixir',   shape:'starburst', color:'#c94a6a' },
+    catalyst: { label:'Catalyst', shape:'wing',      color:'#5fb8c4' }
+  };
+  var POTION_TYPE_IDS = ['toxin','firebomb','elixir','catalyst'];
+  var POTION_MAX_CHARGES = 10;
+  var POTION_POISON_DURATION_MS = 3000;
+  function potionLerp(a, b, tier){ tier = Math.max(0, Math.min(TIER_COUNT-1, tier)); return a + (b-a)*tier/(TIER_COUNT-1); }
+  function parsePotionId(id){ var m = /^(toxin|firebomb|elixir|catalyst)_t(\d+)$/.exec(id||''); return m ? { type:m[1], tier:+m[2] } : null; }
+  function potionEffect(id){
+    var p = parsePotionId(id); if(!p) return null;
+    if(p.type==='toxin')    return { type:'toxin',    tier:p.tier, pct: potionLerp(0.01, 0.10, p.tier) };     // % combat score / sec for 3s
+    if(p.type==='firebomb') return { type:'firebomb', tier:p.tier, dmg: Math.round(potionLerp(5, 210, p.tier)) };
+    if(p.type==='elixir')   return { type:'elixir',   tier:p.tier, crit: potionLerp(0.05, 1.10, p.tier) };    // + crit-damage multiplier
+    if(p.type==='catalyst') return { type:'catalyst', tier:p.tier, fam: potionLerp(0.05, 1.10, p.tier) };     // + familiar spell potency
+    return null;
+  }
+  function activePotionEffect(){ return (state.activePotion && (state.potionCharges||0) > 0) ? potionEffect(state.activePotion) : null; }
+  function elixirCritBonus(){ var e = activePotionEffect(); return (e && e.type==='elixir') ? e.crit : 0; }
+  function catalystFamiliarBonus(){ var e = activePotionEffect(); return (e && e.type==='catalyst') ? e.fam : 0; }
+  function potionEffectDesc(id){
+    var e = potionEffect(id); if(!e) return '';
+    if(e.type==='toxin')    return 'Poison '+Math.round(e.pct*100)+'% combat score/s for 3s';
+    if(e.type==='firebomb') return '~'+e.dmg+' fire damage per hit';
+    if(e.type==='elixir')   return '+'+Math.round(e.crit*100)+'% crit damage';
+    if(e.type==='catalyst') return '+'+Math.round(e.fam*100)+'% familiar spell power';
+    return '';
+  }
+  // Fire the active potion on a player attack: apply its on-hit effect and spend a charge, reloading
+  // the next of the same potion from inventory when it runs dry. Elixir/Catalyst are passive buffs
+  // (read via elixirCritBonus / catalystFamiliarBonus while charges remain) so only spend here.
+  function firePotionOnAttack(act, monster){
+    var e = activePotionEffect(); if(!e) return;
+    if(e.type==='firebomb'){
+      var fb = randInt(Math.round(e.dmg*0.5), Math.round(e.dmg*1.5)); // wide range of flat damage
+      act.monsterHp -= fb;
+      spawnFloatingText('🔥 '+fb, 'ft-rare');
+    } else if(e.type==='toxin'){
+      act.potionPoisonDps = combatLevelEquivalent(state) * e.pct;   // % of combat score per second
+      act.potionPoisonUntil = Date.now() + POTION_POISON_DURATION_MS;
+    }
+    state.potionCharges = (state.potionCharges||0) - 1;
+    if(state.potionCharges <= 0){
+      if((state.inventory[state.activePotion]||0) > 0){ state.inventory[state.activePotion]--; state.potionCharges = POTION_MAX_CHARGES; }
+      else { state.activePotion = null; state.potionCharges = 0; }
+      needsRender = true; // reload/deplete changes the picker; charge countdown updates live otherwise
+    }
+  }
   function playerAttackTick(){
     var act = state.activity;
     var monster = MONSTERS.filter(function(x){return x.id===act.monsterId;})[0];
@@ -5598,11 +5661,13 @@
     var isCrit = Math.random() < criticalEyeCritChance(state);
     var physDmgMult = (weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1));
     physDmgMult *= tenacityLowHpMult(state);
-    var critMult = isCrit ? Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) : 1;
+    // Elixir potions stack their crit-damage bonus on top of the (capped) base+exploitation crit.
+    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus()) : 1;
 
     var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * critMult);
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
+    firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
     if(isCrit) spawnFloatingText('Critical Hit!', 'ft-rare');
     var atkFeed = [['agility',2]];
     if(weaponStyle.hand==='1h') atkFeed.push(['reflexes',2]);
@@ -6151,6 +6216,9 @@
           if(typeof state.familiarCastAccum !== 'number') state.familiarCastAccum = 0;
           if(!state.familiarBuffs || typeof state.familiarBuffs !== 'object') state.familiarBuffs = { armorMult:1, armorUntil:0, damageMult:1, damageUntil:0, enemySlowPct:0, enemySlowUntil:0, enemyWeakenPct:0, enemyWeakenUntil:0, poisonDps:0, poisonUntil:0 };
           if(state.activeCompanion && (!state.familiars[state.activeCompanion] || !state.familiars[state.activeCompanion].owned)) state.activeCompanion = null;
+          if(typeof state.activePotion === 'undefined') state.activePotion = null;
+          if(typeof state.potionCharges !== 'number') state.potionCharges = 0;
+          if(state.activePotion && !parsePotionId(state.activePotion)) { state.activePotion = null; state.potionCharges = 0; }
           var elapsed = Date.now() - (loaded.lastSaved || Date.now());
           applyOfflineProgress(elapsed);
         } else {
@@ -7748,12 +7816,50 @@
     });
     return html;
   }
+  function activatePotion(id){
+    if(!parsePotionId(id)) return;
+    if(state.activePotion === id) return; // already active
+    if((state.inventory[id]||0) <= 0){ addLog('You don\'t have that potion.', 'danger'); return; }
+    state.inventory[id]--;
+    state.activePotion = id;
+    state.potionCharges = POTION_MAX_CHARGES;
+    addLog('Readied ' + ((ALL_SELLABLE[id]||{}).name || id) + ' — ' + POTION_MAX_CHARGES + ' charges.', 'important');
+    saveGame(); render();
+  }
+  function deactivatePotion(){ state.activePotion = null; state.potionCharges = 0; saveGame(); render(); }
+  function renderCombatPotionsPanel(){
+    var html = '<h3 style="margin-top:16px">'+svgIcon('potion','#8a5aaa')+' Combat Potions</h3>';
+    html += '<div class="section-intro">Ready one potion for battle — it triggers on every attack, spending 1 of its 10 charges, then auto-reloads the next from your bag. Only one active at a time. Brew them in Crafting &rarr; Alchemy.</div>';
+    if(state.activePotion){
+      var an = (ALL_SELLABLE[state.activePotion]||{}).name || state.activePotion;
+      html += '<div class="physique-bonus">Active: <b>'+escapeHtml(an)+'</b> &mdash; '+potionEffectDesc(state.activePotion)
+        + ' &bull; Charges <b id="potionChargeLabel">'+(state.potionCharges||0)+'</b>/'+POTION_MAX_CHARGES+' &bull; x'+(state.inventory[state.activePotion]||0)+' spare'
+        + ' <button class="action-btn stop" data-action="deactivatePotion" style="width:auto;flex:0 0 auto;padding:2px 12px;margin-left:8px;">Stow</button></div>';
+    }
+    var any = false;
+    POTION_TYPE_IDS.forEach(function(type){
+      var owned = [];
+      for(var i=0;i<TIER_COUNT;i++){ var id = type+'_t'+i; if((state.inventory[id]||0) > 0) owned.push(id); }
+      if(!owned.length) return;
+      any = true;
+      html += '<div class="inputs-line" style="margin-top:8px">'+POTION_TYPES[type].label+'s</div><div class="style-row">';
+      owned.forEach(function(id){
+        var it = ALL_SELLABLE[id] || {}; var qty = state.inventory[id]||0; var active = state.activePotion===id;
+        html += '<button class="style-btn'+(active?' active':'')+'" data-action="activatePotion" data-item="'+id+'" title="'+escapeHtml(potionEffectDesc(id))+'">'
+          + (it.icon||'') + ' ' + escapeHtml(it.name||id) + ' <span class="style-lvl">x'+qty+'</span></button>';
+      });
+      html += '</div>';
+    });
+    if(!any) html += '<div class="empty-note">No potions in your bag. Brew Toxins, Firebombs, Elixirs, or Catalysts in Crafting &rarr; Alchemy (each needs a Glass Bottle).</div>';
+    return html;
+  }
   function renderCombatTab(){
     var lvl = combatLevelEquivalent(state);
     var act = state.activity;
     var weaponStyle = getWeaponStyle(state.equippedMainhand);
     var html = renderCombatStatsPanel();
     html += renderAutoEatPanel();
+    html += renderCombatPotionsPanel();
     if(act.type==='combat'){
       var m = MONSTERS.filter(function(x){return x.id===act.monsterId;})[0];
       var hpPct = clamp(act.monsterHp/m.hp*100,0,100);
@@ -12190,10 +12296,10 @@
     foraging: 'Forage wild berries, with a chance for bonus Powder and Muddy Artifacts.',
     butchering: 'Hunt wildlife directly for Hide, from Rabbit up to Apex Titan-Beast.',
     carpentry: 'Cut Logs into Planks.',
-    metallurgy: 'Smelt Ore into Bars and Alloys, plus a side-recipe for Glass.',
+    metallurgy: 'Smelt Ore into Bars and Alloys, plus a side-recipe for Glass Bottles.',
     roasting: 'Cook raw Fish and Meat into a quick, portable snack.',
     cooking: 'Combine Roasted Meat, Herbs, and Foraged Berries into a full Meal.',
-    alchemy: 'Grind Powder and Herbs into offensive Toxins.',
+    alchemy: 'Bottle Powder and Herbs into combat Potions -- Toxins, Firebombs, Elixirs, and Catalysts (each needs a Glass Bottle).',
     bowyer: 'Craft Bows from Logs.',
     fletching: 'Cut Shafts from Logs, then fletch them with Ingots into Arrows.',
     baking: 'Turn Grain into Dough, then Dough and Berries into Pies.',
@@ -13238,6 +13344,8 @@
         pf.style.width = pPct+'%';
       }
       if(pl) pl.textContent = fmt(state.playerHp) + ' / ' + maxHpVal;
+      var pcl = document.getElementById('potionChargeLabel');
+      if(pcl) pcl.textContent = (state.potionCharges||0);
       var paf = document.getElementById('arenaPlayerAtkFill');
       if(paf){
         var playerAtkStyle = getWeaponStyle(state.equippedMainhand);
@@ -13709,6 +13817,10 @@
       sellOne(btn.getAttribute('data-item'));
     } else if(action==='setAutoEatThreshold'){
       setAutoEatThreshold(parseFloat(btn.getAttribute('data-value')));
+    } else if(action==='activatePotion'){
+      activatePotion(btn.getAttribute('data-item'));
+    } else if(action==='deactivatePotion'){
+      deactivatePotion();
     } else if(action==='drinkTea'){
       drinkTea(btn.getAttribute('data-item'));
     } else if(action==='drinkBestTea'){
@@ -13949,6 +14061,10 @@
         if(poisonDps > 0 && state.activity.type==='combat'){
           state.activity.monsterHp = Math.max(1, state.activity.monsterHp - poisonDps*dt/1000);
         }
+        // Toxin-potion poison: ticks the enemy for its remaining duration (never the finishing blow).
+        if((state.activity.potionPoisonUntil||0) > Date.now() && state.activity.type==='combat'){
+          state.activity.monsterHp = Math.max(1, state.activity.monsterHp - (state.activity.potionPoisonDps||0)*dt/1000);
+        }
         // Familiar spell casting: one spell every 10 seconds, cycling through its list.
         if(state.activeCompanion && FAMILIAR_DATA[state.activeCompanion]){
           state.familiarCastAccum = (state.familiarCastAccum||0) + dt;
@@ -14108,6 +14224,7 @@
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey,
       craftBodyRarity:craftBodyRarity, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix,
+      potionEffect:potionEffect, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       DAMAGE_TYPES:DAMAGE_TYPES
