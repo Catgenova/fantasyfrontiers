@@ -425,38 +425,21 @@
   .section-intro{font-size:13px;color:var(--text-dim);margin-bottom:14px;line-height:1.5;}
   .card-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(230px, 1fr));gap:22px;}
   @media (max-width:600px){.card-grid{grid-template-columns:1fr;}}
-  /* Parapet card (design pkg 3a): tan inner panel, mottled stone frame behind (::before),
-     bolted wood corner braces (::after). */
+  /* Card frame: a thin ivy vine along the edges with small stone blocks at the four corners, drawn as
+     a 9-slice border-image (corners = stone, edges = seamlessly tiling ivy). Replaces the old heavy
+     stone-frame + bolted-wood-brace treatment, which was too dark/busy and made dimmed (locked) cards
+     hard to read. The tan panel fills the whole border box, so the ivy sits on the card's own edge. */
   .item-card{
     position:relative;overflow:visible;
-    background:var(--bg-card);border:2px solid var(--ink);border-radius:5px;
-    padding:12px;box-shadow:inset 0 2px 6px rgba(0,0,0,.18), 0 6px 15px rgba(20,18,16,.32);
+    background:var(--bg-card);border-radius:4px;
+    border:12px solid transparent;
+    border-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%237cab46'/><stop offset='1' stop-color='%232f5018'/></linearGradient><path id='l' d='M0,-6 C1.6,-3.4 2.6,-3 4.2,-3.2 C6,-3.4 6.6,-1.4 5,0 C6.6,0.6 6.4,2.6 4.4,3 C3,3.3 1.6,4.6 0,7 C-1.6,4.6 -3,3.3 -4.4,3 C-6.4,2.6 -6.6,0.6 -5,0 C-6.6,-1.4 -6,-3.4 -4.2,-3.2 C-2.6,-3 -1.6,-3.4 0,-6 Z' fill='url(%23g)'/><g id='b'><rect x='2' y='2' width='26' height='26' rx='4' fill='%237c7368' stroke='%23241f18' stroke-width='2'/><rect x='5' y='4.5' width='20' height='8' rx='3' fill='%23988d7d'/><rect x='6' y='18' width='18' height='7' rx='3' fill='%235c5348'/></g></defs><g fill='none' stroke='%235a4327' stroke-width='2' stroke-linecap='round'><path d='M30,14 Q50,8 70,14'/><path d='M30,86 Q50,92 70,86'/><path d='M14,30 Q8,50 14,70'/><path d='M86,30 Q92,50 86,70'/></g><use href='%23l' transform='translate(41,12) rotate(15)'/><use href='%23l' transform='translate(59,15) rotate(-155) scale(.85)'/><use href='%23l' transform='translate(41,88) rotate(165)'/><use href='%23l' transform='translate(59,85) rotate(-25) scale(.85)'/><use href='%23l' transform='translate(12,41) rotate(-75)'/><use href='%23l' transform='translate(15,59) rotate(105) scale(.85)'/><use href='%23l' transform='translate(88,41) rotate(75)'/><use href='%23l' transform='translate(85,59) rotate(255) scale(.85)'/><use href='%23b' transform='translate(0,0)'/><use href='%23b' transform='translate(70,0)'/><use href='%23b' transform='translate(0,70)'/><use href='%23b' transform='translate(70,70)'/></svg>") 30 round;
+    padding:5px 9px 9px;box-shadow:0 4px 12px rgba(20,18,16,.24);
   }
-  .item-card::before{ /* mottled mortared-stone frame behind the tan card */
-    content:'';position:absolute;inset:-7px;z-index:-1;border-radius:9px;border:2px solid var(--ink);
-    background-color:var(--stone-card);
-    background-image:
-      radial-gradient(circle at 24% 22%, rgba(255,255,255,.18), transparent 20%),
-      radial-gradient(circle at 74% 34%, rgba(0,0,0,.22), transparent 24%),
-      radial-gradient(circle at 58% 82%, rgba(255,255,255,.10), transparent 18%),
-      radial-gradient(circle at 14% 76%, rgba(0,0,0,.18), transparent 22%),
-      repeating-linear-gradient(0deg, rgba(0,0,0,.28) 0 2px, transparent 2px 23px),
-      repeating-linear-gradient(90deg, rgba(0,0,0,.24) 0 2px, transparent 2px 29px);
-    box-shadow:inset 0 0 0 2px rgba(0,0,0,.30), inset 0 2px 5px rgba(255,255,255,.22);
-  }
-  .item-card::after{ /* four diagonal bolted wood corner braces */
-    content:'';position:absolute;inset:-7px;z-index:3;pointer-events:none;background-repeat:no-repeat;
-    background-image:
-      linear-gradient(-45deg, transparent 44%, #2f1c0d 44% 45.5%, #8a5227 45.5% 49%, #5a3316 49% 53%, #2f1c0d 53% 54.5%, transparent 54.5%),
-      linear-gradient( 45deg, transparent 44%, #2f1c0d 44% 45.5%, #8a5227 45.5% 49%, #5a3316 49% 53%, #2f1c0d 53% 54.5%, transparent 54.5%),
-      linear-gradient( 45deg, transparent 44%, #2f1c0d 44% 45.5%, #8a5227 45.5% 49%, #5a3316 49% 53%, #2f1c0d 53% 54.5%, transparent 54.5%),
-      linear-gradient(-45deg, transparent 44%, #2f1c0d 44% 45.5%, #8a5227 45.5% 49%, #5a3316 49% 53%, #2f1c0d 53% 54.5%, transparent 54.5%);
-    background-size:38px 38px;
-    background-position:top left, top right, bottom left, bottom right;
-    filter:drop-shadow(0 1px 2px rgba(0,0,0,.4));
-  }
-  .item-card.locked{opacity:0.5;}
-  .item-card.active-item{border-color:var(--gold);box-shadow:inset 0 0 0 2px rgba(74,107,44,0.5), 0 0 16px rgba(111,149,56,0.28), 0 6px 15px rgba(20,18,16,.32);}
+  /* Locked cards: readable now -- a light dim + desaturation instead of the old 0.5 opacity that,
+     combined with the heavy dark frame, washed the text out entirely. */
+  .item-card.locked{opacity:0.82;filter:saturate(.55) brightness(.98);}
+  .item-card.active-item{box-shadow:0 0 0 2px rgba(111,149,56,.6), 0 0 16px rgba(111,149,56,0.30), 0 4px 12px rgba(20,18,16,.26);}
   .item-top{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
   .item-icon{font-size:26px;line-height:1;}
   .game-icon{width:1em;height:1em;vertical-align:-0.15em;flex-shrink:0;display:inline-block;}
