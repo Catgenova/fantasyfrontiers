@@ -3215,90 +3215,55 @@
     }
   }
 
-  function getPlotSlots(level){ return Math.min(40, 10 + Math.floor(level/100*30)); }
-  function getPlotUnlockLevel(plotIndex){
-    if(plotIndex < 10) return 1; // first 10 plots are unlocked from the start
-    return Math.ceil((plotIndex - 9) * 10 / 3); // remaining 30 open up, reaching all 40 at level 100
+  // Farming plots are now provided by placed Fields on your estate (scope 'personal') and the guild
+  // estate (scope 'guild', per-member crops). Each plot is keyed by its field cell "x,y" and grows
+  // crops up to the field's tier. Plant/crop state lives in state.farmingPlots / state.guildFarmingPlots.
+  function fieldGridFor(scope){ return scope==='guild' ? ((typeof guildEstate!=='undefined' && guildEstate.status==='ready') ? guildEstate.grid : null) : (state.estate && state.estate.grid); }
+  function farmPlotMap(scope){ return scope==='guild' ? state.guildFarmingPlots : state.farmingPlots; }
+  function fieldTierAt(scope, key){
+    var grid = fieldGridFor(scope); if(!grid) return null;
+    var p = String(key).split(','), x = +p[0], y = +p[1];
+    var cell = grid[x] && grid[x][y];
+    return (cell && cell.fieldTier != null) ? cell.fieldTier : null;
+  }
+  // Resolve a seed id -> its crop line + tier + grown-crop data (across fiber/grain/herb).
+  function seedInfo(seedId){
+    if(GRAIN_SEED_ITEMS[seedId]) return { def:GRAIN_SEED_ITEMS[seedId], cropType:'grain', tier:GRAIN_SEED_ITEMS[seedId].tierIndex, crop:GRAIN_ITEMS['grain_t'+GRAIN_SEED_ITEMS[seedId].tierIndex] };
+    if(HERB_SEED_ITEMS[seedId])  return { def:HERB_SEED_ITEMS[seedId],  cropType:'herb',  tier:HERB_SEED_ITEMS[seedId].tierIndex,  crop:HERB_ITEMS['herb_t'+HERB_SEED_ITEMS[seedId].tierIndex] };
+    if(SEED_ITEMS[seedId])       return { def:SEED_ITEMS[seedId],       cropType:'fiber', tier:SEED_ITEMS[seedId].tierIndex,       crop:FARMING_ITEMS['farming_t'+SEED_ITEMS[seedId].tierIndex] };
+    return null;
   }
 
-  function plantSeed(plotIndex, seedId){
-    var farmLvl = farmingLevel(state);
-    if(plotIndex < 0 || plotIndex >= getPlotSlots(farmLvl)) return;
-    var plot = state.farmingPlots[plotIndex];
-    if(!plot || !isPlotEmpty(plot)) return;
-    if(GRAIN_SEED_ITEMS[seedId]){
-      var gseed = GRAIN_SEED_ITEMS[seedId];
-      if((state.inventory[seedId]||0) <= 0) return;
-      if(getLevel(state.xp.grainharvesting) < TIER_LEVELS[gseed.tierIndex]){
-        addLog('Your Grain Harvesting level isn\'t high enough to plant ' + gseed.name + ' yet -- requires level ' + TIER_LEVELS[gseed.tierIndex] + '.', 'danger');
-        return;
-      }
-      state.inventory[seedId] -= 1;
-      var gCropData = GRAIN_ITEMS['grain_t'+gseed.tierIndex];
-      plot.cropType = 'grain';
-      plot.tierIndex = gseed.tierIndex;
-      plot.plantedAt = Date.now();
-      plot.readyAt = Date.now() + gCropData.durationMs;
-      addLog('You planted a ' + gseed.name + '.', 'important');
-      return;
-    }
-    if(HERB_SEED_ITEMS[seedId]){
-      var hseed = HERB_SEED_ITEMS[seedId];
-      if((state.inventory[seedId]||0) <= 0) return;
-      if(getLevel(state.xp.herbharvesting) < TIER_LEVELS[hseed.tierIndex]){
-        addLog('Your Herb Harvesting level isn\'t high enough to plant ' + hseed.name + ' yet -- requires level ' + TIER_LEVELS[hseed.tierIndex] + '.', 'danger');
-        return;
-      }
-      state.inventory[seedId] -= 1;
-      var hCropData = HERB_ITEMS['herb_t'+hseed.tierIndex];
-      plot.cropType = 'herb';
-      plot.tierIndex = hseed.tierIndex;
-      plot.plantedAt = Date.now();
-      plot.readyAt = Date.now() + hCropData.durationMs;
-      addLog('You planted a ' + hseed.name + '.', 'important');
-      return;
-    }
-    var seed = SEED_ITEMS[seedId];
-    if(!seed) return;
+  function plantSeed(scope, key, seedId){
+    var fieldTier = fieldTierAt(scope, key);
+    if(fieldTier == null) return;                       // no field on that tile
+    var map = farmPlotMap(scope);
+    if(map[key] && map[key].cropType) return;           // already growing something
+    var si = seedInfo(seedId);
+    if(!si || !si.crop) return;
     if((state.inventory[seedId]||0) <= 0) return;
-    if(getLevel(state.xp.fiberharvesting) < TIER_LEVELS[seed.tierIndex]){
-      addLog('Your Fiber Harvesting level isn\'t high enough to plant ' + seed.name + ' yet -- requires level ' + TIER_LEVELS[seed.tierIndex] + '.', 'danger');
-      return;
-    }
+    if(!canPlantInField(fieldTier, si.tier)){ addLog('That ' + (DIGGING_NAMES[fieldTier]||'') + ' Field only grows crops up to ' + TIER_NAMES[fieldTier] + ' tier.', 'danger'); return; }
     state.inventory[seedId] -= 1;
-    var cropData = FARMING_ITEMS['farming_t'+seed.tierIndex];
-    plot.cropType = 'fiber';
-    plot.tierIndex = seed.tierIndex;
-    plot.plantedAt = Date.now();
-    plot.readyAt = Date.now() + cropData.durationMs;
-    addLog('You planted a ' + seed.name + '.', 'important');
+    map[key] = { cropType:si.cropType, tierIndex:si.tier, plantedAt:Date.now(), readyAt:Date.now() + si.crop.durationMs };
+    addLog('You planted a ' + si.def.name + (scope==='guild'?' on the guild estate':'') + '.', 'important');
+    saveGame(); needsRender = true;
   }
 
-  function harvestPlot(plotIndex){
-    var plot = state.farmingPlots[plotIndex];
+  function harvestPlot(scope, key){
+    var map = farmPlotMap(scope);
+    var plot = map[key];
     if(isPlotEmpty(plot)) return;
     if(Date.now() < plot.readyAt) return;
     var cropData = getCropDataForPlot(plot);
-    if(!cropData){
-      // Defensive: an unrecognized cropType (e.g. leftover legacy data) should never
-      // crash the click handler -- just clear the plot back to empty instead.
-      plot.cropType = null;
-      plot.tierIndex = -1;
-      plot.plantedAt = 0;
-      plot.readyAt = 0;
-      needsRender = true;
-      return;
-    }
+    if(!cropData){ delete map[key]; needsRender = true; return; } // self-heal a bad cropType
     addItem(cropData.id, 1);
     addXp(FARMING_CROP_SKILL[plot.cropType] || 'fiberharvesting', cropData.xp);
     addPhysiqueXp(physTierPairs(FARMING_PHYSIQUE, itemTierFromId(cropData.id)));
     maybeSummonFamiliar('farming');
     addLog('You harvested ' + cropData.name + '.', 'important');
     spawnFloatingText('+1 ' + cropData.name, 'ft-success');
-    plot.cropType = null;
-    plot.tierIndex = -1;
-    plot.plantedAt = 0;
-    plot.readyAt = 0;
+    delete map[key];
+    saveGame(); needsRender = true;
   }
 
   function pickWeightedFarmingTier(){
@@ -4478,6 +4443,22 @@
   }
   Object.assign(ALL_SELLABLE, COTTAGE_ITEMS);
 
+  // ---- Farming Fields: built in place on an EMPTY DIRT estate tile from 100 of the equivalent-tier
+  // Digging resource (built, not a crafted item). Each field provides one Farming plot capped at its
+  // tier. 21 tiers (Sand Field .. Lime Field). Placed on personal OR guild estate (max 20 each).
+  var ESTATE_FIELD_MS_PER_TIER = 5*60*1000; // building a field takes 5 min per tier
+  var ESTATE_MAX_FIELDS = 20;               // per estate (personal + an additional 20 on the guild estate)
+  function fieldBuildMs(tier){ return ((tier|0)+1) * ESTATE_FIELD_MS_PER_TIER; }
+  function canPlantInField(fieldTier, seedTier){ return (seedTier|0) <= (fieldTier|0); } // crops of equal/lesser tier
+  var FARM_FIELD_TIERS = {};
+  for(var _ffi=0; _ffi<TIER_COUNT; _ffi++){
+    var _ffid = 'field_t'+_ffi;
+    FARM_FIELD_TIERS[_ffid] = {
+      id:_ffid, tierIndex:_ffi, name: DIGGING_NAMES[_ffi] + ' Field',
+      icon: svgIcon('seed', DIGGING_COLORS[_ffi]), inputs: (function(t){ var o={}; o['digging_t'+t]=100; return o; })(_ffi), levelReq:0
+    };
+  }
+
   var TOOL_TYPES = [];
   GATHER_SKILL_IDS.forEach(function(id){ TOOL_TYPES.push({skillId:id, name:GATHER_TOOL_NAMES[id], icon:GATHERING_SKILLS[id].icon, isGather:true}); });
   CRAFT_SKILL_IDS.forEach(function(id){ TOOL_TYPES.push({skillId:id, name:CRAFT_TOOL_NAMES[id], icon:CRAFTING_SKILLS[id].icon, isGather:false}); });
@@ -4684,7 +4665,7 @@
         var wave = Math.sin(rx*0.55)*1.4 + Math.cos(ry*0.5)*1.4 + Math.sin((rx+ry)*0.35)*1.1;
         var height = Math.round(ESTATE_BASE_HEIGHT + wave);
         height = Math.max(0, Math.min(ESTATE_MAX_HEIGHT-1, height));
-        col.push({ height:height, buildingId:null, type:'dirt', paveTileId:null, workshopId:null, cottageId:null, owned:estateIsCoreTile(x,y), obstacle: generateEstateObstacle() });
+        col.push({ height:height, buildingId:null, type:'dirt', paveTileId:null, workshopId:null, cottageId:null, fieldTier:null, owned:estateIsCoreTile(x,y), obstacle: generateEstateObstacle() });
       }
       grid.push(col);
     }
@@ -4802,11 +4783,8 @@
         helmet: {tier:0, rarity:'normal', material:null},
         back: {tier:0, rarity:'normal', material:null}
       },
-      farmingPlots: (function(){
-        var plots = [];
-        for(var i=0;i<40;i++) plots.push({cropType:null, tierIndex:-1, plantedAt:0, readyAt:0});
-        return plots;
-      })(),
+      farmingPlots: {},        // per-field crop state, keyed "x,y" over personal-estate field tiles
+      guildFarmingPlots: {},   // per-member crop state, keyed "x,y" over guild-estate field tiles
       equippedBeltTier: 0,
       equippedBeltRarity: 'normal',
       jewelrySlots: {
@@ -5930,27 +5908,11 @@
             }
           });
           state.bodyArmor = Object.assign(newGame().bodyArmor, loaded.bodyArmor||{});
-          state.farmingPlots = (loaded.farmingPlots && Array.isArray(loaded.farmingPlots)) ? loaded.farmingPlots.slice(0,40) : newGame().farmingPlots;
-          while(state.farmingPlots.length < 40) state.farmingPlots.push({cropType:null, tierIndex:-1, plantedAt:0, readyAt:0});
-          try {
-            state.farmingPlots = state.farmingPlots.map(function(plot){
-              if(!plot || typeof plot !== 'object'){ return { cropType:null, tierIndex:-1, plantedAt:0, readyAt:0 }; }
-              if(plot.cropType === undefined){
-                if(typeof plot.tierIndex === 'number' && plot.tierIndex >= 0){ plot.cropType = 'fiber'; }
-                else { plot.cropType = null; plot.tierIndex = -1; plot.plantedAt = 0; plot.readyAt = 0; }
-              }
-              if(plot.cropType === 'wheat'){
-                // Wheat has been removed entirely -- clear any plot still growing it.
-                plot.cropType = null;
-                plot.tierIndex = -1;
-                plot.plantedAt = 0;
-                plot.readyAt = 0;
-              }
-              return plot;
-            });
-          } catch(plotErr){
-            state.farmingPlots = newGame().farmingPlots;
-          }
+          // Farming plots moved from a 40-slot level-gated array to per-field keyed maps ("x,y" -> crop
+          // state) provided by placed Fields. Legacy array saves are dropped (the mechanic changed);
+          // object-format saves (new) are kept as-is.
+          state.farmingPlots = (loaded.farmingPlots && typeof loaded.farmingPlots === 'object' && !Array.isArray(loaded.farmingPlots)) ? loaded.farmingPlots : {};
+          state.guildFarmingPlots = (loaded.guildFarmingPlots && typeof loaded.guildFarmingPlots === 'object' && !Array.isArray(loaded.guildFarmingPlots)) ? loaded.guildFarmingPlots : {};
           if(typeof state.equippedBeltTier !== 'number') state.equippedBeltTier = 0;
           if(!state.equippedBeltRarity) state.equippedBeltRarity = 'normal';
           state.jewelrySlots = Object.assign(newGame().jewelrySlots, loaded.jewelrySlots||{});
@@ -6012,6 +5974,7 @@
                   if(cell.paveTileId === undefined) cell.paveTileId = null;
                   if(cell.workshopId === undefined) cell.workshopId = null;
                   if(cell.cottageId === undefined) cell.cottageId = null;
+                  if(cell.fieldTier === undefined) cell.fieldTier = null;
                   if(typeof cell.owned !== 'boolean') cell.owned = estateIsCoreTile(gx, gy);
                   if(cell.obstacle === undefined) cell.obstacle = cell.owned ? null : generateEstateObstacle();
                 });
@@ -6025,7 +5988,8 @@
                 (ej.kind==='raise' || ej.kind==='lower' || ej.kind==='clear' ||
                  (ej.kind==='pave'     && typeof ej.paveTileId==='string') ||
                  (ej.kind==='workshop' && typeof ej.workshopId==='string') ||
-                 (ej.kind==='cottage'  && typeof ej.cottageId==='string'));
+                 (ej.kind==='cottage'  && typeof ej.cottageId==='string') ||
+                 (ej.kind==='field'    && typeof ej.fieldTier==='number'));
               if(!ejOk) state.estate.job = null;
               var edgesYOk = state.estate.edgesY && state.estate.edgesY.length === ESTATE_GRID_SIZE &&
                 state.estate.edgesY.every(function(col){ return Array.isArray(col) && col.length === ESTATE_GRID_SIZE+1 && col.every(function(e){ return !!e; }); });
@@ -6064,13 +6028,9 @@
 
   // ================= RENDER: NAV =================
   function hasReadyFarmingPlot(){
-    var farmLvl = farmingLevel(state);
-    var unlockedPlots = getPlotSlots(farmLvl);
-    for(var i=0; i<unlockedPlots; i++){
-      var plot = state.farmingPlots[i];
-      if(!isPlotEmpty(plot) && Date.now() >= plot.readyAt) return true;
-    }
-    return false;
+    var now = Date.now();
+    function anyReady(map){ if(!map) return false; return Object.keys(map).some(function(k){ var p = map[k]; return p && p.cropType && now >= p.readyAt; }); }
+    return anyReady(state.farmingPlots) || anyReady(state.guildFarmingPlots);
   }
   function railSubFlash(cat){ return (cat==='farming' && hasReadyFarmingPlot()); } // draw attention when a plot is ready
   // Renders the left rail (areas + nested sub-views), the mobile bottom dock, and the mobile sub-view chip row.
@@ -7907,6 +7867,7 @@
   var estateSelectedTile = null;
   var estatePavingMenuOpen = false;
   var estateWorkshopMenuOpen = false;
+  var estateFieldMenuOpen = false;
   // Terraforming: Raise Layer needs Digging 20 (the same level Digging's own Dirt tier
   // requires) and consumes 100 Dirt. Lower Layer gives back 20 Dirt, but gets harder the
   // deeper you dig -- level 10 at height 19 (and still 10 at 18), then +3 per height
@@ -8067,6 +8028,9 @@
     } else if(job.kind === 'cottage'){
       addItem(job.cottageId, 1); // refund the cottage
       addLog('You cancelled building the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + ' (returned to inventory).', 'important');
+    } else if(job.kind === 'field'){
+      addItem('digging_t'+job.fieldTier, 100); // refund the soil
+      addLog('You cancelled tilling the ' + (DIGGING_NAMES[job.fieldTier]||'') + ' Field (recovered 100 ' + diggingResName(job.fieldTier) + ').', 'important');
     } else if(job.kind === 'raise'){
       addItem(ESTATE_DIRT_ITEM_ID, ESTATE_RAISE_DIRT_COST); // refund the reserved Dirt
       addLog('You cancelled raising (' + job.x + ', ' + job.y + ') and recovered your ' + ESTATE_RAISE_DIRT_COST + ' Dirt.', 'important');
@@ -8134,6 +8098,16 @@
         addXp('carpentry', cotXp);
         addLog('Finished building the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + '. +' + cotXp + ' Carpentry XP.' + (cadj ? ' Linked to the adjacent ' + workshopSkillLabel(WORKSHOP_ITEMS[cadj.workshopId].skillId) + ' Workshop.' : ' Place it beside a single Workshop to house a Peon.'), 'important');
         spawnFloatingText('Cottage built! +' + cotXp + ' Carpentry XP', 'ft-bonus');
+      }
+      return true;
+    }
+    if(job.kind === 'field'){
+      cell.fieldTier = job.fieldTier;
+      if(giveRewards){
+        var fldXp = estateBuildXp(job.fieldTier);
+        addXp('digging', fldXp);
+        addLog('Finished the ' + (DIGGING_NAMES[job.fieldTier]||'') + ' Field at (' + job.x + ', ' + job.y + '). +' + fldXp + ' Digging XP. Plant crops up to that tier in the Farming tab.', 'important');
+        spawnFloatingText('Field ready! +' + fldXp + ' Digging XP', 'ft-bonus');
       }
       return true;
     }
@@ -8305,6 +8279,15 @@
     out.sort(function(a,b){ return a.tierIndex - b.tierIndex; });
     return out;
   }
+  // Field tiers the player can build now: has 100 of the matching Digging resource, and the estate is
+  // under its 20-field cap. (Any tier can go on any dirt tile -- no pavement/level requirement.)
+  function placeableFieldsFor(grid){
+    if(estateFieldCount(grid) >= ESTATE_MAX_FIELDS) return [];
+    var out = [];
+    Object.keys(FARM_FIELD_TIERS).forEach(function(id){ var def = FARM_FIELD_TIERS[id]; if((state.inventory['digging_t'+def.tierIndex]||0) >= 100) out.push(def); });
+    out.sort(function(a,b){ return a.tierIndex - b.tierIndex; });
+    return out;
+  }
   function estatePlaceCottage(x, y, cottageId){
     var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || cell.type!=='paved'){ addLog('Cottages can only be placed on paved tiles.', 'danger'); return; }
@@ -8331,6 +8314,42 @@
     addItem(cid, 1);
     cell.cottageId = null;
     addLog('Removed the ' + ((COTTAGE_ITEMS[cid]||{}).name||'cottage') + ' (returned to inventory).', '');
+    estPersist();
+    needsRender = true;
+  }
+  // ---- Farming Fields: built on an empty dirt tile from 100 digging_t<n>; each provides one Farming
+  // plot (see the Farming tab) capped at its tier. Max ESTATE_MAX_FIELDS per estate (personal + guild).
+  function estateFieldCount(grid){ var n=0; if(grid) grid.forEach(function(col){ col.forEach(function(c){ if(c && c.fieldTier != null) n++; }); }); return n; }
+  function diggingResName(tier){ return (ALL_SELLABLE['digging_t'+tier]||{}).name || (DIGGING_NAMES[tier]||'resource'); }
+  function estatePlaceField(x, y, tier){
+    var cell = estActive.grid[x] && estActive.grid[x][y];
+    if(!cell || cell.type!=='dirt'){ addLog('Fields go on empty, unpaved tiles.', 'danger'); return; }
+    if(!cell.owned){ addLog('You can only place a Field on an owned tile.', 'danger'); return; }
+    if(cell.obstacle){ addLog('Clear the obstacle on this tile before placing a Field.', 'danger'); return; }
+    if(cell.fieldTier != null){ addLog('That tile already has a Field.', 'danger'); return; }
+    var def = FARM_FIELD_TIERS['field_t'+tier]; if(!def) return;
+    if(estateFieldCount(estActive.grid) >= ESTATE_MAX_FIELDS){ addLog('This estate already has the maximum of ' + ESTATE_MAX_FIELDS + ' Fields.', 'danger'); return; }
+    if(estateJobActive()){ addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger'); return; }
+    if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
+    if(!hasInputs(def.inputs)){ addLog('Tilling a ' + def.name + ' needs 100 ' + diggingResName(tier) + '.', 'danger'); return; }
+    consumeInputs(def.inputs);
+    var nowF = Date.now();
+    estActive.job = { kind:'field', x:x, y:y, fieldTier:tier, startAt:nowF, readyAt:nowF + fieldBuildMs(tier) };
+    estateFieldMenuOpen = false;
+    addLog('You began tilling a ' + def.name + ' at (' + x + ', ' + y + ') — finishes in ' + ((tier+1)*5) + ' minutes.', 'important');
+    spawnFloatingText('Tilling…', 'ft-success');
+    estPersist();
+    needsRender = true;
+  }
+  function estateRemoveField(x, y){
+    var cell = estActive.grid[x] && estActive.grid[x][y];
+    if(!cell || cell.fieldTier == null) return;
+    var tier = cell.fieldTier;
+    cell.fieldTier = null;
+    var plotMap = estIsGuild ? state.guildFarmingPlots : state.farmingPlots;
+    if(plotMap && plotMap[x + ',' + y]) delete plotMap[x + ',' + y]; // drop any in-progress crop
+    addItem('digging_t'+tier, 100); // recover the soil
+    addLog('Removed the ' + (DIGGING_NAMES[tier]||'') + ' Field (recovered 100 ' + diggingResName(tier) + ').', '');
     estPersist();
     needsRender = true;
   }
@@ -8999,6 +9018,36 @@
     ctx.strokeStyle = estateShadeColor(base,0.66); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx-h*0.85, cy); ctx.lineTo(cx+h*0.85, cy); ctx.stroke(); // ridge
     ctx.fillStyle = estateShadeColor('#6a6a6a',0.7); ctx.fillRect(cx-h*0.72, cy-h*0.72, s*0.16, s*0.16); // chimney
   }
+  // Farming Field: a low tilled-soil bed (tinted by the field's Digging tier) with furrow ridges and
+  // a few green sprouts. One parametric model; tier only changes the soil hue.
+  function estateDrawField(ctx, cx, cy, tier, rot){
+    var base = DIGGING_COLORS[tier] || '#7a5a3a';
+    var hw = 0.64, hd = 0.64, wz = 0.14;
+    var body = estateRectFp(hw, hd);
+    estateDrawPrism(ctx, cx, cy, body, body, 0, wz, rot, estateShadeColor(base,0.7), estateShadeColor(base,0.9)); // tilled soil bed
+    for(var i=-1;i<=1;i++){ // furrow ridges
+      var ry = i*0.36, fr = [[-hw*0.84, ry-0.05],[hw*0.84, ry-0.05],[hw*0.84, ry+0.05],[-hw*0.84, ry+0.05]];
+      estateDrawPrism(ctx, cx, cy, fr, fr, wz, wz+0.04, rot, estateShadeColor(base,0.56), estateShadeColor(base,0.64));
+    }
+    [[-0.36,-0.34],[0.02,0.1],[0.36,-0.12],[-0.12,0.36],[0.3,0.34]].forEach(function(p){ // sprouts
+      var sp = estateRectFp(0.045, 0.045).map(function(q){ return [q[0]+p[0], q[1]+p[1]]; });
+      estateDrawPrism(ctx, cx, cy, sp, sp, wz, wz+0.26, rot, estateShadeColor('#3f6a24',0.8), estateShadeColor('#5aa63f',0.95));
+    });
+  }
+  function drawEstateFieldModel(ctx, cx, cy, tier, rot){
+    estateModelScale = 1.6;
+    estateDrawField(ctx, cx, cy, tier, rot);
+    estateModelScale = 1;
+  }
+  function estateDrawTdField(ctx, cx, cy, tier, ts){
+    var base = DIGGING_COLORS[tier] || '#7a5a3a', s = ts*0.82, h = s/2;
+    ctx.fillStyle = estateShadeColor(base,0.82); ctx.fillRect(cx-h, cy-h, s, s);
+    ctx.strokeStyle = estateShadeColor(base,0.55); ctx.lineWidth = 1; ctx.strokeRect(cx-h, cy-h, s, s);
+    ctx.strokeStyle = estateShadeColor(base,0.62); ctx.lineWidth = 1.4; // furrows
+    for(var i=1;i<=3;i++){ var yy = cy-h + (s*i/4); ctx.beginPath(); ctx.moveTo(cx-h*0.9, yy); ctx.lineTo(cx+h*0.9, yy); ctx.stroke(); }
+    ctx.fillStyle = '#5aa63f'; // sprout dots
+    [[-0.3,-0.15],[0.1,0.2],[0.3,-0.2],[-0.1,0.3]].forEach(function(p){ ctx.beginPath(); ctx.arc(cx+p[0]*s, cy+p[1]*s, s*0.05, 0, Math.PI*2); ctx.fill(); });
+  }
   function drawEstateObstacleModel(ctx, cx, cy, obs, rot){
     if(!obs) return;
     estateModelScale = ESTATE_MODEL_TYPE_SCALE[obs.type] || 1;
@@ -9258,6 +9307,7 @@
       if(cell.obstacle) estateDrawTdObstacle(ctx, p.x, p.y, cell.obstacle, ts);
       if(cell.workshopId) estateDrawTdWorkshop(ctx, p.x, p.y, WORKSHOP_ITEMS[cell.workshopId], ts);
       if(cell.cottageId) estateDrawTdCottage(ctx, p.x, p.y, COTTAGE_ITEMS[cell.cottageId], ts);
+      if(cell.fieldTier != null) estateDrawTdField(ctx, p.x, p.y, cell.fieldTier, ts);
       var isSel = estateSelectedTile && estateSelectedTile.x===x && estateSelectedTile.y===y;
       var isHov = estateHoveredTile && estateHoveredTile.x===x && estateHoveredTile.y===y;
       if(isSel || isHov){ ctx.strokeStyle = isSel?'#ffffff':'#e8c15a'; ctx.lineWidth=2; ctx.strokeRect(p.x-ts/2+1, p.y-ts/2+1, ts-2, ts-2); }
@@ -9336,6 +9386,9 @@
       }
       if(cell.cottageId){
         drawEstateCottageModel(ctx, pos.x, pos.y + ESTATE_TILE_H/2, COTTAGE_ITEMS[cell.cottageId], estateRotation);
+      }
+      if(cell.fieldTier != null){
+        drawEstateFieldModel(ctx, pos.x, pos.y + ESTATE_TILE_H/2, cell.fieldTier, estateRotation);
       }
     }
     // Draw every border on top of the tile faces so built structures and selection/hover
@@ -9588,6 +9641,13 @@
       var jobHere = jobActive && job.x===x && job.y===y;
       var tileBusy = estJobOnTile(x, y);            // any member's job on this tile
       var otherHere = tileBusy && !jobHere;          // a different member is working here
+      if(cell.fieldTier != null){
+        var fdef = FARM_FIELD_TIERS['field_t'+cell.fieldTier];
+        html += '<div class="estate-action-row">';
+        html += '<div class="estate-action-info"><b>Field:</b> '+(fdef?fdef.icon+' '+escapeHtml(fdef.name):'Field')+'<br>Grows crops up to '+TIER_NAMES[cell.fieldTier]+' tier &mdash; plant in the <b>Farming</b> tab.</div>';
+        html += '<button class="action-btn stop" data-action="estateRemoveField" data-x="'+x+'" data-y="'+y+'" '+((jobHere||otherHere)?'disabled':'')+'>'+(otherHere?'In use':'Remove')+'</button>';
+        html += '</div>';
+      } else {
       var canRaise = cell.height < ESTATE_MAX_HEIGHT-1;
       var raiseLevelOk = digLvl >= ESTATE_RAISE_LEVEL;
       var raiseDirtOk = dirtOwned >= ESTATE_RAISE_DIRT_COST;
@@ -9621,6 +9681,23 @@
           html += '</button>';
         });
         html += '</div>';
+      }
+      var placeableFields = placeableFieldsFor(estActive.grid);
+      var atFieldCap = estateFieldCount(estActive.grid) >= ESTATE_MAX_FIELDS;
+      html += '<div class="estate-action-row">';
+      html += '<div class="estate-action-info"><b>Place Field</b><br>Till this tile into a Farming plot from 100 of the matching Digging resource. Grows crops up to the field’s tier; takes 5 min/tier &amp; grants Digging XP. Max '+ESTATE_MAX_FIELDS+' per estate ('+estateFieldCount(estActive.grid)+' built).</div>';
+      html += '<button class="action-btn" data-action="estateToggleFieldMenu" '+((placeableFields.length&&!jobHere&&!otherHere)?'':'disabled')+'>'+(jobHere?'Busy':(otherHere?'In use':(atFieldCap?'Max Fields':(placeableFields.length?(estateFieldMenuOpen?'Close List':'Choose'):'None ready'))))+'</button>';
+      html += '</div>';
+      if(estateFieldMenuOpen && placeableFields.length){
+        html += '<div class="estate-paving-library">';
+        placeableFields.forEach(function(def){
+          var owned = state.inventory['digging_t'+def.tierIndex]||0;
+          html += '<button class="estate-paving-option" data-action="estatePlaceField" data-x="'+x+'" data-y="'+y+'" data-tier="'+def.tierIndex+'">';
+          html += '<span>'+def.icon+' '+escapeHtml(def.name)+'</span><span class="style-lvl">x'+fmt(owned)+'/100</span>';
+          html += '</button>';
+        });
+        html += '</div>';
+      }
       }
     } else if(cell.type === 'paved'){
       var pavedRecipe = getPavingRecipe(cell.paveTileId);
@@ -9750,6 +9827,9 @@
       var cti = COTTAGE_ITEMS[job.cottageId];
       headLabel = 'Building &bull; '+(cti ? cti.name : 'Cottage')+' ('+job.x+', '+job.y+')';
       rewardNote = 'Runs in the background &bull; the Cottage is placed when it finishes';
+    } else if(job.kind === 'field'){
+      headLabel = 'Tilling &bull; '+(DIGGING_NAMES[job.fieldTier]||'')+' Field ('+job.x+', '+job.y+')';
+      rewardNote = 'Runs in the background &bull; +'+estateBuildXp(job.fieldTier)+' Digging XP when it finishes';
     } else {
       headLabel = 'Terraforming &bull; '+(job.kind === 'raise' ? 'Raising' : 'Digging down')+' ('+job.x+', '+job.y+')';
       rewardNote = 'Runs in the background &bull; +'+ESTATE_TERRAFORM_XP+' Digging XP when it finishes';
@@ -9804,85 +9884,71 @@
     return m+':'+(s<10?'0':'')+s;
   }
   function renderFarmingTab(){
-    var fiberLvl = getLevel(state.xp.fiberharvesting);
-    var grainLvl = getLevel(state.xp.grainharvesting);
-    var herbLvl = getLevel(state.xp.herbharvesting);
-    var farmLvl = farmingLevel(state);
-    var unlockedSlots = getPlotSlots(farmLvl);
-    var html = '<div class="section-intro">'+unlockedSlots+' of 40 plots unlocked (more open as your Farming level rises, reaching all 40 at level 100). Tap the <b>?</b> by each bar for how that crop line works.</div>';
+    var html = '<div class="section-intro">Farming plots now come from <b>Fields</b> you build on empty dirt tiles of your Estate (and your guild\'s) in the <b>Building</b> tab &mdash; each Field grows crops up to its tier. Up to '+ESTATE_MAX_FIELDS+' on your Estate + '+ESTATE_MAX_FIELDS+' on the guild Estate.</div>';
     html += renderSkillProgressBar('fiberharvesting');
     html += renderSkillProgressBar('grainharvesting');
     html += renderSkillProgressBar('herbharvesting');
 
-    var ownedSeeds = Object.keys(SEED_ITEMS).filter(function(id){ return (state.inventory[id]||0) > 0; })
-      .sort(function(a,b){ return SEED_ITEMS[a].tierIndex - SEED_ITEMS[b].tierIndex; });
-    var ownedGrainSeeds = Object.keys(GRAIN_SEED_ITEMS).filter(function(id){ return (state.inventory[id]||0) > 0; })
-      .sort(function(a,b){ return GRAIN_SEED_ITEMS[a].tierIndex - GRAIN_SEED_ITEMS[b].tierIndex; });
-    var ownedHerbSeeds = Object.keys(HERB_SEED_ITEMS).filter(function(id){ return (state.inventory[id]||0) > 0; })
-      .sort(function(a,b){ return HERB_SEED_ITEMS[a].tierIndex - HERB_SEED_ITEMS[b].tierIndex; });
+    // Owned seeds across all three crop lines, resolved to {id, def, tier, crop}, sorted by tier.
+    var ownedSeedList = [];
+    [SEED_ITEMS, GRAIN_SEED_ITEMS, HERB_SEED_ITEMS].forEach(function(pool){
+      Object.keys(pool).forEach(function(id){ if((state.inventory[id]||0) > 0){ var si = seedInfo(id); if(si && si.crop) ownedSeedList.push({ id:id, def:si.def, tier:si.tier, crop:si.crop }); } });
+    });
+    ownedSeedList.sort(function(a,b){ return a.tier - b.tier || a.def.name.localeCompare(b.def.name); });
 
-    html += '<div class="card-grid">';
-    for(var i=0;i<40;i++){
-      var locked = i >= unlockedSlots;
-      var plot = state.farmingPlots[i];
-      html += '<div class="item-card'+(locked?' locked':'')+'">';
-      if(locked){
-        html += '<div class="item-top"><div class="item-icon">'+svgIcon('lock','#8a8a8a')+'</div><div><div class="item-name">Plot '+(i+1)+'</div><div class="item-meta">Locked</div></div></div>';
-        html += '<div class="lock-note">Unlocks once a harvesting sub-skill reaches level '+getPlotUnlockLevel(i)+'</div>';
-      } else if(isPlotEmpty(plot)){
-        html += '<div class="item-top"><div class="item-icon">'+svgIcon('dirt','#a97d4f')+'</div><div><div class="item-name">Plot '+(i+1)+'</div><div class="item-meta">Empty</div></div></div>';
-        if(ownedSeeds.length===0 && ownedGrainSeeds.length===0 && ownedHerbSeeds.length===0){
-          html += '<div class="empty-note">No seeds yet. Find some via Critter Caches, or while gathering Botany, Herbalism, or Foraging.</div>';
+    // Render every field cell of an estate grid as a plot card (empty -> seed picker capped at the
+    // field tier; growing -> live timer + harvest). Returns {html, count}.
+    function plotsHtml(scope, grid){
+      if(!grid) return { html:'', count:0 };
+      var map = farmPlotMap(scope), cells = [];
+      for(var x=0;x<grid.length;x++){ var col=grid[x]; if(!col) continue; for(var y=0;y<col.length;y++){ var c=col[y]; if(c && c.fieldTier!=null) cells.push({x:x,y:y,tier:c.fieldTier}); } }
+      cells.sort(function(a,b){ return a.tier-b.tier || a.x-b.x || a.y-b.y; });
+      var out = '';
+      cells.forEach(function(fc){
+        var key = fc.x+','+fc.y, domId = scope+'-'+fc.x+'_'+fc.y, plot = map[key];
+        var fdef = FARM_FIELD_TIERS['field_t'+fc.tier];
+        out += '<div class="item-card">';
+        out += '<div class="item-top"><div class="item-icon">'+(fdef?fdef.icon:'')+'</div><div><div class="item-name">'+DIGGING_NAMES[fc.tier]+' Field</div><div class="item-meta">Grows up to '+TIER_NAMES[fc.tier]+' &bull; ('+fc.x+','+fc.y+')</div></div></div>';
+        if(isPlotEmpty(plot)){
+          var picker = '';
+          ownedSeedList.forEach(function(s){ if(s.tier <= fc.tier){ picker += '<button class="style-btn" data-action="plantSeed" data-scope="'+scope+'" data-key="'+key+'" data-seed="'+s.id+'">'+s.def.icon+' '+escapeHtml(s.def.name)+' <span class="style-lvl">x'+fmt(state.inventory[s.id]||0)+'</span><span class="style-type">'+Math.round(s.crop.durationMs/60000)+'m</span></button>'; } });
+          out += picker ? ('<div class="style-row">'+picker+'</div>') : '<div class="empty-note">No plantable seed for this tier yet — gather/roll a tier ≤ '+TIER_NAMES[fc.tier]+' seed.</div>';
         } else {
-          html += '<div class="style-row">';
-          ownedSeeds.forEach(function(seedId){
-            var seed = SEED_ITEMS[seedId];
-            var qty = state.inventory[seedId]||0;
-            var cropData = FARMING_ITEMS['farming_t'+seed.tierIndex];
-            var seedLocked = fiberLvl < TIER_LEVELS[seed.tierIndex];
-            html += '<button class="style-btn'+(seedLocked?' style-btn-locked':'')+'" data-action="plantSeed" data-plot="'+i+'" data-seed="'+seedId+'" '+(seedLocked?'disabled title="Requires Fiber Harvesting level '+TIER_LEVELS[seed.tierIndex]+'"':'')+'>'+seed.icon+' '+seed.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">'+(seedLocked?'Req. Lv '+TIER_LEVELS[seed.tierIndex]:(cropData.durationMs/60000)+'m')+'</span></button>';
-          });
-          ownedGrainSeeds.forEach(function(seedId){
-            var gseed = GRAIN_SEED_ITEMS[seedId];
-            var gqty = state.inventory[seedId]||0;
-            var gCropData = GRAIN_ITEMS['grain_t'+gseed.tierIndex];
-            var gSeedLocked = grainLvl < TIER_LEVELS[gseed.tierIndex];
-            html += '<button class="style-btn'+(gSeedLocked?' style-btn-locked':'')+'" data-action="plantSeed" data-plot="'+i+'" data-seed="'+seedId+'" '+(gSeedLocked?'disabled title="Requires Grain Harvesting level '+TIER_LEVELS[gseed.tierIndex]+'"':'')+'>'+gseed.icon+' '+gseed.name+' <span class="style-lvl">x'+gqty+'</span><span class="style-type">'+(gSeedLocked?'Req. Lv '+TIER_LEVELS[gseed.tierIndex]:(gCropData.durationMs/60000)+'m')+'</span></button>';
-          });
-          ownedHerbSeeds.forEach(function(seedId){
-            var hseed = HERB_SEED_ITEMS[seedId];
-            var hqty = state.inventory[seedId]||0;
-            var hCropData = HERB_ITEMS['herb_t'+hseed.tierIndex];
-            var hSeedLocked = herbLvl < TIER_LEVELS[hseed.tierIndex];
-            html += '<button class="style-btn'+(hSeedLocked?' style-btn-locked':'')+'" data-action="plantSeed" data-plot="'+i+'" data-seed="'+seedId+'" '+(hSeedLocked?'disabled title="Requires Herb Harvesting level '+TIER_LEVELS[hseed.tierIndex]+'"':'')+'>'+hseed.icon+' '+hseed.name+' <span class="style-lvl">x'+hqty+'</span><span class="style-type">'+(hSeedLocked?'Req. Lv '+TIER_LEVELS[hseed.tierIndex]:(hCropData.durationMs/60000)+'m')+'</span></button>';
-          });
-          html += '</div>';
+          var cd = getCropDataForPlot(plot);
+          if(!cd){ delete map[key]; out += '<div class="empty-note">Empty.</div>'; }
+          else {
+            var remaining = plot.readyAt - Date.now();
+            if(remaining <= 0){
+              out += '<div class="item-top" style="margin-top:6px"><div class="item-icon">'+cd.icon+'</div><div><div class="item-name">'+cd.name+'</div><div class="item-meta">Ready!</div></div></div>';
+              out += '<button class="action-btn" data-action="harvestPlot" data-scope="'+scope+'" data-key="'+key+'">Harvest</button>';
+            } else {
+              var pct = clamp((cd.durationMs-remaining)/cd.durationMs*100,0,100);
+              out += '<div class="item-top" style="margin-top:6px"><div class="item-icon">'+cd.icon+'</div><div><div class="item-name">'+cd.name+'</div><div class="item-meta" id="plot-timer-'+domId+'">Ready in '+formatDuration(remaining)+'</div></div></div>';
+              out += '<div class="progress-track"><div class="progress-fill" id="plot-fill-'+domId+'" style="width:'+pct+'%"></div></div>';
+              out += '<button class="action-btn" disabled>Growing&hellip;</button>';
+            }
+          }
         }
-      } else {
-        var cropData2 = getCropDataForPlot(plot);
-        if(!cropData2){
-          // Defensive: same self-heal as harvestPlot -- never let a bad cropType crash the render.
-          plot.cropType = null; plot.tierIndex = -1; plot.plantedAt = 0; plot.readyAt = 0;
-          html += '<div class="item-top"><div class="item-icon">'+svgIcon('dirt','#a97d4f')+'</div><div><div class="item-name">Plot '+(i+1)+'</div><div class="item-meta">Empty</div></div></div>';
-          html += '</div>';
-          continue;
-        }
-        var remaining = plot.readyAt - Date.now();
-        var ready = remaining <= 0;
-        html += '<div class="item-top"><div class="item-icon">'+cropData2.icon+'</div><div><div class="item-name">'+cropData2.name+'</div><div class="item-meta">Plot '+(i+1)+'</div></div></div>';
-        if(ready){
-          html += '<div class="chance-line">Ready to harvest!</div>';
-          html += '<button class="action-btn" data-action="harvestPlot" data-plot="'+i+'">Harvest</button>';
-        } else {
-          var elapsedPct = clamp((cropData2.durationMs-remaining)/cropData2.durationMs*100,0,100);
-          html += '<div class="chance-line" id="plot-timer-'+i+'">Ready in '+formatDuration(remaining)+'</div>';
-          html += '<div class="progress-track"><div class="progress-fill" id="plot-fill-'+i+'" style="width:'+elapsedPct+'%"></div></div>';
-          html += '<button class="action-btn" disabled>Growing&hellip;</button>';
-        }
-      }
-      html += '</div>';
+        out += '</div>';
+      });
+      return { html:out, count:cells.length };
     }
-    html += '</div>';
+
+    var personal = plotsHtml('personal', state.estate && state.estate.grid);
+    html += '<h3 style="margin-top:14px">Your Fields <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-faint)">'+personal.count+'/'+ESTATE_MAX_FIELDS+'</span></h3>';
+    html += personal.count ? ('<div class="card-grid">'+personal.html+'</div>') : '<div class="empty-note">No Fields yet. Build one on an empty dirt tile of your Estate (Building &rarr; Estate).</div>';
+
+    if(guildState.guild){
+      guildEstateEnsure();
+      if(guildEstate.status==='ready'){
+        var guild = plotsHtml('guild', guildEstate.grid);
+        html += '<h3 style="margin-top:14px">Guild Fields <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-faint)">'+guild.count+'/'+ESTATE_MAX_FIELDS+'</span></h3>';
+        html += '<div class="section-intro" style="margin-bottom:8px">Fields on your guild\'s Estate give every member their own plots here (your crops are your own).</div>';
+        html += guild.count ? ('<div class="card-grid">'+guild.html+'</div>') : '<div class="empty-note">Your guild has no Fields yet. Any member can build them on the guild Estate.</div>';
+      } else {
+        html += '<h3 style="margin-top:14px">Guild Fields</h3><div class="empty-note">Loading the guild estate&hellip;</div>';
+      }
+    }
 
     html += '<h3>Critter Caches</h3>';
     html += '<div class="section-intro">Forestry has a small chance to turn up a Critter Cache. Opening one gives 3 Seeds, heavily weighted toward common tiers.</div>';
@@ -12765,27 +12831,21 @@
     });
 
     if(currentCategory==='farming'){
-      var farmLvl = farmingLevel(state);
-      var unlockedPlots = getPlotSlots(farmLvl);
-      for(var pi=0; pi<unlockedPlots; pi++){
-        var plot = state.farmingPlots[pi];
-        if(isPlotEmpty(plot)) continue;
-        var remainingMs = plot.readyAt - Date.now();
-        if(remainingMs <= 0){
-          if(!plot._readyRendered){ plot._readyRendered = true; needsRender = true; }
-          continue;
-        }
-        plot._readyRendered = false;
-        var timerEl = document.getElementById('plot-timer-'+pi);
-        if(timerEl) timerEl.textContent = 'Ready in ' + formatDuration(remainingMs);
-        var fillEl = document.getElementById('plot-fill-'+pi);
-        if(fillEl){
-          var cropDataLive = getCropDataForPlot(plot);
-          if(cropDataLive){
-            fillEl.style.width = clamp((cropDataLive.durationMs-remainingMs)/cropDataLive.durationMs*100,0,100) + '%';
-          }
-        }
-      }
+      var _fnow = Date.now();
+      [['personal', state.farmingPlots], ['guild', state.guildFarmingPlots]].forEach(function(pair){
+        var scope = pair[0], map = pair[1]; if(!map) return;
+        Object.keys(map).forEach(function(key){
+          var plot = map[key]; if(!plot || !plot.cropType) return;
+          var remainingMs = plot.readyAt - _fnow;
+          if(remainingMs <= 0){ if(!plot._readyRendered){ plot._readyRendered = true; needsRender = true; } return; }
+          plot._readyRendered = false;
+          var domId = scope + '-' + key.replace(/,/g,'_');
+          var timerEl = document.getElementById('plot-timer-'+domId);
+          if(timerEl) timerEl.textContent = 'Ready in ' + formatDuration(remainingMs);
+          var fillEl = document.getElementById('plot-fill-'+domId);
+          if(fillEl){ var cd = getCropDataForPlot(plot); if(cd) fillEl.style.width = clamp((cd.durationMs-remainingMs)/cd.durationMs*100,0,100) + '%'; }
+        });
+      });
     }
 
     if(state.activity.type==='pray'){
@@ -13209,9 +13269,9 @@
       var extraIdx = parseInt(btn.getAttribute('data-slot'),10);
       state.extraCraftSlots[extraIdx] = {type:null};
     } else if(action==='plantSeed'){
-      plantSeed(parseInt(btn.getAttribute('data-plot'),10), btn.getAttribute('data-seed'));
+      plantSeed(btn.getAttribute('data-scope'), btn.getAttribute('data-key'), btn.getAttribute('data-seed'));
     } else if(action==='harvestPlot'){
-      harvestPlot(parseInt(btn.getAttribute('data-plot'),10));
+      harvestPlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key'));
     } else if(action==='estateClearObstacle'){
       estateClearObstacle(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
     } else if(action==='estateRaiseLayer'){
@@ -13291,6 +13351,12 @@
       estatePlaceCottage(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-cottage'));
     } else if(action==='estateRemoveCottage'){
       estateRemoveCottage(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
+    } else if(action==='estateToggleFieldMenu'){
+      estateFieldMenuOpen = !estateFieldMenuOpen;
+    } else if(action==='estatePlaceField'){
+      estatePlaceField(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), parseInt(btn.getAttribute('data-tier'),10));
+    } else if(action==='estateRemoveField'){
+      estateRemoveField(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
     } else if(action==='estateToggleBorderMenu'){
       var borderTypeKey = btn.getAttribute('data-type');
       estateBorderMenuOpen = estateBorderMenuOpen===borderTypeKey ? null : borderTypeKey;
@@ -13752,6 +13818,7 @@
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
+      FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       tierStepper:tierStepper, tierRange:tierRange,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,

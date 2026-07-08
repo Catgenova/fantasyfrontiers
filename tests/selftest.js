@@ -263,6 +263,22 @@
     ok(ttd && ttd.inputs, 'peon tool act resolves at top tier (tierIndex+1 offset in-bounds)');
   });
 
+  // ---- Farming Fields (estate-built farming plots) -------------------------------------
+  suite('farming fields', function(){
+    var F = FF.FARM_FIELD_TIERS;
+    eq(Object.keys(F).length, FF.TIER_COUNT, '21 field tiers');
+    ok(F.field_t0 && F.field_t0.name.indexOf('Field') !== -1, 't0 named "<x> Field"');
+    eq(F.field_t0.inputs['digging_t0'], 100, 't0 field costs 100 digging_t0');
+    eq(F.field_t20.inputs['digging_t20'], 100, 't20 field costs 100 digging_t20');
+    eq(FF.fieldBuildMs(0), 5*60*1000, 't0 builds in 5 min');
+    eq(FF.fieldBuildMs(20), 105*60*1000, 't20 builds in 105 min (21*5)');
+    eq(FF.estateBuildXp(0), 500, 't0 field build = 500 Digging XP');   // shared estate-build XP curve
+    eq(FF.estateBuildXp(20), 10500, 't20 field build = 10500 Digging XP');
+    eq(FF.ESTATE_MAX_FIELDS, 20, 'max 20 fields per estate');
+    ok(FF.canPlantInField(5, 5) && FF.canPlantInField(5, 0), 'tier-5 field accepts t5 and lower');
+    ok(!FF.canPlantInField(5, 6), 'tier-5 field rejects a t6 crop');
+  });
+
   // ---- Tracked Skills now includes physiques -------------------------------------------
   suite('trackable physiques', function(){
     var ids = FF.TRACKABLE_SKILL_IDS;
