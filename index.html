@@ -97,6 +97,11 @@
   .ff-buffchip .t{font-family:var(--font-mono);color:#8a7850;}
   .ff-tb-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
   .ff-track-top{font-family:var(--font-mono);font-size:11px;color:#b3a37e;white-space:nowrap;}
+  .ff-track-btn{display:flex;flex-direction:column;align-items:stretch;gap:3px;background:none;border:none;padding:3px 6px;margin:-2px 0;cursor:pointer;border-radius:6px;min-width:132px;text-align:center;}
+  .ff-track-btn:hover{background:rgba(255,255,255,.08);}
+  .ff-track-btn.ff-track-empty{justify-content:center;color:#b3a37e;font-family:var(--font-mono);font-size:11px;}
+  .ff-track-bar{height:4px;border-radius:3px;background:#000;border:1px solid #48432f;overflow:hidden;}
+  .ff-track-bar-fill{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--gold),var(--gold-bright));border-radius:3px;}
   .ff-gear{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid #48432f;color:#c4ccae;cursor:pointer;font-size:14px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;}
   .ff-gear svg{width:15px;height:15px;}
   .ff-coin svg{width:15px;height:15px;vertical-align:-2px;}
@@ -4660,6 +4665,27 @@
     layer.appendChild(el);
     setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 2000);
   }
+  // Floating "+N XP" for the top-bar tracker, positioned just to the LEFT of the tracking button
+  // (rather than over it) so it doesn't obscure the label/level.
+  function spawnTopTrackXpText(amount){
+    if(offlineCapture) return;
+    var target = document.getElementById('topTrackerBtn');
+    var layer = document.getElementById('floatLayer');
+    if(!target || !layer) return;
+    var rect = target.getBoundingClientRect();
+    if(rect.width===0 && rect.height===0) return; // not mounted/visible
+    var el = document.createElement('div');
+    el.className = 'floating-text ft-xp';
+    el.textContent = '+' + (Math.round(amount*10)/10) + ' XP';
+    el.style.top = (rect.top + rect.height/2) + 'px';
+    el.style.left = rect.left + 'px';
+    layer.appendChild(el);
+    // .floating-text centers on its `left` via translate(-50%); offset so the whole tick sits to
+    // the left of the button with an 8px gap regardless of the number's width.
+    var w = el.getBoundingClientRect().width;
+    el.style.left = (rect.left - 8 - w/2) + 'px';
+    setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 2000);
+  }
   // What the global action bar's skill/physique mini-bars currently represent -- used so
   // XP floating text only appears when there's actually a matching bar on screen to
   // anchor to (e.g. not for weapon/offhand proficiency XP during combat, since only the
@@ -4757,6 +4783,7 @@
     }
     if(resolveActionBarSkill().skillId === skill) spawnBarXpText('gabSkillTrack', amount);
     if(state.trackedSkills && state.trackedSkills.indexOf(skill) !== -1) spawnBarXpText('trackRow-'+skill, amount);
+    if(state.trackedSkills && state.trackedSkills[0] === skill) spawnTopTrackXpText(amount);
   }
   function addPhysiqueXp(pairs){
     if(!pairs) return;
@@ -4779,6 +4806,7 @@
       maybeSummonFamiliar(id);
       if(relevantPhysiqueIds.indexOf(id) !== -1) spawnBarXpText('gabPhysiqueTrack-'+id, amount);
       if(state.trackedSkills && state.trackedSkills.indexOf(id) !== -1) spawnBarXpText('trackRow-'+id, amount);
+      if(state.trackedSkills && state.trackedSkills[0] === id) spawnTopTrackXpText(amount);
     });
   }
   // Lifetime character stats (kills/deaths/items gathered/crafted/rarities). Displayed
@@ -5708,8 +5736,21 @@
     if(serverBuffActive()) html += '<div class="ff-buffchip"><span class="dot" style="background:var(--coin)"></span>+50% EXP <span class="t">'+formatDuration(serverBuff.expUntil-Date.now())+'</span></div>';
     if(isTeaActive()) html += '<div class="ff-buffchip"><span class="dot" style="background:#6f9538"></span>+'+Math.round(state.activeTea.xpBoost*100)+'% XP <span class="t">'+formatDuration(state.activeTea.expiresAt-Date.now())+'</span></div>';
     var tk = state.trackedSkills && state.trackedSkills[0];
-    var trackTxt = tk ? ('Tracking: '+trackSkillMeta(tk).label+' Lv '+getLevel(trackedXpOf(tk))) : '';
-    html += '<div class="ff-tb-right">'+(trackTxt?'<span class="ff-track-top">'+escapeHtml(trackTxt)+'</span>':'')+'<button class="ff-gear" data-action="openSettings">'+shellIcon('gear')+'</button></div>';
+    var trackBtn;
+    if(tk && trackedExists(tk)){
+      var tMeta = trackSkillMeta(tk);
+      var tLvl = getLevel(trackedXpOf(tk));
+      var tPct = Math.round(levelProgress(trackedXpOf(tk)));
+      // Tapping the tracker opens the skill picker; the slim bar under the label shows how far
+      // the tracked skill is through its current level (updated live each tick by renderTopbar).
+      trackBtn = '<button class="ff-track-btn" id="topTrackerBtn" data-action="openTrackerPicker" title="Change tracked skill">'
+        + '<span class="ff-track-top">Tracking: '+escapeHtml(tMeta.label)+' Lv '+tLvl+'</span>'
+        + '<span class="ff-track-bar"><span class="ff-track-bar-fill" style="width:'+tPct+'%"></span></span>'
+        + '</button>';
+    } else {
+      trackBtn = '<button class="ff-track-btn ff-track-empty" id="topTrackerBtn" data-action="openTrackerPicker" title="Track a skill">Track a skill</button>';
+    }
+    html += '<div class="ff-tb-right">'+trackBtn+'<button class="ff-gear" data-action="openSettings">'+shellIcon('gear')+'</button></div>';
     el.innerHTML = html;
   }
   function renderChatDock(){
