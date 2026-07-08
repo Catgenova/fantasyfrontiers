@@ -130,6 +130,37 @@
     }
   });
 
+  // ---- Action HUD task rows: remaining runs, success chance, and nav category ------------
+  suite('describeTask reports runs remaining, success chance, and nav target', function(){
+    var S = FF._state;
+    var savedInv = S.inventory;
+    try {
+      S.inventory = {};
+      var mining = FF.GATHERING_SKILLS.mining.items[0].id;
+      var g = FF.describeTask({ type:'gather', skill:'mining', itemId:mining, progress:0 });
+      eq(g.remaining, Infinity, 'gathering runs are infinite');
+      eq(g.navCat, 'gathering', 'gather task navigates to gathering');
+      ok(g.name.indexOf('Gathering:') === 0, 'gather task name is prefixed');
+      var gf = FF.describeTask({ type:'gather', skill:'forestry', itemId:FF.GATHERING_SKILLS.forestry.items[0].id, progress:0 });
+      eq(gf.successPct, 100, 'forestry gathering is a guaranteed 100%');
+      var pr = FF.describeTask({ type:'pray', itemId:FF.PRAYER_TIERS[0].id, progress:0 });
+      eq(pr.remaining, Infinity, 'prayer runs are infinite');
+      eq(pr.successPct, 100, 'prayer always succeeds');
+      eq(pr.navCat, 'faith', 'prayer navigates to faith');
+      // Carpentry is a crafting skill but lives under the Building sub-tab now.
+      S.inventory['forestry_t0'] = 5; // Willow Plank needs 1 log each
+      var c = FF.describeTask({ type:'craft', skill:'carpentry', itemId:'carpentry_t0', progress:0 });
+      eq(c.remaining, 5, 'craft remaining = runs the inputs support');
+      eq(c.navCat, 'building', 'carpentry craft navigates to the Building tab');
+      S.inventory['forestry_t0'] = 2;
+      eq(FF.describeTask({ type:'craft', skill:'carpentry', itemId:'carpentry_t0', progress:0 }).remaining, 2, 'remaining tracks inventory');
+      var mc = FF.describeTask({ type:'craft', skill:'metallurgy', itemId:'metallurgy_t0', progress:0 });
+      eq(mc.navCat, 'crafting', 'metallurgy craft navigates to the Crafting tab');
+    } finally {
+      S.inventory = savedInv;
+    }
+  });
+
   // ---- Tier steppers replaced the crafting-tier <select> dropdowns -----------------------
   suite('tierRange builds a contiguous 0..max list', function(){
     var r = FF.tierRange(3);
