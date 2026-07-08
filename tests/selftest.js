@@ -333,6 +333,15 @@
     eq(FF.itemRarityId('mining_t7'), 'normal', 'no rarity suffix -> normal');
   });
 
+  // ---- Chat system announcements: only supreme/fantastic crafts echo into global chat ----
+  suite('craft chat announce', function(){
+    eq(FF.craftBodyRarity('Fantastic Steel Axe'), 'fantastic', 'fantastic craft body -> fantastic');
+    eq(FF.craftBodyRarity('Supreme Iron Sword'), 'supreme', 'supreme craft body -> supreme');
+    eq(FF.craftBodyRarity('Rare Bronze Dagger'), null, 'rare craft body -> null (chronicle only)');
+    eq(FF.craftBodyRarity('Oak Plank'), null, 'normal craft body -> null');
+    eq(FF.craftBodyRarity(''), null, 'empty body -> null');
+  });
+
   // ---- Inventory category sort: group each item's tiers by family, then order by tier -----
   suite('inventory family sort', function(){
     eq(FF.invFamilyKey('digging_t2'), 'digging', 'strips tier -> family');

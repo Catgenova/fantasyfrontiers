@@ -485,6 +485,13 @@
   .log-entry .chat-time{margin-right:5px;}
   .chat-body{color:var(--text);word-break:break-word;}
   .chat-empty{margin:auto;color:var(--text-faint);font-style:italic;}
+  /* Server-wide system announcements (e.g. supreme/fantastic crafts) shown inline in global chat. */
+  .chat-msg.chat-system{display:flex;align-items:center;gap:6px;margin:3px 0;padding:5px 8px;border-radius:6px;background:rgba(138,79,176,.09);border-left:3px solid var(--rarity-superior);}
+  .chat-msg.chat-system.rar-fantastic{background:rgba(192,125,30,.11);border-left-color:var(--rarity-fantastic);}
+  .chat-msg.chat-system .chat-sys-ico{flex:0 0 auto;display:inline-flex;}
+  .chat-msg.chat-system .chat-sys-ico svg{width:14px;height:14px;}
+  .chat-msg.chat-system .chat-body{color:var(--text-dim);font-style:italic;font-size:12px;}
+  .chat-msg.chat-system .chat-time{margin-left:auto;margin-right:0;}
   .chat-account{display:flex;align-items:center;gap:8px;font-family:var(--font-body);font-size:12px;color:var(--text-dim);}
   .auth-card{display:flex;flex-direction:column;gap:8px;padding:14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-panel-raised);}
   .auth-tabs{display:flex;gap:6px;margin-bottom:2px;}
@@ -2482,6 +2489,11 @@
       spawnFloatingText('Forged ' + r.label + baseName + '!', 'ft-rare');
       maybeShowRarityPopup(rarityId, r.label + baseName);
       chronicleBroadcast('craft', r.label + baseName);   // rare/supreme/fantastic -> global feed
+      // Supreme/fantastic crafts also announce in global chat (crafter's own copy; other players
+      // synthesize theirs from the chronicle broadcast in chronicleOnIncoming).
+      if(!offlineCapture && authUser && (rarityId==='supreme' || rarityId==='fantastic')){
+        pushChatSystemMessage(chatName() + ' forged a ' + r.label + baseName + '!', rarityId);
+      }
     } else {
       addLog('You forged ' + baseName + '.', 'important');
       spawnFloatingText('Forged ' + baseName, 'ft-success');
@@ -10662,7 +10674,12 @@
     var name = '<b>' + escapeHtml(ev.username || 'Someone') + '</b>';
     var body = escapeHtml(ev.body || '');
     var msg;
-    if(ev.kind === 'craft') msg = name + ' forged a ' + body + '!';
+    if(ev.kind === 'craft'){
+      msg = name + ' forged a ' + body + '!';
+      // A supreme/fantastic craft also drops a system announcement into everyone's global chat.
+      var craftRar = craftBodyRarity(ev.body);
+      if(craftRar) pushChatSystemMessage((ev.username || 'Someone') + ' forged a ' + String(ev.body||'') + '!', craftRar);
+    }
     else if(ev.kind === 'level') msg = name + ' reached ' + body + '!';
     else if(ev.kind === 'familiar') msg = name + ' summoned ' + body + '!';
     else if(ev.kind === 'buff') msg = name + ' ' + body;   // body is self-contained (server-buff event)
@@ -10721,8 +10738,29 @@
   function chatMessagesHtml(){
     if(chatMessages.length===0) return '<div class="chat-empty">No messages yet &mdash; say hello!</div>';
     return chatMessages.map(function(m){
+      if(m.system){
+        var col = m.rarity==='fantastic' ? 'var(--rarity-fantastic)' : 'var(--rarity-superior)';
+        return '<div class="chat-msg chat-system rar-'+(m.rarity||'supreme')+'"><span class="chat-sys-ico">'+svgIcon('starburst',col)+'</span><span class="chat-body">'+escapeHtml(m.body||'')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span></div>';
+      }
       return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+escapeHtml(m.body||'')+'</span></div>';
     }).join('');
+  }
+  // Map a broadcast craft body ("Supreme Iron Sword") to its rarity, or null for rare/normal. Only the
+  // top two tiers (supreme/fantastic) get echoed into global chat as a system announcement.
+  function craftBodyRarity(body){
+    body = String(body||'');
+    if(body.indexOf('Fantastic ')===0) return 'fantastic';
+    if(body.indexOf('Supreme ')===0) return 'supreme';
+    return null;
+  }
+  // Inject a client-side system announcement into global chat (ephemeral -- not persisted to the
+  // messages table). Each online client synthesizes its own copy from the chronicle broadcast.
+  function pushChatSystemMessage(text, rarity){
+    if(!text) return;
+    var m = { id:'sys-'+Date.now()+'-'+Math.floor(Math.random()*1e6), username:null, body:text, rarity:rarity||'supreme', created_at:new Date().toISOString(), system:true };
+    chatMessages.push(m);
+    if(chatMessages.length > 120) chatMessages = chatMessages.slice(-120);
+    if(chatChannel==='global') chatRenderMessagesOnly(); // refresh in place if the global feed is showing
   }
   function chatRenderMessagesOnly(){
     var el = document.getElementById('chatMessages');
@@ -13925,6 +13963,7 @@
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey,
+      craftBodyRarity:craftBodyRarity,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       DAMAGE_TYPES:DAMAGE_TYPES
