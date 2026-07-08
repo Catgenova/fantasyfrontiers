@@ -486,6 +486,26 @@
     ok(FF.accuracyPhysiques({ accuracyPhysiques:['a','b','c','d','e','f','g'] }).length === FF.ACCURACY_PHYS_SLOTS, 'accuracy physiques capped at slot count');
   });
 
+  // ---- Hardening: monster lookup + addItem guards ---------------------------------------
+  suite('hardening', function(){
+    // monsterById maps every monster and rejects unknown ids (used by the combat hot path + stale-id retreat).
+    ok(FF.MONSTERS.every(function(m){ return FF.monsterById(m.id) === m; }), 'monsterById resolves every monster');
+    eq(FF.monsterById('nope_such_monster'), null, 'monsterById(unknown) === null');
+    eq(FF.monsterById(undefined), null, 'monsterById(undefined) === null');
+
+    // addItem ignores NaN / zero / negative so a broken quantity can never enter the inventory.
+    var inv = FF._state.inventory;
+    var K = '__hardening_probe__';
+    delete inv[K];
+    FF.addItem(K, NaN);      eq(inv[K], undefined, 'addItem(NaN) is a no-op');
+    FF.addItem(K, 0);        eq(inv[K], undefined, 'addItem(0) is a no-op');
+    FF.addItem(K, -5);       eq(inv[K], undefined, 'addItem(negative) is a no-op');
+    FF.addItem(K, Infinity); eq(inv[K], undefined, 'addItem(Infinity) is a no-op');
+    FF.addItem(K, 3);        eq(inv[K], 3, 'addItem(positive) adds');
+    FF.addItem(K, 2.9);      eq(inv[K], 5, 'addItem floors fractional grants');
+    delete inv[K];
+  });
+
   // ---- Estate obstacle info -------------------------------------------------------------
   suite('estateObstacleInfo', function(){
     eq(FF.estateObstacleInfo(null), null, 'null obstacle -> null');

@@ -2275,6 +2275,11 @@
   var DUNGEON_MONSTERS = [];
   DUNGEONS.forEach(function(d){ DUNGEON_MONSTERS = DUNGEON_MONSTERS.concat(d.stages); });
   MONSTERS = MONSTERS.concat(DUNGEON_MONSTERS);
+  // id -> monster lookup so hot paths (the combat loop, action-bar live updates, attack ticks) don't
+  // linear-scan all 114 monsters every frame.
+  var MONSTERS_BY_ID = {};
+  MONSTERS.forEach(function(m){ MONSTERS_BY_ID[m.id] = m; });
+  function monsterById(id){ return MONSTERS_BY_ID[id] || null; }
   function getDungeonProgress(dungeonId){
     return (state.dungeonProgress && state.dungeonProgress[dungeonId] !== undefined) ? state.dungeonProgress[dungeonId] : -1;
   }
@@ -3214,7 +3219,7 @@
       // of that type; "void" ignores armour. Chips HP but never lands the finishing blow.
       var cact = state.activity;
       if(cact && cact.type==='combat'){
-        var cmon = MONSTERS.filter(function(x){return x.id===cact.monsterId;})[0];
+        var cmon = monsterById(cact.monsterId);
         // Familiars roll their own accuracy (a level-driven curve, separate from the player's) against
         // the enemy's dodge before a damaging spell lands. A missed spell just fizzles.
         if(cmon && Math.random() >= familiarHitChance(level, cmon)){
@@ -5485,6 +5490,8 @@
     return html + '</div>';
   }
   function addXp(skill, amount){
+    if(!isFinite(amount)) return; // never let a NaN/Infinity poison an xp total (would zero saveProgressScore and stop cloud saves)
+    if(!isFinite(state.xp[skill])) state.xp[skill] = 0;
     var before = getLevel(state.xp[skill]);
     if(isTeaActive()) amount = amount * (1 + state.activeTea.xpBoost);
     amount = amount * familiarXpMult(skill) * serverBuffXpMult();
@@ -5504,6 +5511,8 @@
     if(!pairs) return;
     pairs.forEach(function(pair){
       var id = pair[0], amount = pair[1] * familiarXpMult(id) * serverBuffXpMult();
+      if(!isFinite(amount)) return; // guard against a NaN physique total (same cloud-save hazard as addXp)
+      if(!isFinite(state.physique[id])) state.physique[id] = 0;
       var before = getLevel(state.physique[id]||0);
       state.physique[id] = (state.physique[id]||0) + amount;
       if(offlineCapture){ offlineCapture.physique[id] = (offlineCapture.physique[id]||0) + amount; }
@@ -5527,6 +5536,8 @@
   // same tick functions.
   function bumpStat(key, n){ if(!state.stats) state.stats = {}; state.stats[key] = (state.stats[key]||0) + (n||1); }
   function addItem(id, qty){
+    qty = Math.floor(qty);
+    if(!(qty > 0) || !isFinite(qty)) return; // ignore NaN / Infinity / zero / negative grants so inventory can't hold a broken entry
     if(offlineCapture){ offlineCapture.items[id] = (offlineCapture.items[id]||0) + qty; }
     if(gabCapture){ gabCapture.items[id] = (gabCapture.items[id]||0) + qty; }
     var wasZero = !(state.inventory[id] > 0);
@@ -5539,7 +5550,7 @@
   }
   function consumeInputs(inputs, mult){
     mult = mult||1;
-    Object.keys(inputs).forEach(function(k){ state.inventory[k] -= inputs[k]*mult; });
+    Object.keys(inputs).forEach(function(k){ state.inventory[k] = Math.max(0, (state.inventory[k]||0) - inputs[k]*mult); });
   }
 
   // ================= ACTIONS =================
@@ -5711,7 +5722,7 @@
     placeNewCraftActivity('shieldsmithing', null, 'offhand', { type:'craft', craftKind:'offhand', typeId:typeId, progress:0 });
   }
   function startCombat(monsterId){
-    var m = MONSTERS.filter(function(x){return x.id===monsterId;})[0];
+    var m = monsterById(monsterId);
     if(!m) return;
     if(combatLevelEquivalent(state) < m.levelReq) return;
     if(m.category==='dungeon' && m.stageIndex > getDungeonProgress(m.dungeonId)+1) return;
@@ -5840,7 +5851,7 @@
   }
   function playerAttackTick(){
     var act = state.activity;
-    var monster = MONSTERS.filter(function(x){return x.id===act.monsterId;})[0];
+    var monster = monsterById(act.monsterId);
     if(!monster) return;
     var weapon = getEquippedWeaponItem(state);
     var relicBonus = getEquippedRelicBonus(state);
@@ -5848,8 +5859,8 @@
 
     var weaponStyle = getWeaponStyle(state.equippedMainhand);
     var offhandStyle = getOffhandStyle(state.equippedOffhand);
-    var offhandProficiency = (offhandStyle && state.equippedOffhand) ? (1 + Math.min(0.15, getLevel(state.xp[offhandStyle.id])*0.005)) : 1;
-    var weaponProficiency = state.equippedMainhand ? (1 + getLevel(state.xp[state.equippedMainhand])/100) : 1;
+    var offhandProficiency = (offhandStyle && state.equippedOffhand) ? (1 + Math.min(0.15, getLevel(state.xp[offhandStyle.id]||0)*0.005)) : 1;
+    var weaponProficiency = state.equippedMainhand ? (1 + getLevel(state.xp[state.equippedMainhand]||0)/100) : 1;
     var advantage = weightedAdvantage(weaponStyle.attackTypes || {blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
     var quiverBonus = (offhandStyle && offhandStyle.type==='quiver' && offhandItem) ? (1 + offhandItem.dmgBonus) * offhandProficiency : 1;
     var ringBonus = getRingDamageMultiplier(state, weaponStyle.attackTypes || {blunt:1});
@@ -5902,7 +5913,7 @@
 
   function monsterAttackTick(){
     var act = state.activity;
-    var monster = MONSTERS.filter(function(x){return x.id===act.monsterId;})[0];
+    var monster = monsterById(act.monsterId);
     if(!monster) return;
     var lb = getLeatherArmorBonuses(state);
     var dodgeChance = lb.dodgeBonus * (1 + agilityLeatherMult(state)) + agilityDodgeBonus(state) + reflexesDodgeBonus(state) + getFamBuff('dodge');
@@ -5915,7 +5926,7 @@
     var armorDefense = getTotalArmorDefense(state) * (1 + relicBonus) * getFamiliarArmorMult() * (1 + resolveArmorMult(state));
     var offhandItem = getEquippedOffhandItem(state);
     var offhandStyle = getOffhandStyle(state.equippedOffhand);
-    var offhandProficiency = (offhandStyle && state.equippedOffhand) ? (1 + Math.min(0.15, getLevel(state.xp[offhandStyle.id])*0.005)) : 1;
+    var offhandProficiency = (offhandStyle && state.equippedOffhand) ? (1 + Math.min(0.15, getLevel(state.xp[offhandStyle.id]||0)*0.005)) : 1;
 
     var playerArmorMix = getPlayerArmorTypeMix(state);
     var monsterAdvantage = weightedAdvantage(monster.attackTypes || {blunt:1/3, slashing:1/3, piercing:1/3}, playerArmorMix);
@@ -6196,6 +6207,9 @@
     var act = state.activity;
     var goldBefore = state.gold;
     offlineCapture = { xp:{}, physique:{}, items:{}, gold:0, elapsedMs:capped, activityType:(act&&act.type)||null };
+    // A primary activity whose item id was renamed/removed in an update must not throw here --
+    // that would abort the whole offline pass (belt slots + peons included). Null it out instead.
+    if(act && act.type === 'gather' && !ALL_GATHER_ITEMS[act.itemId]) state.activity = act = { type:null, tier:0 };
     try{
     if(act && act.type === 'gather'){
       var item = ALL_GATHER_ITEMS[act.itemId];
@@ -6249,7 +6263,7 @@
       // Fast-forward the real combat ticks: same player/monster attack timing and auto-eat
       // as live, so kills, XP, gold and drops match. Stops early if food runs out (retreat).
       var _pStyle = getWeaponStyle(state.equippedMainhand);
-      var _monster = MONSTERS.filter(function(x){ return x.id===act.monsterId; })[0];
+      var _monster = monsterById(act.monsterId);
       if(_pStyle && _monster){
         var _pInt = Math.max(200, _pStyle.attackSpeed*1000);
         var _mInt = Math.max(200, _monster.attackSpeed*1000*(1+getFamiliarEnemySlowPct()));
@@ -6260,8 +6274,10 @@
         }
       }
     }
+    }catch(e){} // isolate the primary-activity catch-up so a stale primary can't void the belt slots / peons below
     // Concurrent craft queue (belt-granted extra slots) runs offline too — reuse the live
     // effTime/consume logic; addItem/addXp are captured into the summary automatically.
+    try{
     ensureCraftSlotCapacity();
     for(var _es=0; _es<state.extraCraftSlots.length; _es++){
       var _slot = state.extraCraftSlots[_es];
@@ -7623,7 +7639,7 @@
     var weaponStyle = getWeaponStyle(state.equippedMainhand);
     var weapon = getEquippedWeaponItem(state);
     var physDmgMult = (weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1));
-    var weaponProficiency = state.equippedMainhand ? (1 + getLevel(state.xp[state.equippedMainhand])/100) : 1;
+    var weaponProficiency = state.equippedMainhand ? (1 + getLevel(state.xp[state.equippedMainhand]||0)/100) : 1;
     var effMin = Math.max(1, Math.round(weapon.dmgMin * physDmgMult * weaponProficiency));
     var effMax = Math.max(effMin+1, Math.round(weapon.dmgMax * physDmgMult * weaponProficiency));
     var armor = getTotalArmorDefense(state);
@@ -8096,7 +8112,7 @@
     html += renderAutoEatPanel();
     html += renderCombatPotionsPanel();
     if(act.type==='combat'){
-      var m = MONSTERS.filter(function(x){return x.id===act.monsterId;})[0];
+      var m = monsterById(act.monsterId);
       var hpPct = clamp(act.monsterHp/m.hp*100,0,100);
       var pPct = clamp(state.playerHp/maxHp(state)*100,0,100);
       var monsterAtkIntervalMs = m.attackSpeed*1000*(1+getFamiliarEnemySlowPct());
@@ -11821,6 +11837,7 @@
     if(!sel || !sel.value) return;
     var key=sel.value, owned=state.inventory[key]||0;
     var qty=parseInt((qtyEl&&qtyEl.value)||'0',10);
+    if(state.lockedItems && state.lockedItems[key]){ guildBankState.error='That item is locked. Unlock it first to deposit it.'; render(); return; }
     if(!(owned>0)){ guildBankState.error='You no longer own that item.'; render(); return; }
     if(!(qty>0)) qty=owned;
     if(qty>owned) qty=owned;
@@ -11846,7 +11863,7 @@
     guildBankInvoke('withdraw', { item_key:key, qty:qty }).then(function(res){
       guildBankState.busy=false;
       if(!res.ok){ guildBankState.error=res.error||'Withdraw failed.'; render(); return; }
-      addItem(key, res.granted||qty); saveGame(); guildBankApply(res); render();
+      addItem(key, (typeof res.granted === 'number') ? res.granted : qty); saveGame(); guildBankApply(res); render(); // trust the server's granted count; a real 0 must not fall back to the full request
     });
   }
   function guildBankBuySlot(){
@@ -11893,7 +11910,8 @@
     guildBankInvoke('withdraw_gold', { amount:amt }).then(function(res){
       guildBankState.busy=false;
       if(!res.ok){ guildBankState.error=res.error||'Withdraw failed.'; render(); return; }
-      state.gold = (state.gold||0) + (Number(res.granted)||amt); saveGame(); guildBankApply(res); render();
+      var _g = (res.granted == null) ? amt : Number(res.granted); if(!isFinite(_g)) _g = 0; // trust the server's number; a real 0 must not fall back to the full request
+      state.gold = (state.gold||0) + Math.max(0, _g); saveGame(); guildBankApply(res); render();
     });
   }
   function renderGuildBank(){
@@ -12336,8 +12354,8 @@
       var html = '';
       rows.slice(0,80).forEach(function(r){ var m = marketItemMeta(r.item_key);
         var afford = state.gold >= r.min_ask;
-        html += '<div class="market-listing-row"><button class="market-item-row" style="flex:1;min-width:0;" data-action="marketPickItem" data-item="'+r.item_key+'"><span class="market-item-ico">'+m.icon+'</span><span class="market-item-name">'+escapeHtml(m.name)+'</span><span class="market-listing-info">from '+fmt(r.min_ask)+'g • '+fmt(r.qty)+' available</span></button>';
-        html += '<button class="market-buynow" data-action="marketQuickBuy" data-item="'+r.item_key+'" data-price="'+r.min_ask+'"'+(afford?'':' disabled')+' title="Buy 1 at '+fmt(r.min_ask)+'g">Buy 1</button></div>';
+        html += '<div class="market-listing-row"><button class="market-item-row" style="flex:1;min-width:0;" data-action="marketPickItem" data-item="'+escapeHtml(r.item_key)+'"><span class="market-item-ico">'+m.icon+'</span><span class="market-item-name">'+escapeHtml(m.name)+'</span><span class="market-listing-info">from '+fmt(r.min_ask)+'g • '+fmt(r.qty)+' available</span></button>';
+        html += '<button class="market-buynow" data-action="marketQuickBuy" data-item="'+escapeHtml(r.item_key)+'" data-price="'+r.min_ask+'"'+(afford?'':' disabled')+' title="Buy 1 at '+fmt(r.min_ask)+'g">Buy 1</button></div>';
       });
       return html;
     }
@@ -12470,6 +12488,7 @@
   function marketPlaceSell(){
     var item = marketState.selectedItem; if(!item || marketState.busy) return;
     var q = document.getElementById('marketSellQty'), p = document.getElementById('marketSellPrice');
+    if(state.lockedItems && state.lockedItems[item]){ addLog('That item is locked. Unlock it first to sell it on the market.','danger'); return; }
     var qty = parseInt(q&&q.value,10), price = parseInt(p&&p.value,10);
     if(!(qty>0) || !(price>0)){ addLog('Enter a quantity and price to sell.','danger'); return; }
     if(price>MARKET_MAX_PRICE || qty>MARKET_MAX_QTY){ addLog('Price or quantity is too large.','danger'); return; }
@@ -13218,7 +13237,7 @@
         effTime: pt ? pt.time*1000*speedMultiplier(state) : 1000, progress: act.progress||0, remaining: Infinity, successPct: 100, navCat:'faith', navSub:'prayer' };
     }
     if(act.type==='combat'){
-      var m = MONSTERS.filter(function(x){ return x.id===act.monsterId; })[0];
+      var m = monsterById(act.monsterId);
       return { name:'Fighting: '+(m?m.name:act.monsterId), icon: m?m.icon:svgIcon('crossedswords','var(--cat-combat)'),
         effTime: getWeaponStyle(state.equippedMainhand).attackSpeed*1000, progress: act.tickAccum||0, remaining: null, successPct: null, navCat:'combat', navSub: m?m.category:null };
     }
@@ -13612,7 +13631,7 @@
     }
 
     if(state.activity.type==='combat'){
-      var m = MONSTERS.filter(function(x){return x.id===state.activity.monsterId;})[0];
+      var m = monsterById(state.activity.monsterId);
       var mf = document.getElementById('arenaMonsterFill');
       var ml = document.getElementById('arenaMonsterLabel');
       if(mf && m){
@@ -13845,7 +13864,7 @@
   });
 
   var _ffResizeT = null;
-  window.addEventListener('resize', function(){ if(_ffResizeT) return; _ffResizeT = setTimeout(function(){ _ffResizeT = null; render(); }, 180); });
+  window.addEventListener('resize', function(){ if(_ffResizeT) return; _ffResizeT = setTimeout(function(){ _ffResizeT = null; if(!isMobileView()) chatDrawerOpen = false; render(); }, 180); });
 
   // Maps a tier-stepper's data-tier-target to the state it reads/writes. Scalars ignore `sub`.
   var TIER_STEP_TARGETS = {
@@ -13990,7 +14009,7 @@
       if(_p){ profileView = _p; render(); }
     } else if(action==='viewMyProfile'){
       var _mine = leaderboardData.filter(function(x){ return authUser && x.id===authUser.id; })[0];
-      if(!_mine){ var _s = computeProfileStats(); _mine = { username:(authUser&&authUser.username)||'You', total_level:_s.total_level, gold:_s.gold, skills:_s.skills }; }
+      if(!_mine){ var _s = computeProfileStats(); _mine = Object.assign({ username:(authUser&&authUser.username)||'You' }, _s); } // spread all of _s so equipment + lifetime stats show, not just level/gold/skills
       profileView = _mine; render();
     } else if(action==='closeProfile'){
       profileView = null; render();
@@ -14266,7 +14285,9 @@
     // Crafting-tier pickers are now − value + steppers (handled in the click listener above).
     // The only remaining <select> is the leaderboard "Rank by" metric.
     if(e.target && e.target.id === 'lbMetricSelect'){
-      leaderboardMetric = e.target.value; render(); return;
+      // The <select> is still focused at change time, so a plain render() would defer (isEditingField).
+      // The value is already committed -- force the rebuild so the board re-sorts immediately.
+      leaderboardMetric = e.target.value; render(true); return;
     }
     if(e.target && e.target.id === 'invSortSelect'){
       inventorySort = e.target.value; renderInventoryPanel(); return;
@@ -14330,6 +14351,12 @@
     } else if(state.activity.type==='pray'){
       processPrayActivity(state.activity, dt);
     } else if(state.activity.type==='combat'){
+      if(!monsterById(state.activity.monsterId)){
+        // A save referencing a monster that no longer exists would otherwise leave the player stuck in
+        // a no-op "combat" forever (both ticks early-return). Retreat cleanly instead.
+        addLog('Your quarry is nowhere to be found — you retreat.', 'danger');
+        stopActivity();
+      } else {
       state.activity.tickAccum += dt;
       var attackIntervalMs = getWeaponStyle(state.equippedMainhand).attackSpeed * 1000 * (1 - Math.min(0.9, getFamBuff('haste')));
       while(state.activity.tickAccum >= attackIntervalMs && state.activity.type==='combat'){
@@ -14338,7 +14365,7 @@
         attackIntervalMs = getWeaponStyle(state.equippedMainhand).attackSpeed * 1000 * (1 - Math.min(0.9, getFamBuff('haste')));
       }
       if(state.activity.type==='combat'){
-        var monsterForSpeed = MONSTERS.filter(function(x){return x.id===state.activity.monsterId;})[0];
+        var monsterForSpeed = monsterById(state.activity.monsterId);
         var monsterIntervalMs = (monsterForSpeed ? monsterForSpeed.attackSpeed : 3) * 1000 * (1 + getFamiliarEnemySlowPct());
         state.activity.monsterTickAccum = (state.activity.monsterTickAccum||0) + dt;
         while(state.activity.monsterTickAccum >= monsterIntervalMs && state.activity.type==='combat'){
@@ -14371,6 +14398,7 @@
           }
         }
       }
+      } // end "monster exists" else
     }
 
     autoEatCheck();
@@ -14521,6 +14549,7 @@
       playerAccuracy:playerAccuracy, monsterDodge:monsterDodge, hitChanceVs:hitChanceVs, playerHitChance:playerHitChance,
       familiarAccuracy:familiarAccuracy, familiarHitChance:familiarHitChance, accuracyPhysiques:accuracyPhysiques,
       DEFAULT_ACCURACY_PHYSIQUES:DEFAULT_ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
+      monsterById:monsterById, addItem:addItem,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }
