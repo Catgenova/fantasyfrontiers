@@ -6124,11 +6124,22 @@
       var tbf = document.getElementById('ffTrackBarFill'); if(tbf) tbf.style.width = tPct+'%';
     }
   }
+  // The chat panels are rebuilt (innerHTML replaced) ONLY when their structure changes -- signed-in
+  // user, channel, connection status, guild, or open/expanded/mobile state. Message content is NOT in
+  // the signature: new messages update the list in place (chat/guild/chronicle RenderOnly), and the
+  // live #chatInput is preserved. This is what makes typing usable on mobile, where render() fires
+  // constantly (game ticks + keyboard-open resize) -- previously each render wiped the input.
+  function chatStructSig(){ return (authUser?authUser.username:'') + '|' + chatChannel + '|' + chatStatus + '|' + (guildState.guild?guildState.guild.id:''); }
+  var _chatDockSig = null, _chatDrawerSig = null, _chatExpandSig = null;
   function renderChatDock(){
     var el = document.getElementById('chatDockPanel'); if(!el) return;
+    var mobile = isMobileView();
+    var sig = 'dock|'+mobile+'|'+chatExpanded+'|'+chatStructSig();
+    if(sig === _chatDockSig) return;   // structure unchanged -> keep the live input/messages
+    _chatDockSig = sig;
     // On mobile the rail is hidden and chat lives in the drawer; leave this panel empty so the
     // drawer's #chatInput/#chatMessages ids aren't duplicated by this (hidden) copy.
-    if(isMobileView()){ el.innerHTML = ''; return; }
+    if(mobile){ el.innerHTML = ''; return; }
     // When signed out, renderChatTab() shows the auth form -- rendering it here would duplicate the
     // login inputs' ids and break the real login gate. Show a placeholder instead.
     if(!authUser){ el.innerHTML = '<div class="ff-dock-title">Chat</div><div class="empty-note">Sign in to chat with the realm.</div>'; return; }
@@ -6145,6 +6156,9 @@
   function renderChatExpand(){
     var ov = document.getElementById('chatExpandOverlay'); if(!ov) return;
     if(chatExpanded && !authUser) chatExpanded = false; // can't expand the login form
+    var sig = 'expand|'+chatExpanded+'|'+chatStructSig();
+    if(sig === _chatExpandSig) return;   // structure unchanged -> keep the live input/messages
+    _chatExpandSig = sig;
     if(!chatExpanded){ ov.className = ''; ov.removeAttribute('data-action'); ov.innerHTML = ''; return; }
     ov.className = 'ff-chat-expand-overlay'; ov.setAttribute('data-action','toggleChatExpand'); // click backdrop to close
     ov.innerHTML = '<div class="ff-chat-expand" data-action="noop">'
@@ -6161,7 +6175,11 @@
   function renderChatDrawer(){
     var ov = document.getElementById('chatDrawerOverlay'); if(!ov) return;
     // When full-screen chat is open it owns the live copy; keep the drawer inert (no duplicate ids).
-    if(!chatDrawerOpen || chatExpanded){ ov.className = ''; ov.removeAttribute('data-action'); ov.innerHTML = ''; return; }
+    var open = chatDrawerOpen && !chatExpanded;
+    var sig = 'drawer|'+open+'|'+chatStructSig();
+    if(sig === _chatDrawerSig) return;   // structure unchanged -> keep the live input (crucial on mobile)
+    _chatDrawerSig = sig;
+    if(!open){ ov.className = ''; ov.removeAttribute('data-action'); ov.innerHTML = ''; return; }
     ov.className = 'ff-drawer-overlay'; ov.setAttribute('data-action','toggleChatDrawer');
     var chatInner = authUser ? renderChatTab() : '<div class="empty-note">Sign in to chat with the realm.</div>';
     var expandBtn = authUser ? '<button class="ff-chat-expand-btn" data-action="toggleChatExpand" title="Expand chat to full screen" aria-label="Expand chat">'+CHAT_EXPAND_ICON+'</button>' : '';
@@ -12789,7 +12807,10 @@
     renderOfflineSummary();
     if(_chatFocused){
       var _ci2 = document.getElementById('chatInput');
-      if(_ci2){ _ci2.focus(); if(_chatSel != null){ try{ _ci2.setSelectionRange(_chatSel, _chatSel); }catch(e){} } }
+      // Only restore focus if the input was actually rebuilt (lost focus). With chat panels now
+      // signature-gated, the input usually persists -- re-focusing an already-focused field would
+      // fight the mobile keyboard/IME, so skip it in that case.
+      if(_ci2 && document.activeElement !== _ci2){ _ci2.focus(); if(_chatSel != null){ try{ _ci2.setSelectionRange(_chatSel, _chatSel); }catch(e){} } }
     }
   }
 
