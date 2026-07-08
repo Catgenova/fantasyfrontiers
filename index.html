@@ -5854,7 +5854,7 @@
           if(!state.dungeonProgress || typeof state.dungeonProgress !== 'object') state.dungeonProgress = {};
           if(!state.lockedItems || typeof state.lockedItems !== 'object') state.lockedItems = {};
           if(!Array.isArray(state.trackedSkills)) state.trackedSkills = [];
-          state.trackedSkills = state.trackedSkills.filter(function(id){ return typeof id === 'string'; }).slice(0, 5);
+          state.trackedSkills = state.trackedSkills.filter(function(id){ return typeof id === 'string'; }).slice(0, TRACK_MAX); // single-select: keep only the first
           if(!Array.isArray(state.peons)) state.peons = [];
           if(!Array.isArray(state.guildPeons)) state.guildPeons = [];
           state.peons = state.peons.slice(0, PEON_MAX_SLOTS);
@@ -12463,7 +12463,7 @@
   // A persistent sidebar card of up to TRACK_MAX chosen skills. Each row flashes a floating
   // "+N XP" tick whenever that skill gains experience (see the hook in addXp). The selection
   // lives in state.trackedSkills, so it persists with the save.
-  var TRACK_MAX = 5;
+  var TRACK_MAX = 1;   // single-select: only one skill/physique tracked at a time
   var TRACKABLE_SKILL_IDS = (function(){
     var ids = [];
     GATHER_SKILL_IDS.forEach(function(id){ ids.push(id); });
@@ -12488,9 +12488,8 @@
   var trackerPickerOpen = false;
   function toggleTrackedSkill(id){
     if(!Array.isArray(state.trackedSkills)) state.trackedSkills = [];
-    var i = state.trackedSkills.indexOf(id);
-    if(i !== -1){ state.trackedSkills.splice(i, 1); }
-    else { if(state.trackedSkills.length >= TRACK_MAX) return; state.trackedSkills.push(id); }
+    // Single-select: clicking the currently-tracked skill unpins it; clicking any other replaces it.
+    state.trackedSkills = (state.trackedSkills[0] === id) ? [] : [id];
     saveGame();
     renderTrackerPanel(); renderTrackerPicker();
   }
@@ -12498,10 +12497,10 @@
     var el = document.getElementById('trackerPanel'); if(!el) return;
     var tracked = (state.trackedSkills||[]).filter(function(id){ return trackedExists(id); });
     var html = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">';
-    html += '<h3 style="margin:0;">Tracked Skills</h3>';
+    html += '<h3 style="margin:0;">Tracked Skill</h3>';
     html += '<button class="mini-btn" data-action="openTrackerPicker">Edit</button></div>';
     if(!tracked.length){
-      html += '<div class="empty-note" style="margin-top:8px;">Pin up to '+TRACK_MAX+' skills here to see a floating +XP tick whenever they gain experience. Tap <b>Edit</b> to choose.</div>';
+      html += '<div class="empty-note" style="margin-top:8px;">Pin a skill here to see a floating +XP tick whenever it gains experience. Tap <b>Edit</b> to choose.</div>';
     } else {
       tracked.forEach(function(id){
         var meta = trackSkillMeta(id);
@@ -12522,16 +12521,15 @@
     if(!trackerPickerOpen){ ov.className=''; ov.innerHTML=''; return; }
     var sel = state.trackedSkills || [];
     var html = '<div class="familiar-popup-card" style="max-width:440px;text-align:left;max-height:82vh;overflow:auto;">';
-    html += '<div class="familiar-popup-title">Track Skills ('+sel.length+'/'+TRACK_MAX+')</div>';
-    html += '<div class="empty-note" style="margin-bottom:10px;">Choose up to '+TRACK_MAX+' skills to pin to the sidebar. Their rows flash a floating +XP tick every time they gain experience.</div>';
+    html += '<div class="familiar-popup-title">Track a Skill</div>';
+    html += '<div class="empty-note" style="margin-bottom:10px;">Choose one skill or physique to pin to the header. It flashes a floating +XP tick every time it gains experience. Pick another to switch, or tap the selected one to unpin.</div>';
     html += '<div class="tracker-picker-grid">';
     var physDivided = false;
     TRACKABLE_SKILL_IDS.forEach(function(id){
       if(PHYSIQUE_SKILL_MAP[id] && !physDivided){ physDivided = true; html += '</div><div class="empty-note" style="margin:6px 0 8px;">Physiques</div><div class="tracker-picker-grid">'; }
       var meta = trackSkillMeta(id);
       var on = sel.indexOf(id) !== -1;
-      var disabled = !on && sel.length >= TRACK_MAX;
-      html += '<button class="tracker-chip'+(on?' on':'')+'" data-action="toggleTrackedSkill" data-skill="'+id+'"'+(disabled?' disabled':'')+'>'+meta.icon+' '+escapeHtml(meta.label)+'</button>';
+      html += '<button class="tracker-chip'+(on?' on':'')+'" data-action="toggleTrackedSkill" data-skill="'+id+'">'+meta.icon+' '+escapeHtml(meta.label)+'</button>';
     });
     html += '</div>';
     html += '<button class="action-btn" data-action="closeTrackerPicker" style="margin-top:12px;">Done</button>';
