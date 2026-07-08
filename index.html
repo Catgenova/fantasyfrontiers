@@ -143,6 +143,10 @@
   .ff-rail-chat .chat-messages{flex:1 1 auto;height:auto;min-height:120px;}
   .ff-rail-chat .log-list{max-height:none;flex:1 1 auto;min-height:0;} /* Chronicle feed fills the panel */
   .ff-rail-chat .chat-input{font-size:12px;padding:6px 8px;}
+  /* Mobile chat drawer: let the message list flex so the input/send row is always on-screen. */
+  .ff-drawer .chat-wrap{flex:1 1 auto;min-height:0;}
+  .ff-drawer .chat-messages{flex:1 1 auto;height:auto;min-height:80px;}
+  .ff-drawer .log-list{max-height:none;flex:1 1 auto;min-height:0;}
   .ff-main{flex:1;min-width:0;overflow-y:auto;padding:16px;display:flex;flex-direction:column;}
   .ff-subchips{display:none;}
   .ff-dock{width:206px;flex-shrink:0;padding:14px 12px 14px 0;display:flex;flex-direction:column;gap:12px;overflow-y:auto;}
@@ -13133,11 +13137,13 @@
       cloudSave();
     }
 
-    // A full render() rebuilds #content, which slams shut any open <select> (e.g. the guild-bank
-    // deposit dropdown) mid-interaction -- brutal on a single click, and on mobile pickers. So
-    // while a content dropdown is focused/open, defer the render (keep needsRender set) and
-    // just run the light live-update pass; it flushes as soon as the dropdown is dismissed.
-    if(needsRender && !isContentSelectFocused()){
+    // A full render() rebuilds #content and the rail/drawer chat, which slams shut any open
+    // <select> (e.g. the guild-bank dropdown) AND rebuilds the focused chat input mid-typing --
+    // the latter drops focus and resets the mobile keyboard (so punctuation/symbol pages are
+    // impossible to reach). While either is focused, defer the render (keep needsRender set) and
+    // just run the light live-update pass; incoming chat/XP still update in place. It flushes as
+    // soon as the field is dismissed.
+    if(needsRender && !isContentSelectFocused() && !isChatInputFocused()){
       needsRender = false;
       render();
     } else {
@@ -13148,6 +13154,10 @@
   function isContentSelectFocused(){
     var ae = document.activeElement;
     return !!(ae && ae.tagName === 'SELECT' && ae.closest && ae.closest('#content'));
+  }
+  function isChatInputFocused(){
+    var ae = document.activeElement;
+    return !!(ae && ae.id === 'chatInput');
   }
 
   document.addEventListener('visibilitychange', function(){
