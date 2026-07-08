@@ -271,6 +271,17 @@
     ok(FF.LB_STAT_METRICS.some(function(m){ return m.key === 'hoursBuffed'; }), 'hoursBuffed is a leaderboard metric');
   });
 
+  // ---- Physique XP scales with task tier: each associated physique gains tier+1 (1..21) --------
+  suite('physique tier XP', function(){
+    eq(FF.itemTierFromId('mining_t0'), 0, 'itemTierFromId t0');
+    eq(FF.itemTierFromId('bodyarmor_chain_chest_t20_normal'), 20, 'itemTierFromId t20');
+    eq(FF.itemTierFromId('shaft'), 0, 'itemTierFromId no-tier -> 0');
+    var pairs = [['bodyStrength', 2], ['curiosity', 1]];
+    eq(JSON.stringify(FF.physTierPairs(pairs, 0)), JSON.stringify([['bodyStrength', 1], ['curiosity', 1]]), 't0 -> 1 xp each');
+    eq(JSON.stringify(FF.physTierPairs(pairs, 20)), JSON.stringify([['bodyStrength', 21], ['curiosity', 21]]), 't20 -> 21 xp each');
+    eq(FF.physTierPairs(pairs, 5)[0][1], 6, 't5 -> 6 xp');
+  });
+
   // ---- Marketplace pricing helpers (must match the server RPC's tax math) --------------
   suite('marketplace pricing', function(){
     eq(FF.MARKET_TAX, 0.05, 'market tax is 5%');

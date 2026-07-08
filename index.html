@@ -2559,6 +2559,14 @@
     archaeology:    [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]],
     jewelrycrafting:[['fineMotor',2],['sleightOfHand',1],['logic',1]]
   };;
+  // Physique XP from a gather/craft task scales with the item's tier: each associated physique
+  // gains (tier+1) XP -- 1 at t0 up to 21 at t20 (replaces the old fixed per-physique weights).
+  function physTierPairs(pairs, tierIndex){
+    if(!pairs || !pairs.length) return pairs;
+    var amt = Math.max(1, (tierIndex|0) + 1);
+    return pairs.map(function(p){ return [p[0], amt]; });
+  }
+  function itemTierFromId(id){ var m = /_t(\d+)/.exec(id||''); return m ? parseInt(m[1],10) : 0; }
 
   var ALL_GATHER_ITEMS = {};
   Object.keys(GATHERING_SKILLS).forEach(function(sk){
@@ -3110,7 +3118,7 @@
     }
     addItem(cropData.id, 1);
     addXp(FARMING_CROP_SKILL[plot.cropType] || 'fiberharvesting', cropData.xp);
-    addPhysiqueXp(FARMING_PHYSIQUE);
+    addPhysiqueXp(physTierPairs(FARMING_PHYSIQUE, itemTierFromId(cropData.id)));
     maybeSummonFamiliar('farming');
     addLog('You harvested ' + cropData.name + '.', 'important');
     spawnFloatingText('+1 ' + cropData.name, 'ft-success');
@@ -4027,7 +4035,7 @@
     var successRate = (act.craftKind==='ring' || act.craftKind==='amulet') ? jewelrySuccessRate(state) : craftSuccessRate(state, skillId);
     if(Math.random() < successRate){
       addXp(skillId, tierData.xp*1.5);
-      addPhysiqueXp(CRAFT_PHYSIQUE[skillId]);
+      addPhysiqueXp(physTierPairs(CRAFT_PHYSIQUE[skillId], act.tierIndex));
       // A placed Workshop can double item-producing crafts. Each output rolls its OWN rarity,
       // so a double never clones a Rare/Supreme/Fantastic.
       var outputs = (SPECIAL_DOUBLEABLE_KINDS.indexOf(act.craftKind)!==-1 && Math.random() < workshopDoubleChance(state, skillId)) ? 2 : 1;
@@ -4084,14 +4092,14 @@
           if(Math.random() < shaftSuccessRate(state)){
             addXp('fletching', shaftsCreated*2*1.5);
             addItem('shaft', shaftsCreated);
-            addPhysiqueXp(CRAFT_PHYSIQUE.fletching);
+            addPhysiqueXp(physTierPairs(CRAFT_PHYSIQUE.fletching, act.logTierIndex));
             spawnFloatingText('+' + shaftsCreated + ' Shafts', 'ft-success');
           } else {
             spawnFloatingText('Shaft craft failed', 'ft-fail');
           }
         } else if(recipe.meatId && recipe.hideId){
           addXp(act.skill, recipe.xp*1.5);
-          addPhysiqueXp(CRAFT_PHYSIQUE[act.skill]);
+          addPhysiqueXp(physTierPairs(CRAFT_PHYSIQUE[act.skill], recipe.tierIndex));
           var gotMeat = Math.random() < butcherOutputChance(state, recipe.meatPhysique);
           var gotHide = Math.random() < butcherOutputChance(state, recipe.hidePhysique);
           if(gotMeat) addItem(recipe.meatId, 1);
@@ -4102,7 +4110,7 @@
           else { spawnFloatingText('Nothing usable', 'ft-fail'); }
         } else if(recipe.relicCraft){
           addXp('archaeology', recipe.xp*1.5);
-          addPhysiqueXp(CRAFT_PHYSIQUE.archaeology);
+          addPhysiqueXp(physTierPairs(CRAFT_PHYSIQUE.archaeology, recipe.tierIndex));
           if(Math.random() < archaeologySuccessRate(state)){
             var rarityId = rollRelicRarity(state);
             var relicId = 'relic_t'+recipe.tierIndex+'_'+rarityId;
@@ -4120,7 +4128,7 @@
           var _wq = recipe.outputQty || 1;
           addItem(act.itemId, _wq);
           if(Math.random() < workshopDoubleChance(state, act.skill)){ addItem(act.itemId, _wq); spawnFloatingText('Workshop: double output!', 'ft-rare'); }
-          addPhysiqueXp(CRAFT_PHYSIQUE[act.skill]);
+          addPhysiqueXp(physTierPairs(CRAFT_PHYSIQUE[act.skill], recipe.tierIndex));
           spawnFloatingText('+' + _wq + ' ' + recipe.name, 'ft-success');
         } else {
           spawnFloatingText('Craft failed', 'ft-fail');
@@ -4174,7 +4182,7 @@
           maybeDropForagingArtifact(parseInt(act.itemId.split('_t')[1], 10));
         }
       }
-      addPhysiqueXp(GATHER_PHYSIQUE[act.skill]);
+      addPhysiqueXp(physTierPairs(GATHER_PHYSIQUE[act.skill], itemTierFromId(act.itemId)));
       maybeSummonFamiliar(act.skill);
       effTime = item.time*1000*speedMultiplier(state)*gatherToolSpeedMultiplier(state, act.skill)*(PHYS_LONG_GATHER.indexOf(act.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1);
     }
@@ -5061,7 +5069,7 @@
     consumeInputs(next.inputs);
     if(Math.random() < craftSuccessRate(state, 'weaponsmithing')){
       addXp('weaponsmithing', next.xp*1.5);
-      addPhysiqueXp(CRAFT_PHYSIQUE.weaponsmithing);
+      addPhysiqueXp(physTierPairs(CRAFT_PHYSIQUE.weaponsmithing, tier));
       state.weaponTiers[typeId] = tier+1;
       var rarity = rollCraftRarity(state);
       state.weaponRarities[typeId] = rarity;
@@ -13271,6 +13279,7 @@
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, LB_STAT_METRICS:LB_STAT_METRICS,
+      physTierPairs:physTierPairs, itemTierFromId:itemTierFromId,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       DAMAGE_TYPES:DAMAGE_TYPES
