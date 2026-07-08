@@ -14255,13 +14255,12 @@
       cloudSave();
     }
 
-    // A full render() rebuilds #content and the rail/drawer chat, which slams shut any open
-    // <select> (e.g. the guild-bank dropdown) AND rebuilds the focused chat input mid-typing --
-    // the latter drops focus and resets the mobile keyboard (so punctuation/symbol pages are
-    // impossible to reach). While either is focused, defer the render (keep needsRender set) and
-    // just run the light live-update pass; incoming chat/XP still update in place. It flushes as
-    // soon as the field is dismissed.
-    if(needsRender && !isContentSelectFocused() && !isChatInputFocused()){
+    // A full render() rebuilds #content and the rail/drawer chat, which destroys any focused
+    // field mid-interaction: a <select> slams shut, and a text input loses focus so the mobile
+    // keyboard closes (making it impossible to type an amount, price, chat message, etc.). While
+    // ANY input/textarea/select is focused, defer the render (keep needsRender set) and run only
+    // the light live-update pass; incoming chat/XP still update in place. It flushes on blur.
+    if(needsRender && !isEditingField()){
       needsRender = false;
       render();
     } else {
@@ -14269,13 +14268,11 @@
     }
     requestAnimationFrame(loop);
   }
-  function isContentSelectFocused(){
+  function isEditingField(){
     var ae = document.activeElement;
-    return !!(ae && ae.tagName === 'SELECT' && ae.closest && ae.closest('#content'));
-  }
-  function isChatInputFocused(){
-    var ae = document.activeElement;
-    return !!(ae && ae.id === 'chatInput');
+    if(!ae) return false;
+    var t = ae.tagName;
+    return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT';
   }
 
   document.addEventListener('visibilitychange', function(){
