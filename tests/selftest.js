@@ -445,6 +445,47 @@
     near(FF.weightedAdvantage({ slashing: 0.5, piercing: 0.5 }, { slashing: 1 }), expected, 'weightedAdvantage weights by attacker mix');
   });
 
+  // ---- Accuracy vs Dodge ----------------------------------------------------------------
+  suite('accuracy vs dodge', function(){
+    // Enemy dodge scales monotonically with tier, low at t0 and high at the top tier.
+    var wildlife = FF.MONSTERS.filter(function(m){ return m.category==='wildlife'; })
+      .sort(function(a,b){ return a.tierIndex - b.tierIndex; });
+    ok(wildlife.length >= 21, 'wildlife spans all tiers');
+    var t0 = FF.monsterDodge(wildlife[0]);
+    var tTop = FF.monsterDodge(wildlife[wildlife.length-1]);
+    ok(t0 >= 0 && t0 < 30, 't0 dodge is low (' + t0 + ')');
+    ok(tTop > 400, 'top-tier dodge is high (' + tTop + ')');
+    for(var i=1;i<wildlife.length;i++){
+      ok(FF.monsterDodge(wildlife[i]) >= FF.monsterDodge(wildlife[i-1]), 'dodge is non-decreasing by tier at ' + i);
+    }
+
+    // hitChanceVs: accuracy >= dodge always hits; deficits erode toward the floor; clamped to [floor,1].
+    eq(FF.hitChanceVs(700, 700), 1, 'accuracy meeting dodge => guaranteed hit');
+    eq(FF.hitChanceVs(1000, 700), 1, 'accuracy above dodge => guaranteed hit');
+    ok(FF.hitChanceVs(0, 700) >= 0.15 - 1e-9, 'huge deficit never drops below the 15% floor');
+    ok(FF.hitChanceVs(0, 700) <= 0.16, 'huge deficit sits at the floor');
+    near(FF.hitChanceVs(400, 500), 1 - 100/500, 'partial deficit erodes linearly');
+    ok(FF.hitChanceVs(400, 500) > FF.hitChanceVs(300, 500), 'more accuracy => higher hit chance vs same dodge');
+
+    // Familiar accuracy: concave curve — fast early gains, small gains near the cap.
+    var early = FF.familiarAccuracy(10) - FF.familiarAccuracy(1);
+    var late = FF.familiarAccuracy(100) - FF.familiarAccuracy(90);
+    ok(FF.familiarAccuracy(100) > FF.familiarAccuracy(1), 'familiar accuracy rises with level');
+    ok(early > late, 'familiar gains accuracy faster early than lv90->100 (' + early + ' vs ' + late + ')');
+    ok(late < 20, 'lv90->100 familiar accuracy gain is small (' + late + ')');
+
+    // playerAccuracy is driven by the 5 chosen physiques + weapon proficiency (heavier on physiques).
+    var base = { physique:{}, xp:{}, equippedMainhand:null, accuracyPhysiques:['agility','reflexes'] };
+    FF.DEFAULT_ACCURACY_PHYSIQUES.forEach(function(id){ base.physique[id] = 0; });
+    base.physique.agility = 100*100;   // getLevel(xp)=~101; large so the weighting is visible
+    var accWith = FF.playerAccuracy(base);
+    var base2 = { physique:{}, xp:{}, equippedMainhand:null, accuracyPhysiques:['reflexes'] };
+    var accWithout = FF.playerAccuracy(base2);
+    ok(accWith > accWithout, 'a leveled chosen physique raises accuracy');
+    // accuracyPhysiques caps at the slot count.
+    ok(FF.accuracyPhysiques({ accuracyPhysiques:['a','b','c','d','e','f','g'] }).length === FF.ACCURACY_PHYS_SLOTS, 'accuracy physiques capped at slot count');
+  });
+
   // ---- Estate obstacle info -------------------------------------------------------------
   suite('estateObstacleInfo', function(){
     eq(FF.estateObstacleInfo(null), null, 'null obstacle -> null');
