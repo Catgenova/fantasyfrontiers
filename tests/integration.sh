@@ -41,6 +41,8 @@ assert_err(){  [ "$(field "$1" ok)" = "false" ] && pass "$2" || faild "$2" "resp
 assert_eq(){   [ "$2" = "$3" ] && pass "$1" || faild "$1" "expected [$3] got [$2]"; }
 assert_has(){  has "$1" "$2" && pass "$3" || faild "$3" "missing [$2] in: $1"; }
 assert_nohas(){ has "$1" "$2" && faild "$3" "unexpected [$2] in: $1" || pass "$3"; }
+assert_denied(){  case "$1" in 2*) faild "$3" "expected denial, got HTTP $1: $2";; *) pass "$3";; esac; }  # $1=status $2=body $3=label
+assert_allowed(){ case "$1" in 2*) pass "$3";; *) faild "$3" "expected success, got HTTP $1: $2";; esac; }
 
 reg(){ curl -s -X POST "$BASE/functions/v1/register" -H "apikey: $PUB" -H "Authorization: Bearer $PUB" -H "Content-Type: application/json" -d "$1"; }
 signin(){ curl -s -X POST "$BASE/auth/v1/token?grant_type=password" -H "apikey: $PUB" -H "Content-Type: application/json" -d "$1" | grep -oE '"access_token":"[^"]*"' | head -1 | sed -E 's/.*:"//; s/"//'; }
@@ -52,6 +54,9 @@ rest(){ # rest METHOD PATH TOKEN [BODY]  -> REST API with return=representation
   else
     curl -s -X "$m" "$BASE/rest/v1/$path" -H "apikey: $PUB" -H "Authorization: Bearer $tok"
   fi
+}
+rpc_call(){ # rpc_call NAME TOKEN [BODY] -> POST /rest/v1/rpc/NAME, prints "<body>\n<http_status>"
+  curl -s -w '\n%{http_code}' -X POST "$BASE/rest/v1/rpc/$1" -H "apikey: $PUB" -H "Authorization: Bearer $2" -H "Content-Type: application/json" -d "${3:-{}}"
 }
 # mkuser SUFFIX -> sets USER + TOK for a freshly registered + signed-in account
 mkuser(){ USER="${RUN}_$1"; ACCOUNTS+=("$USER"); reg "{\"username\":\"$USER\",\"password\":\"testpass12345\"}" >/dev/null; TOK="$(signin "{\"email\":\"$USER@players.fantasyfrontiers.app\",\"password\":\"testpass12345\"}")"; }
@@ -211,6 +216,30 @@ SBB=$(fn server_buff "$TOK_MA" '{"action":"buy","kind":"test"}')
 assert_ok  "$SBB" "buy a buff (test kind)"
 assert_has "$SBB" "\"active_until\"" "buy returns the new active_until"
 assert_err "$(fn server_buff "$TOK_MA" '{"action":"buy","kind":"nope"}')" "unknown buff kind rejected"
+
+# --------------------------------------------------------------------------------------------
+sect "RPC lockdown (SECURITY DEFINER RPCs are service_role-only, not callable via REST)"
+# These SECURITY DEFINER functions must NOT be reachable directly at /rest/v1/rpc/<name> by anon or a
+# signed-in user -- that would bypass the edge functions (which authenticate the caller and pass the
+# token-verified uid) and let anyone mint gold/items, poke the treasury, or set recovery answers. A
+# 2xx from any of these = a serious hole. (Migration 20260708130000 revoked EXECUTE from public/anon/
+# authenticated and granted it only to service_role.)
+NOBODY_UUID="00000000-0000-0000-0000-000000000000"
+lockcheck(){ # lockcheck NAME TOKEN BODY LABEL -- asserts a direct RPC call is denied (non-2xx)
+  local R; R="$(rpc_call "$1" "$2" "$3")"
+  assert_denied "$(printf '%s' "$R" | tail -n1)" "$(printf '%s' "$R" | sed '$d')" "$4"
+}
+lockcheck market_credit_gold    "$PUB"    "{\"p_user\":\"$NOBODY_UUID\",\"p_amount\":1000000000}"              "anon cannot mint gold (market_credit_gold)"
+lockcheck market_credit_gold    "$TOK_A"  "{\"p_user\":\"$NOBODY_UUID\",\"p_amount\":1000000000}"              "signed-in user cannot mint gold (market_credit_gold)"
+lockcheck market_credit_item    "$TOK_A"  "{\"p_user\":\"$NOBODY_UUID\",\"p_item\":\"coal\",\"p_qty\":9999}"   "signed-in user cannot mint items (market_credit_item)"
+lockcheck guild_treasury_donate "$TOK_A"  "{\"p_guild\":\"$GID\",\"p_amount\":1}"                              "signed-in user cannot call guild_treasury_donate directly"
+lockcheck server_buff_extend    "$TOK_A"  "{\"p_kind\":\"exp\",\"p_seconds\":3600}"                            "signed-in user cannot extend the server buff directly"
+lockcheck recovery_set          "$PUB"    "{\"p_user\":\"$NOBODY_UUID\",\"p_username\":\"x\",\"p_items\":[]}"   "anon cannot set recovery answers (recovery_set)"
+lockcheck rls_auto_enable       "$TOK_A"  "{}"                                                                 "signed-in user cannot call rls_auto_enable"
+# Positive control: the RLS helper current_guild_id() MUST stay callable by authenticated (RLS uses it).
+# It's a STABLE 0-arg function, so PostgREST calls it via GET (a POST body would be PGRST102).
+CG="$(curl -s -w '\n%{http_code}' "$BASE/rest/v1/rpc/current_guild_id" -H "apikey: $PUB" -H "Authorization: Bearer $TOK_A")"
+assert_allowed "$(printf '%s' "$CG" | tail -n1)" "$(printf '%s' "$CG" | sed '$d')" "current_guild_id() still executable by authenticated (RLS helper)"
 
 # --------------------------------------------------------------------------------------------
 sect "Cleanup"
