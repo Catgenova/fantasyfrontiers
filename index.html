@@ -2918,12 +2918,14 @@
   // any required piece and the class -- and every one of its passives -- immediately goes dormant.
   var CLASS_CLOTH_COLOR = '#c8b088';
   var CLASS_CHAIN_COLOR = '#6a6a72';
+  var CLASS_PLATE_COLOR = '#a8aeb6';
   function armorPieceEquipped(st, slot, material){
     var s = st && st.bodyArmor && st.bodyArmor[slot];
     return !!(s && s.material===material && s.tier > 0);
   }
   function clothPieceEquipped(st, slot){ return armorPieceEquipped(st, slot, 'tailoring'); }
   function chainPieceEquipped(st, slot){ return armorPieceEquipped(st, slot, 'chain'); }
+  function platePieceEquipped(st, slot){ return armorPieceEquipped(st, slot, 'plate'); }
   var CLASS_DEFS = [
     {
       id:'summoner', name:'Summoner', icon:svgIcon('starburst','#7a5aa8'),
@@ -2982,6 +2984,26 @@
         { level:60, name:'Exposed Flesh',    desc:'Deal +50% damage to enemies with no slashing resistance.' },
         { level:80, name:'Death\'s Harvest', desc:'Steal 10% of the damage you deal as Health (replaces Life Reaper).' }
       ]
+    },
+    {
+      id:'herald', name:'Herald', icon:svgIcon('shield','#c8a83a'),
+      blurb:'An armoured champion who turns an unbreakable guard into both shield and sword.',
+      reqText:'Mace + Large Shield, full Plate (Helm, Chest, Gloves, Boots)',
+      reqParts:[
+        { icon:svgIcon('hammer','#7a7a80'),          label:'Mace',         met:function(st){ return st.equippedMainhand==='mace'; } },
+        { icon:svgIcon('shield','#8a6a3a'),          label:'Large Shield', met:function(st){ return st.equippedOffhand==='shieldLarge'; } },
+        { icon:svgIcon('helm',CLASS_PLATE_COLOR),    label:'Plate Helm',   met:function(st){ return platePieceEquipped(st,'helmet'); } },
+        { icon:svgIcon('chestarmor',CLASS_PLATE_COLOR),label:'Plate Chest',met:function(st){ return platePieceEquipped(st,'chest'); } },
+        { icon:svgIcon('gauntlet',CLASS_PLATE_COLOR),label:'Plate Gloves', met:function(st){ return platePieceEquipped(st,'gauntlets'); } },
+        { icon:svgIcon('boots',CLASS_PLATE_COLOR),   label:'Plate Boots',  met:function(st){ return platePieceEquipped(st,'boots'); } }
+      ],
+      passives:[
+        { level:1,  name:'Bulwark',       desc:'+15% chance to Block.' },
+        { level:20, name:'Shield Breaker',desc:'Your damage is increased by your Block chance (a 40% Block chance grants +40% damage).' },
+        { level:40, name:'Aegis',         desc:'Your Armor is increased by your Block chance (a 40% Block chance grants +40% Armor).' },
+        { level:60, name:'Tidewall',      desc:'+60% Water resistance (incoming Water-element damage is reduced 60%).' },
+        { level:80, name:'Lasting Grace', desc:'Buffs granted by your familiars last twice as long.' }
+      ]
     }
   ];
   var CLASS_DEFS_BY_ID = {}; CLASS_DEFS.forEach(function(c){ CLASS_DEFS_BY_ID[c.id] = c; });
@@ -2994,7 +3016,26 @@
   // A tiered passive is live only while its class is the active (equipped) class and high enough level.
   function classBonusActive(id, reqLevel, st){ st = st || state; return activeClassId(st)===id && classLevel(st, id) >= reqLevel; }
   function summonerBonus(reqLevel){ return classBonusActive('summoner', reqLevel); }
-  function classBlockBonus(st){ st = st || state; return (activeClassId(st)==='summoner' && classLevel(st,'summoner') >= 60) ? 0.15 : 0; }
+  function classBlockBonus(st){
+    st = st || state;
+    if(activeClassId(st)==='summoner' && classLevel(st,'summoner') >= 60) return 0.15; // Summoner Lv 60: Arcane Bulwark
+    if(activeClassId(st)==='herald' && classLevel(st,'herald') >= 1) return 0.15;       // Herald Lv 1: Bulwark
+    return 0;
+  }
+  // Total persistent Block chance (gear + physiques + class) -- the temporary familiar 'block' buff is
+  // added on top only at the moment of a monster attack, so it is NOT folded in here.
+  function playerBlockChance(st){
+    st = st || state;
+    return getPlateArmorBlockChance(st) + getStaffBlockChance(st) + blockingBlockBonus(st) + reflexesBlockBonus(st) + classBlockBonus(st);
+  }
+  function heraldBonus(reqLevel, st){ return classBonusActive('herald', reqLevel, st); }
+  // Herald Lv 20: outgoing damage +X% where X = your Block chance. Lv 40: Armor +X% likewise.
+  function heraldBlockDmgMult(st){ st = st || state; return heraldBonus(20, st) ? (1 + playerBlockChance(st)) : 1; }
+  function heraldBlockArmorMult(st){ st = st || state; return heraldBonus(40, st) ? (1 + playerBlockChance(st)) : 1; }
+  // Herald Lv 60: -60% incoming Water-element damage.
+  function heraldWaterResistMult(monster, st){ return (heraldBonus(60, st) && monster && monster.element==='water') ? 0.4 : 1; }
+  // Herald Lv 80: familiar-granted buffs last twice as long.
+  function familiarBuffDurationMult(st){ return heraldBonus(80, st) ? 2 : 1; }
   // Summoner Lv 40 shortens every familiar's cast cadence from 10s to 8s.
   function familiarCastIntervalMs(){ return summonerBonus(40) ? 8000 : 10000; }
   function awardClassXp(amount){ var id = activeClassId(state); if(id && amount > 0) addXp(id, amount); }
@@ -3131,7 +3172,8 @@
     // -- Classes --
     summoner:         { name:'Eidolon',  icon:svgIcon('starburst','#7a5aa8'), spells:[hitSpell('Spirit Bolt','void',15), siphonSpell('Soul Siphon',13), hitSpell('Arcane Surge','void',12), buffSpell('Empower','critDmg',0.32,8)] },
     duelist:          { name:'Fleuret',  icon:svgIcon('sword','#b83a4a'), spells:[hitSpell('Lunge','piercing',15), buffSpell('Riposte','critChance',0.13,8), hitSpell('Flèche','piercing',13), buffSpell('En Garde','dodge',0.14,8)] },
-    reaper:           { name:'Mortis',   icon:svgIcon('ghost','#6a5a7a'), spells:[siphonSpell('Soul Harvest',15), siphonSpell('Life Drain',13), hitSpell('Reap','void',12), weakenSpell('Wither',0.3,8)] }
+    reaper:           { name:'Mortis',   icon:svgIcon('ghost','#6a5a7a'), spells:[siphonSpell('Soul Harvest',15), siphonSpell('Life Drain',13), hitSpell('Reap','void',12), weakenSpell('Wither',0.3,8)] },
+    herald:           { name:'Sentinel', icon:svgIcon('shield','#c8a83a'), spells:[armorSpell('Aegis Wall',1.8,6), buffSpell('Rallying Cry','block',0.18,8), dmgSpell('Valor',1.3,8), buffSpell('Bastion','resistBlunt',0.32,8)] }
   };
 
   // Diverse, unique per-familiar spell kits drawn from the expanded pool. Reassigned onto FAMILIAR_DATA
@@ -3200,7 +3242,8 @@
     // -- Classes --
     summoner:       [ hitSpell('Spirit Bolt','void',15), siphonSpell('Soul Siphon',13), hitSpell('Arcane Surge','void',12), buffSpell('Empower','critDmg',0.32,8) ],
     duelist:        [ hitSpell('Lunge','piercing',15), buffSpell('Riposte','critChance',0.13,8), hitSpell('Flèche','piercing',13), buffSpell('En Garde','dodge',0.14,8) ],
-    reaper:         [ siphonSpell('Soul Harvest',15), siphonSpell('Life Drain',13), hitSpell('Reap','void',12), weakenSpell('Wither',0.3,8) ]
+    reaper:         [ siphonSpell('Soul Harvest',15), siphonSpell('Life Drain',13), hitSpell('Reap','void',12), weakenSpell('Wither',0.3,8) ],
+    herald:         [ armorSpell('Aegis Wall',1.8,6), buffSpell('Rallying Cry','block',0.18,8), dmgSpell('Valor',1.3,8), buffSpell('Bastion','resistBlunt',0.32,8) ]
   };
   // Each familiar channels an element (thematic to its skill). Its damaging spells (direct hits,
   // siphons, and poison DoTs) carry that element, so they gain the +20% elemental advantage against
@@ -3221,7 +3264,7 @@
     reflexes:'fire', stamina:'earth', handStrength:'earth', armStrength:'earth', coreStrength:'earth', solving:'light', criticalThinking:'light',
     mentality:'earth', zen:'light', meditation:'light', fortitude:'dark',
     // Classes
-    summoner:'light', duelist:'fire', reaper:'dark'
+    summoner:'light', duelist:'fire', reaper:'dark', herald:'water'
   };
   var DAMAGE_SPELL_TYPES = { hit:true, siphon:true, poison:true }; // spells that deal direct damage or DoT
   function familiarElement(id){ return FAMILIAR_ELEMENT[id] || null; }
@@ -3277,7 +3320,7 @@
     solving:{s:'puzzle',c:'#3a6a9a',ear:'antenna'}, criticalThinking:{s:'brain',c:'#8a5aaa',ear:'antenna'},
     mentality:{s:'compass',c:'#3f8a8a',ear:'round'}, zen:{s:'yinyang',c:'#8a8a8a',ear:'round'},
     meditation:{s:'lotusflower',c:'#c87a9a',ear:'leaf'}, fortitude:{s:'heart',c:'#c8302a',ear:'round'},
-    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}, reaper:{s:'ghost',c:'#6a5a7a',ear:'horn'}
+    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}, reaper:{s:'ghost',c:'#6a5a7a',ear:'horn'}, herald:{s:'shield',c:'#c8a83a',ear:'horn'}
   };
   // Draw the ear/crown silhouette behind the head. Returned in two layers (behind body, in front).
   function famEars(kind, body, bodyD, belly, accent){
@@ -3444,6 +3487,7 @@
     var now = Date.now();
     if(casterId === undefined) casterId = (state.activeCompanions && state.activeCompanions[0]) || null;
     var potency = familiarPotencyMult(level) * (1 + catalystFamiliarBonus()); // active Catalyst potion boosts spell power
+    var durMult = familiarBuffDurationMult(); // Herald Lv 80: familiar buffs last twice as long
 
     if(spell.type==='heal'){
       var healed = Math.min(Math.round(spell.amount*potency), maxHp(state) - state.playerHp);
@@ -3451,37 +3495,37 @@
       spawnFloatingText('+' + healed + ' HP (' + spell.name + ')', 'ft-success');
     } else if(spell.type==='armorBuff'){
       state.familiarBuffs.armorMult = 1 + (spell.mult-1)*potency;
-      state.familiarBuffs.armorUntil = now + spell.durationMs;
+      state.familiarBuffs.armorUntil = now + spell.durationMs*durMult;
       spawnFloatingText(spell.name + '!', 'ft-rare');
     } else if(spell.type==='damageBuff'){
       state.familiarBuffs.damageMult = 1 + (spell.mult-1)*potency;
-      state.familiarBuffs.damageUntil = now + spell.durationMs;
+      state.familiarBuffs.damageUntil = now + spell.durationMs*durMult;
       spawnFloatingText(spell.name + '!', 'ft-rare');
     } else if(spell.type==='slowEnemy'){
       state.familiarBuffs.enemySlowPct = Math.min(0.9, spell.pct*potency);
-      state.familiarBuffs.enemySlowUntil = now + spell.durationMs;
+      state.familiarBuffs.enemySlowUntil = now + spell.durationMs*durMult;
       spawnFloatingText(spell.name + '!', 'ft-rare');
     } else if(spell.type==='weakenEnemy'){
       state.familiarBuffs.enemyWeakenPct = Math.min(0.9, spell.pct*potency);
-      state.familiarBuffs.enemyWeakenUntil = now + spell.durationMs;
+      state.familiarBuffs.enemyWeakenUntil = now + spell.durationMs*durMult;
       spawnFloatingText(spell.name + '!', 'ft-rare');
     } else if(spell.type==='poison'){
       // Bake the elemental advantage vs the current enemy into the DoT rate (the DoT ticks generically
       // in the loop, so it can't re-evaluate the element per tick).
       var _pmon = (state.activity && state.activity.type==='combat') ? monsterById(state.activity.monsterId) : null;
       state.familiarBuffs.poisonDps = spell.dps*potency*elementAdvantage(spell.element, _pmon && _pmon.element);
-      state.familiarBuffs.poisonUntil = now + spell.durationMs;
+      state.familiarBuffs.poisonUntil = now + spell.durationMs*durMult;
       spawnFloatingText(spell.name + '!', 'ft-rare');
     } else if(spell.type==='regen'){
       state.familiarBuffs.regenHps = spell.hps*potency;
-      state.familiarBuffs.regenUntil = now + spell.durationMs;
+      state.familiarBuffs.regenUntil = now + spell.durationMs*durMult;
       spawnFloatingText(spell.name + '!', 'ft-success');
     } else if(spell.type==='bubble'){
-      state.familiarBuffs.bubbleUntil = now + Math.round(spell.durSec*potency*1000);
+      state.familiarBuffs.bubbleUntil = now + Math.round(spell.durSec*potency*1000*durMult);
       spawnFloatingText(spell.name + '!', 'ft-rare');
     } else if(spell.type==='timedBuff'){
       state.familiarBuffs[spell.kind+'Val'] = spell.val*potency;
-      state.familiarBuffs[spell.kind+'Until'] = now + spell.durationMs;
+      state.familiarBuffs[spell.kind+'Until'] = now + spell.durationMs*durMult;
       spawnFloatingText(spell.name + '!', 'ft-rare');
     } else if(spell.type==='hit' || spell.type==='siphon'){
       // Direct damage to the enemy (only in combat). Typed hits are mitigated by the monster's armour
@@ -6348,7 +6392,7 @@
     }
 
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster));
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult());
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
@@ -6422,7 +6466,7 @@
       return;
     }
     var relicBonus = getEquippedRelicBonus(state);
-    var armorDefense = getTotalArmorDefense(state) * (1 + relicBonus) * getFamiliarArmorMult() * (1 + resolveArmorMult(state));
+    var armorDefense = getTotalArmorDefense(state) * (1 + relicBonus) * getFamiliarArmorMult() * (1 + resolveArmorMult(state)) * heraldBlockArmorMult(state);
     var offhandItem = getEquippedOffhandItem(state);
     var offhandStyle = getOffhandStyle(state.equippedOffhand);
     var offhandProficiency = (offhandStyle && state.equippedOffhand) ? (1 + Math.min(0.15, getLevel(state.xp[offhandStyle.id]||0)*0.005)) : 1;
@@ -6432,9 +6476,9 @@
     // The hit lands its physical type AND the enemy's element together: the element is amplified by
     // the player's armor weakness to it (leather->fire, chain->earth, plate->water).
     var elementMult = incomingElementMult(state, monster);
-    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes)); // familiar type-resistance buffs
+    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster)); // familiar type-resistance buffs + Herald water resist
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
-    var blockChance = getPlateArmorBlockChance(state) + getStaffBlockChance(state) + blockingBlockBonus(state) + reflexesBlockBonus(state) + classBlockBonus(state) + getFamBuff('block');
+    var blockChance = playerBlockChance(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
     if(blocked){
       rawDmg = Math.round(rawDmg * 0.5);
@@ -8436,9 +8480,9 @@
     var physDmgMult = isWandMain ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
     var mainProfId = isWandMain ? WANDS_SKILL_ID : (isScepterMain ? SCEPTERS_SKILL_ID : state.equippedMainhand);
     var weaponProficiency = state.equippedMainhand ? (1 + getLevel(state.xp[mainProfId]||0)/100) : 1;
-    var effMin = Math.max(1, Math.round(weapon.dmgMin * physDmgMult * weaponProficiency));
-    var effMax = Math.max(effMin+1, Math.round(weapon.dmgMax * physDmgMult * weaponProficiency));
-    var armor = getTotalArmorDefense(state);
+    var effMin = Math.max(1, Math.round(weapon.dmgMin * physDmgMult * weaponProficiency * heraldBlockDmgMult()));
+    var effMax = Math.max(effMin+1, Math.round(weapon.dmgMax * physDmgMult * weaponProficiency * heraldBlockDmgMult()));
+    var armor = getTotalArmorDefense(state) * heraldBlockArmorMult(state);
     var weaponMix = weaponStyle.attackTypes || {blunt:1};
     var armorMix = getPlayerArmorTypeMix(state);
     var html = '<div class="stats-panel">';
@@ -8470,8 +8514,7 @@
     html += '<div class="stats-group"><h4>'+svgIcon('shield','currentColor')+' Defense</h4>';
     html += '<div class="stat-row"><span class="stat-label">Armor</span><span class="stat-value">'+(Math.round(armor*100)/100)+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Dodge Chance</span><span class="stat-value">'+(Math.round(getLeatherArmorBonuses(state).dodgeBonus*1000)/10)+'%</span></div>';
-    var totalBlockChance = getPlateArmorBlockChance(state) + getStaffBlockChance(state) + blockingBlockBonus(state) + reflexesBlockBonus(state) + classBlockBonus(state);
-    html += '<div class="stat-row"><span class="stat-label">Block Chance</span><span class="stat-value">'+(Math.round(totalBlockChance*1000)/10)+'% (halves dmg)</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Block Chance</span><span class="stat-value">'+(Math.round(playerBlockChance(state)*1000)/10)+'% (halves dmg)</span></div>';
     var wornMaterialsPreview = {};
     BODY_ARMOR_SLOTS.forEach(function(slot){
       var s = state.bodyArmor && state.bodyArmor[slot];
@@ -13507,6 +13550,7 @@
     summoner: 'A Class conferred by wearing Cloth Hood, Tunic, Gloves & Shoes with a Staff. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     duelist: 'A Class conferred by a Rapier with an empty offhand, Chain Helm & Chest and Cloth Gloves & Shoes. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     reaper: 'A Class conferred by a Scythe with a bare head and Cloth Chest, Gloves & Shoes. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
+    herald: 'A Class conferred by a Mace and Large Shield with full Plate (Helm, Chest, Gloves, Boots). While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     clotharmor: 'Proficiency wearing Tailoring\'s cloth armor at higher tiers.',
     leatherarmor: 'Proficiency wearing Leatherworking\'s leather armor at higher tiers.',
     chainmailarmor: 'Proficiency wearing Armorsmithing\'s chain mail at higher tiers.',
@@ -15498,7 +15542,7 @@
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
-      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult,
+      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

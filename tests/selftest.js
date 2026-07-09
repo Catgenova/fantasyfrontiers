@@ -956,6 +956,64 @@
     ok(fam.spells.some(function(s){ return s.element==='dark'; }), 'reaper familiar damaging spells carry the dark element');
   });
 
+  // ---- Classes: Herald (plate + mace + large shield; block-into-offense tank) -----------
+  suite('classes: Herald', function(){
+    ok(FF.CLASS_SKILL_IDS.indexOf('herald') !== -1, 'herald is a class skill id');
+    var cd = FF.CLASS_DEFS_BY_ID.herald;
+    ok(cd, 'herald class defined');
+    eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'passive tiers are 1/20/40/60/80');
+    eq(cd.reqParts.length, 6, 'requires 6 gear conditions');
+
+    function plate(){ return {tier:1, rarity:'normal', material:'plate'}; }
+    function bare(){ return {tier:0, rarity:'normal', material:null}; }
+    function base(){ return { xp:{herald:0}, physique:{}, equippedMainhand:'mace', equippedMainhandRarity:'normal', equippedOffhand:'shieldLarge', bodyArmor:{ helmet:plate(), chest:plate(), gauntlets:plate(), boots:plate(), back:bare() } }; }
+    var full = base();
+    eq(FF.activeClassId(full), 'herald', 'mace + large shield + full plate => Herald');
+    eq(FF.platePieceEquipped(full,'helmet'), true, 'plate helm detected');
+
+    // Every requirement matters.
+    var noShield = base(); noShield.equippedOffhand=null;
+    eq(FF.activeClassId(noShield), null, 'needs a large shield');
+    var smallShield = base(); smallShield.equippedOffhand='shieldSmall';
+    eq(FF.activeClassId(smallShield), null, 'a small shield does not qualify');
+    var notMace = base(); notMace.equippedMainhand='greatsword';
+    eq(FF.activeClassId(notMace), null, 'needs a mace');
+    var chainHelm = base(); chainHelm.bodyArmor.helmet={tier:1,rarity:'normal',material:'chain'};
+    eq(FF.activeClassId(chainHelm), null, 'needs a plate helm (chain does not qualify)');
+    var noBoots = base(); noBoots.bodyArmor.boots=bare();
+    eq(FF.activeClassId(noBoots), null, 'needs plate boots');
+
+    var lvHi = Math.pow(84,2)*100; // ~Lv 85
+    function leveled(){ var s = base(); s.xp.herald = lvHi; return s; }
+
+    // Lv 1 Bulwark: +15% block, folded into classBlockBonus and playerBlockChance.
+    eq(FF.classBlockBonus(full), 0.15, 'Herald Lv 1: +15% block');
+    var off = base(); off.equippedOffhand=null;
+    eq(FF.classBlockBonus(off), 0, 'herald block bonus gated on the class being active');
+    ok(FF.playerBlockChance(full) - FF.playerBlockChance(off) >= 0.15 - 1e-9, 'the Herald +15% is folded into total block chance');
+
+    // Lv 20 Shield Breaker: outgoing damage x(1 + block chance).
+    eq(FF.heraldBlockDmgMult(full), 1, 'Lv 1 herald: no damage bonus yet');
+    near(FF.heraldBlockDmgMult(leveled()), 1 + FF.playerBlockChance(leveled()), 'Lv 20+: +damage equal to block chance');
+    // Lv 40 Aegis: armor x(1 + block chance).
+    eq(FF.heraldBlockArmorMult(full), 1, 'Lv 1 herald: no armor bonus yet');
+    near(FF.heraldBlockArmorMult(leveled()), 1 + FF.playerBlockChance(leveled()), 'Lv 40+: +armor equal to block chance');
+
+    // Lv 60 Tidewall: -60% incoming water damage.
+    eq(FF.heraldWaterResistMult({element:'water'}, leveled()), 0.4, 'water enemy => damage x0.4 (60% less)');
+    eq(FF.heraldWaterResistMult({element:'fire'}, leveled()), 1, 'non-water enemy => no reduction');
+    eq(FF.heraldWaterResistMult({element:'water'}, full), 1, 'Lv 1 herald: no water resist yet');
+
+    // Lv 80 Lasting Grace: familiar-granted buffs last twice as long.
+    eq(FF.familiarBuffDurationMult(full), 1, 'Lv 1 herald: buff duration unchanged');
+    eq(FF.familiarBuffDurationMult(leveled()), 2, 'Lv 80 herald: familiar buffs last 2x');
+
+    // Class familiar is buff-focused (to synergize with the Lv 80 duration passive).
+    var fam = FF.FAMILIAR_DATA.herald;
+    ok(fam && fam.spells && fam.spells.length === 4, 'herald familiar has 4 spells');
+    ok(fam.spells.some(function(s){ return s.type==='armorBuff' || s.type==='timedBuff' || s.type==='damageBuff'; }), 'herald familiar grants buffs');
+  });
+
   // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------
   suite('warding proficiency', function(){
     eq(FF.WARDING_SKILL_ID, 'warding', 'warding skill id');
