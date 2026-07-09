@@ -14485,6 +14485,23 @@
     if(FAITH_TRAINED_PHYSIQUE[skillId]){ add('focus','max Faith'); add('zen','max Faith'); add('meditation','max Faith'); }
     return out;
   }
+  // Round out physique XP: a physique that BENEFITS a gathering/crafting action (its success, speed,
+  // or find rates) now also earns tiered XP when you perform that action -- the same way Logic
+  // already trains on every craft. We fold each skill's benefit set into its trained-set table (the
+  // single source every XP award reads through physTierPairs), so live, offline, and every
+  // completion path pick it up, and the (?) "trained by" list stays accurate.
+  (function foldPhysiqueBenefitsIntoXp(){
+    function merge(table, skillId){
+      var pairs = table[skillId]; if(!pairs) return;
+      var have = {}; pairs.forEach(function(p){ have[p[0]] = true; });
+      physiqueBenefitsForSkill(skillId).forEach(function(e){
+        var id = e[0];
+        if(!have[id] && PHYSIQUE_SKILL_MAP[id]){ have[id] = true; pairs.push([id, 1]); }
+      });
+    }
+    Object.keys(GATHER_PHYSIQUE).forEach(function(sk){ merge(GATHER_PHYSIQUE, sk); });
+    Object.keys(CRAFT_PHYSIQUE).forEach(function(sk){ merge(CRAFT_PHYSIQUE, sk); });
+  })();
   // Renders a physique as an inline chip (icon + name, with an optional effect note). Accepts
   // either a bare physique id or an [id, note] pair.
   function renderPhysiqueChipList(entries){
@@ -16397,6 +16414,7 @@
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS,
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS,
+      GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
       SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate,
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,

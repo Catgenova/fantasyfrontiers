@@ -469,6 +469,31 @@
     eq(FF.physTierPairs([['grossMotor',2],['sleightOfHand',1],['logic',1]], FF.recipeTier({}, 'carpentry_t4'))[2][1], 5, 'carpentry t4 -> logic gains 5');
   });
 
+  // ---- Every physique that interacts with a gather/craft skill now earns tiered XP from it ------
+  suite('physique XP: benefit-set folded into trained-set', function(){
+    function trainedIds(sk){ return FF.GATHER_PHYSIQUE[sk] ? FF.GATHER_PHYSIQUE[sk].map(function(p){return p[0];}) : FF.CRAFT_PHYSIQUE[sk].map(function(p){return p[0];}); }
+    // The core rule: for every gathering/crafting skill, the physiques that BENEFIT it are a subset
+    // of the physiques TRAINED by it -- so anything that interacts with the action also earns XP.
+    Object.keys(FF.GATHER_PHYSIQUE).concat(Object.keys(FF.CRAFT_PHYSIQUE)).forEach(function(sk){
+      var trained = trainedIds(sk);
+      FF.physiqueBenefitsForSkill(sk).forEach(function(e){
+        ok(trained.indexOf(e[0]) !== -1, sk + ' trains its benefiting physique ' + e[0]);
+      });
+      // physTierPairs still gives every trained physique tier+1 (uniform, like Logic).
+      var pairs = FF.physTierPairs(FF.CRAFT_PHYSIQUE[sk] || FF.GATHER_PHYSIQUE[sk], 4);
+      ok(pairs.every(function(p){ return p[1] === 5; }), sk + ': all physiques gain tier+1 (=5 at t4)');
+    });
+    // Spot-check the specific gaps this closes (benefit-only -> now trained).
+    ok(trainedIds('foraging').indexOf('fineMotor') !== -1, 'foraging now trains Fine Motor (its find-rate physique)');
+    ok(trainedIds('tailoring').indexOf('handStrength') !== -1, 'tailoring now trains Hand Strength');
+    ok(trainedIds('tailoring').indexOf('grossMotor') !== -1, 'tailoring now trains Gross Motor (success)');
+    ok(trainedIds('masonry').indexOf('coreStrength') !== -1, 'masonry now trains Core Strength');
+    ok(trainedIds('alchemy').indexOf('criticalThinking') !== -1, 'alchemy now trains Critical Thinking');
+    ok(trainedIds('runesmithing').indexOf('sleightOfHand') !== -1, 'runesmithing now trains Sleight of Hand (speed)');
+    // Unchanged where already covered: heavy crafts keep exactly their original set + no phantom adds.
+    ok(trainedIds('carpentry').indexOf('grossMotor') !== -1 && trainedIds('carpentry').indexOf('handStrength') === -1, 'carpentry keeps Gross Motor, gains no hand-craft physique');
+  });
+
   // ---- Inventory grid: rarity parsing for cell accents / detail tag ----------------------
   suite('inventory rarity', function(){
     eq(FF.itemRarityId('bodyarmor_chain_chest_t20_normal'), 'normal', 'normal suffix');
