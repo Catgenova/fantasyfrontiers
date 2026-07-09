@@ -474,16 +474,20 @@
     ok(early > late, 'familiar gains accuracy faster early than lv90->100 (' + early + ' vs ' + late + ')');
     ok(late < 20, 'lv90->100 familiar accuracy gain is small (' + late + ')');
 
-    // playerAccuracy is driven by the 5 chosen physiques + weapon proficiency (heavier on physiques).
-    var base = { physique:{}, xp:{}, equippedMainhand:null, accuracyPhysiques:['agility','reflexes'] };
-    FF.DEFAULT_ACCURACY_PHYSIQUES.forEach(function(id){ base.physique[id] = 0; });
-    base.physique.agility = 100*100;   // getLevel(xp)=~101; large so the weighting is visible
+    // The accuracy physiques are a fixed, Claude-chosen combat-reflex set (not player-selected).
+    eq(FF.ACCURACY_PHYSIQUES.length, FF.ACCURACY_PHYS_SLOTS, 'exactly '+FF.ACCURACY_PHYS_SLOTS+' fixed accuracy physiques');
+    FF.ACCURACY_PHYSIQUES.forEach(function(id){ ok(FF.PHYSIQUE_SKILL_MAP[id], id+' is a real physique'); });
+    // accuracyPhysiques() always returns the fixed set and ignores any state override.
+    eq(FF.accuracyPhysiques().join(','), FF.ACCURACY_PHYSIQUES.join(','), 'accuracyPhysiques returns the fixed set');
+    eq(FF.accuracyPhysiques({ accuracyPhysiques:['a','b','c'] }).join(','), FF.ACCURACY_PHYSIQUES.join(','), 'a legacy state override is ignored');
+
+    // playerAccuracy is driven by the fixed physiques + weapon proficiency (heavier on physiques).
+    var base = { physique:{}, xp:{}, equippedMainhand:null };
+    FF.ACCURACY_PHYSIQUES.forEach(function(id){ base.physique[id] = 0; });
+    var accWithout = FF.playerAccuracy(base);
+    base.physique[FF.ACCURACY_PHYSIQUES[0]] = 100*100;   // getLevel(xp)=~101; large so the weighting is visible
     var accWith = FF.playerAccuracy(base);
-    var base2 = { physique:{}, xp:{}, equippedMainhand:null, accuracyPhysiques:['reflexes'] };
-    var accWithout = FF.playerAccuracy(base2);
-    ok(accWith > accWithout, 'a leveled chosen physique raises accuracy');
-    // accuracyPhysiques caps at the slot count.
-    ok(FF.accuracyPhysiques({ accuracyPhysiques:['a','b','c','d','e','f','g'] }).length === FF.ACCURACY_PHYS_SLOTS, 'accuracy physiques capped at slot count');
+    ok(accWith > accWithout, 'leveling a fixed accuracy physique raises accuracy');
   });
 
   // ---- Elemental affinities (magic damage triangle + light/dark rivalry) ----------------

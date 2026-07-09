@@ -4406,9 +4406,9 @@
   // Every enemy has a flat Dodge rating that scales with its tier (low at t0, high at the top
   // tier). Your Accuracy rating is subtracted from that Dodge before rolling to hit -- once your
   // Accuracy meets or beats an enemy's Dodge you never miss it, and any leftover Dodge erodes your
-  // hit chance down to a floor. Accuracy is driven mostly by 5 physiques of your choosing plus your
-  // equipped weapon's proficiency level. Familiars have their own accuracy curve (see below).
-  var ACCURACY_PHYS_WEIGHT = 1.4;    // accuracy per level of each chosen physique (the heaviest lever)
+  // hit chance down to a floor. Accuracy is driven by a fixed set of combat-reflex physiques plus
+  // your equipped weapon's proficiency level. Familiars have their own accuracy curve (see below).
+  var ACCURACY_PHYS_WEIGHT = 1.4;    // accuracy per level of each accuracy physique (the heaviest lever)
   var ACCURACY_PROF_WEIGHT = 1.0;    // accuracy per level of the equipped weapon's proficiency
   var ACCURACY_PHYS_SLOTS  = 5;      // number of physiques that feed accuracy
   var ACCURACY_MISS_DENOM  = 500;    // dodge-beyond-accuracy that maps down to the worst hit rate
@@ -4418,17 +4418,16 @@
   var MONSTER_DODGE_EXP    = 1.4;    // >1 => dodge ramps up steeply toward the top tiers
   var FAM_ACC_MAX          = 800;    // familiar accuracy ceiling
   var FAM_ACC_TAU          = 30;     // familiar accuracy curve constant: fast early, flat by lv90-100
-  // The physiques assigned to accuracy default to the combat-reflex set until the player picks their own.
-  var DEFAULT_ACCURACY_PHYSIQUES = ['agility','reflexes','balance','criticalEye','exploitation'];
-  function accuracyPhysiques(st){
-    st = st || state;
-    var list = (st.accuracyPhysiques && st.accuracyPhysiques.length) ? st.accuracyPhysiques : DEFAULT_ACCURACY_PHYSIQUES;
-    return list.slice(0, ACCURACY_PHYS_SLOTS);
+  // The physiques that feed accuracy are fixed: the five combat-reflex physiques trained by fighting
+  // (footwork, dueling instinct, two-handed poise, and the eye/precision behind landing critical hits).
+  var ACCURACY_PHYSIQUES = ['agility','reflexes','balance','criticalEye','exploitation'];
+  function accuracyPhysiques(){
+    return ACCURACY_PHYSIQUES.slice(0, ACCURACY_PHYS_SLOTS);
   }
   function playerAccuracy(st){
     st = st || state;
     var physSum = 0;
-    accuracyPhysiques(st).forEach(function(id){ physSum += getLevel((st.physique && st.physique[id]) || 0); });
+    accuracyPhysiques().forEach(function(id){ physSum += getLevel((st.physique && st.physique[id]) || 0); });
     var prof = st.equippedMainhand ? getLevel(st.xp[st.equippedMainhand] || 0) : 0;
     return Math.round(physSum*ACCURACY_PHYS_WEIGHT + prof*ACCURACY_PROF_WEIGHT);
   }
@@ -5558,7 +5557,6 @@
       popupBatchTotal: 0,
       settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true },
       trackedSkills: [],
-      accuracyPhysiques: DEFAULT_ACCURACY_PHYSIQUES.slice(), // the 5 physiques that feed combat Accuracy
       peons: [],
       guildPeons: [],
       dungeonProgress: {},
@@ -6846,8 +6844,7 @@
           if(!state.lockedItems || typeof state.lockedItems !== 'object') state.lockedItems = {};
           if(!Array.isArray(state.trackedSkills)) state.trackedSkills = [];
           state.trackedSkills = state.trackedSkills.filter(function(id){ return typeof id === 'string'; }).slice(0, TRACK_MAX); // single-select: keep only the first
-          if(!Array.isArray(state.accuracyPhysiques)) state.accuracyPhysiques = DEFAULT_ACCURACY_PHYSIQUES.slice();
-          state.accuracyPhysiques = state.accuracyPhysiques.filter(function(id){ return PHYSIQUE_SKILL_MAP[id]; }).slice(0, ACCURACY_PHYS_SLOTS);
+          if(state.accuracyPhysiques) delete state.accuracyPhysiques; // accuracy physiques are now a fixed set, no longer player-chosen
           if(!Array.isArray(state.peons)) state.peons = [];
           if(!Array.isArray(state.guildPeons)) state.guildPeons = [];
           state.peons = state.peons.slice(0, PEON_MAX_SLOTS);
@@ -8829,22 +8826,21 @@
     if(!any) html += '<div class="empty-note">No potions in your bag. Brew Toxins, Firebombs, Elixirs, or Catalysts in Crafting &rarr; Alchemy (each needs a Glass Bottle).</div>';
     return html;
   }
-  // Accuracy training card: shows the current Accuracy rating and lets the player assign up to
-  // ACCURACY_PHYS_SLOTS physiques (plus the equipped weapon's proficiency) that drive it.
+  // Accuracy training card: shows the current Accuracy rating and the fixed set of combat-reflex
+  // physiques (plus the equipped weapon's proficiency) that drive it.
   function renderAccuracyPanel(){
-    var chosen = accuracyPhysiques(state);
-    var chosenSet = {}; chosen.forEach(function(id){ chosenSet[id] = true; });
+    var chosen = accuracyPhysiques();
     var prof = state.equippedMainhand ? getLevel(state.xp[state.equippedMainhand] || 0) : 0;
     var html = '<div class="card">';
     html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">';
     html += '<h3 style="margin:0;">'+svgIcon('target','currentColor')+' Accuracy Training</h3>';
     html += '<span class="stat-value" style="font-family:var(--font-mono);color:var(--gold);font-weight:700;">Accuracy '+playerAccuracy(state)+'</span></div>';
-    html += '<div class="section-intro" style="margin:6px 0 8px;">Accuracy is subtracted from an enemy\'s Dodge before every hit is rolled &mdash; raise it to stop missing tougher foes. Assign up to '+ACCURACY_PHYS_SLOTS+' physiques ('+chosen.length+'/'+ACCURACY_PHYS_SLOTS+' chosen) to drive it; your equipped weapon\'s proficiency (Lv '+prof+') adds the rest.</div>';
+    html += '<div class="section-intro" style="margin:6px 0 8px;">Accuracy is subtracted from an enemy\'s Dodge before every hit is rolled &mdash; raise it to stop missing tougher foes. It is driven by these combat-reflex physiques (trained by fighting) plus your equipped weapon\'s proficiency (Lv '+prof+').</div>';
     html += '<div class="tracker-picker-grid">';
-    PHYSIQUE_SKILLS.forEach(function(p){
-      var on = !!chosenSet[p.id];
-      var lvl = getLevel(state.physique[p.id] || 0);
-      html += '<button class="tracker-chip'+(on?' on':'')+'" data-action="toggleAccuracyPhysique" data-id="'+p.id+'" title="'+escapeHtml(p.name)+' — Lv '+lvl+'">'+p.icon+' '+escapeHtml(p.name)+' <span style="opacity:.65;font-family:var(--font-mono);">Lv '+lvl+'</span></button>';
+    chosen.forEach(function(id){
+      var p = PHYSIQUE_SKILL_MAP[id]; if(!p) return;
+      var lvl = getLevel(state.physique[id] || 0);
+      html += '<span class="tracker-chip on" title="'+escapeHtml(p.name)+' — Lv '+lvl+'">'+p.icon+' '+escapeHtml(p.name)+' <span style="opacity:.65;font-family:var(--font-mono);">Lv '+lvl+'</span></span>';
     });
     html += '</div></div>';
     return html;
@@ -14178,18 +14174,6 @@
     saveGame();
     renderTrackerPanel(); renderTrackerPicker();
   }
-  // Add/remove a physique from the accuracy set (capped at ACCURACY_PHYS_SLOTS). Clicking a chosen
-  // one removes it; clicking a new one adds it unless all slots are already filled.
-  function toggleAccuracyPhysique(id){
-    if(!PHYSIQUE_SKILL_MAP[id]) return;
-    if(!Array.isArray(state.accuracyPhysiques)) state.accuracyPhysiques = DEFAULT_ACCURACY_PHYSIQUES.slice();
-    var idx = state.accuracyPhysiques.indexOf(id);
-    if(idx !== -1){ state.accuracyPhysiques.splice(idx, 1); }
-    else if(state.accuracyPhysiques.length < ACCURACY_PHYS_SLOTS){ state.accuracyPhysiques.push(id); }
-    else { addLog('You can assign at most '+ACCURACY_PHYS_SLOTS+' physiques to Accuracy — remove one first.', 'danger'); return; }
-    saveGame();
-    render();
-  }
   function renderTrackerPanel(){
     var el = document.getElementById('trackerPanel'); if(!el) return;
     var tracked = (state.trackedSkills||[]).filter(function(id){ return trackedExists(id); });
@@ -15009,8 +14993,6 @@
       trackerPickerOpen = false; renderTrackerPicker();
     } else if(action==='toggleTrackedSkill'){
       toggleTrackedSkill(btn.getAttribute('data-skill'));
-    } else if(action==='toggleAccuracyPhysique'){
-      toggleAccuracyPhysique(btn.getAttribute('data-id'));
     } else if(action==='peonOpenPicker'){
       peonPicker = { open:true, scope:btn.getAttribute('data-scope'), x:null, y:null, producer:null }; renderPeonPicker();
     } else if(action==='peonClosePicker'){
@@ -15413,7 +15395,7 @@
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       playerAccuracy:playerAccuracy, monsterDodge:monsterDodge, hitChanceVs:hitChanceVs, playerHitChance:playerHitChance,
       familiarAccuracy:familiarAccuracy, familiarHitChance:familiarHitChance, accuracyPhysiques:accuracyPhysiques,
-      DEFAULT_ACCURACY_PHYSIQUES:DEFAULT_ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
+      ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
