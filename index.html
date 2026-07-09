@@ -13379,6 +13379,24 @@
       guildBankApply(res); guildBankState.error=''; if(currentCategory==='guild'||currentCategory==='peons') render();
     });
   }
+  // A fingerprint of the bank contents, so a background refresh only re-renders when something
+  // actually changed (a teammate deposited/withdrew) -- otherwise a poll would keep wiping the
+  // deposit qty field mid-type.
+  function guildBankSig(){
+    return guildBankState.slots + '|' + guildBankState.used + '|' + guildBankState.treasury + '|' +
+      (guildBankState.items||[]).map(function(i){ return i.item_key + ':' + i.qty; }).sort().join(',');
+  }
+  // Silent poll refresh (no 'loading' flicker) used while a member is looking at the bank, so other
+  // members' deposits/withdrawals show up without a manual reload.
+  function guildBankRefresh(){
+    if(!chatClient || !guildState.guild || guildBankState.busy || guildBankState.status==='loading') return;
+    var before = guildBankSig();
+    guildBankInvoke('get', {}).then(function(res){
+      if(!res || !res.ok) return;
+      guildBankApply(res);
+      if(guildBankSig() !== before && currentCategory==='guild' && guildSub==='bank') render();
+    });
+  }
   function guildBankItemName(key){ var it=ALL_SELLABLE[key]; return it ? it.name : key; }
   function guildBankItemIcon(key){ var it=ALL_SELLABLE[key]; return it ? it.icon : svgIcon('question','var(--text-faint)'); }
   function guildBankCanWithdraw(){ return (RANK_VAL[guildState.myRank]||0) >= (RANK_VAL[guildBankState.minWithdrawRank]||1); }
@@ -13908,6 +13926,8 @@
   }
   function guildLiveTick(){
     if(!chatClient || !authUser || !authUser.id) return;
+    // Keep the bank live for anyone looking at it (independent of the roster-state guards below).
+    if(!!guildState.guild && currentCategory==='guild' && guildSub==='bank') guildBankRefresh();
     if(guildState.busy || guildState.status==='loading') return;
     var pendingApp = !guildState.guild && !!guildBrowseState.appliedTo;
     var officerViewing = !!guildState.guild && (guildState.myRank==='leader' || guildState.myRank==='officer') && currentCategory==='guild';
