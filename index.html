@@ -2241,7 +2241,13 @@
   // An enemy's element by category + tier. Base identities: wildlife=earth, demonspawn=fire,
   // kinsworn=water; elementals cycle the triangle. Light/dark are sprinkled into the top tiers.
   var MONSTER_HIGH_TIER_ELEMENT = { 16:'light', 17:'dark', 19:'light', 20:'dark' };
-  function monsterElement(category, tierIndex){
+  // Named elementals with a fixed element (overrides both the cycle and the high-tier sprinkle).
+  var ELEMENTAL_ELEMENT_OVERRIDES = {
+    'Air Elemental':'earth', 'Ice Elemental':'water', 'Stone Golem':'earth', 'Lava Elemental':'fire',
+    'Crystal Elemental':'water', 'Magma Golem':'fire', 'Frost Giant':'water', 'Astral Elemental':'light'
+  };
+  function monsterElement(category, tierIndex, name){
+    if(category==='elemental' && name && ELEMENTAL_ELEMENT_OVERRIDES[name]) return ELEMENTAL_ELEMENT_OVERRIDES[name];
     if(MONSTER_HIGH_TIER_ELEMENT[tierIndex]) return MONSTER_HIGH_TIER_ELEMENT[tierIndex];
     if(category==='wildlife') return 'earth';
     if(category==='demonspawn') return 'fire';
@@ -2256,7 +2262,7 @@
         icon: icons[i],
         category: category,
         tierIndex: i,
-        element: monsterElement(category, i),
+        element: monsterElement(category, i, name),
         levelReq: TIER_LEVELS[i],
         hp: Math.max(5, Math.round(20*Math.pow(1.40,i)*hpMult)),
         atkMin: Math.max(1, Math.round(1*Math.pow(1.32,i)*atkMult)),
@@ -3994,13 +4000,28 @@
     });
   });
   Object.assign(ALL_SELLABLE, STACKABLE_SHIELD_ITEMS);
+  // ---- Elemental Glyphs: tierless drops from Elementals, used only to inscribe Wards (never crafted).
+  function glyphIdFor(element){ return 'glyph_'+element; }
+  var GLYPH_ITEMS = {};
+  WARD_ELEMENTS.forEach(function(el){
+    GLYPH_ITEMS[glyphIdFor(el)] = { id:glyphIdFor(el), name: ELEMENT_META[el].label+' Glyph', icon: elementIcon(el), element:el, sell: 6, dropOnly:true };
+  });
+  Object.assign(ALL_SELLABLE, GLYPH_ITEMS);
+  var GLYPH_DROP_CHANCE = 0.5; // an Elemental has this chance to drop glyphs of its element on death
+  function glyphDropMax(tierIndex){ // max glyphs dropped, by tier band
+    if(tierIndex <= 5) return 5;
+    if(tierIndex <= 10) return 10;
+    if(tierIndex <= 15) return 20;
+    return 25;
+  }
   // ---- Wards: Runesmithing offhands (no armor; reflect matching-element damage). Stackable inventory
   // items like shields, but rarity grants a full-reflect chance instead of scaling a stat.
   function getWardTierData(typeId, tierIndex){
     var w = WARD_TYPE_MAP[typeId];
     var inputs = {};
-    inputs[w.matPrefix+'_t'+tierIndex] = 3;
-    if(tierIndex > 0) inputs['stward_'+typeId+'_t'+(tierIndex-1)+'_normal'] = 1;
+    inputs['forestry_t'+tierIndex] = 3;       // 3 logs
+    inputs['metallurgy_t'+tierIndex] = 3;     // 3 ingots
+    inputs[glyphIdFor(w.element)] = 3;        // 3 glyphs of the ward's element (dropped by Elementals)
     return {
       tierIndex: tierIndex,
       name: METAL_TIER_NAMES[tierIndex] + ' ' + w.name,
@@ -6051,6 +6072,14 @@
       addItem(itemId, qty);
       var itemName = (ALL_GATHER_ITEMS[itemId]||{}).name || itemId;
       addLog('The ' + monster.name + ' dissipated, leaving ' + qty + 'x ' + itemName + '.', '');
+      // Elementals can also shatter into Glyphs of their own element (the only source of Glyphs,
+      // which Runesmithing needs to inscribe Wards). Quantity scales with the elemental's tier band.
+      var gEl = monster.element, gId = gEl && glyphIdFor(gEl);
+      if(gId && GLYPH_ITEMS[gId] && Math.random() < GLYPH_DROP_CHANCE){
+        var gQty = randInt(1, glyphDropMax(i));
+        addItem(gId, gQty);
+        addLog('The ' + monster.name + ' shattered into ' + gQty + 'x ' + GLYPH_ITEMS[gId].name + '.', 'important');
+      }
     } else if(monster.category==='demonspawn'){
       if(Math.random() < 0.08){
         addItem('brokenrelic_t'+i, 1);
@@ -13392,7 +13421,7 @@
     {id:'equipment', label:'Equipment', icon:svgIcon('shield','var(--gold)')}
   ];
   var GATHER_BUCKET_PREFIXES = ['digging_t','forestry_t','mining_t','fishing_t','herbalism_t','botany_t','foraging_t','butchering_t',
-    'muddyartifact_t','brokenrelic_t','powder_t','seed_t','grainseed_t','herbseed_t','farming_t','grain_t','herb_t','corpse_t','gem_'];
+    'muddyartifact_t','brokenrelic_t','powder_t','seed_t','grainseed_t','herbseed_t','farming_t','grain_t','herb_t','corpse_t','gem_','glyph_'];
   function getInventoryCategory(itemId){
     if(getEquipActionForItem(itemId)) return 'equipment';
     if(itemId.indexOf('paving_t')===0 || itemId.indexOf('masonry_t')===0 || itemId.indexOf('workshop_')===0) return 'estate';
@@ -15009,6 +15038,7 @@
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,
       WARD_TYPES:WARD_TYPES, WARD_TYPE_MAP:WARD_TYPE_MAP, isWard:isWard, WARD_ITEMS:WARD_ITEMS, wardReflectPct:wardReflectPct, WARD_FULL_REFLECT_CHANCE:WARD_FULL_REFLECT_CHANCE, getWardTierData:getWardTierData, WARD_ELEMENTS:WARD_ELEMENTS,
       wardingReflectBonus:wardingReflectBonus, WARDING_SKILL_ID:WARDING_SKILL_ID, WARDING_BONUS_MIN:WARDING_BONUS_MIN, WARDING_BONUS_MAX:WARDING_BONUS_MAX, OFFHAND_STYLE_IDS:OFFHAND_STYLE_IDS,
+      GLYPH_ITEMS:GLYPH_ITEMS, glyphIdFor:glyphIdFor, glyphDropMax:glyphDropMax, GLYPH_DROP_CHANCE:GLYPH_DROP_CHANCE, ELEMENTAL_ELEMENT_OVERRIDES:ELEMENTAL_ELEMENT_OVERRIDES,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

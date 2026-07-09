@@ -640,13 +640,44 @@
     var topFant = FF.WARD_ITEMS['stward_wardDark_t'+(FF.TIER_COUNT-1)+'_fantastic'];
     ok(topFant && topFant.reflect === 0.30 && topFant.fullReflectChance === 0.20, 'top fantastic dark ward: 30% reflect, 20% full');
 
-    // Ward tier recipe upgrades from the previous tier and costs its metal.
+    // Ward recipe: 3 logs + 3 ingots + 3 element glyphs (no upgrade chain).
     var d3 = FF.getWardTierData('wardWater', 3);
-    ok(d3.inputs['stward_wardWater_t2_normal'] === 1, 'ward tier upgrades from the previous tier');
-    ok(d3.inputs['metallurgy_t3'] > 0, 'ward costs its tier metal');
+    eq(d3.inputs['forestry_t3'], 3, 'ward needs 3 logs of its tier');
+    eq(d3.inputs['metallurgy_t3'], 3, 'ward needs 3 ingots of its tier');
+    eq(d3.inputs['glyph_water'], 3, 'water ward needs 3 water glyphs');
+    ok(d3.inputs['stward_wardWater_t2_normal'] === undefined, 'no previous-tier-ward requirement anymore');
+    eq(FF.getWardTierData('wardDark', 10).inputs['glyph_dark'], 3, 'dark ward needs dark glyphs');
 
     // Runesmithing is a real crafting skill in the outfitting category.
     ok(FF.CRAFTING_TAB_SKILL_IDS.indexOf('runesmithing') !== -1 || FF.CRAFT_SKILL_IDS.indexOf('runesmithing') !== -1, 'runesmithing is a crafting skill');
+  });
+
+  // ---- Elemental Glyphs (ward ingredient, drop-only) ------------------------------------
+  suite('glyphs', function(){
+    // One tierless, drop-only glyph per element.
+    FF.WARD_ELEMENTS.forEach(function(el){
+      var g = FF.GLYPH_ITEMS[FF.glyphIdFor(el)];
+      ok(g, el+' glyph exists');
+      eq(g.element, el, 'glyph carries its element');
+      ok(g.dropOnly, el+' glyph is drop-only');
+      ok(!/_t\d+$/.test(g.id), el+' glyph has no tier');
+    });
+    // Drop-quantity max scales by tier band: 5 / 10 / 20 / 25.
+    [[0,5],[3,5],[5,5],[6,10],[10,10],[11,20],[15,20],[16,25],[20,25]].forEach(function(p){
+      eq(FF.glyphDropMax(p[0]), p[1], 'tier '+p[0]+' drops up to '+p[1]);
+    });
+    ok(FF.GLYPH_DROP_CHANCE > 0 && FF.GLYPH_DROP_CHANCE <= 1, 'glyph drop chance is a probability');
+
+    // Named-elemental element overrides applied to the real bestiary.
+    var byName = {}; FF.MONSTERS.filter(function(m){ return m.category==='elemental'; }).forEach(function(m){ byName[m.name] = m; });
+    Object.keys(FF.ELEMENTAL_ELEMENT_OVERRIDES).forEach(function(nm){
+      ok(byName[nm], 'elemental "'+nm+'" exists');
+      if(byName[nm]) eq(byName[nm].element, FF.ELEMENTAL_ELEMENT_OVERRIDES[nm], nm+' is '+FF.ELEMENTAL_ELEMENT_OVERRIDES[nm]);
+    });
+    // Spot-check a couple the brief named explicitly.
+    eq(byName['Air Elemental'].element, 'earth', 'Air Elemental -> earth');
+    eq(byName['Lava Elemental'].element, 'fire', 'Lava Elemental -> fire');
+    eq(byName['Astral Elemental'].element, 'light', 'Astral Elemental -> light');
   });
 
   // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------
