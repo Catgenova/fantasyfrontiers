@@ -603,6 +603,18 @@
   .matchup-weak{background:rgba(166,58,47,0.16);color:var(--hp-bad);}
   .matchup-neutral{background:rgba(147,128,90,0.16);color:var(--text-faint);}
 
+  /* Elemental affinity badges on enemy cards (magic damage triangle + light/dark rivalry). */
+  .elem-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px;font-family:var(--font-mono);font-size:11px;}
+  .elem-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:11px;font-weight:600;background:rgba(0,0,0,0.04);border:1px solid var(--border);color:var(--text-dim);}
+  .elem-badge .game-icon{width:13px;height:13px;}
+  .elem-badge.elem-fire{color:#c0562a;border-color:rgba(224,99,47,0.4);}
+  .elem-badge.elem-water{color:#2f76b0;border-color:rgba(63,143,208,0.4);}
+  .elem-badge.elem-earth{color:#5a7d2c;border-color:rgba(111,149,56,0.4);}
+  .elem-badge.elem-light{color:#b89528;border-color:rgba(230,194,74,0.5);}
+  .elem-badge.elem-dark{color:#7148a0;border-color:rgba(138,95,176,0.45);}
+  .elem-weak{display:inline-flex;align-items:center;gap:3px;color:var(--text-faint);}
+  .elem-weak .game-icon{width:12px;height:12px;}
+
   .char-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 8px;font-family:var(--font-mono);font-size:12px;color:var(--text-dim);padding:4px 0;border-bottom:1px dotted var(--border);}
   .char-row:last-child{border-bottom:none;}
   .char-row span:first-child{flex-shrink:0;}
@@ -1120,6 +1132,26 @@
     </symbol>
     <symbol id="shape-flame" viewBox="0 0 24 24">
       <path fill="currentColor" d="M12 2 Q17 8 15 13 Q15 10 13 9 Q14 14 10 16 Q6 18 8 22 Q2 18 4 12 Q5 15 7 15 Q4 8 12 2 Z"/>
+    </symbol>
+    <symbol id="shape-droplet" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M12 2 C12 2 5 11 5 15.5 A7 7 0 1 0 19 15.5 C19 11 12 2 12 2 Z"/>
+      <path fill="#fff" fill-opacity="0.35" d="M9 15.5 A3.2 3.2 0 0 0 12.2 18.7 A0.9 0.9 0 0 1 12 15.5 A3.2 3.2 0 0 0 9 15.5 Z"/>
+    </symbol>
+    <symbol id="shape-mountain" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M2 20 L9 6 L13.5 13 L16.5 8.5 L22 20 Z"/>
+      <path fill="#fff" fill-opacity="0.4" d="M9 6 L11.6 11.2 L9.4 11.2 L7 11.4 Z M16.5 8.5 L18.2 11.6 L15 11.6 Z"/>
+    </symbol>
+    <symbol id="shape-sun" viewBox="0 0 24 24">
+      <circle fill="currentColor" cx="12" cy="12" r="4.4"/>
+      <g stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <line x1="12" y1="1.5" x2="12" y2="4.3"/><line x1="12" y1="19.7" x2="12" y2="22.5"/>
+        <line x1="1.5" y1="12" x2="4.3" y2="12"/><line x1="19.7" y1="12" x2="22.5" y2="12"/>
+        <line x1="4.4" y1="4.4" x2="6.4" y2="6.4"/><line x1="17.6" y1="17.6" x2="19.6" y2="19.6"/>
+        <line x1="4.4" y1="19.6" x2="6.4" y2="17.6"/><line x1="17.6" y1="6.4" x2="19.6" y2="4.4"/>
+      </g>
+    </symbol>
+    <symbol id="shape-moon" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M12 3 A6 6 0 0 0 21 12 A9 9 0 1 1 12 3 Z"/>
     </symbol>
     <symbol id="shape-hornedskull" viewBox="0 0 24 24">
       <path fill="currentColor" d="M12 3 Q19 3 19 10 Q19 15 16 17 L16 20 H8 L8 17 Q5 15 5 10 Q5 3 12 3 Z"/>
@@ -2177,6 +2209,36 @@
   var KINSWORN_COLORS = ['#7a7a7a','#3a3a3a','#8a6a3a','#5a4a3a','#6a6a70','#8a8a8a','#8a2a2a','#5a0a0a','#5a4a2a','#4a4a4a','#c8a838','#9a9aa0','#5a0a0a','#6a6a70','#8a4a2a','#c8a838','#5a0a0a','#8a7a3a','#5a4a2a','#8a4a2a','#c8a838'];
   var KINSWORN_ICONS = KINSWORN_COLORS.map(function(c){ return svgIcon('crossedswords', c); });
 
+  // ===== Elemental affinities (magic damage triangle + light/dark rivalry) ==========
+  // A second damage relationship, independent of the physical slash/pierce/blunt triangle:
+  //   water > fire > earth > water   (an attacker deals +20% to the element it beats)
+  // plus a light <-> dark rivalry (each hits the other for +20%, neutral to the triangle).
+  // Enemies carry an `element` (their affinity); the element that beats it is their weakness.
+  // Players don't wield elements yet -- this is the groundwork the magic system will build on.
+  var ELEMENT_BEATS = { water:'fire', fire:'earth', earth:'water', light:'dark', dark:'light' };
+  var ELEMENT_WEAKNESS = { fire:'water', earth:'fire', water:'earth', light:'dark', dark:'light' }; // the element that beats each
+  var ELEMENT_META = {
+    fire:  { label:'Fire',  icon:'flame',    color:'#e0632f' },
+    water: { label:'Water', icon:'droplet',  color:'#3f8fd0' },
+    earth: { label:'Earth', icon:'mountain', color:'#6f9538' },
+    light: { label:'Light', icon:'sun',      color:'#e6c24a' },
+    dark:  { label:'Dark',  icon:'moon',     color:'#8a5fb0' }
+  };
+  var ELEMENT_ADVANTAGE_MULT = 1.2;
+  function elementIcon(el){ var m = ELEMENT_META[el]; return m ? svgIcon(m.icon, m.color) : ''; }
+  function elementLabel(el){ var m = ELEMENT_META[el]; return m ? m.label : ''; }
+  // Damage multiplier for an attacker element striking a defender element (+20% on a beat, else neutral).
+  function elementAdvantage(atkEl, defEl){ return (atkEl && ELEMENT_BEATS[atkEl] === defEl) ? ELEMENT_ADVANTAGE_MULT : 1; }
+  // An enemy's element by category + tier. Base identities: wildlife=earth, demonspawn=fire,
+  // kinsworn=water; elementals cycle the triangle. Light/dark are sprinkled into the top tiers.
+  var MONSTER_HIGH_TIER_ELEMENT = { 16:'light', 17:'dark', 19:'light', 20:'dark' };
+  function monsterElement(category, tierIndex){
+    if(MONSTER_HIGH_TIER_ELEMENT[tierIndex]) return MONSTER_HIGH_TIER_ELEMENT[tierIndex];
+    if(category==='wildlife') return 'earth';
+    if(category==='demonspawn') return 'fire';
+    if(category==='kinsworn') return 'water';
+    return ['fire','water','earth'][((tierIndex%3)+3)%3]; // elementals + dungeon stages cycle the triangle
+  }
   function makeBestiary(category, names, icons, hpMult, atkMult, goldMult, attackSpeeds, categoryOffset){
     return names.map(function(name, i){
       return {
@@ -2185,6 +2247,7 @@
         icon: icons[i],
         category: category,
         tierIndex: i,
+        element: monsterElement(category, i),
         levelReq: TIER_LEVELS[i],
         hp: Math.max(5, Math.round(20*Math.pow(1.40,i)*hpMult)),
         atkMin: Math.max(1, Math.round(1*Math.pow(1.32,i)*atkMult)),
@@ -2263,6 +2326,7 @@
         isBoss: isBoss,
         tierIndex: def.tierIndex,
         virtualTier: virtualTier, // fractional tier used to scale stats (and dodge) across stages
+        element: monsterElement('dungeon', def.tierIndex + stageIdx), // stages cycle the triangle; deep bosses skew light/dark
         levelReq: TIER_LEVELS[def.tierIndex],
         hp: Math.max(5, Math.round(20*Math.pow(1.40, virtualTier)*hpMult)),
         atkMin: Math.max(1, Math.round(1*Math.pow(1.32, virtualTier)*atkMult)),
@@ -4104,6 +4168,15 @@
   // so the lv90->100 gain is small. Driven by the familiar's own level, not the player's stats.
   function familiarAccuracy(level){ return Math.round(FAM_ACC_MAX*(1 - Math.exp(-(level||1)/FAM_ACC_TAU))); }
   function familiarHitChance(level, m){ return hitChanceVs(familiarAccuracy(level), monsterDodge(m)); }
+  // Enemy elemental affinity pill (+ its weakness) for the combat cards/arena.
+  function elementBadge(m){
+    if(!m || !m.element || !ELEMENT_META[m.element]) return '';
+    var weak = ELEMENT_WEAKNESS[m.element];
+    var s = '<span class="elem-badge elem-'+m.element+'" title="'+elementLabel(m.element)+' element'+(weak?', weak to '+elementLabel(weak):'')+'">'
+      + elementIcon(m.element) + elementLabel(m.element) + '</span>';
+    if(weak) s += '<span class="elem-weak" title="Takes +'+Math.round((ELEMENT_ADVANTAGE_MULT-1)*100)+'% damage from '+elementLabel(weak)+'">weak to '+elementIcon(weak)+' '+elementLabel(weak)+'</span>';
+    return s;
+  }
   function agilityDodgeBonus(state){ return Math.min(0.10, getLevel(state.physique.agility||0)*0.002); }
   function blockingBlockBonus(state){ return Math.min(0.10, getLevel(state.physique.blocking||0)*0.002); }
   function criticalEyeCritChance(state){ return Math.min(MAX_CRIT_CHANCE, BASE_CRIT_CHANCE + getLevel(state.physique.criticalEye||0)*0.0045); }
@@ -8062,7 +8135,8 @@
         html += '<div class="item-card'+(stageLocked?' locked':'')+(isActive?' active-item':'')+'">';
         html += '<div class="item-top"><div class="item-icon">'+m.icon+'</div><div><div class="item-name">'+m.name+(m.isBoss?' &bull; <span style="color:var(--gold)">BOSS</span>':'')+'</div><div class="item-meta">'+m.hp+' HP &bull; '+m.attackSpeed+'s attack</div></div></div>';
         html += '<div class="item-stats"><span>'+m.goldMin+'-'+m.goldMax+'g</span><span>'+m.atkMin+'-'+m.atkMax+' dmg</span><span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
-        html += '<div class="chance-line" style="font-size:11px">Attack: '+formatTypeMix(m.attackTypes)+'<br>Armor: '+formatTypeMix(m.armorTypes)+'</div>';
+        html += '<div class="chance-line" style="font-size:11px">Dodge '+monsterDodge(m)+' &bull; '+(stageLocked?'':'Your hit chance '+Math.round(playerHitChance(m)*100)+'%')+'<br>Attack: '+formatTypeMix(m.attackTypes)+'<br>Armor: '+formatTypeMix(m.armorTypes)+'</div>';
+        html += '<div class="elem-line">'+elementBadge(m)+'</div>';
         if(m.isBoss) html += '<div class="chance-line" style="font-size:11px">Defeating this Boss guarantees an equipment drop plus bonus gold.</div>';
         if(stageLocked){
           html += '<div class="lock-note">Clear the previous stage first</div>';
@@ -8154,6 +8228,7 @@
       var matchup = weightedMatchupLabel(weaponStyle.attackTypes || {blunt:1}, m.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
       html += '<div class="arena">';
       html += '<div class="arena-row"><span class="arena-name">'+m.icon+' '+m.name+' <span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></span></div>';
+      html += '<div class="elem-line" style="margin:2px 0 4px">'+elementBadge(m)+'</div>';
       html += '<div class="hp-label" style="margin-bottom:4px"><span>Enemy Dodge '+monsterDodge(m)+'</span><span>Your hit chance '+Math.round(playerHitChance(m)*100)+'%</span></div>';
       html += '<div class="hp-track"><div class="hp-fill" id="arenaMonsterFill" style="width:'+hpPct+'%;background:var(--hp-bad)"></div></div>';
       html += '<div class="hp-label"><span>Monster HP</span><span id="arenaMonsterLabel">'+fmt(act.monsterHp)+' / '+m.hp+'</span></div>';
@@ -8205,6 +8280,7 @@
       html += '<div class="item-top"><div class="item-icon">'+m.icon+'</div><div><div class="item-name">'+m.name+'</div><div class="item-meta">Req. Lv '+m.levelReq+' &bull; '+m.hp+' HP &bull; '+m.attackSpeed+'s attack</div></div></div>';
       html += '<div class="item-stats"><span>'+m.goldMin+'-'+m.goldMax+'g</span><span>'+m.atkMin+'-'+m.atkMax+' dmg</span><span>'+getMonsterLootChance(m)+'% '+getMonsterLootLabel(m)+'</span><span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
       html += '<div class="chance-line" style="font-size:11px">Dodge '+monsterDodge(m)+' &bull; '+(locked?'':'Your hit chance '+Math.round(playerHitChance(m)*100)+'%')+'<br>Attack: '+formatTypeMix(m.attackTypes)+'<br>Armor: '+formatTypeMix(m.armorTypes)+'</div>';
+      html += '<div class="elem-line">'+elementBadge(m)+'</div>';
       if(locked){
         html += '<div class="lock-note">Locked until level '+m.levelReq+'</div>';
       } else if(isActive){
@@ -14609,6 +14685,7 @@
       familiarAccuracy:familiarAccuracy, familiarHitChance:familiarHitChance, accuracyPhysiques:accuracyPhysiques,
       DEFAULT_ACCURACY_PHYSIQUES:DEFAULT_ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
+      elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

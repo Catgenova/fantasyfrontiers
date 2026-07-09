@@ -486,6 +486,46 @@
     ok(FF.accuracyPhysiques({ accuracyPhysiques:['a','b','c','d','e','f','g'] }).length === FF.ACCURACY_PHYS_SLOTS, 'accuracy physiques capped at slot count');
   });
 
+  // ---- Elemental affinities (magic damage triangle + light/dark rivalry) ----------------
+  suite('elements', function(){
+    // Triangle: water > fire > earth > water, each a +20% beat; everything else neutral.
+    eq(FF.elementAdvantage('water','fire'), FF.ELEMENT_ADVANTAGE_MULT, 'water beats fire');
+    eq(FF.elementAdvantage('fire','earth'), FF.ELEMENT_ADVANTAGE_MULT, 'fire beats earth');
+    eq(FF.elementAdvantage('earth','water'), FF.ELEMENT_ADVANTAGE_MULT, 'earth beats water');
+    eq(FF.elementAdvantage('fire','water'), 1, 'fire is neutral into water (reverse of a beat)');
+    eq(FF.elementAdvantage('water','earth'), 1, 'water neutral into earth');
+    eq(FF.elementAdvantage('fire','fire'), 1, 'same element is neutral');
+    // Light/dark rival each other but are neutral to the triangle.
+    eq(FF.elementAdvantage('light','dark'), FF.ELEMENT_ADVANTAGE_MULT, 'light beats dark');
+    eq(FF.elementAdvantage('dark','light'), FF.ELEMENT_ADVANTAGE_MULT, 'dark beats light');
+    eq(FF.elementAdvantage('light','fire'), 1, 'light neutral to fire');
+    eq(FF.elementAdvantage('fire','light'), 1, 'fire neutral to light');
+    eq(FF.elementAdvantage('earth','dark'), 1, 'earth neutral to dark');
+    eq(FF.elementAdvantage(null,'fire'), 1, 'no attacker element => neutral');
+
+    // ELEMENT_WEAKNESS is the reverse of ELEMENT_BEATS (the element that beats each).
+    Object.keys(FF.ELEMENT_BEATS).forEach(function(atk){
+      var def = FF.ELEMENT_BEATS[atk];
+      eq(FF.ELEMENT_WEAKNESS[def], atk, def + "'s weakness is " + atk);
+    });
+
+    // Base category identities.
+    eq(FF.monsterElement('wildlife', 5), 'earth', 'wildlife is earth');
+    eq(FF.monsterElement('demonspawn', 5), 'fire', 'demonspawn is fire');
+    eq(FF.monsterElement('kinsworn', 5), 'water', 'kinsworn is water');
+    ok(['fire','water','earth'].indexOf(FF.monsterElement('elemental', 4)) !== -1, 'elementals are one of the triangle');
+    // Wildlife (earth) is weak to fire, exactly what the brief asked for.
+    eq(FF.ELEMENT_WEAKNESS[FF.monsterElement('wildlife', 3)], 'fire', 'wildlife weak to fire');
+    eq(FF.ELEMENT_WEAKNESS[FF.monsterElement('demonspawn', 3)], 'water', 'demonspawn weak to water');
+    eq(FF.ELEMENT_WEAKNESS[FF.monsterElement('kinsworn', 3)], 'earth', 'kinsworn weak to earth');
+    // Light/dark are sprinkled into the top tiers.
+    var topEls = [16,17,18,19,20].map(function(t){ return FF.monsterElement('wildlife', t); });
+    ok(topEls.indexOf('light') !== -1 && topEls.indexOf('dark') !== -1, 'light and dark appear in the top tiers');
+
+    // Every monster carries a valid element with known metadata.
+    ok(FF.MONSTERS.every(function(m){ return m.element && FF.ELEMENT_META[m.element]; }), 'every monster has a valid element');
+  });
+
   // ---- Hardening: monster lookup + addItem guards ---------------------------------------
   suite('hardening', function(){
     // monsterById maps every monster and rejects unknown ids (used by the combat hot path + stale-id retreat).
