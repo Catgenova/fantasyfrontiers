@@ -7466,7 +7466,10 @@
     offlineCapture.gold = state.gold - goldBefore;
     var _sum = offlineCapture;
     offlineCapture = null;
-    if(Object.keys(_sum.xp).length || Object.keys(_sum.physique).length || Object.keys(_sum.items).length || _sum.gold > 0){ offlineSummaryData = _sum; }
+    // Only surface the "while you were away" popup for real absences. A brief blip -- a reload, the
+    // 10-minute auto-refresh, or a momentary disconnect -- shouldn't pop a summary, so we require at
+    // least 30s away. The progress itself was already applied above; we're only gating the popup.
+    if(capped >= 30000 && (Object.keys(_sum.xp).length || Object.keys(_sum.physique).length || Object.keys(_sum.items).length || _sum.gold > 0)){ offlineSummaryData = _sum; }
   }
 
   async function initGame(){
