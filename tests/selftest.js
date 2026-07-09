@@ -904,6 +904,58 @@
     ok(fam.spells.some(function(s){ return s.element==='fire'; }), 'duelist familiar damaging spells carry the fire element');
   });
 
+  // ---- Classes: Reaper (scythe soul-harvester: crits + lifesteal) -----------------------
+  suite('classes: Reaper', function(){
+    ok(FF.CLASS_SKILL_IDS.indexOf('reaper') !== -1, 'reaper is a class skill id');
+    var cd = FF.CLASS_DEFS_BY_ID.reaper;
+    ok(cd, 'reaper class defined');
+    eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'passive tiers are 1/20/40/60/80');
+    eq(cd.reqParts.length, 5, 'requires 5 gear conditions');
+
+    function cloth(){ return {tier:1, rarity:'normal', material:'tailoring'}; }
+    function bare(){ return {tier:0, rarity:'normal', material:null}; }
+    function base(){ return { xp:{reaper:0}, equippedMainhand:'scythe', equippedMainhandRarity:'normal', bodyArmor:{ helmet:bare(), chest:cloth(), gauntlets:cloth(), boots:cloth(), back:bare() } }; }
+    var full = base();
+    eq(FF.activeClassId(full), 'reaper', 'scythe + bare head + cloth chest/gloves/shoes => Reaper');
+
+    // Every requirement matters -- note the bare-head requirement is the inverse of the others.
+    var helmOn = base(); helmOn.bodyArmor.helmet=cloth();
+    eq(FF.activeClassId(helmOn), null, 'wearing any helm => no Reaper (head must be bare)');
+    var notScythe = base(); notScythe.equippedMainhand='greatsword';
+    eq(FF.activeClassId(notScythe), null, 'non-scythe mainhand => no Reaper');
+    var noChest = base(); noChest.bodyArmor.chest=bare();
+    eq(FF.activeClassId(noChest), null, 'missing cloth chest => no Reaper');
+    var chainChest = base(); chainChest.bodyArmor.chest={tier:1,rarity:'normal',material:'chain'};
+    eq(FF.activeClassId(chainChest), null, 'chain (not cloth) chest => no Reaper');
+
+    var lvHi = Math.pow(84,2)*100; // ~Lv 85 -> all passives
+    function leveled(){ var s = base(); s.xp.reaper = lvHi; return s; }
+
+    // Lv 1 Mortal Edge: +50% crit damage (only while active).
+    eq(FF.reaperCritDmgBonus(full), 0.5, 'Lv 1 reaper (active): +0.5 crit damage');
+    var lowNoGear = { xp:{reaper:lvHi}, equippedMainhand:'greatsword', bodyArmor:{helmet:bare(),chest:bare(),gauntlets:bare(),boots:bare(),back:bare()} };
+    eq(FF.reaperCritDmgBonus(lowNoGear), 0, 'reaper crit bonus gated on the class being active');
+
+    // Lv 40 / Lv 80 lifesteal: 5% then 10% (replaces, not stacks).
+    eq(FF.reaperLifestealPct(full), 0, 'Lv 1 reaper: no lifesteal yet');
+    var lv40 = base(); lv40.xp.reaper = Math.pow(45,2)*100; // ~Lv 46
+    eq(FF.reaperLifestealPct(lv40), 0.05, 'Lv 40-79 reaper: 5% lifesteal');
+    eq(FF.reaperLifestealPct(leveled()), 0.10, 'Lv 80 reaper: 10% lifesteal (replaces the 5%)');
+
+    // Lv 60 Exposed Flesh: +50% damage vs enemies with no slashing resistance.
+    var noSlashArmor = { armorTypes:{slashing:0, piercing:0.65, blunt:0.35} };
+    var slashArmor   = { armorTypes:{slashing:0.65, piercing:0.35, blunt:0} };
+    eq(FF.reaperNoSlashResistMult(noSlashArmor, leveled()), 1.5, 'no slashing resistance => +50% damage');
+    eq(FF.reaperNoSlashResistMult(slashArmor, leveled()), 1, 'some slashing resistance => no bonus');
+    eq(FF.reaperNoSlashResistMult(noSlashArmor, full), 1, 'Lv 1 reaper: no Exposed Flesh yet');
+
+    // Class familiar leans on life-drain (siphon) spells for the Lv 20 triple-damage passive.
+    var fam = FF.FAMILIAR_DATA.reaper;
+    ok(fam && fam.spells && fam.spells.length === 4, 'reaper familiar has 4 spells');
+    ok(fam.spells.filter(function(s){ return s.type==='siphon'; }).length >= 2, 'reaper familiar has multiple siphon (life-drain) spells');
+    ok(fam.spells.some(function(s){ return s.element==='dark'; }), 'reaper familiar damaging spells carry the dark element');
+  });
+
   // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------
   suite('warding proficiency', function(){
     eq(FF.WARDING_SKILL_ID, 'warding', 'warding skill id');
