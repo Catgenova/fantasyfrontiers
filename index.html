@@ -3860,10 +3860,34 @@
   function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
   function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
   // Every skill/proficiency/class/physique tops out at level 100 -- the same ceiling the tier ladder
-  // targets (the top gear tier requires level 100). XP can keep accruing past the cap, but the level
-  // it maps to never exceeds MAX_SKILL_LEVEL.
+  // targets (the top gear tier requires level 100).
   var MAX_SKILL_LEVEL = 100;
-  function getLevel(xp){ return Math.min(MAX_SKILL_LEVEL, Math.max(1, Math.floor(Math.sqrt(xp/100)) + 1)); }
+  // XP curve: a gentle quadratic up to the "knee" (level 70) -- identical to the classic
+  // 100*(level-1)^2 costs, so nothing below 70 changes -- then each further level costs
+  // exponentially more (x1.20 per level). That turns 70->100 into a brutal grind and makes level
+  // 100 a genuine endgame achievement rather than something you drift into. Precomputed floor table
+  // (xp needed to *reach* each level) so both directions are exact and cheap.
+  var SKILL_CURVE_KNEE = 70;
+  var SKILL_CURVE_GROWTH = 1.20;
+  var SKILL_XP_FLOOR = (function(){
+    var floors = [0, 0]; // floors[level] = total xp to reach that level; level 1 = 0 xp
+    var cum = 0, kneeCost = 100 * (2*SKILL_CURVE_KNEE - 1);
+    for(var L = 1; L < MAX_SKILL_LEVEL; L++){
+      // cost(L) = xp to go from level L to L+1
+      var cost = (L < SKILL_CURVE_KNEE)
+        ? 100 * (2*L - 1)                                             // sum_{1..L-1} = 100*(L-1)^2 (classic curve)
+        : kneeCost * Math.pow(SKILL_CURVE_GROWTH, L - SKILL_CURVE_KNEE); // continuous at the knee, then exponential
+      cum += Math.round(cost);
+      floors[L+1] = cum;
+    }
+    return floors;
+  })();
+  function getLevel(xp){
+    if(!(xp > 0)) return 1;
+    var lo = 1, hi = MAX_SKILL_LEVEL; // largest level whose floor xp <= xp
+    while(lo < hi){ var mid = (lo + hi + 1) >> 1; if(SKILL_XP_FLOOR[mid] <= xp) lo = mid; else hi = mid - 1; }
+    return lo;
+  }
   // Equipping anything above Tier 1 (tierIndex 0) requires the matching proficiency
   // (weapon type, or the armor material worn) to already be at least that tier's own
   // level requirement -- the same threshold that unlocked crafting it in the first
@@ -3874,8 +3898,8 @@
     if(tierIndex <= 0) return true;
     return getLevel(profXp||0) >= TIER_LEVELS[tierIndex];
   }
-  function xpFloorForLevel(level){ return 100*(level-1)*(level-1); }
-  function xpForNextLevel(level){ return 100*level*level; }
+  function xpFloorForLevel(level){ return SKILL_XP_FLOOR[clamp(level, 1, MAX_SKILL_LEVEL)]; }
+  function xpForNextLevel(level){ return level >= MAX_SKILL_LEVEL ? SKILL_XP_FLOOR[MAX_SKILL_LEVEL] : SKILL_XP_FLOOR[level + 1]; }
   function levelProgress(xp){
     var lvl = getLevel(xp);
     if(lvl >= MAX_SKILL_LEVEL) return 100; // maxed -- there is no next level, so show a full bar
@@ -16231,7 +16255,7 @@
   // the page is opened with ?selftest. Production loads never touch this. ----
   if(typeof location !== 'undefined' && /[?&]selftest\b/.test(location.search)){
     window.__FF = {
-      getLevel:getLevel, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
+      getLevel:getLevel, xpFloorForLevel:xpFloorForLevel, xpForNextLevel:xpForNextLevel, levelProgress:levelProgress, MAX_SKILL_LEVEL:MAX_SKILL_LEVEL, SKILL_CURVE_KNEE:SKILL_CURVE_KNEE, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,

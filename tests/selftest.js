@@ -22,17 +22,33 @@
 
   // ---- XP <-> level curve ---------------------------------------------------------------
   suite('getLevel', function(){
+    var KNEE = FF.SKILL_CURVE_KNEE; // 70
+    // Below the knee the curve is unchanged (classic 100*(L-1)^2 floors).
     eq(FF.getLevel(0), 1, 'getLevel(0)');
     eq(FF.getLevel(99), 1, 'getLevel(99) still level 1');
     eq(FF.getLevel(100), 2, 'getLevel(100)');
     eq(FF.getLevel(400), 3, 'getLevel(400)');
-    eq(FF.getLevel(980100), 100, 'getLevel(980100) = 100');
-    // Level is capped at 100 no matter how much XP piles up past it.
-    eq(FF.getLevel(1000000), 100, 'getLevel(1,000,000) capped at 100 (would be 101 uncapped)');
-    eq(FF.getLevel(5760000), 100, 'getLevel(5.76M) still 100 -- no runaway levels');
-    eq(FF.getLevel(1e12), 100, 'getLevel of absurd XP is still 100');
+    eq(FF.xpFloorForLevel(KNEE), 100*(KNEE-1)*(KNEE-1), 'the knee floor still matches the classic quadratic');
+    eq(FF.xpFloorForLevel(50), 100*49*49, 'a mid level below the knee is unchanged');
+
+    // Round-trips exactly against the floor table across the whole ladder.
+    for(var L = 1; L <= FF.MAX_SKILL_LEVEL; L++){
+      eq(FF.getLevel(FF.xpFloorForLevel(L)), L, 'getLevel(floor('+L+')) = '+L);
+      if(L > 1) eq(FF.getLevel(FF.xpFloorForLevel(L) - 1), L-1, 'one XP short of '+L+' is still '+(L-1));
+    }
+
+    // The endgame is brutal: past the knee each level costs far more than the last, and 100 needs
+    // vastly more XP than the old curve's 980,100.
+    var costJustBelowKnee = FF.xpFloorForLevel(KNEE) - FF.xpFloorForLevel(KNEE-1);
+    var costLastLevel = FF.xpFloorForLevel(100) - FF.xpFloorForLevel(99);
+    ok(costLastLevel > costJustBelowKnee * 50, 'the final level costs 50x+ more XP than a pre-knee level');
+    ok(FF.xpFloorForLevel(100) > 8000000, 'reaching level 100 is a multi-million-XP grind');
+    ok(FF.xpFloorForLevel(100) > FF.xpFloorForLevel(90) * 3, 'the last ten levels dwarf everything before them');
+
+    // Cap and monotonicity hold everywhere.
+    eq(FF.getLevel(1e15), 100, 'getLevel of absurd XP is still capped at 100');
     var prev = 0;
-    for(var xp = 0; xp <= 1000000; xp += 5000){ var L = FF.getLevel(xp); ok(L >= prev && L <= 100, 'getLevel monotonic & <=100 @' + xp); prev = L; }
+    for(var xp = 0; xp <= 20000000; xp += 50000){ var lv = FF.getLevel(xp); ok(lv >= prev && lv >= 1 && lv <= 100, 'getLevel monotonic & in [1,100] @' + xp); prev = lv; }
   });
 
   // ---- Tier scaling helpers -------------------------------------------------------------
@@ -365,11 +381,11 @@
     s.physique[physId] = 0; s.xp[mainId] = 0;
     var base = FF.computeProfileStats();
     ok(base.skills[physId] !== undefined, 'physiques appear in the profile skills map');
-    s.physique[physId] = Math.pow(30,2)*100; // ~Lv 31
+    s.physique[physId] = FF.xpFloorForLevel(31); // ~Lv 31
     var afterPhys = FF.computeProfileStats();
     ok(afterPhys.skills[physId] > 0, 'physique level shows in the profile');
     eq(afterPhys.total_level, base.total_level, 'physiques do NOT inflate total_level');
-    s.xp[mainId] = Math.pow(30,2)*100;
+    s.xp[mainId] = FF.xpFloorForLevel(31);
     ok(FF.computeProfileStats().total_level > base.total_level, 'a main skill DOES raise total_level');
     s.physique[physId] = snap.phys; s.xp[mainId] = snap.xp;
 
@@ -853,7 +869,7 @@
     ok(FF.activeCompanionList({ familiars:{}, activeCompanions:['mining'], equippedMainhand:null }).length === 0, 'unowned companions are filtered out');
 
     // Staves efficiency: +1% at Lv1 -> +100% at Lv100 (familiar potency).
-    function seff(lvl){ var xp = lvl<=1?0:Math.pow(lvl-1,2)*100; return FF.stavesEfficiencyBonus({xp:{staves:xp}}); }
+    function seff(lvl){ var xp = lvl<=1?0:FF.xpFloorForLevel(lvl); return FF.stavesEfficiencyBonus({xp:{staves:xp}}); }
     near(seff(1), 0.01, 'Lv1 staves = +1%');
     near(seff(100), 1.00, 'Lv100 staves = +100%');
     ok(seff(50) > seff(10), 'staves efficiency rises with level');
@@ -927,13 +943,13 @@
 
     // Class level tracks its own xp; a fresh class sits at Lv 1 (so the Lv-1 passive is baseline).
     eq(FF.classLevel(full,'summoner'), 1, 'fresh summoner is class Lv 1');
-    var leveled = { xp:{summoner:Math.pow(59,2)*100}, equippedMainhand:'staff', bodyArmor:full.bodyArmor };
+    var leveled = { xp:{summoner:FF.xpFloorForLevel(60)}, equippedMainhand:'staff', bodyArmor:full.bodyArmor };
     ok(FF.classLevel(leveled,'summoner') >= 60, 'xp yields class level >= 60 ('+FF.classLevel(leveled,'summoner')+')');
 
     // Lv 60 passive: +15% block, but only while the class is actually equipped/active.
     eq(FF.classBlockBonus(full), 0, 'Lv 1 summoner: no block bonus yet');
     eq(FF.classBlockBonus(leveled), 0.15, 'Lv 60 summoner (equipped): +15% block');
-    var leveledNoGear = { xp:{summoner:Math.pow(59,2)*100}, equippedMainhand:'greatsword', bodyArmor:{ helmet:bare(),chest:bare(),gauntlets:bare(),boots:bare(),back:bare() } };
+    var leveledNoGear = { xp:{summoner:FF.xpFloorForLevel(60)}, equippedMainhand:'greatsword', bodyArmor:{ helmet:bare(),chest:bare(),gauntlets:bare(),boots:bare(),back:bare() } };
     eq(FF.classBlockBonus(leveledNoGear), 0, 'high-level summoner with gear off: no block bonus');
 
     // The class has its own familiar with a damaging kit that carries its element.
@@ -972,7 +988,7 @@
     eq(FF.activeClassId(chainGloves), null, 'chain (not cloth) gloves => no Duelist');
 
     // Lv 20 Flashing Steel: -10% attack time per rarity rank on the rapier (only from Lv 20).
-    var lvHi = Math.pow(59,2)*100; // ~Lv 60
+    var lvHi = FF.xpFloorForLevel(60); // ~Lv 60
     function leveled(rarity){ var s = base(rarity); s.xp.duelist = lvHi; return s; }
     eq(FF.classAttackSpeedMult(full), 1, 'Lv 1 duelist: no attack-speed bonus yet');
     near(FF.classAttackSpeedMult(leveled('normal')), 1, 'normal rapier: no reduction');
@@ -985,7 +1001,7 @@
     // Lv 40 Perfect Form: +30% accuracy, folded into playerAccuracy.
     eq(FF.classAccuracyMult(full), 1, 'Lv 1 duelist: no accuracy bonus');
     eq(FF.classAccuracyMult(leveled('normal')), 1.3, 'Lv >= 40 duelist: +30% accuracy');
-    var accOn = leveled('normal'); accOn.physique = {}; FF.ACCURACY_PHYSIQUES.forEach(function(id){ accOn.physique[id] = Math.pow(20,2)*100; });
+    var accOn = leveled('normal'); accOn.physique = {}; FF.ACCURACY_PHYSIQUES.forEach(function(id){ accOn.physique[id] = FF.xpFloorForLevel(21); });
     var accOff = { xp:accOn.xp, equippedMainhand:'rapier', equippedMainhandRarity:'normal', equippedOffhand:'shieldSmall', bodyArmor:accOn.bodyArmor, physique:accOn.physique };
     ok(FF.playerAccuracy(accOn) > FF.playerAccuracy(accOff), 'active Duelist gets higher accuracy than the same build with the class off');
     ok(Math.abs(FF.playerAccuracy(accOn) - Math.round(FF.playerAccuracy(accOff)*1.3)) <= 2, 'accuracy scales by the +30% class multiplier');
@@ -1020,7 +1036,7 @@
     var chainChest = base(); chainChest.bodyArmor.chest={tier:1,rarity:'normal',material:'chain'};
     eq(FF.activeClassId(chainChest), null, 'chain (not cloth) chest => no Reaper');
 
-    var lvHi = Math.pow(84,2)*100; // ~Lv 85 -> all passives
+    var lvHi = FF.xpFloorForLevel(85); // ~Lv 85 -> all passives
     function leveled(){ var s = base(); s.xp.reaper = lvHi; return s; }
 
     // Lv 1 Mortal Edge: +50% crit damage (only while active).
@@ -1030,7 +1046,7 @@
 
     // Lv 40 / Lv 80 lifesteal: 5% then 10% (replaces, not stacks).
     eq(FF.reaperLifestealPct(full), 0, 'Lv 1 reaper: no lifesteal yet');
-    var lv40 = base(); lv40.xp.reaper = Math.pow(45,2)*100; // ~Lv 46
+    var lv40 = base(); lv40.xp.reaper = FF.xpFloorForLevel(46); // ~Lv 46
     eq(FF.reaperLifestealPct(lv40), 0.05, 'Lv 40-79 reaper: 5% lifesteal');
     eq(FF.reaperLifestealPct(leveled()), 0.10, 'Lv 80 reaper: 10% lifesteal (replaces the 5%)');
 
@@ -1075,7 +1091,7 @@
     var noBoots = base(); noBoots.bodyArmor.boots=bare();
     eq(FF.activeClassId(noBoots), null, 'needs plate boots');
 
-    var lvHi = Math.pow(84,2)*100; // ~Lv 85
+    var lvHi = FF.xpFloorForLevel(85); // ~Lv 85
     function leveled(){ var s = base(); s.xp.herald = lvHi; return s; }
 
     // Lv 1 Bulwark: +15% block, folded into classBlockBonus and playerBlockChance.
@@ -1133,7 +1149,7 @@
     var plateHelm = base(); plateHelm.bodyArmor.helmet=plate();
     eq(FF.activeClassId(plateHelm), null, 'helm must be leather (plate does not qualify)');
 
-    var lvHi = Math.pow(84,2)*100; // ~Lv 85
+    var lvHi = FF.xpFloorForLevel(85); // ~Lv 85
     function leveled(){ var s = base(); s.xp.quickdraw = lvHi; return s; }
 
     // Lv 1 Fleet Fingers: -15% attack timer (even at Class Lv 1).
@@ -1183,7 +1199,7 @@
     var plateGloves = base(); plateGloves.bodyArmor.gauntlets=plate();
     eq(FF.activeClassId(plateGloves), null, 'gloves must be chain');
 
-    var lvHi = Math.pow(84,2)*100; // ~Lv 85
+    var lvHi = FF.xpFloorForLevel(85); // ~Lv 85
     function leveled(){ var s = base(); s.xp.templar = lvHi; return s; }
 
     // Lv 1 Radiant Ward: +5% reflected damage (baseline -- a fresh class is already Class Lv 1).
@@ -1253,7 +1269,7 @@
       helm:s.bodyArmor.helmet, chest:s.bodyArmor.chest, gaunt:s.bodyArmor.gauntlets, boots:s.bodyArmor.boots };
     s.equippedMainhand='claymore'; s.equippedMainhandRarity='normal';
     s.bodyArmor.helmet=chain(); s.bodyArmor.chest=plate(); s.bodyArmor.gauntlets=chain(); s.bodyArmor.boots=plate();
-    s.xp.knight = Math.pow(84,2)*100; // ~Lv 85 (all miss buffs)
+    s.xp.knight = FF.xpFloorForLevel(85); // ~Lv 85 (all miss buffs)
     s.knightBuffUntil = 0; // window closed
     eq(FF.knightMissDmgMult(), 1, 'no window => no damage bonus');
     eq(FF.knightMissCritChance(), 0, 'no window => no crit chance');
@@ -1262,7 +1278,7 @@
     eq(FF.knightMissDmgMult(), 1.25, 'Lv 20: +25% damage on miss');
     eq(FF.knightMissCritChance(), 0.15, 'Lv 40: +15% crit chance on miss');
     near(FF.knightMissCritDmg(), 1.5, 'Lv 60 (+0.5) + Lv 80 (+1.0) = +1.5 crit damage');
-    s.xp.knight = Math.pow(64,2)*100; // ~Lv 65 (Lv 60 on, Lv 80 off)
+    s.xp.knight = FF.xpFloorForLevel(65); // ~Lv 65 (Lv 60 on, Lv 80 off)
     near(FF.knightMissCritDmg(), 0.5, 'Lv 60 alone => +0.5 crit damage');
     // restore _state for other suites
     s.xp.knight = snap.xpK; s.equippedMainhand = snap.main; s.equippedMainhandRarity = snap.rar; s.knightBuffUntil = snap.buf;
@@ -1285,7 +1301,7 @@
     });
     ok(!FF.isElementAttunement('bodyStrength'), 'a normal physique is not an attunement');
 
-    function stAt(el, lvl){ var o={physique:{}}; o.physique[FF.ELEMENT_ATTUNEMENT[el]] = (lvl<=1 ? 0 : Math.pow(lvl-1,2)*100); return o; }
+    function stAt(el, lvl){ var o={physique:{}}; o.physique[FF.ELEMENT_ATTUNEMENT[el]] = (lvl<=1 ? 0 : FF.xpFloorForLevel(lvl)); return o; }
     // Damage bonus scales +1% (Lv1) -> +100% (Lv100); resistance +1% -> +20%.
     near(FF.elementDamageBonus(stAt('fire',1), 'fire'), 0.01, 'Lv1 fire: +1% damage');
     near(FF.elementDamageBonus(stAt('fire',100), 'fire'), 1.00, 'Lv100 fire: +100% damage');
@@ -1354,8 +1370,8 @@
     near(FF.elementDmgMult(oneFire, 'fire') - baseMult, 0.20, 'fire ring adds +0.20 to the fire damage multiplier');
 
     // Precision ring scales Accuracy.
-    var accBase = st([]); accBase.physique = {agility: Math.pow(50,2)*100};
-    var accRing = st([sl('precision', TC, 'normal')]); accRing.physique = {agility: Math.pow(50,2)*100};
+    var accBase = st([]); accBase.physique = {agility: FF.xpFloorForLevel(51)};
+    var accRing = st([sl('precision', TC, 'normal')]); accRing.physique = {agility: FF.xpFloorForLevel(51)};
     var a0 = FF.playerAccuracy(accBase), a1 = FF.playerAccuracy(accRing);
     ok(a1 > a0, 'precision ring raises accuracy');
     ok(Math.abs(a1 - Math.round(a0*1.30)) <= 1, 'top Normal precision ring => ~+30% accuracy');
@@ -1465,17 +1481,17 @@
     // Lv 20 Appraiser: +10% accuracy per Supreme+ item (folds into classAccuracyMult).
     var thL1 = base('supreme');
     eq(FF.classAccuracyMult(thL1), 1, 'Lv1: accuracy passive not active yet');
-    var thL20 = base('supreme'); thL20.xp.treasureHunter = Math.pow(20,2)*100;
+    var thL20 = base('supreme'); thL20.xp.treasureHunter = FF.xpFloorForLevel(21);
     near(FF.classAccuracyMult(thL20), 1.60, 'Lv20, six Supreme => +60% accuracy');
-    var thL20rare = base('rare'); thL20rare.xp.treasureHunter = Math.pow(20,2)*100;
+    var thL20rare = base('rare'); thL20rare.xp.treasureHunter = FF.xpFloorForLevel(21);
     eq(FF.classAccuracyMult(thL20rare), 1, 'Rare items do not count for the Supreme+ accuracy bonus');
 
     // Lv 40 Connoisseur: +25% crit damage per Fantastic item.
-    var thL20f = base('fantastic'); thL20f.xp.treasureHunter = Math.pow(20,2)*100;
+    var thL20f = base('fantastic'); thL20f.xp.treasureHunter = FF.xpFloorForLevel(21);
     eq(FF.treasureHunterCritDmgBonus(thL20f), 0, 'crit passive needs Lv40');
-    var thL40 = base('fantastic'); thL40.xp.treasureHunter = Math.pow(40,2)*100;
+    var thL40 = base('fantastic'); thL40.xp.treasureHunter = FF.xpFloorForLevel(41);
     near(FF.treasureHunterCritDmgBonus(thL40), 1.50, 'Lv40, six Fantastic => +150% crit damage');
-    var thL40sup = base('supreme'); thL40sup.xp.treasureHunter = Math.pow(40,2)*100;
+    var thL40sup = base('supreme'); thL40sup.xp.treasureHunter = FF.xpFloorForLevel(41);
     eq(FF.treasureHunterCritDmgBonus(thL40sup), 0, 'Supreme items do not count for the Fantastic crit bonus');
 
     // Lv 80 Golden Devotion: doubles the Devotion/Blessing/Miracle rarity bonus (reads global state).
@@ -1490,7 +1506,7 @@
     s.xp.treasureHunter = 0; // Lv 1: not doubled yet
     var single = FF.faithRarityBonus('devotion');
     ok(single > 0, 'running Devotion grants a rarity bonus');
-    s.xp.treasureHunter = Math.pow(80,2)*100; // Lv 81
+    s.xp.treasureHunter = FF.xpFloorForLevel(81); // Lv 81
     near(FF.faithRarityBonus('devotion'), single*2, 'Treasure Hunter Lv80 doubles the Devotion rarity bonus');
     s.equippedMainhand='rapier'; // deactivate class
     near(FF.faithRarityBonus('devotion'), single, 'bonus returns to normal when the class is inactive');
@@ -1528,7 +1544,7 @@
     eq(FF.activeClassId(chainHelm), null, 'all four armor pieces must be cloth');
 
     var lv1 = base(); // fresh -> Lv 1 (Chain Lightning on)
-    var lv20 = base(); lv20.xp.thunderfury = Math.pow(20,2)*100; // ~Lv 21 (Storm Focus on)
+    var lv20 = base(); lv20.xp.thunderfury = FF.xpFloorForLevel(21); // ~Lv 21 (Storm Focus on)
 
     // Lv 1 Chain Lightning: crit stacks cut attack timer -10%/stack (cap 7 = -70%).
     eq(FF.THUNDER_MAX_STACKS, 7, 'crit stacks cap at 7');
@@ -1543,7 +1559,7 @@
 
     // Lv 20 Storm Focus: crit stacks grant +20% accuracy/stack.
     eq(FF.classAccuracyMult(lv1), 1, 'Lv 1: no accuracy stacking yet');
-    var a3 = base(); a3.xp.thunderfury = Math.pow(20,2)*100; a3.thunderStacks=3;
+    var a3 = base(); a3.xp.thunderfury = FF.xpFloorForLevel(21); a3.thunderStacks=3;
     near(FF.classAccuracyMult(a3), 1.60, 'Lv 20+, 3 stacks => +60% accuracy');
 
     // Lv 60 Storm's Wrath: +100% crit damage while below 50% HP (reads global state).
@@ -1552,7 +1568,7 @@
       helm:s.bodyArmor.helmet, chest:s.bodyArmor.chest, gaunt:s.bodyArmor.gauntlets, boots:s.bodyArmor.boots };
     s.equippedMainhand='wandEarth'; s.equippedOffhand='wardEarth';
     s.bodyArmor.helmet=cloth(); s.bodyArmor.chest=cloth(); s.bodyArmor.gauntlets=cloth(); s.bodyArmor.boots=cloth();
-    s.xp.thunderfury = Math.pow(64,2)*100; // ~Lv 65
+    s.xp.thunderfury = FF.xpFloorForLevel(65); // ~Lv 65
     s.playerHp = 999999; // full-ish (above 50%)
     eq(FF.thunderLowHpCritDmg(), 0, 'above 50% HP: no crit-damage bonus');
     s.playerHp = 1; // below 50%
@@ -1596,7 +1612,7 @@
     var chainHelm = base(); chainHelm.bodyArmor.helmet=chain();
     eq(FF.activeClassId(chainHelm), null, 'helm must be cloth');
 
-    var lvHi = Math.pow(84,2)*100; // ~Lv 85
+    var lvHi = FF.xpFloorForLevel(85); // ~Lv 85
     function leveled(){ var s = base(); s.xp.assassin = lvHi; return s; }
     var off = base(); off.equippedOffhand=null; off.equippedOffhandTier=0;
 
@@ -1606,7 +1622,7 @@
 
     // Lv 20 (+10%) and Lv 60 (+15%) Dodge, stacking to +25%.
     eq(FF.assassinDodgeBonus(full), 0, 'Lv 1: no dodge bonus yet');
-    var lv20 = base(); lv20.xp.assassin = Math.pow(20,2)*100; // ~Lv 21
+    var lv20 = base(); lv20.xp.assassin = FF.xpFloorForLevel(21); // ~Lv 21
     near(FF.assassinDodgeBonus(lv20), 0.10, 'Lv 20: +10% dodge');
     near(FF.assassinDodgeBonus(leveled()), 0.25, 'Lv 60+: +25% dodge (10 + 15)');
     ok(FF.playerDodgeChance(leveled()) - FF.playerDodgeChance(full) >= 0.25 - 1e-9, 'assassin dodge is folded into total dodge chance');
@@ -1665,7 +1681,7 @@
   suite('warding proficiency', function(){
     eq(FF.WARDING_SKILL_ID, 'warding', 'warding skill id');
     // Bonus: +1% at Lv1 -> +20% at Lv100, and clamped beyond.
-    function st(lvl){ var xp = lvl<=1 ? 0 : Math.pow(lvl-1,2)*100; var o={xp:{}}; o.xp.warding = xp; return o; }
+    function st(lvl){ var xp = lvl<=1 ? 0 : FF.xpFloorForLevel(lvl); var o={xp:{}}; o.xp.warding = xp; return o; }
     near(FF.wardingReflectBonus(st(1)), 0.01, 'Lv1 => +1%');
     near(FF.wardingReflectBonus(st(100)), 0.20, 'Lv100 => +20%');
     ok(FF.wardingReflectBonus(st(50)) > FF.wardingReflectBonus(st(10)), 'more warding level => more reflection');
