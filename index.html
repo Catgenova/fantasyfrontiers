@@ -9527,6 +9527,35 @@
     }
     return '';
   }
+  // A dedicated, always-expanded panel pinned to the top of the Menagerie for whatever companions
+  // are currently in combat -- their spell rotation and a one-tap Deactivate, without scrolling to
+  // find them among every summoned familiar below.
+  function renderActiveCompanionsSection(){
+    var comps = activeCompanionList(state);
+    var slots = activeCompanionSlots(state);
+    var castSec = familiarCastIntervalMs()/1000;
+    var html = '<h3>Active Companions <span class="item-meta">('+comps.length+'/'+slots+')</span></h3>';
+    if(!comps.length){
+      return html + '<div class="empty-note">No active companions yet. Summon a familiar, expand it below, and <b>Activate as Companion</b> to bring it into combat (each casts a spell every '+castSec+'s).</div>';
+    }
+    html += '<div class="card-grid">';
+    comps.forEach(function(id){
+      var fam = FAMILIAR_DATA[id] || {};
+      var lvl = getFamiliarLevel(id);
+      var physiqueMeta = PHYSIQUE_SKILLS.filter(function(p){ return p.id===id; })[0];
+      var label = SKILL_LABELS[id] || (physiqueMeta ? physiqueMeta.name : id);
+      html += '<div class="item-card active-item">';
+      html += '<div class="item-top"><div class="item-icon">'+(fam.icon||'')+'</div><div><div class="item-name">'+escapeHtml(fam.name||id)+'</div><div class="item-meta">'+escapeHtml(label)+' &bull; Lv '+lvl+(lvl>=FAMILIAR_MAX_LEVEL?' (Max)':'')+' &bull; Companion</div></div></div>';
+      html += '<div class="inputs-line" style="margin-top:6px">Casts one spell every '+castSec+'s, cycling:</div>';
+      (fam.spells||[]).forEach(function(spell, i){
+        html += '<div class="chance-line">'+(i+1)+'. <b>'+escapeHtml(spell.name)+'</b> '+spellElementIcon(spell)+' &mdash; '+describeSpell(spell, lvl)+'</div>';
+      });
+      html += '<button class="action-btn stop" data-action="activateCompanion" data-skill="'+id+'">Deactivate Companion</button>';
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
   function renderFamiliarCard(skillId){
     var fam = FAMILIAR_DATA[skillId];
     if(!fam) return '';
@@ -9719,7 +9748,11 @@
     } else {
       html += '<div class="lock-note">No class is active. Equip one of the gear combinations below to take on its class.</div>';
     }
-    CLASS_DEFS.forEach(function(cd){
+    // Pin the active class to the top so its live passives are front-and-centre; the rest keep order.
+    var orderedClasses = activeId
+      ? CLASS_DEFS.filter(function(c){ return c.id===activeId; }).concat(CLASS_DEFS.filter(function(c){ return c.id!==activeId; }))
+      : CLASS_DEFS;
+    orderedClasses.forEach(function(cd){
       var active = activeId===cd.id;
       var lvl = classLevel(state, cd.id);
       var pct = levelProgress(state.xp[cd.id]||0);
@@ -9761,11 +9794,7 @@
     var _slots = activeCompanionSlots(state);
     var _castSec = familiarCastIntervalMs()/1000;
     var html = '<div class="section-intro">Every skill -- gathering, crafting, farming, faith, and physique -- has an associated familiar, and each Class has one too. Completing an action for that skill carries a small (1/3000) chance to permanently summon it (a Class familiar rolls on kills while that class is active). Expand a summoned familiar to see its level and spells, then activate it as a Companion to bring it into combat: each casts one spell every '+_castSec+' seconds, cycling through its list. You have <b>'+_slots+'</b> companion slot'+(_slots===1?'':'s')+' (a Staff adds more). Summoned: <b>'+totalOwned+' / '+totalFamiliars+'</b></div>';
-    var _actcomp = activeCompanionList(state);
-    if(_actcomp.length){
-      var _names = _actcomp.map(function(id){ var f = FAMILIAR_DATA[id]||{}; return (f.icon||'') + ' ' + (f.name||id); }).join(', ');
-      html += '<div class="physique-bonus">Active Companions ('+_actcomp.length+'/'+_slots+'): <b>'+_names+'</b> &mdash; each casts a spell in combat every '+_castSec+'s.</div>';
-    }
+    html += renderActiveCompanionsSection();
     var clothBonusPct = Math.round(getClothArmorSpellBonus(state)*100);
     html += '<div class="physique-bonus">Cloth Armor Spell Bonus: <b>+'+clothBonusPct+'%</b> summon spell potency &mdash; each equipped Tailoring piece (Chest, Head, Gloves, Boots, Back) adds +5% at Normal, and cloth rarity pumps this bonus 2x/4x/8x (Rare +10%, Supreme +20%, Fantastic +40%) instead of raising the piece\'s armor. Doesn\'t grow with tier.</div>';
     var sections = [
