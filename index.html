@@ -2791,11 +2791,37 @@
     {id:'exploitation',     name:'Exploitation', icon:svgIcon('coin','#c9a227'),
       desc:'Twisting the knife once you find the gap.',
       levels:'Landing critical hits.',
-      affects:'Increases Critical Hit damage above the 1.50x base, up to a 2.50x cap.'}
+      affects:'Increases Critical Hit damage above the 1.50x base, up to a 2.50x cap.'},
+    // Elemental attunements: one per element, trained by dealing OR taking that element's damage.
+    // Each grants growing damage of that element (+1% -> +100%) and resistance to it (+1% -> +20%).
+    {id:'fireAttunement',   name:'Fire Attunement',  icon:svgIcon('flame','#e0632f'),   element:'fire',
+      desc:'An affinity for flame, forged by dealing and enduring fire.',
+      levels:'Dealing or taking Fire-element damage in combat.',
+      affects:'Increases Fire damage you deal (+1% at Lv 1 up to +100% at Lv 100) and your Fire resistance (+1% up to +20%).'},
+    {id:'waterAttunement',  name:'Water Attunement', icon:svgIcon('droplet','#3f8fd0'),  element:'water',
+      desc:'A kinship with tide and current, deepened in the fray.',
+      levels:'Dealing or taking Water-element damage in combat.',
+      affects:'Increases Water damage you deal (+1% at Lv 1 up to +100% at Lv 100) and your Water resistance (+1% up to +20%).'},
+    {id:'earthAttunement',  name:'Earth Attunement', icon:svgIcon('mountain','#6f9538'), element:'earth',
+      desc:'A grounding in stone and soil, hardened by battle.',
+      levels:'Dealing or taking Earth-element damage in combat.',
+      affects:'Increases Earth damage you deal (+1% at Lv 1 up to +100% at Lv 100) and your Earth resistance (+1% up to +20%).'},
+    {id:'lightAttunement',  name:'Light Attunement', icon:svgIcon('sun','#e6c24a'),      element:'light',
+      desc:'A communion with radiance, brightened by holy war.',
+      levels:'Dealing or taking Light-element damage in combat.',
+      affects:'Increases Light damage you deal (+1% at Lv 1 up to +100% at Lv 100) and your Light resistance (+1% up to +20%).'},
+    {id:'darkAttunement',   name:'Dark Attunement',  icon:svgIcon('moon','#8a5fb0'),     element:'dark',
+      desc:'An embrace of shadow, steeped in dread and ruin.',
+      levels:'Dealing or taking Dark-element damage in combat.',
+      affects:'Increases Dark damage you deal (+1% at Lv 1 up to +100% at Lv 100) and your Dark resistance (+1% up to +20%).'}
   ];
 
   var PHYSIQUE_SKILL_MAP = {};
   PHYSIQUE_SKILLS.forEach(function(p){ PHYSIQUE_SKILL_MAP[p.id] = p; });
+  // element -> attunement physique id, and the reverse; used by the element damage/resist/XP helpers.
+  var ELEMENT_ATTUNEMENT = {};
+  PHYSIQUE_SKILLS.forEach(function(p){ if(p.element) ELEMENT_ATTUNEMENT[p.element] = p.id; });
+  function isElementAttunement(id){ return !!(PHYSIQUE_SKILL_MAP[id] && PHYSIQUE_SKILL_MAP[id].element); }
   // Combat draws from two separate physique feeds (one per attack tick, one per hit
   // taken) -- for display purposes on the global action bar, show the full combined set.
   var COMBAT_PHYSIQUE_DISPLAY = ['agility','reflexes','balance','tenacity','criticalEye','exploitation','fortitude','blocking','resolve'];
@@ -3173,7 +3199,9 @@
   var FAMILIAR_SUMMON_CHANCE = 1/3000; // 1/3000 per completed action -- keeps rolling even after a familiar is owned
   var FAMILIAR_MAX_LEVEL = 100;
   var FAMILIAR_POTENCY_PER_LEVEL = 0.05; // +5% spell potency per level above 1 (+495% at level 100)
-  var FAMILIAR_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['farming']).concat(FAITH_SKILL_IDS).concat(PHYSIQUE_SKILLS.map(function(p){ return p.id; }));
+  // Elemental attunement physiques have no familiar, so they're excluded from the familiar roster.
+  var FAMILIAR_PHYSIQUE_IDS = PHYSIQUE_SKILLS.filter(function(p){ return !p.element; }).map(function(p){ return p.id; });
+  var FAMILIAR_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['farming']).concat(FAITH_SKILL_IDS).concat(FAMILIAR_PHYSIQUE_IDS);
 
   function healSpell(name, amount){ return { name:name, type:'heal', amount:amount }; }
   function slowSpell(name, pct, durSec){ return { name:name, type:'slowEnemy', pct:pct, durationMs:durSec*1000 }; }
@@ -3606,7 +3634,7 @@
       // Bake the elemental advantage vs the current enemy into the DoT rate (the DoT ticks generically
       // in the loop, so it can't re-evaluate the element per tick).
       var _pmon = (state.activity && state.activity.type==='combat') ? monsterById(state.activity.monsterId) : null;
-      state.familiarBuffs.poisonDps = spell.dps*potency*elementAdvantage(spell.element, _pmon && _pmon.element);
+      state.familiarBuffs.poisonDps = spell.dps*potency*elementAdvantage(spell.element, _pmon && _pmon.element)*elementDmgMult(state, spell.element);
       state.familiarBuffs.poisonUntil = now + spell.durationMs*durMult;
       spawnFloatingText(spell.name + '!', 'ft-rare');
     } else if(spell.type==='regen'){
@@ -3635,6 +3663,7 @@
         var dmg = spell.amount * potency;
         if(spell.type==='hit' && spell.dmgType!=='void' && cmon){ var atkMix={}; atkMix[spell.dmgType]=1; dmg *= weightedAdvantage(atkMix, cmon.armorTypes || {blunt:1/3,slashing:1/3,piercing:1/3}); }
         dmg *= elementAdvantage(spell.element, cmon && cmon.element); // +20% when the spell's element beats the enemy's
+        dmg *= elementDmgMult(state, spell.element); // your Elemental Attunement boosts the familiar's element damage
         if(casterId==='summoner' && summonerBonus(20)) dmg *= 2; // Summoner Lv 20: its own familiar hits twice as hard
         if(spell.type==='siphon' && reaperBonus(20)) dmg *= 3; // Reaper Lv 20: familiar life-drain (siphon) spells deal triple damage
         dmg = Math.round(dmg);
@@ -3646,7 +3675,7 @@
         }
         applyChipDamage(dmg); // floors at 1 unless you wield a Staff (then summons can land the kill)
         spawnFloatingText('-'+dmg+' ('+spell.name+')', 'ft-rare');
-        if(dmg > 0){ addXp(STAVES_SKILL_ID, dmg); awardClassXp(dmg); } // Staves proficiency + active Class both train on familiar damage
+        if(dmg > 0){ addXp(STAVES_SKILL_ID, dmg); awardClassXp(dmg); awardElementXp(spell.element, dmg); } // Staves proficiency + active Class + Elemental Attunement train on familiar damage
         if(spell.type==='siphon'){
           var stolen = Math.min(dmg, maxHp(state) - state.playerHp);
           if(stolen>0){ state.playerHp += stolen; spawnFloatingText('+'+stolen+' HP', 'ft-success'); }
@@ -4593,6 +4622,17 @@
     if(!monster || !monster.element) return 1;
     return 1 + (playerElementWeakness(state)[monster.element] || 0);
   }
+  // Elemental attunement physiques: level 1 -> Lv 100 scales the bonus from 1% to its max. Damage
+  // dealt of an element scales up to +100%; resistance to it up to +20%. Trained by dealing/taking it.
+  var ELEMENT_ATTUNE_MIN = 0.01, ELEMENT_ATTUNE_DMG_MAX = 1.00, ELEMENT_ATTUNE_RESIST_MAX = 0.20;
+  var ELEMENT_ATTUNE_XP_PER_DMG = 0.5; // physique XP gained per point of that element's damage dealt/taken
+  function attunementLevel(st, element){ st = st || state; var id = ELEMENT_ATTUNEMENT[element]; return id ? getLevel((st.physique && st.physique[id]) || 0) : 1; }
+  function elementDamageBonus(st, element){ if(!element || !ELEMENT_ATTUNEMENT[element]) return 0; return ELEMENT_ATTUNE_MIN + (ELEMENT_ATTUNE_DMG_MAX-ELEMENT_ATTUNE_MIN)*clamp((attunementLevel(st,element)-1)/99,0,1); }
+  function elementResistBonus(st, element){ if(!element || !ELEMENT_ATTUNEMENT[element]) return 0; return ELEMENT_ATTUNE_MIN + (ELEMENT_ATTUNE_RESIST_MAX-ELEMENT_ATTUNE_MIN)*clamp((attunementLevel(st,element)-1)/99,0,1); }
+  function elementDmgMult(st, element){ return 1 + elementDamageBonus(st, element); }
+  function elementResistMult(st, element){ return 1 - elementResistBonus(st, element); }
+  // Grant attunement physique XP for dealing or taking `dmg` of `element`.
+  function awardElementXp(element, dmg){ var id = ELEMENT_ATTUNEMENT[element]; if(id && dmg > 0) addPhysiqueXp([[id, Math.max(1, Math.round(dmg * ELEMENT_ATTUNE_XP_PER_DMG))]]); }
   // Physique-driven combat bonuses -- layered on top of the equipment-driven Leather
   // dodge and Plate block bonuses above, plus two new mechanics of their own.
   var CRIT_DAMAGE_MULT = 1.5;        // base crit damage multiplier
@@ -6473,7 +6513,7 @@
       var _lightMult = templarLightDmgMult();
       if(templarBonus(80) && Math.random() < 0.10){ _lightMult *= 2; spawnFloatingText('Radiant Burst!', 'ft-rare'); }
       advantage = 0.5 * weightedAdvantage({blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3})
-                + 0.5 * elementAdvantage('light', monster.element) * _lightMult;
+                + 0.5 * elementAdvantage('light', monster.element) * _lightMult * elementDmgMult(state, 'light'); // Light Attunement boosts the light half
     } else {
       advantage = weightedAdvantage(weaponStyle.attackTypes || {blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
     }
@@ -6506,7 +6546,8 @@
     }
 
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult());
+    var wandAttuneMult = isWandAttack ? elementDmgMult(state, weaponStyle.element) : 1; // Elemental Attunement boosts a wand's element damage
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult);
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
@@ -6525,6 +6566,9 @@
     if(state.equippedMainhand) addXp(mainProfId, atkProfXp);
     if(state.equippedOffhand && offhandStyle && offhandStyle.type==='quiver') addXp(state.equippedOffhand, atkProfXp);
     awardClassXp(effDmg); // an active Class trains on combat damage dealt
+    // Elemental Attunement trains on the element damage you deal: a Wand's whole hit, a Scepter's light half.
+    if(isWandAttack) awardElementXp(weaponStyle.element, effDmg);
+    else if(isScepterAttack) awardElementXp('light', Math.round(effDmg * 0.5));
     // Knight (Momentum): each landed hit adds a -10% attack-speed stack (capped at 5 = -50%).
     if(knightBonus(1)) state.knightStacks = Math.min(5, (state.knightStacks || 0) + 1);
     // Templar on-hit debuffs: Lv 40 saps 25% of the enemy's damage, Lv 60 shreds 25% of its armor (5s, 5% each).
@@ -6603,7 +6647,7 @@
     // The hit lands its physical type AND the enemy's element together: the element is amplified by
     // the player's armor weakness to it (leather->fire, chain->earth, plate->water).
     var elementMult = incomingElementMult(state, monster);
-    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster) * templarIncomingDmgMult()); // familiar type-resistance buffs + Herald water resist + Templar enfeeble
+    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster) * templarIncomingDmgMult() * elementResistMult(state, monster.element)); // + Elemental Attunement resistance to the enemy's element
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
     var blockChance = playerBlockChance(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
@@ -6628,6 +6672,7 @@
       }
     }
     state.playerHp -= dmgToPlayer;
+    if(monster.element) awardElementXp(monster.element, dmgToPlayer); // Elemental Attunement also trains by taking that element's damage
     if(wardReflected > 0){
       applyChipDamage(wardReflected); // reflected damage chips the enemy (floors at 1 unless you wield a Staff)
       spawnFloatingText('Reflected '+wardReflected+'!', 'ft-rare');
@@ -8661,6 +8706,11 @@
     var _ewParts = ['fire','water','earth','light','dark'].filter(function(el){ return _ew[el] > 0; })
       .map(function(el){ return '<span class="elem-weak-stat elem-'+el+'">'+elementIcon(el)+' '+elementLabel(el)+' +'+Math.round(_ew[el]*100)+'%</span>'; });
     html += '<div class="stat-row"><span class="stat-label">Elemental Weakness</span><span class="stat-value" style="font-size:11px">'+(_ewParts.length ? _ewParts.join(' ') : 'None')+'</span></div>';
+    // Elemental Attunement physiques: per-element damage-dealt and resistance bonuses.
+    var _attParts = ['fire','water','earth','light','dark'].map(function(el){
+      return '<span class="elem-weak-stat elem-'+el+'">'+elementIcon(el)+' +'+Math.round(elementDamageBonus(state,el)*100)+'% dmg / +'+Math.round(elementResistBonus(state,el)*100)+'% res</span>';
+    });
+    html += '<div class="stat-row"><span class="stat-label">Elemental Attunement</span><span class="stat-value" style="font-size:10px;line-height:1.5">'+_attParts.join(' ')+'</span></div>';
     // Equipped ward's reflect (offhand that bounces matching-element damage back at the attacker).
     var _off = getOffhandStyle(state.equippedOffhand);
     if(_off && _off.type==='ward'){
@@ -9419,7 +9469,7 @@
       {label:'Crafting', ids: CRAFT_SKILL_IDS},
       {label:'Farming', ids: ['farming']},
       {label:'Faith', ids: FAITH_SKILL_IDS},
-      {label:'Physique', ids: PHYSIQUE_SKILLS.map(function(p){ return p.id; })},
+      {label:'Physique', ids: FAMILIAR_PHYSIQUE_IDS},
       {label:'Classes', ids: CLASS_SKILL_IDS}
     ];
     sections.forEach(function(section){
@@ -15675,6 +15725,7 @@
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
+      ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

@@ -1182,6 +1182,37 @@
     ok(fam.spells.some(function(sp){ return sp.type==='hit'; }), 'knight familiar has a damaging spell');
   });
 
+  // ---- Elemental attunement physiques (per-element damage + resistance) -----------------
+  suite('elemental attunements', function(){
+    var els = ['fire','water','earth','light','dark'];
+    els.forEach(function(el){
+      var id = FF.ELEMENT_ATTUNEMENT[el];
+      ok(id, el+' has an attunement physique id');
+      ok(FF.PHYSIQUE_SKILL_MAP[id] && FF.PHYSIQUE_SKILL_MAP[id].element===el, id+' is a physique tagged with its element');
+      ok(FF.isElementAttunement(id), id+' is recognised as an element attunement');
+    });
+    ok(!FF.isElementAttunement('bodyStrength'), 'a normal physique is not an attunement');
+
+    function stAt(el, lvl){ var o={physique:{}}; o.physique[FF.ELEMENT_ATTUNEMENT[el]] = (lvl<=1 ? 0 : Math.pow(lvl-1,2)*100); return o; }
+    // Damage bonus scales +1% (Lv1) -> +100% (Lv100); resistance +1% -> +20%.
+    near(FF.elementDamageBonus(stAt('fire',1), 'fire'), 0.01, 'Lv1 fire: +1% damage');
+    near(FF.elementDamageBonus(stAt('fire',100), 'fire'), 1.00, 'Lv100 fire: +100% damage');
+    near(FF.elementResistBonus(stAt('water',1), 'water'), 0.01, 'Lv1 water: +1% resistance');
+    near(FF.elementResistBonus(stAt('water',100), 'water'), 0.20, 'Lv100 water: +20% resistance');
+    ok(FF.elementDamageBonus(stAt('earth',50),'earth') > FF.elementDamageBonus(stAt('earth',10),'earth'), 'damage bonus rises with level');
+    ok(FF.elementResistBonus(stAt('light',80),'light') > FF.elementResistBonus(stAt('light',20),'light'), 'resistance rises with level');
+    // Multipliers.
+    near(FF.elementDmgMult(stAt('light',100),'light'), 2.00, 'Lv100 light damage mult = 2.0x');
+    near(FF.elementResistMult(stAt('dark',100),'dark'), 0.80, 'Lv100 dark resist mult = 0.8x (20% less taken)');
+    // Non-attuned / unknown element => no effect.
+    eq(FF.elementDamageBonus({physique:{}}, null), 0, 'no element => no damage bonus');
+    eq(FF.elementDmgMult({physique:{}}, 'bogus'), 1, 'unknown element => x1 damage');
+    eq(FF.elementResistMult({physique:{}}, 'bogus'), 1, 'unknown element => x1 resist');
+
+    // Attunements are physiques, but have no familiar (excluded from the familiar roster).
+    els.forEach(function(el){ ok(FF.FAMILIAR_SKILL_IDS.indexOf(FF.ELEMENT_ATTUNEMENT[el]) === -1, FF.ELEMENT_ATTUNEMENT[el]+' is not in the familiar roster'); });
+  });
+
   // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------
   suite('warding proficiency', function(){
     eq(FF.WARDING_SKILL_ID, 'warding', 'warding skill id');
