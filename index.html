@@ -12908,11 +12908,50 @@
     if(chatChannel==='global') chatRenderMessagesOnly(); // chat lives in the rail/drawer; refresh in place
     noteChatActivity();
   }
+  // ======== Chat profanity filter ========
+  // Whole-token matching (after light leet/repeat normalization) against an inflected bad-word set.
+  // Matching whole tokens -- never substrings -- sidesteps the Scunthorpe problem, so real words that
+  // merely contain a bad substring (class, grass, assassin, cockpit) pass through untouched. We censor
+  // on send (stored messages stay clean) AND on display (covers history + anyone without this build).
+  var PROFANITY_SET = (function(){
+    var bases = ['fuck','shit','bitch','cunt','ass','asshole','bastard','dick','dickhead','piss','slut',
+      'whore','cock','pussy','damn','wanker','twat','prick','douche','retard','jackass','bollocks',
+      'bugger','fag','faggot','nigger','nigga','coon','spic','kike','wank','arse','crap'];
+    var suffixes = ['','s','es','ed','er','ers','ing','in','y','ies',' y','hole','holes','head','heads','wipe','face','ery','iest'];
+    var set = Object.create(null);
+    bases.forEach(function(w){ suffixes.forEach(function(sf){ set[w+sf.trim()] = 1; }); });
+    ['motherfucker','motherfuckers','motherfucking','bullshit','goddamn','goddamnit','dumbass','dumbasses',
+      'asshat','asshats','asswipe','fuckface','fuckwit','fuckboy','shithead','shithole','dipshit','horseshit'].forEach(function(w){ set[w] = 1; });
+    return set;
+  })();
+  // Two readings of a token: one treating @$!1 etc. as leetspeak letters (catches "sh!t", "@sshole"),
+  // one treating them as plain punctuation to strip (catches "fuck!" -- where "!" is just an exclaim,
+  // not an "i"). A token is profane if either reading, or its de-stretched form, hits the set.
+  function _profLeet(tok){
+    return tok.toLowerCase()
+      .replace(/[@4]/g,'a').replace(/[$5]/g,'s').replace(/[!1|]/g,'i')
+      .replace(/0/g,'o').replace(/3/g,'e').replace(/7/g,'t').replace(/[^a-z]/g,'');
+  }
+  function _profPlain(tok){ return tok.toLowerCase().replace(/[^a-z]/g,''); }
+  function _hit(n){
+    if(!n) return false;
+    if(PROFANITY_SET[n]) return true;
+    var collapsed = n.replace(/(.)\1+/g, '$1'); // fuuuck -> fuck, shiiit -> shit
+    return collapsed !== n && !!PROFANITY_SET[collapsed];
+  }
+  function _isProfane(tok){ return _hit(_profLeet(tok)) || _hit(_profPlain(tok)); }
+  function censorChat(text){
+    if(!text) return text;
+    return String(text).replace(/[A-Za-z0-9@$!*|]+/g, function(tok){
+      return _isProfane(tok) ? (tok.charAt(0) + tok.slice(1).replace(/./g, '*')) : tok;
+    });
+  }
   async function chatSend(){
     var input = document.getElementById('chatInput');
     if(!input) return;
     var text = (input.value||'').trim();
     if(!text) return;
+    text = censorChat(text);
     if(text.length > CHAT_CONFIG.maxLen) text = text.slice(0, CHAT_CONFIG.maxLen);
     var name = chatName();
     if(!name){ addLog('Sign in to chat.', 'danger'); return; }
@@ -12937,7 +12976,7 @@
         var col = m.rarity==='fantastic' ? 'var(--rarity-fantastic)' : 'var(--rarity-superior)';
         return '<div class="chat-msg chat-system rar-'+(m.rarity||'supreme')+'"><span class="chat-sys-ico">'+svgIcon('starburst',col)+'</span><span class="chat-body">'+escapeHtml(m.body||'')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span></div>';
       }
-      return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+escapeHtml(m.body||'')+'</span></div>';
+      return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+escapeHtml(censorChat(m.body||''))+'</span></div>';
     }).join('');
   }
   // Map a broadcast craft body ("Supreme Iron Sword") to its rarity, or null for rare/normal. Only the
@@ -13961,7 +14000,7 @@
   var guildLivePollTimer = null;
   function guildChatMessagesHtml(){
     if(!guildChatMessages.length) return '<div class="chat-empty">No guild messages yet &mdash; say hello to your guildmates!</div>';
-    return guildChatMessages.map(function(m){ return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+escapeHtml(m.body||'')+'</span></div>'; }).join('');
+    return guildChatMessages.map(function(m){ return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+escapeHtml(censorChat(m.body||''))+'</span></div>'; }).join('');
   }
   function guildChatRenderOnly(){ var el=document.getElementById('chatMessages'); if(el){ el.innerHTML=guildChatMessagesHtml(); el.scrollTop=el.scrollHeight; } }
   function guildChatOnIncoming(m){
@@ -14043,6 +14082,7 @@
     var text=(input.value||'').trim();
     if(!text) return;
     if(text.length>500) text=text.slice(0,500);
+    text=censorChat(text);
     var name=chatName(); if(!name) return;
     var now=Date.now(); if(now-guildChatLastSentAt<1200) return;
     input.value=''; guildChatDraft=''; guildChatLastSentAt=now;
@@ -16447,7 +16487,7 @@
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
       GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS,
-      renderGlobalActionBar:renderGlobalActionBar, describeTask:describeTask,
+      renderGlobalActionBar:renderGlobalActionBar, describeTask:describeTask, censorChat:censorChat,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,

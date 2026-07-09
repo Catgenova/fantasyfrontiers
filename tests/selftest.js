@@ -494,6 +494,35 @@
     ok(trainedIds('carpentry').indexOf('grossMotor') !== -1 && trainedIds('carpentry').indexOf('handStrength') === -1, 'carpentry keeps Gross Motor, gains no hand-craft physique');
   });
 
+  // ---- Chat profanity filter -------------------------------------------------------------------
+  suite('chat: profanity filter', function(){
+    var c = FF.censorChat;
+    function censored(s){ var out = c(s); return out !== s && out.indexOf('*') !== -1; }
+    // Clean text is untouched.
+    eq(c('hello there, nice to meet you'), 'hello there, nice to meet you', 'clean text passes through');
+    eq(c(''), '', 'empty string is safe');
+    // Bad words get masked (first char kept, rest starred).
+    eq(c('you fuck'), 'you f***', 'basic swear masked');
+    ok(censored('what the shit'), 'shit masked');
+    ok(censored('bitch'), 'bitch masked');
+    // Inflections and compounds.
+    ok(censored('stop fucking around'), 'inflection (fucking) masked');
+    ok(censored('you asshole'), 'compound (asshole) masked');
+    ok(censored('motherfucker'), 'motherfucker masked');
+    // Light obfuscation: leetspeak + repeated letters.
+    ok(censored('sh1t'), 'leetspeak (sh1t) masked');
+    ok(censored('fuuuck'), 'stretched (fuuuck) masked');
+    ok(censored('@sshole'), 'leet @ (@sshole) masked');
+    // No Scunthorpe: real words that merely contain a bad substring are untouched.
+    eq(c('the assassin joined our class in the grass'), 'the assassin joined our class in the grass', 'assassin/class/grass untouched');
+    eq(c('check the cockpit and pass'), 'check the cockpit and pass', 'cockpit/pass untouched');
+    eq(c('scunthorpe analysis'), 'scunthorpe analysis', 'scunthorpe untouched');
+    // Punctuation-adjacent still catches.
+    ok(censored('fuck!'), 'trailing punctuation still masked');
+    // First letter of the mask is preserved so length/shape stays readable.
+    ok(c('shit').charAt(0) === 's' && c('shit').slice(1) === '***', 'mask keeps first char + stars');
+  });
+
   // ---- Inventory grid: rarity parsing for cell accents / detail tag ----------------------
   suite('inventory rarity', function(){
     eq(FF.itemRarityId('bodyarmor_chain_chest_t20_normal'), 'normal', 'normal suffix');
