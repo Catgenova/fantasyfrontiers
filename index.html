@@ -238,6 +238,13 @@
     .ff-dock-btn .ico{display:block;line-height:0;} .ff-dock-btn .ico svg{width:21px;height:21px;} .ff-dock-btn .lbl{font-family:var(--font-display);font-size:10px;letter-spacing:.5px;margin-top:2px;}
     .ff-dock-btn.on{background:rgba(111,149,56,.14);color:#a9c47e;border-top:3px solid var(--gold-bright);}
     .ff-chatfab{display:flex;align-items:center;justify-content:center;position:absolute;right:14px;bottom:66px;z-index:22;width:50px;height:50px;border-radius:50%;background:linear-gradient(180deg,#5c7f34,#3c5a24);border:2px solid #24380f;color:#f2f8e6;font-size:20px;cursor:pointer;box-shadow:0 5px 14px rgba(0,0,0,.45);}
+    /* Unread indicator: gold ring + a small dot badge, pulsing to draw the eye. */
+    .ff-chatfab-alert{border-color:var(--gold-bright);animation:ffFabPulse 1.4s ease-in-out infinite;}
+    .ff-chatfab-alert::after{content:'';position:absolute;top:-2px;right:-2px;width:14px;height:14px;border-radius:50%;background:var(--gold-bright);border:2px solid #24380f;}
+  }
+  @keyframes ffFabPulse{
+    0%,100%{box-shadow:0 5px 14px rgba(0,0,0,.45), 0 0 0 0 rgba(230,196,90,.55);}
+    50%{box-shadow:0 5px 14px rgba(0,0,0,.45), 0 0 0 7px rgba(230,196,90,0);}
   }
 
   .topbar{
@@ -3237,7 +3244,7 @@
         }
       }
     }
-    addLog((FAMILIAR_DATA[state.activeCompanion]||{}).name + ' casts ' + spell.name + '!', 'important');
+    if(!offlineCapture) addLog((FAMILIAR_DATA[state.activeCompanion]||{}).name + ' casts ' + spell.name + '!', 'important'); // suppress per-cast spam during the offline fast-forward
   }
   function activateCompanion(skillId){
     if(skillId && (!state.familiars[skillId] || !state.familiars[skillId].owned)) return;
@@ -4673,7 +4680,10 @@
     if(!item){ act.type = null; needsRender = true; return; }
     act.progress += dt;
     var effTime = item.time*1000*speedMultiplier(state)*gatherToolSpeedMultiplier(state, act.skill)*(PHYS_LONG_GATHER.indexOf(act.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1);
-    while(act.type==='gather' && act.progress >= effTime){
+    // Cap batched iterations so a huge offline window on a very fast gather can't stall the load
+    // (live ticks pass a tiny dt and never approach the cap). Any leftover progress is discarded.
+    var _gGuard = 0;
+    while(act.type==='gather' && act.progress >= effTime && _gGuard++ < 200000){
       act.progress -= effTime;
       bumpStat('gathered');
       gabCapture = { xp:0, items:{} };
@@ -4748,8 +4758,11 @@
   function unequipBodyArmor(slot){
     var slotState = state.bodyArmor && state.bodyArmor[slot];
     if(!slotState || slotState.tier<=0) return;
-    var oldId = 'bodyarmor_'+slotState.material+'_'+slot+'_t'+(slotState.tier-1)+'_'+slotState.rarity;
-    addItem(oldId, 1);
+    // Only return an item if the slot has a valid material; a legacy/partial save could carry a
+    // tier without a material, which would otherwise mint a phantom "bodyarmor_undefined_..." item.
+    if(slotState.material){
+      addItem('bodyarmor_'+slotState.material+'_'+slot+'_t'+(slotState.tier-1)+'_'+slotState.rarity, 1);
+    }
     slotState.tier = 0; slotState.rarity = 'normal'; slotState.material = null;
   }
 
@@ -6215,7 +6228,7 @@
       var item = ALL_GATHER_ITEMS[act.itemId];
       var ticks = Math.floor(capped/1000 / item.time);
       if(ticks > 0){
-        addXp(act.skill, ticks*item.xp);
+        addXp(act.skill, ticks*item.xp * (1 + curiosityGatherXpBonus(state))); // match live gathering's Curiosity bonus
         if(act.skill === 'digging'){
           var tierIndex = parseInt(act.itemId.split('_t')[1], 10);
           var mainGain = Math.round(ticks * diggingMainChance(state));
@@ -6260,18 +6273,37 @@
       // the old recipe.time lookup threw and aborted the whole offline pass.
       processCraftActivity(act, capped);
     } else if(act && act.type === 'combat'){
-      // Fast-forward the real combat ticks: same player/monster attack timing and auto-eat
-      // as live, so kills, XP, gold and drops match. Stops early if food runs out (retreat).
+      // Fast-forward combat with the same attack timing AND the same damage-over-time / regen /
+      // familiar-spell casting the live loop applies, so a toxin- or familiar-reliant build performs
+      // the same offline. Stepped in fixed chunks so DoT/regen/cast cadence resolve like they do live.
       var _pStyle = getWeaponStyle(state.equippedMainhand);
       var _monster = monsterById(act.monsterId);
       if(_pStyle && _monster){
-        var _pInt = Math.max(200, _pStyle.attackSpeed*1000);
-        var _mInt = Math.max(200, _monster.attackSpeed*1000*(1+getFamiliarEnemySlowPct()));
-        var _nextP = _pInt, _nextM = _mInt, _guard = 0;
-        while(state.activity.type==='combat' && _guard++ < 300000){
-          if(_nextP <= _nextM){ if(_nextP > capped) break; playerAttackTick(); _nextP += _pInt; }
-          else { if(_nextM > capped) break; monsterAttackTick(); autoEatCheck(); _nextM += _mInt; }
+        var _step = 500; // ms per sim step (covers the 12h cap in ~86k steps, well under the guard)
+        var _sim = 0, _pAcc = 0, _mAcc = 0, _castAcc = state.familiarCastAccum||0, _guard = 0;
+        while(_sim < capped && state.activity.type==='combat' && _guard++ < 200000){
+          var _chunk = Math.min(_step, capped - _sim); _sim += _chunk;
+          // Player swings
+          var _pInt = Math.max(200, _pStyle.attackSpeed*1000*(1 - Math.min(0.9, getFamBuff('haste'))));
+          _pAcc += _chunk;
+          while(_pAcc >= _pInt && state.activity.type==='combat'){ _pAcc -= _pInt; playerAttackTick(); _pInt = Math.max(200, _pStyle.attackSpeed*1000*(1 - Math.min(0.9, getFamBuff('haste')))); }
+          if(state.activity.type!=='combat') break;
+          // Monster swings + auto-eat
+          var _mInt = Math.max(200, _monster.attackSpeed*1000*(1+getFamiliarEnemySlowPct()));
+          _mAcc += _chunk;
+          while(_mAcc >= _mInt && state.activity.type==='combat'){ _mAcc -= _mInt; monsterAttackTick(); autoEatCheck(); _mInt = Math.max(200, _monster.attackSpeed*1000*(1+getFamiliarEnemySlowPct())); }
+          if(state.activity.type!=='combat') break;
+          // Familiar poison + toxin-potion poison chip the enemy (never the finishing blow); familiar regen heals.
+          var _pd = getFamiliarPoisonDps(); if(_pd>0) state.activity.monsterHp = Math.max(1, state.activity.monsterHp - _pd*_chunk/1000);
+          if((state.activity.potionPoisonUntil||0) > Date.now()) state.activity.monsterHp = Math.max(1, state.activity.monsterHp - (state.activity.potionPoisonDps||0)*_chunk/1000);
+          var _rh = famRegenHps(); if(_rh>0 && state.playerHp>0) state.playerHp = Math.min(maxHp(state), state.playerHp + _rh*_chunk/1000);
+          // Familiar casts one spell every 10s, cycling its list (same cadence as live).
+          if(state.activeCompanion && FAMILIAR_DATA[state.activeCompanion]){
+            _castAcc += _chunk;
+            while(_castAcc >= 10000){ _castAcc -= 10000; var _cs = FAMILIAR_DATA[state.activeCompanion].spells; castFamiliarSpell(_cs[state.familiarCastIndex % _cs.length], getFamiliarLevel(state.activeCompanion)); state.familiarCastIndex = (state.familiarCastIndex + 1) % _cs.length; }
+          }
         }
+        state.familiarCastAccum = _castAcc;
       }
     }
     }catch(e){} // isolate the primary-activity catch-up so a stale primary can't void the belt slots / peons below
@@ -10757,7 +10789,30 @@
   };
   var CHAT_ENABLED = !!(CHAT_CONFIG.supabaseUrl && CHAT_CONFIG.supabaseAnonKey);
   var chatMessages = [];
-  var chatHasUnread = false;   // set when a message arrives while off the Chat tab -> flashes the tab
+  var chatHasUnread = false;   // set when a message arrives while chat isn't on-screen -> flashes the mobile FAB
+  // Chat is on-screen when the full-screen overlay is up, the Chat category page is open, or (on desktop)
+  // the always-visible dock is showing; on mobile it's hidden behind the FAB unless the drawer is open.
+  function chatIsOnScreen(){
+    if(chatExpanded) return true;
+    if(currentCategory==='chat') return true;
+    return isMobileView() ? chatDrawerOpen : true;
+  }
+  function updateChatFab(){
+    var fab = document.getElementById('ffChatFab');
+    if(fab) fab.classList.toggle('ff-chatfab-alert', chatHasUnread);
+  }
+  // Flag unread + flash the FAB when a message lands while chat isn't visible (respecting the setting).
+  function noteChatActivity(){
+    if(!(state.settings && state.settings.chatFlash)) return;
+    if(chatIsOnScreen()) return;
+    chatHasUnread = true;
+    updateChatFab();
+  }
+  function clearChatUnread(){
+    if(!chatHasUnread) return;
+    chatHasUnread = false;
+    updateChatFab();
+  }
   var chatClient = null;
   var chatStatus = CHAT_ENABLED ? 'connecting' : 'unconfigured'; // unconfigured|connecting|online|error
   var chatLastSentAt = 0;
@@ -11273,6 +11328,7 @@
     chatMessages.push(msg);
     if(chatMessages.length > 120) chatMessages = chatMessages.slice(-120);
     if(chatChannel==='global') chatRenderMessagesOnly(); // chat lives in the rail/drawer; refresh in place
+    noteChatActivity();
   }
   async function chatSend(){
     var input = document.getElementById('chatInput');
@@ -11322,6 +11378,7 @@
     chatMessages.push(m);
     if(chatMessages.length > 120) chatMessages = chatMessages.slice(-120);
     if(chatChannel==='global') chatRenderMessagesOnly(); // refresh in place if the global feed is showing
+    noteChatActivity();
   }
   function chatRenderMessagesOnly(){
     var el = document.getElementById('chatMessages');
@@ -12272,6 +12329,7 @@
     guildChatMessages.push(m);
     if(guildChatMessages.length>120) guildChatMessages=guildChatMessages.slice(-120);
     if(chatChannel==='guild') guildChatRenderOnly();
+    noteChatActivity();
   }
   function guildChatMaybeSubscribe(){
     if(!chatClient || !guildState.guild) return;
@@ -13837,6 +13895,7 @@
     currentArea = areaOf(cat);
     profileView = null;
     chatDrawerOpen = false;
+    if(cat==='chat') clearChatUnread();
     if(DEFAULT_SUB[cat]) currentSub = DEFAULT_SUB[cat];
     if(cat==='market') marketState.status = 'idle'; // reload + auto-collect on each entry
     render();
@@ -13864,7 +13923,7 @@
   });
 
   var _ffResizeT = null;
-  window.addEventListener('resize', function(){ if(_ffResizeT) return; _ffResizeT = setTimeout(function(){ _ffResizeT = null; if(!isMobileView()) chatDrawerOpen = false; render(); }, 180); });
+  window.addEventListener('resize', function(){ if(_ffResizeT) return; _ffResizeT = setTimeout(function(){ _ffResizeT = null; if(!isMobileView()){ chatDrawerOpen = false; clearChatUnread(); } render(); }, 180); });
 
   // Maps a tier-stepper's data-tier-target to the state it reads/writes. Scalars ignore `sub`.
   var TIER_STEP_TARGETS = {
@@ -14193,10 +14252,10 @@
     } else if(action==='buyExpBuff'){
       buyServerExpBuff();
     } else if(action==='toggleChatDrawer'){
-      chatDrawerOpen = !chatDrawerOpen; renderChatDrawer();
+      chatDrawerOpen = !chatDrawerOpen; if(chatDrawerOpen) clearChatUnread(); renderChatDrawer();
     } else if(action==='toggleChatExpand'){
       chatExpanded = !chatExpanded;
-      if(chatExpanded) chatDrawerOpen = false; // full screen supersedes the mobile drawer
+      if(chatExpanded){ chatDrawerOpen = false; clearChatUnread(); } // full screen supersedes the mobile drawer
     } else if(action==='noop'){
       /* swallow clicks inside the chat drawer so the backdrop tap doesn't close it */
     } else if(action==='closeOfflineSummary'){
