@@ -649,6 +649,22 @@
     ok(FF.CRAFTING_TAB_SKILL_IDS.indexOf('runesmithing') !== -1 || FF.CRAFT_SKILL_IDS.indexOf('runesmithing') !== -1, 'runesmithing is a crafting skill');
   });
 
+  // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------
+  suite('warding proficiency', function(){
+    eq(FF.WARDING_SKILL_ID, 'warding', 'warding skill id');
+    // Bonus: +1% at Lv1 -> +20% at Lv100, and clamped beyond.
+    function st(lvl){ var xp = lvl<=1 ? 0 : Math.pow(lvl-1,2)*100; var o={xp:{}}; o.xp.warding = xp; return o; }
+    near(FF.wardingReflectBonus(st(1)), 0.01, 'Lv1 => +1%');
+    near(FF.wardingReflectBonus(st(100)), 0.20, 'Lv100 => +20%');
+    ok(FF.wardingReflectBonus(st(50)) > FF.wardingReflectBonus(st(10)), 'more warding level => more reflection');
+    ok(FF.wardingReflectBonus(st(200)) <= 0.20 + 1e-9, 'bonus clamps at +20% beyond Lv100');
+    eq(FF.WARDING_BONUS_MIN, 0.01, 'min bonus 1%');
+    eq(FF.WARDING_BONUS_MAX, 0.20, 'max bonus 20%');
+    // Warding is a single shared proficiency: the per-element ward styles are NOT proficiency skills.
+    ok(FF.OFFHAND_STYLE_IDS.indexOf('warding') === -1, 'warding is not an offhand STYLE id');
+    FF.WARD_TYPES.forEach(function(w){ ok(FF.OFFHAND_STYLE_IDS.indexOf(w.id) === -1, w.id+' is not a per-style proficiency'); });
+  });
+
   // ---- Hardening: monster lookup + addItem guards ---------------------------------------
   suite('hardening', function(){
     // monsterById maps every monster and rejects unknown ids (used by the combat hot path + stale-id retreat).

@@ -2451,6 +2451,13 @@
   var WARD_REFLECT_MIN = 0.05, WARD_REFLECT_MAX = 0.30;
   var WARD_FULL_REFLECT_CHANCE = { normal:0, rare:0.05, supreme:0.10, fantastic:0.20 };
   function wardReflectPct(tierIndex){ return Math.round((WARD_REFLECT_MIN + (WARD_REFLECT_MAX-WARD_REFLECT_MIN)*(tierIndex/(TIER_COUNT-1)))*1000)/1000; }
+  // The Warding proficiency (trained by reflected damage) adds flat reflection on top of the ward's
+  // own reflect: +1% at level 1, scaling to +20% at level 100.
+  var WARDING_BONUS_MIN = 0.01, WARDING_BONUS_MAX = 0.20;
+  function wardingReflectBonus(st){ st = st || state;
+    var lvl = getLevel((st.xp && st.xp[WARDING_SKILL_ID]) || 0);
+    return WARDING_BONUS_MIN + (WARDING_BONUS_MAX-WARDING_BONUS_MIN)*clamp((lvl-1)/99, 0, 1);
+  }
   var WARD_TYPES = WARD_ELEMENTS.map(function(el){
     return { id:'ward'+el.charAt(0).toUpperCase()+el.slice(1), name: ELEMENT_META[el].label+' Ward', icon: elementIcon(el),
              type:'ward', element:el, ward:true, requiresHand:'1h', skillId:'runesmithing', matPrefix:'metallurgy', tierCount: TIER_COUNT };
@@ -2460,7 +2467,9 @@
   WARD_TYPES.forEach(function(w){ WARD_TYPE_MAP[w.id] = w; });
   function isWard(typeId){ return !!WARD_TYPE_MAP[typeId]; }
   var WEAPON_STYLE_IDS = WEAPON_STYLES.map(function(w){ return w.id; });
-  var OFFHAND_STYLE_IDS = OFFHAND_STYLES.map(function(s){ return s.id; });
+  // Wards are excluded from the per-style proficiency list: all wards share one 'warding' proficiency.
+  var OFFHAND_STYLE_IDS = OFFHAND_STYLES.filter(function(s){ return !s.ward; }).map(function(s){ return s.id; });
+  var WARDING_SKILL_ID = 'warding'; // shared offhand proficiency for every Ward, trained by reflected damage
   var UNARMED_STYLE = {id:null, name:'Fists', icon:svgIcon('fist','#c8a888'), damageType:'blunt', attackTypes:{blunt:1}, hand:'1h', attackSpeed:2};
   var STACKABLE_SHIELD_TYPES = OFFHAND_STYLES.filter(function(o){ return o.stackable; });
   var STACKABLE_SHIELD_TYPE_MAP = {};
@@ -2934,7 +2943,7 @@
   var CRAFTING_TAB_SKILL_IDS = CRAFT_SKILL_IDS.filter(function(id){
     return BUILDING_SKILL_IDS.indexOf(id)===-1 && OUTFITTING_SKILL_IDS.indexOf(id)===-1;
   });
-  var ALL_MAIN_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['fiberharvesting','grainharvesting','herbharvesting']).concat(WEAPON_STYLE_IDS).concat(OFFHAND_STYLE_IDS).concat(ARMOR_PROFICIENCY_IDS).concat(['prayer','sacrifice','devotion','blessing','miracle']);
+  var ALL_MAIN_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['fiberharvesting','grainharvesting','herbharvesting']).concat(WEAPON_STYLE_IDS).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS).concat(['prayer','sacrifice','devotion','blessing','miracle']);
   var FAITH_SKILL_IDS = ['prayer','sacrifice','devotion','blessing','miracle'];
 
   // ================= FAMILIARS =================
@@ -3412,7 +3421,7 @@
   function combatLevelEquivalent(state){
     var total = 0;
     if(state.equippedMainhand) total += getLevel(state.xp[state.equippedMainhand]||0);
-    if(state.equippedOffhand) total += getLevel(state.xp[state.equippedOffhand]||0);
+    if(state.equippedOffhand) total += getLevel(state.xp[isWard(state.equippedOffhand) ? WARDING_SKILL_ID : state.equippedOffhand]||0);
     BODY_ARMOR_SLOTS.forEach(function(slot){
       var s = state.bodyArmor && state.bodyArmor[slot];
       if(s && s.material){
@@ -5369,7 +5378,7 @@
       carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0,
       stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
-      shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0,
+      shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0,
       prayer:0, sacrifice:0, devotion:0, blessing:0, miracle:0
     };
     WEAPON_STYLE_IDS.forEach(function(id){ xpObj[id] = 0; });
@@ -6205,7 +6214,7 @@
     // and reflect that share back as that element. Rarity can proc a full (100%) reflect.
     var wardReflected = 0;
     if(offhandStyle && offhandStyle.type==='ward' && offhandItem && monster.element === offhandStyle.element){
-      var _rf = offhandItem.reflect || 0;
+      var _rf = Math.min(1, (offhandItem.reflect || 0) + wardingReflectBonus(state)); // ward tier + Warding proficiency
       if((offhandItem.fullReflectChance||0) > 0 && Math.random() < offhandItem.fullReflectChance) _rf = 1; // rarity proc: reflect it all
       if(_rf > 0){
         wardReflected = Math.round(dmgToPlayer * _rf);
@@ -6216,6 +6225,7 @@
     if(wardReflected > 0){
       act.monsterHp = Math.max(1, act.monsterHp - wardReflected); // reflected damage chips the enemy (your own attack lands the kill)
       spawnFloatingText('Reflected '+wardReflected+'!', 'ft-rare');
+      addXp(WARDING_SKILL_ID, Math.max(1, Math.round(wardReflected * DEF_PROF_XP_PER_DMG))); // Warding trains on damage reflected
     }
     // Bubble: negate a would-be killing blow (consumed once), while the buff is up.
     if(state.playerHp <= 0 && isFamiliarBuffActive('bubble')){
@@ -8053,7 +8063,10 @@
     if(_off && _off.type==='ward'){
       var _wi = getEquippedOffhandItem(state);
       if(_wi){
-        html += '<div class="stat-row"><span class="stat-label">Ward Reflect</span><span class="stat-value" style="font-size:11px"><span class="elem-weak-stat elem-'+_off.element+'">'+elementIcon(_off.element)+' '+Math.round(_wi.reflect*100)+'% '+elementLabel(_off.element)+'</span>'+(_wi.fullReflectChance>0?' &bull; '+Math.round(_wi.fullReflectChance*100)+'% full':'')+'</span></div>';
+        var _wb = wardingReflectBonus(state);
+        var _tot = Math.min(1, _wi.reflect + _wb);
+        html += '<div class="stat-row"><span class="stat-label">Ward Reflect</span><span class="stat-value" style="font-size:11px"><span class="elem-weak-stat elem-'+_off.element+'">'+elementIcon(_off.element)+' '+Math.round(_tot*100)+'% '+elementLabel(_off.element)+'</span>'+(_wi.fullReflectChance>0?' &bull; '+Math.round(_wi.fullReflectChance*100)+'% full':'')+'</span></div>';
+        html += '<div class="stat-row"><span class="stat-label">&nbsp;&nbsp;from Warding (Lv '+getLevel(state.xp[WARDING_SKILL_ID]||0)+')</span><span class="stat-value" style="font-size:11px">'+Math.round(_wi.reflect*100)+'% ward + '+Math.round(_wb*100)+'%</span></div>';
       }
     }
     html += '</div>';
@@ -13044,6 +13057,7 @@
     shieldMedium: 'A shield that counters piercing attacks.',
     shieldLarge: 'A heavy shield that counters blunt attacks.',
     quiver: 'Boosts arrow damage for bow users.',
+    warding: 'Proficiency wielding Wards. Trained by damage reflected, it adds extra reflection: +1% at Lv 1 up to +20% at Lv 100.',
     clotharmor: 'Proficiency wearing Tailoring\'s cloth armor at higher tiers.',
     leatherarmor: 'Proficiency wearing Leatherworking\'s leather armor at higher tiers.',
     chainmailarmor: 'Proficiency wearing Armorsmithing\'s chain mail at higher tiers.',
@@ -13093,7 +13107,7 @@
     miracle:   ['focus']
   }
   function isCombatSkillId(skillId){
-    return WEAPON_STYLE_IDS.indexOf(skillId)!==-1 || OFFHAND_STYLE_IDS.indexOf(skillId)!==-1 || ARMOR_PROFICIENCY_IDS.indexOf(skillId)!==-1;
+    return WEAPON_STYLE_IDS.indexOf(skillId)!==-1 || OFFHAND_STYLE_IDS.indexOf(skillId)!==-1 || skillId===WARDING_SKILL_ID || ARMOR_PROFICIENCY_IDS.indexOf(skillId)!==-1;
   }
   function physiqueTrainedBySkill(skillId){
     if(GATHER_PHYSIQUE[skillId]) return GATHER_PHYSIQUE[skillId].map(function(p){ return p[0]; });
@@ -13242,6 +13256,7 @@
   CRAFT_SKILL_IDS.forEach(function(id){ SKILL_LABELS[id] = CRAFTING_SKILLS[id].label; });
   WEAPON_STYLES.forEach(function(w){ SKILL_LABELS[w.id] = w.name; });
   OFFHAND_STYLES.forEach(function(s){ SKILL_LABELS[s.id] = s.name; });
+  SKILL_LABELS[WARDING_SKILL_ID] = 'Warding';
   ARMOR_PROFICIENCY_IDS.forEach(function(id){ SKILL_LABELS[id] = ARMOR_PROFICIENCY_LABELS[id]; });
   FAITH_SKILL_IDS.forEach(function(id){ SKILL_LABELS[id] = FAITH_SKILLS[id].label; });
 
@@ -13267,7 +13282,7 @@
     {label:'Gathering', color:'var(--cat-gathering)', skills:GATHER_SKILL_IDS},
     {label:'Crafting',  color:'var(--cat-crafting)',  skills:CRAFT_SKILL_IDS},
     {label:'Farming',   color:'var(--cat-farming)',   skills:['fiberharvesting','grainharvesting','herbharvesting']},
-    {label:'Combat',    color:'var(--cat-combat)',    skills:WEAPON_STYLE_IDS.concat(OFFHAND_STYLE_IDS).concat(ARMOR_PROFICIENCY_IDS)},
+    {label:'Combat',    color:'var(--cat-combat)',    skills:WEAPON_STYLE_IDS.concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS)},
     {label:'Faith',     color:'var(--cat-faith)',     skills:FAITH_SKILL_IDS}
   ];
 
@@ -14993,6 +15008,7 @@
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,
       WARD_TYPES:WARD_TYPES, WARD_TYPE_MAP:WARD_TYPE_MAP, isWard:isWard, WARD_ITEMS:WARD_ITEMS, wardReflectPct:wardReflectPct, WARD_FULL_REFLECT_CHANCE:WARD_FULL_REFLECT_CHANCE, getWardTierData:getWardTierData, WARD_ELEMENTS:WARD_ELEMENTS,
+      wardingReflectBonus:wardingReflectBonus, WARDING_SKILL_ID:WARDING_SKILL_ID, WARDING_BONUS_MIN:WARDING_BONUS_MIN, WARDING_BONUS_MAX:WARDING_BONUS_MAX, OFFHAND_STYLE_IDS:OFFHAND_STYLE_IDS,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }
