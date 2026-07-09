@@ -2911,6 +2911,52 @@
   var ALL_MAIN_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['fiberharvesting','grainharvesting','herbharvesting']).concat(WEAPON_STYLE_IDS).concat([WANDS_SKILL_ID, STAVES_SKILL_ID, SCEPTERS_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS).concat(['prayer','sacrifice','devotion','blessing','miracle']);
   var FAITH_SKILL_IDS = ['prayer','sacrifice','devotion','blessing','miracle'];
 
+  // ================= CLASSES =================
+  // A Class is conferred purely by an equipped gear combination -- no unlock step, no toggle. While
+  // the full set is worn the class is "active": it is its own skill (earns XP from combat and has its
+  // own familiar) and its tiered passives (Class Lv 1/20/40/60/80) switch on as it levels up. Remove
+  // any required piece and the class -- and every one of its passives -- immediately goes dormant.
+  var CLASS_CLOTH_COLOR = '#c8b088';
+  function clothPieceEquipped(st, slot){
+    var s = st && st.bodyArmor && st.bodyArmor[slot];
+    return !!(s && s.material==='tailoring' && s.tier > 0);
+  }
+  var CLASS_DEFS = [
+    {
+      id:'summoner', name:'Summoner', icon:svgIcon('starburst','#7a5aa8'),
+      blurb:'A cloth-clad conduit who lets a host of summoned familiars do the fighting.',
+      reqText:'Cloth Hood, Tunic, Gloves & Shoes + any Staff',
+      reqParts:[
+        { icon:svgIcon('helm',CLASS_CLOTH_COLOR),       label:'Cloth Hood',   met:function(st){ return clothPieceEquipped(st,'helmet'); } },
+        { icon:svgIcon('chestarmor',CLASS_CLOTH_COLOR), label:'Cloth Tunic',  met:function(st){ return clothPieceEquipped(st,'chest'); } },
+        { icon:svgIcon('gauntlet',CLASS_CLOTH_COLOR),   label:'Cloth Gloves', met:function(st){ return clothPieceEquipped(st,'gauntlets'); } },
+        { icon:svgIcon('boots',CLASS_CLOTH_COLOR),      label:'Cloth Shoes',  met:function(st){ return clothPieceEquipped(st,'boots'); } },
+        { icon:STAFF_TYPE.icon,                         label:'Staff',        met:function(st){ return !!(st.equippedMainhand && isStaff(st.equippedMainhand)); } }
+      ],
+      passives:[
+        { level:1,  name:'Kindred Fury',     desc:'Your familiars can land Critical Hits, using your own Critical Hit chance and damage.' },
+        { level:20, name:'Empowered Bond',   desc:'Your Summoner familiar deals double damage while it is an active Companion.' },
+        { level:40, name:'Rapid Channel',    desc:'Familiar attack timers are reduced 20% (a spell every 8s instead of 10s).' },
+        { level:60, name:'Arcane Bulwark',   desc:'+15% Block chance.' },
+        { level:80, name:'Menagerie Master', desc:'Doubled chance to gain proficiency and physique familiars while in combat.' }
+      ]
+    }
+  ];
+  var CLASS_DEFS_BY_ID = {}; CLASS_DEFS.forEach(function(c){ CLASS_DEFS_BY_ID[c.id] = c; });
+  var CLASS_SKILL_IDS = CLASS_DEFS.map(function(c){ return c.id; });
+  ALL_MAIN_SKILL_IDS = ALL_MAIN_SKILL_IDS.concat(CLASS_SKILL_IDS);
+  function classReqMet(cd, st){ return cd.reqParts.every(function(p){ return p.met(st); }); }
+  // Only one class can be active at a time; the first whose full gear set is worn wins.
+  function activeClassId(st){ st = st || state; for(var i=0;i<CLASS_DEFS.length;i++){ if(classReqMet(CLASS_DEFS[i], st)) return CLASS_DEFS[i].id; } return null; }
+  function classLevel(st, id){ st = st || state; return getLevel((st.xp && st.xp[id]) || 0); }
+  // A tiered passive is live only while its class is the active (equipped) class and high enough level.
+  function classBonusActive(id, reqLevel){ return activeClassId(state)===id && classLevel(state, id) >= reqLevel; }
+  function summonerBonus(reqLevel){ return classBonusActive('summoner', reqLevel); }
+  function classBlockBonus(st){ st = st || state; return (activeClassId(st)==='summoner' && classLevel(st,'summoner') >= 60) ? 0.15 : 0; }
+  // Summoner Lv 40 shortens every familiar's cast cadence from 10s to 8s.
+  function familiarCastIntervalMs(){ return summonerBonus(40) ? 8000 : 10000; }
+  function awardClassXp(amount){ var id = activeClassId(state); if(id && amount > 0) addXp(id, amount); }
+
   // ================= FAMILIARS =================
   // Every skill (gathering, crafting, farming, faith, and physique) has an associated
   // familiar that can be summoned -- a small, flat, always-on chance per completed
@@ -3001,7 +3047,9 @@
     mentality:        { name:'Resolve',  icon:svgIcon('compass','#4a8a8a'), spells:[armorSpell('Iron Will',1.6,6), dmgSpell('Unbreakable',1.25,8), healSpell('Mend',15), healSpell('Mend',15)] },
     zen:              { name:'Calm',     icon:svgIcon('yinyang','#8a8a8a'), spells:[healSpell('Tranquil Heal',18), healSpell('Tranquil Heal',18), armorSpell('Serenity',1.5,6), armorSpell('Serenity',1.5,6)] },
     meditation:       { name:'Lotus',    icon:svgIcon('lotusflower','#c87a9a'), spells:[healSpell('Inner Peace',18), healSpell('Inner Peace',18), armorSpell('Meditative Ward',1.5,6), armorSpell('Meditative Ward',1.5,6)] },
-    fortitude:        { name:'Vitality', icon:svgIcon('heart','#c8302a'), spells:[healSpell('Vital Surge',18), healSpell('Vital Surge',18), armorSpell('Life Ward',1.6,6), armorSpell('Life Ward',1.6,6)] }
+    fortitude:        { name:'Vitality', icon:svgIcon('heart','#c8302a'), spells:[healSpell('Vital Surge',18), healSpell('Vital Surge',18), armorSpell('Life Ward',1.6,6), armorSpell('Life Ward',1.6,6)] },
+    // -- Classes --
+    summoner:         { name:'Eidolon',  icon:svgIcon('starburst','#7a5aa8'), spells:[hitSpell('Spirit Bolt','void',15), siphonSpell('Soul Siphon',13), hitSpell('Arcane Surge','void',12), buffSpell('Empower','critDmg',0.32,8)] }
   };
 
   // Diverse, unique per-familiar spell kits drawn from the expanded pool. Reassigned onto FAMILIAR_DATA
@@ -3066,7 +3114,9 @@
     mentality:      [ armorSpell('Iron Will',1.6,6), buffSpell('Unbreakable Will','dmgBlunt',0.3,8), bubbleSpell('Steel Resolve',3), buffSpell('Grim Determination','critDmg',0.3,8) ],
     zen:            [ healSpell('Tranquility',18), regenSpell('Serenity',4,7), buffSpell('Inner Calm','resistBlunt',0.3,8), buffSpell('Flow','dodge',0.13,8) ],
     meditation:     [ healSpell('Inner Peace',18), regenSpell('Lotus Bloom',5,7), armorSpell('Meditative Ward',1.5,6), buffSpell('Serene Flow','dodge',0.13,8) ],
-    fortitude:      [ healSpell('Vital Surge',18), regenSpell('Lifebloom',5,8), bubbleSpell('Life Ward',3), siphonSpell('Vitality Drain',13) ]
+    fortitude:      [ healSpell('Vital Surge',18), regenSpell('Lifebloom',5,8), bubbleSpell('Life Ward',3), siphonSpell('Vitality Drain',13) ],
+    // -- Classes --
+    summoner:       [ hitSpell('Spirit Bolt','void',15), siphonSpell('Soul Siphon',13), hitSpell('Arcane Surge','void',12), buffSpell('Empower','critDmg',0.32,8) ]
   };
   // Each familiar channels an element (thematic to its skill). Its damaging spells (direct hits,
   // siphons, and poison DoTs) carry that element, so they gain the +20% elemental advantage against
@@ -3085,7 +3135,9 @@
     // Physique
     bodyStrength:'earth', bodyControl:'water', fineMotor:'light', grossMotor:'earth', endurance:'earth', focus:'light', balance:'light',
     reflexes:'fire', stamina:'earth', handStrength:'earth', armStrength:'earth', coreStrength:'earth', solving:'light', criticalThinking:'light',
-    mentality:'earth', zen:'light', meditation:'light', fortitude:'dark'
+    mentality:'earth', zen:'light', meditation:'light', fortitude:'dark',
+    // Classes
+    summoner:'light'
   };
   var DAMAGE_SPELL_TYPES = { hit:true, siphon:true, poison:true }; // spells that deal direct damage or DoT
   function familiarElement(id){ return FAMILIAR_ELEMENT[id] || null; }
@@ -3140,7 +3192,8 @@
     armStrength:{s:'dumbbell',c:'#8a6a42',ear:'horn'}, coreStrength:{s:'corespiral',c:'#b23a2a',ear:'horn'},
     solving:{s:'puzzle',c:'#3a6a9a',ear:'antenna'}, criticalThinking:{s:'brain',c:'#8a5aaa',ear:'antenna'},
     mentality:{s:'compass',c:'#3f8a8a',ear:'round'}, zen:{s:'yinyang',c:'#8a8a8a',ear:'round'},
-    meditation:{s:'lotusflower',c:'#c87a9a',ear:'leaf'}, fortitude:{s:'heart',c:'#c8302a',ear:'round'}
+    meditation:{s:'lotusflower',c:'#c87a9a',ear:'leaf'}, fortitude:{s:'heart',c:'#c8302a',ear:'round'},
+    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}
   };
   // Draw the ear/crown silhouette behind the head. Returned in two layers (behind body, in front).
   function famEars(kind, body, bodyD, belly, accent){
@@ -3253,7 +3306,10 @@
     if(!FAMILIAR_DATA[skillId]) return;
     var current = state.familiars[skillId];
     if(current && current.owned && current.level >= FAMILIAR_MAX_LEVEL) return; // maxed, nothing left to gain
-    if(Math.random() < FAMILIAR_SUMMON_CHANCE){
+    // Summoner Lv 80 doubles the summon chance for proficiency & physique familiars while in combat.
+    var chance = FAMILIAR_SUMMON_CHANCE;
+    if(summonerBonus(80) && state.activity && state.activity.type==='combat' && (PHYSIQUE_SKILL_MAP[skillId] || isCombatSkillId(skillId))) chance *= 2;
+    if(Math.random() < chance){
       var fam = FAMILIAR_DATA[skillId];
       if(current && current.owned){
         current.level = Math.min(FAMILIAR_MAX_LEVEL, current.level + 1);
@@ -3358,10 +3414,17 @@
         var dmg = spell.amount * potency;
         if(spell.type==='hit' && spell.dmgType!=='void' && cmon){ var atkMix={}; atkMix[spell.dmgType]=1; dmg *= weightedAdvantage(atkMix, cmon.armorTypes || {blunt:1/3,slashing:1/3,piercing:1/3}); }
         dmg *= elementAdvantage(spell.element, cmon && cmon.element); // +20% when the spell's element beats the enemy's
+        if(casterId==='summoner' && summonerBonus(20)) dmg *= 2; // Summoner Lv 20: its own familiar hits twice as hard
         dmg = Math.round(dmg);
+        // Summoner Lv 1: familiars can crit, borrowing the hero's crit chance & crit damage.
+        if(summonerBonus(1) && Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance'))){
+          var famCritMult = Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg');
+          dmg = Math.round(dmg * famCritMult);
+          spawnFloatingText('Familiar Critical!', 'ft-rare');
+        }
         applyChipDamage(dmg); // floors at 1 unless you wield a Staff (then summons can land the kill)
         spawnFloatingText('-'+dmg+' ('+spell.name+')', 'ft-rare');
-        if(dmg > 0) addXp(STAVES_SKILL_ID, dmg); // Staves proficiency trains on familiar damage dealt
+        if(dmg > 0){ addXp(STAVES_SKILL_ID, dmg); awardClassXp(dmg); } // Staves proficiency + active Class both train on familiar damage
         if(spell.type==='siphon'){
           var stolen = Math.min(dmg, maxHp(state) - state.playerHp);
           if(stolen>0){ state.playerHp += stolen; spawnFloatingText('+'+stolen+' HP', 'ft-success'); }
@@ -5416,6 +5479,7 @@
     };
     WEAPON_STYLE_IDS.forEach(function(id){ xpObj[id] = 0; });
     ARMOR_PROFICIENCY_IDS.forEach(function(id){ xpObj[id] = 0; });
+    CLASS_SKILL_IDS.forEach(function(id){ xpObj[id] = 0; });
     GATHER_SKILL_IDS.forEach(function(id){ if(!(id in xpObj)) xpObj[id] = 0; });
     CRAFT_SKILL_IDS.forEach(function(id){ if(!(id in xpObj)) xpObj[id] = 0; });
     var s = {
@@ -5498,7 +5562,7 @@
   var AREAS = [
     { id:'resources', label:'Resources', icon:'pickaxe', subs:[['peons','Peon Queues'],['gathering','Gathering'],['crafting','Crafting'],['building','Building'],['outfitting','Outfitting'],['faith','Faith'],['inventory','Inventory']] },
     { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
-    { id:'battle', label:'Battle', icon:'crossedswords', subs:[['combat','Combat'],['character','Equipment & Stats'],['menagerie','Menagerie']] }
+    { id:'battle', label:'Battle', icon:'crossedswords', subs:[['combat','Combat'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] }
   ];
   function areaOf(cat){ for(var i=0;i<AREAS.length;i++){ if(AREAS[i].subs.some(function(s){ return s[0]===cat; })) return AREAS[i].id; } return 'resources'; }
   var currentArea = areaOf(currentCategory);
@@ -6217,6 +6281,7 @@
     var atkProfXp = Math.max(1, Math.round(effDmg * WEAPON_PROF_XP_PER_DMG));
     if(state.equippedMainhand) addXp(mainProfId, atkProfXp);
     if(state.equippedOffhand && offhandStyle && offhandStyle.type==='quiver') addXp(state.equippedOffhand, atkProfXp);
+    awardClassXp(effDmg); // an active Class trains on combat damage dealt
     if(act.monsterHp <= 0) defeatMonster(monster);
   }
 
@@ -6230,6 +6295,7 @@
     addPhysiqueXp(physTierPairs([['resolve',1]], monster.tierIndex));
     addLog('Defeated the ' + monster.name + '! +' + goldWon + ' gold.', 'important');
     applyMonsterCategoryLoot(monster);
+    var _cls = activeClassId(state); if(_cls) maybeSummonFamiliar(_cls); // an active Class can summon its own familiar in combat
     act.monsterHp = monster.hp;
     act.monsterTickAccum = 0;
   }
@@ -6271,7 +6337,7 @@
     var elementMult = incomingElementMult(state, monster);
     var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes)); // familiar type-resistance buffs
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
-    var blockChance = getPlateArmorBlockChance(state) + getStaffBlockChance(state) + blockingBlockBonus(state) + reflexesBlockBonus(state) + getFamBuff('block');
+    var blockChance = getPlateArmorBlockChance(state) + getStaffBlockChance(state) + blockingBlockBonus(state) + reflexesBlockBonus(state) + classBlockBonus(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
     if(blocked){
       rawDmg = Math.round(rawDmg * 0.5);
@@ -6648,7 +6714,7 @@
             if(!FAMILIAR_DATA[cid]) return;
             var cc = state.companionCast[cid] || (state.companionCast[cid] = { accum:0, index:0 });
             cc.accum += _chunk;
-            while(cc.accum >= 10000){ cc.accum -= 10000; var _cs = FAMILIAR_DATA[cid].spells; castFamiliarSpell(_cs[cc.index % _cs.length], getFamiliarLevel(cid), cid); cc.index = (cc.index + 1) % _cs.length; }
+            var _ci = familiarCastIntervalMs(); while(cc.accum >= _ci){ cc.accum -= _ci; var _cs = FAMILIAR_DATA[cid].spells; castFamiliarSpell(_cs[cc.index % _cs.length], getFamiliarLevel(cid), cid); cc.index = (cc.index + 1) % _cs.length; }
           });
         }
       }
@@ -8306,7 +8372,8 @@
     html += '<div class="stats-group"><h4>'+svgIcon('shield','currentColor')+' Defense</h4>';
     html += '<div class="stat-row"><span class="stat-label">Armor</span><span class="stat-value">'+(Math.round(armor*100)/100)+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Dodge Chance</span><span class="stat-value">'+(Math.round(getLeatherArmorBonuses(state).dodgeBonus*1000)/10)+'%</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Block Chance</span><span class="stat-value">'+(Math.round(getPlateArmorBlockChance(state)*1000)/10)+'% (halves dmg)</span></div>';
+    var totalBlockChance = getPlateArmorBlockChance(state) + getStaffBlockChance(state) + blockingBlockBonus(state) + reflexesBlockBonus(state) + classBlockBonus(state);
+    html += '<div class="stat-row"><span class="stat-label">Block Chance</span><span class="stat-value">'+(Math.round(totalBlockChance*1000)/10)+'% (halves dmg)</span></div>';
     var wornMaterialsPreview = {};
     BODY_ARMOR_SLOTS.forEach(function(slot){
       var s = state.bodyArmor && state.bodyArmor[slot];
@@ -8761,11 +8828,11 @@
       var _comps = activeCompanionList(state);
       if(_comps.length){
         html += '<div style="height:12px"></div>';
-        html += '<div class="arena-row"><span class="arena-name">Companions ('+_comps.length+'/'+activeCompanionSlots(state)+') &mdash; each casts every 10s</span></div>';
+        html += '<div class="arena-row"><span class="arena-name">Companions ('+_comps.length+'/'+activeCompanionSlots(state)+') &mdash; each casts every '+(familiarCastIntervalMs()/1000)+'s</span></div>';
         _comps.forEach(function(cid){
           var _comp = FAMILIAR_DATA[cid]; if(!_comp) return;
           var cc = (state.companionCast && state.companionCast[cid]) || {accum:0,index:0};
-          var _castPct = clamp((cc.accum||0)/10000*100,0,100);
+          var _castPct = clamp((cc.accum||0)/familiarCastIntervalMs()*100,0,100);
           var _spells = _comp.spells;
           var _next = _spells[(cc.index||0) % _spells.length];
           html += '<div class="hp-label" style="margin-top:6px"><span>'+_comp.icon+' '+escapeHtml(_comp.name)+'</span><span style="color:var(--text-faint)">&#9656; '+escapeHtml(_next.name)+'</span></div>';
@@ -8849,7 +8916,7 @@
     if(owned){
       html += '<div class="item-top" data-action="toggleFamiliar" data-skill="'+skillId+'" style="cursor:pointer"><div class="item-icon">'+fam.icon+'</div><div><div class="item-name">'+fam.name+'</div><div class="item-meta">'+label+' &bull; Lv '+famLevel+(famLevel>=FAMILIAR_MAX_LEVEL?' (Max)':'')+(isCompanion?' &bull; Companion':'')+'</div></div></div>';
       if(expanded){
-        html += '<div class="inputs-line" style="margin-top:6px">Spells (cast in order, one every 10s):</div>';
+        html += '<div class="inputs-line" style="margin-top:6px">Spells (cast in order, one every '+(familiarCastIntervalMs()/1000)+'s):</div>';
         fam.spells.forEach(function(spell, i){
           html += '<div class="chance-line">'+(i+1)+'. <b>'+spell.name+'</b> '+spellElementIcon(spell)+' &mdash; '+describeSpell(spell, famLevel)+'</div>';
         });
@@ -9019,15 +9086,61 @@
     overlay.className = 'familiar-popup-overlay';
     overlay.innerHTML = html;
   }
+  function renderClassesTab(){
+    var activeId = activeClassId(state);
+    var html = '<div class="section-intro">Assemble a specific set of gear and you take on a <b>Class</b> &mdash; a skill in its own right, with its own familiar. While the full combination is equipped the class is <b>active</b>: it earns experience from combat damage and unlocks tiered passives at Class Level 1, 20, 40, 60 and 80. Remove any required piece and the class &mdash; and every one of its passives &mdash; immediately goes dormant.</div>';
+    if(activeId){
+      var acd = CLASS_DEFS_BY_ID[activeId];
+      html += '<div class="physique-bonus">Active Class: <b>'+acd.icon+' '+acd.name+'</b> &mdash; Class Level <b>'+classLevel(state, activeId)+'</b>. Its unlocked passives are in effect.</div>';
+    } else {
+      html += '<div class="lock-note">No class is active. Equip one of the gear combinations below to take on its class.</div>';
+    }
+    CLASS_DEFS.forEach(function(cd){
+      var active = activeId===cd.id;
+      var lvl = classLevel(state, cd.id);
+      var pct = levelProgress(state.xp[cd.id]||0);
+      var fam = FAMILIAR_DATA[cd.id];
+      var famOwned = state.familiars[cd.id] && state.familiars[cd.id].owned;
+      html += '<div class="item-card'+(active?' active-item':'')+'" style="margin-top:12px">';
+      html += '<div class="item-top"><div class="item-icon">'+cd.icon+'</div><div><div class="item-name">'+cd.name+(active?' &bull; <span style="color:var(--gold)">ACTIVE</span>':'')+'</div><div class="item-meta">Class Level '+lvl+' &bull; '+(active?'Earning XP from combat':'Dormant &mdash; gear not equipped')+'</div></div></div>';
+      html += '<div class="chance-line">'+cd.blurb+'</div>';
+      html += '<div class="progress-track"><div class="progress-fill" style="width:'+pct+'%"></div></div>';
+      // Gear requirement -- each piece shows met (gold) or missing (dim).
+      html += '<div class="inputs-line" style="margin-top:8px">Requires:</div><div class="style-row">';
+      cd.reqParts.forEach(function(p){
+        var ok = p.met(state);
+        html += '<span class="style-btn'+(ok?' active':' locked')+'" style="cursor:default">'+p.icon+' '+escapeHtml(p.label)+' <span class="style-type" style="text-transform:none">'+(ok?'✓ equipped':'not equipped')+'</span></span>';
+      });
+      html += '</div>';
+      // Tiered passives.
+      html += '<div class="inputs-line" style="margin-top:8px">Passives:</div>';
+      cd.passives.forEach(function(ps){
+        var unlocked = lvl >= ps.level;
+        var live = active && unlocked;
+        var statusHtml = live
+          ? '<span style="color:var(--hp-good);font-weight:700">Active</span>'
+          : (unlocked ? '<span style="color:var(--text-faint)">Ready &mdash; equip the gear</span>' : '<span class="empty-note">Unlocks at Class Lv '+ps.level+'</span>');
+        var psIcon = live ? '<span style="color:var(--hp-good);font-weight:700">✓</span>' : svgIcon('lock','currentColor');
+        html += '<div class="chance-line" style="'+(live?'':'opacity:.7;')+'">'+psIcon+' <b>Lv '+ps.level+' &bull; '+ps.name+'</b> &mdash; '+ps.desc+' ['+statusHtml+']</div>';
+      });
+      // Class familiar.
+      if(fam){
+        html += '<div class="chance-line" style="margin-top:6px">'+fam.icon+' Class Familiar: <b>'+fam.name+'</b> &mdash; '+(famOwned ? ('Lv '+getFamiliarLevel(cd.id)+'. Activate it as a Companion in the Menagerie.') : 'not yet summoned. Defeat foes while this class is active for a chance to summon it.')+'</div>';
+      }
+      html += '</div>';
+    });
+    return html;
+  }
   function renderMenagerieTab(){
     var totalOwned = Object.keys(state.familiars).filter(function(k){ return state.familiars[k] && state.familiars[k].owned; }).length;
-    var totalFamiliars = FAMILIAR_SKILL_IDS.length;
+    var totalFamiliars = FAMILIAR_SKILL_IDS.length + CLASS_SKILL_IDS.length;
     var _slots = activeCompanionSlots(state);
-    var html = '<div class="section-intro">Every skill -- gathering, crafting, farming, faith, and physique -- has an associated familiar. Completing an action for that skill carries a small (1/3000) chance to permanently summon it. Expand a summoned familiar to see its level and spells, then activate it as a Companion to bring it into combat: each casts one spell every 10 seconds, cycling through its list. You have <b>'+_slots+'</b> companion slot'+(_slots===1?'':'s')+' (a Staff adds more). Summoned: <b>'+totalOwned+' / '+totalFamiliars+'</b></div>';
+    var _castSec = familiarCastIntervalMs()/1000;
+    var html = '<div class="section-intro">Every skill -- gathering, crafting, farming, faith, and physique -- has an associated familiar, and each Class has one too. Completing an action for that skill carries a small (1/3000) chance to permanently summon it (a Class familiar rolls on kills while that class is active). Expand a summoned familiar to see its level and spells, then activate it as a Companion to bring it into combat: each casts one spell every '+_castSec+' seconds, cycling through its list. You have <b>'+_slots+'</b> companion slot'+(_slots===1?'':'s')+' (a Staff adds more). Summoned: <b>'+totalOwned+' / '+totalFamiliars+'</b></div>';
     var _actcomp = activeCompanionList(state);
     if(_actcomp.length){
       var _names = _actcomp.map(function(id){ var f = FAMILIAR_DATA[id]||{}; return (f.icon||'') + ' ' + (f.name||id); }).join(', ');
-      html += '<div class="physique-bonus">Active Companions ('+_actcomp.length+'/'+_slots+'): <b>'+_names+'</b> &mdash; each casts a spell in combat every 10s.</div>';
+      html += '<div class="physique-bonus">Active Companions ('+_actcomp.length+'/'+_slots+'): <b>'+_names+'</b> &mdash; each casts a spell in combat every '+_castSec+'s.</div>';
     }
     var clothBonusPct = Math.round(getClothArmorSpellBonus(state)*100);
     html += '<div class="physique-bonus">Cloth Armor Spell Bonus: <b>+'+clothBonusPct+'%</b> summon spell potency &mdash; each equipped Tailoring piece (Chest, Head, Gloves, Boots, Back) adds +5%, scaled by its rarity. Doesn\'t grow with tier.</div>';
@@ -9036,7 +9149,8 @@
       {label:'Crafting', ids: CRAFT_SKILL_IDS},
       {label:'Farming', ids: ['farming']},
       {label:'Faith', ids: FAITH_SKILL_IDS},
-      {label:'Physique', ids: PHYSIQUE_SKILLS.map(function(p){ return p.id; })}
+      {label:'Physique', ids: PHYSIQUE_SKILLS.map(function(p){ return p.id; })},
+      {label:'Classes', ids: CLASS_SKILL_IDS}
     ];
     sections.forEach(function(section){
       html += '<h3>'+section.label+'</h3><div class="card-grid">';
@@ -13214,6 +13328,7 @@
     else if(currentCategory==='market') html = renderMarketTab();
     else if(currentCategory==='farming') html = renderFarmingTab();
     else if(currentCategory==='combat') html = renderCombatTab();
+    else if(currentCategory==='classes') html = renderClassesTab();
     else if(currentCategory==='faith') html = renderFaithTab(currentSub);
     else if(currentCategory==='character') html = renderCharacterTab();
     else if(currentCategory==='menagerie') html = renderMenagerieTab();
@@ -13291,6 +13406,7 @@
     wands: 'Proficiency wielding Wands. Trained by wand damage dealt, it boosts wand damage: +1% at Lv 1 up to +100% at Lv 100.',
     staves: 'Proficiency wielding Staves. Trained by familiar damage, it boosts familiar efficiency: +1% at Lv 1 up to +100% at Lv 100.',
     scepters: 'Proficiency wielding Scepters. Trained by scepter damage, it boosts scepter damage: +1% at Lv 1 up to +100% at Lv 100.',
+    summoner: 'A Class conferred by wearing Cloth Hood, Tunic, Gloves & Shoes with a Staff. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     clotharmor: 'Proficiency wearing Tailoring\'s cloth armor at higher tiers.',
     leatherarmor: 'Proficiency wearing Leatherworking\'s leather armor at higher tiers.',
     chainmailarmor: 'Proficiency wearing Armorsmithing\'s chain mail at higher tiers.',
@@ -13493,6 +13609,7 @@
   SKILL_LABELS[WANDS_SKILL_ID] = 'Wands';
   SKILL_LABELS[STAVES_SKILL_ID] = 'Staves';
   SKILL_LABELS[SCEPTERS_SKILL_ID] = 'Scepters';
+  CLASS_DEFS.forEach(function(c){ SKILL_LABELS[c.id] = c.name; });
   ARMOR_PROFICIENCY_IDS.forEach(function(id){ SKILL_LABELS[id] = ARMOR_PROFICIENCY_LABELS[id]; });
   FAITH_SKILL_IDS.forEach(function(id){ SKILL_LABELS[id] = FAITH_SKILLS[id].label; });
 
@@ -13519,6 +13636,7 @@
     {label:'Crafting',  color:'var(--cat-crafting)',  skills:CRAFT_SKILL_IDS},
     {label:'Farming',   color:'var(--cat-farming)',   skills:['fiberharvesting','grainharvesting','herbharvesting']},
     {label:'Combat',    color:'var(--cat-combat)',    skills:WEAPON_STYLE_IDS.concat([WANDS_SKILL_ID, STAVES_SKILL_ID, SCEPTERS_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS)},
+    {label:'Classes',   color:'var(--gold)',          skills:CLASS_SKILL_IDS},
     {label:'Faith',     color:'var(--cat-faith)',     skills:FAITH_SKILL_IDS}
   ];
 
@@ -14313,7 +14431,7 @@
       }
       activeCompanionList(state).forEach(function(cid){
         var faf = document.getElementById('arenaCast-'+cid);
-        if(faf){ var cc = (state.companionCast && state.companionCast[cid]) || {accum:0}; faf.style.width = clamp((cc.accum||0)/10000*100,0,100)+'%'; }
+        if(faf){ var cc = (state.companionCast && state.companionCast[cid]) || {accum:0}; faf.style.width = clamp((cc.accum||0)/familiarCastIntervalMs()*100,0,100)+'%'; }
       });
     }
 
@@ -15110,8 +15228,9 @@
           if(!FAMILIAR_DATA[cid]) return;
           var cc = state.companionCast[cid] || (state.companionCast[cid] = { accum:0, index:0 });
           cc.accum += dt;
-          while(cc.accum >= 10000 && state.activity.type==='combat'){
-            cc.accum -= 10000;
+          var castInterval = familiarCastIntervalMs();
+          while(cc.accum >= castInterval && state.activity.type==='combat'){
+            cc.accum -= castInterval;
             var cspells = FAMILIAR_DATA[cid].spells;
             castFamiliarSpell(cspells[cc.index % cspells.length], getFamiliarLevel(cid), cid);
             cc.index = (cc.index + 1) % cspells.length;
@@ -15280,6 +15399,7 @@
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
+      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

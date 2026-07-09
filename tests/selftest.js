@@ -807,6 +807,51 @@
     ok(expDark > (0.5*wAdv + 0.5*1) - 1e-9, 'light half boosted vs a dark enemy');
   });
 
+  // ---- Classes: Summoner (gear-combo class with tiered passives + familiar) -------------
+  suite('classes: Summoner', function(){
+    ok(FF.CLASS_SKILL_IDS.indexOf('summoner') !== -1, 'summoner is a class skill id');
+    var cd = FF.CLASS_DEFS_BY_ID.summoner;
+    ok(cd, 'summoner class defined');
+    eq(cd.passives.length, 5, 'five tiered passives');
+    eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'passive tiers are 1/20/40/60/80');
+    eq(cd.reqParts.length, 5, 'requires 5 gear pieces (4 cloth + staff)');
+
+    function cloth(){ return {tier:1, rarity:'normal', material:'tailoring'}; }
+    function bare(){ return {tier:0, rarity:'normal', material:null}; }
+    var full = { xp:{summoner:0}, equippedMainhand:'staff', bodyArmor:{ helmet:cloth(), chest:cloth(), gauntlets:cloth(), boots:cloth(), back:bare() } };
+    eq(FF.clothPieceEquipped(full,'helmet'), true, 'cloth helmet detected');
+    eq(FF.clothPieceEquipped(full,'back'), false, 'empty back slot not counted');
+    eq(FF.activeClassId(full), 'summoner', 'full cloth set + staff => Summoner active');
+
+    // Any missing piece drops the class.
+    var noHelm = { xp:{summoner:0}, equippedMainhand:'staff', bodyArmor:{ helmet:bare(), chest:cloth(), gauntlets:cloth(), boots:cloth(), back:bare() } };
+    eq(FF.activeClassId(noHelm), null, 'missing cloth helm => no class');
+    var noStaff = { xp:{summoner:0}, equippedMainhand:'greatsword', bodyArmor:full.bodyArmor };
+    eq(FF.activeClassId(noStaff), null, 'no staff => no class');
+    var wandInstead = { xp:{summoner:0}, equippedMainhand:'wandFire', bodyArmor:full.bodyArmor };
+    eq(FF.activeClassId(wandInstead), null, 'a wand is not a staff => no class');
+    var leatherHelm = { xp:{summoner:0}, equippedMainhand:'staff', bodyArmor:{ helmet:{tier:1,rarity:'normal',material:'leather'}, chest:cloth(), gauntlets:cloth(), boots:cloth(), back:bare() } };
+    eq(FF.activeClassId(leatherHelm), null, 'leather (not cloth) helm => no class');
+
+    // Class level tracks its own xp; a fresh class sits at Lv 1 (so the Lv-1 passive is baseline).
+    eq(FF.classLevel(full,'summoner'), 1, 'fresh summoner is class Lv 1');
+    var leveled = { xp:{summoner:Math.pow(59,2)*100}, equippedMainhand:'staff', bodyArmor:full.bodyArmor };
+    ok(FF.classLevel(leveled,'summoner') >= 60, 'xp yields class level >= 60 ('+FF.classLevel(leveled,'summoner')+')');
+
+    // Lv 60 passive: +15% block, but only while the class is actually equipped/active.
+    eq(FF.classBlockBonus(full), 0, 'Lv 1 summoner: no block bonus yet');
+    eq(FF.classBlockBonus(leveled), 0.15, 'Lv 60 summoner (equipped): +15% block');
+    var leveledNoGear = { xp:{summoner:Math.pow(59,2)*100}, equippedMainhand:'greatsword', bodyArmor:{ helmet:bare(),chest:bare(),gauntlets:bare(),boots:bare(),back:bare() } };
+    eq(FF.classBlockBonus(leveledNoGear), 0, 'high-level summoner with gear off: no block bonus');
+
+    // The class has its own familiar with a damaging kit that carries its element.
+    var fam = FF.FAMILIAR_DATA.summoner;
+    ok(fam && fam.spells && fam.spells.length === 4, 'summoner familiar has 4 spells');
+    var dmgSpells = fam.spells.filter(function(s){ return s.type==='hit' || s.type==='siphon'; });
+    ok(dmgSpells.length >= 2, 'summoner familiar has damaging spells (for the double-damage passive)');
+    ok(fam.spells.some(function(s){ return s.element==='light'; }), 'summoner familiar spells carry the light element');
+  });
+
   // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------
   suite('warding proficiency', function(){
     eq(FF.WARDING_SKILL_ID, 'warding', 'warding skill id');
