@@ -560,6 +560,18 @@
     Object.keys(FF.ARMOR_MATERIAL_WEAKNESS).forEach(function(mat){
       ok(FF.ELEMENT_META[FF.ARMOR_MATERIAL_WEAKNESS[mat]], mat + ' maps to a real element');
     });
+
+    // incomingElementMult: enemies strike with their element; the multiplier is 1 + the player's
+    // armor weakness to that element.
+    var PER = FF.ARMOR_ELEMENT_WEAKNESS_PER_PIECE;
+    function st(mats){ var ba={}; FF.CHAINPLATE_SLOTS.forEach(function(s,i){ ba[s]=mats[i]?{material:mats[i],tier:3,rarity:'normal'}:{material:null,tier:0}; }); return {bodyArmor:ba}; }
+    var fireEnemy = { element:'fire' }, waterEnemy = { element:'water' }, darkEnemy = { element:'dark' };
+    eq(FF.incomingElementMult(st([null,null,null,null]), fireEnemy), 1, 'no armor = no elemental amplification');
+    eq(FF.incomingElementMult(st(['leather','leather',null,null]), fireEnemy), 1 + PER*2, 'two leather vs fire enemy = +30% incoming');
+    eq(FF.incomingElementMult(st(['leather','leather',null,null]), waterEnemy), 1, 'fire-weak armor is neutral to a water enemy');
+    eq(FF.incomingElementMult(st(['plate',null,null,null]), waterEnemy), 1 + PER, 'plate vs water enemy = +15% incoming');
+    eq(FF.incomingElementMult(st(['leather','chain','plate','leather']), darkEnemy), 1, 'no armor weakness to dark (yet)');
+    eq(FF.incomingElementMult(st(['leather']), { element:null }), 1, 'elementless enemy = no amplification');
   });
 
   // ---- Hardening: monster lookup + addItem guards ---------------------------------------

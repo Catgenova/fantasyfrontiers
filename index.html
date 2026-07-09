@@ -619,6 +619,9 @@
   .elem-weak-stat .game-icon{width:12px;height:12px;}
   .elem-weak-stat.elem-fire{color:#c0562a;} .elem-weak-stat.elem-water{color:#2f76b0;} .elem-weak-stat.elem-earth{color:#5a7d2c;}
   .elem-weak-stat.elem-light{color:#b89528;} .elem-weak-stat.elem-dark{color:#7148a0;}
+  /* "Your armor is weak to this enemy's element" warning chip on the combat cards/arena. */
+  .elem-danger{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:11px;font-weight:700;background:rgba(166,58,47,0.12);border:1px solid rgba(166,58,47,0.35);color:var(--hp-bad);}
+  .elem-danger .game-icon{width:12px;height:12px;}
 
   .char-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 8px;font-family:var(--font-mono);font-size:12px;color:var(--text-dim);padding:4px 0;border-bottom:1px dotted var(--border);}
   .char-row:last-child{border-bottom:none;}
@@ -4130,6 +4133,13 @@
     });
     return w;
   }
+  // Enemies strike with their element alongside their physical type. The multiplier on an incoming
+  // hit is 1 + the player's armor weakness to that element (e.g. +60% from four leather pieces vs a
+  // fire enemy). Light/dark enemies carry no bonus until the player can be weak to those elements.
+  function incomingElementMult(state, monster){
+    if(!monster || !monster.element) return 1;
+    return 1 + (playerElementWeakness(state)[monster.element] || 0);
+  }
   // Physique-driven combat bonuses -- layered on top of the equipment-driven Leather
   // dodge and Plate block bonuses above, plus two new mechanics of their own.
   var CRIT_DAMAGE_MULT = 1.5;        // base crit damage multiplier
@@ -4190,14 +4200,23 @@
   // so the lv90->100 gain is small. Driven by the familiar's own level, not the player's stats.
   function familiarAccuracy(level){ return Math.round(FAM_ACC_MAX*(1 - Math.exp(-(level||1)/FAM_ACC_TAU))); }
   function familiarHitChance(level, m){ return hitChanceVs(familiarAccuracy(level), monsterDodge(m)); }
-  // Enemy elemental affinity pill (+ its weakness) for the combat cards/arena.
+  // Enemy elemental affinity pill (+ its weakness) for the combat cards/arena. The element is both
+  // what the enemy ATTACKS with and, via the triangle, the element it is WEAK to.
   function elementBadge(m){
     if(!m || !m.element || !ELEMENT_META[m.element]) return '';
     var weak = ELEMENT_WEAKNESS[m.element];
-    var s = '<span class="elem-badge elem-'+m.element+'" title="'+elementLabel(m.element)+' element'+(weak?', weak to '+elementLabel(weak):'')+'">'
+    var s = '<span class="elem-badge elem-'+m.element+'" title="Attacks with '+elementLabel(m.element)+(weak?'; weak to '+elementLabel(weak):'')+'">'
       + elementIcon(m.element) + elementLabel(m.element) + '</span>';
     if(weak) s += '<span class="elem-weak" title="Takes +'+Math.round((ELEMENT_ADVANTAGE_MULT-1)*100)+'% damage from '+elementLabel(weak)+'">weak to '+elementIcon(weak)+' '+elementLabel(weak)+'</span>';
     return s;
+  }
+  // If the player's worn armor is weak to this enemy's attack element, show how much extra damage
+  // they'll take -- actionable "maybe swap armor" info on the enemy cards and in the arena.
+  function incomingElementNote(m){
+    if(!m || !m.element) return '';
+    var wk = playerElementWeakness(state)[m.element] || 0;
+    if(wk <= 0) return '';
+    return '<span class="elem-danger elem-'+m.element+'" title="Your armor is weak to '+elementLabel(m.element)+'">'+elementIcon(m.element)+' +'+Math.round(wk*100)+'% dmg to you</span>';
   }
   function agilityDodgeBonus(state){ return Math.min(0.10, getLevel(state.physique.agility||0)*0.002); }
   function blockingBlockBonus(state){ return Math.min(0.10, getLevel(state.physique.blocking||0)*0.002); }
@@ -6038,7 +6057,10 @@
 
     var playerArmorMix = getPlayerArmorTypeMix(state);
     var monsterAdvantage = weightedAdvantage(monster.attackTypes || {blunt:1/3, slashing:1/3, piercing:1/3}, playerArmorMix);
-    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes)); // familiar type-resistance buffs
+    // The hit lands its physical type AND the enemy's element together: the element is amplified by
+    // the player's armor weakness to it (leather->fire, chain->earth, plate->water).
+    var elementMult = incomingElementMult(state, monster);
+    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes)); // familiar type-resistance buffs
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
     var blockChance = getPlateArmorBlockChance(state) + blockingBlockBonus(state) + reflexesBlockBonus(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
@@ -8163,7 +8185,7 @@
         html += '<div class="item-top"><div class="item-icon">'+m.icon+'</div><div><div class="item-name">'+m.name+(m.isBoss?' &bull; <span style="color:var(--gold)">BOSS</span>':'')+'</div><div class="item-meta">'+m.hp+' HP &bull; '+m.attackSpeed+'s attack</div></div></div>';
         html += '<div class="item-stats"><span>'+m.goldMin+'-'+m.goldMax+'g</span><span>'+m.atkMin+'-'+m.atkMax+' dmg</span><span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
         html += '<div class="chance-line" style="font-size:11px">Dodge '+monsterDodge(m)+' &bull; '+(stageLocked?'':'Your hit chance '+Math.round(playerHitChance(m)*100)+'%')+'<br>Attack: '+formatTypeMix(m.attackTypes)+'<br>Armor: '+formatTypeMix(m.armorTypes)+'</div>';
-        html += '<div class="elem-line">'+elementBadge(m)+'</div>';
+        html += '<div class="elem-line">'+elementBadge(m)+incomingElementNote(m)+'</div>';
         if(m.isBoss) html += '<div class="chance-line" style="font-size:11px">Defeating this Boss guarantees an equipment drop plus bonus gold.</div>';
         if(stageLocked){
           html += '<div class="lock-note">Clear the previous stage first</div>';
@@ -8255,7 +8277,7 @@
       var matchup = weightedMatchupLabel(weaponStyle.attackTypes || {blunt:1}, m.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
       html += '<div class="arena">';
       html += '<div class="arena-row"><span class="arena-name">'+m.icon+' '+m.name+' <span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></span></div>';
-      html += '<div class="elem-line" style="margin:2px 0 4px">'+elementBadge(m)+'</div>';
+      html += '<div class="elem-line" style="margin:2px 0 4px">'+elementBadge(m)+incomingElementNote(m)+'</div>';
       html += '<div class="hp-label" style="margin-bottom:4px"><span>Enemy Dodge '+monsterDodge(m)+'</span><span>Your hit chance '+Math.round(playerHitChance(m)*100)+'%</span></div>';
       html += '<div class="hp-track"><div class="hp-fill" id="arenaMonsterFill" style="width:'+hpPct+'%;background:var(--hp-bad)"></div></div>';
       html += '<div class="hp-label"><span>Monster HP</span><span id="arenaMonsterLabel">'+fmt(act.monsterHp)+' / '+m.hp+'</span></div>';
@@ -8307,7 +8329,7 @@
       html += '<div class="item-top"><div class="item-icon">'+m.icon+'</div><div><div class="item-name">'+m.name+'</div><div class="item-meta">Req. Lv '+m.levelReq+' &bull; '+m.hp+' HP &bull; '+m.attackSpeed+'s attack</div></div></div>';
       html += '<div class="item-stats"><span>'+m.goldMin+'-'+m.goldMax+'g</span><span>'+m.atkMin+'-'+m.atkMax+' dmg</span><span>'+getMonsterLootChance(m)+'% '+getMonsterLootLabel(m)+'</span><span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
       html += '<div class="chance-line" style="font-size:11px">Dodge '+monsterDodge(m)+' &bull; '+(locked?'':'Your hit chance '+Math.round(playerHitChance(m)*100)+'%')+'<br>Attack: '+formatTypeMix(m.attackTypes)+'<br>Armor: '+formatTypeMix(m.armorTypes)+'</div>';
-      html += '<div class="elem-line">'+elementBadge(m)+'</div>';
+      html += '<div class="elem-line">'+elementBadge(m)+incomingElementNote(m)+'</div>';
       if(locked){
         html += '<div class="lock-note">Locked until level '+m.levelReq+'</div>';
       } else if(isActive){
@@ -14713,7 +14735,7 @@
       DEFAULT_ACCURACY_PHYSIQUES:DEFAULT_ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
-      playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS,
+      playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }
