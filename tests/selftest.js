@@ -1213,6 +1213,60 @@
     els.forEach(function(el){ ok(FF.FAMILIAR_SKILL_IDS.indexOf(FF.ELEMENT_ATTUNEMENT[el]) === -1, FF.ELEMENT_ATTUNEMENT[el]+' is not in the familiar roster'); });
   });
 
+  // ---- Classes: Assassin (dual-claw dodge/armor-pen killer) -----------------------------
+  suite('classes: Assassin', function(){
+    ok(FF.CLASS_SKILL_IDS.indexOf('assassin') !== -1, 'assassin is a class skill id');
+    var cd = FF.CLASS_DEFS_BY_ID.assassin;
+    ok(cd, 'assassin class defined');
+    eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'passive tiers are 1/20/40/60/80');
+    eq(cd.reqParts.length, 6, 'requires 6 gear conditions');
+
+    function cloth(){ return {tier:1, rarity:'normal', material:'tailoring'}; }
+    function chain(){ return {tier:1, rarity:'normal', material:'chain'}; }
+    function bare(){ return {tier:0, rarity:'normal', material:null}; }
+    function base(){ return { xp:{assassin:0}, physique:{}, equippedMainhand:'claw', equippedMainhandTier:6, equippedMainhandRarity:'normal', equippedOffhand:'claw', equippedOffhandTier:6, equippedOffhandRarity:'normal', bodyArmor:{ helmet:cloth(), chest:cloth(), gauntlets:chain(), boots:cloth(), back:bare() } }; }
+    var full = base();
+    eq(FF.activeClassId(full), 'assassin', 'dual claws + cloth hood/tunic/shoes + chain gloves => Assassin');
+
+    // Every requirement matters.
+    var noOff = base(); noOff.equippedOffhand=null; noOff.equippedOffhandTier=0;
+    eq(FF.activeClassId(noOff), null, 'needs a claw in the off-hand');
+    var notClawMain = base(); notClawMain.equippedMainhand='rapier';
+    eq(FF.activeClassId(notClawMain), null, 'needs claws in the main hand');
+    var clothGloves = base(); clothGloves.bodyArmor.gauntlets=cloth();
+    eq(FF.activeClassId(clothGloves), null, 'gloves must be chain');
+    var chainHelm = base(); chainHelm.bodyArmor.helmet=chain();
+    eq(FF.activeClassId(chainHelm), null, 'helm must be cloth');
+
+    var lvHi = Math.pow(84,2)*100; // ~Lv 85
+    function leveled(){ var s = base(); s.xp.assassin = lvHi; return s; }
+    var off = base(); off.equippedOffhand=null; off.equippedOffhandTier=0;
+
+    // Lv 1 Bloodletting: double Claws proficiency XP.
+    eq(FF.assassinClawXpMult(full), 2, 'Lv 1 assassin: double claw XP');
+    eq(FF.assassinClawXpMult(off), 1, 'claw XP bonus gated on the class being active');
+
+    // Lv 20 (+10%) and Lv 60 (+15%) Dodge, stacking to +25%.
+    eq(FF.assassinDodgeBonus(full), 0, 'Lv 1: no dodge bonus yet');
+    var lv20 = base(); lv20.xp.assassin = Math.pow(20,2)*100; // ~Lv 21
+    near(FF.assassinDodgeBonus(lv20), 0.10, 'Lv 20: +10% dodge');
+    near(FF.assassinDodgeBonus(leveled()), 0.25, 'Lv 60+: +25% dodge (10 + 15)');
+    ok(FF.playerDodgeChance(leveled()) - FF.playerDodgeChance(full) >= 0.25 - 1e-9, 'assassin dodge is folded into total dodge chance');
+
+    // Lv 40 Exploit Weakness: +20% damage (ignore 20% armor).
+    eq(FF.assassinArmorPenMult(full), 1, 'Lv 1: no armor pen');
+    near(FF.assassinArmorPenMult(leveled()), 1.20, 'Lv 40+: +20% damage');
+
+    // Lv 80 Perfect Killer: outgoing damage x(1 + dodge chance).
+    eq(FF.assassinDodgeDmgMult(full), 1, 'Lv 1: no dodge-to-damage');
+    near(FF.assassinDodgeDmgMult(leveled()), 1 + FF.playerDodgeChance(leveled()), 'Lv 80: +damage equal to dodge chance');
+
+    // Class familiar (dark dual-claw killer with lifesteal).
+    var fam = FF.FAMILIAR_DATA.assassin;
+    ok(fam && fam.spells && fam.spells.length === 4, 'assassin familiar has 4 spells');
+    ok(fam.spells.some(function(sp){ return (sp.type==='hit' || sp.type==='siphon') && sp.element==='dark'; }), 'assassin familiar deals dark damage');
+  });
+
   // ---- Claws (dual-wieldable weapon with an off-hand second attack) ---------------------
   suite('claws', function(){
     ok(FF.isClaw('claw'), 'the claw is a claw');

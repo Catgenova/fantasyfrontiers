@@ -3107,6 +3107,26 @@
         { level:60, name:'Brutal Riposte',desc:'On a miss, gain +50% Critical Hit damage for 8s.' },
         { level:80, name:'Wrath',         desc:'On a miss, gain a further +100% Critical Hit damage for 8s (stacks with Brutal Riposte).' }
       ]
+    },
+    {
+      id:'assassin', name:'Assassin', icon:svgIcon('claw','#7a3a4a'),
+      blurb:'A shadow-quick killer who dances between blows and shreds armour with twin claws.',
+      reqText:'Claws (main + off-hand), Cloth Hood, Tunic & Shoes, Chain Gloves',
+      reqParts:[
+        { icon:svgIcon('claw','#b0757a'),               label:'Claws (main)', met:function(st){ return st.equippedMainhand==='claw'; } },
+        { icon:svgIcon('claw','#7a3a4a'),               label:'Claws (off-hand)', met:function(st){ return hasOffhandClaw(st); } },
+        { icon:svgIcon('helm',CLASS_CLOTH_COLOR),       label:'Cloth Hood',   met:function(st){ return clothPieceEquipped(st,'helmet'); } },
+        { icon:svgIcon('chestarmor',CLASS_CLOTH_COLOR), label:'Cloth Tunic',  met:function(st){ return clothPieceEquipped(st,'chest'); } },
+        { icon:svgIcon('boots',CLASS_CLOTH_COLOR),      label:'Cloth Shoes',  met:function(st){ return clothPieceEquipped(st,'boots'); } },
+        { icon:svgIcon('gauntlet',CLASS_CHAIN_COLOR),   label:'Chain Gloves', met:function(st){ return chainPieceEquipped(st,'gauntlets'); } }
+      ],
+      passives:[
+        { level:1,  name:'Bloodletting',  desc:'Your Claws proficiency earns double experience.' },
+        { level:20, name:'Shadowstep',    desc:'+10% chance to Dodge.' },
+        { level:40, name:'Exploit Weakness', desc:'Your attacks ignore 20% of enemy armor (+20% damage).' },
+        { level:60, name:'Ghost',         desc:'A further +15% chance to Dodge (stacks with Shadowstep for +25%).' },
+        { level:80, name:'Perfect Killer',desc:'Your damage is increased by your Dodge chance (a 25% Dodge chance grants +25% damage).' }
+      ]
     }
   ];
   var CLASS_DEFS_BY_ID = {}; CLASS_DEFS.forEach(function(c){ CLASS_DEFS_BY_ID[c.id] = c; });
@@ -3131,6 +3151,20 @@
     st = st || state;
     return getPlateArmorBlockChance(st) + getStaffBlockChance(st) + blockingBlockBonus(st) + reflexesBlockBonus(st) + classBlockBonus(st);
   }
+  function assassinBonus(reqLevel, st){ return classBonusActive('assassin', reqLevel, st); }
+  // Assassin Lv 20 (+10%) and Lv 60 (+15%) Dodge, stacking to +25% while the class is active.
+  function assassinDodgeBonus(st){ st = st || state; if(activeClassId(st)!=='assassin') return 0; var lvl = classLevel(st,'assassin'); return (lvl>=20?0.10:0) + (lvl>=60?0.15:0); }
+  // Total persistent Dodge chance (gear + physiques + class); the temporary familiar 'dodge' buff is added
+  // on top only at the moment of a monster attack, so it is NOT folded in here.
+  function playerDodgeChance(st){
+    st = st || state;
+    return getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + assassinDodgeBonus(st);
+  }
+  // Assassin Lv 40: attacks ignore 20% of armor (modeled as +20% damage). Lv 80: outgoing damage +X% where X = Dodge chance.
+  function assassinArmorPenMult(st){ return assassinBonus(40, st) ? 1.20 : 1; }
+  function assassinDodgeDmgMult(st){ st = st || state; return assassinBonus(80, st) ? (1 + playerDodgeChance(st)) : 1; }
+  // Assassin Lv 1: Claws proficiency earns double XP.
+  function assassinClawXpMult(st){ return assassinBonus(1, st) ? 2 : 1; }
   function heraldBonus(reqLevel, st){ return classBonusActive('herald', reqLevel, st); }
   // Herald Lv 20: outgoing damage +X% where X = your Block chance. Lv 40: Armor +X% likewise.
   function heraldBlockDmgMult(st){ st = st || state; return heraldBonus(20, st) ? (1 + playerBlockChance(st)) : 1; }
@@ -3307,7 +3341,8 @@
     herald:           { name:'Sentinel', icon:svgIcon('shield','#c8a83a'), spells:[armorSpell('Aegis Wall',1.8,6), buffSpell('Rallying Cry','block',0.18,8), dmgSpell('Valor',1.3,8), buffSpell('Bastion','resistBlunt',0.32,8)] },
     quickdraw:        { name:'Talon',    icon:svgIcon('bow','#5a8a4a'), spells:[hitSpell('Barbed Shot','piercing',15), buffSpell('Rapid Nock','haste',0.18,8), hitSpell('Splitting Arrow','piercing',13), buffSpell('Hawkeye','critChance',0.13,8)] },
     templar:          { name:'Lumen',    icon:svgIcon('starburst','#e0c860'), spells:[hitSpell('Smite','void',15), armorSpell('Consecrate',1.7,6), hitSpell('Radiant Beam','void',13), buffSpell('Zeal','block',0.16,8)] },
-    knight:           { name:'Aldric',   icon:svgIcon('sword','#8a90a0'), spells:[hitSpell('Vanguard Slash','slashing',15), buffSpell('Charge','haste',0.18,8), buffSpell('Honed Blade','dmgSlash',0.32,8), armorSpell('Steel Resolve',1.6,6)] }
+    knight:           { name:'Aldric',   icon:svgIcon('sword','#8a90a0'), spells:[hitSpell('Vanguard Slash','slashing',15), buffSpell('Charge','haste',0.18,8), buffSpell('Honed Blade','dmgSlash',0.32,8), armorSpell('Steel Resolve',1.6,6)] },
+    assassin:         { name:'Shrike',   icon:svgIcon('claw','#7a3a4a'), spells:[hitSpell('Backstab','slashing',16), buffSpell('Evasion','dodge',0.16,8), siphonSpell('Exsanguinate',13), buffSpell('Killer Instinct','critChance',0.13,8)] }
   };
 
   // Diverse, unique per-familiar spell kits drawn from the expanded pool. Reassigned onto FAMILIAR_DATA
@@ -3380,7 +3415,8 @@
     herald:         [ armorSpell('Aegis Wall',1.8,6), buffSpell('Rallying Cry','block',0.18,8), dmgSpell('Valor',1.3,8), buffSpell('Bastion','resistBlunt',0.32,8) ],
     quickdraw:      [ hitSpell('Barbed Shot','piercing',15), buffSpell('Rapid Nock','haste',0.18,8), hitSpell('Splitting Arrow','piercing',13), buffSpell('Hawkeye','critChance',0.13,8) ],
     templar:        [ hitSpell('Smite','void',15), armorSpell('Consecrate',1.7,6), hitSpell('Radiant Beam','void',13), buffSpell('Zeal','block',0.16,8) ],
-    knight:         [ hitSpell('Vanguard Slash','slashing',15), buffSpell('Charge','haste',0.18,8), buffSpell('Honed Blade','dmgSlash',0.32,8), armorSpell('Steel Resolve',1.6,6) ]
+    knight:         [ hitSpell('Vanguard Slash','slashing',15), buffSpell('Charge','haste',0.18,8), buffSpell('Honed Blade','dmgSlash',0.32,8), armorSpell('Steel Resolve',1.6,6) ],
+    assassin:       [ hitSpell('Backstab','slashing',16), buffSpell('Evasion','dodge',0.16,8), siphonSpell('Exsanguinate',13), buffSpell('Killer Instinct','critChance',0.13,8) ]
   };
   // Each familiar channels an element (thematic to its skill). Its damaging spells (direct hits,
   // siphons, and poison DoTs) carry that element, so they gain the +20% elemental advantage against
@@ -3401,7 +3437,7 @@
     reflexes:'fire', stamina:'earth', handStrength:'earth', armStrength:'earth', coreStrength:'earth', solving:'light', criticalThinking:'light',
     mentality:'earth', zen:'light', meditation:'light', fortitude:'dark',
     // Classes
-    summoner:'light', duelist:'fire', reaper:'dark', herald:'water', quickdraw:'earth', templar:'light', knight:'earth'
+    summoner:'light', duelist:'fire', reaper:'dark', herald:'water', quickdraw:'earth', templar:'light', knight:'earth', assassin:'dark'
   };
   var DAMAGE_SPELL_TYPES = { hit:true, siphon:true, poison:true }; // spells that deal direct damage or DoT
   function familiarElement(id){ return FAMILIAR_ELEMENT[id] || null; }
@@ -3457,7 +3493,7 @@
     solving:{s:'puzzle',c:'#3a6a9a',ear:'antenna'}, criticalThinking:{s:'brain',c:'#8a5aaa',ear:'antenna'},
     mentality:{s:'compass',c:'#3f8a8a',ear:'round'}, zen:{s:'yinyang',c:'#8a8a8a',ear:'round'},
     meditation:{s:'lotusflower',c:'#c87a9a',ear:'leaf'}, fortitude:{s:'heart',c:'#c8302a',ear:'round'},
-    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}, reaper:{s:'ghost',c:'#6a5a7a',ear:'horn'}, herald:{s:'shield',c:'#c8a83a',ear:'horn'}, quickdraw:{s:'bow',c:'#5a8a4a',ear:'wing'}, templar:{s:'starburst',c:'#e0c860',ear:'halo'}, knight:{s:'sword',c:'#8a90a0',ear:'horn'}
+    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}, reaper:{s:'ghost',c:'#6a5a7a',ear:'horn'}, herald:{s:'shield',c:'#c8a83a',ear:'horn'}, quickdraw:{s:'bow',c:'#5a8a4a',ear:'wing'}, templar:{s:'starburst',c:'#e0c860',ear:'halo'}, knight:{s:'sword',c:'#8a90a0',ear:'horn'}, assassin:{s:'claw',c:'#7a3a4a',ear:'cat'}
   };
   // Draw the ear/crown silhouette behind the head. Returned in two layers (behind body, in front).
   function famEars(kind, body, bodyD, belly, accent){
@@ -6596,7 +6632,7 @@
 
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
     var wandAttuneMult = isWandAttack ? elementDmgMult(state, weaponStyle.element) : 1; // Elemental Attunement boosts a wand's element damage
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1));
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1));
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
@@ -6612,7 +6648,7 @@
     // mainhand weapon and a Quiver offhand (which boosts your bow damage) train off it.
     var effDmg = Math.min(dmgToMonster, monsterHpBeforeHit);
     var atkProfXp = Math.max(1, Math.round(effDmg * WEAPON_PROF_XP_PER_DMG));
-    if(state.equippedMainhand) addXp(mainProfId, atkProfXp);
+    if(mainhandTypeId) addXp(mainProfId, Math.round(atkProfXp * (mainProfId==='claw' ? assassinClawXpMult() : 1))); // Assassin Lv 1 doubles Claws proficiency XP
     if(state.equippedOffhand && offhandStyle && offhandStyle.type==='quiver') addXp(state.equippedOffhand, atkProfXp);
     awardClassXp(effDmg); // an active Class trains on combat damage dealt
     // Elemental Attunement trains on the element damage you deal: a Wand's whole hit, a Scepter's light half.
@@ -6686,7 +6722,7 @@
     var monster = monsterById(act.monsterId);
     if(!monster) return;
     var lb = getLeatherArmorBonuses(state);
-    var dodgeChance = lb.dodgeBonus * (1 + agilityLeatherMult(state)) + agilityDodgeBonus(state) + reflexesDodgeBonus(state) + getFamBuff('dodge');
+    var dodgeChance = playerDodgeChance(state) + getFamBuff('dodge');
     if(dodgeChance > 0 && Math.random() < dodgeChance){
       addLog('You dodged the ' + monster.name + '\'s attack!', 'important');
       spawnFloatingText('Dodged!', 'ft-success');
@@ -8758,7 +8794,7 @@
     html += '</div>';
     html += '<div class="stats-group"><h4>'+svgIcon('shield','currentColor')+' Defense</h4>';
     html += '<div class="stat-row"><span class="stat-label">Armor</span><span class="stat-value">'+(Math.round(armor*100)/100)+'</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Dodge Chance</span><span class="stat-value">'+(Math.round(getLeatherArmorBonuses(state).dodgeBonus*1000)/10)+'%</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Dodge Chance</span><span class="stat-value">'+(Math.round(playerDodgeChance(state)*1000)/10)+'%</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Block Chance</span><span class="stat-value">'+(Math.round(playerBlockChance(state)*1000)/10)+'% (halves dmg)</span></div>';
     var wornMaterialsPreview = {};
     BODY_ARMOR_SLOTS.forEach(function(slot){
@@ -13810,6 +13846,7 @@
     quickdraw: 'A Class conferred by a Short Bow and Quiver with Plate Boots and Leather Helm, Chest & Gloves. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     templar: 'A Class conferred by a Scepter and Ward with Plate Helm & Chest and Chain Gloves & Boots. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     knight: 'A Class conferred by a Claymore with Plate Chest & Boots and Chain Helm & Gloves. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
+    assassin: 'A Class conferred by dual-wielding Claws (main + off-hand) with Cloth Hood, Tunic & Shoes and Chain Gloves. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     clotharmor: 'Proficiency wearing Tailoring\'s cloth armor at higher tiers.',
     leatherarmor: 'Proficiency wearing Leatherworking\'s leather armor at higher tiers.',
     chainmailarmor: 'Proficiency wearing Armorsmithing\'s chain mail at higher tiers.',
@@ -15821,7 +15858,7 @@
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
-      isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs,
+      isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }
