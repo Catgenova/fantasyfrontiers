@@ -1311,6 +1311,108 @@
     eq(FF.getClothArmorSpellBonus(plateOnly), 0, 'plate pieces give no familiar bonus');
   });
 
+  // ---- Classes: Treasure Hunter (rarity-scaling fortune seeker) -------------------------
+  suite('classes: Treasure Hunter', function(){
+    ok(FF.CLASS_SKILL_IDS.indexOf('treasureHunter') !== -1, 'treasureHunter is a class skill id');
+    var cd = FF.CLASS_DEFS_BY_ID.treasureHunter;
+    ok(cd, 'treasureHunter class defined');
+    eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'passive tiers 1/20/40/60/80');
+    eq(cd.reqParts.length, 6, 'requires 6 gear conditions');
+
+    // Scimitar exists as a forgeable one-hand sword proficiency.
+    ok(FF.WEAPON_STYLE_IDS.indexOf('scimitar') !== -1, 'scimitar is a weapon style');
+
+    function arm(mat, r){ return {tier:1, rarity:r||'normal', material:mat}; }
+    function emptyRings(){ return { ring1:{typeId:null,tier:0,rarity:'normal'}, ring2:{typeId:null,tier:0,rarity:'normal'}, ring3:{typeId:null,tier:0,rarity:'normal'}, ring4:{typeId:null,tier:0,rarity:'normal'}, ring5:{typeId:null,tier:0,rarity:'normal'}, amulet:{tier:0,rarity:'normal'} }; }
+    function base(rar){
+      return {
+        xp:{treasureHunter:0}, physique:{},
+        equippedMainhand:'scimitar', equippedMainhandRarity:rar||'normal',
+        equippedOffhand:'shieldSmall', equippedOffhandTier:1, equippedOffhandRarity:rar||'normal',
+        bodyArmor:{ helmet:arm('chain',rar), boots:arm('chain',rar), chest:arm('plate',rar), gauntlets:arm('tailoring',rar), back:{tier:0,rarity:'normal',material:null} },
+        jewelrySlots:emptyRings(), equippedBeltTier:0, equippedBeltRarity:'normal'
+      };
+    }
+    var full = base();
+    eq(FF.activeClassId(full), 'treasureHunter', 'scimitar + small shield + chain helm/boots + plate chest + cloth gloves => Treasure Hunter');
+
+    // Every requirement matters.
+    var noScim = base(); noScim.equippedMainhand='rapier'; eq(FF.activeClassId(noScim), null, 'must be a Scimitar');
+    var noShield = base(); noShield.equippedOffhand=null; eq(FF.activeClassId(noShield), null, 'needs an offhand shield');
+    var wrongShield = base(); wrongShield.equippedOffhand='shieldLarge'; eq(FF.activeClassId(wrongShield), null, 'must be a Small Shield specifically');
+    var plateHelm = base(); plateHelm.bodyArmor.helmet=arm('plate'); eq(FF.activeClassId(plateHelm), null, 'helm must be chain');
+    var chainChest = base(); chainChest.bodyArmor.chest=arm('chain'); eq(FF.activeClassId(chainChest), null, 'chest must be plate');
+
+    // Rarity counting across all equipped gear.
+    var allRare = base('rare');
+    eq(FF.treasureHunterCount(allRare, 1), 6, 'six Rare pieces => 6 rare-or-higher');
+    eq(FF.treasureHunterCount(allRare, 2), 0, 'none are Supreme+');
+    var allSup = base('supreme');
+    eq(FF.treasureHunterCount(allSup, 1), 6, 'Supreme counts as rare-or-higher');
+    eq(FF.treasureHunterCount(allSup, 2), 6, 'six Supreme => 6 supreme-or-higher');
+    eq(FF.treasureHunterCount(allSup, 3), 0, 'none Fantastic');
+    eq(FF.treasureHunterCount(base('fantastic'), 3), 6, 'six Fantastic => 6 fantastic');
+    // Rings, amulet, and belt count too.
+    var withJewels = base('rare');
+    withJewels.jewelrySlots.ring1 = {typeId:'fire', tier:1, rarity:'fantastic'};
+    withJewels.jewelrySlots.amulet = {tier:1, rarity:'supreme'};
+    withJewels.equippedBeltTier = 1; withJewels.equippedBeltRarity = 'rare';
+    eq(FF.treasureHunterCount(withJewels, 1), 9, 'rings, amulet, belt all count toward rarity totals');
+
+    // Lv 1 Prospector: +10% damage per rare+ item.
+    eq(FF.treasureHunterDmgMult(base('normal')), 1, 'all-normal gear => no damage bonus');
+    near(FF.treasureHunterDmgMult(allRare), 1.60, 'six Rare items => +60% damage');
+    near(FF.treasureHunterDmgMult(base('fantastic')), 1.60, 'Fantastic items also count as rare+ (+60%)');
+
+    // Inactive class => no bonuses at all.
+    var off = base('fantastic'); off.equippedMainhand='rapier';
+    eq(FF.treasureHunterDmgMult(off), 1, 'damage bonus off while class inactive');
+    eq(FF.treasureHunterCritDmgBonus(off), 0, 'crit bonus off while class inactive');
+    eq(FF.classAccuracyMult(off), 1, 'accuracy bonus off while class inactive');
+
+    // Lv 20 Appraiser: +10% accuracy per Supreme+ item (folds into classAccuracyMult).
+    var thL1 = base('supreme');
+    eq(FF.classAccuracyMult(thL1), 1, 'Lv1: accuracy passive not active yet');
+    var thL20 = base('supreme'); thL20.xp.treasureHunter = Math.pow(20,2)*100;
+    near(FF.classAccuracyMult(thL20), 1.60, 'Lv20, six Supreme => +60% accuracy');
+    var thL20rare = base('rare'); thL20rare.xp.treasureHunter = Math.pow(20,2)*100;
+    eq(FF.classAccuracyMult(thL20rare), 1, 'Rare items do not count for the Supreme+ accuracy bonus');
+
+    // Lv 40 Connoisseur: +25% crit damage per Fantastic item.
+    var thL20f = base('fantastic'); thL20f.xp.treasureHunter = Math.pow(20,2)*100;
+    eq(FF.treasureHunterCritDmgBonus(thL20f), 0, 'crit passive needs Lv40');
+    var thL40 = base('fantastic'); thL40.xp.treasureHunter = Math.pow(40,2)*100;
+    near(FF.treasureHunterCritDmgBonus(thL40), 1.50, 'Lv40, six Fantastic => +150% crit damage');
+    var thL40sup = base('supreme'); thL40sup.xp.treasureHunter = Math.pow(40,2)*100;
+    eq(FF.treasureHunterCritDmgBonus(thL40sup), 0, 'Supreme items do not count for the Fantastic crit bonus');
+
+    // Lv 80 Golden Devotion: doubles the Devotion/Blessing/Miracle rarity bonus (reads global state).
+    var s = FF._state;
+    var snap = { xpT:s.xp.treasureHunter, main:s.equippedMainhand, mrar:s.equippedMainhandRarity, off:s.equippedOffhand, offT:s.equippedOffhandTier,
+      helm:s.bodyArmor.helmet, chest:s.bodyArmor.chest, gaunt:s.bodyArmor.gauntlets, boots:s.bodyArmor.boots,
+      fa:s.faithActivity, faith:s.faith };
+    s.equippedMainhand='scimitar'; s.equippedMainhandRarity='normal';
+    s.equippedOffhand='shieldSmall'; s.equippedOffhandTier=1;
+    s.bodyArmor.helmet=arm('chain'); s.bodyArmor.boots=arm('chain'); s.bodyArmor.chest=arm('plate'); s.bodyArmor.gauntlets=arm('tailoring');
+    s.faith = 100; s.faithActivity = { type:'devotion', tier:20 };
+    s.xp.treasureHunter = 0; // Lv 1: not doubled yet
+    var single = FF.faithRarityBonus('devotion');
+    ok(single > 0, 'running Devotion grants a rarity bonus');
+    s.xp.treasureHunter = Math.pow(80,2)*100; // Lv 81
+    near(FF.faithRarityBonus('devotion'), single*2, 'Treasure Hunter Lv80 doubles the Devotion rarity bonus');
+    s.equippedMainhand='rapier'; // deactivate class
+    near(FF.faithRarityBonus('devotion'), single, 'bonus returns to normal when the class is inactive');
+    // restore
+    s.xp.treasureHunter=snap.xpT; s.equippedMainhand=snap.main; s.equippedMainhandRarity=snap.mrar; s.equippedOffhand=snap.off; s.equippedOffhandTier=snap.offT;
+    s.bodyArmor.helmet=snap.helm; s.bodyArmor.chest=snap.chest; s.bodyArmor.gauntlets=snap.gaunt; s.bodyArmor.boots=snap.boots;
+    s.faithActivity=snap.fa; s.faith=snap.faith;
+
+    // Familiar registered, excluded from the passive-summon roster (class familiars roll on kills).
+    var fam = FF.FAMILIAR_DATA.treasureHunter;
+    ok(fam && fam.spells && fam.spells.length === 4, 'Treasure Hunter familiar has 4 spells');
+    ok(FF.FAMILIAR_SKILL_IDS.indexOf('treasureHunter') === -1, 'class familiar not in the passive roster');
+  });
+
   // ---- Classes: Thunderfury (crit-chaining earth-wand storm caller) ---------------------
   suite('classes: Thunderfury', function(){
     ok(FF.CLASS_SKILL_IDS.indexOf('thunderfury') !== -1, 'thunderfury is a class skill id');

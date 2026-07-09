@@ -2340,6 +2340,7 @@
   var MELEE_WEAPON_TYPES = [
     {id:'rapier',      name:'Rapier',        icon:svgIcon('sword','#9aa0a8'), damageType:'piercing', attackTypes:{piercing:0.9, slashing:0.1, blunt:0},    hand:'1h', weaponClass:'One-Hand Sword',  skillId:'weaponsmithing', matPrefix:'metallurgy', tierCount:20, attackSpeed:3},
     {id:'falchion',    name:'Falchion',      icon:svgIcon('sword','#8a9098'), damageType:'piercing', attackTypes:{piercing:0.6, slashing:0.4, blunt:0},    hand:'1h', weaponClass:'One-Hand Sword',  skillId:'weaponsmithing', matPrefix:'metallurgy', tierCount:20, attackSpeed:3},
+    {id:'scimitar',    name:'Scimitar',      icon:svgIcon('sword','#c9a227'), damageType:'slashing', attackTypes:{slashing:0.7, piercing:0.3, blunt:0},    hand:'1h', weaponClass:'One-Hand Sword',  skillId:'weaponsmithing', matPrefix:'metallurgy', tierCount:20, attackSpeed:3.5},
     {id:'hatchet',     name:'Hatchet',       icon:svgIcon('axe','#8a6a3a'), damageType:'slashing', attackTypes:{piercing:0, slashing:0.9, blunt:0.1},   hand:'1h', weaponClass:'One-Hand Axe',    skillId:'weaponsmithing', matPrefix:'metallurgy', tierCount:20, attackSpeed:4},
     {id:'halfmoonaxe', name:'Half-Moon Axe', icon:svgIcon('axe','#9a7a4a'), damageType:'slashing', attackTypes:{piercing:0.1, slashing:0.8, blunt:0.1}, hand:'1h', weaponClass:'One-Hand Axe',    skillId:'weaponsmithing', matPrefix:'metallurgy', tierCount:20, attackSpeed:4},
     {id:'mace',        name:'Mace',          icon:svgIcon('hammer','#7a7a80'), damageType:'blunt',    attackTypes:{piercing:0.1, slashing:0.1, blunt:0.8}, hand:'1h', weaponClass:'One-Hand Hammer', skillId:'weaponsmithing', matPrefix:'metallurgy', tierCount:20, attackSpeed:4.5},
@@ -2583,7 +2584,10 @@
     var fa = state.faithActivity;
     if(!fa || fa.type !== faithType || state.faith<=0) return 0;
     var tierData = FAITH_ACTIVITY_TIERS[faithType][fa.tier];
-    return tierData ? tierData.chance : 0;
+    var bonus = tierData ? tierData.chance : 0;
+    // Treasure Hunter Lv 80 (Golden Devotion): doubles the Devotion/Blessing/Miracle rarity bonus.
+    if(bonus > 0 && classBonusActive('treasureHunter', 80)) bonus *= 2;
+    return bonus;
   }
   function rollCraftRarity(state){
     var fantasticChance = FAITH_BASE_FANTASTIC + faithRarityBonus('miracle');
@@ -3147,6 +3151,26 @@
         { level:60, name:'Storm’s Wrath', desc:'+100% Critical Hit damage while below 50% Health.' },
         { level:80, name:'Life Siphon',     desc:'While below 25% Health, Critical Hits drain HP (heal 50% of the damage dealt).' }
       ]
+    },
+    {
+      id:'treasureHunter', name:'Treasure Hunter', icon:svgIcon('gem','#e6c24a'),
+      blurb:'A fortune-seeking adventurer in mismatched, high-quality kit &mdash; the rarer the gear, the deadlier the hunter.',
+      reqText:'Scimitar + Small Shield, Chain Helm & Boots, Plate Chest, Cloth Gloves',
+      reqParts:[
+        { icon:svgIcon('sword','#c9a227'),              label:'Scimitar',     met:function(st){ return st.equippedMainhand==='scimitar'; } },
+        { icon:svgIcon('shield','#8a97a6'),             label:'Small Shield', met:function(st){ return st.equippedOffhand==='shieldSmall'; } },
+        { icon:svgIcon('helm',CLASS_CHAIN_COLOR),       label:'Chain Helm',   met:function(st){ return chainPieceEquipped(st,'helmet'); } },
+        { icon:svgIcon('boots',CLASS_CHAIN_COLOR),      label:'Chain Boots',  met:function(st){ return chainPieceEquipped(st,'boots'); } },
+        { icon:svgIcon('chestarmor',CLASS_PLATE_COLOR), label:'Plate Chest',  met:function(st){ return platePieceEquipped(st,'chest'); } },
+        { icon:svgIcon('gauntlet',CLASS_CLOTH_COLOR),   label:'Cloth Gloves', met:function(st){ return clothPieceEquipped(st,'gauntlets'); } }
+      ],
+      passives:[
+        { level:1,  name:'Prospector',      desc:'+10% damage for each equipped item of Rare rarity or higher.' },
+        { level:20, name:'Appraiser',       desc:'+10% Accuracy for each equipped item of Supreme rarity or higher.' },
+        { level:40, name:'Connoisseur',     desc:'+25% Critical Hit damage for each equipped item of Fantastic rarity.' },
+        { level:60, name:'Tithe',           desc:'Defeating an enemy grants Faith equal to its tier (a Tier 12 foe gives +12 Faith).' },
+        { level:80, name:'Golden Devotion', desc:'Your Devotion, Blessing, and Miracle rarity bonuses are doubled while this class is active.' }
+      ]
     }
   ];
   var CLASS_DEFS_BY_ID = {}; CLASS_DEFS.forEach(function(c){ CLASS_DEFS_BY_ID[c.id] = c; });
@@ -3193,6 +3217,37 @@
   // Lv 60: +100% crit damage while below 50% HP. Only meaningful on a crit (folded into critMult).
   function thunderLowHpCritDmg(){ return (thunderfuryBonus(60) && state.playerHp < maxHp(state)*0.5) ? 1.0 : 0; }
   function enemyStunned(st){ st = st || state; return !!(st.activity && st.activity.enemyStunUntil && st.activity.enemyStunUntil > Date.now()); }
+  // ---- Treasure Hunter: bonuses scale with how much of your kit is high-rarity ----------
+  var RARITY_ORDER = ['normal','rare','supreme','fantastic'];
+  function rarityRank(r){ var i = RARITY_ORDER.indexOf(r || 'normal'); return i < 0 ? 0 : i; }
+  function equippedOffhandRarity(st){
+    st = st || state;
+    if(!st.equippedOffhand) return null;
+    if(isStackableShield(st.equippedOffhand) || isWard(st.equippedOffhand) || st.equippedOffhand==='claw') return st.equippedOffhandRarity || 'normal';
+    return (st.offhandRarities && st.offhandRarities[st.equippedOffhand]) || 'normal';
+  }
+  // Every equipped gear piece's rarity: weapon, offhand, the 5 armor slots, 5 rings, amulet, belt.
+  function equippedGearRarities(st){
+    st = st || state;
+    var out = [];
+    if(st.equippedMainhand) out.push(st.equippedMainhandRarity || 'normal');
+    var offR = equippedOffhandRarity(st); if(offR) out.push(offR);
+    BODY_ARMOR_SLOTS.forEach(function(slot){ var s = st.bodyArmor && st.bodyArmor[slot]; if(s && s.tier > 0) out.push(s.rarity || 'normal'); });
+    if(st.jewelrySlots){
+      RING_SLOT_IDS.forEach(function(id){ var s = st.jewelrySlots[id]; if(s && s.typeId && s.tier > 0) out.push(s.rarity || 'normal'); });
+      var am = st.jewelrySlots.amulet; if(am && am.tier > 0) out.push(am.rarity || 'normal');
+    }
+    if(st.equippedBeltTier > 0) out.push(st.equippedBeltRarity || 'normal');
+    return out;
+  }
+  function treasureHunterBonus(reqLevel, st){ return classBonusActive('treasureHunter', reqLevel, st); }
+  // Count of equipped items at or above a rarity rank (1=Rare, 2=Supreme, 3=Fantastic).
+  function treasureHunterCount(st, minRank){ return equippedGearRarities(st).filter(function(r){ return rarityRank(r) >= minRank; }).length; }
+  // Lv 1 (Prospector): +10% damage per Rare-or-higher item.
+  function treasureHunterDmgMult(st){ st = st || state; return treasureHunterBonus(1, st) ? (1 + 0.10 * treasureHunterCount(st, 1)) : 1; }
+  // Lv 40 (Connoisseur): +25% Critical Hit damage per Fantastic item.
+  function treasureHunterCritDmgBonus(st){ st = st || state; return treasureHunterBonus(40, st) ? 0.25 * treasureHunterCount(st, 3) : 0; }
+  // Lv 60 (Tithe) is applied on kill (defeatMonster); Lv 80 (Golden Devotion) is applied in faithRarityBonus.
   function heraldBonus(reqLevel, st){ return classBonusActive('herald', reqLevel, st); }
   // Herald Lv 20: outgoing damage +X% where X = your Block chance. Lv 40: Armor +X% likewise.
   function heraldBlockDmgMult(st){ st = st || state; return heraldBonus(20, st) ? (1 + playerBlockChance(st)) : 1; }
@@ -3252,6 +3307,7 @@
     st = st || state; var id = activeClassId(st);
     if(id==='duelist' && classLevel(st,'duelist') >= 40) return 1.3; // Duelist Perfect Form
     if(id==='thunderfury' && classLevel(st,'thunderfury') >= 20) return 1 + 0.20 * Math.min(THUNDER_MAX_STACKS, st.thunderStacks || 0); // Storm Focus crit stacks
+    if(id==='treasureHunter' && classLevel(st,'treasureHunter') >= 20) return 1 + 0.10 * treasureHunterCount(st, 2); // Appraiser: +10% accuracy per Supreme+ item
     return 1;
   }
   // Duelist Lv 60: +25% damage at full Health.
@@ -3377,7 +3433,8 @@
     templar:          { name:'Lumen',    icon:svgIcon('starburst','#e0c860'), spells:[hitSpell('Smite','void',15), armorSpell('Consecrate',1.7,6), hitSpell('Radiant Beam','void',13), buffSpell('Zeal','block',0.16,8)] },
     knight:           { name:'Aldric',   icon:svgIcon('sword','#8a90a0'), spells:[hitSpell('Vanguard Slash','slashing',15), buffSpell('Charge','haste',0.18,8), buffSpell('Honed Blade','dmgSlash',0.32,8), armorSpell('Steel Resolve',1.6,6)] },
     assassin:         { name:'Shrike',   icon:svgIcon('claw','#7a3a4a'), spells:[hitSpell('Backstab','slashing',16), buffSpell('Evasion','dodge',0.16,8), siphonSpell('Exsanguinate',13), buffSpell('Killer Instinct','critChance',0.13,8)] },
-    thunderfury:      { name:'Volt',     icon:svgIcon('lightning','#e8d84a'), spells:[hitSpell('Chain Lightning','void',15), buffSpell('Static Charge','critChance',0.14,8), hitSpell('Thunderclap','void',13), buffSpell('Overload','critDmg',0.34,8)] }
+    thunderfury:      { name:'Volt',     icon:svgIcon('lightning','#e8d84a'), spells:[hitSpell('Chain Lightning','void',15), buffSpell('Static Charge','critChance',0.14,8), hitSpell('Thunderclap','void',13), buffSpell('Overload','critDmg',0.34,8)] },
+    treasureHunter:   { name:'Midas',    icon:svgIcon('gem','#e6c24a'), spells:[hitSpell('Fortune Strike','void',15), buffSpell('Lucky Find','critChance',0.14,8), weakenSpell("Fool's Gold",0.28,8), buffSpell('Midas Touch','critDmg',0.34,8)] }
   };
 
   // Diverse, unique per-familiar spell kits drawn from the expanded pool. Reassigned onto FAMILIAR_DATA
@@ -3452,7 +3509,8 @@
     templar:        [ hitSpell('Smite','void',15), armorSpell('Consecrate',1.7,6), hitSpell('Radiant Beam','void',13), buffSpell('Zeal','block',0.16,8) ],
     knight:         [ hitSpell('Vanguard Slash','slashing',15), buffSpell('Charge','haste',0.18,8), buffSpell('Honed Blade','dmgSlash',0.32,8), armorSpell('Steel Resolve',1.6,6) ],
     assassin:       [ hitSpell('Backstab','slashing',16), buffSpell('Evasion','dodge',0.16,8), siphonSpell('Exsanguinate',13), buffSpell('Killer Instinct','critChance',0.13,8) ],
-    thunderfury:    [ hitSpell('Chain Lightning','void',15), buffSpell('Static Charge','critChance',0.14,8), hitSpell('Thunderclap','void',13), buffSpell('Overload','critDmg',0.34,8) ]
+    thunderfury:    [ hitSpell('Chain Lightning','void',15), buffSpell('Static Charge','critChance',0.14,8), hitSpell('Thunderclap','void',13), buffSpell('Overload','critDmg',0.34,8) ],
+    treasureHunter: [ hitSpell('Fortune Strike','void',15), buffSpell('Lucky Find','critChance',0.14,8), weakenSpell("Fool's Gold",0.28,8), buffSpell('Midas Touch','critDmg',0.34,8) ]
   };
   // Each familiar channels an element (thematic to its skill). Its damaging spells (direct hits,
   // siphons, and poison DoTs) carry that element, so they gain the +20% elemental advantage against
@@ -3473,7 +3531,7 @@
     reflexes:'fire', stamina:'earth', handStrength:'earth', armStrength:'earth', coreStrength:'earth', solving:'light', criticalThinking:'light',
     mentality:'earth', zen:'light', meditation:'light', fortitude:'dark',
     // Classes
-    summoner:'light', duelist:'fire', reaper:'dark', herald:'water', quickdraw:'earth', templar:'light', knight:'earth', assassin:'dark', thunderfury:'earth'
+    summoner:'light', duelist:'fire', reaper:'dark', herald:'water', quickdraw:'earth', templar:'light', knight:'earth', assassin:'dark', thunderfury:'earth', treasureHunter:'light'
   };
   var DAMAGE_SPELL_TYPES = { hit:true, siphon:true, poison:true }; // spells that deal direct damage or DoT
   function familiarElement(id){ return FAMILIAR_ELEMENT[id] || null; }
@@ -3529,7 +3587,7 @@
     solving:{s:'puzzle',c:'#3a6a9a',ear:'antenna'}, criticalThinking:{s:'brain',c:'#8a5aaa',ear:'antenna'},
     mentality:{s:'compass',c:'#3f8a8a',ear:'round'}, zen:{s:'yinyang',c:'#8a8a8a',ear:'round'},
     meditation:{s:'lotusflower',c:'#c87a9a',ear:'leaf'}, fortitude:{s:'heart',c:'#c8302a',ear:'round'},
-    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}, reaper:{s:'ghost',c:'#6a5a7a',ear:'horn'}, herald:{s:'shield',c:'#c8a83a',ear:'horn'}, quickdraw:{s:'bow',c:'#5a8a4a',ear:'wing'}, templar:{s:'starburst',c:'#e0c860',ear:'halo'}, knight:{s:'sword',c:'#8a90a0',ear:'horn'}, assassin:{s:'claw',c:'#7a3a4a',ear:'cat'}, thunderfury:{s:'lightning',c:'#e8d84a',ear:'antenna'}
+    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}, reaper:{s:'ghost',c:'#6a5a7a',ear:'horn'}, herald:{s:'shield',c:'#c8a83a',ear:'horn'}, quickdraw:{s:'bow',c:'#5a8a4a',ear:'wing'}, templar:{s:'starburst',c:'#e0c860',ear:'halo'}, knight:{s:'sword',c:'#8a90a0',ear:'horn'}, assassin:{s:'claw',c:'#7a3a4a',ear:'cat'}, thunderfury:{s:'lightning',c:'#e8d84a',ear:'antenna'}, treasureHunter:{s:'gem',c:'#e6c24a',ear:'round'}
   };
   // Draw the ear/crown silhouette behind the head. Returned in two layers (behind body, in front).
   function famEars(kind, body, bodyD, belly, accent){
@@ -6715,7 +6773,7 @@
     var physDmgMult = isWandAttack ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
     physDmgMult *= tenacityLowHpMult(state);
     // Elixir potions + familiar crit-damage buffs stack on top of the (capped) base+exploitation crit.
-    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + reaperCritDmgBonus() + knightMissCritDmg() + thunderLowHpCritDmg()) : 1;
+    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + reaperCritDmgBonus() + knightMissCritDmg() + thunderLowHpCritDmg() + treasureHunterCritDmgBonus()) : 1;
 
     // Accuracy vs Dodge: roll to land the hit. A miss deals no damage and fires no on-hit effects
     // (potions, proficiency XP), but you still trained your reflexes by swinging so accuracy can grow.
@@ -6738,7 +6796,7 @@
 
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
     var wandAttuneMult = isWandAttack ? elementDmgMult(state, weaponStyle.element) : 1; // Elemental Attunement boosts a wand's element damage
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1));
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1));
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
@@ -6820,6 +6878,14 @@
     addPhysiqueXp(physTierPairs([['resolve',1]], monster.tierIndex));
     addLog('Defeated the ' + monster.name + '! +' + goldWon + ' gold.', 'important');
     applyMonsterCategoryLoot(monster);
+    // Treasure Hunter Lv 60 (Tithe): a kill grants Faith equal to the enemy's tier (Tier 1 = tierIndex 0 => +1).
+    if(treasureHunterBonus(60)){
+      var _tithe = (monster.tierIndex || 0) + 1;
+      var _before = state.faith;
+      state.faith = Math.min(faithMax(state), state.faith + _tithe);
+      var _gained = Math.round(state.faith - _before);
+      if(_gained > 0) spawnFloatingText('+' + _gained + ' Faith', 'ft-success');
+    }
     var _cls = activeClassId(state); if(_cls) maybeSummonFamiliar(_cls); // an active Class can summon its own familiar in combat
     act.monsterHp = monster.hp;
     act.monsterTickAccum = 0;
@@ -13943,6 +14009,7 @@
     miracle: 'Spend Faith continuously for the strongest, rarest tier of benefits.',
     rapier: 'A fast one-hand sword, mostly piercing damage.',
     falchion: 'A one-hand sword balancing piercing and slashing damage.',
+    scimitar: 'A curved one-hand sword, mostly slashing damage.',
     hatchet: 'A fast one-hand axe, mostly slashing damage.',
     halfmoonaxe: 'A one-hand axe balancing slashing and piercing damage.',
     mace: 'A fast one-hand hammer, mostly blunt damage.',
@@ -13973,6 +14040,7 @@
     knight: 'A Class conferred by a Claymore with Plate Chest & Boots and Chain Helm & Gloves. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     assassin: 'A Class conferred by dual-wielding Claws (main + off-hand) with Cloth Hood, Tunic & Shoes and Chain Gloves. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     thunderfury: 'A Class conferred by an Earth Wand and Ward with Cloth Hood, Tunic, Gloves & Shoes. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
+    treasureHunter: 'A Class conferred by a Scimitar and Small Shield with Chain Helm & Boots, a Plate Chest and Cloth Gloves. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     clotharmor: 'Proficiency wearing Tailoring\'s cloth armor at higher tiers.',
     leatherarmor: 'Proficiency wearing Leatherworking\'s leather armor at higher tiers.',
     chainmailarmor: 'Proficiency wearing Armorsmithing\'s chain mail at higher tiers.',
@@ -15992,6 +16060,7 @@
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
+      treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS,
       BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS,
       DAMAGE_TYPES:DAMAGE_TYPES
