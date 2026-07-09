@@ -10034,11 +10034,40 @@
       addLog('You cancelled raising (' + job.x + ', ' + job.y + ') and recovered your ' + ESTATE_RAISE_DIRT_COST + ' Dirt.', 'important');
     } else if(job.kind === 'clear'){
       addLog('You stopped clearing the obstacle at (' + job.x + ', ' + job.y + ').', 'important');
+    } else if(job.kind === 'assist'){
+      // Stop helping: release the teammate's job so another member could assist. The time already
+      // shaved off stays -- we don't rewind it.
+      var tgt = guildJobByOwner(job.assistOf);
+      if(tgt && tgt.assistedBy===estMyId()){ delete tgt.assistedBy; delete tgt.assistedByName; }
+      addLog('You stopped assisting ' + escapeHtml(job.assistOfName||'a teammate') + '\'s task.', 'important');
     } else {
       addLog('You cancelled digging down (' + job.x + ', ' + job.y + ').', 'important');
     }
     estActive.job = null;
     estPersist();
+    needsRender = true;
+  }
+  // Guild-estate teamwork: a free member can pitch in on a busy teammate's task, halving its
+  // remaining time. Both are then occupied on the shared estate -- the helper can't run their own
+  // guild-estate task until the assisted one finishes (they earn no rewards; the doer still does).
+  function guildJobByOwner(ownerId){ return (guildEstate.jobs||[]).filter(function(j){ return j.owner===ownerId && j.kind!=='assist'; })[0] || null; }
+  function estateAssistJob(targetOwner){
+    if(guildEstate.status!=='ready' || !targetOwner) return;
+    var myId = estMyId();
+    if(targetOwner===myId) return;
+    if(guildEstate.job){ addLog('You\'re already busy on the guild estate -- finish or cancel your task before assisting.', 'danger'); return; }
+    var target = guildJobByOwner(targetOwner);
+    if(!target){ addLog('That member is no longer working the estate.', 'danger'); return; }
+    if(target.assistedBy){ addLog((target.assistedByName||'Someone')+' is already assisting that task.', 'danger'); return; }
+    var now = Date.now();
+    if(now >= target.readyAt){ addLog('That task is already finishing.', 'danger'); return; }
+    // Halve the remaining time (floored at 1s) and mark the helper on the target job.
+    target.readyAt = now + Math.max(1000, Math.floor((target.readyAt - now) / 2));
+    target.assistedBy = myId; target.assistedByName = guildMyName();
+    // Occupy the helper with a matching 'assist' job that clears when the helped task finishes.
+    guildEstate.job = { kind:'assist', x:target.x, y:target.y, startAt:now, readyAt:target.readyAt, assistOf:targetOwner, assistOfName:target.ownerName };
+    addLog('You\'re assisting ' + escapeHtml(target.ownerName||'a teammate') + '\'s task -- its remaining time is halved.', 'important');
+    guildEstatePersist();
     needsRender = true;
   }
   // Applies one completed estate job to its grid. The grid change is ALWAYS applied (idempotent),
@@ -11829,6 +11858,9 @@
     } else if(job.kind === 'field'){
       headLabel = 'Tilling &bull; '+(DIGGING_NAMES[job.fieldTier]||'')+' Field ('+job.x+', '+job.y+')';
       rewardNote = 'Runs in the background &bull; +'+estateBuildXp(job.fieldTier)+' Digging XP when it finishes';
+    } else if(job.kind === 'assist'){
+      headLabel = 'Assisting &bull; '+escapeHtml(job.assistOfName||'a teammate')+'’s task ('+job.x+', '+job.y+')';
+      rewardNote = 'You’re both busy until it finishes &bull; you earn no rewards, but their remaining time was halved';
     } else {
       headLabel = 'Terraforming &bull; '+(job.kind === 'raise' ? 'Raising' : 'Digging down')+' ('+job.x+', '+job.y+')';
       rewardNote = 'Runs in the background &bull; +'+ESTATE_TERRAFORM_XP+' Digging XP when it finishes';
@@ -11843,7 +11875,7 @@
     html += '</div>';
     return html + (estIsGuild ? renderGuildOtherJobs() : '');
   }
-  var GUILD_JOB_KIND_LABEL = { clear:'clearing', pave:'paving', workshop:'building', raise:'raising', lower:'digging down' };
+  var GUILD_JOB_KIND_LABEL = { clear:'clearing', pave:'paving', workshop:'building', raise:'raising', lower:'digging down', field:'tilling', cottage:'building', assist:'assisting' };
   function guildJobTimerId(owner){ return 'gjobtimer_' + String(owner).replace(/[^a-zA-Z0-9]/g,''); }
   // On the shared guild estate, show who else is doing what: each working member's action,
   // tile coords and (live) timer -- matching the red tiles on the canvas -- plus a compact
@@ -11859,11 +11891,19 @@
     if(!jobs.length){
       html += '<div class="estate-action-info" style="color:var(--text-faint);">No other members are working the estate right now.</div>';
     } else {
+      var iAmFree = !guildEstate.job; // can only pitch in if I'm not already busy on the guild estate
       jobs.forEach(function(j){
         var rem = Math.max(0, j.readyAt - Date.now());
-        html += '<div class="estate-action-info" style="display:flex;justify-content:space-between;gap:8px;align-items:center;">'
-          + '<span><span style="color:#d23a3a;" title="This tile is locked to other members">&#9632;</span> <b>'+escapeHtml(j.ownerName||'A member')+'</b> &bull; '+(GUILD_JOB_KIND_LABEL[j.kind]||'working')+' ('+j.x+', '+j.y+')</span>'
-          + '<span style="font-family:var(--font-mono);" id="'+guildJobTimerId(j.owner)+'">'+(rem<=0?'finishing…':formatDuration(rem))+'</span></div>';
+        var isAssist = j.kind==='assist';
+        var action = isAssist
+          ? ('assisting '+escapeHtml(j.assistOfName||'a teammate')+' ('+j.x+', '+j.y+')')
+          : ((GUILD_JOB_KIND_LABEL[j.kind]||'working')+' ('+j.x+', '+j.y+')'+(j.assistedBy?' &bull; <span style="color:var(--gold);" title="Being assisted -- time halved">helped by '+escapeHtml(j.assistedByName||'a teammate')+'</span>':''));
+        html += '<div class="estate-action-info" style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;">'
+          + '<span><span style="color:#d23a3a;" title="This tile is locked to other members">&#9632;</span> <b>'+escapeHtml(j.ownerName||'A member')+'</b> &bull; '+action+'</span>'
+          + '<span style="display:flex;gap:8px;align-items:center;">'
+          + '<span style="font-family:var(--font-mono);" id="'+guildJobTimerId(j.owner)+'">'+(rem<=0?'finishing…':formatDuration(rem))+'</span>'
+          + ((iAmFree && !isAssist && !j.assistedBy && rem>0) ? '<button class="mini-btn" data-action="estateAssistJob" data-owner="'+escapeHtml(String(j.owner))+'" title="Both of you stay busy until it finishes; their remaining time is halved">Assist</button>' : '')
+          + '</span></div>';
       });
     }
     if(idle.length){
@@ -13441,7 +13481,10 @@
     else if(!guildEstate.edgesX){ var e = generateEstateEdges(); guildEstate.edgesX = e.edgesX; guildEstate.edgesY = e.edgesY; }
     guildEstate.version = version;
     guildEstate.status = 'ready';
-    if(myJob && !guildEstate.jobs.some(function(j){ return j.owner===myJob.owner && j.x===myJob.x && j.y===myJob.y && j.readyAt===myJob.readyAt; })) guildEstate.jobs.push(myJob);
+    // Match my preserved job by tile only (not readyAt): a teammate assisting my job legitimately
+    // changes its readyAt, and the incoming copy is authoritative -- re-adding my stale copy would
+    // duplicate it. One job per owner+tile, so this is unambiguous.
+    if(myJob && !guildEstate.jobs.some(function(j){ return j.owner===myJob.owner && j.x===myJob.x && j.y===myJob.y; })) guildEstate.jobs.push(myJob);
   }
   function guildEstateEnsure(){
     if(!chatClient || !guildState.guild || !authUser) return;
@@ -13507,7 +13550,19 @@
   function processGuildEstateJobs(){
     if(guildEstate.status!=='ready') return;
     var mine = guildEstate.job;
-    if(!mine || Date.now() < mine.readyAt) return;
+    if(!mine) return;
+    if(mine.kind==='assist'){
+      // The helper is freed once the assisted task finishes (its readyAt) or the owner cancels it
+      // (their job disappears from the shared blob). No rewards -- only the doer earns them.
+      var stillHelping = guildJobByOwner(mine.assistOf);
+      if(stillHelping && Date.now() < mine.readyAt) return;
+      if(stillHelping && stillHelping.assistedBy===mine.owner){ delete stillHelping.assistedBy; delete stillHelping.assistedByName; }
+      guildEstate.jobs = (guildEstate.jobs||[]).filter(function(j){ return j!==mine; });
+      guildEstatePersist();
+      needsRender = true;
+      return;
+    }
+    if(Date.now() < mine.readyAt) return;
     var key = mine.owner+'|'+mine.x+'|'+mine.y+'|'+mine.readyAt;
     if(!guildJobDone[key]){ applyEstateJobCompletion(guildEstate, mine, true, true); guildJobDone[key]=1; }
     guildEstate.jobs = (guildEstate.jobs||[]).filter(function(j){ return j!==mine; });
@@ -15508,6 +15563,8 @@
       estateLowerLayer(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
     } else if(action==='estateCancelJob'){
       estateCancelJob();
+    } else if(action==='estateAssistJob'){
+      estateAssistJob(btn.getAttribute('data-owner'));
     } else if(action==='estateExpand'){
       estateExpand();
     } else if(action==='estateZoomIn'){
@@ -16114,6 +16171,7 @@
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS,
       SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
+      guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, LB_STAT_METRICS:LB_STAT_METRICS,
