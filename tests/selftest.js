@@ -199,7 +199,7 @@
   suite('building and outfitting split the crafting skills without gaps or overlap', function(){
     var building = FF.BUILDING_SKILL_IDS, outfitting = FF.OUTFITTING_SKILL_IDS, craftTab = FF.CRAFTING_TAB_SKILL_IDS;
     eq(building.join(','), 'carpentry,stonecutting,paving,masonry', 'building holds the estate-build skills');
-    eq(outfitting.join(','), 'weaponsmithing,armorsmithing,tailoring,shieldsmithing,runesmithing,fletching,bowyer,leatherworking,jewelrycrafting', 'outfitting holds the gear skills');
+    eq(outfitting.join(','), 'weaponsmithing,armorsmithing,tailoring,shieldsmithing,runesmithing,arcanism,fletching,bowyer,leatherworking,jewelrycrafting', 'outfitting holds the gear skills');
     // Every crafting skill lands in exactly one of the three sub-tab groups.
     var union = building.concat(outfitting).concat(craftTab).slice().sort();
     eq(union.length, FF.CRAFT_SKILL_IDS.length, 'the three groups cover every crafting skill exactly once');
@@ -678,6 +678,42 @@
     eq(byName['Air Elemental'].element, 'earth', 'Air Elemental -> earth');
     eq(byName['Lava Elemental'].element, 'fire', 'Lava Elemental -> fire');
     eq(byName['Astral Elemental'].element, 'light', 'Astral Elemental -> light');
+  });
+
+  // ---- Arcanism wands (elemental 1h weapons) --------------------------------------------
+  suite('wands', function(){
+    eq(FF.WAND_TYPES.length, 5, 'five wands');
+    FF.WAND_TYPES.forEach(function(w){
+      ok(FF.ELEMENT_META[w.element], w.id+' has a valid element');
+      eq(w.hand, '1h', w.id+' is one-handed');
+      eq(w.skillId, 'arcanism', w.id+' is crafted by arcanism');
+      ok(FF.isWandWeapon(w.id), 'isWandWeapon('+w.id+')');
+    });
+    ok(!FF.isWandWeapon('rapier'), 'a rapier is not a wand');
+
+    // Recipe: 2 logs + 3 element glyphs (no metal, no upgrade chain).
+    var d5 = FF.getStackableWeaponTierData('wandFire', 5);
+    eq(d5.inputs['forestry_t5'], 2, 'wand needs 2 logs of its tier');
+    eq(d5.inputs['glyph_fire'], 3, 'fire wand needs 3 fire glyphs');
+    ok(d5.inputs['metallurgy_t5'] === undefined, 'wands need no metal');
+    ok(d5.inputs['stweapon_wandFire_t4_normal'] === undefined, 'no upgrade chain');
+    eq(FF.getStackableWeaponTierData('wandDark', 8).inputs['glyph_dark'], 3, 'dark wand needs dark glyphs');
+
+    // Rarity scales damage 2x / 4x / 8x (not the standard rarity mult).
+    eq(FF.WAND_RARITY_DMG_MULT.normal, 1, 'normal = 1x');
+    eq(FF.WAND_RARITY_DMG_MULT.rare, 2, 'rare = 2x');
+    eq(FF.WAND_RARITY_DMG_MULT.supreme, 4, 'supreme = 4x');
+    eq(FF.WAND_RARITY_DMG_MULT.fantastic, 8, 'fantastic = 8x');
+    var n = FF.STACKABLE_WEAPON_ITEMS['stweapon_wandWater_t10_normal'];
+    var f = FF.STACKABLE_WEAPON_ITEMS['stweapon_wandWater_t10_fantastic'];
+    ok(n && f, 'wand items exist');
+    eq(n.element, 'water', 'wand item carries its element');
+    eq(f.dmgMax, n.dmgMax*8, 'fantastic wand deals 8x the normal damage');
+    eq(FF.STACKABLE_WEAPON_ITEMS['stweapon_wandWater_t10_rare'].dmgMax, n.dmgMax*2, 'rare = 2x');
+
+    // Wands share one 'wands' proficiency; the per-element wand styles are not proficiency skills.
+    ok(FF.WEAPON_STYLE_IDS.indexOf('wands') === -1, 'wands is not a per-style weapon id');
+    FF.WAND_TYPES.forEach(function(w){ ok(FF.WEAPON_STYLE_IDS.indexOf(w.id) === -1, w.id+' is not a per-style proficiency'); });
   });
 
   // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------

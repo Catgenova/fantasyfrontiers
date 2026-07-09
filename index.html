@@ -2030,7 +2030,8 @@
     weaponsmithing: { label:'Weaponsmithing', icon:svgIcon('sword','var(--sub-blacksmithing)'), color:'var(--sub-blacksmithing)' },
     armorsmithing: { label:'Armorsmithing', icon:svgIcon('chestarmor','#8a97a6') },
     shieldsmithing: { label:'Shieldsmithing', icon:svgIcon('shield','#8a97a6') },
-    runesmithing: { label:'Runesmithing', icon:svgIcon('corespiral','#7a5aa8'), color:'#7a5aa8' }
+    runesmithing: { label:'Runesmithing', icon:svgIcon('corespiral','#7a5aa8'), color:'#7a5aa8' },
+    arcanism: { label:'Arcanism', icon:svgIcon('starburst','#5a8ac8'), color:'#5a8ac8' }
   };
 
   // Assign a palette colour to any sub-skill that doesn't already have one set above.
@@ -2148,7 +2149,7 @@
     stonecutting:'Chisel', leatherworking:'Awl', masonry:'Trowel', paving:'Tamper',
     mixology:'Shaker', archaeology:'Excavation Brush', weaponsmithing:'Smithing Hammer',
     armorsmithing:"Armorer's Hammer", shieldsmithing:"Shieldwright's Hammer", blacksmithing:'Forge Tongs',
-    jewelrycrafting:"Jeweler's Loupe", runesmithing:'Rune Chisel'
+    jewelrycrafting:"Jeweler's Loupe", runesmithing:'Rune Chisel', arcanism:'Arcane Focus'
   };
   var CRAFT_TOOL_SPEED = [];
   var CRAFT_TOOL_SUCCESS = [];
@@ -2434,12 +2435,27 @@
     {id:'bowMedium', name:'Medium Bow', icon:svgIcon('bow','#8a6a42'), damageType:'piercing', attackTypes:{piercing:0.8, slashing:0.1, blunt:0.1}, hand:'bow', weaponClass:'Bow', skillId:'bowyer', matPrefix:'forestry', tierCount:TIER_COUNT, attackSpeed:5},
     {id:'bowLong',   name:'Long Bow',   icon:svgIcon('bow','#6a4a2a'), damageType:'piercing', attackTypes:{piercing:0.8, slashing:0.1, blunt:0.1}, hand:'bow', weaponClass:'Bow', skillId:'bowyer', matPrefix:'forestry', tierCount:TIER_COUNT, attackSpeed:6}
   ];
-  var STACKABLE_WEAPON_TYPES = MELEE_WEAPON_TYPES.concat(BOW_WEAPON_TYPES);
+  // ===== Wands (Arcanism one-handed weapons) =====
+  // A Wand is a 1h mainhand crafted by Arcanism that deals ELEMENTAL damage of its element (gaining the
+  // +20% elemental advantage against enemies weak to it). Instead of the usual rarity stat multiplier,
+  // rarity scales its damage 2x/4x/8x (rare/supreme/fantastic). Reuses the stackable-weapon plumbing
+  // (item ids 'stweapon_<id>_...', craftKind 'stackweapon') but shares one 'wands' proficiency.
+  var WAND_ELEMENTS = ['fire','water','earth','light','dark'];
+  var WAND_RARITY_DMG_MULT = { normal:1, rare:2, supreme:4, fantastic:8 };
+  var WAND_TYPES = WAND_ELEMENTS.map(function(el){
+    return { id:'wand'+el.charAt(0).toUpperCase()+el.slice(1), name: ELEMENT_META[el].label+' Wand', icon: elementIcon(el),
+             damageType:'blunt', attackTypes:{blunt:1}, hand:'1h', weaponClass:'Wand', skillId:'arcanism',
+             matPrefix:'forestry', tierCount:TIER_COUNT, attackSpeed:3, wand:true, element:el };
+  });
+  var WAND_TYPE_MAP = {};
+  WAND_TYPES.forEach(function(w){ WAND_TYPE_MAP[w.id] = w; });
+  function isWandWeapon(typeId){ return !!WAND_TYPE_MAP[typeId]; }
+  var STACKABLE_WEAPON_TYPES = MELEE_WEAPON_TYPES.concat(BOW_WEAPON_TYPES).concat(WAND_TYPES);
   var STACKABLE_WEAPON_TYPE_MAP = {};
   STACKABLE_WEAPON_TYPES.forEach(function(w){ STACKABLE_WEAPON_TYPE_MAP[w.id] = w; });
   function isStackableWeapon(typeId){ return !!STACKABLE_WEAPON_TYPE_MAP[typeId]; }
 
-  var WEAPON_STYLES = STACKABLE_WEAPON_TYPES.map(function(w){ return {id:w.id, name:w.name, icon:w.icon, damageType:w.damageType, attackTypes:w.attackTypes, hand:w.hand, stackable:true, attackSpeed:w.attackSpeed}; });
+  var WEAPON_STYLES = STACKABLE_WEAPON_TYPES.map(function(w){ return {id:w.id, name:w.name, icon:w.icon, damageType:w.damageType, attackTypes:w.attackTypes, hand:w.hand, stackable:true, attackSpeed:w.attackSpeed, wand:w.wand||false, element:w.element||null}; });
   // Offhand options depend on the mainhand's handedness:
   // 1h weapons can pair with a shield, bows pair with a quiver, 2h weapons leave no offhand free.
   var OFFHAND_STYLES = [
@@ -2472,7 +2488,9 @@
   var WARD_TYPE_MAP = {};
   WARD_TYPES.forEach(function(w){ WARD_TYPE_MAP[w.id] = w; });
   function isWard(typeId){ return !!WARD_TYPE_MAP[typeId]; }
-  var WEAPON_STYLE_IDS = WEAPON_STYLES.map(function(w){ return w.id; });
+  // Wands are excluded from per-style weapon proficiencies: all wands share one 'wands' proficiency.
+  var WEAPON_STYLE_IDS = WEAPON_STYLES.filter(function(w){ return !w.wand; }).map(function(w){ return w.id; });
+  var WANDS_SKILL_ID = 'wands'; // shared weapon proficiency for every Wand, trained by wand damage dealt
   // Wards are excluded from the per-style proficiency list: all wards share one 'warding' proficiency.
   var OFFHAND_STYLE_IDS = OFFHAND_STYLES.filter(function(s){ return !s.ward; }).map(function(s){ return s.id; });
   var WARDING_SKILL_ID = 'warding'; // shared offhand proficiency for every Ward, trained by reflected damage
@@ -2703,7 +2721,7 @@
       if(!state.equippedMainhandTier || state.equippedMainhandTier<=0) return WEAPON_BASE;
       var itemId = 'stweapon_'+state.equippedMainhand+'_t'+(state.equippedMainhandTier-1)+'_'+state.equippedMainhandRarity;
       var item = STACKABLE_WEAPON_ITEMS[itemId];
-      return item ? {dmgMin:item.dmgMin, dmgMax:item.dmgMax, name:item.name} : WEAPON_BASE;
+      return item ? {dmgMin:item.dmgMin, dmgMax:item.dmgMax, name:item.name, element:item.element||null, rarity:item.rarity} : WEAPON_BASE;
     }
     var tier = state.weaponTiers[state.equippedMainhand]||0;
     if(tier<=0) return WEAPON_BASE;
@@ -2875,6 +2893,7 @@
     armorsmithing:  [['grossMotor',2],['sleightOfHand',1],['logic',1]],
     shieldsmithing: [['grossMotor',2],['sleightOfHand',1],['logic',1]],
     runesmithing:   [['fineMotor',2],['criticalThinking',1],['logic',1]],
+    arcanism:       [['fineMotor',2],['criticalThinking',1],['logic',1]],
     blacksmithing:  [['grossMotor',2],['sleightOfHand',1],['logic',1]],
     leatherworking: [['fineMotor',2],['sleightOfHand',1],['logic',1]],
     paving:         [['grossMotor',2],['bodyControl',1],['sleightOfHand',1],['logic',1]],
@@ -2945,11 +2964,11 @@
   // CRAFT_SKILL_IDS (tools, workshops, XP, familiars, saves, etc.) is deliberately left whole;
   // the split just reorganizes which sub-tab bar each skill appears under.
   var BUILDING_SKILL_IDS = ['carpentry','stonecutting','paving','masonry'];
-  var OUTFITTING_SKILL_IDS = ['weaponsmithing','armorsmithing','tailoring','shieldsmithing','runesmithing','fletching','bowyer','leatherworking','jewelrycrafting'];
+  var OUTFITTING_SKILL_IDS = ['weaponsmithing','armorsmithing','tailoring','shieldsmithing','runesmithing','arcanism','fletching','bowyer','leatherworking','jewelrycrafting'];
   var CRAFTING_TAB_SKILL_IDS = CRAFT_SKILL_IDS.filter(function(id){
     return BUILDING_SKILL_IDS.indexOf(id)===-1 && OUTFITTING_SKILL_IDS.indexOf(id)===-1;
   });
-  var ALL_MAIN_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['fiberharvesting','grainharvesting','herbharvesting']).concat(WEAPON_STYLE_IDS).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS).concat(['prayer','sacrifice','devotion','blessing','miracle']);
+  var ALL_MAIN_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['fiberharvesting','grainharvesting','herbharvesting']).concat(WEAPON_STYLE_IDS).concat([WANDS_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS).concat(['prayer','sacrifice','devotion','blessing','miracle']);
   var FAITH_SKILL_IDS = ['prayer','sacrifice','devotion','blessing','miracle'];
 
   // ================= FAMILIARS =================
@@ -3015,6 +3034,7 @@
     armorsmithing:  { name:'Plate',  icon:svgIcon('chestarmor','#a8aeb6'), spells:[armorSpell('Iron Wall',1.8,6), armorSpell('Iron Wall',1.8,6), healSpell('Mend',15), healSpell('Mend',15)] },
     shieldsmithing: { name:'Aegis',  icon:svgIcon('shield','#8a97a6'), spells:[armorSpell('Shield Wall',1.8,6), armorSpell('Shield Wall',1.8,6), weakenSpell('Bash',0.25,8), healSpell('Mend',15)] },
     runesmithing:   { name:'Rune',   icon:svgIcon('corespiral','#7a5aa8'), spells:[hitSpell('Rune Blast','void',13), armorSpell('Warding Glyph',1.6,6), healSpell('Sigil Mend',15), healSpell('Sigil Mend',15)] },
+    arcanism:       { name:'Arcus',  icon:svgIcon('starburst','#5a8ac8'), spells:[hitSpell('Arcane Bolt','void',14), buffSpell('Focus','critDmg',0.32,8), healSpell('Mana Mend',15), siphonSpell('Mana Leech',12)] },
     // -- Farming --
     farming: { name:'Sprout', icon:svgIcon('fiber','#6bc48a'), spells:[healSpell('Bountiful Heal',15), healSpell('Bountiful Heal',15), armorSpell('Growth Ward',1.5,6), slowSpell('Overgrowth',0.35,10)] },
     // -- Faith --
@@ -3079,6 +3099,7 @@
     armorsmithing:  [ armorSpell('Iron Wall',1.8,6), buffSpell('Bulwark','block',0.18,8), buffSpell('Plated','resistBlunt',0.3,8), buffSpell('Deflection','resistSlash',0.3,8) ],
     shieldsmithing: [ buffSpell('Shield Wall','block',0.2,8), armorSpell('Aegis',1.7,6), buffSpell('Braced','resistPierce',0.3,8), hitSpell('Shield Bash','blunt',13) ],
     runesmithing:   [ hitSpell('Rune Blast','void',14), armorSpell('Warding Glyph',1.6,6), buffSpell('Empower Rune','critDmg',0.32,8), siphonSpell('Drain Sigil',12) ],
+    arcanism:       [ hitSpell('Arcane Bolt','void',15), buffSpell('Arcane Focus','critDmg',0.34,8), siphonSpell('Mana Leech',13), buffSpell('Overcharge','critChance',0.12,8) ],
     // -- Farming --
     farming:        [ healSpell('Bountiful Harvest',16), regenSpell('Root Growth',5,7), armorSpell('Growth Ward',1.5,6), slowSpell('Overgrowth',0.35,10) ],
     // -- Faith --
@@ -3116,7 +3137,7 @@
     // Crafting
     carpentry:'earth', metallurgy:'fire', roasting:'fire', cooking:'water', alchemy:'water', bowyer:'earth', fletching:'earth', baking:'fire',
     tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water',
-    archaeology:'dark', blacksmithing:'fire', weaponsmithing:'fire', armorsmithing:'earth', shieldsmithing:'earth', runesmithing:'light',
+    archaeology:'dark', blacksmithing:'fire', weaponsmithing:'fire', armorsmithing:'earth', shieldsmithing:'earth', runesmithing:'light', arcanism:'light',
     // Farming
     farming:'earth',
     // Faith
@@ -3166,7 +3187,7 @@
     masonry:{s:'wallseg',c:'#8d6f66',ear:'horn'}, paving:{s:'tile',c:'#8d6f66',ear:'round'},
     mixology:{s:'tea',c:'#7a9e4a',ear:'leaf'}, archaeology:{s:'urn',c:'#9a8560',ear:'cat'},
     blacksmithing:{s:'hammer',c:'#7a7a82',ear:'horn'}, weaponsmithing:{s:'sword',c:'#8a97a8',ear:'horn'},
-    armorsmithing:{s:'chestarmor',c:'#98a0aa',ear:'horn'}, shieldsmithing:{s:'shield',c:'#8a97a6',ear:'horn'}, runesmithing:{s:'corespiral',c:'#7a5aa8',ear:'horn'},
+    armorsmithing:{s:'chestarmor',c:'#98a0aa',ear:'horn'}, shieldsmithing:{s:'shield',c:'#8a97a6',ear:'horn'}, runesmithing:{s:'corespiral',c:'#7a5aa8',ear:'horn'}, arcanism:{s:'starburst',c:'#5a8ac8',ear:'horn'},
     farming:{s:'fiber',c:'#5fc48a',ear:'leaf'},
     prayer:{s:'halo',c:'#e0c860',ear:'halo'}, sacrifice:{s:'ghost',c:'#6a4a8a',ear:'horn'},
     devotion:{s:'wing',c:'#d8b878',ear:'wing'}, blessing:{s:'wing',c:'#e8c848',ear:'wing'},
@@ -3426,7 +3447,7 @@
   // means more total access, on top of each piece's own individual level.
   function combatLevelEquivalent(state){
     var total = 0;
-    if(state.equippedMainhand) total += getLevel(state.xp[state.equippedMainhand]||0);
+    if(state.equippedMainhand) total += getLevel(state.xp[isWandWeapon(state.equippedMainhand) ? WANDS_SKILL_ID : state.equippedMainhand]||0);
     if(state.equippedOffhand) total += getLevel(state.xp[isWard(state.equippedOffhand) ? WARDING_SKILL_ID : state.equippedOffhand]||0);
     BODY_ARMOR_SLOTS.forEach(function(slot){
       var s = state.bodyArmor && state.bodyArmor[slot];
@@ -3877,8 +3898,13 @@
     var handBonus = w.hand==='2h' ? 1.3 : 1.0;
     var is2h = w.hand==='2h';
     var inputs = {};
-    inputs[w.matPrefix+'_t'+tierIndex] = is2h ? 6 : 3;   // two-handed weapons cost twice the ingots
-    if(tierIndex > 0) inputs['stweapon_'+typeId+'_t'+(tierIndex-1)+'_normal'] = 1;
+    if(w.wand){
+      inputs['forestry_t'+tierIndex] = 2;        // 2 logs
+      inputs[glyphIdFor(w.element)] = 3;         // 3 matching-element glyphs (from Elementals)
+    } else {
+      inputs[w.matPrefix+'_t'+tierIndex] = is2h ? 6 : 3;   // two-handed weapons cost twice the ingots
+      if(tierIndex > 0) inputs['stweapon_'+typeId+'_t'+(tierIndex-1)+'_normal'] = 1;
+    }
     return {
       tierIndex: tierIndex,
       name: stackableWeaponTierNames(w)[tierIndex] + ' ' + w.name,
@@ -3897,6 +3923,7 @@
       for(var i=0;i<w.tierCount;i++){
         var data = getStackableWeaponTierData(w.id, i);
         var id = 'stweapon_'+w.id+'_t'+i+'_'+rarityId;
+        var dmgMult = w.wand ? WAND_RARITY_DMG_MULT[rarityId] : r.mult; // wands: rarity scales damage 2x/4x/8x
         STACKABLE_WEAPON_ITEMS[id] = {
           id: id,
           name: r.label + data.name,
@@ -3905,8 +3932,9 @@
           typeId: w.id,
           tierIndex: i,
           rarity: rarityId,
-          dmgMin: Math.round(data.dmgMin * r.mult),
-          dmgMax: Math.round(data.dmgMax * r.mult)
+          element: w.element || null,
+          dmgMin: Math.round(data.dmgMin * dmgMult),
+          dmgMax: Math.round(data.dmgMax * dmgMult)
         };
       }
     });
@@ -3929,7 +3957,12 @@
   function equipStackableWeapon(itemId){
     var item = STACKABLE_WEAPON_ITEMS[itemId];
     if(!item || (state.inventory[itemId]||0) <= 0) return;
-    if(!meetsProficiencyRequirement(state.xp[item.typeId], item.tierIndex)){
+    if(isWandWeapon(item.typeId)){
+      // Wands share one 'wands' proficiency (trained by use), so equipping is gated by Arcanism level.
+      if(getLevel(state.xp.arcanism||0) < TIER_LEVELS[item.tierIndex]){
+        addLog('Your Arcanism isn\'t high enough to wield ' + item.name + ' yet.', 'danger'); return;
+      }
+    } else if(!meetsProficiencyRequirement(state.xp[item.typeId], item.tierIndex)){
       addLog('Your ' + (SKILL_LABELS[item.typeId]||item.typeId) + ' proficiency isn\'t high enough to equip ' + item.name + ' yet.', 'danger');
       return;
     }
@@ -5397,9 +5430,9 @@
     var xpObj = {
       digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0,
       carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0,
-      stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, blacksmithing:0, leatherworking:0, paving:0,
+      stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, arcanism:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
-      shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0,
+      shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0, wands:0,
       prayer:0, sacrifice:0, devotion:0, blessing:0, miracle:0
     };
     WEAPON_STYLE_IDS.forEach(function(id){ xpObj[id] = 0; });
@@ -5515,6 +5548,7 @@
   var selectedMeleeWeaponTier = {};
   var selectedShieldTier = {};
   var selectedWardTier = {};
+  var selectedWandTier = {};
   var selectedRingTier = {};
   var selectedAmuletTier = null;
 
@@ -6152,16 +6186,22 @@
     var offhandItem = getEquippedOffhandItem(state);
 
     var weaponStyle = getWeaponStyle(state.equippedMainhand);
+    var isWandAttack = !!weaponStyle.wand; // wand: elemental damage, shared 'wands' proficiency, no physical-type bonuses
     var offhandStyle = getOffhandStyle(state.equippedOffhand);
     var offhandProficiency = (offhandStyle && state.equippedOffhand) ? (1 + Math.min(0.15, getLevel(state.xp[offhandStyle.id]||0)*0.005)) : 1;
-    var weaponProficiency = state.equippedMainhand ? (1 + getLevel(state.xp[state.equippedMainhand]||0)/100) : 1;
-    var advantage = weightedAdvantage(weaponStyle.attackTypes || {blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
+    var weaponProficiency = state.equippedMainhand ? (1 + getLevel(state.xp[isWandAttack ? WANDS_SKILL_ID : state.equippedMainhand]||0)/100) : 1;
+    // Wands bypass the physical slash/pierce/blunt triangle: their damage is elemental (+20% via the
+    // element triangle). Physical-type bonuses (rings, chain-melee, familiar type buffs) don't apply.
+    var elementMult = isWandAttack ? elementAdvantage(weaponStyle.element, monster.element) : 1;
+    var advantage = isWandAttack ? 1 : weightedAdvantage(weaponStyle.attackTypes || {blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
     var quiverBonus = (offhandStyle && offhandStyle.type==='quiver' && offhandItem) ? (1 + offhandItem.dmgBonus) * offhandProficiency : 1;
-    var ringBonus = getRingDamageMultiplier(state, weaponStyle.attackTypes || {blunt:1});
+    var ringBonus = isWandAttack ? 1 : getRingDamageMultiplier(state, weaponStyle.attackTypes || {blunt:1});
     var leatherBowBonus = weaponStyle.hand==='bow' ? (1 + getLeatherArmorBonuses(state).bowDmgBonus) : 1;
-    var chainMeleeBonus = weaponStyle.hand!=='bow' ? (1 + getChainArmorMeleeBonus(state)) : 1;
+    var chainMeleeBonus = (weaponStyle.hand!=='bow' && !isWandAttack) ? (1 + getChainArmorMeleeBonus(state)) : 1;
     var isCrit = Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance')); // familiar crit-chance buff
-    var physDmgMult = (weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1));
+    // Wands are magical, so the melee/bow strength physiques don't scale them -- only the generic
+    // low-HP tenacity bonus. Melee/bow keep their class physique multipliers.
+    var physDmgMult = isWandAttack ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
     physDmgMult *= tenacityLowHpMult(state);
     // Elixir potions + familiar crit-damage buffs stack on top of the (capped) base+exploitation crit.
     var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg')) : 1;
@@ -6174,7 +6214,8 @@
       return;
     }
 
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}) * critMult);
+    var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult);
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
@@ -6190,7 +6231,7 @@
     // mainhand weapon and a Quiver offhand (which boosts your bow damage) train off it.
     var effDmg = Math.min(dmgToMonster, monsterHpBeforeHit);
     var atkProfXp = Math.max(1, Math.round(effDmg * WEAPON_PROF_XP_PER_DMG));
-    if(state.equippedMainhand) addXp(state.equippedMainhand, atkProfXp);
+    if(state.equippedMainhand) addXp(isWandAttack ? WANDS_SKILL_ID : state.equippedMainhand, atkProfXp);
     if(state.equippedOffhand && offhandStyle && offhandStyle.type==='quiver') addXp(state.equippedOffhand, atkProfXp);
     if(act.monsterHp <= 0){
       bumpStat('kills');
@@ -7188,6 +7229,7 @@
     if(skillKey==='armorsmithing') return renderArmorSmithTab();
     if(skillKey==='shieldsmithing') return renderOffhandSmithTab();
     if(skillKey==='runesmithing') return renderWardSmithTab();
+    if(skillKey==='arcanism') return renderArcanismTab();
     if(skillKey==='blacksmithing') return renderBlacksmithingTab();
     if(skillKey==='archaeology') return renderArchaeologyTab();
     if(skillKey==='fletching') return renderFletchingTab();
@@ -7984,6 +8026,72 @@
     return html;
   }
 
+  function renderEquipWandSection(){
+    var current = (state.equippedMainhand && isWandWeapon(state.equippedMainhand) && state.equippedMainhandTier>0)
+      ? STACKABLE_WEAPON_ITEMS['stweapon_'+state.equippedMainhand+'_t'+(state.equippedMainhandTier-1)+'_'+state.equippedMainhandRarity] : null;
+    var owned = Object.keys(STACKABLE_WEAPON_ITEMS).filter(function(id){ return isWandWeapon(STACKABLE_WEAPON_ITEMS[id].typeId) && (state.inventory[id]||0)>0; })
+      .sort(function(a,b){ return STACKABLE_WEAPON_ITEMS[a].tierIndex - STACKABLE_WEAPON_ITEMS[b].tierIndex; });
+    var html = '<h3>Equip Wand</h3>';
+    html += '<div class="section-intro">A Wand is a one-handed Mainhand that deals elemental damage of its element (+20% vs enemies weak to it). Pick which owned Wand to wield.</div>';
+    html += '<div class="card-grid"><div class="item-card">';
+    html += '<div class="item-top"><div class="item-icon">'+(current?current.icon:svgIcon('starburst','#5a8ac8'))+'</div><div><div class="item-name">Mainhand</div><div class="item-meta">'+(current ? current.name+' &bull; '+current.dmgMin+'-'+current.dmgMax+' '+elementLabel(current.element)+' dmg' : 'No wand equipped')+'</div></div></div>';
+    if(owned.length===0){
+      html += '<div class="empty-note">No wands in inventory. Craft one above.</div>';
+    } else {
+      html += '<div class="style-row">';
+      owned.forEach(function(id){
+        var item = STACKABLE_WEAPON_ITEMS[id];
+        var qty = state.inventory[id]||0;
+        var canEquip = getLevel(state.xp.arcanism||0) >= TIER_LEVELS[item.tierIndex];
+        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipStackableWeapon" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type" style="text-transform:none">'+item.dmgMin+'-'+item.dmgMax+' '+elementLabel(item.element)+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires Arcanism Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
+      });
+      html += '</div>';
+    }
+    if(current) html += '<button class="action-btn stop" data-action="unequipStackableWeapon">Unequip</button>';
+    html += '</div></div>';
+    return html;
+  }
+  function renderArcanismTab(){
+    var lvl = getLevel(state.xp.arcanism);
+    var html = renderSkillProgressBar('arcanism');
+    html += '<div class="section-intro" style="margin-top:10px">Arcanism crafts <b>Wands</b> &mdash; one-handed weapons that deal <b>elemental damage</b> of their element (gaining +20% against enemies weak to it). Rarity is special: rare/supreme/fantastic wands deal <b>2x / 4x / 8x</b> damage. Wands share the <b>Wands</b> weapon proficiency, trained by wand damage dealt (+1% at Lv 1 up to +100% at Lv 100).</div>';
+    html += '<h3 style="margin-top:14px">Craft Wands</h3>';
+    html += '<div class="card-grid">';
+    WAND_TYPES.forEach(function(w){
+      var maxUnlocked = 0;
+      for(var mi=0; mi<w.tierCount; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
+      if(selectedWandTier[w.id] === undefined) selectedWandTier[w.id] = maxUnlocked;
+      var sel = Math.min(selectedWandTier[w.id], maxUnlocked);
+      var data = getStackableWeaponTierData(w.id, sel);
+      var activeSlot = findActiveSpecialCraftSlotFor('stackweapon', {typeId:w.id, tierIndex:sel});
+      var isActive = !!activeSlot;
+      var effTime = data.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, 'arcanism');
+      var pct = isActive ? clamp(activeSlot.act.progress/effTime*100,0,100) : 0;
+      var ready = lvl >= data.levelReq && hasInputs(data.inputs);
+      var successPct = Math.round(craftSuccessRate(state, 'arcanism')*100);
+      var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
+      var ownedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stweapon_'+w.id+'_t'+sel+'_'+r; }));
+      html += '<div class="item-card'+(isActive?' active-item':'')+'">';
+      html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">'+elementLabel(w.element)+' damage &bull; '+w.attackSpeed+'s attack &bull; Owned: '+ownedTotal+'</div></div></div>';
+      html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
+      html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>'+data.dmgMin+'-'+data.dmgMax+' dmg</span></div>';
+      html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the 2x/4x/8x rarity odds)</div>';
+      html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-wand-'+w.id)+'</div>';
+      html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
+      if(isActive){
+        html += activeSlot.primary
+          ? '<button class="action-btn stop" data-action="stop">Stop</button>'
+          : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
+      } else {
+        html += '<button class="action-btn" data-action="forgeStackableWeapon" data-type="'+w.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Craft</button>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    html += renderEquipWandSection();
+    return html;
+  }
+
   // ================= RENDER: COMBAT =================
   var TYPE_ICON = { slashing:svgIcon('sword','currentColor'), piercing:svgIcon('bow','currentColor'), blunt:svgIcon('hammer','currentColor') };
 
@@ -8041,9 +8149,10 @@
   }
   function renderCombatStatsPanel(){
     var weaponStyle = getWeaponStyle(state.equippedMainhand);
+    var isWandMain = !!weaponStyle.wand;
     var weapon = getEquippedWeaponItem(state);
-    var physDmgMult = (weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1));
-    var weaponProficiency = state.equippedMainhand ? (1 + getLevel(state.xp[state.equippedMainhand]||0)/100) : 1;
+    var physDmgMult = isWandMain ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
+    var weaponProficiency = state.equippedMainhand ? (1 + getLevel(state.xp[isWandMain ? WANDS_SKILL_ID : state.equippedMainhand]||0)/100) : 1;
     var effMin = Math.max(1, Math.round(weapon.dmgMin * physDmgMult * weaponProficiency));
     var effMax = Math.max(effMin+1, Math.round(weapon.dmgMax * physDmgMult * weaponProficiency));
     var armor = getTotalArmorDefense(state);
@@ -8054,8 +8163,8 @@
     html += '<div class="stats-group"><h4>'+svgIcon('sword','currentColor')+' Offense</h4>';
     html += '<div class="stat-row"><span class="stat-label">Attack Damage</span><span class="stat-value">'+effMin+'-'+effMax+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Attack Time</span><span class="stat-value">'+weaponStyle.attackSpeed+'s</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Damage Type</span><span class="stat-value">'+TYPE_ICON[weaponStyle.damageType]+' '+weaponStyle.damageType+'</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Weapon Proficiency</span><span class="stat-value">+'+Math.round((weaponProficiency-1)*100)+'%</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Damage Type</span><span class="stat-value">'+(isWandMain ? '<span class="elem-weak-stat elem-'+weaponStyle.element+'">'+elementIcon(weaponStyle.element)+' '+elementLabel(weaponStyle.element)+'</span>' : (TYPE_ICON[weaponStyle.damageType]+' '+weaponStyle.damageType))+'</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">'+(isWandMain?'Wands Proficiency':'Weapon Proficiency')+'</span><span class="stat-value">+'+Math.round((weaponProficiency-1)*100)+'%</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+(Math.round(criticalEyeCritChance(state)*10000)/100)+'%</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+(Math.round(Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state))*100)/100)+'x</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Accuracy</span><span class="stat-value">'+playerAccuracy(state)+'</span></div>';
@@ -13030,6 +13139,7 @@
   var SKILL_LABELS = { farming:'Farming', fiberharvesting:'Fiber Harvesting', grainharvesting:'Grain Harvesting', herbharvesting:'Herb Harvesting' };
   var SKILL_INFO = {
     runesmithing: 'Inscribe elemental Wards -- offhands that reflect a share of incoming damage of their element back at the attacker. Rarity grants a chance to reflect 100% of a matching hit.',
+    arcanism: 'Craft elemental Wands -- one-handed weapons that deal elemental damage of their element. Rarity scales their damage 2x/4x/8x.',
     digging: 'Dig for Sand, Soil, Clay, and similar materials, with a chance for bonus Coal and Muddy Artifacts.',
     forestry: 'Chop logs from increasingly exotic trees, from Willow up to Sequoia.',
     mining: 'Mine stone and ore, with a chance for bonus Coal and Gems.',
@@ -13087,6 +13197,7 @@
     shieldLarge: 'A heavy shield that counters blunt attacks.',
     quiver: 'Boosts arrow damage for bow users.',
     warding: 'Proficiency wielding Wards. Trained by damage reflected, it adds extra reflection: +1% at Lv 1 up to +20% at Lv 100.',
+    wands: 'Proficiency wielding Wands. Trained by wand damage dealt, it boosts wand damage: +1% at Lv 1 up to +100% at Lv 100.',
     clotharmor: 'Proficiency wearing Tailoring\'s cloth armor at higher tiers.',
     leatherarmor: 'Proficiency wearing Leatherworking\'s leather armor at higher tiers.',
     chainmailarmor: 'Proficiency wearing Armorsmithing\'s chain mail at higher tiers.',
@@ -13136,7 +13247,7 @@
     miracle:   ['focus']
   }
   function isCombatSkillId(skillId){
-    return WEAPON_STYLE_IDS.indexOf(skillId)!==-1 || OFFHAND_STYLE_IDS.indexOf(skillId)!==-1 || skillId===WARDING_SKILL_ID || ARMOR_PROFICIENCY_IDS.indexOf(skillId)!==-1;
+    return WEAPON_STYLE_IDS.indexOf(skillId)!==-1 || skillId===WANDS_SKILL_ID || OFFHAND_STYLE_IDS.indexOf(skillId)!==-1 || skillId===WARDING_SKILL_ID || ARMOR_PROFICIENCY_IDS.indexOf(skillId)!==-1;
   }
   function physiqueTrainedBySkill(skillId){
     if(GATHER_PHYSIQUE[skillId]) return GATHER_PHYSIQUE[skillId].map(function(p){ return p[0]; });
@@ -13286,6 +13397,7 @@
   WEAPON_STYLES.forEach(function(w){ SKILL_LABELS[w.id] = w.name; });
   OFFHAND_STYLES.forEach(function(s){ SKILL_LABELS[s.id] = s.name; });
   SKILL_LABELS[WARDING_SKILL_ID] = 'Warding';
+  SKILL_LABELS[WANDS_SKILL_ID] = 'Wands';
   ARMOR_PROFICIENCY_IDS.forEach(function(id){ SKILL_LABELS[id] = ARMOR_PROFICIENCY_LABELS[id]; });
   FAITH_SKILL_IDS.forEach(function(id){ SKILL_LABELS[id] = FAITH_SKILLS[id].label; });
 
@@ -13311,7 +13423,7 @@
     {label:'Gathering', color:'var(--cat-gathering)', skills:GATHER_SKILL_IDS},
     {label:'Crafting',  color:'var(--cat-crafting)',  skills:CRAFT_SKILL_IDS},
     {label:'Farming',   color:'var(--cat-farming)',   skills:['fiberharvesting','grainharvesting','herbharvesting']},
-    {label:'Combat',    color:'var(--cat-combat)',    skills:WEAPON_STYLE_IDS.concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS)},
+    {label:'Combat',    color:'var(--cat-combat)',    skills:WEAPON_STYLE_IDS.concat([WANDS_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS)},
     {label:'Faith',     color:'var(--cat-faith)',     skills:FAITH_SKILL_IDS}
   ];
 
@@ -14283,6 +14395,25 @@
       if(wBtn) wBtn.disabled = !(runeLvl >= wData.levelReq && hasInputs(wData.inputs));
     });
 
+    // Arcanism wands: mirror the live-update (wands reuse the stackweapon forge action).
+    var arcLvl = getLevel(state.xp.arcanism);
+    WAND_TYPES.forEach(function(w){
+      var wMax = 0;
+      for(var wmi=0; wmi<w.tierCount; wmi++){ if(TIER_LEVELS[wmi] <= arcLvl) wMax = wmi; }
+      var wSel = Math.min(selectedWandTier[w.id]||0, wMax);
+      var wData = getStackableWeaponTierData(w.id, wSel);
+      Object.keys(wData.inputs).forEach(function(k){
+        var el = document.getElementById('inp-wand-'+w.id+'-'+k);
+        if(el){
+          var have = state.inventory[k]||0, need = wData.inputs[k];
+          el.textContent = need+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+have+' owned)';
+          el.className = have>=need ? 'ok' : 'bad';
+        }
+      });
+      var wBtn2 = document.querySelector('[data-action="forgeStackableWeapon"][data-type="'+w.id+'"]');
+      if(wBtn2) wBtn2.disabled = !(arcLvl >= wData.levelReq && hasInputs(wData.inputs));
+    });
+
     // Quiver: owned counts + ok/bad state + Forge button availability (still sequential)
     var shieldsmithLvl = getLevel(state.xp.shieldsmithing);
     OFFHAND_STYLES.filter(function(o){ return !o.stackable && !o.ward; }).forEach(function(o){
@@ -14353,6 +14484,7 @@
     melee:    { get:function(sub){ return selectedMeleeWeaponTier[sub]; }, set:function(sub,v){ selectedMeleeWeaponTier[sub]=v; } },
     shield:   { get:function(sub){ return selectedShieldTier[sub]; },      set:function(sub,v){ selectedShieldTier[sub]=v; } },
     ward:     { get:function(sub){ return selectedWardTier[sub]; },        set:function(sub,v){ selectedWardTier[sub]=v; } },
+    wand:     { get:function(sub){ return selectedWandTier[sub]; },        set:function(sub,v){ selectedWandTier[sub]=v; } },
     ring:     { get:function(sub){ return selectedRingTier[sub]; },        set:function(sub,v){ selectedRingTier[sub]=v; } },
     amulet:   { get:function(){ return selectedAmuletTier; },              set:function(sub,v){ selectedAmuletTier=v; } }
   };
@@ -15039,6 +15171,7 @@
       WARD_TYPES:WARD_TYPES, WARD_TYPE_MAP:WARD_TYPE_MAP, isWard:isWard, WARD_ITEMS:WARD_ITEMS, wardReflectPct:wardReflectPct, WARD_FULL_REFLECT_CHANCE:WARD_FULL_REFLECT_CHANCE, getWardTierData:getWardTierData, WARD_ELEMENTS:WARD_ELEMENTS,
       wardingReflectBonus:wardingReflectBonus, WARDING_SKILL_ID:WARDING_SKILL_ID, WARDING_BONUS_MIN:WARDING_BONUS_MIN, WARDING_BONUS_MAX:WARDING_BONUS_MAX, OFFHAND_STYLE_IDS:OFFHAND_STYLE_IDS,
       GLYPH_ITEMS:GLYPH_ITEMS, glyphIdFor:glyphIdFor, glyphDropMax:glyphDropMax, GLYPH_DROP_CHANCE:GLYPH_DROP_CHANCE, ELEMENTAL_ELEMENT_OVERRIDES:ELEMENTAL_ELEMENT_OVERRIDES,
+      WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }
