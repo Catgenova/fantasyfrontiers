@@ -13287,6 +13287,8 @@
   // `guild_action` edge function (service role), and reads come from RLS-guarded
   // tables. The client never trusts guild data from any player's save blob.
   var GUILD_CREATE_COST = 50000;
+  var GUILD_MAX_MEMBERS = 10;    // a guild is capped at this many members
+  function guildIsFull(count){ return (count||0) >= GUILD_MAX_MEMBERS; }
   var GUILD_SUBS = [
     {id:'roster', label:'Roster', icon:svgIcon('person','var(--cat-guild)')},
     {id:'bank', label:'Bank', icon:svgIcon('chest','var(--cat-guild)')},
@@ -13366,6 +13368,8 @@
   }
   function guildApply(guildId){
     if(guildState.busy || !guildId) return;
+    var gd=(guildBrowseState.list||[]).filter(function(x){ return x.id===guildId; })[0];
+    if(gd && guildIsFull(gd.member_count)){ guildState.error='That guild is full ('+GUILD_MAX_MEMBERS+'/'+GUILD_MAX_MEMBERS+').'; render(); return; }
     guildState.busy=true; guildState.error='';
     guildInvoke('apply', { guild_id:guildId, message:'' }).then(function(res){
       guildState.busy=false;
@@ -13378,6 +13382,9 @@
   }
   function guildAct(action, targetId){
     if(guildState.busy) return;
+    if(action==='accept' && guildIsFull(guildState.members.length)){
+      guildState.error='Your guild is full ('+GUILD_MAX_MEMBERS+'/'+GUILD_MAX_MEMBERS+'). Remove a member before accepting a new one.'; render(); return;
+    }
     guildState.busy=true; guildState.error='';
     var payload={}; if(targetId) payload.user_id=targetId;
     guildInvoke(action, payload).then(function(res){
@@ -13423,10 +13430,11 @@
     if(g.status==='idle'||g.status==='loading') return html+'<div class="empty-note">Loading guilds&hellip;</div>';
     if(!g.list.length) return html+'<div class="empty-note">No open guilds right now &mdash; found the first one!</div>';
     g.list.forEach(function(gd){
-      var applied=g.appliedTo===gd.id;
+      var applied=g.appliedTo===gd.id, full=guildIsFull(gd.member_count);
       html += '<div class="guild-card"><div class="guild-member-row" style="border:none;background:none;padding:0;margin:0;">';
-      html += '<div><b>['+escapeHtml(gd.tag)+'] '+escapeHtml(gd.name)+'</b><div class="item-meta">'+gd.member_count+' member'+(gd.member_count===1?'':'s')+'</div></div>';
+      html += '<div><b>['+escapeHtml(gd.tag)+'] '+escapeHtml(gd.name)+'</b><div class="item-meta">'+gd.member_count+'/'+GUILD_MAX_MEMBERS+' member'+(gd.member_count===1?'':'s')+(full?' &bull; <span style="color:var(--hp-bad);">Full</span>':'')+'</div></div>';
       if(applied) html += '<button class="action-btn stop" data-action="guildCancelApplication" style="width:auto;flex:0 0 auto;">Cancel application</button>';
+      else if(full) html += '<button class="action-btn" disabled style="width:auto;flex:0 0 auto;">Full</button>';
       else html += '<button class="action-btn" data-action="guildApply" data-guild="'+gd.id+'" '+(guildState.busy?'disabled':'')+' style="width:auto;flex:0 0 auto;">Apply</button>';
       html += '</div>';
       if(gd.description) html += '<div class="item-meta" style="margin-top:6px;">'+escapeHtml(gd.description)+'</div>';
@@ -13447,14 +13455,17 @@
   }
   function renderGuildRoster(){
     var html='', canManage=(guildState.myRank==='leader'||guildState.myRank==='officer'), isLeader=guildState.myRank==='leader';
+    var full=guildIsFull(guildState.members.length);
     if(canManage){
       html += '<div class="guild-section-title">Applications <span class="item-meta">('+guildState.applications.length+')</span></div>';
+      if(full && guildState.applications.length) html += '<div class="empty-note" style="margin-bottom:6px;color:var(--hp-bad);border-color:var(--hp-bad);">Your guild is full ('+GUILD_MAX_MEMBERS+'/'+GUILD_MAX_MEMBERS+'). Remove a member before you can accept anyone new.</div>';
       if(!guildState.applications.length) html += '<div class="empty-note" style="margin-bottom:6px;">No pending applications.</div>';
       else guildState.applications.forEach(function(a){
-        html += '<div class="guild-member-row"><div><b>'+escapeHtml(a.username)+'</b>'+(a.message?'<div class="item-meta">'+escapeHtml(a.message)+'</div>':'')+'</div><div class="guild-row-actions"><button class="mini-btn" data-action="guildAccept" data-id="'+a.user_id+'" '+(guildState.busy?'disabled':'')+'>Accept</button><button class="mini-btn danger" data-action="guildReject" data-id="'+a.user_id+'">Reject</button></div></div>';
+        var acceptDis=(guildState.busy||full)?'disabled':'';
+        html += '<div class="guild-member-row"><div><b>'+escapeHtml(a.username)+'</b>'+(a.message?'<div class="item-meta">'+escapeHtml(a.message)+'</div>':'')+'</div><div class="guild-row-actions"><button class="mini-btn" data-action="guildAccept" data-id="'+a.user_id+'" '+acceptDis+'>Accept</button><button class="mini-btn danger" data-action="guildReject" data-id="'+a.user_id+'">Reject</button></div></div>';
       });
     }
-    html += '<div class="guild-section-title">Members <span class="item-meta">('+guildState.members.length+')</span></div>';
+    html += '<div class="guild-section-title">Members <span class="item-meta">('+guildState.members.length+'/'+GUILD_MAX_MEMBERS+')</span></div>';
     guildState.members.forEach(function(m){
       var isMe=authUser&&m.user_id===authUser.id, ctl='';
       if(isLeader && !isMe && m.rank!=='leader'){
@@ -16488,6 +16499,7 @@
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
       GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS,
       renderGlobalActionBar:renderGlobalActionBar, describeTask:describeTask, censorChat:censorChat,
+      GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,

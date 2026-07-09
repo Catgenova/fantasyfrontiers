@@ -523,6 +523,16 @@
     ok(c('shit').charAt(0) === 's' && c('shit').slice(1) === '***', 'mask keeps first char + stars');
   });
 
+  // ---- Guild membership cap --------------------------------------------------------------------
+  suite('guild: 10-member cap', function(){
+    eq(FF.GUILD_MAX_MEMBERS, 10, 'cap is 10');
+    ok(FF.guildIsFull(10), '10 members is full');
+    ok(FF.guildIsFull(11), 'over cap is full');
+    ok(!FF.guildIsFull(9), '9 members is not full');
+    ok(!FF.guildIsFull(0), 'empty is not full');
+    ok(!FF.guildIsFull(undefined), 'undefined count treated as not full');
+  });
+
   // ---- Inventory grid: rarity parsing for cell accents / detail tag ----------------------
   suite('inventory rarity', function(){
     eq(FF.itemRarityId('bodyarmor_chain_chest_t20_normal'), 'normal', 'normal suffix');
