@@ -3067,7 +3067,35 @@
     meditation:     [ healSpell('Inner Peace',18), regenSpell('Lotus Bloom',5,7), armorSpell('Meditative Ward',1.5,6), buffSpell('Serene Flow','dodge',0.13,8) ],
     fortitude:      [ healSpell('Vital Surge',18), regenSpell('Lifebloom',5,8), bubbleSpell('Life Ward',3), siphonSpell('Vitality Drain',13) ]
   };
-  Object.keys(FAMILIAR_SPELLS).forEach(function(id){ if(FAMILIAR_DATA[id]) FAMILIAR_DATA[id].spells = FAMILIAR_SPELLS[id]; });
+  // Each familiar channels an element (thematic to its skill). Its damaging spells (direct hits,
+  // siphons, and poison DoTs) carry that element, so they gain the +20% elemental advantage against
+  // enemies weak to it (water>fire>earth>water; light<->dark). Non-damaging spells ignore it.
+  var FAMILIAR_ELEMENT = {
+    // Gathering
+    digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark',
+    // Crafting
+    carpentry:'earth', metallurgy:'fire', roasting:'fire', cooking:'water', alchemy:'water', bowyer:'earth', fletching:'earth', baking:'fire',
+    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water',
+    archaeology:'dark', blacksmithing:'fire', weaponsmithing:'fire', armorsmithing:'earth', shieldsmithing:'earth',
+    // Farming
+    farming:'earth',
+    // Faith
+    prayer:'light', sacrifice:'dark', devotion:'light', blessing:'light', miracle:'light',
+    // Physique
+    bodyStrength:'earth', bodyControl:'water', fineMotor:'light', grossMotor:'earth', endurance:'earth', focus:'light', balance:'light',
+    reflexes:'fire', stamina:'earth', handStrength:'earth', armStrength:'earth', coreStrength:'earth', solving:'light', criticalThinking:'light',
+    mentality:'earth', zen:'light', meditation:'light', fortitude:'dark'
+  };
+  var DAMAGE_SPELL_TYPES = { hit:true, siphon:true, poison:true }; // spells that deal direct damage or DoT
+  function familiarElement(id){ return FAMILIAR_ELEMENT[id] || null; }
+  // Assign the expanded kits and stamp each familiar's element onto its damaging spells so the cast
+  // logic and the Menagerie UI can read spell.element directly.
+  Object.keys(FAMILIAR_SPELLS).forEach(function(id){
+    if(!FAMILIAR_DATA[id]) return;
+    var el = FAMILIAR_ELEMENT[id] || null;
+    FAMILIAR_SPELLS[id].forEach(function(sp){ if(DAMAGE_SPELL_TYPES[sp.type]) sp.element = el; });
+    FAMILIAR_DATA[id].spells = FAMILIAR_SPELLS[id];
+  });
 
   // ===================== FAMILIAR AVATARS =====================
   // Each familiar gets a bespoke, cohesive "cute combat companion": a chibi spirit tinted to its
@@ -3279,7 +3307,10 @@
       state.familiarBuffs.enemyWeakenUntil = now + spell.durationMs;
       spawnFloatingText(spell.name + '!', 'ft-rare');
     } else if(spell.type==='poison'){
-      state.familiarBuffs.poisonDps = spell.dps*potency;
+      // Bake the elemental advantage vs the current enemy into the DoT rate (the DoT ticks generically
+      // in the loop, so it can't re-evaluate the element per tick).
+      var _pmon = (state.activity && state.activity.type==='combat') ? monsterById(state.activity.monsterId) : null;
+      state.familiarBuffs.poisonDps = spell.dps*potency*elementAdvantage(spell.element, _pmon && _pmon.element);
       state.familiarBuffs.poisonUntil = now + spell.durationMs;
       spawnFloatingText(spell.name + '!', 'ft-rare');
     } else if(spell.type==='regen'){
@@ -3307,6 +3338,7 @@
         }
         var dmg = spell.amount * potency;
         if(spell.type==='hit' && spell.dmgType!=='void' && cmon){ var atkMix={}; atkMix[spell.dmgType]=1; dmg *= weightedAdvantage(atkMix, cmon.armorTypes || {blunt:1/3,slashing:1/3,piercing:1/3}); }
+        dmg *= elementAdvantage(spell.element, cmon && cmon.element); // +20% when the spell's element beats the enemy's
         dmg = Math.round(dmg);
         cact.monsterHp = Math.max(1, cact.monsterHp - dmg);
         spawnFloatingText('-'+dmg+' ('+spell.name+')', 'ft-rare');
@@ -8344,18 +8376,21 @@
   }
 
   // ================= RENDER: ESTATE (placeholder) =================
+  // Element icon for a damaging spell (blank for non-damaging spells), shown beside it in the Menagerie.
+  function spellElementIcon(spell){ return (spell && spell.element) ? elementIcon(spell.element) : ''; }
   function describeSpell(spell, level){
     var potency = familiarPotencyMult(level||1);
+    var elemSuffix = spell.element ? ' ('+elementLabel(spell.element)+')' : '';
     if(spell.type==='heal') return 'Restores '+Math.round(spell.amount*potency)+' HP';
     if(spell.type==='armorBuff') return 'x'+(Math.round((1+(spell.mult-1)*potency)*100)/100)+' player armor for '+(spell.durationMs/1000)+'s';
     if(spell.type==='damageBuff') return '+'+Math.round((spell.mult-1)*potency*100)+'% player damage for '+(spell.durationMs/1000)+'s';
     if(spell.type==='slowEnemy') return 'Slows enemy attack speed by '+Math.round(Math.min(0.9,spell.pct*potency)*100)+'% for '+(spell.durationMs/1000)+'s';
     if(spell.type==='weakenEnemy') return 'Reduces enemy damage by '+Math.round(Math.min(0.9,spell.pct*potency)*100)+'% for '+(spell.durationMs/1000)+'s';
-    if(spell.type==='poison') return 'Deals '+(Math.round(spell.dps*potency*10)/10)+' dmg/s to the enemy for '+(spell.durationMs/1000)+'s';
+    if(spell.type==='poison') return 'Deals '+(Math.round(spell.dps*potency*10)/10)+' dmg/s to the enemy for '+(spell.durationMs/1000)+'s'+elemSuffix;
     if(spell.type==='regen') return 'Regenerates '+(Math.round(spell.hps*potency*10)/10)+' HP/s for '+(spell.durationMs/1000)+'s';
     if(spell.type==='bubble') return 'Negates a killing blow for '+(Math.round(spell.durSec*potency*10)/10)+'s';
-    if(spell.type==='hit'){ var tl = spell.dmgType==='void'?'armour-ignoring':spell.dmgType; return 'Deals '+Math.round(spell.amount*potency)+' '+tl+' damage'; }
-    if(spell.type==='siphon') return 'Siphons '+Math.round(spell.amount*potency)+' HP from the enemy to you';
+    if(spell.type==='hit'){ var tl = spell.dmgType==='void'?'armour-ignoring':spell.dmgType; return 'Deals '+Math.round(spell.amount*potency)+' '+tl+' damage'+elemSuffix; }
+    if(spell.type==='siphon') return 'Siphons '+Math.round(spell.amount*potency)+' HP from the enemy to you'+elemSuffix;
     if(spell.type==='timedBuff'){
       var v = spell.val*potency, s = (spell.durationMs/1000);
       var pct = Math.round(v*100);
@@ -8385,7 +8420,7 @@
       if(expanded){
         html += '<div class="inputs-line" style="margin-top:6px">Spells (cast in order, one every 10s):</div>';
         fam.spells.forEach(function(spell, i){
-          html += '<div class="chance-line">'+(i+1)+'. <b>'+spell.name+'</b> &mdash; '+describeSpell(spell, famLevel)+'</div>';
+          html += '<div class="chance-line">'+(i+1)+'. <b>'+spell.name+'</b> '+spellElementIcon(spell)+' &mdash; '+describeSpell(spell, famLevel)+'</div>';
         });
         if(isCompanion){
           html += '<button class="action-btn stop" data-action="activateCompanion" data-skill="">Deactivate Companion</button>';
@@ -8425,7 +8460,7 @@
       html += '<div class="familiar-popup-meta">'+label+' &bull; Level '+famLevel+(famLevel>=FAMILIAR_MAX_LEVEL?' (Max)':'')+'</div>';
       html += '<div class="familiar-popup-spells">';
       fam.spells.forEach(function(spell, i){
-        html += '<div>'+(i+1)+'. <b>'+spell.name+'</b> &mdash; '+describeSpell(spell, famLevel)+'</div>';
+        html += '<div>'+(i+1)+'. <b>'+spell.name+'</b> '+spellElementIcon(spell)+' &mdash; '+describeSpell(spell, famLevel)+'</div>';
       });
       html += '</div>';
       html += '<button class="action-btn" data-action="dismissPopup">Wonderful!</button>';
@@ -14736,6 +14771,7 @@
       monsterById:monsterById, addItem:addItem,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
+      FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

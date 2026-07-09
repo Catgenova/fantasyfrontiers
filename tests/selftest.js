@@ -574,6 +574,38 @@
     eq(FF.incomingElementMult(st(['leather']), { element:null }), 1, 'elementless enemy = no amplification');
   });
 
+  // ---- Familiar spell elements ----------------------------------------------------------
+  suite('familiar spell elements', function(){
+    var DMG = FF.DAMAGE_SPELL_TYPES; // { hit, siphon, poison }
+    var damaging = 0, nondamaging = 0;
+    Object.keys(FF.FAMILIAR_DATA).forEach(function(id){
+      var fam = FF.FAMILIAR_DATA[id];
+      fam.spells.forEach(function(sp){
+        if(DMG[sp.type]){
+          damaging++;
+          ok(sp.element && FF.ELEMENT_META[sp.element], id+"'s "+sp.name+' (damaging) has a valid element');
+          eq(sp.element, FF.familiarElement(id), id+"'s "+sp.name+' inherits the familiar element');
+        } else {
+          nondamaging++;
+          ok(!sp.element, id+"'s "+sp.name+' (non-damaging) has no element');
+        }
+      });
+    });
+    ok(damaging > 20, 'there are many damaging spells stamped ('+damaging+')');
+    ok(nondamaging > 0, 'non-damaging spells exist and stay elementless');
+
+    // Every familiar has an assigned element.
+    Object.keys(FF.FAMILIAR_DATA).forEach(function(id){
+      ok(FF.ELEMENT_META[FF.familiarElement(id)], id+' has a valid familiar element');
+    });
+
+    // A fire familiar's damaging spell beats an earth enemy for +20%; neutral vs a fire enemy.
+    var fireFam = Object.keys(FF.FAMILIAR_ELEMENT).filter(function(id){ return FF.FAMILIAR_ELEMENT[id]==='fire'; })[0];
+    ok(fireFam, 'at least one fire familiar exists');
+    eq(FF.elementAdvantage(FF.familiarElement(fireFam), 'earth'), FF.ELEMENT_ADVANTAGE_MULT, 'fire spell beats earth enemy');
+    eq(FF.elementAdvantage(FF.familiarElement(fireFam), 'fire'), 1, 'fire spell neutral vs fire enemy');
+  });
+
   // ---- Hardening: monster lookup + addItem guards ---------------------------------------
   suite('hardening', function(){
     // monsterById maps every monster and rejects unknown ids (used by the combat hot path + stale-id retreat).
