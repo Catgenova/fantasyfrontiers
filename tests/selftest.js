@@ -1278,6 +1278,39 @@
     ok(FF.getRingDamageMultiplier(st([sl('blunt', TC, 'normal')]), {blunt:1}) > 1, 'blunt ring boosts blunt weapons');
   });
 
+  // ---- Cloth armor: rarity boosts familiar potency, not base armor ---------------------
+  suite('cloth armor rarity -> familiar efficiency', function(){
+    // Cloth (Tailoring) base defense is identical across all rarities.
+    function clothDef(rarity){ return FF.BODY_ARMOR_ITEMS['bodyarmor_tailoring_chest_t5_'+rarity].defense; }
+    var cn = clothDef('normal');
+    var clothBase = Math.round(FF.getBodyArmorTierData('tailoring','chest',5).defense);
+    eq(cn, clothBase, 'cloth Normal defense = base tier defense (no rarity mult)');
+    eq(clothDef('rare'), cn, 'Rare cloth: same defense');
+    eq(clothDef('supreme'), cn, 'Supreme cloth: same defense');
+    eq(clothDef('fantastic'), cn, 'Fantastic cloth: same defense');
+
+    // Non-cloth materials still scale base armor 2x/4x/8x with rarity.
+    var plateBase = FF.getBodyArmorTierData('plate','chest',5).defense;
+    function plateDef(rarity){ return FF.BODY_ARMOR_ITEMS['bodyarmor_plate_chest_t5_'+rarity].defense; }
+    eq(plateDef('normal'), Math.round(plateBase), 'plate Normal defense = base');
+    eq(plateDef('fantastic'), Math.round(plateBase*8), 'plate Fantastic defense = 8x base');
+    ok(plateDef('fantastic') > plateDef('normal'), 'plate rarity still raises defense');
+
+    // The inherent familiar-efficiency bonus DOES scale 2x/4x/8x with cloth rarity.
+    function withChest(rarity){ return { bodyArmor: { chest: {material:'tailoring', tier:6, rarity:rarity} } }; }
+    near(FF.getClothArmorSpellBonus(withChest('normal')), FF.CLOTH_SLOT_SPELL_BONUS, 'Normal cloth chest = +5% potency');
+    near(FF.getClothArmorSpellBonus(withChest('rare')), FF.CLOTH_SLOT_SPELL_BONUS*2, 'Rare cloth chest = +10% (2x)');
+    near(FF.getClothArmorSpellBonus(withChest('supreme')), FF.CLOTH_SLOT_SPELL_BONUS*4, 'Supreme cloth chest = +20% (4x)');
+    near(FF.getClothArmorSpellBonus(withChest('fantastic')), FF.CLOTH_SLOT_SPELL_BONUS*8, 'Fantastic cloth chest = +40% (8x)');
+
+    // Multiple pieces stack; non-cloth pieces contribute nothing to the spell bonus.
+    var full = { bodyArmor: {} };
+    FF.TAILORING_SLOTS.forEach(function(slot){ full.bodyArmor[slot] = {material:'tailoring', tier:6, rarity:'fantastic'}; });
+    near(FF.getClothArmorSpellBonus(full), FF.CLOTH_SLOT_SPELL_BONUS*8*FF.TAILORING_SLOTS.length, 'five Fantastic cloth pieces stack');
+    var plateOnly = { bodyArmor: { chest: {material:'plate', tier:6, rarity:'fantastic'} } };
+    eq(FF.getClothArmorSpellBonus(plateOnly), 0, 'plate pieces give no familiar bonus');
+  });
+
   // ---- Classes: Thunderfury (crit-chaining earth-wand storm caller) ---------------------
   suite('classes: Thunderfury', function(){
     ok(FF.CLASS_SKILL_IDS.indexOf('thunderfury') !== -1, 'thunderfury is a class skill id');

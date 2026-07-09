@@ -4656,7 +4656,10 @@
             slot: slot,
             tierIndex: i,
             rarity: rarityId,
-            defense: Math.round(data.defense * r.mult)
+            // Cloth (Tailoring) is the exception: rarity does NOT scale its base armor -- it
+            // instead pumps the inherent familiar-efficiency bonus 2x/4x/8x (see
+            // getClothArmorSpellBonus). Every other material scales defense by rarity as usual.
+            defense: Math.round(data.defense * (material==='tailoring' ? 1 : r.mult))
           };
         }
       });
@@ -8259,6 +8262,7 @@
     html += craftStatsLine('tailoring');
 
     html += '<h3 style="margin-top:14px">Forge Cloth Armor</h3>';
+    html += '<div class="section-intro">Cloth is the caster\'s armor: rarity doesn\'t raise its (light) defense the way it does for Chain/Plate/Leather. Instead, a piece\'s rarity multiplies its inherent familiar-efficiency bonus 2x/4x/8x -- each worn Cloth piece adds +5% summon spell potency at Normal, up to +40% at Fantastic. Defense still grows with tier.</div>';
     html += '<div class="card-grid">';
     TAILORING_MATERIALS.forEach(function(material){
       var mat = BODY_ARMOR_MATERIALS[material];
@@ -9697,7 +9701,7 @@
       html += '<div class="physique-bonus">Active Companions ('+_actcomp.length+'/'+_slots+'): <b>'+_names+'</b> &mdash; each casts a spell in combat every '+_castSec+'s.</div>';
     }
     var clothBonusPct = Math.round(getClothArmorSpellBonus(state)*100);
-    html += '<div class="physique-bonus">Cloth Armor Spell Bonus: <b>+'+clothBonusPct+'%</b> summon spell potency &mdash; each equipped Tailoring piece (Chest, Head, Gloves, Boots, Back) adds +5%, scaled by its rarity. Doesn\'t grow with tier.</div>';
+    html += '<div class="physique-bonus">Cloth Armor Spell Bonus: <b>+'+clothBonusPct+'%</b> summon spell potency &mdash; each equipped Tailoring piece (Chest, Head, Gloves, Boots, Back) adds +5% at Normal, and cloth rarity pumps this bonus 2x/4x/8x (Rare +10%, Supreme +20%, Fantastic +40%) instead of raising the piece\'s armor. Doesn\'t grow with tier.</div>';
     var sections = [
       {label:'Gathering', ids: GATHER_SKILL_IDS},
       {label:'Crafting', ids: CRAFT_SKILL_IDS},
@@ -15989,6 +15993,7 @@
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS,
+      BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }
