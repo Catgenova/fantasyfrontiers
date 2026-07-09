@@ -189,7 +189,16 @@
   .ff-chat-expand-btn svg{width:13px;height:13px;}
   .ff-bottomdock{display:none;}
   .ff-chatfab{display:none;}
-  .ff-farmfab{display:none;}
+  /* Harvest All / Plant All quick-action FABs. Base + desktop layout here (floating bottom-right,
+     fixed to the viewport); the mobile media query below repositions them to stack above the chat
+     bubble. Each is shown (display:flex) only when its action is available -- .on is toggled from
+     renderFarmFabs(). */
+  .ff-farmfab{display:none;align-items:center;justify-content:center;position:fixed;right:20px;z-index:40;width:52px;height:52px;border-radius:50%;border:2px solid #24380f;color:#f2f8e6;cursor:pointer;box-shadow:0 5px 14px rgba(0,0,0,.45);}
+  .ff-farmfab.on{display:flex;}
+  .ff-farmfab:hover{filter:brightness(1.08);}
+  .ff-farmfab-harvest{bottom:20px;background:linear-gradient(180deg,#c79a2a,#8a6a18);}
+  .ff-farmfab-plant{bottom:84px;background:linear-gradient(180deg,#5aa06a,#2f6a3c);}
+  .ff-farmfab-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--gold-bright);color:#3a2a08;border:2px solid #24380f;font-family:var(--font-mono);font-size:10px;font-weight:700;line-height:14px;text-align:center;}
   .ff-ivy{position:absolute;top:-8px;z-index:9;pointer-events:none;width:70px;height:60px;}
   .ff-ivy-l{left:-4px;} .ff-ivy-r{right:-4px;transform:scaleX(-1);}
   @keyframes ffChipFlash{0%,100%{opacity:1;}50%{opacity:.45;}}
@@ -242,14 +251,11 @@
     /* Unread indicator: gold ring + a small dot badge, pulsing to draw the eye. */
     .ff-chatfab-alert{border-color:var(--gold-bright);animation:ffFabPulse 1.4s ease-in-out infinite;}
     .ff-chatfab-alert::after{content:'';position:absolute;top:-2px;right:-2px;width:14px;height:14px;border-radius:50%;background:var(--gold-bright);border:2px solid #24380f;}
-    /* Farming quick-action FABs, stacked above the chat bubble. Shown (per button) only when the
-       action is available -- .on is toggled from renderFarmFabs(). Hidden on desktop (the base
-       .ff-farmfab{display:none} outside this query wins when the query doesn't apply). */
-    .ff-farmfab{align-items:center;justify-content:center;position:absolute;right:14px;z-index:22;width:50px;height:50px;border-radius:50%;border:2px solid #24380f;color:#f2f8e6;cursor:pointer;box-shadow:0 5px 14px rgba(0,0,0,.45);}
-    .ff-farmfab.on{display:flex;}
-    .ff-farmfab-harvest{bottom:126px;background:linear-gradient(180deg,#c79a2a,#8a6a18);}
-    .ff-farmfab-plant{bottom:186px;background:linear-gradient(180deg,#5aa06a,#2f6a3c);}
-    .ff-farmfab-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--gold-bright);color:#3a2a08;border:2px solid #24380f;font-family:var(--font-mono);font-size:10px;font-weight:700;line-height:14px;text-align:center;}
+    /* On mobile the FABs re-anchor to stack directly above the chat bubble (which is absolute at
+       bottom:66px). Colours/size/visibility come from the base rules above. */
+    .ff-farmfab{position:absolute;right:14px;z-index:22;width:50px;height:50px;}
+    .ff-farmfab-harvest{bottom:126px;}
+    .ff-farmfab-plant{bottom:186px;}
   }
   @keyframes ffFabPulse{
     0%,100%{box-shadow:0 5px 14px rgba(0,0,0,.45), 0 0 0 0 rgba(230,196,90,.55);}
@@ -12106,14 +12112,6 @@
     html += renderSkillProgressBar('fiberharvesting');
     html += renderSkillProgressBar('grainharvesting');
     html += renderSkillProgressBar('herbharvesting');
-
-    // One-click bulk actions across every field (yours + guild): harvest all ready crops, and plant
-    // every empty plot (best seeds to the best fields first). Disabled when nothing is actionable.
-    var _readyN = farmingReadyCount(), _plantN = farmingPlantAll(true);
-    html += '<div class="style-row" style="margin:8px 0 4px;">';
-    html += '<button class="action-btn" data-action="harvestAllFarm" '+(_readyN>0?'':'disabled')+' style="width:auto;flex:1 1 auto;">'+svgIcon('herb','currentColor')+' Harvest All'+(_readyN>0?' ('+_readyN+')':'')+'</button>';
-    html += '<button class="action-btn" data-action="plantAllFarm" '+(_plantN>0?'':'disabled')+' style="width:auto;flex:1 1 auto;">'+svgIcon('seed','currentColor')+' Plant All'+(_plantN>0?' ('+_plantN+')':'')+'</button>';
-    html += '</div>';
 
     // Owned seeds across all three crop lines, resolved to {id, def, tier, crop}, sorted by tier.
     var ownedSeedList = [];
