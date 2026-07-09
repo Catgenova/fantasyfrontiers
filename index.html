@@ -2253,7 +2253,7 @@
     if(category==='wildlife') return 'earth';
     if(category==='demonspawn') return 'fire';
     if(category==='kinsworn') return 'water';
-    return ['fire','water','earth'][((tierIndex%3)+3)%3]; // elementals + dungeon stages cycle the triangle
+    return ['fire','water','earth'][((tierIndex%3)+3)%3]; // elementals cycle the triangle
   }
   function makeBestiary(category, names, icons, hpMult, atkMult, goldMult, attackSpeeds, categoryOffset){
     return names.map(function(name, i){
@@ -2291,99 +2291,18 @@
     {id:'wildlife', label:'Wildlife', icon:svgIcon('paw','var(--sub-forestry)'), color:'var(--sub-forestry)', desc:'Drops Corpses, which Butchering processes into Meat for Roasting (their Hides come from Butchering as usual).'},
     {id:'elemental', label:'Elementals', icon:svgIcon('flame','#c9622f'), color:'#c9622f', desc:'Drops a burst of raw material matching Digging, Mining, Herbalism, Botany, or Foraging.'},
     {id:'demonspawn', label:'Demonspawn', icon:svgIcon('hornedskull','var(--hp-bad)'), color:'var(--hp-bad)', desc:'Rarely drops a Broken Relic, which Sacrifice can destroy for a large burst of Faith.'},
-    {id:'kinsworn', label:'Kin-sworn', icon:svgIcon('crossedswords','#8a97a6'), color:'#8a97a6', desc:'Occasionally drops a piece of Normal-rarity equipment outright.'},
-    {id:'dungeons', label:'Dungeons', icon:svgIcon('castle','var(--gold)'), color:'var(--gold)', desc:'A gauntlet of increasingly difficult enemies every 20 levels. Clear stages in order; each dungeon\'s final Boss guarantees an equipment drop and bonus gold.'}
+    {id:'kinsworn', label:'Kin-sworn', icon:svgIcon('crossedswords','#8a97a6'), color:'#8a97a6', desc:'Occasionally drops a piece of Normal-rarity equipment outright.'}
   ];
   var WILDLIFE_MONSTERS = makeBestiary('wildlife', WILDLIFE_NAMES, WILDLIFE_ICONS, 1.0, 1.0, 1.0, WILDLIFE_ATTACK_SPEEDS, 0);
   var ELEMENTAL_MONSTERS = makeBestiary('elemental', ELEMENTAL_NAMES, ELEMENTAL_ICONS, 1.3, 0.85, 0.9, ELEMENTAL_ATTACK_SPEEDS, 1);
   var DEMONSPAWN_MONSTERS = makeBestiary('demonspawn', DEMONSPAWN_NAMES, DEMONSPAWN_ICONS, 0.8, 1.25, 1.1, DEMONSPAWN_ATTACK_SPEEDS, 2);
   var KINSWORN_MONSTERS = makeBestiary('kinsworn', KINSWORN_NAMES, KINSWORN_ICONS, 1.1, 1.0, 1.15, KINSWORN_ATTACK_SPEEDS, 3);
   var MONSTERS = WILDLIFE_MONSTERS.concat(ELEMENTAL_MONSTERS).concat(DEMONSPAWN_MONSTERS).concat(KINSWORN_MONSTERS);
-
-  // ---- Dungeons: a gauntlet of increasingly difficult enemies every 20 levels (tier
-  // indices 4/8/12/16/20 = levels 20/40/60/80/100), a subset of Combat rather than a
-  // freely-repeatable category. Each dungeon has 6 stages that must be cleared in order;
-  // the final stage is a Boss with amplified stats, bonus gold, and a guaranteed
-  // equipment drop. Reuses the exact same HP/attack/gold growth curves as the regular
-  // bestiary, just fed a fractional "virtual tier" so difficulty ramps smoothly within
-  // the dungeon instead of jumping straight to the next bracket.
-  var DUNGEON_DEFS = [
-    { id:'dungeon0', name:'The Sunken Crypt', icon:svgIcon('urn','#5a6a5a'), tierIndex:4,
-      stageNames:['Crypt Ghoul','Bone Wraith','Grave Stalker','Rotting Revenant','Crypt Guardian','Crypt Lord'],
-      stageIcons:[svgIcon('ghost','#7a8a7a'),svgIcon('ghost','#c8d0c8'),svgIcon('ghost','#5a6a5a'),svgIcon('ghost','#3a4a3a'),svgIcon('shield','#6a7a6a'),svgIcon('crown','#c9a227')] },
-    { id:'dungeon1', name:'The Blackthorn Warcamp', icon:svgIcon('crossedswords','#7a2a2a'), tierIndex:8,
-      stageNames:['Warcamp Scout','Blackthorn Raider','Warband Brute','Camp Enforcer','Blackthorn Lieutenant','Blackthorn Warlord'],
-      stageIcons:[svgIcon('bow','#8a6a3a'),svgIcon('sword','#8a8a8a'),svgIcon('axe','#6a4a2a'),svgIcon('shield','#5a4a3a'),svgIcon('crossedswords','#7a2a2a'),svgIcon('crown','#c9a227')] },
-    { id:'dungeon2', name:'The Molten Depths', icon:svgIcon('flame','#c85a2a'), tierIndex:12,
-      stageNames:['Cinder Wretch','Magma Hound','Ashen Brute','Ember Colossus','Molten Herald','Molten Sovereign'],
-      stageIcons:[svgIcon('flame','#e88a2a'),svgIcon('hornedskull','#8a2a1a'),svgIcon('hornedskull','#5a2a1a'),svgIcon('urn','#3a2a24'),svgIcon('flame','#c8302a'),svgIcon('crown','#c9a227')] },
-    { id:'dungeon3', name:'The Void Rift', icon:svgIcon('starburst','#6a4a9a'), tierIndex:16,
-      stageNames:['Rift Wisp','Void Stalker','Nether Horror','Rift Colossus','Void Herald','Rift Sovereign'],
-      stageIcons:[svgIcon('starburst','#9a8ac0'),svgIcon('eye','#5a3a7a'),svgIcon('ghost','#3a2a5a'),svgIcon('starburst','#4a2a6a'),svgIcon('starburst','#2a1a4a'),svgIcon('crown','#c9a227')] },
-    { id:'dungeon4', name:'The Throne of Ruin', icon:svgIcon('castle','#8a7a4a'), tierIndex:20,
-      stageNames:['Ruin Sentinel','Fallen Champion','Ruin Executioner','Throne Guardian','Herald of Ruin','The Ruined King'],
-      stageIcons:[svgIcon('urn','#7a6a50'),svgIcon('crossedswords','#8a8a8a'),svgIcon('axe','#5a4a3a'),svgIcon('shield','#6a6a70'),svgIcon('crown','#c9a227'),svgIcon('ghost','#2a2a2a')] }
-  ];
-  function makeDungeonStages(def){
-    var stageCount = def.stageNames.length;
-    return def.stageNames.map(function(name, stageIdx){
-      var isBoss = stageIdx === stageCount-1;
-      var virtualTier = def.tierIndex + stageIdx*0.6;
-      var hpMult = isBoss ? 2.2 : 1.15;
-      var atkMult = isBoss ? 1.5 : 1.1;
-      var goldMult = isBoss ? 3.0 : 1.3;
-      return {
-        id: def.id+'_stage'+stageIdx,
-        name: name,
-        icon: def.stageIcons[stageIdx],
-        category: 'dungeon',
-        dungeonId: def.id,
-        stageIndex: stageIdx,
-        isBoss: isBoss,
-        tierIndex: def.tierIndex,
-        virtualTier: virtualTier, // fractional tier used to scale stats (and dodge) across stages
-        element: monsterElement('dungeon', def.tierIndex + stageIdx), // stages cycle the triangle; deep bosses skew light/dark
-        levelReq: TIER_LEVELS[def.tierIndex],
-        hp: Math.max(5, Math.round(20*Math.pow(1.40, virtualTier)*hpMult)),
-        atkMin: Math.max(1, Math.round(1*Math.pow(1.32, virtualTier)*atkMult)),
-        atkMax: Math.max(2, Math.round(3*Math.pow(1.32, virtualTier)*atkMult)),
-        goldMin: Math.max(1, Math.round(3*Math.pow(1.40, virtualTier)*goldMult)),
-        goldMax: Math.max(2, Math.round(6*Math.pow(1.40, virtualTier)*goldMult)),
-        damageType: DAMAGE_TYPE_CYCLE[stageIdx%3],
-        attackTypes: makeTypeMix(stageIdx + def.tierIndex),
-        armorTypes: makeTypeMix(stageIdx + def.tierIndex + 2),
-        attackSpeed: isBoss ? 2.0 : Math.round((2.2 + stageIdx*0.3)*10)/10
-      };
-    });
-  }
-  var DUNGEONS = DUNGEON_DEFS.map(function(def){
-    return { id:def.id, name:def.name, icon:def.icon, tierIndex:def.tierIndex, levelReq:TIER_LEVELS[def.tierIndex], stages:makeDungeonStages(def) };
-  });
-  var DUNGEON_MONSTERS = [];
-  DUNGEONS.forEach(function(d){ DUNGEON_MONSTERS = DUNGEON_MONSTERS.concat(d.stages); });
-  MONSTERS = MONSTERS.concat(DUNGEON_MONSTERS);
   // id -> monster lookup so hot paths (the combat loop, action-bar live updates, attack ticks) don't
-  // linear-scan all 114 monsters every frame.
+  // linear-scan every monster every frame.
   var MONSTERS_BY_ID = {};
   MONSTERS.forEach(function(m){ MONSTERS_BY_ID[m.id] = m; });
   function monsterById(id){ return MONSTERS_BY_ID[id] || null; }
-  function getDungeonProgress(dungeonId){
-    return (state.dungeonProgress && state.dungeonProgress[dungeonId] !== undefined) ? state.dungeonProgress[dungeonId] : -1;
-  }
-  function handleDungeonVictory(monster){
-    var prev = getDungeonProgress(monster.dungeonId);
-    if(monster.stageIndex > prev){
-      state.dungeonProgress[monster.dungeonId] = monster.stageIndex;
-      needsRender = true;
-    }
-    if(monster.isBoss){
-      var bonusGold = randInt(monster.goldMin, monster.goldMax);
-      state.gold += bonusGold;
-      grantEquipmentDrop(monster.tierIndex);
-      addLog('The ' + monster.name + ' falls! A guaranteed equipment drop and a bonus ' + bonusGold + ' gold reward your victory.', 'important');
-      spawnFloatingText('Boss defeated! Bonus loot!', 'ft-rare');
-    }
-  }
 
   // ---- Category-specific loot items ----
   var CORPSE_ITEMS = [];
@@ -4433,8 +4352,7 @@
   }
   function monsterDodge(m){
     if(!m) return 0;
-    var t = (typeof m.virtualTier === 'number') ? m.virtualTier : (m.tierIndex || 0);
-    var frac = clamp(t/(TIER_COUNT-1), 0, 1);
+    var frac = clamp((m.tierIndex || 0)/(TIER_COUNT-1), 0, 1);
     return Math.round(MONSTER_DODGE_BASE + (MONSTER_DODGE_MAX-MONSTER_DODGE_BASE)*Math.pow(frac, MONSTER_DODGE_EXP));
   }
   // Accuracy vs Dodge -> 0..1 chance the hit lands. Dodge is reduced by accuracy first; whatever
@@ -5559,7 +5477,6 @@
       trackedSkills: [],
       peons: [],
       guildPeons: [],
-      dungeonProgress: {},
       estate: Object.assign({ grid: generateEstateGrid(), expansionsPurchased: 0, job: null }, generateEstateEdges()),
       lockedItems: {},
       stats: { kills:0, deaths:0, gathered:0, crafted:0, craftedRare:0, craftedSupreme:0, craftedFantastic:0 },
@@ -6107,7 +6024,6 @@
     var m = monsterById(monsterId);
     if(!m) return;
     if(combatLevelEquivalent(state) < m.levelReq) return;
-    if(m.category==='dungeon' && m.stageIndex > getDungeonProgress(m.dungeonId)+1) return;
     state.activity = { type:'combat', monsterId:monsterId, monsterHp:m.hp, tickAccum:0, monsterTickAccum:0 };
   }
 
@@ -6314,7 +6230,6 @@
     addPhysiqueXp(physTierPairs([['resolve',1]], monster.tierIndex));
     addLog('Defeated the ' + monster.name + '! +' + goldWon + ' gold.', 'important');
     applyMonsterCategoryLoot(monster);
-    if(monster.category==='dungeon') handleDungeonVictory(monster);
     act.monsterHp = monster.hp;
     act.monsterTickAccum = 0;
   }
@@ -6840,7 +6755,7 @@
           if(typeof state.settings.popupFantastic !== 'boolean') state.settings.popupFantastic = true;
           if(typeof state.settings.popupFamiliar !== 'boolean') state.settings.popupFamiliar = true;
           if(typeof state.settings.chatFlash !== 'boolean') state.settings.chatFlash = true;
-          if(!state.dungeonProgress || typeof state.dungeonProgress !== 'object') state.dungeonProgress = {};
+          if(state.dungeonProgress) delete state.dungeonProgress; // dungeons feature removed; shed legacy field
           if(!state.lockedItems || typeof state.lockedItems !== 'object') state.lockedItems = {};
           if(!Array.isArray(state.trackedSkills)) state.trackedSkills = [];
           state.trackedSkills = state.trackedSkills.filter(function(id){ return typeof id === 'string'; }).slice(0, TRACK_MAX); // single-select: keep only the first
@@ -8751,43 +8666,6 @@
     return html;
   }
 
-  function renderDungeonsSection(){
-    var lvl = combatLevelEquivalent(state);
-    var weaponStyle = getWeaponStyle(state.equippedMainhand);
-    var act = state.activity;
-    var html = '<div class="section-intro">A gauntlet of increasingly difficult enemies appears every 20 levels. Clear each stage in order to unlock the next -- the final stage of every dungeon is a Boss with far bigger rewards and a guaranteed equipment drop.</div>';
-    DUNGEONS.forEach(function(dungeon){
-      var unlocked = lvl >= dungeon.levelReq;
-      var progress = getDungeonProgress(dungeon.id);
-      html += '<h3>'+dungeon.icon+' '+dungeon.name+' <span class="empty-note" style="font-size:11px">(Req. Lv '+dungeon.levelReq+' &bull; '+(progress+1)+'/'+dungeon.stages.length+' cleared)</span></h3>';
-      if(!unlocked){
-        html += '<div class="lock-note">Locked until level '+dungeon.levelReq+'</div>';
-        return;
-      }
-      html += '<div class="card-grid">';
-      dungeon.stages.forEach(function(m){
-        var stageLocked = m.stageIndex > progress+1;
-        var isActive = act.type==='combat' && act.monsterId===m.id;
-        var matchup = weightedMatchupLabel(weaponStyle.attackTypes || {blunt:1}, m.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
-        html += '<div class="item-card'+(stageLocked?' locked':'')+(isActive?' active-item':'')+'">';
-        html += '<div class="item-top"><div class="item-icon">'+m.icon+'</div><div><div class="item-name">'+m.name+(m.isBoss?' &bull; <span style="color:var(--gold)">BOSS</span>':'')+'</div><div class="item-meta">'+m.hp+' HP &bull; '+m.attackSpeed+'s attack</div></div></div>';
-        html += '<div class="item-stats"><span>'+m.goldMin+'-'+m.goldMax+'g</span><span>'+m.atkMin+'-'+m.atkMax+' dmg</span><span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
-        html += '<div class="chance-line" style="font-size:11px">Dodge '+monsterDodge(m)+' &bull; '+(stageLocked?'':'Your hit chance '+Math.round(playerHitChance(m)*100)+'%')+'<br>Attack: '+formatTypeMix(m.attackTypes)+'<br>Armor: '+formatTypeMix(m.armorTypes)+'</div>';
-        html += '<div class="elem-line">'+elementBadge(m)+incomingElementNote(m)+'</div>';
-        if(m.isBoss) html += '<div class="chance-line" style="font-size:11px">Defeating this Boss guarantees an equipment drop plus bonus gold.</div>';
-        if(stageLocked){
-          html += '<div class="lock-note">Clear the previous stage first</div>';
-        } else if(isActive){
-          html += '<button class="action-btn stop" data-action="stop">Stop</button>';
-        } else {
-          html += '<button class="action-btn" data-action="fight" data-monster="'+m.id+'">Fight</button>';
-        }
-        html += '</div>';
-      });
-      html += '</div>';
-    });
-    return html;
-  }
   function activatePotion(id){
     if(!parsePotionId(id)) return;
     if(state.activePotion === id) return; // already active
@@ -8902,10 +8780,6 @@
     html += '<div class="section-intro">Combat Score '+lvl+' &mdash; choose a foe below. Manage your equipped weapon, offhand, relic, armor, and tools from the Character tab.</div>';
 
     var categoryMeta = MONSTER_CATEGORIES.filter(function(c){ return c.id===currentSub; })[0] || MONSTER_CATEGORIES[0];
-    if(categoryMeta.id === 'dungeons'){
-      html += renderDungeonsSection();
-      return html;
-    }
     var categoryMonsters = MONSTERS.filter(function(m){ return m.category===categoryMeta.id; });
     html += '<h3>'+categoryMeta.icon+' '+categoryMeta.label+'</h3>';
     html += '<div class="section-intro">'+categoryMeta.desc+'</div>';
