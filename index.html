@@ -1518,6 +1518,24 @@
   // potions -- a rare Foraging side-drop, roughly ordered low-to-high tier by potency.
   var POWDER_NAMES = ['Ragwort','Foxglove','Larkspur','Bryony','Hellebore','Baneberry','Pokeweed','Corn Cockle','Bittersweet Nightshade','Mandrake','Oleander','Datura','Black Henbane','Autumn Crocus','Wolfsbane','Deadly Nightshade','Hemlock','Death Camas','Angel\'s Trumpet','Castor Bean','Strychnine Seed'];
 
+  // ---- Beekeeping (gathering) + Brewing / Confectionery (crafting): the "hive" vertical slice ----
+  // Beekeeping gathers a 21-tier honey/hive ladder culminating in Royal Jelly and Ambrosia. Those
+  // honeys sweeten Brewing's buff-drinks (Grain + Honey + Botany spices -> premium XP Brews, which
+  // finally give Botany's spices a consumer) and Confectionery's quick-eat heal snacks (Honey +
+  // Foraged berries -> candies/jams).
+  var HONEY_NAMES = ['Wildflower Honey','Clover Honey','Acacia Honey','Orange Blossom Honey','Lavender Honey','Buckwheat Honey','Heather Honey','Sourwood Honey','Tupelo Honey','Chestnut Honey','Manuka Honey','Sidr Honey','Leatherwood Honey','Fireweed Honey','Ulmo Honey','Rewarewa Honey','Beeswax Comb','Royal Comb','Propolis','Royal Jelly','Ambrosia'];
+  // Light gold -> deep amber ramp across the 21 tiers (interpolated so no hand-typed hex drift).
+  var HONEY_COLORS = (function(){
+    function lerp(a,b,t){ return Math.round(a+(b-a)*t); }
+    function hex(n){ var s=n.toString(16); return s.length<2?'0'+s:s; }
+    var lo=[0xf6,0xd6,0x5a], hi=[0x6e,0x38,0x0c], out=[];
+    for(var i=0;i<TIER_COUNT;i++){ var t=i/(TIER_COUNT-1); out.push('#'+hex(lerp(lo[0],hi[0],t))+hex(lerp(lo[1],hi[1],t))+hex(lerp(lo[2],hi[2],t))); }
+    return out;
+  })();
+  var HONEY_ICONS = HONEY_COLORS.map(function(c){ return svgIcon('potion', c); });
+  var BREW_NAMES = ['Small Ale','Barley Ale','Amber Ale','Pale Cider','Spiced Mead','Honey Mead','Metheglin','Braggot','Stout','Porter','Bock','Barleywine','Sack Mead','Cyser','Melomel','Hydromel','Great Mead','Reserve Mead','Royal Braggot','Ambrosial Brew','Nectar of the Gods'];
+  var CONFECTION_NAMES = ['Honey Drop','Berry Jam','Fruit Gummy','Honey Taffy','Berry Nougat','Marmalade','Honeycomb Candy','Fruit Pastille','Berry Marzipan','Honey Praline','Candied Berries','Fruit Lozenge','Honey Brittle','Berry Truffle','Nectar Bonbon','Royal Fudge','Ambrosia Chew','Honey Comfit','Jellied Nectar','Royal Confection','Ambrosial Delight'];
+
   // ---- Mining: 14 ore tiers + 7 stone tiers interleaved across the 21-tier ladder ----
   // Stones sit at tier positions 2,5,8,11,14,17,20 (1-indexed) -- everything else is ore.
   var MINING_STONE_INDICES = [1,4,7,10,13,16,19];
@@ -1713,6 +1731,22 @@
             hideId:'butchering_t'+i,
             meatPhysique:'handStrength',
             hidePhysique:'fineMotor'
+          });
+        }
+        return list;
+      })() },
+    beekeeping: { label:'Beekeeping', icon:svgIcon('wing','#e0a92e'),
+      items: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({
+            id:'beekeeping_t'+i,
+            name: HONEY_NAMES[i],
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(10,i),
+            time: tierTime(5,0.3,i),
+            sell: tierSell(3,i),
+            icon: HONEY_ICONS[i]
           });
         }
         return list;
@@ -2039,6 +2073,56 @@
         }
         return list;
       })() },
+    brewing: { label:'Brewing', icon:svgIcon('bottle','#c88a2a'),
+      // Premium buff-drinks: Grain + Honey + a Botany spice per tier. These are Teas mechanically
+      // (drunk from the Drink section, boosting all XP) but a tier above Mixology's berry Teas --
+      // a slightly stronger boost and a much longer pour -- and, crucially, the first recipe to
+      // consume Botany's spices, closing that dead-end. Grain caps at 20 tiers, so it's clamped.
+      recipes: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          var inputs = {};
+          inputs['grain_t'+Math.min(i, GRAIN_TIER_COUNT-1)] = 2;
+          inputs['beekeeping_t'+i] = 2;
+          inputs['botany_t'+i] = 1;
+          list.push({
+            id:'brewing_t'+i,
+            name: BREW_NAMES[i],
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(14,i),
+            time: tierTime(7,0.3,i),
+            sell: tierSell(18,i),
+            icon: svgIcon('bottle',HONEY_COLORS[i]),
+            inputs: inputs,
+            xpBoost: tierCappedBonus(0.12,0.02,0.6,i),
+            teaDurationMs: 5*(i+1)*60*1000
+          });
+        }
+        return list;
+      })() },
+    confectionery: { label:'Confectionery', icon:svgIcon('gem','#e06aa0'),
+      // Quick-eat heal snacks from Honey + a matching-tier Foraged berry. Like Baking's pies they
+      // heal but are NOT auto-eaten in combat (manual-eat only), so they're a portable emergency snack.
+      recipes: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          var inputs = {};
+          inputs['beekeeping_t'+i] = 1;
+          inputs['foraging_t'+i] = 2;
+          list.push({
+            id:'confectionery_t'+i,
+            name: CONFECTION_NAMES[i],
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(14,i),
+            time: tierTime(7,0.3,i),
+            sell: tierSell(12,i),
+            icon: svgIcon('gem',FORAGING_COLORS[i]),
+            inputs: inputs,
+            heal: 20*(i+1)
+          });
+        }
+        return list;
+      })() },
     archaeology: { label:'Archaeology', icon:svgIcon('urn','#9a8560'),
       recipes: (function(){
         var list = [];
@@ -2136,7 +2220,7 @@
   })();
   var GATHER_TOOL_NAMES = {
     digging:'Shovel', forestry:'Hatchet', mining:'Pickaxe', fishing:'Fishing Rod',
-    herbalism:'Sickle', botany:'Shears', foraging:'Basket', butchering:'Cleaver'
+    herbalism:'Sickle', botany:'Shears', foraging:'Basket', butchering:'Cleaver', beekeeping:'Bee Smoker'
   };
   var GATHER_TOOL_SPEED = [];
   for(var _gi=0; _gi<TIER_COUNT; _gi++){ GATHER_TOOL_SPEED.push(tierCappedBonus(0.02, 0.013, 0.30, _gi)); }
@@ -2180,7 +2264,8 @@
     stonecutting:'Chisel', leatherworking:'Awl', masonry:'Trowel', paving:'Tamper',
     mixology:'Shaker', archaeology:'Excavation Brush', weaponsmithing:'Smithing Hammer',
     armorsmithing:"Armorer's Hammer", shieldsmithing:"Shieldwright's Hammer", blacksmithing:'Forge Tongs',
-    jewelrycrafting:"Jeweler's Loupe", runesmithing:'Rune Chisel', arcanism:'Arcane Focus'
+    jewelrycrafting:"Jeweler's Loupe", runesmithing:'Rune Chisel', arcanism:'Arcane Focus',
+    brewing:'Brewing Paddle', confectionery:'Candy Thermometer'
   };
   var CRAFT_TOOL_SPEED = [];
   var CRAFT_TOOL_SUCCESS = [];
@@ -2888,7 +2973,8 @@
     herbalism:  [['handStrength',2],['zen',1],['mentality',1],['curiosity',1]],
     botany:     [['handStrength',2],['zen',1],['mentality',1],['stamina',1],['curiosity',1]],
     foraging:   [['handStrength',1],['zen',1],['mentality',1],['criticalThinking',1],['stamina',1],['curiosity',1]],
-    butchering: [['bodyStrength',2],['handStrength',1],['curiosity',1]]
+    butchering: [['bodyStrength',2],['handStrength',1],['curiosity',1]],
+    beekeeping: [['fineMotor',1],['handStrength',1],['zen',1],['mentality',1],['curiosity',1]]
   };
   var CRAFT_PHYSIQUE = {
     carpentry:      [['grossMotor',2],['sleightOfHand',1],['logic',1]],
@@ -2912,7 +2998,9 @@
     masonry:        [['grossMotor',2],['bodyControl',1],['sleightOfHand',1],['logic',1]],
     mixology:       [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]],
     archaeology:    [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]],
-    jewelrycrafting:[['fineMotor',2],['sleightOfHand',1],['logic',1]]
+    jewelrycrafting:[['fineMotor',2],['sleightOfHand',1],['logic',1]],
+    brewing:        [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]],
+    confectionery:  [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]]
   };;
   // Physique XP from a gather/craft task scales with the item's tier: each associated physique
   // gains (tier+1) XP -- 1 at t0 up to 21 at t20 (replaces the old fixed per-physique weights).
@@ -2960,6 +3048,10 @@
     if(block.recipes) block.recipes.forEach(function(r){ ALL_CRAFT_RECIPES[r.id] = r; });
   });
   ALL_CRAFT_RECIPES[CRAFTING_SKILLS.fletching.shaftRecipe.id] = CRAFTING_SKILLS.fletching.shaftRecipe;
+  // Every drinkable XP buff-drink, regardless of which skill brews it (Mixology Teas + Brewing Brews).
+  var TEA_DRINK_RECIPES = Object.keys(ALL_CRAFT_RECIPES)
+    .map(function(k){ return ALL_CRAFT_RECIPES[k]; })
+    .filter(function(r){ return r && r.teaDurationMs; });
   var ALL_DROP_ITEMS = {};
   CORPSE_ITEMS.forEach(function(it){ ALL_DROP_ITEMS[it.id] = it; });
   BROKEN_RELIC_ITEMS.forEach(function(it){ ALL_DROP_ITEMS[it.id] = it; });
@@ -3400,6 +3492,7 @@
     botany:     { name:'Thorn', icon:svgIcon('spice','#3a7a3a'), spells:[slowSpell('Vine Grasp',0.35,10), healSpell('Photosynthesis',15), armorSpell('Bark Skin',1.5,6), weakenSpell('Pollen Cloud',0.25,8)] },
     foraging:   { name:'Berry', icon:svgIcon('berry','#9a2a4a'), spells:[slowSpell('Bramble Snare',0.35,10), healSpell('Wildflower Heal',15), healSpell('Wildflower Heal',15), armorSpell('Camouflage',1.5,6)] },
     butchering: { name:'Fang',  icon:svgIcon('meat','#7a2a2a'), spells:[weakenSpell('Rend',0.3,8), dmgSpell('Howl',1.25,8), healSpell('Feast',15), healSpell('Feast',15)] },
+    beekeeping: { name:'Buzz',  icon:svgIcon('wing','#e0a92e'), spells:[poisonSpell('Swarm Sting',5,6), healSpell('Royal Jelly',18), armorSpell('Waxen Ward',1.5,6), weakenSpell('Smoke Cloud',0.25,8)] },
     // -- Crafting --
     carpentry:      { name:'Timber', icon:svgIcon('plank','#8a6a42'), spells:[armorSpell('Splinter Shield',1.6,6), slowSpell('Root Snare',0.35,10), healSpell('Sap Heal',15), healSpell('Sap Heal',15)] },
     metallurgy:     { name:'Cinder', icon:svgIcon('ingot','#c85a2a'), spells:[dmgSpell('Molten Strike',1.3,8), weakenSpell('Slag',0.25,8), healSpell('Forge Heal',15), healSpell('Forge Heal',15)] },
@@ -3416,6 +3509,8 @@
     masonry:        { name:'Bastion',icon:svgIcon('wallseg','#8d6f66'), spells:[armorSpell('Fortify',1.7,6), weakenSpell('Crumble',0.25,8), healSpell('Mend',15), healSpell('Mend',15)] },
     paving:         { name:'Cobble', icon:svgIcon('tile','#8d6f66'), spells:[armorSpell('Steady Ground',1.5,6), slowSpell('Stumble',0.3,10), healSpell('Mend',15), healSpell('Mend',15)] },
     mixology:       { name:'Brew',   icon:svgIcon('tea','#7a9e4a'), spells:[weakenSpell('Intoxicate',0.3,8), healSpell('Tonic',18), healSpell('Tonic',18), dmgSpell('Dutch Courage',1.25,8)] },
+    brewing:        { name:'Cask',   icon:svgIcon('bottle','#c88a2a'), spells:[dmgSpell('Liquid Courage',1.3,8), weakenSpell('Stupor',0.3,8), healSpell('Mead Draught',18), healSpell('Mead Draught',18)] },
+    confectionery:  { name:'Sugar',  icon:svgIcon('gem','#e06aa0'), spells:[healSpell('Sugar Rush',18), healSpell('Sugar Rush',18), dmgSpell('Sweet Tooth',1.25,8), armorSpell('Candy Shell',1.5,6)] },
     archaeology:    { name:'Relic',  icon:svgIcon('urn','#9a8560'), spells:[armorSpell('Ancient Ward',1.6,6), weakenSpell('Curse',0.3,8), healSpell('Restore',15), healSpell('Restore',15)] },
     blacksmithing:  { name:'Anvil',  icon:svgIcon('hammer','#6a6a70'), spells:[dmgSpell('Hammer Down',1.3,8), armorSpell('Tempered Skin',1.5,6), healSpell('Mend',15), healSpell('Mend',15)] },
     weaponsmithing: { name:'Edge',   icon:svgIcon('sword','#9aa0a8'), spells:[dmgSpell('Keen Edge',1.3,8), armorSpell('Parry Stance',1.5,6), healSpell('Mend',15), healSpell('Mend',15)] },
@@ -3476,6 +3571,7 @@
     botany:     [ poisonSpell('Creeping Rot',5,6), slowSpell('Vine Grasp',0.35,10), buffSpell('Thornmail','dmgPierce',0.3,8), healSpell('Photosynthesis',15) ],
     foraging:   [ healSpell('Wildflower Heal',15), buffSpell('Camouflage','dodge',0.14,8), hitSpell('Bramble Rake','slashing',13), siphonSpell('Leech Berry',11) ],
     butchering: [ hitSpell('Rend','slashing',15), buffSpell('Bloodlust','dmgSlash',0.32,8), siphonSpell('Feast',13), buffSpell("Predator's Eye",'critChance',0.1,8) ],
+    beekeeping: [ poisonSpell('Swarm Sting',5,6), healSpell('Royal Jelly',18), armorSpell('Waxen Ward',1.5,6), weakenSpell('Smoke Cloud',0.3,8) ],
     // -- Crafting --
     carpentry:      [ hitSpell('Splinter Shot','piercing',13), armorSpell('Splinter Shield',1.6,6), buffSpell('Bark Guard','resistPierce',0.3,8), regenSpell('Sap Flow',4,6) ],
     metallurgy:     [ hitSpell('Molten Strike','void',10), buffSpell('Forge Fire','firebomb',0.45,10), weakenSpell('Slag',0.28,8), buffSpell('Heavy Hand','dmgBlunt',0.3,8) ],
@@ -3492,6 +3588,8 @@
     masonry:        [ armorSpell('Fortify',1.7,6), buffSpell('Shield Wall','block',0.18,8), buffSpell('Mortared','resistBlunt',0.3,8), weakenSpell('Crumble',0.26,8) ],
     paving:         [ slowSpell('Stumble',0.35,10), armorSpell('Steady Ground',1.5,6), buffSpell('Paved Guard','resistSlash',0.28,8), hitSpell('Cobblestone','blunt',13) ],
     mixology:       [ healSpell('Tonic',18), regenSpell('Slow Brew',4,7), buffSpell('Fermented Venom','potionPoison',0.45,10), buffSpell('Dutch Courage','dmgBlunt',0.3,8) ],
+    brewing:        [ hitSpell('Barrel Bash','blunt',14), healSpell('Mead Draught',18), buffSpell('Liquid Courage','dmgBlunt',0.3,8), weakenSpell('Stupor',0.3,8) ],
+    confectionery:  [ healSpell('Sugar Rush',18), regenSpell('Sweet Tooth',4,7), buffSpell('Candy Shell','block',0.15,8), buffSpell('Sugar High','critChance',0.12,8) ],
     archaeology:    [ armorSpell('Ancient Ward',1.6,6), weakenSpell('Curse of Ages',0.3,8), hitSpell('Relic Blast','void',10), healSpell('Restore',15) ],
     blacksmithing:  [ hitSpell('Hammer Down','blunt',15), buffSpell('Heavy Blows','dmgBlunt',0.32,8), armorSpell('Tempered Skin',1.5,6), buffSpell('Anvil Might','critChance',0.11,8) ],
     weaponsmithing: [ hitSpell('Keen Edge','slashing',15), buffSpell('Whetstone','dmgSlash',0.32,8), buffSpell('Duelist','critChance',0.11,8), buffSpell('Quick Draw','haste',0.16,8) ],
@@ -3543,10 +3641,10 @@
   // enemies weak to it (water>fire>earth>water; light<->dark). Non-damaging spells ignore it.
   var FAMILIAR_ELEMENT = {
     // Gathering
-    digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark',
+    digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light',
     // Crafting
     carpentry:'earth', metallurgy:'fire', roasting:'fire', cooking:'water', alchemy:'water', bowyer:'earth', fletching:'earth', baking:'fire',
-    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water',
+    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light',
     archaeology:'dark', blacksmithing:'fire', weaponsmithing:'fire', armorsmithing:'earth', shieldsmithing:'earth', runesmithing:'light', arcanism:'light',
     // Farming
     farming:'earth',
@@ -3590,6 +3688,7 @@
     mining:{s:'ore',c:'#8a8a8a',ear:'horn'}, fishing:{s:'fish',c:'#5a8ab0',ear:'fin'},
     herbalism:{s:'herb',c:'#5a9a5a',ear:'leaf'}, botany:{s:'spice',c:'#3a7a3a',ear:'leaf'},
     foraging:{s:'berry',c:'#b23a5a',ear:'cat'}, butchering:{s:'meat',c:'#9a3a3a',ear:'horn'},
+    beekeeping:{s:'wing',c:'#e0a92e',ear:'antenna'}, brewing:{s:'bottle',c:'#c88a2a',ear:'round'}, confectionery:{s:'gem',c:'#e06aa0',ear:'round'},
     carpentry:{s:'plank',c:'#a07a44',ear:'cat'}, metallurgy:{s:'ingot',c:'#c85a2a',ear:'horn'},
     roasting:{s:'skewer',c:'#d1863a',ear:'cat'}, cooking:{s:'meal',c:'#5a9a4a',ear:'round'},
     alchemy:{s:'potion',c:'#8a5aaa',ear:'antenna'}, bowyer:{s:'bow',c:'#a87a4a',ear:'cat'},
@@ -6097,8 +6196,8 @@
     var offhandRarities = {};
     OFFHAND_STYLE_IDS.forEach(function(id){ offhandRarities[id] = 'normal'; });
     var xpObj = {
-      digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0,
-      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0,
+      digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0,
+      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0,
       stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, arcanism:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
       shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0, wands:0, staves:0, scepters:0,
@@ -7177,7 +7276,7 @@
   // ---- Teas (Mixology): manually-drunk consumables that temporarily boost all skill
   // XP gain. Unlike food, they don't stack -- drinking a new tea replaces the current
   // buff outright, resetting both its strength and remaining time.
-  function ownedTeas(){ return CRAFTING_SKILLS.mixology.recipes.filter(function(r){ return (state.inventory[r.id]||0) > 0; }); }
+  function ownedTeas(){ return TEA_DRINK_RECIPES.filter(function(r){ return (state.inventory[r.id]||0) > 0; }); }
   // Best owned tea = highest XP boost, tie-broken by longest duration.
   function bestAvailableTea(){
     var teas = ownedTeas();
@@ -8048,6 +8147,7 @@
     html += craftStatsLine(skillKey);
     html += renderRecipeGrid(skillKey, skill.recipes);
     if(skillKey==='carpentry') html += renderWorkshopForge();
+    if(skillKey==='brewing') html += renderTeaDrinkSection(); // Brews are drinkable like Teas
     return html;
   }
   function renderWorkshopForge(){
@@ -8125,17 +8225,17 @@
   }
 
   function renderTeaDrinkSection(){
-    var html = '<h3>Drink a Tea</h3>';
+    var html = '<h3>Drink a Tea or Brew</h3>';
     if(isTeaActive()){
       var remainingMs = state.activeTea.expiresAt - Date.now();
       html += '<div class="physique-bonus">Active: <b>'+state.activeTea.icon+' '+state.activeTea.name+'</b> &nbsp;|&nbsp; XP Boost: <b>+'+Math.round(state.activeTea.xpBoost*100)+'%</b> &nbsp;|&nbsp; Time Left: <b id="teaTabTimer">'+formatDuration(remainingMs)+'</b></div>';
-      html += '<div class="section-intro">Drinking another Tea replaces this buff outright -- its strength and timer don\'t stack.</div>';
+      html += '<div class="section-intro">Drinking another Tea or Brew replaces this buff outright -- its strength and timer don\'t stack.</div>';
     } else {
-      html += '<div class="section-intro">No Tea active. Drink one below to temporarily boost all skill XP gain.</div>';
+      html += '<div class="section-intro">No buff active. Drink a Tea or Brew below to temporarily boost all skill XP gain.</div>';
     }
-    var owned = CRAFTING_SKILLS.mixology.recipes.filter(function(r){ return (state.inventory[r.id]||0) > 0; });
+    var owned = ownedTeas();
     if(owned.length===0){
-      html += '<div class="empty-note">No Teas in stock yet &mdash; brew some above.</div>';
+      html += '<div class="empty-note">No Teas or Brews in stock yet &mdash; craft some above.</div>';
       return html;
     }
     html += '<div class="card-grid">';
@@ -11123,6 +11223,8 @@
     masonry:{roof:'flat', accent:'battlement', hw:0.66, hd:0.62},
     paving:{roof:'flat', accent:'tile', hw:0.72, hd:0.6, wallH:0.6},
     mixology:{roof:'cone', accent:'bottle'},
+    brewing:{roof:'cone', accent:'bottle'},
+    confectionery:{roof:'dome', accent:'gem'},
     archaeology:{roof:'cone', accent:'urn', wallH:0.7},
     blacksmithing:{roof:'hip', chimney:true, accent:'anvil'},
     weaponsmithing:{roof:'peak', chimney:true, accent:'blade'},
@@ -14384,6 +14486,7 @@
     botany: 'Gather culinary herbs and spices, from Basil up to Truffle.',
     foraging: 'Forage wild berries, with a chance for bonus Powder and Muddy Artifacts.',
     butchering: 'Hunt wildlife directly for Hide, from Rabbit up to Apex Titan-Beast.',
+    beekeeping: 'Tend hives for Honey, from Wildflower up to Royal Jelly and Ambrosia -- the sweetener for Brewing and Confectionery.',
     carpentry: 'Cut Logs into Planks.',
     metallurgy: 'Smelt Ore into Bars and Alloys, plus a side-recipe for Glass Bottles.',
     roasting: 'Cook raw Fish and Meat into a quick, portable snack.',
@@ -14399,6 +14502,8 @@
     masonry: 'Build Curbs, Fences, and Walls from Stonecutting\'s Bricks and Pillars -- usable on the Estate.',
     paving: 'Cut Stonecutting\'s Bricks into decorative floor Tiles -- usable on the Estate.',
     mixology: 'Brew Foraged Berries and Herbs into Teas that boost XP gain.',
+    brewing: 'Ferment Grain, Honey, and Botany spices into Brews -- premium buff-drinks that boost XP for longer than Mixology\'s Teas.',
+    confectionery: 'Cook Honey and Foraged berries into candies and jams -- quick-eat heal snacks.',
     archaeology: 'Excavate Muddy Artifacts into Relics.',
     blacksmithing: 'Forge Tools for every Gathering and Crafting skill.',
     weaponsmithing: 'Forge melee weapons -- swords, axes, and hammers.',
@@ -16517,6 +16622,7 @@
       craftBodyRarity:craftBodyRarity, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix,
       potionEffect:potionEffect, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
+      ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       playerAccuracy:playerAccuracy, monsterDodge:monsterDodge, hitChanceVs:hitChanceVs, playerHitChance:playerHitChance,
       familiarAccuracy:familiarAccuracy, familiarHitChance:familiarHitChance, accuracyPhysiques:accuracyPhysiques,

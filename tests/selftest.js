@@ -533,6 +533,36 @@
     ok(!FF.guildIsFull(undefined), 'undefined count treated as not full');
   });
 
+  // ---- Beekeeping / Brewing / Confectionery vertical slice ------------------------------------
+  suite('skills: beekeeping / brewing / confectionery', function(){
+    // Registered as real skills in the right groups.
+    ok(FF.GATHERING_SKILLS.beekeeping, 'beekeeping is a gathering skill');
+    ok(FF.CRAFTING_SKILLS.brewing, 'brewing is a crafting skill');
+    ok(FF.CRAFTING_SKILLS.confectionery, 'confectionery is a crafting skill');
+    // Full 21-tier ladders.
+    eq(FF.GATHERING_SKILLS.beekeeping.items.length, FF.TIER_COUNT, 'beekeeping has 21 honey tiers');
+    eq(FF.CRAFTING_SKILLS.brewing.recipes.length, FF.TIER_COUNT, 'brewing has 21 brew tiers');
+    eq(FF.CRAFTING_SKILLS.confectionery.recipes.length, FF.TIER_COUNT, 'confectionery has 21 tiers');
+    // Gather items are registered and named.
+    ok(FF.ALL_GATHER_ITEMS['beekeeping_t0'] && FF.ALL_GATHER_ITEMS['beekeeping_t20'], 'honey items registered t0..t20');
+    eq(FF.ALL_GATHER_ITEMS['beekeeping_t19'].name, 'Royal Jelly', 'top honey tiers are Royal Jelly/Ambrosia');
+    // Brewing = drinkable buff (Tea-like) and finally consumes Botany spices + Honey + Grain.
+    var brew5 = FF.ALL_CRAFT_RECIPES['brewing_t5'];
+    ok(brew5.teaDurationMs > 0 && brew5.xpBoost > 0, 'brews are XP buff-drinks');
+    ok(brew5.inputs['beekeeping_t5'] && brew5.inputs['botany_t5'] && brew5.inputs['grain_t5'], 'brew uses honey + botany spice + grain');
+    ok(FF.TEA_DRINK_RECIPES.some(function(r){ return r.id === 'brewing_t5'; }), 'brews join the drinkable Tea/Brew pool');
+    ok(FF.TEA_DRINK_RECIPES.some(function(r){ return r.id === 'mixology_t5'; }), 'mixology teas still in the pool');
+    // Grain clamps at its 20-tier ceiling for the top brew.
+    ok(FF.ALL_CRAFT_RECIPES['brewing_t20'].inputs['grain_t19'], 'top brew clamps grain to t19');
+    // Confectionery = manual-eat heal snack (heal, but not auto-eaten in combat).
+    var conf5 = FF.ALL_CRAFT_RECIPES['confectionery_t5'];
+    ok(conf5.heal > 0, 'confections heal');
+    ok(!conf5.autoEatFood, 'confections are manual-eat (not auto-eaten)');
+    ok(conf5.inputs['beekeeping_t5'] && conf5.inputs['foraging_t5'], 'confection uses honey + foraged berry');
+    // Physique training wired for all three.
+    ok(FF.GATHER_PHYSIQUE.beekeeping && FF.CRAFT_PHYSIQUE.brewing && FF.CRAFT_PHYSIQUE.confectionery, 'physique tables include the new skills');
+  });
+
   // ---- Inventory grid: rarity parsing for cell accents / detail tag ----------------------
   suite('inventory rarity', function(){
     eq(FF.itemRarityId('bodyarmor_chain_chest_t20_normal'), 'normal', 'normal suffix');
