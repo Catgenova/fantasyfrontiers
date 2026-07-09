@@ -763,6 +763,46 @@
     ok(seff(50) > seff(10), 'staves efficiency rises with level');
   });
 
+  // ---- Scepter (1h hybrid: half blunt / half light, runesmithing) ----------------------
+  suite('scepter', function(){
+    ok(FF.isScepter('scepter'), 'the scepter is a scepter');
+    ok(!FF.isScepter('wandFire'), 'a wand is not a scepter');
+    ok(!FF.isScepter('staff'), 'a staff is not a scepter');
+    eq(FF.SCEPTER_TYPE.hand, '1h', 'scepter is one-handed');
+    eq(FF.SCEPTER_TYPE.skillId, 'runesmithing', 'scepter is crafted by runesmithing');
+    eq(FF.SCEPTER_TYPE.element, 'light', 'scepter is a light weapon');
+    eq(FF.SCEPTER_TYPE.damageType, 'blunt', 'scepter physical half is blunt');
+    eq(FF.SCEPTERS_SKILL_ID, 'scepters', 'scepter proficiency id');
+
+    // Recipe: 4 ingots + 8 light glyphs (named after the metal).
+    var d = FF.getStackableWeaponTierData('scepter', 7);
+    eq(d.inputs['metallurgy_t7'], 4, 'scepter needs 4 ingots of its tier');
+    eq(d.inputs['glyph_light'], 8, 'scepter needs 8 light glyphs');
+    ok(d.inputs['forestry_t7'] === undefined, 'scepter uses no logs');
+    ok(d.inputs['stweapon_scepter_t6_normal'] === undefined, 'no upgrade chain');
+    ok(d.name.indexOf(FF.SCEPTER_TYPE.name) !== -1, 'scepter named after its metal tier');
+
+    // Rarity scales damage 2x / 4x / 8x (same as wands, not the standard rarity mult).
+    var n = FF.STACKABLE_WEAPON_ITEMS['stweapon_scepter_t10_normal'];
+    var f = FF.STACKABLE_WEAPON_ITEMS['stweapon_scepter_t10_fantastic'];
+    ok(n && f, 'scepter items exist');
+    eq(f.dmgMax, n.dmgMax*8, 'fantastic scepter deals 8x the normal damage');
+    eq(FF.STACKABLE_WEAPON_ITEMS['stweapon_scepter_t10_rare'].dmgMax, n.dmgMax*2, 'rare = 2x');
+    ok(n.dmgMax > 0, 'scepter deals damage (unlike a staff)');
+
+    // Scepters share one 'scepters' proficiency; the scepter style is not a per-style weapon id.
+    ok(FF.WEAPON_STYLE_IDS.indexOf('scepter') === -1, 'scepter is not a per-style weapon id');
+    ok(FF.WEAPON_STYLE_IDS.indexOf('scepters') === -1, 'scepters proficiency is not a per-style weapon id');
+
+    // Hybrid advantage: half blunt-vs-armor, half light-vs-element. Against a dark enemy
+    // (weak to light), the light half gets the +20% element bonus.
+    var armor = {blunt:1/3, slashing:1/3, piercing:1/3};
+    var wAdv = FF.weightedAdvantage({blunt:1}, armor);
+    var expDark = 0.5*wAdv + 0.5*FF.elementAdvantage('light', 'dark');
+    ok(FF.elementAdvantage('light', 'dark') > 1, 'light beats dark');
+    ok(expDark > (0.5*wAdv + 0.5*1) - 1e-9, 'light half boosted vs a dark enemy');
+  });
+
   // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------
   suite('warding proficiency', function(){
     eq(FF.WARDING_SKILL_ID, 'warding', 'warding skill id');

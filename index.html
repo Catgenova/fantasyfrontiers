@@ -2461,12 +2461,19 @@
   var STAFF_TYPE = { id:'staff', name:'Staff', icon:svgIcon('dowel','#8a6a42'), damageType:'blunt', attackTypes:{blunt:1},
     hand:'2h', weaponClass:'Staff', skillId:'arcanism', matPrefix:'forestry', tierCount:TIER_COUNT, attackSpeed:0, staff:true, noAttack:true };
   function isStaff(typeId){ return typeId==='staff'; }
-  var STACKABLE_WEAPON_TYPES = MELEE_WEAPON_TYPES.concat(BOW_WEAPON_TYPES).concat(WAND_TYPES).concat([STAFF_TYPE]);
+  // ===== Scepter (Runesmithing one-handed hybrid weapon) =====
+  // A Scepter is a 1h weapon crafted by Runesmithing (named after its metal). Half of its damage is
+  // blunt (physical, mitigated by armour) and half is light (elemental, +20% vs enemies weak to light).
+  // Rarity scales its damage 2x/4x/8x, and it uses the 'scepters' weapon proficiency (+1% -> +100%).
+  var SCEPTER_TYPE = { id:'scepter', name:'Scepter', icon:svgIcon('starburst','#c9a227'), damageType:'blunt', attackTypes:{blunt:1},
+    hand:'1h', weaponClass:'Scepter', skillId:'runesmithing', matPrefix:'metallurgy', tierCount:TIER_COUNT, attackSpeed:4, scepter:true, element:'light' };
+  function isScepter(typeId){ return typeId==='scepter'; }
+  var STACKABLE_WEAPON_TYPES = MELEE_WEAPON_TYPES.concat(BOW_WEAPON_TYPES).concat(WAND_TYPES).concat([STAFF_TYPE, SCEPTER_TYPE]);
   var STACKABLE_WEAPON_TYPE_MAP = {};
   STACKABLE_WEAPON_TYPES.forEach(function(w){ STACKABLE_WEAPON_TYPE_MAP[w.id] = w; });
   function isStackableWeapon(typeId){ return !!STACKABLE_WEAPON_TYPE_MAP[typeId]; }
 
-  var WEAPON_STYLES = STACKABLE_WEAPON_TYPES.map(function(w){ return {id:w.id, name:w.name, icon:w.icon, damageType:w.damageType, attackTypes:w.attackTypes, hand:w.hand, stackable:true, attackSpeed:w.attackSpeed, wand:w.wand||false, element:w.element||null, staff:w.staff||false, noAttack:w.noAttack||false}; });
+  var WEAPON_STYLES = STACKABLE_WEAPON_TYPES.map(function(w){ return {id:w.id, name:w.name, icon:w.icon, damageType:w.damageType, attackTypes:w.attackTypes, hand:w.hand, stackable:true, attackSpeed:w.attackSpeed, wand:w.wand||false, element:w.element||null, staff:w.staff||false, noAttack:w.noAttack||false, scepter:w.scepter||false}; });
   // Offhand options depend on the mainhand's handedness:
   // 1h weapons can pair with a shield, bows pair with a quiver, 2h weapons leave no offhand free.
   var OFFHAND_STYLES = [
@@ -2499,11 +2506,12 @@
   var WARD_TYPE_MAP = {};
   WARD_TYPES.forEach(function(w){ WARD_TYPE_MAP[w.id] = w; });
   function isWard(typeId){ return !!WARD_TYPE_MAP[typeId]; }
-  // Wands and the Staff are excluded from per-style weapon proficiencies: wands share the 'wands'
-  // proficiency; the staff uses the 'staves' proficiency (familiar efficiency).
-  var WEAPON_STYLE_IDS = WEAPON_STYLES.filter(function(w){ return !w.wand && !w.staff; }).map(function(w){ return w.id; });
-  var WANDS_SKILL_ID = 'wands';  // shared weapon proficiency for every Wand, trained by wand damage dealt
-  var STAVES_SKILL_ID = 'staves'; // staff proficiency: familiar efficiency, trained by familiar damage
+  // Wands, the Staff, and the Scepter are excluded from per-style weapon proficiencies: wands share
+  // 'wands', the staff uses 'staves' (familiar efficiency), the scepter uses 'scepters'.
+  var WEAPON_STYLE_IDS = WEAPON_STYLES.filter(function(w){ return !w.wand && !w.staff && !w.scepter; }).map(function(w){ return w.id; });
+  var WANDS_SKILL_ID = 'wands';    // shared weapon proficiency for every Wand, trained by wand damage dealt
+  var STAVES_SKILL_ID = 'staves';  // staff proficiency: familiar efficiency, trained by familiar damage
+  var SCEPTERS_SKILL_ID = 'scepters'; // scepter proficiency: +1% -> +100% scepter damage, trained by scepter damage
   // Wards are excluded from the per-style proficiency list: all wards share one 'warding' proficiency.
   var OFFHAND_STYLE_IDS = OFFHAND_STYLES.filter(function(s){ return !s.ward; }).map(function(s){ return s.id; });
   var WARDING_SKILL_ID = 'warding'; // shared offhand proficiency for every Ward, trained by reflected damage
@@ -2981,7 +2989,7 @@
   var CRAFTING_TAB_SKILL_IDS = CRAFT_SKILL_IDS.filter(function(id){
     return BUILDING_SKILL_IDS.indexOf(id)===-1 && OUTFITTING_SKILL_IDS.indexOf(id)===-1;
   });
-  var ALL_MAIN_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['fiberharvesting','grainharvesting','herbharvesting']).concat(WEAPON_STYLE_IDS).concat([WANDS_SKILL_ID, STAVES_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS).concat(['prayer','sacrifice','devotion','blessing','miracle']);
+  var ALL_MAIN_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['fiberharvesting','grainharvesting','herbharvesting']).concat(WEAPON_STYLE_IDS).concat([WANDS_SKILL_ID, STAVES_SKILL_ID, SCEPTERS_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS).concat(['prayer','sacrifice','devotion','blessing','miracle']);
   var FAITH_SKILL_IDS = ['prayer','sacrifice','devotion','blessing','miracle'];
 
   // ================= FAMILIARS =================
@@ -3488,7 +3496,7 @@
   // means more total access, on top of each piece's own individual level.
   function combatLevelEquivalent(state){
     var total = 0;
-    if(state.equippedMainhand) total += getLevel(state.xp[isWandWeapon(state.equippedMainhand) ? WANDS_SKILL_ID : (isStaff(state.equippedMainhand) ? STAVES_SKILL_ID : state.equippedMainhand)]||0);
+    if(state.equippedMainhand) total += getLevel(state.xp[isWandWeapon(state.equippedMainhand) ? WANDS_SKILL_ID : (isStaff(state.equippedMainhand) ? STAVES_SKILL_ID : (isScepter(state.equippedMainhand) ? SCEPTERS_SKILL_ID : state.equippedMainhand))]||0);
     if(state.equippedOffhand) total += getLevel(state.xp[isWard(state.equippedOffhand) ? WARDING_SKILL_ID : state.equippedOffhand]||0);
     BODY_ARMOR_SLOTS.forEach(function(slot){
       var s = state.bodyArmor && state.bodyArmor[slot];
@@ -3942,6 +3950,9 @@
     if(w.staff){
       inputs['forestry_t'+tierIndex] = 4;        // 4 logs
       inputs[glyphIdFor('dark')] = 8;            // 8 Dark Glyphs
+    } else if(w.scepter){
+      inputs['metallurgy_t'+tierIndex] = 4;      // 4 ingots (named after the metal)
+      inputs[glyphIdFor('light')] = 8;           // 8 Light Glyphs
     } else if(w.wand){
       inputs['forestry_t'+tierIndex] = 2;        // 2 logs
       inputs[glyphIdFor(w.element)] = 3;         // 3 matching-element glyphs (from Elementals)
@@ -3968,7 +3979,7 @@
       for(var i=0;i<w.tierCount;i++){
         var data = getStackableWeaponTierData(w.id, i);
         var id = 'stweapon_'+w.id+'_t'+i+'_'+rarityId;
-        var dmgMult = w.wand ? WAND_RARITY_DMG_MULT[rarityId] : r.mult; // wands: rarity scales damage 2x/4x/8x
+        var dmgMult = (w.wand || w.scepter) ? WAND_RARITY_DMG_MULT[rarityId] : r.mult; // wands & scepters: rarity scales damage 2x/4x/8x
         STACKABLE_WEAPON_ITEMS[id] = {
           id: id,
           name: r.label + data.name,
@@ -4008,6 +4019,10 @@
       // Wands/Staves share their own proficiency (trained by use), so equipping is gated by Arcanism level.
       if(getLevel(state.xp.arcanism||0) < TIER_LEVELS[item.tierIndex]){
         addLog('Your Arcanism isn\'t high enough to wield ' + item.name + ' yet.', 'danger'); return;
+      }
+    } else if(isScepter(item.typeId)){
+      if(getLevel(state.xp.runesmithing||0) < TIER_LEVELS[item.tierIndex]){
+        addLog('Your Runesmithing isn\'t high enough to wield ' + item.name + ' yet.', 'danger'); return;
       }
     } else if(!meetsProficiencyRequirement(state.xp[item.typeId], item.tierIndex)){
       addLog('Your ' + (SKILL_LABELS[item.typeId]||item.typeId) + ' proficiency isn\'t high enough to equip ' + item.name + ' yet.', 'danger');
@@ -5479,7 +5494,7 @@
       carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0,
       stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, arcanism:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
-      shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0, wands:0, staves:0,
+      shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0, wands:0, staves:0, scepters:0,
       prayer:0, sacrifice:0, devotion:0, blessing:0, miracle:0
     };
     WEAPON_STYLE_IDS.forEach(function(id){ xpObj[id] = 0; });
@@ -6236,13 +6251,19 @@
 
     var weaponStyle = getWeaponStyle(state.equippedMainhand);
     var isWandAttack = !!weaponStyle.wand; // wand: elemental damage, shared 'wands' proficiency, no physical-type bonuses
+    var isScepterAttack = !!weaponStyle.scepter; // scepter: half blunt / half light, shared 'scepters' proficiency, physical bonuses apply
     var offhandStyle = getOffhandStyle(state.equippedOffhand);
     var offhandProficiency = (offhandStyle && state.equippedOffhand) ? (1 + Math.min(0.15, getLevel(state.xp[offhandStyle.id]||0)*0.005)) : 1;
-    var weaponProficiency = state.equippedMainhand ? (1 + getLevel(state.xp[isWandAttack ? WANDS_SKILL_ID : state.equippedMainhand]||0)/100) : 1;
+    var mainProfId = isWandAttack ? WANDS_SKILL_ID : (isScepterAttack ? SCEPTERS_SKILL_ID : state.equippedMainhand);
+    var weaponProficiency = state.equippedMainhand ? (1 + getLevel(state.xp[mainProfId]||0)/100) : 1;
     // Wands bypass the physical slash/pierce/blunt triangle: their damage is elemental (+20% via the
     // element triangle). Physical-type bonuses (rings, chain-melee, familiar type buffs) don't apply.
+    // Scepters are a hybrid -- half of their swing is blunt (physical triangle vs armor) and half is
+    // light (element triangle vs the monster's element); both halves are averaged into one multiplier.
     var elementMult = isWandAttack ? elementAdvantage(weaponStyle.element, monster.element) : 1;
-    var advantage = isWandAttack ? 1 : weightedAdvantage(weaponStyle.attackTypes || {blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
+    var advantage = isWandAttack ? 1 : (isScepterAttack
+      ? (0.5 * weightedAdvantage({blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3}) + 0.5 * elementAdvantage('light', monster.element))
+      : weightedAdvantage(weaponStyle.attackTypes || {blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3}));
     var quiverBonus = (offhandStyle && offhandStyle.type==='quiver' && offhandItem) ? (1 + offhandItem.dmgBonus) * offhandProficiency : 1;
     var ringBonus = isWandAttack ? 1 : getRingDamageMultiplier(state, weaponStyle.attackTypes || {blunt:1});
     var leatherBowBonus = weaponStyle.hand==='bow' ? (1 + getLeatherArmorBonuses(state).bowDmgBonus) : 1;
@@ -6280,7 +6301,7 @@
     // mainhand weapon and a Quiver offhand (which boosts your bow damage) train off it.
     var effDmg = Math.min(dmgToMonster, monsterHpBeforeHit);
     var atkProfXp = Math.max(1, Math.round(effDmg * WEAPON_PROF_XP_PER_DMG));
-    if(state.equippedMainhand) addXp(isWandAttack ? WANDS_SKILL_ID : state.equippedMainhand, atkProfXp);
+    if(state.equippedMainhand) addXp(mainProfId, atkProfXp);
     if(state.equippedOffhand && offhandStyle && offhandStyle.type==='quiver') addXp(state.equippedOffhand, atkProfXp);
     if(act.monsterHp <= 0) defeatMonster(monster);
   }
@@ -8098,7 +8119,62 @@
       html += '</div>';
     });
     html += '</div>';
+    html += renderScepterCraftSection();
     html += renderEquipWardSection();
+    return html;
+  }
+
+  function renderScepterCraftSection(){
+    var lvl = getLevel(state.xp.runesmithing);
+    var w = SCEPTER_TYPE;
+    var maxUnlocked = 0;
+    for(var mi=0; mi<w.tierCount; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
+    if(selectedWandTier[w.id] === undefined) selectedWandTier[w.id] = maxUnlocked;
+    var sel = Math.min(selectedWandTier[w.id], maxUnlocked);
+    var data = getStackableWeaponTierData(w.id, sel);
+    var activeSlot = findActiveSpecialCraftSlotFor('stackweapon', {typeId:w.id, tierIndex:sel});
+    var isActive = !!activeSlot;
+    var effTime = data.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, 'runesmithing');
+    var pct = isActive ? clamp(activeSlot.act.progress/effTime*100,0,100) : 0;
+    var ready = lvl >= data.levelReq && hasInputs(data.inputs);
+    var successPct = Math.round(craftSuccessRate(state, 'runesmithing')*100);
+    var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
+    var ownedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stweapon_'+w.id+'_t'+sel+'_'+r; }));
+    var current = (state.equippedMainhand && isScepter(state.equippedMainhand) && state.equippedMainhandTier>0)
+      ? STACKABLE_WEAPON_ITEMS['stweapon_scepter_t'+(state.equippedMainhandTier-1)+'_'+state.equippedMainhandRarity] : null;
+    var html = '<h3 style="margin-top:14px">Forge Scepter</h3>';
+    html += '<div class="section-intro">A <b>Scepter</b> is a one-handed weapon that deals <b>half blunt, half '+elementLabel('light')+'</b> damage &mdash; the blunt half is weighed against enemy armour, the '+elementLabel('light')+' half against their element (+20% vs enemies weak to Light). Rarity is special: rare/supreme/fantastic scepters deal <b>2x / 4x / 8x</b> damage. Scepters share the <b>Scepters</b> weapon proficiency, trained by scepter damage dealt (+1% at Lv 1 up to +100% at Lv 100).</div>';
+    html += '<div class="card-grid"><div class="item-card'+(isActive?' active-item':'')+'">';
+    html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">Blunt + '+elementLabel('light')+' &bull; '+w.attackSpeed+'s attack &bull; Owned: '+ownedTotal+'</div></div></div>';
+    html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
+    html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>'+data.dmgMin+'-'+data.dmgMax+' dmg</span></div>';
+    html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the 2x/4x/8x rarity odds)</div>';
+    html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-scepter-'+w.id)+'</div>';
+    html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
+    if(isActive){
+      html += activeSlot.primary ? '<button class="action-btn stop" data-action="stop">Stop</button>' : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
+    } else {
+      html += '<button class="action-btn" data-action="forgeStackableWeapon" data-type="'+w.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
+    }
+    html += '</div></div>';
+    // Equip scepter
+    var owned = Object.keys(STACKABLE_WEAPON_ITEMS).filter(function(id){ return isScepter(STACKABLE_WEAPON_ITEMS[id].typeId) && (state.inventory[id]||0)>0; })
+      .sort(function(a,b){ return STACKABLE_WEAPON_ITEMS[a].tierIndex - STACKABLE_WEAPON_ITEMS[b].tierIndex; });
+    html += '<h3>Equip Scepter</h3>';
+    html += '<div class="card-grid"><div class="item-card">';
+    html += '<div class="item-top"><div class="item-icon">'+(current?current.icon:w.icon)+'</div><div><div class="item-name">Mainhand</div><div class="item-meta">'+(current ? current.name+' &bull; '+current.dmgMin+'-'+current.dmgMax+' blunt+'+elementLabel('light')+' dmg' : 'No scepter equipped')+'</div></div></div>';
+    if(owned.length===0){ html += '<div class="empty-note">No scepters in inventory. Forge one above.</div>'; }
+    else {
+      html += '<div class="style-row">';
+      owned.forEach(function(id){
+        var item = STACKABLE_WEAPON_ITEMS[id]; var qty = state.inventory[id]||0;
+        var canEquip = getLevel(state.xp.runesmithing||0) >= TIER_LEVELS[item.tierIndex];
+        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipStackableWeapon" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type" style="text-transform:none">'+item.dmgMin+'-'+item.dmgMax+' blunt+'+elementLabel('light')+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires Runesmithing Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
+      });
+      html += '</div>';
+    }
+    if(current) html += '<button class="action-btn stop" data-action="unequipStackableWeapon">Unequip</button>';
+    html += '</div></div>';
     return html;
   }
 
@@ -8280,9 +8356,11 @@
   function renderCombatStatsPanel(){
     var weaponStyle = getWeaponStyle(state.equippedMainhand);
     var isWandMain = !!weaponStyle.wand;
+    var isScepterMain = !!weaponStyle.scepter;
     var weapon = getEquippedWeaponItem(state);
     var physDmgMult = isWandMain ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
-    var weaponProficiency = state.equippedMainhand ? (1 + getLevel(state.xp[isWandMain ? WANDS_SKILL_ID : state.equippedMainhand]||0)/100) : 1;
+    var mainProfId = isWandMain ? WANDS_SKILL_ID : (isScepterMain ? SCEPTERS_SKILL_ID : state.equippedMainhand);
+    var weaponProficiency = state.equippedMainhand ? (1 + getLevel(state.xp[mainProfId]||0)/100) : 1;
     var effMin = Math.max(1, Math.round(weapon.dmgMin * physDmgMult * weaponProficiency));
     var effMax = Math.max(effMin+1, Math.round(weapon.dmgMax * physDmgMult * weaponProficiency));
     var armor = getTotalArmorDefense(state);
@@ -8293,8 +8371,16 @@
     html += '<div class="stats-group"><h4>'+svgIcon('sword','currentColor')+' Offense</h4>';
     html += '<div class="stat-row"><span class="stat-label">Attack Damage</span><span class="stat-value">'+effMin+'-'+effMax+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Attack Time</span><span class="stat-value">'+weaponStyle.attackSpeed+'s</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Damage Type</span><span class="stat-value">'+(isWandMain ? '<span class="elem-weak-stat elem-'+weaponStyle.element+'">'+elementIcon(weaponStyle.element)+' '+elementLabel(weaponStyle.element)+'</span>' : (TYPE_ICON[weaponStyle.damageType]+' '+weaponStyle.damageType))+'</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">'+(isWandMain?'Wands Proficiency':'Weapon Proficiency')+'</span><span class="stat-value">+'+Math.round((weaponProficiency-1)*100)+'%</span></div>';
+    var dmgTypeHtml;
+    if(isWandMain){
+      dmgTypeHtml = '<span class="elem-weak-stat elem-'+weaponStyle.element+'">'+elementIcon(weaponStyle.element)+' '+elementLabel(weaponStyle.element)+'</span>';
+    } else if(isScepterMain){
+      dmgTypeHtml = TYPE_ICON.blunt+' Blunt <span class="elem-weak-stat elem-light">'+elementIcon('light')+' '+elementLabel('light')+'</span>';
+    } else {
+      dmgTypeHtml = TYPE_ICON[weaponStyle.damageType]+' '+weaponStyle.damageType;
+    }
+    html += '<div class="stat-row"><span class="stat-label">Damage Type</span><span class="stat-value">'+dmgTypeHtml+'</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">'+(isWandMain?'Wands Proficiency':(isScepterMain?'Scepters Proficiency':'Weapon Proficiency'))+'</span><span class="stat-value">+'+Math.round((weaponProficiency-1)*100)+'%</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+(Math.round(criticalEyeCritChance(state)*10000)/100)+'%</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+(Math.round(Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state))*100)/100)+'x</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Accuracy</span><span class="stat-value">'+playerAccuracy(state)+'</span></div>';
@@ -13334,6 +13420,7 @@
     warding: 'Proficiency wielding Wards. Trained by damage reflected, it adds extra reflection: +1% at Lv 1 up to +20% at Lv 100.',
     wands: 'Proficiency wielding Wands. Trained by wand damage dealt, it boosts wand damage: +1% at Lv 1 up to +100% at Lv 100.',
     staves: 'Proficiency wielding Staves. Trained by familiar damage, it boosts familiar efficiency: +1% at Lv 1 up to +100% at Lv 100.',
+    scepters: 'Proficiency wielding Scepters. Trained by scepter damage, it boosts scepter damage: +1% at Lv 1 up to +100% at Lv 100.',
     clotharmor: 'Proficiency wearing Tailoring\'s cloth armor at higher tiers.',
     leatherarmor: 'Proficiency wearing Leatherworking\'s leather armor at higher tiers.',
     chainmailarmor: 'Proficiency wearing Armorsmithing\'s chain mail at higher tiers.',
@@ -13383,7 +13470,7 @@
     miracle:   ['focus']
   }
   function isCombatSkillId(skillId){
-    return WEAPON_STYLE_IDS.indexOf(skillId)!==-1 || skillId===WANDS_SKILL_ID || skillId===STAVES_SKILL_ID || OFFHAND_STYLE_IDS.indexOf(skillId)!==-1 || skillId===WARDING_SKILL_ID || ARMOR_PROFICIENCY_IDS.indexOf(skillId)!==-1;
+    return WEAPON_STYLE_IDS.indexOf(skillId)!==-1 || skillId===WANDS_SKILL_ID || skillId===STAVES_SKILL_ID || skillId===SCEPTERS_SKILL_ID || OFFHAND_STYLE_IDS.indexOf(skillId)!==-1 || skillId===WARDING_SKILL_ID || ARMOR_PROFICIENCY_IDS.indexOf(skillId)!==-1;
   }
   function physiqueTrainedBySkill(skillId){
     if(GATHER_PHYSIQUE[skillId]) return GATHER_PHYSIQUE[skillId].map(function(p){ return p[0]; });
@@ -13535,6 +13622,7 @@
   SKILL_LABELS[WARDING_SKILL_ID] = 'Warding';
   SKILL_LABELS[WANDS_SKILL_ID] = 'Wands';
   SKILL_LABELS[STAVES_SKILL_ID] = 'Staves';
+  SKILL_LABELS[SCEPTERS_SKILL_ID] = 'Scepters';
   ARMOR_PROFICIENCY_IDS.forEach(function(id){ SKILL_LABELS[id] = ARMOR_PROFICIENCY_LABELS[id]; });
   FAITH_SKILL_IDS.forEach(function(id){ SKILL_LABELS[id] = FAITH_SKILLS[id].label; });
 
@@ -13560,7 +13648,7 @@
     {label:'Gathering', color:'var(--cat-gathering)', skills:GATHER_SKILL_IDS},
     {label:'Crafting',  color:'var(--cat-crafting)',  skills:CRAFT_SKILL_IDS},
     {label:'Farming',   color:'var(--cat-farming)',   skills:['fiberharvesting','grainharvesting','herbharvesting']},
-    {label:'Combat',    color:'var(--cat-combat)',    skills:WEAPON_STYLE_IDS.concat([WANDS_SKILL_ID, STAVES_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS)},
+    {label:'Combat',    color:'var(--cat-combat)',    skills:WEAPON_STYLE_IDS.concat([WANDS_SKILL_ID, STAVES_SKILL_ID, SCEPTERS_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS)},
     {label:'Faith',     color:'var(--cat-faith)',     skills:FAITH_SKILL_IDS}
   ];
 
@@ -14533,6 +14621,24 @@
       var wBtn = document.querySelector('[data-action="forgeWard"][data-type="'+w.id+'"]');
       if(wBtn) wBtn.disabled = !(runeLvl >= wData.levelReq && hasInputs(wData.inputs));
     });
+    // Runesmithing scepter: mirror the live-update (scepters reuse the stackweapon forge action).
+    (function(){
+      var s = SCEPTER_TYPE;
+      var sMax = 0;
+      for(var smi=0; smi<s.tierCount; smi++){ if(TIER_LEVELS[smi] <= runeLvl) sMax = smi; }
+      var sSel = Math.min(selectedWandTier[s.id]||0, sMax);
+      var sData = getStackableWeaponTierData(s.id, sSel);
+      Object.keys(sData.inputs).forEach(function(k){
+        var el = document.getElementById('inp-scepter-'+s.id+'-'+k);
+        if(el){
+          var have = state.inventory[k]||0, need = sData.inputs[k];
+          el.textContent = need+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+have+' owned)';
+          el.className = have>=need ? 'ok' : 'bad';
+        }
+      });
+      var sBtn2 = document.querySelector('[data-action="forgeStackableWeapon"][data-type="'+s.id+'"]');
+      if(sBtn2) sBtn2.disabled = !(runeLvl >= sData.levelReq && hasInputs(sData.inputs));
+    })();
 
     // Arcanism wands: mirror the live-update (wands reuse the stackweapon forge action).
     var arcLvl = getLevel(state.xp.arcanism);
@@ -15317,6 +15423,7 @@
       GLYPH_ITEMS:GLYPH_ITEMS, glyphIdFor:glyphIdFor, glyphDropMax:glyphDropMax, GLYPH_DROP_CHANCE:GLYPH_DROP_CHANCE, ELEMENTAL_ELEMENT_OVERRIDES:ELEMENTAL_ELEMENT_OVERRIDES,
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
+      SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }
