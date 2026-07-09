@@ -286,6 +286,51 @@
     ok(ids.indexOf('mining') !== -1 && ids.indexOf('carpentry') !== -1, 'regular skills still trackable');
   });
 
+  // ---- Leaderboard covers every skill / proficiency / class / physique ------------------
+  suite('leaderboard coverage', function(){
+    // Union of every skill id the leaderboard can rank or show (drives both the "Rank by"
+    // dropdown and the profile page).
+    var grouped = {};
+    FF.SKILL_GROUPS.forEach(function(g){ g.skills.forEach(function(sk){ grouped[sk] = true; }); });
+
+    // Every main skill/proficiency/class is grouped, so newly-added content can never silently
+    // drop off the board.
+    FF.ALL_MAIN_SKILL_IDS.forEach(function(id){ ok(grouped[id], 'leaderboard covers main skill: ' + id); });
+    // Every physique too (body physiques + elemental attunements).
+    FF.PHYSIQUE_SKILLS.forEach(function(p){ ok(grouped[p.id], 'leaderboard covers physique: ' + p.id); });
+
+    // Spot-check the recently-added content specifically.
+    ['scimitar','claw','treasureHunter','wands','staves','scepters','warding',
+     'clotharmor','leatherarmor','chainmailarmor','platearmor',
+     'fireAttunement','waterAttunement','earthAttunement','lightAttunement','darkAttunement']
+      .forEach(function(id){ ok(grouped[id], 'newly-added content is on the leaderboard: ' + id); });
+
+    // Everything ranked has a human-readable label (no raw ids leak into the UI).
+    Object.keys(grouped).forEach(function(id){ ok(FF.SKILL_LABELS[id] && FF.SKILL_LABELS[id] !== id, 'labelled: ' + id); });
+
+    // There is a dedicated Physique group.
+    ok(FF.SKILL_GROUPS.some(function(g){ return g.label === 'Physique'; }), 'a Physique group exists');
+
+    // Profile stats fold physiques into the skills map WITHOUT inflating total_level.
+    var s = FF._state;
+    var physId = FF.PHYSIQUE_SKILLS[0].id, mainId = 'mining';
+    var snap = { phys:s.physique[physId], xp:s.xp[mainId] };
+    s.physique[physId] = 0; s.xp[mainId] = 0;
+    var base = FF.computeProfileStats();
+    ok(base.skills[physId] !== undefined, 'physiques appear in the profile skills map');
+    s.physique[physId] = Math.pow(30,2)*100; // ~Lv 31
+    var afterPhys = FF.computeProfileStats();
+    ok(afterPhys.skills[physId] > 0, 'physique level shows in the profile');
+    eq(afterPhys.total_level, base.total_level, 'physiques do NOT inflate total_level');
+    s.xp[mainId] = Math.pow(30,2)*100;
+    ok(FF.computeProfileStats().total_level > base.total_level, 'a main skill DOES raise total_level');
+    s.physique[physId] = snap.phys; s.xp[mainId] = snap.xp;
+
+    // Ranking by a physique metric reads the skills map.
+    eq(FF.lbMetricValue({ skills:{ fireAttunement: 42 } }, 'skill:fireAttunement'), 42, 'can rank by a physique');
+    eq(FF.lbMetricValue({ skills:{} }, 'skill:fireAttunement'), 0, 'missing physique ranks as 0');
+  });
+
   // ---- PEON_MAX_SLOTS must be a defined constant (its absence blanked the Peons tab) ---
   suite('peon slot constant', function(){
     eq(FF.PEON_MAX_SLOTS, 5, 'PEON_MAX_SLOTS defined = 5 (10 total: 5 personal + 5 guild)');

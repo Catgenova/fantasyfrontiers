@@ -12808,6 +12808,11 @@
       var lv = getLevel(state.xp[ALL_MAIN_SKILL_IDS[i]]||0);
       skills[ALL_MAIN_SKILL_IDS[i]] = lv; total += lv;
     }
+    // Physiques (body physiques + elemental attunements) are stored under state.physique, not
+    // state.xp, so fold them into the same skills map for the leaderboard's Physique rankings and
+    // profile display. They are deliberately NOT added to total_level -- that stays a sum of the
+    // main skill/proficiency/class ladder, the way it always has.
+    PHYSIQUE_SKILLS.forEach(function(p){ skills[p.id] = getLevel(state.physique[p.id]||0); });
     return { total_level: total, gold: Math.floor(state.gold||0), skills: skills, equipment: computeEquipment(), stats: buildProfileStats() };
   }
   // Currently-equipped weapons + armor (NOT tools), captured as display-ready
@@ -14316,6 +14321,7 @@
   CLASS_DEFS.forEach(function(c){ SKILL_LABELS[c.id] = c.name; });
   ARMOR_PROFICIENCY_IDS.forEach(function(id){ SKILL_LABELS[id] = ARMOR_PROFICIENCY_LABELS[id]; });
   FAITH_SKILL_IDS.forEach(function(id){ SKILL_LABELS[id] = FAITH_SKILLS[id].label; });
+  PHYSIQUE_SKILLS.forEach(function(p){ SKILL_LABELS[p.id] = p.name; });
 
   function skillBarColor(skillId){
     if(GATHERING_SKILLS[skillId]) return GATHERING_SKILLS[skillId].color || 'var(--cat-gathering)';
@@ -14341,7 +14347,8 @@
     {label:'Farming',   color:'var(--cat-farming)',   skills:['fiberharvesting','grainharvesting','herbharvesting']},
     {label:'Combat',    color:'var(--cat-combat)',    skills:WEAPON_STYLE_IDS.concat([WANDS_SKILL_ID, STAVES_SKILL_ID, SCEPTERS_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS)},
     {label:'Classes',   color:'var(--gold)',          skills:CLASS_SKILL_IDS},
-    {label:'Faith',     color:'var(--cat-faith)',     skills:FAITH_SKILL_IDS}
+    {label:'Faith',     color:'var(--cat-faith)',     skills:FAITH_SKILL_IDS},
+    {label:'Physique',  color:'var(--cat-physique)',  skills:PHYSIQUE_SKILLS.map(function(p){ return p.id; })}
   ];
 
   function renderCharacterPanel(){
@@ -16106,6 +16113,7 @@
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS,
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS,
+      SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, LB_STAT_METRICS:LB_STAT_METRICS,
