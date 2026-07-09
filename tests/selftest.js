@@ -1063,6 +1063,65 @@
     ok(fam.spells.some(function(s){ return s.type==='hit' && s.element==='earth'; }), 'quickdraw familiar has earth-element hit spells');
   });
 
+  // ---- Classes: Templar (scepter + ward; light/reflect holy warrior) --------------------
+  suite('classes: Templar', function(){
+    ok(FF.CLASS_SKILL_IDS.indexOf('templar') !== -1, 'templar is a class skill id');
+    var cd = FF.CLASS_DEFS_BY_ID.templar;
+    ok(cd, 'templar class defined');
+    eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'passive tiers are 1/20/40/60/80');
+    eq(cd.reqParts.length, 6, 'requires 6 gear conditions');
+
+    function plate(){ return {tier:1, rarity:'normal', material:'plate'}; }
+    function chain(){ return {tier:1, rarity:'normal', material:'chain'}; }
+    function bare(){ return {tier:0, rarity:'normal', material:null}; }
+    function base(){ return { xp:{templar:0}, equippedMainhand:'scepter', equippedMainhandRarity:'normal', equippedOffhand:'wardLight', bodyArmor:{ helmet:plate(), chest:plate(), gauntlets:chain(), boots:chain(), back:bare() } }; }
+    var full = base();
+    ok(FF.isWard('wardLight'), 'wardLight is a ward offhand');
+    eq(FF.activeClassId(full), 'templar', 'scepter + ward + plate helm/chest + chain gloves/boots => Templar');
+
+    // Every requirement matters.
+    var noWard = base(); noWard.equippedOffhand=null;
+    eq(FF.activeClassId(noWard), null, 'needs a ward offhand');
+    var shieldOff = base(); shieldOff.equippedOffhand='shieldLarge';
+    eq(FF.activeClassId(shieldOff), null, 'a shield is not a ward');
+    var notScepter = base(); notScepter.equippedMainhand='mace';
+    eq(FF.activeClassId(notScepter), null, 'needs a scepter');
+    var chainHelm = base(); chainHelm.bodyArmor.helmet=chain();
+    eq(FF.activeClassId(chainHelm), null, 'helm must be plate');
+    var plateGloves = base(); plateGloves.bodyArmor.gauntlets=plate();
+    eq(FF.activeClassId(plateGloves), null, 'gloves must be chain');
+
+    var lvHi = Math.pow(84,2)*100; // ~Lv 85
+    function leveled(){ var s = base(); s.xp.templar = lvHi; return s; }
+
+    // Lv 1 Radiant Ward: +5% reflected damage (baseline -- a fresh class is already Class Lv 1).
+    ok(Math.abs(FF.templarReflectMult(full) - 1.05) < 1e-9, 'Lv 1 templar (active): +5% reflect');
+    ok(Math.abs(FF.templarReflectMult(leveled()) - 1.05) < 1e-9, 'reflect mult stays 1.05 at higher level');
+    // Lv 20 Sunfire: +20% Light damage (not yet at Lv 1).
+    eq(FF.templarLightDmgMult(full), 1, 'Lv 1 templar: no light bonus yet');
+    ok(Math.abs(FF.templarLightDmgMult(leveled()) - 1.2) < 1e-9, 'Lv 20+: +20% light damage');
+    // Both are gated on the class actually being equipped/active.
+    var off = base(); off.equippedOffhand=null; off.xp.templar = lvHi;
+    eq(FF.templarLightDmgMult(off), 1, 'light bonus gated on the class being active');
+    eq(FF.templarReflectMult(off), 1, 'reflect bonus gated on the class being active');
+
+    // Lv 40 / Lv 60 debuff windows (time-based, read from state.classDebuffs).
+    var s = FF._state;
+    var saved = s.classDebuffs;
+    s.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
+    eq(FF.templarIncomingDmgMult(), 1, 'no enfeeble window => enemy deals full damage');
+    eq(FF.templarArmorShredDmgMult(), 1, 'no sunder window => no bonus damage');
+    s.classDebuffs = { enemyDmgUntil: Date.now()+9000, enemyArmorUntil: Date.now()+9000 };
+    eq(FF.templarIncomingDmgMult(), 0.75, 'enfeeble window => enemy deals 25% less (x0.75)');
+    eq(FF.templarArmorShredDmgMult(), 1.25, 'sunder window => you deal +25% (x1.25)');
+    s.classDebuffs = saved; // restore for other suites
+
+    // Class familiar (light-themed smiter).
+    var fam = FF.FAMILIAR_DATA.templar;
+    ok(fam && fam.spells && fam.spells.length === 4, 'templar familiar has 4 spells');
+    ok(fam.spells.some(function(sp){ return sp.type==='hit'; }), 'templar familiar has damaging spells');
+  });
+
   // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------
   suite('warding proficiency', function(){
     eq(FF.WARDING_SKILL_ID, 'warding', 'warding skill id');

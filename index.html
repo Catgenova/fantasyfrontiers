@@ -3026,6 +3026,26 @@
         { level:60, name:'Deadeye',       desc:'+10% Critical Hit chance.' },
         { level:80, name:'Rapid Fire',    desc:'If a shot misses, immediately loose another arrow &mdash; up to 3 shots per attack.' }
       ]
+    },
+    {
+      id:'templar', name:'Templar', icon:svgIcon('starburst','#e0c860'),
+      blurb:'A holy warrior who wards away harm and smites foes with radiant light.',
+      reqText:'Scepter + Ward, Plate Helm & Chest, Chain Gloves & Boots',
+      reqParts:[
+        { icon:svgIcon('starburst','#c9a227'),         label:'Scepter',      met:function(st){ return st.equippedMainhand==='scepter'; } },
+        { icon:svgIcon('shield','#7a5aa8'),            label:'Ward',         met:function(st){ return isWard(st.equippedOffhand); } },
+        { icon:svgIcon('helm',CLASS_PLATE_COLOR),      label:'Plate Helm',   met:function(st){ return platePieceEquipped(st,'helmet'); } },
+        { icon:svgIcon('chestarmor',CLASS_PLATE_COLOR),label:'Plate Chest',  met:function(st){ return platePieceEquipped(st,'chest'); } },
+        { icon:svgIcon('gauntlet',CLASS_CHAIN_COLOR),  label:'Chain Gloves', met:function(st){ return chainPieceEquipped(st,'gauntlets'); } },
+        { icon:svgIcon('boots',CLASS_CHAIN_COLOR),     label:'Chain Boots',  met:function(st){ return chainPieceEquipped(st,'boots'); } }
+      ],
+      passives:[
+        { level:1,  name:'Radiant Ward',   desc:'+5% reflected elemental damage from your Ward.' },
+        { level:20, name:'Sunfire',        desc:'+20% Light damage.' },
+        { level:40, name:'Enfeeble',       desc:'Hits have a 5% chance to reduce the enemy\'s damage 25% for 5s.' },
+        { level:60, name:'Sunder',         desc:'Hits have a 5% chance to reduce the enemy\'s armor 25% for 5s (you deal +25% while it holds).' },
+        { level:80, name:'Radiant Burst',  desc:'Your Light damage has a 10% chance to deal 200% (double) damage.' }
+      ]
     }
   ];
   var CLASS_DEFS_BY_ID = {}; CLASS_DEFS.forEach(function(c){ CLASS_DEFS_BY_ID[c.id] = c; });
@@ -3079,6 +3099,15 @@
   function quickdrawPenetrationMult(st){ return quickdrawBonus(40, st) ? 1.10 : 1; }
   // Quickdraw Lv 60: +10% Critical Hit chance.
   function quickdrawCritChanceBonus(st){ return quickdrawBonus(60, st) ? 0.10 : 0; }
+  function templarBonus(reqLevel, st){ return classBonusActive('templar', reqLevel, st); }
+  // Templar Lv 1: +5% Ward reflected damage. Lv 20: +20% Light damage (the scepter's light half).
+  function templarReflectMult(st){ return templarBonus(1, st) ? 1.05 : 1; }
+  function templarLightDmgMult(st){ return templarBonus(20, st) ? 1.2 : 1; }
+  // Templar Lv 40 / Lv 60 on-hit debuff windows, tracked in state.classDebuffs (time-based).
+  function templarEnemyDmgReduced(){ return !!(state.classDebuffs && state.classDebuffs.enemyDmgUntil > Date.now()); }
+  function templarEnemyArmorReduced(){ return !!(state.classDebuffs && state.classDebuffs.enemyArmorUntil > Date.now()); }
+  function templarIncomingDmgMult(){ return templarEnemyDmgReduced() ? 0.75 : 1; }   // Lv 40: enemy deals 25% less
+  function templarArmorShredDmgMult(){ return templarEnemyArmorReduced() ? 1.25 : 1; } // Lv 60: you deal +25%
   // Player auto-attack interval, folding in familiar Haste and the Duelist's rapier attack-speed bonus.
   function playerAttackIntervalMs(st){
     st = st || state;
@@ -3204,7 +3233,8 @@
     duelist:          { name:'Fleuret',  icon:svgIcon('sword','#b83a4a'), spells:[hitSpell('Lunge','piercing',15), buffSpell('Riposte','critChance',0.13,8), hitSpell('Flèche','piercing',13), buffSpell('En Garde','dodge',0.14,8)] },
     reaper:           { name:'Mortis',   icon:svgIcon('ghost','#6a5a7a'), spells:[siphonSpell('Soul Harvest',15), siphonSpell('Life Drain',13), hitSpell('Reap','void',12), weakenSpell('Wither',0.3,8)] },
     herald:           { name:'Sentinel', icon:svgIcon('shield','#c8a83a'), spells:[armorSpell('Aegis Wall',1.8,6), buffSpell('Rallying Cry','block',0.18,8), dmgSpell('Valor',1.3,8), buffSpell('Bastion','resistBlunt',0.32,8)] },
-    quickdraw:        { name:'Talon',    icon:svgIcon('bow','#5a8a4a'), spells:[hitSpell('Barbed Shot','piercing',15), buffSpell('Rapid Nock','haste',0.18,8), hitSpell('Splitting Arrow','piercing',13), buffSpell('Hawkeye','critChance',0.13,8)] }
+    quickdraw:        { name:'Talon',    icon:svgIcon('bow','#5a8a4a'), spells:[hitSpell('Barbed Shot','piercing',15), buffSpell('Rapid Nock','haste',0.18,8), hitSpell('Splitting Arrow','piercing',13), buffSpell('Hawkeye','critChance',0.13,8)] },
+    templar:          { name:'Lumen',    icon:svgIcon('starburst','#e0c860'), spells:[hitSpell('Smite','void',15), armorSpell('Consecrate',1.7,6), hitSpell('Radiant Beam','void',13), buffSpell('Zeal','block',0.16,8)] }
   };
 
   // Diverse, unique per-familiar spell kits drawn from the expanded pool. Reassigned onto FAMILIAR_DATA
@@ -3275,7 +3305,8 @@
     duelist:        [ hitSpell('Lunge','piercing',15), buffSpell('Riposte','critChance',0.13,8), hitSpell('Flèche','piercing',13), buffSpell('En Garde','dodge',0.14,8) ],
     reaper:         [ siphonSpell('Soul Harvest',15), siphonSpell('Life Drain',13), hitSpell('Reap','void',12), weakenSpell('Wither',0.3,8) ],
     herald:         [ armorSpell('Aegis Wall',1.8,6), buffSpell('Rallying Cry','block',0.18,8), dmgSpell('Valor',1.3,8), buffSpell('Bastion','resistBlunt',0.32,8) ],
-    quickdraw:      [ hitSpell('Barbed Shot','piercing',15), buffSpell('Rapid Nock','haste',0.18,8), hitSpell('Splitting Arrow','piercing',13), buffSpell('Hawkeye','critChance',0.13,8) ]
+    quickdraw:      [ hitSpell('Barbed Shot','piercing',15), buffSpell('Rapid Nock','haste',0.18,8), hitSpell('Splitting Arrow','piercing',13), buffSpell('Hawkeye','critChance',0.13,8) ],
+    templar:        [ hitSpell('Smite','void',15), armorSpell('Consecrate',1.7,6), hitSpell('Radiant Beam','void',13), buffSpell('Zeal','block',0.16,8) ]
   };
   // Each familiar channels an element (thematic to its skill). Its damaging spells (direct hits,
   // siphons, and poison DoTs) carry that element, so they gain the +20% elemental advantage against
@@ -3296,7 +3327,7 @@
     reflexes:'fire', stamina:'earth', handStrength:'earth', armStrength:'earth', coreStrength:'earth', solving:'light', criticalThinking:'light',
     mentality:'earth', zen:'light', meditation:'light', fortitude:'dark',
     // Classes
-    summoner:'light', duelist:'fire', reaper:'dark', herald:'water', quickdraw:'earth'
+    summoner:'light', duelist:'fire', reaper:'dark', herald:'water', quickdraw:'earth', templar:'light'
   };
   var DAMAGE_SPELL_TYPES = { hit:true, siphon:true, poison:true }; // spells that deal direct damage or DoT
   function familiarElement(id){ return FAMILIAR_ELEMENT[id] || null; }
@@ -3352,7 +3383,7 @@
     solving:{s:'puzzle',c:'#3a6a9a',ear:'antenna'}, criticalThinking:{s:'brain',c:'#8a5aaa',ear:'antenna'},
     mentality:{s:'compass',c:'#3f8a8a',ear:'round'}, zen:{s:'yinyang',c:'#8a8a8a',ear:'round'},
     meditation:{s:'lotusflower',c:'#c87a9a',ear:'leaf'}, fortitude:{s:'heart',c:'#c8302a',ear:'round'},
-    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}, reaper:{s:'ghost',c:'#6a5a7a',ear:'horn'}, herald:{s:'shield',c:'#c8a83a',ear:'horn'}, quickdraw:{s:'bow',c:'#5a8a4a',ear:'wing'}
+    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}, reaper:{s:'ghost',c:'#6a5a7a',ear:'horn'}, herald:{s:'shield',c:'#c8a83a',ear:'horn'}, quickdraw:{s:'bow',c:'#5a8a4a',ear:'wing'}, templar:{s:'starburst',c:'#e0c860',ear:'halo'}
   };
   // Draw the ear/crown silhouette behind the head. Returned in two layers (behind body, in front).
   function famEars(kind, body, bodyD, belly, accent){
@@ -5694,6 +5725,7 @@
       activeCompanion: null,
       activeCompanions: [],   // multiple active familiars (1 base slot + a Staff's extra slots)
       companionCast: {},      // per-companion { accum, index } cast timing
+      classDebuffs: { enemyDmgUntil:0, enemyArmorUntil:0 }, // Templar on-hit enemy debuff windows (timestamps)
       activePotion: null,   // Alchemy combat potion currently in use (item id) + its remaining charges
       potionCharges: 0,
       popupQueue: [],
@@ -6401,9 +6433,18 @@
     // Scepters are a hybrid -- half of their swing is blunt (physical triangle vs armor) and half is
     // light (element triangle vs the monster's element); both halves are averaged into one multiplier.
     var elementMult = isWandAttack ? elementAdvantage(weaponStyle.element, monster.element) : 1;
-    var advantage = isWandAttack ? 1 : (isScepterAttack
-      ? (0.5 * weightedAdvantage({blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3}) + 0.5 * elementAdvantage('light', monster.element))
-      : weightedAdvantage(weaponStyle.attackTypes || {blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3}));
+    var advantage;
+    if(isWandAttack){
+      advantage = 1;
+    } else if(isScepterAttack){
+      // Templar boosts the LIGHT half only: Lv 20 = +20%, Lv 80 = 10% chance to double it (Radiant Burst).
+      var _lightMult = templarLightDmgMult();
+      if(templarBonus(80) && Math.random() < 0.10){ _lightMult *= 2; spawnFloatingText('Radiant Burst!', 'ft-rare'); }
+      advantage = 0.5 * weightedAdvantage({blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3})
+                + 0.5 * elementAdvantage('light', monster.element) * _lightMult;
+    } else {
+      advantage = weightedAdvantage(weaponStyle.attackTypes || {blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
+    }
     var quiverBonus = (offhandStyle && offhandStyle.type==='quiver' && offhandItem) ? (1 + offhandItem.dmgBonus) * offhandProficiency : 1;
     var ringBonus = isWandAttack ? 1 : getRingDamageMultiplier(state, weaponStyle.attackTypes || {blunt:1});
     var leatherBowBonus = weaponStyle.hand==='bow' ? (1 + getLeatherArmorBonuses(state).bowDmgBonus) : 1;
@@ -6430,7 +6471,7 @@
     }
 
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult());
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult());
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
@@ -6449,6 +6490,12 @@
     if(state.equippedMainhand) addXp(mainProfId, atkProfXp);
     if(state.equippedOffhand && offhandStyle && offhandStyle.type==='quiver') addXp(state.equippedOffhand, atkProfXp);
     awardClassXp(effDmg); // an active Class trains on combat damage dealt
+    // Templar on-hit debuffs: Lv 40 saps 25% of the enemy's damage, Lv 60 shreds 25% of its armor (5s, 5% each).
+    if(templarBonus(40) || templarBonus(60)){
+      if(!state.classDebuffs) state.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
+      if(templarBonus(40) && Math.random() < 0.05){ state.classDebuffs.enemyDmgUntil = Date.now() + 5000; spawnFloatingText('Enfeebled!', 'ft-rare'); }
+      if(templarBonus(60) && Math.random() < 0.05){ state.classDebuffs.enemyArmorUntil = Date.now() + 5000; spawnFloatingText('Sundered!', 'ft-rare'); }
+    }
     // Reaper lifesteal (Lv 40 = 5%, Lv 80 = 10%): heal a share of the damage actually inflicted.
     var lifestealPct = reaperLifestealPct();
     if(lifestealPct > 0){
@@ -6519,7 +6566,7 @@
     // The hit lands its physical type AND the enemy's element together: the element is amplified by
     // the player's armor weakness to it (leather->fire, chain->earth, plate->water).
     var elementMult = incomingElementMult(state, monster);
-    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster)); // familiar type-resistance buffs + Herald water resist
+    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster) * templarIncomingDmgMult()); // familiar type-resistance buffs + Herald water resist + Templar enfeeble
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
     var blockChance = playerBlockChance(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
@@ -6538,8 +6585,9 @@
       var _rf = Math.min(1, (offhandItem.reflect || 0) + wardingReflectBonus(state)); // ward tier + Warding proficiency
       if((offhandItem.fullReflectChance||0) > 0 && Math.random() < offhandItem.fullReflectChance) _rf = 1; // rarity proc: reflect it all
       if(_rf > 0){
-        wardReflected = Math.round(dmgToPlayer * _rf);
-        dmgToPlayer = Math.max(0, dmgToPlayer - wardReflected);
+        var negated = Math.round(dmgToPlayer * _rf);
+        dmgToPlayer = Math.max(0, dmgToPlayer - negated);
+        wardReflected = Math.round(negated * templarReflectMult()); // Templar Lv 1: +5% reflected elemental damage
       }
     }
     state.playerHp -= dmgToPlayer;
@@ -7077,6 +7125,7 @@
           if(!Array.isArray(state.activeCompanions)) state.activeCompanions = state.activeCompanion ? [state.activeCompanion] : [];
           state.activeCompanions = state.activeCompanions.filter(function(id){ return state.familiars[id] && state.familiars[id].owned; });
           if(!state.companionCast || typeof state.companionCast !== 'object') state.companionCast = {};
+          if(!state.classDebuffs || typeof state.classDebuffs !== 'object') state.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
           if(typeof state.activePotion === 'undefined') state.activePotion = null;
           if(typeof state.potionCharges !== 'number') state.potionCharges = 0;
           if(state.activePotion && !parsePotionId(state.activePotion)) { state.activePotion = null; state.potionCharges = 0; }
@@ -13595,6 +13644,7 @@
     reaper: 'A Class conferred by a Scythe with a bare head and Cloth Chest, Gloves & Shoes. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     herald: 'A Class conferred by a Mace and Large Shield with full Plate (Helm, Chest, Gloves, Boots). While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     quickdraw: 'A Class conferred by a Short Bow and Quiver with Plate Boots and Leather Helm, Chest & Gloves. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
+    templar: 'A Class conferred by a Scepter and Ward with Plate Helm & Chest and Chain Gloves & Boots. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     clotharmor: 'Proficiency wearing Tailoring\'s cloth armor at higher tiers.',
     leatherarmor: 'Proficiency wearing Leatherworking\'s leather armor at higher tiers.',
     chainmailarmor: 'Proficiency wearing Armorsmithing\'s chain mail at higher tiers.',
@@ -15586,7 +15636,7 @@
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
-      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus,
+      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }
