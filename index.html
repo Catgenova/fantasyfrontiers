@@ -3859,7 +3859,11 @@
   // ================= HELPERS =================
   function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
   function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
-  function getLevel(xp){ return Math.max(1, Math.floor(Math.sqrt(xp/100)) + 1); }
+  // Every skill/proficiency/class/physique tops out at level 100 -- the same ceiling the tier ladder
+  // targets (the top gear tier requires level 100). XP can keep accruing past the cap, but the level
+  // it maps to never exceeds MAX_SKILL_LEVEL.
+  var MAX_SKILL_LEVEL = 100;
+  function getLevel(xp){ return Math.min(MAX_SKILL_LEVEL, Math.max(1, Math.floor(Math.sqrt(xp/100)) + 1)); }
   // Equipping anything above Tier 1 (tierIndex 0) requires the matching proficiency
   // (weapon type, or the armor material worn) to already be at least that tier's own
   // level requirement -- the same threshold that unlocked crafting it in the first
@@ -3874,6 +3878,7 @@
   function xpForNextLevel(level){ return 100*level*level; }
   function levelProgress(xp){
     var lvl = getLevel(xp);
+    if(lvl >= MAX_SKILL_LEVEL) return 100; // maxed -- there is no next level, so show a full bar
     var floor = xpFloorForLevel(lvl);
     var ceil = xpForNextLevel(lvl);
     return clamp((xp-floor)/(ceil-floor)*100, 0, 100);

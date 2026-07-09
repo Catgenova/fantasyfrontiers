@@ -27,8 +27,12 @@
     eq(FF.getLevel(100), 2, 'getLevel(100)');
     eq(FF.getLevel(400), 3, 'getLevel(400)');
     eq(FF.getLevel(980100), 100, 'getLevel(980100) = 100');
+    // Level is capped at 100 no matter how much XP piles up past it.
+    eq(FF.getLevel(1000000), 100, 'getLevel(1,000,000) capped at 100 (would be 101 uncapped)');
+    eq(FF.getLevel(5760000), 100, 'getLevel(5.76M) still 100 -- no runaway levels');
+    eq(FF.getLevel(1e12), 100, 'getLevel of absurd XP is still 100');
     var prev = 0;
-    for(var xp = 0; xp <= 1000000; xp += 5000){ var L = FF.getLevel(xp); ok(L >= prev, 'getLevel monotonic @' + xp); prev = L; }
+    for(var xp = 0; xp <= 1000000; xp += 5000){ var L = FF.getLevel(xp); ok(L >= prev && L <= 100, 'getLevel monotonic & <=100 @' + xp); prev = L; }
   });
 
   // ---- Tier scaling helpers -------------------------------------------------------------
