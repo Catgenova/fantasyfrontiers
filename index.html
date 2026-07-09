@@ -13023,14 +13023,29 @@
     if(!silent) guildState.status='loading';
     guildInvoke('get_state', {}).then(function(res){
       if(!res || !res.ok){ guildState.status='error'; guildState.error=(res&&res.error)||'Could not load guild.'; if(currentCategory==='guild'||currentCategory==='chat'||currentCategory==='peons') render(); return; }
+      var wasWaiting = !guildState.guild && !!guildBrowseState.appliedTo; // applied, not yet in a guild
       guildState.status='ready';
       guildState.guild = res.guild || null;
       guildState.members = res.members || [];
       guildState.myRank = res.myRank || null;
       guildState.applications = res.applications || [];
-      if(!guildState.guild){ if(guildBrowseState.status==='idle') guildBrowseLoad(); guildTeardownChat(); }
-      else { guildChatMaybeSubscribe(); guildEstateEnsure(); } // load the shared estate so its workshop bonuses apply on any tab
-      if(currentCategory==='guild'||currentCategory==='chat'||currentCategory==='peons') render();
+      var justAccepted = wasWaiting && !!guildState.guild;
+      if(justAccepted){ // an application we were waiting on just went through
+        guildBrowseState.appliedTo = null;
+        addLog('You were accepted into [' + escapeHtml(guildState.guild.tag) + '] ' + escapeHtml(guildState.guild.name) + '!', 'important');
+      }
+      if(!guildState.guild){
+        if(guildBrowseState.status==='idle') guildBrowseLoad();
+        guildTeardownChat(); guildAppsTeardown();
+        guildMyAppMaybeSubscribe(); // watch for my own acceptance while I wait
+      } else {
+        guildChatMaybeSubscribe(); guildEstateEnsure(); // load the shared estate so its workshop bonuses apply on any tab
+        guildMyAppTeardown();
+        if(guildState.myRank==='leader' || guildState.myRank==='officer') guildAppsMaybeSubscribe(); // watch incoming applications
+        else guildAppsTeardown();
+      }
+      guildLivePollEnsure();
+      if(justAccepted || currentCategory==='guild' || currentCategory==='chat' || currentCategory==='peons') render();
     });
   }
   function guildBrowseLoad(){
@@ -13084,7 +13099,7 @@
         guildBrowseState.status='idle'; guildBankState.status='idle'; guildBankState.guildId=null;
         guildEstateReset();
         guildBossState.status='idle'; guildBossState.guildId=null; guildBossState.active=null; guildBossState.claimable=null;
-        guildTeardownChat(); guildReload(true); return;
+        guildTeardownChat(); guildAppsTeardown(); guildReload(true); return;
       }
       guildReload(true);
     });
@@ -13652,6 +13667,15 @@
   var guildChatSubGuildId = null;
   var guildChatDraft = '';
   var guildChatLastSentAt = 0;
+  // Live guild-application plumbing: a realtime channel that lets officers see incoming
+  // applications the instant they land, a second one that lets an applicant see the moment
+  // they're accepted, and a lightweight poll as a safety net (realtime DELETE events on the
+  // applications table can be dropped depending on replica identity, so we never rely on them alone).
+  var guildAppsChannelObj = null;      // officer-side: applications for my guild
+  var guildAppsSubGuildId = null;
+  var guildMyAppChannelObj = null;     // applicant-side: my own application row
+  var guildMyAppSubUserId = null;
+  var guildLivePollTimer = null;
   function guildChatMessagesHtml(){
     if(!guildChatMessages.length) return '<div class="chat-empty">No guild messages yet &mdash; say hello to your guildmates!</div>';
     return guildChatMessages.map(function(m){ return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+escapeHtml(m.body||'')+'</span></div>'; }).join('');
@@ -13681,6 +13705,52 @@
   function guildTeardownChat(){
     if(guildChatChannelObj){ try{ chatClient.removeChannel(guildChatChannelObj); }catch(e){} guildChatChannelObj=null; }
     guildChatSubGuildId=null; guildChatMessages=[];
+  }
+  // Officer/leader: watch the applications for my guild so new ones (and accept/reject churn)
+  // show up without a refresh. Any change just re-pulls authoritative state via get_state.
+  function guildAppsMaybeSubscribe(){
+    if(!chatClient || !guildState.guild) return;
+    var gid = guildState.guild.id;
+    if(guildAppsSubGuildId===gid && guildAppsChannelObj) return; // already watching this guild
+    guildAppsTeardown();
+    guildAppsSubGuildId = gid;
+    guildAppsChannelObj = chatClient.channel('guild-apps-'+gid)
+      .on('postgres_changes', { event:'*', schema:'public', table:'guild_applications', filter:'guild_id=eq.'+gid }, function(){ guildReload(true); })
+      .subscribe();
+  }
+  function guildAppsTeardown(){
+    if(guildAppsChannelObj){ try{ chatClient.removeChannel(guildAppsChannelObj); }catch(e){} guildAppsChannelObj=null; }
+    guildAppsSubGuildId=null;
+  }
+  // Applicant (not yet in a guild): watch my own application row so acceptance/rejection lands
+  // live. Acceptance shows up as get_state returning a guild; rejection/cancel as the row vanishing.
+  function guildMyAppMaybeSubscribe(){
+    if(!chatClient || !authUser || !authUser.id || guildState.guild) return;
+    var uid = authUser.id;
+    if(guildMyAppSubUserId===uid && guildMyAppChannelObj) return;
+    guildMyAppTeardown();
+    guildMyAppSubUserId = uid;
+    guildMyAppChannelObj = chatClient.channel('guild-myapp-'+uid)
+      .on('postgres_changes', { event:'*', schema:'public', table:'guild_applications', filter:'user_id=eq.'+uid }, function(){ guildReload(true); guildBrowseLoad(); })
+      .subscribe();
+  }
+  function guildMyAppTeardown(){
+    if(guildMyAppChannelObj){ try{ chatClient.removeChannel(guildMyAppChannelObj); }catch(e){} guildMyAppChannelObj=null; }
+    guildMyAppSubUserId=null;
+  }
+  // Safety-net poll: only actually hits the network when there's something time-sensitive to catch --
+  // an officer looking at the applications list, or an applicant waiting on a decision. Realtime does
+  // the instant work; this guarantees liveness even if a realtime event is missed.
+  function guildLivePollEnsure(){
+    if(guildLivePollTimer || !chatClient) return;
+    guildLivePollTimer = setInterval(guildLiveTick, 12000);
+  }
+  function guildLiveTick(){
+    if(!chatClient || !authUser || !authUser.id) return;
+    if(guildState.busy || guildState.status==='loading') return;
+    var pendingApp = !guildState.guild && !!guildBrowseState.appliedTo;
+    var officerViewing = !!guildState.guild && (guildState.myRank==='leader' || guildState.myRank==='officer') && currentCategory==='guild';
+    if(pendingApp || officerViewing) guildReload(true);
   }
   function guildChatSend(){
     var input=document.getElementById('chatInput');
