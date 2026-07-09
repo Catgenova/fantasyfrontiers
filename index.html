@@ -2450,12 +2450,23 @@
   var WAND_TYPE_MAP = {};
   WAND_TYPES.forEach(function(w){ WAND_TYPE_MAP[w.id] = w; });
   function isWandWeapon(typeId){ return !!WAND_TYPE_MAP[typeId]; }
-  var STACKABLE_WEAPON_TYPES = MELEE_WEAPON_TYPES.concat(BOW_WEAPON_TYPES).concat(WAND_TYPES);
+  // ===== Staff (Arcanism two-handed support weapon) =====
+  // A Staff deals no damage and never auto-attacks (no attack speed). Instead it grants Block chance
+  // (5% at t0 -> 30% at t20) AND two additional active-familiar slots, so combat runs on your summons.
+  // Rarity gives MORE familiar slots (rare/supreme/fantastic = +1/+2/+3 beyond the base 2).
+  var STAFF_BLOCK_MIN = 0.05, STAFF_BLOCK_MAX = 0.30;
+  var STAFF_BASE_FAMILIAR_SLOTS = 2;
+  var STAFF_RARITY_FAMILIAR_SLOTS = { normal:2, rare:3, supreme:4, fantastic:5 };
+  function staffBlockPct(tierIndex){ return Math.round((STAFF_BLOCK_MIN + (STAFF_BLOCK_MAX-STAFF_BLOCK_MIN)*(tierIndex/(TIER_COUNT-1)))*1000)/1000; }
+  var STAFF_TYPE = { id:'staff', name:'Staff', icon:svgIcon('dowel','#8a6a42'), damageType:'blunt', attackTypes:{blunt:1},
+    hand:'2h', weaponClass:'Staff', skillId:'arcanism', matPrefix:'forestry', tierCount:TIER_COUNT, attackSpeed:0, staff:true, noAttack:true };
+  function isStaff(typeId){ return typeId==='staff'; }
+  var STACKABLE_WEAPON_TYPES = MELEE_WEAPON_TYPES.concat(BOW_WEAPON_TYPES).concat(WAND_TYPES).concat([STAFF_TYPE]);
   var STACKABLE_WEAPON_TYPE_MAP = {};
   STACKABLE_WEAPON_TYPES.forEach(function(w){ STACKABLE_WEAPON_TYPE_MAP[w.id] = w; });
   function isStackableWeapon(typeId){ return !!STACKABLE_WEAPON_TYPE_MAP[typeId]; }
 
-  var WEAPON_STYLES = STACKABLE_WEAPON_TYPES.map(function(w){ return {id:w.id, name:w.name, icon:w.icon, damageType:w.damageType, attackTypes:w.attackTypes, hand:w.hand, stackable:true, attackSpeed:w.attackSpeed, wand:w.wand||false, element:w.element||null}; });
+  var WEAPON_STYLES = STACKABLE_WEAPON_TYPES.map(function(w){ return {id:w.id, name:w.name, icon:w.icon, damageType:w.damageType, attackTypes:w.attackTypes, hand:w.hand, stackable:true, attackSpeed:w.attackSpeed, wand:w.wand||false, element:w.element||null, staff:w.staff||false, noAttack:w.noAttack||false}; });
   // Offhand options depend on the mainhand's handedness:
   // 1h weapons can pair with a shield, bows pair with a quiver, 2h weapons leave no offhand free.
   var OFFHAND_STYLES = [
@@ -2488,9 +2499,11 @@
   var WARD_TYPE_MAP = {};
   WARD_TYPES.forEach(function(w){ WARD_TYPE_MAP[w.id] = w; });
   function isWard(typeId){ return !!WARD_TYPE_MAP[typeId]; }
-  // Wands are excluded from per-style weapon proficiencies: all wands share one 'wands' proficiency.
-  var WEAPON_STYLE_IDS = WEAPON_STYLES.filter(function(w){ return !w.wand; }).map(function(w){ return w.id; });
-  var WANDS_SKILL_ID = 'wands'; // shared weapon proficiency for every Wand, trained by wand damage dealt
+  // Wands and the Staff are excluded from per-style weapon proficiencies: wands share the 'wands'
+  // proficiency; the staff uses the 'staves' proficiency (familiar efficiency).
+  var WEAPON_STYLE_IDS = WEAPON_STYLES.filter(function(w){ return !w.wand && !w.staff; }).map(function(w){ return w.id; });
+  var WANDS_SKILL_ID = 'wands';  // shared weapon proficiency for every Wand, trained by wand damage dealt
+  var STAVES_SKILL_ID = 'staves'; // staff proficiency: familiar efficiency, trained by familiar damage
   // Wards are excluded from the per-style proficiency list: all wards share one 'warding' proficiency.
   var OFFHAND_STYLE_IDS = OFFHAND_STYLES.filter(function(s){ return !s.ward; }).map(function(s){ return s.id; });
   var WARDING_SKILL_ID = 'warding'; // shared offhand proficiency for every Ward, trained by reflected damage
@@ -2721,7 +2734,7 @@
       if(!state.equippedMainhandTier || state.equippedMainhandTier<=0) return WEAPON_BASE;
       var itemId = 'stweapon_'+state.equippedMainhand+'_t'+(state.equippedMainhandTier-1)+'_'+state.equippedMainhandRarity;
       var item = STACKABLE_WEAPON_ITEMS[itemId];
-      return item ? {dmgMin:item.dmgMin, dmgMax:item.dmgMax, name:item.name, element:item.element||null, rarity:item.rarity} : WEAPON_BASE;
+      return item ? {dmgMin:item.dmgMin, dmgMax:item.dmgMax, name:item.name, element:item.element||null, rarity:item.rarity, block:item.block||0, familiarSlots:item.familiarSlots||0} : WEAPON_BASE;
     }
     var tier = state.weaponTiers[state.equippedMainhand]||0;
     if(tier<=0) return WEAPON_BASE;
@@ -2968,7 +2981,7 @@
   var CRAFTING_TAB_SKILL_IDS = CRAFT_SKILL_IDS.filter(function(id){
     return BUILDING_SKILL_IDS.indexOf(id)===-1 && OUTFITTING_SKILL_IDS.indexOf(id)===-1;
   });
-  var ALL_MAIN_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['fiberharvesting','grainharvesting','herbharvesting']).concat(WEAPON_STYLE_IDS).concat([WANDS_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS).concat(['prayer','sacrifice','devotion','blessing','miracle']);
+  var ALL_MAIN_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['fiberharvesting','grainharvesting','herbharvesting']).concat(WEAPON_STYLE_IDS).concat([WANDS_SKILL_ID, STAVES_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS).concat(['prayer','sacrifice','devotion','blessing','miracle']);
   var FAITH_SKILL_IDS = ['prayer','sacrifice','devotion','blessing','miracle'];
 
   // ================= FAMILIARS =================
@@ -3291,7 +3304,24 @@
   function getFamiliarLevel(skillId){
     return (state.familiars[skillId] && state.familiars[skillId].level) || 1;
   }
-  function familiarPotencyMult(level){ return (1 + (Math.max(1,level)-1)*FAMILIAR_POTENCY_PER_LEVEL) * (1 + getClothArmorSpellBonus(state)); }
+  function familiarPotencyMult(level){ return (1 + (Math.max(1,level)-1)*FAMILIAR_POTENCY_PER_LEVEL) * (1 + getClothArmorSpellBonus(state)) * (1 + stavesEfficiencyBonus(state)); }
+  // ---- Staff & multi-familiar helpers ----
+  // The Staves proficiency (trained by familiar damage) boosts familiar efficiency (spell potency):
+  // +1% at Lv 1 up to +100% at Lv 100. Applies to every familiar cast.
+  var STAVES_EFF_MIN = 0.01, STAVES_EFF_MAX = 1.00;
+  function stavesEfficiencyBonus(st){ st = st || state;
+    var lvl = getLevel((st.xp && st.xp[STAVES_SKILL_ID]) || 0);
+    return STAVES_EFF_MIN + (STAVES_EFF_MAX-STAVES_EFF_MIN)*clamp((lvl-1)/99, 0, 1);
+  }
+  function equippedStaffItem(st){ st = st || state; return (st.equippedMainhand && isStaff(st.equippedMainhand)) ? getEquippedWeaponItem(st) : null; }
+  function getStaffBlockChance(st){ var it = equippedStaffItem(st); return it ? (it.block||0) : 0; }
+  function staffFamiliarSlots(st){ var it = equippedStaffItem(st); return it ? (it.familiarSlots||0) : 0; }
+  function activeCompanionSlots(st){ st = st || state; return 1 + staffFamiliarSlots(st); } // everyone has 1; a staff adds more
+  // The list of currently active companions, filtered to still-owned familiars and capped to slots.
+  function activeCompanionList(st){ st = st || state;
+    if(!Array.isArray(st.activeCompanions)) return [];
+    return st.activeCompanions.filter(function(id){ return st.familiars[id] && st.familiars[id].owned; }).slice(0, activeCompanionSlots(st));
+  }
   function maybeSummonFamiliar(skillId){
     if(!FAMILIAR_DATA[skillId]) return;
     var current = state.familiars[skillId];
@@ -3343,8 +3373,9 @@
     return 1 - Math.min(0.9, red);
   }
   function famRegenHps(){ return isFamiliarBuffActive('regen') ? (state.familiarBuffs.regenHps||0) : 0; }
-  function castFamiliarSpell(spell, level){
+  function castFamiliarSpell(spell, level, casterId){
     var now = Date.now();
+    if(casterId === undefined) casterId = (state.activeCompanions && state.activeCompanions[0]) || null;
     var potency = familiarPotencyMult(level) * (1 + catalystFamiliarBonus()); // active Catalyst potion boosts spell power
 
     if(spell.type==='heal'){
@@ -3401,21 +3432,31 @@
         if(spell.type==='hit' && spell.dmgType!=='void' && cmon){ var atkMix={}; atkMix[spell.dmgType]=1; dmg *= weightedAdvantage(atkMix, cmon.armorTypes || {blunt:1/3,slashing:1/3,piercing:1/3}); }
         dmg *= elementAdvantage(spell.element, cmon && cmon.element); // +20% when the spell's element beats the enemy's
         dmg = Math.round(dmg);
-        cact.monsterHp = Math.max(1, cact.monsterHp - dmg);
+        applyChipDamage(dmg); // floors at 1 unless you wield a Staff (then summons can land the kill)
         spawnFloatingText('-'+dmg+' ('+spell.name+')', 'ft-rare');
+        if(dmg > 0) addXp(STAVES_SKILL_ID, dmg); // Staves proficiency trains on familiar damage dealt
         if(spell.type==='siphon'){
           var stolen = Math.min(dmg, maxHp(state) - state.playerHp);
           if(stolen>0){ state.playerHp += stolen; spawnFloatingText('+'+stolen+' HP', 'ft-success'); }
         }
       }
     }
-    if(!offlineCapture) addLog((FAMILIAR_DATA[state.activeCompanion]||{}).name + ' casts ' + spell.name + '!', 'important'); // suppress per-cast spam during the offline fast-forward
+    if(!offlineCapture) addLog((FAMILIAR_DATA[casterId]||{}).name + ' casts ' + spell.name + '!', 'important'); // suppress per-cast spam during the offline fast-forward
   }
   function activateCompanion(skillId){
-    if(skillId && (!state.familiars[skillId] || !state.familiars[skillId].owned)) return;
-    state.activeCompanion = skillId || null;
-    state.familiarCastIndex = 0;
-    state.familiarCastAccum = 0;
+    if(!Array.isArray(state.activeCompanions)) state.activeCompanions = [];
+    state.companionCast = state.companionCast || {};
+    if(!skillId){ state.activeCompanions = []; needsRender = true; return; } // deactivate all
+    if(!state.familiars[skillId] || !state.familiars[skillId].owned) return;
+    var idx = state.activeCompanions.indexOf(skillId);
+    if(idx !== -1){ state.activeCompanions.splice(idx, 1); }
+    else if(activeCompanionList(state).length < activeCompanionSlots(state)){
+      state.activeCompanions.push(skillId);
+      state.companionCast[skillId] = { accum:0, index:0 };
+    } else {
+      addLog('All '+activeCompanionSlots(state)+' companion slot'+(activeCompanionSlots(state)===1?'':'s')+' are full — deactivate one first (a Staff adds more).', 'danger');
+      return;
+    }
     needsRender = true;
   }
 
@@ -3447,7 +3488,7 @@
   // means more total access, on top of each piece's own individual level.
   function combatLevelEquivalent(state){
     var total = 0;
-    if(state.equippedMainhand) total += getLevel(state.xp[isWandWeapon(state.equippedMainhand) ? WANDS_SKILL_ID : state.equippedMainhand]||0);
+    if(state.equippedMainhand) total += getLevel(state.xp[isWandWeapon(state.equippedMainhand) ? WANDS_SKILL_ID : (isStaff(state.equippedMainhand) ? STAVES_SKILL_ID : state.equippedMainhand)]||0);
     if(state.equippedOffhand) total += getLevel(state.xp[isWard(state.equippedOffhand) ? WARDING_SKILL_ID : state.equippedOffhand]||0);
     BODY_ARMOR_SLOTS.forEach(function(slot){
       var s = state.bodyArmor && state.bodyArmor[slot];
@@ -3898,7 +3939,10 @@
     var handBonus = w.hand==='2h' ? 1.3 : 1.0;
     var is2h = w.hand==='2h';
     var inputs = {};
-    if(w.wand){
+    if(w.staff){
+      inputs['forestry_t'+tierIndex] = 4;        // 4 logs
+      inputs[glyphIdFor('dark')] = 8;            // 8 Dark Glyphs
+    } else if(w.wand){
       inputs['forestry_t'+tierIndex] = 2;        // 2 logs
       inputs[glyphIdFor(w.element)] = 3;         // 3 matching-element glyphs (from Elementals)
     } else {
@@ -3910,8 +3954,9 @@
       name: stackableWeaponTierNames(w)[tierIndex] + ' ' + w.name,
       levelReq: TIER_LEVELS[tierIndex],
       xp: craftXp(tierIndex) * (is2h ? 2 : 1),   // two-handed weapons grant twice the crafting XP
-      dmgMin: Math.max(1, Math.round(tierStat(2,tierIndex)*handBonus)),
-      dmgMax: Math.max(2, Math.round(tierStat(5,tierIndex)*handBonus)),
+      dmgMin: w.staff ? 0 : Math.max(1, Math.round(tierStat(2,tierIndex)*handBonus)), // a staff deals no damage
+      dmgMax: w.staff ? 0 : Math.max(2, Math.round(tierStat(5,tierIndex)*handBonus)),
+      block: w.staff ? staffBlockPct(tierIndex) : 0,
       inputs: inputs,
       time: tierTime(7,0.3,tierIndex)
     };
@@ -3934,7 +3979,9 @@
           rarity: rarityId,
           element: w.element || null,
           dmgMin: Math.round(data.dmgMin * dmgMult),
-          dmgMax: Math.round(data.dmgMax * dmgMult)
+          dmgMax: Math.round(data.dmgMax * dmgMult),
+          block: w.staff ? data.block : 0,                                            // staff: Block chance
+          familiarSlots: w.staff ? (STAFF_RARITY_FAMILIAR_SLOTS[rarityId] || STAFF_BASE_FAMILIAR_SLOTS) : 0 // staff: extra active-familiar slots (rarity adds more)
         };
       }
     });
@@ -3957,8 +4004,8 @@
   function equipStackableWeapon(itemId){
     var item = STACKABLE_WEAPON_ITEMS[itemId];
     if(!item || (state.inventory[itemId]||0) <= 0) return;
-    if(isWandWeapon(item.typeId)){
-      // Wands share one 'wands' proficiency (trained by use), so equipping is gated by Arcanism level.
+    if(isWandWeapon(item.typeId) || isStaff(item.typeId)){
+      // Wands/Staves share their own proficiency (trained by use), so equipping is gated by Arcanism level.
       if(getLevel(state.xp.arcanism||0) < TIER_LEVELS[item.tierIndex]){
         addLog('Your Arcanism isn\'t high enough to wield ' + item.name + ' yet.', 'danger'); return;
       }
@@ -5432,7 +5479,7 @@
       carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0,
       stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, arcanism:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
-      shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0, wands:0,
+      shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0, wands:0, staves:0,
       prayer:0, sacrifice:0, devotion:0, blessing:0, miracle:0
     };
     WEAPON_STYLE_IDS.forEach(function(id){ xpObj[id] = 0; });
@@ -5488,6 +5535,8 @@
       autoTea: false,
       familiars: {},
       activeCompanion: null,
+      activeCompanions: [],   // multiple active familiars (1 base slot + a Staff's extra slots)
+      companionCast: {},      // per-companion { accum, index } cast timing
       activePotion: null,   // Alchemy combat potion currently in use (item id) + its remaining charges
       potionCharges: 0,
       popupQueue: [],
@@ -6233,19 +6282,37 @@
     var atkProfXp = Math.max(1, Math.round(effDmg * WEAPON_PROF_XP_PER_DMG));
     if(state.equippedMainhand) addXp(isWandAttack ? WANDS_SKILL_ID : state.equippedMainhand, atkProfXp);
     if(state.equippedOffhand && offhandStyle && offhandStyle.type==='quiver') addXp(state.equippedOffhand, atkProfXp);
-    if(act.monsterHp <= 0){
-      bumpStat('kills');
-      var goldWon = randInt(monster.goldMin, monster.goldMax);
-      state.gold += goldWon;
-      addPhysiqueXp(physTierPairs([['resolve',1]], monster.tierIndex));
-      addLog('Defeated the ' + monster.name + '! +' + goldWon + ' gold.', 'important');
-      applyMonsterCategoryLoot(monster);
-      if(monster.category==='dungeon') handleDungeonVictory(monster);
-      act.monsterHp = monster.hp;
-      act.monsterTickAccum = 0;
-    }
+    if(act.monsterHp <= 0) defeatMonster(monster);
   }
 
+  // Award the kill (gold, loot, stats, respawn). Called by the player's attack, and by familiars/
+  // reflection when the player wields a Staff (no auto-attack, so summons must land the finishing blow).
+  function defeatMonster(monster){
+    var act = state.activity;
+    bumpStat('kills');
+    var goldWon = randInt(monster.goldMin, monster.goldMax);
+    state.gold += goldWon;
+    addPhysiqueXp(physTierPairs([['resolve',1]], monster.tierIndex));
+    addLog('Defeated the ' + monster.name + '! +' + goldWon + ' gold.', 'important');
+    applyMonsterCategoryLoot(monster);
+    if(monster.category==='dungeon') handleDungeonVictory(monster);
+    act.monsterHp = monster.hp;
+    act.monsterTickAccum = 0;
+  }
+  // Familiar/DoT/reflect damage normally floors the enemy at 1 HP so YOUR attack lands the kill --
+  // except when you wield a Staff (no attack), where your summons must be able to finish the fight.
+  function familiarCanKill(){ var ws = getWeaponStyle(state.equippedMainhand); return !!ws.noAttack; }
+  // Apply chip damage from a non-player source (familiar spell/DoT, ward reflect). Kills only if the
+  // player can't attack (staff); otherwise floors at 1.
+  function applyChipDamage(dmg){
+    var act = state.activity; if(!act || act.type!=='combat') return;
+    if(familiarCanKill()){
+      act.monsterHp -= dmg;
+      if(act.monsterHp <= 0){ var m = monsterById(act.monsterId); if(m) defeatMonster(m); }
+    } else {
+      act.monsterHp = Math.max(1, act.monsterHp - dmg);
+    }
+  }
   function monsterAttackTick(){
     var act = state.activity;
     var monster = monsterById(act.monsterId);
@@ -6270,7 +6337,7 @@
     var elementMult = incomingElementMult(state, monster);
     var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes)); // familiar type-resistance buffs
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
-    var blockChance = getPlateArmorBlockChance(state) + blockingBlockBonus(state) + reflexesBlockBonus(state) + getFamBuff('block');
+    var blockChance = getPlateArmorBlockChance(state) + getStaffBlockChance(state) + blockingBlockBonus(state) + reflexesBlockBonus(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
     if(blocked){
       rawDmg = Math.round(rawDmg * 0.5);
@@ -6293,7 +6360,7 @@
     }
     state.playerHp -= dmgToPlayer;
     if(wardReflected > 0){
-      act.monsterHp = Math.max(1, act.monsterHp - wardReflected); // reflected damage chips the enemy (your own attack lands the kill)
+      applyChipDamage(wardReflected); // reflected damage chips the enemy (floors at 1 unless you wield a Staff)
       spawnFloatingText('Reflected '+wardReflected+'!', 'ft-rare');
       addXp(WARDING_SKILL_ID, Math.max(1, Math.round(wardReflected * DEF_PROF_XP_PER_DMG))); // Warding trains on damage reflected
     }
@@ -6621,13 +6688,17 @@
       var _monster = monsterById(act.monsterId);
       if(_pStyle && _monster){
         var _step = 500; // ms per sim step (covers the 12h cap in ~86k steps, well under the guard)
-        var _sim = 0, _pAcc = 0, _mAcc = 0, _castAcc = state.familiarCastAccum||0, _guard = 0;
+        var _noAtk = !!_pStyle.noAttack; // a Staff never auto-attacks offline either
+        state.companionCast = state.companionCast || {};
+        var _sim = 0, _pAcc = 0, _mAcc = 0, _guard = 0;
         while(_sim < capped && state.activity.type==='combat' && _guard++ < 200000){
           var _chunk = Math.min(_step, capped - _sim); _sim += _chunk;
-          // Player swings
-          var _pInt = Math.max(200, _pStyle.attackSpeed*1000*(1 - Math.min(0.9, getFamBuff('haste'))));
-          _pAcc += _chunk;
-          while(_pAcc >= _pInt && state.activity.type==='combat'){ _pAcc -= _pInt; playerAttackTick(); _pInt = Math.max(200, _pStyle.attackSpeed*1000*(1 - Math.min(0.9, getFamBuff('haste')))); }
+          // Player swings (skipped for a Staff)
+          if(!_noAtk){
+            var _pInt = Math.max(200, _pStyle.attackSpeed*1000*(1 - Math.min(0.9, getFamBuff('haste'))));
+            _pAcc += _chunk;
+            while(_pAcc >= _pInt && state.activity.type==='combat'){ _pAcc -= _pInt; playerAttackTick(); _pInt = Math.max(200, _pStyle.attackSpeed*1000*(1 - Math.min(0.9, getFamBuff('haste')))); }
+          }
           if(state.activity.type!=='combat') break;
           // Monster swings + auto-eat
           var _mInt = Math.max(200, _monster.attackSpeed*1000*(1+getFamiliarEnemySlowPct()));
@@ -6635,16 +6706,17 @@
           while(_mAcc >= _mInt && state.activity.type==='combat'){ _mAcc -= _mInt; monsterAttackTick(); autoEatCheck(); _mInt = Math.max(200, _monster.attackSpeed*1000*(1+getFamiliarEnemySlowPct())); }
           if(state.activity.type!=='combat') break;
           // Familiar poison + toxin-potion poison chip the enemy (never the finishing blow); familiar regen heals.
-          var _pd = getFamiliarPoisonDps(); if(_pd>0) state.activity.monsterHp = Math.max(1, state.activity.monsterHp - _pd*_chunk/1000);
+          var _pd = getFamiliarPoisonDps(); if(_pd>0) applyChipDamage(_pd*_chunk/1000);
           if((state.activity.potionPoisonUntil||0) > Date.now()) state.activity.monsterHp = Math.max(1, state.activity.monsterHp - (state.activity.potionPoisonDps||0)*_chunk/1000);
           var _rh = famRegenHps(); if(_rh>0 && state.playerHp>0) state.playerHp = Math.min(maxHp(state), state.playerHp + _rh*_chunk/1000);
-          // Familiar casts one spell every 10s, cycling its list (same cadence as live).
-          if(state.activeCompanion && FAMILIAR_DATA[state.activeCompanion]){
-            _castAcc += _chunk;
-            while(_castAcc >= 10000){ _castAcc -= 10000; var _cs = FAMILIAR_DATA[state.activeCompanion].spells; castFamiliarSpell(_cs[state.familiarCastIndex % _cs.length], getFamiliarLevel(state.activeCompanion)); state.familiarCastIndex = (state.familiarCastIndex + 1) % _cs.length; }
-          }
+          // Each active companion casts one spell every 10s, cycling its list (same cadence as live).
+          activeCompanionList(state).forEach(function(cid){
+            if(!FAMILIAR_DATA[cid]) return;
+            var cc = state.companionCast[cid] || (state.companionCast[cid] = { accum:0, index:0 });
+            cc.accum += _chunk;
+            while(cc.accum >= 10000){ cc.accum -= 10000; var _cs = FAMILIAR_DATA[cid].spells; castFamiliarSpell(_cs[cc.index % _cs.length], getFamiliarLevel(cid), cid); cc.index = (cc.index + 1) % _cs.length; }
+          });
         }
-        state.familiarCastAccum = _castAcc;
       }
     }
     }catch(e){} // isolate the primary-activity catch-up so a stale primary can't void the belt slots / peons below
@@ -6818,6 +6890,10 @@
           if(typeof state.familiarCastAccum !== 'number') state.familiarCastAccum = 0;
           if(!state.familiarBuffs || typeof state.familiarBuffs !== 'object') state.familiarBuffs = { armorMult:1, armorUntil:0, damageMult:1, damageUntil:0, enemySlowPct:0, enemySlowUntil:0, enemyWeakenPct:0, enemyWeakenUntil:0, poisonDps:0, poisonUntil:0 };
           if(state.activeCompanion && (!state.familiars[state.activeCompanion] || !state.familiars[state.activeCompanion].owned)) state.activeCompanion = null;
+          // Migrate the single active companion to the multi-companion array.
+          if(!Array.isArray(state.activeCompanions)) state.activeCompanions = state.activeCompanion ? [state.activeCompanion] : [];
+          state.activeCompanions = state.activeCompanions.filter(function(id){ return state.familiars[id] && state.familiars[id].owned; });
+          if(!state.companionCast || typeof state.companionCast !== 'object') state.companionCast = {};
           if(typeof state.activePotion === 'undefined') state.activePotion = null;
           if(typeof state.potionCharges !== 'number') state.potionCharges = 0;
           if(state.activePotion && !parsePotionId(state.activePotion)) { state.activePotion = null; state.potionCharges = 0; }
@@ -8088,7 +8164,61 @@
       html += '</div>';
     });
     html += '</div>';
+    html += renderStaffCraftSection();
     html += renderEquipWandSection();
+    return html;
+  }
+  function renderStaffCraftSection(){
+    var lvl = getLevel(state.xp.arcanism);
+    var w = STAFF_TYPE;
+    var maxUnlocked = 0;
+    for(var mi=0; mi<w.tierCount; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
+    if(selectedWandTier[w.id] === undefined) selectedWandTier[w.id] = maxUnlocked;
+    var sel = Math.min(selectedWandTier[w.id], maxUnlocked);
+    var data = getStackableWeaponTierData(w.id, sel);
+    var activeSlot = findActiveSpecialCraftSlotFor('stackweapon', {typeId:w.id, tierIndex:sel});
+    var isActive = !!activeSlot;
+    var effTime = data.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, 'arcanism');
+    var pct = isActive ? clamp(activeSlot.act.progress/effTime*100,0,100) : 0;
+    var ready = lvl >= data.levelReq && hasInputs(data.inputs);
+    var successPct = Math.round(craftSuccessRate(state, 'arcanism')*100);
+    var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
+    var ownedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stweapon_'+w.id+'_t'+sel+'_'+r; }));
+    var current = (state.equippedMainhand && isStaff(state.equippedMainhand) && state.equippedMainhandTier>0)
+      ? STACKABLE_WEAPON_ITEMS['stweapon_staff_t'+(state.equippedMainhandTier-1)+'_'+state.equippedMainhandRarity] : null;
+    var html = '<h3 style="margin-top:14px">Carve Staff</h3>';
+    html += '<div class="section-intro">A <b>Staff</b> is a two-handed weapon that deals no damage and never attacks &mdash; instead it grants <b>Block</b> ('+Math.round(STAFF_BLOCK_MIN*100)+'% at Tier 1 up to '+Math.round(STAFF_BLOCK_MAX*100)+'% at the top tier) and <b>'+STAFF_BASE_FAMILIAR_SLOTS+' extra active-familiar slots</b>, so combat runs on your summons. Rarity grants even more slots: rare/supreme/fantastic = '+STAFF_RARITY_FAMILIAR_SLOTS.rare+'/'+STAFF_RARITY_FAMILIAR_SLOTS.supreme+'/'+STAFF_RARITY_FAMILIAR_SLOTS.fantastic+' slots. Staves share the <b>Staves</b> proficiency (familiar efficiency, +1% at Lv 1 up to +100% at Lv 100, trained by familiar damage).</div>';
+    html += '<div class="card-grid"><div class="item-card'+(isActive?' active-item':'')+'">';
+    html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">No attack &bull; +'+STAFF_BASE_FAMILIAR_SLOTS+' familiar slots &bull; Owned: '+ownedTotal+'</div></div></div>';
+    html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
+    html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>block '+Math.round(data.block*100)+'%</span></div>';
+    html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the rarity odds &mdash; higher rarity = more familiar slots)</div>';
+    html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-wand-'+w.id)+'</div>';
+    html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
+    if(isActive){
+      html += activeSlot.primary ? '<button class="action-btn stop" data-action="stop">Stop</button>' : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
+    } else {
+      html += '<button class="action-btn" data-action="forgeStackableWeapon" data-type="'+w.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Carve</button>';
+    }
+    html += '</div></div>';
+    // Equip staff
+    var owned = Object.keys(STACKABLE_WEAPON_ITEMS).filter(function(id){ return isStaff(STACKABLE_WEAPON_ITEMS[id].typeId) && (state.inventory[id]||0)>0; })
+      .sort(function(a,b){ return STACKABLE_WEAPON_ITEMS[a].tierIndex - STACKABLE_WEAPON_ITEMS[b].tierIndex; });
+    html += '<h3>Equip Staff</h3>';
+    html += '<div class="card-grid"><div class="item-card">';
+    html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">Mainhand</div><div class="item-meta">'+(current ? current.name+' &bull; block '+Math.round((current.block||0)*100)+'% &bull; +'+(current.familiarSlots||0)+' familiar slots' : 'No staff equipped')+'</div></div></div>';
+    if(owned.length===0){ html += '<div class="empty-note">No staves in inventory. Carve one above.</div>'; }
+    else {
+      html += '<div class="style-row">';
+      owned.forEach(function(id){
+        var item = STACKABLE_WEAPON_ITEMS[id]; var qty = state.inventory[id]||0;
+        var canEquip = getLevel(state.xp.arcanism||0) >= TIER_LEVELS[item.tierIndex];
+        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipStackableWeapon" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type" style="text-transform:none">block '+Math.round((item.block||0)*100)+'% &bull; +'+(item.familiarSlots||0)+' slots</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires Arcanism Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
+      });
+      html += '</div>';
+    }
+    if(current) html += '<button class="action-btn stop" data-action="unequipStackableWeapon">Unequip</button>';
+    html += '</div></div>';
     return html;
   }
 
@@ -8660,25 +8790,27 @@
       html += '<div class="hp-label"><span>Monster Attack</span><span>'+m.attackSpeed+'s</span></div>';
       html += '<div style="height:12px"></div>';
       html += '<div class="arena-row"><span class="arena-name">You</span></div>';
-      html += '<div class="hp-track" style="height:8px"><div class="hp-fill" id="arenaPlayerAtkFill" style="width:'+playerAtkPct+'%;background:var(--gold);transition:none"></div></div>';
-      html += '<div class="hp-label"><span>Your Attack</span><span>'+weaponStyle.attackSpeed+'s</span></div>';
+      if(weaponStyle.noAttack){
+        html += '<div class="hp-label"><span style="color:var(--text-faint)">No attack &mdash; your familiars fight for you</span></div>';
+      } else {
+        html += '<div class="hp-track" style="height:8px"><div class="hp-fill" id="arenaPlayerAtkFill" style="width:'+playerAtkPct+'%;background:var(--gold);transition:none"></div></div>';
+        html += '<div class="hp-label"><span>Your Attack</span><span>'+weaponStyle.attackSpeed+'s</span></div>';
+      }
       html += '<div class="hp-track" style="margin-top:6px"><div class="hp-fill" id="arenaPlayerFill" style="width:'+pPct+'%;background:var(--hp-bad)"></div></div>';
       html += '<div class="hp-label"><span>Your HP</span><span id="arenaPlayerLabel">'+fmt(state.playerHp)+' / '+maxHp(state)+'</span></div>';
-      if(state.activeCompanion && FAMILIAR_DATA[state.activeCompanion]){
-        var _comp = FAMILIAR_DATA[state.activeCompanion];
-        var _castPct = clamp((state.familiarCastAccum||0)/10000*100,0,100);
-        var _spells = _comp.spells;
-        var _nextIdx = (state.familiarCastIndex||0) % _spells.length;
+      var _comps = activeCompanionList(state);
+      if(_comps.length){
         html += '<div style="height:12px"></div>';
-        html += '<div class="arena-row"><span class="arena-name">'+_comp.icon+' '+escapeHtml(_comp.name)+' <span style="font-size:10px;color:var(--text-faint);font-family:var(--font-body)">('+escapeHtml(SKILL_LABELS[state.activeCompanion]||state.activeCompanion)+' familiar)</span></span></div>';
-        html += '<div class="hp-track" style="height:8px"><div class="hp-fill" id="arenaFamiliarCastFill" style="width:'+_castPct+'%;background:var(--cat-menagerie);transition:none"></div></div>';
-        html += '<div class="hp-label"><span>Familiar Spell</span><span>every 10s</span></div>';
-        html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px" id="arenaFamiliarCycle">';
-        _spells.forEach(function(sp, si){
-          var _isNext = si===_nextIdx;
-          html += '<span style="font-size:10px;font-family:var(--font-mono);padding:2px 6px;border-radius:3px;border:1px solid '+(_isNext?'var(--cat-menagerie)':'var(--border)')+';'+(_isNext?'background:color-mix(in srgb, var(--cat-menagerie) 22%, var(--bg-panel));color:var(--text);':'color:var(--text-dim);')+'">'+(_isNext?'▸ ':'')+escapeHtml(sp.name)+'</span>';
+        html += '<div class="arena-row"><span class="arena-name">Companions ('+_comps.length+'/'+activeCompanionSlots(state)+') &mdash; each casts every 10s</span></div>';
+        _comps.forEach(function(cid){
+          var _comp = FAMILIAR_DATA[cid]; if(!_comp) return;
+          var cc = (state.companionCast && state.companionCast[cid]) || {accum:0,index:0};
+          var _castPct = clamp((cc.accum||0)/10000*100,0,100);
+          var _spells = _comp.spells;
+          var _next = _spells[(cc.index||0) % _spells.length];
+          html += '<div class="hp-label" style="margin-top:6px"><span>'+_comp.icon+' '+escapeHtml(_comp.name)+'</span><span style="color:var(--text-faint)">&#9656; '+escapeHtml(_next.name)+'</span></div>';
+          html += '<div class="hp-track" style="height:6px"><div class="hp-fill" id="arenaCast-'+cid+'" style="width:'+_castPct+'%;background:var(--cat-menagerie);transition:none"></div></div>';
         });
-        html += '</div>';
       }
       html += '<button class="action-btn stop" data-action="stop" style="margin-top:12px">Retreat</button>';
       html += '</div>';
@@ -8755,7 +8887,7 @@
     var physiqueMeta = PHYSIQUE_SKILLS.filter(function(p){ return p.id===skillId; })[0];
     var label = SKILL_LABELS[skillId] || (physiqueMeta ? physiqueMeta.name : skillId);
     var expanded = !!menagerieExpanded[skillId];
-    var isCompanion = state.activeCompanion === skillId;
+    var isCompanion = activeCompanionList(state).indexOf(skillId) !== -1;
     var famLevel = getFamiliarLevel(skillId);
     var html = '<div class="item-card'+(owned?'':' locked')+(isCompanion?' active-item':'')+'">';
     if(owned){
@@ -8766,9 +8898,10 @@
           html += '<div class="chance-line">'+(i+1)+'. <b>'+spell.name+'</b> '+spellElementIcon(spell)+' &mdash; '+describeSpell(spell, famLevel)+'</div>';
         });
         if(isCompanion){
-          html += '<button class="action-btn stop" data-action="activateCompanion" data-skill="">Deactivate Companion</button>';
+          html += '<button class="action-btn stop" data-action="activateCompanion" data-skill="'+skillId+'">Deactivate Companion</button>';
         } else {
-          html += '<button class="action-btn" data-action="activateCompanion" data-skill="'+skillId+'">Activate as Companion</button>';
+          var _full = activeCompanionList(state).length >= activeCompanionSlots(state);
+          html += '<button class="action-btn" data-action="activateCompanion" data-skill="'+skillId+'" '+(_full?'disabled title="All companion slots are full (a Staff adds more)"':'')+'>Activate as Companion</button>';
         }
       } else {
         html += '<div class="empty-note">Tap to expand</div>';
@@ -8933,10 +9066,12 @@
   function renderMenagerieTab(){
     var totalOwned = Object.keys(state.familiars).filter(function(k){ return state.familiars[k] && state.familiars[k].owned; }).length;
     var totalFamiliars = FAMILIAR_SKILL_IDS.length;
-    var html = '<div class="section-intro">Every skill -- gathering, crafting, farming, faith, and physique -- has an associated familiar. Completing an action for that skill carries a small (1/3000) chance to permanently summon it. Expand a summoned familiar to see its level and spells, then activate it as your Companion to bring it into combat: it casts one spell every 10 seconds, cycling through its list in order. Only one Companion can accompany you at a time. Summoned: <b>'+totalOwned+' / '+totalFamiliars+'</b></div>';
-    if(state.activeCompanion && FAMILIAR_DATA[state.activeCompanion]){
-      var activeFam = FAMILIAR_DATA[state.activeCompanion];
-      html += '<div class="physique-bonus">Active Companion: <b>'+activeFam.icon+' '+activeFam.name+'</b> ('+(SKILL_LABELS[state.activeCompanion]||state.activeCompanion)+') &mdash; casts its next spell in combat every 10s.</div>';
+    var _slots = activeCompanionSlots(state);
+    var html = '<div class="section-intro">Every skill -- gathering, crafting, farming, faith, and physique -- has an associated familiar. Completing an action for that skill carries a small (1/3000) chance to permanently summon it. Expand a summoned familiar to see its level and spells, then activate it as a Companion to bring it into combat: each casts one spell every 10 seconds, cycling through its list. You have <b>'+_slots+'</b> companion slot'+(_slots===1?'':'s')+' (a Staff adds more). Summoned: <b>'+totalOwned+' / '+totalFamiliars+'</b></div>';
+    var _actcomp = activeCompanionList(state);
+    if(_actcomp.length){
+      var _names = _actcomp.map(function(id){ var f = FAMILIAR_DATA[id]||{}; return (f.icon||'') + ' ' + (f.name||id); }).join(', ');
+      html += '<div class="physique-bonus">Active Companions ('+_actcomp.length+'/'+_slots+'): <b>'+_names+'</b> &mdash; each casts a spell in combat every 10s.</div>';
     }
     var clothBonusPct = Math.round(getClothArmorSpellBonus(state)*100);
     html += '<div class="physique-bonus">Cloth Armor Spell Bonus: <b>+'+clothBonusPct+'%</b> summon spell potency &mdash; each equipped Tailoring piece (Chest, Head, Gloves, Boots, Back) adds +5%, scaled by its rarity. Doesn\'t grow with tier.</div>';
@@ -13198,6 +13333,7 @@
     quiver: 'Boosts arrow damage for bow users.',
     warding: 'Proficiency wielding Wards. Trained by damage reflected, it adds extra reflection: +1% at Lv 1 up to +20% at Lv 100.',
     wands: 'Proficiency wielding Wands. Trained by wand damage dealt, it boosts wand damage: +1% at Lv 1 up to +100% at Lv 100.',
+    staves: 'Proficiency wielding Staves. Trained by familiar damage, it boosts familiar efficiency: +1% at Lv 1 up to +100% at Lv 100.',
     clotharmor: 'Proficiency wearing Tailoring\'s cloth armor at higher tiers.',
     leatherarmor: 'Proficiency wearing Leatherworking\'s leather armor at higher tiers.',
     chainmailarmor: 'Proficiency wearing Armorsmithing\'s chain mail at higher tiers.',
@@ -13247,7 +13383,7 @@
     miracle:   ['focus']
   }
   function isCombatSkillId(skillId){
-    return WEAPON_STYLE_IDS.indexOf(skillId)!==-1 || skillId===WANDS_SKILL_ID || OFFHAND_STYLE_IDS.indexOf(skillId)!==-1 || skillId===WARDING_SKILL_ID || ARMOR_PROFICIENCY_IDS.indexOf(skillId)!==-1;
+    return WEAPON_STYLE_IDS.indexOf(skillId)!==-1 || skillId===WANDS_SKILL_ID || skillId===STAVES_SKILL_ID || OFFHAND_STYLE_IDS.indexOf(skillId)!==-1 || skillId===WARDING_SKILL_ID || ARMOR_PROFICIENCY_IDS.indexOf(skillId)!==-1;
   }
   function physiqueTrainedBySkill(skillId){
     if(GATHER_PHYSIQUE[skillId]) return GATHER_PHYSIQUE[skillId].map(function(p){ return p[0]; });
@@ -13398,6 +13534,7 @@
   OFFHAND_STYLES.forEach(function(s){ SKILL_LABELS[s.id] = s.name; });
   SKILL_LABELS[WARDING_SKILL_ID] = 'Warding';
   SKILL_LABELS[WANDS_SKILL_ID] = 'Wands';
+  SKILL_LABELS[STAVES_SKILL_ID] = 'Staves';
   ARMOR_PROFICIENCY_IDS.forEach(function(id){ SKILL_LABELS[id] = ARMOR_PROFICIENCY_LABELS[id]; });
   FAITH_SKILL_IDS.forEach(function(id){ SKILL_LABELS[id] = FAITH_SKILLS[id].label; });
 
@@ -13423,7 +13560,7 @@
     {label:'Gathering', color:'var(--cat-gathering)', skills:GATHER_SKILL_IDS},
     {label:'Crafting',  color:'var(--cat-crafting)',  skills:CRAFT_SKILL_IDS},
     {label:'Farming',   color:'var(--cat-farming)',   skills:['fiberharvesting','grainharvesting','herbharvesting']},
-    {label:'Combat',    color:'var(--cat-combat)',    skills:WEAPON_STYLE_IDS.concat([WANDS_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS)},
+    {label:'Combat',    color:'var(--cat-combat)',    skills:WEAPON_STYLE_IDS.concat([WANDS_SKILL_ID, STAVES_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS)},
     {label:'Faith',     color:'var(--cat-faith)',     skills:FAITH_SKILL_IDS}
   ];
 
@@ -14228,8 +14365,10 @@
         var playerAtkPct = clamp((state.activity.tickAccum||0)/(playerAtkStyle.attackSpeed*1000)*100,0,100);
         paf.style.width = playerAtkPct+'%';
       }
-      var faf = document.getElementById('arenaFamiliarCastFill');
-      if(faf) faf.style.width = clamp((state.familiarCastAccum||0)/10000*100,0,100)+'%';
+      activeCompanionList(state).forEach(function(cid){
+        var faf = document.getElementById('arenaCast-'+cid);
+        if(faf){ var cc = (state.companionCast && state.companionCast[cid]) || {accum:0}; faf.style.width = clamp((cc.accum||0)/10000*100,0,100)+'%'; }
+      });
     }
 
     var autoEatNextEl = document.getElementById('autoEatNextFoodText');
@@ -14972,12 +15111,15 @@
         addLog('Your quarry is nowhere to be found — you retreat.', 'danger');
         stopActivity();
       } else {
-      state.activity.tickAccum += dt;
-      var attackIntervalMs = getWeaponStyle(state.equippedMainhand).attackSpeed * 1000 * (1 - Math.min(0.9, getFamBuff('haste')));
-      while(state.activity.tickAccum >= attackIntervalMs && state.activity.type==='combat'){
-        state.activity.tickAccum -= attackIntervalMs;
-        playerAttackTick();
-        attackIntervalMs = getWeaponStyle(state.equippedMainhand).attackSpeed * 1000 * (1 - Math.min(0.9, getFamBuff('haste')));
+      // A Staff has no attack speed -- it never auto-attacks (combat runs on your familiars).
+      if(!getWeaponStyle(state.equippedMainhand).noAttack){
+        state.activity.tickAccum += dt;
+        var attackIntervalMs = getWeaponStyle(state.equippedMainhand).attackSpeed * 1000 * (1 - Math.min(0.9, getFamBuff('haste')));
+        while(state.activity.tickAccum >= attackIntervalMs && state.activity.type==='combat'){
+          state.activity.tickAccum -= attackIntervalMs;
+          playerAttackTick();
+          attackIntervalMs = getWeaponStyle(state.equippedMainhand).attackSpeed * 1000 * (1 - Math.min(0.9, getFamBuff('haste')));
+        }
       }
       if(state.activity.type==='combat'){
         var monsterForSpeed = monsterById(state.activity.monsterId);
@@ -14988,11 +15130,10 @@
           monsterAttackTick();
           monsterIntervalMs = (monsterForSpeed ? monsterForSpeed.attackSpeed : 3) * 1000 * (1 + getFamiliarEnemySlowPct());
         }
-        // Poison from the active companion chips away at the monster, but never lands
-        // the finishing blow itself -- the player's own attack always gets that credit.
+        // Poison from an active companion chips the monster; it can only land the kill if you wield a Staff.
         var poisonDps = getFamiliarPoisonDps();
         if(poisonDps > 0 && state.activity.type==='combat'){
-          state.activity.monsterHp = Math.max(1, state.activity.monsterHp - poisonDps*dt/1000);
+          applyChipDamage(poisonDps*dt/1000);
         }
         // Toxin-potion poison: ticks the enemy for its remaining duration (never the finishing blow).
         if((state.activity.potionPoisonUntil||0) > Date.now() && state.activity.type==='combat'){
@@ -15001,17 +15142,20 @@
         // Regen: familiar heal-over-time restores player HP while the buff is up.
         var regenHps = famRegenHps();
         if(regenHps > 0 && state.playerHp > 0){ state.playerHp = Math.min(maxHp(state), state.playerHp + regenHps*dt/1000); }
-        // Familiar spell casting: one spell every 10 seconds, cycling through its list.
-        if(state.activeCompanion && FAMILIAR_DATA[state.activeCompanion]){
-          state.familiarCastAccum = (state.familiarCastAccum||0) + dt;
-          while(state.familiarCastAccum >= 10000){
-            state.familiarCastAccum -= 10000;
-            var companionSpells = FAMILIAR_DATA[state.activeCompanion].spells;
-            castFamiliarSpell(companionSpells[state.familiarCastIndex % companionSpells.length], getFamiliarLevel(state.activeCompanion));
-            state.familiarCastIndex = (state.familiarCastIndex + 1) % companionSpells.length;
+        // Familiar spell casting: each active companion casts one spell every 10s, cycling its list.
+        state.companionCast = state.companionCast || {};
+        activeCompanionList(state).forEach(function(cid){
+          if(!FAMILIAR_DATA[cid]) return;
+          var cc = state.companionCast[cid] || (state.companionCast[cid] = { accum:0, index:0 });
+          cc.accum += dt;
+          while(cc.accum >= 10000 && state.activity.type==='combat'){
+            cc.accum -= 10000;
+            var cspells = FAMILIAR_DATA[cid].spells;
+            castFamiliarSpell(cspells[cc.index % cspells.length], getFamiliarLevel(cid), cid);
+            cc.index = (cc.index + 1) % cspells.length;
             needsRender = true;   // refresh the spell-cycle highlight in the combat UI
           }
-        }
+        });
       }
       } // end "monster exists" else
     }
@@ -15172,6 +15316,7 @@
       wardingReflectBonus:wardingReflectBonus, WARDING_SKILL_ID:WARDING_SKILL_ID, WARDING_BONUS_MIN:WARDING_BONUS_MIN, WARDING_BONUS_MAX:WARDING_BONUS_MAX, OFFHAND_STYLE_IDS:OFFHAND_STYLE_IDS,
       GLYPH_ITEMS:GLYPH_ITEMS, glyphIdFor:glyphIdFor, glyphDropMax:glyphDropMax, GLYPH_DROP_CHANCE:GLYPH_DROP_CHANCE, ELEMENTAL_ELEMENT_OVERRIDES:ELEMENTAL_ELEMENT_OVERRIDES,
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
+      STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

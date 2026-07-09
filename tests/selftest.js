@@ -716,6 +716,53 @@
     FF.WAND_TYPES.forEach(function(w){ ok(FF.WEAPON_STYLE_IDS.indexOf(w.id) === -1, w.id+' is not a per-style proficiency'); });
   });
 
+  // ---- Staff (2h support weapon: block + familiar slots) --------------------------------
+  suite('staff', function(){
+    ok(FF.isStaff('staff'), 'the staff is a staff');
+    ok(!FF.isStaff('wandFire'), 'a wand is not a staff');
+    eq(FF.STAFF_TYPE.hand, '2h', 'staff is two-handed');
+    ok(FF.STAFF_TYPE.noAttack, 'staff has no attack');
+    eq(FF.STAFF_TYPE.skillId, 'arcanism', 'staff is crafted by arcanism');
+
+    // Recipe: 4 logs + 8 dark glyphs.
+    var d = FF.getStackableWeaponTierData('staff', 7);
+    eq(d.inputs['forestry_t7'], 4, 'staff needs 4 logs');
+    eq(d.inputs['glyph_dark'], 8, 'staff needs 8 dark glyphs');
+    eq(d.dmgMax, 0, 'staff deals no damage');
+
+    // Block scales 5% (t0) -> 30% (top tier).
+    eq(FF.staffBlockPct(0), 0.05, 't0 block = 5%');
+    eq(FF.staffBlockPct(FF.TIER_COUNT-1), 0.30, 'top block = 30%');
+    var it = FF.STACKABLE_WEAPON_ITEMS['stweapon_staff_t'+(FF.TIER_COUNT-1)+'_normal'];
+    ok(it && it.block === 0.30 && it.dmgMax === 0, 'top staff item: 30% block, no damage');
+
+    // Rarity grants familiar slots: normal 2, rare 3, supreme 4, fantastic 5.
+    eq(FF.STAFF_RARITY_FAMILIAR_SLOTS.normal, 2, 'normal staff = +2 slots');
+    eq(FF.STAFF_RARITY_FAMILIAR_SLOTS.rare, 3, 'rare = +3');
+    eq(FF.STAFF_RARITY_FAMILIAR_SLOTS.supreme, 4, 'supreme = +4');
+    eq(FF.STAFF_RARITY_FAMILIAR_SLOTS.fantastic, 5, 'fantastic = +5');
+    eq(FF.STACKABLE_WEAPON_ITEMS['stweapon_staff_t0_fantastic'].familiarSlots, 5, 'fantastic staff item grants 5 familiar slots');
+
+    // Companion slots: 1 base; a staff adds its familiarSlots.
+    eq(FF.activeCompanionSlots({ equippedMainhand:null }), 1, 'no staff => 1 companion slot');
+    var withStaff = { equippedMainhand:'staff', equippedMainhandTier:1, equippedMainhandRarity:'rare' };
+    eq(FF.activeCompanionSlots(withStaff), 1 + 3, 'rare staff => 1 + 3 = 4 slots');
+    eq(FF.getStaffBlockChance(withStaff), 0.05, 't0 staff block via equipped item');
+
+    // activeCompanionList caps to slots and filters unowned.
+    var st = { equippedMainhand:null, familiars:{ mining:{owned:true}, fishing:{owned:true}, digging:{owned:false} }, activeCompanions:['mining','fishing','digging'] };
+    var lst = FF.activeCompanionList(st);
+    eq(lst.length, 1, 'no staff => only 1 companion active even if more listed');
+    eq(lst[0], 'mining', 'keeps the first owned companion');
+    ok(FF.activeCompanionList({ familiars:{}, activeCompanions:['mining'], equippedMainhand:null }).length === 0, 'unowned companions are filtered out');
+
+    // Staves efficiency: +1% at Lv1 -> +100% at Lv100 (familiar potency).
+    function seff(lvl){ var xp = lvl<=1?0:Math.pow(lvl-1,2)*100; return FF.stavesEfficiencyBonus({xp:{staves:xp}}); }
+    near(seff(1), 0.01, 'Lv1 staves = +1%');
+    near(seff(100), 1.00, 'Lv100 staves = +100%');
+    ok(seff(50) > seff(10), 'staves efficiency rises with level');
+  });
+
   // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------
   suite('warding proficiency', function(){
     eq(FF.WARDING_SKILL_ID, 'warding', 'warding skill id');
