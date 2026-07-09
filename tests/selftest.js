@@ -526,6 +526,42 @@
     ok(FF.MONSTERS.every(function(m){ return m.element && FF.ELEMENT_META[m.element]; }), 'every monster has a valid element');
   });
 
+  // ---- Armor elemental weakness (leather->fire, chain->earth, plate->water; +15% each) --
+  suite('armor element weakness', function(){
+    var PER = FF.ARMOR_ELEMENT_WEAKNESS_PER_PIECE;
+    var slots = FF.CHAINPLATE_SLOTS;
+    function mk(mats){ // build a fake state with the given materials across the 4 chain/plate slots
+      var ba = {}; slots.forEach(function(s,i){ ba[s] = mats[i] ? { material:mats[i], tier:3, rarity:'normal' } : { material:null, tier:0, rarity:'normal' }; });
+      return { bodyArmor: ba };
+    }
+    // No armor -> no weakness anywhere.
+    var none = FF.playerElementWeakness(mk([null,null,null,null]));
+    ok(['fire','water','earth','light','dark'].every(function(e){ return none[e]===0; }), 'bare = no weakness');
+    // One leather piece -> +15% fire only.
+    var oneLeather = FF.playerElementWeakness(mk(['leather',null,null,null]));
+    eq(oneLeather.fire, PER, 'one leather = +15% fire');
+    eq(oneLeather.earth, 0, 'leather adds no earth');
+    // Four leather -> +60% fire, stacking per piece.
+    eq(FF.playerElementWeakness(mk(['leather','leather','leather','leather'])).fire, PER*4, 'four leather stack to +60% fire');
+    // Material -> element mapping.
+    eq(FF.playerElementWeakness(mk(['chain',null,null,null])).earth, PER, 'chain = earth weakness');
+    eq(FF.playerElementWeakness(mk(['plate',null,null,null])).water, PER, 'plate = water weakness');
+    // Cloth/tailoring contributes nothing.
+    var cloth = FF.playerElementWeakness(mk(['tailoring',null,null,null]));
+    ok(['fire','water','earth','light','dark'].every(function(e){ return cloth[e]===0; }), 'cloth = no elemental weakness');
+    // A tier-0 (empty) slot with a material still contributes nothing.
+    eq(FF.playerElementWeakness({ bodyArmor: { gauntlets:{material:'leather',tier:0,rarity:'normal'} } }).fire, 0, 'empty (tier 0) piece adds no weakness');
+    // Mixed loadout accumulates independently.
+    var mixed = FF.playerElementWeakness(mk(['leather','chain','plate','leather']));
+    eq(mixed.fire, PER*2, 'two leather = +30% fire');
+    eq(mixed.earth, PER, 'one chain = +15% earth');
+    eq(mixed.water, PER, 'one plate = +15% water');
+    // The weakness element matches ELEMENT_WEAKNESS wiring for the enemy side later.
+    Object.keys(FF.ARMOR_MATERIAL_WEAKNESS).forEach(function(mat){
+      ok(FF.ELEMENT_META[FF.ARMOR_MATERIAL_WEAKNESS[mat]], mat + ' maps to a real element');
+    });
+  });
+
   // ---- Hardening: monster lookup + addItem guards ---------------------------------------
   suite('hardening', function(){
     // monsterById maps every monster and rejects unknown ids (used by the combat hot path + stale-id retreat).

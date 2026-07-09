@@ -614,6 +614,11 @@
   .elem-badge.elem-dark{color:#7148a0;border-color:rgba(138,95,176,0.45);}
   .elem-weak{display:inline-flex;align-items:center;gap:3px;color:var(--text-faint);}
   .elem-weak .game-icon{width:12px;height:12px;}
+  .elem-weak-stat{display:inline-flex;align-items:center;gap:3px;margin-left:6px;font-weight:600;white-space:nowrap;}
+  .elem-weak-stat:first-child{margin-left:0;}
+  .elem-weak-stat .game-icon{width:12px;height:12px;}
+  .elem-weak-stat.elem-fire{color:#c0562a;} .elem-weak-stat.elem-water{color:#2f76b0;} .elem-weak-stat.elem-earth{color:#5a7d2c;}
+  .elem-weak-stat.elem-light{color:#b89528;} .elem-weak-stat.elem-dark{color:#7148a0;}
 
   .char-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 8px;font-family:var(--font-mono);font-size:12px;color:var(--text-dim);padding:4px 0;border-bottom:1px dotted var(--border);}
   .char-row:last-child{border-bottom:none;}
@@ -4107,6 +4112,23 @@
       }
     });
     return Math.min(0.75, blockChance);
+  }
+  // Each worn body-armor piece carries an inherent elemental weakness by material class:
+  // leather -> fire, chain -> earth, plate -> water. Every such piece stacks +15% weakness to that
+  // element (cloth/tailoring and the Back slot have none). This is the defensive counterpart to the
+  // enemy elemental affinities; it's surfaced in the combat stats now and will amplify incoming
+  // elemental damage once elemental attacks exist.
+  var ARMOR_ELEMENT_WEAKNESS_PER_PIECE = 0.15;
+  var ARMOR_MATERIAL_WEAKNESS = { leather:'fire', chain:'earth', plate:'water' };
+  function playerElementWeakness(state){
+    var w = { fire:0, water:0, earth:0, light:0, dark:0 };
+    CHAINPLATE_SLOTS.forEach(function(slot){
+      var s = state.bodyArmor[slot];
+      if(s && s.tier > 0 && ARMOR_MATERIAL_WEAKNESS[s.material]){
+        w[ARMOR_MATERIAL_WEAKNESS[s.material]] += ARMOR_ELEMENT_WEAKNESS_PER_PIECE;
+      }
+    });
+    return w;
   }
   // Physique-driven combat bonuses -- layered on top of the equipment-driven Leather
   // dodge and Plate block bonuses above, plus two new mechanics of their own.
@@ -7783,6 +7805,11 @@
     });
     html += '<div class="stat-row"><span class="stat-label">Armor Proficiency</span><span class="stat-value" style="font-size:11px">'+(profParts.length ? profParts.join(' / ') : 'No armor equipped')+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Slash / Pierce / Blunt Def</span><span class="stat-value" style="font-size:11px">'+(armor>0?formatTypeMix(armorMix):'No armor equipped')+'</span></div>';
+    // Inherent elemental weakness from worn armor material (leather->fire, chain->earth, plate->water).
+    var _ew = playerElementWeakness(state);
+    var _ewParts = ['fire','water','earth','light','dark'].filter(function(el){ return _ew[el] > 0; })
+      .map(function(el){ return '<span class="elem-weak-stat elem-'+el+'">'+elementIcon(el)+' '+elementLabel(el)+' +'+Math.round(_ew[el]*100)+'%</span>'; });
+    html += '<div class="stat-row"><span class="stat-label">Elemental Weakness</span><span class="stat-value" style="font-size:11px">'+(_ewParts.length ? _ewParts.join(' ') : 'None')+'</span></div>';
     html += '</div>';
     html += '<div class="stats-group"><h4>'+svgIcon('target','currentColor')+' Damage Triangle</h4>';
     var SHORT_TYPE_LABEL = {slashing:'Slash', piercing:'Pierce', blunt:'Blunt'};
@@ -14686,6 +14713,7 @@
       DEFAULT_ACCURACY_PHYSIQUES:DEFAULT_ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
+      playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }
