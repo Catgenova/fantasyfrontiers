@@ -563,6 +563,31 @@
     ok(FF.GATHER_PHYSIQUE.beekeeping && FF.CRAFT_PHYSIQUE.brewing && FF.CRAFT_PHYSIQUE.confectionery, 'physique tables include the new skills');
   });
 
+  // ---- Prospecting / Gemcutting / Enchanting vertical slice -----------------------------------
+  suite('skills: prospecting / gemcutting / enchanting', function(){
+    ok(FF.GATHERING_SKILLS.prospecting, 'prospecting is a gathering skill');
+    ok(FF.CRAFTING_SKILLS.gemcutting, 'gemcutting is a crafting skill');
+    ok(FF.CRAFTING_SKILLS.enchanting, 'enchanting is a crafting skill');
+    eq(FF.GATHERING_SKILLS.prospecting.items.length, FF.TIER_COUNT, 'prospecting has 21 rough-gem tiers');
+    eq(FF.CRAFTING_SKILLS.gemcutting.recipes.length, FF.TIER_COUNT, 'gemcutting has 21 tiers');
+    eq(FF.CRAFTING_SKILLS.enchanting.recipes.length, FF.TIER_COUNT, 'enchanting has 21 tiers');
+    // The chain: Rough Gem -> Cut Gem -> Weapon Enchant.
+    eq(FF.ALL_GATHER_ITEMS['prospecting_t0'].name, 'Rough Quartz', 'prospects Rough Gems');
+    var cut5 = FF.ALL_CRAFT_RECIPES['gemcut_t5'];
+    ok(cut5.inputs['prospecting_t5'], 'gemcutting consumes the matching Rough Gem');
+    eq(cut5.name, 'Cut Peridot', 'gemcutting yields Cut Gems');
+    var ench5 = FF.ALL_CRAFT_RECIPES['enchant_t5'];
+    ok(ench5.inputs['gemcut_t5'] && ench5.inputs['metallurgy_t5'], 'enchant consumes a Cut Gem + metal');
+    // Enchant plugs into the combat potion system as a 5th line.
+    ok(FF.POTION_TYPE_IDS.indexOf('enchant') !== -1, 'enchant is a combat consumable line');
+    eq(ench5.potionType, 'enchant', 'enchant recipe carries potionType');
+    var e0 = FF.potionEffect('enchant_t0'), e20 = FF.potionEffect('enchant_t20');
+    ok(e0 && e0.type==='enchant' && e20 && e20.type==='enchant', 'enchant potionEffect resolves');
+    ok(e20.dmg > e0.dmg && e20.dmg <= 0.40 + 1e-9, 'enchant weapon-damage bonus scales with tier (cap 40%)');
+    ok(/weapon damage/.test(FF.potionEffectDesc('enchant_t10')), 'enchant describes its weapon-damage bonus');
+    ok(FF.GATHER_PHYSIQUE.prospecting && FF.CRAFT_PHYSIQUE.gemcutting && FF.CRAFT_PHYSIQUE.enchanting, 'physique tables include the new skills');
+  });
+
   // ---- Inventory grid: rarity parsing for cell accents / detail tag ----------------------
   suite('inventory rarity', function(){
     eq(FF.itemRarityId('bodyarmor_chain_chest_t20_normal'), 'normal', 'normal suffix');
@@ -592,10 +617,12 @@
     eq(Math.round(FF.potionEffect('catalyst_t0').fam*100), 5, 'catalyst t0 = +5% familiar');
     eq(Math.round(FF.potionEffect('catalyst_t20').fam*100), 110, 'catalyst t20 = +110% familiar');
     eq(FF.potionEffect('mining_t0'), null, 'non-potion id -> null');
-    // every alchemy recipe requires a glass bottle + covers all 4 types x tiers
+    // every alchemy recipe requires a glass bottle + covers its 4 types x tiers (enchant is a separate Enchanting line)
     var alc = FF.CRAFTING_SKILLS_ALCHEMY.recipes;
     ok(alc.every(function(r){ return r.inputs['metallurgy_glass'] === 1; }), 'every alchemy recipe needs 1 glass bottle');
-    ok(FF.POTION_TYPE_IDS.every(function(t){ return alc.some(function(r){ return r.id===t+'_t0'; }) && alc.some(function(r){ return r.id===t+'_t20'; }); }), 'all 4 potion lines span t0..t20');
+    ['toxin','firebomb','elixir','catalyst'].forEach(function(t){
+      ok(alc.some(function(r){ return r.id===t+'_t0'; }) && alc.some(function(r){ return r.id===t+'_t20'; }), t+' alchemy line spans t0..t20');
+    });
   });
 
   // ---- Faith XP reworked from exponential to the linear Crafting curve ----
