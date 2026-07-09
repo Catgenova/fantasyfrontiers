@@ -3127,6 +3127,26 @@
         { level:60, name:'Ghost',         desc:'A further +15% chance to Dodge (stacks with Shadowstep for +25%).' },
         { level:80, name:'Perfect Killer',desc:'Your damage is increased by your Dodge chance (a 25% Dodge chance grants +25% damage).' }
       ]
+    },
+    {
+      id:'thunderfury', name:'Thunderfury', icon:svgIcon('lightning','#e8d84a'),
+      blurb:'A storm-caller whose critical strikes chain into ever-faster, ever-deadlier lightning.',
+      reqText:'Earth Wand + Ward, Cloth Hood, Tunic, Gloves & Shoes',
+      reqParts:[
+        { icon:elementIcon('earth'),                   label:'Earth Wand',   met:function(st){ return st.equippedMainhand==='wandEarth'; } },
+        { icon:svgIcon('shield','#7a5aa8'),            label:'Ward',         met:function(st){ return isWard(st.equippedOffhand); } },
+        { icon:svgIcon('helm',CLASS_CLOTH_COLOR),      label:'Cloth Hood',   met:function(st){ return clothPieceEquipped(st,'helmet'); } },
+        { icon:svgIcon('chestarmor',CLASS_CLOTH_COLOR),label:'Cloth Tunic',  met:function(st){ return clothPieceEquipped(st,'chest'); } },
+        { icon:svgIcon('gauntlet',CLASS_CLOTH_COLOR),  label:'Cloth Gloves', met:function(st){ return clothPieceEquipped(st,'gauntlets'); } },
+        { icon:svgIcon('boots',CLASS_CLOTH_COLOR),     label:'Cloth Shoes',  met:function(st){ return clothPieceEquipped(st,'boots'); } }
+      ],
+      passives:[
+        { level:1,  name:'Chain Lightning', desc:'Critical Hit chance is capped at 50%. Each Critical Hit cuts your next attack timer 10% (stacking up to 70%); a non-critical hit resets it.' },
+        { level:20, name:'Storm Focus',     desc:'Each Critical Hit grants +20% Accuracy (stacks with Chain Lightning; a non-critical hit resets it).' },
+        { level:40, name:'Concussive Bolt', desc:'Critical Hits have a 10% chance to stun the enemy, freezing its action bar for 2s.' },
+        { level:60, name:'Storm’s Wrath', desc:'+100% Critical Hit damage while below 50% Health.' },
+        { level:80, name:'Life Siphon',     desc:'While below 25% Health, Critical Hits drain HP (heal 50% of the damage dealt).' }
+      ]
     }
   ];
   var CLASS_DEFS_BY_ID = {}; CLASS_DEFS.forEach(function(c){ CLASS_DEFS_BY_ID[c.id] = c; });
@@ -3165,6 +3185,14 @@
   function assassinDodgeDmgMult(st){ st = st || state; return assassinBonus(80, st) ? (1 + playerDodgeChance(st)) : 1; }
   // Assassin Lv 1: Claws proficiency earns double XP.
   function assassinClawXpMult(st){ return assassinBonus(1, st) ? 2 : 1; }
+  function thunderfuryBonus(reqLevel, st){ return classBonusActive('thunderfury', reqLevel, st); }
+  // Thunderfury "Chain Lightning": a crit-stack counter (0-7). +1 per Critical Hit, reset on a non-crit hit.
+  // Lv 1 spends it on attack speed (-10%/stack), Lv 20 on accuracy (+20%/stack).
+  var THUNDER_MAX_STACKS = 7, THUNDER_DRAIN_PCT = 0.5;
+  function thunderStacks(st){ st = st || state; return thunderfuryBonus(1, st) ? Math.min(THUNDER_MAX_STACKS, st.thunderStacks || 0) : 0; }
+  // Lv 60: +100% crit damage while below 50% HP. Only meaningful on a crit (folded into critMult).
+  function thunderLowHpCritDmg(){ return (thunderfuryBonus(60) && state.playerHp < maxHp(state)*0.5) ? 1.0 : 0; }
+  function enemyStunned(st){ st = st || state; return !!(st.activity && st.activity.enemyStunUntil && st.activity.enemyStunUntil > Date.now()); }
   function heraldBonus(reqLevel, st){ return classBonusActive('herald', reqLevel, st); }
   // Herald Lv 20: outgoing damage +X% where X = your Block chance. Lv 40: Armor +X% likewise.
   function heraldBlockDmgMult(st){ st = st || state; return heraldBonus(20, st) ? (1 + playerBlockChance(st)) : 1; }
@@ -3189,6 +3217,7 @@
     }
     if(id==='quickdraw' && classLevel(st,'quickdraw') >= 1) return 0.85;
     if(id==='knight' && classLevel(st,'knight') >= 1) return 1 - 0.10 * Math.min(5, st.knightStacks || 0); // Momentum stacks
+    if(id==='thunderfury' && classLevel(st,'thunderfury') >= 1) return 1 - 0.10 * Math.min(THUNDER_MAX_STACKS, st.thunderStacks || 0); // Chain Lightning crit stacks
     return 1;
   }
   // Quickdraw Lv 40: attacks ignore 10% of enemy defenses (modeled as +10% damage).
@@ -3219,7 +3248,12 @@
     return Math.max(200, ws.attackSpeed*1000 * (1 - Math.min(0.9, getFamBuff('haste'))) * classAttackSpeedMult(st));
   }
   // Duelist Lv 40: +30% Accuracy while the class is active.
-  function classAccuracyMult(st){ st = st || state; return (activeClassId(st)==='duelist' && classLevel(st,'duelist') >= 40) ? 1.3 : 1; }
+  function classAccuracyMult(st){
+    st = st || state; var id = activeClassId(st);
+    if(id==='duelist' && classLevel(st,'duelist') >= 40) return 1.3; // Duelist Perfect Form
+    if(id==='thunderfury' && classLevel(st,'thunderfury') >= 20) return 1 + 0.20 * Math.min(THUNDER_MAX_STACKS, st.thunderStacks || 0); // Storm Focus crit stacks
+    return 1;
+  }
   // Duelist Lv 60: +25% damage at full Health.
   function classFullHealthDmgMult(){ return (duelistBonus(60) && state.playerHp >= maxHp(state)) ? 1.25 : 1; }
   function reaperBonus(reqLevel, st){ return classBonusActive('reaper', reqLevel, st); }
@@ -3342,7 +3376,8 @@
     quickdraw:        { name:'Talon',    icon:svgIcon('bow','#5a8a4a'), spells:[hitSpell('Barbed Shot','piercing',15), buffSpell('Rapid Nock','haste',0.18,8), hitSpell('Splitting Arrow','piercing',13), buffSpell('Hawkeye','critChance',0.13,8)] },
     templar:          { name:'Lumen',    icon:svgIcon('starburst','#e0c860'), spells:[hitSpell('Smite','void',15), armorSpell('Consecrate',1.7,6), hitSpell('Radiant Beam','void',13), buffSpell('Zeal','block',0.16,8)] },
     knight:           { name:'Aldric',   icon:svgIcon('sword','#8a90a0'), spells:[hitSpell('Vanguard Slash','slashing',15), buffSpell('Charge','haste',0.18,8), buffSpell('Honed Blade','dmgSlash',0.32,8), armorSpell('Steel Resolve',1.6,6)] },
-    assassin:         { name:'Shrike',   icon:svgIcon('claw','#7a3a4a'), spells:[hitSpell('Backstab','slashing',16), buffSpell('Evasion','dodge',0.16,8), siphonSpell('Exsanguinate',13), buffSpell('Killer Instinct','critChance',0.13,8)] }
+    assassin:         { name:'Shrike',   icon:svgIcon('claw','#7a3a4a'), spells:[hitSpell('Backstab','slashing',16), buffSpell('Evasion','dodge',0.16,8), siphonSpell('Exsanguinate',13), buffSpell('Killer Instinct','critChance',0.13,8)] },
+    thunderfury:      { name:'Volt',     icon:svgIcon('lightning','#e8d84a'), spells:[hitSpell('Chain Lightning','void',15), buffSpell('Static Charge','critChance',0.14,8), hitSpell('Thunderclap','void',13), buffSpell('Overload','critDmg',0.34,8)] }
   };
 
   // Diverse, unique per-familiar spell kits drawn from the expanded pool. Reassigned onto FAMILIAR_DATA
@@ -3416,7 +3451,8 @@
     quickdraw:      [ hitSpell('Barbed Shot','piercing',15), buffSpell('Rapid Nock','haste',0.18,8), hitSpell('Splitting Arrow','piercing',13), buffSpell('Hawkeye','critChance',0.13,8) ],
     templar:        [ hitSpell('Smite','void',15), armorSpell('Consecrate',1.7,6), hitSpell('Radiant Beam','void',13), buffSpell('Zeal','block',0.16,8) ],
     knight:         [ hitSpell('Vanguard Slash','slashing',15), buffSpell('Charge','haste',0.18,8), buffSpell('Honed Blade','dmgSlash',0.32,8), armorSpell('Steel Resolve',1.6,6) ],
-    assassin:       [ hitSpell('Backstab','slashing',16), buffSpell('Evasion','dodge',0.16,8), siphonSpell('Exsanguinate',13), buffSpell('Killer Instinct','critChance',0.13,8) ]
+    assassin:       [ hitSpell('Backstab','slashing',16), buffSpell('Evasion','dodge',0.16,8), siphonSpell('Exsanguinate',13), buffSpell('Killer Instinct','critChance',0.13,8) ],
+    thunderfury:    [ hitSpell('Chain Lightning','void',15), buffSpell('Static Charge','critChance',0.14,8), hitSpell('Thunderclap','void',13), buffSpell('Overload','critDmg',0.34,8) ]
   };
   // Each familiar channels an element (thematic to its skill). Its damaging spells (direct hits,
   // siphons, and poison DoTs) carry that element, so they gain the +20% elemental advantage against
@@ -3437,7 +3473,7 @@
     reflexes:'fire', stamina:'earth', handStrength:'earth', armStrength:'earth', coreStrength:'earth', solving:'light', criticalThinking:'light',
     mentality:'earth', zen:'light', meditation:'light', fortitude:'dark',
     // Classes
-    summoner:'light', duelist:'fire', reaper:'dark', herald:'water', quickdraw:'earth', templar:'light', knight:'earth', assassin:'dark'
+    summoner:'light', duelist:'fire', reaper:'dark', herald:'water', quickdraw:'earth', templar:'light', knight:'earth', assassin:'dark', thunderfury:'earth'
   };
   var DAMAGE_SPELL_TYPES = { hit:true, siphon:true, poison:true }; // spells that deal direct damage or DoT
   function familiarElement(id){ return FAMILIAR_ELEMENT[id] || null; }
@@ -3493,7 +3529,7 @@
     solving:{s:'puzzle',c:'#3a6a9a',ear:'antenna'}, criticalThinking:{s:'brain',c:'#8a5aaa',ear:'antenna'},
     mentality:{s:'compass',c:'#3f8a8a',ear:'round'}, zen:{s:'yinyang',c:'#8a8a8a',ear:'round'},
     meditation:{s:'lotusflower',c:'#c87a9a',ear:'leaf'}, fortitude:{s:'heart',c:'#c8302a',ear:'round'},
-    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}, reaper:{s:'ghost',c:'#6a5a7a',ear:'horn'}, herald:{s:'shield',c:'#c8a83a',ear:'horn'}, quickdraw:{s:'bow',c:'#5a8a4a',ear:'wing'}, templar:{s:'starburst',c:'#e0c860',ear:'halo'}, knight:{s:'sword',c:'#8a90a0',ear:'horn'}, assassin:{s:'claw',c:'#7a3a4a',ear:'cat'}
+    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}, reaper:{s:'ghost',c:'#6a5a7a',ear:'horn'}, herald:{s:'shield',c:'#c8a83a',ear:'horn'}, quickdraw:{s:'bow',c:'#5a8a4a',ear:'wing'}, templar:{s:'starburst',c:'#e0c860',ear:'halo'}, knight:{s:'sword',c:'#8a90a0',ear:'horn'}, assassin:{s:'claw',c:'#7a3a4a',ear:'cat'}, thunderfury:{s:'lightning',c:'#e8d84a',ear:'antenna'}
   };
   // Draw the ear/crown silhouette behind the head. Returned in two layers (behind body, in front).
   function famEars(kind, body, bodyD, belly, accent){
@@ -5877,6 +5913,7 @@
       classDebuffs: { enemyDmgUntil:0, enemyArmorUntil:0 }, // Templar on-hit enemy debuff windows (timestamps)
       knightStacks: 0,        // Knight Momentum: current -10% attack-speed stacks (0-5)
       knightBuffUntil: 0,     // Knight on-miss buff window (timestamp)
+      thunderStacks: 0,       // Thunderfury Chain Lightning: current crit stacks (0-7)
       activePotion: null,   // Alchemy combat potion currently in use (item id) + its remaining charges
       potionCharges: 0,
       popupQueue: [],
@@ -6609,7 +6646,7 @@
     var physDmgMult = isWandAttack ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
     physDmgMult *= tenacityLowHpMult(state);
     // Elixir potions + familiar crit-damage buffs stack on top of the (capped) base+exploitation crit.
-    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + reaperCritDmgBonus() + knightMissCritDmg()) : 1;
+    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + reaperCritDmgBonus() + knightMissCritDmg() + thunderLowHpCritDmg()) : 1;
 
     // Accuracy vs Dodge: roll to land the hit. A miss deals no damage and fires no on-hit effects
     // (potions, proficiency XP), but you still trained your reflexes by swinging so accuracy can grow.
@@ -6663,6 +6700,21 @@
         if(!state.classDebuffs) state.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
         if(templarBonus(40) && Math.random() < 0.05){ state.classDebuffs.enemyDmgUntil = Date.now() + 5000; spawnFloatingText('Enfeebled!', 'ft-rare'); }
         if(templarBonus(60) && Math.random() < 0.05){ state.classDebuffs.enemyArmorUntil = Date.now() + 5000; spawnFloatingText('Sundered!', 'ft-rare'); }
+      }
+      // Thunderfury (Chain Lightning): a Critical Hit builds a stack (attack speed / accuracy); a non-crit resets.
+      if(thunderfuryBonus(1)){
+        if(isCrit){
+          state.thunderStacks = Math.min(THUNDER_MAX_STACKS, (state.thunderStacks || 0) + 1);
+          // Lv 40 (Concussive Bolt): 10% chance a crit stuns the enemy, freezing its action bar for 2s.
+          if(thunderfuryBonus(40) && !offlineCapture && Math.random() < 0.10){ act.enemyStunUntil = Date.now() + 2000; spawnFloatingText('Stunned!', 'ft-rare'); }
+          // Lv 80 (Life Siphon): while below 25% HP, a crit drains HP (heal 50% of the damage dealt).
+          if(thunderfuryBonus(80) && state.playerHp < maxHp(state)*0.25){
+            var drained = Math.min(Math.round(effDmg * THUNDER_DRAIN_PCT), maxHp(state) - state.playerHp);
+            if(drained > 0){ state.playerHp += drained; spawnFloatingText('+'+drained+' HP (siphon)', 'ft-success'); }
+          }
+        } else {
+          state.thunderStacks = 0;
+        }
       }
     }
     // Reaper lifesteal (Lv 40 = 5%, Lv 80 = 10%): heal a share of the damage actually inflicted.
@@ -9240,8 +9292,9 @@
       html += '<div class="hp-label" style="margin-bottom:4px"><span>Enemy Dodge '+monsterDodge(m)+'</span><span>Your hit chance '+Math.round(playerHitChance(m)*100)+'%</span></div>';
       html += '<div class="hp-track"><div class="hp-fill" id="arenaMonsterFill" style="width:'+hpPct+'%;background:var(--hp-bad)"></div></div>';
       html += '<div class="hp-label"><span>Monster HP</span><span id="arenaMonsterLabel">'+fmt(act.monsterHp)+' / '+m.hp+'</span></div>';
-      html += '<div class="hp-track" style="height:8px;margin-top:6px"><div class="hp-fill" id="arenaMonsterAtkFill" style="width:'+monsterAtkPct+'%;background:var(--gold);transition:none"></div></div>';
-      html += '<div class="hp-label"><span>Monster Attack</span><span>'+m.attackSpeed+'s</span></div>';
+      var _stunned = enemyStunned(state);
+      html += '<div class="hp-track" style="height:8px;margin-top:6px"><div class="hp-fill" id="arenaMonsterAtkFill" style="width:'+monsterAtkPct+'%;background:'+(_stunned?'#e8d84a':'var(--gold)')+';transition:none"></div></div>';
+      html += '<div class="hp-label"><span id="arenaMonsterAtkLabel">'+(_stunned ? svgIcon('lightning','#e8d84a')+' Stunned!' : 'Monster Attack')+'</span><span>'+m.attackSpeed+'s</span></div>';
       html += '<div style="height:12px"></div>';
       html += '<div class="arena-row"><span class="arena-name">You</span></div>';
       if(weaponStyle.noAttack){
@@ -13847,6 +13900,7 @@
     templar: 'A Class conferred by a Scepter and Ward with Plate Helm & Chest and Chain Gloves & Boots. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     knight: 'A Class conferred by a Claymore with Plate Chest & Boots and Chain Helm & Gloves. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     assassin: 'A Class conferred by dual-wielding Claws (main + off-hand) with Cloth Hood, Tunic & Shoes and Chain Gloves. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
+    thunderfury: 'A Class conferred by an Earth Wand and Ward with Cloth Hood, Tunic, Gloves & Shoes. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     clotharmor: 'Proficiency wearing Tailoring\'s cloth armor at higher tiers.',
     leatherarmor: 'Proficiency wearing Leatherworking\'s leather armor at higher tiers.',
     chainmailarmor: 'Proficiency wearing Armorsmithing\'s chain mail at higher tiers.',
@@ -14854,6 +14908,10 @@
       if(maf && m){
         var monsterAtkPct = clamp((state.activity.monsterTickAccum||0)/(m.attackSpeed*1000*(1+getFamiliarEnemySlowPct()))*100,0,100);
         maf.style.width = monsterAtkPct+'%';
+        var _stun = enemyStunned(state);
+        maf.style.background = _stun ? '#e8d84a' : 'var(--gold)';
+        var mal = document.getElementById('arenaMonsterAtkLabel');
+        if(mal){ var _want = _stun ? '⚡ Stunned!' : 'Monster Attack'; if(mal.textContent.replace(/\s+/g,' ').trim() !== _want) mal.innerHTML = _stun ? (svgIcon('lightning','#e8d84a')+' Stunned!') : 'Monster Attack'; }
       }
       var pf = document.getElementById('arenaPlayerFill');
       var pl = document.getElementById('arenaPlayerLabel');
@@ -15659,13 +15717,16 @@
         }
       }
       if(state.activity.type==='combat'){
-        var monsterForSpeed = monsterById(state.activity.monsterId);
-        var monsterIntervalMs = (monsterForSpeed ? monsterForSpeed.attackSpeed : 3) * 1000 * (1 + getFamiliarEnemySlowPct());
-        state.activity.monsterTickAccum = (state.activity.monsterTickAccum||0) + dt;
-        while(state.activity.monsterTickAccum >= monsterIntervalMs && state.activity.type==='combat'){
-          state.activity.monsterTickAccum -= monsterIntervalMs;
-          monsterAttackTick();
-          monsterIntervalMs = (monsterForSpeed ? monsterForSpeed.attackSpeed : 3) * 1000 * (1 + getFamiliarEnemySlowPct());
+        // Thunderfury (Concussive Bolt): a stunned enemy's action bar is frozen -- it neither fills nor attacks.
+        if(!enemyStunned()){
+          var monsterForSpeed = monsterById(state.activity.monsterId);
+          var monsterIntervalMs = (monsterForSpeed ? monsterForSpeed.attackSpeed : 3) * 1000 * (1 + getFamiliarEnemySlowPct());
+          state.activity.monsterTickAccum = (state.activity.monsterTickAccum||0) + dt;
+          while(state.activity.monsterTickAccum >= monsterIntervalMs && state.activity.type==='combat'){
+            state.activity.monsterTickAccum -= monsterIntervalMs;
+            monsterAttackTick();
+            monsterIntervalMs = (monsterForSpeed ? monsterForSpeed.attackSpeed : 3) * 1000 * (1 + getFamiliarEnemySlowPct());
+          }
         }
         // Poison from an active companion chips the monster; it can only land the kill if you wield a Staff.
         var poisonDps = getFamiliarPoisonDps();
@@ -15858,7 +15919,7 @@
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
-      isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult,
+      isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

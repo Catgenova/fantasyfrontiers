@@ -1213,6 +1213,72 @@
     els.forEach(function(el){ ok(FF.FAMILIAR_SKILL_IDS.indexOf(FF.ELEMENT_ATTUNEMENT[el]) === -1, FF.ELEMENT_ATTUNEMENT[el]+' is not in the familiar roster'); });
   });
 
+  // ---- Classes: Thunderfury (crit-chaining earth-wand storm caller) ---------------------
+  suite('classes: Thunderfury', function(){
+    ok(FF.CLASS_SKILL_IDS.indexOf('thunderfury') !== -1, 'thunderfury is a class skill id');
+    var cd = FF.CLASS_DEFS_BY_ID.thunderfury;
+    ok(cd, 'thunderfury class defined');
+    eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'passive tiers are 1/20/40/60/80');
+    eq(cd.reqParts.length, 6, 'requires 6 gear conditions');
+
+    function cloth(){ return {tier:1, rarity:'normal', material:'tailoring'}; }
+    function bare(){ return {tier:0, rarity:'normal', material:null}; }
+    function base(){ return { xp:{thunderfury:0}, physique:{}, equippedMainhand:'wandEarth', equippedMainhandRarity:'normal', equippedOffhand:'wardEarth', bodyArmor:{ helmet:cloth(), chest:cloth(), gauntlets:cloth(), boots:cloth(), back:bare() } }; }
+    var full = base();
+    eq(FF.activeClassId(full), 'thunderfury', 'earth wand + ward + full cloth => Thunderfury');
+
+    // Every requirement matters.
+    var notEarthWand = base(); notEarthWand.equippedMainhand='wandFire';
+    eq(FF.activeClassId(notEarthWand), null, 'must be an Earth Wand specifically');
+    var noWard = base(); noWard.equippedOffhand=null;
+    eq(FF.activeClassId(noWard), null, 'needs a ward');
+    var chainHelm = base(); chainHelm.bodyArmor.helmet={tier:1,rarity:'normal',material:'chain'};
+    eq(FF.activeClassId(chainHelm), null, 'all four armor pieces must be cloth');
+
+    var lv1 = base(); // fresh -> Lv 1 (Chain Lightning on)
+    var lv20 = base(); lv20.xp.thunderfury = Math.pow(20,2)*100; // ~Lv 21 (Storm Focus on)
+
+    // Lv 1 Chain Lightning: crit stacks cut attack timer -10%/stack (cap 7 = -70%).
+    eq(FF.THUNDER_MAX_STACKS, 7, 'crit stacks cap at 7');
+    var s0 = base(); s0.thunderStacks=0; eq(FF.classAttackSpeedMult(s0), 1, '0 stacks => no reduction');
+    var s3 = base(); s3.thunderStacks=3; near(FF.classAttackSpeedMult(s3), 0.70, '3 stacks => -30%');
+    var s7 = base(); s7.thunderStacks=7; near(FF.classAttackSpeedMult(s7), 0.30, '7 stacks => -70%');
+    var s10 = base(); s10.thunderStacks=10; near(FF.classAttackSpeedMult(s10), 0.30, 'stacks cap at 7');
+    var off = base(); off.equippedOffhand=null; off.thunderStacks=7;
+    eq(FF.classAttackSpeedMult(off), 1, 'stacks do nothing while the class is inactive');
+    eq(FF.thunderStacks(s10), 7, 'thunderStacks caps at 7 while active');
+    eq(FF.thunderStacks(off), 0, 'no stacks while class inactive');
+
+    // Lv 20 Storm Focus: crit stacks grant +20% accuracy/stack.
+    eq(FF.classAccuracyMult(lv1), 1, 'Lv 1: no accuracy stacking yet');
+    var a3 = base(); a3.xp.thunderfury = Math.pow(20,2)*100; a3.thunderStacks=3;
+    near(FF.classAccuracyMult(a3), 1.60, 'Lv 20+, 3 stacks => +60% accuracy');
+
+    // Lv 60 Storm's Wrath: +100% crit damage while below 50% HP (reads global state).
+    var s = FF._state;
+    var snap = { xpT:s.xp.thunderfury, main:s.equippedMainhand, off:s.equippedOffhand, hp:s.playerHp,
+      helm:s.bodyArmor.helmet, chest:s.bodyArmor.chest, gaunt:s.bodyArmor.gauntlets, boots:s.bodyArmor.boots };
+    s.equippedMainhand='wandEarth'; s.equippedOffhand='wardEarth';
+    s.bodyArmor.helmet=cloth(); s.bodyArmor.chest=cloth(); s.bodyArmor.gauntlets=cloth(); s.bodyArmor.boots=cloth();
+    s.xp.thunderfury = Math.pow(64,2)*100; // ~Lv 65
+    s.playerHp = 999999; // full-ish (above 50%)
+    eq(FF.thunderLowHpCritDmg(), 0, 'above 50% HP: no crit-damage bonus');
+    s.playerHp = 1; // below 50%
+    near(FF.thunderLowHpCritDmg(), 1.0, 'below 50% HP: +100% crit damage');
+    s.xp.thunderfury = snap.xpT; s.equippedMainhand = snap.main; s.equippedOffhand = snap.off; s.playerHp = snap.hp;
+    s.bodyArmor.helmet = snap.helm; s.bodyArmor.chest = snap.chest; s.bodyArmor.gauntlets = snap.gaunt; s.bodyArmor.boots = snap.boots;
+
+    // Lv 40 Concussive Bolt: stun window helper.
+    eq(FF.enemyStunned({ activity:{ enemyStunUntil: Date.now()+2000 } }), true, 'active stun window => stunned');
+    eq(FF.enemyStunned({ activity:{ enemyStunUntil: Date.now()-1 } }), false, 'expired stun window => not stunned');
+    eq(FF.enemyStunned({ activity:{} }), false, 'no stun => not stunned');
+
+    // Class familiar (lightning caster).
+    var fam = FF.FAMILIAR_DATA.thunderfury;
+    ok(fam && fam.spells && fam.spells.length === 4, 'thunderfury familiar has 4 spells');
+    ok(fam.spells.some(function(sp){ return sp.type==='hit'; }), 'thunderfury familiar has a damaging spell');
+  });
+
   // ---- Classes: Assassin (dual-claw dodge/armor-pen killer) -----------------------------
   suite('classes: Assassin', function(){
     ok(FF.CLASS_SKILL_IDS.indexOf('assassin') !== -1, 'assassin is a class skill id');
