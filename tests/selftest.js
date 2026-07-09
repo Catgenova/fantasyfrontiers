@@ -1213,6 +1213,42 @@
     els.forEach(function(el){ ok(FF.FAMILIAR_SKILL_IDS.indexOf(FF.ELEMENT_ATTUNEMENT[el]) === -1, FF.ELEMENT_ATTUNEMENT[el]+' is not in the familiar roster'); });
   });
 
+  // ---- Claws (dual-wieldable weapon with an off-hand second attack) ---------------------
+  suite('claws', function(){
+    ok(FF.isClaw('claw'), 'the claw is a claw');
+    ok(!FF.isClaw('rapier'), 'a rapier is not a claw');
+    var style = FF.getWeaponStyle('claw');
+    ok(style && style.claw, 'claw weapon style is flagged');
+    eq(style.hand, '1h', 'claws are one-handed');
+    near(style.attackTypes.slashing, 0.7, 'claws are 70% slashing');
+    near(style.attackTypes.piercing, 0.2, 'claws are 20% piercing');
+    near(style.attackTypes.blunt, 0.1, 'claws are 10% blunt');
+    // Claws are a normal melee weapon: they train the shared 'claw' proficiency (a per-style id).
+    ok(FF.WEAPON_STYLE_IDS.indexOf('claw') !== -1, 'claw is a per-style weapon proficiency id');
+    // Claw items exist across tiers/rarities.
+    ok(FF.STACKABLE_WEAPON_ITEMS['stweapon_claw_t5_normal'], 'claw items are generated');
+
+    // Off-hand modifiers: +30% attack timer, -30% damage.
+    near(FF.OFFHAND_CLAW_ATTACK_SPEED_MULT, 1.30, 'off-hand claw swings 30% slower');
+    near(FF.OFFHAND_CLAW_DMG_MULT, 0.70, 'off-hand claw deals 30% less damage');
+
+    // Dual-wield rule: an off-hand claw is only valid when a claw is in the main hand.
+    function base(){ return { xp:{}, physique:{}, equippedMainhand:'claw', equippedMainhandTier:6, equippedMainhandRarity:'normal', equippedOffhand:'claw', equippedOffhandTier:6, equippedOffhandRarity:'normal' }; }
+    var dual = base();
+    eq(FF.hasClawMainhand(dual), true, 'claw main hand detected');
+    eq(FF.hasOffhandClaw(dual), true, 'off-hand claw active with a claw main hand');
+    var notClawMain = base(); notClawMain.equippedMainhand='rapier';
+    eq(FF.hasOffhandClaw(notClawMain), false, 'off-hand claw inactive without a claw main hand');
+    var noOff = base(); noOff.equippedOffhand=null; noOff.equippedOffhandTier=0;
+    eq(FF.hasOffhandClaw(noOff), false, 'no off-hand claw equipped');
+    ok(FF.getEquippedOffhandClawItem(dual), 'off-hand claw item resolves');
+    ok(!FF.getEquippedOffhandClawItem(notClawMain), 'no off-hand claw item without a claw main hand');
+
+    // Off-hand attack interval = main-hand interval x1.30.
+    near(FF.offhandClawAttackIntervalMs(dual), FF.playerAttackIntervalMs(dual)*1.30, 'off-hand interval is +30% of the main-hand interval');
+    ok(FF.offhandClawAttackIntervalMs(dual) > FF.playerAttackIntervalMs(dual), 'off-hand swings slower than the main hand');
+  });
+
   // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------
   suite('warding proficiency', function(){
     eq(FF.WARDING_SKILL_ID, 'warding', 'warding skill id');

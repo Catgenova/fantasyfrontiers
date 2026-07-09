@@ -1138,6 +1138,11 @@
       <circle fill="currentColor" cx="17.5" cy="7.5" r="2.6"/>
       <circle fill="currentColor" cx="21" cy="12.5" r="2.2"/>
     </symbol>
+    <symbol id="shape-claw" viewBox="0 0 24 24">
+      <path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M6 3 Q4 12 8 21"/>
+      <path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M12 2 Q11 12 12 22"/>
+      <path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M18 3 Q20 12 16 21"/>
+    </symbol>
     <symbol id="shape-flame" viewBox="0 0 24 24">
       <path fill="currentColor" d="M12 2 Q17 8 15 13 Q15 10 13 9 Q14 14 10 16 Q6 18 8 22 Q2 18 4 12 Q5 15 7 15 Q4 8 12 2 Z"/>
     </symbol>
@@ -2344,7 +2349,8 @@
     {id:'warhammer',   name:'Warhammer',     icon:svgIcon('hammer','#5a5a60'), damageType:'blunt',    attackTypes:{piercing:0.2, slashing:0.2, blunt:0.6}, hand:'2h', weaponClass:'Two-Hand Hammer', skillId:'weaponsmithing', matPrefix:'metallurgy', tierCount:20, attackSpeed:9},
     {id:'sledge',      name:'Sledge',        icon:svgIcon('hammer','#4a4a50'), damageType:'blunt',    attackTypes:{piercing:0, slashing:0, blunt:1.0},     hand:'2h', weaponClass:'Two-Hand Hammer', skillId:'weaponsmithing', matPrefix:'metallurgy', tierCount:20, attackSpeed:9},
     {id:'fullmoonaxe', name:'Full-Moon Axe', icon:svgIcon('axe','#7a5a2a'), damageType:'slashing', attackTypes:{piercing:0.1, slashing:0.5, blunt:0.4}, hand:'2h', weaponClass:'Two-Hand Axe',    skillId:'weaponsmithing', matPrefix:'metallurgy', tierCount:20, attackSpeed:8},
-    {id:'scythe',      name:'Scythe',        icon:svgIcon('axe','#6a4a1a'), damageType:'slashing', attackTypes:{piercing:0, slashing:1.0, blunt:0},     hand:'2h', weaponClass:'Two-Hand Axe',    skillId:'weaponsmithing', matPrefix:'metallurgy', tierCount:20, attackSpeed:8}
+    {id:'scythe',      name:'Scythe',        icon:svgIcon('axe','#6a4a1a'), damageType:'slashing', attackTypes:{piercing:0, slashing:1.0, blunt:0},     hand:'2h', weaponClass:'Two-Hand Axe',    skillId:'weaponsmithing', matPrefix:'metallurgy', tierCount:20, attackSpeed:8},
+    {id:'claw',        name:'Claws',         icon:svgIcon('claw','#b0757a'), damageType:'slashing', attackTypes:{slashing:0.7, piercing:0.2, blunt:0.1}, hand:'1h', weaponClass:'Claws',        skillId:'weaponsmithing', matPrefix:'metallurgy', tierCount:20, attackSpeed:2.5, claw:true}
   ];
   // Bows: crafted from Forestry's logs via Bowyer instead of Metallurgy's bars via
   // Weaponsmithing, since a bow is a wooden weapon. Same Equipment treatment as melee:
@@ -2392,7 +2398,12 @@
   STACKABLE_WEAPON_TYPES.forEach(function(w){ STACKABLE_WEAPON_TYPE_MAP[w.id] = w; });
   function isStackableWeapon(typeId){ return !!STACKABLE_WEAPON_TYPE_MAP[typeId]; }
 
-  var WEAPON_STYLES = STACKABLE_WEAPON_TYPES.map(function(w){ return {id:w.id, name:w.name, icon:w.icon, damageType:w.damageType, attackTypes:w.attackTypes, hand:w.hand, stackable:true, attackSpeed:w.attackSpeed, wand:w.wand||false, element:w.element||null, staff:w.staff||false, noAttack:w.noAttack||false, scepter:w.scepter||false}; });
+  var WEAPON_STYLES = STACKABLE_WEAPON_TYPES.map(function(w){ return {id:w.id, name:w.name, icon:w.icon, damageType:w.damageType, attackTypes:w.attackTypes, hand:w.hand, stackable:true, attackSpeed:w.attackSpeed, wand:w.wand||false, element:w.element||null, staff:w.staff||false, noAttack:w.noAttack||false, scepter:w.scepter||false, claw:w.claw||false}; });
+  // Claws: a fast dual-wieldable weapon. A second Claw may be worn in the off-hand, but ONLY while a
+  // Claw is in the main hand. The off-hand Claw swings on its own, slower timer (+30%) for less (-70%) damage.
+  function isClaw(typeId){ return typeId==='claw'; }
+  var OFFHAND_CLAW_ATTACK_SPEED_MULT = 1.30; // off-hand claw swings 30% slower than the main hand
+  var OFFHAND_CLAW_DMG_MULT = 0.70;          // off-hand claw deals 30% less damage
   // Offhand options depend on the mainhand's handedness:
   // 1h weapons can pair with a shield, bows pair with a quiver, 2h weapons leave no offhand free.
   var OFFHAND_STYLES = [
@@ -2682,6 +2693,11 @@
     if(tier<=0) return null;
     return applyRarity(OFFHAND_TYPE_RECIPES[state.equippedOffhand][tier-1], state.offhandRarities[state.equippedOffhand]);
   }
+  // Off-hand Claw: a second weapon sharing the off-hand slot (equippedOffhand='claw'). Only valid while
+  // a Claw is the main hand. getEquippedOffhandItem returns null for it (it's a weapon, not defensive gear).
+  function hasClawMainhand(st){ st = st || state; return st.equippedMainhand==='claw'; }
+  function hasOffhandClaw(st){ st = st || state; return st.equippedOffhand==='claw' && (st.equippedOffhandTier||0) > 0 && hasClawMainhand(st); }
+  function getEquippedOffhandClawItem(st){ st = st || state; if(!hasOffhandClaw(st)) return null; return STACKABLE_WEAPON_ITEMS['stweapon_claw_t'+(st.equippedOffhandTier-1)+'_'+st.equippedOffhandRarity] || null; }
 
   var PHYSIQUE_SKILLS = [
     {id:'bodyStrength', name:'Body Strength', icon:svgIcon('muscle','#a83828'),
@@ -4269,22 +4285,26 @@
     var w = STACKABLE_WEAPON_TYPE_MAP[item.typeId];
     if(w.hand==='2h'){
       unequipCurrentOffhandToInventory();
-      state.equippedOffhand = null;
+      state.equippedOffhand = null; state.equippedOffhandTier = 0; state.equippedOffhandRarity = 'normal';
     } else {
       var currentOff = getOffhandStyle(state.equippedOffhand);
-      if(currentOff && currentOff.requiresHand !== w.hand){
+      // Drop the off-hand if it no longer fits the mainhand, OR if an off-hand Claw is worn but the new
+      // mainhand isn't a Claw (an off-hand Claw requires a Claw main hand).
+      if((currentOff && currentOff.requiresHand !== w.hand) || (state.equippedOffhand==='claw' && item.typeId!=='claw')){
         unequipCurrentOffhandToInventory();
-        state.equippedOffhand = null;
+        state.equippedOffhand = null; state.equippedOffhandTier = 0; state.equippedOffhandRarity = 'normal';
       }
     }
     addLog('You equipped the ' + item.name + '.', 'important');
   }
   function unequipStackableWeapon(){
     if(!state.equippedMainhand || !isStackableWeapon(state.equippedMainhand)) return;
+    var wasClaw = isClaw(state.equippedMainhand);
     unequipCurrentMainhandToInventory();
     state.equippedMainhand = null;
     state.equippedMainhandTier = 0;
     state.equippedMainhandRarity = 'normal';
+    if(wasClaw && state.equippedOffhand==='claw') unequipOffhandClaw(); // an off-hand Claw needs a Claw main hand
   }
 
   // ---- Shields (Small/Medium/Large): stackable Equipment like melee weapons, forged
@@ -4384,7 +4404,30 @@
       addItem(oldId, 1);
     } else if(state.equippedOffhand && isWard(state.equippedOffhand) && state.equippedOffhandTier > 0){
       addItem('stward_'+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity, 1);
+    } else if(state.equippedOffhand==='claw' && state.equippedOffhandTier > 0){
+      addItem('stweapon_claw_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity, 1);
     }
+  }
+  function equipOffhandClaw(itemId){
+    var item = STACKABLE_WEAPON_ITEMS[itemId];
+    if(!item || !isClaw(item.typeId) || (state.inventory[itemId]||0) <= 0) return;
+    if(!hasClawMainhand(state)){ addLog('You can only wield an off-hand Claw while a Claw is in your main hand.', 'danger'); return; }
+    if(!meetsProficiencyRequirement(state.xp.claw, item.tierIndex)){
+      addLog('Your Claws proficiency isn\'t high enough to equip ' + item.name + ' yet.', 'danger'); return;
+    }
+    unequipCurrentOffhandToInventory();
+    state.inventory[itemId] -= 1;
+    state.equippedOffhand = 'claw';
+    state.equippedOffhandTier = item.tierIndex+1;
+    state.equippedOffhandRarity = item.rarity;
+    addLog('You equipped ' + item.name + ' in your off-hand.', 'important');
+  }
+  function unequipOffhandClaw(){
+    if(state.equippedOffhand !== 'claw') return;
+    unequipCurrentOffhandToInventory();
+    state.equippedOffhand = null;
+    state.equippedOffhandTier = 0;
+    state.equippedOffhandRarity = 'normal';
   }
   function craftStackableShield(typeId, tierIndex){
     var s = STACKABLE_SHIELD_TYPE_MAP[typeId];
@@ -6484,22 +6527,25 @@
       needsRender = true; // reload/deplete changes the picker; charge countdown updates live otherwise
     }
   }
-  function playerAttackTick(isBonus, attempt){
+  function playerAttackTick(isBonus, attempt, isOffhand){
     attempt = attempt || 1; // Quickdraw Rapid Fire re-enters this on a miss (up to 3 attempts)
     var act = state.activity;
     var monster = monsterById(act.monsterId);
     if(!monster) return;
-    var weapon = getEquippedWeaponItem(state);
+    // The off-hand Claw swings the off-hand weapon for 30% less damage; everything else mirrors a hit.
+    var weapon = isOffhand ? getEquippedOffhandClawItem(state) : getEquippedWeaponItem(state);
+    if(isOffhand && !weapon) return;
+    var mainhandTypeId = isOffhand ? 'claw' : state.equippedMainhand;
     var relicBonus = getEquippedRelicBonus(state);
     var offhandItem = getEquippedOffhandItem(state);
 
-    var weaponStyle = getWeaponStyle(state.equippedMainhand);
+    var weaponStyle = getWeaponStyle(mainhandTypeId);
     var isWandAttack = !!weaponStyle.wand; // wand: elemental damage, shared 'wands' proficiency, no physical-type bonuses
     var isScepterAttack = !!weaponStyle.scepter; // scepter: half blunt / half light, shared 'scepters' proficiency, physical bonuses apply
     var offhandStyle = getOffhandStyle(state.equippedOffhand);
     var offhandProficiency = (offhandStyle && state.equippedOffhand) ? (1 + Math.min(0.15, getLevel(state.xp[offhandStyle.id]||0)*0.005)) : 1;
-    var mainProfId = isWandAttack ? WANDS_SKILL_ID : (isScepterAttack ? SCEPTERS_SKILL_ID : state.equippedMainhand);
-    var weaponProficiency = state.equippedMainhand ? (1 + getLevel(state.xp[mainProfId]||0)/100) : 1;
+    var mainProfId = isWandAttack ? WANDS_SKILL_ID : (isScepterAttack ? SCEPTERS_SKILL_ID : mainhandTypeId);
+    var weaponProficiency = mainhandTypeId ? (1 + getLevel(state.xp[mainProfId]||0)/100) : 1;
     // Wands bypass the physical slash/pierce/blunt triangle: their damage is elemental (+20% via the
     // element triangle). Physical-type bonuses (rings, chain-melee, familiar type buffs) don't apply.
     // Scepters are a hybrid -- half of their swing is blunt (physical triangle vs armor) and half is
@@ -6534,20 +6580,23 @@
     if(Math.random() >= playerHitChance(monster)){
       spawnFloatingText('Miss!', 'ft-fail');
       addPhysiqueXp(physTierPairs([['agility',2]], monster.tierIndex));
-      // Knight (Momentum): a miss drops the attack-speed stacks. On-miss buffs (Lv 20+) fire for 8s.
-      if(knightBonus(1)) state.knightStacks = 0;
-      if(knightBonus(20)){ state.knightBuffUntil = Date.now() + 8000; spawnFloatingText('Vengeance!', 'ft-rare'); }
-      // Quickdraw Lv 80 (Rapid Fire): a missed shot immediately looses another arrow, up to 3 total.
-      if(quickdrawBonus(80) && attempt < 3 && state.activity && state.activity.type==='combat'){
-        spawnFloatingText('Rapid Fire!', 'ft-rare');
-        playerAttackTick(isBonus, attempt + 1);
+      // The following class procs belong to the main-hand swing only (an off-hand Claw is pure extra DPS).
+      if(!isOffhand){
+        // Knight (Momentum): a miss drops the attack-speed stacks. On-miss buffs (Lv 20+) fire for 8s.
+        if(knightBonus(1)) state.knightStacks = 0;
+        if(knightBonus(20)){ state.knightBuffUntil = Date.now() + 8000; spawnFloatingText('Vengeance!', 'ft-rare'); }
+        // Quickdraw Lv 80 (Rapid Fire): a missed shot immediately looses another arrow, up to 3 total.
+        if(quickdrawBonus(80) && attempt < 3 && state.activity && state.activity.type==='combat'){
+          spawnFloatingText('Rapid Fire!', 'ft-rare');
+          playerAttackTick(isBonus, attempt + 1);
+        }
       }
       return;
     }
 
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
     var wandAttuneMult = isWandAttack ? elementDmgMult(state, weaponStyle.element) : 1; // Elemental Attunement boosts a wand's element damage
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult);
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1));
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
@@ -6569,13 +6618,16 @@
     // Elemental Attunement trains on the element damage you deal: a Wand's whole hit, a Scepter's light half.
     if(isWandAttack) awardElementXp(weaponStyle.element, effDmg);
     else if(isScepterAttack) awardElementXp('light', Math.round(effDmg * 0.5));
-    // Knight (Momentum): each landed hit adds a -10% attack-speed stack (capped at 5 = -50%).
-    if(knightBonus(1)) state.knightStacks = Math.min(5, (state.knightStacks || 0) + 1);
-    // Templar on-hit debuffs: Lv 40 saps 25% of the enemy's damage, Lv 60 shreds 25% of its armor (5s, 5% each).
-    if(templarBonus(40) || templarBonus(60)){
-      if(!state.classDebuffs) state.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
-      if(templarBonus(40) && Math.random() < 0.05){ state.classDebuffs.enemyDmgUntil = Date.now() + 5000; spawnFloatingText('Enfeebled!', 'ft-rare'); }
-      if(templarBonus(60) && Math.random() < 0.05){ state.classDebuffs.enemyArmorUntil = Date.now() + 5000; spawnFloatingText('Sundered!', 'ft-rare'); }
+    // Class on-hit procs are main-hand only (they don't double up from the off-hand Claw's swings).
+    if(!isOffhand){
+      // Knight (Momentum): each landed hit adds a -10% attack-speed stack (capped at 5 = -50%).
+      if(knightBonus(1)) state.knightStacks = Math.min(5, (state.knightStacks || 0) + 1);
+      // Templar on-hit debuffs: Lv 40 saps 25% of the enemy's damage, Lv 60 shreds 25% of its armor (5s, 5% each).
+      if(templarBonus(40) || templarBonus(60)){
+        if(!state.classDebuffs) state.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
+        if(templarBonus(40) && Math.random() < 0.05){ state.classDebuffs.enemyDmgUntil = Date.now() + 5000; spawnFloatingText('Enfeebled!', 'ft-rare'); }
+        if(templarBonus(60) && Math.random() < 0.05){ state.classDebuffs.enemyArmorUntil = Date.now() + 5000; spawnFloatingText('Sundered!', 'ft-rare'); }
+      }
     }
     // Reaper lifesteal (Lv 40 = 5%, Lv 80 = 10%): heal a share of the damage actually inflicted.
     var lifestealPct = reaperLifestealPct();
@@ -6584,17 +6636,22 @@
       if(healed > 0){ state.playerHp += healed; spawnFloatingText('+'+healed+' HP', 'ft-success'); }
     }
     if(act.monsterHp <= 0) defeatMonster(monster);
-    // Duelist Lv 80 (Riposte): a Critical Hit triggers one immediate bonus attack -- which cannot chain.
-    if(isCrit && !isBonus && duelistBonus(80) && state.activity && state.activity.type==='combat'){
-      spawnFloatingText('Riposte!', 'ft-rare');
-      playerAttackTick(true);
-    }
-    // Quickdraw Lv 20 (Endless Quiver): 30% chance a landed shot looses a free bonus arrow (no chain).
-    if(!isBonus && quickdrawBonus(20) && Math.random() < 0.30 && state.activity && state.activity.type==='combat'){
-      spawnFloatingText('Endless Quiver!', 'ft-rare');
-      playerAttackTick(true);
+    // Bonus-attack class procs are main-hand only (an off-hand Claw never spawns its own bonus swings).
+    if(!isOffhand){
+      // Duelist Lv 80 (Riposte): a Critical Hit triggers one immediate bonus attack -- which cannot chain.
+      if(isCrit && !isBonus && duelistBonus(80) && state.activity && state.activity.type==='combat'){
+        spawnFloatingText('Riposte!', 'ft-rare');
+        playerAttackTick(true);
+      }
+      // Quickdraw Lv 20 (Endless Quiver): 30% chance a landed shot looses a free bonus arrow (no chain).
+      if(!isBonus && quickdrawBonus(20) && Math.random() < 0.30 && state.activity && state.activity.type==='combat'){
+        spawnFloatingText('Endless Quiver!', 'ft-rare');
+        playerAttackTick(true);
+      }
     }
   }
+  // Off-hand Claw swings on its own timer: the main-hand interval scaled +30% slower.
+  function offhandClawAttackIntervalMs(st){ st = st || state; return Math.max(200, playerAttackIntervalMs(st) * OFFHAND_CLAW_ATTACK_SPEED_MULT); }
 
   // Award the kill (gold, loot, stats, respawn). Called by the player's attack, and by familiars/
   // reflection when the player wields a Staff (no auto-attack, so summons must land the finishing blow).
@@ -7004,7 +7061,7 @@
         var _step = 500; // ms per sim step (covers the 12h cap in ~86k steps, well under the guard)
         var _noAtk = !!_pStyle.noAttack; // a Staff never auto-attacks offline either
         state.companionCast = state.companionCast || {};
-        var _sim = 0, _pAcc = 0, _mAcc = 0, _guard = 0;
+        var _sim = 0, _pAcc = 0, _mAcc = 0, _offAcc = 0, _guard = 0;
         while(_sim < capped && state.activity.type==='combat' && _guard++ < 200000){
           var _chunk = Math.min(_step, capped - _sim); _sim += _chunk;
           // Player swings (skipped for a Staff)
@@ -7012,6 +7069,13 @@
             var _pInt = playerAttackIntervalMs();
             _pAcc += _chunk;
             while(_pAcc >= _pInt && state.activity.type==='combat'){ _pAcc -= _pInt; playerAttackTick(); _pInt = playerAttackIntervalMs(); }
+          }
+          if(state.activity.type!=='combat') break;
+          // Off-hand Claw swings on its own slower timer.
+          if(hasOffhandClaw(state)){
+            var _offInt = offhandClawAttackIntervalMs();
+            _offAcc += _chunk;
+            while(_offAcc >= _offInt && state.activity.type==='combat'){ _offAcc -= _offInt; playerAttackTick(false, 1, true); _offInt = offhandClawAttackIntervalMs(); }
           }
           if(state.activity.type!=='combat') break;
           // Monster swings + auto-eat
@@ -8616,12 +8680,19 @@
     if(mh.hand==='1h'){
       var ohEq = getEquippedOffhandItem(state);
       var html3 = '';
-      if(ohEq){
+      if(hasOffhandClaw(state)){
+        var ohClaw = getEquippedOffhandClawItem(state);
+        html3 += '<div class="shop-current">Off-hand Claw: <b style="color:var(--text)">'+(ohClaw?ohClaw.name:'Claws')+'</b> ('+(ohClaw?ohClaw.dmgMin+'-'+ohClaw.dmgMax+' dmg':'')+' &bull; &minus;30% dmg, +30% timer) <button class="action-btn stop" style="width:auto;flex:0 0 auto;padding:2px 12px;margin-left:8px" data-action="unequipOffhandClaw">Unequip</button></div>';
+      } else if(ohEq){
         html3 += '<div class="shop-current">Equipped: <b style="color:var(--text)">'+ohEq.name+'</b> (defense '+ohEq.defense+', counters '+STACKABLE_SHIELD_TYPE_MAP[state.equippedOffhand].countersType+')</div>';
       } else {
-        html3 += '<div class="shop-current">Equipped: <b style="color:var(--text)">No shield</b></div>';
+        html3 += '<div class="shop-current">Equipped: <b style="color:var(--text)">No offhand</b></div>';
       }
-      html3 += '<div class="section-intro" style="margin-top:6px">Shields are Equipment now: forge one from Crafting &rarr; Shieldsmithing, then equip it from your Inventory.</div>';
+      if(hasClawMainhand(state)){
+        html3 += '<div class="section-intro" style="margin-top:6px">Claws can be dual-wielded: forge a second Claw in Weaponsmithing, then equip it in your off-hand from your Inventory. The off-hand Claw swings on its own slower timer (+30%) for less (&minus;30%) damage.</div>';
+      } else {
+        html3 += '<div class="section-intro" style="margin-top:6px">Shields are Equipment now: forge one from Crafting &rarr; Shieldsmithing, then equip it from your Inventory.</div>';
+      }
       return html3;
     }
     // bow mainhand: Quiver is still a single sequential upgrade, toggled directly here
@@ -9141,7 +9212,13 @@
         html += '<div class="hp-label"><span style="color:var(--text-faint)">No attack &mdash; your familiars fight for you</span></div>';
       } else {
         html += '<div class="hp-track" style="height:8px"><div class="hp-fill" id="arenaPlayerAtkFill" style="width:'+playerAtkPct+'%;background:var(--gold);transition:none"></div></div>';
-        html += '<div class="hp-label"><span>Your Attack</span><span>'+weaponStyle.attackSpeed+'s</span></div>';
+        html += '<div class="hp-label"><span>Your Attack</span><span>'+(Math.round(playerAtkIntervalMs/100)/10)+'s</span></div>';
+        if(hasOffhandClaw(state)){
+          var offAtkIntervalMs = offhandClawAttackIntervalMs();
+          var offAtkPct = clamp((act.offhandTickAccum||0)/offAtkIntervalMs*100,0,100);
+          html += '<div class="hp-track" style="height:8px;margin-top:6px"><div class="hp-fill" id="arenaOffhandAtkFill" style="width:'+offAtkPct+'%;background:#b0757a;transition:none"></div></div>';
+          html += '<div class="hp-label"><span>'+svgIcon('claw','#b0757a')+' Off-hand Attack</span><span>'+(Math.round(offAtkIntervalMs/100)/10)+'s</span></div>';
+        }
       }
       html += '<div class="hp-track" style="margin-top:6px"><div class="hp-fill" id="arenaPlayerFill" style="width:'+pPct+'%;background:var(--hp-bad)"></div></div>';
       html += '<div class="hp-label"><span>Your HP</span><span id="arenaPlayerLabel">'+fmt(state.playerHp)+' / '+maxHp(state)+'</span></div>';
@@ -14225,6 +14302,8 @@
     if(id==='treasure_chest'){ acts += '<button class="action-btn" data-action="openTreasureChest">Open</button>'; if(qty>1) acts += '<button class="action-btn" data-action="openAllTreasureChests">Open All ('+fmt(qty)+')</button>'; }
     var equipAction = getEquipActionForItem(id);
     if(equipAction) acts += '<button class="action-btn" data-action="'+equipAction+'" data-item="'+id+'">Equip</button>';
+    // Claws can also be dual-wielded: offer an off-hand equip, but only while a Claw is in the main hand.
+    if(id.indexOf('stweapon_claw_')===0 && hasClawMainhand(state)) acts += '<button class="action-btn" data-action="equipOffhandClaw" data-item="'+id+'">Equip Off-hand</button>';
     acts += '<button class="action-btn'+(isLocked?' stop':'')+'" data-action="toggleItemLock" data-item="'+id+'">'+(isLocked?'Unlock':'Lock')+'</button>';
     acts += '<button class="action-btn" data-action="sellOne" data-item="'+id+'"'+(isLocked?' disabled title="Locked"':'')+'>Sell 1 (+'+item.sell+'g)</button>';
     acts += '<button class="action-btn" data-action="sell" data-item="'+id+'"'+(isLocked?' disabled title="Locked"':'')+'>Sell all (+'+fmt(qty*item.sell)+'g)</button>';
@@ -14754,6 +14833,8 @@
         var playerAtkPct = clamp((state.activity.tickAccum||0)/playerAttackIntervalMs()*100,0,100);
         paf.style.width = playerAtkPct+'%';
       }
+      var oaf = document.getElementById('arenaOffhandAtkFill');
+      if(oaf){ oaf.style.width = clamp((state.activity.offhandTickAccum||0)/offhandClawAttackIntervalMs()*100,0,100)+'%'; }
       activeCompanionList(state).forEach(function(cid){
         var faf = document.getElementById('arenaCast-'+cid);
         if(faf){ var cc = (state.companionCast && state.companionCast[cid]) || {accum:0}; faf.style.width = clamp((cc.accum||0)/familiarCastIntervalMs()*100,0,100)+'%'; }
@@ -15233,6 +15314,10 @@
       craftStackableWeapon(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10));
     } else if(action==='equipStackableWeapon'){
       equipStackableWeapon(btn.getAttribute('data-item'));
+    } else if(action==='equipOffhandClaw'){
+      equipOffhandClaw(btn.getAttribute('data-item'));
+    } else if(action==='unequipOffhandClaw'){
+      unequipOffhandClaw();
     } else if(action==='unequipStackableWeapon'){
       unequipStackableWeapon();
     } else if(action==='forgeStackableShield'){
@@ -15526,6 +15611,16 @@
           attackIntervalMs = playerAttackIntervalMs();
         }
       }
+      // Off-hand Claw: a second, independent attack timer (only while a Claw is dual-wielded).
+      if(state.activity.type==='combat' && hasOffhandClaw(state)){
+        state.activity.offhandTickAccum = (state.activity.offhandTickAccum||0) + dt;
+        var offAttackIntervalMs = offhandClawAttackIntervalMs();
+        while(state.activity.offhandTickAccum >= offAttackIntervalMs && state.activity.type==='combat'){
+          state.activity.offhandTickAccum -= offAttackIntervalMs;
+          playerAttackTick(false, 1, true);
+          offAttackIntervalMs = offhandClawAttackIntervalMs();
+        }
+      }
       if(state.activity.type==='combat'){
         var monsterForSpeed = monsterById(state.activity.monsterId);
         var monsterIntervalMs = (monsterForSpeed ? monsterForSpeed.attackSpeed : 3) * 1000 * (1 + getFamiliarEnemySlowPct());
@@ -15726,6 +15821,7 @@
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
+      isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }
