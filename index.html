@@ -12424,7 +12424,7 @@
     return '';
   }
   var authUser = null;              // { username } when signed in
-  var authMode = 'register';        // 'register' | 'login'
+  var authMode = 'login';        // 'register' | 'login' -- default to Log In; Register is the off tab
   var authError = '';
   var authBusy = false;
   var authUsernameDraft = '';
@@ -12640,8 +12640,11 @@
     html += '<input id="authUsername" class="chat-input" maxlength="'+USERNAME_MAX+'" placeholder="Username" autocomplete="off" spellcheck="false" value="'+escapeHtml(authUsernameDraft)+'">';
     html += '<input id="authPassword" class="chat-input" type="password" placeholder="Password" autocomplete="'+(isReg?'new-password':'current-password')+'">';
     if(isReg) html += '<input id="authConfirm" class="chat-input" type="password" placeholder="Confirm password" autocomplete="new-password">';
-    html += '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);cursor:pointer;margin:4px 2px 0;"><input type="checkbox" data-action="authToggleRemember"'+(authRememberUser?' checked':'')+'> Remember my username</label>';
-    html += '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);cursor:pointer;margin:2px 2px 4px;"><input type="checkbox" data-action="authToggleAutoLogin"'+(authAutoLogin?' checked':'')+'> Automatically log me in</label>';
+    // "Remember username" / "auto-login" only apply when signing back in, so they're login-only.
+    if(!isReg){
+      html += '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);cursor:pointer;margin:4px 2px 0;"><input type="checkbox" data-action="authToggleRemember"'+(authRememberUser?' checked':'')+'> Remember my username</label>';
+      html += '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);cursor:pointer;margin:2px 2px 4px;"><input type="checkbox" data-action="authToggleAutoLogin"'+(authAutoLogin?' checked':'')+'> Automatically log me in</label>';
+    }
     if(authError) html += '<div class="auth-error">'+escapeHtml(authError)+'</div>';
     html += '<button class="action-btn" data-action="authSubmit" '+(authBusy?'disabled':'')+'>'+(authBusy?'Please wait\u2026':(isReg?'Create Account':'Log In'))+'</button>';
     if(!isReg) html += '<div class="auth-note" style="text-align:center;"><a href="#" data-action="recoverOpen" style="color:var(--gold);">Forgot your password?</a></div>';
