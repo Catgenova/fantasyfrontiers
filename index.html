@@ -16370,6 +16370,39 @@
     var gate = document.getElementById('loginGate');
     if(gate && gate.parentNode) gate.parentNode.removeChild(gate);
   }
+  // ---- Periodic auto-refresh -------------------------------------------------------------------
+  // The game ships frequent updates, so long-lived tabs drift behind the deployed build. Every
+  // AUTO_REFRESH_MS we flush the latest progress to the cloud and hard-reload to pick up the new
+  // version. We only reload during a lull: never mid-combat, while a modal/overlay is open, while
+  // the player is typing, or while the tab is backgrounded -- otherwise we re-check shortly after.
+  var AUTO_REFRESH_MS = 10*60*1000;   // 10 minutes
+  var autoRefreshArmed = false;
+  var AUTO_REFRESH_OVERLAYS = ['familiarPopupOverlay','settingsOverlay','trackerPickerOverlay','peonPickerOverlay','chatExpandOverlay','chatDrawerOverlay','skillInfoOverlay','invDetailOverlay'];
+  function autoRefreshIsSafe(){
+    if(!gameStarted) return false;
+    if(typeof document !== 'undefined' && document.hidden) return false;   // don't yank a backgrounded tab
+    if(state && state.activity && state.activity.type === 'combat') return false;  // never mid-fight
+    var a = document.activeElement;
+    if(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT')) return false; // typing/picking
+    for(var i=0;i<AUTO_REFRESH_OVERLAYS.length;i++){
+      var el = document.getElementById(AUTO_REFRESH_OVERLAYS[i]);
+      if(el && el.innerHTML && el.innerHTML.trim() && el.style.display !== 'none') return false; // a modal is open
+    }
+    return true;
+  }
+  async function autoRefreshNow(){
+    try{ await cloudSave(false, true); }catch(e){}   // flush latest progress (bypasses the push throttle)
+    try{ saveGame(); }catch(e){}
+    location.reload();
+  }
+  function scheduleAutoRefresh(){
+    if(autoRefreshArmed) return;   // one timer per session
+    autoRefreshArmed = true;
+    setTimeout(function attempt(){
+      if(autoRefreshIsSafe()) autoRefreshNow();
+      else setTimeout(attempt, 45000);   // busy right now -- try again after a short wait
+    }, AUTO_REFRESH_MS);
+  }
   async function startGameOnline(){
     removeLoginGate();
     await initGame();                 // readSave() now fetches this account's save from the backend
@@ -16380,6 +16413,7 @@
     }
     chatInit();                       // chat + chronicle subscriptions
     profileSync(true); leaderboardFetch(true);
+    scheduleAutoRefresh();            // keep long-lived tabs current with frequent deploys
   }
   (async function onlineBoot(){
     await onlineAuthInit();
