@@ -2919,6 +2919,7 @@
   var CLASS_CLOTH_COLOR = '#c8b088';
   var CLASS_CHAIN_COLOR = '#6a6a72';
   var CLASS_PLATE_COLOR = '#a8aeb6';
+  var CLASS_LEATHER_COLOR = '#8a6a42';
   function armorPieceEquipped(st, slot, material){
     var s = st && st.bodyArmor && st.bodyArmor[slot];
     return !!(s && s.material===material && s.tier > 0);
@@ -2926,6 +2927,7 @@
   function clothPieceEquipped(st, slot){ return armorPieceEquipped(st, slot, 'tailoring'); }
   function chainPieceEquipped(st, slot){ return armorPieceEquipped(st, slot, 'chain'); }
   function platePieceEquipped(st, slot){ return armorPieceEquipped(st, slot, 'plate'); }
+  function leatherPieceEquipped(st, slot){ return armorPieceEquipped(st, slot, 'leather'); }
   var CLASS_DEFS = [
     {
       id:'summoner', name:'Summoner', icon:svgIcon('starburst','#7a5aa8'),
@@ -3004,6 +3006,26 @@
         { level:60, name:'Tidewall',      desc:'+60% Water resistance (incoming Water-element damage is reduced 60%).' },
         { level:80, name:'Lasting Grace', desc:'Buffs granted by your familiars last twice as long.' }
       ]
+    },
+    {
+      id:'quickdraw', name:'Quickdraw', icon:svgIcon('bow','#5a8a4a'),
+      blurb:'A rapid-firing archer who looses arrows faster than the eye can follow.',
+      reqText:'Short Bow + Quiver, Plate Boots, Leather Helm, Chest & Gloves',
+      reqParts:[
+        { icon:svgIcon('bow','#a8895c'),               label:'Short Bow',    met:function(st){ return st.equippedMainhand==='bowShort'; } },
+        { icon:svgIcon('arrow','#a8895c'),             label:'Quiver',       met:function(st){ return st.equippedOffhand==='quiver'; } },
+        { icon:svgIcon('boots',CLASS_PLATE_COLOR),     label:'Plate Boots',  met:function(st){ return platePieceEquipped(st,'boots'); } },
+        { icon:svgIcon('helm',CLASS_LEATHER_COLOR),    label:'Leather Helm', met:function(st){ return leatherPieceEquipped(st,'helmet'); } },
+        { icon:svgIcon('chestarmor',CLASS_LEATHER_COLOR),label:'Leather Chest',met:function(st){ return leatherPieceEquipped(st,'chest'); } },
+        { icon:svgIcon('gauntlet',CLASS_LEATHER_COLOR),label:'Leather Gloves',met:function(st){ return leatherPieceEquipped(st,'gauntlets'); } }
+      ],
+      passives:[
+        { level:1,  name:'Fleet Fingers', desc:'Your attack timer is reduced 15%.' },
+        { level:20, name:'Endless Quiver',desc:'30% chance a bow attack looses a second, free arrow (a bonus shot).' },
+        { level:40, name:'Piercing Shot', desc:'Attacks ignore 10% of enemy defenses (+10% damage).' },
+        { level:60, name:'Deadeye',       desc:'+10% Critical Hit chance.' },
+        { level:80, name:'Rapid Fire',    desc:'If a shot misses, immediately loose another arrow &mdash; up to 3 shots per attack.' }
+      ]
     }
   ];
   var CLASS_DEFS_BY_ID = {}; CLASS_DEFS.forEach(function(c){ CLASS_DEFS_BY_ID[c.id] = c; });
@@ -3040,15 +3062,23 @@
   function familiarCastIntervalMs(){ return summonerBonus(40) ? 8000 : 10000; }
   function awardClassXp(amount){ var id = activeClassId(state); if(id && amount > 0) addXp(id, amount); }
   function duelistBonus(reqLevel){ return classBonusActive('duelist', reqLevel); }
-  // Duelist Lv 20: -10% attack time per rarity rank on the equipped Rapier (normal 0, fantastic -30%).
+  function quickdrawBonus(reqLevel, st){ return classBonusActive('quickdraw', reqLevel, st); }
+  // Attack-timer class bonuses (smaller = faster). Duelist Lv 20: -10% per Rapier rarity rank.
+  // Quickdraw Lv 1: a flat -15%. Only one class is ever active, so these never stack.
   function classAttackSpeedMult(st){
     st = st || state;
-    if(activeClassId(st)==='duelist' && classLevel(st,'duelist') >= 20 && st.equippedMainhand==='rapier'){
+    var id = activeClassId(st);
+    if(id==='duelist' && classLevel(st,'duelist') >= 20 && st.equippedMainhand==='rapier'){
       var rank = ['normal','rare','supreme','fantastic'].indexOf(st.equippedMainhandRarity || 'normal');
       if(rank > 0) return Math.max(0.1, 1 - 0.10*rank);
     }
+    if(id==='quickdraw' && classLevel(st,'quickdraw') >= 1) return 0.85;
     return 1;
   }
+  // Quickdraw Lv 40: attacks ignore 10% of enemy defenses (modeled as +10% damage).
+  function quickdrawPenetrationMult(st){ return quickdrawBonus(40, st) ? 1.10 : 1; }
+  // Quickdraw Lv 60: +10% Critical Hit chance.
+  function quickdrawCritChanceBonus(st){ return quickdrawBonus(60, st) ? 0.10 : 0; }
   // Player auto-attack interval, folding in familiar Haste and the Duelist's rapier attack-speed bonus.
   function playerAttackIntervalMs(st){
     st = st || state;
@@ -3173,7 +3203,8 @@
     summoner:         { name:'Eidolon',  icon:svgIcon('starburst','#7a5aa8'), spells:[hitSpell('Spirit Bolt','void',15), siphonSpell('Soul Siphon',13), hitSpell('Arcane Surge','void',12), buffSpell('Empower','critDmg',0.32,8)] },
     duelist:          { name:'Fleuret',  icon:svgIcon('sword','#b83a4a'), spells:[hitSpell('Lunge','piercing',15), buffSpell('Riposte','critChance',0.13,8), hitSpell('Flèche','piercing',13), buffSpell('En Garde','dodge',0.14,8)] },
     reaper:           { name:'Mortis',   icon:svgIcon('ghost','#6a5a7a'), spells:[siphonSpell('Soul Harvest',15), siphonSpell('Life Drain',13), hitSpell('Reap','void',12), weakenSpell('Wither',0.3,8)] },
-    herald:           { name:'Sentinel', icon:svgIcon('shield','#c8a83a'), spells:[armorSpell('Aegis Wall',1.8,6), buffSpell('Rallying Cry','block',0.18,8), dmgSpell('Valor',1.3,8), buffSpell('Bastion','resistBlunt',0.32,8)] }
+    herald:           { name:'Sentinel', icon:svgIcon('shield','#c8a83a'), spells:[armorSpell('Aegis Wall',1.8,6), buffSpell('Rallying Cry','block',0.18,8), dmgSpell('Valor',1.3,8), buffSpell('Bastion','resistBlunt',0.32,8)] },
+    quickdraw:        { name:'Talon',    icon:svgIcon('bow','#5a8a4a'), spells:[hitSpell('Barbed Shot','piercing',15), buffSpell('Rapid Nock','haste',0.18,8), hitSpell('Splitting Arrow','piercing',13), buffSpell('Hawkeye','critChance',0.13,8)] }
   };
 
   // Diverse, unique per-familiar spell kits drawn from the expanded pool. Reassigned onto FAMILIAR_DATA
@@ -3243,7 +3274,8 @@
     summoner:       [ hitSpell('Spirit Bolt','void',15), siphonSpell('Soul Siphon',13), hitSpell('Arcane Surge','void',12), buffSpell('Empower','critDmg',0.32,8) ],
     duelist:        [ hitSpell('Lunge','piercing',15), buffSpell('Riposte','critChance',0.13,8), hitSpell('Flèche','piercing',13), buffSpell('En Garde','dodge',0.14,8) ],
     reaper:         [ siphonSpell('Soul Harvest',15), siphonSpell('Life Drain',13), hitSpell('Reap','void',12), weakenSpell('Wither',0.3,8) ],
-    herald:         [ armorSpell('Aegis Wall',1.8,6), buffSpell('Rallying Cry','block',0.18,8), dmgSpell('Valor',1.3,8), buffSpell('Bastion','resistBlunt',0.32,8) ]
+    herald:         [ armorSpell('Aegis Wall',1.8,6), buffSpell('Rallying Cry','block',0.18,8), dmgSpell('Valor',1.3,8), buffSpell('Bastion','resistBlunt',0.32,8) ],
+    quickdraw:      [ hitSpell('Barbed Shot','piercing',15), buffSpell('Rapid Nock','haste',0.18,8), hitSpell('Splitting Arrow','piercing',13), buffSpell('Hawkeye','critChance',0.13,8) ]
   };
   // Each familiar channels an element (thematic to its skill). Its damaging spells (direct hits,
   // siphons, and poison DoTs) carry that element, so they gain the +20% elemental advantage against
@@ -3264,7 +3296,7 @@
     reflexes:'fire', stamina:'earth', handStrength:'earth', armStrength:'earth', coreStrength:'earth', solving:'light', criticalThinking:'light',
     mentality:'earth', zen:'light', meditation:'light', fortitude:'dark',
     // Classes
-    summoner:'light', duelist:'fire', reaper:'dark', herald:'water'
+    summoner:'light', duelist:'fire', reaper:'dark', herald:'water', quickdraw:'earth'
   };
   var DAMAGE_SPELL_TYPES = { hit:true, siphon:true, poison:true }; // spells that deal direct damage or DoT
   function familiarElement(id){ return FAMILIAR_ELEMENT[id] || null; }
@@ -3320,7 +3352,7 @@
     solving:{s:'puzzle',c:'#3a6a9a',ear:'antenna'}, criticalThinking:{s:'brain',c:'#8a5aaa',ear:'antenna'},
     mentality:{s:'compass',c:'#3f8a8a',ear:'round'}, zen:{s:'yinyang',c:'#8a8a8a',ear:'round'},
     meditation:{s:'lotusflower',c:'#c87a9a',ear:'leaf'}, fortitude:{s:'heart',c:'#c8302a',ear:'round'},
-    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}, reaper:{s:'ghost',c:'#6a5a7a',ear:'horn'}, herald:{s:'shield',c:'#c8a83a',ear:'horn'}
+    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}, reaper:{s:'ghost',c:'#6a5a7a',ear:'horn'}, herald:{s:'shield',c:'#c8a83a',ear:'horn'}, quickdraw:{s:'bow',c:'#5a8a4a',ear:'wing'}
   };
   // Draw the ear/crown silhouette behind the head. Returned in two layers (behind body, in front).
   function famEars(kind, body, bodyD, belly, accent){
@@ -6348,7 +6380,8 @@
       needsRender = true; // reload/deplete changes the picker; charge countdown updates live otherwise
     }
   }
-  function playerAttackTick(isBonus){
+  function playerAttackTick(isBonus, attempt){
+    attempt = attempt || 1; // Quickdraw Rapid Fire re-enters this on a miss (up to 3 attempts)
     var act = state.activity;
     var monster = monsterById(act.monsterId);
     if(!monster) return;
@@ -6375,7 +6408,7 @@
     var ringBonus = isWandAttack ? 1 : getRingDamageMultiplier(state, weaponStyle.attackTypes || {blunt:1});
     var leatherBowBonus = weaponStyle.hand==='bow' ? (1 + getLeatherArmorBonuses(state).bowDmgBonus) : 1;
     var chainMeleeBonus = (weaponStyle.hand!=='bow' && !isWandAttack) ? (1 + getChainArmorMeleeBonus(state)) : 1;
-    var isCrit = Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance')); // familiar crit-chance buff
+    var isCrit = Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawCritChanceBonus()); // familiar crit-chance buff + Quickdraw Deadeye
     // Wands are magical, so the melee/bow strength physiques don't scale them -- only the generic
     // low-HP tenacity bonus. Melee/bow keep their class physique multipliers.
     var physDmgMult = isWandAttack ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
@@ -6388,11 +6421,16 @@
     if(Math.random() >= playerHitChance(monster)){
       spawnFloatingText('Miss!', 'ft-fail');
       addPhysiqueXp(physTierPairs([['agility',2]], monster.tierIndex));
+      // Quickdraw Lv 80 (Rapid Fire): a missed shot immediately looses another arrow, up to 3 total.
+      if(quickdrawBonus(80) && attempt < 3 && state.activity && state.activity.type==='combat'){
+        spawnFloatingText('Rapid Fire!', 'ft-rare');
+        playerAttackTick(isBonus, attempt + 1);
+      }
       return;
     }
 
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult());
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult());
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
@@ -6421,6 +6459,11 @@
     // Duelist Lv 80 (Riposte): a Critical Hit triggers one immediate bonus attack -- which cannot chain.
     if(isCrit && !isBonus && duelistBonus(80) && state.activity && state.activity.type==='combat'){
       spawnFloatingText('Riposte!', 'ft-rare');
+      playerAttackTick(true);
+    }
+    // Quickdraw Lv 20 (Endless Quiver): 30% chance a landed shot looses a free bonus arrow (no chain).
+    if(!isBonus && quickdrawBonus(20) && Math.random() < 0.30 && state.activity && state.activity.type==='combat'){
+      spawnFloatingText('Endless Quiver!', 'ft-rare');
       playerAttackTick(true);
     }
   }
@@ -8501,7 +8544,7 @@
     }
     html += '<div class="stat-row"><span class="stat-label">Damage Type</span><span class="stat-value">'+dmgTypeHtml+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">'+(isWandMain?'Wands Proficiency':(isScepterMain?'Scepters Proficiency':'Weapon Proficiency'))+'</span><span class="stat-value">+'+Math.round((weaponProficiency-1)*100)+'%</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+(Math.round(criticalEyeCritChance(state)*10000)/100)+'%</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+(Math.round((criticalEyeCritChance(state)+quickdrawCritChanceBonus())*10000)/100)+'%</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+(Math.round((Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + reaperCritDmgBonus())*100)/100)+'x</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Accuracy</span><span class="stat-value">'+playerAccuracy(state)+'</span></div>';
     if(weaponStyle.hand==='bow'){
@@ -13551,6 +13594,7 @@
     duelist: 'A Class conferred by a Rapier with an empty offhand, Chain Helm & Chest and Cloth Gloves & Shoes. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     reaper: 'A Class conferred by a Scythe with a bare head and Cloth Chest, Gloves & Shoes. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     herald: 'A Class conferred by a Mace and Large Shield with full Plate (Helm, Chest, Gloves, Boots). While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
+    quickdraw: 'A Class conferred by a Short Bow and Quiver with Plate Boots and Leather Helm, Chest & Gloves. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     clotharmor: 'Proficiency wearing Tailoring\'s cloth armor at higher tiers.',
     leatherarmor: 'Proficiency wearing Leatherworking\'s leather armor at higher tiers.',
     chainmailarmor: 'Proficiency wearing Armorsmithing\'s chain mail at higher tiers.',
@@ -15542,7 +15586,7 @@
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
-      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult,
+      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

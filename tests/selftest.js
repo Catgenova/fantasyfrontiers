@@ -1014,6 +1014,55 @@
     ok(fam.spells.some(function(s){ return s.type==='armorBuff' || s.type==='timedBuff' || s.type==='damageBuff'; }), 'herald familiar grants buffs');
   });
 
+  // ---- Classes: Quickdraw (short-bow archer: speed, penetration, rapid fire) ------------
+  suite('classes: Quickdraw', function(){
+    ok(FF.CLASS_SKILL_IDS.indexOf('quickdraw') !== -1, 'quickdraw is a class skill id');
+    var cd = FF.CLASS_DEFS_BY_ID.quickdraw;
+    ok(cd, 'quickdraw class defined');
+    eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'passive tiers are 1/20/40/60/80');
+    eq(cd.reqParts.length, 6, 'requires 6 gear conditions');
+
+    function leather(){ return {tier:1, rarity:'normal', material:'leather'}; }
+    function plate(){ return {tier:1, rarity:'normal', material:'plate'}; }
+    function bare(){ return {tier:0, rarity:'normal', material:null}; }
+    function base(){ return { xp:{quickdraw:0}, equippedMainhand:'bowShort', equippedMainhandRarity:'normal', equippedOffhand:'quiver', bodyArmor:{ helmet:leather(), chest:leather(), gauntlets:leather(), boots:plate(), back:bare() } }; }
+    var full = base();
+    eq(FF.activeClassId(full), 'quickdraw', 'short bow + quiver + plate boots + leather helm/chest/gloves => Quickdraw');
+    eq(FF.leatherPieceEquipped(full,'helmet'), true, 'leather helm detected');
+    eq(FF.platePieceEquipped(full,'boots'), true, 'plate boots detected');
+
+    // Every requirement matters.
+    var noQuiver = base(); noQuiver.equippedOffhand=null;
+    eq(FF.activeClassId(noQuiver), null, 'needs a quiver');
+    var notBow = base(); notBow.equippedMainhand='greatsword';
+    eq(FF.activeClassId(notBow), null, 'needs a short bow');
+    var leatherBoots = base(); leatherBoots.bodyArmor.boots=leather();
+    eq(FF.activeClassId(leatherBoots), null, 'boots must be plate (leather does not qualify)');
+    var plateHelm = base(); plateHelm.bodyArmor.helmet=plate();
+    eq(FF.activeClassId(plateHelm), null, 'helm must be leather (plate does not qualify)');
+
+    var lvHi = Math.pow(84,2)*100; // ~Lv 85
+    function leveled(){ var s = base(); s.xp.quickdraw = lvHi; return s; }
+
+    // Lv 1 Fleet Fingers: -15% attack timer (even at Class Lv 1).
+    eq(FF.classAttackSpeedMult(full), 0.85, 'Quickdraw Lv 1: -15% attack timer');
+    var off = base(); off.equippedOffhand=null;
+    eq(FF.classAttackSpeedMult(off), 1, 'attack-timer bonus gated on the class being active');
+
+    // Lv 40 Piercing Shot: +10% damage.
+    eq(FF.quickdrawPenetrationMult(full), 1, 'Lv 1 quickdraw: no penetration yet');
+    eq(FF.quickdrawPenetrationMult(leveled()), 1.10, 'Lv 40+: +10% damage');
+
+    // Lv 60 Deadeye: +10% crit chance.
+    eq(FF.quickdrawCritChanceBonus(full), 0, 'Lv 1 quickdraw: no crit bonus yet');
+    eq(FF.quickdrawCritChanceBonus(leveled()), 0.10, 'Lv 60+: +10% crit chance');
+
+    // Class familiar is a piercing archer to match the fantasy.
+    var fam = FF.FAMILIAR_DATA.quickdraw;
+    ok(fam && fam.spells && fam.spells.length === 4, 'quickdraw familiar has 4 spells');
+    ok(fam.spells.some(function(s){ return s.type==='hit' && s.element==='earth'; }), 'quickdraw familiar has earth-element hit spells');
+  });
+
   // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------
   suite('warding proficiency', function(){
     eq(FF.WARDING_SKILL_ID, 'warding', 'warding skill id');
