@@ -3046,6 +3046,25 @@
         { level:60, name:'Sunder',         desc:'Hits have a 5% chance to reduce the enemy\'s armor 25% for 5s (you deal +25% while it holds).' },
         { level:80, name:'Radiant Burst',  desc:'Your Light damage has a 10% chance to deal 200% (double) damage.' }
       ]
+    },
+    {
+      id:'knight', name:'Knight', icon:svgIcon('sword','#8a90a0'),
+      blurb:'A relentless swordsman who builds momentum on every hit and answers a miss with fury.',
+      reqText:'Claymore, Plate Chest & Boots, Chain Helm & Gloves',
+      reqParts:[
+        { icon:svgIcon('sword','#8a90a0'),             label:'Claymore',     met:function(st){ return st.equippedMainhand==='claymore'; } },
+        { icon:svgIcon('chestarmor',CLASS_PLATE_COLOR),label:'Plate Chest',  met:function(st){ return platePieceEquipped(st,'chest'); } },
+        { icon:svgIcon('boots',CLASS_PLATE_COLOR),     label:'Plate Boots',  met:function(st){ return platePieceEquipped(st,'boots'); } },
+        { icon:svgIcon('helm',CLASS_CHAIN_COLOR),      label:'Chain Helm',   met:function(st){ return chainPieceEquipped(st,'helmet'); } },
+        { icon:svgIcon('gauntlet',CLASS_CHAIN_COLOR),  label:'Chain Gloves', met:function(st){ return chainPieceEquipped(st,'gauntlets'); } }
+      ],
+      passives:[
+        { level:1,  name:'Momentum',     desc:'Each landed hit cuts your next attack timer 10% (stacking up to 50%); a miss resets it.' },
+        { level:20, name:'Vengeful Strike',desc:'On a miss, gain +25% damage for 8s.' },
+        { level:40, name:'Reckless Edge', desc:'On a miss, gain +15% Critical Hit chance for 8s.' },
+        { level:60, name:'Brutal Riposte',desc:'On a miss, gain +50% Critical Hit damage for 8s.' },
+        { level:80, name:'Wrath',         desc:'On a miss, gain a further +100% Critical Hit damage for 8s (stacks with Brutal Riposte).' }
+      ]
     }
   ];
   var CLASS_DEFS_BY_ID = {}; CLASS_DEFS.forEach(function(c){ CLASS_DEFS_BY_ID[c.id] = c; });
@@ -3093,6 +3112,7 @@
       if(rank > 0) return Math.max(0.1, 1 - 0.10*rank);
     }
     if(id==='quickdraw' && classLevel(st,'quickdraw') >= 1) return 0.85;
+    if(id==='knight' && classLevel(st,'knight') >= 1) return 1 - 0.10 * Math.min(5, st.knightStacks || 0); // Momentum stacks
     return 1;
   }
   // Quickdraw Lv 40: attacks ignore 10% of enemy defenses (modeled as +10% damage).
@@ -3108,6 +3128,14 @@
   function templarEnemyArmorReduced(){ return !!(state.classDebuffs && state.classDebuffs.enemyArmorUntil > Date.now()); }
   function templarIncomingDmgMult(){ return templarEnemyDmgReduced() ? 0.75 : 1; }   // Lv 40: enemy deals 25% less
   function templarArmorShredDmgMult(){ return templarEnemyArmorReduced() ? 1.25 : 1; } // Lv 60: you deal +25%
+  function knightBonus(reqLevel, st){ return classBonusActive('knight', reqLevel, st); }
+  // Knight Lv 1 (Momentum): each landed hit stacks -10% attack time (cap 5 = -50%); a miss resets it.
+  function knightStacks(st){ st = st || state; return knightBonus(1, st) ? Math.min(5, st.knightStacks || 0) : 0; }
+  // Knight on-miss buffs last 8s (all granted together on a miss; each gated by its own tier).
+  function knightBuffActive(){ return !!(state.knightBuffUntil && state.knightBuffUntil > Date.now()); }
+  function knightMissDmgMult(){ return (knightBonus(20) && knightBuffActive()) ? 1.25 : 1; }      // Lv 20: +25% damage
+  function knightMissCritChance(){ return (knightBonus(40) && knightBuffActive()) ? 0.15 : 0; }   // Lv 40: +15% crit chance
+  function knightMissCritDmg(){ var b = 0; if(knightBuffActive()){ if(knightBonus(60)) b += 0.5; if(knightBonus(80)) b += 1.0; } return b; } // Lv 60 +50%, Lv 80 +100%
   // Player auto-attack interval, folding in familiar Haste and the Duelist's rapier attack-speed bonus.
   function playerAttackIntervalMs(st){
     st = st || state;
@@ -3234,7 +3262,8 @@
     reaper:           { name:'Mortis',   icon:svgIcon('ghost','#6a5a7a'), spells:[siphonSpell('Soul Harvest',15), siphonSpell('Life Drain',13), hitSpell('Reap','void',12), weakenSpell('Wither',0.3,8)] },
     herald:           { name:'Sentinel', icon:svgIcon('shield','#c8a83a'), spells:[armorSpell('Aegis Wall',1.8,6), buffSpell('Rallying Cry','block',0.18,8), dmgSpell('Valor',1.3,8), buffSpell('Bastion','resistBlunt',0.32,8)] },
     quickdraw:        { name:'Talon',    icon:svgIcon('bow','#5a8a4a'), spells:[hitSpell('Barbed Shot','piercing',15), buffSpell('Rapid Nock','haste',0.18,8), hitSpell('Splitting Arrow','piercing',13), buffSpell('Hawkeye','critChance',0.13,8)] },
-    templar:          { name:'Lumen',    icon:svgIcon('starburst','#e0c860'), spells:[hitSpell('Smite','void',15), armorSpell('Consecrate',1.7,6), hitSpell('Radiant Beam','void',13), buffSpell('Zeal','block',0.16,8)] }
+    templar:          { name:'Lumen',    icon:svgIcon('starburst','#e0c860'), spells:[hitSpell('Smite','void',15), armorSpell('Consecrate',1.7,6), hitSpell('Radiant Beam','void',13), buffSpell('Zeal','block',0.16,8)] },
+    knight:           { name:'Aldric',   icon:svgIcon('sword','#8a90a0'), spells:[hitSpell('Vanguard Slash','slashing',15), buffSpell('Charge','haste',0.18,8), buffSpell('Honed Blade','dmgSlash',0.32,8), armorSpell('Steel Resolve',1.6,6)] }
   };
 
   // Diverse, unique per-familiar spell kits drawn from the expanded pool. Reassigned onto FAMILIAR_DATA
@@ -3306,7 +3335,8 @@
     reaper:         [ siphonSpell('Soul Harvest',15), siphonSpell('Life Drain',13), hitSpell('Reap','void',12), weakenSpell('Wither',0.3,8) ],
     herald:         [ armorSpell('Aegis Wall',1.8,6), buffSpell('Rallying Cry','block',0.18,8), dmgSpell('Valor',1.3,8), buffSpell('Bastion','resistBlunt',0.32,8) ],
     quickdraw:      [ hitSpell('Barbed Shot','piercing',15), buffSpell('Rapid Nock','haste',0.18,8), hitSpell('Splitting Arrow','piercing',13), buffSpell('Hawkeye','critChance',0.13,8) ],
-    templar:        [ hitSpell('Smite','void',15), armorSpell('Consecrate',1.7,6), hitSpell('Radiant Beam','void',13), buffSpell('Zeal','block',0.16,8) ]
+    templar:        [ hitSpell('Smite','void',15), armorSpell('Consecrate',1.7,6), hitSpell('Radiant Beam','void',13), buffSpell('Zeal','block',0.16,8) ],
+    knight:         [ hitSpell('Vanguard Slash','slashing',15), buffSpell('Charge','haste',0.18,8), buffSpell('Honed Blade','dmgSlash',0.32,8), armorSpell('Steel Resolve',1.6,6) ]
   };
   // Each familiar channels an element (thematic to its skill). Its damaging spells (direct hits,
   // siphons, and poison DoTs) carry that element, so they gain the +20% elemental advantage against
@@ -3327,7 +3357,7 @@
     reflexes:'fire', stamina:'earth', handStrength:'earth', armStrength:'earth', coreStrength:'earth', solving:'light', criticalThinking:'light',
     mentality:'earth', zen:'light', meditation:'light', fortitude:'dark',
     // Classes
-    summoner:'light', duelist:'fire', reaper:'dark', herald:'water', quickdraw:'earth', templar:'light'
+    summoner:'light', duelist:'fire', reaper:'dark', herald:'water', quickdraw:'earth', templar:'light', knight:'earth'
   };
   var DAMAGE_SPELL_TYPES = { hit:true, siphon:true, poison:true }; // spells that deal direct damage or DoT
   function familiarElement(id){ return FAMILIAR_ELEMENT[id] || null; }
@@ -3383,7 +3413,7 @@
     solving:{s:'puzzle',c:'#3a6a9a',ear:'antenna'}, criticalThinking:{s:'brain',c:'#8a5aaa',ear:'antenna'},
     mentality:{s:'compass',c:'#3f8a8a',ear:'round'}, zen:{s:'yinyang',c:'#8a8a8a',ear:'round'},
     meditation:{s:'lotusflower',c:'#c87a9a',ear:'leaf'}, fortitude:{s:'heart',c:'#c8302a',ear:'round'},
-    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}, reaper:{s:'ghost',c:'#6a5a7a',ear:'horn'}, herald:{s:'shield',c:'#c8a83a',ear:'horn'}, quickdraw:{s:'bow',c:'#5a8a4a',ear:'wing'}, templar:{s:'starburst',c:'#e0c860',ear:'halo'}
+    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}, reaper:{s:'ghost',c:'#6a5a7a',ear:'horn'}, herald:{s:'shield',c:'#c8a83a',ear:'horn'}, quickdraw:{s:'bow',c:'#5a8a4a',ear:'wing'}, templar:{s:'starburst',c:'#e0c860',ear:'halo'}, knight:{s:'sword',c:'#8a90a0',ear:'horn'}
   };
   // Draw the ear/crown silhouette behind the head. Returned in two layers (behind body, in front).
   function famEars(kind, body, bodyD, belly, accent){
@@ -5726,6 +5756,8 @@
       activeCompanions: [],   // multiple active familiars (1 base slot + a Staff's extra slots)
       companionCast: {},      // per-companion { accum, index } cast timing
       classDebuffs: { enemyDmgUntil:0, enemyArmorUntil:0 }, // Templar on-hit enemy debuff windows (timestamps)
+      knightStacks: 0,        // Knight Momentum: current -10% attack-speed stacks (0-5)
+      knightBuffUntil: 0,     // Knight on-miss buff window (timestamp)
       activePotion: null,   // Alchemy combat potion currently in use (item id) + its remaining charges
       potionCharges: 0,
       popupQueue: [],
@@ -6449,19 +6481,22 @@
     var ringBonus = isWandAttack ? 1 : getRingDamageMultiplier(state, weaponStyle.attackTypes || {blunt:1});
     var leatherBowBonus = weaponStyle.hand==='bow' ? (1 + getLeatherArmorBonuses(state).bowDmgBonus) : 1;
     var chainMeleeBonus = (weaponStyle.hand!=='bow' && !isWandAttack) ? (1 + getChainArmorMeleeBonus(state)) : 1;
-    var isCrit = Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawCritChanceBonus()); // familiar crit-chance buff + Quickdraw Deadeye
+    var isCrit = Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawCritChanceBonus() + knightMissCritChance()); // familiar crit-chance buff + Quickdraw Deadeye + Knight on-miss
     // Wands are magical, so the melee/bow strength physiques don't scale them -- only the generic
     // low-HP tenacity bonus. Melee/bow keep their class physique multipliers.
     var physDmgMult = isWandAttack ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
     physDmgMult *= tenacityLowHpMult(state);
     // Elixir potions + familiar crit-damage buffs stack on top of the (capped) base+exploitation crit.
-    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + reaperCritDmgBonus()) : 1;
+    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + reaperCritDmgBonus() + knightMissCritDmg()) : 1;
 
     // Accuracy vs Dodge: roll to land the hit. A miss deals no damage and fires no on-hit effects
     // (potions, proficiency XP), but you still trained your reflexes by swinging so accuracy can grow.
     if(Math.random() >= playerHitChance(monster)){
       spawnFloatingText('Miss!', 'ft-fail');
       addPhysiqueXp(physTierPairs([['agility',2]], monster.tierIndex));
+      // Knight (Momentum): a miss drops the attack-speed stacks. On-miss buffs (Lv 20+) fire for 8s.
+      if(knightBonus(1)) state.knightStacks = 0;
+      if(knightBonus(20)){ state.knightBuffUntil = Date.now() + 8000; spawnFloatingText('Vengeance!', 'ft-rare'); }
       // Quickdraw Lv 80 (Rapid Fire): a missed shot immediately looses another arrow, up to 3 total.
       if(quickdrawBonus(80) && attempt < 3 && state.activity && state.activity.type==='combat'){
         spawnFloatingText('Rapid Fire!', 'ft-rare');
@@ -6471,7 +6506,7 @@
     }
 
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult());
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult());
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
@@ -6490,6 +6525,8 @@
     if(state.equippedMainhand) addXp(mainProfId, atkProfXp);
     if(state.equippedOffhand && offhandStyle && offhandStyle.type==='quiver') addXp(state.equippedOffhand, atkProfXp);
     awardClassXp(effDmg); // an active Class trains on combat damage dealt
+    // Knight (Momentum): each landed hit adds a -10% attack-speed stack (capped at 5 = -50%).
+    if(knightBonus(1)) state.knightStacks = Math.min(5, (state.knightStacks || 0) + 1);
     // Templar on-hit debuffs: Lv 40 saps 25% of the enemy's damage, Lv 60 shreds 25% of its armor (5s, 5% each).
     if(templarBonus(40) || templarBonus(60)){
       if(!state.classDebuffs) state.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
@@ -13645,6 +13682,7 @@
     herald: 'A Class conferred by a Mace and Large Shield with full Plate (Helm, Chest, Gloves, Boots). While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     quickdraw: 'A Class conferred by a Short Bow and Quiver with Plate Boots and Leather Helm, Chest & Gloves. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     templar: 'A Class conferred by a Scepter and Ward with Plate Helm & Chest and Chain Gloves & Boots. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
+    knight: 'A Class conferred by a Claymore with Plate Chest & Boots and Chain Helm & Gloves. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     clotharmor: 'Proficiency wearing Tailoring\'s cloth armor at higher tiers.',
     leatherarmor: 'Proficiency wearing Leatherworking\'s leather armor at higher tiers.',
     chainmailarmor: 'Proficiency wearing Armorsmithing\'s chain mail at higher tiers.',
@@ -15636,7 +15674,7 @@
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
-      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult,
+      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

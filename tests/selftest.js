@@ -1122,6 +1122,66 @@
     ok(fam.spells.some(function(sp){ return sp.type==='hit'; }), 'templar familiar has damaging spells');
   });
 
+  // ---- Classes: Knight (claymore momentum + on-miss fury) -------------------------------
+  suite('classes: Knight', function(){
+    ok(FF.CLASS_SKILL_IDS.indexOf('knight') !== -1, 'knight is a class skill id');
+    var cd = FF.CLASS_DEFS_BY_ID.knight;
+    ok(cd, 'knight class defined');
+    eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'passive tiers are 1/20/40/60/80');
+    eq(cd.reqParts.length, 5, 'requires 5 gear conditions');
+
+    function plate(){ return {tier:1, rarity:'normal', material:'plate'}; }
+    function chain(){ return {tier:1, rarity:'normal', material:'chain'}; }
+    function bare(){ return {tier:0, rarity:'normal', material:null}; }
+    function base(){ return { xp:{knight:0}, equippedMainhand:'claymore', equippedMainhandRarity:'normal', bodyArmor:{ helmet:chain(), chest:plate(), gauntlets:chain(), boots:plate(), back:bare() } }; }
+    var full = base();
+    eq(FF.activeClassId(full), 'knight', 'claymore + plate chest/boots + chain helm/gloves => Knight');
+
+    // Every requirement matters.
+    var notClay = base(); notClay.equippedMainhand='greatsword';
+    eq(FF.activeClassId(notClay), null, 'needs a claymore');
+    var plateHelm = base(); plateHelm.bodyArmor.helmet=plate();
+    eq(FF.activeClassId(plateHelm), null, 'helm must be chain');
+    var chainChest = base(); chainChest.bodyArmor.chest=chain();
+    eq(FF.activeClassId(chainChest), null, 'chest must be plate');
+
+    // Lv 1 Momentum: each stack -10% attack timer, capped at 5 (-50%); reads st.knightStacks.
+    var s0 = base(); s0.knightStacks = 0; eq(FF.classAttackSpeedMult(s0), 1, '0 stacks => no reduction');
+    var s3 = base(); s3.knightStacks = 3; near(FF.classAttackSpeedMult(s3), 0.70, '3 stacks => -30%');
+    var s5 = base(); s5.knightStacks = 5; near(FF.classAttackSpeedMult(s5), 0.50, '5 stacks => -50%');
+    var s8 = base(); s8.knightStacks = 8; near(FF.classAttackSpeedMult(s8), 0.50, 'stacks cap at 5 (-50%)');
+    var offStacks = base(); offStacks.equippedMainhand='greatsword'; offStacks.knightStacks=5;
+    eq(FF.classAttackSpeedMult(offStacks), 1, 'momentum gated on the class being active');
+    eq(FF.knightStacks(s8), 5, 'knightStacks caps at 5 while active');
+    eq(FF.knightStacks(offStacks), 0, 'no momentum stacks while class inactive');
+
+    // On-miss buffs (Lv 20/40/60/80) read the global 8s buff window on state.
+    var s = FF._state;
+    var snap = { xpK:s.xp.knight, main:s.equippedMainhand, rar:s.equippedMainhandRarity, buf:s.knightBuffUntil,
+      helm:s.bodyArmor.helmet, chest:s.bodyArmor.chest, gaunt:s.bodyArmor.gauntlets, boots:s.bodyArmor.boots };
+    s.equippedMainhand='claymore'; s.equippedMainhandRarity='normal';
+    s.bodyArmor.helmet=chain(); s.bodyArmor.chest=plate(); s.bodyArmor.gauntlets=chain(); s.bodyArmor.boots=plate();
+    s.xp.knight = Math.pow(84,2)*100; // ~Lv 85 (all miss buffs)
+    s.knightBuffUntil = 0; // window closed
+    eq(FF.knightMissDmgMult(), 1, 'no window => no damage bonus');
+    eq(FF.knightMissCritChance(), 0, 'no window => no crit chance');
+    eq(FF.knightMissCritDmg(), 0, 'no window => no crit damage');
+    s.knightBuffUntil = Date.now()+9000; // window open
+    eq(FF.knightMissDmgMult(), 1.25, 'Lv 20: +25% damage on miss');
+    eq(FF.knightMissCritChance(), 0.15, 'Lv 40: +15% crit chance on miss');
+    near(FF.knightMissCritDmg(), 1.5, 'Lv 60 (+0.5) + Lv 80 (+1.0) = +1.5 crit damage');
+    s.xp.knight = Math.pow(64,2)*100; // ~Lv 65 (Lv 60 on, Lv 80 off)
+    near(FF.knightMissCritDmg(), 0.5, 'Lv 60 alone => +0.5 crit damage');
+    // restore _state for other suites
+    s.xp.knight = snap.xpK; s.equippedMainhand = snap.main; s.equippedMainhandRarity = snap.rar; s.knightBuffUntil = snap.buf;
+    s.bodyArmor.helmet = snap.helm; s.bodyArmor.chest = snap.chest; s.bodyArmor.gauntlets = snap.gaunt; s.bodyArmor.boots = snap.boots;
+
+    // Class familiar (steel swordsman).
+    var fam = FF.FAMILIAR_DATA.knight;
+    ok(fam && fam.spells && fam.spells.length === 4, 'knight familiar has 4 spells');
+    ok(fam.spells.some(function(sp){ return sp.type==='hit'; }), 'knight familiar has a damaging spell');
+  });
+
   // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------
   suite('warding proficiency', function(){
     eq(FF.WARDING_SKILL_ID, 'warding', 'warding skill id');
