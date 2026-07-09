@@ -306,6 +306,43 @@
     ok(ids.indexOf('mining') !== -1 && ids.indexOf('carpentry') !== -1, 'regular skills still trackable');
   });
 
+  // ---- Farming: Harvest All / Plant All bulk actions -----------------------------------
+  suite('farming bulk actions', function(){
+    var S = FF._state, grid = S.estate.grid, pm = FF.farmPlotMap('personal');
+    // Grab three real grid cells and turn them into fields of tiers 5 / 2 / 0.
+    var cells = [];
+    for(var x=0; x<grid.length && cells.length<3; x++){ if(!grid[x]) continue; for(var y=0; y<grid[x].length && cells.length<3; y++){ if(grid[x][y]) cells.push([x,y]); } }
+    var savedTiers = cells.map(function(c){ return grid[c[0]][c[1]].fieldTier; });
+    var savedPlots = {}; Object.keys(pm).forEach(function(k){ savedPlots[k]=pm[k]; delete pm[k]; });
+    var savedInv = { t5:S.inventory.seed_t5||0, t2:S.inventory.seed_t2||0, t0:S.inventory.seed_t0||0 };
+
+    [5,2,0].forEach(function(t,i){ grid[cells[i][0]][cells[i][1]].fieldTier = t; });
+    S.inventory.seed_t5 = 1; S.inventory.seed_t2 = 1; S.inventory.seed_t0 = 5;
+
+    ok(FF.allFieldPlots().filter(function(p){ return p.scope==='personal'; }).length >= 3, 'three personal fields present');
+
+    // Plant All: best seeds go to the best fields; dry-run count matches the real run.
+    eq(FF.farmingPlantAll(true), 3, 'dry-run plants all three empty fields');
+    eq(FF.farmingPlantAll(false), 3, 'plant-all fills all three');
+    var byTier = {}; FF.allFieldPlots().forEach(function(p){ if(p.tier===5||p.tier===2||p.tier===0){ byTier[p.tier] = p.plot && p.plot.tierIndex; } });
+    eq(byTier[5], 5, 'tier-5 field got the highest fitting seed (t5)');
+    eq(byTier[2], 2, 'tier-2 field got the t2 seed (t5 doesn\'t fit)');
+    eq(byTier[0], 0, 'tier-0 field got a t0 seed');
+    eq(FF.farmingPlantAll(true), 0, 'nothing left to plant once every field is full');
+
+    // Harvest All: ripen them, then one call clears every ready plot.
+    FF.allFieldPlots().forEach(function(p){ if(p.plot && p.plot.cropType) p.plot.readyAt = Date.now() - 1; });
+    eq(FF.farmingReadyCount(), 3, 'all three crops are ready');
+    eq(FF.farmingHarvestAll(), 3, 'harvest-all clears all three');
+    eq(FF.farmingReadyCount(), 0, 'no ready crops remain after harvest-all');
+
+    // restore
+    Object.keys(pm).forEach(function(k){ delete pm[k]; });
+    Object.keys(savedPlots).forEach(function(k){ pm[k]=savedPlots[k]; });
+    cells.forEach(function(c,i){ grid[c[0]][c[1]].fieldTier = savedTiers[i]; });
+    S.inventory.seed_t5 = savedInv.t5; S.inventory.seed_t2 = savedInv.t2; S.inventory.seed_t0 = savedInv.t0;
+  });
+
   // ---- Guild estate: assist a teammate's task ------------------------------------------
   suite('guild estate assist', function(){
     var ge = FF.guildEstate;

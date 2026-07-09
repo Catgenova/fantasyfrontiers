@@ -189,6 +189,7 @@
   .ff-chat-expand-btn svg{width:13px;height:13px;}
   .ff-bottomdock{display:none;}
   .ff-chatfab{display:none;}
+  .ff-farmfab{display:none;}
   .ff-ivy{position:absolute;top:-8px;z-index:9;pointer-events:none;width:70px;height:60px;}
   .ff-ivy-l{left:-4px;} .ff-ivy-r{right:-4px;transform:scaleX(-1);}
   @keyframes ffChipFlash{0%,100%{opacity:1;}50%{opacity:.45;}}
@@ -241,6 +242,14 @@
     /* Unread indicator: gold ring + a small dot badge, pulsing to draw the eye. */
     .ff-chatfab-alert{border-color:var(--gold-bright);animation:ffFabPulse 1.4s ease-in-out infinite;}
     .ff-chatfab-alert::after{content:'';position:absolute;top:-2px;right:-2px;width:14px;height:14px;border-radius:50%;background:var(--gold-bright);border:2px solid #24380f;}
+    /* Farming quick-action FABs, stacked above the chat bubble. Shown (per button) only when the
+       action is available -- .on is toggled from renderFarmFabs(). Hidden on desktop (the base
+       .ff-farmfab{display:none} outside this query wins when the query doesn't apply). */
+    .ff-farmfab{align-items:center;justify-content:center;position:absolute;right:14px;z-index:22;width:50px;height:50px;border-radius:50%;border:2px solid #24380f;color:#f2f8e6;cursor:pointer;box-shadow:0 5px 14px rgba(0,0,0,.45);}
+    .ff-farmfab.on{display:flex;}
+    .ff-farmfab-harvest{bottom:126px;background:linear-gradient(180deg,#c79a2a,#8a6a18);}
+    .ff-farmfab-plant{bottom:186px;background:linear-gradient(180deg,#5aa06a,#2f6a3c);}
+    .ff-farmfab-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--gold-bright);color:#3a2a08;border:2px solid #24380f;font-family:var(--font-mono);font-size:10px;font-weight:700;line-height:14px;text-align:center;}
   }
   @keyframes ffFabPulse{
     0%,100%{box-shadow:0 5px 14px rgba(0,0,0,.45), 0 0 0 0 rgba(230,196,90,.55);}
@@ -1424,6 +1433,8 @@
   </div>
   <nav class="ff-bottomdock" id="ffBottomDock"></nav>
   <button class="ff-chatfab" id="ffChatFab" data-action="toggleChatDrawer"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-chat"></use></svg></button>
+  <button class="ff-farmfab ff-farmfab-harvest" id="ffHarvestFab" data-action="harvestAllFarm" title="Harvest all ready crops"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-herb"></use></svg><span class="ff-farmfab-badge" id="ffHarvestFabBadge"></span></button>
+  <button class="ff-farmfab ff-farmfab-plant" id="ffPlantFab" data-action="plantAllFarm" title="Plant all empty fields"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-seed"></use></svg><span class="ff-farmfab-badge" id="ffPlantFabBadge"></span></button>
   <div class="ff-ivy ff-ivy-l" id="ffIvyL"></div>
   <div class="ff-ivy ff-ivy-r" id="ffIvyR"></div>
   <div id="chatDrawerOverlay"></div>
@@ -4192,36 +4203,103 @@
     return null;
   }
 
-  function plantSeed(scope, key, seedId){
+  // batch=true suppresses the per-plot log/toast/save (used by Plant All) so the caller writes one
+  // summary line and saves once. Returns true on a successful plant.
+  function plantSeed(scope, key, seedId, batch){
     var fieldTier = fieldTierAt(scope, key);
-    if(fieldTier == null) return;                       // no field on that tile
+    if(fieldTier == null) return false;                 // no field on that tile
     var map = farmPlotMap(scope);
-    if(map[key] && map[key].cropType) return;           // already growing something
+    if(map[key] && map[key].cropType) return false;     // already growing something
     var si = seedInfo(seedId);
-    if(!si || !si.crop) return;
-    if((state.inventory[seedId]||0) <= 0) return;
-    if(!canPlantInField(fieldTier, si.tier)){ addLog('That ' + (DIGGING_NAMES[fieldTier]||'') + ' Field only grows crops up to ' + TIER_NAMES[fieldTier] + ' tier.', 'danger'); return; }
+    if(!si || !si.crop) return false;
+    if((state.inventory[seedId]||0) <= 0) return false;
+    if(!canPlantInField(fieldTier, si.tier)){ if(!batch) addLog('That ' + (DIGGING_NAMES[fieldTier]||'') + ' Field only grows crops up to ' + TIER_NAMES[fieldTier] + ' tier.', 'danger'); return false; }
     state.inventory[seedId] -= 1;
     map[key] = { cropType:si.cropType, tierIndex:si.tier, plantedAt:Date.now(), readyAt:Date.now() + si.crop.durationMs };
-    addLog('You planted a ' + si.def.name + (scope==='guild'?' on the guild estate':'') + '.', 'important');
-    saveGame(); needsRender = true;
+    if(!batch){ addLog('You planted a ' + si.def.name + (scope==='guild'?' on the guild estate':'') + '.', 'important'); saveGame(); }
+    needsRender = true;
+    return true;
   }
 
-  function harvestPlot(scope, key){
+  // batch=true suppresses the per-plot log/toast/save (used by Harvest All). Returns the harvested
+  // crop data (for a batch summary), or null if nothing was harvested.
+  function harvestPlot(scope, key, batch){
     var map = farmPlotMap(scope);
     var plot = map[key];
-    if(isPlotEmpty(plot)) return;
-    if(Date.now() < plot.readyAt) return;
+    if(isPlotEmpty(plot)) return null;
+    if(Date.now() < plot.readyAt) return null;
     var cropData = getCropDataForPlot(plot);
-    if(!cropData){ delete map[key]; needsRender = true; return; } // self-heal a bad cropType
+    if(!cropData){ delete map[key]; needsRender = true; return null; } // self-heal a bad cropType
     addItem(cropData.id, 1);
     addXp(FARMING_CROP_SKILL[plot.cropType] || 'fiberharvesting', cropData.xp);
     addPhysiqueXp(physTierPairs(FARMING_PHYSIQUE, itemTierFromId(cropData.id)));
     maybeSummonFamiliar('farming');
-    addLog('You harvested ' + cropData.name + '.', 'important');
-    spawnFloatingText('+1 ' + cropData.name, 'ft-success');
+    if(!batch){ addLog('You harvested ' + cropData.name + '.', 'important'); spawnFloatingText('+1 ' + cropData.name, 'ft-success'); }
     delete map[key];
-    saveGame(); needsRender = true;
+    if(!batch) saveGame();
+    needsRender = true;
+    return cropData;
+  }
+
+  // ---- Bulk field actions (Harvest All / Plant All -- desktop buttons + mobile FABs) ----
+  // Every field plot across your estate and the guild estate: {scope, key, tier, plot}.
+  function allFieldPlots(){
+    var out = [];
+    var scopes = [['personal', state.estate && state.estate.grid],
+                  ['guild', (guildState.guild && typeof guildEstate!=='undefined' && guildEstate.status==='ready') ? guildEstate.grid : null]];
+    scopes.forEach(function(pair){
+      var scope = pair[0], grid = pair[1];
+      if(!grid) return;
+      var map = farmPlotMap(scope);
+      for(var x=0;x<grid.length;x++){ var col=grid[x]; if(!col) continue;
+        for(var y=0;y<col.length;y++){ var c=col[y]; if(c && c.fieldTier!=null){ var key=x+','+y; out.push({ scope:scope, key:key, tier:c.fieldTier, plot:map[key] }); } } }
+    });
+    return out;
+  }
+  // Owned seed types, resolved to {id, tier}, sorted highest-tier first.
+  function ownedSeedTypesDesc(){
+    var list = [];
+    [SEED_ITEMS, GRAIN_SEED_ITEMS, HERB_SEED_ITEMS].forEach(function(pool){
+      Object.keys(pool).forEach(function(id){ if((state.inventory[id]||0) > 0){ var si = seedInfo(id); if(si && si.crop) list.push({ id:id, tier:si.tier }); } });
+    });
+    list.sort(function(a,b){ return b.tier - a.tier; });
+    return list;
+  }
+  function farmingReadyCount(){
+    var now = Date.now(), n = 0;
+    allFieldPlots().forEach(function(p){ if(p.plot && p.plot.cropType && now >= p.plot.readyAt) n++; });
+    return n;
+  }
+  // One click harvests every ready crop across both estates.
+  function farmingHarvestAll(){
+    var now = Date.now(), total = 0;
+    allFieldPlots().forEach(function(p){ if(p.plot && p.plot.cropType && now >= p.plot.readyAt){ if(harvestPlot(p.scope, p.key, true)) total++; } });
+    if(total > 0){ addLog('Harvested ' + total + ' crop' + (total===1?'':'s') + ' from your fields.', 'important'); spawnFloatingText('+' + total + ' crops', 'ft-success'); saveGame(); needsRender = true; }
+    return total;
+  }
+  // Plant every empty plot, giving the highest-tier seeds to the highest-tier fields first. dryRun
+  // returns how many WOULD be planted (for a button's enabled state/count) without changing state.
+  function farmingPlantAll(dryRun){
+    var empties = allFieldPlots().filter(function(p){ return isPlotEmpty(p.plot); });
+    if(!empties.length) return 0;
+    empties.sort(function(a,b){ return b.tier - a.tier; }); // best fields first
+    var seeds = ownedSeedTypesDesc();
+    if(!seeds.length) return 0;
+    var qty = {}; seeds.forEach(function(s){ qty[s.id] = state.inventory[s.id] || 0; });
+    var n = 0;
+    empties.forEach(function(p){
+      for(var i=0;i<seeds.length;i++){
+        var s = seeds[i];
+        if(qty[s.id] > 0 && canPlantInField(p.tier, s.tier)){
+          qty[s.id] -= 1;
+          if(!dryRun) plantSeed(p.scope, p.key, s.id, true);
+          n++;
+          break;
+        }
+      }
+    });
+    if(!dryRun && n > 0){ addLog('Planted ' + n + ' seed' + (n===1?'':'s') + ' across your fields.', 'important'); spawnFloatingText('Planted ' + n + ' seeds', 'ft-success'); saveGame(); needsRender = true; }
+    return n;
   }
 
   function pickWeightedFarmingTier(){
@@ -12029,6 +12107,14 @@
     html += renderSkillProgressBar('grainharvesting');
     html += renderSkillProgressBar('herbharvesting');
 
+    // One-click bulk actions across every field (yours + guild): harvest all ready crops, and plant
+    // every empty plot (best seeds to the best fields first). Disabled when nothing is actionable.
+    var _readyN = farmingReadyCount(), _plantN = farmingPlantAll(true);
+    html += '<div class="style-row" style="margin:8px 0 4px;">';
+    html += '<button class="action-btn" data-action="harvestAllFarm" '+(_readyN>0?'':'disabled')+' style="width:auto;flex:1 1 auto;">'+svgIcon('herb','currentColor')+' Harvest All'+(_readyN>0?' ('+_readyN+')':'')+'</button>';
+    html += '<button class="action-btn" data-action="plantAllFarm" '+(_plantN>0?'':'disabled')+' style="width:auto;flex:1 1 auto;">'+svgIcon('seed','currentColor')+' Plant All'+(_plantN>0?' ('+_plantN+')':'')+'</button>';
+    html += '</div>';
+
     // Owned seeds across all three crop lines, resolved to {id, def, tier, crop}, sorted by tier.
     var ownedSeedList = [];
     [SEED_ITEMS, GRAIN_SEED_ITEMS, HERB_SEED_ITEMS].forEach(function(pool){
@@ -12274,6 +12360,20 @@
   function updateChatFab(){
     var fab = document.getElementById('ffChatFab');
     if(fab) fab.classList.toggle('ff-chatfab-alert', chatHasUnread);
+  }
+  // Show/hide the Harvest All / Plant All FABs (mobile) based on what's actionable right now, with a
+  // count badge. CSS keeps them hidden on desktop regardless of the .on class.
+  function renderFarmFabs(){
+    var hv = document.getElementById('ffHarvestFab'), pl = document.getElementById('ffPlantFab');
+    if(!hv || !pl) return;
+    var readyN = farmingReadyCount();
+    var plantN = farmingPlantAll(true); // dry-run count -- how many would be planted
+    hv.classList.toggle('on', readyN > 0);
+    pl.classList.toggle('on', plantN > 0);
+    var hb = document.getElementById('ffHarvestFabBadge'); if(hb) hb.textContent = readyN > 0 ? (readyN > 99 ? '99+' : readyN) : '';
+    var pb = document.getElementById('ffPlantFabBadge'); if(pb) pb.textContent = plantN > 0 ? (plantN > 99 ? '99+' : plantN) : '';
+    hv.title = 'Harvest all ready crops (' + readyN + ')';
+    pl.title = 'Plant all empty fields (' + plantN + ')';
   }
   // Flag unread + flash the FAB when a message lands while chat isn't visible (respecting the setting).
   function noteChatActivity(){
@@ -15123,6 +15223,7 @@
     renderInventoryPanel();   // fills #inventoryPanel when the Inventory view is open
     renderChatDock();         // Chat panel (lower left rail; Chronicle is a tab within it)
     renderChatDrawer();       // mobile: chat lives in a bottom-sheet drawer instead
+    renderFarmFabs();         // mobile: Harvest All / Plant All quick-action bubbles
     renderChatExpand();       // optional full-screen chat overlay
     renderPopupQueue();
     renderTrackerPicker();
@@ -15676,6 +15777,10 @@
       plantSeed(btn.getAttribute('data-scope'), btn.getAttribute('data-key'), btn.getAttribute('data-seed'));
     } else if(action==='harvestPlot'){
       harvestPlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key'));
+    } else if(action==='harvestAllFarm'){
+      farmingHarvestAll(); render();
+    } else if(action==='plantAllFarm'){
+      farmingPlantAll(false); render();
     } else if(action==='estateClearObstacle'){
       estateClearObstacle(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
     } else if(action==='estateRaiseLayer'){
@@ -16296,6 +16401,7 @@
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS,
       SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate,
+      farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, LB_STAT_METRICS:LB_STAT_METRICS,
