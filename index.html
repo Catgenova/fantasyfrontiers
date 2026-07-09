@@ -4744,7 +4744,7 @@
   function attunementLevel(st, element){ st = st || state; var id = ELEMENT_ATTUNEMENT[element]; return id ? getLevel((st.physique && st.physique[id]) || 0) : 1; }
   function elementDamageBonus(st, element){ if(!element || !ELEMENT_ATTUNEMENT[element]) return 0; return ELEMENT_ATTUNE_MIN + (ELEMENT_ATTUNE_DMG_MAX-ELEMENT_ATTUNE_MIN)*clamp((attunementLevel(st,element)-1)/99,0,1); }
   function elementResistBonus(st, element){ if(!element || !ELEMENT_ATTUNEMENT[element]) return 0; return ELEMENT_ATTUNE_MIN + (ELEMENT_ATTUNE_RESIST_MAX-ELEMENT_ATTUNE_MIN)*clamp((attunementLevel(st,element)-1)/99,0,1); }
-  function elementDmgMult(st, element){ return 1 + elementDamageBonus(st, element); }
+  function elementDmgMult(st, element){ return 1 + elementDamageBonus(st, element) + getRingElementDamageBonus(st, element); }
   function elementResistMult(st, element){ return 1 - elementResistBonus(st, element); }
   // Grant attunement physique XP for dealing or taking `dmg` of `element`.
   function awardElementXp(element, dmg){ var id = ELEMENT_ATTUNEMENT[element]; if(id && dmg > 0) addPhysiqueXp([[id, Math.max(1, Math.round(dmg * ELEMENT_ATTUNE_XP_PER_DMG))]]); }
@@ -4788,7 +4788,7 @@
     var physSum = 0;
     accuracyPhysiques().forEach(function(id){ physSum += getLevel((st.physique && st.physique[id]) || 0); });
     var prof = st.equippedMainhand ? getLevel(st.xp[st.equippedMainhand] || 0) : 0;
-    return Math.round((physSum*ACCURACY_PHYS_WEIGHT + prof*ACCURACY_PROF_WEIGHT) * classAccuracyMult(st));
+    return Math.round((physSum*ACCURACY_PHYS_WEIGHT + prof*ACCURACY_PROF_WEIGHT) * classAccuracyMult(st) * (1 + getRingAccuracyBonus(st)));
   }
   function monsterDodge(m){
     if(!m) return 0;
@@ -4967,10 +4967,23 @@
   // damage. Amulets instead add flat armor. Same Equipment treatment as everything
   // else: stackable, forge any unlocked tier, full rarity range, sacrificeable (rings
   // and amulets restore more Faith than typical gear when sacrificed).
+  // Physical rings (blunt/slash/pierce) boost a damage type, scaled by how much of the
+  // weapon's mix is that type. Kind rings are a newer family: five Elemental rings each add
+  // +1-20% damage of one element (folded into Elemental Attunement), a Precision ring adds
+  // +5-30% Accuracy, and a Warding ring adds +1-20% flat damage resistance. Like wands/scepters,
+  // kind rings scale their bonus 2x/4x/8x with rarity (WAND_RARITY_DMG_MULT) rather than the
+  // usual gentle rarity mult, so a Fantastic kind ring is a genuine chase item.
   var RING_TYPES = [
     {id:'blunt',  name:'Ring of Blunt',  icon:svgIcon('ring','#8a8a8a'), damageType:'blunt'},
     {id:'slash',  name:'Ring of Slash',  icon:svgIcon('ring','#c9a227'), damageType:'slashing'},
-    {id:'pierce', name:'Ring of Pierce', icon:svgIcon('ring','#8a97a6'), damageType:'piercing'}
+    {id:'pierce', name:'Ring of Pierce', icon:svgIcon('ring','#8a97a6'), damageType:'piercing'},
+    {id:'fire',   name:'Ring of Fire',   icon:svgIcon('ring',ELEMENT_META.fire.color),  kind:'elementDamage', element:'fire',  min:0.01, max:0.20},
+    {id:'water',  name:'Ring of Water',  icon:svgIcon('ring',ELEMENT_META.water.color), kind:'elementDamage', element:'water', min:0.01, max:0.20},
+    {id:'earth',  name:'Ring of Earth',  icon:svgIcon('ring',ELEMENT_META.earth.color), kind:'elementDamage', element:'earth', min:0.01, max:0.20},
+    {id:'light',  name:'Ring of Light',  icon:svgIcon('ring',ELEMENT_META.light.color), kind:'elementDamage', element:'light', min:0.01, max:0.20},
+    {id:'dark',   name:'Ring of Dark',   icon:svgIcon('ring',ELEMENT_META.dark.color),  kind:'elementDamage', element:'dark',  min:0.01, max:0.20},
+    {id:'precision', name:'Ring of Precision', icon:svgIcon('ring','#d8d8d8'), kind:'accuracy',   min:0.05, max:0.30},
+    {id:'warding',   name:'Ring of Warding',   icon:svgIcon('ring','#4a9c8a'), kind:'resistance', min:0.01, max:0.20}
   ];
   var RING_TYPE_MAP = {};
   RING_TYPES.forEach(function(rt){ RING_TYPE_MAP[rt.id] = rt; });
@@ -4979,15 +4992,21 @@
     var inputs = {};
     inputs['twine_t'+tierIndex] = 3;
     inputs[getGemForTier(tierIndex)] = 1;
-    return {
+    var out = {
       tierIndex: tierIndex,
       name: TIER_NAMES[tierIndex] + ' ' + rt.name,
       levelReq: TIER_LEVELS[tierIndex],
       xp: craftXp(tierIndex),
-      dmgBonus: tierCappedBonus(0.02, 0.007, 0.16, tierIndex),
       inputs: inputs,
       time: tierTime(7,0.3,tierIndex)
     };
+    if(rt.kind){
+      // Kind rings scale linearly across the tier ladder from min to max at Normal rarity.
+      out.bonus = rt.min + (rt.max - rt.min) * (TIER_COUNT>1 ? tierIndex/(TIER_COUNT-1) : 0);
+    } else {
+      out.dmgBonus = tierCappedBonus(0.02, 0.007, 0.16, tierIndex);
+    }
+    return out;
   }
   var RING_ITEMS = {};
   RING_TYPES.forEach(function(rt){
@@ -4996,11 +5015,18 @@
       for(var i=0;i<TIER_COUNT;i++){
         var data = getRingTierData(rt.id, i);
         var id = 'ring_'+rt.id+'_t'+i+'_'+rarityId;
-        RING_ITEMS[id] = {
+        var item = {
           id: id, name: r.label + data.name, icon: rt.icon, sell: tierSell(15,i)*r.mult,
-          typeId: rt.id, damageType: rt.damageType, tierIndex: i, rarity: rarityId,
-          dmgBonus: data.dmgBonus * r.mult
+          typeId: rt.id, tierIndex: i, rarity: rarityId, kind: rt.kind || 'physical'
         };
+        if(rt.kind){
+          item.bonus = data.bonus * WAND_RARITY_DMG_MULT[rarityId]; // 2x/4x/8x with rarity
+          if(rt.element) item.element = rt.element;
+        } else {
+          item.damageType = rt.damageType;
+          item.dmgBonus = data.dmgBonus * r.mult;
+        }
+        RING_ITEMS[id] = item;
       }
     });
   });
@@ -5113,9 +5139,49 @@
     var totalBonus = 0;
     RING_SLOT_IDS.forEach(function(slotId){
       var ring = getRingItemInSlot(state, slotId);
-      if(ring) totalBonus += ring.dmgBonus * (weaponAttackTypes[ring.damageType]||0);
+      if(ring && ring.dmgBonus) totalBonus += ring.dmgBonus * (weaponAttackTypes[ring.damageType]||0);
     });
     return 1 + totalBonus;
+  }
+  // Sum of all equipped Elemental rings matching `element` (stacks across the 5 slots).
+  function getRingElementDamageBonus(st, element){
+    st = st || state;
+    var total = 0;
+    RING_SLOT_IDS.forEach(function(slotId){
+      var ring = getRingItemInSlot(st, slotId);
+      if(ring && ring.kind==='elementDamage' && ring.element===element) total += ring.bonus;
+    });
+    return total;
+  }
+  // Sum of all equipped Precision rings' accuracy bonus (a fractional multiplier on Accuracy).
+  function getRingAccuracyBonus(st){
+    st = st || state;
+    var total = 0;
+    RING_SLOT_IDS.forEach(function(slotId){
+      var ring = getRingItemInSlot(st, slotId);
+      if(ring && ring.kind==='accuracy') total += ring.bonus;
+    });
+    return total;
+  }
+  // Sum of all equipped Warding rings' flat damage resistance, capped so it can never fully
+  // negate incoming damage.
+  function getRingResistanceBonus(st){
+    st = st || state;
+    var total = 0;
+    RING_SLOT_IDS.forEach(function(slotId){
+      var ring = getRingItemInSlot(st, slotId);
+      if(ring && ring.kind==='resistance') total += ring.bonus;
+    });
+    return Math.min(0.9, total);
+  }
+  // Numeric bonus of a ring item (physical rings store dmgBonus, kind rings store bonus).
+  function ringItemBonus(item){ return item ? ((item.dmgBonus != null) ? item.dmgBonus : (item.bonus||0)) : 0; }
+  // Human-readable description of what a ring type / item boosts, for crafting & equip UIs.
+  function ringBonusLabel(o){
+    if(o.kind==='elementDamage') return elementIcon(o.element)+' '+ELEMENT_META[o.element].label+' dmg';
+    if(o.kind==='accuracy') return 'accuracy';
+    if(o.kind==='resistance') return 'dmg resist';
+    return TYPE_ICON[o.damageType]+' '+o.damageType+' dmg';
   }
   function getAmuletDefenseBonus(state){
     var amulet = getEquippedAmuletItem(state);
@@ -6792,7 +6858,7 @@
     // The hit lands its physical type AND the enemy's element together: the element is amplified by
     // the player's armor weakness to it (leather->fire, chain->earth, plate->water).
     var elementMult = incomingElementMult(state, monster);
-    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster) * templarIncomingDmgMult() * elementResistMult(state, monster.element)); // + Elemental Attunement resistance to the enemy's element
+    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster) * templarIncomingDmgMult() * elementResistMult(state, monster.element) * (1 - getRingResistanceBonus(state))); // + Elemental Attunement resistance to the enemy's element, + Warding ring flat resistance
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
     var blockChance = playerBlockChance(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
@@ -8244,7 +8310,7 @@
     html += renderRecipeGrid('jewelrycrafting', CRAFTING_SKILLS.jewelrycrafting.recipes);
 
     html += '<h3>Forge Rings</h3>';
-    html += '<div class="section-intro">Each Ring boosts its matching damage type -- scaled by how much of your weapon\'s own damage is actually that type. Three types for now (Blunt, Slash, Pierce), with more planned. Sacrificing a Ring restores extra Faith.</div>';
+    html += '<div class="section-intro">Physical Rings (Blunt/Slash/Pierce) boost their matching damage type, scaled by how much of your weapon\'s damage is that type. Elemental Rings (Fire/Water/Earth/Light/Dark) add +1-20% damage of their element, a Precision Ring adds +5-30% Accuracy, and a Warding Ring adds +1-20% flat damage resistance. Elemental/Precision/Warding rings scale their bonus 2x/4x/8x with rarity. Sacrificing a Ring restores extra Faith.</div>';
     html += '<div class="card-grid">';
     RING_TYPES.forEach(function(rt){
       if(selectedRingTier[rt.id] === undefined) selectedRingTier[rt.id] = maxUnlocked;
@@ -8257,9 +8323,11 @@
       var ready = lvl >= data.levelReq && hasInputs(data.inputs);
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+rt.icon+'</div><div><div class="item-name">'+rt.name+'</div><div class="item-meta">'+TYPE_ICON[rt.damageType]+' +'+Math.round(data.dmgBonus*100)+'% '+rt.damageType+' dmg (Normal)</div></div></div>';
+      var ringPct = (data.dmgBonus != null) ? data.dmgBonus : data.bonus;
+      var ringFantasticMult = rt.kind ? WAND_RARITY_DMG_MULT.fantastic : getRarity('fantastic').mult;
+      html += '<div class="item-top"><div class="item-icon">'+rt.icon+'</div><div><div class="item-name">'+rt.name+'</div><div class="item-meta">+'+Math.round(ringPct*100)+'% '+ringBonusLabel(rt)+' (Normal)</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('ring',rt.id,tierRange(maxUnlocked),sel,TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-      html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>+'+Math.round(data.dmgBonus*100)+'% (Normal)</span><span>+'+Math.round(data.dmgBonus*800)+'% (Fantastic)</span></div>';
+      html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>+'+Math.round(ringPct*100)+'% (Normal)</span><span>+'+Math.round(ringPct*100*ringFantasticMult)+'% (Fantastic)</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+jewelrySuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-ring-'+rt.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -8976,7 +9044,7 @@
     RING_SLOT_IDS.forEach(function(slotId, slotIdx){
       var slotRing = getRingItemInSlot(state, slotId);
       html += '<div class="item-card">';
-      html += '<div class="item-top"><div class="item-icon">'+svgIcon('ring','#c9a227')+'</div><div><div class="item-name">Ring Slot '+(slotIdx+1)+'</div><div class="item-meta">'+(slotRing ? slotRing.name+' &bull; +'+Math.round(slotRing.dmgBonus*100)+'% '+slotRing.damageType+' dmg' : 'Empty')+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+svgIcon('ring','#c9a227')+'</div><div><div class="item-name">Ring Slot '+(slotIdx+1)+'</div><div class="item-meta">'+(slotRing ? slotRing.name+' &bull; +'+Math.round(ringItemBonus(slotRing)*100)+'% '+ringBonusLabel(slotRing) : 'Empty')+'</div></div></div>';
       if(ownedRings.length===0){
         html += '<div class="empty-note">No Rings in inventory. Forge one in Crafting &rarr; Jewelrycrafting.</div>';
       } else {
@@ -8984,7 +9052,7 @@
         ownedRings.forEach(function(id){
           var item = RING_ITEMS[id];
           var qty = state.inventory[id]||0;
-          html += '<button class="style-btn" data-action="equipRing" data-item="'+id+'" data-slot="'+slotId+'">'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">+'+Math.round(item.dmgBonus*100)+'%</span></button>';
+          html += '<button class="style-btn" data-action="equipRing" data-item="'+id+'" data-slot="'+slotId+'">'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">+'+Math.round(ringItemBonus(item)*100)+'%</span></button>';
         });
         html += '</div>';
       }
@@ -15920,6 +15988,7 @@
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
+      RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

@@ -1213,6 +1213,71 @@
     els.forEach(function(el){ ok(FF.FAMILIAR_SKILL_IDS.indexOf(FF.ELEMENT_ATTUNEMENT[el]) === -1, FF.ELEMENT_ATTUNEMENT[el]+' is not in the familiar roster'); });
   });
 
+  // ---- Rings: elemental / precision / warding kinds -------------------------------------
+  suite('rings: element/accuracy/resistance', function(){
+    var byId = {}; FF.RING_TYPES.forEach(function(rt){ byId[rt.id] = rt; });
+    ['fire','water','earth','light','dark'].forEach(function(el){
+      ok(byId[el] && byId[el].kind === 'elementDamage' && byId[el].element === el, 'Ring of '+el+' is an elementDamage ring');
+    });
+    ok(byId.precision && byId.precision.kind === 'accuracy', 'Ring of Precision is an accuracy ring');
+    ok(byId.warding && byId.warding.kind === 'resistance', 'Ring of Warding is a resistance ring');
+    ok(byId.blunt && !byId.blunt.kind, 'physical rings still have no kind');
+
+    var TC = FF.TIER_COUNT;
+    // Tier ladder scales min->max at Normal; rarity multiplies 2x/4x/8x (wand ladder).
+    var fireTop = FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_normal'];
+    near(fireTop.bonus, 0.20, 'top-tier Normal Ring of Fire = +20% fire dmg');
+    eq(fireTop.kind, 'elementDamage', 'ring item carries kind');
+    eq(fireTop.element, 'fire', 'ring item carries element');
+    near(FF.RING_ITEMS['ring_fire_t0_normal'].bonus, 0.01, 't0 Normal Ring of Fire = +1%');
+    near(FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_rare'].bonus, 0.40, 'Rare doubles to +40%');
+    near(FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_supreme'].bonus, 0.80, 'Supreme x4 = +80%');
+    near(FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_fantastic'].bonus, 1.60, 'Fantastic x8 = +160%');
+    near(FF.RING_ITEMS['ring_precision_t'+(TC-1)+'_normal'].bonus, 0.30, 'top Precision Normal = +30% acc');
+    near(FF.RING_ITEMS['ring_precision_t0_normal'].bonus, 0.05, 't0 Precision = +5% acc');
+    near(FF.RING_ITEMS['ring_warding_t'+(TC-1)+'_normal'].bonus, 0.20, 'top Warding Normal = +20% resist');
+
+    // Physical rings unchanged.
+    var bluntTop = FF.RING_ITEMS['ring_blunt_t'+(TC-1)+'_normal'];
+    ok(bluntTop.dmgBonus > 0 && bluntTop.damageType === 'blunt', 'physical rings keep dmgBonus/damageType');
+    ok(bluntTop.bonus === undefined, 'physical rings have no kind bonus field');
+
+    function sl(typeId, tier, rarity){ return {typeId:typeId, tier:tier, rarity:rarity||'normal'}; }
+    function empty(){ return {typeId:null, tier:0, rarity:'normal'}; }
+    function st(rings){
+      var js = { ring1:empty(), ring2:empty(), ring3:empty(), ring4:empty(), ring5:empty(), amulet:{tier:0,rarity:'normal'} };
+      (rings||[]).forEach(function(r,i){ js['ring'+(i+1)] = r; });
+      return { jewelrySlots: js, physique:{}, xp:{} };
+    }
+
+    // Element ring bonus sums across slots.
+    var oneFire = st([sl('fire', TC, 'normal')]); // +20%
+    near(FF.getRingElementDamageBonus(oneFire, 'fire'), 0.20, 'one top fire ring => +20%');
+    eq(FF.getRingElementDamageBonus(oneFire, 'water'), 0, 'no water rings => 0');
+    var twoFire = st([sl('fire', TC, 'normal'), sl('fire', TC, 'normal')]);
+    near(FF.getRingElementDamageBonus(twoFire, 'fire'), 0.40, 'two fire rings stack to +40%');
+
+    // Folds into elementDmgMult on top of attunement.
+    var baseMult = FF.elementDmgMult(st([]), 'fire');
+    near(FF.elementDmgMult(oneFire, 'fire') - baseMult, 0.20, 'fire ring adds +0.20 to the fire damage multiplier');
+
+    // Precision ring scales Accuracy.
+    var accBase = st([]); accBase.physique = {agility: Math.pow(50,2)*100};
+    var accRing = st([sl('precision', TC, 'normal')]); accRing.physique = {agility: Math.pow(50,2)*100};
+    var a0 = FF.playerAccuracy(accBase), a1 = FF.playerAccuracy(accRing);
+    ok(a1 > a0, 'precision ring raises accuracy');
+    ok(Math.abs(a1 - Math.round(a0*1.30)) <= 1, 'top Normal precision ring => ~+30% accuracy');
+
+    // Warding ring: flat resistance, capped at 0.9.
+    near(FF.getRingResistanceBonus(st([sl('warding', TC, 'normal')])), 0.20, 'one top warding ring => 20% resist');
+    var manyWard = st([sl('warding',TC,'fantastic'), sl('warding',TC,'fantastic'), sl('warding',TC,'fantastic'), sl('warding',TC,'fantastic'), sl('warding',TC,'fantastic')]);
+    near(FF.getRingResistanceBonus(manyWard), 0.90, 'resistance is capped at 90%');
+
+    // Kind rings do not add physical (damage-type) multiplier; physical rings do.
+    eq(FF.getRingDamageMultiplier(oneFire, {blunt:1}), 1, 'element rings add no physical damage multiplier');
+    ok(FF.getRingDamageMultiplier(st([sl('blunt', TC, 'normal')]), {blunt:1}) > 1, 'blunt ring boosts blunt weapons');
+  });
+
   // ---- Classes: Thunderfury (crit-chaining earth-wand storm caller) ---------------------
   suite('classes: Thunderfury', function(){
     ok(FF.CLASS_SKILL_IDS.indexOf('thunderfury') !== -1, 'thunderfury is a class skill id');
