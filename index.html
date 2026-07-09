@@ -2029,7 +2029,8 @@
     blacksmithing: { label:'Blacksmithing', icon:svgIcon('hammer','var(--sub-blacksmithing)') },
     weaponsmithing: { label:'Weaponsmithing', icon:svgIcon('sword','var(--sub-blacksmithing)'), color:'var(--sub-blacksmithing)' },
     armorsmithing: { label:'Armorsmithing', icon:svgIcon('chestarmor','#8a97a6') },
-    shieldsmithing: { label:'Shieldsmithing', icon:svgIcon('shield','#8a97a6') }
+    shieldsmithing: { label:'Shieldsmithing', icon:svgIcon('shield','#8a97a6') },
+    runesmithing: { label:'Runesmithing', icon:svgIcon('corespiral','#7a5aa8'), color:'#7a5aa8' }
   };
 
   // Assign a palette colour to any sub-skill that doesn't already have one set above.
@@ -2147,7 +2148,7 @@
     stonecutting:'Chisel', leatherworking:'Awl', masonry:'Trowel', paving:'Tamper',
     mixology:'Shaker', archaeology:'Excavation Brush', weaponsmithing:'Smithing Hammer',
     armorsmithing:"Armorer's Hammer", shieldsmithing:"Shieldwright's Hammer", blacksmithing:'Forge Tongs',
-    jewelrycrafting:"Jeweler's Loupe"
+    jewelrycrafting:"Jeweler's Loupe", runesmithing:'Rune Chisel'
   };
   var CRAFT_TOOL_SPEED = [];
   var CRAFT_TOOL_SUCCESS = [];
@@ -2441,6 +2442,23 @@
     {id:'shieldLarge',  name:'Large Shield',  icon:svgIcon('shield','#8a6a3a'), type:'shield', countersType:'blunt', requiresHand:'1h', stackable:true, skillId:'shieldsmithing', matPrefix:'metallurgy', tierCount:20},
     {id:'quiver',       name:'Quiver',        icon:svgIcon('arrow','#a8895c'), type:'quiver', requiresHand:'bow'}
   ];
+  // ===== Wards (Runesmithing offhands) =====
+  // A Ward is an offhand like a shield but provides NO armor. Instead it reflects a share of incoming
+  // damage of ITS element back at the attacker (negating that share of the hit). Reflect scales from
+  // 5% at t0 to 30% at the top tier. Rarity is special: instead of a stat multiplier, it grants a
+  // chance to reflect 100% of a matching hit (rare 5%, supreme 10%, fantastic 20%).
+  var WARD_ELEMENTS = ['fire','water','earth','light','dark'];
+  var WARD_REFLECT_MIN = 0.05, WARD_REFLECT_MAX = 0.30;
+  var WARD_FULL_REFLECT_CHANCE = { normal:0, rare:0.05, supreme:0.10, fantastic:0.20 };
+  function wardReflectPct(tierIndex){ return Math.round((WARD_REFLECT_MIN + (WARD_REFLECT_MAX-WARD_REFLECT_MIN)*(tierIndex/(TIER_COUNT-1)))*1000)/1000; }
+  var WARD_TYPES = WARD_ELEMENTS.map(function(el){
+    return { id:'ward'+el.charAt(0).toUpperCase()+el.slice(1), name: ELEMENT_META[el].label+' Ward', icon: elementIcon(el),
+             type:'ward', element:el, ward:true, requiresHand:'1h', skillId:'runesmithing', matPrefix:'metallurgy', tierCount: TIER_COUNT };
+  });
+  OFFHAND_STYLES = OFFHAND_STYLES.concat(WARD_TYPES);
+  var WARD_TYPE_MAP = {};
+  WARD_TYPES.forEach(function(w){ WARD_TYPE_MAP[w.id] = w; });
+  function isWard(typeId){ return !!WARD_TYPE_MAP[typeId]; }
   var WEAPON_STYLE_IDS = WEAPON_STYLES.map(function(w){ return w.id; });
   var OFFHAND_STYLE_IDS = OFFHAND_STYLES.map(function(s){ return s.id; });
   var UNARMED_STYLE = {id:null, name:'Fists', icon:svgIcon('fist','#c8a888'), damageType:'blunt', attackTypes:{blunt:1}, hand:'1h', attackSpeed:2};
@@ -2532,7 +2550,7 @@
   });
   var OFFHAND_TYPE_RECIPES = {};
   OFFHAND_STYLES.forEach(function(o){
-    if(o.stackable) return; // shields are stackable Equipment now -- see STACKABLE_SHIELD_TYPES below
+    if(o.stackable || o.ward) return; // shields are stackable Equipment; wards use their own WARD_ITEMS
     var list = [];
     for(var i=0;i<TIER_COUNT;i++){
       var obj = { tier:i+1, name:TIER_NAMES[i]+' '+o.name, levelReq:TIER_LEVELS[i], xp:craftXp(i), inputs:tierInput('metallurgy', o.type==='shield'?4:3)(i), time:tierTime(7,0.3,i) };
@@ -2682,6 +2700,10 @@
       if(!state.equippedOffhandTier || state.equippedOffhandTier<=0) return null;
       var itemId = 'stshield_'+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity;
       return STACKABLE_SHIELD_ITEMS[itemId] || null;
+    }
+    if(isWard(state.equippedOffhand)){
+      if(!state.equippedOffhandTier || state.equippedOffhandTier<=0) return null;
+      return WARD_ITEMS['stward_'+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity] || null;
     }
     var tier = state.offhandTiers[state.equippedOffhand]||0;
     if(tier<=0) return null;
@@ -2837,6 +2859,7 @@
     weaponsmithing: [['grossMotor',2],['sleightOfHand',1],['logic',1]],
     armorsmithing:  [['grossMotor',2],['sleightOfHand',1],['logic',1]],
     shieldsmithing: [['grossMotor',2],['sleightOfHand',1],['logic',1]],
+    runesmithing:   [['fineMotor',2],['criticalThinking',1],['logic',1]],
     blacksmithing:  [['grossMotor',2],['sleightOfHand',1],['logic',1]],
     leatherworking: [['fineMotor',2],['sleightOfHand',1],['logic',1]],
     paving:         [['grossMotor',2],['bodyControl',1],['sleightOfHand',1],['logic',1]],
@@ -2907,7 +2930,7 @@
   // CRAFT_SKILL_IDS (tools, workshops, XP, familiars, saves, etc.) is deliberately left whole;
   // the split just reorganizes which sub-tab bar each skill appears under.
   var BUILDING_SKILL_IDS = ['carpentry','stonecutting','paving','masonry'];
-  var OUTFITTING_SKILL_IDS = ['weaponsmithing','armorsmithing','tailoring','shieldsmithing','fletching','bowyer','leatherworking','jewelrycrafting'];
+  var OUTFITTING_SKILL_IDS = ['weaponsmithing','armorsmithing','tailoring','shieldsmithing','runesmithing','fletching','bowyer','leatherworking','jewelrycrafting'];
   var CRAFTING_TAB_SKILL_IDS = CRAFT_SKILL_IDS.filter(function(id){
     return BUILDING_SKILL_IDS.indexOf(id)===-1 && OUTFITTING_SKILL_IDS.indexOf(id)===-1;
   });
@@ -2976,6 +2999,7 @@
     weaponsmithing: { name:'Edge',   icon:svgIcon('sword','#9aa0a8'), spells:[dmgSpell('Keen Edge',1.3,8), armorSpell('Parry Stance',1.5,6), healSpell('Mend',15), healSpell('Mend',15)] },
     armorsmithing:  { name:'Plate',  icon:svgIcon('chestarmor','#a8aeb6'), spells:[armorSpell('Iron Wall',1.8,6), armorSpell('Iron Wall',1.8,6), healSpell('Mend',15), healSpell('Mend',15)] },
     shieldsmithing: { name:'Aegis',  icon:svgIcon('shield','#8a97a6'), spells:[armorSpell('Shield Wall',1.8,6), armorSpell('Shield Wall',1.8,6), weakenSpell('Bash',0.25,8), healSpell('Mend',15)] },
+    runesmithing:   { name:'Rune',   icon:svgIcon('corespiral','#7a5aa8'), spells:[hitSpell('Rune Blast','void',13), armorSpell('Warding Glyph',1.6,6), healSpell('Sigil Mend',15), healSpell('Sigil Mend',15)] },
     // -- Farming --
     farming: { name:'Sprout', icon:svgIcon('fiber','#6bc48a'), spells:[healSpell('Bountiful Heal',15), healSpell('Bountiful Heal',15), armorSpell('Growth Ward',1.5,6), slowSpell('Overgrowth',0.35,10)] },
     // -- Faith --
@@ -3039,6 +3063,7 @@
     weaponsmithing: [ hitSpell('Keen Edge','slashing',15), buffSpell('Whetstone','dmgSlash',0.32,8), buffSpell('Duelist','critChance',0.11,8), buffSpell('Quick Draw','haste',0.16,8) ],
     armorsmithing:  [ armorSpell('Iron Wall',1.8,6), buffSpell('Bulwark','block',0.18,8), buffSpell('Plated','resistBlunt',0.3,8), buffSpell('Deflection','resistSlash',0.3,8) ],
     shieldsmithing: [ buffSpell('Shield Wall','block',0.2,8), armorSpell('Aegis',1.7,6), buffSpell('Braced','resistPierce',0.3,8), hitSpell('Shield Bash','blunt',13) ],
+    runesmithing:   [ hitSpell('Rune Blast','void',14), armorSpell('Warding Glyph',1.6,6), buffSpell('Empower Rune','critDmg',0.32,8), siphonSpell('Drain Sigil',12) ],
     // -- Farming --
     farming:        [ healSpell('Bountiful Harvest',16), regenSpell('Root Growth',5,7), armorSpell('Growth Ward',1.5,6), slowSpell('Overgrowth',0.35,10) ],
     // -- Faith --
@@ -3076,7 +3101,7 @@
     // Crafting
     carpentry:'earth', metallurgy:'fire', roasting:'fire', cooking:'water', alchemy:'water', bowyer:'earth', fletching:'earth', baking:'fire',
     tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water',
-    archaeology:'dark', blacksmithing:'fire', weaponsmithing:'fire', armorsmithing:'earth', shieldsmithing:'earth',
+    archaeology:'dark', blacksmithing:'fire', weaponsmithing:'fire', armorsmithing:'earth', shieldsmithing:'earth', runesmithing:'light',
     // Farming
     farming:'earth',
     // Faith
@@ -3126,7 +3151,7 @@
     masonry:{s:'wallseg',c:'#8d6f66',ear:'horn'}, paving:{s:'tile',c:'#8d6f66',ear:'round'},
     mixology:{s:'tea',c:'#7a9e4a',ear:'leaf'}, archaeology:{s:'urn',c:'#9a8560',ear:'cat'},
     blacksmithing:{s:'hammer',c:'#7a7a82',ear:'horn'}, weaponsmithing:{s:'sword',c:'#8a97a8',ear:'horn'},
-    armorsmithing:{s:'chestarmor',c:'#98a0aa',ear:'horn'}, shieldsmithing:{s:'shield',c:'#8a97a6',ear:'horn'},
+    armorsmithing:{s:'chestarmor',c:'#98a0aa',ear:'horn'}, shieldsmithing:{s:'shield',c:'#8a97a6',ear:'horn'}, runesmithing:{s:'corespiral',c:'#7a5aa8',ear:'horn'},
     farming:{s:'fiber',c:'#5fc48a',ear:'leaf'},
     prayer:{s:'halo',c:'#e0c860',ear:'halo'}, sacrifice:{s:'ghost',c:'#6a4a8a',ear:'horn'},
     devotion:{s:'wing',c:'#d8b878',ear:'wing'}, blessing:{s:'wing',c:'#e8c848',ear:'wing'},
@@ -3960,10 +3985,47 @@
     });
   });
   Object.assign(ALL_SELLABLE, STACKABLE_SHIELD_ITEMS);
+  // ---- Wards: Runesmithing offhands (no armor; reflect matching-element damage). Stackable inventory
+  // items like shields, but rarity grants a full-reflect chance instead of scaling a stat.
+  function getWardTierData(typeId, tierIndex){
+    var w = WARD_TYPE_MAP[typeId];
+    var inputs = {};
+    inputs[w.matPrefix+'_t'+tierIndex] = 3;
+    if(tierIndex > 0) inputs['stward_'+typeId+'_t'+(tierIndex-1)+'_normal'] = 1;
+    return {
+      tierIndex: tierIndex,
+      name: METAL_TIER_NAMES[tierIndex] + ' ' + w.name,
+      levelReq: TIER_LEVELS[tierIndex],
+      xp: craftXp(tierIndex),
+      reflect: wardReflectPct(tierIndex),
+      inputs: inputs,
+      time: tierTime(7,0.3,tierIndex)
+    };
+  }
+  var WARD_ITEMS = {};
+  WARD_TYPES.forEach(function(w){
+    ['normal','rare','supreme','fantastic'].forEach(function(rarityId){
+      var r = getRarity(rarityId);
+      for(var i=0;i<w.tierCount;i++){
+        var data = getWardTierData(w.id, i);
+        var id = 'stward_'+w.id+'_t'+i+'_'+rarityId;
+        WARD_ITEMS[id] = {
+          id: id, name: r.label + data.name, icon: w.icon,
+          sell: tierSell(12, i) * r.mult,
+          typeId: w.id, tierIndex: i, rarity: rarityId, element: w.element,
+          reflect: data.reflect,                          // fraction of a matching-element hit reflected
+          fullReflectChance: WARD_FULL_REFLECT_CHANCE[rarityId] || 0  // rarity: chance to reflect 100%
+        };
+      }
+    });
+  });
+  Object.assign(ALL_SELLABLE, WARD_ITEMS);
   function unequipCurrentOffhandToInventory(){
     if(state.equippedOffhand && isStackableShield(state.equippedOffhand) && state.equippedOffhandTier > 0){
       var oldId = 'stshield_'+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity;
       addItem(oldId, 1);
+    } else if(state.equippedOffhand && isWard(state.equippedOffhand) && state.equippedOffhandTier > 0){
+      addItem('stward_'+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity, 1);
     }
   }
   function craftStackableShield(typeId, tierIndex){
@@ -3992,6 +4054,36 @@
   }
   function unequipStackableShield(){
     if(!state.equippedOffhand || !isStackableShield(state.equippedOffhand)) return;
+    unequipCurrentOffhandToInventory();
+    state.equippedOffhand = null;
+    state.equippedOffhandTier = 0;
+    state.equippedOffhandRarity = 'normal';
+  }
+  function craftWard(typeId, tierIndex){
+    var w = WARD_TYPE_MAP[typeId];
+    if(!w) return;
+    var data = getWardTierData(typeId, tierIndex);
+    if(getLevel(state.xp.runesmithing) < data.levelReq) return;
+    if(!hasInputs(data.inputs)){ addLog('Not enough materials to inscribe ' + data.name + '.', 'danger'); return; }
+    placeNewCraftActivity('runesmithing', null, 'ward', { type:'craft', craftKind:'ward', typeId:typeId, tierIndex:tierIndex, progress:0 });
+  }
+  function equipWard(itemId){
+    var item = WARD_ITEMS[itemId];
+    if(!item || (state.inventory[itemId]||0) <= 0) return;
+    var mh = getWeaponStyle(state.equippedMainhand);
+    if(mh.hand !== '1h'){ addLog('Wards need a one-handed mainhand equipped (the offhand must be free).', 'danger'); return; }
+    if(getLevel(state.xp.runesmithing) < TIER_LEVELS[item.tierIndex]){
+      addLog('Your Runesmithing isn\'t high enough to wield ' + item.name + ' yet.', 'danger'); return;
+    }
+    unequipCurrentOffhandToInventory();
+    state.inventory[itemId] -= 1;
+    state.equippedOffhand = item.typeId;
+    state.equippedOffhandTier = item.tierIndex+1;
+    state.equippedOffhandRarity = item.rarity;
+    addLog('You equipped the ' + item.name + '.', 'important');
+  }
+  function unequipWard(){
+    if(!state.equippedOffhand || !isWard(state.equippedOffhand)) return;
     unequipCurrentOffhandToInventory();
     state.equippedOffhand = null;
     state.equippedOffhandTier = 0;
@@ -4626,6 +4718,7 @@
     if(act.craftKind==='tool') return 'blacksmithing';
     if(act.craftKind==='stackweapon') return STACKABLE_WEAPON_TYPE_MAP[act.typeId].skillId;
     if(act.craftKind==='stackshield') return STACKABLE_SHIELD_TYPE_MAP[act.typeId].skillId;
+    if(act.craftKind==='ward') return WARD_TYPE_MAP[act.typeId].skillId;
     if(act.craftKind==='bodyarmor') return BODY_ARMOR_MATERIALS[act.material].skillId;
     if(act.craftKind==='belt') return 'leatherworking';
     if(act.craftKind==='offhand') return 'shieldsmithing';
@@ -4643,6 +4736,7 @@
     }
     if(act.craftKind==='stackweapon') return getStackableWeaponTierData(act.typeId, act.tierIndex);
     if(act.craftKind==='stackshield') return getStackableShieldTierData(act.typeId, act.tierIndex);
+    if(act.craftKind==='ward') return getWardTierData(act.typeId, act.tierIndex);
     if(act.craftKind==='bodyarmor') return getBodyArmorTierData(act.material, act.slot, act.tierIndex);
     if(act.craftKind==='belt') return getBeltTierData(act.tierIndex);
     if(act.craftKind==='offhand'){
@@ -4658,7 +4752,7 @@
   }
   // Item-producing special crafts a Workshop can double (tier-UPGRADE kinds like offhand
   // can't be doubled). Each doubled output rolls its rarity independently.
-  var SPECIAL_DOUBLEABLE_KINDS = ['tool','stackweapon','stackshield','bodyarmor','belt','ring','amulet','workshop'];
+  var SPECIAL_DOUBLEABLE_KINDS = ['tool','stackweapon','stackshield','ward','bodyarmor','belt','ring','amulet','workshop'];
   // Produce ONE output for this special craft at the given rarity; returns the rarity
   // actually used (bodyarmor clamps to its material's allowed set; workshops are always normal).
   function produceSpecialOutput(act, rarity){
@@ -4668,6 +4762,8 @@
       addItem('stweapon_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
     } else if(act.craftKind==='stackshield'){
       addItem('stshield_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
+    } else if(act.craftKind==='ward'){
+      addItem('stward_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
     } else if(act.craftKind==='bodyarmor'){
       var mat = BODY_ARMOR_MATERIALS[act.material];
       if(mat.rarityIds.indexOf(rarity)===-1) rarity = mat.rarityIds[mat.rarityIds.length-1];
@@ -5271,7 +5367,7 @@
     var xpObj = {
       digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0,
       carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0,
-      stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, blacksmithing:0, leatherworking:0, paving:0,
+      stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
       shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0,
       prayer:0, sacrifice:0, devotion:0, blessing:0, miracle:0
@@ -5388,6 +5484,7 @@
   var selectedBeltTier = null;
   var selectedMeleeWeaponTier = {};
   var selectedShieldTier = {};
+  var selectedWardTier = {};
   var selectedRingTier = {};
   var selectedAmuletTier = null;
 
@@ -6104,7 +6201,22 @@
     var shieldCounter = weightedShieldCounter(offhandStyle, monster.attackTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
     var effectiveShieldDefense = (offhandStyle && offhandStyle.type==='shield' && offhandItem) ? offhandItem.defense * shieldCounter * offhandProficiency * (1 + shieldProfMult(state)) : 0;
     var dmgToPlayer = Math.max(1, Math.round((rawDmg - armorDefense - effectiveShieldDefense) / tenacityLowHpMult(state)));
+    // Elemental Ward: if the offhand is a ward matching the enemy's element, negate a share of the hit
+    // and reflect that share back as that element. Rarity can proc a full (100%) reflect.
+    var wardReflected = 0;
+    if(offhandStyle && offhandStyle.type==='ward' && offhandItem && monster.element === offhandStyle.element){
+      var _rf = offhandItem.reflect || 0;
+      if((offhandItem.fullReflectChance||0) > 0 && Math.random() < offhandItem.fullReflectChance) _rf = 1; // rarity proc: reflect it all
+      if(_rf > 0){
+        wardReflected = Math.round(dmgToPlayer * _rf);
+        dmgToPlayer = Math.max(0, dmgToPlayer - wardReflected);
+      }
+    }
     state.playerHp -= dmgToPlayer;
+    if(wardReflected > 0){
+      act.monsterHp = Math.max(1, act.monsterHp - wardReflected); // reflected damage chips the enemy (your own attack lands the kill)
+      spawnFloatingText('Reflected '+wardReflected+'!', 'ft-rare');
+    }
     // Bubble: negate a would-be killing blow (consumed once), while the buff is up.
     if(state.playerHp <= 0 && isFamiliarBuffActive('bubble')){
       state.playerHp = 1; state.familiarBuffs.bubbleUntil = 0;
@@ -7036,6 +7148,7 @@
     if(skillKey==='weaponsmithing') return renderWeaponSmithTab();
     if(skillKey==='armorsmithing') return renderArmorSmithTab();
     if(skillKey==='shieldsmithing') return renderOffhandSmithTab();
+    if(skillKey==='runesmithing') return renderWardSmithTab();
     if(skillKey==='blacksmithing') return renderBlacksmithingTab();
     if(skillKey==='archaeology') return renderArchaeologyTab();
     if(skillKey==='fletching') return renderFletchingTab();
@@ -7725,7 +7838,7 @@
 
     html += '<h3>Forge Quivers</h3>';
     html += '<div class="card-grid">';
-    OFFHAND_STYLES.filter(function(o){ return !o.stackable; }).forEach(function(o){
+    OFFHAND_STYLES.filter(function(o){ return !o.stackable && !o.ward; }).forEach(function(o){
       var tier = state.offhandTiers[o.id]||0;
       var current = tier>0 ? OFFHAND_TYPE_RECIPES[o.id][tier-1] : null;
       var statLabel = function(item){ return o.type==='shield' ? ('defense '+item.defense) : ('+'+Math.round(item.dmgBonus*100)+'% arrow dmg'); };
@@ -7758,6 +7871,77 @@
       html += '</div>';
     });
     html += '</div>';
+    return html;
+  }
+
+  function renderEquipWardSection(){
+    var current = (state.equippedOffhand && isWard(state.equippedOffhand) && state.equippedOffhandTier>0)
+      ? WARD_ITEMS['stward_'+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity] : null;
+    var owned = Object.keys(WARD_ITEMS).filter(function(id){ return (state.inventory[id]||0)>0; })
+      .sort(function(a,b){ return WARD_ITEMS[a].tierIndex - WARD_ITEMS[b].tierIndex; });
+    var mh = getWeaponStyle(state.equippedMainhand);
+    var html = '<h3>Equip Ward</h3>';
+    if(mh.hand !== '1h'){
+      html += '<div class="section-intro">Wards are offhands and need a one-handed Mainhand weapon equipped. '+(mh.hand==='2h' ? 'Both hands are currently occupied by your two-handed weapon.' : 'Your bow occupies the offhand with a Quiver.')+'</div>';
+      return html;
+    }
+    html += '<div class="section-intro">A Ward reflects a share of incoming damage of its own element straight back at the attacker &mdash; it grants no armor. Pick which owned Ward is your Offhand.</div>';
+    html += '<div class="card-grid"><div class="item-card">';
+    html += '<div class="item-top"><div class="item-icon">'+(current?current.icon:svgIcon('corespiral','#7a5aa8'))+'</div><div><div class="item-name">Offhand</div><div class="item-meta">'+(current ? current.name+' &bull; reflects '+Math.round(current.reflect*100)+'% '+elementLabel(current.element)+(current.fullReflectChance>0?' &bull; '+Math.round(current.fullReflectChance*100)+'% full-reflect':'') : 'No ward equipped')+'</div></div></div>';
+    if(owned.length===0){
+      html += '<div class="empty-note">No wards in inventory. Inscribe one above.</div>';
+    } else {
+      html += '<div class="style-row">';
+      owned.forEach(function(id){
+        var item = WARD_ITEMS[id];
+        var qty = state.inventory[id]||0;
+        var canEquip = getLevel(state.xp.runesmithing) >= TIER_LEVELS[item.tierIndex];
+        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipWard" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type" style="text-transform:none">reflects '+Math.round(item.reflect*100)+'% '+elementLabel(item.element)+(item.fullReflectChance>0?' &bull; '+Math.round(item.fullReflectChance*100)+'% full':'')+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires Runesmithing Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
+      });
+      html += '</div>';
+    }
+    if(current) html += '<button class="action-btn stop" data-action="unequipWard">Unequip</button>';
+    html += '</div></div>';
+    return html;
+  }
+  function renderWardSmithTab(){
+    var lvl = getLevel(state.xp.runesmithing);
+    var html = renderSkillProgressBar('runesmithing');
+    html += '<div class="section-intro" style="margin-top:10px">Runesmithing inscribes <b>Wards</b> &mdash; offhands that grant no armor but <b>reflect</b> a share of incoming damage of their element back at the attacker, completely negating that share. Reflection scales from 5% at Tier 1 to 30% at the top tier. Rarity is special: instead of bigger stats, a rare/supreme/fantastic ward has a <b>'+Math.round(WARD_FULL_REFLECT_CHANCE.rare*100)+'% / '+Math.round(WARD_FULL_REFLECT_CHANCE.supreme*100)+'% / '+Math.round(WARD_FULL_REFLECT_CHANCE.fantastic*100)+'% chance to reflect 100%</b> of a matching hit.</div>';
+    html += '<h3 style="margin-top:14px">Inscribe Wards</h3>';
+    html += '<div class="card-grid">';
+    WARD_TYPES.forEach(function(w){
+      var maxUnlocked = 0;
+      for(var mi=0; mi<w.tierCount; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
+      if(selectedWardTier[w.id] === undefined) selectedWardTier[w.id] = maxUnlocked;
+      var sel = Math.min(selectedWardTier[w.id], maxUnlocked);
+      var data = getWardTierData(w.id, sel);
+      var activeSlot = findActiveSpecialCraftSlotFor('ward', {typeId:w.id, tierIndex:sel});
+      var isActive = !!activeSlot;
+      var effTime = data.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, w.skillId);
+      var pct = isActive ? clamp(activeSlot.act.progress/effTime*100,0,100) : 0;
+      var ready = lvl >= data.levelReq && hasInputs(data.inputs);
+      var successPct = Math.round(craftSuccessRate(state, w.skillId)*100);
+      var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
+      var ownedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stward_'+w.id+'_t'+sel+'_'+r; }));
+      html += '<div class="item-card'+(isActive?' active-item':'')+'">';
+      html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">Reflects '+elementLabel(w.element)+' &bull; Owned: '+ownedTotal+'</div></div></div>';
+      html += '<div class="inputs-line">Tier: '+tierStepper('ward',w.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
+      html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>reflect '+Math.round(data.reflect*100)+'%</span></div>';
+      html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the full-reflect rarity odds)</div>';
+      html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-ward-'+w.id)+'</div>';
+      html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
+      if(isActive){
+        html += activeSlot.primary
+          ? '<button class="action-btn stop" data-action="stop">Stop</button>'
+          : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
+      } else {
+        html += '<button class="action-btn" data-action="forgeWard" data-type="'+w.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Inscribe</button>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    html += renderEquipWardSection();
     return html;
   }
 
@@ -7864,6 +8048,14 @@
     var _ewParts = ['fire','water','earth','light','dark'].filter(function(el){ return _ew[el] > 0; })
       .map(function(el){ return '<span class="elem-weak-stat elem-'+el+'">'+elementIcon(el)+' '+elementLabel(el)+' +'+Math.round(_ew[el]*100)+'%</span>'; });
     html += '<div class="stat-row"><span class="stat-label">Elemental Weakness</span><span class="stat-value" style="font-size:11px">'+(_ewParts.length ? _ewParts.join(' ') : 'None')+'</span></div>';
+    // Equipped ward's reflect (offhand that bounces matching-element damage back at the attacker).
+    var _off = getOffhandStyle(state.equippedOffhand);
+    if(_off && _off.type==='ward'){
+      var _wi = getEquippedOffhandItem(state);
+      if(_wi){
+        html += '<div class="stat-row"><span class="stat-label">Ward Reflect</span><span class="stat-value" style="font-size:11px"><span class="elem-weak-stat elem-'+_off.element+'">'+elementIcon(_off.element)+' '+Math.round(_wi.reflect*100)+'% '+elementLabel(_off.element)+'</span>'+(_wi.fullReflectChance>0?' &bull; '+Math.round(_wi.fullReflectChance*100)+'% full':'')+'</span></div>';
+      }
+    }
     html += '</div>';
     html += '<div class="stats-group"><h4>'+svgIcon('target','currentColor')+' Damage Triangle</h4>';
     var SHORT_TYPE_LABEL = {slashing:'Slash', piercing:'Pierce', blunt:'Blunt'};
@@ -9233,6 +9425,7 @@
     var out = [];
     STACKABLE_WEAPON_TYPES.forEach(function(w){ if(w.skillId===workshopSkillId) out.push({ craftKind:'stackweapon', params:{typeId:w.id}, label:w.name, icon:w.icon }); });
     if(workshopSkillId==='shieldsmithing') STACKABLE_SHIELD_TYPES.forEach(function(s){ out.push({ craftKind:'stackshield', params:{typeId:s.id}, label:s.name, icon:s.icon }); });
+    if(workshopSkillId==='runesmithing') WARD_TYPES.forEach(function(w){ out.push({ craftKind:'ward', params:{typeId:w.id}, label:w.name, icon:w.icon }); });
     Object.keys(BODY_ARMOR_MATERIALS).forEach(function(mk){ var m=BODY_ARMOR_MATERIALS[mk]; if(m.skillId===workshopSkillId) (m.slots||[]).forEach(function(sl){ var slotLabel=(m.slotLabels&&m.slotLabels[sl])||sl; out.push({ craftKind:'bodyarmor', params:{material:mk, slot:sl}, label:(m.label?m.label+' ':'')+slotLabel, icon:m.icon }); }); });
     if(workshopSkillId==='leatherworking') out.push({ craftKind:'belt', params:{}, label:'Belt', icon:svgIcon('belt','#8a6a42') });
     if(workshopSkillId==='jewelrycrafting'){ RING_TYPES.forEach(function(rt){ out.push({ craftKind:'ring', params:{typeId:rt.id}, label:rt.name, icon:rt.icon }); }); out.push({ craftKind:'amulet', params:{}, label:'Amulet', icon:svgIcon('amulet','#c9a227') }); }
@@ -10856,7 +11049,7 @@
         rows.push({category:'amulet', id:id, icon:item.icon, item:item, tier:item.tierIndex+1, jewelryBoost:true});
       }
     });
-    OFFHAND_STYLES.filter(function(o){ return !o.stackable; }).forEach(function(o){
+    OFFHAND_STYLES.filter(function(o){ return !o.stackable && !o.ward; }).forEach(function(o){
       var tier = state.offhandTiers[o.id]||0;
       if(tier>0) rows.push({category:'offhand', id:o.id, icon:o.icon, item:applyRarity(OFFHAND_TYPE_RECIPES[o.id][tier-1], state.offhandRarities[o.id]), tier:tier});
     });
@@ -12794,6 +12987,7 @@
   // ================= RENDER: SIDEBAR =================
   var SKILL_LABELS = { farming:'Farming', fiberharvesting:'Fiber Harvesting', grainharvesting:'Grain Harvesting', herbharvesting:'Herb Harvesting' };
   var SKILL_INFO = {
+    runesmithing: 'Inscribe elemental Wards -- offhands that reflect a share of incoming damage of their element back at the attacker. Rarity grants a chance to reflect 100% of a matching hit.',
     digging: 'Dig for Sand, Soil, Clay, and similar materials, with a chance for bonus Coal and Muddy Artifacts.',
     forestry: 'Chop logs from increasingly exotic trees, from Willow up to Sequoia.',
     mining: 'Mine stone and ore, with a chance for bonus Coal and Gems.',
@@ -14026,9 +14220,28 @@
       if(sBtn) sBtn.disabled = !(shieldSkillLvl >= shieldData.levelReq && hasInputs(shieldData.inputs));
     });
 
+    // Runesmithing wards: mirror the shield input/button live-update.
+    var runeLvl = getLevel(state.xp.runesmithing);
+    WARD_TYPES.forEach(function(w){
+      var wMax = 0;
+      for(var wmi=0; wmi<w.tierCount; wmi++){ if(TIER_LEVELS[wmi] <= runeLvl) wMax = wmi; }
+      var wSel = Math.min(selectedWardTier[w.id]||0, wMax);
+      var wData = getWardTierData(w.id, wSel);
+      Object.keys(wData.inputs).forEach(function(k){
+        var el = document.getElementById('inp-ward-'+w.id+'-'+k);
+        if(el){
+          var have = state.inventory[k]||0, need = wData.inputs[k];
+          el.textContent = need+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+have+' owned)';
+          el.className = have>=need ? 'ok' : 'bad';
+        }
+      });
+      var wBtn = document.querySelector('[data-action="forgeWard"][data-type="'+w.id+'"]');
+      if(wBtn) wBtn.disabled = !(runeLvl >= wData.levelReq && hasInputs(wData.inputs));
+    });
+
     // Quiver: owned counts + ok/bad state + Forge button availability (still sequential)
     var shieldsmithLvl = getLevel(state.xp.shieldsmithing);
-    OFFHAND_STYLES.filter(function(o){ return !o.stackable; }).forEach(function(o){
+    OFFHAND_STYLES.filter(function(o){ return !o.stackable && !o.ward; }).forEach(function(o){
       var tier = state.offhandTiers[o.id]||0;
       if(tier >= TIER_COUNT) return;
       var nextData = OFFHAND_TYPE_RECIPES[o.id][tier];
@@ -14095,6 +14308,7 @@
     belt:     { get:function(){ return selectedBeltTier; },                set:function(sub,v){ selectedBeltTier=v; } },
     melee:    { get:function(sub){ return selectedMeleeWeaponTier[sub]; }, set:function(sub,v){ selectedMeleeWeaponTier[sub]=v; } },
     shield:   { get:function(sub){ return selectedShieldTier[sub]; },      set:function(sub,v){ selectedShieldTier[sub]=v; } },
+    ward:     { get:function(sub){ return selectedWardTier[sub]; },        set:function(sub,v){ selectedWardTier[sub]=v; } },
     ring:     { get:function(sub){ return selectedRingTier[sub]; },        set:function(sub,v){ selectedRingTier[sub]=v; } },
     amulet:   { get:function(){ return selectedAmuletTier; },              set:function(sub,v){ selectedAmuletTier=v; } }
   };
@@ -14305,6 +14519,12 @@
       equipStackableShield(btn.getAttribute('data-item'));
     } else if(action==='unequipStackableShield'){
       unequipStackableShield();
+    } else if(action==='forgeWard'){
+      craftWard(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10));
+    } else if(action==='equipWard'){
+      equipWard(btn.getAttribute('data-item'));
+    } else if(action==='unequipWard'){
+      unequipWard();
     } else if(action==='forgeOffhandType'){
       craftOffhandType(btn.getAttribute('data-type'));
     } else if(action==='equipMainhand'){
@@ -14772,6 +14992,7 @@
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,
+      WARD_TYPES:WARD_TYPES, WARD_TYPE_MAP:WARD_TYPE_MAP, isWard:isWard, WARD_ITEMS:WARD_ITEMS, wardReflectPct:wardReflectPct, WARD_FULL_REFLECT_CHANCE:WARD_FULL_REFLECT_CHANCE, getWardTierData:getWardTierData, WARD_ELEMENTS:WARD_ELEMENTS,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

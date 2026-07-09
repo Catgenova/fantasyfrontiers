@@ -199,7 +199,7 @@
   suite('building and outfitting split the crafting skills without gaps or overlap', function(){
     var building = FF.BUILDING_SKILL_IDS, outfitting = FF.OUTFITTING_SKILL_IDS, craftTab = FF.CRAFTING_TAB_SKILL_IDS;
     eq(building.join(','), 'carpentry,stonecutting,paving,masonry', 'building holds the estate-build skills');
-    eq(outfitting.join(','), 'weaponsmithing,armorsmithing,tailoring,shieldsmithing,fletching,bowyer,leatherworking,jewelrycrafting', 'outfitting holds the gear skills');
+    eq(outfitting.join(','), 'weaponsmithing,armorsmithing,tailoring,shieldsmithing,runesmithing,fletching,bowyer,leatherworking,jewelrycrafting', 'outfitting holds the gear skills');
     // Every crafting skill lands in exactly one of the three sub-tab groups.
     var union = building.concat(outfitting).concat(craftTab).slice().sort();
     eq(union.length, FF.CRAFT_SKILL_IDS.length, 'the three groups cover every crafting skill exactly once');
@@ -604,6 +604,49 @@
     ok(fireFam, 'at least one fire familiar exists');
     eq(FF.elementAdvantage(FF.familiarElement(fireFam), 'earth'), FF.ELEMENT_ADVANTAGE_MULT, 'fire spell beats earth enemy');
     eq(FF.elementAdvantage(FF.familiarElement(fireFam), 'fire'), 1, 'fire spell neutral vs fire enemy');
+  });
+
+  // ---- Runesmithing wards ---------------------------------------------------------------
+  suite('wards', function(){
+    // Five element wards, one per element, no armor, offhand.
+    eq(FF.WARD_TYPES.length, 5, 'five wards');
+    eq(FF.WARD_ELEMENTS.slice().sort().join(','), 'dark,earth,fire,light,water', 'one ward per element');
+    FF.WARD_TYPES.forEach(function(w){
+      eq(w.type, 'ward', w.id+' is type ward');
+      ok(FF.ELEMENT_META[w.element], w.id+' has a valid element');
+      eq(w.skillId, 'runesmithing', w.id+' is crafted by runesmithing');
+      ok(FF.isWard(w.id), 'isWard('+w.id+')');
+    });
+    ok(!FF.isWard('shieldSmall'), 'a shield is not a ward');
+
+    // Reflect scales 5% at t0 -> 30% at the top tier, monotonic.
+    eq(FF.wardReflectPct(0), 0.05, 't0 reflect = 5%');
+    eq(FF.wardReflectPct(FF.TIER_COUNT-1), 0.30, 'top-tier reflect = 30%');
+    for(var i=1;i<FF.TIER_COUNT;i++){ ok(FF.wardReflectPct(i) >= FF.wardReflectPct(i-1), 'reflect non-decreasing at '+i); }
+
+    // Rarity grants a full-reflect chance instead of a stat multiplier: 0 / 5 / 10 / 20%.
+    eq(FF.WARD_FULL_REFLECT_CHANCE.normal, 0, 'normal ward never full-reflects');
+    eq(FF.WARD_FULL_REFLECT_CHANCE.rare, 0.05, 'rare = 5% full-reflect');
+    eq(FF.WARD_FULL_REFLECT_CHANCE.supreme, 0.10, 'supreme = 10%');
+    eq(FF.WARD_FULL_REFLECT_CHANCE.fantastic, 0.20, 'fantastic = 20%');
+
+    // Ward items exist for every type/tier/rarity, carry element + reflect + fullReflectChance and no armor.
+    var sample = FF.WARD_ITEMS['stward_wardFire_t0_rare'];
+    ok(sample, 'fire ward t0 rare exists');
+    eq(sample.element, 'fire', 'carries its element');
+    eq(sample.reflect, 0.05, 't0 reflect stat');
+    eq(sample.fullReflectChance, 0.05, 'rare full-reflect chance');
+    ok(sample.defense === undefined, 'wards provide no armor/defense');
+    var topFant = FF.WARD_ITEMS['stward_wardDark_t'+(FF.TIER_COUNT-1)+'_fantastic'];
+    ok(topFant && topFant.reflect === 0.30 && topFant.fullReflectChance === 0.20, 'top fantastic dark ward: 30% reflect, 20% full');
+
+    // Ward tier recipe upgrades from the previous tier and costs its metal.
+    var d3 = FF.getWardTierData('wardWater', 3);
+    ok(d3.inputs['stward_wardWater_t2_normal'] === 1, 'ward tier upgrades from the previous tier');
+    ok(d3.inputs['metallurgy_t3'] > 0, 'ward costs its tier metal');
+
+    // Runesmithing is a real crafting skill in the outfitting category.
+    ok(FF.CRAFTING_TAB_SKILL_IDS.indexOf('runesmithing') !== -1 || FF.CRAFT_SKILL_IDS.indexOf('runesmithing') !== -1, 'runesmithing is a crafting skill');
   });
 
   // ---- Hardening: monster lookup + addItem guards ---------------------------------------
