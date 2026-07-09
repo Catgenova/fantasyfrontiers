@@ -852,6 +852,58 @@
     ok(fam.spells.some(function(s){ return s.element==='light'; }), 'summoner familiar spells carry the light element');
   });
 
+  // ---- Classes: Duelist (rapier fencer with speed/precision/riposte passives) -----------
+  suite('classes: Duelist', function(){
+    ok(FF.CLASS_SKILL_IDS.indexOf('duelist') !== -1, 'duelist is a class skill id');
+    var cd = FF.CLASS_DEFS_BY_ID.duelist;
+    ok(cd, 'duelist class defined');
+    eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'passive tiers are 1/20/40/60/80');
+    eq(cd.reqParts.length, 6, 'requires 6 gear conditions');
+
+    function chain(){ return {tier:1, rarity:'normal', material:'chain'}; }
+    function cloth(){ return {tier:1, rarity:'normal', material:'tailoring'}; }
+    function bare(){ return {tier:0, rarity:'normal', material:null}; }
+    function base(rarity){ return { xp:{duelist:0}, equippedMainhand:'rapier', equippedMainhandRarity:rarity||'normal', equippedOffhand:null, bodyArmor:{ helmet:chain(), chest:chain(), gauntlets:cloth(), boots:cloth(), back:bare() } }; }
+    var full = base();
+    eq(FF.activeClassId(full), 'duelist', 'rapier + empty offhand + chain helm/chest + cloth gloves/shoes => Duelist');
+    eq(FF.chainPieceEquipped(full,'helmet'), true, 'chain helm detected');
+    eq(FF.clothPieceEquipped(full,'gauntlets'), true, 'cloth gloves detected');
+
+    // Every requirement is load-bearing.
+    var withOffhand = base(); withOffhand.equippedOffhand='shieldSmall';
+    eq(FF.activeClassId(withOffhand), null, 'a filled offhand disqualifies the Duelist');
+    var notRapier = base(); notRapier.equippedMainhand='greatsword';
+    eq(FF.activeClassId(notRapier), null, 'non-rapier mainhand => no Duelist');
+    var clothHelm = base(); clothHelm.bodyArmor.helmet=cloth();
+    eq(FF.activeClassId(clothHelm), null, 'cloth (not chain) helm => no Duelist');
+    var chainGloves = base(); chainGloves.bodyArmor.gauntlets=chain();
+    eq(FF.activeClassId(chainGloves), null, 'chain (not cloth) gloves => no Duelist');
+
+    // Lv 20 Flashing Steel: -10% attack time per rarity rank on the rapier (only from Lv 20).
+    var lvHi = Math.pow(59,2)*100; // ~Lv 60
+    function leveled(rarity){ var s = base(rarity); s.xp.duelist = lvHi; return s; }
+    eq(FF.classAttackSpeedMult(full), 1, 'Lv 1 duelist: no attack-speed bonus yet');
+    near(FF.classAttackSpeedMult(leveled('normal')), 1, 'normal rapier: no reduction');
+    near(FF.classAttackSpeedMult(leveled('rare')), 0.9, 'rare rapier: -10%');
+    near(FF.classAttackSpeedMult(leveled('supreme')), 0.8, 'supreme rapier: -20%');
+    near(FF.classAttackSpeedMult(leveled('fantastic')), 0.7, 'fantastic rapier: -30%');
+    var fastButOff = leveled('fantastic'); fastButOff.equippedOffhand='shieldSmall';
+    eq(FF.classAttackSpeedMult(fastButOff), 1, 'attack-speed bonus is gated on the class being active');
+
+    // Lv 40 Perfect Form: +30% accuracy, folded into playerAccuracy.
+    eq(FF.classAccuracyMult(full), 1, 'Lv 1 duelist: no accuracy bonus');
+    eq(FF.classAccuracyMult(leveled('normal')), 1.3, 'Lv >= 40 duelist: +30% accuracy');
+    var accOn = leveled('normal'); accOn.physique = {}; FF.ACCURACY_PHYSIQUES.forEach(function(id){ accOn.physique[id] = Math.pow(20,2)*100; });
+    var accOff = { xp:accOn.xp, equippedMainhand:'rapier', equippedMainhandRarity:'normal', equippedOffhand:'shieldSmall', bodyArmor:accOn.bodyArmor, physique:accOn.physique };
+    ok(FF.playerAccuracy(accOn) > FF.playerAccuracy(accOff), 'active Duelist gets higher accuracy than the same build with the class off');
+    ok(Math.abs(FF.playerAccuracy(accOn) - Math.round(FF.playerAccuracy(accOff)*1.3)) <= 2, 'accuracy scales by the +30% class multiplier');
+
+    // Class familiar.
+    var fam = FF.FAMILIAR_DATA.duelist;
+    ok(fam && fam.spells && fam.spells.length === 4, 'duelist familiar has 4 spells');
+    ok(fam.spells.some(function(s){ return s.element==='fire'; }), 'duelist familiar damaging spells carry the fire element');
+  });
+
   // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------
   suite('warding proficiency', function(){
     eq(FF.WARDING_SKILL_ID, 'warding', 'warding skill id');

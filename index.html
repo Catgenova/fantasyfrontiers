@@ -2917,10 +2917,13 @@
   // own familiar) and its tiered passives (Class Lv 1/20/40/60/80) switch on as it levels up. Remove
   // any required piece and the class -- and every one of its passives -- immediately goes dormant.
   var CLASS_CLOTH_COLOR = '#c8b088';
-  function clothPieceEquipped(st, slot){
+  var CLASS_CHAIN_COLOR = '#6a6a72';
+  function armorPieceEquipped(st, slot, material){
     var s = st && st.bodyArmor && st.bodyArmor[slot];
-    return !!(s && s.material==='tailoring' && s.tier > 0);
+    return !!(s && s.material===material && s.tier > 0);
   }
+  function clothPieceEquipped(st, slot){ return armorPieceEquipped(st, slot, 'tailoring'); }
+  function chainPieceEquipped(st, slot){ return armorPieceEquipped(st, slot, 'chain'); }
   var CLASS_DEFS = [
     {
       id:'summoner', name:'Summoner', icon:svgIcon('starburst','#7a5aa8'),
@@ -2940,6 +2943,26 @@
         { level:60, name:'Arcane Bulwark',   desc:'+15% Block chance.' },
         { level:80, name:'Menagerie Master', desc:'Doubled chance to gain proficiency and physique familiars while in combat.' }
       ]
+    },
+    {
+      id:'duelist', name:'Duelist', icon:svgIcon('sword','#b83a4a'),
+      blurb:'A lightly-armoured fencer who turns speed, precision, and ripostes into a lethal dance.',
+      reqText:'Rapier + empty offhand, Chain Helm & Chest, Cloth Gloves & Shoes',
+      reqParts:[
+        { icon:svgIcon('sword','#9aa0a8'),               label:'Rapier',        met:function(st){ return st.equippedMainhand==='rapier'; } },
+        { icon:svgIcon('shield','#8a8a8a'),              label:'Empty Offhand', met:function(st){ return !st.equippedOffhand; } },
+        { icon:svgIcon('helm',CLASS_CHAIN_COLOR),        label:'Chain Helm',    met:function(st){ return chainPieceEquipped(st,'helmet'); } },
+        { icon:svgIcon('chestarmor',CLASS_CHAIN_COLOR),  label:'Chain Chest',   met:function(st){ return chainPieceEquipped(st,'chest'); } },
+        { icon:svgIcon('gauntlet',CLASS_CLOTH_COLOR),    label:'Cloth Gloves',  met:function(st){ return clothPieceEquipped(st,'gauntlets'); } },
+        { icon:svgIcon('boots',CLASS_CLOTH_COLOR),       label:'Cloth Shoes',   met:function(st){ return clothPieceEquipped(st,'boots'); } }
+      ],
+      passives:[
+        { level:1,  name:'Reactive Casting', desc:'When you dodge an attack, a familiar instantly casts a random extra spell &mdash; without interrupting its own cast timer.' },
+        { level:20, name:'Flashing Steel',   desc:'Your attack timer is reduced 10% for each rarity rank on your Rapier (Rare −10%, Supreme −20%, Fantastic −30%).' },
+        { level:40, name:'Perfect Form',     desc:'+30% Accuracy.' },
+        { level:60, name:'First Blood',      desc:'Deal +25% damage while at full Health.' },
+        { level:80, name:'Riposte',          desc:'On a Critical Hit, immediately strike again as a bonus attack (cannot chain).' }
+      ]
     }
   ];
   var CLASS_DEFS_BY_ID = {}; CLASS_DEFS.forEach(function(c){ CLASS_DEFS_BY_ID[c.id] = c; });
@@ -2956,6 +2979,37 @@
   // Summoner Lv 40 shortens every familiar's cast cadence from 10s to 8s.
   function familiarCastIntervalMs(){ return summonerBonus(40) ? 8000 : 10000; }
   function awardClassXp(amount){ var id = activeClassId(state); if(id && amount > 0) addXp(id, amount); }
+  function duelistBonus(reqLevel){ return classBonusActive('duelist', reqLevel); }
+  // Duelist Lv 20: -10% attack time per rarity rank on the equipped Rapier (normal 0, fantastic -30%).
+  function classAttackSpeedMult(st){
+    st = st || state;
+    if(activeClassId(st)==='duelist' && classLevel(st,'duelist') >= 20 && st.equippedMainhand==='rapier'){
+      var rank = ['normal','rare','supreme','fantastic'].indexOf(st.equippedMainhandRarity || 'normal');
+      if(rank > 0) return Math.max(0.1, 1 - 0.10*rank);
+    }
+    return 1;
+  }
+  // Player auto-attack interval, folding in familiar Haste and the Duelist's rapier attack-speed bonus.
+  function playerAttackIntervalMs(st){
+    st = st || state;
+    var ws = getWeaponStyle(st.equippedMainhand);
+    return Math.max(200, ws.attackSpeed*1000 * (1 - Math.min(0.9, getFamBuff('haste'))) * classAttackSpeedMult(st));
+  }
+  // Duelist Lv 40: +30% Accuracy while the class is active.
+  function classAccuracyMult(st){ st = st || state; return (activeClassId(st)==='duelist' && classLevel(st,'duelist') >= 40) ? 1.3 : 1; }
+  // Duelist Lv 60: +25% damage at full Health.
+  function classFullHealthDmgMult(){ return (duelistBonus(60) && state.playerHp >= maxHp(state)) ? 1.25 : 1; }
+  // Duelist Lv 1: on a dodge, a random active companion fires one extra spell for free -- this does NOT
+  // advance or reset that companion's own cast timer (state.companionCast is left untouched).
+  function duelistDodgeBonusCast(){
+    if(!duelistBonus(1)) return;
+    var comps = activeCompanionList(state);
+    if(!comps.length) return;
+    var cid = comps[Math.floor(Math.random()*comps.length)];
+    var spells = FAMILIAR_DATA[cid] && FAMILIAR_DATA[cid].spells;
+    if(!spells || !spells.length) return;
+    castFamiliarSpell(spells[Math.floor(Math.random()*spells.length)], getFamiliarLevel(cid), cid);
+  }
 
   // ================= FAMILIARS =================
   // Every skill (gathering, crafting, farming, faith, and physique) has an associated
@@ -3049,7 +3103,8 @@
     meditation:       { name:'Lotus',    icon:svgIcon('lotusflower','#c87a9a'), spells:[healSpell('Inner Peace',18), healSpell('Inner Peace',18), armorSpell('Meditative Ward',1.5,6), armorSpell('Meditative Ward',1.5,6)] },
     fortitude:        { name:'Vitality', icon:svgIcon('heart','#c8302a'), spells:[healSpell('Vital Surge',18), healSpell('Vital Surge',18), armorSpell('Life Ward',1.6,6), armorSpell('Life Ward',1.6,6)] },
     // -- Classes --
-    summoner:         { name:'Eidolon',  icon:svgIcon('starburst','#7a5aa8'), spells:[hitSpell('Spirit Bolt','void',15), siphonSpell('Soul Siphon',13), hitSpell('Arcane Surge','void',12), buffSpell('Empower','critDmg',0.32,8)] }
+    summoner:         { name:'Eidolon',  icon:svgIcon('starburst','#7a5aa8'), spells:[hitSpell('Spirit Bolt','void',15), siphonSpell('Soul Siphon',13), hitSpell('Arcane Surge','void',12), buffSpell('Empower','critDmg',0.32,8)] },
+    duelist:          { name:'Fleuret',  icon:svgIcon('sword','#b83a4a'), spells:[hitSpell('Lunge','piercing',15), buffSpell('Riposte','critChance',0.13,8), hitSpell('Flèche','piercing',13), buffSpell('En Garde','dodge',0.14,8)] }
   };
 
   // Diverse, unique per-familiar spell kits drawn from the expanded pool. Reassigned onto FAMILIAR_DATA
@@ -3116,7 +3171,8 @@
     meditation:     [ healSpell('Inner Peace',18), regenSpell('Lotus Bloom',5,7), armorSpell('Meditative Ward',1.5,6), buffSpell('Serene Flow','dodge',0.13,8) ],
     fortitude:      [ healSpell('Vital Surge',18), regenSpell('Lifebloom',5,8), bubbleSpell('Life Ward',3), siphonSpell('Vitality Drain',13) ],
     // -- Classes --
-    summoner:       [ hitSpell('Spirit Bolt','void',15), siphonSpell('Soul Siphon',13), hitSpell('Arcane Surge','void',12), buffSpell('Empower','critDmg',0.32,8) ]
+    summoner:       [ hitSpell('Spirit Bolt','void',15), siphonSpell('Soul Siphon',13), hitSpell('Arcane Surge','void',12), buffSpell('Empower','critDmg',0.32,8) ],
+    duelist:        [ hitSpell('Lunge','piercing',15), buffSpell('Riposte','critChance',0.13,8), hitSpell('Flèche','piercing',13), buffSpell('En Garde','dodge',0.14,8) ]
   };
   // Each familiar channels an element (thematic to its skill). Its damaging spells (direct hits,
   // siphons, and poison DoTs) carry that element, so they gain the +20% elemental advantage against
@@ -3137,7 +3193,7 @@
     reflexes:'fire', stamina:'earth', handStrength:'earth', armStrength:'earth', coreStrength:'earth', solving:'light', criticalThinking:'light',
     mentality:'earth', zen:'light', meditation:'light', fortitude:'dark',
     // Classes
-    summoner:'light'
+    summoner:'light', duelist:'fire'
   };
   var DAMAGE_SPELL_TYPES = { hit:true, siphon:true, poison:true }; // spells that deal direct damage or DoT
   function familiarElement(id){ return FAMILIAR_ELEMENT[id] || null; }
@@ -3193,7 +3249,7 @@
     solving:{s:'puzzle',c:'#3a6a9a',ear:'antenna'}, criticalThinking:{s:'brain',c:'#8a5aaa',ear:'antenna'},
     mentality:{s:'compass',c:'#3f8a8a',ear:'round'}, zen:{s:'yinyang',c:'#8a8a8a',ear:'round'},
     meditation:{s:'lotusflower',c:'#c87a9a',ear:'leaf'}, fortitude:{s:'heart',c:'#c8302a',ear:'round'},
-    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}
+    summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}
   };
   // Draw the ear/crown silhouette behind the head. Returned in two layers (behind body, in front).
   function famEars(kind, body, bodyD, belly, accent){
@@ -4411,7 +4467,7 @@
     var physSum = 0;
     accuracyPhysiques().forEach(function(id){ physSum += getLevel((st.physique && st.physique[id]) || 0); });
     var prof = st.equippedMainhand ? getLevel(st.xp[st.equippedMainhand] || 0) : 0;
-    return Math.round(physSum*ACCURACY_PHYS_WEIGHT + prof*ACCURACY_PROF_WEIGHT);
+    return Math.round((physSum*ACCURACY_PHYS_WEIGHT + prof*ACCURACY_PROF_WEIGHT) * classAccuracyMult(st));
   }
   function monsterDodge(m){
     if(!m) return 0;
@@ -6219,7 +6275,7 @@
       needsRender = true; // reload/deplete changes the picker; charge countdown updates live otherwise
     }
   }
-  function playerAttackTick(){
+  function playerAttackTick(isBonus){
     var act = state.activity;
     var monster = monsterById(act.monsterId);
     if(!monster) return;
@@ -6263,7 +6319,7 @@
     }
 
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult);
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult());
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
@@ -6283,6 +6339,11 @@
     if(state.equippedOffhand && offhandStyle && offhandStyle.type==='quiver') addXp(state.equippedOffhand, atkProfXp);
     awardClassXp(effDmg); // an active Class trains on combat damage dealt
     if(act.monsterHp <= 0) defeatMonster(monster);
+    // Duelist Lv 80 (Riposte): a Critical Hit triggers one immediate bonus attack -- which cannot chain.
+    if(isCrit && !isBonus && duelistBonus(80) && state.activity && state.activity.type==='combat'){
+      spawnFloatingText('Riposte!', 'ft-rare');
+      playerAttackTick(true);
+    }
   }
 
   // Award the kill (gold, loot, stats, respawn). Called by the player's attack, and by familiars/
@@ -6322,6 +6383,7 @@
     if(dodgeChance > 0 && Math.random() < dodgeChance){
       addLog('You dodged the ' + monster.name + '\'s attack!', 'important');
       spawnFloatingText('Dodged!', 'ft-success');
+      duelistDodgeBonusCast(); // Duelist Lv 1: a dodge triggers a free familiar cast (no timer interruption)
       return;
     }
     var relicBonus = getEquippedRelicBonus(state);
@@ -6695,9 +6757,9 @@
           var _chunk = Math.min(_step, capped - _sim); _sim += _chunk;
           // Player swings (skipped for a Staff)
           if(!_noAtk){
-            var _pInt = Math.max(200, _pStyle.attackSpeed*1000*(1 - Math.min(0.9, getFamBuff('haste'))));
+            var _pInt = playerAttackIntervalMs();
             _pAcc += _chunk;
-            while(_pAcc >= _pInt && state.activity.type==='combat'){ _pAcc -= _pInt; playerAttackTick(); _pInt = Math.max(200, _pStyle.attackSpeed*1000*(1 - Math.min(0.9, getFamBuff('haste')))); }
+            while(_pAcc >= _pInt && state.activity.type==='combat'){ _pAcc -= _pInt; playerAttackTick(); _pInt = playerAttackIntervalMs(); }
           }
           if(state.activity.type!=='combat') break;
           // Monster swings + auto-eat
@@ -8348,7 +8410,8 @@
     html += '<div class="stats-group" style="grid-column:1/-1"><div class="stat-row"><span class="stat-label">Combat Score</span><span class="stat-value">'+combatLevelEquivalent(state)+'</span></div></div>';
     html += '<div class="stats-group"><h4>'+svgIcon('sword','currentColor')+' Offense</h4>';
     html += '<div class="stat-row"><span class="stat-label">Attack Damage</span><span class="stat-value">'+effMin+'-'+effMax+'</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Attack Time</span><span class="stat-value">'+weaponStyle.attackSpeed+'s</span></div>';
+    var effAtkTime = Math.round(weaponStyle.attackSpeed * classAttackSpeedMult(state) * 100) / 100;
+    html += '<div class="stat-row"><span class="stat-label">Attack Time</span><span class="stat-value">'+effAtkTime+'s'+(effAtkTime<weaponStyle.attackSpeed?' <span style="color:var(--gold)">(class)</span>':'')+'</span></div>';
     var dmgTypeHtml;
     if(isWandMain){
       dmgTypeHtml = '<span class="elem-weak-stat elem-'+weaponStyle.element+'">'+elementIcon(weaponStyle.element)+' '+elementLabel(weaponStyle.element)+'</span>';
@@ -8804,7 +8867,7 @@
       var pPct = clamp(state.playerHp/maxHp(state)*100,0,100);
       var monsterAtkIntervalMs = m.attackSpeed*1000*(1+getFamiliarEnemySlowPct());
       var monsterAtkPct = clamp((act.monsterTickAccum||0)/monsterAtkIntervalMs*100,0,100);
-      var playerAtkIntervalMs = weaponStyle.attackSpeed*1000;
+      var playerAtkIntervalMs = playerAttackIntervalMs();
       var playerAtkPct = clamp((act.tickAccum||0)/playerAtkIntervalMs*100,0,100);
       var matchup = weightedMatchupLabel(weaponStyle.attackTypes || {blunt:1}, m.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
       html += '<div class="arena">';
@@ -13407,6 +13470,7 @@
     staves: 'Proficiency wielding Staves. Trained by familiar damage, it boosts familiar efficiency: +1% at Lv 1 up to +100% at Lv 100.',
     scepters: 'Proficiency wielding Scepters. Trained by scepter damage, it boosts scepter damage: +1% at Lv 1 up to +100% at Lv 100.',
     summoner: 'A Class conferred by wearing Cloth Hood, Tunic, Gloves & Shoes with a Staff. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
+    duelist: 'A Class conferred by a Rapier with an empty offhand, Chain Helm & Chest and Cloth Gloves & Shoes. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     clotharmor: 'Proficiency wearing Tailoring\'s cloth armor at higher tiers.',
     leatherarmor: 'Proficiency wearing Leatherworking\'s leather armor at higher tiers.',
     chainmailarmor: 'Proficiency wearing Armorsmithing\'s chain mail at higher tiers.',
@@ -14425,8 +14489,7 @@
       if(pcl) pcl.textContent = (state.potionCharges||0);
       var paf = document.getElementById('arenaPlayerAtkFill');
       if(paf){
-        var playerAtkStyle = getWeaponStyle(state.equippedMainhand);
-        var playerAtkPct = clamp((state.activity.tickAccum||0)/(playerAtkStyle.attackSpeed*1000)*100,0,100);
+        var playerAtkPct = clamp((state.activity.tickAccum||0)/playerAttackIntervalMs()*100,0,100);
         paf.style.width = playerAtkPct+'%';
       }
       activeCompanionList(state).forEach(function(cid){
@@ -15194,11 +15257,11 @@
       // A Staff has no attack speed -- it never auto-attacks (combat runs on your familiars).
       if(!getWeaponStyle(state.equippedMainhand).noAttack){
         state.activity.tickAccum += dt;
-        var attackIntervalMs = getWeaponStyle(state.equippedMainhand).attackSpeed * 1000 * (1 - Math.min(0.9, getFamBuff('haste')));
+        var attackIntervalMs = playerAttackIntervalMs();
         while(state.activity.tickAccum >= attackIntervalMs && state.activity.type==='combat'){
           state.activity.tickAccum -= attackIntervalMs;
           playerAttackTick();
-          attackIntervalMs = getWeaponStyle(state.equippedMainhand).attackSpeed * 1000 * (1 - Math.min(0.9, getFamBuff('haste')));
+          attackIntervalMs = playerAttackIntervalMs();
         }
       }
       if(state.activity.type==='combat'){
@@ -15399,7 +15462,7 @@
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
-      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped,
+      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }
