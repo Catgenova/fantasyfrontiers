@@ -1415,6 +1415,7 @@
   <div id="skillInfoOverlay" class="skill-info-overlay" data-action="closeSkillInfo" style="display:none"></div>
   <div id="invDetailOverlay" class="skill-info-overlay" data-action="closeInvDetail" style="display:none"></div>
   <div id="itemLinkOverlay" class="skill-info-overlay" data-action="closeItemLink" style="display:none"></div>
+  <div id="uniqueDetailOverlay" class="skill-info-overlay" data-action="closeUniqueDetail" style="display:none"></div>
   <div id="settingsOverlay"></div>
   <div id="trackerPickerOverlay"></div>
   <div id="peonPickerOverlay"></div>
@@ -10929,16 +10930,28 @@
     return html;
   }
 
-  function renderStackableWeaponEquipSection(types, title){
+  // Equip gate for a stackable-weapon inventory item, matching equipStackableWeapon: wands & staves are
+  // gated by Arcanism level, scepters by Runesmithing level, and everything else by its own per-type
+  // proficiency. Returns { ok, label, lvl } for the button's enabled state + lock hint.
+  function stackableEquipGate(item){
+    var t = item.tierIndex, lvl = TIER_LEVELS[t];
+    if(isWandWeapon(item.typeId) || isStaff(item.typeId)) return { ok: getLevel(state.xp.arcanism||0) >= lvl, label:'Arcanism', lvl:lvl };
+    if(isScepter(item.typeId)) return { ok: getLevel(state.xp.runesmithing||0) >= lvl, label:'Runesmithing', lvl:lvl };
+    return { ok: meetsProficiencyRequirement(state.xp[item.typeId], t), label:(SKILL_LABELS[item.typeId]||item.typeId), lvl:lvl };
+  }
+  // A staff deals no damage (support weapon) -- show its block instead of a 0-0 dmg range.
+  function stackableWeaponStatLabel(item){ return (isStaff(item.typeId) && !item.dmgMax) ? ('block '+Math.round((item.block||0)*100)+'%') : (item.dmgMin+'-'+item.dmgMax+' dmg'); }
+  function renderStackableWeaponEquipSection(types, title, hideIfEmpty){
     var typeIds = types.map(function(w){ return w.id; });
     var current = (state.equippedMainhand && typeIds.indexOf(state.equippedMainhand)!==-1 && state.equippedMainhandTier>0)
       ? STACKABLE_WEAPON_ITEMS['stweapon_'+state.equippedMainhand+'_t'+(state.equippedMainhandTier-1)+'_'+state.equippedMainhandRarity] : null;
     var owned = Object.keys(STACKABLE_WEAPON_ITEMS).filter(function(id){ return typeIds.indexOf(STACKABLE_WEAPON_ITEMS[id].typeId)!==-1 && (state.inventory[id]||0)>0; })
       .sort(function(a,b){ return STACKABLE_WEAPON_ITEMS[a].tierIndex - STACKABLE_WEAPON_ITEMS[b].tierIndex; });
+    if(hideIfEmpty && owned.length===0 && !current) return ''; // don't clutter the picker with weapon classes you don't use
     var html = '<h3>Equip '+title+'</h3>';
     html += '<div class="section-intro">Pick which owned '+title.toLowerCase()+' is your Mainhand. Forged weapons sit in inventory, stacked by type, tier, and rarity, until equipped here.</div>';
     html += '<div class="card-grid"><div class="item-card">';
-    html += '<div class="item-top"><div class="item-icon">'+svgIcon('sword','#9aa0a8')+'</div><div><div class="item-name">Mainhand</div><div class="item-meta">'+(current ? current.name+' &bull; '+current.dmgMin+'-'+current.dmgMax+' dmg &bull; '+STACKABLE_WEAPON_TYPE_MAP[current.typeId].attackSpeed+'s attack' : 'No '+title.toLowerCase()+' equipped')+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+(current?current.icon:svgIcon('sword','#9aa0a8'))+'</div><div><div class="item-name">Mainhand</div><div class="item-meta">'+(current ? current.name+' &bull; '+stackableWeaponStatLabel(current)+' &bull; '+STACKABLE_WEAPON_TYPE_MAP[current.typeId].attackSpeed+'s attack' : 'No '+title.toLowerCase()+' equipped')+'</div></div></div>';
     if(owned.length===0){
       html += '<div class="empty-note">No '+title.toLowerCase()+' in inventory. Forge one above.</div>';
     } else {
@@ -10946,8 +10959,8 @@
       owned.forEach(function(id){
         var item = STACKABLE_WEAPON_ITEMS[id];
         var qty = state.inventory[id]||0;
-        var canEquip = meetsProficiencyRequirement(state.xp[item.typeId], item.tierIndex);
-        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipStackableWeapon" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">'+item.dmgMin+'-'+item.dmgMax+' dmg &bull; '+STACKABLE_WEAPON_TYPE_MAP[item.typeId].attackSpeed+'s</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS[item.typeId]||item.typeId)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
+        var gate = stackableEquipGate(item);
+        html += '<button class="style-btn'+(gate.ok?'':' locked')+'" data-action="equipStackableWeapon" data-item="'+id+'" '+(gate.ok?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">'+stackableWeaponStatLabel(item)+' &bull; '+STACKABLE_WEAPON_TYPE_MAP[item.typeId].attackSpeed+'s</span>'+(gate.ok?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(gate.label)+' Lv '+gate.lvl+'</span>')+'</button>';
       });
       html += '</div>';
     }
@@ -11511,6 +11524,9 @@
     if(state.equippedMainhand) html += '<button class="action-btn stop" data-action="unequipStackableWeapon">Unequip</button>';
     html += renderStackableWeaponEquipSection(MELEE_WEAPON_TYPES, 'Melee Weapon');
     html += renderStackableWeaponEquipSection(BOW_WEAPON_TYPES, 'Bow');
+    html += renderStackableWeaponEquipSection(WAND_TYPES, 'Wand', true);
+    html += renderStackableWeaponEquipSection([STAFF_TYPE], 'Staff', true);
+    html += renderStackableWeaponEquipSection([SCEPTER_TYPE], 'Scepter', true);
     return html;
   }
   function renderOffhandEquipFullSection(){
@@ -11527,8 +11543,9 @@
       html += '<div class="shop-current">Equipped: <b style="color:var(--text)">None</b></div>';
     }
     html += renderGearSelector('offhand');
-    html += '<div class="section-intro" style="margin-top:10px">One-handed weapons free up your offhand for a shield; bows pair with a quiver instead; two-handed weapons need both hands. Forge new gear via Crafting &rarr; Weaponsmithing / Shieldsmithing. Damage types cycle slashing &gt; piercing &gt; blunt &gt; slashing.</div>';
+    html += '<div class="section-intro" style="margin-top:10px">One-handed weapons free up your offhand for a shield or ward; bows pair with a quiver instead; two-handed weapons need both hands. Forge new gear via Crafting &rarr; Weaponsmithing / Shieldsmithing / Runesmithing. Damage types cycle slashing &gt; piercing &gt; blunt &gt; slashing.</div>';
     html += renderEquipShieldSection();
+    html += renderEquipWardSection();
     return html;
   }
   function renderBeltEquipSection(){
@@ -17353,7 +17370,8 @@
     {id:'gathering', label:'Gathering', icon:svgIcon('chest','var(--cat-gathering)')},
     {id:'crafting',  label:'Crafting',  icon:svgIcon('hammer','var(--cat-crafting)')},
     {id:'estate',    label:'Estate',    icon:svgIcon('castle','var(--cat-estate)')},
-    {id:'equipment', label:'Equipment', icon:svgIcon('shield','var(--gold)')}
+    {id:'equipment', label:'Equipment', icon:svgIcon('shield','var(--gold)')},
+    {id:'unique',    label:'Unique',    icon:svgIcon('starburst','var(--rarity-fantastic)')} // enchanted/enhanced items (state.uniqueItems), not stackable inventory
   ];
   var GATHER_BUCKET_PREFIXES = ['digging_t','forestry_t','mining_t','fishing_t','herbalism_t','botany_t','foraging_t','butchering_t',
     'muddyartifact_t','brokenrelic_t','powder_t','seed_t','grainseed_t','herbseed_t','farming_t','grain_t','herb_t','corpse_t','gem_','glyph_'];
@@ -17404,6 +17422,12 @@
       var qty = state.inventory[id]||0;
       if(qty>0) rows.push({id:id, item:ALL_SELLABLE[id], qty:qty, cat:getInventoryCategory(id)});
     });
+    // Unique (enchanted/enhanced) items live in state.uniqueItems, not the stackable inventory --
+    // surface them as their own "Unique" bucket. Clicking one opens its stat card (openUniqueDetail).
+    Object.keys(state.uniqueItems||{}).forEach(function(uid){
+      var u = state.uniqueItems[uid]; if(!u) return;
+      rows.push({ id:uid, unique:true, u:u, item:{ name:uniqueDisplayName(u), icon:uniqueIcon(u), sell:uniqueSellValue(u) }, qty:1, cat:'unique', rar:u.rarity });
+    });
 
     // ---- Toolbar: search + category filter chips + sort dropdown ----
     var html = '<h3>Inventory</h3>';
@@ -17429,6 +17453,15 @@
     });
 
     function cellHtml(r){
+      if(r.unique){
+        var uc = '<div class="inv-cell'+(r.rar!=='normal'?' rar-'+r.rar:'')+'" data-action="openUniqueDetail" data-uid="'+r.id+'" title="'+escapeHtml(r.item.name)+'">';
+        if(r.u.enhance>0) uc += '<span class="qty" style="color:var(--gold)">+'+r.u.enhance+'</span>';
+        if(uniqueIsEquipped(r.id)) uc += '<span class="lk">'+svgIcon('sword','var(--gold)')+'</span>';
+        uc += '<span class="ic">'+r.item.icon+'</span>';
+        uc += '<span class="nm">'+escapeHtml(r.item.name)+'</span>';
+        uc += '</div>';
+        return uc;
+      }
       var isLocked = !!state.lockedItems[r.id];
       var rar = itemRarityId(r.id);
       var c = '<div class="inv-cell'+(rar!=='normal'?' rar-'+rar:'')+'" data-action="openInvDetail" data-item="'+r.id+'" title="'+escapeHtml(r.item.name)+'">';
@@ -17530,6 +17563,24 @@
     if(!card){ overlay.style.display = 'none'; overlay.innerHTML = ''; chatItemLinkView = null; return; }
     overlay.style.display = 'flex';
     overlay.innerHTML = '<div class="skill-info-card">'+card+'<button class="action-btn" data-action="closeItemLink" style="margin-top:14px">Close</button></div>';
+  }
+  // Detail popup for one of YOUR unique items (opened from the Inventory "Unique" bucket): shows the
+  // stat card plus quick actions -- equip/unequip, jump to the Improvement tab, or link it in chat.
+  var uniqueDetailUid = null;
+  function renderUniqueDetailOverlay(){
+    var overlay = document.getElementById('uniqueDetailOverlay'); if(!overlay) return;
+    var u = uniqueDetailUid && state.uniqueItems && state.uniqueItems[uniqueDetailUid];
+    if(!u){ overlay.style.display = 'none'; overlay.innerHTML = ''; uniqueDetailUid = null; return; }
+    var card = renderLinkedItemCard(encodeItemLink(u));
+    var eq = uniqueIsEquipped(u.uid);
+    overlay.style.display = 'flex';
+    overlay.innerHTML = '<div class="skill-info-card">'+card
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px;">'
+      + '<button class="mini-btn" data-action="'+(eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(eq?'Unequip':'Equip')+'</button>'
+      + '<button class="mini-btn" data-action="uniqueManage" data-uid="'+u.uid+'">Manage</button>'
+      + '<button class="mini-btn" data-action="improveLinkChat" data-uid="'+u.uid+'">🔗 Link in chat</button>'
+      + '</div>'
+      + '<button class="action-btn" data-action="closeUniqueDetail" style="margin-top:12px">Close</button></div>';
   }
 
   var lastRenderedLogVersion = -1;
@@ -17865,6 +17916,7 @@
     renderSkillInfoPopup();
     renderInvDetailOverlay();  // item detail modal for the grid inventory
     renderItemLinkPopup();     // chat item-link stat card
+    renderUniqueDetailOverlay(); // Inventory "Unique" bucket item card
     renderOfflineSummary();
     renderLootPopup();
     renderEnhancePopup();
@@ -18549,6 +18601,12 @@
       chatItemLinkView = btn.getAttribute('data-item');
     } else if(action==='closeItemLink'){
       chatItemLinkView = null;
+    } else if(action==='openUniqueDetail'){
+      uniqueDetailUid = btn.getAttribute('data-uid');
+    } else if(action==='closeUniqueDetail'){
+      uniqueDetailUid = null;
+    } else if(action==='uniqueManage'){
+      improveSelect(btn.getAttribute('data-uid')); uniqueDetailUid = null; navPickCat('improvement');
     } else if(action==='improveLinkChat'){
       improveLinkChat(btn.getAttribute('data-uid'));
     } else if(action==='toggleItemLock'){
@@ -19038,7 +19096,7 @@
   // the player is typing, or while the tab is backgrounded -- otherwise we re-check shortly after.
   var AUTO_REFRESH_MS = 10*60*1000;   // 10 minutes
   var autoRefreshArmed = false;
-  var AUTO_REFRESH_OVERLAYS = ['familiarPopupOverlay','settingsOverlay','trackerPickerOverlay','peonPickerOverlay','chatExpandOverlay','chatDrawerOverlay','skillInfoOverlay','invDetailOverlay','itemLinkOverlay'];
+  var AUTO_REFRESH_OVERLAYS = ['familiarPopupOverlay','settingsOverlay','trackerPickerOverlay','peonPickerOverlay','chatExpandOverlay','chatDrawerOverlay','skillInfoOverlay','invDetailOverlay','itemLinkOverlay','uniqueDetailOverlay'];
   function autoRefreshIsSafe(){
     if(!gameStarted) return false;
     if(typeof document !== 'undefined' && document.hidden) return false;   // don't yank a backgrounded tab
