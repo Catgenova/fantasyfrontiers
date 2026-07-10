@@ -1566,6 +1566,15 @@
   var CHEESE_ICONS = RANCH_COLORS.map(function(c){ return svgIcon('block', c); });  // cheese block
   var FEAST_NAMES = ['Simple Supper','Farmhouse Spread','Cheese Board','Harvest Platter','Roast Feast','Hearty Banquet','Spiced Roast','Grand Platter','Noble Spread','Royal Table','Gilded Feast','Baronial Banquet','Ducal Spread','Kingly Platter','Imperial Feast','Celestial Table','Mythic Banquet','Ambrosial Spread','Divine Feast','Feast of Legends','Eternal Banquet'];
 
+  // ---- Mycology (gathering) -> Apothecary (crafting): the "poison" slice ----------------------
+  // Mycology forages a 21-tier mushroom ladder (culinary -> toxic -> arcane); Apothecary distils the
+  // toxic caps + Herbs into Weapon Coatings -- a combat consumable (potion slot) whose venom poisons
+  // enemies over time, a longer-lasting sibling to Alchemy's burst Toxins.
+  var MYCOLOGY_NAMES = ['Button Mushroom','Chanterelle','Porcini','Morel','Shiitake','Oyster Mushroom','Enoki','Portobello','Truffle Cap','Chicken of the Woods','Fly Agaric','Death Cap','Destroying Angel','Deadly Webcap','Panther Cap','Autumn Skullcap','Ghost Fungus','Bleeding Tooth','Devil\'s Tooth','Witch\'s Cauldron','Fairy Ring'];
+  var MYCOLOGY_COLORS = ['#c8a878','#e8b04a','#a86a3a','#7a5a3a','#8a6a4a','#d8c8b0','#e8e0d0','#9a7a5a','#5a4030','#e88a2a','#e83a2a','#d8e0c8','#e8e8e0','#b06a3a','#c8a060','#8a6a3a','#c8e8d8','#e86a5a','#7a4a2a','#5a2a6a','#c89ad8'];
+  var MYCOLOGY_ICONS = MYCOLOGY_COLORS.map(function(c){ return svgIcon('spice', c); });
+  var COATING_NAMES = ['Weak Venom','Irritant Coating','Nettle Venom','Toxin Salve','Spider Venom','Viper Venom','Necrotic Coating','Blight Venom','Corrosive Coating','Wraith Venom','Basilisk Venom','Plague Coating','Death Cap Extract','Doom Venom','Void Toxin','Soulrot Coating','Hydra Venom','Wyvern Venom','Dragon Venom','Elder Venom','God-Slayer Toxin'];
+
   // ---- Mining: 14 ore tiers + 7 stone tiers interleaved across the 21-tier ladder ----
   // Stones sit at tier positions 2,5,8,11,14,17,20 (1-indexed) -- everything else is ore.
   var MINING_STONE_INDICES = [1,4,7,10,13,16,19];
@@ -1809,6 +1818,22 @@
             time: tierTime(5,0.3,i),
             sell: tierSell(3,i),
             icon: RANCH_ICONS[i]
+          });
+        }
+        return list;
+      })() },
+    mycology: { label:'Mycology', icon:svgIcon('spice','#8a5aa8'),
+      items: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({
+            id:'mycology_t'+i,
+            name: MYCOLOGY_NAMES[i],
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(10,i),
+            time: tierTime(5,0.3,i),
+            sell: tierSell(3,i),
+            icon: MYCOLOGY_ICONS[i]
           });
         }
         return list;
@@ -2271,6 +2296,27 @@
         }
         return list;
       })() },
+    apothecary: { label:'Apothecary', icon:svgIcon('droplet','#6a8a3a'),
+      // Weapon Coatings: toxic Mushrooms distilled with Herbs into a venom you ready like a potion.
+      // Every hit poisons the enemy -- a longer-lasting, premium sibling to Alchemy's burst Toxins,
+      // and (unlike Alchemy) it needs no Glass Bottle. Gives Mycology's toxic caps a real consumer.
+      recipes: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({
+            id:'coating_t'+i,
+            name: COATING_NAMES[i],
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(14,i),
+            time: tierTime(7,0.3,i),
+            sell: tierSell(15,i),
+            icon: svgIcon('droplet',MYCOLOGY_COLORS[i]),
+            inputs: tierInput2('mycology',2,'herbalism',1)(i),
+            potionType: 'coating'
+          });
+        }
+        return list;
+      })() },
     archaeology: { label:'Archaeology', icon:svgIcon('urn','#9a8560'),
       recipes: (function(){
         var list = [];
@@ -2368,7 +2414,7 @@
   })();
   var GATHER_TOOL_NAMES = {
     digging:'Shovel', forestry:'Hatchet', mining:'Pickaxe', fishing:'Fishing Rod',
-    herbalism:'Sickle', botany:'Shears', foraging:'Basket', butchering:'Cleaver', beekeeping:'Bee Smoker', prospecting:'Pan', ranching:'Milking Pail'
+    herbalism:'Sickle', botany:'Shears', foraging:'Basket', butchering:'Cleaver', beekeeping:'Bee Smoker', prospecting:'Pan', ranching:'Milking Pail', mycology:'Mushroom Knife'
   };
   var GATHER_TOOL_SPEED = [];
   for(var _gi=0; _gi<TIER_COUNT; _gi++){ GATHER_TOOL_SPEED.push(tierCappedBonus(0.02, 0.013, 0.30, _gi)); }
@@ -2414,7 +2460,7 @@
     armorsmithing:"Armorer's Hammer", shieldsmithing:"Shieldwright's Hammer", blacksmithing:'Forge Tongs',
     jewelrycrafting:"Jeweler's Loupe", runesmithing:'Rune Chisel', arcanism:'Arcane Focus',
     brewing:'Brewing Paddle', confectionery:'Candy Thermometer', gemcutting:'Gem Facet Wheel', enchanting:'Enchanting Rod',
-    dairy:'Churn', gastronomy:"Chef's Torch"
+    dairy:'Churn', gastronomy:"Chef's Torch", apothecary:'Distillation Kit'
   };
   var CRAFT_TOOL_SPEED = [];
   var CRAFT_TOOL_SUCCESS = [];
@@ -3125,7 +3171,8 @@
     butchering: [['bodyStrength',2],['handStrength',1],['curiosity',1]],
     beekeeping: [['fineMotor',1],['handStrength',1],['zen',1],['mentality',1],['curiosity',1]],
     prospecting:[['armStrength',1],['fineMotor',1],['criticalThinking',1],['curiosity',1]],
-    ranching:   [['handStrength',1],['bodyStrength',1],['endurance',1],['mentality',1],['curiosity',1]]
+    ranching:   [['handStrength',1],['bodyStrength',1],['endurance',1],['mentality',1],['curiosity',1]],
+    mycology:   [['fineMotor',1],['handStrength',1],['criticalThinking',1],['mentality',1],['curiosity',1]]
   };
   var CRAFT_PHYSIQUE = {
     carpentry:      [['grossMotor',2],['sleightOfHand',1],['logic',1]],
@@ -3155,7 +3202,8 @@
     gemcutting:     [['fineMotor',2],['sleightOfHand',1],['logic',1]],
     enchanting:     [['fineMotor',2],['criticalThinking',1],['logic',1]],
     dairy:          [['fineMotor',2],['sleightOfHand',1],['logic',1]],
-    gastronomy:     [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]]
+    gastronomy:     [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]],
+    apothecary:     [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]]
   };;
   // Physique XP from a gather/craft task scales with the item's tier: each associated physique
   // gains (tier+1) XP -- 1 at t0 up to 21 at t20 (replaces the old fixed per-physique weights).
@@ -3650,6 +3698,7 @@
     beekeeping: { name:'Buzz',  icon:svgIcon('wing','#e0a92e'), spells:[poisonSpell('Swarm Sting',5,6), healSpell('Royal Jelly',18), armorSpell('Waxen Ward',1.5,6), weakenSpell('Smoke Cloud',0.25,8)] },
     prospecting:{ name:'Nugget',icon:svgIcon('gem','#8a97a6'), spells:[hitSpell('Pickaxe Toss','piercing',14), buffSpell('Gold Rush','critChance',0.11,8), armorSpell('Bedrock Guard',1.5,6), siphonSpell('Vein Tap',12)] },
     ranching:  { name:'Clover',icon:svgIcon('flask','#e8dcc0'), spells:[hitSpell('Stampede','blunt',14), buffSpell('Herd Strength','dmgBlunt',0.3,8), healSpell('Fresh Milk',16), armorSpell('Thick Hide',1.5,6)] },
+    mycology:  { name:'Spore', icon:svgIcon('spice','#8a5aa8'), spells:[poisonSpell('Spore Burst',5,6), slowSpell('Mycelial Snare',0.35,10), buffSpell('Toxic Bloom','potionPoison',0.4,10), healSpell('Fungal Mend',15)] },
     // -- Crafting --
     carpentry:      { name:'Timber', icon:svgIcon('plank','#8a6a42'), spells:[armorSpell('Splinter Shield',1.6,6), slowSpell('Root Snare',0.35,10), healSpell('Sap Heal',15), healSpell('Sap Heal',15)] },
     metallurgy:     { name:'Cinder', icon:svgIcon('ingot','#c85a2a'), spells:[dmgSpell('Molten Strike',1.3,8), weakenSpell('Slag',0.25,8), healSpell('Forge Heal',15), healSpell('Forge Heal',15)] },
@@ -3670,6 +3719,7 @@
     confectionery:  { name:'Sugar',  icon:svgIcon('gem','#e06aa0'), spells:[healSpell('Sugar Rush',18), healSpell('Sugar Rush',18), dmgSpell('Sweet Tooth',1.25,8), armorSpell('Candy Shell',1.5,6)] },
     dairy:          { name:'Wheel',  icon:svgIcon('block','#e8c84a'), spells:[healSpell('Curds & Whey',18), healSpell('Curds & Whey',18), armorSpell('Rind Guard',1.5,6), dmgSpell('Aged Sharp',1.25,8)] },
     gastronomy:     { name:'Platter',icon:svgIcon('meal','#d8a02a'), spells:[healSpell('Grand Feast',18), healSpell('Grand Feast',18), dmgSpell('Well Fed',1.3,8), armorSpell('Hearty Guard',1.6,6)] },
+    apothecary:     { name:'Venom',  icon:svgIcon('droplet','#6a8a3a'), spells:[poisonSpell('Envenom',6,6), weakenSpell('Debilitate',0.3,8), buffSpell('Venom Craft','potionPoison',0.45,10), armorSpell('Antidote Skin',1.5,6)] },
     gemcutting:     { name:'Facet',  icon:svgIcon('gem','#3fc9c4'), spells:[dmgSpell('Prism Beam',1.3,8), armorSpell('Crystal Ward',1.6,6), healSpell('Mend',15), healSpell('Mend',15)] },
     enchanting:     { name:'Sigil',  icon:svgIcon('starburst','#a06ad8'), spells:[dmgSpell('Arcane Sigil',1.3,8), armorSpell('Glyphward',1.6,6), healSpell('Mana Mend',15), healSpell('Mana Mend',15)] },
     archaeology:    { name:'Relic',  icon:svgIcon('urn','#9a8560'), spells:[armorSpell('Ancient Ward',1.6,6), weakenSpell('Curse',0.3,8), healSpell('Restore',15), healSpell('Restore',15)] },
@@ -3735,6 +3785,7 @@
     beekeeping: [ poisonSpell('Swarm Sting',5,6), healSpell('Royal Jelly',18), armorSpell('Waxen Ward',1.5,6), weakenSpell('Smoke Cloud',0.3,8) ],
     prospecting: [ hitSpell('Pickaxe Toss','piercing',14), buffSpell('Gold Rush','critChance',0.11,8), armorSpell('Bedrock Guard',1.5,6), siphonSpell('Vein Tap',12) ],
     ranching: [ hitSpell('Stampede','blunt',14), buffSpell('Herd Strength','dmgBlunt',0.3,8), healSpell('Fresh Milk',16), armorSpell('Thick Hide',1.5,6) ],
+    mycology: [ poisonSpell('Spore Burst',5,6), slowSpell('Mycelial Snare',0.35,10), buffSpell('Toxic Bloom','potionPoison',0.4,10), healSpell('Fungal Mend',15) ],
     // -- Crafting --
     carpentry:      [ hitSpell('Splinter Shot','piercing',13), armorSpell('Splinter Shield',1.6,6), buffSpell('Bark Guard','resistPierce',0.3,8), regenSpell('Sap Flow',4,6) ],
     metallurgy:     [ hitSpell('Molten Strike','void',10), buffSpell('Forge Fire','firebomb',0.45,10), weakenSpell('Slag',0.28,8), buffSpell('Heavy Hand','dmgBlunt',0.3,8) ],
@@ -3757,6 +3808,7 @@
     enchanting:     [ hitSpell('Arcane Sigil','void',15), buffSpell('Empowered Rune','critDmg',0.34,8), siphonSpell('Mana Siphon',13), buffSpell('Glyphward','block',0.15,8) ],
     dairy:          [ healSpell('Curds & Whey',18), armorSpell('Rind Guard',1.6,6), buffSpell('Aged Sharp','critDmg',0.3,8), siphonSpell('Whey Drain',12) ],
     gastronomy:     [ healSpell('Grand Feast',18), regenSpell('Second Helping',5,7), buffSpell('Well Fed','dmgBlunt',0.32,8), armorSpell('Hearty Guard',1.6,6) ],
+    apothecary:     [ poisonSpell('Envenom',6,6), weakenSpell('Debilitate',0.3,8), buffSpell('Venom Craft','potionPoison',0.45,10), armorSpell('Antidote Skin',1.5,6) ],
     archaeology:    [ armorSpell('Ancient Ward',1.6,6), weakenSpell('Curse of Ages',0.3,8), hitSpell('Relic Blast','void',10), healSpell('Restore',15) ],
     blacksmithing:  [ hitSpell('Hammer Down','blunt',15), buffSpell('Heavy Blows','dmgBlunt',0.32,8), armorSpell('Tempered Skin',1.5,6), buffSpell('Anvil Might','critChance',0.11,8) ],
     weaponsmithing: [ hitSpell('Keen Edge','slashing',15), buffSpell('Whetstone','dmgSlash',0.32,8), buffSpell('Duelist','critChance',0.11,8), buffSpell('Quick Draw','haste',0.16,8) ],
@@ -3808,10 +3860,10 @@
   // enemies weak to it (water>fire>earth>water; light<->dark). Non-damaging spells ignore it.
   var FAMILIAR_ELEMENT = {
     // Gathering
-    digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth', ranching:'earth',
+    digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth', ranching:'earth', mycology:'dark',
     // Crafting
     carpentry:'earth', metallurgy:'fire', roasting:'fire', cooking:'water', alchemy:'water', bowyer:'earth', fletching:'earth', baking:'fire',
-    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire',
+    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark',
     archaeology:'dark', blacksmithing:'fire', weaponsmithing:'fire', armorsmithing:'earth', shieldsmithing:'earth', runesmithing:'light', arcanism:'light',
     // Farming
     farming:'earth',
@@ -3858,6 +3910,7 @@
     beekeeping:{s:'wing',c:'#e0a92e',ear:'antenna'}, brewing:{s:'bottle',c:'#c88a2a',ear:'round'}, confectionery:{s:'gem',c:'#e06aa0',ear:'round'},
     prospecting:{s:'gem',c:'#8a97a6',ear:'horn'}, gemcutting:{s:'gem',c:'#3fc9c4',ear:'antenna'}, enchanting:{s:'starburst',c:'#a06ad8',ear:'horn'},
     ranching:{s:'flask',c:'#e8dcc0',ear:'horn'}, dairy:{s:'block',c:'#e8c84a',ear:'round'}, gastronomy:{s:'meal',c:'#d8a02a',ear:'round'},
+    mycology:{s:'spice',c:'#8a5aa8',ear:'round'}, apothecary:{s:'droplet',c:'#6a8a3a',ear:'horn'},
     carpentry:{s:'plank',c:'#a07a44',ear:'cat'}, metallurgy:{s:'ingot',c:'#c85a2a',ear:'horn'},
     roasting:{s:'skewer',c:'#d1863a',ear:'cat'}, cooking:{s:'meal',c:'#5a9a4a',ear:'round'},
     alchemy:{s:'potion',c:'#8a5aaa',ear:'antenna'}, bowyer:{s:'bow',c:'#a87a4a',ear:'cat'},
@@ -6365,8 +6418,8 @@
     var offhandRarities = {};
     OFFHAND_STYLE_IDS.forEach(function(id){ offhandRarities[id] = 'normal'; });
     var xpObj = {
-      digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0, ranching:0,
-      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0,
+      digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0, ranching:0, mycology:0,
+      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0,
       stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, arcanism:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
       shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0, wands:0, staves:0, scepters:0,
@@ -7081,13 +7134,14 @@
     firebomb: { label:'Firebomb', shape:'flame',     color:'#d0532a' },
     elixir:   { label:'Elixir',   shape:'starburst', color:'#c94a6a' },
     catalyst: { label:'Catalyst', shape:'wing',      color:'#5fb8c4' },
-    enchant:  { label:'Weapon Enchant', shape:'starburst', color:'#a06ad8' }
+    enchant:  { label:'Weapon Enchant', shape:'starburst', color:'#a06ad8' },
+    coating:  { label:'Weapon Coating', shape:'droplet', color:'#6a8a3a' }
   };
-  var POTION_TYPE_IDS = ['toxin','firebomb','elixir','catalyst','enchant'];
+  var POTION_TYPE_IDS = ['toxin','firebomb','elixir','catalyst','enchant','coating'];
   var POTION_MAX_CHARGES = 10;
   var POTION_POISON_DURATION_MS = 3000;
   function potionLerp(a, b, tier){ tier = Math.max(0, Math.min(TIER_COUNT-1, tier)); return a + (b-a)*tier/(TIER_COUNT-1); }
-  function parsePotionId(id){ var m = /^(toxin|firebomb|elixir|catalyst|enchant)_t(\d+)$/.exec(id||''); return m ? { type:m[1], tier:+m[2] } : null; }
+  function parsePotionId(id){ var m = /^(toxin|firebomb|elixir|catalyst|enchant|coating)_t(\d+)$/.exec(id||''); return m ? { type:m[1], tier:+m[2] } : null; }
   function potionEffect(id){
     var p = parsePotionId(id); if(!p) return null;
     if(p.type==='toxin')    return { type:'toxin',    tier:p.tier, pct: potionLerp(0.01, 0.10, p.tier) };     // % combat score / sec for 3s
@@ -7095,6 +7149,7 @@
     if(p.type==='elixir')   return { type:'elixir',   tier:p.tier, crit: potionLerp(0.05, 1.10, p.tier) };    // + crit-damage multiplier
     if(p.type==='catalyst') return { type:'catalyst', tier:p.tier, fam: potionLerp(0.05, 1.10, p.tier) };     // + familiar spell potency
     if(p.type==='enchant')  return { type:'enchant',  tier:p.tier, dmg: potionLerp(0.05, 0.40, p.tier) };     // + weapon-damage multiplier on every hit
+    if(p.type==='coating')  return { type:'coating',  tier:p.tier, pct: potionLerp(0.015, 0.14, p.tier), durationMs: 6000 }; // longer, stronger poison than Toxin
     return null;
   }
   function activePotionEffect(){ return (state.activePotion && (state.potionCharges||0) > 0) ? potionEffect(state.activePotion) : null; }
@@ -7108,6 +7163,7 @@
     if(e.type==='elixir')   return '+'+Math.round(e.crit*100)+'% crit damage';
     if(e.type==='catalyst') return '+'+Math.round(e.fam*100)+'% familiar spell power';
     if(e.type==='enchant')  return '+'+Math.round(e.dmg*100)+'% weapon damage';
+    if(e.type==='coating')  return 'Poison '+Math.round(e.pct*100)+'% combat score/s for '+Math.round(e.durationMs/1000)+'s';
     return '';
   }
   // Fire the active potion on a player attack: apply its on-hit effect and spend a charge, reloading
@@ -7122,6 +7178,10 @@
     } else if(e.type==='toxin'){
       act.potionPoisonDps = combatLevelEquivalent(state) * e.pct * (1 + getFamBuff('potionPoison')); // % of combat score per second, + familiar poison buff
       act.potionPoisonUntil = Date.now() + POTION_POISON_DURATION_MS;
+    } else if(e.type==='coating'){
+      // Weapon Coating: same poison DoT channel as Toxin, but a longer-lasting venom (its own duration).
+      act.potionPoisonDps = combatLevelEquivalent(state) * e.pct * (1 + getFamBuff('potionPoison'));
+      act.potionPoisonUntil = Date.now() + (e.durationMs || POTION_POISON_DURATION_MS);
     }
     state.potionCharges = (state.potionCharges||0) - 1;
     if(state.potionCharges <= 0){
@@ -9829,7 +9889,7 @@
   function deactivatePotion(){ state.activePotion = null; state.potionCharges = 0; saveGame(); render(); }
   function renderCombatPotionsPanel(){
     var html = '<h3 style="margin-top:16px">'+svgIcon('potion','#8a5aaa')+' Combat Potions</h3>';
-    html += '<div class="section-intro">Ready one potion or Weapon Enchant for battle — it triggers on every attack, spending 1 of its 10 charges, then auto-reloads the next from your bag. Only one active at a time. Brew potions in Crafting &rarr; Alchemy; craft Weapon Enchants in Crafting &rarr; Enchanting.</div>';
+    html += '<div class="section-intro">Ready one potion, Weapon Enchant, or Weapon Coating for battle — it triggers on every attack, spending 1 of its 10 charges, then auto-reloads the next from your bag. Only one active at a time. Brew potions in Crafting &rarr; Alchemy; Weapon Enchants in Crafting &rarr; Enchanting; Weapon Coatings in Crafting &rarr; Apothecary.</div>';
     if(state.activePotion){
       var an = (ALL_SELLABLE[state.activePotion]||{}).name || state.activePotion;
       html += '<div class="physique-bonus">Active: <b>'+escapeHtml(an)+'</b> &mdash; '+potionEffectDesc(state.activePotion)
@@ -9851,7 +9911,7 @@
       });
       html += '</div>';
     });
-    if(!any) html += '<div class="empty-note">No potions in your bag. Brew Toxins, Firebombs, Elixirs, or Catalysts in Crafting &rarr; Alchemy (each needs a Glass Bottle), or craft Weapon Enchants in Crafting &rarr; Enchanting.</div>';
+    if(!any) html += '<div class="empty-note">No potions in your bag. Brew Toxins, Firebombs, Elixirs, or Catalysts in Crafting &rarr; Alchemy (each needs a Glass Bottle), Weapon Enchants in Crafting &rarr; Enchanting, or Weapon Coatings in Crafting &rarr; Apothecary.</div>';
     return html;
   }
   // Accuracy training card: shows the current Accuracy rating and the fixed set of combat-reflex
@@ -11468,6 +11528,7 @@
     enchanting:{roof:'cone', accent:'urn'},
     dairy:{roof:'hip', accent:'block'},
     gastronomy:{roof:'hip', chimney:true, accent:'pot'},
+    apothecary:{roof:'dome', accent:'flask'},
     archaeology:{roof:'cone', accent:'urn', wallH:0.7},
     blacksmithing:{roof:'hip', chimney:true, accent:'anvil'},
     weaponsmithing:{roof:'peak', chimney:true, accent:'blade'},
@@ -14732,6 +14793,7 @@
     beekeeping: 'Tend hives for Honey, from Wildflower up to Royal Jelly and Ambrosia -- the sweetener for Brewing and Confectionery.',
     prospecting: 'Pan and dig for Rough Gems, from Quartz up to Star Ruby -- cut them in Gemcutting.',
     ranching: 'Raise livestock for Milk, from Goat up to Dragon -- churned into Cheese in Dairy.',
+    mycology: 'Forage mushrooms, from Button up to Fairy Ring -- the toxic caps feed Apothecary.',
     carpentry: 'Cut Logs into Planks.',
     metallurgy: 'Smelt Ore into Bars and Alloys, plus a side-recipe for Glass Bottles.',
     roasting: 'Cook raw Fish and Meat into a quick, portable snack.',
@@ -14753,6 +14815,7 @@
     enchanting: 'Bind Cut Gems and metal into Weapon Enchants -- ready one in Battle to add bonus weapon damage to every hit.',
     dairy: 'Churn Ranching\'s Milk into Cheese -- a richer food input and the base for Gastronomy.',
     gastronomy: 'Plate a Cooking Meal with Cheese and a Botany spice into a Feast -- the best food, and serving one empowers your hits for a few minutes.',
+    apothecary: 'Distil toxic Mushrooms and Herbs into Weapon Coatings -- ready one in Battle to poison enemies over time on every hit.',
     archaeology: 'Excavate Muddy Artifacts into Relics.',
     blacksmithing: 'Forge Tools for every Gathering and Crafting skill.',
     weaponsmithing: 'Forge melee weapons -- swords, axes, and hammers.',

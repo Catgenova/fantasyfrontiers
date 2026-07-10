@@ -622,6 +622,29 @@
     ok(FF.GATHER_PHYSIQUE.ranching && FF.CRAFT_PHYSIQUE.dairy && FF.CRAFT_PHYSIQUE.gastronomy, 'physique tables include the new skills');
   });
 
+  // ---- Mycology / Apothecary vertical slice (poison Weapon Coatings) --------------------------
+  suite('skills: mycology / apothecary', function(){
+    ok(FF.GATHERING_SKILLS.mycology, 'mycology is a gathering skill');
+    ok(FF.CRAFTING_SKILLS.apothecary, 'apothecary is a crafting skill');
+    eq(FF.GATHERING_SKILLS.mycology.items.length, FF.TIER_COUNT, 'mycology has 21 mushroom tiers');
+    eq(FF.CRAFTING_SKILLS.apothecary.recipes.length, FF.TIER_COUNT, 'apothecary has 21 coating tiers');
+    eq(FF.ALL_GATHER_ITEMS['mycology_t0'].name, 'Button Mushroom', 'mycology forages mushrooms');
+    // Apothecary distils toxic mushroom + herb (and, unlike Alchemy, needs no glass bottle).
+    var coat5 = FF.ALL_CRAFT_RECIPES['coating_t5'];
+    ok(coat5.inputs['mycology_t5'] && coat5.inputs['herbalism_t5'], 'coating uses toxic mushroom + herb');
+    ok(!coat5.inputs['metallurgy_glass'], 'coatings need no glass bottle (distinct from Alchemy)');
+    // Coating is a 6th combat-consumable line that poisons over time.
+    ok(FF.POTION_TYPE_IDS.indexOf('coating') !== -1, 'coating is a combat consumable line');
+    eq(coat5.potionType, 'coating', 'coating recipe carries potionType');
+    var c0 = FF.potionEffect('coating_t0'), c20 = FF.potionEffect('coating_t20');
+    ok(c0 && c0.type==='coating' && c20 && c20.type==='coating', 'coating potionEffect resolves');
+    ok(c20.pct > c0.pct, 'coating poison scales with tier');
+    // Distinct from Alchemy Toxin: a longer poison window.
+    ok(c20.durationMs > 3000, 'coating poisons longer than a Toxin (>3s burst)');
+    ok(/Poison .* combat score\/s/.test(FF.potionEffectDesc('coating_t10')), 'coating describes its poison DoT');
+    ok(FF.GATHER_PHYSIQUE.mycology && FF.CRAFT_PHYSIQUE.apothecary, 'physique tables include the new skills');
+  });
+
   // ---- Inventory grid: rarity parsing for cell accents / detail tag ----------------------
   suite('inventory rarity', function(){
     eq(FF.itemRarityId('bodyarmor_chain_chest_t20_normal'), 'normal', 'normal suffix');
