@@ -5208,7 +5208,7 @@
   // Fortitude (a Physique sub-skill) is trained purely by taking damage, and is the
   // sole driver of max HP -- combat proficiency no longer factors into survivability
   // directly, only into which fights you're allowed to enter.
-  function maxHp(state){ return 50 + getLevel(state.physique.fortitude||0)*5; }
+  function maxHp(state){ return 50 + getLevel(state.physique.fortitude||0)*5 + Math.round((equippedEnchantTotals(state).maxHp)||0); }
   function fmt(n){ return Math.floor(n).toLocaleString(); }
   var BASE_CRAFT_SUCCESS = 0.7;
   function sleightOfHandCraftSpeedBonus(state){ return Math.min(0.15, getLevel(state.physique.sleightOfHand||0)*0.003); }
@@ -8023,6 +8023,46 @@
     return need>0 ? null : { plan:plan, maxTier:maxTier };
   }
 
+  // ---- Enchant bonuses feed combat (Stage 1c) ----
+  // Enhance scales base + enchant stats up to +500% across +1..+15 (enhance stays 0 until Stage 2).
+  function enhanceStatMult(enhance){ return 1 + Math.max(0, Math.min(ENHANCE_MAX, enhance||0)) / ENHANCE_MAX * 5; }
+  // Sum every EQUIPPED unique item's enchant modifiers into { statKey: total }. Empty when nothing
+  // enchanted is equipped, so this is purely additive on top of the existing combat math.
+  function equippedEnchantTotals(st){
+    var tot = {};
+    function addUid(uid){ var u = uid && st.uniqueItems && st.uniqueItems[uid]; if(!u || !u.enchants) return;
+      var mult = enhanceStatMult(u.enhance);
+      u.enchants.forEach(function(e){ var m = enchantModById(u.kind, e.mod); if(m) tot[m.stat] = (tot[m.stat]||0) + e.roll*mult; });
+    }
+    addUid(st.equippedMainhandUid); addUid(st.equippedOffhandUid); addUid(st.equippedAmuletUid);
+    (st.equippedRingUids||[]).forEach(addUid);
+    if(st.bodyArmor) BODY_ARMOR_SLOTS.forEach(function(sl){ var s=st.bodyArmor[sl]; if(s && s.uid) addUid(s.uid); });
+    return tot;
+  }
+  function uniqueIsEquipped(uid){ return state.equippedMainhandUid===uid || state.equippedOffhandUid===uid || state.equippedAmuletUid===uid || ((state.equippedRingUids||[]).indexOf(uid)!==-1) || (state.bodyArmor && BODY_ARMOR_SLOTS.some(function(sl){ return state.bodyArmor[sl] && state.bodyArmor[sl].uid===uid; })); }
+  // Equip / unequip a unique WEAPON (armour + jewelry follow). Reuses the normal mainhand fields for
+  // the base stats and records the uid so its enchants apply through equippedEnchantTotals.
+  function unequipMainhandAny(){
+    if(state.equippedMainhandUid){ state.equippedMainhandUid = null; } // the unique stays in the table
+    else { unequipCurrentMainhandToInventory(); }
+    state.equippedMainhand = null; state.equippedMainhandTier = 0; state.equippedMainhandRarity = 'normal';
+  }
+  function equipUnique(uid){
+    var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
+    if(u.kind!=='weapon'){ addLog('Equipping enchanted armour/jewelry is coming soon.','danger'); return; }
+    var m = /^stweapon_(.+)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return; }
+    var typeId = m[1];
+    if(!isWandWeapon(typeId) && !isStaff(typeId) && !isScepter(typeId) && !meetsProficiencyRequirement(state.xp[typeId], u.tier)){
+      addLog('Your proficiency isn’t high enough to equip '+uniqueDisplayName(u)+' yet.','danger'); return;
+    }
+    unequipMainhandAny();
+    state.equippedMainhand = typeId; state.equippedMainhandTier = u.tier+1; state.equippedMainhandRarity = u.rarity; state.equippedMainhandUid = uid;
+    var w = STACKABLE_WEAPON_TYPE_MAP[typeId];
+    if(w && w.hand==='2h'){ unequipCurrentOffhandToInventory(); state.equippedOffhand=null; state.equippedOffhandTier=0; state.equippedOffhandRarity='normal'; }
+    addLog('You equipped '+uniqueDisplayName(u)+'.','important'); saveGame(); render();
+  }
+  function unequipUnique(uid){ if(state.equippedMainhandUid===uid){ unequipMainhandAny(); addLog('Unequipped.','chronicle'); saveGame(); render(); } }
+
   // ---- Improvement UI state + actions ----
   var improveSel = null;        // selected item: a base equipment id OR a unique uid
   var improvePending = null;    // { uid, roll } awaiting placement when slots are full
@@ -8077,6 +8117,7 @@
       var name = isU2 ? uniqueDisplayName(u) : (ALL_SELLABLE[improveSel]||{name:'Equipment'}).name;
       html += '<div class="guild-section-title" style="margin-top:14px;">'+escapeHtml(name)+'</div>';
       html += '<div class="item-card" style="max-width:540px;"><div class="item-meta" style="margin-bottom:6px;">'+escapeHtml(getRarity(rarity).label)+' · Tier '+(tier+1)+' · '+count+'/'+slots+' enchant slots'+(enhance>0?' · <b>+'+enhance+'</b>':'')+'</div>';
+      if(isU2 && u.kind==='weapon'){ var _eq = uniqueIsEquipped(u.uid); html += '<div style="margin-bottom:8px;"><button class="mini-btn" data-action="'+(_eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(_eq?'Unequip':'Equip weapon')+'</button>'+(_eq?' <span class="item-meta" style="color:var(--gold);">equipped</span>':'')+'</div>'; }
       if(isU2 && u.enchants.length){ u.enchants.forEach(function(e,i){ html += '<div class="inputs-line"><span style="color:var(--gold);">'+escapeHtml(enchantLabel(u.kind,e))+'</span>'+((improvePending&&improvePending.uid===u.uid)?' <button class="mini-btn" data-action="improvePlace" data-idx="'+i+'">Replace</button>':'')+'</div>'; }); }
       else if(isU2){ html += '<div class="empty-note" style="margin-bottom:6px;">No enchants yet.</div>'; }
       var cost = count + 1;
@@ -8465,6 +8506,7 @@
     var mainhandTypeId = isOffhand ? 'claw' : state.equippedMainhand;
     var relicBonus = getEquippedRelicBonus(state);
     var offhandItem = getEquippedOffhandItem(state);
+    var enchTot = equippedEnchantTotals(state); // equipped-item enchant bonuses (all zero if none equipped)
 
     var weaponStyle = getWeaponStyle(mainhandTypeId);
     var isWandAttack = !!weaponStyle.wand; // wand: elemental damage, shared 'wands' proficiency, no physical-type bonuses
@@ -8494,13 +8536,13 @@
     var ringBonus = isWandAttack ? 1 : getRingDamageMultiplier(state, weaponStyle.attackTypes || {blunt:1});
     var leatherBowBonus = weaponStyle.hand==='bow' ? (1 + getLeatherArmorBonuses(state).bowDmgBonus) : 1;
     var chainMeleeBonus = (weaponStyle.hand!=='bow' && !isWandAttack) ? (1 + getChainArmorMeleeBonus(state)) : 1;
-    var isCrit = Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawCritChanceBonus() + knightMissCritChance() + spellbladeCritChance() + newClassCritChance()); // + Spellblade Arcane Edge, + new-class crit-chance passives
+    var isCrit = Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawCritChanceBonus() + knightMissCritChance() + spellbladeCritChance() + newClassCritChance() + (enchTot.critChance||0)/100); // + Spellblade Arcane Edge, new-class passives, and equipped-item Critical Chance enchants
     // Wands are magical, so the melee/bow strength physiques don't scale them -- only the generic
     // low-HP tenacity bonus. Melee/bow keep their class physique multipliers.
     var physDmgMult = isWandAttack ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
     physDmgMult *= tenacityLowHpMult(state);
     // Elixir potions + familiar crit-damage buffs stack on top of the (capped) base+exploitation crit.
-    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + reaperCritDmgBonus() + knightMissCritDmg() + thunderLowHpCritDmg() + treasureHunterCritDmgBonus() + newClassCritDmg()) : 1;
+    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + reaperCritDmgBonus() + knightMissCritDmg() + thunderLowHpCritDmg() + treasureHunterCritDmgBonus() + newClassCritDmg() + (enchTot.critDamage||0)/100) : 1;
 
     // Accuracy vs Dodge: roll to land the hit. A miss deals no damage and fires no on-hit effects
     // (potions, proficiency XP), but you still trained your reflexes by swinging so accuracy can grow.
@@ -8524,7 +8566,8 @@
 
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
     var wandAttuneMult = isWandAttack ? elementDmgMult(state, weaponStyle.element) : 1; // Elemental Attunement boosts a wand's element damage
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + enchantDamageBonus() * spellbladeEnchantMult()) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1));
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + enchantDamageBonus() * spellbladeEnchantMult()) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100)); // + equipped-item Weapon/All Damage enchants
+    dmgToMonster += Math.round(enchTot.flatDamage||0); // + equipped-item Flat Damage enchants
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     // Executioner Lv 80 (Decapitate): a hit that leaves the enemy below 15% of its max HP finishes it outright.
@@ -18029,6 +18072,10 @@
       improvePlace(parseInt(btn.getAttribute('data-idx'),10));
     } else if(action==='improveToggleWarn'){
       improveToggleWarn();
+    } else if(action==='improveEquip'){
+      equipUnique(btn.getAttribute('data-uid'));
+    } else if(action==='improveUnequip'){
+      unequipUnique(btn.getAttribute('data-uid'));
     } else if(action==='tierStep'){
       var _tt = TIER_STEP_TARGETS[btn.getAttribute('data-tier-target')];
       var _vals = (btn.getAttribute('data-tier-values')||'').split(',').map(function(v){ return parseInt(v,10); }).filter(function(v){ return !isNaN(v); });
@@ -18761,6 +18808,7 @@
       earnGold:earnGold, walletSync:walletSync, itemSync:itemSync,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
       parseImprovable:parseImprovable, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique,
+      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, uniqueIsEquipped:uniqueIsEquipped,
       startGather:startGather, startCraft:startCraft, startPray:startPray,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,

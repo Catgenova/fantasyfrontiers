@@ -2533,6 +2533,24 @@
     s.inventory = savedInv;
   });
 
+  // ---- Improvement system: combat aggregate (Stage 1c) ----------------------------------
+  suite('improvement: enchant combat aggregate', function(){
+    ok(typeof FF.equippedEnchantTotals === 'function', 'aggregate exported');
+    // enhance scaling: +0 = x1, +15 = x6 (base + up to +500%)
+    near(FF.enhanceStatMult(0), 1, 'enhance +0 = x1');
+    near(FF.enhanceStatMult(15), 6, 'enhance +15 = x6 (+500%)');
+    // an unequipped/empty state contributes nothing
+    var t0 = FF.equippedEnchantTotals({ uniqueItems:{} });
+    ok(t0 && Object.keys(t0).length===0, 'nothing equipped -> zero totals (additive-safe)');
+    // a constructed state with an equipped weapon carrying two crit-damage enchants sums them
+    var st = { uniqueItems:{ u1:{ uid:'u1', kind:'weapon', enhance:0, enchants:[{mod:'critDamage',roll:10},{mod:'critDamage',roll:15}] } }, equippedMainhandUid:'u1' };
+    var t1 = FF.equippedEnchantTotals(st);
+    eq(t1.critDamage, 25, 'two Critical Damage enchants stack to +25');
+    // enhance doubles-plus: at +15 the same enchants scale x6
+    st.uniqueItems.u1.enhance = 15;
+    eq(FF.equippedEnchantTotals(st).critDamage, 150, 'enhanced +15 scales enchant totals x6');
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }
