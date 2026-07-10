@@ -1,0 +1,45 @@
+name: Deploy (obfuscated) to GitHub Pages
+
+# Builds an obfuscated copy of the game into dist/, smoke-tests it, and deploys to Pages. The
+# repo's index.html stays readable; players only ever get the obfuscated build. A failed smoke
+# test skips the deploy, so a broken obfuscation never ships.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run smoke          # gates the deploy: a broken obfuscation fails here
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
