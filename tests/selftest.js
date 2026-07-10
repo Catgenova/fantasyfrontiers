@@ -812,13 +812,21 @@
 
   // ---- Final proposal slice: Trapping/Tapping/Spelunking (gather) + Chandlery/Woodcarving/
   //      Glassblowing/Cooperage (craft) -- completes the 30-skill web ------------------------------
-  suite('skills: trapping/tapping/spelunking + chandlery/woodcarving/glassblowing/cooperage', function(){
-    // Three new gathering domains, each a full 21-tier ladder.
-    ['trapping','tapping','spelunking'].forEach(function(g){
+  suite('skills: tapping/spelunking + chandlery/woodcarving/glassblowing/cooperage', function(){
+    // Two new gathering domains, each a full 21-tier ladder (Trapping was removed; its Fat/Tallow is now a Butchering byproduct).
+    ['tapping','spelunking'].forEach(function(g){
       ok(FF.GATHERING_SKILLS[g], g + ' is a gathering skill');
       eq(FF.GATHERING_SKILLS[g].items.length, FF.TIER_COUNT, g + ' has 21 tiers');
       ok(FF.GATHER_PHYSIQUE[g], 'physique table includes ' + g);
     });
+    // Trapping is fully removed as a skill; its output is rendered from Butchering instead.
+    ok(!FF.GATHERING_SKILLS.trapping, 'Trapping is no longer a gathering skill');
+    ok(!FF.GATHER_PHYSIQUE.trapping && !FF.FAMILIAR_DATA.trapping, 'Trapping physique + familiar removed');
+    ok(FF._state.xp.trapping == null || FF.GATHERING_SKILLS.trapping == null, 'Trapping is not a live skill');
+    // The butcher recipe now yields Fat/Tallow (fat_t<n>) alongside Meat and Hide.
+    var bp = FF.ALL_CRAFT_RECIPES['butcher_process_t5'];
+    ok(bp && bp.fatId === 'fat_t5' && bp.fatPhysique, 'butchering a t5 carcass can yield fat_t5');
+    ok(FF.ALL_SELLABLE['fat_t5'] && /Fat|Tallow|Grease|Lard|Wax/.test(FF.ALL_SELLABLE['fat_t5'].name), 'fat item is registered + sellable');
     // Four new crafting skills, each a full 21-tier ladder.
     ['chandlery','woodcarving','glassblowing','cooperage'].forEach(function(c){
       ok(FF.CRAFTING_SKILLS[c], c + ' is a crafting skill');
@@ -826,7 +834,7 @@
       ok(FF.CRAFT_PHYSIQUE[c], 'physique table includes ' + c);
     });
     // Each new gather has its named consumer (the interlock holds).
-    eq(FF.ALL_CRAFT_RECIPES['chandlery_t5'].inputs['trapping_t5'], 1, 'Chandlery renders Trapping Tallow into Candles 1:1');
+    eq(FF.ALL_CRAFT_RECIPES['chandlery_t5'].inputs['fat_t5'], 1, 'Chandlery renders Butchering Fat/Tallow into Candles 1:1');
     var carv = FF.ALL_CRAFT_RECIPES['woodcarving_t5'].inputs;
     ok(carv['carpentry_t5'] === 1 && carv['tapping_t5'] === 1, 'Woodcarving binds a Carpentry Plank + Tapping Resin');
     var glass = FF.ALL_CRAFT_RECIPES['glassblowing_t5'].inputs;
@@ -834,7 +842,7 @@
     var barrel = FF.ALL_CRAFT_RECIPES['cooperage_t5'].inputs;
     ok(barrel['carpentry_t5'] === 2 && barrel['metallurgy_t5'] === 1, 'Cooperage binds Planks with a Metallurgy band');
     // All seven are seeded in the xp table (save-merge safety -- newGame() must know them).
-    ['trapping','tapping','spelunking','chandlery','woodcarving','glassblowing','cooperage'].forEach(function(s){
+    ['tapping','spelunking','chandlery','woodcarving','glassblowing','cooperage'].forEach(function(s){
       ok(FF._state.xp[s] != null, s + ' is seeded in the xp table');
     });
   });

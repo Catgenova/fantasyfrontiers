@@ -1631,13 +1631,13 @@
   var DIVING_ICONS = DIVING_COLORS.map(function(c){ return svgIcon('droplet', c); });
 
   // ---- Final proposal slice: 3 gathering domains + 4 crafts that complete the 30-skill web ---------
-  // Trapping (game -> Tallow) feeds Chandlery (Candles); Tapping (tree -> Resin) feeds Woodcarving
-  // (carved goods); Spelunking (cave -> Minerals) feeds Glassblowing (Glass). Cooperage is a standalone
-  // refinement (Planks + Ingot bands -> Barrels). All additive sellable verticals -- no existing recipe
-  // is rebalanced -- each new gather has a named consumer, mirroring the earlier vertical slices.
-  var TRAPPING_NAMES = ['Rat Fat','Sparrow Fat','Rabbit Tallow','Squirrel Tallow','Weasel Tallow','Quail Fat','Hare Tallow','Fox Tallow','Marten Tallow','Pheasant Fat','Ermine Tallow','Boar Lard','Elk Tallow','Bison Tallow','Bear Grease','Mammoth Tallow','Yeti Fat','Drake Tallow','Phoenix Wax','Griffon Tallow','Behemoth Tallow'];
-  var TRAPPING_COLORS = _rampColors([0xe8,0xe0,0xc8], [0x6a,0x4a,0x2a]);   // pale fat -> dark grease
-  var TRAPPING_ICONS = TRAPPING_COLORS.map(function(c){ return svgIcon('paw', c); });
+  // Fat/Tallow/Grease are byproducts of Butchering corpses (rendered from the carcass alongside Meat &
+  // Hide) and feed Chandlery (Candles). Tapping (tree -> Resin) feeds Woodcarving (carved goods);
+  // Spelunking (cave -> Minerals) feeds Glassblowing (Glass). Cooperage is a standalone refinement
+  // (Planks + Ingot bands -> Barrels).
+  var FAT_NAMES = ['Rat Fat','Sparrow Fat','Rabbit Tallow','Squirrel Tallow','Weasel Tallow','Quail Fat','Hare Tallow','Fox Tallow','Marten Tallow','Pheasant Fat','Ermine Tallow','Boar Lard','Elk Tallow','Bison Tallow','Bear Grease','Mammoth Tallow','Yeti Fat','Drake Tallow','Phoenix Wax','Griffon Tallow','Behemoth Tallow'];
+  var FAT_COLORS = _rampColors([0xe8,0xe0,0xc8], [0x6a,0x4a,0x2a]);   // pale fat -> dark grease
+  var FAT_ICONS = FAT_COLORS.map(function(c){ return svgIcon('droplet', c); });
   var TAPPING_NAMES = ['Birch Sap','Pine Resin','Maple Syrup','Fir Resin','Cedar Resin','Spruce Gum','Amber Bead','Larch Balsam','Copal Resin','Dammar Gum','Mastic Resin','Frankincense','Myrrh Resin','Dragon Sap','Sunbark Resin','Moonsap','Ambergris','Elderwood Resin','Heartwood Amber','Worldtree Sap','Eternal Amber'];
   var TAPPING_COLORS = _rampColors([0xe0,0xb0,0x50], [0x7a,0x3a,0x14]);   // golden sap -> deep amber
   var TAPPING_ICONS = TAPPING_COLORS.map(function(c){ return svgIcon('droplet', c); });
@@ -1850,8 +1850,10 @@
             inputs: tierInput('corpse',1)(i),
             meatId:'meat_t'+i,
             hideId:'butchering_t'+i,
+            fatId:'fat_t'+i,
             meatPhysique:'handStrength',
-            hidePhysique:'fineMotor'
+            hidePhysique:'fineMotor',
+            fatPhysique:'handStrength'
           });
         }
         return list;
@@ -1965,14 +1967,6 @@
             sell: tierSell(6,i),
             icon: DIVING_ICONS[i]
           });
-        }
-        return list;
-      })() },
-    trapping: { label:'Trapping', icon:svgIcon('paw','#8a6a42'),
-      items: (function(){
-        var list = [];
-        for(var i=0;i<TIER_COUNT;i++){
-          list.push({ id:'trapping_t'+i, name: TRAPPING_NAMES[i], levelReq: TIER_LEVELS[i], xp: tierXp(11,i), time: tierTime(5,0.3,i), sell: tierSell(4,i), icon: TRAPPING_ICONS[i] });
         }
         return list;
       })() },
@@ -2595,11 +2589,11 @@
       // Recipes are built after METAL_TIER_NAMES exists (see below), like Fletching's arrows.
       recipes: [] },
     chandlery: { label:'Chandlery', icon:svgIcon('candle','#e8c84a'),
-      // Render Trapping's Tallow into Candles (1:1) -- light/ambiance goods.
+      // Render Butchering's Fat/Tallow into Candles (1:1) -- light/ambiance goods.
       recipes: (function(){
         var list = [];
         for(var i=0;i<TIER_COUNT;i++){
-          list.push({ id:'chandlery_t'+i, name: CHANDLERY_NAMES[i], levelReq: TIER_LEVELS[i], xp: tierXp(11,i), time: tierTime(7,0.3,i), sell: tierSell(5,i), icon: CHANDLERY_ICONS[i], inputs: tierInput('trapping',1)(i) });
+          list.push({ id:'chandlery_t'+i, name: CHANDLERY_NAMES[i], levelReq: TIER_LEVELS[i], xp: tierXp(11,i), time: tierTime(7,0.3,i), sell: tierSell(5,i), icon: CHANDLERY_ICONS[i], inputs: tierInput('fat',1)(i) });
         }
         return list;
       })() },
@@ -2808,7 +2802,7 @@
   })();
   var GATHER_TOOL_NAMES = {
     digging:'Shovel', forestry:'Hatchet', mining:'Pickaxe', fishing:'Fishing Rod',
-    herbalism:'Sickle', botany:'Shears', foraging:'Basket', butchering:'Cleaver', beekeeping:'Bee Smoker', prospecting:'Pan', ranching:'Milking Pail', mycology:'Mushroom Knife', salvaging:'Magnet', essence:'Ley Rod', diving:'Diving Knife', trapping:'Snare Kit', tapping:'Tapping Spile', spelunking:'Climbing Pick'
+    herbalism:'Sickle', botany:'Shears', foraging:'Basket', butchering:'Cleaver', beekeeping:'Bee Smoker', prospecting:'Pan', ranching:'Milking Pail', mycology:'Mushroom Knife', salvaging:'Magnet', essence:'Ley Rod', diving:'Diving Knife', tapping:'Tapping Spile', spelunking:'Climbing Pick'
   };
   var GATHER_TOOL_SPEED = [];
   for(var _gi=0; _gi<TIER_COUNT; _gi++){ GATHER_TOOL_SPEED.push(tierCappedBonus(0.02, 0.013, 0.30, _gi)); }
@@ -3017,6 +3011,7 @@
   var CORPSE_ITEMS = [];
   var BROKEN_RELIC_ITEMS = [];
   var MEAT_ITEMS = [];
+  var FAT_ITEMS = [];   // Fat/Tallow/Grease -- a Butchering byproduct (see the butcher recipe), input to Chandlery
   var MUDDY_ARTIFACT_ITEMS = [];
   var COAL_ITEM = { id:'coal', name:'Coal', icon:svgIcon('coal','#2a2622'), sell:5 };
   var BROKEN_ARTIFACT_COLORS = ['#9a9088','#8a8078','#7a7068','#6a6058','#5a5048','#4a4038','#7a746a','#6a645a','#5a544a','#4a443c','#8a8478','#7a7468','#6a6458','#5a5448','#4a443a','#3a342c','#8a7c6a','#7a6c5a','#6a5c4a','#5a4c3a','#4a3c2a'];
@@ -3025,9 +3020,11 @@
     CORPSE_ITEMS.push({ id:'corpse_t'+_bi, name:WILDLIFE_NAMES[_bi]+' Corpse', icon:svgIcon('meat',CORPSE_COLORS[_bi]), sell:tierSell(2,_bi) });
     BROKEN_RELIC_ITEMS.push({ id:'brokenrelic_t'+_bi, name:'Broken '+DIGGING_NAMES[_bi]+' Relic', icon:svgIcon('urn',BROKEN_ARTIFACT_COLORS[_bi]), sell:tierSell(10,_bi) });
     MEAT_ITEMS.push({ id:'meat_t'+_bi, name:WILDLIFE_NAMES[_bi]+' Meat', icon:svgIcon('meat',MEAT_COLORS[_bi]), sell:tierSell(4,_bi), heal:tierXp(6,_bi) });
+    FAT_ITEMS.push({ id:'fat_t'+_bi, name:FAT_NAMES[_bi], icon:FAT_ICONS[_bi], sell:tierSell(4,_bi) });
     MUDDY_ARTIFACT_ITEMS.push({ id:'muddyartifact_t'+_bi, name:DIGGING_NAMES[_bi]+' Artifact', icon:svgIcon('urn',MUDDY_ARTIFACT_COLORS[_bi]), sell:tierSell(12,_bi) });
   }
   var CORPSE_ITEM_MAP = {}; CORPSE_ITEMS.forEach(function(x){ CORPSE_ITEM_MAP[x.id]=x; });
+  var FAT_ITEM_MAP = {}; FAT_ITEMS.forEach(function(x){ FAT_ITEM_MAP[x.id]=x; });
   var BROKEN_RELIC_MAP = {}; BROKEN_RELIC_ITEMS.forEach(function(x){ BROKEN_RELIC_MAP[x.id]=x; });
   var ELEMENTAL_DROP_SKILLS = ['digging','mining','herbalism','botany','foraging'];
 
@@ -3655,7 +3652,6 @@
     salvaging:  [['armStrength',1],['fineMotor',1],['criticalThinking',1],['curiosity',1]],
     essence:    [['fineMotor',1],['criticalThinking',1],['mentality',1],['zen',1],['curiosity',1]],
     diving:     [['stamina',2],['endurance',1],['bodyControl',1],['bodyStrength',1],['zen',1]],
-    trapping:   [['fineMotor',1],['handStrength',1],['bodyControl',1],['zen',1],['curiosity',1]],
     tapping:    [['armStrength',1],['handStrength',1],['endurance',1],['zen',1],['curiosity',1]],
     spelunking: [['bodyStrength',1],['bodyControl',1],['endurance',1],['stamina',1],['curiosity',1]]
   };
@@ -3758,6 +3754,7 @@
   CORPSE_ITEMS.forEach(function(it){ ALL_DROP_ITEMS[it.id] = it; });
   BROKEN_RELIC_ITEMS.forEach(function(it){ ALL_DROP_ITEMS[it.id] = it; });
   MEAT_ITEMS.forEach(function(it){ ALL_DROP_ITEMS[it.id] = it; });
+  FAT_ITEMS.forEach(function(it){ ALL_DROP_ITEMS[it.id] = it; });
   ALL_DROP_ITEMS[COAL_ITEM.id] = COAL_ITEM;
   MUDDY_ARTIFACT_ITEMS.forEach(function(it){ ALL_DROP_ITEMS[it.id] = it; });
   ALL_DROP_ITEMS.shaft = { id:'shaft', name:'Shaft', icon:svgIcon('dowel','#a8895c'), sell:1 };
@@ -4506,7 +4503,6 @@
     salvaging: { name:'Rivet',  icon:svgIcon('gear','#9a8a6a'), spells:[hitSpell('Scrap Toss','piercing',13), buffSpell('Salvage Rights','firebomb',0.4,10), armorSpell('Junk Plating',1.6,6), regenSpell('Patch Job',4,6)] },
     essence:   { name:'Wisp',   icon:svgIcon('starburst','#7a8ac8'), spells:[hitSpell('Aether Bolt','void',14), slowSpell('Ley Bind',0.4,10), buffSpell('Ley Surge','critDmg',0.32,8), healSpell('Mana Well',15)] },
     diving:    { name:'Nautilus', icon:svgIcon('droplet','#4a7ac8'), spells:[hitSpell('Pressure Crush','blunt',14), buffSpell('Deep Breath','resistBlunt',0.3,8), healSpell('Pearl Restore',16), siphonSpell('Undertow',12)] },
-    trapping:  { name:'Snare',  icon:svgIcon('paw','#8a6a42'), spells:[hitSpell('Snap Trap','piercing',14), slowSpell('Snare',0.4,10), poisonSpell('Bleed',5,6), buffSpell("Trapper's Eye",'critChance',0.11,8)] },
     tapping:   { name:'Sap',    icon:svgIcon('droplet','#c89a3a'), spells:[slowSpell('Sap Trap',0.4,10), regenSpell('Sap Flow',4,6), buffSpell('Sticky Resin','block',0.15,8), healSpell('Amber Salve',16)] },
     spelunking:{ name:'Delver', icon:svgIcon('gem','#7a8a9a'), spells:[hitSpell('Rockfall','blunt',15), buffSpell('Cave Sense','dodge',0.13,8), weakenSpell('Darkness',0.3,8), armorSpell('Stone Skin',1.6,6)] },
     // -- Crafting --
@@ -4623,7 +4619,6 @@
     salvaging: [ hitSpell('Scrap Toss','piercing',13), buffSpell('Salvage Rights','firebomb',0.4,10), armorSpell('Junk Plating',1.6,6), regenSpell('Patch Job',4,6) ],
     essence: [ hitSpell('Aether Bolt','void',14), slowSpell('Ley Bind',0.4,10), buffSpell('Ley Surge','critDmg',0.32,8), healSpell('Mana Well',15) ],
     diving: [ hitSpell('Pressure Crush','blunt',14), buffSpell('Deep Breath','resistBlunt',0.3,8), healSpell('Pearl Restore',16), siphonSpell('Undertow',12) ],
-    trapping: [ hitSpell('Snap Trap','piercing',14), slowSpell('Snare',0.4,10), poisonSpell('Bleed',5,6), buffSpell("Trapper's Eye",'critChance',0.11,8) ],
     tapping: [ slowSpell('Sap Trap',0.4,10), regenSpell('Sap Flow',4,6), buffSpell('Sticky Resin','block',0.15,8), healSpell('Amber Salve',16) ],
     spelunking: [ hitSpell('Rockfall','blunt',15), buffSpell('Cave Sense','dodge',0.13,8), weakenSpell('Darkness',0.3,8), armorSpell('Stone Skin',1.6,6) ],
     // -- Crafting --
@@ -4724,7 +4719,7 @@
   // enemies weak to it (water>fire>earth>water; light<->dark). Non-damaging spells ignore it.
   var FAMILIAR_ELEMENT = {
     // Gathering
-    digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth', ranching:'earth', mycology:'dark', salvaging:'earth', essence:'light', diving:'water', trapping:'earth', tapping:'earth', spelunking:'dark',
+    digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth', ranching:'earth', mycology:'dark', salvaging:'earth', essence:'light', diving:'water', tapping:'earth', spelunking:'dark',
     // Crafting
     carpentry:'earth', metallurgy:'fire', roasting:'fire', cooking:'water', alchemy:'water', bowyer:'earth', fletching:'earth', baking:'fire',
     tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark', tanning:'earth', weaving:'light', papermaking:'earth', bookbinding:'light', tinkering:'earth', pyrotechnics:'fire', inscription:'light', pottery:'fire', goldsmithing:'light', chandlery:'fire', woodcarving:'earth', glassblowing:'fire', cooperage:'earth', fertilizer:'water',
@@ -4780,7 +4775,7 @@
     salvaging:{s:'gear',c:'#9a8a6a',ear:'horn'}, tinkering:{s:'gear',c:'#c8853a',ear:'antenna'}, pyrotechnics:{s:'flame',c:'#e8a02a',ear:'horn'},
     essence:{s:'starburst',c:'#7a8ac8',ear:'antenna'}, inscription:{s:'corespiral',c:'#7a5aa8',ear:'horn'},
     diving:{s:'droplet',c:'#4a7ac8',ear:'fin'},
-    trapping:{s:'paw',c:'#8a6a42',ear:'cat'}, tapping:{s:'droplet',c:'#c89a3a',ear:'leaf'}, spelunking:{s:'gem',c:'#7a8a9a',ear:'horn'},
+    tapping:{s:'droplet',c:'#c89a3a',ear:'leaf'}, spelunking:{s:'gem',c:'#7a8a9a',ear:'horn'},
     pottery:{s:'urn',c:'#c4885a',ear:'round'}, goldsmithing:{s:'ring',c:'#d8b048',ear:'horn'}, fertilizer:{s:'spice',c:'#6b8f4e',ear:'round'},
     chandlery:{s:'candle',c:'#e8c84a',ear:'halo'}, woodcarving:{s:'log',c:'#a07a44',ear:'leaf'}, glassblowing:{s:'potion',c:'#8ac8e0',ear:'antenna'}, cooperage:{s:'chest',c:'#a0783c',ear:'round'},
     tanning:{s:'hide',c:'#8a6a42',ear:'round'}, weaving:{s:'spool',c:'#c8b088',ear:'cat'},
@@ -6843,13 +6838,12 @@
         } else if(recipe.meatId && recipe.hideId){
           addXp(act.skill, recipe.xp*1.5);
           addPhysiqueXp(physTierPairs(CRAFT_PHYSIQUE[act.skill], recipeTier(recipe, act.itemId)));
-          var gotMeat = Math.random() < butcherOutputChance(state, recipe.meatPhysique);
-          var gotHide = Math.random() < butcherOutputChance(state, recipe.hidePhysique);
-          if(gotMeat) addItem(recipe.meatId, 1);
-          if(gotHide) addItem(recipe.hideId, 1);
-          if(gotMeat && gotHide){ addLog('You butchered the carcass and recovered both Meat and Hide.', 'important'); spawnFloatingText('+1 Meat, +1 Hide', 'ft-success'); }
-          else if(gotMeat){ addLog('You butchered the carcass and recovered Meat.', ''); spawnFloatingText('+1 Meat', 'ft-success'); }
-          else if(gotHide){ addLog('You butchered the carcass and recovered Hide.', ''); spawnFloatingText('+1 Hide', 'ft-success'); }
+          // A carcass can yield Meat, Hide, and rendered Fat/Tallow/Grease -- each an independent roll.
+          var got = [];
+          if(Math.random() < butcherOutputChance(state, recipe.meatPhysique)){ addItem(recipe.meatId, 1); got.push('Meat'); }
+          if(Math.random() < butcherOutputChance(state, recipe.hidePhysique)){ addItem(recipe.hideId, 1); got.push('Hide'); }
+          if(recipe.fatId && Math.random() < butcherOutputChance(state, recipe.fatPhysique)){ addItem(recipe.fatId, 1); got.push((FAT_ITEM_MAP[recipe.fatId]||{}).name || 'Fat'); }
+          if(got.length){ addLog('You butchered the carcass and recovered ' + got.join(', ') + '.', 'important'); spawnFloatingText('+' + got.join(', +'), 'ft-success'); }
           else { spawnFloatingText('Nothing usable', 'ft-fail'); }
         } else if(recipe.relicCraft){
           addXp('archaeology', recipe.xp*1.5);
@@ -7371,7 +7365,7 @@
     var offhandRarities = {};
     OFFHAND_STYLE_IDS.forEach(function(id){ offhandRarities[id] = 'normal'; });
     var xpObj = {
-      digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0, ranching:0, mycology:0, salvaging:0, essence:0, diving:0, trapping:0, tapping:0, spelunking:0,
+      digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0, ranching:0, mycology:0, salvaging:0, essence:0, diving:0, tapping:0, spelunking:0,
       carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0, tanning:0, weaving:0, papermaking:0, bookbinding:0, tinkering:0, pyrotechnics:0, inscription:0, pottery:0, goldsmithing:0, chandlery:0, woodcarving:0, glassblowing:0, cooperage:0, fertilizer:0,
       stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, arcanism:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
@@ -8986,6 +8980,12 @@
           state.jewelrySlots = Object.assign(newGame().jewelrySlots, loaded.jewelrySlots||{});
           state.extraCraftSlots = (Array.isArray(loaded.extraCraftSlots) && loaded.extraCraftSlots.length>=3) ? loaded.extraCraftSlots : newGame().extraCraftSlots;
           state.inventory = loaded.inventory || {};
+          // Trapping was removed; its Fat/Tallow items (trapping_t<n>) are now Butchering byproducts (fat_t<n>).
+          // Fold any legacy trapping stock into the new ids so old saves keep their goods and Chandlery inputs.
+          for(var _mi=0; _mi<TIER_COUNT; _mi++){
+            var _oldFat = state.inventory['trapping_t'+_mi];
+            if(_oldFat){ state.inventory['fat_t'+_mi] = (state.inventory['fat_t'+_mi]||0) + _oldFat; delete state.inventory['trapping_t'+_mi]; }
+          }
           if(typeof state.playerHp !== 'number') state.playerHp = maxHp(state);
           if(typeof state.autoEatThreshold !== 'number') state.autoEatThreshold = 0;
           if(!state.stats || typeof state.stats !== 'object') state.stats = {};
@@ -9420,11 +9420,13 @@
       var canStart = !locked && hasInputs(recipe.inputs);
       var meatChance = Math.round(butcherOutputChance(state, recipe.meatPhysique)*100);
       var hideChance = Math.round(butcherOutputChance(state, recipe.hidePhysique)*100);
+      var fatChance = recipe.fatId ? Math.round(butcherOutputChance(state, recipe.fatPhysique)*100) : 0;
+      var fatName = recipe.fatId ? ((FAT_ITEM_MAP[recipe.fatId]||{}).name || 'Fat') : '';
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: '+(state.inventory[recipe.meatId]||0)+' Meat, '+(state.inventory[recipe.hideId]||0)+' Hide</div></div></div>';
-      html += '<div class="item-stats"><span>+'+Math.round(recipe.xp*1.5)+' XP</span><span>'+recipe.time+'s</span><span>'+meatChance+'% Meat</span><span>'+hideChance+'% Hide</span></div>';
-      html += '<div class="chance-line">Output: <b>1x Meat</b> at <b>'+meatChance+'%</b> &nbsp;|&nbsp; <b>1x Hide</b> at <b>'+hideChance+'%</b> (independent rolls)</div>';
+      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: '+(state.inventory[recipe.meatId]||0)+' Meat, '+(state.inventory[recipe.hideId]||0)+' Hide'+(recipe.fatId?', '+(state.inventory[recipe.fatId]||0)+' '+fatName:'')+'</div></div></div>';
+      html += '<div class="item-stats"><span>+'+Math.round(recipe.xp*1.5)+' XP</span><span>'+recipe.time+'s</span><span>'+meatChance+'% Meat</span><span>'+hideChance+'% Hide</span>'+(recipe.fatId?'<span>'+fatChance+'% Fat</span>':'')+'</div>';
+      html += '<div class="chance-line">Output: <b>1x Meat</b> at <b>'+meatChance+'%</b> &nbsp;|&nbsp; <b>1x Hide</b> at <b>'+hideChance+'%</b>'+(recipe.fatId?' &nbsp;|&nbsp; <b>1x '+fatName+'</b> at <b>'+fatChance+'%</b>':'')+' (independent rolls)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(recipe.inputs, 'inp-'+recipe.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
       if(locked){
@@ -16027,7 +16029,6 @@
     salvaging: 'Sift Scrap from wrecks and battlefields, from Rusty Scrap up to Eternal Mechanism -- the base for Tinkering and Pyrotechnics.',
     essence: 'Tap ley-line nodes for arcane Essence, from Faint Mote up to Primordial Aether -- the base for Inscription.',
     diving: 'Dive ever-deeper reefs for Pearls, from Seed Pearl up to Oceanheart Pearl -- Amulets now seat one instead of a faceted Gem.',
-    trapping: 'Snare small game and fowl for Tallow, from Rat Fat up to Behemoth Tallow -- the fat Chandlery renders into Candles.',
     tapping: 'Tap trees for Sap and Resin, from Birch Sap up to Eternal Amber -- the varnish Woodcarving finishes its carvings with.',
     spelunking: 'Delve caves for Minerals, from Cave Salt up to Deepheart Crystal -- the raw stock Glassblowing melts into Glass.',
     carpentry: 'Cut Logs into Planks.',
@@ -16057,7 +16058,7 @@
     inscription: 'Inscribe Essence and Paper into Scrolls. Reading a Scroll wards you, reducing all incoming damage for a while.',
     pottery: 'Fire Digging\'s clay into Crucibles -- the vessel Goldsmithing casts jewelry Settings in.',
     goldsmithing: 'Cast a Metallurgy ingot in a Pottery Crucible into a Setting -- the metal base Rings and Amulets now seat their gem in.',
-    chandlery: 'Render Trapping\'s Tallow into Candles, from Tallow Candle up to Godflame Candle.',
+    chandlery: 'Render Butchering\'s Fat &amp; Tallow into Candles, from Tallow Candle up to Godflame Candle.',
     woodcarving: 'Carve Carpentry Planks, varnished with Tapping\'s Resin, into decorative goods from Whittled Charm up to Eternal Idol.',
     glassblowing: 'Melt Spelunking Minerals over coal and blow them into Glass goods, from Glass Bead up to Eternal Crystal.',
     cooperage: 'Bind Carpentry Planks with a Metallurgy ingot band into Barrels and Casks, from Small Pail up to Eternal Cask.',
@@ -16130,7 +16131,7 @@
     digging: GATHER_INTRO_GENERIC, forestry: GATHER_INTRO_GENERIC, fishing: GATHER_INTRO_GENERIC,
     herbalism: GATHER_INTRO_GENERIC, botany: GATHER_INTRO_GENERIC, foraging: GATHER_INTRO_GENERIC,
     mining: GATHER_INTRO_GENERIC + ' 14 ore tiers and 7 stone tiers (Limestone, Sandstone, Andesite, Soapstone, Granite, Slate, Marble) share this ladder — stones feed Stone Cutting, ore feeds Metallurgy.',
-    butchering: 'Wildlife you defeat in Combat drop Corpses. Process one here for an independent chance at both Meat (for Roasting) and Hide (for Leatherworking).',
+    butchering: 'Wildlife you defeat in Combat drop Corpses. Process one here for an independent chance at Meat (for Roasting), Hide (for Leatherworking), and rendered Fat/Tallow (for Chandlery).',
     // Generic crafting
     carpentry: CRAFT_INTRO_GENERIC, metallurgy: CRAFT_INTRO_GENERIC, roasting: CRAFT_INTRO_GENERIC,
     cooking: CRAFT_INTRO_GENERIC, alchemy: CRAFT_INTRO_GENERIC, baking: CRAFT_INTRO_GENERIC,
