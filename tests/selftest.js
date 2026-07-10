@@ -1037,10 +1037,10 @@
     function stFor(id, level, extra){
       var st = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat',monsterHp:100}, playerHp:55 };
       st.xp[id] = FF.xpFloorForLevel(level);
-      if(id==='pyromancer'){ st.equippedMainhand='wandFire'; st.equippedOffhand='wardLight'; st.bodyArmor={helmet:armor('tailoring'),chest:armor('tailoring'),boots:armor('tailoring')}; }
-      if(id==='sharpshooter'){ st.equippedMainhand='bowLong'; st.equippedOffhand='quiver'; st.bodyArmor={helmet:armor('leather'),chest:armor('leather'),boots:armor('leather')}; }
+      if(id==='pyromancer'){ st.equippedMainhand='wandFire'; st.equippedOffhand='wardLight'; st.bodyArmor={helmet:armor('tailoring'),chest:armor('tailoring'),gauntlets:armor('tailoring'),boots:armor('tailoring')}; }
+      if(id==='sharpshooter'){ st.equippedMainhand='bowLong'; st.equippedOffhand='quiver'; st.bodyArmor={helmet:armor('leather'),chest:armor('leather'),boots:armor('leather'),gauntlets:armor('tailoring')}; }
       if(id==='juggernaut'){ st.equippedMainhand='sledge'; st.bodyArmor={helmet:armor('plate'),chest:armor('plate'),gauntlets:armor('plate'),boots:armor('plate')}; }
-      if(id==='nightblade'){ st.equippedMainhand='wandDark'; st.equippedOffhand='wardLight'; st.bodyArmor={helmet:armor('leather'),chest:armor('leather'),gauntlets:armor('leather')}; }
+      if(id==='nightblade'){ st.equippedMainhand='wandDark'; st.equippedOffhand='wardLight'; st.bodyArmor={helmet:armor('leather'),chest:armor('leather'),gauntlets:armor('leather'),boots:armor('leather')}; }
       if(id==='executioner'){ st.equippedMainhand='fullmoonaxe'; st.bodyArmor={chest:armor('chain'),gauntlets:armor('chain'),boots:armor('leather')}; } // no helmet = bare head
       if(extra) for(var k in extra) st[k]=extra[k];
       return st;
@@ -1049,8 +1049,14 @@
     eq(FF.activeClassId(stFor('pyromancer',80)), 'pyromancer', 'fire wand + ward + cloth => Pyromancer');
     eq(FF.activeClassId(stFor('sharpshooter',80)), 'sharpshooter', 'long bow + quiver + leather => Sharpshooter');
     eq(FF.activeClassId(stFor('juggernaut',80)), 'juggernaut', 'sledge + full plate => Juggernaut');
-    eq(FF.activeClassId(stFor('nightblade',80)), 'nightblade', 'dark wand + ward + leather => Nightblade');
+    eq(FF.activeClassId(stFor('nightblade',80)), 'nightblade', 'dark wand + ward + full leather => Voidshadow');
     eq(FF.activeClassId(stFor('executioner',80)), 'executioner', 'full-moon axe + bare head + chain => Executioner');
+    // Nightblade was renamed to Voidshadow (display only; id/bonus keys unchanged).
+    eq(FF.CLASS_DEFS_BY_ID.nightblade.name, 'Voidshadow', 'nightblade renamed to Voidshadow');
+    // New gear requirements gate: dropping the added piece must deactivate the class.
+    eq(FF.activeClassId(stFor('pyromancer',80,{bodyArmor:{helmet:armor('tailoring'),chest:armor('tailoring'),boots:armor('tailoring')}})), null, 'Pyromancer needs Cloth Gloves');
+    eq(FF.activeClassId(stFor('sharpshooter',80,{bodyArmor:{helmet:armor('leather'),chest:armor('leather'),boots:armor('leather')}})), null, 'Sharpshooter needs Cloth Gloves');
+    eq(FF.activeClassId(stFor('nightblade',80,{bodyArmor:{helmet:armor('leather'),chest:armor('leather'),gauntlets:armor('leather')}})), null, 'Voidshadow needs Leather Boots');
 
     var monFull = {hp:100}, monLow = {hp:100};
     // Pyromancer: Kindle x1.30; Meltdown +50% vs healthy enemy stacks at Lv80; crit/block perks.
