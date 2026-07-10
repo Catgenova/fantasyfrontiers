@@ -3552,7 +3552,7 @@
       affects:'Speeds up all crafting, up to +15%.'},
     {id:'logic',            name:'Logic', icon:svgIcon('gear','#5a5f9a'),
       desc:'A systematic mind that keeps more work organised and running at once.',
-      levels:'All Crafting skills.',
+      levels:'Refining skills.',
       affects:'Grants +1 additional concurrent craft slot for every 10 levels reached (base +0), stacking on top of any Belt slots.'},
     {id:'blocking',         name:'Blocking', icon:svgIcon('wallseg','#8a8a8a'),
       desc:'The trained instinct to soak a blow.',
@@ -3779,7 +3779,7 @@
   // Tier for a craft recipe: use an explicit tierIndex when present (archaeology/relic), otherwise
   // derive it from the output item id's _t<n> suffix. Standard recipes (cooking_t3, stonecutting_t5,
   // twine_t2, ...) carry no tierIndex field, so without this fallback physTierPairs saw undefined->0
-  // and every standard craft granted only 1 physique XP (most visible on Logic, trained only by crafting).
+  // and every standard craft granted only 1 physique XP (most visible on Logic, trained only by refining).
   function recipeTier(recipe, itemId){
     if(recipe && typeof recipe.tierIndex === 'number') return recipe.tierIndex;
     return itemTierFromId(itemId || (recipe && recipe.id));
@@ -3857,6 +3857,14 @@
     Object.keys(CRAFT_PHYSIQUE).forEach(function(k){ CRAFT_PHYSIQUE[k] = CRAFT_PHYSIQUE[k].concat([['quartermaster',1],['diligence',1]]); });
     // Outfitting crafts: Masterwork (rarity rolls).
     OUTFITTING_SKILL_IDS.forEach(function(k){ if(CRAFT_PHYSIQUE[k]) CRAFT_PHYSIQUE[k] = CRAFT_PHYSIQUE[k].concat([['masterwork',1]]); });
+    // Logic is the REFINING physique: it trains from (and ONLY from) the Refining skills. Ensure every
+    // refining craft grants it, and strip it from every non-refining craft (cooking/outfitting/construction).
+    REFINING_SKILL_IDS.forEach(function(k){
+      if(CRAFT_PHYSIQUE[k] && !CRAFT_PHYSIQUE[k].some(function(p){ return p[0]==='logic'; })) CRAFT_PHYSIQUE[k] = CRAFT_PHYSIQUE[k].concat([['logic',1]]);
+    });
+    Object.keys(CRAFT_PHYSIQUE).forEach(function(k){
+      if(REFINING_SKILL_IDS.indexOf(k) === -1) CRAFT_PHYSIQUE[k] = CRAFT_PHYSIQUE[k].filter(function(p){ return p[0] !== 'logic'; });
+    });
   })();
 
   // ================= CLASSES =================
@@ -9240,7 +9248,7 @@
   // Tips & tricks scrolled across the top-bar ticker (see #ffTicker). One shows at a time; the next
   // is swapped in each time the marquee completes a pass. <b> highlights the key term.
   var TICKER_TIPS = [
-    "<b>Logic:</b> every 10 levels earned in Logic grants one extra active craft slot. Get crafting!",
+    "<b>Logic:</b> every 10 levels earned in Logic grants one extra active craft slot — train it by refining materials!",
     "<b>Sand</b> you dig smelts into Glass Bottles for Alchemy potions and fires into Crucibles in Pottery. Dig long enough and you'll turn up Muddy Artifacts to clean off in Archaeology.",
     "<b>Classes</b> aren't unlocked, they're worn: equip a full matching gear set (Cloth robes + a Staff = Summoner) and its passives switch on. Swap a piece out and it goes dormant.",
     "Finding a <b>familiar</b> sets off a server-wide +50% EXP buff for everyone for 5 minutes — and registering a new account triggers a full hour.",

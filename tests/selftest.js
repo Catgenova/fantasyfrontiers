@@ -419,6 +419,10 @@
     // Quartermaster + Diligence feed EVERY craft; Masterwork feeds outfitting crafts.
     ok(feeds(FF.CRAFT_PHYSIQUE.cooking,'quartermaster') && feeds(FF.CRAFT_PHYSIQUE.cooking,'diligence'), 'all crafts train Quartermaster + Diligence');
     ok(feeds(FF.CRAFT_PHYSIQUE.weaponsmithing,'masterwork') && !feeds(FF.CRAFT_PHYSIQUE.cooking,'masterwork'), 'only outfitting crafts train Masterwork');
+    // Logic trains ONLY from Refining skills (metallurgy/tanning/...), not cooking/outfitting/construction.
+    ok(feeds(FF.CRAFT_PHYSIQUE.metallurgy,'logic') && feeds(FF.CRAFT_PHYSIQUE.tanning,'logic')
+       && !feeds(FF.CRAFT_PHYSIQUE.cooking,'logic') && !feeds(FF.CRAFT_PHYSIQUE.weaponsmithing,'logic') && !feeds(FF.CRAFT_PHYSIQUE.carpentry,'logic'),
+       'only refining crafts train Logic');
 
     // Effect scaling: at Lv100 each bonus reaches its cap; helpers read live state.physique.
     var S = FF._state, saved = {}, savedFaith = S.faith;
