@@ -198,6 +198,7 @@
   .ff-farmfab:hover{filter:brightness(1.08);}
   .ff-farmfab-harvest{bottom:20px;background:linear-gradient(180deg,#c79a2a,#8a6a18);}
   .ff-farmfab-plant{bottom:84px;background:linear-gradient(180deg,#5aa06a,#2f6a3c);}
+  .ff-farmfab-fertilize{bottom:148px;background:linear-gradient(180deg,#8aa84e,#4f6a24);}
   .ff-farmfab-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--gold-bright);color:#3a2a08;border:2px solid #24380f;font-family:var(--font-mono);font-size:10px;font-weight:700;line-height:14px;text-align:center;}
   .ff-ivy{position:absolute;top:-8px;z-index:9;pointer-events:none;width:70px;height:60px;}
   .ff-ivy-l{left:-4px;} .ff-ivy-r{right:-4px;transform:scaleX(-1);}
@@ -256,6 +257,7 @@
     .ff-farmfab{position:absolute;right:14px;z-index:22;width:50px;height:50px;}
     .ff-farmfab-harvest{bottom:126px;}
     .ff-farmfab-plant{bottom:186px;}
+    .ff-farmfab-fertilize{bottom:246px;}
   }
   @keyframes ffFabPulse{
     0%,100%{box-shadow:0 5px 14px rgba(0,0,0,.45), 0 0 0 0 rgba(230,196,90,.55);}
@@ -1441,6 +1443,7 @@
   <button class="ff-chatfab" id="ffChatFab" data-action="toggleChatDrawer"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-chat"></use></svg></button>
   <button class="ff-farmfab ff-farmfab-harvest" id="ffHarvestFab" data-action="harvestAllFarm" title="Harvest all ready crops"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-herb"></use></svg><span class="ff-farmfab-badge" id="ffHarvestFabBadge"></span></button>
   <button class="ff-farmfab ff-farmfab-plant" id="ffPlantFab" data-action="plantAllFarm" title="Plant all empty fields"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-seed"></use></svg><span class="ff-farmfab-badge" id="ffPlantFabBadge"></span></button>
+  <button class="ff-farmfab ff-farmfab-fertilize" id="ffFertilizeFab" data-action="fertilizeAllFarm" title="Fertilize all growing crops"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-spice"></use></svg><span class="ff-farmfab-badge" id="ffFertilizeFabBadge"></span></button>
   <div class="ff-ivy ff-ivy-l" id="ffIvyL"></div>
   <div class="ff-ivy ff-ivy-r" id="ffIvyR"></div>
   <div id="chatDrawerOverlay"></div>
@@ -2690,7 +2693,26 @@
     armorsmithing: { label:'Armorsmithing', icon:svgIcon('chestarmor','#8a97a6') },
     shieldsmithing: { label:'Shieldsmithing', icon:svgIcon('shield','#8a97a6') },
     runesmithing: { label:'Runesmithing', icon:svgIcon('corespiral','#7a5aa8'), color:'#7a5aa8' },
-    arcanism: { label:'Arcanism', icon:svgIcon('starburst','#5a8ac8'), color:'#5a8ac8' }
+    arcanism: { label:'Arcanism', icon:svgIcon('starburst','#5a8ac8'), color:'#5a8ac8' },
+    fertilizer: { label:'Fertilizer', icon:svgIcon('spice','#6b8f4e'), color:'#6b8f4e',
+      // Refine a Fishing catch with equal-tier Digging soil into Fertilizer -- applied to a growing
+      // crop of the same tier, it doubles that plot's harvest. Each tier is named after its fish.
+      recipes: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({
+            id:'fertilizer_t'+i,
+            name: FISH_NAMES[i]+' Fertilizer',
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(11,i),
+            time: tierTime(7,0.3,i),
+            sell: tierSell(6,i),
+            icon: svgIcon('spice',DIGGING_COLORS[i]),
+            inputs: tierInput2('fishing',1,'digging',1)(i)
+          });
+        }
+        return list;
+      })() }
   };
 
   // Assign a palette colour to any sub-skill that doesn't already have one set above.
@@ -2835,7 +2857,8 @@
     dairy:'Churn', gastronomy:"Chef's Torch", apothecary:'Distillation Kit', tanning:'Tanning Knife', weaving:'Loom', papermaking:'Paper Press', bookbinding:'Bookbinding Press',
     tinkering:'Tinkerer\'s Wrench', pyrotechnics:'Fuse Crimper', inscription:'Inscribing Stylus',
     pottery:'Potter\'s Wheel', goldsmithing:'Jeweler\'s Loupe',
-    chandlery:'Wick Dipper', woodcarving:'Carving Chisel', glassblowing:'Blowpipe', cooperage:'Cooper\'s Adze'
+    chandlery:'Wick Dipper', woodcarving:'Carving Chisel', glassblowing:'Blowpipe', cooperage:'Cooper\'s Adze',
+    fertilizer:'Muck Fork'
   };
   var CRAFT_TOOL_SPEED = [];
   var CRAFT_TOOL_SUCCESS = [];
@@ -3273,7 +3296,7 @@
   function rollCraftRarity(state){
     var fantasticChance = FAITH_BASE_FANTASTIC + faithRarityBonus('miracle');
     var supremeChance = FAITH_BASE_SUPREME + faithRarityBonus('blessing');
-    var rareChance = FAITH_BASE_RARE + faithRarityBonus('devotion');
+    var rareChance = FAITH_BASE_RARE + faithRarityBonus('devotion') + masterworkRarityBonus(); // Masterwork physique lifts rare-or-better odds
     var roll = Math.random();
     if(roll < fantasticChance) return 'fantastic';
     if(roll < fantasticChance + supremeChance) return 'supreme';
@@ -3493,6 +3516,87 @@
       desc:'Twisting the knife once you find the gap.',
       levels:'Landing critical hits.',
       affects:'Increases Critical Hit damage above the 1.50x base, up to a 2.50x cap.'},
+    // ===== Cross-skill physiques: each is trained by one activity and feeds a DIFFERENT system. =====
+    {id:'anglersEye',       name:"Angler's Eye", icon:svgIcon('fish','#3f8fd0'),
+      desc:'A practiced read of the water for what lurks beneath.',
+      levels:'Fishing and Diving.',
+      affects:'Raises your Fishing Treasure-Chest chance, up to +15%.'},
+    {id:'prospectorsNose',  name:"Prospector's Nose", icon:svgIcon('gem','#8a97a6'),
+      desc:'A nose for a rich seam of ore or a hidden gem.',
+      levels:'Mining, Prospecting, and Digging.',
+      affects:'Chance to pull a bonus resource from Mining, Prospecting & Digging, up to +12%.'},
+    {id:'huntsman',         name:'Huntsman', icon:svgIcon('meat','#7a2a2a'),
+      desc:'A clean, thorough hand at dressing a carcass.',
+      levels:'Butchering and Ranching.',
+      affects:'Improves Meat & Hide recovery when butchering, up to +12%.'},
+    {id:'sylvanBond',       name:'Sylvan Bond', icon:svgIcon('log','#6a9a5a'),
+      desc:'A quiet kinship with the wood and its small folk.',
+      levels:'Forestry and Foraging.',
+      affects:'Raises the Critter Cache drop rate, up to +5%.'},
+    {id:'quartermaster',    name:'Quartermaster', icon:svgIcon('urn','#9a8a6a'),
+      desc:'A frugal eye that wastes not a scrap of stock.',
+      levels:'All Crafting skills.',
+      affects:'Each craft has a chance to refund one input material, up to 15%.'},
+    {id:'masterwork',       name:'Masterwork', icon:svgIcon('starburst','#c9a227'),
+      desc:'The patient pursuit of a flawless piece.',
+      levels:'Outfitting crafts: smithing, tailoring, leatherwork, jewellery, bows & arcane.',
+      affects:'Improves the rarity roll on every craft, up to +15% to the rare-or-better odds.'},
+    {id:'diligence',        name:'Diligence', icon:svgIcon('brain','#5a5f9a'),
+      desc:'Steady, attentive practice at the bench.',
+      levels:'All Crafting skills.',
+      affects:'Increases Crafting XP gained, up to +15%.'},
+    {id:'weaponsmithsEdge', name:"Weaponsmith's Edge", icon:svgIcon('sword','#a83828'),
+      desc:'An intimate knowledge of an edge, learned at the forge.',
+      levels:'Weaponsmithing and Blacksmithing.',
+      affects:'Your attacks deal more damage as your Weaponsmithing grows, up to +15%.'},
+    {id:'armorersTemper',   name:"Armorer's Temper", icon:svgIcon('chestarmor','#8a97a6'),
+      desc:'A feel for how tempered plate turns a blow.',
+      levels:'Armorsmithing and Shieldsmithing.',
+      affects:'Your worn armour defends better as your Armoursmithing grows, up to +15%.'},
+    {id:'greenThumb',       name:'Green Thumb', icon:svgIcon('seed','#5aa06a'),
+      desc:'A gift for coaxing the most from a growing thing.',
+      levels:'Farming (harvesting crops).',
+      affects:'Crops ripen faster and may yield an extra unit, up to +15% each.'},
+    {id:'composter',        name:'Composter', icon:svgIcon('spice','#6b8f4e'),
+      desc:'Making every handful of muck count for more.',
+      levels:'Refining Fertilizer.',
+      affects:'Fertilizer may not be consumed, and a fertilized crop may yield 3x, up to +20%.'},
+    {id:'apothecarysHand',  name:"Apothecary's Hand", icon:svgIcon('potion','#7a4a9a'),
+      desc:'A steady pour that stretches every draught further.',
+      levels:'Alchemy and Apothecary.',
+      affects:'Combat potions gain extra charges, up to +5.'},
+    {id:'demolitionist',    name:'Demolitionist', icon:svgIcon('flame','#e8a02a'),
+      desc:'An instinct for packing the biggest bang.',
+      levels:'Tinkering, Pyrotechnics, and Salvaging.',
+      affects:'Bombs & Flash Bombs are stronger, up to +30%.'},
+    {id:'runicAttunement',  name:'Runic Attunement', icon:svgIcon('corespiral','#7a5aa8'),
+      desc:'A resonance with the sigils you inscribe.',
+      levels:'Arcanism and Runesmithing.',
+      affects:'Wand & Scepter attacks deal more damage, up to +20%.'},
+    {id:'wardersFocus',     name:"Warder's Focus", icon:svgIcon('shield','#7a5aa8'),
+      desc:'The discipline to turn an attacker\'s force back on them.',
+      levels:'Inscription (scribing Scrolls & wards).',
+      affects:'Strengthens Ward reflection, up to +15%.'},
+    {id:'zealotry',         name:'Zealotry', icon:svgIcon('candle','#e0c860'),
+      desc:'Devotion sharpened into a weapon.',
+      levels:'All Faith activities.',
+      affects:'Converts your current Faith into bonus damage, up to +20% at full Faith.'},
+    {id:'oblation',         name:'Oblation', icon:svgIcon('urn','#9a8560'),
+      desc:'Giving freely, and being answered in kind.',
+      levels:'Sacrifice.',
+      affects:'Sacrifices restore more Faith and may return the offered item, up to +25%.'},
+    {id:'fieldRations',     name:'Field Rations', icon:svgIcon('meal','#5a9a4a'),
+      desc:'Cooking that keeps a fighter fed through a long campaign.',
+      levels:'Cooking, Baking, and Gastronomy.',
+      affects:'Feasts & food buffs last longer, up to +30%.'},
+    {id:'menagerist',       name:'Menagerist', icon:svgIcon('wing','#c87a9a'),
+      desc:'A bond that draws the best from your companions.',
+      levels:'Fighting with an active Companion familiar.',
+      affects:'Boosts familiar spell potency, up to +25%.'},
+    {id:'merchantsSavvy',   name:"Merchant's Savvy", icon:svgIcon('coin','#c9a227'),
+      desc:'A trader\'s nose for a fair price and a lighter toll.',
+      levels:'Selling to vendors and trading on the Marketplace.',
+      affects:'Better vendor sell prices and a lower Market tax, up to +15%.'},
     // Elemental attunements: one per element, trained by dealing OR taking that element's damage.
     // Each grants growing damage of that element (+1% -> +100%) and resistance to it (+1% -> +20%).
     {id:'fireAttunement',   name:'Fire Attunement',  icon:svgIcon('flame','#e0632f'),   element:'fire',
@@ -3597,7 +3701,8 @@
     chandlery:      [['fineMotor',2],['sleightOfHand',1],['logic',1]],
     woodcarving:    [['fineMotor',2],['sleightOfHand',1],['logic',1]],
     glassblowing:   [['fineMotor',2],['sleightOfHand',1],['logic',1]],
-    cooperage:      [['grossMotor',2],['sleightOfHand',1],['logic',1]]
+    cooperage:      [['grossMotor',2],['sleightOfHand',1],['logic',1]],
+    fertilizer:     [['grossMotor',2],['stamina',1],['handStrength',1]]
   };;
   // Physique XP from a gather/craft task scales with the item's tier: each associated physique
   // gains (tier+1) XP -- 1 at t0 up to 21 at t20 (replaces the old fixed per-physique weights).
@@ -3671,6 +3776,31 @@
   });
   var ALL_MAIN_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['fiberharvesting','grainharvesting','herbharvesting']).concat(WEAPON_STYLE_IDS).concat([WANDS_SKILL_ID, STAVES_SKILL_ID, SCEPTERS_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS).concat(['prayer','sacrifice','devotion','blessing','miracle']);
   var FAITH_SKILL_IDS = ['prayer','sacrifice','devotion','blessing','miracle'];
+
+  // ---- Cross-skill physiques: attach each new physique to the skills that train it, appended to the
+  // gather/craft feed tables so they earn XP automatically (like curiosity/sleightOfHand do). The
+  // faith / combat / selling physiques (zealotry, oblation, menagerist, merchantsSavvy, greenThumb)
+  // are fed at their own action sites instead. ----
+  (function(){
+    function fg(sk, id){ if(GATHER_PHYSIQUE[sk]) GATHER_PHYSIQUE[sk] = GATHER_PHYSIQUE[sk].concat([[id,1]]); }
+    function fc(sk, id){ if(CRAFT_PHYSIQUE[sk]) CRAFT_PHYSIQUE[sk] = CRAFT_PHYSIQUE[sk].concat([[id,1]]); }
+    fg('fishing','anglersEye'); fg('diving','anglersEye');
+    fg('mining','prospectorsNose'); fg('prospecting','prospectorsNose'); fg('digging','prospectorsNose');
+    fg('butchering','huntsman'); fg('ranching','huntsman');
+    fg('forestry','sylvanBond'); fg('foraging','sylvanBond');
+    fg('salvaging','demolitionist'); fc('tinkering','demolitionist'); fc('pyrotechnics','demolitionist');
+    fc('alchemy','apothecarysHand'); fc('apothecary','apothecarysHand');
+    fc('arcanism','runicAttunement'); fc('runesmithing','runicAttunement');
+    fc('inscription','wardersFocus');
+    fc('cooking','fieldRations'); fc('baking','fieldRations'); fc('gastronomy','fieldRations');
+    fc('fertilizer','composter');
+    fc('weaponsmithing','weaponsmithsEdge'); fc('blacksmithing','weaponsmithsEdge');
+    fc('armorsmithing','armorersTemper'); fc('shieldsmithing','armorersTemper');
+    // All-crafting: Quartermaster (input refunds) + Diligence (craft XP).
+    Object.keys(CRAFT_PHYSIQUE).forEach(function(k){ CRAFT_PHYSIQUE[k] = CRAFT_PHYSIQUE[k].concat([['quartermaster',1],['diligence',1]]); });
+    // Outfitting crafts: Masterwork (rarity rolls).
+    OUTFITTING_SKILL_IDS.forEach(function(k){ if(CRAFT_PHYSIQUE[k]) CRAFT_PHYSIQUE[k] = CRAFT_PHYSIQUE[k].concat([['masterwork',1]]); });
+  })();
 
   // ================= CLASSES =================
   // A Class is conferred purely by an equipped gear combination -- no unlock step, no toggle. While
@@ -3985,6 +4115,101 @@
         { level:60, name:'Momentum',   desc:'Each landed hit grants a stack (max 5) of +6% damage; a miss resets it.' },
         { level:80, name:'Overwhelm',  desc:'At max Momentum, your hits ignore 25% of enemy armor (+25% damage).' }
       ]
+    },
+    {
+      id:'pyromancer', name:'Pyromancer', icon:elementIcon('fire'),
+      blurb:'A robed incendiary who channels a fire wand into scorching, crit-heavy bursts, shielded only by a ward.',
+      reqText:'Fire Wand + Ward, Cloth Hood, Tunic & Shoes',
+      reqParts:[
+        { icon:elementIcon('fire'),                    label:'Fire Wand',    met:function(st){ return st.equippedMainhand==='wandFire'; } },
+        { icon:svgIcon('shield','#7a5aa8'),            label:'Ward',         met:function(st){ return isWard(st.equippedOffhand); } },
+        { icon:svgIcon('helm',CLASS_CLOTH_COLOR),      label:'Cloth Hood',   met:function(st){ return clothPieceEquipped(st,'helmet'); } },
+        { icon:svgIcon('chestarmor',CLASS_CLOTH_COLOR),label:'Cloth Tunic',  met:function(st){ return clothPieceEquipped(st,'chest'); } },
+        { icon:svgIcon('boots',CLASS_CLOTH_COLOR),     label:'Cloth Shoes',  met:function(st){ return clothPieceEquipped(st,'boots'); } }
+      ],
+      passives:[
+        { level:1,  name:'Kindle',        desc:'+30% damage.' },
+        { level:20, name:'Combustion',    desc:'+12% Critical Hit chance.' },
+        { level:40, name:'Conflagration', desc:'+75% Critical Hit damage.' },
+        { level:60, name:'Ember Ward',    desc:'+15% Block chance.' },
+        { level:80, name:'Meltdown',      desc:'+50% damage to enemies at or above half Health.' }
+      ]
+    },
+    {
+      id:'sharpshooter', name:'Sharpshooter', icon:svgIcon('bow','#8a6a42'),
+      blurb:'A patient marksman whose long bow trades draw speed for devastating, armour-splitting aimed shots.',
+      reqText:'Long Bow + Quiver, Leather Helm, Chest & Boots',
+      reqParts:[
+        { icon:svgIcon('bow','#6a4a2a'),                 label:'Long Bow',     met:function(st){ return st.equippedMainhand==='bowLong'; } },
+        { icon:svgIcon('arrow','#6a4a2a'),               label:'Quiver',       met:function(st){ return st.equippedOffhand==='quiver'; } },
+        { icon:svgIcon('helm',CLASS_LEATHER_COLOR),      label:'Leather Helm', met:function(st){ return leatherPieceEquipped(st,'helmet'); } },
+        { icon:svgIcon('chestarmor',CLASS_LEATHER_COLOR),label:'Leather Chest',met:function(st){ return leatherPieceEquipped(st,'chest'); } },
+        { icon:svgIcon('boots',CLASS_LEATHER_COLOR),     label:'Leather Boots',met:function(st){ return leatherPieceEquipped(st,'boots'); } }
+      ],
+      passives:[
+        { level:1,  name:'Aimed Shot',    desc:'+50% Critical Hit damage.' },
+        { level:20, name:'Piercing Shot', desc:'Attacks ignore 20% of enemy defenses (+20% damage).' },
+        { level:40, name:'Steady Aim',    desc:'+30% Accuracy.' },
+        { level:60, name:'Deadeye',       desc:'+12% Critical Hit chance.' },
+        { level:80, name:'Kill Shot',     desc:'+100% Critical Hit damage.' }
+      ]
+    },
+    {
+      id:'juggernaut', name:'Juggernaut', icon:svgIcon('hammer','#5a5a60'),
+      blurb:'An unstoppable plated bruiser who shatters defences with the raw concussive force of a two-handed sledge.',
+      reqText:'Sledge, Plate Helm, Chest, Gloves & Boots',
+      reqParts:[
+        { icon:svgIcon('hammer','#4a4a50'),            label:'Sledge',       met:function(st){ return st.equippedMainhand==='sledge'; } },
+        { icon:svgIcon('helm',CLASS_PLATE_COLOR),      label:'Plate Helm',   met:function(st){ return platePieceEquipped(st,'helmet'); } },
+        { icon:svgIcon('chestarmor',CLASS_PLATE_COLOR),label:'Plate Chest',  met:function(st){ return platePieceEquipped(st,'chest'); } },
+        { icon:svgIcon('gauntlet',CLASS_PLATE_COLOR),  label:'Plate Gloves', met:function(st){ return platePieceEquipped(st,'gauntlets'); } },
+        { icon:svgIcon('boots',CLASS_PLATE_COLOR),     label:'Plate Boots',  met:function(st){ return platePieceEquipped(st,'boots'); } }
+      ],
+      passives:[
+        { level:1,  name:'Crushing Blows', desc:'+30% damage.' },
+        { level:20, name:'Bulwark',        desc:'+15% Block chance.' },
+        { level:40, name:'Ironclad',       desc:'+25% Armor.' },
+        { level:60, name:'Unstoppable',    desc:'−20% incoming damage.' },
+        { level:80, name:'Devastate',      desc:'+60% Critical Hit damage.' }
+      ]
+    },
+    {
+      id:'nightblade', name:'Nightblade', icon:elementIcon('dark'),
+      blurb:'A shadow-clad hexer who drains life with a dark wand and slips between blows in supple leather.',
+      reqText:'Dark Wand + Ward, Leather Hood, Chest & Gloves',
+      reqParts:[
+        { icon:elementIcon('dark'),                      label:'Dark Wand',     met:function(st){ return st.equippedMainhand==='wandDark'; } },
+        { icon:svgIcon('shield','#7a5aa8'),              label:'Ward',          met:function(st){ return isWard(st.equippedOffhand); } },
+        { icon:svgIcon('helm',CLASS_LEATHER_COLOR),      label:'Leather Hood',  met:function(st){ return leatherPieceEquipped(st,'helmet'); } },
+        { icon:svgIcon('chestarmor',CLASS_LEATHER_COLOR),label:'Leather Chest', met:function(st){ return leatherPieceEquipped(st,'chest'); } },
+        { icon:svgIcon('gauntlet',CLASS_LEATHER_COLOR),  label:'Leather Gloves',met:function(st){ return leatherPieceEquipped(st,'gauntlets'); } }
+      ],
+      passives:[
+        { level:1,  name:'Siphon',      desc:'Heal 8% of the damage you deal.' },
+        { level:20, name:'Hex',         desc:'+25% damage.' },
+        { level:40, name:'Shadowstep',  desc:'+15% Dodge chance.' },
+        { level:60, name:'Dark Pact',   desc:'+12% Critical Hit chance.' },
+        { level:80, name:'Soul Reap',   desc:'Your Siphon lifesteal rises to 15% of the damage you deal.' }
+      ]
+    },
+    {
+      id:'executioner', name:'Executioner', icon:svgIcon('axe','#7a5a2a'),
+      blurb:'A grim headsman whose great crescent axe reaps the wounded and answers a strong foe with a killing crit.',
+      reqText:'Full-Moon Axe + bare head, Chain Chest & Gloves, Leather Boots',
+      reqParts:[
+        { icon:svgIcon('axe','#7a5a2a'),                 label:'Full-Moon Axe', met:function(st){ return st.equippedMainhand==='fullmoonaxe'; } },
+        { icon:svgIcon('helm','#6a6a6a'),                label:'Bare Head',     met:function(st){ return !(st.bodyArmor && st.bodyArmor.helmet && st.bodyArmor.helmet.tier > 0); } },
+        { icon:svgIcon('chestarmor',CLASS_CHAIN_COLOR),  label:'Chain Chest',   met:function(st){ return chainPieceEquipped(st,'chest'); } },
+        { icon:svgIcon('gauntlet',CLASS_CHAIN_COLOR),    label:'Chain Gloves',  met:function(st){ return chainPieceEquipped(st,'gauntlets'); } },
+        { icon:svgIcon('boots',CLASS_LEATHER_COLOR),     label:'Leather Boots', met:function(st){ return leatherPieceEquipped(st,'boots'); } }
+      ],
+      passives:[
+        { level:1,  name:'Reap the Weak', desc:'+30% damage to enemies below half Health.' },
+        { level:20, name:'Cleave',        desc:'+12% Critical Hit chance.' },
+        { level:40, name:'Bloodthirst',   desc:'Heal 8% of the damage you deal.' },
+        { level:60, name:'Grisly Resolve',desc:'+50% Critical Hit damage.' },
+        { level:80, name:'Decapitate',    desc:'A hit that leaves the enemy below 15% Health instantly slays it.' }
+      ]
     }
   ];
   var CLASS_DEFS_BY_ID = {}; CLASS_DEFS.forEach(function(c){ CLASS_DEFS_BY_ID[c.id] = c; });
@@ -4002,6 +4227,8 @@
     if(activeClassId(st)==='summoner' && classLevel(st,'summoner') >= 60) return 0.15; // Summoner Lv 60: Arcane Bulwark
     if(activeClassId(st)==='herald' && classLevel(st,'herald') >= 1) return 0.15;       // Herald Lv 1: Bulwark
     if(activeClassId(st)==='frostwarden' && classLevel(st,'frostwarden') >= 40) return frostwardenBlockBonus(st); // Rime Guard +10%
+    if(activeClassId(st)==='pyromancer' && classLevel(st,'pyromancer') >= 60) return 0.15; // Pyromancer Lv 60: Ember Ward
+    if(activeClassId(st)==='juggernaut' && classLevel(st,'juggernaut') >= 20) return 0.15;  // Juggernaut Lv 20: Bulwark
     return 0;
   }
   // Total persistent Block chance (gear + physiques + class) -- the temporary familiar 'block' buff is
@@ -4017,7 +4244,7 @@
   // on top only at the moment of a monster attack, so it is NOT folded in here.
   function playerDodgeChance(st){
     st = st || state;
-    return getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + assassinDodgeBonus(st);
+    return getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + assassinDodgeBonus(st) + nightbladeDodgeBonus(st);
   }
   // Assassin Lv 40: attacks ignore 20% of armor (modeled as +20% damage). Lv 80: outgoing damage +X% where X = Dodge chance.
   function assassinArmorPenMult(st){ return assassinBonus(40, st) ? 1.20 : 1; }
@@ -4124,6 +4351,7 @@
     if(id==='duelist' && classLevel(st,'duelist') >= 40) return 1.3; // Duelist Perfect Form
     if(id==='thunderfury' && classLevel(st,'thunderfury') >= 20) return 1 + 0.20 * Math.min(THUNDER_MAX_STACKS, st.thunderStacks || 0); // Storm Focus crit stacks
     if(id==='treasureHunter' && classLevel(st,'treasureHunter') >= 20) return 1 + 0.10 * treasureHunterCount(st, 2); // Appraiser: +10% accuracy per Supreme+ item
+    if(id==='sharpshooter' && classLevel(st,'sharpshooter') >= 40) return 1.3; // Sharpshooter Lv 40: Steady Aim +30% Accuracy
     return 1;
   }
   // Duelist Lv 60: +25% damage at full Health.
@@ -4168,6 +4396,54 @@
   function spellbladeOverwhelmMult(st){ st = st || state; return (spellbladeBonus(80, st) && spellbladeStacks(st) >= 5) ? 1.25 : 1; } // Lv80 +25% at max
   function spellbladeCritChance(st){ return (spellbladeBonus(40, st) && enchantDamageBonus() > 0) ? 0.15 : 0; }    // Lv40 +15% crit while Enchant active
   function spellbladeEnchantMult(){ return spellbladeBonus(1) ? 2 : 1; }                                           // Lv1 Runeblade: double the Enchant bonus
+  // ===== New classes: Pyromancer / Sharpshooter / Juggernaut / Nightblade / Executioner =====
+  function pyromancerBonus(reqLevel, st){ return classBonusActive('pyromancer', reqLevel, st); }
+  function sharpshooterBonus(reqLevel, st){ return classBonusActive('sharpshooter', reqLevel, st); }
+  function juggernautBonus(reqLevel, st){ return classBonusActive('juggernaut', reqLevel, st); }
+  function nightbladeBonus(reqLevel, st){ return classBonusActive('nightblade', reqLevel, st); }
+  function executionerBonus(reqLevel, st){ return classBonusActive('executioner', reqLevel, st); }
+  // Fraction of the current enemy's max HP remaining (read pre-hit at the damage-mult site), for HP-threshold passives.
+  function enemyHpFrac(monster, st){ st = st || state; var mh = monster && monster.hp; if(!mh || mh <= 0) return 1; var cur = (st.activity && typeof st.activity.monsterHp === 'number') ? st.activity.monsterHp : mh; return Math.max(0, Math.min(1, cur / mh)); }
+  // Outgoing-damage multiplier from the five new classes (only one class is ever active, so factors don't cross-stack).
+  function newClassDmgMult(monster, st){
+    st = st || state; var m = 1;
+    if(pyromancerBonus(1, st)) m *= 1.30;                                    // Pyromancer Kindle
+    if(pyromancerBonus(80, st) && enemyHpFrac(monster, st) >= 0.5) m *= 1.50; // Pyromancer Meltdown
+    if(sharpshooterBonus(20, st)) m *= 1.20;                                 // Sharpshooter Piercing Shot
+    if(juggernautBonus(1, st)) m *= 1.30;                                    // Juggernaut Crushing Blows
+    if(nightbladeBonus(20, st)) m *= 1.25;                                   // Nightblade Hex
+    if(executionerBonus(1, st) && enemyHpFrac(monster, st) < 0.5) m *= 1.30; // Executioner Reap the Weak
+    return m;
+  }
+  // Critical-hit-chance bonus from the new classes (added into the crit roll).
+  function newClassCritChance(st){
+    st = st || state; var c = 0;
+    if(pyromancerBonus(20, st)) c += 0.12;   // Pyromancer Combustion
+    if(sharpshooterBonus(60, st)) c += 0.12; // Sharpshooter Deadeye
+    if(nightbladeBonus(60, st)) c += 0.12;   // Nightblade Dark Pact
+    if(executionerBonus(20, st)) c += 0.12;  // Executioner Cleave
+    return c;
+  }
+  // Critical-hit-damage bonus from the new classes (additive onto the crit multiplier, like Reaper/Elixir).
+  function newClassCritDmg(st){
+    st = st || state; var d = 0;
+    if(pyromancerBonus(40, st)) d += 0.75;   // Pyromancer Conflagration
+    if(sharpshooterBonus(1, st)) d += 0.50;  // Sharpshooter Aimed Shot
+    if(sharpshooterBonus(80, st)) d += 1.00; // Sharpshooter Kill Shot
+    if(juggernautBonus(80, st)) d += 0.60;   // Juggernaut Devastate
+    if(executionerBonus(60, st)) d += 0.50;  // Executioner Grisly Resolve
+    return d;
+  }
+  // Lifesteal (fraction of damage healed): Nightblade Siphon/Soul Reap + Executioner Bloodthirst.
+  function nightbladeLifestealPct(st){ if(nightbladeBonus(80, st)) return 0.15; if(nightbladeBonus(1, st)) return 0.08; return 0; }
+  function executionerLifestealPct(st){ return executionerBonus(40, st) ? 0.08 : 0; }
+  // Nightblade Lv 40 Shadowstep: +15% Dodge (folded into playerDodgeChance).
+  function nightbladeDodgeBonus(st){ st = st || state; return nightbladeBonus(40, st) ? 0.15 : 0; }
+  // Juggernaut Lv 40 Ironclad: +25% Armor; Lv 60 Unstoppable: -20% incoming damage.
+  function juggernautArmorMult(st){ return juggernautBonus(40, st) ? 1.25 : 1; }
+  function juggernautIncomingMult(st){ return juggernautBonus(60, st) ? 0.80 : 1; }
+  // Executioner Lv 80 Decapitate: a hit that leaves the enemy below 15% of its max HP instantly slays it.
+  function executionerExecuteThreshold(monster){ return (executionerBonus(80) && monster && monster.hp) ? monster.hp * 0.15 : 0; }
   // Duelist Lv 1: on a dodge, a random active companion fires one extra spell for free -- this does NOT
   // advance or reset that companion's own cast timer (state.companionCast is left untouched).
   function duelistDodgeBonusCast(){
@@ -4263,6 +4539,7 @@
     woodcarving:    { name:'Chip',   icon:svgIcon('log','#a07a44'), spells:[hitSpell('Splinter','piercing',13), buffSpell('Whittled Edge','dmgPierce',0.3,8), armorSpell('Hardwood Guard',1.6,6), buffSpell("Carver's Focus",'critChance',0.11,8)] },
     glassblowing:   { name:'Bulb',   icon:svgIcon('potion','#8ac8e0'), spells:[hitSpell('Glass Shard','slashing',14), buffSpell('Glass Cannon','critDmg',0.34,8), weakenSpell('Blinding Glare',0.3,8), buffSpell('Prism Focus','critChance',0.12,8)] },
     cooperage:      { name:'Stave',  icon:svgIcon('chest','#a0783c'), spells:[hitSpell('Barrel Bash','blunt',14), armorSpell('Ironbound',1.7,6), buffSpell('Braced Staves','block',0.16,8), siphonSpell('Tap the Cask',12)] },
+    fertilizer:     { name:'Sprout', icon:svgIcon('spice','#6b8f4e'), spells:[hitSpell('Mulch Toss','blunt',14), regenSpell('Bloom',5,7), buffSpell('Fertile Ground','dmgSlash',0.3,8), healSpell('Compost Heal',16)] },
     tanning:        { name:'Suede',  icon:svgIcon('hide','#8a6a42'), spells:[hitSpell('Rawhide Lash','slashing',13), armorSpell('Cured Hide',1.6,6), buffSpell('Supple Step','dodge',0.14,8), regenSpell("Tanner's Rest",4,6)] },
     weaving:        { name:'Loom',   icon:svgIcon('spool','#c8b088'), spells:[slowSpell('Snare Weave',0.4,10), armorSpell('Woven Ward',1.7,6), buffSpell('Tight Weave','block',0.15,8), buffSpell('Spun Speed','haste',0.16,8)] },
     papermaking:    { name:'Sheet',  icon:svgIcon('tabard','#e8dcc0'), spells:[hitSpell('Paper Cut','slashing',12), buffSpell('Crisp Edge','critChance',0.11,8), armorSpell('Pulp Ward',1.5,6), regenSpell('Fresh Sheet',4,6)] },
@@ -4318,7 +4595,12 @@
     plaguebearer:     { name:'Miasma',   icon:svgIcon('droplet','#6a8a3a'), spells:[poisonSpell('Plague',6,6), weakenSpell('Rot',0.3,8), siphonSpell('Leech Rot',13), buffSpell('Festering','potionPoison',0.45,10)] },
     berserker:        { name:'Ragnar',   icon:svgIcon('hornedskull','#c85a2a'), spells:[hitSpell('Frenzy','blunt',15), buffSpell('Bloodrage','dmgBlunt',0.34,8), siphonSpell('Rampage',13), buffSpell('Fury','critChance',0.13,8)] },
     sentinel:         { name:'Aegir',    icon:svgIcon('shield','#8a97a6'), spells:[armorSpell('Aegis Wall',1.8,6), buffSpell('Bastion','block',0.18,8), buffSpell('Immovable','resistBlunt',0.32,8), hitSpell('Shield Slam','blunt',13)] },
-    spellblade:       { name:'Rune',     icon:svgIcon('sword','#7a5aa8'), spells:[hitSpell('Runebolt','void',15), buffSpell('Enchanted Edge','critDmg',0.34,8), buffSpell('Spellweave','critChance',0.12,8), armorSpell('Mage Armor',1.5,6)] }
+    spellblade:       { name:'Rune',     icon:svgIcon('sword','#7a5aa8'), spells:[hitSpell('Runebolt','void',15), buffSpell('Enchanted Edge','critDmg',0.34,8), buffSpell('Spellweave','critChance',0.12,8), armorSpell('Mage Armor',1.5,6)] },
+    pyromancer:       { name:'Blaze',    icon:elementIcon('fire'),          spells:[hitSpell('Fireball','void',15), buffSpell('Immolate','firebomb',0.45,10), hitSpell('Scorch','void',13), buffSpell('Heat Haze','critDmg',0.34,8)] },
+    sharpshooter:     { name:'Falcon',   icon:svgIcon('bow','#8a6a42'),     spells:[hitSpell('Aimed Shot','piercing',16), buffSpell('Focus','critChance',0.13,8), hitSpell('Volley','piercing',13), buffSpell('Steady Aim','critDmg',0.32,8)] },
+    juggernaut:       { name:'Titan',    icon:svgIcon('hammer','#5a5a60'),  spells:[hitSpell('Sunder','blunt',15), buffSpell('Fortify','resistBlunt',0.32,8), armorSpell('Bulwark',1.8,6), buffSpell('Crush','dmgBlunt',0.32,8)] },
+    nightblade:       { name:'Umbra',    icon:elementIcon('dark'),          spells:[siphonSpell('Drain Life',15), buffSpell('Shadowstep','dodge',0.15,8), hitSpell('Shadow Bolt','void',13), buffSpell('Malice','critChance',0.13,8)] },
+    executioner:      { name:'Grimm',    icon:svgIcon('axe','#7a5a2a'),     spells:[hitSpell('Cleave','slashing',16), siphonSpell('Harvest',13), buffSpell('Bloodlust','critDmg',0.34,8), weakenSpell('Intimidate',0.3,8)] }
   };
 
   // Diverse, unique per-familiar spell kits drawn from the expanded pool. Reassigned onto FAMILIAR_DATA
@@ -4376,6 +4658,7 @@
     woodcarving:    [ hitSpell('Splinter','piercing',13), buffSpell('Whittled Edge','dmgPierce',0.3,8), armorSpell('Hardwood Guard',1.6,6), buffSpell("Carver's Focus",'critChance',0.11,8) ],
     glassblowing:   [ hitSpell('Glass Shard','slashing',14), buffSpell('Glass Cannon','critDmg',0.34,8), weakenSpell('Blinding Glare',0.3,8), buffSpell('Prism Focus','critChance',0.12,8) ],
     cooperage:      [ hitSpell('Barrel Bash','blunt',14), armorSpell('Ironbound',1.7,6), buffSpell('Braced Staves','block',0.16,8), siphonSpell('Tap the Cask',12) ],
+    fertilizer:     [ hitSpell('Mulch Toss','blunt',14), regenSpell('Bloom',5,7), buffSpell('Fertile Ground','dmgSlash',0.3,8), healSpell('Compost Heal',16) ],
     tanning:        [ hitSpell('Rawhide Lash','slashing',13), armorSpell('Cured Hide',1.6,6), buffSpell('Supple Step','dodge',0.14,8), regenSpell("Tanner's Rest",4,6) ],
     weaving:        [ slowSpell('Snare Weave',0.4,10), armorSpell('Woven Ward',1.7,6), buffSpell('Tight Weave','block',0.15,8), buffSpell('Spun Speed','haste',0.16,8) ],
     papermaking:    [ hitSpell('Paper Cut','slashing',12), buffSpell('Crisp Edge','critChance',0.11,8), armorSpell('Pulp Ward',1.5,6), regenSpell('Fresh Sheet',4,6) ],
@@ -4429,7 +4712,12 @@
     plaguebearer:   [ poisonSpell('Plague',6,6), weakenSpell('Rot',0.3,8), siphonSpell('Leech Rot',13), buffSpell('Festering','potionPoison',0.45,10) ],
     berserker:      [ hitSpell('Frenzy','blunt',15), buffSpell('Bloodrage','dmgBlunt',0.34,8), siphonSpell('Rampage',13), buffSpell('Fury','critChance',0.13,8) ],
     sentinel:       [ armorSpell('Aegis Wall',1.8,6), buffSpell('Bastion','block',0.18,8), buffSpell('Immovable','resistBlunt',0.32,8), hitSpell('Shield Slam','blunt',13) ],
-    spellblade:     [ hitSpell('Runebolt','void',15), buffSpell('Enchanted Edge','critDmg',0.34,8), buffSpell('Spellweave','critChance',0.12,8), armorSpell('Mage Armor',1.5,6) ]
+    spellblade:     [ hitSpell('Runebolt','void',15), buffSpell('Enchanted Edge','critDmg',0.34,8), buffSpell('Spellweave','critChance',0.12,8), armorSpell('Mage Armor',1.5,6) ],
+    pyromancer:     [ hitSpell('Fireball','void',15), buffSpell('Immolate','firebomb',0.45,10), hitSpell('Scorch','void',13), buffSpell('Heat Haze','critDmg',0.34,8) ],
+    sharpshooter:   [ hitSpell('Aimed Shot','piercing',16), buffSpell('Focus','critChance',0.13,8), hitSpell('Volley','piercing',13), buffSpell('Steady Aim','critDmg',0.32,8) ],
+    juggernaut:     [ hitSpell('Sunder','blunt',15), buffSpell('Fortify','resistBlunt',0.32,8), armorSpell('Bulwark',1.8,6), buffSpell('Crush','dmgBlunt',0.32,8) ],
+    nightblade:     [ siphonSpell('Drain Life',15), buffSpell('Shadowstep','dodge',0.15,8), hitSpell('Shadow Bolt','void',13), buffSpell('Malice','critChance',0.13,8) ],
+    executioner:    [ hitSpell('Cleave','slashing',16), siphonSpell('Harvest',13), buffSpell('Bloodlust','critDmg',0.34,8), weakenSpell('Intimidate',0.3,8) ]
   };
   // Each familiar channels an element (thematic to its skill). Its damaging spells (direct hits,
   // siphons, and poison DoTs) carry that element, so they gain the +20% elemental advantage against
@@ -4439,7 +4727,7 @@
     digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth', ranching:'earth', mycology:'dark', salvaging:'earth', essence:'light', diving:'water', trapping:'earth', tapping:'earth', spelunking:'dark',
     // Crafting
     carpentry:'earth', metallurgy:'fire', roasting:'fire', cooking:'water', alchemy:'water', bowyer:'earth', fletching:'earth', baking:'fire',
-    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark', tanning:'earth', weaving:'light', papermaking:'earth', bookbinding:'light', tinkering:'earth', pyrotechnics:'fire', inscription:'light', pottery:'fire', goldsmithing:'light', chandlery:'fire', woodcarving:'earth', glassblowing:'fire', cooperage:'earth',
+    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark', tanning:'earth', weaving:'light', papermaking:'earth', bookbinding:'light', tinkering:'earth', pyrotechnics:'fire', inscription:'light', pottery:'fire', goldsmithing:'light', chandlery:'fire', woodcarving:'earth', glassblowing:'fire', cooperage:'earth', fertilizer:'water',
     archaeology:'dark', blacksmithing:'fire', weaponsmithing:'fire', armorsmithing:'earth', shieldsmithing:'earth', runesmithing:'light', arcanism:'light',
     // Farming
     farming:'earth',
@@ -4451,7 +4739,8 @@
     mentality:'earth', zen:'light', meditation:'light', fortitude:'dark',
     // Classes
     summoner:'light', duelist:'fire', reaper:'dark', herald:'water', quickdraw:'earth', templar:'light', knight:'earth', assassin:'dark', thunderfury:'earth', treasureHunter:'light',
-    frostwarden:'water', plaguebearer:'dark', berserker:'fire', sentinel:'earth', spellblade:'light'
+    frostwarden:'water', plaguebearer:'dark', berserker:'fire', sentinel:'earth', spellblade:'light',
+    pyromancer:'fire', sharpshooter:'earth', juggernaut:'earth', nightblade:'dark', executioner:'dark'
   };
   var DAMAGE_SPELL_TYPES = { hit:true, siphon:true, poison:true }; // spells that deal direct damage or DoT
   function familiarElement(id){ return FAMILIAR_ELEMENT[id] || null; }
@@ -4492,7 +4781,7 @@
     essence:{s:'starburst',c:'#7a8ac8',ear:'antenna'}, inscription:{s:'corespiral',c:'#7a5aa8',ear:'horn'},
     diving:{s:'droplet',c:'#4a7ac8',ear:'fin'},
     trapping:{s:'paw',c:'#8a6a42',ear:'cat'}, tapping:{s:'droplet',c:'#c89a3a',ear:'leaf'}, spelunking:{s:'gem',c:'#7a8a9a',ear:'horn'},
-    pottery:{s:'urn',c:'#c4885a',ear:'round'}, goldsmithing:{s:'ring',c:'#d8b048',ear:'horn'},
+    pottery:{s:'urn',c:'#c4885a',ear:'round'}, goldsmithing:{s:'ring',c:'#d8b048',ear:'horn'}, fertilizer:{s:'spice',c:'#6b8f4e',ear:'round'},
     chandlery:{s:'candle',c:'#e8c84a',ear:'halo'}, woodcarving:{s:'log',c:'#a07a44',ear:'leaf'}, glassblowing:{s:'potion',c:'#8ac8e0',ear:'antenna'}, cooperage:{s:'chest',c:'#a0783c',ear:'round'},
     tanning:{s:'hide',c:'#8a6a42',ear:'round'}, weaving:{s:'spool',c:'#c8b088',ear:'cat'},
     papermaking:{s:'tabard',c:'#e8dcc0',ear:'round'}, bookbinding:{s:'brain',c:'#7a5aa8',ear:'horn'},
@@ -4520,7 +4809,8 @@
     mentality:{s:'compass',c:'#3f8a8a',ear:'round'}, zen:{s:'yinyang',c:'#8a8a8a',ear:'round'},
     meditation:{s:'lotusflower',c:'#c87a9a',ear:'leaf'}, fortitude:{s:'heart',c:'#c8302a',ear:'round'},
     summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}, reaper:{s:'ghost',c:'#6a5a7a',ear:'horn'}, herald:{s:'shield',c:'#c8a83a',ear:'horn'}, quickdraw:{s:'bow',c:'#5a8a4a',ear:'wing'}, templar:{s:'starburst',c:'#e0c860',ear:'halo'}, knight:{s:'sword',c:'#8a90a0',ear:'horn'}, assassin:{s:'claw',c:'#7a3a4a',ear:'cat'}, thunderfury:{s:'lightning',c:'#e8d84a',ear:'antenna'}, treasureHunter:{s:'gem',c:'#e6c24a',ear:'round'},
-    frostwarden:{s:'droplet',c:'#5ac8e8',ear:'horn'}, plaguebearer:{s:'droplet',c:'#6a8a3a',ear:'horn'}, berserker:{s:'hornedskull',c:'#c85a2a',ear:'horn'}, sentinel:{s:'shield',c:'#8a97a6',ear:'horn'}, spellblade:{s:'sword',c:'#7a5aa8',ear:'horn'}
+    frostwarden:{s:'droplet',c:'#5ac8e8',ear:'horn'}, plaguebearer:{s:'droplet',c:'#6a8a3a',ear:'horn'}, berserker:{s:'hornedskull',c:'#c85a2a',ear:'horn'}, sentinel:{s:'shield',c:'#8a97a6',ear:'horn'}, spellblade:{s:'sword',c:'#7a5aa8',ear:'horn'},
+    pyromancer:{s:'starburst',c:'#e0662a',ear:'horn'}, sharpshooter:{s:'bow',c:'#8a6a42',ear:'wing'}, juggernaut:{s:'hammer',c:'#5a5a60',ear:'horn'}, nightblade:{s:'starburst',c:'#5a3a6a',ear:'cat'}, executioner:{s:'axe',c:'#7a5a2a',ear:'horn'}
   };
   // Draw the ear/crown silhouette behind the head. Returned in two layers (behind body, in front).
   function famEars(kind, body, bodyD, belly, accent){
@@ -4611,7 +4901,7 @@
   function getFamiliarLevel(skillId){
     return (state.familiars[skillId] && state.familiars[skillId].level) || 1;
   }
-  function familiarPotencyMult(level){ return (1 + (Math.max(1,level)-1)*FAMILIAR_POTENCY_PER_LEVEL) * (1 + getClothArmorSpellBonus(state)) * (1 + stavesEfficiencyBonus(state)); }
+  function familiarPotencyMult(level){ return (1 + (Math.max(1,level)-1)*FAMILIAR_POTENCY_PER_LEVEL) * (1 + getClothArmorSpellBonus(state)) * (1 + stavesEfficiencyBonus(state)) * menageristPotencyMult(); }
   // ---- Staff & multi-familiar helpers ----
   // The Staves proficiency (trained by familiar damage) boosts familiar efficiency (spell potency):
   // +1% at Lv 1 up to +100% at Lv 100. Applies to every familiar cast.
@@ -4642,14 +4932,18 @@
         current.level = Math.min(FAMILIAR_MAX_LEVEL, current.level + 1);
         addLog(fam.icon + ' ' + fam.name + ' grows stronger! Now level ' + current.level + '.', 'important');
         spawnFloatingText(fam.name + ' leveled up!', 'ft-rare');
-        if(state.settings.popupFamiliar){ state.popupQueue.push({ type:'familiar', skillId:skillId, leveledUp:true }); state.popupBatchTotal = (state.popupBatchTotal||0) + 1; }
+        // Offline: collect into one consolidated notification instead of a popup per familiar.
+        if(offlineCapture){ if(offlineCapture.familiars) offlineCapture.familiars.push({ skillId:skillId, leveledUp:true, level:current.level }); }
+        else if(state.settings.popupFamiliar){ state.popupQueue.push({ type:'familiar', skillId:skillId, leveledUp:true }); state.popupBatchTotal = (state.popupBatchTotal||0) + 1; }
       } else {
         state.familiars[skillId] = { owned:true, level:1 };
         addLog(fam.icon + ' A familiar has joined you! ' + fam.name + ' (' + (SKILL_LABELS[skillId]||skillId) + ') answered your call.', 'important');
         spawnFloatingText('Familiar summoned: ' + fam.name + '!', 'ft-rare');
         chronicleBroadcast('familiar', fam.name);   // new summon -> global feed
         if(!offlineCapture) serverBuffGrant('familiar'); // finding a familiar gifts a 5min server +50% EXP buff
-        if(state.settings.popupFamiliar){ state.popupQueue.push({ type:'familiar', skillId:skillId, leveledUp:false }); state.popupBatchTotal = (state.popupBatchTotal||0) + 1; }
+        // Offline: collect into one consolidated notification instead of a popup per familiar.
+        if(offlineCapture){ if(offlineCapture.familiars) offlineCapture.familiars.push({ skillId:skillId, leveledUp:false, level:1 }); }
+        else if(state.settings.popupFamiliar){ state.popupQueue.push({ type:'familiar', skillId:skillId, leveledUp:false }); state.popupBatchTotal = (state.popupBatchTotal||0) + 1; }
       }
       needsRender = true;
     }
@@ -4883,7 +5177,7 @@
     var toolBonus = getEquippedGatherTool('butchering', toolTier, state.gatherToolRarities.butchering).speedBonus || 0;
     var physLevel = getLevel(state.physique[physiqueId]||0);
     var physBonus = Math.min(0.25, physLevel*0.0025);
-    return Math.min(0.95, BASE_BUTCHER_CHANCE + toolBonus + physBonus);
+    return Math.min(0.95, BASE_BUTCHER_CHANCE + toolBonus + physBonus + huntsmanOutputBonus());
   }
 
   // ---- Digging: main output chance (Shovel-boosted) + two independent rare side-drops (physique-boosted) ----
@@ -4914,6 +5208,10 @@
     if(Math.random() < workshopDoubleChance(state, skillId)){
       addItem(itemId, 1);
       spawnFloatingText('Workshop: double output!', 'ft-rare');
+    }
+    if(prospectorBonusRoll(skillId)){ // Prospector's Nose: a bonus ore/soil from Mining/Prospecting/Digging
+      addItem(itemId, 1);
+      spawnFloatingText('Prospector: bonus find!', 'ft-rare');
     }
   }
   function processDiggingRoll(mainItemId){
@@ -5045,8 +5343,8 @@
   var FISHING_TREASURE_CHANCE = 0.05;       // base chance a *failed* cast snags a Treasure Chest instead
   var FISHING_TREASURE_PER_TIER = 0.02;     // +2% per action tier -- deeper waters hide better loot
   // Treasure-on-miss chance for a given fish, scaling with the fished item's tier (fishing_t<n>).
-  function fishingTreasureChance(itemId){ return Math.min(1, FISHING_TREASURE_CHANCE + FISHING_TREASURE_PER_TIER * itemTierFromId(itemId)); }
-  var FARMING_PHYSIQUE = [['handStrength',1],['zen',1],['mentality',1]];
+  function fishingTreasureChance(itemId){ return Math.min(1, FISHING_TREASURE_CHANCE + FISHING_TREASURE_PER_TIER * itemTierFromId(itemId) + anglersEyeTreasureBonus()); }
+  var FARMING_PHYSIQUE = [['handStrength',1],['zen',1],['mentality',1],['greenThumb',1]];
   // Farming is split into three harvesting sub-skills, one per crop line. Each seed type is
   // gated by its own sub-skill level, and a harvest grants XP to that sub-skill.
   var FARMING_SUBSKILLS = ['fiberharvesting','grainharvesting','herbharvesting'];
@@ -5128,7 +5426,7 @@
     if((state.inventory[seedId]||0) <= 0) return false;
     if(!canPlantInField(fieldTier, si.tier)){ if(!batch) addLog('That ' + (DIGGING_NAMES[fieldTier]||'') + ' Field only grows crops up to ' + TIER_NAMES[fieldTier] + ' tier.', 'danger'); return false; }
     state.inventory[seedId] -= 1;
-    map[key] = { cropType:si.cropType, tierIndex:si.tier, plantedAt:Date.now(), readyAt:Date.now() + si.crop.durationMs };
+    map[key] = { cropType:si.cropType, tierIndex:si.tier, plantedAt:Date.now(), readyAt:Date.now() + Math.round(si.crop.durationMs * greenThumbGrowthMult()) }; // Green Thumb: faster growth
     if(!batch){ addLog('You planted a ' + si.def.name + (scope==='guild'?' on the guild estate':'') + '.', 'important'); saveGame(); }
     needsRender = true;
     return true;
@@ -5143,11 +5441,14 @@
     if(Date.now() < plot.readyAt) return null;
     var cropData = getCropDataForPlot(plot);
     if(!cropData){ delete map[key]; needsRender = true; return null; } // self-heal a bad cropType
-    addItem(cropData.id, 1);
+    // Fertilizer doubles the harvest (Composter can push a fertilized plot to 3x); Green Thumb may add one more.
+    var yieldQty = plot.fertilized ? (composterTripleYield() ? 3 : 2) : 1;
+    yieldQty += greenThumbExtraYield();
+    addItem(cropData.id, yieldQty);
     addXp(FARMING_CROP_SKILL[plot.cropType] || 'fiberharvesting', cropData.xp);
     addPhysiqueXp(physTierPairs(FARMING_PHYSIQUE, itemTierFromId(cropData.id)));
     maybeSummonFamiliar('farming');
-    if(!batch){ addLog('You harvested ' + cropData.name + '.', 'important'); spawnFloatingText('+1 ' + cropData.name, 'ft-success'); }
+    if(!batch){ addLog('You harvested ' + yieldQty + '&times; ' + cropData.name + (plot.fertilized ? ' (fertilized)' : '') + '.', 'important'); spawnFloatingText('+' + yieldQty + ' ' + cropData.name, 'ft-success'); }
     delete map[key];
     if(!batch) saveGame();
     needsRender = true;
@@ -5215,6 +5516,40 @@
     return n;
   }
 
+  // ---- Fertilizer: applied to a growing (unharvested) crop, it doubles that plot's harvest. The
+  // Fertilizer must match the crop's tier (fertilizer_t<n> for a tier-n crop). batch=true suppresses
+  // the per-plot log/toast/save so Fertilize All writes one summary and saves once.
+  function fertilizePlot(scope, key, batch){
+    var map = farmPlotMap(scope);
+    var plot = map[key];
+    if(isPlotEmpty(plot)) return false;        // nothing growing to fertilize
+    if(plot.fertilized) return false;          // already doubled
+    var fid = 'fertilizer_t' + plot.tierIndex; // must be the same tier as the crop
+    if((state.inventory[fid]||0) <= 0) return false;
+    state.inventory[fid] -= 1;
+    if(composterRefund()) state.inventory[fid] += 1; // Composter: a chance the Fertilizer isn't used up
+    plot.fertilized = true;
+    if(!batch){ addLog('You spread ' + (ALL_CRAFT_RECIPES[fid] ? ALL_CRAFT_RECIPES[fid].name : 'Fertilizer') + ' on your crop — it will yield double.', 'important'); spawnFloatingText('Fertilized (2×)', 'ft-success'); saveGame(); }
+    needsRender = true;
+    return true;
+  }
+  // Fertilize every growing, unfertilized crop for which a matching-tier Fertilizer is owned. Scarce
+  // fertilizer favors higher-tier crops first. dryRun returns the count that WOULD be fertilized.
+  function farmingFertilizeAll(dryRun){
+    var plots = allFieldPlots().filter(function(p){ return p.plot && p.plot.cropType && !p.plot.fertilized; });
+    if(!plots.length) return 0;
+    plots.sort(function(a,b){ return (b.plot.tierIndex||0) - (a.plot.tierIndex||0); });
+    var avail = {}, n = 0; // avail: crop-tier -> owned matching fertilizer, decremented as allocated
+    plots.forEach(function(p){
+      var t = p.plot.tierIndex;
+      if(avail[t] === undefined) avail[t] = state.inventory['fertilizer_t'+t] || 0;
+      if(avail[t] > 0){ avail[t] -= 1; if(!dryRun) fertilizePlot(p.scope, p.key, true); n++; }
+    });
+    if(!dryRun && n > 0){ addLog('Fertilized ' + n + ' crop' + (n===1?'':'s') + ' — each will yield double.', 'important'); spawnFloatingText('Fertilized ' + n + ' crops', 'ft-success'); saveGame(); needsRender = true; }
+    return n;
+  }
+  function farmingFertilizableCount(){ return farmingFertilizeAll(true); }
+
   function pickWeightedFarmingTier(){
     var weights = [], total = 0, i;
     for(i=0;i<TIER_COUNT;i++){ var w = Math.pow(0.65, i); weights.push(w); total += w; }
@@ -5264,7 +5599,7 @@
   var NEST_PHYSIQUE_CAP = 0.05;
   function critterCacheChance(state){
     var lvl = getLevel(state.physique[NEST_PHYSIQUE]||0);
-    return Math.min(0.11, BASE_NEST_CHANCE + Math.min(NEST_PHYSIQUE_CAP, lvl*0.0005));
+    return Math.min(0.16, BASE_NEST_CHANCE + Math.min(NEST_PHYSIQUE_CAP, lvl*0.0005) + sylvanBondCacheBonus());
   }
   function maybeDropCritterCache(){
     if(Math.random() < critterCacheChance(state)){
@@ -6492,6 +6827,7 @@
         needsRender = true;
       } else {
         consumeInputs(actualInputs);
+        if(quartermasterRefund()){ var _qk = Object.keys(actualInputs); if(_qk.length){ addItem(_qk[Math.floor(Math.random()*_qk.length)], 1); } } // Quartermaster: refund one input
         bumpStat('crafted');
         gabCapture = { xp:0, items:{} };
         if(recipe.shaftCraft){
@@ -6614,7 +6950,7 @@
     while(act.type==='pray' && act.progress >= effTimeP){
       act.progress -= effTimeP;
       addXp('prayer', prayerTier.xp);
-      addPhysiqueXp(physTierPairs([['focus',1]], itemTierFromId(act.itemId)));
+      addPhysiqueXp(physTierPairs([['focus',1],['zealotry',1]], itemTierFromId(act.itemId)));
       maybeSummonFamiliar('prayer');
       effTimeP = prayerTier.time*1000*speedMultiplier(state);
     }
@@ -6863,6 +7199,33 @@
   function agilityLeatherMult(state){ return Math.min(0.30, getLevel(state.physique.agility||0)*0.003); }               // light-armor proficiency
   function shieldProfMult(state){ return Math.min(0.30, (getLevel(state.physique.fortitude||0)+getLevel(state.physique.blocking||0))*0.0015); } // shield proficiency (fortitude+blocking)
   function resolveArmorMult(state){ return Math.min(0.25, getLevel(state.physique.resolve||0)*0.003); }                 // armor proficiencies
+  // Generic cross-skill physique bonus: scales ~linearly from Lv1 up to `cap` at Lv100 (matches how the
+  // built-in physiques ramp). All the new cross-skill physiques below read through this one helper.
+  function physBonus(id, cap){ return Math.min(cap, getLevel((state.physique && state.physique[id]) || 0) * (cap/100)); }
+  // Derived effects for the cross-skill physiques. Each is a no-op at base level (physBonus ~ 0), so
+  // existing players see no change until they train the physique.
+  function merchantSellMult(){ return 1 + physBonus('merchantsSavvy', 0.15); }         // +vendor sell price
+  function merchantTaxMult(){ return 1 - physBonus('merchantsSavvy', 0.50); }          // up to -50% Market tax
+  function weaponsmithEdgeMult(){ return 1 + physBonus('weaponsmithsEdge', 0.15); }    // +weapon damage
+  function armorerTemperMult(){ return 1 + physBonus('armorersTemper', 0.15); }        // +armour defence
+  function runicAttunementMult(){ return 1 + physBonus('runicAttunement', 0.20); }     // +wand/scepter damage
+  function zealotryDmgMult(){ var mx = faithMax(state); var frac = mx > 0 ? Math.min(1, (state.faith||0)/mx) : 0; return 1 + physBonus('zealotry', 0.20) * frac; }
+  function menageristPotencyMult(){ return 1 + physBonus('menagerist', 0.25); }        // +familiar potency
+  function fieldRationsDurationMult(){ return 1 + physBonus('fieldRations', 0.30); }   // +food-buff duration
+  function apothecaryExtraCharges(){ return Math.round(physBonus('apothecarysHand', 5)); } // +potion charges (0..5)
+  function demolitionistMult(){ return 1 + physBonus('demolitionist', 0.30); }         // +bomb/flash potency
+  function wardersFocusReflectBonus(){ return physBonus('wardersFocus', 0.15); }       // +ward reflect fraction
+  function greenThumbGrowthMult(){ return 1 - physBonus('greenThumb', 0.15); }         // shorter crop growth time
+  function greenThumbExtraYield(){ return Math.random() < physBonus('greenThumb', 0.15) ? 1 : 0; }
+  function composterRefund(){ return Math.random() < physBonus('composter', 0.20); }   // Fertilizer not consumed
+  function composterTripleYield(){ return Math.random() < physBonus('composter', 0.20); } // fertilized crop -> 3x
+  function prospectorBonusRoll(skillId){ return (skillId==='mining'||skillId==='prospecting'||skillId==='digging') && Math.random() < physBonus('prospectorsNose', 0.12); }
+  function huntsmanOutputBonus(){ return physBonus('huntsman', 0.12); }                // +butcher recovery chance
+  function quartermasterRefund(){ return Math.random() < physBonus('quartermaster', 0.15); } // refund one input
+  function diligenceCraftXpMult(){ return 1 + physBonus('diligence', 0.15); }          // +craft XP
+  function masterworkRarityBonus(){ return physBonus('masterwork', 0.15); }            // +rare-or-better odds
+  function anglersEyeTreasureBonus(){ return physBonus('anglersEye', 0.15); }          // +fishing treasure chance
+  function sylvanBondCacheBonus(){ return physBonus('sylvanBond', 0.05); }             // +critter cache chance
   // Crafting
   function grossMotorCraftSuccessBonus(state){ return Math.min(0.15, getLevel(state.physique.grossMotor||0)*0.003); }   // all crafts
   function criticalThinkingCraftSuccessBonus(state){ return Math.min(0.15, getLevel(state.physique.criticalThinking||0)*0.003); } // alchemy/mixology/archaeology
@@ -7009,7 +7372,7 @@
     OFFHAND_STYLE_IDS.forEach(function(id){ offhandRarities[id] = 'normal'; });
     var xpObj = {
       digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0, ranching:0, mycology:0, salvaging:0, essence:0, diving:0, trapping:0, tapping:0, spelunking:0,
-      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0, tanning:0, weaving:0, papermaking:0, bookbinding:0, tinkering:0, pyrotechnics:0, inscription:0, pottery:0, goldsmithing:0, chandlery:0, woodcarving:0, glassblowing:0, cooperage:0,
+      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0, tanning:0, weaving:0, papermaking:0, bookbinding:0, tinkering:0, pyrotechnics:0, inscription:0, pottery:0, goldsmithing:0, chandlery:0, woodcarving:0, glassblowing:0, cooperage:0, fertilizer:0,
       stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, arcanism:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
       shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0, wands:0, staves:0, scepters:0,
@@ -7422,6 +7785,7 @@
     var before = getLevel(state.xp[skill]);
     if(isTeaActive()) amount = amount * (1 + state.activeTea.xpBoost);
     amount = amount * familiarXpMult(skill) * serverBuffXpMult();
+    if(CRAFT_SKILL_IDS.indexOf(skill) !== -1) amount *= diligenceCraftXpMult(); // Diligence: +Crafting XP
     state.xp[skill] += amount;
     if(offlineCapture){ offlineCapture.xp[skill] = (offlineCapture.xp[skill]||0) + amount; }
     if(gabCapture){ gabCapture.xp += amount; }
@@ -7580,10 +7944,12 @@
     var restore = relicTierIndex>=0
       ? Math.round(30 * Math.pow(1.3, relicTierIndex))
       : Math.round(15 * Math.pow(1.25, tier-1) * (jewelryBoost ? 1.5 : 1));
+    restore = Math.round(restore * (1 + physBonus('oblation', 0.25)));           // Oblation: more Faith per offering
+    if(Math.random() < physBonus('oblation', 0.25)){ addItem(id, 1); spawnFloatingText('The offering is returned!', 'ft-rare'); } // Oblation: a chance the item comes back
     var before = state.faith;
     state.faith = Math.min(faithMax(state), state.faith + restore);
     addXp('sacrifice', 30);
-    addPhysiqueXp(physTierPairs([['focus',1]], tier-1));
+    addPhysiqueXp(physTierPairs([['focus',1],['zealotry',1],['oblation',1]], tier-1));
     maybeSummonFamiliar('sacrifice');
     addLog('You sacrificed your ' + label + ' and restored ' + Math.round(state.faith-before) + ' Faith.', 'important');
     needsRender = true;
@@ -7797,16 +8163,16 @@
       act.potionPoisonUntil = Date.now() + _cdur;
     } else if(e.type==='bomb'){
       // Tinkering Bomb: a heavy raw burst on each hit (never the finishing blow via poison rules -- this is direct).
-      var bb = Math.round(randInt(Math.round(e.dmg*0.6), Math.round(e.dmg*1.4)));
+      var bb = Math.round(randInt(Math.round(e.dmg*0.6), Math.round(e.dmg*1.4)) * demolitionistMult()); // Demolitionist: bigger bang
       act.monsterHp -= bb;
       spawnFloatingText('💣 '+bb, 'ft-rare');
     } else if(e.type==='flash'){
       // Pyrotechnics Flash Bomb: a chance to stun the enemy, freezing its action bar for 1.5s.
-      if(!offlineCapture && Math.random() < e.stun){ act.enemyStunUntil = Date.now() + 1500; spawnFloatingText('Flashed!', 'ft-rare'); }
+      if(!offlineCapture && Math.random() < e.stun * demolitionistMult()){ act.enemyStunUntil = Date.now() + 1500; spawnFloatingText('Flashed!', 'ft-rare'); } // Demolitionist: better stun odds
     }
     state.potionCharges = (state.potionCharges||0) - 1;
     if(state.potionCharges <= 0){
-      if((state.inventory[state.activePotion]||0) > 0){ state.inventory[state.activePotion]--; state.potionCharges = POTION_MAX_CHARGES; }
+      if((state.inventory[state.activePotion]||0) > 0){ state.inventory[state.activePotion]--; state.potionCharges = POTION_MAX_CHARGES + apothecaryExtraCharges(); }
       else { state.activePotion = null; state.potionCharges = 0; }
       needsRender = true; // reload/deplete changes the picker; charge countdown updates live otherwise
     }
@@ -7877,13 +8243,13 @@
     var ringBonus = isWandAttack ? 1 : getRingDamageMultiplier(state, weaponStyle.attackTypes || {blunt:1});
     var leatherBowBonus = weaponStyle.hand==='bow' ? (1 + getLeatherArmorBonuses(state).bowDmgBonus) : 1;
     var chainMeleeBonus = (weaponStyle.hand!=='bow' && !isWandAttack) ? (1 + getChainArmorMeleeBonus(state)) : 1;
-    var isCrit = Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawCritChanceBonus() + knightMissCritChance() + spellbladeCritChance()); // + Spellblade Arcane Edge (while an Enchant is active)
+    var isCrit = Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawCritChanceBonus() + knightMissCritChance() + spellbladeCritChance() + newClassCritChance()); // + Spellblade Arcane Edge, + new-class crit-chance passives
     // Wands are magical, so the melee/bow strength physiques don't scale them -- only the generic
     // low-HP tenacity bonus. Melee/bow keep their class physique multipliers.
     var physDmgMult = isWandAttack ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
     physDmgMult *= tenacityLowHpMult(state);
     // Elixir potions + familiar crit-damage buffs stack on top of the (capped) base+exploitation crit.
-    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + reaperCritDmgBonus() + knightMissCritDmg() + thunderLowHpCritDmg() + treasureHunterCritDmgBonus()) : 1;
+    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + reaperCritDmgBonus() + knightMissCritDmg() + thunderLowHpCritDmg() + treasureHunterCritDmgBonus() + newClassCritDmg()) : 1;
 
     // Accuracy vs Dodge: roll to land the hit. A miss deals no damage and fires no on-hit effects
     // (potions, proficiency XP), but you still trained your reflexes by swinging so accuracy can grow.
@@ -7907,9 +8273,14 @@
 
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
     var wandAttuneMult = isWandAttack ? elementDmgMult(state, weaponStyle.element) : 1; // Elemental Attunement boosts a wand's element damage
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * (1 + enchantDamageBonus() * spellbladeEnchantMult()) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1));
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + enchantDamageBonus() * spellbladeEnchantMult()) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1));
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
+    // Executioner Lv 80 (Decapitate): a hit that leaves the enemy below 15% of its max HP finishes it outright.
+    if(!isOffhand && act.monsterHp > 0){
+      var execThresh = executionerExecuteThreshold(monster);
+      if(execThresh > 0 && act.monsterHp <= execThresh){ act.monsterHp = 0; spawnFloatingText('Decapitate!', 'ft-rare'); }
+    }
     firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
     if(isCrit) spawnFloatingText('Critical Hit!', 'ft-rare');
     var atkFeed = [['agility',2]];
@@ -7917,6 +8288,7 @@
     else if(weaponStyle.hand==='2h') atkFeed.push(['balance',2]);
     if(isCrit){ atkFeed.push(['criticalEye',2]); atkFeed.push(['exploitation',2]); }
     if(state.playerHp < maxHp(state)*0.25) atkFeed.push(['tenacity',2]);
+    if(activeCompanionList(state).length) atkFeed.push(['menagerist',2]); // trains only while a Companion familiar fights alongside you
     addPhysiqueXp(physTierPairs(atkFeed, monster.tierIndex)); // each combat physique earns monsterTier+1
     // Offensive proficiency XP scales with damage actually inflicted (capped at the monster's
     // remaining HP so overkill isn't over-rewarded) -- no inherent per-hit enemy XP. Both the
@@ -7970,7 +8342,7 @@
       if(spellbladeBonus(60)) state.spellbladeStacks = Math.min(5, (state.spellbladeStacks || 0) + 1);
     }
     // Reaper (Lv 40/80) + Berserker (Lv 20 Bloodthirst): heal a share of the damage actually inflicted.
-    var lifestealPct = reaperLifestealPct() + berserkerLifestealPct();
+    var lifestealPct = reaperLifestealPct() + berserkerLifestealPct() + nightbladeLifestealPct() + executionerLifestealPct();
     if(lifestealPct > 0){
       var healed = Math.min(Math.round(effDmg * lifestealPct), maxHp(state) - state.playerHp);
       if(healed > 0){ state.playerHp += healed; spawnFloatingText('+'+healed+' HP', 'ft-success'); }
@@ -8048,7 +8420,7 @@
       return;
     }
     var relicBonus = getEquippedRelicBonus(state);
-    var armorDefense = getTotalArmorDefense(state) * (1 + relicBonus) * getFamiliarArmorMult() * (1 + resolveArmorMult(state)) * heraldBlockArmorMult(state) * sentinelArmorMult(state);
+    var armorDefense = getTotalArmorDefense(state) * (1 + relicBonus) * getFamiliarArmorMult() * (1 + resolveArmorMult(state)) * heraldBlockArmorMult(state) * sentinelArmorMult(state) * juggernautArmorMult(state) * armorerTemperMult();
     var offhandItem = getEquippedOffhandItem(state);
     var offhandStyle = getOffhandStyle(state.equippedOffhand);
     var offhandProficiency = (offhandStyle && state.equippedOffhand) ? (1 + Math.min(0.15, getLevel(state.xp[offhandStyle.id]||0)*0.005)) : 1;
@@ -8058,7 +8430,7 @@
     // The hit lands its physical type AND the enemy's element together: the element is amplified by
     // the player's armor weakness to it (leather->fire, chain->earth, plate->water).
     var elementMult = incomingElementMult(state, monster);
-    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster) * frostwardenWaterResistMult(monster) * templarIncomingDmgMult() * sentinelIncomingMult(state) * berserkerRecklessTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getRingResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring flat resistance
+    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster) * frostwardenWaterResistMult(monster) * templarIncomingDmgMult() * sentinelIncomingMult(state) * juggernautIncomingMult(state) * berserkerRecklessTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getRingResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring flat resistance
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
     var blockChance = playerBlockChance(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
@@ -8090,7 +8462,7 @@
     // and reflect that share back as that element. Rarity can proc a full (100%) reflect.
     var wardReflected = 0;
     if(offhandStyle && offhandStyle.type==='ward' && offhandItem && monster.element === offhandStyle.element){
-      var _rf = Math.min(1, (offhandItem.reflect || 0) + wardingReflectBonus(state)); // ward tier + Warding proficiency
+      var _rf = Math.min(1, (offhandItem.reflect || 0) + wardingReflectBonus(state) + wardersFocusReflectBonus()); // ward tier + Warding proficiency + Warder's Focus physique
       if((offhandItem.fullReflectChance||0) > 0 && Math.random() < offhandItem.fullReflectChance) _rf = 1; // rarity proc: reflect it all
       if(_rf > 0){
         var negated = Math.round(dmgToPlayer * _rf);
@@ -8242,15 +8614,17 @@
     if(!recipe || !recipe.feastDurationMs) return;
     if((state.inventory[itemId]||0) <= 0) return;
     state.inventory[itemId] -= 1;
-    var healed = Math.min(recipe.heal||0, maxHp(state) - state.playerHp);
+    var _frMult = fieldRationsDurationMult(); // Field Rations: longer, more nourishing feasts
+    var healed = Math.min(Math.round((recipe.heal||0) * _frMult), maxHp(state) - state.playerHp);
     if(healed > 0) state.playerHp += healed;
+    var _feastDur = Math.round(recipe.feastDurationMs * _frMult);
     state.activeFeast = {
       itemId: itemId,
       name: recipe.name,
       icon: recipe.icon,
       dmgBonus: recipe.feastBonus,
-      durationMs: recipe.feastDurationMs,
-      expiresAt: Date.now() + recipe.feastDurationMs
+      durationMs: _feastDur,
+      expiresAt: Date.now() + _feastDur
     };
     addLog('You feast on a ' + recipe.name + (healed>0 ? (', recovering ' + healed + ' HP and') : ',') + ' empowering your attacks +' + Math.round(recipe.feastBonus*100) + '% for ' + Math.round(recipe.feastDurationMs/60000) + ' minutes.', 'important');
     needsRender = true;
@@ -8298,8 +8672,9 @@
       addLog('That item is locked. Unlock it first to sell.', 'danger');
       return;
     }
-    state.gold += qty*item.sell;
+    state.gold += Math.round(qty*item.sell*merchantSellMult());
     state.inventory[id] = 0;
+    addPhysiqueXp([['merchantsSavvy',1]]); // Merchant's Savvy trains on selling
     needsRender = true;
   }
   function toggleItemLock(id){
@@ -8313,7 +8688,7 @@
       var qty = state.inventory[id]||0;
       if(item && qty>0 && !state.lockedItems[id]){ total += qty*item.sell; state.inventory[id]=0; }
     });
-    if(total>0){ state.gold += total; addLog('Sold your goods for ' + total + ' gold.'); needsRender = true; }
+    if(total>0){ total = Math.round(total*merchantSellMult()); state.gold += total; addPhysiqueXp([['merchantsSavvy',2]]); addLog('Sold your goods for ' + total + ' gold.'); needsRender = true; }
   }
 
   // Tools are now Equipment: forging produces a stackable inventory item for whatever
@@ -8428,7 +8803,7 @@
     if(regenSeconds > 0) state.playerHp = Math.min(maxHp(state), state.playerHp + regenSeconds);
     var act = state.activity;
     var goldBefore = state.gold;
-    offlineCapture = { xp:{}, physique:{}, items:{}, gold:0, elapsedMs:capped, activityType:(act&&act.type)||null };
+    offlineCapture = { xp:{}, physique:{}, items:{}, gold:0, elapsedMs:capped, activityType:(act&&act.type)||null, familiars:[] };
     // A primary activity whose item id was renamed/removed in an update must not throw here --
     // that would abort the whole offline pass (belt slots + peons included). Null it out instead.
     if(act && act.type === 'gather' && !ALL_GATHER_ITEMS[act.itemId]) state.activity = act = { type:null, tier:0 };
@@ -8553,6 +8928,9 @@
     // 10-minute auto-refresh, or a momentary disconnect -- shouldn't pop a summary, so we require at
     // least 30s away. The progress itself was already applied above; we're only gating the popup.
     if(capped >= 30000 && (Object.keys(_sum.xp).length || Object.keys(_sum.physique).length || Object.keys(_sum.items).length || _sum.gold > 0)){ offlineSummaryData = _sum; }
+    // Familiars found offline ride along on the summary (shown as a second consolidated popup on Collect).
+    // If there was no summary to show but familiars were still found, surface the consolidated popup directly.
+    if(_sum.familiars && _sum.familiars.length && !offlineSummaryData){ queueFamiliarBatch(_sum.familiars); }
   }
 
   async function initGame(){
@@ -10300,8 +10678,8 @@
     }
     html += '<div class="stat-row"><span class="stat-label">Damage Type</span><span class="stat-value">'+dmgTypeHtml+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">'+(isWandMain?'Wands Proficiency':(isScepterMain?'Scepters Proficiency':'Weapon Proficiency'))+'</span><span class="stat-value">+'+Math.round((weaponProficiency-1)*100)+'%</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+(Math.round((criticalEyeCritChance(state)+quickdrawCritChanceBonus())*10000)/100)+'%</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+(Math.round((Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + reaperCritDmgBonus())*100)/100)+'x</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+(Math.round((criticalEyeCritChance(state)+quickdrawCritChanceBonus()+newClassCritChance())*10000)/100)+'%</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+(Math.round((Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + reaperCritDmgBonus() + newClassCritDmg())*100)/100)+'x</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Accuracy</span><span class="stat-value">'+playerAccuracy(state)+'</span></div>';
     if(weaponStyle.hand==='bow'){
       html += '<div class="stat-row"><span class="stat-label">Leather Bow Bonus</span><span class="stat-value">+'+Math.round(getLeatherArmorBonuses(state).bowDmgBonus*100)+'%</span></div>';
@@ -10684,8 +11062,8 @@
     if((state.inventory[id]||0) <= 0){ addLog('You don\'t have that potion.', 'danger'); return; }
     state.inventory[id]--;
     state.activePotion = id;
-    state.potionCharges = POTION_MAX_CHARGES;
-    addLog('Readied ' + ((ALL_SELLABLE[id]||{}).name || id) + ' — ' + POTION_MAX_CHARGES + ' charges.', 'important');
+    state.potionCharges = POTION_MAX_CHARGES + apothecaryExtraCharges();
+    addLog('Readied ' + ((ALL_SELLABLE[id]||{}).name || id) + ' — ' + (POTION_MAX_CHARGES + apothecaryExtraCharges()) + ' charges.', 'important');
     saveGame(); render();
   }
   function deactivatePotion(){ state.activePotion = null; state.potionCharges = 0; saveGame(); render(); }
@@ -10695,7 +11073,7 @@
     if(state.activePotion){
       var an = (ALL_SELLABLE[state.activePotion]||{}).name || state.activePotion;
       html += '<div class="physique-bonus">Active: <b>'+escapeHtml(an)+'</b> &mdash; '+potionEffectDesc(state.activePotion)
-        + ' &bull; Charges <b id="potionChargeLabel">'+(state.potionCharges||0)+'</b>/'+POTION_MAX_CHARGES+' &bull; x'+(state.inventory[state.activePotion]||0)+' spare'
+        + ' &bull; Charges <b id="potionChargeLabel">'+(state.potionCharges||0)+'</b>/'+(POTION_MAX_CHARGES + apothecaryExtraCharges())+' &bull; x'+(state.inventory[state.activePotion]||0)+' spare'
         + ' <button class="action-btn stop" data-action="deactivatePotion" style="width:auto;flex:0 0 auto;padding:2px 12px;margin-left:8px;">Stow</button></div>';
     }
     var any = false;
@@ -10917,6 +11295,15 @@
     html += '</div>';
     return html;
   }
+  // One consolidated popup listing every familiar found during an offline stretch, instead of a
+  // separate click-through popup for each. Respects the Familiar-popup setting.
+  function queueFamiliarBatch(list){
+    if(!state.settings.popupFamiliar || !list || !list.length) return;
+    if(!Array.isArray(state.popupQueue)) state.popupQueue = [];
+    state.popupQueue.push({ type:'familiarBatch', familiars: list.slice() });
+    state.popupBatchTotal = (state.popupBatchTotal||0) + 1;
+    needsRender = true;
+  }
   function renderPopupQueue(){
     var overlay = document.getElementById('familiarPopupOverlay');
     var queue = state.popupQueue;
@@ -10951,6 +11338,25 @@
       html += '<div class="familiar-popup-icon">'+pending.icon+'</div>';
       html += '<div class="familiar-popup-name">'+pending.itemName+'</div>';
       html += '<button class="action-btn" data-action="dismissPopup">Excellent!</button>';
+    } else if(pending.type==='familiarBatch'){
+      var fams = (pending.familiars || []).filter(function(f){ return f && FAMILIAR_DATA[f.skillId]; });
+      var newCount = fams.filter(function(f){ return !f.leveledUp; }).length;
+      var lvlCount = fams.length - newCount;
+      html += counterHtml;
+      html += '<div class="familiar-popup-title">Your Menagerie Grew While You Were Away</div>';
+      html += '<div class="familiar-popup-icon">'+svgIcon('wing','#c87a9a')+'</div>';
+      var sub = [];
+      if(newCount) sub.push(newCount + ' new familiar' + (newCount===1?'':'s'));
+      if(lvlCount) sub.push(lvlCount + ' familiar' + (lvlCount===1?'':'s') + ' leveled up');
+      html += '<div class="familiar-popup-meta">'+(sub.join(' &bull; ') || 'No familiars found')+'</div>';
+      html += '<div class="familiar-popup-spells">';
+      fams.forEach(function(f){
+        var fd = FAMILIAR_DATA[f.skillId];
+        var lbl = SKILL_LABELS[f.skillId] || ((PHYSIQUE_SKILL_MAP[f.skillId]||{}).name) || f.skillId;
+        html += '<div><span style="display:inline-block;width:18px;height:18px;vertical-align:middle;margin-right:4px;">'+fd.icon+'</span><b>'+fd.name+'</b> <span style="color:var(--text-dim)">('+escapeHtml(lbl)+')</span> &mdash; '+(f.leveledUp ? 'grew to Lv '+f.level : 'joined you at Lv '+f.level)+'</div>';
+      });
+      html += '</div>';
+      html += '<button class="action-btn" data-action="dismissPopup">Wonderful!</button>';
     }
     html += '</div>';
     overlay.className = 'familiar-popup-overlay';
@@ -12340,6 +12746,7 @@
     woodcarving:{roof:'gable', accent:'log'},
     glassblowing:{roof:'dome', chimney:true, accent:'bottle'},
     cooperage:{roof:'hip', accent:'pot'},
+    fertilizer:{roof:'gable', accent:'block'},
     tanning:{roof:'peak', accent:'hide'},
     weaving:{roof:'gable', accent:'spool'},
     papermaking:{roof:'flat', accent:'block'},
@@ -13366,14 +13773,18 @@
           if(!cd){ delete map[key]; out += '<div class="empty-note">Empty.</div>'; }
           else {
             var remaining = plot.readyAt - Date.now();
+            // Fertilizer: an unfertilized growing crop can be doubled if a same-tier Fertilizer is owned.
+            var fid = 'fertilizer_t' + plot.tierIndex, fertOwned = state.inventory[fid]||0;
+            var fertBadge = plot.fertilized ? '<div class="item-meta" style="color:#7fbf5a;font-weight:700">&#10003; Fertilized &mdash; yields 2&times;</div>' : '';
+            var fertBtn = (!plot.fertilized && fertOwned > 0) ? ('<button class="mini-btn" data-action="fertilizePlot" data-scope="'+scope+'" data-key="'+key+'" title="Apply '+escapeHtml((ALL_CRAFT_RECIPES[fid]&&ALL_CRAFT_RECIPES[fid].name)||'Fertilizer')+' (x'+fmt(fertOwned)+')">Fertilize 2&times;</button>') : '';
             if(remaining <= 0){
-              out += '<div class="item-top" style="margin-top:6px"><div class="item-icon">'+cd.icon+'</div><div><div class="item-name">'+cd.name+'</div><div class="item-meta">Ready!</div></div></div>';
-              out += '<button class="action-btn" data-action="harvestPlot" data-scope="'+scope+'" data-key="'+key+'">Harvest</button>';
+              out += '<div class="item-top" style="margin-top:6px"><div class="item-icon">'+cd.icon+'</div><div><div class="item-name">'+cd.name+'</div><div class="item-meta">Ready!</div>'+fertBadge+'</div></div>';
+              out += '<button class="action-btn" data-action="harvestPlot" data-scope="'+scope+'" data-key="'+key+'">Harvest</button>'+fertBtn;
             } else {
               var pct = clamp((cd.durationMs-remaining)/cd.durationMs*100,0,100);
-              out += '<div class="item-top" style="margin-top:6px"><div class="item-icon">'+cd.icon+'</div><div><div class="item-name">'+cd.name+'</div><div class="item-meta" id="plot-timer-'+domId+'">Ready in '+formatDuration(remaining)+'</div></div></div>';
+              out += '<div class="item-top" style="margin-top:6px"><div class="item-icon">'+cd.icon+'</div><div><div class="item-name">'+cd.name+'</div><div class="item-meta" id="plot-timer-'+domId+'">Ready in '+formatDuration(remaining)+'</div>'+fertBadge+'</div></div>';
               out += '<div class="progress-track"><div class="progress-fill" id="plot-fill-'+domId+'" style="width:'+pct+'%"></div></div>';
-              out += '<button class="action-btn" disabled>Growing&hellip;</button>';
+              out += '<button class="action-btn" disabled>Growing&hellip;</button>'+fertBtn;
             }
           }
         }
@@ -13586,16 +13997,20 @@
   // Show/hide the Harvest All / Plant All FABs (mobile) based on what's actionable right now, with a
   // count badge. CSS keeps them hidden on desktop regardless of the .on class.
   function renderFarmFabs(){
-    var hv = document.getElementById('ffHarvestFab'), pl = document.getElementById('ffPlantFab');
+    var hv = document.getElementById('ffHarvestFab'), pl = document.getElementById('ffPlantFab'), fz = document.getElementById('ffFertilizeFab');
     if(!hv || !pl) return;
     var readyN = farmingReadyCount();
     var plantN = farmingPlantAll(true); // dry-run count -- how many would be planted
+    var fertN = farmingFertilizableCount(); // dry-run count -- how many growing crops can be doubled now
     hv.classList.toggle('on', readyN > 0);
     pl.classList.toggle('on', plantN > 0);
+    if(fz) fz.classList.toggle('on', fertN > 0);
     var hb = document.getElementById('ffHarvestFabBadge'); if(hb) hb.textContent = readyN > 0 ? (readyN > 99 ? '99+' : readyN) : '';
     var pb = document.getElementById('ffPlantFabBadge'); if(pb) pb.textContent = plantN > 0 ? (plantN > 99 ? '99+' : plantN) : '';
+    var fb = document.getElementById('ffFertilizeFabBadge'); if(fb) fb.textContent = fertN > 0 ? (fertN > 99 ? '99+' : fertN) : '';
     hv.title = 'Harvest all ready crops (' + readyN + ')';
     pl.title = 'Plant all empty fields (' + plantN + ')';
+    if(fz) fz.title = 'Fertilize all growing crops (' + fertN + ')';
   }
   // Flag unread + flash the FAB when a message lands while chat isn't visible (respecting the setting).
   function noteChatActivity(){
@@ -15329,7 +15744,7 @@
   // inbox we collect. Server guarantees matching/tax integrity; names/icons come from ALL_SELLABLE.
   var MARKET_TAX = 0.05;
   var MARKET_MAX_PRICE = 1000000000, MARKET_MAX_QTY = 1000000, MARKET_MAX_ORDERS = 40;
-  function marketTax(gold){ return Math.floor(gold * MARKET_TAX); }
+  function marketTax(gold){ return Math.floor(gold * MARKET_TAX * merchantTaxMult()); }
   function marketSellNet(price, qty){ var g = price * qty; return g - marketTax(g); }
   function marketBuyCost(price, qty){ return price * qty; }
   var marketState = { mode:'forsale', status:'idle', selectedItem:null, book:null, bookItem:null, orders:[], proceeds:{gold:0,items:[]}, listings:[], search:'', busy:false };
@@ -15646,6 +16061,7 @@
     woodcarving: 'Carve Carpentry Planks, varnished with Tapping\'s Resin, into decorative goods from Whittled Charm up to Eternal Idol.',
     glassblowing: 'Melt Spelunking Minerals over coal and blow them into Glass goods, from Glass Bead up to Eternal Crystal.',
     cooperage: 'Bind Carpentry Planks with a Metallurgy ingot band into Barrels and Casks, from Small Pail up to Eternal Cask.',
+    fertilizer: 'Refine a Fishing catch with equal-tier Digging soil into Fertilizer. Apply it to a growing crop of the same tier to double that plot\'s harvest.',
     tanning: 'Cure Butchering\'s raw Hide into Leather -- the material Leatherworking\'s armour now requires.',
     weaving: 'Weave Farming\'s Fiber into Cloth -- the material Tailoring\'s cloth armour now requires.',
     papermaking: 'Pulp Forestry logs into Paper -- the base for Bookbinding.',
@@ -16092,7 +16508,7 @@
     var item = ALL_SELLABLE[id]; var qty = state.inventory[id]||0;
     if(qty <= 0 || !item) return;
     if(state.lockedItems[id]){ addLog('That item is locked. Unlock it first to sell.', 'danger'); return; }
-    state.gold += item.sell; state.inventory[id] = qty - 1; needsRender = true;
+    state.gold += Math.round(item.sell*merchantSellMult()); state.inventory[id] = qty - 1; addPhysiqueXp([['merchantsSavvy',1]]); needsRender = true;
   }
   function renderInventoryPanel(){
     var searchInputEl = document.getElementById('invSearchInput');
@@ -17100,10 +17516,14 @@
       plantSeed(btn.getAttribute('data-scope'), btn.getAttribute('data-key'), btn.getAttribute('data-seed'));
     } else if(action==='harvestPlot'){
       harvestPlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key'));
+    } else if(action==='fertilizePlot'){
+      fertilizePlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); render();
     } else if(action==='harvestAllFarm'){
       farmingHarvestAll(); render();
     } else if(action==='plantAllFarm'){
       farmingPlantAll(false); render();
+    } else if(action==='fertilizeAllFarm'){
+      farmingFertilizeAll(false); render();
     } else if(action==='estateClearObstacle'){
       estateClearObstacle(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
     } else if(action==='estateRaiseLayer'){
@@ -17371,7 +17791,9 @@
     } else if(action==='noop'){
       /* swallow clicks inside the chat drawer so the backdrop tap doesn't close it */
     } else if(action==='closeOfflineSummary'){
+      var _offFams = offlineSummaryData && offlineSummaryData.familiars;
       offlineSummaryData = null;
+      if(_offFams && _offFams.length) queueFamiliarBatch(_offFams); // second consolidated notification: all familiars found
     } else if(action==='closeSettings'){
       settingsOpen = false;
     } else if(action==='toggleSetting'){
@@ -17600,7 +18022,7 @@
         while(state._faithFamiliarAccum >= 1000){
           state._faithFamiliarAccum -= 1000;
           maybeSummonFamiliar(state.faithActivity.type);
-          addPhysiqueXp(physTierPairs([['focus',1]], state.faithActivity.tier));
+          addPhysiqueXp(physTierPairs([['focus',1],['zealotry',1]], state.faithActivity.tier));
         }
         if(state.faith <= 0){
           addLog('Your ' + state.faithActivity.type + ' faded as your Faith ran dry.', 'danger');
@@ -17761,10 +18183,12 @@
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS,
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS,
-      GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
+      GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, FARMING_PHYSIQUE:FARMING_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
+      physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
       SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate,
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
+      fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, seedInfo:seedInfo,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, LB_STAT_METRICS:LB_STAT_METRICS,
@@ -17791,6 +18215,7 @@
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus,
+      pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, executionerLifestealPct:executionerLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, executionerExecuteThreshold:executionerExecuteThreshold, enemyHpFrac:enemyHpFrac,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenChillChance:frostwardenChillChance, frostwardenBlockBonus:frostwardenBlockBonus, enemyChilled:enemyChilled, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantMult:spellbladeEnchantMult, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,

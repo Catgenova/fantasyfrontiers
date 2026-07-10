@@ -343,6 +343,112 @@
     S.inventory.seed_t5 = savedInv.t5; S.inventory.seed_t2 = savedInv.t2; S.inventory.seed_t0 = savedInv.t0;
   });
 
+  // ---- Fertilizer: a refinement crafting skill; doubles a same-tier growing crop's harvest --------
+  suite('fertilizer', function(){
+    // Data: 21-tier crafting skill; each tier = 1 same-tier Fishing catch + 1 Digging soil; fish-named.
+    var fk = FF.CRAFTING_SKILLS.fertilizer;
+    ok(fk && fk.recipes.length === FF.TIER_COUNT, 'Fertilizer is a 21-tier crafting skill');
+    var r5 = FF.ALL_CRAFT_RECIPES['fertilizer_t5'];
+    ok(r5 && r5.inputs['fishing_t5']===1 && r5.inputs['digging_t5']===1, 'fertilizer_t5 = 1 fish + 1 soil, same tier');
+    ok(/ Fertilizer$/.test(r5.name), 'fertilizer named "<Fish> Fertilizer"');
+    ok(FF.ALL_CRAFT_RECIPES['fertilizer_t0'] && FF.ALL_CRAFT_RECIPES['fertilizer_t20'], 't0 + t20 fertilizer recipes exist');
+    ok(FF.CRAFT_SKILL_IDS.indexOf('fertilizer') !== -1 && FF.CRAFTING_TAB_SKILL_IDS.indexOf('fertilizer') !== -1, 'registered + appears in the Crafting tab');
+    ok(FF.CRAFT_PHYSIQUE.fertilizer && FF.FAMILIAR_DATA.fertilizer, 'has a physique table + a familiar');
+
+    // Mechanic: fertilize a growing crop with a matching-tier Fertilizer -> it yields double.
+    var S = FF._state, grid = S.estate.grid, pm = FF.farmPlotMap('personal');
+    var cells = [];
+    for(var x=0; x<grid.length && cells.length<2; x++){ if(!grid[x]) continue; for(var y=0; y<grid[x].length && cells.length<2; y++){ if(grid[x][y]) cells.push([x,y]); } }
+    var savedTiers = cells.map(function(c){ return grid[c[0]][c[1]].fieldTier; });
+    var savedPlots = {}; Object.keys(pm).forEach(function(k){ savedPlots[k]=pm[k]; delete pm[k]; });
+    var savedFert = S.inventory.fertilizer_t5||0, savedCrop = S.inventory.farming_t5||0;
+
+    grid[cells[0][0]][cells[0][1]].fieldTier = 5;
+    grid[cells[1][0]][cells[1][1]].fieldTier = 5;
+    var k0 = cells[0][0]+','+cells[0][1], k1 = cells[1][0]+','+cells[1][1];
+    pm[k0] = { cropType:'fiber', tierIndex:5, plantedAt:Date.now(), readyAt:Date.now()+9e8 };
+    pm[k1] = { cropType:'fiber', tierIndex:5, plantedAt:Date.now(), readyAt:Date.now()+9e8 };
+
+    S.inventory.fertilizer_t5 = 0;
+    ok(!FF.fertilizePlot('personal', k0), 'no fertilizer in stock -> cannot fertilize');
+    eq(FF.farmingFertilizableCount(), 0, 'nothing fertilizable without stock');
+    // One t5 fertilizer: only one of the two t5 crops can be doubled.
+    S.inventory.fertilizer_t5 = 1;
+    eq(FF.farmingFertilizableCount(), 1, 'one fertilizer -> one candidate');
+    eq(FF.farmingFertilizeAll(false), 1, 'fertilize-all fertilizes exactly one');
+    eq(S.inventory.fertilizer_t5, 0, 'the fertilizer was consumed');
+    var fertKey = pm[k0].fertilized ? k0 : k1, plainKey = fertKey===k0 ? k1 : k0;
+    ok(pm[fertKey].fertilized && !pm[plainKey].fertilized, 'exactly one plot is fertilized');
+
+    // Ripen + harvest: fertilized plot yields 2, the other yields 1.
+    pm[k0].readyAt = pm[k1].readyAt = Date.now()-1;
+    S.inventory.farming_t5 = 0;
+    FF.harvestPlot('personal', fertKey);
+    eq(S.inventory.farming_t5, 2, 'fertilized crop yields 2x');
+    FF.harvestPlot('personal', plainKey);
+    eq(S.inventory.farming_t5, 3, 'plain crop yields 1x (total 3)');
+
+    // restore
+    Object.keys(pm).forEach(function(k){ delete pm[k]; });
+    Object.keys(savedPlots).forEach(function(k){ pm[k]=savedPlots[k]; });
+    cells.forEach(function(c,i){ grid[c[0]][c[1]].fieldTier = savedTiers[i]; });
+    S.inventory.fertilizer_t5 = savedFert; S.inventory.farming_t5 = savedCrop;
+  });
+
+  // ---- Cross-skill physiques: 20 new physiques trained by one skill, feeding another --------------
+  suite('cross-skill physiques', function(){
+    var NEW = ['anglersEye','prospectorsNose','huntsman','sylvanBond','quartermaster','masterwork','diligence','weaponsmithsEdge','armorersTemper','greenThumb','composter','apothecarysHand','demolitionist','runicAttunement','wardersFocus','zealotry','oblation','fieldRations','menagerist','merchantsSavvy'];
+    NEW.forEach(function(id){
+      var p = FF.PHYSIQUE_SKILL_MAP[id];
+      ok(p && p.name && p.desc && p.levels && p.affects, id+' is a fully-described physique');
+      ok(!p.element, id+' is a normal physique (not an elemental attunement)');
+    });
+    // XP feeds attach each physique to the skills that train it.
+    function feeds(list, id){ return !!list && list.some(function(pr){ return pr[0]===id; }); }
+    ok(feeds(FF.GATHER_PHYSIQUE.fishing,'anglersEye'), 'Fishing trains Angler\'s Eye');
+    ok(feeds(FF.GATHER_PHYSIQUE.mining,'prospectorsNose'), 'Mining trains Prospector\'s Nose');
+    ok(feeds(FF.GATHER_PHYSIQUE.butchering,'huntsman'), 'Butchering trains Huntsman');
+    ok(feeds(FF.GATHER_PHYSIQUE.forestry,'sylvanBond'), 'Forestry trains Sylvan Bond');
+    ok(feeds(FF.CRAFT_PHYSIQUE.alchemy,'apothecarysHand'), 'Alchemy trains Apothecary\'s Hand');
+    ok(feeds(FF.CRAFT_PHYSIQUE.fertilizer,'composter'), 'Fertilizer trains Composter');
+    ok(feeds(FF.CRAFT_PHYSIQUE.weaponsmithing,'weaponsmithsEdge'), 'Weaponsmithing trains Weaponsmith\'s Edge');
+    ok(feeds(FF.CRAFT_PHYSIQUE.armorsmithing,'armorersTemper'), 'Armorsmithing trains Armorer\'s Temper');
+    ok(feeds(FF.CRAFT_PHYSIQUE.inscription,'wardersFocus'), 'Inscription trains Warder\'s Focus');
+    ok(feeds(FF.CRAFT_PHYSIQUE.gastronomy,'fieldRations'), 'Gastronomy trains Field Rations');
+    ok(feeds(FF.FARMING_PHYSIQUE,'greenThumb'), 'Farming trains Green Thumb');
+    // Quartermaster + Diligence feed EVERY craft; Masterwork feeds outfitting crafts.
+    ok(feeds(FF.CRAFT_PHYSIQUE.cooking,'quartermaster') && feeds(FF.CRAFT_PHYSIQUE.cooking,'diligence'), 'all crafts train Quartermaster + Diligence');
+    ok(feeds(FF.CRAFT_PHYSIQUE.weaponsmithing,'masterwork') && !feeds(FF.CRAFT_PHYSIQUE.cooking,'masterwork'), 'only outfitting crafts train Masterwork');
+
+    // Effect scaling: at Lv100 each bonus reaches its cap; helpers read live state.physique.
+    var S = FF._state, saved = {}, savedFaith = S.faith;
+    NEW.forEach(function(id){ saved[id] = S.physique[id]; S.physique[id] = FF.xpFloorForLevel(100); });
+    ok(Math.abs(FF.anglersEyeTreasureBonus() - 0.15) < 1e-6, 'Angler\'s Eye +15% treasure at Lv100');
+    ok(Math.abs(FF.merchantSellMult() - 1.15) < 1e-6, 'Merchant\'s Savvy +15% sell at Lv100');
+    ok(Math.abs(FF.merchantTaxMult() - 0.50) < 1e-6, 'Merchant\'s Savvy halves Market tax at Lv100');
+    ok(Math.abs(FF.weaponsmithEdgeMult() - 1.15) < 1e-6, 'Weaponsmith\'s Edge +15% damage at Lv100');
+    ok(Math.abs(FF.armorerTemperMult() - 1.15) < 1e-6, 'Armorer\'s Temper +15% armour at Lv100');
+    ok(Math.abs(FF.runicAttunementMult() - 1.20) < 1e-6, 'Runic Attunement +20% wand/scepter at Lv100');
+    ok(Math.abs(FF.menageristPotencyMult() - 1.25) < 1e-6, 'Menagerist +25% familiar potency at Lv100');
+    ok(Math.abs(FF.diligenceCraftXpMult() - 1.15) < 1e-6, 'Diligence +15% craft XP at Lv100');
+    eq(FF.apothecaryExtraCharges(), 5, 'Apothecary\'s Hand +5 potion charges at Lv100');
+    ok(Math.abs(FF.demolitionistMult() - 1.30) < 1e-6, 'Demolitionist +30% bomb/flash at Lv100');
+    ok(Math.abs(FF.wardersFocusReflectBonus() - 0.15) < 1e-6, 'Warder\'s Focus +15% reflect at Lv100');
+    ok(Math.abs(FF.greenThumbGrowthMult() - 0.85) < 1e-6, 'Green Thumb -15% growth time at Lv100');
+    ok(Math.abs(FF.huntsmanOutputBonus() - 0.12) < 1e-6, 'Huntsman +12% butcher output at Lv100');
+    ok(Math.abs(FF.masterworkRarityBonus() - 0.15) < 1e-6, 'Masterwork +15% rare odds at Lv100');
+    ok(Math.abs(FF.sylvanBondCacheBonus() - 0.05) < 1e-6, 'Sylvan Bond +5% cache at Lv100');
+    ok(Math.abs(FF.physBonus('anglersEye', 0.3) - 0.3) < 1e-6, 'physBonus reaches its cap at Lv100');
+    // Zealotry scales with current Faith fraction.
+    S.faith = 1e9; // clamp to full-faith fraction
+    ok(Math.abs(FF.zealotryDmgMult() - 1.20) < 1e-6, 'Zealotry +20% damage at full Faith (Lv100)');
+    S.faith = 0;
+    ok(Math.abs(FF.zealotryDmgMult() - 1) < 1e-6, 'Zealotry neutral at 0 Faith');
+    // restore
+    NEW.forEach(function(id){ S.physique[id] = saved[id]; });
+    S.faith = savedFaith;
+  });
+
   // ---- Guild estate: assist a teammate's task ------------------------------------------
   suite('guild estate assist', function(){
     var ge = FF.guildEstate;
@@ -820,6 +926,91 @@
     eq(FF.frostwardenDmgMult(none), 1, 'no class -> Frostbite neutral');
     eq(FF.sentinelIncomingMult(none), 1, 'no class -> Immovable neutral');
     eq(FF.enemyChillSlowMult(none), 0, 'no chill -> no enemy slow');
+  });
+
+  suite('classes: pyromancer / sharpshooter / juggernaut / nightblade / executioner (unused weapons)', function(){
+    var NEW = ['pyromancer','sharpshooter','juggernaut','nightblade','executioner'];
+    NEW.forEach(function(id){
+      var cd = FF.CLASS_DEFS_BY_ID[id];
+      ok(cd, id+' is a registered class');
+      if(!cd) return;
+      eq(cd.passives.length, 5, id+' has 5 perks');
+      eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', id+' perks at Lv 1/20/40/60/80');
+      ok(cd.reqParts.length >= 5, id+' has a full gear set');
+      ok(FF.CLASS_SKILL_IDS.indexOf(id) !== -1, id+' is its own combat skill');
+      // each carries a familiar with a unique 4-spell kit + a channelled element
+      var fam = FF.FAMILIAR_DATA[id];
+      ok(fam && fam.spells && fam.spells.length === 4, id+' familiar has a 4-spell kit');
+    });
+    // Each new class must claim a weapon type NO prior class used.
+    ok(/Fire Wand/.test(FF.CLASS_DEFS_BY_ID.pyromancer.reqText), 'pyromancer wields the Fire Wand');
+    ok(/Long Bow/.test(FF.CLASS_DEFS_BY_ID.sharpshooter.reqText), 'sharpshooter wields the Long Bow');
+    ok(/Sledge/.test(FF.CLASS_DEFS_BY_ID.juggernaut.reqText), 'juggernaut wields the Sledge');
+    ok(/Dark Wand/.test(FF.CLASS_DEFS_BY_ID.nightblade.reqText), 'nightblade wields the Dark Wand');
+    ok(/Full-Moon Axe/.test(FF.CLASS_DEFS_BY_ID.executioner.reqText), 'executioner wields the Full-Moon Axe');
+
+    function armor(mat,tier){ return {material:mat,tier:tier||5}; }
+    function stFor(id, level, extra){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat',monsterHp:100}, playerHp:55 };
+      st.xp[id] = FF.xpFloorForLevel(level);
+      if(id==='pyromancer'){ st.equippedMainhand='wandFire'; st.equippedOffhand='wardLight'; st.bodyArmor={helmet:armor('tailoring'),chest:armor('tailoring'),boots:armor('tailoring')}; }
+      if(id==='sharpshooter'){ st.equippedMainhand='bowLong'; st.equippedOffhand='quiver'; st.bodyArmor={helmet:armor('leather'),chest:armor('leather'),boots:armor('leather')}; }
+      if(id==='juggernaut'){ st.equippedMainhand='sledge'; st.bodyArmor={helmet:armor('plate'),chest:armor('plate'),gauntlets:armor('plate'),boots:armor('plate')}; }
+      if(id==='nightblade'){ st.equippedMainhand='wandDark'; st.equippedOffhand='wardLight'; st.bodyArmor={helmet:armor('leather'),chest:armor('leather'),gauntlets:armor('leather')}; }
+      if(id==='executioner'){ st.equippedMainhand='fullmoonaxe'; st.bodyArmor={chest:armor('chain'),gauntlets:armor('chain'),boots:armor('leather')}; } // no helmet = bare head
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+    // gating: each mock activates exactly its class (unique unused weapon disambiguates)
+    eq(FF.activeClassId(stFor('pyromancer',80)), 'pyromancer', 'fire wand + ward + cloth => Pyromancer');
+    eq(FF.activeClassId(stFor('sharpshooter',80)), 'sharpshooter', 'long bow + quiver + leather => Sharpshooter');
+    eq(FF.activeClassId(stFor('juggernaut',80)), 'juggernaut', 'sledge + full plate => Juggernaut');
+    eq(FF.activeClassId(stFor('nightblade',80)), 'nightblade', 'dark wand + ward + leather => Nightblade');
+    eq(FF.activeClassId(stFor('executioner',80)), 'executioner', 'full-moon axe + bare head + chain => Executioner');
+
+    var monFull = {hp:100}, monLow = {hp:100};
+    // Pyromancer: Kindle x1.30; Meltdown +50% vs healthy enemy stacks at Lv80; crit/block perks.
+    ok(Math.abs(FF.newClassDmgMult(monFull, stFor('pyromancer',1)) - 1.30) < 1e-9, 'Pyromancer Kindle +30%');
+    var pyroFull = stFor('pyromancer',80); // enemy at full HP (monsterHp 100)
+    ok(Math.abs(FF.newClassDmgMult(monFull, pyroFull) - 1.95) < 1e-9, 'Pyromancer Meltdown stacks on Kindle vs healthy foe (x1.95)');
+    var pyroLow = stFor('pyromancer',80,{activity:{type:'combat',monsterHp:10}});
+    ok(Math.abs(FF.newClassDmgMult(monLow, pyroLow) - 1.30) < 1e-9, 'Pyromancer Meltdown falls off below half HP (x1.30)');
+    ok(Math.abs(FF.newClassCritChance(stFor('pyromancer',80)) - 0.12) < 1e-9, 'Pyromancer Combustion +12% crit chance');
+    ok(Math.abs(FF.newClassCritDmg(stFor('pyromancer',80)) - 0.75) < 1e-9, 'Pyromancer Conflagration +75% crit dmg');
+    eq(FF.classBlockBonus(stFor('pyromancer',80)), 0.15, 'Pyromancer Ember Ward +15% Block');
+    // Sharpshooter: Aimed+Kill = +150% crit dmg; Piercing +20%; Steady Aim +30% acc; Deadeye +12% crit.
+    ok(Math.abs(FF.newClassCritDmg(stFor('sharpshooter',80)) - 1.50) < 1e-9, 'Sharpshooter Aimed+Kill = +150% crit dmg');
+    ok(Math.abs(FF.newClassDmgMult(monFull, stFor('sharpshooter',80)) - 1.20) < 1e-9, 'Sharpshooter Piercing Shot +20%');
+    eq(FF.classAccuracyMult(stFor('sharpshooter',80)), 1.3, 'Sharpshooter Steady Aim +30% Accuracy');
+    ok(Math.abs(FF.newClassCritChance(stFor('sharpshooter',80)) - 0.12) < 1e-9, 'Sharpshooter Deadeye +12% crit chance');
+    // Juggernaut: Crushing +30%; Bulwark +15% Block; Ironclad +25% armor; Unstoppable -20% incoming; Devastate +60% crit dmg.
+    ok(Math.abs(FF.newClassDmgMult(monFull, stFor('juggernaut',80)) - 1.30) < 1e-9, 'Juggernaut Crushing Blows +30%');
+    eq(FF.classBlockBonus(stFor('juggernaut',80)), 0.15, 'Juggernaut Bulwark +15% Block');
+    eq(FF.juggernautArmorMult(stFor('juggernaut',80)), 1.25, 'Juggernaut Ironclad +25% Armor');
+    eq(FF.juggernautIncomingMult(stFor('juggernaut',80)), 0.80, 'Juggernaut Unstoppable -20% incoming');
+    ok(Math.abs(FF.newClassCritDmg(stFor('juggernaut',80)) - 0.60) < 1e-9, 'Juggernaut Devastate +60% crit dmg');
+    // Nightblade: Siphon 8% -> Soul Reap 15%; Hex +25%; Shadowstep +15% dodge; Dark Pact +12% crit.
+    ok(Math.abs(FF.nightbladeLifestealPct(stFor('nightblade',1)) - 0.08) < 1e-9, 'Nightblade Siphon 8%');
+    ok(Math.abs(FF.nightbladeLifestealPct(stFor('nightblade',80)) - 0.15) < 1e-9, 'Nightblade Soul Reap 15%');
+    ok(Math.abs(FF.newClassDmgMult(monFull, stFor('nightblade',80)) - 1.25) < 1e-9, 'Nightblade Hex +25%');
+    ok(Math.abs(FF.nightbladeDodgeBonus(stFor('nightblade',80)) - 0.15) < 1e-9, 'Nightblade Shadowstep +15% Dodge');
+    // Executioner: Reap +30% vs wounded; Bloodthirst 8%; Grisly +50% crit dmg; Cleave +12% crit; Decapitate exists.
+    ok(Math.abs(FF.newClassDmgMult(monLow, stFor('executioner',80,{activity:{type:'combat',monsterHp:10}})) - 1.30) < 1e-9, 'Executioner Reap the Weak +30% vs wounded foe');
+    eq(FF.newClassDmgMult(monFull, stFor('executioner',80)), 1, 'Executioner Reap is neutral vs a healthy foe');
+    ok(Math.abs(FF.executionerLifestealPct(stFor('executioner',80)) - 0.08) < 1e-9, 'Executioner Bloodthirst 8%');
+    ok(Math.abs(FF.newClassCritDmg(stFor('executioner',80)) - 0.50) < 1e-9, 'Executioner Grisly Resolve +50% crit dmg');
+    ok(Math.abs(FF.newClassCritChance(stFor('executioner',80)) - 0.12) < 1e-9, 'Executioner Cleave +12% crit chance');
+    ok(/Decapitate/.test(FF.CLASS_DEFS_BY_ID.executioner.passives[4].name), 'Executioner Lv80 is Decapitate');
+    // No class active -> every new-class multiplier is neutral.
+    var none = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat',monsterHp:100}, playerHp:1 };
+    eq(FF.newClassDmgMult(monFull, none), 1, 'no class -> new-class dmg neutral');
+    eq(FF.newClassCritChance(none), 0, 'no class -> new-class crit chance neutral');
+    eq(FF.newClassCritDmg(none), 0, 'no class -> new-class crit dmg neutral');
+    eq(FF.nightbladeLifestealPct(none), 0, 'no class -> no siphon');
+    eq(FF.juggernautIncomingMult(none), 1, 'no class -> incoming neutral');
+    // enemyHpFrac reads current/max cleanly.
+    ok(Math.abs(FF.enemyHpFrac({hp:100}, {activity:{monsterHp:40}}) - 0.4) < 1e-9, 'enemyHpFrac = current/max');
+    eq(FF.enemyHpFrac({hp:0}, {activity:{monsterHp:0}}), 1, 'enemyHpFrac guards against a zero max');
   });
 
   // ---- Gadgets: Salvaging -> Tinkering (Bombs) + Pyrotechnics (Flash Bombs) --------------------
