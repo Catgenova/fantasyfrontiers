@@ -2513,6 +2513,26 @@
     eq(FF.enchantCrystalCost({enchants:[1,2,3]}), 4, 'each extra enchant adds +1 crystal');
   });
 
+  // ---- Improvement system: enchant engine (Stage 1b) ------------------------------------
+  suite('improvement: enchant engine', function(){
+    ok(typeof FF.makeUniqueFromBase === 'function' && typeof FF.planEnchantCrystals === 'function', 'engine exported');
+    var p = FF.parseImprovable('stweapon_rapier_t5_rare');
+    ok(p && p.kind==='weapon' && p.tier===5 && p.rarity==='rare', 'parses a rare tier-5 weapon');
+    eq(FF.parseImprovable('ring_fire_t3_supreme').kind, 'ring', 'ring parsed');
+    eq(FF.parseImprovable('bodyarmor_plate_chest_t2_normal').kind, 'bodyarmor', 'body armour parsed');
+    eq(FF.parseImprovable('amulet_t4_fantastic').kind, 'amulet', 'amulet parsed');
+    ok(FF.parseImprovable('coal') === null, 'non-equipment rejected');
+    // Crystal planning against a controlled inventory (selftest state is a throwaway newGame).
+    var s = FF._state, savedInv = s.inventory;
+    s.inventory = { enchant_t3:1, enchant_t5:5 };
+    ok(FF.planEnchantCrystals(6, 1) === null, 'cannot plan when no crystal is tier6+');
+    var plan = FF.planEnchantCrystals(5, 3);
+    ok(plan && plan.plan.enchant_t5===3 && plan.maxTier===5, 'plans 3 tier-5 crystals');
+    var plan2 = FF.planEnchantCrystals(3, 4);
+    ok(plan2 && plan2.plan.enchant_t3===1 && plan2.plan.enchant_t5===3 && plan2.maxTier===5, 'fills tier3 first, spills to higher tier, flags it');
+    s.inventory = savedInv;
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }

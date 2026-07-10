@@ -7551,7 +7551,7 @@
   var currentSub = 'digging';
   // Ivy Castle IA: 3 areas -> sub-views (each maps to an existing content category).
   var AREAS = [
-    { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['faith','Faith'],['building','Construction'],['inventory','Inventory'],['skills','Skills']] },
+    { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['improvement','Improvement'],['faith','Faith'],['building','Construction'],['inventory','Inventory'],['skills','Skills']] },
     { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['peons','Peons'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
     { id:'battle', label:'Battle', icon:'crossedswords', subs:[['combat','Combat'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] }
   ];
@@ -7982,6 +7982,118 @@
   function enchantCrystalCost(u){ return ((u && u.enchants) ? u.enchants.length : 0) + 1; }
   // Monotonic unique-instance id per save.
   function genUid(){ state.uidSeq = (state.uidSeq||0) + 1; return 'u'+state.uidSeq; }
+
+  // ---- Improvement engine (Stage 1b) ----
+  // Parse an equipment inventory id into {kind,tier,rarity,baseId}; only weapons/shields/body-armour/
+  // rings/amulets are improvable. Returns null for anything else.
+  function parseImprovable(id){
+    if(typeof id!=='string') return null;
+    var kind = id.indexOf('stweapon_')===0 ? 'weapon'
+      : id.indexOf('stshield_')===0 ? 'offhand'
+      : id.indexOf('bodyarmor_')===0 ? 'bodyarmor'
+      : id.indexOf('ring_')===0 ? 'ring'
+      : id.indexOf('amulet_t')===0 ? 'amulet' : null;
+    if(!kind) return null;
+    var tm = /_t(\d+)/.exec(id); var tier = tm ? parseInt(tm[1],10) : 0;
+    return { kind:kind, tier:tier, rarity:(itemRarityId(id)||'normal'), baseId:id };
+  }
+  function isUniqueId(id){ return typeof id==='string' && id.charAt(0)==='u' && !!(state.uniqueItems && state.uniqueItems[id]); }
+  function uniqueBaseName(u){ var b = ALL_SELLABLE[u.base]; return b ? b.name : 'Equipment'; }
+  function uniqueDisplayName(u){ return uniqueBaseName(u) + (u.enhance>0 ? ' +'+u.enhance : ''); }
+  function uniqueIcon(u){ var b = ALL_SELLABLE[u.base]; return (b && b.icon) || svgIcon('sword','var(--gold)'); }
+  // Create a unique instance from an owned base equipment item (consumes 1). Returns uid or null.
+  function makeUniqueFromBase(baseId){
+    var p = parseImprovable(baseId); if(!p) return null;
+    if((state.inventory[baseId]||0) <= 0) return null;
+    state.inventory[baseId] -= 1; if(state.inventory[baseId] <= 0) delete state.inventory[baseId];
+    var uid = genUid();
+    state.uniqueItems[uid] = { uid:uid, base:baseId, kind:p.kind, tier:p.tier, rarity:p.rarity, enchants:[], enhance:0 };
+    return uid; // lives in state.uniqueItems only (kept out of state.inventory so name/icon lookups don't break)
+  }
+  // Drop a unique instance entirely (on sell/sacrifice, Stage 3): remove from the table (saves storage).
+  function removeUnique(uid){ if(state.uniqueItems) delete state.uniqueItems[uid]; }
+  // Plan `count` Enchant Crystals of tier >= itemTier, cheapest (lowest) tiers first.
+  // Returns { plan:{enchant_t<n>:qty}, maxTier } or null if the player can't cover it.
+  function planEnchantCrystals(itemTier, count){
+    var plan = {}, need = count, maxTier = itemTier;
+    for(var t=itemTier; t<TIER_COUNT && need>0; t++){
+      var id = 'enchant_t'+t, have = state.inventory[id]||0; if(have<=0) continue;
+      var take = Math.min(have, need); plan[id] = take; need -= take; if(t>maxTier) maxTier = t;
+    }
+    return need>0 ? null : { plan:plan, maxTier:maxTier };
+  }
+
+  // ---- Improvement UI state + actions ----
+  var improveSel = null;        // selected item: a base equipment id OR a unique uid
+  var improvePending = null;    // { uid, roll } awaiting placement when slots are full
+  var improveWarnArmed = false; // higher-tier-crystal warning acknowledged for the next click
+  function improveSelect(id){ improveSel = id; improvePending = null; improveWarnArmed = false; render(); }
+  function improveToggleWarn(){ state.enchantWarnHiTier = !state.enchantWarnHiTier; improveWarnArmed = false; saveGame(); render(); }
+  function improveEnchant(){
+    if(improvePending) return;
+    var sel = improveSel; if(!sel) return;
+    var isU = isUniqueId(sel);
+    var tier, enhance, count, kind;
+    if(isU){ var u0 = state.uniqueItems[sel]; if(!u0){ addLog('That item is gone.','danger'); return; } tier=u0.tier; enhance=u0.enhance; count=u0.enchants.length; kind=u0.kind; }
+    else { var p = parseImprovable(sel); if(!p || (state.inventory[sel]||0)<=0){ addLog('That item is no longer available.','danger'); return; } tier=p.tier; enhance=0; count=0; kind=p.kind; }
+    if(enhance>0){ addLog('Enhanced items (+'+enhance+') can no longer be enchanted.','danger'); return; }
+    var cost = count + 1;
+    var planned = planEnchantCrystals(tier, cost);
+    if(!planned){ addLog('You need '+cost+' Enchant Crystal'+(cost===1?'':'s')+' of tier '+(tier+1)+' or higher.','danger'); return; }
+    if(planned.maxTier>tier && state.enchantWarnHiTier && !improveWarnArmed){ improveWarnArmed = true; render(); return; }
+    improveWarnArmed = false;
+    var uid = isU ? sel : makeUniqueFromBase(sel); if(!uid){ return; } improveSel = uid;
+    var u = state.uniqueItems[uid];
+    consumeInputs(planned.plan);
+    var roll = rollEnchant(u.kind);
+    if(u.enchants.length < enchantSlotsFor(u.rarity)){ u.enchants.push(roll); addLog('Enchanted '+uniqueBaseName(u)+': '+enchantLabel(u.kind,roll)+'.','important'); }
+    else { improvePending = { uid:uid, roll:roll }; addLog('Rolled '+enchantLabel(u.kind,roll)+' — replace an enchant or discard it.','important'); }
+    saveGame(); render();
+  }
+  function improvePlace(replaceIndex){
+    if(!improvePending) return;
+    var u = state.uniqueItems[improvePending.uid];
+    if(u && replaceIndex>=0 && replaceIndex<u.enchants.length){ u.enchants[replaceIndex] = improvePending.roll; addLog('Replaced an enchant with '+enchantLabel(u.kind,improvePending.roll)+'.','chronicle'); }
+    else { addLog('Discarded the new roll.','chronicle'); }
+    improvePending = null; saveGame(); render();
+  }
+  function renderImprovementTab(){
+    var html = '<div class="section-intro">Turn a piece of equipment into a unique item and <b>Enchant</b> it with random modifiers. Rarity sets how many it can hold (Normal 1 · Rare 2 · Supreme 3 · Fantastic 4). Each enchant costs Enchant Crystals of equal-or-higher tier; the cost rises by one per enchant. Enchant freely — but once you <b>Enhance</b> an item it can no longer be enchanted.</div>';
+    var bases = [], uniques = Object.keys(state.uniqueItems||{});
+    Object.keys(state.inventory).forEach(function(id){ if((state.inventory[id]||0)>0 && parseImprovable(id)) bases.push(id); });
+    html += '<div class="guild-section-title" style="margin-top:6px;">Choose equipment</div>';
+    if(!bases.length && !uniques.length) html += '<div class="empty-note">No weapons, armour, or jewelry to improve yet — forge or find some first.</div>';
+    html += '<div class="card-grid">';
+    uniques.forEach(function(uid){ var u=state.uniqueItems[uid]; if(!u) return;
+      html += '<button class="item-card'+(improveSel===uid?' active-item':'')+'" data-action="improveSelect" data-uid="'+uid+'" style="text-align:left;"><div class="item-top"><div class="item-icon">'+uniqueIcon(u)+'</div><div><div class="item-name">'+escapeHtml(uniqueDisplayName(u))+'</div><div class="item-meta">'+escapeHtml(getRarity(u.rarity).label)+' · '+u.enchants.length+'/'+enchantSlotsFor(u.rarity)+' enchants</div></div></div></button>'; });
+    bases.forEach(function(id){ var p=parseImprovable(id), b=ALL_SELLABLE[id]; if(!b) return;
+      html += '<button class="item-card'+(improveSel===id?' active-item':'')+'" data-action="improveSelect" data-uid="'+id+'" style="text-align:left;"><div class="item-top"><div class="item-icon">'+(b.icon||'')+'</div><div><div class="item-name">'+escapeHtml(b.name)+'</div><div class="item-meta">'+escapeHtml(getRarity(p.rarity).label)+' · ×'+(state.inventory[id]||0)+'</div></div></div></button>'; });
+    html += '</div>';
+    if(improveSel){
+      var isU2 = isUniqueId(improveSel);
+      var u = isU2 ? state.uniqueItems[improveSel] : null, pp = isU2 ? null : parseImprovable(improveSel);
+      var tier = isU2 ? u.tier : pp.tier, rarity = isU2 ? u.rarity : pp.rarity, enhance = isU2 ? u.enhance : 0;
+      var slots = enchantSlotsFor(rarity), count = isU2 ? u.enchants.length : 0;
+      var name = isU2 ? uniqueDisplayName(u) : (ALL_SELLABLE[improveSel]||{name:'Equipment'}).name;
+      html += '<div class="guild-section-title" style="margin-top:14px;">'+escapeHtml(name)+'</div>';
+      html += '<div class="item-card" style="max-width:540px;"><div class="item-meta" style="margin-bottom:6px;">'+escapeHtml(getRarity(rarity).label)+' · Tier '+(tier+1)+' · '+count+'/'+slots+' enchant slots'+(enhance>0?' · <b>+'+enhance+'</b>':'')+'</div>';
+      if(isU2 && u.enchants.length){ u.enchants.forEach(function(e,i){ html += '<div class="inputs-line"><span style="color:var(--gold);">'+escapeHtml(enchantLabel(u.kind,e))+'</span>'+((improvePending&&improvePending.uid===u.uid)?' <button class="mini-btn" data-action="improvePlace" data-idx="'+i+'">Replace</button>':'')+'</div>'; }); }
+      else if(isU2){ html += '<div class="empty-note" style="margin-bottom:6px;">No enchants yet.</div>'; }
+      var cost = count + 1;
+      if(enhance>0){ html += '<div class="lock-note">Enhanced items can’t be enchanted.</div>'; }
+      else if(improvePending && u && improvePending.uid===u.uid){
+        html += '<div class="inputs-line" style="color:var(--gold);">New roll: '+escapeHtml(enchantLabel(u.kind,improvePending.roll))+'</div>';
+        html += '<div class="empty-note">Slots full — <b>Replace</b> one above, or <button class="mini-btn" data-action="improvePlace" data-idx="-1">Discard</button> the new roll.</div>';
+      } else {
+        html += '<div class="inputs-line">Next enchant: <b>'+cost+'</b> Enchant Crystal'+(cost===1?'':'s')+' (tier '+(tier+1)+'+).</div>';
+        if(improveWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No tier-'+(tier+1)+' crystals — this spends higher-tier ones. Click Enchant again to confirm.</div>';
+        html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn" data-action="improveEnchant" style="width:auto;flex:0 0 auto;">Enchant ('+cost+')</button>';
+        html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleWarn"'+(state.enchantWarnHiTier?' checked':'')+'> warn on higher-tier crystals</label></div>';
+      }
+      html += '</div>';
+    }
+    return html;
+  }
 
   // ================= ACTIONS =================
   function startGather(skill, itemId){
@@ -16443,6 +16555,7 @@
     if(currentCategory==='gathering') html = renderGatherTab(currentSub);
     else if(currentCategory==='refining' && currentSub==='butchering') html = renderGatherTab(currentSub); // Butchering keeps its corpse-processing UI
     else if(currentCategory==='crafting' || currentCategory==='building' || currentCategory==='outfitting' || currentCategory==='refining' || currentCategory==='cooking') html = '<div class="'+(craftOnlyAffordable?'craft-filtering':'')+'"><div class="craft-filter-bar"><button class="craft-filter-btn'+(craftOnlyAffordable?' on':'')+'" data-action="toggleCraftFilter">'+(craftOnlyAffordable?'\u2611':'\u2610')+' Only show items I have materials for</button></div>'+renderCraftTab(currentSub)+'</div>';
+    else if(currentCategory==='improvement') html = renderImprovementTab();
     else if(currentCategory==='skills') html = renderSkillsTab();
     else if(currentCategory==='estate'){ estUse(false); html = renderEstateTab(); }
     else if(currentCategory==='peons') html = renderPeonsTab();
@@ -17908,6 +18021,14 @@
       startGather(btn.getAttribute('data-skill'), btn.getAttribute('data-item'));
     } else if(action==='craft'){
       startCraft(btn.getAttribute('data-skill'), btn.getAttribute('data-item'));
+    } else if(action==='improveSelect'){
+      improveSelect(btn.getAttribute('data-uid'));
+    } else if(action==='improveEnchant'){
+      improveEnchant();
+    } else if(action==='improvePlace'){
+      improvePlace(parseInt(btn.getAttribute('data-idx'),10));
+    } else if(action==='improveToggleWarn'){
+      improveToggleWarn();
     } else if(action==='tierStep'){
       var _tt = TIER_STEP_TARGETS[btn.getAttribute('data-tier-target')];
       var _vals = (btn.getAttribute('data-tier-values')||'').split(',').map(function(v){ return parseInt(v,10); }).filter(function(v){ return !isNaN(v); });
@@ -18639,6 +18760,7 @@
       _state:state, getMaxCraftSlots:getMaxCraftSlots, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       earnGold:earnGold, walletSync:walletSync, itemSync:itemSync,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
+      parseImprovable:parseImprovable, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique,
       startGather:startGather, startCraft:startCraft, startPray:startPray,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
