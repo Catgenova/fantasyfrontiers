@@ -766,13 +766,10 @@
     eq(cut5.name, 'Cut Peridot', 'gemcutting yields Cut Gems');
     var ench5 = FF.ALL_CRAFT_RECIPES['enchant_t5'];
     ok(ench5.inputs['gemcut_t5'] && ench5.inputs['metallurgy_t5'], 'enchant consumes a Cut Gem + metal');
-    // Enchant plugs into the combat potion system as a 5th line.
-    ok(FF.POTION_TYPE_IDS.indexOf('enchant') !== -1, 'enchant is a combat consumable line');
-    eq(ench5.potionType, 'enchant', 'enchant recipe carries potionType');
-    var e0 = FF.potionEffect('enchant_t0'), e20 = FF.potionEffect('enchant_t20');
-    ok(e0 && e0.type==='enchant' && e20 && e20.type==='enchant', 'enchant potionEffect resolves');
-    ok(e20.dmg > e0.dmg && e20.dmg <= 0.40 + 1e-9, 'enchant weapon-damage bonus scales with tier (cap 40%)');
-    ok(/weapon damage/.test(FF.potionEffectDesc('enchant_t10')), 'enchant describes its weapon-damage bonus');
+    eq(ench5.name, 'Peridot Enchant Crystal', 'enchanting yields Enchant Crystals');
+    // Enchant Crystals are the Improvement-tab enchant INPUT, no longer a Battle-tab combat consumable.
+    ok(FF.POTION_TYPE_IDS.indexOf('enchant') === -1, 'enchant is NOT a combat consumable line (retired)');
+    ok(ench5.potionType === undefined, 'enchant recipe carries no potionType (retired consumable)');
     ok(FF.GATHER_PHYSIQUE.prospecting && FF.CRAFT_PHYSIQUE.gemcutting && FF.CRAFT_PHYSIQUE.enchanting, 'physique tables include the new skills');
   });
 
