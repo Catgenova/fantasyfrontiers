@@ -2546,6 +2546,22 @@
     // enhance doubles-plus: at +15 the same enchants scale x6
     st.uniqueItems.u1.enhance = 15;
     eq(FF.equippedEnchantTotals(st).critDamage, 150, 'enhanced +15 scales enchant totals x6');
+    // Stage 3: armour, jewelry, and offhand slots now feed the aggregate off their real slot models
+    // (jewelrySlots[ringN].uid / jewelrySlots.amulet.uid / bodyArmor[slot].uid / equippedOffhandUid).
+    var stAll = { uniqueItems:{
+        r1:{uid:'r1',kind:'ring',enhance:0,enchants:[{mod:'critChance',roll:5}]},
+        am:{uid:'am',kind:'amulet',enhance:0,enchants:[{mod:'maxHp',roll:20}]},
+        ch:{uid:'ch',kind:'bodyarmor',enhance:0,enchants:[{mod:'maxHp',roll:30}]},
+        of:{uid:'of',kind:'offhand',enhance:0,enchants:[{mod:'blockChance',roll:4}]}
+      },
+      jewelrySlots:{ ring1:{uid:'r1'}, ring2:{}, ring3:{}, ring4:{}, ring5:{}, amulet:{uid:'am'} },
+      bodyArmor:{ gauntlets:{}, boots:{}, chest:{uid:'ch'}, helmet:{}, back:{} },
+      equippedOffhandUid:'of' };
+    var ta = FF.equippedEnchantTotals(stAll);
+    eq(ta.critChance, 5, 'equipped ring enchant feeds the aggregate');
+    eq(ta.maxHp, 50, 'amulet + body-armour Max HP enchants stack (20+30)');
+    eq(ta.blockChance, 4, 'equipped offhand enchant feeds the aggregate');
+    ok(typeof FF.equipUnique==='function' && typeof FF.unequipUnique==='function' && typeof FF.uniqueSellValue==='function', 'stage-3 equip/trade fns exported');
   });
 
   // ---- Improvement system: enhance (Stage 2) --------------------------------------------

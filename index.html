@@ -5965,6 +5965,7 @@
   });
   Object.assign(ALL_SELLABLE, WARD_ITEMS);
   function unequipCurrentOffhandToInventory(){
+    if(state.equippedOffhandUid){ state.equippedOffhandUid = null; return; } // a unique offhand doesn't return to inventory (it stays in the table)
     if(state.equippedOffhand && isStackableShield(state.equippedOffhand) && state.equippedOffhandTier > 0){
       var oldId = 'stshield_'+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity;
       addItem(oldId, 1);
@@ -6590,7 +6591,8 @@
     }
     if(RING_SLOT_IDS.indexOf(slotId)===-1) return;
     var cur = state.jewelrySlots[slotId];
-    if(cur.typeId){
+    if(cur.uid){ /* displaced unique stays in the table, not returned to inventory */ }
+    else if(cur.typeId){
       addItem('ring_'+cur.typeId+'_t'+(cur.tier-1)+'_'+cur.rarity, 1);
     }
     state.inventory[itemId] -= 1;
@@ -6601,6 +6603,7 @@
   function unequipRing(slotId){
     if(RING_SLOT_IDS.indexOf(slotId)===-1) return;
     var cur = state.jewelrySlots[slotId];
+    if(cur && cur.uid){ state.jewelrySlots[slotId] = { typeId:null, tier:0, rarity:'normal' }; return; } // unique stays in the table
     if(!cur || !cur.typeId) return;
     addItem('ring_'+cur.typeId+'_t'+(cur.tier-1)+'_'+cur.rarity, 1);
     state.jewelrySlots[slotId] = { typeId:null, tier:0, rarity:'normal' };
@@ -6609,7 +6612,8 @@
     var item = AMULET_ITEMS[itemId];
     if(!item || (state.inventory[itemId]||0) <= 0) return;
     var cur = state.jewelrySlots.amulet;
-    if(cur.tier > 0){
+    if(cur.uid){ /* displaced unique stays in the table */ }
+    else if(cur.tier > 0){
       addItem('amulet_t'+(cur.tier-1)+'_'+cur.rarity, 1);
     }
     state.inventory[itemId] -= 1;
@@ -6619,6 +6623,7 @@
   }
   function unequipAmulet(){
     var cur = state.jewelrySlots.amulet;
+    if(cur && cur.uid){ state.jewelrySlots.amulet = { tier:0, rarity:'normal' }; return; } // unique stays in the table
     if(!cur || cur.tier <= 0) return;
     addItem('amulet_t'+(cur.tier-1)+'_'+cur.rarity, 1);
     state.jewelrySlots.amulet = { tier:0, rarity:'normal' };
@@ -7043,7 +7048,8 @@
       return;
     }
     var slotState = state.bodyArmor[item.slot];
-    if(slotState.tier > 0){
+    if(slotState.uid){ slotState.uid = null; } // displaced unique stays in the table, not returned to inventory
+    else if(slotState.tier > 0){
       var oldId = 'bodyarmor_'+slotState.material+'_'+item.slot+'_t'+(slotState.tier-1)+'_'+slotState.rarity;
       addItem(oldId, 1);
     }
@@ -7051,18 +7057,21 @@
     slotState.tier = item.tierIndex+1;
     slotState.rarity = item.rarity;
     slotState.material = item.material;
+    slotState.uid = null;
     armorPanelExpanded = true;
     addLog('You equipped the ' + item.name + '.', 'important');
   }
   function unequipBodyArmor(slot){
     var slotState = state.bodyArmor && state.bodyArmor[slot];
     if(!slotState || slotState.tier<=0) return;
-    // Only return an item if the slot has a valid material; a legacy/partial save could carry a
-    // tier without a material, which would otherwise mint a phantom "bodyarmor_undefined_..." item.
-    if(slotState.material){
+    // A unique in the slot stays in the table (never returns to inventory). Otherwise only return an
+    // item if the slot has a valid material; a legacy/partial save could carry a tier without a
+    // material, which would otherwise mint a phantom "bodyarmor_undefined_..." item.
+    if(slotState.uid){ /* unique stays in the table */ }
+    else if(slotState.material){
       addItem('bodyarmor_'+slotState.material+'_'+slot+'_t'+(slotState.tier-1)+'_'+slotState.rarity, 1);
     }
-    slotState.tier = 0; slotState.rarity = 'normal'; slotState.material = null;
+    slotState.tier = 0; slotState.rarity = 'normal'; slotState.material = null; slotState.uid = null;
   }
 
   // ---- Unified Tools: every Gathering and Crafting tool is now one Equipment category.
@@ -8034,34 +8043,99 @@
       var mult = enhanceStatMult(u.enhance);
       u.enchants.forEach(function(e){ var m = enchantModById(u.kind, e.mod); if(m) tot[m.stat] = (tot[m.stat]||0) + e.roll*mult; });
     }
-    addUid(st.equippedMainhandUid); addUid(st.equippedOffhandUid); addUid(st.equippedAmuletUid);
-    (st.equippedRingUids||[]).forEach(addUid);
+    addUid(st.equippedMainhandUid); addUid(st.equippedOffhandUid);
+    if(st.jewelrySlots){ RING_SLOT_IDS.forEach(function(sl){ var s=st.jewelrySlots[sl]; if(s && s.uid) addUid(s.uid); }); if(st.jewelrySlots.amulet && st.jewelrySlots.amulet.uid) addUid(st.jewelrySlots.amulet.uid); }
     if(st.bodyArmor) BODY_ARMOR_SLOTS.forEach(function(sl){ var s=st.bodyArmor[sl]; if(s && s.uid) addUid(s.uid); });
     return tot;
   }
-  function uniqueIsEquipped(uid){ return state.equippedMainhandUid===uid || state.equippedOffhandUid===uid || state.equippedAmuletUid===uid || ((state.equippedRingUids||[]).indexOf(uid)!==-1) || (state.bodyArmor && BODY_ARMOR_SLOTS.some(function(sl){ return state.bodyArmor[sl] && state.bodyArmor[sl].uid===uid; })); }
-  // Equip / unequip a unique WEAPON (armour + jewelry follow). Reuses the normal mainhand fields for
-  // the base stats and records the uid so its enchants apply through equippedEnchantTotals.
+  function uniqueIsEquipped(uid){
+    if(state.equippedMainhandUid===uid || state.equippedOffhandUid===uid) return true;
+    if(state.jewelrySlots){ if(RING_SLOT_IDS.some(function(sl){ return state.jewelrySlots[sl] && state.jewelrySlots[sl].uid===uid; })) return true; if(state.jewelrySlots.amulet && state.jewelrySlots.amulet.uid===uid) return true; }
+    if(state.bodyArmor && BODY_ARMOR_SLOTS.some(function(sl){ return state.bodyArmor[sl] && state.bodyArmor[sl].uid===uid; })) return true;
+    return false;
+  }
+  // Equip / unequip a unique of ANY kind. A unique lives permanently in state.uniqueItems; equipping
+  // points the matching real slot at its uid AND copies its base tier/rarity into that slot so the
+  // normal combat math reads the base stats, while equippedEnchantTotals reads the uid for enchants.
+  // Unequipping clears the slot's uid (the unique stays in the table, never returns to inventory).
   function unequipMainhandAny(){
     if(state.equippedMainhandUid){ state.equippedMainhandUid = null; } // the unique stays in the table
     else { unequipCurrentMainhandToInventory(); }
     state.equippedMainhand = null; state.equippedMainhandTier = 0; state.equippedMainhandRarity = 'normal';
   }
-  function equipUnique(uid){
-    var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
-    if(u.kind!=='weapon'){ addLog('Equipping enchanted armour/jewelry is coming soon.','danger'); return; }
-    var m = /^stweapon_(.+)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return; }
+  function unequipOffhandAny(){ // unequipCurrentOffhandToInventory now releases a unique offhand without minting
+    unequipCurrentOffhandToInventory();
+    state.equippedOffhand = null; state.equippedOffhandTier = 0; state.equippedOffhandRarity = 'normal';
+  }
+  function equipUniqueWeapon(uid){
+    var u = state.uniqueItems[uid];
+    var m = /^stweapon_(.+)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
     var typeId = m[1];
     if(!isWandWeapon(typeId) && !isStaff(typeId) && !isScepter(typeId) && !meetsProficiencyRequirement(state.xp[typeId], u.tier)){
-      addLog('Your proficiency isn’t high enough to equip '+uniqueDisplayName(u)+' yet.','danger'); return;
+      addLog('Your proficiency isn’t high enough to equip '+uniqueDisplayName(u)+' yet.','danger'); return false;
     }
     unequipMainhandAny();
     state.equippedMainhand = typeId; state.equippedMainhandTier = u.tier+1; state.equippedMainhandRarity = u.rarity; state.equippedMainhandUid = uid;
     var w = STACKABLE_WEAPON_TYPE_MAP[typeId];
-    if(w && w.hand==='2h'){ unequipCurrentOffhandToInventory(); state.equippedOffhand=null; state.equippedOffhandTier=0; state.equippedOffhandRarity='normal'; }
-    addLog('You equipped '+uniqueDisplayName(u)+'.','important'); saveGame(); render();
+    if(w && w.hand==='2h'){ unequipOffhandAny(); }
+    addLog('You equipped '+uniqueDisplayName(u)+'.','important'); return true;
   }
-  function unequipUnique(uid){ if(state.equippedMainhandUid===uid){ unequipMainhandAny(); addLog('Unequipped.','chronicle'); saveGame(); render(); } }
+  function equipUniqueOffhand(uid){
+    var u = state.uniqueItems[uid];
+    var m = /^stshield_(.+)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
+    var typeId = m[1], mh = getWeaponStyle(state.equippedMainhand);
+    if(mh.hand !== '1h'){ addLog('Shields require a one-handed weapon in your main hand.','danger'); return false; }
+    if(!meetsProficiencyRequirement(state.xp[typeId], u.tier)){ addLog('Your proficiency isn’t high enough to equip '+uniqueDisplayName(u)+' yet.','danger'); return false; }
+    unequipOffhandAny();
+    state.equippedOffhand = typeId; state.equippedOffhandTier = u.tier+1; state.equippedOffhandRarity = u.rarity; state.equippedOffhandUid = uid;
+    addLog('You equipped '+uniqueDisplayName(u)+'.','important'); return true;
+  }
+  function equipUniqueBodyArmor(uid){
+    var u = state.uniqueItems[uid];
+    var m = /^bodyarmor_(.+)_(gauntlets|boots|chest|helmet|back)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
+    var material = m[1], slot = m[2], profId = MATERIAL_TO_PROFICIENCY[material];
+    if(!meetsProficiencyRequirement(profId ? state.xp[profId] : 0, u.tier)){ addLog('Your proficiency isn’t high enough to equip '+uniqueDisplayName(u)+' yet.','danger'); return false; }
+    var ss = state.bodyArmor[slot];
+    if(ss.uid){ /* release previously-equipped unique back to the table */ }
+    else if(ss.tier>0 && ss.material){ addItem('bodyarmor_'+ss.material+'_'+slot+'_t'+(ss.tier-1)+'_'+ss.rarity, 1); }
+    ss.tier = u.tier+1; ss.rarity = u.rarity; ss.material = material; ss.uid = uid;
+    addLog('You equipped '+uniqueDisplayName(u)+'.','important'); return true;
+  }
+  function equipUniqueRing(uid){
+    var u = state.uniqueItems[uid];
+    var m = /^ring_(.+)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
+    var slotId = findEmptyRingSlot();
+    if(!slotId){ addLog('All 5 Ring slots are full. Unequip one first.','danger'); return false; }
+    state.jewelrySlots[slotId] = { typeId: m[1], tier: u.tier+1, rarity: u.rarity, uid: uid };
+    addLog('You equipped '+uniqueDisplayName(u)+'.','important'); return true;
+  }
+  function equipUniqueAmulet(uid){
+    var u = state.uniqueItems[uid], cur = state.jewelrySlots.amulet;
+    if(cur.uid){ /* release previously-equipped unique */ } else if(cur.tier>0){ addItem('amulet_t'+(cur.tier-1)+'_'+cur.rarity, 1); }
+    state.jewelrySlots.amulet = { tier: u.tier+1, rarity: u.rarity, uid: uid };
+    addLog('You equipped '+uniqueDisplayName(u)+'.','important'); return true;
+  }
+  function equipUnique(uid){
+    var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
+    var ok = u.kind==='weapon' ? equipUniqueWeapon(uid)
+      : u.kind==='offhand' ? equipUniqueOffhand(uid)
+      : u.kind==='bodyarmor' ? equipUniqueBodyArmor(uid)
+      : u.kind==='ring' ? equipUniqueRing(uid)
+      : u.kind==='amulet' ? equipUniqueAmulet(uid) : false;
+    if(ok){ armorPanelExpanded = true; saveGame(); render(); }
+  }
+  function unequipUnique(uid){
+    var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
+    var done = false;
+    if(state.equippedMainhandUid===uid){ unequipMainhandAny(); done=true; }
+    if(!done && state.equippedOffhandUid===uid){ unequipOffhandAny(); done=true; }
+    if(!done && state.bodyArmor) BODY_ARMOR_SLOTS.forEach(function(sl){ var s=state.bodyArmor[sl]; if(!done && s && s.uid===uid){ s.tier=0; s.rarity='normal'; s.material=null; s.uid=null; done=true; } });
+    if(!done && state.jewelrySlots){
+      RING_SLOT_IDS.forEach(function(sl){ var s=state.jewelrySlots[sl]; if(!done && s && s.uid===uid){ state.jewelrySlots[sl] = {typeId:null,tier:0,rarity:'normal'}; done=true; } });
+      if(!done && state.jewelrySlots.amulet && state.jewelrySlots.amulet.uid===uid){ state.jewelrySlots.amulet = {tier:0,rarity:'normal'}; done=true; }
+    }
+    if(done){ addLog('Unequipped '+uniqueDisplayName(u)+'.','chronicle'); saveGame(); render(); }
+  }
   // Base-stat scaling for an equipped unique WEAPON: its base damage scales up to +500% at +15.
   function mainhandEnhanceMult(){ var uid = state.equippedMainhandUid, u = uid && state.uniqueItems && state.uniqueItems[uid]; return u ? enhanceStatMult(u.enhance) : 1; }
 
@@ -8100,7 +8174,8 @@
   var improvePending = null;    // { uid, roll } awaiting placement when slots are full
   var improveWarnArmed = false; // higher-tier-crystal warning acknowledged for the next click
   var enhanceWarnArmed = false; // higher-tier-inscription warning acknowledged for the next click
-  function improveSelect(id){ improveSel = id; improvePending = null; improveWarnArmed = false; render(); }
+  var improveConfirm = null;    // 'sell:<uid>' | 'sacrifice:<uid>' — arms a destructive action for a second confirming click
+  function improveSelect(id){ improveSel = id; improvePending = null; improveWarnArmed = false; improveConfirm = null; render(); }
   function improveToggleWarn(){ state.enchantWarnHiTier = !state.enchantWarnHiTier; improveWarnArmed = false; saveGame(); render(); }
   function improveToggleEnhanceWarn(){ state.enhanceWarnHiTier = !state.enhanceWarnHiTier; enhanceWarnArmed = false; saveGame(); render(); }
   function improveEnchant(){
@@ -8131,6 +8206,38 @@
     else { addLog('Discarded the new roll.','chronicle'); }
     improvePending = null; saveGame(); render();
   }
+  // ---- Unique trade lifecycle (Stage 3): sell for gold or sacrifice for Faith, then drop the uid. ----
+  // A unique never sits in state.inventory, so it can't be a craft input; sell/sacrifice removes it from
+  // state.uniqueItems entirely (saves storage) after unequipping it from any slot.
+  function uniqueSellValue(u){ var b = ALL_SELLABLE[u.base]; if(!b) return 0; return Math.round(b.sell * (1 + 0.5*((u.enchants||[]).length)) * (1 + 0.1*(u.enhance||0)) * merchantSellMult()); }
+  function improveSellUnique(uid){
+    var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
+    if(improveConfirm !== 'sell:'+uid){ improveConfirm = 'sell:'+uid; render(); return; }
+    improveConfirm = null;
+    if(uniqueIsEquipped(uid)) unequipUnique(uid);
+    var val = uniqueSellValue(u);
+    removeUnique(uid); if(improveSel===uid){ improveSel = null; } improvePending = null;
+    earnGold(val); addPhysiqueXp([['merchantsSavvy',1]]);
+    addLog('Sold '+uniqueDisplayName(u)+' for '+val+' gold.','important');
+    saveGame(); render();
+  }
+  function improveSacrificeUnique(uid){
+    var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
+    if(improveConfirm !== 'sacrifice:'+uid){ improveConfirm = 'sacrifice:'+uid; render(); return; }
+    improveConfirm = null;
+    if(uniqueIsEquipped(uid)) unequipUnique(uid);
+    var tier = u.tier+1, jb = (u.kind==='ring'||u.kind==='amulet');
+    var restore = Math.round(15 * Math.pow(1.25, tier-1) * (jb?1.5:1) * (1 + 0.25*((u.enchants||[]).length)));
+    restore = Math.round(restore * (1 + physBonus('oblation', 0.25)));
+    removeUnique(uid); if(improveSel===uid){ improveSel = null; } improvePending = null;
+    var before = state.faith;
+    state.faith = Math.min(faithMax(state), state.faith + restore);
+    addXp('sacrifice', 30);
+    addPhysiqueXp(physTierPairs([['focus',1],['zealotry',1],['oblation',1]], tier-1));
+    maybeSummonFamiliar('sacrifice');
+    addLog('You sacrificed '+uniqueDisplayName(u)+' and restored '+Math.round(state.faith-before)+' Faith.','important');
+    saveGame(); render();
+  }
   function renderImprovementTab(){
     var html = '<div class="section-intro">Turn a piece of equipment into a unique item and <b>Enchant</b> it with random modifiers. Rarity sets how many it can hold (Normal 1 · Rare 2 · Supreme 3 · Fantastic 4). Each enchant costs Enchant Crystals of equal-or-higher tier; the cost rises by one per enchant. Enchant freely — but once you <b>Enhance</b> an item it can no longer be enchanted.</div>';
     var bases = [], uniques = Object.keys(state.uniqueItems||{});
@@ -8151,7 +8258,7 @@
       var name = isU2 ? uniqueDisplayName(u) : (ALL_SELLABLE[improveSel]||{name:'Equipment'}).name;
       html += '<div class="guild-section-title" style="margin-top:14px;">'+escapeHtml(name)+'</div>';
       html += '<div class="item-card" style="max-width:540px;"><div class="item-meta" style="margin-bottom:6px;">'+escapeHtml(getRarity(rarity).label)+' · Tier '+(tier+1)+' · '+count+'/'+slots+' enchant slots'+(enhance>0?' · <b>+'+enhance+'</b>':'')+'</div>';
-      if(isU2 && u.kind==='weapon'){ var _eq = uniqueIsEquipped(u.uid); html += '<div style="margin-bottom:8px;"><button class="mini-btn" data-action="'+(_eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(_eq?'Unequip':'Equip weapon')+'</button>'+(_eq?' <span class="item-meta" style="color:var(--gold);">equipped</span>':'')+'</div>'; }
+      if(isU2){ var _eq = uniqueIsEquipped(u.uid); html += '<div style="margin-bottom:8px;"><button class="mini-btn" data-action="'+(_eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(_eq?'Unequip':'Equip')+'</button>'+(_eq?' <span class="item-meta" style="color:var(--gold);">equipped</span>':'')+'</div>'; }
       if(isU2 && u.enchants.length){ u.enchants.forEach(function(e,i){ html += '<div class="inputs-line"><span style="color:var(--gold);">'+escapeHtml(enchantLabel(u.kind,e))+'</span>'+((improvePending&&improvePending.uid===u.uid)?' <button class="mini-btn" data-action="improvePlace" data-idx="'+i+'">Replace</button>':'')+'</div>'; }); }
       else if(isU2){ html += '<div class="empty-note" style="margin-bottom:6px;">No enchants yet.</div>'; }
       var cost = count + 1;
@@ -8176,6 +8283,16 @@
           html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn stop" data-action="improveEnhance" data-uid="'+u.uid+'" style="width:auto;flex:0 0 auto;">Enhance ('+ecost+')</button>';
           html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleEnhanceWarn"'+(state.enhanceWarnHiTier?' checked':'')+'> warn on higher-tier inscriptions</label></div>';
         }
+        // Trade lifecycle: a unique can be sold for gold or sacrificed for Faith. Both are permanent
+        // (the item is destroyed), so each takes a confirming second click.
+        var sellV = uniqueSellValue(u);
+        html += '<div class="guild-section-title" style="margin-top:12px;font-size:13px;">Trade</div>';
+        if(improveConfirm==='sell:'+u.uid) html += '<div class="empty-note" style="color:var(--danger);">⚠ Permanently sell this unique for '+sellV+' gold? Click Sell again to confirm.</div>';
+        if(improveConfirm==='sacrifice:'+u.uid) html += '<div class="empty-note" style="color:var(--danger);">⚠ Permanently sacrifice this unique for Faith? Click Sacrifice again to confirm.</div>';
+        html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;">';
+        html += '<button class="mini-btn" data-action="improveSellUnique" data-uid="'+u.uid+'">'+(improveConfirm==='sell:'+u.uid?'Confirm sell':'Sell')+' ('+sellV+'g)</button>';
+        html += '<button class="mini-btn" data-action="improveSacrificeUnique" data-uid="'+u.uid+'">'+(improveConfirm==='sacrifice:'+u.uid?'Confirm sacrifice':'Sacrifice')+'</button>';
+        html += '</div>';
       }
       html += '</div>';
     }
@@ -18127,6 +18244,10 @@
       enhanceItem(btn.getAttribute('data-uid'));
     } else if(action==='improveToggleEnhanceWarn'){
       improveToggleEnhanceWarn();
+    } else if(action==='improveSellUnique'){
+      improveSellUnique(btn.getAttribute('data-uid'));
+    } else if(action==='improveSacrificeUnique'){
+      improveSacrificeUnique(btn.getAttribute('data-uid'));
     } else if(action==='tierStep'){
       var _tt = TIER_STEP_TARGETS[btn.getAttribute('data-tier-target')];
       var _vals = (btn.getAttribute('data-tier-values')||'').split(',').map(function(v){ return parseInt(v,10); }).filter(function(v){ return !isNaN(v); });
@@ -18859,7 +18980,7 @@
       earnGold:earnGold, walletSync:walletSync, itemSync:itemSync,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
       parseImprovable:parseImprovable, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique,
-      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, uniqueIsEquipped:uniqueIsEquipped,
+      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
