@@ -7579,7 +7579,6 @@
   var physiquePanelExpanded = false;
   var menagerieExpanded = {};
   var settingsOpen = false;
-  var settingsView = 'main'; // 'main' | 'skills'
   var selectedToolTier = {};
   var selectedWorkshopTier = {};
   var selectedCottageTier = 0;
@@ -12106,41 +12105,11 @@
     html += '</div>';
     return html;
   }
-  // Settings > Skills screen: every skill grouped, with its current level and a (?) for the full
-  // "what trains it / what it affects" tooltip (reuses the same skill-info popup used across the game).
-  function renderSkillsScreen(){
-    var total = 0;
-    ALL_MAIN_SKILL_IDS.forEach(function(id){ total += getLevel((state.xp && state.xp[id]) || 0); });
-    var html = '<div class="section-intro" style="margin-top:10px">Every skill you can train and its current level. Tap a skill\'s <b>?</b> for what trains it and what it affects. <b>Total Level '+fmt(total)+'</b> (skills, proficiencies &amp; classes).</div>';
-    html += '<div class="settings-grid">';
-    SKILL_GROUPS.forEach(function(g){
-      html += '<div class="settings-col"><h4 style="color:'+g.color+'">'+escapeHtml(g.label)+'</h4>';
-      g.skills.forEach(function(id){
-        var info = (SKILL_INFO[id] || PHYSIQUE_SKILL_MAP[id]) ? ' '+skillInfoBtn(id) : '';
-        html += '<div class="settings-skill-row"><span>'+escapeHtml(SKILL_LABELS[id]||id)+info+'</span><b>Lv '+anySkillLevel(id)+'</b></div>';
-      });
-      html += '</div>';
-    });
-    html += '</div>';
-    return html;
-  }
   function renderSettingsModal(){
     var overlay = document.getElementById('settingsOverlay');
     if(!settingsOpen){ overlay.className = ''; overlay.innerHTML = ''; return; }
     var html = '<div class="familiar-popup-card settings-card">';
     html += '<div class="familiar-popup-title">Settings</div>';
-    html += '<div class="settings-tabs">'
-      + '<button class="action-btn settings-tab'+(settingsView==='main'?'':' off')+'" data-action="settingsTab" data-view="main">Settings</button>'
-      + '<button class="action-btn settings-tab'+(settingsView==='skills'?'':' off')+'" data-action="settingsTab" data-view="skills">Skills</button>'
-      + '</div>';
-    if(settingsView==='skills'){
-      html += renderSkillsScreen();
-      html += '<button class="action-btn settings-close" data-action="closeSettings">Close</button>';
-      html += '</div>';
-      overlay.className = 'familiar-popup-overlay';
-      overlay.innerHTML = html;
-      return;
-    }
     html += '<div class="settings-grid">';
     // -- Preferences column --
     html += '<div class="settings-col"><h4>Preferences</h4>';
@@ -18593,11 +18562,8 @@
     } else if(action==='marketCollect'){
       marketReload();
     } else if(action==='openSettings'){
-      settingsOpen = true; settingsView = 'main'; recoveryStatus = null; recoveryEditing = false; recoveryMsg = '';
+      settingsOpen = true; recoveryStatus = null; recoveryEditing = false; recoveryMsg = '';
       serverBuffFetch(); // refresh the buff status when the menu opens
-    } else if(action==='settingsTab'){
-      settingsView = btn.getAttribute('data-view')==='skills' ? 'skills' : 'main';
-      renderSettingsModal();
     } else if(action==='buyExpBuff'){
       buyServerExpBuff();
     } else if(action==='toggleChatDrawer'){
