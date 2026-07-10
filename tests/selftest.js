@@ -2171,8 +2171,9 @@
     eq(FF.activeClassId(full), 'thunderfury', 'earth wand + ward + full cloth => Thunderfury');
 
     // Every requirement matters.
-    var notEarthWand = base(); notEarthWand.equippedMainhand='wandFire';
-    eq(FF.activeClassId(notEarthWand), null, 'must be an Earth Wand specifically');
+    // A Fire/Water/Dark wand now confers its own class (Pyromancer/Frostwarden/Nightblade); a Light Wand has none.
+    var notEarthWand = base(); notEarthWand.equippedMainhand='wandLight';
+    eq(FF.activeClassId(notEarthWand), null, 'must be an Earth Wand specifically (a Light Wand confers no class)');
     var noWard = base(); noWard.equippedOffhand=null;
     eq(FF.activeClassId(noWard), null, 'needs a ward');
     var chainHelm = base(); chainHelm.bodyArmor.helmet={tier:1,rarity:'normal',material:'chain'};

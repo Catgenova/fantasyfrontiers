@@ -7201,7 +7201,7 @@
   function resolveArmorMult(state){ return Math.min(0.25, getLevel(state.physique.resolve||0)*0.003); }                 // armor proficiencies
   // Generic cross-skill physique bonus: scales ~linearly from Lv1 up to `cap` at Lv100 (matches how the
   // built-in physiques ramp). All the new cross-skill physiques below read through this one helper.
-  function physBonus(id, cap){ return Math.min(cap, getLevel((state.physique && state.physique[id]) || 0) * (cap/100)); }
+  function physBonus(id, cap){ return Math.min(cap, Math.max(0, getLevel((state.physique && state.physique[id]) || 0) - 1) * (cap/99)); } // 0 at Lv1 -> cap at Lv100 (truly neutral at base)
   // Derived effects for the cross-skill physiques. Each is a no-op at base level (physBonus ~ 0), so
   // existing players see no change until they train the physique.
   function merchantSellMult(){ return 1 + physBonus('merchantsSavvy', 0.15); }         // +vendor sell price
