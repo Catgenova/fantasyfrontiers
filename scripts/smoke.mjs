@@ -33,10 +33,12 @@ try {
   page.on("pageerror", (e) => errs.push("pageerror: " + e.message));
   page.on("console", (m) => { if (m.type() === "error") errs.push("console: " + m.text()); });
   await page.goto(base + "?selftest", { waitUntil: "domcontentloaded" });
-  const st = await page
+  // Wait for the suite to finish, THEN read the full result object (waitForFunction resolves to the
+  // predicate's return value, not __FF_SELFTEST -- so fetch the object with a separate evaluate).
+  await page
     .waitForFunction(() => window.__FF_SELFTEST && (window.__FF_SELFTEST.passed || window.__FF_SELFTEST.error), null, { timeout: 45000 })
-    .then((h) => h.jsonValue())
     .catch(() => null);
+  const st = await page.evaluate(() => window.__FF_SELFTEST || null);
   console.log("smoke: selftest =", JSON.stringify(st));
   if (!st || st.error || st.failed > 0 || !(st.passed > 0)) { console.error("smoke: SELFTEST FAILED"); failed = true; }
 
