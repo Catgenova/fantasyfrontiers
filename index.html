@@ -2430,8 +2430,8 @@
         return list;
       })() },
     enchanting: { label:'Enchanting', icon:svgIcon('starburst','#a06ad8'),
-      // Weapon Enchants: a Cut Gem bound to a metal fitting. These are combat consumables -- ready one
-      // in the Battle tab (like an Alchemy potion) and every hit lands +X% weapon damage while charged.
+      // Enchant Crystals: a Cut Gem bound to a metal fitting. The input the Improvement tab spends to
+      // enchant equipment (Resources -> Improvement) -- no longer a Battle-tab combat consumable.
       recipes: (function(){
         var list = [];
         for(var i=0;i<TIER_COUNT;i++){
@@ -2446,8 +2446,7 @@
             time: tierTime(7,0.3,i),
             sell: tierSell(16,i),
             icon: svgIcon('starburst',PROSPECTING_COLORS[i]),
-            inputs: inputs,
-            potionType: 'enchant'
+            inputs: inputs
           });
         }
         return list;
@@ -4174,9 +4173,9 @@
         { icon:svgIcon('boots',CLASS_LEATHER_COLOR),    label:'Leather Boots', met:function(st){ return leatherPieceEquipped(st,'boots'); } }
       ],
       passives:[
-        { level:1,  name:'Runeblade',  desc:'Your active Weapon Enchant\'s damage bonus is doubled.' },
+        { level:1,  name:'Runeblade',  desc:'Your equipped gear\'s enchant bonuses are increased by 50%.' },
         { level:20, name:'Spell Echo', desc:'15% chance a hit echoes, striking again for 50% damage.' },
-        { level:40, name:'Arcane Edge',desc:'While a Weapon Enchant is active, +15% Critical Hit chance.' },
+        { level:40, name:'Arcane Edge',desc:'While you have enchanted gear equipped, +15% Critical Hit chance.' },
         { level:60, name:'Momentum',   desc:'Each landed hit grants a stack (max 5) of +6% damage; a miss resets it.' },
         { level:80, name:'Overwhelm',  desc:'At max Momentum, your hits ignore 25% of enemy armor (+25% damage).' }
       ]
@@ -4459,8 +4458,9 @@
   function spellbladeStacks(st){ st = st || state; return spellbladeBonus(60, st) ? Math.min(5, st.spellbladeStacks || 0) : 0; }
   function spellbladeMomentumMult(st){ st = st || state; return 1 + 0.06 * spellbladeStacks(st); }                 // Lv60 +6%/stack
   function spellbladeOverwhelmMult(st){ st = st || state; return (spellbladeBonus(80, st) && spellbladeStacks(st) >= 5) ? 1.25 : 1; } // Lv80 +25% at max
-  function spellbladeCritChance(st){ return (spellbladeBonus(40, st) && enchantDamageBonus() > 0) ? 0.15 : 0; }    // Lv40 +15% crit while Enchant active
-  function spellbladeEnchantMult(){ return spellbladeBonus(1) ? 2 : 1; }                                           // Lv1 Runeblade: double the Enchant bonus
+  function hasEquippedEnchants(st){ st = st || state; for(var _k in equippedEnchantTotals(st)) return true; return false; }
+  function spellbladeCritChance(st){ return (spellbladeBonus(40, st) && hasEquippedEnchants(st)) ? 0.15 : 0; }      // Lv40 Arcane Edge: +15% crit while enchanted gear is equipped
+  function spellbladeEnchantBoost(st){ return spellbladeBonus(1, st) ? 1.5 : 1; }                                  // Lv1 Runeblade: +50% to your equipped gear's enchant bonuses
   // ===== New classes: Pyromancer / Sharpshooter / Juggernaut / Nightblade / Executioner =====
   function pyromancerBonus(reqLevel, st){ return classBonusActive('pyromancer', reqLevel, st); }
   function sharpshooterBonus(reqLevel, st){ return classBonusActive('sharpshooter', reqLevel, st); }
@@ -5208,7 +5208,7 @@
   // Fortitude (a Physique sub-skill) is trained purely by taking damage, and is the
   // sole driver of max HP -- combat proficiency no longer factors into survivability
   // directly, only into which fights you're allowed to enter.
-  function maxHp(state){ return 50 + getLevel(state.physique.fortitude||0)*5 + Math.round((equippedEnchantTotals(state).maxHp)||0); }
+  function maxHp(state){ return 50 + getLevel(state.physique.fortitude||0)*5 + Math.round(((equippedEnchantTotals(state).maxHp)||0) * spellbladeEnchantBoost(state)); }
   function fmt(n){ return Math.floor(n).toLocaleString(); }
   var BASE_CRAFT_SUCCESS = 0.7;
   function sleightOfHandCraftSpeedBonus(state){ return Math.min(0.15, getLevel(state.physique.sleightOfHand||0)*0.003); }
@@ -8447,7 +8447,7 @@
     bomb:     { label:'Bomb',          shape:'flame',   color:'#c8853a' },
     flash:    { label:'Flash Bomb',    shape:'sun',     color:'#e8a02a' }
   };
-  var POTION_TYPE_IDS = ['toxin','firebomb','elixir','catalyst','enchant','coating','bomb','flash'];
+  var POTION_TYPE_IDS = ['toxin','firebomb','elixir','catalyst','coating','bomb','flash']; // 'enchant' retired -> Enchant Crystals are now the Improvement-tab enchant input, not a combat consumable
   var POTION_MAX_CHARGES = 10;
   var POTION_POISON_DURATION_MS = 3000;
   function potionLerp(a, b, tier){ tier = Math.max(0, Math.min(TIER_COUNT-1, tier)); return a + (b-a)*tier/(TIER_COUNT-1); }
@@ -8553,6 +8553,7 @@
     var relicBonus = getEquippedRelicBonus(state);
     var offhandItem = getEquippedOffhandItem(state);
     var enchTot = equippedEnchantTotals(state); // equipped-item enchant bonuses (all zero if none equipped)
+    var _enchBoost = spellbladeEnchantBoost(state); if(_enchBoost!==1){ for(var _ek in enchTot) enchTot[_ek] *= _enchBoost; } // Spellblade Runeblade amplifies equipped enchants
 
     var weaponStyle = getWeaponStyle(mainhandTypeId);
     var isWandAttack = !!weaponStyle.wand; // wand: elemental damage, shared 'wands' proficiency, no physical-type bonuses
@@ -8612,7 +8613,7 @@
 
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
     var wandAttuneMult = isWandAttack ? elementDmgMult(state, weaponStyle.element) : 1; // Elemental Attunement boosts a wand's element damage
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + enchantDamageBonus() * spellbladeEnchantMult()) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, and the mainhand's Enhance base-stat scaling
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, and the mainhand's Enhance base-stat scaling
     dmgToMonster += Math.round(enchTot.flatDamage||0); // + equipped-item Flat Damage enchants
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
