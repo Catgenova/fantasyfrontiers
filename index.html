@@ -7465,6 +7465,9 @@
     var s = {
       gold: 25,
       goldEarnedTotal: 25,   // monotonic lifetime gold received (wallet-sync anchor); never decreases
+      uniqueItems: {},       // uid -> unique enchanted/enhanced equipment instance (Improvement system)
+      uidSeq: 0,             // monotonic counter for unique-instance ids
+      enchantWarnHiTier: true, enhanceWarnHiTier: true, // show higher-tier-input warnings (toggleable)
       xp: xpObj,
       physique: physique,
       inventory: {},
@@ -7924,6 +7927,61 @@
     mult = mult||1;
     Object.keys(inputs).forEach(function(k){ state.inventory[k] = Math.max(0, (state.inventory[k]||0) - inputs[k]*mult); });
   }
+
+  // ================= IMPROVEMENT: ENCHANT + ENHANCE (Stage 1a foundation) =================
+  // A player turns a piece of equipment into a UNIQUE instance (state.uniqueItems[uid]) and:
+  //   - ENCHANTS it: rolls a random modifier at an RNG value. Re-enchanting rolls again and the
+  //     player keeps the better; rarity caps held enchants (normal 1 / rare 2 / supreme 3 / fantastic 4).
+  //     Each enchant costs (current enchant count + 1) Enchant Crystals of tier >= the item's tier.
+  //   - ENHANCES it (Stage 2): +1..+15, scaling base + enchant stats up to +500%.
+  // Unique items don't stack, can't be craft inputs, and are dropped from the table when sold/sacrificed.
+  // This block is the data model + pools + pure helpers; the UI, combat wiring, and enhance land next.
+  var ENCHANT_SLOTS_BY_RARITY = { normal:1, rare:2, supreme:3, fantastic:4 };
+  function enchantSlotsFor(rarity){ return ENCHANT_SLOTS_BY_RARITY[rarity] || 1; }
+  var ENHANCE_MAX = 15;
+  // Broad modifier pools. Each mod: id, label, stat (the combat hook Stage 1c reads), min/max (inclusive
+  // integer roll), pct (value is a percent). Weapons, armour (all body slots + shields), and jewelry differ.
+  var ENCHANT_MODS = {
+    weapon: [
+      { id:'critDamage',   label:'Critical Damage', stat:'critDamage',  min:5, max:30, pct:true },
+      { id:'critChance',   label:'Critical Chance', stat:'critChance',  min:2, max:12, pct:true },
+      { id:'weaponDamage', label:'Weapon Damage',   stat:'pctDamage',   min:5, max:25, pct:true },
+      { id:'flatDamage',   label:'Flat Damage',     stat:'flatDamage',  min:3, max:20, pct:false },
+      { id:'lifesteal',    label:'Lifesteal',       stat:'lifesteal',   min:1, max:8,  pct:true },
+      { id:'accuracy',     label:'Accuracy',        stat:'accuracy',    min:3, max:15, pct:true },
+      { id:'penetration',  label:'Armour Pierce',   stat:'penetration', min:3, max:15, pct:true }
+    ],
+    armor: [
+      { id:'defense',      label:'Defense',          stat:'defense',      min:5, max:30, pct:true },
+      { id:'maxHp',        label:'Max HP',           stat:'maxHp',        min:10,max:60, pct:false },
+      { id:'dmgReduction', label:'Damage Reduction', stat:'dmgReduction', min:1, max:7,  pct:true },
+      { id:'blockChance',  label:'Block Chance',     stat:'blockChance',  min:2, max:10, pct:true },
+      { id:'thorns',       label:'Thorns',           stat:'thorns',       min:3, max:18, pct:false },
+      { id:'hpRegen',      label:'HP Regen',         stat:'hpRegen',      min:1, max:6,  pct:false }
+    ],
+    jewelry: [
+      { id:'critDamage',   label:'Critical Damage', stat:'critDamage', min:4, max:22, pct:true },
+      { id:'critChance',   label:'Critical Chance', stat:'critChance', min:2, max:9,  pct:true },
+      { id:'allDamage',    label:'All Damage',      stat:'pctDamage',  min:3, max:15, pct:true },
+      { id:'resistance',   label:'Resistance',      stat:'resistance', min:2, max:12, pct:true },
+      { id:'maxHp',        label:'Max HP',          stat:'maxHp',      min:8, max:45, pct:false },
+      { id:'lifesteal',    label:'Lifesteal',       stat:'lifesteal',  min:1, max:5,  pct:true }
+    ]
+  };
+  // kind -> modifier pool. weapon->weapon; ring/amulet->jewelry; body armour + shields/offhands->armor.
+  function enchantCategoryForKind(kind){ return kind==='weapon' ? 'weapon' : (kind==='ring'||kind==='amulet') ? 'jewelry' : 'armor'; }
+  function enchantModById(kind, id){ var pool = ENCHANT_MODS[enchantCategoryForKind(kind)]; for(var i=0;i<pool.length;i++){ if(pool[i].id===id) return pool[i]; } return null; }
+  // Roll one enchant: a random mod from the kind's pool at a random inclusive value in its range.
+  function rollEnchant(kind){
+    var pool = ENCHANT_MODS[enchantCategoryForKind(kind)];
+    var mod = pool[Math.floor(Math.random()*pool.length)];
+    return { mod: mod.id, roll: mod.min + Math.floor(Math.random()*(mod.max - mod.min + 1)) };
+  }
+  function enchantLabel(kind, e){ var m = enchantModById(kind, e.mod); if(!m) return '+'+e.roll+' ?'; return '+'+e.roll+(m.pct?'%':'')+' '+m.label; }
+  // Crystal cost for the NEXT enchant on an item = (current enchant count) + 1.
+  function enchantCrystalCost(u){ return ((u && u.enchants) ? u.enchants.length : 0) + 1; }
+  // Monotonic unique-instance id per save.
+  function genUid(){ state.uidSeq = (state.uidSeq||0) + 1; return 'u'+state.uidSeq; }
 
   // ================= ACTIONS =================
   function startGather(skill, itemId){
@@ -9090,6 +9148,11 @@
           // and never let it drop below the current balance.
           if(typeof state.goldEarnedTotal !== 'number' || !isFinite(state.goldEarnedTotal)) state.goldEarnedTotal = Math.max(0, Math.floor(state.gold||0));
           else state.goldEarnedTotal = Math.max(state.goldEarnedTotal, Math.floor(state.gold||0));
+          // Improvement system (enchant/enhance): unique-instance table + id counter + warning toggles.
+          if(!state.uniqueItems || typeof state.uniqueItems !== 'object' || Array.isArray(state.uniqueItems)) state.uniqueItems = {};
+          if(typeof state.uidSeq !== 'number' || !isFinite(state.uidSeq)) state.uidSeq = 0;
+          if(typeof state.enchantWarnHiTier !== 'boolean') state.enchantWarnHiTier = true;
+          if(typeof state.enhanceWarnHiTier !== 'boolean') state.enhanceWarnHiTier = true;
           if(typeof state.playerHp !== 'number') state.playerHp = maxHp(state);
           if(typeof state.autoEatThreshold !== 'number') state.autoEatThreshold = 0;
           if(!state.stats || typeof state.stats !== 'object') state.stats = {};
@@ -18575,6 +18638,7 @@
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       earnGold:earnGold, walletSync:walletSync, itemSync:itemSync,
+      ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
       startGather:startGather, startCraft:startCraft, startPray:startPray,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,

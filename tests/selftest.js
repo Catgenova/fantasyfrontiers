@@ -2487,6 +2487,32 @@
     s.gold = g0; s.goldEarnedTotal = e0; // restore so the test never perturbs the real balance
   });
 
+  // ---- Improvement system: enchant foundation (Stage 1a) --------------------------------
+  suite('improvement: enchant foundation', function(){
+    ok(typeof FF.rollEnchant === 'function' && FF.ENCHANT_MODS, 'enchant pools + roll exported');
+    eq(FF.enchantSlotsFor('normal'), 1, 'normal = 1 enchant slot');
+    eq(FF.enchantSlotsFor('rare'), 2, 'rare = 2 slots');
+    eq(FF.enchantSlotsFor('supreme'), 3, 'supreme = 3 slots');
+    eq(FF.enchantSlotsFor('fantastic'), 4, 'fantastic = 4 slots');
+    eq(FF.ENHANCE_MAX, 15, 'enhance caps at +15');
+    eq(FF.enchantCategoryForKind('weapon'), 'weapon', 'weapon -> weapon pool');
+    eq(FF.enchantCategoryForKind('ring'), 'jewelry', 'ring -> jewelry pool');
+    eq(FF.enchantCategoryForKind('amulet'), 'jewelry', 'amulet -> jewelry pool');
+    eq(FF.enchantCategoryForKind('bodyarmor'), 'armor', 'armour slot -> armor pool');
+    eq(FF.enchantCategoryForKind('offhand'), 'armor', 'offhand/shield -> armor pool');
+    ['weapon','armor','jewelry'].forEach(function(cat){
+      var pool = FF.ENCHANT_MODS[cat];
+      ok(pool && pool.length >= 4, cat + ' pool is a broad list');
+      pool.forEach(function(m){ ok(m.id && m.label && m.stat && m.min <= m.max, cat + '/' + m.id + ' well-formed'); });
+    });
+    for(var i=0;i<50;i++){
+      var e = FF.rollEnchant('weapon'); var m = FF.enchantModById('weapon', e.mod);
+      ok(m && e.roll >= m.min && e.roll <= m.max, 'weapon roll lands in the mod range');
+    }
+    eq(FF.enchantCrystalCost({enchants:[]}), 1, 'first enchant costs 1 crystal');
+    eq(FF.enchantCrystalCost({enchants:[1,2,3]}), 4, 'each extra enchant adds +1 crystal');
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }
