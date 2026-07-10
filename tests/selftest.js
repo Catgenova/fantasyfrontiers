@@ -506,6 +506,16 @@
     ok(FF.chronicleCraftToSystemMsg({ id:10, username:'A', body:'Iron Sword', created_at:'x' }) === null, 'a plain craft is not blasted');
   });
 
+  // ---- Top-bar tips & tricks ticker ------------------------------------------------------------------
+  suite('tips ticker', function(){
+    var T = FF.TICKER_TIPS;
+    ok(Array.isArray(T) && T.length >= 20, 'there is a healthy list of tips (>= 20)');
+    ok(T.every(function(t){ return typeof t === 'string' && t.length > 10; }), 'every tip is a non-trivial string');
+    ok(T.some(function(t){ return /Logic/.test(t) && /craft slot/.test(t); }), 'includes the Logic craft-slot tip');
+    ok(T.some(function(t){ return /Sand/.test(t) && /Archaeolog/.test(t); }), 'includes the Sand / Archaeology tip');
+    ok(new Set(T).size === T.length, 'no duplicate tips');
+  });
+
   // ---- Guild estate: assist a teammate's task ------------------------------------------
   suite('guild estate assist', function(){
     var ge = FF.guildEstate;

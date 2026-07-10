@@ -99,6 +99,14 @@
     background-image:radial-gradient(circle at 20% 30%, rgba(120,140,90,.08), transparent 30%),repeating-linear-gradient(90deg, rgba(0,0,0,.28) 0 2px, transparent 2px 28px);
     border-bottom:2px solid #000;box-shadow:inset 0 -2px 4px rgba(0,0,0,.35);
   }
+  /* Tips & tricks ticker: a slim scrolling strip under the top bar, visible on every in-game screen. */
+  .ff-ticker{display:flex;align-items:center;gap:9px;padding:4px 14px;flex-shrink:0;overflow:hidden;z-index:7;background-color:var(--stone-dk);background-image:repeating-linear-gradient(90deg, rgba(0,0,0,.22) 0 2px, transparent 2px 28px);border-bottom:2px solid #000;box-shadow:inset 0 -2px 4px rgba(0,0,0,.3);}
+  .ff-ticker-ico{flex-shrink:0;font-size:13px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.5));}
+  .ff-ticker-view{flex:1 1 auto;min-width:0;overflow:hidden;}
+  .ff-ticker-text{display:inline-block;white-space:nowrap;padding-left:100%;font-family:var(--font-body);font-size:12px;color:#d7c9a6;will-change:transform;animation:ffTickerScroll 26s linear infinite;}
+  .ff-ticker-text b{color:var(--coin);}
+  .ff-ticker:hover .ff-ticker-text{animation-play-state:paused;}
+  @keyframes ffTickerScroll{ from{transform:translateX(0);} to{transform:translateX(-100%);} }
   .ff-brand{display:flex;align-items:center;gap:9px;}
   .ff-brand-word{font-family:var(--font-display);font-weight:700;font-size:14px;letter-spacing:1px;color:var(--coin);white-space:nowrap;}
   .ff-brand-crest{width:34px;height:34px;flex-shrink:0;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));}
@@ -1381,6 +1389,7 @@
   <div id="trackerPickerOverlay"></div>
   <div id="peonPickerOverlay"></div>
   <div class="ff-topbar" id="ffTopbar"></div>
+  <div class="ff-ticker" id="ffTicker"><span class="ff-ticker-ico" aria-hidden="true">💡</span><div class="ff-ticker-view"><span class="ff-ticker-text" id="ffTickerText"></span></div></div>
   <div class="ff-mid">
     <nav class="ff-rail" id="ffRail"></nav>
     <svg class="ff-railvine" id="ffRailVine" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -9183,6 +9192,46 @@
   // Signature of everything that changes the topbar's STRUCTURE (which chips/buttons exist). The live
   // countdowns/levels are NOT in it -- those update text in place. This lets updateHeader avoid
   // rebuilding the bar (and its buttons) every frame, which was eating clicks on Settings/Tracker.
+  // Tips & tricks scrolled across the top-bar ticker (see #ffTicker). One shows at a time; the next
+  // is swapped in each time the marquee completes a pass. <b> highlights the key term.
+  var TICKER_TIPS = [
+    "<b>Logic:</b> every 10 levels earned in Logic grants one extra active craft slot. Get crafting!",
+    "<b>Sand</b> you dig smelts into Glass Bottles for Alchemy potions and fires into Crucibles in Pottery. Dig long enough and you'll turn up Muddy Artifacts to clean off in Archaeology.",
+    "<b>Classes</b> aren't unlocked, they're worn: equip a full matching gear set (Cloth robes + a Staff = Summoner) and its passives switch on. Swap a piece out and it goes dormant.",
+    "Finding a <b>familiar</b> sets off a server-wide +50% EXP buff for everyone for 5 minutes — and registering a new account triggers a full hour.",
+    "A <b>Staff</b> deals no damage — it grants Block and extra familiar slots so your summoned Companions do the fighting for you.",
+    "One <b>butchered corpse</b> gives three things: Meat for Hot Food Cooking, Hide for Leatherworking, and Fat/Tallow for Chandlery candles.",
+    "<b>Fertilizer:</b> refine a Fishing catch with equal-tier Digging soil, then spread it on a same-tier growing crop to double that plot's harvest.",
+    "<b>Faith</b> isn't just buffs — leveling Devotion, Blessing, and Miracle steadily raises your odds of forging Rare, Supreme, and Fantastic gear.",
+    "Every skill has a <b>familiar</b> waiting to be found, a small chance on each completed action. Set one as your Companion and it casts spells for you in combat.",
+    "<b>Cloth armor</b> makes your familiar's spells hit harder, and Catalyst potions from Alchemy stack on top. A well-dressed summoner is a dangerous one.",
+    "<b>Physiques</b> train themselves from what you already do: heavy labor builds Body Strength (melee damage), fighting builds Agility (dodge). The Skills tab shows what trains each.",
+    "<b>Gathering</b> has a 70% base success — forge that skill's gather Tool via Blacksmithing to push it toward a 95% cap.",
+    "<b>Wands</b> deal elemental damage and <b>Wards</b> reflect it. Rarity multiplies a wand's damage 2x/4x/8x and gives a ward a chance to reflect a full hit.",
+    "Place a <b>Workshop</b> on your Estate to speed a skill and add double-output. Put a Cottage beside it and idle Peons will work that skill for you.",
+    "<b>Elemental Attunements</b> grow as you deal or take that element's damage, raising both the damage you deal and your resistance to it.",
+    "Below 25% HP, <b>Tenacity</b> turns desperation into power: deal more and take less. Some classes fight hurt on purpose.",
+    "Brew <b>Teas</b> (Mixology) for XP, plate <b>Feasts</b> (Gastronomy) for damage, bind <b>Tomes</b> (Bookbinding) for work speed, and scribe <b>Scrolls</b> (Inscription) to ward off damage.",
+    "Every craft can roll a rarity, and the <b>Treasure Hunter</b> class grows stronger the more Rare-or-better gear you wear. Dress to impress.",
+    "Not every gather feeds a weapon: <b>Diving</b> turns up Pearls for Amulets, and <b>Prospecting</b> sifts Gems for Gemcutting.",
+    "A <b>Belt</b> adds concurrent craft slots on top of what Logic grants — stack both to run more crafts at once.",
+    "<b>Merchant's Savvy</b> sharpens your prices: better vendor payouts and a lighter Marketplace tax, and it levels just by selling.",
+    "<b>Sacrifice</b> unwanted gear for Faith — and slay Demonspawn for Broken Relics, since sacrificing one is worth a huge burst of Faith.",
+    "Your guild shares an <b>Estate</b> funded by the treasury, and the leader decides who may demolish buildings or tear up pavement.",
+    "<b>Green Thumb</b> speeds your crops and can drop a bonus harvest; <b>Composter</b> can keep your Fertilizer from being used up. Farm smarter.",
+    "<b>Supreme and Fantastic</b> crafts get blasted to the whole server in global chat — forge something legendary and let everyone know."
+  ];
+  var _tickerStarted = false;
+  function startTicker(){
+    var el = document.getElementById('ffTickerText');
+    if(!el || _tickerStarted) return;
+    _tickerStarted = true;
+    var order = TICKER_TIPS.slice();
+    for(var k=order.length-1;k>0;k--){ var j=Math.floor(Math.random()*(k+1)); var t=order[k]; order[k]=order[j]; order[j]=t; } // shuffle so the sequence differs each session
+    var i = 0;
+    el.innerHTML = order[0];
+    el.addEventListener('animationiteration', function(){ i = (i+1) % order.length; el.innerHTML = order[i]; });
+  }
   function topbarSignature(){
     var tk = state.trackedSkills && state.trackedSkills[0];
     return [authUser?1:0, serverBuffActive()?1:0, isTeaActive()?1:0, isFeastActive()?1:0, isTomeActive()?1:0, isScrollActive()?1:0, tk||'', (tk&&trackedExists(tk))?1:0].join('|');
@@ -9235,6 +9284,7 @@
     html += '<div class="ff-tb-right">'+trackBtn+'<button class="ff-settings-btn" data-action="openSettings" title="Settings">'+shellIcon('gear')+'<span class="ff-settings-lbl">Settings</span></button></div>';
     el.innerHTML = html;
     _topbarSig = topbarSignature();
+    startTicker(); // idempotent -- kicks off the tips ticker once the header is on screen
   }
   // Per-tick live refresh of the topbar's dynamic text/bars WITHOUT rebuilding it (so the Settings and
   // Tracker buttons survive between a click's mousedown and mouseup). Only a structural change (a buff
@@ -18314,7 +18364,7 @@
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS,
       GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, FARMING_PHYSIQUE:FARMING_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
       physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
-      SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
+      SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, TICKER_TIPS:TICKER_TIPS, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
