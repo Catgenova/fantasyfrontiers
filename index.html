@@ -1575,6 +1575,22 @@
   var MYCOLOGY_ICONS = MYCOLOGY_COLORS.map(function(c){ return svgIcon('spice', c); });
   var COATING_NAMES = ['Weak Venom','Irritant Coating','Nettle Venom','Toxin Salve','Spider Venom','Viper Venom','Necrotic Coating','Blight Venom','Corrosive Coating','Wraith Venom','Basilisk Venom','Plague Coating','Death Cap Extract','Doom Venom','Void Toxin','Soulrot Coating','Hydra Venom','Wyvern Venom','Dragon Venom','Elder Venom','God-Slayer Toxin'];
 
+  // ---- Papermaking (crafting) -> Bookbinding (crafting): the "knowledge" slice ----------------
+  // Papermaking pulps Forestry logs into Paper; Bookbinding binds Paper + Cured Leather (from
+  // Tanning) into Tomes. Studying a Tome grants a timed work-speed buff to ALL gathering & crafting
+  // -- a fresh buff channel, distinct from Teas (XP) and Feasts (damage).
+  var PAPER_NAMES = ['Coarse Paper','Rough Paper','Parchment','Vellum','Fine Paper','Linen Paper','Rag Paper','Bond Paper','Cotton Paper','Bamboo Paper','Rice Paper','Papyrus','Mulberry Paper','Washi','Amate Paper','Gilt Paper','Silk Paper','Runic Vellum','Arcane Parchment','Celestial Folio','Eternal Leaf'];
+  var TOME_NAMES = ['Field Notes','Primer','Almanac','Compendium','Treatise','Manual','Codex','Grimoire','Tome of Lore','Encyclopedia','Master Compendium','Arcane Codex','Grand Grimoire','Royal Almanac',"Sage's Tome",'Celestial Codex','Mythic Grimoire','Eternal Tome','Divine Codex','Cosmic Compendium','Tome of Ages'];
+  function _rampColors(lo, hi){
+    function lerp(a,b,t){ return Math.round(a+(b-a)*t); }
+    function hex(n){ var s=n.toString(16); return s.length<2?'0'+s:s; }
+    var out=[]; for(var i=0;i<TIER_COUNT;i++){ var t=i/(TIER_COUNT-1); out.push('#'+hex(lerp(lo[0],hi[0],t))+hex(lerp(lo[1],hi[1],t))+hex(lerp(lo[2],hi[2],t))); }
+    return out;
+  }
+  var PAPER_COLORS = _rampColors([0xf2,0xea,0xd6], [0xc8,0xa8,0x60]);   // cream -> parchment
+  var TOME_COLORS  = _rampColors([0xa0,0x6a,0x3a], [0x4a,0x2a,0x5a]);   // leather brown -> arcane purple
+  var PAPER_ICONS = PAPER_COLORS.map(function(c){ return svgIcon('tabard', c); });
+
   // ---- Mining: 14 ore tiers + 7 stone tiers interleaved across the 21-tier ladder ----
   // Stones sit at tier positions 2,5,8,11,14,17,20 (1-indexed) -- everything else is ore.
   var MINING_STONE_INDICES = [1,4,7,10,13,16,19];
@@ -2355,6 +2371,45 @@
         }
         return list;
       })() },
+    papermaking: { label:'Papermaking', icon:svgIcon('tabard','#e8dcc0'),
+      // Pulp Forestry logs into Paper -- the base Bookbinding needs.
+      recipes: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({
+            id:'paper_t'+i,
+            name: PAPER_NAMES[i],
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(11,i),
+            time: tierTime(7,0.3,i),
+            sell: tierSell(5,i),
+            icon: PAPER_ICONS[i],
+            inputs: tierInput('forestry',2)(i)
+          });
+        }
+        return list;
+      })() },
+    bookbinding: { label:'Bookbinding', icon:svgIcon('brain','#7a5aa8'),
+      // Bind Paper + Cured Leather into Tomes. Studying a Tome (in this tab) grants a timed +work-speed
+      // buff to all gathering & crafting -- its own channel (see studyTome). Consumes Tanning's leather.
+      recipes: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({
+            id:'tome_t'+i,
+            name: TOME_NAMES[i],
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(16,i),
+            time: tierTime(7,0.35,i),
+            sell: tierSell(22,i),
+            icon: svgIcon('brain',TOME_COLORS[i]),
+            inputs: tierInput2('paper',2,'tanning',1)(i),
+            tomeSpeedBonus: tierCappedBonus(0.05,0.01,0.25,i),
+            tomeDurationMs: 4*(i+1)*60*1000
+          });
+        }
+        return list;
+      })() },
     archaeology: { label:'Archaeology', icon:svgIcon('urn','#9a8560'),
       recipes: (function(){
         var list = [];
@@ -2498,7 +2553,7 @@
     armorsmithing:"Armorer's Hammer", shieldsmithing:"Shieldwright's Hammer", blacksmithing:'Forge Tongs',
     jewelrycrafting:"Jeweler's Loupe", runesmithing:'Rune Chisel', arcanism:'Arcane Focus',
     brewing:'Brewing Paddle', confectionery:'Candy Thermometer', gemcutting:'Gem Facet Wheel', enchanting:'Enchanting Rod',
-    dairy:'Churn', gastronomy:"Chef's Torch", apothecary:'Distillation Kit', tanning:'Tanning Knife', weaving:'Loom'
+    dairy:'Churn', gastronomy:"Chef's Torch", apothecary:'Distillation Kit', tanning:'Tanning Knife', weaving:'Loom', papermaking:'Paper Press', bookbinding:'Bookbinding Press'
   };
   var CRAFT_TOOL_SPEED = [];
   var CRAFT_TOOL_SUCCESS = [];
@@ -3243,7 +3298,9 @@
     gastronomy:     [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]],
     apothecary:     [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]],
     tanning:        [['fineMotor',2],['sleightOfHand',1],['logic',1]],
-    weaving:        [['fineMotor',2],['sleightOfHand',1],['logic',1]]
+    weaving:        [['fineMotor',2],['sleightOfHand',1],['logic',1]],
+    papermaking:    [['fineMotor',2],['sleightOfHand',1],['logic',1]],
+    bookbinding:    [['fineMotor',2],['solving',1],['criticalThinking',1],['logic',1]]
   };;
   // Physique XP from a gather/craft task scales with the item's tier: each associated physique
   // gains (tier+1) XP -- 1 at t0 up to 21 at t20 (replaces the old fixed per-physique weights).
@@ -3762,6 +3819,8 @@
     apothecary:     { name:'Venom',  icon:svgIcon('droplet','#6a8a3a'), spells:[poisonSpell('Envenom',6,6), weakenSpell('Debilitate',0.3,8), buffSpell('Venom Craft','potionPoison',0.45,10), armorSpell('Antidote Skin',1.5,6)] },
     tanning:        { name:'Suede',  icon:svgIcon('hide','#8a6a42'), spells:[hitSpell('Rawhide Lash','slashing',13), armorSpell('Cured Hide',1.6,6), buffSpell('Supple Step','dodge',0.14,8), regenSpell("Tanner's Rest",4,6)] },
     weaving:        { name:'Loom',   icon:svgIcon('spool','#c8b088'), spells:[slowSpell('Snare Weave',0.4,10), armorSpell('Woven Ward',1.7,6), buffSpell('Tight Weave','block',0.15,8), buffSpell('Spun Speed','haste',0.16,8)] },
+    papermaking:    { name:'Sheet',  icon:svgIcon('tabard','#e8dcc0'), spells:[hitSpell('Paper Cut','slashing',12), buffSpell('Crisp Edge','critChance',0.11,8), armorSpell('Pulp Ward',1.5,6), regenSpell('Fresh Sheet',4,6)] },
+    bookbinding:    { name:'Codex',  icon:svgIcon('brain','#7a5aa8'), spells:[hitSpell('Arcane Verse','void',14), buffSpell('Studied Aim','critDmg',0.34,8), buffSpell('Focused Mind','critChance',0.12,8), healSpell('Restorative Passage',15)] },
     gemcutting:     { name:'Facet',  icon:svgIcon('gem','#3fc9c4'), spells:[dmgSpell('Prism Beam',1.3,8), armorSpell('Crystal Ward',1.6,6), healSpell('Mend',15), healSpell('Mend',15)] },
     enchanting:     { name:'Sigil',  icon:svgIcon('starburst','#a06ad8'), spells:[dmgSpell('Arcane Sigil',1.3,8), armorSpell('Glyphward',1.6,6), healSpell('Mana Mend',15), healSpell('Mana Mend',15)] },
     archaeology:    { name:'Relic',  icon:svgIcon('urn','#9a8560'), spells:[armorSpell('Ancient Ward',1.6,6), weakenSpell('Curse',0.3,8), healSpell('Restore',15), healSpell('Restore',15)] },
@@ -3853,6 +3912,8 @@
     apothecary:     [ poisonSpell('Envenom',6,6), weakenSpell('Debilitate',0.3,8), buffSpell('Venom Craft','potionPoison',0.45,10), armorSpell('Antidote Skin',1.5,6) ],
     tanning:        [ hitSpell('Rawhide Lash','slashing',13), armorSpell('Cured Hide',1.6,6), buffSpell('Supple Step','dodge',0.14,8), regenSpell("Tanner's Rest",4,6) ],
     weaving:        [ slowSpell('Snare Weave',0.4,10), armorSpell('Woven Ward',1.7,6), buffSpell('Tight Weave','block',0.15,8), buffSpell('Spun Speed','haste',0.16,8) ],
+    papermaking:    [ hitSpell('Paper Cut','slashing',12), buffSpell('Crisp Edge','critChance',0.11,8), armorSpell('Pulp Ward',1.5,6), regenSpell('Fresh Sheet',4,6) ],
+    bookbinding:    [ hitSpell('Arcane Verse','void',14), buffSpell('Studied Aim','critDmg',0.34,8), buffSpell('Focused Mind','critChance',0.12,8), healSpell('Restorative Passage',15) ],
     archaeology:    [ armorSpell('Ancient Ward',1.6,6), weakenSpell('Curse of Ages',0.3,8), hitSpell('Relic Blast','void',10), healSpell('Restore',15) ],
     blacksmithing:  [ hitSpell('Hammer Down','blunt',15), buffSpell('Heavy Blows','dmgBlunt',0.32,8), armorSpell('Tempered Skin',1.5,6), buffSpell('Anvil Might','critChance',0.11,8) ],
     weaponsmithing: [ hitSpell('Keen Edge','slashing',15), buffSpell('Whetstone','dmgSlash',0.32,8), buffSpell('Duelist','critChance',0.11,8), buffSpell('Quick Draw','haste',0.16,8) ],
@@ -3907,7 +3968,7 @@
     digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth', ranching:'earth', mycology:'dark',
     // Crafting
     carpentry:'earth', metallurgy:'fire', roasting:'fire', cooking:'water', alchemy:'water', bowyer:'earth', fletching:'earth', baking:'fire',
-    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark', tanning:'earth', weaving:'light',
+    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark', tanning:'earth', weaving:'light', papermaking:'earth', bookbinding:'light',
     archaeology:'dark', blacksmithing:'fire', weaponsmithing:'fire', armorsmithing:'earth', shieldsmithing:'earth', runesmithing:'light', arcanism:'light',
     // Farming
     farming:'earth',
@@ -3956,6 +4017,7 @@
     ranching:{s:'flask',c:'#e8dcc0',ear:'horn'}, dairy:{s:'block',c:'#e8c84a',ear:'round'}, gastronomy:{s:'meal',c:'#d8a02a',ear:'round'},
     mycology:{s:'spice',c:'#8a5aa8',ear:'round'}, apothecary:{s:'droplet',c:'#6a8a3a',ear:'horn'},
     tanning:{s:'hide',c:'#8a6a42',ear:'round'}, weaving:{s:'spool',c:'#c8b088',ear:'cat'},
+    papermaking:{s:'tabard',c:'#e8dcc0',ear:'round'}, bookbinding:{s:'brain',c:'#7a5aa8',ear:'horn'},
     carpentry:{s:'plank',c:'#a07a44',ear:'cat'}, metallurgy:{s:'ingot',c:'#c85a2a',ear:'horn'},
     roasting:{s:'skewer',c:'#d1863a',ear:'cat'}, cooking:{s:'meal',c:'#5a9a4a',ear:'round'},
     alchemy:{s:'potion',c:'#8a5aaa',ear:'antenna'}, bowyer:{s:'bow',c:'#a87a4a',ear:'cat'},
@@ -6298,7 +6360,8 @@
     return sum / PHYSIQUE_SKILLS.length;
   }
   function speedMultiplier(state){
-    return 1 - Math.min(0.20, physiqueAvgLevel(state)*0.003);
+    // Lower = faster. Physique average shaves up to 20%; an active Tome (studyTome) shaves more on top.
+    return (1 - Math.min(0.20, physiqueAvgLevel(state)*0.003)) * (1 - tomeSpeedBonus());
   }
 
   // ===== Physique OUTPUTS (remapped). Each function turns one physique's level into a
@@ -6464,7 +6527,7 @@
     OFFHAND_STYLE_IDS.forEach(function(id){ offhandRarities[id] = 'normal'; });
     var xpObj = {
       digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0, ranching:0, mycology:0,
-      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0, tanning:0, weaving:0,
+      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0, tanning:0, weaving:0, papermaking:0, bookbinding:0,
       stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, arcanism:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
       shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0, wands:0, staves:0, scepters:0,
@@ -6522,6 +6585,7 @@
       autoEatThreshold: 0,
       activeTea: { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 },
       activeFeast: { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 },
+      activeTome: { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 },
       autoTea: false,
       familiars: {},
       activeCompanion: null,
@@ -6779,6 +6843,12 @@
     return !!(state.activeFeast && state.activeFeast.itemId && state.activeFeast.expiresAt > Date.now());
   }
   function feastDamageBonus(){ return isFeastActive() ? (state.activeFeast.dmgBonus||0) : 0; }
+  // Tome buff: studying a Bookbinding Tome speeds ALL gathering & crafting for a while (folded into
+  // speedMultiplier). Its own timed channel, separate from Teas (XP) and Feasts (damage).
+  function isTomeActive(){
+    return !!(state.activeTome && state.activeTome.itemId && state.activeTome.expiresAt > Date.now());
+  }
+  function tomeSpeedBonus(){ return isTomeActive() ? (state.activeTome.speedBonus||0) : 0; }
   // A familiar linked to a skill grants +1% XP for that skill per familiar level.
   function familiarXpMult(skillId){ var f = state.familiars && state.familiars[skillId]; return (f && f.owned) ? (1 + f.level * 0.01) : 1; }
   // ---- Server-wide buffs: gold-bought boosts that help EVERY player (a revenue feature). ----
@@ -7610,6 +7680,23 @@
     addLog('You feast on a ' + recipe.name + (healed>0 ? (', recovering ' + healed + ' HP and') : ',') + ' empowering your attacks +' + Math.round(recipe.feastBonus*100) + '% for ' + Math.round(recipe.feastDurationMs/60000) + ' minutes.', 'important');
     needsRender = true;
   }
+  // Studying a Tome (Bookbinding): starts/refreshes the timed work-speed buff. Doesn't stack.
+  function studyTome(itemId){
+    var recipe = ALL_CRAFT_RECIPES[itemId];
+    if(!recipe || !recipe.tomeDurationMs) return;
+    if((state.inventory[itemId]||0) <= 0) return;
+    state.inventory[itemId] -= 1;
+    state.activeTome = {
+      itemId: itemId,
+      name: recipe.name,
+      icon: recipe.icon,
+      speedBonus: recipe.tomeSpeedBonus,
+      durationMs: recipe.tomeDurationMs,
+      expiresAt: Date.now() + recipe.tomeDurationMs
+    };
+    addLog('You study the ' + recipe.name + ', speeding your gathering & crafting +' + Math.round(recipe.tomeSpeedBonus*100) + '% for ' + Math.round(recipe.tomeDurationMs/60000) + ' minutes.', 'important');
+    needsRender = true;
+  }
 
   function sellItem(id){
     var item = ALL_SELLABLE[id];
@@ -7935,6 +8022,7 @@
           ['kills','deaths','gathered','crafted','craftedRare','craftedSupreme','craftedFantastic','hoursBuffed'].forEach(function(k){ if(typeof state.stats[k] !== 'number') state.stats[k] = 0; });
           if(!state.activeTea || typeof state.activeTea !== 'object') state.activeTea = { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 };
           if(!state.activeFeast || typeof state.activeFeast !== 'object') state.activeFeast = { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 };
+          if(!state.activeTome || typeof state.activeTome !== 'object') state.activeTome = { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 };
           if(typeof state.autoTea !== 'boolean') state.autoTea = false;
           if(!state.familiars || typeof state.familiars !== 'object') state.familiars = {};
           Object.keys(state.familiars).forEach(function(fid){
@@ -8084,7 +8172,7 @@
   // rebuilding the bar (and its buttons) every frame, which was eating clicks on Settings/Tracker.
   function topbarSignature(){
     var tk = state.trackedSkills && state.trackedSkills[0];
-    return [authUser?1:0, serverBuffActive()?1:0, isTeaActive()?1:0, isFeastActive()?1:0, tk||'', (tk&&trackedExists(tk))?1:0].join('|');
+    return [authUser?1:0, serverBuffActive()?1:0, isTeaActive()?1:0, isFeastActive()?1:0, isTomeActive()?1:0, tk||'', (tk&&trackedExists(tk))?1:0].join('|');
   }
   var _topbarSig = null;
   function renderTopbar(){
@@ -8101,6 +8189,11 @@
       var teaBuffPct = clamp((state.activeTea.expiresAt-Date.now())/state.activeTea.durationMs*100, 0, 100);
       html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:#6f9538"></span>+'+Math.round(state.activeTea.xpBoost*100)+'% XP <span class="t" id="ffTeaBuffT">'+formatDuration(state.activeTea.expiresAt-Date.now())+'</span></span>'
         + '<span class="ff-buffbar"><span class="ff-buffbar-fill" id="ffTeaBuffBar" style="width:'+teaBuffPct+'%;background:#6f9538"></span></span></div>';
+    }
+    if(isTomeActive()){
+      var tomeBuffPct = clamp((state.activeTome.expiresAt-Date.now())/state.activeTome.durationMs*100, 0, 100);
+      html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:#5a8ac8"></span>+'+Math.round(state.activeTome.speedBonus*100)+'% SPEED <span class="t" id="ffTomeBuffT">'+formatDuration(state.activeTome.expiresAt-Date.now())+'</span></span>'
+        + '<span class="ff-buffbar"><span class="ff-buffbar-fill" id="ffTomeBuffBar" style="width:'+tomeBuffPct+'%;background:#5a8ac8"></span></span></div>';
     }
     if(isFeastActive()){
       var feastBuffPct = clamp((state.activeFeast.expiresAt-Date.now())/state.activeFeast.durationMs*100, 0, 100);
@@ -8142,6 +8235,10 @@
     if(isFeastActive()){
       var ft = document.getElementById('ffFeastBuffT'); if(ft) ft.textContent = formatDuration(state.activeFeast.expiresAt-Date.now());
       var fbar = document.getElementById('ffFeastBuffBar'); if(fbar) fbar.style.width = clamp((state.activeFeast.expiresAt-Date.now())/state.activeFeast.durationMs*100,0,100)+'%';
+    }
+    if(isTomeActive()){
+      var mt = document.getElementById('ffTomeBuffT'); if(mt) mt.textContent = formatDuration(state.activeTome.expiresAt-Date.now());
+      var mbar = document.getElementById('ffTomeBuffBar'); if(mbar) mbar.style.width = clamp((state.activeTome.expiresAt-Date.now())/state.activeTome.durationMs*100,0,100)+'%';
     }
     var tk = state.trackedSkills && state.trackedSkills[0];
     if(tk && trackedExists(tk)){
@@ -8464,6 +8561,7 @@
     if(skillKey==='carpentry') html += renderWorkshopForge();
     if(skillKey==='brewing') html += renderTeaDrinkSection(); // Brews are drinkable like Teas
     if(skillKey==='gastronomy') html += renderFeastSection(); // Feasts are servable for a combat buff
+    if(skillKey==='bookbinding') html += renderTomeSection(); // Tomes are studyable for a work-speed buff
     return html;
   }
   function renderWorkshopForge(){
@@ -8589,6 +8687,34 @@
       html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+qty+'</div></div></div>';
       html += '<div class="item-stats"><span>+'+Math.round(recipe.feastBonus*100)+'% DMG</span><span>+'+recipe.heal+' HP &bull; '+Math.round(recipe.feastDurationMs/60000)+' min</span></div>';
       html += '<button class="action-btn" data-action="serveFeast" data-item="'+recipe.id+'">Serve</button>';
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+  // Bookbinding: study a Tome to start the timed work-speed buff (mirrors the Feast section).
+  function ownedTomes(){ return CRAFTING_SKILLS.bookbinding.recipes.filter(function(r){ return (state.inventory[r.id]||0) > 0; }); }
+  function renderTomeSection(){
+    var html = '<h3>Study a Tome</h3>';
+    if(isTomeActive()){
+      var remainingMs = state.activeTome.expiresAt - Date.now();
+      html += '<div class="physique-bonus">Active: <b>'+state.activeTome.icon+' '+state.activeTome.name+'</b> &nbsp;|&nbsp; Work Speed: <b>+'+Math.round(state.activeTome.speedBonus*100)+'%</b> &nbsp;|&nbsp; Time Left: <b id="tomeTabTimer">'+formatDuration(remainingMs)+'</b></div>';
+      html += '<div class="section-intro">Studying another Tome replaces this buff outright -- its strength and timer don\'t stack.</div>';
+    } else {
+      html += '<div class="section-intro">No Tome active. Study one below to speed all your gathering &amp; crafting for a few minutes.</div>';
+    }
+    var owned = ownedTomes();
+    if(owned.length===0){
+      html += '<div class="empty-note">No Tomes in stock yet &mdash; bind some above.</div>';
+      return html;
+    }
+    html += '<div class="card-grid">';
+    owned.forEach(function(recipe){
+      var qty = state.inventory[recipe.id]||0;
+      html += '<div class="item-card">';
+      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+qty+'</div></div></div>';
+      html += '<div class="item-stats"><span>+'+Math.round(recipe.tomeSpeedBonus*100)+'% Speed</span><span>'+Math.round(recipe.tomeDurationMs/60000)+' min</span></div>';
+      html += '<button class="action-btn" data-action="studyTome" data-item="'+recipe.id+'">Study</button>';
       html += '</div>';
     });
     html += '</div>';
@@ -11576,6 +11702,8 @@
     apothecary:{roof:'dome', accent:'flask'},
     tanning:{roof:'peak', accent:'hide'},
     weaving:{roof:'gable', accent:'spool'},
+    papermaking:{roof:'flat', accent:'block'},
+    bookbinding:{roof:'gable', accent:'urn'},
     archaeology:{roof:'cone', accent:'urn', wallH:0.7},
     blacksmithing:{roof:'hip', chimney:true, accent:'anvil'},
     weaponsmithing:{roof:'peak', chimney:true, accent:'blade'},
@@ -14865,6 +14993,8 @@
     apothecary: 'Distil toxic Mushrooms and Herbs into Weapon Coatings -- ready one in Battle to poison enemies over time on every hit.',
     tanning: 'Cure Butchering\'s raw Hide into Leather -- the material Leatherworking\'s armour now requires.',
     weaving: 'Weave Farming\'s Fiber into Cloth -- the material Tailoring\'s cloth armour now requires.',
+    papermaking: 'Pulp Forestry logs into Paper -- the base for Bookbinding.',
+    bookbinding: 'Bind Paper and Cured Leather into Tomes. Studying a Tome speeds all your gathering & crafting for a while.',
     archaeology: 'Excavate Muddy Artifacts into Relics.',
     blacksmithing: 'Forge Tools for every Gathering and Crafting skill.',
     weaponsmithing: 'Forge melee weapons -- swords, axes, and hammers.',
@@ -16512,6 +16642,8 @@
       drinkTea(btn.getAttribute('data-item'));
     } else if(action==='serveFeast'){
       serveFeast(btn.getAttribute('data-item'));
+    } else if(action==='studyTome'){
+      studyTome(btn.getAttribute('data-item'));
     } else if(action==='drinkBestTea'){
       drinkBestTea();
     } else if(action==='toggleAutoTea'){
@@ -16987,6 +17119,7 @@
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES,
       isFeastActive:isFeastActive, feastDamageBonus:feastDamageBonus, serveFeast:serveFeast,
+      isTomeActive:isTomeActive, tomeSpeedBonus:tomeSpeedBonus, studyTome:studyTome, speedMultiplier:speedMultiplier,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       playerAccuracy:playerAccuracy, monsterDodge:monsterDodge, hitChanceVs:hitChanceVs, playerHitChance:playerHitChance,
       familiarAccuracy:familiarAccuracy, familiarHitChance:familiarHitChance, accuracyPhysiques:accuracyPhysiques,

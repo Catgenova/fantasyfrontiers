@@ -666,6 +666,32 @@
     ok(FF.CRAFT_PHYSIQUE.tanning && FF.CRAFT_PHYSIQUE.weaving, 'physique tables include the new skills');
   });
 
+  // ---- Knowledge vertical: Papermaking -> Bookbinding + the Tome (work-speed) buff --------------
+  suite('skills: papermaking / bookbinding', function(){
+    ok(FF.CRAFTING_SKILLS.papermaking, 'papermaking is a crafting skill');
+    ok(FF.CRAFTING_SKILLS.bookbinding, 'bookbinding is a crafting skill');
+    eq(FF.CRAFTING_SKILLS.papermaking.recipes.length, FF.TIER_COUNT, 'papermaking has 21 paper tiers');
+    eq(FF.CRAFTING_SKILLS.bookbinding.recipes.length, FF.TIER_COUNT, 'bookbinding has 21 tome tiers');
+    // Chain: Logs -> Paper -> Tome (Paper + Cured Leather from Tanning).
+    var paper5 = FF.ALL_CRAFT_RECIPES['paper_t5'];
+    ok(paper5.inputs['forestry_t5'], 'papermaking pulps Forestry logs');
+    var tome5 = FF.ALL_CRAFT_RECIPES['tome_t5'];
+    ok(tome5.inputs['paper_t5'] && tome5.inputs['tanning_t5'], 'tome binds Paper + Cured Leather (interlocks Tanning)');
+    // Tome grants a timed work-speed buff -- its own channel.
+    ok(tome5.tomeSpeedBonus > 0 && tome5.tomeDurationMs > 0, 'tomes carry a timed work-speed buff');
+    var t0 = FF.ALL_CRAFT_RECIPES['tome_t0'], t20 = FF.ALL_CRAFT_RECIPES['tome_t20'];
+    ok(t20.tomeSpeedBonus > t0.tomeSpeedBonus && t20.tomeSpeedBonus <= 0.25 + 1e-9, 'tome speed bonus scales with tier (cap 25%)');
+    // Studying a tome speeds work: speedMultiplier drops (lower = faster). No buff by default.
+    eq(FF.tomeSpeedBonus(), 0, 'no tome buff by default');
+    var before = FF.speedMultiplier(FF._state);
+    FF._state.inventory['tome_t10'] = 1;
+    FF.studyTome('tome_t10');
+    ok(FF.isTomeActive(), 'studying a tome activates the buff');
+    ok(FF.tomeSpeedBonus() > 0, 'active tome adds work speed');
+    ok(FF.speedMultiplier(FF._state) < before, 'speedMultiplier drops (work is faster) while a tome is active');
+    ok(FF.CRAFT_PHYSIQUE.papermaking && FF.CRAFT_PHYSIQUE.bookbinding, 'physique tables include the new skills');
+  });
+
   // ---- Inventory grid: rarity parsing for cell accents / detail tag ----------------------
   suite('inventory rarity', function(){
     eq(FF.itemRarityId('bodyarmor_chain_chest_t20_normal'), 'normal', 'normal suffix');
