@@ -103,5 +103,36 @@ Deno.serve(async (req) => {
     return json({ ok: true, gold: Number(row?.gold ?? w.gold), credited });
   }
 
+  // The reconcile the client calls periodically (and on load). It (1) credits new earnings under
+  // the same throttle as `earn`, then (2) CLAMPS the balance to the client's reported gold with a
+  // min(). The clamp is what makes the wallet authoritative while staying offline-safe: a legit
+  // player's local spends (estate, bank, etc.) pull the number DOWN with no per-spend plumbing,
+  // but a spoofed-HIGH balance can't push it UP -- min() only ever lowers. The returned gold is
+  // written back into state.gold, so a cheat that inflates local gold is undone on the next sync.
+  if (action === "sync") {
+    const reported = body.earned_total;
+    const reportedGold = (body as { gold?: unknown }).gold;
+    if (typeof reported !== "number" || !Number.isFinite(reported) || reported < 0) {
+      return json({ ok: false, error: "Invalid earned_total." }, 400);
+    }
+    if (typeof reportedGold !== "number" || !Number.isFinite(reportedGold) || reportedGold < 0) {
+      return json({ ok: false, error: "Invalid gold." }, 400);
+    }
+    const w = await ensureWallet();
+    const delta = Math.max(0, Math.floor(reported) - w.earned_total);
+    const hours = Math.max(0, (Date.now() - new Date(w.updated_at).getTime()) / 3_600_000);
+    const credited = Math.min(delta, Math.min(BURST_GOLD, Math.floor(GOLD_PER_HOUR * hours)));
+    let gold = w.gold;
+    let earnedTotal = w.earned_total;
+    if (credited > 0) { gold = Math.min(HARD_CAP, gold + credited); earnedTotal += credited; }
+    const clamped = Math.max(0, Math.min(gold, Math.floor(Math.min(reportedGold, HARD_CAP))));
+    await admin.from("player_wallet").update({
+      gold: clamped,
+      earned_total: earnedTotal,
+      updated_at: credited > 0 ? new Date().toISOString() : w.updated_at, // keep the accrual clock on idle syncs
+    }).eq("user_id", userId);
+    return json({ ok: true, gold: clamped, credited });
+  }
+
   return json({ ok: false, error: "Unknown action." }, 400);
 });
