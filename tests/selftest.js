@@ -2470,6 +2470,7 @@
   suite('gold wallet: earnGold feeds the lifetime anchor', function(){
     ok(typeof FF.earnGold === 'function', 'earnGold is exported');
     ok(typeof FF.walletSync === 'function', 'walletSync is exported');
+    ok(typeof FF.itemSync === 'function', 'itemSync (item-ledger reconcile) is exported');
     var s = FF._state;
     ok(typeof s.goldEarnedTotal === 'number', 'state carries a goldEarnedTotal anchor');
     ok(s.goldEarnedTotal >= Math.floor(s.gold||0), 'the anchor is never below the current balance');

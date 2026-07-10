@@ -14447,7 +14447,7 @@
       if(!chatClient) return;
       var res = await chatClient.auth.getSession();
       var sess = res.data && res.data.session;
-      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; await cloudLoad(); if(!cloudReloading){ profileSync(true); walletSync(true); } }
+      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; await cloudLoad(); if(!cloudReloading){ profileSync(true); walletSync(true); itemSync(true); } }
     }catch(e){}
   }
 
@@ -15124,6 +15124,30 @@
         var cv = document.getElementById('ffCoinVal'); if(cv) cv.textContent = fmt(state.gold);
         var hg = document.getElementById('hdrGold'); if(hg) hg.textContent = fmt(state.gold);
       }
+    }catch(e){}
+  }
+  // ===== Server-authoritative ITEM ledger (Stage 2 reconcile) =====
+  // The item counterpart of walletSync. Posts the full inventory to items.sync; the server grandfathers
+  // it once, then rate-caps each item's increase and clamps to what we report, and returns the
+  // reconciled ledger. Unlike gold we do NOT overwrite state.inventory from it -- the ledger is the
+  // server truth that the Stage 3 market-list / bank-deposit gates check; dropping real items off a
+  // player's screen would be riskier than clamping a gold number. Kill switch: ITEM_SYNC_ENABLED.
+  var ITEM_SYNC_ENABLED = true;
+  var itemLastSync = 0;
+  var itemLedger = null;            // last reconciled server ledger { item_key: qty }, or null
+  async function itemSync(force){
+    if(!ITEM_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id || cloudReloading) return;
+    var now = Date.now();
+    if(!force && now - itemLastSync < WALLET_SYNC_MS) return;
+    itemLastSync = now;
+    if(!chatClient){ if(!(await authEnsureClient())) return; }
+    // Compact the inventory to { item_key: positive-integer-qty }.
+    var inv = {}, src = state.inventory || {};
+    for(var k in src){ if(!Object.prototype.hasOwnProperty.call(src, k)) continue; var q = Math.floor(src[k]); if(q > 0) inv[k] = q; }
+    try{
+      var res = await chatClient.functions.invoke('items', { body: { action:'sync', inventory: inv } });
+      var d = res && res.data;
+      if(d && d.ok && d.items) itemLedger = d.items;
     }catch(e){}
   }
   async function leaderboardFetch(force){
@@ -18403,6 +18427,7 @@
       saveGame();
       profileSync();
       walletSync();
+      itemSync();
       cloudSave();
     }
 
@@ -18509,7 +18534,7 @@
       requestAnimationFrame(loop);
     }
     chatInit();                       // chat + chronicle subscriptions
-    profileSync(true); leaderboardFetch(true); walletSync(true);
+    profileSync(true); leaderboardFetch(true); walletSync(true); itemSync(true);
     scheduleAutoRefresh();            // keep long-lived tabs current with frequent deploys
   }
   (async function onlineBoot(){
@@ -18538,7 +18563,7 @@
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
-      earnGold:earnGold, walletSync:walletSync,
+      earnGold:earnGold, walletSync:walletSync, itemSync:itemSync,
       startGather:startGather, startCraft:startCraft, startPray:startPray,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
