@@ -704,6 +704,35 @@
     ok(FF.GATHER_PHYSIQUE.diving, 'physique table includes diving');
   });
 
+  // ---- Final proposal slice: Trapping/Tapping/Spelunking (gather) + Chandlery/Woodcarving/
+  //      Glassblowing/Cooperage (craft) -- completes the 30-skill web ------------------------------
+  suite('skills: trapping/tapping/spelunking + chandlery/woodcarving/glassblowing/cooperage', function(){
+    // Three new gathering domains, each a full 21-tier ladder.
+    ['trapping','tapping','spelunking'].forEach(function(g){
+      ok(FF.GATHERING_SKILLS[g], g + ' is a gathering skill');
+      eq(FF.GATHERING_SKILLS[g].items.length, FF.TIER_COUNT, g + ' has 21 tiers');
+      ok(FF.GATHER_PHYSIQUE[g], 'physique table includes ' + g);
+    });
+    // Four new crafting skills, each a full 21-tier ladder.
+    ['chandlery','woodcarving','glassblowing','cooperage'].forEach(function(c){
+      ok(FF.CRAFTING_SKILLS[c], c + ' is a crafting skill');
+      eq(FF.CRAFTING_SKILLS[c].recipes.length, FF.TIER_COUNT, c + ' has 21 tiers');
+      ok(FF.CRAFT_PHYSIQUE[c], 'physique table includes ' + c);
+    });
+    // Each new gather has its named consumer (the interlock holds).
+    eq(FF.ALL_CRAFT_RECIPES['chandlery_t5'].inputs['trapping_t5'], 1, 'Chandlery renders Trapping Tallow into Candles 1:1');
+    var carv = FF.ALL_CRAFT_RECIPES['woodcarving_t5'].inputs;
+    ok(carv['carpentry_t5'] === 1 && carv['tapping_t5'] === 1, 'Woodcarving binds a Carpentry Plank + Tapping Resin');
+    var glass = FF.ALL_CRAFT_RECIPES['glassblowing_t5'].inputs;
+    ok(glass['spelunking_t5'] === 1 && glass['coal'] === 1, 'Glassblowing melts a Spelunking Mineral over coal');
+    var barrel = FF.ALL_CRAFT_RECIPES['cooperage_t5'].inputs;
+    ok(barrel['carpentry_t5'] === 2 && barrel['metallurgy_t5'] === 1, 'Cooperage binds Planks with a Metallurgy band');
+    // All seven are seeded in the xp table (save-merge safety -- newGame() must know them).
+    ['trapping','tapping','spelunking','chandlery','woodcarving','glassblowing','cooperage'].forEach(function(s){
+      ok(FF._state.xp[s] != null, s + ' is seeded in the xp table');
+    });
+  });
+
   // ---- Knowledge vertical: Papermaking -> Bookbinding + the Tome (work-speed) buff --------------
   suite('skills: papermaking / bookbinding', function(){
     ok(FF.CRAFTING_SKILLS.papermaking, 'papermaking is a crafting skill');

@@ -1627,6 +1627,33 @@
   var DIVING_COLORS = _rampColors([0xf0,0xe8,0xdc], [0x2a,0x2e,0x54]);   // pale cream -> deep abyssal blue
   var DIVING_ICONS = DIVING_COLORS.map(function(c){ return svgIcon('droplet', c); });
 
+  // ---- Final proposal slice: 3 gathering domains + 4 crafts that complete the 30-skill web ---------
+  // Trapping (game -> Tallow) feeds Chandlery (Candles); Tapping (tree -> Resin) feeds Woodcarving
+  // (carved goods); Spelunking (cave -> Minerals) feeds Glassblowing (Glass). Cooperage is a standalone
+  // refinement (Planks + Ingot bands -> Barrels). All additive sellable verticals -- no existing recipe
+  // is rebalanced -- each new gather has a named consumer, mirroring the earlier vertical slices.
+  var TRAPPING_NAMES = ['Rat Fat','Sparrow Fat','Rabbit Tallow','Squirrel Tallow','Weasel Tallow','Quail Fat','Hare Tallow','Fox Tallow','Marten Tallow','Pheasant Fat','Ermine Tallow','Boar Lard','Elk Tallow','Bison Tallow','Bear Grease','Mammoth Tallow','Yeti Fat','Drake Tallow','Phoenix Wax','Griffon Tallow','Behemoth Tallow'];
+  var TRAPPING_COLORS = _rampColors([0xe8,0xe0,0xc8], [0x6a,0x4a,0x2a]);   // pale fat -> dark grease
+  var TRAPPING_ICONS = TRAPPING_COLORS.map(function(c){ return svgIcon('paw', c); });
+  var TAPPING_NAMES = ['Birch Sap','Pine Resin','Maple Syrup','Fir Resin','Cedar Resin','Spruce Gum','Amber Bead','Larch Balsam','Copal Resin','Dammar Gum','Mastic Resin','Frankincense','Myrrh Resin','Dragon Sap','Sunbark Resin','Moonsap','Ambergris','Elderwood Resin','Heartwood Amber','Worldtree Sap','Eternal Amber'];
+  var TAPPING_COLORS = _rampColors([0xe0,0xb0,0x50], [0x7a,0x3a,0x14]);   // golden sap -> deep amber
+  var TAPPING_ICONS = TAPPING_COLORS.map(function(c){ return svgIcon('droplet', c); });
+  var SPELUNKING_NAMES = ['Cave Salt','Chalk Nodule','Gypsum Crystal','Quartz Shard','Obsidian Chip','Flint Nodule','Calcite Crystal','Fluorite Gem','Amethyst Geode','Onyx Shard','Cave Pearl','Selenite Wand','Malachite Chunk','Azurite Crystal','Moonstone Geode','Opal Vein','Star Crystal','Voidglass Shard','Prismatic Geode','Aurora Crystal','Deepheart Crystal'];
+  var SPELUNKING_COLORS = _rampColors([0x8a,0x8a,0x9a], [0x8a,0xc8,0xe8]);   // dull rock -> luminous crystal
+  var SPELUNKING_ICONS = SPELUNKING_COLORS.map(function(c){ return svgIcon('gem', c); });
+  var CHANDLERY_NAMES = ['Tallow Candle','Rushlight','Wax Taper','Pillar Candle','Votive Candle','Lantern Candle','Scented Candle','Beeswax Candle','Church Candle','Altar Candle','Everburn Candle','Warding Candle','Spirit Candle','Moonlit Candle','Radiant Candle','Blessed Candle','Ghostflame Candle','Sun Candle','Star Candle','Eternal Candle','Godflame Candle'];
+  var CHANDLERY_COLORS = _rampColors([0xf0,0xe8,0xc8], [0xf0,0xc0,0x40]);   // pale wax -> golden flame
+  var CHANDLERY_ICONS = CHANDLERY_COLORS.map(function(c){ return svgIcon('candle', c); });
+  var WOODCARVING_NAMES = ['Whittled Charm','Wooden Spoon','Carved Idol','Totem Pole','Oak Figurine','Inlaid Box','Carved Mask','Amber Totem','Heirloom Chair','Rune Totem','Filigree Panel','Guardian Totem','Ancestral Idol','Dragonwood Statue','Sunbark Totem','Moonwood Idol','Spirit Totem','Elderwood Throne','Heartwood Effigy','Worldtree Totem','Eternal Idol'];
+  var WOODCARVING_COLORS = _rampColors([0xc8,0xa0,0x6a], [0x5a,0x3a,0x20]);   // light wood -> dark heartwood
+  var WOODCARVING_ICONS = WOODCARVING_COLORS.map(function(c){ return svgIcon('log', c); });
+  var GLASSBLOWING_NAMES = ['Glass Bead','Glass Vial','Glass Pane','Glass Bottle','Glass Lens','Stained Pane','Crystal Vial','Prism Lens','Glass Orb','Blown Vase','Frosted Pane','Leaded Crystal','Cut Crystal','Optical Lens','Mirror Pane','Crystal Goblet','Void Glass','Starglass Orb','Aurora Pane','Prismatic Lens','Eternal Crystal'];
+  var GLASSBLOWING_COLORS = _rampColors([0xc8,0xe8,0xe4], [0x7a,0xa8,0xe0]);   // pale glass -> prismatic crystal
+  var GLASSBLOWING_ICONS = GLASSBLOWING_COLORS.map(function(c){ return svgIcon('potion', c); });
+  var COOPERAGE_NAMES = ['Small Pail','Wooden Bucket','Firkin','Keg','Cask','Barrel','Hogshead','Puncheon','Butt Cask','Tun','Oak Barrel','Ironbound Cask','Aging Barrel','Reinforced Keg','Great Tun','Vintage Cask','Runed Barrel','Deepwood Cask','Everfull Barrel','Titan Tun','Eternal Cask'];
+  var COOPERAGE_COLORS = _rampColors([0xb0,0x8a,0x54], [0x5a,0x44,0x2e]);   // oak -> dark ironbound
+  var COOPERAGE_ICONS = COOPERAGE_COLORS.map(function(c){ return svgIcon('chest', c); });
+
   // ---- Mining: 14 ore tiers + 7 stone tiers interleaved across the 21-tier ladder ----
   // Stones sit at tier positions 2,5,8,11,14,17,20 (1-indexed) -- everything else is ore.
   var MINING_STONE_INDICES = [1,4,7,10,13,16,19];
@@ -1935,6 +1962,30 @@
             sell: tierSell(6,i),
             icon: DIVING_ICONS[i]
           });
+        }
+        return list;
+      })() },
+    trapping: { label:'Trapping', icon:svgIcon('paw','#8a6a42'),
+      items: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({ id:'trapping_t'+i, name: TRAPPING_NAMES[i], levelReq: TIER_LEVELS[i], xp: tierXp(11,i), time: tierTime(5,0.3,i), sell: tierSell(4,i), icon: TRAPPING_ICONS[i] });
+        }
+        return list;
+      })() },
+    tapping: { label:'Tapping', icon:svgIcon('droplet','#c89a3a'),
+      items: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({ id:'tapping_t'+i, name: TAPPING_NAMES[i], levelReq: TIER_LEVELS[i], xp: tierXp(11,i), time: tierTime(5,0.3,i), sell: tierSell(4,i), icon: TAPPING_ICONS[i] });
+        }
+        return list;
+      })() },
+    spelunking: { label:'Spelunking', icon:svgIcon('gem','#7a8a9a'),
+      items: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({ id:'spelunking_t'+i, name: SPELUNKING_NAMES[i], levelReq: TIER_LEVELS[i], xp: tierXp(12,i), time: tierTime(5,0.3,i), sell: tierSell(5,i), icon: SPELUNKING_ICONS[i] });
         }
         return list;
       })() }
@@ -2540,6 +2591,43 @@
       // Amulets now seat their gem in this Setting -- the metalwork counterpart to Tanning/Weaving.
       // Recipes are built after METAL_TIER_NAMES exists (see below), like Fletching's arrows.
       recipes: [] },
+    chandlery: { label:'Chandlery', icon:svgIcon('candle','#e8c84a'),
+      // Render Trapping's Tallow into Candles (1:1) -- light/ambiance goods.
+      recipes: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({ id:'chandlery_t'+i, name: CHANDLERY_NAMES[i], levelReq: TIER_LEVELS[i], xp: tierXp(11,i), time: tierTime(7,0.3,i), sell: tierSell(5,i), icon: CHANDLERY_ICONS[i], inputs: tierInput('trapping',1)(i) });
+        }
+        return list;
+      })() },
+    woodcarving: { label:'Woodcarving', icon:svgIcon('log','#a07a44'),
+      // Carve a Carpentry Plank, varnished with Tapping's Resin, into decorative goods.
+      recipes: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({ id:'woodcarving_t'+i, name: WOODCARVING_NAMES[i], levelReq: TIER_LEVELS[i], xp: tierXp(13,i), time: tierTime(8,0.3,i), sell: tierSell(7,i), icon: WOODCARVING_ICONS[i], inputs: tierInput2('carpentry',1,'tapping',1)(i) });
+        }
+        return list;
+      })() },
+    glassblowing: { label:'Glassblowing', icon:svgIcon('potion','#8ac8e0'),
+      // Melt a Spelunking mineral over coal and blow it into Glass goods (vials, panes, lenses).
+      recipes: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          var inputs = tierInput('spelunking',1)(i); inputs['coal'] = 1;
+          list.push({ id:'glassblowing_t'+i, name: GLASSBLOWING_NAMES[i], levelReq: TIER_LEVELS[i], xp: tierXp(12,i), time: tierTime(7,0.3,i), sell: tierSell(6,i), icon: GLASSBLOWING_ICONS[i], inputs: inputs });
+        }
+        return list;
+      })() },
+    cooperage: { label:'Cooperage', icon:svgIcon('chest','#a0783c'),
+      // Bind Carpentry Planks with a Metallurgy ingot band into Barrels and Casks.
+      recipes: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({ id:'cooperage_t'+i, name: COOPERAGE_NAMES[i], levelReq: TIER_LEVELS[i], xp: tierXp(12,i), time: tierTime(8,0.3,i), sell: tierSell(6,i), icon: COOPERAGE_ICONS[i], inputs: tierInput2('carpentry',2,'metallurgy',1)(i) });
+        }
+        return list;
+      })() },
     papermaking: { label:'Papermaking', icon:svgIcon('tabard','#e8dcc0'),
       // Pulp Forestry logs into Paper -- the base Bookbinding needs.
       recipes: (function(){
@@ -2698,7 +2786,7 @@
   })();
   var GATHER_TOOL_NAMES = {
     digging:'Shovel', forestry:'Hatchet', mining:'Pickaxe', fishing:'Fishing Rod',
-    herbalism:'Sickle', botany:'Shears', foraging:'Basket', butchering:'Cleaver', beekeeping:'Bee Smoker', prospecting:'Pan', ranching:'Milking Pail', mycology:'Mushroom Knife', salvaging:'Magnet', essence:'Ley Rod', diving:'Diving Knife'
+    herbalism:'Sickle', botany:'Shears', foraging:'Basket', butchering:'Cleaver', beekeeping:'Bee Smoker', prospecting:'Pan', ranching:'Milking Pail', mycology:'Mushroom Knife', salvaging:'Magnet', essence:'Ley Rod', diving:'Diving Knife', trapping:'Snare Kit', tapping:'Tapping Spile', spelunking:'Climbing Pick'
   };
   var GATHER_TOOL_SPEED = [];
   for(var _gi=0; _gi<TIER_COUNT; _gi++){ GATHER_TOOL_SPEED.push(tierCappedBonus(0.02, 0.013, 0.30, _gi)); }
@@ -2746,7 +2834,8 @@
     brewing:'Brewing Paddle', confectionery:'Candy Thermometer', gemcutting:'Gem Facet Wheel', enchanting:'Enchanting Rod',
     dairy:'Churn', gastronomy:"Chef's Torch", apothecary:'Distillation Kit', tanning:'Tanning Knife', weaving:'Loom', papermaking:'Paper Press', bookbinding:'Bookbinding Press',
     tinkering:'Tinkerer\'s Wrench', pyrotechnics:'Fuse Crimper', inscription:'Inscribing Stylus',
-    pottery:'Potter\'s Wheel', goldsmithing:'Jeweler\'s Loupe'
+    pottery:'Potter\'s Wheel', goldsmithing:'Jeweler\'s Loupe',
+    chandlery:'Wick Dipper', woodcarving:'Carving Chisel', glassblowing:'Blowpipe', cooperage:'Cooper\'s Adze'
   };
   var CRAFT_TOOL_SPEED = [];
   var CRAFT_TOOL_SUCCESS = [];
@@ -3461,7 +3550,10 @@
     mycology:   [['fineMotor',1],['handStrength',1],['criticalThinking',1],['mentality',1],['curiosity',1]],
     salvaging:  [['armStrength',1],['fineMotor',1],['criticalThinking',1],['curiosity',1]],
     essence:    [['fineMotor',1],['criticalThinking',1],['mentality',1],['zen',1],['curiosity',1]],
-    diving:     [['stamina',2],['endurance',1],['bodyControl',1],['bodyStrength',1],['zen',1]]
+    diving:     [['stamina',2],['endurance',1],['bodyControl',1],['bodyStrength',1],['zen',1]],
+    trapping:   [['fineMotor',1],['handStrength',1],['bodyControl',1],['zen',1],['curiosity',1]],
+    tapping:    [['armStrength',1],['handStrength',1],['endurance',1],['zen',1],['curiosity',1]],
+    spelunking: [['bodyStrength',1],['bodyControl',1],['endurance',1],['stamina',1],['curiosity',1]]
   };
   var CRAFT_PHYSIQUE = {
     carpentry:      [['grossMotor',2],['sleightOfHand',1],['logic',1]],
@@ -3501,7 +3593,11 @@
     pyrotechnics:   [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]],
     inscription:    [['fineMotor',2],['criticalThinking',1],['logic',1]],
     pottery:        [['grossMotor',2],['sleightOfHand',1],['logic',1]],
-    goldsmithing:   [['fineMotor',2],['sleightOfHand',1],['logic',1]]
+    goldsmithing:   [['fineMotor',2],['sleightOfHand',1],['logic',1]],
+    chandlery:      [['fineMotor',2],['sleightOfHand',1],['logic',1]],
+    woodcarving:    [['fineMotor',2],['sleightOfHand',1],['logic',1]],
+    glassblowing:   [['fineMotor',2],['sleightOfHand',1],['logic',1]],
+    cooperage:      [['grossMotor',2],['sleightOfHand',1],['logic',1]]
   };;
   // Physique XP from a gather/craft task scales with the item's tier: each associated physique
   // gains (tier+1) XP -- 1 at t0 up to 21 at t20 (replaces the old fixed per-physique weights).
@@ -4134,6 +4230,9 @@
     salvaging: { name:'Rivet',  icon:svgIcon('gear','#9a8a6a'), spells:[hitSpell('Scrap Toss','piercing',13), buffSpell('Salvage Rights','firebomb',0.4,10), armorSpell('Junk Plating',1.6,6), regenSpell('Patch Job',4,6)] },
     essence:   { name:'Wisp',   icon:svgIcon('starburst','#7a8ac8'), spells:[hitSpell('Aether Bolt','void',14), slowSpell('Ley Bind',0.4,10), buffSpell('Ley Surge','critDmg',0.32,8), healSpell('Mana Well',15)] },
     diving:    { name:'Nautilus', icon:svgIcon('droplet','#4a7ac8'), spells:[hitSpell('Pressure Crush','blunt',14), buffSpell('Deep Breath','resistBlunt',0.3,8), healSpell('Pearl Restore',16), siphonSpell('Undertow',12)] },
+    trapping:  { name:'Snare',  icon:svgIcon('paw','#8a6a42'), spells:[hitSpell('Snap Trap','piercing',14), slowSpell('Snare',0.4,10), poisonSpell('Bleed',5,6), buffSpell("Trapper's Eye",'critChance',0.11,8)] },
+    tapping:   { name:'Sap',    icon:svgIcon('droplet','#c89a3a'), spells:[slowSpell('Sap Trap',0.4,10), regenSpell('Sap Flow',4,6), buffSpell('Sticky Resin','block',0.15,8), healSpell('Amber Salve',16)] },
+    spelunking:{ name:'Delver', icon:svgIcon('gem','#7a8a9a'), spells:[hitSpell('Rockfall','blunt',15), buffSpell('Cave Sense','dodge',0.13,8), weakenSpell('Darkness',0.3,8), armorSpell('Stone Skin',1.6,6)] },
     // -- Crafting --
     carpentry:      { name:'Timber', icon:svgIcon('plank','#8a6a42'), spells:[armorSpell('Splinter Shield',1.6,6), slowSpell('Root Snare',0.35,10), healSpell('Sap Heal',15), healSpell('Sap Heal',15)] },
     metallurgy:     { name:'Cinder', icon:svgIcon('ingot','#c85a2a'), spells:[dmgSpell('Molten Strike',1.3,8), weakenSpell('Slag',0.25,8), healSpell('Forge Heal',15), healSpell('Forge Heal',15)] },
@@ -4160,6 +4259,10 @@
     inscription:    { name:'Glyph',  icon:svgIcon('corespiral','#7a5aa8'), spells:[armorSpell('Ward Sigil',1.7,6), buffSpell('Runic Guard','block',0.16,8), hitSpell('Rune Script','void',13), regenSpell('Sigil Mend',4,6)] },
     pottery:        { name:'Kiln',   icon:svgIcon('urn','#c4885a'), spells:[hitSpell('Shatterware','blunt',14), armorSpell('Kiln-Fired Ward',1.6,6), buffSpell('Tempered Clay','resistBlunt',0.3,8), regenSpell('Slip Cast',4,6)] },
     goldsmithing:   { name:'Bezel',  icon:svgIcon('ring','#d8b048'), spells:[buffSpell('Dazzling Gleam','critChance',0.12,8), buffSpell('Gilded Edge','critDmg',0.34,8), siphonSpell('Golden Greed',13), armorSpell('Bezel Guard',1.6,6)] },
+    chandlery:      { name:'Wick',   icon:svgIcon('candle','#e8c84a'), spells:[hitSpell('Candleflame','void',11), buffSpell('Warm Glow','critDmg',0.3,8), healSpell('Soothing Light',16), buffSpell('Waxen Ward','block',0.15,8)] },
+    woodcarving:    { name:'Chip',   icon:svgIcon('log','#a07a44'), spells:[hitSpell('Splinter','piercing',13), buffSpell('Whittled Edge','dmgPierce',0.3,8), armorSpell('Hardwood Guard',1.6,6), buffSpell("Carver's Focus",'critChance',0.11,8)] },
+    glassblowing:   { name:'Bulb',   icon:svgIcon('potion','#8ac8e0'), spells:[hitSpell('Glass Shard','slashing',14), buffSpell('Glass Cannon','critDmg',0.34,8), weakenSpell('Blinding Glare',0.3,8), buffSpell('Prism Focus','critChance',0.12,8)] },
+    cooperage:      { name:'Stave',  icon:svgIcon('chest','#a0783c'), spells:[hitSpell('Barrel Bash','blunt',14), armorSpell('Ironbound',1.7,6), buffSpell('Braced Staves','block',0.16,8), siphonSpell('Tap the Cask',12)] },
     tanning:        { name:'Suede',  icon:svgIcon('hide','#8a6a42'), spells:[hitSpell('Rawhide Lash','slashing',13), armorSpell('Cured Hide',1.6,6), buffSpell('Supple Step','dodge',0.14,8), regenSpell("Tanner's Rest",4,6)] },
     weaving:        { name:'Loom',   icon:svgIcon('spool','#c8b088'), spells:[slowSpell('Snare Weave',0.4,10), armorSpell('Woven Ward',1.7,6), buffSpell('Tight Weave','block',0.15,8), buffSpell('Spun Speed','haste',0.16,8)] },
     papermaking:    { name:'Sheet',  icon:svgIcon('tabard','#e8dcc0'), spells:[hitSpell('Paper Cut','slashing',12), buffSpell('Crisp Edge','critChance',0.11,8), armorSpell('Pulp Ward',1.5,6), regenSpell('Fresh Sheet',4,6)] },
@@ -4238,6 +4341,9 @@
     salvaging: [ hitSpell('Scrap Toss','piercing',13), buffSpell('Salvage Rights','firebomb',0.4,10), armorSpell('Junk Plating',1.6,6), regenSpell('Patch Job',4,6) ],
     essence: [ hitSpell('Aether Bolt','void',14), slowSpell('Ley Bind',0.4,10), buffSpell('Ley Surge','critDmg',0.32,8), healSpell('Mana Well',15) ],
     diving: [ hitSpell('Pressure Crush','blunt',14), buffSpell('Deep Breath','resistBlunt',0.3,8), healSpell('Pearl Restore',16), siphonSpell('Undertow',12) ],
+    trapping: [ hitSpell('Snap Trap','piercing',14), slowSpell('Snare',0.4,10), poisonSpell('Bleed',5,6), buffSpell("Trapper's Eye",'critChance',0.11,8) ],
+    tapping: [ slowSpell('Sap Trap',0.4,10), regenSpell('Sap Flow',4,6), buffSpell('Sticky Resin','block',0.15,8), healSpell('Amber Salve',16) ],
+    spelunking: [ hitSpell('Rockfall','blunt',15), buffSpell('Cave Sense','dodge',0.13,8), weakenSpell('Darkness',0.3,8), armorSpell('Stone Skin',1.6,6) ],
     // -- Crafting --
     carpentry:      [ hitSpell('Splinter Shot','piercing',13), armorSpell('Splinter Shield',1.6,6), buffSpell('Bark Guard','resistPierce',0.3,8), regenSpell('Sap Flow',4,6) ],
     metallurgy:     [ hitSpell('Molten Strike','void',10), buffSpell('Forge Fire','firebomb',0.45,10), weakenSpell('Slag',0.28,8), buffSpell('Heavy Hand','dmgBlunt',0.3,8) ],
@@ -4266,6 +4372,10 @@
     inscription:    [ armorSpell('Ward Sigil',1.7,6), buffSpell('Runic Guard','block',0.16,8), hitSpell('Rune Script','void',13), regenSpell('Sigil Mend',4,6) ],
     pottery:        [ hitSpell('Shatterware','blunt',14), armorSpell('Kiln-Fired Ward',1.6,6), buffSpell('Tempered Clay','resistBlunt',0.3,8), regenSpell('Slip Cast',4,6) ],
     goldsmithing:   [ buffSpell('Dazzling Gleam','critChance',0.12,8), buffSpell('Gilded Edge','critDmg',0.34,8), siphonSpell('Golden Greed',13), armorSpell('Bezel Guard',1.6,6) ],
+    chandlery:      [ hitSpell('Candleflame','void',11), buffSpell('Warm Glow','critDmg',0.3,8), healSpell('Soothing Light',16), buffSpell('Waxen Ward','block',0.15,8) ],
+    woodcarving:    [ hitSpell('Splinter','piercing',13), buffSpell('Whittled Edge','dmgPierce',0.3,8), armorSpell('Hardwood Guard',1.6,6), buffSpell("Carver's Focus",'critChance',0.11,8) ],
+    glassblowing:   [ hitSpell('Glass Shard','slashing',14), buffSpell('Glass Cannon','critDmg',0.34,8), weakenSpell('Blinding Glare',0.3,8), buffSpell('Prism Focus','critChance',0.12,8) ],
+    cooperage:      [ hitSpell('Barrel Bash','blunt',14), armorSpell('Ironbound',1.7,6), buffSpell('Braced Staves','block',0.16,8), siphonSpell('Tap the Cask',12) ],
     tanning:        [ hitSpell('Rawhide Lash','slashing',13), armorSpell('Cured Hide',1.6,6), buffSpell('Supple Step','dodge',0.14,8), regenSpell("Tanner's Rest",4,6) ],
     weaving:        [ slowSpell('Snare Weave',0.4,10), armorSpell('Woven Ward',1.7,6), buffSpell('Tight Weave','block',0.15,8), buffSpell('Spun Speed','haste',0.16,8) ],
     papermaking:    [ hitSpell('Paper Cut','slashing',12), buffSpell('Crisp Edge','critChance',0.11,8), armorSpell('Pulp Ward',1.5,6), regenSpell('Fresh Sheet',4,6) ],
@@ -4326,10 +4436,10 @@
   // enemies weak to it (water>fire>earth>water; light<->dark). Non-damaging spells ignore it.
   var FAMILIAR_ELEMENT = {
     // Gathering
-    digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth', ranching:'earth', mycology:'dark', salvaging:'earth', essence:'light', diving:'water',
+    digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth', ranching:'earth', mycology:'dark', salvaging:'earth', essence:'light', diving:'water', trapping:'earth', tapping:'earth', spelunking:'dark',
     // Crafting
     carpentry:'earth', metallurgy:'fire', roasting:'fire', cooking:'water', alchemy:'water', bowyer:'earth', fletching:'earth', baking:'fire',
-    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark', tanning:'earth', weaving:'light', papermaking:'earth', bookbinding:'light', tinkering:'earth', pyrotechnics:'fire', inscription:'light', pottery:'fire', goldsmithing:'light',
+    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark', tanning:'earth', weaving:'light', papermaking:'earth', bookbinding:'light', tinkering:'earth', pyrotechnics:'fire', inscription:'light', pottery:'fire', goldsmithing:'light', chandlery:'fire', woodcarving:'earth', glassblowing:'fire', cooperage:'earth',
     archaeology:'dark', blacksmithing:'fire', weaponsmithing:'fire', armorsmithing:'earth', shieldsmithing:'earth', runesmithing:'light', arcanism:'light',
     // Farming
     farming:'earth',
@@ -4381,7 +4491,9 @@
     salvaging:{s:'gear',c:'#9a8a6a',ear:'horn'}, tinkering:{s:'gear',c:'#c8853a',ear:'antenna'}, pyrotechnics:{s:'flame',c:'#e8a02a',ear:'horn'},
     essence:{s:'starburst',c:'#7a8ac8',ear:'antenna'}, inscription:{s:'corespiral',c:'#7a5aa8',ear:'horn'},
     diving:{s:'droplet',c:'#4a7ac8',ear:'fin'},
+    trapping:{s:'paw',c:'#8a6a42',ear:'cat'}, tapping:{s:'droplet',c:'#c89a3a',ear:'leaf'}, spelunking:{s:'gem',c:'#7a8a9a',ear:'horn'},
     pottery:{s:'urn',c:'#c4885a',ear:'round'}, goldsmithing:{s:'ring',c:'#d8b048',ear:'horn'},
+    chandlery:{s:'candle',c:'#e8c84a',ear:'halo'}, woodcarving:{s:'log',c:'#a07a44',ear:'leaf'}, glassblowing:{s:'potion',c:'#8ac8e0',ear:'antenna'}, cooperage:{s:'chest',c:'#a0783c',ear:'round'},
     tanning:{s:'hide',c:'#8a6a42',ear:'round'}, weaving:{s:'spool',c:'#c8b088',ear:'cat'},
     papermaking:{s:'tabard',c:'#e8dcc0',ear:'round'}, bookbinding:{s:'brain',c:'#7a5aa8',ear:'horn'},
     carpentry:{s:'plank',c:'#a07a44',ear:'cat'}, metallurgy:{s:'ingot',c:'#c85a2a',ear:'horn'},
@@ -6896,8 +7008,8 @@
     var offhandRarities = {};
     OFFHAND_STYLE_IDS.forEach(function(id){ offhandRarities[id] = 'normal'; });
     var xpObj = {
-      digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0, ranching:0, mycology:0, salvaging:0, essence:0, diving:0,
-      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0, tanning:0, weaving:0, papermaking:0, bookbinding:0, tinkering:0, pyrotechnics:0, inscription:0, pottery:0, goldsmithing:0,
+      digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0, ranching:0, mycology:0, salvaging:0, essence:0, diving:0, trapping:0, tapping:0, spelunking:0,
+      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0, tanning:0, weaving:0, papermaking:0, bookbinding:0, tinkering:0, pyrotechnics:0, inscription:0, pottery:0, goldsmithing:0, chandlery:0, woodcarving:0, glassblowing:0, cooperage:0,
       stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, arcanism:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
       shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0, wands:0, staves:0, scepters:0,
@@ -12224,6 +12336,10 @@
     inscription:{roof:'cone', accent:'urn'},
     pottery:{roof:'cone', chimney:true, accent:'pot'},
     goldsmithing:{roof:'peak', chimney:true, accent:'gem'},
+    chandlery:{roof:'cone', chimney:true, accent:'bottle'},
+    woodcarving:{roof:'gable', accent:'log'},
+    glassblowing:{roof:'dome', chimney:true, accent:'bottle'},
+    cooperage:{roof:'hip', accent:'pot'},
     tanning:{roof:'peak', accent:'hide'},
     weaving:{roof:'gable', accent:'spool'},
     papermaking:{roof:'flat', accent:'block'},
@@ -15496,6 +15612,9 @@
     salvaging: 'Sift Scrap from wrecks and battlefields, from Rusty Scrap up to Eternal Mechanism -- the base for Tinkering and Pyrotechnics.',
     essence: 'Tap ley-line nodes for arcane Essence, from Faint Mote up to Primordial Aether -- the base for Inscription.',
     diving: 'Dive ever-deeper reefs for Pearls, from Seed Pearl up to Oceanheart Pearl -- Amulets now seat one instead of a faceted Gem.',
+    trapping: 'Snare small game and fowl for Tallow, from Rat Fat up to Behemoth Tallow -- the fat Chandlery renders into Candles.',
+    tapping: 'Tap trees for Sap and Resin, from Birch Sap up to Eternal Amber -- the varnish Woodcarving finishes its carvings with.',
+    spelunking: 'Delve caves for Minerals, from Cave Salt up to Deepheart Crystal -- the raw stock Glassblowing melts into Glass.',
     carpentry: 'Cut Logs into Planks.',
     metallurgy: 'Smelt Ore into Bars and Alloys, plus a side-recipe for Glass Bottles.',
     roasting: 'Cook raw Fish and Meat into a quick, portable snack.',
@@ -15523,6 +15642,10 @@
     inscription: 'Inscribe Essence and Paper into Scrolls. Reading a Scroll wards you, reducing all incoming damage for a while.',
     pottery: 'Fire Digging\'s clay into Crucibles -- the vessel Goldsmithing casts jewelry Settings in.',
     goldsmithing: 'Cast a Metallurgy ingot in a Pottery Crucible into a Setting -- the metal base Rings and Amulets now seat their gem in.',
+    chandlery: 'Render Trapping\'s Tallow into Candles, from Tallow Candle up to Godflame Candle.',
+    woodcarving: 'Carve Carpentry Planks, varnished with Tapping\'s Resin, into decorative goods from Whittled Charm up to Eternal Idol.',
+    glassblowing: 'Melt Spelunking Minerals over coal and blow them into Glass goods, from Glass Bead up to Eternal Crystal.',
+    cooperage: 'Bind Carpentry Planks with a Metallurgy ingot band into Barrels and Casks, from Small Pail up to Eternal Cask.',
     tanning: 'Cure Butchering\'s raw Hide into Leather -- the material Leatherworking\'s armour now requires.',
     weaving: 'Weave Farming\'s Fiber into Cloth -- the material Tailoring\'s cloth armour now requires.',
     papermaking: 'Pulp Forestry logs into Paper -- the base for Bookbinding.',
