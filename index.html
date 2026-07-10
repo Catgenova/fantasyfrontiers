@@ -13280,9 +13280,9 @@
     }
     // Physiques (body physiques + elemental attunements) are stored under state.physique, not
     // state.xp, so fold them into the same skills map for the leaderboard's Physique rankings and
-    // profile display. They are deliberately NOT added to total_level -- that stays a sum of the
-    // main skill/proficiency/class ladder, the way it always has.
-    PHYSIQUE_SKILLS.forEach(function(p){ skills[p.id] = getLevel(state.physique[p.id]||0); });
+    // profile display. They also count toward total_level (which the server validates as the sum of
+    // every submitted skill level), so physique training raises your ranked Total too.
+    PHYSIQUE_SKILLS.forEach(function(p){ var pl = getLevel(state.physique[p.id]||0); skills[p.id] = pl; total += pl; });
     return { total_level: total, gold: Math.floor(state.gold||0), skills: skills, equipment: computeEquipment(), stats: buildProfileStats() };
   }
   // Currently-equipped weapons + armor (NOT tools), captured as display-ready

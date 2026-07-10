@@ -411,19 +411,23 @@
     // There is a dedicated Physique group.
     ok(FF.SKILL_GROUPS.some(function(g){ return g.label === 'Physique'; }), 'a Physique group exists');
 
-    // Profile stats fold physiques into the skills map WITHOUT inflating total_level.
+    // Profile stats fold physiques into the skills map AND count them toward total_level, so the
+    // server's `total_level == sum(skills)` validation passes (submit_profile rejects any mismatch).
     var s = FF._state;
     var physId = FF.PHYSIQUE_SKILLS[0].id, mainId = 'mining';
     var snap = { phys:s.physique[physId], xp:s.xp[mainId] };
+    function sumSkills(st){ return Object.keys(st.skills).reduce(function(a,k){ return a + st.skills[k]; }, 0); }
     s.physique[physId] = 0; s.xp[mainId] = 0;
     var base = FF.computeProfileStats();
     ok(base.skills[physId] !== undefined, 'physiques appear in the profile skills map');
+    eq(base.total_level, sumSkills(base), 'total_level equals the sum of every submitted skill (server invariant)');
     s.physique[physId] = FF.xpFloorForLevel(31); // ~Lv 31
     var afterPhys = FF.computeProfileStats();
     ok(afterPhys.skills[physId] > 0, 'physique level shows in the profile');
-    eq(afterPhys.total_level, base.total_level, 'physiques do NOT inflate total_level');
+    ok(afterPhys.total_level > base.total_level, 'physiques now raise total_level');
+    eq(afterPhys.total_level, sumSkills(afterPhys), 'total_level still equals sum(skills) after training a physique');
     s.xp[mainId] = FF.xpFloorForLevel(31);
-    ok(FF.computeProfileStats().total_level > base.total_level, 'a main skill DOES raise total_level');
+    ok(FF.computeProfileStats().total_level > afterPhys.total_level, 'a main skill also raises total_level');
     s.physique[physId] = snap.phys; s.xp[mainId] = snap.xp;
 
     // Ranking by a physique metric reads the skills map.

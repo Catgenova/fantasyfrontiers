@@ -16,7 +16,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // ---- Tunable limits (safe, generous defaults) ----
 const MAX_SKILL_LEVEL = 100;      // getLevel caps at content tier 100
 const MIN_SKILL_LEVEL = 1;        // getLevel() returns >= 1
-const MAX_SKILLS = 80;            // real count is ~30; headroom for future skills
+const MAX_SKILLS = 160;           // main skills + proficiencies + classes + physiques + attunements (~100), with headroom
 const GOLD_ABS_CAP = 1_000_000_000_000; // 1e12 sanity ceiling
 
 // Rate limits. Allowed increase = BURST + PER_HOUR * hoursElapsed.
