@@ -5765,8 +5765,10 @@
       inputs[glyphIdFor(w.element)] = 3;         // 3 matching-element glyphs (from Elementals)
     } else {
       inputs[w.matPrefix+'_t'+tierIndex] = is2h ? 6 : 3;   // two-handed weapons cost twice the ingots
-      if(tierIndex > 0) inputs['stweapon_'+typeId+'_t'+(tierIndex-1)+'_normal'] = 1;
     }
+    // Every stackable weapon -- melee, bow, wand, staff, scepter -- also consumes a Normal-rarity
+    // previous tier of the same weapon, matching Weaponsmithing/Armorsmithing's tier ladder.
+    if(tierIndex > 0) inputs['stweapon_'+typeId+'_t'+(tierIndex-1)+'_normal'] = 1;
     return {
       tierIndex: tierIndex,
       name: stackableWeaponTierNames(w)[tierIndex] + ' ' + w.name,
@@ -5928,6 +5930,7 @@
     inputs['forestry_t'+tierIndex] = 3;       // 3 logs
     inputs['metallurgy_t'+tierIndex] = 3;     // 3 ingots
     inputs[glyphIdFor(w.element)] = 3;        // 3 glyphs of the ward's element (dropped by Elementals)
+    if(tierIndex > 0) inputs['stward_'+typeId+'_t'+(tierIndex-1)+'_normal'] = 1; // + a Normal previous tier
     return {
       tierIndex: tierIndex,
       name: METAL_TIER_NAMES[tierIndex] + ' ' + w.name,
@@ -6484,6 +6487,7 @@
     inputs['twine_t'+tierIndex] = 3;
     inputs[getGemForTier(tierIndex)] = 1;
     inputs['goldsmithing_t'+tierIndex] = 1;
+    if(tierIndex > 0) inputs['ring_'+typeId+'_t'+(tierIndex-1)+'_normal'] = 1; // + a Normal previous tier
     var out = {
       tierIndex: tierIndex,
       name: METAL_TIER_NAMES[tierIndex] + ' ' + rt.name,   // named after its goldsmithing setting's metal
@@ -6528,6 +6532,7 @@
     // Amulets seat a Diving Pearl (rings keep the faceted mining Gem) -- the two jewelry lines split.
     inputs['diving_t'+tierIndex] = 1;
     inputs['goldsmithing_t'+tierIndex] = 1;
+    if(tierIndex > 0) inputs['amulet_t'+(tierIndex-1)+'_normal'] = 1; // + a Normal previous tier
     return {
       tierIndex: tierIndex,
       name: METAL_TIER_NAMES[tierIndex] + ' Amulet',   // named after its goldsmithing setting's metal

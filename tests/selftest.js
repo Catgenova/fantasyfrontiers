@@ -865,6 +865,11 @@
     eq(ring5['goldsmithing_t5'], 1, 'rings now require a matching Setting');
     var am5 = FF.getAmuletTierData(5).inputs;
     eq(am5['goldsmithing_t5'], 1, 'amulets now require a matching Setting');
+    // Rings and amulets now also consume a Normal previous tier (like Weaponsmithing/Armorsmithing).
+    eq(ring5['ring_fire_t4_normal'], 1, 'ring now consumes its Normal previous tier');
+    eq(am5['amulet_t4_normal'], 1, 'amulet now consumes its Normal previous tier');
+    ok(FF.getRingTierData('fire', 0).inputs['ring_fire_t-1_normal'] === undefined, 'tier 0 ring has no previous-tier requirement');
+    ok(FF.getAmuletTierData(0).inputs['amulet_t-1_normal'] === undefined, 'tier 0 amulet has no previous-tier requirement');
     // The gem/twine part of the recipe is untouched (Setting is additive, not a replacement).
     ok(ring5['twine_t5'] === 3 && ring5['digging_t5'] == null, 'ring keeps its Twine and does not eat raw clay directly');
     ok(FF.CRAFT_PHYSIQUE.pottery && FF.CRAFT_PHYSIQUE.goldsmithing, 'physique tables include the new skills');
@@ -1479,12 +1484,13 @@
     var topFant = FF.WARD_ITEMS['stward_wardDark_t'+(FF.TIER_COUNT-1)+'_fantastic'];
     ok(topFant && topFant.reflect === 0.30 && topFant.fullReflectChance === 0.20, 'top fantastic dark ward: 30% reflect, 20% full');
 
-    // Ward recipe: 3 logs + 3 ingots + 3 element glyphs (no upgrade chain).
+    // Ward recipe: 3 logs + 3 ingots + 3 element glyphs + a Normal previous tier.
     var d3 = FF.getWardTierData('wardWater', 3);
     eq(d3.inputs['forestry_t3'], 3, 'ward needs 3 logs of its tier');
     eq(d3.inputs['metallurgy_t3'], 3, 'ward needs 3 ingots of its tier');
     eq(d3.inputs['glyph_water'], 3, 'water ward needs 3 water glyphs');
-    ok(d3.inputs['stward_wardWater_t2_normal'] === undefined, 'no previous-tier-ward requirement anymore');
+    eq(d3.inputs['stward_wardWater_t2_normal'], 1, 'ward now also consumes its Normal previous tier');
+    ok(FF.getWardTierData('wardWater', 0).inputs['stward_wardWater_t-1_normal'] === undefined, 'tier 0 ward has no previous-tier requirement');
     eq(FF.getWardTierData('wardDark', 10).inputs['glyph_dark'], 3, 'dark ward needs dark glyphs');
 
     // Runesmithing is a real crafting skill in the outfitting category.
@@ -1530,12 +1536,13 @@
     });
     ok(!FF.isWandWeapon('rapier'), 'a rapier is not a wand');
 
-    // Recipe: 2 logs + 3 element glyphs (no metal, no upgrade chain).
+    // Recipe: 2 logs + 3 element glyphs + a Normal previous tier (no metal).
     var d5 = FF.getStackableWeaponTierData('wandFire', 5);
     eq(d5.inputs['forestry_t5'], 2, 'wand needs 2 logs of its tier');
     eq(d5.inputs['glyph_fire'], 3, 'fire wand needs 3 fire glyphs');
     ok(d5.inputs['metallurgy_t5'] === undefined, 'wands need no metal');
-    ok(d5.inputs['stweapon_wandFire_t4_normal'] === undefined, 'no upgrade chain');
+    eq(d5.inputs['stweapon_wandFire_t4_normal'], 1, 'wand now also consumes its Normal previous tier');
+    ok(FF.getStackableWeaponTierData('wandFire', 0).inputs['stweapon_wandFire_t-1_normal'] === undefined, 'tier 0 has no previous-tier requirement');
     eq(FF.getStackableWeaponTierData('wandDark', 8).inputs['glyph_dark'], 3, 'dark wand needs dark glyphs');
 
     // Rarity scales damage 2x / 4x / 8x (not the standard rarity mult).
@@ -1563,10 +1570,11 @@
     ok(FF.STAFF_TYPE.noAttack, 'staff has no attack');
     eq(FF.STAFF_TYPE.skillId, 'arcanism', 'staff is crafted by arcanism');
 
-    // Recipe: 4 logs + 8 dark glyphs.
+    // Recipe: 4 logs + 8 dark glyphs + a Normal previous tier.
     var d = FF.getStackableWeaponTierData('staff', 7);
     eq(d.inputs['forestry_t7'], 4, 'staff needs 4 logs');
     eq(d.inputs['glyph_dark'], 8, 'staff needs 8 dark glyphs');
+    eq(d.inputs['stweapon_staff_t6_normal'], 1, 'staff now also consumes its Normal previous tier');
     eq(d.dmgMax, 0, 'staff deals no damage');
 
     // Block scales 5% (t0) -> 30% (top tier).
@@ -1613,12 +1621,12 @@
     eq(FF.SCEPTER_TYPE.damageType, 'blunt', 'scepter physical half is blunt');
     eq(FF.SCEPTERS_SKILL_ID, 'scepters', 'scepter proficiency id');
 
-    // Recipe: 4 ingots + 8 light glyphs (named after the metal).
+    // Recipe: 4 ingots + 8 light glyphs + a Normal previous tier (named after the metal).
     var d = FF.getStackableWeaponTierData('scepter', 7);
     eq(d.inputs['metallurgy_t7'], 4, 'scepter needs 4 ingots of its tier');
     eq(d.inputs['glyph_light'], 8, 'scepter needs 8 light glyphs');
     ok(d.inputs['forestry_t7'] === undefined, 'scepter uses no logs');
-    ok(d.inputs['stweapon_scepter_t6_normal'] === undefined, 'no upgrade chain');
+    eq(d.inputs['stweapon_scepter_t6_normal'], 1, 'scepter now also consumes its Normal previous tier');
     ok(d.name.indexOf(FF.SCEPTER_TYPE.name) !== -1, 'scepter named after its metal tier');
 
     // Rarity scales damage 2x / 4x / 8x (same as wands, not the standard rarity mult).
