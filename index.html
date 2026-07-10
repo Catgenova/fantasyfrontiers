@@ -11371,7 +11371,10 @@
         var ohClaw = getEquippedOffhandClawItem(state);
         html3 += '<div class="shop-current">Off-hand Claw: <b style="color:var(--text)">'+(ohClaw?ohClaw.name:'Claws')+'</b> ('+(ohClaw?ohClaw.dmgMin+'-'+ohClaw.dmgMax+' dmg':'')+' &bull; &minus;30% dmg, +30% timer) <button class="action-btn stop" style="width:auto;flex:0 0 auto;padding:2px 12px;margin-left:8px" data-action="unequipOffhandClaw">Unequip</button></div>';
       } else if(ohEq){
-        html3 += '<div class="shop-current">Equipped: <b style="color:var(--text)">'+ohEq.name+'</b> (defense '+ohEq.defense+', counters '+STACKABLE_SHIELD_TYPE_MAP[state.equippedOffhand].countersType+')</div>';
+        var _ohDesc = isWard(state.equippedOffhand)
+          ? ('reflects '+Math.round((ohEq.reflect||0)*100)+'% '+elementLabel(ohEq.element))
+          : ('defense '+ohEq.defense+', counters '+((STACKABLE_SHIELD_TYPE_MAP[state.equippedOffhand]||{}).countersType||'—'));
+        html3 += '<div class="shop-current">Equipped: <b style="color:var(--text)">'+escapeHtml(ohEq.name)+'</b> ('+_ohDesc+')</div>';
       } else {
         html3 += '<div class="shop-current">Equipped: <b style="color:var(--text)">No offhand</b></div>';
       }
@@ -11537,7 +11540,9 @@
     if(weaponStyle.hand==='2h'){
       html += '<div class="shop-current">Both hands occupied &mdash; no offhand item can be equipped.</div>';
     } else if(ohStyleNow && ohItem){
-      var ohStatLabel = ohStyleNow.type==='shield' ? ('defense '+ohItem.defense) : ('+'+Math.round(ohItem.dmgBonus*100)+'% arrow dmg');
+      var ohStatLabel = ohStyleNow.type==='shield' ? ('defense '+ohItem.defense)
+        : ohStyleNow.type==='ward' ? ('reflects '+Math.round((ohItem.reflect||0)*100)+'% '+elementLabel(ohItem.element))
+        : ('+'+Math.round((ohItem.dmgBonus||0)*100)+'% arrow dmg');
       html += '<div class="shop-current">Equipped: <b style="color:var(--text)">'+ohStyleNow.name+'</b> &mdash; '+ohItem.name+' ('+ohStatLabel+')</div>';
     } else {
       html += '<div class="shop-current">Equipped: <b style="color:var(--text)">None</b></div>';
