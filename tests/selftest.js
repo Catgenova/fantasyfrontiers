@@ -518,7 +518,7 @@
 
   // ---- Icon shape symbols exist (previously-blank Dairy/Ranching/Tanning/Weaving/etc. icons) ---------
   suite('icon shapes defined', function(){
-    ['milk','cheese','churn','block','bottle','hide','spool'].forEach(function(sh){
+    ['milk','cheese','churn','block','bottle','hide','spool','mug'].forEach(function(sh){
       ok(document.getElementById('shape-'+sh), 'shape-'+sh+' symbol is defined (icon renders, not blank)');
     });
   });
