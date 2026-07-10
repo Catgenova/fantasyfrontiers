@@ -784,6 +784,29 @@
     ok(FF.GATHER_PHYSIQUE.salvaging && FF.CRAFT_PHYSIQUE.tinkering && FF.CRAFT_PHYSIQUE.pyrotechnics, 'physique tables include the new skills');
   });
 
+  // ---- Arcane: Essence Harvesting -> Inscription + the Scroll (ward) buff ----------------------
+  suite('skills: essence / inscription', function(){
+    ok(FF.GATHERING_SKILLS.essence, 'essence harvesting is a gathering skill');
+    ok(FF.CRAFTING_SKILLS.inscription, 'inscription is a crafting skill');
+    eq(FF.GATHERING_SKILLS.essence.items.length, FF.TIER_COUNT, 'essence has 21 tiers');
+    eq(FF.CRAFTING_SKILLS.inscription.recipes.length, FF.TIER_COUNT, 'inscription has 21 scroll tiers');
+    eq(FF.ALL_GATHER_ITEMS['essence_t0'].name, 'Faint Mote', 'essence taps Aether/Motes');
+    // Chain: Essence + Paper (from Papermaking) -> Scroll.
+    var scr5 = FF.ALL_CRAFT_RECIPES['scroll_t5'];
+    ok(scr5.inputs['essence_t5'] && scr5.inputs['paper_t5'], 'scroll binds Essence + Paper (interlocks Papermaking)');
+    // Scroll = a timed damage-reduction ward -- its own channel.
+    ok(scr5.scrollBonus > 0 && scr5.scrollDurationMs > 0, 'scrolls carry a timed ward buff');
+    var s0 = FF.ALL_CRAFT_RECIPES['scroll_t0'], s20 = FF.ALL_CRAFT_RECIPES['scroll_t20'];
+    ok(s20.scrollBonus > s0.scrollBonus && s20.scrollBonus <= 0.30 + 1e-9, 'ward scales with tier (cap 30%)');
+    // Reading a scroll reduces incoming damage; none by default.
+    eq(FF.scrollDamageReduction(), 0, 'no ward by default');
+    FF._state.inventory['scroll_t10'] = 1;
+    FF.readScroll('scroll_t10');
+    ok(FF.isScrollActive(), 'reading a scroll activates the ward');
+    ok(FF.scrollDamageReduction() > 0 && FF.scrollDamageReduction() <= 0.30 + 1e-9, 'active ward reduces incoming damage');
+    ok(FF.CRAFT_PHYSIQUE.inscription && FF.GATHER_PHYSIQUE.essence, 'physique tables include the new skills');
+  });
+
   // ---- Inventory grid: rarity parsing for cell accents / detail tag ----------------------
   suite('inventory rarity', function(){
     eq(FF.itemRarityId('bodyarmor_chain_chest_t20_normal'), 'normal', 'normal suffix');

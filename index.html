@@ -1601,6 +1601,15 @@
   var BOMB_NAMES = ['Firecracker','Pipe Bomb','Shrapnel Bomb','Frag Grenade','Cluster Bomb','Concussion Bomb','Incendiary Charge','Thermite Charge','Blast Keg','Demolition Charge','Seismic Charge','Plasma Bomb','Arc Bomb','Nova Charge','Detonator Core','Cataclysm Bomb','Singularity Charge','Annihilator','Doombringer','Worldbreaker','The Big One'];
   var FLASH_NAMES = ['Flash Powder','Smoke Bomb','Blinding Flash','Concussion Flash','Dazzle Bomb','Stun Grenade','Scatter Flash','Flashbang','Disorienting Charge','Sensory Bomb','Neural Flash','Shock Flash','Overload Bomb','Stasis Charge','Paralytic Flash','Temporal Flash','Void Flash','Astral Daze','Mind Shatter','Reality Flash','Godflash'];
 
+  // ---- Essence Harvesting (gathering) -> Inscription (crafting): the "arcane" slice --------------
+  // Essence Harvesting taps ley-line nodes for a 21-tier Aether/Mote ladder; Inscription binds Essence
+  // with Paper (from Papermaking) into Scrolls. Reading a Scroll wards you -- a timed damage-reduction
+  // buff, a fresh channel distinct from Teas (XP), Feasts (damage), and Tomes (work speed).
+  var ESSENCE_NAMES = ['Faint Mote','Dim Aether','Pale Wisp','Spirit Dust','Arcane Mote','Ether Wisp','Astral Dust','Mana Crystal','Ley Wisp','Aether Shard','Spirit Ember','Void Mote','Star Dust','Ley Crystal','Runed Aether','Celestial Mote','Astral Shard','Ethereal Core','Cosmic Dust','Empyreal Essence','Primordial Aether'];
+  var ESSENCE_COLORS = _rampColors([0x5a,0x8a,0xc8], [0x9a,0x5a,0xc8]);   // arcane blue -> violet
+  var ESSENCE_ICONS = ESSENCE_COLORS.map(function(c){ return svgIcon('dust', c); });
+  var SCROLL_NAMES = ['Warding Scrap','Minor Sigil','Warding Note','Sigil of Guard','Rune Scroll','Aegis Sigil','Greater Ward','Runed Tablet','Sigil of Aegis','Warding Codex','Astral Sigil','Guardian Scroll','Celestial Ward','Runic Aegis','Sigil of Protection','Empyreal Ward','Cosmic Sigil','Aegis of Ages','Primordial Ward','Eternal Sigil','Ward of the Gods'];
+
   // ---- Mining: 14 ore tiers + 7 stone tiers interleaved across the 21-tier ladder ----
   // Stones sit at tier positions 2,5,8,11,14,17,20 (1-indexed) -- everything else is ore.
   var MINING_STONE_INDICES = [1,4,7,10,13,16,19];
@@ -1876,6 +1885,22 @@
             time: tierTime(5,0.3,i),
             sell: tierSell(3,i),
             icon: SALVAGE_ICONS[i]
+          });
+        }
+        return list;
+      })() },
+    essence: { label:'Essence Harvesting', icon:svgIcon('starburst','#7a8ac8'),
+      items: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({
+            id:'essence_t'+i,
+            name: ESSENCE_NAMES[i],
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(12,i),
+            time: tierTime(5,0.3,i),
+            sell: tierSell(4,i),
+            icon: ESSENCE_ICONS[i]
           });
         }
         return list;
@@ -2399,6 +2424,27 @@
         }
         return list;
       })() },
+    inscription: { label:'Inscription', icon:svgIcon('corespiral','#7a5aa8'),
+      // Bind Essence with Paper (from Papermaking) into Scrolls. Reading a Scroll (in this tab) wards
+      // you -- a timed damage-reduction buff -- its own channel (see readScroll). Consumes Paper + Essence.
+      recipes: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({
+            id:'scroll_t'+i,
+            name: SCROLL_NAMES[i],
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(16,i),
+            time: tierTime(7,0.35,i),
+            sell: tierSell(20,i),
+            icon: svgIcon('corespiral',ESSENCE_COLORS[i]),
+            inputs: tierInput2('essence',2,'paper',1)(i),
+            scrollBonus: tierCappedBonus(0.05,0.0125,0.30,i),
+            scrollDurationMs: 3*(i+1)*60*1000
+          });
+        }
+        return list;
+      })() },
     tanning: { label:'Tanning', icon:svgIcon('hide','#8a6a42'),
       // Refinement step: cure Butchering's raw Hide into Leather (1:1). Leatherworking's armour now
       // requires this Cured Leather instead of raw Hide, deepening that chain like Metallurgy does for ore.
@@ -2573,7 +2619,7 @@
   })();
   var GATHER_TOOL_NAMES = {
     digging:'Shovel', forestry:'Hatchet', mining:'Pickaxe', fishing:'Fishing Rod',
-    herbalism:'Sickle', botany:'Shears', foraging:'Basket', butchering:'Cleaver', beekeeping:'Bee Smoker', prospecting:'Pan', ranching:'Milking Pail', mycology:'Mushroom Knife', salvaging:'Magnet'
+    herbalism:'Sickle', botany:'Shears', foraging:'Basket', butchering:'Cleaver', beekeeping:'Bee Smoker', prospecting:'Pan', ranching:'Milking Pail', mycology:'Mushroom Knife', salvaging:'Magnet', essence:'Ley Rod'
   };
   var GATHER_TOOL_SPEED = [];
   for(var _gi=0; _gi<TIER_COUNT; _gi++){ GATHER_TOOL_SPEED.push(tierCappedBonus(0.02, 0.013, 0.30, _gi)); }
@@ -2620,7 +2666,7 @@
     jewelrycrafting:"Jeweler's Loupe", runesmithing:'Rune Chisel', arcanism:'Arcane Focus',
     brewing:'Brewing Paddle', confectionery:'Candy Thermometer', gemcutting:'Gem Facet Wheel', enchanting:'Enchanting Rod',
     dairy:'Churn', gastronomy:"Chef's Torch", apothecary:'Distillation Kit', tanning:'Tanning Knife', weaving:'Loom', papermaking:'Paper Press', bookbinding:'Bookbinding Press',
-    tinkering:'Tinkerer\'s Wrench', pyrotechnics:'Fuse Crimper'
+    tinkering:'Tinkerer\'s Wrench', pyrotechnics:'Fuse Crimper', inscription:'Inscribing Stylus'
   };
   var CRAFT_TOOL_SPEED = [];
   var CRAFT_TOOL_SUCCESS = [];
@@ -3333,7 +3379,8 @@
     prospecting:[['armStrength',1],['fineMotor',1],['criticalThinking',1],['curiosity',1]],
     ranching:   [['handStrength',1],['bodyStrength',1],['endurance',1],['mentality',1],['curiosity',1]],
     mycology:   [['fineMotor',1],['handStrength',1],['criticalThinking',1],['mentality',1],['curiosity',1]],
-    salvaging:  [['armStrength',1],['fineMotor',1],['criticalThinking',1],['curiosity',1]]
+    salvaging:  [['armStrength',1],['fineMotor',1],['criticalThinking',1],['curiosity',1]],
+    essence:    [['fineMotor',1],['criticalThinking',1],['mentality',1],['zen',1],['curiosity',1]]
   };
   var CRAFT_PHYSIQUE = {
     carpentry:      [['grossMotor',2],['sleightOfHand',1],['logic',1]],
@@ -3370,7 +3417,8 @@
     papermaking:    [['fineMotor',2],['sleightOfHand',1],['logic',1]],
     bookbinding:    [['fineMotor',2],['solving',1],['criticalThinking',1],['logic',1]],
     tinkering:      [['fineMotor',2],['solving',1],['criticalThinking',1],['logic',1]],
-    pyrotechnics:   [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]]
+    pyrotechnics:   [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]],
+    inscription:    [['fineMotor',2],['criticalThinking',1],['logic',1]]
   };;
   // Physique XP from a gather/craft task scales with the item's tier: each associated physique
   // gains (tier+1) XP -- 1 at t0 up to 21 at t20 (replaces the old fixed per-physique weights).
@@ -4001,6 +4049,7 @@
     ranching:  { name:'Clover',icon:svgIcon('flask','#e8dcc0'), spells:[hitSpell('Stampede','blunt',14), buffSpell('Herd Strength','dmgBlunt',0.3,8), healSpell('Fresh Milk',16), armorSpell('Thick Hide',1.5,6)] },
     mycology:  { name:'Spore', icon:svgIcon('spice','#8a5aa8'), spells:[poisonSpell('Spore Burst',5,6), slowSpell('Mycelial Snare',0.35,10), buffSpell('Toxic Bloom','potionPoison',0.4,10), healSpell('Fungal Mend',15)] },
     salvaging: { name:'Rivet',  icon:svgIcon('gear','#9a8a6a'), spells:[hitSpell('Scrap Toss','piercing',13), buffSpell('Salvage Rights','firebomb',0.4,10), armorSpell('Junk Plating',1.6,6), regenSpell('Patch Job',4,6)] },
+    essence:   { name:'Wisp',   icon:svgIcon('starburst','#7a8ac8'), spells:[hitSpell('Aether Bolt','void',14), slowSpell('Ley Bind',0.4,10), buffSpell('Ley Surge','critDmg',0.32,8), healSpell('Mana Well',15)] },
     // -- Crafting --
     carpentry:      { name:'Timber', icon:svgIcon('plank','#8a6a42'), spells:[armorSpell('Splinter Shield',1.6,6), slowSpell('Root Snare',0.35,10), healSpell('Sap Heal',15), healSpell('Sap Heal',15)] },
     metallurgy:     { name:'Cinder', icon:svgIcon('ingot','#c85a2a'), spells:[dmgSpell('Molten Strike',1.3,8), weakenSpell('Slag',0.25,8), healSpell('Forge Heal',15), healSpell('Forge Heal',15)] },
@@ -4024,6 +4073,7 @@
     apothecary:     { name:'Venom',  icon:svgIcon('droplet','#6a8a3a'), spells:[poisonSpell('Envenom',6,6), weakenSpell('Debilitate',0.3,8), buffSpell('Venom Craft','potionPoison',0.45,10), armorSpell('Antidote Skin',1.5,6)] },
     tinkering:      { name:'Cog',    icon:svgIcon('gear','#c8853a'), spells:[hitSpell('Shrapnel Blast','piercing',15), buffSpell('Overclock','haste',0.18,8), buffSpell('Precision Bore','dmgPierce',0.3,8), armorSpell('Bolted Plate',1.6,6)] },
     pyrotechnics:   { name:'Sparky', icon:svgIcon('flame','#e8a02a'), spells:[buffSpell('Powder Keg','firebomb',0.5,10), hitSpell('Firework Barrage','void',11), weakenSpell('Blinding Flash',0.3,8), buffSpell('Fuse Rush','critChance',0.12,8)] },
+    inscription:    { name:'Glyph',  icon:svgIcon('corespiral','#7a5aa8'), spells:[armorSpell('Ward Sigil',1.7,6), buffSpell('Runic Guard','block',0.16,8), hitSpell('Rune Script','void',13), regenSpell('Sigil Mend',4,6)] },
     tanning:        { name:'Suede',  icon:svgIcon('hide','#8a6a42'), spells:[hitSpell('Rawhide Lash','slashing',13), armorSpell('Cured Hide',1.6,6), buffSpell('Supple Step','dodge',0.14,8), regenSpell("Tanner's Rest",4,6)] },
     weaving:        { name:'Loom',   icon:svgIcon('spool','#c8b088'), spells:[slowSpell('Snare Weave',0.4,10), armorSpell('Woven Ward',1.7,6), buffSpell('Tight Weave','block',0.15,8), buffSpell('Spun Speed','haste',0.16,8)] },
     papermaking:    { name:'Sheet',  icon:svgIcon('tabard','#e8dcc0'), spells:[hitSpell('Paper Cut','slashing',12), buffSpell('Crisp Edge','critChance',0.11,8), armorSpell('Pulp Ward',1.5,6), regenSpell('Fresh Sheet',4,6)] },
@@ -4100,6 +4150,7 @@
     ranching: [ hitSpell('Stampede','blunt',14), buffSpell('Herd Strength','dmgBlunt',0.3,8), healSpell('Fresh Milk',16), armorSpell('Thick Hide',1.5,6) ],
     mycology: [ poisonSpell('Spore Burst',5,6), slowSpell('Mycelial Snare',0.35,10), buffSpell('Toxic Bloom','potionPoison',0.4,10), healSpell('Fungal Mend',15) ],
     salvaging: [ hitSpell('Scrap Toss','piercing',13), buffSpell('Salvage Rights','firebomb',0.4,10), armorSpell('Junk Plating',1.6,6), regenSpell('Patch Job',4,6) ],
+    essence: [ hitSpell('Aether Bolt','void',14), slowSpell('Ley Bind',0.4,10), buffSpell('Ley Surge','critDmg',0.32,8), healSpell('Mana Well',15) ],
     // -- Crafting --
     carpentry:      [ hitSpell('Splinter Shot','piercing',13), armorSpell('Splinter Shield',1.6,6), buffSpell('Bark Guard','resistPierce',0.3,8), regenSpell('Sap Flow',4,6) ],
     metallurgy:     [ hitSpell('Molten Strike','void',10), buffSpell('Forge Fire','firebomb',0.45,10), weakenSpell('Slag',0.28,8), buffSpell('Heavy Hand','dmgBlunt',0.3,8) ],
@@ -4125,6 +4176,7 @@
     apothecary:     [ poisonSpell('Envenom',6,6), weakenSpell('Debilitate',0.3,8), buffSpell('Venom Craft','potionPoison',0.45,10), armorSpell('Antidote Skin',1.5,6) ],
     tinkering:      [ hitSpell('Shrapnel Blast','piercing',15), buffSpell('Overclock','haste',0.18,8), buffSpell('Precision Bore','dmgPierce',0.3,8), armorSpell('Bolted Plate',1.6,6) ],
     pyrotechnics:   [ buffSpell('Powder Keg','firebomb',0.5,10), hitSpell('Firework Barrage','void',11), weakenSpell('Blinding Flash',0.3,8), buffSpell('Fuse Rush','critChance',0.12,8) ],
+    inscription:    [ armorSpell('Ward Sigil',1.7,6), buffSpell('Runic Guard','block',0.16,8), hitSpell('Rune Script','void',13), regenSpell('Sigil Mend',4,6) ],
     tanning:        [ hitSpell('Rawhide Lash','slashing',13), armorSpell('Cured Hide',1.6,6), buffSpell('Supple Step','dodge',0.14,8), regenSpell("Tanner's Rest",4,6) ],
     weaving:        [ slowSpell('Snare Weave',0.4,10), armorSpell('Woven Ward',1.7,6), buffSpell('Tight Weave','block',0.15,8), buffSpell('Spun Speed','haste',0.16,8) ],
     papermaking:    [ hitSpell('Paper Cut','slashing',12), buffSpell('Crisp Edge','critChance',0.11,8), armorSpell('Pulp Ward',1.5,6), regenSpell('Fresh Sheet',4,6) ],
@@ -4185,10 +4237,10 @@
   // enemies weak to it (water>fire>earth>water; light<->dark). Non-damaging spells ignore it.
   var FAMILIAR_ELEMENT = {
     // Gathering
-    digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth', ranching:'earth', mycology:'dark', salvaging:'earth',
+    digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth', ranching:'earth', mycology:'dark', salvaging:'earth', essence:'light',
     // Crafting
     carpentry:'earth', metallurgy:'fire', roasting:'fire', cooking:'water', alchemy:'water', bowyer:'earth', fletching:'earth', baking:'fire',
-    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark', tanning:'earth', weaving:'light', papermaking:'earth', bookbinding:'light', tinkering:'earth', pyrotechnics:'fire',
+    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark', tanning:'earth', weaving:'light', papermaking:'earth', bookbinding:'light', tinkering:'earth', pyrotechnics:'fire', inscription:'light',
     archaeology:'dark', blacksmithing:'fire', weaponsmithing:'fire', armorsmithing:'earth', shieldsmithing:'earth', runesmithing:'light', arcanism:'light',
     // Farming
     farming:'earth',
@@ -4238,6 +4290,7 @@
     ranching:{s:'flask',c:'#e8dcc0',ear:'horn'}, dairy:{s:'block',c:'#e8c84a',ear:'round'}, gastronomy:{s:'meal',c:'#d8a02a',ear:'round'},
     mycology:{s:'spice',c:'#8a5aa8',ear:'round'}, apothecary:{s:'droplet',c:'#6a8a3a',ear:'horn'},
     salvaging:{s:'gear',c:'#9a8a6a',ear:'horn'}, tinkering:{s:'gear',c:'#c8853a',ear:'antenna'}, pyrotechnics:{s:'flame',c:'#e8a02a',ear:'horn'},
+    essence:{s:'starburst',c:'#7a8ac8',ear:'antenna'}, inscription:{s:'corespiral',c:'#7a5aa8',ear:'horn'},
     tanning:{s:'hide',c:'#8a6a42',ear:'round'}, weaving:{s:'spool',c:'#c8b088',ear:'cat'},
     papermaking:{s:'tabard',c:'#e8dcc0',ear:'round'}, bookbinding:{s:'brain',c:'#7a5aa8',ear:'horn'},
     carpentry:{s:'plank',c:'#a07a44',ear:'cat'}, metallurgy:{s:'ingot',c:'#c85a2a',ear:'horn'},
@@ -6749,8 +6802,8 @@
     var offhandRarities = {};
     OFFHAND_STYLE_IDS.forEach(function(id){ offhandRarities[id] = 'normal'; });
     var xpObj = {
-      digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0, ranching:0, mycology:0, salvaging:0,
-      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0, tanning:0, weaving:0, papermaking:0, bookbinding:0, tinkering:0, pyrotechnics:0,
+      digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0, ranching:0, mycology:0, salvaging:0, essence:0,
+      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0, tanning:0, weaving:0, papermaking:0, bookbinding:0, tinkering:0, pyrotechnics:0, inscription:0,
       stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, arcanism:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
       shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0, wands:0, staves:0, scepters:0,
@@ -6809,6 +6862,7 @@
       activeTea: { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 },
       activeFeast: { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 },
       activeTome: { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 },
+      activeScroll: { itemId:null, name:null, icon:null, wardPct:0, durationMs:0, expiresAt:0 },
       autoTea: false,
       familiars: {},
       activeCompanion: null,
@@ -7072,6 +7126,12 @@
     return !!(state.activeTome && state.activeTome.itemId && state.activeTome.expiresAt > Date.now());
   }
   function tomeSpeedBonus(){ return isTomeActive() ? (state.activeTome.speedBonus||0) : 0; }
+  // Scroll ward: reading an Inscription Scroll reduces all incoming damage for a while (folded into
+  // the monster's attack). Its own timed channel -- the defensive counterpart to Feasts (offense).
+  function isScrollActive(){
+    return !!(state.activeScroll && state.activeScroll.itemId && state.activeScroll.expiresAt > Date.now());
+  }
+  function scrollDamageReduction(){ return isScrollActive() ? (state.activeScroll.wardPct||0) : 0; }
   // A familiar linked to a skill grants +1% XP for that skill per familiar level.
   function familiarXpMult(skillId){ var f = state.familiars && state.familiars[skillId]; return (f && f.owned) ? (1 + f.level * 0.01) : 1; }
   // ---- Server-wide buffs: gold-bought boosts that help EVERY player (a revenue feature). ----
@@ -7792,7 +7852,7 @@
     // The hit lands its physical type AND the enemy's element together: the element is amplified by
     // the player's armor weakness to it (leather->fire, chain->earth, plate->water).
     var elementMult = incomingElementMult(state, monster);
-    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster) * frostwardenWaterResistMult(monster) * templarIncomingDmgMult() * sentinelIncomingMult(state) * berserkerRecklessTakenMult(state) * elementResistMult(state, monster.element) * (1 - getRingResistanceBonus(state))); // + class resist/reckless mods, Elemental Attunement resistance, Warding ring flat resistance
+    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster) * frostwardenWaterResistMult(monster) * templarIncomingDmgMult() * sentinelIncomingMult(state) * berserkerRecklessTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getRingResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring flat resistance
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
     var blockChance = playerBlockChance(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
@@ -8004,6 +8064,23 @@
       expiresAt: Date.now() + recipe.tomeDurationMs
     };
     addLog('You study the ' + recipe.name + ', speeding your gathering & crafting +' + Math.round(recipe.tomeSpeedBonus*100) + '% for ' + Math.round(recipe.tomeDurationMs/60000) + ' minutes.', 'important');
+    needsRender = true;
+  }
+  // Reading a Scroll (Inscription): starts/refreshes the timed damage-reduction ward. Doesn't stack.
+  function readScroll(itemId){
+    var recipe = ALL_CRAFT_RECIPES[itemId];
+    if(!recipe || !recipe.scrollDurationMs) return;
+    if((state.inventory[itemId]||0) <= 0) return;
+    state.inventory[itemId] -= 1;
+    state.activeScroll = {
+      itemId: itemId,
+      name: recipe.name,
+      icon: recipe.icon,
+      wardPct: recipe.scrollBonus,
+      durationMs: recipe.scrollDurationMs,
+      expiresAt: Date.now() + recipe.scrollDurationMs
+    };
+    addLog('You read the ' + recipe.name + ', warding away ' + Math.round(recipe.scrollBonus*100) + '% of incoming damage for ' + Math.round(recipe.scrollDurationMs/60000) + ' minutes.', 'important');
     needsRender = true;
   }
 
@@ -8332,6 +8409,7 @@
           if(!state.activeTea || typeof state.activeTea !== 'object') state.activeTea = { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 };
           if(!state.activeFeast || typeof state.activeFeast !== 'object') state.activeFeast = { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 };
           if(!state.activeTome || typeof state.activeTome !== 'object') state.activeTome = { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 };
+          if(!state.activeScroll || typeof state.activeScroll !== 'object') state.activeScroll = { itemId:null, name:null, icon:null, wardPct:0, durationMs:0, expiresAt:0 };
           if(typeof state.autoTea !== 'boolean') state.autoTea = false;
           if(!state.familiars || typeof state.familiars !== 'object') state.familiars = {};
           Object.keys(state.familiars).forEach(function(fid){
@@ -8481,7 +8559,7 @@
   // rebuilding the bar (and its buttons) every frame, which was eating clicks on Settings/Tracker.
   function topbarSignature(){
     var tk = state.trackedSkills && state.trackedSkills[0];
-    return [authUser?1:0, serverBuffActive()?1:0, isTeaActive()?1:0, isFeastActive()?1:0, isTomeActive()?1:0, tk||'', (tk&&trackedExists(tk))?1:0].join('|');
+    return [authUser?1:0, serverBuffActive()?1:0, isTeaActive()?1:0, isFeastActive()?1:0, isTomeActive()?1:0, isScrollActive()?1:0, tk||'', (tk&&trackedExists(tk))?1:0].join('|');
   }
   var _topbarSig = null;
   function renderTopbar(){
@@ -8503,6 +8581,11 @@
       var tomeBuffPct = clamp((state.activeTome.expiresAt-Date.now())/state.activeTome.durationMs*100, 0, 100);
       html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:#5a8ac8"></span>+'+Math.round(state.activeTome.speedBonus*100)+'% SPEED <span class="t" id="ffTomeBuffT">'+formatDuration(state.activeTome.expiresAt-Date.now())+'</span></span>'
         + '<span class="ff-buffbar"><span class="ff-buffbar-fill" id="ffTomeBuffBar" style="width:'+tomeBuffPct+'%;background:#5a8ac8"></span></span></div>';
+    }
+    if(isScrollActive()){
+      var scrollBuffPct = clamp((state.activeScroll.expiresAt-Date.now())/state.activeScroll.durationMs*100, 0, 100);
+      html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:#9a6ad8"></span>+'+Math.round(state.activeScroll.wardPct*100)+'% WARD <span class="t" id="ffScrollBuffT">'+formatDuration(state.activeScroll.expiresAt-Date.now())+'</span></span>'
+        + '<span class="ff-buffbar"><span class="ff-buffbar-fill" id="ffScrollBuffBar" style="width:'+scrollBuffPct+'%;background:#9a6ad8"></span></span></div>';
     }
     if(isFeastActive()){
       var feastBuffPct = clamp((state.activeFeast.expiresAt-Date.now())/state.activeFeast.durationMs*100, 0, 100);
@@ -8548,6 +8631,10 @@
     if(isTomeActive()){
       var mt = document.getElementById('ffTomeBuffT'); if(mt) mt.textContent = formatDuration(state.activeTome.expiresAt-Date.now());
       var mbar = document.getElementById('ffTomeBuffBar'); if(mbar) mbar.style.width = clamp((state.activeTome.expiresAt-Date.now())/state.activeTome.durationMs*100,0,100)+'%';
+    }
+    if(isScrollActive()){
+      var wt = document.getElementById('ffScrollBuffT'); if(wt) wt.textContent = formatDuration(state.activeScroll.expiresAt-Date.now());
+      var wbar = document.getElementById('ffScrollBuffBar'); if(wbar) wbar.style.width = clamp((state.activeScroll.expiresAt-Date.now())/state.activeScroll.durationMs*100,0,100)+'%';
     }
     var tk = state.trackedSkills && state.trackedSkills[0];
     if(tk && trackedExists(tk)){
@@ -8871,6 +8958,7 @@
     if(skillKey==='brewing') html += renderTeaDrinkSection(); // Brews are drinkable like Teas
     if(skillKey==='gastronomy') html += renderFeastSection(); // Feasts are servable for a combat buff
     if(skillKey==='bookbinding') html += renderTomeSection(); // Tomes are studyable for a work-speed buff
+    if(skillKey==='inscription') html += renderScrollSection(); // Scrolls are readable for a damage-reduction ward
     return html;
   }
   function renderWorkshopForge(){
@@ -9024,6 +9112,34 @@
       html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+qty+'</div></div></div>';
       html += '<div class="item-stats"><span>+'+Math.round(recipe.tomeSpeedBonus*100)+'% Speed</span><span>'+Math.round(recipe.tomeDurationMs/60000)+' min</span></div>';
       html += '<button class="action-btn" data-action="studyTome" data-item="'+recipe.id+'">Study</button>';
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+  // Inscription: read a Scroll to start the timed damage-reduction ward (mirrors the Tome section).
+  function ownedScrolls(){ return CRAFTING_SKILLS.inscription.recipes.filter(function(r){ return (state.inventory[r.id]||0) > 0; }); }
+  function renderScrollSection(){
+    var html = '<h3>Read a Scroll</h3>';
+    if(isScrollActive()){
+      var remainingMs = state.activeScroll.expiresAt - Date.now();
+      html += '<div class="physique-bonus">Active: <b>'+state.activeScroll.icon+' '+state.activeScroll.name+'</b> &nbsp;|&nbsp; Ward: <b>&minus;'+Math.round(state.activeScroll.wardPct*100)+'% damage taken</b> &nbsp;|&nbsp; Time Left: <b id="scrollTabTimer">'+formatDuration(remainingMs)+'</b></div>';
+      html += '<div class="section-intro">Reading another Scroll replaces this ward outright -- its strength and timer don\'t stack.</div>';
+    } else {
+      html += '<div class="section-intro">No Scroll active. Read one below to ward away a share of all incoming damage for a few minutes.</div>';
+    }
+    var owned = ownedScrolls();
+    if(owned.length===0){
+      html += '<div class="empty-note">No Scrolls in stock yet &mdash; inscribe some above.</div>';
+      return html;
+    }
+    html += '<div class="card-grid">';
+    owned.forEach(function(recipe){
+      var qty = state.inventory[recipe.id]||0;
+      html += '<div class="item-card">';
+      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+qty+'</div></div></div>';
+      html += '<div class="item-stats"><span>&minus;'+Math.round(recipe.scrollBonus*100)+'% DMG taken</span><span>'+Math.round(recipe.scrollDurationMs/60000)+' min</span></div>';
+      html += '<button class="action-btn" data-action="readScroll" data-item="'+recipe.id+'">Read</button>';
       html += '</div>';
     });
     html += '</div>';
@@ -12011,6 +12127,7 @@
     apothecary:{roof:'dome', accent:'flask'},
     tinkering:{roof:'flat', chimney:true, accent:'anvil'},
     pyrotechnics:{roof:'peak', chimney:true, accent:'flask'},
+    inscription:{roof:'cone', accent:'urn'},
     tanning:{roof:'peak', accent:'hide'},
     weaving:{roof:'gable', accent:'spool'},
     papermaking:{roof:'flat', accent:'block'},
@@ -15281,6 +15398,7 @@
     ranching: 'Raise livestock for Milk, from Goat up to Dragon -- churned into Cheese in Dairy.',
     mycology: 'Forage mushrooms, from Button up to Fairy Ring -- the toxic caps feed Apothecary.',
     salvaging: 'Sift Scrap from wrecks and battlefields, from Rusty Scrap up to Eternal Mechanism -- the base for Tinkering and Pyrotechnics.',
+    essence: 'Tap ley-line nodes for arcane Essence, from Faint Mote up to Primordial Aether -- the base for Inscription.',
     carpentry: 'Cut Logs into Planks.',
     metallurgy: 'Smelt Ore into Bars and Alloys, plus a side-recipe for Glass Bottles.',
     roasting: 'Cook raw Fish and Meat into a quick, portable snack.',
@@ -15305,6 +15423,7 @@
     apothecary: 'Distil toxic Mushrooms and Herbs into Weapon Coatings -- ready one in Battle to poison enemies over time on every hit.',
     tinkering: 'Build Scrap and metal into Bombs -- ready one in Battle to burst the enemy for heavy damage on every hit.',
     pyrotechnics: 'Pack Powder and scrap into Flash Bombs -- ready one in Battle for a chance to stun the enemy on every hit.',
+    inscription: 'Inscribe Essence and Paper into Scrolls. Reading a Scroll wards you, reducing all incoming damage for a while.',
     tanning: 'Cure Butchering\'s raw Hide into Leather -- the material Leatherworking\'s armour now requires.',
     weaving: 'Weave Farming\'s Fiber into Cloth -- the material Tailoring\'s cloth armour now requires.',
     papermaking: 'Pulp Forestry logs into Paper -- the base for Bookbinding.',
@@ -16958,6 +17077,8 @@
       serveFeast(btn.getAttribute('data-item'));
     } else if(action==='studyTome'){
       studyTome(btn.getAttribute('data-item'));
+    } else if(action==='readScroll'){
+      readScroll(btn.getAttribute('data-item'));
     } else if(action==='drinkBestTea'){
       drinkBestTea();
     } else if(action==='toggleAutoTea'){
@@ -17432,6 +17553,7 @@
       ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES,
       isFeastActive:isFeastActive, feastDamageBonus:feastDamageBonus, serveFeast:serveFeast,
       isTomeActive:isTomeActive, tomeSpeedBonus:tomeSpeedBonus, studyTome:studyTome, speedMultiplier:speedMultiplier,
+      isScrollActive:isScrollActive, scrollDamageReduction:scrollDamageReduction, readScroll:readScroll,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       playerAccuracy:playerAccuracy, monsterDodge:monsterDodge, hitChanceVs:hitChanceVs, playerHitChance:playerHitChance,
       familiarAccuracy:familiarAccuracy, familiarHitChance:familiarHitChance, accuracyPhysiques:accuracyPhysiques,
