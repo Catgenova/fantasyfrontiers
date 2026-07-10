@@ -692,6 +692,69 @@
     ok(FF.CRAFT_PHYSIQUE.papermaking && FF.CRAFT_PHYSIQUE.bookbinding, 'physique tables include the new skills');
   });
 
+  // ---- 5 new combat classes: gear combos + level perks --------------------------------------
+  suite('classes: frostwarden / plaguebearer / berserker / sentinel / spellblade', function(){
+    var NEW = ['frostwarden','plaguebearer','berserker','sentinel','spellblade'];
+    NEW.forEach(function(id){
+      var cd = FF.CLASS_DEFS_BY_ID[id];
+      ok(cd, id+' is a registered class');
+      if(!cd) return;
+      eq(cd.passives.length, 5, id+' has 5 perks');
+      eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', id+' perks at Lv 1/20/40/60/80');
+      ok(cd.reqParts.length >= 5, id+' has a full gear set');
+      ok(FF.CLASS_SKILL_IDS.indexOf(id) !== -1, id+' is its own combat skill');
+    });
+    // Plaguebearer change #1: Hatchet (not Falchion).
+    var pb = FF.CLASS_DEFS_BY_ID.plaguebearer;
+    ok(/Hatchet/.test(pb.reqText) && !/Falchion/.test(pb.reqText), 'plaguebearer wields a Hatchet, not a Falchion');
+    // Plaguebearer change #2: Lv80 is a per-tick explosion chance, not an on-death detonation.
+    var pandemic = pb.passives.filter(function(p){ return p.level===80; })[0];
+    eq(pandemic.name, 'Pandemic', 'plaguebearer Lv80 is Pandemic');
+    ok(/10%/.test(pandemic.desc) && /Dark/.test(pandemic.desc) && !/dies|death/i.test(pandemic.desc), 'Pandemic = each poison tick has a 10% Dark-explosion chance (not on-death)');
+
+    // ---- Functional: build mock states that activate each class, verify gating + perk math ----
+    function armor(mat,tier){ return {material:mat,tier:tier||5}; }
+    function stFor(id, level, extra){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat'}, playerHp:55 };
+      st.xp[id] = FF.xpFloorForLevel(level);
+      if(id==='frostwarden'){ st.equippedMainhand='wandWater'; st.equippedOffhand='shieldMedium'; st.bodyArmor={helmet:armor('chain'),chest:armor('chain'),gauntlets:armor('tailoring'),boots:armor('tailoring')}; }
+      if(id==='berserker'){ st.equippedMainhand='warhammer'; st.bodyArmor={chest:armor('leather'),gauntlets:armor('tailoring'),boots:armor('tailoring')}; } // no helmet = bare head
+      if(id==='sentinel'){ st.equippedMainhand='maul'; st.equippedOffhand='shieldMedium'; st.bodyArmor={helmet:armor('chain'),chest:armor('chain'),gauntlets:armor('chain'),boots:armor('chain')}; }
+      if(id==='spellblade'){ st.equippedMainhand='greatsword'; st.bodyArmor={helmet:armor('chain'),chest:armor('chain'),gauntlets:armor('leather'),boots:armor('leather')}; }
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+    // gating: each mock activates exactly its class
+    eq(FF.activeClassId(stFor('berserker',80)), 'berserker', 'berserker gear activates Berserker');
+    eq(FF.activeClassId(stFor('frostwarden',80)), 'frostwarden', 'frostwarden gear activates Frostwarden');
+    eq(FF.activeClassId(stFor('sentinel',80)), 'sentinel', 'sentinel gear activates Sentinel');
+    eq(FF.activeClassId(stFor('spellblade',80)), 'spellblade', 'spellblade gear activates Spellblade');
+    // Berserker Rage scales with missing Health; Reckless +25%; Bloodthirst 8%.
+    eq(FF.berserkerRageMult(stFor('berserker',1,{playerHp:55})), 1, 'Berserker Rage = x1 at full HP');
+    ok(Math.abs(FF.berserkerRageMult(stFor('berserker',1,{playerHp:0})) - 1.5) < 1e-9, 'Berserker Rage = x1.5 near death');
+    eq(FF.berserkerRecklessMult(stFor('berserker',40)), 1.25, 'Berserker Reckless +25% dealt');
+    ok(Math.abs(FF.berserkerLifestealPct(stFor('berserker',20)) - 0.08) < 1e-9, 'Berserker Bloodthirst 8%');
+    // Frostwarden Frostbite +25%; chill chance rises Lv20->Lv60; Absolute Zero stacks vs chilled.
+    eq(FF.frostwardenDmgMult(stFor('frostwarden',1)), 1.25, 'Frostwarden Frostbite +25%');
+    ok(Math.abs(FF.frostwardenChillChance(stFor('frostwarden',20)) - 0.15) < 1e-9, 'Chilling Touch 15% at Lv20');
+    ok(Math.abs(FF.frostwardenChillChance(stFor('frostwarden',60)) - 0.30) < 1e-9, 'Deep Freeze 30% at Lv60');
+    var chilled = stFor('frostwarden',80); chilled.activity.enemyChillUntil = FF.now ? FF.now()+4000 : Date.now()+4000; chilled.activity.enemyChillPct = 0.5;
+    ok(FF.enemyChilled(chilled) && Math.abs(FF.frostwardenDmgMult(chilled) - 1.75) < 1e-6, 'Absolute Zero: +40% vs Chilled stacks on Frostbite (x1.75)');
+    // Sentinel Bracing +25% armor, Immovable -30% incoming.
+    eq(FF.sentinelArmorMult(stFor('sentinel',20)), 1.25, 'Sentinel Bracing +25% Armor');
+    eq(FF.sentinelIncomingMult(stFor('sentinel',60)), 0.70, 'Sentinel Immovable -30% incoming');
+    // Spellblade Momentum stacks (+6% each) and Overwhelm at max.
+    var sb = stFor('spellblade',80); sb.spellbladeStacks = 5;
+    ok(Math.abs(FF.spellbladeMomentumMult(sb) - 1.30) < 1e-9, 'Spellblade Momentum = +6%/stack (x1.30 at 5)');
+    eq(FF.spellbladeOverwhelmMult(sb), 1.25, 'Spellblade Overwhelm +25% at max stacks');
+    // No class active -> every perk multiplier is neutral.
+    var none = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat'}, playerHp:1 };
+    eq(FF.berserkerRageMult(none), 1, 'no class -> Rage neutral');
+    eq(FF.frostwardenDmgMult(none), 1, 'no class -> Frostbite neutral');
+    eq(FF.sentinelIncomingMult(none), 1, 'no class -> Immovable neutral');
+    eq(FF.enemyChillSlowMult(none), 0, 'no chill -> no enemy slow');
+  });
+
   // ---- Inventory grid: rarity parsing for cell accents / detail tag ----------------------
   suite('inventory rarity', function(){
     eq(FF.itemRarityId('bodyarmor_chain_chest_t20_normal'), 'normal', 'normal suffix');
