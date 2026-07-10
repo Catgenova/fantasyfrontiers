@@ -5184,13 +5184,13 @@
 
   // ---- Digging: main output chance (Shovel-boosted) + two independent rare side-drops (physique-boosted) ----
   // Uniform Gathering success: every gathering skill's main resource drops 70% of the time at base,
-  // climbing toward ~98% as its gather tool improves. Digging/Mining/Fishing keep their own tuned rolls
+  // climbing toward a 95% hard cap as its gather tool improves. Digging/Mining/Fishing keep their own rolls
   // (all already anchored at this 70% base); every other gather is gated through this helper.
   var BASE_GATHER_MAIN_CHANCE = 0.70;
   var GATHER_MAIN_TOOL_CAP = 0.28;
   function genericGatherMainChance(state, skillId){
     var tier = (state.gatherTools && state.gatherTools[skillId]) || 0;
-    return Math.min(0.98, BASE_GATHER_MAIN_CHANCE + GATHER_MAIN_TOOL_CAP * (tier/TIER_COUNT));
+    return Math.min(0.95, BASE_GATHER_MAIN_CHANCE + GATHER_MAIN_TOOL_CAP * (tier/TIER_COUNT));
   }
   var BASE_DIG_MAIN_CHANCE = 0.70;
   var DIG_MAIN_TOOL_CAP = 0.28;
@@ -5203,7 +5203,7 @@
   function diggingMainChance(state){
     var tier = state.gatherTools.digging||0;
     var toolBonus = DIG_MAIN_TOOL_CAP * (tier/TIER_COUNT);
-    return Math.min(0.98, BASE_DIG_MAIN_CHANCE + toolBonus);
+    return Math.min(0.95, BASE_DIG_MAIN_CHANCE + toolBonus);
   }
   function diggingSideChance(baseChance, physiqueId, physiqueCap, physiqueScale){
     var physLevel = getLevel(state.physique[physiqueId]||0);
@@ -5277,7 +5277,7 @@
   function miningMainChance(state){
     var tier = state.gatherTools.mining||0;
     var toolBonus = getEquippedGatherTool('mining', tier, state.gatherToolRarities.mining).speedBonus || 0;
-    return Math.min(1, BASE_MINE_MAIN_CHANCE + toolBonus);
+    return Math.min(0.95, BASE_MINE_MAIN_CHANCE + toolBonus);
   }
   function miningSideChance(baseChance, physiqueId, physiqueCap, physiqueScale){
     var physLevel = getLevel(state.physique[physiqueId]||0);
@@ -5309,11 +5309,11 @@
   }
 
   // ---- Fishing: 60% base catch chance, boosted by the Fishing Rod ----
-  var BASE_FISH_CHANCE = 0.70;
+  var BASE_FISH_CHANCE = 0.50;
   function fishingCatchChance(state){
     var tier = state.gatherTools.fishing||0;
     var toolBonus = getEquippedGatherTool('fishing', tier, state.gatherToolRarities.fishing).speedBonus || 0;
-    return Math.min(1, BASE_FISH_CHANCE + toolBonus);
+    return Math.min(0.95, BASE_FISH_CHANCE + toolBonus);
   }
   function processFishingRoll(mainItemId){
     if(Math.random() < fishingCatchChance(state)){
@@ -11776,6 +11776,18 @@
     estIsGuild = guild; estActive = guild ? guildEstate : state.estate;
   }
   function estMyId(){ return (typeof authUser !== 'undefined' && authUser && authUser.id) || '_local'; }
+  // ---- Guild estate demolition permission: the leader picks the minimum rank allowed to remove a
+  // building or tear up pavement on the guild estate (stored in the synced guild_estate blob). ----
+  var GUILD_RANK_ORDER = { member:1, officer:2, leader:3 };
+  function guildDestroyMinRole(){ return (typeof guildEstate!=='undefined' && guildEstate.destroyRole) || 'officer'; }
+  function canDestroyGuildEstate(){ return (GUILD_RANK_ORDER[guildState.myRank]||0) >= (GUILD_RANK_ORDER[guildDestroyMinRole()]||2); }
+  // Guard called at the top of every guild-estate demolish action; blocks ranks below the setting.
+  function guildDestroyBlocked(){
+    if(!estIsGuild || canDestroyGuildEstate()) return false;
+    var min = guildDestroyMinRole();
+    addLog('Only ' + (min==='member' ? 'guild members' : (min==='officer' ? 'officers &amp; the leader' : 'the guild leader')) + ' may demolish on the guild estate.', 'danger');
+    return true;
+  }
   function estPersist(){ if(estIsGuild) guildEstatePersist(); }                       // personal autosaves; guild pushes to server
   function estRecomputeWorkshops(){ if(estIsGuild) recomputeGuildWorkshops(); else recomputePlacedWorkshops(); }
   function estAllJobs(){ if(!estActive) return []; return estIsGuild ? (estActive.jobs||[]) : (estActive.job ? [estActive.job] : []); }
@@ -11837,6 +11849,7 @@
     needsRender = true;
   }
   function estateLowerLayer(x, y){
+    if(guildDestroyBlocked()) return;
     var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || cell.type !== 'dirt') return;
     if(cell.obstacle){ addLog('Clear the obstacle on this tile before terraforming it.', 'danger'); return; }
@@ -12121,6 +12134,7 @@
     needsRender = true;
   }
   function estateRemoveWorkshop(x, y){
+    if(guildDestroyBlocked()) return;
     var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || !cell.workshopId) return;
     var wid = cell.workshopId;
@@ -12179,6 +12193,7 @@
     needsRender = true;
   }
   function estateRemoveCottage(x, y){
+    if(guildDestroyBlocked()) return;
     var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || !cell.cottageId) return;
     var cid = cell.cottageId;
@@ -12213,6 +12228,7 @@
     needsRender = true;
   }
   function estateRemoveField(x, y){
+    if(guildDestroyBlocked()) return;
     var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || cell.fieldTier == null) return;
     var tier = cell.fieldTier;
@@ -12538,6 +12554,7 @@
     needsRender = true;
   }
   function estateDestroyBorder(orient, x, y){
+    if(guildDestroyBlocked()) return;
     var edge = { orient:orient, x:x, y:y };
     var cell = estateGetEdgeCell(edge);
     if(!cell || !cell.type) return;
@@ -13686,6 +13703,20 @@
       var expandLabel = canAfford ? ('Expand: '+fmt(nextCost)+'g'+(estIsGuild?' from treasury':'')) : (estIsGuild && !canManageGuild ? 'Officers only' : fmt(nextCost)+'g Req.');
       html += '<button class="action-btn" data-action="estateExpand" style="width:auto;flex-shrink:0" '+(canAfford?'':'disabled')+'>'+expandLabel+'</button>';
       html += '</div>';
+    }
+    if(estIsGuild){
+      // Leader-set demolition permission: the minimum rank allowed to remove buildings / tear up pavement.
+      var _isLeader = guildState.myRank==='leader';
+      var _curRole = guildDestroyMinRole();
+      var _roleLbl = { leader:'Leader only', officer:'Officers+', member:'Any member' };
+      html += '<div class="estate-action-row" style="margin-top:8px">';
+      html += '<div class="estate-action-info"><b>Demolition permission</b><br>Who may remove a building or tear up pavement on the guild estate.'+(_isLeader?'':' <span style="color:var(--text-faint)">Only the guild leader can change this.</span>')+'</div>';
+      html += '<div style="display:flex;gap:5px;flex-wrap:wrap;flex-shrink:0">';
+      ['leader','officer','member'].forEach(function(r){
+        var on = _curRole===r;
+        html += '<button class="action-btn" data-action="guildSetDestroyRole" data-role="'+r+'" style="width:auto;padding:6px 10px'+(on?';outline:2px solid var(--gold);outline-offset:1px':'')+'" '+((on||!_isLeader)?'disabled':'')+'>'+_roleLbl[r]+'</button>';
+      });
+      html += '</div></div>';
     }
     html += renderEstateJobStatus();
     html += '</div>';
@@ -15435,6 +15466,7 @@
     guildEstate.grid = data.grid || guildEstate.grid;
     guildEstate.jobs = (data.jobs || []).slice();
     guildEstate.expansionsPurchased = data.expansionsPurchased || 0;
+    guildEstate.destroyRole = data.destroyRole || 'officer'; // who may demolish on the guild estate
     if(data.edgesX && data.edgesY){ guildEstate.edgesX = data.edgesX; guildEstate.edgesY = data.edgesY; }
     else if(!guildEstate.edgesX){ var e = generateEstateEdges(); guildEstate.edgesX = e.edgesX; guildEstate.edgesY = e.edgesY; }
     guildEstate.version = version;
@@ -15478,7 +15510,7 @@
   function guildEstatePersist(onOk){
     if(!chatClient || guildEstate.status!=='ready' || !guildState.guild) return;
     var expected = guildEstate.version, gid = guildState.guild.id;
-    var blob = { grid:guildEstate.grid, jobs:guildEstate.jobs, expansionsPurchased:guildEstate.expansionsPurchased, edgesX:guildEstate.edgesX, edgesY:guildEstate.edgesY };
+    var blob = { grid:guildEstate.grid, jobs:guildEstate.jobs, expansionsPurchased:guildEstate.expansionsPurchased, edgesX:guildEstate.edgesX, edgesY:guildEstate.edgesY, destroyRole:guildEstate.destroyRole||'officer' };
     guildEstate.version = expected + 1;
     chatClient.from('guild_estate').update({ data:blob, version:guildEstate.version, updated_at:new Date().toISOString() }).eq('guild_id',gid).eq('version',expected).select('version').then(function(res){
       if(!res || res.error || !res.data || !res.data.length){
@@ -17649,6 +17681,13 @@
       estatePlaceWorkshop(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-workshop'));
     } else if(action==='estateRemoveWorkshop'){
       estateRemoveWorkshop(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
+    } else if(action==='guildSetDestroyRole'){
+      if(estIsGuild && guildState.myRank==='leader'){
+        guildEstate.destroyRole = btn.getAttribute('data-role');
+        guildEstatePersist();
+        addLog('Guild demolition permission set to: ' + guildDestroyMinRole() + '.', 'important');
+        render();
+      }
     } else if(action==='estateToggleCottageMenu'){
       estateCottageMenuOpen = !estateCottageMenuOpen;
     } else if(action==='estatePlaceCottage'){
@@ -18238,6 +18277,7 @@
       physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
       SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate,
+      guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
       fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, seedInfo:seedInfo,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,

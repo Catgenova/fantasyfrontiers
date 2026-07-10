@@ -478,6 +478,23 @@
     ok(typeof p === 'number' && p >= 0 && p <= 100, 'anySkillProgress is a 0-100 percentage');
   });
 
+  // ---- Guild estate: leader-set demolition permission (who may remove buildings / pavement) ----------
+  suite('guild demolition permission', function(){
+    eq(FF.GUILD_RANK_ORDER.leader, 3, 'rank order leader(3) > officer(2) > member(1)');
+    var GS = FF.guildState, GE = FF.guildEstate;
+    var savedRank = GS.myRank, savedRole = GE.destroyRole;
+    GE.destroyRole = 'officer';
+    GS.myRank = 'member';  ok(!FF.canDestroyGuildEstate(), 'member blocked when set to Officers+');
+    GS.myRank = 'officer'; ok(FF.canDestroyGuildEstate(), 'officer allowed when set to Officers+');
+    GS.myRank = 'leader';  ok(FF.canDestroyGuildEstate(), 'leader is always allowed');
+    GE.destroyRole = 'leader';
+    GS.myRank = 'officer'; ok(!FF.canDestroyGuildEstate(), 'officer blocked when set to Leader only');
+    GE.destroyRole = 'member';
+    GS.myRank = 'member';  ok(FF.canDestroyGuildEstate(), 'any member allowed when set to Any member');
+    GE.destroyRole = undefined; eq(FF.guildDestroyMinRole(), 'officer', 'defaults to Officers+');
+    GS.myRank = savedRank; GE.destroyRole = savedRole;
+  });
+
   // ---- Guild estate: assist a teammate's task ------------------------------------------
   suite('guild estate assist', function(){
     var ge = FF.guildEstate;
