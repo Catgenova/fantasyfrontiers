@@ -826,7 +826,8 @@
     // The butcher recipe now yields Fat/Tallow (fat_t<n>) alongside Meat and Hide.
     var bp = FF.ALL_CRAFT_RECIPES['butcher_process_t5'];
     ok(bp && bp.fatId === 'fat_t5' && bp.fatPhysique, 'butchering a t5 carcass can yield fat_t5');
-    ok(FF.ALL_SELLABLE['fat_t5'] && /Fat|Tallow|Grease|Lard|Wax/.test(FF.ALL_SELLABLE['fat_t5'].name), 'fat item is registered + sellable');
+    var fat5 = FF.ALL_SELLABLE && FF.ALL_SELLABLE['fat_t5'];
+    ok(fat5 && /Fat|Tallow|Grease|Lard|Wax/.test(fat5.name), 'fat item is registered + sellable');
     // Four new crafting skills, each a full 21-tier ladder.
     ['chandlery','woodcarving','glassblowing','cooperage'].forEach(function(c){
       ok(FF.CRAFTING_SKILLS[c], c + ' is a crafting skill');
