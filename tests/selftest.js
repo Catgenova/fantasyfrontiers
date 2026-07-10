@@ -755,6 +755,35 @@
     eq(FF.enemyChillSlowMult(none), 0, 'no chill -> no enemy slow');
   });
 
+  // ---- Gadgets: Salvaging -> Tinkering (Bombs) + Pyrotechnics (Flash Bombs) --------------------
+  suite('skills: salvaging / tinkering / pyrotechnics', function(){
+    ok(FF.GATHERING_SKILLS.salvaging, 'salvaging is a gathering skill');
+    ok(FF.CRAFTING_SKILLS.tinkering, 'tinkering is a crafting skill');
+    ok(FF.CRAFTING_SKILLS.pyrotechnics, 'pyrotechnics is a crafting skill');
+    eq(FF.GATHERING_SKILLS.salvaging.items.length, FF.TIER_COUNT, 'salvaging has 21 scrap tiers');
+    eq(FF.CRAFTING_SKILLS.tinkering.recipes.length, FF.TIER_COUNT, 'tinkering has 21 bomb tiers');
+    eq(FF.CRAFTING_SKILLS.pyrotechnics.recipes.length, FF.TIER_COUNT, 'pyrotechnics has 21 flash tiers');
+    eq(FF.ALL_GATHER_ITEMS['salvaging_t0'].name, 'Rusty Scrap', 'salvaging sifts Scrap');
+    // Tinkering bombs need scrap + metal (no glass bottle); Pyrotechnics needs powder + scrap.
+    var bomb5 = FF.ALL_CRAFT_RECIPES['bomb_t5'];
+    ok(bomb5.inputs['salvaging_t5'] && bomb5.inputs['metallurgy_t5'] && !bomb5.inputs['metallurgy_glass'], 'bomb = scrap + metal, no glass bottle');
+    var flash5 = FF.ALL_CRAFT_RECIPES['flash_t5'];
+    ok(flash5.inputs['powder_t5'] && flash5.inputs['salvaging_t5'], 'flash bomb = powder + scrap');
+    // Both are 5th/6th... two new combat-consumable lines.
+    ok(FF.POTION_TYPE_IDS.indexOf('bomb') !== -1 && FF.POTION_TYPE_IDS.indexOf('flash') !== -1, 'bomb + flash are combat-consumable lines');
+    eq(bomb5.potionType, 'bomb', 'bomb recipe carries potionType');
+    eq(flash5.potionType, 'flash', 'flash recipe carries potionType');
+    // Bomb: burst damage that scales and beats a Firebomb; Flash: stun chance that scales.
+    var b0 = FF.potionEffect('bomb_t0'), b20 = FF.potionEffect('bomb_t20');
+    ok(b0.type==='bomb' && b20.dmg > b0.dmg, 'bomb burst scales with tier');
+    ok(b20.dmg > FF.potionEffect('firebomb_t20').dmg, 'top Bomb hits harder than a top Firebomb');
+    var f0 = FF.potionEffect('flash_t0'), f20 = FF.potionEffect('flash_t20');
+    ok(f0.type==='flash' && f20.stun > f0.stun && f20.stun <= 0.20 + 1e-9, 'flash stun chance scales with tier (cap 20%)');
+    ok(/burst damage/.test(FF.potionEffectDesc('bomb_t10')), 'bomb describes its burst');
+    ok(/stun/.test(FF.potionEffectDesc('flash_t10')), 'flash describes its stun');
+    ok(FF.GATHER_PHYSIQUE.salvaging && FF.CRAFT_PHYSIQUE.tinkering && FF.CRAFT_PHYSIQUE.pyrotechnics, 'physique tables include the new skills');
+  });
+
   // ---- Inventory grid: rarity parsing for cell accents / detail tag ----------------------
   suite('inventory rarity', function(){
     eq(FF.itemRarityId('bodyarmor_chain_chest_t20_normal'), 'normal', 'normal suffix');
