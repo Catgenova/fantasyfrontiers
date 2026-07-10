@@ -2551,6 +2551,22 @@
     eq(FF.equippedEnchantTotals(st).critDamage, 150, 'enhanced +15 scales enchant totals x6');
   });
 
+  // ---- Improvement system: enhance (Stage 2) --------------------------------------------
+  suite('improvement: enhance', function(){
+    ok(typeof FF.enhanceItem === 'function' && typeof FF.enhanceSuccessChance === 'function', 'enhance exported');
+    near(FF.enhanceSuccessChance(0), 0.95, 'first enhance is 95%');
+    near(FF.enhanceSuccessChance(1), 0.90, 'second is 90%');
+    near(FF.enhanceSuccessChance(5), 0.70, '+5 -> 70%');
+    eq(FF.enhanceSuccessChance(20) >= 0.05, true, 'success chance floors at 5%');
+    // inscription planning (throwaway selftest inventory)
+    var s = FF._state, savedInv = s.inventory;
+    s.inventory = { inscription_t2:1, inscription_t4:5 };
+    ok(FF.planInscriptions(5, 1) === null, 'cannot plan when no inscription is tier5+');
+    var pl = FF.planInscriptions(2, 3);
+    ok(pl && pl.plan.inscription_t2===1 && pl.plan.inscription_t4===2 && pl.maxTier===4, 'plans tier2 first then higher');
+    s.inventory = savedInv;
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }

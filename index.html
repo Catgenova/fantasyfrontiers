@@ -8062,13 +8062,47 @@
     addLog('You equipped '+uniqueDisplayName(u)+'.','important'); saveGame(); render();
   }
   function unequipUnique(uid){ if(state.equippedMainhandUid===uid){ unequipMainhandAny(); addLog('Unequipped.','chronicle'); saveGame(); render(); } }
+  // Base-stat scaling for an equipped unique WEAPON: its base damage scales up to +500% at +15.
+  function mainhandEnhanceMult(){ var uid = state.equippedMainhandUid, u = uid && state.uniqueItems && state.uniqueItems[uid]; return u ? enhanceStatMult(u.enhance) : 1; }
+
+  // ---- Enhance (Stage 2) ----
+  // Success starts at 95% and drops 5% per level already reached (floor 5%). A failure DESTROYS the
+  // item. Cost = (current +level + 1) Inscriptions of tier >= the item's tier.
+  function enhanceSuccessChance(enhance){ return Math.max(0.05, 0.95 - 0.05*(enhance||0)); }
+  function planInscriptions(itemTier, count){
+    var plan = {}, need = count, maxTier = itemTier;
+    for(var t=itemTier; t<TIER_COUNT && need>0; t++){ var id='inscription_t'+t, have=state.inventory[id]||0; if(have<=0) continue; var take=Math.min(have,need); plan[id]=take; need-=take; if(t>maxTier) maxTier=t; }
+    return need>0 ? null : { plan:plan, maxTier:maxTier };
+  }
+  function enhanceItem(uid){
+    var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
+    if(u.enhance >= ENHANCE_MAX){ addLog('Already at the maximum +'+ENHANCE_MAX+'.','danger'); return; }
+    var cost = u.enhance + 1;
+    var planned = planInscriptions(u.tier, cost);
+    if(!planned){ addLog('You need '+cost+' Inscription'+(cost===1?'':'s')+' of tier '+(u.tier+1)+' or higher.','danger'); return; }
+    if(planned.maxTier>u.tier && state.enhanceWarnHiTier && !enhanceWarnArmed){ enhanceWarnArmed = true; render(); return; }
+    enhanceWarnArmed = false;
+    consumeInputs(planned.plan);
+    if(Math.random() < enhanceSuccessChance(u.enhance)){
+      u.enhance += 1; addLog(uniqueBaseName(u)+' was Enhanced to +'+u.enhance+'!','important');
+    } else {
+      addLog(uniqueBaseName(u)+' shattered during Enhancement and was destroyed!','danger');
+      if(state.equippedMainhandUid===uid) unequipMainhandAny();
+      if(improveSel===uid) improveSel = null;
+      improvePending = null;
+      removeUnique(uid);
+    }
+    saveGame(); render();
+  }
 
   // ---- Improvement UI state + actions ----
   var improveSel = null;        // selected item: a base equipment id OR a unique uid
   var improvePending = null;    // { uid, roll } awaiting placement when slots are full
   var improveWarnArmed = false; // higher-tier-crystal warning acknowledged for the next click
+  var enhanceWarnArmed = false; // higher-tier-inscription warning acknowledged for the next click
   function improveSelect(id){ improveSel = id; improvePending = null; improveWarnArmed = false; render(); }
   function improveToggleWarn(){ state.enchantWarnHiTier = !state.enchantWarnHiTier; improveWarnArmed = false; saveGame(); render(); }
+  function improveToggleEnhanceWarn(){ state.enhanceWarnHiTier = !state.enhanceWarnHiTier; enhanceWarnArmed = false; saveGame(); render(); }
   function improveEnchant(){
     if(improvePending) return;
     var sel = improveSel; if(!sel) return;
@@ -8130,6 +8164,18 @@
         if(improveWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No tier-'+(tier+1)+' crystals — this spends higher-tier ones. Click Enchant again to confirm.</div>';
         html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn" data-action="improveEnchant" style="width:auto;flex:0 0 auto;">Enchant ('+cost+')</button>';
         html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleWarn"'+(state.enchantWarnHiTier?' checked':'')+'> warn on higher-tier crystals</label></div>';
+      }
+      if(isU2){
+        var eLvl = u.enhance, ecost = eLvl+1, chance = Math.round(enhanceSuccessChance(eLvl)*100);
+        html += '<div class="guild-section-title" style="margin-top:12px;font-size:13px;">Enhance</div>';
+        html += '<div class="inputs-line">Current <b>+'+eLvl+'</b> / +'+ENHANCE_MAX+' — base &amp; enchant stats at <b style="color:var(--gold);">+'+Math.round((enhanceStatMult(eLvl)-1)*100)+'%</b>.</div>';
+        if(eLvl>=ENHANCE_MAX){ html += '<div class="lock-note">Maxed at +'+ENHANCE_MAX+'.</div>'; }
+        else {
+          html += '<div class="inputs-line">Next: <b>'+ecost+'</b> Inscription'+(ecost===1?'':'s')+' (tier '+(tier+1)+'+) · <b style="color:var(--gold);">'+chance+'%</b> success · <b style="color:var(--danger);">a failure destroys the item.</b></div>';
+          if(enhanceWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No tier-'+(tier+1)+' inscriptions — this spends higher-tier ones. Click Enhance again to confirm.</div>';
+          html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn stop" data-action="improveEnhance" data-uid="'+u.uid+'" style="width:auto;flex:0 0 auto;">Enhance ('+ecost+')</button>';
+          html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleEnhanceWarn"'+(state.enhanceWarnHiTier?' checked':'')+'> warn on higher-tier inscriptions</label></div>';
+        }
       }
       html += '</div>';
     }
@@ -8566,7 +8612,7 @@
 
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
     var wandAttuneMult = isWandAttack ? elementDmgMult(state, weaponStyle.element) : 1; // Elemental Attunement boosts a wand's element damage
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + enchantDamageBonus() * spellbladeEnchantMult()) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100)); // + equipped-item Weapon/All Damage enchants
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + enchantDamageBonus() * spellbladeEnchantMult()) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, and the mainhand's Enhance base-stat scaling
     dmgToMonster += Math.round(enchTot.flatDamage||0); // + equipped-item Flat Damage enchants
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
@@ -18076,6 +18122,10 @@
       equipUnique(btn.getAttribute('data-uid'));
     } else if(action==='improveUnequip'){
       unequipUnique(btn.getAttribute('data-uid'));
+    } else if(action==='improveEnhance'){
+      enhanceItem(btn.getAttribute('data-uid'));
+    } else if(action==='improveToggleEnhanceWarn'){
+      improveToggleEnhanceWarn();
     } else if(action==='tierStep'){
       var _tt = TIER_STEP_TARGETS[btn.getAttribute('data-tier-target')];
       var _vals = (btn.getAttribute('data-tier-values')||'').split(',').map(function(v){ return parseInt(v,10); }).filter(function(v){ return !isNaN(v); });
@@ -18809,6 +18859,7 @@
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
       parseImprovable:parseImprovable, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, uniqueIsEquipped:uniqueIsEquipped,
+      enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
