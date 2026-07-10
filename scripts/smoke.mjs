@@ -40,6 +40,8 @@ try {
     .catch(() => null);
   const st = await page.evaluate(() => window.__FF_SELFTEST || null);
   console.log("smoke: selftest =", JSON.stringify(st));
+  const dbg = await page.evaluate(() => { const F = window.__FF; if (!F || !F.CRAFT_PHYSIQUE) return "no FF"; const has = (k) => (F.CRAFT_PHYSIQUE[k] || []).some((p) => p[0] === "logic"); return { cooking: has("cooking"), metallurgy: has("metallurgy"), weaponsmithing: has("weaponsmithing"), refLen: (F.REFINING_SKILL_IDS || []).length, metInRef: (F.REFINING_SKILL_IDS || []).indexOf("metallurgy") }; });
+  console.log("smoke: logic-dbg =", JSON.stringify(dbg));
   if (!st || st.error || st.failed > 0 || !(st.passed > 0)) { console.error("smoke: SELFTEST FAILED"); failed = true; }
 
   // 2) Normal boot (no ?selftest): the shell renders and nothing throws.
