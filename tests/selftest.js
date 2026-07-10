@@ -652,7 +652,7 @@
     eq(FF.recipeTier({tierIndex:7}, 'cooking_t3'), 7, 'recipeTier prefers explicit tierIndex');
     eq(FF.recipeTier({}, 'stonecutting_t5'), 5, 'recipeTier falls back to item id tier');
     eq(FF.recipeTier({id:'twine_t2'}, null), 2, 'recipeTier falls back to recipe.id tier');
-    eq(FF.recipeTier({}, 'metallurgy_glass'), 0, 'recipeTier no-tier -> 0');
+    eq(FF.recipeTier({}, 'fletching_shaft'), 0, 'recipeTier no-tier -> 0');
     // A standard carpentry recipe at t4 -> logic (and every associated physique) gains 5.
     eq(FF.physTierPairs([['grossMotor',2],['sleightOfHand',1],['logic',1]], FF.recipeTier({}, 'carpentry_t4'))[2][1], 5, 'carpentry t4 -> logic gains 5');
   });
@@ -1178,9 +1178,11 @@
     eq(Math.round(FF.potionEffect('catalyst_t0').fam*100), 5, 'catalyst t0 = +5% familiar');
     eq(Math.round(FF.potionEffect('catalyst_t20').fam*100), 110, 'catalyst t20 = +110% familiar');
     eq(FF.potionEffect('mining_t0'), null, 'non-potion id -> null');
-    // every alchemy recipe requires a glass bottle + covers its 4 types x tiers (enchant is a separate Enchanting line)
+    // every alchemy recipe requires the matching-tier Glassblowing glass (Metallurgy's flat Glass
+    // Bottle side-recipe is retired) + covers its 4 types x tiers (enchant is a separate Enchanting line)
     var alc = FF.CRAFTING_SKILLS_ALCHEMY.recipes;
-    ok(alc.every(function(r){ return r.inputs['metallurgy_glass'] === 1; }), 'every alchemy recipe needs 1 glass bottle');
+    ok(alc.every(function(r){ return !r.inputs['metallurgy_glass']; }), 'no alchemy recipe still uses the retired metallurgy_glass');
+    ok(alc.every(function(r){ var m=/_t(\d+)$/.exec(r.id); return m && r.inputs['glassblowing_t'+m[1]] === 1; }), 'every alchemy recipe needs 1 tier-matched Glassblowing glass');
     ['toxin','firebomb','elixir','catalyst'].forEach(function(t){
       ok(alc.some(function(r){ return r.id===t+'_t0'; }) && alc.some(function(r){ return r.id===t+'_t20'; }), t+' alchemy line spans t0..t20');
     });

@@ -2098,19 +2098,8 @@
             inputs: inputs
           });
         }
-        // A t0-level side-recipe: smelt Sand (Digging's tier1) into a Glass Bottle -- the vessel
-        // every Alchemy potion is bottled in. Placed at the front of the metallurgy cards rather
-        // than occupying one of its 21 tier slots.
-        list.unshift({
-          id:'metallurgy_glass',
-          name:'Glass Bottle',
-          levelReq: 1,
-          xp: 50,
-          time: tierTime(7,0.3,0),
-          sell: tierSell(6,0),
-          icon: svgIcon('potion','#cfe8ea'),
-          inputs: { digging_t0: 2 }
-        });
+        // (Retired) Metallurgy no longer smelts Sand into Glass Bottles -- Alchemy's vessels now come
+        // from the Glassblowing skill (tier-matched glass goods). See the alchemy recipes below.
         return list;
       })() },
     roasting: { label:'Roasting', icon:svgIcon('skewer','var(--sub-roasting)'), color:'var(--sub-roasting)',
@@ -2170,8 +2159,8 @@
     alchemy: { label:'Alchemy', icon:svgIcon('potion','#6a8a3a'),
       // Four combat-potion lines -- Toxins (poison the enemy), Firebombs (flat damage), Elixirs
       // (+crit damage), Catalysts (+familiar spell power). Each is ground from Powder (Foraging's
-      // rare side-drop) + Herbalism and bottled in a Glass Bottle, then used in the Battle tab
-      // (10 charges, spent one per attack). Named after the reagent powder, like the old Toxins.
+      // rare side-drop) + Herbalism and bottled in the matching-tier Glassblowing glass good, then
+      // used in the Battle tab (10 charges, spent one per attack). Named after the reagent powder.
       recipes: (function(){
         var list = [];
         var POTION_LINES = [
@@ -2190,7 +2179,7 @@
               time: tierTime(7,0.3,i),
               sell: tierSell(16,i),
               icon: svgIcon(line.shape, POWDER_COLORS[i]),
-              inputs: (function(){ var o={}; o['powder_t'+i]=2; o['herbalism_t'+i]=1; o['metallurgy_glass']=1; return o; })(),
+              inputs: (function(){ var o={}; o['powder_t'+i]=2; o['herbalism_t'+i]=1; o['glassblowing_t'+i]=1; return o; })(),
               potionType: line.type
             });
           }
@@ -9462,6 +9451,11 @@
             var _oldFat = state.inventory['trapping_t'+_mi];
             if(_oldFat){ state.inventory['fat_t'+_mi] = (state.inventory['fat_t'+_mi]||0) + _oldFat; delete state.inventory['trapping_t'+_mi]; }
           }
+          // Metallurgy's Sand->Glass Bottle side-recipe was retired; Alchemy now bottles in tier-matched
+          // Glassblowing goods. Fold any legacy metallurgy_glass stock into glassblowing_t3 (the "Glass
+          // Bottle" tier) so old saves keep their vessels instead of stranding an orphan item id.
+          var _oldGlass = state.inventory['metallurgy_glass'];
+          if(_oldGlass){ state.inventory['glassblowing_t3'] = (state.inventory['glassblowing_t3']||0) + _oldGlass; delete state.inventory['metallurgy_glass']; }
           // Server-authoritative wallet anchor: lifetime gold received. Seed from current gold for
           // legacy saves (past earnings aren't recorded, so the anchor starts at today's balance),
           // and never let it drop below the current balance.
@@ -9631,7 +9625,7 @@
   // is swapped in each time the marquee completes a pass. <b> highlights the key term.
   var TICKER_TIPS = [
     "<b>Logic:</b> every 10 levels earned in Logic grants one extra active craft slot — train it by refining materials!",
-    "<b>Sand</b> you dig smelts into Glass Bottles for Alchemy potions and fires into Crucibles in Pottery. Dig long enough and you'll turn up Muddy Artifacts to clean off in Archaeology.",
+    "<b>Sand</b> you dig fires into Crucibles in Pottery. Dig long enough and you'll turn up Muddy Artifacts to clean off in Archaeology.",
     "<b>Classes</b> aren't unlocked, they're worn: equip a full matching gear set (Cloth robes + a Staff = Summoner) and its passives switch on. Swap a piece out and it goes dormant.",
     "Finding a <b>familiar</b> sets off a server-wide +50% EXP buff for everyone for 5 minutes — and registering a new account triggers a full hour.",
     "A <b>Staff</b> deals no damage — it grants Block and extra familiar slots so your summoned Companions do the fighting for you.",
@@ -9658,7 +9652,7 @@
   ];
   // 100 more tips, shown at random alongside the first set.
   TICKER_TIPS = TICKER_TIPS.concat([
-    "<b>Digging</b> turns up Sand, Soil, and Clay — the raw materials behind Pottery, Masonry, and Glassblowing.",
+    "<b>Digging</b> turns up Sand, Soil, and Clay — the raw materials behind Pottery and Masonry.",
     "<b>Fishing</b> can snag a Treasure Chest on a cast that comes up empty. Even a whiff can pay off.",
     "<b>Mining</b> yields ore for Metallurgy, plus the odd Coal and Gem. A better Pickaxe finds more.",
     "<b>Forestry</b> logs feed Carpentry, Bowyer, and Fletching — the whole wooden supply chain starts with a tree.",
@@ -16806,10 +16800,10 @@
     tapping: 'Tap trees for Sap and Resin, from Birch Sap up to Eternal Amber -- the varnish Woodcarving finishes its carvings with.',
     spelunking: 'Delve caves for Minerals, from Cave Salt up to Deepheart Crystal -- the raw stock Glassblowing melts into Glass.',
     carpentry: 'Cut Logs into Planks.',
-    metallurgy: 'Smelt Ore into Bars and Alloys, plus a side-recipe for Glass Bottles.',
+    metallurgy: 'Smelt Ore into Bars and Alloys.',
     roasting: 'Cook raw Fish and Meat into a quick, portable snack.',
     cooking: 'Combine Roasted Meat, Herbs, and Foraged Berries into a full Meal.',
-    alchemy: 'Bottle Powder and Herbs into combat Potions -- Toxins, Firebombs, Elixirs, and Catalysts (each needs a Glass Bottle).',
+    alchemy: 'Bottle Powder and Herbs into combat Potions -- Toxins, Firebombs, Elixirs, and Catalysts (each needs the matching-tier Glassblowing glass).',
     bowyer: 'Craft Bows from Logs.',
     fletching: 'Cut Shafts from Logs, then fletch them with Ingots into Arrows.',
     baking: 'Turn Grain into Dough, then Dough and Berries into Pies.',
@@ -16834,7 +16828,7 @@
     goldsmithing: 'Cast a Metallurgy ingot in a Pottery Crucible into a Setting -- the metal base Rings and Amulets now seat their gem in.',
     chandlery: 'Render Butchering\'s Fat &amp; Tallow into Candles, from Tallow Candle up to Godflame Candle.',
     woodcarving: 'Carve Carpentry Planks, varnished with Tapping\'s Resin, into decorative goods from Whittled Charm up to Eternal Idol.',
-    glassblowing: 'Melt Spelunking Minerals over coal and blow them into Glass goods, from Glass Bead up to Eternal Crystal.',
+    glassblowing: 'Melt Spelunking Minerals over coal and blow them into Glass goods, from Glass Bead up to Eternal Crystal -- the tier-matched vessels Alchemy bottles its potions in.',
     cooperage: 'Bind Carpentry Planks with a Metallurgy ingot band into Barrels and Casks, from Small Pail up to Eternal Cask.',
     fertilizer: 'Refine a Fishing catch with equal-tier Digging soil into Fertilizer. Apply it to a growing crop of the same tier to double that plot\'s harvest.',
     tanning: 'Cure Butchering\'s raw Hide into Leather -- the material Leatherworking\'s armour now requires.',
