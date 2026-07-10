@@ -666,6 +666,29 @@
     ok(FF.CRAFT_PHYSIQUE.tanning && FF.CRAFT_PHYSIQUE.weaving, 'physique tables include the new skills');
   });
 
+  // ---- Refinement layer: Pottery (clay->Crucible) + Goldsmithing (ingot+Crucible->Setting) ------
+  suite('skills: pottery / goldsmithing refinement', function(){
+    ok(FF.CRAFTING_SKILLS.pottery, 'pottery is a crafting skill');
+    ok(FF.CRAFTING_SKILLS.goldsmithing, 'goldsmithing is a crafting skill');
+    eq(FF.CRAFTING_SKILLS.pottery.recipes.length, FF.TIER_COUNT, 'pottery has 21 crucible tiers');
+    eq(FF.CRAFTING_SKILLS.goldsmithing.recipes.length, FF.TIER_COUNT, 'goldsmithing has 21 setting tiers');
+    // Pottery fires Digging clay 1:1 into a Crucible.
+    var cru5 = FF.ALL_CRAFT_RECIPES['pottery_t5'];
+    eq(cru5.inputs['digging_t5'], 1, 'pottery fires Digging clay 1:1');
+    // Goldsmithing casts a Metallurgy ingot inside a matching-tier Crucible into a Setting.
+    var set5 = FF.ALL_CRAFT_RECIPES['goldsmithing_t5'];
+    eq(set5.inputs['metallurgy_t5'], 1, 'goldsmithing casts one matching ingot');
+    eq(set5.inputs['pottery_t5'], 1, 'goldsmithing consumes one matching Crucible');
+    // The chain is inserted: rings and amulets now seat their gem in a Setting.
+    var ring5 = FF.getRingTierData('fire', 5).inputs;
+    eq(ring5['goldsmithing_t5'], 1, 'rings now require a matching Setting');
+    var am5 = FF.getAmuletTierData(5).inputs;
+    eq(am5['goldsmithing_t5'], 1, 'amulets now require a matching Setting');
+    // The gem/twine part of the recipe is untouched (Setting is additive, not a replacement).
+    ok(ring5['twine_t5'] === 3 && ring5['digging_t5'] == null, 'ring keeps its Twine and does not eat raw clay directly');
+    ok(FF.CRAFT_PHYSIQUE.pottery && FF.CRAFT_PHYSIQUE.goldsmithing, 'physique tables include the new skills');
+  });
+
   // ---- Knowledge vertical: Papermaking -> Bookbinding + the Tome (work-speed) buff --------------
   suite('skills: papermaking / bookbinding', function(){
     ok(FF.CRAFTING_SKILLS.papermaking, 'papermaking is a crafting skill');

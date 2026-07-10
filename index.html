@@ -1610,6 +1610,15 @@
   var ESSENCE_ICONS = ESSENCE_COLORS.map(function(c){ return svgIcon('dust', c); });
   var SCROLL_NAMES = ['Warding Scrap','Minor Sigil','Warding Note','Sigil of Guard','Rune Scroll','Aegis Sigil','Greater Ward','Runed Tablet','Sigil of Aegis','Warding Codex','Astral Sigil','Guardian Scroll','Celestial Ward','Runic Aegis','Sigil of Protection','Empyreal Ward','Cosmic Sigil','Aegis of Ages','Primordial Ward','Eternal Sigil','Ward of the Gods'];
 
+  // ---- Pottery + Goldsmithing: the "refinement" slice for the jewelry chain -----------------------
+  // Pottery fires Digging's clay into a 21-tier Crucible ladder (1:1); Goldsmithing casts a Metallurgy
+  // ingot inside that Crucible into a matching-tier Setting. Rings and Amulets now require a Setting to
+  // seat their gem -- the same "deepen an existing chain with a refinement step" move as Tanning/Weaving.
+  var POTTERY_NAMES = ['Sand Crucible','Moss Crucible','Mulch Crucible','Compost Crucible','Earthen Crucible','Terracotta Crucible','Redware Crucible','Stoneware Crucible','Loam Crucible','Silt Crucible','Kiln Crucible','Firebrick Crucible','Fen Crucible','Marsh Crucible','Mire Crucible','Marl Crucible','Porcelain Crucible','Graphite Crucible','Alumina Crucible','Fireclay Crucible','Vitreous Crucible'];
+  var POTTERY_COLORS = _rampColors([0xc4,0x8a,0x5a], [0xe8,0xe0,0xd0]);   // terracotta -> glazed porcelain
+  var POTTERY_ICONS = POTTERY_COLORS.map(function(c){ return svgIcon('urn', c); });
+  var GOLDSMITH_COLORS = _rampColors([0x8a,0x6a,0x3a], [0xf0,0xd8,0x7a]);   // bronze -> bright gold
+
   // ---- Mining: 14 ore tiers + 7 stone tiers interleaved across the 21-tier ladder ----
   // Stones sit at tier positions 2,5,8,11,14,17,20 (1-indexed) -- everything else is ore.
   var MINING_STONE_INDICES = [1,4,7,10,13,16,19];
@@ -2483,6 +2492,30 @@
         }
         return list;
       })() },
+    pottery: { label:'Pottery', icon:svgIcon('urn','#c4885a'),
+      // Refinement step: fire Digging's clay into a Crucible (1:1). Goldsmithing seats a molten ingot
+      // in this Crucible to cast a jewelry Setting -- the base of the deepened ring/amulet chain.
+      recipes: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({
+            id:'pottery_t'+i,
+            name: POTTERY_NAMES[i],
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(11,i),
+            time: tierTime(7,0.3,i),
+            sell: tierSell(4,i),
+            icon: POTTERY_ICONS[i],
+            inputs: tierInput('digging',1)(i)
+          });
+        }
+        return list;
+      })() },
+    goldsmithing: { label:'Goldsmithing', icon:svgIcon('ring','#d8b048'),
+      // Refinement step: cast a Metallurgy ingot inside a Pottery Crucible into a Setting. Rings and
+      // Amulets now seat their gem in this Setting -- the metalwork counterpart to Tanning/Weaving.
+      // Recipes are built after METAL_TIER_NAMES exists (see below), like Fletching's arrows.
+      recipes: [] },
     papermaking: { label:'Papermaking', icon:svgIcon('tabard','#e8dcc0'),
       // Pulp Forestry logs into Paper -- the base Bookbinding needs.
       recipes: (function(){
@@ -2594,6 +2627,28 @@
     });
     return names;
   })();
+  // Goldsmithing Settings: 21 tiers, each named after its ingot (Copper Setting, Bronze Setting, ...).
+  // Every tier casts 1 matching Ingot + 1 matching-tier Crucible into 1 Setting. Built here, after
+  // METAL_TIER_NAMES exists, exactly like Fletching's arrows.
+  CRAFTING_SKILLS.goldsmithing.recipes = (function(){
+    var list = [];
+    for(var i=0;i<TIER_COUNT;i++){
+      var inputs = {};
+      inputs['metallurgy_t'+i] = 1;
+      inputs['pottery_t'+i] = 1;
+      list.push({
+        id:'goldsmithing_t'+i,
+        name: METAL_TIER_NAMES[i] + ' Setting',
+        levelReq: TIER_LEVELS[i],
+        xp: tierXp(13,i),
+        time: tierTime(7,0.3,i),
+        sell: tierSell(5,i),
+        icon: svgIcon('ring',GOLDSMITH_COLORS[i]),
+        inputs: inputs
+      });
+    }
+    return list;
+  })();
   // Arrows: 20 tiers, each named after its ingot (Bronze through Tungsten -- Copper is
   // skipped as too soft for arrowheads). Every tier needs 15 Shafts + 1 matching Ingot
   // and produces 15 Arrows at once.
@@ -2666,7 +2721,8 @@
     jewelrycrafting:"Jeweler's Loupe", runesmithing:'Rune Chisel', arcanism:'Arcane Focus',
     brewing:'Brewing Paddle', confectionery:'Candy Thermometer', gemcutting:'Gem Facet Wheel', enchanting:'Enchanting Rod',
     dairy:'Churn', gastronomy:"Chef's Torch", apothecary:'Distillation Kit', tanning:'Tanning Knife', weaving:'Loom', papermaking:'Paper Press', bookbinding:'Bookbinding Press',
-    tinkering:'Tinkerer\'s Wrench', pyrotechnics:'Fuse Crimper', inscription:'Inscribing Stylus'
+    tinkering:'Tinkerer\'s Wrench', pyrotechnics:'Fuse Crimper', inscription:'Inscribing Stylus',
+    pottery:'Potter\'s Wheel', goldsmithing:'Jeweler\'s Loupe'
   };
   var CRAFT_TOOL_SPEED = [];
   var CRAFT_TOOL_SUCCESS = [];
@@ -3418,7 +3474,9 @@
     bookbinding:    [['fineMotor',2],['solving',1],['criticalThinking',1],['logic',1]],
     tinkering:      [['fineMotor',2],['solving',1],['criticalThinking',1],['logic',1]],
     pyrotechnics:   [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]],
-    inscription:    [['fineMotor',2],['criticalThinking',1],['logic',1]]
+    inscription:    [['fineMotor',2],['criticalThinking',1],['logic',1]],
+    pottery:        [['grossMotor',2],['sleightOfHand',1],['logic',1]],
+    goldsmithing:   [['fineMotor',2],['sleightOfHand',1],['logic',1]]
   };;
   // Physique XP from a gather/craft task scales with the item's tier: each associated physique
   // gains (tier+1) XP -- 1 at t0 up to 21 at t20 (replaces the old fixed per-physique weights).
@@ -4074,6 +4132,8 @@
     tinkering:      { name:'Cog',    icon:svgIcon('gear','#c8853a'), spells:[hitSpell('Shrapnel Blast','piercing',15), buffSpell('Overclock','haste',0.18,8), buffSpell('Precision Bore','dmgPierce',0.3,8), armorSpell('Bolted Plate',1.6,6)] },
     pyrotechnics:   { name:'Sparky', icon:svgIcon('flame','#e8a02a'), spells:[buffSpell('Powder Keg','firebomb',0.5,10), hitSpell('Firework Barrage','void',11), weakenSpell('Blinding Flash',0.3,8), buffSpell('Fuse Rush','critChance',0.12,8)] },
     inscription:    { name:'Glyph',  icon:svgIcon('corespiral','#7a5aa8'), spells:[armorSpell('Ward Sigil',1.7,6), buffSpell('Runic Guard','block',0.16,8), hitSpell('Rune Script','void',13), regenSpell('Sigil Mend',4,6)] },
+    pottery:        { name:'Kiln',   icon:svgIcon('urn','#c4885a'), spells:[hitSpell('Shatterware','blunt',14), armorSpell('Kiln-Fired Ward',1.6,6), buffSpell('Tempered Clay','resistBlunt',0.3,8), regenSpell('Slip Cast',4,6)] },
+    goldsmithing:   { name:'Bezel',  icon:svgIcon('ring','#d8b048'), spells:[buffSpell('Dazzling Gleam','critChance',0.12,8), buffSpell('Gilded Edge','critDmg',0.34,8), siphonSpell('Golden Greed',13), armorSpell('Bezel Guard',1.6,6)] },
     tanning:        { name:'Suede',  icon:svgIcon('hide','#8a6a42'), spells:[hitSpell('Rawhide Lash','slashing',13), armorSpell('Cured Hide',1.6,6), buffSpell('Supple Step','dodge',0.14,8), regenSpell("Tanner's Rest",4,6)] },
     weaving:        { name:'Loom',   icon:svgIcon('spool','#c8b088'), spells:[slowSpell('Snare Weave',0.4,10), armorSpell('Woven Ward',1.7,6), buffSpell('Tight Weave','block',0.15,8), buffSpell('Spun Speed','haste',0.16,8)] },
     papermaking:    { name:'Sheet',  icon:svgIcon('tabard','#e8dcc0'), spells:[hitSpell('Paper Cut','slashing',12), buffSpell('Crisp Edge','critChance',0.11,8), armorSpell('Pulp Ward',1.5,6), regenSpell('Fresh Sheet',4,6)] },
@@ -4177,6 +4237,8 @@
     tinkering:      [ hitSpell('Shrapnel Blast','piercing',15), buffSpell('Overclock','haste',0.18,8), buffSpell('Precision Bore','dmgPierce',0.3,8), armorSpell('Bolted Plate',1.6,6) ],
     pyrotechnics:   [ buffSpell('Powder Keg','firebomb',0.5,10), hitSpell('Firework Barrage','void',11), weakenSpell('Blinding Flash',0.3,8), buffSpell('Fuse Rush','critChance',0.12,8) ],
     inscription:    [ armorSpell('Ward Sigil',1.7,6), buffSpell('Runic Guard','block',0.16,8), hitSpell('Rune Script','void',13), regenSpell('Sigil Mend',4,6) ],
+    pottery:        [ hitSpell('Shatterware','blunt',14), armorSpell('Kiln-Fired Ward',1.6,6), buffSpell('Tempered Clay','resistBlunt',0.3,8), regenSpell('Slip Cast',4,6) ],
+    goldsmithing:   [ buffSpell('Dazzling Gleam','critChance',0.12,8), buffSpell('Gilded Edge','critDmg',0.34,8), siphonSpell('Golden Greed',13), armorSpell('Bezel Guard',1.6,6) ],
     tanning:        [ hitSpell('Rawhide Lash','slashing',13), armorSpell('Cured Hide',1.6,6), buffSpell('Supple Step','dodge',0.14,8), regenSpell("Tanner's Rest",4,6) ],
     weaving:        [ slowSpell('Snare Weave',0.4,10), armorSpell('Woven Ward',1.7,6), buffSpell('Tight Weave','block',0.15,8), buffSpell('Spun Speed','haste',0.16,8) ],
     papermaking:    [ hitSpell('Paper Cut','slashing',12), buffSpell('Crisp Edge','critChance',0.11,8), armorSpell('Pulp Ward',1.5,6), regenSpell('Fresh Sheet',4,6) ],
@@ -4240,7 +4302,7 @@
     digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth', ranching:'earth', mycology:'dark', salvaging:'earth', essence:'light',
     // Crafting
     carpentry:'earth', metallurgy:'fire', roasting:'fire', cooking:'water', alchemy:'water', bowyer:'earth', fletching:'earth', baking:'fire',
-    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark', tanning:'earth', weaving:'light', papermaking:'earth', bookbinding:'light', tinkering:'earth', pyrotechnics:'fire', inscription:'light',
+    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark', tanning:'earth', weaving:'light', papermaking:'earth', bookbinding:'light', tinkering:'earth', pyrotechnics:'fire', inscription:'light', pottery:'fire', goldsmithing:'light',
     archaeology:'dark', blacksmithing:'fire', weaponsmithing:'fire', armorsmithing:'earth', shieldsmithing:'earth', runesmithing:'light', arcanism:'light',
     // Farming
     farming:'earth',
@@ -4291,6 +4353,7 @@
     mycology:{s:'spice',c:'#8a5aa8',ear:'round'}, apothecary:{s:'droplet',c:'#6a8a3a',ear:'horn'},
     salvaging:{s:'gear',c:'#9a8a6a',ear:'horn'}, tinkering:{s:'gear',c:'#c8853a',ear:'antenna'}, pyrotechnics:{s:'flame',c:'#e8a02a',ear:'horn'},
     essence:{s:'starburst',c:'#7a8ac8',ear:'antenna'}, inscription:{s:'corespiral',c:'#7a5aa8',ear:'horn'},
+    pottery:{s:'urn',c:'#c4885a',ear:'round'}, goldsmithing:{s:'ring',c:'#d8b048',ear:'horn'},
     tanning:{s:'hide',c:'#8a6a42',ear:'round'}, weaving:{s:'spool',c:'#c8b088',ear:'cat'},
     papermaking:{s:'tabard',c:'#e8dcc0',ear:'round'}, bookbinding:{s:'brain',c:'#7a5aa8',ear:'horn'},
     carpentry:{s:'plank',c:'#a07a44',ear:'cat'}, metallurgy:{s:'ingot',c:'#c85a2a',ear:'horn'},
@@ -5880,6 +5943,7 @@
     var inputs = {};
     inputs['twine_t'+tierIndex] = 3;
     inputs[getGemForTier(tierIndex)] = 1;
+    inputs['goldsmithing_t'+tierIndex] = 1;
     var out = {
       tierIndex: tierIndex,
       name: TIER_NAMES[tierIndex] + ' ' + rt.name,
@@ -5922,6 +5986,7 @@
     var inputs = {};
     inputs['twine_t'+tierIndex] = 3;
     inputs[getGemForTier(tierIndex)] = 1;
+    inputs['goldsmithing_t'+tierIndex] = 1;
     return {
       tierIndex: tierIndex,
       name: TIER_NAMES[tierIndex] + ' Amulet',
@@ -6803,7 +6868,7 @@
     OFFHAND_STYLE_IDS.forEach(function(id){ offhandRarities[id] = 'normal'; });
     var xpObj = {
       digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0, ranching:0, mycology:0, salvaging:0, essence:0,
-      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0, tanning:0, weaving:0, papermaking:0, bookbinding:0, tinkering:0, pyrotechnics:0, inscription:0,
+      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0, tanning:0, weaving:0, papermaking:0, bookbinding:0, tinkering:0, pyrotechnics:0, inscription:0, pottery:0, goldsmithing:0,
       stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, arcanism:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
       shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0, wands:0, staves:0, scepters:0,
@@ -12128,6 +12193,8 @@
     tinkering:{roof:'flat', chimney:true, accent:'anvil'},
     pyrotechnics:{roof:'peak', chimney:true, accent:'flask'},
     inscription:{roof:'cone', accent:'urn'},
+    pottery:{roof:'cone', chimney:true, accent:'pot'},
+    goldsmithing:{roof:'peak', chimney:true, accent:'gem'},
     tanning:{roof:'peak', accent:'hide'},
     weaving:{roof:'gable', accent:'spool'},
     papermaking:{roof:'flat', accent:'block'},
@@ -15424,6 +15491,8 @@
     tinkering: 'Build Scrap and metal into Bombs -- ready one in Battle to burst the enemy for heavy damage on every hit.',
     pyrotechnics: 'Pack Powder and scrap into Flash Bombs -- ready one in Battle for a chance to stun the enemy on every hit.',
     inscription: 'Inscribe Essence and Paper into Scrolls. Reading a Scroll wards you, reducing all incoming damage for a while.',
+    pottery: 'Fire Digging\'s clay into Crucibles -- the vessel Goldsmithing casts jewelry Settings in.',
+    goldsmithing: 'Cast a Metallurgy ingot in a Pottery Crucible into a Setting -- the metal base Rings and Amulets now seat their gem in.',
     tanning: 'Cure Butchering\'s raw Hide into Leather -- the material Leatherworking\'s armour now requires.',
     weaving: 'Weave Farming\'s Fiber into Cloth -- the material Tailoring\'s cloth armour now requires.',
     papermaking: 'Pulp Forestry logs into Paper -- the base for Bookbinding.',
@@ -17573,7 +17642,7 @@
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax,
-      RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS,
+      RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS,
       BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
