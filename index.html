@@ -1547,6 +1547,25 @@
   var PROSPECTING_ICONS = PROSPECTING_COLORS.map(function(c){ return svgIcon('block', c); });   // uncut = rough block
   var CUTGEM_ICONS = PROSPECTING_COLORS.map(function(c){ return svgIcon('gem', c); });           // cut = faceted gem
 
+  // ---- Ranching (gathering) -> Dairy (refine) -> Gastronomy (crafting): the "husbandry" slice ----
+  // Ranching milks a 21-tier livestock ladder, Dairy churns each Milk into a Cheese, and Gastronomy
+  // plates Cheese + a Botany spice + a Cooking Meal into a Feast -- the game's best food, which also
+  // grants a timed combat-damage buff (a fresh buff channel, separate from Teas and combat potions).
+  var RANCH_ANIMALS = ['Goat','Cow','Sheep','Buffalo','Yak','Camel','Reindeer','Donkey','Mare','Zebu','Llama','Moose','Bison','Elk','Ibex','Aurochs','Musk Ox','Unicorn','Griffon','Pegasus','Dragon'];
+  var RANCH_NAMES = RANCH_ANIMALS.map(function(a){ return a+' Milk'; });
+  var CHEESE_NAMES = RANCH_ANIMALS.map(function(a){ return a+' Cheese'; });
+  // Cream -> butter-gold ramp across the tiers.
+  var RANCH_COLORS = (function(){
+    function lerp(a,b,t){ return Math.round(a+(b-a)*t); }
+    function hex(n){ var s=n.toString(16); return s.length<2?'0'+s:s; }
+    var lo=[0xf6,0xef,0xe0], hi=[0xcf,0xa8,0x60], out=[];
+    for(var i=0;i<TIER_COUNT;i++){ var t=i/(TIER_COUNT-1); out.push('#'+hex(lerp(lo[0],hi[0],t))+hex(lerp(lo[1],hi[1],t))+hex(lerp(lo[2],hi[2],t))); }
+    return out;
+  })();
+  var RANCH_ICONS = RANCH_COLORS.map(function(c){ return svgIcon('flask', c); });   // milk jug
+  var CHEESE_ICONS = RANCH_COLORS.map(function(c){ return svgIcon('block', c); });  // cheese block
+  var FEAST_NAMES = ['Simple Supper','Farmhouse Spread','Cheese Board','Harvest Platter','Roast Feast','Hearty Banquet','Spiced Roast','Grand Platter','Noble Spread','Royal Table','Gilded Feast','Baronial Banquet','Ducal Spread','Kingly Platter','Imperial Feast','Celestial Table','Mythic Banquet','Ambrosial Spread','Divine Feast','Feast of Legends','Eternal Banquet'];
+
   // ---- Mining: 14 ore tiers + 7 stone tiers interleaved across the 21-tier ladder ----
   // Stones sit at tier positions 2,5,8,11,14,17,20 (1-indexed) -- everything else is ore.
   var MINING_STONE_INDICES = [1,4,7,10,13,16,19];
@@ -1774,6 +1793,22 @@
             time: tierTime(5,0.3,i),
             sell: tierSell(4,i),
             icon: PROSPECTING_ICONS[i]
+          });
+        }
+        return list;
+      })() },
+    ranching: { label:'Ranching', icon:svgIcon('flask','#e8dcc0'),
+      items: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({
+            id:'ranching_t'+i,
+            name: RANCH_NAMES[i],
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(10,i),
+            time: tierTime(5,0.3,i),
+            sell: tierSell(3,i),
+            icon: RANCH_ICONS[i]
           });
         }
         return list;
@@ -2191,6 +2226,51 @@
         }
         return list;
       })() },
+    dairy: { label:'Dairy', icon:svgIcon('block','#e8c84a'),
+      // Churn Ranching's Milk into Cheese -- the base Gastronomy plates into Feasts.
+      recipes: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({
+            id:'dairy_t'+i,
+            name: CHEESE_NAMES[i],
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(12,i),
+            time: tierTime(7,0.3,i),
+            sell: tierSell(8,i),
+            icon: CHEESE_ICONS[i],
+            inputs: tierInput('ranching',2)(i)
+          });
+        }
+        return list;
+      })() },
+    gastronomy: { label:'Gastronomy', icon:svgIcon('meal','#d8a02a'),
+      // Feasts: a Cooking Meal elevated with Cheese and a Botany spice. The game's best food AND a
+      // timed combat buff -- serving one heals big and empowers every hit for a few minutes (see
+      // serveFeast). Consumes Botany spices, reinforcing that chain's payoff.
+      recipes: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          var inputs = {};
+          inputs['cooking_t'+i] = 1;
+          inputs['dairy_t'+i] = 1;
+          inputs['botany_t'+i] = 1;
+          list.push({
+            id:'gastronomy_t'+i,
+            name: FEAST_NAMES[i],
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(16,i),
+            time: tierTime(7,0.35,i),
+            sell: tierSell(20,i),
+            icon: svgIcon('meal',RANCH_COLORS[i]),
+            inputs: inputs,
+            heal: 60*(i+1),
+            feastBonus: tierCappedBonus(0.05,0.015,0.35,i),
+            feastDurationMs: 3*(i+1)*60*1000
+          });
+        }
+        return list;
+      })() },
     archaeology: { label:'Archaeology', icon:svgIcon('urn','#9a8560'),
       recipes: (function(){
         var list = [];
@@ -2288,7 +2368,7 @@
   })();
   var GATHER_TOOL_NAMES = {
     digging:'Shovel', forestry:'Hatchet', mining:'Pickaxe', fishing:'Fishing Rod',
-    herbalism:'Sickle', botany:'Shears', foraging:'Basket', butchering:'Cleaver', beekeeping:'Bee Smoker', prospecting:'Pan'
+    herbalism:'Sickle', botany:'Shears', foraging:'Basket', butchering:'Cleaver', beekeeping:'Bee Smoker', prospecting:'Pan', ranching:'Milking Pail'
   };
   var GATHER_TOOL_SPEED = [];
   for(var _gi=0; _gi<TIER_COUNT; _gi++){ GATHER_TOOL_SPEED.push(tierCappedBonus(0.02, 0.013, 0.30, _gi)); }
@@ -2333,7 +2413,8 @@
     mixology:'Shaker', archaeology:'Excavation Brush', weaponsmithing:'Smithing Hammer',
     armorsmithing:"Armorer's Hammer", shieldsmithing:"Shieldwright's Hammer", blacksmithing:'Forge Tongs',
     jewelrycrafting:"Jeweler's Loupe", runesmithing:'Rune Chisel', arcanism:'Arcane Focus',
-    brewing:'Brewing Paddle', confectionery:'Candy Thermometer', gemcutting:'Gem Facet Wheel', enchanting:'Enchanting Rod'
+    brewing:'Brewing Paddle', confectionery:'Candy Thermometer', gemcutting:'Gem Facet Wheel', enchanting:'Enchanting Rod',
+    dairy:'Churn', gastronomy:"Chef's Torch"
   };
   var CRAFT_TOOL_SPEED = [];
   var CRAFT_TOOL_SUCCESS = [];
@@ -3043,7 +3124,8 @@
     foraging:   [['handStrength',1],['zen',1],['mentality',1],['criticalThinking',1],['stamina',1],['curiosity',1]],
     butchering: [['bodyStrength',2],['handStrength',1],['curiosity',1]],
     beekeeping: [['fineMotor',1],['handStrength',1],['zen',1],['mentality',1],['curiosity',1]],
-    prospecting:[['armStrength',1],['fineMotor',1],['criticalThinking',1],['curiosity',1]]
+    prospecting:[['armStrength',1],['fineMotor',1],['criticalThinking',1],['curiosity',1]],
+    ranching:   [['handStrength',1],['bodyStrength',1],['endurance',1],['mentality',1],['curiosity',1]]
   };
   var CRAFT_PHYSIQUE = {
     carpentry:      [['grossMotor',2],['sleightOfHand',1],['logic',1]],
@@ -3071,7 +3153,9 @@
     brewing:        [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]],
     confectionery:  [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]],
     gemcutting:     [['fineMotor',2],['sleightOfHand',1],['logic',1]],
-    enchanting:     [['fineMotor',2],['criticalThinking',1],['logic',1]]
+    enchanting:     [['fineMotor',2],['criticalThinking',1],['logic',1]],
+    dairy:          [['fineMotor',2],['sleightOfHand',1],['logic',1]],
+    gastronomy:     [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]]
   };;
   // Physique XP from a gather/craft task scales with the item's tier: each associated physique
   // gains (tier+1) XP -- 1 at t0 up to 21 at t20 (replaces the old fixed per-physique weights).
@@ -3565,6 +3649,7 @@
     butchering: { name:'Fang',  icon:svgIcon('meat','#7a2a2a'), spells:[weakenSpell('Rend',0.3,8), dmgSpell('Howl',1.25,8), healSpell('Feast',15), healSpell('Feast',15)] },
     beekeeping: { name:'Buzz',  icon:svgIcon('wing','#e0a92e'), spells:[poisonSpell('Swarm Sting',5,6), healSpell('Royal Jelly',18), armorSpell('Waxen Ward',1.5,6), weakenSpell('Smoke Cloud',0.25,8)] },
     prospecting:{ name:'Nugget',icon:svgIcon('gem','#8a97a6'), spells:[hitSpell('Pickaxe Toss','piercing',14), buffSpell('Gold Rush','critChance',0.11,8), armorSpell('Bedrock Guard',1.5,6), siphonSpell('Vein Tap',12)] },
+    ranching:  { name:'Clover',icon:svgIcon('flask','#e8dcc0'), spells:[hitSpell('Stampede','blunt',14), buffSpell('Herd Strength','dmgBlunt',0.3,8), healSpell('Fresh Milk',16), armorSpell('Thick Hide',1.5,6)] },
     // -- Crafting --
     carpentry:      { name:'Timber', icon:svgIcon('plank','#8a6a42'), spells:[armorSpell('Splinter Shield',1.6,6), slowSpell('Root Snare',0.35,10), healSpell('Sap Heal',15), healSpell('Sap Heal',15)] },
     metallurgy:     { name:'Cinder', icon:svgIcon('ingot','#c85a2a'), spells:[dmgSpell('Molten Strike',1.3,8), weakenSpell('Slag',0.25,8), healSpell('Forge Heal',15), healSpell('Forge Heal',15)] },
@@ -3583,6 +3668,8 @@
     mixology:       { name:'Brew',   icon:svgIcon('tea','#7a9e4a'), spells:[weakenSpell('Intoxicate',0.3,8), healSpell('Tonic',18), healSpell('Tonic',18), dmgSpell('Dutch Courage',1.25,8)] },
     brewing:        { name:'Cask',   icon:svgIcon('bottle','#c88a2a'), spells:[dmgSpell('Liquid Courage',1.3,8), weakenSpell('Stupor',0.3,8), healSpell('Mead Draught',18), healSpell('Mead Draught',18)] },
     confectionery:  { name:'Sugar',  icon:svgIcon('gem','#e06aa0'), spells:[healSpell('Sugar Rush',18), healSpell('Sugar Rush',18), dmgSpell('Sweet Tooth',1.25,8), armorSpell('Candy Shell',1.5,6)] },
+    dairy:          { name:'Wheel',  icon:svgIcon('block','#e8c84a'), spells:[healSpell('Curds & Whey',18), healSpell('Curds & Whey',18), armorSpell('Rind Guard',1.5,6), dmgSpell('Aged Sharp',1.25,8)] },
+    gastronomy:     { name:'Platter',icon:svgIcon('meal','#d8a02a'), spells:[healSpell('Grand Feast',18), healSpell('Grand Feast',18), dmgSpell('Well Fed',1.3,8), armorSpell('Hearty Guard',1.6,6)] },
     gemcutting:     { name:'Facet',  icon:svgIcon('gem','#3fc9c4'), spells:[dmgSpell('Prism Beam',1.3,8), armorSpell('Crystal Ward',1.6,6), healSpell('Mend',15), healSpell('Mend',15)] },
     enchanting:     { name:'Sigil',  icon:svgIcon('starburst','#a06ad8'), spells:[dmgSpell('Arcane Sigil',1.3,8), armorSpell('Glyphward',1.6,6), healSpell('Mana Mend',15), healSpell('Mana Mend',15)] },
     archaeology:    { name:'Relic',  icon:svgIcon('urn','#9a8560'), spells:[armorSpell('Ancient Ward',1.6,6), weakenSpell('Curse',0.3,8), healSpell('Restore',15), healSpell('Restore',15)] },
@@ -3647,6 +3734,7 @@
     butchering: [ hitSpell('Rend','slashing',15), buffSpell('Bloodlust','dmgSlash',0.32,8), siphonSpell('Feast',13), buffSpell("Predator's Eye",'critChance',0.1,8) ],
     beekeeping: [ poisonSpell('Swarm Sting',5,6), healSpell('Royal Jelly',18), armorSpell('Waxen Ward',1.5,6), weakenSpell('Smoke Cloud',0.3,8) ],
     prospecting: [ hitSpell('Pickaxe Toss','piercing',14), buffSpell('Gold Rush','critChance',0.11,8), armorSpell('Bedrock Guard',1.5,6), siphonSpell('Vein Tap',12) ],
+    ranching: [ hitSpell('Stampede','blunt',14), buffSpell('Herd Strength','dmgBlunt',0.3,8), healSpell('Fresh Milk',16), armorSpell('Thick Hide',1.5,6) ],
     // -- Crafting --
     carpentry:      [ hitSpell('Splinter Shot','piercing',13), armorSpell('Splinter Shield',1.6,6), buffSpell('Bark Guard','resistPierce',0.3,8), regenSpell('Sap Flow',4,6) ],
     metallurgy:     [ hitSpell('Molten Strike','void',10), buffSpell('Forge Fire','firebomb',0.45,10), weakenSpell('Slag',0.28,8), buffSpell('Heavy Hand','dmgBlunt',0.3,8) ],
@@ -3667,6 +3755,8 @@
     confectionery:  [ healSpell('Sugar Rush',18), regenSpell('Sweet Tooth',4,7), buffSpell('Candy Shell','block',0.15,8), buffSpell('Sugar High','critChance',0.12,8) ],
     gemcutting:     [ hitSpell('Facet Shard','piercing',14), buffSpell('Flawless Cut','critDmg',0.34,8), buffSpell('Keen Facet','critChance',0.12,8), armorSpell('Crystal Ward',1.5,6) ],
     enchanting:     [ hitSpell('Arcane Sigil','void',15), buffSpell('Empowered Rune','critDmg',0.34,8), siphonSpell('Mana Siphon',13), buffSpell('Glyphward','block',0.15,8) ],
+    dairy:          [ healSpell('Curds & Whey',18), armorSpell('Rind Guard',1.6,6), buffSpell('Aged Sharp','critDmg',0.3,8), siphonSpell('Whey Drain',12) ],
+    gastronomy:     [ healSpell('Grand Feast',18), regenSpell('Second Helping',5,7), buffSpell('Well Fed','dmgBlunt',0.32,8), armorSpell('Hearty Guard',1.6,6) ],
     archaeology:    [ armorSpell('Ancient Ward',1.6,6), weakenSpell('Curse of Ages',0.3,8), hitSpell('Relic Blast','void',10), healSpell('Restore',15) ],
     blacksmithing:  [ hitSpell('Hammer Down','blunt',15), buffSpell('Heavy Blows','dmgBlunt',0.32,8), armorSpell('Tempered Skin',1.5,6), buffSpell('Anvil Might','critChance',0.11,8) ],
     weaponsmithing: [ hitSpell('Keen Edge','slashing',15), buffSpell('Whetstone','dmgSlash',0.32,8), buffSpell('Duelist','critChance',0.11,8), buffSpell('Quick Draw','haste',0.16,8) ],
@@ -3718,10 +3808,10 @@
   // enemies weak to it (water>fire>earth>water; light<->dark). Non-damaging spells ignore it.
   var FAMILIAR_ELEMENT = {
     // Gathering
-    digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth',
+    digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth', ranching:'earth',
     // Crafting
     carpentry:'earth', metallurgy:'fire', roasting:'fire', cooking:'water', alchemy:'water', bowyer:'earth', fletching:'earth', baking:'fire',
-    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark',
+    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire',
     archaeology:'dark', blacksmithing:'fire', weaponsmithing:'fire', armorsmithing:'earth', shieldsmithing:'earth', runesmithing:'light', arcanism:'light',
     // Farming
     farming:'earth',
@@ -3767,6 +3857,7 @@
     foraging:{s:'berry',c:'#b23a5a',ear:'cat'}, butchering:{s:'meat',c:'#9a3a3a',ear:'horn'},
     beekeeping:{s:'wing',c:'#e0a92e',ear:'antenna'}, brewing:{s:'bottle',c:'#c88a2a',ear:'round'}, confectionery:{s:'gem',c:'#e06aa0',ear:'round'},
     prospecting:{s:'gem',c:'#8a97a6',ear:'horn'}, gemcutting:{s:'gem',c:'#3fc9c4',ear:'antenna'}, enchanting:{s:'starburst',c:'#a06ad8',ear:'horn'},
+    ranching:{s:'flask',c:'#e8dcc0',ear:'horn'}, dairy:{s:'block',c:'#e8c84a',ear:'round'}, gastronomy:{s:'meal',c:'#d8a02a',ear:'round'},
     carpentry:{s:'plank',c:'#a07a44',ear:'cat'}, metallurgy:{s:'ingot',c:'#c85a2a',ear:'horn'},
     roasting:{s:'skewer',c:'#d1863a',ear:'cat'}, cooking:{s:'meal',c:'#5a9a4a',ear:'round'},
     alchemy:{s:'potion',c:'#8a5aaa',ear:'antenna'}, bowyer:{s:'bow',c:'#a87a4a',ear:'cat'},
@@ -6274,8 +6365,8 @@
     var offhandRarities = {};
     OFFHAND_STYLE_IDS.forEach(function(id){ offhandRarities[id] = 'normal'; });
     var xpObj = {
-      digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0,
-      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0,
+      digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0, ranching:0,
+      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0,
       stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, arcanism:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
       shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0, wands:0, staves:0, scepters:0,
@@ -6332,6 +6423,7 @@
       playerHp: 50,
       autoEatThreshold: 0,
       activeTea: { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 },
+      activeFeast: { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 },
       autoTea: false,
       familiars: {},
       activeCompanion: null,
@@ -6583,6 +6675,12 @@
   function isTeaActive(){
     return !!(state.activeTea && state.activeTea.itemId && state.activeTea.expiresAt > Date.now());
   }
+  // Feast buff: a Gastronomy Feast, once served, empowers every hit for a few minutes. Its own timed
+  // channel (separate from Teas' XP boost and the single combat-potion slot). Read in the damage calc.
+  function isFeastActive(){
+    return !!(state.activeFeast && state.activeFeast.itemId && state.activeFeast.expiresAt > Date.now());
+  }
+  function feastDamageBonus(){ return isFeastActive() ? (state.activeFeast.dmgBonus||0) : 0; }
   // A familiar linked to a skill grants +1% XP for that skill per familiar level.
   function familiarXpMult(skillId){ var f = state.familiars && state.familiars[skillId]; return (f && f.owned) ? (1 + f.level * 0.01) : 1; }
   // ---- Server-wide buffs: gold-bought boosts that help EVERY player (a revenue feature). ----
@@ -7101,7 +7199,7 @@
 
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
     var wandAttuneMult = isWandAttack ? elementDmgMult(state, weaponStyle.element) : 1; // Elemental Attunement boosts a wand's element damage
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * (1 + enchantDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1));
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * (1 + enchantDamageBonus()) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1));
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
@@ -7385,6 +7483,26 @@
       expiresAt: Date.now() + recipe.teaDurationMs
     };
     addLog('You drink a ' + recipe.name + ', boosting XP gain by ' + Math.round(recipe.xpBoost*100) + '% for ' + Math.round(recipe.teaDurationMs/60000) + ' minutes.', 'important');
+    needsRender = true;
+  }
+  // Serving a Feast (Gastronomy): heals a big chunk and starts/refreshes the timed weapon-damage buff.
+  // Like Teas, it doesn't stack -- serving another replaces the current buff outright.
+  function serveFeast(itemId){
+    var recipe = ALL_CRAFT_RECIPES[itemId];
+    if(!recipe || !recipe.feastDurationMs) return;
+    if((state.inventory[itemId]||0) <= 0) return;
+    state.inventory[itemId] -= 1;
+    var healed = Math.min(recipe.heal||0, maxHp(state) - state.playerHp);
+    if(healed > 0) state.playerHp += healed;
+    state.activeFeast = {
+      itemId: itemId,
+      name: recipe.name,
+      icon: recipe.icon,
+      dmgBonus: recipe.feastBonus,
+      durationMs: recipe.feastDurationMs,
+      expiresAt: Date.now() + recipe.feastDurationMs
+    };
+    addLog('You feast on a ' + recipe.name + (healed>0 ? (', recovering ' + healed + ' HP and') : ',') + ' empowering your attacks +' + Math.round(recipe.feastBonus*100) + '% for ' + Math.round(recipe.feastDurationMs/60000) + ' minutes.', 'important');
     needsRender = true;
   }
 
@@ -7711,6 +7829,7 @@
           if(!state.stats || typeof state.stats !== 'object') state.stats = {};
           ['kills','deaths','gathered','crafted','craftedRare','craftedSupreme','craftedFantastic','hoursBuffed'].forEach(function(k){ if(typeof state.stats[k] !== 'number') state.stats[k] = 0; });
           if(!state.activeTea || typeof state.activeTea !== 'object') state.activeTea = { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 };
+          if(!state.activeFeast || typeof state.activeFeast !== 'object') state.activeFeast = { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 };
           if(typeof state.autoTea !== 'boolean') state.autoTea = false;
           if(!state.familiars || typeof state.familiars !== 'object') state.familiars = {};
           Object.keys(state.familiars).forEach(function(fid){
@@ -7860,7 +7979,7 @@
   // rebuilding the bar (and its buttons) every frame, which was eating clicks on Settings/Tracker.
   function topbarSignature(){
     var tk = state.trackedSkills && state.trackedSkills[0];
-    return [authUser?1:0, serverBuffActive()?1:0, isTeaActive()?1:0, tk||'', (tk&&trackedExists(tk))?1:0].join('|');
+    return [authUser?1:0, serverBuffActive()?1:0, isTeaActive()?1:0, isFeastActive()?1:0, tk||'', (tk&&trackedExists(tk))?1:0].join('|');
   }
   var _topbarSig = null;
   function renderTopbar(){
@@ -7877,6 +7996,11 @@
       var teaBuffPct = clamp((state.activeTea.expiresAt-Date.now())/state.activeTea.durationMs*100, 0, 100);
       html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:#6f9538"></span>+'+Math.round(state.activeTea.xpBoost*100)+'% XP <span class="t" id="ffTeaBuffT">'+formatDuration(state.activeTea.expiresAt-Date.now())+'</span></span>'
         + '<span class="ff-buffbar"><span class="ff-buffbar-fill" id="ffTeaBuffBar" style="width:'+teaBuffPct+'%;background:#6f9538"></span></span></div>';
+    }
+    if(isFeastActive()){
+      var feastBuffPct = clamp((state.activeFeast.expiresAt-Date.now())/state.activeFeast.durationMs*100, 0, 100);
+      html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:#d8a02a"></span>+'+Math.round(state.activeFeast.dmgBonus*100)+'% DMG <span class="t" id="ffFeastBuffT">'+formatDuration(state.activeFeast.expiresAt-Date.now())+'</span></span>'
+        + '<span class="ff-buffbar"><span class="ff-buffbar-fill" id="ffFeastBuffBar" style="width:'+feastBuffPct+'%;background:#d8a02a"></span></span></div>';
     }
     var tk = state.trackedSkills && state.trackedSkills[0];
     var trackBtn;
@@ -7909,6 +8033,10 @@
     if(isTeaActive()){
       var tt = document.getElementById('ffTeaBuffT'); if(tt) tt.textContent = formatDuration(state.activeTea.expiresAt-Date.now());
       var tbar = document.getElementById('ffTeaBuffBar'); if(tbar) tbar.style.width = clamp((state.activeTea.expiresAt-Date.now())/state.activeTea.durationMs*100,0,100)+'%';
+    }
+    if(isFeastActive()){
+      var ft = document.getElementById('ffFeastBuffT'); if(ft) ft.textContent = formatDuration(state.activeFeast.expiresAt-Date.now());
+      var fbar = document.getElementById('ffFeastBuffBar'); if(fbar) fbar.style.width = clamp((state.activeFeast.expiresAt-Date.now())/state.activeFeast.durationMs*100,0,100)+'%';
     }
     var tk = state.trackedSkills && state.trackedSkills[0];
     if(tk && trackedExists(tk)){
@@ -8230,6 +8358,7 @@
     html += renderRecipeGrid(skillKey, skill.recipes);
     if(skillKey==='carpentry') html += renderWorkshopForge();
     if(skillKey==='brewing') html += renderTeaDrinkSection(); // Brews are drinkable like Teas
+    if(skillKey==='gastronomy') html += renderFeastSection(); // Feasts are servable for a combat buff
     return html;
   }
   function renderWorkshopForge(){
@@ -8327,6 +8456,34 @@
       html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+qty+'</div></div></div>';
       html += '<div class="item-stats"><span>+'+Math.round(recipe.xpBoost*100)+'% XP</span><span>'+Math.round(recipe.teaDurationMs/60000)+' min</span></div>';
       html += '<button class="action-btn" data-action="drinkTea" data-item="'+recipe.id+'">Drink</button>';
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+  // Gastronomy: serve a Feast to heal + start the timed weapon-damage buff (mirrors the Tea section).
+  function ownedFeasts(){ return CRAFTING_SKILLS.gastronomy.recipes.filter(function(r){ return (state.inventory[r.id]||0) > 0; }); }
+  function renderFeastSection(){
+    var html = '<h3>Serve a Feast</h3>';
+    if(isFeastActive()){
+      var remainingMs = state.activeFeast.expiresAt - Date.now();
+      html += '<div class="physique-bonus">Active: <b>'+state.activeFeast.icon+' '+state.activeFeast.name+'</b> &nbsp;|&nbsp; Damage: <b>+'+Math.round(state.activeFeast.dmgBonus*100)+'%</b> &nbsp;|&nbsp; Time Left: <b id="feastTabTimer">'+formatDuration(remainingMs)+'</b></div>';
+      html += '<div class="section-intro">Serving another Feast replaces this buff outright -- its strength and timer don\'t stack.</div>';
+    } else {
+      html += '<div class="section-intro">No Feast active. Serve one below to heal and empower every hit for a few minutes.</div>';
+    }
+    var owned = ownedFeasts();
+    if(owned.length===0){
+      html += '<div class="empty-note">No Feasts in stock yet &mdash; cook some above.</div>';
+      return html;
+    }
+    html += '<div class="card-grid">';
+    owned.forEach(function(recipe){
+      var qty = state.inventory[recipe.id]||0;
+      html += '<div class="item-card">';
+      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+qty+'</div></div></div>';
+      html += '<div class="item-stats"><span>+'+Math.round(recipe.feastBonus*100)+'% DMG</span><span>+'+recipe.heal+' HP &bull; '+Math.round(recipe.feastDurationMs/60000)+' min</span></div>';
+      html += '<button class="action-btn" data-action="serveFeast" data-item="'+recipe.id+'">Serve</button>';
       html += '</div>';
     });
     html += '</div>';
@@ -11309,6 +11466,8 @@
     confectionery:{roof:'dome', accent:'gem'},
     gemcutting:{roof:'dome', accent:'gem'},
     enchanting:{roof:'cone', accent:'urn'},
+    dairy:{roof:'hip', accent:'block'},
+    gastronomy:{roof:'hip', chimney:true, accent:'pot'},
     archaeology:{roof:'cone', accent:'urn', wallH:0.7},
     blacksmithing:{roof:'hip', chimney:true, accent:'anvil'},
     weaponsmithing:{roof:'peak', chimney:true, accent:'blade'},
@@ -14572,6 +14731,7 @@
     butchering: 'Hunt wildlife directly for Hide, from Rabbit up to Apex Titan-Beast.',
     beekeeping: 'Tend hives for Honey, from Wildflower up to Royal Jelly and Ambrosia -- the sweetener for Brewing and Confectionery.',
     prospecting: 'Pan and dig for Rough Gems, from Quartz up to Star Ruby -- cut them in Gemcutting.',
+    ranching: 'Raise livestock for Milk, from Goat up to Dragon -- churned into Cheese in Dairy.',
     carpentry: 'Cut Logs into Planks.',
     metallurgy: 'Smelt Ore into Bars and Alloys, plus a side-recipe for Glass Bottles.',
     roasting: 'Cook raw Fish and Meat into a quick, portable snack.',
@@ -14591,6 +14751,8 @@
     confectionery: 'Cook Honey and Foraged berries into candies and jams -- quick-eat heal snacks.',
     gemcutting: 'Cut Prospecting\'s Rough Gems into faceted Cut Gems -- the base for Enchanting.',
     enchanting: 'Bind Cut Gems and metal into Weapon Enchants -- ready one in Battle to add bonus weapon damage to every hit.',
+    dairy: 'Churn Ranching\'s Milk into Cheese -- a richer food input and the base for Gastronomy.',
+    gastronomy: 'Plate a Cooking Meal with Cheese and a Botany spice into a Feast -- the best food, and serving one empowers your hits for a few minutes.',
     archaeology: 'Excavate Muddy Artifacts into Relics.',
     blacksmithing: 'Forge Tools for every Gathering and Crafting skill.',
     weaponsmithing: 'Forge melee weapons -- swords, axes, and hammers.',
@@ -16236,6 +16398,8 @@
       deactivatePotion();
     } else if(action==='drinkTea'){
       drinkTea(btn.getAttribute('data-item'));
+    } else if(action==='serveFeast'){
+      serveFeast(btn.getAttribute('data-item'));
     } else if(action==='drinkBestTea'){
       drinkBestTea();
     } else if(action==='toggleAutoTea'){
@@ -16710,6 +16874,7 @@
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES,
+      isFeastActive:isFeastActive, feastDamageBonus:feastDamageBonus, serveFeast:serveFeast,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       playerAccuracy:playerAccuracy, monsterDodge:monsterDodge, hitChanceVs:hitChanceVs, playerHitChance:playerHitChance,
       familiarAccuracy:familiarAccuracy, familiarHitChance:familiarHitChance, accuracyPhysiques:accuracyPhysiques,

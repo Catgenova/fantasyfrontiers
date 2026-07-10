@@ -592,6 +592,36 @@
     ok(FF.GATHER_PHYSIQUE.prospecting && FF.CRAFT_PHYSIQUE.gemcutting && FF.CRAFT_PHYSIQUE.enchanting, 'physique tables include the new skills');
   });
 
+  // ---- Ranching / Dairy / Gastronomy vertical slice + Feast buff channel ----------------------
+  suite('skills: ranching / dairy / gastronomy', function(){
+    ok(FF.GATHERING_SKILLS.ranching, 'ranching is a gathering skill');
+    ok(FF.CRAFTING_SKILLS.dairy, 'dairy is a crafting skill');
+    ok(FF.CRAFTING_SKILLS.gastronomy, 'gastronomy is a crafting skill');
+    eq(FF.GATHERING_SKILLS.ranching.items.length, FF.TIER_COUNT, 'ranching has 21 milk tiers');
+    eq(FF.CRAFTING_SKILLS.dairy.recipes.length, FF.TIER_COUNT, 'dairy has 21 cheese tiers');
+    eq(FF.CRAFTING_SKILLS.gastronomy.recipes.length, FF.TIER_COUNT, 'gastronomy has 21 feast tiers');
+    // Chain: Milk -> Cheese -> Feast (Cheese + Botany spice + Cooking meal).
+    eq(FF.ALL_GATHER_ITEMS['ranching_t0'].name, 'Goat Milk', 'ranching yields Milk');
+    var cheese5 = FF.ALL_CRAFT_RECIPES['dairy_t5'];
+    ok(cheese5.inputs['ranching_t5'], 'dairy churns the matching Milk');
+    eq(cheese5.name, 'Camel Cheese', 'dairy yields Cheese');
+    var feast5 = FF.ALL_CRAFT_RECIPES['gastronomy_t5'];
+    ok(feast5.inputs['dairy_t5'] && feast5.inputs['botany_t5'] && feast5.inputs['cooking_t5'], 'feast plates cheese + botany spice + cooking meal');
+    // Feast is a food AND a timed combat buff -- a distinct channel.
+    ok(feast5.heal > 0, 'feasts heal');
+    ok(feast5.feastBonus > 0 && feast5.feastDurationMs > 0, 'feasts carry a timed damage buff');
+    var f0 = FF.ALL_CRAFT_RECIPES['gastronomy_t0'], f20 = FF.ALL_CRAFT_RECIPES['gastronomy_t20'];
+    ok(f20.feastBonus > f0.feastBonus && f20.feastBonus <= 0.35 + 1e-9, 'feast damage bonus scales with tier (cap 35%)');
+    // Serving a feast activates the buff and empowers hits; no buff by default.
+    eq(FF.feastDamageBonus(), 0, 'no feast buff by default');
+    FF._state.inventory['gastronomy_t10'] = 1; FF._state.playerHp = 1;
+    FF.serveFeast('gastronomy_t10');
+    ok(FF.isFeastActive(), 'serving a feast activates the buff');
+    ok(FF.feastDamageBonus() > 0, 'active feast adds weapon damage');
+    ok(FF._state.playerHp > 1, 'serving a feast also heals');
+    ok(FF.GATHER_PHYSIQUE.ranching && FF.CRAFT_PHYSIQUE.dairy && FF.CRAFT_PHYSIQUE.gastronomy, 'physique tables include the new skills');
+  });
+
   // ---- Inventory grid: rarity parsing for cell accents / detail tag ----------------------
   suite('inventory rarity', function(){
     eq(FF.itemRarityId('bodyarmor_chain_chest_t20_normal'), 'normal', 'normal suffix');
