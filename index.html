@@ -8138,11 +8138,14 @@
 
   // ---- Enhance (Stage 2) ----
   // Success starts at 95% and drops 5% per level already reached (floor 5%). A failure DESTROYS the
-  // item. Cost = (current +level + 1) Inscriptions of tier >= the item's tier.
+  // item. Cost = (current +level + 1) Inscription Scrolls (scroll_t<n>, e.g. Warding Scrap) of tier
+  // >= the item's tier -- the Scrolls that the Inscription skill scribes.
   function enhanceSuccessChance(enhance){ return Math.max(0.05, 0.95 - 0.05*(enhance||0)); }
+  // Total materials of `prefix`+tier owned across tiers >= fromTier (for the "you have N" readouts).
+  function countTierMaterials(prefix, fromTier){ var n=0; for(var t=Math.max(0,fromTier); t<TIER_COUNT; t++){ n += state.inventory[prefix+t]||0; } return n; }
   function planInscriptions(itemTier, count){
     var plan = {}, need = count, maxTier = itemTier;
-    for(var t=itemTier; t<TIER_COUNT && need>0; t++){ var id='inscription_t'+t, have=state.inventory[id]||0; if(have<=0) continue; var take=Math.min(have,need); plan[id]=take; need-=take; if(t>maxTier) maxTier=t; }
+    for(var t=itemTier; t<TIER_COUNT && need>0; t++){ var id='scroll_t'+t, have=state.inventory[id]||0; if(have<=0) continue; var take=Math.min(have,need); plan[id]=take; need-=take; if(t>maxTier) maxTier=t; }
     return need>0 ? null : { plan:plan, maxTier:maxTier };
   }
   function enhanceItem(uid){
@@ -8150,7 +8153,7 @@
     if(u.enhance >= ENHANCE_MAX){ addLog('Already at the maximum +'+ENHANCE_MAX+'.','danger'); return; }
     var cost = u.enhance + 1;
     var planned = planInscriptions(u.tier, cost);
-    if(!planned){ addLog('You need '+cost+' Inscription'+(cost===1?'':'s')+' of tier '+(u.tier+1)+' or higher.','danger'); return; }
+    if(!planned){ addLog('You need '+cost+' Inscription Scroll'+(cost===1?'':'s')+' (e.g. Warding Scrap) of tier '+(u.tier+1)+' or higher.','danger'); return; }
     if(planned.maxTier>u.tier && state.enhanceWarnHiTier && !enhanceWarnArmed){ enhanceWarnArmed = true; render(); return; }
     enhanceWarnArmed = false;
     consumeInputs(planned.plan);
@@ -8235,11 +8238,66 @@
     addLog('You sacrificed '+uniqueDisplayName(u)+' and restored '+Math.round(state.faith-before)+' Faith.','important');
     saveGame(); render();
   }
+  // The selected-item detail card (enchant + enhance + trade). Rendered at the TOP of the tab, right
+  // under the intro, so the item you're working on stays the primary focus above the picker grid.
+  function renderImproveDetail(){
+    if(!improveSel) return '';
+    var isU2 = isUniqueId(improveSel);
+    var u = isU2 ? state.uniqueItems[improveSel] : null, pp = isU2 ? null : parseImprovable(improveSel);
+    if(!isU2 && !pp) return '';
+    var tier = isU2 ? u.tier : pp.tier, rarity = isU2 ? u.rarity : pp.rarity, enhance = isU2 ? u.enhance : 0;
+    var slots = enchantSlotsFor(rarity), count = isU2 ? u.enchants.length : 0;
+    var name = isU2 ? uniqueDisplayName(u) : (ALL_SELLABLE[improveSel]||{name:'Equipment'}).name;
+    var html = '<div class="guild-section-title" style="margin-top:4px;">'+escapeHtml(name)+'</div>';
+    html += '<div class="item-card" style="max-width:540px;"><div class="item-meta" style="margin-bottom:6px;">'+escapeHtml(getRarity(rarity).label)+' · Tier '+(tier+1)+' · '+count+'/'+slots+' enchant slots'+(enhance>0?' · <b>+'+enhance+'</b>':'')+'</div>';
+    if(isU2){ var _eq = uniqueIsEquipped(u.uid); html += '<div style="margin-bottom:8px;"><button class="mini-btn" data-action="'+(_eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(_eq?'Unequip':'Equip')+'</button>'+(_eq?' <span class="item-meta" style="color:var(--gold);">equipped</span>':'')+'</div>'; }
+    if(isU2 && u.enchants.length){ u.enchants.forEach(function(e,i){ html += '<div class="inputs-line"><span style="color:var(--gold);">'+escapeHtml(enchantLabel(u.kind,e))+'</span>'+((improvePending&&improvePending.uid===u.uid)?' <button class="mini-btn" data-action="improvePlace" data-idx="'+i+'">Replace</button>':'')+'</div>'; }); }
+    else if(isU2){ html += '<div class="empty-note" style="margin-bottom:6px;">No enchants yet.</div>'; }
+    var cost = count + 1;
+    var haveCry = countTierMaterials('enchant_t', tier); // Enchant Crystals of this item's tier or higher
+    if(enhance>0){ html += '<div class="lock-note">Enhanced items can’t be enchanted.</div>'; }
+    else if(improvePending && u && improvePending.uid===u.uid){
+      html += '<div class="inputs-line" style="color:var(--gold);">New roll: '+escapeHtml(enchantLabel(u.kind,improvePending.roll))+'</div>';
+      html += '<div class="empty-note">Slots full — <b>Replace</b> one above, or <button class="mini-btn" data-action="improvePlace" data-idx="-1">Discard</button> the new roll.</div>';
+    } else {
+      html += '<div class="inputs-line">Next enchant: <b>'+cost+'</b> Enchant Crystal'+(cost===1?'':'s')+' (tier '+(tier+1)+'+) · <b style="color:'+(haveCry>=cost?'var(--gold)':'var(--danger)')+';">you have '+haveCry+'</b>.</div>';
+      if(improveWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No tier-'+(tier+1)+' crystals — this spends higher-tier ones. Click Enchant again to confirm.</div>';
+      html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn" data-action="improveEnchant" style="width:auto;flex:0 0 auto;">Enchant ('+cost+')</button>';
+      html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleWarn"'+(state.enchantWarnHiTier?' checked':'')+'> warn on higher-tier crystals</label></div>';
+    }
+    if(isU2){
+      var eLvl = u.enhance, ecost = eLvl+1, chance = Math.round(enhanceSuccessChance(eLvl)*100);
+      var haveScr = countTierMaterials('scroll_t', tier); // Inscription Scrolls (Warding Scrap ...) of tier+
+      html += '<div class="guild-section-title" style="margin-top:12px;font-size:13px;">Enhance</div>';
+      html += '<div class="inputs-line">Current <b>+'+eLvl+'</b> / +'+ENHANCE_MAX+' — base &amp; enchant stats at <b style="color:var(--gold);">+'+Math.round((enhanceStatMult(eLvl)-1)*100)+'%</b>.</div>';
+      if(eLvl>=ENHANCE_MAX){ html += '<div class="lock-note">Maxed at +'+ENHANCE_MAX+'.</div>'; }
+      else {
+        html += '<div class="inputs-line">Next: <b>'+ecost+'</b> Inscription Scroll'+(ecost===1?'':'s')+' (tier '+(tier+1)+'+) · <b style="color:'+(haveScr>=ecost?'var(--gold)':'var(--danger)')+';">you have '+haveScr+'</b> · <b style="color:var(--gold);">'+chance+'%</b> success · <b style="color:var(--danger);">a failure destroys the item.</b></div>';
+        if(enhanceWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No tier-'+(tier+1)+' Scrolls — this spends higher-tier ones. Click Enhance again to confirm.</div>';
+        html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn stop" data-action="improveEnhance" data-uid="'+u.uid+'" style="width:auto;flex:0 0 auto;">Enhance ('+ecost+')</button>';
+        html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleEnhanceWarn"'+(state.enhanceWarnHiTier?' checked':'')+'> warn on higher-tier Scrolls</label></div>';
+      }
+      // Trade lifecycle: a unique can be sold for gold or sacrificed for Faith. Both are permanent
+      // (the item is destroyed), so each takes a confirming second click.
+      var sellV = uniqueSellValue(u);
+      html += '<div class="guild-section-title" style="margin-top:12px;font-size:13px;">Trade</div>';
+      if(improveConfirm==='sell:'+u.uid) html += '<div class="empty-note" style="color:var(--danger);">⚠ Permanently sell this unique for '+sellV+' gold? Click Sell again to confirm.</div>';
+      if(improveConfirm==='sacrifice:'+u.uid) html += '<div class="empty-note" style="color:var(--danger);">⚠ Permanently sacrifice this unique for Faith? Click Sacrifice again to confirm.</div>';
+      html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;">';
+      html += '<button class="mini-btn" data-action="improveSellUnique" data-uid="'+u.uid+'">'+(improveConfirm==='sell:'+u.uid?'Confirm sell':'Sell')+' ('+sellV+'g)</button>';
+      html += '<button class="mini-btn" data-action="improveSacrificeUnique" data-uid="'+u.uid+'">'+(improveConfirm==='sacrifice:'+u.uid?'Confirm sacrifice':'Sacrifice')+'</button>';
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
   function renderImprovementTab(){
-    var html = '<div class="section-intro">Turn a piece of equipment into a unique item and <b>Enchant</b> it with random modifiers. Rarity sets how many it can hold (Normal 1 · Rare 2 · Supreme 3 · Fantastic 4). Each enchant costs Enchant Crystals of equal-or-higher tier; the cost rises by one per enchant. Enchant freely — but once you <b>Enhance</b> an item it can no longer be enchanted.</div>';
+    var html = '<div class="section-intro">Turn a piece of equipment into a unique item and <b>Enchant</b> it with random modifiers. Rarity sets how many it can hold (Normal 1 · Rare 2 · Supreme 3 · Fantastic 4). Each enchant costs Enchant Crystals of equal-or-higher tier; the cost rises by one per enchant. Enchant freely — but once you <b>Enhance</b> an item (with Inscription Scrolls) it can no longer be enchanted.</div>';
+    // Selected item first (top priority, right under the intro), then the equipment picker.
+    html += renderImproveDetail();
     var bases = [], uniques = Object.keys(state.uniqueItems||{});
     Object.keys(state.inventory).forEach(function(id){ if((state.inventory[id]||0)>0 && parseImprovable(id)) bases.push(id); });
-    html += '<div class="guild-section-title" style="margin-top:6px;">Choose equipment</div>';
+    html += '<div class="guild-section-title" style="margin-top:14px;">Choose equipment</div>';
     if(!bases.length && !uniques.length) html += '<div class="empty-note">No weapons, armour, or jewelry to improve yet — forge or find some first.</div>';
     html += '<div class="card-grid">';
     uniques.forEach(function(uid){ var u=state.uniqueItems[uid]; if(!u) return;
@@ -8247,52 +8305,6 @@
     bases.forEach(function(id){ var p=parseImprovable(id), b=ALL_SELLABLE[id]; if(!b) return;
       html += '<button class="item-card'+(improveSel===id?' active-item':'')+'" data-action="improveSelect" data-uid="'+id+'" style="text-align:left;"><div class="item-top"><div class="item-icon">'+(b.icon||'')+'</div><div><div class="item-name">'+escapeHtml(b.name)+'</div><div class="item-meta">'+escapeHtml(getRarity(p.rarity).label)+' · ×'+(state.inventory[id]||0)+'</div></div></div></button>'; });
     html += '</div>';
-    if(improveSel){
-      var isU2 = isUniqueId(improveSel);
-      var u = isU2 ? state.uniqueItems[improveSel] : null, pp = isU2 ? null : parseImprovable(improveSel);
-      var tier = isU2 ? u.tier : pp.tier, rarity = isU2 ? u.rarity : pp.rarity, enhance = isU2 ? u.enhance : 0;
-      var slots = enchantSlotsFor(rarity), count = isU2 ? u.enchants.length : 0;
-      var name = isU2 ? uniqueDisplayName(u) : (ALL_SELLABLE[improveSel]||{name:'Equipment'}).name;
-      html += '<div class="guild-section-title" style="margin-top:14px;">'+escapeHtml(name)+'</div>';
-      html += '<div class="item-card" style="max-width:540px;"><div class="item-meta" style="margin-bottom:6px;">'+escapeHtml(getRarity(rarity).label)+' · Tier '+(tier+1)+' · '+count+'/'+slots+' enchant slots'+(enhance>0?' · <b>+'+enhance+'</b>':'')+'</div>';
-      if(isU2){ var _eq = uniqueIsEquipped(u.uid); html += '<div style="margin-bottom:8px;"><button class="mini-btn" data-action="'+(_eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(_eq?'Unequip':'Equip')+'</button>'+(_eq?' <span class="item-meta" style="color:var(--gold);">equipped</span>':'')+'</div>'; }
-      if(isU2 && u.enchants.length){ u.enchants.forEach(function(e,i){ html += '<div class="inputs-line"><span style="color:var(--gold);">'+escapeHtml(enchantLabel(u.kind,e))+'</span>'+((improvePending&&improvePending.uid===u.uid)?' <button class="mini-btn" data-action="improvePlace" data-idx="'+i+'">Replace</button>':'')+'</div>'; }); }
-      else if(isU2){ html += '<div class="empty-note" style="margin-bottom:6px;">No enchants yet.</div>'; }
-      var cost = count + 1;
-      if(enhance>0){ html += '<div class="lock-note">Enhanced items can’t be enchanted.</div>'; }
-      else if(improvePending && u && improvePending.uid===u.uid){
-        html += '<div class="inputs-line" style="color:var(--gold);">New roll: '+escapeHtml(enchantLabel(u.kind,improvePending.roll))+'</div>';
-        html += '<div class="empty-note">Slots full — <b>Replace</b> one above, or <button class="mini-btn" data-action="improvePlace" data-idx="-1">Discard</button> the new roll.</div>';
-      } else {
-        html += '<div class="inputs-line">Next enchant: <b>'+cost+'</b> Enchant Crystal'+(cost===1?'':'s')+' (tier '+(tier+1)+'+).</div>';
-        if(improveWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No tier-'+(tier+1)+' crystals — this spends higher-tier ones. Click Enchant again to confirm.</div>';
-        html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn" data-action="improveEnchant" style="width:auto;flex:0 0 auto;">Enchant ('+cost+')</button>';
-        html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleWarn"'+(state.enchantWarnHiTier?' checked':'')+'> warn on higher-tier crystals</label></div>';
-      }
-      if(isU2){
-        var eLvl = u.enhance, ecost = eLvl+1, chance = Math.round(enhanceSuccessChance(eLvl)*100);
-        html += '<div class="guild-section-title" style="margin-top:12px;font-size:13px;">Enhance</div>';
-        html += '<div class="inputs-line">Current <b>+'+eLvl+'</b> / +'+ENHANCE_MAX+' — base &amp; enchant stats at <b style="color:var(--gold);">+'+Math.round((enhanceStatMult(eLvl)-1)*100)+'%</b>.</div>';
-        if(eLvl>=ENHANCE_MAX){ html += '<div class="lock-note">Maxed at +'+ENHANCE_MAX+'.</div>'; }
-        else {
-          html += '<div class="inputs-line">Next: <b>'+ecost+'</b> Inscription'+(ecost===1?'':'s')+' (tier '+(tier+1)+'+) · <b style="color:var(--gold);">'+chance+'%</b> success · <b style="color:var(--danger);">a failure destroys the item.</b></div>';
-          if(enhanceWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No tier-'+(tier+1)+' inscriptions — this spends higher-tier ones. Click Enhance again to confirm.</div>';
-          html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn stop" data-action="improveEnhance" data-uid="'+u.uid+'" style="width:auto;flex:0 0 auto;">Enhance ('+ecost+')</button>';
-          html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleEnhanceWarn"'+(state.enhanceWarnHiTier?' checked':'')+'> warn on higher-tier inscriptions</label></div>';
-        }
-        // Trade lifecycle: a unique can be sold for gold or sacrificed for Faith. Both are permanent
-        // (the item is destroyed), so each takes a confirming second click.
-        var sellV = uniqueSellValue(u);
-        html += '<div class="guild-section-title" style="margin-top:12px;font-size:13px;">Trade</div>';
-        if(improveConfirm==='sell:'+u.uid) html += '<div class="empty-note" style="color:var(--danger);">⚠ Permanently sell this unique for '+sellV+' gold? Click Sell again to confirm.</div>';
-        if(improveConfirm==='sacrifice:'+u.uid) html += '<div class="empty-note" style="color:var(--danger);">⚠ Permanently sacrifice this unique for Faith? Click Sacrifice again to confirm.</div>';
-        html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;">';
-        html += '<button class="mini-btn" data-action="improveSellUnique" data-uid="'+u.uid+'">'+(improveConfirm==='sell:'+u.uid?'Confirm sell':'Sell')+' ('+sellV+'g)</button>';
-        html += '<button class="mini-btn" data-action="improveSacrificeUnique" data-uid="'+u.uid+'">'+(improveConfirm==='sacrifice:'+u.uid?'Confirm sacrifice':'Sacrifice')+'</button>';
-        html += '</div>';
-      }
-      html += '</div>';
-    }
     return html;
   }
 

@@ -2587,12 +2587,14 @@
     near(FF.enhanceSuccessChance(1), 0.90, 'second is 90%');
     near(FF.enhanceSuccessChance(5), 0.70, '+5 -> 70%');
     eq(FF.enhanceSuccessChance(20) >= 0.05, true, 'success chance floors at 5%');
-    // inscription planning (throwaway selftest inventory)
+    // Enhance consumes Inscription Scrolls (scroll_t<n>, e.g. Warding Scrap) -- the items the
+    // Inscription skill scribes -- NOT a non-existent inscription_t id. (throwaway selftest inventory)
     var s = FF._state, savedInv = s.inventory;
-    s.inventory = { inscription_t2:1, inscription_t4:5 };
-    ok(FF.planInscriptions(5, 1) === null, 'cannot plan when no inscription is tier5+');
+    s.inventory = { scroll_t2:1, scroll_t4:5 };
+    ok(FF.planInscriptions(5, 1) === null, 'cannot plan when no Scroll is tier5+');
     var pl = FF.planInscriptions(2, 3);
-    ok(pl && pl.plan.inscription_t2===1 && pl.plan.inscription_t4===2 && pl.maxTier===4, 'plans tier2 first then higher');
+    ok(pl && pl.plan.scroll_t2===1 && pl.plan.scroll_t4===2 && pl.maxTier===4, 'plans tier2 Scroll first then higher');
+    ok(FF.ALL_CRAFT_RECIPES['scroll_t0'] && FF.ALL_CRAFT_RECIPES['scroll_t0'].name === 'Warding Scrap', 'the tier-0 Inscription Scroll is Warding Scrap');
     s.inventory = savedInv;
   });
 
