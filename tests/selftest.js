@@ -2466,6 +2466,22 @@
     ok(FF.getRarity('bogus') && FF.getRarity('bogus').id, 'getRarity falls back for unknown id');
   });
 
+  // ---- Server-authoritative gold wallet (Stage 2 client wiring) -------------------------
+  suite('gold wallet: earnGold feeds the lifetime anchor', function(){
+    ok(typeof FF.earnGold === 'function', 'earnGold is exported');
+    ok(typeof FF.walletSync === 'function', 'walletSync is exported');
+    var s = FF._state;
+    ok(typeof s.goldEarnedTotal === 'number', 'state carries a goldEarnedTotal anchor');
+    ok(s.goldEarnedTotal >= Math.floor(s.gold||0), 'the anchor is never below the current balance');
+    var g0 = s.gold, e0 = s.goldEarnedTotal;
+    FF.earnGold(7);
+    eq(s.gold, g0 + 7, 'earnGold raises gold');
+    eq(s.goldEarnedTotal, e0 + 7, 'earnGold raises the lifetime anchor by the same amount');
+    FF.earnGold(-3); FF.earnGold(0);
+    eq(s.gold, g0 + 7, 'earnGold ignores non-positive amounts');
+    s.gold = g0; s.goldEarnedTotal = e0; // restore so the test never perturbs the real balance
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }

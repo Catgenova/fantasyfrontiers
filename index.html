@@ -5632,7 +5632,7 @@
       // 1-10000 gold, weighted toward the low end (cubic skew), like the Critter Cache's roll.
       gold += Math.max(1, Math.min(10000, Math.floor(Math.pow(Math.random(), 3) * 10000) + 1));
     }
-    state.gold += gold;
+    earnGold(gold);
     addLog('You pried open ' + n + ' Treasure Chest' + (n===1?'':'s') + ' and found ' + fmt(gold) + ' gold!', 'important');
     spawnFloatingText('+' + fmt(gold) + ' gold', 'ft-bonus');
     lootPopupData = { title:'Treasure Chest'+(n===1?'':'s'), icon:(ALL_SELLABLE.treasure_chest||{}).icon, opened:n, gold:gold, items:{} };
@@ -7456,6 +7456,7 @@
     CRAFT_SKILL_IDS.forEach(function(id){ if(!(id in xpObj)) xpObj[id] = 0; });
     var s = {
       gold: 25,
+      goldEarnedTotal: 25,   // monotonic lifetime gold received (wallet-sync anchor); never decreases
       xp: xpObj,
       physique: physique,
       inventory: {},
@@ -7817,13 +7818,13 @@
         addLog('You activated a server-wide +50% EXP buff for 1 hour — every player benefits. Thanks for supporting the server!', 'important');
         chronicleBroadcast('buff', 'bought a +50% EXP server buff (1 hour) for the whole server!');
       } else {
-        state.gold += SERVER_BUFF_EXP_COST; bumpStat('hoursBuffed', -1); saveGame();
+        earnGold(SERVER_BUFF_EXP_COST); bumpStat('hoursBuffed', -1); saveGame();
         addLog('The buff purchase failed: ' + ((res && res.error) || 'try again') + '. Your gold was refunded.', 'danger');
       }
       renderSettingsModal(); render();
     }, function(){
       _serverBuffBusy = false;
-      state.gold += SERVER_BUFF_EXP_COST; bumpStat('hoursBuffed', -1); saveGame();
+      earnGold(SERVER_BUFF_EXP_COST); bumpStat('hoursBuffed', -1); saveGame();
       addLog('The buff purchase failed (network). Your gold was refunded.', 'danger');
       renderSettingsModal(); render();
     });
@@ -8116,7 +8117,7 @@
       addLog('The fallen foe\'s gear can be salvaged! You obtained a ' + name + '.', 'important');
     } else {
       var bonusGold = randInt(5,15) * (tierIndex+1);
-      state.gold += bonusGold;
+      earnGold(bonusGold);
       addLog('You salvaged ' + bonusGold + ' gold from the fallen foe.', '');
     }
     needsRender = true;
@@ -8448,7 +8449,7 @@
     var act = state.activity;
     bumpStat('kills');
     var goldWon = randInt(monster.goldMin, monster.goldMax);
-    state.gold += goldWon;
+    earnGold(goldWon);
     addPhysiqueXp(physTierPairs([['resolve',1]], monster.tierIndex));
     addLog('Defeated the ' + monster.name + '! +' + goldWon + ' gold.', 'important');
     applyMonsterCategoryLoot(monster);
@@ -8743,7 +8744,7 @@
       addLog('That item is locked. Unlock it first to sell.', 'danger');
       return;
     }
-    state.gold += Math.round(qty*item.sell*merchantSellMult());
+    earnGold(Math.round(qty*item.sell*merchantSellMult()));
     state.inventory[id] = 0;
     addPhysiqueXp([['merchantsSavvy',1]]); // Merchant's Savvy trains on selling
     needsRender = true;
@@ -8759,7 +8760,7 @@
       var qty = state.inventory[id]||0;
       if(item && qty>0 && !state.lockedItems[id]){ total += qty*item.sell; state.inventory[id]=0; }
     });
-    if(total>0){ total = Math.round(total*merchantSellMult()); state.gold += total; addPhysiqueXp([['merchantsSavvy',2]]); addLog('Sold your goods for ' + total + ' gold.'); needsRender = true; }
+    if(total>0){ total = Math.round(total*merchantSellMult()); earnGold(total); addPhysiqueXp([['merchantsSavvy',2]]); addLog('Sold your goods for ' + total + ' gold.'); needsRender = true; }
   }
 
   // Tools are now Equipment: forging produces a stackable inventory item for whatever
@@ -8865,6 +8866,18 @@
   function saveGame(){
     state.lastSaved = Date.now();
     cloudSave();   // ONLINE-ONLY: persistence goes to the backend (debounced); no localStorage
+  }
+
+  // Every gold RECEIVED -- combat/gathering earnings, sale proceeds, cross-player transfers, and
+  // refunds -- flows through here so the monotonic goldEarnedTotal anchor stays accurate. walletSync()
+  // reconciles that anchor with the server, which credits it under a rate limit and clamps a
+  // spoofed-high balance back down. Spending stays a plain subtraction: the clamp reflects it via the
+  // lower reported gold, so no per-spend plumbing is needed to keep the wallet honest.
+  function earnGold(amt){
+    amt = Math.floor(amt);
+    if(!(amt > 0)) return;
+    state.gold += amt;
+    state.goldEarnedTotal = (state.goldEarnedTotal||0) + amt;
   }
 
   function applyOfflineProgress(elapsedMs){
@@ -9063,6 +9076,11 @@
             var _oldFat = state.inventory['trapping_t'+_mi];
             if(_oldFat){ state.inventory['fat_t'+_mi] = (state.inventory['fat_t'+_mi]||0) + _oldFat; delete state.inventory['trapping_t'+_mi]; }
           }
+          // Server-authoritative wallet anchor: lifetime gold received. Seed from current gold for
+          // legacy saves (past earnings aren't recorded, so the anchor starts at today's balance),
+          // and never let it drop below the current balance.
+          if(typeof state.goldEarnedTotal !== 'number' || !isFinite(state.goldEarnedTotal)) state.goldEarnedTotal = Math.max(0, Math.floor(state.gold||0));
+          else state.goldEarnedTotal = Math.max(state.goldEarnedTotal, Math.floor(state.gold||0));
           if(typeof state.playerHp !== 'number') state.playerHp = maxHp(state);
           if(typeof state.autoEatThreshold !== 'number') state.autoEatThreshold = 0;
           if(!state.stats || typeof state.stats !== 'object') state.stats = {};
@@ -14428,7 +14446,7 @@
       if(!chatClient) return;
       var res = await chatClient.auth.getSession();
       var sess = res.data && res.data.session;
-      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; await cloudLoad(); if(!cloudReloading) profileSync(true); }
+      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; await cloudLoad(); if(!cloudReloading){ profileSync(true); walletSync(true); } }
     }catch(e){}
   }
 
@@ -15002,6 +15020,13 @@
   var leaderboardStatus = CHAT_ENABLED ? 'idle' : 'unconfigured'; // idle|loading|ready|error|unconfigured
   var leaderboardLastFetch = 0;
   var profileLastSync = 0;
+  // ===== Server-authoritative gold wallet (Stage 2 cutover) =====
+  // Kill switch: flip to false to fall back to purely local gold (no reconcile) if the wallet ever
+  // misbehaves. When on, walletSync() reconciles state.gold with the server every WALLET_SYNC_MS.
+  var WALLET_SYNC_ENABLED = true;
+  var WALLET_SYNC_MS = 60000;
+  var walletLastSync = 0;
+  var walletServerGold = null;   // last authoritative balance returned by the server (null until first sync)
   var profileView = null;
   // Lifetime-stat metrics available as leaderboard rankings (must match the state.stats keys).
   var LB_STAT_METRICS = [
@@ -15069,6 +15094,35 @@
       await chatClient.functions.invoke('submit_profile', {
         body: { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, equipment: stats.equipment, stats: stats.stats }
       });
+    }catch(e){}
+  }
+  // Reconcile the local balance with the server wallet. Sends lifetime earnings (goldEarnedTotal)
+  // and the current gold; the server credits earnings under a rate limit and CLAMPS the balance to
+  // the reported gold (min), then returns the authoritative number, which we adopt. The returned
+  // value can only equal or LOWER what we sent, so this quietly corrects a spoofed-high balance while
+  // leaving legit gold untouched. Offline-safe: if we're not signed in / offline, it just no-ops and
+  // local gold keeps working. Guarded by WALLET_SYNC_ENABLED as a kill switch.
+  async function walletSync(force){
+    if(!WALLET_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id || cloudReloading) return;
+    var now = Date.now();
+    if(!force && now - walletLastSync < WALLET_SYNC_MS) return;
+    walletLastSync = now;
+    if(!chatClient){ if(!(await authEnsureClient())) return; }
+    var sentGold = Math.max(0, Math.floor(state.gold||0));
+    var sentEarned = Math.max(0, Math.floor(state.goldEarnedTotal||0));
+    try{
+      var res = await chatClient.functions.invoke('wallet', { body: { action:'sync', earned_total: sentEarned, gold: sentGold } });
+      var d = res && res.data;
+      if(!d || d.ok !== true || typeof d.gold !== 'number' || !isFinite(d.gold)) return;
+      walletServerGold = d.gold;
+      // Preserve gold earned/spent locally DURING the round-trip so a concurrent tick isn't clobbered.
+      var drift = Math.floor(state.gold||0) - sentGold;
+      var next = Math.max(0, Math.floor(d.gold) + drift);
+      if(next !== state.gold){
+        state.gold = next;
+        var cv = document.getElementById('ffCoinVal'); if(cv) cv.textContent = fmt(state.gold);
+        var hg = document.getElementById('hdrGold'); if(hg) hg.textContent = fmt(state.gold);
+      }
     }catch(e){}
   }
   async function leaderboardFetch(force){
@@ -15295,7 +15349,7 @@
     render();
     guildInvoke('create', { name:name, tag:tag, description:desc }).then(function(res){
       guildState.busy=false;
-      if(!res || !res.ok){ state.gold += GUILD_CREATE_COST; guildState.error=(res&&res.error)||'Could not create guild.'; render(); return; }
+      if(!res || !res.ok){ earnGold(GUILD_CREATE_COST); guildState.error=(res&&res.error)||'Could not create guild.'; render(); return; }
       saveGame();
       guildState.error=''; guildBrowseState.status='idle'; guildReload(true);
     });
@@ -15568,7 +15622,7 @@
       guildBankState.busy=false;
       if(!res.ok){ guildBankState.error=res.error||'Withdraw failed.'; render(); return; }
       var _g = (res.granted == null) ? amt : Number(res.granted); if(!isFinite(_g)) _g = 0; // trust the server's number; a real 0 must not fall back to the full request
-      state.gold = (state.gold||0) + Math.max(0, _g); saveGame(); guildBankApply(res); render();
+      earnGold(Math.max(0, _g)); saveGame(); guildBankApply(res); render();
     });
   }
   function renderGuildBank(){
@@ -16190,7 +16244,7 @@
     return marketInvoke('collect').then(function(res){
       if(res && res.ok){
         var got=false, parts=[];
-        if(res.gold>0){ state.gold += res.gold; got=true; parts.push(fmt(res.gold)+'g'); }
+        if(res.gold>0){ earnGold(res.gold); got=true; parts.push(fmt(res.gold)+'g'); }
         (res.items||[]).forEach(function(it){ if(it.amount>0){ addItem(it.item_key, it.amount); got=true; parts.push(fmt(it.amount)+'× '+marketItemName(it.item_key)); } });
         if(got){ saveGame(); addLog('Collected from the Auction House: '+parts.join(', ')+'.', 'chronicle'); }
       }
@@ -16246,7 +16300,7 @@
     state.gold -= cost; saveGame(); // escrow gold (price-improvement is refunded via collect)
     marketInvoke('place', { side:'buy', item_key:item, unit_price:price, qty:qty }).then(function(res){
       marketState.busy = false;
-      if(!res || !res.ok){ state.gold += cost; saveGame(); addLog('Buy failed: '+((res&&res.error)||'try again')+'.','danger'); render(); return; }
+      if(!res || !res.ok){ earnGold(cost); saveGame(); addLog('Buy failed: '+((res&&res.error)||'try again')+'.','danger'); render(); return; }
       var filled = res.filled||0, rest = res.rest||0;
       if(instant){
         addLog(filled>0 ? ('Bought '+fmt(filled)+' '+marketItemName(item)+(rest>0? ' — bid '+fmt(rest)+' more @ '+fmt(price)+'g':'')+'.') : ('Nothing available to buy now — bid '+fmt(rest)+' '+marketItemName(item)+' @ '+fmt(price)+'g.'), 'chronicle');
@@ -16276,7 +16330,7 @@
     marketInvoke('cancel', { order_id:orderId }).then(function(res){
       if(res && res.ok){
         if(res.side==='sell'){ addItem(res.item_key, res.qty); addLog('Cancelled sell order — recovered '+fmt(res.qty)+' '+marketItemName(res.item_key)+'.', 'chronicle'); }
-        else { state.gold += res.qty * res.unit_price; addLog('Cancelled buy order — refunded '+fmt(res.qty*res.unit_price)+'g.', 'chronicle'); }
+        else { earnGold(res.qty * res.unit_price); addLog('Cancelled buy order — refunded '+fmt(res.qty*res.unit_price)+'g.', 'chronicle'); }
         saveGame(); marketReload();
       } else { addLog('Cancel failed: '+((res&&res.error)||'try again')+'.','danger'); }
     });
@@ -16808,7 +16862,7 @@
     var item = ALL_SELLABLE[id]; var qty = state.inventory[id]||0;
     if(qty <= 0 || !item) return;
     if(state.lockedItems[id]){ addLog('That item is locked. Unlock it first to sell.', 'danger'); return; }
-    state.gold += Math.round(item.sell*merchantSellMult()); state.inventory[id] = qty - 1; addPhysiqueXp([['merchantsSavvy',1]]); needsRender = true;
+    earnGold(Math.round(item.sell*merchantSellMult())); state.inventory[id] = qty - 1; addPhysiqueXp([['merchantsSavvy',1]]); needsRender = true;
   }
   function renderInventoryPanel(){
     var searchInputEl = document.getElementById('invSearchInput');
@@ -18344,6 +18398,7 @@
       saveAccum = 0;
       saveGame();
       profileSync();
+      walletSync();
       cloudSave();
     }
 
@@ -18450,7 +18505,7 @@
       requestAnimationFrame(loop);
     }
     chatInit();                       // chat + chronicle subscriptions
-    profileSync(true); leaderboardFetch(true);
+    profileSync(true); leaderboardFetch(true); walletSync(true);
     scheduleAutoRefresh();            // keep long-lived tabs current with frequent deploys
   }
   (async function onlineBoot(){
@@ -18479,6 +18534,7 @@
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
+      earnGold:earnGold, walletSync:walletSync,
       startGather:startGather, startCraft:startCraft, startPray:startPray,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
