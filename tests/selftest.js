@@ -1243,6 +1243,13 @@
     var emblemOk = ids.every(function(id){ return FF.familiarAvatar(id).indexOf('#shape-'+FF.FAM_SKIN[id].s) > -1; });
     ok(emblemOk, 'each avatar holds its skill emblem shape');
     eq(FF.familiarAvatar('mining').indexOf('#shape-ore') > -1, true, 'mining familiar holds the ore crest');
+    // Every familiar-eligible skill (gathering/crafting/farming/faith/physique) has a COMPLETE familiar:
+    // a 4-spell kit, an avatar skin, and a channelled element. Guards the "a familiar for every skill" fill.
+    var missingFam = FF.FAMILIAR_SKILL_IDS.filter(function(id){ var f=FF.FAMILIAR_DATA[id]; return !(f && f.spells && f.spells.length===4 && FF.FAM_SKIN[id] && FF.FAMILIAR_ELEMENT[id]); });
+    eq(missingFam.length, 0, 'every skill has a complete familiar' + (missingFam.length?': missing '+missingFam.join(','):''));
+    // spot-check a couple of the newly-filled utility-physique familiars
+    ok(FF.FAMILIAR_DATA.merchantsSavvy && FF.FAMILIAR_DATA.merchantsSavvy.spells.length===4, "Merchant's Savvy has a familiar");
+    ok(FF.FAMILIAR_DATA.zealotry && FF.FAMILIAR_DATA.zealotry.spells.length===4, 'Zealotry has a familiar');
     // famMix midpoint of black and white is grey
     eq(FF.famMix('#000000','#ffffff',0.5), '#808080', 'famMix 50% black/white -> grey');
   });

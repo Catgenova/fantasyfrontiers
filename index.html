@@ -4954,6 +4954,78 @@
     s += '</svg>';
     return s;
   }
+  // ---- Ensure a familiar for EVERY skill -------------------------------------------------------
+  // The original FAMILIAR_DATA covered the first physiques but not the utility physiques added later
+  // (Resolve, Curiosity, Merchant's Savvy, ...). Fill any familiar-eligible skill still missing an
+  // entry: each gets a name, its own physique icon + a matching chibi avatar (FAM_SKIN), an element,
+  // and a themed 4-spell kit. Runs before the avatar swap below so the new ones get a chibi too.
+  (function(){
+    // Each familiar kit must be a UNIQUE effect combination (selftest enforces it), so generate one
+    // per familiar and skip any signature already used by a hand-authored kit or an earlier fill.
+    function kitSig(kit){ return kit.map(function(s){ return s.type+(s.kind?':'+s.kind:'')+(s.dmgType?':'+s.dmgType:''); }).sort().join('|'); }
+    var usedKit = {};
+    Object.keys(FAMILIAR_DATA).forEach(function(id){ var sp=FAMILIAR_DATA[id].spells; if(sp) usedKit[kitSig(sp)] = true; });
+    var GK_DMG = ['piercing','slashing','blunt','void'];
+    var GK_BK  = ['critChance','critDmg','block','dodge','haste','resistBlunt','resistSlash','resistPierce','dmgBlunt','dmgSlash','dmgPierce','firebomb','potionPoison'];
+    var GK_4TH = [ function(){return healSpell('Mend',16);}, function(){return armorSpell('Guard',1.6,6);}, function(){return regenSpell('Renew',4,6);}, function(){return weakenSpell('Expose',0.3,8);}, function(){return slowSpell('Bind',0.4,10);}, function(){return siphonSpell('Drain',12);}, function(){return poisonSpell('Blight',5,6);} ];
+    function genKit(seed, el){
+      for(var a=0;a<800;a++){
+        var i = seed*7 + a, bA = i%GK_BK.length, bB = (i*5+3)%GK_BK.length; if(bB===bA) bB=(bB+1)%GK_BK.length;
+        var kit = [ hitSpell('Strike', GK_DMG[i%4], 14), buffSpell('Empower', GK_BK[bA], 0.3, 8), buffSpell('Focus', GK_BK[bB], 0.15, 8), GK_4TH[i%GK_4TH.length]() ];
+        var s = kitSig(kit);
+        if(!usedKit[s]){ usedKit[s]=true; kit.forEach(function(sp){ if(DAMAGE_SPELL_TYPES[sp.type]) sp.element = el; }); return kit; }
+      }
+      var k=[hitSpell('Strike','void',14),buffSpell('Empower','critDmg',0.3,8),armorSpell('Guard',1.6,6),healSpell('Mend',16)]; k.forEach(function(sp){ if(DAMAGE_SPELL_TYPES[sp.type]) sp.element=el; }); return k;
+    }
+    var gkSeed = 0;
+    var FILL = {
+      resolve:{n:'Resolute',s:'candle',c:'#d8b82a',ear:'horn',el:'dark',k:'def'},
+      curiosity:{n:'Sniff',s:'magnify',c:'#4a8a8a',ear:'antenna',el:'light',k:'ctrl'},
+      tenacity:{n:'Cornered',s:'muscle',c:'#c8902a',ear:'horn',el:'fire',k:'off'},
+      agility:{n:'Dart',s:'run',c:'#3a9a9a',ear:'cat',el:'water',k:'ctrl'},
+      sleightOfHand:{n:'Sly',s:'tophat',c:'#3a3a3a',ear:'cat',el:'dark',k:'ctrl'},
+      logic:{n:'Cogsworth',s:'gear',c:'#5a5f9a',ear:'antenna',el:'light',k:'sup'},
+      blocking:{n:'Barricade',s:'wallseg',c:'#8a8a8a',ear:'horn',el:'earth',k:'def'},
+      criticalEye:{n:'Keeneye',s:'target',c:'#c8302a',ear:'antenna',el:'fire',k:'off'},
+      exploitation:{n:'Vantage',s:'coin',c:'#c9a227',ear:'horn',el:'dark',k:'off'},
+      anglersEye:{n:'Angler',s:'fish',c:'#3f8fd0',ear:'fin',el:'water',k:'ctrl'},
+      prospectorsNose:{n:'Seeker',s:'gem',c:'#8a97a6',ear:'horn',el:'earth',k:'off'},
+      huntsman:{n:'Tracker',s:'meat',c:'#7a2a2a',ear:'horn',el:'dark',k:'off'},
+      sylvanBond:{n:'Sylvan',s:'log',c:'#6a9a5a',ear:'leaf',el:'earth',k:'sup'},
+      quartermaster:{n:'Ledger',s:'urn',c:'#9a8a6a',ear:'round',el:'earth',k:'sup'},
+      masterwork:{n:'Artisan',s:'starburst',c:'#c9a227',ear:'horn',el:'light',k:'sup'},
+      diligence:{n:'Scholar',s:'brain',c:'#5a5f9a',ear:'antenna',el:'light',k:'sup'},
+      weaponsmithsEdge:{n:'Whetstone',s:'sword',c:'#a83828',ear:'horn',el:'fire',k:'off'},
+      armorersTemper:{n:'Temper',s:'chestarmor',c:'#8a97a6',ear:'horn',el:'earth',k:'def'},
+      greenThumb:{n:'Bloom',s:'seed',c:'#5aa06a',ear:'leaf',el:'earth',k:'sup'},
+      composter:{n:'Mulch',s:'spice',c:'#6b8f4e',ear:'round',el:'water',k:'sup'},
+      apothecarysHand:{n:'Draught',s:'potion',c:'#7a4a9a',ear:'antenna',el:'dark',k:'pois'},
+      demolitionist:{n:'Kaboom',s:'flame',c:'#e8a02a',ear:'horn',el:'fire',k:'off'},
+      runicAttunement:{n:'Resonance',s:'corespiral',c:'#7a5aa8',ear:'horn',el:'light',k:'off'},
+      wardersFocus:{n:'Deflect',s:'shield',c:'#7a5aa8',ear:'horn',el:'light',k:'def'},
+      zealotry:{n:'Zeal',s:'candle',c:'#e0c860',ear:'halo',el:'light',k:'off'},
+      oblation:{n:'Offering',s:'urn',c:'#9a8560',ear:'horn',el:'dark',k:'sup'},
+      fieldRations:{n:'Ration',s:'meal',c:'#5a9a4a',ear:'round',el:'fire',k:'sup'},
+      menagerist:{n:'Warden',s:'wing',c:'#c87a9a',ear:'wing',el:'light',k:'sup'},
+      merchantsSavvy:{n:'Haggle',s:'coin',c:'#c9a227',ear:'round',el:'light',k:'sup'}
+    };
+    function mk(id, spec){
+      if(FAMILIAR_DATA[id]) return;
+      var el = spec.el || 'earth';
+      var pm = PHYSIQUE_SKILL_MAP[id];
+      FAMILIAR_DATA[id] = { name: spec.n || (pm?pm.name:id), icon: (pm&&pm.icon)||svgIcon('starburst','#8a8a8a'), spells: genKit(gkSeed++, el) };
+      FAMILIAR_ELEMENT[id] = el;
+      FAM_SKIN[id] = { s: spec.s||'starburst', c: spec.c||'#8a8a8a', ear: spec.ear||'round' };
+    }
+    Object.keys(FILL).forEach(function(id){ mk(id, FILL[id]); });
+    // Safety net: any remaining familiar-eligible skill still without an entry gets a generated
+    // default, so EVERY skill is guaranteed a familiar (and any future skill is auto-covered).
+    FAMILIAR_SKILL_IDS.forEach(function(id){
+      if(FAMILIAR_DATA[id]) return;
+      var pm = PHYSIQUE_SKILL_MAP[id];
+      mk(id, { n: pm?pm.name:id, s:'starburst', c:'#8a8a8a', ear:'round', el:'earth', k:'sup' });
+    });
+  })();
   // Swap each familiar's flat skill icon for its bespoke companion avatar (flows to the menagerie
   // cards, the summon popup, the active-companion banner, and combat automatically).
   Object.keys(FAMILIAR_DATA).forEach(function(id){ if(FAM_SKIN[id]) FAMILIAR_DATA[id].icon = familiarAvatar(id); });
@@ -17358,6 +17430,7 @@
     if(itemId.indexOf('tool_')===0) return 'equipTool';
     if(itemId.indexOf('stweapon_')===0) return 'equipStackableWeapon';
     if(itemId.indexOf('stshield_')===0) return 'equipStackableShield';
+    if(itemId.indexOf('stward_')===0) return 'equipWard';
     if(itemId.indexOf('bodyarmor_')===0) return 'equipBodyArmor';
     if(itemId.indexOf('belt_t')===0) return 'equipBelt';
     if(itemId.indexOf('relic_t')===0) return 'equipRelic';
