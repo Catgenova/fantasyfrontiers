@@ -46,6 +46,7 @@ try {
   const rawServer = createServer((req, res) => { let p = decodeURIComponent(req.url.split("?")[0]); if (p.endsWith("/")) p += "index.html"; const fp = join(".", normalize(p).replace(/^(\.\.[/\\])+/, "")); if (!existsSync(fp)) { res.writeHead(404); res.end("nf"); return; } res.writeHead(200, { "Content-Type": TYPES[extname(fp)] || "application/octet-stream" }); res.end(readFileSync(fp)); });
   await new Promise((r) => rawServer.listen(4174, r));
   const rp = await browser.newPage();
+  rp.on("console", (m) => { const t = m.text(); if (t.indexOf("STRIPDBG") !== -1) console.log("smoke: RAW " + t); });
   await rp.goto("http://localhost:4174/index.html?selftest", { waitUntil: "domcontentloaded" });
   await rp.waitForFunction(() => window.__FF && window.__FF.CRAFT_PHYSIQUE, null, { timeout: 30000 }).catch(() => null);
   console.log("smoke: logic-dbg(raw source) =", JSON.stringify(await dumpLogic(rp)));
