@@ -15134,7 +15134,7 @@
     guildChatSubGuildId = gid;
     chatClient.from('guild_messages').select('id,created_at,username,body').eq('guild_id',gid).order('created_at',{ascending:false}).limit(80).then(function(res){
       guildChatMessages = ((res&&res.data)||[]).slice().reverse();
-      if(currentCategory==='chat' && chatChannel==='guild') guildChatRenderOnly();
+      if(chatChannel==='guild') guildChatRenderOnly();
     });
     guildChatChannelObj = chatClient.channel('guild-chat-'+gid)
       .on('postgres_changes', { event:'INSERT', schema:'public', table:'guild_messages', filter:'guild_id=eq.'+gid }, function(p){ guildChatOnIncoming(p.new); })
@@ -16412,7 +16412,7 @@
     var _ci = document.getElementById('chatInput');
     var _chatFocused = !!(_ci && document.activeElement === _ci);
     var _chatSel = _ci ? _ci.selectionStart : null;
-    if(_ci){ if(currentCategory==='chat' && chatChannel==='guild') guildChatDraft = _ci.value; else chatDraft = _ci.value; }
+    if(_ci){ if(chatChannel==='guild') guildChatDraft = _ci.value; else chatDraft = _ci.value; } // #chatInput is the guild input whenever the guild channel is active (dock/drawer/tab)
     currentArea = areaOf(currentCategory); // keep the rail's active area in sync with the content
     updateHeader();
     document.getElementById('globalActionBar').innerHTML = renderGlobalActionBar();
@@ -17313,7 +17313,7 @@
 
   document.getElementById('app').addEventListener('keydown', function(e){
     if(e.key !== 'Enter' || !e.target) return;
-    if(e.target.id === 'chatInput'){ e.preventDefault(); if(currentCategory==='chat' && chatChannel==='guild') guildChatSend(); else chatSend(); }
+    if(e.target.id === 'chatInput'){ e.preventDefault(); if(chatChannel==='guild' && guildState.guild) guildChatSend(); else chatSend(); } // route by active channel (chat lives in the rail dock, so currentCategory isn't 'chat')
     else if(e.target.id === 'authUsername' || e.target.id === 'authPassword' || e.target.id === 'authConfirm'){ e.preventDefault(); authSubmit(); }
   });
 
