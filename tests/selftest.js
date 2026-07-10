@@ -449,6 +449,35 @@
     S.faith = savedFaith;
   });
 
+  // ---- Resources reorg: Gathering / Refining / Cooking / Construction split + 70% gather success -----
+  suite('resources reorg', function(){
+    // Cooking = food & drink; Refining = the rest of the old Crafting tab; both partition it exactly.
+    var COOK = FF.COOKING_SKILL_IDS, REF = FF.REFINING_SKILL_IDS, TAB = FF.CRAFTING_TAB_SKILL_IDS;
+    ['roasting','cooking','baking','brewing','mixology','confectionery','dairy','gastronomy'].forEach(function(id){
+      ok(COOK.indexOf(id) !== -1, id+' is a Cooking skill');
+    });
+    ok(REF.indexOf('metallurgy') !== -1 && REF.indexOf('tanning') !== -1 && REF.indexOf('alchemy') !== -1, 'Refining holds the material-processing crafts');
+    ok(COOK.every(function(id){ return REF.indexOf(id) === -1; }), 'Cooking and Refining are disjoint');
+    eq(COOK.length + REF.length, TAB.length, 'Cooking + Refining exactly partition the old Crafting tab');
+    // Butchering left Gathering and leads Refining.
+    ok(FF.GATHERING_TAB_SKILL_IDS.indexOf('butchering') === -1, 'Gathering no longer lists Butchering');
+    ok(FF.GATHER_SKILL_IDS.indexOf('butchering') !== -1, 'Butchering is still a (gather-backed) skill');
+    eq(FF.REFINING_TAB_SKILL_IDS[0], 'butchering', 'Butchering leads the Refining tab');
+
+    // Every gathering skill now has a 70% base main-output chance (no equipped tool).
+    eq(FF.BASE_GATHER_MAIN_CHANCE, 0.70, 'base gather success is 70%');
+    var S = FF._state, savedTools = S.gatherTools;
+    S.gatherTools = {}; // no tools -> pure base
+    ['forestry','herbalism','botany','foraging','beekeeping','essence','tapping','spelunking'].forEach(function(sk){
+      ok(Math.abs(FF.genericGatherMainChance(S, sk) - 0.70) < 1e-9, sk+' base success = 70%');
+    });
+    S.gatherTools = savedTools;
+
+    // Skills-tab progress helper returns a 0..100 percentage.
+    var p = FF.anySkillProgress('mining');
+    ok(typeof p === 'number' && p >= 0 && p <= 100, 'anySkillProgress is a 0-100 percentage');
+  });
+
   // ---- Guild estate: assist a teammate's task ------------------------------------------
   suite('guild estate assist', function(){
     var ge = FF.guildEstate;

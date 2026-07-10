@@ -1471,7 +1471,7 @@
     {id:'leaderboard', label:'Leaderboard', icon:svgIcon('trophy','var(--cat-leaderboard)'), color:'var(--cat-leaderboard)'}
   ];
 
-  var DEFAULT_SUB = { gathering:'digging', crafting:'metallurgy', building:'carpentry', outfitting:'weaponsmithing', faith:'prayer', combat:'wildlife' };
+  var DEFAULT_SUB = { gathering:'digging', crafting:'metallurgy', refining:'butchering', cooking:'roasting', building:'carpentry', outfitting:'weaponsmithing', faith:'prayer', combat:'wildlife' };
 
   var SUB_PALETTE = ['#8a6a45','#6f8a4a','#4a7a8a','#9a6a8a','#7a8a45','#8a5a5a','#5a7a9a','#8a7a3a','#4a8a6a','#9a7a5a','#6a5a9a','#8a4a6a','#4a9a7a','#9a5a4a','#5a9a8a'];
 
@@ -3771,6 +3771,13 @@
   var CRAFTING_TAB_SKILL_IDS = CRAFT_SKILL_IDS.filter(function(id){
     return BUILDING_SKILL_IDS.indexOf(id)===-1 && OUTFITTING_SKILL_IDS.indexOf(id)===-1;
   });
+  // Resources area sub-tabs: the old "Crafting" tab splits into Cooking (food & drink) and Refining
+  // (material processing, incl. Butchering); "Building" is shown as "Construction". Gathering excludes
+  // Butchering (it's a refining activity now).
+  var COOKING_SKILL_IDS = ['roasting','cooking','baking','brewing','mixology','confectionery','dairy','gastronomy'];
+  var REFINING_SKILL_IDS = CRAFTING_TAB_SKILL_IDS.filter(function(id){ return COOKING_SKILL_IDS.indexOf(id)===-1; });
+  var REFINING_TAB_SKILL_IDS = ['butchering'].concat(REFINING_SKILL_IDS); // Butchering leads the Refining tab
+  var GATHERING_TAB_SKILL_IDS = GATHER_SKILL_IDS.filter(function(id){ return id !== 'butchering'; });
   var ALL_MAIN_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['fiberharvesting','grainharvesting','herbharvesting']).concat(WEAPON_STYLE_IDS).concat([WANDS_SKILL_ID, STAVES_SKILL_ID, SCEPTERS_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS).concat(['prayer','sacrifice','devotion','blessing','miracle']);
   var FAITH_SKILL_IDS = ['prayer','sacrifice','devotion','blessing','miracle'];
 
@@ -5176,6 +5183,15 @@
   }
 
   // ---- Digging: main output chance (Shovel-boosted) + two independent rare side-drops (physique-boosted) ----
+  // Uniform Gathering success: every gathering skill's main resource drops 70% of the time at base,
+  // climbing toward ~98% as its gather tool improves. Digging/Mining/Fishing keep their own tuned rolls
+  // (all already anchored at this 70% base); every other gather is gated through this helper.
+  var BASE_GATHER_MAIN_CHANCE = 0.70;
+  var GATHER_MAIN_TOOL_CAP = 0.28;
+  function genericGatherMainChance(state, skillId){
+    var tier = (state.gatherTools && state.gatherTools[skillId]) || 0;
+    return Math.min(0.98, BASE_GATHER_MAIN_CHANCE + GATHER_MAIN_TOOL_CAP * (tier/TIER_COUNT));
+  }
   var BASE_DIG_MAIN_CHANCE = 0.70;
   var DIG_MAIN_TOOL_CAP = 0.28;
   var BASE_COAL_CHANCE = 0.10;
@@ -5293,7 +5309,7 @@
   }
 
   // ---- Fishing: 60% base catch chance, boosted by the Fishing Rod ----
-  var BASE_FISH_CHANCE = 0.60;
+  var BASE_FISH_CHANCE = 0.70;
   function fishingCatchChance(state){
     var tier = state.gatherTools.fishing||0;
     var toolBonus = getEquippedGatherTool('fishing', tier, state.gatherToolRarities.fishing).speedBonus || 0;
@@ -6908,7 +6924,13 @@
         processMiningRoll(act.itemId);
       } else if(act.skill === 'fishing'){
         processFishingRoll(act.itemId);
-      } else {
+      } else if(act.skill === 'butchering'){
+        // Butchering's Hide gather-line is a Refining activity, not a 70% gather -- it always yields.
+        addItem(act.itemId, 1);
+        spawnFloatingText('+1 ' + item.name, 'ft-success');
+        gatherDoubleRoll(act.itemId, act.skill);
+      } else if(Math.random() < genericGatherMainChance(state, act.skill)){
+        // Every other gather has a 70% base success (+ gather-tool bonus); a whiff yields nothing this tick.
         addItem(act.itemId, 1);
         spawnFloatingText('+1 ' + item.name, 'ft-success');
         gatherDoubleRoll(act.itemId, act.skill);
@@ -6925,6 +6947,8 @@
           maybeDropPowder(parseInt(act.itemId.split('_t')[1], 10));
           maybeDropForagingArtifact(parseInt(act.itemId.split('_t')[1], 10));
         }
+      } else {
+        spawnFloatingText('Nothing gathered', 'ft-fail');
       }
       addPhysiqueXp(physTierPairs(GATHER_PHYSIQUE[act.skill], itemTierFromId(act.itemId)));
       maybeSummonFamiliar(act.skill);
@@ -7462,7 +7486,7 @@
   var currentSub = 'digging';
   // Ivy Castle IA: 3 areas -> sub-views (each maps to an existing content category).
   var AREAS = [
-    { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['crafting','Crafting'],['building','Building'],['outfitting','Outfitting'],['faith','Faith'],['inventory','Inventory']] },
+    { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['faith','Faith'],['building','Construction'],['inventory','Inventory'],['skills','Skills']] },
     { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['peons','Peons'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
     { id:'battle', label:'Battle', icon:'crossedswords', subs:[['combat','Combat'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] }
   ];
@@ -9317,18 +9341,20 @@
     var el = document.getElementById('subTabs');
     if(currentCategory==='gathering'){
       el.style.display = 'flex';
-      el.innerHTML = GATHER_SKILL_IDS.map(function(sk){
+      el.innerHTML = GATHERING_TAB_SKILL_IDS.map(function(sk){
         var s = GATHERING_SKILLS[sk];
         var active = sk===currentSub ? ' active' : '';
         return '<button class="sub-btn'+active+'" data-sub="'+sk+'" style="--sub-color:'+s.color+'">'+s.icon+' '+s.label+'</button>';
       }).join('');
-    } else if(currentCategory==='crafting' || currentCategory==='building' || currentCategory==='outfitting'){
+    } else if(currentCategory==='crafting' || currentCategory==='building' || currentCategory==='outfitting' || currentCategory==='refining' || currentCategory==='cooking'){
       el.style.display = 'flex';
       var craftIds = currentCategory==='building' ? BUILDING_SKILL_IDS
                    : currentCategory==='outfitting' ? OUTFITTING_SKILL_IDS
+                   : currentCategory==='refining' ? REFINING_TAB_SKILL_IDS
+                   : currentCategory==='cooking' ? COOKING_SKILL_IDS
                    : CRAFTING_TAB_SKILL_IDS;
       el.innerHTML = craftIds.map(function(sk){
-        var s = CRAFTING_SKILLS[sk];
+        var s = CRAFTING_SKILLS[sk] || GATHERING_SKILLS[sk]; // Butchering (in Refining) lives in GATHERING_SKILLS
         var active = sk===currentSub ? ' active' : '';
         return '<button class="sub-btn'+active+'" data-sub="'+sk+'" style="--sub-color:'+s.color+'">'+s.icon+' '+s.label+'</button>';
       }).join('');
@@ -11439,6 +11465,27 @@
   }
   // Current level of any trackable skill -- physiques live in state.physique, everything else in state.xp.
   function anySkillLevel(id){ return PHYSIQUE_SKILL_MAP[id] ? getLevel((state.physique && state.physique[id]) || 0) : getLevel((state.xp && state.xp[id]) || 0); }
+  // Progress toward the next level (0-100) for any trackable skill or physique.
+  function anySkillProgress(id){ return levelProgress(PHYSIQUE_SKILL_MAP[id] ? ((state.physique && state.physique[id]) || 0) : ((state.xp && state.xp[id]) || 0)); }
+  // Resources > Skills tab: same grouped list as Settings, but every skill also gets a live progress bar.
+  function renderSkillsTab(){
+    var total = 0;
+    ALL_MAIN_SKILL_IDS.forEach(function(id){ total += getLevel((state.xp && state.xp[id]) || 0); });
+    PHYSIQUE_SKILLS.forEach(function(p){ total += getLevel((state.physique && state.physique[p.id]) || 0); });
+    var html = '<div class="section-intro">Every skill you can train, with its current level and progress. Tap a skill\'s <b>?</b> for what trains it and what it affects. <b>Total Level '+fmt(total)+'</b> (skills, proficiencies, classes &amp; physiques).</div>';
+    html += '<div class="settings-grid">';
+    SKILL_GROUPS.forEach(function(g){
+      html += '<div class="settings-col"><h4 style="color:'+g.color+'">'+escapeHtml(g.label)+'</h4>';
+      g.skills.forEach(function(id){
+        var info = (SKILL_INFO[id] || PHYSIQUE_SKILL_MAP[id]) ? ' '+skillInfoBtn(id) : '';
+        html += '<div class="settings-skill-row"><span>'+escapeHtml(SKILL_LABELS[id]||id)+info+'</span><b>Lv '+anySkillLevel(id)+'</b></div>';
+        html += '<div class="progress-track" style="height:5px;margin:0 0 7px;"><div class="progress-fill" style="width:'+anySkillProgress(id)+'%"></div></div>';
+      });
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
   // Settings > Skills screen: every skill grouped, with its current level and a (?) for the full
   // "what trains it / what it affects" tooltip (reuses the same skill-info popup used across the game).
   function renderSkillsScreen(){
@@ -15989,7 +16036,9 @@
   function renderContent(){
     var html = '';
     if(currentCategory==='gathering') html = renderGatherTab(currentSub);
-    else if(currentCategory==='crafting' || currentCategory==='building' || currentCategory==='outfitting') html = '<div class="'+(craftOnlyAffordable?'craft-filtering':'')+'"><div class="craft-filter-bar"><button class="craft-filter-btn'+(craftOnlyAffordable?' on':'')+'" data-action="toggleCraftFilter">'+(craftOnlyAffordable?'\u2611':'\u2610')+' Only show items I have materials for</button></div>'+renderCraftTab(currentSub)+'</div>';
+    else if(currentCategory==='refining' && currentSub==='butchering') html = renderGatherTab(currentSub); // Butchering keeps its corpse-processing UI
+    else if(currentCategory==='crafting' || currentCategory==='building' || currentCategory==='outfitting' || currentCategory==='refining' || currentCategory==='cooking') html = '<div class="'+(craftOnlyAffordable?'craft-filtering':'')+'"><div class="craft-filter-bar"><button class="craft-filter-btn'+(craftOnlyAffordable?' on':'')+'" data-action="toggleCraftFilter">'+(craftOnlyAffordable?'\u2611':'\u2610')+' Only show items I have materials for</button></div>'+renderCraftTab(currentSub)+'</div>';
+    else if(currentCategory==='skills') html = renderSkillsTab();
     else if(currentCategory==='estate'){ estUse(false); html = renderEstateTab(); }
     else if(currentCategory==='peons') html = renderPeonsTab();
     else if(currentCategory==='inventory') html = renderInventoryTab();
@@ -18171,6 +18220,7 @@
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       tierStepper:tierStepper, tierRange:tierRange,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
+      GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       startGather:startGather, startCraft:startCraft, startPray:startPray,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
