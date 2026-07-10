@@ -419,6 +419,9 @@
   }
   .skill-info-btn:hover{color:var(--gold-bright);border-color:var(--gold);}
   .skill-info-overlay{position:fixed; inset:0; width:100%; height:100dvh; background:rgba(52,38,18,0.55); z-index:10001; align-items:center; justify-content:center; padding:20px; box-sizing:border-box;}
+  .chat-item-link{display:inline-flex; align-items:center; gap:3px; cursor:pointer; padding:0 5px; margin:0 1px; border-radius:5px; background:rgba(201,162,39,0.14); border:1px solid rgba(201,162,39,0.5); color:var(--gold); font-weight:600; vertical-align:baseline; line-height:1.5;}
+  .chat-item-link:hover{background:rgba(201,162,39,0.26);}
+  .chat-item-link .chat-item-ico, .chat-item-link .chat-item-ico svg{width:12px; height:12px; display:inline-block; flex:0 0 auto;}
   .skill-info-card{
     background:linear-gradient(165deg,var(--bg-panel-raised),var(--bg-card)); border:2px solid var(--gold); border-radius:var(--radius);
     max-width:380px; width:100%; max-height:85dvh; overflow-y:auto; padding:20px; text-align:center; box-shadow:0 0 34px rgba(15,125,116,0.22), 0 10px 28px rgba(52,38,18,0.28);
@@ -1411,6 +1414,7 @@
   <div id="familiarPopupOverlay"></div>
   <div id="skillInfoOverlay" class="skill-info-overlay" data-action="closeSkillInfo" style="display:none"></div>
   <div id="invDetailOverlay" class="skill-info-overlay" data-action="closeInvDetail" style="display:none"></div>
+  <div id="itemLinkOverlay" class="skill-info-overlay" data-action="closeItemLink" style="display:none"></div>
   <div id="settingsOverlay"></div>
   <div id="trackerPickerOverlay"></div>
   <div id="peonPickerOverlay"></div>
@@ -8237,6 +8241,83 @@
     addLog('You sacrificed '+uniqueDisplayName(u)+' and restored '+Math.round(state.faith-before)+' Faith.','important');
     saveGame(); render();
   }
+  // ---- Chat item links: share a unique's stats with other players -------------------------------
+  // A unique lives only in the owner's save, so we encode everything needed to render it into a token
+  // embedded in the chat body: {{i:<base64>}} where the payload is "base|enhance|mod,roll;mod,roll".
+  // Name/icon/base stats derive from the base id (ALL_SELLABLE is identical on every client) and the
+  // enchants ride along, so any reader can view the item with no server round-trip.
+  function encodeItemLink(u){
+    var ench = (u.enchants||[]).map(function(e){ return e.mod+','+e.roll; }).join(';');
+    try { return btoa([u.base, String(u.enhance||0), ench].join('|')); } catch(e){ return ''; }
+  }
+  function decodeItemLink(b64){
+    try {
+      var parts = atob(b64).split('|');
+      var base = parts[0], p = parseImprovable(base); if(!p) return null;
+      var enchants = (parts[2]||'').split(';').filter(Boolean).map(function(seg){ var kv=seg.split(','); return { mod:kv[0], roll:parseInt(kv[1],10)||0 }; });
+      return { base:base, kind:p.kind, tier:p.tier, rarity:p.rarity, enhance:parseInt(parts[1],10)||0, enchants:enchants };
+    } catch(e){ return null; }
+  }
+  // Inline chat chip (opens the stat card on click).
+  function itemLinkChipHtml(b64){
+    var d = decodeItemLink(b64); if(!d) return '';
+    var b = ALL_SELLABLE[d.base];
+    var nm = (b?b.name:'Equipment') + (d.enhance>0?' +'+d.enhance:'');
+    return '<span class="chat-item-link rar-'+d.rarity+'" data-action="chatItemView" data-item="'+b64+'" title="View item stats">'+((b&&b.icon)?'<span class="chat-item-ico">'+b.icon+'</span>':'')+escapeHtml(nm)+'</span>';
+  }
+  // Full stat card for the popup: name, rarity/tier/enhance, base stats, and enhance-scaled enchants.
+  function renderLinkedItemCard(b64){
+    var d = decodeItemLink(b64); if(!d) return '';
+    var b = ALL_SELLABLE[d.base];
+    var nm = (b?b.name:'Equipment') + (d.enhance>0?' +'+d.enhance:'');
+    var html = '<div class="inv-detail-icon">'+((b&&b.icon)||svgIcon('sword','var(--gold)'))+'</div>';
+    html += '<div class="skill-info-title">'+escapeHtml(nm)+'</div>';
+    html += '<div class="inv-detail-meta">'+escapeHtml(getRarity(d.rarity).label||'')+' &bull; Tier '+(d.tier+1)+(d.enhance>0?' &bull; <b>+'+d.enhance+'</b>':'')+'</div>';
+    var baseLines = [];
+    if(b){
+      if(b.dmgMin||b.dmgMax) baseLines.push('Damage '+(b.dmgMin||0)+'–'+(b.dmgMax||0));
+      if(b.defense) baseLines.push('Defense '+(Math.round(b.defense*10)/10));
+      if(b.block) baseLines.push('Block '+Math.round(b.block*100)+'%');
+      if(b.dmgBonus) baseLines.push('+'+Math.round(b.dmgBonus*100)+'% damage');
+    }
+    if(baseLines.length) html += '<div class="skill-info-section"><div class="skill-info-section-label">Base</div><div class="skill-info-section-body">'+baseLines.map(escapeHtml).join(' &bull; ')+'</div></div>';
+    var mult = enhanceStatMult(d.enhance);
+    var enchLines = (d.enchants||[]).map(function(e){ var mod=enchantModById(d.kind, e.mod); if(!mod) return null; var v=e.roll*mult; return mod.pct ? ('+'+(Math.round(v*10)/10)+'% '+mod.label) : ('+'+Math.round(v)+' '+mod.label); }).filter(Boolean);
+    html += '<div class="skill-info-section"><div class="skill-info-section-label">Enchants ('+enchLines.length+')</div><div class="skill-info-section-body">'+(enchLines.length ? enchLines.map(function(l){ return '<div style="color:var(--gold)">'+escapeHtml(l)+'</div>'; }).join('') : '<div class="empty-note">None</div>')+'</div></div>';
+    return html;
+  }
+  // Split a raw chat body into escaped text + rendered item chips (censor only the text segments so a
+  // base64 payload is never mangled by the profanity filter).
+  function chatBodyHtml(raw){
+    raw = String(raw||'');
+    var re = /\{\{i:([A-Za-z0-9+\/=]+)\}\}/g, out='', last=0, m;
+    while((m = re.exec(raw))){
+      out += escapeHtml(censorChat(raw.slice(last, m.index)));
+      var chip = itemLinkChipHtml(m[1]);
+      out += chip || escapeHtml(m[0]);
+      last = m.index + m[0].length;
+    }
+    out += escapeHtml(censorChat(raw.slice(last)));
+    return out;
+  }
+  // "Link in chat" from the Improvement tab: drop the item token into the active chat draft so the
+  // owner can add a note and send it. Respects the current channel (global/guild).
+  function improveLinkChat(uid){
+    var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
+    if(!chatName()){ addLog('Sign in to chat to link items.','danger'); return; }
+    var token = '{{i:'+encodeItemLink(u)+'}}';
+    var guild = (chatChannel==='guild'), maxLen = guild ? 500 : CHAT_CONFIG.maxLen;
+    var ci = document.getElementById('chatInput');
+    var base = ci ? ci.value : (guild ? guildChatDraft : chatDraft); // start from the freshest in-progress draft
+    if((base||'').length + token.length + 1 > maxLen){ addLog('Your chat message is too long to add an item link.','danger'); return; }
+    var next = (base ? base.replace(/\s+$/,'')+' ' : '') + token + ' ';
+    if(guild) guildChatDraft = next; else chatDraft = next;
+    if(ci) ci.value = next;                 // update the live input BEFORE render so its input->draft sync keeps the token
+    if(isMobileView()) chatDrawerOpen = true;
+    render();
+    var ci2 = document.getElementById('chatInput'); if(ci2){ try{ ci2.focus(); ci2.setSelectionRange(ci2.value.length, ci2.value.length); }catch(e){} }
+    addLog('Item link added to your chat — add a note and press Enter to send.','chronicle');
+  }
   // The selected-item detail card (enchant + enhance + trade). Rendered at the TOP of the tab, right
   // under the intro, so the item you're working on stays the primary focus above the picker grid.
   function renderImproveDetail(){
@@ -8249,7 +8330,7 @@
     var name = isU2 ? uniqueDisplayName(u) : (ALL_SELLABLE[improveSel]||{name:'Equipment'}).name;
     var html = '<div class="guild-section-title" style="margin-top:4px;">'+escapeHtml(name)+'</div>';
     html += '<div class="item-card" style="max-width:540px;"><div class="item-meta" style="margin-bottom:6px;">'+escapeHtml(getRarity(rarity).label)+' · Tier '+(tier+1)+' · '+count+'/'+slots+' enchant slots'+(enhance>0?' · <b>+'+enhance+'</b>':'')+'</div>';
-    if(isU2){ var _eq = uniqueIsEquipped(u.uid); html += '<div style="margin-bottom:8px;"><button class="mini-btn" data-action="'+(_eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(_eq?'Unequip':'Equip')+'</button>'+(_eq?' <span class="item-meta" style="color:var(--gold);">equipped</span>':'')+'</div>'; }
+    if(isU2){ var _eq = uniqueIsEquipped(u.uid); html += '<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><button class="mini-btn" data-action="'+(_eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(_eq?'Unequip':'Equip')+'</button><button class="mini-btn" data-action="improveLinkChat" data-uid="'+u.uid+'" title="Share this item\'s stats in chat">🔗 Link in chat</button>'+(_eq?'<span class="item-meta" style="color:var(--gold);">equipped</span>':'')+'</div>'; }
     if(isU2 && u.enchants.length){ u.enchants.forEach(function(e,i){ html += '<div class="inputs-line"><span style="color:var(--gold);">'+escapeHtml(enchantLabel(u.kind,e))+'</span>'+((improvePending&&improvePending.uid===u.uid)?' <button class="mini-btn" data-action="improvePlace" data-idx="'+i+'">Replace</button>':'')+'</div>'; }); }
     else if(isU2){ html += '<div class="empty-note" style="margin-bottom:6px;">No enchants yet.</div>'; }
     var cost = count + 1;
@@ -15295,7 +15376,7 @@
         var col = m.rarity==='fantastic' ? 'var(--rarity-fantastic)' : 'var(--rarity-superior)';
         return '<div class="chat-msg chat-system rar-'+(m.rarity||'supreme')+'"><span class="chat-sys-ico">'+svgIcon('starburst',col)+'</span><span class="chat-body">'+escapeHtml(m.body||'')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span></div>';
       }
-      return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+escapeHtml(censorChat(m.body||''))+'</span></div>';
+      return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+chatBodyHtml(m.body||'')+'</span></div>';
     }).join('');
   }
   // Map a broadcast craft body ("Supreme Iron Sword") to its rarity, or null for rare/normal. Only the
@@ -16401,7 +16482,7 @@
   var guildLivePollTimer = null;
   function guildChatMessagesHtml(){
     if(!guildChatMessages.length) return '<div class="chat-empty">No guild messages yet &mdash; say hello to your guildmates!</div>';
-    return guildChatMessages.map(function(m){ return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+escapeHtml(censorChat(m.body||''))+'</span></div>'; }).join('');
+    return guildChatMessages.map(function(m){ return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+chatBodyHtml(m.body||'')+'</span></div>'; }).join('');
   }
   function guildChatRenderOnly(){ var el=document.getElementById('chatMessages'); if(el){ el.innerHTML=guildChatMessagesHtml(); el.scrollTop=el.scrollHeight; } }
   function guildChatOnIncoming(m){
@@ -17396,6 +17477,16 @@
       '<button class="action-btn" data-action="closeInvDetail" style="margin-top:14px">Close</button>'+
       '</div>';
   }
+  // Popup for a chat item link (shows the shared unique's stats). Reuses the skill-info overlay chrome.
+  var chatItemLinkView = null; // base64 payload of the item currently being viewed, or null
+  function renderItemLinkPopup(){
+    var overlay = document.getElementById('itemLinkOverlay'); if(!overlay) return;
+    if(!chatItemLinkView){ overlay.style.display = 'none'; overlay.innerHTML = ''; return; }
+    var card = renderLinkedItemCard(chatItemLinkView);
+    if(!card){ overlay.style.display = 'none'; overlay.innerHTML = ''; chatItemLinkView = null; return; }
+    overlay.style.display = 'flex';
+    overlay.innerHTML = '<div class="skill-info-card">'+card+'<button class="action-btn" data-action="closeItemLink" style="margin-top:14px">Close</button></div>';
+  }
 
   var lastRenderedLogVersion = -1;
   function renderLogPanel(){
@@ -17729,6 +17820,7 @@
     renderSettingsModal();
     renderSkillInfoPopup();
     renderInvDetailOverlay();  // item detail modal for the grid inventory
+    renderItemLinkPopup();     // chat item-link stat card
     renderOfflineSummary();
     renderLootPopup();
     if(_chatFocused){
@@ -18408,6 +18500,12 @@
       skillInfoOpen = btn.getAttribute('data-skill');
     } else if(action==='closeSkillInfo'){
       skillInfoOpen = null;
+    } else if(action==='chatItemView'){
+      chatItemLinkView = btn.getAttribute('data-item');
+    } else if(action==='closeItemLink'){
+      chatItemLinkView = null;
+    } else if(action==='improveLinkChat'){
+      improveLinkChat(btn.getAttribute('data-uid'));
     } else if(action==='toggleItemLock'){
       toggleItemLock(btn.getAttribute('data-item'));
     } else if(action==='openCritterCache'){
@@ -18893,7 +18991,7 @@
   // the player is typing, or while the tab is backgrounded -- otherwise we re-check shortly after.
   var AUTO_REFRESH_MS = 10*60*1000;   // 10 minutes
   var autoRefreshArmed = false;
-  var AUTO_REFRESH_OVERLAYS = ['familiarPopupOverlay','settingsOverlay','trackerPickerOverlay','peonPickerOverlay','chatExpandOverlay','chatDrawerOverlay','skillInfoOverlay','invDetailOverlay'];
+  var AUTO_REFRESH_OVERLAYS = ['familiarPopupOverlay','settingsOverlay','trackerPickerOverlay','peonPickerOverlay','chatExpandOverlay','chatDrawerOverlay','skillInfoOverlay','invDetailOverlay','itemLinkOverlay'];
   function autoRefreshIsSafe(){
     if(!gameStarted) return false;
     if(typeof document !== 'undefined' && document.hidden) return false;   // don't yank a backgrounded tab
@@ -18960,7 +19058,7 @@
       earnGold:earnGold, walletSync:walletSync, itemSync:itemSync,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
       parseImprovable:parseImprovable, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique,
-      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue,
+      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,

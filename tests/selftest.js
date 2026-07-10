@@ -2578,6 +2578,14 @@
     eq(ta.maxHp, 50, 'amulet + body-armour Max HP enchants stack (20+30)');
     eq(ta.blockChance, 4, 'equipped offhand enchant feeds the aggregate');
     ok(typeof FF.equipUnique==='function' && typeof FF.unequipUnique==='function' && typeof FF.uniqueSellValue==='function', 'stage-3 equip/trade fns exported');
+    // Chat item links: a unique round-trips through encode -> decode with base/enhance/enchants intact.
+    var linkU = { base:'stweapon_wandFire_t3_rare', kind:'weapon', tier:3, rarity:'rare', enhance:4, enchants:[{mod:'critDamage',roll:12},{mod:'lifesteal',roll:7}] };
+    var tok = FF.encodeItemLink(linkU);
+    ok(typeof tok==='string' && tok.length>0, 'encodeItemLink returns a token');
+    var dec = FF.decodeItemLink(tok);
+    ok(dec && dec.base==='stweapon_wandFire_t3_rare' && dec.tier===3 && dec.rarity==='rare' && dec.kind==='weapon', 'decode recovers base/tier/rarity/kind');
+    ok(dec && dec.enhance===4 && dec.enchants.length===2 && dec.enchants[0].mod==='critDamage' && dec.enchants[0].roll===12 && dec.enchants[1].mod==='lifesteal' && dec.enchants[1].roll===7, 'decode recovers enhance + enchant rolls');
+    ok(FF.decodeItemLink('!!!not-base64!!!')===null || FF.decodeItemLink('')===null, 'garbage payload decodes to null (safe fallback)');
   });
 
   // ---- Improvement system: enhance (Stage 2) --------------------------------------------
