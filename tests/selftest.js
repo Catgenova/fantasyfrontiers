@@ -516,6 +516,13 @@
     ok(new Set(T).size === T.length, 'no duplicate tips');
   });
 
+  // ---- Icon shape symbols exist (previously-blank Dairy/Ranching/Tanning/Weaving/etc. icons) ---------
+  suite('icon shapes defined', function(){
+    ['milk','cheese','churn','block','bottle','hide','spool'].forEach(function(sh){
+      ok(document.getElementById('shape-'+sh), 'shape-'+sh+' symbol is defined (icon renders, not blank)');
+    });
+  });
+
   // ---- Guild estate: assist a teammate's task ------------------------------------------
   suite('guild estate assist', function(){
     var ge = FF.guildEstate;
