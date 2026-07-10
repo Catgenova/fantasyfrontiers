@@ -110,13 +110,23 @@ Deno.serve(async (req) => {
     if (!KEY_RE.test(key)) return json({ ok: false, error: "Invalid item." }, 400);
     if (!Number.isInteger(price) || price <= 0 || price > MAX_PRICE) return json({ ok: false, error: "Invalid price." }, 400);
     if (!Number.isInteger(qty) || qty <= 0 || qty > MAX_QTY) return json({ ok: false, error: "Invalid quantity." }, 400);
+    // A BUY escrows price*qty of GOLD -- take it from the server-authoritative wallet up front so
+    // spoofed client gold can't buy from other players. (A SELL escrows items, not gold.) Price
+    // improvement and, later, sale proceeds are returned to the wallet via `collect`; a cancelled
+    // buy returns its remaining escrow via `cancel`. Refund the escrow if the order itself fails.
+    const buyEscrow = side === "buy" ? price * qty : 0;
+    if (buyEscrow > 0) {
+      const { data: paid } = await admin.rpc("wallet_debit", { p_user: user.id, p_amount: buyEscrow });
+      if (paid !== true) return json({ ok: false, error: "Not enough gold.", code: "poor" }, 402);
+    }
+    const refundEscrow = async () => { if (buyEscrow > 0) await admin.rpc("wallet_credit", { p_user: user.id, p_amount: buyEscrow }); };
     const { data: r, error } = await admin.rpc("market_place", {
       p_user: user.id, p_username: username, p_side: side, p_item: key, p_price: price, p_qty: qty,
     });
-    if (error) return json({ ok: false, error: "Order failed." }, 500);
+    if (error) { await refundEscrow(); return json({ ok: false, error: "Order failed." }, 500); }
     const res = r as { status?: string; filled?: number; rest?: number; refund?: number; order_id?: number };
-    if (res?.status === "toomany") return json({ ok: false, error: "You already have the maximum of 40 open orders.", code: "toomany" }, 409);
-    if (res?.status !== "ok") return json({ ok: false, error: "Order rejected." }, 400);
+    if (res?.status === "toomany") { await refundEscrow(); return json({ ok: false, error: "You already have the maximum of 40 open orders.", code: "toomany" }, 409); }
+    if (res?.status !== "ok") { await refundEscrow(); return json({ ok: false, error: "Order rejected." }, 400); }
     return json({ ok: true, filled: Number(res.filled || 0), rest: Number(res.rest || 0), refund: Number(res.refund || 0), order_id: res.order_id ?? null });
   }
 
@@ -128,6 +138,11 @@ Deno.serve(async (req) => {
     const res = r as { status?: string; side?: string; item_key?: string; qty?: number; unit_price?: number };
     if (res?.status === "notfound") return json({ ok: false, error: "That order no longer exists.", code: "notfound" }, 404);
     if (res?.status !== "ok") return json({ ok: false, error: "Cancel rejected." }, 400);
+    // A cancelled BUY returns its remaining gold escrow (qty_remaining * bid price) to the wallet.
+    if (res.side === "buy") {
+      const back = Number(res.qty) * Number(res.unit_price);
+      if (back > 0) await admin.rpc("wallet_credit", { p_user: user.id, p_amount: back });
+    }
     return json({ ok: true, side: res.side, item_key: res.item_key, qty: Number(res.qty), unit_price: Number(res.unit_price) });
   }
 
@@ -136,7 +151,12 @@ Deno.serve(async (req) => {
     if (error) return json({ ok: false, error: "Collect failed." }, 500);
     const res = r as { status?: string; gold?: number; items?: { item_key: string; amount: number }[] };
     if (res?.status !== "ok") return json({ ok: false, error: "Collect rejected." }, 400);
-    return json({ ok: true, gold: Number(res.gold || 0), items: (res.items || []).map((i) => ({ item_key: i.item_key, amount: Number(i.amount) })) });
+    // Gold proceeds (a seller's sale receipts + a buyer's price-improvement refunds) are credited
+    // into the server-authoritative wallet so they're real spendable balance. Verified transfer,
+    // so unthrottled. The client still adds the same gold locally; the sync clamp reconciles.
+    const goldOut = Number(res.gold || 0);
+    if (goldOut > 0) await admin.rpc("wallet_credit", { p_user: user.id, p_amount: goldOut });
+    return json({ ok: true, gold: goldOut, items: (res.items || []).map((i) => ({ item_key: i.item_key, amount: Number(i.amount) })) });
   }
 
   return json({ ok: false, error: "Unknown action." }, 400);

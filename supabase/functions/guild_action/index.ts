@@ -35,6 +35,7 @@ function json(body: unknown, status = 200): Response {
 
 const NAME_RE = /^[A-Za-z0-9 '\-]{3,24}$/;
 const TAG_RE = /^[A-Za-z0-9]{2,5}$/;
+const GUILD_CREATE_COST = 50000; // gold to found a guild, charged server-side (must match the client)
 
 // deno-lint-ignore no-explicit-any
 type Admin = any;
@@ -103,10 +104,17 @@ Deno.serve(async (req) => {
     if (!NAME_RE.test(name)) return json({ ok: false, error: "Name must be 3–24 letters, numbers, spaces, ' or -." }, 400);
     if (!TAG_RE.test(tag)) return json({ ok: false, error: "Tag must be 2–5 letters or numbers." }, 400);
 
+    // Charge the founding cost against the server-authoritative wallet before creating anything, so
+    // spoofed client gold can't found a guild. Refund on any downstream failure.
+    const { data: paid } = await admin.rpc("wallet_debit", { p_user: userId, p_amount: GUILD_CREATE_COST });
+    if (paid !== true) return json({ ok: false, error: "Not enough gold." }, 402);
+    const refund = () => admin.rpc("wallet_credit", { p_user: userId, p_amount: GUILD_CREATE_COST });
+
     const { data: guild, error: gErr } = await admin.from("guilds")
       .insert({ name, tag, description, leader_id: userId, member_count: 1 })
       .select("*").single();
     if (gErr) {
+      await refund();
       const dup = String(gErr.message || "").toLowerCase();
       if (dup.includes("guilds_name_key")) return json({ ok: false, error: "That guild name is taken." }, 409);
       if (dup.includes("guilds_tag_key")) return json({ ok: false, error: "That guild tag is taken." }, 409);
@@ -116,6 +124,7 @@ Deno.serve(async (req) => {
       .insert({ user_id: userId, guild_id: guild.id, username, rank: "leader" });
     if (mErr) { // roll back the guild so a failed create doesn't strand an empty guild
       await admin.from("guilds").delete().eq("id", guild.id);
+      await refund();
       return json({ ok: false, error: "Could not create guild." }, 500);
     }
     // Clear any pending applications this user had elsewhere.

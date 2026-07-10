@@ -7802,12 +7802,13 @@
     var ms = serverBuff.expUntil - Date.now();
     return ms > 0 ? ('Active — ' + formatDuration(ms) + ' left') : 'Inactive';
   }
-  function buyServerExpBuff(){
+  async function buyServerExpBuff(){
     if(!authUser){ addLog('Sign in to buy a server buff.', 'danger'); return; }
     if(_serverBuffBusy) return;
-    if(state.gold < SERVER_BUFF_EXP_COST){ addLog('You need ' + fmt(SERVER_BUFF_EXP_COST) + 'g to buy the EXP buff.', 'danger'); return; }
-    _serverBuffBusy = true;
-    state.gold -= SERVER_BUFF_EXP_COST; // client-authoritative economy (like guild treasury)
+    _serverBuffBusy = true;                 // lock before the async sync so a double-click can't double-spend
+    await walletSync(true);                 // reconcile the wallet so gold earned since the last sync counts
+    if(state.gold < SERVER_BUFF_EXP_COST){ _serverBuffBusy = false; addLog('You need ' + fmt(SERVER_BUFF_EXP_COST) + 'g to buy the EXP buff.', 'danger'); render(); return; }
+    state.gold -= SERVER_BUFF_EXP_COST; // charged server-side against the wallet; refunded below if rejected
     bumpStat('hoursBuffed', 1);
     saveGame();
     chatClient.functions.invoke('server_buff', { body:{ action:'buy', kind:'exp' } }).then(function(r){
@@ -15339,13 +15340,14 @@
       });
     }, function(){ guildBrowseState.status='error'; if(currentCategory==='guild'||currentCategory==='peons') render(); });
   }
-  function guildCreate(){
+  async function guildCreate(){
     if(guildState.busy) return;
     var nameEl=document.getElementById('guildNameInput'), tagEl=document.getElementById('guildTagInput'), descEl=document.getElementById('guildDescInput');
     var name=(nameEl&&nameEl.value||'').trim(), tag=(tagEl&&tagEl.value||'').trim(), desc=(descEl&&descEl.value||'').trim();
-    if((state.gold||0) < GUILD_CREATE_COST){ guildState.error='You need '+fmt(GUILD_CREATE_COST)+' gold to found a guild.'; render(); return; }
-    guildState.busy=true; guildState.error='';
-    state.gold -= GUILD_CREATE_COST; // deducted locally (client-authoritative economy); refunded on failure
+    guildState.busy=true; guildState.error='';       // lock before the async sync
+    await walletSync(true);                            // reconcile so gold earned since the last sync counts
+    if((state.gold||0) < GUILD_CREATE_COST){ guildState.busy=false; guildState.error='You need '+fmt(GUILD_CREATE_COST)+' gold to found a guild.'; render(); return; }
+    state.gold -= GUILD_CREATE_COST; // charged server-side against the wallet; refunded below on failure
     render();
     guildInvoke('create', { name:name, tag:tag, description:desc }).then(function(res){
       guildState.busy=false;
@@ -15594,13 +15596,14 @@
       else { guildBankState.error=res.error||'Could not update.'; render(); }
     });
   }
-  function guildBankDonateGold(){
+  async function guildBankDonateGold(){
     if(guildBankState.busy) return;
     var el=document.getElementById('guildBankDonateGoldAmt');
     var amt=parseInt((el&&el.value)||'0',10);
     if(!(amt>0)){ guildBankState.error='Enter an amount of gold to donate.'; render(); return; }
-    if(amt>(state.gold||0)){ guildBankState.error='You only have '+fmt(state.gold||0)+' gold.'; render(); return; }
-    guildBankState.busy=true; guildBankState.error=''; render();
+    guildBankState.busy=true; guildBankState.error=''; render();   // lock before the async sync
+    await walletSync(true);                                         // reconcile so recent earnings count
+    if(amt>(state.gold||0)){ guildBankState.busy=false; guildBankState.error='You only have '+fmt(state.gold||0)+' gold.'; render(); return; }
     guildBankInvoke('donate_gold', { amount:amt }).then(function(res){
       guildBankState.busy=false;
       if(!res.ok){ guildBankState.error=res.error||'Donation failed.'; render(); return; }
@@ -16290,14 +16293,15 @@
   }
   // Shared buy path (used by the limit-buy form, a listing's quick "Buy 1", and detail "Buy Now").
   // `instant` just changes the log wording; matching/escrow is identical.
-  function marketSubmitBuy(item, price, qty, instant){
+  async function marketSubmitBuy(item, price, qty, instant){
     if(!item || marketState.busy) return;
     if(!(qty>0) || !(price>0)){ addLog('Enter a quantity and price to buy.','danger'); return; }
     if(price>MARKET_MAX_PRICE || qty>MARKET_MAX_QTY){ addLog('Price or quantity is too large.','danger'); return; }
     var cost = marketBuyCost(price, qty);
-    if(state.gold < cost){ addLog('You need '+fmt(cost)+'g for that.','danger'); return; }
-    marketState.busy = true;
-    state.gold -= cost; saveGame(); // escrow gold (price-improvement is refunded via collect)
+    marketState.busy = true;                 // lock before the async sync so a double-click can't double-spend
+    await walletSync(true);                  // reconcile the wallet so gold earned since the last sync counts
+    if(state.gold < cost){ marketState.busy = false; addLog('You need '+fmt(cost)+'g for that.','danger'); render(); return; }
+    state.gold -= cost; saveGame(); // escrow gold (price-improvement + sale proceeds return via collect)
     marketInvoke('place', { side:'buy', item_key:item, unit_price:price, qty:qty }).then(function(res){
       marketState.busy = false;
       if(!res || !res.ok){ earnGold(cost); saveGame(); addLog('Buy failed: '+((res&&res.error)||'try again')+'.','danger'); render(); return; }

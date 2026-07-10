@@ -127,9 +127,15 @@ Deno.serve(async (req) => {
   if (action === "donate_gold") {
     const amount = Number(body.amount);
     if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_QTY) return json({ ok: false, error: "Invalid amount." }, 400);
+    // Take the gold from the donor's server-authoritative wallet FIRST, so spoofed client gold can't
+    // fill the shared treasury. Refund the wallet if the treasury update then fails.
+    const { data: paid } = await admin.rpc("wallet_debit", { p_user: user.id, p_amount: amount });
+    if (paid !== true) return json({ ok: false, error: "Not enough gold." }, 402);
     const { data: r, error } = await admin.rpc("guild_treasury_donate", { p_guild: guildId, p_amount: amount });
-    if (error) return json({ ok: false, error: "Donation failed." }, 500);
-    if ((r as { status?: string })?.status !== "ok") return json({ ok: false, error: "Donation rejected." }, 400);
+    if (error || (r as { status?: string })?.status !== "ok") {
+      await admin.rpc("wallet_credit", { p_user: user.id, p_amount: amount }); // refund
+      return json({ ok: false, error: error ? "Donation failed." : "Donation rejected." }, error ? 500 : 400);
+    }
     return json({ ok: true, ...(await snapshot()) });
   }
 
@@ -144,7 +150,11 @@ Deno.serve(async (req) => {
     const res = r as { status?: string; granted?: number };
     if (res?.status === "short") return json({ ok: false, error: "Not enough gold in the treasury.", code: "short" }, 409);
     if (res?.status !== "ok") return json({ ok: false, error: "Withdraw rejected." }, 400);
-    return json({ ok: true, granted: Number(res.granted), ...(await snapshot()) });
+    // Credit the withdrawn gold into the withdrawer's server-authoritative wallet so it's real,
+    // spendable balance (not just a client-side number). Unthrottled: it's a verified transfer.
+    const granted = Number(res.granted);
+    if (granted > 0) await admin.rpc("wallet_credit", { p_user: user.id, p_amount: granted });
+    return json({ ok: true, granted, ...(await snapshot()) });
   }
 
   if (action === "set_withdraw_rank") {

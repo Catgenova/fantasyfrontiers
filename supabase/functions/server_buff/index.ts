@@ -25,6 +25,9 @@ function json(body: unknown, status = 200): Response {
 // `test` is a 1s no-op kind the integration script exercises so it doesn't extend the real
 // `exp` buff for the whole server; no client reads it.
 const BUFF_SECONDS: Record<string, number> = { exp: 3600, test: 1 };
+// Gold cost per purchase, charged server-side against the player_wallet (must match the client's
+// SERVER_BUFF_EXP_COST). The `test` kind is free so the integration script doesn't need a funded wallet.
+const BUFF_COST: Record<string, number> = { exp: 100000, test: 0 };
 
 // Auto-granted (no gold) extensions to the shared `exp` buff, keyed by reason. A fresh registration
 // gifts 1h; finding a familiar gifts 5min. Server-side extension only -- same trust model as `buy`
@@ -64,8 +67,18 @@ Deno.serve(async (req) => {
     const kind = String(body.kind || "");
     const secs = BUFF_SECONDS[kind];
     if (!secs) return json({ ok: false, error: "Unknown buff." }, 400);
+    // Charge the gold against the server-authoritative wallet BEFORE extending the shared timer, so
+    // spoofed client gold can't buy a buff that helps the whole server. Refund on a downstream failure.
+    const cost = BUFF_COST[kind] || 0;
+    if (cost > 0) {
+      const { data: paid } = await admin.rpc("wallet_debit", { p_user: userData.user.id, p_amount: cost });
+      if (paid !== true) return json({ ok: false, error: "Not enough gold." }, 402);
+    }
     const { data: until, error } = await admin.rpc("server_buff_extend", { p_kind: kind, p_seconds: secs });
-    if (error || !until) return json({ ok: false, error: "Purchase failed." }, 500);
+    if (error || !until) {
+      if (cost > 0) await admin.rpc("wallet_credit", { p_user: userData.user.id, p_amount: cost }); // refund
+      return json({ ok: false, error: "Purchase failed." }, 500);
+    }
     return json({ ok: true, kind, active_until: until, buffs: await snapshot() });
   }
 
