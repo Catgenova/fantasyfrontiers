@@ -14611,6 +14611,20 @@
         .limit(CHAT_CONFIG.historyLimit);
       if(res.error) throw res.error;
       chatMessages = (res.data || []).slice().reverse();
+      // Reload persisted supreme/fantastic craft "blasts" (from the chronicle table) as system messages,
+      // merged into the timeline -- previously these were live-only and vanished on refresh.
+      try{
+        var chron = await chatClient.from('chronicle')
+          .select('id,created_at,username,body')
+          .eq('kind','craft')
+          .order('created_at', { ascending:false })
+          .limit(60);
+        var sysMsgs = ((chron && chron.data) || []).map(chronicleCraftToSystemMsg).filter(Boolean);
+        if(sysMsgs.length){
+          chatMessages = chatMessages.concat(sysMsgs).sort(function(a,b){ return new Date(a.created_at) - new Date(b.created_at); });
+          if(chatMessages.length > 120) chatMessages = chatMessages.slice(-120);
+        }
+      }catch(e){}
       chatStatus = 'online';
       chatEnsureSubscribed();
       chronicleEnsureSubscribed();
@@ -14702,6 +14716,13 @@
     if(body.indexOf('Fantastic ')===0) return 'fantastic';
     if(body.indexOf('Supreme ')===0) return 'supreme';
     return null;
+  }
+  // Map a persisted 'craft' chronicle row to a global-chat system message (or null for rare/normal),
+  // so supreme/fantastic craft blasts can be reloaded on refresh instead of vanishing.
+  function chronicleCraftToSystemMsg(c){
+    var rar = craftBodyRarity(c && c.body);
+    if(!rar) return null;
+    return { id:'sys-'+c.id, username:null, body:(c.username||'Someone')+' forged a '+String(c.body||'')+'!', rarity:rar, created_at:c.created_at, system:true };
   }
   // Inject a client-side system announcement into global chat (ephemeral -- not persisted to the
   // messages table). Each online client synthesizes its own copy from the chronicle broadcast.
@@ -18284,7 +18305,7 @@
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey,
-      craftBodyRarity:craftBodyRarity, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix,
+      craftBodyRarity:craftBodyRarity, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix,
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, ALL_SELLABLE:ALL_SELLABLE, ALL_DROP_ITEMS:ALL_DROP_ITEMS, FAT_ITEMS:FAT_ITEMS, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES,

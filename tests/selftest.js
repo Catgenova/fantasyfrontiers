@@ -495,6 +495,17 @@
     GS.myRank = savedRank; GE.destroyRole = savedRole;
   });
 
+  // ---- Persisted supreme/fantastic craft blasts reload into global chat as system messages ----------
+  suite('persistent craft blasts', function(){
+    var sup = FF.chronicleCraftToSystemMsg({ id:7, username:'Nyx', body:'Supreme Iron Sword', created_at:'2026-07-10T00:00:00Z' });
+    ok(sup && sup.system === true && sup.rarity === 'supreme', 'a Supreme craft row -> a system message');
+    ok(sup.id === 'sys-7' && sup.username === null && /Nyx forged a Supreme Iron Sword!/.test(sup.body), 'system message carries the forger + item');
+    var fan = FF.chronicleCraftToSystemMsg({ id:8, username:'Vex', body:'Fantastic Dragon Bow', created_at:'2026-07-10T00:00:00Z' });
+    ok(fan && fan.rarity === 'fantastic', 'a Fantastic craft row -> a fantastic system message');
+    ok(FF.chronicleCraftToSystemMsg({ id:9, username:'A', body:'Rare Copper Ring', created_at:'x' }) === null, 'Rare/normal crafts are not blasted');
+    ok(FF.chronicleCraftToSystemMsg({ id:10, username:'A', body:'Iron Sword', created_at:'x' }) === null, 'a plain craft is not blasted');
+  });
+
   // ---- Guild estate: assist a teammate's task ------------------------------------------
   suite('guild estate assist', function(){
     var ge = FF.guildEstate;
