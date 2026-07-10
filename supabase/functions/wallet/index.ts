@@ -12,7 +12,8 @@
 // from the player's current save the first time the wallet is touched.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Rate limits mirror submit_profile's gold caps. Allowed credit = BURST + PER_HOUR * hoursElapsed.
+// Rate limits (token bucket). Credit accrues at GOLD_PER_HOUR since the last credit, capped at
+// BURST_GOLD per claim -- see the `earn` handler. A scripted earn loop can't beat the time-based rate.
 const GOLD_PER_HOUR = 20_000_000;
 const BURST_GOLD = 10_000_000;
 const HARD_CAP = 1_000_000_000_000_000; // 1e15, keeps totals safe JS integers
@@ -84,9 +85,13 @@ Deno.serve(async (req) => {
     }
     const w = await ensureWallet();
     const delta = Math.max(0, Math.floor(reported) - w.earned_total);
+    // Token-bucket rate limit: the allowance accrues from wall-clock time SINCE THE LAST
+    // credit (updated_at advances only when we credit), capped at BURST_GOLD per claim. Because
+    // it's a function of elapsed time and not call count, hammering earn in a loop grants nothing
+    // extra -- max sustained credit is GOLD_PER_HOUR, max single claim is BURST_GOLD.
     const hours = Math.max(0, (Date.now() - new Date(w.updated_at).getTime()) / 3_600_000);
-    const allowed = BURST_GOLD + GOLD_PER_HOUR * hours;
-    const credited = Math.min(delta, Math.floor(allowed));
+    const allowed = Math.min(BURST_GOLD, Math.floor(GOLD_PER_HOUR * hours));
+    const credited = Math.min(delta, allowed);
     if (credited > 0) {
       await admin.from("player_wallet").update({
         gold: Math.min(HARD_CAP, w.gold + credited),
