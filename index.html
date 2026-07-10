@@ -3277,7 +3277,7 @@
     for(var i=0;i<TIER_COUNT;i++){
       list.push({
         tier: i+1,
-        name: TIER_NAMES[i]+' '+w.name,
+        name: METAL_TIER_NAMES[i]+' '+w.name,   // named after the ingot it's forged from (Copper Sword ...)
         levelReq: TIER_LEVELS[i],
         xp: craftXp(i),
         dmgMin: Math.max(1, Math.round(tierStat(2,i)*handBonus)),
@@ -3292,7 +3292,7 @@
     if(o.stackable || o.ward) return; // shields are stackable Equipment; wards use their own WARD_ITEMS
     var list = [];
     for(var i=0;i<TIER_COUNT;i++){
-      var obj = { tier:i+1, name:TIER_NAMES[i]+' '+o.name, levelReq:TIER_LEVELS[i], xp:craftXp(i), inputs:tierInput('metallurgy', o.type==='shield'?4:3)(i), time:tierTime(7,0.3,i) };
+      var obj = { tier:i+1, name:METAL_TIER_NAMES[i]+' '+o.name, levelReq:TIER_LEVELS[i], xp:craftXp(i), inputs:tierInput('metallurgy', o.type==='shield'?4:3)(i), time:tierTime(7,0.3,i) }; // named after its ingot
       if(o.type==='shield') obj.defense = tierStat(2,i);
       else obj.dmgBonus = tierCappedBonus(0.05,0.014,0.35,i);
       list.push(obj);
@@ -7081,7 +7081,7 @@
     if(tierIndex > 0) inputs['workshop_'+skillId+'_t'+(tierIndex-1)] = 1; // upgrades consume the previous-tier Workshop
     return {
       tierIndex: tierIndex,
-      name: TIER_NAMES[tierIndex] + ' ' + workshopSkillLabel(skillId) + ' Workshop',
+      name: FORESTRY_NAMES[tierIndex] + ' ' + workshopSkillLabel(skillId) + ' Workshop', // named after the plank's wood (Maple ...)
       levelReq: TIER_LEVELS[tierIndex],   // Carpentry level, staggered every 5
       xp: tierXp(30, tierIndex),
       time: tierTime(15, 0.5, tierIndex),
@@ -7095,7 +7095,7 @@
     for(var _wt=0; _wt<TIER_COUNT; _wt++){
       var _wid = 'workshop_'+skillId+'_t'+_wt;
       WORKSHOP_ITEMS[_wid] = {
-        id:_wid, name: TIER_NAMES[_wt] + ' ' + workshopSkillLabel(skillId) + ' Workshop',
+        id:_wid, name: FORESTRY_NAMES[_wt] + ' ' + workshopSkillLabel(skillId) + ' Workshop',
         icon: isGatherWorkshop(skillId) ? (GATHERING_SKILLS[skillId].icon) : svgIcon('castle', workshopSkillColor(skillId)), sell: tierSell(30, _wt),
         tierIndex:_wt, skillId:skillId
       };
@@ -7110,12 +7110,12 @@
   function getCottageTierData(tier){
     var inputs = {}; inputs['carpentry_t'+tier] = 100;
     if(tier > 0) inputs['cottage_t'+(tier-1)] = 1;
-    return { tierIndex: tier, name: TIER_NAMES[tier] + ' Cottage', levelReq: TIER_LEVELS[tier], xp: tierXp(40, tier), time: tierTime(20, 0.6, tier), inputs: inputs };
+    return { tierIndex: tier, name: FORESTRY_NAMES[tier] + ' Cottage', levelReq: TIER_LEVELS[tier], xp: tierXp(40, tier), time: tierTime(20, 0.6, tier), inputs: inputs }; // named after the plank's wood (Maple Cottage ...)
   }
   var COTTAGE_ITEMS = {};
   for(var _ct=0; _ct<TIER_COUNT; _ct++){
     var _cid = 'cottage_t'+_ct;
-    COTTAGE_ITEMS[_cid] = { id:_cid, name: TIER_NAMES[_ct] + ' Cottage', icon: svgIcon('log', cottageTierColor(_ct)), sell: tierSell(40, _ct), tierIndex:_ct };
+    COTTAGE_ITEMS[_cid] = { id:_cid, name: FORESTRY_NAMES[_ct] + ' Cottage', icon: svgIcon('log', cottageTierColor(_ct)), sell: tierSell(40, _ct), tierIndex:_ct };
   }
   Object.assign(ALL_SELLABLE, COTTAGE_ITEMS);
 
@@ -8788,7 +8788,7 @@
   function craftCottage(tierIndex){
     var data = getCottageTierData(tierIndex);
     if(getLevel(state.xp.carpentry) < data.levelReq){ addLog('Carpentry level too low to build ' + data.name + '.', 'danger'); return; }
-    if(!hasInputs(data.inputs)){ addLog('Not enough materials to build ' + data.name + ' (needs 100 planks' + (tierIndex>0?' + a '+TIER_NAMES[tierIndex-1]+' Cottage':'') + ').', 'danger'); return; }
+    if(!hasInputs(data.inputs)){ addLog('Not enough materials to build ' + data.name + ' (needs 100 planks' + (tierIndex>0?' + a '+FORESTRY_NAMES[tierIndex-1]+' Cottage':'') + ').', 'danger'); return; }
     placeNewCraftActivity('carpentry', null, 'cottage', { type:'craft', craftKind:'cottage', tierIndex:tierIndex, progress:0 });
   }
   function equipTool(itemId){
@@ -9817,9 +9817,9 @@
     var html = '<div class="guild-section-title" style="margin-top:10px;">Cottages</div>';
     html += '<div class="empty-note" style="margin-bottom:6px;">Place a Cottage on paved estate ground next to a Workshop, then assign Peons in the <b>Peons</b> tab to work that workshop’s skill. A cottage links to a single adjacent workshop; surround one workshop with cottages for more peons.</div>';
     html += '<div class="card-grid"><div class="item-card'+(isActive?' active-item':'')+'">';
-    html += '<div class="item-top"><div class="item-icon">'+svgIcon('log', cottageTierColor(sel))+'</div><div><div class="item-name">'+escapeHtml(TIER_NAMES[sel])+' Cottage</div><div class="item-meta">Owned this tier: '+owned+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+svgIcon('log', cottageTierColor(sel))+'</div><div><div class="item-name">'+escapeHtml(FORESTRY_NAMES[sel])+' Cottage</div><div class="item-meta">Owned this tier: '+owned+'</div></div></div>';
     html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Houses a Peon &mdash; place next to a Workshop of tier '+ (sel+1) +' or higher</div>';
-    html += '<div class="inputs-line">Tier: '+tierStepper('cottage','',tierRange(maxUnlocked),sel,TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
+    html += '<div class="inputs-line">Tier: '+tierStepper('cottage','',tierRange(maxUnlocked),sel,FORESTRY_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
     html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>Req. Lv '+data.levelReq+'</span></div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-cottage')+'</div>';
     html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -9848,7 +9848,7 @@
     var html = '<div class="item-card'+(isActive?' active-item':'')+'">';
     html += '<div class="item-top"><div class="item-icon">'+wIcon+'</div><div><div class="item-name">'+escapeHtml(lbl)+' Workshop</div><div class="item-meta">Owned this tier: '+owned+'</div></div></div>';
     html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Boosts <b>'+escapeHtml(lbl)+'</b> &mdash; +'+Math.round(data.speedPct*100)+'% '+(isGather?'gathering':'crafting')+' speed, '+Math.round(data.doublePct*100)+'% double output</div>';
-    html += '<div class="inputs-line">Tier: '+tierStepper('workshop',skillId,tierRange(maxUnlocked),sel,TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
+    html += '<div class="inputs-line">Tier: '+tierStepper('workshop',skillId,tierRange(maxUnlocked),sel,FORESTRY_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
     html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>Req. Lv '+data.levelReq+'</span></div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-workshop-'+skillId)+'</div>';
     html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
