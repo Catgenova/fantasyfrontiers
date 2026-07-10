@@ -2317,6 +2317,44 @@
         }
         return list;
       })() },
+    tanning: { label:'Tanning', icon:svgIcon('hide','#8a6a42'),
+      // Refinement step: cure Butchering's raw Hide into Leather (1:1). Leatherworking's armour now
+      // requires this Cured Leather instead of raw Hide, deepening that chain like Metallurgy does for ore.
+      recipes: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({
+            id:'tanning_t'+i,
+            name: WILDLIFE_NAMES[i]+' Leather',
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(11,i),
+            time: tierTime(7,0.3,i),
+            sell: tierSell(4,i),
+            icon: svgIcon('hide',BUTCHERING_COLORS[i]),
+            inputs: tierInput('butchering',1)(i)
+          });
+        }
+        return list;
+      })() },
+    weaving: { label:'Weaving', icon:svgIcon('spool','#c8b088'),
+      // Refinement step: weave Farming's Fiber into Cloth (1:1). Tailoring's cloth armour now requires
+      // this Woven Cloth instead of raw Fiber -- the textile counterpart to Tanning.
+      recipes: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({
+            id:'weaving_t'+i,
+            name: FARMING_NAMES[i]+' Cloth',
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(11,i),
+            time: tierTime(7,0.3,i),
+            sell: tierSell(4,i),
+            icon: svgIcon('spool',FARMING_COLORS[i]),
+            inputs: tierInput('farming',1)(i)
+          });
+        }
+        return list;
+      })() },
     archaeology: { label:'Archaeology', icon:svgIcon('urn','#9a8560'),
       recipes: (function(){
         var list = [];
@@ -2460,7 +2498,7 @@
     armorsmithing:"Armorer's Hammer", shieldsmithing:"Shieldwright's Hammer", blacksmithing:'Forge Tongs',
     jewelrycrafting:"Jeweler's Loupe", runesmithing:'Rune Chisel', arcanism:'Arcane Focus',
     brewing:'Brewing Paddle', confectionery:'Candy Thermometer', gemcutting:'Gem Facet Wheel', enchanting:'Enchanting Rod',
-    dairy:'Churn', gastronomy:"Chef's Torch", apothecary:'Distillation Kit'
+    dairy:'Churn', gastronomy:"Chef's Torch", apothecary:'Distillation Kit', tanning:'Tanning Knife', weaving:'Loom'
   };
   var CRAFT_TOOL_SPEED = [];
   var CRAFT_TOOL_SUCCESS = [];
@@ -3203,7 +3241,9 @@
     enchanting:     [['fineMotor',2],['criticalThinking',1],['logic',1]],
     dairy:          [['fineMotor',2],['sleightOfHand',1],['logic',1]],
     gastronomy:     [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]],
-    apothecary:     [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]]
+    apothecary:     [['fineMotor',2],['solving',1],['sleightOfHand',1],['logic',1]],
+    tanning:        [['fineMotor',2],['sleightOfHand',1],['logic',1]],
+    weaving:        [['fineMotor',2],['sleightOfHand',1],['logic',1]]
   };;
   // Physique XP from a gather/craft task scales with the item's tier: each associated physique
   // gains (tier+1) XP -- 1 at t0 up to 21 at t20 (replaces the old fixed per-physique weights).
@@ -3720,6 +3760,8 @@
     dairy:          { name:'Wheel',  icon:svgIcon('block','#e8c84a'), spells:[healSpell('Curds & Whey',18), healSpell('Curds & Whey',18), armorSpell('Rind Guard',1.5,6), dmgSpell('Aged Sharp',1.25,8)] },
     gastronomy:     { name:'Platter',icon:svgIcon('meal','#d8a02a'), spells:[healSpell('Grand Feast',18), healSpell('Grand Feast',18), dmgSpell('Well Fed',1.3,8), armorSpell('Hearty Guard',1.6,6)] },
     apothecary:     { name:'Venom',  icon:svgIcon('droplet','#6a8a3a'), spells:[poisonSpell('Envenom',6,6), weakenSpell('Debilitate',0.3,8), buffSpell('Venom Craft','potionPoison',0.45,10), armorSpell('Antidote Skin',1.5,6)] },
+    tanning:        { name:'Suede',  icon:svgIcon('hide','#8a6a42'), spells:[hitSpell('Rawhide Lash','slashing',13), armorSpell('Cured Hide',1.6,6), buffSpell('Supple Step','dodge',0.14,8), regenSpell("Tanner's Rest",4,6)] },
+    weaving:        { name:'Loom',   icon:svgIcon('spool','#c8b088'), spells:[slowSpell('Snare Weave',0.4,10), armorSpell('Woven Ward',1.7,6), buffSpell('Tight Weave','block',0.15,8), buffSpell('Spun Speed','haste',0.16,8)] },
     gemcutting:     { name:'Facet',  icon:svgIcon('gem','#3fc9c4'), spells:[dmgSpell('Prism Beam',1.3,8), armorSpell('Crystal Ward',1.6,6), healSpell('Mend',15), healSpell('Mend',15)] },
     enchanting:     { name:'Sigil',  icon:svgIcon('starburst','#a06ad8'), spells:[dmgSpell('Arcane Sigil',1.3,8), armorSpell('Glyphward',1.6,6), healSpell('Mana Mend',15), healSpell('Mana Mend',15)] },
     archaeology:    { name:'Relic',  icon:svgIcon('urn','#9a8560'), spells:[armorSpell('Ancient Ward',1.6,6), weakenSpell('Curse',0.3,8), healSpell('Restore',15), healSpell('Restore',15)] },
@@ -3809,6 +3851,8 @@
     dairy:          [ healSpell('Curds & Whey',18), armorSpell('Rind Guard',1.6,6), buffSpell('Aged Sharp','critDmg',0.3,8), siphonSpell('Whey Drain',12) ],
     gastronomy:     [ healSpell('Grand Feast',18), regenSpell('Second Helping',5,7), buffSpell('Well Fed','dmgBlunt',0.32,8), armorSpell('Hearty Guard',1.6,6) ],
     apothecary:     [ poisonSpell('Envenom',6,6), weakenSpell('Debilitate',0.3,8), buffSpell('Venom Craft','potionPoison',0.45,10), armorSpell('Antidote Skin',1.5,6) ],
+    tanning:        [ hitSpell('Rawhide Lash','slashing',13), armorSpell('Cured Hide',1.6,6), buffSpell('Supple Step','dodge',0.14,8), regenSpell("Tanner's Rest",4,6) ],
+    weaving:        [ slowSpell('Snare Weave',0.4,10), armorSpell('Woven Ward',1.7,6), buffSpell('Tight Weave','block',0.15,8), buffSpell('Spun Speed','haste',0.16,8) ],
     archaeology:    [ armorSpell('Ancient Ward',1.6,6), weakenSpell('Curse of Ages',0.3,8), hitSpell('Relic Blast','void',10), healSpell('Restore',15) ],
     blacksmithing:  [ hitSpell('Hammer Down','blunt',15), buffSpell('Heavy Blows','dmgBlunt',0.32,8), armorSpell('Tempered Skin',1.5,6), buffSpell('Anvil Might','critChance',0.11,8) ],
     weaponsmithing: [ hitSpell('Keen Edge','slashing',15), buffSpell('Whetstone','dmgSlash',0.32,8), buffSpell('Duelist','critChance',0.11,8), buffSpell('Quick Draw','haste',0.16,8) ],
@@ -3863,7 +3907,7 @@
     digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth', ranching:'earth', mycology:'dark',
     // Crafting
     carpentry:'earth', metallurgy:'fire', roasting:'fire', cooking:'water', alchemy:'water', bowyer:'earth', fletching:'earth', baking:'fire',
-    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark',
+    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark', tanning:'earth', weaving:'light',
     archaeology:'dark', blacksmithing:'fire', weaponsmithing:'fire', armorsmithing:'earth', shieldsmithing:'earth', runesmithing:'light', arcanism:'light',
     // Farming
     farming:'earth',
@@ -3911,6 +3955,7 @@
     prospecting:{s:'gem',c:'#8a97a6',ear:'horn'}, gemcutting:{s:'gem',c:'#3fc9c4',ear:'antenna'}, enchanting:{s:'starburst',c:'#a06ad8',ear:'horn'},
     ranching:{s:'flask',c:'#e8dcc0',ear:'horn'}, dairy:{s:'block',c:'#e8c84a',ear:'round'}, gastronomy:{s:'meal',c:'#d8a02a',ear:'round'},
     mycology:{s:'spice',c:'#8a5aa8',ear:'round'}, apothecary:{s:'droplet',c:'#6a8a3a',ear:'horn'},
+    tanning:{s:'hide',c:'#8a6a42',ear:'round'}, weaving:{s:'spool',c:'#c8b088',ear:'cat'},
     carpentry:{s:'plank',c:'#a07a44',ear:'cat'}, metallurgy:{s:'ingot',c:'#c85a2a',ear:'horn'},
     roasting:{s:'skewer',c:'#d1863a',ear:'cat'}, cooking:{s:'meal',c:'#5a9a4a',ear:'round'},
     alchemy:{s:'potion',c:'#8a5aaa',ear:'antenna'}, bowyer:{s:'bow',c:'#a87a4a',ear:'cat'},
@@ -5100,7 +5145,7 @@
       matQty:{gauntlets:2, boots:2, chest:3, helmet:2},
       armorTypes:{slashing:0.7, piercing:0.15, blunt:0.15},
       rarityIds:['normal','rare','supreme','fantastic'],
-      tierNames: function(){ return WILDLIFE_NAMES; }, matItemPrefix:'butchering', skillId:'leatherworking',
+      tierNames: function(){ return WILDLIFE_NAMES; }, matItemPrefix:'tanning', skillId:'leatherworking',
       slotLabels: LEATHER_GARMENT_LABELS, slots: CHAINPLATE_SLOTS
     },
     tailoring: {
@@ -5109,7 +5154,7 @@
       matQty:{gauntlets:2, boots:2, chest:3, helmet:2, back:2},
       armorTypes:{slashing:0.34, piercing:0.33, blunt:0.33},
       rarityIds:['normal','rare','supreme','fantastic'],
-      tierNames: function(){ return FARMING_NAMES; }, matItemPrefix:'farming', skillId:'tailoring',
+      tierNames: function(){ return FARMING_NAMES; }, matItemPrefix:'weaving', skillId:'tailoring',
       slotLabels: TAILORING_GARMENT_LABELS, slots: TAILORING_SLOTS
     }
   };
@@ -6419,7 +6464,7 @@
     OFFHAND_STYLE_IDS.forEach(function(id){ offhandRarities[id] = 'normal'; });
     var xpObj = {
       digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0, ranching:0, mycology:0,
-      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0,
+      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0, tanning:0, weaving:0,
       stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, arcanism:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
       shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0, wands:0, staves:0, scepters:0,
@@ -11529,6 +11574,8 @@
     dairy:{roof:'hip', accent:'block'},
     gastronomy:{roof:'hip', chimney:true, accent:'pot'},
     apothecary:{roof:'dome', accent:'flask'},
+    tanning:{roof:'peak', accent:'hide'},
+    weaving:{roof:'gable', accent:'spool'},
     archaeology:{roof:'cone', accent:'urn', wallH:0.7},
     blacksmithing:{roof:'hip', chimney:true, accent:'anvil'},
     weaponsmithing:{roof:'peak', chimney:true, accent:'blade'},
@@ -14816,6 +14863,8 @@
     dairy: 'Churn Ranching\'s Milk into Cheese -- a richer food input and the base for Gastronomy.',
     gastronomy: 'Plate a Cooking Meal with Cheese and a Botany spice into a Feast -- the best food, and serving one empowers your hits for a few minutes.',
     apothecary: 'Distil toxic Mushrooms and Herbs into Weapon Coatings -- ready one in Battle to poison enemies over time on every hit.',
+    tanning: 'Cure Butchering\'s raw Hide into Leather -- the material Leatherworking\'s armour now requires.',
+    weaving: 'Weave Farming\'s Fiber into Cloth -- the material Tailoring\'s cloth armour now requires.',
     archaeology: 'Excavate Muddy Artifacts into Relics.',
     blacksmithing: 'Forge Tools for every Gathering and Crafting skill.',
     weaponsmithing: 'Forge melee weapons -- swords, axes, and hammers.',

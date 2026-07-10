@@ -645,6 +645,27 @@
     ok(FF.GATHER_PHYSIQUE.mycology && FF.CRAFT_PHYSIQUE.apothecary, 'physique tables include the new skills');
   });
 
+  // ---- Refinement layer: Tanning (Hide->Leather) + Weaving (Fiber->Cloth) ----------------------
+  suite('skills: tanning / weaving refinement', function(){
+    ok(FF.CRAFTING_SKILLS.tanning, 'tanning is a crafting skill');
+    ok(FF.CRAFTING_SKILLS.weaving, 'weaving is a crafting skill');
+    eq(FF.CRAFTING_SKILLS.tanning.recipes.length, FF.TIER_COUNT, 'tanning has 21 leather tiers');
+    eq(FF.CRAFTING_SKILLS.weaving.recipes.length, FF.TIER_COUNT, 'weaving has 21 cloth tiers');
+    // Each refines its raw 1:1 (material balance preserved -- just an added step + XP).
+    var lea5 = FF.ALL_CRAFT_RECIPES['tanning_t5'];
+    eq(lea5.inputs['butchering_t5'], 1, 'tanning cures raw Hide 1:1');
+    var clo5 = FF.ALL_CRAFT_RECIPES['weaving_t5'];
+    eq(clo5.inputs['farming_t5'], 1, 'weaving spins raw Fiber 1:1');
+    // The chain is inserted: finished armour now consumes the refined good, not the raw one.
+    var leaChest = FF.getBodyArmorTierData('leather','chest',5).inputs;
+    ok(leaChest['tanning_t5'] && !leaChest['butchering_t5'], 'leather armour now needs Cured Leather, not raw Hide');
+    var cloChest = FF.getBodyArmorTierData('tailoring','chest',5).inputs;
+    ok(cloChest['weaving_t5'] && !cloChest['farming_t5'], 'cloth armour now needs Woven Cloth, not raw Fiber');
+    // The raws still have consumers (no orphans): Hide feeds Tanning + jewelry Twine.
+    ok(FF.ALL_CRAFT_RECIPES['twine_t5'].inputs['butchering_t5'], 'Hide still feeds jewelry Twine');
+    ok(FF.CRAFT_PHYSIQUE.tanning && FF.CRAFT_PHYSIQUE.weaving, 'physique tables include the new skills');
+  });
+
   // ---- Inventory grid: rarity parsing for cell accents / detail tag ----------------------
   suite('inventory rarity', function(){
     eq(FF.itemRarityId('bodyarmor_chain_chest_t20_normal'), 'normal', 'normal suffix');
