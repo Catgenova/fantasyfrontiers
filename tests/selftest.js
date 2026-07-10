@@ -689,6 +689,21 @@
     ok(FF.CRAFT_PHYSIQUE.pottery && FF.CRAFT_PHYSIQUE.goldsmithing, 'physique tables include the new skills');
   });
 
+  // ---- Ocean domain: Diving (gathers Pearls) -> Amulets seat a Pearl instead of the faceted Gem ---
+  suite('skills: diving / ocean', function(){
+    ok(FF.GATHERING_SKILLS.diving, 'diving is a gathering skill');
+    eq(FF.GATHERING_SKILLS.diving.items.length, FF.TIER_COUNT, 'diving has 21 pearl tiers');
+    eq(FF.GATHERING_SKILLS.diving.items[0].id, 'diving_t0', 'diving items follow the tier id scheme');
+    // Amulets now seat a matching-tier Pearl and no longer the mining Gem; rings keep the Gem.
+    var am5 = FF.getAmuletTierData(5).inputs;
+    var ring5 = FF.getRingTierData('fire', 5).inputs;
+    eq(am5['diving_t5'], 1, 'amulets now seat a matching Diving Pearl');
+    ok(Object.keys(am5).every(function(k){ return k.indexOf('gem_') !== 0; }), 'amulets no longer consume a faceted mining Gem');
+    ok(Object.keys(ring5).some(function(k){ return k.indexOf('gem_') === 0; }), 'rings still seat a faceted mining Gem');
+    ok(ring5['diving_t5'] == null, 'rings do not consume Pearls (the two jewelry lines stay split)');
+    ok(FF.GATHER_PHYSIQUE.diving, 'physique table includes diving');
+  });
+
   // ---- Knowledge vertical: Papermaking -> Bookbinding + the Tome (work-speed) buff --------------
   suite('skills: papermaking / bookbinding', function(){
     ok(FF.CRAFTING_SKILLS.papermaking, 'papermaking is a crafting skill');

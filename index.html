@@ -1619,6 +1619,14 @@
   var POTTERY_ICONS = POTTERY_COLORS.map(function(c){ return svgIcon('urn', c); });
   var GOLDSMITH_COLORS = _rampColors([0x8a,0x6a,0x3a], [0xf0,0xd8,0x7a]);   // bronze -> bright gold
 
+  // ---- Diving (gathering): the "ocean" slice -----------------------------------------------------
+  // Diving opens the ocean domain, harvesting a 21-tier Pearl ladder from ever-deeper reefs. Amulets
+  // now seat a matching-tier Pearl instead of a faceted Gem -- rings keep the gem, so the two jewelry
+  // lines split cleanly (rings = gemstone from Prospecting, amulets = pearl from Diving).
+  var DIVING_NAMES = ['Seed Pearl','River Pearl','Freshwater Pearl','Grey Pearl','Cream Pearl','Rose Pearl','Golden Pearl','Akoya Pearl','Lavender Pearl','Peacock Pearl','Champagne Pearl','Silver Pearl','Tahitian Pearl','Cobalt Pearl','Aurora Pearl','Moonlit Pearl','Black Pearl','Abyssal Pearl','Leviathan Pearl','Kraken Pearl','Oceanheart Pearl'];
+  var DIVING_COLORS = _rampColors([0xf0,0xe8,0xdc], [0x2a,0x2e,0x54]);   // pale cream -> deep abyssal blue
+  var DIVING_ICONS = DIVING_COLORS.map(function(c){ return svgIcon('droplet', c); });
+
   // ---- Mining: 14 ore tiers + 7 stone tiers interleaved across the 21-tier ladder ----
   // Stones sit at tier positions 2,5,8,11,14,17,20 (1-indexed) -- everything else is ore.
   var MINING_STONE_INDICES = [1,4,7,10,13,16,19];
@@ -1910,6 +1918,22 @@
             time: tierTime(5,0.3,i),
             sell: tierSell(4,i),
             icon: ESSENCE_ICONS[i]
+          });
+        }
+        return list;
+      })() },
+    diving: { label:'Diving', icon:svgIcon('droplet','#4a7ac8'),
+      items: (function(){
+        var list = [];
+        for(var i=0;i<TIER_COUNT;i++){
+          list.push({
+            id:'diving_t'+i,
+            name: DIVING_NAMES[i],
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(12,i),
+            time: tierTime(5,0.3,i),
+            sell: tierSell(6,i),
+            icon: DIVING_ICONS[i]
           });
         }
         return list;
@@ -2674,7 +2698,7 @@
   })();
   var GATHER_TOOL_NAMES = {
     digging:'Shovel', forestry:'Hatchet', mining:'Pickaxe', fishing:'Fishing Rod',
-    herbalism:'Sickle', botany:'Shears', foraging:'Basket', butchering:'Cleaver', beekeeping:'Bee Smoker', prospecting:'Pan', ranching:'Milking Pail', mycology:'Mushroom Knife', salvaging:'Magnet', essence:'Ley Rod'
+    herbalism:'Sickle', botany:'Shears', foraging:'Basket', butchering:'Cleaver', beekeeping:'Bee Smoker', prospecting:'Pan', ranching:'Milking Pail', mycology:'Mushroom Knife', salvaging:'Magnet', essence:'Ley Rod', diving:'Diving Knife'
   };
   var GATHER_TOOL_SPEED = [];
   for(var _gi=0; _gi<TIER_COUNT; _gi++){ GATHER_TOOL_SPEED.push(tierCappedBonus(0.02, 0.013, 0.30, _gi)); }
@@ -3436,7 +3460,8 @@
     ranching:   [['handStrength',1],['bodyStrength',1],['endurance',1],['mentality',1],['curiosity',1]],
     mycology:   [['fineMotor',1],['handStrength',1],['criticalThinking',1],['mentality',1],['curiosity',1]],
     salvaging:  [['armStrength',1],['fineMotor',1],['criticalThinking',1],['curiosity',1]],
-    essence:    [['fineMotor',1],['criticalThinking',1],['mentality',1],['zen',1],['curiosity',1]]
+    essence:    [['fineMotor',1],['criticalThinking',1],['mentality',1],['zen',1],['curiosity',1]],
+    diving:     [['stamina',2],['endurance',1],['bodyControl',1],['bodyStrength',1],['zen',1]]
   };
   var CRAFT_PHYSIQUE = {
     carpentry:      [['grossMotor',2],['sleightOfHand',1],['logic',1]],
@@ -4108,6 +4133,7 @@
     mycology:  { name:'Spore', icon:svgIcon('spice','#8a5aa8'), spells:[poisonSpell('Spore Burst',5,6), slowSpell('Mycelial Snare',0.35,10), buffSpell('Toxic Bloom','potionPoison',0.4,10), healSpell('Fungal Mend',15)] },
     salvaging: { name:'Rivet',  icon:svgIcon('gear','#9a8a6a'), spells:[hitSpell('Scrap Toss','piercing',13), buffSpell('Salvage Rights','firebomb',0.4,10), armorSpell('Junk Plating',1.6,6), regenSpell('Patch Job',4,6)] },
     essence:   { name:'Wisp',   icon:svgIcon('starburst','#7a8ac8'), spells:[hitSpell('Aether Bolt','void',14), slowSpell('Ley Bind',0.4,10), buffSpell('Ley Surge','critDmg',0.32,8), healSpell('Mana Well',15)] },
+    diving:    { name:'Nautilus', icon:svgIcon('droplet','#4a7ac8'), spells:[hitSpell('Pressure Crush','blunt',14), buffSpell('Deep Breath','resistBlunt',0.3,8), healSpell('Pearl Restore',16), siphonSpell('Undertow',12)] },
     // -- Crafting --
     carpentry:      { name:'Timber', icon:svgIcon('plank','#8a6a42'), spells:[armorSpell('Splinter Shield',1.6,6), slowSpell('Root Snare',0.35,10), healSpell('Sap Heal',15), healSpell('Sap Heal',15)] },
     metallurgy:     { name:'Cinder', icon:svgIcon('ingot','#c85a2a'), spells:[dmgSpell('Molten Strike',1.3,8), weakenSpell('Slag',0.25,8), healSpell('Forge Heal',15), healSpell('Forge Heal',15)] },
@@ -4211,6 +4237,7 @@
     mycology: [ poisonSpell('Spore Burst',5,6), slowSpell('Mycelial Snare',0.35,10), buffSpell('Toxic Bloom','potionPoison',0.4,10), healSpell('Fungal Mend',15) ],
     salvaging: [ hitSpell('Scrap Toss','piercing',13), buffSpell('Salvage Rights','firebomb',0.4,10), armorSpell('Junk Plating',1.6,6), regenSpell('Patch Job',4,6) ],
     essence: [ hitSpell('Aether Bolt','void',14), slowSpell('Ley Bind',0.4,10), buffSpell('Ley Surge','critDmg',0.32,8), healSpell('Mana Well',15) ],
+    diving: [ hitSpell('Pressure Crush','blunt',14), buffSpell('Deep Breath','resistBlunt',0.3,8), healSpell('Pearl Restore',16), siphonSpell('Undertow',12) ],
     // -- Crafting --
     carpentry:      [ hitSpell('Splinter Shot','piercing',13), armorSpell('Splinter Shield',1.6,6), buffSpell('Bark Guard','resistPierce',0.3,8), regenSpell('Sap Flow',4,6) ],
     metallurgy:     [ hitSpell('Molten Strike','void',10), buffSpell('Forge Fire','firebomb',0.45,10), weakenSpell('Slag',0.28,8), buffSpell('Heavy Hand','dmgBlunt',0.3,8) ],
@@ -4299,7 +4326,7 @@
   // enemies weak to it (water>fire>earth>water; light<->dark). Non-damaging spells ignore it.
   var FAMILIAR_ELEMENT = {
     // Gathering
-    digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth', ranching:'earth', mycology:'dark', salvaging:'earth', essence:'light',
+    digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth', ranching:'earth', mycology:'dark', salvaging:'earth', essence:'light', diving:'water',
     // Crafting
     carpentry:'earth', metallurgy:'fire', roasting:'fire', cooking:'water', alchemy:'water', bowyer:'earth', fletching:'earth', baking:'fire',
     tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark', tanning:'earth', weaving:'light', papermaking:'earth', bookbinding:'light', tinkering:'earth', pyrotechnics:'fire', inscription:'light', pottery:'fire', goldsmithing:'light',
@@ -4353,6 +4380,7 @@
     mycology:{s:'spice',c:'#8a5aa8',ear:'round'}, apothecary:{s:'droplet',c:'#6a8a3a',ear:'horn'},
     salvaging:{s:'gear',c:'#9a8a6a',ear:'horn'}, tinkering:{s:'gear',c:'#c8853a',ear:'antenna'}, pyrotechnics:{s:'flame',c:'#e8a02a',ear:'horn'},
     essence:{s:'starburst',c:'#7a8ac8',ear:'antenna'}, inscription:{s:'corespiral',c:'#7a5aa8',ear:'horn'},
+    diving:{s:'droplet',c:'#4a7ac8',ear:'fin'},
     pottery:{s:'urn',c:'#c4885a',ear:'round'}, goldsmithing:{s:'ring',c:'#d8b048',ear:'horn'},
     tanning:{s:'hide',c:'#8a6a42',ear:'round'}, weaving:{s:'spool',c:'#c8b088',ear:'cat'},
     papermaking:{s:'tabard',c:'#e8dcc0',ear:'round'}, bookbinding:{s:'brain',c:'#7a5aa8',ear:'horn'},
@@ -5985,7 +6013,8 @@
   function getAmuletTierData(tierIndex){
     var inputs = {};
     inputs['twine_t'+tierIndex] = 3;
-    inputs[getGemForTier(tierIndex)] = 1;
+    // Amulets seat a Diving Pearl (rings keep the faceted mining Gem) -- the two jewelry lines split.
+    inputs['diving_t'+tierIndex] = 1;
     inputs['goldsmithing_t'+tierIndex] = 1;
     return {
       tierIndex: tierIndex,
@@ -6867,7 +6896,7 @@
     var offhandRarities = {};
     OFFHAND_STYLE_IDS.forEach(function(id){ offhandRarities[id] = 'normal'; });
     var xpObj = {
-      digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0, ranching:0, mycology:0, salvaging:0, essence:0,
+      digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0, ranching:0, mycology:0, salvaging:0, essence:0, diving:0,
       carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0, tanning:0, weaving:0, papermaking:0, bookbinding:0, tinkering:0, pyrotechnics:0, inscription:0, pottery:0, goldsmithing:0,
       stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, arcanism:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
@@ -15466,6 +15495,7 @@
     mycology: 'Forage mushrooms, from Button up to Fairy Ring -- the toxic caps feed Apothecary.',
     salvaging: 'Sift Scrap from wrecks and battlefields, from Rusty Scrap up to Eternal Mechanism -- the base for Tinkering and Pyrotechnics.',
     essence: 'Tap ley-line nodes for arcane Essence, from Faint Mote up to Primordial Aether -- the base for Inscription.',
+    diving: 'Dive ever-deeper reefs for Pearls, from Seed Pearl up to Oceanheart Pearl -- Amulets now seat one instead of a faceted Gem.',
     carpentry: 'Cut Logs into Planks.',
     metallurgy: 'Smelt Ore into Bars and Alloys, plus a side-recipe for Glass Bottles.',
     roasting: 'Cook raw Fish and Meat into a quick, portable snack.',
