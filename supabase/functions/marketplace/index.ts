@@ -119,7 +119,19 @@ Deno.serve(async (req) => {
       const { data: paid } = await admin.rpc("wallet_debit", { p_user: user.id, p_amount: buyEscrow });
       if (paid !== true) return json({ ok: false, error: "Not enough gold.", code: "poor" }, 402);
     }
-    const refundEscrow = async () => { if (buyEscrow > 0) await admin.rpc("wallet_credit", { p_user: user.id, p_amount: buyEscrow }); };
+    // A SELL escrows the ITEMS being listed -- take them from the server item ledger up front so
+    // minted/spoofed items can't be sold to other players. Returned on failure / collect / cancel.
+    if (side === "sell") {
+      const { data: held } = await admin.rpc("item_debit", { p_user: user.id, p_key: key, p_qty: qty });
+      if (held !== true) {
+        if (buyEscrow > 0) await admin.rpc("wallet_credit", { p_user: user.id, p_amount: buyEscrow });
+        return json({ ok: false, error: "You don't have those items to sell.", code: "poor" }, 402);
+      }
+    }
+    const refundEscrow = async () => {
+      if (buyEscrow > 0) await admin.rpc("wallet_credit", { p_user: user.id, p_amount: buyEscrow });
+      if (side === "sell") await admin.rpc("item_credit", { p_user: user.id, p_key: key, p_qty: qty });
+    };
     const { data: r, error } = await admin.rpc("market_place", {
       p_user: user.id, p_username: username, p_side: side, p_item: key, p_price: price, p_qty: qty,
     });
@@ -138,10 +150,14 @@ Deno.serve(async (req) => {
     const res = r as { status?: string; side?: string; item_key?: string; qty?: number; unit_price?: number };
     if (res?.status === "notfound") return json({ ok: false, error: "That order no longer exists.", code: "notfound" }, 404);
     if (res?.status !== "ok") return json({ ok: false, error: "Cancel rejected." }, 400);
-    // A cancelled BUY returns its remaining gold escrow (qty_remaining * bid price) to the wallet.
+    // A cancelled BUY returns its remaining gold escrow (qty_remaining * bid price) to the wallet;
+    // a cancelled SELL returns the remaining escrowed ITEMS to the item ledger.
     if (res.side === "buy") {
       const back = Number(res.qty) * Number(res.unit_price);
       if (back > 0) await admin.rpc("wallet_credit", { p_user: user.id, p_amount: back });
+    } else if (res.side === "sell") {
+      const back = Number(res.qty);
+      if (back > 0) await admin.rpc("item_credit", { p_user: user.id, p_key: String(res.item_key), p_qty: back });
     }
     return json({ ok: true, side: res.side, item_key: res.item_key, qty: Number(res.qty), unit_price: Number(res.unit_price) });
   }
@@ -156,7 +172,12 @@ Deno.serve(async (req) => {
     // so unthrottled. The client still adds the same gold locally; the sync clamp reconciles.
     const goldOut = Number(res.gold || 0);
     if (goldOut > 0) await admin.rpc("wallet_credit", { p_user: user.id, p_amount: goldOut });
-    return json({ ok: true, gold: goldOut, items: (res.items || []).map((i) => ({ item_key: i.item_key, amount: Number(i.amount) })) });
+    // Item proceeds (units a buyer bought, or items returned to a seller) become real ledger stock.
+    const items = (res.items || []).map((i) => ({ item_key: i.item_key, amount: Number(i.amount) }));
+    for (const it of items) {
+      if (it.amount > 0 && KEY_RE.test(String(it.item_key))) await admin.rpc("item_credit", { p_user: user.id, p_key: it.item_key, p_qty: it.amount });
+    }
+    return json({ ok: true, gold: goldOut, items });
   }
 
   return json({ ok: false, error: "Unknown action." }, 400);

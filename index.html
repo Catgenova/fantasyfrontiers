@@ -15568,7 +15568,7 @@
   function guildBankItemName(key){ var it=ALL_SELLABLE[key]; return it ? it.name : key; }
   function guildBankItemIcon(key){ var it=ALL_SELLABLE[key]; return it ? it.icon : svgIcon('question','var(--text-faint)'); }
   function guildBankCanWithdraw(){ return (RANK_VAL[guildState.myRank]||0) >= (RANK_VAL[guildBankState.minWithdrawRank]||1); }
-  function guildBankDeposit(){
+  async function guildBankDeposit(){
     if(guildBankState.busy) return;
     var sel=document.getElementById('guildBankDepositItem'), qtyEl=document.getElementById('guildBankDepositQty');
     if(!sel || !sel.value) return;
@@ -15578,7 +15578,8 @@
     if(!(owned>0)){ guildBankState.error='You no longer own that item.'; render(); return; }
     if(!(qty>0)) qty=owned;
     if(qty>owned) qty=owned;
-    guildBankState.busy=true; guildBankState.error=''; render();
+    guildBankState.busy=true; guildBankState.error=''; render();   // lock before the async sync
+    await itemSync(true);                                            // reconcile the ledger so the items count server-side
     guildBankInvoke('deposit', { item_key:key, qty:qty }).then(function(res){
       guildBankState.busy=false;
       if(!res.ok){ guildBankState.error=res.error||'Deposit failed.'; render(); return; }
@@ -16298,7 +16299,7 @@
     });
   }
   function marketPickItem(item){ marketState.selectedItem = item; marketState.book = null; marketState.bookItem = null; render(); marketLoadBook(item); }
-  function marketPlaceSell(){
+  async function marketPlaceSell(){
     var item = marketState.selectedItem; if(!item || marketState.busy) return;
     var q = document.getElementById('marketSellQty'), p = document.getElementById('marketSellPrice');
     if(state.lockedItems && state.lockedItems[item]){ addLog('That item is locked. Unlock it first to sell it on the market.','danger'); return; }
@@ -16306,7 +16307,8 @@
     if(!(qty>0) || !(price>0)){ addLog('Enter a quantity and price to sell.','danger'); return; }
     if(price>MARKET_MAX_PRICE || qty>MARKET_MAX_QTY){ addLog('Price or quantity is too large.','danger'); return; }
     if((state.inventory[item]||0) < qty){ addLog('You don’t have that many to sell.','danger'); return; }
-    marketState.busy = true;
+    marketState.busy = true;                       // lock before the async sync
+    await itemSync(true);                            // reconcile the ledger (reports the full inventory) so just-gathered items count
     state.inventory[item] = (state.inventory[item]||0) - qty; saveGame(); // escrow items
     marketInvoke('place', { side:'sell', item_key:item, unit_price:price, qty:qty }).then(function(res){
       marketState.busy = false;

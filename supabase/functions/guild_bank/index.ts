@@ -79,10 +79,17 @@ Deno.serve(async (req) => {
     const qty = Number(body.qty);
     if (!KEY_RE.test(key)) return json({ ok: false, error: "Invalid item." }, 400);
     if (!Number.isInteger(qty) || qty <= 0 || qty > MAX_QTY) return json({ ok: false, error: "Invalid quantity." }, 400);
+    // Take the items from the depositor's server ledger first, so minted/spoofed items can't fill the
+    // shared vault. Refund to the ledger if the deposit then fails (full / error / rejected).
+    const { data: held } = await admin.rpc("item_debit", { p_user: user.id, p_key: key, p_qty: qty });
+    if (held !== true) return json({ ok: false, error: "You don't have those items.", code: "poor" }, 402);
     const { data: r, error } = await admin.rpc("guild_bank_deposit", { p_guild: guildId, p_key: key, p_qty: qty });
-    if (error) return json({ ok: false, error: "Deposit failed." }, 500);
-    if (r === "full") return json({ ok: false, error: "The bank is full — buy more slots.", code: "full" }, 409);
-    if (r !== "ok") return json({ ok: false, error: "Deposit rejected." }, 400);
+    if (error || r !== "ok") {
+      await admin.rpc("item_credit", { p_user: user.id, p_key: key, p_qty: qty }); // refund the escrow
+      if (error) return json({ ok: false, error: "Deposit failed." }, 500);
+      if (r === "full") return json({ ok: false, error: "The bank is full — buy more slots.", code: "full" }, 409);
+      return json({ ok: false, error: "Deposit rejected." }, 400);
+    }
     return json({ ok: true, ...(await snapshot()) });
   }
 
@@ -98,6 +105,8 @@ Deno.serve(async (req) => {
     if (error) return json({ ok: false, error: "Withdraw failed." }, 500);
     if (r === "short") return json({ ok: false, error: "Not enough of that item in the bank.", code: "short" }, 409);
     if (r !== "ok") return json({ ok: false, error: "Withdraw rejected." }, 400);
+    // The withdrawn items become real ledger stock for the withdrawer (verified transfer).
+    await admin.rpc("item_credit", { p_user: user.id, p_key: key, p_qty: qty });
     return json({ ok: true, granted: qty, ...(await snapshot()) });
   }
 
