@@ -40,17 +40,6 @@ try {
     .catch(() => null);
   const st = await page.evaluate(() => window.__FF_SELFTEST || null);
   console.log("smoke: selftest =", JSON.stringify(st));
-  const dumpLogic = (pg) => pg.evaluate(() => { const F = window.__FF; if (!F || !F.CRAFT_PHYSIQUE) return "no FF"; const has = (k) => (F.CRAFT_PHYSIQUE[k] || []).some((p) => p[0] === "logic"); return { cooking: has("cooking"), metallurgy: has("metallurgy"), weaponsmithing: has("weaponsmithing"), fertilizer: has("fertilizer") }; });
-  console.log("smoke: logic-dbg(obfuscated) =", JSON.stringify(await dumpLogic(page)));
-  // Diagnostic: also test the RAW source (repo root) to isolate whether obfuscation is the cause.
-  const rawServer = createServer((req, res) => { let p = decodeURIComponent(req.url.split("?")[0]); if (p.endsWith("/")) p += "index.html"; const fp = join(".", normalize(p).replace(/^(\.\.[/\\])+/, "")); if (!existsSync(fp)) { res.writeHead(404); res.end("nf"); return; } res.writeHead(200, { "Content-Type": TYPES[extname(fp)] || "application/octet-stream" }); res.end(readFileSync(fp)); });
-  await new Promise((r) => rawServer.listen(4174, r));
-  const rp = await browser.newPage();
-  rp.on("console", (m) => { const t = m.text(); if (t.indexOf("STRIPDBG") !== -1) console.log("smoke: RAW " + t); });
-  await rp.goto("http://localhost:4174/index.html?selftest", { waitUntil: "domcontentloaded" });
-  await rp.waitForFunction(() => window.__FF && window.__FF.CRAFT_PHYSIQUE, null, { timeout: 30000 }).catch(() => null);
-  console.log("smoke: logic-dbg(raw source) =", JSON.stringify(await dumpLogic(rp)));
-  rawServer.close();
   if (!st || st.error || st.failed > 0 || !(st.passed > 0)) { console.error("smoke: SELFTEST FAILED"); failed = true; }
 
   // 2) Normal boot (no ?selftest): the shell renders and nothing throws.
