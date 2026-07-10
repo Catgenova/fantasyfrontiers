@@ -8151,6 +8151,16 @@
     for(var t=itemTier; t<TIER_COUNT && need>0; t++){ var id='scroll_t'+t, have=state.inventory[id]||0; if(have<=0) continue; var take=Math.min(have,need); plan[id]=take; need-=take; if(t>maxTier) maxTier=t; }
     return need>0 ? null : { plan:plan, maxTier:maxTier };
   }
+  // +10-or-higher enhances are a big deal: announce them in global chat (own client shows it locally;
+  // chronicleBroadcast relays to everyone else, who synthesize the same system message).
+  var ENHANCE_ANNOUNCE_MIN = 10;
+  function announceEnhance(u){
+    if(u.enhance < ENHANCE_ANNOUNCE_MIN || !chatName()) return;
+    var body = uniqueBaseName(u) + ' to +' + u.enhance;         // e.g. "Willow Fire Wand to +12"
+    var rar = u.enhance >= 15 ? 'fantastic' : 'supreme';
+    pushChatSystemMessage(chatName() + ' enhanced their ' + body + '!', rar);
+    chronicleBroadcast('enhance', body);
+  }
   function enhanceItem(uid){
     var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
     if(u.enhance >= ENHANCE_MAX){ addLog('Already at the maximum +'+ENHANCE_MAX+'.','danger'); return; }
@@ -8161,9 +8171,13 @@
     enhanceWarnArmed = false;
     consumeInputs(planned.plan);
     if(Math.random() < enhanceSuccessChance(u.enhance)){
-      u.enhance += 1; addLog(uniqueBaseName(u)+' was Enhanced to +'+u.enhance+'!','important');
+      u.enhance += 1;
+      addLog(uniqueBaseName(u)+' was Enhanced to +'+u.enhance+'!','important');
+      enhancePopupData = { ok:true, name:uniqueBaseName(u), icon:uniqueIcon(u), enhance:u.enhance };
+      announceEnhance(u);
     } else {
       addLog(uniqueBaseName(u)+' shattered during Enhancement and was destroyed!','danger');
+      enhancePopupData = { ok:false, name:uniqueBaseName(u), icon:uniqueIcon(u) }; // capture before removeUnique drops it
       if(state.equippedMainhandUid===uid) unequipMainhandAny();
       if(improveSel===uid) improveSel = null;
       improvePending = null;
@@ -12163,6 +12177,30 @@
     html += '</div>';
     ov.innerHTML = html;
   }
+  // Enhancement result popup: celebrates a successful +N or mourns a shattered item. Dismissed by tap.
+  var enhancePopupData = null; // { ok:bool, name, icon, enhance }
+  function renderEnhancePopup(){
+    var existing = document.getElementById('enhanceOverlay');
+    if(!enhancePopupData){ if(existing && existing.parentNode) existing.parentNode.removeChild(existing); return; }
+    var d = enhancePopupData;
+    var ov = existing;
+    if(!ov){ ov = document.createElement('div'); ov.id = 'enhanceOverlay'; ov.className = 'familiar-popup-overlay'; ov.style.zIndex = '10006'; ov.setAttribute('data-action','closeEnhancePopup'); document.getElementById('app').appendChild(ov); }
+    var html = '<div class="familiar-popup-card" data-action="noop" style="max-width:380px;text-align:center;">';
+    html += '<div class="familiar-popup-icon">'+(d.icon||'')+'</div>';
+    if(d.ok){
+      html += '<div class="familiar-popup-title" style="color:var(--gold);">Enhancement Success!</div>';
+      html += '<div style="margin:8px 0 3px;font-size:15px;"><b>'+escapeHtml(d.name)+'</b> is now <b style="color:var(--gold);">+'+d.enhance+'</b>.</div>';
+      html += '<div style="font-size:12px;color:var(--text-dim);">Base &amp; enchant stats scaled to <b style="color:var(--gold);">+'+Math.round((enhanceStatMult(d.enhance)-1)*100)+'%</b>.</div>';
+      html += '<button class="action-btn" data-action="closeEnhancePopup" style="margin-top:14px">Nice!</button>';
+    } else {
+      html += '<div class="familiar-popup-title" style="color:var(--danger);">Enhancement Failed!</div>';
+      html += '<div style="margin:8px 0 3px;font-size:15px;">Your <b>'+escapeHtml(d.name)+'</b> shattered and was <b style="color:var(--danger);">destroyed</b>.</div>';
+      html += '<div style="font-size:12px;color:var(--text-dim);">Enhance risk rises with each level — fortune favours the bold.</div>';
+      html += '<button class="action-btn stop" data-action="closeEnhancePopup" style="margin-top:14px">Ouch</button>';
+    }
+    html += '</div>';
+    ov.innerHTML = html;
+  }
   // Current level of any trackable skill -- physiques live in state.physique, everything else in state.xp.
   function anySkillLevel(id){ return PHYSIQUE_SKILL_MAP[id] ? getLevel((state.physique && state.physique[id]) || 0) : getLevel((state.xp && state.xp[id]) || 0); }
   // Progress toward the next level (0-100) for any trackable skill or physique.
@@ -15260,6 +15298,12 @@
       var craftRar = craftBodyRarity(ev.body);
       if(craftRar) pushChatSystemMessage((ev.username || 'Someone') + ' forged a ' + String(ev.body||'') + '!', craftRar);
     }
+    else if(ev.kind === 'enhance'){
+      msg = name + ' enhanced their ' + body + '!';
+      // Enhancing gear to +10 or higher also drops a system announcement into everyone's global chat.
+      var em = /\+(\d+)/.exec(String(ev.body||'')); var erar = (em && parseInt(em[1],10) >= 15) ? 'fantastic' : 'supreme';
+      pushChatSystemMessage((ev.username || 'Someone') + ' enhanced their ' + String(ev.body||'') + '!', erar);
+    }
     else if(ev.kind === 'level') msg = name + ' reached ' + body + '!';
     else if(ev.kind === 'familiar') msg = name + ' summoned ' + body + '!';
     else if(ev.kind === 'buff') msg = name + ' ' + body;   // body is self-contained (server-buff event)
@@ -17823,6 +17867,7 @@
     renderItemLinkPopup();     // chat item-link stat card
     renderOfflineSummary();
     renderLootPopup();
+    renderEnhancePopup();
     if(_chatFocused){
       var _ci2 = document.getElementById('chatInput');
       // Only restore focus if the input was actually rebuilt (lost focus). With chat panels now
@@ -18518,6 +18563,8 @@
       openAllTreasureChests();
     } else if(action==='closeLootPopup'){
       lootPopupData = null;
+    } else if(action==='closeEnhancePopup'){
+      enhancePopupData = null;
     } else if(action==='startShaftCraft'){
       startShaftCraft(parseInt(btn.getAttribute('data-tier'),10));
     } else if(action==='forgeTool'){
