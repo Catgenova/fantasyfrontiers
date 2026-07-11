@@ -15,7 +15,7 @@
   var R = { passed:0, failed:0, failures:[] };
   function ok(cond, msg){ if(cond){ R.passed++; } else { R.failed++; R.failures.push(msg); if(window.console) console.error('FAIL: ' + msg); } }
   function eq(a, b, msg){ ok(a === b, msg + ' (got ' + JSON.stringify(a) + ', want ' + JSON.stringify(b) + ')'); }
-  function near(a, b, msg){ ok(Math.abs(a - b) <= 1e-9, msg + ' (got ' + a + ', want ~' + b + ')'); }
+  function near(a, b, msg, eps){ eps = (typeof eps === 'number') ? eps : 1e-9; ok(Math.abs(a - b) <= eps, msg + ' (got ' + a + ', want ~' + b + ')'); }
   function suite(name, fn){ try { fn(); } catch(e){ R.failed++; R.failures.push(name + ': threw ' + e); if(window.console) console.error('THREW in ' + name, e); } }
 
   if(!FF){ if(window.console) console.error('SELFTEST: window.__FF missing — open index.html with ?selftest'); window.__FF_SELFTEST = { error:'no __FF' }; return; }
@@ -1940,9 +1940,11 @@
     // Lv 60 Prolonged Duel: damage vs the current foe ramps +2%/sec up to +40%.
     function duel(secsAgo){ var s = leveled('normal'); s.activity = { type:'combat', duelStartedAt: Date.now() - secsAgo*1000 }; return s; }
     eq(FF.duelistDuelMult(leveled('normal')), 1, 'no active duel clock: neutral');
-    near(FF.duelistDuelMult(duel(5)), 1.10, '5s into the duel: +10%');
-    near(FF.duelistDuelMult(duel(15)), 1.30, '15s into the duel: +30%');
-    near(FF.duelistDuelMult(duel(60)), 1.40, 'ramp caps at +40%');
+    // Tolerance covers sub-second wall-clock drift between duelStartedAt and the Date.now() read inside
+    // duelistDuelMult (the ramp is +0.00002/ms, so even ~100ms of test lag stays well under 0.02).
+    near(FF.duelistDuelMult(duel(5)), 1.10, '5s into the duel: +10%', 0.02);
+    near(FF.duelistDuelMult(duel(15)), 1.30, '15s into the duel: +30%', 0.02);
+    near(FF.duelistDuelMult(duel(60)), 1.40, 'ramp caps at +40%', 0.02);
     var duelLow = duel(60); duelLow.xp.duelist = 0; eq(FF.duelistDuelMult(duelLow), 1, 'Prolonged Duel is gated on Lv 60');
     eq(FF.DUELIST_POISE_MAX, 6, 'Flourish builds 6 Poise before its burst');
 
