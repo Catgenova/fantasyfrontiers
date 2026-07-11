@@ -1197,6 +1197,31 @@
     }
   });
 
+  // ---- Tooltip coverage: every skill that renders a (?) info button must carry a SKILL_INFO blurb ---
+  // (The info button only shows when SKILL_INFO[id] exists, so a missing entry silently drops the tooltip.)
+  suite('skill info: every skill has a tooltip', function(){
+    var INFO = FF.SKILL_INFO;
+    ok(INFO && typeof INFO === 'object', 'SKILL_INFO is exposed');
+    var cats = {
+      classes: FF.CLASS_SKILL_IDS,
+      gathering: FF.GATHER_SKILL_IDS,
+      crafting: FF.CRAFT_SKILL_IDS,
+      weapons: FF.WEAPON_STYLE_IDS,
+      offhands: FF.OFFHAND_STYLE_IDS,
+      'armor proficiencies': FF.ARMOR_PROFICIENCY_IDS,
+      faith: FF.FAITH_SKILL_IDS
+    };
+    Object.keys(cats).forEach(function(cat){
+      var ids = cats[cat] || [];
+      var missing = ids.filter(function(id){ return !INFO[id]; });
+      ok(missing.length === 0, cat + ': all have a SKILL_INFO tooltip' + (missing.length ? ' (missing: ' + missing.join(', ') + ')' : ''));
+    });
+    // Spot-check the classes that had been missing before this pass.
+    ['frostwarden','plaguebearer','berserker','sentinel','spellblade','pyromancer','sharpshooter','juggernaut','nightblade','executioner','lumen','reaver'].forEach(function(id){
+      ok(typeof INFO[id] === 'string' && INFO[id].length > 20, id + ' has a class tooltip');
+    });
+  });
+
   // ---- Gadgets: Salvaging -> Tinkering (Bombs) + Pyrotechnics (Flash Bombs) --------------------
   suite('skills: salvaging / tinkering / pyrotechnics', function(){
     ok(FF.GATHERING_SKILLS.salvaging, 'salvaging is a gathering skill');
