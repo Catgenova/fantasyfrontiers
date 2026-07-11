@@ -2716,6 +2716,33 @@
     s.inventory = savedInv;
   });
 
+  // ---- Improvement system: modify EQUIPPED gear in place (keeps it equipped) --------------------
+  suite('improvement: equipped gear is improvable in place', function(){
+    ok(typeof FF.equippedImprovableBases === 'function' && typeof FF.improveFromEquipped === 'function', 'equipped-improve helpers exported');
+    var s = FF._state;
+    var save = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid, uniq:s.uniqueItems, jw:s.jewelrySlots };
+    try {
+      s.uniqueItems = {};
+      // Equip a plain base Half-Moon Axe (tier index 4, i.e. tier field 5) with no unique uid.
+      s.equippedMainhand = 'halfmoonaxe'; s.equippedMainhandTier = 5; s.equippedMainhandRarity = 'normal'; s.equippedMainhandUid = null;
+      var list = FF.equippedImprovableBases();
+      var mh = list.filter(function(e){ return e.slot==='mainhand'; })[0];
+      ok(mh && mh.baseId==='stweapon_halfmoonaxe_t4_normal', 'equipped base mainhand is surfaced with its real item id');
+      // Convert it in place -> a unique that stays equipped.
+      FF.improveFromEquipped('mainhand');
+      var uid = s.equippedMainhandUid;
+      ok(uid && s.uniqueItems[uid], 'a unique was minted for the equipped slot');
+      ok(FF.uniqueIsEquipped(uid), 'the new unique is equipped (gear stays equipped)');
+      var u = s.uniqueItems[uid];
+      ok(u.kind==='weapon' && u.tier===4 && u.rarity==='normal', 'the unique inherits the base kind/tier/rarity');
+      ok(u.enchants.length===0 && u.enhance===0, 'it starts as a stat-identical 0-enchant/0-enhance unique');
+      // Now that the slot holds a unique, it no longer appears as a raw equipped BASE to convert.
+      ok(FF.equippedImprovableBases().every(function(e){ return e.slot!=='mainhand'; }), 'an already-unique slot is not offered again');
+    } finally {
+      s.equippedMainhand=save.mh; s.equippedMainhandTier=save.mht; s.equippedMainhandRarity=save.mhr; s.equippedMainhandUid=save.mhu; s.uniqueItems=save.uniq; s.jewelrySlots=save.jw;
+    }
+  });
+
   // ---- Improvement system: combat aggregate (Stage 1c) ----------------------------------
   suite('improvement: enchant combat aggregate', function(){
     ok(typeof FF.equippedEnchantTotals === 'function', 'aggregate exported');
