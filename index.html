@@ -7665,6 +7665,7 @@
       activeTome: { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 },
       activeScroll: { itemId:null, name:null, icon:null, wardPct:0, durationMs:0, expiresAt:0 },
       autoTea: false,
+      autoTome: false,   // auto-study the best owned Tome when none is active
       familiars: {},
       activeCompanion: null,
       activeCompanions: [],   // multiple active familiars (1 base slot + a Staff's extra slots)
@@ -9404,6 +9405,18 @@
     addLog('You study the ' + recipe.name + ', speeding your gathering & crafting +' + Math.round(recipe.tomeSpeedBonus*100) + '% for ' + Math.round(recipe.tomeDurationMs/60000) + ' minutes.', 'important');
     needsRender = true;
   }
+  // Best owned tome = highest work-speed bonus, tie-broken by longest duration (mirrors bestAvailableTea).
+  function bestAvailableTome(){
+    var tomes = ownedTomes();
+    if(!tomes.length) return null;
+    return tomes.slice().sort(function(a,b){ return (b.tomeSpeedBonus-a.tomeSpeedBonus) || (b.tomeDurationMs-a.tomeDurationMs); })[0];
+  }
+  function studyBestTome(){ var t = bestAvailableTome(); if(t) studyTome(t.id); }
+  function toggleAutoTome(){
+    state.autoTome = !state.autoTome;
+    if(state.autoTome && !isTomeActive()) studyBestTome(); // start immediately if a tome is on hand
+    needsRender = true;
+  }
   // Reading a Scroll (Inscription): starts/refreshes the timed damage-reduction ward. Doesn't stack.
   function readScroll(itemId){
     var recipe = ALL_CRAFT_RECIPES[itemId];
@@ -9798,6 +9811,7 @@
           if(!state.activeTome || typeof state.activeTome !== 'object') state.activeTome = { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 };
           if(!state.activeScroll || typeof state.activeScroll !== 'object') state.activeScroll = { itemId:null, name:null, icon:null, wardPct:0, durationMs:0, expiresAt:0 };
           if(typeof state.autoTea !== 'boolean') state.autoTea = false;
+          if(typeof state.autoTome !== 'boolean') state.autoTome = false;
           if(!state.familiars || typeof state.familiars !== 'object') state.familiars = {};
           Object.keys(state.familiars).forEach(function(fid){
             var f = state.familiars[fid];
@@ -17976,6 +17990,28 @@
   }
   function gabTaskRemainText(rem){ return rem===Infinity ? '∞' : (rem!=null ? rem+' left' : ''); }
   function gabTaskChanceText(pct){ return pct!=null ? pct+'%' : ''; }
+  // Tome buff widget: study an available Tome (or the active one's countdown) for a work-speed buff,
+  // plus an Auto-study toggle. Mirrors the Tea widget below; the two stack as separate sections.
+  function gabTomeHtml(){
+    var active = isTomeActive();
+    var best = active ? null : bestAvailableTome();
+    if(!active && !best) return '';
+    var auto = '<span class="gab-tea-auto" data-action="toggleAutoTome">'+(state.autoTome?'☑':'☐')+' Auto-study next</span>';
+    var html = '<div class="gab-tea gab-tome">';
+    if(active){
+      var t = state.activeTome;
+      var pct = clamp((t.expiresAt-Date.now())/t.durationMs*100, 0, 100);
+      html += '<div class="gab-tea-row"><span class="gab-tea-name">'+t.icon+' '+escapeHtml(t.name)+' <b>+'+Math.round(t.speedBonus*100)+'% SPD</b></span>'+auto+'</div>';
+      html += '<div class="gab-tea-track"><div class="gab-tea-fill" id="gabTomeFill" style="width:'+pct.toFixed(1)+'%;background:#5a8ac8"></div></div>';
+      html += '<div class="gab-tea-time" id="gabTomeTime">'+formatDuration(t.expiresAt-Date.now())+' left</div>';
+    } else {
+      html += '<div class="gab-tea-row"><button class="gab-tea-btn" data-action="studyBestTome">'+best.icon+' Study '+escapeHtml(best.name)+' &bull; +'+Math.round(best.tomeSpeedBonus*100)+'% SPD</button>'+auto+'</div>';
+    }
+    return html + '</div>';
+  }
+  // Combined buff widget: the Tome section (top) and the Tea section (bottom), split vertically. Each
+  // has its own auto toggle. Returns '' when neither has anything to show.
+  function gabBuffsHtml(){ return gabTomeHtml() + gabTeaHtml(); }
   // Tea buff widget in the header: drink an available tea (or the active one's countdown),
   // plus an Auto-drink toggle. Shown whenever a tea is active or one is owned.
   function gabTeaHtml(){
@@ -18002,7 +18038,7 @@
     var idleSlots = Math.max(0, slotCap - tasks.length); // how many aren't producing right now
     if(!tasks.length){
       var idleMsg = slotCap > 1 ? ('Idle — all ' + slotCap + ' action slots free') : 'Idle';
-      return '<div class="global-action-bar idle"><div class="gab-idle">'+idleMsg+'</div>'+gabTeaHtml()+'</div>';
+      return '<div class="global-action-bar idle"><div class="gab-idle">'+idleMsg+'</div>'+gabBuffsHtml()+'</div>';
     }
     // One row per running task at a comfortable fixed height; the card simply grows taller as
     // more tasks run (no inner scrollbar), so every active task stays readable regardless of count.
@@ -18026,12 +18062,13 @@
     if(idleSlots > 0){
       html += '<div class="gab-idle-note"><span class="dot"></span>' + idleSlots + ' of ' + slotCap + ' action slots idle — put ' + (idleSlots===1?'it':'them') + ' to work</div>';
     }
-    html += gabTeaHtml() + '</div>';
+    html += gabBuffsHtml() + '</div>';
     return html;
   }
 
   var gabSig = '';
   var gabTeaWasActive = false;
+  var gabTomeWasActive = false;
   function updateGlobalActionBarLive(){
     flushGabRewardQueue(); // anchor any pending reward floats to the current task rows
     var tasks = collectTasks();
@@ -18063,6 +18100,15 @@
       if(_tf) _tf.style.width = clamp((state.activeTea.expiresAt-Date.now())/state.activeTea.durationMs*100, 0, 100) + '%';
       var _tt = document.getElementById('gabTeaTime');
       if(_tt) _tt.textContent = formatDuration(state.activeTea.expiresAt-Date.now()) + ' left';
+    }
+    // Tome buff: live countdown, same treatment as tea (re-render on activate/expire so the section swaps).
+    var tomeNow = isTomeActive();
+    if(tomeNow !== gabTomeWasActive){ gabTomeWasActive = tomeNow; needsRender = true; }
+    if(tomeNow){
+      var _mf = document.getElementById('gabTomeFill');
+      if(_mf) _mf.style.width = clamp((state.activeTome.expiresAt-Date.now())/state.activeTome.durationMs*100, 0, 100) + '%';
+      var _mt = document.getElementById('gabTomeTime');
+      if(_mt) _mt.textContent = formatDuration(state.activeTome.expiresAt-Date.now()) + ' left';
     }
   }
 
@@ -18979,6 +19025,10 @@
       drinkBestTea();
     } else if(action==='toggleAutoTea'){
       toggleAutoTea();
+    } else if(action==='studyBestTome'){
+      studyBestTome();
+    } else if(action==='toggleAutoTome'){
+      toggleAutoTome();
     } else if(action==='toggleFamiliar'){
       var famSkill = btn.getAttribute('data-skill');
       menagerieExpanded[famSkill] = !menagerieExpanded[famSkill];
@@ -19156,6 +19206,8 @@
     // Auto-drink: if enabled and no tea buff is running, brew-and-drink the best one on hand
     // (fires once per expiry since drinking makes isTeaActive() true again).
     if(state.autoTea && !isTeaActive()) drinkBestTea();
+    // Auto-study: same, for the best owned Tome (work-speed buff).
+    if(state.autoTome && !isTomeActive()) studyBestTome();
 
     // Estate terraforming runs entirely in the background, independent of state.activity,
     // so it keeps progressing (and can finish) no matter what the player is actively doing.
@@ -19459,7 +19511,7 @@
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, ALL_SELLABLE:ALL_SELLABLE, ALL_DROP_ITEMS:ALL_DROP_ITEMS, FAT_ITEMS:FAT_ITEMS, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES,
       isFeastActive:isFeastActive, feastDamageBonus:feastDamageBonus, serveFeast:serveFeast,
-      isTomeActive:isTomeActive, tomeSpeedBonus:tomeSpeedBonus, studyTome:studyTome, speedMultiplier:speedMultiplier,
+      isTomeActive:isTomeActive, tomeSpeedBonus:tomeSpeedBonus, studyTome:studyTome, bestAvailableTome:bestAvailableTome, ownedTomes:ownedTomes, speedMultiplier:speedMultiplier,
       isScrollActive:isScrollActive, scrollDamageReduction:scrollDamageReduction, readScroll:readScroll,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       playerAccuracy:playerAccuracy, monsterDodge:monsterDodge, hitChanceVs:hitChanceVs, playerHitChance:playerHitChance,

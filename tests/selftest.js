@@ -943,6 +943,14 @@
     ok(tome5.tomeSpeedBonus > 0 && tome5.tomeDurationMs > 0, 'tomes carry a timed work-speed buff');
     var t0 = FF.ALL_CRAFT_RECIPES['tome_t0'], t20 = FF.ALL_CRAFT_RECIPES['tome_t20'];
     ok(t20.tomeSpeedBonus > t0.tomeSpeedBonus && t20.tomeSpeedBonus <= 0.25 + 1e-9, 'tome speed bonus scales with tier (cap 25%)');
+    // Auto-study / the action-bar Tome widget pick the strongest owned tome (highest speed bonus,
+    // tie-broken by longest duration).
+    ok(typeof FF.bestAvailableTome === 'function', 'bestAvailableTome exported');
+    eq(FF.bestAvailableTome(), null, 'no tomes owned -> bestAvailableTome null');
+    FF._state.inventory['tome_t2'] = 1; FF._state.inventory['tome_t15'] = 1;
+    var bt = FF.bestAvailableTome();
+    ok(bt && bt.id === 'tome_t15', 'bestAvailableTome picks the strongest owned tome');
+    delete FF._state.inventory['tome_t2']; delete FF._state.inventory['tome_t15'];
     // Studying a tome speeds work: speedMultiplier drops (lower = faster). No buff by default.
     eq(FF.tomeSpeedBonus(), 0, 'no tome buff by default');
     var before = FF.speedMultiplier(FF._state);
