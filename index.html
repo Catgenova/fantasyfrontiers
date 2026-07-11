@@ -4271,6 +4271,26 @@
         { level:60, name:'Grisly Resolve',desc:'+50% Critical Hit damage.' },
         { level:80, name:'Decapitate',    desc:'A hit that leaves the enemy below 15% Health instantly slays it.' }
       ]
+    },
+    {
+      id:'lumen', name:'Lumen Oracle', icon:svgIcon('sun','#e6c24a'),
+      blurb:'A serene seer who blinds foes with searing light and outlasts them in supple leather.',
+      reqText:'Light Wand + Ward, Leather Hood, Chest, Gloves & Boots',
+      reqParts:[
+        { icon:elementIcon('light'),                     label:'Light Wand',    met:function(st){ return st.equippedMainhand==='wandLight'; } },
+        { icon:svgIcon('shield','#7a5aa8'),              label:'Ward',          met:function(st){ return isWard(st.equippedOffhand); } },
+        { icon:svgIcon('helm',CLASS_LEATHER_COLOR),      label:'Leather Hood',  met:function(st){ return leatherPieceEquipped(st,'helmet'); } },
+        { icon:svgIcon('chestarmor',CLASS_LEATHER_COLOR),label:'Leather Chest', met:function(st){ return leatherPieceEquipped(st,'chest'); } },
+        { icon:svgIcon('gauntlet',CLASS_LEATHER_COLOR),  label:'Leather Gloves',met:function(st){ return leatherPieceEquipped(st,'gauntlets'); } },
+        { icon:svgIcon('boots',CLASS_LEATHER_COLOR),     label:'Leather Boots', met:function(st){ return leatherPieceEquipped(st,'boots'); } }
+      ],
+      passives:[
+        { level:1,  name:'Glare',             desc:'+25% damage.' },
+        { level:20, name:'Blind',             desc:'Hits have a 15% chance to reduce the enemy\'s damage 25% for 5s.' },
+        { level:40, name:'Flashbang',         desc:'Hits have an 8% chance to stun the enemy, freezing its action bar for 2s.' },
+        { level:60, name:'Afterimage',        desc:'+12% Dodge chance.' },
+        { level:80, name:'Blinding Radiance',  desc:'While the enemy is Blinded, you deal +25% damage and take 25% less.' }
+      ]
     }
   ];
   var CLASS_DEFS_BY_ID = {}; CLASS_DEFS.forEach(function(c){ CLASS_DEFS_BY_ID[c.id] = c; });
@@ -4305,7 +4325,7 @@
   // on top only at the moment of a monster attack, so it is NOT folded in here.
   function playerDodgeChance(st){
     st = st || state;
-    return getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + assassinDodgeBonus(st) + nightbladeDodgeBonus(st);
+    return getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + assassinDodgeBonus(st) + nightbladeDodgeBonus(st) + lumenDodgeBonus(st);
   }
   // Assassin Lv 40: attacks ignore 20% of armor (modeled as +20% damage). Lv 80: outgoing damage +X% where X = Dodge chance.
   function assassinArmorPenMult(st){ return assassinBonus(40, st) ? 1.20 : 1; }
@@ -4475,6 +4495,8 @@
     if(juggernautBonus(1, st)) m *= 1.30;                                    // Juggernaut Crushing Blows
     if(nightbladeBonus(20, st)) m *= 1.25;                                   // Nightblade Hex
     if(executionerBonus(1, st) && enemyHpFrac(monster, st) < 0.5) m *= 1.30; // Executioner Reap the Weak
+    if(lumenBonus(1, st)) m *= 1.25;                                         // Lumen Oracle Glare
+    m *= lumenBlindingDealtMult(st);                                         // Lumen Oracle Blinding Radiance (Lv80, while blinded)
     return m;
   }
   // Critical-hit-chance bonus from the new classes (added into the crit roll).
@@ -4506,6 +4528,14 @@
   function juggernautIncomingMult(st){ return juggernautBonus(60, st) ? 0.80 : 1; }
   // Executioner Lv 80 Decapitate: a hit that leaves the enemy below 15% of its max HP instantly slays it.
   function executionerExecuteThreshold(monster){ return (executionerBonus(80) && monster && monster.hp) ? monster.hp * 0.15 : 0; }
+  // ===== Lumen Oracle (Light Wand): Glare / Blind / Flashbang / Afterimage / Blinding Radiance =====
+  // Blind reuses the shared enemy-damage debuff window (state.classDebuffs.enemyDmgUntil) -- the same
+  // channel Templar's Enfeeble uses -- so templarIncomingDmgMult() already applies its 25% reduction.
+  function lumenBonus(reqLevel, st){ return classBonusActive('lumen', reqLevel, st); }
+  function lumenEnemyBlinded(st){ st = st || state; return !!(st.classDebuffs && st.classDebuffs.enemyDmgUntil > Date.now()); }
+  function lumenDodgeBonus(st){ st = st || state; return lumenBonus(60, st) ? 0.12 : 0; }                               // Lv60 Afterimage (folded into playerDodgeChance)
+  function lumenBlindingDealtMult(st){ st = st || state; return (lumenBonus(80, st) && lumenEnemyBlinded(st)) ? 1.25 : 1; }  // Lv80 Blinding Radiance: +25% dealt while blinded
+  function lumenIncomingMult(st){ st = st || state; return (lumenBonus(80, st) && lumenEnemyBlinded(st)) ? 0.75 : 1; }   // Lv80 Blinding Radiance: -25% taken while blinded
   // Duelist Lv 1: on a dodge, a random active companion fires one extra spell for free -- this does NOT
   // advance or reset that companion's own cast timer (state.companionCast is left untouched).
   function duelistDodgeBonusCast(){
@@ -8945,6 +8975,12 @@
         if(templarBonus(40) && Math.random() < 0.05){ state.classDebuffs.enemyDmgUntil = Date.now() + 5000; spawnFloatingText('Enfeebled!', 'ft-rare'); }
         if(templarBonus(60) && Math.random() < 0.05){ state.classDebuffs.enemyArmorUntil = Date.now() + 5000; spawnFloatingText('Sundered!', 'ft-rare'); }
       }
+      // Lumen Oracle on-hit: Lv 20 Blind (15% -> reuse the enemy-damage debuff window), Lv 40 Flashbang (8% stun).
+      if(lumenBonus(20) && Math.random() < 0.15){
+        if(!state.classDebuffs) state.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
+        state.classDebuffs.enemyDmgUntil = Date.now() + 5000; spawnFloatingText('Blinded!', 'ft-rare');
+      }
+      if(lumenBonus(40) && !offlineCapture && Math.random() < 0.08){ act.enemyStunUntil = Date.now() + 2000; spawnFloatingText('Flashed!', 'ft-rare'); }
       // Thunderfury (Chain Lightning): a Critical Hit builds a stack (attack speed / accuracy); a non-crit resets.
       if(thunderfuryBonus(1)){
         if(isCrit){
@@ -9064,7 +9100,7 @@
     // The hit lands its physical type AND the enemy's element together: the element is amplified by
     // the player's armor weakness to it (leather->fire, chain->earth, plate->water).
     var elementMult = incomingElementMult(state, monster);
-    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster) * frostwardenWaterResistMult(monster) * templarIncomingDmgMult() * sentinelIncomingMult(state) * juggernautIncomingMult(state) * berserkerRecklessTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getRingResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring flat resistance
+    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster) * frostwardenWaterResistMult(monster) * templarIncomingDmgMult() * lumenIncomingMult(state) * sentinelIncomingMult(state) * juggernautIncomingMult(state) * berserkerRecklessTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getRingResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring flat resistance
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
     var blockChance = playerBlockChance(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
@@ -19288,7 +19324,7 @@
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus,
-      pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, executionerLifestealPct:executionerLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, executionerExecuteThreshold:executionerExecuteThreshold, enemyHpFrac:enemyHpFrac,
+      pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, executionerLifestealPct:executionerLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, executionerExecuteThreshold:executionerExecuteThreshold, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenChillChance:frostwardenChillChance, frostwardenBlockBonus:frostwardenBlockBonus, enemyChilled:enemyChilled, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,

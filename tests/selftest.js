@@ -1108,6 +1108,50 @@
     eq(FF.enemyHpFrac({hp:0}, {activity:{monsterHp:0}}), 1, 'enemyHpFrac guards against a zero max');
   });
 
+  // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------
+  suite('classes: lumen oracle (light wand)', function(){
+    function armor(mat,tier){ return {material:mat,tier:tier||5}; }
+    function stFor(level, extra){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:'wandLight', equippedOffhand:'wardLight',
+                 bodyArmor:{helmet:armor('leather'),chest:armor('leather'),gauntlets:armor('leather'),boots:armor('leather')},
+                 classDebuffs:{enemyDmgUntil:0,enemyArmorUntil:0}, activity:{type:'combat',monsterHp:100}, playerHp:55 };
+      st.xp['lumen'] = FF.xpFloorForLevel(level);
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+    var cd = FF.CLASS_DEFS_BY_ID.lumen;
+    ok(cd, 'Lumen Oracle is a registered class');
+    eq(cd.name, 'Lumen Oracle', 'display name is Lumen Oracle');
+    eq(cd.passives.length, 5, 'has 5 perks');
+    eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'perks at Lv 1/20/40/60/80');
+    ok(/Light Wand/.test(cd.reqText), 'wields the Light Wand (the last element without a class)');
+    // gating: full kit activates; dropping the boots deactivates.
+    eq(FF.activeClassId(stFor(80)), 'lumen', 'light wand + ward + full leather => Lumen Oracle');
+    eq(FF.activeClassId(stFor(80,{bodyArmor:{helmet:armor('leather'),chest:armor('leather'),gauntlets:armor('leather')}})), null, 'Lumen Oracle needs Leather Boots');
+    ok(FF.activeClassId(stFor(80,{equippedMainhand:'wandDark'})) !== 'lumen', 'a Dark Wand does not activate Lumen Oracle (it is the Voidshadow kit)');
+    // Lv1 Glare: +25% damage.
+    var mon = {hp:100};
+    ok(Math.abs(FF.newClassDmgMult(mon, stFor(1)) - 1.25) < 1e-9, 'Glare +25% damage');
+    // Lv60 Afterimage: +12% Dodge.
+    ok(Math.abs(FF.lumenDodgeBonus(stFor(60)) - 0.12) < 1e-9, 'Afterimage +12% Dodge');
+    ok(Math.abs(FF.lumenDodgeBonus(stFor(40)) - 0) < 1e-9, 'no Dodge before Lv60');
+    // Lv80 Blinding Radiance: only fires while the enemy carries the Blind (enemy-damage) debuff.
+    var blindActive = stFor(80,{classDebuffs:{enemyDmgUntil:Date.now()+4000,enemyArmorUntil:0}});
+    ok(FF.lumenEnemyBlinded(blindActive), 'enemy is Blinded while the debuff window holds');
+    ok(Math.abs(FF.lumenBlindingDealtMult(blindActive) - 1.25) < 1e-9, 'Blinding Radiance +25% dealt while blinded');
+    eq(FF.lumenIncomingMult(blindActive), 0.75, 'Blinding Radiance -25% taken while blinded');
+    var blindOff = stFor(80); // no active debuff
+    eq(FF.lumenBlindingDealtMult(blindOff), 1, 'Blinding Radiance is neutral with no Blind up');
+    eq(FF.lumenIncomingMult(blindOff), 1, 'no incoming reduction with no Blind up');
+    // Glare stacks with Blinding Radiance in the aggregate dmg mult (1.25 * 1.25 = 1.5625).
+    ok(Math.abs(FF.newClassDmgMult(mon, blindActive) - 1.5625) < 1e-9, 'Glare and Blinding Radiance stack (x1.5625)');
+    // no class active -> every Lumen multiplier is neutral.
+    var none = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, classDebuffs:{enemyDmgUntil:Date.now()+4000}, activity:{type:'combat',monsterHp:100}, playerHp:55 };
+    eq(FF.lumenBlindingDealtMult(none), 1, 'no class -> Blinding Radiance dealt neutral');
+    eq(FF.lumenIncomingMult(none), 1, 'no class -> Blinding Radiance incoming neutral');
+    eq(FF.lumenDodgeBonus(none), 0, 'no class -> no Afterimage dodge');
+  });
+
   // ---- Gadgets: Salvaging -> Tinkering (Bombs) + Pyrotechnics (Flash Bombs) --------------------
   suite('skills: salvaging / tinkering / pyrotechnics', function(){
     ok(FF.GATHERING_SKILLS.salvaging, 'salvaging is a gathering skill');
