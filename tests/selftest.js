@@ -2710,6 +2710,13 @@
     eq(R(400, 400, 1000, 400, 1000), 400, 'a spend sticks (server adopted the lower balance)');
     // Round-trip drift: gold earned locally during the request is preserved on top.
     eq(R(1200, 1000, 1000, 1000, 1000), 1200, 'drift earned mid-request is not clobbered');
+    // Treasure-chest gold is banked exempt via wallet.earn_chest (server-verified by an item_debit),
+    // credited in full to the server balance outside the token bucket -- so it reconciles like any
+    // already-credited gold and is never throttled/clamped. Its credit does NOT flow through
+    // goldEarnedTotal, so the normal earn/sync path can't double-count it.
+    ok(typeof FF.walletEarnChest === 'function', 'walletEarnChest exported (exempt chest-gold credit)');
+    // Once earn_chest has banked the chest gold into serverGold, the reconcile keeps it (no pending needed).
+    eq(R(50000, 50000, 0, 50000, 0), 50000, 'chest gold banked into server balance survives reconcile');
   });
 
   // ---- Improvement system: enchant foundation (Stage 1a) --------------------------------

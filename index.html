@@ -5767,7 +5767,14 @@
       // 1-10000 gold, weighted toward the low end (cubic skew), like the Critter Cache's roll.
       gold += Math.max(1, Math.min(10000, Math.floor(Math.pow(Math.random(), 3) * 10000) + 1));
     }
-    earnGold(gold);
+    // Treasure-chest gold is EXEMPT from the wallet's rate-limit/clamp. It's credited optimistically
+    // to local gold, then banked in full server-side via wallet.earn_chest -- which is gated by a
+    // server-verified item_debit of the chests, so it's bounded by chests you actually own (can't be
+    // forged) yet never throttled. Deliberately NOT routed through earnGold(): chest gold does not
+    // enter goldEarnedTotal, so the normal (bucket-limited) sync never touches it. walletEarnChest
+    // falls back to the normal anchor if the server can't credit it (offline / ledger miss).
+    state.gold += gold;
+    walletEarnChest(n, gold);
     addLog('You pried open ' + n + ' Treasure Chest' + (n===1?'':'s') + ' and found ' + fmt(gold) + ' gold!', 'important');
     spawnFloatingText('+' + fmt(gold) + ' gold', 'ft-bonus');
     lootPopupData = { title:'Treasure Chest'+(n===1?'':'s'), icon:(ALL_SELLABLE.treasure_chest||{}).icon, opened:n, gold:gold, items:{} };
@@ -15842,6 +15849,29 @@
       }
     }catch(e){}
   }
+  var CHEST_MAX_GOLD = 10000; // must match the per-chest roll cap in openTreasureChests + the server
+  // Bank treasure-chest gold server-side, EXEMPT from the token bucket. The server verifies + consumes
+  // the chests from the item ledger (item_debit) and credits min(gold, count*CHEST_MAX_GOLD) in full,
+  // so it's bounded by real chests but never throttled/clamped. If the server can't credit it (offline,
+  // signed out, or the ledger doesn't show the chests yet), fall back to the normal earnings anchor so
+  // the gold is still preserved (rate-limited) rather than lost. No double-credit: on the success path
+  // chest gold never enters goldEarnedTotal, so the periodic sync never re-credits it.
+  async function walletEarnChest(count, gold){
+    count = Math.floor(count); gold = Math.floor(gold);
+    if(!(count > 0) || !(gold > 0)) return;
+    function fallback(){ state.goldEarnedTotal = (state.goldEarnedTotal||0) + gold; } // normal (bucket) path preserves it
+    if(!WALLET_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id || cloudReloading){ fallback(); return; }
+    if(!chatClient){ if(!(await authEnsureClient())){ fallback(); return; } }
+    try{
+      var res = await chatClient.functions.invoke('wallet', { body: { action:'earn_chest', count:count, gold:gold } });
+      var d = res && res.data;
+      if(d && d.ok === true && typeof d.gold === 'number' && isFinite(d.gold)){
+        walletServerGold = d.gold; // credited in full server-side; the next sync's reconcile keeps it
+      } else {
+        fallback(); // server refused (older server / ledger miss) -> don't lose it
+      }
+    }catch(e){ fallback(); }
+  }
   // ===== Server-authoritative ITEM ledger (Stage 2 reconcile) =====
   // The item counterpart of walletSync. Posts the full inventory to items.sync; the server grandfathers
   // it once, then rate-caps each item's increase and clamps to what we report, and returns the
@@ -19378,7 +19408,7 @@
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
-      earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, itemSync:itemSync,
+      earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
       parseImprovable:parseImprovable, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink,

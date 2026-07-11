@@ -3,6 +3,9 @@
 // Endpoints (all POST, identity from the auth token, never the body):
 //   { action:"get" }                      -> { ok, gold }   (seeds from the player's save on first touch)
 //   { action:"earn", earned_total:number} -> { ok, gold, credited }   rate-limited credit of new earnings
+//   { action:"earn_chest", count, gold }  -> { ok, gold, credited }   FULL credit (no rate limit), gated
+//                                            by an item_debit of `count` treasure_chest -- treasure-chest
+//                                            gold is exempt from the bucket/clamp but bounded by real chests
 //   { action:"spend", amount:number }     -> { ok, gold }   debits if the balance covers it, else ok:false
 //
 // EARNING is client-reported (the server can't simulate combat/gathering) but RATE-LIMITED: the credit
@@ -63,7 +66,7 @@ Deno.serve(async (req) => {
   if (userErr || !user) return json({ ok: false, error: "Not authenticated." }, 401);
   const userId = user.id;
 
-  let body: { action?: unknown; earned_total?: unknown; amount?: unknown };
+  let body: { action?: unknown; earned_total?: unknown; amount?: unknown; count?: unknown; gold?: unknown };
   try { body = await req.json(); } catch { return json({ ok: false, error: "Invalid request." }, 400); }
   const action = String(body.action || "get");
 
@@ -119,6 +122,33 @@ Deno.serve(async (req) => {
     }
     const { data: row } = await admin.from("player_wallet").select("gold, earned_total").eq("user_id", userId).maybeSingle();
     return json({ ok: true, gold: Number(row?.gold ?? w.gold), earned: Number(row?.earned_total ?? w.earned_total), credited });
+  }
+
+  // Treasure-chest gold: credited in FULL and EXEMPT from the token bucket / clamp. Security comes not
+  // from the rate limit but from the item ledger: we item_debit the opened chests first, so the credit
+  // is bounded by chests the player actually holds server-side (can't be forged) and capped at the
+  // per-chest gold ceiling. Deliberately does NOT touch earned_total or updated_at -- this credit is
+  // outside the normal earnings anchor, so the periodic `sync`/`earn` path never double-credits it.
+  if (action === "earn_chest") {
+    const count = body.count;
+    const reportedGold = body.gold;
+    if (typeof count !== "number" || !Number.isInteger(count) || count <= 0 || count > 10_000_000) {
+      return json({ ok: false, error: "Invalid count." }, 400);
+    }
+    if (typeof reportedGold !== "number" || !Number.isFinite(reportedGold) || reportedGold < 0) {
+      return json({ ok: false, error: "Invalid gold." }, 400);
+    }
+    await ensureWallet();
+    // Verify + consume the chests from the item ledger. Fails (ok:false) if the player doesn't hold N
+    // chests server-side -- the client then falls back to the normal rate-limited earn path.
+    const { data: debited } = await admin.rpc("item_debit", { p_user: userId, p_key: "treasure_chest", p_qty: count });
+    if (debited !== true) return json({ ok: false, error: "Chests not available in the ledger." });
+    const w = await ensureWallet();
+    const CHEST_MAX_GOLD = 10_000; // per-chest gold ceiling (matches openTreasureChests' roll cap)
+    const credit = Math.max(0, Math.min(Math.floor(reportedGold), count * CHEST_MAX_GOLD));
+    const newGold = Math.min(HARD_CAP, w.gold + credit);
+    await admin.from("player_wallet").update({ gold: newGold }).eq("user_id", userId); // earned_total & updated_at unchanged: exempt from the bucket
+    return json({ ok: true, gold: newGold, credited: credit });
   }
 
   // The reconcile the client calls periodically (and on load). It (1) credits new earnings under
