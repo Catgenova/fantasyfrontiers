@@ -1895,7 +1895,7 @@
     ok(fam.spells.some(function(s){ return s.element==='light'; }), 'summoner familiar spells carry the light element');
   });
 
-  // ---- Classes: Duelist (rapier fencer with speed/precision/riposte passives) -----------
+  // ---- Classes: Duelist (rapier fencer: dodge-tempo footwork, flourish, prolonged duel, disengage) --
   suite('classes: Duelist', function(){
     ok(FF.CLASS_SKILL_IDS.indexOf('duelist') !== -1, 'duelist is a class skill id');
     var cd = FF.CLASS_DEFS_BY_ID.duelist;
@@ -1922,29 +1922,79 @@
     var chainGloves = base(); chainGloves.bodyArmor.gauntlets=chain();
     eq(FF.activeClassId(chainGloves), null, 'chain (not cloth) gloves => no Duelist');
 
-    // Lv 20 Flashing Steel: -10% attack time per rarity rank on the rapier (only from Lv 20).
+    // Reworked perk ladder: names in order.
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Reactive Casting,Fleet Footwork,Flourish,Prolonged Duel,Disengage', 'reworked Duelist perk names');
+
     var lvHi = FF.xpFloorForLevel(60); // ~Lv 60
     function leveled(rarity){ var s = base(rarity); s.xp.duelist = lvHi; return s; }
+    // Lv 20 Fleet Footwork: -15% attack time per dodge stack (up to -45%), gated on the class.
     eq(FF.classAttackSpeedMult(full), 1, 'Lv 1 duelist: no attack-speed bonus yet');
-    near(FF.classAttackSpeedMult(leveled('normal')), 1, 'normal rapier: no reduction');
-    near(FF.classAttackSpeedMult(leveled('rare')), 0.9, 'rare rapier: -10%');
-    near(FF.classAttackSpeedMult(leveled('supreme')), 0.8, 'supreme rapier: -20%');
-    near(FF.classAttackSpeedMult(leveled('fantastic')), 0.7, 'fantastic rapier: -30%');
-    var fastButOff = leveled('fantastic'); fastButOff.equippedOffhand='shieldSmall';
-    eq(FF.classAttackSpeedMult(fastButOff), 1, 'attack-speed bonus is gated on the class being active');
+    var fw0 = leveled('normal'); eq(FF.classAttackSpeedMult(fw0), 1, 'no footwork stacks: no reduction');
+    var fw2 = leveled('normal'); fw2.duelistFootworkStacks = 2; near(FF.classAttackSpeedMult(fw2), 0.7, '2 dodge stacks: -30%');
+    var fw9 = leveled('normal'); fw9.duelistFootworkStacks = 9; near(FF.classAttackSpeedMult(fw9), 0.55, 'footwork caps at 3 stacks (-45%)');
+    var fwOff = leveled('normal'); fwOff.duelistFootworkStacks = 3; fwOff.equippedOffhand='shieldSmall';
+    eq(FF.classAttackSpeedMult(fwOff), 1, 'footwork bonus is gated on the class being active');
+    // Perfect Form is gone -- the Duelist no longer grants a flat accuracy multiplier.
+    eq(FF.classAccuracyMult(leveled('normal')), 1, 'Duelist no longer grants +30% accuracy (Perfect Form removed)');
 
-    // Lv 40 Perfect Form: +30% accuracy, folded into playerAccuracy.
-    eq(FF.classAccuracyMult(full), 1, 'Lv 1 duelist: no accuracy bonus');
-    eq(FF.classAccuracyMult(leveled('normal')), 1.3, 'Lv >= 40 duelist: +30% accuracy');
-    var accOn = leveled('normal'); accOn.physique = {}; FF.ACCURACY_PHYSIQUES.forEach(function(id){ accOn.physique[id] = FF.xpFloorForLevel(21); });
-    var accOff = { xp:accOn.xp, equippedMainhand:'rapier', equippedMainhandRarity:'normal', equippedOffhand:'shieldSmall', bodyArmor:accOn.bodyArmor, physique:accOn.physique };
-    ok(FF.playerAccuracy(accOn) > FF.playerAccuracy(accOff), 'active Duelist gets higher accuracy than the same build with the class off');
-    ok(Math.abs(FF.playerAccuracy(accOn) - Math.round(FF.playerAccuracy(accOff)*1.3)) <= 2, 'accuracy scales by the +30% class multiplier');
+    // Lv 60 Prolonged Duel: damage vs the current foe ramps +2%/sec up to +40%.
+    function duel(secsAgo){ var s = leveled('normal'); s.activity = { type:'combat', duelStartedAt: Date.now() - secsAgo*1000 }; return s; }
+    eq(FF.duelistDuelMult(leveled('normal')), 1, 'no active duel clock: neutral');
+    near(FF.duelistDuelMult(duel(5)), 1.10, '5s into the duel: +10%');
+    near(FF.duelistDuelMult(duel(15)), 1.30, '15s into the duel: +30%');
+    near(FF.duelistDuelMult(duel(60)), 1.40, 'ramp caps at +40%');
+    var duelLow = duel(60); duelLow.xp.duelist = 0; eq(FF.duelistDuelMult(duelLow), 1, 'Prolonged Duel is gated on Lv 60');
+    eq(FF.DUELIST_POISE_MAX, 6, 'Flourish builds 6 Poise before its burst');
 
     // Class familiar.
     var fam = FF.FAMILIAR_DATA.duelist;
     ok(fam && fam.spells && fam.spells.length === 4, 'duelist familiar has 4 spells');
     ok(fam.spells.some(function(s){ return s.element==='fire'; }), 'duelist familiar damaging spells carry the fire element');
+  });
+
+  // ---- Duelist reworked combat flow: crash-safety + state invariants over many live ticks --------
+  // The new perks (Fleet Footwork stacks, Flourish's 3-hit bonus burst, Disengage's dodge+return) run
+  // inside playerAttackTick/monsterAttackTick, which are random. Rather than assert exact outcomes, we
+  // drive hundreds of real ticks with the Duelist active and confirm nothing throws, no runaway loop,
+  // and the class state never leaves its valid range (Flourish never recurses out of bounds, etc.).
+  suite('classes: Duelist reworked combat flow (smoke)', function(){
+    var s = FF._state;
+    var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid, oh:s.equippedOffhand, ba:s.bodyArmor, xp:s.xp.duelist, act:s.activity, hp:s.playerHp, fw:s.duelistFootworkStacks, po:s.duelistPoise, gc:s.duelistGuaranteedCrits };
+    var threw = null, invariantsOk = true;
+    try {
+      s.equippedMainhand='rapier'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null; s.equippedOffhand=null;
+      s.bodyArmor={helmet:{material:'chain',tier:5,rarity:'normal'},chest:{material:'chain',tier:5,rarity:'normal'},gauntlets:{material:'tailoring',tier:5,rarity:'normal'},boots:{material:'tailoring',tier:5,rarity:'normal'},back:{tier:0,rarity:'normal',material:null}};
+      s.xp.duelist = FF.xpFloorForLevel(80);
+      eq(FF.activeClassId(s), 'duelist', 'smoke setup activates the Duelist');
+      var mon = FF.MONSTERS[0];
+      for(var round=0; round<3 && !threw; round++){
+        s.activity = { type:'combat', monsterId:mon.id, monsterHp: mon.hp*40, tickAccum:0, monsterTickAccum:0, duelStartedAt: Date.now()-3000, disengageUsed:false };
+        s.duelistFootworkStacks = 0; s.duelistPoise = FF.DUELIST_POISE_MAX - 1; s.duelistGuaranteedCrits = 0; // primed so Flourish fires quickly
+        s.playerHp = 12; // low, so Disengage's threshold can trigger
+        for(var i=0; i<200 && !threw; i++){
+          try {
+            FF.playerAttackTick();
+            if(s.activity && s.activity.type==='combat'){ if(s.activity.monsterHp <= 0) s.activity.monsterHp = mon.hp*40; FF.monsterAttackTick(); }
+            if(!(s.duelistFootworkStacks >= 0 && s.duelistFootworkStacks <= FF.DUELIST_FOOTWORK_MAX)) invariantsOk = false;
+            if(!(s.duelistPoise >= 0 && s.duelistPoise <= FF.DUELIST_POISE_MAX)) invariantsOk = false;
+            if(!((s.duelistGuaranteedCrits||0) >= 0)) invariantsOk = false;
+            // The Disengage threshold means low-HP hits sometimes kill the player, and real death handling
+            // clears the activity to { type:null }. Only the combat monsterHp needs to stay finite; a dead
+            // player just re-enters the fight below (mirrors the game loop respawning into a new duel).
+            if(s.activity && s.activity.type==='combat' && !isFinite(s.activity.monsterHp)) invariantsOk = false;
+            if(!isFinite(s.playerHp)) invariantsOk = false;
+            if(s.playerHp <= 0 || !s.activity || s.activity.type!=='combat'){
+              s.playerHp = 12;
+              s.activity = { type:'combat', monsterId:mon.id, monsterHp: mon.hp*40, tickAccum:0, monsterTickAccum:0, duelStartedAt: Date.now()-3000, disengageUsed:false };
+            }
+          } catch(e){ threw = (e && e.message) || String(e); }
+        }
+      }
+    } finally {
+      s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu; s.equippedOffhand=snap.oh; s.bodyArmor=snap.ba; s.xp.duelist=snap.xp; s.activity=snap.act; s.playerHp=snap.hp; s.duelistFootworkStacks=snap.fw; s.duelistPoise=snap.po; s.duelistGuaranteedCrits=snap.gc;
+    }
+    ok(!threw, 'no crash / runaway across ~600 attack+monster ticks with the Duelist active' + (threw ? ' ('+threw+')' : ''));
+    ok(invariantsOk, 'footwork (0-3), poise (0-6), guaranteed-crits (>=0) and HP stay valid throughout');
   });
 
   // ---- Classes: Reaper (scythe soul-harvester: crits + lifesteal) -----------------------

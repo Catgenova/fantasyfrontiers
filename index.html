@@ -3912,7 +3912,7 @@
     },
     {
       id:'duelist', name:'Duelist', icon:svgIcon('sword','#b83a4a'),
-      blurb:'A lightly-armoured fencer who turns speed, precision, and ripostes into a lethal dance.',
+      blurb:'A lightly-armoured fencer whose footwork is her weapon &mdash; every dodge feeds the next flurry, and a brush with death becomes a killing dance.',
       reqText:'Rapier + empty offhand, Chain Helm & Chest, Cloth Gloves & Shoes',
       reqParts:[
         { icon:svgIcon('sword','#9aa0a8'),               label:'Rapier',        met:function(st){ return st.equippedMainhand==='rapier'; } },
@@ -3923,11 +3923,11 @@
         { icon:svgIcon('boots',CLASS_CLOTH_COLOR),       label:'Cloth Shoes',   met:function(st){ return clothPieceEquipped(st,'boots'); } }
       ],
       passives:[
-        { level:1,  name:'Reactive Casting', desc:'When you dodge an attack, a familiar instantly casts a random extra spell &mdash; without interrupting its own cast timer.' },
-        { level:20, name:'Flashing Steel',   desc:'Your attack timer is reduced 10% for each rarity rank on your Rapier (Rare −10%, Supreme −20%, Fantastic −30%).' },
-        { level:40, name:'Perfect Form',     desc:'+30% Accuracy.' },
-        { level:60, name:'First Blood',      desc:'Deal +25% damage while at full Health.' },
-        { level:80, name:'Riposte',          desc:'On a Critical Hit, immediately strike again as a bonus attack (cannot chain).' }
+        { level:1,  name:'Reactive Casting', desc:'When you Dodge an attack, a familiar instantly casts a random extra spell &mdash; without interrupting its own cast timer.' },
+        { level:20, name:'Fleet Footwork',   desc:'Each Dodge cuts your next attack timer 15% (stacking up to −45%); taking a hit resets it.' },
+        { level:40, name:'Flourish',         desc:'Consecutive landed hits build Poise; at max Poise your next strike unleashes a Flourish &mdash; 3 rapid bonus stabs &mdash; then resets. A miss drops a stack.' },
+        { level:60, name:'Prolonged Duel',   desc:'Your damage against the current foe climbs the longer the duel lasts (+2% per second, up to +40%), resetting when it dies.' },
+        { level:80, name:'Disengage',        desc:'Once per fight, the first hit that would drop you below 25% Health is Dodged outright (a full retreat), and your next 3 attacks are guaranteed Critical Hits.' }
       ]
     },
     {
@@ -4417,15 +4417,15 @@
   function awardClassXp(amount){ var id = activeClassId(state); if(id && amount > 0) addXp(id, amount); }
   function duelistBonus(reqLevel){ return classBonusActive('duelist', reqLevel); }
   function quickdrawBonus(reqLevel, st){ return classBonusActive('quickdraw', reqLevel, st); }
-  // Attack-timer class bonuses (smaller = faster). Duelist Lv 20: -10% per Rapier rarity rank.
+  var DUELIST_FOOTWORK_MAX = 3;   // Fleet Footwork: up to 3 dodge stacks (-45%)
+  var DUELIST_POISE_MAX = 6;      // Flourish: landed hits to build before a Flourish burst
+  // Attack-timer class bonuses (smaller = faster). Duelist Lv 20 Fleet Footwork: -15% per dodge stack.
   // Quickdraw Lv 1: a flat -15%. Only one class is ever active, so these never stack.
   function classAttackSpeedMult(st){
     st = st || state;
     var id = activeClassId(st);
-    if(id==='duelist' && classLevel(st,'duelist') >= 20 && st.equippedMainhand==='rapier'){
-      var rank = ['normal','rare','supreme','fantastic'].indexOf(st.equippedMainhandRarity || 'normal');
-      if(rank > 0) return Math.max(0.1, 1 - 0.10*rank);
-    }
+    if(id==='duelist' && classLevel(st,'duelist') >= 20)
+      return 1 - 0.15 * Math.min(DUELIST_FOOTWORK_MAX, st.duelistFootworkStacks || 0);
     if(id==='quickdraw' && classLevel(st,'quickdraw') >= 1) return 0.85;
     if(id==='knight' && classLevel(st,'knight') >= 1) return 1 - 0.10 * Math.min(5, st.knightStacks || 0); // Momentum stacks
     if(id==='thunderfury' && classLevel(st,'thunderfury') >= 1) return 1 - 0.10 * Math.min(THUNDER_MAX_STACKS, st.thunderStacks || 0); // Chain Lightning crit stacks
@@ -4462,14 +4462,25 @@
   // Duelist Lv 40: +30% Accuracy while the class is active.
   function classAccuracyMult(st){
     st = st || state; var id = activeClassId(st);
-    if(id==='duelist' && classLevel(st,'duelist') >= 40) return 1.3; // Duelist Perfect Form
     if(id==='thunderfury' && classLevel(st,'thunderfury') >= 20) return 1 + 0.20 * Math.min(THUNDER_MAX_STACKS, st.thunderStacks || 0); // Storm Focus crit stacks
     if(id==='treasureHunter' && classLevel(st,'treasureHunter') >= 20) return 1 + 0.10 * treasureHunterCount(st, 2); // Appraiser: +10% accuracy per Supreme+ item
     if(id==='sharpshooter' && classLevel(st,'sharpshooter') >= 40) return 1.3; // Sharpshooter Lv 40: Steady Aim +30% Accuracy
     return 1;
   }
-  // Duelist Lv 60: +25% damage at full Health.
-  function classFullHealthDmgMult(){ return (duelistBonus(60) && state.playerHp >= maxHp(state)) ? 1.25 : 1; }
+  // Duelist Lv 60 (Prolonged Duel): outgoing damage vs the CURRENT foe ramps +2%/sec up to +40%; the
+  // duel clock (act.duelStartedAt) is set on engage and reset each time an enemy dies.
+  function duelistDuelMult(st){
+    st = st || state; if(!classBonusActive('duelist', 60, st)) return 1;
+    var a = st.activity; if(!a || a.type!=='combat' || !a.duelStartedAt) return 1;
+    return 1 + Math.min(0.40, 0.02 * Math.max(0, (Date.now() - a.duelStartedAt) / 1000));
+  }
+  // Shared dodge hook: fires whenever the player evades a hit -- the normal dodge roll OR the Duelist's
+  // Lv 80 Disengage. Lv 1 Reactive Casting casts a free familiar spell; Lv 20 Fleet Footwork builds a
+  // stacking attack-speed bonus.
+  function onPlayerDodged(){
+    duelistDodgeBonusCast();
+    if(duelistBonus(20)) state.duelistFootworkStacks = Math.min(DUELIST_FOOTWORK_MAX, (state.duelistFootworkStacks || 0) + 1);
+  }
   function reaperBonus(reqLevel, st){ return classBonusActive('reaper', reqLevel, st); }
   // Reaper Lv 1: +50% crit damage (added on top of the capped base crit, like Elixir/familiar bonuses).
   function reaperCritDmgBonus(st){ return reaperBonus(1, st) ? 0.5 : 0; }
@@ -8808,7 +8819,8 @@
     var m = monsterById(monsterId);
     if(!m) return;
     if(combatLevelEquivalent(state) < m.levelReq) return;
-    state.activity = { type:'combat', monsterId:monsterId, monsterHp:m.hp, tickAccum:0, monsterTickAccum:0 };
+    state.activity = { type:'combat', monsterId:monsterId, monsterHp:m.hp, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), disengageUsed:false };
+    state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0; // fresh Duelist combat state
   }
 
   // Mirrors applyMonsterCategoryLoot's own odds, so the UI can never drift out of sync
@@ -9021,7 +9033,9 @@
     var ringBonus = isWandAttack ? 1 : getRingDamageMultiplier(state, weaponStyle.attackTypes || {blunt:1});
     var leatherBowBonus = weaponStyle.hand==='bow' ? (1 + getLeatherArmorBonuses(state).bowDmgBonus) : 1;
     var chainMeleeBonus = (weaponStyle.hand!=='bow' && !isWandAttack) ? (1 + getChainArmorMeleeBonus(state)) : 1;
-    var isCrit = Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawCritChanceBonus() + knightMissCritChance() + spellbladeCritChance() + newClassCritChance() + (enchTot.critChance||0)/100); // + Spellblade Arcane Edge, new-class passives, and equipped-item Critical Chance enchants
+    // Duelist Disengage (Lv 80): the next 3 attacks after a retreat are guaranteed Critical Hits.
+    var forcedCrit = !isOffhand && duelistBonus(80) && (state.duelistGuaranteedCrits || 0) > 0;
+    var isCrit = forcedCrit || Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawCritChanceBonus() + knightMissCritChance() + spellbladeCritChance() + newClassCritChance() + (enchTot.critChance||0)/100); // + Spellblade Arcane Edge, new-class passives, and equipped-item Critical Chance enchants
     // Wands are magical, so the melee/bow strength physiques don't scale them -- only the generic
     // low-HP tenacity bonus. Melee/bow keep their class physique multipliers.
     var physDmgMult = isWandAttack ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
@@ -9039,6 +9053,7 @@
         // Knight (Momentum): a miss drops the attack-speed stacks. On-miss buffs (Lv 20+) fire for 8s.
         if(knightBonus(1)) state.knightStacks = 0;
         if(spellbladeBonus(60)) state.spellbladeStacks = 0; // Spellblade Momentum resets on a miss
+        if(duelistBonus(40)) state.duelistPoise = Math.max(0, (state.duelistPoise || 0) - 1); // Flourish: a miss drops a Poise stack
         if(knightBonus(20)){ state.knightBuffUntil = Date.now() + 8000; spawnFloatingText('Vengeance!', 'ft-rare'); }
         // Quickdraw Lv 80 (Rapid Fire): a missed shot immediately looses another arrow, up to 3 total.
         if(quickdrawBonus(80) && attempt < 3 && state.activity && state.activity.type==='combat'){
@@ -9049,9 +9064,10 @@
       return;
     }
 
+    if(forcedCrit) state.duelistGuaranteedCrits = Math.max(0, (state.duelistGuaranteedCrits || 0) - 1); // Disengage: consume a guaranteed crit on a landed hit
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
     var wandAttuneMult = isWandAttack ? elementDmgMult(state, weaponStyle.element) : 1; // Elemental Attunement boosts a wand's element damage
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * classFullHealthDmgMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, and the mainhand's Enhance base-stat scaling
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * duelistDuelMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, and the mainhand's Enhance base-stat scaling
     dmgToMonster += Math.round(enchTot.flatDamage||0); // + equipped-item Flat Damage enchants
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
@@ -9149,10 +9165,15 @@
     }
     // Bonus-attack class procs are main-hand only (an off-hand Claw never spawns its own bonus swings).
     if(!isOffhand){
-      // Duelist Lv 80 (Riposte): a Critical Hit triggers one immediate bonus attack -- which cannot chain.
-      if(isCrit && !isBonus && duelistBonus(80) && state.activity && state.activity.type==='combat'){
-        spawnFloatingText('Riposte!', 'ft-rare');
-        playerAttackTick(true);
+      // Duelist Lv 40 (Flourish): landed main-hand hits build Poise; at max, unleash 3 rapid bonus
+      // stabs and reset. The bonus stabs are isBonus so they don't build Poise (no runaway loop).
+      if(!isBonus && duelistBonus(40) && state.activity && state.activity.type==='combat'){
+        state.duelistPoise = (state.duelistPoise || 0) + 1;
+        if(state.duelistPoise >= DUELIST_POISE_MAX){
+          state.duelistPoise = 0;
+          spawnFloatingText('Flourish!', 'ft-rare');
+          for(var _fl=0; _fl<3 && state.activity && state.activity.type==='combat' && state.activity.monsterHp>0; _fl++) playerAttackTick(true);
+        }
       }
       // Quickdraw Lv 20 (Endless Quiver): 30% chance a landed shot looses a free bonus arrow (no chain).
       if(!isBonus && quickdrawBonus(20) && Math.random() < 0.30 && state.activity && state.activity.type==='combat'){
@@ -9186,6 +9207,9 @@
     act.monsterHp = monster.hp;
     act.monsterTickAccum = 0;
     act.bleedStacks = 0; act.bleedDps = 0; act.bleedUntil = 0; // a fresh foe starts unbled (Reaver Rend doesn't carry over)
+    // Duelist: each new foe is a fresh duel -- reset the ramp clock, the once-per-fight Disengage, and the stacks.
+    act.duelStartedAt = Date.now(); act.disengageUsed = false;
+    state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0;
   }
   // Familiar/DoT/reflect damage normally floors the enemy at 1 HP so YOUR attack lands the kill --
   // except when you wield a Staff (no attack), where your summons must be able to finish the fight.
@@ -9210,7 +9234,7 @@
     if(dodgeChance > 0 && Math.random() < dodgeChance){
       addLog('You dodged the ' + monster.name + '\'s attack!', 'important');
       spawnFloatingText('Dodged!', 'ft-success');
-      duelistDodgeBonusCast(); // Duelist Lv 1: a dodge triggers a free familiar cast (no timer interruption)
+      onPlayerDodged(); // Duelist: Lv 1 free familiar cast + Lv 20 Fleet Footwork stack
       return;
     }
     var relicBonus = getEquippedRelicBonus(state);
@@ -9264,6 +9288,18 @@
         wardReflected = Math.round(negated * templarReflectMult()); // Templar Lv 1: +5% reflected elemental damage
       }
     }
+    // Duelist Lv 80 (Disengage): once per fight, the first hit that WOULD drop you below 25% Health is
+    // Dodged outright -- it counts as a Dodge (fires Reactive Casting + Fleet Footwork) -- and your next
+    // 3 attacks become guaranteed Critical Hits.
+    if(duelistBonus(80) && !act.disengageUsed && dmgToPlayer > 0 && (state.playerHp - dmgToPlayer) < maxHp(state)*0.25){
+      act.disengageUsed = true;
+      state.duelistGuaranteedCrits = 3;
+      addLog('You disengage with a fencer\'s retreat!', 'important');
+      spawnFloatingText('Disengage!', 'ft-rare');
+      onPlayerDodged();
+      return;
+    }
+    if(duelistBonus(20)) state.duelistFootworkStacks = 0; // Fleet Footwork: taking a hit resets the dodge stacks
     state.playerHp -= dmgToPlayer;
     if(monster.element) awardElementXp(monster.element, dmgToPlayer); // Elemental Attunement also trains by taking that element's damage
     if(wardReflected > 0){
@@ -19587,7 +19623,7 @@
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, executionerLifestealPct:executionerLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, executionerExecuteThreshold:executionerExecuteThreshold, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick,
-      frostwardenDmgMult:frostwardenDmgMult, frostwardenChillChance:frostwardenChillChance, frostwardenBlockBonus:frostwardenBlockBonus, enemyChilled:enemyChilled, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
+      frostwardenDmgMult:frostwardenDmgMult, frostwardenChillChance:frostwardenChillChance, frostwardenBlockBonus:frostwardenBlockBonus, enemyChilled:enemyChilled, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax,
