@@ -2,7 +2,22 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" id="ffViewport">
+<script>
+  /* Phones default to the compact "zoomed-out" layout: render the game at a fixed ~780px CSS width
+     scaled to fit the screen. The denser multi-column layout (2-up cards, full tab row, all action
+     slots) reads much sharper than the stacked single-column mobile layout. Tablets and desktops keep
+     their native responsive width; players can still pinch-zoom. Gate on the true device dimension --
+     screen.width does not change when we rewrite the viewport, so the check can't feed back on itself. */
+  (function(){
+    try {
+      var dev = Math.min(screen.width || 0, screen.height || 0) || window.innerWidth || 0;
+      if(dev > 0 && dev <= 540){
+        document.getElementById('ffViewport').setAttribute('content', 'width=780');
+      }
+    } catch(e){}
+  })();
+</script>
 <title>Fantasy Frontiers — Idle Adventure</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Spectral:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
