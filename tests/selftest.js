@@ -1518,6 +1518,28 @@
     ok(sawGlyph, 'Glyphs still drop (~50% of kills)');
   });
 
+  // ---- Kin-sworn loot: drop Inscription Scrolls at 5% (no more equipment) ------------------------
+  suite('loot: kinsworn drop inscription scrolls', function(){
+    var fake = { category:'kinsworn', tierIndex:5, element:'water', name:'Test Kinsman' };
+    eq(FF.getMonsterLootChance(fake), 5, 'kinsworn loot chance is 5%');
+    eq(FF.getMonsterLootLabel(fake), 'Inscription', 'kinsworn loot label is Inscription');
+    var cat = FF.MONSTER_CATEGORIES.filter(function(c){ return c.id==='kinsworn'; })[0];
+    ok(cat && /Inscription|Scroll/.test(cat.desc) && !/equipment/i.test(cat.desc), 'Kin-sworn category describes Inscriptions, not equipment');
+    // Functional: the only thing a Kin-sworn can ever add is a tier-matched Inscription Scroll.
+    var S = FF._state; var saveInv = S.inventory;
+    var bad = {}, sawScroll = false, tier = 7;
+    try {
+      var mon = { category:'kinsworn', tierIndex:tier, element:'water', name:'Test Kinsman' };
+      for(var n=0; n<400; n++){
+        S.inventory = {};
+        FF.applyMonsterCategoryLoot(mon);
+        Object.keys(S.inventory).forEach(function(id){ if(id==='scroll_t'+tier) sawScroll = true; else bad[id] = true; });
+      }
+    } finally { S.inventory = saveInv; }
+    ok(Object.keys(bad).length === 0, 'kin-sworn drop only tier-matched Inscription Scrolls' + (Object.keys(bad).length ? ' (leaked: '+Object.keys(bad).join(', ')+')' : ''));
+    ok(sawScroll, 'Inscription Scrolls do drop (~5% of kills)');
+  });
+
   // ---- Armor elemental weakness (leather->fire, chain->earth, plate->water; +15% each) --
   suite('armor element weakness', function(){
     var PER = FF.ARMOR_ELEMENT_WEAKNESS_PER_PIECE;

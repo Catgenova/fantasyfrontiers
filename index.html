@@ -3040,7 +3040,7 @@
     {id:'wildlife', label:'Wildlife', icon:svgIcon('paw','var(--sub-forestry)'), color:'var(--sub-forestry)', desc:'Drops Corpses, which Butchering processes into Meat for Roasting (their Hides come from Butchering as usual).'},
     {id:'elemental', label:'Elementals', icon:svgIcon('flame','#c9622f'), color:'#c9622f', desc:'Shatters into Elemental Glyphs of its own element -- the only source of Glyphs, used by Runesmithing to inscribe Wards.'},
     {id:'demonspawn', label:'Demonspawn', icon:svgIcon('hornedskull','var(--hp-bad)'), color:'var(--hp-bad)', desc:'Rarely drops a Broken Relic, which Sacrifice can destroy for a large burst of Faith.'},
-    {id:'kinsworn', label:'Kin-sworn', icon:svgIcon('crossedswords','#8a97a6'), color:'#8a97a6', desc:'Occasionally drops a piece of Normal-rarity equipment outright.'}
+    {id:'kinsworn', label:'Kin-sworn', icon:svgIcon('crossedswords','#8a97a6'), color:'#8a97a6', desc:'Rarely carries Inscription Scrolls of its tier -- read one to ward yourself, or spend them enhancing gear.'}
   ];
   var WILDLIFE_MONSTERS = makeBestiary('wildlife', WILDLIFE_NAMES, WILDLIFE_ICONS, 1.0, 1.0, 1.0, WILDLIFE_ATTACK_SPEEDS, 0);
   var ELEMENTAL_MONSTERS = makeBestiary('elemental', ELEMENTAL_NAMES, ELEMENTAL_ICONS, 1.3, 0.85, 0.9, ELEMENTAL_ATTACK_SPEEDS, 1);
@@ -8710,49 +8710,20 @@
     state.activity = { type:'combat', monsterId:monsterId, monsterHp:m.hp, tickAccum:0, monsterTickAccum:0 };
   }
 
-  function grantEquipmentDrop(tierIndex){
-    var pool = [];
-    WEAPON_STYLE_IDS.forEach(function(id){ pool.push({cat:'weapon', id:id}); });
-    OFFHAND_STYLES.forEach(function(o){ if(!o.stackable) pool.push({cat:'offhand', id:o.id}); }); // shields are stackable now; only non-stackable types (Quiver) have OFFHAND_TYPE_RECIPES entries
-    var pick = pool[randInt(0, pool.length-1)];
-    var targetTier = tierIndex+1;
-    var name = null;
-    if(pick.cat==='weapon'){
-      var wType = STACKABLE_WEAPON_TYPE_MAP[pick.id];
-      var wTierIndex = Math.min(targetTier-1, wType.tierCount-1);
-      var wItemId = 'stweapon_'+pick.id+'_t'+wTierIndex+'_normal';
-      addItem(wItemId, 1);
-      name = STACKABLE_WEAPON_ITEMS[wItemId].name;
-    } else if(pick.cat==='offhand'){
-      if((state.offhandTiers[pick.id]||0) < targetTier){
-        state.offhandTiers[pick.id] = targetTier;
-        state.offhandRarities[pick.id] = 'normal';
-        name = OFFHAND_TYPE_RECIPES[pick.id][targetTier-1].name;
-      }
-    }
-    if(name){
-      addLog('The fallen foe\'s gear can be salvaged! You obtained a ' + name + '.', 'important');
-    } else {
-      var bonusGold = randInt(5,15) * (tierIndex+1);
-      earnGold(bonusGold);
-      addLog('You salvaged ' + bonusGold + ' gold from the fallen foe.', '');
-    }
-    needsRender = true;
-  }
   // Mirrors applyMonsterCategoryLoot's own odds, so the UI can never drift out of sync
   // with the actual drop logic.
   function getMonsterLootChance(monster){
     if(monster.category==='wildlife') return 100;
     if(monster.category==='elemental') return Math.round(GLYPH_DROP_CHANCE*100);
     if(monster.category==='demonspawn') return 8;
-    if(monster.category==='kinsworn') return 10;
+    if(monster.category==='kinsworn') return 5;
     return 0;
   }
   function getMonsterLootLabel(monster){
     if(monster.category==='wildlife') return 'Corpse';
     if(monster.category==='elemental') return 'Glyph';
     if(monster.category==='demonspawn') return 'Broken Relic';
-    if(monster.category==='kinsworn') return 'Equipment';
+    if(monster.category==='kinsworn') return 'Inscription';
     return 'Loot';
   }
   function applyMonsterCategoryLoot(monster){
@@ -8775,7 +8746,13 @@
         addLog('The ' + monster.name + ' dropped a ' + BROKEN_RELIC_MAP['brokenrelic_t'+i].name + '!', 'important');
       }
     } else if(monster.category==='kinsworn'){
-      if(Math.random() < 0.10) grantEquipmentDrop(i);
+      // Kin-sworn no longer drop gear -- instead they occasionally carry Inscription Scrolls of their
+      // tier (read one to ward yourself, or spend them enhancing gear in the Improvement tab).
+      if(Math.random() < 0.05){
+        var sQty = randInt(1,2), sId = 'scroll_t'+i;
+        addItem(sId, sQty);
+        addLog('The ' + monster.name + ' carried ' + sQty + 'x ' + SCROLL_NAMES[i] + '.', 'important');
+      }
     }
   }
 
