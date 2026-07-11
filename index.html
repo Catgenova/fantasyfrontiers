@@ -7736,7 +7736,7 @@
       potionCharges: 0,
       popupQueue: [],
       popupBatchTotal: 0,
-      settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true },
+      settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true, compactMobile:true },
       trackedSkills: [],
       peons: [],
       guildPeons: [],
@@ -9952,6 +9952,7 @@
           if(typeof state.settings.popupFantastic !== 'boolean') state.settings.popupFantastic = true;
           if(typeof state.settings.popupFamiliar !== 'boolean') state.settings.popupFamiliar = true;
           if(typeof state.settings.chatFlash !== 'boolean') state.settings.chatFlash = true;
+          if(typeof state.settings.compactMobile !== 'boolean') state.settings.compactMobile = true; // existing players keep the new compact default
           if(state.dungeonProgress) delete state.dungeonProgress; // dungeons feature removed; shed legacy field
           if(!state.lockedItems || typeof state.lockedItems !== 'object') state.lockedItems = {};
           if(!Array.isArray(state.trackedSkills)) state.trackedSkills = [];
@@ -10212,6 +10213,18 @@
     "I asked my <b>Blacksmithing</b> familiar for a pun and it just said 'forge-t about it.'",
     "<b>Confectionery</b> spins sugar into sweets and <b>Baking</b> turns Grain and Berries into pastries — level up on a full stomach."
   ]);
+  // Apply the mobile-layout preference. On phones (<=540 CSS px), "Compact" renders the game at a fixed
+  // 780px width scaled to fit -- the denser desktop-style layout; "off" restores the native
+  // single-column mobile layout. The inline <head> script sets the compact default pre-load to avoid a
+  // flash; this reconciles once the saved preference is known, and re-runs when the toggle flips.
+  function applyMobileLayoutPref(){
+    try {
+      var meta = document.getElementById('ffViewport'); if(!meta) return;
+      var dev = Math.min(screen.width || 0, screen.height || 0) || window.innerWidth || 0;
+      var compact = !state || !state.settings || state.settings.compactMobile !== false; // default on
+      meta.setAttribute('content', (dev > 0 && dev <= 540 && compact) ? 'width=780' : 'width=device-width, initial-scale=1.0');
+    } catch(e){}
+  }
   var _tickerStarted = false;
   function startTicker(){
     var el = document.getElementById('ffTickerText');
@@ -12484,7 +12497,8 @@
     {key:'popupSupreme', label:'Supreme item popup', desc:'Show a popup when a Supreme item is forged'},
     {key:'popupFantastic', label:'Fantastic item popup', desc:'Show a popup when a Fantastic item is forged'},
     {key:'popupFamiliar', label:'Familiar popup', desc:'Show a popup when a familiar is summoned or levels up'},
-    {key:'chatFlash', label:'Chat tab flash', desc:'Flash the Chat tab when a new message arrives'}
+    {key:'chatFlash', label:'Chat tab flash', desc:'Flash the Chat tab when a new message arrives'},
+    {key:'compactMobile', label:'Compact layout (mobile)', desc:'Zoom out to the denser multi-column layout on phones (off = large single-column). No effect on tablets or desktop.'}
   ];
   var pwChangeMsg = '', pwChangeOk = false, pwChangeBusy = false;
   async function changePassword(){
@@ -19245,6 +19259,7 @@
     } else if(action==='toggleSetting'){
       var setKey = btn.getAttribute('data-key');
       state.settings[setKey] = !state.settings[setKey];
+      if(setKey==='compactMobile') applyMobileLayoutPref(); // re-scale the viewport immediately
     } else if(action==='changePassword'){
       changePassword();
     } else if(action==='guildSubtab'){
@@ -19589,6 +19604,7 @@
   async function startGameOnline(){
     removeLoginGate();
     await initGame();                 // readSave() now fetches this account's save from the backend
+    applyMobileLayoutPref();          // reconcile the mobile viewport with the loaded Compact-layout preference
     if(!gameStarted){
       gameStarted = true;
       lastTick = Date.now();
@@ -19675,7 +19691,7 @@
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, executionerLifestealPct:executionerLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, executionerExecuteThreshold:executionerExecuteThreshold, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick,
-      frostwardenDmgMult:frostwardenDmgMult, frostwardenChillChance:frostwardenChillChance, frostwardenBlockBonus:frostwardenBlockBonus, enemyChilled:enemyChilled, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
+      frostwardenDmgMult:frostwardenDmgMult, frostwardenChillChance:frostwardenChillChance, frostwardenBlockBonus:frostwardenBlockBonus, enemyChilled:enemyChilled, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax,
