@@ -16531,13 +16531,13 @@
   function guildBankDepositUnique(uid){
     if(guildBankState.busy) return;
     var u = state.uniqueItems && state.uniqueItems[uid]; if(!u){ guildBankState.error='That item is gone.'; render(); return; }
+    if(uniqueIsEquipped(uid)){ guildBankState.error='Unequip that item before depositing it to the guild bank.'; render(); return; }
     guildBankState.busy=true; guildBankState.error=''; render();
     var payload = { unique: { base:u.base, kind:u.kind, tier:u.tier, rarity:u.rarity, enhance:u.enhance||0,
       enchants:(u.enchants||[]).map(function(e){ return { mod:e.mod, roll:e.roll }; }) } };
     guildBankInvoke('deposit_unique', payload).then(function(res){
       guildBankState.busy=false;
       if(!res.ok){ guildBankState.error=(res.error||'Deposit failed.')+(res.code?'' : ' (the guild bank may need its server update).'); render(); return; }
-      if(uniqueIsEquipped(uid)) unequipUnique(uid); // free the equip slot before dropping the uid
       removeUnique(uid); if(improveSel===uid) improveSel=null;
       addLog('Deposited '+uniqueDisplayName(u)+' into the guild bank.','chronicle');
       saveGame(); guildBankApply(res); render();
@@ -16649,11 +16649,12 @@
       html += '<button class="action-btn" data-action="guildBankDeposit" '+(guildBankState.busy?'disabled':'')+' style="width:auto;flex:0 0 auto;">Deposit</button>';
       html += '</div>';
     }
-    // Deposit a UNIQUE (enchanted/enhanced) item -- each takes one bank slot.
-    var _ownedUni = Object.keys(state.uniqueItems||{});
+    // Deposit a UNIQUE (enchanted/enhanced) item -- each takes one bank slot. Equipped uniques are
+    // excluded: unequip a piece before banking it (so you never accidentally strip your own loadout).
+    var _ownedUni = Object.keys(state.uniqueItems||{}).filter(function(uid){ return !uniqueIsEquipped(uid); });
     if(_ownedUni.length){
       html += '<div class="char-row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">';
-      html += '<select id="guildBankDepUniqueSel" class="chat-input" style="flex:1 1 160px;min-width:120px;">'+_ownedUni.map(function(uid){ var u=state.uniqueItems[uid]; return '<option value="'+uid+'">'+escapeHtml(uniqueDisplayName(u))+' &mdash; '+escapeHtml(getRarity(u.rarity).label)+(uniqueIsEquipped(uid)?' (equipped)':'')+'</option>'; }).join('')+'</select>';
+      html += '<select id="guildBankDepUniqueSel" class="chat-input" style="flex:1 1 160px;min-width:120px;">'+_ownedUni.map(function(uid){ var u=state.uniqueItems[uid]; return '<option value="'+uid+'">'+escapeHtml(uniqueDisplayName(u))+' &mdash; '+escapeHtml(getRarity(u.rarity).label)+'</option>'; }).join('')+'</select>';
       html += '<button class="action-btn" data-action="guildBankDepositUniqueSel" '+(guildBankState.busy?'disabled':'')+' style="width:auto;flex:0 0 auto;">Deposit unique</button>';
       html += '</div>';
     }
