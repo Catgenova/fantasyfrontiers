@@ -2849,6 +2849,14 @@
     ok(dec && dec.base==='stweapon_wandFire_t3_rare' && dec.tier===3 && dec.rarity==='rare' && dec.kind==='weapon', 'decode recovers base/tier/rarity/kind');
     ok(dec && dec.enhance===4 && dec.enchants.length===2 && dec.enchants[0].mod==='critDamage' && dec.enchants[0].roll===12 && dec.enchants[1].mod==='lifesteal' && dec.enchants[1].roll===7, 'decode recovers enhance + enchant rolls');
     ok(FF.decodeItemLink('!!!not-base64!!!')===null || FF.decodeItemLink('')===null, 'garbage payload decodes to null (safe fallback)');
+    // Unique cards always list their enchants, enhance-scaled (mirrors the improvement/inventory cards).
+    var uLines = FF.uniqueEnchantLines({ kind:'weapon', enhance:15, enchants:[{mod:'critDamage',roll:10}] });
+    ok(uLines.length===1 && /Critical Damage/.test(uLines[0]) && /\+60(\.0)?%/.test(uLines[0]), 'enchant line is enhance-scaled (10% x6 = 60%)');
+    // Equip comparison chip: coloured gain/loss vs equipped.
+    ok(/equip-cmp up/.test(FF.equipDeltaChip(20, 12)) && /\+8/.test(FF.equipDeltaChip(20,12)), 'higher candidate -> green +delta');
+    ok(/equip-cmp down/.test(FF.equipDeltaChip(12, 20)), 'lower candidate -> red delta');
+    ok(/equip-cmp eq/.test(FF.equipDeltaChip(10, 10)), 'equal -> neutral ±0');
+    ok(/%/.test(FF.equipDeltaChip(0.3, 0.1, true)), 'pct mode renders a percentage');
   });
 
   // ---- Improvement system: enhance (Stage 2) --------------------------------------------

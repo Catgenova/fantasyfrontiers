@@ -422,6 +422,20 @@
   .chat-item-link{display:inline-flex; align-items:center; gap:3px; cursor:pointer; padding:0 5px; margin:0 1px; border-radius:5px; background:rgba(201,162,39,0.14); border:1px solid rgba(201,162,39,0.5); color:var(--gold); font-weight:600; vertical-align:baseline; line-height:1.5;}
   .chat-item-link:hover{background:rgba(201,162,39,0.26);}
   .chat-item-link .chat-item-ico, .chat-item-link .chat-item-ico svg{width:12px; height:12px; display:inline-block; flex:0 0 auto;}
+  .unique-ench-chips{display:flex; flex-wrap:wrap; gap:4px; margin-top:6px;}
+  .unique-ench-chip{font-family:var(--font-mono); font-size:10.5px; line-height:1.5; padding:0 6px; border-radius:5px; background:rgba(201,162,39,0.14); border:1px solid rgba(201,162,39,0.45); color:var(--gold); white-space:nowrap;}
+  .unique-inv-grid{grid-column:1/-1; display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; margin-top:6px;}
+  .unique-inv-card{border:1px solid var(--border); border-radius:10px; padding:12px 12px 10px; cursor:pointer; text-align:center; background:rgba(201,162,39,0.05); transition:border-color .12s, background .12s;}
+  .unique-inv-card:hover{border-color:var(--gold); background:rgba(201,162,39,0.10);}
+  .unique-inv-card .inv-detail-icon{margin:0 auto 4px;}
+  .unique-inv-card .skill-info-section{margin-top:8px;}
+  .unique-inv-eq{font-family:var(--font-mono); font-size:10.5px; color:var(--gold); display:flex; align-items:center; justify-content:center; gap:4px; margin-bottom:4px;}
+  .unique-inv-eq .game-icon{width:13px; height:13px;}
+  .unique-inv-hint{font-family:var(--font-mono); font-size:10px; color:var(--text-faint); margin-top:9px;}
+  .equip-cmp{font-family:var(--font-mono); font-weight:700; padding:0 4px; border-radius:4px; white-space:nowrap;}
+  .equip-cmp.up{color:#3fa45b; background:rgba(63,164,91,0.14);}
+  .equip-cmp.down{color:var(--hp-bad); background:rgba(180,60,60,0.14);}
+  .equip-cmp.eq{color:var(--text-faint);}
   .skill-info-card{
     background:linear-gradient(165deg,var(--bg-panel-raised),var(--bg-card)); border:2px solid var(--gold); border-radius:var(--radius);
     max-width:380px; width:100%; max-height:85dvh; overflow-y:auto; padding:20px; text-align:center; box-shadow:0 0 34px rgba(15,125,116,0.22), 0 10px 28px rgba(52,38,18,0.28);
@@ -8466,9 +8480,20 @@
     var nm = (b?b.name:'Equipment') + (d.enhance>0?' +'+d.enhance:'');
     return '<span class="chat-item-link rar-'+d.rarity+'" data-action="chatItemView" data-item="'+b64+'" title="View item stats">'+((b&&b.icon)?'<span class="chat-item-ico">'+b.icon+'</span>':'')+escapeHtml(nm)+'</span>';
   }
-  // Full stat card for the popup: name, rarity/tier/enhance, base stats, and enhance-scaled enchants.
-  function renderLinkedItemCard(b64){
-    var d = decodeItemLink(b64); if(!d) return '';
+  // Enhance-scaled enchant labels for a unique-like { kind, enhance, enchants } -> ['+18% Critical Damage', ...].
+  function uniqueEnchantLines(d){
+    var mult = enhanceStatMult(d.enhance);
+    return (d.enchants||[]).map(function(e){ var mod=enchantModById(d.kind, e.mod); if(!mod) return null; var v=e.roll*mult; return mod.pct ? ('+'+(Math.round(v*10)/10)+'% '+mod.label) : ('+'+Math.round(v)+' '+mod.label); }).filter(Boolean);
+  }
+  // Compact enchant chips appended to a unique's card so its enchantments are ALWAYS visible at a glance.
+  function uniqueEnchantChips(u){
+    if(!u || !u.enchants || !u.enchants.length) return '';
+    return '<div class="unique-ench-chips">'+uniqueEnchantLines(u).map(function(l){ return '<span class="unique-ench-chip">'+escapeHtml(l)+'</span>'; }).join('')+'</div>';
+  }
+  // Full stat card body for a unique-like { base, kind, tier, rarity, enhance, enchants }: icon, name,
+  // rarity/tier/+enhance, base stats, and the ALWAYS-visible enhance-scaled enchant list. Shared by the
+  // chat-link popup, the Inventory "Unique" section, and the unique detail popup.
+  function uniqueCardBody(d){
     var b = ALL_SELLABLE[d.base];
     var nm = (b?b.name:'Equipment') + (d.enhance>0?' +'+d.enhance:'');
     var html = '<div class="inv-detail-icon">'+((b&&b.icon)||svgIcon('sword','var(--gold)'))+'</div>';
@@ -8482,10 +8507,20 @@
       if(b.dmgBonus) baseLines.push('+'+Math.round(b.dmgBonus*100)+'% damage');
     }
     if(baseLines.length) html += '<div class="skill-info-section"><div class="skill-info-section-label">Base</div><div class="skill-info-section-body">'+baseLines.map(escapeHtml).join(' &bull; ')+'</div></div>';
-    var mult = enhanceStatMult(d.enhance);
-    var enchLines = (d.enchants||[]).map(function(e){ var mod=enchantModById(d.kind, e.mod); if(!mod) return null; var v=e.roll*mult; return mod.pct ? ('+'+(Math.round(v*10)/10)+'% '+mod.label) : ('+'+Math.round(v)+' '+mod.label); }).filter(Boolean);
+    var enchLines = uniqueEnchantLines(d);
     html += '<div class="skill-info-section"><div class="skill-info-section-label">Enchants ('+enchLines.length+')</div><div class="skill-info-section-body">'+(enchLines.length ? enchLines.map(function(l){ return '<div style="color:var(--gold)">'+escapeHtml(l)+'</div>'; }).join('') : '<div class="empty-note">None</div>')+'</div></div>';
     return html;
+  }
+  function renderLinkedItemCard(b64){ var d = decodeItemLink(b64); if(!d) return ''; return uniqueCardBody(d); }
+  // One card in the Inventory "Unique" section: the full stat card for a unique you own; tapping it
+  // opens the manage popup (equip / enchant / sell / link).
+  function renderUniqueInvCard(u){
+    var eq = uniqueIsEquipped(u.uid);
+    return '<div class="unique-inv-card" data-action="openUniqueDetail" data-uid="'+u.uid+'">'
+      + (eq ? '<div class="unique-inv-eq">'+svgIcon('sword','var(--gold)')+' Equipped</div>' : '')
+      + uniqueCardBody(u)
+      + '<div class="unique-inv-hint">Tap to equip · enchant · sell · link</div>'
+      + '</div>';
   }
   // Split a raw chat body into escaped text + rendered item chips (censor only the text segments so a
   // base64 payload is never mangled by the profanity filter).
@@ -8592,7 +8627,7 @@
     eqBases.forEach(function(e){ var b=ALL_SELLABLE[e.baseId]; if(!b) return;
       html += '<button class="item-card" data-action="improveFromEquipped" data-slot="'+e.slot+'" style="text-align:left;"><div class="item-top"><div class="item-icon">'+(b.icon||'')+'</div><div><div class="item-name">'+escapeHtml(b.name)+'</div><div class="item-meta" style="color:var(--gold);">Equipped · tap to improve</div></div></div></button>'; });
     uniques.forEach(function(uid){ var u=state.uniqueItems[uid]; if(!u) return;
-      html += '<button class="item-card'+(improveSel===uid?' active-item':'')+'" data-action="improveSelect" data-uid="'+uid+'" style="text-align:left;"><div class="item-top"><div class="item-icon">'+uniqueIcon(u)+'</div><div><div class="item-name">'+escapeHtml(uniqueDisplayName(u))+'</div><div class="item-meta">'+escapeHtml(getRarity(u.rarity).label)+' · '+u.enchants.length+'/'+enchantSlotsFor(u.rarity)+' enchants</div></div></div></button>'; });
+      html += '<button class="item-card'+(improveSel===uid?' active-item':'')+'" data-action="improveSelect" data-uid="'+uid+'" style="text-align:left;"><div class="item-top"><div class="item-icon">'+uniqueIcon(u)+'</div><div><div class="item-name">'+escapeHtml(uniqueDisplayName(u))+'</div><div class="item-meta">'+escapeHtml(getRarity(u.rarity).label)+' · '+u.enchants.length+'/'+enchantSlotsFor(u.rarity)+' enchants</div></div></div>'+uniqueEnchantChips(u)+'</button>'; });
     bases.forEach(function(id){ var p=parseImprovable(id), b=ALL_SELLABLE[id]; if(!b) return;
       html += '<button class="item-card'+(improveSel===id?' active-item':'')+'" data-action="improveSelect" data-uid="'+id+'" style="text-align:left;"><div class="item-top"><div class="item-icon">'+(b.icon||'')+'</div><div><div class="item-name">'+escapeHtml(b.name)+'</div><div class="item-meta">'+escapeHtml(getRarity(p.rarity).label)+' · ×'+(state.inventory[id]||0)+'</div></div></div></button>'; });
     html += '</div>';
@@ -10903,7 +10938,8 @@
           var qty = state.inventory[id]||0;
           var profId = MATERIAL_TO_PROFICIENCY[item.material];
           var canEquip = meetsProficiencyRequirement(profId ? state.xp[profId] : 0, item.tierIndex);
-          html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipBodyArmor" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">def '+item.defense+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(ARMOR_PROFICIENCY_LABELS[profId]||item.material)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
+          var acmp = (current && current.id===id) ? '<span class="equip-cmp eq">equipped</span>' : (' vs equipped '+equipDeltaChip(item.defense, current?current.defense:0)+' def');
+          html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipBodyArmor" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">def '+item.defense+' '+acmp+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(ARMOR_PROFICIENCY_LABELS[profId]||item.material)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
         });
         html += '</div>';
       }
@@ -11155,6 +11191,15 @@
   // Equip gate for a stackable-weapon inventory item, matching equipStackableWeapon: wands & staves are
   // gated by Arcanism level, scepters by Runesmithing level, and everything else by its own per-type
   // proficiency. Returns { ok, label, lvl } for the button's enabled state + lock hint.
+  // Compare a candidate stat to the currently-equipped one -> a coloured "+N"/"−N" chip, so the player
+  // sees at a glance what swapping gear gains or loses. `pct` renders as a percentage; a near-zero
+  // difference shows a neutral "±0". Prefixed with "vs" for clarity in the picker.
+  function equipDeltaChip(nextVal, curVal, pct){
+    var d = (nextVal||0) - (curVal||0);
+    var v = pct ? Math.round(d*1000)/10 : Math.round(d*10)/10;
+    if(Math.abs(v) < 0.05) return '<span class="equip-cmp eq">±0'+(pct?'%':'')+'</span>';
+    return '<span class="equip-cmp '+(v>0?'up':'down')+'">'+(v>0?'+':'')+v+(pct?'%':'')+'</span>';
+  }
   function stackableEquipGate(item){
     var t = item.tierIndex, lvl = TIER_LEVELS[t];
     if(isWandWeapon(item.typeId) || isStaff(item.typeId)) return { ok: getLevel(state.xp.arcanism||0) >= lvl, label:'Arcanism', lvl:lvl };
@@ -11177,12 +11222,16 @@
     if(owned.length===0){
       html += '<div class="empty-note">No '+title.toLowerCase()+' in inventory. Forge one above.</div>';
     } else {
+      var eqW = getEquippedWeaponItem(state);             // baseline = the weapon you have equipped now
+      var curAvg = ((eqW.dmgMin||0)+(eqW.dmgMax||0))/2;
       html += '<div class="style-row">';
       owned.forEach(function(id){
         var item = STACKABLE_WEAPON_ITEMS[id];
         var qty = state.inventory[id]||0;
         var gate = stackableEquipGate(item);
-        html += '<button class="style-btn'+(gate.ok?'':' locked')+'" data-action="equipStackableWeapon" data-item="'+id+'" '+(gate.ok?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">'+stackableWeaponStatLabel(item)+' &bull; '+STACKABLE_WEAPON_TYPE_MAP[item.typeId].attackSpeed+'s</span>'+(gate.ok?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(gate.label)+' Lv '+gate.lvl+'</span>')+'</button>';
+        var isCur = current && current.id===id;         // the currently-equipped item of this type
+        var cmp = isCur ? '<span class="equip-cmp eq">equipped</span>' : (' vs equipped '+equipDeltaChip(((item.dmgMin||0)+(item.dmgMax||0))/2, curAvg)+' avg dmg');
+        html += '<button class="style-btn'+(gate.ok?'':' locked')+'" data-action="equipStackableWeapon" data-item="'+id+'" '+(gate.ok?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">'+stackableWeaponStatLabel(item)+' &bull; '+STACKABLE_WEAPON_TYPE_MAP[item.typeId].attackSpeed+'s '+cmp+'</span>'+(gate.ok?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(gate.label)+' Lv '+gate.lvl+'</span>')+'</button>';
       });
       html += '</div>';
     }
@@ -11231,7 +11280,8 @@
         var item = STACKABLE_SHIELD_ITEMS[id];
         var qty = state.inventory[id]||0;
         var canEquip = meetsProficiencyRequirement(state.xp[item.typeId], item.tierIndex);
-        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipStackableShield" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">defense '+item.defense+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS[item.typeId]||item.typeId)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
+        var scmp = (current && current.id===id) ? '<span class="equip-cmp eq">equipped</span>' : (' vs equipped '+equipDeltaChip(item.defense, current?current.defense:0)+' def');
+        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipStackableShield" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">defense '+item.defense+' '+scmp+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS[item.typeId]||item.typeId)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
       });
       html += '</div>';
     }
@@ -11340,7 +11390,8 @@
         var item = WARD_ITEMS[id];
         var qty = state.inventory[id]||0;
         var canEquip = getLevel(state.xp.runesmithing) >= TIER_LEVELS[item.tierIndex];
-        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipWard" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type" style="text-transform:none">reflects '+Math.round(item.reflect*100)+'% '+elementLabel(item.element)+(item.fullReflectChance>0?' &bull; '+Math.round(item.fullReflectChance*100)+'% full':'')+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires Runesmithing Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
+        var wcmp = (current && current.id===id) ? ' <span class="equip-cmp eq">equipped</span>' : (' &bull; vs equipped '+equipDeltaChip(item.reflect, current?current.reflect:0, true)+' reflect');
+        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipWard" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type" style="text-transform:none">reflects '+Math.round(item.reflect*100)+'% '+elementLabel(item.element)+(item.fullReflectChance>0?' &bull; '+Math.round(item.fullReflectChance*100)+'% full':'')+wcmp+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires Runesmithing Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
       });
       html += '</div>';
     }
@@ -11839,7 +11890,8 @@
       ownedAmulets.forEach(function(id){
         var item = AMULET_ITEMS[id];
         var qty = state.inventory[id]||0;
-        html += '<button class="style-btn" data-action="equipAmulet" data-item="'+id+'">'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">def '+item.defense+'</span></button>';
+        var amcmp = (currentAmulet && currentAmulet.id===id) ? '<span class="equip-cmp eq">equipped</span>' : (' vs equipped '+equipDeltaChip(item.defense, currentAmulet?currentAmulet.defense:0)+' def');
+        html += '<button class="style-btn" data-action="equipAmulet" data-item="'+id+'">'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">def '+item.defense+' '+amcmp+'</span></button>';
       });
       html += '</div>';
     }
@@ -17754,30 +17806,45 @@
       html += '<div class="inv-count-note">0 items</div><div class="empty-note">No items match your filters.</div>';
     } else {
       html += '<div class="inv-count-note">'+shown.length+' item'+(shown.length===1?'':'s')+(query||inventoryFilterCat!=='all'?' shown':'')+'</div>';
-      if(inventorySort==='category'){
-        // Grouped grid: a full-width header per category (in the canonical order), items A–Z within.
-        html += '<div class="inv-grid">';
-        INVENTORY_CATEGORIES.forEach(function(cat){
-          var catRows = shown.filter(function(r){ return r.cat===cat.id; })
-            .sort(function(a,b){
-              // Group each item's tiers together (family), ascending tier within, then by name.
-              return invFamilyKey(a.id).localeCompare(invFamilyKey(b.id))
-                || (itemTierFromId(a.id) - itemTierFromId(b.id))
-                || a.item.name.localeCompare(b.item.name);
-            });
-          if(catRows.length===0) return;
-          html += '<div class="inv-cat-head">'+cat.icon+' '+cat.label+' <span class="n">'+catRows.length+'</span></div>';
-          catRows.forEach(function(r){ html += cellHtml(r); });
-        });
-        html += '</div>';
-      } else {
-        var sorted = shown.slice();
-        if(inventorySort==='name') sorted.sort(function(a,b){ return a.item.name.localeCompare(b.item.name); });
-        else if(inventorySort==='qty') sorted.sort(function(a,b){ return b.qty - a.qty || a.item.name.localeCompare(b.item.name); });
-        else if(inventorySort==='value') sorted.sort(function(a,b){ return (b.qty*(b.item.sell||0)) - (a.qty*(a.item.sell||0)) || a.item.name.localeCompare(b.item.name); });
-        else if(inventorySort==='tier') sorted.sort(function(a,b){ return itemTierFromId(b.id) - itemTierFromId(a.id) || a.item.name.localeCompare(b.item.name); });
-        html += '<div class="inv-grid">';
-        sorted.forEach(function(r){ html += cellHtml(r); });
+      // Unique (enchanted) equipment is pulled out of the compact grid into its own section that shows
+      // the FULL card (base stats + all enchants) for each item -- tap one to equip / enchant / link it.
+      var uniRows = shown.filter(function(r){ return r.unique; });
+      var normalRows = shown.filter(function(r){ return !r.unique; });
+      if(normalRows.length){
+        if(inventorySort==='category'){
+          // Grouped grid: a full-width header per category (in the canonical order), items A–Z within.
+          html += '<div class="inv-grid">';
+          INVENTORY_CATEGORIES.forEach(function(cat){
+            if(cat.id==='unique') return; // handled by the full-card section below
+            var catRows = normalRows.filter(function(r){ return r.cat===cat.id; })
+              .sort(function(a,b){
+                // Group each item's tiers together (family), ascending tier within, then by name.
+                return invFamilyKey(a.id).localeCompare(invFamilyKey(b.id))
+                  || (itemTierFromId(a.id) - itemTierFromId(b.id))
+                  || a.item.name.localeCompare(b.item.name);
+              });
+            if(catRows.length===0) return;
+            html += '<div class="inv-cat-head">'+cat.icon+' '+cat.label+' <span class="n">'+catRows.length+'</span></div>';
+            catRows.forEach(function(r){ html += cellHtml(r); });
+          });
+          html += '</div>';
+        } else {
+          var sorted = normalRows.slice();
+          if(inventorySort==='name') sorted.sort(function(a,b){ return a.item.name.localeCompare(b.item.name); });
+          else if(inventorySort==='qty') sorted.sort(function(a,b){ return b.qty - a.qty || a.item.name.localeCompare(b.item.name); });
+          else if(inventorySort==='value') sorted.sort(function(a,b){ return (b.qty*(b.item.sell||0)) - (a.qty*(a.item.sell||0)) || a.item.name.localeCompare(b.item.name); });
+          else if(inventorySort==='tier') sorted.sort(function(a,b){ return itemTierFromId(b.id) - itemTierFromId(a.id) || a.item.name.localeCompare(b.item.name); });
+          html += '<div class="inv-grid">';
+          sorted.forEach(function(r){ html += cellHtml(r); });
+          html += '</div>';
+        }
+      }
+      if(uniRows.length){
+        var ucat = INVENTORY_CATEGORIES.filter(function(c){ return c.id==='unique'; })[0] || {icon:'',label:'Unique'};
+        uniRows.sort(function(a,b){ return (b.u.enhance-a.u.enhance) || (b.u.enchants.length-a.u.enchants.length) || a.item.name.localeCompare(b.item.name); });
+        html += '<div class="inv-cat-head"'+(normalRows.length?' style="margin-top:14px"':'')+'>'+ucat.icon+' '+ucat.label+' <span class="n">'+uniRows.length+'</span></div>';
+        html += '<div class="unique-inv-grid">';
+        uniRows.forEach(function(r){ html += renderUniqueInvCard(r.u); });
         html += '</div>';
       }
     }
@@ -19481,7 +19548,7 @@
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
       parseImprovable:parseImprovable, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant,
-      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink,
+      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, equipDeltaChip:equipDeltaChip,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
