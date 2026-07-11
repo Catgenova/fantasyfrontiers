@@ -1540,6 +1540,28 @@
     ok(sawScroll, 'Inscription Scrolls do drop (~5% of kills)');
   });
 
+  // ---- Demonspawn loot: drop Enchant Crystals at 5% (no more Broken Relics) ----------------------
+  suite('loot: demonspawn drop enchant crystals', function(){
+    var fake = { category:'demonspawn', tierIndex:5, element:'fire', name:'Test Demon' };
+    eq(FF.getMonsterLootChance(fake), 5, 'demonspawn loot chance is 5%');
+    eq(FF.getMonsterLootLabel(fake), 'Enchant Crystal', 'demonspawn loot label is Enchant Crystal');
+    var cat = FF.MONSTER_CATEGORIES.filter(function(c){ return c.id==='demonspawn'; })[0];
+    ok(cat && /Enchant Crystal/.test(cat.desc) && !/Broken Relic/i.test(cat.desc), 'Demonspawn category describes Enchant Crystals, not Broken Relics');
+    // Functional: the only thing a Demonspawn can ever add is a tier-matched Enchant Crystal (no relics).
+    var S = FF._state; var saveInv = S.inventory;
+    var bad = {}, sawCrystal = false, tier = 6;
+    try {
+      var mon = { category:'demonspawn', tierIndex:tier, element:'fire', name:'Test Demon' };
+      for(var n=0; n<400; n++){
+        S.inventory = {};
+        FF.applyMonsterCategoryLoot(mon);
+        Object.keys(S.inventory).forEach(function(id){ if(id==='enchant_t'+tier) sawCrystal = true; else bad[id] = true; });
+      }
+    } finally { S.inventory = saveInv; }
+    ok(Object.keys(bad).length === 0, 'demonspawn drop only tier-matched Enchant Crystals' + (Object.keys(bad).length ? ' (leaked: '+Object.keys(bad).join(', ')+')' : ''));
+    ok(sawCrystal, 'Enchant Crystals do drop (~5% of kills)');
+  });
+
   // ---- Armor elemental weakness (leather->fire, chain->earth, plate->water; +15% each) --
   suite('armor element weakness', function(){
     var PER = FF.ARMOR_ELEMENT_WEAKNESS_PER_PIECE;
@@ -2716,30 +2738,39 @@
     s.inventory = savedInv;
   });
 
-  // ---- Improvement system: modify EQUIPPED gear in place (keeps it equipped) --------------------
+  // ---- Improvement system: modify EQUIPPED gear (deferred conversion, keeps it equipped) --------
   suite('improvement: equipped gear is improvable in place', function(){
     ok(typeof FF.equippedImprovableBases === 'function' && typeof FF.improveFromEquipped === 'function', 'equipped-improve helpers exported');
+    ok(typeof FF.convertEquippedToUnique === 'function' && typeof FF.isEquipToken === 'function', 'deferred-conversion helpers exported');
     var s = FF._state;
-    var save = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid, uniq:s.uniqueItems, jw:s.jewelrySlots };
+    var save = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid, uniq:s.uniqueItems, jw:s.jewelrySlots, inv:s.inventory };
     try {
-      s.uniqueItems = {};
+      s.uniqueItems = {}; s.inventory = {};
       // Equip a plain base Half-Moon Axe (tier index 4, i.e. tier field 5) with no unique uid.
       s.equippedMainhand = 'halfmoonaxe'; s.equippedMainhandTier = 5; s.equippedMainhandRarity = 'normal'; s.equippedMainhandUid = null;
-      var list = FF.equippedImprovableBases();
-      var mh = list.filter(function(e){ return e.slot==='mainhand'; })[0];
+      var mh = FF.equippedImprovableBases().filter(function(e){ return e.slot==='mainhand'; })[0];
       ok(mh && mh.baseId==='stweapon_halfmoonaxe_t4_normal', 'equipped base mainhand is surfaced with its real item id');
-      // Convert it in place -> a unique that stays equipped.
+      // Selecting it must NOT convert yet -- browsing equipped gear leaves it untouched.
       FF.improveFromEquipped('mainhand');
+      ok(FF.isEquipToken('equip:mainhand'), 'the equip token is recognised');
+      ok(s.equippedMainhandUid == null && Object.keys(s.uniqueItems).length === 0, 'selecting an equipped base does NOT mint a unique yet (deferred)');
+      // The conversion happens when an enchant actually lands. Give it a matching-tier crystal and enchant.
+      s.inventory['enchant_t4'] = 3;
+      FF.improveEnchant();
       var uid = s.equippedMainhandUid;
-      ok(uid && s.uniqueItems[uid], 'a unique was minted for the equipped slot');
-      ok(FF.uniqueIsEquipped(uid), 'the new unique is equipped (gear stays equipped)');
+      ok(uid && s.uniqueItems[uid], 'enchanting converts the equipped base into a unique');
+      ok(FF.uniqueIsEquipped(uid), 'the new unique stays equipped in its slot');
       var u = s.uniqueItems[uid];
       ok(u.kind==='weapon' && u.tier===4 && u.rarity==='normal', 'the unique inherits the base kind/tier/rarity');
-      ok(u.enchants.length===0 && u.enhance===0, 'it starts as a stat-identical 0-enchant/0-enhance unique');
+      ok(u.enchants.length===1, 'the enchant that triggered the conversion is applied');
       // Now that the slot holds a unique, it no longer appears as a raw equipped BASE to convert.
       ok(FF.equippedImprovableBases().every(function(e){ return e.slot!=='mainhand'; }), 'an already-unique slot is not offered again');
+      // Direct helper: convertEquippedToUnique mints + points the slot at the uid.
+      s.uniqueItems = {}; s.equippedMainhandUid = null;
+      var uid2 = FF.convertEquippedToUnique('mainhand');
+      ok(uid2 && s.equippedMainhandUid===uid2 && s.uniqueItems[uid2].enchants.length===0, 'convertEquippedToUnique mints a stat-identical equipped unique');
     } finally {
-      s.equippedMainhand=save.mh; s.equippedMainhandTier=save.mht; s.equippedMainhandRarity=save.mhr; s.equippedMainhandUid=save.mhu; s.uniqueItems=save.uniq; s.jewelrySlots=save.jw;
+      s.equippedMainhand=save.mh; s.equippedMainhandTier=save.mht; s.equippedMainhandRarity=save.mhr; s.equippedMainhandUid=save.mhu; s.uniqueItems=save.uniq; s.jewelrySlots=save.jw; s.inventory=save.inv;
     }
   });
 

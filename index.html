@@ -3039,7 +3039,7 @@
   var MONSTER_CATEGORIES = [
     {id:'wildlife', label:'Wildlife', icon:svgIcon('paw','var(--sub-forestry)'), color:'var(--sub-forestry)', desc:'Drops Corpses, which Butchering processes into Meat for Roasting (their Hides come from Butchering as usual).'},
     {id:'elemental', label:'Elementals', icon:svgIcon('flame','#c9622f'), color:'#c9622f', desc:'Shatters into Elemental Glyphs of its own element -- the only source of Glyphs, used by Runesmithing to inscribe Wards.'},
-    {id:'demonspawn', label:'Demonspawn', icon:svgIcon('hornedskull','var(--hp-bad)'), color:'var(--hp-bad)', desc:'Rarely drops a Broken Relic, which Sacrifice can destroy for a large burst of Faith.'},
+    {id:'demonspawn', label:'Demonspawn', icon:svgIcon('hornedskull','var(--hp-bad)'), color:'var(--hp-bad)', desc:'Rarely drops Enchant Crystals of its tier -- the input the Improvement tab spends to enchant gear.'},
     {id:'kinsworn', label:'Kin-sworn', icon:svgIcon('crossedswords','#8a97a6'), color:'#8a97a6', desc:'Rarely carries Inscription Scrolls of its tier -- read one to ward yourself, or spend them enhancing gear.'}
   ];
   var WILDLIFE_MONSTERS = makeBestiary('wildlife', WILDLIFE_NAMES, WILDLIFE_ICONS, 1.0, 1.0, 1.0, WILDLIFE_ATTACK_SPEEDS, 0);
@@ -8293,6 +8293,8 @@
     chronicleBroadcast('enhance', body);
   }
   function enhanceItem(uid){
+    // An equipped base is converted to a unique in place only now, as the enhance is attempted.
+    if(isEquipToken(uid)){ var nu = convertEquippedToUnique(equipTokenSlot(uid)); if(!nu){ addLog('That item is no longer equipped.','danger'); return; } improveSel = nu; uid = nu; }
     var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
     if(u.enhance >= ENHANCE_MAX){ addLog('Already at the maximum +'+ENHANCE_MAX+'.','danger'); return; }
     var cost = u.enhance + 1;
@@ -8341,13 +8343,19 @@
     if(am && !am.uid && am.tier > 0) out.push({ slot:'amulet', baseId:'amulet_t'+(am.tier-1)+'_'+am.rarity });
     return out;
   }
+  // Selecting an equipped base just points improveSel at an 'equip:<slot>' token -- NO conversion yet.
+  // The base is only turned into a unique when the player actually Enchants or Enhances it (see
+  // improveEnchant / enhanceItem), so browsing equipped gear never mutates it.
+  function isEquipToken(sel){ return typeof sel==='string' && sel.indexOf('equip:')===0; }
+  function equipTokenSlot(sel){ return isEquipToken(sel) ? sel.slice(6) : null; }
+  function improveFromEquipped(slotKey){ improveSelect('equip:'+slotKey); }
   // Convert an equipped base piece into a unique IN PLACE: mint a 0-enchant/0-enhance unique from the
-  // slot's tier/rarity and point that same slot at its uid, so the gear stays equipped and can now be
-  // Enchanted/Enhanced. A 0-enchant unique is stat-identical to the base, so this is non-destructive.
-  function improveFromEquipped(slotKey){
+  // slot's tier/rarity and point that same slot at its uid, so the gear stays equipped. Returns the uid
+  // (or null). Called lazily the first time an equipped base is Enchanted or Enhanced.
+  function convertEquippedToUnique(slotKey){
     var match = equippedImprovableBases().filter(function(e){ return e.slot===slotKey; })[0];
-    if(!match){ return; }
-    var p = parseImprovable(match.baseId); if(!p){ return; }
+    if(!match){ return null; }
+    var p = parseImprovable(match.baseId); if(!p){ return null; }
     var uid = genUid();
     state.uniqueItems[uid] = { uid:uid, base:match.baseId, kind:p.kind, tier:p.tier, rarity:p.rarity, enchants:[], enhance:0 };
     if(slotKey==='mainhand') state.equippedMainhandUid = uid;
@@ -8355,8 +8363,7 @@
     else if(slotKey.indexOf('armor:')===0){ var asl=slotKey.slice(6); if(state.bodyArmor[asl]) state.bodyArmor[asl].uid = uid; }
     else if(slotKey.indexOf('ring:')===0){ var rsl=slotKey.slice(5); if(state.jewelrySlots[rsl]) state.jewelrySlots[rsl].uid = uid; }
     else if(slotKey==='amulet'){ if(state.jewelrySlots.amulet) state.jewelrySlots.amulet.uid = uid; }
-    improveSel = uid; improvePending = null; improveWarnArmed = false; improveConfirm = null;
-    saveGame(); render();
+    return uid;
   }
   function improveToggleWarn(){ state.enchantWarnHiTier = !state.enchantWarnHiTier; improveWarnArmed = false; saveGame(); render(); }
   function improveToggleEnhanceWarn(){ state.enhanceWarnHiTier = !state.enhanceWarnHiTier; enhanceWarnArmed = false; saveGame(); render(); }
@@ -8364,8 +8371,10 @@
     if(improvePending) return;
     var sel = improveSel; if(!sel) return;
     var isU = isUniqueId(sel);
+    var isEq = isEquipToken(sel), eqm = null;
     var tier, enhance, count, kind;
     if(isU){ var u0 = state.uniqueItems[sel]; if(!u0){ addLog('That item is gone.','danger'); return; } tier=u0.tier; enhance=u0.enhance; count=u0.enchants.length; kind=u0.kind; }
+    else if(isEq){ eqm = equippedImprovableBases().filter(function(e){ return e.slot===equipTokenSlot(sel); })[0]; if(!eqm){ addLog('That item is no longer equipped.','danger'); return; } var ep = parseImprovable(eqm.baseId); tier=ep.tier; enhance=0; count=0; kind=ep.kind; }
     else { var p = parseImprovable(sel); if(!p || (state.inventory[sel]||0)<=0){ addLog('That item is no longer available.','danger'); return; } tier=p.tier; enhance=0; count=0; kind=p.kind; }
     if(enhance>0){ addLog('Enhanced items (+'+enhance+') can no longer be enchanted.','danger'); return; }
     var cost = count + 1;
@@ -8373,7 +8382,8 @@
     if(!planned){ addLog('You need '+cost+' Enchant Crystal'+(cost===1?'':'s')+' of tier '+(tier+1)+' or higher.','danger'); return; }
     if(planned.maxTier>tier && state.enchantWarnHiTier && !improveWarnArmed){ improveWarnArmed = true; render(); return; }
     improveWarnArmed = false;
-    var uid = isU ? sel : makeUniqueFromBase(sel); if(!uid){ return; } improveSel = uid;
+    // Convert the source into a unique only now, as the enchant actually lands.
+    var uid = isU ? sel : (isEq ? convertEquippedToUnique(equipTokenSlot(sel)) : makeUniqueFromBase(sel)); if(!uid){ return; } improveSel = uid;
     var u = state.uniqueItems[uid];
     consumeInputs(planned.plan);
     var roll = rollEnchant(u.kind);
@@ -8502,16 +8512,19 @@
   function renderImproveDetail(){
     if(!improveSel) return '';
     var isU2 = isUniqueId(improveSel);
-    var u = isU2 ? state.uniqueItems[improveSel] : null, pp = isU2 ? null : parseImprovable(improveSel);
+    var isEq = isEquipToken(improveSel), eqBaseId = null;
+    if(isEq){ var _em = equippedImprovableBases().filter(function(e){ return e.slot===equipTokenSlot(improveSel); })[0]; if(!_em) return ''; eqBaseId = _em.baseId; }
+    var u = isU2 ? state.uniqueItems[improveSel] : null, pp = isU2 ? null : parseImprovable(isEq ? eqBaseId : improveSel);
     if(!isU2 && !pp) return '';
     var tier = isU2 ? u.tier : pp.tier, rarity = isU2 ? u.rarity : pp.rarity, enhance = isU2 ? u.enhance : 0;
     var slots = enchantSlotsFor(rarity), count = isU2 ? u.enchants.length : 0;
-    var name = isU2 ? uniqueDisplayName(u) : (ALL_SELLABLE[improveSel]||{name:'Equipment'}).name;
+    var name = isU2 ? uniqueDisplayName(u) : (ALL_SELLABLE[isEq ? eqBaseId : improveSel]||{name:'Equipment'}).name;
     var html = '<div class="guild-section-title" style="margin-top:4px;">'+escapeHtml(name)+'</div>';
     html += '<div class="item-card" style="max-width:540px;"><div class="item-meta" style="margin-bottom:6px;">'+escapeHtml(getRarity(rarity).label)+' · Tier '+(tier+1)+' · '+count+'/'+slots+' enchant slots'+(enhance>0?' · <b>+'+enhance+'</b>':'')+'</div>';
     if(isU2){ var _eq = uniqueIsEquipped(u.uid); html += '<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><button class="mini-btn" data-action="'+(_eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(_eq?'Unequip':'Equip')+'</button><button class="mini-btn" data-action="improveLinkChat" data-uid="'+u.uid+'" title="Share this item\'s stats in chat">🔗 Link in chat</button>'+(_eq?'<span class="item-meta" style="color:var(--gold);">equipped</span>':'')+'</div>'; }
+    else if(isEq){ html += '<div style="margin-bottom:8px;"><span class="item-meta" style="color:var(--gold);">equipped</span> <span class="item-meta">· becomes a unique when you Enchant or Enhance it</span></div>'; }
     if(isU2 && u.enchants.length){ u.enchants.forEach(function(e,i){ html += '<div class="inputs-line"><span style="color:var(--gold);">'+escapeHtml(enchantLabel(u.kind,e))+'</span>'+((improvePending&&improvePending.uid===u.uid)?' <button class="mini-btn" data-action="improvePlace" data-idx="'+i+'">Replace</button>':'')+'</div>'; }); }
-    else if(isU2){ html += '<div class="empty-note" style="margin-bottom:6px;">No enchants yet.</div>'; }
+    else if(isU2 || isEq){ html += '<div class="empty-note" style="margin-bottom:6px;">No enchants yet.</div>'; }
     var cost = count + 1;
     var haveCry = countTierMaterials('enchant_t', tier); // Enchant Crystals of this item's tier or higher
     if(enhance>0){ html += '<div class="lock-note">Enhanced items can’t be enchanted.</div>'; }
@@ -8524,8 +8537,9 @@
       html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn" data-action="improveEnchant" style="width:auto;flex:0 0 auto;">Enchant ('+cost+')</button>';
       html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleWarn"'+(state.enchantWarnHiTier?' checked':'')+'> warn on higher-tier crystals</label></div>';
     }
-    if(isU2){
-      var eLvl = u.enhance, ecost = eLvl+1, chance = Math.round(enhanceSuccessChance(eLvl)*100);
+    if(isU2 || isEq){
+      var eLvl = isU2 ? u.enhance : 0, ecost = eLvl+1, chance = Math.round(enhanceSuccessChance(eLvl)*100);
+      var enhTarget = isU2 ? u.uid : improveSel; // for an equipped base, the equip token (converts on click)
       var haveScr = countTierMaterials('scroll_t', tier); // Inscription Scrolls (Warding Scrap ...) of tier+
       html += '<div class="guild-section-title" style="margin-top:12px;font-size:13px;">Enhance</div>';
       html += '<div class="inputs-line">Current <b>+'+eLvl+'</b> / +'+ENHANCE_MAX+' — base &amp; enchant stats at <b style="color:var(--gold);">+'+Math.round((enhanceStatMult(eLvl)-1)*100)+'%</b>.</div>';
@@ -8533,9 +8547,11 @@
       else {
         html += '<div class="inputs-line">Next: <b>'+ecost+'</b> Inscription Scroll'+(ecost===1?'':'s')+' (tier '+(tier+1)+'+) · <b style="color:'+(haveScr>=ecost?'var(--gold)':'var(--danger)')+';">you have '+haveScr+'</b> · <b style="color:var(--gold);">'+chance+'%</b> success · <b style="color:var(--danger);">a failure destroys the item.</b></div>';
         if(enhanceWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No tier-'+(tier+1)+' Scrolls — this spends higher-tier ones. Click Enhance again to confirm.</div>';
-        html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn stop" data-action="improveEnhance" data-uid="'+u.uid+'" style="width:auto;flex:0 0 auto;">Enhance ('+ecost+')</button>';
+        html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn stop" data-action="improveEnhance" data-uid="'+enhTarget+'" style="width:auto;flex:0 0 auto;">Enhance ('+ecost+')</button>';
         html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleEnhanceWarn"'+(state.enhanceWarnHiTier?' checked':'')+'> warn on higher-tier Scrolls</label></div>';
       }
+    }
+    if(isU2){
       // Trade lifecycle: a unique can be sold for gold or sacrificed for Faith. Both are permanent
       // (the item is destroyed), so each takes a confirming second click.
       var sellV = uniqueSellValue(u);
@@ -8753,14 +8769,14 @@
   function getMonsterLootChance(monster){
     if(monster.category==='wildlife') return 100;
     if(monster.category==='elemental') return Math.round(GLYPH_DROP_CHANCE*100);
-    if(monster.category==='demonspawn') return 8;
+    if(monster.category==='demonspawn') return 5;
     if(monster.category==='kinsworn') return 5;
     return 0;
   }
   function getMonsterLootLabel(monster){
     if(monster.category==='wildlife') return 'Corpse';
     if(monster.category==='elemental') return 'Glyph';
-    if(monster.category==='demonspawn') return 'Broken Relic';
+    if(monster.category==='demonspawn') return 'Enchant Crystal';
     if(monster.category==='kinsworn') return 'Inscription';
     return 'Loot';
   }
@@ -8779,9 +8795,12 @@
         addLog('The ' + monster.name + ' shattered into ' + gQty + 'x ' + GLYPH_ITEMS[gId].name + '.', 'important');
       }
     } else if(monster.category==='demonspawn'){
-      if(Math.random() < 0.08){
-        addItem('brokenrelic_t'+i, 1);
-        addLog('The ' + monster.name + ' dropped a ' + BROKEN_RELIC_MAP['brokenrelic_t'+i].name + '!', 'important');
+      // Demonspawn no longer drop Broken Relics (those still come from failed Archaeology digs) -- they
+      // instead occasionally yield Enchant Crystals of their tier, the Improvement-tab enchant input.
+      if(Math.random() < 0.05){
+        var eQty = randInt(1,2), eId = 'enchant_t'+i;
+        addItem(eId, eQty);
+        addLog('The ' + monster.name + ' dropped ' + eQty + 'x ' + (ALL_SELLABLE[eId]||{name:'Enchant Crystal'}).name + '.', 'important');
       }
     } else if(monster.category==='kinsworn'){
       // Kin-sworn no longer drop gear -- instead they occasionally carry Inscription Scrolls of their
@@ -19351,7 +19370,7 @@
       _state:state, getMaxCraftSlots:getMaxCraftSlots, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       earnGold:earnGold, walletSync:walletSync, itemSync:itemSync,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
-      parseImprovable:parseImprovable, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped,
+      parseImprovable:parseImprovable, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray,
