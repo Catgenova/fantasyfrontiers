@@ -16426,7 +16426,7 @@
   var BANK_SLOT_BASE = 10000;
   function bankSlotCost(slots){ return Math.round(BANK_SLOT_BASE * Math.pow(1.25, Math.max(0, slots-5))); }
   var RANK_VAL = { member:1, officer:2, leader:3 };
-  var guildBankState = { status:'idle', guildId:null, slots:5, used:0, items:[], minWithdrawRank:'member', treasury:0, busy:false, error:'' };
+  var guildBankState = { status:'idle', guildId:null, slots:5, used:0, items:[], uniques:[], minWithdrawRank:'member', treasury:0, busy:false, error:'' };
   function guildBankInvoke(action, payload){
     if(!chatClient || !authUser) return Promise.resolve({ ok:false, error:'Sign in first.' });
     var body = { action: action };
@@ -16440,6 +16440,7 @@
     guildBankState.status='ready';
     guildBankState.slots = res.slots; guildBankState.used = res.used;
     guildBankState.items = res.items || []; guildBankState.minWithdrawRank = res.min_withdraw_rank || 'member';
+    guildBankState.uniques = res.uniques || []; // enchanted/enhanced equipment stored in the vault (undefined on an older server -> [])
     guildBankState.treasury = Number(res.treasury) || 0;
   }
   // Deposit resources harvested by clearing a guild-estate tile straight into the guild bank
@@ -16472,7 +16473,8 @@
   // deposit qty field mid-type.
   function guildBankSig(){
     return guildBankState.slots + '|' + guildBankState.used + '|' + guildBankState.treasury + '|' +
-      (guildBankState.items||[]).map(function(i){ return i.item_key + ':' + i.qty; }).sort().join(',');
+      (guildBankState.items||[]).map(function(i){ return i.item_key + ':' + i.qty; }).sort().join(',') + '|' +
+      (guildBankState.uniques||[]).map(function(u){ return u.bank_uid; }).sort().join(',');
   }
   // Silent poll refresh (no 'loading' flicker) used while a member is looking at the bank, so other
   // members' deposits/withdrawals show up without a manual reload.
@@ -16522,6 +16524,40 @@
       guildBankState.busy=false;
       if(!res.ok){ guildBankState.error=res.error||'Withdraw failed.'; render(); return; }
       addItem(key, (typeof res.granted === 'number') ? res.granted : qty); saveGame(); guildBankApply(res); render(); // trust the server's granted count; a real 0 must not fall back to the full request
+    });
+  }
+  // Deposit a UNIQUE (enchanted/enhanced) item into the vault. Its per-instance blob (base + enchants +
+  // enhance) is stored server-side; on success it leaves your uniqueItems (unequipped first if worn).
+  function guildBankDepositUnique(uid){
+    if(guildBankState.busy) return;
+    var u = state.uniqueItems && state.uniqueItems[uid]; if(!u){ guildBankState.error='That item is gone.'; render(); return; }
+    guildBankState.busy=true; guildBankState.error=''; render();
+    var payload = { unique: { base:u.base, kind:u.kind, tier:u.tier, rarity:u.rarity, enhance:u.enhance||0,
+      enchants:(u.enchants||[]).map(function(e){ return { mod:e.mod, roll:e.roll }; }) } };
+    guildBankInvoke('deposit_unique', payload).then(function(res){
+      guildBankState.busy=false;
+      if(!res.ok){ guildBankState.error=(res.error||'Deposit failed.')+(res.code?'' : ' (the guild bank may need its server update).'); render(); return; }
+      if(uniqueIsEquipped(uid)) unequipUnique(uid); // free the equip slot before dropping the uid
+      removeUnique(uid); if(improveSel===uid) improveSel=null;
+      addLog('Deposited '+uniqueDisplayName(u)+' into the guild bank.','chronicle');
+      saveGame(); guildBankApply(res); render();
+    });
+  }
+  function guildBankWithdrawUnique(bankUid){
+    if(guildBankState.busy) return;
+    bankUid = parseInt(bankUid,10); if(!(bankUid>0)) return;
+    guildBankState.busy=true; guildBankState.error=''; render();
+    guildBankInvoke('withdraw_unique', { bank_uid:bankUid }).then(function(res){
+      guildBankState.busy=false;
+      if(!res.ok){ guildBankState.error=res.error||'Withdraw failed.'; render(); return; }
+      var u = res.unique;
+      if(u && u.base){
+        var newUid = genUid();
+        state.uniqueItems[newUid] = { uid:newUid, base:u.base, kind:u.kind, tier:u.tier, rarity:u.rarity, enhance:u.enhance||0,
+          enchants:(u.enchants||[]).map(function(e){ return { mod:e.mod, roll:parseInt(e.roll,10)||0 }; }) };
+        addLog('Withdrew '+uniqueDisplayName(state.uniqueItems[newUid])+' from the guild bank.','important');
+      }
+      saveGame(); guildBankApply(res); render();
     });
   }
   function guildBankBuySlot(){
@@ -16613,13 +16649,36 @@
       html += '<button class="action-btn" data-action="guildBankDeposit" '+(guildBankState.busy?'disabled':'')+' style="width:auto;flex:0 0 auto;">Deposit</button>';
       html += '</div>';
     }
-    html += '<div class="guild-section-title">Contents</div>';
-    if(!guildBankState.items.length){ html += '<div class="empty-note">The vault is empty. Deposit something to get started.</div>'; }
-    else guildBankState.items.forEach(function(it){
-      html += '<div class="guild-member-row"><div style="display:flex;align-items:center;gap:8px;">'+guildBankItemIcon(it.item_key)+'<b>'+escapeHtml(guildBankItemName(it.item_key))+'</b> <span class="item-meta">x'+fmt(it.qty)+'</span></div>';
-      if(canWithdraw) html += '<button class="mini-btn" data-action="guildBankWithdraw" data-item="'+escapeHtml(it.item_key)+'" '+(guildBankState.busy?'disabled':'')+'>Withdraw</button>';
+    // Deposit a UNIQUE (enchanted/enhanced) item -- each takes one bank slot.
+    var _ownedUni = Object.keys(state.uniqueItems||{});
+    if(_ownedUni.length){
+      html += '<div class="char-row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">';
+      html += '<select id="guildBankDepUniqueSel" class="chat-input" style="flex:1 1 160px;min-width:120px;">'+_ownedUni.map(function(uid){ var u=state.uniqueItems[uid]; return '<option value="'+uid+'">'+escapeHtml(uniqueDisplayName(u))+' &mdash; '+escapeHtml(getRarity(u.rarity).label)+(uniqueIsEquipped(uid)?' (equipped)':'')+'</option>'; }).join('')+'</select>';
+      html += '<button class="action-btn" data-action="guildBankDepositUniqueSel" '+(guildBankState.busy?'disabled':'')+' style="width:auto;flex:0 0 auto;">Deposit unique</button>';
       html += '</div>';
-    });
+    }
+    // Contents -- a standard grid of stackable stacks, plus a full-card section for unique equipment.
+    html += '<div class="guild-section-title">Contents</div>';
+    if(!guildBankState.items.length && !guildBankState.uniques.length){ html += '<div class="empty-note">The vault is empty. Deposit something to get started.</div>'; }
+    else {
+      if(guildBankState.items.length){
+        html += '<div class="inv-grid">';
+        guildBankState.items.forEach(function(it){
+          var wd = canWithdraw && !guildBankState.busy;
+          html += '<div class="inv-cell'+(itemRarityId(it.item_key)!=='normal'?' rar-'+itemRarityId(it.item_key):'')+(wd?'':' locked')+'"'+(wd?' data-action="guildBankWithdraw" data-item="'+escapeHtml(it.item_key)+'"':'')+' title="'+escapeHtml(guildBankItemName(it.item_key))+(wd?' — tap to withdraw':'')+'"><span class="qty">'+fmt(it.qty)+'</span><span class="ic">'+guildBankItemIcon(it.item_key)+'</span><span class="nm">'+escapeHtml(guildBankItemName(it.item_key))+'</span></div>';
+        });
+        html += '</div>';
+      }
+      if(guildBankState.uniques.length){
+        html += '<div class="inv-cat-head" style="margin-top:12px">'+svgIcon('starburst','var(--rarity-fantastic)')+' Unique Equipment <span class="n">'+guildBankState.uniques.length+'</span></div>';
+        html += '<div class="unique-inv-grid">';
+        guildBankState.uniques.forEach(function(u){
+          var wd = canWithdraw && !guildBankState.busy;
+          html += '<div class="unique-inv-card"'+(wd?' data-action="guildBankWithdrawUnique" data-bank-uid="'+u.bank_uid+'"':'')+'>'+uniqueCardBody(u)+'<div class="unique-inv-hint">'+(wd?'Tap to withdraw':'Withdraw restricted')+'</div></div>';
+        });
+        html += '</div>';
+      }
+    }
     if(isLeader){
       html += '<div class="guild-section-title">Withdraw permission</div><div class="char-row" style="gap:4px;flex-wrap:wrap;">';
       [['member','Members'],['officer','Officers+'],['leader','Leader only']].forEach(function(o){
@@ -19300,6 +19359,10 @@
       guildBankDeposit();
     } else if(action==='guildBankWithdraw'){
       guildBankWithdraw(btn.getAttribute('data-item'));
+    } else if(action==='guildBankDepositUniqueSel'){
+      var _us=document.getElementById('guildBankDepUniqueSel'); if(_us && _us.value) guildBankDepositUnique(_us.value);
+    } else if(action==='guildBankWithdrawUnique'){
+      guildBankWithdrawUnique(btn.getAttribute('data-bank-uid'));
     } else if(action==='guildBankSetWithdrawRank'){
       guildBankSetWithdrawRank(btn.getAttribute('data-rank'));
     } else if(action==='guildBankDonateGold'){

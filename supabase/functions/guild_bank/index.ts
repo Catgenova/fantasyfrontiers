@@ -5,9 +5,11 @@
 // atomic and capacity-checked. Identity comes from the token; rank rules are enforced here.
 //
 // Actions (POST { action, ... }):
-//   get                              -> { slots, used, items:[{item_key,qty}], min_withdraw_rank }
+//   get                              -> { slots, used, items:[{item_key,qty}], uniques:[{bank_uid,base,...}], min_withdraw_rank }
 //   deposit  { item_key, qty }       -> member; add to the vault (respects the slot cap)
+//   deposit_unique { unique:{...} }  -> member; store one enchanted/enhanced item (one slot)
 //   withdraw { item_key, qty }       -> requires rank >= guild's min_withdraw_rank
+//   withdraw_unique { bank_uid }     -> requires rank >= min_withdraw_rank; returns the unique blob
 //   buy_slot                         -> (leader/officer) +1 slot; PAID FROM THE TREASURY
 //   set_withdraw_rank { rank }       -> (leader) set the minimum rank allowed to withdraw
 //   donate_gold   { amount }         -> member; add gold to the shared treasury
@@ -60,11 +62,17 @@ Deno.serve(async (req) => {
     const { data: g } = await admin.from("guilds").select("bank_slots, bank_min_withdraw_rank, treasury").eq("id", guildId).maybeSingle();
     const { data: items } = await admin.from("guild_bank")
       .select("item_key, qty").eq("guild_id", guildId).order("updated_at", { ascending: false });
+    const { data: uniq } = await admin.from("guild_bank_unique")
+      .select("id, base, kind, tier, rarity, enhance, enchants").eq("guild_id", guildId).order("updated_at", { ascending: false });
     const list = items || [];
+    const uniques = (uniq || []).map((u) => ({
+      bank_uid: u.id, base: u.base, kind: u.kind, tier: u.tier, rarity: u.rarity, enhance: u.enhance, enchants: u.enchants,
+    }));
     return {
       slots: g?.bank_slots ?? 5,
-      used: list.length,
+      used: list.length + uniques.length,   // uniques share the slot cap with stacks
       items: list,
+      uniques,
       min_withdraw_rank: g?.bank_min_withdraw_rank ?? "member",
       treasury: Number(g?.treasury ?? 0),
     };
@@ -108,6 +116,51 @@ Deno.serve(async (req) => {
     // The withdrawn items become real ledger stock for the withdrawer (verified transfer).
     await admin.rpc("item_credit", { p_user: user.id, p_key: key, p_qty: qty });
     return json({ ok: true, granted: qty, ...(await snapshot()) });
+  }
+
+  // Deposit a UNIQUE (enchanted/enhanced) item. Ownership is client-authoritative (uniques aren't in
+  // the server item ledger), matching the bank's trust model; the server validates the blob shape and
+  // enforces the shared slot cap. Every unique is one slot.
+  if (action === "deposit_unique") {
+    const u = (body as { unique?: unknown }).unique as Record<string, unknown> | undefined;
+    if (!u || typeof u !== "object") return json({ ok: false, error: "Invalid item." }, 400);
+    const base = String(u.base || "");
+    const kind = String(u.kind || "weapon");
+    const rarity = String(u.rarity || "normal");
+    const tier = Number(u.tier);
+    const enhance = Number(u.enhance) || 0;
+    if (!KEY_RE.test(base)) return json({ ok: false, error: "Invalid item." }, 400);
+    if (!["normal", "rare", "supreme", "fantastic"].includes(rarity)) return json({ ok: false, error: "Invalid item." }, 400);
+    if (!Number.isInteger(tier) || tier < 0 || tier > 40) return json({ ok: false, error: "Invalid item." }, 400);
+    // Enchants: an array of { mod:string, roll:number }, capped so the blob stays small.
+    const rawEnch = Array.isArray(u.enchants) ? u.enchants : [];
+    if (rawEnch.length > 8) return json({ ok: false, error: "Invalid item." }, 400);
+    const enchants = rawEnch.map((e) => {
+      const o = (e || {}) as Record<string, unknown>;
+      return { mod: String(o.mod || "").slice(0, 32), roll: Math.max(0, Math.min(100000, Math.floor(Number(o.roll) || 0))) };
+    }).filter((e) => e.mod);
+    const { data: id, error } = await admin.rpc("guild_bank_deposit_unique", {
+      p_guild: guildId, p_base: base, p_kind: kind.slice(0, 24), p_tier: tier, p_rarity: rarity,
+      p_enhance: Math.max(0, Math.min(15, Math.floor(enhance))), p_enchants: enchants,
+    });
+    if (error) return json({ ok: false, error: "Deposit failed." }, 500);
+    if (id === -2) return json({ ok: false, error: "The bank is full — buy more slots.", code: "full" }, 409);
+    if (typeof id !== "number" || id < 0) return json({ ok: false, error: "Deposit rejected." }, 400);
+    return json({ ok: true, bank_uid: id, ...(await snapshot()) });
+  }
+
+  // Withdraw a unique by its bank id. Same rank gate as stackable withdraw; returns the full blob for
+  // the client to re-mint into its uniqueItems.
+  if (action === "withdraw_unique") {
+    if (RANKVAL[myRank] < RANKVAL[(await snapshot()).min_withdraw_rank]) {
+      return json({ ok: false, error: "Your rank can't withdraw from the bank." }, 403);
+    }
+    const bankUid = Number((body as { bank_uid?: unknown }).bank_uid);
+    if (!Number.isInteger(bankUid) || bankUid <= 0) return json({ ok: false, error: "Invalid item." }, 400);
+    const { data: row, error } = await admin.rpc("guild_bank_withdraw_unique", { p_guild: guildId, p_id: bankUid });
+    if (error) return json({ ok: false, error: "Withdraw failed." }, 500);
+    if (!row) return json({ ok: false, error: "That item is no longer in the bank.", code: "short" }, 409);
+    return json({ ok: true, unique: row, ...(await snapshot()) });
   }
 
   if (action === "buy_slot") {
