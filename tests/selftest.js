@@ -1152,6 +1152,51 @@
     eq(FF.lumenDodgeBonus(none), 0, 'no class -> no Afterimage dodge');
   });
 
+  // ---- Reaver (Half-Moon Axe): the fast 1h axe gets a Bleed-DoT class -----------------------------
+  suite('classes: reaver (half-moon axe, bleed)', function(){
+    function armor(mat){ return {material:mat,tier:5}; }
+    function stFor(level, extra){
+      var st = { xp:{}, physique:{}, equippedMainhand:'halfmoonaxe', equippedOffhand:'shieldSmall',
+                 bodyArmor:{helmet:armor('chain'),chest:armor('chain'),gauntlets:armor('leather'),boots:armor('leather')},
+                 activity:{type:'combat',monsterHp:100}, playerHp:55 };
+      st.xp['reaver'] = FF.xpFloorForLevel(level);
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+    var cd = FF.CLASS_DEFS_BY_ID.reaver;
+    ok(cd, 'Reaver is a registered class');
+    eq(cd.passives.length, 5, 'has 5 perks');
+    eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'perks at Lv 1/20/40/60/80');
+    ok(/Half-Moon Axe/.test(cd.reqText), 'wields the Half-Moon Axe (previously unclaimed)');
+    // gating: full kit activates; dropping the shield or swapping the gloves to chain deactivates.
+    eq(FF.activeClassId(stFor(80)), 'reaver', 'half-moon axe + small shield + chain/leather => Reaver');
+    eq(FF.activeClassId(stFor(80,{equippedOffhand:null})), null, 'Reaver needs the Small Shield');
+    eq(FF.activeClassId(stFor(80,{bodyArmor:{helmet:armor('chain'),chest:armor('chain'),gauntlets:armor('chain'),boots:armor('leather')}})), null, 'Reaver needs Leather Gloves, not chain');
+    // Savagery +25% damage; Hemorrhage +50% crit damage (Lv40).
+    ok(Math.abs(FF.newClassDmgMult({hp:100}, stFor(1)) - 1.25) < 1e-9, 'Savagery +25% damage');
+    ok(Math.abs(FF.newClassCritDmg(stFor(40)) - 0.50) < 1e-9, 'Hemorrhage +50% crit damage');
+    eq(FF.newClassCritDmg(stFor(20)), 0, 'no crit-damage bonus before Lv40');
+    // Bleed tick: it reads the global _state.activity. Snapshot the fields we touch, then restore.
+    // With no Reaver kit equipped on _state, reaverBonus(60/80) are off, so we exercise the base tick:
+    // it chips the enemy and floors it at 1 (never the finishing blow), and an expired Bleed does nothing.
+    var S = FF._state;
+    var save = { act:S.activity, hp:S.playerHp, mh:S.equippedMainhand, oh:S.equippedOffhand };
+    try {
+      S.equippedMainhand=null; S.equippedOffhand=null;
+      S.activity = { type:'combat', monsterId:null, monsterHp:100, bleedDps:20, bleedUntil:Date.now()+5000 };
+      FF.applyReaverBleedTick(1000);
+      ok(Math.abs(S.activity.monsterHp - 80) < 1e-6, 'Bleed chips 20 damage over 1s (20 dps)');
+      S.activity.monsterHp = 5; S.activity.bleedDps = 999;
+      FF.applyReaverBleedTick(1000);
+      eq(S.activity.monsterHp, 1, 'Bleed floors the enemy at 1 (never the finishing blow)');
+      S.activity.monsterHp = 100; S.activity.bleedUntil = Date.now()-1;
+      FF.applyReaverBleedTick(1000);
+      eq(S.activity.monsterHp, 100, 'an expired Bleed deals no damage');
+    } finally {
+      S.activity=save.act; S.playerHp=save.hp; S.equippedMainhand=save.mh; S.equippedOffhand=save.oh;
+    }
+  });
+
   // ---- Gadgets: Salvaging -> Tinkering (Bombs) + Pyrotechnics (Flash Bombs) --------------------
   suite('skills: salvaging / tinkering / pyrotechnics', function(){
     ok(FF.GATHERING_SKILLS.salvaging, 'salvaging is a gathering skill');

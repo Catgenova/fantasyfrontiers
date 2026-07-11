@@ -4291,6 +4291,26 @@
         { level:60, name:'Afterimage',        desc:'+12% Dodge chance.' },
         { level:80, name:'Blinding Radiance',  desc:'While the enemy is Blinded, you deal +25% damage and take 25% less.' }
       ]
+    },
+    {
+      id:'reaver', name:'Reaver', icon:svgIcon('axe','#a83a3a'),
+      blurb:'A savage raider whose fast axe leaves foes bleeding out, then feeds on their open wounds.',
+      reqText:'Half-Moon Axe + Small Shield, Chain Helm & Chest, Leather Gloves & Boots',
+      reqParts:[
+        { icon:svgIcon('axe','#9a7a4a'),                 label:'Half-Moon Axe', met:function(st){ return st.equippedMainhand==='halfmoonaxe'; } },
+        { icon:svgIcon('shield','#8a97a6'),              label:'Small Shield',  met:function(st){ return st.equippedOffhand==='shieldSmall'; } },
+        { icon:svgIcon('helm',CLASS_CHAIN_COLOR),        label:'Chain Helm',    met:function(st){ return chainPieceEquipped(st,'helmet'); } },
+        { icon:svgIcon('chestarmor',CLASS_CHAIN_COLOR),  label:'Chain Chest',   met:function(st){ return chainPieceEquipped(st,'chest'); } },
+        { icon:svgIcon('gauntlet',CLASS_LEATHER_COLOR),  label:'Leather Gloves',met:function(st){ return leatherPieceEquipped(st,'gauntlets'); } },
+        { icon:svgIcon('boots',CLASS_LEATHER_COLOR),     label:'Leather Boots', met:function(st){ return leatherPieceEquipped(st,'boots'); } }
+      ],
+      passives:[
+        { level:1,  name:'Savagery',     desc:'+25% damage.' },
+        { level:20, name:'Rend',         desc:'Hits apply a stacking Bleed (up to 5) that damages the enemy over time; each hit refreshes it.' },
+        { level:40, name:'Hemorrhage',   desc:'+50% Critical Hit damage.' },
+        { level:60, name:'Bloodletting', desc:'Heal 8% of the damage your Bleed deals.' },
+        { level:80, name:'Exsanguinate', desc:'Your Bleed deals double damage to enemies below half Health.' }
+      ]
     }
   ];
   var CLASS_DEFS_BY_ID = {}; CLASS_DEFS.forEach(function(c){ CLASS_DEFS_BY_ID[c.id] = c; });
@@ -4497,6 +4517,7 @@
     if(executionerBonus(1, st) && enemyHpFrac(monster, st) < 0.5) m *= 1.30; // Executioner Reap the Weak
     if(lumenBonus(1, st)) m *= 1.25;                                         // Lumen Oracle Glare
     m *= lumenBlindingDealtMult(st);                                         // Lumen Oracle Blinding Radiance (Lv80, while blinded)
+    if(reaverBonus(1, st)) m *= 1.25;                                        // Reaver Savagery
     return m;
   }
   // Critical-hit-chance bonus from the new classes (added into the crit roll).
@@ -4516,6 +4537,7 @@
     if(sharpshooterBonus(80, st)) d += 1.00; // Sharpshooter Kill Shot
     if(juggernautBonus(80, st)) d += 0.60;   // Juggernaut Devastate
     if(executionerBonus(60, st)) d += 0.50;  // Executioner Grisly Resolve
+    if(reaverBonus(40, st)) d += 0.50;       // Reaver Hemorrhage
     return d;
   }
   // Lifesteal (fraction of damage healed): Nightblade Siphon/Soul Reap + Executioner Bloodthirst.
@@ -4536,6 +4558,13 @@
   function lumenDodgeBonus(st){ st = st || state; return lumenBonus(60, st) ? 0.12 : 0; }                               // Lv60 Afterimage (folded into playerDodgeChance)
   function lumenBlindingDealtMult(st){ st = st || state; return (lumenBonus(80, st) && lumenEnemyBlinded(st)) ? 1.25 : 1; }  // Lv80 Blinding Radiance: +25% dealt while blinded
   function lumenIncomingMult(st){ st = st || state; return (lumenBonus(80, st) && lumenEnemyBlinded(st)) ? 0.75 : 1; }   // Lv80 Blinding Radiance: -25% taken while blinded
+  // ===== Reaver (Half-Moon Axe): Savagery / Rend / Hemorrhage / Bloodletting / Exsanguinate =====
+  // Rend stacks a Bleed DoT tracked on the activity (its own channel, separate from potion poison), each
+  // stack worth REAVER_BLEED_PCT of combat power per second; the tick lives in applyReaverBleedTick().
+  var REAVER_BLEED_MAX = 5;          // stacks
+  var REAVER_BLEED_PCT = 0.04;       // per-stack dps as a fraction of combat power (max 5 stacks = 20%/s)
+  var REAVER_BLEED_MS = 6000;        // a hit refreshes the Bleed for 6s
+  function reaverBonus(reqLevel, st){ return classBonusActive('reaver', reqLevel, st); }
   // Duelist Lv 1: on a dodge, a random active companion fires one extra spell for free -- this does NOT
   // advance or reset that companion's own cast timer (state.companionCast is left untouched).
   function duelistDodgeBonusCast(){
@@ -8864,6 +8893,18 @@
       }
     }
   }
+  // Reaver Rend: a stacking physical Bleed DoT on its own activity channel (separate from potion poison).
+  // Mirrors the poison tick -- floors the enemy at 1 HP (never the finishing blow) -- plus Reaver's own
+  // Lv60 Bloodletting (heal off Bleed) and Lv80 Exsanguinate (double vs a wounded foe).
+  function applyReaverBleedTick(dtMs){
+    var act = state.activity;
+    if(!act || act.type!=='combat' || (act.bleedUntil||0) <= Date.now()) return;
+    var dps = act.bleedDps || 0; if(dps <= 0) return;
+    var dmg = dps * dtMs / 1000;
+    if(reaverBonus(80)){ var mon = monsterById(act.monsterId); if(mon && mon.hp && act.monsterHp < mon.hp*0.5) dmg *= 2; } // Exsanguinate
+    act.monsterHp = Math.max(1, act.monsterHp - dmg);
+    if(reaverBonus(60)){ var heal = Math.min(Math.round(dmg * 0.08), maxHp(state) - state.playerHp); if(heal > 0) state.playerHp += heal; } // Bloodletting
+  }
   function playerAttackTick(isBonus, attempt, isOffhand){
     attempt = attempt || 1; // Quickdraw Rapid Fire re-enters this on a miss (up to 3 attempts)
     var act = state.activity;
@@ -8981,6 +9022,14 @@
         state.classDebuffs.enemyDmgUntil = Date.now() + 5000; spawnFloatingText('Blinded!', 'ft-rare');
       }
       if(lumenBonus(40) && !offlineCapture && Math.random() < 0.08){ act.enemyStunUntil = Date.now() + 2000; spawnFloatingText('Flashed!', 'ft-rare'); }
+      // Reaver Rend (Lv 20): each hit stacks a Bleed (up to 5) and refreshes it; dps = stacks * 4% of combat power.
+      if(reaverBonus(20)){
+        if((act.bleedUntil||0) <= Date.now()) act.bleedStacks = 0;        // a lapsed Bleed starts fresh
+        act.bleedStacks = Math.min(REAVER_BLEED_MAX, (act.bleedStacks||0) + 1);
+        act.bleedDps = act.bleedStacks * combatLevelEquivalent(state) * REAVER_BLEED_PCT;
+        act.bleedUntil = Date.now() + REAVER_BLEED_MS;
+        spawnFloatingText('Rend x'+act.bleedStacks, 'ft-bonus');
+      }
       // Thunderfury (Chain Lightning): a Critical Hit builds a stack (attack speed / accuracy); a non-crit resets.
       if(thunderfuryBonus(1)){
         if(isCrit){
@@ -9062,6 +9111,7 @@
     var _cls = activeClassId(state); if(_cls) maybeSummonFamiliar(_cls); // an active Class can summon its own familiar in combat
     act.monsterHp = monster.hp;
     act.monsterTickAccum = 0;
+    act.bleedStacks = 0; act.bleedDps = 0; act.bleedUntil = 0; // a fresh foe starts unbled (Reaver Rend doesn't carry over)
   }
   // Familiar/DoT/reflect damage normally floors the enemy at 1 HP so YOUR attack lands the kill --
   // except when you wield a Staff (no attack), where your summons must be able to finish the fight.
@@ -9573,6 +9623,7 @@
           // Familiar poison + toxin-potion poison chip the enemy (never the finishing blow); familiar regen heals.
           var _pd = getFamiliarPoisonDps(); if(_pd>0) applyChipDamage(_pd*_chunk/1000);
           applyPotionPoisonTick(_chunk);
+          applyReaverBleedTick(_chunk);
           var _rh = famRegenHps(); if(_rh>0 && state.playerHp>0) state.playerHp = Math.min(maxHp(state), state.playerHp + _rh*_chunk/1000);
           // Each active companion casts one spell every 10s, cycling its list (same cadence as live).
           activeCompanionList(state).forEach(function(cid){
@@ -19089,6 +19140,7 @@
         }
         // Toxin/Coating poison: ticks the enemy for its remaining duration (never the finishing blow).
         applyPotionPoisonTick(dt);
+        applyReaverBleedTick(dt);
         // Regen: familiar heal-over-time restores player HP while the buff is up.
         var regenHps = famRegenHps();
         if(regenHps > 0 && state.playerHp > 0){ state.playerHp = Math.min(maxHp(state), state.playerHp + regenHps*dt/1000); }
@@ -19324,7 +19376,7 @@
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus,
-      pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, executionerLifestealPct:executionerLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, executionerExecuteThreshold:executionerExecuteThreshold, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult,
+      pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, executionerLifestealPct:executionerLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, executionerExecuteThreshold:executionerExecuteThreshold, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenChillChance:frostwardenChillChance, frostwardenBlockBonus:frostwardenBlockBonus, enemyChilled:enemyChilled, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
