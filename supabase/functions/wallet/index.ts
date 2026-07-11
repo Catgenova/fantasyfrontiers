@@ -12,11 +12,30 @@
 // from the player's current save the first time the wallet is touched.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Rate limits (token bucket). Credit accrues at GOLD_PER_HOUR since the last credit, capped at
-// BURST_GOLD per claim -- see the `earn` handler. A scripted earn loop can't beat the time-based rate.
+// Rate limits (token bucket). Allowance accrues at GOLD_PER_HOUR and CARRIES between claims up to
+// BURST_GOLD (see bucketState). A scripted earn loop can't beat the sustained time-based rate, but a
+// single legit burst up to BURST_GOLD credits in full -- so opening a stack of treasure chests isn't
+// throttled away. A freshly-seeded wallet starts with a FULL bucket (see ensureWallet).
 const GOLD_PER_HOUR = 20_000_000;
 const BURST_GOLD = 10_000_000;
 const HARD_CAP = 1_000_000_000_000_000; // 1e15, keeps totals safe JS integers
+const BUCKET_FILL_MS = Math.floor((BURST_GOLD / GOLD_PER_HOUR) * 3_600_000); // time to refill to BURST (30 min)
+
+// Proper token bucket keyed off `updated_at`: allowance = time since updated_at at GOLD_PER_HOUR,
+// capped at BURST_GOLD and CARRIED between claims (unused allowance persists). `bucketState` reports the
+// available allowance and the effective start; `bucketAdvance` moves the clock forward only by what was
+// actually consumed. This fixes the old bug where a legit earn right after a credit/seed was throttled
+// to ~0 and the sync-clamp then wiped the balance.
+function bucketState(updatedAtIso: string): { available: number; from: number } {
+  const now = Date.now();
+  const from = Math.max(new Date(updatedAtIso).getTime(), now - BUCKET_FILL_MS); // cap the backlog at a full bucket
+  const available = Math.min(BURST_GOLD, Math.floor((GOLD_PER_HOUR * (now - from)) / 3_600_000));
+  return { available, from };
+}
+function bucketAdvance(from: number, consumed: number): string {
+  if (consumed <= 0) return new Date(from).toISOString();
+  return new Date(Math.min(Date.now(), from + Math.floor((consumed / GOLD_PER_HOUR) * 3_600_000))).toISOString();
+}
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -59,12 +78,16 @@ Deno.serve(async (req) => {
     const g = (save?.data as Record<string, unknown> | undefined)?.gold;
     if (typeof g === "number" && Number.isFinite(g) && g > 0) seedGold = Math.floor(g);
     const { data: seeded } = await admin.rpc("wallet_seed", { p_user: userId, p_gold: Math.min(seedGold, HARD_CAP) });
-    return { gold: Number(seeded ?? seedGold), earned_total: 0, updated_at: new Date().toISOString() };
+    // Start the bucket FULL: back-date updated_at by the fill window so the first legit earn after
+    // seeding isn't throttled to ~0 (which, on a 0-gold seed, wiped freshly-earned gold to 0).
+    const backdated = new Date(Date.now() - BUCKET_FILL_MS).toISOString();
+    await admin.from("player_wallet").update({ updated_at: backdated }).eq("user_id", userId);
+    return { gold: Number(seeded ?? seedGold), earned_total: 0, updated_at: backdated };
   }
 
   if (action === "get") {
     const w = await ensureWallet();
-    return json({ ok: true, gold: w.gold });
+    return json({ ok: true, gold: w.gold, earned: w.earned_total });
   }
 
   if (action === "spend") {
@@ -85,22 +108,17 @@ Deno.serve(async (req) => {
     }
     const w = await ensureWallet();
     const delta = Math.max(0, Math.floor(reported) - w.earned_total);
-    // Token-bucket rate limit: the allowance accrues from wall-clock time SINCE THE LAST
-    // credit (updated_at advances only when we credit), capped at BURST_GOLD per claim. Because
-    // it's a function of elapsed time and not call count, hammering earn in a loop grants nothing
-    // extra -- max sustained credit is GOLD_PER_HOUR, max single claim is BURST_GOLD.
-    const hours = Math.max(0, (Date.now() - new Date(w.updated_at).getTime()) / 3_600_000);
-    const allowed = Math.min(BURST_GOLD, Math.floor(GOLD_PER_HOUR * hours));
-    const credited = Math.min(delta, allowed);
+    const { available, from } = bucketState(w.updated_at);
+    const credited = Math.max(0, Math.min(delta, available));
     if (credited > 0) {
       await admin.from("player_wallet").update({
         gold: Math.min(HARD_CAP, w.gold + credited),
-        earned_total: w.earned_total + credited, // advance only by what we credited, so throttling persists
-        updated_at: new Date().toISOString(),
+        earned_total: w.earned_total + credited, // advance only by what we credited, so un-credited earnings stay claimable
+        updated_at: bucketAdvance(from, credited),
       }).eq("user_id", userId);
     }
-    const { data: row } = await admin.from("player_wallet").select("gold").eq("user_id", userId).maybeSingle();
-    return json({ ok: true, gold: Number(row?.gold ?? w.gold), credited });
+    const { data: row } = await admin.from("player_wallet").select("gold, earned_total").eq("user_id", userId).maybeSingle();
+    return json({ ok: true, gold: Number(row?.gold ?? w.gold), earned: Number(row?.earned_total ?? w.earned_total), credited });
   }
 
   // The reconcile the client calls periodically (and on load). It (1) credits new earnings under
@@ -120,18 +138,22 @@ Deno.serve(async (req) => {
     }
     const w = await ensureWallet();
     const delta = Math.max(0, Math.floor(reported) - w.earned_total);
-    const hours = Math.max(0, (Date.now() - new Date(w.updated_at).getTime()) / 3_600_000);
-    const credited = Math.min(delta, Math.min(BURST_GOLD, Math.floor(GOLD_PER_HOUR * hours)));
-    let gold = w.gold;
-    let earnedTotal = w.earned_total;
-    if (credited > 0) { gold = Math.min(HARD_CAP, gold + credited); earnedTotal += credited; }
-    const clamped = Math.max(0, Math.min(gold, Math.floor(Math.min(reportedGold, HARD_CAP))));
+    const { available, from } = bucketState(w.updated_at);
+    const credited = Math.max(0, Math.min(delta, available));
+    const goldAfterCredit = Math.min(HARD_CAP, w.gold + credited);
+    const clamped = Math.max(0, Math.min(goldAfterCredit, Math.floor(Math.min(reportedGold, HARD_CAP))));
+    // Bank ONLY the credit that survived the clamp. If a legit earn can't be reflected yet (client
+    // reports lower gold, e.g. throttled or previously mis-clamped), we DON'T burn earned_total for it,
+    // so it stays claimable on a later sync -- this makes wrongly-lost gold recoverable and stops the
+    // old death-spiral where throttled earnings were consumed but never delivered.
+    const stuckCredit = Math.max(0, Math.min(credited, clamped - w.gold));
+    const earnedTotal = w.earned_total + stuckCredit;
     await admin.from("player_wallet").update({
       gold: clamped,
       earned_total: earnedTotal,
-      updated_at: credited > 0 ? new Date().toISOString() : w.updated_at, // keep the accrual clock on idle syncs
+      updated_at: stuckCredit > 0 ? bucketAdvance(from, stuckCredit) : w.updated_at, // carry the clock otherwise
     }).eq("user_id", userId);
-    return json({ ok: true, gold: clamped, credited });
+    return json({ ok: true, gold: clamped, earned: earnedTotal, credited: stuckCredit });
   }
 
   return json({ ok: false, error: "Unknown action." }, 400);

@@ -2692,6 +2692,26 @@
     s.gold = g0; s.goldEarnedTotal = e0; // restore so the test never perturbs the real balance
   });
 
+  // ---- Gold wallet reconcile: never destroy legit earnings, still collapse spoofed gold ----------
+  suite('wallet: reconcile never loses legit earnings', function(){
+    var R = FF.walletReconcileGold;
+    ok(typeof R === 'function', 'walletReconcileGold exported');
+    // Normal case: server credited the full earn -> local matches server.
+    eq(R(1500000, 1500000, 1500000, 1500000, 1500000), 1500000, 'fully-credited earn: gold preserved');
+    // The BUG this fixes: server throttled/clamped the balance low, but the earn is legit (earned_total
+    // reflects it). The un-credited remainder (pending) is kept, NOT thrown away.
+    eq(R(1500000, 1500000, 1500000, /*serverGold*/0, /*serverEarned*/0), 1500000, 'throttled earn is NOT lost (pending restores it)');
+    eq(R(1500000, 1500000, 1500000, 666666, 666666), 1500000, 'partially-credited earn keeps the remainder');
+    // Recovery: a previously wiped balance (local 0) comes back once the server can credit the gap.
+    eq(R(0, 0, 1500000, 0, 0), 1500000, 'recovers gold the old bug wiped to 0');
+    // Anti-cheat: a tampered-HIGH local gold with NO matching earnings collapses to the server value.
+    eq(R(1000000000, 1000000000, 0, 500, 0), 500, 'spoofed local gold (no earnings) collapses to server');
+    // Legit spend propagates: local dropped below what was sent, server adopted it, no pending.
+    eq(R(400, 400, 1000, 400, 1000), 400, 'a spend sticks (server adopted the lower balance)');
+    // Round-trip drift: gold earned locally during the request is preserved on top.
+    eq(R(1200, 1000, 1000, 1000, 1000), 1200, 'drift earned mid-request is not clobbered');
+  });
+
   // ---- Improvement system: enchant foundation (Stage 1a) --------------------------------
   suite('improvement: enchant foundation', function(){
     ok(typeof FF.rollEnchant === 'function' && FF.ENCHANT_MODS, 'enchant pools + roll exported');

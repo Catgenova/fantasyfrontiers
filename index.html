@@ -15809,6 +15809,18 @@
   // value can only equal or LOWER what we sent, so this quietly corrects a spoofed-high balance while
   // leaving legit gold untouched. Offline-safe: if we're not signed in / offline, it just no-ops and
   // local gold keeps working. Guarded by WALLET_SYNC_ENABLED as a kill switch.
+  // Pure reconcile: the true balance is the server's authoritative (credited) gold PLUS legitimate
+  // earnings the server hasn't credited yet (localEarned - serverEarned), plus any local gold change
+  // during the round-trip (drift). Because "pending" is bounded by earned_total (which only grows from
+  // real gathering/combat), a tampered-high LOCAL gold with no matching earnings still collapses to the
+  // server value -- but legit earnings (e.g. a big treasure-chest haul) are NEVER thrown away while the
+  // server credits them under its rate limit. serverEarned may be undefined (older server) -> pending 0.
+  function walletReconcileGold(localGold, sentGold, localEarned, serverGold, serverEarned){
+    var pending = (typeof serverEarned === 'number' && isFinite(serverEarned))
+      ? Math.max(0, Math.floor(localEarned||0) - Math.floor(serverEarned)) : 0;
+    var drift = Math.floor(localGold||0) - Math.floor(sentGold||0);
+    return Math.max(0, Math.floor(serverGold) + pending + drift);
+  }
   async function walletSync(force){
     if(!WALLET_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id || cloudReloading) return;
     var now = Date.now();
@@ -15822,9 +15834,7 @@
       var d = res && res.data;
       if(!d || d.ok !== true || typeof d.gold !== 'number' || !isFinite(d.gold)) return;
       walletServerGold = d.gold;
-      // Preserve gold earned/spent locally DURING the round-trip so a concurrent tick isn't clobbered.
-      var drift = Math.floor(state.gold||0) - sentGold;
-      var next = Math.max(0, Math.floor(d.gold) + drift);
+      var next = walletReconcileGold(state.gold, sentGold, state.goldEarnedTotal, d.gold, d.earned);
       if(next !== state.gold){
         state.gold = next;
         var cv = document.getElementById('ffCoinVal'); if(cv) cv.textContent = fmt(state.gold);
@@ -19368,7 +19378,7 @@
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
-      earnGold:earnGold, walletSync:walletSync, itemSync:itemSync,
+      earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, itemSync:itemSync,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
       parseImprovable:parseImprovable, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink,
