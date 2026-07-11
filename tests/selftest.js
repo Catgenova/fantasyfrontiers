@@ -2861,6 +2861,22 @@
     s.inventory = savedInv;
   });
 
+  // ---- Improvement: an equipped base is improvable even if a stale mainhand uid lingers ----------
+  suite('improvement: equipped base vs stale uid', function(){
+    ok(typeof FF.equippedImprovableBases === 'function', 'equippedImprovableBases exported');
+    var s = FF._state;
+    var sv = { mh:s.equippedMainhand, t:s.equippedMainhandTier, r:s.equippedMainhandRarity, uid:s.equippedMainhandUid, ui:s.uniqueItems };
+    s.uniqueItems = {};
+    s.equippedMainhand = 'rapier'; s.equippedMainhandTier = 3; s.equippedMainhandRarity = 'normal';
+    // A dangling uid (points at no real unique) must NOT hide the equipped base from the picker.
+    s.equippedMainhandUid = 'u_ghost';
+    ok(FF.equippedImprovableBases().some(function(e){ return e.slot==='mainhand'; }), 'stale mainhand uid does not hide the equipped base');
+    // A real equipped unique DOES occupy the slot -> the raw base is not offered (the unique shows separately).
+    s.uniqueItems = { u_ghost:{ uid:'u_ghost', base:'stweapon_rapier_t2_normal', kind:'weapon', tier:2, rarity:'normal', enchants:[], enhance:0 } };
+    ok(!FF.equippedImprovableBases().some(function(e){ return e.slot==='mainhand'; }), 'a valid equipped unique hides the raw base');
+    s.equippedMainhand=sv.mh; s.equippedMainhandTier=sv.t; s.equippedMainhandRarity=sv.r; s.equippedMainhandUid=sv.uid; s.uniqueItems=sv.ui;
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }

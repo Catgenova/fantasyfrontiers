@@ -5950,6 +5950,7 @@
   });
   Object.assign(ALL_SELLABLE, STACKABLE_WEAPON_ITEMS);
   function unequipCurrentMainhandToInventory(){
+    if(state.equippedMainhandUid){ state.equippedMainhandUid = null; return; } // a unique mainhand doesn't return to inventory (it stays in the table) -- also clears the uid so a following base equip isn't mistaken for a unique
     if(state.equippedMainhand && isStackableWeapon(state.equippedMainhand) && state.equippedMainhandTier > 0){
       var oldId = 'stweapon_'+state.equippedMainhand+'_t'+(state.equippedMainhandTier-1)+'_'+state.equippedMainhandRarity;
       addItem(oldId, 1);
@@ -8336,18 +8337,21 @@
   // Currently-equipped BASE pieces (a filled slot with no unique uid). These live in their equip slot,
   // not in state.inventory, so the normal inventory picker can't see them -- surfaced here so equipped
   // gear can be Enchanted/Enhanced without unequipping first.
+  // A slot "holds a unique" only if its uid points at a REAL unique in the table -- a stale/dangling
+  // uid (left by an older equip path) must NOT hide the underlying base from the Improvement picker.
+  function slotHasValidUnique(uid){ return !!(uid && state.uniqueItems && state.uniqueItems[uid]); }
   function equippedImprovableBases(){
     var out = [];
-    if(!state.equippedMainhandUid && isStackableWeapon(state.equippedMainhand) && state.equippedMainhandTier > 0)
+    if(!slotHasValidUnique(state.equippedMainhandUid) && isStackableWeapon(state.equippedMainhand) && state.equippedMainhandTier > 0)
       out.push({ slot:'mainhand', baseId:'stweapon_'+state.equippedMainhand+'_t'+(state.equippedMainhandTier-1)+'_'+state.equippedMainhandRarity });
-    if(!state.equippedOffhandUid && isStackableShield(state.equippedOffhand) && state.equippedOffhandTier > 0)
+    if(!slotHasValidUnique(state.equippedOffhandUid) && isStackableShield(state.equippedOffhand) && state.equippedOffhandTier > 0)
       out.push({ slot:'offhand', baseId:'stshield_'+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity });
     if(state.bodyArmor) BODY_ARMOR_SLOTS.forEach(function(sl){ var s=state.bodyArmor[sl];
-      if(s && !s.uid && s.tier > 0 && s.material) out.push({ slot:'armor:'+sl, baseId:'bodyarmor_'+s.material+'_'+sl+'_t'+(s.tier-1)+'_'+s.rarity }); });
+      if(s && !slotHasValidUnique(s.uid) && s.tier > 0 && s.material) out.push({ slot:'armor:'+sl, baseId:'bodyarmor_'+s.material+'_'+sl+'_t'+(s.tier-1)+'_'+s.rarity }); });
     if(state.jewelrySlots) RING_SLOT_IDS.forEach(function(sl){ var s=state.jewelrySlots[sl];
-      if(s && !s.uid && s.tier > 0 && s.typeId) out.push({ slot:'ring:'+sl, baseId:'ring_'+s.typeId+'_t'+(s.tier-1)+'_'+s.rarity }); });
+      if(s && !slotHasValidUnique(s.uid) && s.tier > 0 && s.typeId) out.push({ slot:'ring:'+sl, baseId:'ring_'+s.typeId+'_t'+(s.tier-1)+'_'+s.rarity }); });
     var am = state.jewelrySlots && state.jewelrySlots.amulet;
-    if(am && !am.uid && am.tier > 0) out.push({ slot:'amulet', baseId:'amulet_t'+(am.tier-1)+'_'+am.rarity });
+    if(am && !slotHasValidUnique(am.uid) && am.tier > 0) out.push({ slot:'amulet', baseId:'amulet_t'+(am.tier-1)+'_'+am.rarity });
     return out;
   }
   // Selecting an equipped base just points improveSel at an 'equip:<slot>' token -- NO conversion yet.
@@ -9772,6 +9776,17 @@
           // Improvement system (enchant/enhance): unique-instance table + id counter + warning toggles.
           if(!state.uniqueItems || typeof state.uniqueItems !== 'object' || Array.isArray(state.uniqueItems)) state.uniqueItems = {};
           if(typeof state.uidSeq !== 'number' || !isFinite(state.uidSeq)) state.uidSeq = 0;
+          // Heal stale equip-slot uids: a uid that doesn't point to a real unique (e.g. left behind by
+          // an older equip path that didn't clear it when swapping a unique out for a base) must be
+          // cleared -- otherwise the slot is treated as a unique, hiding the base from the Improvement
+          // picker and leaking the old unique's enchants into combat.
+          (function(){ var UI = state.uniqueItems; function ok(uid){ return uid && UI[uid]; }
+            if(state.equippedMainhandUid && !ok(state.equippedMainhandUid)) state.equippedMainhandUid = null;
+            if(state.equippedOffhandUid && !ok(state.equippedOffhandUid)) state.equippedOffhandUid = null;
+            if(state.bodyArmor) BODY_ARMOR_SLOTS.forEach(function(sl){ var s=state.bodyArmor[sl]; if(s && s.uid && !ok(s.uid)) s.uid = null; });
+            if(state.jewelrySlots){ RING_SLOT_IDS.forEach(function(sl){ var s=state.jewelrySlots[sl]; if(s && s.uid && !ok(s.uid)) s.uid = null; });
+              if(state.jewelrySlots.amulet && state.jewelrySlots.amulet.uid && !ok(state.jewelrySlots.amulet.uid)) state.jewelrySlots.amulet.uid = null; }
+          })();
           if(typeof state.enchantWarnHiTier !== 'boolean') state.enchantWarnHiTier = true;
           if(typeof state.enhanceWarnHiTier !== 'boolean') state.enhanceWarnHiTier = true;
           if(typeof state.playerHp !== 'number') state.playerHp = maxHp(state);
