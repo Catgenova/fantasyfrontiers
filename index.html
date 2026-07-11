@@ -3932,7 +3932,7 @@
     },
     {
       id:'reaper', name:'Reaper', icon:svgIcon('axe','#5a5a6a'),
-      blurb:'A bare-headed harvester of souls who trades protection for lethal crits and life-stealing strikes.',
+      blurb:'A bare-headed harvester of souls who trades protection for life-stealing strikes, banking the overflow into a spectral guard that rots the foes it faces.',
       reqText:'Scythe + bare head, Cloth Chest, Gloves & Shoes',
       reqParts:[
         { icon:svgIcon('axe','#6a4a1a'),               label:'Scythe',       met:function(st){ return st.equippedMainhand==='scythe'; } },
@@ -3942,11 +3942,11 @@
         { icon:svgIcon('boots',CLASS_CLOTH_COLOR),     label:'Cloth Shoes',  met:function(st){ return clothPieceEquipped(st,'boots'); } }
       ],
       passives:[
-        { level:1,  name:'Mortal Edge',      desc:'+50% Critical Hit damage.' },
-        { level:20, name:'Soul Harvest',     desc:'Your familiars\' life-drain (siphon) spells deal triple damage.' },
-        { level:40, name:'Life Reaper',      desc:'Steal 5% of the damage you deal as Health.' },
-        { level:60, name:'Exposed Flesh',    desc:'Deal +50% damage to enemies with no slashing resistance.' },
-        { level:80, name:'Death\'s Harvest', desc:'Steal 10% of the damage you deal as Health (replaces Life Reaper).' }
+        { level:1,  name:'Death\'s Harvest',   desc:'Steal 10% of the damage you deal as Health.' },
+        { level:20, name:'Soul Harvest',       desc:'Your familiars\' life-drain (siphon) spells deal triple damage.' },
+        { level:40, name:'Siphon Shield',      desc:'Life-steal beyond full Health banks as a spectral shield (absorbs up to 20% of your max Health) that soaks incoming hits before your own HP.' },
+        { level:60, name:'Grim Resolve',       desc:'Gain up to +30% Critical Hit chance, scaling with your missing Health &mdash; the closer to death, the deadlier.' },
+        { level:80, name:'Withering Harvest',  desc:'While your Siphon Shield holds, the foe you face rots for 1.5% of its max Health per second.' }
       ]
     },
     {
@@ -4482,12 +4482,25 @@
     if(duelistBonus(20)) state.duelistFootworkStacks = Math.min(DUELIST_FOOTWORK_MAX, (state.duelistFootworkStacks || 0) + 1);
   }
   function reaperBonus(reqLevel, st){ return classBonusActive('reaper', reqLevel, st); }
-  // Reaper Lv 1: +50% crit damage (added on top of the capped base crit, like Elixir/familiar bonuses).
-  function reaperCritDmgBonus(st){ return reaperBonus(1, st) ? 0.5 : 0; }
-  // Reaper Lv 40: steal 5% of damage dealt as Health; Lv 80 raises it to 10% (replaces, not stacks).
-  function reaperLifestealPct(st){ if(reaperBonus(80, st)) return 0.10; if(reaperBonus(40, st)) return 0.05; return 0; }
-  // Reaper Lv 60: +50% damage vs enemies with no slashing resistance (armorTypes.slashing == 0).
-  function reaperNoSlashResistMult(monster, st){ return (reaperBonus(60, st) && monster && !((monster.armorTypes||{}).slashing > 0)) ? 1.5 : 1; }
+  // Reaper Lv 1 (Death's Harvest): steal 10% of the damage you deal as Health.
+  function reaperLifestealPct(st){ return reaperBonus(1, st) ? 0.10 : 0; }
+  // Reaper Lv 40 (Siphon Shield): the spectral absorb caps at 20% of max HP.
+  var REAPER_SHIELD_MAX_PCT = 0.20;
+  function reaperShieldCap(st){ st = st || state; return Math.round(maxHp(st) * REAPER_SHIELD_MAX_PCT); }
+  // Reaper Lv 60 (Grim Resolve): up to +30% crit chance, scaling with missing Health.
+  function reaperGrimResolveCrit(st){
+    st = st || state; if(!reaperBonus(60, st)) return 0;
+    var mh = Math.max(1, maxHp(st));
+    return 0.30 * Math.max(0, Math.min(1, 1 - (st.playerHp || 0) / mh));
+  }
+  // Reaper Lv 80 (Withering Harvest): while a Siphon Shield is banked, the engaged foe rots for 1.5%
+  // of its max HP per second. Floors at 1 HP (your strike lands the kill), like the other DoT ticks.
+  function applyReaperWitherTick(dtMs){
+    var act = state.activity;
+    if(!act || act.type!=='combat' || !reaperBonus(80) || (state.reaperShield||0) <= 0) return;
+    var mon = monsterById(act.monsterId); if(!mon || !mon.hp) return;
+    act.monsterHp = Math.max(1, act.monsterHp - mon.hp * 0.015 * dtMs / 1000);
+  }
 
   // ===== New classes: Frostwarden / Plaguebearer / Berserker / Sentinel / Spellblade =====
   function frostwardenBonus(reqLevel, st){ return classBonusActive('frostwarden', reqLevel, st); }
@@ -4551,6 +4564,7 @@
     if(sharpshooterBonus(60, st)) c += 0.12; // Sharpshooter Deadeye
     if(nightbladeBonus(60, st)) c += 0.12;   // Nightblade Dark Pact
     if(executionerBonus(20, st)) c += 0.12;  // Executioner Cleave
+    c += reaperGrimResolveCrit(st);          // Reaper Grim Resolve (scales with missing Health)
     return c;
   }
   // Critical-hit-damage bonus from the new classes (additive onto the crit multiplier, like Reaper/Elixir).
@@ -9041,7 +9055,7 @@
     var physDmgMult = isWandAttack ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
     physDmgMult *= tenacityLowHpMult(state);
     // Elixir potions + familiar crit-damage buffs stack on top of the (capped) base+exploitation crit.
-    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + reaperCritDmgBonus() + knightMissCritDmg() + thunderLowHpCritDmg() + treasureHunterCritDmgBonus() + newClassCritDmg() + (enchTot.critDamage||0)/100) : 1;
+    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + knightMissCritDmg() + thunderLowHpCritDmg() + treasureHunterCritDmgBonus() + newClassCritDmg() + (enchTot.critDamage||0)/100) : 1;
 
     // Accuracy vs Dodge: roll to land the hit. A miss deals no damage and fires no on-hit effects
     // (potions, proficiency XP), but you still trained your reflexes by swinging so accuracy can grow.
@@ -9067,7 +9081,7 @@
     if(forcedCrit) state.duelistGuaranteedCrits = Math.max(0, (state.duelistGuaranteedCrits || 0) - 1); // Disengage: consume a guaranteed crit on a landed hit
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
     var wandAttuneMult = isWandAttack ? elementDmgMult(state, weaponStyle.element) : 1; // Elemental Attunement boosts a wand's element damage
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * duelistDuelMult() * reaperNoSlashResistMult(monster) * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, and the mainhand's Enhance base-stat scaling
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * duelistDuelMult() * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, and the mainhand's Enhance base-stat scaling
     dmgToMonster += Math.round(enchTot.flatDamage||0); // + equipped-item Flat Damage enchants
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
@@ -9153,8 +9167,18 @@
     // Reaper (Lv 40/80) + Berserker (Lv 20 Bloodthirst): heal a share of the damage actually inflicted.
     var lifestealPct = reaperLifestealPct() + berserkerLifestealPct() + nightbladeLifestealPct() + executionerLifestealPct();
     if(lifestealPct > 0){
-      var healed = Math.min(Math.round(effDmg * lifestealPct), maxHp(state) - state.playerHp);
+      var wouldHeal = Math.round(effDmg * lifestealPct);
+      var healed = Math.min(wouldHeal, maxHp(state) - state.playerHp);
       if(healed > 0){ state.playerHp += healed; spawnFloatingText('+'+healed+' HP', 'ft-success'); }
+      // Reaper Siphon Shield (Lv 40): life-steal beyond full Health banks as a spectral absorb (cap 20% max HP).
+      if(reaperBonus(40)){
+        var overheal = wouldHeal - Math.max(0, healed);
+        if(overheal > 0){
+          var _before = state.reaperShield || 0;
+          state.reaperShield = Math.min(reaperShieldCap(state), _before + overheal);
+          if(state.reaperShield > _before) spawnFloatingText('Siphon Shield '+Math.round(state.reaperShield), 'ft-rare');
+        }
+      }
     }
     if(act.monsterHp <= 0) defeatMonster(monster);
     // Spellblade (Spell Echo): 15% chance a landed hit echoes for 50% of the damage just dealt (never the killing blow's re-entry).
@@ -9300,6 +9324,12 @@
       return;
     }
     if(duelistBonus(20)) state.duelistFootworkStacks = 0; // Fleet Footwork: taking a hit resets the dodge stacks
+    // Reaper Siphon Shield: the spectral absorb soaks incoming damage before your own HP.
+    if((state.reaperShield||0) > 0 && dmgToPlayer > 0){
+      var _absorbed = Math.min(state.reaperShield, dmgToPlayer);
+      state.reaperShield -= _absorbed; dmgToPlayer -= _absorbed;
+      if(_absorbed > 0) spawnFloatingText('Absorbed '+Math.round(_absorbed)+'!', 'ft-success');
+    }
     state.playerHp -= dmgToPlayer;
     if(monster.element) awardElementXp(monster.element, dmgToPlayer); // Elemental Attunement also trains by taking that element's damage
     if(wardReflected > 0){
@@ -9339,6 +9369,7 @@
     if(state.playerHp <= 0){
       bumpStat('deaths');
       state.playerHp = 0;
+      state.reaperShield = 0; // a spectral guard shatters when you fall
       state.activity = { type:null };
       addLog('You were defeated by the ' + monster.name + ' and retreat to recover.', 'danger');
       needsRender = true;
@@ -9746,6 +9777,7 @@
           var _pd = getFamiliarPoisonDps(); if(_pd>0) applyChipDamage(_pd*_chunk/1000);
           applyPotionPoisonTick(_chunk);
           applyReaverBleedTick(_chunk);
+          applyReaperWitherTick(_chunk);
           var _rh = famRegenHps(); if(_rh>0 && state.playerHp>0) state.playerHp = Math.min(maxHp(state), state.playerHp + _rh*_chunk/1000);
           // Each active companion casts one spell every 10s, cycling its list (same cadence as live).
           activeCompanionList(state).forEach(function(cid){
@@ -11737,7 +11769,7 @@
     html += '<div class="stat-row"><span class="stat-label">Damage Type</span><span class="stat-value">'+dmgTypeHtml+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">'+(isWandMain?'Wands Proficiency':(isScepterMain?'Scepters Proficiency':'Weapon Proficiency'))+'</span><span class="stat-value">+'+Math.round((weaponProficiency-1)*100)+'%</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+(Math.round((criticalEyeCritChance(state)+quickdrawCritChanceBonus()+newClassCritChance())*10000)/100)+'%</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+(Math.round((Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + reaperCritDmgBonus() + newClassCritDmg())*100)/100)+'x</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+(Math.round((Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + newClassCritDmg())*100)/100)+'x</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Accuracy</span><span class="stat-value">'+playerAccuracy(state)+'</span></div>';
     if(weaponStyle.hand==='bow'){
       html += '<div class="stat-row"><span class="stat-label">Leather Bow Bonus</span><span class="stat-value">+'+Math.round(getLeatherArmorBonuses(state).bowDmgBonus*100)+'%</span></div>';
@@ -19387,6 +19419,7 @@
         // Toxin/Coating poison: ticks the enemy for its remaining duration (never the finishing blow).
         applyPotionPoisonTick(dt);
         applyReaverBleedTick(dt);
+        applyReaperWitherTick(dt);
         // Regen: familiar heal-over-time restores player HP while the buff is up.
         var regenHps = famRegenHps();
         if(regenHps > 0 && state.playerHp > 0){ state.playerHp = Math.min(maxHp(state), state.playerHp + regenHps*dt/1000); }
@@ -19623,7 +19656,7 @@
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, executionerLifestealPct:executionerLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, executionerExecuteThreshold:executionerExecuteThreshold, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick,
-      frostwardenDmgMult:frostwardenDmgMult, frostwardenChillChance:frostwardenChillChance, frostwardenBlockBonus:frostwardenBlockBonus, enemyChilled:enemyChilled, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperCritDmgBonus:reaperCritDmgBonus, reaperLifestealPct:reaperLifestealPct, reaperNoSlashResistMult:reaperNoSlashResistMult, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
+      frostwardenDmgMult:frostwardenDmgMult, frostwardenChillChance:frostwardenChillChance, frostwardenBlockBonus:frostwardenBlockBonus, enemyChilled:enemyChilled, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax,

@@ -2024,23 +2024,42 @@
     var lvHi = FF.xpFloorForLevel(85); // ~Lv 85 -> all passives
     function leveled(){ var s = base(); s.xp.reaper = lvHi; return s; }
 
-    // Lv 1 Mortal Edge: +50% crit damage (only while active).
-    eq(FF.reaperCritDmgBonus(full), 0.5, 'Lv 1 reaper (active): +0.5 crit damage');
+    // Lv 1 Death's Harvest: steal 10% of the damage you deal as Health (only while active).
+    eq(FF.reaperLifestealPct(full), 0.10, 'Lv 1 reaper (active): 10% lifesteal');
     var lowNoGear = { xp:{reaper:lvHi}, equippedMainhand:'greatsword', bodyArmor:{helmet:bare(),chest:bare(),gauntlets:bare(),boots:bare(),back:bare()} };
-    eq(FF.reaperCritDmgBonus(lowNoGear), 0, 'reaper crit bonus gated on the class being active');
+    eq(FF.reaperLifestealPct(lowNoGear), 0, 'reaper lifesteal gated on the class being active');
 
-    // Lv 40 / Lv 80 lifesteal: 5% then 10% (replaces, not stacks).
-    eq(FF.reaperLifestealPct(full), 0, 'Lv 1 reaper: no lifesteal yet');
-    var lv40 = base(); lv40.xp.reaper = FF.xpFloorForLevel(46); // ~Lv 46
-    eq(FF.reaperLifestealPct(lv40), 0.05, 'Lv 40-79 reaper: 5% lifesteal');
-    eq(FF.reaperLifestealPct(leveled()), 0.10, 'Lv 80 reaper: 10% lifesteal (replaces the 5%)');
+    // Lv 60 Grim Resolve: crit-chance bonus is gated on the class being Lv 60+ (scaling tested below).
+    eq(FF.reaperGrimResolveCrit(full), 0, 'Lv 1 reaper: no Grim Resolve yet (returns before touching HP)');
 
-    // Lv 60 Exposed Flesh: +50% damage vs enemies with no slashing resistance.
-    var noSlashArmor = { armorTypes:{slashing:0, piercing:0.65, blunt:0.35} };
-    var slashArmor   = { armorTypes:{slashing:0.65, piercing:0.35, blunt:0} };
-    eq(FF.reaperNoSlashResistMult(noSlashArmor, leveled()), 1.5, 'no slashing resistance => +50% damage');
-    eq(FF.reaperNoSlashResistMult(slashArmor, leveled()), 1, 'some slashing resistance => no bonus');
-    eq(FF.reaperNoSlashResistMult(noSlashArmor, full), 1, 'Lv 1 reaper: no Exposed Flesh yet');
+    // Behavioral: Grim Resolve scales with missing HP; Siphon Shield caps at 20% max HP; Withering
+    // Harvest only rots while a shield holds. Uses the live state (real physique/maxHp).
+    (function(){
+      var s = FF._state;
+      var snap = { mh:s.equippedMainhand, mhr:s.equippedMainhandRarity, ba:s.bodyArmor, xp:s.xp.reaper, hp:s.playerHp, act:s.activity, sh:s.reaperShield };
+      try {
+        s.equippedMainhand='scythe'; s.equippedMainhandRarity='normal';
+        s.bodyArmor={ helmet:bare(), chest:cloth(), gauntlets:cloth(), boots:cloth(), back:bare() };
+        s.xp.reaper = lvHi; s.reaperShield = 0;
+        eq(FF.activeClassId(s), 'reaper', 'behavioral setup activates the Reaper');
+        var mh = FF.maxHp(s);
+        s.playerHp = mh;               ok(FF.reaperGrimResolveCrit(s) === 0, 'Grim Resolve = 0 at full Health');
+        s.playerHp = 1;                ok(FF.reaperGrimResolveCrit(s) > 0.28, 'Grim Resolve near +30% at ~0 Health');
+        s.playerHp = Math.round(mh*0.5); ok(Math.abs(FF.reaperGrimResolveCrit(s) - 0.15) < 0.02, 'Grim Resolve ~+15% at half Health');
+        eq(FF.reaperShieldCap(s), Math.round(mh*0.20), 'Siphon Shield cap is 20% of max Health');
+        var mon = FF.MONSTERS[0];
+        s.activity = { type:'combat', monsterId:mon.id, monsterHp: mon.hp, tickAccum:0, monsterTickAccum:0 };
+        s.reaperShield = 10; var before = s.activity.monsterHp;
+        FF.applyReaperWitherTick(1000);
+        ok(s.activity.monsterHp < before, 'Withering Harvest rots the foe while a Siphon Shield holds');
+        ok(s.activity.monsterHp >= 1, 'Withering Harvest floors the foe at 1 HP (never the finishing blow)');
+        s.reaperShield = 0; s.activity.monsterHp = mon.hp; var b2 = s.activity.monsterHp;
+        FF.applyReaperWitherTick(1000);
+        eq(s.activity.monsterHp, b2, 'Withering Harvest is inert with no Siphon Shield');
+      } finally {
+        s.equippedMainhand=snap.mh; s.equippedMainhandRarity=snap.mhr; s.bodyArmor=snap.ba; s.xp.reaper=snap.xp; s.playerHp=snap.hp; s.activity=snap.act; s.reaperShield=snap.sh;
+      }
+    })();
 
     // Class familiar leans on life-drain (siphon) spells for the Lv 20 triple-damage passive.
     var fam = FF.FAMILIAR_DATA.reaper;
