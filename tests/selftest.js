@@ -1491,6 +1491,33 @@
     ok(FF.MONSTERS.every(function(m){ return m.element && FF.ELEMENT_META[m.element]; }), 'every monster has a valid element');
   });
 
+  // ---- Elemental loot: Elementals drop ONLY Glyphs (no raw-material burst) ----------------------
+  suite('loot: elementals drop only glyphs', function(){
+    // Loot preview stays in sync with the drop logic: chance = the glyph chance, label = 'Glyph'.
+    var fake = { category:'elemental', tierIndex:5, element:'fire', name:'Fire Elemental' };
+    eq(FF.getMonsterLootChance(fake), Math.round(FF.GLYPH_DROP_CHANCE*100), 'elemental loot chance = the Glyph drop chance');
+    eq(FF.getMonsterLootLabel(fake), 'Glyph', 'elemental loot label is Glyph');
+    // The category blurb no longer promises raw material.
+    var cat = FF.MONSTER_CATEGORIES.filter(function(c){ return c.id==='elemental'; })[0];
+    ok(cat && /Glyph/.test(cat.desc) && !/raw material/i.test(cat.desc), 'Elementals category describes Glyphs, not raw material');
+    // Functional: run the loot many times across every element -- the only items an Elemental can ever
+    // add are Glyphs (this fails loudly if a raw-material burst is ever re-introduced).
+    var S = FF._state; var saveInv = S.inventory;
+    var bad = {}, sawGlyph = false;
+    try {
+      ['fire','water','earth','light','dark'].forEach(function(el){
+        var mon = { category:'elemental', tierIndex:8, element:el, name:'Test Elemental' };
+        for(var n=0; n<60; n++){
+          S.inventory = {};
+          FF.applyMonsterCategoryLoot(mon);
+          Object.keys(S.inventory).forEach(function(id){ if(id.indexOf('glyph_')===0) sawGlyph = true; else bad[id] = true; });
+        }
+      });
+    } finally { S.inventory = saveInv; }
+    ok(Object.keys(bad).length === 0, 'across 300 kills the only drops are Glyphs' + (Object.keys(bad).length ? ' (leaked: '+Object.keys(bad).join(', ')+')' : ''));
+    ok(sawGlyph, 'Glyphs still drop (~50% of kills)');
+  });
+
   // ---- Armor elemental weakness (leather->fire, chain->earth, plate->water; +15% each) --
   suite('armor element weakness', function(){
     var PER = FF.ARMOR_ELEMENT_WEAKNESS_PER_PIECE;
