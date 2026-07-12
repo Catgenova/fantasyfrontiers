@@ -13631,7 +13631,19 @@
     if(owned){
       html += '<div class="item-top" data-action="toggleFamiliar" data-skill="'+skillId+'" style="cursor:pointer"><div class="item-icon">'+fam.icon+'</div><div><div class="item-name">'+fam.name+'</div><div class="item-meta">'+label+' &bull; Lv '+famLevel+(famLevel>=FAMILIAR_MAX_LEVEL?' (Max)':'')+(isCompanion?' &bull; Companion':'')+'</div></div></div>';
       if(expanded){
-        html += '<div class="inputs-line" style="margin-top:6px">Spells (cast in order, one every '+(familiarCastIntervalMs()/1000)+'s):</div>';
+        // Spell Potency readout: the numbers below already bake in your familiar-efficiency bonuses
+        // (cloth armour, Staves, Communion rings, Menagerist) on top of the familiar's own level, so
+        // show the total multiplier and where the efficiency portion comes from.
+        var _pcCloth = getClothArmorSpellBonus(state), _pcStaves = stavesEfficiencyBonus(state), _pcRing = getRingFamiliarBonus(state), _pcMenag = menageristPotencyMult() - 1;
+        var _effMult = (1+_pcCloth)*(1+_pcStaves)*(1+_pcRing)*(1+_pcMenag);
+        var _totPot = familiarPotencyMult(famLevel);
+        var _srcs = [];
+        if(_pcCloth>0)  _srcs.push('Cloth +'+Math.round(_pcCloth*100)+'%');
+        if(_pcStaves>0) _srcs.push('Staves +'+Math.round(_pcStaves*100)+'%');
+        if(_pcRing>0)   _srcs.push('Communion +'+Math.round(_pcRing*100)+'%');
+        if(_pcMenag>0)  _srcs.push('Menagerist +'+Math.round(_pcMenag*100)+'%');
+        html += '<div class="inputs-line" style="margin-top:6px">Spell Potency: <b style="color:var(--gold)">&times;'+(Math.round(_totPot*100)/100)+'</b> &mdash; Lv '+famLevel+(_effMult>1.0001 ? ' + <b style="color:var(--gold)">+'+Math.round((_effMult-1)*100)+'% efficiency</b>' : ' (no efficiency bonuses yet)')+(_srcs.length ? ' <span style="color:var(--text-dim)">('+_srcs.join(', ')+')</span>' : '')+'</div>';
+        html += '<div class="inputs-line" style="margin-top:6px">Spells (cast in order, one every '+(familiarCastIntervalMs()/1000)+'s) &mdash; values include your potency:</div>';
         fam.spells.forEach(function(spell, i){
           html += '<div class="chance-line">'+(i+1)+'. <b>'+spell.name+'</b> '+spellElementIcon(spell)+' &mdash; '+describeSpell(spell, famLevel)+'</div>';
         });
