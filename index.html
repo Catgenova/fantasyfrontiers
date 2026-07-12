@@ -669,6 +669,28 @@
   .rota-chip{font-family:var(--font-mono);font-size:9.5px;padding:2px 6px;border-radius:9px;background:var(--bg-deep);border:1px solid var(--border-light);color:var(--text-faint);display:inline-flex;align-items:center;gap:3px;white-space:nowrap;}
   .rota-chip .game-icon{width:11px;height:11px;}
   .rota-chip.next{background:var(--cat-menagerie);border-color:var(--green-deep);color:#f2f8e6;font-weight:600;box-shadow:0 0 0 2px var(--gold-bright);}
+  /* Active buff / debuff timers: a labelled depleting bar per effect, on the owning side. */
+  .arena-fx{margin-top:8px;border-top:1px dashed var(--border-light);padding-top:6px;}
+  .arena-fx-title{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);margin-bottom:3px;}
+  .arena-fx-row{display:flex;align-items:center;gap:6px;margin-top:4px;font-family:var(--font-mono);font-size:10px;}
+  .arena-fx-row .game-icon{width:13px;height:13px;flex:0 0 auto;}
+  .arena-fx-name{flex:0 0 auto;min-width:56px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .arena-fx-bar{flex:1 1 auto;height:6px;border-radius:3px;background:var(--bg-deep);border:1px solid var(--border-light);overflow:hidden;}
+  .arena-fx-fill{height:100%;transition:none;}
+  .arena-fx-t{flex:0 0 auto;color:var(--text-faint);min-width:26px;text-align:right;}
+  /* In-card combat consumables strip. */
+  .arena-items{margin-top:10px;border-top:1px dashed var(--border-light);padding-top:8px;}
+  .arena-items-active{font-family:var(--font-mono);font-size:11px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;}
+  .arena-item-chip{display:inline-flex;flex-direction:column;align-items:flex-start;gap:1px;padding:4px 8px;border-radius:6px;background:var(--bg-panel-raised);border:1px solid var(--border-light);cursor:pointer;font-family:var(--font-mono);font-size:10px;color:var(--text);}
+  .arena-item-chip.on{background:linear-gradient(180deg,#5c7f34,#3c5a24);color:#f2f8e6;border-color:#24380f;}
+  .arena-item-chip .qty{color:var(--text-faint);}
+  .arena-item-chip.on .qty{color:#d8e8c0;}
+  /* Richer combat floating text: damage numbers, crits, misses, damage taken. */
+  .floating-text.ft-dmg{color:#c8532a;}
+  .floating-text.ft-crit{color:#d89a1e;font-size:16px;}
+  .floating-text.ft-miss{color:#8a7850;font-style:italic;}
+  .floating-text.ft-taken{color:#a63a2f;}
+  .floating-text .game-icon{width:12px;height:12px;vertical-align:-2px;}
   .idle-note{font-family:var(--font-mono);font-size:12px;color:var(--text-faint);text-align:center;padding:6px 0;}
 
   .style-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
@@ -9226,7 +9248,7 @@
     // Accuracy vs Dodge: roll to land the hit. A miss deals no damage and fires no on-hit effects
     // (potions, proficiency XP), but you still trained your reflexes by swinging so accuracy can grow.
     if(Math.random() >= playerHitChance(monster)){
-      spawnFloatingText('Miss!', 'ft-fail');
+      if(!isOffhand) spawnCombatFloat('Miss', 'ft-miss', true);
       addPhysiqueXp(physTierPairs([['agility',2]], monster.tierIndex));
       // The following class procs belong to the main-hand swing only (an off-hand Claw is pure extra DPS).
       if(!isOffhand){
@@ -9257,7 +9279,8 @@
       if(execThresh > 0 && act.monsterHp <= execThresh){ act.monsterHp = 0; spawnFloatingText('Decapitate!', 'ft-rare'); }
     }
     firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
-    if(isCrit) spawnFloatingText('Critical Hit!', 'ft-rare');
+    // Floating damage: the hit's damage + its type/element, crit-styled on a Critical Hit.
+    spawnCombatFloat((isCrit?'✦ ':'')+'-'+fmt(dmgToMonster)+' '+combatDmgTypeIcon(weaponStyle, isWandAttack, isScepterAttack), isCrit?'ft-crit':'ft-dmg', true);
     var atkFeed = [['agility',2]];
     if(weaponStyle.hand==='1h') atkFeed.push(['reflexes',2]);
     else if(weaponStyle.hand==='2h') atkFeed.push(['balance',2]);
@@ -9423,7 +9446,7 @@
     var dodgeChance = playerDodgeChance(state) + getFamBuff('dodge');
     if(dodgeChance > 0 && Math.random() < dodgeChance){
       addLog('You dodged the ' + monster.name + '\'s attack!', 'important');
-      spawnFloatingText('Dodged!', 'ft-success');
+      spawnCombatFloat('Dodged', 'ft-miss', false);
       onPlayerDodged(); // Duelist: Lv 1 free familiar cast + Lv 20 Fleet Footwork stack
       return;
     }
@@ -9446,7 +9469,7 @@
       var _preBlock = rawDmg;
       rawDmg = Math.round(rawDmg * 0.5);
       addLog('You blocked the ' + monster.name + '\'s attack, halving the damage!', 'important');
-      spawnFloatingText('Blocked!', 'ft-success');
+      spawnCombatFloat('Blocked', 'ft-success', false);
       // Sentinel Riposte Guard (Lv1: 50% weapon dmg; Lv80: 100% and can crit) counters on a block.
       if(sentinelBonus(1)){
         var _cw = getEquippedWeaponItem(state);
@@ -9507,6 +9530,7 @@
       if(_absorbed > 0) spawnFloatingText('Absorbed '+Math.round(_absorbed)+'!', 'ft-success');
     }
     state.playerHp -= dmgToPlayer;
+    if(dmgToPlayer > 0) spawnCombatFloat('-'+fmt(dmgToPlayer)+' '+(monster.element?elementIcon(monster.element):''), 'ft-taken', false); // damage taken + its element
     if(monster.element) awardElementXp(monster.element, dmgToPlayer); // Elemental Attunement also trains by taking that element's damage
     if(wardReflected > 0){
       applyChipDamage(wardReflected); // reflected damage chips the enemy (floors at 1 unless you wield a Staff)
@@ -13095,6 +13119,103 @@
       head('#b5785a')+'<path d="M34 48 l10 -3 M52 45 l10 3" stroke="#7a1a1a" stroke-width="2.5" stroke-linecap="round"/>'+gEyes('#f0641e')+
       '<path d="M42 56 q6 4 12 0 l-2 -3 -2 2 -2 -3 -2 2 -2 -3 Z" fill="#2a0a0a"/>');
   })();
+  // ---- Combat floating text: damage numbers / type / element / miss, anchored over the arena ----
+  function combatDmgTypeIcon(ws, isWand, isScepter){
+    if(isWand) return elementIcon(ws.element);
+    if(isScepter) return elementIcon('light');
+    var mix = ws.attackTypes || {blunt:1}, best=null, bv=-1;
+    for(var t in mix){ if(mix[t] > bv){ bv=mix[t]; best=t; } }
+    return best ? (TYPE_ICON[best]||'') : '';
+  }
+  function spawnCombatFloat(html, cls, enemySide){
+    if(!ACTION_BAR_RESULT_TEXT || offlineCapture) return;
+    var layer = document.getElementById('floatLayer');
+    var anchor = document.getElementById(enemySide ? 'arenaMonsterFill' : 'arenaPlayerFill');
+    if(!layer || !anchor) return;
+    var rect = anchor.getBoundingClientRect();
+    if(!rect.width) return;
+    var el = document.createElement('div');
+    el.className = 'floating-text ' + (cls||'ft-dmg');
+    el.innerHTML = html;
+    var jitterX = Math.round(Math.random()*44 - 22);
+    var jitterY = -(floatingTextCount % 5) * 16;
+    floatingTextCount++;
+    el.style.left = (rect.left + rect.width/2 + jitterX) + 'px';
+    el.style.top = (rect.top - 16 + jitterY) + 'px';
+    layer.appendChild(el);
+    setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 1300);
+  }
+  // ---- Active buff (player) / debuff (enemy) timers shown as depleting bars in the arena ----
+  var COMBAT_BUFF_META = {
+    haste:{n:'Haste',c:'#5a8ac8'}, dodge:{n:'Dodge',c:'#5d7a34'}, block:{n:'Block',c:'#6a7a88'},
+    critChance:{n:'Crit Chance',c:'#c79a2a'}, critDmg:{n:'Crit Damage',c:'#c79a2a'},
+    resistBlunt:{n:'Resist Blunt',c:'#6a7a88'}, resistSlash:{n:'Resist Slash',c:'#6a7a88'}, resistPierce:{n:'Resist Pierce',c:'#6a7a88'},
+    dmgBlunt:{n:'+Blunt Dmg',c:'#c8532a'}, dmgSlash:{n:'+Slash Dmg',c:'#c8532a'}, dmgPierce:{n:'+Pierce Dmg',c:'#c8532a'},
+    firebomb:{n:'+Firebomb',c:'#e8641e'}, potionPoison:{n:'+Toxin',c:'#6fae3a'}
+  };
+  function combatPlayerBuffs(){
+    var out=[], now=Date.now(), fb=state.familiarBuffs||{};
+    function add(key,until,name,color){ if((until||0)>now) out.push({key:key,until:until,name:name,color:color}); }
+    add('dmg', fb.damageUntil, '+Damage', '#c8532a');
+    add('armor', fb.armorUntil, '+Armor', '#6a7a88');
+    add('regen', fb.regenUntil, 'Regen', '#5c8a3c');
+    add('bubble', fb.bubbleUntil, 'Bubble', '#5fd0e0');
+    Object.keys(COMBAT_BUFF_META).forEach(function(k){ var mm=COMBAT_BUFF_META[k]; add(k, fb[k+'Until'], mm.n, mm.c); });
+    add('fury', state.berserkerFuryUntil, 'Fury', '#c8302a');
+    add('enrage', state.summonerEnrageUntil, 'Host Enraged', '#c8302a');
+    add('vengeance', state.knightBuffUntil, 'Vengeance', '#8a90a0');
+    return out;
+  }
+  function combatEnemyDebuffs(){
+    var out=[], now=Date.now(), a=state.activity, fb=state.familiarBuffs||{}, cd=state.classDebuffs||{};
+    if(!a || a.type!=='combat') return out;
+    function add(key,until,name,color){ if((until||0)>now) out.push({key:key,until:until,name:name,color:color}); }
+    add('stun', a.enemyStunUntil, 'Stunned', '#e8d84a');
+    add('chill', a.enemyChillUntil, 'Chilled', '#7fd9d4');
+    add('bleed', a.bleedUntil, 'Bleeding', '#a63a2f');
+    add('ppoison', a.potionPoisonUntil, 'Poisoned', '#6fae3a');
+    add('eslow', fb.enemySlowUntil, 'Slowed', '#7a8aa0');
+    add('eweak', fb.enemyWeakenUntil, 'Weakened', '#8a97a6');
+    add('fpoison', fb.poisonUntil, 'Poisoned', '#6fae3a');
+    add('enfeeble', cd.enemyDmgUntil, 'Enfeebled', '#c85a2a');
+    add('sunder', cd.enemyArmorUntil, 'Sundered', '#c85a2a');
+    return out;
+  }
+  var _arenaFxPeak = {}, _arenaFxSig = '';
+  function combatFxSignature(){ return combatPlayerBuffs().map(function(b){return b.key;}).join(',')+'|'+combatEnemyDebuffs().map(function(b){return b.key;}).join(','); }
+  function renderFxBars(list, title){
+    if(!list.length) return '';
+    var now=Date.now(), h='<div class="arena-fx"><div class="arena-fx-title">'+title+'</div>';
+    list.forEach(function(b){
+      var rem = Math.max(0, b.until-now);
+      _arenaFxPeak[b.key] = rem; // reset the bar to full at render time
+      h += '<div class="arena-fx-row">'
+        + '<span style="width:12px;height:12px;border-radius:3px;background:'+b.color+';border:1px solid var(--border);flex:0 0 auto;"></span>'
+        + '<span class="arena-fx-name">'+b.name+'</span>'
+        + '<span class="arena-fx-bar"><span class="arena-fx-fill" id="arenaFx-'+b.key+'" style="width:100%;background:'+b.color+'"></span></span>'
+        + '<span class="arena-fx-t" id="arenaFxT-'+b.key+'">'+(rem/1000).toFixed(rem<10000?1:0)+'s</span></div>';
+    });
+    return h+'</div>';
+  }
+  // Compact in-card combat consumables: the active potion (with charges) + owned consumable chips.
+  function renderCombatConsumables(){
+    var h = '<div class="arena-items">';
+    if(state.activePotion){
+      var an=(ALL_SELLABLE[state.activePotion]||{}).name||state.activePotion;
+      h += '<div class="arena-items-active">'+svgIcon('potion','#8a5aaa')+' <b>'+escapeHtml(an)+'</b> &bull; '+escapeHtml(potionEffectDesc(state.activePotion))
+        +' &bull; Charges <b id="potionChargeLabel">'+(state.potionCharges||0)+'</b>/'+(POTION_MAX_CHARGES+apothecaryExtraCharges())
+        +' <button class="action-btn stop" data-action="deactivatePotion" style="width:auto;flex:0 0 auto;padding:2px 10px;">Stow</button></div>';
+    }
+    var chips=[];
+    POTION_TYPE_IDS.forEach(function(type){
+      for(var i=0;i<TIER_COUNT;i++){ var id=type+'_t'+i, qty=state.inventory[id]||0; if(qty>0){ var it=ALL_SELLABLE[id]||{};
+        chips.push('<button class="arena-item-chip'+(state.activePotion===id?' on':'')+'" data-action="activatePotion" data-item="'+id+'" title="'+escapeHtml(potionEffectDesc(id))+'"><span>'+(it.icon||'')+' '+escapeHtml(it.name||id)+'</span><span class="qty">'+escapeHtml(potionEffectDesc(id))+' &bull; x'+qty+'</span></button>');
+      } }
+    });
+    if(chips.length) h += '<div style="display:flex;flex-wrap:wrap;gap:5px;">'+chips.join('')+'</div>';
+    else if(!state.activePotion) h += '<div class="empty-note" style="margin:0">No combat consumables in your bag &mdash; craft Potions, Weapon Enchants, Coatings, Bombs, or Flash Bombs.</div>';
+    return h+'</div>';
+  }
   function renderCombatTab(){
     var lvl = combatLevelEquivalent(state);
     var act = state.activity;
@@ -13102,7 +13223,7 @@
     var html = renderCombatStatsPanel();
     html += renderAccuracyPanel();
     html += renderAutoEatPanel();
-    html += renderCombatPotionsPanel();
+    if(act.type!=='combat') html += renderCombatPotionsPanel(); // out of combat: prep consumables above; in combat they move into the card
     if(act.type==='combat'){
       var m = monsterById(act.monsterId);
       var hpPct = clamp(act.monsterHp/m.hp*100,0,100);
@@ -13154,6 +13275,7 @@
         });
         html += '</div>';
       }
+      html += renderFxBars(combatPlayerBuffs(), 'Your Effects');
       html += '</div>'; // arena-player
       // ---- RIGHT: enemy ----
       html += '<div class="arena-side arena-enemy">';
@@ -13165,10 +13287,13 @@
       html += '<div class="hp-label"><span>Monster HP</span><span id="arenaMonsterLabel">'+fmt(act.monsterHp)+' / '+m.hp+'</span></div>';
       html += '<div class="hp-track" style="height:8px;margin-top:6px"><div class="hp-fill" id="arenaMonsterAtkFill" style="width:'+monsterAtkPct+'%;background:'+(_stunned?'#e8d84a':'var(--gold)')+';transition:none"></div></div>';
       html += '<div class="hp-label"><span id="arenaMonsterAtkLabel">'+(_stunned ? svgIcon('lightning','#e8d84a')+' Stunned!' : 'Monster Attack')+'</span><span>'+m.attackSpeed+'s</span></div>';
+      html += renderFxBars(combatEnemyDebuffs(), 'Enemy Effects');
       html += '</div>'; // arena-enemy
       html += '</div>'; // arena-cols
+      html += renderCombatConsumables();
       html += '<button class="action-btn stop" data-action="stop" style="margin-top:10px">Retreat</button>';
       html += '</div>';
+      _arenaFxSig = combatFxSignature();
     } else if(state.playerHp <= 0){
       html += '<div class="idle-note">You are recovering. HP regenerates slowly, or eat food from the sidebar.</div>';
     }
@@ -19542,6 +19667,19 @@
           }
         }
       });
+      // Buff/debuff timer bars: rebuild the arena when the SET of effects changes (one appears/expires),
+      // otherwise just deplete each bar's fill + remaining-seconds label live.
+      var _fxSig = combatFxSignature();
+      if(_fxSig !== _arenaFxSig){ _arenaFxSig = _fxSig; needsRender = true; }
+      else {
+        combatPlayerBuffs().concat(combatEnemyDebuffs()).forEach(function(b){
+          var fill = document.getElementById('arenaFx-'+b.key); if(!fill) return;
+          var rem = Math.max(0, b.until - Date.now());
+          var peak = _arenaFxPeak[b.key] = Math.max(_arenaFxPeak[b.key]||0, rem);
+          fill.style.width = clamp(rem/Math.max(1,peak)*100, 0, 100)+'%';
+          var t = document.getElementById('arenaFxT-'+b.key); if(t) t.textContent = (rem/1000).toFixed(rem<10000?1:0)+'s';
+        });
+      }
     }
 
     var autoEatNextEl = document.getElementById('autoEatNextFoodText');
