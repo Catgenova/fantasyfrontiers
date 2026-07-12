@@ -3085,6 +3085,17 @@
     ok(/equip-cmp down/.test(FF.equipDeltaChip(12, 20)), 'lower candidate -> red delta');
     ok(/equip-cmp eq/.test(FF.equipDeltaChip(10, 10)), 'equal -> neutral ±0');
     ok(/%/.test(FF.equipDeltaChip(0.3, 0.1, true)), 'pct mode renders a percentage');
+    // The Equipment & Stats equip card must emit a HANDLED data-action. It fires the click dispatcher's
+    // 'improveEquip'/'improveUnequip' cases (which call equip/unequipUnique) -- NOT the bare function
+    // names, which have no handler (that made "Equip" silently do nothing). A ring has no proficiency
+    // lock, so the card shows the live Equip button.
+    var _uid = 'sel_equipcard';
+    FF._state.uniqueItems = FF._state.uniqueItems || {};
+    FF._state.uniqueItems[_uid] = { uid:_uid, base:'ring_fire_t0_rare', kind:'ring', tier:0, rarity:'rare', enchants:[], enhance:0 };
+    var _card = FF.renderUniqueEquipCard(FF._state.uniqueItems[_uid]);
+    ok(/data-action="improveEquip"/.test(_card), 'equip card uses the handled improveEquip action (not the unhandled equipUnique)');
+    ok(!/data-action="equipUnique"/.test(_card), 'equip card does not emit the unhandled equipUnique action');
+    delete FF._state.uniqueItems[_uid];
   });
 
   // ---- Improvement system: enhance (Stage 2) --------------------------------------------
