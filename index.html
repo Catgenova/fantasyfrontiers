@@ -4144,10 +4144,10 @@
       ],
       passives:[
         { level:1,  name:'Chain Lightning', desc:'Critical Hit chance is capped at 50%. Each Critical Hit cuts your next attack timer 10% (stacking up to 70%); a non-critical hit resets it.' },
-        { level:20, name:'Storm Focus',     desc:'Each Critical Hit grants +20% Accuracy (stacks with Chain Lightning; a non-critical hit resets it).' },
-        { level:40, name:'Concussive Bolt', desc:'Critical Hits have a 10% chance to stun the enemy, freezing its action bar for 2s.' },
-        { level:60, name:'Storm’s Wrath', desc:'+100% Critical Hit damage while below 50% Health.' },
-        { level:80, name:'Life Siphon',     desc:'While below 25% Health, Critical Hits drain HP (heal 50% of the damage dealt).' }
+        { level:20, name:'Static Charge',   desc:'Every landed hit builds a Static stack; the 5th discharges a burst of lightning at the enemy and empties the meter.' },
+        { level:40, name:'Grounding Rod',   desc:'When the enemy damages you, part of that blow is earthed into a Static stack — charging your discharge faster.' },
+        { level:60, name:'Concussive Bolt', desc:'Critical Hits have a 10% chance to stun the enemy, freezing its action bar for 2s.' },
+        { level:80, name:'Galvanize',       desc:'Each Critical Hit permanently adds +10% Critical Hit damage for the rest of the fight (up to +100%).' }
       ]
     },
     {
@@ -4483,12 +4483,20 @@
   // Assassin Lv 1: Claws proficiency earns double XP.
   function assassinClawXpMult(st){ return assassinBonus(1, st) ? 2 : 1; }
   function thunderfuryBonus(reqLevel, st){ return classBonusActive('thunderfury', reqLevel, st); }
-  // Thunderfury "Chain Lightning": a crit-stack counter (0-7). +1 per Critical Hit, reset on a non-crit hit.
-  // Lv 1 spends it on attack speed (-10%/stack), Lv 20 on accuracy (+20%/stack).
-  var THUNDER_MAX_STACKS = 7, THUNDER_DRAIN_PCT = 0.5;
+  // Thunderfury "Chain Lightning" (Lv1): a crit-stack counter (0-7). +1 per Critical Hit, reset on a
+  // non-crit hit; spent on attack speed (-10%/stack via classAttackSpeedMult).
+  var THUNDER_MAX_STACKS = 7;
   function thunderStacks(st){ st = st || state; return thunderfuryBonus(1, st) ? Math.min(THUNDER_MAX_STACKS, st.thunderStacks || 0) : 0; }
-  // Lv 60: +100% crit damage while below 50% HP. Only meaningful on a crit (folded into critMult).
-  function thunderLowHpCritDmg(){ return (thunderfuryBonus(60) && state.playerHp < maxHp(state)*0.5) ? 1.0 : 0; }
+  // Static Charge (Lv20): a build-and-discharge meter on the activity (act.staticCharge, 0..MAX). Every
+  // landed hit adds one; Grounding Rod (Lv40) adds one per blow you take. When it fills, your next hit
+  // discharges a lightning burst (a multiple of that hit) and empties the meter.
+  var THUNDER_STATIC_MAX = 5;
+  var THUNDER_STATIC_DISCHARGE_MULT = 1.5; // discharge burst = this * the triggering hit's damage
+  function thunderStaticCharge(st){ st = st || state; var a = st.activity; return (a && a.type==='combat') ? Math.min(THUNDER_STATIC_MAX, a.staticCharge||0) : 0; }
+  // Galvanize (Lv80): each crit permanently adds +10% crit damage for the rest of the fight
+  // (act.galvanizeStacks, capped at +100%). Folded into critMult; reset when a new foe is engaged.
+  var THUNDER_GALVANIZE_MAX = 10, THUNDER_GALVANIZE_PER = 0.10;
+  function thunderGalvanizeCritDmg(st){ st = st || state; if(!thunderfuryBonus(80, st)) return 0; var a = st.activity; var n = (a && a.type==='combat') ? (a.galvanizeStacks||0) : 0; return Math.min(THUNDER_GALVANIZE_MAX, n) * THUNDER_GALVANIZE_PER; }
   function enemyStunned(st){ st = st || state; return !!(st.activity && st.activity.enemyStunUntil && st.activity.enemyStunUntil > Date.now()); }
   // ---- Treasure Hunter: bonuses scale with how much of your kit is high-rarity ----------
   var RARITY_ORDER = ['normal','rare','supreme','fantastic'];
@@ -4609,7 +4617,6 @@
   // Duelist Lv 40: +30% Accuracy while the class is active.
   function classAccuracyMult(st){
     st = st || state; var id = activeClassId(st);
-    if(id==='thunderfury' && classLevel(st,'thunderfury') >= 20) return 1 + 0.20 * Math.min(THUNDER_MAX_STACKS, st.thunderStacks || 0); // Storm Focus crit stacks
     if(id==='treasureHunter' && classLevel(st,'treasureHunter') >= 20) return 1 + 0.10 * treasureHunterCount(st, 2); // Appraiser: +10% accuracy per Supreme+ item
     if(id==='sharpshooter' && classLevel(st,'sharpshooter') >= 40) return 1.3; // Sharpshooter Lv 40: Steady Aim +30% Accuracy
     return 1;
@@ -9265,7 +9272,7 @@
     var m = monsterById(monsterId);
     if(!m) return;
     if(combatLevelEquivalent(state) < m.levelReq) return;
-    state.activity = { type:'combat', monsterId:monsterId, monsterHp:m.hp, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), disengageUsed:false, guardianBondUsed:false, samuraiFirstStrike:true, samuraiFocus:0 };
+    state.activity = { type:'combat', monsterId:monsterId, monsterHp:m.hp, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), disengageUsed:false, guardianBondUsed:false, samuraiFirstStrike:true, samuraiFocus:0, staticCharge:0, galvanizeStacks:0 };
     state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0; // fresh Duelist combat state
   }
 
@@ -9503,7 +9510,7 @@
     var physDmgMult = isWandAttack ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
     physDmgMult *= tenacityLowHpMult(state);
     // Elixir potions + familiar crit-damage buffs stack on top of the (capped) base+exploitation crit.
-    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + knightMissCritDmg() + thunderLowHpCritDmg() + treasureHunterCritDmgBonus() + newClassCritDmg() + pyromancerKindlingCritDmg(state) + (enchTot.critDamage||0)/100) : 1;
+    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + knightMissCritDmg() + thunderGalvanizeCritDmg() + treasureHunterCritDmgBonus() + newClassCritDmg() + pyromancerKindlingCritDmg(state) + (enchTot.critDamage||0)/100) : 1;
 
     // Accuracy vs Dodge: roll to land the hit. A miss deals no damage and fires no on-hit effects
     // (potions, proficiency XP), but you still trained your reflexes by swinging so accuracy can grow.
@@ -9598,19 +9605,26 @@
         act.bleedUntil = Date.now() + REAVER_BLEED_MS;
         spawnFloatingText('Rend x'+act.bleedStacks, 'ft-bonus');
       }
-      // Thunderfury (Chain Lightning): a Critical Hit builds a stack (attack speed / accuracy); a non-crit resets.
+      // Thunderfury (Chain Lightning, Lv1): a Critical Hit builds a crit-stack (attack speed); a non-crit resets.
       if(thunderfuryBonus(1)){
         if(isCrit){
           state.thunderStacks = Math.min(THUNDER_MAX_STACKS, (state.thunderStacks || 0) + 1);
-          // Lv 40 (Concussive Bolt): 10% chance a crit stuns the enemy, freezing its action bar for 2s.
-          if(thunderfuryBonus(40) && !offlineCapture && Math.random() < 0.10){ act.enemyStunUntil = Date.now() + 2000; spawnFloatingText('Stunned!', 'ft-rare'); }
-          // Lv 80 (Life Siphon): while below 25% HP, a crit drains HP (heal 50% of the damage dealt).
-          if(thunderfuryBonus(80) && state.playerHp < maxHp(state)*0.25){
-            var drained = Math.min(Math.round(effDmg * THUNDER_DRAIN_PCT), maxHp(state) - state.playerHp);
-            if(drained > 0){ state.playerHp += drained; spawnFloatingText('+'+drained+' HP (siphon)', 'ft-success'); }
-          }
+          // Concussive Bolt (Lv60): 10% chance a crit stuns the enemy, freezing its action bar for 2s.
+          if(thunderfuryBonus(60) && !offlineCapture && Math.random() < 0.10){ act.enemyStunUntil = Date.now() + 2000; spawnFloatingText('Stunned!', 'ft-rare'); }
+          // Galvanize (Lv80): each crit permanently adds +10% crit damage for the rest of this fight (folded into critMult).
+          if(thunderfuryBonus(80)) act.galvanizeStacks = Math.min(THUNDER_GALVANIZE_MAX, (act.galvanizeStacks || 0) + 1);
         } else {
           state.thunderStacks = 0;
+        }
+      }
+      // Static Charge (Lv20): every landed hit builds a Static stack; when the meter fills, this hit
+      // discharges a lightning burst at the enemy and empties it. (Grounding Rod also feeds the meter.)
+      if(thunderfuryBonus(20)){
+        act.staticCharge = Math.min(THUNDER_STATIC_MAX, (act.staticCharge || 0) + 1);
+        if(act.staticCharge >= THUNDER_STATIC_MAX){
+          act.staticCharge = 0;
+          var _discharge = Math.round(dmgToMonster * THUNDER_STATIC_DISCHARGE_MULT);
+          if(_discharge > 0){ act.monsterHp -= _discharge; spawnCombatFloat('⚡ Discharge -'+fmt(_discharge), 'ft-crit', true); }
         }
       }
       // Frostwarden Permafrost (Lv1): every landed hit stacks Chill, slowing the enemy's action bar.
@@ -9757,6 +9771,7 @@
     act.monsterTickAccum = 0;
     act.bleedStacks = 0; act.bleedDps = 0; act.bleedUntil = 0; // a fresh foe starts unbled (Reaver Rend doesn't carry over)
     act.samuraiFirstStrike = true; act.samuraiFocus = 0; // Samurai: arm the Iaijutsu/First Blood opener and reset the Bushido Focus combo
+    act.staticCharge = 0; act.galvanizeStacks = 0; // Thunderfury: fresh Static meter + Galvanize ramp against each foe
     act.chillStacks = 0; act.enemyChillUntil = 0; act.frostbiteStacks = 0; act.frostbiteDps = 0; act.frostbiteUntil = 0; // Frostwarden Chill/Frostbite don't carry between foes
     act.burnStacks = 0; act.burnUntil = 0; act.burnDps = 0; // Pyromancer Burn doesn't carry between foes
     state.heraldGuardStacks = 0; // Herald Perfect Guard streak starts fresh against each foe
@@ -9877,6 +9892,8 @@
       if(_absorbed > 0) spawnFloatingText('Absorbed '+Math.round(_absorbed)+'!', 'ft-success');
     }
     state.playerHp -= dmgToPlayer;
+    // Thunderfury Grounding Rod (Lv40): a blow you take earths part of its force into a Static stack, charging your discharge faster.
+    if(dmgToPlayer > 0 && thunderfuryBonus(40) && act && act.type==='combat'){ act.staticCharge = Math.min(THUNDER_STATIC_MAX, (act.staticCharge || 0) + 1); }
     if(dmgToPlayer > 0) spawnCombatFloat('-'+fmt(dmgToPlayer)+' '+(monster.element?elementIcon(monster.element):''), 'ft-taken', false); // damage taken + its element
     if(monster.element) awardElementXp(monster.element, dmgToPlayer); // Elemental Attunement also trains by taking that element's damage
     if(wardReflected > 0){
@@ -21350,7 +21367,7 @@
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, executionerLifestealPct:executionerLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, executionerExecuteThreshold:executionerExecuteThreshold, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
-      isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
+      isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
       BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,

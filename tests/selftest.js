@@ -2722,9 +2722,6 @@
     var chainHelm = base(); chainHelm.bodyArmor.helmet={tier:1,rarity:'normal',material:'chain'};
     eq(FF.activeClassId(chainHelm), null, 'all four armor pieces must be cloth');
 
-    var lv1 = base(); // fresh -> Lv 1 (Chain Lightning on)
-    var lv20 = base(); lv20.xp.thunderfury = FF.xpFloorForLevel(21); // ~Lv 21 (Storm Focus on)
-
     // Lv 1 Chain Lightning: crit stacks cut attack timer -10%/stack (cap 7 = -70%).
     eq(FF.THUNDER_MAX_STACKS, 7, 'crit stacks cap at 7');
     var s0 = base(); s0.thunderStacks=0; eq(FF.classAttackSpeedMult(s0), 1, '0 stacks => no reduction');
@@ -2736,29 +2733,27 @@
     eq(FF.thunderStacks(s10), 7, 'thunderStacks caps at 7 while active');
     eq(FF.thunderStacks(off), 0, 'no stacks while class inactive');
 
-    // Lv 20 Storm Focus: crit stacks grant +20% accuracy/stack.
-    eq(FF.classAccuracyMult(lv1), 1, 'Lv 1: no accuracy stacking yet');
-    var a3 = base(); a3.xp.thunderfury = FF.xpFloorForLevel(21); a3.thunderStacks=3;
-    near(FF.classAccuracyMult(a3), 1.60, 'Lv 20+, 3 stacks => +60% accuracy');
+    // Lv 20 Static Charge: the Static meter (act.staticCharge) reads capped at 5; empty outside combat.
+    eq(FF.THUNDER_STATIC_MAX, 5, 'static meter caps at 5');
+    var sc3 = base(); sc3.xp.thunderfury = FF.xpFloorForLevel(21); sc3.activity = { type:'combat', staticCharge:3 };
+    eq(FF.thunderStaticCharge(sc3), 3, 'reads the current Static meter');
+    var scCap = base(); scCap.activity = { type:'combat', staticCharge:9 };
+    eq(FF.thunderStaticCharge(scCap), 5, 'Static meter reads capped at 5');
+    eq(FF.thunderStaticCharge(base()), 0, 'no Static outside combat');
 
-    // Lv 60 Storm's Wrath: +100% crit damage while below 50% HP (reads global state).
-    var s = FF._state;
-    var snap = { xpT:s.xp.thunderfury, main:s.equippedMainhand, off:s.equippedOffhand, hp:s.playerHp,
-      helm:s.bodyArmor.helmet, chest:s.bodyArmor.chest, gaunt:s.bodyArmor.gauntlets, boots:s.bodyArmor.boots };
-    s.equippedMainhand='wandEarth'; s.equippedOffhand='wardEarth';
-    s.bodyArmor.helmet=cloth(); s.bodyArmor.chest=cloth(); s.bodyArmor.gauntlets=cloth(); s.bodyArmor.boots=cloth();
-    s.xp.thunderfury = FF.xpFloorForLevel(65); // ~Lv 65
-    s.playerHp = 999999; // full-ish (above 50%)
-    eq(FF.thunderLowHpCritDmg(), 0, 'above 50% HP: no crit-damage bonus');
-    s.playerHp = 1; // below 50%
-    near(FF.thunderLowHpCritDmg(), 1.0, 'below 50% HP: +100% crit damage');
-    s.xp.thunderfury = snap.xpT; s.equippedMainhand = snap.main; s.equippedOffhand = snap.off; s.playerHp = snap.hp;
-    s.bodyArmor.helmet = snap.helm; s.bodyArmor.chest = snap.chest; s.bodyArmor.gauntlets = snap.gaunt; s.bodyArmor.boots = snap.boots;
-
-    // Lv 40 Concussive Bolt: stun window helper.
+    // Lv 60 Concussive Bolt: stun window helper.
     eq(FF.enemyStunned({ activity:{ enemyStunUntil: Date.now()+2000 } }), true, 'active stun window => stunned');
     eq(FF.enemyStunned({ activity:{ enemyStunUntil: Date.now()-1 } }), false, 'expired stun window => not stunned');
     eq(FF.enemyStunned({ activity:{} }), false, 'no stun => not stunned');
+
+    // Lv 80 Galvanize: each crit adds +10% crit damage this fight (act.galvanizeStacks), capped at +100%.
+    eq(FF.THUNDER_GALVANIZE_MAX, 10, 'galvanize stacks cap at 10 (+100%)');
+    var g4 = base(); g4.xp.thunderfury = FF.xpFloorForLevel(85); g4.activity = { type:'combat', galvanizeStacks:4 };
+    near(FF.thunderGalvanizeCritDmg(g4), 0.40, 'Lv 80, 4 crit stacks => +40% crit damage');
+    var gCap = base(); gCap.xp.thunderfury = FF.xpFloorForLevel(85); gCap.activity = { type:'combat', galvanizeStacks:20 };
+    near(FF.thunderGalvanizeCritDmg(gCap), 1.0, 'Galvanize crit damage caps at +100%');
+    var gLow = base(); gLow.xp.thunderfury = FF.xpFloorForLevel(65); gLow.activity = { type:'combat', galvanizeStacks:4 };
+    eq(FF.thunderGalvanizeCritDmg(gLow), 0, 'no Galvanize below Class Lv 80');
 
     // Class familiar (lightning caster).
     var fam = FF.FAMILIAR_DATA.thunderfury;
