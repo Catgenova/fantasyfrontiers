@@ -6691,7 +6691,7 @@
     {id:'light',  name:'Ring of Light',  icon:svgIcon('ring',ELEMENT_META.light.color), kind:'elementDamage', element:'light', min:0.01, max:0.20},
     {id:'dark',   name:'Ring of Dark',   icon:svgIcon('ring',ELEMENT_META.dark.color),  kind:'elementDamage', element:'dark',  min:0.01, max:0.20},
     {id:'precision', name:'Ring of Precision', icon:svgIcon('ring','#d8d8d8'), kind:'accuracy',   min:0.05, max:0.30},
-    {id:'warding',   name:'Ring of Warding',   icon:svgIcon('ring','#4a9c8a'), kind:'resistance', min:0.01, max:0.20}
+    {id:'warding',   name:'Ring of Warding',   icon:svgIcon('ring','#4a9c8a'), kind:'resistance', min:0.01, max:0.20, retired:true} // no longer craftable -- the Warding role moved to the Amulet of Warding; existing rings still work
   ];
   var RING_TYPE_MAP = {};
   RING_TYPES.forEach(function(rt){ RING_TYPE_MAP[rt.id] = rt; });
@@ -6740,34 +6740,58 @@
       }
     });
   });
-  function getAmuletTierData(tierIndex){
+  // Amulets are typed like rings but share the single amulet slot. The plain Amulet gives flat Armor;
+  // the Amulet of Warding gives flat damage resistance (the role the old Ring of Warding filled). The
+  // plain amulet keeps its legacy id scheme (amulet_t<i>_<rarity>) so existing saves/uniques are
+  // untouched; typed amulets prefix their type (amulet_warding_t<i>_<rarity>).
+  var AMULET_TYPES = [
+    { id:'plain',   name:'Amulet',            icon:svgIcon('amulet','#c9a227'), kind:'defense' },
+    { id:'warding', name:'Amulet of Warding', icon:svgIcon('amulet','#4a9c8a'), kind:'resistance', min:0.01, max:0.20 }
+  ];
+  var AMULET_TYPE_MAP = {}; AMULET_TYPES.forEach(function(at){ AMULET_TYPE_MAP[at.id] = at; });
+  function amuletBaseId(typeId, tierIndex, rarity){ return 'amulet_'+((typeId && typeId!=='plain') ? typeId+'_' : '')+'t'+tierIndex+'_'+rarity; }
+  function parseAmuletId(id){ var m = /^amulet_(?:(warding)_)?t(\d+)_(\w+)$/.exec(id); return m ? { typeId:(m[1]||'plain'), tierIndex:parseInt(m[2],10), rarity:m[3] } : null; }
+  function amuletSlotType(s){ return (s && s.typeId) ? s.typeId : 'plain'; } // legacy slots (no typeId) are the plain Amulet
+  function getAmuletTierData(typeId, tierIndex){
+    var at = AMULET_TYPE_MAP[typeId] || AMULET_TYPE_MAP.plain;
     var inputs = {};
     inputs['twine_t'+tierIndex] = 3;
     // Amulets seat a Diving Pearl (rings keep the faceted mining Gem) -- the two jewelry lines split.
     inputs['diving_t'+tierIndex] = 1;
     inputs['goldsmithing_t'+tierIndex] = 1;
-    if(tierIndex > 0) inputs['amulet_t'+(tierIndex-1)+'_normal'] = 1; // + a Normal previous tier
-    return {
+    if(tierIndex > 0) inputs[amuletBaseId(at.id, tierIndex-1, 'normal')] = 1; // + a Normal previous tier of the same type
+    var out = {
+      typeId: at.id,
       tierIndex: tierIndex,
-      name: METAL_TIER_NAMES[tierIndex] + ' Amulet',   // named after its goldsmithing setting's metal
+      name: METAL_TIER_NAMES[tierIndex] + ' ' + at.name,   // named after its goldsmithing setting's metal
       levelReq: TIER_LEVELS[tierIndex],
       xp: tierXp(20, tierIndex),
-      defense: tierStat(2, tierIndex),
       inputs: inputs,
       time: tierTime(7,0.3,tierIndex)
     };
+    // Warding amulets scale their resistance linearly across the tier ladder (Normal rarity); the plain
+    // amulet keeps its flat defense stat.
+    if(at.kind==='resistance') out.bonus = at.min + (at.max - at.min) * (TIER_COUNT>1 ? tierIndex/(TIER_COUNT-1) : 0);
+    else out.defense = tierStat(2, tierIndex);
+    return out;
   }
   var AMULET_ITEMS = {};
-  ['normal','rare','supreme','fantastic'].forEach(function(rarityId){
-    var r = getRarity(rarityId);
-    for(var i=0;i<TIER_COUNT;i++){
-      var data = getAmuletTierData(i);
-      var id = 'amulet_t'+i+'_'+rarityId;
-      AMULET_ITEMS[id] = {
-        id: id, name: r.label + data.name, icon:svgIcon('amulet','#c9a227'), sell: tierSell(15,i)*r.mult,
-        tierIndex: i, rarity: rarityId, defense: Math.round(data.defense*r.mult)
-      };
-    }
+  AMULET_TYPES.forEach(function(at){
+    ['normal','rare','supreme','fantastic'].forEach(function(rarityId){
+      var r = getRarity(rarityId);
+      for(var i=0;i<TIER_COUNT;i++){
+        var data = getAmuletTierData(at.id, i);
+        var id = amuletBaseId(at.id, i, rarityId);
+        var item = {
+          id: id, name: r.label + data.name, icon: at.icon, sell: tierSell(15,i)*r.mult,
+          typeId: at.id, tierIndex: i, rarity: rarityId, kind: at.kind
+        };
+        // Warding amulets scale resistance 2x/4x/8x with rarity (like the old ring); plain scales defense.
+        if(at.kind==='resistance') item.bonus = data.bonus * WAND_RARITY_DMG_MULT[rarityId];
+        else item.defense = Math.round(data.defense * r.mult);
+        AMULET_ITEMS[id] = item;
+      }
+    });
   });
   Object.assign(ALL_SELLABLE, RING_ITEMS, AMULET_ITEMS);
   function craftRing(typeId, tierIndex){
@@ -6777,11 +6801,11 @@
     if(!hasInputs(data.inputs)){ addLog('Not enough materials to craft ' + data.name + '.', 'danger'); return; }
     placeNewCraftActivity('jewelrycrafting', null, 'ring', { type:'craft', craftKind:'ring', typeId:typeId, tierIndex:tierIndex, progress:0 });
   }
-  function craftAmulet(tierIndex){
-    var data = getAmuletTierData(tierIndex);
+  function craftAmulet(typeId, tierIndex){
+    var data = getAmuletTierData(typeId, tierIndex);
     if(getLevel(state.xp.jewelrycrafting) < data.levelReq) return;
     if(!hasInputs(data.inputs)){ addLog('Not enough materials to craft ' + data.name + '.', 'danger'); return; }
-    placeNewCraftActivity('jewelrycrafting', null, 'amulet', { type:'craft', craftKind:'amulet', tierIndex:tierIndex, progress:0 });
+    placeNewCraftActivity('jewelrycrafting', null, 'amulet', { type:'craft', craftKind:'amulet', typeId:(typeId||'plain'), tierIndex:tierIndex, progress:0 });
   }
   var RING_SLOT_IDS = ['ring1','ring2','ring3','ring4','ring5'];
   function findEmptyRingSlot(){
@@ -6825,10 +6849,10 @@
     var cur = state.jewelrySlots.amulet;
     if(cur.uid){ /* displaced unique stays in the table */ }
     else if(cur.tier > 0){
-      addItem('amulet_t'+(cur.tier-1)+'_'+cur.rarity, 1);
+      addItem(amuletBaseId(amuletSlotType(cur), cur.tier-1, cur.rarity), 1);
     }
     state.inventory[itemId] -= 1;
-    state.jewelrySlots.amulet = { tier: item.tierIndex+1, rarity: item.rarity };
+    state.jewelrySlots.amulet = { tier: item.tierIndex+1, rarity: item.rarity, typeId: item.typeId };
     armorPanelExpanded = true;
     addLog('You equipped the ' + item.name + '.', 'important');
   }
@@ -6836,7 +6860,7 @@
     var cur = state.jewelrySlots.amulet;
     if(cur && cur.uid){ state.jewelrySlots.amulet = { tier:0, rarity:'normal' }; return; } // unique stays in the table
     if(!cur || cur.tier <= 0) return;
-    addItem('amulet_t'+(cur.tier-1)+'_'+cur.rarity, 1);
+    addItem(amuletBaseId(amuletSlotType(cur), cur.tier-1, cur.rarity), 1);
     state.jewelrySlots.amulet = { tier:0, rarity:'normal' };
   }
   function getRingItemInSlot(state, slotId){
@@ -6847,7 +6871,7 @@
   function getEquippedAmuletItem(state){
     var s = state.jewelrySlots && state.jewelrySlots.amulet;
     if(!s || s.tier<=0) return null;
-    return AMULET_ITEMS['amulet_t'+(s.tier-1)+'_'+s.rarity] || null;
+    return AMULET_ITEMS[amuletBaseId(amuletSlotType(s), s.tier-1, s.rarity)] || null;
   }
   // Sums every equipped ring's contribution (up to 5 at once) for the type(s) that
   // actually matter to this weapon -- scaled per-ring by how much of the weapon's own
@@ -6902,8 +6926,16 @@
   }
   function getAmuletDefenseBonus(state){
     var amulet = getEquippedAmuletItem(state);
-    return amulet ? amulet.defense : 0;
+    return (amulet && amulet.defense) ? amulet.defense : 0; // only the plain Amulet carries defense
   }
+  // Flat damage resistance from an equipped Amulet of Warding (0 for the plain Amulet).
+  function getAmuletResistanceBonus(state){
+    var amulet = getEquippedAmuletItem(state);
+    return (amulet && amulet.kind==='resistance') ? (amulet.bonus || 0) : 0;
+  }
+  // Total flat damage resistance from Warding gear -- legacy Warding rings + the Amulet of Warding --
+  // capped so it can never fully negate incoming damage.
+  function getWardResistanceBonus(st){ st = st || state; return Math.min(0.9, getRingResistanceBonus(st) + getAmuletResistanceBonus(st)); }
 
   function findActiveCraftSlotFor(skill, itemId){
     if(state.activity.type==='craft' && state.activity.skill===skill && state.activity.itemId===itemId) return {primary:true, act:state.activity};
@@ -6944,7 +6976,7 @@
     if(craftKind==='belt') return act.tierIndex===params.tierIndex;
     if(craftKind==='offhand') return act.typeId===params.typeId;
     if(craftKind==='ring') return act.typeId===params.typeId && act.tierIndex===params.tierIndex;
-    if(craftKind==='amulet') return act.tierIndex===params.tierIndex;
+    if(craftKind==='amulet') return (act.typeId||'plain')===(params.typeId||'plain') && act.tierIndex===params.tierIndex;
     if(craftKind==='workshop') return act.skillId===params.skillId && act.tierIndex===params.tierIndex;
     if(craftKind==='cottage') return act.tierIndex===params.tierIndex;
     return false;
@@ -7010,7 +7042,7 @@
       return OFFHAND_TYPE_RECIPES[act.typeId][oTier];
     }
     if(act.craftKind==='ring') return getRingTierData(act.typeId, act.tierIndex);
-    if(act.craftKind==='amulet') return getAmuletTierData(act.tierIndex);
+    if(act.craftKind==='amulet') return getAmuletTierData(act.typeId||'plain', act.tierIndex);
     if(act.craftKind==='workshop') return getWorkshopTierData(act.skillId, act.tierIndex);
     if(act.craftKind==='cottage') return getCottageTierData(act.tierIndex);
     return null;
@@ -7042,7 +7074,7 @@
     } else if(act.craftKind==='ring'){
       addItem('ring_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
     } else if(act.craftKind==='amulet'){
-      addItem('amulet_t'+act.tierIndex+'_'+rarity, 1);
+      addItem(amuletBaseId(act.typeId||'plain', act.tierIndex, rarity), 1);
     } else if(act.craftKind==='workshop'){
       addItem('workshop_'+act.skillId+'_t'+act.tierIndex, 1);
       rarity = 'normal';
@@ -7805,7 +7837,7 @@
   var selectedWardTier = {};
   var selectedWandTier = {};
   var selectedRingTier = {};
-  var selectedAmuletTier = null;
+  var selectedAmuletTier = {}; // keyed by amulet typeId (plain / warding)
 
   var logVersion = 0;
   // When set (only during applyOfflineProgress), gained XP/items/gold accumulate here and
@@ -8212,7 +8244,7 @@
       : id.indexOf('stshield_')===0 ? 'offhand'
       : id.indexOf('bodyarmor_')===0 ? 'bodyarmor'
       : id.indexOf('ring_')===0 ? 'ring'
-      : id.indexOf('amulet_t')===0 ? 'amulet' : null;
+      : (id.indexOf('amulet_t')===0 || id.indexOf('amulet_warding_t')===0) ? 'amulet' : null;
     if(!kind) return null;
     var tm = /_t(\d+)/.exec(id); var tier = tm ? parseInt(tm[1],10) : 0;
     return { kind:kind, tier:tier, rarity:(itemRarityId(id)||'normal'), baseId:id };
@@ -8326,8 +8358,9 @@
   }
   function equipUniqueAmulet(uid){
     var u = state.uniqueItems[uid], cur = state.jewelrySlots.amulet;
-    if(cur.uid){ /* release previously-equipped unique */ } else if(cur.tier>0){ addItem('amulet_t'+(cur.tier-1)+'_'+cur.rarity, 1); }
-    state.jewelrySlots.amulet = { tier: u.tier+1, rarity: u.rarity, uid: uid };
+    if(cur.uid){ /* release previously-equipped unique */ } else if(cur.tier>0){ addItem(amuletBaseId(amuletSlotType(cur), cur.tier-1, cur.rarity), 1); }
+    var pa = parseAmuletId(u.base);
+    state.jewelrySlots.amulet = { tier: u.tier+1, rarity: u.rarity, uid: uid, typeId: (pa ? pa.typeId : 'plain') };
     addLog('You equipped '+uniqueDisplayName(u)+'.','important'); return true;
   }
   function equipUnique(uid){
@@ -8428,7 +8461,7 @@
     if(state.jewelrySlots) RING_SLOT_IDS.forEach(function(sl){ var s=state.jewelrySlots[sl];
       if(s && !slotHasValidUnique(s.uid) && s.tier > 0 && s.typeId) out.push({ slot:'ring:'+sl, baseId:'ring_'+s.typeId+'_t'+(s.tier-1)+'_'+s.rarity }); });
     var am = state.jewelrySlots && state.jewelrySlots.amulet;
-    if(am && !slotHasValidUnique(am.uid) && am.tier > 0) out.push({ slot:'amulet', baseId:'amulet_t'+(am.tier-1)+'_'+am.rarity });
+    if(am && !slotHasValidUnique(am.uid) && am.tier > 0) out.push({ slot:'amulet', baseId:amuletBaseId(amuletSlotType(am), am.tier-1, am.rarity) });
     return out.filter(function(e){ var p = parseImprovable(e.baseId); return p && isImprovableRarity(p.rarity); }); // Normal gear can't be improved
   }
   // Selecting an equipped base just points improveSel at an 'equip:<slot>' token -- NO conversion yet.
@@ -9334,7 +9367,7 @@
     // The hit lands its physical type AND the enemy's element together: the element is amplified by
     // the player's armor weakness to it (leather->fire, chain->earth, plate->water).
     var elementMult = incomingElementMult(state, monster);
-    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster) * frostwardenWaterResistMult(monster) * templarIncomingDmgMult() * lumenIncomingMult(state) * sentinelIncomingMult(state) * juggernautIncomingMult(state) * berserkerRecklessTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getRingResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring flat resistance
+    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster) * frostwardenWaterResistMult(monster) * templarIncomingDmgMult() * lumenIncomingMult(state) * sentinelIncomingMult(state) * juggernautIncomingMult(state) * berserkerRecklessTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getWardResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring/amulet flat resistance
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
     var blockChance = playerBlockChance(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
@@ -11248,9 +11281,10 @@
     html += renderRecipeGrid('jewelrycrafting', CRAFTING_SKILLS.jewelrycrafting.recipes);
 
     html += '<h3>Forge Rings</h3>';
-    html += '<div class="section-intro">Physical Rings (Blunt/Slash/Pierce) boost their matching damage type, scaled by how much of your weapon\'s damage is that type. Elemental Rings (Fire/Water/Earth/Light/Dark) add +1-20% damage of their element, a Precision Ring adds +5-30% Accuracy, and a Warding Ring adds +1-20% flat damage resistance. Elemental/Precision/Warding rings scale their bonus 2x/4x/8x with rarity. Sacrificing a Ring restores extra Faith.</div>';
+    html += '<div class="section-intro">Physical Rings (Blunt/Slash/Pierce) boost their matching damage type, scaled by how much of your weapon\'s damage is that type. Elemental Rings (Fire/Water/Earth/Light/Dark) add +1-20% damage of their element, and a Precision Ring adds +5-30% Accuracy. Elemental/Precision rings scale their bonus 2x/4x/8x with rarity. (Flat damage resistance now comes from the Amulet of Warding below.) Sacrificing a Ring restores extra Faith.</div>';
     html += '<div class="card-grid">';
     RING_TYPES.forEach(function(rt){
+      if(rt.retired) return; // retired ring types (e.g. Warding) stay usable if owned but are no longer craftable
       if(selectedRingTier[rt.id] === undefined) selectedRingTier[rt.id] = maxUnlocked;
       var sel = Math.min(selectedRingTier[rt.id], maxUnlocked);
       var data = getRingTierData(rt.id, sel);
@@ -11281,31 +11315,37 @@
     html += '</div>';
 
     html += '<h3>Forge Amulets</h3>';
-    html += '<div class="section-intro">Amulets add flat Armor instead of a damage-type boost. Sacrificing an Amulet also restores extra Faith.</div>';
-    if(selectedAmuletTier===null) selectedAmuletTier = maxUnlocked;
-    var amSel = Math.min(selectedAmuletTier, maxUnlocked);
-    var amData = getAmuletTierData(amSel);
-    var amActiveSlot = findActiveSpecialCraftSlotFor('amulet', {tierIndex:amSel});
-    var amIsActive = !!amActiveSlot;
-    var amEffTime = amData.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, 'jewelrycrafting');
-    var amPct = amIsActive ? clamp(amActiveSlot.act.progress/amEffTime*100,0,100) : 0;
-    var amReady = lvl >= amData.levelReq && hasInputs(amData.inputs);
-    var amFillId = amIsActive ? (amActiveSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+amActiveSlot.index) : '';
-    html += '<div class="card-grid"><div class="item-card'+(amIsActive?' active-item':'')+'">';
-    html += '<div class="item-top"><div class="item-icon">'+svgIcon('amulet','#c9a227')+'</div><div><div class="item-name">Amulet</div><div class="item-meta">Flat armor bonus</div></div></div>';
-    html += '<div class="inputs-line">Tier: '+tierStepper('amulet','',tierRange(maxUnlocked),amSel,METAL_TIER_NAMES[amSel]+' (Lv'+TIER_LEVELS[amSel]+')',amIsActive)+'</div>';
-    html += '<div class="item-stats"><span>+'+Math.round(amData.xp*1.5)+' XP</span><span>'+amData.name+'</span><span>defense '+amData.defense+'</span></div>';
-    html += '<div class="chance-line">Output: <b>1x '+amData.name+'</b> at <b>'+jewelrySuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
-    html += '<div class="inputs-line">Needs: '+inputsLine(amData.inputs, 'inp-amulet')+'</div>';
-    html += '<div class="progress-track"><div class="progress-fill"'+(amIsActive?' id="'+amFillId+'"':'')+' style="width:'+amPct+'%"></div></div>';
-    if(amIsActive){
-      html += amActiveSlot.primary
-        ? '<button class="action-btn stop" data-action="stop">Stop</button>'
-        : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+amActiveSlot.index+'">Stop</button>';
-    } else {
-      html += '<button class="action-btn" data-action="forgeAmulet" data-tier="'+amSel+'" '+(amReady?'':'disabled')+'>Forge</button>';
-    }
-    html += '</div></div>';
+    html += '<div class="section-intro">The plain <b>Amulet</b> adds flat Armor. The <b>Amulet of Warding</b> adds +1-20% flat damage resistance instead (scaling 2x/4x/8x with rarity, like the old Ring of Warding). Sacrificing an Amulet also restores extra Faith.</div>';
+    html += '<div class="card-grid">';
+    AMULET_TYPES.forEach(function(at){
+      if(selectedAmuletTier[at.id] === undefined) selectedAmuletTier[at.id] = maxUnlocked;
+      var amSel = Math.min(selectedAmuletTier[at.id], maxUnlocked);
+      var amData = getAmuletTierData(at.id, amSel);
+      var amActiveSlot = findActiveSpecialCraftSlotFor('amulet', {typeId:at.id, tierIndex:amSel});
+      var amIsActive = !!amActiveSlot;
+      var amEffTime = amData.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, 'jewelrycrafting');
+      var amPct = amIsActive ? clamp(amActiveSlot.act.progress/amEffTime*100,0,100) : 0;
+      var amReady = lvl >= amData.levelReq && hasInputs(amData.inputs);
+      var amFillId = amIsActive ? (amActiveSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+amActiveSlot.index) : '';
+      var isWard = at.kind==='resistance';
+      var normPct = isWard ? Math.round(amData.bonus*100) : 0;
+      html += '<div class="item-card'+(amIsActive?' active-item':'')+'">';
+      html += '<div class="item-top"><div class="item-icon">'+at.icon+'</div><div><div class="item-name">'+at.name+'</div><div class="item-meta">'+(isWard ? 'Flat damage resistance' : 'Flat armor bonus')+'</div></div></div>';
+      html += '<div class="inputs-line">Tier: '+tierStepper('amulet',at.id,tierRange(maxUnlocked),amSel,METAL_TIER_NAMES[amSel]+' (Lv'+TIER_LEVELS[amSel]+')',amIsActive)+'</div>';
+      html += '<div class="item-stats"><span>+'+Math.round(amData.xp*1.5)+' XP</span><span>'+amData.name+'</span>'+(isWard ? '<span>+'+normPct+'% resist (Normal)</span><span>+'+Math.round(normPct*WAND_RARITY_DMG_MULT.fantastic)+'% (Fantastic)</span>' : '<span>defense '+amData.defense+'</span>')+'</div>';
+      html += '<div class="chance-line">Output: <b>1x '+amData.name+'</b> at <b>'+jewelrySuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
+      html += '<div class="inputs-line">Needs: '+inputsLine(amData.inputs, 'inp-amulet-'+at.id)+'</div>';
+      html += '<div class="progress-track"><div class="progress-fill"'+(amIsActive?' id="'+amFillId+'"':'')+' style="width:'+amPct+'%"></div></div>';
+      if(amIsActive){
+        html += amActiveSlot.primary
+          ? '<button class="action-btn stop" data-action="stop">Stop</button>'
+          : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+amActiveSlot.index+'">Stop</button>';
+      } else {
+        html += '<button class="action-btn" data-action="forgeAmulet" data-type="'+at.id+'" data-tier="'+amSel+'" '+(amReady?'':'disabled')+'>Forge</button>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
     return html;
   }
 
@@ -12037,13 +12077,15 @@
     html += '</div>';
     return html;
   }
+  // Compact stat readout for an amulet item -- defense (plain) or damage resistance (warding).
+  function amuletStatText(item){ return (item.kind==='resistance') ? (Math.round((item.bonus||0)*100)+'% resist') : ('def '+(item.defense||0)); }
   function renderAmuletEquipSection(){
     var html = '<h3>Amulet</h3>';
     var currentAmulet = getEquippedAmuletItem(state);
     var ownedAmulets = Object.keys(AMULET_ITEMS).filter(function(id){ return (state.inventory[id]||0)>0; })
       .sort(function(a,b){ return AMULET_ITEMS[a].tierIndex - AMULET_ITEMS[b].tierIndex; });
     html += '<div class="card-grid"><div class="item-card">';
-    html += '<div class="item-top"><div class="item-icon">'+svgIcon('amulet','#c9a227')+'</div><div><div class="item-name">Amulet</div><div class="item-meta">'+(currentAmulet ? currentAmulet.name+' &bull; defense '+currentAmulet.defense : 'Not equipped')+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+svgIcon('amulet','#c9a227')+'</div><div><div class="item-name">Amulet</div><div class="item-meta">'+(currentAmulet ? escapeHtml(currentAmulet.name)+' &bull; '+amuletStatText(currentAmulet) : 'Not equipped')+'</div></div></div>';
     if(ownedAmulets.length===0){
       html += '<div class="empty-note">No Amulets in inventory. Forge one in Crafting &rarr; Jewelrycrafting.</div>';
     } else {
@@ -12051,8 +12093,11 @@
       ownedAmulets.forEach(function(id){
         var item = AMULET_ITEMS[id];
         var qty = state.inventory[id]||0;
-        var amcmp = (currentAmulet && currentAmulet.id===id) ? '<span class="equip-cmp eq">equipped</span>' : (' vs equipped '+equipDeltaChip(item.defense, currentAmulet?currentAmulet.defense:0)+' def');
-        html += '<button class="style-btn" data-action="equipAmulet" data-item="'+id+'">'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">def '+item.defense+' '+amcmp+'</span></button>';
+        var amcmp;
+        if(currentAmulet && currentAmulet.id===id) amcmp = '<span class="equip-cmp eq">equipped</span>';
+        else if(currentAmulet && currentAmulet.kind===item.kind) amcmp = ' vs equipped '+(item.kind==='resistance' ? equipDeltaChip(item.bonus, currentAmulet.bonus, true) : (equipDeltaChip(item.defense, currentAmulet.defense)+' def'));
+        else amcmp = '';
+        html += '<button class="style-btn" data-action="equipAmulet" data-item="'+id+'">'+item.icon+' '+escapeHtml(item.name)+' <span class="style-lvl">x'+qty+'</span><span class="style-type">'+amuletStatText(item)+' '+amcmp+'</span></button>';
       });
       html += '</div>';
     }
@@ -13464,7 +13509,7 @@
     if(workshopSkillId==='runesmithing') WARD_TYPES.forEach(function(w){ out.push({ craftKind:'ward', params:{typeId:w.id}, label:w.name, icon:w.icon }); });
     Object.keys(BODY_ARMOR_MATERIALS).forEach(function(mk){ var m=BODY_ARMOR_MATERIALS[mk]; if(m.skillId===workshopSkillId) (m.slots||[]).forEach(function(sl){ var slotLabel=(m.slotLabels&&m.slotLabels[sl])||sl; out.push({ craftKind:'bodyarmor', params:{material:mk, slot:sl}, label:(m.label?m.label+' ':'')+slotLabel, icon:m.icon }); }); });
     if(workshopSkillId==='leatherworking') out.push({ craftKind:'belt', params:{}, label:'Belt', icon:svgIcon('belt','#8a6a42') });
-    if(workshopSkillId==='jewelrycrafting'){ RING_TYPES.forEach(function(rt){ out.push({ craftKind:'ring', params:{typeId:rt.id}, label:rt.name, icon:rt.icon }); }); out.push({ craftKind:'amulet', params:{}, label:'Amulet', icon:svgIcon('amulet','#c9a227') }); }
+    if(workshopSkillId==='jewelrycrafting'){ RING_TYPES.forEach(function(rt){ if(rt.retired) return; out.push({ craftKind:'ring', params:{typeId:rt.id}, label:rt.name, icon:rt.icon }); }); AMULET_TYPES.forEach(function(at){ out.push({ craftKind:'amulet', params:{typeId:at.id}, label:at.name, icon:at.icon }); }); }
     if(workshopSkillId==='blacksmithing') TOOL_TYPES.forEach(function(tt){ out.push({ craftKind:'tool', params:{skillId:tt.skillId}, label:tt.name, icon:tt.icon }); });
     return out;
   }
@@ -17906,7 +17951,7 @@
     if(itemId.indexOf('belt_t')===0) return 'equipBelt';
     if(itemId.indexOf('relic_t')===0) return 'equipRelic';
     if(itemId.indexOf('ring_')===0) return 'equipRing';
-    if(itemId.indexOf('amulet_t')===0) return 'equipAmulet';
+    if(itemId.indexOf('amulet_')===0) return 'equipAmulet';
     return null;
   }
   // Inventory is grouped into 4 broad buckets. Equipment is anything equip-able
@@ -18987,7 +19032,7 @@
     ward:     { get:function(sub){ return selectedWardTier[sub]; },        set:function(sub,v){ selectedWardTier[sub]=v; } },
     wand:     { get:function(sub){ return selectedWandTier[sub]; },        set:function(sub,v){ selectedWandTier[sub]=v; } },
     ring:     { get:function(sub){ return selectedRingTier[sub]; },        set:function(sub,v){ selectedRingTier[sub]=v; } },
-    amulet:   { get:function(){ return selectedAmuletTier; },              set:function(sub,v){ selectedAmuletTier=v; } }
+    amulet:   { get:function(sub){ return selectedAmuletTier[sub]; },      set:function(sub,v){ selectedAmuletTier[sub]=v; } }
   };
 
   document.getElementById('app').addEventListener('click', function(e){
@@ -19072,7 +19117,7 @@
     } else if(action==='unequipRing'){
       unequipRing(btn.getAttribute('data-slot'));
     } else if(action==='forgeAmulet'){
-      craftAmulet(parseInt(btn.getAttribute('data-tier'),10));
+      craftAmulet(btn.getAttribute('data-type')||'plain', parseInt(btn.getAttribute('data-tier'),10));
     } else if(action==='equipAmulet'){
       equipAmulet(btn.getAttribute('data-item'));
     } else if(action==='unequipAmulet'){
@@ -19829,7 +19874,7 @@
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax,
-      RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS,
+      RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
       BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
       DAMAGE_TYPES:DAMAGE_TYPES
     };

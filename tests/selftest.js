@@ -863,13 +863,13 @@
     // The chain is inserted: rings and amulets now seat their gem in a Setting.
     var ring5 = FF.getRingTierData('fire', 5).inputs;
     eq(ring5['goldsmithing_t5'], 1, 'rings now require a matching Setting');
-    var am5 = FF.getAmuletTierData(5).inputs;
+    var am5 = FF.getAmuletTierData('plain', 5).inputs;
     eq(am5['goldsmithing_t5'], 1, 'amulets now require a matching Setting');
     // Rings and amulets now also consume a Normal previous tier (like Weaponsmithing/Armorsmithing).
     eq(ring5['ring_fire_t4_normal'], 1, 'ring now consumes its Normal previous tier');
     eq(am5['amulet_t4_normal'], 1, 'amulet now consumes its Normal previous tier');
     ok(FF.getRingTierData('fire', 0).inputs['ring_fire_t-1_normal'] === undefined, 'tier 0 ring has no previous-tier requirement');
-    ok(FF.getAmuletTierData(0).inputs['amulet_t-1_normal'] === undefined, 'tier 0 amulet has no previous-tier requirement');
+    ok(FF.getAmuletTierData('plain', 0).inputs['amulet_t-1_normal'] === undefined, 'tier 0 amulet has no previous-tier requirement');
     // The gem/twine part of the recipe is untouched (Setting is additive, not a replacement).
     ok(ring5['twine_t5'] === 3 && ring5['digging_t5'] == null, 'ring keeps its Twine and does not eat raw clay directly');
     ok(FF.CRAFT_PHYSIQUE.pottery && FF.CRAFT_PHYSIQUE.goldsmithing, 'physique tables include the new skills');
@@ -881,7 +881,7 @@
     eq(FF.GATHERING_SKILLS.diving.items.length, FF.TIER_COUNT, 'diving has 21 pearl tiers');
     eq(FF.GATHERING_SKILLS.diving.items[0].id, 'diving_t0', 'diving items follow the tier id scheme');
     // Amulets now seat a matching-tier Pearl and no longer the mining Gem; rings keep the Gem.
-    var am5 = FF.getAmuletTierData(5).inputs;
+    var am5 = FF.getAmuletTierData('plain', 5).inputs;
     var ring5 = FF.getRingTierData('fire', 5).inputs;
     eq(am5['diving_t5'], 1, 'amulets now seat a matching Diving Pearl');
     ok(Object.keys(am5).every(function(k){ return k.indexOf('gem_') !== 0; }), 'amulets no longer consume a faceted mining Gem');
@@ -2415,6 +2415,51 @@
     // Kind rings do not add physical (damage-type) multiplier; physical rings do.
     eq(FF.getRingDamageMultiplier(oneFire, {blunt:1}), 1, 'element rings add no physical damage multiplier');
     ok(FF.getRingDamageMultiplier(st([sl('blunt', TC, 'normal')]), {blunt:1}) > 1, 'blunt ring boosts blunt weapons');
+  });
+
+  // ---- Amulet of Warding: the Warding resistance role moved from a ring to a typed amulet -----------
+  suite('jewelry: Amulet of Warding', function(){
+    var TC = FF.TIER_COUNT;
+    // The Warding ring is retired (no longer craftable) but its items still exist so nobody loses gear.
+    var wardRing = FF.RING_TYPES.filter(function(rt){ return rt.id==='warding'; })[0];
+    ok(wardRing && wardRing.retired === true, 'Ring of Warding is retired (not craftable)');
+    ok(FF.RING_ITEMS['ring_warding_t'+(TC-1)+'_normal'], 'legacy Warding ring items still exist');
+
+    // A typed Amulet of Warding now exists alongside the plain defense Amulet.
+    var types = FF.AMULET_TYPES.map(function(a){ return a.id; });
+    ok(types.indexOf('plain') !== -1 && types.indexOf('warding') !== -1, 'plain + warding amulet types exist');
+    // Warding amulet id scheme is prefixed; plain keeps the legacy scheme untouched.
+    eq(FF.amuletBaseId('plain', 5, 'rare'), 'amulet_t5_rare', 'plain amulet keeps its legacy id');
+    eq(FF.amuletBaseId('warding', 5, 'rare'), 'amulet_warding_t5_rare', 'warding amulet is type-prefixed');
+    eq(FF.parseAmuletId('amulet_warding_t5_rare').typeId, 'warding', 'warding amulet id parses back to its type');
+    eq(FF.parseAmuletId('amulet_t5_rare').typeId, 'plain', 'plain amulet id parses to plain');
+
+    // Warding amulet grants resistance (not defense) and scales 2x/4x/8x with rarity like the old ring.
+    var wNorm = FF.AMULET_ITEMS['amulet_warding_t'+(TC-1)+'_normal'];
+    var wFant = FF.AMULET_ITEMS['amulet_warding_t'+(TC-1)+'_fantastic'];
+    near(wNorm.bonus, 0.20, 'top Warding amulet (Normal) = +20% resist');
+    ok(wNorm.defense == null, 'warding amulet has no defense');
+    near(wFant.bonus, 1.60, 'Fantastic warding amulet scales 8x (capped later in combat)');
+
+    // Its inputs are the AMULET line (Diving Pearl + Setting + prev-tier warding amulet), not the ring's Gem.
+    var win = FF.getAmuletTierData('warding', 5).inputs;
+    eq(win['diving_t5'], 1, 'warding amulet seats a Diving Pearl');
+    eq(win['goldsmithing_t5'], 1, 'warding amulet seats a Setting');
+    eq(win['amulet_warding_t4_normal'], 1, 'warding amulet consumes its own Normal previous tier');
+    ok(Object.keys(win).every(function(k){ return k.indexOf('gem_') !== 0; }), 'warding amulet uses no faceted Gem');
+
+    // Equipped warding amulet feeds the combined ward resistance; the plain amulet gives none.
+    function stAmulet(typeId, tier, rarity){ return { jewelrySlots:{ ring1:{typeId:null,tier:0,rarity:'normal'}, ring2:{typeId:null,tier:0,rarity:'normal'}, ring3:{typeId:null,tier:0,rarity:'normal'}, ring4:{typeId:null,tier:0,rarity:'normal'}, ring5:{typeId:null,tier:0,rarity:'normal'}, amulet:{tier:tier, rarity:rarity, typeId:typeId} } }; }
+    near(FF.getAmuletResistanceBonus(stAmulet('warding', TC, 'normal')), 0.20, 'equipped Warding amulet => +20% resist');
+    eq(FF.getAmuletResistanceBonus(stAmulet('plain', TC, 'normal')), 0, 'plain amulet gives no resistance');
+    ok(FF.getAmuletDefenseBonus(stAmulet('warding', TC, 'normal')) === 0, 'warding amulet gives no defense');
+    ok(FF.getAmuletDefenseBonus(stAmulet('plain', TC, 'normal')) > 0, 'plain amulet still gives defense');
+    // Combined ward resistance sums rings + amulet, capped at 90%.
+    near(FF.getWardResistanceBonus(stAmulet('warding', TC, 'normal')), 0.20, 'ward resistance includes the amulet');
+    ok(FF.getWardResistanceBonus(stAmulet('warding', TC, 'fantastic')) <= 0.9 + 1e-9, 'combined ward resistance caps at 90%');
+
+    // A warding amulet is improvable jewelry (parses as an amulet kind).
+    eq(FF.parseImprovable('amulet_warding_t3_rare').kind, 'amulet', 'warding amulet is improvable as an amulet');
   });
 
   // ---- Cloth armor: rarity boosts familiar potency, not base armor ---------------------
