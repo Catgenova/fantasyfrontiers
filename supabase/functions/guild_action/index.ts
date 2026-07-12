@@ -103,6 +103,10 @@ Deno.serve(async (req) => {
     const description = String(body.description || "").trim().slice(0, 240);
     if (!NAME_RE.test(name)) return json({ ok: false, error: "Name must be 3–24 letters, numbers, spaces, ' or -." }, 400);
     if (!TAG_RE.test(tag)) return json({ ok: false, error: "Tag must be 2–5 letters or numbers." }, 400);
+    // Mortal/Immortal segregation: a guild's path is fixed by its founder. Mortals found Mortal
+    // guilds (no bank); Immortals found standard guilds. Self-declared like the rest of the game's
+    // client-authoritative progress model.
+    const mortal = body.mortal === true;
 
     // Charge the founding cost against the server-authoritative wallet before creating anything, so
     // spoofed client gold can't found a guild. Refund on any downstream failure.
@@ -111,7 +115,7 @@ Deno.serve(async (req) => {
     const refund = () => admin.rpc("wallet_credit", { p_user: userId, p_amount: GUILD_CREATE_COST });
 
     const { data: guild, error: gErr } = await admin.from("guilds")
-      .insert({ name, tag, description, leader_id: userId, member_count: 1 })
+      .insert({ name, tag, description, leader_id: userId, member_count: 1, mortal })
       .select("*").single();
     if (gErr) {
       await refund();
@@ -137,9 +141,13 @@ Deno.serve(async (req) => {
     if (me) return json({ ok: false, error: "You're already in a guild." }, 409);
     const guildId = String(body.guild_id || "");
     const message = String(body.message || "").trim().slice(0, 200);
-    const { data: guild } = await admin.from("guilds").select("id, open, min_total_level").eq("id", guildId).maybeSingle();
+    const { data: guild } = await admin.from("guilds").select("id, open, min_total_level, mortal").eq("id", guildId).maybeSingle();
     if (!guild) return json({ ok: false, error: "Guild not found." }, 404);
     if (!guild.open) return json({ ok: false, error: "That guild isn't accepting applications." }, 403);
+    // A Mortal may only join a Mortal guild, and an Immortal only a standard guild.
+    if ((guild.mortal === true) !== (body.mortal === true)) {
+      return json({ ok: false, error: guild.mortal ? "Only Mortal-path adventurers may join a Mortal guild." : "Mortal-path adventurers can only join Mortal guilds." }, 403);
+    }
     const { error: aErr } = await admin.from("guild_applications")
       .upsert({ guild_id: guildId, user_id: userId, username, message }, { onConflict: "guild_id,user_id" });
     if (aErr) return json({ ok: false, error: "Could not submit application." }, 500);

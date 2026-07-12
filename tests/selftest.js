@@ -3117,6 +3117,40 @@
     s.equippedMainhand=sv.mh; s.equippedMainhandTier=sv.t; s.equippedMainhandRarity=sv.r; s.equippedMainhandUid=sv.uid; s.uniqueItems=sv.ui;
   });
 
+  // ---- Mortal / Immortal path -------------------------------------------------------------
+  suite('mortal path: half XP + death conversion', function(){
+    ok(typeof FF.isMortal === 'function', 'isMortal exported');
+    ok(typeof FF.MORTAL_XP_MULT === 'number' && FF.MORTAL_XP_MULT === 0.5, 'Mortals gain XP at half rate (0.5)');
+    var s = FF._state;
+    var sv = { mortal:s.mortal, xp:s.xp.fishing };
+    // Neutralise the buff/familiar multipliers so we isolate the mortal factor: no active tea, no
+    // server buff influence beyond 1x is assumed by the harness (matches other addXp tests here).
+    s.mortal = false; s.xp.fishing = 0;
+    FF.addXp('fishing', 1000);
+    var immortalGain = s.xp.fishing;
+    s.mortal = true; s.xp.fishing = 0;
+    FF.addXp('fishing', 1000);
+    var mortalGain = s.xp.fishing;
+    ok(mortalGain > 0 && immortalGain > 0, 'both paths gain some XP');
+    near(mortalGain, immortalGain * 0.5, 'a Mortal gains exactly half an Immortal\'s XP', immortalGain * 0.01);
+    s.mortal = sv.mortal; s.xp.fishing = sv.xp;
+  });
+
+  suite('mortal path: choose + convert', function(){
+    var s = FF._state;
+    var sv = s.mortal;
+    ok(Array.isArray(FF.PATH_CHOICES) && FF.PATH_CHOICES.length === 2, 'two paths offered');
+    ok(FF.PATH_CHOICES.some(function(c){ return c.id==='mortal'; }) && FF.PATH_CHOICES.some(function(c){ return c.id==='immortal'; }), 'Immortal + Mortal choices present');
+    // choosePath commits the flag.
+    FF.choosePath('mortal'); eq(s.mortal, true, 'choosePath("mortal") sets Mortal');
+    ok(FF.isMortal(), 'isMortal() true after choosing Mortal');
+    // mortalDeath flips a Mortal back to Immortal (permadeath -> standard play).
+    FF.mortalDeath({ name:'Test Foe' }); eq(s.mortal, false, 'a Mortal\'s death reverts them to Immortal');
+    ok(!FF.isMortal(), 'isMortal() false after death');
+    FF.choosePath('immortal'); eq(s.mortal, false, 'choosePath("immortal") sets Immortal');
+    s.mortal = sv;
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }

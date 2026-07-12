@@ -58,6 +58,10 @@ Deno.serve(async (req) => {
   const myRank = me.rank as string;
   const isOfficer = myRank === "officer" || myRank === "leader";
 
+  // Mortal guilds keep no shared vault: every bank action is refused for them.
+  const { data: guildRow } = await admin.from("guilds").select("mortal").eq("id", guildId).maybeSingle();
+  if (guildRow?.mortal === true) return json({ ok: false, error: "Mortal guilds have no bank." }, 403);
+
   async function snapshot() {
     const { data: g } = await admin.from("guilds").select("bank_slots, bank_min_withdraw_rank, treasury").eq("id", guildId).maybeSingle();
     const { data: items } = await admin.from("guild_bank")

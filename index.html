@@ -603,6 +603,17 @@
   .auth-tab.on{background:color-mix(in srgb, var(--cat-chat) 22%, var(--bg-panel));border-color:var(--cat-chat);color:var(--text);}
   .auth-error{font-family:var(--font-body);font-size:12px;color:var(--hp-bad);}
   .auth-note{font-family:var(--font-body);font-size:11px;color:var(--text-faint);line-height:1.4;}
+  /* Path selection (Immortal vs Mortal), shown once after registration. */
+  .path-card-row{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;}
+  .path-card{flex:1 1 260px;max-width:290px;display:flex;flex-direction:column;gap:10px;text-align:left;padding:16px;border:1px solid var(--border);border-top:3px solid var(--path-accent,var(--gold));border-radius:var(--radius);background:var(--bg-panel-raised);color:var(--text);cursor:pointer;transition:border-color .12s,transform .12s,box-shadow .12s;}
+  .path-card:hover:not([disabled]){transform:translateY(-2px);border-color:var(--path-accent,var(--gold));box-shadow:0 6px 18px color-mix(in srgb, var(--path-accent,var(--gold)) 22%, transparent);}
+  .path-card[disabled]{opacity:.55;cursor:default;}
+  .path-card-head{display:flex;align-items:center;gap:10px;}
+  .path-card-icon{flex:0 0 auto;width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;}
+  .path-card-icon svg{width:30px;height:30px;}
+  .path-card-name{font-family:var(--font-display);font-weight:700;font-size:20px;letter-spacing:.5px;color:var(--path-accent,var(--gold));}
+  .path-card-desc{font-family:var(--font-body);font-size:12.5px;line-height:1.5;color:var(--text-dim);}
+  .path-card-cta{margin-top:auto;align-self:flex-start;font-family:var(--font-display);font-size:12px;letter-spacing:.5px;padding:7px 14px;border-radius:var(--radius);background:color-mix(in srgb, var(--path-accent,var(--gold)) 20%, var(--bg-panel));border:1px solid var(--path-accent,var(--gold));color:var(--text);}
   .lb-controls{display:flex;gap:8px;}
   .lb-list{display:flex;flex-direction:column;gap:4px;}
   .lb-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font-family:var(--font-body);font-size:13px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-panel);color:var(--text);cursor:pointer;}
@@ -614,6 +625,13 @@
   .lb-online{flex:0 0 auto;width:9px;height:9px;border-radius:50%;background:var(--hp-bad);box-shadow:0 0 0 1px rgba(0,0,0,.15) inset;}
   .lb-online.on{background:var(--hp-good);box-shadow:0 0 5px color-mix(in srgb, var(--hp-good) 70%, transparent);}
   .lb-name{flex:1;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  /* Mortal-path players: bold maroon name (readable in both themes). */
+  .lb-name.mortal{color:#8a1f2c;font-weight:800;}
+  @media (prefers-color-scheme: dark){ .lb-name.mortal{color:#e06576;} }
+  :root[data-theme="dark"] .lb-name.mortal{color:#e06576;}
+  :root[data-theme="light"] .lb-name.mortal{color:#8a1f2c;}
+  .lb-mortal-toggle{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);flex:0 0 auto;cursor:pointer;}
+  .lb-mortal-toggle input{cursor:pointer;}
   .lb-lvl{flex:0 0 auto;font-family:var(--font-mono);color:var(--cat-leaderboard);}
   .lb-gold{flex:0 0 auto;font-family:var(--font-mono);color:var(--gold);}
   .profile-head{padding:12px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-panel-raised);}
@@ -7820,6 +7838,7 @@
       playerHp: 50,
       autoEatThreshold: 0,
       autoSacrificeRelics: false,
+      mortal: null,   // Path: null = not yet chosen (prompt after registration), true = Mortal (permadeath -> immortal on death), false = Immortal (standard play)
       activeTea: { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 },
       activeFeast: { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 },
       activeTome: { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 },
@@ -8172,12 +8191,17 @@
     html += '<button class="action-btn" data-action="buyExpBuff" style="width:auto;flex:0 0 auto;"' + ((state.gold < SERVER_BUFF_EXP_COST || _serverBuffBusy) ? ' disabled' : '') + '>' + (_serverBuffBusy ? 'Buying…' : 'Buy') + '</button></div>';
     return html + '</div>';
   }
+  // Mortal path: death is permanent (converts the profile to Immortal). true only while the
+  // player has chosen -- and not yet lost -- the Mortal path.
+  function isMortal(){ return state.mortal === true; }
+  var MORTAL_XP_MULT = 0.5;   // Mortals gain experience at half the rate of Immortals.
   function addXp(skill, amount){
     if(!isFinite(amount)) return; // never let a NaN/Infinity poison an xp total (would zero saveProgressScore and stop cloud saves)
     if(!isFinite(state.xp[skill])) state.xp[skill] = 0;
     var before = getLevel(state.xp[skill]);
     if(isTeaActive()) amount = amount * (1 + state.activeTea.xpBoost);
     amount = amount * familiarXpMult(skill) * serverBuffXpMult();
+    if(isMortal()) amount *= MORTAL_XP_MULT; // Mortals level at half speed
     if(CRAFT_SKILL_IDS.indexOf(skill) !== -1) amount *= diligenceCraftXpMult(); // Diligence: +Crafting XP
     state.xp[skill] += amount;
     if(offlineCapture){ offlineCapture.xp[skill] = (offlineCapture.xp[skill]||0) + amount; }
@@ -8195,6 +8219,7 @@
     if(!pairs) return;
     pairs.forEach(function(pair){
       var id = pair[0], amount = pair[1] * familiarXpMult(id) * serverBuffXpMult();
+      if(isMortal()) amount *= MORTAL_XP_MULT; // Mortals level at half speed (physiques too)
       if(!isFinite(amount)) return; // guard against a NaN physique total (same cloud-save hazard as addXp)
       if(!isFinite(state.physique[id])) state.physique[id] = 0;
       var before = getLevel(state.physique[id]||0);
@@ -9571,9 +9596,25 @@
       state.playerHp = 0;
       state.reaperShield = 0; // a spectral guard shatters when you fall
       state.activity = { type:null };
-      addLog('You were defeated by the ' + monster.name + ' and retreat to recover.', 'danger');
+      if(isMortal()) mortalDeath(monster); // permadeath: the profile passes into Immortal play
+      else addLog('You were defeated by the ' + monster.name + ' and retreat to recover.', 'danger');
       needsRender = true;
     }
+  }
+  // A Mortal's death is final: their profile becomes Immortal and continues on into standard play,
+  // and they are cast out of any Mortal guild (a Mortal guild would no longer accept them). The gear,
+  // gold, and skills all remain -- only the Mortal condition ends.
+  function mortalDeath(monster){
+    state.mortal = false;
+    addLog('The ' + (monster ? monster.name : 'foe') + ' has slain you. Your mortal life is over — your soul passes into the immortal realm, and you continue on as an Immortal.', 'danger');
+    // Leave a Mortal guild (banks and mortal-only membership no longer apply to you).
+    try{
+      if(guildState && guildState.guild && guildState.guild.mortal && authUser){
+        guildInvoke('leave', {}).then(function(){ guildReload(true); });
+      }
+    }catch(e){}
+    saveGame();
+    profileSync(true); // republish the profile as Immortal so the leaderboard drops the mortal styling
   }
 
   function eatFood(){
@@ -10108,6 +10149,10 @@
           if(typeof state.playerHp !== 'number') state.playerHp = maxHp(state);
           if(typeof state.autoEatThreshold !== 'number') state.autoEatThreshold = 0;
           if(typeof state.autoSacrificeRelics !== 'boolean') state.autoSacrificeRelics = false;
+          // Mortal/Immortal path: a save that predates the feature (mortal missing) is an existing
+          // player who has always played standard -> immortal. Only a brand-new account (no save row
+          // at all, so this branch never runs) keeps the newGame() null and gets the path prompt.
+          if(typeof state.mortal !== 'boolean') state.mortal = false;
           if(!state.stats || typeof state.stats !== 'object') state.stats = {};
           ['kills','deaths','gathered','crafted','craftedRare','craftedSupreme','craftedFantastic','hoursBuffed'].forEach(function(k){ if(typeof state.stats[k] !== 'number') state.stats[k] = 0; });
           if(!state.activeTea || typeof state.activeTea !== 'object') state.activeTea = { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 };
@@ -16915,6 +16960,7 @@
   var LEADERBOARD_LIMIT = 50;
   var leaderboardData = [];
   var leaderboardMetric = 'total'; // 'total' | 'gold' | 'skill:<id>' | 'stat:<key>'
+  var leaderboardMortalOnly = false; // when true, the board lists only Mortal-path players
   var leaderboardStatus = CHAT_ENABLED ? 'idle' : 'unconfigured'; // idle|loading|ready|error|unconfigured
   var leaderboardLastFetch = 0;
   var profileLastSync = 0;
@@ -16990,7 +17036,7 @@
       // table is no longer client-writable). id + username are derived server-side from
       // the auth token; a rejected submission just leaves the last accepted row intact.
       await chatClient.functions.invoke('submit_profile', {
-        body: { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, equipment: stats.equipment, stats: stats.stats }
+        body: { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, equipment: stats.equipment, stats: stats.stats, mortal: isMortal() }
       });
     }catch(e){}
   }
@@ -17090,12 +17136,12 @@
     if(!chatClient){ if(!(await authEnsureClient())){ leaderboardStatus='error'; if(currentCategory==='leaderboard') render(); return; } }
     try{
       var res = await chatClient.from('profiles')
-        .select('id,username,total_level,gold,skills,equipment,stats,updated_at')
+        .select('id,username,total_level,gold,skills,equipment,stats,mortal,updated_at')
         .order('total_level', { ascending:false })
         .limit(LEADERBOARD_LIMIT);
       if(res.error){
-        // The stats column may not be migrated yet -- fall back so the board still loads
-        // (lifetime-stat rankings just read as 0 until the migration + a profile re-sync).
+        // The stats/mortal columns may not be migrated yet -- fall back so the board still loads
+        // (lifetime-stat rankings read as 0 and mortal styling is off until the migration + a re-sync).
         res = await chatClient.from('profiles')
           .select('id,username,total_level,gold,skills,equipment,updated_at')
           .order('total_level', { ascending:false })
@@ -17139,10 +17185,11 @@
     var secondary = (metric==='total') ? ('CS '+fmt(lbCombatScore(p))) : ('Lv '+fmt(p.total_level||0));
     var online = isMe || isPlayerOnline(p.id);
     var dot = '<span class="lb-online'+(online?' on':'')+'"'+(p.id?' data-uid="'+escapeHtml(String(p.id))+'"':'')+' title="'+(online?'Online':'Offline')+'"></span>';
+    var mortal = (p.mortal === true) || (isMe && isMortal()); // Mortal-path players wear a bold maroon name
     return '<button class="lb-row'+(isMe?' me':'')+'" data-action="viewProfile" data-id="'+escapeHtml(String(p.id||''))+'">'
       +'<span class="lb-rank">'+(medals[rank]||('#'+rank))+'</span>'
       +dot
-      +'<span class="lb-name">'+escapeHtml(p.username||'anon')+'</span>'
+      +'<span class="lb-name'+(mortal?' mortal':'')+'"'+(mortal?' title="Mortal path"':'')+'>'+escapeHtml(p.username||'anon')+'</span>'
       +'<span class="lb-lvl">'+lbPrimaryText(p, metric)+'</span>'
       +'<span class="lb-gold">'+secondary+'</span></button>';
   }
@@ -17211,15 +17258,21 @@
     html += '<div class="lb-controls"><button class="action-btn" data-action="leaderboardRefresh" style="width:auto;flex:0 0 auto;">Refresh</button>';
     if(authUser) html += '<button class="action-btn" data-action="viewMyProfile" style="width:auto;flex:0 0 auto;">My Profile</button>';
     html += '<label class="lb-metric"><span>Rank by</span><select id="lbMetricSelect" class="chat-input">'+lbMetricOptions()+'</select></label>';
+    html += '<label class="lb-mortal-toggle" title="Show only Mortal-path players"><input type="checkbox" data-action="toggleMortalOnly"'+(leaderboardMortalOnly?' checked':'')+'> <span>Mortals only</span></label>';
     html += '</div>';
     if(leaderboardStatus==='loading' && !leaderboardData.length){ html += '<div class="empty-note">Loading the rankings\u2026</div>'; }
     else if(leaderboardStatus==='error'){ html += '<div class="empty-note">Couldn\'t load the leaderboard. Make sure the <code>profiles</code> table and its read policy exist.</div>'; }
     else if(!leaderboardData.length){ html += '<div class="empty-note">No ranked players yet &mdash; be the first to make your mark!</div>'; }
     else {
-      var sorted = leaderboardData.slice().sort(function(a,b){ return lbMetricValue(b, leaderboardMetric) - lbMetricValue(a, leaderboardMetric); });
-      html += '<div class="lb-list">';
-      sorted.forEach(function(p, i){ html += lbRow(i+1, p, authUser && p.id===authUser.id, leaderboardMetric); });
-      html += '</div>';
+      // Mortals are otherwise mixed in with everyone; the toggle narrows the board to Mortal players only.
+      var rows = leaderboardMortalOnly ? leaderboardData.filter(function(p){ return p.mortal === true; }) : leaderboardData;
+      var sorted = rows.slice().sort(function(a,b){ return lbMetricValue(b, leaderboardMetric) - lbMetricValue(a, leaderboardMetric); });
+      if(!sorted.length){ html += '<div class="empty-note">No Mortal-path players on the board yet &mdash; will you be the first to risk it all?</div>'; }
+      else {
+        html += '<div class="lb-list">';
+        sorted.forEach(function(p, i){ html += lbRow(i+1, p, authUser && p.id===authUser.id, leaderboardMetric); });
+        html += '</div>';
+      }
     }
     html += '</div>';
     return html;
@@ -17285,7 +17338,21 @@
   function guildBrowseLoad(){
     if(!chatClient || !authUser || !authUser.id){ return; }
     guildBrowseState.status='loading';
-    chatClient.from('guilds').select('id,name,tag,description,member_count,min_total_level').eq('open',true).order('member_count',{ascending:false}).limit(50).then(function(res){
+    // Mortals and Immortals never mix in guilds: a Mortal may only see (and join) Mortal guilds, and
+    // vice versa. Filter on the shared `mortal` flag; fall back gracefully if the column isn't migrated.
+    var q = chatClient.from('guilds').select('id,name,tag,description,member_count,min_total_level,mortal').eq('open',true);
+    q.eq('mortal', isMortal()).order('member_count',{ascending:false}).limit(50).then(function(res){
+      if(res && res.error){ // column may not exist yet -> unfiltered fallback
+        chatClient.from('guilds').select('id,name,tag,description,member_count,min_total_level').eq('open',true).order('member_count',{ascending:false}).limit(50).then(function(r2){
+          guildBrowseState.list = (r2 && r2.data) || [];
+          chatClient.from('guild_applications').select('guild_id').eq('user_id', authUser.id).limit(1).then(function(a){
+            guildBrowseState.appliedTo = (a && a.data && a.data[0] && a.data[0].guild_id) || null;
+            guildBrowseState.status='ready';
+            if(currentCategory==='guild'||currentCategory==='peons') render();
+          });
+        });
+        return;
+      }
       guildBrowseState.list = (res && res.data) || [];
       chatClient.from('guild_applications').select('guild_id').eq('user_id', authUser.id).limit(1).then(function(a){
         guildBrowseState.appliedTo = (a && a.data && a.data[0] && a.data[0].guild_id) || null;
@@ -17303,7 +17370,7 @@
     if((state.gold||0) < GUILD_CREATE_COST){ guildState.busy=false; guildState.error='You need '+fmt(GUILD_CREATE_COST)+' gold to found a guild.'; render(); return; }
     state.gold -= GUILD_CREATE_COST; // charged server-side against the wallet; refunded below on failure
     render();
-    guildInvoke('create', { name:name, tag:tag, description:desc }).then(function(res){
+    guildInvoke('create', { name:name, tag:tag, description:desc, mortal:isMortal() }).then(function(res){
       guildState.busy=false;
       if(!res || !res.ok){ earnGold(GUILD_CREATE_COST); guildState.error=(res&&res.error)||'Could not create guild.'; render(); return; }
       saveGame();
@@ -17315,7 +17382,7 @@
     var gd=(guildBrowseState.list||[]).filter(function(x){ return x.id===guildId; })[0];
     if(gd && guildIsFull(gd.member_count)){ guildState.error='That guild is full ('+GUILD_MAX_MEMBERS+'/'+GUILD_MAX_MEMBERS+').'; render(); return; }
     guildState.busy=true; guildState.error='';
-    guildInvoke('apply', { guild_id:guildId, message:'' }).then(function(res){
+    guildInvoke('apply', { guild_id:guildId, message:'', mortal:isMortal() }).then(function(res){
       guildState.busy=false;
       if(!res.ok){ guildState.error=res.error||'Could not apply.'; render(); return; }
       guildBrowseState.appliedTo=guildId; render();
@@ -17364,7 +17431,8 @@
     var g=guildBrowseState, canAfford=(state.gold||0)>=GUILD_CREATE_COST;
     var html='<div class="section-intro">You’re not in a guild yet. Found your own or apply to an open one.</div>';
     html += '<div class="guild-card">';
-    html += '<div class="guild-section-title" style="margin-top:0;">Found a Guild &mdash; <span style="color:var(--cat-guild);">'+fmt(GUILD_CREATE_COST)+' gold</span></div>';
+    html += '<div class="guild-section-title" style="margin-top:0;">Found a'+(isMortal()?' <span style="color:#8a1f2c;">Mortal</span>':'')+' Guild &mdash; <span style="color:var(--cat-guild);">'+fmt(GUILD_CREATE_COST)+' gold</span></div>';
+    if(isMortal()) html += '<div class="item-meta" style="margin-bottom:6px;">As a Mortal, the guild you found will be a <b style="color:#8a1f2c;">Mortal guild</b> &mdash; open only to other Mortals, and with no shared bank.</div>';
     html += '<input id="guildNameInput" class="chat-input" maxlength="24" placeholder="Guild name (3–24 characters)" style="margin-bottom:6px;width:100%;">';
     html += '<input id="guildTagInput" class="chat-input" maxlength="5" placeholder="Tag (2–5 letters or numbers)" style="margin-bottom:6px;width:100%;">';
     html += '<textarea id="guildDescInput" class="chat-input" maxlength="240" placeholder="Description (optional)" style="margin-bottom:8px;width:100%;height:52px;resize:vertical;"></textarea>';
@@ -17390,7 +17458,11 @@
     var gd=guildState.guild, html='';
     html += '<div class="guild-header"><div><div class="guild-title">['+escapeHtml(gd.tag)+'] '+escapeHtml(gd.name)+'</div><div class="item-meta">'+gd.member_count+' member'+(gd.member_count===1?'':'s')+' &bull; you are '+guildRankLabel(guildState.myRank)+'</div></div></div>';
     if(gd.description) html += '<div class="item-meta" style="margin:6px 0 4px;">'+escapeHtml(gd.description)+'</div>';
-    html += '<div class="guild-subtabs">'+GUILD_SUBS.map(function(s){ return '<button class="guild-subtab'+(s.id===guildSub?' active':'')+'" data-action="guildSubtab" data-sub="'+s.id+'">'+s.icon+' '+s.label+'</button>'; }).join('')+'</div>';
+    if(gd.mortal) html += '<div class="item-meta" style="margin:2px 0 4px;">'+svgIcon('hornedskull','#8a1f2c')+' <b style="color:#8a1f2c;">Mortal guild</b> &mdash; no shared bank.</div>';
+    // A Mortal guild has no bank, so its Bank subtab is hidden entirely.
+    var subs = gd.mortal ? GUILD_SUBS.filter(function(s){ return s.id!=='bank'; }) : GUILD_SUBS;
+    if(gd.mortal && guildSub==='bank') guildSub='roster';
+    html += '<div class="guild-subtabs">'+subs.map(function(s){ return '<button class="guild-subtab'+(s.id===guildSub?' active':'')+'" data-action="guildSubtab" data-sub="'+s.id+'">'+s.icon+' '+s.label+'</button>'; }).join('')+'</div>';
     if(guildSub==='roster') html += renderGuildRoster();
     else if(guildSub==='bank') html += renderGuildBank();
     else if(guildSub==='estate') html += renderGuildEstate();
@@ -17620,6 +17692,7 @@
     });
   }
   function renderGuildBank(){
+    if(isMortal()) return '<div class="empty-note">Guild banks are sealed to <b style="color:#8a1f2c;">Mortal</b>-path adventurers. A Mortal guild keeps no shared vault &mdash; what you carry is yours alone.</div>';
     if(guildBankState.status==='idle' || guildBankState.guildId !== (guildState.guild&&guildState.guild.id)){ guildBankLoad(); }
     var canManage = guildState.myRank==='leader' || guildState.myRank==='officer';
     var isLeader = guildState.myRank==='leader';
@@ -18247,6 +18320,7 @@
   }
   function renderMarketTab(){
     if(!authUser) return '<div class="section-intro">Sign in to use the Auction House.</div>';
+    if(isMortal()) return '<div class="section-intro">Auction House</div><div class="empty-note">The Auction House is closed to those on the <b style="color:#8a1f2c;">Mortal</b> path. Trade with other players is barred while a single life hangs in the balance &mdash; gather and craft your own fortune.</div>';
     marketEnsureLoaded();
     var html = '<div class="section-intro">A shared auction house. Browse everything players have listed, then place a <b>buy</b> or <b>sell</b> order priced in gold — matching orders fill automatically (partial fills allowed). A '+Math.round(MARKET_TAX*100)+'% tax is burned on every sale. Gold and items you’re owed wait under <b>My Orders</b>.</div>';
     function nav(mode, label){ return '<button class="market-subtab'+((marketState.mode===mode && !marketState.selectedItem)?' on':'')+'" data-action="marketMode" data-mode="'+mode+'">'+label+'</button>'; }
@@ -20112,6 +20186,10 @@
       authLogout();
     } else if(action==='leaderboardRefresh'){
       leaderboardFetch(true);
+    } else if(action==='choosePath'){
+      choosePath(btn.getAttribute('data-path'));
+    } else if(action==='toggleMortalOnly'){
+      leaderboardMortalOnly = !leaderboardMortalOnly; render();
     } else if(action==='viewProfile'){
       var _pid = btn.getAttribute('data-id');
       var _p = leaderboardData.filter(function(x){ return String(x.id)===String(_pid); })[0];
@@ -20672,6 +20750,59 @@
     var gate = document.getElementById('loginGate');
     if(gate && gate.parentNode) gate.parentNode.removeChild(gate);
   }
+  // ---- Path selection: shown once, right after a brand-new account first loads (state.mortal is
+  // null until chosen). The player commits to Immortal (standard) or Mortal (permadeath) play. ----
+  var PATH_CHOICES = [
+    { id:'immortal', name:'Immortal', accent:'var(--gold)',
+      icon:svgIcon('crown','#c9a84a'),
+      desc:'The standard path. Death has no lasting cost &mdash; when you fall in battle you simply retreat to recover, keeping all your progress. Full access to the Auction House, guild banks, and every guild. Experience is earned at the normal rate.' },
+    { id:'mortal', name:'Mortal', accent:'#8a1f2c',
+      icon:svgIcon('hornedskull','#8a1f2c'),
+      desc:'A single, fragile life. If you die, your Mortal life ends for good &mdash; your profile becomes Immortal and you continue on in standard play. Mortals earn experience at <b>half</b> the rate, cannot use the Auction House or guild banks, and may only join or found <b>Mortal guilds</b> (which have no bank). In return your name blazes in bold maroon on the leaderboard, among the few who dare a life that can truly be lost.' }
+  ];
+  var pathSelectBusy = false;
+  function pathSelectNeeded(){ return CHAT_ENABLED && authUser && state.mortal === null; }
+  function renderPathSelect(){
+    var app = document.getElementById('app');
+    var gate = document.getElementById('pathSelectGate');
+    if(!gate){
+      gate = document.createElement('div');
+      gate.id = 'pathSelectGate';
+      gate.style.cssText = 'position:fixed;inset:0;z-index:9997;display:flex;align-items:center;justify-content:center;background:var(--paper);padding:20px;overflow:auto;';
+      app.appendChild(gate);
+    }
+    var cards = PATH_CHOICES.map(function(c){
+      return '<button class="path-card" data-action="choosePath" data-path="'+c.id+'"'+(pathSelectBusy?' disabled':'')+' style="--path-accent:'+c.accent+';">'
+        + '<div class="path-card-head"><span class="path-card-icon">'+c.icon+'</span><span class="path-card-name">'+c.name+'</span></div>'
+        + '<div class="path-card-desc">'+c.desc+'</div>'
+        + '<div class="path-card-cta">Choose '+c.name+'</div>'
+        + '</button>';
+    }).join('');
+    gate.innerHTML = '<div style="max-width:620px;width:100%;text-align:center;">'
+      + '<div style="font-family:var(--font-display);font-weight:700;font-size:26px;color:var(--gold);letter-spacing:1.5px;margin-bottom:4px;">Choose Your Path</div>'
+      + '<div style="color:var(--text-dim);font-size:13px;margin-bottom:18px;">This choice is made once, now, as you set out. It shapes how you live &mdash; and how you can die.</div>'
+      + '<div class="path-card-row">' + cards + '</div>'
+      + '</div>';
+  }
+  function removePathSelect(){
+    var gate = document.getElementById('pathSelectGate');
+    if(gate && gate.parentNode) gate.parentNode.removeChild(gate);
+  }
+  function choosePath(pathId){
+    if(pathSelectBusy) return;
+    if(pathId !== 'mortal' && pathId !== 'immortal') return;
+    pathSelectBusy = true;
+    state.mortal = (pathId === 'mortal');
+    addLog(state.mortal
+      ? 'You set out upon the Mortal path. A single life, all or nothing.'
+      : 'You set out upon the Immortal path.', 'important');
+    saveGame();
+    try{ profileSync(true); }catch(e){}
+    pathSelectBusy = false;
+    removePathSelect();
+    needsRender = true;
+    render();
+  }
   // ---- Periodic auto-refresh -------------------------------------------------------------------
   // The game ships frequent updates, so long-lived tabs drift behind the deployed build. Every
   // AUTO_REFRESH_MS we flush the latest progress to the cloud and hard-reload to pick up the new
@@ -20717,6 +20848,7 @@
     chatInit();                       // chat + chronicle subscriptions
     profileSync(true); leaderboardFetch(true); walletSync(true); itemSync(true);
     scheduleAutoRefresh();            // keep long-lived tabs current with frequent deploys
+    if(pathSelectNeeded()) renderPathSelect();   // brand-new account: pick Immortal vs Mortal before playing
   }
   (async function onlineBoot(){
     await onlineAuthInit();
@@ -20736,6 +20868,7 @@
   if(typeof location !== 'undefined' && /[?&]selftest\b/.test(location.search)){
     window.__FF = {
       getLevel:getLevel, xpFloorForLevel:xpFloorForLevel, xpForNextLevel:xpForNextLevel, levelProgress:levelProgress, MAX_SKILL_LEVEL:MAX_SKILL_LEVEL, SKILL_CURVE_KNEE:SKILL_CURVE_KNEE, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
+      isMortal:isMortal, MORTAL_XP_MULT:MORTAL_XP_MULT, addXp:addXp, choosePath:choosePath, mortalDeath:mortalDeath, pathSelectNeeded:pathSelectNeeded, PATH_CHOICES:PATH_CHOICES, renderPathSelect:renderPathSelect, removePathSelect:removePathSelect, lbRow:lbRow,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,

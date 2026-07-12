@@ -143,6 +143,10 @@ Deno.serve(async (req) => {
   };
   const stats = cleanStats((body as { stats?: unknown }).stats);
 
+  // Mortal-path flag (leaderboard styling + guild segregation). Client-authoritative, like the rest
+  // of the game's progress — a Mortal's death flips this to false when they republish as Immortal.
+  const mortal = (body as { mortal?: unknown }).mortal === true;
+
   // 4. Accept.
   const { error: upErr } = await admin.from("profiles").upsert({
     id: userId,
@@ -152,6 +156,7 @@ Deno.serve(async (req) => {
     skills,
     equipment,
     stats,
+    mortal,
     updated_at: new Date(nowMs).toISOString(),
   }, { onConflict: "id" });
   if (upErr) return json({ ok: false, error: "Could not save profile." }, 500);
