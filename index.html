@@ -17256,7 +17256,7 @@
     var pErr = validatePassword(password);
     if(pErr){ authError = pErr; authRender(); return; }
     if(authMode==='register' && cEl && cEl.value !== password){ authError = 'Passwords do not match.'; authRender(); return; }
-    if(authMode==='register' && !authTermsAccepted){ authError = 'Please read and accept the Game Rules & Terms to create an account.'; authRender(); return; }
+    if(authMode==='register' && !(authTermsAccepted && authRulesAccepted)){ authError = 'Please accept both the Terms and Conditions and the Game Rules to create an account.'; authRender(); return; }
     authError = '';
     authBusy = true; authRender();
     var ok = await authEnsureClient();
@@ -17423,51 +17423,70 @@
     }catch(e){}
   }
   // ---- Game Rules + Terms & Conditions (must be accepted before registering) ----
-  var authTermsAccepted = false, termsModalOpen = false;
-  var GAME_TERMS_HTML = ''
-    + '<p style="margin:0 0 10px;">Welcome to <b>Fantasy Frontiers</b>. By creating an account and playing, you agree to the rules and terms below. Please read them &mdash; accounts that break the rules may be suspended or removed.</p>'
-    + '<h4 style="color:var(--gold);margin:12px 0 4px;">1. Fair Play &amp; Conduct</h4>'
+  // Two separate documents, each with its own checkbox -- BOTH must be accepted to register.
+  var authTermsAccepted = false, authRulesAccepted = false, authDocOpen = null; // authDocOpen: null | 'terms' | 'rules'
+  var _hd = 'color:var(--gold);margin:12px 0 4px;';
+  var TERMS_HTML = ''
+    + '<p style="margin:0 0 10px;">These Terms and Conditions (the &ldquo;Terms&rdquo;) govern your use of <b>Fantasy Frontiers</b> (the &ldquo;Game&rdquo;). By creating an account or playing, you agree to these Terms. If you do not agree, do not use the Game.</p>'
+    + '<h4 style="'+_hd+'">1. Eligibility</h4>'
+    + '<p style="margin:0 0 4px;">You must be at least 13 years old, or the minimum age of digital consent in your country, to create an account. By registering you confirm that you meet this requirement.</p>'
+    + '<h4 style="'+_hd+'">2. Your Account</h4>'
+    + '<p style="margin:0 0 4px;">You are responsible for all activity under your account and for keeping your password secure. The Game stores no email address; account recovery relies solely on the security questions you set. You may not sell, buy, share, rent, or transfer accounts.</p>'
+    + '<h4 style="'+_hd+'">3. Licence to Play</h4>'
+    + '<p style="margin:0 0 4px;">You are granted a personal, non-exclusive, non-transferable, revocable licence to access and play the Game for personal, non-commercial entertainment. You may not copy, modify, reverse-engineer, decompile, automate (beyond the Game&rsquo;s own opt-in features), or create derivative works of the Game or its client, nor exploit bugs or defects. All rights in the Game &mdash; including its code, art, text, and trademarks &mdash; remain with the operators.</p>'
+    + '<h4 style="'+_hd+'">4. Virtual Items</h4>'
+    + '<p style="margin:0 0 4px;">Gold, items, levels, and other in-game content are virtual, licensed not sold, have <b>no monetary or real-world value</b>, and cannot be redeemed, exchanged, or transferred for money or anything of value. The operators may create, modify, remove, or reset virtual content at any time.</p>'
+    + '<h4 style="'+_hd+'">5. Service Provided &ldquo;As Is&rdquo;</h4>'
+    + '<p style="margin:0 0 4px;">The Game is a free, hobby project provided <b>&ldquo;as is&rdquo; and &ldquo;as available&rdquo;</b>, without warranties of any kind, express or implied, including merchantability, fitness for a particular purpose, and non-infringement. The Game may be changed, interrupted, or discontinued, and your progress may be reset, altered, or lost, at any time and without notice.</p>'
+    + '<h4 style="'+_hd+'">6. Limitation of Liability</h4>'
+    + '<p style="margin:0 0 4px;">To the fullest extent permitted by law, the operators will not be liable for any indirect, incidental, or consequential damages, or for lost progress, data, or virtual items, arising from your use of or inability to use the Game.</p>'
+    + '<h4 style="'+_hd+'">7. Privacy &amp; Data</h4>'
+    + '<p style="margin:0 0 4px;">The Game stores only what it needs to function: your username, a hashed password, hashed security-question answers, and your game save and public profile. Your username, leaderboard standing, and chat messages are <b>public</b>. Do not share personal information in chat.</p>'
+    + '<h4 style="'+_hd+'">8. Conduct</h4>'
+    + '<p style="margin:0 0 4px;">Your use of the Game is also subject to the <b>Game Rules</b>. Violating these Terms or the Game Rules may result in warnings, suspension, rollback of progress, or termination of your account, at the operators&rsquo; discretion.</p>'
+    + '<h4 style="'+_hd+'">9. Changes &amp; Termination</h4>'
+    + '<p style="margin:0 0 4px;">The operators may update these Terms at any time; continued use after a change constitutes acceptance. You may stop using the Game at any time. The operators may suspend or terminate access for any reason, including breach of these Terms.</p>'
+    + '<h4 style="'+_hd+'">10. General</h4>'
+    + '<p style="margin:0 0 4px;">If any provision of these Terms is held unenforceable, the remaining provisions stay in effect. These Terms are the entire agreement between you and the operators regarding the Game.</p>';
+  var GAME_RULES_HTML = ''
+    + '<p style="margin:0 0 10px;">These Game Rules keep <b>Fantasy Frontiers</b> fair and welcoming for everyone. Breaking them may lead to warnings, muting, rollbacks, or a ban.</p>'
+    + '<h4 style="'+_hd+'">1. Be Respectful</h4>'
     + '<ul style="margin:0 0 4px;padding-left:18px;">'
-      + '<li>Be respectful. No harassment, hate speech, threats, doxxing, spam, or sexual/graphic content in chat, guild names, or usernames.</li>'
-      + '<li>No cheating: do not modify the client, run bots/scripts/external automation (beyond the game’s own opt-in auto features), or manipulate the economy or leaderboard.</li>'
-      + '<li>Do not abuse bugs. If you find a duplication or economy exploit, stop and report it &mdash; knowingly exploiting one may result in a rollback or ban.</li>'
-      + '<li>Play the shared systems (Auction House, guild banks, dungeons) in good faith. No scamming via impersonation or deliberate market manipulation.</li>'
+      + '<li>No harassment, hate speech, threats, doxxing, or spam in chat.</li>'
+      + '<li>No sexual, graphic, or otherwise offensive content in chat, usernames, or guild names.</li>'
     + '</ul>'
-    + '<h4 style="color:var(--gold);margin:12px 0 4px;">2. Accounts</h4>'
+    + '<h4 style="'+_hd+'">2. No Cheating</h4>'
     + '<ul style="margin:0 0 4px;padding-left:18px;">'
-      + '<li>You are responsible for your account and keeping your password safe. We store no email &mdash; recovery relies on the security questions you set.</li>'
-      + '<li>Do not sell, buy, share, or transfer accounts, or trade in-game items/gold for real money or outside goods.</li>'
-      + '<li>Usernames must not impersonate other players or staff, or be offensive.</li>'
+      + '<li>Do not modify the client, or run bots, scripts, or external automation (beyond the game&rsquo;s own opt-in auto features).</li>'
+      + '<li>Do not manipulate the economy, the leaderboard, or any shared system.</li>'
     + '</ul>'
-    + '<h4 style="color:var(--gold);margin:12px 0 4px;">3. The Game Service</h4>'
+    + '<h4 style="'+_hd+'">3. No Exploiting Bugs</h4>'
     + '<ul style="margin:0 0 4px;padding-left:18px;">'
-      + '<li>Fantasy Frontiers is a free, hobby project provided <b>&ldquo;as is&rdquo;</b>, without warranty of any kind, and may be unavailable, changed, or discontinued at any time.</li>'
-      + '<li>Your progress may be reset, altered, corrected, or lost (e.g., during maintenance, balancing, or exploit clean-up). No guarantee of data retention is made.</li>'
-      + '<li>Virtual items, gold, and levels have <b>no real-world value</b> and cannot be redeemed for money.</li>'
+      + '<li>If you find a duplication or economy exploit, stop and report it. Knowingly exploiting a bug may result in a rollback or ban.</li>'
     + '</ul>'
-    + '<h4 style="color:var(--gold);margin:12px 0 4px;">4. Data &amp; Privacy</h4>'
+    + '<h4 style="'+_hd+'">4. Play Fair in Shared Systems</h4>'
     + '<ul style="margin:0 0 4px;padding-left:18px;">'
-      + '<li>We store only what the game needs: your username, a hashed password, hashed security-question answers, and your game save/profile.</li>'
-      + '<li>Your username, leaderboard standing, and chat messages are <b>public</b>. Do not share personal information in chat.</li>'
+      + '<li>Use the Auction House, guild banks, and dungeons in good faith &mdash; no scamming, impersonation, or deliberate market manipulation.</li>'
+      + '<li>Do not trade accounts, items, or gold for real money or outside goods.</li>'
     + '</ul>'
-    + '<h4 style="color:var(--gold);margin:12px 0 4px;">5. Enforcement &amp; Changes</h4>'
+    + '<h4 style="'+_hd+'">5. Names &amp; Accounts</h4>'
     + '<ul style="margin:0 0 4px;padding-left:18px;">'
-      + '<li>The operators may moderate chat, suspend or remove accounts, roll back progress, or refuse service for rule violations, at their discretion.</li>'
-      + '<li>These rules and terms may change; continued play after a change means you accept the updated version.</li>'
-    + '</ul>'
-    + '<h4 style="color:var(--gold);margin:12px 0 4px;">6. Eligibility</h4>'
-    + '<p style="margin:0 0 4px;">By registering you confirm you are old enough to use online services where you live (at least 13, or the minimum digital-consent age in your country), and that you accept these rules and terms in full.</p>';
+      + '<li>Usernames and guild names must not impersonate other players or staff, or be offensive.</li>'
+      + '<li>You are responsible for your own account and password.</li>'
+    + '</ul>';
+  function authDocMeta(which){ return which==='terms' ? { title:'Terms &amp; Conditions', html:TERMS_HTML } : { title:'Game Rules', html:GAME_RULES_HTML }; }
   function renderTermsModal(){
     var ov = document.getElementById('termsOverlay');
-    if(!termsModalOpen){ if(ov){ ov.className = ''; ov.innerHTML = ''; } return; }
+    if(!authDocOpen){ if(ov){ ov.className = ''; ov.innerHTML = ''; } return; }
     if(!ov){ ov = document.createElement('div'); ov.id = 'termsOverlay'; document.getElementById('app').appendChild(ov); }
+    var m = authDocMeta(authDocOpen);
     ov.className = 'familiar-popup-overlay';
     ov.innerHTML = '<div class="familiar-popup-card" style="max-width:640px;text-align:left;max-height:84vh;display:flex;flex-direction:column;">'
-      + '<div class="familiar-popup-title">Game Rules &amp; Terms</div>'
-      + '<div style="overflow:auto;font-size:12.5px;line-height:1.55;color:var(--text-dim);padding-right:6px;">' + GAME_TERMS_HTML + '</div>'
+      + '<div class="familiar-popup-title">' + m.title + '</div>'
+      + '<div style="overflow:auto;font-size:12.5px;line-height:1.55;color:var(--text-dim);padding-right:6px;">' + m.html + '</div>'
       + '<div style="display:flex;gap:8px;margin-top:12px;flex-shrink:0;">'
-        + '<button class="action-btn" data-action="acceptTerms" style="flex:1;">I Have Read &amp; Accept</button>'
-        + '<button class="action-btn stop" data-action="closeTerms" style="width:auto;flex:0 0 auto;">Close</button>'
+        + '<button class="action-btn" data-action="acceptDoc" data-doc="' + authDocOpen + '" style="flex:1;">I Have Read &amp; Accept</button>'
+        + '<button class="action-btn stop" data-action="closeDoc" style="width:auto;flex:0 0 auto;">Close</button>'
       + '</div></div>';
   }
   function renderAuthPanel(){
@@ -17483,11 +17502,12 @@
       html += '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);cursor:pointer;margin:2px 2px 4px;"><input type="checkbox" data-action="authToggleAutoLogin"'+(authAutoLogin?' checked':'')+'> Automatically log me in</label>';
     }
     if(isReg){
-      html += '<label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--text-dim);cursor:pointer;margin:6px 2px 1px;"><input type="checkbox" data-action="authToggleTerms"'+(authTermsAccepted?' checked':'')+' style="margin-top:2px;flex:0 0 auto;"> <span>I have read and agree to the Game Rules &amp; Terms and Conditions.</span></label>';
-      html += '<div style="font-size:11px;margin:0 2px 5px;"><a href="#" data-action="viewTerms" style="color:var(--gold);">Read the Game Rules &amp; Terms and Conditions</a></div>';
+      html += '<label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--text-dim);cursor:pointer;margin:6px 2px 1px;"><input type="checkbox" data-action="authToggleDoc" data-doc="terms"'+(authTermsAccepted?' checked':'')+' style="margin-top:2px;flex:0 0 auto;"> <span>I have read and agree to the Terms and Conditions.</span></label>';
+      html += '<label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--text-dim);cursor:pointer;margin:2px 2px 1px;"><input type="checkbox" data-action="authToggleDoc" data-doc="rules"'+(authRulesAccepted?' checked':'')+' style="margin-top:2px;flex:0 0 auto;"> <span>I have read and agree to the Game Rules.</span></label>';
+      html += '<div style="font-size:11px;margin:2px 2px 5px;"><a href="#" data-action="viewDoc" data-doc="terms" style="color:var(--gold);">Read the Terms and Conditions</a> &nbsp;&bull;&nbsp; <a href="#" data-action="viewDoc" data-doc="rules" style="color:var(--gold);">Read the Game Rules</a></div>';
     }
     if(authError) html += '<div class="auth-error">'+escapeHtml(authError)+'</div>';
-    var submitDisabled = authBusy || (isReg && !authTermsAccepted);
+    var submitDisabled = authBusy || (isReg && !(authTermsAccepted && authRulesAccepted));
     html += '<button class="action-btn" data-action="authSubmit" '+(submitDisabled?'disabled':'')+'>'+(authBusy?'Please wait\u2026':(isReg?'Create Account':'Log In'))+'</button>';
     if(!isReg) html += '<div class="auth-note" style="text-align:center;"><a href="#" data-action="recoverOpen" style="color:var(--gold);">Forgot your password?</a></div>';
     html += '<div class="auth-note">'+(isReg?'Choose a username and password &mdash; no email required.':'Welcome back, adventurer.')+(CHAT_ENABLED?'':' <b>Local preview:</b> accounts aren\'t real until a backend is connected.')+'</div>';
@@ -21179,14 +21199,19 @@
       authAutoLogin = !authAutoLogin; authRender();
     } else if(action==='authMode'){
       authMode = btn.getAttribute('data-mode')==='login' ? 'login' : 'register'; authError=''; authRender();
-    } else if(action==='authToggleTerms'){
-      authTermsAccepted = !authTermsAccepted; authRender();
-    } else if(action==='viewTerms'){
-      e.preventDefault(); termsModalOpen = true; renderTermsModal();
-    } else if(action==='closeTerms'){
-      termsModalOpen = false; renderTermsModal();
-    } else if(action==='acceptTerms'){
-      authTermsAccepted = true; termsModalOpen = false; try{ localStorage.setItem('ff-terms-accepted', String(Date.now())); }catch(err){} renderTermsModal(); authRender();
+    } else if(action==='authToggleDoc'){
+      var _td = btn.getAttribute('data-doc');
+      if(_td==='terms') authTermsAccepted = !authTermsAccepted; else if(_td==='rules') authRulesAccepted = !authRulesAccepted;
+      authRender();
+    } else if(action==='viewDoc'){
+      e.preventDefault(); authDocOpen = (btn.getAttribute('data-doc')==='terms') ? 'terms' : 'rules'; renderTermsModal();
+    } else if(action==='closeDoc'){
+      authDocOpen = null; renderTermsModal();
+    } else if(action==='acceptDoc'){
+      var _ad = btn.getAttribute('data-doc');
+      if(_ad==='terms') authTermsAccepted = true; else if(_ad==='rules') authRulesAccepted = true;
+      authDocOpen = null; try{ localStorage.setItem('ff-terms-accepted', String(Date.now())); }catch(err){}
+      renderTermsModal(); authRender();
     } else if(action==='recoverOpen'){
       e.preventDefault(); recoverOpen = true; recoverStep = 'username'; recoverMsg = ''; recoverQuestions = null; renderLoginGate();
     } else if(action==='recoverBack'){
@@ -21864,7 +21889,7 @@
   function removeLoginGate(){
     var gate = document.getElementById('loginGate');
     if(gate && gate.parentNode) gate.parentNode.removeChild(gate);
-    termsModalOpen = false; renderTermsModal(); // drop the Terms overlay if it was open
+    authDocOpen = null; renderTermsModal(); // drop the Terms/Rules overlay if it was open
   }
   // ---- Path selection: shown once, right after a brand-new account first loads (state.mortal is
   // null until chosen). The player commits to Immortal (standard) or Mortal (permadeath) play. ----
