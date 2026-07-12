@@ -624,6 +624,8 @@
      global-chat presence channel, red otherwise. */
   .lb-online{flex:0 0 auto;width:9px;height:9px;border-radius:50%;background:var(--hp-bad);box-shadow:0 0 0 1px rgba(0,0,0,.15) inset;}
   .lb-online.on{background:var(--hp-good);box-shadow:0 0 5px color-mix(in srgb, var(--hp-good) 70%, transparent);}
+  .lb-class{flex:0 0 auto;display:inline-flex;align-items:center;margin-right:1px;}
+  .lb-class svg,.lb-class .game-icon{width:16px;height:16px;}
   .lb-name{flex:1;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   /* Mortal-path players: bold maroon name (readable in both themes). */
   .lb-name.mortal{color:#8a1f2c;font-weight:800;}
@@ -17257,7 +17259,7 @@
       // table is no longer client-writable). id + username are derived server-side from
       // the auth token; a rejected submission just leaves the last accepted row intact.
       await chatClient.functions.invoke('submit_profile', {
-        body: { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, equipment: stats.equipment, stats: stats.stats, mortal: isMortal() }
+        body: { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, equipment: stats.equipment, stats: stats.stats, mortal: isMortal(), class: activeClassId(state) || null }
       });
     }catch(e){}
   }
@@ -17357,12 +17359,19 @@
     if(!chatClient){ if(!(await authEnsureClient())){ leaderboardStatus='error'; if(currentCategory==='leaderboard') render(); return; } }
     try{
       var res = await chatClient.from('profiles')
-        .select('id,username,total_level,gold,skills,equipment,stats,mortal,updated_at')
+        .select('id,username,total_level,gold,skills,equipment,stats,mortal,class,updated_at')
         .order('total_level', { ascending:false })
         .limit(LEADERBOARD_LIMIT);
       if(res.error){
-        // The stats/mortal columns may not be migrated yet -- fall back so the board still loads
-        // (lifetime-stat rankings read as 0 and mortal styling is off until the migration + a re-sync).
+        // The `class` column may not be migrated yet -- retry WITHOUT it but keep stats/mortal, so the
+        // board doesn't lose its stat rankings or Mortal styling just because class icons aren't live.
+        res = await chatClient.from('profiles')
+          .select('id,username,total_level,gold,skills,equipment,stats,mortal,updated_at')
+          .order('total_level', { ascending:false })
+          .limit(LEADERBOARD_LIMIT);
+      }
+      if(res.error){
+        // Older server: stats/mortal not migrated either -- minimal columns so the board still loads.
         res = await chatClient.from('profiles')
           .select('id,username,total_level,gold,skills,equipment,updated_at')
           .order('total_level', { ascending:false })
@@ -17407,9 +17416,15 @@
     var online = isMe || isPlayerOnline(p.id);
     var dot = '<span class="lb-online'+(online?' on':'')+'"'+(p.id?' data-uid="'+escapeHtml(String(p.id))+'"':'')+' title="'+(online?'Online':'Offline')+'"></span>';
     var mortal = (p.mortal === true) || (isMe && isMortal()); // Mortal-path players wear a bold maroon name
+    // Equipped-Class icon (live for me, stored for everyone else); a neutral figure when no Class is active.
+    var clsId = isMe ? activeClassId(state) : (p.class || null);
+    var clsDef = clsId ? CLASS_DEFS_BY_ID[clsId] : null;
+    var clsIcon = clsDef ? clsDef.icon : svgIcon('person','var(--text-faint)');
+    var clsTitle = clsDef ? clsDef.name+' Class' : 'No active Class';
     return '<button class="lb-row'+(isMe?' me':'')+'" data-action="viewProfile" data-id="'+escapeHtml(String(p.id||''))+'">'
       +'<span class="lb-rank">'+(medals[rank]||('#'+rank))+'</span>'
       +dot
+      +'<span class="lb-class" title="'+escapeHtml(clsTitle)+'">'+clsIcon+'</span>'
       +'<span class="lb-name'+(mortal?' mortal':'')+'"'+(mortal?' title="Mortal path"':'')+'>'+escapeHtml(p.username||'anon')+'</span>'
       +'<span class="lb-lvl">'+lbPrimaryText(p, metric)+'</span>'
       +'<span class="lb-gold">'+secondary+'</span></button>';

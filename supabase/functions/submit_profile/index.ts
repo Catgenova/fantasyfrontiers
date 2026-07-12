@@ -147,6 +147,11 @@ Deno.serve(async (req) => {
   // of the game's progress — a Mortal's death flips this to false when they republish as Immortal.
   const mortal = (body as { mortal?: unknown }).mortal === true;
 
+  // Currently-equipped Class id (for the leaderboard's class icon). Cosmetic + client-authoritative;
+  // stored as a bounded slug or null. The client maps it to an icon (unknown/null -> neutral figure).
+  const clsRaw = (body as { class?: unknown }).class;
+  const cls = (typeof clsRaw === "string" && /^[a-z][a-z0-9_]{0,23}$/.test(clsRaw)) ? clsRaw : null;
+
   // 4. Accept.
   const { error: upErr } = await admin.from("profiles").upsert({
     id: userId,
@@ -157,6 +162,7 @@ Deno.serve(async (req) => {
     equipment,
     stats,
     mortal,
+    class: cls,
     updated_at: new Date(nowMs).toISOString(),
   }, { onConflict: "id" });
   if (upErr) return json({ ok: false, error: "Could not save profile." }, 500);
