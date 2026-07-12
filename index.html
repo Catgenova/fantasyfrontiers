@@ -5161,7 +5161,7 @@
   function getFamiliarLevel(skillId){
     return (state.familiars[skillId] && state.familiars[skillId].level) || 1;
   }
-  function familiarPotencyMult(level){ return (1 + (Math.max(1,level)-1)*FAMILIAR_POTENCY_PER_LEVEL) * (1 + getClothArmorSpellBonus(state)) * (1 + stavesEfficiencyBonus(state)) * menageristPotencyMult(); }
+  function familiarPotencyMult(level){ return (1 + (Math.max(1,level)-1)*FAMILIAR_POTENCY_PER_LEVEL) * (1 + getClothArmorSpellBonus(state)) * (1 + stavesEfficiencyBonus(state)) * (1 + getRingFamiliarBonus(state)) * menageristPotencyMult(); }
   // ---- Staff & multi-familiar helpers ----
   // The Staves proficiency (trained by familiar damage) boosts familiar efficiency (spell potency):
   // +1% at Lv 1 up to +100% at Lv 100. Applies to every familiar cast.
@@ -6691,7 +6691,8 @@
     {id:'light',  name:'Ring of Light',  icon:svgIcon('ring',ELEMENT_META.light.color), kind:'elementDamage', element:'light', min:0.01, max:0.20},
     {id:'dark',   name:'Ring of Dark',   icon:svgIcon('ring',ELEMENT_META.dark.color),  kind:'elementDamage', element:'dark',  min:0.01, max:0.20},
     {id:'precision', name:'Ring of Precision', icon:svgIcon('ring','#d8d8d8'), kind:'accuracy',   min:0.05, max:0.30},
-    {id:'warding',   name:'Ring of Warding',   icon:svgIcon('ring','#4a9c8a'), kind:'resistance', min:0.01, max:0.20, retired:true} // no longer craftable -- the Warding role moved to the Amulet of Warding; existing rings still work
+    {id:'warding',   name:'Ring of Warding',   icon:svgIcon('ring','#4a9c8a'), kind:'resistance', min:0.01, max:0.20, retired:true}, // no longer craftable -- the Warding role moved to the Amulet of Warding; existing rings still work
+    {id:'communion', name:'Ring of Communion', icon:svgIcon('ring','#7a5aa8'), kind:'familiar',   min:0.05, max:0.50} // +5% -> +50% familiar spell potency (Tier 0 -> Tier 20), 2x/4x/8x with rarity
   ];
   var RING_TYPE_MAP = {};
   RING_TYPES.forEach(function(rt){ RING_TYPE_MAP[rt.id] = rt; });
@@ -6904,6 +6905,17 @@
     });
     return total;
   }
+  // Sum of all equipped Communion rings' familiar-efficiency bonus (stacks across the 5 slots),
+  // folded into familiar spell potency alongside the cloth-armour and Staves bonuses.
+  function getRingFamiliarBonus(st){
+    st = st || state;
+    var total = 0;
+    RING_SLOT_IDS.forEach(function(slotId){
+      var ring = getRingItemInSlot(st, slotId);
+      if(ring && ring.kind==='familiar') total += ring.bonus;
+    });
+    return total;
+  }
   // Sum of all equipped Warding rings' flat damage resistance, capped so it can never fully
   // negate incoming damage.
   function getRingResistanceBonus(st){
@@ -6922,6 +6934,7 @@
     if(o.kind==='elementDamage') return elementIcon(o.element)+' '+ELEMENT_META[o.element].label+' dmg';
     if(o.kind==='accuracy') return 'accuracy';
     if(o.kind==='resistance') return 'dmg resist';
+    if(o.kind==='familiar') return 'familiar potency';
     return TYPE_ICON[o.damageType]+' '+o.damageType+' dmg';
   }
   function getAmuletDefenseBonus(state){
@@ -11319,7 +11332,7 @@
     html += renderRecipeGrid('jewelrycrafting', CRAFTING_SKILLS.jewelrycrafting.recipes);
 
     html += '<h3>Forge Rings</h3>';
-    html += '<div class="section-intro">Physical Rings (Blunt/Slash/Pierce) boost their matching damage type, scaled by how much of your weapon\'s damage is that type. Elemental Rings (Fire/Water/Earth/Light/Dark) add +1-20% damage of their element, and a Precision Ring adds +5-30% Accuracy. Elemental/Precision rings scale their bonus 2x/4x/8x with rarity. (Flat damage resistance now comes from the Amulet of Warding below.) Sacrificing a Ring restores extra Faith.</div>';
+    html += '<div class="section-intro">Physical Rings (Blunt/Slash/Pierce) boost their matching damage type, scaled by how much of your weapon\'s damage is that type. Elemental Rings (Fire/Water/Earth/Light/Dark) add +1-20% damage of their element, a Precision Ring adds +5-30% Accuracy, and a Ring of Communion adds +5-50% familiar spell potency. Elemental/Precision/Communion rings scale their bonus 2x/4x/8x with rarity. (Flat damage resistance now comes from the Amulet of Warding below.) Sacrificing a Ring restores extra Faith.</div>';
     html += '<div class="card-grid">';
     RING_TYPES.forEach(function(rt){
       if(rt.retired) return; // retired ring types (e.g. Warding) stay usable if owned but are no longer craftable
@@ -19923,7 +19936,7 @@
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem,
-      RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
+      RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
       BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
       DAMAGE_TYPES:DAMAGE_TYPES
     };

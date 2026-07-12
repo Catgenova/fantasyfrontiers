@@ -2360,6 +2360,7 @@
     });
     ok(byId.precision && byId.precision.kind === 'accuracy', 'Ring of Precision is an accuracy ring');
     ok(byId.warding && byId.warding.kind === 'resistance', 'Ring of Warding is a resistance ring');
+    ok(byId.communion && byId.communion.kind === 'familiar', 'Ring of Communion is a familiar-potency ring');
     ok(byId.blunt && !byId.blunt.kind, 'physical rings still have no kind');
 
     var TC = FF.TIER_COUNT;
@@ -2375,6 +2376,12 @@
     near(FF.RING_ITEMS['ring_precision_t'+(TC-1)+'_normal'].bonus, 0.30, 'top Precision Normal = +30% acc');
     near(FF.RING_ITEMS['ring_precision_t0_normal'].bonus, 0.05, 't0 Precision = +5% acc');
     near(FF.RING_ITEMS['ring_warding_t'+(TC-1)+'_normal'].bonus, 0.20, 'top Warding Normal = +20% resist');
+    // Ring of Communion: +5% (t0) -> +50% (t20) familiar potency at Normal, 2x/4x/8x with rarity.
+    near(FF.RING_ITEMS['ring_communion_t0_normal'].bonus, 0.05, 't0 Communion Normal = +5% familiar potency');
+    near(FF.RING_ITEMS['ring_communion_t'+(TC-1)+'_normal'].bonus, 0.50, 't20 Communion Normal = +50%');
+    near(FF.RING_ITEMS['ring_communion_t'+(TC-1)+'_rare'].bonus, 1.00, 'Rare x2 = +100%');
+    near(FF.RING_ITEMS['ring_communion_t'+(TC-1)+'_supreme'].bonus, 2.00, 'Supreme x4 = +200%');
+    near(FF.RING_ITEMS['ring_communion_t'+(TC-1)+'_fantastic'].bonus, 4.00, 'Fantastic x8 = +400%');
 
     // Physical rings unchanged.
     var bluntTop = FF.RING_ITEMS['ring_blunt_t'+(TC-1)+'_normal'];
@@ -2411,6 +2418,11 @@
     near(FF.getRingResistanceBonus(st([sl('warding', TC, 'normal')])), 0.20, 'one top warding ring => 20% resist');
     var manyWard = st([sl('warding',TC,'fantastic'), sl('warding',TC,'fantastic'), sl('warding',TC,'fantastic'), sl('warding',TC,'fantastic'), sl('warding',TC,'fantastic')]);
     near(FF.getRingResistanceBonus(manyWard), 0.90, 'resistance is capped at 90%');
+
+    // Communion ring: familiar-potency bonus sums across slots; other kinds contribute nothing.
+    near(FF.getRingFamiliarBonus(st([sl('communion', TC, 'normal')])), 0.50, 'one top Communion ring => +50% familiar potency');
+    near(FF.getRingFamiliarBonus(st([sl('communion',TC,'normal'), sl('communion',TC,'normal')])), 1.00, 'two Communion rings stack to +100%');
+    eq(FF.getRingFamiliarBonus(oneFire), 0, 'non-Communion rings give no familiar potency');
 
     // Kind rings do not add physical (damage-type) multiplier; physical rings do.
     eq(FF.getRingDamageMultiplier(oneFire, {blunt:1}), 1, 'element rings add no physical damage multiplier');
