@@ -8326,6 +8326,10 @@
   // Mortal path: death is permanent (converts the profile to Immortal). true only while the
   // player has chosen -- and not yet lost -- the Mortal path.
   function isMortal(){ return state.mortal === true; }
+  // A Mortal guild has NO shared bank/treasury (see guild creation). Its estate is funded and harvested
+  // per-member instead: cleared resources go to the clearer's own inventory, and expansion is paid from
+  // the expanding member's own gold. (A normal guild pools both through the treasury.)
+  function isMortalGuild(){ return !!(guildState && guildState.guild && guildState.guild.mortal); }
   var MORTAL_XP_MULT = 0.5;   // Mortals gain experience at half the rate of Immortals.
   function addXp(skill, amount){
     if(!isFinite(amount)) return; // never let a NaN/Infinity poison an xp total (would zero saveProgressScore and stop cloud saves)
@@ -14193,16 +14197,18 @@
       return;
     }
     var cost = getEstateExpansionCost(purchased);
-    if(estIsGuild){ guildEstateExpandFromTreasury(cost); return; } // guild estate is funded by the coffers
+    // A normal guild estate is funded from the shared treasury (officers/leader). A MORTAL guild has no
+    // treasury, so any member expands it from their OWN gold -- the new tile still joins the shared grid.
+    if(estIsGuild && !isMortalGuild()){ guildEstateExpandFromTreasury(cost); return; }
     if(state.gold < cost){
-      addLog('Expanding the estate costs ' + cost + ' gold -- you don\'t have enough.', 'danger');
+      addLog('Expanding the ' + (estIsGuild?'guild ':'') + 'estate costs ' + cost + ' gold -- you don\'t have enough.', 'danger');
       return;
     }
     state.gold -= cost;
     var next = ESTATE_EXPANSION_ORDER[purchased];
     estActive.grid[next.x][next.y].owned = true;
     estActive.expansionsPurchased = purchased + 1;
-    addLog('You expanded your estate for ' + cost + ' gold.', 'important');
+    addLog('You expanded ' + (estIsGuild?'the guild':'your') + ' estate for ' + cost + ' gold.', 'important');
     spawnFloatingText('+1 Tile', 'ft-success');
     estPersist();
     needsRender = true;
@@ -14503,13 +14509,14 @@
       var oinfo = estateObstacleInfo(cell.obstacle);
       if(giveRewards && oinfo){
         addXp(oinfo.def.skill, oinfo.xp); // the clearer always earns the XP
-        if(isGuild){
-          // Shared estate: the harvested resources belong to the guild -> deposit into the bank.
+        if(isGuild && !isMortalGuild()){
+          // Normal guild: the harvested resources belong to the guild -> deposit into the shared bank.
           guildBankDepositCleared(oinfo.itemId, oinfo.resourceAmount, oinfo.itemName, oinfo.def.label, job);
           addLog('Cleared the ' + oinfo.def.label + ' on the guild estate. +' + oinfo.xp + ' ' + SKILL_LABELS[oinfo.def.skill] + ' XP.', 'important');
         } else {
+          // Personal estate, or a MORTAL guild (no shared bank): the resources go to the clearer's own inventory.
           addItem(oinfo.itemId, oinfo.resourceAmount);
-          addLog('Cleared the ' + oinfo.def.label + ' at (' + job.x + ', ' + job.y + '). +' + oinfo.resourceAmount + ' ' + oinfo.itemName + ', +' + oinfo.xp + ' ' + SKILL_LABELS[oinfo.def.skill] + ' XP.', 'important');
+          addLog('Cleared the ' + oinfo.def.label + (isGuild ? ' on the guild estate' : ' at (' + job.x + ', ' + job.y + ')') + '. +' + oinfo.resourceAmount + ' ' + oinfo.itemName + ', +' + oinfo.xp + ' ' + SKILL_LABELS[oinfo.def.skill] + ' XP.', 'important');
           spawnFloatingText('+' + oinfo.resourceAmount + ' ' + oinfo.itemName, 'ft-success');
         }
       }
@@ -16245,8 +16252,9 @@
     // Guild estate expansion is a coffers expense: funded by the treasury, officers/leader only.
     if(estIsGuild && (guildBankState.status==='idle' || guildBankState.guildId !== (guildState.guild&&guildState.guild.id))) guildBankLoad();
     var canManageGuild = guildState.myRank==='leader' || guildState.myRank==='officer';
-    var expandFunds = estIsGuild ? (guildBankState.treasury||0) : (state.gold||0);
-    var canAfford = !fullyExpanded && expandFunds >= nextCost && (!estIsGuild || (canManageGuild && !guildEstate.busy));
+    var guildFromTreasury = estIsGuild && !isMortalGuild(); // Mortal guilds have no treasury -> members pay from their own gold
+    var expandFunds = guildFromTreasury ? (guildBankState.treasury||0) : (state.gold||0);
+    var canAfford = !fullyExpanded && expandFunds >= nextCost && (!guildFromTreasury || (canManageGuild && !guildEstate.busy));
     var html = '<div class="section-intro">'+(estIsGuild
       ? 'Your <b>guild\u2019s shared estate</b> \u2014 the same map for every member. Anyone can clear, terraform, pave, build Workshops and borders here, and each member can run their own activity at the same time. Workshops placed on the guild estate boost every member\u2019s crafting and stack with the ones on your own My Estate. '
       : 'Your home plot -- terraformable up to 20 layers tall, and expandable one tile at a time with gold. ')
@@ -16266,8 +16274,11 @@
       html += '<div class="estate-action-info">'+(estIsGuild?'The guild estate':'Your estate')+' is fully expanded.</div>';
     } else {
       html += '<div class="estate-action-row">';
-      html += '<div class="estate-action-info"><b>Expand Estate</b><br>Purchases the next tile along the boundary, starting from the top-left and circling outward. Cost rises 25% with each purchase.'+(estIsGuild?' <b>Paid from the guild treasury</b> ('+fmt(guildBankState.treasury||0)+'g) &mdash; officers &amp; the leader only.':'')+'</div>';
-      var expandLabel = canAfford ? ('Expand: '+fmt(nextCost)+'g'+(estIsGuild?' from treasury':'')) : (estIsGuild && !canManageGuild ? 'Officers only' : fmt(nextCost)+'g Req.');
+      var expandNote = guildFromTreasury
+        ? ' <b>Paid from the guild treasury</b> ('+fmt(guildBankState.treasury||0)+'g) &mdash; officers &amp; the leader only.'
+        : (estIsGuild ? ' <b>Paid from your own gold</b> ('+fmt(state.gold||0)+'g) &mdash; a Mortal guild has no treasury, so any member can grow the shared estate.' : '');
+      html += '<div class="estate-action-info"><b>Expand Estate</b><br>Purchases the next tile along the boundary, starting from the top-left and circling outward. Cost rises 25% with each purchase.'+expandNote+'</div>';
+      var expandLabel = canAfford ? ('Expand: '+fmt(nextCost)+'g'+(guildFromTreasury?' from treasury':'')) : (guildFromTreasury && !canManageGuild ? 'Officers only' : fmt(nextCost)+'g Req.');
       html += '<button class="action-btn" data-action="estateExpand" style="width:auto;flex-shrink:0" '+(canAfford?'':'disabled')+'>'+expandLabel+'</button>';
       html += '</div>';
     }
