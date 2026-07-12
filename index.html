@@ -8547,6 +8547,23 @@
     if(!u || !u.enchants || !u.enchants.length) return '';
     return '<div class="unique-ench-chips">'+uniqueEnchantLines(u).map(function(l){ return '<span class="unique-ench-chip">'+escapeHtml(l)+'</span>'; }).join('')+'</div>';
   }
+  // The inherent per-piece bonus a body-armor material grants -- familiar spell potency (cloth),
+  // ranged damage + dodge (leather), melee damage (chain), or Block (plate) -- amplified by the piece's
+  // rarity. Mirrors getClothArmorSpellBonus / getLeatherArmorBonuses / getChainArmorMeleeBonus /
+  // getPlateArmorBlockChance (one piece's contribution) so the card shows exactly what the piece adds
+  // while worn. Returned as ready-to-display strings; empty for materials/slots with no inherent bonus
+  // (e.g. a Plate Chest, which is excluded from the Block bonus).
+  function armorMaterialBonusLines(material, slot, rarityId){
+    var mult = getRarity(rarityId).mult || 1;
+    var out = [];
+    if(material==='tailoring') out.push('+'+Math.round(CLOTH_SLOT_SPELL_BONUS*mult*100)+'% Familiar spell potency');
+    else if(material==='leather'){
+      out.push('+'+Math.round(LEATHER_SLOT_BOW_DMG_BONUS*mult*100)+'% Ranged damage');
+      out.push('+'+Math.round(LEATHER_SLOT_DODGE_BONUS*mult*100)+'% Dodge chance');
+    } else if(material==='chain') out.push('+'+Math.round(CHAIN_SLOT_MELEE_DMG_BONUS*mult*100)+'% Melee damage');
+    else if(material==='plate' && PLATE_BLOCK_SLOTS.indexOf(slot)!==-1) out.push('+'+Math.round(PLATE_SLOT_BLOCK_CHANCE*mult*100)+'% Block chance');
+    return out;
+  }
   // Full stat card body for a unique-like { base, kind, tier, rarity, enhance, enchants }: icon, name,
   // rarity/tier/+enhance, base stats, and the ALWAYS-visible enhance-scaled enchant list. Shared by the
   // chat-link popup, the Inventory "Unique" section, and the unique detail popup.
@@ -8564,6 +8581,11 @@
       if(b.dmgBonus) baseLines.push('+'+Math.round(b.dmgBonus*100)+'% damage');
     }
     if(baseLines.length) html += '<div class="skill-info-section"><div class="skill-info-section-label">Base</div><div class="skill-info-section-body">'+baseLines.map(escapeHtml).join(' &bull; ')+'</div></div>';
+    // Inherent, rarity-scaled material bonus (body armor only) -- what the piece adds just by being worn.
+    if(b && b.material && b.slot){
+      var matLines = armorMaterialBonusLines(b.material, b.slot, d.rarity);
+      if(matLines.length) html += '<div class="skill-info-section"><div class="skill-info-section-label">Material Bonus</div><div class="skill-info-section-body">'+matLines.map(function(l){ return '<div style="color:var(--gold)">'+escapeHtml(l)+'</div>'; }).join('')+'</div></div>';
+    }
     var enchLines = uniqueEnchantLines(d);
     html += '<div class="skill-info-section"><div class="skill-info-section-label">Enchants ('+enchLines.length+')</div><div class="skill-info-section-body">'+(enchLines.length ? enchLines.map(function(l){ return '<div style="color:var(--gold)">'+escapeHtml(l)+'</div>'; }).join('') : '<div class="empty-note">None</div>')+'</div></div>';
     return html;
@@ -11042,7 +11064,9 @@
       var owned = Object.keys(BODY_ARMOR_ITEMS).filter(function(id){ return BODY_ARMOR_ITEMS[id].slot===slot && (state.inventory[id]||0)>0; })
         .sort(function(a,b){ return BODY_ARMOR_ITEMS[a].tierIndex - BODY_ARMOR_ITEMS[b].tierIndex; });
       html += '<div class="item-card">';
-      html += '<div class="item-top"><div class="item-icon">'+BODY_ARMOR_ICONS[slot]+'</div><div><div class="item-name">'+BODY_ARMOR_LABELS[slot]+'</div><div class="item-meta">'+(current ? current.name+' &bull; defense '+current.defense : 'Not equipped')+'</div></div></div>';
+      var curMat = current ? armorMaterialBonusLines(current.material, current.slot, current.rarity) : [];
+      var curMeta = current ? (current.name+' &bull; defense '+current.defense+(curMat.length ? ' &bull; '+curMat.join(' &bull; ') : '')) : 'Not equipped';
+      html += '<div class="item-top"><div class="item-icon">'+BODY_ARMOR_ICONS[slot]+'</div><div><div class="item-name">'+BODY_ARMOR_LABELS[slot]+'</div><div class="item-meta">'+curMeta+'</div></div></div>';
       if(owned.length===0){
         html += '<div class="empty-note">No '+BODY_ARMOR_LABELS[slot]+' in inventory. Forge one above.</div>';
       } else {
@@ -19783,7 +19807,7 @@
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS,
-      BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS,
+      BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

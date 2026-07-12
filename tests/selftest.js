@@ -2448,6 +2448,14 @@
     near(FF.getClothArmorSpellBonus(full), FF.CLOTH_SLOT_SPELL_BONUS*8*FF.TAILORING_SLOTS.length, 'five Fantastic cloth pieces stack');
     var plateOnly = { bodyArmor: { chest: {material:'plate', tier:6, rarity:'fantastic'} } };
     eq(FF.getClothArmorSpellBonus(plateOnly), 0, 'plate pieces give no familiar bonus');
+
+    // Card display: the inherent material bonus shown on item cards, per material/slot/rarity.
+    eq(FF.armorMaterialBonusLines('tailoring','chest','normal').join('|'), '+5% Familiar spell potency', 'cloth card: +5% familiar potency at Normal');
+    eq(FF.armorMaterialBonusLines('tailoring','chest','fantastic').join('|'), '+40% Familiar spell potency', 'cloth card: +40% at Fantastic');
+    eq(FF.armorMaterialBonusLines('chain','helmet','rare').join('|'), '+10% Melee damage', 'chain card: +10% melee at Rare');
+    eq(FF.armorMaterialBonusLines('leather','boots','supreme').join('|'), '+20% Ranged damage|+4% Dodge chance', 'leather card: ranged + dodge at Supreme');
+    eq(FF.armorMaterialBonusLines('plate','helmet','normal').join('|'), '+5% Block chance', 'plate helmet card: +5% block');
+    eq(FF.armorMaterialBonusLines('plate','chest','fantastic').join('|'), '', 'plate CHEST card: no block bonus (chest is excluded)');
   });
 
   // ---- Classes: Treasure Hunter (rarity-scaling fortune seeker) -------------------------
