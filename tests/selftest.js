@@ -609,6 +609,12 @@
     var base = FF.computeProfileStats();
     ok(base.skills[physId] !== undefined, 'physiques appear in the profile skills map');
     eq(base.total_level, sumSkills(base), 'total_level equals the sum of every submitted skill (server invariant)');
+    // Guard the server's MAX_SKILLS cap (submit_profile rejects the WHOLE submission if the skill count
+    // exceeds it -- which silently froze the entire leaderboard once the set outgrew the old cap of 160).
+    // The submitted set is ~172 today; keep it well under the server's 400 so adding classes/skills can't
+    // break profile writes without this failing first as a heads-up to bump the server cap.
+    var submittedSkillCount = Object.keys(base.skills).length;
+    ok(submittedSkillCount < 350, 'submitted leaderboard skill count (' + submittedSkillCount + ') stays well under the server MAX_SKILLS cap (400)');
     s.physique[physId] = FF.xpFloorForLevel(31); // ~Lv 31
     var afterPhys = FF.computeProfileStats();
     ok(afterPhys.skills[physId] > 0, 'physique level shows in the profile');

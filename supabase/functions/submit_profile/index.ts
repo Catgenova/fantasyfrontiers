@@ -16,7 +16,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // ---- Tunable limits (safe, generous defaults) ----
 const MAX_SKILL_LEVEL = 100;      // getLevel caps at content tier 100
 const MIN_SKILL_LEVEL = 1;        // getLevel() returns >= 1
-const MAX_SKILLS = 160;           // main skills + proficiencies + classes + physiques + attunements (~100), with headroom
+const MAX_SKILLS = 400;           // main skills + proficiencies + classes + physiques + attunements. The
+                                 // submitted set is ~172 today and grows every time a class/skill is
+                                 // added (e.g. Samurai) -- was 160, which the set had OUTGROWN, so EVERY
+                                 // submission 400'd ("Too many skills") and the whole leaderboard stopped
+                                 // updating. 400 leaves generous headroom while still bounding abuse.
 const GOLD_ABS_CAP = 1_000_000_000_000; // 1e12 sanity ceiling
 
 // Rate limits. Allowed increase = BURST + PER_HOUR * hoursElapsed.
