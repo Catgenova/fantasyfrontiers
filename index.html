@@ -13037,6 +13037,12 @@
   function estateLowerRequiredLevel(currentHeight){
     return ESTATE_LOWER_BASE_LEVEL + ESTATE_LOWER_LEVEL_STEP * Math.max(0, 18-currentHeight);
   }
+  // Whether the player's own skill is high enough to clear this obstacle yet (guild obstacles train
+  // and gate on the player's personal skill too). Models the player can't clear are drawn dimmed.
+  function estateCanClearObstacle(obs){
+    var info = estateObstacleInfo(obs);
+    return !info || getLevel(state.xp[info.def.skill] || 0) >= info.reqLevel;
+  }
   // ---- Active-estate context ----------------------------------------------------------
   // The estate engine (interaction + rendering below) operates on whichever estate is
   // currently on screen. Personal "My Estate" and the shared guild estate are never visible
@@ -14492,7 +14498,7 @@
       ctx.fillRect(p.x-ts/2, p.y-ts/2, ts, ts);
       ctx.strokeStyle='rgba(0,0,0,0.22)'; ctx.lineWidth=1; ctx.strokeRect(p.x-ts/2, p.y-ts/2, ts, ts);
       if(jobTiles[x+'_'+y]){ ctx.fillStyle='rgba(206,52,52,0.38)'; ctx.fillRect(p.x-ts/2, p.y-ts/2, ts, ts); ctx.strokeStyle='#d23a3a'; ctx.lineWidth=2; ctx.strokeRect(p.x-ts/2+1, p.y-ts/2+1, ts-2, ts-2); }
-      if(cell.obstacle) estateDrawTdObstacle(ctx, p.x, p.y, cell.obstacle, ts);
+      if(cell.obstacle){ var _tdClear = estateCanClearObstacle(cell.obstacle); if(!_tdClear) ctx.globalAlpha = 0.5; estateDrawTdObstacle(ctx, p.x, p.y, cell.obstacle, ts); if(!_tdClear) ctx.globalAlpha = 1; }
       if(cell.workshopId) estateDrawTdWorkshop(ctx, p.x, p.y, WORKSHOP_ITEMS[cell.workshopId], ts);
       if(cell.cottageId) estateDrawTdCottage(ctx, p.x, p.y, COTTAGE_ITEMS[cell.cottageId], ts);
       if(cell.fieldTier != null) estateDrawTdField(ctx, p.x, p.y, cell.fieldTier, ts);
@@ -14567,7 +14573,10 @@
         ctx.strokeStyle = '#d23a3a'; ctx.lineWidth = 2; ctx.stroke();
       }
       if(cell.obstacle){
+        var _canClear = estateCanClearObstacle(cell.obstacle);
+        if(!_canClear) ctx.globalAlpha = 0.5; // dim resource models you can't yet clear (skill too low)
         drawEstateObstacleModel(ctx, pos.x, pos.y + ESTATE_TILE_H/2, cell.obstacle, estateRotation);
+        if(!_canClear) ctx.globalAlpha = 1;
       }
       if(cell.workshopId){
         drawEstateWorkshopModel(ctx, pos.x, pos.y + ESTATE_TILE_H/2, WORKSHOP_ITEMS[cell.workshopId], estateRotation);
