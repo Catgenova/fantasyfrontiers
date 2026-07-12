@@ -1857,6 +1857,7 @@
     ok(cd, 'summoner class defined');
     eq(cd.passives.length, 5, 'five tiered passives');
     eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'passive tiers are 1/20/40/60/80');
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Third Eye,Guardian Bond,Desperate Summons,Overload,Kindred Fury', 'reworked Summoner perk names');
     eq(cd.reqParts.length, 5, 'requires 5 gear pieces (4 cloth + staff)');
 
     function cloth(){ return {tier:1, rarity:'normal', material:'tailoring'}; }
@@ -1881,17 +1882,41 @@
     var leveled = { xp:{summoner:FF.xpFloorForLevel(60)}, equippedMainhand:'staff', bodyArmor:full.bodyArmor };
     ok(FF.classLevel(leveled,'summoner') >= 60, 'xp yields class level >= 60 ('+FF.classLevel(leveled,'summoner')+')');
 
-    // Lv 60 passive: +15% block, but only while the class is actually equipped/active.
-    eq(FF.classBlockBonus(full), 0, 'Lv 1 summoner: no block bonus yet');
-    eq(FF.classBlockBonus(leveled), 0.15, 'Lv 60 summoner (equipped): +15% block');
-    var leveledNoGear = { xp:{summoner:FF.xpFloorForLevel(60)}, equippedMainhand:'greatsword', bodyArmor:{ helmet:bare(),chest:bare(),gauntlets:bare(),boots:bare(),back:bare() } };
-    eq(FF.classBlockBonus(leveledNoGear), 0, 'high-level summoner with gear off: no block bonus');
+    // Lv 1 Third Eye: +1 Companion slot on top of the Staff's slots (isolate by comparing to the same
+    // staff with the class inactive, so only Third Eye differs).
+    var sameStaffNoClass = { xp:{summoner:0}, equippedMainhand:'staff', bodyArmor:{ helmet:{tier:1,rarity:'normal',material:'leather'}, chest:cloth(), gauntlets:cloth(), boots:cloth(), back:bare() } };
+    eq(FF.activeClassId(sameStaffNoClass), null, 'leather helm breaks the class (Third Eye control)');
+    eq(FF.activeCompanionSlots(full), FF.activeCompanionSlots(sameStaffNoClass) + 1, 'Lv 1 Third Eye grants +1 Companion slot');
 
-    // The class has its own familiar with a damaging kit that carries its element.
+    // Behavioral: Overload quickens the cast timer with fight time (floor 5s); Desperate Summons halves
+    // it while below 25% HP. Uses the live state (real maxHp) and the live combat activity clock.
+    (function(){
+      var s = FF._state;
+      var snap = { mh:s.equippedMainhand, mhr:s.equippedMainhandRarity, ba:s.bodyArmor, xp:s.xp.summoner, hp:s.playerHp, act:s.activity };
+      try {
+        s.equippedMainhand='staff'; s.equippedMainhandRarity='normal';
+        s.bodyArmor={ helmet:cloth(), chest:cloth(), gauntlets:cloth(), boots:cloth(), back:bare() };
+        s.xp.summoner = FF.xpFloorForLevel(80);
+        eq(FF.activeClassId(s), 'summoner', 'behavioral setup activates the Summoner');
+        var mh = FF.maxHp(s);
+        s.activity = null; s.playerHp = mh;
+        eq(FF.familiarCastIntervalMs(), 10000, 'no fight: familiars cast on the 10s base');
+        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:100, duelStartedAt: Date.now() - 20000 };
+        eq(FF.familiarCastIntervalMs(), 8000, 'Overload: 20s in => -2000ms (8s)');
+        s.activity.duelStartedAt = Date.now() - 100000;
+        eq(FF.familiarCastIntervalMs(), 5000, 'Overload: floors at 5s');
+        s.activity.duelStartedAt = Date.now(); s.playerHp = Math.round(mh*0.10);
+        eq(FF.familiarCastIntervalMs(), 5000, 'Desperate Summons: <25% HP halves the 10s base to 5s');
+      } finally {
+        s.equippedMainhand=snap.mh; s.equippedMainhandRarity=snap.mhr; s.bodyArmor=snap.ba; s.xp.summoner=snap.xp; s.playerHp=snap.hp; s.activity=snap.act;
+      }
+    })();
+
+    // The class has its own familiar with a damaging kit that carries its element (Kindred Fury lets it crit).
     var fam = FF.FAMILIAR_DATA.summoner;
     ok(fam && fam.spells && fam.spells.length === 4, 'summoner familiar has 4 spells');
     var dmgSpells = fam.spells.filter(function(s){ return s.type==='hit' || s.type==='siphon'; });
-    ok(dmgSpells.length >= 2, 'summoner familiar has damaging spells (for the double-damage passive)');
+    ok(dmgSpells.length >= 2, 'summoner familiar has damaging spells');
     ok(fam.spells.some(function(s){ return s.element==='light'; }), 'summoner familiar spells carry the light element');
   });
 
