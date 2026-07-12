@@ -12010,6 +12010,21 @@
       }
     }
     html += '</div>';
+    // Familiar / summoning modifiers -- spell potency (efficiency) and where it comes from, plus the
+    // companion slot count and cast cadence. Block / Dodge / Ward Reflect live in the Defense group above.
+    var _famCloth = getClothArmorSpellBonus(state), _famStaves = stavesEfficiencyBonus(state), _famRing = getRingFamiliarBonus(state), _famMenag = menageristPotencyMult();
+    var _famPot = (1+_famCloth)*(1+_famStaves)*(1+_famRing)*_famMenag - 1;
+    var _famSrc = [];
+    if(_famCloth>0)  _famSrc.push('Cloth +'+Math.round(_famCloth*100)+'%');
+    if(_famStaves>0) _famSrc.push('Staves +'+Math.round(_famStaves*100)+'%');
+    if(_famRing>0)   _famSrc.push('Communion +'+Math.round(_famRing*100)+'%');
+    if(_famMenag>1)  _famSrc.push('Menagerist +'+Math.round((_famMenag-1)*100)+'%');
+    html += '<div class="stats-group"><h4>'+svgIcon('starburst','currentColor')+' Familiar</h4>';
+    html += '<div class="stat-row"><span class="stat-label">Spell Potency</span><span class="stat-value">+'+(Math.round(_famPot*1000)/10)+'%</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">&nbsp;&nbsp;Sources</span><span class="stat-value" style="font-size:11px">'+(_famSrc.length ? _famSrc.join(' &bull; ') : 'Familiar level only')+'</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Companion Slots</span><span class="stat-value">'+activeCompanionSlots(state)+'</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Cast Interval</span><span class="stat-value">'+(familiarCastIntervalMs()/1000)+'s</span></div>';
+    html += '</div>';
     html += '<div class="stats-group"><h4>'+svgIcon('target','currentColor')+' Damage Triangle</h4>';
     var SHORT_TYPE_LABEL = {slashing:'Slash', piercing:'Pierce', blunt:'Blunt'};
     DAMAGE_TYPES.forEach(function(t){
