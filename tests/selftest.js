@@ -1263,8 +1263,17 @@
     // formula exactly -- hp[i]=round(50000*1.05^i), boss=round(hp[23]*10) -- or shared HP desyncs.
     for(var _i = 0; _i < 24; _i++) eq(en[_i].hp, Math.round(50000 * Math.pow(1.05, _i)), 'enemy ' + _i + ' HP matches the server formula');
     eq(en[24].hp, Math.round(en[23].hp * 10), 'boss HP = round(24th * 10) matches the server');
-    // The DPS proxy the client reports to the server is a positive finite number.
+    // Enemy ATTACK curve + cadence must also match the server (dungeon edge fn d1Roster) or enemy
+    // damage/timing desyncs in Stage B: atkMin=round(200*1.04^i), atkMax=round(500*1.04^i),
+    // interval_ms = round((2.2 + (i%5)*0.3)*1000).
+    for(var _j = 0; _j < 25; _j++){
+      eq(en[_j].atkMin, Math.round(200 * Math.pow(1.04, _j)), 'enemy ' + _j + ' atkMin matches server');
+      eq(en[_j].atkMax, Math.round(500 * Math.pow(1.04, _j)), 'enemy ' + _j + ' atkMax matches server');
+      eq(Math.round(en[_j].attackSpeed * 1000), Math.round((2.2 + (_j % 5) * 0.3) * 1000), 'enemy ' + _j + ' attack interval matches server');
+    }
+    // Reported proxies are bounded: DPS positive, mitigation 0..85%.
     var pw = FF.dungeonPower(); ok(typeof pw === 'number' && isFinite(pw) && pw >= 1, 'dungeonPower() is a positive finite DPS proxy');
+    var mp = FF.dungeonMitPct(); ok(mp >= 0 && mp <= 85, 'dungeonMitPct() is a bounded 0..85% proxy');
   });
 
   // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------

@@ -27,19 +27,27 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
-// Server-authoritative dungeon roster. HP must match the client's DUNGEON_D1_ENEMIES:
-// hp[i] = round(50000 * 1.05^i) for i < 24; hp[24] = round(hp[23] * 10) (boss ~10x the 24th).
-function d1Hp(): number[] {
-  const hp: number[] = [];
-  for (let i = 0; i < 25; i++) hp.push(Math.round(50000 * Math.pow(1.05, i)));
+// Server-authoritative dungeon roster. These MUST match the client's DUNGEON_D1_ENEMIES:
+//   hp[i]  = round(50000 * 1.05^i) for i < 24; hp[24] = round(hp[23]*10)   (boss ~10x the 24th)
+//   atk[i] = round((round(200*1.04^i) + round(500*1.04^i)) / 2)            (avg enemy hit)
+//   spd_ms[i] = round((2.2 + (i%5)*0.3) * 1000)                            (enemy attack interval)
+function d1Roster(): { hp: number[]; atk: number[]; spd: number[] } {
+  const hp: number[] = [], atk: number[] = [], spd: number[] = [];
+  for (let i = 0; i < 25; i++) {
+    hp.push(Math.round(50000 * Math.pow(1.05, i)));
+    atk.push(Math.round((Math.round(200 * Math.pow(1.04, i)) + Math.round(500 * Math.pow(1.04, i))) / 2));
+    spd.push(Math.round((2.2 + (i % 5) * 0.3) * 1000));
+  }
   hp[24] = Math.round(hp[23] * 10);
-  return hp;
+  return { hp, atk, spd };
 }
-const DUNGEONS: Record<string, { count: number; hours: number; hp: number[] }> = {
-  d1: { count: 25, hours: 3, hp: d1Hp() },
+const DUNGEONS: Record<string, { count: number; hours: number; hp: number[]; atk: number[]; spd: number[] }> = {
+  d1: { count: 25, hours: 3, ...d1Roster() },
 };
-const POWER_CEILING = 12000;     // max accepted DPS proxy (anti-cheat clamp)
-const MAX_CREDIT_SECONDS = 30;   // max real-time credited per assault ping (anti-burst)
+const POWER_CEILING = 12000;         // max accepted DPS proxy (anti-cheat clamp)
+const MAX_CREDIT_SECONDS = 30;       // max real-time credited per assault ping (anti-burst)
+const MAX_HP_CEILING = 100_000_000;  // clamp for the client-reported effective HP proxy
+const THREAT_CEILING = 1000;         // clamp for the client-reported threat proxy
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -67,6 +75,18 @@ Deno.serve(async (req) => {
     if (!Number.isFinite(p) || p < 0) p = 0;
     return Math.min(POWER_CEILING, Math.round(p));
   }
+  function clampInt(v: unknown, lo: number, hi: number): number {
+    let n = Number(v);
+    if (!Number.isFinite(n)) n = lo;
+    return Math.max(lo, Math.min(hi, Math.round(n)));
+  }
+  // Combat stats a client reports for itself (trusted-but-bounded proxies, like power).
+  const combatStats = () => ({
+    p_power: clampPower(body.power),
+    p_threat: clampInt(body.threat, 1, THREAT_CEILING),
+    p_max_hp: clampInt(body.max_hp, 1, MAX_HP_CEILING),
+    p_mit: clampInt(body.mit, 0, 85),
+  });
 
   // Full snapshot of a session id: the session row + its member roster.
   async function snapshotOf(sessionId: string) {
@@ -75,7 +95,7 @@ Deno.serve(async (req) => {
       .eq("id", sessionId).maybeSingle();
     if (!session) return { session: null, members: [] };
     const { data: members } = await admin.from("dungeon_members")
-      .select("user_id, username, power, damage, alive, claimed").eq("session_id", sessionId).order("joined_at");
+      .select("user_id, username, power, damage, alive, claimed, hp, max_hp, threat").eq("session_id", sessionId).order("joined_at");
     return { session, members: members || [] };
   }
 
@@ -85,7 +105,7 @@ Deno.serve(async (req) => {
     if (!mine || !mine.length) return { session: null, members: [] };
     for (const row of mine) {
       const snap = await snapshotOf(row.session_id as string);
-      if (snap.session && ["lobby", "active", "cleared"].includes(snap.session.status as string)) return snap;
+      if (snap.session && ["lobby", "active", "cleared", "wiped"].includes(snap.session.status as string)) return snap;
     }
     return { session: null, members: [] };
   }
@@ -109,7 +129,7 @@ Deno.serve(async (req) => {
     const def = DUNGEONS[layer];
     if (!def) return json({ ok: false, error: "Unknown dungeon." }, 400);
     const { data: r, error } = await admin.rpc("dungeon_create", {
-      p_user: user.id, p_username: username, p_layer: layer, p_power: clampPower(body.power), p_count: def.count, p_hours: def.hours,
+      p_user: user.id, p_username: username, p_layer: layer, ...combatStats(), p_count: def.count, p_hours: def.hours,
     });
     if (error) return json({ ok: false, error: "Could not create the party." }, 500);
     const res = r as { status?: string; session_id?: string };
@@ -120,7 +140,7 @@ Deno.serve(async (req) => {
   if (action === "join") {
     const sid = String(body.session_id || "");
     const { data: r, error } = await admin.rpc("dungeon_join", {
-      p_session: sid, p_user: user.id, p_username: username, p_power: clampPower(body.power),
+      p_session: sid, p_user: user.id, p_username: username, ...combatStats(),
     });
     if (error) return json({ ok: false, error: "Could not join." }, 500);
     const st = (r as { status?: string }).status;
@@ -160,10 +180,24 @@ Deno.serve(async (req) => {
     const def = s ? DUNGEONS[s.layer as string] : null;
     if (!def) return json({ ok: false, error: "Party not found." }, 404);
     const { data: r, error } = await admin.rpc("dungeon_assault", {
-      p_session: sid, p_user: user.id, p_power: clampPower(body.power), p_max_seconds: MAX_CREDIT_SECONDS, p_hp: def.hp,
+      p_session: sid, p_user: user.id, p_power: clampPower(body.power), p_max_seconds: MAX_CREDIT_SECONDS,
+      p_hp: def.hp, p_atk: def.atk, p_spd_ms: def.spd,
     });
     if (error) return json({ ok: false, error: "Assault failed." }, 500);
     return json({ ok: true, result: r, ...(await snapshotOf(sid)) });
+  }
+
+  if (action === "claim") {
+    const sid = String(body.session_id || "");
+    const { data: s } = await admin.from("dungeon_sessions").select("id").eq("id", sid).maybeSingle();
+    if (!s) return json({ ok: false, error: "Party not found." }, 404);
+    const { data: r, error } = await admin.rpc("dungeon_claim", { p_session: sid, p_user: user.id });
+    if (error) return json({ ok: false, error: "Claim failed." }, 500);
+    const st = (r as { status?: string }).status;
+    if (st === "dead") return json({ ok: false, error: "You fell — only survivors claim the Formula." }, 403);
+    if (st === "claimed") return json({ ok: false, error: "You've already claimed this run's Formula." }, 409);
+    if (st !== "ok") return json({ ok: false, error: "Nothing to claim." }, 409);
+    return json({ ok: true, claim: r, ...(await snapshotOf(sid)) });
   }
 
   return json({ ok: false, error: "Unknown action." }, 400);

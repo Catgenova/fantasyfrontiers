@@ -13825,6 +13825,12 @@
     var fam = getFamiliarDamageMult ? getFamiliarDamageMult() : 1;
     return Math.max(1, Math.round(avg * prof * (1 + relic) * fam / attackSpeed));
   }
+  // Mitigation % proxy the server applies to enemy hits (0..85). Derived from total armour defense on a
+  // soft curve; the player's max HP (reported separately) is the main survivability lever.
+  function dungeonMitPct(){ var def = (typeof getTotalArmorDefense === 'function') ? (getTotalArmorDefense(state) || 0) : 0; return Math.max(0, Math.min(85, Math.round(100 * def / (def + 1500)))); }
+  // The combat stats a client reports about itself (all clamped server-side).
+  function dungeonStats(){ return { power:dungeonPower(), threat:playerThreat(state), max_hp:maxHp(state), mit:dungeonMitPct() }; }
+  function dungeonNetMyMember(){ if(!authUser) return null; for(var i = 0; i < dungeonNet.members.length; i++){ if(dungeonNet.members[i].user_id === authUser.id) return dungeonNet.members[i]; } return null; }
   function dungeonNetInvoke(action, payload){
     if(!chatClient || !authUser) return Promise.resolve({ ok:false, error:'Sign in to play multiplayer dungeons.' });
     var body = { action:action }; if(payload){ for(var k in payload){ if(payload.hasOwnProperty(k)) body[k] = payload[k]; } }
@@ -13839,11 +13845,10 @@
     dungeonNet.members = res.members || [];
     dungeonNet.status = 'ready';
     dungeonNetResubscribe();
-    // On a clear, the layer's Formula lands in each surviving delver's own inventory (once).
+    // On a clear, claim the Formula -- the server grants it only to SURVIVORS, once each.
     if(dungeonNet.session && dungeonNet.session.status === 'cleared' && !dungeonNet.clearedHandled){
       dungeonNet.clearedHandled = true;
-      var def = DUNGEON_DEFS[dungeonNet.session.layer];
-      if(def){ addItem(def.reward, 1); addLog('The ' + def.category + ' is cleared! You claim a ' + def.rewardName + '.', 'important'); spawnFloatingText('+1 ' + def.rewardName, 'ft-rare'); }
+      dungeonNetClaim();
     }
     if(!dungeonNet.session) dungeonNet.clearedHandled = false;
   }
@@ -13862,8 +13867,9 @@
     dungeonNet.subMembers = chatClient.channel('dungeon_m_' + sid)
       .on('postgres_changes', { event:'*', schema:'public', table:'dungeon_members', filter:'session_id=eq.' + sid }, function(){ dungeonNetRefresh(); }).subscribe();
   }
-  function dungeonNetCreate(layer){ if(dungeonNet.busy) return; dungeonNet.busy = true; dungeonNet.error = ''; dungeonNetInvoke('create', { layer:layer, power:dungeonPower() }).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not create the party.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
-  function dungeonNetJoin(id){ if(dungeonNet.busy) return; dungeonNet.busy = true; dungeonNet.error = ''; dungeonNetInvoke('join', { session_id:id, power:dungeonPower() }).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not join.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
+  function dungeonNetCreate(layer){ if(dungeonNet.busy) return; dungeonNet.busy = true; dungeonNet.error = ''; dungeonNetInvoke('create', Object.assign({ layer:layer }, dungeonStats())).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not create the party.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
+  function dungeonNetJoin(id){ if(dungeonNet.busy) return; dungeonNet.busy = true; dungeonNet.error = ''; dungeonNetInvoke('join', Object.assign({ session_id:id }, dungeonStats())).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not join.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
+  function dungeonNetClaim(){ if(!dungeonNet.session) return; dungeonNetInvoke('claim', { session_id:dungeonNet.session.id }).then(function(res){ if(res.ok){ var def = DUNGEON_DEFS[dungeonNet.session.layer]; if(def){ addItem(def.reward, 1); addLog('The ' + def.category + ' is cleared! You claim a ' + def.rewardName + '.', 'important'); spawnFloatingText('+1 ' + def.rewardName, 'ft-rare'); } dungeonNetApply(res); } if(currentCategory === 'dungeons') render(); }); }
   function dungeonNetLeave(){ if(!dungeonNet.session || dungeonNet.busy) return; dungeonNet.busy = true; var sid = dungeonNet.session.id; dungeonNetInvoke('leave', { session_id:sid }).then(function(res){ dungeonNet.busy = false; dungeonNet.session = null; dungeonNet.members = []; dungeonNet.clearedHandled = false; dungeonNetResubscribe(); if(currentCategory === 'dungeons') render(); }); }
   function dungeonNetStart(){ if(!dungeonNet.session || dungeonNet.busy) return; dungeonNet.busy = true; dungeonNet.error = ''; var sid = dungeonNet.session.id; dungeonNetInvoke('start', { session_id:sid }).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not start.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
   function dungeonNetListLobbies(layer){ dungeonNetInvoke('list', { layer:layer }).then(function(res){ if(res.ok){ dungeonNet.lobbies = res.lobbies || []; if(currentCategory === 'dungeons') render(); } }); }
@@ -13872,6 +13878,8 @@
   function dungeonNetTick(){
     var s = dungeonNet.session;
     if(!s || s.status !== 'active') return;
+    var me = dungeonNetMyMember();
+    if(me && !me.alive) return; // a downed delver can't attack; they spectate until wipe or clear
     var now = Date.now();
     if(now - dungeonNet.lastAssault < 2500) return;
     dungeonNet.lastAssault = now;
@@ -13895,7 +13903,7 @@
       var ns = dungeonNet.session.status;
       if(ns === 'lobby') return renderDungeonNetLobby();
       if(ns === 'active') return renderDungeonNetRun();
-      if(ns === 'cleared') return renderDungeonNetResult();
+      if(ns === 'cleared' || ns === 'wiped') return renderDungeonNetResult();
     }
     if(dungeonView === 'run' && act.type === 'combat' && act.dungeon) return renderDungeonRun();
     if(dungeonView === 'result' && dungeonRun) return renderDungeonResult();
@@ -13934,21 +13942,39 @@
     html += '<div class="hp-track" style="margin-top:6px"><div class="hp-fill" style="width:' + pct + '%;background:var(--hp-bad)"></div></div>';
     html += '<div class="hp-label"><span>Shared HP</span><span>' + fmt(cur) + ' / ' + fmt(maxHp) + '</span></div>';
     html += '</div>';
-    // Party contributions.
-    html += '<div class="item-card" style="margin-top:8px"><div class="inputs-line">Party damage this run</div><div class="style-row" style="flex-direction:column;gap:5px;align-items:stretch">';
+    // Party: HP bars + who the enemy is targeting + damage contribution.
+    var tgt = s.target_id, tName = '—';
+    dungeonNet.members.forEach(function(m){ if(m.user_id === tgt) tName = m.username; });
+    html += '<div class="item-card" style="margin-top:8px"><div class="inputs-line">Party &bull; the ' + escapeHtml(enemy.name) + ' is attacking <b style="color:var(--hp-bad)">' + escapeHtml(tName) + '</b></div>';
     dungeonNet.members.slice().sort(function(a, b){ return (b.damage || 0) - (a.damage || 0); }).forEach(function(m){
-      var isMe = authUser && m.user_id === authUser.id;
-      html += '<span class="style-btn' + (isMe ? ' active' : '') + '" style="cursor:default;justify-content:space-between">' + svgIcon('person', 'var(--gold)') + ' ' + escapeHtml(m.username) + (isMe ? ' (you)' : '') + ' <span class="style-type" style="text-transform:none">' + fmt(m.damage || 0) + ' dmg</span></span>';
+      var isMe = authUser && m.user_id === authUser.id, targeted = m.user_id === tgt;
+      var mh = Math.max(0, m.hp || 0), mm = Math.max(1, m.max_hp || 1), hpPct = clamp(mh / mm * 100, 0, 100);
+      html += '<div style="margin-top:6px">';
+      html += '<div class="hp-label" style="margin-bottom:2px"><span>' + (m.alive ? (targeted ? svgIcon('crossedswords', 'var(--hp-bad)') : svgIcon('person', 'var(--gold)')) : svgIcon('hornedskull', 'var(--text-faint)')) + ' ' + escapeHtml(m.username) + (isMe ? ' (you)' : '') + (targeted && m.alive ? ' <span style="color:var(--hp-bad)">◄ targeted</span>' : '') + (m.alive ? '' : ' <span style="color:var(--text-faint)">— downed</span>') + '</span><span>Threat ' + (m.threat || 0) + ' &bull; ' + fmt(m.damage || 0) + ' dmg</span></div>';
+      html += '<div class="hp-track" style="height:8px"><div class="hp-fill" style="width:' + hpPct + '%;background:' + (m.alive ? 'var(--hp-good)' : 'var(--text-faint)') + '"></div></div>';
+      html += '<div class="hp-label"><span></span><span>' + fmt(mh) + ' / ' + fmt(mm) + '</span></div>';
+      html += '</div>';
     });
-    html += '</div></div>';
-    html += '<div class="chance-line" style="margin-top:6px">' + svgIcon('lightning', '#e8d84a') + ' Your blade drums against the shared foe — everyone\'s damage stacks. (In this build the enemy doesn\'t strike back yet; threat targeting &amp; danger arrive in the next update.)</div>';
+    html += '</div>';
+    var me = dungeonNetMyMember();
+    if(me && !me.alive) html += '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad)">You are downed — spectating. Survive by clearing the layer, or the party wipes if everyone falls.</div>';
+    html += '<div class="chance-line" style="margin-top:6px">' + svgIcon('shield', '#8a97a6') + ' The enemy strikes a threat-weighted delver each turn — plate tanks draw its attacks off cloth casters.</div>';
     html += '<button class="action-btn stop" data-action="dungeonNetLeave" style="margin-top:8px;width:auto">Leave Dungeon</button>';
     return html;
   }
   function renderDungeonNetResult(){
-    var s = dungeonNet.session, def = DUNGEON_DEFS[s.layer] || DUNGEON_DEFS.d1;
+    var s = dungeonNet.session, def = DUNGEON_DEFS[s.layer] || DUNGEON_DEFS.d1, me = dungeonNetMyMember();
+    if(s.status === 'wiped'){
+      var wh = '<div class="section-intro" style="color:var(--hp-bad)"><b>Party Wiped.</b> Every delver fell in the ' + def.category + ' — no Formula this run.</div>';
+      wh += '<div class="item-card"><div class="chance-line">The party reached enemy ' + (s.enemy_index + 1) + ' / ' + def.enemies.length + ' before falling. Regroup, gear up, and descend again.</div>';
+      wh += '<button class="action-btn" data-action="dungeonNetLeave" style="margin-top:8px;width:auto">Return to Dungeons</button></div>';
+      return wh;
+    }
+    var survived = me && me.alive;
     var html = '<div class="section-intro"><b>' + def.label + ' Cleared!</b> Your party bested all ' + def.enemies.length + ' arachnids.</div>';
-    html += '<div class="item-card"><div class="item-top"><div class="item-icon">' + (FORMULA_ITEMS[def.reward] || {}).icon + '</div><div><div class="item-name">' + def.rewardName + '</div><div class="item-meta">Added to your inventory. Endgame gear blueprint (details coming soon).</div></div></div>';
+    html += '<div class="item-card">';
+    if(survived) html += '<div class="item-top"><div class="item-icon">' + (FORMULA_ITEMS[def.reward] || {}).icon + '</div><div><div class="item-name">' + def.rewardName + '</div><div class="item-meta">Claimed to your inventory. Endgame gear blueprint (details coming soon).</div></div></div>';
+    else html += '<div class="chance-line" style="color:var(--text-faint)">You fell before the final blow — only survivors claim the Formula. Your party pulled through without you.</div>';
     html += '<button class="action-btn" data-action="dungeonNetLeave" style="margin-top:8px;width:auto">Return to Dungeons</button></div>';
     return html;
   }
@@ -21795,7 +21821,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, FORMULA_ITEMS:FORMULA_ITEMS, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, FORMULA_ITEMS:FORMULA_ITEMS, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,
