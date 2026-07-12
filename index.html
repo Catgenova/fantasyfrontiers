@@ -8302,6 +8302,17 @@
       { id:'lifesteal',    label:'Lifesteal',       stat:'lifesteal',  min:1, max:5,  pct:true }
     ]
   };
+  // Display labels for the AGGREGATED enchant totals (equippedEnchantTotals keys by `stat`, so several
+  // mods can fold into one row -- e.g. two Critical Chance enchants sum into a single critChance total).
+  var ENCHANT_STAT_DISPLAY = {
+    critDamage:{label:'Critical Damage',pct:true}, critChance:{label:'Critical Chance',pct:true},
+    pctDamage:{label:'Damage',pct:true}, flatDamage:{label:'Flat Damage',pct:false},
+    lifesteal:{label:'Lifesteal',pct:true}, accuracy:{label:'Accuracy',pct:true},
+    penetration:{label:'Armour Pierce',pct:true}, defense:{label:'Defense',pct:true},
+    maxHp:{label:'Max HP',pct:false}, dmgReduction:{label:'Damage Reduction',pct:true},
+    blockChance:{label:'Block Chance',pct:true}, thorns:{label:'Thorns',pct:false},
+    hpRegen:{label:'HP Regen',pct:false}, resistance:{label:'Resistance',pct:true}
+  };
   // kind -> modifier pool. weapon->weapon; ring/amulet->jewelry; body armour + shields/offhands->armor.
   function enchantCategoryForKind(kind){ return kind==='weapon' ? 'weapon' : (kind==='ring'||kind==='amulet') ? 'jewelry' : 'armor'; }
   function enchantModById(kind, id){ var pool = ENCHANT_MODS[enchantCategoryForKind(kind)]; for(var i=0;i<pool.length;i++){ if(pool[i].id===id) return pool[i]; } return null; }
@@ -12099,6 +12110,12 @@
     var armor = getTotalArmorDefense(state) * heraldBlockArmorMult(state);
     var weaponMix = weaponStyle.attackTypes || {blunt:1};
     var armorMix = getPlayerArmorTypeMix(state);
+    // Equipped-item enchant totals (summed by stat), with the Spellblade amplifier applied exactly as
+    // combat does (index.html combat loop) so the panel matches what actually happens in a fight.
+    var enchTot = equippedEnchantTotals(state);
+    var enchBoost = spellbladeEnchantBoost(state);
+    if(enchBoost!==1){ for(var _ek in enchTot) enchTot[_ek] *= enchBoost; }
+    var enchCrit = (enchTot.critChance||0)/100, enchCritDmg = (enchTot.critDamage||0)/100;
     var html = '<div class="stats-panel">';
     html += '<div class="stats-group" style="grid-column:1/-1"><div class="stat-row"><span class="stat-label">Combat Score</span><span class="stat-value">'+combatLevelEquivalent(state)+'</span></div></div>';
     html += '<div class="stats-group"><h4>'+svgIcon('sword','currentColor')+' Offense</h4>';
@@ -12115,8 +12132,10 @@
     }
     html += '<div class="stat-row"><span class="stat-label">Damage Type</span><span class="stat-value">'+dmgTypeHtml+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">'+(isWandMain?'Wands Proficiency':(isScepterMain?'Scepters Proficiency':'Weapon Proficiency'))+'</span><span class="stat-value">+'+Math.round((weaponProficiency-1)*100)+'%</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+(Math.round((criticalEyeCritChance(state)+quickdrawCritChanceBonus()+newClassCritChance())*10000)/100)+'%</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+(Math.round((Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + newClassCritDmg())*100)/100)+'x</span></div>';
+    var _critChancePct = Math.round((criticalEyeCritChance(state)+quickdrawCritChanceBonus()+newClassCritChance()+enchCrit)*10000)/100;
+    html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+_critChancePct+'%'+(enchCrit>0?' <span style="color:var(--gold)">(+'+(Math.round(enchTot.critChance*10)/10)+'% ench)</span>':'')+'</span></div>';
+    var _critDmgMult = Math.round((Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + newClassCritDmg() + enchCritDmg)*100)/100;
+    html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+_critDmgMult+'x'+(enchCritDmg>0?' <span style="color:var(--gold)">(+'+(Math.round(enchTot.critDamage*10)/10)+'% ench)</span>':'')+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Accuracy</span><span class="stat-value">'+playerAccuracy(state)+'</span></div>';
     if(weaponStyle.hand==='bow'){
       html += '<div class="stat-row"><span class="stat-label">Leather Bow Bonus</span><span class="stat-value">+'+Math.round(getLeatherArmorBonuses(state).bowDmgBonus*100)+'%</span></div>';
@@ -12164,6 +12183,19 @@
       }
     }
     html += '</div>';
+    // Aggregated enchant bonuses from every equipped unique -- summed by stat, so two +6% Critical
+    // Chance enchants read as a single +12% here (the same total combat uses). Only shown when the
+    // player has enchanted gear equipped.
+    var _enchKeys = Object.keys(enchTot).filter(function(k){ return enchTot[k] && ENCHANT_STAT_DISPLAY[k]; });
+    if(_enchKeys.length){
+      html += '<div class="stats-group" style="grid-column:1/-1"><h4><span style="color:var(--gold)">&#10022;</span> Enchantments'+(enchBoost!==1?' <span style="color:var(--gold);font-size:11px">(Spellblade &times;'+(Math.round(enchBoost*100)/100)+')</span>':'')+'</h4>';
+      _enchKeys.forEach(function(k){
+        var d = ENCHANT_STAT_DISPLAY[k], v = enchTot[k];
+        var disp = d.pct ? ('+'+(Math.round(v*10)/10)+'%') : ('+'+Math.round(v));
+        html += '<div class="stat-row"><span class="stat-label">'+d.label+'</span><span class="stat-value" style="color:var(--gold)">'+disp+'</span></div>';
+      });
+      html += '</div>';
+    }
     // Familiar / summoning modifiers -- spell potency (efficiency) and where it comes from, plus the
     // companion slot count and cast cadence. Block / Dodge / Ward Reflect live in the Defense group above.
     var _famCloth = getClothArmorSpellBonus(state), _famStaves = stavesEfficiencyBonus(state), _famRing = getRingFamiliarBonus(state), _famMenag = menageristPotencyMult();
