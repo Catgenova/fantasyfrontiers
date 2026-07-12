@@ -17532,7 +17532,7 @@
         else guildAppsTeardown();
       }
       guildLivePollEnsure();
-      if(justAccepted || currentCategory==='guild' || currentCategory==='chat' || currentCategory==='peons') render();
+      if(justAccepted || currentCategory==='guild' || currentCategory==='chat' || currentCategory==='peons') softRender(); // background roster poll -- don't clobber an open picker/input
     });
   }
   function guildBrowseLoad(){
@@ -17766,7 +17766,7 @@
     guildBankInvoke('get', {}).then(function(res){
       if(!res || !res.ok) return;
       guildBankApply(res);
-      if(guildBankSig() !== before && currentCategory==='guild' && guildSub==='bank') render();
+      if(guildBankSig() !== before && currentCategory==='guild' && guildSub==='bank') softRender(); // defer if the deposit picker is open (iOS dismisses it on rebuild)
     });
   }
   function guildBankItemName(key){ var it=ALL_SELLABLE[key]; return it ? it.name : key; }
@@ -20915,6 +20915,12 @@
     var t = ae.tagName;
     return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT';
   }
+  // Repaint now UNLESS the player is mid-interaction with a focused field -- a full render() rebuilds
+  // #content and, on iOS especially, slams shut any open native <select> picker (the guild-bank deposit
+  // dropdown) or drops a text input's keyboard. In that case defer: mark needsRender so the main loop
+  // flushes the repaint the instant the field blurs. Use this for BACKGROUND polls (guild/bank live
+  // ticks) that fire on a timer while the player may be picking something.
+  function softRender(){ if(isEditingField()) needsRender = true; else render(); }
 
   document.addEventListener('visibilitychange', function(){
     if(document.visibilityState==='hidden'){ saveGame(); cloudSave(false, true); cloudSaveBeacon(); }
