@@ -1259,6 +1259,12 @@
     // Target picker: a lone alive member is always chosen; an all-downed party returns -1.
     eq(FF.dungeonPickTarget([{ alive:true, threat:10 }]), 0, 'solo party targets member 0');
     eq(FF.dungeonPickTarget([{ alive:false, threat:10 }]), -1, 'no alive members -> -1 (no target)');
+    // CRITICAL client<->server invariant: the enemy HP curve must match the server (dungeon edge fn)
+    // formula exactly -- hp[i]=round(50000*1.05^i), boss=round(hp[23]*10) -- or shared HP desyncs.
+    for(var _i = 0; _i < 24; _i++) eq(en[_i].hp, Math.round(50000 * Math.pow(1.05, _i)), 'enemy ' + _i + ' HP matches the server formula');
+    eq(en[24].hp, Math.round(en[23].hp * 10), 'boss HP = round(24th * 10) matches the server');
+    // The DPS proxy the client reports to the server is a positive finite number.
+    var pw = FF.dungeonPower(); ok(typeof pw === 'number' && isFinite(pw) && pw >= 1, 'dungeonPower() is a positive finite DPS proxy');
   });
 
   // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------
