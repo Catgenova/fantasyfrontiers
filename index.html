@@ -11063,11 +11063,17 @@
       var current = (s && s.tier>0) ? BODY_ARMOR_ITEMS['bodyarmor_'+s.material+'_'+slot+'_t'+(s.tier-1)+'_'+s.rarity] : null;
       var owned = Object.keys(BODY_ARMOR_ITEMS).filter(function(id){ return BODY_ARMOR_ITEMS[id].slot===slot && (state.inventory[id]||0)>0; })
         .sort(function(a,b){ return BODY_ARMOR_ITEMS[a].tierIndex - BODY_ARMOR_ITEMS[b].tierIndex; });
+      // Owned UNIQUE (enchanted, uid-tracked) pieces for this slot -- equippable right here too.
+      var equippedUnique = (s && s.uid && state.uniqueItems && state.uniqueItems[s.uid]) ? state.uniqueItems[s.uid] : null;
+      var slotUniques = Object.keys(state.uniqueItems||{}).map(function(uid){ return state.uniqueItems[uid]; })
+        .filter(function(u){ if(u.kind!=='bodyarmor') return false; var mm=/^bodyarmor_.+_(gauntlets|boots|chest|helmet|back)_t\d+_\w+$/.exec(u.base); return mm && mm[1]===slot; })
+        .sort(function(a,b){ return (b.enhance-a.enhance) || (b.enchants.length-a.enchants.length); });
       html += '<div class="item-card">';
       var curMat = current ? armorMaterialBonusLines(current.material, current.slot, current.rarity) : [];
-      var curMeta = current ? (current.name+' &bull; defense '+current.defense+(curMat.length ? ' &bull; '+curMat.join(' &bull; ') : '')) : 'Not equipped';
+      var curName = equippedUnique ? uniqueDisplayName(equippedUnique) : (current ? current.name : '');
+      var curMeta = current ? (escapeHtml(curName)+' &bull; defense '+current.defense+(curMat.length ? ' &bull; '+curMat.join(' &bull; ') : '')) : 'Not equipped';
       html += '<div class="item-top"><div class="item-icon">'+BODY_ARMOR_ICONS[slot]+'</div><div><div class="item-name">'+BODY_ARMOR_LABELS[slot]+'</div><div class="item-meta">'+curMeta+'</div></div></div>';
-      if(owned.length===0){
+      if(owned.length===0 && slotUniques.length===0){
         html += '<div class="empty-note">No '+BODY_ARMOR_LABELS[slot]+' in inventory. Forge one above.</div>';
       } else {
         html += '<div class="style-row">';
@@ -11076,8 +11082,17 @@
           var qty = state.inventory[id]||0;
           var profId = MATERIAL_TO_PROFICIENCY[item.material];
           var canEquip = meetsProficiencyRequirement(profId ? state.xp[profId] : 0, item.tierIndex);
-          var acmp = (current && current.id===id) ? '<span class="equip-cmp eq">equipped</span>' : (' vs equipped '+equipDeltaChip(item.defense, current?current.defense:0)+' def');
+          var acmp = (!(s&&s.uid) && current && current.id===id) ? '<span class="equip-cmp eq">equipped</span>' : (' vs equipped '+equipDeltaChip(item.defense, current?current.defense:0)+' def');
           html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipBodyArmor" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">def '+item.defense+' '+acmp+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(ARMOR_PROFICIENCY_LABELS[profId]||item.material)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
+        });
+        slotUniques.forEach(function(u){
+          var bi = BODY_ARMOR_ITEMS[u.base]; if(!bi) return;
+          var profId = MATERIAL_TO_PROFICIENCY[bi.material];
+          var canEquip = meetsProficiencyRequirement(profId ? state.xp[profId] : 0, u.tier);
+          var isEq = !!(s && s.uid===u.uid);
+          var ucmp = isEq ? '<span class="equip-cmp eq">equipped</span>' : (' vs equipped '+equipDeltaChip(bi.defense, current?current.defense:0)+' def');
+          var badge = '&#10022;'+(u.enchants.length ? ' '+u.enchants.length : ''); // ✦ marks a unique; number = enchant count
+          html += '<button class="style-btn rar-'+u.rarity+(canEquip?'':' locked')+'" data-action="equipUnique" data-uid="'+u.uid+'" '+(canEquip?'':'disabled')+'>'+bi.icon+' '+escapeHtml(uniqueDisplayName(u))+' <span class="style-lvl">'+badge+'</span><span class="style-type">def '+bi.defense+' '+ucmp+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(ARMOR_PROFICIENCY_LABELS[profId]||bi.material)+' Lv '+TIER_LEVELS[u.tier]+'</span>')+'</button>';
         });
         html += '</div>';
       }
