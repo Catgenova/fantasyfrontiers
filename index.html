@@ -8723,6 +8723,62 @@
       + '<div class="unique-inv-hint">Tap to equip · enchant · sell · link</div>'
       + '</div>';
   }
+  // Static proficiency gate for equipping a unique (dynamic conditions -- a 2h weapon occupying the
+  // offhand, all ring slots full -- are left to the equip call, which messages on failure). Returns a
+  // short "Requires X Lv Y" string when the piece can't be equipped yet, else null.
+  function uniqueEquipLock(u){
+    if(u.kind==='weapon'){
+      var mw=/^stweapon_(.+)_t\d+_\w+$/.exec(u.base); if(!mw) return 'Cannot equip';
+      var tw=mw[1];
+      if(isWandWeapon(tw)||isStaff(tw)||isScepter(tw)) return null;
+      return meetsProficiencyRequirement(state.xp[tw], u.tier) ? null : ('Requires '+escapeHtml(SKILL_LABELS[tw]||tw)+' Lv '+TIER_LEVELS[u.tier]);
+    }
+    if(u.kind==='offhand'){
+      var mo=/^stshield_(.+)_t\d+_\w+$/.exec(u.base); if(!mo) return 'Cannot equip';
+      var to=mo[1];
+      return meetsProficiencyRequirement(state.xp[to], u.tier) ? null : ('Requires '+escapeHtml(SKILL_LABELS[to]||to)+' Lv '+TIER_LEVELS[u.tier]);
+    }
+    if(u.kind==='bodyarmor'){
+      var mb=/^bodyarmor_(.+)_(gauntlets|boots|chest|helmet|back)_t\d+_\w+$/.exec(u.base); if(!mb) return 'Cannot equip';
+      var prof=MATERIAL_TO_PROFICIENCY[mb[1]];
+      return meetsProficiencyRequirement(prof?state.xp[prof]:0, u.tier) ? null : ('Requires '+escapeHtml(ARMOR_PROFICIENCY_LABELS[prof]||mb[1])+' Lv '+TIER_LEVELS[u.tier]);
+    }
+    return null; // ring / amulet: no proficiency gate
+  }
+  // One equip card for an owned unique: the full stat card (every enchant shown) plus a direct
+  // Equip / Unequip button. Surfaced in each slot section on the Equipment & Stats page so uniques
+  // can be equipped there, not only from Inventory / Improvement.
+  function renderUniqueEquipCard(u){
+    var eq = uniqueIsEquipped(u.uid);
+    var lock = eq ? null : uniqueEquipLock(u);
+    var btn;
+    if(eq) btn = '<button class="mini-btn stop" data-action="unequipUnique" data-uid="'+u.uid+'" style="margin-top:9px;width:100%;">Unequip</button>';
+    else if(lock) btn = '<button class="mini-btn" disabled style="margin-top:9px;width:100%;opacity:.5;">'+svgIcon('lock','currentColor')+' '+lock+'</button>';
+    else btn = '<button class="mini-btn" data-action="equipUnique" data-uid="'+u.uid+'" style="margin-top:9px;width:100%;">Equip</button>';
+    return '<div class="unique-inv-card rar-'+u.rarity+'" style="cursor:default;">'
+      + (eq ? '<div class="unique-inv-eq">'+svgIcon('sword','var(--gold)')+' Equipped</div>' : '')
+      + uniqueCardBody(u)
+      + btn
+      + '</div>';
+  }
+  // All owned uniques of a kind (optionally narrowed to one body-armor slot), as a grid of equip cards.
+  // `label`, when given, prefixes a small heading. Returns '' when the player owns none of that kind.
+  function renderUniqueEquipOptions(kind, slot, label){
+    if(!state.uniqueItems) return '';
+    var uids = Object.keys(state.uniqueItems).filter(function(uid){
+      var u=state.uniqueItems[uid]; if(!u || u.kind!==kind) return false;
+      if(slot){ var mm=/^bodyarmor_.+_(gauntlets|boots|chest|helmet|back)_t\d+_\w+$/.exec(u.base); if(!mm || mm[1]!==slot) return false; }
+      return true;
+    });
+    if(!uids.length) return '';
+    uids.sort(function(a,b){
+      var ea=uniqueIsEquipped(a)?1:0, eb=uniqueIsEquipped(b)?1:0;
+      if(ea!==eb) return eb-ea;
+      return (state.uniqueItems[b].tier-state.uniqueItems[a].tier) || ((state.uniqueItems[b].enhance||0)-(state.uniqueItems[a].enhance||0));
+    });
+    var head = label ? '<div class="section-intro" style="margin-top:10px"><b style="color:var(--gold)">&#10022; Unique '+escapeHtml(label)+'</b> you own &mdash; Equip directly; every enchantment is shown.</div>' : '';
+    return head + '<div class="unique-inv-grid">'+uids.map(function(uid){ return renderUniqueEquipCard(state.uniqueItems[uid]); }).join('')+'</div>';
+  }
   // Split a raw chat body into escaped text + rendered item chips (censor only the text segments so a
   // base64 payload is never mangled by the profanity filter).
   function chatBodyHtml(raw){
@@ -11271,25 +11327,20 @@
       if(owned.length===0 && slotUniques.length===0){
         html += '<div class="empty-note">No '+BODY_ARMOR_LABELS[slot]+' in inventory. Forge one above.</div>';
       } else {
-        html += '<div class="style-row">';
-        owned.forEach(function(id){
-          var item = BODY_ARMOR_ITEMS[id];
-          var qty = state.inventory[id]||0;
-          var profId = MATERIAL_TO_PROFICIENCY[item.material];
-          var canEquip = meetsProficiencyRequirement(profId ? state.xp[profId] : 0, item.tierIndex);
-          var acmp = (!(s&&s.uid) && current && current.id===id) ? '<span class="equip-cmp eq">equipped</span>' : (' vs equipped '+equipDeltaChip(item.defense, current?current.defense:0)+' def');
-          html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipBodyArmor" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">def '+item.defense+' '+acmp+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(ARMOR_PROFICIENCY_LABELS[profId]||item.material)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
-        });
-        slotUniques.forEach(function(u){
-          var bi = BODY_ARMOR_ITEMS[u.base]; if(!bi) return;
-          var profId = MATERIAL_TO_PROFICIENCY[bi.material];
-          var canEquip = meetsProficiencyRequirement(profId ? state.xp[profId] : 0, u.tier);
-          var isEq = !!(s && s.uid===u.uid);
-          var ucmp = isEq ? '<span class="equip-cmp eq">equipped</span>' : (' vs equipped '+equipDeltaChip(bi.defense, current?current.defense:0)+' def');
-          var badge = '&#10022;'+(u.enchants.length ? ' '+u.enchants.length : ''); // ✦ marks a unique; number = enchant count
-          html += '<button class="style-btn rar-'+u.rarity+(canEquip?'':' locked')+'" data-action="equipUnique" data-uid="'+u.uid+'" '+(canEquip?'':'disabled')+'>'+bi.icon+' '+escapeHtml(uniqueDisplayName(u))+' <span class="style-lvl">'+badge+'</span><span class="style-type">def '+bi.defense+' '+ucmp+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(ARMOR_PROFICIENCY_LABELS[profId]||bi.material)+' Lv '+TIER_LEVELS[u.tier]+'</span>')+'</button>';
-        });
-        html += '</div>';
+        if(owned.length){
+          html += '<div class="style-row">';
+          owned.forEach(function(id){
+            var item = BODY_ARMOR_ITEMS[id];
+            var qty = state.inventory[id]||0;
+            var profId = MATERIAL_TO_PROFICIENCY[item.material];
+            var canEquip = meetsProficiencyRequirement(profId ? state.xp[profId] : 0, item.tierIndex);
+            var acmp = (!(s&&s.uid) && current && current.id===id) ? '<span class="equip-cmp eq">equipped</span>' : (' vs equipped '+equipDeltaChip(item.defense, current?current.defense:0)+' def');
+            html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipBodyArmor" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">def '+item.defense+' '+acmp+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(ARMOR_PROFICIENCY_LABELS[profId]||item.material)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
+          });
+          html += '</div>';
+        }
+        // Unique (enchanted) pieces for this slot: full cards so every enchantment is visible.
+        html += renderUniqueEquipOptions('bodyarmor', slot);
       }
       if(current) html += '<button class="action-btn stop" data-action="unequipBodyArmor" data-slot="'+slot+'">Unequip</button>';
       html += '</div>';
@@ -12169,6 +12220,7 @@
     html += '<div class="shop-current">Equipped: <b style="color:var(--text)">'+weaponStyle.name+'</b> &mdash; '+mhItem.name+' ('+mhItem.dmgMin+'-'+mhItem.dmgMax+' dmg)</div>';
     html += renderGearSelector('mainhand');
     if(state.equippedMainhand) html += '<button class="action-btn stop" data-action="unequipStackableWeapon">Unequip</button>';
+    html += renderUniqueEquipOptions('weapon', null, 'Weapons');
     html += renderStackableWeaponEquipSection(MELEE_WEAPON_TYPES, 'Melee Weapon');
     html += renderStackableWeaponEquipSection(BOW_WEAPON_TYPES, 'Bow');
     html += renderStackableWeaponEquipSection(WAND_TYPES, 'Wand', true);
@@ -12192,6 +12244,7 @@
       html += '<div class="shop-current">Equipped: <b style="color:var(--text)">None</b></div>';
     }
     html += renderGearSelector('offhand');
+    if(weaponStyle.hand!=='2h') html += renderUniqueEquipOptions('offhand', null, 'Offhands');
     html += '<div class="section-intro" style="margin-top:10px">One-handed weapons free up your offhand for a shield or ward; bows pair with a quiver instead; two-handed weapons need both hands. Forge new gear via Crafting &rarr; Weaponsmithing / Shieldsmithing / Runesmithing. Damage types cycle slashing &gt; piercing &gt; blunt &gt; slashing.</div>';
     html += renderEquipShieldSection();
     html += renderEquipWardSection();
@@ -12244,6 +12297,7 @@
       html += '</div>';
     });
     html += '</div>';
+    html += renderUniqueEquipOptions('ring', null, 'Rings');
     return html;
   }
   // Compact stat readout for an amulet item -- defense (plain) or damage resistance (warding).
@@ -12272,6 +12326,7 @@
     }
     if(currentAmulet) html += '<button class="action-btn stop" data-action="unequipAmulet">Unequip</button>';
     html += '</div></div>';
+    html += renderUniqueEquipOptions('amulet', null, 'Amulets');
     return html;
   }
   // A single skill's tool-equip card, shown at the bottom of that skill's own tab (moved out of
