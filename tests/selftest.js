@@ -79,6 +79,38 @@
     eq(FF.tierTime(7, 0.3, 1), 7.3, 'tierTime +step');
   });
 
+  // ---- Vendor sell values: flat linear curve, not the old exponential tierSell -----------
+  suite('economy: vendor sell values', function(){
+    var S = FF.ALL_SELLABLE;
+    // Gathered materials: 5g at t0, +5g/tier -> 105g at t20.
+    eq(S['digging_t0'].sell, 5, 'gathered material t0 sells for 5');
+    eq(S['digging_t10'].sell, 55, 'gathered material t10 sells for 55');
+    eq(S['digging_t20'].sell, 105, 'gathered material t20 sells for 105');
+    // Everything else (crafted goods): 10g at t0, +10g/tier -> 210g at t20 (endpoints proven via
+    // vendorSellValue below; spot-check a real craft recipe at t0 that is NOT a gathered material).
+    ok(S['metallurgy_t0'] && !FF.ALL_GATHER_ITEMS['metallurgy_t0'], 'metallurgy_t0 is a crafted (non-gathered) good');
+    eq(S['metallurgy_t0'].sell, 10, 'crafted good t0 sells for 10');
+    eq(FF.vendorSellValue('anything_t20', { rarity:'normal' }, false), 210, 'other t20 = 10+200 = 210');
+    // Rarity multipliers x2 / x4 / x8.
+    eq(FF.SELL_RARITY_MULT.normal, 1, 'normal x1');
+    eq(FF.SELL_RARITY_MULT.rare, 2, 'rare x2');
+    eq(FF.SELL_RARITY_MULT.supreme, 4, 'supreme x4');
+    eq(FF.SELL_RARITY_MULT.fantastic, 8, 'fantastic x8');
+    // vendorSellValue: gathered vs other + rarity, from the id + item.
+    eq(FF.vendorSellValue('x_t5', { rarity:'normal' }, true), 30, 'gathered t5 = 5+25 = 30');
+    eq(FF.vendorSellValue('x_t5', { rarity:'normal' }, false), 60, 'other t5 = 10+50 = 60');
+    eq(FF.vendorSellValue('x_t5', { rarity:'rare' }, false), 120, 'other t5 rare = 60 x2');
+    eq(FF.vendorSellValue('x_t5', { rarity:'supreme' }, false), 240, 'other t5 supreme = 60 x4');
+    eq(FF.vendorSellValue('x_t5', { rarity:'fantastic' }, false), 480, 'other t5 fantastic = 60 x8');
+    // Non-tiered specials keep their hand-set value (null -> unchanged).
+    eq(FF.vendorSellValue('shaft', {}, false), null, 'non-tiered item is not repriced');
+    eq((S['formula_d1_masterwork']||{}).sell, 0, 'the D1 Formula stays non-vendorable (sell 0)');
+    // No tiered sell is exponentially large anymore: the max tiered non-rarity sell is 210 (was thousands).
+    var maxTieredNormalSell = 0;
+    Object.keys(S).forEach(function(id){ var it = S[id]; if(it && /_t\d/.test(id) && !it.rarity && typeof it.sell === 'number' && it.sell > maxTieredNormalSell) maxTieredNormalSell = it.sell; });
+    ok(maxTieredNormalSell <= 210, 'no tiered normal-rarity item sells above 210 -- got ' + maxTieredNormalSell);
+  });
+
   // ---- Guild bank slot cost must match the server RPC formula ---------------------------
   suite('bankSlotCost matches server', function(){
     eq(FF.bankSlotCost(4), 10000, 'bankSlotCost clamps below 5 slots');

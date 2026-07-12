@@ -7711,6 +7711,30 @@
     }
   });
   Object.assign(ALL_SELLABLE, RELIC_ITEMS);
+  // ---- Vendor sell values: a flat LINEAR curve (the old tierSell was base*1.45^i -- exponential, so
+  // high-tier sells ran wildly out of hand). Gathered materials sell for 5g at t0 rising +5g/tier
+  // (105g at t20); everything else sells for 10g at t0 rising +10g/tier (210g at t20). Rarity
+  // multiplies the sell x2 / x4 / x8 (rare / supreme / fantastic). One repricing pass over every
+  // sellable item overwrites whatever the generators set, so there's a single source of truth. Items
+  // with no tier in their id (shaft, coal, the Formula) and non-vendorable items (sell 0) are left as-is.
+  var SELL_GATHER_BASE = 5, SELL_GATHER_STEP = 5, SELL_OTHER_BASE = 10, SELL_OTHER_STEP = 10;
+  var SELL_RARITY_MULT = { normal:1, rare:2, supreme:4, fantastic:8 };
+  function vendorSellValue(id, item, isGathered){
+    var tm = /_t(\d+)/.exec(id);
+    if(!tm) return null; // non-tiered specials keep their hand-set sell
+    var t = parseInt(tm[1], 10);
+    var base = isGathered ? (SELL_GATHER_BASE + SELL_GATHER_STEP * t) : (SELL_OTHER_BASE + SELL_OTHER_STEP * t);
+    var rar = (item && SELL_RARITY_MULT[item.rarity]) ? item.rarity : 'normal';
+    return Math.round(base * SELL_RARITY_MULT[rar]);
+  }
+  (function repriceVendorSells(){
+    Object.keys(ALL_SELLABLE).forEach(function(id){
+      var item = ALL_SELLABLE[id];
+      if(!item || typeof item !== 'object' || item.sell === 0) return; // leave non-vendorable (sell 0) items
+      var v = vendorSellValue(id, item, !!ALL_GATHER_ITEMS[id]);
+      if(v !== null) item.sell = v;
+    });
+  })();
   function getRelicBonusPct(tierIndex, rarityId){
     var base = (tierIndex+1) * 0.02;
     var mult = getRarity(rarityId).mult;
@@ -21829,7 +21853,7 @@
       craftBodyRarity:craftBodyRarity, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix,
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
-      ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, ALL_SELLABLE:ALL_SELLABLE, ALL_DROP_ITEMS:ALL_DROP_ITEMS, FAT_ITEMS:FAT_ITEMS, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES,
+      ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, ALL_SELLABLE:ALL_SELLABLE, ALL_DROP_ITEMS:ALL_DROP_ITEMS, FAT_ITEMS:FAT_ITEMS, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES, vendorSellValue:vendorSellValue, SELL_RARITY_MULT:SELL_RARITY_MULT,
       isFeastActive:isFeastActive, feastDamageBonus:feastDamageBonus, serveFeast:serveFeast,
       isTomeActive:isTomeActive, tomeSpeedBonus:tomeSpeedBonus, studyTome:studyTome, bestAvailableTome:bestAvailableTome, ownedTomes:ownedTomes, speedMultiplier:speedMultiplier,
       isScrollActive:isScrollActive, scrollDamageReduction:scrollDamageReduction, readScroll:readScroll,
