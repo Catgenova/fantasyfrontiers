@@ -111,6 +111,15 @@
     ok(maxTieredNormalSell <= 210, 'no tiered normal-rarity item sells above 210 -- got ' + maxTieredNormalSell);
   });
 
+  // ---- Settings: the opt-in automation toggles exist and default OFF ----------------------
+  suite('settings: auto-action toggles', function(){
+    var st = FF._state.settings || {};
+    ['autoOpenCaches','autoOpenChests','autoHarvest','autoFertilize','autoPlant'].forEach(function(k){
+      eq(typeof st[k], 'boolean', k + ' is a boolean setting');
+      eq(st[k], false, k + ' defaults to off');
+    });
+  });
+
   // ---- Guild bank slot cost must match the server RPC formula ---------------------------
   suite('bankSlotCost matches server', function(){
     eq(FF.bankSlotCost(4), 10000, 'bankSlotCost clamps below 5 slots');

@@ -6092,7 +6092,7 @@
     return 0;
   }
   var lootPopupData = null;   // aggregated results of a chest/cache open, shown in a popup until dismissed
-  function openTreasureChests(n){
+  function openTreasureChests(n, silent){
     var have = state.inventory.treasure_chest||0;
     n = Math.min(n|0, have);
     if(n <= 0) return;
@@ -6112,10 +6112,10 @@
     walletEarnChest(n, gold);
     addLog('You pried open ' + n + ' Treasure Chest' + (n===1?'':'s') + ' and found ' + fmt(gold) + ' gold!', 'important');
     spawnFloatingText('+' + fmt(gold) + ' gold', 'ft-bonus');
-    lootPopupData = { title:'Treasure Chest'+(n===1?'':'s'), icon:(ALL_SELLABLE.treasure_chest||{}).icon, opened:n, gold:gold, items:{} };
+    if(!silent) lootPopupData = { title:'Treasure Chest'+(n===1?'':'s'), icon:(ALL_SELLABLE.treasure_chest||{}).icon, opened:n, gold:gold, items:{} };
     saveGame(); needsRender = true;
   }
-  function openCritterCaches(n){
+  function openCritterCaches(n, silent){
     var have = state.inventory.critter_cache||0;
     n = Math.min(n|0, have);
     if(n <= 0) return;
@@ -6126,13 +6126,28 @@
     }
     addLog('You opened ' + n + ' Critter Cache' + (n===1?'':'s') + ' and found ' + (n*3) + ' seeds.', 'important');
     spawnFloatingText('+' + (n*3) + ' Seeds', 'ft-bonus');
-    lootPopupData = { title:'Critter Cache'+(n===1?'':'s'), icon:(ALL_SELLABLE.critter_cache||{}).icon, opened:n, gold:0, items:items };
+    if(!silent) lootPopupData = { title:'Critter Cache'+(n===1?'':'s'), icon:(ALL_SELLABLE.critter_cache||{}).icon, opened:n, gold:0, items:items };
     saveGame(); needsRender = true;
   }
   function openTreasureChest(){ openTreasureChests(1); }
   function openCritterCache(){ openCritterCaches(1); }
   function openAllTreasureChests(){ openTreasureChests(state.inventory.treasure_chest||0); }
   function openAllCritterCaches(){ openCritterCaches(state.inventory.critter_cache||0); }
+  // Opt-in automation (all OFF by default; toggled in Settings). Throttled ~1.5s off the game loop and
+  // each batch fn self-guards on empty work, so this is cheap when idle. Auto-opens run SILENT (no modal
+  // popup). Farming order: harvest ready -> replant empties -> fertilize the growing crops.
+  var _autoActionsAt = 0;
+  function autoActionsCheck(){
+    var s = state.settings; if(!s) return;
+    var now = Date.now();
+    if(now - _autoActionsAt < 1500) return;
+    _autoActionsAt = now;
+    if(s.autoOpenCaches && (state.inventory.critter_cache||0) > 0) openCritterCaches(state.inventory.critter_cache||0, true);
+    if(s.autoOpenChests && (state.inventory.treasure_chest||0) > 0) openTreasureChests(state.inventory.treasure_chest||0, true);
+    if(s.autoHarvest) farmingHarvestAll();
+    if(s.autoPlant) farmingPlantAll(false);
+    if(s.autoFertilize) farmingFertilizeAll(false);
+  }
 
   // Critter Caches: 1% base chance per Forestry action, boosted by Balance.
   var BASE_NEST_CHANCE = 0.05;
@@ -8076,7 +8091,7 @@
       potionCharges: 0,
       popupQueue: [],
       popupBatchTotal: 0,
-      settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true, compactMobile:true },
+      settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true, compactMobile:true, autoOpenCaches:false, autoOpenChests:false, autoHarvest:false, autoFertilize:false, autoPlant:false },
       trackedSkills: [],
       peons: [],
       guildPeons: [],
@@ -10630,6 +10645,7 @@
           if(typeof state.settings.popupFamiliar !== 'boolean') state.settings.popupFamiliar = true;
           if(typeof state.settings.chatFlash !== 'boolean') state.settings.chatFlash = true;
           if(typeof state.settings.compactMobile !== 'boolean') state.settings.compactMobile = true; // existing players keep the new compact default
+          ['autoOpenCaches','autoOpenChests','autoHarvest','autoFertilize','autoPlant'].forEach(function(k){ if(typeof state.settings[k] !== 'boolean') state.settings[k] = false; }); // opt-in automation, off by default
           if(state.dungeonProgress) delete state.dungeonProgress; // dungeons feature removed; shed legacy field
           if(!state.lockedItems || typeof state.lockedItems !== 'object') state.lockedItems = {};
           if(!Array.isArray(state.trackedSkills)) state.trackedSkills = [];
@@ -14406,7 +14422,12 @@
     {key:'popupFantastic', label:'Fantastic item popup', desc:'Show a popup when a Fantastic item is forged'},
     {key:'popupFamiliar', label:'Familiar popup', desc:'Show a popup when a familiar is summoned or levels up'},
     {key:'chatFlash', label:'Chat tab flash', desc:'Flash the Chat tab when a new message arrives'},
-    {key:'compactMobile', label:'Compact layout (mobile)', desc:'Zoom out to the denser multi-column layout on phones (off = large single-column). No effect on tablets or desktop.'}
+    {key:'compactMobile', label:'Compact layout (mobile)', desc:'Zoom out to the denser multi-column layout on phones (off = large single-column). No effect on tablets or desktop.'},
+    {key:'autoOpenCaches', label:'Auto-open Critter Caches', desc:'Automatically open Critter Caches as they drop (no popup).'},
+    {key:'autoOpenChests', label:'Auto-open Treasure Chests', desc:'Automatically open Treasure Chests as they drop (no popup).'},
+    {key:'autoHarvest', label:'Auto-harvest crops', desc:'Automatically harvest crops from your fields the moment they are ready.'},
+    {key:'autoFertilize', label:'Auto-fertilize crops', desc:'Automatically fertilize growing crops when you hold a matching-tier Fertilizer (doubles the yield).'},
+    {key:'autoPlant', label:'Auto-plant crops', desc:'Automatically replant empty fields, giving your best seeds to your best fields first.'}
   ];
   var pwChangeMsg = '', pwChangeOk = false, pwChangeBusy = false;
   async function changePassword(){
@@ -21615,6 +21636,7 @@
       }
     }
     autoSacrificeRelicsCheck(); // top up Faith from Broken Relics when enabled (no-op otherwise)
+    autoActionsCheck(); // opt-in auto open-caches/chests + harvest/plant/fertilize crops (all off by default)
     dungeonNetTick(); // networked dungeon: drip shared-enemy damage while a party run is active (self-rate-limited)
 
     saveAccum += dt;
