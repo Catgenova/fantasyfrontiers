@@ -1444,13 +1444,6 @@
     near(FF.hitChanceVs(400, 500), 1 - 100/500, 'partial deficit erodes linearly');
     ok(FF.hitChanceVs(400, 500) > FF.hitChanceVs(300, 500), 'more accuracy => higher hit chance vs same dodge');
 
-    // Familiar accuracy: concave curve — fast early gains, small gains near the cap.
-    var early = FF.familiarAccuracy(10) - FF.familiarAccuracy(1);
-    var late = FF.familiarAccuracy(100) - FF.familiarAccuracy(90);
-    ok(FF.familiarAccuracy(100) > FF.familiarAccuracy(1), 'familiar accuracy rises with level');
-    ok(early > late, 'familiar gains accuracy faster early than lv90->100 (' + early + ' vs ' + late + ')');
-    ok(late < 20, 'lv90->100 familiar accuracy gain is small (' + late + ')');
-
     // The accuracy physiques are a fixed, Claude-chosen combat-reflex set (not player-selected).
     eq(FF.ACCURACY_PHYSIQUES.length, FF.ACCURACY_PHYS_SLOTS, 'exactly '+FF.ACCURACY_PHYS_SLOTS+' fixed accuracy physiques');
     FF.ACCURACY_PHYSIQUES.forEach(function(id){ ok(FF.PHYSIQUE_SKILL_MAP[id], id+' is a real physique'); });

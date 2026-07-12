@@ -5365,12 +5365,7 @@
       var cact = state.activity;
       if(cact && cact.type==='combat'){
         var cmon = monsterById(cact.monsterId);
-        // Familiars roll their own accuracy (a level-driven curve, separate from the player's) against
-        // the enemy's dodge before a damaging spell lands. A missed spell just fizzles.
-        if(cmon && Math.random() >= familiarHitChance(level, cmon)){
-          spawnFloatingText(spell.name+' missed!', 'ft-fail');
-          return;
-        }
+        // Familiars always land their damaging spells now -- no accuracy roll.
         var dmg = spell.amount * potency;
         if(spell.type==='hit' && spell.dmgType!=='void' && cmon){ var atkMix={}; atkMix[spell.dmgType]=1; dmg *= weightedAdvantage(atkMix, cmon.armorTypes || {blunt:1/3,slashing:1/3,piercing:1/3}); }
         dmg *= elementAdvantage(spell.element, cmon && cmon.element); // +20% when the spell's element beats the enemy's
@@ -6561,8 +6556,6 @@
   var MONSTER_DODGE_MAX    = 700;    // top-tier flat dodge (a fully-maxed accuracy build negates it)
   var MONSTER_DODGE_BASE   = 4;      // t0 dodge floor
   var MONSTER_DODGE_EXP    = 1.4;    // >1 => dodge ramps up steeply toward the top tiers
-  var FAM_ACC_MAX          = 800;    // familiar accuracy ceiling
-  var FAM_ACC_TAU          = 30;     // familiar accuracy curve constant: fast early, flat by lv90-100
   // The physiques that feed accuracy are fixed: Agility (footwork) plus four coordination/dexterity
   // physiques behind a steady, precise hand -- Body Control, Gross Motor Control, Fine Motor Control,
   // and Sleight of Hand.
@@ -6589,10 +6582,6 @@
     return clamp(1 - eff/ACCURACY_MISS_DENOM, ACCURACY_MIN_HIT, 1);
   }
   function playerHitChance(m){ return hitChanceVs(playerAccuracy(state), monsterDodge(m)); }
-  // Familiars gain accuracy quickly at low levels then level off near the cap (a concave curve),
-  // so the lv90->100 gain is small. Driven by the familiar's own level, not the player's stats.
-  function familiarAccuracy(level){ return Math.round(FAM_ACC_MAX*(1 - Math.exp(-(level||1)/FAM_ACC_TAU))); }
-  function familiarHitChance(level, m){ return hitChanceVs(familiarAccuracy(level), monsterDodge(m)); }
   // Enemy elemental affinity pill (+ its weakness) for the combat cards/arena. The element is both
   // what the enemy ATTACKS with and, via the triangle, the element it is WEAK to.
   function elementBadge(m){
@@ -21061,7 +21050,7 @@
       isScrollActive:isScrollActive, scrollDamageReduction:scrollDamageReduction, readScroll:readScroll,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       playerAccuracy:playerAccuracy, monsterDodge:monsterDodge, hitChanceVs:hitChanceVs, playerHitChance:playerHitChance,
-      familiarAccuracy:familiarAccuracy, familiarHitChance:familiarHitChance, accuracyPhysiques:accuracyPhysiques,
+      accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
