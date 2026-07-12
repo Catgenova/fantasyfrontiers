@@ -3149,6 +3149,63 @@
   MONSTERS.forEach(function(m){ MONSTERS_BY_ID[m.id] = m; });
   function monsterById(id){ return MONSTERS_BY_ID[id] || null; }
 
+  // ================= DUNGEONS =================
+  // D1 "Cave" -- the first dungeon layer: 25 arachnids fought ONE AT A TIME, levels 100->125, each with
+  // its own element + armour mix. The 25th (The Broodmother) is the boss at ~10x the 24th's HP. Clearing
+  // it grants each surviving player a D1 Masterwork Formula. Playable solo now; a synchronous 1-4 player
+  // layer (server-authoritative) follows. These are registered into MONSTERS_BY_ID so the FULL combat
+  // engine (classes, enchants, familiars, DoTs) applies -- but they're kept OUT of the MONSTERS array and
+  // MONSTER_CATEGORIES so they never appear in the normal hunt tabs.
+  function dungeonElementColor(el){ return ({ fire:'#e0632f', water:'#3f8fd0', earth:'#6f9538', light:'#e6c24a', dark:'#8a5fb0' })[el] || '#9a8a7a'; }
+  // Parametric arachnid portrait: one spider drawn from a few index-driven knobs (abdomen size + marking,
+  // eye count, leg splay) tinted by its element, so all 25 D1 foes read visually distinct. Boss is larger.
+  function spiderPortrait(i, element, boss){
+    var c = dungeonElementColor(element), body = boss ? '#241a2a' : '#2a2320';
+    var legW = boss ? 3.4 : 2.2;
+    var abX = 50, abY = 40, abRx = boss ? 21 : 13 + (i % 4) * 1.4, abRy = boss ? 25 : 16 + (i % 4) * 1.4;
+    var ceX = 50, ceY = abY + abRy + 4, splay = 0.5 + (i % 3) * 0.2, legs = '';
+    for(var s = -1; s <= 1; s += 2){
+      for(var k = 0; k < 4; k++){
+        var ly = ceY - 6 + k * 4, mx = ceX + s * (18 + k * 3), my = ly - 10 + k * 6 * splay, ex = ceX + s * (30 + k * 2), ey = ly + 8 + k * 5;
+        legs += '<path d="M' + ceX + ' ' + ly + ' Q' + mx + ' ' + my + ' ' + ex + ' ' + ey + '" fill="none" stroke="' + body + '" stroke-width="' + legW + '" stroke-linecap="round"/>';
+      }
+    }
+    var mk = i % 3, mark;
+    if(mk === 0) mark = '<path d="M' + abX + ' ' + (abY - abRy * 0.5) + ' L' + (abX - 5) + ' ' + abY + ' L' + abX + ' ' + (abY + abRy * 0.5) + ' L' + (abX + 5) + ' ' + abY + ' Z" fill="' + c + '"/>';
+    else if(mk === 1) mark = '<path d="M' + (abX - abRx * 0.6) + ' ' + (abY - 4) + ' h' + (abRx * 1.2) + ' M' + (abX - abRx * 0.7) + ' ' + (abY + 3) + ' h' + (abRx * 1.4) + '" stroke="' + c + '" stroke-width="3" fill="none"/>';
+    else mark = '<circle cx="' + (abX - 5) + '" cy="' + (abY - 3) + '" r="3" fill="' + c + '"/><circle cx="' + (abX + 5) + '" cy="' + (abY - 3) + '" r="3" fill="' + c + '"/><circle cx="' + abX + '" cy="' + (abY + 5) + '" r="3.5" fill="' + c + '"/>';
+    var eyes = '', ne = 4 + (i % 4) * 2;
+    for(var e = 0; e < ne; e++){ var exx = ceX - (ne - 1) * 1.6 + e * 3.2, eyy = ceY + 3 + (e % 2) * 2.5; eyes += '<circle cx="' + exx + '" cy="' + eyy + '" r="1.5" fill="' + c + '"/>'; }
+    return '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' + legs
+      + '<ellipse cx="' + abX + '" cy="' + abY + '" rx="' + abRx + '" ry="' + abRy + '" fill="' + body + '"/>' + mark
+      + '<ellipse cx="' + ceX + '" cy="' + ceY + '" rx="' + (boss ? 12 : 8) + '" ry="' + (boss ? 11 : 7) + '" fill="' + body + '"/>' + eyes
+      + '<path d="M' + (ceX - 4) + ' ' + (ceY + 7) + ' L' + (ceX - 2) + ' ' + (ceY + 13) + ' M' + (ceX + 4) + ' ' + (ceY + 7) + ' L' + (ceX + 2) + ' ' + (ceY + 13) + '" stroke="' + c + '" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
+  }
+  var DUNGEON_D1_NAMES = ['Cave Skitterling','Gloomweb Crawler','Silk Lurker','Venomfang Spinner','Rockback Tarantula','Cavern Widow','Pale Recluse','Hookleg Stalker','Gossamer Wraith','Chitin Prowler','Emberfang Spider','Frostsilk Weaver','Stonehide Broodling','Nightshade Lurker','Barbed Ambusher','Crystalback Spinner','Dreadweb Matron','Hollowfang Reaver','Obsidian Widow','Venomlord Stalker','Gravebound Weaver','Silkbound Horror','Chasmspawn Devourer','Elder Webtyrant','The Broodmother'];
+  var DUNGEON_D1_ELEM_CYCLE = ['earth','dark','water','fire','light'];
+  var DUNGEON_D1_COUNT = 25;
+  var DUNGEON_D1_ENEMIES = [];
+  for(var _di = 0; _di < DUNGEON_D1_COUNT; _di++){
+    var _boss = _di === DUNGEON_D1_COUNT - 1;
+    var _el = _boss ? 'dark' : DUNGEON_D1_ELEM_CYCLE[_di % 5];
+    DUNGEON_D1_ENEMIES.push({
+      id:'dungeon_d1_' + (_di + 1), name:DUNGEON_D1_NAMES[_di],
+      dungeon:'d1', dungeonIndex:_di, isBoss:_boss,
+      icon: spiderPortrait(_di, _el, _boss),
+      category:'dungeon', tierIndex:20, element:_el,
+      level: Math.round(100 + _di * 25 / (DUNGEON_D1_COUNT - 1)), levelReq:100,
+      hp: Math.round(50000 * Math.pow(1.05, _di)),
+      atkMin: Math.round(200 * Math.pow(1.04, _di)), atkMax: Math.round(500 * Math.pow(1.04, _di)),
+      goldMin: Math.round(200 * Math.pow(1.05, _di)), goldMax: Math.round(400 * Math.pow(1.05, _di)),
+      damageType: DAMAGE_TYPE_CYCLE[_di % 3], attackTypes: makeTypeMix(_di), armorTypes: makeTypeMix(_di + 2),
+      attackSpeed: Math.round((2.2 + (_di % 5) * 0.3) * 10) / 10
+    });
+  }
+  DUNGEON_D1_ENEMIES[DUNGEON_D1_COUNT - 1].hp = Math.round(DUNGEON_D1_ENEMIES[DUNGEON_D1_COUNT - 2].hp * 10); // boss ~10x the 24th
+  DUNGEON_D1_ENEMIES.forEach(function(m){ MONSTERS_BY_ID[m.id] = m; });
+  var DUNGEON_DEFS = { d1: { id:'d1', category:'Cave', label:'D1 — Cave', enemies:DUNGEON_D1_ENEMIES, minCombatScore:100, reward:'formula_d1_masterwork', rewardName:'D1 Masterwork Formula' } };
+  function isDungeonMonster(m){ return !!(m && m.dungeon); }
+
   // ---- Category-specific loot items ----
   var CORPSE_ITEMS = [];
   var BROKEN_RELIC_ITEMS = [];
@@ -3899,7 +3956,13 @@
   ALL_DROP_ITEMS[COAL_ITEM.id] = COAL_ITEM;
   MUDDY_ARTIFACT_ITEMS.forEach(function(it){ ALL_DROP_ITEMS[it.id] = it; });
   ALL_DROP_ITEMS.shaft = { id:'shaft', name:'Shaft', icon:svgIcon('dowel','#a8895c'), sell:1 };
-  var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS);
+  // Dungeon Formulas: endgame gear blueprints that drop from a dungeon boss. Details are TBD -- for now
+  // a D1 clear drops a single "D1 Masterwork Formula" placeholder. Registered here so inventory can
+  // display it (sell:0 -> not vendorable).
+  var FORMULA_ITEMS = {
+    formula_d1_masterwork: { id:'formula_d1_masterwork', name:'D1 Masterwork Formula', icon:svgIcon('gem','#c9a227'), sell:0, dungeon:'d1', formula:true }
+  };
+  var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS);
 
   var GATHER_SKILL_IDS = Object.keys(GATHERING_SKILLS);
   var CRAFT_SKILL_IDS = Object.keys(CRAFTING_SKILLS);
@@ -8014,7 +8077,7 @@
   var AREAS = [
     { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['improvement','Improvement'],['faith','Faith'],['building','Construction'],['inventory','Inventory'],['skills','Skills']] },
     { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['peons','Peons'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
-    { id:'battle', label:'Battle', icon:'crossedswords', subs:[['combat','Combat'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] }
+    { id:'battle', label:'Battle', icon:'crossedswords', subs:[['combat','Combat'],['dungeons','Dungeons'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] }
   ];
   function areaOf(cat){ for(var i=0;i<AREAS.length;i++){ if(AREAS[i].subs.some(function(s){ return s[0]===cat; })) return AREAS[i].id; } return 'resources'; }
   var currentArea = areaOf(currentCategory);
@@ -9756,6 +9819,7 @@
   // reflection when the player wields a Staff (no auto-attack, so summons must land the finishing blow).
   function defeatMonster(monster){
     var act = state.activity;
+    if(act && act.dungeon){ dungeonOnKill(monster); return; } // dungeon foe -> advance the run instead of re-engaging
     bumpStat('kills');
     var goldWon = randInt(monster.goldMin, monster.goldMax);
     earnGold(goldWon);
@@ -9936,11 +10000,13 @@
     });
     if(state.playerHp <= 0){
       bumpStat('deaths');
+      var _diedInDungeon = state.activity && state.activity.dungeon;
       state.playerHp = 0;
       state.reaperShield = 0; // a spectral guard shatters when you fall
       state.activity = { type:null };
+      if(_diedInDungeon) dungeonEndRun('death'); // a dungeon run ends when you fall
       if(isMortal()) mortalDeath(monster); // permadeath: the profile passes into Immortal play
-      else addLog('You were defeated by the ' + monster.name + ' and retreat to recover.', 'danger');
+      else if(!_diedInDungeon) addLog('You were defeated by the ' + monster.name + ' and retreat to recover.', 'danger');
       needsRender = true;
     }
   }
@@ -13655,6 +13721,254 @@
     else if(!state.activePotion) h += '<div class="empty-note" style="margin:0">No combat consumables in your bag &mdash; craft Potions, Coatings, Bombs, or Flash Bombs.</div>';
     return h+'</div>';
   }
+  // ================= DUNGEON RUNS =================
+  // Phase 1 (solo): a dungeon run marches through its enemy list one at a time, reusing the real combat
+  // engine (each foe is a normal state.activity combat, so classes/enchants/familiars/DoTs all apply).
+  // The run state is ephemeral (module-scoped); the dungeon linkage also lives on state.activity.dungeon
+  // so a reload mid-fight ends gracefully. Threat + target selection are modelled now so the Phase 2
+  // server-authoritative 1-4 player layer can slot in: the enemy targets a random ALIVE party member
+  // weighted by threat (heavier armour = more threat), and the run UI shows who's being targeted.
+  var dungeonRun = null;        // { def, idx, party:[{name,threat,alive,isSelf}], targetIdx, active, cleared }
+  var dungeonView = 'browse';   // 'browse' | 'lobby' | 'run' | 'result'
+  var dungeonLobbyId = null;
+  function armorThreatWeight(material){ return ({ plate:4, chain:3, leather:2, tailoring:1 })[material] || 1; }
+  // A player's threat: a base plus a weight per worn armour piece by material (plate > chain > leather > cloth),
+  // so heavily-plated players draw the enemy's attacks more than cloth-wearers.
+  function playerThreat(st){
+    st = st || state; var t = 10;
+    BODY_ARMOR_SLOTS.forEach(function(slot){ var s = st.bodyArmor[slot]; if(s && s.material && (s.tier > 0)) t += armorThreatWeight(s.material); });
+    return t;
+  }
+  function dungeonSelfCombatant(){ return { name:(authUser && authUser.username) || 'You', isSelf:true, threat:playerThreat(state), alive:true }; }
+  // Pick the enemy's target: a threat-weighted random draw among the ALIVE party. Returns the party index.
+  function dungeonPickTarget(party){
+    var alive = [], w = [], total = 0;
+    for(var i = 0; i < party.length; i++){ if(party[i].alive){ var t = Math.max(1, party[i].threat || 1); alive.push(i); w.push(t); total += t; } }
+    if(!alive.length) return -1;
+    var r = Math.random() * total, acc = 0;
+    for(var j = 0; j < alive.length; j++){ acc += w[j]; if(r <= acc) return alive[j]; }
+    return alive[alive.length - 1];
+  }
+  function dungeonRetarget(){ if(dungeonRun) dungeonRun.targetIdx = dungeonPickTarget(dungeonRun.party); }
+  // Engage arachnid `idx` as a normal combat, tagged as a dungeon fight so defeatMonster advances the run.
+  function dungeonEngage(idx){
+    if(!dungeonRun) return;
+    var enemy = dungeonRun.def.enemies[idx]; if(!enemy) return;
+    dungeonRun.idx = idx;
+    state.activity = { type:'combat', monsterId:enemy.id, monsterHp:enemy.hp, tickAccum:0, monsterTickAccum:0,
+      duelStartedAt:Date.now(), disengageUsed:false, guardianBondUsed:false,
+      samuraiFirstStrike:true, samuraiFocus:0, staticCharge:0, galvanizeStacks:0,
+      dungeon:dungeonRun.def.id, dungeonIndex:idx };
+    state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0;
+    dungeonRetarget();
+  }
+  function dungeonEnterLobby(id){ if(!DUNGEON_DEFS[id]) return; dungeonLobbyId = id; dungeonView = 'lobby'; needsRender = true; }
+  function dungeonBackToBrowse(){ dungeonView = 'browse'; dungeonLobbyId = null; needsRender = true; }
+  function dungeonBegin(id){
+    var def = DUNGEON_DEFS[id]; if(!def) return;
+    if(combatLevelEquivalent(state) < def.minCombatScore){ addLog('You need Combat Score ' + def.minCombatScore + ' to enter the ' + def.category + '.', 'danger'); return; }
+    dungeonRun = { def:def, idx:0, party:[dungeonSelfCombatant()], targetIdx:0, active:true, cleared:false };
+    dungeonView = 'run';
+    addLog('You descend into the ' + def.category + ' — ' + def.enemies.length + ' arachnids await, one at a time.', 'important');
+    dungeonEngage(0);
+    needsRender = true;
+  }
+  // Called from defeatMonster when the fallen foe is a dungeon enemy: advance to the next, or finish.
+  function dungeonOnKill(monster){
+    dungeonEnsureRun(); // resume a run whose module state was lost to a reload, so the kill still advances
+    bumpStat('kills');
+    earnGold(randInt(monster.goldMin, monster.goldMax));
+    addLog('Defeated the ' + monster.name + '!', 'important');
+    var _cls = activeClassId(state); if(_cls) maybeSummonFamiliar(_cls);
+    if(!dungeonRun || !dungeonRun.active){ stopActivity(); dungeonView = 'browse'; needsRender = true; return; }
+    if(dungeonRun.idx >= dungeonRun.def.enemies.length - 1) dungeonComplete();
+    else { dungeonEngage(dungeonRun.idx + 1); needsRender = true; }
+  }
+  function dungeonComplete(){
+    var def = dungeonRun.def;
+    // Every surviving player claims the layer's Formula (solo now; the party loop lands with Phase 2).
+    dungeonRun.party.forEach(function(p){ if(p.alive && p.isSelf) addItem(def.reward, 1); });
+    addLog('The ' + def.category + ' is cleared! You claim a ' + def.rewardName + '.', 'important');
+    spawnFloatingText('+1 ' + def.rewardName, 'ft-rare');
+    dungeonRun.active = false; dungeonRun.cleared = true;
+    stopActivity();
+    dungeonView = 'result';
+    needsRender = true;
+  }
+  // End a run early (retreat) or on death. Clears the fight and returns to the dungeon list.
+  function dungeonEndRun(reason){
+    if(dungeonRun) dungeonRun.active = false;
+    if(state.activity && state.activity.dungeon) stopActivity();
+    dungeonView = 'browse';
+    if(reason === 'death') addLog('You fell in the depths — the dungeon run ends.', 'danger');
+    else if(reason === 'retreat') addLog('You retreat from the dungeon.', '');
+    needsRender = true;
+  }
+  function dungeonEnemyLevelRange(def){ return def.enemies[0].level + '–' + def.enemies[def.enemies.length - 1].level; }
+  // On reload the module-scoped run state is gone but state.activity may still be a dungeon combat.
+  // Rebuild a solo run from it so the descent resumes instead of stranding the player mid-fight.
+  function dungeonEnsureRun(){
+    var act = state.activity;
+    if(act && act.type === 'combat' && act.dungeon && (!dungeonRun || !dungeonRun.active)){
+      var def = DUNGEON_DEFS[act.dungeon];
+      if(def){ dungeonRun = { def:def, idx:act.dungeonIndex || 0, party:[dungeonSelfCombatant()], targetIdx:0, active:true, cleared:false }; dungeonRetarget(); dungeonView = 'run'; }
+    }
+  }
+  function renderDungeonsTab(){
+    dungeonEnsureRun();
+    var act = state.activity;
+    if(dungeonView === 'run' && act.type === 'combat' && act.dungeon) return renderDungeonRun();
+    if(dungeonView === 'result' && dungeonRun) return renderDungeonResult();
+    if(dungeonView === 'lobby' && dungeonLobbyId) return renderDungeonLobby(dungeonLobbyId);
+    return renderDungeonBrowse();
+  }
+  function renderDungeonBrowse(){
+    var html = '<div class="section-intro">Descend into <b>Dungeons</b> — gauntlets of foes fought one at a time. Bring a party of up to 4 (synchronous co-op is coming; for now you enter solo). Clear the final boss and every surviving delver claims a <b>Formula</b>, a blueprint for endgame gear.</div>';
+    var def = DUNGEON_DEFS.d1;
+    var canEnter = combatLevelEquivalent(state) >= def.minCombatScore;
+    html += '<h3>' + svgIcon('gem', '#8a5fb0') + ' Cave</h3>';
+    html += '<div class="item-card">';
+    html += '<div class="item-top"><div class="item-icon">' + def.enemies[def.enemies.length - 1].icon + '</div><div><div class="item-name">' + def.label + '</div><div class="item-meta">' + def.enemies.length + ' arachnids &bull; Levels ' + dungeonEnemyLevelRange(def) + ' &bull; Boss: ' + escapeHtml(def.enemies[def.enemies.length - 1].name) + '</div></div></div>';
+    html += '<div class="chance-line">The first dungeon layer. Twenty-five arachnids, each with its own element and armour, guard the depths. The 25th — the Broodmother — towers over the rest. Reward: <b>' + def.rewardName + '</b>.</div>';
+    html += '<div class="inputs-line" style="margin-top:6px">Requires Combat Score ' + def.minCombatScore + (canEnter ? '' : ' <span style="color:var(--hp-bad)">(you are ' + combatLevelEquivalent(state) + ')</span>') + '</div>';
+    html += '<button class="action-btn" data-action="dungeonEnter" data-id="' + def.id + '" style="margin-top:8px;width:auto" ' + (canEnter ? '' : 'disabled') + '>' + (canEnter ? 'Enter the Cave' : 'Combat Score ' + def.minCombatScore + ' required') + '</button>';
+    html += '</div>';
+    // Enemy roster preview -- shows every portrait so the arachnids are visible before entering.
+    html += '<div class="inputs-line" style="margin-top:12px">Denizens of the Cave</div>';
+    html += '<div class="card-grid">';
+    def.enemies.forEach(function(en, i){
+      html += '<div class="item-card" style="text-align:center;padding:8px">';
+      html += '<div style="width:56px;height:56px;margin:0 auto">' + en.icon + '</div>';
+      html += '<div class="item-name" style="font-size:0.82em;margin-top:4px">' + (en.isBoss ? '&#9733; ' : (i + 1) + '. ') + escapeHtml(en.name) + '</div>';
+      html += '<div class="item-meta">Lv ' + en.level + ' &bull; ' + elementBadge(en) + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+  function renderDungeonLobby(id){
+    var def = DUNGEON_DEFS[id]; if(!def) return renderDungeonBrowse();
+    var canEnter = combatLevelEquivalent(state) >= def.minCombatScore;
+    var myThreat = playerThreat(state);
+    var myCls = activeClassId(state);
+    var html = '<div class="section-intro"><b>' + def.label + '</b> — Pre-fight Lobby. Form your party, then begin the descent. Combat here is <b>synchronous</b>: the party fights each foe together, one at a time.</div>';
+    html += '<div class="item-card">';
+    html += '<div class="item-top"><div class="item-icon">' + svgIcon('person', 'var(--gold)') + '</div><div><div class="item-name">Party (1–4)</div><div class="item-meta">Synchronous co-op is coming — for now you enter solo.</div></div></div>';
+    // Slot 1: you.
+    html += '<div class="style-row" style="flex-direction:column;gap:6px;align-items:stretch">';
+    html += '<span class="style-btn active" style="cursor:default;justify-content:space-between">' + svgIcon('person', 'var(--gold)') + ' ' + escapeHtml((authUser && authUser.username) || 'You') + (myCls ? ' &bull; ' + escapeHtml((CLASS_DEFS_BY_ID[myCls] || {}).name || '') : '') + ' <span class="style-type" style="text-transform:none">Threat ' + myThreat + '</span></span>';
+    for(var s = 2; s <= 4; s++) html += '<span class="style-btn locked" style="cursor:default"><span class="style-type" style="text-transform:none">Slot ' + s + ' — open (multiplayer coming soon)</span></span>';
+    html += '</div>';
+    html += '<div class="chance-line" style="margin-top:8px">' + svgIcon('shield', '#8a97a6') + ' <b>Threat</b> decides how often a foe targets you: heavier armour draws more attacks (Plate &gt; Chain &gt; Leather &gt; Cloth). Plate-clad delvers tank; cloth casters stay out of reach.</div>';
+    html += '<div style="display:flex;gap:8px;margin-top:10px">';
+    html += '<button class="action-btn" data-action="dungeonBegin" data-id="' + def.id + '" style="width:auto" ' + (canEnter ? '' : 'disabled') + '>' + (canEnter ? 'Begin Descent' : 'Combat Score ' + def.minCombatScore + ' required') + '</button>';
+    html += '<button class="action-btn stop" data-action="dungeonBack" style="width:auto">Back</button>';
+    html += '</div></div>';
+    return html;
+  }
+  function renderDungeonRun(){
+    var def = dungeonRun.def, idx = dungeonRun.idx, enemy = def.enemies[idx];
+    var html = '<div class="physique-bonus">' + svgIcon('gem', '#8a5fb0') + ' <b>' + def.label + '</b> &mdash; Enemy <b>' + (idx + 1) + ' / ' + def.enemies.length + '</b>' + (enemy.isBoss ? ' &bull; <span style="color:var(--hp-bad);font-weight:800">BOSS</span>' : '') + '</div>';
+    html += '<div class="progress-track" style="margin-bottom:8px"><div class="progress-fill" style="width:' + Math.round(idx / def.enemies.length * 100) + '%"></div></div>';
+    // Party + who the enemy is targeting with its current attack.
+    var tName = (dungeonRun.targetIdx >= 0 && dungeonRun.party[dungeonRun.targetIdx]) ? dungeonRun.party[dungeonRun.targetIdx].name : '—';
+    html += '<div class="item-card" style="margin-bottom:8px"><div class="inputs-line">Party &bull; the ' + escapeHtml(enemy.name) + ' is attacking <b style="color:var(--hp-bad)">' + escapeHtml(tName) + '</b></div><div class="style-row">';
+    dungeonRun.party.forEach(function(p, i){
+      var targeted = i === dungeonRun.targetIdx;
+      html += '<span class="style-btn' + (targeted ? ' active' : '') + '" style="cursor:default">' + (targeted ? svgIcon('crossedswords', 'var(--hp-bad)') : svgIcon('person', 'var(--gold)')) + ' ' + escapeHtml(p.name) + ' <span class="style-type" style="text-transform:none">' + (p.alive ? 'Threat ' + p.threat + (targeted ? ' &bull; TARGETED' : '') : 'Downed') + '</span></span>';
+    });
+    html += '</div></div>';
+    html += renderArena();
+    return html;
+  }
+  function renderDungeonResult(){
+    var def = dungeonRun.def;
+    var html = '<div class="section-intro"><b>' + def.label + ' Cleared!</b></div>';
+    html += '<div class="item-card"><div class="item-top"><div class="item-icon">' + (FORMULA_ITEMS[def.reward] || {}).icon + '</div><div><div class="item-name">' + def.rewardName + '</div><div class="item-meta">Added to your inventory. Endgame gear blueprint (details coming soon).</div></div></div>';
+    html += '<div class="chance-line">You bested all ' + def.enemies.length + ' arachnids of the ' + def.category + ', Broodmother and all.</div>';
+    html += '<button class="action-btn" data-action="dungeonBack" style="margin-top:8px;width:auto">Return to Dungeons</button></div>';
+    return html;
+  }
+  // The combat "arena" card (player + familiars vs the current foe). Extracted so both the Combat tab
+  // and the Dungeons tab render the exact same fight UI. Self-contained: reads state.activity.
+  function renderArena(){
+    var act = state.activity;
+    if(!act || act.type!=='combat') return '';
+    var m = monsterById(act.monsterId);
+    if(!m) return '';
+    var weaponStyle = getWeaponStyle(state.equippedMainhand);
+    var html = '';
+    var hpPct = clamp(act.monsterHp/m.hp*100,0,100);
+    var pPct = clamp(state.playerHp/maxHp(state)*100,0,100);
+    var monsterAtkIntervalMs = m.attackSpeed*1000*(1+getFamiliarEnemySlowPct()+enemyChillSlowMult());
+    var monsterAtkPct = clamp((act.monsterTickAccum||0)/monsterAtkIntervalMs*100,0,100);
+    var playerAtkIntervalMs = playerAttackIntervalMs();
+    var playerAtkPct = clamp((act.tickAccum||0)/playerAtkIntervalMs*100,0,100);
+    var matchup = weightedMatchupLabel(weaponStyle.attackTypes || {blunt:1}, m.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
+    var _stunned = enemyStunned(state);
+    var _comps = activeCompanionList(state);
+    html += '<div class="arena">';
+    html += '<div class="arena-cols">';
+    // ---- LEFT: player + familiars ----
+    html += '<div class="arena-side arena-player">';
+    html += '<div class="arena-side-head">'+svgIcon('person','var(--gold)')+' You</div>';
+    html += '<div class="arena-portrait">'+playerPortrait()+'</div>';
+    if(weaponStyle.noAttack){
+      html += '<div class="hp-label"><span style="color:var(--text-faint)">No attack &mdash; familiars fight for you</span></div>';
+    } else {
+      html += '<div class="hp-track" style="height:8px"><div class="hp-fill" id="arenaPlayerAtkFill" style="width:'+playerAtkPct+'%;background:var(--gold);transition:none"></div></div>';
+      html += '<div class="hp-label"><span>Attack</span><span>'+(Math.round(playerAtkIntervalMs/100)/10)+'s</span></div>';
+      if(hasOffhandClaw(state)){
+        var offAtkIntervalMs = offhandClawAttackIntervalMs();
+        var offAtkPct = clamp((act.offhandTickAccum||0)/offAtkIntervalMs*100,0,100);
+        html += '<div class="hp-track" style="height:8px;margin-top:6px"><div class="hp-fill" id="arenaOffhandAtkFill" style="width:'+offAtkPct+'%;background:#b0757a;transition:none"></div></div>';
+        html += '<div class="hp-label"><span>'+svgIcon('claw','#b0757a')+' Off-hand</span><span>'+(Math.round(offAtkIntervalMs/100)/10)+'s</span></div>';
+      }
+    }
+    html += '<div class="hp-track" style="margin-top:6px"><div class="hp-fill" id="arenaPlayerFill" style="width:'+pPct+'%;background:var(--hp-bad)"></div></div>';
+    html += '<div class="hp-label"><span>HP</span><span id="arenaPlayerLabel">'+fmt(state.playerHp)+' / '+maxHp(state)+'</span></div>';
+    if(_comps.length){
+      html += '<div class="arena-fams">';
+      html += '<div class="arena-fams-title">Companions ('+_comps.length+'/'+activeCompanionSlots(state)+') &bull; cast every '+(familiarCastIntervalMs()/1000)+'s</div>';
+      _comps.forEach(function(cid){
+        var _comp = FAMILIAR_DATA[cid]; if(!_comp) return;
+        var cc = (state.companionCast && state.companionCast[cid]) || {accum:0,index:0};
+        var _castPct = clamp((cc.accum||0)/familiarCastIntervalMs()*100,0,100);
+        var _spells = _comp.spells;
+        var _ni = (cc.index||0) % _spells.length;
+        html += '<div class="arena-fam">';
+        html += '<div class="arena-fam-ico">'+_comp.icon+'</div>';
+        html += '<div class="arena-fam-body">';
+        html += '<div class="arena-fam-name"><span>'+escapeHtml(_comp.name)+'</span></div>';
+        html += '<div class="hp-track" style="height:6px;margin-top:3px"><div class="hp-fill" id="arenaCast-'+cid+'" style="width:'+_castPct+'%;background:var(--cat-menagerie);transition:none"></div></div>';
+        html += '<div class="arena-fam-rota" id="arenaRota-'+cid+'">';
+        _spells.forEach(function(sp, i){ html += '<span class="rota-chip'+(i===_ni?' next':'')+'" id="arenaRota-'+cid+'-'+i+'">'+(i===_ni?'&#9656; ':'')+spellElementIcon(sp)+escapeHtml(sp.name)+'</span>'; });
+        html += '</div></div></div>';
+      });
+      html += '</div>';
+    }
+    html += renderFxBars(combatPlayerBuffs(), 'Your Effects');
+    html += '</div>'; // arena-player
+    // ---- RIGHT: enemy ----
+    html += '<div class="arena-side arena-enemy">';
+    html += '<div class="arena-side-head">'+escapeHtml(m.name)+' <span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
+    html += '<div class="arena-portrait">'+monsterPortrait(m)+'</div>';
+    html += '<div class="elem-line" style="margin:2px 0 5px">'+elementBadge(m)+incomingElementNote(m)+'</div>';
+    html += '<div class="hp-label" style="margin-bottom:4px"><span>Dodge '+monsterDodge(m)+'</span><span>Hit '+Math.round(playerHitChance(m)*100)+'%</span></div>';
+    html += '<div class="hp-track"><div class="hp-fill" id="arenaMonsterFill" style="width:'+hpPct+'%;background:var(--hp-bad)"></div></div>';
+    html += '<div class="hp-label"><span>Monster HP</span><span id="arenaMonsterLabel">'+fmt(act.monsterHp)+' / '+m.hp+'</span></div>';
+    html += '<div class="hp-track" style="height:8px;margin-top:6px"><div class="hp-fill" id="arenaMonsterAtkFill" style="width:'+monsterAtkPct+'%;background:'+(_stunned?'#e8d84a':'var(--gold)')+';transition:none"></div></div>';
+    html += '<div class="hp-label"><span id="arenaMonsterAtkLabel">'+(_stunned ? svgIcon('lightning','#e8d84a')+' Stunned!' : 'Monster Attack')+'</span><span>'+m.attackSpeed+'s</span></div>';
+    html += renderFxBars(combatEnemyDebuffs(), 'Enemy Effects');
+    html += '</div>'; // arena-enemy
+    html += '</div>'; // arena-cols
+    html += renderCombatConsumables();
+    html += renderAutoEatPanel(); // Auto-Eat controls live inside the combat card during a fight
+    html += '<button class="action-btn stop" data-action="stop" style="margin-top:10px">Retreat</button>';
+    html += '</div>';
+    _arenaFxSig = combatFxSignature();
+    return html;
+  }
   function renderCombatTab(){
     var lvl = combatLevelEquivalent(state);
     var act = state.activity;
@@ -13662,77 +13976,14 @@
     // The combat card (arena) is pinned to the very top of the screen while you're fighting; the
     // stats / accuracy / auto-eat panels sit below it. Out of combat there's no card, so those panels lead.
     var html = '';
+    if(act.type==='combat' && act.dungeon){
+      // A dungeon fight lives on the Dungeons tab -- keep the Combat tab clean while it's running.
+      html += '<div class="idle-note">You are in the '+((DUNGEON_DEFS[act.dungeon]||{}).category||'dungeon')+'. Manage the fight on the <b>Dungeons</b> tab.</div>';
+      html += renderCombatStatsPanel();
+      return html;
+    }
     if(act.type==='combat'){
-      var m = monsterById(act.monsterId);
-      var hpPct = clamp(act.monsterHp/m.hp*100,0,100);
-      var pPct = clamp(state.playerHp/maxHp(state)*100,0,100);
-      var monsterAtkIntervalMs = m.attackSpeed*1000*(1+getFamiliarEnemySlowPct()+enemyChillSlowMult());
-      var monsterAtkPct = clamp((act.monsterTickAccum||0)/monsterAtkIntervalMs*100,0,100);
-      var playerAtkIntervalMs = playerAttackIntervalMs();
-      var playerAtkPct = clamp((act.tickAccum||0)/playerAtkIntervalMs*100,0,100);
-      var matchup = weightedMatchupLabel(weaponStyle.attackTypes || {blunt:1}, m.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
-      var _stunned = enemyStunned(state);
-      var _comps = activeCompanionList(state);
-      html += '<div class="arena">';
-      html += '<div class="arena-cols">';
-      // ---- LEFT: player + familiars ----
-      html += '<div class="arena-side arena-player">';
-      html += '<div class="arena-side-head">'+svgIcon('person','var(--gold)')+' You</div>';
-      html += '<div class="arena-portrait">'+playerPortrait()+'</div>';
-      if(weaponStyle.noAttack){
-        html += '<div class="hp-label"><span style="color:var(--text-faint)">No attack &mdash; familiars fight for you</span></div>';
-      } else {
-        html += '<div class="hp-track" style="height:8px"><div class="hp-fill" id="arenaPlayerAtkFill" style="width:'+playerAtkPct+'%;background:var(--gold);transition:none"></div></div>';
-        html += '<div class="hp-label"><span>Attack</span><span>'+(Math.round(playerAtkIntervalMs/100)/10)+'s</span></div>';
-        if(hasOffhandClaw(state)){
-          var offAtkIntervalMs = offhandClawAttackIntervalMs();
-          var offAtkPct = clamp((act.offhandTickAccum||0)/offAtkIntervalMs*100,0,100);
-          html += '<div class="hp-track" style="height:8px;margin-top:6px"><div class="hp-fill" id="arenaOffhandAtkFill" style="width:'+offAtkPct+'%;background:#b0757a;transition:none"></div></div>';
-          html += '<div class="hp-label"><span>'+svgIcon('claw','#b0757a')+' Off-hand</span><span>'+(Math.round(offAtkIntervalMs/100)/10)+'s</span></div>';
-        }
-      }
-      html += '<div class="hp-track" style="margin-top:6px"><div class="hp-fill" id="arenaPlayerFill" style="width:'+pPct+'%;background:var(--hp-bad)"></div></div>';
-      html += '<div class="hp-label"><span>HP</span><span id="arenaPlayerLabel">'+fmt(state.playerHp)+' / '+maxHp(state)+'</span></div>';
-      if(_comps.length){
-        html += '<div class="arena-fams">';
-        html += '<div class="arena-fams-title">Companions ('+_comps.length+'/'+activeCompanionSlots(state)+') &bull; cast every '+(familiarCastIntervalMs()/1000)+'s</div>';
-        _comps.forEach(function(cid){
-          var _comp = FAMILIAR_DATA[cid]; if(!_comp) return;
-          var cc = (state.companionCast && state.companionCast[cid]) || {accum:0,index:0};
-          var _castPct = clamp((cc.accum||0)/familiarCastIntervalMs()*100,0,100);
-          var _spells = _comp.spells;
-          var _ni = (cc.index||0) % _spells.length;
-          html += '<div class="arena-fam">';
-          html += '<div class="arena-fam-ico">'+_comp.icon+'</div>';
-          html += '<div class="arena-fam-body">';
-          html += '<div class="arena-fam-name"><span>'+escapeHtml(_comp.name)+'</span></div>';
-          html += '<div class="hp-track" style="height:6px;margin-top:3px"><div class="hp-fill" id="arenaCast-'+cid+'" style="width:'+_castPct+'%;background:var(--cat-menagerie);transition:none"></div></div>';
-          html += '<div class="arena-fam-rota" id="arenaRota-'+cid+'">';
-          _spells.forEach(function(sp, i){ html += '<span class="rota-chip'+(i===_ni?' next':'')+'" id="arenaRota-'+cid+'-'+i+'">'+(i===_ni?'&#9656; ':'')+spellElementIcon(sp)+escapeHtml(sp.name)+'</span>'; });
-          html += '</div></div></div>';
-        });
-        html += '</div>';
-      }
-      html += renderFxBars(combatPlayerBuffs(), 'Your Effects');
-      html += '</div>'; // arena-player
-      // ---- RIGHT: enemy ----
-      html += '<div class="arena-side arena-enemy">';
-      html += '<div class="arena-side-head">'+escapeHtml(m.name)+' <span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
-      html += '<div class="arena-portrait">'+monsterPortrait(m)+'</div>';
-      html += '<div class="elem-line" style="margin:2px 0 5px">'+elementBadge(m)+incomingElementNote(m)+'</div>';
-      html += '<div class="hp-label" style="margin-bottom:4px"><span>Dodge '+monsterDodge(m)+'</span><span>Hit '+Math.round(playerHitChance(m)*100)+'%</span></div>';
-      html += '<div class="hp-track"><div class="hp-fill" id="arenaMonsterFill" style="width:'+hpPct+'%;background:var(--hp-bad)"></div></div>';
-      html += '<div class="hp-label"><span>Monster HP</span><span id="arenaMonsterLabel">'+fmt(act.monsterHp)+' / '+m.hp+'</span></div>';
-      html += '<div class="hp-track" style="height:8px;margin-top:6px"><div class="hp-fill" id="arenaMonsterAtkFill" style="width:'+monsterAtkPct+'%;background:'+(_stunned?'#e8d84a':'var(--gold)')+';transition:none"></div></div>';
-      html += '<div class="hp-label"><span id="arenaMonsterAtkLabel">'+(_stunned ? svgIcon('lightning','#e8d84a')+' Stunned!' : 'Monster Attack')+'</span><span>'+m.attackSpeed+'s</span></div>';
-      html += renderFxBars(combatEnemyDebuffs(), 'Enemy Effects');
-      html += '</div>'; // arena-enemy
-      html += '</div>'; // arena-cols
-      html += renderCombatConsumables();
-      html += renderAutoEatPanel(); // Auto-Eat controls live inside the combat card during a fight
-      html += '<button class="action-btn stop" data-action="stop" style="margin-top:10px">Retreat</button>';
-      html += '</div>';
-      _arenaFxSig = combatFxSignature();
+      html += renderArena();
     } else if(state.playerHp <= 0){
       html += '<div class="idle-note">You are recovering. HP regenerates slowly, or eat food from the sidebar.</div>';
     }
@@ -18891,6 +19142,7 @@
     else if(currentCategory==='market') html = renderMarketTab();
     else if(currentCategory==='farming') html = renderFarmingTab();
     else if(currentCategory==='combat') html = renderCombatTab();
+    else if(currentCategory==='dungeons') html = renderDungeonsTab();
     else if(currentCategory==='classes') html = renderClassesTab();
     else if(currentCategory==='faith') html = renderFaithTab(currentSub);
     else if(currentCategory==='character') html = renderCharacterTab();
@@ -20540,7 +20792,14 @@
         else if(DEFAULT_SUB[navCat]) currentSub = DEFAULT_SUB[navCat];
       }
     } else if(action==='stop'){
-      stopActivity();
+      if(state.activity && state.activity.dungeon) dungeonEndRun('retreat'); // retreating from a dungeon abandons the run
+      else stopActivity();
+    } else if(action==='dungeonEnter'){
+      dungeonEnterLobby(btn.getAttribute('data-id'));
+    } else if(action==='dungeonBegin'){
+      dungeonBegin(btn.getAttribute('data-id'));
+    } else if(action==='dungeonBack'){
+      dungeonBackToBrowse();
     } else if(action==='eat'){
       eatFood();
     } else if(action==='sell'){
@@ -21382,6 +21641,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, FORMULA_ITEMS:FORMULA_ITEMS, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,

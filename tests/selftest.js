@@ -1230,6 +1230,37 @@
        'Treasure Hunter gear reorders to weapon/offhand/helm/chest/gloves/boots');
   });
 
+  // ---- Dungeons: D1 "Cave" (25 arachnids, L100->125, ~10x boss, threat targeting) ---------
+  suite('dungeons: D1 Cave', function(){
+    var def = FF.DUNGEON_DEFS.d1;
+    ok(def, 'D1 dungeon defined');
+    eq(def.category, 'Cave', 'the single category is Cave');
+    var en = FF.DUNGEON_D1_ENEMIES;
+    eq(en.length, 25, '25 enemies');
+    eq(en[0].level, 100, 'first enemy is level 100');
+    eq(en[24].level, 125, 'last enemy is level 125');
+    ok(en.every(function(e,i){ return i===0 || e.level >= en[i-1].level; }), 'levels rise 100 -> 125 without dropping');
+    // boss = 25th, ~10x the 24th's HP
+    eq(en[24].isBoss, true, 'the 25th enemy is the boss');
+    ok(!en[23].isBoss, 'the 24th is not the boss');
+    ok(Math.abs(en[24].hp / en[23].hp - 10) < 0.01, 'boss HP is ~10x the 24th (' + en[24].hp + ' vs ' + en[23].hp + ')');
+    // distinct elements across the set
+    var elems = {}; en.forEach(function(e){ elems[e.element] = 1; });
+    ok(Object.keys(elems).length >= 3, 'enemies span multiple elements (' + Object.keys(elems).join(',') + ')');
+    // every enemy: SVG portrait + full combat typing + registered in monsterById
+    ok(en.every(function(e){ return typeof e.icon === 'string' && e.icon.indexOf('<svg') === 0; }), 'every enemy has an SVG portrait');
+    ok(en.every(function(e){ return e.element && e.armorTypes && e.attackTypes && e.hp > 0 && FF.monsterById(e.id) === e; }), 'every enemy has element/armor/attack/hp and resolves via monsterById');
+    // D1 Masterwork Formula registered for inventory display
+    var f = FF.ALL_SELLABLE[def.reward]; ok(f && /Masterwork Formula/.test(f.name), 'the D1 Masterwork Formula item is registered');
+    // Threat: plate armour draws more than cloth.
+    function armorSet(mat){ var b = {}; ['helmet','chest','gauntlets','boots'].forEach(function(s){ b[s] = { material:mat, tier:5, rarity:'normal' }; }); return b; }
+    ok(FF.playerThreat({ bodyArmor: armorSet('plate') }) > FF.playerThreat({ bodyArmor: armorSet('tailoring') }), 'plate armour generates more threat than cloth');
+    ok(FF.armorThreatWeight('plate') > FF.armorThreatWeight('tailoring'), 'plate threat weight > cloth');
+    // Target picker: a lone alive member is always chosen; an all-downed party returns -1.
+    eq(FF.dungeonPickTarget([{ alive:true, threat:10 }]), 0, 'solo party targets member 0');
+    eq(FF.dungeonPickTarget([{ alive:false, threat:10 }]), -1, 'no alive members -> -1 (no target)');
+  });
+
   // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------
   suite('classes: lumen oracle (light wand)', function(){
     function armor(mat,tier){ return {material:mat,tier:tier||5}; }
