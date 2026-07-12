@@ -194,6 +194,10 @@
       eq(FF.describeTask({ type:'craft', skill:'carpentry', itemId:'carpentry_t0', progress:0 }).remaining, 2, 'remaining tracks inventory');
       var mc = FF.describeTask({ type:'craft', skill:'metallurgy', itemId:'metallurgy_t0', progress:0 });
       eq(mc.navCat, 'crafting', 'metallurgy craft navigates to the Crafting tab');
+      // Butchering processes corpses under the Refining tab (renderGatherTab), NOT the Crafting tab --
+      // routing it to 'crafting' rendered it as a craft skill and threw, breaking render + chat.
+      var bc = FF.describeTask({ type:'craft', skill:'butchering', itemId:'rabbit_carcass', progress:0 });
+      eq(bc.navCat, 'refining', 'butchering corpse task navigates to the Refining tab (not Crafting)');
     } finally {
       S.inventory = savedInv;
     }
