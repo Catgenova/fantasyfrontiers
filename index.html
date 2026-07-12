@@ -19434,8 +19434,15 @@
   // Which Resources sub-category a crafting skill lives under (crafting/building/outfitting) --
   // so tapping a craft task navigates to the right tab after the cosmetic split.
   function craftCatForSkill(skill){
+    // Butchering is a gather skill that processes corpses under the Refining tab (rendered by
+    // renderGatherTab, NOT renderCraftTab) -- routing its task to 'crafting' rendered it as a craft
+    // skill, which threw and aborted render (and took chat down with it). Map every skill to its real
+    // nav category so tapping the action bar lands on the right tab.
+    if(skill==='butchering') return 'refining';
     if(BUILDING_SKILL_IDS.indexOf(skill) !== -1) return 'building';
     if(OUTFITTING_SKILL_IDS.indexOf(skill) !== -1) return 'outfitting';
+    if(COOKING_SKILL_IDS.indexOf(skill) !== -1) return 'cooking';
+    if(REFINING_SKILL_IDS.indexOf(skill) !== -1) return 'refining';
     return 'crafting';
   }
   // Runs the current inventory supports for a recipe's inputs (Infinity if it needs none).
