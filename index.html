@@ -4368,6 +4368,26 @@
       ]
     },
     {
+      id:'ranger', name:'Ranger', icon:svgIcon('bow','#5a7a3a'),
+      blurb:'A wilderness hunter whose medium bow looses imbued arrows -- venom, barb, frost and flame -- then buries a quarry riddled with every ailment at once.',
+      reqText:'Medium Bow + Quiver, Leather Helm, Chest & Gloves, Cloth Boots',
+      reqParts:[
+        { icon:svgIcon('bow','#5a7a3a'),                 label:'Medium Bow',    met:function(st){ return st.equippedMainhand==='bowMedium'; } },
+        { icon:svgIcon('arrow','#6a4a2a'),               label:'Quiver',        met:function(st){ return st.equippedOffhand==='quiver'; } },
+        { icon:svgIcon('helm',CLASS_LEATHER_COLOR),      label:'Leather Helm',  met:function(st){ return leatherPieceEquipped(st,'helmet'); } },
+        { icon:svgIcon('chestarmor',CLASS_LEATHER_COLOR),label:'Leather Chest', met:function(st){ return leatherPieceEquipped(st,'chest'); } },
+        { icon:svgIcon('gauntlet',CLASS_LEATHER_COLOR),  label:'Leather Gloves',met:function(st){ return leatherPieceEquipped(st,'gauntlets'); } },
+        { icon:svgIcon('boots',CLASS_CLOTH_COLOR),       label:'Cloth Boots',   met:function(st){ return clothPieceEquipped(st,'boots'); } }
+      ],
+      passives:[
+        { level:1,  name:'Venom Arrows',  desc:'Each hit has a 25% chance to poison the enemy — a damage-over-time.' },
+        { level:20, name:'Barbed Arrows', desc:'Each hit has a 25% chance to make the enemy Bleed — a stacking physical damage-over-time.' },
+        { level:40, name:'Frost Arrows',  desc:'Each hit has a 25% chance to Chill the enemy, slowing its action bar.' },
+        { level:60, name:'Fire Arrows',   desc:'Each hit has a 25% chance to set the enemy Burning — a stacking fire damage-over-time.' },
+        { level:80, name:'Apex Predator', desc:'A hit against an enemy suffering ALL four ailments at once — Poison, Bleed, Chill AND Burn — deals 300% damage.' }
+      ]
+    },
+    {
       id:'lumen', name:'Lumen Oracle', icon:svgIcon('sun','#e6c24a'),
       blurb:'A serene seer who blinds foes with searing light and outlasts them in supple leather.',
       reqText:'Light Wand + Ward, Leather Hood, Chest, Gloves & Boots',
@@ -4665,6 +4685,23 @@
   function juggernautBonus(reqLevel, st){ return classBonusActive('juggernaut', reqLevel, st); }
   function nightbladeBonus(reqLevel, st){ return classBonusActive('nightblade', reqLevel, st); }
   function executionerBonus(reqLevel, st){ return classBonusActive('executioner', reqLevel, st); }
+  // --- Ranger (Medium Bow) --- Imbued arrows each have a 25% chance on hit to inflict one of the four
+  // shared ailments (reusing the existing Poison / Bleed / Chill / Burn systems); Apex Predator (Lv80)
+  // triples a hit against a foe suffering ALL FOUR at once.
+  function rangerBonus(reqLevel, st){ return classBonusActive('ranger', reqLevel, st); }
+  var RANGER_PROC_CHANCE = 0.25;      // per-hit chance for each imbued arrow to land its ailment
+  var RANGER_POISON_PCT = 0.06;       // Venom dps = combat power * this
+  var RANGER_POISON_MS = 4000;
+  var RANGER_BLEED_PCT = 0.05;        // Barbed per-stack dps = stacks * combat power * this
+  var RANGER_BLEED_MAX = 5;
+  var RANGER_BLEED_MS = 4000;
+  var RANGER_ONSLAUGHT_MULT = 3;      // Apex Predator: x3 damage when all four ailments are active
+  // Apex Predator (Lv80): true only when the enemy is suffering Poison AND Bleed AND Chill AND Burn.
+  function rangerAllStatuses(st){ st = st || state; var a = st.activity; if(!a || a.type!=='combat') return false;
+    var poison = (a.potionPoisonUntil||0) > Date.now() && (a.potionPoisonDps||0) > 0;
+    var bleed  = (a.bleedUntil||0) > Date.now() && (a.bleedStacks||0) > 0;
+    return poison && bleed && enemyChilled(st) && enemyBurning(st);
+  }
   // Fraction of the current enemy's max HP remaining (read pre-hit at the damage-mult site), for HP-threshold passives.
   function enemyHpFrac(monster, st){ st = st || state; var mh = monster && monster.hp; if(!mh || mh <= 0) return 1; var cur = (st.activity && typeof st.activity.monsterHp === 'number') ? st.activity.monsterHp : mh; return Math.max(0, Math.min(1, cur / mh)); }
   // Outgoing-damage multiplier from the five new classes (only one class is ever active, so factors don't cross-stack).
@@ -4677,6 +4714,7 @@
     if(lumenBonus(1, st)) m *= 1.25;                                         // Lumen Oracle Glare
     m *= lumenBlindingDealtMult(st);                                         // Lumen Oracle Blinding Radiance (Lv80, while blinded)
     if(reaverBonus(1, st)) m *= 1.25;                                        // Reaver Savagery
+    if(rangerBonus(80, st) && rangerAllStatuses(st)) m *= RANGER_ONSLAUGHT_MULT; // Ranger Apex Predator: x3 vs a fully-ailed foe
     return m;
   }
   // Critical-hit-chance bonus from the new classes (added into the crit roll).
@@ -4904,7 +4942,8 @@
     sharpshooter:     { name:'Falcon',   icon:svgIcon('bow','#8a6a42'),     spells:[hitSpell('Aimed Shot','piercing',16), buffSpell('Focus','critChance',0.13,8), hitSpell('Volley','piercing',13), buffSpell('Steady Aim','critDmg',0.32,8)] },
     juggernaut:       { name:'Titan',    icon:svgIcon('hammer','#5a5a60'),  spells:[hitSpell('Sunder','blunt',15), buffSpell('Fortify','resistBlunt',0.32,8), armorSpell('Bulwark',1.8,6), buffSpell('Crush','dmgBlunt',0.32,8)] },
     nightblade:       { name:'Umbra',    icon:elementIcon('dark'),          spells:[siphonSpell('Drain Life',15), buffSpell('Shadowstep','dodge',0.15,8), hitSpell('Shadow Bolt','void',13), buffSpell('Malice','critChance',0.13,8)] },
-    executioner:      { name:'Grimm',    icon:svgIcon('axe','#7a5a2a'),     spells:[hitSpell('Cleave','slashing',16), siphonSpell('Harvest',13), buffSpell('Bloodlust','critDmg',0.34,8), weakenSpell('Intimidate',0.3,8)] }
+    executioner:      { name:'Grimm',    icon:svgIcon('axe','#7a5a2a'),     spells:[hitSpell('Cleave','slashing',16), siphonSpell('Harvest',13), buffSpell('Bloodlust','critDmg',0.34,8), weakenSpell('Intimidate',0.3,8)] },
+    ranger:           { name:'Lynx',     icon:svgIcon('paw','#5a7a3a'),     spells:[hitSpell('Pounce','slashing',15), buffSpell('Keen Eye','critChance',0.12,8), weakenSpell('Snarl',0.3,8), healSpell('Forage',15)] }
   };
 
   // Diverse, unique per-familiar spell kits drawn from the expanded pool. Reassigned onto FAMILIAR_DATA
@@ -5020,7 +5059,8 @@
     sharpshooter:   [ hitSpell('Aimed Shot','piercing',16), buffSpell('Focus','critChance',0.13,8), hitSpell('Volley','piercing',13), buffSpell('Steady Aim','critDmg',0.32,8) ],
     juggernaut:     [ hitSpell('Sunder','blunt',15), buffSpell('Fortify','resistBlunt',0.32,8), armorSpell('Bulwark',1.8,6), buffSpell('Crush','dmgBlunt',0.32,8) ],
     nightblade:     [ siphonSpell('Drain Life',15), buffSpell('Shadowstep','dodge',0.15,8), hitSpell('Shadow Bolt','void',13), buffSpell('Malice','critChance',0.13,8) ],
-    executioner:    [ hitSpell('Cleave','slashing',16), siphonSpell('Harvest',13), buffSpell('Bloodlust','critDmg',0.34,8), weakenSpell('Intimidate',0.3,8) ]
+    executioner:    [ hitSpell('Cleave','slashing',16), siphonSpell('Harvest',13), buffSpell('Bloodlust','critDmg',0.34,8), weakenSpell('Intimidate',0.3,8) ],
+    ranger:         [ hitSpell('Pounce','slashing',15), buffSpell('Keen Eye','critChance',0.12,8), weakenSpell('Snarl',0.3,8), healSpell('Forage',15) ]
   };
   // Each familiar channels an element (thematic to its skill). Its damaging spells (direct hits,
   // siphons, and poison DoTs) carry that element, so they gain the +20% elemental advantage against
@@ -5043,7 +5083,7 @@
     // Classes
     summoner:'light', duelist:'fire', reaper:'dark', herald:'water', quickdraw:'earth', templar:'light', knight:'earth', assassin:'dark', thunderfury:'earth', treasureHunter:'light',
     frostwarden:'water', plaguebearer:'dark', berserker:'fire', sentinel:'earth', spellblade:'light',
-    pyromancer:'fire', sharpshooter:'earth', juggernaut:'earth', nightblade:'dark', executioner:'dark'
+    pyromancer:'fire', sharpshooter:'earth', juggernaut:'earth', nightblade:'dark', executioner:'dark', ranger:'earth'
   };
   var DAMAGE_SPELL_TYPES = { hit:true, siphon:true, poison:true }; // spells that deal direct damage or DoT
   function familiarElement(id){ return FAMILIAR_ELEMENT[id] || null; }
@@ -5113,7 +5153,7 @@
     meditation:{s:'lotusflower',c:'#c87a9a',ear:'leaf'}, fortitude:{s:'heart',c:'#c8302a',ear:'round'},
     summoner:{s:'starburst',c:'#7a5aa8',ear:'horn'}, duelist:{s:'sword',c:'#b83a4a',ear:'cat'}, reaper:{s:'ghost',c:'#6a5a7a',ear:'horn'}, herald:{s:'shield',c:'#c8a83a',ear:'horn'}, quickdraw:{s:'bow',c:'#5a8a4a',ear:'wing'}, templar:{s:'starburst',c:'#e0c860',ear:'halo'}, knight:{s:'sword',c:'#8a90a0',ear:'horn'}, assassin:{s:'claw',c:'#7a3a4a',ear:'cat'}, thunderfury:{s:'lightning',c:'#e8d84a',ear:'antenna'}, treasureHunter:{s:'gem',c:'#e6c24a',ear:'round'},
     frostwarden:{s:'droplet',c:'#5ac8e8',ear:'horn'}, plaguebearer:{s:'droplet',c:'#6a8a3a',ear:'horn'}, berserker:{s:'hornedskull',c:'#c85a2a',ear:'horn'}, sentinel:{s:'shield',c:'#8a97a6',ear:'horn'}, spellblade:{s:'sword',c:'#7a5aa8',ear:'horn'},
-    pyromancer:{s:'starburst',c:'#e0662a',ear:'horn'}, sharpshooter:{s:'bow',c:'#8a6a42',ear:'wing'}, juggernaut:{s:'hammer',c:'#5a5a60',ear:'horn'}, nightblade:{s:'starburst',c:'#5a3a6a',ear:'cat'}, executioner:{s:'axe',c:'#7a5a2a',ear:'horn'}
+    pyromancer:{s:'starburst',c:'#e0662a',ear:'horn'}, sharpshooter:{s:'bow',c:'#8a6a42',ear:'wing'}, juggernaut:{s:'hammer',c:'#5a5a60',ear:'horn'}, nightblade:{s:'starburst',c:'#5a3a6a',ear:'cat'}, executioner:{s:'axe',c:'#7a5a2a',ear:'horn'}, ranger:{s:'paw',c:'#5a7a3a',ear:'cat'}
   };
   // Draw the ear/crown silhouette behind the head. Returned in two layers (behind body, in front).
   function famEars(kind, body, bodyD, belly, accent){
@@ -9557,6 +9597,30 @@
       if(pyromancerBonus(40) && isCrit){
         for(var _ki=0; _ki<PYRO_KINDLING_CRIT_STACKS; _ki++) pyromancerApplyBurn(act);
         act.burnDps = act.burnStacks * combatLevelEquivalent(state) * PYRO_BURN_PCT;
+      }
+      // Ranger imbued arrows: each unlocked tier has a 25% chance on hit to inflict its ailment. They
+      // reuse the shared Poison / Bleed / Chill / Burn systems, so their DoT ticks + Chill slow already
+      // run in the combat loop; stacking all four unlocks Apex Predator's x3 (see newClassDmgMult).
+      if(rangerBonus(1) && Math.random() < RANGER_PROC_CHANCE){ // Venom Arrows (Lv1): poison
+        var _rvd = combatLevelEquivalent(state) * RANGER_POISON_PCT;
+        if(_rvd > (act.potionPoisonDps||0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = Math.max(act.potionPoisonDps||0, _rvd);
+        act.potionPoisonUntil = Math.max(act.potionPoisonUntil||0, Date.now() + RANGER_POISON_MS);
+        spawnFloatingText('Venom!', 'ft-bonus');
+      }
+      if(rangerBonus(20) && Math.random() < RANGER_PROC_CHANCE){ // Barbed Arrows (Lv20): bleed
+        if((act.bleedUntil||0) <= Date.now()) act.bleedStacks = 0;
+        act.bleedStacks = Math.min(RANGER_BLEED_MAX, (act.bleedStacks||0) + 1);
+        act.bleedDps = act.bleedStacks * combatLevelEquivalent(state) * RANGER_BLEED_PCT;
+        act.bleedUntil = Date.now() + RANGER_BLEED_MS;
+        spawnFloatingText('Bleed x'+act.bleedStacks, 'ft-bonus');
+      }
+      if(rangerBonus(40) && Math.random() < RANGER_PROC_CHANCE){ // Frost Arrows (Lv40): chill
+        spawnFloatingText('Chill x'+frostwardenApplyChill(act), 'ft-bonus');
+      }
+      if(rangerBonus(60) && Math.random() < RANGER_PROC_CHANCE){ // Fire Arrows (Lv60): burn
+        var _rbs = pyromancerApplyBurn(act);
+        act.burnDps = act.burnStacks * combatLevelEquivalent(state) * PYRO_BURN_PCT;
+        spawnFloatingText('Burn x'+_rbs, 'ft-bonus');
       }
       // Plaguebearer (Virulence): 20% chance a hit poisons even with no Coating charges (never weakens an active one).
       if(plaguebearerBonus(60) && Math.random() < 0.20){
@@ -18846,6 +18910,7 @@
     juggernaut: 'A Class conferred by a Sledge with full Plate (Helm, Chest, Gloves & Boots). While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     nightblade: 'A Class (Voidshadow) conferred by a Dark Wand and Ward with Leather Hood, Chest, Gloves & Boots. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     executioner: 'A Class conferred by a Full-Moon Axe with a bare head, Chain Chest & Gloves and Leather Boots. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
+    ranger: 'A Class conferred by a Medium Bow and Quiver with Leather Helm, Chest & Gloves and Cloth Boots. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80 — imbued arrows that stack Poison, Bleed, Chill and Burn. See the Battle → Classes tab for details.',
     lumen: 'A Class (Lumen Oracle) conferred by a Light Wand and Ward with Leather Hood, Chest, Gloves & Boots. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     reaver: 'A Class conferred by a Half-Moon Axe and Small Shield with Chain Helm & Chest and Leather Gloves & Boots. While that gear is worn it earns XP from combat and unlocks passives at Class Lv 1/20/40/60/80. See the Battle → Classes tab for details.',
     clotharmor: 'Proficiency wearing Tailoring\'s cloth armor at higher tiers.',

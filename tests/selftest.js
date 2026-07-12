@@ -1141,6 +1141,34 @@
     eq(FF.enemyHpFrac({hp:0}, {activity:{monsterHp:0}}), 1, 'enemyHpFrac guards against a zero max');
   });
 
+  // ---- Classes: Ranger (medium bow; imbued arrows stack Poison/Bleed/Chill/Burn -> Apex Predator x3) --
+  suite('classes: Ranger', function(){
+    ok(FF.CLASS_SKILL_IDS.indexOf('ranger') !== -1, 'ranger is a class skill id');
+    var cd = FF.CLASS_DEFS_BY_ID.ranger; ok(cd, 'ranger class defined');
+    eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'passives at 1/20/40/60/80');
+    ok(cd.reqParts.length >= 6, 'ranger has a full gear set');
+    ok(/Medium Bow/.test(cd.reqText), 'ranger wields the Medium Bow');
+    var fam = FF.FAMILIAR_DATA.ranger; ok(fam && fam.spells && fam.spells.length === 4, 'ranger familiar has a 4-spell kit');
+    function lea(){ return { tier:1, rarity:'normal', material:'leather' }; }
+    function clo(){ return { tier:1, rarity:'normal', material:'tailoring' }; }
+    function rgear(){ return { xp:{ ranger: FF.xpFloorForLevel(85) }, physique:{}, equippedMainhand:'bowMedium', equippedOffhand:'quiver', bodyArmor:{ helmet:lea(), chest:lea(), gauntlets:lea(), boots:clo() } }; }
+    eq(FF.activeClassId(rgear()), 'ranger', 'medium bow + quiver + leather + cloth boots => Ranger');
+    var wrongBow = rgear(); wrongBow.equippedMainhand = 'bowLong';
+    eq(FF.activeClassId(wrongBow), null, 'the Medium Bow is required (a long bow does not qualify)');
+    // Apex Predator (Lv80): a hit against a foe with ALL FOUR ailments deals x3 damage; missing any -> x1.
+    var mon = { hp:100 };
+    var allFour = rgear();
+    allFour.activity = { type:'combat', monsterHp:50,
+      potionPoisonUntil: Date.now()+4000, potionPoisonDps: 5,
+      bleedUntil: Date.now()+4000, bleedStacks: 1, bleedDps: 3,
+      enemyChillUntil: Date.now()+4000, chillStacks: 1,
+      burnUntil: Date.now()+4000, burnStacks: 1, burnDps: 3 };
+    ok(Math.abs(FF.newClassDmgMult(mon, allFour) - 3) < 1e-9, 'Apex Predator: x3 vs a foe with Poison+Bleed+Chill+Burn');
+    var missingBurn = rgear();
+    missingBurn.activity = Object.assign({}, allFour.activity, { burnUntil:0, burnStacks:0, burnDps:0 });
+    eq(FF.newClassDmgMult(mon, missingBurn), 1, 'no x3 unless all four ailments are up at once');
+  });
+
   // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------
   suite('classes: lumen oracle (light wand)', function(){
     function armor(mat,tier){ return {material:mat,tier:tier||5}; }
