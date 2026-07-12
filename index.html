@@ -9607,10 +9607,23 @@
   function mortalDeath(monster){
     state.mortal = false;
     addLog('The ' + (monster ? monster.name : 'foe') + ' has slain you. Your mortal life is over — your soul passes into the immortal realm, and you continue on as an Immortal.', 'danger');
-    // Leave a Mortal guild (banks and mortal-only membership no longer apply to you).
+    // Leave a Mortal guild (banks and mortal-only membership no longer apply to you). A leader can't
+    // just leave, so hand the guild to the next member first -- or disband it if they were the last one.
     try{
       if(guildState && guildState.guild && guildState.guild.mortal && authUser){
-        guildInvoke('leave', {}).then(function(){ guildReload(true); });
+        var myId = authUser.id;
+        if(guildState.myRank === 'leader'){
+          var heirs = (guildState.members||[]).filter(function(m){ return m.user_id !== myId; });
+          if(heirs.length){
+            guildInvoke('transfer', { user_id: heirs[0].user_id })
+              .then(function(){ return guildInvoke('leave', {}); })
+              .then(function(){ guildReload(true); });
+          } else {
+            guildInvoke('disband', {}).then(function(){ guildReload(true); });
+          }
+        } else {
+          guildInvoke('leave', {}).then(function(){ guildReload(true); });
+        }
       }
     }catch(e){}
     saveGame();
@@ -20813,6 +20826,7 @@
   var AUTO_REFRESH_OVERLAYS = ['familiarPopupOverlay','settingsOverlay','trackerPickerOverlay','peonPickerOverlay','chatExpandOverlay','chatDrawerOverlay','skillInfoOverlay','invDetailOverlay','itemLinkOverlay','uniqueDetailOverlay'];
   function autoRefreshIsSafe(){
     if(!gameStarted) return false;
+    if(pathSelectNeeded()) return false;   // never reload while the one-time path choice is open: it would flush mortal:null, and the load migration then coerces it to Immortal so the prompt never returns
     if(typeof document !== 'undefined' && document.hidden) return false;   // don't yank a backgrounded tab
     if(state && state.activity && state.activity.type === 'combat') return false;  // never mid-fight
     var a = document.activeElement;
