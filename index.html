@@ -8952,13 +8952,12 @@
     if(isU2 && u.enchants.length){ u.enchants.forEach(function(e,i){ html += '<div class="inputs-line"><span style="color:var(--gold);">'+escapeHtml(enchantLabel(u.kind,e))+'</span>'+((improvePending&&improvePending.uid===u.uid)?' <button class="mini-btn" data-action="improvePlace" data-idx="'+i+'">Replace</button>':'')+'</div>'; }); }
     else if(isU2 || isEq){ html += '<div class="empty-note" style="margin-bottom:6px;">No enchants yet.</div>'; }
     var cost = count + 1;
-    var haveCry = countTierMaterials('enchant_t', tier); // Enchant Crystals of this item's tier or higher
     if(enhance>0){ html += '<div class="lock-note">Enhanced items can’t be enchanted.</div>'; }
     else if(improvePending && u && improvePending.uid===u.uid){
       html += '<div class="inputs-line" style="color:var(--gold);">New roll: '+escapeHtml(enchantLabel(u.kind,improvePending.roll))+'</div>';
       html += '<div class="empty-note">Slots full — <b>Replace</b> one above, or <button class="mini-btn" data-action="improvePlace" data-idx="-1">Discard</button> the new roll.</div>';
     } else {
-      html += '<div class="inputs-line">Next enchant: <b>'+cost+'</b> Enchant Crystal'+(cost===1?'':'s')+' (tier '+(tier+1)+'+) · <b style="color:'+(haveCry>=cost?'var(--gold)':'var(--danger)')+';">you have '+haveCry+'</b>.</div>';
+      html += '<div class="inputs-line">Next enchant: <b>'+cost+'</b> Enchant Crystal'+(cost===1?'':'s')+' (tier '+(tier+1)+'+) · <b>you have '+improveMaterialSpan('enchant_t', tier, cost)+'</b>.</div>';
       if(improveWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No tier-'+(tier+1)+' crystals — this spends higher-tier ones. Click Enchant again to confirm.</div>';
       html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn" data-action="improveEnchant" style="width:auto;flex:0 0 auto;">Enchant ('+cost+')</button>';
       html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleWarn"'+(state.enchantWarnHiTier?' checked':'')+'> warn on higher-tier crystals</label></div>';
@@ -8966,12 +8965,11 @@
     if(isU2 || isEq){
       var eLvl = isU2 ? u.enhance : 0, ecost = eLvl+1, chance = Math.round(enhanceSuccessChance(eLvl)*100);
       var enhTarget = isU2 ? u.uid : improveSel; // for an equipped base, the equip token (converts on click)
-      var haveScr = countTierMaterials('scroll_t', tier); // Inscription Scrolls (Warding Scrap ...) of tier+
       html += '<div class="guild-section-title" style="margin-top:12px;font-size:13px;">Enhance</div>';
       html += '<div class="inputs-line">Current <b>+'+eLvl+'</b> / +'+ENHANCE_MAX+' — base &amp; enchant stats at <b style="color:var(--gold);">+'+Math.round((enhanceStatMult(eLvl)-1)*100)+'%</b>.</div>';
       if(eLvl>=ENHANCE_MAX){ html += '<div class="lock-note">Maxed at +'+ENHANCE_MAX+'.</div>'; }
       else {
-        html += '<div class="inputs-line">Next: <b>'+ecost+'</b> Inscription Scroll'+(ecost===1?'':'s')+' (tier '+(tier+1)+'+) · <b style="color:'+(haveScr>=ecost?'var(--gold)':'var(--danger)')+';">you have '+haveScr+'</b> · <b style="color:var(--gold);">'+chance+'%</b> success · <b style="color:var(--danger);">a failure destroys the item.</b></div>';
+        html += '<div class="inputs-line">Next: <b>'+ecost+'</b> Inscription Scroll'+(ecost===1?'':'s')+' (tier '+(tier+1)+'+) · <b>you have '+improveMaterialSpan('scroll_t', tier, ecost)+'</b> · <b style="color:var(--gold);">'+chance+'%</b> success · <b style="color:var(--danger);">a failure destroys the item.</b></div>';
         if(enhanceWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No tier-'+(tier+1)+' Scrolls — this spends higher-tier ones. Click Enhance again to confirm.</div>';
         html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn stop" data-action="improveEnhance" data-uid="'+enhTarget+'" style="width:auto;flex:0 0 auto;">Enhance ('+ecost+')</button>';
         html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleEnhanceWarn"'+(state.enhanceWarnHiTier?' checked':'')+'> warn on higher-tier Scrolls</label></div>';
@@ -11077,6 +11075,14 @@
     var arr = [].concat(ids);
     var sum = arr.reduce(function(s,id){ return s + (state.inventory[id]||0); }, 0);
     return '<span class="owned-live" data-owned-ids="'+arr.join(',')+'">'+fmt(sum)+'</span>';
+  }
+  // Live "you have N" readout for an Improvement material (Enchant Crystals / Inscription Scrolls) of
+  // tier >= fromTier: same self-re-summing owned-live span, plus a data-cost so updateDynamic recolours
+  // it gold/red as your stock (or the cost) changes -- no full render needed.
+  function improveMaterialSpan(prefix, fromTier, cost){
+    var ids = []; for(var t=Math.max(0,fromTier); t<TIER_COUNT; t++) ids.push(prefix+t);
+    var sum = ids.reduce(function(s,id){ return s + (state.inventory[id]||0); }, 0);
+    return '<span class="owned-live" data-owned-ids="'+ids.join(',')+'" data-cost="'+cost+'" style="color:'+(sum>=cost?'var(--gold)':'var(--danger)')+';">'+fmt(sum)+'</span>';
   }
 
   function renderRecipeGrid(skillKey, recipes){
@@ -20174,6 +20180,8 @@
       var oids = (osp.getAttribute('data-owned-ids')||'').split(',');
       var osum = 0; for(var oj=0; oj<oids.length; oj++){ if(oids[oj]) osum += (state.inventory[oids[oj]]||0); }
       osp.textContent = fmt(osum);
+      var _oc = osp.getAttribute('data-cost'); // Improvement material readouts: recolour gold/red by affordability
+      if(_oc != null) osp.style.color = (osum >= (parseInt(_oc,10)||0)) ? 'var(--gold)' : 'var(--danger)';
     }
 
     // Blacksmithing: owned counts + ok/bad state + Forge button availability for the
