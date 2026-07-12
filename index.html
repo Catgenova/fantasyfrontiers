@@ -6732,7 +6732,7 @@
   function getEquippedBeltDefense(state){
     if(!state.equippedBeltTier || state.equippedBeltTier<=0) return 0;
     var item = BELT_ITEMS['belt_t'+(state.equippedBeltTier-1)+'_'+state.equippedBeltRarity];
-    return item ? item.defense : 0;
+    return item ? Math.round(item.defense * beltEnhanceMult(state)) : 0; // a unique belt's +enhance scales its defense
   }
   // Logic (a physique) grants +1 concurrent craft slot for every 10 levels, base +0.
   function logicSlotBonus(state){ return Math.floor(getLevel(state.physique.logic||0) / 10); }
@@ -6756,10 +6756,8 @@
   function equipBelt(itemId){
     var item = BELT_ITEMS[itemId];
     if(!item || (state.inventory[itemId]||0) <= 0) return;
-    if(state.equippedBeltTier > 0){
-      var oldId = 'belt_t'+(state.equippedBeltTier-1)+'_'+state.equippedBeltRarity;
-      addItem(oldId, 1);
-    }
+    if(state.equippedBeltUid){ state.equippedBeltUid = null; } // releasing a unique belt -- it stays in the table, not minted back
+    else if(state.equippedBeltTier > 0){ addItem('belt_t'+(state.equippedBeltTier-1)+'_'+state.equippedBeltRarity, 1); }
     state.inventory[itemId] -= 1;
     state.equippedBeltTier = item.tierIndex+1;
     state.equippedBeltRarity = item.rarity;
@@ -6768,8 +6766,8 @@
   }
   function unequipBelt(){
     if(!state.equippedBeltTier || state.equippedBeltTier <= 0) return;
-    var oldId = 'belt_t'+(state.equippedBeltTier-1)+'_'+state.equippedBeltRarity;
-    addItem(oldId, 1);
+    if(state.equippedBeltUid){ state.equippedBeltUid = null; } // unique stays in the table
+    else { addItem('belt_t'+(state.equippedBeltTier-1)+'_'+state.equippedBeltRarity, 1); }
     state.equippedBeltTier = 0;
     state.equippedBeltRarity = 'normal';
   }
@@ -7567,7 +7565,7 @@
   }
   function getEquippedRelicBonus(state){
     if(!state.equippedRelicTier || state.equippedRelicTier<=0) return 0;
-    return getRelicBonusPct(state.equippedRelicTier-1, state.equippedRelicRarity);
+    return getRelicBonusPct(state.equippedRelicTier-1, state.equippedRelicRarity) * relicEnhanceMult(state); // unique relic's +enhance scales its dmg/armor bonus
   }
   // Relics share the exact same baseline + Faith-bonus model as general crafting above.
   function relicRarityChances(state){
@@ -7604,10 +7602,8 @@
     if(!m) return;
     var tierIndex = parseInt(m[1],10);
     var rarityId = m[2];
-    if(state.equippedRelicTier > 0){
-      var oldId = 'relic_t'+(state.equippedRelicTier-1)+'_'+state.equippedRelicRarity;
-      addItem(oldId, 1);
-    }
+    if(state.equippedRelicUid){ state.equippedRelicUid = null; } // releasing a unique relic -- stays in the table
+    else if(state.equippedRelicTier > 0){ addItem('relic_t'+(state.equippedRelicTier-1)+'_'+state.equippedRelicRarity, 1); }
     state.inventory[itemId] -= 1;
     state.equippedRelicTier = tierIndex+1;
     state.equippedRelicRarity = rarityId;
@@ -7615,8 +7611,8 @@
   }
   function unequipRelic(){
     if(state.equippedRelicTier <= 0) return;
-    var oldId = 'relic_t'+(state.equippedRelicTier-1)+'_'+state.equippedRelicRarity;
-    addItem(oldId, 1);
+    if(state.equippedRelicUid){ state.equippedRelicUid = null; } // unique stays in the table
+    else { addItem('relic_t'+(state.equippedRelicTier-1)+'_'+state.equippedRelicRarity, 1); }
     state.equippedRelicTier = 0;
     state.equippedRelicRarity = 'normal';
   }
@@ -7857,6 +7853,7 @@
       equippedOffhandRarity: 'normal',
       equippedRelicTier: 0,
       equippedRelicRarity: 'normal',
+      equippedRelicUid: null,   // set when a unique (enchanted/enhanced) Relic is equipped
       bodyArmor: {
         gauntlets: {tier:0, rarity:'normal', material:null},
         boots: {tier:0, rarity:'normal', material:null},
@@ -7868,6 +7865,7 @@
       guildFarmingPlots: {},   // per-member crop state, keyed "x,y" over guild-estate field tiles
       equippedBeltTier: 0,
       equippedBeltRarity: 'normal',
+      equippedBeltUid: null,   // set when a unique (enchanted/enhanced) Belt is equipped
       jewelrySlots: {
         ring1: {typeId:null, tier:0, rarity:'normal'},
         ring2: {typeId:null, tier:0, rarity:'normal'},
@@ -8357,8 +8355,8 @@
     blockChance:{label:'Block Chance',pct:true}, thorns:{label:'Thorns',pct:false},
     hpRegen:{label:'HP Regen',pct:false}, resistance:{label:'Resistance',pct:true}
   };
-  // kind -> modifier pool. weapon->weapon; ring/amulet->jewelry; body armour + shields/offhands->armor.
-  function enchantCategoryForKind(kind){ return kind==='weapon' ? 'weapon' : (kind==='ring'||kind==='amulet') ? 'jewelry' : 'armor'; }
+  // kind -> modifier pool. weapon->weapon; ring/amulet/relic->jewelry; body armour + shields + belts->armor.
+  function enchantCategoryForKind(kind){ return kind==='weapon' ? 'weapon' : (kind==='ring'||kind==='amulet'||kind==='relic') ? 'jewelry' : 'armor'; }
   function enchantModById(kind, id){ var pool = ENCHANT_MODS[enchantCategoryForKind(kind)]; for(var i=0;i<pool.length;i++){ if(pool[i].id===id) return pool[i]; } return null; }
   // Roll one enchant: a random mod from the kind's pool at a random inclusive value in its range.
   function rollEnchant(kind){
@@ -8381,7 +8379,9 @@
       : id.indexOf('stshield_')===0 ? 'offhand'
       : id.indexOf('bodyarmor_')===0 ? 'bodyarmor'
       : id.indexOf('ring_')===0 ? 'ring'
-      : (id.indexOf('amulet_t')===0 || id.indexOf('amulet_warding_t')===0) ? 'amulet' : null;
+      : (id.indexOf('amulet_t')===0 || id.indexOf('amulet_warding_t')===0) ? 'amulet'
+      : id.indexOf('belt_t')===0 ? 'belt'
+      : id.indexOf('relic_t')===0 ? 'relic' : null;
     if(!kind) return null;
     var tm = /_t(\d+)/.exec(id); var tier = tm ? parseInt(tm[1],10) : 0;
     return { kind:kind, tier:tier, rarity:(itemRarityId(id)||'normal'), baseId:id };
@@ -8427,13 +8427,13 @@
       var mult = enhanceStatMult(u.enhance);
       u.enchants.forEach(function(e){ var m = enchantModById(u.kind, e.mod); if(m) tot[m.stat] = (tot[m.stat]||0) + e.roll*mult; });
     }
-    addUid(st.equippedMainhandUid); addUid(st.equippedOffhandUid);
+    addUid(st.equippedMainhandUid); addUid(st.equippedOffhandUid); addUid(st.equippedBeltUid); addUid(st.equippedRelicUid);
     if(st.jewelrySlots){ RING_SLOT_IDS.forEach(function(sl){ var s=st.jewelrySlots[sl]; if(s && s.uid) addUid(s.uid); }); if(st.jewelrySlots.amulet && st.jewelrySlots.amulet.uid) addUid(st.jewelrySlots.amulet.uid); }
     if(st.bodyArmor) BODY_ARMOR_SLOTS.forEach(function(sl){ var s=st.bodyArmor[sl]; if(s && s.uid) addUid(s.uid); });
     return tot;
   }
   function uniqueIsEquipped(uid){
-    if(state.equippedMainhandUid===uid || state.equippedOffhandUid===uid) return true;
+    if(state.equippedMainhandUid===uid || state.equippedOffhandUid===uid || state.equippedBeltUid===uid || state.equippedRelicUid===uid) return true;
     if(state.jewelrySlots){ if(RING_SLOT_IDS.some(function(sl){ return state.jewelrySlots[sl] && state.jewelrySlots[sl].uid===uid; })) return true; if(state.jewelrySlots.amulet && state.jewelrySlots.amulet.uid===uid) return true; }
     if(state.bodyArmor && BODY_ARMOR_SLOTS.some(function(sl){ return state.bodyArmor[sl] && state.bodyArmor[sl].uid===uid; })) return true;
     return false;
@@ -8500,15 +8500,34 @@
     state.jewelrySlots.amulet = { tier: u.tier+1, rarity: u.rarity, uid: uid, typeId: (pa ? pa.typeId : 'plain') };
     addLog('You equipped '+uniqueDisplayName(u)+'.','important'); return true;
   }
+  function equipUniqueBelt(uid){
+    var u = state.uniqueItems[uid];
+    var m = /^belt_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
+    if(!state.equippedBeltUid && state.equippedBeltTier>0){ addItem('belt_t'+(state.equippedBeltTier-1)+'_'+state.equippedBeltRarity, 1); } // return a stackable belt; a unique just stays in the table
+    state.equippedBeltTier = u.tier+1; state.equippedBeltRarity = u.rarity; state.equippedBeltUid = uid;
+    addLog('You equipped '+uniqueDisplayName(u)+'.','important'); return true;
+  }
+  function equipUniqueRelic(uid){
+    var u = state.uniqueItems[uid];
+    var m = /^relic_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
+    if(!state.equippedRelicUid && state.equippedRelicTier>0){ addItem('relic_t'+(state.equippedRelicTier-1)+'_'+state.equippedRelicRarity, 1); }
+    state.equippedRelicTier = u.tier+1; state.equippedRelicRarity = u.rarity; state.equippedRelicUid = uid;
+    addLog('You equipped '+uniqueDisplayName(u)+'.','important'); return true;
+  }
   function equipUnique(uid){
     var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
     var ok = u.kind==='weapon' ? equipUniqueWeapon(uid)
       : u.kind==='offhand' ? equipUniqueOffhand(uid)
       : u.kind==='bodyarmor' ? equipUniqueBodyArmor(uid)
       : u.kind==='ring' ? equipUniqueRing(uid)
-      : u.kind==='amulet' ? equipUniqueAmulet(uid) : false;
+      : u.kind==='amulet' ? equipUniqueAmulet(uid)
+      : u.kind==='belt' ? equipUniqueBelt(uid)
+      : u.kind==='relic' ? equipUniqueRelic(uid) : false;
     if(ok){ armorPanelExpanded = true; saveGame(); render(); }
   }
+  // +enhance base-stat scaling for a unique Belt (defense) / Relic (dmg&armor %), mirroring mainhandEnhanceMult.
+  function beltEnhanceMult(st){ st = st || state; var uid = st.equippedBeltUid, u = uid && st.uniqueItems && st.uniqueItems[uid]; return u ? enhanceStatMult(u.enhance) : 1; }
+  function relicEnhanceMult(st){ st = st || state; var uid = st.equippedRelicUid, u = uid && st.uniqueItems && st.uniqueItems[uid]; return u ? enhanceStatMult(u.enhance) : 1; }
   function unequipUnique(uid){
     var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
     var done = false;
@@ -8519,6 +8538,8 @@
       RING_SLOT_IDS.forEach(function(sl){ var s=state.jewelrySlots[sl]; if(!done && s && s.uid===uid){ state.jewelrySlots[sl] = {typeId:null,tier:0,rarity:'normal'}; done=true; } });
       if(!done && state.jewelrySlots.amulet && state.jewelrySlots.amulet.uid===uid){ state.jewelrySlots.amulet = {tier:0,rarity:'normal'}; done=true; }
     }
+    if(!done && state.equippedBeltUid===uid){ state.equippedBeltUid=null; state.equippedBeltTier=0; state.equippedBeltRarity='normal'; done=true; }
+    if(!done && state.equippedRelicUid===uid){ state.equippedRelicUid=null; state.equippedRelicTier=0; state.equippedRelicRarity='normal'; done=true; }
     if(done){ addLog('Unequipped '+uniqueDisplayName(u)+'.','chronicle'); saveGame(); render(); }
   }
   // Base-stat scaling for an equipped unique WEAPON: its base damage scales up to +500% at +15.
@@ -8599,6 +8620,8 @@
       if(s && !slotHasValidUnique(s.uid) && s.tier > 0 && s.typeId) out.push({ slot:'ring:'+sl, baseId:'ring_'+s.typeId+'_t'+(s.tier-1)+'_'+s.rarity }); });
     var am = state.jewelrySlots && state.jewelrySlots.amulet;
     if(am && !slotHasValidUnique(am.uid) && am.tier > 0) out.push({ slot:'amulet', baseId:amuletBaseId(amuletSlotType(am), am.tier-1, am.rarity) });
+    if(!slotHasValidUnique(state.equippedBeltUid) && state.equippedBeltTier > 0) out.push({ slot:'belt', baseId:'belt_t'+(state.equippedBeltTier-1)+'_'+state.equippedBeltRarity });
+    if(!slotHasValidUnique(state.equippedRelicUid) && state.equippedRelicTier > 0) out.push({ slot:'relic', baseId:'relic_t'+(state.equippedRelicTier-1)+'_'+state.equippedRelicRarity });
     return out.filter(function(e){ var p = parseImprovable(e.baseId); return p && isImprovableRarity(p.rarity); }); // Normal gear can't be improved
   }
   // Selecting an equipped base just points improveSel at an 'equip:<slot>' token -- NO conversion yet.
@@ -8621,6 +8644,8 @@
     else if(slotKey.indexOf('armor:')===0){ var asl=slotKey.slice(6); if(state.bodyArmor[asl]) state.bodyArmor[asl].uid = uid; }
     else if(slotKey.indexOf('ring:')===0){ var rsl=slotKey.slice(5); if(state.jewelrySlots[rsl]) state.jewelrySlots[rsl].uid = uid; }
     else if(slotKey==='amulet'){ if(state.jewelrySlots.amulet) state.jewelrySlots.amulet.uid = uid; }
+    else if(slotKey==='belt'){ state.equippedBeltUid = uid; }
+    else if(slotKey==='relic'){ state.equippedRelicUid = uid; }
     return uid;
   }
   function improveToggleWarn(){ state.enchantWarnHiTier = !state.enchantWarnHiTier; improveWarnArmed = false; saveGame(); render(); }
@@ -8757,6 +8782,8 @@
       if(b.block) baseLines.push('Block '+Math.round(b.block*100)+'%');
       if(b.dmgBonus) baseLines.push('+'+Math.round(b.dmgBonus*100)+'% damage');
     }
+    // Relics carry no static stat field -- their %dmg/armour bonus is computed from tier+rarity (and +enhance).
+    if(d.kind==='relic') baseLines.push('+'+Math.round(getRelicBonusPct(d.tier, d.rarity) * enhanceStatMult(d.enhance||0) * 100)+'% Damage & Armour');
     if(baseLines.length) html += '<div class="skill-info-section"><div class="skill-info-section-label">Base</div><div class="skill-info-section-body">'+baseLines.map(escapeHtml).join(' &bull; ')+'</div></div>';
     // Inherent, rarity-scaled material bonus (body armor only) -- what the piece adds just by being worn.
     if(b && b.material && b.slot){
@@ -10331,6 +10358,8 @@
             if(state.bodyArmor) BODY_ARMOR_SLOTS.forEach(function(sl){ var s=state.bodyArmor[sl]; if(s && s.uid && !ok(s.uid)) s.uid = null; });
             if(state.jewelrySlots){ RING_SLOT_IDS.forEach(function(sl){ var s=state.jewelrySlots[sl]; if(s && s.uid && !ok(s.uid)) s.uid = null; });
               if(state.jewelrySlots.amulet && state.jewelrySlots.amulet.uid && !ok(state.jewelrySlots.amulet.uid)) state.jewelrySlots.amulet.uid = null; }
+            if(state.equippedBeltUid && !ok(state.equippedBeltUid)) state.equippedBeltUid = null;
+            if(state.equippedRelicUid && !ok(state.equippedRelicUid)) state.equippedRelicUid = null;
           })();
           if(typeof state.enchantWarnHiTier !== 'boolean') state.enchantWarnHiTier = true;
           if(typeof state.enhanceWarnHiTier !== 'boolean') state.enhanceWarnHiTier = true;
@@ -12410,6 +12439,7 @@
     }
     if(currentBelt) html += '<button class="action-btn stop" data-action="unequipBelt">Unequip</button>';
     html += '</div></div>';
+    html += renderUniqueEquipOptions('belt', null, 'Belts');
     return html;
   }
   function renderRingsEquipSection(){
@@ -12663,6 +12693,7 @@
       html += '</div>';
     }
     html += '<div class="section-intro" style="margin-top:6px">Relics are your first equipment that lives in inventory until equipped. Find Muddy Artifacts while Digging, then extract them in Archaeology.</div>';
+    html += renderUniqueEquipOptions('relic', null, 'Relics');
     return html;
   }
 
@@ -21188,7 +21219,7 @@
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
-      BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
+      BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

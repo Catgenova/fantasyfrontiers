@@ -3096,6 +3096,27 @@
     ok(/data-action="improveEquip"/.test(_card), 'equip card uses the handled improveEquip action (not the unhandled equipUnique)');
     ok(!/data-action="equipUnique"/.test(_card), 'equip card does not emit the unhandled equipUnique action');
     delete FF._state.uniqueItems[_uid];
+
+    // Belts and Relics are improvable: own kinds, right enchant pools, and their equipped uniques feed
+    // equippedEnchantTotals + scale their base stat by +enhance -- like every other slot.
+    eq(FF.parseImprovable('belt_t5_rare').kind, 'belt', 'a belt parses as an improvable belt');
+    eq(FF.parseImprovable('relic_t3_supreme').kind, 'relic', 'a relic parses as an improvable relic');
+    eq(FF.enchantCategoryForKind('belt'), 'armor', 'belts enchant from the armor pool');
+    eq(FF.enchantCategoryForKind('relic'), 'jewelry', 'relics enchant from the jewelry pool');
+    var _es = { uniqueItems:{
+        ubelt:{ uid:'ubelt', base:'belt_t5_rare', kind:'belt', tier:5, rarity:'rare', enhance:0, enchants:[{mod:'defense',roll:10}] },
+        urelic:{ uid:'urelic', base:'relic_t3_supreme', kind:'relic', tier:3, rarity:'supreme', enhance:0, enchants:[{mod:'critChance',roll:5}] }
+      }, equippedBeltUid:'ubelt', equippedRelicUid:'urelic' };
+    var _et = FF.equippedEnchantTotals(_es);
+    eq(_et.defense, 10, 'equipped unique belt feeds its Defense enchant into the totals');
+    eq(_et.critChance, 5, 'equipped unique relic feeds its Crit Chance enchant into the totals');
+    // +enhance scales the base stat (enhanceStatMult(15) = 6x).
+    var _b0 = FF.getEquippedBeltDefense({ equippedBeltTier:6, equippedBeltRarity:'rare', equippedBeltUid:null, uniqueItems:{} });
+    var _b15 = FF.getEquippedBeltDefense({ equippedBeltTier:6, equippedBeltRarity:'rare', equippedBeltUid:'ub', uniqueItems:{ ub:{ uid:'ub', base:'belt_t5_rare', kind:'belt', tier:5, rarity:'rare', enhance:15, enchants:[] } } });
+    ok(_b0 > 0 && Math.abs(_b15 - _b0*6) <= 1, 'a +15 unique belt scales its Defense 6x');
+    var _r0 = FF.getEquippedRelicBonus({ equippedRelicTier:4, equippedRelicRarity:'supreme', equippedRelicUid:null, uniqueItems:{} });
+    var _r15 = FF.getEquippedRelicBonus({ equippedRelicTier:4, equippedRelicRarity:'supreme', equippedRelicUid:'ur', uniqueItems:{ ur:{ uid:'ur', base:'relic_t3_supreme', kind:'relic', tier:3, rarity:'supreme', enhance:15, enchants:[] } } });
+    ok(_r0 > 0 && Math.abs(_r15 - _r0*6) < 1e-9, 'a +15 unique relic scales its bonus 6x');
   });
 
   // ---- Improvement system: enhance (Stage 2) --------------------------------------------
