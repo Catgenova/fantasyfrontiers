@@ -7763,6 +7763,7 @@
       faithActivity: { type:null, tier:0 },
       playerHp: 50,
       autoEatThreshold: 0,
+      autoSacrificeRelics: false,
       activeTea: { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 },
       activeFeast: { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 },
       activeTome: { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 },
@@ -8782,7 +8783,7 @@
     state.faithActivity = { type:kind, tier:tierIndex };
   }
   function stopFaithActivity(){ state.faithActivity = { type:null, tier:0 }; }
-  function sacrificeItem(category, id){
+  function sacrificeItem(category, id, silent){
     var STACKABLE_SAC_CATEGORIES = ['stackweapon','stackshield','ring','amulet','relic','tool','belt'];
     if(STACKABLE_SAC_CATEGORIES.indexOf(category)!==-1 && state.lockedItems[id]){
       addLog('That item is locked. Unlock it first to sacrifice it.', 'danger');
@@ -8861,8 +8862,44 @@
     addXp('sacrifice', 30);
     addPhysiqueXp(physTierPairs([['focus',1],['zealotry',1],['oblation',1]], tier-1));
     maybeSummonFamiliar('sacrifice');
-    addLog('You sacrificed your ' + label + ' and restored ' + Math.round(state.faith-before) + ' Faith.', 'important');
+    if(!silent) addLog('You sacrificed your ' + label + ' and restored ' + Math.round(state.faith-before) + ' Faith.', 'important');
     needsRender = true;
+    return Math.round(state.faith - before);
+  }
+  // Faith a Broken Relic of the given tier index restores when sacrificed (matches sacrificeItem's math,
+  // including the Oblation physique bonus). Used by the preview and the auto-sacrifice top-up.
+  function brokenRelicFaithRestore(relicTierIndex){
+    return Math.round(Math.round(30 * Math.pow(1.3, relicTierIndex)) * (1 + physBonus('oblation', 0.25)));
+  }
+  // Auto-sacrifice Broken Relics to top up Faith: only when a relic's FULL restore fits the current
+  // deficit (so the overflow past the cap is never wasted). Prefers the largest-fitting relic each pass
+  // for an efficient top-up. Fires from the game loop while state.autoSacrificeRelics is on.
+  function autoSacrificeRelicsCheck(){
+    if(!state.autoSacrificeRelics) return;
+    var mx = faithMax(state), guard = 0, count = 0, gained = 0;
+    while(guard++ < 500){
+      var deficit = mx - state.faith;
+      if(deficit <= 0) break;
+      var best = null;
+      for(var i=0;i<BROKEN_RELIC_ITEMS.length;i++){
+        var rid = BROKEN_RELIC_ITEMS[i].id;
+        if(state.lockedItems[rid] || (state.inventory[rid]||0) <= 0) continue;
+        var restore = brokenRelicFaithRestore(i);
+        if(restore <= deficit && (!best || restore > best.restore)) best = { id:rid, restore:restore };
+      }
+      if(!best) break;
+      gained += sacrificeItem('relic', best.id, true) || 0; // silent -- summarised below
+      count++;
+    }
+    if(count > 0){
+      addLog('Auto-sacrificed ' + count + ' Broken Relic' + (count===1?'':'s') + ', restoring ' + Math.round(gained) + ' Faith.', 'important');
+      needsRender = true;
+    }
+  }
+  function toggleAutoSacrificeRelics(){
+    state.autoSacrificeRelics = !state.autoSacrificeRelics;
+    if(state.autoSacrificeRelics) autoSacrificeRelicsCheck(); // top up immediately when switched on
+    saveGame(); render();
   }
   function stopActivity(){ state.activity = { type:null }; }
   function equipMainhand(typeId){
@@ -10012,6 +10049,7 @@
           if(typeof state.enhanceWarnHiTier !== 'boolean') state.enhanceWarnHiTier = true;
           if(typeof state.playerHp !== 'number') state.playerHp = maxHp(state);
           if(typeof state.autoEatThreshold !== 'number') state.autoEatThreshold = 0;
+          if(typeof state.autoSacrificeRelics !== 'boolean') state.autoSacrificeRelics = false;
           if(!state.stats || typeof state.stats !== 'object') state.stats = {};
           ['kills','deaths','gathered','crafted','craftedRare','craftedSupreme','craftedFantastic','hoursBuffed'].forEach(function(k){ if(typeof state.stats[k] !== 'number') state.stats[k] = 0; });
           if(!state.activeTea || typeof state.activeTea !== 'object') state.activeTea = { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 };
@@ -15156,6 +15194,14 @@
     var html = '<div class="section-intro">Level '+lvl+' Sacrifice &mdash; destroy owned weapons, shields, tools, belts, rings, amulets, and relics to restore Faith and gain a flat 30 XP. Higher-tier items restore more Faith, but the item is consumed entirely. Equipped Tools and Armor can\'t be sacrificed.</div>';
     html += renderSkillProgressBar('sacrifice');
     html += renderFaithBar();
+    // Auto-sacrifice Broken Relics: a persistent toggle that tops up Faith from Broken Relics whenever
+    // there's room for a relic's full value (never wasting the overflow past the cap).
+    var relicCount = 0, relicFaith = 0;
+    BROKEN_RELIC_ITEMS.forEach(function(relic, i){ var q = state.inventory[relic.id]||0; if(q>0 && !state.lockedItems[relic.id]){ relicCount += q; relicFaith += q * brokenRelicFaithRestore(i); } });
+    html += '<div class="physique-bonus" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">'
+      + '<span class="gab-tea-auto" data-action="toggleAutoSacrificeRelics" style="cursor:pointer;">'+(state.autoSacrificeRelics?'☑':'☐')+' Auto-sacrifice Broken Relics</span>'
+      + '<span style="font-size:12px;color:var(--text-dim);">Offers Broken Relics to refill Faith only when the full value fits (no waste). Held: <b>'+relicCount+'</b> (~'+Math.round(relicFaith)+' Faith)</span>'
+      + '</div>';
     var rows = [];
     Object.keys(STACKABLE_WEAPON_ITEMS).forEach(function(id){
       if((state.inventory[id]||0)>0 && !state.lockedItems[id]){
@@ -19359,6 +19405,8 @@
       drinkBestTea();
     } else if(action==='toggleAutoTea'){
       toggleAutoTea();
+    } else if(action==='toggleAutoSacrificeRelics'){
+      toggleAutoSacrificeRelics();
     } else if(action==='studyBestTome'){
       studyBestTome();
     } else if(action==='toggleAutoTome'){
@@ -19675,6 +19723,7 @@
         }
       }
     }
+    autoSacrificeRelicsCheck(); // top up Faith from Broken Relics when enabled (no-op otherwise)
 
     saveAccum += dt;
     if(saveAccum >= 4000){
@@ -19873,7 +19922,7 @@
       frostwardenDmgMult:frostwardenDmgMult, frostwardenChillChance:frostwardenChillChance, frostwardenBlockBonus:frostwardenBlockBonus, enemyChilled:enemyChilled, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
-      treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax,
+      treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
       BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
       DAMAGE_TYPES:DAMAGE_TYPES

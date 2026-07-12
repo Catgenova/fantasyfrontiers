@@ -2778,6 +2778,50 @@
     FF.WARD_TYPES.forEach(function(w){ ok(FF.OFFHAND_STYLE_IDS.indexOf(w.id) === -1, w.id+' is not a per-style proficiency'); });
   });
 
+  // ---- Faith: auto-sacrifice Broken Relics to top up Faith (no-overflow) ----------------
+  suite('faith: auto-sacrifice broken relics', function(){
+    ok(typeof FF.autoSacrificeRelicsCheck === 'function' && typeof FF.brokenRelicFaithRestore === 'function', 'auto-sacrifice helpers exported');
+    var s = FF._state;
+    var save = { inv:s.inventory, faith:s.faith, auto:s.autoSacrificeRelics, locked:s.lockedItems, sx:s.xp.sacrifice, obl:(s.physique&&s.physique.oblation) };
+    try {
+      s.inventory = {}; s.lockedItems = {}; s.autoSacrificeRelics = false;
+      if(s.physique) s.physique.oblation = 0; // deterministic: no Oblation return-chance / bonus
+      var mx = FF.faithMax(s);
+      var t0 = FF.BROKEN_RELIC_ITEMS[0].id, t1 = FF.BROKEN_RELIC_ITEMS[1].id;
+      var r0 = FF.brokenRelicFaithRestore(0), r1 = FF.brokenRelicFaithRestore(1);
+      ok(r1 > r0, 'a higher-tier Broken Relic restores more Faith');
+
+      // Disabled => no-op even with relics on hand and Faith empty.
+      s.inventory[t0] = 5; s.faith = 0;
+      FF.autoSacrificeRelicsCheck();
+      eq(s.faith, 0, 'toggle off => nothing is auto-sacrificed');
+      eq(s.inventory[t0], 5, 'relics untouched while the toggle is off');
+
+      // Enabled with a large deficit => tops up, staying within the cap.
+      s.autoSacrificeRelics = true; s.faith = 0;
+      FF.autoSacrificeRelicsCheck();
+      ok(s.faith > 0 && s.faith <= mx + 1e-9, 'enabled => Faith is topped up within the cap');
+
+      // No overflow: a relic is NOT sacrificed when its full value would spill past the cap.
+      s.inventory = {}; s.inventory[t1] = 1; s.faith = mx - (r1 - 1); // deficit = r1-1 < r1
+      FF.autoSacrificeRelicsCheck();
+      eq(s.inventory[t1], 1, 'no auto-sacrifice when the full value would overflow the cap');
+
+      // Exact fit => sacrificed, filling to (about) the cap.
+      s.faith = mx - r1;
+      FF.autoSacrificeRelicsCheck();
+      ok((s.inventory[t1]||0) === 0, 'auto-sacrificed once its full value fits the deficit');
+      ok(Math.abs(s.faith - mx) <= 1, 'Faith filled to about the cap');
+
+      // Locked Broken Relics are never auto-sacrificed.
+      s.inventory = {}; s.inventory[t0] = 1; s.lockedItems[t0] = true; s.faith = 0;
+      FF.autoSacrificeRelicsCheck();
+      eq(s.inventory[t0], 1, 'locked Broken Relics are protected from auto-sacrifice');
+    } finally {
+      s.inventory=save.inv; s.faith=save.faith; s.autoSacrificeRelics=save.auto; s.lockedItems=save.locked; s.xp.sacrifice=save.sx; if(s.physique) s.physique.oblation=save.obl;
+    }
+  });
+
   // ---- Hardening: monster lookup + addItem guards ---------------------------------------
   suite('hardening', function(){
     // monsterById maps every monster and rejects unknown ids (used by the combat hot path + stale-id retreat).
