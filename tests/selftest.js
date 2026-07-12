@@ -2589,13 +2589,13 @@
     var TC = FF.TIER_COUNT;
     // Tier ladder scales min->max at Normal; rarity multiplies 2x/4x/8x (wand ladder).
     var fireTop = FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_normal'];
-    near(fireTop.bonus, 0.20, 'top-tier Normal Ring of Fire = +20% fire dmg');
+    near(fireTop.bonus, 0.50, 'top-tier Normal Ring of Fire = +50% fire dmg');
     eq(fireTop.kind, 'elementDamage', 'ring item carries kind');
     eq(fireTop.element, 'fire', 'ring item carries element');
-    near(FF.RING_ITEMS['ring_fire_t0_normal'].bonus, 0.01, 't0 Normal Ring of Fire = +1%');
-    near(FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_rare'].bonus, 0.40, 'Rare doubles to +40%');
-    near(FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_supreme'].bonus, 0.80, 'Supreme x4 = +80%');
-    near(FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_fantastic'].bonus, 1.60, 'Fantastic x8 = +160%');
+    near(FF.RING_ITEMS['ring_fire_t0_normal'].bonus, 0.05, 't0 Normal Ring of Fire = +5%');
+    near(FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_rare'].bonus, 1.00, 'Rare x2 = +100%');
+    near(FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_supreme'].bonus, 2.00, 'Supreme x4 = +200%');
+    near(FF.RING_ITEMS['ring_fire_t'+(TC-1)+'_fantastic'].bonus, 4.00, 'Fantastic x8 = +400%');
     near(FF.RING_ITEMS['ring_precision_t'+(TC-1)+'_normal'].bonus, 0.30, 'top Precision Normal = +30% acc');
     near(FF.RING_ITEMS['ring_precision_t0_normal'].bonus, 0.05, 't0 Precision = +5% acc');
     near(FF.RING_ITEMS['ring_warding_t'+(TC-1)+'_normal'].bonus, 0.20, 'top Warding Normal = +20% resist');
@@ -2606,10 +2606,12 @@
     near(FF.RING_ITEMS['ring_communion_t'+(TC-1)+'_supreme'].bonus, 2.00, 'Supreme x4 = +200%');
     near(FF.RING_ITEMS['ring_communion_t'+(TC-1)+'_fantastic'].bonus, 4.00, 'Fantastic x8 = +400%');
 
-    // Physical rings unchanged.
+    // Physical rings now share the +5%->+50% x rarity curve (dmgBonus, applied by weapon-type fraction).
     var bluntTop = FF.RING_ITEMS['ring_blunt_t'+(TC-1)+'_normal'];
-    ok(bluntTop.dmgBonus > 0 && bluntTop.damageType === 'blunt', 'physical rings keep dmgBonus/damageType');
-    ok(bluntTop.bonus === undefined, 'physical rings have no kind bonus field');
+    near(bluntTop.dmgBonus, 0.50, 'top Normal Blunt ring = +50% (before weapon-type scaling)');
+    near(FF.RING_ITEMS['ring_blunt_t0_normal'].dmgBonus, 0.05, 't0 Normal Blunt ring = +5%');
+    near(FF.RING_ITEMS['ring_blunt_t'+(TC-1)+'_fantastic'].dmgBonus, 4.00, 'Fantastic x8 = +400%');
+    ok(bluntTop.damageType === 'blunt' && bluntTop.bonus === undefined, 'physical rings keep damageType, no kind bonus field');
 
     function sl(typeId, tier, rarity){ return {typeId:typeId, tier:tier, rarity:rarity||'normal'}; }
     function empty(){ return {typeId:null, tier:0, rarity:'normal'}; }
@@ -2620,15 +2622,15 @@
     }
 
     // Element ring bonus sums across slots.
-    var oneFire = st([sl('fire', TC, 'normal')]); // +20%
-    near(FF.getRingElementDamageBonus(oneFire, 'fire'), 0.20, 'one top fire ring => +20%');
+    var oneFire = st([sl('fire', TC, 'normal')]); // +50%
+    near(FF.getRingElementDamageBonus(oneFire, 'fire'), 0.50, 'one top fire ring => +50%');
     eq(FF.getRingElementDamageBonus(oneFire, 'water'), 0, 'no water rings => 0');
     var twoFire = st([sl('fire', TC, 'normal'), sl('fire', TC, 'normal')]);
-    near(FF.getRingElementDamageBonus(twoFire, 'fire'), 0.40, 'two fire rings stack to +40%');
+    near(FF.getRingElementDamageBonus(twoFire, 'fire'), 1.00, 'two fire rings stack to +100%');
 
     // Folds into elementDmgMult on top of attunement.
     var baseMult = FF.elementDmgMult(st([]), 'fire');
-    near(FF.elementDmgMult(oneFire, 'fire') - baseMult, 0.20, 'fire ring adds +0.20 to the fire damage multiplier');
+    near(FF.elementDmgMult(oneFire, 'fire') - baseMult, 0.50, 'fire ring adds +0.50 to the fire damage multiplier');
 
     // Precision ring scales Accuracy.
     var accBase = st([]); accBase.physique = {agility: FF.xpFloorForLevel(51)};
