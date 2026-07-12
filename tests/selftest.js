@@ -583,6 +583,12 @@
 
     // Every main skill/proficiency/class is grouped, so newly-added content can never silently
     // drop off the board.
+    // Every Class has a hand-crafted hero portrait (the leaderboard shows it per player, not a small icon).
+    ok(FF.CLASS_PORTRAITS && FF.CLASS_PORTRAITS.none, 'the no-class portrait exists');
+    FF.CLASS_SKILL_IDS.forEach(function(cid){
+      var pt = FF.CLASS_PORTRAITS[cid];
+      ok(typeof pt === 'string' && pt.indexOf('<svg') === 0, 'class ' + cid + ' has a hand-crafted portrait');
+    });
     FF.ALL_MAIN_SKILL_IDS.forEach(function(id){ ok(grouped[id], 'leaderboard covers main skill: ' + id); });
     // Every physique too (body physiques + elemental attunements).
     FF.PHYSIQUE_SKILLS.forEach(function(p){ ok(grouped[p.id], 'leaderboard covers physique: ' + p.id); });

@@ -624,8 +624,8 @@
      global-chat presence channel, red otherwise. */
   .lb-online{flex:0 0 auto;width:9px;height:9px;border-radius:50%;background:var(--hp-bad);box-shadow:0 0 0 1px rgba(0,0,0,.15) inset;}
   .lb-online.on{background:var(--hp-good);box-shadow:0 0 5px color-mix(in srgb, var(--hp-good) 70%, transparent);}
-  .lb-class{flex:0 0 auto;display:inline-flex;align-items:center;margin-right:1px;}
-  .lb-class svg,.lb-class .game-icon{width:16px;height:16px;}
+  .lb-class{flex:0 0 auto;display:inline-flex;align-items:center;margin-right:3px;}
+  .lb-class svg,.lb-class .game-icon{width:24px;height:24px;border-radius:50%;}
   .lb-name{flex:1;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   /* Mortal-path players: bold maroon name (readable in both themes). */
   .lb-name.mortal{color:#8a1f2c;font-weight:800;}
@@ -12979,6 +12979,9 @@
     var cid = activeClassId(state);
     return (cid && CLASS_PORTRAITS[cid]) || CLASS_PORTRAITS.none || svgIcon('person','#5a6a8a');
   }
+  // Hero portrait for a given Class id (used by the leaderboard for every player); the no-class
+  // adventurer when the id is null/unknown. Same hand-crafted art as the combat arena.
+  function classPortraitFor(cid){ return (cid && CLASS_PORTRAITS[cid]) || CLASS_PORTRAITS.none || svgIcon('person','var(--text-faint)'); }
   // Hand-crafted enemy portraits, keyed by monster name (authored per category). Any enemy without a
   // bespoke portrait yet falls back to its category icon, so the screen never breaks mid-rollout.
   // Each is a self-contained 100x100 SVG (no <defs>/ids, so many can render at once on the selection
@@ -13620,6 +13623,19 @@
       '<path d="M28 42 Q28 24 48 24 Q68 24 68 42 Q68 40 58 36 Q48 30 38 36 Q28 40 28 42 Z" fill="#5a2a24" stroke="'+K+'" stroke-width="2.5"/>'+
       head('#b5785a')+'<path d="M34 48 l10 -3 M52 45 l10 3" stroke="#7a1a1a" stroke-width="2.5" stroke-linecap="round"/>'+gEyes('#f0641e')+
       '<path d="M42 56 q6 4 12 0 l-2 -3 -2 2 -2 -3 -2 2 -2 -3 Z" fill="#2a0a0a"/>');
+    // Ranger: hooded wilderness archer, a bow strung at the ready.
+    CLASS_PORTRAITS.ranger = P('#22381e', sh('#3f5a30')+
+      '<path d="M78 14 Q92 50 78 86" fill="none" stroke="#7a5230" stroke-width="3"/><path d="M78 14 L78 86" fill="none" stroke="#e6ddb8" stroke-width="1.2"/>'+
+      hood('#43663a','#8fb85e')+
+      '<path d="M33 44 q6 -4 12 0 M51 44 q6 -4 12 0" fill="none" stroke="#0e1608" stroke-width="1.5"/>'+
+      gEyes('#c2ea72')+mouth());
+    // Samurai: stern ronin with a crimson headband and a drawn katana.
+    CLASS_PORTRAITS.samurai = P('#281521', sh('#5a2830')+
+      '<path d="M16 86 L84 24" stroke="#d3d8e0" stroke-width="2.5" stroke-linecap="round"/><path d="M82 24 l5 -3 -1 6 Z" fill="#b5423a"/><path d="M24 80 l7 -6" stroke="#2a1a12" stroke-width="4" stroke-linecap="round"/>'+
+      head('#c99f78')+
+      '<path d="M30 37 Q48 29 66 37" fill="none" stroke="#8a1f2c" stroke-width="6"/>'+
+      '<path d="M66 36 l14 -3 M66 40 l13 3" stroke="#8a1f2c" stroke-width="2" stroke-linecap="round"/>'+
+      eyes('#241018')+'<path d="M44 56 q4 1 8 0" fill="none" stroke="'+K+'" stroke-width="1.5" stroke-linecap="round"/>');
   })();
   // ---- Combat floating text: damage numbers / type / element / miss, anchored over the arena ----
   function combatDmgTypeIcon(ws, isWand, isScepter){
@@ -18047,10 +18063,11 @@
     var online = isMe || isPlayerOnline(p.id);
     var dot = '<span class="lb-online'+(online?' on':'')+'"'+(p.id?' data-uid="'+escapeHtml(String(p.id))+'"':'')+' title="'+(online?'Online':'Offline')+'"></span>';
     var mortal = (p.mortal === true) || (isMe && isMortal()); // Mortal-path players wear a bold maroon name
-    // Equipped-Class icon (live for me, stored for everyone else); a neutral figure when no Class is active.
+    // Equipped-Class hero portrait (live for me, stored for everyone else); the no-class adventurer
+    // when no Class is active. Uses the same hand-crafted art as the combat arena, not the small icon.
     var clsId = isMe ? activeClassId(state) : (p.class || null);
     var clsDef = clsId ? CLASS_DEFS_BY_ID[clsId] : null;
-    var clsIcon = clsDef ? clsDef.icon : svgIcon('person','var(--text-faint)');
+    var clsIcon = classPortraitFor(clsId);
     var clsTitle = clsDef ? clsDef.name+' Class' : 'No active Class';
     return '<button class="lb-row'+(isMe?' me':'')+'" data-action="viewProfile" data-id="'+escapeHtml(String(p.id||''))+'">'
       +'<span class="lb-rank">'+(medals[rank]||('#'+rank))+'</span>'
