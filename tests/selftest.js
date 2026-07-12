@@ -2885,10 +2885,11 @@
     var save = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid, uniq:s.uniqueItems, jw:s.jewelrySlots, inv:s.inventory };
     try {
       s.uniqueItems = {}; s.inventory = {};
-      // Equip a plain base Half-Moon Axe (tier index 4, i.e. tier field 5) with no unique uid.
-      s.equippedMainhand = 'halfmoonaxe'; s.equippedMainhandTier = 5; s.equippedMainhandRarity = 'normal'; s.equippedMainhandUid = null;
+      // Equip a plain base Rare Half-Moon Axe (tier index 4, i.e. tier field 5) with no unique uid.
+      // (Rare-or-better is required now that Normal gear is no longer improvable.)
+      s.equippedMainhand = 'halfmoonaxe'; s.equippedMainhandTier = 5; s.equippedMainhandRarity = 'rare'; s.equippedMainhandUid = null;
       var mh = FF.equippedImprovableBases().filter(function(e){ return e.slot==='mainhand'; })[0];
-      ok(mh && mh.baseId==='stweapon_halfmoonaxe_t4_normal', 'equipped base mainhand is surfaced with its real item id');
+      ok(mh && mh.baseId==='stweapon_halfmoonaxe_t4_rare', 'equipped base mainhand is surfaced with its real item id');
       // Selecting it must NOT convert yet -- browsing equipped gear leaves it untouched.
       FF.improveFromEquipped('mainhand');
       ok(FF.isEquipToken('equip:mainhand'), 'the equip token is recognised');
@@ -2900,7 +2901,7 @@
       ok(uid && s.uniqueItems[uid], 'enchanting converts the equipped base into a unique');
       ok(FF.uniqueIsEquipped(uid), 'the new unique stays equipped in its slot');
       var u = s.uniqueItems[uid];
-      ok(u.kind==='weapon' && u.tier===4 && u.rarity==='normal', 'the unique inherits the base kind/tier/rarity');
+      ok(u.kind==='weapon' && u.tier===4 && u.rarity==='rare', 'the unique inherits the base kind/tier/rarity');
       ok(u.enchants.length===1, 'the enchant that triggered the conversion is applied');
       // Now that the slot holds a unique, it no longer appears as a raw equipped BASE to convert.
       ok(FF.equippedImprovableBases().every(function(e){ return e.slot!=='mainhand'; }), 'an already-unique slot is not offered again');
@@ -2987,13 +2988,31 @@
     var s = FF._state;
     var sv = { mh:s.equippedMainhand, t:s.equippedMainhandTier, r:s.equippedMainhandRarity, uid:s.equippedMainhandUid, ui:s.uniqueItems };
     s.uniqueItems = {};
-    s.equippedMainhand = 'rapier'; s.equippedMainhandTier = 3; s.equippedMainhandRarity = 'normal';
+    s.equippedMainhand = 'rapier'; s.equippedMainhandTier = 3; s.equippedMainhandRarity = 'rare';
     // A dangling uid (points at no real unique) must NOT hide the equipped base from the picker.
     s.equippedMainhandUid = 'u_ghost';
     ok(FF.equippedImprovableBases().some(function(e){ return e.slot==='mainhand'; }), 'stale mainhand uid does not hide the equipped base');
     // A real equipped unique DOES occupy the slot -> the raw base is not offered (the unique shows separately).
-    s.uniqueItems = { u_ghost:{ uid:'u_ghost', base:'stweapon_rapier_t2_normal', kind:'weapon', tier:2, rarity:'normal', enchants:[], enhance:0 } };
+    s.uniqueItems = { u_ghost:{ uid:'u_ghost', base:'stweapon_rapier_t2_rare', kind:'weapon', tier:2, rarity:'rare', enchants:[], enhance:0 } };
     ok(!FF.equippedImprovableBases().some(function(e){ return e.slot==='mainhand'; }), 'a valid equipped unique hides the raw base');
+    s.equippedMainhand=sv.mh; s.equippedMainhandTier=sv.t; s.equippedMainhandRarity=sv.r; s.equippedMainhandUid=sv.uid; s.uniqueItems=sv.ui;
+  });
+
+  // ---- Improvement: only Rare-or-better gear can be improved (Normal is excluded) ---------------
+  suite('improvement: Normal gear cannot be improved', function(){
+    ok(typeof FF.isImprovableRarity === 'function', 'rarity gate exported');
+    eq(FF.isImprovableRarity('normal'), false, 'Normal is NOT improvable');
+    ok(FF.isImprovableRarity('rare') && FF.isImprovableRarity('supreme') && FF.isImprovableRarity('fantastic'), 'Rare / Supreme / Fantastic are improvable');
+    var s = FF._state;
+    var sv = { mh:s.equippedMainhand, t:s.equippedMainhandTier, r:s.equippedMainhandRarity, uid:s.equippedMainhandUid, ui:s.uniqueItems };
+    s.uniqueItems = {}; s.equippedMainhandUid = null;
+    s.equippedMainhand='rapier'; s.equippedMainhandTier=3;
+    // Normal equipped gear is NOT offered in the improve picker.
+    s.equippedMainhandRarity='normal';
+    ok(!FF.equippedImprovableBases().some(function(e){ return e.slot==='mainhand'; }), 'Normal equipped gear is not offered as a selectable');
+    // Bumping the same slot to Rare makes it appear.
+    s.equippedMainhandRarity='rare';
+    ok(FF.equippedImprovableBases().some(function(e){ return e.slot==='mainhand'; }), 'Rare equipped gear IS offered');
     s.equippedMainhand=sv.mh; s.equippedMainhandTier=sv.t; s.equippedMainhandRarity=sv.r; s.equippedMainhandUid=sv.uid; s.uniqueItems=sv.ui;
   });
 

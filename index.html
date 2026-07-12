@@ -8217,6 +8217,10 @@
     var tm = /_t(\d+)/.exec(id); var tier = tm ? parseInt(tm[1],10) : 0;
     return { kind:kind, tier:tier, rarity:(itemRarityId(id)||'normal'), baseId:id };
   }
+  // Improvement (Enchant/Enhance) is limited to Rare-or-better gear: Normal items can't be improved and
+  // never appear in the picker. Central gate used by the selectable list AND every improve action.
+  var IMPROVE_MIN_RANK = 1; // rare
+  function isImprovableRarity(rarityId){ return rarityRank(rarityId) >= IMPROVE_MIN_RANK; }
   function isUniqueId(id){ return typeof id==='string' && id.charAt(0)==='u' && !!(state.uniqueItems && state.uniqueItems[id]); }
   function uniqueBaseName(u){ var b = ALL_SELLABLE[u.base]; return b ? b.name : 'Equipment'; }
   function uniqueDisplayName(u){ return uniqueBaseName(u) + (u.enhance>0 ? ' +'+u.enhance : ''); }
@@ -8376,6 +8380,7 @@
     // An equipped base is converted to a unique in place only now, as the enhance is attempted.
     if(isEquipToken(uid)){ var nu = convertEquippedToUnique(equipTokenSlot(uid)); if(!nu){ addLog('That item is no longer equipped.','danger'); return; } improveSel = nu; uid = nu; }
     var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
+    if(!isImprovableRarity(u.rarity)){ addLog('Only Rare-or-better gear can be enhanced.','danger'); return; }
     if(u.enhance >= ENHANCE_MAX){ addLog('Already at the maximum +'+ENHANCE_MAX+'.','danger'); return; }
     var cost = u.enhance + 1;
     var planned = planInscriptions(u.tier, cost);
@@ -8424,7 +8429,7 @@
       if(s && !slotHasValidUnique(s.uid) && s.tier > 0 && s.typeId) out.push({ slot:'ring:'+sl, baseId:'ring_'+s.typeId+'_t'+(s.tier-1)+'_'+s.rarity }); });
     var am = state.jewelrySlots && state.jewelrySlots.amulet;
     if(am && !slotHasValidUnique(am.uid) && am.tier > 0) out.push({ slot:'amulet', baseId:'amulet_t'+(am.tier-1)+'_'+am.rarity });
-    return out;
+    return out.filter(function(e){ var p = parseImprovable(e.baseId); return p && isImprovableRarity(p.rarity); }); // Normal gear can't be improved
   }
   // Selecting an equipped base just points improveSel at an 'equip:<slot>' token -- NO conversion yet.
   // The base is only turned into a unique when the player actually Enchants or Enhances it (see
@@ -8456,9 +8461,11 @@
     var isU = isUniqueId(sel);
     var isEq = isEquipToken(sel), eqm = null;
     var tier, enhance, count, kind;
-    if(isU){ var u0 = state.uniqueItems[sel]; if(!u0){ addLog('That item is gone.','danger'); return; } tier=u0.tier; enhance=u0.enhance; count=u0.enchants.length; kind=u0.kind; }
-    else if(isEq){ eqm = equippedImprovableBases().filter(function(e){ return e.slot===equipTokenSlot(sel); })[0]; if(!eqm){ addLog('That item is no longer equipped.','danger'); return; } var ep = parseImprovable(eqm.baseId); tier=ep.tier; enhance=0; count=0; kind=ep.kind; }
-    else { var p = parseImprovable(sel); if(!p || (state.inventory[sel]||0)<=0){ addLog('That item is no longer available.','danger'); return; } tier=p.tier; enhance=0; count=0; kind=p.kind; }
+    var rarity;
+    if(isU){ var u0 = state.uniqueItems[sel]; if(!u0){ addLog('That item is gone.','danger'); return; } tier=u0.tier; enhance=u0.enhance; count=u0.enchants.length; kind=u0.kind; rarity=u0.rarity; }
+    else if(isEq){ eqm = equippedImprovableBases().filter(function(e){ return e.slot===equipTokenSlot(sel); })[0]; if(!eqm){ addLog('That item is no longer equipped.','danger'); return; } var ep = parseImprovable(eqm.baseId); tier=ep.tier; enhance=0; count=0; kind=ep.kind; rarity=ep.rarity; }
+    else { var p = parseImprovable(sel); if(!p || (state.inventory[sel]||0)<=0){ addLog('That item is no longer available.','danger'); return; } tier=p.tier; enhance=0; count=0; kind=p.kind; rarity=p.rarity; }
+    if(!isImprovableRarity(rarity)){ addLog('Only Rare-or-better gear can be enchanted.','danger'); return; }
     if(enhance>0){ addLog('Enhanced items (+'+enhance+') can no longer be enchanted.','danger'); return; }
     var cost = count + 1;
     var planned = planEnchantCrystals(tier, cost);
@@ -8693,11 +8700,12 @@
     return html;
   }
   function renderImprovementTab(){
-    var html = '<div class="section-intro">Turn a piece of equipment into a unique item and <b>Enchant</b> it with random modifiers. Rarity sets how many it can hold (Normal 1 · Rare 2 · Supreme 3 · Fantastic 4). Each enchant costs Enchant Crystals of equal-or-higher tier; the cost rises by one per enchant. Enchant freely — but once you <b>Enhance</b> an item (with Inscription Scrolls) it can no longer be enchanted. <b>Currently-equipped gear appears here too</b> — improving it keeps it equipped.</div>';
+    var html = '<div class="section-intro">Turn a piece of equipment into a unique item and <b>Enchant</b> it with random modifiers. <b>Only Rare-or-better gear can be improved</b> — Normal items don\'t appear here. Rarity sets how many enchants it can hold (Rare 2 · Supreme 3 · Fantastic 4). Each enchant costs Enchant Crystals of equal-or-higher tier; the cost rises by one per enchant. Enchant freely — but once you <b>Enhance</b> an item (with Inscription Scrolls) it can no longer be enchanted. <b>Currently-equipped gear appears here too</b> — improving it keeps it equipped.</div>';
     // Selected item first (top priority, right under the intro), then the equipment picker.
     html += renderImproveDetail();
-    var bases = [], uniques = Object.keys(state.uniqueItems||{});
-    Object.keys(state.inventory).forEach(function(id){ if((state.inventory[id]||0)>0 && parseImprovable(id)) bases.push(id); });
+    // Only Rare-or-better gear is improvable: Normal inventory bases and any Normal uniques are excluded.
+    var bases = [], uniques = Object.keys(state.uniqueItems||{}).filter(function(uid){ var u=state.uniqueItems[uid]; return u && isImprovableRarity(u.rarity); });
+    Object.keys(state.inventory).forEach(function(id){ if((state.inventory[id]||0)>0){ var p=parseImprovable(id); if(p && isImprovableRarity(p.rarity)) bases.push(id); } });
     var eqBases = equippedImprovableBases();
     html += '<div class="guild-section-title" style="margin-top:14px;">Choose equipment</div>';
     if(!bases.length && !uniques.length && !eqBases.length) html += '<div class="empty-note">No weapons, armour, or jewelry to improve yet — forge, find, or equip some first.</div>';
@@ -19768,7 +19776,7 @@
       _state:state, getMaxCraftSlots:getMaxCraftSlots, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
-      parseImprovable:parseImprovable, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant,
+      parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, equipDeltaChip:equipDeltaChip,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray,
