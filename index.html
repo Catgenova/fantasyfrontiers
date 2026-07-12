@@ -16280,6 +16280,7 @@
   function renderEstateCanvas(){
     var canvas = document.getElementById('estateCanvas');
     if(!canvas || !canvas.getContext) return;
+    if(!estActive || !estActive.grid) return; // nothing to draw (e.g. landing preview not yet pointed)
     var ctx = canvas.getContext('2d');
     var W = canvas.width, H = canvas.height;
     var _o0 = estateCanvasOrigin(canvas); var originX = _o0.x, originY = _o0.y;
@@ -21187,6 +21188,12 @@
       estateRotate(1);
     } else if(action==='estateToggleTopDown'){
       estateToggleTopDown();
+    } else if(action==='landingEstZoom'){
+      estateZoomBy(parseFloat(btn.getAttribute('data-d'))||0); renderEstateCanvas();
+    } else if(action==='landingEstRotate'){
+      estateRotate(parseInt(btn.getAttribute('data-d'),10)||1); renderEstateCanvas();
+    } else if(action==='landingEstToggle'){
+      estateToggleTopDown(); renderLoginGate(); // rebuild so the 3D/2D button label updates, then redraw
     } else if(action==='toggleCraftFilter'){
       craftOnlyAffordable = !craftOnlyAffordable;
     } else if(action==='chatSend'){
@@ -21808,6 +21815,8 @@
       + '.ff-land-auth{background:var(--bg-card);border:1.5px solid var(--gold);border-radius:14px;padding:16px;box-shadow:0 8px 28px rgba(20,14,4,.18);}'
       + '.ff-land-auth-h{font-family:var(--font-display);font-size:15px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;text-align:center;}'
       + '.ff-land-show{margin-top:24px;}'
+      + '.ff-land-estate{margin-top:26px;}'
+      + '.ff-land-estate .estate-canvas-wrap{max-width:620px;margin:0 auto;}'
       + '.ff-land-show-t{font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:9px;}'
       + '.ff-land-ports{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;}'
       + '.ff-land-port{width:46px;height:46px;border-radius:50%;overflow:hidden;border:1px solid var(--border);flex:0 0 auto;}'
@@ -21839,6 +21848,37 @@
       + '@media (prefers-reduced-motion:reduce){.ff-prev *{animation:none!important}.ff-prev-hp-fill{width:34%}.ff-prev-dmg.d2{opacity:1}}'
       + '@media (max-width:820px){.ff-land-title{font-size:28px;}.ff-land-row{grid-template-columns:1fr;}.ff-land-feat{grid-template-columns:1fr;}.ff-land-auth{order:-1;}.ff-prev{gap:8px;padding:12px;}.ff-prev-side{width:100px;}.ff-prev-port,.ff-prev-port svg{width:54px;height:54px;}}';
     document.head.appendChild(st);
+  }
+  // ---- Landing estate preview: a blank generated estate anyone can pan/zoom/rotate before signing in.
+  // Reuses the real renderEstateCanvas draw (pointed at a preview estate) but binds pan-only handlers --
+  // the game canvas's click handler calls render() (game-coupled), which we suppress via _estateBound. ----
+  var landingEstate = null, _landingDrag = null, _landingWinBound = false;
+  function landingEstateEnsure(){
+    if(!landingEstate){
+      landingEstate = Object.assign({ grid: generateEstateGrid(), expansionsPurchased:0, job:null, jobs:[] }, generateEstateEdges());
+      var g = landingEstate.grid; // reveal the whole plot (a fresh estate only owns its core)
+      for(var x=0;x<g.length;x++){ for(var y=0;y<g[x].length;y++){ if(g[x][y]) g[x][y].owned = true; } }
+    }
+    return landingEstate;
+  }
+  function landingEstateActivate(){
+    estActive = landingEstateEnsure(); estIsGuild = false;
+    var canvas = document.getElementById('estateCanvas');
+    if(!canvas) return;
+    canvas._estateBound = true; // suppress renderEstateCanvas's game-coupled (hover/select -> render()) handlers
+    if(!_landingWinBound){
+      _landingWinBound = true;
+      window.addEventListener('mousemove', function(e){ if(!_landingDrag) return; estatePanX = _landingDrag.panX + (e.clientX - _landingDrag.x); estatePanY = _landingDrag.panY + (e.clientY - _landingDrag.y); renderEstateCanvas(); });
+      window.addEventListener('mouseup', function(){ _landingDrag = null; });
+    }
+    if(!canvas._landingBound){
+      canvas._landingBound = true;
+      canvas.addEventListener('mousedown', function(e){ _landingDrag = { x:e.clientX, y:e.clientY, panX:estatePanX, panY:estatePanY }; });
+      canvas.addEventListener('touchstart', function(e){ if(e.touches.length!==1) return; var t=e.touches[0]; _landingDrag = { x:t.clientX, y:t.clientY, panX:estatePanX, panY:estatePanY }; }, { passive:true });
+      canvas.addEventListener('touchmove', function(e){ if(!_landingDrag || e.touches.length!==1) return; var t=e.touches[0]; estatePanX = _landingDrag.panX + (t.clientX - _landingDrag.x); estatePanY = _landingDrag.panY + (t.clientY - _landingDrag.y); renderEstateCanvas(); if(e.cancelable) e.preventDefault(); }, { passive:false });
+      canvas.addEventListener('touchend', function(){ _landingDrag = null; }, { passive:true });
+    }
+    renderEstateCanvas();
   }
   function renderLoginGate(){
     ensureLandingStyle();
@@ -21882,9 +21922,20 @@
         + '<div class="ff-land-feat">' + features + '</div>'
         + '<div class="ff-land-auth"><div class="ff-land-auth-h">Play Free</div>' + (recoverOpen ? renderRecoverPanel() : renderAuthPanel()) + '</div>'
       + '</div>'
+      // Interactive estate preview -- a blank plot potential players can drag/zoom/rotate.
+      + '<div class="ff-land-estate"><div class="ff-land-show-t">Your estate awaits &mdash; drag to look around, zoom &amp; rotate</div>'
+        + '<div class="estate-canvas-wrap">'
+          + '<button class="estate-zoom-btn estate-zoom-out" data-action="landingEstZoom" data-d="-0.15" title="Zoom out">−</button>'
+          + '<button class="estate-rotate-btn estate-rotate-left" data-action="landingEstRotate" data-d="-1" title="Rotate left">↺</button>'
+          + '<canvas id="estateCanvas" width="600" height="360"></canvas>'
+          + '<button class="estate-zoom-btn estate-zoom-in" data-action="landingEstZoom" data-d="0.15" title="Zoom in">+</button>'
+          + '<button class="estate-rotate-btn estate-rotate-right" data-action="landingEstRotate" data-d="1" title="Rotate right">↻</button>'
+          + '<button class="estate-view-btn'+(estateTopDown?' on':'')+'" data-action="landingEstToggle" title="Toggle top-down view">'+(estateTopDown?'▦ 2D':'◈ 3D')+'</button>'
+        + '</div></div>'
       + (ports ? '<div class="ff-land-show"><div class="ff-land-show-t">A few of the 24 Classes</div><div class="ff-land-ports">' + ports + '</div></div>' : '')
       + '<div class="ff-land-foot">Free to play &bull; your progress saves to your account and follows you across every device.</div>'
       + '</div>';
+    landingEstateActivate(); // point estActive at the preview estate + bind pan/zoom/rotate + draw
   }
   function removeLoginGate(){
     var gate = document.getElementById('loginGate');
