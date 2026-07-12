@@ -21697,19 +21697,70 @@
       if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; if(sess.access_token) cloudAccessToken = sess.access_token; }
     }catch(e){}
   }
+  // One-time injected stylesheet for the landing screen (theme-variable driven, responsive).
+  function ensureLandingStyle(){
+    if(document.getElementById('ffLandStyle')) return;
+    var st = document.createElement('style'); st.id = 'ffLandStyle';
+    st.textContent = ''
+      + '#loginGate{background:radial-gradient(120% 120% at 50% 0%, var(--bg-card) 0%, var(--paper) 60%);}'
+      + '.ff-land{max-width:1000px;width:100%;margin:0 auto;text-align:center;}'
+      + '.ff-land-title{font-family:var(--font-display);font-weight:700;font-size:36px;color:var(--gold);letter-spacing:2px;line-height:1.05;}'
+      + '.ff-land-sub{color:var(--text-dim);font-size:14px;max-width:660px;margin:8px auto 18px;line-height:1.55;}'
+      + '.ff-land-chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:22px;}'
+      + '.ff-land-chip{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:9px 16px;min-width:92px;}'
+      + '.ff-land-chip b{display:block;font-family:var(--font-display);font-size:23px;color:var(--gold);line-height:1;}'
+      + '.ff-land-chip span{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;}'
+      + '.ff-land-row{display:grid;grid-template-columns:1.35fr 1fr;gap:18px;text-align:left;align-items:start;}'
+      + '.ff-land-feat{display:grid;grid-template-columns:1fr 1fr;gap:12px;}'
+      + '.ff-land-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:13px;}'
+      + '.ff-land-card-ico svg{width:26px;height:26px;margin-bottom:6px;}'
+      + '.ff-land-card-t{font-weight:700;color:var(--gold);font-size:13px;margin-bottom:3px;}'
+      + '.ff-land-card-b{font-size:12px;color:var(--text-dim);line-height:1.45;}'
+      + '.ff-land-auth{background:var(--bg-card);border:1.5px solid var(--gold);border-radius:14px;padding:16px;box-shadow:0 8px 28px rgba(20,14,4,.18);}'
+      + '.ff-land-auth-h{font-family:var(--font-display);font-size:15px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;text-align:center;}'
+      + '.ff-land-show{margin-top:24px;}'
+      + '.ff-land-show-t{font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:9px;}'
+      + '.ff-land-ports{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;}'
+      + '.ff-land-port{width:46px;height:46px;border-radius:50%;overflow:hidden;border:1px solid var(--border);flex:0 0 auto;}'
+      + '.ff-land-port svg{width:46px;height:46px;display:block;}'
+      + '.ff-land-foot{color:var(--text-faint);font-size:11px;margin-top:18px;}'
+      + '@media (max-width:820px){.ff-land-title{font-size:28px;}.ff-land-row{grid-template-columns:1fr;}.ff-land-feat{grid-template-columns:1fr;}.ff-land-auth{order:-1;}}';
+    document.head.appendChild(st);
+  }
   function renderLoginGate(){
+    ensureLandingStyle();
     var app = document.getElementById('app');
     var gate = document.getElementById('loginGate');
     if(!gate){
       gate = document.createElement('div');
       gate.id = 'loginGate';
-      gate.style.cssText = 'position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;background:var(--paper);padding:24px;overflow:auto;';
+      gate.style.cssText = 'position:fixed;inset:0;z-index:9998;display:flex;align-items:flex-start;justify-content:center;padding:34px 22px;overflow:auto;';
       app.appendChild(gate);
     }
-    gate.innerHTML = '<div style="max-width:380px;width:100%;text-align:center;">'
-      + '<div style="font-family:var(--font-display);font-weight:700;font-size:28px;color:var(--gold);letter-spacing:1.5px;margin-bottom:6px;">Fantasy Frontiers</div>'
-      + '<div style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">Sign in to play &mdash; your adventure is saved to your account and follows you across every device.</div>'
-      + '<div style="text-align:left;">' + (recoverOpen ? renderRecoverPanel() : renderAuthPanel()) + '</div>'
+    function chip(n, l){ return '<div class="ff-land-chip"><b>'+n+'</b><span>'+l+'</span></div>'; }
+    function feat(icon, t, b){ return '<div class="ff-land-card"><div class="ff-land-card-ico">'+icon+'</div><div class="ff-land-card-t">'+t+'</div><div class="ff-land-card-b">'+b+'</div></div>'; }
+    var features = ''
+      + feat(svgIcon('brain','#7a5aa8'), '170+ Skills to Master', 'Gathering, crafting, combat, farming and faith &mdash; over 170 skills, each with its own levels and rewards.')
+      + feat(svgIcon('crossedswords','#c9a227'), '24 Hero Classes', 'Wear the right gear and you <b>become</b> a Class &mdash; Samurai, Pyromancer, Frostwarden and more &mdash; each with five tiered passives and a signature familiar.')
+      + feat(svgIcon('paw','#5a7a3a'), '100+ Familiars', 'Summon a companion for every skill. They fight at your side in combat and speed your gathering and crafting.')
+      + feat(svgIcon('hornedskull','#8a1f2c'), 'Synchronous Co-op Dungeons', 'Enter Dungeons solo or as a party of <b>1&ndash;4</b> and battle a shared foe together in real time, with armour-based threat targeting.')
+      + feat(svgIcon('hammer','#8a6a42'), 'Deep Crafting &amp; Smithing', 'Smelt ore, forge weapons and armour, tan leather, weave cloth &mdash; then enhance and enchant your gear to perfection.')
+      + feat(svgIcon('mountain','#6f9538'), 'Estates &mdash; Yours &amp; Your Guild&rsquo;s', 'Terraform, pave and build a personal estate &mdash; and shape a <b>shared guild estate</b> every member contributes to.');
+    var showIds = ['samurai','pyromancer','frostwarden','herald','reaper','berserker','nightblade','thunderfury','ranger','executioner','templar','assassin'];
+    var ports = showIds.map(function(id){
+      var p = (typeof CLASS_PORTRAITS !== 'undefined' && CLASS_PORTRAITS[id]); if(!p) return '';
+      return '<div class="ff-land-port" title="'+escapeHtml((CLASS_DEFS_BY_ID[id]||{}).name||'')+'">'+p+'</div>';
+    }).join('');
+    gate.innerHTML = '<div class="ff-land">'
+      + '<div class="ff-land-title">Fantasy Frontiers</div>'
+      + '<div class="ff-land-sub">A living idle RPG. Master over 170 skills, take on 24 hero Classes, raise a menagerie of familiars, and delve synchronous co-op dungeons &mdash; then come home to an estate you and your guild build together.</div>'
+      + '<div class="ff-land-chips">' + chip('170+','Skills') + chip('24','Classes') + chip('100+','Familiars') + chip('1&ndash;4','Co-op PvE') + '</div>'
+      + '<div class="ff-land-row">'
+        + '<div class="ff-land-feat">' + features + '</div>'
+        + '<div class="ff-land-auth"><div class="ff-land-auth-h">Play Free</div>' + (recoverOpen ? renderRecoverPanel() : renderAuthPanel()) + '</div>'
+      + '</div>'
+      + (ports ? '<div class="ff-land-show"><div class="ff-land-show-t">A few of the 24 Classes</div><div class="ff-land-ports">' + ports + '</div></div>' : '')
+      + '<div class="ff-land-foot">Free to play &bull; your progress saves to your account and follows you across every device.</div>'
       + '</div>';
   }
   function removeLoginGate(){
