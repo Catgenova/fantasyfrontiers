@@ -1169,6 +1169,38 @@
     eq(FF.newClassDmgMult(mon, missingBurn), 1, 'no x3 unless all four ailments are up at once');
   });
 
+  // ---- Classes: Samurai (Katana, 2H; Iaijutsu opener -> First Blood Bleed -> Crimson Edge/Bushido/Zanshin) --
+  suite('classes: Samurai', function(){
+    ok(FF.CLASS_SKILL_IDS.indexOf('samurai') !== -1, 'samurai is a class skill id');
+    var cd = FF.CLASS_DEFS_BY_ID.samurai; ok(cd, 'samurai class defined');
+    eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'passives at 1/20/40/60/80');
+    ok(cd.reqParts.length >= 5, 'samurai has a full gear set');
+    ok(/Katana/.test(cd.reqText), 'samurai wields the Katana');
+    var fam = FF.FAMILIAR_DATA.samurai; ok(fam && fam.spells && fam.spells.length === 4, 'samurai familiar has a 4-spell kit');
+    function lea(){ return { tier:1, rarity:'normal', material:'leather' }; }
+    function sgear(lvl){ return { xp:{ samurai: FF.xpFloorForLevel(lvl||85) }, physique:{}, equippedMainhand:'falchion', equippedOffhand:null, bodyArmor:{ helmet:lea(), chest:lea(), gauntlets:lea(), boots:lea() } }; }
+    eq(FF.activeClassId(sgear()), 'samurai', 'katana + full leather => Samurai');
+    var wrongWpn = sgear(); wrongWpn.equippedMainhand = 'greatsword';
+    eq(FF.activeClassId(wrongWpn), null, 'the Katana is required (a greatsword does not qualify)');
+    var mon = { hp:100 };
+    // Crimson Edge (Lv40): +30% damage vs a Bleeding foe (Focus held at 0 so Bushido is neutral).
+    var bleeding = sgear(); bleeding.activity = { type:'combat', monsterHp:60, bleedUntil: Date.now()+4000, bleedStacks:2, bleedDps:5, samuraiFocus:0 };
+    ok(FF.enemyBleeding(bleeding), 'enemyBleeding true while bleedStacks+bleedUntil are live');
+    ok(Math.abs(FF.newClassDmgMult(mon, bleeding) - 1.30) < 1e-9, 'Crimson Edge: x1.30 vs a Bleeding foe');
+    var unbled = sgear(); unbled.activity = { type:'combat', monsterHp:60, bleedUntil:0, bleedStacks:0, samuraiFocus:0 };
+    eq(FF.newClassDmgMult(mon, unbled), 1, 'no Crimson Edge bonus vs an unbled foe (Focus 0)');
+    // Bushido (Lv60): +5% damage per Focus stack (no bleed, so Crimson is off).
+    var focus = sgear(); focus.activity = { type:'combat', monsterHp:60, bleedUntil:0, bleedStacks:0, samuraiFocus:4 };
+    eq(FF.samuraiFocusStacks(focus), 4, 'samuraiFocusStacks reads the activity');
+    ok(Math.abs(FF.newClassDmgMult(mon, focus) - 1.20) < 1e-9, 'Bushido: 4 Focus stacks => x1.20 damage');
+    // Zanshin (Lv80): +1.5% crit chance per Focus stack.
+    ok(Math.abs(FF.newClassCritChance(focus) - 4*0.015) < 1e-9, 'Zanshin: 4 Focus stacks => +6% crit chance');
+    // Below Lv60/80 the Focus perks are inert even with stacks present.
+    var lowLvl = sgear(45); lowLvl.activity = { type:'combat', monsterHp:60, bleedUntil:0, bleedStacks:0, samuraiFocus:4 };
+    eq(FF.newClassDmgMult(mon, lowLvl), 1, 'no Bushido damage below Class Lv60');
+    eq(FF.newClassCritChance(lowLvl), 0, 'no Zanshin crit below Class Lv80');
+  });
+
   // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------
   suite('classes: lumen oracle (light wand)', function(){
     function armor(mat,tier){ return {material:mat,tier:tier||5}; }
