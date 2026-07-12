@@ -13358,7 +13358,10 @@
     return best ? (TYPE_ICON[best]||'') : '';
   }
   function spawnCombatFloat(html, cls, enemySide){
-    if(!ACTION_BAR_RESULT_TEXT || offlineCapture) return;
+    // Combat-card damage/crit numbers float over the arena, NOT the action-bar card, so they ride the
+    // global floating-text switch -- not ACTION_BAR_RESULT_TEXT, which only silences the action-bar's
+    // per-task result popups. (They were wrongly gated on that flag, so combat floats never showed.)
+    if(!FLOATING_TEXT_ENABLED || offlineCapture) return;
     var layer = document.getElementById('floatLayer');
     var anchor = document.getElementById(enemySide ? 'arenaMonsterFill' : 'arenaPlayerFill');
     if(!layer || !anchor) return;
