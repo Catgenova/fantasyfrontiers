@@ -1201,6 +1201,35 @@
     eq(FF.newClassCritChance(lowLvl), 0, 'no Zanshin crit below Class Lv80');
   });
 
+  // ---- Classes: gear-requirement UI renders in a standardized slot order ------------------
+  suite('classes: standardized gear order', function(){
+    // Slot derivation from the part label: weapon(0) -> offhand(1) -> helm(2) -> chest(3) -> gloves(4) -> boots(5).
+    eq(FF.classPartSlotRank('Rapier'), 0, 'a weapon is slot 0');
+    eq(FF.classPartSlotRank('Staff'), 0, 'a staff is slot 0');
+    eq(FF.classPartSlotRank('Claws (off-hand)'), 1, 'an off-hand claw is the offhand slot');
+    eq(FF.classPartSlotRank('Small Shield'), 1, 'a shield is the offhand slot');
+    eq(FF.classPartSlotRank('Ward'), 1, 'a ward is the offhand slot');
+    eq(FF.classPartSlotRank('Quiver'), 1, 'a quiver is the offhand slot');
+    eq(FF.classPartSlotRank('Warhammer'), 0, 'a warhammer is a weapon, not an offhand (no false "ward" match)');
+    eq(FF.classPartSlotRank('Bare Head'), 2, 'bare head is the helm slot');
+    eq(FF.classPartSlotRank('Chain Helm'), 2, 'a helm is slot 2');
+    eq(FF.classPartSlotRank('Cloth Tunic'), 3, 'a tunic is the chest slot');
+    eq(FF.classPartSlotRank('Plate Gloves'), 4, 'gloves are slot 4');
+    eq(FF.classPartSlotRank('Cloth Shoes'), 5, 'shoes are the boots slot');
+    // Every class renders its gear weapon-first, in non-decreasing slot order.
+    FF.CLASS_DEFS.forEach(function(cd){
+      var ranks = FF.classPartsInSlotOrder(cd.reqParts).map(function(p){ return FF.classPartSlotRank(p.label); });
+      eq(ranks[0], 0, cd.id + ': the weapon renders first');
+      var nonDecreasing = ranks.every(function(r, i){ return i === 0 || r >= ranks[i-1]; });
+      ok(nonDecreasing, cd.id + ': gear parts render in canonical slot order');
+    });
+    // Concrete example: Treasure Hunter declares helm/boots/chest/gloves out of order; it renders sorted.
+    var th = FF.CLASS_DEFS_BY_ID.treasureHunter;
+    eq(FF.classPartsInSlotOrder(th.reqParts).map(function(p){ return p.label; }).join(' | '),
+       'Scimitar | Small Shield | Chain Helm | Plate Chest | Cloth Gloves | Chain Boots',
+       'Treasure Hunter gear reorders to weapon/offhand/helm/chest/gloves/boots');
+  });
+
   // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------
   suite('classes: lumen oracle (light wand)', function(){
     function armor(mat,tier){ return {material:mat,tier:tier||5}; }
