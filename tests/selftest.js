@@ -846,8 +846,12 @@
     ok(leaChest['tanning_t5'] && !leaChest['butchering_t5'], 'leather armour now needs Cured Leather, not raw Hide');
     var cloChest = FF.getBodyArmorTierData('tailoring','chest',5).inputs;
     ok(cloChest['weaving_t5'] && !cloChest['farming_t5'], 'cloth armour now needs Woven Cloth, not raw Fiber');
-    // The raws still have consumers (no orphans): Hide feeds Tanning + jewelry Twine.
-    ok(FF.ALL_CRAFT_RECIPES['twine_t5'].inputs['butchering_t5'], 'Hide still feeds jewelry Twine');
+    // Twine and Belts are now routed through the tanning channel too: they consume cured Leather, not
+    // raw Hide. Hide's only remaining consumer is Tanning (asserted above), so nothing is orphaned.
+    var tw5 = FF.ALL_CRAFT_RECIPES['twine_t5'].inputs;
+    ok(tw5['tanning_t5'] && !tw5['butchering_t5'], 'Twine braids cured Leather (tanning), not raw Hide');
+    var belt5 = FF.getBeltTierData(5).inputs;
+    ok(belt5['tanning_t5'] && !belt5['butchering_t5'], 'Belts are cut from cured Leather (tanning), not raw Hide');
     ok(FF.CRAFT_PHYSIQUE.tanning && FF.CRAFT_PHYSIQUE.weaving, 'physique tables include the new skills');
   });
 
