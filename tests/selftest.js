@@ -1004,12 +1004,20 @@
     ok(Math.abs(FF.berserkerRageMult(stFor('berserker',1,{playerHp:0})) - 1.5) < 1e-9, 'Berserker Rage = x1.5 near death');
     eq(FF.berserkerRecklessMult(stFor('berserker',40)), 1.25, 'Berserker Reckless +25% dealt');
     ok(Math.abs(FF.berserkerLifestealPct(stFor('berserker',20)) - 0.08) < 1e-9, 'Berserker Bloodthirst 8%');
-    // Frostwarden Frostbite +25%; chill chance rises Lv20->Lv60; Absolute Zero stacks vs chilled.
-    eq(FF.frostwardenDmgMult(stFor('frostwarden',1)), 1.25, 'Frostwarden Frostbite +25%');
-    ok(Math.abs(FF.frostwardenChillChance(stFor('frostwarden',20)) - 0.15) < 1e-9, 'Chilling Touch 15% at Lv20');
-    ok(Math.abs(FF.frostwardenChillChance(stFor('frostwarden',60)) - 0.30) < 1e-9, 'Deep Freeze 30% at Lv60');
-    var chilled = stFor('frostwarden',80); chilled.activity.enemyChillUntil = FF.now ? FF.now()+4000 : Date.now()+4000; chilled.activity.enemyChillPct = 0.5;
-    ok(FF.enemyChilled(chilled) && Math.abs(FF.frostwardenDmgMult(chilled) - 1.75) < 1e-6, 'Absolute Zero: +40% vs Chilled stacks on Frostbite (x1.75)');
+    // Frostwarden rework: Permafrost stacks Chill (10% enemy slow each, cap 5/50%); Time Dilation quickens
+    // you by half the slow (cap 30%); Rime Resonance grants +25% damage vs a Chilled foe.
+    var fw = stFor('frostwarden',80);
+    FF.frostwardenApplyChill(fw.activity); FF.frostwardenApplyChill(fw.activity); FF.frostwardenApplyChill(fw.activity);
+    eq(FF.enemyChillStacks(fw), 3, 'Permafrost: 3 hits -> 3 Chill stacks');
+    ok(Math.abs(FF.enemyChillSlowMult(fw) - 0.30) < 1e-9, 'Chill: 3 stacks -> 30% enemy slow');
+    FF.frostwardenApplyChill(fw.activity); FF.frostwardenApplyChill(fw.activity); FF.frostwardenApplyChill(fw.activity);
+    eq(FF.enemyChillStacks(fw), 5, 'Chill stacks cap at 5');
+    ok(Math.abs(FF.enemyChillSlowMult(fw) - 0.50) < 1e-9, 'Chill slow caps at 50%');
+    ok(Math.abs(FF.frostwardenTimeDilation(fw) - 0.25) < 1e-9, 'Time Dilation: 25% haste at 50% Chill');
+    eq(FF.frostwardenTimeDilation(stFor('frostwarden',1)), 0, 'Time Dilation inactive below Lv20');
+    ok(Math.abs(FF.frostwardenDmgMult(fw) - 1.25) < 1e-9, 'Rime Resonance: +25% damage vs a Chilled foe at Lv80');
+    eq(FF.frostwardenDmgMult(stFor('frostwarden',80)), 1, 'Rime Resonance neutral vs an unchilled foe');
+    eq(FF.frostwardenDmgMult(stFor('frostwarden',40)), 1, 'no +25% below Lv80');
     // Sentinel Bracing +25% armor, Immovable -30% incoming.
     eq(FF.sentinelArmorMult(stFor('sentinel',20)), 1.25, 'Sentinel Bracing +25% Armor');
     eq(FF.sentinelIncomingMult(stFor('sentinel',60)), 0.70, 'Sentinel Immovable -30% incoming');
@@ -1020,7 +1028,7 @@
     // No class active -> every perk multiplier is neutral.
     var none = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat'}, playerHp:1 };
     eq(FF.berserkerRageMult(none), 1, 'no class -> Rage neutral');
-    eq(FF.frostwardenDmgMult(none), 1, 'no class -> Frostbite neutral');
+    eq(FF.frostwardenDmgMult(none), 1, 'no class -> Frostwarden damage neutral');
     eq(FF.sentinelIncomingMult(none), 1, 'no class -> Immovable neutral');
     eq(FF.enemyChillSlowMult(none), 0, 'no chill -> no enemy slow');
   });

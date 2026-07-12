@@ -4170,7 +4170,7 @@
     },
     {
       id:'frostwarden', name:'Frostwarden', icon:elementIcon('water'),
-      blurb:'A glacial battle-mage who freezes foes in place and weathers any storm behind a wall of rime.',
+      blurb:'A glacial battle-mage who freezes foes solid with stacking rime, quickens as they slow, and shatters them apart.',
       reqText:'Water Wand + Medium Shield, Chain Helm & Chest, Cloth Gloves & Shoes',
       reqParts:[
         { icon:elementIcon('water'),                    label:'Water Wand',    met:function(st){ return st.equippedMainhand==='wandWater'; } },
@@ -4181,11 +4181,11 @@
         { icon:svgIcon('boots',CLASS_CLOTH_COLOR),      label:'Cloth Shoes',   met:function(st){ return clothPieceEquipped(st,'boots'); } }
       ],
       passives:[
-        { level:1,  name:'Frostbite',      desc:'+25% Water damage.' },
-        { level:20, name:'Chilling Touch', desc:'Your hits have a 15% chance to Chill the enemy, slowing its action bar 30% for 4s.' },
-        { level:40, name:'Rime Guard',     desc:'+40% Water resistance (incoming Water damage reduced 40%) and +10% Block.' },
-        { level:60, name:'Deep Freeze',    desc:'Chilling Touch now triggers 30% of the time and slows 50%.' },
-        { level:80, name:'Absolute Zero',  desc:'You deal +40% damage to Chilled enemies.' }
+        { level:1,  name:'Permafrost',     desc:'Every hit Chills the enemy, stacking up to 5. Each stack slows its action bar 10% (up to 50%) for 4s.' },
+        { level:20, name:'Time Dilation',  desc:'While the enemy is Chilled, your own action bar quickens by half of its current slow — up to +30% attack speed.' },
+        { level:40, name:'Shatter',        desc:'Striking a Chilled enemy has a 25% chance to detonate the Chill for burst Water damage (20% of the hit per stack), consuming it.' },
+        { level:60, name:'Frostbite',      desc:'Your hits stack a Water damage-over-time (up to 5). Each stack deals 4% of your combat power per second, refreshed for 4s.' },
+        { level:80, name:'Rime Resonance', desc:'Your Rime familiar casts 30% faster and its spells also Chill — and you deal +25% damage to Chilled enemies.' }
       ]
     },
     {
@@ -4419,7 +4419,6 @@
   function classBlockBonus(st){
     st = st || state;
     if(activeClassId(st)==='herald' && classLevel(st,'herald') >= 1) return 0.15;       // Herald Lv 1: Bulwark
-    if(activeClassId(st)==='frostwarden' && classLevel(st,'frostwarden') >= 40) return frostwardenBlockBonus(st); // Rime Guard +10%
     if(activeClassId(st)==='pyromancer' && classLevel(st,'pyromancer') >= 60) return 0.15; // Pyromancer Lv 60: Ember Ward
     if(activeClassId(st)==='juggernaut' && classLevel(st,'juggernaut') >= 20) return 0.15;  // Juggernaut Lv 20: Bulwark
     return 0;
@@ -4504,6 +4503,7 @@
     }
     // Summoner Lv 40 (Desperate Summons): while you're below 25% Health, familiars cast twice as fast.
     if(summonerBonus(40) && state.playerHp < maxHp(state) * 0.25) ms *= 0.5;
+    if(frostwardenBonus(80)) ms *= FROST_RESONANCE_CAST_MULT; // Rime Resonance: your Rime familiar casts 30% faster
     return Math.max(2500, ms);
   }
   function awardClassXp(amount){ var id = activeClassId(state); if(id && amount > 0) addXp(id, amount); }
@@ -4522,6 +4522,7 @@
     if(id==='knight' && classLevel(st,'knight') >= 1) return 1 - 0.10 * Math.min(5, st.knightStacks || 0); // Momentum stacks
     if(id==='thunderfury' && classLevel(st,'thunderfury') >= 1) return 1 - 0.10 * Math.min(THUNDER_MAX_STACKS, st.thunderStacks || 0); // Chain Lightning crit stacks
     if(id==='berserker' && classLevel(st,'berserker') >= 60) return 1 - 0.30 * berserkerMissingFrac(st); // Undying Fury: up to -30% as Health falls
+    if(id==='frostwarden' && classLevel(st,'frostwarden') >= 20) return 1 - frostwardenTimeDilation(st); // Time Dilation: quicken with the enemy's Chill
     return 1;
   }
   // Quickdraw Lv 40: attacks ignore 10% of enemy defenses (modeled as +10% damage).
@@ -4600,14 +4601,30 @@
   function berserkerBonus(reqLevel, st){ return classBonusActive('berserker', reqLevel, st); }
   function sentinelBonus(reqLevel, st){ return classBonusActive('sentinel', reqLevel, st); }
   function spellbladeBonus(reqLevel, st){ return classBonusActive('spellblade', reqLevel, st); }
-  // --- Frostwarden --- Chill is an on-hit debuff that slows the enemy's action bar (tracked on the activity).
+  // --- Frostwarden --- Reworked ladder: Permafrost (Lv1) / Time Dilation (Lv20) / Shatter (Lv40) /
+  // Frostbite (Lv60) / Rime Resonance (Lv80). Chill is now a STACKING on-hit debuff on the activity
+  // (chillStacks + enemyChillUntil); each stack slows the enemy action bar, and several perks read it.
+  var FROST_CHILL_MAX_STACKS = 5;          // Permafrost: hits stack Chill up to this
+  var FROST_CHILL_SLOW_PER_STACK = 0.10;   // enemy action-bar slow per stack (max 50%)
+  var FROST_CHILL_MS = 4000;               // Chill duration, refreshed by each stacking hit
+  var FROST_TIME_DILATION_FRAC = 0.5;      // Time Dilation: your haste = this * the enemy's current Chill slow
+  var FROST_TIME_DILATION_CAP = 0.30;      // ... capped at +30% attack speed
+  var FROST_SHATTER_CHANCE = 0.25;         // Shatter: chance to detonate Chill when striking a Chilled foe
+  var FROST_SHATTER_PER_STACK = 0.20;      // ... bonus damage = hit * this * stacks consumed
+  var FROST_FROSTBITE_MAX = 5;             // Frostbite: stacking Water DoT cap
+  var FROST_FROSTBITE_PCT = 0.04;          // ... per-stack dps as a fraction of combat power (max 20%/s)
+  var FROST_FROSTBITE_MS = 4000;           // ... refresh window
+  var FROST_RESONANCE_CAST_MULT = 0.7;     // Rime Resonance: familiars cast 30% faster
+  var FROST_RESONANCE_DMG_MULT = 1.25;     // ... and you deal +25% to Chilled enemies
   function enemyChilled(st){ st = st || state; return !!(st.activity && st.activity.enemyChillUntil && st.activity.enemyChillUntil > Date.now()); }
-  function enemyChillSlowMult(st){ st = st || state; return enemyChilled(st) ? (st.activity.enemyChillPct || 0) : 0; } // added into the enemy action-bar interval
-  function frostwardenChillChance(st){ if(frostwardenBonus(60, st)) return 0.30; if(frostwardenBonus(20, st)) return 0.15; return 0; } // Lv20 15% -> Lv60 30%
-  function frostwardenChillSlow(st){ return frostwardenBonus(60, st) ? 0.50 : 0.30; }                              // Lv20 30% -> Lv60 50%
-  function frostwardenDmgMult(st){ st = st || state; var m = 1; if(frostwardenBonus(1, st)) m *= 1.25; if(frostwardenBonus(80, st) && enemyChilled(st)) m *= 1.40; return m; } // Lv1 Frostbite, Lv80 Absolute Zero
-  function frostwardenBlockBonus(st){ return frostwardenBonus(40, st) ? 0.10 : 0; }                                // Lv40 Rime Guard +10% Block
-  function frostwardenWaterResistMult(monster, st){ return (frostwardenBonus(40, st) && monster && monster.element==='water') ? 0.6 : 1; } // Lv40 -40% Water
+  function enemyChillStacks(st){ st = st || state; return enemyChilled(st) ? (st.activity.chillStacks || 0) : 0; }
+  function enemyChillSlowMult(st){ return Math.min(FROST_CHILL_MAX_STACKS*FROST_CHILL_SLOW_PER_STACK, enemyChillStacks(st) * FROST_CHILL_SLOW_PER_STACK); } // added into the enemy action-bar interval
+  // Permafrost (Lv1): stack one Chill on the activity, refreshing its duration; returns the new stack count.
+  function frostwardenApplyChill(act){ if(!act) return 0; if((act.enemyChillUntil||0) <= Date.now()) act.chillStacks = 0; act.chillStacks = Math.min(FROST_CHILL_MAX_STACKS, (act.chillStacks||0) + 1); act.enemyChillUntil = Date.now() + FROST_CHILL_MS; return act.chillStacks; }
+  // Time Dilation (Lv20): your action bar quickens by a fraction of the enemy's current Chill slow.
+  function frostwardenTimeDilation(st){ st = st || state; return frostwardenBonus(20, st) ? Math.min(FROST_TIME_DILATION_CAP, enemyChillSlowMult(st) * FROST_TIME_DILATION_FRAC) : 0; }
+  // Rime Resonance (Lv80): you deal +25% damage to a Chilled foe. (Reuses the old frostwardenDmgMult call site.)
+  function frostwardenDmgMult(st){ st = st || state; return (frostwardenBonus(80, st) && enemyChilled(st)) ? FROST_RESONANCE_DMG_MULT : 1; }
   // --- Plaguebearer --- Lv20 Contagion: +15% damage to a poisoned enemy. (Lv1/40/60/80 live in the poison paths.)
   function plaguebearerContagionMult(st){ st = st || state; return (plaguebearerBonus(20, st) && st.activity && (st.activity.potionPoisonUntil||0) > Date.now()) ? 1.15 : 1; }
   // --- Berserker --- rage scales with missing Health; Reckless trades offense for defense; Last Stand is a per-fight save.
@@ -5369,6 +5386,7 @@
           spawnFloatingText('Familiar Critical!', 'ft-rare');
         }
         applyChipDamage(dmg); // floors at 1 unless you wield a Staff (then summons can land the kill)
+        if(frostwardenBonus(80)) frostwardenApplyChill(cact); // Rime Resonance: familiar frost spells also Chill
         spawnFloatingText('-'+dmg+' ('+spell.name+')', 'ft-rare');
         if(dmg > 0){ addXp(STAVES_SKILL_ID, dmg); awardClassXp(dmg); awardElementXp(spell.element, dmg); } // Staves proficiency + active Class + Elemental Attunement train on familiar damage
         if(spell.type==='siphon'){
@@ -9285,6 +9303,14 @@
     act.monsterHp = Math.max(1, act.monsterHp - dmg);
     if(reaverBonus(60)){ var heal = Math.min(Math.round(dmg * 0.08), maxHp(state) - state.playerHp); if(heal > 0) state.playerHp += heal; } // Bloodletting
   }
+  // Frostwarden Frostbite (Lv60): a stacking Water DoT on its own channel; floors the enemy at 1 HP so a
+  // shatter/hit lands the kill. Mirrors the Bleed tick.
+  function applyFrostwardenFrostbiteTick(dtMs){
+    var act = state.activity;
+    if(!act || act.type!=='combat' || (act.frostbiteUntil||0) <= Date.now()) return;
+    var dps = act.frostbiteDps || 0; if(dps <= 0) return;
+    act.monsterHp = Math.max(1, act.monsterHp - dps * dtMs / 1000);
+  }
   function playerAttackTick(isBonus, attempt, isOffhand){
     attempt = attempt || 1; // Quickdraw Rapid Fire re-enters this on a miss (up to 3 attempts)
     var act = state.activity;
@@ -9430,10 +9456,27 @@
           state.thunderStacks = 0;
         }
       }
-      // Frostwarden (Chilling Touch / Deep Freeze): a hit has a chance to Chill -- slow the enemy action bar for 4s.
-      if(frostwardenChillChance() > 0 && Math.random() < frostwardenChillChance()){
-        act.enemyChillUntil = Date.now() + 4000; act.enemyChillPct = frostwardenChillSlow();
-        spawnFloatingText('Chilled!', 'ft-rare');
+      // Frostwarden Permafrost (Lv1): every landed hit stacks Chill, slowing the enemy's action bar.
+      if(frostwardenBonus(1)){
+        var _cs = frostwardenApplyChill(act);
+        spawnFloatingText('Chill x'+_cs, 'ft-bonus');
+      }
+      // Frostwarden Frostbite (Lv60): each hit stacks a Water damage-over-time (refreshes for 4s).
+      if(frostwardenBonus(60)){
+        if((act.frostbiteUntil||0) <= Date.now()) act.frostbiteStacks = 0;
+        act.frostbiteStacks = Math.min(FROST_FROSTBITE_MAX, (act.frostbiteStacks||0) + 1);
+        act.frostbiteDps = act.frostbiteStacks * combatLevelEquivalent(state) * FROST_FROSTBITE_PCT;
+        act.frostbiteUntil = Date.now() + FROST_FROSTBITE_MS;
+        spawnFloatingText('Frostbite x'+act.frostbiteStacks, 'ft-bonus');
+      }
+      // Frostwarden Shatter (Lv40): striking a Chilled foe can detonate the Chill for burst Water damage.
+      if(frostwardenBonus(40) && enemyChilled(state) && Math.random() < FROST_SHATTER_CHANCE){
+        var _shDmg = Math.round(dmgToMonster * FROST_SHATTER_PER_STACK * (act.chillStacks||0));
+        if(_shDmg > 0){
+          act.monsterHp -= _shDmg;
+          act.chillStacks = 0; act.enemyChillUntil = 0; // the Chill is consumed by the blast
+          spawnCombatFloat('❄ Shatter -'+fmt(_shDmg), 'ft-crit', true);
+        }
       }
       // Plaguebearer (Virulence): 20% chance a hit poisons even with no Coating charges (never weakens an active one).
       if(plaguebearerBonus(60) && Math.random() < 0.20){
@@ -9512,6 +9555,7 @@
     act.monsterHp = monster.hp;
     act.monsterTickAccum = 0;
     act.bleedStacks = 0; act.bleedDps = 0; act.bleedUntil = 0; // a fresh foe starts unbled (Reaver Rend doesn't carry over)
+    act.chillStacks = 0; act.enemyChillUntil = 0; act.frostbiteStacks = 0; act.frostbiteDps = 0; act.frostbiteUntil = 0; // Frostwarden Chill/Frostbite don't carry between foes
     // Duelist: each new foe is a fresh duel -- reset the ramp clock, the once-per-fight Disengage, and the stacks.
     act.duelStartedAt = Date.now(); act.disengageUsed = false; act.guardianBondUsed = false;
     state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0;
@@ -9553,7 +9597,7 @@
     // The hit lands its physical type AND the enemy's element together: the element is amplified by
     // the player's armor weakness to it (leather->fire, chain->earth, plate->water).
     var elementMult = incomingElementMult(state, monster);
-    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster) * frostwardenWaterResistMult(monster) * templarIncomingDmgMult() * lumenIncomingMult(state) * sentinelIncomingMult(state) * juggernautIncomingMult(state) * berserkerRecklessTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getWardResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring/amulet flat resistance
+    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster) * templarIncomingDmgMult() * lumenIncomingMult(state) * sentinelIncomingMult(state) * juggernautIncomingMult(state) * berserkerRecklessTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getWardResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring/amulet flat resistance
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
     var blockChance = playerBlockChance(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
@@ -10098,6 +10142,7 @@
           var _pd = getFamiliarPoisonDps(); if(_pd>0) applyChipDamage(_pd*_chunk/1000);
           applyPotionPoisonTick(_chunk);
           applyReaverBleedTick(_chunk);
+          applyFrostwardenFrostbiteTick(_chunk);
           applyReaperWitherTick(_chunk);
           var _rh = famRegenHps(); if(_rh>0 && state.playerHp>0) state.playerHp = Math.min(maxHp(state), state.playerHp + _rh*_chunk/1000);
           // Each active companion casts one spell every 10s, cycling its list (same cadence as live).
@@ -20734,6 +20779,7 @@
         // Toxin/Coating poison: ticks the enemy for its remaining duration (never the finishing blow).
         applyPotionPoisonTick(dt);
         applyReaverBleedTick(dt);
+        applyFrostwardenFrostbiteTick(dt);
         applyReaperWitherTick(dt);
         // Regen: familiar heal-over-time restores player HP while the buff is up.
         var regenHps = famRegenHps();
@@ -21029,7 +21075,7 @@
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, executionerLifestealPct:executionerLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, executionerExecuteThreshold:executionerExecuteThreshold, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick,
-      frostwardenDmgMult:frostwardenDmgMult, frostwardenChillChance:frostwardenChillChance, frostwardenBlockBonus:frostwardenBlockBonus, enemyChilled:enemyChilled, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
+      frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem,
