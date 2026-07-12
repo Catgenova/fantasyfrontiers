@@ -12445,11 +12445,13 @@
     html += '</div></div>';
     return html;
   }
-  // Player avatar for the combat arena: the active Class emblem if one is equipped, else a hero glyph.
+  // Hand-crafted hero portraits, one per Class (keyed by class id) plus a 'none' adventurer for when no
+  // class is active. Same circular-framed style as the enemy portraits. Authored below.
+  var CLASS_PORTRAITS = {};
+  // Player avatar for the combat arena: the active Class's hero portrait, else the no-class adventurer.
   function playerPortrait(){
     var cid = activeClassId(state);
-    if(cid && CLASS_DEFS_BY_ID[cid]) return CLASS_DEFS_BY_ID[cid].icon;
-    return svgIcon('person','#5a6a8a');
+    return (cid && CLASS_PORTRAITS[cid]) || CLASS_PORTRAITS.none || svgIcon('person','#5a6a8a');
   }
   // Hand-crafted enemy portraits, keyed by monster name (authored per category). Any enemy without a
   // bespoke portrait yet falls back to its category icon, so the screen never breaks mid-rollout.
@@ -12963,6 +12965,135 @@
       '<path d="M30 40 Q30 22 48 22 Q66 22 66 40 L66 68 Q48 80 30 68 Z" fill="#e8cf5a" stroke="'+K+'" stroke-width="2.5"/>'+
       visorFace('#3fd6c8')+'<path d="M30 40 Q48 33 66 40" fill="none" stroke="#b09828" stroke-width="2"/>'+
       '<circle cx="48" cy="62" r="1.8" fill="#c8302a"/><path d="M46 30 h4 v12 h-4 Z" fill="#b09828"/>');
+  })();
+  // ===== CLASS HERO PORTRAITS (represent the player as each Class) =====
+  (function(){
+    function P(bg, inner){ return '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="47" fill="'+bg+'" stroke="#141210" stroke-width="2.5"/>'+inner+'</svg>'; }
+    var K = '#141210';
+    function sh(c){ return '<path d="M14 94 Q14 72 34 67 L37 60 L59 60 L62 67 Q82 72 82 94 Z" fill="'+c+'" stroke="'+K+'" stroke-width="2.5"/>'; }
+    function head(skin){ return '<ellipse cx="48" cy="45" rx="15" ry="17" fill="'+(skin||'#c79b74')+'" stroke="'+K+'" stroke-width="2"/>'; }
+    function eyes(c){ return '<circle cx="42" cy="45" r="2.2" fill="'+(c||K)+'"/><circle cx="54" cy="45" r="2.2" fill="'+(c||K)+'"/>'; }
+    function gEyes(c){ return '<circle cx="42" cy="45" r="3" fill="'+c+'"/><circle cx="54" cy="45" r="3" fill="'+c+'"/><circle cx="41" cy="44" r="1" fill="#fff"/><circle cx="53" cy="44" r="1" fill="#fff"/>'; }
+    function hood(c, cd){ return '<path d="M26 50 Q24 22 48 22 Q72 22 70 50 Q70 40 60 36 Q48 30 36 36 Q26 40 26 50 Z" fill="'+c+'" stroke="'+K+'" stroke-width="2.5"/>'+(cd?'<path d="M30 44 Q48 36 66 44" fill="none" stroke="'+cd+'" stroke-width="1.6"/>':''); }
+    function mouth(){ return '<path d="M44 55 q4 2 8 0" fill="none" stroke="'+K+'" stroke-width="1.5" stroke-linecap="round"/>'; }
+    // No class: a plain adventurer in leathers.
+    CLASS_PORTRAITS.none = P('#5b5340', sh('#6a5236')+
+      '<path d="M32 40 Q30 26 48 26 Q66 26 64 40 L60 38 Q48 32 36 38 Z" fill="#4a3a2a" stroke="'+K+'" stroke-width="2"/>'+
+      head('#c79b74')+'<path d="M34 40 h28" stroke="#7a2a2a" stroke-width="2.5"/>'+eyes()+mouth());
+    // Summoner: cloth hood + a floating familiar wisp.
+    CLASS_PORTRAITS.summoner = P('#2c2442', sh('#4a3a68')+hood('#5a4586','#8a6fc0')+
+      '<path d="M34 46 Q40 40 46 46 M50 46 Q56 40 62 46" fill="none" stroke="#0f0a1a" stroke-width="1.6"/>'+gEyes('#b98af0')+
+      '<circle cx="74" cy="40" r="6" fill="#c9a6f4"/><circle cx="74" cy="40" r="9" fill="#c9a6f4" opacity="0.35"/><circle cx="72" cy="38" r="1.6" fill="#fff"/>');
+    // Duelist: fencer with a plumed hat and rapier behind.
+    CLASS_PORTRAITS.duelist = P('#4a1824', sh('#8a2f3c')+
+      '<path d="M72 20 Q84 18 86 8" fill="none" stroke="#c8302a" stroke-width="3" stroke-linecap="round"/>'+
+      '<path d="M18 78 L82 30" stroke="#cdd3db" stroke-width="2.5" stroke-linecap="round"/><path d="M80 30 l6 -3 -2 6 Z" fill="#e0b84a"/>'+
+      head('#caa079')+'<path d="M28 34 Q48 22 68 34 L66 40 Q48 32 30 40 Z" fill="#3a1a20" stroke="'+K+'" stroke-width="2"/>'+
+      '<path d="M34 45 h28" stroke="#1a1015" stroke-width="4"/>'+eyes('#e8d8c8')+
+      '<path d="M42 45 h5 M53 45 h5" stroke="#fff" stroke-width="1" opacity="0.5"/>');
+    // Reaper: bare pale head + hooded cloak + scythe arc.
+    CLASS_PORTRAITS.reaper = P('#26262f', sh('#33333f')+
+      '<path d="M16 84 Q6 50 30 34" fill="none" stroke="#8a8f98" stroke-width="3"/><path d="M30 34 Q46 30 40 46" fill="none" stroke="#cdd3db" stroke-width="3.5" stroke-linecap="round"/>'+
+      '<path d="M28 48 Q26 24 48 24 Q70 24 68 48 Q60 40 48 40 Q36 40 28 48 Z" fill="#3f3f4c" stroke="'+K+'" stroke-width="2.5"/>'+
+      head('#d8d2c0')+gEyes('#6fe04a')+'<path d="M44 55 q4 -1 8 0" fill="none" stroke="'+K+'" stroke-width="1.4"/>');
+    // Herald: gold plate, crowned helm, shield emblem.
+    CLASS_PORTRAITS.herald = P('#4a3f1c', sh('#b09a3a')+
+      '<path d="M40 92 Q40 74 48 72 Q56 74 56 92 M42 78 h12" stroke="#8a7422" stroke-width="1.6" fill="none"/>'+
+      '<path d="M30 42 Q30 24 48 24 Q66 24 66 42 L66 60 Q48 68 30 60 Z" fill="#d8c25a" stroke="'+K+'" stroke-width="2.5"/>'+
+      '<path d="M30 26 L36 14 L42 24 L48 12 L54 24 L60 14 L66 26 Z" fill="#e0b84a" stroke="'+K+'" stroke-width="1.6" stroke-linejoin="round"/>'+
+      '<path d="M32 44 Q48 38 64 44 L62 50 L36 50 Z" fill="#15161c"/><rect x="38" y="45" width="22" height="4" rx="2" fill="#f4d23a"/><rect x="47" y="40" width="2.4" height="20" fill="#0c0d12"/>');
+    // Quickdraw: ranger hood + bow + arrow.
+    CLASS_PORTRAITS.quickdraw = P('#233519', sh('#3a5024')+
+      '<path d="M76 16 Q92 46 76 78" fill="none" stroke="#8a6a3a" stroke-width="3"/><path d="M76 16 L76 78" stroke="#cdd3db" stroke-width="1.5"/>'+
+      '<path d="M40 47 L86 47 M80 43 l6 4 -6 4" fill="none" stroke="#e0b84a" stroke-width="2" stroke-linecap="round"/>'+
+      hood('#4a6a2a','#6f9538')+eyes()+'<path d="M40 52 L56 52 Q52 58 48 58 Q44 58 40 52 Z" fill="#2a3a18"/>');
+    // Templar: radiant holy helm with halo + light.
+    CLASS_PORTRAITS.templar = P('#4a4520', sh('#c6b45a')+
+      '<circle cx="48" cy="26" r="14" fill="none" stroke="#f4e6a0" stroke-width="2.5"/>'+
+      '<g stroke="#f4e6a0" stroke-width="2" stroke-linecap="round"><path d="M20 40 L14 34 M76 40 L82 34 M22 60 L15 62 M74 60 L81 62"/></g>'+
+      '<path d="M30 42 Q30 26 48 26 Q66 26 66 42 L66 60 Q48 68 30 60 Z" fill="#e6d47a" stroke="'+K+'" stroke-width="2.5"/>'+
+      '<path d="M32 44 Q48 38 64 44 L62 50 L36 50 Z" fill="#2a2410"/><rect x="38" y="45" width="22" height="4" rx="2" fill="#fff6d0"/><rect x="47" y="40" width="2.4" height="20" fill="#3a3410"/>');
+    // Knight: steel plumed helm + sword.
+    CLASS_PORTRAITS.knight = P('#33363e', sh('#8a90a0')+
+      '<path d="M48 12 Q56 20 48 34 Q40 20 48 12 Z" fill="#c8302a" stroke="'+K+'" stroke-width="1.6"/>'+
+      '<path d="M20 82 L40 58" stroke="#cdd3db" stroke-width="3" stroke-linecap="round"/><path d="M36 54 l8 8" stroke="#8a7422" stroke-width="3"/>'+
+      '<path d="M30 40 Q30 24 48 24 Q66 24 66 40 L66 62 Q48 70 30 62 Z" fill="#a3a9b4" stroke="'+K+'" stroke-width="2.5"/>'+
+      '<path d="M32 42 Q48 36 64 42 L62 48 L36 48 Z" fill="#15161c"/><rect x="38" y="43" width="22" height="4" rx="2" fill="#e8c83a"/><rect x="47" y="38" width="2.4" height="22" fill="#0c0d12"/>');
+    // Assassin: hooded, lower-face mask, claws, glowing eyes.
+    CLASS_PORTRAITS.assassin = P('#2c1620', sh('#3a1e28')+
+      '<path d="M60 70 l18 14 M64 68 l18 12 M68 66 l16 12" stroke="#cdd3db" stroke-width="2" stroke-linecap="round"/>'+
+      hood('#5a2836')+'<path d="M32 52 Q48 46 64 52 L64 62 Q48 70 32 62 Z" fill="#2a1018"/>'+gEyes('#e85a6a')+
+      '<path d="M36 44 Q48 38 60 44" fill="none" stroke="#12080c" stroke-width="2"/>');
+    // Thunderfury: crackling storm warrior.
+    CLASS_PORTRAITS.thunderfury = P('#33310f', sh('#5a5620')+
+      '<path d="M18 26 L26 40 L20 42 M78 26 L70 40 L76 42" fill="none" stroke="#f4e23a" stroke-width="2.5" stroke-linecap="round"/>'+
+      '<path d="M30 40 Q30 24 48 24 Q66 24 66 40 L66 60 Q48 68 30 60 Z" fill="#8a8556" stroke="'+K+'" stroke-width="2.5"/>'+
+      '<path d="M46 26 L38 44 L46 44 L40 60 L58 40 L48 40 L54 26 Z" fill="#f4e23a" stroke="'+K+'" stroke-width="1.5" stroke-linejoin="round"/>'+
+      gEyes('#f4e23a'));
+    // Treasure Hunter: explorer with a brimmed hat + gem.
+    CLASS_PORTRAITS.treasureHunter = P('#3a2e14', sh('#7a5a30')+
+      '<path d="M22 34 Q48 20 74 34 Q74 40 66 40 L30 40 Q22 40 22 34 Z" fill="#6a4a24" stroke="'+K+'" stroke-width="2.5"/><path d="M34 34 Q48 26 62 34" fill="none" stroke="#c8a838" stroke-width="2"/>'+
+      head('#c79b74')+eyes()+mouth()+
+      '<path d="M70 62 l4 -6 4 6 -4 6 Z" fill="#3fd6c8" stroke="'+K+'" stroke-width="1.5" stroke-linejoin="round"/>');
+    // Frostwarden: icy hood + frost crystals + cyan glow.
+    CLASS_PORTRAITS.frostwarden = P('#22414f', sh('#3a6472')+hood('#5a94a6','#c8f0f8')+
+      '<path d="M24 30 L28 22 L30 32 M66 32 L68 22 L72 30" fill="none" stroke="#d6f0f8" stroke-width="2" stroke-linecap="round"/>'+
+      gEyes('#a6e8f4')+'<path d="M42 55 h12 M44 58 l-2 6 M52 58 l2 6" fill="none" stroke="#d6f0f8" stroke-width="1.5" stroke-linecap="round"/>');
+    // Plaguebearer: plague-doctor beak mask.
+    CLASS_PORTRAITS.plaguebearer = P('#24341c', sh('#3a4a24')+hood('#4a5a2e')+
+      '<circle cx="42" cy="42" r="4.5" fill="#cfe0b8" stroke="'+K+'" stroke-width="1.5"/><circle cx="54" cy="42" r="4.5" fill="#cfe0b8" stroke="'+K+'" stroke-width="1.5"/><circle cx="42" cy="42" r="2" fill="#3a4a2a"/><circle cx="54" cy="42" r="2" fill="#3a4a2a"/>'+
+      '<path d="M44 48 Q48 50 52 48 L58 68 Q48 74 38 68 Z" fill="#8a9a5a" stroke="'+K+'" stroke-width="2" stroke-linejoin="round"/>'+
+      '<circle cx="48" cy="66" r="3" fill="#6fe04a" opacity="0.8"/>');
+    // Berserker: wild-haired warrior with war paint + axe.
+    CLASS_PORTRAITS.berserker = P('#4a1810', sh('#7a4a2a')+
+      '<path d="M24 44 Q16 20 28 20 Q30 34 36 40 M72 44 Q80 20 68 20 Q66 34 60 40 M40 34 L44 16 L48 32 L52 16 L56 34" fill="none" stroke="#3a2414" stroke-width="3.5" stroke-linecap="round"/>'+
+      '<path d="M14 66 L36 52" stroke="#8a8f98" stroke-width="3" stroke-linecap="round"/><path d="M12 62 Q6 66 14 72 L22 58 Z" fill="#cdd3db" stroke="'+K+'" stroke-width="2"/>'+
+      head('#c08a5a')+'<path d="M34 46 h11 M51 46 h11" stroke="#7a2020" stroke-width="3.5" stroke-linecap="round"/>'+gEyes('#f4d23a'));
+    // Sentinel: tower shield + kettle helm.
+    CLASS_PORTRAITS.sentinel = P('#2e3a44', sh('#4a5a68')+
+      '<rect x="60" y="52" width="26" height="40" rx="5" fill="#6a7a88" stroke="'+K+'" stroke-width="2.5"/><path d="M73 54 v36 M62 72 h22" stroke="#4a5a66" stroke-width="1.6"/>'+
+      '<path d="M28 46 Q28 30 48 28 Q68 30 68 46 Q68 50 62 50 L34 50 Q28 50 28 46 Z" fill="#8a97a4" stroke="'+K+'" stroke-width="2.5"/><path d="M26 46 Q48 42 70 46 L70 50 Q48 46 26 50 Z" fill="#6a7784" stroke="'+K+'" stroke-width="1.5"/>'+
+      '<path d="M36 50 Q48 46 60 50 L58 60 L38 60 Z" fill="#c79b74"/>'+eyes());
+    // Spellblade: mage-knight with a glowing rune blade.
+    CLASS_PORTRAITS.spellblade = P('#2a2050', sh('#453a72')+
+      '<path d="M20 82 L44 44" stroke="#8ab6f4" stroke-width="3.5" stroke-linecap="round"/><path d="M22 84 L46 46" stroke="#dceaff" stroke-width="1.2"/>'+
+      '<path d="M30 42 Q30 26 48 26 Q66 26 66 42 L66 60 Q48 66 30 60 Z" fill="#5a4f88" stroke="'+K+'" stroke-width="2.5"/>'+
+      '<path d="M32 44 Q48 38 64 44 L62 50 L36 50 Z" fill="#15121c"/><rect x="38" y="45" width="22" height="4" rx="2" fill="#8ab6f4"/><rect x="47" y="40" width="2.4" height="20" fill="#0c0a12"/>');
+    // Pyromancer: fire mage with flame in hand.
+    CLASS_PORTRAITS.pyromancer = P('#3a1808', sh('#7a3a18')+hood('#a5501e','#f0902a')+gEyes('#f4b02a')+
+      '<path d="M72 58 Q78 66 74 72 Q80 68 78 62 Q84 70 76 80 Q70 84 64 80 Q58 70 66 62 Q64 68 70 72 Q66 64 72 58 Z" fill="#f0641e" stroke="'+K+'" stroke-width="1.5"/><path d="M72 66 Q76 72 72 78 Q68 72 72 66 Z" fill="#f4d23a"/>');
+    // Sharpshooter: precise archer with a focusing lens.
+    CLASS_PORTRAITS.sharpshooter = P('#263a1e', sh('#3a5a2a')+
+      '<path d="M78 18 Q92 46 78 74" fill="none" stroke="#8a6a3a" stroke-width="2.5"/>'+
+      '<path d="M22 40 Q48 26 74 40 Q74 44 66 44 L30 44 Q22 44 22 40 Z" fill="#3a5024" stroke="'+K+'" stroke-width="2.5"/><path d="M40 30 L48 22 L56 30 Z" fill="#5a7a34"/>'+
+      head('#c79b74')+'<circle cx="54" cy="47" r="6" fill="none" stroke="#e0b84a" stroke-width="2"/><line x1="60" y1="47" x2="66" y2="47" stroke="#e0b84a" stroke-width="2"/>'+
+      '<circle cx="42" cy="47" r="2.2" fill="'+K+'"/><circle cx="54" cy="47" r="2.2" fill="'+K+'"/>'+mouth());
+    // Juggernaut: massive full helm + heavy plate.
+    CLASS_PORTRAITS.juggernaut = P('#2f2f33', sh('#5a5a60')+
+      '<path d="M22 44 Q22 22 48 22 Q74 22 74 44 L74 64 Q48 74 22 64 Z" fill="#7a7a82" stroke="'+K+'" stroke-width="3"/>'+
+      '<path d="M20 42 Q48 36 76 42 L76 48 Q48 42 20 48 Z" fill="#5a5a62" stroke="'+K+'" stroke-width="2"/>'+
+      '<rect x="34" y="50" width="10" height="6" rx="2" fill="#c8302a"/><rect x="52" y="50" width="10" height="6" rx="2" fill="#c8302a"/>'+
+      '<path d="M30 64 h36" stroke="#3a3a40" stroke-width="2.5"/>');
+    // Voidshadow (nightblade): shadowy hood with void tendrils.
+    CLASS_PORTRAITS.nightblade = P('#1e1430', sh('#33244a')+
+      '<path d="M22 40 Q10 54 16 70 M74 40 Q86 54 80 70" fill="none" stroke="#7a4fb0" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>'+
+      hood('#3a2858')+'<path d="M32 50 Q48 44 64 50 L64 60 Q48 68 32 60 Z" fill="#140c22"/>'+gEyes('#b98af0'));
+    // Executioner: black hood + eye mask + big axe.
+    CLASS_PORTRAITS.executioner = P('#26202a', sh('#33313a')+
+      '<path d="M12 84 Q4 50 26 40" fill="none" stroke="#5a4a2a" stroke-width="3"/><path d="M26 40 Q46 34 40 54 Q30 54 26 40 Z" fill="#cdd3db" stroke="'+K+'" stroke-width="2.5"/>'+
+      hood('#2e2a36')+'<rect x="32" y="42" width="32" height="9" rx="2" fill="#12121a"/>'+
+      '<rect x="38" y="44" width="8" height="4" rx="1.5" fill="#c8302a"/><rect x="50" y="44" width="8" height="4" rx="1.5" fill="#c8302a"/>');
+    // Lumen Oracle: radiant seer with light rays + veil.
+    CLASS_PORTRAITS.lumen = P('#4a4626', sh('#c8bE6a')+
+      '<g stroke="#f6ecc0" stroke-width="2" stroke-linecap="round"><path d="M48 8 v10 M26 16 l6 8 M70 16 l-6 8 M14 34 l9 4 M82 34 l-9 4"/></g>'+
+      '<path d="M30 44 Q30 24 48 24 Q66 24 66 44 Q66 62 48 70 Q30 62 30 44 Z" fill="#e6dca0" stroke="'+K+'" stroke-width="2.5"/>'+
+      '<path d="M32 52 Q48 46 64 52" fill="none" stroke="#c8bc7a" stroke-width="1.6"/>'+gEyes('#fff6d0'));
+    // Reaver: savage berserker with a jagged blood-blade.
+    CLASS_PORTRAITS.reaver = P('#3a1414', sh('#6a3a2a')+
+      '<path d="M16 84 L40 50" stroke="#9aa0a8" stroke-width="4" stroke-linecap="round"/><path d="M18 82 l4 3 3 -4 4 3 3 -4 4 3 L40 50" fill="none" stroke="#c8302a" stroke-width="1.4"/>'+
+      '<path d="M28 42 Q28 24 48 24 Q68 24 68 42 Q68 40 58 36 Q48 30 38 36 Q28 40 28 42 Z" fill="#5a2a24" stroke="'+K+'" stroke-width="2.5"/>'+
+      head('#b5785a')+'<path d="M34 48 l10 -3 M52 45 l10 3" stroke="#7a1a1a" stroke-width="2.5" stroke-linecap="round"/>'+gEyes('#f0641e')+
+      '<path d="M42 56 q6 4 12 0 l-2 -3 -2 2 -2 -3 -2 2 -2 -3 Z" fill="#2a0a0a"/>');
   })();
   function renderCombatTab(){
     var lvl = combatLevelEquivalent(state);
@@ -20524,7 +20655,7 @@
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
-      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS,
+      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, executionerLifestealPct:executionerLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, executionerExecuteThreshold:executionerExecuteThreshold, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenChillChance:frostwardenChillChance, frostwardenBlockBonus:frostwardenBlockBonus, enemyChilled:enemyChilled, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
