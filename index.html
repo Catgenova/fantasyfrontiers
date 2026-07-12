@@ -4031,7 +4031,7 @@
     },
     {
       id:'herald', name:'Herald', icon:svgIcon('shield','#c8a83a'),
-      blurb:'An armoured champion who turns an unbreakable guard into both shield and sword.',
+      blurb:'An immovable champion whose guard only hardens as a fight drags on, turning every block into a counterblow.',
       reqText:'Mace + Large Shield, full Plate (Helm, Chest, Gloves, Boots)',
       reqParts:[
         { icon:svgIcon('hammer','#7a7a80'),          label:'Mace',         met:function(st){ return st.equippedMainhand==='mace'; } },
@@ -4042,10 +4042,10 @@
         { icon:svgIcon('boots',CLASS_PLATE_COLOR),   label:'Plate Boots',  met:function(st){ return platePieceEquipped(st,'boots'); } }
       ],
       passives:[
-        { level:1,  name:'Bulwark',       desc:'+15% chance to Block.' },
-        { level:20, name:'Shield Breaker',desc:'Your damage is increased by your Block chance (a 40% Block chance grants +40% damage).' },
-        { level:40, name:'Aegis',         desc:'Your Armor is increased by your Block chance (a 40% Block chance grants +40% Armor).' },
-        { level:60, name:'Tidewall',      desc:'+60% Water resistance (incoming Water-element damage is reduced 60%).' },
+        { level:1,  name:'Perfect Guard', desc:'Consecutive Blocks stack a rising guard — each Block reduces your incoming damage 5% more (up to 25%). Taking an unblocked hit resets the stacks.' },
+        { level:20, name:'Riposte Guard', desc:'When you Block, reflect 50% of the damage the block prevented straight back at the attacker.' },
+        { level:40, name:'Fortress',      desc:'The longer a fight lasts, the sturdier you stand: +4% Armor per second held, up to +40%, reset against each new foe.' },
+        { level:60, name:'Unbreakable',   desc:'Your Blocks are near-absolute — a blocked hit is reduced 75% instead of the usual 50%.' },
         { level:80, name:'Lasting Grace', desc:'Buffs granted by your familiars last twice as long.' }
       ]
     },
@@ -4418,7 +4418,6 @@
   function summonerBonus(reqLevel, st){ return classBonusActive('summoner', reqLevel, st); }
   function classBlockBonus(st){
     st = st || state;
-    if(activeClassId(st)==='herald' && classLevel(st,'herald') >= 1) return 0.15;       // Herald Lv 1: Bulwark
     if(activeClassId(st)==='juggernaut' && classLevel(st,'juggernaut') >= 20) return 0.15;  // Juggernaut Lv 20: Bulwark
     return 0;
   }
@@ -4482,12 +4481,26 @@
   function treasureHunterCritDmgBonus(st){ st = st || state; return treasureHunterBonus(40, st) ? 0.25 * treasureHunterCount(st, 3) : 0; }
   // Lv 60 (Tithe) is applied on kill (defeatMonster); Lv 80 (Golden Devotion) is applied in faithRarityBonus.
   function heraldBonus(reqLevel, st){ return classBonusActive('herald', reqLevel, st); }
-  // Herald Lv 20: outgoing damage +X% where X = your Block chance. Lv 40: Armor +X% likewise.
-  function heraldBlockDmgMult(st){ st = st || state; return heraldBonus(20, st) ? (1 + playerBlockChance(st)) : 1; }
-  function heraldBlockArmorMult(st){ st = st || state; return heraldBonus(40, st) ? (1 + playerBlockChance(st)) : 1; }
-  // Herald Lv 60: -60% incoming Water-element damage.
-  function heraldWaterResistMult(monster, st){ return (heraldBonus(60, st) && monster && monster.element==='water') ? 0.4 : 1; }
-  // Herald Lv 80: familiar-granted buffs last twice as long.
+  // --- Herald --- Reworked block-tank ladder: Perfect Guard (Lv1) / Riposte Guard (Lv20) /
+  // Fortress (Lv40) / Unbreakable (Lv60) / Lasting Grace (Lv80). Everything keys off Blocking.
+  var HERALD_GUARD_PER_STACK = 0.05;   // Perfect Guard: -5% incoming damage per stacked Block
+  var HERALD_GUARD_MAX_STACKS = 5;     // ... up to -25%
+  var HERALD_RIPOSTE_PCT = 0.5;        // Riposte Guard: reflect 50% of the damage a Block prevents
+  var HERALD_UNBREAKABLE_MULT = 0.25;  // Unbreakable: a blocked hit keeps only 25% (-75%) vs the usual 50%
+  var HERALD_FORTRESS_PER_SEC = 0.04;  // Fortress: +4% Armor per second held in the current fight
+  var HERALD_FORTRESS_CAP = 0.40;      // ... up to +40%
+  // Perfect Guard (Lv1): incoming-damage reduction that grows with the current Block streak
+  // (state.heraldGuardStacks -- stacked in monsterAttackTick on a Block, reset by an unblocked hit).
+  function heraldGuardMult(st){ st = st || state; return heraldBonus(1, st) ? (1 - Math.min(HERALD_GUARD_MAX_STACKS*HERALD_GUARD_PER_STACK, (st.heraldGuardStacks||0)*HERALD_GUARD_PER_STACK)) : 1; }
+  // Unbreakable (Lv60): the fraction of a blocked hit that still lands (0.25 = -75%), else the usual half.
+  function heraldBlockMult(st){ st = st || state; return heraldBonus(60, st) ? HERALD_UNBREAKABLE_MULT : 0.5; }
+  // Fortress (Lv40): Armor multiplier that ramps the longer the current fight lasts, reset against each foe.
+  function heraldFortressArmorMult(st){ st = st || state;
+    if(!heraldBonus(40, st)) return 1;
+    var a = st.activity; if(!a || a.type!=='combat' || !a.duelStartedAt) return 1;
+    return 1 + Math.min(HERALD_FORTRESS_CAP, Math.max(0, (Date.now() - a.duelStartedAt)/1000) * HERALD_FORTRESS_PER_SEC);
+  }
+  // Lasting Grace (Lv80): familiar-granted buffs last twice as long.
   function familiarBuffDurationMult(st){ return heraldBonus(80, st) ? 2 : 1; }
   // Summoner Lv 40 shortens every familiar's cast cadence from 10s to 8s.
   function familiarCastIntervalMs(){
@@ -9405,7 +9418,7 @@
     if(forcedCrit) state.duelistGuaranteedCrits = Math.max(0, (state.duelistGuaranteedCrits || 0) - 1); // Disengage: consume a guaranteed crit on a landed hit
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
     var wandAttuneMult = isWandAttack ? elementDmgMult(state, weaponStyle.element) : 1; // Elemental Attunement boosts a wand's element damage
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * duelistDuelMult() * heraldBlockDmgMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, and the mainhand's Enhance base-stat scaling
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * duelistDuelMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, and the mainhand's Enhance base-stat scaling
     dmgToMonster += Math.round(enchTot.flatDamage||0); // + equipped-item Flat Damage enchants
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
@@ -9595,6 +9608,7 @@
     act.bleedStacks = 0; act.bleedDps = 0; act.bleedUntil = 0; // a fresh foe starts unbled (Reaver Rend doesn't carry over)
     act.chillStacks = 0; act.enemyChillUntil = 0; act.frostbiteStacks = 0; act.frostbiteDps = 0; act.frostbiteUntil = 0; // Frostwarden Chill/Frostbite don't carry between foes
     act.burnStacks = 0; act.burnUntil = 0; act.burnDps = 0; // Pyromancer Burn doesn't carry between foes
+    state.heraldGuardStacks = 0; // Herald Perfect Guard streak starts fresh against each foe
     // Duelist: each new foe is a fresh duel -- reset the ramp clock, the once-per-fight Disengage, and the stacks.
     act.duelStartedAt = Date.now(); act.disengageUsed = false; act.guardianBondUsed = false;
     state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0;
@@ -9626,7 +9640,7 @@
       return;
     }
     var relicBonus = getEquippedRelicBonus(state);
-    var armorDefense = getTotalArmorDefense(state) * (1 + relicBonus) * getFamiliarArmorMult() * (1 + resolveArmorMult(state)) * heraldBlockArmorMult(state) * sentinelArmorMult(state) * juggernautArmorMult(state) * armorerTemperMult();
+    var armorDefense = getTotalArmorDefense(state) * (1 + relicBonus) * getFamiliarArmorMult() * (1 + resolveArmorMult(state)) * heraldFortressArmorMult(state) * sentinelArmorMult(state) * juggernautArmorMult(state) * armorerTemperMult();
     var offhandItem = getEquippedOffhandItem(state);
     var offhandStyle = getOffhandStyle(state.equippedOffhand);
     var offhandProficiency = (offhandStyle && state.equippedOffhand) ? (1 + Math.min(0.15, getLevel(state.xp[offhandStyle.id]||0)*0.005)) : 1;
@@ -9636,15 +9650,22 @@
     // The hit lands its physical type AND the enemy's element together: the element is amplified by
     // the player's armor weakness to it (leather->fire, chain->earth, plate->water).
     var elementMult = incomingElementMult(state, monster);
-    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldWaterResistMult(monster) * templarIncomingDmgMult() * lumenIncomingMult(state) * sentinelIncomingMult(state) * juggernautIncomingMult(state) * berserkerRecklessTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getWardResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring/amulet flat resistance
+    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldGuardMult(state) * templarIncomingDmgMult() * lumenIncomingMult(state) * sentinelIncomingMult(state) * juggernautIncomingMult(state) * berserkerRecklessTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getWardResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring/amulet flat resistance
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
     var blockChance = playerBlockChance(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
+    // Herald Perfect Guard (Lv1): a Block adds a stack of incoming-damage reduction; an unblocked hit resets it.
+    if(heraldBonus(1)) state.heraldGuardStacks = blocked ? Math.min(HERALD_GUARD_MAX_STACKS, (state.heraldGuardStacks||0) + 1) : 0;
     if(blocked){
       var _preBlock = rawDmg;
-      rawDmg = Math.round(rawDmg * 0.5);
-      addLog('You blocked the ' + monster.name + '\'s attack, halving the damage!', 'important');
+      rawDmg = Math.round(rawDmg * heraldBlockMult(state)); // Herald Unbreakable (Lv60): keep 25% (-75%) instead of 50%
+      addLog('You blocked the ' + monster.name + '\'s attack!', 'important');
       spawnCombatFloat('Blocked', 'ft-success', false);
+      // Herald Riposte Guard (Lv20): reflect a share of the damage the block just prevented.
+      if(heraldBonus(20)){
+        var _hr = Math.max(1, Math.round((_preBlock - rawDmg) * HERALD_RIPOSTE_PCT));
+        applyChipDamage(_hr); spawnCombatFloat('Riposte -'+fmt(_hr), 'ft-crit', true);
+      }
       // Sentinel Riposte Guard (Lv1: 50% weapon dmg; Lv80: 100% and can crit) counters on a block.
       if(sentinelBonus(1)){
         var _cw = getEquippedWeaponItem(state);
@@ -12190,9 +12211,9 @@
     var physDmgMult = isWandMain ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
     var mainProfId = isWandMain ? WANDS_SKILL_ID : (isScepterMain ? SCEPTERS_SKILL_ID : state.equippedMainhand);
     var weaponProficiency = state.equippedMainhand ? (1 + getLevel(state.xp[mainProfId]||0)/100) : 1;
-    var effMin = Math.max(1, Math.round(weapon.dmgMin * physDmgMult * weaponProficiency * heraldBlockDmgMult()));
-    var effMax = Math.max(effMin+1, Math.round(weapon.dmgMax * physDmgMult * weaponProficiency * heraldBlockDmgMult()));
-    var armor = getTotalArmorDefense(state) * heraldBlockArmorMult(state);
+    var effMin = Math.max(1, Math.round(weapon.dmgMin * physDmgMult * weaponProficiency));
+    var effMax = Math.max(effMin+1, Math.round(weapon.dmgMax * physDmgMult * weaponProficiency));
+    var armor = getTotalArmorDefense(state) * heraldFortressArmorMult(state);
     var weaponMix = weaponStyle.attackTypes || {blunt:1};
     var armorMix = getPlayerArmorTypeMix(state);
     // Equipped-item enchant totals (summed by stat), with the Spellblade amplifier applied exactly as
@@ -21142,7 +21163,7 @@
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, executionerLifestealPct:executionerLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, executionerExecuteThreshold:executionerExecuteThreshold, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick,
-      frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
+      frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem,

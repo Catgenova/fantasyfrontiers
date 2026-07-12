@@ -2113,7 +2113,7 @@
     ok(fam.spells.some(function(s){ return s.element==='dark'; }), 'reaper familiar damaging spells carry the dark element');
   });
 
-  // ---- Classes: Herald (plate + mace + large shield; block-into-offense tank) -----------
+  // ---- Classes: Herald (plate + mace + large shield; stacking-block retaliation tank) ----
   suite('classes: Herald', function(){
     ok(FF.CLASS_SKILL_IDS.indexOf('herald') !== -1, 'herald is a class skill id');
     var cd = FF.CLASS_DEFS_BY_ID.herald;
@@ -2143,23 +2143,27 @@
     var lvHi = FF.xpFloorForLevel(85); // ~Lv 85
     function leveled(){ var s = base(); s.xp.herald = lvHi; return s; }
 
-    // Lv 1 Bulwark: +15% block, folded into classBlockBonus and playerBlockChance.
-    eq(FF.classBlockBonus(full), 0.15, 'Herald Lv 1: +15% block');
+    // Bulwark retired: Herald no longer grants a flat Block-chance bonus (block now comes from plate/physiques).
     var off = base(); off.equippedOffhand=null;
-    eq(FF.classBlockBonus(off), 0, 'herald block bonus gated on the class being active');
-    ok(FF.playerBlockChance(full) - FF.playerBlockChance(off) >= 0.15 - 1e-9, 'the Herald +15% is folded into total block chance');
+    eq(FF.classBlockBonus(full), 0, 'Herald no longer adds a flat Block bonus (Bulwark retired)');
 
-    // Lv 20 Shield Breaker: outgoing damage x(1 + block chance).
-    eq(FF.heraldBlockDmgMult(full), 1, 'Lv 1 herald: no damage bonus yet');
-    near(FF.heraldBlockDmgMult(leveled()), 1 + FF.playerBlockChance(leveled()), 'Lv 20+: +damage equal to block chance');
-    // Lv 40 Aegis: armor x(1 + block chance).
-    eq(FF.heraldBlockArmorMult(full), 1, 'Lv 1 herald: no armor bonus yet');
-    near(FF.heraldBlockArmorMult(leveled()), 1 + FF.playerBlockChance(leveled()), 'Lv 40+: +armor equal to block chance');
+    // Lv 1 Perfect Guard: incoming-damage reduction that stacks with consecutive Blocks (up to -25%).
+    var pg = leveled(); pg.heraldGuardStacks = 3;
+    near(FF.heraldGuardMult(pg), 0.85, 'Perfect Guard: 3 Blocks -> -15% incoming');
+    pg.heraldGuardStacks = 99;
+    near(FF.heraldGuardMult(pg), 0.75, 'Perfect Guard caps at -25%');
+    eq(FF.heraldGuardMult(off), 1, 'no Herald -> no guard reduction');
 
-    // Lv 60 Tidewall: -60% incoming water damage.
-    eq(FF.heraldWaterResistMult({element:'water'}, leveled()), 0.4, 'water enemy => damage x0.4 (60% less)');
-    eq(FF.heraldWaterResistMult({element:'fire'}, leveled()), 1, 'non-water enemy => no reduction');
-    eq(FF.heraldWaterResistMult({element:'water'}, full), 1, 'Lv 1 herald: no water resist yet');
+    // Lv 60 Unbreakable: a blocked hit keeps 25% (-75%) instead of the usual 50%.
+    eq(FF.heraldBlockMult(leveled()), 0.25, 'Unbreakable: blocked hit kept at 25%');
+    eq(FF.heraldBlockMult(full), 0.5, 'below Lv60: standard 50% block');
+
+    // Lv 40 Fortress: Armor ramps +4%/s held in a fight (cap +40%), reset per foe.
+    var ft = leveled(); ft.activity = { type:'combat', duelStartedAt: Date.now() - 5000 };
+    ok(Math.abs(FF.heraldFortressArmorMult(ft) - 1.20) < 0.02, 'Fortress: +4%/s -> ~+20% at 5s');
+    ft.activity.duelStartedAt = Date.now() - 60000;
+    ok(Math.abs(FF.heraldFortressArmorMult(ft) - 1.40) < 1e-9, 'Fortress caps at +40%');
+    eq(FF.heraldFortressArmorMult(full), 1, 'Fortress inactive below Lv40');
 
     // Lv 80 Lasting Grace: familiar-granted buffs last twice as long.
     eq(FF.familiarBuffDurationMult(full), 1, 'Lv 1 herald: buff duration unchanged');
