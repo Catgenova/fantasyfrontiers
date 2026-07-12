@@ -642,12 +642,33 @@
   .action-btn:disabled{background:#b8a374;border-color:#a98f5e;color:#8a7850;cursor:not-allowed;}
   .lock-note{font-family:var(--font-mono);font-size:11px;color:var(--hp-bad);margin-top:6px;}
 
-  .arena{background:linear-gradient(160deg, #ffffff, var(--bg-card) 85%);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:0 2px 6px rgba(120,92,44,0.14);}
+  /* Combat arena: matches the action-bar card (solid tan + ivy frame, no gradient). Two columns --
+     player on the left, enemy on the right -- each with a portrait and its own bars. */
+  .arena{background:var(--bg-card);border-radius:4px;border:12px solid transparent;border-image:var(--ivy-frame) 30 round;padding:8px 12px 12px;margin-bottom:14px;box-shadow:0 4px 12px rgba(20,18,16,.24);}
+  .arena-cols{display:flex;gap:10px;align-items:stretch;}
+  .arena-side{flex:1 1 0;min-width:0;background:var(--bg-panel-raised);border:1px solid var(--border-light);border-radius:6px;padding:8px 9px;box-shadow:0 1px 2px rgba(120,92,44,0.18) inset;}
+  .arena-enemy{background:#e5cfa4;}
+  .arena-side-head{display:flex;align-items:center;gap:6px;font-family:var(--font-display);font-size:14px;color:var(--gold);margin-bottom:5px;flex-wrap:wrap;line-height:1.2;}
+  .arena-portrait{width:100%;display:flex;align-items:center;justify-content:center;padding:2px 0 6px;}
+  .arena-portrait svg,.arena-portrait .game-icon{width:104px;height:104px;filter:drop-shadow(0 2px 3px rgba(20,18,16,.3));}
   .arena-row{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px;margin-bottom:10px;}
   .arena-name{font-family:var(--font-display);font-size:15px;color:var(--gold);}
-  .hp-track{height:14px;border-radius:2px;background:var(--bg-deep);border:1px solid var(--border);overflow:hidden;box-shadow:0 1px 2px rgba(120,92,44,0.25) inset;}
+  .hp-track{height:13px;border-radius:2px;background:var(--bg-deep);border:1px solid var(--border);overflow:hidden;box-shadow:0 1px 2px rgba(120,92,44,0.25) inset;}
   .hp-fill{height:100%;transition:width .25s;}
   .hp-label{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin-top:3px;display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px;}
+  /* Familiars fight below the player: each shows its own cast bar and its spell rotation, with the
+     next-to-cast spell clearly highlighted. */
+  .arena-fams{margin-top:8px;border-top:1px dashed var(--border-light);padding-top:7px;}
+  .arena-fams-title{font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint);margin-bottom:5px;}
+  .arena-fam{display:flex;gap:7px;align-items:flex-start;margin-top:8px;}
+  .arena-fam-ico{flex:0 0 auto;width:30px;height:30px;border-radius:6px;background:var(--bg-deep);border:1px solid var(--border-light);display:flex;align-items:center;justify-content:center;}
+  .arena-fam-ico .game-icon{width:20px;height:20px;}
+  .arena-fam-body{flex:1 1 auto;min-width:0;}
+  .arena-fam-name{font-family:var(--font-mono);font-size:11px;color:var(--text);display:flex;justify-content:space-between;gap:6px;}
+  .arena-fam-rota{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;}
+  .rota-chip{font-family:var(--font-mono);font-size:9.5px;padding:2px 6px;border-radius:9px;background:var(--bg-deep);border:1px solid var(--border-light);color:var(--text-faint);display:inline-flex;align-items:center;gap:3px;white-space:nowrap;}
+  .rota-chip .game-icon{width:11px;height:11px;}
+  .rota-chip.next{background:var(--cat-menagerie);border-color:var(--green-deep);color:#f2f8e6;font-weight:600;box-shadow:0 0 0 2px var(--gold-bright);}
   .idle-note{font-family:var(--font-mono);font-size:12px;color:var(--text-faint);text-align:center;padding:6px 0;}
 
   .style-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
@@ -12424,6 +12445,16 @@
     html += '</div></div>';
     return html;
   }
+  // Player avatar for the combat arena: the active Class emblem if one is equipped, else a hero glyph.
+  function playerPortrait(){
+    var cid = activeClassId(state);
+    if(cid && CLASS_DEFS_BY_ID[cid]) return CLASS_DEFS_BY_ID[cid].icon;
+    return svgIcon('person','#5a6a8a');
+  }
+  // Hand-crafted enemy portraits, keyed by monster name (authored per category). Any enemy without a
+  // bespoke portrait yet falls back to its category icon, so the screen never breaks mid-rollout.
+  var MONSTER_PORTRAITS = {};
+  function monsterPortrait(m){ return (m && MONSTER_PORTRAITS[m.name]) || (m && m.icon) || ''; }
   function renderCombatTab(){
     var lvl = combatLevelEquivalent(state);
     var act = state.activity;
@@ -12441,46 +12472,62 @@
       var playerAtkIntervalMs = playerAttackIntervalMs();
       var playerAtkPct = clamp((act.tickAccum||0)/playerAtkIntervalMs*100,0,100);
       var matchup = weightedMatchupLabel(weaponStyle.attackTypes || {blunt:1}, m.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
-      html += '<div class="arena">';
-      html += '<div class="arena-row"><span class="arena-name">'+m.icon+' '+m.name+' <span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></span></div>';
-      html += '<div class="elem-line" style="margin:2px 0 4px">'+elementBadge(m)+incomingElementNote(m)+'</div>';
-      html += '<div class="hp-label" style="margin-bottom:4px"><span>Enemy Dodge '+monsterDodge(m)+'</span><span>Your hit chance '+Math.round(playerHitChance(m)*100)+'%</span></div>';
-      html += '<div class="hp-track"><div class="hp-fill" id="arenaMonsterFill" style="width:'+hpPct+'%;background:var(--hp-bad)"></div></div>';
-      html += '<div class="hp-label"><span>Monster HP</span><span id="arenaMonsterLabel">'+fmt(act.monsterHp)+' / '+m.hp+'</span></div>';
       var _stunned = enemyStunned(state);
-      html += '<div class="hp-track" style="height:8px;margin-top:6px"><div class="hp-fill" id="arenaMonsterAtkFill" style="width:'+monsterAtkPct+'%;background:'+(_stunned?'#e8d84a':'var(--gold)')+';transition:none"></div></div>';
-      html += '<div class="hp-label"><span id="arenaMonsterAtkLabel">'+(_stunned ? svgIcon('lightning','#e8d84a')+' Stunned!' : 'Monster Attack')+'</span><span>'+m.attackSpeed+'s</span></div>';
-      html += '<div style="height:12px"></div>';
-      html += '<div class="arena-row"><span class="arena-name">You</span></div>';
+      var _comps = activeCompanionList(state);
+      html += '<div class="arena">';
+      html += '<div class="arena-cols">';
+      // ---- LEFT: player + familiars ----
+      html += '<div class="arena-side arena-player">';
+      html += '<div class="arena-side-head">'+svgIcon('person','var(--gold)')+' You</div>';
+      html += '<div class="arena-portrait">'+playerPortrait()+'</div>';
       if(weaponStyle.noAttack){
-        html += '<div class="hp-label"><span style="color:var(--text-faint)">No attack &mdash; your familiars fight for you</span></div>';
+        html += '<div class="hp-label"><span style="color:var(--text-faint)">No attack &mdash; familiars fight for you</span></div>';
       } else {
         html += '<div class="hp-track" style="height:8px"><div class="hp-fill" id="arenaPlayerAtkFill" style="width:'+playerAtkPct+'%;background:var(--gold);transition:none"></div></div>';
-        html += '<div class="hp-label"><span>Your Attack</span><span>'+(Math.round(playerAtkIntervalMs/100)/10)+'s</span></div>';
+        html += '<div class="hp-label"><span>Attack</span><span>'+(Math.round(playerAtkIntervalMs/100)/10)+'s</span></div>';
         if(hasOffhandClaw(state)){
           var offAtkIntervalMs = offhandClawAttackIntervalMs();
           var offAtkPct = clamp((act.offhandTickAccum||0)/offAtkIntervalMs*100,0,100);
           html += '<div class="hp-track" style="height:8px;margin-top:6px"><div class="hp-fill" id="arenaOffhandAtkFill" style="width:'+offAtkPct+'%;background:#b0757a;transition:none"></div></div>';
-          html += '<div class="hp-label"><span>'+svgIcon('claw','#b0757a')+' Off-hand Attack</span><span>'+(Math.round(offAtkIntervalMs/100)/10)+'s</span></div>';
+          html += '<div class="hp-label"><span>'+svgIcon('claw','#b0757a')+' Off-hand</span><span>'+(Math.round(offAtkIntervalMs/100)/10)+'s</span></div>';
         }
       }
       html += '<div class="hp-track" style="margin-top:6px"><div class="hp-fill" id="arenaPlayerFill" style="width:'+pPct+'%;background:var(--hp-bad)"></div></div>';
-      html += '<div class="hp-label"><span>Your HP</span><span id="arenaPlayerLabel">'+fmt(state.playerHp)+' / '+maxHp(state)+'</span></div>';
-      var _comps = activeCompanionList(state);
+      html += '<div class="hp-label"><span>HP</span><span id="arenaPlayerLabel">'+fmt(state.playerHp)+' / '+maxHp(state)+'</span></div>';
       if(_comps.length){
-        html += '<div style="height:12px"></div>';
-        html += '<div class="arena-row"><span class="arena-name">Companions ('+_comps.length+'/'+activeCompanionSlots(state)+') &mdash; each casts every '+(familiarCastIntervalMs()/1000)+'s</span></div>';
+        html += '<div class="arena-fams">';
+        html += '<div class="arena-fams-title">Companions ('+_comps.length+'/'+activeCompanionSlots(state)+') &bull; cast every '+(familiarCastIntervalMs()/1000)+'s</div>';
         _comps.forEach(function(cid){
           var _comp = FAMILIAR_DATA[cid]; if(!_comp) return;
           var cc = (state.companionCast && state.companionCast[cid]) || {accum:0,index:0};
           var _castPct = clamp((cc.accum||0)/familiarCastIntervalMs()*100,0,100);
           var _spells = _comp.spells;
-          var _next = _spells[(cc.index||0) % _spells.length];
-          html += '<div class="hp-label" style="margin-top:6px"><span>'+_comp.icon+' '+escapeHtml(_comp.name)+'</span><span style="color:var(--text-faint)">&#9656; '+escapeHtml(_next.name)+'</span></div>';
-          html += '<div class="hp-track" style="height:6px"><div class="hp-fill" id="arenaCast-'+cid+'" style="width:'+_castPct+'%;background:var(--cat-menagerie);transition:none"></div></div>';
+          var _ni = (cc.index||0) % _spells.length;
+          html += '<div class="arena-fam">';
+          html += '<div class="arena-fam-ico">'+_comp.icon+'</div>';
+          html += '<div class="arena-fam-body">';
+          html += '<div class="arena-fam-name"><span>'+escapeHtml(_comp.name)+'</span></div>';
+          html += '<div class="hp-track" style="height:6px;margin-top:3px"><div class="hp-fill" id="arenaCast-'+cid+'" style="width:'+_castPct+'%;background:var(--cat-menagerie);transition:none"></div></div>';
+          html += '<div class="arena-fam-rota" id="arenaRota-'+cid+'">';
+          _spells.forEach(function(sp, i){ html += '<span class="rota-chip'+(i===_ni?' next':'')+'" id="arenaRota-'+cid+'-'+i+'">'+(i===_ni?'&#9656; ':'')+spellElementIcon(sp)+escapeHtml(sp.name)+'</span>'; });
+          html += '</div></div></div>';
         });
+        html += '</div>';
       }
-      html += '<button class="action-btn stop" data-action="stop" style="margin-top:12px">Retreat</button>';
+      html += '</div>'; // arena-player
+      // ---- RIGHT: enemy ----
+      html += '<div class="arena-side arena-enemy">';
+      html += '<div class="arena-side-head">'+escapeHtml(m.name)+' <span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
+      html += '<div class="arena-portrait">'+monsterPortrait(m)+'</div>';
+      html += '<div class="elem-line" style="margin:2px 0 5px">'+elementBadge(m)+incomingElementNote(m)+'</div>';
+      html += '<div class="hp-label" style="margin-bottom:4px"><span>Dodge '+monsterDodge(m)+'</span><span>Hit '+Math.round(playerHitChance(m)*100)+'%</span></div>';
+      html += '<div class="hp-track"><div class="hp-fill" id="arenaMonsterFill" style="width:'+hpPct+'%;background:var(--hp-bad)"></div></div>';
+      html += '<div class="hp-label"><span>Monster HP</span><span id="arenaMonsterLabel">'+fmt(act.monsterHp)+' / '+m.hp+'</span></div>';
+      html += '<div class="hp-track" style="height:8px;margin-top:6px"><div class="hp-fill" id="arenaMonsterAtkFill" style="width:'+monsterAtkPct+'%;background:'+(_stunned?'#e8d84a':'var(--gold)')+';transition:none"></div></div>';
+      html += '<div class="hp-label"><span id="arenaMonsterAtkLabel">'+(_stunned ? svgIcon('lightning','#e8d84a')+' Stunned!' : 'Monster Attack')+'</span><span>'+m.attackSpeed+'s</span></div>';
+      html += '</div>'; // arena-enemy
+      html += '</div>'; // arena-cols
+      html += '<button class="action-btn stop" data-action="stop" style="margin-top:10px">Retreat</button>';
       html += '</div>';
     } else if(state.playerHp <= 0){
       html += '<div class="idle-note">You are recovering. HP regenerates slowly, or eat food from the sidebar.</div>';
@@ -18838,8 +18885,22 @@
       var oaf = document.getElementById('arenaOffhandAtkFill');
       if(oaf){ oaf.style.width = clamp((state.activity.offhandTickAccum||0)/offhandClawAttackIntervalMs()*100,0,100)+'%'; }
       activeCompanionList(state).forEach(function(cid){
+        var cc = (state.companionCast && state.companionCast[cid]) || {accum:0, index:0};
         var faf = document.getElementById('arenaCast-'+cid);
-        if(faf){ var cc = (state.companionCast && state.companionCast[cid]) || {accum:0}; faf.style.width = clamp((cc.accum||0)/familiarCastIntervalMs()*100,0,100)+'%'; }
+        if(faf){ faf.style.width = clamp((cc.accum||0)/familiarCastIntervalMs()*100,0,100)+'%'; }
+        // Move the "next to cast" highlight along the rotation as the companion cycles its spells.
+        var comp = FAMILIAR_DATA[cid];
+        var rota = document.getElementById('arenaRota-'+cid);
+        if(comp && comp.spells && rota){
+          var ni = (cc.index||0) % comp.spells.length;
+          if(rota._ni !== ni){
+            rota._ni = ni;
+            for(var _ri=0; _ri<comp.spells.length; _ri++){
+              var ch = document.getElementById('arenaRota-'+cid+'-'+_ri);
+              if(ch){ var isN = _ri===ni; ch.classList.toggle('next', isN); ch.innerHTML = (isN?'▸ ':'')+spellElementIcon(comp.spells[_ri])+escapeHtml(comp.spells[_ri].name); }
+            }
+          }
+        }
       });
     }
 
