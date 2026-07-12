@@ -6956,11 +6956,11 @@
     {id:'blunt',  name:'Ring of Blunt',  icon:svgIcon('ring','#8a8a8a'), damageType:'blunt'},
     {id:'slash',  name:'Ring of Slash',  icon:svgIcon('ring','#c9a227'), damageType:'slashing'},
     {id:'pierce', name:'Ring of Pierce', icon:svgIcon('ring','#8a97a6'), damageType:'piercing'},
-    {id:'fire',   name:'Ring of Fire',   icon:svgIcon('ring',ELEMENT_META.fire.color),  kind:'elementDamage', element:'fire',  min:0.01, max:0.20},
-    {id:'water',  name:'Ring of Water',  icon:svgIcon('ring',ELEMENT_META.water.color), kind:'elementDamage', element:'water', min:0.01, max:0.20},
-    {id:'earth',  name:'Ring of Earth',  icon:svgIcon('ring',ELEMENT_META.earth.color), kind:'elementDamage', element:'earth', min:0.01, max:0.20},
-    {id:'light',  name:'Ring of Light',  icon:svgIcon('ring',ELEMENT_META.light.color), kind:'elementDamage', element:'light', min:0.01, max:0.20},
-    {id:'dark',   name:'Ring of Dark',   icon:svgIcon('ring',ELEMENT_META.dark.color),  kind:'elementDamage', element:'dark',  min:0.01, max:0.20},
+    {id:'fire',   name:'Ring of Fire',   icon:svgIcon('ring',ELEMENT_META.fire.color),  kind:'elementDamage', element:'fire',  min:0.05, max:0.50},
+    {id:'water',  name:'Ring of Water',  icon:svgIcon('ring',ELEMENT_META.water.color), kind:'elementDamage', element:'water', min:0.05, max:0.50},
+    {id:'earth',  name:'Ring of Earth',  icon:svgIcon('ring',ELEMENT_META.earth.color), kind:'elementDamage', element:'earth', min:0.05, max:0.50},
+    {id:'light',  name:'Ring of Light',  icon:svgIcon('ring',ELEMENT_META.light.color), kind:'elementDamage', element:'light', min:0.05, max:0.50},
+    {id:'dark',   name:'Ring of Dark',   icon:svgIcon('ring',ELEMENT_META.dark.color),  kind:'elementDamage', element:'dark',  min:0.05, max:0.50},
     {id:'precision', name:'Ring of Precision', icon:svgIcon('ring','#d8d8d8'), kind:'accuracy',   min:0.05, max:0.30},
     {id:'warding',   name:'Ring of Warding',   icon:svgIcon('ring','#4a9c8a'), kind:'resistance', min:0.01, max:0.20, retired:true}, // no longer craftable -- the Warding role moved to the Amulet of Warding; existing rings still work
     {id:'communion', name:'Ring of Communion', icon:svgIcon('ring','#7a5aa8'), kind:'familiar',   min:0.05, max:0.50} // +5% -> +50% familiar spell potency (Tier 0 -> Tier 20), 2x/4x/8x with rarity
@@ -6986,7 +6986,9 @@
       // Kind rings scale linearly across the tier ladder from min to max at Normal rarity.
       out.bonus = rt.min + (rt.max - rt.min) * (TIER_COUNT>1 ? tierIndex/(TIER_COUNT-1) : 0);
     } else {
-      out.dmgBonus = tierCappedBonus(0.02, 0.007, 0.16, tierIndex);
+      // Physical rings (Blunt/Slash/Pierce) now match the elemental/familiar curve: +5% at t0 -> +50% at
+      // t20 (Normal), then 2x/4x/8x with rarity. Applied to the fraction of your weapon that is that type.
+      out.dmgBonus = 0.05 + (0.50 - 0.05) * (TIER_COUNT>1 ? tierIndex/(TIER_COUNT-1) : 0);
     }
     return out;
   }
@@ -7006,7 +7008,7 @@
           if(rt.element) item.element = rt.element;
         } else {
           item.damageType = rt.damageType;
-          item.dmgBonus = data.dmgBonus * r.mult;
+          item.dmgBonus = data.dmgBonus * WAND_RARITY_DMG_MULT[rarityId]; // 2x/4x/8x with rarity, like the elemental rings
         }
         RING_ITEMS[id] = item;
       }
@@ -11891,7 +11893,7 @@
     html += renderRecipeGrid('jewelrycrafting', CRAFTING_SKILLS.jewelrycrafting.recipes);
 
     html += '<h3>Forge Rings</h3>';
-    html += '<div class="section-intro">Physical Rings (Blunt/Slash/Pierce) boost their matching damage type, scaled by how much of your weapon\'s damage is that type. Elemental Rings (Fire/Water/Earth/Light/Dark) add +1-20% damage of their element, a Precision Ring adds +5-30% Accuracy, and a Ring of Communion adds +5-50% familiar spell potency. Elemental/Precision/Communion rings scale their bonus 2x/4x/8x with rarity. (Flat damage resistance now comes from the Amulet of Warding below.) Sacrificing a Ring restores extra Faith.</div>';
+    html += '<div class="section-intro">Physical Rings (Blunt/Slash/Pierce) and Elemental Rings (Fire/Water/Earth/Light/Dark) add <b>+5% damage at Tier 0 rising to +50% at Tier 20</b> &mdash; physical rings scaled by how much of your weapon\'s damage is that type, elemental rings applied to their element. A Precision Ring adds +5-30% Accuracy, and a Ring of Communion adds +5-50% familiar spell potency. Every ring scales its bonus <b>2x/4x/8x with rarity</b> (so a Fantastic Tier-20 ring is +400%). (Flat damage resistance now comes from the Amulet of Warding below.) Sacrificing a Ring restores extra Faith.</div>';
     html += '<div class="card-grid">';
     RING_TYPES.forEach(function(rt){
       if(rt.retired) return; // retired ring types (e.g. Warding) stay usable if owned but are no longer craftable

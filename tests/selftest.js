@@ -930,6 +930,19 @@
     eq(ring5['ring_fire_t4_normal'], 1, 'ring now consumes its Normal previous tier');
     eq(am5['amulet_t4_normal'], 1, 'amulet now consumes its Normal previous tier');
     ok(FF.getRingTierData('fire', 0).inputs['ring_fire_t-1_normal'] === undefined, 'tier 0 ring has no previous-tier requirement');
+    // Damage rings (physical Blunt/Slash/Pierce + elemental) now do +5% at t0 -> +50% at t20 (Normal),
+    // scaled 2x/4x/8x by rarity -- matching the familiar/Communion curve.
+    near(FF.getRingTierData('blunt', 0).dmgBonus, 0.05, 'physical ring t0 = +5%');
+    near(FF.getRingTierData('blunt', 20).dmgBonus, 0.50, 'physical ring t20 = +50%');
+    near(FF.getRingTierData('fire', 0).bonus, 0.05, 'elemental ring t0 = +5%');
+    near(FF.getRingTierData('fire', 20).bonus, 0.50, 'elemental ring t20 = +50%');
+    var RS = FF.ALL_SELLABLE;
+    near(RS['ring_fire_t20_normal'].bonus, 0.50, 'fire ring t20 normal = 50%');
+    near(RS['ring_fire_t20_rare'].bonus, 1.00, 'fire ring t20 rare = 100% (x2)');
+    near(RS['ring_fire_t20_supreme'].bonus, 2.00, 'fire ring t20 supreme = 200% (x4)');
+    near(RS['ring_fire_t20_fantastic'].bonus, 4.00, 'fire ring t20 fantastic = 400% (x8)');
+    near(RS['ring_blunt_t0_normal'].dmgBonus, 0.05, 'blunt ring t0 normal = 5%');
+    near(RS['ring_blunt_t20_fantastic'].dmgBonus, 4.00, 'blunt ring t20 fantastic = 400% (x8)');
     ok(FF.getAmuletTierData('plain', 0).inputs['amulet_t-1_normal'] === undefined, 'tier 0 amulet has no previous-tier requirement');
     // The gem/twine part of the recipe is untouched (Setting is additive, not a replacement).
     ok(ring5['twine_t5'] === 3 && ring5['digging_t5'] == null, 'ring keeps its Twine and does not eat raw clay directly');
