@@ -4269,7 +4269,7 @@
     },
     {
       id:'pyromancer', name:'Pyromancer', icon:elementIcon('fire'),
-      blurb:'A robed incendiary who channels a fire wand into scorching, crit-heavy bursts, shielded only by a ward.',
+      blurb:'A robed incendiary who sets foes ablaze with stacking fire, detonating the burn with crits while shimmering heat-haze turns their flames into your speed.',
       reqText:'Fire Wand + Ward, Cloth Hood, Tunic, Gloves & Shoes',
       reqParts:[
         { icon:elementIcon('fire'),                    label:'Fire Wand',    met:function(st){ return st.equippedMainhand==='wandFire'; } },
@@ -4280,11 +4280,11 @@
         { icon:svgIcon('boots',CLASS_CLOTH_COLOR),     label:'Cloth Shoes',  met:function(st){ return clothPieceEquipped(st,'boots'); } }
       ],
       passives:[
-        { level:1,  name:'Kindle',        desc:'+30% damage.' },
-        { level:20, name:'Combustion',    desc:'+12% Critical Hit chance.' },
-        { level:40, name:'Conflagration', desc:'+75% Critical Hit damage.' },
-        { level:60, name:'Ember Ward',    desc:'+15% Block chance.' },
-        { level:80, name:'Meltdown',      desc:'+50% damage to enemies at or above half Health.' }
+        { level:1,  name:'Ignite',         desc:'Every hit stacks a fire damage-over-time (up to 5). Each stack deals 5% of your combat power per second, refreshed for 4s.' },
+        { level:20, name:'Combust',        desc:'A Critical Hit detonates all Burn stacks for burst fire damage — 25% of the hit per stack — consuming them.' },
+        { level:40, name:'Kindling Crits', desc:'A Critical Hit adds 2 Burn stacks, and your Critical Hit damage rises +8% for every Burn stack on the enemy.' },
+        { level:60, name:'Heat Haze',      desc:'The shimmering heat makes you harder to hit: +4% Dodge for each Burn stack on the enemy (up to +20%).' },
+        { level:80, name:'Fever Pitch',    desc:'You attack faster as the enemy burns: +5% attack speed per Burn stack (up to +30%).' }
       ]
     },
     {
@@ -4419,7 +4419,6 @@
   function classBlockBonus(st){
     st = st || state;
     if(activeClassId(st)==='herald' && classLevel(st,'herald') >= 1) return 0.15;       // Herald Lv 1: Bulwark
-    if(activeClassId(st)==='pyromancer' && classLevel(st,'pyromancer') >= 60) return 0.15; // Pyromancer Lv 60: Ember Ward
     if(activeClassId(st)==='juggernaut' && classLevel(st,'juggernaut') >= 20) return 0.15;  // Juggernaut Lv 20: Bulwark
     return 0;
   }
@@ -4436,7 +4435,7 @@
   // on top only at the moment of a monster attack, so it is NOT folded in here.
   function playerDodgeChance(st){
     st = st || state;
-    return getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + assassinDodgeBonus(st) + nightbladeDodgeBonus(st) + lumenDodgeBonus(st);
+    return getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + assassinDodgeBonus(st) + nightbladeDodgeBonus(st) + lumenDodgeBonus(st) + pyromancerHeatHazeDodge(st); // + Pyromancer Heat Haze (scales with the enemy's Burn)
   }
   // Assassin Lv 40: attacks ignore 20% of armor (modeled as +20% damage). Lv 80: outgoing damage +X% where X = Dodge chance.
   function assassinArmorPenMult(st){ return assassinBonus(40, st) ? 1.20 : 1; }
@@ -4523,6 +4522,7 @@
     if(id==='thunderfury' && classLevel(st,'thunderfury') >= 1) return 1 - 0.10 * Math.min(THUNDER_MAX_STACKS, st.thunderStacks || 0); // Chain Lightning crit stacks
     if(id==='berserker' && classLevel(st,'berserker') >= 60) return 1 - 0.30 * berserkerMissingFrac(st); // Undying Fury: up to -30% as Health falls
     if(id==='frostwarden' && classLevel(st,'frostwarden') >= 20) return 1 - frostwardenTimeDilation(st); // Time Dilation: quicken with the enemy's Chill
+    if(id==='pyromancer' && classLevel(st,'pyromancer') >= 80) return 1 - pyromancerFeverHaste(st); // Fever Pitch: quicken with the enemy's Burn
     return 1;
   }
   // Quickdraw Lv 40: attacks ignore 10% of enemy defenses (modeled as +10% damage).
@@ -4655,8 +4655,6 @@
   // Outgoing-damage multiplier from the five new classes (only one class is ever active, so factors don't cross-stack).
   function newClassDmgMult(monster, st){
     st = st || state; var m = 1;
-    if(pyromancerBonus(1, st)) m *= 1.30;                                    // Pyromancer Kindle
-    if(pyromancerBonus(80, st) && enemyHpFrac(monster, st) >= 0.5) m *= 1.50; // Pyromancer Meltdown
     if(sharpshooterBonus(20, st)) m *= 1.20;                                 // Sharpshooter Piercing Shot
     if(juggernautBonus(1, st)) m *= 1.30;                                    // Juggernaut Crushing Blows
     if(nightbladeBonus(20, st)) m *= 1.25;                                   // Nightblade Hex
@@ -4669,7 +4667,6 @@
   // Critical-hit-chance bonus from the new classes (added into the crit roll).
   function newClassCritChance(st){
     st = st || state; var c = 0;
-    if(pyromancerBonus(20, st)) c += 0.12;   // Pyromancer Combustion
     if(sharpshooterBonus(60, st)) c += 0.12; // Sharpshooter Deadeye
     if(nightbladeBonus(60, st)) c += 0.12;   // Nightblade Dark Pact
     if(executionerBonus(20, st)) c += 0.12;  // Executioner Cleave
@@ -4679,7 +4676,6 @@
   // Critical-hit-damage bonus from the new classes (additive onto the crit multiplier, like Reaper/Elixir).
   function newClassCritDmg(st){
     st = st || state; var d = 0;
-    if(pyromancerBonus(40, st)) d += 0.75;   // Pyromancer Conflagration
     if(sharpshooterBonus(1, st)) d += 0.50;  // Sharpshooter Aimed Shot
     if(sharpshooterBonus(80, st)) d += 1.00; // Sharpshooter Kill Shot
     if(juggernautBonus(80, st)) d += 0.60;   // Juggernaut Devastate
@@ -4687,6 +4683,32 @@
     if(reaverBonus(40, st)) d += 0.50;       // Reaver Hemorrhage
     return d;
   }
+  // --- Pyromancer --- Reworked ladder: Ignite (Lv1) / Combust (Lv20) / Kindling Crits (Lv40) /
+  // Heat Haze (Lv60) / Fever Pitch (Lv80). Burn is a STACKING fire DoT on the activity (burnStacks +
+  // burnUntil + burnDps); the higher perks all read the enemy's current Burn stacks.
+  var PYRO_BURN_MAX_STACKS = 5;             // Ignite: hits stack Burn up to this
+  var PYRO_BURN_PCT = 0.05;                 // ... per-stack DoT as a fraction of combat power (max 25%/s)
+  var PYRO_BURN_MS = 4000;                  // Burn duration, refreshed by each stacking hit
+  var PYRO_COMBUST_PER_STACK = 0.25;        // Combust: a crit detonates Burn for 25% of the hit per stack
+  var PYRO_KINDLING_CRIT_STACKS = 2;        // Kindling Crits: a crit adds this many Burn stacks
+  var PYRO_KINDLING_CRITDMG_PER_STACK = 0.08; // Kindling Crits: +8% crit damage per enemy Burn stack
+  var PYRO_HEATHAZE_DODGE_PER_STACK = 0.04; // Heat Haze: +4% Dodge per enemy Burn stack
+  var PYRO_HEATHAZE_DODGE_CAP = 0.20;       // ... capped
+  var PYRO_FEVER_HASTE_PER_STACK = 0.05;    // Fever Pitch: +5% attack speed per enemy Burn stack
+  var PYRO_FEVER_CAP = 0.30;                // ... capped
+  function enemyBurning(st){ st = st || state; return !!(st.activity && st.activity.burnUntil && st.activity.burnUntil > Date.now()); }
+  function enemyBurnStacks(st){ st = st || state; return enemyBurning(st) ? (st.activity.burnStacks || 0) : 0; }
+  // Ignite (Lv1): stack one Burn on the activity, refreshing its duration; returns the new stack count.
+  // (The dps is recomputed by the caller from live combat power, matching the Frostbite/Bleed pattern.)
+  function pyromancerApplyBurn(act){ if(!act) return 0; if((act.burnUntil||0) <= Date.now()) act.burnStacks = 0; act.burnStacks = Math.min(PYRO_BURN_MAX_STACKS, (act.burnStacks||0) + 1); act.burnUntil = Date.now() + PYRO_BURN_MS; return act.burnStacks; }
+  // Combust (Lv20): the burst a Critical Hit deals by detonating current Burn stacks (gated on crit inline).
+  function pyromancerCombustDmg(hitDmg, st){ st = st || state; return (pyromancerBonus(20, st) && enemyBurning(st)) ? Math.round((hitDmg||0) * PYRO_COMBUST_PER_STACK * enemyBurnStacks(st)) : 0; }
+  // Kindling Crits (Lv40): +crit damage that scales with the enemy's current Burn stacks.
+  function pyromancerKindlingCritDmg(st){ st = st || state; return pyromancerBonus(40, st) ? enemyBurnStacks(st) * PYRO_KINDLING_CRITDMG_PER_STACK : 0; }
+  // Heat Haze (Lv60): bonus Dodge that grows with the enemy's Burn stacks.
+  function pyromancerHeatHazeDodge(st){ st = st || state; return pyromancerBonus(60, st) ? Math.min(PYRO_HEATHAZE_DODGE_CAP, enemyBurnStacks(st) * PYRO_HEATHAZE_DODGE_PER_STACK) : 0; }
+  // Fever Pitch (Lv80): attack-speed haste that grows with the enemy's Burn stacks.
+  function pyromancerFeverHaste(st){ st = st || state; return pyromancerBonus(80, st) ? Math.min(PYRO_FEVER_CAP, enemyBurnStacks(st) * PYRO_FEVER_HASTE_PER_STACK) : 0; }
   // Lifesteal (fraction of damage healed): Nightblade Siphon/Soul Reap + Executioner Bloodthirst.
   function nightbladeLifestealPct(st){ if(nightbladeBonus(80, st)) return 0.15; if(nightbladeBonus(1, st)) return 0.08; return 0; }
   function executionerLifestealPct(st){ return executionerBonus(40, st) ? 0.08 : 0; }
@@ -9300,6 +9322,13 @@
     var dps = act.frostbiteDps || 0; if(dps <= 0) return;
     act.monsterHp = Math.max(1, act.monsterHp - dps * dtMs / 1000);
   }
+  // Pyromancer Ignite (Lv1): a stacking fire DoT on its own channel; floors the enemy at 1 HP.
+  function applyPyromancerBurnTick(dtMs){
+    var act = state.activity;
+    if(!act || act.type!=='combat' || (act.burnUntil||0) <= Date.now()) return;
+    var dps = act.burnDps || 0; if(dps <= 0) return;
+    act.monsterHp = Math.max(1, act.monsterHp - dps * dtMs / 1000);
+  }
   function playerAttackTick(isBonus, attempt, isOffhand){
     attempt = attempt || 1; // Quickdraw Rapid Fire re-enters this on a miss (up to 3 attempts)
     var act = state.activity;
@@ -9350,7 +9379,7 @@
     var physDmgMult = isWandAttack ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
     physDmgMult *= tenacityLowHpMult(state);
     // Elixir potions + familiar crit-damage buffs stack on top of the (capped) base+exploitation crit.
-    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + knightMissCritDmg() + thunderLowHpCritDmg() + treasureHunterCritDmgBonus() + newClassCritDmg() + (enchTot.critDamage||0)/100) : 1;
+    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + knightMissCritDmg() + thunderLowHpCritDmg() + treasureHunterCritDmgBonus() + newClassCritDmg() + pyromancerKindlingCritDmg(state) + (enchTot.critDamage||0)/100) : 1;
 
     // Accuracy vs Dodge: roll to land the hit. A miss deals no damage and fires no on-hit effects
     // (potions, proficiency XP), but you still trained your reflexes by swinging so accuracy can grow.
@@ -9467,6 +9496,26 @@
           spawnCombatFloat('❄ Shatter -'+fmt(_shDmg), 'ft-crit', true);
         }
       }
+      // Pyromancer Ignite (Lv1): every hit stacks a fire damage-over-time scaling with your combat power.
+      if(pyromancerBonus(1)){
+        var _bs = pyromancerApplyBurn(act);
+        act.burnDps = act.burnStacks * combatLevelEquivalent(state) * PYRO_BURN_PCT;
+        spawnFloatingText('Ignite x'+_bs, 'ft-bonus');
+      }
+      // Pyromancer Combust (Lv20): a Critical Hit detonates all Burn stacks for burst fire damage.
+      if(pyromancerBonus(20) && isCrit && enemyBurning(state)){
+        var _cbDmg = pyromancerCombustDmg(dmgToMonster, state);
+        if(_cbDmg > 0){
+          act.monsterHp -= _cbDmg;
+          act.burnStacks = 0; act.burnUntil = 0; act.burnDps = 0; // the Burn is consumed by the blast
+          spawnCombatFloat('🔥 Combust -'+fmt(_cbDmg), 'ft-crit', true);
+        }
+      }
+      // Pyromancer Kindling Crits (Lv40): a Critical Hit stokes the fire, adding Burn stacks (re-seeding after a Combust).
+      if(pyromancerBonus(40) && isCrit){
+        for(var _ki=0; _ki<PYRO_KINDLING_CRIT_STACKS; _ki++) pyromancerApplyBurn(act);
+        act.burnDps = act.burnStacks * combatLevelEquivalent(state) * PYRO_BURN_PCT;
+      }
       // Plaguebearer (Virulence): 20% chance a hit poisons even with no Coating charges (never weakens an active one).
       if(plaguebearerBonus(60) && Math.random() < 0.20){
         var vDps = combatLevelEquivalent(state) * 0.06 * (1 + getFamBuff('potionPoison'));
@@ -9545,6 +9594,7 @@
     act.monsterTickAccum = 0;
     act.bleedStacks = 0; act.bleedDps = 0; act.bleedUntil = 0; // a fresh foe starts unbled (Reaver Rend doesn't carry over)
     act.chillStacks = 0; act.enemyChillUntil = 0; act.frostbiteStacks = 0; act.frostbiteDps = 0; act.frostbiteUntil = 0; // Frostwarden Chill/Frostbite don't carry between foes
+    act.burnStacks = 0; act.burnUntil = 0; act.burnDps = 0; // Pyromancer Burn doesn't carry between foes
     // Duelist: each new foe is a fresh duel -- reset the ramp clock, the once-per-fight Disengage, and the stacks.
     act.duelStartedAt = Date.now(); act.disengageUsed = false; act.guardianBondUsed = false;
     state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0;
@@ -10132,6 +10182,7 @@
           applyPotionPoisonTick(_chunk);
           applyReaverBleedTick(_chunk);
           applyFrostwardenFrostbiteTick(_chunk);
+          applyPyromancerBurnTick(_chunk);
           applyReaperWitherTick(_chunk);
           var _rh = famRegenHps(); if(_rh>0 && state.playerHp>0) state.playerHp = Math.min(maxHp(state), state.playerHp + _rh*_chunk/1000);
           // Each active companion casts one spell every 10s, cycling its list (same cadence as live).
@@ -20769,6 +20820,7 @@
         applyPotionPoisonTick(dt);
         applyReaverBleedTick(dt);
         applyFrostwardenFrostbiteTick(dt);
+        applyPyromancerBurnTick(dt);
         applyReaperWitherTick(dt);
         // Regen: familiar heal-over-time restores player HP while the buff is up.
         var regenHps = famRegenHps();
@@ -21063,7 +21115,7 @@
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
-      pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, executionerLifestealPct:executionerLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, executionerExecuteThreshold:executionerExecuteThreshold, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick,
+      pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, executionerLifestealPct:executionerLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, executionerExecuteThreshold:executionerExecuteThreshold, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldBlockDmgMult:heraldBlockDmgMult, heraldBlockArmorMult:heraldBlockArmorMult, heraldWaterResistMult:heraldWaterResistMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderLowHpCritDmg:thunderLowHpCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS,

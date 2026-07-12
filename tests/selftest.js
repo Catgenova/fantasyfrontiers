@@ -1080,15 +1080,24 @@
     eq(FF.activeClassId(stFor('nightblade',80,{bodyArmor:{helmet:armor('leather'),chest:armor('leather'),gauntlets:armor('leather')}})), null, 'Voidshadow needs Leather Boots');
 
     var monFull = {hp:100}, monLow = {hp:100};
-    // Pyromancer: Kindle x1.30; Meltdown +50% vs healthy enemy stacks at Lv80; crit/block perks.
-    ok(Math.abs(FF.newClassDmgMult(monFull, stFor('pyromancer',1)) - 1.30) < 1e-9, 'Pyromancer Kindle +30%');
-    var pyroFull = stFor('pyromancer',80); // enemy at full HP (monsterHp 100)
-    ok(Math.abs(FF.newClassDmgMult(monFull, pyroFull) - 1.95) < 1e-9, 'Pyromancer Meltdown stacks on Kindle vs healthy foe (x1.95)');
-    var pyroLow = stFor('pyromancer',80,{activity:{type:'combat',monsterHp:10}});
-    ok(Math.abs(FF.newClassDmgMult(monLow, pyroLow) - 1.30) < 1e-9, 'Pyromancer Meltdown falls off below half HP (x1.30)');
-    ok(Math.abs(FF.newClassCritChance(stFor('pyromancer',80)) - 0.12) < 1e-9, 'Pyromancer Combustion +12% crit chance');
-    ok(Math.abs(FF.newClassCritDmg(stFor('pyromancer',80)) - 0.75) < 1e-9, 'Pyromancer Conflagration +75% crit dmg');
-    eq(FF.classBlockBonus(stFor('pyromancer',80)), 0.15, 'Pyromancer Ember Ward +15% Block');
+    // Pyromancer rework: Ignite stacks Burn (cap 5); Combust burst = 25% of the hit per stack; Kindling
+    // +8% crit dmg/stack; Heat Haze dodge & Fever Pitch haste scale with Burn. The old flat stats are gone.
+    eq(FF.newClassDmgMult(monFull, stFor('pyromancer',80)), 1, 'Pyromancer no longer grants flat damage');
+    eq(FF.newClassCritChance(stFor('pyromancer',80)), 0, 'Pyromancer no longer grants flat crit chance');
+    eq(FF.newClassCritDmg(stFor('pyromancer',80)), 0, 'Pyromancer no longer grants flat crit damage');
+    eq(FF.classBlockBonus(stFor('pyromancer',80)), 0, 'Pyromancer no longer grants Block');
+    var pyro = stFor('pyromancer',80);
+    FF.pyromancerApplyBurn(pyro.activity); FF.pyromancerApplyBurn(pyro.activity); FF.pyromancerApplyBurn(pyro.activity);
+    eq(FF.enemyBurnStacks(pyro), 3, 'Ignite: 3 hits -> 3 Burn stacks');
+    FF.pyromancerApplyBurn(pyro.activity); FF.pyromancerApplyBurn(pyro.activity); FF.pyromancerApplyBurn(pyro.activity);
+    eq(FF.enemyBurnStacks(pyro), 5, 'Burn stacks cap at 5');
+    ok(Math.abs(FF.pyromancerKindlingCritDmg(pyro) - 0.40) < 1e-9, 'Kindling Crits: +8%/stack -> +40% crit dmg at 5 stacks');
+    ok(Math.abs(FF.pyromancerHeatHazeDodge(pyro) - 0.20) < 1e-9, 'Heat Haze: +4%/stack dodge, capped +20% at 5 stacks');
+    ok(Math.abs(FF.pyromancerFeverHaste(pyro) - 0.25) < 1e-9, 'Fever Pitch: +5%/stack -> +25% haste at 5 stacks');
+    eq(FF.pyromancerCombustDmg(1000, pyro), 1250, 'Combust: 25% of the hit per stack (5 stacks -> +1250 on a 1000 hit)');
+    eq(FF.pyromancerKindlingCritDmg(stFor('pyromancer',20)), 0, 'Kindling inactive below Lv40');
+    eq(FF.pyromancerHeatHazeDodge(stFor('pyromancer',40)), 0, 'Heat Haze inactive below Lv60');
+    eq(FF.pyromancerFeverHaste(stFor('pyromancer',60)), 0, 'Fever Pitch inactive below Lv80');
     // Sharpshooter: Aimed+Kill = +150% crit dmg; Piercing +20%; Steady Aim +30% acc; Deadeye +12% crit.
     ok(Math.abs(FF.newClassCritDmg(stFor('sharpshooter',80)) - 1.50) < 1e-9, 'Sharpshooter Aimed+Kill = +150% crit dmg');
     ok(Math.abs(FF.newClassDmgMult(monFull, stFor('sharpshooter',80)) - 1.20) < 1e-9, 'Sharpshooter Piercing Shot +20%');
