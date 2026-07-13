@@ -239,6 +239,9 @@
       // routing it to 'crafting' rendered it as a craft skill and threw, breaking render + chat.
       var bc = FF.describeTask({ type:'craft', skill:'butchering', itemId:'rabbit_carcass', progress:0 });
       eq(bc.navCat, 'refining', 'butchering corpse task navigates to the Refining tab (not Crafting)');
+      // A dungeon fight's action-bar card jumps to the Dungeons page; a normal fight to the Combat tab.
+      eq(FF.describeTask({ type:'combat', monsterId:FF.DUNGEON_D1_ENEMIES[0].id, dungeon:'d1', tickAccum:0 }).navCat, 'dungeons', 'a dungeon fight navigates to the Dungeons page');
+      eq(FF.describeTask({ type:'combat', monsterId:FF.MONSTERS[0].id, tickAccum:0 }).navCat, 'combat', 'a normal fight navigates to the Combat tab');
     } finally {
       S.inventory = savedInv;
     }
