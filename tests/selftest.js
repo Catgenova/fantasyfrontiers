@@ -2802,7 +2802,7 @@
     ok(fam.spells.some(function(s){ return s.type==='hit' && s.element==='earth'; }), 'quickdraw familiar has earth-element hit spells');
   });
 
-  // ---- Classes: Templar (scepter + ward; light/reflect holy warrior) --------------------
+  // ---- Classes: Templar (Lay on Hands / Beacon of Faith / Dawnbreaker / Holy Light / Aegis of Dawn) ----
   suite('classes: Templar', function(){
     ok(FF.CLASS_SKILL_IDS.indexOf('templar') !== -1, 'templar is a class skill id');
     var cd = FF.CLASS_DEFS_BY_ID.templar;
@@ -2831,28 +2831,33 @@
     eq(FF.activeClassId(plateGloves), null, 'gloves must be chain');
 
     var lvHi = FF.xpFloorForLevel(85); // ~Lv 85
-    function leveled(){ var s = base(); s.xp.templar = lvHi; return s; }
+    function leveled(){ var s = base(); s.xp.templar = lvHi; s.physique = {}; return s; }
 
-    // Lv 1 Radiant Ward: +5% reflected damage (baseline -- a fresh class is already Class Lv 1).
-    ok(Math.abs(FF.templarReflectMult(full) - 1.05) < 1e-9, 'Lv 1 templar (active): +5% reflect');
-    ok(Math.abs(FF.templarReflectMult(leveled()) - 1.05) < 1e-9, 'reflect mult stays 1.05 at higher level');
-    // Lv 20 Sunfire: +20% Light damage (not yet at Lv 1).
-    eq(FF.templarLightDmgMult(full), 1, 'Lv 1 templar: no light bonus yet');
-    ok(Math.abs(FF.templarLightDmgMult(leveled()) - 1.2) < 1e-9, 'Lv 20+: +20% light damage');
-    // Both are gated on the class actually being equipped/active.
+    // Lv 20 Beacon of Faith: +20% familiar spell potency (gated on the class being active).
+    eq(FF.templarBeaconPotencyMult(full), 1, 'Lv 1 templar: no Beacon potency yet');
+    ok(Math.abs(FF.templarBeaconPotencyMult(leveled()) - 1.20) < 1e-9, 'Lv 20+: familiar spells +20%');
     var off = base(); off.equippedOffhand=null; off.xp.templar = lvHi;
-    eq(FF.templarLightDmgMult(off), 1, 'light bonus gated on the class being active');
-    eq(FF.templarReflectMult(off), 1, 'reflect bonus gated on the class being active');
+    eq(FF.templarBeaconPotencyMult(off), 1, 'Beacon gated on the class being active');
 
-    // Lv 40 / Lv 60 debuff windows (time-based, read from state.classDebuffs).
-    var s = FF._state;
-    var saved = s.classDebuffs;
+    // Lv 40 Dawnbreaker: +30% Light (the scepter's light half) vs Dark-element foes only.
+    eq(FF.templarDawnbreakerMult({element:'dark'}, leveled()), 1.30, 'Dawnbreaker: +30% Light vs a Dark foe');
+    eq(FF.templarDawnbreakerMult({element:'fire'}, leveled()), 1, 'Dawnbreaker: no bonus vs a non-Dark foe');
+    eq(FF.templarDawnbreakerMult({element:'dark'}, full), 1, 'Dawnbreaker gated on Class Lv 40 (nothing at Lv 1)');
+
+    // Lv 60 Holy Light: a heal-over-time only below 40% HP at Lv 60+.
+    var hlLow = leveled(); hlLow.playerHp = 10;    // maxHp(physique {}) ~50 -> 40% ~20; 10 < 20 => healing
+    var hlFull = leveled(); hlFull.playerHp = 45;  // 45 >= 20 => none
+    ok(FF.templarHolyLightHps(hlLow) > 0, 'Holy Light heals below 40% HP at Lv 60+');
+    eq(FF.templarHolyLightHps(hlFull), 0, 'Holy Light does nothing at healthy HP');
+    var hlLv1 = base(); hlLv1.physique = {}; hlLv1.playerHp = 1;
+    eq(FF.templarHolyLightHps(hlLv1), 0, 'Holy Light gated on Class Lv 60 (nothing at Lv 1)');
+
+    // The enemy-damage debuff window (now driven by Lumen's Blind) still applies 25% off via templarIncomingDmgMult.
+    var s = FF._state, saved = s.classDebuffs;
     s.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
-    eq(FF.templarIncomingDmgMult(), 1, 'no enfeeble window => enemy deals full damage');
-    eq(FF.templarArmorShredDmgMult(), 1, 'no sunder window => no bonus damage');
-    s.classDebuffs = { enemyDmgUntil: Date.now()+9000, enemyArmorUntil: Date.now()+9000 };
-    eq(FF.templarIncomingDmgMult(), 0.75, 'enfeeble window => enemy deals 25% less (x0.75)');
-    eq(FF.templarArmorShredDmgMult(), 1.25, 'sunder window => you deal +25% (x1.25)');
+    eq(FF.templarIncomingDmgMult(), 1, 'no blind window => enemy deals full damage');
+    s.classDebuffs = { enemyDmgUntil: Date.now()+9000, enemyArmorUntil:0 };
+    eq(FF.templarIncomingDmgMult(), 0.75, 'blind window => enemy deals 25% less (x0.75)');
     s.classDebuffs = saved; // restore for other suites
 
     // Class familiar (light-themed smiter).

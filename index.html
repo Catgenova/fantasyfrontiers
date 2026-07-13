@@ -4634,11 +4634,11 @@
         { icon:svgIcon('boots',CLASS_CHAIN_COLOR),     label:'Chain Boots',  met:function(st){ return chainPieceEquipped(st,'boots'); } }
       ],
       passives:[
-        { level:1,  name:'Radiant Ward',   desc:'+5% reflected elemental damage from your Ward.' },
-        { level:20, name:'Sunfire',        desc:'+20% Light damage.' },
-        { level:40, name:'Enfeeble',       desc:'Hits have a 5% chance to reduce the enemy\'s damage 25% for 5s.' },
-        { level:60, name:'Sunder',         desc:'Hits have a 5% chance to reduce the enemy\'s armor 25% for 5s (you deal +25% while it holds).' },
-        { level:80, name:'Radiant Burst',  desc:'Your Light damage has a 10% chance to deal 200% (double) damage.' }
+        { level:1,  name:'Lay on Hands',   desc:'Critical Hits heal the lowest-HP ally — or yourself — for 20% of the damage dealt.' },
+        { level:20, name:'Beacon of Faith',desc:'Your familiars’ spells hit 20% harder and cast 15% faster.' },
+        { level:40, name:'Dawnbreaker',    desc:'+30% Light damage to Dark-element foes; your Light is never resisted.' },
+        { level:60, name:'Holy Light',     desc:'Below 40% HP, radiant Light heals you over time.' },
+        { level:80, name:'Aegis of Dawn',  desc:'Every 10s, you (and your party in a dungeon) gain a Holy shield absorbing up to 15% max HP.' }
       ]
     },
     {
@@ -5152,6 +5152,7 @@
     // Summoner Lv 40 (Desperate Summons): while you're below 25% Health, familiars cast twice as fast.
     if(summonerBonus(40) && state.playerHp < maxHp(state) * 0.25) ms *= 0.5;
     if(frostwardenBonus(80)) ms *= FROST_RESONANCE_CAST_MULT; // Rime Resonance: your Rime familiar casts 30% faster
+    if(templarBonus(20)) ms *= 0.85; // Beacon of Faith: familiars cast 15% faster
     ms *= (1 - Math.min(0.9, legendaryRingBonus('famhaste', state))); // Cave Signet of Communion: reduced familiar action time
     return Math.max(2500, ms);
   }
@@ -5182,14 +5183,16 @@
   var QUICKDRAW_EAGLE_DENOM = 1000, QUICKDRAW_EAGLE_CAP = 0.25;
   function quickdrawEagleEyeCrit(monster, st){ st = st || state; if(!quickdrawBonus(60, st) || !monster) return 0; var over = playerAccuracy(st) - monsterDodge(monster); return over > 0 ? Math.min(QUICKDRAW_EAGLE_CAP, over / QUICKDRAW_EAGLE_DENOM) : 0; }
   function templarBonus(reqLevel, st){ return classBonusActive('templar', reqLevel, st); }
-  // Templar Lv 1: +5% Ward reflected damage. Lv 20: +20% Light damage (the scepter's light half).
-  function templarReflectMult(st){ return templarBonus(1, st) ? 1.05 : 1; }
-  function templarLightDmgMult(st){ return templarBonus(20, st) ? 1.2 : 1; }
-  // Templar Lv 40 / Lv 60 on-hit debuff windows, tracked in state.classDebuffs (time-based).
+  // Templar Lv 20 (Beacon of Faith): familiar spells hit +20% (folded into familiarPotencyMult) and cast 15% faster.
+  function templarBeaconPotencyMult(st){ return templarBonus(20, st) ? 1.20 : 1; }
+  // Templar Lv 40 (Dawnbreaker): +30% Light (the scepter's light half) vs Dark-element foes; Light is never resisted.
+  function templarDawnbreakerMult(monster, st){ return (templarBonus(40, st) && monster && monster.element === 'dark') ? 1.30 : 1; }
+  // Templar Lv 60 (Holy Light): below 40% HP, a radiant heal-over-time (2% of max HP per second, in combat).
+  function templarHolyLightHps(st){ st = st || state; return (templarBonus(60, st) && st.playerHp > 0 && st.playerHp < 0.40 * maxHp(st)) ? 0.02 * maxHp(st) : 0; }
+  // Enemy-damage debuff window (state.classDebuffs.enemyDmgUntil): now driven by Lumen's Blind; the 25%
+  // reduction still applies via templarIncomingDmgMult so that class keeps working.
   function templarEnemyDmgReduced(){ return !!(state.classDebuffs && state.classDebuffs.enemyDmgUntil > Date.now()); }
-  function templarEnemyArmorReduced(){ return !!(state.classDebuffs && state.classDebuffs.enemyArmorUntil > Date.now()); }
-  function templarIncomingDmgMult(){ return templarEnemyDmgReduced() ? 0.75 : 1; }   // Lv 40: enemy deals 25% less
-  function templarArmorShredDmgMult(){ return templarEnemyArmorReduced() ? 1.25 : 1; } // Lv 60: you deal +25%
+  function templarIncomingDmgMult(){ return templarEnemyDmgReduced() ? 0.75 : 1; }   // enemy deals 25% less while blinded
   function knightBonus(reqLevel, st){ return classBonusActive('knight', reqLevel, st); }
   // Knight Lv 1 (Momentum): each landed hit stacks -10% attack time (cap 5 = -50%); a miss resets it.
   function knightStacks(st){ st = st || state; return knightBonus(1, st) ? Math.min(5, st.knightStacks || 0) : 0; }
@@ -5993,7 +5996,7 @@
   function getFamiliarLevel(skillId){
     return (state.familiars[skillId] && state.familiars[skillId].level) || 1;
   }
-  function familiarPotencyMult(level){ return (1 + (Math.max(1,level)-1)*FAMILIAR_POTENCY_PER_LEVEL) * (1 + getClothArmorSpellBonus(state)) * (1 + stavesEfficiencyBonus(state)) * (1 + getRingFamiliarBonus(state)) * menageristPotencyMult(); }
+  function familiarPotencyMult(level){ return (1 + (Math.max(1,level)-1)*FAMILIAR_POTENCY_PER_LEVEL) * (1 + getClothArmorSpellBonus(state)) * (1 + stavesEfficiencyBonus(state)) * (1 + getRingFamiliarBonus(state)) * menageristPotencyMult() * templarBeaconPotencyMult(); }
   // ---- Staff & multi-familiar helpers ----
   // The Staves proficiency (trained by familiar damage) boosts familiar efficiency (spell potency):
   // +1% at Lv 1 up to +100% at Lv 100. Applies to every familiar cast.
@@ -10312,9 +10315,8 @@
     if(isWandAttack){
       advantage = 1;
     } else if(isScepterAttack){
-      // Templar boosts the LIGHT half only: Lv 20 = +20%, Lv 80 = 10% chance to double it (Radiant Burst).
-      var _lightMult = templarLightDmgMult();
-      if(templarBonus(80) && Math.random() < 0.10){ _lightMult *= 2; spawnFloatingText('Radiant Burst!', 'ft-rare'); }
+      // Templar Dawnbreaker (Lv 40): the scepter's LIGHT half deals +30% to Dark-element foes.
+      var _lightMult = templarDawnbreakerMult(monster);
       advantage = 0.5 * weightedAdvantage({blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3})
                 + 0.5 * elementAdvantage('light', monster.element) * _lightMult * elementDmgMult(state, 'light'); // Light Attunement boosts the light half
     } else {
@@ -10358,7 +10360,7 @@
     var assassinVanish = assassinVanishReady(); // Assassin Vanish (Lv80): this landed strike is empowered if the 4s-untouched window is up
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
     var wandAttuneMult = isWandAttack ? elementDmgMult(state, weaponStyle.element) : 1; // Elemental Attunement boosts a wand's element damage
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * duelistDuelMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * (isCrit ? assassinHemorrhageCritMult() : 1) * (assassinVanish ? ASSASSIN_VANISH_MULT : 1) * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, and the mainhand's Enhance base-stat scaling
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * duelistDuelMult() * knightMissDmgMult() * wandAttuneMult * (isCrit ? assassinHemorrhageCritMult() : 1) * (assassinVanish ? ASSASSIN_VANISH_MULT : 1) * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, and the mainhand's Enhance base-stat scaling
     dmgToMonster += Math.round(enchTot.flatDamage||0); // + equipped-item Flat Damage enchants
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
@@ -10416,12 +10418,6 @@
       if(samuraiBonus(60)) act.samuraiFocus = Math.min(SAMURAI_FOCUS_MAX, (act.samuraiFocus||0) + 1);
       // Knight (Momentum): each landed hit adds a -10% attack-speed stack (capped at 5 = -50%).
       if(knightBonus(1)) state.knightStacks = Math.min(5, (state.knightStacks || 0) + 1);
-      // Templar on-hit debuffs: Lv 40 saps 25% of the enemy's damage, Lv 60 shreds 25% of its armor (5s, 5% each).
-      if(templarBonus(40) || templarBonus(60)){
-        if(!state.classDebuffs) state.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
-        if(templarBonus(40) && Math.random() < 0.05){ state.classDebuffs.enemyDmgUntil = Date.now() + 5000; spawnFloatingText('Enfeebled!', 'ft-rare'); }
-        if(templarBonus(60) && Math.random() < 0.05){ state.classDebuffs.enemyArmorUntil = Date.now() + 5000; spawnFloatingText('Sundered!', 'ft-rare'); }
-      }
       // Lumen Oracle on-hit: Lv 20 Blind (15% -> reuse the enemy-damage debuff window), Lv 40 Flashbang (8% stun).
       if(lumenBonus(20) && Math.random() < 0.15){
         if(!state.classDebuffs) state.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
@@ -10539,6 +10535,12 @@
         if(_ssDps > (act.potionPoisonDps || 0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = Math.max(act.potionPoisonDps || 0, _ssDps);
         act.potionPoisonUntil = Math.max(act.potionPoisonUntil || 0, Date.now() + 4000);
         spawnFloatingText("Serpent's Sting!", 'ft-crit', true);
+      }
+      // Templar Lv 1 (Lay on Hands): a Critical Hit mends you for 20% of the damage dealt (the lowest-HP
+      // party ally in a networked dungeon is a server-side extension; solo, that ally is always you).
+      if(templarBonus(1) && isCrit){
+        var _loh = Math.min(Math.round(dmgToMonster * 0.20), maxHp(state) - state.playerHp);
+        if(_loh > 0){ state.playerHp += _loh; spawnFloatingText('Lay on Hands +'+_loh, 'ft-success'); }
       }
       // Spellblade (Momentum): each landed hit adds a +6% damage stack (cap 5); a miss resets it (below).
       if(spellbladeBonus(60)) state.spellbladeStacks = Math.min(5, (state.spellbladeStacks || 0) + 1);
@@ -10710,7 +10712,7 @@
       if(_rf > 0){
         var negated = Math.round(dmgToPlayer * _rf);
         dmgToPlayer = Math.max(0, dmgToPlayer - negated);
-        wardReflected = Math.round(negated * templarReflectMult()); // Templar Lv 1: +5% reflected elemental damage
+        wardReflected = negated; // the Ward reflects the negated share back as its element
       }
     }
     // Duelist Lv 80 (Disengage): once per fight, the first hit that WOULD drop you below 25% Health is
@@ -10734,6 +10736,12 @@
       addLog('A familiar throws itself before the blow &mdash; Guardian Bond!', 'important');
       spawnFloatingText('Guardian Bond!', 'ft-rare');
       return;
+    }
+    // Templar Aegis of Dawn: the Holy shield soaks incoming damage before your own HP.
+    if((state.templarShield||0) > 0 && dmgToPlayer > 0){
+      var _aegis = Math.min(state.templarShield, dmgToPlayer);
+      state.templarShield -= _aegis; dmgToPlayer -= _aegis;
+      if(_aegis > 0) spawnFloatingText('Aegis '+Math.round(_aegis), 'ft-success');
     }
     // Reaper Siphon Shield: the spectral absorb soaks incoming damage before your own HP.
     if((state.reaperShield||0) > 0 && dmgToPlayer > 0){
@@ -10786,6 +10794,7 @@
       var _diedInDungeon = state.activity && state.activity.dungeon;
       state.playerHp = 0;
       state.reaperShield = 0; // a spectral guard shatters when you fall
+      state.templarShield = 0; // Aegis of Dawn shatters on death too
       state.activity = { type:null };
       if(_diedInDungeon) dungeonEndRun('death'); // a dungeon run ends when you fall
       if(isMortal()) mortalDeath(monster); // permadeath: the profile passes into Immortal play
@@ -22844,6 +22853,17 @@
         // Regen: familiar heal-over-time restores player HP while the buff is up.
         var regenHps = famRegenHps();
         if(regenHps > 0 && state.playerHp > 0){ state.playerHp = Math.min(maxHp(state), state.playerHp + regenHps*dt/1000); }
+        // Templar Lv 60 (Holy Light): a radiant heal-over-time while you're below 40% HP.
+        var _hlHps = templarHolyLightHps();
+        if(_hlHps > 0 && state.playerHp > 0){ state.playerHp = Math.min(maxHp(state), state.playerHp + _hlHps*dt/1000); }
+        // Templar Lv 80 (Aegis of Dawn): every 10s in combat, refresh a Holy absorb shield to 15% max HP.
+        if(templarBonus(80)){
+          if(!state.templarShieldAt || Date.now() - state.templarShieldAt >= 10000){
+            state.templarShieldAt = Date.now();
+            var _aegisCap = Math.round(0.15 * maxHp(state));
+            if((state.templarShield||0) < _aegisCap){ state.templarShield = _aegisCap; spawnFloatingText('Aegis of Dawn '+_aegisCap, 'ft-rare'); }
+          }
+        }
         // Familiar spell casting: each active companion casts one spell every 10s, cycling its list.
         state.companionCast = state.companionCast || {};
         activeCompanionList(state).forEach(function(cid){
@@ -23360,7 +23380,7 @@
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
-      frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
+      frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, assassinRhythmRegister:assassinRhythmRegister, ASSASSIN_RHYTHM_MAX:ASSASSIN_RHYTHM_MAX, assassinApplyLacerate:assassinApplyLacerate, assassinLacerateMaxStacks:assassinLacerateMaxStacks, ASSASSIN_BLEED_MAX:ASSASSIN_BLEED_MAX, assassinHemorrhageCritMult:assassinHemorrhageCritMult, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem,
