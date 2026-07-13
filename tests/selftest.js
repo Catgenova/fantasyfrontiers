@@ -1375,11 +1375,42 @@
     eq(FF.juggernautArmorMult(stFor('juggernaut',80)), 1.25, 'Juggernaut Ironclad +25% Armor');
     eq(FF.juggernautIncomingMult(stFor('juggernaut',80)), 0.80, 'Juggernaut Unstoppable -20% incoming');
     ok(Math.abs(FF.newClassCritDmg(stFor('juggernaut',80)) - 0.60) < 1e-9, 'Juggernaut Devastate +60% crit dmg');
-    // Nightblade: Siphon 8% -> Soul Reap 15%; Hex +25%; Shadowstep +15% dodge; Dark Pact +12% crit.
-    ok(Math.abs(FF.nightbladeLifestealPct(stFor('nightblade',1)) - 0.08) < 1e-9, 'Nightblade Siphon 8%');
-    ok(Math.abs(FF.nightbladeLifestealPct(stFor('nightblade',80)) - 0.15) < 1e-9, 'Nightblade Soul Reap 15%');
-    ok(Math.abs(FF.newClassDmgMult(monFull, stFor('nightblade',80)) - 1.25) < 1e-9, 'Nightblade Hex +25%');
-    ok(Math.abs(FF.nightbladeDodgeBonus(stFor('nightblade',80)) - 0.15) < 1e-9, 'Nightblade Shadowstep +15% Dodge');
+    // Voidshadow rework: Mark of the Void (Lv1) / Enfeeble (Lv20) / Void Resonance (Lv40) /
+    // Soul Tax (Lv60) / Doom (Lv80). Curses stack on the foe; the old flat Hex/Siphon/Shadowstep are gone.
+    var nbNames = FF.CLASS_DEFS_BY_ID.nightblade.passives.map(function(p){ return p.name; });
+    eq(JSON.stringify(nbNames), JSON.stringify(['Mark of the Void','Enfeeble','Void Resonance','Soul Tax','Doom']), 'Voidshadow ladder is the reworked five');
+    var vFuture = Date.now() + 10000;
+    function nbSt(level, vuln, extraDebuffs){
+      var act = { type:'combat', monsterHp:100 };
+      if(vuln > 0){ act.voidVulnStacks = vuln; act.voidVulnUntil = vFuture; }
+      if(extraDebuffs){ for(var k in extraDebuffs) act[k] = extraDebuffs[k]; }
+      return stFor('nightblade', level, { activity:act, classDebuffs:{ enemyDmgUntil:0, enemyArmorUntil:0 } });
+    }
+    // Mark of the Void: +2% dmg-taken per Vulnerability stack, capped at 10 (+20%).
+    ok(Math.abs(FF.voidVulnMult(nbSt(1,5)) - 1.10) < 1e-9, 'Mark of the Void: 5 stacks -> +10% damage taken');
+    ok(Math.abs(FF.voidVulnMult(nbSt(1,10)) - 1.20) < 1e-9, 'Mark of the Void: +20% at max (10) stacks');
+    ok(Math.abs(FF.voidVulnMult(nbSt(1,20)) - 1.20) < 1e-9, 'Vulnerability mult caps at 10 stacks');
+    eq(FF.voidVulnMult(nbSt(1,0)), 1, 'no Vulnerability -> neutral mult');
+    // Doom (Lv80): at MAX Vulnerability the foe takes +40% (instead of +20%); below max it is ordinary.
+    ok(Math.abs(FF.voidVulnMult(nbSt(80,10)) - 1.40) < 1e-9, 'Doom: +40% damage at max Vulnerability with Lv80');
+    ok(Math.abs(FF.voidVulnMult(nbSt(80,9)) - 1.18) < 1e-9, 'below max Vulnerability, Doom does not apply (+18%)');
+    ok(Math.abs(FF.voidVulnMult(nbSt(1,10)) - 1.20) < 1e-9, 'without Lv80, max Vulnerability stays +20% (no Doom)');
+    // enemyDebuffCount: distinct debuffs on the foe (drives Void Resonance + Soul Tax).
+    var nbCount = stFor('nightblade',80,{ activity:{type:'combat',monsterHp:100,voidVulnStacks:5,voidVulnUntil:vFuture,enemyStunUntil:vFuture}, classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0} });
+    eq(FF.enemyDebuffCount(nbCount), 3, 'enemyDebuffCount tallies Vulnerability + Stun + Enfeeble = 3');
+    eq(FF.enemyDebuffCount(nbSt(1,0)), 0, 'a foe with no debuffs -> count 0');
+    // Void Resonance (Lv40): +6% damage per distinct debuff. Isolate it with 0 Vulnerability (mult 1) + 2 debuffs.
+    var nbRes = stFor('nightblade',40,{ activity:{type:'combat',monsterHp:100,enemyStunUntil:vFuture}, classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0} });
+    ok(Math.abs(FF.voidDmgMult(nbRes) - 1.12) < 1e-9, 'Void Resonance: +6% x 2 debuffs = +12% (no Vulnerability)');
+    eq(FF.voidDmgMult(stFor('nightblade',20,{activity:{type:'combat',monsterHp:100,enemyStunUntil:vFuture},classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0}})), 1, 'Void Resonance inactive below Lv40');
+    // Soul Tax (Lv60): +2% lifesteal AND +2% dark damage per distinct debuff.
+    var nbTax = stFor('nightblade',60,{ activity:{type:'combat',monsterHp:100,enemyStunUntil:vFuture}, classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0} });
+    ok(Math.abs(FF.nightbladeLifestealPct(nbTax) - 0.04) < 1e-9, 'Soul Tax: +2% lifesteal x 2 debuffs = +4%');
+    ok(Math.abs(FF.voidDmgMult(nbTax) - (1.12 * 1.04)) < 1e-9, 'Soul Tax stacks its +2%/debuff dark damage atop Void Resonance');
+    eq(FF.nightbladeLifestealPct(stFor('nightblade',40,{activity:{type:'combat',monsterHp:100,enemyStunUntil:vFuture},classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0}})), 0, 'Soul Tax lifesteal inactive below Lv60');
+    // Removed helpers/perks: the old flat Hex, Shadowstep dodge, and Siphon lifesteal are gone.
+    eq(FF.newClassDmgMult(monFull, stFor('nightblade',80)), FF.voidDmgMult(stFor('nightblade',80)), 'Voidshadow damage is driven entirely by voidDmgMult (no flat Hex)');
+    ok(typeof FF.nightbladeDodgeBonus === 'undefined', 'Shadowstep dodge helper removed');
     // Executioner rework: Reaping Vigor (Lv1) / Reap the Weak (Lv20) / Rising Guillotine (Lv40) /
     // Headsman's Tally (Lv60) / Gallows Humor (Lv80). The old crit/lifesteal/execute stats are gone.
     var exNames = FF.CLASS_DEFS_BY_ID.executioner.passives.map(function(p){ return p.name; });

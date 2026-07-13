@@ -4902,7 +4902,7 @@
     },
     {
       id:'nightblade', name:'Voidshadow', icon:elementIcon('dark'),
-      blurb:'A shadow-clad hexer who drains life with a dark wand and slips between blows in supple leather.',
+      blurb:'A dark-wand hexer who buries a foe under stacking curses — the more debilitated it is, the harder the void bites and the more life it leeches.',
       reqText:'Dark Wand + Ward, Leather Hood, Chest, Gloves & Boots',
       reqParts:[
         { icon:elementIcon('dark'),                      label:'Dark Wand',     met:function(st){ return st.equippedMainhand==='wandDark'; } },
@@ -4913,11 +4913,11 @@
         { icon:svgIcon('boots',CLASS_LEATHER_COLOR),     label:'Leather Boots', met:function(st){ return leatherPieceEquipped(st,'boots'); } }
       ],
       passives:[
-        { level:1,  name:'Siphon',      desc:'Heal 8% of the damage you deal.' },
-        { level:20, name:'Hex',         desc:'+25% damage.' },
-        { level:40, name:'Shadowstep',  desc:'+15% Dodge chance.' },
-        { level:60, name:'Dark Pact',   desc:'+12% Critical Hit chance.' },
-        { level:80, name:'Soul Reap',   desc:'Your Siphon lifesteal rises to 15% of the damage you deal.' }
+        { level:1,  name:'Mark of the Void', desc:'Hits stack Vulnerability on the foe (up to 10) &mdash; it takes +2% damage per stack (+20% at max), refreshed on every hit.' },
+        { level:20, name:'Enfeeble',         desc:'Every hit saps the enemy\'s damage 25% for 5s.' },
+        { level:40, name:'Void Resonance',   desc:'Your damage rises +6% for each distinct debuff on the foe &mdash; the more crippled it is, the harder you hit.' },
+        { level:60, name:'Soul Tax',         desc:'Each distinct debuff on the foe grants you +2% lifesteal and +2% dark damage.' },
+        { level:80, name:'Doom',             desc:'At max Vulnerability the foe is Doomed: it takes +40% damage (instead of +20%).' }
       ]
     },
     {
@@ -5045,7 +5045,7 @@
   // on top only at the moment of a monster attack, so it is NOT folded in here.
   function playerDodgeChance(st){
     st = st || state;
-    return getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + nightbladeDodgeBonus(st) + pyromancerHeatHazeDodge(st) + quickdrawSecondWindDodge(st) + legendaryRingBonus('dodge', st); // + Pyromancer Heat Haze; + Quickdraw Second Wind; + Cave Signet of Evasion
+    return getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + pyromancerHeatHazeDodge(st) + quickdrawSecondWindDodge(st) + legendaryRingBonus('dodge', st); // + Pyromancer Heat Haze; + Quickdraw Second Wind; + Cave Signet of Evasion
   }
   // ===== Assassin (twin Claws): reworked ladder =====
   //  Lv1  Rhythm        -- alternating main/off-hand hits build a meter; at full, the next two landed
@@ -5334,6 +5334,40 @@
   function sharpshooterBonus(reqLevel, st){ return classBonusActive('sharpshooter', reqLevel, st); }
   function juggernautBonus(reqLevel, st){ return classBonusActive('juggernaut', reqLevel, st); }
   function nightbladeBonus(reqLevel, st){ return classBonusActive('nightblade', reqLevel, st); }
+  // ===== Voidshadow (Dark Wand) -- debilitating dark-debuffer: Mark of the Void / Enfeeble /
+  //       Void Resonance / Soul Tax / Doom. Curses stack on the foe; the more debilitated it is, the
+  //       harder your dark magic bites and the more life you leech.
+  var VOID_VULN_PER_STACK = 0.02, VOID_VULN_MAX = 10, VOID_VULN_MS = 6000; // Mark of the Void: +2%/stack dmg taken, cap 10 (+20%)
+  var VOID_DOOM_MULT = 0.40;      // Doom (Lv80): +40% dmg taken at max Vulnerability
+  var VOID_RESONANCE_PER = 0.06;  // Void Resonance (Lv40): +6% damage per distinct enemy debuff
+  var VOID_SOULTAX_PER = 0.02;    // Soul Tax (Lv60): +2% lifesteal AND +2% dark damage per distinct enemy debuff
+  function voidVulnStacks(st){ st = st || state; var a = st.activity; return (a && a.type==='combat' && (a.voidVulnUntil||0) > Date.now()) ? (a.voidVulnStacks||0) : 0; }
+  // Mark of the Void's +damage-taken multiplier on the current foe; Doom upgrades it at max stacks.
+  function voidVulnMult(st){ st = st || state; var s = voidVulnStacks(st); if(s <= 0) return 1;
+    if(nightbladeBonus(80, st) && s >= VOID_VULN_MAX) return 1 + VOID_DOOM_MULT;   // Doom: +40% at max
+    return 1 + Math.min(VOID_VULN_MAX, s) * VOID_VULN_PER_STACK;
+  }
+  // Distinct debuffs currently on the foe (drives Void Resonance + Soul Tax). Reads the shared channels.
+  function enemyDebuffCount(st){ st = st || state; var a = st.activity; if(!a || a.type!=='combat') return 0;
+    var now = Date.now(), n = 0;
+    if((a.voidVulnStacks||0) > 0 && (a.voidVulnUntil||0) > now) n++;             // Vulnerability
+    if(st.classDebuffs && (st.classDebuffs.enemyDmgUntil||0) > now) n++;         // Enfeeble
+    if(st.classDebuffs && (st.classDebuffs.enemyArmorUntil||0) > now) n++;       // Sunder
+    if((a.enemyStunUntil||0) > now) n++;                                         // Stun
+    if((a.enemyChillUntil||0) > now) n++;                                        // Chill
+    if((a.bleedUntil||0) > now && (a.bleedStacks||0) > 0) n++;                   // Bleed
+    if((a.burnUntil||0) > now) n++;                                             // Burn
+    if((a.frostbiteUntil||0) > now) n++;                                        // Frostbite
+    if((a.potionPoisonUntil||0) > now) n++;                                     // Poison
+    return n;
+  }
+  // Voidshadow outgoing-damage multiplier: Vulnerability (Lv1 / Doom) x Void Resonance (Lv40) x Soul Tax (Lv60).
+  function voidDmgMult(st){ st = st || state; var m = 1;
+    if(nightbladeBonus(1, st)) m *= voidVulnMult(st);
+    if(nightbladeBonus(40, st)) m *= 1 + VOID_RESONANCE_PER * enemyDebuffCount(st);
+    if(nightbladeBonus(60, st)) m *= 1 + VOID_SOULTAX_PER * enemyDebuffCount(st);
+    return m;
+  }
   function executionerBonus(reqLevel, st){ return classBonusActive('executioner', reqLevel, st); }
   // ===== Executioner (Full-Moon Axe): reworked ladder =====
   //  Lv1  Reaping Vigor    -- each Critical Hit adds a stacking +25% max-HP buff for 30s (real-time,
@@ -5396,7 +5430,7 @@
     st = st || state; var m = 1;
     if(sharpshooterBonus(20, st)) m *= 1.20;                                 // Sharpshooter Piercing Shot
     if(juggernautBonus(1, st)) m *= 1.30;                                    // Juggernaut Crushing Blows
-    if(nightbladeBonus(20, st)) m *= 1.25;                                   // Nightblade Hex
+    m *= voidDmgMult(st);                                                    // Voidshadow: Vulnerability x Void Resonance x Soul Tax
     if(executionerBonus(20, st) && enemyHpFrac(monster, st) < executionerReapThreshold(st)) m *= 1.30; // Executioner Reap the Weak (Lv20); threshold raised by Rising Guillotine (Lv40)
     if(reaverBonus(1, st)) m *= 1.25;                                        // Reaver Savagery
     if(rangerBonus(80, st) && rangerAllStatuses(st)) m *= RANGER_ONSLAUGHT_MULT; // Ranger Apex Predator: x3 vs a fully-ailed foe
@@ -5408,7 +5442,6 @@
   function newClassCritChance(st){
     st = st || state; var c = 0;
     if(sharpshooterBonus(60, st)) c += 0.12; // Sharpshooter Deadeye
-    if(nightbladeBonus(60, st)) c += 0.12;   // Nightblade Dark Pact
     c += executionerGallowsCrit(st);         // Executioner Gallows Humor (Lv80): scales with the foe's missing Health
     if(samuraiBonus(80, st)) c += samuraiFocusStacks(st) * SAMURAI_ZANSHIN_CRIT_PER_STACK; // Samurai Zanshin: +1.5% crit per Focus stack
     c += reaperGrimResolveCrit(st);          // Reaper Grim Resolve (scales with missing Health)
@@ -5448,10 +5481,9 @@
   function pyromancerHeatHazeDodge(st){ st = st || state; return pyromancerBonus(60, st) ? Math.min(PYRO_HEATHAZE_DODGE_CAP, enemyBurnStacks(st) * PYRO_HEATHAZE_DODGE_PER_STACK) : 0; }
   // Fever Pitch (Lv80): attack-speed haste that grows with the enemy's Burn stacks.
   function pyromancerFeverHaste(st){ st = st || state; return pyromancerBonus(80, st) ? Math.min(PYRO_FEVER_CAP, enemyBurnStacks(st) * PYRO_FEVER_HASTE_PER_STACK) : 0; }
-  // Lifesteal (fraction of damage healed): Nightblade Siphon/Soul Reap.
-  function nightbladeLifestealPct(st){ if(nightbladeBonus(80, st)) return 0.15; if(nightbladeBonus(1, st)) return 0.08; return 0; }
-  // Nightblade Lv 40 Shadowstep: +15% Dodge (folded into playerDodgeChance).
-  function nightbladeDodgeBonus(st){ st = st || state; return nightbladeBonus(40, st) ? 0.15 : 0; }
+  // Lifesteal (fraction of damage healed): Voidshadow Soul Tax (Lv60) grants +2% lifesteal per
+  // distinct debuff on the foe.
+  function nightbladeLifestealPct(st){ st = st || state; return nightbladeBonus(60, st) ? VOID_SOULTAX_PER * enemyDebuffCount(st) : 0; }
   // Juggernaut Lv 40 Ironclad: +25% Armor; Lv 60 Unstoppable: -20% incoming damage.
   function juggernautArmorMult(st){ return juggernautBonus(40, st) ? 1.25 : 1; }
   function juggernautIncomingMult(st){ return juggernautBonus(60, st) ? 0.80 : 1; }
@@ -10521,6 +10553,19 @@
       // Lumen Oracle on-hit: Lv1 Flashbang (8% stun); Lv40 Reflected Light (a share of the hit heals the lowest ally / you).
       if(lumenBonus(1) && !offlineCapture && Math.random() < 0.08){ act.enemyStunUntil = Date.now() + 2000; spawnFloatingText('Flashed!', 'ft-rare'); }
       if(lumenBonus(40)){ var _lr = lumenApplyHeal(dmgToMonster * LUMEN_REFLECT_PCT); if(_lr > 0 && !offlineCapture) spawnFloatingText('+'+_lr+' HP', 'ft-success'); }
+      // Voidshadow on-hit: Lv1 Mark of the Void stacks Vulnerability (cap 10, refreshed each hit); at max,
+      // Lv80 Doom deepens it. Lv20 Enfeeble saps enemy damage 25% for 5s via the shared enemy-damage window.
+      if(nightbladeBonus(1)){
+        if((act.voidVulnUntil||0) <= Date.now()) act.voidVulnStacks = 0;   // a lapsed Mark starts fresh
+        var _prevVuln = act.voidVulnStacks || 0;
+        act.voidVulnStacks = Math.min(VOID_VULN_MAX, _prevVuln + 1);
+        act.voidVulnUntil = Date.now() + VOID_VULN_MS;
+        if(!offlineCapture){
+          if(nightbladeBonus(80) && act.voidVulnStacks >= VOID_VULN_MAX && _prevVuln < VOID_VULN_MAX) spawnFloatingText('Doomed!', 'ft-rare');
+          else spawnFloatingText('Vuln x'+act.voidVulnStacks, 'ft-bonus');
+        }
+      }
+      if(nightbladeBonus(20)){ state.classDebuffs.enemyDmgUntil = Date.now() + 5000; if(!offlineCapture) spawnFloatingText('Enfeebled!', 'ft-bonus'); }
       // Reaver Frenzied Rending (Lv 40): each hit stacks a Bleed (up to 5) and refreshes it; a 25% chance
       // adds an extra stack (the frenzy attack-speed bonus at max stacks lives in classAttackSpeedMult).
       if(reaverBonus(40)){
@@ -10741,6 +10786,7 @@
     act.staticCharge = 0; act.galvanizeStacks = 0; // Thunderfury: fresh Static meter + Galvanize ramp against each foe
     act.chillStacks = 0; act.enemyChillUntil = 0; act.frostbiteStacks = 0; act.frostbiteDps = 0; act.frostbiteUntil = 0; // Frostwarden Chill/Frostbite don't carry between foes
     act.burnStacks = 0; act.burnUntil = 0; act.burnDps = 0; // Pyromancer Burn doesn't carry between foes
+    act.voidVulnStacks = 0; act.voidVulnUntil = 0; // Voidshadow Mark of the Void / Doom don't carry between foes
     state.heraldGuardStacks = 0; // Herald Perfect Guard streak starts fresh against each foe
     // Duelist: each new foe is a fresh duel -- reset the ramp clock, the once-per-fight Disengage, and the stacks.
     act.duelStartedAt = Date.now(); act.disengageUsed = false; act.guardianBondUsed = false;
@@ -14765,6 +14811,10 @@
     add('fpoison', fb.poisonUntil, 'Poisoned', '#6fae3a');
     add('enfeeble', cd.enemyDmgUntil, 'Enfeebled', '#c85a2a');
     add('sunder', cd.enemyArmorUntil, 'Sundered', '#c85a2a');
+    if((a.voidVulnStacks||0) > 0 && (a.voidVulnUntil||0) > now){
+      var _doomed = nightbladeBonus(80) && (a.voidVulnStacks||0) >= VOID_VULN_MAX;
+      add('voidvuln', a.voidVulnUntil, (_doomed ? 'Doomed' : 'Vulnerable x'+a.voidVulnStacks), '#8a5ac8');
+    }
     return out;
   }
   var _arenaFxPeak = {}, _arenaFxSig = '';
@@ -23876,7 +23926,7 @@
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
-      pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
+      pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, assassinRhythmRegister:assassinRhythmRegister, ASSASSIN_RHYTHM_MAX:ASSASSIN_RHYTHM_MAX, assassinApplyLacerate:assassinApplyLacerate, assassinLacerateMaxStacks:assassinLacerateMaxStacks, ASSASSIN_BLEED_MAX:ASSASSIN_BLEED_MAX, assassinHemorrhageCritMult:assassinHemorrhageCritMult, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
