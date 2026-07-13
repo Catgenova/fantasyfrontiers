@@ -4379,6 +4379,39 @@
         dungeon:layer, category:def.category, slot:slot.id, slotLabel:slot.label, chance:slot.chance, blueprint:true, sell:0 };
     });
   });
+  // ===== Mastercrafting =====
+  // A dungeon Blueprint is forged into a LEGENDARY item. D1 (Cave) Rings: one of five signets, each with a
+  // unique effect only D1 legendary rings grant. Rarity scales the effect 2x/4x/8x (rare/supreme/fantastic).
+  // Only one legendary of each effect may be worn; they share the 5 ring slots with normal rings.
+  var LEGENDARY_RARITY_MULT = { normal:1, rare:2, supreme:4, fantastic:8 };
+  var LEG_RING_RARITIES = ['normal','rare','supreme','fantastic'];
+  var D1_LEG_RING_DEFS = [
+    { key:'block',       name:'Cave Signet of Warding',   stat:'Block Chance',                 base:0.05, icon:svgIcon('shield','#c9a227') },
+    { key:'dodge',       name:'Cave Signet of Evasion',   stat:'Dodge Chance',                 base:0.05, icon:svgIcon('balancepose','#c9a227') },
+    { key:'ignorearmor', name:'Cave Signet of Sundering', stat:'Ignore Armor',                 base:0.05, icon:svgIcon('axe','#c9a227') },
+    { key:'ignoreres',   name:'Cave Signet of Piercing',  stat:'Ignore Resistances',           base:0.05, icon:svgIcon('starburst','#c9a227') },
+    { key:'famhaste',    name:'Cave Signet of Communion', stat:'Reduced Familiar Action Time', base:0.05, icon:svgIcon('paw','#c9a227') }
+  ];
+  var D1_LEG_RING_MAP = {}; D1_LEG_RING_DEFS.forEach(function(d){ D1_LEG_RING_MAP[d.key] = d; });
+  function legRingItemId(key, rarity){ return 'legring_d1_' + key + '_' + rarity; }
+  // One inventory item per (effect x rarity). value = base effect x the rarity multiplier.
+  var LEGENDARY_RING_ITEMS = {};
+  D1_LEG_RING_DEFS.forEach(function(d){
+    LEG_RING_RARITIES.forEach(function(r){
+      var id = legRingItemId(d.key, r);
+      LEGENDARY_RING_ITEMS[id] = { id:id, legKey:d.key, dungeon:'d1', rarity:r, slot:'ring', legendary:true,
+        name: d.name + (r==='normal' ? '' : ' (' + getRarity(r).label + ')'), icon: d.icon,
+        value: Math.round(d.base * LEGENDARY_RARITY_MULT[r] * 1000) / 1000, statLabel: d.stat, sell:0 };
+    });
+  });
+  // Recipes keyed by "<layer>_<slot>". Only D1 Ring exists so far; other Blueprints read as "coming soon".
+  var MASTERCRAFT_RECIPES = {
+    d1_ring: { layer:'d1', slot:'ring',
+      inputs: { metallurgy_t20:1000, gem_voidcrystal:100, twine_t20:100, goldsmithing_t20:100 },
+      rareRings: 10,                              // + 10 rare Tier-20 Rings of any type
+      outcomes: D1_LEG_RING_DEFS.map(function(d){ return d.key; }) }
+  };
+  function mastercraftRecipeFor(bpItem){ return bpItem ? (MASTERCRAFT_RECIPES[bpItem.dungeon + '_' + bpItem.slot] || null) : null; }
   var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS);
 
   var GATHER_SKILL_IDS = Object.keys(GATHERING_SKILLS);
@@ -4946,14 +4979,14 @@
   // added on top only at the moment of a monster attack, so it is NOT folded in here.
   function playerBlockChance(st){
     st = st || state;
-    return getPlateArmorBlockChance(st) + getStaffBlockChance(st) + blockingBlockBonus(st) + reflexesBlockBonus(st) + classBlockBonus(st);
+    return getPlateArmorBlockChance(st) + getStaffBlockChance(st) + blockingBlockBonus(st) + reflexesBlockBonus(st) + classBlockBonus(st) + legendaryRingBonus('block', st);
   }
   function assassinBonus(reqLevel, st){ return classBonusActive('assassin', reqLevel, st); }
   // Total persistent Dodge chance (gear + physiques + class); the temporary familiar 'dodge' buff is added
   // on top only at the moment of a monster attack, so it is NOT folded in here.
   function playerDodgeChance(st){
     st = st || state;
-    return getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + nightbladeDodgeBonus(st) + lumenDodgeBonus(st) + pyromancerHeatHazeDodge(st); // + Pyromancer Heat Haze (scales with the enemy's Burn)
+    return getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + nightbladeDodgeBonus(st) + lumenDodgeBonus(st) + pyromancerHeatHazeDodge(st) + legendaryRingBonus('dodge', st); // + Pyromancer Heat Haze; + Cave Signet of Evasion
   }
   // ===== Assassin (twin Claws): reworked ladder =====
   //  Lv1  Rhythm        -- alternating main/off-hand hits build a meter; at full, the next two landed
@@ -5082,6 +5115,7 @@
     // Summoner Lv 40 (Desperate Summons): while you're below 25% Health, familiars cast twice as fast.
     if(summonerBonus(40) && state.playerHp < maxHp(state) * 0.25) ms *= 0.5;
     if(frostwardenBonus(80)) ms *= FROST_RESONANCE_CAST_MULT; // Rime Resonance: your Rime familiar casts 30% faster
+    ms *= (1 - Math.min(0.9, legendaryRingBonus('famhaste', state))); // Cave Signet of Communion: reduced familiar action time
     return Math.max(2500, ms);
   }
   function awardClassXp(amount){ var id = activeClassId(state); if(id && amount > 0) addXp(id, amount); }
@@ -7583,7 +7617,8 @@
   var RING_SLOT_IDS = ['ring1','ring2','ring3','ring4','ring5'];
   function findEmptyRingSlot(){
     for(var i=0;i<RING_SLOT_IDS.length;i++){
-      if(!state.jewelrySlots[RING_SLOT_IDS[i]].typeId) return RING_SLOT_IDS[i];
+      var s = state.jewelrySlots[RING_SLOT_IDS[i]];
+      if(s && !s.typeId && !s.leg) return RING_SLOT_IDS[i]; // legendary Signets have no typeId but still occupy the slot
     }
     return null;
   }
@@ -7600,6 +7635,7 @@
     if(RING_SLOT_IDS.indexOf(slotId)===-1) return;
     var cur = state.jewelrySlots[slotId];
     if(cur.uid){ /* displaced unique stays in the table, not returned to inventory */ }
+    else if(cur.leg){ addItem(legRingItemId(cur.leg, cur.rarity), 1); } // return a displaced legendary Signet
     else if(cur.typeId){
       addItem('ring_'+cur.typeId+'_t'+(cur.tier-1)+'_'+cur.rarity, 1);
     }
@@ -7614,6 +7650,53 @@
     if(cur && cur.uid){ state.jewelrySlots[slotId] = { typeId:null, tier:0, rarity:'normal' }; return; } // unique stays in the table
     if(!cur || !cur.typeId) return;
     addItem('ring_'+cur.typeId+'_t'+(cur.tier-1)+'_'+cur.rarity, 1);
+    state.jewelrySlots[slotId] = { typeId:null, tier:0, rarity:'normal' };
+  }
+  // ---- Mastercraft: legendary ring effects, crafting, and equip (they share the 5 ring slots) ----
+  function countRareT20Rings(){ var n = 0; (typeof RING_TYPES !== 'undefined' ? RING_TYPES : []).forEach(function(rt){ n += state.inventory['ring_' + rt.id + '_t20_rare'] || 0; }); return n; }
+  function consumeRareT20Rings(count){ RING_TYPES.forEach(function(rt){ if(count <= 0) return; var id = 'ring_' + rt.id + '_t20_rare'; var have = state.inventory[id] || 0; var take = Math.min(have, count); if(take > 0){ state.inventory[id] = have - take; count -= take; } }); }
+  function rollMastercraftRarity(){ var r = Math.random() + masterworkRarityBonus(); if(r >= 0.95) return 'fantastic'; if(r >= 0.85) return 'supreme'; if(r >= 0.60) return 'rare'; return 'normal'; }
+  // Sum of a legendary ring effect across equipped ring slots (one-of-each keeps this to one, but it's additive-safe).
+  function legendaryRingBonus(effectKey, st){ st = st || state; var sum = 0, def = D1_LEG_RING_MAP[effectKey]; if(!def || !st.jewelrySlots) return 0; RING_SLOT_IDS.forEach(function(sid){ var s = st.jewelrySlots[sid]; if(s && s.leg === effectKey) sum += def.base * (LEGENDARY_RARITY_MULT[s.rarity] || 1); }); return sum; }
+  function legRingEquipped(effectKey, st){ st = st || state; if(!st.jewelrySlots) return false; return RING_SLOT_IDS.some(function(sid){ var s = st.jewelrySlots[sid]; return s && s.leg === effectKey; }); }
+  function craftMastercraft(blueprintId){
+    var bp = BLUEPRINT_ITEMS[blueprintId]; if(!bp) return;
+    if(((state.blueprints && state.blueprints[blueprintId]) || 0) <= 0){ addLog('You don’t hold that Blueprint.', 'danger'); return; }
+    var recipe = mastercraftRecipeFor(bp);
+    if(!recipe){ addLog('That Mastercraft isn’t available yet.', 'danger'); return; }
+    if(!hasInputs(recipe.inputs)){ addLog('You lack the materials to mastercraft the ' + bp.name + '.', 'danger'); return; }
+    if(countRareT20Rings() < recipe.rareRings){ addLog('You need ' + recipe.rareRings + ' rare Tier-20 Rings (you have ' + countRareT20Rings() + ').', 'danger'); return; }
+    consumeInputs(recipe.inputs);
+    consumeRareT20Rings(recipe.rareRings);
+    state.blueprints[blueprintId] -= 1;
+    var key = recipe.outcomes[Math.floor(Math.random() * recipe.outcomes.length)];
+    var rarity = rollMastercraftRarity();
+    var itemId = legRingItemId(key, rarity);
+    addItem(itemId, 1);
+    bumpStat('crafted'); addXp('jewelrycrafting', 20000);
+    var it = LEGENDARY_RING_ITEMS[itemId];
+    addLog('Mastercraft! You forged the ' + it.name + ' — +' + Math.round(it.value * 100) + '% ' + it.statLabel + '.', 'important');
+    spawnFloatingText('+1 ' + it.name, rarity === 'fantastic' ? 'ft-fantastic' : rarity === 'supreme' ? 'ft-supreme' : rarity === 'rare' ? 'ft-rare' : 'ft-success');
+    needsRender = true;
+  }
+  function equipLegRing(itemId, slotId){
+    var item = LEGENDARY_RING_ITEMS[itemId];
+    if(!item || (state.inventory[itemId] || 0) <= 0) return;
+    if(legRingEquipped(item.legKey)){ addLog('You can only wear one ' + (D1_LEG_RING_MAP[item.legKey] || {}).name + ' at a time.', 'danger'); return; }
+    if(!slotId){ slotId = findEmptyRingSlot(); if(!slotId){ addLog('All 5 Ring slots are full. Unequip one first.', 'danger'); return; } }
+    if(RING_SLOT_IDS.indexOf(slotId) === -1) return;
+    var cur = state.jewelrySlots[slotId];
+    if(cur){ if(cur.leg){ addItem(legRingItemId(cur.leg, cur.rarity), 1); } else if(cur.typeId){ addItem('ring_' + cur.typeId + '_t' + (cur.tier - 1) + '_' + cur.rarity, 1); } } // displaced ring returns (uniques stay in their table)
+    state.inventory[itemId] -= 1;
+    state.jewelrySlots[slotId] = { leg: item.legKey, rarity: item.rarity };
+    armorPanelExpanded = true;
+    addLog('You equipped the ' + item.name + '.', 'important');
+  }
+  function unequipLegRing(slotId){
+    if(RING_SLOT_IDS.indexOf(slotId) === -1) return;
+    var cur = state.jewelrySlots[slotId];
+    if(!cur || !cur.leg) return;
+    addItem(legRingItemId(cur.leg, cur.rarity), 1);
     state.jewelrySlots[slotId] = { typeId:null, tier:0, rarity:'normal' };
   }
   function equipAmulet(itemId){
@@ -10146,6 +10229,8 @@
     // Scepters are a hybrid -- half of their swing is blunt (physical triangle vs armor) and half is
     // light (element triangle vs the monster's element); both halves are averaged into one multiplier.
     var elementMult = isWandAttack ? elementAdvantage(weaponStyle.element, monster.element) : 1;
+    // Cave Signet of Piercing: ignore a share of the enemy's elemental resistance (recover the shortfall below 1x).
+    var _ignRes = legendaryRingBonus('ignoreres', state); if(_ignRes > 0 && elementMult < 1) elementMult += (1 - elementMult) * _ignRes;
     var advantage;
     if(isWandAttack){
       advantage = 1;
@@ -10158,6 +10243,8 @@
     } else {
       advantage = weightedAdvantage(weaponStyle.attackTypes || {blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
     }
+    // Cave Signet of Sundering: ignore a share of the enemy's armour mitigation (recover the shortfall below 1x).
+    var _ignArm = legendaryRingBonus('ignorearmor', state); if(_ignArm > 0 && advantage < 1) advantage += (1 - advantage) * _ignArm;
     var quiverBonus = (offhandStyle && offhandStyle.type==='quiver' && offhandItem) ? (1 + offhandItem.dmgBonus) * offhandProficiency : 1;
     var ringBonus = isWandAttack ? 1 : getRingDamageMultiplier(state, weaponStyle.attackTypes || {blunt:1});
     var leatherBowBonus = weaponStyle.hand==='bow' ? (1 + getLeatherArmorBonuses(state).bowDmgBonus) : 1;
@@ -11642,25 +11729,50 @@
   }
   // Masterwork Blueprints -- their own inventory (Resources > Blueprints). Grouped by dungeon; each
   // dungeon shows all nine gear-slot Blueprints with owned counts (0 = not yet dropped, dimmed).
+  var mastercraftSel = null; // selected Blueprint id in the Mastercraft tab (null = empty craft card)
   function renderMasterworkTab(){
     var bp = state.blueprints || {};
-    var total = 0; Object.keys(bp).forEach(function(k){ total += bp[k] || 0; });
-    var html = '<div class="section-intro"><b>Masterwork Blueprints</b> — endgame gear plans that drop from dungeon bosses. Each will be forged from parts of the finest gear in the game (the Masterwork craft system is coming). You hold <b>' + fmt(total) + '</b> Blueprint' + (total === 1 ? '' : 's') + '.</div>';
-    DUNGEON_ORDER.forEach(function(layer){
-      var def = DUNGEON_DEFS[layer]; if(!def) return;
-      var layerCount = 0; MASTERWORK_SLOTS.forEach(function(s){ layerCount += (bp[masterworkBlueprintId(layer, s.id)] || 0); });
-      html += '<h3 style="margin-top:16px">' + svgIcon('gem', BLUEPRINT_DUNGEON_COLOR[layer] || '#8a5fb0') + ' ' + escapeHtml(def.category) + ' <span class="item-meta" style="font-weight:400">(' + fmt(layerCount) + ' held)</span></h3>';
+    var owned = Object.keys(BLUEPRINT_ITEMS).filter(function(id){ return (bp[id] || 0) > 0; })
+      .sort(function(a,b){ var A=BLUEPRINT_ITEMS[a], B=BLUEPRINT_ITEMS[b]; return DUNGEON_ORDER.indexOf(A.dungeon)-DUNGEON_ORDER.indexOf(B.dungeon) || 0; });
+    var total = 0; owned.forEach(function(id){ total += bp[id]; });
+    var html = '<div class="section-intro"><b>Mastercrafting</b> — forge a dungeon <b>Blueprint</b> into a Legendary. Pick a Blueprint from your collection below to load its recipe. You hold <b>' + fmt(total) + '</b> Blueprint' + (total === 1 ? '' : 's') + '.</div>';
+    // ---- Mastercraft card (empty until a Blueprint is selected) ----
+    var selBp = mastercraftSel ? BLUEPRINT_ITEMS[mastercraftSel] : null;
+    html += '<div class="arena" style="max-width:640px;margin:0 auto 14px">';
+    if(!selBp){
+      html += '<div class="empty-note" style="text-align:center;padding:24px 12px">' + svgIcon('starburst', '#c9a227') + '<div style="margin-top:6px">Select a Blueprint below to load its Mastercraft recipe.</div></div>';
+    } else {
+      var recipe = mastercraftRecipeFor(selBp);
+      var haveBp = bp[selBp.id] || 0;
+      html += '<div class="item-top"><div class="item-icon">' + selBp.icon + '</div><div><div class="item-name">' + escapeHtml(selBp.name) + '</div><div class="item-meta">Mastercraft &bull; you hold <b>x' + fmt(haveBp) + '</b></div></div></div>';
+      if(!recipe){
+        html += '<div class="empty-note" style="margin-top:10px">This Mastercraft recipe is coming soon.</div>';
+      } else {
+        html += '<div class="chance-line" style="margin-top:6px">Yields one random Legendary ' + escapeHtml(selBp.slotLabel) + ', its effect scaled <b>2x / 4x / 8x</b> by the rarity it rolls:</div>';
+        html += '<div class="style-row" style="margin:4px 0 8px">';
+        recipe.outcomes.forEach(function(key){ var d = D1_LEG_RING_MAP[key]; if(d) html += '<span class="style-btn" style="cursor:default">' + d.icon + ' ' + escapeHtml(d.name.replace('Cave Signet of ', '')) + ' <span class="style-type" style="text-transform:none">+' + Math.round(d.base * 100) + '% ' + escapeHtml(d.stat) + '</span></span>'; });
+        html += '</div>';
+        html += '<div class="inputs-line">Needs: ' + inputsLine(recipe.inputs, 'mc-' + selBp.id) + ' &bull; <span class="' + (countRareT20Rings() >= recipe.rareRings ? 'ok' : 'bad') + '">' + recipe.rareRings + 'x Rare Tier-20 Rings (' + countRareT20Rings() + ')</span></div>';
+        var canCraft = haveBp > 0 && hasInputs(recipe.inputs) && countRareT20Rings() >= recipe.rareRings;
+        html += '<button class="action-btn" data-action="craftMastercraft" data-item="' + selBp.id + '" ' + (canCraft ? '' : 'disabled') + '>Mastercraft</button>';
+      }
+    }
+    html += '</div>';
+    // ---- Blueprint inventory grid ----
+    html += '<div class="inputs-line" style="margin-top:6px">Your Blueprints</div>';
+    if(!owned.length){
+      html += '<div class="empty-note">No Blueprints yet. Clear dungeon bosses to earn them.</div>';
+    } else {
       html += '<div class="card-grid">';
-      MASTERWORK_SLOTS.forEach(function(slot){
-        var item = BLUEPRINT_ITEMS[masterworkBlueprintId(layer, slot.id)]; if(!item) return;
-        var owned = bp[item.id] || 0;
-        html += '<div class="item-card" style="padding:8px' + (owned ? '' : ';opacity:0.5') + '">';
+      owned.forEach(function(id){
+        var item = BLUEPRINT_ITEMS[id]; var q = bp[id]; var sel = (id === mastercraftSel);
+        html += '<div class="item-card' + (sel ? ' active-item' : '') + '" data-action="mastercraftSelect" data-item="' + id + '" style="padding:8px;cursor:pointer">';
         html += '<div class="item-top"><div class="item-icon">' + item.icon + '</div><div><div class="item-name" style="font-size:0.9em">' + escapeHtml(item.name) + '</div>';
-        html += '<div class="item-meta">' + escapeHtml(slot.label) + ' &bull; Drop ' + (slot.chance * 100) + '%' + (owned ? ' &bull; <b>x' + fmt(owned) + '</b>' : '') + '</div></div></div>';
+        html += '<div class="item-meta">' + escapeHtml(item.slotLabel) + ' &bull; <b>x' + fmt(q) + '</b>' + (mastercraftRecipeFor(item) ? '' : ' &bull; soon') + '</div></div></div>';
         html += '</div>';
       });
       html += '</div>';
-    });
+    }
     return html;
   }
   function renderChatDrawer(){
@@ -13333,16 +13445,21 @@
   }
   function renderRingsEquipSection(){
     var html = '<h3>Rings</h3>';
-    html += '<div class="section-intro">Up to 5 Rings can be worn at once -- mix and match types freely, their bonuses stack.</div>';
+    html += '<div class="section-intro">Up to 5 Rings can be worn at once -- mix and match types freely, their bonuses stack. Legendary <b>Signets</b> (Mastercrafted from Cave Blueprints) share these slots; only one of each Signet may be worn.</div>';
     var ownedRings = Object.keys(RING_ITEMS).filter(function(id){ return (state.inventory[id]||0)>0; })
       .sort(function(a,b){ return RING_ITEMS[a].tierIndex - RING_ITEMS[b].tierIndex; });
+    var ownedLeg = Object.keys(LEGENDARY_RING_ITEMS).filter(function(id){ return (state.inventory[id]||0)>0; });
     html += '<div class="card-grid">';
     RING_SLOT_IDS.forEach(function(slotId, slotIdx){
       var slotRing = getRingItemInSlot(state, slotId);
+      var ss = state.jewelrySlots[slotId];
+      var legItem = (ss && ss.leg) ? LEGENDARY_RING_ITEMS[legRingItemId(ss.leg, ss.rarity)] : null;
       html += '<div class="item-card">';
-      html += '<div class="item-top"><div class="item-icon">'+svgIcon('ring','#c9a227')+'</div><div><div class="item-name">Ring Slot '+(slotIdx+1)+'</div><div class="item-meta">'+(slotRing ? slotRing.name+' &bull; +'+Math.round(ringItemBonus(slotRing)*100)+'% '+ringBonusLabel(slotRing) : 'Empty')+'</div></div></div>';
-      if(ownedRings.length===0){
-        html += '<div class="empty-note">No Rings in inventory. Forge one in Crafting &rarr; Jewelrycrafting.</div>';
+      var metaTxt = legItem ? (escapeHtml(legItem.name)+' &bull; +'+Math.round(legItem.value*100)+'% '+escapeHtml(legItem.statLabel))
+        : (slotRing ? slotRing.name+' &bull; +'+Math.round(ringItemBonus(slotRing)*100)+'% '+ringBonusLabel(slotRing) : 'Empty');
+      html += '<div class="item-top"><div class="item-icon">'+svgIcon('ring','#c9a227')+'</div><div><div class="item-name">Ring Slot '+(slotIdx+1)+'</div><div class="item-meta">'+metaTxt+'</div></div></div>';
+      if(ownedRings.length===0 && ownedLeg.length===0){
+        html += '<div class="empty-note">No Rings in inventory. Forge one in Crafting &rarr; Jewelrycrafting, or Mastercraft a Signet.</div>';
       } else {
         html += '<div class="style-row">';
         ownedRings.forEach(function(id){
@@ -13350,9 +13467,16 @@
           var qty = state.inventory[id]||0;
           html += '<button class="style-btn" data-action="equipRing" data-item="'+id+'" data-slot="'+slotId+'">'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">+'+Math.round(ringItemBonus(item)*100)+'%</span></button>';
         });
+        ownedLeg.forEach(function(id){
+          var item = LEGENDARY_RING_ITEMS[id];
+          var qty = state.inventory[id]||0;
+          var worn = legRingEquipped(item.legKey);
+          html += '<button class="style-btn'+(worn?' locked':'')+'" data-action="equipLegRing" data-item="'+id+'" data-slot="'+slotId+'" '+(worn?'disabled':'')+'>'+item.icon+' '+escapeHtml(item.name)+' <span class="style-lvl">x'+qty+'</span><span class="style-type" style="text-transform:none">+'+Math.round(item.value*100)+'% '+escapeHtml(item.statLabel)+(worn?' &bull; worn':'')+'</span></button>';
+        });
         html += '</div>';
       }
-      if(slotRing) html += '<button class="action-btn stop" data-action="unequipRing" data-slot="'+slotId+'">Unequip</button>';
+      if(legItem) html += '<button class="action-btn stop" data-action="unequipLegRing" data-slot="'+slotId+'">Unequip</button>';
+      else if(slotRing) html += '<button class="action-btn stop" data-action="unequipRing" data-slot="'+slotId+'">Unequip</button>';
       html += '</div>';
     });
     html += '</div>';
@@ -20717,6 +20841,7 @@
     if(itemId.indexOf('bodyarmor_')===0) return 'equipBodyArmor';
     if(itemId.indexOf('belt_t')===0) return 'equipBelt';
     if(itemId.indexOf('relic_t')===0) return 'equipRelic';
+    if(itemId.indexOf('legring_')===0) return 'equipLegRing';
     if(itemId.indexOf('ring_')===0) return 'equipRing';
     if(itemId.indexOf('amulet_')===0) return 'equipAmulet';
     return null;
@@ -21936,6 +22061,14 @@
       equipRing(btn.getAttribute('data-item'), equipSlotAttr || undefined);
     } else if(action==='unequipRing'){
       unequipRing(btn.getAttribute('data-slot'));
+    } else if(action==='equipLegRing'){
+      equipLegRing(btn.getAttribute('data-item'), btn.getAttribute('data-slot') || undefined); render();
+    } else if(action==='unequipLegRing'){
+      unequipLegRing(btn.getAttribute('data-slot')); render();
+    } else if(action==='craftMastercraft'){
+      craftMastercraft(btn.getAttribute('data-item')); render();
+    } else if(action==='mastercraftSelect'){
+      mastercraftSel = btn.getAttribute('data-item'); render();
     } else if(action==='forgeAmulet'){
       craftAmulet(btn.getAttribute('data-type')||'plain', parseInt(btn.getAttribute('data-tier'),10));
     } else if(action==='equipAmulet'){
@@ -22950,7 +23083,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,

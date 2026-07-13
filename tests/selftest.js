@@ -1561,6 +1561,39 @@
     near(s.familiarBuffs.enemySlowPct, 0.99, 'Slow clamps to 99%');
   });
 
+  // ---- Mastercrafting: D1 Ring Blueprint -> one of 5 Legendary Signets (effect scaled 2x/4x/8x) --------
+  suite('mastercraft: D1 legendary rings', function(){
+    var s = FF._state;
+    eq(Object.keys(FF.LEGENDARY_RING_ITEMS).length, 20, '5 effects x 4 rarities = 20 legendary ring items');
+    eq(FF.LEGENDARY_RING_ITEMS[FF.legRingItemId('block','normal')].value, 0.05, 'block Signet base is 5%');
+    eq(FF.LEGENDARY_RING_ITEMS[FF.legRingItemId('block','rare')].value, 0.10, 'rare = 2x');
+    eq(FF.LEGENDARY_RING_ITEMS[FF.legRingItemId('block','supreme')].value, 0.20, 'supreme = 4x');
+    eq(FF.LEGENDARY_RING_ITEMS[FF.legRingItemId('block','fantastic')].value, 0.40, 'fantastic = 8x');
+    // Recipe matches the spec; only D1 Ring exists so far.
+    var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','ring')]);
+    ok(rec && rec.inputs.metallurgy_t20===1000 && rec.inputs.gem_voidcrystal===100 && rec.inputs.twine_t20===100 && rec.inputs.goldsmithing_t20===100 && rec.rareRings===10, 'D1 Ring recipe = 1000 ingots / 100 gems / 100 twine / 100 settings / 10 rare rings');
+    eq(FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2','ring')]), null, 'D2 Ring mastercraft is not available yet');
+    // Effect aggregation from an equipped Signet.
+    var svJ = s.jewelrySlots;
+    s.jewelrySlots = { ring1:{leg:'block',rarity:'rare'}, ring2:{typeId:null,tier:0,rarity:'normal'}, ring3:{typeId:null,tier:0,rarity:'normal'}, ring4:{typeId:null,tier:0,rarity:'normal'}, ring5:{typeId:null,tier:0,rarity:'normal'} };
+    near(FF.legendaryRingBonus('block', s), 0.10, 'an equipped rare block Signet gives +10% block');
+    ok(FF.legRingEquipped('block', s) && !FF.legRingEquipped('dodge', s), 'legRingEquipped is per-effect');
+    s.jewelrySlots = svJ;
+    // Full craft: materials + 10 rare Tier-20 rings + a Blueprint -> one Signet, all inputs consumed.
+    var svInv = s.inventory, svBp = s.blueprints;
+    var ringId = 'ring_' + FF.RING_TYPES[0].id + '_t20_rare';
+    s.inventory = { metallurgy_t20:1000, gem_voidcrystal:100, twine_t20:100, goldsmithing_t20:100 };
+    s.inventory[ringId] = 10;
+    s.blueprints = {}; s.blueprints[FF.masterworkBlueprintId('d1','ring')] = 1;
+    FF.craftMastercraft(FF.masterworkBlueprintId('d1','ring'));
+    eq(s.blueprints[FF.masterworkBlueprintId('d1','ring')], 0, 'craft consumes the Blueprint');
+    eq(s.inventory.metallurgy_t20, 0, 'craft consumes the ingots');
+    eq(s.inventory[ringId], 0, 'craft consumes the 10 rare Rings');
+    var made = Object.keys(FF.LEGENDARY_RING_ITEMS).reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
+    eq(made, 1, 'craft grants exactly one Legendary Signet');
+    s.inventory = svInv; s.blueprints = svBp;
+  });
+
   // ---- Dungeon unlock chain: each layer requires clearing the previous boss (Cave = Combat Score only) --
   suite('dungeons: unlock chain (clear the previous boss)', function(){
     var s = FF._state, saved = s.dungeonsCleared;
