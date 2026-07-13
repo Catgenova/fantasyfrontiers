@@ -19705,12 +19705,35 @@
   var GUILD_MAX_MEMBERS = 10;    // a guild is capped at this many members
   function guildIsFull(count){ return (count||0) >= GUILD_MAX_MEMBERS; }
   var GUILD_SUBS = [
+    {id:'guilds', label:'Guilds', icon:svgIcon('compass','var(--cat-guild)')},
     {id:'roster', label:'Roster', icon:svgIcon('person','var(--cat-guild)')},
     {id:'bank', label:'Bank', icon:svgIcon('chest','var(--cat-guild)')},
     {id:'estate', label:'Estate', icon:svgIcon('castle','var(--cat-guild)')},
     {id:'bosses', label:'Bosses', icon:svgIcon('hornedskull','var(--cat-guild)')}
   ];
   var guildSub = 'roster';
+  // Guild directory: browse every guild (world-readable guilds + guild_members) and view its roster.
+  var guildDir = { status:'idle', list:[], viewId:null, viewGuild:null, viewMembers:[], viewStatus:'idle' };
+  function guildDirLoad(force){
+    if(!chatClient || guildDir.status==='loading') return;
+    if(!force && guildDir.status==='ready') return;
+    guildDir.status='loading';
+    chatClient.from('guilds').select('id,name,tag,description,member_count,mortal').order('member_count',{ascending:false}).limit(100).then(function(res){
+      guildDir.list = (res && res.data) || []; guildDir.status='ready';
+      if(currentCategory==='guild') render();
+    }, function(){ guildDir.status='error'; if(currentCategory==='guild') render(); });
+  }
+  function guildDirOpen(id){
+    if(!chatClient || !id) return;
+    guildDir.viewId = id; guildDir.viewStatus='loading';
+    guildDir.viewGuild = (guildDir.list||[]).filter(function(x){ return x.id===id; })[0] || null;
+    guildDir.viewMembers = []; render();
+    chatClient.from('guild_members').select('user_id,username,rank,contribution,joined_at').eq('guild_id', id).order('joined_at',{ascending:true}).then(function(res){
+      guildDir.viewMembers = (res && res.data) || []; guildDir.viewStatus='ready';
+      if(currentCategory==='guild') render();
+    }, function(){ guildDir.viewStatus='error'; if(currentCategory==='guild') render(); });
+  }
+  function guildDirBack(){ guildDir.viewId=null; guildDir.viewGuild=null; guildDir.viewMembers=[]; render(); }
   var guildState = { status:'idle', guild:null, members:[], myRank:null, applications:[], busy:false, error:'' };
   var guildBrowseState = { status:'idle', list:[], appliedTo:null };
 
@@ -19882,10 +19905,43 @@
     var subs = gd.mortal ? GUILD_SUBS.filter(function(s){ return s.id!=='bank'; }) : GUILD_SUBS;
     if(gd.mortal && guildSub==='bank') guildSub='roster';
     html += '<div class="guild-subtabs">'+subs.map(function(s){ return '<button class="guild-subtab'+(s.id===guildSub?' active':'')+'" data-action="guildSubtab" data-sub="'+s.id+'">'+s.icon+' '+s.label+'</button>'; }).join('')+'</div>';
-    if(guildSub==='roster') html += renderGuildRoster();
+    if(guildSub==='guilds') html += renderGuildDirectory();
+    else if(guildSub==='roster') html += renderGuildRoster();
     else if(guildSub==='bank') html += renderGuildBank();
     else if(guildSub==='estate') html += renderGuildEstate();
     else if(guildSub==='bosses') html += renderGuildBoss();
+    return html;
+  }
+  // The Guilds directory: browse every guild's name/tag/size, tap one to view its roster (read-only).
+  function renderGuildDirectory(){
+    if(guildDir.status==='idle') guildDirLoad(false);
+    if(guildDir.viewId){
+      var gd = guildDir.viewGuild || {};
+      var h = '<button class="action-btn" data-action="guildDirBack" style="width:auto;flex:0 0 auto;margin-bottom:8px;">&lsaquo; All guilds</button>';
+      h += '<div class="guild-header"><div><div class="guild-title">['+escapeHtml(gd.tag||'')+'] '+escapeHtml(gd.name||'Guild')+'</div><div class="item-meta">'+((gd.member_count!=null?gd.member_count:guildDir.viewMembers.length))+' member'+((gd.member_count===1)?'':'s')+(gd.mortal?' &bull; <span style="color:#8a1f2c;">Mortal guild</span>':'')+'</div></div></div>';
+      if(gd.description) h += '<div class="item-meta" style="margin:6px 0 4px;">'+escapeHtml(gd.description)+'</div>';
+      h += '<div class="guild-section-title">Roster</div>';
+      if(guildDir.viewStatus==='loading') return h+'<div class="empty-note">Loading roster&hellip;</div>';
+      if(guildDir.viewStatus==='error') return h+'<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad);">Couldn\'t load that guild\'s roster.</div>';
+      if(!guildDir.viewMembers.length) return h+'<div class="empty-note">No members.</div>';
+      var order={leader:0,officer:1,member:2};
+      guildDir.viewMembers.slice().sort(function(a,b){ return (order[a.rank]!=null?order[a.rank]:3)-(order[b.rank]!=null?order[b.rank]:3); }).forEach(function(m){
+        var isMe = authUser && m.user_id===authUser.id;
+        h += '<div class="guild-member-row"><div><b>'+escapeHtml(m.username)+'</b>'+(isMe?' <span class="item-meta">(you)</span>':'')+guildRankBadge(m.rank)+'</div></div>';
+      });
+      return h;
+    }
+    var html = '<div class="section-intro">Browse every guild &mdash; tap one to view its roster.</div>';
+    html += '<div class="guild-section-title" style="margin-top:0;display:flex;justify-content:space-between;align-items:center;">All Guilds <button class="mini-btn" data-action="guildDirRefresh">Refresh</button></div>';
+    if(guildDir.status==='loading'||guildDir.status==='idle') return html+'<div class="empty-note">Loading guilds&hellip;</div>';
+    if(guildDir.status==='error') return html+'<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad);">Couldn\'t load the guild directory.</div>';
+    if(!guildDir.list.length) return html+'<div class="empty-note">No guilds yet.</div>';
+    guildDir.list.forEach(function(gd){
+      var mine = guildState.guild && guildState.guild.id===gd.id;
+      html += '<button class="guild-card guild-dir-row" data-action="guildDirView" data-id="'+escapeHtml(String(gd.id))+'" style="display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;text-align:left;cursor:pointer;">';
+      html += '<div><b>['+escapeHtml(gd.tag)+'] '+escapeHtml(gd.name)+'</b>'+(mine?' <span class="item-meta">(yours)</span>':'')+(gd.mortal?' '+svgIcon('hornedskull','#8a1f2c'):'')+'<div class="item-meta">'+gd.member_count+'/'+GUILD_MAX_MEMBERS+' member'+(gd.member_count===1?'':'s')+'</div></div>';
+      html += '<span class="item-meta">View &rsaquo;</span></button>';
+    });
     return html;
   }
   function renderGuildRoster(){
@@ -23012,6 +23068,13 @@
       changePassword();
     } else if(action==='guildSubtab'){
       guildSub = btn.getAttribute('data-sub');
+      if(guildSub==='guilds'){ guildDir.viewId=null; guildDirLoad(false); } // enter the directory at the list
+    } else if(action==='guildDirView'){
+      guildDirOpen(btn.getAttribute('data-id'));
+    } else if(action==='guildDirBack'){
+      guildDirBack();
+    } else if(action==='guildDirRefresh'){
+      guildDirLoad(true);
     } else if(action==='guildCreate'){
       guildCreate();
     } else if(action==='guildApply'){
@@ -23700,7 +23763,7 @@
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
       GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS,
       renderGlobalActionBar:renderGlobalActionBar, describeTask:describeTask, censorChat:censorChat,
-      GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull,
+      GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS,
       TOOL_TYPES:TOOL_TYPES, toolBenefitLabel:toolBenefitLabel, BLACKSMITH_TOOL_GROUPS:BLACKSMITH_TOOL_GROUPS, blacksmithToolGroupKey:blacksmithToolGroupKey, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupsOpen:blacksmithGroupsOpen,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
