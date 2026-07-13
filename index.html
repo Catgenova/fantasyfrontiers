@@ -397,6 +397,11 @@
   .market-subtabs{display:flex; align-items:center; gap:8px; margin:10px 0 12px; flex-wrap:wrap;}
   .market-subtab{font-family:inherit; font-size:13px; padding:6px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text); cursor:pointer;}
   .market-subtab.on{border-color:var(--cat-market); color:var(--cat-market); font-weight:600;}
+  .dungeon-tabs{display:flex; align-items:center; gap:6px; margin:10px 0 12px; flex-wrap:wrap;}
+  .dungeon-tab{font-family:inherit; font-size:13px; padding:6px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text); cursor:pointer; display:inline-flex; align-items:center; gap:5px;}
+  .dungeon-tab .dungeon-tab-sub{font-family:var(--font-mono); font-size:10px; color:var(--text-faint);}
+  .dungeon-tab.on{border-color:#8a5fb0; color:#8a5fb0; font-weight:600;}
+  .dungeon-tab.locked{opacity:0.65;}
   .market-search{margin-bottom:8px;}
   .market-search-input, .market-num{font-family:inherit; font-size:13px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text); width:100%; box-sizing:border-box;}
   .market-results{display:flex; flex-direction:column; gap:4px; max-height:60dvh; overflow:auto;}
@@ -14290,6 +14295,7 @@
   var dungeonRun = null;        // { def, idx, party:[{name,threat,alive,isSelf}], targetIdx, active, cleared }
   var dungeonView = 'browse';   // 'browse' | 'lobby' | 'run' | 'result'
   var dungeonLobbyId = null;
+  var dungeonBrowseLayer = 'd1';   // which dungeon tab is open on the browse page
   function armorThreatWeight(material){ return ({ plate:4, chain:3, leather:2, tailoring:1 })[material] || 1; }
   // A player's threat: a base plus a weight per worn armour piece by material (plate > chain > leather > cloth),
   // so heavily-plated players draw the enemy's attacks more than cloth-wearers.
@@ -14540,43 +14546,64 @@
   function renderDungeonBrowse(){
     var html = '<div class="section-intro">Descend into <b>Dungeons</b> — gauntlets of foes fought one at a time. Bring a party of up to 4 (synchronous co-op is coming; for now you enter solo). Clear the final boss and every surviving delver claims a <b>Formula</b>, a blueprint for endgame gear.</div>';
     var myScore = combatLevelEquivalent(state);
+    // One tab per dungeon -- each layer (and its loot) is viewed on its own.
+    if(!DUNGEON_DEFS[dungeonBrowseLayer]) dungeonBrowseLayer = DUNGEON_ORDER[0];
+    html += '<div class="dungeon-tabs">';
     DUNGEON_ORDER.forEach(function(layer){
-      var def = DUNGEON_DEFS[layer]; if(!def) return;
-      var canEnter = myScore >= def.minCombatScore;
-      var boss = def.enemies[def.enemies.length - 1];
-      html += '<h3 style="margin-top:16px">' + svgIcon('gem', '#8a5fb0') + ' ' + escapeHtml(def.category) + '</h3>';
-      html += '<div class="item-card">';
-      html += '<div class="item-top"><div class="item-icon">' + boss.icon + '</div><div><div class="item-name">' + def.label + '</div><div class="item-meta">' + def.enemies.length + ' ' + def.theme + ' &bull; Levels ' + dungeonEnemyLevelRange(def) + ' &bull; Boss: ' + escapeHtml(boss.name) + '</div></div></div>';
-      html += '<div class="chance-line">' + def.enemies.length + ' ' + def.theme + ', each with its own element and armour, guard the ' + escapeHtml(def.category.toLowerCase()) + '. The ' + def.enemies.length + 'th — ' + escapeHtml(boss.name) + ' — towers over the rest. Reward: <b>' + def.rewardName + '</b>.</div>';
-      html += '<div class="inputs-line" style="margin-top:6px">Requires Combat Score ' + def.minCombatScore + (canEnter ? '' : ' <span style="color:var(--hp-bad)">(you are ' + myScore + ')</span>') + '</div>';
-      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">';
-      html += '<button class="action-btn" data-action="dungeonEnter" data-id="' + def.id + '" style="width:auto" ' + (canEnter ? '' : 'disabled') + '>' + (canEnter ? 'Enter Solo' : 'Combat Score ' + def.minCombatScore + ' required') + '</button>';
-      if(chatClient && authUser) html += '<button class="action-btn" data-action="dungeonNetCreate" data-id="' + def.id + '" style="width:auto" ' + ((canEnter && !dungeonNet.busy) ? '' : 'disabled') + '>' + svgIcon('person', 'currentColor') + ' Create Party (1–4)</button>';
-      html += '</div>';
-      // Open parties to join (multiplayer, server-authoritative shared fight) -- per layer.
-      if(chatClient && authUser){
-        var lobbies = dungeonNet.lobbiesByLayer[layer] || [];
-        html += '<div class="inputs-line" style="margin-top:12px;display:flex;justify-content:space-between;align-items:center">Open Parties <button class="action-btn" data-action="dungeonNetRefreshList" data-id="' + def.id + '" style="width:auto;padding:4px 10px">Refresh</button></div>';
-        if(!lobbies.length) html += '<div class="empty-note">No open parties right now. Create one above — teammates who Refresh will see it.</div>';
-        else lobbies.forEach(function(lb){
-          html += '<div class="item-card" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><div class="item-name">' + escapeHtml(lb.members[0] || 'Party') + '’s party</div><div class="item-meta">' + lb.count + '/4 &bull; ' + escapeHtml(lb.members.join(', ')) + '</div></div>';
-          html += '<button class="action-btn" data-action="dungeonNetJoin" data-id="' + lb.id + '" style="width:auto" ' + ((lb.count < 4 && !dungeonNet.busy) ? '' : 'disabled') + '>Join</button></div>';
-        });
-      }
-      html += '</div>';
-      // Enemy roster preview -- every portrait, so the foes are visible before entering.
-      html += '<div class="inputs-line" style="margin-top:12px">Denizens of the ' + escapeHtml(def.category) + '</div>';
-      html += '<div class="card-grid">';
-      def.enemies.forEach(function(en, i){
-        html += '<div class="item-card" style="text-align:center;padding:8px">';
-        html += '<div style="width:56px;height:56px;margin:0 auto">' + en.icon + '</div>';
-        html += '<div class="item-name" style="font-size:0.82em;margin-top:4px">' + (en.isBoss ? '&#9733; ' : (i + 1) + '. ') + escapeHtml(en.name) + '</div>';
-        html += '<div class="item-meta">Lv ' + en.level + ' &bull; ' + elementBadge(en) + '</div>';
-        html += '</div>';
+      var d = DUNGEON_DEFS[layer]; if(!d) return;
+      var unlocked = myScore >= d.minCombatScore;
+      html += '<button class="dungeon-tab' + (layer === dungeonBrowseLayer ? ' on' : '') + (unlocked ? '' : ' locked') + '" data-action="dungeonTab" data-id="' + layer + '" title="' + escapeHtml(d.label) + (unlocked ? '' : ' — Combat Score ' + d.minCombatScore + ' required') + '">'
+        + (unlocked ? '' : '🔒 ') + escapeHtml(d.id.toUpperCase()) + ' <span class="dungeon-tab-sub">' + escapeHtml(d.category) + '</span></button>';
+    });
+    html += '</div>';
+    html += renderDungeonLayerPanel(dungeonBrowseLayer, myScore);
+    if(chatClient && authUser && dungeonNet.error) html += '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad)">' + escapeHtml(dungeonNet.error) + '</div>';
+    return html;
+  }
+  // The full panel for one dungeon layer: descent card, open parties, loot, and the enemy roster.
+  function renderDungeonLayerPanel(layer, myScore){
+    var def = DUNGEON_DEFS[layer]; if(!def) return '';
+    var canEnter = myScore >= def.minCombatScore;
+    var boss = def.enemies[def.enemies.length - 1];
+    var html = '<h3 style="margin-top:4px">' + svgIcon('gem', '#8a5fb0') + ' ' + escapeHtml(def.category) + '</h3>';
+    html += '<div class="item-card">';
+    html += '<div class="item-top"><div class="item-icon">' + boss.icon + '</div><div><div class="item-name">' + def.label + '</div><div class="item-meta">' + def.enemies.length + ' ' + def.theme + ' &bull; Levels ' + dungeonEnemyLevelRange(def) + ' &bull; Boss: ' + escapeHtml(boss.name) + '</div></div></div>';
+    html += '<div class="chance-line">' + def.enemies.length + ' ' + def.theme + ', each with its own element and armour, guard the ' + escapeHtml(def.category.toLowerCase()) + '. The ' + def.enemies.length + 'th — ' + escapeHtml(boss.name) + ' — towers over the rest. Reward: <b>' + def.rewardName + '</b>.</div>';
+    html += '<div class="inputs-line" style="margin-top:6px">Requires Combat Score ' + def.minCombatScore + (canEnter ? '' : ' <span style="color:var(--hp-bad)">(you are ' + myScore + ')</span>') + '</div>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">';
+    html += '<button class="action-btn" data-action="dungeonEnter" data-id="' + def.id + '" style="width:auto" ' + (canEnter ? '' : 'disabled') + '>' + (canEnter ? 'Enter Solo' : 'Combat Score ' + def.minCombatScore + ' required') + '</button>';
+    if(chatClient && authUser) html += '<button class="action-btn" data-action="dungeonNetCreate" data-id="' + def.id + '" style="width:auto" ' + ((canEnter && !dungeonNet.busy) ? '' : 'disabled') + '>' + svgIcon('person', 'currentColor') + ' Create Party (1–4)</button>';
+    html += '</div>';
+    // Open parties to join (multiplayer, server-authoritative shared fight) -- for this layer.
+    if(chatClient && authUser){
+      var lobbies = dungeonNet.lobbiesByLayer[layer] || [];
+      html += '<div class="inputs-line" style="margin-top:12px;display:flex;justify-content:space-between;align-items:center">Open Parties <button class="action-btn" data-action="dungeonNetRefreshList" data-id="' + def.id + '" style="width:auto;padding:4px 10px">Refresh</button></div>';
+      if(!lobbies.length) html += '<div class="empty-note">No open parties right now. Create one above — teammates who Refresh will see it.</div>';
+      else lobbies.forEach(function(lb){
+        html += '<div class="item-card" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><div class="item-name">' + escapeHtml(lb.members[0] || 'Party') + '’s party</div><div class="item-meta">' + lb.count + '/4 &bull; ' + escapeHtml(lb.members.join(', ')) + '</div></div>';
+        html += '<button class="action-btn" data-action="dungeonNetJoin" data-id="' + lb.id + '" style="width:auto" ' + ((lb.count < 4 && !dungeonNet.busy) ? '' : 'disabled') + '>Join</button></div>';
       });
+    }
+    html += '</div>';
+    // Loot -- the boss drop for this layer. The Masterwork crafting system will grow out of here.
+    var reward = FORMULA_ITEMS[def.reward] || {};
+    var owned = (state.inventory && state.inventory[def.reward]) || 0;
+    html += '<div class="inputs-line" style="margin-top:14px">Loot &mdash; ' + escapeHtml(def.category) + '</div>';
+    html += '<div class="item-card">';
+    html += '<div class="item-top"><div class="item-icon">' + (reward.icon || '') + '</div><div><div class="item-name">' + def.rewardName + '</div><div class="item-meta">Boss drop &bull; every surviving delver claims one' + (owned ? ' &bull; <b>You own ' + fmt(owned) + '</b>' : '') + '</div></div></div>';
+    html += '<div class="chance-line">A blueprint for endgame <b>Masterwork</b> gear. The crafting system that forges Formulas into gear is coming &mdash; collect them now, one per boss clear.</div>';
+    html += '</div>';
+    // Enemy roster preview -- every portrait, so the foes are visible before entering.
+    html += '<div class="inputs-line" style="margin-top:14px">Denizens of the ' + escapeHtml(def.category) + '</div>';
+    html += '<div class="card-grid">';
+    def.enemies.forEach(function(en, i){
+      html += '<div class="item-card" style="text-align:center;padding:8px">';
+      html += '<div style="width:56px;height:56px;margin:0 auto">' + en.icon + '</div>';
+      html += '<div class="item-name" style="font-size:0.82em;margin-top:4px">' + (en.isBoss ? '&#9733; ' : (i + 1) + '. ') + escapeHtml(en.name) + '</div>';
+      html += '<div class="item-meta">Lv ' + en.level + ' &bull; ' + elementBadge(en) + '</div>';
       html += '</div>';
     });
-    if(chatClient && authUser && dungeonNet.error) html += '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad)">' + escapeHtml(dungeonNet.error) + '</div>';
+    html += '</div>';
     return html;
   }
   function renderDungeonLobby(id){
@@ -21686,6 +21713,8 @@
     } else if(action==='stop'){
       if(state.activity && state.activity.dungeon) dungeonEndRun('retreat'); // retreating from a dungeon abandons the run
       else stopActivity();
+    } else if(action==='dungeonTab'){
+      dungeonBrowseLayer = btn.getAttribute('data-id'); render();
     } else if(action==='dungeonEnter'){
       dungeonEnterLobby(btn.getAttribute('data-id'));
     } else if(action==='dungeonBegin'){
