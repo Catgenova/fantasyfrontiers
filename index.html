@@ -6179,6 +6179,7 @@
   function makeShaftInputs(logTierIndex){ var o = {}; o['forestry_t'+logTierIndex] = 1; return o; }
   function shaftOutputFor(logTierIndex){ return 15*(logTierIndex+1); }
   function startShaftCraft(logTierIndex){
+    if(dungeonLocksActions()){ dungeonActionBlockedNotice(); return; }
     if((state.inventory['forestry_t'+logTierIndex]||0) <= 0) return;
     var slot = findFreeCraftSlot();
     if(slot && !slot.primary){
@@ -7777,9 +7778,23 @@
     }
     return null;
   }
+  // While the player is committed to a dungeon (a live solo fight, or a networked party in its lobby/
+  // active run), they can't start ANY other action-bar task -- starting one would abandon or run
+  // alongside the dungeon fight. Leaving/finishing the run clears the lock. (dungeonRun/dungeonNet are
+  // declared later in the IIFE; they're assigned well before any player action can fire.)
+  function dungeonLocksActions(){
+    if(typeof dungeonRun !== 'undefined' && dungeonRun && dungeonRun.active) return true;
+    if(typeof dungeonNet !== 'undefined' && dungeonNet && dungeonNet.session){
+      var st = dungeonNet.session.status;
+      if(st === 'lobby' || st === 'active') return true;
+    }
+    return false;
+  }
+  function dungeonActionBlockedNotice(){ addLog('You’re in a dungeon — finish or leave the run before starting other tasks.', 'danger'); }
   // Places a newly-started task (craft/gather/pray) into a free Belt-granted slot if one is
   // available; otherwise it always wins, stopping whatever the primary slot was doing.
   function placeNewActivity(newAct){
+    if(dungeonLocksActions()){ dungeonActionBlockedNotice(); return; }
     var slot = findFreeCraftSlot();
     if(slot && !slot.primary){
       state.extraCraftSlots[slot.index] = newAct;
@@ -9902,6 +9917,7 @@
     placeNewCraftActivity('shieldsmithing', null, 'offhand', { type:'craft', craftKind:'offhand', typeId:typeId, progress:0 });
   }
   function startCombat(monsterId){
+    if(dungeonLocksActions()){ dungeonActionBlockedNotice(); return; }
     var m = monsterById(monsterId);
     if(!m) return;
     if(combatLevelEquivalent(state) < m.levelReq) return;
@@ -22878,7 +22894,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,

@@ -1544,6 +1544,9 @@
     var full = [];
     for(var j = 0; j < 400; j++) full = full.concat(FF.rollMasterworkDrops('d1', 1));
     ok(full.length > 0, 'the group (1x) rate still drops Blueprints');
+    // Action lock: no dungeon in progress -> other action-bar tasks are allowed.
+    eq(typeof FF.dungeonLocksActions, 'function', 'dungeonLocksActions is exported');
+    eq(FF.dungeonLocksActions(), false, 'actions are not locked when not in a dungeon');
   });
 
   // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------
