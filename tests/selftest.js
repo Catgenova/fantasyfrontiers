@@ -1414,7 +1414,7 @@
 
   // ---- Dungeons: D3 "Underground Chamber" (25 Undead, L151->175, ~10x boss) ----------------
   suite('dungeons: D3 Underground Chamber', function(){
-    ok(FF.DUNGEON_ORDER && FF.DUNGEON_ORDER.join(',') === 'd1,d2,d3', 'all three layers are in DUNGEON_ORDER, in order');
+    ok(FF.DUNGEON_ORDER && FF.DUNGEON_ORDER.slice(0,3).join(',') === 'd1,d2,d3', 'the first three layers are d1,d2,d3 in order');
     var def = FF.DUNGEON_DEFS.d3;
     ok(def, 'D3 dungeon defined');
     eq(def.category, 'Underground Chamber', 'the category is Underground Chamber');
@@ -1446,6 +1446,45 @@
       eq(en[_j].atkMin, Math.round(800 * Math.pow(1.04, _j)), 'undead ' + _j + ' atkMin matches server');
       eq(en[_j].atkMax, Math.round(2000 * Math.pow(1.04, _j)), 'undead ' + _j + ' atkMax matches server');
     }
+  });
+
+  // ---- Dungeons: D4 "Nest of the Depths" (25 Dragons, L176->200, ~10x boss) ----------------
+  suite('dungeons: D4 Nest of the Depths', function(){
+    ok(FF.DUNGEON_ORDER && FF.DUNGEON_ORDER.join(',') === 'd1,d2,d3,d4', 'all four layers are in DUNGEON_ORDER, in order');
+    var def = FF.DUNGEON_DEFS.d4;
+    ok(def, 'D4 dungeon defined');
+    eq(def.category, 'Nest of the Depths', 'the category is Nest of the Depths');
+    eq(def.theme, 'dragons', 'the theme is dragons');
+    eq(def.minCombatScore, 176, 'D4 requires Combat Score 176');
+    var en = FF.DUNGEON_D4_ENEMIES;
+    eq(en.length, 25, '25 dragons');
+    eq(en[0].level, 176, 'first dragon is level 176');
+    eq(en[24].level, 200, 'last dragon (boss) is level 200');
+    ok(en.every(function(e,i){ return i===0 || e.level >= en[i-1].level; }), 'levels rise 176 -> 200 without dropping');
+    eq(en[24].isBoss, true, 'the 25th dragon is the boss');
+    eq(en[24].name, 'Vaeldrûn the Worldender', 'the boss is Vaeldrûn the Worldender');
+    ok(!en[23].isBoss, 'the 24th is not the boss');
+    ok(Math.abs(en[24].hp / en[23].hp - 10) < 0.01, 'boss HP is ~10x the 24th (' + en[24].hp + ' vs ' + en[23].hp + ')');
+    var elems = {}; en.forEach(function(e){ elems[e.element] = 1; });
+    ok(Object.keys(elems).length >= 3, 'dragons span multiple elements (' + Object.keys(elems).join(',') + ')');
+    ok(en.every(function(e){ return typeof e.icon === 'string' && e.icon.indexOf('<svg') === 0; }), 'every dragon has an SVG portrait');
+    ok(en.every(function(e){ return e.element && e.armorTypes && e.attackTypes && e.hp > 0 && FF.monsterById(e.id) === e; }), 'every dragon has element/armor/attack/hp and resolves via monsterById');
+    var seen = {}; var uniq = en.every(function(e){ if(seen[e.icon]) return false; seen[e.icon] = 1; return true; });
+    ok(uniq, 'all 25 dragon portraits are unique (hand-crafted, no repeats)');
+    var f = FF.ALL_SELLABLE[def.reward]; ok(f && /D4 Masterwork Formula/.test(f.name), 'the D4 Masterwork Formula item is registered');
+    eq(f.sell, 0, 'the D4 Formula is non-vendorable (sell 0)');
+    // CRITICAL client<->server invariant (dungeon edge fn d4Roster): hp[i]=round(1350000*1.05^i),
+    // boss=round(hp[23]*10); atkMin=round(1600*1.04^i), atkMax=round(4000*1.04^i).
+    for(var _i = 0; _i < 24; _i++) eq(en[_i].hp, Math.round(1350000 * Math.pow(1.05, _i)), 'dragon ' + _i + ' HP matches the server formula');
+    eq(en[24].hp, Math.round(en[23].hp * 10), 'boss HP = round(24th * 10) matches the server');
+    for(var _j = 0; _j < 25; _j++){
+      eq(en[_j].atkMin, Math.round(1600 * Math.pow(1.04, _j)), 'dragon ' + _j + ' atkMin matches server');
+      eq(en[_j].atkMax, Math.round(4000 * Math.pow(1.04, _j)), 'dragon ' + _j + ' atkMax matches server');
+    }
+    // Every dungeon Formula is distinct across all four layers.
+    var rewards = FF.DUNGEON_ORDER.map(function(l){ return FF.DUNGEON_DEFS[l].reward; });
+    var rset = {}; rewards.forEach(function(r){ rset[r] = 1; });
+    eq(Object.keys(rset).length, 4, 'all four dungeon Formulas are distinct');
   });
 
   // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------

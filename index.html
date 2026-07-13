@@ -3464,12 +3464,118 @@
   DUNGEON_D3_ENEMIES[DUNGEON_D3_COUNT - 1].hp = Math.round(DUNGEON_D3_ENEMIES[DUNGEON_D3_COUNT - 2].hp * 10); // boss ~10x the 24th
   DUNGEON_D3_ENEMIES.forEach(function(m){ MONSTERS_BY_ID[m.id] = m; });
 
+  // ---- D4 "Nest of the Depths" -- the final dungeon layer: 25 Dragons fought ONE AT A TIME, levels
+  // 176->200, each with its own HAND-CRAFTED portrait, element and armour mix. The 25th (Vaeldrûn the
+  // Worldender) is the boss at ~10x the 24th's HP; clearing it grants each surviving player a D4
+  // Masterwork Formula. Same synchronous one-at-a-time engine as D1/D2/D3.
+  var DUNGEON_D4_NAMES = ['Emberscale Wyrmling','Frostfang Drake','Mossback Drake','Gloomscale Serpent','Bronze Wyrmling','Cindermaw Drake','Tidewyrm','Venom Wyvern','Nightscale Wyrm','Goldhoard Drake','Ashwing Dragon','Deepmaw Serpent','Stonehide Drake','Voidscale Wyvern','Stormwing Dragon','Emberstorm Dragon','Glacial Leviathan','Thornscale Wyrm','Shadowmaw Drake','Sunflare Dragon','Magmaheart Wyrm','Abyssal Serpent','Elder Rootdrake','Obsidian Tyrant','Vaeldrûn the Worldender'];
+  var DUNGEON_D4_ELEM_CYCLE = ['fire','water','earth','dark','light'];
+  // Twenty-five hand-picked dragon busts. Each spec draws a distinct combination of scale palette, horns,
+  // eyes, crest, jaw and nostril-smoke; scale colour tracks the element. The boss gets bespoke extras.
+  var DUNGEON_D4_PORTRAITS = (function(){
+    var K = '#141210', HO = '#e6dcc0'; // ink outline, horn ivory
+    var SCALE = { red:['#a3372f','#7e281f','#c25248'], crimson:['#8f2a3a','#6c1e2b','#ad4152'], green:['#3f7a44','#2d5c31','#5a9760'], emerald:['#2f7a5a','#215c43','#4a9775'], bronze:['#9a6a3a','#75502b','#bb8654'], blue:['#3560a0','#264a7c','#4f7cbf'], azure:['#2f7fa8','#215f80','#4f9dc2'], ice:['#a7c2cf','#82a0ae','#c6dbe4'], black:['#3a3540','#2a2630','#4f4857'], purple:['#6a3f8a','#4f2e68','#8659a8'], gold:['#b48a2e','#8c6a20','#d3ab4c'], bone:['#cabf9f','#a89b78','#e0d6b8'] };
+    function tint(el){ return ({ earth:'#7aa02f', fire:'#e0632f', water:'#3f8fd0', light:'#e6c24a', dark:'#a06fd0' })[el] || '#c0392b'; }
+    function head(p){
+      return '<path d="M50 16 C34 16 24 28 26 44 C28 56 38 64 45 70 L45 77 Q50 81 55 77 L55 70 C62 64 72 56 74 44 C76 28 66 16 50 16 Z" fill="'+p[0]+'" stroke="'+K+'" stroke-width="2.5"/>'
+        + '<path d="M50 18 C41 18 34 24 32 33 C41 29 59 29 68 33 C66 24 59 18 50 18 Z" fill="'+p[2]+'" opacity="0.55"/>'   // brow highlight
+        + '<path d="M45 66 Q50 70 55 66 L55 76 Q50 80 45 76 Z" fill="'+p[1]+'"/>'                                          // muzzle shading
+        + '<path d="M30 46 l4 3 M32 52 l4 3 M70 46 l-4 3 M68 52 l-4 3" stroke="'+p[1]+'" stroke-width="1.4"/>';            // cheek scales
+    }
+    function snout(p, smoke, el){ var n = '<ellipse cx="46" cy="72" rx="1.7" ry="1.1" fill="#0c0a09"/><ellipse cx="54" cy="72" rx="1.7" ry="1.1" fill="#0c0a09"/>';
+      if(smoke) n += '<circle cx="46" cy="67" r="2.4" fill="'+tint(el)+'" opacity="0.35"/><circle cx="54" cy="67" r="2.4" fill="'+tint(el)+'" opacity="0.35"/>'; return n; }
+    function mouth(){ return '<path d="M35 58 Q50 66 65 58" fill="none" stroke="'+K+'" stroke-width="2" stroke-linecap="round"/>'; }
+    function eyes(t, el){ var c = tint(el);
+      if(t==='round') return '<circle cx="40" cy="43" r="3.3" fill="#f1e8c8"/><circle cx="60" cy="43" r="3.3" fill="#f1e8c8"/><circle cx="40" cy="43" r="1.5" fill="'+K+'"/><circle cx="60" cy="43" r="1.5" fill="'+K+'"/>';
+      if(t==='glow') return '<path d="M33 42 Q40 38 46 43 Q40 46 33 44 Z" fill="'+c+'"/><path d="M67 42 Q60 38 54 43 Q60 46 67 44 Z" fill="'+c+'"/><path d="M39.5 40 Q41.5 43 39.5 46 M60.5 40 Q58.5 43 60.5 46" stroke="'+K+'" stroke-width="1.7" fill="none"/>';
+      if(t==='rage') return '<path d="M33 40 L46 44 L44 47 L34 45 Z" fill="'+c+'"/><path d="M67 40 L54 44 L56 47 L66 45 Z" fill="'+c+'"/><path d="M40 42 Q42 44 40 47 M60 42 Q58 44 60 47" stroke="'+K+'" stroke-width="1.6" fill="none"/>';
+      return '<path d="M33 42 Q40 38 46 43 Q40 46 33 44 Z" fill="#f1e8c8"/><path d="M67 42 Q60 38 54 43 Q60 46 67 44 Z" fill="#f1e8c8"/><path d="M39.5 40 Q41.5 43 39.5 46 M60.5 40 Q58.5 43 60.5 46" stroke="'+K+'" stroke-width="1.8" fill="none"/>'; // slit
+    }
+    function horns(t){
+      if(t==='swept') return '<path d="M35 20 Q22 12 14 16 Q26 18 33 26 Z" fill="'+HO+'" stroke="'+K+'" stroke-width="2" stroke-linejoin="round"/><path d="M65 20 Q78 12 86 16 Q74 18 67 26 Z" fill="'+HO+'" stroke="'+K+'" stroke-width="2" stroke-linejoin="round"/>';
+      if(t==='ram') return '<path d="M34 22 Q20 22 18 34 Q24 30 33 30 Z" fill="'+HO+'" stroke="'+K+'" stroke-width="2" stroke-linejoin="round"/><path d="M66 22 Q80 22 82 34 Q76 30 67 30 Z" fill="'+HO+'" stroke="'+K+'" stroke-width="2" stroke-linejoin="round"/>';
+      if(t==='crown') return '<path d="M34 22 L30 7 L38 18 M50 18 L50 5 M66 22 L70 7 L62 18" fill="none" stroke="'+HO+'" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>';
+      if(t==='forward') return '<path d="M36 22 Q30 12 36 6 Q40 14 42 24 Z" fill="'+HO+'" stroke="'+K+'" stroke-width="1.8" stroke-linejoin="round"/><path d="M64 22 Q70 12 64 6 Q60 14 58 24 Z" fill="'+HO+'" stroke="'+K+'" stroke-width="1.8" stroke-linejoin="round"/>';
+      if(t==='antler') return '<path d="M36 20 Q26 14 22 6 M29 11 L23 10 M66 20 Q74 14 78 6 M71 11 L77 10" fill="none" stroke="'+HO+'" stroke-width="2.6" stroke-linecap="round"/>';
+      return '<path d="M38 18 Q30 10 20 11 M40 22 Q30 17 22 19" fill="none" stroke="#2b2722" stroke-width="3" stroke-linecap="round"/><path d="M62 18 Q70 10 80 11 M60 22 Q70 17 78 19" fill="none" stroke="#2b2722" stroke-width="3" stroke-linecap="round"/>'; // back
+    }
+    function frill(t, p){
+      if(t==='fin') return '<path d="M23 40 Q11 30 9 47 Q16 44 25 48 Z" fill="'+p[1]+'" stroke="'+K+'" stroke-width="1.8" stroke-linejoin="round"/><path d="M77 40 Q89 30 91 47 Q84 44 75 48 Z" fill="'+p[1]+'" stroke="'+K+'" stroke-width="1.8" stroke-linejoin="round"/>';
+      if(t==='spines') return '<path d="M50 6 L45 16 L55 16 Z" fill="'+p[1]+'" stroke="'+K+'" stroke-width="1.4" stroke-linejoin="round"/><path d="M39 11 L36 19 L44 17 Z M61 11 L64 19 L56 17 Z" fill="'+p[1]+'" stroke="'+K+'" stroke-width="1.2" stroke-linejoin="round"/>';
+      if(t==='ruff') return '<path d="M27 30 Q13 44 19 63 M73 30 Q87 44 81 63" fill="none" stroke="'+p[1]+'" stroke-width="4" stroke-linecap="round"/>';
+      return '';
+    }
+    function jaw(t, p){
+      if(t==='fangs') return '<path d="M43 65 l-1.5 5 l3 0 Z M57 65 l1.5 5 l-3 0 Z" fill="#f1e8c8" stroke="'+K+'" stroke-width="0.8"/>';
+      if(t==='underbite') return '<path d="M44 74 Q50 82 56 74 Q54 79 50 79 Q46 79 44 74 Z" fill="'+p[1]+'" stroke="'+K+'" stroke-width="1"/><path d="M46 75 l0 3 M50 76 l0 3 M54 75 l0 3" stroke="#f1e8c8" stroke-width="1.2"/>';
+      if(t==='beard') return '<path d="M45 78 Q46 85 43 90 M50 80 Q50 87 50 92 M55 78 Q54 85 57 90" fill="none" stroke="'+p[1]+'" stroke-width="1.7" stroke-linecap="round"/>';
+      return '';
+    }
+    function build(s, boss){
+      var p = SCALE[s.scale] || SCALE.red, c = tint(s.el);
+      var body = '<path d="M20 92 Q26 74 50 74 Q74 74 80 92 Z" fill="'+p[1]+'" stroke="'+K+'" stroke-width="2"/>';
+      var svg = frill(s.frill, p) + horns(s.horns) + body + head(p) + eyes(s.eyes, s.el) + snout(p, !!s.smoke, s.el) + mouth() + jaw(s.jaw, p);
+      if(boss) svg = '<circle cx="50" cy="50" r="41" fill="'+c+'" opacity="0.16"/>' + svg; // Vaeldrûn: a molten aura
+      var bg = boss ? '#231212' : '#161018';
+      return '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="47" fill="'+bg+'" stroke="'+K+'" stroke-width="2.5"/>' + svg + '</svg>';
+    }
+    var SPEC = [
+      { scale:'red',     horns:'back',    eyes:'slit',  frill:'none',   jaw:'none',      smoke:0, el:'fire'  },
+      { scale:'ice',     horns:'forward', eyes:'round', frill:'none',   jaw:'fangs',     smoke:0, el:'water' },
+      { scale:'green',   horns:'ram',     eyes:'slit',  frill:'spines', jaw:'none',      smoke:0, el:'earth' },
+      { scale:'black',   horns:'back',    eyes:'glow',  frill:'ruff',   jaw:'underbite', smoke:0, el:'dark'  },
+      { scale:'bronze',  horns:'forward', eyes:'round', frill:'none',   jaw:'fangs',     smoke:0, el:'light' },
+      { scale:'crimson', horns:'ram',     eyes:'rage',  frill:'spines', jaw:'fangs',     smoke:1, el:'fire'  },
+      { scale:'azure',   horns:'swept',   eyes:'round', frill:'fin',    jaw:'none',      smoke:0, el:'water' },
+      { scale:'emerald', horns:'antler',  eyes:'glow',  frill:'spines', jaw:'beard',     smoke:1, el:'earth' },
+      { scale:'purple',  horns:'crown',   eyes:'glow',  frill:'spines', jaw:'underbite', smoke:0, el:'dark'  },
+      { scale:'gold',    horns:'ram',     eyes:'round', frill:'ruff',   jaw:'beard',     smoke:0, el:'light' },
+      { scale:'red',     horns:'swept',   eyes:'glow',  frill:'ruff',   jaw:'fangs',     smoke:1, el:'fire'  },
+      { scale:'blue',    horns:'back',    eyes:'glow',  frill:'fin',    jaw:'fangs',     smoke:0, el:'water' },
+      { scale:'bronze',  horns:'forward', eyes:'slit',  frill:'none',   jaw:'underbite', smoke:0, el:'earth' },
+      { scale:'black',   horns:'antler',  eyes:'glow',  frill:'spines', jaw:'fangs',     smoke:0, el:'dark'  },
+      { scale:'gold',    horns:'crown',   eyes:'rage',  frill:'fin',    jaw:'none',      smoke:0, el:'light' },
+      { scale:'crimson', horns:'crown',   eyes:'rage',  frill:'spines', jaw:'fangs',     smoke:1, el:'fire'  },
+      { scale:'ice',     horns:'swept',   eyes:'glow',  frill:'fin',    jaw:'underbite', smoke:0, el:'water' },
+      { scale:'green',   horns:'antler',  eyes:'slit',  frill:'spines', jaw:'fangs',     smoke:0, el:'earth' },
+      { scale:'purple',  horns:'back',    eyes:'glow',  frill:'ruff',   jaw:'underbite', smoke:0, el:'dark'  },
+      { scale:'gold',    horns:'swept',   eyes:'glow',  frill:'spines', jaw:'fangs',     smoke:1, el:'light' },
+      { scale:'red',     horns:'ram',     eyes:'glow',  frill:'spines', jaw:'beard',     smoke:1, el:'fire'  },
+      { scale:'azure',   horns:'antler',  eyes:'glow',  frill:'fin',    jaw:'underbite', smoke:0, el:'water' },
+      { scale:'emerald', horns:'crown',   eyes:'slit',  frill:'ruff',   jaw:'beard',     smoke:0, el:'earth' },
+      { scale:'black',   horns:'crown',   eyes:'glow',  frill:'spines', jaw:'underbite', smoke:0, el:'dark'  },
+      { scale:'crimson', horns:'crown',   eyes:'glow',  frill:'spines', jaw:'fangs',     smoke:1, el:'fire'  }  // Vaeldrûn (boss)
+    ];
+    return SPEC.map(function(s, i){ return build(s, i === 24); });
+  })();
+  var DUNGEON_D4_COUNT = 25;
+  var DUNGEON_D4_ENEMIES = [];
+  for(var _d4 = 0; _d4 < DUNGEON_D4_COUNT; _d4++){
+    var _b4 = _d4 === DUNGEON_D4_COUNT - 1;
+    var _e4 = _b4 ? 'fire' : DUNGEON_D4_ELEM_CYCLE[_d4 % 5];
+    DUNGEON_D4_ENEMIES.push({
+      id:'dungeon_d4_' + (_d4 + 1), name:DUNGEON_D4_NAMES[_d4],
+      dungeon:'d4', dungeonIndex:_d4, isBoss:_b4,
+      icon: DUNGEON_D4_PORTRAITS[_d4],
+      category:'dungeon', tierIndex:20, element:_e4,
+      level: Math.round(176 + _d4 * 24 / (DUNGEON_D4_COUNT - 1)), levelReq:176,
+      hp: Math.round(1350000 * Math.pow(1.05, _d4)),
+      atkMin: Math.round(1600 * Math.pow(1.04, _d4)), atkMax: Math.round(4000 * Math.pow(1.04, _d4)),
+      goldMin: Math.round(1600 * Math.pow(1.05, _d4)), goldMax: Math.round(3200 * Math.pow(1.05, _d4)),
+      damageType: DAMAGE_TYPE_CYCLE[_d4 % 3], attackTypes: makeTypeMix(_d4), armorTypes: makeTypeMix(_d4 + 2),
+      attackSpeed: Math.round((2.2 + (_d4 % 5) * 0.3) * 10) / 10
+    });
+  }
+  DUNGEON_D4_ENEMIES[DUNGEON_D4_COUNT - 1].hp = Math.round(DUNGEON_D4_ENEMIES[DUNGEON_D4_COUNT - 2].hp * 10); // boss ~10x the 24th
+  DUNGEON_D4_ENEMIES.forEach(function(m){ MONSTERS_BY_ID[m.id] = m; });
+
   var DUNGEON_DEFS = {
     d1: { id:'d1', category:'Cave',   label:'D1 — Cave',   theme:'arachnids', enemies:DUNGEON_D1_ENEMIES, minCombatScore:100, reward:'formula_d1_masterwork', rewardName:'D1 Masterwork Formula' },
     d2: { id:'d2', category:'Tunnel', label:'D2 — Tunnel', theme:'orcs',      enemies:DUNGEON_D2_ENEMIES, minCombatScore:126, reward:'formula_d2_masterwork', rewardName:'D2 Masterwork Formula' },
-    d3: { id:'d3', category:'Underground Chamber', label:'D3 — Underground Chamber', theme:'undead', enemies:DUNGEON_D3_ENEMIES, minCombatScore:151, reward:'formula_d3_masterwork', rewardName:'D3 Masterwork Formula' }
+    d3: { id:'d3', category:'Underground Chamber', label:'D3 — Underground Chamber', theme:'undead', enemies:DUNGEON_D3_ENEMIES, minCombatScore:151, reward:'formula_d3_masterwork', rewardName:'D3 Masterwork Formula' },
+    d4: { id:'d4', category:'Nest of the Depths', label:'D4 — Nest of the Depths', theme:'dragons', enemies:DUNGEON_D4_ENEMIES, minCombatScore:176, reward:'formula_d4_masterwork', rewardName:'D4 Masterwork Formula' }
   };
-  var DUNGEON_ORDER = ['d1', 'd2', 'd3'];
+  var DUNGEON_ORDER = ['d1', 'd2', 'd3', 'd4'];
   function isDungeonMonster(m){ return !!(m && m.dungeon); }
 
   // ---- Category-specific loot items ----
@@ -4228,7 +4334,8 @@
   var FORMULA_ITEMS = {
     formula_d1_masterwork: { id:'formula_d1_masterwork', name:'D1 Masterwork Formula', icon:svgIcon('gem','#c9a227'), sell:0, dungeon:'d1', formula:true },
     formula_d2_masterwork: { id:'formula_d2_masterwork', name:'D2 Masterwork Formula', icon:svgIcon('gem','#7a9a3a'), sell:0, dungeon:'d2', formula:true },
-    formula_d3_masterwork: { id:'formula_d3_masterwork', name:'D3 Masterwork Formula', icon:svgIcon('gem','#8a5fb0'), sell:0, dungeon:'d3', formula:true }
+    formula_d3_masterwork: { id:'formula_d3_masterwork', name:'D3 Masterwork Formula', icon:svgIcon('gem','#8a5fb0'), sell:0, dungeon:'d3', formula:true },
+    formula_d4_masterwork: { id:'formula_d4_masterwork', name:'D4 Masterwork Formula', icon:svgIcon('gem','#c0392b'), sell:0, dungeon:'d4', formula:true }
   };
   var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS);
 
@@ -22609,7 +22716,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,
