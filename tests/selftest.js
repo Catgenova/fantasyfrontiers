@@ -1188,13 +1188,41 @@
     ok(Math.abs(FF.nightbladeLifestealPct(stFor('nightblade',80)) - 0.15) < 1e-9, 'Nightblade Soul Reap 15%');
     ok(Math.abs(FF.newClassDmgMult(monFull, stFor('nightblade',80)) - 1.25) < 1e-9, 'Nightblade Hex +25%');
     ok(Math.abs(FF.nightbladeDodgeBonus(stFor('nightblade',80)) - 0.15) < 1e-9, 'Nightblade Shadowstep +15% Dodge');
-    // Executioner: Reap +30% vs wounded; Bloodthirst 8%; Grisly +50% crit dmg; Cleave +12% crit; Decapitate exists.
-    ok(Math.abs(FF.newClassDmgMult(monLow, stFor('executioner',80,{activity:{type:'combat',monsterHp:10}})) - 1.30) < 1e-9, 'Executioner Reap the Weak +30% vs wounded foe');
-    eq(FF.newClassDmgMult(monFull, stFor('executioner',80)), 1, 'Executioner Reap is neutral vs a healthy foe');
-    ok(Math.abs(FF.executionerLifestealPct(stFor('executioner',80)) - 0.08) < 1e-9, 'Executioner Bloodthirst 8%');
-    ok(Math.abs(FF.newClassCritDmg(stFor('executioner',80)) - 0.50) < 1e-9, 'Executioner Grisly Resolve +50% crit dmg');
-    ok(Math.abs(FF.newClassCritChance(stFor('executioner',80)) - 0.12) < 1e-9, 'Executioner Cleave +12% crit chance');
-    ok(/Decapitate/.test(FF.CLASS_DEFS_BY_ID.executioner.passives[4].name), 'Executioner Lv80 is Decapitate');
+    // Executioner rework: Reaping Vigor (Lv1) / Reap the Weak (Lv20) / Rising Guillotine (Lv40) /
+    // Headsman's Tally (Lv60) / Gallows Humor (Lv80). The old crit/lifesteal/execute stats are gone.
+    var exNames = FF.CLASS_DEFS_BY_ID.executioner.passives.map(function(p){ return p.name; });
+    eq(JSON.stringify(exNames), JSON.stringify(['Reaping Vigor','Reap the Weak','Rising Guillotine','Headsman\'s Tally','Gallows Humor']), 'Executioner ladder is the reworked five');
+    // Reap the Weak moved from Lv1 to Lv20.
+    eq(FF.newClassDmgMult(monLow, stFor('executioner',1,{activity:{type:'combat',monsterHp:10}})), 1, 'Lv1 no longer grants Reap (moved to Lv20)');
+    ok(Math.abs(FF.newClassDmgMult(monLow, stFor('executioner',20,{activity:{type:'combat',monsterHp:10}})) - 1.30) < 1e-9, 'Reap the Weak +30% vs a wounded foe at Lv20');
+    eq(FF.newClassDmgMult(monLow, stFor('executioner',20,{activity:{type:'combat',monsterHp:60}})), 1, 'Lv20 Reap is neutral above the flat 50% threshold');
+    // Rising Guillotine (Lv40): after 20s the threshold climbs to ~70%, so a 60%-HP foe now reaps.
+    var exRise = stFor('executioner',40,{activity:{type:'combat',monsterHp:60,duelStartedAt:Date.now()-20000}});
+    near(FF.executionerReapThreshold(exRise), 0.70, 'Rising Guillotine: +1%/s -> 70% threshold at 20s', 1e-6);
+    ok(Math.abs(FF.newClassDmgMult(monLow, exRise) - 1.30) < 1e-9, 'Rising Guillotine lets a 60%-HP foe be reaped at 20s');
+    eq(FF.executionerReapThreshold(stFor('executioner',20)), 0.5, 'without Rising Guillotine the threshold stays 50%');
+    // Reaping Vigor (Lv1): each crit stack = +25% max HP, gated on the class.
+    FF.execVigorReset();
+    eq(FF.execVigorMaxHpBonus(stFor('executioner',80)), 0, 'no crit stacks -> no Vigor bonus');
+    FF.execVigorAddStack(); FF.execVigorAddStack();
+    ok(Math.abs(FF.execVigorMaxHpBonus(stFor('executioner',80)) - 0.50) < 1e-9, 'Reaping Vigor: 2 crit stacks -> +50% max HP');
+    eq(FF.execVigorMaxHpBonus(none), 0, 'no class -> Vigor bonus neutral even with stacks queued');
+    FF.execVigorReset();
+    // Headsman's Tally (Lv60): +5 max HP per session kill, capped at +250, gated on the class.
+    FF.headsmanTallyReset();
+    eq(FF.headsmanTallyBonusHp(stFor('executioner',80)), 0, 'no kills -> no Tally HP');
+    FF.headsmanTallyKill(); FF.headsmanTallyKill(); FF.headsmanTallyKill();
+    eq(FF.headsmanTallyBonusHp(stFor('executioner',80)), 15, 'Headsman\'s Tally: 3 kills -> +15 max HP');
+    for(var _hk=0; _hk<100; _hk++) FF.headsmanTallyKill();
+    eq(FF.headsmanTallyBonusHp(stFor('executioner',80)), 250, 'Headsman\'s Tally caps at +250 max HP');
+    eq(FF.headsmanTallyBonusHp(stFor('executioner',40)), 0, 'Tally inactive below Lv60');
+    FF.headsmanTallyReset();
+    // Gallows Humor (Lv80): +crit scaling with the foe's missing Health (up to +25%).
+    var exGMon = FF.MONSTERS[0];
+    var exGal = stFor('executioner',80); exGal.activity = { type:'combat', monsterId:exGMon.id, monsterHp: exGMon.hp*0.2 };
+    near(FF.newClassCritChance(exGal), 0.20, 'Gallows Humor: +25% * 80% missing HP = +20% crit', 1e-6);
+    eq(FF.newClassCritChance(stFor('executioner',60)), 0, 'Gallows Humor inactive below Lv80');
+    eq(FF.newClassCritDmg(stFor('executioner',80)), 0, 'Executioner no longer grants flat crit damage');
     // No class active -> every new-class multiplier is neutral.
     var none = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat',monsterHp:100}, playerHp:1 };
     eq(FF.newClassDmgMult(monFull, none), 1, 'no class -> new-class dmg neutral');

@@ -4413,7 +4413,7 @@
     },
     {
       id:'executioner', name:'Executioner', icon:svgIcon('axe','#7a5a2a'),
-      blurb:'A grim headsman whose great crescent axe reaps the wounded and answers a strong foe with a killing crit.',
+      blurb:'A grim headsman who banks each crit into surging vitality, reaps ever-weaker foes as the fight drags on, and grows mightier with every head he takes.',
       reqText:'Full-Moon Axe + bare head, Chain Chest & Gloves, Leather Boots',
       reqParts:[
         { icon:svgIcon('axe','#7a5a2a'),                 label:'Full-Moon Axe', met:function(st){ return st.equippedMainhand==='fullmoonaxe'; } },
@@ -4423,11 +4423,11 @@
         { icon:svgIcon('boots',CLASS_LEATHER_COLOR),     label:'Leather Boots', met:function(st){ return leatherPieceEquipped(st,'boots'); } }
       ],
       passives:[
-        { level:1,  name:'Reap the Weak', desc:'+30% damage to enemies below half Health.' },
-        { level:20, name:'Cleave',        desc:'+12% Critical Hit chance.' },
-        { level:40, name:'Bloodthirst',   desc:'Heal 8% of the damage you deal.' },
-        { level:60, name:'Grisly Resolve',desc:'+50% Critical Hit damage.' },
-        { level:80, name:'Decapitate',    desc:'A hit that leaves the enemy below 15% Health instantly slays it.' }
+        { level:1,  name:'Reaping Vigor',     desc:'Every Critical Hit grants +25% max Health for 30s. Stacks with each crit.' },
+        { level:20, name:'Reap the Weak',     desc:'+30% damage to enemies below half Health.' },
+        { level:40, name:'Rising Guillotine', desc:'Reap the Weak\'s Health threshold climbs the longer you fight a foe &mdash; +1% per second, up to 85%.' },
+        { level:60, name:'Headsman\'s Tally', desc:'Every enemy you slay this session permanently adds +5 max Health, up to +250.' },
+        { level:80, name:'Gallows Humor',     desc:'+Critical Hit chance scaling with the foe\'s missing Health &mdash; up to +25% against a near-dead enemy.' }
       ]
     },
     {
@@ -4774,6 +4774,43 @@
   function juggernautBonus(reqLevel, st){ return classBonusActive('juggernaut', reqLevel, st); }
   function nightbladeBonus(reqLevel, st){ return classBonusActive('nightblade', reqLevel, st); }
   function executionerBonus(reqLevel, st){ return classBonusActive('executioner', reqLevel, st); }
+  // ===== Executioner (Full-Moon Axe): reworked ladder =====
+  //  Lv1  Reaping Vigor    -- each Critical Hit adds a stacking +25% max-HP buff for 30s (real-time,
+  //                           independent per-stack timers; a transient combat buff, never saved).
+  //  Lv20 Reap the Weak    -- +30% damage to a foe below the reap threshold (base 50% of its Health).
+  //  Lv40 Rising Guillotine-- that threshold climbs +1%/s over the CURRENT duel, up to 85%.
+  //  Lv60 Headsman's Tally -- every kill this session adds flat max HP (resets on reload), capped.
+  //  Lv80 Gallows Humor    -- bonus Critical Hit chance scaling with the foe's MISSING Health.
+  var EXEC_VIGOR_PCT = 0.25, EXEC_VIGOR_MS = 30000;        // Lv1: +25% max HP per stack, 30s each
+  var execVigorStacks = [];                                 // ascending expiry timestamps (transient; not saved)
+  function execVigorPrune(){ var now = Date.now(); while(execVigorStacks.length && execVigorStacks[0] <= now) execVigorStacks.shift(); }
+  function execVigorCount(){ execVigorPrune(); return execVigorStacks.length; }
+  function execVigorAddStack(){ execVigorStacks.push(Date.now() + EXEC_VIGOR_MS); }
+  function execVigorReset(){ execVigorStacks.length = 0; }
+  function execVigorMaxHpBonus(st){ st = st || state; return executionerBonus(1, st) ? execVigorCount() * EXEC_VIGOR_PCT : 0; }
+
+  var EXEC_REAP_BASE = 0.5;                                 // Lv20 reap threshold (enemy HP fraction)
+  var EXEC_RISING_PER_SEC = 0.01, EXEC_RISING_MAX = 0.85;   // Lv40 raises it +1%/s, capped at 85%
+  function executionerReapThreshold(st){ st = st || state;
+    if(!executionerBonus(40, st)) return EXEC_REAP_BASE;
+    var a = st.activity; var t0 = (a && a.type==='combat') ? a.duelStartedAt : 0;
+    var secs = t0 ? Math.max(0, (Date.now() - t0)/1000) : 0;
+    return Math.min(EXEC_RISING_MAX, EXEC_REAP_BASE + secs * EXEC_RISING_PER_SEC);
+  }
+
+  var EXEC_TALLY_HP_PER_KILL = 5, EXEC_TALLY_CAP_HP = 250;  // Lv60: +5 max HP per kill this session, capped
+  var headsmanTallyKills = 0;                               // session kill count (transient; not saved)
+  function headsmanTallyKill(){ headsmanTallyKills++; }
+  function headsmanTallyReset(){ headsmanTallyKills = 0; }
+  function headsmanTallyBonusHp(st){ st = st || state; return executionerBonus(60, st) ? Math.min(EXEC_TALLY_CAP_HP, headsmanTallyKills * EXEC_TALLY_HP_PER_KILL) : 0; }
+
+  var EXEC_GALLOWS_MAX = 0.25;                              // Lv80: up to +25% crit vs a near-dead foe
+  function executionerGallowsCrit(st){ st = st || state;
+    if(!executionerBonus(80, st)) return 0;
+    var a = st.activity; if(!a || a.type!=='combat') return 0;
+    var mon = monsterById(a.monsterId); if(!mon) return 0;
+    return EXEC_GALLOWS_MAX * (1 - enemyHpFrac(mon, st)); // grows with the enemy's missing Health
+  }
   // --- Ranger (Medium Bow) --- Imbued arrows each have a 25% chance on hit to inflict one of the four
   // shared ailments (reusing the existing Poison / Bleed / Chill / Burn systems); Apex Predator (Lv80)
   // triples a hit against a foe suffering ALL FOUR at once.
@@ -4799,7 +4836,7 @@
     if(sharpshooterBonus(20, st)) m *= 1.20;                                 // Sharpshooter Piercing Shot
     if(juggernautBonus(1, st)) m *= 1.30;                                    // Juggernaut Crushing Blows
     if(nightbladeBonus(20, st)) m *= 1.25;                                   // Nightblade Hex
-    if(executionerBonus(1, st) && enemyHpFrac(monster, st) < 0.5) m *= 1.30; // Executioner Reap the Weak
+    if(executionerBonus(20, st) && enemyHpFrac(monster, st) < executionerReapThreshold(st)) m *= 1.30; // Executioner Reap the Weak (Lv20); threshold raised by Rising Guillotine (Lv40)
     if(lumenBonus(1, st)) m *= 1.25;                                         // Lumen Oracle Glare
     m *= lumenBlindingDealtMult(st);                                         // Lumen Oracle Blinding Radiance (Lv80, while blinded)
     if(reaverBonus(1, st)) m *= 1.25;                                        // Reaver Savagery
@@ -4813,7 +4850,7 @@
     st = st || state; var c = 0;
     if(sharpshooterBonus(60, st)) c += 0.12; // Sharpshooter Deadeye
     if(nightbladeBonus(60, st)) c += 0.12;   // Nightblade Dark Pact
-    if(executionerBonus(20, st)) c += 0.12;  // Executioner Cleave
+    c += executionerGallowsCrit(st);         // Executioner Gallows Humor (Lv80): scales with the foe's missing Health
     if(samuraiBonus(80, st)) c += samuraiFocusStacks(st) * SAMURAI_ZANSHIN_CRIT_PER_STACK; // Samurai Zanshin: +1.5% crit per Focus stack
     c += reaperGrimResolveCrit(st);          // Reaper Grim Resolve (scales with missing Health)
     return c;
@@ -4824,7 +4861,6 @@
     if(sharpshooterBonus(1, st)) d += 0.50;  // Sharpshooter Aimed Shot
     if(sharpshooterBonus(80, st)) d += 1.00; // Sharpshooter Kill Shot
     if(juggernautBonus(80, st)) d += 0.60;   // Juggernaut Devastate
-    if(executionerBonus(60, st)) d += 0.50;  // Executioner Grisly Resolve
     if(reaverBonus(40, st)) d += 0.50;       // Reaver Hemorrhage
     return d;
   }
@@ -4854,16 +4890,13 @@
   function pyromancerHeatHazeDodge(st){ st = st || state; return pyromancerBonus(60, st) ? Math.min(PYRO_HEATHAZE_DODGE_CAP, enemyBurnStacks(st) * PYRO_HEATHAZE_DODGE_PER_STACK) : 0; }
   // Fever Pitch (Lv80): attack-speed haste that grows with the enemy's Burn stacks.
   function pyromancerFeverHaste(st){ st = st || state; return pyromancerBonus(80, st) ? Math.min(PYRO_FEVER_CAP, enemyBurnStacks(st) * PYRO_FEVER_HASTE_PER_STACK) : 0; }
-  // Lifesteal (fraction of damage healed): Nightblade Siphon/Soul Reap + Executioner Bloodthirst.
+  // Lifesteal (fraction of damage healed): Nightblade Siphon/Soul Reap.
   function nightbladeLifestealPct(st){ if(nightbladeBonus(80, st)) return 0.15; if(nightbladeBonus(1, st)) return 0.08; return 0; }
-  function executionerLifestealPct(st){ return executionerBonus(40, st) ? 0.08 : 0; }
   // Nightblade Lv 40 Shadowstep: +15% Dodge (folded into playerDodgeChance).
   function nightbladeDodgeBonus(st){ st = st || state; return nightbladeBonus(40, st) ? 0.15 : 0; }
   // Juggernaut Lv 40 Ironclad: +25% Armor; Lv 60 Unstoppable: -20% incoming damage.
   function juggernautArmorMult(st){ return juggernautBonus(40, st) ? 1.25 : 1; }
   function juggernautIncomingMult(st){ return juggernautBonus(60, st) ? 0.80 : 1; }
-  // Executioner Lv 80 Decapitate: a hit that leaves the enemy below 15% of its max HP instantly slays it.
-  function executionerExecuteThreshold(monster){ return (executionerBonus(80) && monster && monster.hp) ? monster.hp * 0.15 : 0; }
   // ===== Lumen Oracle (Light Wand): Glare / Blind / Flashbang / Afterimage / Blinding Radiance =====
   // Blind reuses the shared enemy-damage debuff window (state.classDebuffs.enemyDmgUntil) -- the same
   // channel Templar's Enfeeble uses -- so templarIncomingDmgMult() already applies its 25% reduction.
@@ -5670,7 +5703,11 @@
   // Fortitude (a Physique sub-skill) is trained purely by taking damage, and is the
   // sole driver of max HP -- combat proficiency no longer factors into survivability
   // directly, only into which fights you're allowed to enter.
-  function maxHp(state){ return 50 + getLevel(state.physique.fortitude||0)*5 + Math.round(((equippedEnchantTotals(state).maxHp)||0) * spellbladeEnchantBoost(state)); }
+  function maxHp(state){
+    var base = 50 + getLevel(state.physique.fortitude||0)*5 + Math.round(((equippedEnchantTotals(state).maxHp)||0) * spellbladeEnchantBoost(state));
+    base += headsmanTallyBonusHp(state);                          // Executioner Headsman's Tally (Lv60): flat session HP
+    return Math.round(base * (1 + execVigorMaxHpBonus(state)));   // Executioner Reaping Vigor (Lv1): stacking transient +max HP
+  }
   function fmt(n){ return Math.floor(n).toLocaleString(); }
   var BASE_CRAFT_SUCCESS = 0.7;
   function sleightOfHandCraftSpeedBonus(state){ return Math.min(0.15, getLevel(state.physique.sleightOfHand||0)*0.003); }
@@ -9649,11 +9686,6 @@
     dmgToMonster += Math.round(enchTot.flatDamage||0); // + equipped-item Flat Damage enchants
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
-    // Executioner Lv 80 (Decapitate): a hit that leaves the enemy below 15% of its max HP finishes it outright.
-    if(!isOffhand && act.monsterHp > 0){
-      var execThresh = executionerExecuteThreshold(monster);
-      if(execThresh > 0 && act.monsterHp <= execThresh){ act.monsterHp = 0; spawnFloatingText('Decapitate!', 'ft-rare'); }
-    }
     firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
     // Floating damage: the hit's damage + its type/element, crit-styled on a Critical Hit.
     spawnCombatFloat((isCrit?'✦ ':'')+'-'+fmt(dmgToMonster)+' '+combatDmgTypeIcon(weaponStyle, isWandAttack, isScepterAttack), isCrit?'ft-crit':'ft-dmg', true);
@@ -9713,6 +9745,8 @@
         act.bleedUntil = Date.now() + REAVER_BLEED_MS;
         spawnFloatingText('Rend x'+act.bleedStacks, 'ft-bonus');
       }
+      // Executioner Reaping Vigor (Lv1): a landed Critical Hit banks a stacking +25% max-HP buff (30s).
+      if(executionerBonus(1) && isCrit){ execVigorAddStack(); spawnFloatingText('Reaping Vigor!', 'ft-rare'); }
       // Thunderfury (Chain Lightning, Lv1): a Critical Hit builds a crit-stack (attack speed); a non-crit resets.
       if(thunderfuryBonus(1)){
         if(isCrit){
@@ -9812,7 +9846,7 @@
       if(spellbladeBonus(60)) state.spellbladeStacks = Math.min(5, (state.spellbladeStacks || 0) + 1);
     }
     // Reaper (Lv 40/80) + Berserker (Lv 20 Bloodthirst): heal a share of the damage actually inflicted.
-    var lifestealPct = reaperLifestealPct() + berserkerLifestealPct() + nightbladeLifestealPct() + executionerLifestealPct();
+    var lifestealPct = reaperLifestealPct() + berserkerLifestealPct() + nightbladeLifestealPct();
     if(lifestealPct > 0){
       var wouldHeal = Math.round(effDmg * lifestealPct);
       var healed = Math.min(wouldHeal, maxHp(state) - state.playerHp);
@@ -9860,6 +9894,7 @@
   // reflection when the player wields a Staff (no auto-attack, so summons must land the finishing blow).
   function defeatMonster(monster){
     var act = state.activity;
+    if(executionerBonus(60)) headsmanTallyKill(); // Headsman's Tally: every kill this session grows your max HP (dungeon foes included)
     if(act && act.dungeon){ dungeonOnKill(monster); return; } // dungeon foe -> advance the run instead of re-engaging
     bumpStat('kills');
     var goldWon = randInt(monster.goldMin, monster.goldMax);
@@ -22256,7 +22291,7 @@
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
-      pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, executionerLifestealPct:executionerLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, executionerExecuteThreshold:executionerExecuteThreshold, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
+      pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
