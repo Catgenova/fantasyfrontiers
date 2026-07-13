@@ -9640,7 +9640,8 @@
     improveConfirm = null;
     if(uniqueIsEquipped(uid)) unequipUnique(uid);
     var tier = u.tier+1, jb = (u.kind==='ring'||u.kind==='amulet');
-    var restore = Math.round(15 * Math.pow(1.25, tier-1) * (jb?1.5:1) * (1 + 0.25*((u.enchants||[]).length)));
+    // Base gear value (tier curve + jewelry + rarity 2x/4x/8x), then the unique's enchant bonus on top.
+    var restore = Math.round(sacrificeGearFaith(tier, jb, u.rarity) * (1 + 0.25*((u.enchants||[]).length)));
     restore = Math.round(restore * (1 + physBonus('oblation', 0.25)));
     removeUnique(uid); if(improveSel===uid){ improveSel = null; } improvePending = null;
     var before = state.faith;
@@ -9936,16 +9937,22 @@
     state.faithActivity = { type:kind, tier:tierIndex };
   }
   function stopFaithActivity(){ state.faithActivity = { type:null, tier:0 }; }
+  // Faith restored by sacrificing one piece of gear (non-relic): a tier curve, +50% for jewelry, and a
+  // rarity multiplier so a Rare/Supreme/Fantastic offering restores 2x/4x/8x Faith (getRarity().mult).
+  function sacrificeGearFaith(tier, jewelryBoost, rarity){
+    return Math.round(15 * Math.pow(1.25, tier-1) * (jewelryBoost ? 1.5 : 1) * getRarity(rarity||'normal').mult);
+  }
   function sacrificeItem(category, id, silent){
     var STACKABLE_SAC_CATEGORIES = ['stackweapon','stackshield','ring','amulet','relic','tool','belt'];
     if(STACKABLE_SAC_CATEGORIES.indexOf(category)!==-1 && state.lockedItems[id]){
       addLog('That item is locked. Unlock it first to sacrifice it.', 'danger');
       return;
     }
-    var tier = 0, label = '', relicTierIndex = -1, jewelryBoost = false;
+    var tier = 0, label = '', relicTierIndex = -1, jewelryBoost = false, rarity = 'normal';
     if(category==='weapon'){
       tier = state.weaponTiers[id]||0;
       if(tier<=0) return;
+      rarity = state.weaponRarities[id] || 'normal'; // capture BEFORE resetting the rarity below
       label = getWeaponStyle(id).name;
       state.weaponTiers[id] = 0;
       state.weaponRarities[id] = 'normal';
@@ -9953,6 +9960,7 @@
     } else if(category==='offhand'){
       tier = state.offhandTiers[id]||0;
       if(tier<=0) return;
+      rarity = state.offhandRarities[id] || 'normal'; // capture BEFORE the reset below
       label = getOffhandStyle(id).name;
       state.offhandTiers[id] = 0;
       state.offhandRarities[id] = 'normal';
@@ -9961,18 +9969,21 @@
       var stItem = STACKABLE_WEAPON_ITEMS[id];
       if(!stItem || (state.inventory[id]||0) <= 0) return;
       tier = stItem.tierIndex + 1;
+      rarity = stItem.rarity || 'normal';
       label = stItem.name;
       state.inventory[id] -= 1;
     } else if(category==='stackshield'){
       var stShieldItem = STACKABLE_SHIELD_ITEMS[id];
       if(!stShieldItem || (state.inventory[id]||0) <= 0) return;
       tier = stShieldItem.tierIndex + 1;
+      rarity = stShieldItem.rarity || 'normal';
       label = stShieldItem.name;
       state.inventory[id] -= 1;
     } else if(category==='ring'){
       var ringItem = RING_ITEMS[id];
       if(!ringItem || (state.inventory[id]||0) <= 0) return;
       tier = ringItem.tierIndex + 1;
+      rarity = ringItem.rarity || 'normal';
       label = ringItem.name;
       state.inventory[id] -= 1;
       jewelryBoost = true;
@@ -9980,6 +9991,7 @@
       var amuletItem = AMULET_ITEMS[id];
       if(!amuletItem || (state.inventory[id]||0) <= 0) return;
       tier = amuletItem.tierIndex + 1;
+      rarity = amuletItem.rarity || 'normal';
       label = amuletItem.name;
       state.inventory[id] -= 1;
       jewelryBoost = true;
@@ -9994,12 +10006,14 @@
       var toolItem = TOOL_ITEMS[id];
       if(!toolItem || (state.inventory[id]||0) <= 0) return;
       tier = toolItem.tierIndex + 1;
+      rarity = toolItem.rarity || 'normal';
       label = toolItem.name;
       state.inventory[id] -= 1;
     } else if(category==='belt'){
       var beltItem = BELT_ITEMS[id];
       if(!beltItem || (state.inventory[id]||0) <= 0) return;
       tier = beltItem.tierIndex + 1;
+      rarity = beltItem.rarity || 'normal';
       label = beltItem.name;
       state.inventory[id] -= 1;
     } else {
@@ -10007,7 +10021,7 @@
     }
     var restore = relicTierIndex>=0
       ? Math.round(30 * Math.pow(1.3, relicTierIndex))
-      : Math.round(15 * Math.pow(1.25, tier-1) * (jewelryBoost ? 1.5 : 1));
+      : sacrificeGearFaith(tier, jewelryBoost, rarity);
     restore = Math.round(restore * (1 + physBonus('oblation', 0.25)));           // Oblation: more Faith per offering
     if(Math.random() < physBonus('oblation', 0.25)){ addItem(id, 1); spawnFloatingText('The offering is returned!', 'ft-rare'); } // Oblation: a chance the item comes back
     var before = state.faith;
@@ -18187,7 +18201,7 @@
 
   function renderSacrificeTab(){
     var lvl = getLevel(state.xp.sacrifice);
-    var html = '<div class="section-intro">Level '+lvl+' Sacrifice &mdash; destroy owned weapons, shields, tools, belts, rings, amulets, and relics to restore Faith and gain a flat 30 XP. Higher-tier items restore more Faith, but the item is consumed entirely. Equipped Tools and Armor can\'t be sacrificed.</div>';
+    var html = '<div class="section-intro">Level '+lvl+' Sacrifice &mdash; destroy owned weapons, shields, tools, belts, rings, amulets, and relics to restore Faith and gain a flat 30 XP. Higher-tier items restore more Faith, and Rare/Supreme/Fantastic offerings restore 2x/4x/8x, but the item is consumed entirely. Equipped Tools and Armor can\'t be sacrificed.</div>';
     html += renderSkillProgressBar('sacrifice');
     html += renderFaithBar();
     // Auto-sacrifice Broken Relics: a persistent toggle that tops up Faith from Broken Relics whenever
@@ -18251,7 +18265,7 @@
     rows.forEach(function(r){
       var restorePreview = r.category==='relic'
         ? Math.round(30*Math.pow(1.3, r.relicTierIndex))
-        : Math.round(15*Math.pow(1.25, r.tier-1) * (r.jewelryBoost ? 1.5 : 1));
+        : sacrificeGearFaith(r.tier, r.jewelryBoost, r.item && r.item.rarity);
       var metaText = r.category==='relic' ? ('Owned: '+r.tier) : ('Tier '+r.tier);
       html += '<div class="item-card">';
       html += '<div class="item-top"><div class="item-icon">'+r.icon+'</div><div><div class="item-name">'+r.item.name+'</div><div class="item-meta">'+metaText+'</div></div></div>';
@@ -23677,7 +23691,7 @@
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, assassinRhythmRegister:assassinRhythmRegister, ASSASSIN_RHYTHM_MAX:ASSASSIN_RHYTHM_MAX, assassinApplyLacerate:assassinApplyLacerate, assassinLacerateMaxStacks:assassinLacerateMaxStacks, ASSASSIN_BLEED_MAX:ASSASSIN_BLEED_MAX, assassinHemorrhageCritMult:assassinHemorrhageCritMult, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
-      treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem,
+      treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
       BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, OFFHAND_TYPE_RECIPES:OFFHAND_TYPE_RECIPES, getSpecialSkillId:getSpecialSkillId, WILDLIFE_NAMES:WILDLIFE_NAMES, quiverAmmoPreserve:quiverAmmoPreserve, bowArrowToConsume:bowArrowToConsume, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT, applyRarity:applyRarity, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
       DAMAGE_TYPES:DAMAGE_TYPES

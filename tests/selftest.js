@@ -3652,6 +3652,22 @@
     }
   });
 
+  // ---- Faith: sacrifice value scales with rarity (2x/4x/8x) -----------------------------
+  suite('faith: sacrifice rarity scaling', function(){
+    // Base (normal) value: tier curve, with a +50% jewelry boost.
+    var t5 = FF.sacrificeGearFaith(5, false, 'normal');
+    eq(t5, Math.round(15 * Math.pow(1.25, 4)), 'normal gear uses the base tier curve');
+    // Rare/Supreme/Fantastic restore 2x/4x/8x the normal value.
+    near(FF.sacrificeGearFaith(5, false, 'rare')      / t5, 2, 'rare => 2x Faith');
+    near(FF.sacrificeGearFaith(5, false, 'supreme')   / t5, 4, 'supreme => 4x Faith');
+    near(FF.sacrificeGearFaith(5, false, 'fantastic') / t5, 8, 'fantastic => 8x Faith');
+    // A missing/unknown rarity is treated as normal (1x).
+    eq(FF.sacrificeGearFaith(5, false, undefined), t5, 'undefined rarity => normal value');
+    // The jewelry boost and the rarity multiplier compound.
+    var ringNormal = FF.sacrificeGearFaith(3, true, 'normal');
+    near(FF.sacrificeGearFaith(3, true, 'supreme') / ringNormal, 4, 'jewelry + supreme => 4x on top of the +50% jewelry base');
+  });
+
   // ---- Hardening: monster lookup + addItem guards ---------------------------------------
   suite('hardening', function(){
     // monsterById maps every monster and rejects unknown ids (used by the combat hot path + stale-id retreat).
