@@ -22546,6 +22546,23 @@
     }
     requestAnimationFrame(loop);
   }
+  // Browsers pause requestAnimationFrame (and timers) while the tab/app is backgrounded or the screen is
+  // off, so the loop stalls and its dt clamps to 60s on return -- longer absences would otherwise lose
+  // most of their progress. When the page becomes visible again, run the SAME catch-up used at load for
+  // any gap over 60s (active task, Belt slots, peons + the "While you were away" summary), then advance
+  // the clocks so neither the loop's next frame nor a quick reload re-credits the same time. An ACTIVE
+  // dungeon fight is attended/real-time, so freeze it instead -- resume exactly where the player left off.
+  document.addEventListener('visibilitychange', function(){
+    if(document.hidden || !gameStarted) return;
+    var awayMs = Date.now() - lastTick;                          // the loop paused while hidden -> time away
+    if(awayMs <= 60000) return;                                 // <=60s: the loop's own clamped catch-up covers it silently
+    if(dungeonLocksActions()){ lastTick = Date.now(); return; } // don't fast-forward a live dungeon fight
+    applyOfflineProgress(awayMs);                               // credit tasks + peons (capped 12h) + build the summary
+    lastTick = Date.now();                                      // stop the loop re-crediting the clamped 60s...
+    state.lastSaved = Date.now();                               // ...and a quick reload re-crediting via offline-on-load
+    cloudSave(false, true);
+    render();                                                   // surface the "While you were away" summary
+  });
   function isEditingField(){
     var ae = document.activeElement;
     if(!ae) return false;
