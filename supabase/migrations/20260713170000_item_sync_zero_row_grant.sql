@@ -1,17 +1,20 @@
 -- ============================================================================
--- FIX (follow-up to 20260713150000): grant the burst allowance whenever the ledger holds ZERO of an
--- item, not only for never-seen rows.
+-- Item ledger (player_items / item_sync): grant the burst allowance whenever the ledger holds ZERO of
+-- an item -- a never-seen row OR one sitting at qty 0.
 --
--- The previous fix only special-cased a NEW item type (no row). But a staff (or any item) that was
--- synced DURING the buggy window already has a row stuck at qty 0. On the next sync that row is NOT
--- null, so it took the rate-limited path: allowed = per_hour * elapsed-since-updated_at. Because the
--- row's updated_at only advances when qty actually increases (it never did -- it's pinned at 0), a
--- player who keeps retrying keeps the clock near "now", so allowed stays ~0 and the ledger stays 0 --
--- and item_debit keeps rejecting SELL / guild-bank DEPOSIT of that item.
+-- item_sync rate-limits each item's per-sync INCREASE with a token bucket keyed on the row's
+-- updated_at. Two failure modes this addresses:
+--   * A brand-new item type (first owned after the account's seeding sync) had no row, so it started
+--     at prev_at = now() -> zero elapsed -> allowed = 0 -> it was stored at qty 0.
+--   * An item already stuck at a 0-row: its updated_at only advances when qty actually increases (it
+--     never did), so retrying keeps the clock near "now", allowed stays ~0, and the ledger stays 0.
+-- In both cases item_debit then rejected SELL (marketplace) / guild-bank DEPOSIT of the item -- the
+-- server saw 0 of it (e.g. a rare Birch Staff you'd just crafted).
 --
--- Now: prev = 0 (whether the row is missing or exists at 0) grants the full burst up front, so a
--- freshly-owned or previously-depleted item is ledgered immediately. Anti-mint holds: the instant
--- grant is capped at p_burst, and sustained growth beyond that is still rate-limited exactly as before.
+-- Fix: prev = 0 grants the full burst up front, so a freshly-owned or previously-depleted item is
+-- ledgered immediately. Anti-mint holds: the instant grant is capped at p_burst, and sustained growth
+-- beyond that is still rate-limited exactly as before. create-or-replace -> the `items` edge function
+-- picks it up automatically (SQL only, no redeploy).
 -- ============================================================================
 create or replace function public.item_sync(p_user uuid, p_items jsonb, p_per_hour bigint, p_burst bigint)
 returns jsonb language plpgsql security definer set search_path = public as $$
