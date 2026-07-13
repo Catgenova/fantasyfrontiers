@@ -567,6 +567,36 @@
     S.inventory.fertilizer_t5 = savedFert; S.inventory.farming_t5 = savedCrop;
   });
 
+  // ---- Harvesting a crop returns a seed of that crop 75% of the time -----------------------------
+  suite('farming: harvest seed drop', function(){
+    eq(FF.HARVEST_SEED_DROP_CHANCE, 0.75, 'seed drop chance is 75%');
+    // crop (type + tier) -> its seed id, across all three crop lines; unknown -> null (no phantom seed).
+    eq(FF.cropSeedId('fiber', 5), 'seed_t5', 'fiber crop -> seed_t');
+    eq(FF.cropSeedId('grain', 3), 'grainseed_t3', 'grain crop -> grainseed_t');
+    eq(FF.cropSeedId('herb', 7), 'herbseed_t7', 'herb crop -> herbseed_t');
+    eq(FF.cropSeedId('fiber', 999), null, 'out-of-range tier -> null');
+    // Statistical: harvest a ripe t5 fiber plot many times; ~75% of harvests return a seed_t5.
+    var S = FF._state, grid = S.estate.grid, pm = FF.farmPlotMap('personal');
+    var cell=null; for(var x=0;x<grid.length && !cell;x++){ if(!grid[x]) continue; for(var y=0;y<grid[x].length && !cell;y++){ if(grid[x][y]) cell=[x,y]; } }
+    ok(cell, 'found an estate cell to farm');
+    var key = cell[0]+','+cell[1];
+    var savedTier = grid[cell[0]][cell[1]].fieldTier, savedPlot = pm[key];
+    var savedSeed = S.inventory.seed_t5||0, savedCrop = S.inventory.farming_t5||0;
+    grid[cell[0]][cell[1]].fieldTier = 5;
+    var N=600, seeds=0;
+    for(var i=0;i<N;i++){
+      S.inventory.seed_t5 = 0;
+      pm[key] = { cropType:'fiber', tierIndex:5, plantedAt:Date.now(), readyAt:Date.now()-1 };
+      FF.harvestPlot('personal', key, true);
+      if((S.inventory.seed_t5||0) > 0) seeds++;
+    }
+    var rate = seeds/N;
+    ok(rate > 0.65 && rate < 0.85, 'harvest returns a seed ~75% of the time (got '+rate.toFixed(3)+')');
+    delete pm[key]; if(savedPlot) pm[key]=savedPlot;
+    grid[cell[0]][cell[1]].fieldTier = savedTier;
+    S.inventory.seed_t5 = savedSeed; S.inventory.farming_t5 = savedCrop;
+  });
+
   // ---- Cross-skill physiques: 20 new physiques trained by one skill, feeding another --------------
   suite('cross-skill physiques', function(){
     var NEW = ['anglersEye','prospectorsNose','huntsman','sylvanBond','quartermaster','masterwork','diligence','weaponsmithsEdge','armorersTemper','greenThumb','composter','apothecarysHand','demolitionist','runicAttunement','wardersFocus','zealotry','oblation','fieldRations','menagerist','merchantsSavvy'];

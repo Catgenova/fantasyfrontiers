@@ -6552,6 +6552,13 @@
     if(SEED_ITEMS[seedId])       return { def:SEED_ITEMS[seedId],       cropType:'fiber', tier:SEED_ITEMS[seedId].tierIndex,       crop:FARMING_ITEMS['farming_t'+SEED_ITEMS[seedId].tierIndex] };
     return null;
   }
+  // Inverse of seedInfo: the seed id for a growing crop (its type + tier). Harvesting has a chance to
+  // drop one back (self-sustaining fields).
+  var HARVEST_SEED_DROP_CHANCE = 0.75;   // chance a harvest returns a seed of the crop harvested
+  function cropSeedId(cropType, tierIndex){
+    var id = cropType==='grain' ? 'grainseed_t'+tierIndex : cropType==='herb' ? 'herbseed_t'+tierIndex : 'seed_t'+tierIndex;
+    return (SEED_ITEMS[id] || GRAIN_SEED_ITEMS[id] || HERB_SEED_ITEMS[id]) ? id : null;
+  }
 
   // batch=true suppresses the per-plot log/toast/save (used by Plant All) so the caller writes one
   // summary line and saves once. Returns true on a successful plant.
@@ -6584,10 +6591,18 @@
     var yieldQty = plot.fertilized ? (composterTripleYield() ? 3 : 2) : 1;
     yieldQty += greenThumbExtraYield();
     addItem(cropData.id, yieldQty);
+    // 75% chance to recover a seed of the crop just harvested (keeps fields self-sustaining).
+    var seedId = cropSeedId(plot.cropType, plot.tierIndex);
+    var gotSeed = !!(seedId && Math.random() < HARVEST_SEED_DROP_CHANCE);
+    if(gotSeed) addItem(seedId, 1);
     addXp(FARMING_CROP_SKILL[plot.cropType] || 'fiberharvesting', cropData.xp);
     addPhysiqueXp(physTierPairs(FARMING_PHYSIQUE, itemTierFromId(cropData.id)));
     maybeSummonFamiliar('farming');
-    if(!batch){ addLog('You harvested ' + yieldQty + '&times; ' + cropData.name + (plot.fertilized ? ' (fertilized)' : '') + '.', 'important'); spawnFloatingText('+' + yieldQty + ' ' + cropData.name, 'ft-success'); }
+    if(!batch){
+      var seedName = (gotSeed && ALL_SELLABLE[seedId]) ? ALL_SELLABLE[seedId].name : '';
+      addLog('You harvested ' + yieldQty + '&times; ' + cropData.name + (plot.fertilized ? ' (fertilized)' : '') + (gotSeed ? ' and recovered a ' + seedName : '') + '.', 'important');
+      spawnFloatingText('+' + yieldQty + ' ' + cropData.name + (gotSeed ? ' +1 Seed' : ''), 'ft-success');
+    }
     delete map[key];
     if(!batch) saveGame();
     needsRender = true;
@@ -23794,7 +23809,7 @@
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       guildLogPush:guildLogPush, renderGuildActivityLog:renderGuildActivityLog, GUILD_LOG_MAX:GUILD_LOG_MAX, guildIsOfficerPlus:guildIsOfficerPlus,
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
-      fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, seedInfo:seedInfo,
+      fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, serverBuffGrant:serverBuffGrant, lastBuffGrantReason:lastBuffGrantReason, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
