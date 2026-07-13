@@ -1198,7 +1198,7 @@
     eq(FF.newClassDmgMult(monLow, stFor('executioner',20,{activity:{type:'combat',monsterHp:60}})), 1, 'Lv20 Reap is neutral above the flat 50% threshold');
     // Rising Guillotine (Lv40): after 20s the threshold climbs to ~70%, so a 60%-HP foe now reaps.
     var exRise = stFor('executioner',40,{activity:{type:'combat',monsterHp:60,duelStartedAt:Date.now()-20000}});
-    near(FF.executionerReapThreshold(exRise), 0.70, 'Rising Guillotine: +1%/s -> 70% threshold at 20s', 1e-6);
+    near(FF.executionerReapThreshold(exRise), 0.70, 'Rising Guillotine: +1%/s -> 70% threshold at 20s', 1e-2); // wall-clock drift (Date.now advances a few ms between setup and read) -> tolerant compare
     ok(Math.abs(FF.newClassDmgMult(monLow, exRise) - 1.30) < 1e-9, 'Rising Guillotine lets a 60%-HP foe be reaped at 20s');
     eq(FF.executionerReapThreshold(stFor('executioner',20)), 0.5, 'without Rising Guillotine the threshold stays 50%');
     // Reaping Vigor (Lv1): each crit stack = +25% max HP, gated on the class.
