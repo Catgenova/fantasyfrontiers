@@ -11697,6 +11697,10 @@
       meta.setAttribute('content', (dev > 0 && dev <= 540 && compact) ? 'width=780' : 'width=device-width, initial-scale=1.0');
     } catch(e){}
   }
+  // Pre-alpha disclaimer: shown in red on the ticker with a much higher chance than any single tip.
+  var TICKER_DISCLAIMER = '<span style="color:#ff6b6b;font-weight:700">The current state of the game is Active Development Pre-Alpha. Please expect bugs, frequent changes, and future progress wipes. Thank you and excited for your feedback!</span>';
+  var TICKER_DISCLAIMER_CHANCE = 0.30; // ~30% of marquee cycles land on the disclaimer
+  function nextTickerHtml(order, i){ return Math.random() < TICKER_DISCLAIMER_CHANCE ? TICKER_DISCLAIMER : order[i]; }
   var _tickerStarted = false;
   function startTicker(){
     var el = document.getElementById('ffTickerText');
@@ -11705,8 +11709,8 @@
     var order = TICKER_TIPS.slice();
     for(var k=order.length-1;k>0;k--){ var j=Math.floor(Math.random()*(k+1)); var t=order[k]; order[k]=order[j]; order[j]=t; } // shuffle so the sequence differs each session
     var i = 0;
-    el.innerHTML = order[0];
-    el.addEventListener('animationiteration', function(){ i = (i+1) % order.length; el.innerHTML = order[i]; });
+    el.innerHTML = nextTickerHtml(order, 0);
+    el.addEventListener('animationiteration', function(){ i = (i+1) % order.length; el.innerHTML = nextTickerHtml(order, i); });
   }
   function topbarSignature(){
     var tk = state.trackedSkills && state.trackedSkills[0];
@@ -23381,7 +23385,7 @@
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS,
       GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, FARMING_PHYSIQUE:FARMING_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
       physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
-      SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, TICKER_TIPS:TICKER_TIPS, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
+      SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, TICKER_TIPS:TICKER_TIPS, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
