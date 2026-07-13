@@ -21877,7 +21877,14 @@
     var st = document.createElement('style'); st.id = 'ffLandStyle';
     st.textContent = ''
       + '#loginGate{background:radial-gradient(120% 120% at 50% 0%, var(--bg-card) 0%, var(--paper) 60%);}'
-      + '.ff-land{max-width:1000px;width:100%;margin:0 auto;text-align:center;}'
+      // Faint full-bleed "every skill + its familiar" word-wall behind the content. A radial mask keeps
+      // the central reading column clear, so the skill roster frames the page through the side gutters.
+      + '.ff-land-bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;display:flex;flex-wrap:wrap;align-content:flex-start;justify-content:center;gap:7px 13px;padding:24px 20px;opacity:.16;-webkit-mask-image:radial-gradient(118% 82% at 50% 44%, transparent 28%, #000 68%);mask-image:radial-gradient(118% 82% at 50% 44%, transparent 28%, #000 68%);}'
+      + '.ff-wm{display:inline-flex;align-items:center;gap:5px;font-size:11px;line-height:1;color:var(--text-dim);white-space:nowrap;}'
+      + '.ff-wm svg{width:13px;height:13px;flex:0 0 auto;}'
+      + '.ff-wm b{color:var(--gold);font-weight:600;}'
+      + '@media (max-width:560px){.ff-land-bg{display:none;}}'
+      + '.ff-land{max-width:1000px;width:100%;margin:0 auto;text-align:center;position:relative;z-index:1;}'
       + '.ff-land-title{font-family:var(--font-display);font-weight:700;font-size:36px;color:var(--gold);letter-spacing:2px;line-height:1.05;}'
       + '.ff-land-sub{color:var(--text-dim);font-size:14px;max-width:660px;margin:8px auto 18px;line-height:1.55;}'
       + '.ff-land-chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:22px;}'
@@ -21992,7 +21999,20 @@
       var p = (typeof CLASS_PORTRAITS !== 'undefined' && CLASS_PORTRAITS[id]); if(!p) return '';
       return '<div class="ff-land-port" title="'+escapeHtml((CLASS_DEFS_BY_ID[id]||{}).name||'')+'">'+p+'</div>';
     }).join('');
-    gate.innerHTML = '<div class="ff-land">'
+    // Background word-wall: every skill (excluding the separately-showcased Classes) with its familiar's
+    // icon + name, drawn faintly behind everything. Derived from FAMILIAR_DATA so it always stays complete.
+    var _clsSet = {}; (typeof CLASS_SKILL_IDS !== 'undefined' ? CLASS_SKILL_IDS : []).forEach(function(id){ _clsSet[id] = 1; });
+    var wmItems = '';
+    if(typeof FAMILIAR_DATA !== 'undefined'){
+      Object.keys(FAMILIAR_DATA).forEach(function(id){
+        if(_clsSet[id]) return;
+        var f = FAMILIAR_DATA[id]; if(!f) return;
+        var lbl = (typeof SKILL_LABELS !== 'undefined' && SKILL_LABELS[id]) || id;
+        wmItems += '<span class="ff-wm">' + (f.icon || '') + '<b>' + escapeHtml(lbl) + '</b> ' + escapeHtml(f.name || '') + '</span>';
+      });
+    }
+    var bgWall = wmItems ? '<div class="ff-land-bg" aria-hidden="true">' + wmItems + '</div>' : '';
+    gate.innerHTML = bgWall + '<div class="ff-land">'
       + '<div class="ff-land-title">Fantasy Frontiers</div>'
       + '<div class="ff-land-sub">A living idle RPG. Master over 170 skills, take on 24 hero Classes, raise a menagerie of familiars, and delve synchronous co-op dungeons &mdash; then come home to an estate you and your guild build together.</div>'
       + '<div class="ff-land-chips">' + chip('170+','Skills') + chip('24','Classes') + chip('100+','Familiars') + chip('1&ndash;4','Co-op PvE') + '</div>'
