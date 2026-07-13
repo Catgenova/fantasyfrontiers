@@ -19433,6 +19433,14 @@
     if(payload){ for(var k in payload){ if(payload.hasOwnProperty(k)) body[k]=payload[k]; } }
     return chatClient.functions.invoke('guild_bank', { body: body }).then(function(r){
       if(r && r.data) return r.data;
+      // Non-2xx: Supabase wraps the response in r.error (FunctionsHttpError) and the actual body -- our
+      // {ok,error,code} -- is on r.error.context (a Response). Read it so the player sees the REAL reason
+      // ("The bank is full — buy more slots", "You don't have those items", ...) instead of the generic
+      // "Edge Function returned a non-2xx status code".
+      if(r && r.error && r.error.context && typeof r.error.context.json === 'function'){
+        return r.error.context.json().then(function(b){ return (b && b.error) ? { ok:false, error:b.error, code:b.code } : { ok:false, error:(r.error.message || 'Request failed.') }; },
+          function(){ return { ok:false, error:(r.error.message || 'Request failed.') }; });
+      }
       return { ok:false, error:(r && r.error && r.error.message) || 'Request failed.' };
     }, function(){ return { ok:false, error:'Network error.' }; });
   }
@@ -19504,7 +19512,7 @@
     await itemSync(true);                                            // reconcile the ledger so the items count server-side
     guildBankInvoke('deposit', { item_key:key, qty:qty }).then(function(res){
       guildBankState.busy=false;
-      if(!res.ok){ guildBankState.error=res.error||'Deposit failed.'; render(); return; }
+      if(!res.ok){ guildBankState.error=res.error||'Deposit failed.'; addLog('Guild bank deposit failed: ' + guildBankState.error, 'danger'); render(); return; }
       state.inventory[key] = Math.max(0, (state.inventory[key]||0) - qty); // only after the server accepted it
       saveGame(); guildBankApply(res); render();
     });
