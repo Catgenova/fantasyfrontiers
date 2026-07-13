@@ -4413,12 +4413,40 @@
         value: Math.round(d.base * LEGENDARY_RARITY_MULT[r] * 1000) / 1000, statLabel: d.stat, sell:0 };
     });
   });
-  // Recipes keyed by "<layer>_<slot>". Only D1 Ring exists so far; other Blueprints read as "coming soon".
+  // ---- D1 (Cave) Cloaks: one of three Shrouds, worn in the Back body-armor slot (displacing a normal
+  // cloak). Same 2x/4x/8x rarity scaling as the Signets; a Shroud's effect is inherent -- it grants no
+  // base defense (like a legendary Signet grants no base ring stat).
+  var D1_LEG_CLOAK_DEFS = [
+    { key:'accuracy',   name:'Cave Shroud of Precision', stat:'Accuracy',        base:0.50, icon:svgIcon('target','#c9a227') },
+    { key:'critchance', name:'Cave Shroud of Fortune',   stat:'Critical Chance', base:0.05, icon:svgIcon('starburst','#c9a227') },
+    { key:'critdmg',    name:'Cave Shroud of Malice',    stat:'Critical Damage', base:0.20, icon:svgIcon('crossedswords','#c9a227') }
+  ];
+  var D1_LEG_CLOAK_MAP = {}; D1_LEG_CLOAK_DEFS.forEach(function(d){ D1_LEG_CLOAK_MAP[d.key] = d; });
+  function legCloakItemId(key, rarity){ return 'legcloak_d1_' + key + '_' + rarity; }
+  var LEGENDARY_CLOAK_ITEMS = {};
+  D1_LEG_CLOAK_DEFS.forEach(function(d){
+    LEG_RING_RARITIES.forEach(function(r){
+      var id = legCloakItemId(d.key, r);
+      LEGENDARY_CLOAK_ITEMS[id] = { id:id, legKey:d.key, dungeon:'d1', rarity:r, slot:'back', legendary:true,
+        name: d.name + (r==='normal' ? '' : ' (' + getRarity(r).label + ')'), icon: d.icon,
+        value: Math.round(d.base * LEGENDARY_RARITY_MULT[r] * 1000) / 1000, statLabel: d.stat, sell:0 };
+    });
+  });
+  // Recipes keyed by "<layer>_<slot>". Each forges one Blueprint into a random Legendary of that slot,
+  // rarity rolled 2x/4x/8x. Ring vs cloak differ only in the material bill + which item family they yield.
   var MASTERCRAFT_RECIPES = {
     d1_ring: { layer:'d1', slot:'ring',
       inputs: { metallurgy_t20:1000, gem_voidcrystal:100, twine_t20:100, goldsmithing_t20:100 },
-      rareRings: 10,                              // + 10 rare Tier-20 Rings of any type
-      outcomes: D1_LEG_RING_DEFS.map(function(d){ return d.key; }) }
+      rareCount: 10, rareLabel:'Rare Tier-20 Rings', stripPrefix:'Cave Signet of ', xpSkill:'jewelrycrafting',
+      defMap: D1_LEG_RING_MAP, itemMap: LEGENDARY_RING_ITEMS, itemId: legRingItemId,
+      countRare: countRareT20Rings, consumeRare: consumeRareT20Rings,
+      outcomes: D1_LEG_RING_DEFS.map(function(d){ return d.key; }) },
+    d1_cape: { layer:'d1', slot:'cape',
+      inputs: { weaving_t20:1000 },              // 1000 Tier-20 refined Cloths
+      rareCount: 10, rareLabel:'Rare Tier-20 Cloaks', stripPrefix:'Cave Shroud of ', xpSkill:'tailoring',
+      defMap: D1_LEG_CLOAK_MAP, itemMap: LEGENDARY_CLOAK_ITEMS, itemId: legCloakItemId,
+      countRare: countRareT20Cloaks, consumeRare: consumeRareT20Cloaks,
+      outcomes: D1_LEG_CLOAK_DEFS.map(function(d){ return d.key; }) }
   };
   function mastercraftRecipeFor(bpItem){ return bpItem ? (MASTERCRAFT_RECIPES[bpItem.dungeon + '_' + bpItem.slot] || null) : null; }
   var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS);
@@ -7315,7 +7343,7 @@
     var physSum = 0;
     accuracyPhysiques().forEach(function(id){ physSum += getLevel((st.physique && st.physique[id]) || 0); });
     var prof = st.equippedMainhand ? getLevel(st.xp[st.equippedMainhand] || 0) : 0;
-    return Math.round((physSum*ACCURACY_PHYS_WEIGHT + prof*ACCURACY_PROF_WEIGHT) * classAccuracyMult(st) * (1 + getRingAccuracyBonus(st)));
+    return Math.round((physSum*ACCURACY_PHYS_WEIGHT + prof*ACCURACY_PROF_WEIGHT) * classAccuracyMult(st) * (1 + getRingAccuracyBonus(st) + legendaryCloakBonus('accuracy', st)));
   }
   function monsterDodge(m){
     if(!m) return 0;
@@ -7674,16 +7702,17 @@
     var recipe = mastercraftRecipeFor(bp);
     if(!recipe){ addLog('That Mastercraft isn’t available yet.', 'danger'); return; }
     if(!hasInputs(recipe.inputs)){ addLog('You lack the materials to mastercraft the ' + bp.name + '.', 'danger'); return; }
-    if(countRareT20Rings() < recipe.rareRings){ addLog('You need ' + recipe.rareRings + ' rare Tier-20 Rings (you have ' + countRareT20Rings() + ').', 'danger'); return; }
+    var haveRare = recipe.countRare();
+    if(haveRare < recipe.rareCount){ addLog('You need ' + recipe.rareCount + ' ' + recipe.rareLabel + ' (you have ' + haveRare + ').', 'danger'); return; }
     consumeInputs(recipe.inputs);
-    consumeRareT20Rings(recipe.rareRings);
+    recipe.consumeRare(recipe.rareCount);
     state.blueprints[blueprintId] -= 1;
     var key = recipe.outcomes[Math.floor(Math.random() * recipe.outcomes.length)];
     var rarity = rollMastercraftRarity();
-    var itemId = legRingItemId(key, rarity);
+    var itemId = recipe.itemId(key, rarity);
     addItem(itemId, 1);
-    bumpStat('crafted'); addXp('jewelrycrafting', 20000);
-    var it = LEGENDARY_RING_ITEMS[itemId];
+    bumpStat('crafted'); addXp(recipe.xpSkill || 'jewelrycrafting', 20000);
+    var it = recipe.itemMap[itemId];
     addLog('Mastercraft! You forged the ' + it.name + ' — +' + Math.round(it.value * 100) + '% ' + it.statLabel + '.', 'important');
     spawnFloatingText('+1 ' + it.name, rarity === 'fantastic' ? 'ft-fantastic' : rarity === 'supreme' ? 'ft-supreme' : rarity === 'rare' ? 'ft-rare' : 'ft-success');
     needsRender = true;
@@ -7707,6 +7736,32 @@
     if(!cur || !cur.leg) return;
     addItem(legRingItemId(cur.leg, cur.rarity), 1);
     state.jewelrySlots[slotId] = { typeId:null, tier:0, rarity:'normal' };
+  }
+  // ---- Mastercraft: legendary cloak (Shroud), worn in the single Back body-armor slot ----
+  function countRareT20Cloaks(){ return state.inventory['bodyarmor_tailoring_back_t20_rare'] || 0; }
+  function consumeRareT20Cloaks(count){ var id = 'bodyarmor_tailoring_back_t20_rare'; state.inventory[id] = Math.max(0, (state.inventory[id] || 0) - count); }
+  function legendaryCloakBonus(effectKey, st){ st = st || state; var def = D1_LEG_CLOAK_MAP[effectKey]; if(!def || !st.bodyArmor) return 0; var s = st.bodyArmor.back; return (s && s.leg === effectKey) ? def.base * (LEGENDARY_RARITY_MULT[s.rarity] || 1) : 0; }
+  function legCloakEquipped(st){ st = st || state; return !!(st.bodyArmor && st.bodyArmor.back && st.bodyArmor.back.leg); }
+  function equipLegCloak(itemId){
+    var item = LEGENDARY_CLOAK_ITEMS[itemId];
+    if(!item || (state.inventory[itemId] || 0) <= 0) return;
+    var cur = state.bodyArmor.back;
+    if(cur){
+      if(cur.leg){ addItem(legCloakItemId(cur.leg, cur.rarity), 1); }                                  // displaced Shroud returns
+      else if(cur.uid){ /* displaced unique cloak stays in its table */ }
+      else if(cur.tier > 0 && cur.material){ addItem('bodyarmor_'+cur.material+'_back_t'+(cur.tier-1)+'_'+cur.rarity, 1); }
+    }
+    state.inventory[itemId] -= 1;
+    state.bodyArmor.back = { leg: item.legKey, rarity: item.rarity, tier:0, material:null, uid:null };
+    armorPanelExpanded = true;
+    addLog('You equipped the ' + item.name + '.', 'important');
+    needsRender = true;
+  }
+  function unequipLegCloak(){
+    var cur = state.bodyArmor && state.bodyArmor.back;
+    if(!cur || !cur.leg) return;
+    addItem(legCloakItemId(cur.leg, cur.rarity), 1);
+    state.bodyArmor.back = { tier:0, rarity:'normal', material:null, uid:null };
   }
   function equipAmulet(itemId){
     var item = AMULET_ITEMS[itemId];
@@ -8186,12 +8241,14 @@
       return;
     }
     var slotState = state.bodyArmor[item.slot];
-    if(slotState.uid){ slotState.uid = null; } // displaced unique stays in the table, not returned to inventory
+    if(slotState.leg){ addItem(legCloakItemId(slotState.leg, slotState.rarity), 1); slotState.leg = null; } // displaced legendary Shroud returns
+    else if(slotState.uid){ slotState.uid = null; } // displaced unique stays in the table, not returned to inventory
     else if(slotState.tier > 0){
       var oldId = 'bodyarmor_'+slotState.material+'_'+item.slot+'_t'+(slotState.tier-1)+'_'+slotState.rarity;
       addItem(oldId, 1);
     }
     state.inventory[itemId] -= 1;
+    slotState.leg = null;
     slotState.tier = item.tierIndex+1;
     slotState.rarity = item.rarity;
     slotState.material = item.material;
@@ -8201,7 +8258,9 @@
   }
   function unequipBodyArmor(slot){
     var slotState = state.bodyArmor && state.bodyArmor[slot];
-    if(!slotState || slotState.tier<=0) return;
+    if(!slotState) return;
+    if(slotState.leg){ addItem(legCloakItemId(slotState.leg, slotState.rarity), 1); slotState.leg=null; slotState.tier=0; slotState.rarity='normal'; slotState.material=null; slotState.uid=null; return; } // return a legendary Shroud
+    if(slotState.tier<=0) return;
     // A unique in the slot stays in the table (never returns to inventory). Otherwise only return an
     // item if the slot has a valid material; a legacy/partial save could carry a tier without a
     // material, which would otherwise mint a phantom "bodyarmor_undefined_..." item.
@@ -10261,13 +10320,13 @@
     // Duelist Disengage (Lv 80): the next 3 attacks after a retreat are guaranteed Critical Hits.
     var forcedCrit = !isOffhand && duelistBonus(80) && (state.duelistGuaranteedCrits || 0) > 0;
     var samuraiFirstStrike = !isOffhand && samuraiBonus(1) && !!(act && act.samuraiFirstStrike); // Samurai Iaijutsu: the opening landed strike of each duel is a guaranteed crit
-    var isCrit = forcedCrit || samuraiFirstStrike || Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawCritChanceBonus() + knightMissCritChance() + spellbladeCritChance() + newClassCritChance() + (enchTot.critChance||0)/100); // + Spellblade Arcane Edge, new-class passives, and equipped-item Critical Chance enchants
+    var isCrit = forcedCrit || samuraiFirstStrike || Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawCritChanceBonus() + knightMissCritChance() + spellbladeCritChance() + newClassCritChance() + legendaryCloakBonus('critchance', state) + (enchTot.critChance||0)/100); // + Spellblade Arcane Edge, new-class passives, legendary Shroud, and equipped-item Critical Chance enchants
     // Wands are magical, so the melee/bow strength physiques don't scale them -- only the generic
     // low-HP tenacity bonus. Melee/bow keep their class physique multipliers.
     var physDmgMult = isWandAttack ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
     physDmgMult *= tenacityLowHpMult(state);
     // Elixir potions + familiar crit-damage buffs stack on top of the (capped) base+exploitation crit.
-    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + knightMissCritDmg() + thunderGalvanizeCritDmg() + treasureHunterCritDmgBonus() + newClassCritDmg() + pyromancerKindlingCritDmg(state) + (enchTot.critDamage||0)/100) : 1;
+    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + knightMissCritDmg() + thunderGalvanizeCritDmg() + treasureHunterCritDmgBonus() + newClassCritDmg() + pyromancerKindlingCritDmg(state) + legendaryCloakBonus('critdmg', state) + (enchTot.critDamage||0)/100) : 1;
 
     // Accuracy vs Dodge: roll to land the hit. A miss deals no damage and fires no on-hit effects
     // (potions, proficiency XP), but you still trained your reflexes by swinging so accuracy can grow.
@@ -11759,10 +11818,11 @@
       } else {
         html += '<div class="chance-line" style="margin-top:6px">Yields one random Legendary ' + escapeHtml(selBp.slotLabel) + ', its effect scaled <b>2x / 4x / 8x</b> by the rarity it rolls:</div>';
         html += '<div class="style-row" style="margin:4px 0 8px">';
-        recipe.outcomes.forEach(function(key){ var d = D1_LEG_RING_MAP[key]; if(d) html += '<span class="style-btn" style="cursor:default">' + d.icon + ' ' + escapeHtml(d.name.replace('Cave Signet of ', '')) + ' <span class="style-type" style="text-transform:none">+' + Math.round(d.base * 100) + '% ' + escapeHtml(d.stat) + '</span></span>'; });
+        recipe.outcomes.forEach(function(key){ var d = recipe.defMap[key]; if(d) html += '<span class="style-btn" style="cursor:default">' + d.icon + ' ' + escapeHtml(d.name.replace(recipe.stripPrefix, '')) + ' <span class="style-type" style="text-transform:none">+' + Math.round(d.base * 100) + '% ' + escapeHtml(d.stat) + '</span></span>'; });
         html += '</div>';
-        html += '<div class="inputs-line">Needs: ' + inputsLine(recipe.inputs, 'mc-' + selBp.id) + ' &bull; <span class="' + (countRareT20Rings() >= recipe.rareRings ? 'ok' : 'bad') + '">' + recipe.rareRings + 'x Rare Tier-20 Rings (' + countRareT20Rings() + ')</span></div>';
-        var canCraft = haveBp > 0 && hasInputs(recipe.inputs) && countRareT20Rings() >= recipe.rareRings;
+        var haveRare = recipe.countRare();
+        html += '<div class="inputs-line">Needs: ' + inputsLine(recipe.inputs, 'mc-' + selBp.id) + ' &bull; <span class="' + (haveRare >= recipe.rareCount ? 'ok' : 'bad') + '">' + recipe.rareCount + 'x ' + escapeHtml(recipe.rareLabel) + ' (' + haveRare + ')</span></div>';
+        var canCraft = haveBp > 0 && hasInputs(recipe.inputs) && haveRare >= recipe.rareCount;
         html += '<button class="action-btn" data-action="craftMastercraft" data-item="' + selBp.id + '" ' + (canCraft ? '' : 'disabled') + '>Mastercraft</button>';
       }
     }
@@ -12459,8 +12519,11 @@
     BODY_ARMOR_SLOTS.forEach(function(slot){
       var s = state.bodyArmor[slot];
       var current = (s && s.tier>0) ? BODY_ARMOR_ITEMS['bodyarmor_'+s.material+'_'+slot+'_t'+(s.tier-1)+'_'+s.rarity] : null;
+      var legCloak = (s && s.leg) ? LEGENDARY_CLOAK_ITEMS[legCloakItemId(s.leg, s.rarity)] : null;
       var owned = Object.keys(BODY_ARMOR_ITEMS).filter(function(id){ return BODY_ARMOR_ITEMS[id].slot===slot && (state.inventory[id]||0)>0; })
         .sort(function(a,b){ return BODY_ARMOR_ITEMS[a].tierIndex - BODY_ARMOR_ITEMS[b].tierIndex; });
+      // Owned legendary Shrouds (Mastercrafted from a Cave Cape Blueprint) equip into the Back slot here.
+      var ownedLegCloaks = (slot==='back') ? Object.keys(LEGENDARY_CLOAK_ITEMS).filter(function(id){ return (state.inventory[id]||0)>0; }) : [];
       // Owned UNIQUE (enchanted, uid-tracked) pieces for this slot -- equippable right here too.
       var equippedUnique = (s && s.uid && state.uniqueItems && state.uniqueItems[s.uid]) ? state.uniqueItems[s.uid] : null;
       var slotUniques = Object.keys(state.uniqueItems||{}).map(function(uid){ return state.uniqueItems[uid]; })
@@ -12469,9 +12532,10 @@
       html += '<div class="item-card">';
       var curMat = current ? armorMaterialBonusLines(current.material, current.slot, current.rarity) : [];
       var curName = equippedUnique ? uniqueDisplayName(equippedUnique) : (current ? current.name : '');
-      var curMeta = current ? (escapeHtml(curName)+' &bull; defense '+current.defense+(curMat.length ? ' &bull; '+curMat.join(' &bull; ') : '')) : 'Not equipped';
+      var curMeta = legCloak ? (escapeHtml(legCloak.name)+' &bull; +'+Math.round(legCloak.value*100)+'% '+escapeHtml(legCloak.statLabel))
+        : current ? (escapeHtml(curName)+' &bull; defense '+current.defense+(curMat.length ? ' &bull; '+curMat.join(' &bull; ') : '')) : 'Not equipped';
       html += '<div class="item-top"><div class="item-icon">'+BODY_ARMOR_ICONS[slot]+'</div><div><div class="item-name">'+BODY_ARMOR_LABELS[slot]+'</div><div class="item-meta">'+curMeta+'</div></div></div>';
-      if(owned.length===0 && slotUniques.length===0){
+      if(owned.length===0 && slotUniques.length===0 && ownedLegCloaks.length===0){
         html += '<div class="empty-note">No '+BODY_ARMOR_LABELS[slot]+' in inventory. Forge one above.</div>';
       } else {
         if(owned.length){
@@ -12486,10 +12550,20 @@
           });
           html += '</div>';
         }
+        if(ownedLegCloaks.length){
+          html += '<div class="style-row">';
+          ownedLegCloaks.forEach(function(id){
+            var item = LEGENDARY_CLOAK_ITEMS[id];
+            var qty = state.inventory[id]||0;
+            var worn = !!(s && s.leg===item.legKey && s.rarity===item.rarity);
+            html += '<button class="style-btn'+(worn?' locked':'')+'" data-action="equipLegCloak" data-item="'+id+'" '+(worn?'disabled':'')+'>'+item.icon+' '+escapeHtml(item.name)+' <span class="style-lvl">x'+qty+'</span><span class="style-type" style="text-transform:none">+'+Math.round(item.value*100)+'% '+escapeHtml(item.statLabel)+(worn?' &bull; worn':'')+'</span></button>';
+          });
+          html += '</div>';
+        }
         // Unique (enchanted) pieces for this slot: full cards so every enchantment is visible.
         html += renderUniqueEquipOptions('bodyarmor', slot);
       }
-      if(current) html += '<button class="action-btn stop" data-action="unequipBodyArmor" data-slot="'+slot+'">Unequip</button>';
+      if(current || legCloak) html += '<button class="action-btn stop" data-action="unequipBodyArmor" data-slot="'+slot+'">Unequip</button>';
       html += '</div>';
     });
     html += '</div>';
@@ -13279,9 +13353,9 @@
     }
     html += '<div class="stat-row"><span class="stat-label">Damage Type</span><span class="stat-value">'+dmgTypeHtml+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">'+(isWandMain?'Wands Proficiency':(isScepterMain?'Scepters Proficiency':'Weapon Proficiency'))+'</span><span class="stat-value">+'+Math.round((weaponProficiency-1)*100)+'%</span></div>';
-    var _critChancePct = Math.round((criticalEyeCritChance(state)+quickdrawCritChanceBonus()+newClassCritChance()+enchCrit)*10000)/100;
+    var _critChancePct = Math.round((criticalEyeCritChance(state)+quickdrawCritChanceBonus()+newClassCritChance()+legendaryCloakBonus('critchance',state)+enchCrit)*10000)/100;
     html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+_critChancePct+'%'+(enchCrit>0?' <span style="color:var(--gold)">(+'+(Math.round(enchTot.critChance*10)/10)+'% ench)</span>':'')+'</span></div>';
-    var _critDmgMult = Math.round((Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + newClassCritDmg() + enchCritDmg)*100)/100;
+    var _critDmgMult = Math.round((Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + newClassCritDmg() + legendaryCloakBonus('critdmg',state) + enchCritDmg)*100)/100;
     html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+_critDmgMult+'x'+(enchCritDmg>0?' <span style="color:var(--gold)">(+'+(Math.round(enchTot.critDamage*10)/10)+'% ench)</span>':'')+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Accuracy</span><span class="stat-value">'+playerAccuracy(state)+'</span></div>';
     if(weaponStyle.hand==='bow'){
@@ -20867,6 +20941,7 @@
     if(itemId.indexOf('stweapon_')===0) return 'equipStackableWeapon';
     if(itemId.indexOf('stshield_')===0) return 'equipStackableShield';
     if(itemId.indexOf('stward_')===0) return 'equipWard';
+    if(itemId.indexOf('legcloak_')===0) return 'equipLegCloak';
     if(itemId.indexOf('bodyarmor_')===0) return 'equipBodyArmor';
     if(itemId.indexOf('belt_t')===0) return 'equipBelt';
     if(itemId.indexOf('relic_t')===0) return 'equipRelic';
@@ -22095,6 +22170,10 @@
       equipLegRing(btn.getAttribute('data-item'), btn.getAttribute('data-slot') || undefined); render();
     } else if(action==='unequipLegRing'){
       unequipLegRing(btn.getAttribute('data-slot')); render();
+    } else if(action==='equipLegCloak'){
+      equipLegCloak(btn.getAttribute('data-item')); render();
+    } else if(action==='unequipLegCloak'){
+      unequipLegCloak(); render();
     } else if(action==='craftMastercraft'){
       craftMastercraft(btn.getAttribute('data-item')); render();
     } else if(action==='mastercraftSelect'){
@@ -23114,7 +23193,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,

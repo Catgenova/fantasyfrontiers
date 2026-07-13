@@ -1574,7 +1574,7 @@
     eq(FF.LEGENDARY_RING_ITEMS[FF.legRingItemId('block','fantastic')].value, 0.40, 'fantastic = 8x');
     // Recipe matches the spec; only D1 Ring exists so far.
     var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','ring')]);
-    ok(rec && rec.inputs.metallurgy_t20===1000 && rec.inputs.gem_voidcrystal===100 && rec.inputs.twine_t20===100 && rec.inputs.goldsmithing_t20===100 && rec.rareRings===10, 'D1 Ring recipe = 1000 ingots / 100 gems / 100 twine / 100 settings / 10 rare rings');
+    ok(rec && rec.inputs.metallurgy_t20===1000 && rec.inputs.gem_voidcrystal===100 && rec.inputs.twine_t20===100 && rec.inputs.goldsmithing_t20===100 && rec.rareCount===10, 'D1 Ring recipe = 1000 ingots / 100 gems / 100 twine / 100 settings / 10 rare rings');
     eq(FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2','ring')]), null, 'D2 Ring mastercraft is not available yet');
     // Effect aggregation from an equipped Signet.
     var svJ = s.jewelrySlots;
@@ -1595,6 +1595,40 @@
     var made = Object.keys(FF.LEGENDARY_RING_ITEMS).reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
     eq(made, 1, 'craft grants exactly one Legendary Signet');
     s.inventory = svInv; s.blueprints = svBp;
+  });
+
+  suite('mastercraft: D1 legendary cloaks (Shrouds)', function(){
+    var s = FF._state;
+    eq(Object.keys(FF.LEGENDARY_CLOAK_ITEMS).length, 12, '3 effects x 4 rarities = 12 legendary cloak items');
+    // Each effect has its own base, scaled 2x/4x/8x by rarity.
+    eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('accuracy','normal')].value, 0.50, 'accuracy Shroud base is 50%');
+    eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('accuracy','fantastic')].value, 4.00, 'accuracy fantastic = 8x = 400%');
+    eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('critchance','normal')].value, 0.05, 'crit-chance Shroud base is 5%');
+    eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('critchance','supreme')].value, 0.20, 'crit-chance supreme = 4x = 20%');
+    eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('critdmg','normal')].value, 0.20, 'crit-damage Shroud base is 20%');
+    eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('critdmg','rare')].value, 0.40, 'crit-damage rare = 2x = 40%');
+    // Recipe = 1000 Tier-20 Cloths + 10 rare Tier-20 Cloaks.
+    var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','cape')]);
+    ok(rec && rec.inputs.weaving_t20===1000 && rec.rareCount===10, 'D1 Cloak recipe = 1000 refined cloths / 10 rare cloaks');
+    eq(FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2','cape')]), null, 'D2 Cloak mastercraft is not available yet');
+    // Effect aggregation from an equipped Shroud in the Back slot.
+    var svB = s.bodyArmor.back;
+    s.bodyArmor.back = { leg:'critchance', rarity:'supreme', tier:0, material:null };
+    near(FF.legendaryCloakBonus('critchance', s), 0.20, 'an equipped supreme crit-chance Shroud gives +20% crit chance');
+    eq(FF.legendaryCloakBonus('critdmg', s), 0, 'only the worn effect counts');
+    ok(FF.legCloakEquipped(s), 'legCloakEquipped detects a worn Shroud');
+    s.bodyArmor.back = svB;
+    // Full craft: 1000 cloths + 10 rare Tier-20 cloaks + a Blueprint -> one Shroud, all inputs consumed.
+    var svInv = s.inventory, svBp = s.blueprints, svBack = s.bodyArmor.back;
+    s.inventory = { weaving_t20:1000, bodyarmor_tailoring_back_t20_rare:10 };
+    s.blueprints = {}; s.blueprints[FF.masterworkBlueprintId('d1','cape')] = 1;
+    FF.craftMastercraft(FF.masterworkBlueprintId('d1','cape'));
+    eq(s.blueprints[FF.masterworkBlueprintId('d1','cape')], 0, 'craft consumes the Blueprint');
+    eq(s.inventory.weaving_t20, 0, 'craft consumes the 1000 cloths');
+    eq(s.inventory.bodyarmor_tailoring_back_t20_rare, 0, 'craft consumes the 10 rare cloaks');
+    var made = Object.keys(FF.LEGENDARY_CLOAK_ITEMS).reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
+    eq(made, 1, 'craft grants exactly one Legendary Shroud');
+    s.inventory = svInv; s.blueprints = svBp; s.bodyArmor.back = svBack;
   });
 
   // ---- Dungeon unlock chain: each layer requires clearing the previous boss (Cave = Combat Score only) --
