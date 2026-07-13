@@ -787,6 +787,18 @@
     ok(censored('fuck!'), 'trailing punctuation still masked');
     // First letter of the mask is preserved so length/shape stays readable.
     ok(c('shit').charAt(0) === 's' && c('shit').slice(1) === '***', 'mask keeps first char + stars');
+    // Website links are stripped (scam/off-site link prevention), on send AND display.
+    eq(c('visit http://evil.com/win now'), 'visit [link removed] now', 'http URL removed');
+    eq(c('go to https://phish.io/x'), 'go to [link removed]', 'https URL removed');
+    eq(c('see www.example.org for more'), 'see [link removed] for more', 'www URL removed');
+    eq(c('join discord.gg/abc123'), 'join [link removed]', 'bare domain.tld/path removed');
+    eq(c('my site is cool-stuff.net today'), 'my site is [link removed] today', 'hyphenated bare domain removed');
+    ok(c('grab it at bit.ly/xyz').indexOf('[link removed]') !== -1, 'short-link domain removed');
+    // False positives are NOT censored: decimals, initialisms, party codes, item tokens.
+    eq(c('it does 3.5x damage'), 'it does 3.5x damage', 'decimals are not links');
+    eq(c('e.g. the tunnel'), 'e.g. the tunnel', 'initialisms (e.g.) are not links');
+    eq(c('join my party d2:3f9a1b2c-4d5e-6f70'), 'join my party d2:3f9a1b2c-4d5e-6f70', 'a party code is not a link');
+    eq(c('look {{i:AbC123deF}}'), 'look {{i:AbC123deF}}', 'an item-link token is not a website link');
   });
 
   // ---- Guild membership cap --------------------------------------------------------------------

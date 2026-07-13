@@ -18895,8 +18895,17 @@
     return collapsed !== n && !!PROFANITY_SET[collapsed];
   }
   function _isProfane(tok){ return _hit(_profLeet(tok)) || _hit(_profPlain(tok)); }
+  // Website-link filter: players can't drop external URLs in chat (scam/phishing/off-site links). Catches
+  // scheme URLs (http/https), www.*, and bare domain.tld(/path) forms against a broad TLD list; the whole
+  // match becomes "[link removed]". Runs inside censorChat, so it applies on send AND on display (history
+  // + anyone on an older build). A domain needs a dot + a real TLD, so party codes ("d2:<uuid>"), item
+  // tokens (dot-free base64), decimals ("3.5"), and initialisms ("e.g") are left alone.
+  var LINK_TLDS = 'com|net|org|io|gg|co|gov|edu|me|tv|xyz|app|dev|info|biz|online|site|link|shop|store|live|fun|club|ly|gl|be|to|cc|us|uk|ca|de|fr|ru|jp|cn|in|au|nl|se|es|it|br|mx|pl|tk|ml|ga|cf|top|vip|win|xxx';
+  var LINK_RE = new RegExp('(?:https?:\\/\\/|www\\.)[^\\s]+|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+(?:' + LINK_TLDS + ')\\b(?:\\/[^\\s]*)?', 'gi');
+  function censorLinks(text){ return String(text == null ? '' : text).replace(LINK_RE, '[link removed]'); }
   function censorChat(text){
     if(!text) return text;
+    text = censorLinks(text);   // strip website links first, then run the profanity pass on what's left
     return String(text).replace(/[A-Za-z0-9@$!*|]+/g, function(tok){
       return _isProfane(tok) ? (tok.charAt(0) + tok.slice(1).replace(/./g, '*')) : tok;
     });
