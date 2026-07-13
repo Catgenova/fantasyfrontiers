@@ -696,6 +696,24 @@
     eq(FF.expBuffMultFor(3000, 2000), 1, 'buff expired (now >= until) -> 1x');
     eq(FF.expBuffMultFor(1000, 0), 1, 'no buff (until 0) -> 1x');
     ok(FF.LB_STAT_METRICS.some(function(m){ return m.key === 'hoursBuffed'; }), 'hoursBuffed is a leaderboard metric');
+    // Finding a familiar must request the "familiar" server buff (the +5min grant). Force a summon on a
+    // skill with a familiar defined but not yet owned, and confirm serverBuffGrant('familiar') fired.
+    var s = FF._state;
+    var skill = Object.keys(FF.FAMILIAR_DATA).filter(function(k){ return !(s.familiars[k] && s.familiars[k].owned); })[0];
+    ok(skill, 'there is a skill whose familiar is not yet owned to test the summon');
+    if(skill){
+      var savedRandom = Math.random, savedFam = s.familiars[skill];
+      s.familiars[skill] = undefined;
+      FF.serverBuffGrant(null);                 // clear the recorded reason
+      Math.random = function(){ return 0; };    // force the summon roll to succeed
+      try { FF.maybeSummonFamiliar(skill); } finally { Math.random = savedRandom; }
+      ok(s.familiars[skill] && s.familiars[skill].owned, 'the brand-new familiar was summoned');
+      eq(FF.lastBuffGrantReason(), 'familiar', 'a new familiar requests the "familiar" (+5min) server buff');
+      s.familiars[skill] = savedFam;
+    }
+    // The grant is applied on top of the current timer (server extends greatest(now, active_until) by
+    // the reason's seconds); the client just reflects whatever active_until comes back.
+    eq(FF.SERVER_BUFF_EXP_MS, 3600*1000, 'a full (purchase/registration) buff is 1 hour');
   });
 
   // ---- Physique XP scales with task tier: each associated physique gains tier+1 (1..21) --------

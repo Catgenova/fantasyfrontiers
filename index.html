@@ -9077,7 +9077,10 @@
   }
   // Auto-granted server buffs (no gold): registering gifts 1h of +50% EXP to everyone; finding a
   // familiar gifts 5min. Fire-and-forget; the server extends the shared timer and we apply the result.
+  var _lastBuffGrantReason = null;   // most recent grant we requested (diagnostics + regression tests)
+  function lastBuffGrantReason(){ return _lastBuffGrantReason; }
   function serverBuffGrant(reason){
+    _lastBuffGrantReason = reason;   // record the intent even if the network call is skipped (offline/no-chat)
     if(!CHAT_ENABLED || !chatClient || !authUser) return;
     chatClient.functions.invoke('server_buff', { body:{ action:'grant', reason:reason } }).then(function(r){
       var res = r && r.data;
@@ -9086,6 +9089,10 @@
         if(reason==='register'){ addLog('Welcome! Your registration set off a server-wide +50% EXP buff (1 hour) for every player.', 'important'); chronicleBroadcast('buff', 'registered — a +50% EXP server buff (1 hour) is on for everyone!'); }
         else if(reason==='familiar'){ addLog('Finding a familiar sparked a server-wide +50% EXP buff (+5 min) for everyone!', 'important'); chronicleBroadcast('buff', 'found a familiar — a +50% EXP server buff (+5 min) is on for everyone!'); }
         needsRender = true;
+      } else if(typeof console !== 'undefined' && console.warn){
+        // A stale server_buff edge function (missing the 'grant' action) would fail here silently --
+        // surface it so a familiar not extending the buff is diagnosable rather than invisible.
+        console.warn('server_buff grant("' + reason + '") did not apply; redeploy the server_buff edge function?', (res && res.error) || 'no response');
       }
     }, function(){});
   }
@@ -23308,7 +23315,7 @@
       fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, seedInfo:seedInfo,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
-      expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, LB_STAT_METRICS:LB_STAT_METRICS,
+      expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, serverBuffGrant:serverBuffGrant, lastBuffGrantReason:lastBuffGrantReason, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey,
       craftBodyRarity:craftBodyRarity, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
