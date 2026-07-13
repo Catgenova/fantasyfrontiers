@@ -4980,7 +4980,7 @@
     },
     {
       id:'lumen', name:'Lumen Oracle', icon:svgIcon('sun','#e6c24a'),
-      blurb:'A serene seer who blinds foes with searing light and outlasts them in supple leather.',
+      blurb:'A radiant field-medic whose light mends the party\'s most wounded, banking every overheal into a protective barrier.',
       reqText:'Light Wand + Ward, Leather Hood, Chest, Gloves & Boots',
       reqParts:[
         { icon:elementIcon('light'),                     label:'Light Wand',    met:function(st){ return st.equippedMainhand==='wandLight'; } },
@@ -4991,11 +4991,11 @@
         { icon:svgIcon('boots',CLASS_LEATHER_COLOR),     label:'Leather Boots', met:function(st){ return leatherPieceEquipped(st,'boots'); } }
       ],
       passives:[
-        { level:1,  name:'Glare',             desc:'+25% damage.' },
-        { level:20, name:'Blind',             desc:'Hits have a 15% chance to reduce the enemy\'s damage 25% for 5s.' },
-        { level:40, name:'Flashbang',         desc:'Hits have an 8% chance to stun the enemy, freezing its action bar for 2s.' },
-        { level:60, name:'Afterimage',        desc:'+12% Dodge chance.' },
-        { level:80, name:'Blinding Radiance',  desc:'While the enemy is Blinded, you deal +25% damage and take 25% less.' }
+        { level:1,  name:'Flashbang',       desc:'Hits have an 8% chance to stun the enemy, freezing its action bar for 2s.' },
+        { level:20, name:'Mending Ray',     desc:'A beam of light steadily heals the lowest-Health ally &mdash; yourself when solo &mdash; for 2% of your max Health per second in combat.' },
+        { level:40, name:'Reflected Light', desc:'15% of the damage you deal is reflected as healing onto the lowest-Health ally (yourself when solo).' },
+        { level:60, name:'Everfull',        desc:'Healing beyond a target\'s full Health isn\'t wasted &mdash; it banks as a protective shield (up to 30% of max Health) that soaks the next hits.' },
+        { level:80, name:'Radiant Barrier', desc:'Every heal you cast also grants a shield equal to 30% of the amount healed.' }
       ]
     },
     {
@@ -5045,7 +5045,7 @@
   // on top only at the moment of a monster attack, so it is NOT folded in here.
   function playerDodgeChance(st){
     st = st || state;
-    return getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + nightbladeDodgeBonus(st) + lumenDodgeBonus(st) + pyromancerHeatHazeDodge(st) + quickdrawSecondWindDodge(st) + legendaryRingBonus('dodge', st); // + Pyromancer Heat Haze; + Quickdraw Second Wind; + Cave Signet of Evasion
+    return getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + nightbladeDodgeBonus(st) + pyromancerHeatHazeDodge(st) + quickdrawSecondWindDodge(st) + legendaryRingBonus('dodge', st); // + Pyromancer Heat Haze; + Quickdraw Second Wind; + Cave Signet of Evasion
   }
   // ===== Assassin (twin Claws): reworked ladder =====
   //  Lv1  Rhythm        -- alternating main/off-hand hits build a meter; at full, the next two landed
@@ -5398,8 +5398,6 @@
     if(juggernautBonus(1, st)) m *= 1.30;                                    // Juggernaut Crushing Blows
     if(nightbladeBonus(20, st)) m *= 1.25;                                   // Nightblade Hex
     if(executionerBonus(20, st) && enemyHpFrac(monster, st) < executionerReapThreshold(st)) m *= 1.30; // Executioner Reap the Weak (Lv20); threshold raised by Rising Guillotine (Lv40)
-    if(lumenBonus(1, st)) m *= 1.25;                                         // Lumen Oracle Glare
-    m *= lumenBlindingDealtMult(st);                                         // Lumen Oracle Blinding Radiance (Lv80, while blinded)
     if(reaverBonus(1, st)) m *= 1.25;                                        // Reaver Savagery
     if(rangerBonus(80, st) && rangerAllStatuses(st)) m *= RANGER_ONSLAUGHT_MULT; // Ranger Apex Predator: x3 vs a fully-ailed foe
     if(samuraiBonus(40, st) && enemyBleeding(st)) m *= SAMURAI_CRIMSON_MULT; // Samurai Crimson Edge: +30% vs a Bleeding foe
@@ -5457,14 +5455,50 @@
   // Juggernaut Lv 40 Ironclad: +25% Armor; Lv 60 Unstoppable: -20% incoming damage.
   function juggernautArmorMult(st){ return juggernautBonus(40, st) ? 1.25 : 1; }
   function juggernautIncomingMult(st){ return juggernautBonus(60, st) ? 0.80 : 1; }
-  // ===== Lumen Oracle (Light Wand): Glare / Blind / Flashbang / Afterimage / Blinding Radiance =====
-  // Blind reuses the shared enemy-damage debuff window (state.classDebuffs.enemyDmgUntil) -- the same
-  // channel Templar's Enfeeble uses -- so templarIncomingDmgMult() already applies its 25% reduction.
+  // ===== Lumen Oracle (Light Wand) -- party field-medic: Flashbang / Mending Ray / Reflected Light /
+  //       Everfull / Radiant Barrier. Heals are designed to mend the party's lowest-HP ally; SOLO (or
+  //       when you have no living teammate, or you ARE the lowest) they cast on YOU. Cross-player
+  //       application in the networked dungeon is server-authoritative (dungeon_members HP), a pending
+  //       server extension -- until it ships the light mends the Oracle, so the kit is fully solo-usable.
   function lumenBonus(reqLevel, st){ return classBonusActive('lumen', reqLevel, st); }
-  function lumenEnemyBlinded(st){ st = st || state; return !!(st.classDebuffs && st.classDebuffs.enemyDmgUntil > Date.now()); }
-  function lumenDodgeBonus(st){ st = st || state; return lumenBonus(60, st) ? 0.12 : 0; }                               // Lv60 Afterimage (folded into playerDodgeChance)
-  function lumenBlindingDealtMult(st){ st = st || state; return (lumenBonus(80, st) && lumenEnemyBlinded(st)) ? 1.25 : 1; }  // Lv80 Blinding Radiance: +25% dealt while blinded
-  function lumenIncomingMult(st){ st = st || state; return (lumenBonus(80, st) && lumenEnemyBlinded(st)) ? 0.75 : 1; }   // Lv80 Blinding Radiance: -25% taken while blinded
+  var LUMEN_MEND_HPS_PCT = 0.02;     // Mending Ray (Lv20): heal 2% of max HP per second
+  var LUMEN_REFLECT_PCT = 0.15;      // Reflected Light (Lv40): 15% of damage dealt returns as healing
+  var LUMEN_SHIELD_MAX_PCT = 0.30;   // Everfull / Radiant Barrier shield cap (30% of max HP)
+  var LUMEN_BARRIER_PCT = 0.30;      // Radiant Barrier (Lv80): shield = 30% of the amount healed
+  // Resolve who a Lumen heal mends: the party's lowest-HP living teammate, else YOU (solo / you're lowest).
+  function lumenHealTarget(){
+    if(typeof dungeonNetInParty === 'function' && dungeonNetInParty() && authUser){
+      var lowest = null, lowestFrac = Infinity;
+      (dungeonNet.members || []).forEach(function(m){ if(!m || !m.alive) return; var frac = (m.max_hp > 0) ? (m.hp / m.max_hp) : 1; if(frac < lowestFrac){ lowestFrac = frac; lowest = m; } });
+      if(lowest && lowest.user_id !== authUser.id) return { isSelf:false, member:lowest };
+    }
+    return { isSelf:true };
+  }
+  function lumenShieldCap(st){ st = st || state; return Math.round(maxHp(st) * LUMEN_SHIELD_MAX_PCT); }
+  function lumenAddShield(amount){
+    amount = Math.round(amount); if(!(amount > 0)) return;
+    var before = state.lumenShield || 0;
+    state.lumenShield = Math.min(lumenShieldCap(state), before + amount);
+    if(state.lumenShield > before && !offlineCapture) spawnFloatingText('Barrier ' + Math.round(state.lumenShield), 'ft-success');
+  }
+  // Apply a Lumen heal to the resolved target. Solo (and, for now, always) it mends YOU: Everfull (Lv60)
+  // banks overheal as shield, Radiant Barrier (Lv80) adds a shield worth 30% of the HP restored.
+  function lumenApplyHeal(amount){
+    amount = Math.round(amount); if(!(amount > 0)) return 0;
+    lumenHealTarget(); // intended recipient (self when solo); cross-player application is the pending server hook
+    var healed = Math.max(0, Math.min(amount, maxHp(state) - state.playerHp));
+    var overheal = amount - healed;
+    if(healed > 0) state.playerHp += healed;
+    if(overheal > 0 && lumenBonus(60)) lumenAddShield(overheal);                 // Everfull: overheal -> shield
+    if(healed > 0 && lumenBonus(80)) lumenAddShield(healed * LUMEN_BARRIER_PCT); // Radiant Barrier: +30% of the heal as shield
+    return healed;
+  }
+  // Mending Ray (Lv20): a steady heal-over-time on the lowest-HP ally (you, solo), while in combat.
+  function applyLumenMendingTick(dtMs){
+    if(!lumenBonus(20)) return;
+    var act = state.activity; if(!act || act.type !== 'combat') return;
+    lumenApplyHeal(maxHp(state) * LUMEN_MEND_HPS_PCT * dtMs / 1000);
+  }
   // ===== Reaver (Half-Moon Axe): Savagery / Bloodletting / Frenzied Rending / Arterial Spray / Hemorrhagic Burst =====
   // Rend stacks a Bleed DoT tracked on the activity (its own channel, separate from potion poison), each
   // stack worth REAVER_BLEED_PCT of combat power per second; the tick lives in applyReaverBleedTick().
@@ -10484,12 +10518,9 @@
       if(samuraiBonus(60)) act.samuraiFocus = Math.min(SAMURAI_FOCUS_MAX, (act.samuraiFocus||0) + 1);
       // Knight (Momentum): each landed hit adds a -10% attack-speed stack (cap 5, or 8 with Relentless).
       if(knightBonus(1)) state.knightStacks = Math.min(knightStackCap(state), (state.knightStacks || 0) + 1);
-      // Lumen Oracle on-hit: Lv 20 Blind (15% -> reuse the enemy-damage debuff window), Lv 40 Flashbang (8% stun).
-      if(lumenBonus(20) && Math.random() < 0.15){
-        if(!state.classDebuffs) state.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
-        state.classDebuffs.enemyDmgUntil = Date.now() + 5000; spawnFloatingText('Blinded!', 'ft-rare');
-      }
-      if(lumenBonus(40) && !offlineCapture && Math.random() < 0.08){ act.enemyStunUntil = Date.now() + 2000; spawnFloatingText('Flashed!', 'ft-rare'); }
+      // Lumen Oracle on-hit: Lv1 Flashbang (8% stun); Lv40 Reflected Light (a share of the hit heals the lowest ally / you).
+      if(lumenBonus(1) && !offlineCapture && Math.random() < 0.08){ act.enemyStunUntil = Date.now() + 2000; spawnFloatingText('Flashed!', 'ft-rare'); }
+      if(lumenBonus(40)){ var _lr = lumenApplyHeal(dmgToMonster * LUMEN_REFLECT_PCT); if(_lr > 0 && !offlineCapture) spawnFloatingText('+'+_lr+' HP', 'ft-success'); }
       // Reaver Frenzied Rending (Lv 40): each hit stacks a Bleed (up to 5) and refreshes it; a 25% chance
       // adds an extra stack (the frenzy attack-speed bonus at max stacks lives in classAttackSpeedMult).
       if(reaverBonus(40)){
@@ -10752,7 +10783,7 @@
     // The hit lands its physical type AND the enemy's element together: the element is amplified by
     // the player's armor weakness to it (leather->fire, chain->earth, plate->water).
     var elementMult = incomingElementMult(state, monster);
-    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldGuardMult(state) * templarIncomingDmgMult() * lumenIncomingMult(state) * sentinelIncomingMult(state) * juggernautIncomingMult(state) * berserkerRecklessTakenMult(state) * knightDamageTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getWardResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring/amulet flat resistance
+    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldGuardMult(state) * templarIncomingDmgMult() * sentinelIncomingMult(state) * juggernautIncomingMult(state) * berserkerRecklessTakenMult(state) * knightDamageTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getWardResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring/amulet flat resistance
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
     var blockChance = playerBlockChance(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
@@ -10827,11 +10858,16 @@
       state.templarShield -= _aegis; dmgToPlayer -= _aegis;
       if(_aegis > 0) spawnFloatingText('Aegis '+Math.round(_aegis), 'ft-success');
     }
-    // Reaper Siphon Shield: the spectral absorb soaks incoming damage before your own HP.
+    // Reaper Siphon Shield + Lumen Radiant Barrier: absorbs soak incoming damage before your own HP.
     if((state.reaperShield||0) > 0 && dmgToPlayer > 0){
       var _absorbed = Math.min(state.reaperShield, dmgToPlayer);
       state.reaperShield -= _absorbed; dmgToPlayer -= _absorbed;
       if(_absorbed > 0) spawnFloatingText('Absorbed '+Math.round(_absorbed)+'!', 'ft-success');
+    }
+    if((state.lumenShield||0) > 0 && dmgToPlayer > 0){
+      var _lAbsorbed = Math.min(state.lumenShield, dmgToPlayer);
+      state.lumenShield -= _lAbsorbed; dmgToPlayer -= _lAbsorbed;
+      if(_lAbsorbed > 0) spawnFloatingText('Barrier absorbed '+Math.round(_lAbsorbed)+'!', 'ft-success');
     }
     state.playerHp -= dmgToPlayer;
     // Knight Counterweight (Lv 20): a hit you take also builds a Momentum stack -- the blows you take feed your tempo.
@@ -10880,6 +10916,7 @@
       var _diedInDungeon = state.activity && state.activity.dungeon;
       state.playerHp = 0;
       state.reaperShield = 0; // a spectral guard shatters when you fall
+      state.lumenShield = 0;  // a Radiant Barrier shatters when you fall
       state.templarShield = 0; // Aegis of Dawn shatters on death too
       state.activity = { type:null };
       if(_diedInDungeon) dungeonEndRun('death'); // a dungeon run ends when you fall
@@ -11321,6 +11358,7 @@
           applyFrostwardenFrostbiteTick(_chunk);
           applyPyromancerBurnTick(_chunk);
           applyReaperWitherTick(_chunk);
+          applyLumenMendingTick(_chunk);
           var _rh = famRegenHps(); if(_rh>0 && state.playerHp>0) state.playerHp = Math.min(maxHp(state), state.playerHp + _rh*_chunk/1000);
           // Each active companion casts one spell every 10s, cycling its list (same cadence as live).
           activeCompanionList(state).forEach(function(cid){
@@ -23304,6 +23342,7 @@
         applyFrostwardenFrostbiteTick(dt);
         applyPyromancerBurnTick(dt);
         applyReaperWitherTick(dt);
+        applyLumenMendingTick(dt);
         // Regen: familiar heal-over-time restores player HP while the buff is up.
         var regenHps = famRegenHps();
         if(regenHps > 0 && state.playerHp > 0){ state.playerHp = Math.min(maxHp(state), state.playerHp + regenHps*dt/1000); }
@@ -23837,7 +23876,7 @@
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
-      pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
+      pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, assassinRhythmRegister:assassinRhythmRegister, ASSASSIN_RHYTHM_MAX:ASSASSIN_RHYTHM_MAX, assassinApplyLacerate:assassinApplyLacerate, assassinLacerateMaxStacks:assassinLacerateMaxStacks, ASSASSIN_BLEED_MAX:ASSASSIN_BLEED_MAX, assassinHemorrhageCritMult:assassinHemorrhageCritMult, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,

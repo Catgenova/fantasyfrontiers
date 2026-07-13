@@ -1890,27 +1890,38 @@
     eq(FF.activeClassId(stFor(80)), 'lumen', 'light wand + ward + full leather => Lumen Oracle');
     eq(FF.activeClassId(stFor(80,{bodyArmor:{helmet:armor('leather'),chest:armor('leather'),gauntlets:armor('leather')}})), null, 'Lumen Oracle needs Leather Boots');
     ok(FF.activeClassId(stFor(80,{equippedMainhand:'wandDark'})) !== 'lumen', 'a Dark Wand does not activate Lumen Oracle (it is the Voidshadow kit)');
-    // Lv1 Glare: +25% damage.
-    var mon = {hp:100};
-    ok(Math.abs(FF.newClassDmgMult(mon, stFor(1)) - 1.25) < 1e-9, 'Glare +25% damage');
-    // Lv60 Afterimage: +12% Dodge.
-    ok(Math.abs(FF.lumenDodgeBonus(stFor(60)) - 0.12) < 1e-9, 'Afterimage +12% Dodge');
-    ok(Math.abs(FF.lumenDodgeBonus(stFor(40)) - 0) < 1e-9, 'no Dodge before Lv60');
-    // Lv80 Blinding Radiance: only fires while the enemy carries the Blind (enemy-damage) debuff.
-    var blindActive = stFor(80,{classDebuffs:{enemyDmgUntil:Date.now()+4000,enemyArmorUntil:0}});
-    ok(FF.lumenEnemyBlinded(blindActive), 'enemy is Blinded while the debuff window holds');
-    ok(Math.abs(FF.lumenBlindingDealtMult(blindActive) - 1.25) < 1e-9, 'Blinding Radiance +25% dealt while blinded');
-    eq(FF.lumenIncomingMult(blindActive), 0.75, 'Blinding Radiance -25% taken while blinded');
-    var blindOff = stFor(80); // no active debuff
-    eq(FF.lumenBlindingDealtMult(blindOff), 1, 'Blinding Radiance is neutral with no Blind up');
-    eq(FF.lumenIncomingMult(blindOff), 1, 'no incoming reduction with no Blind up');
-    // Glare stacks with Blinding Radiance in the aggregate dmg mult (1.25 * 1.25 = 1.5625).
-    ok(Math.abs(FF.newClassDmgMult(mon, blindActive) - 1.5625) < 1e-9, 'Glare and Blinding Radiance stack (x1.5625)');
-    // no class active -> every Lumen multiplier is neutral.
-    var none = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, classDebuffs:{enemyDmgUntil:Date.now()+4000}, activity:{type:'combat',monsterHp:100}, playerHp:55 };
-    eq(FF.lumenBlindingDealtMult(none), 1, 'no class -> Blinding Radiance dealt neutral');
-    eq(FF.lumenIncomingMult(none), 1, 'no class -> Blinding Radiance incoming neutral');
-    eq(FF.lumenDodgeBonus(none), 0, 'no class -> no Afterimage dodge');
+    // Reworked ladder: Flashbang / Mending Ray / Reflected Light / Everfull / Radiant Barrier.
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Flashbang,Mending Ray,Reflected Light,Everfull,Radiant Barrier', 'reworked Lumen ladder (party medic)');
+    // The class no longer grants flat damage (Glare retired).
+    eq(FF.newClassDmgMult({hp:100}, stFor(80)), 1, 'Lumen no longer grants flat damage');
+    eq(FF.LUMEN_REFLECT_PCT, 0.15, 'Reflected Light returns 15% of damage as healing');
+    // Solo, a heal always targets self (no living networked party).
+    eq(FF.lumenHealTarget().isSelf, true, 'solo -> Lumen heals cast on self');
+    // Live-state mechanics: the Lumen kit must be worn on _state so the bonuses are active.
+    var S = FF._state;
+    var sv = { mh:S.equippedMainhand, oh:S.equippedOffhand, ba:S.bodyArmor, xp:S.xp.lumen, act:S.activity, hp:S.playerHp, sh:S.lumenShield };
+    try {
+      S.equippedMainhand='wandLight'; S.equippedOffhand='wardLight';
+      S.bodyArmor={helmet:armor('leather'),chest:armor('leather'),gauntlets:armor('leather'),boots:armor('leather')};
+      S.activity = { type:'combat', monsterId:null, monsterHp:100 };
+      // Reflected Light (Lv40): a Lumen heal restores HP to self; no shield yet (Everfull/Barrier locked).
+      S.xp.lumen = FF.xpFloorForLevel(40); S.lumenShield = 0; S.playerHp = 1;
+      ok(FF.lumenBonus(40), 'Lumen Lv40 active with the kit worn');
+      ok(FF.lumenApplyHeal(100) > 0 && S.playerHp > 1, 'a Lumen heal restores HP to self');
+      eq(S.lumenShield||0, 0, 'no shield before Everfull/Radiant Barrier');
+      // Everfull (Lv60): healing a full-HP target banks the overheal as a shield.
+      S.xp.lumen = FF.xpFloorForLevel(60); S.lumenShield = 0; S.playerHp = FF.maxHp(S);
+      FF.lumenApplyHeal(100);
+      ok((S.lumenShield||0) > 0, 'Everfull banks overheal as a shield');
+      // Radiant Barrier (Lv80): a normal heal also grants a shield = 30% of the HP restored.
+      S.xp.lumen = FF.xpFloorForLevel(80); S.lumenShield = 0; S.playerHp = Math.max(1, FF.maxHp(S) - 100);
+      var h2 = FF.lumenApplyHeal(50);
+      ok(h2 > 0 && Math.abs((S.lumenShield||0) - Math.round(h2 * 0.30)) <= 1, 'Radiant Barrier shields 30% of the amount healed');
+      // The shield is capped at 30% of max HP.
+      S.lumenShield = 0; FF.lumenAddShield(1e9); eq(S.lumenShield, FF.lumenShieldCap(S), 'Lumen shield caps at 30% of max HP');
+    } finally {
+      S.equippedMainhand=sv.mh; S.equippedOffhand=sv.oh; S.bodyArmor=sv.ba; S.xp.lumen=sv.xp; S.activity=sv.act; S.playerHp=sv.hp; S.lumenShield=sv.sh;
+    }
   });
 
   // ---- Reaver (Half-Moon Axe): the fast 1h axe gets a Bleed-DoT class -----------------------------
