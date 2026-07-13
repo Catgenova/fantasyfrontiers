@@ -1487,6 +1487,40 @@
     eq(Object.keys(rset).length, 4, 'all four dungeon Formulas are distinct');
   });
 
+  // ---- Masterwork Blueprints: 9 slots x 4 dungeons, weighted boss drops, separate inventory -------
+  suite('masterwork blueprints', function(){
+    var slots = FF.MASTERWORK_SLOTS;
+    eq(slots.length, 9, 'nine Masterwork gear slots');
+    // exact drop chances requested
+    var byId = {}; slots.forEach(function(s){ byId[s.id] = s; });
+    var want = { ring:0.05, amulet:0.025, cape:0.015, mainhand:0.15, offhand:0.15, head:0.15, chest:0.15, hands:0.15, feet:0.15 };
+    Object.keys(want).forEach(function(k){ ok(byId[k], 'slot ' + k + ' exists'); near((byId[k]||{}).chance, want[k], 'slot ' + k + ' drop chance', 1e-9); });
+    // 36 Blueprints (4 dungeons x 9 slots), each named "<Category> <Slot> Blueprint"
+    eq(Object.keys(FF.BLUEPRINT_ITEMS).length, 36, '4 dungeons x 9 slots = 36 Blueprints');
+    eq(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','amulet')].name, 'Cave Amulet Blueprint', 'D1 amulet is "Cave Amulet Blueprint"');
+    eq(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','mainhand')].name, 'Underground Chamber Mainhand Blueprint', 'D3 mainhand is "Underground Chamber Mainhand Blueprint"');
+    eq(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d4','cape')].name, 'Nest of the Depths Cape Blueprint', 'D4 cape name');
+    ok(Object.keys(FF.BLUEPRINT_ITEMS).every(function(id){ var b = FF.BLUEPRINT_ITEMS[id]; return b.blueprint === true && b.sell === 0 && /<svg/.test(b.icon); }), 'every Blueprint is flagged, non-vendorable, and has an icon');
+    // Blueprints are their OWN inventory, not in the sellable/item economy.
+    ok(Object.keys(FF.BLUEPRINT_ITEMS).every(function(id){ return !FF.ALL_SELLABLE[id]; }), 'Blueprints are not part of ALL_SELLABLE (separate inventory)');
+    // addBlueprint stores into state.blueprints (not state.inventory).
+    var s = FF._state; var svB = s.blueprints, svI = s.inventory;
+    s.blueprints = {}; s.inventory = {};
+    var bid = FF.masterworkBlueprintId('d2','feet');
+    FF.addBlueprint(bid, 2);
+    eq(s.blueprints[bid], 2, 'addBlueprint credits the Blueprint inventory');
+    eq(s.inventory[bid] || 0, 0, 'addBlueprint does NOT touch the item inventory');
+    FF.addBlueprint('not_a_blueprint', 1); eq(s.blueprints['not_a_blueprint'], undefined, 'addBlueprint rejects unknown ids');
+    // rollMasterworkDrops only ever grants THIS layer's Blueprints, and stays within the slot set.
+    s.blueprints = {};
+    var granted = [];
+    for(var r = 0; r < 300; r++) granted = granted.concat(FF.rollMasterworkDrops('d1'));
+    ok(granted.length > 0, 'over many clears, some Blueprints drop');
+    ok(granted.every(function(b){ return b.dungeon === 'd1'; }), 'a d1 clear only drops d1 Blueprints');
+    ok(Object.keys(s.blueprints).every(function(id){ return FF.BLUEPRINT_ITEMS[id] && FF.BLUEPRINT_ITEMS[id].dungeon === 'd1'; }), 'the Blueprint inventory only holds d1 Blueprints after d1 clears');
+    s.blueprints = svB; s.inventory = svI;
+  });
+
   // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------
   suite('classes: lumen oracle (light wand)', function(){
     function armor(mat,tier){ return {material:mat,tier:tier||5}; }

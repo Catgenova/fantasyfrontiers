@@ -4333,15 +4333,42 @@
   ALL_DROP_ITEMS[COAL_ITEM.id] = COAL_ITEM;
   MUDDY_ARTIFACT_ITEMS.forEach(function(it){ ALL_DROP_ITEMS[it.id] = it; });
   ALL_DROP_ITEMS.shaft = { id:'shaft', name:'Shaft', icon:svgIcon('dowel','#a8895c'), sell:1 };
-  // Dungeon Formulas: endgame gear blueprints that drop from a dungeon boss. Details are TBD -- for now
-  // a D1 clear drops a single "D1 Masterwork Formula" placeholder. Registered here so inventory can
-  // display it (sell:0 -> not vendorable).
+  // Legacy single-formula placeholders (kept registered so any already-owned copies still resolve).
+  // The live drop is the typed Masterwork Blueprint system below.
   var FORMULA_ITEMS = {
     formula_d1_masterwork: { id:'formula_d1_masterwork', name:'D1 Masterwork Formula', icon:svgIcon('gem','#c9a227'), sell:0, dungeon:'d1', formula:true },
     formula_d2_masterwork: { id:'formula_d2_masterwork', name:'D2 Masterwork Formula', icon:svgIcon('gem','#7a9a3a'), sell:0, dungeon:'d2', formula:true },
     formula_d3_masterwork: { id:'formula_d3_masterwork', name:'D3 Masterwork Formula', icon:svgIcon('gem','#8a5fb0'), sell:0, dungeon:'d3', formula:true },
     formula_d4_masterwork: { id:'formula_d4_masterwork', name:'D4 Masterwork Formula', icon:svgIcon('gem','#c0392b'), sell:0, dungeon:'d4', formula:true }
   };
+  // ===== Masterwork Blueprints =====
+  // Each dungeon boss clear rolls each of these nine gear slots INDEPENDENTLY at its own drop chance
+  // (rare accessories, common gear pieces). A hit grants that slot's Blueprint for the cleared dungeon.
+  // 4 dungeons x 9 slots = 36 Blueprints, named "<Category> <Slot> Blueprint" (e.g. "Cave Amulet
+  // Blueprint", "Underground Chamber Mainhand Blueprint"). They live in their OWN inventory
+  // (state.blueprints) and will be forged into endgame gear by the coming Masterwork craft system.
+  var MASTERWORK_SLOTS = [
+    { id:'ring',     label:'Ring',     chance:0.05,  icon:'ring' },
+    { id:'amulet',   label:'Amulet',   chance:0.025, icon:'amulet' },
+    { id:'cape',     label:'Cape',     chance:0.015, icon:'cloak' },
+    { id:'mainhand', label:'Mainhand', chance:0.15,  icon:'sword' },
+    { id:'offhand',  label:'Offhand',  chance:0.15,  icon:'shield' },
+    { id:'head',     label:'Head',     chance:0.15,  icon:'helm' },
+    { id:'chest',    label:'Chest',    chance:0.15,  icon:'chestarmor' },
+    { id:'hands',    label:'Hands',    chance:0.15,  icon:'gauntlet' },
+    { id:'feet',     label:'Feet',     chance:0.15,  icon:'boots' }
+  ];
+  var BLUEPRINT_DUNGEON_COLOR = { d1:'#8a5fb0', d2:'#7a9a3a', d3:'#9a9aa8', d4:'#c0392b' };
+  function masterworkBlueprintId(layer, slotId){ return 'blueprint_' + layer + '_' + slotId; }
+  var BLUEPRINT_ITEMS = {};
+  DUNGEON_ORDER.forEach(function(layer){
+    var def = DUNGEON_DEFS[layer]; if(!def) return;
+    MASTERWORK_SLOTS.forEach(function(slot){
+      var id = masterworkBlueprintId(layer, slot.id);
+      BLUEPRINT_ITEMS[id] = { id:id, name:def.category + ' ' + slot.label + ' Blueprint', icon:svgIcon(slot.icon, BLUEPRINT_DUNGEON_COLOR[layer] || '#c9a227'),
+        dungeon:layer, category:def.category, slot:slot.id, slotLabel:slot.label, chance:slot.chance, blueprint:true, sell:0 };
+    });
+  });
   var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS);
 
   var GATHER_SKILL_IDS = Object.keys(GATHERING_SKILLS);
@@ -8485,6 +8512,7 @@
       xp: xpObj,
       physique: physique,
       inventory: {},
+      blueprints: {},        // Masterwork Blueprints -- their own separate inventory (dungeon boss drops)
       gatherTools: gatherTools,
       gatherToolRarities: gatherToolRarities,
       craftTools: craftTools,
@@ -8570,7 +8598,7 @@
   var currentSub = 'digging';
   // Ivy Castle IA: 3 areas -> sub-views (each maps to an existing content category).
   var AREAS = [
-    { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['improvement','Improvement'],['faith','Faith'],['building','Construction'],['inventory','Inventory'],['skills','Skills']] },
+    { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['improvement','Improvement'],['faith','Faith'],['building','Construction'],['masterwork','Blueprints'],['inventory','Inventory'],['skills','Skills']] },
     { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['peons','Peons'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
     { id:'battle', label:'Battle', icon:'crossedswords', subs:[['combat','Combat'],['dungeons','Dungeons'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] }
   ];
@@ -8946,6 +8974,38 @@
     var wasZero = !(state.inventory[id] > 0);
     state.inventory[id] = (state.inventory[id]||0) + qty;
     if(wasZero) needsRender = true;
+  }
+  // Masterwork Blueprints live in their own inventory (state.blueprints), separate from items.
+  function addBlueprint(id, qty){
+    qty = Math.floor(qty || 1);
+    if(!(qty > 0) || !isFinite(qty) || !BLUEPRINT_ITEMS[id]) return;
+    if(!state.blueprints || typeof state.blueprints !== 'object') state.blueprints = {};
+    state.blueprints[id] = (state.blueprints[id] || 0) + qty;
+    needsRender = true;
+  }
+  // A dungeon boss clear rolls each Masterwork slot independently at its drop chance; each hit grants
+  // that dungeon's Blueprint for the slot. Returns the list of Blueprint items granted (for logging/UI).
+  function rollMasterworkDrops(layer){
+    if(!DUNGEON_DEFS[layer]) return [];
+    var got = [];
+    MASTERWORK_SLOTS.forEach(function(slot){
+      if(Math.random() < slot.chance){
+        var bp = BLUEPRINT_ITEMS[masterworkBlueprintId(layer, slot.id)];
+        if(bp){ addBlueprint(bp.id, 1); got.push(bp); }
+      }
+    });
+    return got;
+  }
+  // Grant + announce a boss clear's Masterwork drops for the current player.
+  function grantMasterworkDrops(layer){
+    var def = DUNGEON_DEFS[layer]; if(!def) return;
+    var got = rollMasterworkDrops(layer);
+    if(got.length){
+      got.forEach(function(bp){ spawnFloatingText('+1 ' + bp.name, 'ft-rare'); });
+      addLog('The ' + def.category + ' is cleared! You recover: ' + got.map(function(bp){ return bp.name; }).join(', ') + '.', 'important');
+    } else {
+      addLog('The ' + def.category + ' is cleared! No Masterwork Blueprint dropped this run — descend again for another chance.', 'important');
+    }
   }
   function hasInputs(inputs, mult){
     mult = mult||1;
@@ -11050,6 +11110,7 @@
           state.jewelrySlots = Object.assign(newGame().jewelrySlots, loaded.jewelrySlots||{});
           state.extraCraftSlots = (Array.isArray(loaded.extraCraftSlots) && loaded.extraCraftSlots.length>=3) ? loaded.extraCraftSlots : newGame().extraCraftSlots;
           state.inventory = loaded.inventory || {};
+          state.blueprints = (loaded.blueprints && typeof loaded.blueprints === 'object' && !Array.isArray(loaded.blueprints)) ? loaded.blueprints : {}; // Masterwork Blueprint inventory
           // Trapping was removed; its Fat/Tallow items (trapping_t<n>) are now Butchering byproducts (fat_t<n>).
           // Fold any legacy trapping stock into the new ids so old saves keep their goods and Chandlery inputs.
           for(var _mi=0; _mi<TIER_COUNT; _mi++){
@@ -11538,6 +11599,29 @@
   // renderInventoryPanel() later in render().
   function renderInventoryTab(){
     return '<div class="section-intro">Everything you’ve gathered, crafted, and looted — search, sell, equip, or open.</div><div id="inventoryPanel"></div>';
+  }
+  // Masterwork Blueprints -- their own inventory (Resources > Blueprints). Grouped by dungeon; each
+  // dungeon shows all nine gear-slot Blueprints with owned counts (0 = not yet dropped, dimmed).
+  function renderMasterworkTab(){
+    var bp = state.blueprints || {};
+    var total = 0; Object.keys(bp).forEach(function(k){ total += bp[k] || 0; });
+    var html = '<div class="section-intro"><b>Masterwork Blueprints</b> — endgame gear plans that drop from dungeon bosses. Each will be forged from parts of the finest gear in the game (the Masterwork craft system is coming). You hold <b>' + fmt(total) + '</b> Blueprint' + (total === 1 ? '' : 's') + '.</div>';
+    DUNGEON_ORDER.forEach(function(layer){
+      var def = DUNGEON_DEFS[layer]; if(!def) return;
+      var layerCount = 0; MASTERWORK_SLOTS.forEach(function(s){ layerCount += (bp[masterworkBlueprintId(layer, s.id)] || 0); });
+      html += '<h3 style="margin-top:16px">' + svgIcon('gem', BLUEPRINT_DUNGEON_COLOR[layer] || '#8a5fb0') + ' ' + escapeHtml(def.category) + ' <span class="item-meta" style="font-weight:400">(' + fmt(layerCount) + ' held)</span></h3>';
+      html += '<div class="card-grid">';
+      MASTERWORK_SLOTS.forEach(function(slot){
+        var item = BLUEPRINT_ITEMS[masterworkBlueprintId(layer, slot.id)]; if(!item) return;
+        var owned = bp[item.id] || 0;
+        html += '<div class="item-card" style="padding:8px' + (owned ? '' : ';opacity:0.5') + '">';
+        html += '<div class="item-top"><div class="item-icon">' + item.icon + '</div><div><div class="item-name" style="font-size:0.9em">' + escapeHtml(item.name) + '</div>';
+        html += '<div class="item-meta">' + escapeHtml(slot.label) + ' &bull; Drop ' + (slot.chance * 100) + '%' + (owned ? ' &bull; <b>x' + fmt(owned) + '</b>' : '') + '</div></div></div>';
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+    return html;
   }
   function renderChatDrawer(){
     var ov = document.getElementById('chatDrawerOverlay'); if(!ov) return;
@@ -14351,10 +14435,8 @@
   }
   function dungeonComplete(){
     var def = dungeonRun.def;
-    // Every surviving player claims the layer's Formula (solo now; the party loop lands with Phase 2).
-    dungeonRun.party.forEach(function(p){ if(p.alive && p.isSelf) addItem(def.reward, 1); });
-    addLog('The ' + def.category + ' is cleared! You claim a ' + def.rewardName + '.', 'important');
-    spawnFloatingText('+1 ' + def.rewardName, 'ft-rare');
+    // Every surviving player rolls the layer's Masterwork Blueprint drops (solo self now).
+    if(dungeonRun.party.some(function(p){ return p.alive && p.isSelf; })) grantMasterworkDrops(def.id);
     dungeonRun.active = false; dungeonRun.cleared = true;
     stopActivity();
     dungeonView = 'result';
@@ -14434,7 +14516,7 @@
   }
   function dungeonNetCreate(layer){ if(dungeonNet.busy) return; dungeonNet.busy = true; dungeonNet.error = ''; dungeonNetInvoke('create', Object.assign({ layer:layer }, dungeonStats())).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not create the party.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
   function dungeonNetJoin(id){ if(dungeonNet.busy) return; dungeonNet.busy = true; dungeonNet.error = ''; dungeonNetInvoke('join', Object.assign({ session_id:id }, dungeonStats())).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not join.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
-  function dungeonNetClaim(){ if(!dungeonNet.session) return; dungeonNetInvoke('claim', { session_id:dungeonNet.session.id }).then(function(res){ if(res.ok){ var def = DUNGEON_DEFS[dungeonNet.session.layer]; if(def){ addItem(def.reward, 1); addLog('The ' + def.category + ' is cleared! You claim a ' + def.rewardName + '.', 'important'); spawnFloatingText('+1 ' + def.rewardName, 'ft-rare'); } dungeonNetApply(res); } if(currentCategory === 'dungeons') render(); }); }
+  function dungeonNetClaim(){ if(!dungeonNet.session) return; dungeonNetInvoke('claim', { session_id:dungeonNet.session.id }).then(function(res){ if(res.ok){ var def = DUNGEON_DEFS[dungeonNet.session.layer]; if(def) grantMasterworkDrops(def.id); dungeonNetApply(res); } if(currentCategory === 'dungeons') render(); }); }
   function dungeonNetLeave(){ if(!dungeonNet.session || dungeonNet.busy) return; dungeonNet.busy = true; var sid = dungeonNet.session.id; dungeonNetInvoke('leave', { session_id:sid }).then(function(res){ dungeonNet.busy = false; dungeonNet.session = null; dungeonNet.members = []; dungeonNet.clearedHandled = false; dungeonNetResubscribe(); if(currentCategory === 'dungeons') render(); }); }
   function dungeonNetStart(){ if(!dungeonNet.session || dungeonNet.busy) return; dungeonNet.busy = true; dungeonNet.error = ''; var sid = dungeonNet.session.id; dungeonNetInvoke('start', { session_id:sid }).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not start.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
   function dungeonNetListLobbies(layer){ dungeonNetInvoke('list', { layer:layer }).then(function(res){ if(res.ok){ dungeonNet.lobbiesByLayer[layer] = res.lobbies || []; if(currentCategory === 'dungeons') render(); } }); }
@@ -14538,8 +14620,8 @@
     var survived = me && me.alive;
     var html = '<div class="section-intro"><b>' + def.label + ' Cleared!</b> Your party bested all ' + def.enemies.length + ' ' + def.theme + '.</div>';
     html += '<div class="item-card">';
-    if(survived) html += '<div class="item-top"><div class="item-icon">' + (FORMULA_ITEMS[def.reward] || {}).icon + '</div><div><div class="item-name">' + def.rewardName + '</div><div class="item-meta">Claimed to your inventory. Endgame gear blueprint (details coming soon).</div></div></div>';
-    else html += '<div class="chance-line" style="color:var(--text-faint)">You fell before the final blow — only survivors claim the Formula. Your party pulled through without you.</div>';
+    if(survived) html += '<div class="chance-line">You rolled this run\'s <b>Masterwork Blueprint</b> drops — check <b>Resources &rarr; Blueprints</b> for what the ' + escapeHtml(def.category) + ' yielded.</div>';
+    else html += '<div class="chance-line" style="color:var(--text-faint)">You fell before the final blow — only survivors roll the Masterwork drops. Your party pulled through without you.</div>';
     html += '<button class="action-btn" data-action="dungeonNetLeave" style="margin-top:8px;width:auto">Return to Dungeons</button></div>';
     return html;
   }
@@ -14568,7 +14650,7 @@
     var html = '<h3 style="margin-top:4px">' + svgIcon('gem', '#8a5fb0') + ' ' + escapeHtml(def.category) + '</h3>';
     html += '<div class="item-card">';
     html += '<div class="item-top"><div class="item-icon">' + boss.icon + '</div><div><div class="item-name">' + def.label + '</div><div class="item-meta">' + def.enemies.length + ' ' + def.theme + ' &bull; Levels ' + dungeonEnemyLevelRange(def) + ' &bull; Boss: ' + escapeHtml(boss.name) + '</div></div></div>';
-    html += '<div class="chance-line">' + def.enemies.length + ' ' + def.theme + ', each with its own element and armour, guard the ' + escapeHtml(def.category.toLowerCase()) + '. The ' + def.enemies.length + 'th — ' + escapeHtml(boss.name) + ' — towers over the rest. Reward: <b>' + def.rewardName + '</b>.</div>';
+    html += '<div class="chance-line">' + def.enemies.length + ' ' + def.theme + ', each with its own element and armour, guard the ' + escapeHtml(def.category.toLowerCase()) + '. The ' + def.enemies.length + 'th — ' + escapeHtml(boss.name) + ' — towers over the rest. Reward: <b>Masterwork Blueprints</b>.</div>';
     html += '<div class="inputs-line" style="margin-top:6px">Requires Combat Score ' + def.minCombatScore + (canEnter ? '' : ' <span style="color:var(--hp-bad)">(you are ' + myScore + ')</span>') + '</div>';
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">';
     html += '<button class="action-btn" data-action="dungeonEnter" data-id="' + def.id + '" style="width:auto" ' + (canEnter ? '' : 'disabled') + '>' + (canEnter ? 'Enter Solo' : 'Combat Score ' + def.minCombatScore + ' required') + '</button>';
@@ -14585,13 +14667,19 @@
       });
     }
     html += '</div>';
-    // Loot -- the boss drop for this layer. The Masterwork crafting system will grow out of here.
-    var reward = FORMULA_ITEMS[def.reward] || {};
-    var owned = (state.inventory && state.inventory[def.reward]) || 0;
-    html += '<div class="inputs-line" style="margin-top:14px">Loot &mdash; ' + escapeHtml(def.category) + '</div>';
-    html += '<div class="item-card">';
-    html += '<div class="item-top"><div class="item-icon">' + (reward.icon || '') + '</div><div><div class="item-name">' + def.rewardName + '</div><div class="item-meta">Boss drop &bull; every surviving delver claims one' + (owned ? ' &bull; <b>You own ' + fmt(owned) + '</b>' : '') + '</div></div></div>';
-    html += '<div class="chance-line">A blueprint for endgame <b>Masterwork</b> gear. The crafting system that forges Formulas into gear is coming &mdash; collect them now, one per boss clear.</div>';
+    // Loot -- the Masterwork Blueprint table for this layer. Each slot rolls independently on a boss
+    // clear; the Blueprints are stored in the Blueprints tab and will forge endgame gear (coming soon).
+    html += '<div class="inputs-line" style="margin-top:14px">Loot &mdash; Masterwork Blueprints (boss drop)</div>';
+    html += '<div class="chance-line" style="margin-bottom:6px">Each ' + escapeHtml(boss.name) + ' clear rolls every slot below independently at its drop chance. Blueprints collect in <b>Resources &rarr; Blueprints</b>, ready to forge endgame <b>Masterwork</b> gear.</div>';
+    html += '<div class="card-grid">';
+    MASTERWORK_SLOTS.forEach(function(slot){
+      var bp = BLUEPRINT_ITEMS[masterworkBlueprintId(def.id, slot.id)]; if(!bp) return;
+      var owned = (state.blueprints && state.blueprints[bp.id]) || 0;
+      html += '<div class="item-card" style="padding:8px">';
+      html += '<div class="item-top"><div class="item-icon">' + bp.icon + '</div><div><div class="item-name" style="font-size:0.9em">' + escapeHtml(bp.name) + '</div>';
+      html += '<div class="item-meta">Drop ' + (slot.chance * 100) + '%' + (owned ? ' &bull; <b>Owned ' + fmt(owned) + '</b>' : '') + '</div></div></div>';
+      html += '</div>';
+    });
     html += '</div>';
     // Enemy roster preview -- every portrait, so the foes are visible before entering.
     html += '<div class="inputs-line" style="margin-top:14px">Denizens of the ' + escapeHtml(def.category) + '</div>';
@@ -14644,8 +14732,7 @@
   function renderDungeonResult(){
     var def = dungeonRun.def;
     var html = '<div class="section-intro"><b>' + def.label + ' Cleared!</b></div>';
-    html += '<div class="item-card"><div class="item-top"><div class="item-icon">' + (FORMULA_ITEMS[def.reward] || {}).icon + '</div><div><div class="item-name">' + def.rewardName + '</div><div class="item-meta">Added to your inventory. Endgame gear blueprint (details coming soon).</div></div></div>';
-    html += '<div class="chance-line">You bested all ' + def.enemies.length + ' ' + def.theme + ' of the ' + def.category + ', ' + escapeHtml(def.enemies[def.enemies.length - 1].name) + ' and all.</div>';
+    html += '<div class="item-card"><div class="chance-line">You bested all ' + def.enemies.length + ' ' + def.theme + ' of the ' + def.category + ', ' + escapeHtml(def.enemies[def.enemies.length - 1].name) + ' and all. Your <b>Masterwork Blueprint</b> drops for this run are in <b>Resources &rarr; Blueprints</b>.</div>';
     html += '<button class="action-btn" data-action="dungeonBack" style="margin-top:8px;width:auto">Return to Dungeons</button></div>';
     return html;
   }
@@ -20058,6 +20145,7 @@
     else if(currentCategory==='estate'){ estUse(false); html = renderEstateTab(); }
     else if(currentCategory==='peons') html = renderPeonsTab();
     else if(currentCategory==='inventory') html = renderInventoryTab();
+    else if(currentCategory==='masterwork') html = renderMasterworkTab();
     else if(currentCategory==='market') html = renderMarketTab();
     else if(currentCategory==='farming') html = renderFarmingTab();
     else if(currentCategory==='combat') html = renderCombatTab();
@@ -22745,7 +22833,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,
