@@ -176,6 +176,37 @@
     FF.estUse(false); ge.grid = savedGrid; ge.status = savedStatus; s.inventory['paving_t2'] = savedInv;
   });
 
+  // ---- Estate: upgrade a Workshop / Cottage (100x next-tier planks, gated by pavement) ----
+  suite('estate: upgrade workshop & cottage', function(){
+    eq(FF.ESTATE_BUILDING_UPGRADE_PLANKS, 100, 'a building upgrade costs 100 planks');
+    var s = FF._state;
+    FF.estUse(false);
+    var cell = s.estate.grid[0][0];
+    var saved = { type:cell.type, pave:cell.paveTileId, work:cell.workshopId, cot:cell.cottageId };
+    var savedInv = { c2:s.inventory['carpentry_t2'], c3:s.inventory['carpentry_t3'], c4:s.inventory['carpentry_t4'] };
+    // Workshop t2 on t5 pavement -> upgrade to t3 for 100x the t3 plank.
+    cell.type = 'paved'; cell.paveTileId = 'paving_t5'; cell.cottageId = null; cell.workshopId = 'workshop_mining_t2';
+    s.inventory['carpentry_t3'] = 100;
+    FF.estateUpgradeWorkshop(0, 0);
+    eq(cell.workshopId, 'workshop_mining_t3', 'the workshop rose one tier, same skill');
+    eq(s.inventory['carpentry_t3'], 0, 'the upgrade spent 100 next-tier planks');
+    // Pavement too low blocks it: workshop t3 -> t4 needs pavement >= t4, but the pavement is t3.
+    cell.paveTileId = 'paving_t3'; s.inventory['carpentry_t4'] = 100;
+    FF.estateUpgradeWorkshop(0, 0);
+    eq(cell.workshopId, 'workshop_mining_t3', 'no upgrade while the pavement is too low');
+    eq(s.inventory['carpentry_t4'], 100, '...and no planks are spent when blocked');
+    // Cottage t1 on t5 pavement -> upgrade to t2 for 100x the t2 plank.
+    cell.workshopId = null; cell.cottageId = 'cottage_t1'; cell.paveTileId = 'paving_t5';
+    s.inventory['carpentry_t2'] = 100;
+    FF.estateUpgradeCottage(0, 0);
+    eq(cell.cottageId, 'cottage_t2', 'the cottage rose one tier');
+    eq(s.inventory['carpentry_t2'], 0, 'the cottage upgrade spent 100 next-tier planks');
+    // restore
+    cell.type = saved.type; cell.paveTileId = saved.pave; cell.workshopId = saved.work; cell.cottageId = saved.cot;
+    s.inventory['carpentry_t2'] = savedInv.c2; s.inventory['carpentry_t3'] = savedInv.c3; s.inventory['carpentry_t4'] = savedInv.c4;
+    FF.estRecomputeWorkshops(); // rebuild the workshop cache from the restored grid
+  });
+
   // ---- Workshop bonus % + upgrade chain (tier N consumes tier N-1) ----------------------
   suite('workshopBonusPct', function(){
     near(FF.workshopBonusPct(0), 0.05, 'workshop tier 0 = 5%');

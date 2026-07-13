@@ -16210,6 +16210,42 @@
     estPersist();
     needsRender = true;
   }
+  // Upgrade a placed Workshop or Cottage one tier for 100x the next-tier Plank (carpentry_t<n>). Instant,
+  // in place; the pavement must already support the higher tier (upgrade the pavement first if not).
+  var ESTATE_BUILDING_UPGRADE_PLANKS = 100;
+  function estateUpgradeWorkshop(x, y){
+    var cell = estActive && estActive.grid[x] && estActive.grid[x][y];
+    if(!cell || !cell.workshopId) return;
+    var wIt = WORKSHOP_ITEMS[cell.workshopId]; if(!wIt) return;
+    var nextTier = wIt.tierIndex + 1;
+    if(nextTier >= TIER_COUNT){ addLog('This Workshop is already the top tier.', 'danger'); return; }
+    if(pavementTierOf(cell) < nextTier){ addLog('The pavement under this Workshop is too low — upgrade the pavement first.', 'danger'); return; }
+    var plankId = 'carpentry_t' + nextTier, owned = state.inventory[plankId] || 0;
+    if(owned < ESTATE_BUILDING_UPGRADE_PLANKS){ addLog('Upgrading this Workshop costs ' + ESTATE_BUILDING_UPGRADE_PLANKS + ' ' + FORESTRY_NAMES[nextTier] + ' Planks (you have ' + owned + ').', 'danger'); return; }
+    state.inventory[plankId] -= ESTATE_BUILDING_UPGRADE_PLANKS;
+    cell.workshopId = 'workshop_' + wIt.skillId + '_t' + nextTier;
+    estRecomputeWorkshops();
+    addLog('You upgraded the ' + workshopSkillLabel(wIt.skillId) + ' Workshop at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[nextTier] + '.', 'important');
+    spawnFloatingText('Workshop upgraded!', 'ft-success');
+    estPersist();
+    needsRender = true;
+  }
+  function estateUpgradeCottage(x, y){
+    var cell = estActive && estActive.grid[x] && estActive.grid[x][y];
+    if(!cell || !cell.cottageId) return;
+    var cIt = COTTAGE_ITEMS[cell.cottageId]; if(!cIt) return;
+    var nextTier = cIt.tierIndex + 1;
+    if(nextTier >= TIER_COUNT){ addLog('This Cottage is already the top tier.', 'danger'); return; }
+    if(pavementTierOf(cell) < nextTier){ addLog('The pavement under this Cottage is too low — upgrade the pavement first.', 'danger'); return; }
+    var plankId = 'carpentry_t' + nextTier, owned = state.inventory[plankId] || 0;
+    if(owned < ESTATE_BUILDING_UPGRADE_PLANKS){ addLog('Upgrading this Cottage costs ' + ESTATE_BUILDING_UPGRADE_PLANKS + ' ' + FORESTRY_NAMES[nextTier] + ' Planks (you have ' + owned + ').', 'danger'); return; }
+    state.inventory[plankId] -= ESTATE_BUILDING_UPGRADE_PLANKS;
+    cell.cottageId = 'cottage_t' + nextTier;
+    addLog('You upgraded the Cottage at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[nextTier] + '.', 'important');
+    spawnFloatingText('Cottage upgraded!', 'ft-success');
+    estPersist();
+    needsRender = true;
+  }
 
   // ---- Carpentry Workshops: placement on paved tiles + the crafting bonuses ----
   // placedWorkshops caches skillId -> tierIndex of the ONE placed workshop for that skill
@@ -17757,6 +17793,13 @@
         html += '<div class="estate-action-info"><b>Workshop:</b> '+(wIt?wIt.icon+' '+escapeHtml(wIt.name):'Unknown')+'<br>+'+wPct+'% '+escapeHtml(workshopSkillLabel(wIt?wIt.skillId:''))+(isGatherWorkshop(wIt?wIt.skillId:'')?' gathering':' crafting')+' speed &bull; '+wPct+'% double output</div>';
         html += '<button class="action-btn stop" data-action="estateRemoveWorkshop" data-x="'+x+'" data-y="'+y+'">Remove</button>';
         html += '</div>';
+        var wNext = (wIt?wIt.tierIndex:0) + 1;
+        if(wNext < TIER_COUNT){
+          var wPaveOk = pavementTierOf(cell) >= wNext, wPlankOwned = state.inventory['carpentry_t'+wNext] || 0;
+          var wUpOk = wPaveOk && wPlankOwned >= ESTATE_BUILDING_UPGRADE_PLANKS;
+          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade Workshop</b><br>To '+escapeHtml(FORESTRY_NAMES[wNext])+' &bull; '+ESTATE_BUILDING_UPGRADE_PLANKS+'&times; '+escapeHtml(FORESTRY_NAMES[wNext])+' Plank (have '+wPlankOwned+')'+(wPaveOk?'':' &bull; <span style="color:var(--hp-bad)">needs higher pavement</span>')+'</div>';
+          html += '<button class="action-btn" data-action="estateUpgradeWorkshop" data-x="'+x+'" data-y="'+y+'" '+(wUpOk?'':'disabled')+'>'+(wUpOk?'Upgrade':(wPaveOk?'Need '+ESTATE_BUILDING_UPGRADE_PLANKS:'Pave higher'))+'</button></div>';
+        }
       } else if(cell.cottageId){
         var cIt = COTTAGE_ITEMS[cell.cottageId];
         var cAdj = estateAdjacentWorkshop(estActive.grid, x, y);
@@ -17764,6 +17807,13 @@
         html += '<div class="estate-action-info"><b>Cottage:</b> '+(cIt?cIt.icon+' '+escapeHtml(cIt.name):'Unknown')+'<br>'+(cAdj ? ('Linked to the '+escapeHtml(workshopSkillLabel(WORKSHOP_ITEMS[cAdj.workshopId].skillId))+' Workshop &mdash; assign a Peon in the <b>Peons</b> tab.') : 'Not linked &mdash; place beside exactly one Workshop.')+'</div>';
         html += '<button class="action-btn stop" data-action="estateRemoveCottage" data-x="'+x+'" data-y="'+y+'">Remove</button>';
         html += '</div>';
+        var cNext = (cIt?cIt.tierIndex:0) + 1;
+        if(cNext < TIER_COUNT){
+          var cPaveOk = pavementTierOf(cell) >= cNext, cPlankOwned = state.inventory['carpentry_t'+cNext] || 0;
+          var cUpOk = cPaveOk && cPlankOwned >= ESTATE_BUILDING_UPGRADE_PLANKS;
+          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade Cottage</b><br>To '+escapeHtml(FORESTRY_NAMES[cNext])+' &bull; '+ESTATE_BUILDING_UPGRADE_PLANKS+'&times; '+escapeHtml(FORESTRY_NAMES[cNext])+' Plank (have '+cPlankOwned+')'+(cPaveOk?'':' &bull; <span style="color:var(--hp-bad)">needs higher pavement</span>')+'</div>';
+          html += '<button class="action-btn" data-action="estateUpgradeCottage" data-x="'+x+'" data-y="'+y+'" '+(cUpOk?'':'disabled')+'>'+(cUpOk?'Upgrade':(cPaveOk?'Need '+ESTATE_BUILDING_UPGRADE_PLANKS:'Pave higher'))+'</button></div>';
+        }
       } else {
         var placeable = placeableWorkshopsFor(cell);
         html += '<div class="estate-action-row">';
@@ -22490,6 +22540,10 @@
       estateBreakPavement(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
     } else if(action==='estateUpgradePavement'){
       estateUpgradePavement(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
+    } else if(action==='estateUpgradeWorkshop'){
+      estateUpgradeWorkshop(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
+    } else if(action==='estateUpgradeCottage'){
+      estateUpgradeCottage(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
     } else if(action==='estateToggleWorkshopMenu'){
       estateWorkshopMenuOpen = !estateWorkshopMenuOpen;
     } else if(action==='estatePlaceWorkshop'){
@@ -23396,6 +23450,7 @@
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
       estateUpgradePavement:estateUpgradePavement, pavementTierOf:pavementTierOf, ESTATE_PAVE_TILE_COST:ESTATE_PAVE_TILE_COST, estUse:estUse,
+      estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, ESTATE_BUILDING_UPGRADE_PLANKS:ESTATE_BUILDING_UPGRADE_PLANKS, estRecomputeWorkshops:estRecomputeWorkshops,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       tierStepper:tierStepper, tierRange:tierRange,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
