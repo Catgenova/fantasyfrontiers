@@ -1650,6 +1650,15 @@
   function shellIcon(shapeId){
     return '<svg class="game-icon" viewBox="0 0 24 24"><use href="#shape-'+shapeId+'"></use></svg>';
   }
+  // Official community Discord. The logo is an inline brand SVG (not a sprite shape); discordLinkHtml
+  // renders the standard "blurple" button used on both the landing screen and the Settings panel.
+  var DISCORD_URL = 'https://discord.gg/tFCwJgeDc';
+  function discordIconSvg(fill, size){ size = size || 18; return '<svg viewBox="0 0 24 24" width="'+size+'" height="'+size+'" fill="'+(fill||'#fff')+'" aria-hidden="true" style="flex:0 0 auto;"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg>'; }
+  function discordLinkHtml(label, extraStyle){
+    return '<a href="'+DISCORD_URL+'" target="_blank" rel="noopener noreferrer" title="Join the Fantasy Frontiers Discord" '
+      + 'style="display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:9px 16px;border-radius:10px;background:#5865F2;color:#fff;font-weight:700;font-size:13px;text-decoration:none;'+(extraStyle||'')+'">'
+      + discordIconSvg('#fff') + '<span>'+escapeHtml(label)+'</span></a>';
+  }
   var DIGGING_NAMES = ['Sand','Moss','Mulch','Compost','Dirt','Soil','Mud','Sod','Loam','Silt','Peat','Bog','Fen','Marsh','Mire','Marl','Clay','Gravel','Pebbles','Chalk','Lime'];
   var DIGGING_COLORS = ['#d4b483','#6b8f4e','#5a3d2b','#4a3524','#6f4e2f','#5c3a1e','#4b3621','#7a8f4e','#6e5a3a','#9c8a6b','#3d2b1f','#3f4a34','#4a5c3f','#556b4a','#35301f','#a89a7c','#b5654b','#8a8a86','#9a9a94','#e8e4d8','#d9e8c4'];
   var DIGGING_ICONS = DIGGING_COLORS.map(function(c){ return svgIcon('dirt', c); });
@@ -15411,6 +15420,7 @@
     // -- Lifetime stats column --
     html += '<div class="settings-col">'+renderLifetimeStatsPanel()+'</div>';
     html += '</div>'; // .settings-grid
+    html += '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;margin:10px 0 2px;"><div class="settings-row-desc" style="text-align:center;">Chat, get help, and hear about updates:</div>'+discordLinkHtml('Join our Discord')+'</div>';
     html += '<button class="action-btn settings-close" data-action="closeSettings">Close</button>';
     html += '</div>';
     overlay.className = 'familiar-popup-overlay';
@@ -22922,6 +22932,7 @@
           + '<button class="estate-view-btn'+(estateTopDown?' on':'')+'" data-action="landingEstToggle" title="Toggle top-down view">'+(estateTopDown?'▦ 2D':'◈ 3D')+'</button>'
         + '</div></div>'
       + (ports ? '<div class="ff-land-show"><div class="ff-land-show-t">All 24 Classes</div><div class="ff-land-ports">' + ports + '</div></div>' : '')
+      + '<div style="display:flex;flex-direction:column;align-items:center;gap:7px;margin-top:22px;"><div class="ff-land-show-t" style="margin:0;">Join the community</div>' + discordLinkHtml('Fantasy Frontiers Discord') + '</div>'
       + '<div class="ff-land-foot">Free to play &bull; your progress saves to your account and follows you across every device.</div>'
       + '</div>';
     landingEstateActivate(); // point estActive at the preview estate + bind pan/zoom/rotate + draw
