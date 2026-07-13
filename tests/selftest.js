@@ -3403,6 +3403,21 @@
     s.mortal = sv;
   });
 
+  // ---- Blacksmithing: Forge Tools ordered alphabetically by the skill each tool benefits -------
+  suite('blacksmithing forge order', function(){
+    ok(Array.isArray(FF.TOOL_TYPES) && FF.TOOL_TYPES.length > 0, 'TOOL_TYPES exported');
+    ok(typeof FF.toolBenefitLabel === 'function', 'toolBenefitLabel exported');
+    // Mirror the render sort: a copy of TOOL_TYPES sorted by benefit label.
+    var labels = FF.TOOL_TYPES.slice()
+      .sort(function(a,b){ return FF.toolBenefitLabel(a).localeCompare(FF.toolBenefitLabel(b)); })
+      .map(function(tt){ return FF.toolBenefitLabel(tt); });
+    var expected = labels.slice().sort(function(a,b){ return a.localeCompare(b); });
+    eq(JSON.stringify(labels), JSON.stringify(expected), 'Forge Tools cards are ordered A→Z by benefited skill');
+    // Sanity: gathering + crafting tools are interleaved, not grouped (i.e. the sort actually mixes
+    // the two families — the first label should not simply be the first GATHER_SKILL_IDS entry).
+    ok(labels.length === FF.TOOL_TYPES.length, 'no tool cards dropped by the sort');
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }

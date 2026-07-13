@@ -11629,6 +11629,11 @@
     return html;
   }
 
+  // The skill a forged tool boosts (its "benefit"), used both for the card label and for
+  // ordering the Forge Tools grid alphabetically by that skill.
+  function toolBenefitLabel(tt){
+    return (tt.isGather ? (GATHERING_SKILLS[tt.skillId]||{}).label : (CRAFTING_SKILLS[tt.skillId]||{}).label) || SKILL_LABELS[tt.skillId] || tt.skillId;
+  }
   function renderBlacksmithingTab(){
     var lvl = getLevel(state.xp.blacksmithing);
     var maxUnlocked = 0;
@@ -11637,7 +11642,10 @@
     html += renderSkillProgressBar('blacksmithing');
     html += '<h3 style="margin-top:14px">Forge Tools</h3>';
     html += '<div class="card-grid">';
-    TOOL_TYPES.forEach(function(tt){
+    // Cards are ordered by the skill each tool benefits, alphabetically (gathering + crafting
+    // tools interleaved). Sort a copy so the shared TOOL_TYPES order stays intact for other views.
+    var sortedToolTypes = TOOL_TYPES.slice().sort(function(a,b){ return toolBenefitLabel(a).localeCompare(toolBenefitLabel(b)); });
+    sortedToolTypes.forEach(function(tt){
       if(selectedToolTier[tt.skillId] === undefined) selectedToolTier[tt.skillId] = maxUnlocked;
       var sel = Math.min(selectedToolTier[tt.skillId], maxUnlocked);
       sel = craftFilterTier(sel, maxUnlocked, function(t){ return (tt.isGather ? getGatherToolTierData(tt.skillId, t+1) : getCraftToolTierData(tt.skillId, t+1)).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('tool', {skillId:tt.skillId, tierIndex:t}); });
@@ -11655,7 +11663,7 @@
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+tt.icon+'</div><div><div class="item-name">'+tt.name+'</div><div class="item-meta">Equipped: '+equippedLabel+' &bull; Owned: '+toolOwnedTotal+'</div></div></div>';
-      var benefitLabel = (tt.isGather ? (GATHERING_SKILLS[tt.skillId]||{}).label : (CRAFTING_SKILLS[tt.skillId]||{}).label) || SKILL_LABELS[tt.skillId] || tt.skillId;
+      var benefitLabel = toolBenefitLabel(tt);
       html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Boosts your <b>'+escapeHtml(benefitLabel)+'</b> '+(tt.isGather?'gathering':'crafting')+'</div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('tool',tt.skillId,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       var statLine = tt.isGather
@@ -22208,6 +22216,7 @@
       renderGlobalActionBar:renderGlobalActionBar, describeTask:describeTask, censorChat:censorChat,
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS,
+      TOOL_TYPES:TOOL_TYPES, toolBenefitLabel:toolBenefitLabel,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS,
