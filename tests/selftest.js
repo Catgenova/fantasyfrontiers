@@ -160,6 +160,22 @@
     s.inventory['paving_t4'] = savedInv.t4; s.inventory['paving_t5'] = savedInv.t5;
   });
 
+  // ---- The SAME upgrade works on the guild estate (shared estActive engine, not a copy) ----
+  suite('estate: upgrade guild pavement', function(){
+    var s = FF._state, ge = FF.guildEstate;
+    var savedGrid = ge.grid, savedStatus = ge.status, savedInv = s.inventory['paving_t2'];
+    ge.grid = [[{ type:'paved', paveTileId:'paving_t1', workshopId:'workshop_mining_t0' }]]; // a paved guild tile with a building
+    ge.status = 'ready';
+    FF.estUse(true);                                   // point the shared engine at the guild estate
+    s.inventory['paving_t2'] = 20;
+    FF.estateUpgradePavement(0, 0);
+    eq(ge.grid[0][0].paveTileId, 'paving_t2', 'the guild pavement upgraded through the shared engine');
+    eq(ge.grid[0][0].workshopId, 'workshop_mining_t0', 'the guild building on the tile is kept');
+    eq(s.inventory['paving_t2'], 0, 'the upgrade spent 20 next-tier tiles from personal inventory');
+    // restore
+    FF.estUse(false); ge.grid = savedGrid; ge.status = savedStatus; s.inventory['paving_t2'] = savedInv;
+  });
+
   // ---- Workshop bonus % + upgrade chain (tier N consumes tier N-1) ----------------------
   suite('workshopBonusPct', function(){
     near(FF.workshopBonusPct(0), 0.05, 'workshop tier 0 = 5%');
