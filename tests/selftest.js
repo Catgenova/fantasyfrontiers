@@ -1903,10 +1903,18 @@
     eq(FF.activeClassId(stFor(80)), 'reaver', 'half-moon axe + small shield + chain/leather => Reaver');
     eq(FF.activeClassId(stFor(80,{equippedOffhand:null})), null, 'Reaver needs the Small Shield');
     eq(FF.activeClassId(stFor(80,{bodyArmor:{helmet:armor('chain'),chest:armor('chain'),gauntlets:armor('chain'),boots:armor('leather')}})), null, 'Reaver needs Leather Gloves, not chain');
-    // Savagery +25% damage; Hemorrhage +50% crit damage (Lv40).
+    // Reworked ladder: Savagery / Bloodletting / Frenzied Rending / Arterial Spray / Hemorrhagic Burst.
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Savagery,Bloodletting,Frenzied Rending,Arterial Spray,Hemorrhagic Burst', 'reworked Reaver ladder');
+    // Savagery +25% damage (Lv1); the class no longer grants any flat crit damage (Hemorrhage retired).
     ok(Math.abs(FF.newClassDmgMult({hp:100}, stFor(1)) - 1.25) < 1e-9, 'Savagery +25% damage');
-    ok(Math.abs(FF.newClassCritDmg(stFor(40)) - 0.50) < 1e-9, 'Hemorrhage +50% crit damage');
-    eq(FF.newClassCritDmg(stFor(20)), 0, 'no crit-damage bonus before Lv40');
+    eq(FF.newClassCritDmg(stFor(80)), 0, 'Reaver no longer grants flat crit damage');
+    // Frenzied Rending (Lv40): +15% attack speed (x0.85) at max Bleed stacks; neutral below max or before Lv40.
+    var frMax = stFor(40); frMax.activity = { type:'combat', monsterHp:100, bleedStacks:5, bleedUntil:Date.now()+5000 };
+    near(FF.classAttackSpeedMult(frMax), 0.85, 'Frenzied Rending: +15% attack speed at max Bleed stacks', 1e-9);
+    var frLow = stFor(40); frLow.activity = { type:'combat', monsterHp:100, bleedStacks:2, bleedUntil:Date.now()+5000 };
+    eq(FF.classAttackSpeedMult(frLow), 1, 'no frenzy haste below max stacks');
+    var fr20 = stFor(20); fr20.activity = { type:'combat', monsterHp:100, bleedStacks:5, bleedUntil:Date.now()+5000 };
+    eq(FF.classAttackSpeedMult(fr20), 1, 'no frenzy haste before Lv40');
     // Bleed tick: it reads the global _state.activity. Snapshot the fields we touch, then restore.
     // With no Reaver kit equipped on _state, reaverBonus(60/80) are off, so we exercise the base tick:
     // it chips the enemy and floors it at 1 (never the finishing blow), and an expired Bleed does nothing.
@@ -1925,6 +1933,20 @@
       eq(S.activity.monsterHp, 100, 'an expired Bleed deals no damage');
     } finally {
       S.activity=save.act; S.playerHp=save.hp; S.equippedMainhand=save.mh; S.equippedOffhand=save.oh;
+    }
+    // Bloodletting (Lv20): with the Reaver kit worn, the Bleed tick heals 8% of the damage it deals.
+    var bl = { mh:S.equippedMainhand, oh:S.equippedOffhand, ba:S.bodyArmor, xp:S.xp.reaver, act:S.activity, hp:S.playerHp };
+    try {
+      S.equippedMainhand='halfmoonaxe'; S.equippedOffhand='shieldSmall';
+      S.bodyArmor={helmet:armor('chain'),chest:armor('chain'),gauntlets:armor('leather'),boots:armor('leather')};
+      S.xp.reaver = FF.xpFloorForLevel(25);
+      ok(FF.reaverBonus(20), 'Reaver Lv20 is active with the kit worn');
+      S.activity = { type:'combat', monsterId:null, monsterHp:100000, bleedDps:100, bleedUntil:Date.now()+5000 };
+      S.playerHp = 10;
+      FF.applyReaverBleedTick(1000); // 100 Bleed damage over 1s -> heal 8% = +8 HP
+      ok(S.playerHp >= 18 - 1e-6, 'Bloodletting heals 8% of Bleed damage (100 dmg -> +8 HP), got '+S.playerHp);
+    } finally {
+      S.equippedMainhand=bl.mh; S.equippedOffhand=bl.oh; S.bodyArmor=bl.ba; S.xp.reaver=bl.xp; S.activity=bl.act; S.playerHp=bl.hp;
     }
   });
 

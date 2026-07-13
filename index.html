@@ -5011,11 +5011,11 @@
         { icon:svgIcon('boots',CLASS_LEATHER_COLOR),     label:'Leather Boots', met:function(st){ return leatherPieceEquipped(st,'boots'); } }
       ],
       passives:[
-        { level:1,  name:'Savagery',     desc:'+25% damage.' },
-        { level:20, name:'Rend',         desc:'Hits apply a stacking Bleed (up to 5) that damages the enemy over time; each hit refreshes it.' },
-        { level:40, name:'Hemorrhage',   desc:'+50% Critical Hit damage.' },
-        { level:60, name:'Bloodletting', desc:'Heal 8% of the damage your Bleed deals.' },
-        { level:80, name:'Exsanguinate', desc:'Your Bleed deals double damage to enemies below half Health.' }
+        { level:1,  name:'Savagery',          desc:'+25% damage.' },
+        { level:20, name:'Bloodletting',      desc:'Heal 8% of the damage your Bleed deals.' },
+        { level:40, name:'Frenzied Rending',  desc:'Each hit applies a stacking Bleed (up to 5) that damages over time and refreshes it; hits have a 25% chance to apply an extra stack, and while the foe is at max stacks your attack speed +15%.' },
+        { level:60, name:'Arterial Spray',    desc:'When a Bleeding foe dies, the next foe you face inherits its Bleed stacks.' },
+        { level:80, name:'Hemorrhagic Burst', desc:'Your Critical Hits detonate the foe\'s Bleed for a burst of instant damage, then reapply a single stack.' }
       ]
     }
   ];
@@ -5196,6 +5196,7 @@
     if(id==='berserker' && classLevel(st,'berserker') >= 60) return 1 - 0.30 * berserkerMissingFrac(st); // Undying Fury: up to -30% as Health falls
     if(id==='frostwarden' && classLevel(st,'frostwarden') >= 20) return 1 - frostwardenTimeDilation(st); // Time Dilation: quicken with the enemy's Chill
     if(id==='pyromancer' && classLevel(st,'pyromancer') >= 80) return 1 - pyromancerFeverHaste(st); // Fever Pitch: quicken with the enemy's Burn
+    if(id==='reaver' && classLevel(st,'reaver') >= 40 && st.activity && st.activity.type==='combat' && (st.activity.bleedStacks||0) >= REAVER_BLEED_MAX && (st.activity.bleedUntil||0) > Date.now()) return 0.85; // Frenzied Rending: +15% attack speed at max Bleed stacks
     return 1;
   }
   // Quickdraw Lv 20 (Second Wind): below 40% HP, attack timer -20% (via classAttackSpeedMult) and +20% Dodge.
@@ -5421,7 +5422,6 @@
     if(sharpshooterBonus(1, st)) d += 0.50;  // Sharpshooter Aimed Shot
     if(sharpshooterBonus(80, st)) d += 1.00; // Sharpshooter Kill Shot
     if(juggernautBonus(80, st)) d += 0.60;   // Juggernaut Devastate
-    if(reaverBonus(40, st)) d += 0.50;       // Reaver Hemorrhage
     return d;
   }
   // --- Pyromancer --- Reworked ladder: Ignite (Lv1) / Combust (Lv20) / Kindling Crits (Lv40) /
@@ -5465,7 +5465,7 @@
   function lumenDodgeBonus(st){ st = st || state; return lumenBonus(60, st) ? 0.12 : 0; }                               // Lv60 Afterimage (folded into playerDodgeChance)
   function lumenBlindingDealtMult(st){ st = st || state; return (lumenBonus(80, st) && lumenEnemyBlinded(st)) ? 1.25 : 1; }  // Lv80 Blinding Radiance: +25% dealt while blinded
   function lumenIncomingMult(st){ st = st || state; return (lumenBonus(80, st) && lumenEnemyBlinded(st)) ? 0.75 : 1; }   // Lv80 Blinding Radiance: -25% taken while blinded
-  // ===== Reaver (Half-Moon Axe): Savagery / Rend / Hemorrhage / Bloodletting / Exsanguinate =====
+  // ===== Reaver (Half-Moon Axe): Savagery / Bloodletting / Frenzied Rending / Arterial Spray / Hemorrhagic Burst =====
   // Rend stacks a Bleed DoT tracked on the activity (its own channel, separate from potion poison), each
   // stack worth REAVER_BLEED_PCT of combat power per second; the tick lives in applyReaverBleedTick().
   var REAVER_BLEED_MAX = 5;          // stacks
@@ -10302,15 +10302,14 @@
   }
   // Reaver Rend: a stacking physical Bleed DoT on its own activity channel (separate from potion poison).
   // Mirrors the poison tick -- floors the enemy at 1 HP (never the finishing blow) -- plus Reaver's own
-  // Lv60 Bloodletting (heal off Bleed) and Lv80 Exsanguinate (double vs a wounded foe).
+  // Lv20 Bloodletting (heal 8% of the Bleed damage dealt).
   function applyReaverBleedTick(dtMs){
     var act = state.activity;
     if(!act || act.type!=='combat' || (act.bleedUntil||0) <= Date.now()) return;
     var dps = act.bleedDps || 0; if(dps <= 0) return;
     var dmg = dps * dtMs / 1000;
-    if(reaverBonus(80)){ var mon = monsterById(act.monsterId); if(mon && mon.hp && act.monsterHp < mon.hp*0.5) dmg *= 2; } // Exsanguinate
     act.monsterHp = Math.max(1, act.monsterHp - dmg);
-    if(reaverBonus(60)){ var heal = Math.min(Math.round(dmg * 0.08), maxHp(state) - state.playerHp); if(heal > 0) state.playerHp += heal; } // Bloodletting
+    if(reaverBonus(20)){ var heal = Math.min(Math.round(dmg * 0.08), maxHp(state) - state.playerHp); if(heal > 0) state.playerHp += heal; } // Bloodletting
   }
   // Frostwarden Frostbite (Lv60): a stacking Water DoT on its own channel; floors the enemy at 1 HP so a
   // shatter/hit lands the kill. Mirrors the Bleed tick.
@@ -10476,13 +10475,22 @@
         state.classDebuffs.enemyDmgUntil = Date.now() + 5000; spawnFloatingText('Blinded!', 'ft-rare');
       }
       if(lumenBonus(40) && !offlineCapture && Math.random() < 0.08){ act.enemyStunUntil = Date.now() + 2000; spawnFloatingText('Flashed!', 'ft-rare'); }
-      // Reaver Rend (Lv 20): each hit stacks a Bleed (up to 5) and refreshes it; dps = stacks * 4% of combat power.
-      if(reaverBonus(20)){
+      // Reaver Frenzied Rending (Lv 40): each hit stacks a Bleed (up to 5) and refreshes it; a 25% chance
+      // adds an extra stack (the frenzy attack-speed bonus at max stacks lives in classAttackSpeedMult).
+      if(reaverBonus(40)){
         if((act.bleedUntil||0) <= Date.now()) act.bleedStacks = 0;        // a lapsed Bleed starts fresh
-        act.bleedStacks = Math.min(REAVER_BLEED_MAX, (act.bleedStacks||0) + 1);
+        act.bleedStacks = Math.min(REAVER_BLEED_MAX, (act.bleedStacks||0) + (Math.random() < 0.25 ? 2 : 1));
         act.bleedDps = act.bleedStacks * combatLevelEquivalent(state) * REAVER_BLEED_PCT;
         act.bleedUntil = Date.now() + REAVER_BLEED_MS;
         spawnFloatingText('Rend x'+act.bleedStacks, 'ft-bonus');
+      }
+      // Reaver Hemorrhagic Burst (Lv 80): a Critical Hit detonates the foe's Bleed for instant damage
+      // (its remaining duration paid up front), then reapplies a single stack.
+      if(reaverBonus(80) && isCrit && enemyBleeding()){
+        var _hbSec = Math.max(0, (act.bleedUntil - Date.now())/1000);
+        var _hbDmg = Math.round((act.bleedDps||0) * _hbSec);
+        if(_hbDmg > 0){ act.monsterHp -= _hbDmg; spawnCombatFloat('✦ -'+fmt(_hbDmg)+' Hemorrhage', 'ft-crit', true); }
+        act.bleedStacks = 1; act.bleedDps = combatLevelEquivalent(state) * REAVER_BLEED_PCT; act.bleedUntil = Date.now() + REAVER_BLEED_MS;
       }
       // Executioner Reaping Vigor (Lv1): a landed Critical Hit banks a stacking +25% max-HP buff (30s).
       if(executionerBonus(1) && isCrit){ execVigorAddStack(); spawnFloatingText('Reaping Vigor!', 'ft-rare'); }
@@ -10654,6 +10662,8 @@
   // reflection when the player wields a Staff (no auto-attack, so summons must land the finishing blow).
   function defeatMonster(monster){
     var act = state.activity;
+    // Reaver Arterial Spray (Lv60): a Bleeding foe's stacks carry to the next foe. Captured before the reset.
+    var _arterialCarry = (reaverBonus(60) && act && (act.bleedStacks||0) > 0 && (act.bleedUntil||0) > Date.now()) ? act.bleedStacks : 0;
     if(executionerBonus(60)) headsmanTallyKill(); // Headsman's Tally: every kill this session grows your max HP (dungeon foes included)
     if(act && act.dungeon){ dungeonOnKill(monster); return; } // dungeon foe -> advance the run instead of re-engaging
     bumpStat('kills');
@@ -10674,6 +10684,12 @@
     act.monsterHp = monster.hp;
     act.monsterTickAccum = 0;
     act.bleedStacks = 0; act.bleedDps = 0; act.bleedUntil = 0; // a fresh foe starts unbled (Reaver Rend / Assassin Lacerate don't carry over)
+    if(_arterialCarry > 0){ // Reaver Arterial Spray: the next foe inherits the slain foe's Bleed
+      act.bleedStacks = _arterialCarry;
+      act.bleedDps = act.bleedStacks * combatLevelEquivalent(state) * REAVER_BLEED_PCT;
+      act.bleedUntil = Date.now() + REAVER_BLEED_MS;
+      spawnFloatingText('Arterial Spray x'+_arterialCarry, 'ft-bonus');
+    }
     act.rhythmStacks = 0; act.rhythmFlurry = 0; act.rhythmLastHand = null; act.lastDamagedAt = Date.now(); // Assassin: fresh Rhythm meter + Vanish clock per foe
     act.samuraiFirstStrike = true; act.samuraiFocus = 0; // Samurai: arm the Iaijutsu/First Blood opener and reset the Bushido Focus combo
     act.staticCharge = 0; act.galvanizeStacks = 0; // Thunderfury: fresh Static meter + Galvanize ramp against each foe
