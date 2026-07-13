@@ -3203,7 +3203,150 @@
   }
   DUNGEON_D1_ENEMIES[DUNGEON_D1_COUNT - 1].hp = Math.round(DUNGEON_D1_ENEMIES[DUNGEON_D1_COUNT - 2].hp * 10); // boss ~10x the 24th
   DUNGEON_D1_ENEMIES.forEach(function(m){ MONSTERS_BY_ID[m.id] = m; });
-  var DUNGEON_DEFS = { d1: { id:'d1', category:'Cave', label:'D1 — Cave', enemies:DUNGEON_D1_ENEMIES, minCombatScore:100, reward:'formula_d1_masterwork', rewardName:'D1 Masterwork Formula' } };
+
+  // ---- D2 "Tunnel" -- the second dungeon layer: 25 Orcs fought ONE AT A TIME, levels 126->150, each
+  // with its own HAND-CRAFTED portrait, element and armour mix. The 25th (Gorthak the Undertyrant) is
+  // the boss at ~10x the 24th's HP; clearing it grants each surviving player a D2 Masterwork Formula.
+  // Same synchronous one-at-a-time engine as D1 (registered into MONSTERS_BY_ID, kept out of the hunt).
+  var DUNGEON_D2_NAMES = ['Tunnel Grunt','Cave Marauder','Gravel Brute','Stoneskull Raider','Emberfist Orc','Gloomtusk Savage','Rockjaw Breaker','Ashen Berserker','Bloodmaw Reaver','Ironhide Enforcer','Deeproot Shaman','Cindereye Warcaller','Bonegrinder Butcher','Murkblood Slasher','Craghorn Warrior','Venomtooth Stalker','Skullcleaver Champion','Nightfang Marauder','Molten Warbringer','Doomjaw Executioner','Grimtide Warchief','Blackrock Overseer','Ravenous Devourer','Elder Warbeast','Gorthak the Undertyrant'];
+  var DUNGEON_D2_ELEM_CYCLE = ['earth','fire','dark','water','light'];
+  // Twenty-five hand-picked orc busts. Each spec draws a distinct combination of skin palette, headgear,
+  // tusks, eyes, war-paint and an accessory so no two read alike; the boss (Gorthak) gets bespoke extras.
+  // Self-contained framed SVGs (no <defs>/ids -> no collisions when the whole roster renders at once).
+  var DUNGEON_D2_PORTRAITS = (function(){
+    var K = '#141210', IV = '#efe6cf'; // ink outline, ivory tusk
+    var SKIN = { swamp:['#5f7a3c','#45602a','#7c9552'], moss:['#6b8347','#4f6632','#88a260'], grey:['#6a7560','#4f5947','#86927c'], ash:['#78766c','#59574d','#948f85'], clay:['#7d5c3c','#5d452b','#9c7650'], sick:['#93a066','#6f7a4a','#b1bd86'], fungus:['#8a9488','#687064','#a8b2a4'], coal:['#514f49','#3a3830','#6b665c'], bruise:['#6f5b73','#504156','#8e7993'] };
+    function tint(el){ return ({ earth:'#7aa02f', fire:'#e0632f', water:'#3f8fd0', light:'#e6c24a', dark:'#a06fd0' })[el] || '#c0392b'; }
+    // Head silhouette + shading (broad orc skull, heavy jaw).
+    function head(p){
+      return '<path d="M50 16 C33 16 25 28 25 43 C25 55 30 67 40 75 C44 79 56 79 60 75 C70 67 75 55 75 43 C75 28 67 16 50 16 Z" fill="'+p[0]+'" stroke="'+K+'" stroke-width="2.5"/>'
+        + '<path d="M50 18 C40 18 33 24 31 33 C41 28 59 28 69 33 C67 24 60 18 50 18 Z" fill="'+p[2]+'" opacity="0.55"/>'
+        + '<path d="M38 71 C43 76 57 76 62 71 C58 74 54 75 50 75 C46 75 42 74 38 71 Z" fill="'+p[1]+'"/>';
+    }
+    function ears(p, big){ var w = big ? 15 : 11, y = big ? 28 : 32;
+      return '<path d="M27 37 L'+(27-w)+' '+y+' L28 49 Z" fill="'+p[1]+'" stroke="'+K+'" stroke-width="2" stroke-linejoin="round"/>'
+        + '<path d="M73 37 L'+(73+w)+' '+y+' L72 49 Z" fill="'+p[1]+'" stroke="'+K+'" stroke-width="2" stroke-linejoin="round"/>';
+    }
+    function brow(p){ return '<path d="M30 40 Q50 34 70 40 L70 45 Q50 39 30 45 Z" fill="'+p[1]+'"/><path d="M31 40 Q40 36 47 40 M53 40 Q60 36 69 40" fill="none" stroke="'+K+'" stroke-width="2.4" stroke-linecap="round"/>'; }
+    function eyes(t, el){ var c = tint(el);
+      if(t==='glow') return '<ellipse cx="41" cy="47" rx="5" ry="3.4" fill="'+c+'"/><ellipse cx="59" cy="47" rx="5" ry="3.4" fill="'+c+'"/><circle cx="41" cy="47" r="1.5" fill="'+K+'"/><circle cx="59" cy="47" r="1.5" fill="'+K+'"/>';
+      if(t==='narrow') return '<path d="M36 47 L46 45 M54 45 L64 47" stroke="'+K+'" stroke-width="3" stroke-linecap="round"/><circle cx="41" cy="46.4" r="1.3" fill="'+c+'"/><circle cx="59" cy="46.4" r="1.3" fill="'+c+'"/>';
+      if(t==='wide') return '<circle cx="41" cy="47" r="4.4" fill="#f4efe2"/><circle cx="59" cy="47" r="4.4" fill="#f4efe2"/><circle cx="41.6" cy="47" r="2.1" fill="'+K+'"/><circle cx="58.4" cy="47" r="2.1" fill="'+K+'"/>';
+      if(t==='beady') return '<circle cx="42" cy="47" r="2.1" fill="'+K+'"/><circle cx="58" cy="47" r="2.1" fill="'+K+'"/><circle cx="42.7" cy="46.3" r="0.7" fill="#fff"/><circle cx="58.7" cy="46.3" r="0.7" fill="#fff"/>';
+      return '<path d="M35 44 L46 47 L45 50 L36 48 Z" fill="#f4efe2"/><path d="M65 44 L54 47 L55 50 L64 48 Z" fill="#f4efe2"/><circle cx="42" cy="47.4" r="1.7" fill="'+K+'"/><circle cx="58" cy="47.4" r="1.7" fill="'+K+'"/>'; // angry
+    }
+    function nose(p){ return '<path d="M50 49 L45 59 Q50 62 55 59 Z" fill="'+p[1]+'" stroke="'+K+'" stroke-width="1.4"/><circle cx="47" cy="58" r="1.2" fill="'+K+'"/><circle cx="53" cy="58" r="1.2" fill="'+K+'"/>'; }
+    function fang(x, up, dir){ var tx = x + dir*3.2, ty = 66 - up; return '<path d="M'+(x-2.3)+' 67 Q'+(x-1)+' '+(66-up*0.6)+' '+tx+' '+ty+' Q'+(x+3)+' '+(66-up*0.5)+' '+(x+2.3)+' 67 Z" fill="'+IV+'" stroke="'+K+'" stroke-width="1.2" stroke-linejoin="round"/>'; }
+    function mouth(t, p){
+      var lip = '<path d="M40 66 Q50 '+(t==='underbite'?72:70)+' 60 66" fill="none" stroke="'+K+'" stroke-width="2.6" stroke-linecap="round"/>';
+      var jaw = (t==='underbite') ? '<path d="M40 66 Q50 74 60 66 Q57 71 50 71 Q43 71 40 66 Z" fill="'+p[1]+'"/>' : '';
+      var f;
+      if(t==='broken') f = '<path d="M40 66 l-1.2 -3 l3 0 l0.6 3 Z" fill="'+IV+'" stroke="'+K+'" stroke-width="1"/>' + fang(58, 6, 1);
+      else if(t==='four') f = fang(38, 5, -1) + fang(45, 6, -1) + fang(55, 6, 1) + fang(62, 5, 1);
+      else if(t==='big') f = fang(41, 9, -1) + fang(59, 9, 1);
+      else if(t==='curved') f = fang(40, 7, -1.4) + fang(60, 7, 1.4);
+      else f = fang(42, 6, -1) + fang(58, 6, 1); // up2
+      return jaw + lip + f;
+    }
+    // Headgear -- the biggest silhouette differentiator.
+    function gear(t, el, p){ var c = tint(el);
+      if(t==='mohawk') return '<path d="M50 6 L46 18 L54 18 Z M50 9 L42 20 M50 9 L58 20 M50 7 L50 18" fill="'+K+'" stroke="'+K+'" stroke-width="2.5" stroke-linejoin="round"/>';
+      if(t==='topknot') return '<circle cx="50" cy="12" r="5" fill="'+K+'"/><path d="M50 17 L50 24" stroke="'+K+'" stroke-width="3"/>';
+      if(t==='ironhelm') return '<path d="M27 34 Q50 8 73 34 L73 40 Q50 24 27 40 Z" fill="#6b7079" stroke="'+K+'" stroke-width="2.5"/><path d="M50 24 L50 58" stroke="#4a4e55" stroke-width="3"/><circle cx="50" cy="14" r="2.6" fill="#3a3e44"/>';
+      if(t==='hornhelm') return '<path d="M28 36 Q50 10 72 36 L72 41 Q50 26 28 41 Z" fill="#5a5048" stroke="'+K+'" stroke-width="2.5"/><path d="M28 34 Q16 26 12 12 Q22 22 30 30 Z" fill="'+IV+'" stroke="'+K+'" stroke-width="2" stroke-linejoin="round"/><path d="M72 34 Q84 26 88 12 Q78 22 70 30 Z" fill="'+IV+'" stroke="'+K+'" stroke-width="2" stroke-linejoin="round"/>';
+      if(t==='bonecrown') return '<path d="M28 36 L30 22 L36 32 L42 20 L48 32 L50 18 L52 32 L58 20 L64 32 L70 22 L72 36 Z" fill="#d8ceb4" stroke="'+K+'" stroke-width="2" stroke-linejoin="round"/>';
+      if(t==='hood') return '<path d="M22 44 Q22 12 50 10 Q78 12 78 44 Q66 30 50 30 Q34 30 22 44 Z" fill="#2c2a30" stroke="'+K+'" stroke-width="2.5"/>';
+      if(t==='skullcap') return '<path d="M28 36 Q50 14 72 36 Q50 26 28 36 Z" fill="'+p[1]+'" stroke="'+K+'" stroke-width="2.5"/><path d="M34 30 L36 34 M50 26 L50 31 M66 30 L64 34" stroke="'+K+'" stroke-width="1.6"/>';
+      if(t==='braids') return '<path d="M25 42 Q18 56 20 70 Q24 60 27 52 Z" fill="'+K+'"/><path d="M75 42 Q82 56 80 70 Q76 60 73 52 Z" fill="'+K+'"/><circle cx="20" cy="70" r="2.2" fill="'+c+'"/><circle cx="80" cy="70" r="2.2" fill="'+c+'"/>';
+      if(t==='spikes') return '<path d="M31 32 L28 20 L37 30 M50 28 L50 14 L50 28 M69 32 L72 20 L63 30" fill="none" stroke="#7a7266" stroke-width="3" stroke-linecap="round"/>';
+      if(t==='warhelm') return '<path d="M25 36 Q50 6 75 36 L75 42 Q50 20 25 42 Z" fill="#3a3d43" stroke="'+K+'" stroke-width="3"/><path d="M25 34 Q10 24 6 6 Q20 20 30 30 Z" fill="'+IV+'" stroke="'+K+'" stroke-width="2.5" stroke-linejoin="round"/><path d="M75 34 Q90 24 94 6 Q80 20 70 30 Z" fill="'+IV+'" stroke="'+K+'" stroke-width="2.5" stroke-linejoin="round"/><path d="M50 20 L50 60" stroke="#26282c" stroke-width="3.5"/><circle cx="50" cy="12" r="3.4" fill="'+c+'" stroke="'+K+'" stroke-width="1.5"/>';
+      return ''; // 'none'
+    }
+    function paint(t, el){ var c = tint(el); if(t==='none') return '';
+      if(t==='stripes') return '<path d="M38 42 L38 62 M44 43 L44 63" stroke="'+c+'" stroke-width="2.5" stroke-linecap="round" opacity="0.85"/>';
+      if(t==='vmask') return '<path d="M34 40 L50 56 L66 40" fill="none" stroke="'+c+'" stroke-width="3" stroke-linecap="round" opacity="0.8"/>';
+      if(t==='handprint') return '<path d="M43 42 Q50 40 57 42 L57 58 Q50 62 43 58 Z" fill="'+c+'" opacity="0.28"/>';
+      if(t==='underrim') return '<path d="M36 51 Q50 55 64 51" fill="none" stroke="'+c+'" stroke-width="3" stroke-linecap="round" opacity="0.85"/>';
+      if(t==='browband') return '<path d="M30 38 Q50 33 70 38" fill="none" stroke="'+c+'" stroke-width="3.5" stroke-linecap="round" opacity="0.8"/>';
+      return '';
+    }
+    function acc(t, el){ var c = tint(el); if(t==='none') return '';
+      if(t==='nosering') return '<circle cx="50" cy="61" r="3" fill="none" stroke="#d8c26a" stroke-width="1.8"/>';
+      if(t==='earrings') return '<circle cx="20" cy="49" r="2.4" fill="none" stroke="#d8c26a" stroke-width="1.6"/><circle cx="80" cy="49" r="2.4" fill="none" stroke="#d8c26a" stroke-width="1.6"/>';
+      if(t==='scar') return '<path d="M60 34 L64 52" stroke="#c88" stroke-width="1.8" stroke-linecap="round"/><path d="M60 37 l4 0 M59 44 l4 0" stroke="#c88" stroke-width="1.2"/>';
+      if(t==='eyepatch') return '<path d="M53 45 L70 40 L70 44 L55 50 Z" fill="'+K+'"/><path d="M54 47 L30 42" stroke="'+K+'" stroke-width="1.6"/>';
+      if(t==='necklace') return '<path d="M38 78 Q50 86 62 78" fill="none" stroke="'+K+'" stroke-width="1.6"/><path d="M46 82 l2 4 l2 -4 Z M54 82 l2 4 l2 -4 Z" fill="'+IV+'" stroke="'+K+'" stroke-width="0.8"/>';
+      if(t==='warpaint2') return '<circle cx="41" cy="53" r="2" fill="'+c+'" opacity="0.8"/><circle cx="59" cy="53" r="2" fill="'+c+'" opacity="0.8"/>';
+      return '';
+    }
+    function build(s, boss){
+      var p = SKIN[s.skin] || SKIN.swamp, big = !!boss;
+      // Layer order: a hood wraps BEHIND the head; every other headgear sits on top of it.
+      var body = '<path d="M22 92 Q28 74 50 74 Q72 74 78 92 Z" fill="'+p[1]+'" stroke="'+K+'" stroke-width="2"/>'; // shoulders
+      var g = gear(s.gear, s.el, p);
+      var behind = (s.gear==='hood') ? g : '';
+      var front = (s.gear==='hood') ? '' : g;
+      var svg = behind + body + ears(p, big) + head(p) + brow(p) + paint(s.paint, s.el) + eyes(s.eyes, s.el) + nose(p) + mouth(s.mouth, p) + front + acc(s.acc, s.el);
+      if(boss) svg = '<path d="M50 47 Q54 55 50 64 Q46 55 50 47 Z" fill="'+tint(s.el)+'" opacity="0.5"/>' + svg; // Gorthak: an ember-glow maw
+      var bg = boss ? '#241a12' : '#1b1712';
+      return '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="47" fill="'+bg+'" stroke="'+K+'" stroke-width="2.5"/>' + svg + '</svg>';
+    }
+    // 25 hand-picked specs (skin / headgear / tusks / eyes / paint / accessory), boss last.
+    var SPEC = [
+      { skin:'swamp',  gear:'none',      mouth:'up2',       eyes:'angry',  paint:'none',      acc:'none',      el:'earth' },
+      { skin:'moss',   gear:'topknot',   mouth:'up2',       eyes:'beady',  paint:'stripes',   acc:'earrings',  el:'fire'  },
+      { skin:'grey',   gear:'none',      mouth:'underbite', eyes:'narrow', paint:'none',      acc:'scar',      el:'dark'  },
+      { skin:'ash',    gear:'skullcap',  mouth:'up2',       eyes:'angry',  paint:'browband',  acc:'none',      el:'water' },
+      { skin:'clay',   gear:'mohawk',    mouth:'big',       eyes:'wide',   paint:'vmask',     acc:'nosering',  el:'fire'  },
+      { skin:'fungus', gear:'hood',      mouth:'up2',       eyes:'glow',   paint:'none',      acc:'none',      el:'dark'  },
+      { skin:'swamp',  gear:'ironhelm',  mouth:'underbite', eyes:'angry',  paint:'none',      acc:'none',      el:'earth' },
+      { skin:'coal',   gear:'mohawk',    mouth:'four',      eyes:'wide',   paint:'stripes',   acc:'warpaint2', el:'fire'  },
+      { skin:'moss',   gear:'braids',    mouth:'big',       eyes:'angry',  paint:'underrim',  acc:'necklace',  el:'dark'  },
+      { skin:'grey',   gear:'ironhelm',  mouth:'up2',       eyes:'narrow', paint:'none',      acc:'none',      el:'earth' },
+      { skin:'sick',   gear:'bonecrown', mouth:'curved',    eyes:'glow',   paint:'vmask',     acc:'none',      el:'water' },
+      { skin:'clay',   gear:'spikes',    mouth:'up2',       eyes:'glow',   paint:'browband',  acc:'scar',      el:'fire'  },
+      { skin:'ash',    gear:'none',      mouth:'four',      eyes:'angry',  paint:'stripes',   acc:'necklace',  el:'dark'  },
+      { skin:'bruise', gear:'hood',      mouth:'underbite', eyes:'beady',  paint:'none',      acc:'nosering',  el:'water' },
+      { skin:'grey',   gear:'hornhelm',  mouth:'big',       eyes:'angry',  paint:'none',      acc:'none',      el:'earth' },
+      { skin:'sick',   gear:'braids',    mouth:'curved',    eyes:'narrow', paint:'underrim',  acc:'eyepatch',  el:'dark'  },
+      { skin:'clay',   gear:'hornhelm',  mouth:'big',       eyes:'wide',   paint:'vmask',     acc:'scar',      el:'fire'  },
+      { skin:'coal',   gear:'hood',      mouth:'four',      eyes:'glow',   paint:'none',      acc:'earrings',  el:'dark'  },
+      { skin:'clay',   gear:'warhelm',   mouth:'big',       eyes:'glow',   paint:'browband',  acc:'none',      el:'fire'  },
+      { skin:'ash',    gear:'bonecrown', mouth:'underbite', eyes:'angry',  paint:'stripes',   acc:'scar',      el:'dark'  },
+      { skin:'moss',   gear:'warhelm',   mouth:'big',       eyes:'angry',  paint:'none',      acc:'necklace',  el:'earth' },
+      { skin:'coal',   gear:'ironhelm',  mouth:'four',      eyes:'narrow', paint:'browband',  acc:'none',      el:'water' },
+      { skin:'sick',   gear:'spikes',    mouth:'four',      eyes:'glow',   paint:'vmask',     acc:'warpaint2', el:'dark'  },
+      { skin:'bruise', gear:'bonecrown', mouth:'curved',    eyes:'glow',   paint:'underrim',  acc:'necklace',  el:'light' },
+      { skin:'coal',   gear:'warhelm',   mouth:'big',       eyes:'glow',   paint:'vmask',     acc:'necklace',  el:'dark'  }  // Gorthak (boss)
+    ];
+    return SPEC.map(function(s, i){ return build(s, i === 24); });
+  })();
+  var DUNGEON_D2_COUNT = 25;
+  var DUNGEON_D2_ENEMIES = [];
+  for(var _d2 = 0; _d2 < DUNGEON_D2_COUNT; _d2++){
+    var _b2 = _d2 === DUNGEON_D2_COUNT - 1;
+    var _e2 = _b2 ? 'dark' : DUNGEON_D2_ELEM_CYCLE[_d2 % 5];
+    DUNGEON_D2_ENEMIES.push({
+      id:'dungeon_d2_' + (_d2 + 1), name:DUNGEON_D2_NAMES[_d2],
+      dungeon:'d2', dungeonIndex:_d2, isBoss:_b2,
+      icon: DUNGEON_D2_PORTRAITS[_d2],
+      category:'dungeon', tierIndex:20, element:_e2,
+      level: Math.round(126 + _d2 * 24 / (DUNGEON_D2_COUNT - 1)), levelReq:126,
+      hp: Math.round(150000 * Math.pow(1.05, _d2)),
+      atkMin: Math.round(400 * Math.pow(1.04, _d2)), atkMax: Math.round(1000 * Math.pow(1.04, _d2)),
+      goldMin: Math.round(400 * Math.pow(1.05, _d2)), goldMax: Math.round(800 * Math.pow(1.05, _d2)),
+      damageType: DAMAGE_TYPE_CYCLE[_d2 % 3], attackTypes: makeTypeMix(_d2), armorTypes: makeTypeMix(_d2 + 2),
+      attackSpeed: Math.round((2.2 + (_d2 % 5) * 0.3) * 10) / 10
+    });
+  }
+  DUNGEON_D2_ENEMIES[DUNGEON_D2_COUNT - 1].hp = Math.round(DUNGEON_D2_ENEMIES[DUNGEON_D2_COUNT - 2].hp * 10); // boss ~10x the 24th
+  DUNGEON_D2_ENEMIES.forEach(function(m){ MONSTERS_BY_ID[m.id] = m; });
+
+  var DUNGEON_DEFS = {
+    d1: { id:'d1', category:'Cave',   label:'D1 — Cave',   theme:'arachnids', enemies:DUNGEON_D1_ENEMIES, minCombatScore:100, reward:'formula_d1_masterwork', rewardName:'D1 Masterwork Formula' },
+    d2: { id:'d2', category:'Tunnel', label:'D2 — Tunnel', theme:'orcs',      enemies:DUNGEON_D2_ENEMIES, minCombatScore:126, reward:'formula_d2_masterwork', rewardName:'D2 Masterwork Formula' }
+  };
+  var DUNGEON_ORDER = ['d1', 'd2'];
   function isDungeonMonster(m){ return !!(m && m.dungeon); }
 
   // ---- Category-specific loot items ----
@@ -3960,7 +4103,8 @@
   // a D1 clear drops a single "D1 Masterwork Formula" placeholder. Registered here so inventory can
   // display it (sell:0 -> not vendorable).
   var FORMULA_ITEMS = {
-    formula_d1_masterwork: { id:'formula_d1_masterwork', name:'D1 Masterwork Formula', icon:svgIcon('gem','#c9a227'), sell:0, dungeon:'d1', formula:true }
+    formula_d1_masterwork: { id:'formula_d1_masterwork', name:'D1 Masterwork Formula', icon:svgIcon('gem','#c9a227'), sell:0, dungeon:'d1', formula:true },
+    formula_d2_masterwork: { id:'formula_d2_masterwork', name:'D2 Masterwork Formula', icon:svgIcon('gem','#7a9a3a'), sell:0, dungeon:'d2', formula:true }
   };
   var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS);
 
@@ -13953,7 +14097,7 @@
     if(combatLevelEquivalent(state) < def.minCombatScore){ addLog('You need Combat Score ' + def.minCombatScore + ' to enter the ' + def.category + '.', 'danger'); return; }
     dungeonRun = { def:def, idx:0, party:[dungeonSelfCombatant()], targetIdx:0, active:true, cleared:false };
     dungeonView = 'run';
-    addLog('You descend into the ' + def.category + ' — ' + def.enemies.length + ' arachnids await, one at a time.', 'important');
+    addLog('You descend into the ' + def.category + ' — ' + def.enemies.length + ' ' + def.theme + ' await, one at a time.', 'important');
     dungeonEngage(0);
     needsRender = true;
   }
@@ -13996,7 +14140,7 @@
   // damage as a clamped power*elapsed proxy (the server can't run the JS combat engine), and the
   // shared HP + advancement stream back over realtime. Stage A is the co-op DPS core (the enemy does
   // not yet attack back); Stage B adds threat targeting, death/wipe, and the Formula claim.
-  var dungeonNet = { status:'idle', session:null, members:[], subSession:null, subMembers:null, _subId:null, busy:false, error:'', lastAssault:0, lobbies:[], clearedHandled:false };
+  var dungeonNet = { status:'idle', session:null, members:[], subSession:null, subMembers:null, _subId:null, busy:false, error:'', lastAssault:0, lobbiesByLayer:{}, clearedHandled:false };
   // A representative DPS proxy (avg weapon damage / attack interval, folding the always-on mults).
   // The server clamps it, so an inflated value can't dump impossible damage.
   function dungeonPower(){
@@ -14036,7 +14180,7 @@
     }
     if(!dungeonNet.session) dungeonNet.clearedHandled = false;
   }
-  function dungeonNetLoad(){ if(!chatClient || !authUser){ dungeonNet.status = 'idle'; return; } dungeonNet.status = 'loading'; dungeonNetInvoke('get', {}).then(function(res){ if(res.ok) dungeonNetApply(res); else dungeonNet.status = 'ready'; if(!dungeonNet.session) dungeonNetListLobbies('d1'); if(currentCategory === 'dungeons') render(); }); }
+  function dungeonNetLoad(){ if(!chatClient || !authUser){ dungeonNet.status = 'idle'; return; } dungeonNet.status = 'loading'; dungeonNetInvoke('get', {}).then(function(res){ if(res.ok) dungeonNetApply(res); else dungeonNet.status = 'ready'; if(!dungeonNet.session) DUNGEON_ORDER.forEach(function(l){ dungeonNetListLobbies(l); }); if(currentCategory === 'dungeons') render(); }); }
   var _dungeonRefreshT = 0;
   function dungeonNetRefresh(){ var now = Date.now(); if(now - _dungeonRefreshT < 250) return; _dungeonRefreshT = now; dungeonNetInvoke('get', {}).then(function(res){ if(res.ok){ dungeonNetApply(res); if(currentCategory === 'dungeons') render(); } }); }
   function dungeonNetResubscribe(){
@@ -14056,7 +14200,7 @@
   function dungeonNetClaim(){ if(!dungeonNet.session) return; dungeonNetInvoke('claim', { session_id:dungeonNet.session.id }).then(function(res){ if(res.ok){ var def = DUNGEON_DEFS[dungeonNet.session.layer]; if(def){ addItem(def.reward, 1); addLog('The ' + def.category + ' is cleared! You claim a ' + def.rewardName + '.', 'important'); spawnFloatingText('+1 ' + def.rewardName, 'ft-rare'); } dungeonNetApply(res); } if(currentCategory === 'dungeons') render(); }); }
   function dungeonNetLeave(){ if(!dungeonNet.session || dungeonNet.busy) return; dungeonNet.busy = true; var sid = dungeonNet.session.id; dungeonNetInvoke('leave', { session_id:sid }).then(function(res){ dungeonNet.busy = false; dungeonNet.session = null; dungeonNet.members = []; dungeonNet.clearedHandled = false; dungeonNetResubscribe(); if(currentCategory === 'dungeons') render(); }); }
   function dungeonNetStart(){ if(!dungeonNet.session || dungeonNet.busy) return; dungeonNet.busy = true; dungeonNet.error = ''; var sid = dungeonNet.session.id; dungeonNetInvoke('start', { session_id:sid }).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not start.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
-  function dungeonNetListLobbies(layer){ dungeonNetInvoke('list', { layer:layer }).then(function(res){ if(res.ok){ dungeonNet.lobbies = res.lobbies || []; if(currentCategory === 'dungeons') render(); } }); }
+  function dungeonNetListLobbies(layer){ dungeonNetInvoke('list', { layer:layer }).then(function(res){ if(res.ok){ dungeonNet.lobbiesByLayer[layer] = res.lobbies || []; if(currentCategory === 'dungeons') render(); } }); }
   // Assault pulse: while our party's run is active, drip power*elapsed into the shared pool. Driven off
   // the main loop (dungeonNetTick), rate-limited client-side; the server caps the credited elapsed too.
   function dungeonNetTick(){
@@ -14155,7 +14299,7 @@
       return wh;
     }
     var survived = me && me.alive;
-    var html = '<div class="section-intro"><b>' + def.label + ' Cleared!</b> Your party bested all ' + def.enemies.length + ' arachnids.</div>';
+    var html = '<div class="section-intro"><b>' + def.label + ' Cleared!</b> Your party bested all ' + def.enemies.length + ' ' + def.theme + '.</div>';
     html += '<div class="item-card">';
     if(survived) html += '<div class="item-top"><div class="item-icon">' + (FORMULA_ITEMS[def.reward] || {}).icon + '</div><div><div class="item-name">' + def.rewardName + '</div><div class="item-meta">Claimed to your inventory. Endgame gear blueprint (details coming soon).</div></div></div>';
     else html += '<div class="chance-line" style="color:var(--text-faint)">You fell before the final blow — only survivors claim the Formula. Your party pulled through without you.</div>';
@@ -14164,39 +14308,44 @@
   }
   function renderDungeonBrowse(){
     var html = '<div class="section-intro">Descend into <b>Dungeons</b> — gauntlets of foes fought one at a time. Bring a party of up to 4 (synchronous co-op is coming; for now you enter solo). Clear the final boss and every surviving delver claims a <b>Formula</b>, a blueprint for endgame gear.</div>';
-    var def = DUNGEON_DEFS.d1;
-    var canEnter = combatLevelEquivalent(state) >= def.minCombatScore;
-    html += '<h3>' + svgIcon('gem', '#8a5fb0') + ' Cave</h3>';
-    html += '<div class="item-card">';
-    html += '<div class="item-top"><div class="item-icon">' + def.enemies[def.enemies.length - 1].icon + '</div><div><div class="item-name">' + def.label + '</div><div class="item-meta">' + def.enemies.length + ' arachnids &bull; Levels ' + dungeonEnemyLevelRange(def) + ' &bull; Boss: ' + escapeHtml(def.enemies[def.enemies.length - 1].name) + '</div></div></div>';
-    html += '<div class="chance-line">The first dungeon layer. Twenty-five arachnids, each with its own element and armour, guard the depths. The 25th — the Broodmother — towers over the rest. Reward: <b>' + def.rewardName + '</b>.</div>';
-    html += '<div class="inputs-line" style="margin-top:6px">Requires Combat Score ' + def.minCombatScore + (canEnter ? '' : ' <span style="color:var(--hp-bad)">(you are ' + combatLevelEquivalent(state) + ')</span>') + '</div>';
-    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">';
-    html += '<button class="action-btn" data-action="dungeonEnter" data-id="' + def.id + '" style="width:auto" ' + (canEnter ? '' : 'disabled') + '>' + (canEnter ? 'Enter Solo' : 'Combat Score ' + def.minCombatScore + ' required') + '</button>';
-    if(chatClient && authUser) html += '<button class="action-btn" data-action="dungeonNetCreate" data-id="' + def.id + '" style="width:auto" ' + ((canEnter && !dungeonNet.busy) ? '' : 'disabled') + '>' + svgIcon('person', 'currentColor') + ' Create Party (1–4)</button>';
-    html += '</div>';
-    html += '</div>';
-    // Open parties to join (multiplayer, server-authoritative shared fight).
-    if(chatClient && authUser){
-      if(dungeonNet.error) html += '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad)">' + escapeHtml(dungeonNet.error) + '</div>';
-      html += '<div class="inputs-line" style="margin-top:12px;display:flex;justify-content:space-between;align-items:center">Open Parties <button class="action-btn" data-action="dungeonNetRefreshList" data-id="' + def.id + '" style="width:auto;padding:4px 10px">Refresh</button></div>';
-      if(!dungeonNet.lobbies.length) html += '<div class="empty-note">No open parties right now. Create one above — teammates who Refresh will see it.</div>';
-      else dungeonNet.lobbies.forEach(function(lb){
-        html += '<div class="item-card" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><div class="item-name">' + escapeHtml(lb.members[0] || 'Party') + '’s party</div><div class="item-meta">' + lb.count + '/4 &bull; ' + escapeHtml(lb.members.join(', ')) + '</div></div>';
-        html += '<button class="action-btn" data-action="dungeonNetJoin" data-id="' + lb.id + '" style="width:auto" ' + ((lb.count < 4 && !dungeonNet.busy) ? '' : 'disabled') + '>Join</button></div>';
+    var myScore = combatLevelEquivalent(state);
+    DUNGEON_ORDER.forEach(function(layer){
+      var def = DUNGEON_DEFS[layer]; if(!def) return;
+      var canEnter = myScore >= def.minCombatScore;
+      var boss = def.enemies[def.enemies.length - 1];
+      html += '<h3 style="margin-top:16px">' + svgIcon('gem', '#8a5fb0') + ' ' + escapeHtml(def.category) + '</h3>';
+      html += '<div class="item-card">';
+      html += '<div class="item-top"><div class="item-icon">' + boss.icon + '</div><div><div class="item-name">' + def.label + '</div><div class="item-meta">' + def.enemies.length + ' ' + def.theme + ' &bull; Levels ' + dungeonEnemyLevelRange(def) + ' &bull; Boss: ' + escapeHtml(boss.name) + '</div></div></div>';
+      html += '<div class="chance-line">' + def.enemies.length + ' ' + def.theme + ', each with its own element and armour, guard the ' + escapeHtml(def.category.toLowerCase()) + '. The ' + def.enemies.length + 'th — ' + escapeHtml(boss.name) + ' — towers over the rest. Reward: <b>' + def.rewardName + '</b>.</div>';
+      html += '<div class="inputs-line" style="margin-top:6px">Requires Combat Score ' + def.minCombatScore + (canEnter ? '' : ' <span style="color:var(--hp-bad)">(you are ' + myScore + ')</span>') + '</div>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">';
+      html += '<button class="action-btn" data-action="dungeonEnter" data-id="' + def.id + '" style="width:auto" ' + (canEnter ? '' : 'disabled') + '>' + (canEnter ? 'Enter Solo' : 'Combat Score ' + def.minCombatScore + ' required') + '</button>';
+      if(chatClient && authUser) html += '<button class="action-btn" data-action="dungeonNetCreate" data-id="' + def.id + '" style="width:auto" ' + ((canEnter && !dungeonNet.busy) ? '' : 'disabled') + '>' + svgIcon('person', 'currentColor') + ' Create Party (1–4)</button>';
+      html += '</div>';
+      // Open parties to join (multiplayer, server-authoritative shared fight) -- per layer.
+      if(chatClient && authUser){
+        var lobbies = dungeonNet.lobbiesByLayer[layer] || [];
+        html += '<div class="inputs-line" style="margin-top:12px;display:flex;justify-content:space-between;align-items:center">Open Parties <button class="action-btn" data-action="dungeonNetRefreshList" data-id="' + def.id + '" style="width:auto;padding:4px 10px">Refresh</button></div>';
+        if(!lobbies.length) html += '<div class="empty-note">No open parties right now. Create one above — teammates who Refresh will see it.</div>';
+        else lobbies.forEach(function(lb){
+          html += '<div class="item-card" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><div class="item-name">' + escapeHtml(lb.members[0] || 'Party') + '’s party</div><div class="item-meta">' + lb.count + '/4 &bull; ' + escapeHtml(lb.members.join(', ')) + '</div></div>';
+          html += '<button class="action-btn" data-action="dungeonNetJoin" data-id="' + lb.id + '" style="width:auto" ' + ((lb.count < 4 && !dungeonNet.busy) ? '' : 'disabled') + '>Join</button></div>';
+        });
+      }
+      html += '</div>';
+      // Enemy roster preview -- every portrait, so the foes are visible before entering.
+      html += '<div class="inputs-line" style="margin-top:12px">Denizens of the ' + escapeHtml(def.category) + '</div>';
+      html += '<div class="card-grid">';
+      def.enemies.forEach(function(en, i){
+        html += '<div class="item-card" style="text-align:center;padding:8px">';
+        html += '<div style="width:56px;height:56px;margin:0 auto">' + en.icon + '</div>';
+        html += '<div class="item-name" style="font-size:0.82em;margin-top:4px">' + (en.isBoss ? '&#9733; ' : (i + 1) + '. ') + escapeHtml(en.name) + '</div>';
+        html += '<div class="item-meta">Lv ' + en.level + ' &bull; ' + elementBadge(en) + '</div>';
+        html += '</div>';
       });
-    }
-    // Enemy roster preview -- shows every portrait so the arachnids are visible before entering.
-    html += '<div class="inputs-line" style="margin-top:12px">Denizens of the Cave</div>';
-    html += '<div class="card-grid">';
-    def.enemies.forEach(function(en, i){
-      html += '<div class="item-card" style="text-align:center;padding:8px">';
-      html += '<div style="width:56px;height:56px;margin:0 auto">' + en.icon + '</div>';
-      html += '<div class="item-name" style="font-size:0.82em;margin-top:4px">' + (en.isBoss ? '&#9733; ' : (i + 1) + '. ') + escapeHtml(en.name) + '</div>';
-      html += '<div class="item-meta">Lv ' + en.level + ' &bull; ' + elementBadge(en) + '</div>';
       html += '</div>';
     });
-    html += '</div>';
+    if(chatClient && authUser && dungeonNet.error) html += '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad)">' + escapeHtml(dungeonNet.error) + '</div>';
     return html;
   }
   function renderDungeonLobby(id){
@@ -14238,7 +14387,7 @@
     var def = dungeonRun.def;
     var html = '<div class="section-intro"><b>' + def.label + ' Cleared!</b></div>';
     html += '<div class="item-card"><div class="item-top"><div class="item-icon">' + (FORMULA_ITEMS[def.reward] || {}).icon + '</div><div><div class="item-name">' + def.rewardName + '</div><div class="item-meta">Added to your inventory. Endgame gear blueprint (details coming soon).</div></div></div>';
-    html += '<div class="chance-line">You bested all ' + def.enemies.length + ' arachnids of the ' + def.category + ', Broodmother and all.</div>';
+    html += '<div class="chance-line">You bested all ' + def.enemies.length + ' ' + def.theme + ' of the ' + def.category + ', ' + escapeHtml(def.enemies[def.enemies.length - 1].name) + ' and all.</div>';
     html += '<button class="action-btn" data-action="dungeonBack" style="margin-top:8px;width:auto">Return to Dungeons</button></div>';
     return html;
   }
@@ -22336,7 +22485,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, FORMULA_ITEMS:FORMULA_ITEMS, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,

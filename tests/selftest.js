@@ -1370,6 +1370,48 @@
     var mp = FF.dungeonMitPct(); ok(mp >= 0 && mp <= 85, 'dungeonMitPct() is a bounded 0..85% proxy');
   });
 
+  // ---- Dungeons: D2 "Tunnel" (25 Orcs, L126->150, ~10x boss, hand-crafted portraits) ------
+  suite('dungeons: D2 Tunnel', function(){
+    ok(FF.DUNGEON_ORDER && FF.DUNGEON_ORDER.indexOf('d1') !== -1 && FF.DUNGEON_ORDER.indexOf('d2') !== -1, 'both layers are in DUNGEON_ORDER');
+    var def = FF.DUNGEON_DEFS.d2;
+    ok(def, 'D2 dungeon defined');
+    eq(def.category, 'Tunnel', 'the category is Tunnel');
+    eq(def.theme, 'orcs', 'the theme is orcs');
+    eq(def.minCombatScore, 126, 'D2 requires Combat Score 126');
+    var en = FF.DUNGEON_D2_ENEMIES;
+    eq(en.length, 25, '25 orcs');
+    eq(en[0].level, 126, 'first orc is level 126');
+    eq(en[24].level, 150, 'last orc (boss) is level 150');
+    ok(en.every(function(e,i){ return i===0 || e.level >= en[i-1].level; }), 'levels rise 126 -> 150 without dropping');
+    eq(en[24].isBoss, true, 'the 25th orc is the boss');
+    eq(en[24].name, 'Gorthak the Undertyrant', 'the boss is Gorthak the Undertyrant');
+    ok(!en[23].isBoss, 'the 24th is not the boss');
+    ok(Math.abs(en[24].hp / en[23].hp - 10) < 0.01, 'boss HP is ~10x the 24th (' + en[24].hp + ' vs ' + en[23].hp + ')');
+    // distinct elements across the set
+    var elems = {}; en.forEach(function(e){ elems[e.element] = 1; });
+    ok(Object.keys(elems).length >= 3, 'orcs span multiple elements (' + Object.keys(elems).join(',') + ')');
+    // every orc: an SVG portrait, registered in monsterById, full combat typing
+    ok(en.every(function(e){ return typeof e.icon === 'string' && e.icon.indexOf('<svg') === 0; }), 'every orc has an SVG portrait');
+    ok(en.every(function(e){ return e.element && e.armorTypes && e.attackTypes && e.hp > 0 && FF.monsterById(e.id) === e; }), 'every orc has element/armor/attack/hp and resolves via monsterById');
+    // hand-crafted => every portrait is unique (no two orcs share an SVG string)
+    var seen = {}; var uniq = en.every(function(e){ if(seen[e.icon]) return false; seen[e.icon] = 1; return true; });
+    ok(uniq, 'all 25 orc portraits are unique (hand-crafted, no repeats)');
+    // D2 Masterwork Formula registered + non-vendorable
+    var f = FF.ALL_SELLABLE[def.reward]; ok(f && /D2 Masterwork Formula/.test(f.name), 'the D2 Masterwork Formula item is registered');
+    eq(f.sell, 0, 'the D2 Formula is non-vendorable (sell 0)');
+    ok(def.reward !== FF.DUNGEON_DEFS.d1.reward, 'D2 drops a different Formula than D1');
+    // CRITICAL client<->server invariant: the shared enemy HP/attack curves must match the server
+    // (dungeon edge fn d2Roster): hp[i]=round(150000*1.05^i), boss=round(hp[23]*10);
+    // atkMin=round(400*1.04^i), atkMax=round(1000*1.04^i), interval_ms=round((2.2+(i%5)*0.3)*1000).
+    for(var _i = 0; _i < 24; _i++) eq(en[_i].hp, Math.round(150000 * Math.pow(1.05, _i)), 'orc ' + _i + ' HP matches the server formula');
+    eq(en[24].hp, Math.round(en[23].hp * 10), 'boss HP = round(24th * 10) matches the server');
+    for(var _j = 0; _j < 25; _j++){
+      eq(en[_j].atkMin, Math.round(400 * Math.pow(1.04, _j)), 'orc ' + _j + ' atkMin matches server');
+      eq(en[_j].atkMax, Math.round(1000 * Math.pow(1.04, _j)), 'orc ' + _j + ' atkMax matches server');
+      eq(Math.round(en[_j].attackSpeed * 1000), Math.round((2.2 + (_j % 5) * 0.3) * 1000), 'orc ' + _j + ' attack interval matches server');
+    }
+  });
+
   // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------
   suite('classes: lumen oracle (light wand)', function(){
     function armor(mat,tier){ return {material:mat,tier:tier||5}; }
