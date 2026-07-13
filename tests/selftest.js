@@ -2881,6 +2881,21 @@
     eq(FF.getSpecialSkillId({ craftKind:'offhand', typeId:'quiver' }), 'leatherworking', 'a quiver craft trains Leatherworking');
     // Still a damage-boost offhand, not defense.
     ok(q[0].dmgBonus > 0 && q[0].defense === undefined, 'the quiver grants arrow damage, no defense');
+
+    // Ammo-preservation bonus: 5% at t0 -> 20% at t20, scaled x2/4/8 by rarity.
+    near(q[0].ammoPreserve, 0.05, 't0 quiver keeps ammo 5% of the time');
+    near(q[20].ammoPreserve, 0.20, 't20 quiver keeps ammo 20% of the time');
+    near(FF.applyRarity(q[20], 'fantastic').ammoPreserve, 1.60, 'rarity scales ammo-keep x8 (0.20 -> 1.60 pre-cap)');
+    // quiverAmmoPreserve reads the equipped quiver and caps the effective chance at 95%.
+    eq(FF.quiverAmmoPreserve({ equippedOffhand:'quiver', offhandTiers:{quiver:21}, offhandRarities:{quiver:'fantastic'} }), 0.95, 'a t20 fantastic quiver caps ammo-keep at 95%');
+    near(FF.quiverAmmoPreserve({ equippedOffhand:'quiver', offhandTiers:{quiver:1}, offhandRarities:{quiver:'normal'} }), 0.05, 'a t1 normal quiver keeps 5%');
+    eq(FF.quiverAmmoPreserve({ equippedOffhand:null }), 0, 'no quiver equipped -> 0% keep');
+
+    // bowArrowToConsume: the highest-tier Fletching Arrow you own that isn't fancier than the bow.
+    eq(FF.bowArrowToConsume({ equippedMainhandTier:6, inventory:{ fletching_arrow_t0:10, fletching_arrow_t3:5 } }), 'fletching_arrow_t3', 'consumes the highest owned arrow within the bow tier');
+    eq(FF.bowArrowToConsume({ equippedMainhandTier:6, inventory:{} }), null, 'no arrows -> null (shoot unfletched)');
+    eq(FF.bowArrowToConsume({ equippedMainhandTier:2, inventory:{ fletching_arrow_t10:5 } }), null, 'arrows fancier than the bow are not usable');
+    eq(FF.UNFLETCHED_DMG_MULT, 0.25, 'an unfletched bow deals 25% damage');
   });
 
   // ---- Classes: Knight (claymore momentum + on-miss fury) -------------------------------

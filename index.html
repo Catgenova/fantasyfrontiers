@@ -3837,7 +3837,7 @@
       var obj = { tier:i+1, name:(isQuiver ? WILDLIFE_NAMES[i] : METAL_TIER_NAMES[i])+' '+o.name, levelReq:TIER_LEVELS[i], xp:craftXp(i),
         inputs: isQuiver ? tierInput('tanning',3)(i) : tierInput('metallurgy', o.type==='shield'?4:3)(i), time:tierTime(7,0.3,i) };
       if(o.type==='shield') obj.defense = tierStat(2,i);
-      else obj.dmgBonus = tierCappedBonus(0.05,0.014,0.35,i);
+      else { obj.dmgBonus = tierCappedBonus(0.05,0.014,0.35,i); obj.ammoPreserve = tierCappedBonus(0.05,0.0075,0.20,i); } // Quiver: arrow dmg + a chance a shot doesn't spend its arrow (5% t0 -> 20% t20, x2/4/8 by rarity)
       list.push(obj);
     }
     OFFHAND_TYPE_RECIPES[o.id] = list;
@@ -3946,7 +3946,7 @@
     var out = Object.assign({}, item);
     out.name = r.label + out.name;
     out.rarity = r.id;
-    ['dmgMin','dmgMax','defense','speedBonus','successBonus','dmgBonus'].forEach(function(k){
+    ['dmgMin','dmgMax','defense','speedBonus','successBonus','dmgBonus','ammoPreserve'].forEach(function(k){
       if(typeof out[k]==='number') out[k] = Math.round(out[k]*r.mult*1000)/1000;
     });
     return out;
@@ -3993,6 +3993,19 @@
     var tier = state.offhandTiers[state.equippedOffhand]||0;
     if(tier<=0) return null;
     return applyRarity(OFFHAND_TYPE_RECIPES[state.equippedOffhand][tier-1], state.offhandRarities[state.equippedOffhand]);
+  }
+  // ---- Quiver ammo: a bow spends one Fletching Arrow per shot; the Quiver rolls a chance to keep it,
+  // and firing with no usable arrows shoots "unfletched" at a fraction of the damage. ----
+  var UNFLETCHED_DMG_MULT = 0.25;   // a bow with no arrows deals 25% damage
+  var ARROW_MAX_INDEX = 19;         // fletching_arrow_t0 .. t19 (20 tiers; Copper is skipped)
+  // The Quiver's chance a shot doesn't consume its arrow, rarity-scaled (x2/4/8), capped at 95%.
+  function quiverAmmoPreserve(st){ st = st || state; if(st.equippedOffhand !== 'quiver') return 0; var oi = getEquippedOffhandItem(st); return oi ? Math.min(0.95, oi.ammoPreserve || 0) : 0; }
+  // The arrow a bow shot spends: the highest-tier Arrow you own that isn't fancier than the bow, or null.
+  function bowArrowToConsume(st){
+    st = st || state;
+    var bowTierIdx = Math.max(0, (st.equippedMainhandTier || 1) - 1);
+    for(var i = Math.min(ARROW_MAX_INDEX, bowTierIdx); i >= 0; i--){ if(((st.inventory && st.inventory['fletching_arrow_t'+i]) || 0) > 0) return 'fletching_arrow_t'+i; }
+    return null;
   }
   // Off-hand Claw: a second weapon sharing the off-hand slot (equippedOffhand='claw'). Only valid while
   // a Claw is the main hand. getEquippedOffhandItem returns null for it (it's a weapon, not defensive gear).
@@ -10341,6 +10354,15 @@
     // Elixir potions + familiar crit-damage buffs stack on top of the (capped) base+exploitation crit.
     var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + knightMissCritDmg() + thunderGalvanizeCritDmg() + treasureHunterCritDmgBonus() + newClassCritDmg() + pyromancerKindlingCritDmg(state) + legendaryCloakBonus('critdmg', state) + (enchTot.critDamage||0)/100) : 1;
 
+    // Bow ammo: each shot (hit or miss) spends one Fletching Arrow unless the Quiver preserves it. With
+    // no usable arrows the shot is "unfletched" and deals only a fraction of its damage (never blocked).
+    var unfletched = false;
+    if(!isOffhand && weaponStyle.hand === 'bow'){
+      var _arrowId = bowArrowToConsume(state);
+      if(_arrowId){ if(Math.random() >= quiverAmmoPreserve(state)) state.inventory[_arrowId] = Math.max(0, (state.inventory[_arrowId] || 0) - 1); }
+      else { unfletched = true; if(Math.random() < 0.25) spawnCombatFloat('No arrows!', 'ft-miss', true); }
+    }
+
     // Accuracy vs Dodge: roll to land the hit. A miss deals no damage and fires no on-hit effects
     // (potions, proficiency XP), but you still trained your reflexes by swinging so accuracy can grow.
     if(Math.random() >= playerHitChance(monster)){
@@ -10362,7 +10384,7 @@
     var assassinVanish = assassinVanishReady(); // Assassin Vanish (Lv80): this landed strike is empowered if the 4s-untouched window is up
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
     var wandAttuneMult = isWandAttack ? elementDmgMult(state, weaponStyle.element) : 1; // Elemental Attunement boosts a wand's element damage
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * duelistDuelMult() * knightMissDmgMult() * wandAttuneMult * (isCrit ? assassinHemorrhageCritMult() : 1) * (assassinVanish ? ASSASSIN_VANISH_MULT : 1) * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, and the mainhand's Enhance base-stat scaling
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * duelistDuelMult() * knightMissDmgMult() * wandAttuneMult * (isCrit ? assassinHemorrhageCritMult() : 1) * (assassinVanish ? ASSASSIN_VANISH_MULT : 1) * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (unfletched ? UNFLETCHED_DMG_MULT : 1) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, unfletched-bow penalty, and the mainhand's Enhance base-stat scaling
     dmgToMonster += Math.round(enchTot.flatDamage||0); // + equipped-item Flat Damage enchants
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
@@ -12671,7 +12693,7 @@
     OFFHAND_STYLES.filter(function(o){ return !o.stackable && !o.ward; }).forEach(function(o){
       var tier = state.offhandTiers[o.id]||0;
       var current = tier>0 ? OFFHAND_TYPE_RECIPES[o.id][tier-1] : null;
-      var statLabel = function(item){ return '+'+Math.round(item.dmgBonus*100)+'% arrow dmg'; };
+      var statLabel = function(item){ return '+'+Math.round(item.dmgBonus*100)+'% arrow dmg'+(item.ammoPreserve ? ' &bull; '+Math.round(item.ammoPreserve*100)+'% keep ammo' : ''); };
       var activeSlot = findActiveSpecialCraftSlotFor('offhand', {typeId:o.id});
       var isActive = !!activeSlot;
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
@@ -13305,6 +13327,8 @@
       } else if(ohEq){
         var _ohDesc = isWard(state.equippedOffhand)
           ? ('reflects '+Math.round((ohEq.reflect||0)*100)+'% '+elementLabel(ohEq.element))
+          : state.equippedOffhand==='quiver'
+          ? ('+'+Math.round((ohEq.dmgBonus||0)*100)+'% arrow dmg'+(ohEq.ammoPreserve ? ', '+Math.round(ohEq.ammoPreserve*100)+'% keep ammo' : ''))
           : ('defense '+ohEq.defense+', counters '+((STACKABLE_SHIELD_TYPE_MAP[state.equippedOffhand]||{}).countersType||'—'));
         html3 += '<div class="shop-current">Equipped: <b style="color:var(--text)">'+escapeHtml(ohEq.name)+'</b> ('+_ohDesc+')</div>';
       } else {
@@ -13362,6 +13386,12 @@
     html += '<div class="stats-group" style="grid-column:1/-1"><div class="stat-row"><span class="stat-label">Combat Score</span><span class="stat-value">'+combatLevelEquivalent(state)+'</span></div></div>';
     html += '<div class="stats-group"><h4>'+svgIcon('sword','currentColor')+' Offense</h4>';
     html += '<div class="stat-row"><span class="stat-label">Attack Damage</span><span class="stat-value">'+effMin+'-'+effMax+'</span></div>';
+    if(weaponStyle.hand==='bow'){
+      var _bowTierIdx = Math.max(0, (state.equippedMainhandTier||1)-1);
+      var _arrows = 0; for(var _ai=Math.min(ARROW_MAX_INDEX,_bowTierIdx); _ai>=0; _ai--) _arrows += state.inventory['fletching_arrow_t'+_ai]||0;
+      var _keepPct = Math.round(quiverAmmoPreserve(state)*100);
+      html += '<div class="stat-row"><span class="stat-label">Arrows</span><span class="stat-value">'+(_arrows>0 ? fmt(_arrows)+(_keepPct?' <span style="color:var(--gold)">('+_keepPct+'% keep)</span>':'') : '<span style="color:var(--hp-bad)">none — unfletched &times;'+UNFLETCHED_DMG_MULT+'</span>')+'</span></div>';
+    }
     var effAtkTime = Math.round(weaponStyle.attackSpeed * classAttackSpeedMult(state) * 100) / 100;
     html += '<div class="stat-row"><span class="stat-label">Attack Time</span><span class="stat-value">'+effAtkTime+'s'+(effAtkTime<weaponStyle.attackSpeed?' <span style="color:var(--gold)">(class)</span>':'')+'</span></div>';
     var dmgTypeHtml;
@@ -13512,7 +13542,7 @@
     } else if(ohStyleNow && ohItem){
       var ohStatLabel = ohStyleNow.type==='shield' ? ('defense '+ohItem.defense)
         : ohStyleNow.type==='ward' ? ('reflects '+Math.round((ohItem.reflect||0)*100)+'% '+elementLabel(ohItem.element))
-        : ('+'+Math.round((ohItem.dmgBonus||0)*100)+'% arrow dmg');
+        : ('+'+Math.round((ohItem.dmgBonus||0)*100)+'% arrow dmg'+(ohItem.ammoPreserve ? ' &bull; '+Math.round(ohItem.ammoPreserve*100)+'% keep ammo' : ''));
       html += '<div class="shop-current">Equipped: <b style="color:var(--text)">'+ohStyleNow.name+'</b> &mdash; '+ohItem.name+' ('+ohStatLabel+')</div>';
     } else {
       html += '<div class="shop-current">Equipped: <b style="color:var(--text)">None</b></div>';
@@ -23389,7 +23419,7 @@
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, assassinRhythmRegister:assassinRhythmRegister, ASSASSIN_RHYTHM_MAX:ASSASSIN_RHYTHM_MAX, assassinApplyLacerate:assassinApplyLacerate, assassinLacerateMaxStacks:assassinLacerateMaxStacks, ASSASSIN_BLEED_MAX:ASSASSIN_BLEED_MAX, assassinHemorrhageCritMult:assassinHemorrhageCritMult, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
-      BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, OFFHAND_TYPE_RECIPES:OFFHAND_TYPE_RECIPES, getSpecialSkillId:getSpecialSkillId, WILDLIFE_NAMES:WILDLIFE_NAMES, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
+      BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, OFFHAND_TYPE_RECIPES:OFFHAND_TYPE_RECIPES, getSpecialSkillId:getSpecialSkillId, WILDLIFE_NAMES:WILDLIFE_NAMES, quiverAmmoPreserve:quiverAmmoPreserve, bowArrowToConsume:bowArrowToConsume, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT, applyRarity:applyRarity, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }
