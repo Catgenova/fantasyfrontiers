@@ -22500,13 +22500,16 @@
     var st = document.createElement('style'); st.id = 'ffLandStyle';
     st.textContent = ''
       + '#loginGate{background:radial-gradient(120% 120% at 50% 0%, var(--bg-card) 0%, var(--paper) 60%);}'
-      // Faint full-bleed "every skill + its familiar" word-wall behind the content. A radial mask keeps
-      // the central reading column clear, so the skill roster frames the page through the side gutters.
-      + '.ff-land-bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;display:flex;flex-wrap:wrap;align-content:flex-start;justify-content:center;gap:7px 13px;padding:24px 20px;opacity:.16;-webkit-mask-image:radial-gradient(118% 82% at 50% 44%, transparent 28%, #000 68%);mask-image:radial-gradient(118% 82% at 50% 44%, transparent 28%, #000 68%);}'
-      + '.ff-wm{display:inline-flex;align-items:center;gap:5px;font-size:11px;line-height:1;color:var(--text-dim);white-space:nowrap;}'
-      + '.ff-wm svg{width:13px;height:13px;flex:0 0 auto;}'
+      // "Every skill + its familiar" filling the empty side gutters: two fixed vertical rails, one per
+      // side, each a tall scroll-free column of skill->familiar tags. Pinned to the gutter width via
+      // calc(50% - half the content column), faded top/bottom, and hidden once the gutters disappear.
+      + '.ff-land-rail{position:fixed;top:0;bottom:0;z-index:0;pointer-events:none;overflow:hidden;display:flex;flex-direction:column;gap:11px;padding:16px 16px;opacity:.5;-webkit-mask-image:linear-gradient(to bottom, transparent 0, #000 7%, #000 93%, transparent 100%);mask-image:linear-gradient(to bottom, transparent 0, #000 7%, #000 93%, transparent 100%);}'
+      + '.ff-land-rail.left{left:0;width:calc(50% - 512px);align-items:flex-start;}'
+      + '.ff-land-rail.right{right:0;width:calc(50% - 512px);align-items:flex-end;text-align:right;}'
+      + '.ff-wm{display:inline-flex;align-items:center;gap:6px;font-size:12px;line-height:1;color:var(--text-dim);white-space:nowrap;}'
+      + '.ff-wm svg{width:15px;height:15px;flex:0 0 auto;}'
       + '.ff-wm b{color:var(--gold);font-weight:600;}'
-      + '@media (max-width:560px){.ff-land-bg{display:none;}}'
+      + '@media (max-width:1160px){.ff-land-rail{display:none;}}'
       + '.ff-land{max-width:1000px;width:100%;margin:0 auto;text-align:center;position:relative;z-index:1;}'
       + '.ff-land-title{font-family:var(--font-display);font-weight:700;font-size:36px;color:var(--gold);letter-spacing:2px;line-height:1.05;}'
       + '.ff-land-sub{color:var(--text-dim);font-size:14px;max-width:660px;margin:8px auto 18px;line-height:1.55;}'
@@ -22622,19 +22625,26 @@
       var p = (typeof CLASS_PORTRAITS !== 'undefined' && CLASS_PORTRAITS[id]); if(!p) return '';
       return '<div class="ff-land-port" title="'+escapeHtml((CLASS_DEFS_BY_ID[id]||{}).name||'')+'">'+p+'</div>';
     }).join('');
-    // Background word-wall: every skill (excluding the separately-showcased Classes) with its familiar's
-    // icon + name, drawn faintly behind everything. Derived from FAMILIAR_DATA so it always stays complete.
+    // Side rails: every skill (excluding the separately-showcased Classes) with its familiar's icon +
+    // name, stacked down both empty gutters. Derived from FAMILIAR_DATA so the list always stays complete.
     var _clsSet = {}; (typeof CLASS_SKILL_IDS !== 'undefined' ? CLASS_SKILL_IDS : []).forEach(function(id){ _clsSet[id] = 1; });
-    var wmItems = '';
+    var wmArr = [];
     if(typeof FAMILIAR_DATA !== 'undefined'){
       Object.keys(FAMILIAR_DATA).forEach(function(id){
         if(_clsSet[id]) return;
         var f = FAMILIAR_DATA[id]; if(!f) return;
         var lbl = (typeof SKILL_LABELS !== 'undefined' && SKILL_LABELS[id]) || id;
-        wmItems += '<span class="ff-wm">' + (f.icon || '') + '<b>' + escapeHtml(lbl) + '</b> ' + escapeHtml(f.name || '') + '</span>';
+        wmArr.push('<span class="ff-wm">' + (f.icon || '') + '<b>' + escapeHtml(lbl) + '</b> ' + escapeHtml(f.name || '') + '</span>');
       });
     }
-    var bgWall = wmItems ? '<div class="ff-land-bg" aria-hidden="true">' + wmItems + '</div>' : '';
+    var bgWall = '';
+    if(wmArr.length){
+      var _wmHalf = Math.ceil(wmArr.length / 2);
+      var wmLeft = wmArr.join('');
+      var wmRight = wmArr.slice(_wmHalf).concat(wmArr.slice(0, _wmHalf)).join(''); // offset so the two rails don't mirror each other
+      bgWall = '<div class="ff-land-rail left" aria-hidden="true">' + wmLeft + '</div>'
+             + '<div class="ff-land-rail right" aria-hidden="true">' + wmRight + '</div>';
+    }
     gate.innerHTML = bgWall + '<div class="ff-land">'
       + '<div class="ff-land-title">Fantasy Frontiers</div>'
       + '<div class="ff-land-sub">A living idle RPG. Master over 170 skills, take on 24 hero Classes, raise a menagerie of familiars, and delve synchronous co-op dungeons &mdash; then come home to an estate you and your guild build together.</div>'
