@@ -2932,7 +2932,7 @@
     ok(fam.spells.some(function(sp){ return sp.type==='hit'; }), 'thunderfury familiar has a damaging spell');
   });
 
-  // ---- Classes: Assassin (dual-claw dodge/armor-pen killer) -----------------------------
+  // ---- Classes: Assassin (twin-claw Rhythm / bleed / Vanish killer) ---------------------
   suite('classes: Assassin', function(){
     ok(FF.CLASS_SKILL_IDS.indexOf('assassin') !== -1, 'assassin is a class skill id');
     var cd = FF.CLASS_DEFS_BY_ID.assassin;
@@ -2961,24 +2961,55 @@
     function leveled(){ var s = base(); s.xp.assassin = lvHi; return s; }
     var off = base(); off.equippedOffhand=null; off.equippedOffhandTier=0;
 
-    // Lv 1 Bloodletting: double Claws proficiency XP.
-    eq(FF.assassinClawXpMult(full), 2, 'Lv 1 assassin: double claw XP');
-    eq(FF.assassinClawXpMult(off), 1, 'claw XP bonus gated on the class being active');
+    // Reworked ladder: Rhythm / Ambidexterity / Lacerate / Hemorrhage / Vanish.
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Rhythm,Ambidexterity,Lacerate,Hemorrhage,Vanish', 'reworked Assassin ladder');
 
-    // Lv 20 (+10%) and Lv 60 (+15%) Dodge, stacking to +25%.
-    eq(FF.assassinDodgeBonus(full), 0, 'Lv 1: no dodge bonus yet');
-    var lv20 = base(); lv20.xp.assassin = FF.xpFloorForLevel(21); // ~Lv 21
-    near(FF.assassinDodgeBonus(lv20), 0.10, 'Lv 20: +10% dodge');
-    near(FF.assassinDodgeBonus(leveled()), 0.25, 'Lv 60+: +25% dodge (10 + 15)');
-    ok(FF.playerDodgeChance(leveled()) - FF.playerDodgeChance(full) >= 0.25 - 1e-9, 'assassin dodge is folded into total dodge chance');
+    // Lv 1 Rhythm: 6 alternating hits fill the meter, priming a 2-strike flurry, then it resets.
+    var ract = {};
+    var built = ['main','off','main','off','main','off'].map(function(h){ return FF.assassinRhythmRegister(ract, h); });
+    eq(built.filter(Boolean).length, 0, 'building the Rhythm meter fires no echoes');
+    eq(ract.rhythmStacks, FF.ASSASSIN_RHYTHM_MAX, 'six alternating hits fill the meter');
+    eq(ract.rhythmFlurry, 2, 'a full meter primes a 2-strike flurry');
+    eq(FF.assassinRhythmRegister(ract, 'main'), true, 'flurry strike 1 echoes');
+    eq(FF.assassinRhythmRegister(ract, 'off'), true, 'flurry strike 2 echoes');
+    eq(ract.rhythmStacks, 0, 'the flurry resets the meter');
+    eq(FF.assassinRhythmRegister(ract, 'main'), false, 'the meter rebuilds after a flurry');
+    var ract2 = {}; FF.assassinRhythmRegister(ract2,'main'); FF.assassinRhythmRegister(ract2,'off');
+    FF.assassinRhythmRegister(ract2,'off'); // a repeated hand breaks the alternation
+    eq(ract2.rhythmStacks, 1, 'a repeated hand reseeds the meter to 1');
 
-    // Lv 40 Exploit Weakness: +20% damage (ignore 20% armor).
-    eq(FF.assassinArmorPenMult(full), 1, 'Lv 1: no armor pen');
-    near(FF.assassinArmorPenMult(leveled()), 1.20, 'Lv 40+: +20% damage');
+    // Lv 20 Ambidexterity: off-hand claw swings at main-hand speed (no 30% penalty).
+    near(FF.offhandClawAttackIntervalMs(full), Math.max(200, FF.playerAttackIntervalMs(full)*FF.OFFHAND_CLAW_ATTACK_SPEED_MULT), 'Lv1: off-hand claw is 30% slower', 1);
+    var lv20 = base(); lv20.xp.assassin = FF.xpFloorForLevel(21);
+    near(FF.offhandClawAttackIntervalMs(lv20), Math.max(200, FF.playerAttackIntervalMs(lv20)), 'Lv20 Ambidexterity: off-hand swings at main-hand speed', 1);
 
-    // Lv 80 Perfect Killer: outgoing damage x(1 + dodge chance).
-    eq(FF.assassinDodgeDmgMult(full), 1, 'Lv 1: no dodge-to-damage');
-    near(FF.assassinDodgeDmgMult(leveled()), 1 + FF.playerDodgeChance(leveled()), 'Lv 80: +damage equal to dodge chance');
+    // Lv 40 Lacerate: each claw hit stacks a Bleed (cap 5) on the shared Bleed channel.
+    var lact = { type:'combat', bleedUntil:0 };
+    FF.assassinApplyLacerate(lact); FF.assassinApplyLacerate(lact);
+    eq(lact.bleedStacks, 2, 'Lacerate: two hits -> 2 Bleed stacks');
+    for(var _li=0; _li<10; _li++) FF.assassinApplyLacerate(lact);
+    eq(lact.bleedStacks, FF.ASSASSIN_BLEED_MAX, 'Lacerate caps at 5 stacks');
+    ok(lact.bleedUntil > Date.now(), 'Lacerate refreshes the Bleed duration');
+    var vact = { type:'combat', bleedUntil:0, bleedStacks:0 };
+    FF.assassinLacerateMaxStacks(vact);
+    eq(vact.bleedStacks, FF.ASSASSIN_BLEED_MAX, 'Vanish slams full Lacerate stacks at once');
+
+    // Lv 60 Hemorrhage: a crit vs a Bleeding foe deals +50%.
+    var hBleed = leveled(); hBleed.activity = { type:'combat', bleedUntil:Date.now()+3000, bleedStacks:3 };
+    near(FF.assassinHemorrhageCritMult(hBleed), 1.5, 'Hemorrhage: +50% vs a Bleeding foe (Lv60+)');
+    var hClean = leveled(); hClean.activity = { type:'combat', bleedUntil:0, bleedStacks:0 };
+    eq(FF.assassinHemorrhageCritMult(hClean), 1, 'Hemorrhage neutral vs an unbled foe');
+    var h40 = base(); h40.xp.assassin = FF.xpFloorForLevel(41); h40.activity = { type:'combat', bleedUntil:Date.now()+3000, bleedStacks:3 };
+    eq(FF.assassinHemorrhageCritMult(h40), 1, 'Hemorrhage inactive below Lv60');
+
+    // Lv 80 Vanish: 4s untouched empowers the next strike (+100%).
+    eq(FF.ASSASSIN_VANISH_MULT, 2, 'Vanish empowers the next strike x2');
+    var vReady = leveled(); vReady.activity = { type:'combat', lastDamagedAt:Date.now()-5000 };
+    ok(FF.assassinVanishReady(vReady), 'Vanish ready after 4s untouched (Lv80)');
+    var vHot = leveled(); vHot.activity = { type:'combat', lastDamagedAt:Date.now()-1000 };
+    ok(!FF.assassinVanishReady(vHot), 'Vanish not ready within 4s of taking a hit');
+    var v60 = base(); v60.xp.assassin = FF.xpFloorForLevel(61); v60.activity = { type:'combat', lastDamagedAt:Date.now()-5000 };
+    ok(!FF.assassinVanishReady(v60), 'Vanish inactive below Lv80');
 
     // Class familiar (dark dual-claw killer with lifesteal).
     var fam = FF.FAMILIAR_DATA.assassin;

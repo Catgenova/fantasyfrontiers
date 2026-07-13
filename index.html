@@ -4175,7 +4175,7 @@
     },
     {
       id:'assassin', name:'Assassin', icon:svgIcon('claw','#7a3a4a'),
-      blurb:'A shadow-quick killer who dances between blows and shreds armour with twin claws.',
+      blurb:'A twin-claw killer who builds a lethal rhythm, opens deep wounds that never close, and vanishes between blows to strike from nowhere.',
       reqText:'Claws (main + off-hand), Cloth Hood, Tunic & Shoes, Chain Gloves',
       reqParts:[
         { icon:svgIcon('claw','#b0757a'),               label:'Claws (main)', met:function(st){ return st.equippedMainhand==='claw'; } },
@@ -4186,11 +4186,11 @@
         { icon:svgIcon('gauntlet',CLASS_CHAIN_COLOR),   label:'Chain Gloves', met:function(st){ return chainPieceEquipped(st,'gauntlets'); } }
       ],
       passives:[
-        { level:1,  name:'Bloodletting',  desc:'Your Claws proficiency earns double experience.' },
-        { level:20, name:'Shadowstep',    desc:'+10% chance to Dodge.' },
-        { level:40, name:'Exploit Weakness', desc:'Your attacks ignore 20% of enemy armor (+20% damage).' },
-        { level:60, name:'Ghost',         desc:'A further +15% chance to Dodge (stacks with Shadowstep for +25%).' },
-        { level:80, name:'Perfect Killer',desc:'Your damage is increased by your Dodge chance (a 25% Dodge chance grants +25% damage).' }
+        { level:1,  name:'Rhythm',        desc:'Alternating main- and off-hand hits build a Rhythm meter. At full Rhythm your next two strikes each echo with a bonus swing &mdash; a four-hit flurry &mdash; then it resets.' },
+        { level:20, name:'Ambidexterity', desc:'Your off-hand claw swings at full main-hand speed instead of 30% slower &mdash; doubling its damage output.' },
+        { level:40, name:'Lacerate',      desc:'Each landed claw hit stacks a Bleed (up to 5) that keeps ticking between swings.' },
+        { level:60, name:'Hemorrhage',    desc:'Your Critical Hits deal +50% damage to a Bleeding foe and refresh its Bleed, keeping the wounds open.' },
+        { level:80, name:'Vanish',        desc:'Go 4s without being hit and you vanish: your next strike deals +100% damage and slams the foe with full Lacerate stacks.' }
       ]
     },
     {
@@ -4532,19 +4532,56 @@
     return getPlateArmorBlockChance(st) + getStaffBlockChance(st) + blockingBlockBonus(st) + reflexesBlockBonus(st) + classBlockBonus(st);
   }
   function assassinBonus(reqLevel, st){ return classBonusActive('assassin', reqLevel, st); }
-  // Assassin Lv 20 (+10%) and Lv 60 (+15%) Dodge, stacking to +25% while the class is active.
-  function assassinDodgeBonus(st){ st = st || state; if(activeClassId(st)!=='assassin') return 0; var lvl = classLevel(st,'assassin'); return (lvl>=20?0.10:0) + (lvl>=60?0.15:0); }
   // Total persistent Dodge chance (gear + physiques + class); the temporary familiar 'dodge' buff is added
   // on top only at the moment of a monster attack, so it is NOT folded in here.
   function playerDodgeChance(st){
     st = st || state;
-    return getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + assassinDodgeBonus(st) + nightbladeDodgeBonus(st) + lumenDodgeBonus(st) + pyromancerHeatHazeDodge(st); // + Pyromancer Heat Haze (scales with the enemy's Burn)
+    return getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + nightbladeDodgeBonus(st) + lumenDodgeBonus(st) + pyromancerHeatHazeDodge(st); // + Pyromancer Heat Haze (scales with the enemy's Burn)
   }
-  // Assassin Lv 40: attacks ignore 20% of armor (modeled as +20% damage). Lv 80: outgoing damage +X% where X = Dodge chance.
-  function assassinArmorPenMult(st){ return assassinBonus(40, st) ? 1.20 : 1; }
-  function assassinDodgeDmgMult(st){ st = st || state; return assassinBonus(80, st) ? (1 + playerDodgeChance(st)) : 1; }
-  // Assassin Lv 1: Claws proficiency earns double XP.
-  function assassinClawXpMult(st){ return assassinBonus(1, st) ? 2 : 1; }
+  // ===== Assassin (twin Claws): reworked ladder =====
+  //  Lv1  Rhythm        -- alternating main/off-hand hits build a meter; at full, the next two landed
+  //                        strikes each echo with a bonus swing (a four-hit flurry), then it resets.
+  //  Lv20 Ambidexterity -- the off-hand claw swings at full main-hand speed (folded into its interval).
+  //  Lv40 Lacerate      -- each landed claw hit stacks a Bleed (shared Bleed channel), up to 5.
+  //  Lv60 Hemorrhage    -- a Critical Hit vs a Bleeding foe deals +50% and refreshes the Bleed.
+  //  Lv80 Vanish        -- 4s untouched -> the next strike deals +100% and slams full Lacerate stacks.
+  var ASSASSIN_RHYTHM_MAX = 6;                                        // Lv1: alternating hits to fill the meter
+  function assassinRhythmRegister(act, hand){
+    // Updates the Rhythm meter for a landed main-hand ('main') or off-hand ('off') strike.
+    // Returns true if THIS strike should spawn one bonus flurry echo.
+    if(!act) return false;
+    if((act.rhythmFlurry||0) > 0){ act.rhythmFlurry -= 1; if(act.rhythmFlurry === 0) act.rhythmStacks = 0; return true; }
+    if(act.rhythmLastHand && act.rhythmLastHand !== hand) act.rhythmStacks = Math.min(ASSASSIN_RHYTHM_MAX, (act.rhythmStacks||0) + 1);
+    else act.rhythmStacks = 1;                                        // a repeated (or first) hand reseeds the meter at 1
+    act.rhythmLastHand = hand;
+    if(act.rhythmStacks >= ASSASSIN_RHYTHM_MAX) act.rhythmFlurry = 2; // full meter primes the next two strikes
+    return false;
+  }
+  var ASSASSIN_BLEED_MAX = 5, ASSASSIN_BLEED_PCT = 0.04, ASSASSIN_BLEED_MS = 4000; // Lv40 Lacerate (shared Bleed channel)
+  function assassinApplyLacerate(act){
+    if(!act) return 0;
+    if((act.bleedUntil||0) <= Date.now()) act.bleedStacks = 0;        // a lapsed Bleed starts fresh
+    act.bleedStacks = Math.min(ASSASSIN_BLEED_MAX, (act.bleedStacks||0) + 1);
+    act.bleedDps = act.bleedStacks * combatLevelEquivalent(state) * ASSASSIN_BLEED_PCT;
+    act.bleedUntil = Date.now() + ASSASSIN_BLEED_MS;
+    return act.bleedStacks;
+  }
+  function assassinLacerateMaxStacks(act){ // Vanish kicker: slam the foe to full Lacerate stacks at once
+    if(!act) return 0;
+    act.bleedStacks = ASSASSIN_BLEED_MAX;
+    act.bleedDps = act.bleedStacks * combatLevelEquivalent(state) * ASSASSIN_BLEED_PCT;
+    act.bleedUntil = Date.now() + ASSASSIN_BLEED_MS;
+    return act.bleedStacks;
+  }
+  var ASSASSIN_HEMORRHAGE_MULT = 1.5;                                 // Lv60: crit vs a Bleeding foe deals +50%
+  function assassinHemorrhageCritMult(st){ st = st || state; return (assassinBonus(60, st) && enemyBleeding(st)) ? ASSASSIN_HEMORRHAGE_MULT : 1; }
+  var ASSASSIN_VANISH_MS = 4000, ASSASSIN_VANISH_MULT = 2;            // Lv80: 4s untouched -> +100% next strike
+  function assassinVanishReady(st){ st = st || state;
+    if(!assassinBonus(80, st)) return false;
+    var a = st.activity; if(!a || a.type!=='combat') return false;
+    var last = a.lastDamagedAt || a.duelStartedAt || 0;
+    return last > 0 && (Date.now() - last) >= ASSASSIN_VANISH_MS;
+  }
   function thunderfuryBonus(reqLevel, st){ return classBonusActive('thunderfury', reqLevel, st); }
   // Thunderfury "Chain Lightning" (Lv1): a crit-stack counter (0-7). +1 per Critical Hit, reset on a
   // non-crit hit; spent on attack speed (-10%/stack via classAttackSpeedMult).
@@ -9680,12 +9717,28 @@
     }
 
     if(forcedCrit) state.duelistGuaranteedCrits = Math.max(0, (state.duelistGuaranteedCrits || 0) - 1); // Disengage: consume a guaranteed crit on a landed hit
+    var assassinVanish = assassinVanishReady(); // Assassin Vanish (Lv80): this landed strike is empowered if the 4s-untouched window is up
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
     var wandAttuneMult = isWandAttack ? elementDmgMult(state, weaponStyle.element) : 1; // Elemental Attunement boosts a wand's element damage
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * duelistDuelMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * assassinArmorPenMult() * assassinDodgeDmgMult() * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, and the mainhand's Enhance base-stat scaling
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * duelistDuelMult() * quickdrawPenetrationMult() * templarArmorShredDmgMult() * knightMissDmgMult() * wandAttuneMult * (isCrit ? assassinHemorrhageCritMult() : 1) * (assassinVanish ? ASSASSIN_VANISH_MULT : 1) * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, and the mainhand's Enhance base-stat scaling
     dmgToMonster += Math.round(enchTot.flatDamage||0); // + equipped-item Flat Damage enchants
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
+    // Assassin twin-claw on-hit (both hands): Lacerate bleed, Hemorrhage refresh, Vanish consume, Rhythm flurry.
+    if(activeClassId(state)==='assassin'){
+      if(assassinBonus(40)) assassinApplyLacerate(act);                                   // Lacerate: stack a Bleed
+      if(assassinBonus(60) && isCrit && enemyBleeding()) act.bleedUntil = Date.now() + ASSASSIN_BLEED_MS; // Hemorrhage: a crit keeps the wounds open
+      if(assassinVanish){                                                                  // Vanish: consumed by this strike
+        act.lastDamagedAt = Date.now();                                                    // restart the untouched clock (one Vanish per window)
+        if(assassinBonus(40)) assassinLacerateMaxStacks(act);                              // ...and slam full Lacerate stacks
+        spawnFloatingText('Vanish!', 'ft-rare');
+      }
+      if(assassinBonus(1) && !isBonus && assassinRhythmRegister(act, isOffhand ? 'off' : 'main')
+         && state.activity && state.activity.type==='combat' && act.monsterHp > 0){
+        spawnFloatingText('Rhythm!', 'ft-bonus');
+        playerAttackTick(true, 1, isOffhand);                                              // a flurry echo of this claw
+      }
+    }
     firePotionOnAttack(act, monster); // active Alchemy potion triggers each attack (firebomb dmg / toxin poison / spend charge)
     // Floating damage: the hit's damage + its type/element, crit-styled on a Critical Hit.
     spawnCombatFloat((isCrit?'✦ ':'')+'-'+fmt(dmgToMonster)+' '+combatDmgTypeIcon(weaponStyle, isWandAttack, isScepterAttack), isCrit?'ft-crit':'ft-dmg', true);
@@ -9701,7 +9754,7 @@
     // mainhand weapon and a Quiver offhand (which boosts your bow damage) train off it.
     var effDmg = Math.min(dmgToMonster, monsterHpBeforeHit);
     var atkProfXp = Math.max(1, Math.round(effDmg * WEAPON_PROF_XP_PER_DMG));
-    if(mainhandTypeId) addXp(mainProfId, Math.round(atkProfXp * (mainProfId==='claw' ? assassinClawXpMult() : 1))); // Assassin Lv 1 doubles Claws proficiency XP
+    if(mainhandTypeId) addXp(mainProfId, atkProfXp);
     if(state.equippedOffhand && offhandStyle && offhandStyle.type==='quiver') addXp(state.equippedOffhand, atkProfXp);
     awardClassXp(effDmg); // an active Class trains on combat damage dealt
     // Elemental Attunement trains on the element damage you deal: a Wand's whole hit, a Scepter's light half.
@@ -9888,7 +9941,8 @@
     }
   }
   // Off-hand Claw swings on its own timer: the main-hand interval scaled +30% slower.
-  function offhandClawAttackIntervalMs(st){ st = st || state; return Math.max(200, playerAttackIntervalMs(st) * OFFHAND_CLAW_ATTACK_SPEED_MULT); }
+  // Assassin Ambidexterity (Lv20): the off-hand claw loses its 30% speed penalty and swings at full main-hand pace.
+  function offhandClawAttackIntervalMs(st){ st = st || state; var mult = assassinBonus(20, st) ? 1 : OFFHAND_CLAW_ATTACK_SPEED_MULT; return Math.max(200, playerAttackIntervalMs(st) * mult); }
 
   // Award the kill (gold, loot, stats, respawn). Called by the player's attack, and by familiars/
   // reflection when the player wields a Staff (no auto-attack, so summons must land the finishing blow).
@@ -9913,7 +9967,8 @@
     var _cls = activeClassId(state); if(_cls) maybeSummonFamiliar(_cls); // an active Class can summon its own familiar in combat
     act.monsterHp = monster.hp;
     act.monsterTickAccum = 0;
-    act.bleedStacks = 0; act.bleedDps = 0; act.bleedUntil = 0; // a fresh foe starts unbled (Reaver Rend doesn't carry over)
+    act.bleedStacks = 0; act.bleedDps = 0; act.bleedUntil = 0; // a fresh foe starts unbled (Reaver Rend / Assassin Lacerate don't carry over)
+    act.rhythmStacks = 0; act.rhythmFlurry = 0; act.rhythmLastHand = null; act.lastDamagedAt = Date.now(); // Assassin: fresh Rhythm meter + Vanish clock per foe
     act.samuraiFirstStrike = true; act.samuraiFocus = 0; // Samurai: arm the Iaijutsu/First Blood opener and reset the Bushido Focus combo
     act.staticCharge = 0; act.galvanizeStacks = 0; // Thunderfury: fresh Static meter + Galvanize ramp against each foe
     act.chillStacks = 0; act.enemyChillUntil = 0; act.frostbiteStacks = 0; act.frostbiteDps = 0; act.frostbiteUntil = 0; // Frostwarden Chill/Frostbite don't carry between foes
@@ -10036,6 +10091,7 @@
       if(_absorbed > 0) spawnFloatingText('Absorbed '+Math.round(_absorbed)+'!', 'ft-success');
     }
     state.playerHp -= dmgToPlayer;
+    if(dmgToPlayer > 0 && act && act.type==='combat') act.lastDamagedAt = Date.now(); // Assassin Vanish: a landed blow restarts the 4s-untouched clock
     // Thunderfury Grounding Rod (Lv40): a blow you take earths part of its force into a Static stack, charging your discharge faster.
     if(dmgToPlayer > 0 && thunderfuryBonus(40) && act && act.type==='combat'){ act.staticCharge = Math.min(THUNDER_STATIC_MAX, (act.staticCharge || 0) + 1); }
     if(dmgToPlayer > 0) spawnCombatFloat('-'+fmt(dmgToPlayer)+' '+(monster.element?elementIcon(monster.element):''), 'ft-taken', false); // damage taken + its element
@@ -22294,7 +22350,7 @@
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawPenetrationMult:quickdrawPenetrationMult, quickdrawCritChanceBonus:quickdrawCritChanceBonus, templarReflectMult:templarReflectMult, templarLightDmgMult:templarLightDmgMult, templarIncomingDmgMult:templarIncomingDmgMult, templarArmorShredDmgMult:templarArmorShredDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
-      isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, assassinDodgeBonus:assassinDodgeBonus, playerDodgeChance:playerDodgeChance, assassinArmorPenMult:assassinArmorPenMult, assassinDodgeDmgMult:assassinDodgeDmgMult, assassinClawXpMult:assassinClawXpMult, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
+      isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, assassinRhythmRegister:assassinRhythmRegister, ASSASSIN_RHYTHM_MAX:ASSASSIN_RHYTHM_MAX, assassinApplyLacerate:assassinApplyLacerate, assassinLacerateMaxStacks:assassinLacerateMaxStacks, ASSASSIN_BLEED_MAX:ASSASSIN_BLEED_MAX, assassinHemorrhageCritMult:assassinHemorrhageCritMult, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
       BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
