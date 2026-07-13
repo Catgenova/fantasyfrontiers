@@ -5409,6 +5409,10 @@
   var FAMILIAR_PHYSIQUE_IDS = PHYSIQUE_SKILLS.filter(function(p){ return !p.element; }).map(function(p){ return p.id; });
   var FAMILIAR_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['farming']).concat(FAITH_SKILL_IDS).concat(FAMILIAR_PHYSIQUE_IDS);
 
+  // Status debuffs (Weaken = -enemy damage, Slow = +enemy attack interval) are capped so they can never
+  // fully negate the enemy -- potency (cloth armour, potions, familiar level) can push a spell's raw pct
+  // past this, but the excess is clamped and does nothing. 0.99 => at most 99% (enemy keeps 1%).
+  var STATUS_DEBUFF_CAP = 0.99;
   function healSpell(name, amount){ return { name:name, type:'heal', amount:amount }; }
   function slowSpell(name, pct, durSec){ return { name:name, type:'slowEnemy', pct:pct, durationMs:durSec*1000 }; }
   function armorSpell(name, mult, durSec){ return { name:name, type:'armorBuff', mult:mult, durationMs:durSec*1000 }; }
@@ -6011,11 +6015,11 @@
       state.familiarBuffs.damageUntil = now + spell.durationMs*durMult;
       spawnFloatingText(spell.name + '!', 'ft-rare');
     } else if(spell.type==='slowEnemy'){
-      state.familiarBuffs.enemySlowPct = Math.min(0.9, spell.pct*potency);
+      state.familiarBuffs.enemySlowPct = Math.min(STATUS_DEBUFF_CAP, spell.pct*potency);
       state.familiarBuffs.enemySlowUntil = now + spell.durationMs*durMult;
       spawnFloatingText(spell.name + '!', 'ft-rare');
     } else if(spell.type==='weakenEnemy'){
-      state.familiarBuffs.enemyWeakenPct = Math.min(0.9, spell.pct*potency);
+      state.familiarBuffs.enemyWeakenPct = Math.min(STATUS_DEBUFF_CAP, spell.pct*potency);
       state.familiarBuffs.enemyWeakenUntil = now + spell.durationMs*durMult;
       spawnFloatingText(spell.name + '!', 'ft-rare');
     } else if(spell.type==='poison'){
@@ -14959,8 +14963,8 @@
     if(spell.type==='heal') return 'Restores '+Math.round(spell.amount*potency)+' HP';
     if(spell.type==='armorBuff') return 'x'+(Math.round((1+(spell.mult-1)*potency)*100)/100)+' player armor for '+(spell.durationMs/1000)+'s';
     if(spell.type==='damageBuff') return '+'+Math.round((spell.mult-1)*potency*100)+'% player damage for '+(spell.durationMs/1000)+'s';
-    if(spell.type==='slowEnemy') return 'Slows enemy attack speed by '+Math.round(Math.min(0.9,spell.pct*potency)*100)+'% for '+(spell.durationMs/1000)+'s';
-    if(spell.type==='weakenEnemy') return 'Reduces enemy damage by '+Math.round(Math.min(0.9,spell.pct*potency)*100)+'% for '+(spell.durationMs/1000)+'s';
+    if(spell.type==='slowEnemy') return 'Slows enemy attack speed by '+Math.round(Math.min(STATUS_DEBUFF_CAP,spell.pct*potency)*100)+'% for '+(spell.durationMs/1000)+'s';
+    if(spell.type==='weakenEnemy') return 'Reduces enemy damage by '+Math.round(Math.min(STATUS_DEBUFF_CAP,spell.pct*potency)*100)+'% for '+(spell.durationMs/1000)+'s';
     if(spell.type==='poison') return 'Deals '+(Math.round(spell.dps*potency*10)/10)+' dmg/s to the enemy for '+(spell.durationMs/1000)+'s'+elemSuffix;
     if(spell.type==='regen') return 'Regenerates '+(Math.round(spell.hps*potency*10)/10)+' HP/s for '+(spell.durationMs/1000)+'s';
     if(spell.type==='bubble') return 'Negates a killing blow for '+(Math.round(spell.durSec*potency*10)/10)+'s';
@@ -22914,7 +22918,7 @@
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey,
-      craftBodyRarity:craftBodyRarity, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix,
+      craftBodyRarity:craftBodyRarity, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, ALL_SELLABLE:ALL_SELLABLE, ALL_DROP_ITEMS:ALL_DROP_ITEMS, FAT_ITEMS:FAT_ITEMS, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES, vendorSellValue:vendorSellValue, SELL_RARITY_MULT:SELL_RARITY_MULT,

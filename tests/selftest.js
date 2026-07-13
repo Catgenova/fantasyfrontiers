@@ -1549,6 +1549,18 @@
     eq(FF.dungeonLocksActions(), false, 'actions are not locked when not in a dungeon');
   });
 
+  // ---- Status debuff cap: Weaken / Slow clamp to 99% even when familiar potency over-stacks them ------
+  suite('familiars: status debuffs cap at 99%', function(){
+    eq(FF.STATUS_DEBUFF_CAP, 0.99, 'the status-debuff cap is 99%');
+    var s = FF._state;
+    if(!s.familiarBuffs || typeof s.familiarBuffs !== 'object') s.familiarBuffs = { enemyWeakenPct:0, enemyWeakenUntil:0, enemySlowPct:0, enemySlowUntil:0 };
+    // A raw pct far above 1.0 (as heavy cloth/potion/level potency could push it) is clamped to the cap.
+    FF.castFamiliarSpell({ type:'weakenEnemy', name:'Test Weaken', pct:5.0, durationMs:8000 }, 100);
+    near(s.familiarBuffs.enemyWeakenPct, 0.99, 'Weaken clamps to 99% (enemy keeps 1% of its damage)');
+    FF.castFamiliarSpell({ type:'slowEnemy', name:'Test Slow', pct:5.0, durationMs:8000 }, 100);
+    near(s.familiarBuffs.enemySlowPct, 0.99, 'Slow clamps to 99%');
+  });
+
   // ---- Dungeon unlock chain: each layer requires clearing the previous boss (Cave = Combat Score only) --
   suite('dungeons: unlock chain (clear the previous boss)', function(){
     var s = FF._state, saved = s.dungeonsCleared;
