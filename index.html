@@ -4658,7 +4658,7 @@
     },
     {
       id:'knight', name:'Knight', icon:svgIcon('sword','#8a90a0'),
-      blurb:'A relentless swordsman who builds momentum on every hit and answers a miss with fury.',
+      blurb:'A relentless claymore brawler who builds momentum on every blow -- landed or taken -- and grows tougher the longer he holds the line.',
       reqText:'Claymore, Plate Chest & Boots, Chain Helm & Gloves',
       reqParts:[
         { icon:svgIcon('sword','#8a90a0'),             label:'Claymore',     met:function(st){ return st.equippedMainhand==='claymore'; } },
@@ -4668,11 +4668,11 @@
         { icon:svgIcon('gauntlet',CLASS_CHAIN_COLOR),  label:'Chain Gloves', met:function(st){ return chainPieceEquipped(st,'gauntlets'); } }
       ],
       passives:[
-        { level:1,  name:'Momentum',     desc:'Each landed hit cuts your next attack timer 10% (stacking up to 50%); a miss resets it.' },
-        { level:20, name:'Vengeful Strike',desc:'On a miss, gain +25% damage for 8s.' },
-        { level:40, name:'Reckless Edge', desc:'On a miss, gain +15% Critical Hit chance for 8s.' },
-        { level:60, name:'Brutal Riposte',desc:'On a miss, gain +50% Critical Hit damage for 8s.' },
-        { level:80, name:'Wrath',         desc:'On a miss, gain a further +100% Critical Hit damage for 8s (stacks with Brutal Riposte).' }
+        { level:1,  name:'Momentum',           desc:'Each landed hit cuts your next attack timer 10% (stacking up to 50%); a miss resets it.' },
+        { level:20, name:'Counterweight',       desc:'Being hit also adds a Momentum stack -- the blows you take feed your tempo.' },
+        { level:40, name:'Bulwark',             desc:'Each Momentum stack also reduces damage taken by 4% (up to 20% at 5 stacks).' },
+        { level:60, name:'Warlord\'s Presence', desc:'Above half Health, deal +20% damage. Below half, take 25% less damage and heal for 10% of the damage you deal.' },
+        { level:80, name:'Relentless',          desc:'Your Momentum cap rises to 8 stacks (up to -80% attack timer), and a miss drops only one stack instead of resetting.' }
       ]
     },
     {
@@ -5184,7 +5184,7 @@
     if(id==='duelist' && classLevel(st,'duelist') >= 20)
       return 1 - 0.15 * Math.min(DUELIST_FOOTWORK_MAX, st.duelistFootworkStacks || 0);
     if(id==='quickdraw' && quickdrawSecondWind(st)) return 0.80; // Second Wind: -20% attack timer below 40% HP
-    if(id==='knight' && classLevel(st,'knight') >= 1) return 1 - 0.10 * Math.min(5, st.knightStacks || 0); // Momentum stacks
+    if(id==='knight' && classLevel(st,'knight') >= 1) return 1 - 0.10 * Math.min(knightStackCap(st), st.knightStacks || 0); // Momentum stacks (cap 5, or 8 with Relentless)
     if(id==='thunderfury' && classLevel(st,'thunderfury') >= 1) return 1 - 0.10 * Math.min(THUNDER_MAX_STACKS, st.thunderStacks || 0); // Chain Lightning crit stacks
     if(id==='berserker' && classLevel(st,'berserker') >= 60) return 1 - 0.30 * berserkerMissingFrac(st); // Undying Fury: up to -30% as Health falls
     if(id==='frostwarden' && classLevel(st,'frostwarden') >= 20) return 1 - frostwardenTimeDilation(st); // Time Dilation: quicken with the enemy's Chill
@@ -5209,13 +5209,21 @@
   function templarEnemyDmgReduced(){ return !!(state.classDebuffs && state.classDebuffs.enemyDmgUntil > Date.now()); }
   function templarIncomingDmgMult(){ return templarEnemyDmgReduced() ? 0.75 : 1; }   // enemy deals 25% less while blinded
   function knightBonus(reqLevel, st){ return classBonusActive('knight', reqLevel, st); }
-  // Knight Lv 1 (Momentum): each landed hit stacks -10% attack time (cap 5 = -50%); a miss resets it.
-  function knightStacks(st){ st = st || state; return knightBonus(1, st) ? Math.min(5, st.knightStacks || 0) : 0; }
-  // Knight on-miss buffs last 8s (all granted together on a miss; each gated by its own tier).
-  function knightBuffActive(){ return !!(state.knightBuffUntil && state.knightBuffUntil > Date.now()); }
-  function knightMissDmgMult(){ return (knightBonus(20) && knightBuffActive()) ? 1.25 : 1; }      // Lv 20: +25% damage
-  function knightMissCritChance(){ return (knightBonus(40) && knightBuffActive()) ? 0.15 : 0; }   // Lv 40: +15% crit chance
-  function knightMissCritDmg(){ var b = 0; if(knightBuffActive()){ if(knightBonus(60)) b += 0.5; if(knightBonus(80)) b += 1.0; } return b; } // Lv 60 +50%, Lv 80 +100%
+  // Knight Lv 1 (Momentum): each landed hit stacks -10% attack time; a miss resets it. Relentless (Lv 80)
+  // raises the cap from 5 (-50%) to 8 (-80%) and softens a miss to a single-stack drop.
+  function knightStackCap(st){ st = st || state; return knightBonus(80, st) ? 8 : 5; }
+  function knightStacks(st){ st = st || state; return knightBonus(1, st) ? Math.min(knightStackCap(st), st.knightStacks || 0) : 0; }
+  // Knight Lv 40 (Bulwark): each live Momentum stack also cuts incoming damage 4%, capped at -20% (5 stacks)
+  // even past the Relentless cap -- the mitigation tops out where the base Momentum cap did.
+  function knightBulwarkDR(st){ st = st || state; return knightBonus(40, st) ? 0.04 * Math.min(5, st.knightStacks || 0) : 0; }
+  // Knight Lv 60 (Warlord's Presence): a Health-threshold stance. Above half HP you hit harder; below it you
+  // weather blows and drain life from every strike.
+  function knightHurt(st){ st = st || state; return (st.playerHp||0) > 0 && (st.playerHp||0) < maxHp(st) * 0.5; }
+  function knightWarlordDmgMult(st){ st = st || state; return (knightBonus(60, st) && !knightHurt(st)) ? 1.20 : 1; }
+  function knightWarlordDR(st){ st = st || state; return (knightBonus(60, st) && knightHurt(st)) ? 0.25 : 0; }
+  function knightWarlordLifestealPct(st){ st = st || state; return (knightBonus(60, st) && knightHurt(st)) ? 0.10 : 0; }
+  // Combined Knight damage-taken multiplier (Bulwark stacks + Warlord below-half), floored at -80% total.
+  function knightDamageTakenMult(st){ st = st || state; return 1 - Math.min(0.80, knightBulwarkDR(st) + knightWarlordDR(st)); }
   // Player auto-attack interval, folding in familiar Haste and the Duelist's rapier attack-speed bonus.
   function playerAttackIntervalMs(st){
     st = st || state;
@@ -8776,8 +8784,7 @@
       activeCompanions: [],   // multiple active familiars (1 base slot + a Staff's extra slots)
       companionCast: {},      // per-companion { accum, index } cast timing
       classDebuffs: { enemyDmgUntil:0, enemyArmorUntil:0 }, // Templar on-hit enemy debuff windows (timestamps)
-      knightStacks: 0,        // Knight Momentum: current -10% attack-speed stacks (0-5)
-      knightBuffUntil: 0,     // Knight on-miss buff window (timestamp)
+      knightStacks: 0,        // Knight Momentum: current -10% attack-speed stacks (0-5, or 0-8 with Relentless)
       thunderStacks: 0,       // Thunderfury Chain Lightning: current crit stacks (0-7)
       activePotion: null,   // Alchemy combat potion currently in use (item id) + its remaining charges
       potionCharges: 0,
@@ -10347,13 +10354,13 @@
     // Duelist Disengage (Lv 80): the next 3 attacks after a retreat are guaranteed Critical Hits.
     var forcedCrit = !isOffhand && duelistBonus(80) && (state.duelistGuaranteedCrits || 0) > 0;
     var samuraiFirstStrike = !isOffhand && samuraiBonus(1) && !!(act && act.samuraiFirstStrike); // Samurai Iaijutsu: the opening landed strike of each duel is a guaranteed crit
-    var isCrit = forcedCrit || samuraiFirstStrike || Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawEagleEyeCrit(monster) + knightMissCritChance() + spellbladeCritChance() + newClassCritChance() + legendaryCloakBonus('critchance', state) + (enchTot.critChance||0)/100); // + Quickdraw Eagle Eye (overflow accuracy), Spellblade Arcane Edge, new-class passives, legendary Shroud, equipped Crit Chance enchants
+    var isCrit = forcedCrit || samuraiFirstStrike || Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawEagleEyeCrit(monster) + spellbladeCritChance() + newClassCritChance() + legendaryCloakBonus('critchance', state) + (enchTot.critChance||0)/100); // + Quickdraw Eagle Eye (overflow accuracy), Spellblade Arcane Edge, new-class passives, legendary Shroud, equipped Crit Chance enchants
     // Wands are magical, so the melee/bow strength physiques don't scale them -- only the generic
     // low-HP tenacity bonus. Melee/bow keep their class physique multipliers.
     var physDmgMult = isWandAttack ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
     physDmgMult *= tenacityLowHpMult(state);
     // Elixir potions + familiar crit-damage buffs stack on top of the (capped) base+exploitation crit.
-    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + knightMissCritDmg() + thunderGalvanizeCritDmg() + treasureHunterCritDmgBonus() + newClassCritDmg() + pyromancerKindlingCritDmg(state) + legendaryCloakBonus('critdmg', state) + (enchTot.critDamage||0)/100) : 1;
+    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + thunderGalvanizeCritDmg() + treasureHunterCritDmgBonus() + newClassCritDmg() + pyromancerKindlingCritDmg(state) + legendaryCloakBonus('critdmg', state) + (enchTot.critDamage||0)/100) : 1;
 
     // Bow ammo: each shot (hit or miss) spends one Fletching Arrow unless the Quiver preserves it. With
     // no usable arrows the shot is "unfletched" and deals only a fraction of its damage (never blocked).
@@ -10371,12 +10378,11 @@
       addPhysiqueXp(physTierPairs([['agility',2]], monster.tierIndex));
       // The following class procs belong to the main-hand swing only (an off-hand Claw is pure extra DPS).
       if(!isOffhand){
-        // Knight (Momentum): a miss drops the attack-speed stacks. On-miss buffs (Lv 20+) fire for 8s.
-        if(knightBonus(1)) state.knightStacks = 0;
+        // Knight (Momentum): a miss resets the attack-speed stacks -- but Relentless (Lv 80) softens it to a single-stack drop.
+        if(knightBonus(1)) state.knightStacks = knightBonus(80) ? Math.max(0, (state.knightStacks || 0) - 1) : 0;
         if(samuraiBonus(60) && act) act.samuraiFocus = 0; // Samurai Bushido: a miss breaks the Focus combo
         if(spellbladeBonus(60)) state.spellbladeStacks = 0; // Spellblade Momentum resets on a miss
         if(duelistBonus(40)) state.duelistPoise = Math.max(0, (state.duelistPoise || 0) - 1); // Flourish: a miss drops a Poise stack
-        if(knightBonus(20)){ state.knightBuffUntil = Date.now() + 8000; spawnFloatingText('Vengeance!', 'ft-rare'); }
       }
       return;
     }
@@ -10385,7 +10391,7 @@
     var assassinVanish = assassinVanishReady(); // Assassin Vanish (Lv80): this landed strike is empowered if the 4s-untouched window is up
     var famTypeMult = isWandAttack ? 1 : famOutgoingDmgMult(weaponStyle.attackTypes || {blunt:1}); // physical-type familiar buffs don't apply to elemental wands
     var wandAttuneMult = isWandAttack ? elementDmgMult(state, weaponStyle.element) : 1; // Elemental Attunement boosts a wand's element damage
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * duelistDuelMult() * knightMissDmgMult() * wandAttuneMult * (isCrit ? assassinHemorrhageCritMult() : 1) * (assassinVanish ? ASSASSIN_VANISH_MULT : 1) * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (unfletched ? UNFLETCHED_DMG_MULT : 1) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, unfletched-bow penalty, and the mainhand's Enhance base-stat scaling
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * getFamiliarDamageMult() * famTypeMult * critMult * duelistDuelMult() * knightWarlordDmgMult(state) * wandAttuneMult * (isCrit ? assassinHemorrhageCritMult() : 1) * (assassinVanish ? ASSASSIN_VANISH_MULT : 1) * treasureHunterDmgMult() * frostwardenDmgMult() * plaguebearerContagionMult() * berserkerRageMult() * berserkerRecklessMult() * berserkerFuryMult() * spellbladeMomentumMult() * spellbladeOverwhelmMult() * newClassDmgMult(monster) * weaponsmithEdgeMult() * zealotryDmgMult() * ((isWandAttack||isScepterAttack) ? runicAttunementMult() : 1) * (1 + feastDamageBonus()) * (isOffhand ? OFFHAND_CLAW_DMG_MULT : 1) * (1 + (enchTot.pctDamage||0)/100) * (unfletched ? UNFLETCHED_DMG_MULT : 1) * (isOffhand ? 1 : mainhandEnhanceMult())); // + Weapon/All Damage enchants, unfletched-bow penalty, and the mainhand's Enhance base-stat scaling
     dmgToMonster += Math.round(enchTot.flatDamage||0); // + equipped-item Flat Damage enchants
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
@@ -10441,8 +10447,8 @@
       }
       // Samurai Bushido (Lv60): each landed hit builds a Focus stack (capped); a miss resets it (miss branch above).
       if(samuraiBonus(60)) act.samuraiFocus = Math.min(SAMURAI_FOCUS_MAX, (act.samuraiFocus||0) + 1);
-      // Knight (Momentum): each landed hit adds a -10% attack-speed stack (capped at 5 = -50%).
-      if(knightBonus(1)) state.knightStacks = Math.min(5, (state.knightStacks || 0) + 1);
+      // Knight (Momentum): each landed hit adds a -10% attack-speed stack (cap 5, or 8 with Relentless).
+      if(knightBonus(1)) state.knightStacks = Math.min(knightStackCap(state), (state.knightStacks || 0) + 1);
       // Lumen Oracle on-hit: Lv 20 Blind (15% -> reuse the enemy-damage debuff window), Lv 40 Flashbang (8% stun).
       if(lumenBonus(20) && Math.random() < 0.15){
         if(!state.classDebuffs) state.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
@@ -10570,8 +10576,9 @@
       // Spellblade (Momentum): each landed hit adds a +6% damage stack (cap 5); a miss resets it (below).
       if(spellbladeBonus(60)) state.spellbladeStacks = Math.min(5, (state.spellbladeStacks || 0) + 1);
     }
-    // Reaper (Lv 40/80) + Berserker (Lv 20 Bloodthirst): heal a share of the damage actually inflicted.
-    var lifestealPct = reaperLifestealPct() + berserkerLifestealPct() + nightbladeLifestealPct();
+    // Reaper (Lv 40/80) + Berserker (Lv 20 Bloodthirst) + Knight (Lv 60 Warlord's Presence, below-half HP):
+    // heal a share of the damage actually inflicted.
+    var lifestealPct = reaperLifestealPct() + berserkerLifestealPct() + nightbladeLifestealPct() + knightWarlordLifestealPct();
     if(lifestealPct > 0){
       var wouldHeal = Math.round(effDmg * lifestealPct);
       var healed = Math.min(wouldHeal, maxHp(state) - state.playerHp);
@@ -10693,7 +10700,7 @@
     // The hit lands its physical type AND the enemy's element together: the element is amplified by
     // the player's armor weakness to it (leather->fire, chain->earth, plate->water).
     var elementMult = incomingElementMult(state, monster);
-    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldGuardMult(state) * templarIncomingDmgMult() * lumenIncomingMult(state) * sentinelIncomingMult(state) * juggernautIncomingMult(state) * berserkerRecklessTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getWardResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring/amulet flat resistance
+    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldGuardMult(state) * templarIncomingDmgMult() * lumenIncomingMult(state) * sentinelIncomingMult(state) * juggernautIncomingMult(state) * berserkerRecklessTakenMult(state) * knightDamageTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getWardResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring/amulet flat resistance
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
     var blockChance = playerBlockChance(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
@@ -10775,6 +10782,8 @@
       if(_absorbed > 0) spawnFloatingText('Absorbed '+Math.round(_absorbed)+'!', 'ft-success');
     }
     state.playerHp -= dmgToPlayer;
+    // Knight Counterweight (Lv 20): a hit you take also builds a Momentum stack -- the blows you take feed your tempo.
+    if(dmgToPlayer > 0 && knightBonus(20)) state.knightStacks = Math.min(knightStackCap(state), (state.knightStacks || 0) + 1);
     if(dmgToPlayer > 0 && act && act.type==='combat') act.lastDamagedAt = Date.now(); // Assassin Vanish: a landed blow restarts the 4s-untouched clock
     // Thunderfury Grounding Rod (Lv40): a blow you take earths part of its force into a Static stack, charging your discharge faster.
     if(dmgToPlayer > 0 && thunderfuryBonus(40) && act && act.type==='combat'){ act.staticCharge = Math.min(THUNDER_STATIC_MAX, (act.staticCharge || 0) + 1); }
@@ -14619,7 +14628,6 @@
     Object.keys(COMBAT_BUFF_META).forEach(function(k){ var mm=COMBAT_BUFF_META[k]; add(k, fb[k+'Until'], mm.n, mm.c); });
     add('fury', state.berserkerFuryUntil, 'Fury', '#c8302a');
     add('enrage', state.summonerEnrageUntil, 'Host Enraged', '#c8302a');
-    add('vengeance', state.knightBuffUntil, 'Vengeance', '#8a90a0');
     return out;
   }
   function combatEnemyDebuffs(){
@@ -23666,7 +23674,7 @@
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, nightbladeDodgeBonus:nightbladeDodgeBonus, juggernautArmorMult:juggernautArmorMult, juggernautIncomingMult:juggernautIncomingMult, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenEnemyBlinded:lumenEnemyBlinded, lumenDodgeBonus:lumenDodgeBonus, lumenBlindingDealtMult:lumenBlindingDealtMult, lumenIncomingMult:lumenIncomingMult, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
-      frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightMissDmgMult:knightMissDmgMult, knightMissCritChance:knightMissCritChance, knightMissCritDmg:knightMissCritDmg,
+      frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, assassinRhythmRegister:assassinRhythmRegister, ASSASSIN_RHYTHM_MAX:ASSASSIN_RHYTHM_MAX, assassinApplyLacerate:assassinApplyLacerate, assassinLacerateMaxStacks:assassinLacerateMaxStacks, ASSASSIN_BLEED_MAX:ASSASSIN_BLEED_MAX, assassinHemorrhageCritMult:assassinHemorrhageCritMult, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem,

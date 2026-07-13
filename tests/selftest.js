@@ -3027,7 +3027,7 @@
     eq(FF.UNFLETCHED_DMG_MULT, 0.25, 'an unfletched bow deals 25% damage');
   });
 
-  // ---- Classes: Knight (claymore momentum + on-miss fury) -------------------------------
+  // ---- Classes: Knight (claymore offtank brawler: momentum + counterweight/bulwark/warlord/relentless) ----
   suite('classes: Knight', function(){
     ok(FF.CLASS_SKILL_IDS.indexOf('knight') !== -1, 'knight is a class skill id');
     var cd = FF.CLASS_DEFS_BY_ID.knight;
@@ -3060,25 +3060,49 @@
     eq(FF.knightStacks(s8), 5, 'knightStacks caps at 5 while active');
     eq(FF.knightStacks(offStacks), 0, 'no momentum stacks while class inactive');
 
-    // On-miss buffs (Lv 20/40/60/80) read the global 8s buff window on state.
+    // Lv 80 Relentless: Momentum cap rises from 5 to 8 (up to -80% attack timer).
+    eq(FF.knightStackCap(base()), 5, 'below Lv80 the Momentum cap stays at 5');
+    var r8 = base(); r8.xp.knight = FF.xpFloorForLevel(85); r8.knightStacks = 8;
+    eq(FF.knightStackCap(r8), 8, 'Relentless (Lv80) raises the Momentum cap to 8');
+    near(FF.classAttackSpeedMult(r8), 0.20, 'Lv80: 8 stacks => -80% attack timer');
+    eq(FF.knightStacks(r8), 8, 'knightStacks caps at 8 with Relentless');
+
+    // Lv 40 Bulwark: -4% damage taken per stack, capped at -20% (5 stacks) even past the Relentless cap.
+    var b20 = base(); b20.xp.knight = FF.xpFloorForLevel(25); b20.knightStacks = 5;
+    eq(FF.knightBulwarkDR(b20), 0, 'no Bulwark before Lv40');
+    var b40 = base(); b40.xp.knight = FF.xpFloorForLevel(45);
+    b40.knightStacks = 0; eq(FF.knightBulwarkDR(b40), 0, '0 stacks => no mitigation');
+    b40.knightStacks = 3; near(FF.knightBulwarkDR(b40), 0.12, '3 stacks => -12% damage taken');
+    b40.knightStacks = 5; near(FF.knightBulwarkDR(b40), 0.20, '5 stacks => -20% (cap)');
+    var b85 = base(); b85.xp.knight = FF.xpFloorForLevel(85); b85.knightStacks = 8;
+    near(FF.knightBulwarkDR(b85), 0.20, 'Bulwark still caps at -20% past the Relentless stack cap');
+
+    // Lv 60 Warlord's Presence + the combined mitigation need a full state (maxHp reads physique/enchants),
+    // so exercise them on _state with a controlled Knight loadout, then restore for the other suites.
     var s = FF._state;
-    var snap = { xpK:s.xp.knight, main:s.equippedMainhand, rar:s.equippedMainhandRarity, buf:s.knightBuffUntil,
+    var snap = { xpK:s.xp.knight, main:s.equippedMainhand, rar:s.equippedMainhandRarity, hp:s.playerHp, stk:s.knightStacks,
       helm:s.bodyArmor.helmet, chest:s.bodyArmor.chest, gaunt:s.bodyArmor.gauntlets, boots:s.bodyArmor.boots };
     s.equippedMainhand='claymore'; s.equippedMainhandRarity='normal';
     s.bodyArmor.helmet=chain(); s.bodyArmor.chest=plate(); s.bodyArmor.gauntlets=chain(); s.bodyArmor.boots=plate();
-    s.xp.knight = FF.xpFloorForLevel(85); // ~Lv 85 (all miss buffs)
-    s.knightBuffUntil = 0; // window closed
-    eq(FF.knightMissDmgMult(), 1, 'no window => no damage bonus');
-    eq(FF.knightMissCritChance(), 0, 'no window => no crit chance');
-    eq(FF.knightMissCritDmg(), 0, 'no window => no crit damage');
-    s.knightBuffUntil = Date.now()+9000; // window open
-    eq(FF.knightMissDmgMult(), 1.25, 'Lv 20: +25% damage on miss');
-    eq(FF.knightMissCritChance(), 0.15, 'Lv 40: +15% crit chance on miss');
-    near(FF.knightMissCritDmg(), 1.5, 'Lv 60 (+0.5) + Lv 80 (+1.0) = +1.5 crit damage');
-    s.xp.knight = FF.xpFloorForLevel(65); // ~Lv 65 (Lv 60 on, Lv 80 off)
-    near(FF.knightMissCritDmg(), 0.5, 'Lv 60 alone => +0.5 crit damage');
-    // restore _state for other suites
-    s.xp.knight = snap.xpK; s.equippedMainhand = snap.main; s.equippedMainhandRarity = snap.rar; s.knightBuffUntil = snap.buf;
+    var hp = FF.maxHp(s); // fortitude-driven, independent of Knight level/stacks
+    s.xp.knight = FF.xpFloorForLevel(25); s.playerHp = 1;
+    eq(FF.knightWarlordDmgMult(s), 1, 'no Warlord before Lv60');
+    s.xp.knight = FF.xpFloorForLevel(65);
+    s.playerHp = hp; // full HP -> offense stance
+    near(FF.knightWarlordDmgMult(s), 1.20, 'above half HP => +20% damage');
+    eq(FF.knightWarlordDR(s), 0, '...and no defensive bonus while healthy');
+    eq(FF.knightWarlordLifestealPct(s), 0, '...and no lifesteal while healthy');
+    ok(!FF.knightHurt(s), 'not "hurt" at full HP');
+    s.playerHp = Math.floor(hp*0.4); // below half -> defense stance
+    eq(FF.knightWarlordDmgMult(s), 1, 'below half HP => no damage bonus');
+    near(FF.knightWarlordDR(s), 0.25, '...but -25% damage taken');
+    near(FF.knightWarlordLifestealPct(s), 0.10, '...and +10% lifesteal');
+    ok(FF.knightHurt(s), '"hurt" below half HP');
+    // Combined incoming-damage multiplier: Bulwark (5 stacks, Lv85) + Warlord below-half.
+    s.xp.knight = FF.xpFloorForLevel(85); s.knightStacks = 5;
+    near(FF.knightDamageTakenMult(s), 0.55, 'Bulwark -20% + Warlord -25% => -45% damage taken');
+    // restore _state
+    s.xp.knight = snap.xpK; s.equippedMainhand = snap.main; s.equippedMainhandRarity = snap.rar; s.playerHp = snap.hp; s.knightStacks = snap.stk;
     s.bodyArmor.helmet = snap.helm; s.bodyArmor.chest = snap.chest; s.bodyArmor.gauntlets = snap.gaunt; s.bodyArmor.boots = snap.boots;
 
     // Class familiar (steel swordsman).
