@@ -11354,8 +11354,21 @@
     html += renderCottageForge(maxUnlocked, lvl);
     return html;
   }
+  // "Only show items I have materials for": a tiered forge card defaults to the highest unlocked tier, so
+  // if that top tier is unaffordable the card was hidden even when LOWER tiers are craftable. This drops
+  // the DISPLAYED tier to the highest one whose inputs we can currently afford, so those lower-tier
+  // craftables stay on screen (shown at the tier you can actually make). Returns sel unchanged when the
+  // filter is off, when the shown tier is already affordable, or when nothing is affordable (still hidden).
+  function craftFilterTier(sel, maxTier, getInputs, isActiveAt){
+    if(!craftOnlyAffordable) return sel;
+    if(isActiveAt && isActiveAt(sel)) return sel;   // never move an in-progress craft off its own card
+    if(hasInputs(getInputs(sel))) return sel;
+    for(var t=maxTier; t>=0; t--){ if(hasInputs(getInputs(t))) return t; }
+    return sel;
+  }
   function renderCottageForge(maxUnlocked, lvl){
     var sel = Math.min(selectedCottageTier, maxUnlocked);
+    sel = craftFilterTier(sel, maxUnlocked, function(t){ return getCottageTierData(t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('cottage', {tierIndex:t}); });
     var data = getCottageTierData(sel);
     var activeSlot = findActiveSpecialCraftSlotFor('cottage', {tierIndex:sel});
     var isActive = !!activeSlot;
@@ -11384,6 +11397,7 @@
   function renderWorkshopCard(skillId, maxUnlocked, lvl){
     if(selectedWorkshopTier[skillId] === undefined) selectedWorkshopTier[skillId] = maxUnlocked;
     var sel = Math.min(selectedWorkshopTier[skillId], maxUnlocked);
+    sel = craftFilterTier(sel, maxUnlocked, function(t){ return getWorkshopTierData(skillId, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('workshop', {skillId:skillId, tierIndex:t}); });
     var data = getWorkshopTierData(skillId, sel);
     var activeSlot = findActiveSpecialCraftSlotFor('workshop', {skillId:skillId, tierIndex:sel});
     var isActive = !!activeSlot;
@@ -11626,6 +11640,7 @@
     TOOL_TYPES.forEach(function(tt){
       if(selectedToolTier[tt.skillId] === undefined) selectedToolTier[tt.skillId] = maxUnlocked;
       var sel = Math.min(selectedToolTier[tt.skillId], maxUnlocked);
+      sel = craftFilterTier(sel, maxUnlocked, function(t){ return (tt.isGather ? getGatherToolTierData(tt.skillId, t+1) : getCraftToolTierData(tt.skillId, t+1)).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('tool', {skillId:tt.skillId, tierIndex:t}); });
       var data = tt.isGather ? getGatherToolTierData(tt.skillId, sel+1) : getCraftToolTierData(tt.skillId, sel+1);
       var activeSlot = findActiveSpecialCraftSlotFor('tool', {skillId:tt.skillId, tierIndex:sel});
       var isActive = !!activeSlot;
@@ -11680,6 +11695,7 @@
         var key = material+'_'+slot;
         if(selectedBodyArmorTier[key] === undefined) selectedBodyArmorTier[key] = maxUnlocked;
         var sel = Math.min(selectedBodyArmorTier[key], maxUnlocked);
+        sel = craftFilterTier(sel, maxUnlocked, function(t){ return getBodyArmorTierData(material, slot, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('bodyarmor', {material:material, slot:slot, tierIndex:t}); });
         var data = getBodyArmorTierData(material, slot, sel);
         var activeSlot = findActiveSpecialCraftSlotFor('bodyarmor', {material:material, slot:slot, tierIndex:sel});
         var isActive = !!activeSlot;
@@ -11772,6 +11788,7 @@
         var key = material+'_'+slot;
         if(selectedBodyArmorTier[key] === undefined) selectedBodyArmorTier[key] = maxUnlocked;
         var sel = Math.min(selectedBodyArmorTier[key], maxUnlocked);
+        sel = craftFilterTier(sel, maxUnlocked, function(t){ return getBodyArmorTierData(material, slot, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('bodyarmor', {material:material, slot:slot, tierIndex:t}); });
         var data = getBodyArmorTierData(material, slot, sel);
         var activeSlot = findActiveSpecialCraftSlotFor('bodyarmor', {material:material, slot:slot, tierIndex:sel});
         var isActive = !!activeSlot;
@@ -11805,6 +11822,7 @@
     html += '<div class="section-intro">Belts work differently: rarity doesn\'t just scale their (small) defense -- Rare lets you run 2 tasks at once, Supreme 3, Fantastic 4. Each extra slot can be any task -- crafting, gathering, or Faith (prayer) -- and they can be freely mixed (e.g. mine while you smith while you pray).</div>';
     if(selectedBeltTier===null) selectedBeltTier = maxUnlocked;
     var beltSel = Math.min(selectedBeltTier, maxUnlocked);
+    beltSel = craftFilterTier(beltSel, maxUnlocked, function(t){ return getBeltTierData(t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('belt', {tierIndex:t}); });
     var beltData = getBeltTierData(beltSel);
     var beltActiveSlot = findActiveSpecialCraftSlotFor('belt', {tierIndex:beltSel});
     var beltIsActive = !!beltActiveSlot;
@@ -11849,6 +11867,7 @@
         var key = material+'_'+slot;
         if(selectedBodyArmorTier[key] === undefined) selectedBodyArmorTier[key] = maxUnlocked;
         var sel = Math.min(selectedBodyArmorTier[key], maxUnlocked);
+        sel = craftFilterTier(sel, maxUnlocked, function(t){ return getBodyArmorTierData(material, slot, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('bodyarmor', {material:material, slot:slot, tierIndex:t}); });
         var data = getBodyArmorTierData(material, slot, sel);
         var activeSlot = findActiveSpecialCraftSlotFor('bodyarmor', {material:material, slot:slot, tierIndex:sel});
         var isActive = !!activeSlot;
@@ -11899,6 +11918,7 @@
       if(rt.retired) return; // retired ring types (e.g. Warding) stay usable if owned but are no longer craftable
       if(selectedRingTier[rt.id] === undefined) selectedRingTier[rt.id] = maxUnlocked;
       var sel = Math.min(selectedRingTier[rt.id], maxUnlocked);
+      sel = craftFilterTier(sel, maxUnlocked, function(t){ return getRingTierData(rt.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('ring', {typeId:rt.id, tierIndex:t}); });
       var data = getRingTierData(rt.id, sel);
       var activeSlot = findActiveSpecialCraftSlotFor('ring', {typeId:rt.id, tierIndex:sel});
       var isActive = !!activeSlot;
@@ -11932,6 +11952,7 @@
     AMULET_TYPES.forEach(function(at){
       if(selectedAmuletTier[at.id] === undefined) selectedAmuletTier[at.id] = maxUnlocked;
       var amSel = Math.min(selectedAmuletTier[at.id], maxUnlocked);
+      amSel = craftFilterTier(amSel, maxUnlocked, function(t){ return getAmuletTierData(at.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('amulet', {typeId:at.id, tierIndex:t}); });
       var amData = getAmuletTierData(at.id, amSel);
       var amActiveSlot = findActiveSpecialCraftSlotFor('amulet', {typeId:at.id, tierIndex:amSel});
       var amIsActive = !!amActiveSlot;
@@ -11971,6 +11992,7 @@
       for(var mi=0; mi<w.tierCount; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
       if(selectedMeleeWeaponTier[w.id] === undefined) selectedMeleeWeaponTier[w.id] = maxUnlocked;
       var sel = Math.min(selectedMeleeWeaponTier[w.id], maxUnlocked);
+      sel = craftFilterTier(sel, maxUnlocked, function(t){ return getStackableWeaponTierData(w.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('stackweapon', {typeId:w.id, tierIndex:t}); });
       var data = getStackableWeaponTierData(w.id, sel);
       var activeSlot = findActiveSpecialCraftSlotFor('stackweapon', {typeId:w.id, tierIndex:sel});
       var isActive = !!activeSlot;
@@ -12115,6 +12137,7 @@
       for(var mi=0; mi<s.tierCount; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
       if(selectedShieldTier[s.id] === undefined) selectedShieldTier[s.id] = maxUnlocked;
       var sel = Math.min(selectedShieldTier[s.id], maxUnlocked);
+      sel = craftFilterTier(sel, maxUnlocked, function(t){ return getStackableShieldTierData(s.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('stackshield', {typeId:s.id, tierIndex:t}); });
       var data = getStackableShieldTierData(s.id, sel);
       var activeSlot = findActiveSpecialCraftSlotFor('stackshield', {typeId:s.id, tierIndex:sel});
       var isActive = !!activeSlot;
@@ -12223,6 +12246,7 @@
       for(var mi=0; mi<w.tierCount; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
       if(selectedWardTier[w.id] === undefined) selectedWardTier[w.id] = maxUnlocked;
       var sel = Math.min(selectedWardTier[w.id], maxUnlocked);
+      sel = craftFilterTier(sel, maxUnlocked, function(t){ return getWardTierData(w.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('ward', {typeId:w.id, tierIndex:t}); });
       var data = getWardTierData(w.id, sel);
       var activeSlot = findActiveSpecialCraftSlotFor('ward', {typeId:w.id, tierIndex:sel});
       var isActive = !!activeSlot;
@@ -12261,6 +12285,7 @@
     for(var mi=0; mi<w.tierCount; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
     if(selectedWandTier[w.id] === undefined) selectedWandTier[w.id] = maxUnlocked;
     var sel = Math.min(selectedWandTier[w.id], maxUnlocked);
+    sel = craftFilterTier(sel, maxUnlocked, function(t){ return getStackableWeaponTierData(w.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('stackweapon', {typeId:w.id, tierIndex:t}); });
     var data = getStackableWeaponTierData(w.id, sel);
     var activeSlot = findActiveSpecialCraftSlotFor('stackweapon', {typeId:w.id, tierIndex:sel});
     var isActive = !!activeSlot;
@@ -12344,6 +12369,7 @@
       for(var mi=0; mi<w.tierCount; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
       if(selectedWandTier[w.id] === undefined) selectedWandTier[w.id] = maxUnlocked;
       var sel = Math.min(selectedWandTier[w.id], maxUnlocked);
+      sel = craftFilterTier(sel, maxUnlocked, function(t){ return getStackableWeaponTierData(w.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('stackweapon', {typeId:w.id, tierIndex:t}); });
       var data = getStackableWeaponTierData(w.id, sel);
       var activeSlot = findActiveSpecialCraftSlotFor('stackweapon', {typeId:w.id, tierIndex:sel});
       var isActive = !!activeSlot;
@@ -12381,6 +12407,7 @@
     for(var mi=0; mi<w.tierCount; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
     if(selectedWandTier[w.id] === undefined) selectedWandTier[w.id] = maxUnlocked;
     var sel = Math.min(selectedWandTier[w.id], maxUnlocked);
+    sel = craftFilterTier(sel, maxUnlocked, function(t){ return getStackableWeaponTierData(w.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('stackweapon', {typeId:w.id, tierIndex:t}); });
     var data = getStackableWeaponTierData(w.id, sel);
     var activeSlot = findActiveSpecialCraftSlotFor('stackweapon', {typeId:w.id, tierIndex:sel});
     var isActive = !!activeSlot;
