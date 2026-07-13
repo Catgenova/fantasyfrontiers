@@ -17906,8 +17906,10 @@
     return html;
   }
   function renderEstateTab(){
-    // Read-only viewer for another player's published estate (opened from the leaderboard).
-    if(estateVisit.active){
+    // Read-only viewer for another player's published estate (opened from the leaderboard). Gated on
+    // the transient 'visitestate' category too: this same function renders My Estate AND the guild
+    // estate, and a lingering estateVisit (user navigated away without Leave) must not hijack those.
+    if(estateVisit.active && currentCategory==='visitestate'){
       var vName = escapeHtml(estateVisit.name || 'a player');
       var vh = '<div class="estate-visit-bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">'
         + '<button class="action-btn" data-action="leaveEstateVisit" style="width:auto;flex:0 0 auto;">‹ Leave</button>'
@@ -19580,6 +19582,19 @@
     html += '</div></div>';
     return html;
   }
+  // Sanity-check a fetched estate snapshot before pointing the canvas at it: profile blobs are
+  // client-published, so a tampered profile could carry a huge or malformed grid. Bound the
+  // dimensions (the real game never exceeds ~30x30) and require rectangular array-of-arrays.
+  function visitEstateGridOk(e){
+    if(!e || !Array.isArray(e.grid) || !e.grid.length || e.grid.length > 64) return false;
+    var h = -1;
+    for(var i=0;i<e.grid.length;i++){
+      var col = e.grid[i];
+      if(!Array.isArray(col) || !col.length || col.length > 64) return false;
+      if(h === -1) h = col.length; else if(col.length !== h) return false;
+    }
+    return true;
+  }
   // Open a read-only view of another player's published estate (from their leaderboard profile).
   // Switches to the transient 'visitestate' category, fetches just that player's estate snapshot,
   // and lets them pan/zoom/rotate without any interaction (see estReadOnly).
@@ -19597,7 +19612,7 @@
         var res = await chatClient.from('profiles').select('estate').eq('id', playerId).maybeSingle();
         if(!estateVisit.active) return; // user already left
         if(res.error){ estateVisit.loading=false; estateVisit.error='Estate viewing isn’t available yet.'; }
-        else if(res.data && res.data.estate && res.data.estate.grid){ estateVisit.estate = res.data.estate; estateVisit.loading=false; }
+        else if(res.data && visitEstateGridOk(res.data.estate)){ estateVisit.estate = res.data.estate; estateVisit.loading=false; }
         else { estateVisit.loading=false; } // no estate published -> renderEstateTab shows the soft empty note
       }catch(e){ estateVisit.loading=false; estateVisit.error='Could not load their estate.'; }
       if(currentCategory==='visitestate') render();
@@ -20890,7 +20905,7 @@
     document.getElementById('content').innerHTML = html;
     if(currentCategory==='estate'){ estUse(false); renderEstateCanvas(); }
     if(currentCategory==='visitestate' && estateVisit.estate){ estActive = estateVisit.estate; estIsGuild = false; estReadOnly = true; renderEstateCanvas(); }
-    if(currentCategory==='guild' && guildSub==='estate' && guildEstate.status==='ready'){ estUse(true); renderEstateCanvas(); }
+    if(currentCategory==='guild' && guildSub==='estate' && guildEstate.status==='ready'){ estUse(true); estReadOnly=false; renderEstateCanvas(); }
     if(currentCategory==='chat'){ var _cm=document.getElementById('chatMessages'); if(_cm) _cm.scrollTop=_cm.scrollHeight; }
   }
 
