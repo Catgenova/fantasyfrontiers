@@ -2744,7 +2744,7 @@
     ok(fam.spells.some(function(s){ return s.type==='armorBuff' || s.type==='timedBuff' || s.type==='damageBuff'; }), 'herald familiar grants buffs');
   });
 
-  // ---- Classes: Quickdraw (short-bow archer: speed, penetration, rapid fire) ------------
+  // ---- Classes: Quickdraw (short-bow archer: Trick Shot / Second Wind / Twin Fang / Eagle Eye / Serpent's Sting) ----
   suite('classes: Quickdraw', function(){
     ok(FF.CLASS_SKILL_IDS.indexOf('quickdraw') !== -1, 'quickdraw is a class skill id');
     var cd = FF.CLASS_DEFS_BY_ID.quickdraw;
@@ -2772,20 +2772,29 @@
     eq(FF.activeClassId(plateHelm), null, 'helm must be leather (plate does not qualify)');
 
     var lvHi = FF.xpFloorForLevel(85); // ~Lv 85
-    function leveled(){ var s = base(); s.xp.quickdraw = lvHi; return s; }
+    var lv100 = FF.xpFloorForLevel(100);
+    function leveled(){ var s = base(); s.xp.quickdraw = lvHi; s.physique = {}; return s; }
 
-    // Lv 1 Fleet Fingers: -15% attack timer (even at Class Lv 1).
-    eq(FF.classAttackSpeedMult(full), 0.85, 'Quickdraw Lv 1: -15% attack timer');
-    var off = base(); off.equippedOffhand=null;
-    eq(FF.classAttackSpeedMult(off), 1, 'attack-timer bonus gated on the class being active');
+    // Lv 1 Trick Shot is a crit -> bonus-shot proc; Quickdraw no longer has any passive attack-speed.
+    eq(FF.classAttackSpeedMult(full), 1, 'Quickdraw has no passive attack-speed at Lv 1 (Trick Shot is a crit proc)');
 
-    // Lv 40 Piercing Shot: +10% damage.
-    eq(FF.quickdrawPenetrationMult(full), 1, 'Lv 1 quickdraw: no penetration yet');
-    eq(FF.quickdrawPenetrationMult(leveled()), 1.10, 'Lv 40+: +10% damage');
+    // Lv 20 Second Wind: below 40% HP -> -20% attack timer + +20% Dodge; gated on Lv 20 AND the HP threshold.
+    var swLow = leveled(); swLow.playerHp = 10;    // maxHp(physique {}) = 50 -> 40% = 20; 10 < 20 => active
+    var swFull = leveled(); swFull.playerHp = 45;  // 45 >= 20 => inactive
+    eq(FF.quickdrawSecondWind(swLow), true, 'Second Wind active below 40% HP at Lv 20+');
+    eq(FF.quickdrawSecondWind(swFull), false, 'Second Wind inactive at healthy HP');
+    eq(FF.quickdrawSecondWindDodge(swLow), 0.20, 'Second Wind grants +20% Dodge');
+    eq(FF.classAttackSpeedMult(swLow), 0.80, 'Second Wind: -20% attack timer while active');
+    var swLv1 = base(); swLv1.physique = {}; swLv1.playerHp = 1;
+    eq(FF.quickdrawSecondWind(swLv1), false, 'Second Wind is gated on Class Lv 20 (not at Lv 1)');
 
-    // Lv 60 Deadeye: +10% crit chance.
-    eq(FF.quickdrawCritChanceBonus(full), 0, 'Lv 1 quickdraw: no crit bonus yet');
-    eq(FF.quickdrawCritChanceBonus(leveled()), 0.10, 'Lv 60+: +10% crit chance');
+    // Lv 60 Eagle Eye: accuracy over a foe's Dodge -> crit chance (cap +25%); nothing when accuracy <= dodge.
+    var ee = leveled(); ee.xp.bowShort = lv100;    // high bow proficiency -> accuracy well over a t0 foe's dodge
+    ok(FF.quickdrawEagleEyeCrit({tierIndex:0}, ee) > 0, 'Eagle Eye converts overflow accuracy into crit chance');
+    eq(FF.quickdrawEagleEyeCrit({tierIndex:20}, ee), 0, 'no Eagle Eye crit when accuracy does not exceed a tough foe\'s dodge');
+    eq(FF.quickdrawEagleEyeCrit({tierIndex:0}, full), 0, 'Eagle Eye is gated on Class Lv 60 (nothing at Lv 1)');
+    var eeMax = leveled(); eeMax.physique = { agility:lv100, bodyControl:lv100, grossMotor:lv100, fineMotor:lv100, sleightOfHand:lv100 };
+    eq(FF.quickdrawEagleEyeCrit({tierIndex:0}, eeMax), 0.25, 'Eagle Eye crit is capped at +25%');
 
     // Class familiar is a piercing archer to match the fantasy.
     var fam = FF.FAMILIAR_DATA.quickdraw;
