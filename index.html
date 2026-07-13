@@ -15747,6 +15747,7 @@
     estActive.expansionsPurchased = purchased + 1;
     addLog('You expanded ' + (estIsGuild?'the guild':'your') + ' estate for ' + cost + ' gold.', 'important');
     spawnFloatingText('+1 Tile', 'ft-success');
+    if(estIsGuild) guildLogPush('estate', 'expanded the estate (+1 tile) for '+fmt(cost)+'g of their own gold');
     estPersist();
     needsRender = true;
   }
@@ -15766,6 +15767,8 @@
       guildEstate.expansionsPurchased = purchased + 1;
       addLog('Expanded the guild estate for ' + fmt(cost) + ' gold from the treasury.', 'important');
       spawnFloatingText('+1 Tile', 'ft-success');
+      guildLogPush('estate', 'expanded the estate (+1 tile) for '+fmt(cost)+'g');
+      guildLogPush('bank', '−'+fmt(cost)+'g (estate expansion)');
       guildEstatePersist();
       if(currentCategory==='guild'||currentCategory==='peons') render();
     });
@@ -16056,6 +16059,10 @@
           addLog('Cleared the ' + oinfo.def.label + (isGuild ? ' on the guild estate' : ' at (' + job.x + ', ' + job.y + ')') + '. +' + oinfo.resourceAmount + ' ' + oinfo.itemName + ', +' + oinfo.xp + ' ' + SKILL_LABELS[oinfo.def.skill] + ' XP.', 'important');
           spawnFloatingText('+' + oinfo.resourceAmount + ' ' + oinfo.itemName, 'ft-success');
         }
+        if(isGuild){
+          guildLogPush('estate', 'cleared the ' + oinfo.def.label + ' at (' + job.x + ', ' + job.y + ')');
+          if(!isMortalGuild()) guildLogPush('bank', '+' + oinfo.resourceAmount + ' ' + oinfo.itemName + ' (cleared)');
+        }
       }
       cell.obstacle = null;
       return true;
@@ -16068,6 +16075,7 @@
         addXp('paving', pavXp);
         addLog('Finished paving (' + job.x + ', ' + job.y + ')' + (pr?' with '+pr.name:'') + '. +' + pavXp + ' Paving XP.', 'important');
         spawnFloatingText('Tile Paved! +' + pavXp + ' Paving XP', 'ft-success');
+        if(isGuild) guildLogPush('estate', 'paved (' + job.x + ', ' + job.y + ')' + (pr ? ' with ' + pr.name : ''));
       }
       return true;
     }
@@ -16079,6 +16087,7 @@
         addXp('carpentry', wsXp);
         addLog('Finished building the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'workshop') + '. +' + wsXp + ' Carpentry XP.', 'important');
         spawnFloatingText('Workshop built! +' + wsXp + ' Carpentry XP', 'ft-bonus');
+        if(isGuild) guildLogPush('estate', 'built the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'Workshop') + ' at (' + job.x + ', ' + job.y + ')');
       }
       return true;
     }
@@ -16090,6 +16099,7 @@
         addXp('carpentry', cotXp);
         addLog('Finished building the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + '. +' + cotXp + ' Carpentry XP.' + (cadj ? ' Linked to the adjacent ' + workshopSkillLabel(WORKSHOP_ITEMS[cadj.workshopId].skillId) + ' Workshop.' : ' Place it beside a single Workshop to house a Peon.'), 'important');
         spawnFloatingText('Cottage built! +' + cotXp + ' Carpentry XP', 'ft-bonus');
+        if(isGuild) guildLogPush('estate', 'built the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'Cottage') + ' at (' + job.x + ', ' + job.y + ')');
       }
       return true;
     }
@@ -16207,6 +16217,7 @@
     cell.paveTileId = nextId;
     addLog('You upgraded the pavement at (' + x + ', ' + y + ') to ' + (recipe ? recipe.name : nextId) + '.', 'important');
     spawnFloatingText('Pavement upgraded!', 'ft-success');
+    if(estIsGuild) guildLogPush('estate', 'upgraded pavement at ('+x+', '+y+') to '+(recipe ? recipe.name : nextId));
     estPersist();
     needsRender = true;
   }
@@ -16227,6 +16238,7 @@
     estRecomputeWorkshops();
     addLog('You upgraded the ' + workshopSkillLabel(wIt.skillId) + ' Workshop at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[nextTier] + '.', 'important');
     spawnFloatingText('Workshop upgraded!', 'ft-success');
+    if(estIsGuild) guildLogPush('estate', 'upgraded the '+workshopSkillLabel(wIt.skillId)+' Workshop at ('+x+', '+y+') to '+FORESTRY_NAMES[nextTier]);
     estPersist();
     needsRender = true;
   }
@@ -16243,6 +16255,7 @@
     cell.cottageId = 'cottage_t' + nextTier;
     addLog('You upgraded the Cottage at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[nextTier] + '.', 'important');
     spawnFloatingText('Cottage upgraded!', 'ft-success');
+    if(estIsGuild) guildLogPush('estate', 'upgraded the Cottage at ('+x+', '+y+') to '+FORESTRY_NAMES[nextTier]);
     estPersist();
     needsRender = true;
   }
@@ -19852,6 +19865,7 @@
     state.inventory[key] = Math.max(0, (state.inventory[key]||0) - qty); // only after the server accepted it
     saveGame(); guildBankApply(res); render();
     addLog('Deposited '+qty+'x '+((ALL_SELLABLE[key]||{}).name || key)+' to the guild bank.', 'important');
+    guildLogAppend('bank', '+'+qty+' '+((ALL_SELLABLE[key]||{}).name || key)+' (deposited)');
   }
   function guildBankWithdraw(key){
     if(guildBankState.busy) return;
@@ -19867,7 +19881,9 @@
     guildBankInvoke('withdraw', { item_key:key, qty:qty }).then(function(res){
       guildBankState.busy=false;
       if(!res.ok){ guildBankState.error=res.error||'Withdraw failed.'; render(); return; }
-      addItem(key, (typeof res.granted === 'number') ? res.granted : qty); saveGame(); guildBankApply(res); render(); // trust the server's granted count; a real 0 must not fall back to the full request
+      var _wq = (typeof res.granted === 'number') ? res.granted : qty;
+      addItem(key, _wq); saveGame(); guildBankApply(res); render(); // trust the server's granted count; a real 0 must not fall back to the full request
+      guildLogAppend('bank', '−'+_wq+' '+guildBankItemName(key)+' (withdrew)');
     });
   }
   // Deposit a UNIQUE (enchanted/enhanced) item into the vault. Its per-instance blob (base + enchants +
@@ -19884,6 +19900,7 @@
       if(!res.ok){ guildBankState.error=(res.error||'Deposit failed.')+(res.code?'' : ' (the guild bank may need its server update).'); render(); return; }
       removeUnique(uid); if(improveSel===uid) improveSel=null;
       addLog('Deposited '+uniqueDisplayName(u)+' into the guild bank.','chronicle');
+      guildLogAppend('bank', '+'+uniqueDisplayName(u)+' (deposited)');
       saveGame(); guildBankApply(res); render();
     });
   }
@@ -19900,6 +19917,7 @@
         state.uniqueItems[newUid] = { uid:newUid, base:u.base, kind:u.kind, tier:u.tier, rarity:u.rarity, enhance:u.enhance||0,
           enchants:(u.enchants||[]).map(function(e){ return { mod:e.mod, roll:parseInt(e.roll,10)||0 }; }) };
         addLog('Withdrew '+uniqueDisplayName(state.uniqueItems[newUid])+' from the guild bank.','important');
+        guildLogAppend('bank', '−'+uniqueDisplayName(state.uniqueItems[newUid])+' (withdrew)');
       }
       saveGame(); guildBankApply(res); render();
     });
@@ -19913,6 +19931,7 @@
       guildBankState.busy=false;
       if(!res.ok){ guildBankState.error=res.error||'Purchase failed.'; render(); return; }
       guildBankApply(res); render(); // paid from the treasury (snapshot returns the new balance); no personal gold spent
+      guildLogAppend('bank', '−'+fmt(cost)+'g (bought a bank slot)');
     });
   }
   function guildBankSetWithdrawRank(rank){
@@ -19934,6 +19953,7 @@
       if(!res.ok){ guildBankState.error=res.error||'Donation failed.'; render(); return; }
       state.gold = Math.max(0, (state.gold||0) - amt); // only after the server accepted it
       saveGame(); guildBankApply(res); render();
+      guildLogAppend('bank', '+'+fmt(amt)+'g (donated to treasury)');
     });
   }
   function guildBankWithdrawGold(){
@@ -19951,11 +19971,13 @@
       if(!res.ok){ guildBankState.error=res.error||'Withdraw failed.'; render(); return; }
       var _g = (res.granted == null) ? amt : Number(res.granted); if(!isFinite(_g)) _g = 0; // trust the server's number; a real 0 must not fall back to the full request
       earnGold(Math.max(0, _g)); saveGame(); guildBankApply(res); render();
+      guildLogAppend('bank', '−'+fmt(Math.max(0,_g))+'g (withdrew from treasury)');
     });
   }
   function renderGuildBank(){
     if(isMortal()) return '<div class="empty-note">Guild banks are sealed to <b style="color:#8a1f2c;">Mortal</b>-path adventurers. A Mortal guild keeps no shared vault &mdash; what you carry is yours alone.</div>';
     if(guildBankState.status==='idle' || guildBankState.guildId !== (guildState.guild&&guildState.guild.id)){ guildBankLoad(); }
+    guildEstateEnsure(); // the shared activity log rides the estate blob -- load it so the ledger shows + bank ops can append
     var canManage = guildState.myRank==='leader' || guildState.myRank==='officer';
     var isLeader = guildState.myRank==='leader';
     var canWithdraw = guildBankCanWithdraw();
@@ -20034,6 +20056,7 @@
     } else if(!canWithdraw){
       html += '<div class="empty-note" style="margin-top:8px;">Withdrawals are restricted to '+(guildBankState.minWithdrawRank==='leader'?'the leader':'officers and above')+'.</div>';
     }
+    html += renderGuildActivityLog('bank', 'Bank Ledger');
     return html;
   }
 
@@ -20060,7 +20083,47 @@
   // The live shared-estate object. Shaped like state.estate (grid + edges + expansionsPurchased)
   // so the whole estate engine operates on it unchanged. `job` is a computed accessor mapping to
   // MY entry in the shared jobs[] (keyed by user id), so estActive.job behaves like personal.
-  var guildEstate = { status:'idle', guildId:null, version:0, error:'', busy:false, grid:null, jobs:[], expansionsPurchased:0, edgesX:null, edgesY:null, _sub:null, _subGuild:null };
+  var guildEstate = { status:'idle', guildId:null, version:0, error:'', busy:false, grid:null, jobs:[], expansionsPurchased:0, edgesX:null, edgesY:null, log:[], _sub:null, _subGuild:null };
+  // Shared guild activity log (rides the synced estate blob so every officer sees everyone's actions).
+  // Entries: { kind:'estate'|'bank', who, text, at }. Newest first, capped. Officer+ only in the UI.
+  var GUILD_LOG_MAX = 120;
+  function estIsGuildContext(){ return !!(guildEstate.status==='ready' && guildState.guild); }
+  // Append a log entry (newest first, capped). Returns whether it landed. No flush -- callers that
+  // already persist (estate edits) rely on their own estPersist(); guildLogAppend flushes for callers
+  // that don't (bank ops).
+  function guildLogPush(kind, text){
+    if(!estIsGuildContext()) return false;                   // only while a guild estate is loaded/synced
+    if(!Array.isArray(guildEstate.log)) guildEstate.log = [];
+    guildEstate.log.unshift({ kind:kind, who: guildMyName(), text: String(text||'').slice(0,160), at: Date.now() });
+    if(guildEstate.log.length > GUILD_LOG_MAX) guildEstate.log.length = GUILD_LOG_MAX;
+    return true;
+  }
+  function guildLogAppend(kind, text){ if(guildLogPush(kind, text)) guildEstatePersist(); }
+  function guildIsOfficerPlus(){ return guildState.myRank==='leader' || guildState.myRank==='officer'; }
+  function guildLogTime(at){
+    var diff = Date.now() - (at||0);
+    if(diff < 60000) return 'just now';
+    if(diff < 3600000) return Math.floor(diff/60000)+'m ago';
+    if(diff < 86400000) return Math.floor(diff/3600000)+'h ago';
+    var d = new Date(at||0);
+    return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+  }
+  // Officer+ only audit log, filtered by kind ('estate' | 'bank'). Reads the shared guildEstate.log blob.
+  function renderGuildActivityLog(kind, title){
+    if(!guildIsOfficerPlus()) return '';
+    var entries = (guildEstate.log||[]).filter(function(e){ return e && e.kind===kind; }).slice(0, 60);
+    var html = '<div class="guild-section-title" style="margin-top:16px">📜 '+escapeHtml(title)+' <span style="color:var(--text-faint);font-weight:400">(officers+)</span></div>';
+    if(!entries.length){ html += '<div class="empty-note">No activity recorded yet.</div>'; return html; }
+    html += '<div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:8px;">';
+    entries.forEach(function(e, i){
+      html += '<div style="display:flex;gap:8px;align-items:baseline;padding:5px 9px;font-size:12px;'+(i%2?'background:rgba(0,0,0,0.04);':'')+'">'
+        + '<span style="flex:0 0 auto;color:var(--text-faint);font-family:var(--font-mono);font-size:10px;min-width:64px;">'+escapeHtml(guildLogTime(e.at))+'</span>'
+        + '<span style="flex:0 0 auto;color:var(--gold);font-weight:600;">'+escapeHtml(e.who||'?')+'</span>'
+        + '<span style="flex:1 1 auto;color:var(--text);">'+escapeHtml(e.text||'')+'</span></div>';
+    });
+    html += '</div>';
+    return html;
+  }
   Object.defineProperty(guildEstate, 'job', {
     get: function(){ var id=estMyId(); return (this.jobs||[]).filter(function(j){ return j.owner===id; })[0] || null; },
     set: function(j){ var id=estMyId(); this.jobs=(this.jobs||[]).filter(function(x){ return x.owner!==id; }); if(j){ j.owner=id; j.ownerName=guildMyName(); this.jobs.push(j); } }
@@ -20069,7 +20132,7 @@
   function guildEstateReset(){
     if(guildEstate._sub && chatClient){ try{ chatClient.removeChannel(guildEstate._sub); }catch(e){} }
     guildEstate._sub=null; guildEstate._subGuild=null;
-    guildEstate.status='idle'; guildEstate.guildId=null; guildEstate.grid=null; guildEstate.jobs=[]; guildEstate.version=0; guildEstate.error='';
+    guildEstate.status='idle'; guildEstate.guildId=null; guildEstate.grid=null; guildEstate.jobs=[]; guildEstate.version=0; guildEstate.error=''; guildEstate.log=[];
     guildPlacedWorkshops={};
   }
   // Countdown label reused by the Bosses UI too.
@@ -20094,6 +20157,7 @@
     guildEstate.destroyRole = data.destroyRole || 'officer'; // who may demolish on the guild estate
     if(data.edgesX && data.edgesY){ guildEstate.edgesX = data.edgesX; guildEstate.edgesY = data.edgesY; }
     else if(!guildEstate.edgesX){ var e = generateEstateEdges(); guildEstate.edgesX = e.edgesX; guildEstate.edgesY = e.edgesY; }
+    guildEstate.log = Array.isArray(data.log) ? data.log : [];
     guildEstate.version = version;
     guildEstate.status = 'ready';
     // Match my preserved job by tile only (not readyAt): a teammate assisting my job legitimately
@@ -20135,7 +20199,7 @@
   function guildEstatePersist(onOk){
     if(!chatClient || guildEstate.status!=='ready' || !guildState.guild) return;
     var expected = guildEstate.version, gid = guildState.guild.id;
-    var blob = { grid:guildEstate.grid, jobs:guildEstate.jobs, expansionsPurchased:guildEstate.expansionsPurchased, edgesX:guildEstate.edgesX, edgesY:guildEstate.edgesY, destroyRole:guildEstate.destroyRole||'officer' };
+    var blob = { grid:guildEstate.grid, jobs:guildEstate.jobs, expansionsPurchased:guildEstate.expansionsPurchased, edgesX:guildEstate.edgesX, edgesY:guildEstate.edgesY, destroyRole:guildEstate.destroyRole||'officer', log:(guildEstate.log||[]).slice(0, GUILD_LOG_MAX) };
     guildEstate.version = expected + 1;
     chatClient.from('guild_estate').update({ data:blob, version:guildEstate.version, updated_at:new Date().toISOString() }).eq('guild_id',gid).eq('version',expected).select('version').then(function(res){
       if(!res || res.error || !res.data || !res.data.length){
@@ -20192,7 +20256,7 @@
     var html = '';
     if(guildEstate.error){ html += '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad);">'+escapeHtml(guildEstate.error)+'</div>'; }
     if(guildEstate.status !== 'ready') return html + '<div class="empty-note">Loading the shared guild estate&hellip;</div>';
-    return html + renderEstateTab();
+    return html + renderEstateTab() + renderGuildActivityLog('estate', 'Estate Activity Log');
   }
 
   // ---- Guild Bosses (Phase 4): async damage-pool raids ----
@@ -23479,6 +23543,7 @@
       SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, TICKER_TIPS:TICKER_TIPS, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
+      guildLogPush:guildLogPush, renderGuildActivityLog:renderGuildActivityLog, GUILD_LOG_MAX:GUILD_LOG_MAX, guildIsOfficerPlus:guildIsOfficerPlus,
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
       fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, seedInfo:seedInfo,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,

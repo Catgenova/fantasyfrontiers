@@ -207,6 +207,37 @@
     FF.estRecomputeWorkshops(); // rebuild the workshop cache from the restored grid
   });
 
+  // ---- Guild activity + bank logs (shared blob, officer+ only, filtered by kind) ----
+  suite('guild: activity & bank logs', function(){
+    var ge = FF.guildEstate, gs = FF.guildState;
+    var savedStatus = ge.status, savedLog = ge.log, savedGuild = gs.guild, savedRank = gs.myRank;
+    ge.status = 'ready'; ge.log = []; gs.guild = { id:'g1' };
+    // guildLogPush records only while a guild estate is loaded; newest first, with who + timestamp.
+    FF.guildLogPush('estate', 'cleared the Boulder at (3, 4)');
+    FF.guildLogPush('bank', '+500g (donated to treasury)');
+    eq(ge.log.length, 2, 'two entries recorded');
+    eq(ge.log[0].kind, 'bank', 'newest entry is first');
+    ok(ge.log[0].who && typeof ge.log[0].at === 'number', 'entries carry who + a timestamp');
+    // The render is officer+ only, and each surface filters by kind.
+    gs.myRank = 'member';
+    eq(FF.renderGuildActivityLog('estate', 'Estate Activity Log'), '', 'a plain member sees no log');
+    gs.myRank = 'officer';
+    var est = FF.renderGuildActivityLog('estate', 'Estate Activity Log');
+    ok(/Boulder/.test(est) && !/donated/.test(est), 'the estate log shows estate events only');
+    var bank = FF.renderGuildActivityLog('bank', 'Bank Ledger');
+    ok(/donated/.test(bank) && !/Boulder/.test(bank), 'the bank ledger shows bank events only');
+    // The log is capped.
+    ge.log.length = 0;
+    for(var i=0;i<FF.GUILD_LOG_MAX+25;i++) FF.guildLogPush('estate', 'e'+i);
+    eq(ge.log.length, FF.GUILD_LOG_MAX, 'the log is capped at GUILD_LOG_MAX');
+    // Not appended without a loaded guild estate.
+    ge.status = 'idle'; ge.log = [];
+    FF.guildLogPush('estate', 'ignored');
+    eq(ge.log.length, 0, 'nothing is logged when no guild estate is loaded');
+    // restore
+    ge.status = savedStatus; ge.log = savedLog; gs.guild = savedGuild; gs.myRank = savedRank;
+  });
+
   // ---- Workshop bonus % + upgrade chain (tier N consumes tier N-1) ----------------------
   suite('workshopBonusPct', function(){
     near(FF.workshopBonusPct(0), 0.05, 'workshop tier 0 = 5%');
