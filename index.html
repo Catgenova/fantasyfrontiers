@@ -19504,15 +19504,16 @@
     if(!sel || !sel.value) return;
     var key=sel.value, owned=state.inventory[key]||0;
     var qty=parseInt((qtyEl&&qtyEl.value)||'0',10);
-    if(state.lockedItems && state.lockedItems[key]){ guildBankState.error='That item is locked. Unlock it first to deposit it.'; render(); return; }
-    if(!(owned>0)){ guildBankState.error='You no longer own that item.'; render(); return; }
+    // Every failure path below logs WITH the item key, so a "nothing happened" deposit always leaves a trail.
+    if(state.lockedItems && state.lockedItems[key]){ guildBankState.error='That item is locked. Unlock it first to deposit it.'; addLog('Guild bank: '+key+' is locked — unlock it to deposit.', 'danger'); render(); return; }
+    if(!(owned>0)){ guildBankState.error='You no longer own that item ('+key+').'; addLog('Guild bank deposit: you hold 0 of '+key+' in inventory.', 'danger'); render(); return; }
     if(!(qty>0)) qty=owned;
     if(qty>owned) qty=owned;
     guildBankState.busy=true; guildBankState.error=''; render();   // lock before the async sync
     await itemSync(true);                                            // reconcile the ledger so the items count server-side
     guildBankInvoke('deposit', { item_key:key, qty:qty }).then(function(res){
       guildBankState.busy=false;
-      if(!res.ok){ guildBankState.error=res.error||'Deposit failed.'; addLog('Guild bank deposit failed: ' + guildBankState.error, 'danger'); render(); return; }
+      if(!res.ok){ guildBankState.error=res.error||'Deposit failed.'; addLog('Guild bank deposit of '+qty+'x '+key+' failed: ' + guildBankState.error, 'danger'); render(); return; }
       state.inventory[key] = Math.max(0, (state.inventory[key]||0) - qty); // only after the server accepted it
       saveGame(); guildBankApply(res); render();
     });
