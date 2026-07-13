@@ -3831,9 +3831,11 @@
   var OFFHAND_TYPE_RECIPES = {};
   OFFHAND_STYLES.forEach(function(o){
     if(o.stackable || o.ward) return; // shields are stackable Equipment; wards use their own WARD_ITEMS
+    var isQuiver = o.type === 'quiver'; // the Quiver is a Leatherworking item: named after the Wildlife tier, built from Leather
     var list = [];
     for(var i=0;i<TIER_COUNT;i++){
-      var obj = { tier:i+1, name:METAL_TIER_NAMES[i]+' '+o.name, levelReq:TIER_LEVELS[i], xp:craftXp(i), inputs:tierInput('metallurgy', o.type==='shield'?4:3)(i), time:tierTime(7,0.3,i) }; // named after its ingot
+      var obj = { tier:i+1, name:(isQuiver ? WILDLIFE_NAMES[i] : METAL_TIER_NAMES[i])+' '+o.name, levelReq:TIER_LEVELS[i], xp:craftXp(i),
+        inputs: isQuiver ? tierInput('tanning',3)(i) : tierInput('metallurgy', o.type==='shield'?4:3)(i), time:tierTime(7,0.3,i) };
       if(o.type==='shield') obj.defense = tierStat(2,i);
       else obj.dmgBonus = tierCappedBonus(0.05,0.014,0.35,i);
       list.push(obj);
@@ -7973,7 +7975,7 @@
     if(act.craftKind==='ward') return WARD_TYPE_MAP[act.typeId].skillId;
     if(act.craftKind==='bodyarmor') return BODY_ARMOR_MATERIALS[act.material].skillId;
     if(act.craftKind==='belt') return 'leatherworking';
-    if(act.craftKind==='offhand') return 'shieldsmithing';
+    if(act.craftKind==='offhand') return 'leatherworking'; // the Quiver (the only offhand-type craft) is a Leatherworking item
     if(act.craftKind==='ring') return 'jewelrycrafting';
     if(act.craftKind==='amulet') return 'jewelrycrafting';
     if(act.craftKind==='workshop') return 'carpentry'; // Carpentry builds every Workshop
@@ -10087,9 +10089,9 @@
     var tier = state.offhandTiers[typeId]||0;
     if(tier >= TIER_COUNT) return;
     var next = OFFHAND_TYPE_RECIPES[typeId][tier];
-    if(getLevel(state.xp.shieldsmithing) < next.levelReq) return;
+    if(getLevel(state.xp.leatherworking) < next.levelReq) return;
     if(!hasInputs(next.inputs)){ addLog('Not enough materials to forge ' + next.name + '.', 'danger'); return; }
-    placeNewCraftActivity('shieldsmithing', null, 'offhand', { type:'craft', craftKind:'offhand', typeId:typeId, progress:0 });
+    placeNewCraftActivity('leatherworking', null, 'offhand', { type:'craft', craftKind:'offhand', typeId:typeId, progress:0 });
   }
   function startCombat(monsterId){
     if(dungeonLocksActions()){ dungeonActionBlockedNotice(); return; }
@@ -12662,6 +12664,43 @@
       html += '<button class="action-btn" data-action="forgeBelt" data-tier="'+beltSel+'" '+(beltReady?'':'disabled')+'>Forge</button>';
     }
     html += '</div></div>';
+
+    // Quivers: bow offhands, cured from Leather (a sequential single-tier upgrade like the Belt).
+    html += '<h3 style="margin-top:14px">Forge Quivers</h3>';
+    html += '<div class="card-grid">';
+    OFFHAND_STYLES.filter(function(o){ return !o.stackable && !o.ward; }).forEach(function(o){
+      var tier = state.offhandTiers[o.id]||0;
+      var current = tier>0 ? OFFHAND_TYPE_RECIPES[o.id][tier-1] : null;
+      var statLabel = function(item){ return '+'+Math.round(item.dmgBonus*100)+'% arrow dmg'; };
+      var activeSlot = findActiveSpecialCraftSlotFor('offhand', {typeId:o.id});
+      var isActive = !!activeSlot;
+      html += '<div class="item-card'+(isActive?' active-item':'')+'">';
+      html += '<div class="item-top"><div class="item-icon">'+o.icon+'</div><div><div class="item-name">'+o.name+'</div><div class="item-meta">'+(current ? current.name+' &bull; '+statLabel(current) : 'Not forged')+'</div></div></div>';
+      if(isActive){
+        var nextDataActive = getSpecialTierData(activeSlot.act);
+        var effTimeO = nextDataActive.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, 'leatherworking');
+        var pctO = clamp(activeSlot.act.progress/effTimeO*100,0,100);
+        var fillIdO = activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index;
+        html += '<div class="item-stats"><span>+'+Math.round(nextDataActive.xp*1.5)+' XP</span><span>Forging: '+nextDataActive.name+'</span><span>'+statLabel(nextDataActive)+'</span></div>';
+        html += '<div class="progress-track"><div class="progress-fill" id="'+fillIdO+'" style="width:'+pctO+'%"></div></div>';
+        html += activeSlot.primary
+          ? '<button class="action-btn stop" data-action="stop">Stop</button>'
+          : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
+      } else if(tier < TIER_COUNT){
+        var nextData = OFFHAND_TYPE_RECIPES[o.id][tier];
+        var ready = lvl >= nextData.levelReq && hasInputs(nextData.inputs);
+        var offhandSuccessPct = Math.round(craftSuccessRate(state, 'leatherworking')*100);
+        html += '<div class="item-stats"><span>Next: '+nextData.name+'</span><span>'+statLabel(nextData)+'</span><span>Req. Lv '+nextData.levelReq+'</span></div>';
+        html += '<div class="chance-line">Output: <b>1x '+nextData.name+'</b> at <b>'+offhandSuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
+        html += '<div class="inputs-line">Needs: '+inputsLine(nextData.inputs, 'inp-otype-'+o.id)+'</div>';
+        html += '<div class="progress-track"><div class="progress-fill" style="width:0%"></div></div>';
+        html += '<button class="action-btn" data-action="forgeOffhandType" data-type="'+o.id+'" '+(ready?'':'disabled')+'>Forge</button>';
+      } else {
+        html += '<div class="empty-note">Maxed out.</div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
     return html;
   }
 
@@ -12981,41 +13020,6 @@
     });
     html += '</div>';
 
-    html += '<h3>Forge Quivers</h3>';
-    html += '<div class="card-grid">';
-    OFFHAND_STYLES.filter(function(o){ return !o.stackable && !o.ward; }).forEach(function(o){
-      var tier = state.offhandTiers[o.id]||0;
-      var current = tier>0 ? OFFHAND_TYPE_RECIPES[o.id][tier-1] : null;
-      var statLabel = function(item){ return o.type==='shield' ? ('defense '+item.defense) : ('+'+Math.round(item.dmgBonus*100)+'% arrow dmg'); };
-      var activeSlot = findActiveSpecialCraftSlotFor('offhand', {typeId:o.id});
-      var isActive = !!activeSlot;
-      html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+o.icon+'</div><div><div class="item-name">'+o.name+'</div><div class="item-meta">'+(current ? current.name+' &bull; '+statLabel(current) : 'Not forged')+'</div></div></div>';
-      if(isActive){
-        var nextDataActive = getSpecialTierData(activeSlot.act);
-        var effTimeO = nextDataActive.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, 'shieldsmithing');
-        var pctO = clamp(activeSlot.act.progress/effTimeO*100,0,100);
-        var fillIdO = activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index;
-        html += '<div class="item-stats"><span>+'+Math.round(nextDataActive.xp*1.5)+' XP</span><span>Forging: '+nextDataActive.name+'</span><span>'+statLabel(nextDataActive)+'</span></div>';
-        html += '<div class="progress-track"><div class="progress-fill" id="'+fillIdO+'" style="width:'+pctO+'%"></div></div>';
-        html += activeSlot.primary
-          ? '<button class="action-btn stop" data-action="stop">Stop</button>'
-          : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
-      } else if(tier < TIER_COUNT){
-        var nextData = OFFHAND_TYPE_RECIPES[o.id][tier];
-        var ready = lvl >= nextData.levelReq && hasInputs(nextData.inputs);
-        var offhandSuccessPct = Math.round(craftSuccessRate(state, 'shieldsmithing')*100);
-        html += '<div class="item-stats"><span>Next: '+nextData.name+'</span><span>'+statLabel(nextData)+'</span><span>Req. Lv '+nextData.levelReq+'</span></div>';
-        html += '<div class="chance-line">Output: <b>1x '+nextData.name+'</b> at <b>'+offhandSuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
-        html += '<div class="inputs-line">Needs: '+inputsLine(nextData.inputs, 'inp-otype-'+o.id)+'</div>';
-        html += '<div class="progress-track"><div class="progress-fill" style="width:0%"></div></div>';
-        html += '<button class="action-btn" data-action="forgeOffhandType" data-type="'+o.id+'" '+(ready?'':'disabled')+'>Forge</button>';
-      } else {
-        html += '<div class="empty-note">Maxed out.</div>';
-      }
-      html += '</div>';
-    });
-    html += '</div>';
     return html;
   }
 
@@ -20662,7 +20666,7 @@
     blacksmithing: 'Forge Tools for every Gathering and Crafting skill.',
     weaponsmithing: 'Forge melee weapons -- swords, axes, and hammers.',
     armorsmithing: 'Forge Chain Mail and Plate armor.',
-    shieldsmithing: 'Forge Shields and Quivers.',
+    shieldsmithing: 'Forge Shields.',
     farming: 'Plant Fiber, Grain, and Herb Seeds in Plot Slots, then harvest them once grown.',
     fiberharvesting: 'Plant and harvest Fiber Seeds into fiber for Tailoring. Higher-tier Fiber Seeds need a higher Fiber Harvesting level to plant.',
     grainharvesting: "Plant and harvest Grain Seeds into Grain for Baking's Dough. Higher-tier Grain Seeds need a higher Grain Harvesting level to plant.",
@@ -20750,8 +20754,8 @@
     weaponsmithing: 'Forge any of the 12 named melee weapons as Equipment — any unlocked tier repeatedly, then equip whichever one you want from your stock.',
     bowyer: 'Forge Short, Medium, and Long Bows as Equipment from Forestry’s logs. Any unlocked tier, any time, then equip whichever one you want from your stock.',
     armorsmithing: 'Forge Chain Mail or Plate Armor for Gauntlets, Boots, Chest, and Helmet -- forge any unlocked tier repeatedly, then choose which to equip.',
-    shieldsmithing: 'Forge Small, Medium, and Large Shields from Metallurgy’s bars, plus Quivers. Which type you can equip in Combat depends on your equipped weapon’s handedness.',
-    leatherworking: 'Forge Leather Armor (Coif, Gambison, Gauntlets, Boots) and Belts from Tanning\'s cured Leather (raw Hide tanned first). Belts grant extra simultaneous task slots (crafting, gathering, or faith) at higher rarity.',
+    shieldsmithing: 'Forge Small, Medium, and Large Shields from Metallurgy’s bars. Which type you can equip in Combat depends on your equipped weapon’s handedness.',
+    leatherworking: 'Forge Leather Armor (Coif, Gambison, Gauntlets, Boots), Belts, and Quivers from Tanning\'s cured Leather (raw Hide tanned first). Belts grant extra simultaneous task slots at higher rarity; a Quiver boosts bow damage.',
     tailoring: 'Forge Cloth Armor (Hood, Tunic, Gloves, Shoes, Cloak) — light protection woven from Farming’s fibers.',
     jewelrycrafting: 'Braid Tanning\'s cured Leather into Twine, then set a matching Gem into that Twine to make Rings and Amulets. Twine uses the standard 70% success rate; Rings and Amulets are fussier at 50%.',
     // Farming sub-skills
@@ -23385,7 +23389,7 @@
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, assassinRhythmRegister:assassinRhythmRegister, ASSASSIN_RHYTHM_MAX:ASSASSIN_RHYTHM_MAX, assassinApplyLacerate:assassinApplyLacerate, assassinLacerateMaxStacks:assassinLacerateMaxStacks, ASSASSIN_BLEED_MAX:ASSASSIN_BLEED_MAX, assassinHemorrhageCritMult:assassinHemorrhageCritMult, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
-      BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
+      BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, OFFHAND_TYPE_RECIPES:OFFHAND_TYPE_RECIPES, getSpecialSkillId:getSpecialSkillId, WILDLIFE_NAMES:WILDLIFE_NAMES, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

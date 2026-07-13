@@ -2866,6 +2866,23 @@
     ok(fam.spells.some(function(sp){ return sp.type==='hit'; }), 'templar familiar has damaging spells');
   });
 
+  // ---- Quiver is now a Leatherworking item (Wildlife-named, built from Leather) ---------
+  suite('quiver: leatherworking item', function(){
+    var q = FF.OFFHAND_TYPE_RECIPES.quiver;
+    ok(q && q.length === 21, 'the quiver has 21 tiers');
+    // Named after the leather (Wildlife) tier, not a metal ingot.
+    eq(q[0].name, FF.WILDLIFE_NAMES[0] + ' Quiver', 'tier-1 quiver is named after the Wildlife tier');
+    eq(q[20].name, FF.WILDLIFE_NAMES[20] + ' Quiver', 'top-tier quiver is Wildlife-named too');
+    // Built from Leather (Tanning's cured hide, tanning_t<n>), not Metallurgy bars.
+    ok(q[0].inputs.tanning_t0 > 0, 'tier-1 quiver costs Leather (tanning_t0)');
+    ok(!q[0].inputs.metallurgy_t0, 'the quiver no longer costs metal bars');
+    ok(q[5].inputs.tanning_t5 > 0, 'tier-6 quiver costs the matching-tier Leather');
+    // The craft engine routes its XP / success / tool-speed to Leatherworking.
+    eq(FF.getSpecialSkillId({ craftKind:'offhand', typeId:'quiver' }), 'leatherworking', 'a quiver craft trains Leatherworking');
+    // Still a damage-boost offhand, not defense.
+    ok(q[0].dmgBonus > 0 && q[0].defense === undefined, 'the quiver grants arrow damage, no defense');
+  });
+
   // ---- Classes: Knight (claymore momentum + on-miss fury) -------------------------------
   suite('classes: Knight', function(){
     ok(FF.CLASS_SKILL_IDS.indexOf('knight') !== -1, 'knight is a class skill id');
