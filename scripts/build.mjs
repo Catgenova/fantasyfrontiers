@@ -37,7 +37,19 @@ const OPTIONS = {
   target: "browser",
 };
 
-const html = readFileSync(SRC, "utf8");
+// Unique per-deploy build stamp. In GitHub Actions GITHUB_SHA is the commit being deployed; locally we
+// fall back to a timestamp. The running client compares this against version.json (served from Pages)
+// and hard-reloads the moment they differ -- i.e. on every patch pushed to main. See scheduleUpdateChecks.
+const BUILD_ID = (process.env.GITHUB_SHA || ("local-" + Date.now().toString(36))).slice(0, 40);
+
+let html = readFileSync(SRC, "utf8");
+// Bake the build id into the client (replaces the readable copy's 'dev' sentinel, which disables the
+// update check). Must run BEFORE obfuscation so the value ends up inside the obfuscated script.
+if (!html.includes("var FF_BUILD_ID = 'dev';")) {
+  console.error("build: FF_BUILD_ID = 'dev' sentinel not found in index.html -- aborting.");
+  process.exit(1);
+}
+html = html.replace("var FF_BUILD_ID = 'dev';", "var FF_BUILD_ID = '" + BUILD_ID + "';");
 
 // The document has exactly two attribute-less inline <script> blocks and no <script src>; the game
 // script contains no literal "</script>", so a non-greedy match extracts each block cleanly.
@@ -53,10 +65,11 @@ if (count < 1) { console.error("build: no inline <script> blocks matched -- abor
 rmSync(OUT_DIR, { recursive: true, force: true });
 mkdirSync(OUT_DIR, { recursive: true });
 writeFileSync(`${OUT_DIR}/index.html`, out);
+writeFileSync(`${OUT_DIR}/version.json`, JSON.stringify({ build: BUILD_ID }) + "\n"); // deployed build stamp the client polls
 writeFileSync(`${OUT_DIR}/.nojekyll`, "");                                  // serve files verbatim
 if (existsSync("tests")) cpSync("tests", `${OUT_DIR}/tests`, { recursive: true }); // keep ?selftest working
 if (existsSync("CNAME")) cpSync("CNAME", `${OUT_DIR}/CNAME`);               // preserve a custom domain if set
 
 // Note: supabase/ (backend source) is intentionally NOT copied, so the edge-function source stops
 // being served from the Pages site.
-console.log(`build: obfuscated ${count} script block(s) -> ${OUT_DIR}/index.html`);
+console.log(`build: obfuscated ${count} script block(s) -> ${OUT_DIR}/index.html (build ${BUILD_ID})`);

@@ -11242,8 +11242,8 @@
     offlineCapture.gold = state.gold - goldBefore;
     var _sum = offlineCapture;
     offlineCapture = null;
-    // Only surface the "while you were away" popup for real absences. A brief blip -- a reload, the
-    // 10-minute auto-refresh, or a momentary disconnect -- shouldn't pop a summary, so we require at
+    // Only surface the "while you were away" popup for real absences. A brief blip -- a reload, a
+    // new-build refresh, or a momentary disconnect -- shouldn't pop a summary, so we require at
     // least 30s away. The progress itself was already applied above; we're only gating the popup.
     if(capped >= 30000 && (Object.keys(_sum.xp).length || Object.keys(_sum.physique).length || Object.keys(_sum.items).length || _sum.gold > 0)){ offlineSummaryData = _sum; }
     // Familiars found offline ride along on the summary (shown as a second consolidated popup on Collect).
@@ -23077,39 +23077,75 @@
     needsRender = true;
     render();
   }
-  // ---- Periodic auto-refresh -------------------------------------------------------------------
-  // The game ships frequent updates, so long-lived tabs drift behind the deployed build. Every
-  // AUTO_REFRESH_MS we flush the latest progress to the cloud and hard-reload to pick up the new
-  // version. We only reload during a lull: never mid-combat, while a modal/overlay is open, while
-  // the player is typing, or while the tab is backgrounded -- otherwise we re-check shortly after.
-  var AUTO_REFRESH_MS = 10*60*1000;   // 10 minutes
-  var autoRefreshArmed = false;
-  var AUTO_REFRESH_OVERLAYS = ['familiarPopupOverlay','settingsOverlay','trackerPickerOverlay','peonPickerOverlay','chatExpandOverlay','chatDrawerOverlay','skillInfoOverlay','invDetailOverlay','itemLinkOverlay','uniqueDetailOverlay'];
-  function autoRefreshIsSafe(){
+  // ---- New-build refresh -----------------------------------------------------------------------
+  // The game ships frequent patches, so long-lived tabs drift behind the deployed build. Instead of a
+  // blind periodic reload, every deploy stamps the build with a unique id (the git SHA) into both
+  // version.json and FF_BUILD_ID below. Every UPDATE_CHECK_MS -- and the instant a backgrounded tab
+  // comes back -- we fetch version.json; the moment the deployed id no longer matches the running one,
+  // a new patch is live on main, so we flush the latest progress and hard-reload to pick it up. The
+  // reload is mandatory (no prompt) but waits for a safe lull: never mid-combat, while a modal/overlay
+  // is open, while the player is typing, or while the tab is backgrounded -- then it re-checks shortly.
+  var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
+  var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
+  var updateChecksArmed = false;
+  var updatePending = false;          // a newer build was detected; reload at the next safe moment
+  var updateTargetBuild = null;       // the deployed build id we're reloading to reach
+  var UPDATE_REFRESH_OVERLAYS = ['familiarPopupOverlay','settingsOverlay','trackerPickerOverlay','peonPickerOverlay','chatExpandOverlay','chatDrawerOverlay','skillInfoOverlay','invDetailOverlay','itemLinkOverlay','uniqueDetailOverlay'];
+  // Loop-guard: right after a Pages deploy the edge/browser can still serve the OLD index.html for a
+  // short while even though version.json already reads the new stamp. Without this, we'd reload, boot
+  // the stale build, immediately see the mismatch again, and hot-loop. So we suppress re-reloading for
+  // the same target build for 2 minutes after an attempt -- long enough for the HTML cache to turn over.
+  function reloadedRecentlyFor(build){
+    try{
+      var o = JSON.parse(sessionStorage.getItem('ff-update-reload') || 'null');
+      return !!(o && o.build === build && (Date.now() - o.at) < 120000);
+    }catch(e){ return false; }
+  }
+  function updateRefreshIsSafe(){
     if(!gameStarted) return false;
     if(pathSelectNeeded()) return false;   // never reload while the one-time path choice is open: it would flush mortal:null, and the load migration then coerces it to Immortal so the prompt never returns
     if(typeof document !== 'undefined' && document.hidden) return false;   // don't yank a backgrounded tab
     if(state && state.activity && state.activity.type === 'combat') return false;  // never mid-fight
     var a = document.activeElement;
     if(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT')) return false; // typing/picking
-    for(var i=0;i<AUTO_REFRESH_OVERLAYS.length;i++){
-      var el = document.getElementById(AUTO_REFRESH_OVERLAYS[i]);
+    for(var i=0;i<UPDATE_REFRESH_OVERLAYS.length;i++){
+      var el = document.getElementById(UPDATE_REFRESH_OVERLAYS[i]);
       if(el && el.innerHTML && el.innerHTML.trim() && el.style.display !== 'none') return false; // a modal is open
     }
     return true;
   }
-  async function autoRefreshNow(){
+  async function updateRefreshNow(){
+    try{ sessionStorage.setItem('ff-update-reload', JSON.stringify({ build: updateTargetBuild, at: Date.now() })); }catch(e){}
+    try{ addLog('A new version was deployed — refreshing to update…', 'important'); }catch(e){}
     try{ await cloudSave(false, true); }catch(e){}   // flush latest progress (bypasses the push throttle)
     try{ saveGame(); }catch(e){}
     location.reload();
   }
-  function scheduleAutoRefresh(){
-    if(autoRefreshArmed) return;   // one timer per session
-    autoRefreshArmed = true;
-    setTimeout(function attempt(){
-      if(autoRefreshIsSafe()) autoRefreshNow();
-      else setTimeout(attempt, 45000);   // busy right now -- try again after a short wait
-    }, AUTO_REFRESH_MS);
+  // Fetch the deployed build stamp (cache-busted). Sets updatePending when a NEWER build is live.
+  // Silently no-ops in the readable repo copy (FF_BUILD_ID==='dev', or version.json missing), so
+  // local/selftest boots never reload.
+  async function checkForNewBuild(){
+    if(FF_BUILD_ID === 'dev' || updatePending) return;
+    try{
+      var res = await fetch('version.json?ts=' + Date.now(), { cache: 'no-store' });
+      if(!res || !res.ok) return;
+      var data = await res.json();
+      if(data && data.build && data.build !== FF_BUILD_ID && !reloadedRecentlyFor(data.build)){
+        updateTargetBuild = data.build; updatePending = true;
+      }
+    }catch(e){}
+  }
+  async function updateTick(){
+    await checkForNewBuild();
+    if(updatePending && updateRefreshIsSafe()) updateRefreshNow();
+  }
+  function scheduleUpdateChecks(){
+    if(updateChecksArmed) return;   // one checker per session
+    updateChecksArmed = true;
+    setInterval(updateTick, UPDATE_CHECK_MS);
+    // Re-check the instant a backgrounded tab returns, so a patch that landed while the player was away
+    // refreshes as soon as they come back rather than waiting out the next interval.
+    if(typeof document !== 'undefined') document.addEventListener('visibilitychange', function(){ if(!document.hidden) updateTick(); });
   }
   async function startGameOnline(){
     removeLoginGate();
@@ -23122,7 +23158,7 @@
     }
     chatInit();                       // chat + chronicle subscriptions
     profileSync(true); leaderboardFetch(true); walletSync(true); itemSync(true);
-    scheduleAutoRefresh();            // keep long-lived tabs current with frequent deploys
+    scheduleUpdateChecks();           // hard-refresh tabs the moment a new build ships to main
     if(pathSelectNeeded()) renderPathSelect();   // brand-new account: pick Immortal vs Mortal before playing
   }
   (async function onlineBoot(){
