@@ -1655,6 +1655,31 @@
     s.dungeonsCleared = saved;
   });
 
+  // ---- Joining a party: Total Level 5000 + must have beaten THIS dungeon (Cave excepted) ----
+  suite('dungeons: join requirements + party code', function(){
+    var s = FF._state, savedCleared = s.dungeonsCleared, savedXp = s.xp, savedPhys = s.physique;
+    // Force the profile over the Total Level gate so the join test isolates the beaten-this-dungeon rule.
+    // (playerTotalLevel sums skill + physique levels; a big fake skill map clears 5000 handily.)
+    var bigXp = {}; if (FF.ALL_MAIN_SKILL_IDS) FF.ALL_MAIN_SKILL_IDS.forEach(function(id){ bigXp[id] = 1e12; });
+    s.xp = bigXp; s.physique = {};
+    ok(FF.playerTotalLevel(s) >= FF.DUNGEON_MIN_TOTAL_LEVEL, 'the boosted profile clears the Total Level gate');
+    s.dungeonsCleared = {};
+    eq(FF.dungeonJoinBlock('d1'), null, 'the Cave has no beaten-before requirement to join');
+    ok(FF.dungeonJoinBlock('d2') !== null, 'joining a Tunnel party requires having beaten the Tunnel');
+    FF.dungeonMarkCleared('d2');
+    eq(FF.dungeonJoinBlock('d2'), null, 'once you have beaten the Tunnel you can join its parties');
+    // Below the Total Level gate, even the Cave blocks joining.
+    s.xp = {}; s.physique = {};
+    ok((FF.dungeonJoinBlock('d1') || '').indexOf('Total Level') === 0, 'below the Total Level gate even the Cave blocks joining');
+    s.xp = savedXp; s.physique = savedPhys; s.dungeonsCleared = savedCleared;
+    // Party-code parsing: "<layer>:<id>" splits; a bare id yields a null layer.
+    var c = FF.parseDungeonCode('d2:abc-123');
+    eq(c.layer, 'd2', 'a "d2:<id>" code parses the layer'); eq(c.id, 'abc-123', '...and the session id');
+    eq(FF.parseDungeonCode('D3 9f8e').layer, 'd3', 'space + upper-case layer prefixes also parse');
+    eq(FF.parseDungeonCode('abc-123').layer, null, 'a bare id has no encoded layer');
+    eq(FF.parseDungeonCode('abc-123').id, 'abc-123', 'a bare id passes through as the id');
+  });
+
   // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------
   suite('classes: lumen oracle (light wand)', function(){
     function armor(mat,tier){ return {material:mat,tier:tier||5}; }

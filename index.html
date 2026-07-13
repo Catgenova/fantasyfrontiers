@@ -14741,6 +14741,24 @@
     if(prev && !dungeonBossCleared(prev)) return 'Clear the ' + (DUNGEON_DEFS[prev] ? DUNGEON_DEFS[prev].category : prev) + ' first';
     return null;
   }
+  // Reason the player can't JOIN someone else's party for a layer, or null if they can. Joining is
+  // stricter than starting your own: besides the Total Level gate, you must have BEATEN that dungeon
+  // yourself already (so you're not carried through content you haven't earned) -- the Cave excepted.
+  function dungeonJoinBlock(layer){
+    if(!DUNGEON_DEFS[layer]) return 'Unknown dungeon';
+    if(playerTotalLevel(state) < DUNGEON_MIN_TOTAL_LEVEL) return 'Total Level ' + fmt(DUNGEON_MIN_TOTAL_LEVEL) + ' required';
+    if(layer !== 'd1' && !dungeonBossCleared(layer)) return 'Beat the ' + DUNGEON_DEFS[layer].category + ' yourself first';
+    return null;
+  }
+  // Shareable party code = "<layer>:<sessionId>" (e.g. "d2:3f9a…"). Encoding the layer lets a joiner
+  // validate the requirements client-side before joining, with no extra server round-trip.
+  function dungeonPartyCode(){ var s = dungeonNet.session; return s ? (s.layer + ':' + s.id) : ''; }
+  function parseDungeonCode(raw){
+    raw = String(raw || '').trim();
+    var m = /^(d[1-9]\d*)\s*[:_\-\s]\s*(.+)$/i.exec(raw);
+    if(m) return { layer: m[1].toLowerCase(), id: m[2].trim() };
+    return { layer: null, id: raw };   // a bare session id (layer unknown until the server tells us)
+  }
 
   // ===== Networked dungeon runs (Phase 2, Stage A): server-authoritative shared enemy =====
   // A party (1-4) forms in a lobby, then descends together. The server (dungeon edge function +
@@ -14749,6 +14767,7 @@
   // shared HP + advancement stream back over realtime. Stage A is the co-op DPS core (the enemy does
   // not yet attack back); Stage B adds threat targeting, death/wipe, and the Formula claim.
   var dungeonNet = { status:'idle', session:null, members:[], subSession:null, subMembers:null, _subId:null, busy:false, error:'', lastAssault:0, lobbiesByLayer:{}, clearedHandled:false };
+  var dungeonJoinCodeDraft = '';   // in-progress "Join by ID" input, preserved across re-renders
   // A representative DPS proxy (avg weapon damage / attack interval, folding the always-on mults).
   // The server clamps it, so an inflated value can't dump impossible damage.
   function dungeonPower(){
@@ -14809,7 +14828,47 @@
   // Which layer an open lobby belongs to (Join only knows the session id) -- so we can gate joining too.
   function dungeonLobbyLayer(sessionId){ for(var l in dungeonNet.lobbiesByLayer){ var arr = dungeonNet.lobbiesByLayer[l] || []; for(var i = 0; i < arr.length; i++){ if(arr[i].id === sessionId) return l; } } return null; }
   function dungeonNetCreate(layer){ if(dungeonNet.busy) return; var _b = dungeonEntryBlock(DUNGEON_DEFS[layer]); if(_b){ dungeonNet.error = 'Locked — ' + _b + '.'; if(currentCategory === 'dungeons') render(); return; } dungeonNet.busy = true; dungeonNet.error = ''; dungeonNetInvoke('create', Object.assign({ layer:layer }, dungeonStats())).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not create the party.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
-  function dungeonNetJoin(id){ if(dungeonNet.busy) return; var _b = dungeonEntryBlock(DUNGEON_DEFS[dungeonLobbyLayer(id) || dungeonBrowseLayer]); if(_b){ dungeonNet.error = 'Locked — ' + _b + '.'; if(currentCategory === 'dungeons') render(); return; } dungeonNet.busy = true; dungeonNet.error = ''; dungeonNetInvoke('join', Object.assign({ session_id:id }, dungeonStats())).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not join.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
+  // Join a party. knownLayer is the layer when we already know it (from the open-list, whose lobbies
+  // carry it, or a shared "layer:id" code); when it's a bare id we can only enforce the Total Level gate
+  // up front, then verify the beaten-this-dungeon rule after the server hands us the joined layer.
+  function dungeonNetJoin(id, knownLayer){
+    if(dungeonNet.busy || !id) return;
+    var layer = knownLayer || dungeonLobbyLayer(id);
+    if(layer){ var _b = dungeonJoinBlock(layer); if(_b){ dungeonNet.error = 'Locked — ' + _b + '.'; if(currentCategory === 'dungeons') render(); return; } }
+    else if(playerTotalLevel(state) < DUNGEON_MIN_TOTAL_LEVEL){ dungeonNet.error = 'Locked — Total Level ' + fmt(DUNGEON_MIN_TOTAL_LEVEL) + ' required.'; if(currentCategory === 'dungeons') render(); return; }
+    dungeonNet.busy = true; dungeonNet.error = '';
+    dungeonNetInvoke('join', Object.assign({ session_id:id }, dungeonStats())).then(function(res){
+      dungeonNet.busy = false;
+      if(!res.ok){ dungeonNet.error = res.error || 'Could not join.'; if(currentCategory === 'dungeons') render(); return; }
+      // Bare-id join: now that the server told us the layer, enforce the beaten-this-dungeon rule and
+      // back out (leave) if it isn't met, so an ID can't bypass the join requirements.
+      var joinedLayer = res.session && res.session.layer;
+      if(!layer && joinedLayer){
+        var b2 = dungeonJoinBlock(joinedLayer);
+        if(b2){ dungeonNetInvoke('leave', { session_id:id }).then(function(){ dungeonNet.session = null; dungeonNet.members = []; dungeonNet.clearedHandled = false; dungeonNetResubscribe(); dungeonNet.error = 'Locked — ' + b2 + '.'; if(currentCategory === 'dungeons') render(); }); return; }
+      }
+      dungeonJoinCodeDraft = '';
+      dungeonNetApply(res);
+      if(currentCategory === 'dungeons') render();
+    });
+  }
+  // Join from the "Join by ID" box using a shared party code (or a bare session id).
+  function dungeonNetJoinByCode(){
+    var el = document.getElementById('dungeonJoinCodeInput');
+    var parsed = parseDungeonCode(el ? el.value : dungeonJoinCodeDraft);
+    if(!parsed.id){ dungeonNet.error = 'Paste a party code from chat first.'; if(currentCategory === 'dungeons') render(); return; }
+    dungeonNetJoin(parsed.id, parsed.layer);
+  }
+  // Post the current party's join code to global chat so anyone can join.
+  function dungeonNetPostCode(){
+    var s = dungeonNet.session; if(!s) return;
+    var def = DUNGEON_DEFS[s.layer] || DUNGEON_DEFS.d1;
+    chatPostMessage('⚔️ Forming a party for the ' + def.category + ' (' + s.layer.toUpperCase() + ')! Join in Dungeons → Join by ID: ' + dungeonPartyCode());
+  }
+  function dungeonNetCopyCode(){
+    var code = dungeonPartyCode(); if(!code) return;
+    try{ if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(function(){ addLog('Party code copied.', 'important'); }, function(){}); else addLog('Party code: ' + code, 'important'); }catch(e){ addLog('Party code: ' + code, 'important'); }
+  }
   function dungeonNetClaim(){ if(!dungeonNet.session) return; dungeonNetInvoke('claim', { session_id:dungeonNet.session.id }).then(function(res){ if(res.ok){ var def = DUNGEON_DEFS[dungeonNet.session.layer]; if(def) grantMasterworkDrops(def.id); dungeonNetApply(res); } if(currentCategory === 'dungeons') render(); }); }
   function dungeonNetLeave(){ if(!dungeonNet.session || dungeonNet.busy) return; dungeonNet.busy = true; var sid = dungeonNet.session.id; dungeonNetInvoke('leave', { session_id:sid }).then(function(res){ dungeonNet.busy = false; dungeonNet.session = null; dungeonNet.members = []; dungeonNet.clearedHandled = false; dungeonNetResubscribe(); if(currentCategory === 'dungeons') render(); }); }
   function dungeonNetStart(){ if(!dungeonNet.session || dungeonNet.busy) return; dungeonNet.busy = true; dungeonNet.error = ''; var sid = dungeonNet.session.id; dungeonNetInvoke('start', { session_id:sid }).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not start.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
@@ -14864,6 +14923,12 @@
       html += '<span class="style-btn active" style="cursor:default;justify-content:space-between">' + svgIcon('person', 'var(--gold)') + ' ' + escapeHtml(m.username) + (isMe ? ' (you)' : '') + ' ' + (isHost ? '<span class="style-type" style="text-transform:none">Host</span>' : '') + '</span>';
     });
     html += '</div>';
+    // Invite by Party ID: share a code to global chat so anyone eligible can join without the open list.
+    html += '<div class="inputs-line" style="margin-top:12px">Invite by Party ID</div>';
+    html += '<div class="chance-line">Post this code to chat, or share it directly. Anyone Total Level <b>' + fmt(DUNGEON_MIN_TOTAL_LEVEL) + '</b>+' + (s.layer === 'd1' ? '' : ' who has cleared the <b>' + escapeHtml(def.category) + '</b>') + ' can join it from <b>Dungeons → Join by ID</b>.</div>';
+    html += '<div class="style-row" style="align-items:center;gap:6px;margin-top:4px"><code style="flex:1;min-width:0;overflow:auto;padding:6px 8px;background:var(--input-fill);border:1px solid var(--ink);border-radius:6px;font-family:var(--font-mono);font-size:11px;white-space:nowrap">' + escapeHtml(dungeonPartyCode()) + '</code>';
+    html += '<button class="action-btn" data-action="dungeonNetCopyCode" style="width:auto;flex:0 0 auto">Copy</button>';
+    html += '<button class="action-btn" data-action="dungeonNetPostCode" style="width:auto;flex:0 0 auto">' + svgIcon('person', 'currentColor') + ' Post to Chat</button></div>';
     html += '<div style="display:flex;gap:8px;margin-top:10px">';
     if(host) html += '<button class="action-btn" data-action="dungeonNetStart" style="width:auto" ' + (dungeonNet.busy ? 'disabled' : '') + '>Begin Descent</button>';
     html += '<button class="action-btn stop" data-action="dungeonNetLeave" style="width:auto">Leave Party</button>';
@@ -14940,6 +15005,7 @@
   function renderDungeonLayerPanel(layer, myTotal){
     var def = DUNGEON_DEFS[layer]; if(!def) return '';
     var block = dungeonEntryBlock(def); var canEnter = !block;
+    var joinBlock = dungeonJoinBlock(def.id); var canJoin = !joinBlock;   // joining is gated on beating THIS dungeon (Cave aside), not the prior one
     var boss = def.enemies[def.enemies.length - 1];
     var html = '<h3 style="margin-top:4px">' + svgIcon('gem', '#8a5fb0') + ' ' + escapeHtml(def.category) + '</h3>';
     html += '<div class="item-card">';
@@ -14958,10 +15024,13 @@
     if(chatClient && authUser){
       var lobbies = dungeonNet.lobbiesByLayer[layer] || [];
       html += '<div class="inputs-line" style="margin-top:12px;display:flex;justify-content:space-between;align-items:center">Open Parties <button class="action-btn" data-action="dungeonNetRefreshList" data-id="' + def.id + '" style="width:auto;padding:4px 10px">Refresh</button></div>';
+      // Join by ID: paste a code someone posted in chat (works for any layer's party).
+      html += '<div class="style-row" style="gap:6px;margin-bottom:6px"><input id="dungeonJoinCodeInput" class="chat-input" style="flex:1;min-width:0" placeholder="Paste a party ID from chat…" value="' + escapeHtml(dungeonJoinCodeDraft) + '"><button class="action-btn" data-action="dungeonNetJoinByCode" style="width:auto;flex:0 0 auto" ' + (dungeonNet.busy ? 'disabled' : '') + '>Join by ID</button></div>';
+      if(!canJoin) html += '<div class="chance-line" style="color:var(--hp-bad)">' + svgIcon('lock', 'currentColor') + ' To join a ' + escapeHtml(def.category) + ' party: ' + escapeHtml(joinBlock) + '.</div>';
       if(!lobbies.length) html += '<div class="empty-note">No open parties right now. Create one above — teammates who Refresh will see it.</div>';
       else lobbies.forEach(function(lb){
         html += '<div class="item-card" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><div class="item-name">' + escapeHtml(lb.members[0] || 'Party') + '’s party</div><div class="item-meta">' + lb.count + '/4 &bull; ' + escapeHtml(lb.members.join(', ')) + '</div></div>';
-        html += '<button class="action-btn" data-action="dungeonNetJoin" data-id="' + lb.id + '" style="width:auto"' + (canEnter ? '' : ' title="' + escapeHtml(block) + '"') + ' ' + ((canEnter && lb.count < 4 && !dungeonNet.busy) ? '' : 'disabled') + '>' + (canEnter ? 'Join' : escapeHtml(block)) + '</button></div>';
+        html += '<button class="action-btn" data-action="dungeonNetJoin" data-id="' + lb.id + '" style="width:auto"' + (canJoin ? '' : ' title="' + escapeHtml(joinBlock) + '"') + ' ' + ((canJoin && lb.count < 4 && !dungeonNet.busy) ? '' : 'disabled') + '>' + (canJoin ? 'Join' : escapeHtml(joinBlock)) + '</button></div>';
       });
     }
     html += '</div>';
@@ -18848,6 +18917,21 @@
       if(res.error) throw res.error;
     }catch(e){ addLog('Message failed to send.', 'danger'); }
   }
+  // Post a message to global chat programmatically (used by the dungeon party-invite share). Mirrors
+  // chatSend's insert without touching the input box; returns whether it went out.
+  async function chatPostMessage(text){
+    var name = chatName();
+    if(!name){ addLog('Sign in to chat.', 'danger'); return false; }
+    text = String(text || '').trim();
+    if(!text) return false;
+    if(text.length > CHAT_CONFIG.maxLen) text = text.slice(0, CHAT_CONFIG.maxLen);
+    var now = Date.now();
+    if(now - chatLastSentAt < 1200){ addLog('Slow down a moment before posting again.', 'danger'); return false; } // same rate limit as chatSend
+    if(!CHAT_ENABLED || !chatClient){ chatOnIncoming({ id:'local-'+now, created_at:new Date().toISOString(), username:name, body:text }); return true; }
+    chatLastSentAt = now;
+    try{ var res = await chatClient.from(CHAT_CONFIG.table).insert({ username:name, body:text }); if(res.error) throw res.error; addLog('Posted your party invite to chat.', 'important'); return true; }
+    catch(e){ addLog('Couldn’t post to chat.', 'danger'); return false; }
+  }
   function chatMessagesHtml(){
     if(chatMessages.length===0) return '<div class="chat-empty">No messages yet &mdash; say hello!</div>';
     return chatMessages.map(function(m){
@@ -22134,6 +22218,12 @@
       dungeonNetCreate(btn.getAttribute('data-id'));
     } else if(action==='dungeonNetJoin'){
       dungeonNetJoin(btn.getAttribute('data-id'));
+    } else if(action==='dungeonNetJoinByCode'){
+      dungeonNetJoinByCode();
+    } else if(action==='dungeonNetPostCode'){
+      dungeonNetPostCode();
+    } else if(action==='dungeonNetCopyCode'){
+      dungeonNetCopyCode();
     } else if(action==='dungeonNetStart'){
       dungeonNetStart();
     } else if(action==='dungeonNetLeave'){
@@ -22599,6 +22689,8 @@
       renderMarketResults(); // update only the results list so the search box keeps focus
     } else if(e.target.classList && e.target.classList.contains('market-num')){
       marketUpdatePreview(); // live cost/net preview without a re-render (keeps input focus)
+    } else if(e.target.id === 'dungeonJoinCodeInput'){
+      dungeonJoinCodeDraft = e.target.value; // preserve the pasted party code across re-renders (no re-render here, keeps focus)
     }
   });
 
@@ -23230,7 +23322,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,
