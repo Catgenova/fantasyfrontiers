@@ -14492,13 +14492,15 @@
     dungeonView = 'result';
     needsRender = true;
   }
-  // End a run early (retreat) or on death. Clears the fight and returns to the dungeon list.
+  // End a run on death or retreat. Progress is NOT preserved: drop the whole run (its advanced enemy
+  // index + party) and clear the linked combat, so the next descent restarts from the first foe rather
+  // than resuming where the player fell/fled.
   function dungeonEndRun(reason){
-    if(dungeonRun) dungeonRun.active = false;
+    dungeonRun = null;                                       // discard all run progress (idx, party)
     if(state.activity && state.activity.dungeon) stopActivity();
-    dungeonView = 'browse';
-    if(reason === 'death') addLog('You fell in the depths — the dungeon run ends.', 'danger');
-    else if(reason === 'retreat') addLog('You retreat from the dungeon.', '');
+    dungeonView = 'browse'; dungeonLobbyId = null;
+    if(reason === 'death') addLog('You fell in the depths — the run ends and its progress resets. Descend again to start from the first foe.', 'danger');
+    else if(reason === 'retreat') addLog('You retreat from the dungeon — the run resets. Descend again to start from the first foe.', '');
     needsRender = true;
   }
   function dungeonEnemyLevelRange(def){ return def.enemies[0].level + '–' + def.enemies[def.enemies.length - 1].level; }
