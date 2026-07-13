@@ -1412,6 +1412,42 @@
     }
   });
 
+  // ---- Dungeons: D3 "Underground Chamber" (25 Undead, L151->175, ~10x boss) ----------------
+  suite('dungeons: D3 Underground Chamber', function(){
+    ok(FF.DUNGEON_ORDER && FF.DUNGEON_ORDER.join(',') === 'd1,d2,d3', 'all three layers are in DUNGEON_ORDER, in order');
+    var def = FF.DUNGEON_DEFS.d3;
+    ok(def, 'D3 dungeon defined');
+    eq(def.category, 'Underground Chamber', 'the category is Underground Chamber');
+    eq(def.theme, 'undead', 'the theme is undead');
+    eq(def.minCombatScore, 151, 'D3 requires Combat Score 151');
+    var en = FF.DUNGEON_D3_ENEMIES;
+    eq(en.length, 25, '25 undead');
+    eq(en[0].level, 151, 'first undead is level 151');
+    eq(en[24].level, 175, 'last undead (boss) is level 175');
+    ok(en.every(function(e,i){ return i===0 || e.level >= en[i-1].level; }), 'levels rise 151 -> 175 without dropping');
+    eq(en[24].isBoss, true, 'the 25th undead is the boss');
+    eq(en[24].name, 'Malothrax the Deathless', 'the boss is Malothrax the Deathless');
+    ok(!en[23].isBoss, 'the 24th is not the boss');
+    ok(Math.abs(en[24].hp / en[23].hp - 10) < 0.01, 'boss HP is ~10x the 24th (' + en[24].hp + ' vs ' + en[23].hp + ')');
+    var elems = {}; en.forEach(function(e){ elems[e.element] = 1; });
+    ok(Object.keys(elems).length >= 3, 'undead span multiple elements (' + Object.keys(elems).join(',') + ')');
+    ok(en.every(function(e){ return typeof e.icon === 'string' && e.icon.indexOf('<svg') === 0; }), 'every undead has an SVG portrait');
+    ok(en.every(function(e){ return e.element && e.armorTypes && e.attackTypes && e.hp > 0 && FF.monsterById(e.id) === e; }), 'every undead has element/armor/attack/hp and resolves via monsterById');
+    var seen = {}; var uniq = en.every(function(e){ if(seen[e.icon]) return false; seen[e.icon] = 1; return true; });
+    ok(uniq, 'all 25 undead portraits are unique (hand-crafted, no repeats)');
+    var f = FF.ALL_SELLABLE[def.reward]; ok(f && /D3 Masterwork Formula/.test(f.name), 'the D3 Masterwork Formula item is registered');
+    eq(f.sell, 0, 'the D3 Formula is non-vendorable (sell 0)');
+    ok(def.reward !== FF.DUNGEON_DEFS.d2.reward && def.reward !== FF.DUNGEON_DEFS.d1.reward, 'D3 drops a Formula distinct from D1/D2');
+    // CRITICAL client<->server invariant (dungeon edge fn d3Roster): hp[i]=round(450000*1.05^i),
+    // boss=round(hp[23]*10); atkMin=round(800*1.04^i), atkMax=round(2000*1.04^i).
+    for(var _i = 0; _i < 24; _i++) eq(en[_i].hp, Math.round(450000 * Math.pow(1.05, _i)), 'undead ' + _i + ' HP matches the server formula');
+    eq(en[24].hp, Math.round(en[23].hp * 10), 'boss HP = round(24th * 10) matches the server');
+    for(var _j = 0; _j < 25; _j++){
+      eq(en[_j].atkMin, Math.round(800 * Math.pow(1.04, _j)), 'undead ' + _j + ' atkMin matches server');
+      eq(en[_j].atkMax, Math.round(2000 * Math.pow(1.04, _j)), 'undead ' + _j + ' atkMax matches server');
+    }
+  });
+
   // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------
   suite('classes: lumen oracle (light wand)', function(){
     function armor(mat,tier){ return {material:mat,tier:tier||5}; }

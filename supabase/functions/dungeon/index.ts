@@ -55,9 +55,24 @@ function d2Roster(): { hp: number[]; atk: number[]; spd: number[] } {
   hp[24] = Math.round(hp[23] * 10);
   return { hp, atk, spd };
 }
+// D3 "Underground Chamber" (Undead, L151->175). Mirrors the client's DUNGEON_D3_ENEMIES:
+//   hp[i]  = round(450000 * 1.05^i) for i < 24; hp[24] = round(hp[23]*10)   (boss ~10x the 24th)
+//   atk[i] = round((round(800*1.04^i) + round(2000*1.04^i)) / 2)            (avg enemy hit)
+//   spd_ms[i] = round((2.2 + (i%5)*0.3) * 1000)                            (enemy attack interval)
+function d3Roster(): { hp: number[]; atk: number[]; spd: number[] } {
+  const hp: number[] = [], atk: number[] = [], spd: number[] = [];
+  for (let i = 0; i < 25; i++) {
+    hp.push(Math.round(450000 * Math.pow(1.05, i)));
+    atk.push(Math.round((Math.round(800 * Math.pow(1.04, i)) + Math.round(2000 * Math.pow(1.04, i))) / 2));
+    spd.push(Math.round((2.2 + (i % 5) * 0.3) * 1000));
+  }
+  hp[24] = Math.round(hp[23] * 10);
+  return { hp, atk, spd };
+}
 const DUNGEONS: Record<string, { count: number; hours: number; hp: number[]; atk: number[]; spd: number[] }> = {
   d1: { count: 25, hours: 3, ...d1Roster() },
   d2: { count: 25, hours: 4, ...d2Roster() },
+  d3: { count: 25, hours: 5, ...d3Roster() },
 };
 const POWER_CEILING = 12000;         // max accepted DPS proxy (anti-cheat clamp)
 const MAX_CREDIT_SECONDS = 30;       // max real-time credited per assault ping (anti-burst)

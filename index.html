@@ -3342,11 +3342,134 @@
   DUNGEON_D2_ENEMIES[DUNGEON_D2_COUNT - 1].hp = Math.round(DUNGEON_D2_ENEMIES[DUNGEON_D2_COUNT - 2].hp * 10); // boss ~10x the 24th
   DUNGEON_D2_ENEMIES.forEach(function(m){ MONSTERS_BY_ID[m.id] = m; });
 
+  // ---- D3 "Underground Chamber" -- the third dungeon layer: 25 Undead fought ONE AT A TIME, levels
+  // 151->175, each with its own HAND-CRAFTED portrait, element and armour mix. The 25th (Malothrax the
+  // Deathless) is the boss at ~10x the 24th's HP; clearing it grants each surviving player a D3
+  // Masterwork Formula. Same synchronous one-at-a-time engine as D1/D2.
+  var DUNGEON_D3_NAMES = ['Shambling Corpse','Crypt Skeleton','Rotting Ghoul','Pale Revenant','Bonepicker Fiend','Grave Wight','Festering Zombie','Hollow Wraith','Cinder Skeleton','Drowned Husk','Plague Cadaver','Gravebound Shade','Marrow Fiend','Sunken Lurker','Ashen Reaper','Rictus Stalker','Bonecrush Colossus','Nightshade Wight','Emberbound Revenant','Doomcaller Lich','Grave Tyrant','Blackbone Overlord','Soul-Render','Elder Deathknight','Malothrax the Deathless'];
+  var DUNGEON_D3_ELEM_CYCLE = ['dark','earth','water','fire','light'];
+  // Twenty-five hand-picked undead busts. Each spec is a distinct combination of pallor, headgear,
+  // eye-sockets, jaw/teeth, marks and an accessory, with a bone/flesh flag; the boss gets bespoke extras.
+  var DUNGEON_D3_PORTRAITS = (function(){
+    var K = '#141210', BONE = '#e3d9bd';
+    var SKIN = { bone:['#d9cfb2','#b7a986','#efe6ca'], rot:['#7c8a5c','#5d6b43','#96a372'], pallid:['#9aa2a0','#767d7b','#b6bdbb'], drown:['#7f96a2','#5f727c','#9cb1bc'], ashen:['#8b8178','#67605a','#a69c92'], ghoul:['#88a07a','#647a58','#a6bd96'], wraith:['#8a7c93','#665a6e','#a89cb1'], charred:['#5a5450','#403c39','#726a63'] };
+    function tint(el){ return ({ earth:'#7aa02f', fire:'#e0632f', water:'#3f8fd0', light:'#e6c24a', dark:'#a06fd0' })[el] || '#c0392b'; }
+    function head(p){
+      return '<path d="M50 16 C36 16 29 27 29 41 C29 52 33 63 41 72 C45 77 55 77 59 72 C67 63 71 52 71 41 C71 27 64 16 50 16 Z" fill="'+p[0]+'" stroke="'+K+'" stroke-width="2.5"/>'
+        + '<path d="M33 46 Q37 56 43 61 Q36 58 32 49 Z" fill="'+p[1]+'"/><path d="M67 46 Q63 56 57 61 Q64 58 68 49 Z" fill="'+p[1]+'"/>' // gaunt cheek hollows
+        + '<path d="M50 18 C42 18 35 24 33 32 C42 28 58 28 67 32 C65 24 58 18 50 18 Z" fill="'+p[2]+'" opacity="0.5"/>';
+    }
+    function ears(p){ return '<path d="M28 40 L20 36 L29 50 Z" fill="'+p[1]+'" stroke="'+K+'" stroke-width="1.8" stroke-linejoin="round"/><path d="M72 40 L80 36 L71 50 Z" fill="'+p[1]+'" stroke="'+K+'" stroke-width="1.8" stroke-linejoin="round"/>'; }
+    function brow(){ return '<path d="M31 39 Q41 35 47 38 M53 38 Q59 35 69 39" fill="none" stroke="'+K+'" stroke-width="2.2" stroke-linecap="round"/>'; }
+    function eyes(t, el){ var c = tint(el), sock = '<ellipse cx="41" cy="45" rx="5.4" ry="4.6" fill="#0c0a09"/><ellipse cx="59" cy="45" rx="5.4" ry="4.6" fill="#0c0a09"/>';
+      if(t==='glow') return sock + '<circle cx="41" cy="45" r="2.4" fill="'+c+'"/><circle cx="59" cy="45" r="2.4" fill="'+c+'"/><circle cx="41" cy="45" r="4.4" fill="'+c+'" opacity="0.25"/><circle cx="59" cy="45" r="4.4" fill="'+c+'" opacity="0.25"/>';
+      if(t==='pinpoint') return sock + '<circle cx="41" cy="45" r="1.1" fill="'+c+'"/><circle cx="59" cy="45" r="1.1" fill="'+c+'"/>';
+      if(t==='sunken') return '<ellipse cx="41" cy="45" rx="4.6" ry="4" fill="#0c0a09"/><ellipse cx="59" cy="45" rx="4.6" ry="4" fill="#0c0a09"/><circle cx="41" cy="46" r="1.4" fill="#3a3630"/><circle cx="59" cy="46" r="1.4" fill="#3a3630"/>';
+      if(t==='oneeye') return '<ellipse cx="41" cy="45" rx="5.4" ry="4.6" fill="#0c0a09"/><circle cx="41" cy="45" r="2.3" fill="'+c+'"/><path d="M53 42 L66 42 M53 45 L66 47 M53 48 L65 49" stroke="'+K+'" stroke-width="1.5"/>'; // right socket sewn shut
+      return sock; // hollow
+    }
+    function nose(bone, p){ if(bone) return '<path d="M50 50 L46 58 Q50 60 54 58 Z" fill="#0c0a09"/>'; return '<path d="M50 50 l-2 7 M50 50 l2 7" stroke="'+p[1]+'" stroke-width="1"/><circle cx="47.5" cy="57" r="1.3" fill="#241f1b"/><circle cx="52.5" cy="57" r="1.3" fill="#241f1b"/>'; }
+    function mouth(t){ var mx = 38, w = 24;
+      function teeth(y, h, n){ var s = ''; for(var k = 0; k <= n; k++){ var x = mx + k * (w / n); s += '<path d="M'+x+' '+y+' L'+x+' '+(y+h)+'" stroke="'+K+'" stroke-width="1.1"/>'; } return s; }
+      if(t==='skull') return '<rect x="'+mx+'" y="63" width="'+w+'" height="7" rx="1.5" fill="'+BONE+'" stroke="'+K+'" stroke-width="1.4"/>' + teeth(63, 7, 7);
+      if(t==='nojaw') return '<path d="M'+mx+' 63 h'+w+' v3 h-'+w+' Z" fill="'+BONE+'" stroke="'+K+'" stroke-width="1.2"/>' + teeth(63, 3, 7) + '<path d="M41 67 Q50 77 59 67" fill="#0c0a09" opacity="0.85"/>';
+      if(t==='rot') return '<path d="M38 64 L42 62 L46 65 L50 62 L54 65 L58 62 L62 64 L60 69 Q50 72 40 69 Z" fill="#c9bfa4" stroke="'+K+'" stroke-width="1.2" stroke-linejoin="round"/>';
+      if(t==='sewn') return '<path d="M39 66 Q50 69 61 66" fill="none" stroke="'+K+'" stroke-width="2"/><path d="M42 63 l0 6 M48 64 l0 5 M54 64 l0 5 M58 63 l0 6" stroke="'+K+'" stroke-width="1.2"/>';
+      if(t==='gape') return '<ellipse cx="50" cy="67" rx="8" ry="6" fill="#0c0a09"/><path d="M44 64 l2 3 M50 63 l0 3 M56 64 l-2 3" stroke="'+BONE+'" stroke-width="1.3"/>';
+      return '<path d="M40 66 Q50 70 60 66" fill="none" stroke="'+K+'" stroke-width="2.4" stroke-linecap="round"/>';
+    }
+    function gear(t, el, p){ var c = tint(el);
+      if(t==='hood') return '<path d="M22 46 Q20 12 50 10 Q80 12 78 46 Q66 30 50 30 Q34 30 22 46 Z" fill="#26242a" stroke="'+K+'" stroke-width="2.5"/><path d="M30 40 Q50 30 70 40" fill="none" stroke="#3a3740" stroke-width="1.4"/>';
+      if(t==='crown') return '<path d="M30 30 L30 17 L37 26 L43 14 L50 25 L57 14 L63 26 L70 17 L70 30 Q50 24 30 30 Z" fill="#cdbf8e" stroke="'+K+'" stroke-width="2" stroke-linejoin="round"/><circle cx="50" cy="19" r="2.1" fill="'+c+'"/><circle cx="37" cy="22" r="1.4" fill="'+c+'"/><circle cx="63" cy="22" r="1.4" fill="'+c+'"/>';
+      if(t==='bandage') return '<path d="M28 30 Q50 21 72 30 M27 37 Q50 31 73 37" fill="none" stroke="#cfc6ad" stroke-width="4.2" stroke-linecap="round"/><path d="M40 26 l6 2 M56 24 l6 3" stroke="#a89b7a" stroke-width="1.2"/>';
+      if(t==='horns') return '<path d="M31 32 Q21 22 23 8 Q31 18 37 28 Z" fill="#3a3a40" stroke="'+K+'" stroke-width="2" stroke-linejoin="round"/><path d="M69 32 Q79 22 77 8 Q69 18 63 28 Z" fill="#3a3a40" stroke="'+K+'" stroke-width="2" stroke-linejoin="round"/>';
+      if(t==='helm') return '<path d="M27 36 Q50 12 73 36 L73 40 Q50 26 27 40 Z" fill="#5e5a52" stroke="'+K+'" stroke-width="2.5"/><path d="M50 20 L50 56" stroke="#3f3c36" stroke-width="3"/><path d="M34 33 l3 4 M66 33 l-3 4" stroke="#2a2824" stroke-width="1.4"/>';
+      if(t==='tatters') return '<path d="M26 34 Q50 13 74 34 L70 41 L65 34 L60 43 L54 34 L50 45 L46 34 L40 43 L35 34 L30 41 Z" fill="#3b3630" stroke="'+K+'" stroke-width="1.6" stroke-linejoin="round"/>';
+      if(t==='boneplate') return '<path d="M30 34 Q50 16 70 34 Q50 26 30 34 Z" fill="'+BONE+'" stroke="'+K+'" stroke-width="2.2"/><path d="M50 18 L50 30 M40 22 L41 30 M60 22 L59 30" stroke="'+K+'" stroke-width="1.1"/>';
+      return '';
+    }
+    function marks(t, el){ var c = tint(el); if(t==='none') return '';
+      if(t==='cracks') return '<path d="M44 21 L47 31 L44 39 M60 23 L57 33" fill="none" stroke="'+K+'" stroke-width="1" opacity="0.65"/>';
+      if(t==='stitches') return '<path d="M36 54 L44 56 M56 56 L64 54" stroke="'+K+'" stroke-width="1.3"/><path d="M38 53 l0 4 M42 54 l0 4 M58 54 l0 4 M62 53 l0 4" stroke="'+K+'" stroke-width="0.9"/>';
+      if(t==='runes') return '<path d="M47 25 l6 0 M50 23 l0 8 M48 33 l4 0" stroke="'+c+'" stroke-width="1.4" opacity="0.9"/>';
+      if(t==='veins') return '<path d="M36 40 q3 6 1 14 M64 40 q-3 6 -1 14" fill="none" stroke="'+c+'" stroke-width="1" opacity="0.5"/>';
+      if(t==='blood') return '<path d="M41 50 q0 8 1 12 M59 50 q0 6 -1 9" fill="none" stroke="#8a2020" stroke-width="1.6" opacity="0.8"/>';
+      return '';
+    }
+    function acc(t){ if(t==='none') return '';
+      if(t==='ribs') return '<path d="M40 80 Q50 84 60 80 M42 84 Q50 87 58 84" fill="none" stroke="'+BONE+'" stroke-width="2"/>';
+      if(t==='chain') return '<circle cx="20" cy="52" r="2" fill="none" stroke="#7a7266" stroke-width="1.4"/><circle cx="80" cy="52" r="2" fill="none" stroke="#7a7266" stroke-width="1.4"/>';
+      if(t==='jawstrap') return '<path d="M32 58 Q50 74 68 58" fill="none" stroke="#a89b7a" stroke-width="2"/>';
+      if(t==='hornsmall') return '<path d="M34 30 Q30 22 33 16 Q37 22 39 28 Z M66 30 Q70 22 67 16 Q63 22 61 28 Z" fill="'+BONE+'" stroke="'+K+'" stroke-width="1.2"/>';
+      return '';
+    }
+    function build(s, boss){
+      var p = SKIN[s.skin] || SKIN.bone, c = tint(s.el);
+      var body = '<path d="M20 92 Q26 74 50 74 Q74 74 80 92 Z" fill="'+p[1]+'" stroke="'+K+'" stroke-width="2"/>';
+      var g = gear(s.gear, s.el, p);
+      var behind = (s.gear==='hood') ? g : '';
+      var front = (s.gear==='hood') ? '' : g;
+      var svg = behind + body + ears(p) + head(p) + brow() + marks(s.marks, s.el) + eyes(s.eyes, s.el) + nose(!!s.bone, p) + mouth(s.mouth) + front + acc(s.acc);
+      if(boss) svg = '<circle cx="50" cy="50" r="40" fill="'+c+'" opacity="0.18"/>' + svg; // Malothrax: a soul-glow halo
+      var bg = boss ? '#1a1220' : '#141018';
+      return '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="47" fill="'+bg+'" stroke="'+K+'" stroke-width="2.5"/>' + svg + '</svg>';
+    }
+    var SPEC = [
+      { skin:'rot',     bone:0, gear:'none',      eyes:'hollow',   mouth:'rot',    marks:'veins',    acc:'none',      el:'dark'  },
+      { skin:'bone',    bone:1, gear:'none',      eyes:'hollow',   mouth:'skull',  marks:'cracks',   acc:'none',      el:'earth' },
+      { skin:'ghoul',   bone:0, gear:'none',      eyes:'sunken',   mouth:'gape',   marks:'blood',    acc:'none',      el:'water' },
+      { skin:'pallid',  bone:0, gear:'tatters',   eyes:'glow',     mouth:'sewn',   marks:'none',     acc:'chain',     el:'fire'  },
+      { skin:'bone',    bone:1, gear:'boneplate', eyes:'pinpoint', mouth:'skull',  marks:'none',     acc:'jawstrap',  el:'light' },
+      { skin:'drown',   bone:0, gear:'hood',      eyes:'glow',     mouth:'nojaw',  marks:'none',     acc:'none',      el:'dark'  },
+      { skin:'rot',     bone:0, gear:'none',      eyes:'sunken',   mouth:'sewn',   marks:'stitches', acc:'jawstrap',  el:'earth' },
+      { skin:'wraith',  bone:0, gear:'hood',      eyes:'glow',     mouth:'gape',   marks:'runes',    acc:'chain',     el:'water' },
+      { skin:'charred', bone:1, gear:'none',      eyes:'glow',     mouth:'skull',  marks:'cracks',   acc:'none',      el:'fire'  },
+      { skin:'drown',   bone:0, gear:'tatters',   eyes:'hollow',   mouth:'rot',    marks:'veins',    acc:'none',      el:'light' },
+      { skin:'ghoul',   bone:0, gear:'bandage',   eyes:'sunken',   mouth:'sewn',   marks:'blood',    acc:'none',      el:'dark'  },
+      { skin:'wraith',  bone:0, gear:'hood',      eyes:'pinpoint', mouth:'flat',   marks:'runes',    acc:'none',      el:'earth' },
+      { skin:'bone',    bone:1, gear:'horns',     eyes:'glow',     mouth:'gape',   marks:'cracks',   acc:'hornsmall', el:'water' },
+      { skin:'pallid',  bone:0, gear:'none',      eyes:'sunken',   mouth:'nojaw',  marks:'veins',    acc:'jawstrap',  el:'fire'  },
+      { skin:'ashen',   bone:1, gear:'hood',      eyes:'glow',     mouth:'skull',  marks:'none',     acc:'none',      el:'light' },
+      { skin:'bone',    bone:1, gear:'helm',      eyes:'hollow',   mouth:'skull',  marks:'cracks',   acc:'none',      el:'dark'  },
+      { skin:'bone',    bone:1, gear:'boneplate', eyes:'pinpoint', mouth:'nojaw',  marks:'none',     acc:'ribs',      el:'earth' },
+      { skin:'wraith',  bone:0, gear:'tatters',   eyes:'glow',     mouth:'rot',    marks:'runes',    acc:'chain',     el:'water' },
+      { skin:'charred', bone:1, gear:'horns',     eyes:'glow',     mouth:'gape',   marks:'blood',    acc:'hornsmall', el:'fire'  },
+      { skin:'bone',    bone:1, gear:'crown',     eyes:'glow',     mouth:'skull',  marks:'runes',    acc:'chain',     el:'light' },
+      { skin:'ashen',   bone:1, gear:'helm',      eyes:'glow',     mouth:'nojaw',  marks:'cracks',   acc:'jawstrap',  el:'earth' },
+      { skin:'charred', bone:1, gear:'crown',     eyes:'pinpoint', mouth:'skull',  marks:'none',     acc:'ribs',      el:'dark'  },
+      { skin:'wraith',  bone:0, gear:'tatters',   eyes:'glow',     mouth:'nojaw',  marks:'blood',    acc:'chain',     el:'water' },
+      { skin:'pallid',  bone:1, gear:'horns',     eyes:'glow',     mouth:'sewn',   marks:'veins',    acc:'jawstrap',  el:'fire'  },
+      { skin:'bone',    bone:1, gear:'crown',     eyes:'glow',     mouth:'skull',  marks:'runes',    acc:'ribs',      el:'dark'  }  // Malothrax (boss)
+    ];
+    return SPEC.map(function(s, i){ return build(s, i === 24); });
+  })();
+  var DUNGEON_D3_COUNT = 25;
+  var DUNGEON_D3_ENEMIES = [];
+  for(var _d3 = 0; _d3 < DUNGEON_D3_COUNT; _d3++){
+    var _b3 = _d3 === DUNGEON_D3_COUNT - 1;
+    var _e3 = _b3 ? 'dark' : DUNGEON_D3_ELEM_CYCLE[_d3 % 5];
+    DUNGEON_D3_ENEMIES.push({
+      id:'dungeon_d3_' + (_d3 + 1), name:DUNGEON_D3_NAMES[_d3],
+      dungeon:'d3', dungeonIndex:_d3, isBoss:_b3,
+      icon: DUNGEON_D3_PORTRAITS[_d3],
+      category:'dungeon', tierIndex:20, element:_e3,
+      level: Math.round(151 + _d3 * 24 / (DUNGEON_D3_COUNT - 1)), levelReq:151,
+      hp: Math.round(450000 * Math.pow(1.05, _d3)),
+      atkMin: Math.round(800 * Math.pow(1.04, _d3)), atkMax: Math.round(2000 * Math.pow(1.04, _d3)),
+      goldMin: Math.round(800 * Math.pow(1.05, _d3)), goldMax: Math.round(1600 * Math.pow(1.05, _d3)),
+      damageType: DAMAGE_TYPE_CYCLE[_d3 % 3], attackTypes: makeTypeMix(_d3), armorTypes: makeTypeMix(_d3 + 2),
+      attackSpeed: Math.round((2.2 + (_d3 % 5) * 0.3) * 10) / 10
+    });
+  }
+  DUNGEON_D3_ENEMIES[DUNGEON_D3_COUNT - 1].hp = Math.round(DUNGEON_D3_ENEMIES[DUNGEON_D3_COUNT - 2].hp * 10); // boss ~10x the 24th
+  DUNGEON_D3_ENEMIES.forEach(function(m){ MONSTERS_BY_ID[m.id] = m; });
+
   var DUNGEON_DEFS = {
     d1: { id:'d1', category:'Cave',   label:'D1 — Cave',   theme:'arachnids', enemies:DUNGEON_D1_ENEMIES, minCombatScore:100, reward:'formula_d1_masterwork', rewardName:'D1 Masterwork Formula' },
-    d2: { id:'d2', category:'Tunnel', label:'D2 — Tunnel', theme:'orcs',      enemies:DUNGEON_D2_ENEMIES, minCombatScore:126, reward:'formula_d2_masterwork', rewardName:'D2 Masterwork Formula' }
+    d2: { id:'d2', category:'Tunnel', label:'D2 — Tunnel', theme:'orcs',      enemies:DUNGEON_D2_ENEMIES, minCombatScore:126, reward:'formula_d2_masterwork', rewardName:'D2 Masterwork Formula' },
+    d3: { id:'d3', category:'Underground Chamber', label:'D3 — Underground Chamber', theme:'undead', enemies:DUNGEON_D3_ENEMIES, minCombatScore:151, reward:'formula_d3_masterwork', rewardName:'D3 Masterwork Formula' }
   };
-  var DUNGEON_ORDER = ['d1', 'd2'];
+  var DUNGEON_ORDER = ['d1', 'd2', 'd3'];
   function isDungeonMonster(m){ return !!(m && m.dungeon); }
 
   // ---- Category-specific loot items ----
@@ -4104,7 +4227,8 @@
   // display it (sell:0 -> not vendorable).
   var FORMULA_ITEMS = {
     formula_d1_masterwork: { id:'formula_d1_masterwork', name:'D1 Masterwork Formula', icon:svgIcon('gem','#c9a227'), sell:0, dungeon:'d1', formula:true },
-    formula_d2_masterwork: { id:'formula_d2_masterwork', name:'D2 Masterwork Formula', icon:svgIcon('gem','#7a9a3a'), sell:0, dungeon:'d2', formula:true }
+    formula_d2_masterwork: { id:'formula_d2_masterwork', name:'D2 Masterwork Formula', icon:svgIcon('gem','#7a9a3a'), sell:0, dungeon:'d2', formula:true },
+    formula_d3_masterwork: { id:'formula_d3_masterwork', name:'D3 Masterwork Formula', icon:svgIcon('gem','#8a5fb0'), sell:0, dungeon:'d3', formula:true }
   };
   var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS);
 
@@ -22485,7 +22609,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,
