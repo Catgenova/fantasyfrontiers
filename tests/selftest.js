@@ -136,6 +136,30 @@
     for(var i = 0; i < 20; i++){ var c = FF.getEstateExpansionCost(i); ok(c >= pc, 'expansion cost non-decreasing @' + i); pc = c; }
   });
 
+  // ---- Estate: upgrade a placed pavement (20x the next-tier tile, keeps any building) ---
+  suite('estate: upgrade pavement', function(){
+    eq(FF.ESTATE_PAVE_TILE_COST, 20, 'an upgrade costs 20 tiles');
+    eq(FF.pavementTierOf({ type:'paved', paveTileId:'paving_t3' }), 3, 'pavementTierOf reads the tier from paveTileId');
+    eq(FF.pavementTierOf({ type:'dirt' }), -1, 'a dirt tile has no pavement tier');
+    var s = FF._state;
+    FF.estUse(false);                                  // point estActive at the personal estate
+    var cell = s.estate.grid[0][0];
+    var saved = { type:cell.type, pave:cell.paveTileId, work:cell.workshopId };
+    var savedInv = { t4:s.inventory['paving_t4'], t5:s.inventory['paving_t5'] };
+    cell.type = 'paved'; cell.paveTileId = 'paving_t3'; cell.workshopId = 'workshop_mining_t0'; // a building is present
+    s.inventory['paving_t4'] = 25;
+    FF.estateUpgradePavement(0, 0);
+    eq(cell.paveTileId, 'paving_t4', 'the pavement rose one tier');
+    eq(s.inventory['paving_t4'], 5, 'the upgrade spent 20 of the next-tier tile');
+    eq(cell.workshopId, 'workshop_mining_t0', 'the building on the tile is kept');
+    s.inventory['paving_t5'] = 3;                       // not enough for the next upgrade
+    FF.estateUpgradePavement(0, 0);
+    eq(cell.paveTileId, 'paving_t4', 'no upgrade without 20 of the next-tier tile');
+    // restore
+    cell.type = saved.type; cell.paveTileId = saved.pave; cell.workshopId = saved.work;
+    s.inventory['paving_t4'] = savedInv.t4; s.inventory['paving_t5'] = savedInv.t5;
+  });
+
   // ---- Workshop bonus % + upgrade chain (tier N consumes tier N-1) ----------------------
   suite('workshopBonusPct', function(){
     near(FF.workshopBonusPct(0), 0.05, 'workshop tier 0 = 5%');

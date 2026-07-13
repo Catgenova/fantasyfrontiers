@@ -16189,6 +16189,27 @@
     estPersist();
     needsRender = true;
   }
+  // Upgrade a placed pavement one tier for 20x the next-tier tile. Instant, and it keeps any Workshop or
+  // Cottage already on the tile -- the building is untouched (a higher pavement supports the same building).
+  function estateUpgradePavement(x, y){
+    var cell = estActive && estActive.grid[x] && estActive.grid[x][y];
+    if(!cell || cell.type !== 'paved' || !cell.paveTileId) return;
+    var curTier = pavementTierOf(cell);
+    if(curTier < 0 || curTier >= TIER_COUNT - 1){ addLog('This pavement is already the top tier.', 'danger'); return; }
+    var nextId = 'paving_t' + (curTier + 1);
+    var recipe = getPavingRecipe(nextId);
+    var owned = state.inventory[nextId] || 0;
+    if(owned < ESTATE_PAVE_TILE_COST){
+      addLog('Upgrading to ' + (recipe ? recipe.name : nextId) + ' costs ' + ESTATE_PAVE_TILE_COST + ' of it (you have ' + owned + ').', 'danger');
+      return;
+    }
+    state.inventory[nextId] -= ESTATE_PAVE_TILE_COST;
+    cell.paveTileId = nextId;
+    addLog('You upgraded the pavement at (' + x + ', ' + y + ') to ' + (recipe ? recipe.name : nextId) + '.', 'important');
+    spawnFloatingText('Pavement upgraded!', 'ft-success');
+    estPersist();
+    needsRender = true;
+  }
 
   // ---- Carpentry Workshops: placement on paved tiles + the crafting bonuses ----
   // placedWorkshops caches skillId -> tierIndex of the ONE placed workshop for that skill
@@ -17772,6 +17793,18 @@
           });
           html += '</div>';
         }
+      }
+      // Upgrade the pavement to the next tier -- works even with a building on it.
+      var upTier = pavementTierOf(cell);
+      if(upTier >= 0 && upTier < TIER_COUNT - 1){
+        var upNextId = 'paving_t' + (upTier + 1);
+        var upRecipe = getPavingRecipe(upNextId);
+        var upOwned = state.inventory[upNextId] || 0;
+        var upOk = upOwned >= ESTATE_PAVE_TILE_COST;
+        html += '<div class="estate-action-row">';
+        html += '<div class="estate-action-info"><b>Upgrade Pavement</b><br>Raise to '+(upRecipe?upRecipe.icon+' '+escapeHtml(upRecipe.name):escapeHtml(upNextId))+' &bull; costs '+ESTATE_PAVE_TILE_COST+'&times; that tile (have '+upOwned+') &bull; any building stays put</div>';
+        html += '<button class="action-btn" data-action="estateUpgradePavement" data-x="'+x+'" data-y="'+y+'" '+(upOk?'':'disabled')+'>'+(upOk?'Upgrade':'Need '+ESTATE_PAVE_TILE_COST)+'</button>';
+        html += '</div>';
       }
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Break Pavement</b><br>Requires Digging '+ESTATE_BREAK_PAVEMENT_LEVEL+' &bull; Returns the tile to Dirt (no materials given back)</div>';
@@ -22455,6 +22488,8 @@
       estatePaveTile(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-tile'));
     } else if(action==='estateBreakPavement'){
       estateBreakPavement(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
+    } else if(action==='estateUpgradePavement'){
+      estateUpgradePavement(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
     } else if(action==='estateToggleWorkshopMenu'){
       estateWorkshopMenuOpen = !estateWorkshopMenuOpen;
     } else if(action==='estatePlaceWorkshop'){
@@ -23360,6 +23395,7 @@
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
+      estateUpgradePavement:estateUpgradePavement, pavementTierOf:pavementTierOf, ESTATE_PAVE_TILE_COST:ESTATE_PAVE_TILE_COST, estUse:estUse,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       tierStepper:tierStepper, tierRange:tierRange,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
