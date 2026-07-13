@@ -3152,7 +3152,17 @@
   // linear-scan every monster every frame.
   var MONSTERS_BY_ID = {};
   MONSTERS.forEach(function(m){ MONSTERS_BY_ID[m.id] = m; });
-  function monsterById(id){ return MONSTERS_BY_ID[id] || null; }
+  function monsterById(id){
+    var m = MONSTERS_BY_ID[id];
+    if(m) return m;
+    // A solo dungeon clone ('<baseId>_solo') lives in a module-scoped cache that's empty after a reload;
+    // rebuild it on demand from its base so a resumed solo fight still resolves its (scaled) foe.
+    if(typeof id === 'string' && id.slice(-5) === '_solo'){
+      var base = MONSTERS_BY_ID[id.slice(0, -5)];
+      if(base) return dungeonSoloEnemy(base);
+    }
+    return null;
+  }
 
   // ================= DUNGEONS =================
   // D1 "Cave" -- the first dungeon layer: 25 arachnids fought ONE AT A TIME, levels 100->125, each with
@@ -8985,11 +8995,12 @@
   }
   // A dungeon boss clear rolls each Masterwork slot independently at its drop chance; each hit grants
   // that dungeon's Blueprint for the slot. Returns the list of Blueprint items granted (for logging/UI).
-  function rollMasterworkDrops(layer){
+  function rollMasterworkDrops(layer, chanceMult){
     if(!DUNGEON_DEFS[layer]) return [];
+    var m = (typeof chanceMult === 'number' && chanceMult >= 0) ? chanceMult : 1; // solo passes 0.25; group omits it (=1)
     var got = [];
     MASTERWORK_SLOTS.forEach(function(slot){
-      if(Math.random() < slot.chance){
+      if(Math.random() < slot.chance * m){
         var bp = BLUEPRINT_ITEMS[masterworkBlueprintId(layer, slot.id)];
         if(bp){ addBlueprint(bp.id, 1); got.push(bp); }
       }
@@ -8997,9 +9008,9 @@
     return got;
   }
   // Grant + announce a boss clear's Masterwork drops for the current player.
-  function grantMasterworkDrops(layer){
+  function grantMasterworkDrops(layer, chanceMult){
     var def = DUNGEON_DEFS[layer]; if(!def) return;
-    var got = rollMasterworkDrops(layer);
+    var got = rollMasterworkDrops(layer, chanceMult);
     if(got.length){
       got.forEach(function(bp){ spawnFloatingText('+1 ' + bp.name, 'ft-rare'); });
       addLog('The ' + def.category + ' is cleared! You recover: ' + got.map(function(bp){ return bp.name; }).join(', ') + '.', 'important');
@@ -14380,6 +14391,28 @@
   var dungeonView = 'browse';   // 'browse' | 'lobby' | 'run' | 'result'
   var dungeonLobbyId = null;
   var dungeonBrowseLayer = 'd1';   // which dungeon tab is open on the browse page
+  // Solo runs are tuned to 30% of the group (server) difficulty: a lone delver faces a foe balanced for a
+  // party of up to 4, so its HP and attack are scaled down, and its Formula drop rate is likewise reduced
+  // to 25% of the party rate. Solo engages a scaled CLONE of the enemy (its own id in MONSTERS_BY_ID), so
+  // every combat + display path (HP bar, %-of-max mechanics, incoming damage) reads the reduced stats
+  // automatically -- while the canonical group roster (and the selftests that pin it) stay untouched.
+  var DUNGEON_SOLO_DIFFICULTY = 0.3;   // solo enemy HP + attack = 30% of the group values
+  var DUNGEON_SOLO_DROP_MULT = 0.25;   // solo Masterwork Formula drop chance = 25% of the group rate
+  var _dungeonSoloEnemies = {};
+  function dungeonSoloEnemy(enemy){
+    if(!enemy) return enemy;
+    var sid = enemy.id + '_solo';
+    if(!_dungeonSoloEnemies[sid]){
+      var c = {}; for(var k in enemy){ if(enemy.hasOwnProperty(k)) c[k] = enemy[k]; }
+      c.id     = sid;
+      c.hp     = Math.max(1, Math.round(enemy.hp     * DUNGEON_SOLO_DIFFICULTY));
+      c.atkMin = Math.max(1, Math.round(enemy.atkMin * DUNGEON_SOLO_DIFFICULTY));
+      c.atkMax = Math.max(1, Math.round(enemy.atkMax * DUNGEON_SOLO_DIFFICULTY));
+      _dungeonSoloEnemies[sid] = c;
+      MONSTERS_BY_ID[sid] = c;
+    }
+    return _dungeonSoloEnemies[sid];
+  }
   function armorThreatWeight(material){ return ({ plate:4, chain:3, leather:2, tailoring:1 })[material] || 1; }
   // A player's threat: a base plus a weight per worn armour piece by material (plate > chain > leather > cloth),
   // so heavily-plated players draw the enemy's attacks more than cloth-wearers.
@@ -14402,7 +14435,8 @@
   // Engage arachnid `idx` as a normal combat, tagged as a dungeon fight so defeatMonster advances the run.
   function dungeonEngage(idx){
     if(!dungeonRun) return;
-    var enemy = dungeonRun.def.enemies[idx]; if(!enemy) return;
+    var _base = dungeonRun.def.enemies[idx]; if(!_base) return;
+    var enemy = dungeonSoloEnemy(_base); // solo faces a 30%-scaled clone (HP + attack) of the group foe
     dungeonRun.idx = idx;
     state.activity = { type:'combat', monsterId:enemy.id, monsterHp:enemy.hp, tickAccum:0, monsterTickAccum:0,
       duelStartedAt:Date.now(), disengageUsed:false, guardianBondUsed:false,
@@ -14435,8 +14469,8 @@
   }
   function dungeonComplete(){
     var def = dungeonRun.def;
-    // Every surviving player rolls the layer's Masterwork Blueprint drops (solo self now).
-    if(dungeonRun.party.some(function(p){ return p.alive && p.isSelf; })) grantMasterworkDrops(def.id);
+    // Every surviving player rolls the layer's Masterwork Blueprint drops -- solo at 25% of the party rate.
+    if(dungeonRun.party.some(function(p){ return p.alive && p.isSelf; })) grantMasterworkDrops(def.id, DUNGEON_SOLO_DROP_MULT);
     dungeonRun.active = false; dungeonRun.cleared = true;
     stopActivity();
     dungeonView = 'result';
@@ -14656,6 +14690,7 @@
     html += '<button class="action-btn" data-action="dungeonEnter" data-id="' + def.id + '" style="width:auto" ' + (canEnter ? '' : 'disabled') + '>' + (canEnter ? 'Enter Solo' : 'Combat Score ' + def.minCombatScore + ' required') + '</button>';
     if(chatClient && authUser) html += '<button class="action-btn" data-action="dungeonNetCreate" data-id="' + def.id + '" style="width:auto" ' + ((canEnter && !dungeonNet.busy) ? '' : 'disabled') + '>' + svgIcon('person', 'currentColor') + ' Create Party (1–4)</button>';
     html += '</div>';
+    html += '<div style="font-size:11px;color:var(--text-faint);margin-top:5px">Solo is tuned to <b>' + Math.round(DUNGEON_SOLO_DIFFICULTY * 100) + '%</b> of party difficulty; solo Formula drops roll at <b>' + Math.round(DUNGEON_SOLO_DROP_MULT * 100) + '%</b> of the party rate.</div>';
     // Open parties to join (multiplayer, server-authoritative shared fight) -- for this layer.
     if(chatClient && authUser){
       var lobbies = dungeonNet.lobbiesByLayer[layer] || [];
@@ -22843,7 +22878,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,

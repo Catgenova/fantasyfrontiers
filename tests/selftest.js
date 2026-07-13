@@ -1521,6 +1521,31 @@
     s.blueprints = svB; s.inventory = svI;
   });
 
+  // ---- Solo dungeon tuning: 30% difficulty + 25% Formula drop vs the group (server) baseline ---------
+  suite('dungeons: solo scaling (30% difficulty, 25% drops)', function(){
+    eq(FF.DUNGEON_SOLO_DIFFICULTY, 0.3, 'solo difficulty is 30% of group');
+    eq(FF.DUNGEON_SOLO_DROP_MULT, 0.25, 'solo Formula drop is 25% of group');
+    var base = FF.DUNGEON_D1_ENEMIES[0];
+    var solo = FF.dungeonSoloEnemy(base);
+    eq(solo.id, base.id + '_solo', 'solo enemy gets its own id');
+    eq(solo.hp, Math.max(1, Math.round(base.hp * 0.3)), 'solo enemy HP is 30% of the group foe');
+    eq(solo.atkMin, Math.max(1, Math.round(base.atkMin * 0.3)), 'solo enemy atkMin is 30%');
+    eq(solo.atkMax, Math.max(1, Math.round(base.atkMax * 0.3)), 'solo enemy atkMax is 30%');
+    ok(base.hp > 0 && FF.DUNGEON_D1_ENEMIES[0].hp === base.hp, 'the canonical group roster is left untouched');
+    // The boss clone keeps the ~10x proportion (30% of a 10x-of-24th boss).
+    var bBoss = FF.DUNGEON_D1_ENEMIES[FF.DUNGEON_D1_ENEMIES.length - 1];
+    eq(FF.dungeonSoloEnemy(bBoss).hp, Math.max(1, Math.round(bBoss.hp * 0.3)), 'boss clone HP is 30% of the boss');
+    // monsterById resolves a '<base>_solo' id (rebuilding the clone lazily, e.g. after a reload).
+    ok(FF.monsterById(base.id + '_solo') && FF.monsterById(base.id + '_solo').hp === solo.hp, 'monsterById resolves a solo clone id');
+    // Drop rate: a 0 multiplier never drops; the default (group) can. Confirms the multiplier is applied.
+    var none = [];
+    for(var i = 0; i < 200; i++) none = none.concat(FF.rollMasterworkDrops('d1', 0));
+    eq(none.length, 0, 'a 0x drop multiplier yields no Blueprints');
+    var full = [];
+    for(var j = 0; j < 400; j++) full = full.concat(FF.rollMasterworkDrops('d1', 1));
+    ok(full.length > 0, 'the group (1x) rate still drops Blueprints');
+  });
+
   // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------
   suite('classes: lumen oracle (light wand)', function(){
     function armor(mat,tier){ return {material:mat,tier:tier||5}; }
