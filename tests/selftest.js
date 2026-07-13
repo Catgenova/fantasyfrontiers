@@ -1549,6 +1549,29 @@
     eq(FF.dungeonLocksActions(), false, 'actions are not locked when not in a dungeon');
   });
 
+  // ---- Dungeon unlock chain: each layer requires clearing the previous boss (Cave = Combat Score only) --
+  suite('dungeons: unlock chain (clear the previous boss)', function(){
+    var s = FF._state, saved = s.dungeonsCleared;
+    eq(FF.dungeonPrevId('d1'), null, 'd1 (Cave) has no prerequisite dungeon');
+    eq(FF.dungeonPrevId('d2'), 'd1', 'd2 requires d1');
+    eq(FF.dungeonPrevId('d3'), 'd2', 'd3 requires d2');
+    eq(FF.dungeonPrevId('d4'), 'd3', 'd4 requires d3');
+    s.dungeonsCleared = {};
+    eq(FF.dungeonBossCleared('d1'), false, 'a boss is not cleared until beaten');
+    FF.dungeonMarkCleared('d1');
+    eq(FF.dungeonBossCleared('d1'), true, 'dungeonMarkCleared records the boss kill');
+    // With d1 cleared, d2 is no longer PREREQ-blocked (only Combat Score may remain, never the prereq).
+    var b2 = FF.dungeonEntryBlock(FF.DUNGEON_DEFS.d2);
+    ok(b2 === null || b2.indexOf('Combat Score') === 0, 'clearing d1 lifts d2\'s prerequisite (Combat Score aside)');
+    // Cave itself is never prereq-gated -- only Combat Score can block it.
+    var b1 = FF.dungeonEntryBlock(FF.DUNGEON_DEFS.d1);
+    ok(b1 === null || b1.indexOf('Combat Score') === 0, 'the Cave is gated only by Combat Score');
+    // Nothing cleared -> d4 is always blocked (prereq and/or score), never enterable.
+    s.dungeonsCleared = {};
+    ok(FF.dungeonEntryBlock(FF.DUNGEON_DEFS.d4) !== null, 'd4 is blocked while its prerequisites are unmet');
+    s.dungeonsCleared = saved;
+  });
+
   // ---- Lumen Oracle (Light Wand): the last wand element gets a caster class -----------------------
   suite('classes: lumen oracle (light wand)', function(){
     function armor(mat,tier){ return {material:mat,tier:tier||5}; }

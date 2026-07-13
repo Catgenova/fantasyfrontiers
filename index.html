@@ -8542,6 +8542,7 @@
       physique: physique,
       inventory: {},
       blueprints: {},        // Masterwork Blueprints -- their own separate inventory (dungeon boss drops)
+      dungeonsCleared: {},   // layer id -> true once its boss has been beaten (gates the next dungeon)
       gatherTools: gatherTools,
       gatherToolRarities: gatherToolRarities,
       craftTools: craftTools,
@@ -11142,6 +11143,7 @@
           state.extraCraftSlots = (Array.isArray(loaded.extraCraftSlots) && loaded.extraCraftSlots.length>=3) ? loaded.extraCraftSlots : newGame().extraCraftSlots;
           state.inventory = loaded.inventory || {};
           state.blueprints = (loaded.blueprints && typeof loaded.blueprints === 'object' && !Array.isArray(loaded.blueprints)) ? loaded.blueprints : {}; // Masterwork Blueprint inventory
+          state.dungeonsCleared = (loaded.dungeonsCleared && typeof loaded.dungeonsCleared === 'object' && !Array.isArray(loaded.dungeonsCleared)) ? loaded.dungeonsCleared : {}; // which dungeon bosses have been beaten
           // Trapping was removed; its Fat/Tallow items (trapping_t<n>) are now Butchering byproducts (fat_t<n>).
           // Fold any legacy trapping stock into the new ids so old saves keep their goods and Chandlery inputs.
           for(var _mi=0; _mi<TIER_COUNT; _mi++){
@@ -14469,7 +14471,8 @@
   function dungeonBackToBrowse(){ dungeonView = 'browse'; dungeonLobbyId = null; needsRender = true; }
   function dungeonBegin(id){
     var def = DUNGEON_DEFS[id]; if(!def) return;
-    if(combatLevelEquivalent(state) < def.minCombatScore){ addLog('You need Combat Score ' + def.minCombatScore + ' to enter the ' + def.category + '.', 'danger'); return; }
+    var _block = dungeonEntryBlock(def);
+    if(_block){ addLog('You can’t enter the ' + def.category + ' yet — ' + _block + '.', 'danger'); return; }
     dungeonStopAllTasks(); // starting the descent stops any lobby crafting/gathering (incl. Belt slots)
     dungeonRun = { def:def, idx:0, party:[dungeonSelfCombatant()], targetIdx:0, active:true, cleared:false };
     dungeonView = 'run';
@@ -14490,6 +14493,7 @@
   }
   function dungeonComplete(){
     var def = dungeonRun.def;
+    dungeonMarkCleared(def.id); // beating the boss unlocks the next dungeon
     // Every surviving player rolls the layer's Masterwork Blueprint drops -- solo at 25% of the party rate.
     if(dungeonRun.party.some(function(p){ return p.alive && p.isSelf; })) grantMasterworkDrops(def.id, DUNGEON_SOLO_DROP_MULT);
     dungeonRun.active = false; dungeonRun.cleared = true;
@@ -14509,6 +14513,19 @@
     needsRender = true;
   }
   function dungeonEnemyLevelRange(def){ return def.enemies[0].level + '–' + def.enemies[def.enemies.length - 1].level; }
+  // ---- Dungeon unlock chain: Cave (d1) only needs Combat Score; every later layer ALSO requires having
+  // beaten the PREVIOUS layer's boss (tracked in state.dungeonsCleared, set on a solo or party clear). ----
+  function dungeonPrevId(layerId){ var i = DUNGEON_ORDER.indexOf(layerId); return i > 0 ? DUNGEON_ORDER[i - 1] : null; }
+  function dungeonBossCleared(layerId){ return !!(state.dungeonsCleared && state.dungeonsCleared[layerId]); }
+  function dungeonMarkCleared(layerId){ if(!state.dungeonsCleared || typeof state.dungeonsCleared !== 'object') state.dungeonsCleared = {}; if(layerId) state.dungeonsCleared[layerId] = true; }
+  // Reason the player can't enter yet, or null if they can.
+  function dungeonEntryBlock(def){
+    if(!def) return 'Unavailable';
+    if(combatLevelEquivalent(state) < def.minCombatScore) return 'Combat Score ' + def.minCombatScore + ' required';
+    var prev = dungeonPrevId(def.id);
+    if(prev && !dungeonBossCleared(prev)) return 'Clear the ' + (DUNGEON_DEFS[prev] ? DUNGEON_DEFS[prev].category : prev) + ' first';
+    return null;
+  }
 
   // ===== Networked dungeon runs (Phase 2, Stage A): server-authoritative shared enemy =====
   // A party (1-4) forms in a lobby, then descends together. The server (dungeon edge function +
@@ -14553,9 +14570,9 @@
     // The descent just started (lobby -> active): stop any lobby crafting/gathering. From here actions lock.
     if(dungeonNet.session && dungeonNet.session.status === 'active' && _prevStatus !== 'active') dungeonStopAllTasks();
     // On a clear, claim the Formula -- the server grants it only to SURVIVORS, once each.
-    if(dungeonNet.session && dungeonNet.session.status === 'cleared' && !dungeonNet.clearedHandled){
-      dungeonNet.clearedHandled = true;
-      dungeonNetClaim();
+    if(dungeonNet.session && dungeonNet.session.status === 'cleared'){
+      dungeonMarkCleared(dungeonNet.session.layer); // party clear unlocks the next dungeon for everyone present
+      if(!dungeonNet.clearedHandled){ dungeonNet.clearedHandled = true; dungeonNetClaim(); }
     }
     if(!dungeonNet.session) dungeonNet.clearedHandled = false;
   }
@@ -14574,8 +14591,10 @@
     dungeonNet.subMembers = chatClient.channel('dungeon_m_' + sid)
       .on('postgres_changes', { event:'*', schema:'public', table:'dungeon_members', filter:'session_id=eq.' + sid }, function(){ dungeonNetRefresh(); }).subscribe();
   }
-  function dungeonNetCreate(layer){ if(dungeonNet.busy) return; dungeonNet.busy = true; dungeonNet.error = ''; dungeonNetInvoke('create', Object.assign({ layer:layer }, dungeonStats())).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not create the party.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
-  function dungeonNetJoin(id){ if(dungeonNet.busy) return; dungeonNet.busy = true; dungeonNet.error = ''; dungeonNetInvoke('join', Object.assign({ session_id:id }, dungeonStats())).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not join.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
+  // Which layer an open lobby belongs to (Join only knows the session id) -- so we can gate joining too.
+  function dungeonLobbyLayer(sessionId){ for(var l in dungeonNet.lobbiesByLayer){ var arr = dungeonNet.lobbiesByLayer[l] || []; for(var i = 0; i < arr.length; i++){ if(arr[i].id === sessionId) return l; } } return null; }
+  function dungeonNetCreate(layer){ if(dungeonNet.busy) return; var _b = dungeonEntryBlock(DUNGEON_DEFS[layer]); if(_b){ dungeonNet.error = 'Locked — ' + _b + '.'; if(currentCategory === 'dungeons') render(); return; } dungeonNet.busy = true; dungeonNet.error = ''; dungeonNetInvoke('create', Object.assign({ layer:layer }, dungeonStats())).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not create the party.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
+  function dungeonNetJoin(id){ if(dungeonNet.busy) return; var _b = dungeonEntryBlock(DUNGEON_DEFS[dungeonLobbyLayer(id) || dungeonBrowseLayer]); if(_b){ dungeonNet.error = 'Locked — ' + _b + '.'; if(currentCategory === 'dungeons') render(); return; } dungeonNet.busy = true; dungeonNet.error = ''; dungeonNetInvoke('join', Object.assign({ session_id:id }, dungeonStats())).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not join.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
   function dungeonNetClaim(){ if(!dungeonNet.session) return; dungeonNetInvoke('claim', { session_id:dungeonNet.session.id }).then(function(res){ if(res.ok){ var def = DUNGEON_DEFS[dungeonNet.session.layer]; if(def) grantMasterworkDrops(def.id); dungeonNetApply(res); } if(currentCategory === 'dungeons') render(); }); }
   function dungeonNetLeave(){ if(!dungeonNet.session || dungeonNet.busy) return; dungeonNet.busy = true; var sid = dungeonNet.session.id; dungeonNetInvoke('leave', { session_id:sid }).then(function(res){ dungeonNet.busy = false; dungeonNet.session = null; dungeonNet.members = []; dungeonNet.clearedHandled = false; dungeonNetResubscribe(); if(currentCategory === 'dungeons') render(); }); }
   function dungeonNetStart(){ if(!dungeonNet.session || dungeonNet.busy) return; dungeonNet.busy = true; dungeonNet.error = ''; var sid = dungeonNet.session.id; dungeonNetInvoke('start', { session_id:sid }).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not start.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
@@ -14693,8 +14712,8 @@
     html += '<div class="dungeon-tabs">';
     DUNGEON_ORDER.forEach(function(layer){
       var d = DUNGEON_DEFS[layer]; if(!d) return;
-      var unlocked = myScore >= d.minCombatScore;
-      html += '<button class="dungeon-tab' + (layer === dungeonBrowseLayer ? ' on' : '') + (unlocked ? '' : ' locked') + '" data-action="dungeonTab" data-id="' + layer + '" title="' + escapeHtml(d.label) + (unlocked ? '' : ' — Combat Score ' + d.minCombatScore + ' required') + '">'
+      var _tblock = dungeonEntryBlock(d); var unlocked = !_tblock;
+      html += '<button class="dungeon-tab' + (layer === dungeonBrowseLayer ? ' on' : '') + (unlocked ? '' : ' locked') + '" data-action="dungeonTab" data-id="' + layer + '" title="' + escapeHtml(d.label) + (unlocked ? '' : ' — ' + escapeHtml(_tblock)) + '">'
         + (unlocked ? '' : '🔒 ') + escapeHtml(d.id.toUpperCase()) + ' <span class="dungeon-tab-sub">' + escapeHtml(d.category) + '</span></button>';
     });
     html += '</div>';
@@ -14705,15 +14724,18 @@
   // The full panel for one dungeon layer: descent card, open parties, loot, and the enemy roster.
   function renderDungeonLayerPanel(layer, myScore){
     var def = DUNGEON_DEFS[layer]; if(!def) return '';
-    var canEnter = myScore >= def.minCombatScore;
+    var block = dungeonEntryBlock(def); var canEnter = !block;
     var boss = def.enemies[def.enemies.length - 1];
     var html = '<h3 style="margin-top:4px">' + svgIcon('gem', '#8a5fb0') + ' ' + escapeHtml(def.category) + '</h3>';
     html += '<div class="item-card">';
     html += '<div class="item-top"><div class="item-icon">' + boss.icon + '</div><div><div class="item-name">' + def.label + '</div><div class="item-meta">' + def.enemies.length + ' ' + def.theme + ' &bull; Levels ' + dungeonEnemyLevelRange(def) + ' &bull; Boss: ' + escapeHtml(boss.name) + '</div></div></div>';
     html += '<div class="chance-line">' + def.enemies.length + ' ' + def.theme + ', each with its own element and armour, guard the ' + escapeHtml(def.category.toLowerCase()) + '. The ' + def.enemies.length + 'th — ' + escapeHtml(boss.name) + ' — towers over the rest. Reward: <b>Masterwork Blueprints</b>.</div>';
-    html += '<div class="inputs-line" style="margin-top:6px">Requires Combat Score ' + def.minCombatScore + (canEnter ? '' : ' <span style="color:var(--hp-bad)">(you are ' + myScore + ')</span>') + '</div>';
+    var _prevId = dungeonPrevId(def.id);
+    html += '<div class="inputs-line" style="margin-top:6px">Requires Combat Score ' + def.minCombatScore + (myScore >= def.minCombatScore ? '' : ' <span style="color:var(--hp-bad)">(you are ' + myScore + ')</span>');
+    if(_prevId){ var _pc = dungeonBossCleared(_prevId); html += ' &bull; <span style="color:var(--' + (_pc ? 'hp-good' : 'hp-bad') + ')">' + (_pc ? '&#10003; ' : '&#128274; ') + 'Clear the ' + escapeHtml(DUNGEON_DEFS[_prevId].category) + '</span>'; }
+    html += '</div>';
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">';
-    html += '<button class="action-btn" data-action="dungeonEnter" data-id="' + def.id + '" style="width:auto" ' + (canEnter ? '' : 'disabled') + '>' + (canEnter ? 'Enter Solo' : 'Combat Score ' + def.minCombatScore + ' required') + '</button>';
+    html += '<button class="action-btn" data-action="dungeonEnter" data-id="' + def.id + '" style="width:auto" ' + (canEnter ? '' : 'disabled') + '>' + (canEnter ? 'Enter Solo' : escapeHtml(block)) + '</button>';
     if(chatClient && authUser) html += '<button class="action-btn" data-action="dungeonNetCreate" data-id="' + def.id + '" style="width:auto" ' + ((canEnter && !dungeonNet.busy) ? '' : 'disabled') + '>' + svgIcon('person', 'currentColor') + ' Create Party (1–4)</button>';
     html += '</div>';
     html += '<div style="font-size:11px;color:var(--text-faint);margin-top:5px">Solo is tuned to <b>' + Math.round(DUNGEON_SOLO_DIFFICULTY * 100) + '%</b> of party difficulty; solo Formula drops roll at <b>' + Math.round(DUNGEON_SOLO_DROP_MULT * 100) + '%</b> of the party rate.</div>';
@@ -14757,7 +14779,7 @@
   }
   function renderDungeonLobby(id){
     var def = DUNGEON_DEFS[id]; if(!def) return renderDungeonBrowse();
-    var canEnter = combatLevelEquivalent(state) >= def.minCombatScore;
+    var block = dungeonEntryBlock(def); var canEnter = !block;
     var myThreat = playerThreat(state);
     var myCls = activeClassId(state);
     var html = '<div class="section-intro"><b>' + def.label + '</b> — Pre-fight Lobby. Form your party, then begin the descent. Combat here is <b>synchronous</b>: the party fights each foe together, one at a time.</div>';
@@ -14770,7 +14792,7 @@
     html += '</div>';
     html += '<div class="chance-line" style="margin-top:8px">' + svgIcon('shield', '#8a97a6') + ' <b>Threat</b> decides how often a foe targets you: heavier armour draws more attacks (Plate &gt; Chain &gt; Leather &gt; Cloth). Plate-clad delvers tank; cloth casters stay out of reach.</div>';
     html += '<div style="display:flex;gap:8px;margin-top:10px">';
-    html += '<button class="action-btn" data-action="dungeonBegin" data-id="' + def.id + '" style="width:auto" ' + (canEnter ? '' : 'disabled') + '>' + (canEnter ? 'Begin Descent' : 'Combat Score ' + def.minCombatScore + ' required') + '</button>';
+    html += '<button class="action-btn" data-action="dungeonBegin" data-id="' + def.id + '" style="width:auto" ' + (canEnter ? '' : 'disabled') + '>' + (canEnter ? 'Begin Descent' : escapeHtml(block)) + '</button>';
     html += '<button class="action-btn stop" data-action="dungeonBack" style="width:auto">Back</button>';
     html += '</div></div>';
     return html;
@@ -22904,7 +22926,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,
