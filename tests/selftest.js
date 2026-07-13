@@ -207,6 +207,28 @@
     FF.estRecomputeWorkshops(); // rebuild the workshop cache from the restored grid
   });
 
+  // ---- Estate snapshot: the compact, render-only blob published for "Visit Estate" viewing ----
+  suite('estate: public snapshot', function(){
+    var s = FF._state;
+    var snap = FF.computeEstateSnapshot();
+    ok(snap && snap.grid && snap.grid.length, 'a snapshot has a grid');
+    eq(snap.grid.length, s.estate.grid.length, 'snapshot grid matches the estate width');
+    eq(snap.edgesX, s.estate.edgesX, 'snapshot carries edgesX');
+    eq(snap.edgesY, s.estate.edgesY, 'snapshot carries edgesY');
+    // Placements + geometry are preserved so the read-only canvas can draw them.
+    var cell = s.estate.grid[0][0];
+    var saved = { type:cell.type, pave:cell.paveTileId, work:cell.workshopId, h:cell.height, owned:cell.owned };
+    cell.owned = true; cell.type = 'paved'; cell.paveTileId = 'paving_t2'; cell.workshopId = 'workshop_mining_t1'; cell.height = 3;
+    var c2 = FF.computeEstateSnapshot().grid[0][0];
+    eq(c2.paveTileId, 'paving_t2', 'snapshot keeps the pavement tier');
+    eq(c2.workshopId, 'workshop_mining_t1', 'snapshot keeps the workshop');
+    eq(c2.height, 3, 'snapshot keeps the tile height');
+    eq(c2.owned, true, 'snapshot keeps ownership');
+    // No internal timers/jobs leak into the public blob.
+    ok(!('job' in c2) && !('jobs' in c2), 'snapshot cells carry no job/timer state');
+    cell.type = saved.type; cell.paveTileId = saved.pave; cell.workshopId = saved.work; cell.height = saved.h; cell.owned = saved.owned;
+  });
+
   // ---- Guild activity + bank logs (shared blob, officer+ only, filtered by kind) ----
   suite('guild: activity & bank logs', function(){
     var ge = FF.guildEstate, gs = FF.guildState;

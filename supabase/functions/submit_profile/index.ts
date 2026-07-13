@@ -156,8 +156,21 @@ Deno.serve(async (req) => {
   const clsRaw = (body as { class?: unknown }).class;
   const cls = (typeof clsRaw === "string" && /^[a-z][a-z0-9_]{0,23}$/.test(clsRaw)) ? clsRaw : null;
 
+  // Optional public estate snapshot (render-only) so others can view it read-only from the
+  // leaderboard. Cosmetic + client-authoritative; never reject the submission over it. Bounded by a
+  // size cap + a basic shape check so a client can't bloat the row. Stored verbatim (the viewer only
+  // reads grid geometry + placements) or null. Only touched when the body actually carries the field,
+  // so an older client that doesn't send `estate` never clobbers a previously-published one.
+  const ESTATE_MAX_BYTES = 80_000;
+  const estateProvided = Object.prototype.hasOwnProperty.call(body, "estate");
+  const estRaw = (body as { estate?: unknown }).estate;
+  let estate: unknown = null;
+  if (estRaw && typeof estRaw === "object" && !Array.isArray(estRaw) && Array.isArray((estRaw as Record<string, unknown>).grid)) {
+    try { if (JSON.stringify(estRaw).length <= ESTATE_MAX_BYTES) estate = estRaw; } catch { estate = null; }
+  }
+
   // 4. Accept.
-  const { error: upErr } = await admin.from("profiles").upsert({
+  const record: Record<string, unknown> = {
     id: userId,
     username,
     total_level: totalLevel,
@@ -168,7 +181,15 @@ Deno.serve(async (req) => {
     mortal,
     class: cls,
     updated_at: new Date(nowMs).toISOString(),
-  }, { onConflict: "id" });
+  };
+  if (estateProvided) record.estate = estate; // omit entirely -> upsert leaves any existing estate untouched
+  let { error: upErr } = await admin.from("profiles").upsert(record, { onConflict: "id" });
+  if (upErr && estateProvided) {
+    // The `estate` column may not be migrated yet -- retry WITHOUT it so a new client never loses its
+    // leaderboard update just because the estate migration hasn't been applied. (Deploy-order safety.)
+    delete record.estate;
+    ({ error: upErr } = await admin.from("profiles").upsert(record, { onConflict: "id" }));
+  }
   if (upErr) return json({ ok: false, error: "Could not save profile." }, 500);
 
   return json({ ok: true });

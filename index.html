@@ -15811,6 +15811,10 @@
   }
   var estateHoveredTile = null;
   var estateSelectedTile = null;
+  // Read-only estate viewing (visiting another player's published estate from the leaderboard).
+  // While active, estActive points at the fetched snapshot and tile selection/actions are suppressed.
+  var estReadOnly = false;
+  var estateVisit = { active:false, estate:null, name:'', loading:false, error:'' };
   var estatePavingMenuOpen = false;
   var estateWorkshopMenuOpen = false;
   var estateFieldMenuOpen = false;
@@ -17560,6 +17564,7 @@
       renderEstateCanvas();
     }
     function handleSelect(clientX, clientY){
+      if(estReadOnly) return; // visiting another player's estate: pan/zoom only, no tile selection
       var _os = estateCanvasOrigin(canvas), originX = _os.x, originY = _os.y;
       var p = toWorldCoords(clientX, clientY);
       var edge = estateFindEdgeAt(p.x, p.y, originX, originY);
@@ -17878,6 +17883,26 @@
     return html;
   }
   function renderEstateTab(){
+    // Read-only viewer for another player's published estate (opened from the leaderboard).
+    if(estateVisit.active){
+      var vName = escapeHtml(estateVisit.name || 'a player');
+      var vh = '<div class="estate-visit-bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">'
+        + '<button class="action-btn" data-action="leaveEstateVisit" style="width:auto;flex:0 0 auto;">‹ Leave</button>'
+        + '<div class="section-intro" style="margin:0;flex:1;min-width:200px;">Viewing <b>'+vName+'</b>’s estate — <b>read-only</b>. Drag to pan, use +/− to zoom, and the turn arrows to rotate.</div></div>';
+      if(estateVisit.loading) return vh + '<div class="empty-note">Loading their estate…</div>';
+      if(estateVisit.error) return vh + '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad)">'+escapeHtml(estateVisit.error)+'</div>';
+      if(!estateVisit.estate || !estateVisit.estate.grid) return vh + '<div class="empty-note">'+vName+' hasn’t published an estate yet.</div>';
+      vh += '<div class="estate-canvas-wrap">'+
+        '<button class="estate-zoom-btn estate-zoom-out" data-action="estateZoomOut" title="Zoom out">−</button>'+
+        '<button class="estate-rotate-btn estate-rotate-left" data-action="estateRotateLeft" title="Rotate 90° left">↺</button>'+
+        '<canvas id="estateCanvas" width="580" height="490"></canvas>'+
+        '<button class="estate-zoom-btn estate-zoom-in" data-action="estateZoomIn" title="Zoom in">+</button>'+
+        '<button class="estate-rotate-btn estate-rotate-right" data-action="estateRotateRight" title="Rotate 90° right">↻</button>'+
+        '<button class="estate-view-btn'+(estateTopDown?' on':'')+'" data-action="estateToggleTopDown" title="Toggle top-down view">'+(estateTopDown?'▦ 2D':'◈ 3D')+'</button>'+
+        '</div>';
+      vh += '<div class="estate-hover-info" id="estateHoverInfo">Read-only view — hover a tile to inspect it. Drag to pan, +/− to zoom, arrows to rotate.</div>';
+      return vh;
+    }
     var tilesOwned = 0;
     estActive.grid.forEach(function(col){ col.forEach(function(cell){ if(cell.owned) tilesOwned++; }); });
     var purchased = estActive.expansionsPurchased||0;
@@ -19268,6 +19293,27 @@
     });
     return { weapons: weapons, armor: armor };
   }
+  // Compact, render-only snapshot of the player's personal estate for the public profile, so others
+  // can view it read-only from the leaderboard. Only the fields renderEstateCanvas + the hover tooltip
+  // need (grid geometry + placements + heights), never jobs or internal timers. Returns null if there's
+  // no estate yet. The visited estate is drawn as a plain object shaped like state.estate.
+  function computeEstateSnapshot(){
+    var e = state.estate;
+    if(!e || !e.grid || !e.grid.length) return null;
+    var grid = e.grid.map(function(col){
+      return col.map(function(c){
+        var o = { owned: !!c.owned, type: c.type, height: c.height||0 };
+        if(c.obstacle) o.obstacle = c.obstacle;
+        if(c.paveTileId) o.paveTileId = c.paveTileId;
+        if(c.masonryTileId) o.masonryTileId = c.masonryTileId;
+        if(c.workshopId) o.workshopId = c.workshopId;
+        if(c.cottageId) o.cottageId = c.cottageId;
+        if(c.fieldTier != null) o.fieldTier = c.fieldTier;
+        return o;
+      });
+    });
+    return { grid: grid, edgesX: e.edgesX, edgesY: e.edgesY, expansionsPurchased: e.expansionsPurchased||0 };
+  }
   async function profileSync(force){
     if(!CHAT_ENABLED || !authUser || !authUser.id || cloudReloading) return;  // don't push a pre-pull state
     var now = Date.now();
@@ -19279,8 +19325,10 @@
       // Writes go through the server-validated 'submit_profile' function (the profiles
       // table is no longer client-writable). id + username are derived server-side from
       // the auth token; a rejected submission just leaves the last accepted row intact.
+      // `estate` is a compact render-only snapshot so others can view it from the leaderboard;
+      // an older server that doesn't accept it simply ignores the extra field.
       await chatClient.functions.invoke('submit_profile', {
-        body: { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, equipment: stats.equipment, stats: stats.stats, mortal: isMortal(), class: activeClassId(state) || null }
+        body: { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, equipment: stats.equipment, stats: stats.stats, mortal: isMortal(), class: activeClassId(state) || null, estate: computeEstateSnapshot() }
       });
     }catch(e){}
   }
@@ -19380,12 +19428,13 @@
     if(!chatClient){ if(!(await authEnsureClient())){ leaderboardStatus='error'; if(currentCategory==='leaderboard') render(); return; } }
     try{
       var res = await chatClient.from('profiles')
-        .select('id,username,total_level,gold,skills,equipment,stats,mortal,class,updated_at')
+        .select('id,username,total_level,gold,skills,equipment,stats,mortal,class,has_estate,updated_at')
         .order('total_level', { ascending:false })
         .limit(LEADERBOARD_LIMIT);
       if(res.error){
-        // The `class` column may not be migrated yet -- retry WITHOUT it but keep stats/mortal, so the
-        // board doesn't lose its stat rankings or Mortal styling just because class icons aren't live.
+        // The `class`/`has_estate` columns may not be migrated yet -- retry WITHOUT them but keep
+        // stats/mortal, so the board doesn't lose its stat rankings or Mortal styling. When has_estate
+        // is absent the "Visit Estate" button simply stays hidden (graceful pre-deploy degradation).
         res = await chatClient.from('profiles')
           .select('id,username,total_level,gold,skills,equipment,stats,mortal,updated_at')
           .order('total_level', { ascending:false })
@@ -19464,7 +19513,12 @@
   }
   function renderProfileDetail(p){
     var html = '<div class="chat-wrap">';
+    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
     html += '<button class="action-btn" data-action="closeProfile" style="width:auto;flex:0 0 auto;">\u2039 Back</button>';
+    // Visit Estate: fetch + open a read-only canvas view of this player's published estate.
+    // Hidden until the backend publishes estates (p.estate is a small presence flag when available).
+    if(CHAT_ENABLED && p.id && p.has_estate) html += '<button class="action-btn" data-action="visitEstate" data-id="'+escapeHtml(String(p.id))+'" data-name="'+escapeHtml(String(p.username||'anon'))+'" style="width:auto;flex:0 0 auto;">\ud83c\udfe1 Visit Estate</button>';
+    html += '</div>';
     html += '<div class="profile-head"><div class="profile-name">'+escapeHtml(p.username||'anon')+'</div>'
       +'<div class="profile-stats"><span>Total Level <b>'+fmt(p.total_level||0)+'</b></span><span>Combat Score <b>'+fmt(lbCombatScore(p))+'</b></span><span>Gold <b>'+fmt(p.gold||0)+'</b></span></div></div>';
     var pst = p.stats || {};
@@ -19502,6 +19556,36 @@
     });
     html += '</div></div>';
     return html;
+  }
+  // Open a read-only view of another player's published estate (from their leaderboard profile).
+  // Switches to the transient 'visitestate' category, fetches just that player's estate snapshot,
+  // and lets them pan/zoom/rotate without any interaction (see estReadOnly).
+  function visitEstate(playerId, name){
+    if(!CHAT_ENABLED || !playerId) return;
+    estateVisit = { active:true, estate:null, name: name||'anon', loading:true, error:'' };
+    estReadOnly = true;
+    profileView = null;               // leave the profile detail behind
+    currentCategory = 'visitestate';
+    estatePanX = 0; estatePanY = 0;   // recentre the view for the new estate
+    render();
+    (async function(){
+      try{
+        if(!chatClient){ if(!(await authEnsureClient())){ estateVisit.loading=false; estateVisit.error='Could not connect.'; if(currentCategory==='visitestate') render(); return; } }
+        var res = await chatClient.from('profiles').select('estate').eq('id', playerId).maybeSingle();
+        if(!estateVisit.active) return; // user already left
+        if(res.error){ estateVisit.loading=false; estateVisit.error='Estate viewing isn’t available yet.'; }
+        else if(res.data && res.data.estate && res.data.estate.grid){ estateVisit.estate = res.data.estate; estateVisit.loading=false; }
+        else { estateVisit.loading=false; } // no estate published -> renderEstateTab shows the soft empty note
+      }catch(e){ estateVisit.loading=false; estateVisit.error='Could not load their estate.'; }
+      if(currentCategory==='visitestate') render();
+    })();
+  }
+  function leaveEstateVisit(){
+    estateVisit = { active:false, estate:null, name:'', loading:false, error:'' };
+    estReadOnly = false;
+    estActive = state.estate; estIsGuild = false; // drop the visited snapshot pointer
+    currentCategory = 'leaderboard';
+    render();
   }
   function renderLeaderboardTab(){
     if(profileView) return renderProfileDetail(profileView);
@@ -20764,7 +20848,8 @@
     else if(currentCategory==='crafting' || currentCategory==='building' || currentCategory==='outfitting' || currentCategory==='refining' || currentCategory==='cooking') html = '<div class="'+(craftOnlyAffordable?'craft-filtering':'')+'"><div class="craft-filter-bar"><button class="craft-filter-btn'+(craftOnlyAffordable?' on':'')+'" data-action="toggleCraftFilter">'+(craftOnlyAffordable?'\u2611':'\u2610')+' Only show items I have materials for</button></div>'+renderCraftTab(currentSub)+'</div>';
     else if(currentCategory==='improvement') html = renderImprovementTab();
     else if(currentCategory==='skills') html = renderSkillsTab();
-    else if(currentCategory==='estate'){ estUse(false); html = renderEstateTab(); }
+    else if(currentCategory==='estate'){ estUse(false); estReadOnly=false; html = renderEstateTab(); }
+    else if(currentCategory==='visitestate'){ estReadOnly = true; if(estateVisit.estate) estActive = estateVisit.estate; html = renderEstateTab(); }
     else if(currentCategory==='peons') html = renderPeonsTab();
     else if(currentCategory==='inventory') html = renderInventoryTab();
     else if(currentCategory==='masterwork') html = renderMasterworkTab();
@@ -20781,6 +20866,7 @@
     else if(currentCategory==='leaderboard'){ leaderboardFetch(); html = renderLeaderboardTab(); }
     document.getElementById('content').innerHTML = html;
     if(currentCategory==='estate'){ estUse(false); renderEstateCanvas(); }
+    if(currentCategory==='visitestate' && estateVisit.estate){ estActive = estateVisit.estate; estIsGuild = false; estReadOnly = true; renderEstateCanvas(); }
     if(currentCategory==='guild' && guildSub==='estate' && guildEstate.status==='ready'){ estUse(true); renderEstateCanvas(); }
     if(currentCategory==='chat'){ var _cm=document.getElementById('chatMessages'); if(_cm) _cm.scrollTop=_cm.scrollHeight; }
   }
@@ -22596,6 +22682,10 @@
       profileView = _mine; render();
     } else if(action==='closeProfile'){
       profileView = null; render();
+    } else if(action==='visitEstate'){
+      visitEstate(btn.getAttribute('data-id'), btn.getAttribute('data-name'));
+    } else if(action==='leaveEstateVisit'){
+      leaveEstateVisit();
     } else if(action==='estateTogglePavingMenu'){
       estatePavingMenuOpen = !estatePavingMenuOpen;
     } else if(action==='estatePaveTile'){
@@ -23515,6 +23605,7 @@
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
       estateUpgradePavement:estateUpgradePavement, pavementTierOf:pavementTierOf, ESTATE_PAVE_TILE_COST:ESTATE_PAVE_TILE_COST, estUse:estUse,
       estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, ESTATE_BUILDING_UPGRADE_PLANKS:ESTATE_BUILDING_UPGRADE_PLANKS, estRecomputeWorkshops:estRecomputeWorkshops,
+      computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       tierStepper:tierStepper, tierRange:tierRange,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
