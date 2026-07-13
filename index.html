@@ -6056,14 +6056,17 @@
         if(spell.type==='siphon' && reaperBonus(20)) dmg *= 3; // Reaper Lv 20: familiar life-drain (siphon) spells deal triple damage
         dmg = Math.round(dmg);
         // Summoner Lv 80 (Kindred Fury): familiars can crit, borrowing the hero's crit chance & crit damage.
+        var famName = (FAMILIAR_DATA[casterId] || {}).name || 'Familiar';
+        var famCrit = false;
         if(summonerBonus(80) && Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance'))){
           var famCritMult = Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg');
           dmg = Math.round(dmg * famCritMult);
-          spawnFloatingText('Familiar Critical!', 'ft-rare');
+          famCrit = true;
         }
         applyChipDamage(dmg); // floors at 1 unless you wield a Staff (then summons can land the kill)
         if(frostwardenBonus(80)) frostwardenApplyChill(cact); // Rime Resonance: familiar frost spells also Chill
-        spawnFloatingText('-'+dmg+' ('+spell.name+')', 'ft-rare');
+        // Familiar damage floats over the enemy on the combat card, tagged with the familiar's name.
+        spawnCombatFloat(escapeHtml(famName) + ' <b>-' + dmg + '</b>' + (famCrit ? ' CRIT' : ''), famCrit ? 'ft-crit' : 'ft-rare', true);
         if(dmg > 0){ addXp(STAVES_SKILL_ID, dmg); awardClassXp(dmg); awardElementXp(spell.element, dmg); } // Staves proficiency + active Class + Elemental Attunement train on familiar damage
         if(spell.type==='siphon'){
           var stolen = Math.min(dmg, maxHp(state) - state.playerHp);
