@@ -7783,12 +7783,16 @@
   // alongside the dungeon fight. Leaving/finishing the run clears the lock. (dungeonRun/dungeonNet are
   // declared later in the IIFE; they're assigned well before any player action can fire.)
   function dungeonLocksActions(){
-    if(typeof dungeonRun !== 'undefined' && dungeonRun && dungeonRun.active) return true;
-    if(typeof dungeonNet !== 'undefined' && dungeonNet && dungeonNet.session){
-      var st = dungeonNet.session.status;
-      if(st === 'lobby' || st === 'active') return true;
-    }
+    if(typeof dungeonRun !== 'undefined' && dungeonRun && dungeonRun.active) return true; // solo descent underway
+    // Networked: a lobby is free time (players may craft/gather while waiting); only the ACTIVE descent locks.
+    if(typeof dungeonNet !== 'undefined' && dungeonNet && dungeonNet.session && dungeonNet.session.status === 'active') return true;
     return false;
+  }
+  // Stop every player task (the primary slot + any Belt-granted extra slots) -- called the moment a descent
+  // begins, so lobby crafting/gathering doesn't carry into (or run alongside) the dungeon fight.
+  function dungeonStopAllTasks(){
+    stopActivity();
+    if(state.extraCraftSlots){ for(var _si = 0; _si < state.extraCraftSlots.length; _si++) state.extraCraftSlots[_si] = { type:null }; }
   }
   function dungeonActionBlockedNotice(){ addLog('You’re in a dungeon — finish or leave the run before starting other tasks.', 'danger'); }
   // Places a newly-started task (craft/gather/pray) into a free Belt-granted slot if one is
@@ -14466,6 +14470,7 @@
   function dungeonBegin(id){
     var def = DUNGEON_DEFS[id]; if(!def) return;
     if(combatLevelEquivalent(state) < def.minCombatScore){ addLog('You need Combat Score ' + def.minCombatScore + ' to enter the ' + def.category + '.', 'danger'); return; }
+    dungeonStopAllTasks(); // starting the descent stops any lobby crafting/gathering (incl. Belt slots)
     dungeonRun = { def:def, idx:0, party:[dungeonSelfCombatant()], targetIdx:0, active:true, cleared:false };
     dungeonView = 'run';
     addLog('You descend into the ' + def.category + ' — ' + def.enemies.length + ' ' + def.theme + ' await, one at a time.', 'important');
@@ -14540,10 +14545,13 @@
   }
   function dungeonNetInParty(){ return !!(dungeonNet.session); }
   function dungeonNetApply(res){
+    var _prevStatus = dungeonNet.session && dungeonNet.session.status;
     dungeonNet.session = res.session || null;
     dungeonNet.members = res.members || [];
     dungeonNet.status = 'ready';
     dungeonNetResubscribe();
+    // The descent just started (lobby -> active): stop any lobby crafting/gathering. From here actions lock.
+    if(dungeonNet.session && dungeonNet.session.status === 'active' && _prevStatus !== 'active') dungeonStopAllTasks();
     // On a clear, claim the Formula -- the server grants it only to SURVIVORS, once each.
     if(dungeonNet.session && dungeonNet.session.status === 'cleared' && !dungeonNet.clearedHandled){
       dungeonNet.clearedHandled = true;
