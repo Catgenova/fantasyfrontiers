@@ -402,6 +402,13 @@
   .dungeon-tab .dungeon-tab-sub{font-family:var(--font-mono); font-size:10px; color:var(--text-faint);}
   .dungeon-tab.on{border-color:#8a5fb0; color:#8a5fb0; font-weight:600;}
   .dungeon-tab.locked{opacity:0.65;}
+  /* Blacksmithing: collapsible tool-family groups (nested navigation). */
+  .forge-group-head{display:flex; align-items:center; gap:8px; width:100%; text-align:left; margin-top:8px; padding:9px 12px; border:1px solid var(--border); border-left:4px solid var(--fg-accent,var(--cat-crafting)); border-radius:8px; background:var(--bg-card); color:var(--text); cursor:pointer; font-family:inherit;}
+  .forge-group-head:hover{border-color:var(--fg-accent,var(--cat-crafting));}
+  .forge-group-head.open{background:color-mix(in srgb, var(--fg-accent,var(--cat-crafting)) 10%, var(--bg-card));}
+  .forge-group-chev{flex:0 0 auto; color:var(--fg-accent,var(--cat-crafting)); font-size:12px; width:12px;}
+  .forge-group-name{font-family:var(--font-display); font-weight:600; font-size:15px; color:var(--fg-accent,var(--cat-crafting));}
+  .forge-group-meta{margin-left:auto; font-family:var(--font-mono); font-size:11px; color:var(--text-dim);}
   .market-search{margin-bottom:8px;}
   .market-search-input, .market-num{font-family:inherit; font-size:13px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text); width:100%; box-sizing:border-box;}
   .market-results{display:flex; flex-direction:column; gap:4px; max-height:60dvh; overflow:auto;}
@@ -12479,6 +12486,62 @@
   function toolBenefitLabel(tt){
     return (tt.isGather ? (GATHERING_SKILLS[tt.skillId]||{}).label : (CRAFTING_SKILLS[tt.skillId]||{}).label) || SKILL_LABELS[tt.skillId] || tt.skillId;
   }
+  // Blacksmithing tools nest under the skill FAMILY they serve -- the same families the player
+  // navigates in Resources (Gathering / Refining / Cooking / Outfitting / Construction) -- so a
+  // collapsible group per family lets them jump straight to the tool they want to forge.
+  var BLACKSMITH_TOOL_GROUPS = [
+    { key:'gathering',    label:'Gathering',    color:'#5d7a34' },
+    { key:'refining',     label:'Refining',     color:'#a85b1f' },
+    { key:'cooking',      label:'Cooking',      color:'#c8792a' },
+    { key:'outfitting',   label:'Outfitting',   color:'#7a5aa8' },
+    { key:'construction', label:'Construction', color:'#8a7a5a' }
+  ];
+  function blacksmithToolGroupKey(skillId){
+    if(BUILDING_SKILL_IDS.indexOf(skillId) !== -1) return 'construction';
+    if(OUTFITTING_SKILL_IDS.indexOf(skillId) !== -1) return 'outfitting';
+    if(COOKING_SKILL_IDS.indexOf(skillId) !== -1) return 'cooking';
+    if(skillId === 'butchering' || REFINING_SKILL_IDS.indexOf(skillId) !== -1) return 'refining';
+    return 'gathering';
+  }
+  var blacksmithGroupsOpen = {};   // family key -> expanded?  (collapsed by default; forging groups auto-open)
+  // One Forge Tool card. Extracted so the nested-by-family layout and any other view can render it.
+  function renderForgeToolCard(tt, maxUnlocked, lvl){
+    if(selectedToolTier[tt.skillId] === undefined) selectedToolTier[tt.skillId] = maxUnlocked;
+    var sel = Math.min(selectedToolTier[tt.skillId], maxUnlocked);
+    sel = craftFilterTier(sel, maxUnlocked, function(t){ return (tt.isGather ? getGatherToolTierData(tt.skillId, t+1) : getCraftToolTierData(tt.skillId, t+1)).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('tool', {skillId:tt.skillId, tierIndex:t}); });
+    var data = tt.isGather ? getGatherToolTierData(tt.skillId, sel+1) : getCraftToolTierData(tt.skillId, sel+1);
+    var activeSlot = findActiveSpecialCraftSlotFor('tool', {skillId:tt.skillId, tierIndex:sel});
+    var isActive = !!activeSlot;
+    var effTime = data.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, 'blacksmithing');
+    var pct = isActive ? clamp(activeSlot.act.progress/effTime*100,0,100) : 0;
+    var ready = lvl >= data.levelReq && hasInputs(data.inputs);
+    var successPct = Math.round(craftSuccessRate(state, 'blacksmithing')*100);
+    var equippedTier = (tt.isGather ? state.gatherTools : state.craftTools)[tt.skillId]||0;
+    var equippedRarity = (tt.isGather ? state.gatherToolRarities : state.craftToolRarities)[tt.skillId];
+    var equippedLabel = equippedTier>0 ? (tt.isGather?getEquippedGatherTool(tt.skillId,equippedTier,equippedRarity):getEquippedCraftTool(tt.skillId,equippedTier,equippedRarity)).name : 'None equipped';
+    var toolOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'tool_'+tt.skillId+'_t'+sel+'_'+r; }));
+    var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
+    var html = '<div class="item-card'+(isActive?' active-item':'')+'">';
+    html += '<div class="item-top"><div class="item-icon">'+tt.icon+'</div><div><div class="item-name">'+tt.name+'</div><div class="item-meta">Equipped: '+equippedLabel+' &bull; Owned: '+toolOwnedTotal+'</div></div></div>';
+    html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Boosts your <b>'+escapeHtml(toolBenefitLabel(tt))+'</b> '+(tt.isGather?'gathering':'crafting')+'</div>';
+    html += '<div class="inputs-line">Tier: '+tierStepper('tool',tt.skillId,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
+    var statLine = tt.isGather
+      ? ('+'+Math.round(data.speedBonus*100)+'% speed')
+      : ('+'+Math.round(data.speedBonus*100)+'% spd, +'+Math.round(data.successBonus*100)+'% success');
+    html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>'+statLine+'</span></div>';
+    html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
+    html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-tool-'+tt.skillId)+'</div>';
+    html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
+    if(isActive){
+      html += activeSlot.primary
+        ? '<button class="action-btn stop" data-action="stop">Stop</button>'
+        : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
+    } else {
+      html += '<button class="action-btn" data-action="forgeTool" data-skill="'+tt.skillId+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
+    }
+    html += '</div>';
+    return { html:html, isActive:isActive };
+  }
   function renderBlacksmithingTab(){
     var lvl = getLevel(state.xp.blacksmithing);
     var maxUnlocked = 0;
@@ -12486,48 +12549,24 @@
     var html = '';
     html += renderSkillProgressBar('blacksmithing');
     html += '<h3 style="margin-top:14px">Forge Tools</h3>';
-    html += '<div class="card-grid">';
-    // Cards are ordered by the skill each tool benefits, alphabetically (gathering + crafting
-    // tools interleaved). Sort a copy so the shared TOOL_TYPES order stays intact for other views.
-    var sortedToolTypes = TOOL_TYPES.slice().sort(function(a,b){ return toolBenefitLabel(a).localeCompare(toolBenefitLabel(b)); });
-    sortedToolTypes.forEach(function(tt){
-      if(selectedToolTier[tt.skillId] === undefined) selectedToolTier[tt.skillId] = maxUnlocked;
-      var sel = Math.min(selectedToolTier[tt.skillId], maxUnlocked);
-      sel = craftFilterTier(sel, maxUnlocked, function(t){ return (tt.isGather ? getGatherToolTierData(tt.skillId, t+1) : getCraftToolTierData(tt.skillId, t+1)).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('tool', {skillId:tt.skillId, tierIndex:t}); });
-      var data = tt.isGather ? getGatherToolTierData(tt.skillId, sel+1) : getCraftToolTierData(tt.skillId, sel+1);
-      var activeSlot = findActiveSpecialCraftSlotFor('tool', {skillId:tt.skillId, tierIndex:sel});
-      var isActive = !!activeSlot;
-      var effTime = data.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, 'blacksmithing');
-      var pct = isActive ? clamp(activeSlot.act.progress/effTime*100,0,100) : 0;
-      var ready = lvl >= data.levelReq && hasInputs(data.inputs);
-      var successPct = Math.round(craftSuccessRate(state, 'blacksmithing')*100);
-      var equippedTier = (tt.isGather ? state.gatherTools : state.craftTools)[tt.skillId]||0;
-      var equippedRarity = (tt.isGather ? state.gatherToolRarities : state.craftToolRarities)[tt.skillId];
-      var equippedLabel = equippedTier>0 ? (tt.isGather?getEquippedGatherTool(tt.skillId,equippedTier,equippedRarity):getEquippedCraftTool(tt.skillId,equippedTier,equippedRarity)).name : 'None equipped';
-      var toolOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'tool_'+tt.skillId+'_t'+sel+'_'+r; }));
-      var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
-      html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+tt.icon+'</div><div><div class="item-name">'+tt.name+'</div><div class="item-meta">Equipped: '+equippedLabel+' &bull; Owned: '+toolOwnedTotal+'</div></div></div>';
-      var benefitLabel = toolBenefitLabel(tt);
-      html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Boosts your <b>'+escapeHtml(benefitLabel)+'</b> '+(tt.isGather?'gathering':'crafting')+'</div>';
-      html += '<div class="inputs-line">Tier: '+tierStepper('tool',tt.skillId,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-      var statLine = tt.isGather
-        ? ('+'+Math.round(data.speedBonus*100)+'% speed')
-        : ('+'+Math.round(data.speedBonus*100)+'% spd, +'+Math.round(data.successBonus*100)+'% success');
-      html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>'+statLine+'</span></div>';
-      html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
-      html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-tool-'+tt.skillId)+'</div>';
-      html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
-      if(isActive){
-        html += activeSlot.primary
-          ? '<button class="action-btn stop" data-action="stop">Stop</button>'
-          : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
-      } else {
-        html += '<button class="action-btn" data-action="forgeTool" data-skill="'+tt.skillId+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
-      }
-      html += '</div>';
+    html += '<div class="section-intro">Tools are grouped by the skill they serve — tap a group to expand it and jump to the tool you want to forge.</div>';
+    // Bucket every tool into its skill family, each sorted alphabetically by the skill it benefits.
+    var buckets = {}; BLACKSMITH_TOOL_GROUPS.forEach(function(g){ buckets[g.key] = []; });
+    TOOL_TYPES.forEach(function(tt){ (buckets[blacksmithToolGroupKey(tt.skillId)] || buckets.gathering).push(tt); });
+    Object.keys(buckets).forEach(function(k){ buckets[k].sort(function(a,b){ return toolBenefitLabel(a).localeCompare(toolBenefitLabel(b)); }); });
+    BLACKSMITH_TOOL_GROUPS.forEach(function(g){
+      var tools = buckets[g.key]; if(!tools.length) return;
+      // Render each tool's card first so we know which are actively forging (those groups auto-open).
+      var cards = tools.map(function(tt){ return renderForgeToolCard(tt, maxUnlocked, lvl); });
+      var anyActive = cards.some(function(c){ return c.isActive; });
+      var equippedN = tools.filter(function(tt){ return ((tt.isGather ? state.gatherTools : state.craftTools)[tt.skillId]||0) > 0; }).length;
+      var open = anyActive || !!blacksmithGroupsOpen[g.key];
+      html += '<button class="forge-group-head'+(open?' open':'')+'" data-action="blacksmithToggleGroup" data-group="'+g.key+'" style="--fg-accent:'+g.color+'">'
+        + '<span class="forge-group-chev">'+(open?'▾':'▸')+'</span>'
+        + '<span class="forge-group-name">'+escapeHtml(g.label)+'</span>'
+        + '<span class="forge-group-meta">'+tools.length+' tool'+(tools.length===1?'':'s')+' &bull; '+equippedN+' equipped'+(anyActive?' &bull; <b style="color:var(--gold)">forging</b>':'')+'</span></button>';
+      if(open) html += '<div class="card-grid" style="margin-top:8px">' + cards.map(function(c){ return c.html; }).join('') + '</div>';
     });
-    html += '</div>';
     return html;
   }
 
@@ -22800,6 +22839,8 @@
       enhancePopupData = null;
     } else if(action==='startShaftCraft'){
       startShaftCraft(parseInt(btn.getAttribute('data-tier'),10));
+    } else if(action==='blacksmithToggleGroup'){
+      var _bg = btn.getAttribute('data-group'); blacksmithGroupsOpen[_bg] = !blacksmithGroupsOpen[_bg]; render();
     } else if(action==='forgeTool'){
       craftTool(btn.getAttribute('data-skill'), parseInt(btn.getAttribute('data-tier'),10));
     } else if(action==='buildWorkshop'){
@@ -23661,7 +23702,7 @@
       renderGlobalActionBar:renderGlobalActionBar, describeTask:describeTask, censorChat:censorChat,
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS,
-      TOOL_TYPES:TOOL_TYPES, toolBenefitLabel:toolBenefitLabel,
+      TOOL_TYPES:TOOL_TYPES, toolBenefitLabel:toolBenefitLabel, BLACKSMITH_TOOL_GROUPS:BLACKSMITH_TOOL_GROUPS, blacksmithToolGroupKey:blacksmithToolGroupKey, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupsOpen:blacksmithGroupsOpen,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS,

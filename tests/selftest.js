@@ -4018,18 +4018,31 @@
   });
 
   // ---- Blacksmithing: Forge Tools ordered alphabetically by the skill each tool benefits -------
-  suite('blacksmithing forge order', function(){
+  suite('blacksmithing forge groups', function(){
     ok(Array.isArray(FF.TOOL_TYPES) && FF.TOOL_TYPES.length > 0, 'TOOL_TYPES exported');
     ok(typeof FF.toolBenefitLabel === 'function', 'toolBenefitLabel exported');
-    // Mirror the render sort: a copy of TOOL_TYPES sorted by benefit label.
-    var labels = FF.TOOL_TYPES.slice()
-      .sort(function(a,b){ return FF.toolBenefitLabel(a).localeCompare(FF.toolBenefitLabel(b)); })
-      .map(function(tt){ return FF.toolBenefitLabel(tt); });
-    var expected = labels.slice().sort(function(a,b){ return a.localeCompare(b); });
-    eq(JSON.stringify(labels), JSON.stringify(expected), 'Forge Tools cards are ordered A→Z by benefited skill');
-    // Sanity: gathering + crafting tools are interleaved, not grouped (i.e. the sort actually mixes
-    // the two families — the first label should not simply be the first GATHER_SKILL_IDS entry).
-    ok(labels.length === FF.TOOL_TYPES.length, 'no tool cards dropped by the sort');
+    ok(Array.isArray(FF.BLACKSMITH_TOOL_GROUPS) && FF.BLACKSMITH_TOOL_GROUPS.length === 5, 'five tool-family groups');
+    ok(typeof FF.blacksmithToolGroupKey === 'function', 'blacksmithToolGroupKey exported');
+    var groupKeys = FF.BLACKSMITH_TOOL_GROUPS.map(function(g){ return g.key; });
+    eq(groupKeys.join(','), 'gathering,refining,cooking,outfitting,construction', 'groups mirror the Resources families, in order');
+    // Every tool classifies into exactly one known group.
+    var buckets = {}; groupKeys.forEach(function(k){ buckets[k] = []; });
+    var covered = FF.TOOL_TYPES.every(function(tt){ var k = FF.blacksmithToolGroupKey(tt.skillId); if(!buckets[k]) return false; buckets[k].push(tt); return true; });
+    ok(covered, 'every tool maps to a known family');
+    var total = groupKeys.reduce(function(n,k){ return n + buckets[k].length; }, 0);
+    eq(total, FF.TOOL_TYPES.length, 'the families partition all tools (none dropped or double-counted)');
+    // A few known placements.
+    eq(FF.blacksmithToolGroupKey('mining'), 'gathering', 'mining tool nests under Gathering');
+    eq(FF.blacksmithToolGroupKey('butchering'), 'refining', 'butchering nests under Refining (a refining activity)');
+    eq(FF.blacksmithToolGroupKey('cooking'), 'cooking', 'cooking nests under Cooking');
+    eq(FF.blacksmithToolGroupKey('weaponsmithing'), 'outfitting', 'weaponsmithing nests under Outfitting');
+    eq(FF.blacksmithToolGroupKey('carpentry'), 'construction', 'carpentry nests under Construction');
+    // Within each group, tools sort alphabetically by benefited skill (the render order).
+    groupKeys.forEach(function(k){
+      var labels = buckets[k].map(function(tt){ return FF.toolBenefitLabel(tt); });
+      var sorted = labels.slice().sort(function(a,b){ return a.localeCompare(b); });
+      eq(JSON.stringify(labels.slice().sort(function(a,b){ return a.localeCompare(b); })), JSON.stringify(sorted), k + ' group sorts A→Z');
+    });
   });
 
   // ---- Report ---------------------------------------------------------------------------
