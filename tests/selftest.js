@@ -1380,7 +1380,7 @@
     ok(def, 'D2 dungeon defined');
     eq(def.category, 'Tunnel', 'the category is Tunnel');
     eq(def.theme, 'orcs', 'the theme is orcs');
-    eq(def.minCombatScore, 126, 'D2 requires Combat Score 126');
+    eq(def.minCombatScore, undefined, 'D2 no longer carries a Combat Score gate (Total Level gate now)');
     var en = FF.DUNGEON_D2_ENEMIES;
     eq(en.length, 25, '25 orcs');
     eq(en[0].level, 126, 'first orc is level 126');
@@ -1422,7 +1422,7 @@
     ok(def, 'D3 dungeon defined');
     eq(def.category, 'Underground Chamber', 'the category is Underground Chamber');
     eq(def.theme, 'undead', 'the theme is undead');
-    eq(def.minCombatScore, 151, 'D3 requires Combat Score 151');
+    eq(def.minCombatScore, undefined, 'D3 no longer carries a Combat Score gate (Total Level gate now)');
     var en = FF.DUNGEON_D3_ENEMIES;
     eq(en.length, 25, '25 undead');
     eq(en[0].level, 151, 'first undead is level 151');
@@ -1458,7 +1458,7 @@
     ok(def, 'D4 dungeon defined');
     eq(def.category, 'Nest of the Depths', 'the category is Nest of the Depths');
     eq(def.theme, 'dragons', 'the theme is dragons');
-    eq(def.minCombatScore, 176, 'D4 requires Combat Score 176');
+    eq(def.minCombatScore, undefined, 'D4 no longer carries a Combat Score gate (Total Level gate now)');
     var en = FF.DUNGEON_D4_ENEMIES;
     eq(en.length, 25, '25 dragons');
     eq(en[0].level, 176, 'first dragon is level 176');
@@ -1631,24 +1631,25 @@
     s.inventory = svInv; s.blueprints = svBp; s.bodyArmor.back = svBack;
   });
 
-  // ---- Dungeon unlock chain: each layer requires clearing the previous boss (Cave = Combat Score only) --
-  suite('dungeons: unlock chain (clear the previous boss)', function(){
+  // ---- Dungeon gate: a minimum Total Level to enter ANY dungeon, plus the clear-the-previous-boss chain --
+  suite('dungeons: Total Level gate + unlock chain', function(){
     var s = FF._state, saved = s.dungeonsCleared;
+    eq(FF.DUNGEON_MIN_TOTAL_LEVEL, 5000, 'the dungeon entry gate is Total Level 5000');
     eq(FF.dungeonPrevId('d1'), null, 'd1 (Cave) has no prerequisite dungeon');
     eq(FF.dungeonPrevId('d2'), 'd1', 'd2 requires d1');
     eq(FF.dungeonPrevId('d3'), 'd2', 'd3 requires d2');
     eq(FF.dungeonPrevId('d4'), 'd3', 'd4 requires d3');
+    // The default test state is below 5000 Total Level, so every layer is Total-Level-blocked first.
+    ok(FF.playerTotalLevel(s) < FF.DUNGEON_MIN_TOTAL_LEVEL, 'the default test profile is under the Total Level gate');
+    ok((FF.dungeonEntryBlock(FF.DUNGEON_DEFS.d1) || '').indexOf('Total Level') === 0, 'the Cave is Total-Level-gated below 5000');
     s.dungeonsCleared = {};
     eq(FF.dungeonBossCleared('d1'), false, 'a boss is not cleared until beaten');
     FF.dungeonMarkCleared('d1');
     eq(FF.dungeonBossCleared('d1'), true, 'dungeonMarkCleared records the boss kill');
-    // With d1 cleared, d2 is no longer PREREQ-blocked (only Combat Score may remain, never the prereq).
+    // Whatever the level gate, d2 is never blocked by the prereq once d1 is cleared (block is the level gate or null).
     var b2 = FF.dungeonEntryBlock(FF.DUNGEON_DEFS.d2);
-    ok(b2 === null || b2.indexOf('Combat Score') === 0, 'clearing d1 lifts d2\'s prerequisite (Combat Score aside)');
-    // Cave itself is never prereq-gated -- only Combat Score can block it.
-    var b1 = FF.dungeonEntryBlock(FF.DUNGEON_DEFS.d1);
-    ok(b1 === null || b1.indexOf('Combat Score') === 0, 'the Cave is gated only by Combat Score');
-    // Nothing cleared -> d4 is always blocked (prereq and/or score), never enterable.
+    ok(b2 === null || b2.indexOf('Total Level') === 0, 'clearing d1 lifts d2\'s prerequisite (Total Level gate aside)');
+    // Nothing cleared -> d4 is always blocked (prereq and/or level), never enterable.
     s.dungeonsCleared = {};
     ok(FF.dungeonEntryBlock(FF.DUNGEON_DEFS.d4) !== null, 'd4 is blocked while its prerequisites are unmet');
     s.dungeonsCleared = saved;

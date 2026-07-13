@@ -3594,10 +3594,10 @@
   DUNGEON_D4_ENEMIES.forEach(function(m){ MONSTERS_BY_ID[m.id] = m; });
 
   var DUNGEON_DEFS = {
-    d1: { id:'d1', category:'Cave',   label:'D1 — Cave',   theme:'arachnids', enemies:DUNGEON_D1_ENEMIES, minCombatScore:100, reward:'formula_d1_masterwork', rewardName:'D1 Masterwork Formula' },
-    d2: { id:'d2', category:'Tunnel', label:'D2 — Tunnel', theme:'orcs',      enemies:DUNGEON_D2_ENEMIES, minCombatScore:126, reward:'formula_d2_masterwork', rewardName:'D2 Masterwork Formula' },
-    d3: { id:'d3', category:'Underground Chamber', label:'D3 — Underground Chamber', theme:'undead', enemies:DUNGEON_D3_ENEMIES, minCombatScore:151, reward:'formula_d3_masterwork', rewardName:'D3 Masterwork Formula' },
-    d4: { id:'d4', category:'Nest of the Depths', label:'D4 — Nest of the Depths', theme:'dragons', enemies:DUNGEON_D4_ENEMIES, minCombatScore:176, reward:'formula_d4_masterwork', rewardName:'D4 Masterwork Formula' }
+    d1: { id:'d1', category:'Cave',   label:'D1 — Cave',   theme:'arachnids', enemies:DUNGEON_D1_ENEMIES, reward:'formula_d1_masterwork', rewardName:'D1 Masterwork Formula' },
+    d2: { id:'d2', category:'Tunnel', label:'D2 — Tunnel', theme:'orcs',      enemies:DUNGEON_D2_ENEMIES, reward:'formula_d2_masterwork', rewardName:'D2 Masterwork Formula' },
+    d3: { id:'d3', category:'Underground Chamber', label:'D3 — Underground Chamber', theme:'undead', enemies:DUNGEON_D3_ENEMIES, reward:'formula_d3_masterwork', rewardName:'D3 Masterwork Formula' },
+    d4: { id:'d4', category:'Nest of the Depths', label:'D4 — Nest of the Depths', theme:'dragons', enemies:DUNGEON_D4_ENEMIES, reward:'formula_d4_masterwork', rewardName:'D4 Masterwork Formula' }
   };
   var DUNGEON_ORDER = ['d1', 'd2', 'd3', 'd4'];
   function isDungeonMonster(m){ return !!(m && m.dungeon); }
@@ -14718,15 +14718,25 @@
     needsRender = true;
   }
   function dungeonEnemyLevelRange(def){ return def.enemies[0].level + '–' + def.enemies[def.enemies.length - 1].level; }
-  // ---- Dungeon unlock chain: Cave (d1) only needs Combat Score; every later layer ALSO requires having
-  // beaten the PREVIOUS layer's boss (tracked in state.dungeonsCleared, set on a solo or party clear). ----
+  // ---- Dungeon unlock chain: entering ANY dungeon (solo or party) requires a minimum Total Level;
+  // every layer past the Cave ALSO requires having beaten the PREVIOUS layer's boss (tracked in
+  // state.dungeonsCleared, set on a solo or party clear). ----
+  var DUNGEON_MIN_TOTAL_LEVEL = 5000;   // the Total Level gate to join or start any dungeon run
+  // Total Level = sum of every main-skill level + every physique level (matches the leaderboard's
+  // Total Level / computeProfileStats().total_level). A lightweight recompute for the entry gate.
+  function playerTotalLevel(st){
+    st = st || state; var t = 0;
+    for(var i=0;i<ALL_MAIN_SKILL_IDS.length;i++){ t += getLevel((st.xp && st.xp[ALL_MAIN_SKILL_IDS[i]]) || 0); }
+    PHYSIQUE_SKILLS.forEach(function(p){ t += getLevel((st.physique && st.physique[p.id]) || 0); });
+    return t;
+  }
   function dungeonPrevId(layerId){ var i = DUNGEON_ORDER.indexOf(layerId); return i > 0 ? DUNGEON_ORDER[i - 1] : null; }
   function dungeonBossCleared(layerId){ return !!(state.dungeonsCleared && state.dungeonsCleared[layerId]); }
   function dungeonMarkCleared(layerId){ if(!state.dungeonsCleared || typeof state.dungeonsCleared !== 'object') state.dungeonsCleared = {}; if(layerId) state.dungeonsCleared[layerId] = true; }
   // Reason the player can't enter yet, or null if they can.
   function dungeonEntryBlock(def){
     if(!def) return 'Unavailable';
-    if(combatLevelEquivalent(state) < def.minCombatScore) return 'Combat Score ' + def.minCombatScore + ' required';
+    if(playerTotalLevel(state) < DUNGEON_MIN_TOTAL_LEVEL) return 'Total Level ' + fmt(DUNGEON_MIN_TOTAL_LEVEL) + ' required';
     var prev = dungeonPrevId(def.id);
     if(prev && !dungeonBossCleared(prev)) return 'Clear the ' + (DUNGEON_DEFS[prev] ? DUNGEON_DEFS[prev].category : prev) + ' first';
     return null;
@@ -14911,7 +14921,7 @@
   }
   function renderDungeonBrowse(){
     var html = '<div class="section-intro">Descend into <b>Dungeons</b> — gauntlets of foes fought one at a time. Bring a party of up to 4 (synchronous co-op is coming; for now you enter solo). Clear the final boss and every surviving delver claims a <b>Formula</b>, a blueprint for endgame gear.</div>';
-    var myScore = combatLevelEquivalent(state);
+    var myTotal = playerTotalLevel(state);
     // One tab per dungeon -- each layer (and its loot) is viewed on its own.
     if(!DUNGEON_DEFS[dungeonBrowseLayer]) dungeonBrowseLayer = DUNGEON_ORDER[0];
     html += '<div class="dungeon-tabs">';
@@ -14922,12 +14932,12 @@
         + (unlocked ? '' : '🔒 ') + escapeHtml(d.id.toUpperCase()) + ' <span class="dungeon-tab-sub">' + escapeHtml(d.category) + '</span></button>';
     });
     html += '</div>';
-    html += renderDungeonLayerPanel(dungeonBrowseLayer, myScore);
+    html += renderDungeonLayerPanel(dungeonBrowseLayer, myTotal);
     if(chatClient && authUser && dungeonNet.error) html += '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad)">' + escapeHtml(dungeonNet.error) + '</div>';
     return html;
   }
   // The full panel for one dungeon layer: descent card, open parties, loot, and the enemy roster.
-  function renderDungeonLayerPanel(layer, myScore){
+  function renderDungeonLayerPanel(layer, myTotal){
     var def = DUNGEON_DEFS[layer]; if(!def) return '';
     var block = dungeonEntryBlock(def); var canEnter = !block;
     var boss = def.enemies[def.enemies.length - 1];
@@ -14936,7 +14946,7 @@
     html += '<div class="item-top"><div class="item-icon">' + boss.icon + '</div><div><div class="item-name">' + def.label + '</div><div class="item-meta">' + def.enemies.length + ' ' + def.theme + ' &bull; Levels ' + dungeonEnemyLevelRange(def) + ' &bull; Boss: ' + escapeHtml(boss.name) + '</div></div></div>';
     html += '<div class="chance-line">' + def.enemies.length + ' ' + def.theme + ', each with its own element and armour, guard the ' + escapeHtml(def.category.toLowerCase()) + '. The ' + def.enemies.length + 'th — ' + escapeHtml(boss.name) + ' — towers over the rest. Reward: <b>Masterwork Blueprints</b>.</div>';
     var _prevId = dungeonPrevId(def.id);
-    html += '<div class="inputs-line" style="margin-top:6px">Requires Combat Score ' + def.minCombatScore + (myScore >= def.minCombatScore ? '' : ' <span style="color:var(--hp-bad)">(you are ' + myScore + ')</span>');
+    html += '<div class="inputs-line" style="margin-top:6px">Requires Total Level ' + fmt(DUNGEON_MIN_TOTAL_LEVEL) + (myTotal >= DUNGEON_MIN_TOTAL_LEVEL ? '' : ' <span style="color:var(--hp-bad)">(you are ' + fmt(myTotal) + ')</span>');
     if(_prevId){ var _pc = dungeonBossCleared(_prevId); html += ' &bull; <span style="color:var(--' + (_pc ? 'hp-good' : 'hp-bad') + ')">' + (_pc ? '&#10003; ' : '&#128274; ') + 'Clear the ' + escapeHtml(DUNGEON_DEFS[_prevId].category) + '</span>'; }
     html += '</div>';
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">';
@@ -14951,7 +14961,7 @@
       if(!lobbies.length) html += '<div class="empty-note">No open parties right now. Create one above — teammates who Refresh will see it.</div>';
       else lobbies.forEach(function(lb){
         html += '<div class="item-card" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><div class="item-name">' + escapeHtml(lb.members[0] || 'Party') + '’s party</div><div class="item-meta">' + lb.count + '/4 &bull; ' + escapeHtml(lb.members.join(', ')) + '</div></div>';
-        html += '<button class="action-btn" data-action="dungeonNetJoin" data-id="' + lb.id + '" style="width:auto" ' + ((lb.count < 4 && !dungeonNet.busy) ? '' : 'disabled') + '>Join</button></div>';
+        html += '<button class="action-btn" data-action="dungeonNetJoin" data-id="' + lb.id + '" style="width:auto"' + (canEnter ? '' : ' title="' + escapeHtml(block) + '"') + ' ' + ((canEnter && lb.count < 4 && !dungeonNet.busy) ? '' : 'disabled') + '>' + (canEnter ? 'Join' : escapeHtml(block)) + '</button></div>';
       });
     }
     html += '</div>';
@@ -23220,7 +23230,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,
