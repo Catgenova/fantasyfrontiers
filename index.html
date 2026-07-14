@@ -22710,37 +22710,25 @@
     amulet:   { get:function(sub){ return selectedAmuletTier[sub]; },      set:function(sub,v){ selectedAmuletTier[sub]=v; } }
   };
 
-  document.getElementById('app').addEventListener('click', function(e){
-    var btn = e.target.closest('[data-action]');
-    if(!btn) return;
-    var action = btn.getAttribute('data-action');
-    if(action==='gather'){
-      startGather(btn.getAttribute('data-skill'), btn.getAttribute('data-item'));
-    } else if(action==='craft'){
-      startCraft(btn.getAttribute('data-skill'), btn.getAttribute('data-item'));
-    } else if(action==='improveSelect'){
-      improveSelect(btn.getAttribute('data-uid'));
-    } else if(action==='improveFromEquipped'){
-      improveFromEquipped(btn.getAttribute('data-slot'));
-    } else if(action==='improveEnchant'){
-      improveEnchant();
-    } else if(action==='improvePlace'){
-      improvePlace(parseInt(btn.getAttribute('data-idx'),10));
-    } else if(action==='improveToggleWarn'){
-      improveToggleWarn();
-    } else if(action==='improveEquip'){
-      equipUnique(btn.getAttribute('data-uid'));
-    } else if(action==='improveUnequip'){
-      unequipUnique(btn.getAttribute('data-uid'));
-    } else if(action==='improveEnhance'){
-      enhanceItem(btn.getAttribute('data-uid'));
-    } else if(action==='improveToggleEnhanceWarn'){
-      improveToggleEnhanceWarn();
-    } else if(action==='improveSellUnique'){
-      improveSellUnique(btn.getAttribute('data-uid'));
-    } else if(action==='improveSacrificeUnique'){
-      improveSacrificeUnique(btn.getAttribute('data-uid'));
-    } else if(action==='tierStep'){
+  // ---- data-action dispatch table ----
+  // One named handler per data-action (was a 236-branch else-if ladder). Handlers receive the
+  // clicked [data-action] element and the click event; after the handler runs, the dispatcher
+  // always repaints (render(true)) -- no handler suppresses it, same as the old ladder.
+  var ACTIONS = {
+    gather: function(btn, e){ startGather(btn.getAttribute('data-skill'), btn.getAttribute('data-item')); },
+    craft: function(btn, e){ startCraft(btn.getAttribute('data-skill'), btn.getAttribute('data-item')); },
+    improveSelect: function(btn, e){ improveSelect(btn.getAttribute('data-uid')); },
+    improveFromEquipped: function(btn, e){ improveFromEquipped(btn.getAttribute('data-slot')); },
+    improveEnchant: function(btn, e){ improveEnchant(); },
+    improvePlace: function(btn, e){ improvePlace(parseInt(btn.getAttribute('data-idx'),10)); },
+    improveToggleWarn: function(btn, e){ improveToggleWarn(); },
+    improveEquip: function(btn, e){ equipUnique(btn.getAttribute('data-uid')); },
+    improveUnequip: function(btn, e){ unequipUnique(btn.getAttribute('data-uid')); },
+    improveEnhance: function(btn, e){ enhanceItem(btn.getAttribute('data-uid')); },
+    improveToggleEnhanceWarn: function(btn, e){ improveToggleEnhanceWarn(); },
+    improveSellUnique: function(btn, e){ improveSellUnique(btn.getAttribute('data-uid')); },
+    improveSacrificeUnique: function(btn, e){ improveSacrificeUnique(btn.getAttribute('data-uid')); },
+    tierStep: function(btn, e){
       var _tt = TIER_STEP_TARGETS[btn.getAttribute('data-tier-target')];
       var _vals = (btn.getAttribute('data-tier-values')||'').split(',').map(function(v){ return parseInt(v,10); }).filter(function(v){ return !isNaN(v); });
       if(_tt && _vals.length){
@@ -22752,9 +22740,9 @@
         _tt.set(_sub, _vals[_i]);
         render();
       }
-    } else if(action==='fight'){
-      startCombat(btn.getAttribute('data-monster'));
-    } else if(action==='navToActivity'){
+    },
+    fight: function(btn, e){ startCombat(btn.getAttribute('data-monster')); },
+    navToActivity: function(btn, e){
       var navCat = btn.getAttribute('data-nav-cat');
       var navSub = btn.getAttribute('data-nav-sub');
       if(navCat){
@@ -22762,492 +22750,353 @@
         if(navSub) currentSub = navSub;
         else if(DEFAULT_SUB[navCat]) currentSub = DEFAULT_SUB[navCat];
       }
-    } else if(action==='stop'){
+    },
+    stop: function(btn, e){
       if(state.activity && state.activity.dungeon) dungeonEndRun('retreat'); // retreating from a dungeon abandons the run
       else stopActivity();
-    } else if(action==='dungeonTab'){
-      dungeonBrowseLayer = btn.getAttribute('data-id'); render();
-    } else if(action==='dungeonEnter'){
-      dungeonEnterLobby(btn.getAttribute('data-id'));
-    } else if(action==='dungeonBegin'){
-      dungeonBegin(btn.getAttribute('data-id'));
-    } else if(action==='dungeonBack'){
-      dungeonBackToBrowse();
-    } else if(action==='dungeonNetCreate'){
-      dungeonNetCreate(btn.getAttribute('data-id'));
-    } else if(action==='dungeonNetJoin'){
-      dungeonNetJoin(btn.getAttribute('data-id'));
-    } else if(action==='dungeonNetJoinByCode'){
-      dungeonNetJoinByCode();
-    } else if(action==='dungeonNetPostCode'){
-      dungeonNetPostCode();
-    } else if(action==='dungeonNetCopyCode'){
-      dungeonNetCopyCode();
-    } else if(action==='dungeonNetStart'){
-      dungeonNetStart();
-    } else if(action==='dungeonNetLeave'){
-      dungeonNetLeave();
-    } else if(action==='dungeonNetRefreshList'){
-      dungeonNetListLobbies(btn.getAttribute('data-id'));
-    } else if(action==='eat'){
-      eatFood();
-    } else if(action==='sell'){
-      sellItem(btn.getAttribute('data-item'));
-    } else if(action==='sellAll'){
-      sellAll();
-    } else if(action==='forgeBodyArmor'){
+    },
+    dungeonTab: function(btn, e){ dungeonBrowseLayer = btn.getAttribute('data-id'); render(); },
+    dungeonEnter: function(btn, e){ dungeonEnterLobby(btn.getAttribute('data-id')); },
+    dungeonBegin: function(btn, e){ dungeonBegin(btn.getAttribute('data-id')); },
+    dungeonBack: function(btn, e){ dungeonBackToBrowse(); },
+    dungeonNetCreate: function(btn, e){ dungeonNetCreate(btn.getAttribute('data-id')); },
+    dungeonNetJoin: function(btn, e){ dungeonNetJoin(btn.getAttribute('data-id')); },
+    dungeonNetJoinByCode: function(btn, e){ dungeonNetJoinByCode(); },
+    dungeonNetPostCode: function(btn, e){ dungeonNetPostCode(); },
+    dungeonNetCopyCode: function(btn, e){ dungeonNetCopyCode(); },
+    dungeonNetStart: function(btn, e){ dungeonNetStart(); },
+    dungeonNetLeave: function(btn, e){ dungeonNetLeave(); },
+    dungeonNetRefreshList: function(btn, e){ dungeonNetListLobbies(btn.getAttribute('data-id')); },
+    eat: function(btn, e){ eatFood(); },
+    sell: function(btn, e){ sellItem(btn.getAttribute('data-item')); },
+    sellAll: function(btn, e){ sellAll(); },
+    forgeBodyArmor: function(btn, e){
       craftBodyArmor(btn.getAttribute('data-material'), btn.getAttribute('data-slot'), parseInt(btn.getAttribute('data-tier'),10));
-    } else if(action==='equipBodyArmor'){
-      equipBodyArmor(btn.getAttribute('data-item'));
-    } else if(action==='unequipBodyArmor'){
-      unequipBodyArmor(btn.getAttribute('data-slot'));
-    } else if(action==='forgeBelt'){
-      craftBelt(parseInt(btn.getAttribute('data-tier'),10));
-    } else if(action==='openEquipPicker'){
-      equipPickerSlot = btn.getAttribute('data-slot'); render();
-    } else if(action==='equipBelt'){
-      equipBelt(btn.getAttribute('data-item'));
-    } else if(action==='unequipBelt'){
-      unequipBelt();
-    } else if(action==='forgeRing'){
-      craftRing(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10));
-    } else if(action==='equipRing'){
+    },
+    equipBodyArmor: function(btn, e){ equipBodyArmor(btn.getAttribute('data-item')); },
+    unequipBodyArmor: function(btn, e){ unequipBodyArmor(btn.getAttribute('data-slot')); },
+    forgeBelt: function(btn, e){ craftBelt(parseInt(btn.getAttribute('data-tier'),10)); },
+    openEquipPicker: function(btn, e){ equipPickerSlot = btn.getAttribute('data-slot'); render(); },
+    equipBelt: function(btn, e){ equipBelt(btn.getAttribute('data-item')); },
+    unequipBelt: function(btn, e){ unequipBelt(); },
+    forgeRing: function(btn, e){ craftRing(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10)); },
+    equipRing: function(btn, e){
       var equipSlotAttr = btn.getAttribute('data-slot');
       equipRing(btn.getAttribute('data-item'), equipSlotAttr || undefined);
-    } else if(action==='unequipRing'){
-      unequipRing(btn.getAttribute('data-slot'));
-    } else if(action==='equipLegRing'){
-      equipLegRing(btn.getAttribute('data-item'), btn.getAttribute('data-slot') || undefined); render();
-    } else if(action==='unequipLegRing'){
-      unequipLegRing(btn.getAttribute('data-slot')); render();
-    } else if(action==='equipLegCloak'){
-      equipLegCloak(btn.getAttribute('data-item')); render();
-    } else if(action==='unequipLegCloak'){
-      unequipLegCloak(); render();
-    } else if(action==='craftMastercraft'){
-      craftMastercraft(btn.getAttribute('data-item')); render();
-    } else if(action==='mastercraftSelect'){
-      mastercraftSel = btn.getAttribute('data-item'); render();
-    } else if(action==='forgeAmulet'){
-      craftAmulet(btn.getAttribute('data-type')||'plain', parseInt(btn.getAttribute('data-tier'),10));
-    } else if(action==='equipAmulet'){
-      equipAmulet(btn.getAttribute('data-item'));
-    } else if(action==='unequipAmulet'){
-      unequipAmulet();
-    } else if(action==='stopExtraSlot'){
+    },
+    unequipRing: function(btn, e){ unequipRing(btn.getAttribute('data-slot')); },
+    equipLegRing: function(btn, e){ equipLegRing(btn.getAttribute('data-item'), btn.getAttribute('data-slot') || undefined); render(); },
+    unequipLegRing: function(btn, e){ unequipLegRing(btn.getAttribute('data-slot')); render(); },
+    equipLegCloak: function(btn, e){ equipLegCloak(btn.getAttribute('data-item')); render(); },
+    unequipLegCloak: function(btn, e){ unequipLegCloak(); render(); },
+    craftMastercraft: function(btn, e){ craftMastercraft(btn.getAttribute('data-item')); render(); },
+    mastercraftSelect: function(btn, e){ mastercraftSel = btn.getAttribute('data-item'); render(); },
+    forgeAmulet: function(btn, e){ craftAmulet(btn.getAttribute('data-type')||'plain', parseInt(btn.getAttribute('data-tier'),10)); },
+    equipAmulet: function(btn, e){ equipAmulet(btn.getAttribute('data-item')); },
+    unequipAmulet: function(btn, e){ unequipAmulet(); },
+    stopExtraSlot: function(btn, e){
       var extraIdx = parseInt(btn.getAttribute('data-slot'),10);
       state.extraCraftSlots[extraIdx] = {type:null};
-    } else if(action==='plantSeed'){
-      plantSeed(btn.getAttribute('data-scope'), btn.getAttribute('data-key'), btn.getAttribute('data-seed'));
-    } else if(action==='harvestPlot'){
-      harvestPlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key'));
-    } else if(action==='fertilizePlot'){
-      fertilizePlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); render();
-    } else if(action==='harvestAllFarm'){
-      farmingHarvestAll(); render();
-    } else if(action==='plantAllFarm'){
-      farmingPlantAll(false); render();
-    } else if(action==='fertilizeAllFarm'){
-      farmingFertilizeAll(false); render();
-    } else if(action==='estateClearObstacle'){
-      estateClearObstacle(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
-    } else if(action==='estateRaiseLayer'){
-      estateRaiseLayer(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
-    } else if(action==='estateLowerLayer'){
-      estateLowerLayer(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
-    } else if(action==='estateCancelJob'){
-      estateCancelJob();
-    } else if(action==='estateAssistJob'){
-      estateAssistJob(btn.getAttribute('data-owner'));
-    } else if(action==='estateExpand'){
-      estateExpand();
-    } else if(action==='estateZoomIn'){
-      estateZoomBy(ESTATE_ZOOM_STEP);
-    } else if(action==='estateZoomOut'){
-      estateZoomBy(-ESTATE_ZOOM_STEP);
-    } else if(action==='estateRotateLeft'){
-      estateRotate(-1);
-    } else if(action==='estateRotateRight'){
-      estateRotate(1);
-    } else if(action==='estateToggleTopDown'){
-      estateToggleTopDown();
-    } else if(action==='landingEstZoom'){
-      estateZoomBy(parseFloat(btn.getAttribute('data-d'))||0); renderEstateCanvas();
-    } else if(action==='landingEstRotate'){
-      estateRotate(parseInt(btn.getAttribute('data-d'),10)||1); renderEstateCanvas();
-    } else if(action==='landingEstToggle'){
+    },
+    plantSeed: function(btn, e){ plantSeed(btn.getAttribute('data-scope'), btn.getAttribute('data-key'), btn.getAttribute('data-seed')); },
+    harvestPlot: function(btn, e){ harvestPlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); },
+    fertilizePlot: function(btn, e){ fertilizePlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); render(); },
+    harvestAllFarm: function(btn, e){ farmingHarvestAll(); render(); },
+    plantAllFarm: function(btn, e){ farmingPlantAll(false); render(); },
+    fertilizeAllFarm: function(btn, e){ farmingFertilizeAll(false); render(); },
+    estateClearObstacle: function(btn, e){ estateClearObstacle(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
+    estateRaiseLayer: function(btn, e){ estateRaiseLayer(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
+    estateLowerLayer: function(btn, e){ estateLowerLayer(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
+    estateCancelJob: function(btn, e){ estateCancelJob(); },
+    estateAssistJob: function(btn, e){ estateAssistJob(btn.getAttribute('data-owner')); },
+    estateExpand: function(btn, e){ estateExpand(); },
+    estateZoomIn: function(btn, e){ estateZoomBy(ESTATE_ZOOM_STEP); },
+    estateZoomOut: function(btn, e){ estateZoomBy(-ESTATE_ZOOM_STEP); },
+    estateRotateLeft: function(btn, e){ estateRotate(-1); },
+    estateRotateRight: function(btn, e){ estateRotate(1); },
+    estateToggleTopDown: function(btn, e){ estateToggleTopDown(); },
+    landingEstZoom: function(btn, e){ estateZoomBy(parseFloat(btn.getAttribute('data-d'))||0); renderEstateCanvas(); },
+    landingEstRotate: function(btn, e){ estateRotate(parseInt(btn.getAttribute('data-d'),10)||1); renderEstateCanvas(); },
+    landingEstToggle: function(btn, e){
       estateToggleTopDown(); renderLoginGate(); // rebuild so the 3D/2D button label updates, then redraw
-    } else if(action==='toggleCraftFilter'){
-      craftOnlyAffordable = !craftOnlyAffordable;
-    } else if(action==='chatSend'){
-      chatSend();
-    } else if(action==='authSubmit'){
-      authSubmit();
-    } else if(action==='authToggleRemember'){
-      authRememberUser = !authRememberUser; authRender();
-    } else if(action==='authToggleAutoLogin'){
-      authAutoLogin = !authAutoLogin; authRender();
-    } else if(action==='authMode'){
-      authMode = btn.getAttribute('data-mode')==='login' ? 'login' : 'register'; authError=''; authRender();
-    } else if(action==='authToggleDoc'){
+    },
+    toggleCraftFilter: function(btn, e){ craftOnlyAffordable = !craftOnlyAffordable; },
+    chatSend: function(btn, e){ chatSend(); },
+    authSubmit: function(btn, e){ authSubmit(); },
+    authToggleRemember: function(btn, e){ authRememberUser = !authRememberUser; authRender(); },
+    authToggleAutoLogin: function(btn, e){ authAutoLogin = !authAutoLogin; authRender(); },
+    authMode: function(btn, e){ authMode = btn.getAttribute('data-mode')==='login' ? 'login' : 'register'; authError=''; authRender(); },
+    authToggleDoc: function(btn, e){
       var _td = btn.getAttribute('data-doc');
       if(_td==='privacy') authPrivacyAccepted = !authPrivacyAccepted; else if(_td==='rules') authRulesAccepted = !authRulesAccepted;
       authRender();
-    } else if(action==='viewDoc'){
+    },
+    viewDoc: function(btn, e){
       e.preventDefault(); authDocOpen = (btn.getAttribute('data-doc')==='privacy') ? 'privacy' : 'rules'; renderTermsModal();
-    } else if(action==='closeDoc'){
-      authDocOpen = null; renderTermsModal();
-    } else if(action==='acceptDoc'){
+    },
+    closeDoc: function(btn, e){ authDocOpen = null; renderTermsModal(); },
+    acceptDoc: function(btn, e){
       var _ad = btn.getAttribute('data-doc');
       if(_ad==='privacy') authPrivacyAccepted = true; else if(_ad==='rules') authRulesAccepted = true;
       authDocOpen = null; try{ localStorage.setItem('ff-terms-accepted', String(Date.now())); }catch(err){}
       renderTermsModal(); authRender();
-    } else if(action==='recoverOpen'){
+    },
+    recoverOpen: function(btn, e){
       e.preventDefault(); recoverOpen = true; recoverStep = 'username'; recoverMsg = ''; recoverQuestions = null; renderLoginGate();
-    } else if(action==='recoverBack'){
+    },
+    recoverBack: function(btn, e){
       e.preventDefault();
       if(recoverStep === 'answers'){ recoverStep = 'username'; recoverMsg = ''; }
       else { recoverOpen = false; }
       renderLoginGate();
-    } else if(action==='recoverFind'){
-      recoverFindQuestions();
-    } else if(action==='recoverSubmit'){
-      recoverSubmit();
-    } else if(action==='toggleRecoveryEdit'){
-      toggleRecoveryEdit();
-    } else if(action==='saveRecoveryQuestions'){
-      saveRecoveryQuestions();
-    } else if(action==='authLogout'){
-      authLogout();
-    } else if(action==='leaderboardRefresh'){
-      leaderboardFetch(true);
-    } else if(action==='choosePath'){
-      choosePath(btn.getAttribute('data-path'));
-    } else if(action==='toggleMortalOnly'){
-      leaderboardMortalOnly = !leaderboardMortalOnly; render();
-    } else if(action==='viewProfile'){
+    },
+    recoverFind: function(btn, e){ recoverFindQuestions(); },
+    recoverSubmit: function(btn, e){ recoverSubmit(); },
+    toggleRecoveryEdit: function(btn, e){ toggleRecoveryEdit(); },
+    saveRecoveryQuestions: function(btn, e){ saveRecoveryQuestions(); },
+    authLogout: function(btn, e){ authLogout(); },
+    leaderboardRefresh: function(btn, e){ leaderboardFetch(true); },
+    choosePath: function(btn, e){ choosePath(btn.getAttribute('data-path')); },
+    toggleMortalOnly: function(btn, e){ leaderboardMortalOnly = !leaderboardMortalOnly; render(); },
+    viewProfile: function(btn, e){
       var _pid = btn.getAttribute('data-id');
       var _p = leaderboardData.filter(function(x){ return String(x.id)===String(_pid); })[0];
       if(_p){ profileView = _p; render(); }
-    } else if(action==='viewMyProfile'){
+    },
+    viewMyProfile: function(btn, e){
       var _mine = leaderboardData.filter(function(x){ return authUser && x.id===authUser.id; })[0];
       if(!_mine){ var _s = computeProfileStats(); _mine = Object.assign({ username:(authUser&&authUser.username)||'You' }, _s); } // spread all of _s so equipment + lifetime stats show, not just level/gold/skills
       profileView = _mine; render();
-    } else if(action==='closeProfile'){
-      profileView = null; render();
-    } else if(action==='visitEstate'){
-      visitEstate(btn.getAttribute('data-id'), btn.getAttribute('data-name'));
-    } else if(action==='leaveEstateVisit'){
-      leaveEstateVisit();
-    } else if(action==='estateTogglePavingMenu'){
-      estatePavingMenuOpen = !estatePavingMenuOpen;
-    } else if(action==='estatePaveTile'){
+    },
+    closeProfile: function(btn, e){ profileView = null; render(); },
+    visitEstate: function(btn, e){ visitEstate(btn.getAttribute('data-id'), btn.getAttribute('data-name')); },
+    leaveEstateVisit: function(btn, e){ leaveEstateVisit(); },
+    estateTogglePavingMenu: function(btn, e){ estatePavingMenuOpen = !estatePavingMenuOpen; },
+    estatePaveTile: function(btn, e){
       estatePaveTile(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-tile'));
-    } else if(action==='estateBreakPavement'){
-      estateBreakPavement(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
-    } else if(action==='estateUpgradePavement'){
-      estateUpgradePavement(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
-    } else if(action==='estateUpgradeWorkshop'){
-      estateUpgradeWorkshop(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
-    } else if(action==='estateUpgradeCottage'){
-      estateUpgradeCottage(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
-    } else if(action==='estateToggleWorkshopMenu'){
-      estateWorkshopMenuOpen = !estateWorkshopMenuOpen;
-    } else if(action==='estatePlaceWorkshop'){
+    },
+    estateBreakPavement: function(btn, e){ estateBreakPavement(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
+    estateUpgradePavement: function(btn, e){ estateUpgradePavement(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
+    estateUpgradeWorkshop: function(btn, e){ estateUpgradeWorkshop(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
+    estateUpgradeCottage: function(btn, e){ estateUpgradeCottage(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
+    estateToggleWorkshopMenu: function(btn, e){ estateWorkshopMenuOpen = !estateWorkshopMenuOpen; },
+    estatePlaceWorkshop: function(btn, e){
       estatePlaceWorkshop(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-workshop'));
-    } else if(action==='estateRemoveWorkshop'){
-      estateRemoveWorkshop(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
-    } else if(action==='guildSetDestroyRole'){
+    },
+    estateRemoveWorkshop: function(btn, e){ estateRemoveWorkshop(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
+    guildSetDestroyRole: function(btn, e){
       if(estIsGuild && guildState.myRank==='leader'){
         guildEstate.destroyRole = btn.getAttribute('data-role');
         guildEstatePersist();
         addLog('Guild demolition permission set to: ' + guildDestroyMinRole() + '.', 'important');
         render();
       }
-    } else if(action==='estateToggleCottageMenu'){
-      estateCottageMenuOpen = !estateCottageMenuOpen;
-    } else if(action==='estatePlaceCottage'){
+    },
+    estateToggleCottageMenu: function(btn, e){ estateCottageMenuOpen = !estateCottageMenuOpen; },
+    estatePlaceCottage: function(btn, e){
       estatePlaceCottage(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-cottage'));
-    } else if(action==='estateRemoveCottage'){
-      estateRemoveCottage(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
-    } else if(action==='estateToggleFieldMenu'){
-      estateFieldMenuOpen = !estateFieldMenuOpen;
-    } else if(action==='estatePlaceField'){
+    },
+    estateRemoveCottage: function(btn, e){ estateRemoveCottage(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
+    estateToggleFieldMenu: function(btn, e){ estateFieldMenuOpen = !estateFieldMenuOpen; },
+    estatePlaceField: function(btn, e){
       estatePlaceField(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), parseInt(btn.getAttribute('data-tier'),10));
-    } else if(action==='estateRemoveField'){
-      estateRemoveField(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
-    } else if(action==='estateToggleBorderMenu'){
+    },
+    estateRemoveField: function(btn, e){ estateRemoveField(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
+    estateToggleBorderMenu: function(btn, e){
       var borderTypeKey = btn.getAttribute('data-type');
       estateBorderMenuOpen = estateBorderMenuOpen===borderTypeKey ? null : borderTypeKey;
-    } else if(action==='estateBuildBorder'){
+    },
+    estateBuildBorder: function(btn, e){
       estateBuildBorder(btn.getAttribute('data-orient'), parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-tile'));
-    } else if(action==='estateDestroyBorder'){
+    },
+    estateDestroyBorder: function(btn, e){
       estateDestroyBorder(btn.getAttribute('data-orient'), parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
-    } else if(action==='showSkillInfo'){
-      skillInfoOpen = btn.getAttribute('data-skill');
-    } else if(action==='closeSkillInfo'){
-      skillInfoOpen = null;
-    } else if(action==='chatItemView'){
-      chatItemLinkView = btn.getAttribute('data-item');
-    } else if(action==='closeItemLink'){
-      chatItemLinkView = null;
-    } else if(action==='openUniqueDetail'){
-      uniqueDetailUid = btn.getAttribute('data-uid');
-    } else if(action==='closeUniqueDetail'){
-      uniqueDetailUid = null;
-    } else if(action==='uniqueManage'){
-      improveSelect(btn.getAttribute('data-uid')); uniqueDetailUid = null; navPickCat('improvement');
-    } else if(action==='improveLinkChat'){
-      improveLinkChat(btn.getAttribute('data-uid'));
-    } else if(action==='toggleItemLock'){
-      toggleItemLock(btn.getAttribute('data-item'));
-    } else if(action==='openCritterCache'){
-      openCritterCache();
-    } else if(action==='openTreasureChest'){
-      openTreasureChest();
-    } else if(action==='openAllCritterCaches'){
-      openAllCritterCaches();
-    } else if(action==='openAllTreasureChests'){
-      openAllTreasureChests();
-    } else if(action==='closeLootPopup'){
-      lootPopupData = null;
-    } else if(action==='closeEnhancePopup'){
-      enhancePopupData = null;
-    } else if(action==='startShaftCraft'){
-      startShaftCraft(parseInt(btn.getAttribute('data-tier'),10));
-    } else if(action==='blacksmithToggleGroup'){
-      var _bg = btn.getAttribute('data-group'); blacksmithGroupsOpen[_bg] = !blacksmithGroupsOpen[_bg]; render();
-    } else if(action==='forgeTool'){
-      craftTool(btn.getAttribute('data-skill'), parseInt(btn.getAttribute('data-tier'),10));
-    } else if(action==='buildWorkshop'){
-      craftWorkshop(btn.getAttribute('data-skill'), parseInt(btn.getAttribute('data-tier'),10));
-    } else if(action==='buildCottage'){
-      craftCottage(parseInt(btn.getAttribute('data-tier'),10));
-    } else if(action==='equipTool'){
-      equipTool(btn.getAttribute('data-item'));
-    } else if(action==='unequipTool'){
-      unequipTool(btn.getAttribute('data-skill'));
-    } else if(action==='forgeWeaponType'){
-      craftWeaponType(btn.getAttribute('data-type'));
-    } else if(action==='forgeStackableWeapon'){
-      craftStackableWeapon(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10));
-    } else if(action==='equipStackableWeapon'){
-      equipStackableWeapon(btn.getAttribute('data-item'));
-    } else if(action==='equipOffhandClaw'){
-      equipOffhandClaw(btn.getAttribute('data-item'));
-    } else if(action==='unequipOffhandClaw'){
-      unequipOffhandClaw();
-    } else if(action==='unequipStackableWeapon'){
-      unequipStackableWeapon();
-    } else if(action==='forgeStackableShield'){
-      craftStackableShield(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10));
-    } else if(action==='equipStackableShield'){
-      equipStackableShield(btn.getAttribute('data-item'));
-    } else if(action==='unequipStackableShield'){
-      unequipStackableShield();
-    } else if(action==='forgeWard'){
-      craftWard(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10));
-    } else if(action==='equipWard'){
-      equipWard(btn.getAttribute('data-item'));
-    } else if(action==='unequipWard'){
-      unequipWard();
-    } else if(action==='forgeOffhandType'){
-      craftOffhandType(btn.getAttribute('data-type'));
-    } else if(action==='equipMainhand'){
-      equipMainhand(btn.getAttribute('data-type'));
-    } else if(action==='equipOffhand'){
-      equipOffhand(btn.getAttribute('data-type'));
-    } else if(action==='equipRelic'){
-      equipRelic(btn.getAttribute('data-item'));
-    } else if(action==='unequipRelic'){
-      unequipRelic();
-    } else if(action==='pray'){
-      startPray(btn.getAttribute('data-item'));
-    } else if(action==='sacrifice'){
+    },
+    showSkillInfo: function(btn, e){ skillInfoOpen = btn.getAttribute('data-skill'); },
+    closeSkillInfo: function(btn, e){ skillInfoOpen = null; },
+    chatItemView: function(btn, e){ chatItemLinkView = btn.getAttribute('data-item'); },
+    closeItemLink: function(btn, e){ chatItemLinkView = null; },
+    openUniqueDetail: function(btn, e){ uniqueDetailUid = btn.getAttribute('data-uid'); },
+    closeUniqueDetail: function(btn, e){ uniqueDetailUid = null; },
+    uniqueManage: function(btn, e){ improveSelect(btn.getAttribute('data-uid')); uniqueDetailUid = null; navPickCat('improvement'); },
+    improveLinkChat: function(btn, e){ improveLinkChat(btn.getAttribute('data-uid')); },
+    toggleItemLock: function(btn, e){ toggleItemLock(btn.getAttribute('data-item')); },
+    openCritterCache: function(btn, e){ openCritterCache(); },
+    openTreasureChest: function(btn, e){ openTreasureChest(); },
+    openAllCritterCaches: function(btn, e){ openAllCritterCaches(); },
+    openAllTreasureChests: function(btn, e){ openAllTreasureChests(); },
+    closeLootPopup: function(btn, e){ lootPopupData = null; },
+    closeEnhancePopup: function(btn, e){ enhancePopupData = null; },
+    startShaftCraft: function(btn, e){ startShaftCraft(parseInt(btn.getAttribute('data-tier'),10)); },
+    blacksmithToggleGroup: function(btn, e){ var _bg = btn.getAttribute('data-group'); blacksmithGroupsOpen[_bg] = !blacksmithGroupsOpen[_bg]; render(); },
+    forgeTool: function(btn, e){ craftTool(btn.getAttribute('data-skill'), parseInt(btn.getAttribute('data-tier'),10)); },
+    buildWorkshop: function(btn, e){ craftWorkshop(btn.getAttribute('data-skill'), parseInt(btn.getAttribute('data-tier'),10)); },
+    buildCottage: function(btn, e){ craftCottage(parseInt(btn.getAttribute('data-tier'),10)); },
+    equipTool: function(btn, e){ equipTool(btn.getAttribute('data-item')); },
+    unequipTool: function(btn, e){ unequipTool(btn.getAttribute('data-skill')); },
+    forgeWeaponType: function(btn, e){ craftWeaponType(btn.getAttribute('data-type')); },
+    forgeStackableWeapon: function(btn, e){ craftStackableWeapon(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10)); },
+    equipStackableWeapon: function(btn, e){ equipStackableWeapon(btn.getAttribute('data-item')); },
+    equipOffhandClaw: function(btn, e){ equipOffhandClaw(btn.getAttribute('data-item')); },
+    unequipOffhandClaw: function(btn, e){ unequipOffhandClaw(); },
+    unequipStackableWeapon: function(btn, e){ unequipStackableWeapon(); },
+    forgeStackableShield: function(btn, e){ craftStackableShield(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10)); },
+    equipStackableShield: function(btn, e){ equipStackableShield(btn.getAttribute('data-item')); },
+    unequipStackableShield: function(btn, e){ unequipStackableShield(); },
+    forgeWard: function(btn, e){ craftWard(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10)); },
+    equipWard: function(btn, e){ equipWard(btn.getAttribute('data-item')); },
+    unequipWard: function(btn, e){ unequipWard(); },
+    forgeOffhandType: function(btn, e){ craftOffhandType(btn.getAttribute('data-type')); },
+    equipMainhand: function(btn, e){ equipMainhand(btn.getAttribute('data-type')); },
+    equipOffhand: function(btn, e){ equipOffhand(btn.getAttribute('data-type')); },
+    equipRelic: function(btn, e){ equipRelic(btn.getAttribute('data-item')); },
+    unequipRelic: function(btn, e){ unequipRelic(); },
+    pray: function(btn, e){ startPray(btn.getAttribute('data-item')); },
+    sacrifice: function(btn, e){
       var sacCategory = btn.getAttribute('data-category');
       var sacId = btn.getAttribute('data-id');
       sacrificeItem(sacCategory, sacId);
-    } else if(action==='startFaith'){
-      startFaithActivity(btn.getAttribute('data-kind'), parseInt(btn.getAttribute('data-tier'),10));
-    } else if(action==='stopFaith'){
-      stopFaithActivity();
-    } else if(action==='toggleArmorPanel'){
-      armorPanelExpanded = !armorPanelExpanded;
-    } else if(action==='toggleToolPanel'){
-      toolPanelExpanded = !toolPanelExpanded;
-    } else if(action==='toggleSkillGroup'){
+    },
+    startFaith: function(btn, e){ startFaithActivity(btn.getAttribute('data-kind'), parseInt(btn.getAttribute('data-tier'),10)); },
+    stopFaith: function(btn, e){ stopFaithActivity(); },
+    toggleArmorPanel: function(btn, e){ armorPanelExpanded = !armorPanelExpanded; },
+    toggleToolPanel: function(btn, e){ toolPanelExpanded = !toolPanelExpanded; },
+    toggleSkillGroup: function(btn, e){
       var groupKey = btn.getAttribute('data-group');
       skillGroupExpanded[groupKey] = !skillGroupExpanded[groupKey];
-    } else if(action==='togglePhysiquePanel'){
-      physiquePanelExpanded = !physiquePanelExpanded;
-    } else if(action==='invFilterCat'){
-      inventoryFilterCat = btn.getAttribute('data-cat');
-    } else if(action==='openInvDetail'){
-      inventoryDetailItem = btn.getAttribute('data-item');
-    } else if(action==='closeInvDetail'){
-      inventoryDetailItem = null;
-    } else if(action==='sellOne'){
-      sellOne(btn.getAttribute('data-item'));
-    } else if(action==='setAutoEatThreshold'){
-      setAutoEatThreshold(parseFloat(btn.getAttribute('data-value')));
-    } else if(action==='activatePotion'){
-      activatePotion(btn.getAttribute('data-item'));
-    } else if(action==='deactivatePotion'){
-      deactivatePotion();
-    } else if(action==='drinkTea'){
-      drinkTea(btn.getAttribute('data-item'));
-    } else if(action==='serveFeast'){
-      serveFeast(btn.getAttribute('data-item'));
-    } else if(action==='studyTome'){
-      studyTome(btn.getAttribute('data-item'));
-    } else if(action==='readScroll'){
-      readScroll(btn.getAttribute('data-item'));
-    } else if(action==='drinkBestTea'){
-      drinkBestTea();
-    } else if(action==='toggleAutoTea'){
-      toggleAutoTea();
-    } else if(action==='toggleAutoSacrificeRelics'){
-      toggleAutoSacrificeRelics();
-    } else if(action==='studyBestTome'){
-      studyBestTome();
-    } else if(action==='toggleAutoTome'){
-      toggleAutoTome();
-    } else if(action==='toggleFamiliar'){
+    },
+    togglePhysiquePanel: function(btn, e){ physiquePanelExpanded = !physiquePanelExpanded; },
+    invFilterCat: function(btn, e){ inventoryFilterCat = btn.getAttribute('data-cat'); },
+    openInvDetail: function(btn, e){ inventoryDetailItem = btn.getAttribute('data-item'); },
+    closeInvDetail: function(btn, e){ inventoryDetailItem = null; },
+    sellOne: function(btn, e){ sellOne(btn.getAttribute('data-item')); },
+    setAutoEatThreshold: function(btn, e){ setAutoEatThreshold(parseFloat(btn.getAttribute('data-value'))); },
+    activatePotion: function(btn, e){ activatePotion(btn.getAttribute('data-item')); },
+    deactivatePotion: function(btn, e){ deactivatePotion(); },
+    drinkTea: function(btn, e){ drinkTea(btn.getAttribute('data-item')); },
+    serveFeast: function(btn, e){ serveFeast(btn.getAttribute('data-item')); },
+    studyTome: function(btn, e){ studyTome(btn.getAttribute('data-item')); },
+    readScroll: function(btn, e){ readScroll(btn.getAttribute('data-item')); },
+    drinkBestTea: function(btn, e){ drinkBestTea(); },
+    toggleAutoTea: function(btn, e){ toggleAutoTea(); },
+    toggleAutoSacrificeRelics: function(btn, e){ toggleAutoSacrificeRelics(); },
+    studyBestTome: function(btn, e){ studyBestTome(); },
+    toggleAutoTome: function(btn, e){ toggleAutoTome(); },
+    toggleFamiliar: function(btn, e){
       var famSkill = btn.getAttribute('data-skill');
       menagerieExpanded[famSkill] = !menagerieExpanded[famSkill];
-    } else if(action==='activateCompanion'){
-      activateCompanion(btn.getAttribute('data-skill'));
-    } else if(action==='dismissPopup'){
+    },
+    activateCompanion: function(btn, e){ activateCompanion(btn.getAttribute('data-skill')); },
+    dismissPopup: function(btn, e){
       state.popupQueue.shift();
       if(state.popupQueue.length === 0) state.popupBatchTotal = 0;
-    } else if(action==='openTrackerPicker'){
-      trackerPickerOpen = true; renderTrackerPicker();
-    } else if(action==='closeTrackerPicker'){
-      trackerPickerOpen = false; renderTrackerPicker();
-    } else if(action==='toggleTrackedSkill'){
-      toggleTrackedSkill(btn.getAttribute('data-skill'));
-    } else if(action==='peonOpenPicker'){
+    },
+    openTrackerPicker: function(btn, e){ trackerPickerOpen = true; renderTrackerPicker(); },
+    closeTrackerPicker: function(btn, e){ trackerPickerOpen = false; renderTrackerPicker(); },
+    toggleTrackedSkill: function(btn, e){ toggleTrackedSkill(btn.getAttribute('data-skill')); },
+    peonOpenPicker: function(btn, e){
       peonPicker = { open:true, scope:btn.getAttribute('data-scope'), x:null, y:null, producer:null }; renderPeonPicker();
-    } else if(action==='peonClosePicker'){
-      peonPicker.open = false; renderPeonPicker();
-    } else if(action==='peonPickSource'){
+    },
+    peonClosePicker: function(btn, e){ peonPicker.open = false; renderPeonPicker(); },
+    peonPickSource: function(btn, e){
       peonPicker.x = parseInt(btn.getAttribute('data-x'),10); peonPicker.y = parseInt(btn.getAttribute('data-y'),10); peonPicker.producer = null; renderPeonPicker();
-    } else if(action==='peonPickBack'){
+    },
+    peonPickBack: function(btn, e){
       if(peonPicker.producer){ peonPicker.producer = null; } else { peonPicker.x = null; peonPicker.y = null; } renderPeonPicker();
-    } else if(action==='peonPickTask'){
-      peonAssign(btn.getAttribute('data-kind'), btn.getAttribute('data-item'));
-    } else if(action==='peonPickProducer'){
+    },
+    peonPickTask: function(btn, e){ peonAssign(btn.getAttribute('data-kind'), btn.getAttribute('data-item')); },
+    peonPickProducer: function(btn, e){
       peonPicker.producer = peonPickerProducers[parseInt(btn.getAttribute('data-idx'),10)] || null; renderPeonPicker();
-    } else if(action==='peonPickTier'){
-      peonAssignSpecial(parseInt(btn.getAttribute('data-tier'),10));
-    } else if(action==='peonStop'){
+    },
+    peonPickTier: function(btn, e){ peonAssignSpecial(parseInt(btn.getAttribute('data-tier'),10)); },
+    peonStop: function(btn, e){
       peonStop(btn.getAttribute('data-scope'), parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10));
-    } else if(action==='marketMode'){
+    },
+    marketMode: function(btn, e){
       marketState.mode = btn.getAttribute('data-mode'); marketState.selectedItem = null; marketState.search = ''; render();
-    } else if(action==='marketRefresh'){
-      marketReload();
-    } else if(action==='marketPickItem'){
-      marketPickItem(btn.getAttribute('data-item'));
-    } else if(action==='marketClearItem'){
-      marketState.selectedItem = null; render();
-    } else if(action==='marketPlaceSell'){
-      marketPlaceSell();
-    } else if(action==='marketPlaceBuy'){
-      marketPlaceBuy();
-    } else if(action==='marketQuickBuy'){
-      marketQuickBuy(btn.getAttribute('data-item'), parseInt(btn.getAttribute('data-price'),10));
-    } else if(action==='marketBuyNow'){
-      marketBuyNow();
-    } else if(action==='marketCancel'){
-      marketCancelOrder(parseInt(btn.getAttribute('data-order'),10));
-    } else if(action==='marketCollect'){
-      marketReload();
-    } else if(action==='openSettings'){
+    },
+    marketRefresh: function(btn, e){ marketReload(); },
+    marketPickItem: function(btn, e){ marketPickItem(btn.getAttribute('data-item')); },
+    marketClearItem: function(btn, e){ marketState.selectedItem = null; render(); },
+    marketPlaceSell: function(btn, e){ marketPlaceSell(); },
+    marketPlaceBuy: function(btn, e){ marketPlaceBuy(); },
+    marketQuickBuy: function(btn, e){ marketQuickBuy(btn.getAttribute('data-item'), parseInt(btn.getAttribute('data-price'),10)); },
+    marketBuyNow: function(btn, e){ marketBuyNow(); },
+    marketCancel: function(btn, e){ marketCancelOrder(parseInt(btn.getAttribute('data-order'),10)); },
+    marketCollect: function(btn, e){ marketReload(); },
+    openSettings: function(btn, e){
       settingsOpen = true; recoveryStatus = null; recoveryEditing = false; recoveryMsg = '';
       serverBuffFetch(); // refresh the buff status when the menu opens
-    } else if(action==='buyExpBuff'){
-      buyServerExpBuff();
-    } else if(action==='toggleChatDrawer'){
-      chatDrawerOpen = !chatDrawerOpen; if(chatDrawerOpen) clearChatUnread(); renderChatDrawer();
-    } else if(action==='toggleChatExpand'){
+    },
+    buyExpBuff: function(btn, e){ buyServerExpBuff(); },
+    toggleChatDrawer: function(btn, e){ chatDrawerOpen = !chatDrawerOpen; if(chatDrawerOpen) clearChatUnread(); renderChatDrawer(); },
+    toggleChatExpand: function(btn, e){
       chatExpanded = !chatExpanded;
       if(chatExpanded){ chatDrawerOpen = false; clearChatUnread(); } // full screen supersedes the mobile drawer
-    } else if(action==='noop'){
+    },
+    noop: function(btn, e){
       /* swallow clicks inside the chat drawer so the backdrop tap doesn't close it */
-    } else if(action==='closeOfflineSummary'){
+    },
+    closeOfflineSummary: function(btn, e){
       var _offFams = offlineSummaryData && offlineSummaryData.familiars;
       offlineSummaryData = null;
       if(_offFams && _offFams.length) queueFamiliarBatch(_offFams); // second consolidated notification: all familiars found
-    } else if(action==='closeSettings'){
-      settingsOpen = false;
-    } else if(action==='toggleSetting'){
+    },
+    closeSettings: function(btn, e){ settingsOpen = false; },
+    toggleSetting: function(btn, e){
       var setKey = btn.getAttribute('data-key');
       state.settings[setKey] = !state.settings[setKey];
       if(setKey==='compactMobile') applyMobileLayoutPref(); // re-scale the viewport immediately
-    } else if(action==='changePassword'){
-      changePassword();
-    } else if(action==='guildSubtab'){
+    },
+    changePassword: function(btn, e){ changePassword(); },
+    guildSubtab: function(btn, e){
       guildSub = btn.getAttribute('data-sub');
       if(guildSub==='guilds'){ guildDir.viewId=null; guildDirLoad(false); } // enter the directory at the list
-    } else if(action==='guildDirView'){
-      guildDirOpen(btn.getAttribute('data-id'));
-    } else if(action==='guildDirBack'){
-      guildDirBack();
-    } else if(action==='guildDirRefresh'){
-      guildDirLoad(true);
-    } else if(action==='guildCreate'){
-      guildCreate();
-    } else if(action==='guildApply'){
-      guildApply(btn.getAttribute('data-guild'));
-    } else if(action==='guildCancelApplication'){
-      guildCancelApplication();
-    } else if(action==='guildAccept'){
-      guildAct('accept', btn.getAttribute('data-id'));
-    } else if(action==='guildReject'){
-      guildAct('reject', btn.getAttribute('data-id'));
-    } else if(action==='guildPromote'){
-      guildAct('promote', btn.getAttribute('data-id'));
-    } else if(action==='guildDemote'){
-      guildAct('demote', btn.getAttribute('data-id'));
-    } else if(action==='guildTransfer'){
+    },
+    guildDirView: function(btn, e){ guildDirOpen(btn.getAttribute('data-id')); },
+    guildDirBack: function(btn, e){ guildDirBack(); },
+    guildDirRefresh: function(btn, e){ guildDirLoad(true); },
+    guildCreate: function(btn, e){ guildCreate(); },
+    guildApply: function(btn, e){ guildApply(btn.getAttribute('data-guild')); },
+    guildCancelApplication: function(btn, e){ guildCancelApplication(); },
+    guildAccept: function(btn, e){ guildAct('accept', btn.getAttribute('data-id')); },
+    guildReject: function(btn, e){ guildAct('reject', btn.getAttribute('data-id')); },
+    guildPromote: function(btn, e){ guildAct('promote', btn.getAttribute('data-id')); },
+    guildDemote: function(btn, e){ guildAct('demote', btn.getAttribute('data-id')); },
+    guildTransfer: function(btn, e){
       if(confirm('Make this member the guild leader? You will step down to Officer.')) guildAct('transfer', btn.getAttribute('data-id'));
-    } else if(action==='guildKick'){
-      if(confirm('Remove this member from the guild?')) guildAct('kick', btn.getAttribute('data-id'));
-    } else if(action==='guildToggleOpen'){
-      guildSetOpen(!guildState.guild.open);
-    } else if(action==='guildLeave'){
-      if(confirm('Leave your guild?')) guildAct('leave');
-    } else if(action==='guildDisband'){
-      if(confirm('Disband the guild? This permanently deletes it for every member.')) guildAct('disband');
-    } else if(action==='guildChannel'){
+    },
+    guildKick: function(btn, e){ if(confirm('Remove this member from the guild?')) guildAct('kick', btn.getAttribute('data-id')); },
+    guildToggleOpen: function(btn, e){ guildSetOpen(!guildState.guild.open); },
+    guildLeave: function(btn, e){ if(confirm('Leave your guild?')) guildAct('leave'); },
+    guildDisband: function(btn, e){ if(confirm('Disband the guild? This permanently deletes it for every member.')) guildAct('disband'); },
+    guildChannel: function(btn, e){
       var _ch = btn.getAttribute('data-channel');
       chatChannel = (_ch==='guild' || _ch==='chronicle') ? _ch : 'global';
       if(chatChannel==='guild') guildChatMaybeSubscribe();
-    } else if(action==='guildChatSend'){
-      guildChatSend();
-    } else if(action==='guildBankBuySlot'){
-      guildBankBuySlot();
-    } else if(action==='guildBankDeposit'){
-      guildBankDeposit();
-    } else if(action==='guildBankWithdraw'){
-      guildBankWithdraw(btn.getAttribute('data-item'));
-    } else if(action==='guildBankDepositUniqueSel'){
+    },
+    guildChatSend: function(btn, e){ guildChatSend(); },
+    guildBankBuySlot: function(btn, e){ guildBankBuySlot(); },
+    guildBankDeposit: function(btn, e){ guildBankDeposit(); },
+    guildBankWithdraw: function(btn, e){ guildBankWithdraw(btn.getAttribute('data-item')); },
+    guildBankDepositUniqueSel: function(btn, e){
       var _us=document.getElementById('guildBankDepUniqueSel'); if(_us && _us.value) guildBankDepositUnique(_us.value);
-    } else if(action==='guildBankWithdrawUnique'){
-      guildBankWithdrawUnique(btn.getAttribute('data-bank-uid'));
-    } else if(action==='guildBankSetWithdrawRank'){
-      guildBankSetWithdrawRank(btn.getAttribute('data-rank'));
-    } else if(action==='guildBankDonateGold'){
-      guildBankDonateGold();
-    } else if(action==='guildBankWithdrawGold'){
-      guildBankWithdrawGold();
-    } else if(action==='guildBossSummon'){
-      guildBossSummon(btn.getAttribute('data-key'));
-    } else if(action==='guildBossAssault'){
-      guildBossAssault(true);
-    } else if(action==='guildBossClaim'){
-      guildBossClaim();
-    }
+    },
+    guildBankWithdrawUnique: function(btn, e){ guildBankWithdrawUnique(btn.getAttribute('data-bank-uid')); },
+    guildBankSetWithdrawRank: function(btn, e){ guildBankSetWithdrawRank(btn.getAttribute('data-rank')); },
+    guildBankDonateGold: function(btn, e){ guildBankDonateGold(); },
+    guildBankWithdrawGold: function(btn, e){ guildBankWithdrawGold(); },
+    guildBossSummon: function(btn, e){ guildBossSummon(btn.getAttribute('data-key')); },
+    guildBossAssault: function(btn, e){ guildBossAssault(true); },
+    guildBossClaim: function(btn, e){ guildBossClaim(); }
+  };
+
+  document.getElementById('app').addEventListener('click', function(e){
+    var btn = e.target.closest('[data-action]');
+    if(!btn) return;
+    var action = btn.getAttribute('data-action');
+    var handler = ACTIONS[action];
+    if(handler) handler(btn, e);
     render(true); // user gesture -- rebuild even if a field was focused (the tap consumes it)
     needsRender = false;
   });
