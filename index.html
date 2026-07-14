@@ -11282,26 +11282,6 @@
   }
 
   // ================= PERSISTENCE =================
-  var SAVE_KEY = 'emberhollow-save-v3';
-  var _lsAvailable = null;
-  function localStorageAvailable(){
-    if(_lsAvailable !== null) return _lsAvailable;
-    try{
-      var t = '__ff_ls_test__';
-      window.localStorage.setItem(t, '1');
-      window.localStorage.removeItem(t);
-      _lsAvailable = true;
-    }catch(e){ _lsAvailable = false; }
-    return _lsAvailable;
-  }
-  // Persist to the browser's localStorage when the game is hosted on the web; fall back to
-  // Claude's window.storage inside the artifact runtime (where localStorage is unavailable).
-  function writeSave(str){
-    if(localStorageAvailable()){
-      try{ window.localStorage.setItem(SAVE_KEY, str); return; }catch(e){}
-    }
-    try{ if(window.storage && window.storage.set){ window.storage.set(SAVE_KEY, str).catch(function(){}); } }catch(e){}
-  }
   async function readSave(){
     // ONLINE-ONLY: the save lives in the backend and requires an authenticated session.
     if(!chatClient || !authUser || !authUser.id) return null;
@@ -15502,7 +15482,11 @@
     return html;
   }
 
-  // ================= RENDER: ESTATE (placeholder) =================
+  // ================= RENDER: ESTATE =================
+  // The full estate subsystem: 2.5D iso + top-down canvas rendering (terrain, pavement, workshops,
+  // cottages, fields, borders), pan/zoom/rotate input, tile/edge selection menus, terraform/pave/
+  // build/upgrade jobs, expansion, and the shared engine that renders BOTH My Estate and the guild
+  // estate through the estActive pointer (see estUse), plus the read-only visit viewer.
   // Element icon for a damaging spell (blank for non-damaging spells), shown beside it in the Menagerie.
   function spellElementIcon(spell){ return (spell && spell.element) ? elementIcon(spell.element) : ''; }
   function describeSpell(spell, level){
@@ -18683,26 +18667,19 @@
       if(!chatClient) return;
       var res = await chatClient.auth.getSession();
       var sess = res.data && res.data.session;
-      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; await cloudLoad(); if(!cloudReloading){ profileSync(true); walletSync(true); itemSync(true); } }
+      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; profileSync(true); walletSync(true); itemSync(true); }
     }catch(e){}
   }
 
   // ================= CLOUD SAVES =================
-  // Preserve the full game state server-side for signed-in players (survives a cleared
-  // browser, follows them across devices). localStorage stays the fast local cache and
-  // keeps anonymous/offline play working; the cloud layers on top when signed in.
-  // Reconciliation is newest-wins by state.lastSaved, guarded server-side against stale
-  // overwrites, with owner-tagging so a save synced under one account isn't pushed into
-  // another on a shared browser.
-  // Kill switch for cloud sync. Re-enabled after the reconciliation was rebuilt to be
-  // progress-aware (compares total-XP score, never timestamps) with a server-side
-  // forward-only guard, so an empty/lower-progress state can never overwrite real data.
-  // Flip to false to instantly disable all cloud reads/writes (localStorage-only) if needed.
+  // ONLINE-ONLY persistence: the save lives in the backend `saves` table, written via the
+  // save_game edge function and read back by readSave()/initGame() on boot. The server keeps a
+  // forward-only progress guard (compares total-XP score, never timestamps), so an empty or
+  // lower-progress push can never overwrite real data; `force` exists solely for deliberate resets.
+  // Flip CLOUD_SYNC_ENABLED to false to instantly disable all cloud writes if needed.
   var CLOUD_SYNC_ENABLED = true;
-  var SAVE_OWNER_KEY = 'ff-save-owner';
   var CLOUD_PUSH_INTERVAL = 8000;   // debounce between cloud pushes (was 30s -> tightened so inventory/gold changes reach Supabase quickly)
   var cloudLastPush = 0;
-  var cloudReloading = false;
   var cloudAccessToken = null;      // cached bearer token so the unload beacon can authenticate synchronously
   function cloudRefreshToken(){
     try{ if(!chatClient) return; chatClient.auth.getSession().then(function(r){ var s = r && r.data && r.data.session; if(s && s.access_token) cloudAccessToken = s.access_token; }); }catch(e){}
@@ -18725,9 +18702,6 @@
       });
     }catch(e){}
   }
-  function localSaveOwner(){ try{ return window.localStorage.getItem(SAVE_OWNER_KEY) || ''; }catch(e){ return ''; } }
-  function setLocalSaveOwner(id){ try{ if(id){ window.localStorage.setItem(SAVE_OWNER_KEY, id); } else { window.localStorage.removeItem(SAVE_OWNER_KEY); } }catch(e){} }
-
   // Monotonic progress metric = total XP (skills + physique). Reconciliation compares THIS,
   // never wall-clock timestamps, so an empty newGame() (score 0) can never win and overwrite
   // real progress. XP only grows barring an explicit reset.
@@ -18744,7 +18718,7 @@
   // flush = push now, skipping the debounce, but STILL subject to the empty + forward guards.
   async function cloudSave(force, flush){
     if(!CLOUD_SYNC_ENABLED) return;
-    if(!CHAT_ENABLED || !authUser || !authUser.id || cloudReloading) return;
+    if(!CHAT_ENABLED || !authUser || !authUser.id) return;
     cloudRefreshToken(); // keep the cached token fresh for the unload beacon
     var score = saveProgressScore(state);
     // Never push an empty/zero-progress state (unless a deliberate, forced reset) -- this is
@@ -18758,50 +18732,8 @@
       var res = await chatClient.functions.invoke('save_game', {
         body: { data: state, client_saved_at: state.lastSaved || 0, progress: score, force: !!force }
       });
-      if(res && res.data && res.data.ok){ setLocalSaveOwner(authUser.id); }
       // A non-ok/'stale' result means the cloud holds a higher-progress save; leave both
       // sides untouched (non-destructive) and reconcile on the next load.
-    }catch(e){}
-  }
-
-  async function cloudLoad(){
-    return;   // ONLINE-ONLY: loading is handled by initGame()/readSave() from the backend
-    if(!CLOUD_SYNC_ENABLED) return;
-    if(!CHAT_ENABLED || !authUser || !authUser.id || cloudReloading) return;
-    if(!chatClient){ if(!(await authEnsureClient())) return; }
-    try{
-      var res = await chatClient.from('saves').select('data,progress').eq('user_id', authUser.id).maybeSingle();
-      var cloud = (res && res.data) || null;
-      var hasCloud = !!(cloud && cloud.data);
-      var cloudScore = hasCloud ? (cloud.progress || 0) : -1;
-      var localScore = saveProgressScore(state);
-      var owner = localSaveOwner();
-      var ownedByUs = !owner || owner === authUser.id;    // anonymous (claimable) or already ours
-      function adoptCloud(){
-        cloudReloading = true;
-        setLocalSaveOwner(authUser.id);
-        writeSave(JSON.stringify(cloud.data));
-        addLog('Loaded your cloud save.');
-        setTimeout(function(){ location.reload(); }, 500);
-      }
-      if(hasCloud){
-        // The cloud save is the source of truth. On login we PULL it so your character
-        // follows you across devices. We keep local instead only when OUR OWN local is
-        // STRICTLY further along (e.g. you played more on this device while offline) -- then
-        // push it up so newer progress isn't lost. A different account's local never
-        // overwrites the cloud; we always load our own cloud in that case. The server's
-        // forward-only progress guard still blocks any empty/stale push.
-        if(ownedByUs && localScore > cloudScore){
-          setLocalSaveOwner(authUser.id);
-          cloudSave();                  // local is ahead & ours -> push forward (becomes truth)
-        } else if(!ownedByUs || cloudScore > localScore){
-          adoptCloud(); return;         // cloud is ahead, or local isn't ours -> pull the cloud
-        }
-        // else: ours and already in sync (equal progress) -> nothing to do
-      } else if(ownedByUs && localScore > 0){
-        setLocalSaveOwner(authUser.id);
-        cloudSave();                    // no cloud yet -> seed it from our current local
-      }
     }catch(e){}
   }
   // ---- Game Rules + Privacy Policy (must be accepted before registering) ----
@@ -19520,8 +19452,9 @@
     });
     return { grid: grid, edgesX: e.edgesX, edgesY: e.edgesY, expansionsPurchased: e.expansionsPurchased||0 };
   }
+  var _lastEstateJson = null; // last estate snapshot ACCEPTED by submit_profile, serialized -- resend only on change
   async function profileSync(force){
-    if(!CHAT_ENABLED || !authUser || !authUser.id || cloudReloading) return;  // don't push a pre-pull state
+    if(!CHAT_ENABLED || !authUser || !authUser.id) return;
     var now = Date.now();
     if(!force && now - profileLastSync < 90000) return;
     profileLastSync = now;
@@ -19531,11 +19464,15 @@
       // Writes go through the server-validated 'submit_profile' function (the profiles
       // table is no longer client-writable). id + username are derived server-side from
       // the auth token; a rejected submission just leaves the last accepted row intact.
-      // `estate` is a compact render-only snapshot so others can view it from the leaderboard;
-      // an older server that doesn't accept it simply ignores the extra field.
-      await chatClient.functions.invoke('submit_profile', {
-        body: { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, equipment: stats.equipment, stats: stats.stats, mortal: isMortal(), class: activeClassId(state) || null, estate: computeEstateSnapshot() }
-      });
+      // `estate` is a compact render-only snapshot so others can view it from the leaderboard.
+      // It's tens of KB, so it rides along ONLY when it changed since the last accepted send --
+      // the server leaves the stored estate untouched when the field is absent from the body.
+      var body = { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, equipment: stats.equipment, stats: stats.stats, mortal: isMortal(), class: activeClassId(state) || null };
+      var estJson = null;
+      try{ estJson = JSON.stringify(computeEstateSnapshot()); }catch(e2){}
+      if(estJson !== null && estJson !== _lastEstateJson) body.estate = JSON.parse(estJson);
+      var res = await chatClient.functions.invoke('submit_profile', { body: body });
+      if(body.estate !== undefined && res && !res.error) _lastEstateJson = estJson; // a failed send retries next sync
     }catch(e){}
   }
   // Reconcile the local balance with the server wallet. Sends lifetime earnings (goldEarnedTotal)
@@ -19557,7 +19494,7 @@
     return Math.max(0, Math.floor(serverGold) + pending + drift);
   }
   async function walletSync(force){
-    if(!WALLET_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id || cloudReloading) return;
+    if(!WALLET_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id) return;
     var now = Date.now();
     if(!force && now - walletLastSync < WALLET_SYNC_MS) return;
     walletLastSync = now;
@@ -19588,7 +19525,7 @@
     count = Math.floor(count); gold = Math.floor(gold);
     if(!(count > 0) || !(gold > 0)) return;
     function fallback(){ state.goldEarnedTotal = (state.goldEarnedTotal||0) + gold; } // normal (bucket) path preserves it
-    if(!WALLET_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id || cloudReloading){ fallback(); return; }
+    if(!WALLET_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id){ fallback(); return; }
     if(!chatClient){ if(!(await authEnsureClient())){ fallback(); return; } }
     try{
       var res = await chatClient.functions.invoke('wallet', { body: { action:'earn_chest', count:count, gold:gold } });
@@ -19610,7 +19547,7 @@
   var itemLastSync = 0;
   var itemLedger = null;            // last reconciled server ledger { item_key: qty }, or null
   async function itemSync(force){
-    if(!ITEM_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id || cloudReloading) return;
+    if(!ITEM_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id) return;
     var now = Date.now();
     if(!force && now - itemLastSync < WALLET_SYNC_MS) return;
     itemLastSync = now;
@@ -23496,22 +23433,35 @@
     }
     requestAnimationFrame(loop);
   }
-  // Browsers pause requestAnimationFrame (and timers) while the tab/app is backgrounded or the screen is
-  // off, so the loop stalls and its dt clamps to 60s on return -- longer absences would otherwise lose
-  // most of their progress. When the page becomes visible again, run the SAME catch-up used at load for
-  // any gap over 60s (active task, Belt slots, peons + the "While you were away" summary), then advance
-  // the clocks so neither the loop's next frame nor a quick reload re-credits the same time. An ACTIVE
-  // dungeon fight is attended/real-time, so freeze it instead -- resume exactly where the player left off.
+  // ---- Tab hide/show lifecycle (the ONLY visibilitychange listener) ----
+  // HIDDEN: flush the save immediately (async push + keepalive beacon) so nothing recent is lost if
+  // the tab never comes back.
+  // VISIBLE: browsers pause requestAnimationFrame (and timers) while backgrounded, so the loop stalls
+  // and its dt clamps to 60s on return -- longer absences would otherwise lose most of their progress.
+  // Run the SAME catch-up used at load for any gap over 60s (active task, Belt slots, peons + the
+  // "While you were away" summary), then advance the clocks so neither the loop's next frame nor a
+  // quick reload re-credits the same time. An ACTIVE dungeon fight is attended/real-time, so freeze it
+  // instead -- resume exactly where the player left off. Progress is credited and saved BEFORE the
+  // update check, which may hard-reload the page when a new build landed while the tab was away.
   document.addEventListener('visibilitychange', function(){
-    if(document.hidden || !gameStarted) return;
-    var awayMs = Date.now() - lastTick;                          // the loop paused while hidden -> time away
-    if(awayMs <= 60000) return;                                 // <=60s: the loop's own clamped catch-up covers it silently
-    if(dungeonLocksActions()){ lastTick = Date.now(); return; } // don't fast-forward a live dungeon fight
-    applyOfflineProgress(awayMs);                               // credit tasks + peons (capped 12h) + build the summary
-    lastTick = Date.now();                                      // stop the loop re-crediting the clamped 60s...
-    state.lastSaved = Date.now();                               // ...and a quick reload re-crediting via offline-on-load
-    cloudSave(false, true);
-    render();                                                   // surface the "While you were away" summary
+    if(document.hidden){
+      if(gameStarted){ saveGame(); cloudSave(false, true); cloudSaveBeacon(); }
+      return;
+    }
+    if(gameStarted){
+      var awayMs = Date.now() - lastTick;                            // the loop paused while hidden -> time away
+      if(awayMs > 60000){                                            // <=60s: the loop's own clamped catch-up covers it silently
+        if(dungeonLocksActions()){ lastTick = Date.now(); }          // don't fast-forward a live dungeon fight
+        else {
+          applyOfflineProgress(awayMs);                              // credit tasks + peons (capped 12h) + build the summary
+          lastTick = Date.now();                                     // stop the loop re-crediting the clamped 60s...
+          state.lastSaved = Date.now();                              // ...and a quick reload re-crediting via offline-on-load
+          cloudSave(false, true);
+          render();                                                  // surface the "While you were away" summary
+        }
+      }
+    }
+    if(updateChecksArmed) updateTick(); // a patch that landed while away refreshes now, not at the next interval
   });
   function isEditingField(){
     var ae = document.activeElement;
@@ -23526,9 +23476,6 @@
   // ticks) that fire on a timer while the player may be picking something.
   function softRender(){ if(isEditingField()) needsRender = true; else render(); }
 
-  document.addEventListener('visibilitychange', function(){
-    if(document.visibilityState==='hidden'){ saveGame(); cloudSave(false, true); cloudSaveBeacon(); }
-  });
   // pagehide fires on hard refresh / close / navigate (more reliably than beforeunload, and works with
   // bfcache); the keepalive beacon carries the latest state to Supabase so nothing recent is lost.
   window.addEventListener('pagehide', function(){ cloudSaveBeacon(); });
@@ -23848,9 +23795,9 @@
     if(updateChecksArmed) return;   // one checker per session
     updateChecksArmed = true;
     setInterval(updateTick, UPDATE_CHECK_MS);
-    // Re-check the instant a backgrounded tab returns, so a patch that landed while the player was away
-    // refreshes as soon as they come back rather than waiting out the next interval.
-    if(typeof document !== 'undefined') document.addEventListener('visibilitychange', function(){ if(!document.hidden) updateTick(); });
+    // The consolidated visibilitychange handler also fires updateTick() the instant a backgrounded
+    // tab returns (gated on updateChecksArmed), so a patch that landed while the player was away
+    // refreshes immediately rather than waiting out the next interval.
   }
   async function startGameOnline(){
     removeLoginGate();
