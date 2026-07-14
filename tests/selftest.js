@@ -2443,6 +2443,41 @@
   });
 
   // ---- D1 legendary AMULETS (Pendants): 3 universal effects, worn in the single Amulet slot -----------
+  // ---- D1 armor Set Items: data model + set-piece detection ------------------------------------------
+  suite('D1 armor sets: data model + detection', function(){
+    var ids = FF.D1_SET_CLASS_IDS;
+    eq(ids.length, 24, '24 class sets defined (one per class)');
+    ids.forEach(function(id){ ok(FF.CLASS_DEFS_BY_ID[id], id + ' set maps to a real class'); });
+    FF.CLASS_SKILL_IDS.forEach(function(cid){ ok(FF.D1_SET_DEFS[cid], cid + ' has a D1 set'); });
+    // Bare-head classes are 3-piece sets (no helmet); everyone else is a full 4.
+    ['reaper','berserker','executioner'].forEach(function(id){ var d = FF.D1_SET_DEFS[id];
+      eq(d.full, 3, id + ' is a 3-piece set'); ok(!d.pieces.helmet, id + ' has no helmet piece'); });
+    eq(FF.D1_SET_DEFS.summoner.full, 4, 'summoner is a 4-piece set');
+    // Materials valid; both bonuses present with name/desc/key.
+    var mats = { tailoring:1, leather:1, chain:1, plate:1 };
+    ids.forEach(function(id){ var d = FF.D1_SET_DEFS[id];
+      Object.keys(d.pieces).forEach(function(slot){ ok(mats[d.pieces[slot]], id + '/' + slot + ' has a valid material'); });
+      ok(d.b2 && d.b2.name && d.b2.desc && d.b2.key, id + ' has a named 2-piece bonus');
+      ok(d.bf && d.bf.name && d.bf.desc && d.bf.key, id + ' has a named full-set bonus'); });
+    // Spot-check a couple of the chosen bonuses landed.
+    eq(FF.D1_SET_DEFS.summoner.b2.name, 'Pack Tactics', 'Summoner 2pc is Pack Tactics');
+    eq(FF.D1_SET_DEFS.reaver.bf.name, 'Feeding Frenzy', 'Reaver capstone is Feeding Frenzy');
+    eq(FF.D1_SET_DEFS.nightblade.b2.name, 'Resistance Rot', 'Voidshadow (nightblade) 2pc is Resistance Rot');
+    // Detection: seat set pieces via unique.set on body-armor slots.
+    var st = { bodyArmor:{ helmet:{uid:'a'}, chest:{uid:'b'}, gauntlets:{uid:'c'}, boots:{} },
+      uniqueItems:{ a:{set:'summoner'}, b:{set:'summoner'}, c:{set:'summoner'} } };
+    eq(FF.setPiecesWorn('summoner', st), 3, 'counts worn Summoner set pieces');
+    eq(FF.set2('summoner', st), true, '3 pieces -> the 2-piece bonus is active');
+    eq(FF.setFull('summoner', st), false, '3 of 4 -> the capstone is not yet active');
+    st.bodyArmor.boots = { uid:'d' }; st.uniqueItems.d = { set:'summoner' };
+    eq(FF.setFull('summoner', st), true, 'the full 4 -> the capstone is active');
+    eq(FF.setPiecesWorn('duelist', st), 0, "another class's set is not counted");
+    // A bare-head 3-piece set reaches its capstone at 3.
+    var rst = { bodyArmor:{ chest:{uid:'x'}, gauntlets:{uid:'y'}, boots:{uid:'z'} },
+      uniqueItems:{ x:{set:'reaper'}, y:{set:'reaper'}, z:{set:'reaper'} } };
+    eq(FF.setFull('reaper', rst), true, 'a bare-head 3-piece set hits its capstone at 3 pieces');
+  });
+
   suite('mastercraft: D1 legendary amulets', function(){
     // A state with a legendary Pendant seated in the Amulet slot.
     function amSt(key, rarity, extra){

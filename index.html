@@ -5181,6 +5181,101 @@
   ];
   var CLASS_DEFS_BY_ID = {}; CLASS_DEFS.forEach(function(c){ CLASS_DEFS_BY_ID[c.id] = c; });
   var CLASS_SKILL_IDS = CLASS_DEFS.map(function(c){ return c.id; });
+  // ===== D1 (Cave) Armor Set Items =====
+  // Each class has a defined 4-piece set (3 for bare-head classes) in the armor materials it actually
+  // wears. Wearing 2 pieces grants the class's 2-piece bonus; wearing the full set grants the capstone
+  // (3-piece for bare-head classes, 4-piece otherwise). Materials: tailoring=Cloth, leather, chain, plate.
+  // Set pieces are t21 (one tier above the t20 cap) unique armor scaled 2x/4x/8x by rarity -- best-in-slot
+  // AND enchantable. Effects are wired per class behind setBonusActive(cls, 2|full).
+  var D1_SET_DEFS = {
+    summoner:      { cls:'summoner',      pieces:{ helmet:'tailoring', chest:'tailoring', gauntlets:'tailoring', boots:'tailoring' },
+      b2:{ key:'packtactics',   name:'Pack Tactics',   desc:'Each active familiar grants you +4% damage and +4% damage reduction.' },
+      bf:{ key:'twincast',      name:'Twin Cast',      desc:'Your familiars’ spells have a chance to fire a second time.' } },
+    duelist:       { cls:'duelist',       pieces:{ helmet:'chain', chest:'chain', gauntlets:'tailoring', boots:'tailoring' },
+      b2:{ key:'riposte',       name:'Riposte',        desc:'The first strike after a Dodge is a guaranteed Critical Hit.' },
+      bf:{ key:'redoublement',  name:'Redoublement',   desc:'Flourish unleashes 5 stabs instead of 3.' } },
+    reaper:        { cls:'reaper',        bareHead:true, pieces:{ chest:'tailoring', gauntlets:'tailoring', boots:'tailoring' },
+      b2:{ key:'gravechill',    name:'Grave Chill',    desc:'Your hits stack a slow on the foe — its action bar crawls.' },
+      bf:{ key:'overkillsiphon',name:'Overkill Siphon',desc:'Damage dealt beyond a foe’s Health carries over as Siphon Shield.' } },
+    herald:        { cls:'herald',        pieces:{ helmet:'plate', chest:'plate', gauntlets:'plate', boots:'plate' },
+      b2:{ key:'fullretort',    name:'Full Retort',    desc:'Riposte Guard reflects 100% of the damage a Block prevents.' },
+      bf:{ key:'bastion',       name:'Bastion',        desc:'No single blow can take more than 25% of your max Health.' } },
+    quickdraw:     { cls:'quickdraw',     pieces:{ helmet:'leather', chest:'leather', gauntlets:'leather', boots:'plate' },
+      b2:{ key:'venomglut',     name:'Venom Glut',     desc:'A crit on an already-poisoned foe stacks a heavier venom.' },
+      bf:{ key:'trickvolley',   name:'Trick Volley',   desc:'Trick Shot’s free arrow can itself trigger Twin Fang and Serpent’s Sting.' } },
+    templar:       { cls:'templar',       pieces:{ helmet:'plate', chest:'plate', gauntlets:'chain', boots:'chain' },
+      b2:{ key:'mercy',         name:'Mercy',          desc:'Lay on Hands mends 40% of the damage instead of 20%.' },
+      bf:{ key:'blessingofhaste',name:'Blessing of Haste',desc:'Beacon of Faith also speeds your own attacks, not just familiars’.' } },
+    knight:        { cls:'knight',        pieces:{ helmet:'chain', chest:'plate', gauntlets:'chain', boots:'plate' },
+      b2:{ key:'unstoppableforce',name:'Unstoppable Force',desc:'At max Momentum, your hits deal +25% damage.' },
+      bf:{ key:'onslaught',     name:'Onslaught',      desc:'At max Momentum, every 5th strike lands a heavy bonus blow.' } },
+    assassin:      { cls:'assassin',      pieces:{ helmet:'tailoring', chest:'tailoring', gauntlets:'chain', boots:'tailoring' },
+      b2:{ key:'ambush',        name:'Ambush',         desc:'The strike out of Vanish is a guaranteed Critical Hit.' },
+      bf:{ key:'shadowstep',    name:'Shadowstep',     desc:'The Vanish window arms in 3s instead of 4s.' } },
+    thunderfury:   { cls:'thunderfury',   pieces:{ helmet:'tailoring', chest:'tailoring', gauntlets:'tailoring', boots:'tailoring' },
+      b2:{ key:'supercell',     name:'Supercell',      desc:'Static Charge builds twice as fast.' },
+      bf:{ key:'overcharge',    name:'Overcharge',     desc:'Static Charge discharges at 4 stacks and hits harder.' } },
+    treasureHunter:{ cls:'treasureHunter',pieces:{ helmet:'chain', chest:'plate', gauntlets:'tailoring', boots:'chain' },
+      b2:{ key:'blessedarsenal',name:'Blessed Arsenal',desc:'Prospector’s per-item damage rises to +15%.' },
+      bf:{ key:'widerappraisal',name:'Wider Appraisal',desc:'Appraiser & Connoisseur also count items one rarity tier lower.' } },
+    frostwarden:   { cls:'frostwarden',   pieces:{ helmet:'chain', chest:'chain', gauntlets:'tailoring', boots:'tailoring' },
+      b2:{ key:'deepchill',     name:'Deep Chill',     desc:'Chill’s cap rises to 8 stacks.' },
+      bf:{ key:'hoarfrost',     name:'Hoarfrost',      desc:'Your Chill also reduces the foe’s outgoing damage.' } },
+    plaguebearer:  { cls:'plaguebearer',  pieces:{ helmet:'leather', chest:'leather', gauntlets:'tailoring', boots:'leather' },
+      b2:{ key:'plaguebloom',   name:'Plague Bloom',   desc:'Poison stacks higher and ticks for more.' },
+      bf:{ key:'pestilence',    name:'Pestilence',     desc:'Killing a poisoned foe carries its poison to the next foe.' } },
+    berserker:     { cls:'berserker',     bareHead:true, pieces:{ chest:'leather', gauntlets:'tailoring', boots:'tailoring' },
+      b2:{ key:'undyingrage',   name:'Undying Rage',   desc:'Blood Pact’s HP cost can never drop you below 1 HP.' },
+      bf:{ key:'frenziedblows', name:'Frenzied Blows', desc:'The lower your Health, the faster you attack.' } },
+    sentinel:      { cls:'sentinel',      pieces:{ helmet:'chain', chest:'chain', gauntlets:'chain', boots:'chain' },
+      b2:{ key:'barbedplating', name:'Barbed Plating', desc:'A share of your Armor rating is added to all your reflect damage.' },
+      bf:{ key:'unbreakablewill',name:'Unbreakable Will',desc:'+Armor, and you can no longer be Critically Hit.' } },
+    spellblade:    { cls:'spellblade',    pieces:{ helmet:'chain', chest:'chain', gauntlets:'leather', boots:'leather' },
+      b2:{ key:'echochamber',   name:'Echo Chamber',   desc:'Spell Echo’s base chance rises to 40%.' },
+      bf:{ key:'resonantcrit',  name:'Resonant Crit',  desc:'Echoes can Critically Hit on their own.' } },
+    pyromancer:    { cls:'pyromancer',    pieces:{ helmet:'tailoring', chest:'tailoring', gauntlets:'tailoring', boots:'tailoring' },
+      b2:{ key:'wildfire',      name:'Wildfire',       desc:'Burn’s cap rises to 8 stacks.' },
+      bf:{ key:'emberburst',    name:'Ember Burst',    desc:'Killing a burning foe carries its Burn to the next foe.' } },
+    sharpshooter:  { cls:'sharpshooter',  pieces:{ helmet:'leather', chest:'leather', gauntlets:'tailoring', boots:'leather' },
+      b2:{ key:'deadeye',       name:'Deadeye',        desc:'+flat Accuracy, feeding every accuracy-scaling perk.' },
+      bf:{ key:'longshot',      name:'Long Shot',      desc:'Your damage ramps the longer you attack without taking a hit.' } },
+    juggernaut:    { cls:'juggernaut',    pieces:{ helmet:'plate', chest:'plate', gauntlets:'plate', boots:'plate' },
+      b2:{ key:'heavyhitter',   name:'Heavy Hitter',   desc:'Wind-Up’s damage bonus rises to +60%.' },
+      bf:{ key:'momentumswing', name:'Momentum Swing', desc:'The longer since your last swing, the more damage it deals.' } },
+    nightblade:    { cls:'nightblade',    pieces:{ helmet:'leather', chest:'leather', gauntlets:'leather', boots:'leather' },
+      b2:{ key:'resistancerot', name:'Resistance Rot', desc:'Your Dark damage also strips the foe’s resistances.' },
+      bf:{ key:'malediction',   name:'Malediction',    desc:'Every hit also applies a second ailment, fueling Void Resonance.' } },
+    executioner:   { cls:'executioner',   bareHead:true, pieces:{ chest:'chain', gauntlets:'chain', boots:'leather' },
+      b2:{ key:'execute',       name:'Execute',        desc:'Non-boss foes below 15% Health are slain instantly.' },
+      bf:{ key:'adrenalvigor',  name:'Adrenal Vigor',  desc:'While Reaping Vigor stacks are held, you also attack faster.' } },
+    ranger:        { cls:'ranger',        pieces:{ helmet:'leather', chest:'leather', gauntlets:'leather', boots:'tailoring' },
+      b2:{ key:'persistentailments',name:'Persistent Ailments',desc:'Your ailments last noticeably longer.' },
+      bf:{ key:'toxicfletching',name:'Toxic Fletching',desc:'Each ailment’s proc chance rises to 40%.' } },
+    samurai:       { cls:'samurai',       pieces:{ helmet:'leather', chest:'leather', gauntlets:'leather', boots:'leather' },
+      b2:{ key:'unbrokenfocus', name:'Unbroken Focus', desc:'Focus builds two stacks per landed hit.' },
+      bf:{ key:'flowingstrikes',name:'Flowing Strikes',desc:'At max Focus, you also attack faster.' } },
+    lumen:         { cls:'lumen',         pieces:{ helmet:'leather', chest:'leather', gauntlets:'leather', boots:'leather' },
+      b2:{ key:'radiantsurge',  name:'Radiant Surge',  desc:'Reflected Light heals for 25% of damage instead of 15%.' },
+      bf:{ key:'sanctuary',     name:'Sanctuary',      desc:'Everfull’s shield cap rises to 40% max Health.' } },
+    reaver:        { cls:'reaver',        pieces:{ helmet:'chain', chest:'chain', gauntlets:'leather', boots:'leather' },
+      b2:{ key:'rabid',         name:'Rabid',          desc:'Frenzied Rending’s Bleed cap rises to 8 stacks.' },
+      bf:{ key:'feedingfrenzy', name:'Feeding Frenzy', desc:'Your attack speed scales with the foe’s Bleed stacks.' } }
+  };
+  // Full-set threshold per class (bare-head classes are 3-piece sets, everyone else 4).
+  Object.keys(D1_SET_DEFS).forEach(function(id){ var d = D1_SET_DEFS[id]; d.full = Object.keys(d.pieces).length; });
+  var D1_SET_CLASS_IDS = Object.keys(D1_SET_DEFS);
+  // Count how many of a class's set pieces are currently equipped (a worn body-armor slot whose unique
+  // carries set===cls). Gated on pieces worn -- NOT on the active class -- so the 2-piece tier is reachable
+  // before the full class kit is assembled, and mixed-set builds are allowed (like the legendaries).
+  function setPiecesWorn(cls, st){ st = st || state; if(!st.bodyArmor) return 0; var n = 0;
+    for(var i=0;i<BODY_ARMOR_SLOTS.length;i++){ var s = st.bodyArmor[BODY_ARMOR_SLOTS[i]]; if(!s || !s.uid) continue;
+      var u = st.uniqueItems && st.uniqueItems[s.uid]; if(u && u.set === cls) n++; }
+    return n; }
+  // Is a class's set bonus live? threshold: 2 for the 2-piece bonus, 'full' for the capstone (3 or 4 pieces).
+  function setBonusActive(cls, threshold, st){ st = st || state; var d = D1_SET_DEFS[cls]; if(!d) return false;
+    return setPiecesWorn(cls, st) >= (threshold === 'full' ? d.full : threshold); }
+  function set2(cls, st){ return setBonusActive(cls, 2, st); }
+  function setFull(cls, st){ return setBonusActive(cls, 'full', st); }
   ALL_MAIN_SKILL_IDS = ALL_MAIN_SKILL_IDS.concat(CLASS_SKILL_IDS);
   function classReqMet(cd, st){ return cd.reqParts.every(function(p){ return p.met(st); }); }
   // Only one class can be active at a time; the first whose full gear set is worn wins.
@@ -24292,7 +24387,7 @@
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
-      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
+      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, sharpshooterAccOverDodge:sharpshooterAccOverDodge, sharpshooterEagleEyeCrit:sharpshooterEagleEyeCrit, sharpshooterPinpointMult:sharpshooterPinpointMult, sharpshooterFocusCritDmg:sharpshooterFocusCritDmg, sharpshooterArmorPierce:sharpshooterArmorPierce, sharpshooterPatienceMult:sharpshooterPatienceMult, SHARP_EAGLE_CAP:SHARP_EAGLE_CAP, SHARP_PINPOINT_CAP:SHARP_PINPOINT_CAP, SHARP_FOCUS_CAP:SHARP_FOCUS_CAP, SHARP_PATIENCE_CAP:SHARP_PATIENCE_CAP, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautSmashReady:juggernautSmashReady, juggernautFuryStacks:juggernautFuryStacks, juggernautArmorPierce:juggernautArmorPierce, JUG_WINDUP_DMG:JUG_WINDUP_DMG, JUG_WINDUP_SLOW:JUG_WINDUP_SLOW, JUG_SMASH_EVERY:JUG_SMASH_EVERY, JUG_CONCUSS_MS:JUG_CONCUSS_MS, JUG_FURY_PER:JUG_FURY_PER, JUG_FURY_MAX:JUG_FURY_MAX, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeRuneHungerMult:spellbladeRuneHungerMult, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, spellbladeEchoChance:spellbladeEchoChance, equippedEnchantCount:equippedEnchantCount, spellbladeEnchantBoost:spellbladeEnchantBoost, SPELLBLADE_RUNEHUNGER_PER:SPELLBLADE_RUNEHUNGER_PER, SPELLBLADE_CRITRUNE_PER:SPELLBLADE_CRITRUNE_PER, SPELLBLADE_ECHO_PCT:SPELLBLADE_ECHO_PCT, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, legendaryDmgMult:legendaryDmgMult, legendaryDodgeBonus:legendaryDodgeBonus, legendaryLifestealPct:legendaryLifestealPct, legWastingCurseIncomingMult:legWastingCurseIncomingMult, legNotePoisonStart:legNotePoisonStart, legVanishWindowReady:legVanishWindowReady, samuraiFocusCap:samuraiFocusCap, knightMomentumPerStack:knightMomentumPerStack, legDistinctEnchantCount:legDistinctEnchantCount, legEchoDmgMult:legEchoDmgMult, legShieldBashDamage:legShieldBashDamage, legReflectCanCrit:legReflectCanCrit, legReflectCritMult:legReflectCritMult, legendaryCritDmg:legendaryCritDmg, legEarthshakerBuild:legEarthshakerBuild, legEarthshakerConsume:legEarthshakerConsume, LEG_TREMOR_CAP:LEG_TREMOR_CAP, LEG_TREMOR_MULT:LEG_TREMOR_MULT, CRIT_DAMAGE_MULT:CRIT_DAMAGE_MULT, legendaryAccuracyBonus:legendaryAccuracyBonus, legRangerAilmentRolls:legRangerAilmentRolls, LEG_CHAINSHOT_MAX:LEG_CHAINSHOT_MAX, legendaryCritChance:legendaryCritChance, legThunderMaxStacks:legThunderMaxStacks, legRetributionArmed:legRetributionArmed, legRetributionConsume:legRetributionConsume, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, heraldGuardMaxStacks:heraldGuardMaxStacks, HERALD_GUARD_MAX_STACKS:HERALD_GUARD_MAX_STACKS, HERALD_GUARD_PER_STACK:HERALD_GUARD_PER_STACK, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legChargedRiposteArmed:legChargedRiposteArmed, legChargedRiposteConsume:legChargedRiposteConsume, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
