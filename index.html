@@ -5291,6 +5291,23 @@
   // Feeding Frenzy (Reaver full) / Flowing Strikes (Samurai full): attack-speed set capstones (folded into classAttackSpeedMult).
   function reaverFeedingFrenzyMult(st){ st = st || state; if(!setFull('reaver', st)) return 1; var a = st.activity; var stacks = (a && a.type==='combat' && (a.bleedUntil||0) > Date.now()) ? (a.bleedStacks||0) : 0; return 1 - Math.min(0.30, stacks * 0.04); }
   function samuraiFlowingStrikesMult(st){ st = st || state; return (setFull('samurai', st) && samuraiFocusStacks(st) >= samuraiFocusCap(st)) ? 0.80 : 1; }
+  // Batch 2 -- crit, tempo & momentum.
+  function jugWindupDmg(st){ return set2('juggernaut', st) ? 1.60 : JUG_WINDUP_DMG; }             // Heavy Hitter (2pc): Wind-Up +60%
+  function knightUnstoppableMult(st){ st = st || state; return (set2('knight', st) && (st.knightStacks||0) >= knightStackCap(st)) ? 1.25 : 1; } // Unstoppable Force (2pc): +25% at max Momentum
+  function thunderStaticPerHit(st){ return set2('thunderfury', st) ? 2 : 1; }                     // Supercell (2pc): Static builds 2x
+  function thunderStaticThreshold(st){ return setFull('thunderfury', st) ? 4 : THUNDER_STATIC_MAX; }         // Overcharge (full): discharge at 4
+  function thunderDischargeMult(st){ return setFull('thunderfury', st) ? 2.25 : THUNDER_STATIC_DISCHARGE_MULT; } // Overcharge (full): bigger burst
+  function deadeyeAccuracyBonus(st){ return set2('sharpshooter', st) ? 0.20 : 0; }                // Deadeye (2pc): +20% Accuracy
+  function duelistFlourishStabs(st){ return setFull('duelist', st) ? 5 : 3; }                     // Redoublement (full): 5 stabs
+  function assassinVanishMs(st){ return setFull('assassin', st) ? 3000 : ASSASSIN_VANISH_MS; }    // Shadowstep (full): 3s Vanish window
+  // Momentum Swing (Juggernaut full): the longer since your last swing, the harder it lands (+10%/s, cap +50%).
+  var SET_MOMENTUM_SWING_PER_SEC = 0.10, SET_MOMENTUM_SWING_CAP = 0.50;
+  function jugMomentumSwingMult(st){ st = st || state; if(!setFull('juggernaut', st)) return 1; var a = st.activity; if(!a || a.type!=='combat' || !a.lastSwingAt) return 1; return 1 + Math.min(SET_MOMENTUM_SWING_CAP, Math.max(0, (Date.now() - a.lastSwingAt)/1000) * SET_MOMENTUM_SWING_PER_SEC); }
+  // Long Shot (Sharpshooter full): damage ramps the longer you go without being hit (+5%/s, cap +50%).
+  var SET_LONGSHOT_PER_SEC = 0.05, SET_LONGSHOT_CAP = 0.50;
+  function longShotMult(st){ st = st || state; if(!setFull('sharpshooter', st)) return 1; var a = st.activity; if(!a || a.type!=='combat') return 1; var since = a.lastDamagedAt || a.duelStartedAt || 0; if(!since) return 1; return 1 + Math.min(SET_LONGSHOT_CAP, Math.max(0, (Date.now() - since)/1000) * SET_LONGSHOT_PER_SEC); }
+  // One PLAYER_DMG_MODS row for the Batch 2 outgoing-damage set-bonuses.
+  function setDmgMult(monster, st){ st = st || state; return knightUnstoppableMult(st) * jugMomentumSwingMult(st) * longShotMult(st); }
   ALL_MAIN_SKILL_IDS = ALL_MAIN_SKILL_IDS.concat(CLASS_SKILL_IDS);
   function classReqMet(cd, st){ return cd.reqParts.every(function(p){ return p.met(st); }); }
   // Only one class can be active at a time; the first whose full gear set is worn wins.
@@ -5383,7 +5400,7 @@
     if(!assassinBonus(80, st)) return false;
     var a = st.activity; if(!a || a.type!=='combat') return false;
     var last = a.lastDamagedAt || a.duelStartedAt || 0;
-    return last > 0 && (Date.now() - last) >= ASSASSIN_VANISH_MS;
+    return last > 0 && (Date.now() - last) >= assassinVanishMs(st); // Shadowstep set: 3s window
   }
   function thunderfuryBonus(reqLevel, st){ return classBonusActive('thunderfury', reqLevel, st); }
   // Thunderfury "Chain Lightning" (Lv1): a crit-stack counter (0-7). +1 per Critical Hit, reset on a
@@ -5556,6 +5573,7 @@
   function onPlayerDodged(){
     duelistDodgeBonusCast();
     if(duelistBonus(20)) state.duelistFootworkStacks = Math.min(DUELIST_FOOTWORK_MAX, (state.duelistFootworkStacks || 0) + 1);
+    if(set2('duelist')) state.duelistRiposteReady = true; // Riposte set: the next strike after a Dodge is a guaranteed crit
   }
   function reaperBonus(reqLevel, st){ return classBonusActive('reaper', reqLevel, st); }
   // Reaper Lv 1 (Death's Harvest): steal 10% of the damage you deal as Health.
@@ -5770,7 +5788,7 @@
     st = st || state; var m = 1;
     m *= sharpshooterPinpointMult(st);                                      // Sharpshooter Pinpoint (Lv20): accuracy-over-dodge -> damage
     m *= sharpshooterPatienceMult(st);                                      // Sharpshooter Sniper's Patience (Lv80): ramps on one foe
-    if(juggernautBonus(1, st)) m *= JUG_WINDUP_DMG;                          // Juggernaut Wind-Up: +45% damage (swings 25% slower)
+    if(juggernautBonus(1, st)) m *= jugWindupDmg(st);                        // Juggernaut Wind-Up: +45% damage (+60% with Heavy Hitter set); swings 25% slower
     m *= voidDmgMult(st);                                                    // Voidshadow: Vulnerability x Void Resonance x Soul Tax
     if(executionerBonus(20, st) && enemyHpFrac(monster, st) < executionerReapThreshold(st)) m *= 1.30; // Executioner Reap the Weak (Lv20); threshold raised by Rising Guillotine (Lv40)
     if(reaverBonus(1, st)) m *= 1.25;                                        // Reaver Savagery
@@ -7970,7 +7988,7 @@
     var physSum = 0;
     accuracyPhysiques().forEach(function(id){ physSum += getLevel((st.physique && st.physique[id]) || 0); });
     var prof = st.equippedMainhand ? getLevel(st.xp[st.equippedMainhand] || 0) : 0;
-    return Math.round((physSum*ACCURACY_PHYS_WEIGHT + prof*ACCURACY_PROF_WEIGHT) * classAccuracyMult(st) * (1 + getRingAccuracyBonus(st) + legendaryCloakBonus('accuracy', st) + legendaryAccuracyBonus(st))); // + Steady Aim (legendary bow)
+    return Math.round((physSum*ACCURACY_PHYS_WEIGHT + prof*ACCURACY_PROF_WEIGHT) * classAccuracyMult(st) * (1 + getRingAccuracyBonus(st) + legendaryCloakBonus('accuracy', st) + legendaryAccuracyBonus(st) + deadeyeAccuracyBonus(st))); // + Steady Aim (legendary bow); + Deadeye (Sharpshooter set)
   }
   function monsterDodge(m){
     if(!m) return 0;
@@ -11023,6 +11041,7 @@
     { name:'spellbladeRuneHunger',  fn:function(c){ return spellbladeRuneHungerMult(); } },
     { name:'newClassPassives',      fn:function(c){ return newClassDmgMult(c.monster); } },
     { name:'legendaryGear',         fn:function(c){ return legendaryDmgMult(c.monster); } },
+    { name:'setBonuses',            fn:function(c){ return setDmgMult(c.monster); } },
     { name:'weaponsmithEdge',       fn:function(c){ return weaponsmithEdgeMult(); } },
     { name:'zealotry',              fn:function(c){ return zealotryDmgMult(); } },
     { name:'runicAttunement',       fn:function(c){ return (c.isWandAttack || c.isScepterAttack) ? runicAttunementMult() : 1; } },
@@ -11089,7 +11108,10 @@
     var samuraiFirstStrike = !isOffhand && samuraiBonus(1) && !!(act && act.samuraiFirstStrike); // Samurai Iaijutsu: the opening landed strike of each duel is a guaranteed crit
     var juggernautSmash = !isOffhand && juggernautSmashReady(state); // Juggernaut Overhead Smash: every 4th landed main-hand hit is a guaranteed crit
     var _chargedRiposteCrit = !isOffhand && legChargedRiposteConsume(state); // Charged Riposte (legendary ward): the strike after a ward reflect is a guaranteed crit
-    var isCrit = forcedCrit || samuraiFirstStrike || juggernautSmash || _chargedRiposteCrit || Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawEagleEyeCrit(monster) + spellbladeCriticalRunesCrit() + newClassCritChance() + legendaryCloakBonus('critchance', state) + legendaryCritChance(state) + (enchTot.critChance||0)/100); // + Quickdraw Eagle Eye, Spellblade Critical Runes, new-class passives, legendary Shroud, Tempest, equipped Crit Chance enchants
+    var _setAmbush = !isOffhand && set2('assassin') && assassinVanishReady(); // Ambush (Assassin set): the strike out of Vanish is a guaranteed crit
+    var _setRiposte = !isOffhand && set2('duelist') && !!state.duelistRiposteReady; // Riposte (Duelist set): the first strike after a Dodge is a guaranteed crit
+    if(_setRiposte) state.duelistRiposteReady = false; // consumed by this strike
+    var isCrit = forcedCrit || samuraiFirstStrike || juggernautSmash || _chargedRiposteCrit || _setAmbush || _setRiposte || Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawEagleEyeCrit(monster) + spellbladeCriticalRunesCrit() + newClassCritChance() + legendaryCloakBonus('critchance', state) + legendaryCritChance(state) + (enchTot.critChance||0)/100); // + Quickdraw Eagle Eye, Spellblade Critical Runes, new-class passives, legendary Shroud, Tempest, equipped Crit Chance enchants
     // A Critical Hit that ignores the foe's armour: Juggernaut Pulverize (Lv80) / Sharpshooter Armor-Splitter (Lv60).
     if(!isOffhand && advantage < 1){ var _critPierce = Math.max(juggernautArmorPierce(isCrit, state), sharpshooterArmorPierce(isCrit, state)); if(_critPierce > 0) advantage += (1 - advantage) * _critPierce; }
     // Wands are magical, so the melee/bow strength physiques don't scale them -- only the generic
@@ -11141,6 +11163,12 @@
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     if(!isOffhand && isCrit) legEarthshakerBuild(act, state); // Earthshaker: each crit charges the Tremor meter (primes the NEXT swing)
+    // Onslaught (Knight full): at max Momentum, every 5th strike lands a heavy bonus blow.
+    if(!isOffhand && setFull('knight') && (state.knightStacks||0) >= knightStackCap(state) && act.monsterHp > 0){
+      act.onslaughtCount = (act.onslaughtCount||0) + 1;
+      if(act.onslaughtCount >= 5){ act.onslaughtCount = 0; var _ons = Math.max(1, Math.round(dmgToMonster * 1.5)); act.monsterHp -= _ons; spawnCombatFloat('Onslaught -'+fmt(_ons), 'ft-crit', true); }
+    }
+    if(!isOffhand) act.lastSwingAt = Date.now(); // Momentum Swing (Juggernaut full) reads the gap since the previous swing
     // Assassin twin-claw on-hit (both hands): Lacerate bleed, Hemorrhage refresh, Vanish consume, Rhythm flurry.
     if(activeClassId(state)==='assassin'){
       if(assassinBonus(40)) assassinApplyLacerate(act);                                   // Lacerate: stack a Bleed
@@ -11252,10 +11280,10 @@
       // Static Charge (Lv20): every landed hit builds a Static stack; when the meter fills, this hit
       // discharges a lightning burst at the enemy and empties it. (Grounding Rod also feeds the meter.)
       if(thunderfuryBonus(20)){
-        act.staticCharge = Math.min(THUNDER_STATIC_MAX, (act.staticCharge || 0) + 1);
-        if(act.staticCharge >= THUNDER_STATIC_MAX){
+        act.staticCharge = Math.min(THUNDER_STATIC_MAX, (act.staticCharge || 0) + thunderStaticPerHit(state)); // Supercell: +2/hit
+        if(act.staticCharge >= thunderStaticThreshold(state)){ // Overcharge: discharge at 4 stacks
           act.staticCharge = 0;
-          var _discharge = Math.round(dmgToMonster * THUNDER_STATIC_DISCHARGE_MULT);
+          var _discharge = Math.round(dmgToMonster * thunderDischargeMult(state));
           if(_discharge > 0){ act.monsterHp -= _discharge; spawnCombatFloat('⚡ Discharge -'+fmt(_discharge), 'ft-crit', true); }
         }
       }
@@ -11406,7 +11434,7 @@
         if(state.duelistPoise >= DUELIST_POISE_MAX){
           state.duelistPoise = 0;
           spawnFloatingText('Flourish!', 'ft-rare');
-          for(var _fl=0; _fl<3 && state.activity && state.activity.type==='combat' && state.activity.monsterHp>0; _fl++) playerAttackTick(true);
+          for(var _fl=0; _fl<duelistFlourishStabs(state) && state.activity && state.activity.type==='combat' && state.activity.monsterHp>0; _fl++) playerAttackTick(true); // Redoublement set: 5 stabs
         }
       }
       // Quickdraw Lv 1 (Trick Shot): a Critical Hit immediately looses a free follow-up arrow. Normally a
@@ -11499,6 +11527,7 @@
     act.trickChain = 0; // Chain Shot's follow-up counter resets per foe
     act.burnSpreadAccum = 0; // Ember Storm's spread timer resets with the Burn
     act.nightshroudUntil = 0; // Nightshroud's Enfeeble doesn't carry between foes
+    act.onslaughtCount = 0; act.lastSwingAt = 0; // Onslaught tally + Momentum Swing clock restart per foe
     act.juggernautSwings = 0; act.juggernautFuryStacks = 0; // Juggernaut Overhead Smash tally + Building Fury reset per foe
     state.heraldGuardStacks = 0; // Herald Perfect Guard streak starts fresh against each foe
     // Duelist: each new foe is a fresh duel -- reset the ramp clock, the once-per-fight Disengage, and the stacks.
@@ -11662,7 +11691,7 @@
     if(dmgToPlayer > 0 && act && act.type==='combat') act.lastDamagedAt = Date.now(); // Assassin Vanish: a landed blow restarts the 4s-untouched clock
     if(dmgToPlayer > 0 && act && act.type==='combat' && legActive('nightshroud')) act.nightshroudUntil = Date.now() + LEG_NIGHTSHROUD_MS; // Nightshroud: a foe that damages you is Enfeebled
     // Thunderfury Grounding Rod (Lv40): a blow you take earths part of its force into a Static stack, charging your discharge faster.
-    if(dmgToPlayer > 0 && thunderfuryBonus(40) && act && act.type==='combat'){ act.staticCharge = Math.min(THUNDER_STATIC_MAX, (act.staticCharge || 0) + 1); }
+    if(dmgToPlayer > 0 && thunderfuryBonus(40) && act && act.type==='combat'){ act.staticCharge = Math.min(THUNDER_STATIC_MAX, (act.staticCharge || 0) + thunderStaticPerHit(state)); }
     if(dmgToPlayer > 0) spawnCombatFloat('-'+fmt(dmgToPlayer)+' '+(monster.element?elementIcon(monster.element):''), 'ft-taken', false); // damage taken + its element
     if(monster.element) awardElementXp(monster.element, dmgToPlayer); // Elemental Attunement also trains by taking that element's damage
     if(wardReflected > 0){
@@ -24509,7 +24538,7 @@
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
-      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, SET_TIER_INDEX:SET_TIER_INDEX, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
+      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, SET_TIER_INDEX:SET_TIER_INDEX, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, knightUnstoppableMult:knightUnstoppableMult, thunderStaticPerHit:thunderStaticPerHit, thunderStaticThreshold:thunderStaticThreshold, thunderDischargeMult:thunderDischargeMult, deadeyeAccuracyBonus:deadeyeAccuracyBonus, duelistFlourishStabs:duelistFlourishStabs, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, sharpshooterAccOverDodge:sharpshooterAccOverDodge, sharpshooterEagleEyeCrit:sharpshooterEagleEyeCrit, sharpshooterPinpointMult:sharpshooterPinpointMult, sharpshooterFocusCritDmg:sharpshooterFocusCritDmg, sharpshooterArmorPierce:sharpshooterArmorPierce, sharpshooterPatienceMult:sharpshooterPatienceMult, SHARP_EAGLE_CAP:SHARP_EAGLE_CAP, SHARP_PINPOINT_CAP:SHARP_PINPOINT_CAP, SHARP_FOCUS_CAP:SHARP_FOCUS_CAP, SHARP_PATIENCE_CAP:SHARP_PATIENCE_CAP, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautSmashReady:juggernautSmashReady, juggernautFuryStacks:juggernautFuryStacks, juggernautArmorPierce:juggernautArmorPierce, JUG_WINDUP_DMG:JUG_WINDUP_DMG, JUG_WINDUP_SLOW:JUG_WINDUP_SLOW, JUG_SMASH_EVERY:JUG_SMASH_EVERY, JUG_CONCUSS_MS:JUG_CONCUSS_MS, JUG_FURY_PER:JUG_FURY_PER, JUG_FURY_MAX:JUG_FURY_MAX, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeRuneHungerMult:spellbladeRuneHungerMult, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, spellbladeEchoChance:spellbladeEchoChance, equippedEnchantCount:equippedEnchantCount, spellbladeEnchantBoost:spellbladeEnchantBoost, SPELLBLADE_RUNEHUNGER_PER:SPELLBLADE_RUNEHUNGER_PER, SPELLBLADE_CRITRUNE_PER:SPELLBLADE_CRITRUNE_PER, SPELLBLADE_ECHO_PCT:SPELLBLADE_ECHO_PCT, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, legendaryDmgMult:legendaryDmgMult, legendaryDodgeBonus:legendaryDodgeBonus, legendaryLifestealPct:legendaryLifestealPct, legWastingCurseIncomingMult:legWastingCurseIncomingMult, legNotePoisonStart:legNotePoisonStart, legVanishWindowReady:legVanishWindowReady, samuraiFocusCap:samuraiFocusCap, knightMomentumPerStack:knightMomentumPerStack, legDistinctEnchantCount:legDistinctEnchantCount, legEchoDmgMult:legEchoDmgMult, legShieldBashDamage:legShieldBashDamage, legReflectCanCrit:legReflectCanCrit, legReflectCritMult:legReflectCritMult, legendaryCritDmg:legendaryCritDmg, legEarthshakerBuild:legEarthshakerBuild, legEarthshakerConsume:legEarthshakerConsume, LEG_TREMOR_CAP:LEG_TREMOR_CAP, LEG_TREMOR_MULT:LEG_TREMOR_MULT, CRIT_DAMAGE_MULT:CRIT_DAMAGE_MULT, legendaryAccuracyBonus:legendaryAccuracyBonus, legRangerAilmentRolls:legRangerAilmentRolls, LEG_CHAINSHOT_MAX:LEG_CHAINSHOT_MAX, legendaryCritChance:legendaryCritChance, legThunderMaxStacks:legThunderMaxStacks, legRetributionArmed:legRetributionArmed, legRetributionConsume:legRetributionConsume, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, heraldGuardMaxStacks:heraldGuardMaxStacks, HERALD_GUARD_MAX_STACKS:HERALD_GUARD_MAX_STACKS, HERALD_GUARD_PER_STACK:HERALD_GUARD_PER_STACK, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legChargedRiposteArmed:legChargedRiposteArmed, legChargedRiposteConsume:legChargedRiposteConsume, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,

@@ -2577,6 +2577,50 @@
     near(FF.classAttackSpeedMult(samu), 1, 'no Flowing Strikes below max Focus');
   });
 
+  // ---- D1 set bonuses, Batch 2: crit / tempo / momentum ----------------------------------------------
+  suite('D1 set bonuses: crit, tempo & momentum', function(){
+    function setSt(cls, count, extra){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, activity:{type:'combat', monsterHp:100}, playerHp:100 };
+      var slots = Object.keys(FF.D1_SET_DEFS[cls].pieces);
+      for(var i=0;i<count && i<slots.length;i++){ var uid='sp'+i; st.uniqueItems[uid] = { uid:uid, set:cls };
+        st.bodyArmor[slots[i]] = { uid:uid, material:FF.D1_SET_DEFS[cls].pieces[slots[i]], tier:22, rarity:'rare' }; }
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+    var now = Date.now();
+
+    // The Batch 2 outgoing-damage row exists in the ordered table.
+    ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'setBonuses'; }), 'setBonuses is a named PLAYER_DMG_MODS row');
+
+    // Juggernaut Heavy Hitter (2pc): Wind-Up 45% -> 60%.
+    near(FF.jugWindupDmg(setSt('juggernaut',2)), 1.60, 'Heavy Hitter: Wind-Up +60%');
+    near(FF.jugWindupDmg(setSt('juggernaut',1)), FF.JUG_WINDUP_DMG, '1 piece -> base Wind-Up');
+    // Knight Unstoppable Force (2pc): +25% only at max Momentum.
+    near(FF.knightUnstoppableMult(setSt('knight',2, { knightStacks:5 })), 1.25, 'Unstoppable Force: +25% at max Momentum');
+    near(FF.knightUnstoppableMult(setSt('knight',2, { knightStacks:2 })), 1, 'no Unstoppable Force below max Momentum');
+    near(FF.knightUnstoppableMult(setSt('knight',1, { knightStacks:5 })), 1, '1 piece -> no Unstoppable Force');
+    // Thunderfury Supercell (2pc) + Overcharge (full).
+    eq(FF.thunderStaticPerHit(setSt('thunderfury',2)), 2, 'Supercell: Static builds 2/hit');
+    eq(FF.thunderStaticThreshold(setSt('thunderfury',4)), 4, 'Overcharge: discharge at 4 stacks');
+    eq(FF.thunderStaticThreshold(setSt('thunderfury',2)), FF.THUNDER_STATIC_MAX, '2 of 4 -> base discharge threshold');
+    ok(FF.thunderDischargeMult(setSt('thunderfury',4)) > FF.thunderDischargeMult(setSt('thunderfury',2)), 'Overcharge: bigger discharge burst');
+    // Sharpshooter Deadeye (2pc).
+    near(FF.deadeyeAccuracyBonus(setSt('sharpshooter',2)), 0.20, 'Deadeye: +20% Accuracy');
+    near(FF.deadeyeAccuracyBonus(setSt('sharpshooter',1)), 0, '1 piece -> no Deadeye');
+    // Duelist Redoublement (full).
+    eq(FF.duelistFlourishStabs(setSt('duelist',4)), 5, 'Redoublement: Flourish = 5 stabs');
+    eq(FF.duelistFlourishStabs(setSt('duelist',2)), 3, '2 of 4 -> 3 stabs');
+    // Assassin Shadowstep (full): 3s Vanish window.
+    eq(FF.assassinVanishMs(setSt('assassin',4)), 3000, 'Shadowstep: Vanish window arms in 3s');
+    eq(FF.assassinVanishMs(setSt('assassin',3)), 4000, '3 of 4 -> base 4s window');
+    // Time-ramp capstones: Momentum Swing (Juggernaut) + Long Shot (Sharpshooter).
+    near(FF.jugMomentumSwingMult(setSt('juggernaut',4, { activity:{type:'combat', lastSwingAt: now-3000} })), 1.30, 'Momentum Swing: +30% after a 3s gap', 1e-2);
+    near(FF.jugMomentumSwingMult(setSt('juggernaut',4, { activity:{type:'combat', lastSwingAt: now-20000} })), 1.50, 'Momentum Swing caps at +50%', 1e-2);
+    near(FF.jugMomentumSwingMult(setSt('juggernaut',2, { activity:{type:'combat', lastSwingAt: now-3000} })), 1, 'no Momentum Swing below the full set');
+    near(FF.longShotMult(setSt('sharpshooter',4, { activity:{type:'combat', lastDamagedAt: now-4000} })), 1.20, 'Long Shot: +20% after 4s untouched', 1e-2);
+    near(FF.longShotMult(setSt('sharpshooter',2, { activity:{type:'combat', lastDamagedAt: now-4000} })), 1, 'no Long Shot below the full set');
+  });
+
   suite('mastercraft: D1 legendary amulets', function(){
     // A state with a legendary Pendant seated in the Amulet slot.
     function amSt(key, rarity, extra){
