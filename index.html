@@ -710,6 +710,7 @@
   .arena-fx-bar{flex:1 1 auto;height:6px;border-radius:3px;background:var(--bg-deep);border:1px solid var(--border-light);overflow:hidden;}
   .arena-fx-fill{height:100%;transition:none;}
   .arena-fx-t{flex:0 0 auto;color:var(--text-faint);min-width:26px;text-align:right;}
+  .arena-fx-n{flex:0 0 auto;font-family:var(--font-mono);font-size:10px;font-weight:700;min-width:18px;text-align:right;}
   /* In-card combat consumables strip. */
   .arena-items{margin-top:10px;border-top:1px dashed var(--border-light);padding-top:8px;}
   .arena-items-active{font-family:var(--font-mono);font-size:11px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;}
@@ -15720,7 +15721,7 @@
     firebomb:{n:'+Firebomb',c:'#e8641e'}, potionPoison:{n:'+Toxin',c:'#6fae3a'}
   };
   function combatPlayerBuffs(){
-    var out=[], now=Date.now(), fb=state.familiarBuffs||{};
+    var out=[], now=Date.now(), fb=state.familiarBuffs||{}, a=state.activity;
     function add(key,until,name,color){ if((until||0)>now) out.push({key:key,until:until,name:name,color:color}); }
     add('dmg', fb.damageUntil, '+Damage', '#c8532a');
     add('armor', fb.armorUntil, '+Armor', '#6a7a88');
@@ -15728,15 +15729,29 @@
     add('bubble', fb.bubbleUntil, 'Bubble', '#5fd0e0');
     Object.keys(COMBAT_BUFF_META).forEach(function(k){ var mm=COMBAT_BUFF_META[k]; add(k, fb[k+'Until'], mm.n, mm.c); });
     add('enrage', state.summonerEnrageUntil, 'Host Enraged', '#c8302a');
+    // Class stack-buffs -- timerless; the bar fills toward the stack cap and a xN badge shows the count.
+    function addStack(key,active,val,cap,name,color){ if(active && (val||0) > 0) out.push({key:key,name:name,color:color,stacks:val,cap:Math.max(1,cap||1)}); }
+    addStack('momentum', knightBonus(1), state.knightStacks, knightStackCap(state), 'Momentum', '#c8a24a');
+    addStack('focus', samuraiBonus(60), a && a.samuraiFocus, samuraiFocusCap(state), 'Focus', '#b06ac8');
+    addStack('fury', juggernautBonus(60), a && a.juggernautFuryStacks, JUG_FURY_MAX, 'Fury', '#c8532a');
+    addStack('static', thunderfuryBonus(20), a && a.staticCharge, thunderStaticThreshold(state), 'Static', '#5a8ac8');
+    addStack('tcharge', thunderfuryBonus(1), state.thunderStacks, legThunderMaxStacks(state), 'Charge', '#6aa0d8');
+    addStack('hguard', heraldBonus(1), state.heraldGuardStacks, heraldGuardMaxStacks(state), 'Guard', '#6a7a88');
     return out;
   }
   function combatEnemyDebuffs(){
     var out=[], now=Date.now(), a=state.activity, fb=state.familiarBuffs||{}, cd=state.classDebuffs||{};
     if(!a || a.type!=='combat') return out;
-    function add(key,until,name,color){ if((until||0)>now) out.push({key:key,until:until,name:name,color:color}); }
+    function add(key,until,name,color,stacks){ if((until||0)>now) out.push({key:key,until:until,name:name,color:color,stacks:(stacks>0?stacks:undefined)}); }
     add('stun', a.enemyStunUntil, 'Stunned', '#e8d84a');
-    add('chill', a.enemyChillUntil, 'Chilled', '#7fd9d4');
-    add('bleed', a.bleedUntil, 'Bleeding', '#a63a2f');
+    add('chill', a.enemyChillUntil, 'Chilled', '#7fd9d4', a.chillStacks);
+    add('bleed', a.bleedUntil, 'Bleeding', '#a63a2f', a.bleedStacks);
+    add('frostbite', a.frostbiteUntil, 'Frostbite', '#5fb8d0', a.frostbiteStacks);
+    // Burn: normal Burn depletes on a timer; an Everburning (never-expiring) Burn shows as stacks only.
+    if(enemyBurning()){
+      if(legBurnNeverExpires() && (a.burnUntil||0) <= now) out.push({key:'burn', name:'Burning', color:'#e8641e', stacks:((a.burnStacks||0)>0?a.burnStacks:undefined), cap:pyroBurnCap(state)});
+      else add('burn', a.burnUntil, 'Burning', '#e8641e', a.burnStacks);
+    }
     add('ppoison', a.potionPoisonUntil, 'Poisoned', '#6fae3a');
     add('eslow', fb.enemySlowUntil, 'Slowed', '#7a8aa0');
     add('eweak', fb.enemyWeakenUntil, 'Weakened', '#8a97a6');
@@ -15745,7 +15760,7 @@
     add('sunder', cd.enemyArmorUntil, 'Sundered', '#c85a2a');
     if((a.voidVulnStacks||0) > 0 && (a.voidVulnUntil||0) > now){
       var _doomed = nightbladeBonus(80) && (a.voidVulnStacks||0) >= VOID_VULN_MAX;
-      add('voidvuln', a.voidVulnUntil, (_doomed ? 'Doomed' : 'Vulnerable x'+a.voidVulnStacks), '#8a5ac8');
+      add('voidvuln', a.voidVulnUntil, (_doomed ? 'Doomed' : 'Vulnerable'), '#8a5ac8', a.voidVulnStacks);
     }
     return out;
   }
@@ -15755,13 +15770,18 @@
     if(!list.length) return '';
     var now=Date.now(), h='<div class="arena-fx"><div class="arena-fx-title">'+title+'</div>';
     list.forEach(function(b){
-      var rem = Math.max(0, b.until-now);
-      _arenaFxPeak[b.key] = rem; // reset the bar to full at render time
+      var stackOnly = !b.until;                        // class stacks / Everburning have no countdown
+      var rem = b.until ? Math.max(0, b.until-now) : 0;
+      _arenaFxPeak[b.key] = rem;                        // reset the timer bar to full at render time
+      var pct = stackOnly ? clamp((b.stacks/(b.cap||b.stacks||1))*100, 0, 100) : 100; // stack bars fill toward the cap
+      var badge = (b.stacks != null) ? '<span class="arena-fx-n" id="arenaFxN-'+b.key+'" style="color:'+b.color+'">&times;'+b.stacks+'</span>' : '';
+      var timeLab = stackOnly ? '' : '<span class="arena-fx-t" id="arenaFxT-'+b.key+'">'+(rem/1000).toFixed(rem<10000?1:0)+'s</span>';
       h += '<div class="arena-fx-row">'
         + '<span style="width:12px;height:12px;border-radius:3px;background:'+b.color+';border:1px solid var(--border);flex:0 0 auto;"></span>'
         + '<span class="arena-fx-name">'+b.name+'</span>'
-        + '<span class="arena-fx-bar"><span class="arena-fx-fill" id="arenaFx-'+b.key+'" style="width:100%;background:'+b.color+'"></span></span>'
-        + '<span class="arena-fx-t" id="arenaFxT-'+b.key+'">'+(rem/1000).toFixed(rem<10000?1:0)+'s</span></div>';
+        + badge
+        + '<span class="arena-fx-bar"><span class="arena-fx-fill" id="arenaFx-'+b.key+'" style="width:'+pct+'%;background:'+b.color+'"></span></span>'
+        + timeLab + '</div>';
     });
     return h+'</div>';
   }
@@ -23316,11 +23336,16 @@
       if(_fxSig !== _arenaFxSig){ _arenaFxSig = _fxSig; needsRender = true; }
       else {
         combatPlayerBuffs().concat(combatEnemyDebuffs()).forEach(function(b){
+          var nEl = document.getElementById('arenaFxN-'+b.key); if(nEl && b.stacks != null) nEl.innerHTML = '&times;'+b.stacks; // live stack count
           var fill = document.getElementById('arenaFx-'+b.key); if(!fill) return;
-          var rem = Math.max(0, b.until - Date.now());
-          var peak = _arenaFxPeak[b.key] = Math.max(_arenaFxPeak[b.key]||0, rem);
-          fill.style.width = clamp(rem/Math.max(1,peak)*100, 0, 100)+'%';
-          var t = document.getElementById('arenaFxT-'+b.key); if(t) t.textContent = (rem/1000).toFixed(rem<10000?1:0)+'s';
+          if(b.until){ // timer-based: deplete the bar and tick the seconds label
+            var rem = Math.max(0, b.until - Date.now());
+            var peak = _arenaFxPeak[b.key] = Math.max(_arenaFxPeak[b.key]||0, rem);
+            fill.style.width = clamp(rem/Math.max(1,peak)*100, 0, 100)+'%';
+            var t = document.getElementById('arenaFxT-'+b.key); if(t) t.textContent = (rem/1000).toFixed(rem<10000?1:0)+'s';
+          } else { // stack-only: the bar reflects progress toward the cap
+            fill.style.width = clamp((b.stacks/(b.cap||1))*100, 0, 100)+'%';
+          }
         });
       }
     }
@@ -24682,7 +24707,7 @@
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
-      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, SET_TIER_INDEX:SET_TIER_INDEX, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, SET_NAMES:SET_NAMES, setName:setName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, knightUnstoppableMult:knightUnstoppableMult, thunderStaticPerHit:thunderStaticPerHit, thunderStaticThreshold:thunderStaticThreshold, thunderDischargeMult:thunderDischargeMult, deadeyeAccuracyBonus:deadeyeAccuracyBonus, duelistFlourishStabs:duelistFlourishStabs, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, heraldRipostePct:heraldRipostePct, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, undyingRageIncomingMult:undyingRageIncomingMult, berserkerFrenziedBlowsMult:berserkerFrenziedBlowsMult, templarLayOnHandsPct:templarLayOnHandsPct, templarBlessingOfHasteMult:templarBlessingOfHasteMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, spellbladeResonantCrit:spellbladeResonantCrit, voidVulnPerStack:voidVulnPerStack, voidMarkPerHit:voidMarkPerHit, quickdrawVenomPct:quickdrawVenomPct, quickdrawTwinFangChance:quickdrawTwinFangChance, treasureProspectorPer:treasureProspectorPer, setTreasureMult:setTreasureMult, EXEC_SET_EXECUTE_FRAC:EXEC_SET_EXECUTE_FRAC, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
+      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, SET_TIER_INDEX:SET_TIER_INDEX, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, SET_NAMES:SET_NAMES, setName:setName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, combatPlayerBuffs:combatPlayerBuffs, combatEnemyDebuffs:combatEnemyDebuffs, renderFxBars:renderFxBars, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, knightUnstoppableMult:knightUnstoppableMult, thunderStaticPerHit:thunderStaticPerHit, thunderStaticThreshold:thunderStaticThreshold, thunderDischargeMult:thunderDischargeMult, deadeyeAccuracyBonus:deadeyeAccuracyBonus, duelistFlourishStabs:duelistFlourishStabs, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, heraldRipostePct:heraldRipostePct, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, undyingRageIncomingMult:undyingRageIncomingMult, berserkerFrenziedBlowsMult:berserkerFrenziedBlowsMult, templarLayOnHandsPct:templarLayOnHandsPct, templarBlessingOfHasteMult:templarBlessingOfHasteMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, spellbladeResonantCrit:spellbladeResonantCrit, voidVulnPerStack:voidVulnPerStack, voidMarkPerHit:voidMarkPerHit, quickdrawVenomPct:quickdrawVenomPct, quickdrawTwinFangChance:quickdrawTwinFangChance, treasureProspectorPer:treasureProspectorPer, setTreasureMult:setTreasureMult, EXEC_SET_EXECUTE_FRAC:EXEC_SET_EXECUTE_FRAC, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, sharpshooterAccOverDodge:sharpshooterAccOverDodge, sharpshooterEagleEyeCrit:sharpshooterEagleEyeCrit, sharpshooterPinpointMult:sharpshooterPinpointMult, sharpshooterFocusCritDmg:sharpshooterFocusCritDmg, sharpshooterArmorPierce:sharpshooterArmorPierce, sharpshooterPatienceMult:sharpshooterPatienceMult, SHARP_EAGLE_CAP:SHARP_EAGLE_CAP, SHARP_PINPOINT_CAP:SHARP_PINPOINT_CAP, SHARP_FOCUS_CAP:SHARP_FOCUS_CAP, SHARP_PATIENCE_CAP:SHARP_PATIENCE_CAP, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautSmashReady:juggernautSmashReady, juggernautFuryStacks:juggernautFuryStacks, juggernautArmorPierce:juggernautArmorPierce, JUG_WINDUP_DMG:JUG_WINDUP_DMG, JUG_WINDUP_SLOW:JUG_WINDUP_SLOW, JUG_SMASH_EVERY:JUG_SMASH_EVERY, JUG_CONCUSS_MS:JUG_CONCUSS_MS, JUG_FURY_PER:JUG_FURY_PER, JUG_FURY_MAX:JUG_FURY_MAX, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_SHIELD_MAX_PCT:LUMEN_SHIELD_MAX_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, HERALD_RIPOSTE_PCT:HERALD_RIPOSTE_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeRuneHungerMult:spellbladeRuneHungerMult, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, spellbladeEchoChance:spellbladeEchoChance, equippedEnchantCount:equippedEnchantCount, spellbladeEnchantBoost:spellbladeEnchantBoost, SPELLBLADE_RUNEHUNGER_PER:SPELLBLADE_RUNEHUNGER_PER, SPELLBLADE_CRITRUNE_PER:SPELLBLADE_CRITRUNE_PER, SPELLBLADE_ECHO_PCT:SPELLBLADE_ECHO_PCT, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, legendaryDmgMult:legendaryDmgMult, legendaryDodgeBonus:legendaryDodgeBonus, legendaryLifestealPct:legendaryLifestealPct, legWastingCurseIncomingMult:legWastingCurseIncomingMult, legNotePoisonStart:legNotePoisonStart, legVanishWindowReady:legVanishWindowReady, samuraiFocusCap:samuraiFocusCap, knightMomentumPerStack:knightMomentumPerStack, legDistinctEnchantCount:legDistinctEnchantCount, legEchoDmgMult:legEchoDmgMult, legShieldBashDamage:legShieldBashDamage, legReflectCanCrit:legReflectCanCrit, legReflectCritMult:legReflectCritMult, legendaryCritDmg:legendaryCritDmg, legEarthshakerBuild:legEarthshakerBuild, legEarthshakerConsume:legEarthshakerConsume, LEG_TREMOR_CAP:LEG_TREMOR_CAP, LEG_TREMOR_MULT:LEG_TREMOR_MULT, CRIT_DAMAGE_MULT:CRIT_DAMAGE_MULT, legendaryAccuracyBonus:legendaryAccuracyBonus, legRangerAilmentRolls:legRangerAilmentRolls, LEG_CHAINSHOT_MAX:LEG_CHAINSHOT_MAX, legendaryCritChance:legendaryCritChance, legThunderMaxStacks:legThunderMaxStacks, legRetributionArmed:legRetributionArmed, legRetributionConsume:legRetributionConsume, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, heraldGuardMaxStacks:heraldGuardMaxStacks, HERALD_GUARD_MAX_STACKS:HERALD_GUARD_MAX_STACKS, HERALD_GUARD_PER_STACK:HERALD_GUARD_PER_STACK, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legChargedRiposteArmed:legChargedRiposteArmed, legChargedRiposteConsume:legChargedRiposteConsume, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,

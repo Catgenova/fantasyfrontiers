@@ -2850,6 +2850,33 @@
     ok(!FF.set2('executioner', setSt('executioner', 1)), 'one piece does not arm Execute');
   });
 
+  // ---- Combat card: buff/debuff stack badges -------------------------------------------
+  suite('combat card shows buff & debuff stacks', function(){
+    var S = FF._state, now = Date.now();
+    var savedAct = S.activity;
+    try {
+      S.activity = { type:'combat', monsterHp:100,
+        enemyChillUntil: now+5000, chillStacks: 6,
+        bleedUntil: now+4000, bleedStacks: 4,
+        frostbiteUntil: now+3000, frostbiteStacks: 3,
+        burnUntil: now+3500, burnStacks: 5,
+        voidVulnUntil: now+6000, voidVulnStacks: 7,
+        enemyStunUntil: now+2000 };
+      var deb = {}; FF.combatEnemyDebuffs().forEach(function(d){ deb[d.key] = d; });
+      eq(deb.chill.stacks, 6, 'Chilled carries its stack count');
+      eq(deb.bleed.stacks, 4, 'Bleeding carries its stack count');
+      eq(deb.frostbite.stacks, 3, 'Frostbite is now shown, with stacks');
+      eq(deb.burn.stacks, 5, 'Burning is now shown, with stacks');
+      eq(deb.voidvuln.stacks, 7, 'Vulnerable carries its stack count');
+      eq(deb.voidvuln.name, 'Vulnerable', 'the Vuln name is clean (count lives in the badge)');
+      eq(deb.stun.stacks, undefined, 'a single (non-stacking) debuff has no stack count');
+      // The rendered row carries a live-updating badge element and a filled bar.
+      var html = FF.renderFxBars(FF.combatEnemyDebuffs(), 'Enemy Effects');
+      ok(/id="arenaFxN-chill"/.test(html) && /&times;6/.test(html), 'the Chill row renders a x6 badge');
+      ok(/id="arenaFxN-voidvuln"/.test(html), 'the Vuln row renders a live stack badge');
+    } finally { S.activity = savedAct; }
+  });
+
   suite('mastercraft: D1 legendary amulets', function(){
     // A state with a legendary Pendant seated in the Amulet slot.
     function amSt(key, rarity, extra){
