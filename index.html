@@ -4842,7 +4842,7 @@
     },
     {
       id:'spellblade', name:'Spellblade', icon:svgIcon('sword','#7a5aa8'),
-      blurb:'A duelist-mage whose runed greatsword hums with borrowed power, each swing sharper than the last.',
+      blurb:'A duelist-mage whose runed greatsword feeds on enchantment itself &mdash; the more runes it carries, the harder it bites and the more its strikes echo.',
       reqText:'Greatsword + empty offhand, Chain Helm & Chest, Leather Gloves & Boots',
       reqParts:[
         { icon:svgIcon('sword','#a8aeb6'),              label:'Greatsword',    met:function(st){ return st.equippedMainhand==='greatsword'; } },
@@ -4853,11 +4853,11 @@
         { icon:svgIcon('boots',CLASS_LEATHER_COLOR),    label:'Leather Boots', met:function(st){ return leatherPieceEquipped(st,'boots'); } }
       ],
       passives:[
-        { level:1,  name:'Runeblade',  desc:'Your equipped gear\'s enchant bonuses are increased by 50%.' },
-        { level:20, name:'Spell Echo', desc:'15% chance a hit echoes, striking again for 50% damage.' },
-        { level:40, name:'Arcane Edge',desc:'While you have enchanted gear equipped, +15% Critical Hit chance.' },
-        { level:60, name:'Momentum',   desc:'Each landed hit grants a stack (max 5) of +6% damage; a miss resets it.' },
-        { level:80, name:'Overwhelm',  desc:'At max Momentum, your hits ignore 25% of enemy armor (+25% damage).' }
+        { level:1,  name:'Rune Hunger',    desc:'+4% damage for each enchant on your equipped gear &mdash; fully-enchanted high-rarity gear becomes a huge multiplier.' },
+        { level:20, name:'Critical Runes', desc:'Every 5% of Critical Damage from your enchants also grants +1% Critical Hit chance.' },
+        { level:40, name:'Spell Echo',     desc:'15% chance a hit echoes, striking again for 50% damage.' },
+        { level:60, name:'Twin Echo',      desc:'Spell Echo chance rises to 30%, and an echo can itself echo (chaining strikes).' },
+        { level:80, name:'Empowered Runes',desc:'Your equipped gear\'s enchant bonuses are increased by 100% (up from Rune Hunger\'s base runes).' }
       ]
     },
     {
@@ -5385,13 +5385,19 @@
     if(sentinelBonus(80, st) && r > 0) r += (armor||0);                                     // Bulwark's Wrath: + Armor rating
     return r;
   }
-  // --- Spellblade --- Momentum stacks (like Knight/Thunderfury), Arcane Edge crit while an Enchant is up.
-  function spellbladeStacks(st){ st = st || state; return spellbladeBonus(60, st) ? Math.min(5, st.spellbladeStacks || 0) : 0; }
-  function spellbladeMomentumMult(st){ st = st || state; return 1 + 0.06 * spellbladeStacks(st); }                 // Lv60 +6%/stack
-  function spellbladeOverwhelmMult(st){ st = st || state; return (spellbladeBonus(80, st) && spellbladeStacks(st) >= 5) ? 1.25 : 1; } // Lv80 +25% at max
+  // --- Spellblade --- reworked enchant-scaling greatsword DPS: Rune Hunger (Lv1) turns each equipped enchant
+  //     into damage; Critical Runes (Lv20) turns crit-damage enchants into crit chance; Spell Echo (Lv40) /
+  //     Twin Echo (Lv60) chain bonus strikes; Empowered Runes (Lv80) doubles all your enchant bonuses.
+  var SPELLBLADE_RUNEHUNGER_PER = 0.04; // Rune Hunger: +4% damage per equipped enchant
+  var SPELLBLADE_CRITRUNE_PER = 0.01;   // Critical Runes: +1% crit chance per 5% crit-damage enchant
+  var SPELLBLADE_ECHO_PCT = 0.5;        // an echo strikes for 50% of the hit's damage
   function hasEquippedEnchants(st){ st = st || state; for(var _k in equippedEnchantTotals(st)) return true; return false; }
-  function spellbladeCritChance(st){ return (spellbladeBonus(40, st) && hasEquippedEnchants(st)) ? 0.15 : 0; }      // Lv40 Arcane Edge: +15% crit while enchanted gear is equipped
-  function spellbladeEnchantBoost(st){ return spellbladeBonus(1, st) ? 1.5 : 1; }                                  // Lv1 Runeblade: +50% to your equipped gear's enchant bonuses
+  function spellbladeEnchantBoost(st){ return spellbladeBonus(80, st) ? 2.0 : 1; }                                 // Empowered Runes (Lv80): +100% to equipped enchant bonuses
+  function spellbladeRuneHungerMult(st){ st = st || state; return spellbladeBonus(1, st) ? (1 + SPELLBLADE_RUNEHUNGER_PER * equippedEnchantCount(st)) : 1; } // Lv1 Rune Hunger: +4%/enchant
+  // Critical Runes (Lv20): +1% crit per 5% Critical-Damage enchant (boosted by Empowered Runes, like the crit-dmg itself).
+  function spellbladeCriticalRunesCrit(st){ st = st || state; if(!spellbladeBonus(20, st)) return 0; var cd = (equippedEnchantTotals(st).critDamage||0) * spellbladeEnchantBoost(st); return (cd/5) * SPELLBLADE_CRITRUNE_PER; }
+  // Echo chance: Spell Echo (Lv40) 15%; Twin Echo (Lv60) 30% and echoes can re-echo (handled in playerAttackTick).
+  function spellbladeEchoChance(st){ st = st || state; return spellbladeBonus(60, st) ? 0.30 : (spellbladeBonus(40, st) ? 0.15 : 0); }
   // ===== New classes: Pyromancer / Sharpshooter / Juggernaut / Nightblade / Executioner =====
   function pyromancerBonus(reqLevel, st){ return classBonusActive('pyromancer', reqLevel, st); }
   function sharpshooterBonus(reqLevel, st){ return classBonusActive('sharpshooter', reqLevel, st); }
@@ -9542,6 +9548,16 @@
     if(st.bodyArmor) BODY_ARMOR_SLOTS.forEach(function(sl){ var s=st.bodyArmor[sl]; if(s && s.uid) addUid(s.uid); });
     return tot;
   }
+  // Total number of enchant instances across all equipped gear (drives Spellblade Rune Hunger). Mirrors
+  // equippedEnchantTotals' slot walk but counts each filled enchant slot rather than summing rolls.
+  function equippedEnchantCount(st){
+    st = st || state; var n = 0;
+    function cnt(uid){ var u = uid && st.uniqueItems && st.uniqueItems[uid]; if(u && u.enchants) n += u.enchants.length; }
+    cnt(st.equippedMainhandUid); cnt(st.equippedOffhandUid); cnt(st.equippedBeltUid); cnt(st.equippedRelicUid);
+    if(st.jewelrySlots){ RING_SLOT_IDS.forEach(function(sl){ var s=st.jewelrySlots[sl]; if(s && s.uid) cnt(s.uid); }); if(st.jewelrySlots.amulet && st.jewelrySlots.amulet.uid) cnt(st.jewelrySlots.amulet.uid); }
+    if(st.bodyArmor) BODY_ARMOR_SLOTS.forEach(function(sl){ var s=st.bodyArmor[sl]; if(s && s.uid) cnt(s.uid); });
+    return n;
+  }
   function uniqueIsEquipped(uid){
     if(state.equippedMainhandUid===uid || state.equippedOffhandUid===uid || state.equippedBeltUid===uid || state.equippedRelicUid===uid) return true;
     if(state.jewelrySlots){ if(RING_SLOT_IDS.some(function(sl){ return state.jewelrySlots[sl] && state.jewelrySlots[sl].uid===uid; })) return true; if(state.jewelrySlots.amulet && state.jewelrySlots.amulet.uid===uid) return true; }
@@ -10514,8 +10530,7 @@
     { name:'berserkerRage',         fn:function(c){ return berserkerRageMult(); } },
     { name:'berserkerBloodPact',    fn:function(c){ return berserkerBloodPactMult(); } },
     { name:'berserkerToll',         fn:function(c){ return berserkerTollMult(); } },
-    { name:'spellbladeMomentum',    fn:function(c){ return spellbladeMomentumMult(); } },
-    { name:'spellbladeOverwhelm',   fn:function(c){ return spellbladeOverwhelmMult(); } },
+    { name:'spellbladeRuneHunger',  fn:function(c){ return spellbladeRuneHungerMult(); } },
     { name:'newClassPassives',      fn:function(c){ return newClassDmgMult(c.monster); } },
     { name:'weaponsmithEdge',       fn:function(c){ return weaponsmithEdgeMult(); } },
     { name:'zealotry',              fn:function(c){ return zealotryDmgMult(); } },
@@ -10543,7 +10558,7 @@
     var relicBonus = getEquippedRelicBonus(state);
     var offhandItem = getEquippedOffhandItem(state);
     var enchTot = equippedEnchantTotals(state); // equipped-item enchant bonuses (all zero if none equipped)
-    var _enchBoost = spellbladeEnchantBoost(state); if(_enchBoost!==1){ for(var _ek in enchTot) enchTot[_ek] *= _enchBoost; } // Spellblade Runeblade amplifies equipped enchants
+    var _enchBoost = spellbladeEnchantBoost(state); if(_enchBoost!==1){ for(var _ek in enchTot) enchTot[_ek] *= _enchBoost; } // Spellblade Empowered Runes (Lv80) amplifies equipped enchants
 
     var weaponStyle = getWeaponStyle(mainhandTypeId);
     var isWandAttack = !!weaponStyle.wand; // wand: elemental damage, shared 'wands' proficiency, no physical-type bonuses
@@ -10582,7 +10597,7 @@
     var forcedCrit = !isOffhand && duelistBonus(80) && (state.duelistGuaranteedCrits || 0) > 0;
     var samuraiFirstStrike = !isOffhand && samuraiBonus(1) && !!(act && act.samuraiFirstStrike); // Samurai Iaijutsu: the opening landed strike of each duel is a guaranteed crit
     var juggernautSmash = !isOffhand && juggernautSmashReady(state); // Juggernaut Overhead Smash: every 4th landed main-hand hit is a guaranteed crit
-    var isCrit = forcedCrit || samuraiFirstStrike || juggernautSmash || Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawEagleEyeCrit(monster) + spellbladeCritChance() + newClassCritChance() + legendaryCloakBonus('critchance', state) + (enchTot.critChance||0)/100); // + Quickdraw Eagle Eye (overflow accuracy), Spellblade Arcane Edge, new-class passives, legendary Shroud, equipped Crit Chance enchants
+    var isCrit = forcedCrit || samuraiFirstStrike || juggernautSmash || Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawEagleEyeCrit(monster) + spellbladeCriticalRunesCrit() + newClassCritChance() + legendaryCloakBonus('critchance', state) + (enchTot.critChance||0)/100); // + Quickdraw Eagle Eye (overflow accuracy), Spellblade Critical Runes, new-class passives, legendary Shroud, equipped Crit Chance enchants
     // Juggernaut Pulverize (Lv80): a Critical Hit ignores the foe's armour mitigation entirely (recover the sub-1x shortfall).
     if(!isOffhand && advantage < 1){ var _jugPierce = juggernautArmorPierce(isCrit, state); if(_jugPierce > 0) advantage += (1 - advantage) * _jugPierce; }
     // Wands are magical, so the melee/bow strength physiques don't scale them -- only the generic
@@ -10611,7 +10626,6 @@
         // Knight (Momentum): a miss resets the attack-speed stacks -- but Relentless (Lv 80) softens it to a single-stack drop.
         if(knightBonus(1)) state.knightStacks = knightBonus(80) ? Math.max(0, (state.knightStacks || 0) - 1) : 0;
         if(samuraiBonus(60) && act) act.samuraiFocus = 0; // Samurai Bushido: a miss breaks the Focus combo
-        if(spellbladeBonus(60)) state.spellbladeStacks = 0; // Spellblade Momentum resets on a miss
         if(duelistBonus(40)) state.duelistPoise = Math.max(0, (state.duelistPoise || 0) - 1); // Flourish: a miss drops a Poise stack
       }
       return;
@@ -10832,8 +10846,6 @@
         var _loh = Math.min(Math.round(dmgToMonster * 0.20), healRoom(state));
         if(_loh > 0){ state.playerHp += _loh; spawnFloatingText('Lay on Hands +'+_loh, 'ft-success'); }
       }
-      // Spellblade (Momentum): each landed hit adds a +6% damage stack (cap 5); a miss resets it (below).
-      if(spellbladeBonus(60)) state.spellbladeStacks = Math.min(5, (state.spellbladeStacks || 0) + 1);
     }
     // Reaper (Lv 40/80) + Voidshadow (Soul Tax) + Knight (Lv 60 Warlord's Presence, below-half HP):
     // heal a share of the damage actually inflicted.
@@ -10853,11 +10865,19 @@
       }
     }
     if(act.monsterHp <= 0) defeatMonster(monster);
-    // Spellblade (Spell Echo): 15% chance a landed hit echoes for 50% of the damage just dealt (never the killing blow's re-entry).
-    if(!isOffhand && spellbladeBonus(20) && Math.random() < 0.15 && state.activity && state.activity.type==='combat' && act.monsterHp > 0){
-      var echo = Math.max(1, Math.round(dmgToMonster * 0.5));
-      act.monsterHp -= echo; spawnFloatingText('Spell Echo '+echo+'!', 'ft-rare');
-      if(act.monsterHp <= 0) defeatMonster(monster);
+    // Spellblade Spell Echo (Lv40, 15%) / Twin Echo (Lv60, 30% and an echo can re-echo): a landed hit echoes
+    // for 50% of the damage just dealt. Twin Echo chains additional echoes off each successful echo (bounded so
+    // it can't loop forever). Never re-enters the killing blow.
+    if(!isOffhand && spellbladeBonus(40)){
+      var _echoChance = spellbladeEchoChance(state), _echoChain = spellbladeBonus(60); // Twin Echo: echoes can echo
+      var _echoGuard = 0; // safety bound on the chain length
+      while(_echoChance > 0 && Math.random() < _echoChance && state.activity && state.activity.type==='combat' && act.monsterHp > 0 && _echoGuard < 20){
+        _echoGuard++;
+        var echo = Math.max(1, Math.round(dmgToMonster * SPELLBLADE_ECHO_PCT));
+        act.monsterHp -= echo; spawnFloatingText((_echoChain ? 'Twin Echo ' : 'Spell Echo ')+echo+'!', 'ft-rare');
+        if(act.monsterHp <= 0){ defeatMonster(monster); break; }
+        if(!_echoChain) break; // Spell Echo alone fires at most once per hit
+      }
     }
     // Bonus-attack class procs are main-hand only (an off-hand Claw never spawns its own bonus swings).
     if(!isOffhand){
@@ -23856,7 +23876,7 @@
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautSmashReady:juggernautSmashReady, juggernautFuryStacks:juggernautFuryStacks, juggernautArmorPierce:juggernautArmorPierce, JUG_WINDUP_DMG:JUG_WINDUP_DMG, JUG_WINDUP_SLOW:JUG_WINDUP_SLOW, JUG_SMASH_EVERY:JUG_SMASH_EVERY, JUG_CONCUSS_MS:JUG_CONCUSS_MS, JUG_FURY_PER:JUG_FURY_PER, JUG_FURY_MAX:JUG_FURY_MAX, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
-      frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
+      frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeRuneHungerMult:spellbladeRuneHungerMult, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, spellbladeEchoChance:spellbladeEchoChance, equippedEnchantCount:equippedEnchantCount, spellbladeEnchantBoost:spellbladeEnchantBoost, SPELLBLADE_RUNEHUNGER_PER:SPELLBLADE_RUNEHUNGER_PER, SPELLBLADE_CRITRUNE_PER:SPELLBLADE_CRITRUNE_PER, SPELLBLADE_ECHO_PCT:SPELLBLADE_ECHO_PCT, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, assassinRhythmRegister:assassinRhythmRegister, ASSASSIN_RHYTHM_MAX:ASSASSIN_RHYTHM_MAX, assassinApplyLacerate:assassinApplyLacerate, assassinLacerateMaxStacks:assassinLacerateMaxStacks, ASSASSIN_BLEED_MAX:ASSASSIN_BLEED_MAX, assassinHemorrhageCritMult:assassinHemorrhageCritMult, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,

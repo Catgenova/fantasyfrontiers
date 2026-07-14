@@ -1329,10 +1329,31 @@
     eq(FF.SENTINEL_SHRED_FRAC, 0.5, 'Sunder ignores 50% of enemy armour');
     // No Sentinel reflect without the class.
     eq(FF.sentinelReflectDamage(100, 80, 999, {xp:{},physique:{},bodyArmor:{},equippedMainhand:null,equippedOffhand:null,activity:{type:'combat'},playerHp:1}), 0, 'no class -> no reflect');
-    // Spellblade Momentum stacks (+6% each) and Overwhelm at max.
-    var sb = stFor('spellblade',80); sb.spellbladeStacks = 5;
-    ok(Math.abs(FF.spellbladeMomentumMult(sb) - 1.30) < 1e-9, 'Spellblade Momentum = +6%/stack (x1.30 at 5)');
-    eq(FF.spellbladeOverwhelmMult(sb), 1.25, 'Spellblade Overwhelm +25% at max stacks');
+    // Spellblade rework: Rune Hunger (Lv1) / Critical Runes (Lv20) / Spell Echo (Lv40) / Twin Echo (Lv60) / Empowered Runes (Lv80).
+    var sbNames = FF.CLASS_DEFS_BY_ID.spellblade.passives.map(function(p){ return p.name; });
+    eq(JSON.stringify(sbNames), JSON.stringify(['Rune Hunger','Critical Runes','Spell Echo','Twin Echo','Empowered Runes']), 'Spellblade ladder is the reworked five');
+    // Build a Spellblade with two equipped weapon enchants (a 20% Critical Damage + a 10% Weapon Damage).
+    function sbEnch(level){
+      var st = stFor('spellblade', level);
+      st.uniqueItems = { w1:{ kind:'weapon', enhance:0, enchants:[{mod:'critDamage',roll:20},{mod:'weaponDamage',roll:10}] } };
+      st.equippedMainhandUid = 'w1';
+      return st;
+    }
+    // Rune Hunger (Lv1): +4% damage per equipped enchant.
+    eq(FF.equippedEnchantCount(sbEnch(1)), 2, 'equippedEnchantCount tallies each equipped enchant');
+    ok(Math.abs(FF.spellbladeRuneHungerMult(sbEnch(1)) - 1.08) < 1e-9, 'Rune Hunger: +4% x 2 enchants = +8%');
+    eq(FF.spellbladeRuneHungerMult(stFor('spellblade',1)), 1, 'Rune Hunger neutral with no equipped enchants');
+    // Critical Runes (Lv20): +1% crit per 5% Critical-Damage enchant (here 20% -> +4%).
+    ok(Math.abs(FF.spellbladeCriticalRunesCrit(sbEnch(20)) - 0.04) < 1e-9, 'Critical Runes: 20% crit-dmg enchant -> +4% crit chance');
+    eq(FF.spellbladeCriticalRunesCrit(sbEnch(1)), 0, 'Critical Runes inactive below Lv20');
+    // Empowered Runes (Lv80): enchant bonuses doubled -> Critical Runes reads the doubled crit-dmg (40% -> +8%).
+    eq(FF.spellbladeEnchantBoost(stFor('spellblade',80)), 2.0, 'Empowered Runes doubles enchant bonuses');
+    eq(FF.spellbladeEnchantBoost(stFor('spellblade',60)), 1, 'no enchant amplification below Lv80');
+    ok(Math.abs(FF.spellbladeCriticalRunesCrit(sbEnch(80)) - 0.08) < 1e-9, 'Empowered Runes doubles the crit-dmg feeding Critical Runes (40% -> +8%)');
+    // Spell Echo (Lv40) 15%; Twin Echo (Lv60) 30%; nothing below Lv40.
+    ok(Math.abs(FF.spellbladeEchoChance(stFor('spellblade',40)) - 0.15) < 1e-9, 'Spell Echo: 15% at Lv40');
+    ok(Math.abs(FF.spellbladeEchoChance(stFor('spellblade',60)) - 0.30) < 1e-9, 'Twin Echo: 30% at Lv60');
+    eq(FF.spellbladeEchoChance(stFor('spellblade',20)), 0, 'no echo below Lv40');
     // No class active -> every perk multiplier is neutral.
     var none = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat'}, playerHp:1 };
     eq(FF.berserkerRageMult(none), 1, 'no class -> Rage neutral');
