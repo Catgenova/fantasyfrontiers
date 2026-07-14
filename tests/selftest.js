@@ -3230,6 +3230,30 @@
     ok(fam.spells.some(function(sp){ return sp.type==='hit'; }), 'knight familiar has a damaging spell');
   });
 
+  // ---- PLAYER_DMG_MODS: the named damage-modifier table behind the damage formula ---------
+  suite('combat: player damage modifier table', function(){
+    var mods = FF.PLAYER_DMG_MODS;
+    ok(Array.isArray(mods) && mods.length >= 20, 'the modifier table exists ('+mods.length+' rows)');
+    var names = mods.map(function(m){ return m.name; });
+    eq(names.length, new Set(names).size, 'modifier names are unique');
+    mods.forEach(function(m){ ok(typeof m.fn === 'function', m.name+' has a fn'); });
+    // A benign context: no crit, mainhand, physical weapon, no special flags.
+    var mon = FF.MONSTERS[0];
+    function ctx(over){ return Object.assign({ monster:mon, weaponStyle:{attackTypes:{blunt:1}}, enchTot:{}, isCrit:false, isOffhand:false, isWandAttack:false, isScepterAttack:false, assassinVanish:false, unfletched:false }, over||{}); }
+    var byName = {}; mods.forEach(function(m){ byName[m.name] = m; });
+    // Pure ctx-driven rows behave exactly like the old inline ternaries.
+    eq(byName.offhandClawPenalty.fn(ctx()), 1, 'mainhand swing: no claw penalty');
+    eq(byName.offhandClawPenalty.fn(ctx({isOffhand:true})), FF.OFFHAND_CLAW_DMG_MULT, 'offhand claw applies its damage penalty');
+    eq(byName.unfletchedPenalty.fn(ctx()), 1, 'arrows in stock: no unfletched penalty');
+    eq(byName.unfletchedPenalty.fn(ctx({unfletched:true})), FF.UNFLETCHED_DMG_MULT, 'no arrows: unfletched penalty applies');
+    eq(byName.assassinVanish.fn(ctx({assassinVanish:true})), FF.ASSASSIN_VANISH_MULT, 'Vanish empowers the strike');
+    near(byName.damageEnchants.fn(ctx({enchTot:{pctDamage:25}})), 1.25, '+25% damage enchant => x1.25');
+    eq(byName.mainhandEnhance.fn(ctx({isOffhand:true})), 1, 'offhand swings ignore the mainhand Enhance');
+    // The aggregate multiplier is a sane positive number on the (unbuffed) selftest state.
+    var total = FF.playerDamageMultiplier(ctx());
+    ok(isFinite(total) && total > 0, 'aggregate multiplier is finite and positive ('+total+')');
+  });
+
   // ---- activeClassId memo: live-state gear changes must invalidate the cached class ------
   suite('classes: activeClassId memo invalidation', function(){
     var s = FF._state;
