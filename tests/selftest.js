@@ -2196,6 +2196,58 @@
     near(FF.legEchoDmgMult(legSt('engarde')), 1, 'Resonant Echo is inert without its legendary');
   });
 
+  // ---- D1 legendary gear COMBAT effects, Batch 5: the four Blunt weapons ------------------------------
+  suite('mastercraft: legendary blunt effects', function(){
+    function legSt(key, extra){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+        uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_mace_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } },
+        equippedMainhandUid:'L' };
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+
+    // Shield Bash (herald/mace): a Block smashes the attacker for half your Armor rating.
+    eq(FF.legShieldBashDamage(200, legSt('shieldbash')), 100, 'Shield Bash deals 50% of Armor on a Block');
+    eq(FF.legShieldBashDamage(200, legSt('titaniccrits')), 0, 'Shield Bash is inert without its legendary');
+    eq(FF.legShieldBashDamage(0, legSt('shieldbash')), 1, 'Shield Bash floors at 1 even with no Armor');
+
+    // Crushing Reprisal (sentinel/maul): thorns can crit, and the crit deals +100% extra crit damage.
+    eq(FF.legReflectCanCrit(legSt('crushingreprisal')), true, 'Crushing Reprisal lets a reflect crit');
+    eq(FF.legReflectCanCrit(legSt('shieldbash')), false, 'no reflect crit without Crushing Reprisal');
+    near(FF.legReflectCritMult(legSt('crushingreprisal')), FF.CRIT_DAMAGE_MULT + 1.0, 'Crushing Reprisal: reflect crit = base crit mult +100%');
+    near(FF.legReflectCritMult(legSt('shieldbash')), FF.CRIT_DAMAGE_MULT, 'the reflect crit mult is the base without the legendary');
+
+    // Titanic Crits (berserker/warhammer): +10% crit damage per 1000 max Health, capped at +100%.
+    var tcSmall = legSt('titaniccrits'); // empty physique -> low max HP
+    near(FF.legendaryCritDmg(tcSmall), Math.min(1.0, 0.0001 * FF.maxHp(tcSmall)), 'Titanic Crits scales +10% crit dmg per 1000 max HP');
+    // Reach 10k+ max HP via a big Max-HP armor enchant (fortitude alone caps at Lv100 -> ~550 HP).
+    var tcBig = legSt('titaniccrits');
+    tcBig.bodyArmor = { chest:{ uid:'A' } };
+    tcBig.uniqueItems.A = { uid:'A', kind:'armor', base:'bodyarmor_plate_chest_t19_rare', tier:19, rarity:'rare', enchants:[{mod:'maxHp', roll:20000}], enhance:0 };
+    ok(FF.maxHp(tcBig) >= 10000, 'the boosted profile clears 10k max HP');
+    near(FF.legendaryCritDmg(tcBig), 1.0, 'Titanic Crits caps at +100% crit damage');
+    near(FF.legendaryCritDmg(legSt('shieldbash')), 0, 'Titanic Crits is inert without its legendary');
+
+    // Earthshaker (juggernaut/sledge): crits build a 5-stack Tremor; at full, the next swing hits x4 and empties it.
+    var esSt = legSt('earthshaker');
+    var act = esSt.activity;
+    for(var i=0;i<4;i++) FF.legEarthshakerBuild(act, esSt);
+    eq(act.tremorStacks, 4, '4 crits bank 4 Tremor stacks');
+    ok(!act.tremorReady, 'the Tremor is not yet primed at 4 stacks');
+    eq(FF.legEarthshakerConsume(act, esSt), 1, 'an unprimed Tremor does not empower the swing');
+    FF.legEarthshakerBuild(act, esSt); // the 5th crit
+    eq(act.tremorStacks, 0, 'reaching the cap resets the stack counter');
+    ok(act.tremorReady, 'the 5th crit primes the Tremor');
+    eq(FF.legEarthshakerConsume(act, esSt), FF.LEG_TREMOR_MULT, 'a primed swing hits x4 (+300%)');
+    ok(!act.tremorReady, 'consuming the Tremor disarms it');
+    eq(FF.legEarthshakerConsume(act, esSt), 1, 'the Tremor only empowers one swing');
+    // Without the legendary, build/consume are no-ops.
+    var plain = legSt('shieldbash'); var pact = plain.activity;
+    for(var j=0;j<6;j++) FF.legEarthshakerBuild(pact, plain);
+    ok(!pact.tremorReady && !pact.tremorStacks, 'Earthshaker never charges without its legendary');
+    eq(FF.legEarthshakerConsume(pact, plain), 1, 'Earthshaker never empowers without its legendary');
+  });
+
   // ---- Dungeon gate: a minimum Total Level to enter ANY dungeon, plus the clear-the-previous-boss chain --
   suite('dungeons: Total Level gate + unlock chain', function(){
     var s = FF._state, saved = s.dungeonsCleared;
