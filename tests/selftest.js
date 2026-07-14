@@ -1827,18 +1827,23 @@
     eq(Object.keys(rset).length, 4, 'all four dungeon Formulas are distinct');
   });
 
-  // ---- Masterwork Blueprints: 9 slots x 4 dungeons, weighted boss drops, separate inventory -------
+  // ---- Masterwork Blueprints: 13 formula types x 4 dungeons, weighted boss drops, separate inventory ----
   suite('masterwork blueprints', function(){
     var slots = FF.MASTERWORK_SLOTS;
-    eq(slots.length, 9, 'nine Masterwork gear slots');
-    // exact drop chances requested
+    eq(slots.length, 13, 'thirteen Masterwork formula types');
+    // exact drop chances: armor highest, weapons (+ shield) equal, jewelry lowest
     var byId = {}; slots.forEach(function(s){ byId[s.id] = s; });
-    var want = { ring:0.05, amulet:0.025, cape:0.015, mainhand:0.15, offhand:0.15, head:0.15, chest:0.15, hands:0.15, feet:0.15 };
-    Object.keys(want).forEach(function(k){ ok(byId[k], 'slot ' + k + ' exists'); near((byId[k]||{}).chance, want[k], 'slot ' + k + ' drop chance', 1e-9); });
-    // 36 Blueprints (4 dungeons x 9 slots), each named "<Category> <Slot> Blueprint"
-    eq(Object.keys(FF.BLUEPRINT_ITEMS).length, 36, '4 dungeons x 9 slots = 36 Blueprints');
+    var want = { cloth:0.12, leather:0.12, chain:0.12, plate:0.12, slash:0.08, pierce:0.08, blunt:0.08, ranged:0.08, arcane:0.08, defense:0.08, ring:0.05, amulet:0.03, cape:0.02 };
+    Object.keys(want).forEach(function(k){ ok(byId[k], 'formula ' + k + ' exists'); near((byId[k]||{}).chance, want[k], 'formula ' + k + ' drop chance', 1e-9); });
+    // Tiering the request asked for: armor > weapons/shield > jewelry.
+    ok(byId.cloth.chance > byId.slash.chance && byId.slash.chance > byId.ring.chance, 'drop-rate tiers: armor > weapons > jewelry');
+    ['slash','pierce','blunt','ranged','arcane','defense'].forEach(function(k){ eq(byId[k].chance, byId.slash.chance, 'all weapon/shield formulas share one drop rate'); });
+    // 52 Blueprints (4 dungeons x 13 types), each named "<Category> <Label> Blueprint"
+    eq(Object.keys(FF.BLUEPRINT_ITEMS).length, 52, '4 dungeons x 13 types = 52 Blueprints');
     eq(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','amulet')].name, 'Cave Amulet Blueprint', 'D1 amulet is "Cave Amulet Blueprint"');
-    eq(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','mainhand')].name, 'Underground Chamber Mainhand Blueprint', 'D3 mainhand is "Underground Chamber Mainhand Blueprint"');
+    eq(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','slash')].name, 'Cave Slash Weapon Blueprint', 'D1 slash is "Cave Slash Weapon Blueprint"');
+    eq(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','cloth')].name, 'Underground Chamber Cloth Armor Blueprint', 'D3 cloth armor name');
+    eq(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2','defense')].name, 'Tunnel Shield Blueprint', 'D2 shield is "Tunnel Shield Blueprint"');
     eq(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d4','cape')].name, 'Nest of the Depths Cape Blueprint', 'D4 cape name');
     ok(Object.keys(FF.BLUEPRINT_ITEMS).every(function(id){ var b = FF.BLUEPRINT_ITEMS[id]; return b.blueprint === true && b.sell === 0 && /<svg/.test(b.icon); }), 'every Blueprint is flagged, non-vendorable, and has an icon');
     // Blueprints are their OWN inventory, not in the sellable/item economy.
@@ -1846,7 +1851,7 @@
     // addBlueprint stores into state.blueprints (not state.inventory).
     var s = FF._state; var svB = s.blueprints, svI = s.inventory;
     s.blueprints = {}; s.inventory = {};
-    var bid = FF.masterworkBlueprintId('d2','feet');
+    var bid = FF.masterworkBlueprintId('d2','plate');
     FF.addBlueprint(bid, 2);
     eq(s.blueprints[bid], 2, 'addBlueprint credits the Blueprint inventory');
     eq(s.inventory[bid] || 0, 0, 'addBlueprint does NOT touch the item inventory');
