@@ -2016,6 +2016,45 @@
     eq(FF.legActive('cull', eq2), true, 'legActive true for the equipped legendary effect');
   });
 
+  // ---- D1 legendary gear FORGE: the six formula recipes mint a legendary unique -----------------------
+  suite('mastercraft: D1 legendary gear forge', function(){
+    // Every formula group has a recipe with the right inputs + a rare-t20 counting list.
+    ['slash','pierce','blunt','ranged','arcane','defense'].forEach(function(g){
+      var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1',g)]);
+      ok(rec && rec.gear === true, g + ' has a gear forge recipe');
+      eq(rec.rareCount, 10, g + ' needs 10 rare Tier-20 items');
+      eq(rec.outcomes.length, FF.LEG_GEAR_GROUP_KEYS[g].length, g + ' forges one of its group pool');
+    });
+    // Exact input bills the user specified.
+    var melee = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','slash')]);
+    eq(melee.inputs.metallurgy_t20, 1000, 'melee formula costs 1000 t20 ingots');
+    eq(FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','ranged')]).inputs.forestry_t20, 1000, 'bow formula costs 1000 t20 wood');
+    var arc = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','arcane')]).inputs;
+    eq(arc.forestry_t20, 1000, 'arcane formula costs 1000 t20 wood');
+    ['fire','water','earth','light','dark'].forEach(function(el){ eq(arc['glyph_'+el], 200, 'arcane formula costs 200 '+el+' glyphs'); });
+    // Rare-t20 id lists point at real inventory item ids of the right family + top tier.
+    ok(FF.legGearRareIds('slash').indexOf('stweapon_scimitar_t19_rare') !== -1, 'slash counts rare t20 (index 19) slashing melee');
+    ok(FF.legGearRareIds('ranged').indexOf('stweapon_bowLong_t20_rare') !== -1, 'ranged counts rare t20 (index 20) bows');
+    ok(FF.legGearRareIds('arcane').indexOf('stward_wardFire_t20_rare') !== -1, 'arcane counts rare t20 wards');
+    ok(FF.legGearRareIds('defense').indexOf('stshield_shieldSmall_t19_rare') !== -1, 'defense counts rare t20 shields');
+    // Full forge: give the inputs + a blueprint, craft, and confirm a legendary UNIQUE is minted (with its leg).
+    var s = FF._state, svInv = s.inventory, svBp = s.blueprints, svUniq = s.uniqueItems;
+    s.inventory = { metallurgy_t20: 1000 }; s.blueprints = {}; s.uniqueItems = {};
+    FF.legGearRareIds('slash').forEach(function(id){ s.inventory[id] = 2; }); // plenty of rare slash weapons
+    var bpId = FF.masterworkBlueprintId('d1','slash'); s.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
+    eq(minted.length, 1, 'the forge mints exactly one legendary unique');
+    var u = minted[0];
+    ok(u && u.leg && FF.LEG_GEAR_GROUP_KEYS.slash.indexOf(u.leg) !== -1, 'the unique carries a slash-group legendary effect');
+    ok(/^stweapon_.+_t19_(normal|rare|supreme|fantastic)$/.test(u.base), 'the unique is a top-tier slashing weapon base');
+    eq(s.blueprints[bpId], 0, 'the forge consumes the Blueprint');
+    eq(s.inventory.metallurgy_t20, 0, 'the forge consumes the 1000 ingots');
+    var rareLeft = FF.legGearRareIds('slash').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
+    eq(rareLeft, FF.legGearRareIds('slash').length * 2 - 10, 'the forge consumes exactly 10 rare weapons');
+    s.inventory = svInv; s.blueprints = svBp; s.uniqueItems = svUniq;
+  });
+
   // ---- Dungeon gate: a minimum Total Level to enter ANY dungeon, plus the clear-the-previous-boss chain --
   suite('dungeons: Total Level gate + unlock chain', function(){
     var s = FF._state, saved = s.dungeonsCleared;

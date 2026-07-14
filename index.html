@@ -4562,6 +4562,26 @@
   function legMainhandEffect(st){ st = st || state; var u = st.equippedMainhandUid && st.uniqueItems && st.uniqueItems[st.equippedMainhandUid]; return (u && u.leg) || null; }
   function legOffhandEffect(st){ st = st || state; var u = st.equippedOffhandUid && st.uniqueItems && st.uniqueItems[st.equippedOffhandUid]; return (u && u.leg) || null; }
   function legActive(key, st){ st = st || state; return legMainhandEffect(st) === key || legOffhandEffect(st) === key; }
+  // The 10 Rare Tier-20 gear items a formula group consumes. Melee tops at its type's last tier (index 19);
+  // bows/wands/scepter/staff/wards at TIER_COUNT-1 (20); shields at 19. Wards use the stward_ id family.
+  function legGearRareIds(group){
+    var ids = [];
+    function add(list, prefix){ list.forEach(function(w){ ids.push(prefix + w.id + '_t' + ((w.tierCount || TIER_COUNT) - 1) + '_rare'); }); }
+    if(group === 'slash')        add(MELEE_WEAPON_TYPES.filter(function(w){ return w.damageType === 'slashing'; }), 'stweapon_');
+    else if(group === 'pierce')  add(MELEE_WEAPON_TYPES.filter(function(w){ return w.damageType === 'piercing'; }), 'stweapon_');
+    else if(group === 'blunt')   add(MELEE_WEAPON_TYPES.filter(function(w){ return w.damageType === 'blunt'; }), 'stweapon_');
+    else if(group === 'ranged')  add(BOW_WEAPON_TYPES, 'stweapon_');
+    else if(group === 'arcane'){ add(WAND_TYPES, 'stweapon_'); add([SCEPTER_TYPE, STAFF_TYPE], 'stweapon_'); add(WARD_TYPES, 'stward_'); }
+    else if(group === 'defense') add(STACKABLE_SHIELD_TYPES, 'stshield_');
+    return ids;
+  }
+  function legGearCountRare(group){ return legGearRareIds(group).reduce(function(n, id){ return n + (state.inventory[id] || 0); }, 0); }
+  function legGearConsumeRare(group, count){ var ids = legGearRareIds(group); for(var i = 0; i < ids.length && count > 0; i++){ var have = state.inventory[ids[i]] || 0, take = Math.min(have, count); if(take > 0){ state.inventory[ids[i]] -= take; count -= take; } } }
+  function legGearRecipe(group, inputs, xpSkill, rareLabel){
+    return { layer:'d1', slot:group, gear:true, group:group, inputs:inputs, rareCount:10, rareLabel:rareLabel, xpSkill:xpSkill,
+      itemMap:LEGENDARY_GEAR_ITEMS, itemId:legGearItemId, defMap:D1_LEG_GEAR_MAP, outcomes:LEG_GEAR_GROUP_KEYS[group],
+      countRare:function(){ return legGearCountRare(group); }, consumeRare:function(c){ legGearConsumeRare(group, c); } };
+  }
   // Recipes keyed by "<layer>_<slot>". Each forges one Blueprint into a random Legendary of that slot,
   // rarity rolled 2x/4x/8x. Ring vs cloak differ only in the material bill + which item family they yield.
   var MASTERCRAFT_RECIPES = {
@@ -4576,7 +4596,14 @@
       rareCount: 10, rareLabel:'Rare Tier-20 Cloaks', xpSkill:'tailoring',
       defMap: D1_LEG_CLOAK_MAP, itemMap: LEGENDARY_CLOAK_ITEMS, itemId: legCloakItemId,
       countRare: countRareT20Cloaks, consumeRare: consumeRareT20Cloaks,
-      outcomes: D1_LEG_CLOAK_DEFS.map(function(d){ return d.key; }) }
+      outcomes: D1_LEG_CLOAK_DEFS.map(function(d){ return d.key; }) },
+    // Weapon / shield / ward formulas -> one random legendary of the group (a unique carrying its effect).
+    d1_slash:   legGearRecipe('slash',   { metallurgy_t20:1000 }, 'weaponsmithing', 'Rare Tier-20 Slash Weapons'),
+    d1_pierce:  legGearRecipe('pierce',  { metallurgy_t20:1000 }, 'weaponsmithing', 'Rare Tier-20 Pierce Weapons'),
+    d1_blunt:   legGearRecipe('blunt',   { metallurgy_t20:1000 }, 'weaponsmithing', 'Rare Tier-20 Blunt Weapons'),
+    d1_ranged:  legGearRecipe('ranged',  { forestry_t20:1000 },   'bowyer',         'Rare Tier-20 Bows'),
+    d1_arcane:  legGearRecipe('arcane',  { forestry_t20:1000, glyph_fire:200, glyph_water:200, glyph_earth:200, glyph_light:200, glyph_dark:200 }, 'arcanism', 'Rare Tier-20 Arcane Gear'),
+    d1_defense: legGearRecipe('defense', { metallurgy_t20:1000 }, 'shieldsmithing', 'Rare Tier-20 Shields')
   };
   function mastercraftRecipeFor(bpItem){ return bpItem ? (MASTERCRAFT_RECIPES[bpItem.dungeon + '_' + bpItem.slot] || null) : null; }
   var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS);
@@ -8020,11 +8047,27 @@
     var key = recipe.outcomes[Math.floor(Math.random() * recipe.outcomes.length)];
     var rarity = rollMastercraftRarity();
     var itemId = recipe.itemId(key, rarity);
-    addItem(itemId, 1);
+    var ftClass = rarity === 'fantastic' ? 'ft-fantastic' : rarity === 'supreme' ? 'ft-supreme' : rarity === 'rare' ? 'ft-rare' : 'ft-success';
     bumpStat('crafted'); addXp(recipe.xpSkill || 'jewelrycrafting', 20000);
+    if(recipe.gear){
+      // Legendary weapon/shield/ward: mint a UNIQUE that carries the effect (leg) at the top tier of its base.
+      var gdef = D1_LEG_GEAR_MAP[key];
+      var topIdx = legGearBaseTopTier(gdef.base);
+      var prefix = WARD_TYPE_MAP[gdef.base] ? 'stward_' : (STACKABLE_SHIELD_TYPE_MAP[gdef.base] ? 'stshield_' : 'stweapon_');
+      var uid = genUid();
+      state.uniqueItems[uid] = { uid:uid, base: prefix + gdef.base + '_t' + topIdx + '_' + rarity,
+        kind: (gdef.slot === 'mainhand' ? 'weapon' : (gdef.group === 'defense' ? 'shield' : 'ward')),
+        tier: topIdx + 1, rarity: rarity, enchants: [], enhance: 0, leg: key };
+      var git = recipe.itemMap[itemId];
+      addLog('Mastercraft! You forged the Legendary ' + git.name + ' — ' + gdef.desc, 'important');
+      spawnFloatingText('+1 ' + git.name, ftClass);
+      needsRender = true;
+      return;
+    }
+    addItem(itemId, 1);
     var it = recipe.itemMap[itemId];
     addLog('Mastercraft! You forged the ' + it.name + ' — +' + Math.round(it.value * 100) + '% ' + it.statLabel + '.', 'important');
-    spawnFloatingText('+1 ' + it.name, rarity === 'fantastic' ? 'ft-fantastic' : rarity === 'supreme' ? 'ft-supreme' : rarity === 'rare' ? 'ft-rare' : 'ft-success');
+    spawnFloatingText('+1 ' + it.name, ftClass);
     needsRender = true;
   }
   function equipLegRing(itemId, slotId){
@@ -12245,7 +12288,10 @@
       } else {
         html += '<div class="chance-line" style="margin-top:6px">Yields one random Legendary ' + escapeHtml(selBp.slotLabel) + ', its effect scaled <b>2x / 4x / 8x</b> by the rarity it rolls:</div>';
         html += '<div class="style-row" style="margin:4px 0 8px">';
-        recipe.outcomes.forEach(function(key){ var d = recipe.defMap[key]; if(d) html += '<span class="style-btn" style="cursor:default">' + d.icon + ' ' + escapeHtml(d.short || d.name) + ' <span class="style-type" style="text-transform:none">+' + Math.round(d.base * 100) + '% ' + escapeHtml(d.stat) + '</span></span>'; });
+        recipe.outcomes.forEach(function(key){ var d = recipe.defMap[key]; if(!d) return;
+          if(recipe.gear){ html += '<span class="style-btn" style="cursor:default">' + legGearBaseIcon(d.base) + ' ' + escapeHtml(d.name) + ' <span class="style-type" style="text-transform:none">' + escapeHtml(((CLASS_DEFS_BY_ID[d.cls]||{}).name) || '') + '</span></span>'; }
+          else { html += '<span class="style-btn" style="cursor:default">' + d.icon + ' ' + escapeHtml(d.short || d.name) + ' <span class="style-type" style="text-transform:none">+' + Math.round(d.base * 100) + '% ' + escapeHtml(d.stat) + '</span></span>'; }
+        });
         html += '</div>';
         var haveRare = recipe.countRare();
         html += '<div class="inputs-line">Needs: ' + inputsLine(recipe.inputs, 'mc-' + selBp.id) + ' &bull; <span class="' + (haveRare >= recipe.rareCount ? 'ok' : 'bad') + '">' + recipe.rareCount + 'x ' + escapeHtml(recipe.rareLabel) + ' (' + haveRare + ')</span></div>';
@@ -23966,7 +24012,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,
