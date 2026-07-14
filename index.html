@@ -4436,11 +4436,11 @@
   var LEGENDARY_RARITY_MULT = { normal:1, rare:2, supreme:4, fantastic:8 };
   var LEG_RING_RARITIES = ['normal','rare','supreme','fantastic'];
   var D1_LEG_RING_DEFS = [
-    { key:'block',       name:'Cave Signet of Warding',   stat:'Block Chance',                 base:0.05, icon:svgIcon('shield','#c9a227') },
-    { key:'dodge',       name:'Cave Signet of Evasion',   stat:'Dodge Chance',                 base:0.05, icon:svgIcon('balancepose','#c9a227') },
-    { key:'ignorearmor', name:'Cave Signet of Sundering', stat:'Ignore Armor',                 base:0.05, icon:svgIcon('axe','#c9a227') },
-    { key:'ignoreres',   name:'Cave Signet of Piercing',  stat:'Ignore Resistances',           base:0.05, icon:svgIcon('starburst','#c9a227') },
-    { key:'famhaste',    name:'Cave Signet of Communion', stat:'Reduced Familiar Action Time', base:0.05, icon:svgIcon('paw','#c9a227') }
+    { key:'block',       name:'Signet of the Carapace', short:'Carapace', stat:'Block Chance',                 base:0.05, icon:svgIcon('shield','#c9a227') },
+    { key:'dodge',       name:'Signet of the Skitter',  short:'Skitter',  stat:'Dodge Chance',                 base:0.05, icon:svgIcon('balancepose','#c9a227') },
+    { key:'ignorearmor', name:'Signet of the Fang',     short:'Fang',     stat:'Ignore Armor',                 base:0.05, icon:svgIcon('axe','#c9a227') },
+    { key:'ignoreres',   name:'Signet of Venom',        short:'Venom',    stat:'Ignore Resistances',           base:0.05, icon:svgIcon('starburst','#c9a227') },
+    { key:'famhaste',    name:'Signet of the Brood',    short:'Brood',    stat:'Reduced Familiar Action Time', base:0.05, icon:svgIcon('paw','#c9a227') }
   ];
   var D1_LEG_RING_MAP = {}; D1_LEG_RING_DEFS.forEach(function(d){ D1_LEG_RING_MAP[d.key] = d; });
   function legRingItemId(key, rarity){ return 'legring_d1_' + key + '_' + rarity; }
@@ -4458,9 +4458,9 @@
   // cloak). Same 2x/4x/8x rarity scaling as the Signets; a Shroud's effect is inherent -- it grants no
   // base defense (like a legendary Signet grants no base ring stat).
   var D1_LEG_CLOAK_DEFS = [
-    { key:'accuracy',   name:'Cave Shroud of Precision', stat:'Accuracy',        base:0.50, icon:svgIcon('target','#c9a227') },
-    { key:'critchance', name:'Cave Shroud of Fortune',   stat:'Critical Chance', base:0.05, icon:svgIcon('starburst','#c9a227') },
-    { key:'critdmg',    name:'Cave Shroud of Malice',    stat:'Critical Damage', base:0.20, icon:svgIcon('crossedswords','#c9a227') }
+    { key:'accuracy',   name:'Shroud of Many Eyes',  short:'Many Eyes', stat:'Accuracy',        base:0.50, icon:svgIcon('target','#c9a227') },
+    { key:'critchance', name:'Shroud of the Ambush', short:'Ambush',    stat:'Critical Chance', base:0.05, icon:svgIcon('starburst','#c9a227') },
+    { key:'critdmg',    name:"Widow's Shroud",       short:'Widow',     stat:'Critical Damage', base:0.20, icon:svgIcon('crossedswords','#c9a227') }
   ];
   var D1_LEG_CLOAK_MAP = {}; D1_LEG_CLOAK_DEFS.forEach(function(d){ D1_LEG_CLOAK_MAP[d.key] = d; });
   function legCloakItemId(key, rarity){ return 'legcloak_d1_' + key + '_' + rarity; }
@@ -4478,13 +4478,13 @@
   var MASTERCRAFT_RECIPES = {
     d1_ring: { layer:'d1', slot:'ring',
       inputs: { metallurgy_t20:1000, gem_voidcrystal:100, twine_t20:100, goldsmithing_t20:100 },
-      rareCount: 10, rareLabel:'Rare Tier-20 Rings', stripPrefix:'Cave Signet of ', xpSkill:'jewelrycrafting',
+      rareCount: 10, rareLabel:'Rare Tier-20 Rings', xpSkill:'jewelrycrafting',
       defMap: D1_LEG_RING_MAP, itemMap: LEGENDARY_RING_ITEMS, itemId: legRingItemId,
       countRare: countRareT20Rings, consumeRare: consumeRareT20Rings,
       outcomes: D1_LEG_RING_DEFS.map(function(d){ return d.key; }) },
     d1_cape: { layer:'d1', slot:'cape',
       inputs: { weaving_t20:1000 },              // 1000 Tier-20 refined Cloths
-      rareCount: 10, rareLabel:'Rare Tier-20 Cloaks', stripPrefix:'Cave Shroud of ', xpSkill:'tailoring',
+      rareCount: 10, rareLabel:'Rare Tier-20 Cloaks', xpSkill:'tailoring',
       defMap: D1_LEG_CLOAK_MAP, itemMap: LEGENDARY_CLOAK_ITEMS, itemId: legCloakItemId,
       countRare: countRareT20Cloaks, consumeRare: consumeRareT20Cloaks,
       outcomes: D1_LEG_CLOAK_DEFS.map(function(d){ return d.key; }) }
@@ -5088,7 +5088,7 @@
   // on top only at the moment of a monster attack, so it is NOT folded in here.
   function playerDodgeChance(st){
     st = st || state;
-    return (getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + pyromancerHeatHazeDodge(st) + quickdrawSecondWindDodge(st) + legendaryRingBonus('dodge', st)) * berserkerGlassMult(st); // + Pyromancer Heat Haze; + Quickdraw Second Wind; + Cave Signet of Evasion; x Berserker Glass Titan (-40% Dodge)
+    return (getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + pyromancerHeatHazeDodge(st) + quickdrawSecondWindDodge(st) + legendaryRingBonus('dodge', st)) * berserkerGlassMult(st); // + Pyromancer Heat Haze; + Quickdraw Second Wind; + Signet of the Skitter; x Berserker Glass Titan (-40% Dodge)
   }
   // ===== Assassin (twin Claws): reworked ladder =====
   //  Lv1  Rhythm        -- alternating main/off-hand hits build a meter; at full, the next two landed
@@ -5218,7 +5218,7 @@
     if(summonerBonus(40) && state.playerHp < maxHp(state) * 0.25) ms *= 0.5;
     if(frostwardenBonus(80)) ms *= FROST_RESONANCE_CAST_MULT; // Rime Resonance: your Rime familiar casts 30% faster
     if(templarBonus(20)) ms *= 0.85; // Beacon of Faith: familiars cast 15% faster
-    ms *= (1 - Math.min(0.9, legendaryRingBonus('famhaste', state))); // Cave Signet of Communion: reduced familiar action time
+    ms *= (1 - Math.min(0.9, legendaryRingBonus('famhaste', state))); // Signet of the Brood: reduced familiar action time
     return Math.max(2500, ms);
   }
   function awardClassXp(amount){ var id = activeClassId(state); if(id && amount > 0) addXp(id, amount); }
@@ -10585,7 +10585,7 @@
     // Scepters are a hybrid -- half of their swing is blunt (physical triangle vs armor) and half is
     // light (element triangle vs the monster's element); both halves are averaged into one multiplier.
     var elementMult = isWandAttack ? elementAdvantage(weaponStyle.element, monster.element) : 1;
-    // Cave Signet of Piercing: ignore a share of the enemy's elemental resistance (recover the shortfall below 1x).
+    // Signet of Venom: ignore a share of the enemy's elemental resistance (recover the shortfall below 1x).
     var _ignRes = legendaryRingBonus('ignoreres', state); if(_ignRes > 0 && elementMult < 1) elementMult += (1 - elementMult) * _ignRes;
     var advantage;
     if(isWandAttack){
@@ -10598,7 +10598,7 @@
     } else {
       advantage = weightedAdvantage(weaponStyle.attackTypes || {blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
     }
-    // Cave Signet of Sundering: ignore a share of the enemy's armour mitigation (recover the shortfall below 1x).
+    // Signet of the Fang: ignore a share of the enemy's armour mitigation (recover the shortfall below 1x).
     var _ignArm = legendaryRingBonus('ignorearmor', state); if(_ignArm > 0 && advantage < 1) advantage += (1 - advantage) * _ignArm;
     // Shared Sunder (Sentinel Brittle Guard): while the foe's armour is shredded, ignore a share of its mitigation.
     if(!isOffhand && advantage < 1 && state.classDebuffs && (state.classDebuffs.enemyArmorUntil||0) > Date.now()) advantage += (1 - advantage) * SENTINEL_SHRED_FRAC;
@@ -12156,7 +12156,7 @@
       } else {
         html += '<div class="chance-line" style="margin-top:6px">Yields one random Legendary ' + escapeHtml(selBp.slotLabel) + ', its effect scaled <b>2x / 4x / 8x</b> by the rarity it rolls:</div>';
         html += '<div class="style-row" style="margin:4px 0 8px">';
-        recipe.outcomes.forEach(function(key){ var d = recipe.defMap[key]; if(d) html += '<span class="style-btn" style="cursor:default">' + d.icon + ' ' + escapeHtml(d.name.replace(recipe.stripPrefix, '')) + ' <span class="style-type" style="text-transform:none">+' + Math.round(d.base * 100) + '% ' + escapeHtml(d.stat) + '</span></span>'; });
+        recipe.outcomes.forEach(function(key){ var d = recipe.defMap[key]; if(d) html += '<span class="style-btn" style="cursor:default">' + d.icon + ' ' + escapeHtml(d.short || d.name) + ' <span class="style-type" style="text-transform:none">+' + Math.round(d.base * 100) + '% ' + escapeHtml(d.stat) + '</span></span>'; });
         html += '</div>';
         var haveRare = recipe.countRare();
         html += '<div class="inputs-line">Needs: ' + inputsLine(recipe.inputs, 'mc-' + selBp.id) + ' &bull; <span class="' + (haveRare >= recipe.rareCount ? 'ok' : 'bad') + '">' + recipe.rareCount + 'x ' + escapeHtml(recipe.rareLabel) + ' (' + haveRare + ')</span></div>';
