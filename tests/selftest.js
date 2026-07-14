@@ -2478,6 +2478,57 @@
     eq(FF.setFull('reaper', rst), true, 'a bare-head 3-piece set hits its capstone at 3 pieces');
   });
 
+  // ---- D1 armor Set Items: t21 pieces, forge, equip, defense ------------------------------------------
+  suite('D1 armor sets: forge + equip + t21 stats', function(){
+    // The four material formulas exist with the right bill.
+    var cloth = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','cloth')]);
+    ok(cloth && cloth.setarmor, 'the Cloth armor formula is a set-armor recipe');
+    eq(cloth.inputs.weaving_t20, 1000, 'Cloth set formula costs 1000 t20 cloth');
+    eq(cloth.rareCount, 10, 'set formulas need 10 rare t20 armor of the material');
+    eq(FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','plate')]).inputs.metallurgy_t20, 1000, 'Plate set formula costs 1000 t20 ingots');
+    eq(FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','leather')]).inputs.tanning_t20, 1000, 'Leather set formula costs 1000 t20 leather');
+    // The catalyst is rare t20 armor of that material, across the four slots.
+    ok(FF.setArmorRareIds('tailoring').indexOf('bodyarmor_tailoring_helmet_t20_rare') !== -1, 'cloth catalyst counts rare t20 cloth armor');
+    eq(FF.setArmorRareIds('chain').length, 4, 'four slots of rare t20 chain armor count as catalysts');
+
+    var s = FF._state, svInv = s.inventory, svUniq = s.uniqueItems, svBody = s.bodyArmor, svBp = s.blueprints, svXp = s.xp, svPhys = s.physique;
+
+    // Full forge: give the bill, craft a Chain set piece, confirm a t21 set unique is minted.
+    s.uniqueItems = {}; s.blueprints = {};
+    s.inventory = { metallurgy_t20: 1000 };
+    FF.setArmorRareIds('chain').forEach(function(id){ s.inventory[id] = 3; });
+    var bp = FF.masterworkBlueprintId('d1','chain'); s.blueprints[bp] = 1;
+    FF.craftMastercraft(bp);
+    var mintedUid = Object.keys(s.uniqueItems)[0];
+    var u = s.uniqueItems[mintedUid];
+    ok(u && u.set && FF.D1_SET_DEFS[u.set], 'the forge mints a set-piece unique carrying its class-set');
+    eq(u.material, 'chain', 'a Chain formula forges a chain piece');
+    eq(u.tier, FF.SET_TIER_INDEX, 'the set piece is t21 (one above the t20 cap)');
+    ok(/^bodyarmor_chain_(helmet|chest|gauntlets|boots)_t21_(rare|supreme|fantastic)$/.test(u.base), 'the base is a t21 chain armor item, floored at Rare');
+    eq(s.inventory.metallurgy_t20, 0, 'the forge consumes the 1000 ingots');
+    eq(s.blueprints[bp], 0, 'the forge consumes the Blueprint');
+    var rareLeft = FF.setArmorRareIds('chain').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
+    eq(rareLeft, 4*3 - 10, 'the forge consumes exactly 10 rare chain armor pieces');
+
+    // Enchant slots follow rarity (the shared unique rule): normal 1 / rare 2 / supreme 3 / fantastic 4.
+    eq(FF.enchantSlotsFor(u.rarity), ({normal:1,rare:2,supreme:3,fantastic:4})[u.rarity], 'a set piece uses the rarity enchant-slot rule');
+
+    // Equip it: requires t20 (level 100) armor proficiency, then it seats + counts toward the set.
+    s.bodyArmor = { helmet:{tier:0,rarity:'normal'}, chest:{tier:0,rarity:'normal'}, gauntlets:{tier:0,rarity:'normal'}, boots:{tier:0,rarity:'normal'}, back:{tier:0,rarity:'normal'} };
+    s.physique = {}; s.xp = {}; // no proficiency yet
+    eq(FF.equipUniqueBodyArmor(mintedUid), false, 'a t21 set piece needs maxed armor proficiency to equip');
+    s.xp.chainmailarmor = FF.xpFloorForLevel(100);
+    eq(FF.equipUniqueBodyArmor(mintedUid), true, 'with maxed Chain proficiency, the set piece equips');
+    eq(s.bodyArmor[u.slot].uid, mintedUid, 'the piece seats in its slot');
+    eq(s.bodyArmor[u.slot].material, 'chain', 'the seated slot records its material (for class gating)');
+    eq(FF.setPiecesWorn(u.set, s), 1, 'the equipped piece counts toward its class set');
+    // Its t21 defense flows through the normal armor total and beats a t20 rare of the same slot.
+    var setDef = FF.getTotalArmorDefense(s);
+    ok(setDef > 0, 'the t21 set piece contributes armor defense');
+
+    s.inventory = svInv; s.uniqueItems = svUniq; s.bodyArmor = svBody; s.blueprints = svBp; s.xp = svXp; s.physique = svPhys;
+  });
+
   suite('mastercraft: D1 legendary amulets', function(){
     // A state with a legendary Pendant seated in the Amulet slot.
     function amSt(key, rarity, extra){

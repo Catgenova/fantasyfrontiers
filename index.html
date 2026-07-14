@@ -7778,6 +7778,55 @@
     });
   });
   Object.assign(ALL_SELLABLE, BODY_ARMOR_ITEMS);
+  // ===== D1 Set-piece armor: a t21 tier (one above the t20 craftable cap), used ONLY by Set pieces.
+  // Best-in-slot base defense scaled 2x/4x/8x by rarity (cloth keeps flat defense like normal cloth, its
+  // rarity instead pumping the familiar-efficiency bonus). Not craftable in the normal ladder -- these
+  // items exist purely so an equipped Set piece resolves its stats through the usual armor plumbing.
+  var SET_TIER_INDEX = TIER_COUNT; // 21
+  var SET_ARMOR_SLOTS = ['helmet','chest','gauntlets','boots'];
+  BODY_ARMOR_MATERIAL_IDS.forEach(function(material){
+    var mat = BODY_ARMOR_MATERIALS[material];
+    SET_ARMOR_SLOTS.forEach(function(slot){
+      if(mat.baseDefense[slot] == null) return;
+      ['normal','rare','supreme','fantastic'].forEach(function(rarityId){
+        var r = getRarity(rarityId);
+        var id = 'bodyarmor_'+material+'_'+slot+'_t'+SET_TIER_INDEX+'_'+rarityId;
+        BODY_ARMOR_ITEMS[id] = {
+          id:id, name: r.label + (mat.label ? mat.label+' ' : '') + (mat.slotLabels[slot]||slot),
+          icon: svgIcon(BODY_ARMOR_SLOT_SHAPE[slot] || 'chestarmor', BODY_ARMOR_MATERIAL_COLOR[material] || '#8a8a8a'),
+          sell:0, material:material, slot:slot, tierIndex:SET_TIER_INDEX, rarity:rarityId,
+          defense: Math.round(tierStat(mat.baseDefense[slot], SET_TIER_INDEX) * (material==='tailoring' ? 1 : r.mult))
+        };
+      });
+    });
+  });
+  // Set-piece plumbing: which (class, slot) pieces each material's formula can forge, + minting.
+  var SET_PIECES_BY_MATERIAL = {};
+  Object.keys(D1_SET_DEFS).forEach(function(cls){ var d = D1_SET_DEFS[cls];
+    Object.keys(d.pieces).forEach(function(slot){ var m = d.pieces[slot];
+      (SET_PIECES_BY_MATERIAL[m] = SET_PIECES_BY_MATERIAL[m] || []).push({ cls:cls, slot:slot }); }); });
+  function setPieceBaseId(cls, slot, rarity){ var d = D1_SET_DEFS[cls]; if(!d || !d.pieces[slot]) return null; return 'bodyarmor_'+d.pieces[slot]+'_'+slot+'_t'+SET_TIER_INDEX+'_'+rarity; }
+  function setPieceName(cls, slot){ return ((CLASS_DEFS_BY_ID[cls]||{}).name || cls) + ' ' + (BODY_ARMOR_LABELS[slot]||slot); }
+  function mintSetPiece(cls, slot, rarity){
+    var base = setPieceBaseId(cls, slot, rarity); if(!base) return null;
+    var uid = genUid();
+    state.uniqueItems[uid] = { uid:uid, base:base, kind:'bodyarmor', slot:slot, material:D1_SET_DEFS[cls].pieces[slot],
+      tier:SET_TIER_INDEX, rarity:rarity, enchants:[], enhance:0, set:cls }; // tier=21 base INDEX (equip adds +1)
+    return uid;
+  }
+  // Rare Tier-20 armor of a material (any slot) -- the forge catalyst.
+  function setArmorRareIds(material){ return SET_ARMOR_SLOTS.filter(function(slot){ return BODY_ARMOR_MATERIALS[material].baseDefense[slot] != null; }).map(function(slot){ return 'bodyarmor_'+material+'_'+slot+'_t20_rare'; }); }
+  function setArmorRecipe(material, matInput, xpSkill, rareLabel){
+    return { layer:'d1', setarmor:true, material:material, inputs:matInput, rareCount:10, rareLabel:rareLabel, xpSkill:xpSkill,
+      outcomes: SET_PIECES_BY_MATERIAL[material] || [],
+      countRare: function(){ return setArmorRareIds(material).reduce(function(n,id){ return n + (state.inventory[id]||0); }, 0); },
+      consumeRare: function(count){ setArmorRareIds(material).forEach(function(id){ if(count<=0) return; var have = state.inventory[id]||0, take = Math.min(have,count); if(take>0){ state.inventory[id] = have-take; count -= take; } }); } };
+  }
+  // Each armor formula forges a random class-set piece of its material (1000 refined material + 10 rare t20 armor).
+  MASTERCRAFT_RECIPES.d1_cloth   = setArmorRecipe('tailoring', { weaving_t20:1000 },    'tailoring',      'Rare Tier-20 Cloth armor');
+  MASTERCRAFT_RECIPES.d1_leather = setArmorRecipe('leather',   { tanning_t20:1000 },     'leatherworking', 'Rare Tier-20 Leather armor');
+  MASTERCRAFT_RECIPES.d1_chain   = setArmorRecipe('chain',     { metallurgy_t20:1000 },  'armorsmithing',  'Rare Tier-20 Chain armor');
+  MASTERCRAFT_RECIPES.d1_plate   = setArmorRecipe('plate',     { metallurgy_t20:1000 },  'armorsmithing',  'Rare Tier-20 Plate armor');
   // Leatherworking-only body armor bonus: each equipped Leather piece (any of the 4
   // Chain/Plate-style slots) adds a flat +5% Bow damage and +1% dodge chance, scaled by
   // that piece's own rarity multiplier. Flat per slot -- does not grow with tier.
@@ -8275,9 +8324,19 @@
     state.blueprints[blueprintId] -= 1;
     var key = recipe.outcomes[Math.floor(Math.random() * recipe.outcomes.length)];
     var rarity = rollMastercraftRarity();
-    var itemId = recipe.itemId(key, rarity);
     var ftClass = rarity === 'fantastic' ? 'ft-fantastic' : rarity === 'supreme' ? 'ft-supreme' : rarity === 'rare' ? 'ft-rare' : 'ft-success';
     bumpStat('crafted'); addXp(recipe.xpSkill || 'jewelrycrafting', 20000);
+    if(recipe.setarmor){
+      // D1 armor Set piece: mint a t21 UNIQUE carrying its class-set membership. Best-in-slot -> floor at Rare.
+      if(rarityRank(rarity) < 1){ rarity = 'rare'; ftClass = 'ft-rare'; }
+      mintSetPiece(key.cls, key.slot, rarity);
+      var pname = getRarity(rarity).label + setPieceName(key.cls, key.slot);
+      addLog('Mastercraft! You forged the ' + pname + ' — part of the ' + ((CLASS_DEFS_BY_ID[key.cls]||{}).name || key.cls) + ' set.', 'important');
+      spawnFloatingText('+1 ' + pname, ftClass);
+      needsRender = true;
+      return;
+    }
+    var itemId = recipe.itemId(key, rarity);
     if(recipe.gear){
       // Legendary weapon/shield/ward: mint a UNIQUE that carries the effect (leg) at the top tier of its base.
       // A Masterwork legendary is never Normal -- floor the rarity roll at Rare (also keeps it improvable).
@@ -9902,7 +9961,7 @@
   var IMPROVE_MIN_RANK = 1; // rare
   function isImprovableRarity(rarityId){ return rarityRank(rarityId) >= IMPROVE_MIN_RANK; }
   function isUniqueId(id){ return typeof id==='string' && id.charAt(0)==='u' && !!(state.uniqueItems && state.uniqueItems[id]); }
-  function uniqueBaseName(u){ if(u.leg && LEGENDARY_GEAR_ITEMS[legGearItemId(u.leg, u.rarity)]) return LEGENDARY_GEAR_ITEMS[legGearItemId(u.leg, u.rarity)].name; var b = ALL_SELLABLE[u.base]; return b ? b.name : 'Equipment'; }
+  function uniqueBaseName(u){ if(u.leg && LEGENDARY_GEAR_ITEMS[legGearItemId(u.leg, u.rarity)]) return LEGENDARY_GEAR_ITEMS[legGearItemId(u.leg, u.rarity)].name; if(u.set && D1_SET_DEFS[u.set]) return setPieceName(u.set, u.slot); var b = ALL_SELLABLE[u.base]; return b ? b.name : 'Equipment'; }
   function uniqueDisplayName(u){ return uniqueBaseName(u) + (u.enhance>0 ? ' +'+u.enhance : ''); }
   function uniqueIcon(u){ if(u.leg && D1_LEG_GEAR_MAP[u.leg]) return legGearBaseIcon(D1_LEG_GEAR_MAP[u.leg].base); var b = ALL_SELLABLE[u.base]; return (b && b.icon) || svgIcon('sword','var(--gold)'); }
   // Create a unique instance from an owned base equipment item (consumes 1). Returns uid or null.
@@ -9999,7 +10058,8 @@
     var u = state.uniqueItems[uid];
     var m = /^bodyarmor_(.+)_(gauntlets|boots|chest|helmet|back)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
     var material = m[1], slot = m[2], profId = MATERIAL_TO_PROFICIENCY[material];
-    if(!meetsProficiencyRequirement(profId ? state.xp[profId] : 0, u.tier)){ addLog('Your proficiency isn’t high enough to equip '+uniqueDisplayName(u)+' yet.','danger'); return false; }
+    // t21 Set pieces gate on the top craftable proficiency (t20 / level 100), not a non-existent t21 requirement.
+    if(!meetsProficiencyRequirement(profId ? state.xp[profId] : 0, Math.min(u.tier, TIER_COUNT-1))){ addLog('Your proficiency isn’t high enough to equip '+uniqueDisplayName(u)+' yet.','danger'); return false; }
     var ss = state.bodyArmor[slot];
     if(ss.uid){ /* release previously-equipped unique back to the table */ }
     else if(ss.tier>0 && ss.material){ addItem('bodyarmor_'+ss.material+'_'+slot+'_t'+(ss.tier-1)+'_'+ss.rarity, 1); }
@@ -12635,6 +12695,16 @@
       html += '<div class="item-top"><div class="item-icon">' + selBp.icon + '</div><div><div class="item-name">' + escapeHtml(selBp.name) + '</div><div class="item-meta">Mastercraft &bull; you hold <b>x' + fmt(haveBp) + '</b></div></div></div>';
       if(!recipe){
         html += '<div class="empty-note" style="margin-top:10px">This Mastercraft recipe is coming soon.</div>';
+      } else if(recipe.setarmor){
+        var setClasses = {}; recipe.outcomes.forEach(function(o){ setClasses[o.cls] = true; });
+        var setClsNames = Object.keys(setClasses).map(function(c){ return (CLASS_DEFS_BY_ID[c]||{}).name || c; }).sort();
+        var matLabel = (BODY_ARMOR_MATERIALS[recipe.material] && BODY_ARMOR_MATERIALS[recipe.material].label) || (recipe.material==='tailoring' ? 'Cloth' : recipe.material.charAt(0).toUpperCase()+recipe.material.slice(1));
+        html += '<div class="chance-line" style="margin-top:6px">Yields one random <b>'+escapeHtml(matLabel)+'</b> Set piece &mdash; Tier-21 best-in-slot armor scaled <b>2x / 4x / 8x</b> by rarity, part of a class set (2-piece &amp; full-set bonuses). One of ' + recipe.outcomes.length + ' pieces across these class sets:</div>';
+        html += '<div class="style-row" style="margin:4px 0 8px">' + setClsNames.map(function(n){ return '<span class="style-btn" style="cursor:default">' + escapeHtml(n) + '</span>'; }).join('') + '</div>';
+        var haveRareA = recipe.countRare();
+        html += '<div class="inputs-line">Needs: ' + inputsLine(recipe.inputs, 'mc-' + selBp.id) + ' &bull; <span class="' + (haveRareA >= recipe.rareCount ? 'ok' : 'bad') + '">' + recipe.rareCount + 'x ' + escapeHtml(recipe.rareLabel) + ' (' + haveRareA + ')</span></div>';
+        var canCraftA = haveBp > 0 && hasInputs(recipe.inputs) && haveRareA >= recipe.rareCount;
+        html += '<button class="action-btn" data-action="craftMastercraft" data-item="' + selBp.id + '" ' + (canCraftA ? '' : 'disabled') + '>Mastercraft</button>';
       } else {
         html += '<div class="chance-line" style="margin-top:6px">Yields one random Legendary ' + escapeHtml(selBp.slotLabel) + ', its effect scaled <b>2x / 4x / 8x</b> by the rarity it rolls:</div>';
         html += '<div class="style-row" style="margin:4px 0 8px">';
@@ -24387,7 +24457,7 @@
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
-      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
+      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, SET_TIER_INDEX:SET_TIER_INDEX, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, sharpshooterAccOverDodge:sharpshooterAccOverDodge, sharpshooterEagleEyeCrit:sharpshooterEagleEyeCrit, sharpshooterPinpointMult:sharpshooterPinpointMult, sharpshooterFocusCritDmg:sharpshooterFocusCritDmg, sharpshooterArmorPierce:sharpshooterArmorPierce, sharpshooterPatienceMult:sharpshooterPatienceMult, SHARP_EAGLE_CAP:SHARP_EAGLE_CAP, SHARP_PINPOINT_CAP:SHARP_PINPOINT_CAP, SHARP_FOCUS_CAP:SHARP_FOCUS_CAP, SHARP_PATIENCE_CAP:SHARP_PATIENCE_CAP, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautSmashReady:juggernautSmashReady, juggernautFuryStacks:juggernautFuryStacks, juggernautArmorPierce:juggernautArmorPierce, JUG_WINDUP_DMG:JUG_WINDUP_DMG, JUG_WINDUP_SLOW:JUG_WINDUP_SLOW, JUG_SMASH_EVERY:JUG_SMASH_EVERY, JUG_CONCUSS_MS:JUG_CONCUSS_MS, JUG_FURY_PER:JUG_FURY_PER, JUG_FURY_MAX:JUG_FURY_MAX, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeRuneHungerMult:spellbladeRuneHungerMult, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, spellbladeEchoChance:spellbladeEchoChance, equippedEnchantCount:equippedEnchantCount, spellbladeEnchantBoost:spellbladeEnchantBoost, SPELLBLADE_RUNEHUNGER_PER:SPELLBLADE_RUNEHUNGER_PER, SPELLBLADE_CRITRUNE_PER:SPELLBLADE_CRITRUNE_PER, SPELLBLADE_ECHO_PCT:SPELLBLADE_ECHO_PCT, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, legendaryDmgMult:legendaryDmgMult, legendaryDodgeBonus:legendaryDodgeBonus, legendaryLifestealPct:legendaryLifestealPct, legWastingCurseIncomingMult:legWastingCurseIncomingMult, legNotePoisonStart:legNotePoisonStart, legVanishWindowReady:legVanishWindowReady, samuraiFocusCap:samuraiFocusCap, knightMomentumPerStack:knightMomentumPerStack, legDistinctEnchantCount:legDistinctEnchantCount, legEchoDmgMult:legEchoDmgMult, legShieldBashDamage:legShieldBashDamage, legReflectCanCrit:legReflectCanCrit, legReflectCritMult:legReflectCritMult, legendaryCritDmg:legendaryCritDmg, legEarthshakerBuild:legEarthshakerBuild, legEarthshakerConsume:legEarthshakerConsume, LEG_TREMOR_CAP:LEG_TREMOR_CAP, LEG_TREMOR_MULT:LEG_TREMOR_MULT, CRIT_DAMAGE_MULT:CRIT_DAMAGE_MULT, legendaryAccuracyBonus:legendaryAccuracyBonus, legRangerAilmentRolls:legRangerAilmentRolls, LEG_CHAINSHOT_MAX:LEG_CHAINSHOT_MAX, legendaryCritChance:legendaryCritChance, legThunderMaxStacks:legThunderMaxStacks, legRetributionArmed:legRetributionArmed, legRetributionConsume:legRetributionConsume, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, heraldGuardMaxStacks:heraldGuardMaxStacks, HERALD_GUARD_MAX_STACKS:HERALD_GUARD_MAX_STACKS, HERALD_GUARD_PER_STACK:HERALD_GUARD_PER_STACK, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legChargedRiposteArmed:legChargedRiposteArmed, legChargedRiposteConsume:legChargedRiposteConsume, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
