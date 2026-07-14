@@ -4483,6 +4483,85 @@
         value: Math.round(d.base * LEGENDARY_RARITY_MULT[r] * 1000) / 1000, statLabel: d.stat, sell:0 };
     });
   });
+  // ---- D1 legendary WEAPONS / SHIELDS / WARDS ----
+  // Each forges from its formula into a UNIQUE that carries one legendary effect -- a 6th class-perk-style
+  // passive, active while the item is equipped. One legendary per class's signature gear (24 weapons + 6
+  // shields + 5 wards = 35). `group` = which formula forges it (slash/pierce/blunt/ranged/arcane/defense);
+  // `slot` = mainhand or offhand; `base` = the underlying weapon/shield/ward type id it is forged as. The
+  // effect itself is read via legMainhandEffect()/legOffhandEffect() and wired into combat per-effect.
+  var D1_LEG_GEAR_DEFS = [
+    // --- Slash weapons (mainhand) ---
+    { key:'relicreaver',    name:'Relic Reaver',    group:'slash', slot:'mainhand', base:'scimitar',    cls:'treasureHunter', desc:'Kills can drop a Broken Relic (chance scales with foe tier); +25% damage while your Faith is above half.' },
+    { key:'wastingcurse',   name:'Wasting Curse',   group:'slash', slot:'mainhand', base:'hatchet',     cls:'plaguebearer',   desc:'A poisoned foe deals −5% damage per second poisoned (up to −40%).' },
+    { key:'crimsonharvest', name:'Crimson Harvest', group:'slash', slot:'mainhand', base:'halfmoonaxe',  cls:'reaver',         desc:'Each Bleed stack on the foe grants you +2% lifesteal on your direct hits.' },
+    { key:'phantomassault', name:'Phantom Assault', group:'slash', slot:'mainhand', base:'claw',         cls:'assassin',       desc:'While Vanish is ready: +20% Dodge and +25% damage.' },
+    { key:'cull',           name:'Cull',            group:'slash', slot:'mainhand', base:'fullmoonaxe',  cls:'executioner',    desc:'+2% damage for every 1% of the foe’s missing Health (up to +100%).' },
+    { key:'spectralaegis',  name:'Spectral Aegis',  group:'slash', slot:'mainhand', base:'scythe',       cls:'reaper',         desc:'Your Siphon Shield cap doubles to 40% of max Health.' },
+    // --- Pierce weapons (mainhand) ---
+    { key:'engarde',        name:'En Garde',        group:'pierce', slot:'mainhand', base:'rapier',      cls:'duelist',        desc:'+15% Dodge chance.' },
+    { key:'flowingblade',   name:'Flowing Blade',   group:'pierce', slot:'mainhand', base:'falchion',    cls:'samurai',        desc:'Focus no longer resets on a miss (drops one stack) and its cap rises to 15.' },
+    { key:'resonantecho',   name:'Resonant Echo',   group:'pierce', slot:'mainhand', base:'greatsword',  cls:'spellblade',     desc:'Each Spell Echo hits +10% harder per distinct enchant you carry.' },
+    { key:'relentlessassault', name:'Relentless Assault', group:'pierce', slot:'mainhand', base:'claymore', cls:'knight',      desc:'Momentum cap rises to 10 stacks and each stack’s speed bonus rises to 12%.' },
+    // --- Blunt weapons (mainhand) ---
+    { key:'shieldbash',     name:'Shield Bash',     group:'blunt', slot:'mainhand', base:'mace',         cls:'herald',         desc:'Blocking deals bonus damage to the attacker, scaling with your Armor.' },
+    { key:'crushingreprisal', name:'Crushing Reprisal', group:'blunt', slot:'mainhand', base:'maul',     cls:'sentinel',       desc:'Your reflected damage crits for +100% extra crit damage.' },
+    { key:'titaniccrits',   name:'Titanic Crits',   group:'blunt', slot:'mainhand', base:'warhammer',    cls:'berserker',      desc:'+10% Critical Hit damage per 1000 max Health (up to +100%).' },
+    { key:'earthshaker',    name:'Earthshaker',     group:'blunt', slot:'mainhand', base:'sledge',       cls:'juggernaut',     desc:'Crits build a Tremor meter; at full, your next swing deals +300% and empties it.' },
+    // --- Ranged weapons (mainhand) ---
+    { key:'chainshot',      name:'Chain Shot',      group:'ranged', slot:'mainhand', base:'bowShort',    cls:'quickdraw',      desc:'Trick Shot’s free arrow can itself crit and trigger another free arrow (bounded chain).' },
+    { key:'compoundarrows', name:'Compound Arrows', group:'ranged', slot:'mainhand', base:'bowMedium',   cls:'ranger',         desc:'Each hit rolls two ailment procs instead of one.' },
+    { key:'steadyaim',      name:'Steady Aim',      group:'ranged', slot:'mainhand', base:'bowLong',     cls:'sharpshooter',   desc:'+30% Accuracy.' },
+    // --- Arcane weapons (mainhand) ---
+    { key:'emberstorm',     name:'Ember Storm',     group:'arcane', slot:'mainhand', base:'wandFire',    cls:'pyromancer',     desc:'Your Burn ticks have a chance to add another Burn stack (self-spreading fire).' },
+    { key:'deepfreeze',     name:'Deep Freeze',     group:'arcane', slot:'mainhand', base:'wandWater',   cls:'frostwarden',    desc:'At max Chill, the foe is periodically Frozen (action bar stunned).' },
+    { key:'tempest',        name:'Tempest',         group:'arcane', slot:'mainhand', base:'wandEarth',   cls:'thunderfury',    desc:'Chain Lightning’s crit cap rises to 65% and its attack-speed cap to 90%.' },
+    { key:'aegisbreak',     name:'Aegis Break',     group:'arcane', slot:'mainhand', base:'wandLight',   cls:'lumen',          desc:'When your shield breaks, it bursts for Light damage scaling with its remaining value.' },
+    { key:'cursebringer',   name:'Cursebringer',    group:'arcane', slot:'mainhand', base:'wandDark',    cls:'nightblade',     desc:'Every hit also Sunders the foe — a second debuff feeding Void Resonance and Soul Tax.' },
+    { key:'retribution',    name:'Retribution',     group:'arcane', slot:'mainhand', base:'scepter',     cls:'templar',        desc:'Whenever a Holy shield absorbs a hit, your next strike deals +50% Light damage.' },
+    { key:'rapidconjuring', name:'Rapid Conjuring', group:'arcane', slot:'mainhand', base:'staff',       cls:'summoner',       desc:'Your familiars cast 20% faster.' },
+    // --- Shields (offhand, defense formula) ---
+    { key:'fortunesriposte', name:'Fortune’s Riposte', group:'defense', slot:'offhand', base:'shieldSmall',  cls:'treasureHunter', desc:'After a Block, your next hit deals +40% damage.' },
+    { key:'immunize',       name:'Immunize',        group:'defense', slot:'offhand', base:'shieldSmall',  cls:'plaguebearer',   desc:'Take 25% less damage from a poisoned foe.' },
+    { key:'frenziedguard',  name:'Frenzied Guard',  group:'defense', slot:'offhand', base:'shieldSmall',  cls:'reaver',         desc:'Blocking grants +10% attack speed for a few seconds.' },
+    { key:'coldsnap',       name:'Cold Snap',       group:'defense', slot:'offhand', base:'shieldMedium', cls:'frostwarden',    desc:'Blocking briefly Freezes the attacker (stun).' },
+    { key:'thornmailshield', name:'Thornmail Shield', group:'defense', slot:'offhand', base:'shieldMedium', cls:'sentinel',     desc:'While at full Health, your reflect is doubled.' },
+    { key:'perfectbulwark', name:'Perfect Bulwark', group:'defense', slot:'offhand', base:'shieldLarge',  cls:'herald',         desc:'Perfect Guard’s cap rises to −40% and a miss drops only one stack (no full reset).' },
+    // --- Wards (offhand, arcane formula) ---
+    { key:'everburning',    name:'Everburning',     group:'arcane', slot:'offhand', base:'wardFire',      cls:'pyromancer',    desc:'Your Burn stacks never expire while this ward is equipped.' },
+    { key:'chargedriposte', name:'Charged Riposte', group:'arcane', slot:'offhand', base:'wardEarth',     cls:'thunderfury',   desc:'After your ward reflects a hit, your next hit is a guaranteed Critical Hit.' },
+    { key:'nightshroud',    name:'Nightshroud',     group:'arcane', slot:'offhand', base:'wardDark',      cls:'nightblade',    desc:'Foes that damage you are Enfeebled 10% for a few seconds.' },
+    { key:'beaconward',     name:'Beacon Ward',     group:'arcane', slot:'offhand', base:'wardLight',     cls:'lumen',         desc:'Your ward reflect also heals the lowest-HP ally (yourself when solo).' },
+    { key:'holyward',       name:'Holy Ward',       group:'arcane', slot:'offhand', base:'wardLight',     cls:'templar',       desc:'When your ward reflects a hit, you gain a Holy shield.' }
+  ];
+  var D1_LEG_GEAR_MAP = {}; D1_LEG_GEAR_DEFS.forEach(function(d){ D1_LEG_GEAR_MAP[d.key] = d; });
+  function legGearItemId(key, rarity){ return 'leggear_d1_' + key + '_' + rarity; }
+  function legGearBaseIcon(base){
+    var w = STACKABLE_WEAPON_TYPE_MAP[base]; if(w) return w.icon;
+    var s = STACKABLE_SHIELD_TYPE_MAP[base]; if(s) return s.icon;
+    var wd = WARD_TYPE_MAP[base]; if(wd) return wd.icon;
+    return svgIcon('starburst', '#c9a227');
+  }
+  // The forged base is the TOP tier of that type (melee=index 19; bows/wands/scepter/staff/wards=TIER_COUNT-1).
+  function legGearBaseTopTier(base){
+    var w = STACKABLE_WEAPON_TYPE_MAP[base] || STACKABLE_SHIELD_TYPE_MAP[base] || WARD_TYPE_MAP[base];
+    return (w && w.tierCount ? w.tierCount : TIER_COUNT) - 1;
+  }
+  var LEGENDARY_GEAR_ITEMS = {};
+  D1_LEG_GEAR_DEFS.forEach(function(d){
+    LEG_RING_RARITIES.forEach(function(r){
+      var id = legGearItemId(d.key, r);
+      LEGENDARY_GEAR_ITEMS[id] = { id:id, legKey:d.key, dungeon:'d1', group:d.group, slot:d.slot, base:d.base, cls:d.cls,
+        rarity:r, legendary:true, gear:true, sell:0, desc:d.desc,
+        name: d.name + (r==='normal' ? '' : ' (' + getRarity(r).label + ')'), icon: legGearBaseIcon(d.base) };
+    });
+  });
+  var LEG_GEAR_GROUP_KEYS = {}; // group id -> [effect keys], the forge outcome pool per formula
+  D1_LEG_GEAR_DEFS.forEach(function(d){ (LEG_GEAR_GROUP_KEYS[d.group] = LEG_GEAR_GROUP_KEYS[d.group] || []).push(d.key); });
+  // Which legendary effect (if any) is carried by the equipped mainhand / offhand unique. These gate every
+  // legendary effect in combat, the way classBonusActive gates class perks.
+  function legMainhandEffect(st){ st = st || state; var u = st.equippedMainhandUid && st.uniqueItems && st.uniqueItems[st.equippedMainhandUid]; return (u && u.leg) || null; }
+  function legOffhandEffect(st){ st = st || state; var u = st.equippedOffhandUid && st.uniqueItems && st.uniqueItems[st.equippedOffhandUid]; return (u && u.leg) || null; }
+  function legActive(key, st){ st = st || state; return legMainhandEffect(st) === key || legOffhandEffect(st) === key; }
   // Recipes keyed by "<layer>_<slot>". Each forges one Blueprint into a random Legendary of that slot,
   // rarity rolled 2x/4x/8x. Ring vs cloak differ only in the material bill + which item family they yield.
   var MASTERCRAFT_RECIPES = {
@@ -23887,7 +23966,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,

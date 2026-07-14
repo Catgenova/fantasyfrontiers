@@ -1973,6 +1973,49 @@
     s.inventory = svInv; s.blueprints = svBp; s.bodyArmor.back = svBack;
   });
 
+  // ---- D1 legendary weapons / shields / wards: the 35 effect definitions + item generation ------------
+  suite('mastercraft: D1 legendary gear (35 effects)', function(){
+    var defs = FF.D1_LEG_GEAR_DEFS;
+    eq(defs.length, 35, '35 legendary gear effects (24 weapons + 6 shields + 5 wards)');
+    // Group counts by formula.
+    var byGroup = {}; defs.forEach(function(d){ byGroup[d.group] = (byGroup[d.group]||0) + 1; });
+    eq(byGroup.slash, 6, 'slash formula forges one of 6 legendaries');
+    eq(byGroup.pierce, 4, 'pierce -> 4');
+    eq(byGroup.blunt, 4, 'blunt -> 4');
+    eq(byGroup.ranged, 3, 'ranged -> 3');
+    eq(byGroup.arcane, 12, 'arcane -> 12 (7 arcane weapons + 5 wards)');
+    eq(byGroup.defense, 6, 'defense -> 6 shields');
+    // Unique keys; every effect maps to a real class and a real base gear type.
+    var keys = {}; defs.forEach(function(d){ keys[d.key] = (keys[d.key]||0) + 1; });
+    ok(Object.keys(keys).every(function(k){ return keys[k] === 1; }), 'every legendary key is unique');
+    ok(defs.every(function(d){ return !!FF.CLASS_DEFS_BY_ID[d.cls]; }), 'every legendary names a real class');
+    ok(defs.every(function(d){ return d.slot === 'mainhand' || d.slot === 'offhand'; }), 'every legendary slots main- or off-hand');
+    ok(defs.every(function(d){ return typeof d.desc === 'string' && d.desc.length > 10; }), 'every legendary has a description');
+    // Every def's base is a real weapon / shield / ward type, and top-tier resolves.
+    ok(defs.every(function(d){ return FF.getWeaponStyle(d.base) || FF.isWard(d.base) || /^shield/.test(d.base); }), 'every base is a real gear type');
+    eq(FF.legGearBaseTopTier('scimitar'), 19, 'melee top tier is index 19 (20 tiers)');
+    eq(FF.legGearBaseTopTier('bowLong'), 20, 'bows top out at index 20');
+    eq(FF.legGearBaseTopTier('wandFire'), 20, 'wands top out at index 20');
+    // 35 effects x 4 rarities = 140 generated items, all flagged + non-vendorable + iconned.
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS).length, 140, '35 x 4 rarities = 140 legendary gear items');
+    ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS).every(function(id){ var it = FF.LEGENDARY_GEAR_ITEMS[id]; return it.legendary === true && it.gear === true && it.sell === 0 && /<svg/.test(it.icon); }), 'every legendary gear item is flagged, non-vendorable, iconned');
+    // Names carry the rarity suffix; base Normal is bare.
+    eq(FF.LEGENDARY_GEAR_ITEMS[FF.legGearItemId('cull','normal')].name, 'Cull', 'Normal legendary name is bare');
+    ok(/^Cull \(Fantastic\s*\)$/.test(FF.LEGENDARY_GEAR_ITEMS[FF.legGearItemId('cull','fantastic')].name), 'Fantastic legendary carries the rarity suffix');
+    // Group -> outcome-key pools (what a formula can forge).
+    eq(FF.LEG_GEAR_GROUP_KEYS.slash.length, 6, 'slash outcome pool has 6 keys');
+    ok(FF.LEG_GEAR_GROUP_KEYS.arcane.indexOf('holyward') !== -1, 'wards live in the arcane outcome pool');
+    // Detection: nothing legendary equipped -> no effect active.
+    var none = { equippedMainhandUid:null, equippedOffhandUid:null, uniqueItems:{} };
+    eq(FF.legMainhandEffect(none), null, 'no legendary mainhand -> null');
+    eq(FF.legOffhandEffect(none), null, 'no legendary offhand -> null');
+    eq(FF.legActive('cull', none), false, 'legActive false with nothing equipped');
+    // Detection reads the equipped unique's leg field.
+    var eq2 = { equippedMainhandUid:'u1', equippedOffhandUid:null, uniqueItems:{ u1:{ uid:'u1', leg:'cull' } } };
+    eq(FF.legMainhandEffect(eq2), 'cull', 'a legendary mainhand exposes its effect key');
+    eq(FF.legActive('cull', eq2), true, 'legActive true for the equipped legendary effect');
+  });
+
   // ---- Dungeon gate: a minimum Total Level to enter ANY dungeon, plus the clear-the-previous-boss chain --
   suite('dungeons: Total Level gate + unlock chain', function(){
     var s = FF._state, saved = s.dungeonsCleared;
