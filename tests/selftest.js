@@ -2395,6 +2395,53 @@
     eq(FF.legActive('coldsnap', legSt('coldsnap', 'shieldMedium')), true, 'legActive detects Cold Snap');
   });
 
+  // ---- D1 legendary gear COMBAT effects, Batch 9: the five Wards (all offhand) ------------------------
+  suite('mastercraft: legendary ward effects', function(){
+    function legSt(key, base, extra){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+        uniqueItems:{ L:{ uid:'L', leg:key, kind:'offhand', base:'stward_'+(base||'wardFire')+'_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 } },
+        equippedOffhandUid:'L' };
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+    var now = Date.now();
+
+    // Everburning (pyromancer/wardFire): Burn never expires while stacks remain.
+    var ebLapsed = legSt('everburning', 'wardFire', { activity:{type:'combat', monsterHp:100, burnStacks:3, burnUntil: now-1} });
+    ok(FF.enemyBurning(ebLapsed), 'Everburning keeps Burn alive after its timer lapses (stacks remain)');
+    var noEbLapsed = legSt('holyward', 'wardLight', { activity:{type:'combat', monsterHp:100, burnStacks:3, burnUntil: now-1} });
+    ok(!FF.enemyBurning(noEbLapsed), 'without Everburning, a lapsed Burn is gone');
+    var ebNoStacks = legSt('everburning', 'wardFire', { activity:{type:'combat', monsterHp:100, burnStacks:0, burnUntil: now-1} });
+    ok(!FF.enemyBurning(ebNoStacks), 'Everburning does nothing once the last Burn stack is gone');
+    eq(FF.legBurnNeverExpires(legSt('everburning', 'wardFire')), true, 'legBurnNeverExpires true with Everburning');
+    eq(FF.legBurnNeverExpires(legSt('holyward', 'wardLight')), false, 'legBurnNeverExpires false otherwise');
+
+    // Charged Riposte (thunderfury/wardEarth): a ward reflect arms a guaranteed crit on the next hit.
+    var cr = legSt('chargedriposte', 'wardEarth');
+    eq(FF.legChargedRiposteArmed(cr), false, 'Charged Riposte is unarmed until a reflect');
+    cr.chargedRiposteReady = true;
+    eq(FF.legChargedRiposteArmed(cr), true, 'a reflect arms Charged Riposte');
+    eq(FF.legChargedRiposteConsume(cr), true, 'the armed strike is a guaranteed crit');
+    eq(cr.chargedRiposteReady, false, 'consuming disarms it');
+    eq(FF.legChargedRiposteConsume(cr), false, 'it only empowers one strike');
+    var crOff = legSt('everburning', 'wardFire'); crOff.chargedRiposteReady = true;
+    eq(FF.legChargedRiposteConsume(crOff), false, 'Charged Riposte is inert without its legendary');
+
+    // Nightshroud (nightblade/wardDark): a foe that damaged you is Enfeebled -10%, and it counts as a debuff.
+    var nsOn = legSt('nightshroud', 'wardDark', { activity:{type:'combat', monsterHp:100, nightshroudUntil: now+4000} });
+    near(FF.legNightshroudIncomingMult(nsOn), 0.90, 'Nightshroud: the Enfeebled foe deals 10% less');
+    ok(FF.legNightshroudActive(nsOn), 'Nightshroud is active while the window is live');
+    eq(FF.enemyDebuffCount(nsOn), 1, 'Nightshroud Enfeeble counts as a debuff (feeds Void Resonance / Soul Tax)');
+    var nsOff = legSt('nightshroud', 'wardDark', { activity:{type:'combat', monsterHp:100, nightshroudUntil: now-1} });
+    near(FF.legNightshroudIncomingMult(nsOff), 1, 'the Nightshroud window expires');
+    eq(FF.enemyDebuffCount(nsOff), 0, 'an expired Nightshroud no longer counts');
+    near(FF.legNightshroudIncomingMult(legSt('everburning', 'wardFire', { activity:{type:'combat', nightshroudUntil: now+4000} })), 1, 'Nightshroud is inert without its legendary');
+
+    // Beacon Ward / Holy Ward (both light wards): detection (heal / Holy-shield-on-reflect is behaviour-driven).
+    eq(FF.legActive('beaconward', legSt('beaconward', 'wardLight')), true, 'legActive detects Beacon Ward');
+    eq(FF.legActive('holyward', legSt('holyward', 'wardLight')), true, 'legActive detects Holy Ward');
+  });
+
   // ---- Dungeon gate: a minimum Total Level to enter ANY dungeon, plus the clear-the-previous-boss chain --
   suite('dungeons: Total Level gate + unlock chain', function(){
     var s = FF._state, saved = s.dungeonsCleared;
