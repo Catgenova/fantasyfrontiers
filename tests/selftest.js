@@ -2055,6 +2055,33 @@
     s.inventory = svInv; s.blueprints = svBp; s.uniqueItems = svUniq;
   });
 
+  // ---- D1 legendary gear EQUIP: forged uniques slot into hand + expose their effect --------------------
+  suite('mastercraft: legendary gear equip', function(){
+    var s = FF._state;
+    var sv = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid,
+      oh:s.equippedOffhand, oht:s.equippedOffhandTier, ohr:s.equippedOffhandRarity, ohu:s.equippedOffhandUid, uniq:s.uniqueItems, xp:s.xp };
+    s.uniqueItems = {}; s.xp = {};
+    s.equippedMainhand = null; s.equippedMainhandUid = null; s.equippedOffhand = null; s.equippedOffhandUid = null;
+    // A legendary wand (no weapon-proficiency gate) equips to the main hand and exposes its effect.
+    s.uniqueItems.w = { uid:'w', base:'stweapon_wandFire_t20_rare', kind:'weapon', tier:20, rarity:'rare', enchants:[], enhance:0, leg:'emberstorm' };
+    ok(FF.equipUniqueWeapon('w'), 'a legendary wand equips to the main hand');
+    eq(s.equippedMainhandUid, 'w', 'equippedMainhandUid points at the legendary');
+    eq(s.equippedMainhand, 'wandFire', 'the base weapon type is set for combat math');
+    eq(FF.legMainhandEffect(), 'emberstorm', 'legMainhandEffect reads the equipped legendary');
+    ok(/Ember Storm/.test(FF.uniqueDisplayName(s.uniqueItems.w)), 'the legendary displays its effect name, not the base weapon');
+    // Its base resolves to a real top-tier weapon item (tier index + 1 wiring is correct).
+    ok(FF.getEquippedWeaponItem(s).dmgMax > 0, 'the equipped legendary resolves to a real weapon (tier wiring correct)');
+    // A legendary ward equips to the off-hand (the wand main hand is 1h) with no weapon proficiency needed.
+    s.uniqueItems.d = { uid:'d', base:'stward_wardFire_t20_rare', kind:'offhand', tier:20, rarity:'rare', enchants:[], enhance:0, leg:'everburning' };
+    ok(FF.equipUniqueOffhand('d'), 'a legendary ward equips to the off-hand');
+    eq(FF.legOffhandEffect(), 'everburning', 'legOffhandEffect reads the equipped ward');
+    eq(FF.legActive('everburning'), true, 'legActive true for the equipped ward');
+    eq(FF.legActive('emberstorm'), true, 'legActive true for the equipped wand');
+    s.equippedMainhand=sv.mh; s.equippedMainhandTier=sv.mht; s.equippedMainhandRarity=sv.mhr; s.equippedMainhandUid=sv.mhu;
+    s.equippedOffhand=sv.oh; s.equippedOffhandTier=sv.oht; s.equippedOffhandRarity=sv.ohr; s.equippedOffhandUid=sv.ohu;
+    s.uniqueItems=sv.uniq; s.xp=sv.xp;
+  });
+
   // ---- Dungeon gate: a minimum Total Level to enter ANY dungeon, plus the clear-the-previous-boss chain --
   suite('dungeons: Total Level gate + unlock chain', function(){
     var s = FF._state, saved = s.dungeonsCleared;

@@ -8051,13 +8051,15 @@
     bumpStat('crafted'); addXp(recipe.xpSkill || 'jewelrycrafting', 20000);
     if(recipe.gear){
       // Legendary weapon/shield/ward: mint a UNIQUE that carries the effect (leg) at the top tier of its base.
+      // A Masterwork legendary is never Normal -- floor the rarity roll at Rare (also keeps it improvable).
+      if(rarityRank(rarity) < 1){ rarity = 'rare'; itemId = recipe.itemId(key, rarity); ftClass = 'ft-rare'; }
       var gdef = D1_LEG_GEAR_MAP[key];
       var topIdx = legGearBaseTopTier(gdef.base);
       var prefix = WARD_TYPE_MAP[gdef.base] ? 'stward_' : (STACKABLE_SHIELD_TYPE_MAP[gdef.base] ? 'stshield_' : 'stweapon_');
       var uid = genUid();
       state.uniqueItems[uid] = { uid:uid, base: prefix + gdef.base + '_t' + topIdx + '_' + rarity,
-        kind: (gdef.slot === 'mainhand' ? 'weapon' : (gdef.group === 'defense' ? 'shield' : 'ward')),
-        tier: topIdx + 1, rarity: rarity, enchants: [], enhance: 0, leg: key };
+        kind: (gdef.slot === 'mainhand' ? 'weapon' : 'offhand'),
+        tier: topIdx, rarity: rarity, enchants: [], enhance: 0, leg: key }; // tier = base tier INDEX (equip adds +1)
       var git = recipe.itemMap[itemId];
       addLog('Mastercraft! You forged the Legendary ' + git.name + ' — ' + gdef.desc, 'important');
       spawnFloatingText('+1 ' + git.name, ftClass);
@@ -9652,9 +9654,9 @@
   var IMPROVE_MIN_RANK = 1; // rare
   function isImprovableRarity(rarityId){ return rarityRank(rarityId) >= IMPROVE_MIN_RANK; }
   function isUniqueId(id){ return typeof id==='string' && id.charAt(0)==='u' && !!(state.uniqueItems && state.uniqueItems[id]); }
-  function uniqueBaseName(u){ var b = ALL_SELLABLE[u.base]; return b ? b.name : 'Equipment'; }
+  function uniqueBaseName(u){ if(u.leg && LEGENDARY_GEAR_ITEMS[legGearItemId(u.leg, u.rarity)]) return LEGENDARY_GEAR_ITEMS[legGearItemId(u.leg, u.rarity)].name; var b = ALL_SELLABLE[u.base]; return b ? b.name : 'Equipment'; }
   function uniqueDisplayName(u){ return uniqueBaseName(u) + (u.enhance>0 ? ' +'+u.enhance : ''); }
-  function uniqueIcon(u){ var b = ALL_SELLABLE[u.base]; return (b && b.icon) || svgIcon('sword','var(--gold)'); }
+  function uniqueIcon(u){ if(u.leg && D1_LEG_GEAR_MAP[u.leg]) return legGearBaseIcon(D1_LEG_GEAR_MAP[u.leg].base); var b = ALL_SELLABLE[u.base]; return (b && b.icon) || svgIcon('sword','var(--gold)'); }
   // Create a unique instance from an owned base equipment item (consumes 1). Returns uid or null.
   function makeUniqueFromBase(baseId){
     var p = parseImprovable(baseId); if(!p) return null;
@@ -9737,10 +9739,10 @@
   }
   function equipUniqueOffhand(uid){
     var u = state.uniqueItems[uid];
-    var m = /^stshield_(.+)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
+    var m = /^st(?:shield|ward)_(.+)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
     var typeId = m[1], mh = getWeaponStyle(state.equippedMainhand);
-    if(mh.hand !== '1h'){ addLog('Shields require a one-handed weapon in your main hand.','danger'); return false; }
-    if(!meetsProficiencyRequirement(state.xp[typeId], u.tier)){ addLog('Your proficiency isn’t high enough to equip '+uniqueDisplayName(u)+' yet.','danger'); return false; }
+    if(mh.hand !== '1h'){ addLog('Off-hand gear requires a one-handed weapon in your main hand.','danger'); return false; }
+    if(!isWard(typeId) && !meetsProficiencyRequirement(state.xp[typeId], u.tier)){ addLog('Your proficiency isn’t high enough to equip '+uniqueDisplayName(u)+' yet.','danger'); return false; } // wards use Warding, not a per-type weapon proficiency
     unequipOffhandAny();
     state.equippedOffhand = typeId; state.equippedOffhandTier = u.tier+1; state.equippedOffhandRarity = u.rarity; state.equippedOffhandUid = uid;
     addLog('You equipped '+uniqueDisplayName(u)+'.','important'); return true;
@@ -23973,7 +23975,7 @@
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
       parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant,
-      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
+      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
