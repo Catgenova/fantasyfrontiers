@@ -1427,11 +1427,40 @@
     eq(FF.pyromancerKindlingCritDmg(stFor('pyromancer',20)), 0, 'Kindling inactive below Lv40');
     eq(FF.pyromancerHeatHazeDodge(stFor('pyromancer',40)), 0, 'Heat Haze inactive below Lv60');
     eq(FF.pyromancerFeverHaste(stFor('pyromancer',60)), 0, 'Fever Pitch inactive below Lv80');
-    // Sharpshooter: Aimed+Kill = +150% crit dmg; Piercing +20%; Steady Aim +30% acc; Deadeye +12% crit.
-    ok(Math.abs(FF.newClassCritDmg(stFor('sharpshooter',80)) - 1.50) < 1e-9, 'Sharpshooter Aimed+Kill = +150% crit dmg');
-    ok(Math.abs(FF.newClassDmgMult(monFull, stFor('sharpshooter',80)) - 1.20) < 1e-9, 'Sharpshooter Piercing Shot +20%');
-    eq(FF.classAccuracyMult(stFor('sharpshooter',80)), 1.3, 'Sharpshooter Steady Aim +30% Accuracy');
-    ok(Math.abs(FF.newClassCritChance(stFor('sharpshooter',80)) - 0.12) < 1e-9, 'Sharpshooter Deadeye +12% crit chance');
+    // Sharpshooter rework: Eagle Eye (Lv1) / Pinpoint (Lv20) / Marksman's Focus (Lv40) / Armor-Splitter (Lv60) / Sniper's Patience (Lv80).
+    var ssNames = FF.CLASS_DEFS_BY_ID.sharpshooter.passives.map(function(p){ return p.name; });
+    eq(JSON.stringify(ssNames), JSON.stringify(['Eagle Eye','Pinpoint',"Marksman's Focus",'Armor-Splitter',"Sniper's Patience"]), 'Sharpshooter ladder is the reworked five');
+    var ssMon = FF.MONSTERS[0]; // a weak, low-Dodge foe so the marksman's Accuracy clears its Dodge
+    function ssFor(level, extra){
+      var st = stFor('sharpshooter', level, extra);
+      st.xp.bowLong = FF.xpFloorForLevel(100); // strong bow proficiency -> high Accuracy
+      st.activity = st.activity || {}; st.activity.type='combat';
+      if(st.activity.monsterId == null) st.activity.monsterId = ssMon.id;
+      if(st.activity.monsterHp == null) st.activity.monsterHp = ssMon.hp;
+      return st;
+    }
+    var _ssAcc = FF.playerAccuracy(ssFor(80)), _ssOver = Math.max(0, _ssAcc - FF.monsterDodge(ssMon));
+    ok(_ssOver > 0, 'Sharpshooter Accuracy clears the weak foe\'s Dodge (surplus fuels the kit)');
+    // Eagle Eye (Lv1): Accuracy over Dodge -> crit chance (/1000, cap 25%). Steady Aim's flat accuracy is gone.
+    ok(Math.abs(FF.sharpshooterEagleEyeCrit(ssFor(1)) - Math.min(0.25, _ssOver/1000)) < 1e-9, 'Eagle Eye: accuracy-over-dodge becomes crit chance');
+    eq(FF.sharpshooterEagleEyeCrit(stFor('pyromancer',80)), 0, 'Eagle Eye inactive without the class');
+    eq(FF.classAccuracyMult(stFor('sharpshooter',80)), 1, 'Steady Aim removed: no flat class accuracy bonus');
+    ok(Math.abs(FF.newClassCritChance(ssFor(1)) - FF.sharpshooterEagleEyeCrit(ssFor(1))) < 1e-9, 'Sharpshooter crit chance is driven by Eagle Eye');
+    // Pinpoint (Lv20): +1% damage per 5 Accuracy over Dodge (0.002/pt), cap +100%.
+    ok(Math.abs(FF.sharpshooterPinpointMult(ssFor(20)) - (1 + Math.min(1.0, _ssOver*0.002))) < 1e-9, 'Pinpoint: accuracy-over-dodge -> damage');
+    eq(FF.sharpshooterPinpointMult(ssFor(1)), 1, 'Pinpoint inactive below Lv20');
+    // Marksman's Focus (Lv40): +5% crit damage per 100 Accuracy (0.0005/pt), cap +100%.
+    ok(Math.abs(FF.sharpshooterFocusCritDmg(ssFor(40)) - Math.min(1.0, _ssAcc*0.0005)) < 1e-9, "Marksman's Focus: accuracy -> crit damage");
+    eq(FF.sharpshooterFocusCritDmg(ssFor(20)), 0, "Marksman's Focus inactive below Lv40");
+    ok(Math.abs(FF.newClassCritDmg(ssFor(40)) - FF.sharpshooterFocusCritDmg(ssFor(40))) < 1e-9, "Sharpshooter crit damage is driven by Marksman's Focus (flat Aimed/Kill removed)");
+    // Armor-Splitter (Lv60): a Critical Hit ignores 100% of enemy armour; a non-crit (or below Lv60) ignores none.
+    eq(FF.sharpshooterArmorPierce(true, ssFor(60)), 1, 'Armor-Splitter: a crit ignores all armour at Lv60');
+    eq(FF.sharpshooterArmorPierce(false, ssFor(60)), 0, 'Armor-Splitter only applies on a crit');
+    eq(FF.sharpshooterArmorPierce(true, ssFor(40)), 0, 'Armor-Splitter inactive below Lv60');
+    // Sniper's Patience (Lv80): +4% damage/sec on one foe (cap +80%); resets on a new target (fresh duelStartedAt).
+    near(FF.sharpshooterPatienceMult(ssFor(80,{activity:{type:'combat',monsterId:ssMon.id,monsterHp:ssMon.hp,duelStartedAt:Date.now()-10000}})), 1.40, "Sniper's Patience: +4%/sec -> +40% at 10s", 2e-2);
+    near(FF.sharpshooterPatienceMult(ssFor(80,{activity:{type:'combat',monsterId:ssMon.id,monsterHp:ssMon.hp,duelStartedAt:Date.now()-30000}})), 1.80, "Sniper's Patience caps at +80%", 1e-6);
+    eq(FF.sharpshooterPatienceMult(ssFor(60,{activity:{type:'combat',monsterId:ssMon.id,monsterHp:ssMon.hp,duelStartedAt:Date.now()-10000}})), 1, "Sniper's Patience inactive below Lv80");
     // Juggernaut rework: Wind-Up (Lv1) / Overhead Smash (Lv20) / Concussive Crits (Lv40) /
     // Building Fury (Lv60) / Pulverize (Lv80). Slow, hard-hitting crit bruiser; the old defensive kit is gone.
     var jugNames = FF.CLASS_DEFS_BY_ID.juggernaut.passives.map(function(p){ return p.name; });
