@@ -2000,8 +2000,8 @@
     eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS).length, 140, '35 x 4 rarities = 140 legendary gear items');
     ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS).every(function(id){ var it = FF.LEGENDARY_GEAR_ITEMS[id]; return it.legendary === true && it.gear === true && it.sell === 0 && /<svg/.test(it.icon); }), 'every legendary gear item is flagged, non-vendorable, iconned');
     // Names carry the rarity suffix; base Normal is bare.
-    eq(FF.LEGENDARY_GEAR_ITEMS[FF.legGearItemId('cull','normal')].name, 'Cull', 'Normal legendary name is bare');
-    ok(/^Cull \(Fantastic\s*\)$/.test(FF.LEGENDARY_GEAR_ITEMS[FF.legGearItemId('cull','fantastic')].name), 'Fantastic legendary carries the rarity suffix');
+    eq(FF.LEGENDARY_GEAR_ITEMS[FF.legGearItemId('cull','normal')].name, 'Huskmaker', 'Normal legendary name is bare');
+    ok(/^Huskmaker \(Fantastic\s*\)$/.test(FF.LEGENDARY_GEAR_ITEMS[FF.legGearItemId('cull','fantastic')].name), 'Fantastic legendary carries the rarity suffix');
     // Group -> outcome-key pools (what a formula can forge).
     eq(FF.LEG_GEAR_GROUP_KEYS.slash.length, 6, 'slash outcome pool has 6 keys');
     ok(FF.LEG_GEAR_GROUP_KEYS.arcane.indexOf('holyward') !== -1, 'wards live in the arcane outcome pool');
@@ -2068,7 +2068,7 @@
     eq(s.equippedMainhandUid, 'w', 'equippedMainhandUid points at the legendary');
     eq(s.equippedMainhand, 'wandFire', 'the base weapon type is set for combat math');
     eq(FF.legMainhandEffect(), 'emberstorm', 'legMainhandEffect reads the equipped legendary');
-    ok(/Ember Storm/.test(FF.uniqueDisplayName(s.uniqueItems.w)), 'the legendary displays its effect name, not the base weapon');
+    ok(/Creeping Flame/.test(FF.uniqueDisplayName(s.uniqueItems.w)), 'the legendary displays its effect name, not the base weapon');
     // Its base resolves to a real top-tier weapon item (tier index + 1 wiring is correct).
     ok(FF.getEquippedWeaponItem(s).dmgMax > 0, 'the equipped legendary resolves to a real weapon (tier wiring correct)');
     // A legendary ward equips to the off-hand (the wand main hand is 1h) with no weapon proficiency needed.
