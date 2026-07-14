@@ -5254,7 +5254,7 @@
   // Thunderfury "Chain Lightning" (Lv1): a crit-stack counter (0-7). +1 per Critical Hit, reset on a
   // non-crit hit; spent on attack speed (-10%/stack via classAttackSpeedMult).
   var THUNDER_MAX_STACKS = 7;
-  function thunderStacks(st){ st = st || state; return thunderfuryBonus(1, st) ? Math.min(THUNDER_MAX_STACKS, st.thunderStacks || 0) : 0; }
+  function thunderStacks(st){ st = st || state; return thunderfuryBonus(1, st) ? Math.min(legThunderMaxStacks(st), st.thunderStacks || 0) : 0; }
   // Static Charge (Lv20): a build-and-discharge meter on the activity (act.staticCharge, 0..MAX). Every
   // landed hit adds one; Grounding Rod (Lv40) adds one per blow you take. When it fills, your next hit
   // discharges a lightning burst (a multiple of that hit) and empties the meter.
@@ -5335,6 +5335,7 @@
     if(frostwardenBonus(80)) ms *= FROST_RESONANCE_CAST_MULT; // Rime Resonance: your Rime familiar casts 30% faster
     if(templarBonus(20)) ms *= 0.85; // Beacon of Faith: familiars cast 15% faster
     ms *= (1 - Math.min(0.9, legendaryRingBonus('famhaste', state))); // Signet of the Brood: reduced familiar action time
+    ms *= legFamiliarHasteMult(state); // Rapid Conjuring (legendary staff): familiars cast 20% faster
     return Math.max(2500, ms);
   }
   function awardClassXp(amount){ var id = activeClassId(state); if(id && amount > 0) addXp(id, amount); }
@@ -5351,7 +5352,7 @@
       return 1 - 0.15 * Math.min(DUELIST_FOOTWORK_MAX, st.duelistFootworkStacks || 0);
     if(id==='quickdraw' && quickdrawSecondWind(st)) return 0.80; // Second Wind: -20% attack timer below 40% HP
     if(id==='knight' && classLevel(st,'knight') >= 1) return Math.max(0.10, 1 - knightMomentumPerStack(st) * Math.min(knightStackCap(st), st.knightStacks || 0)); // Momentum stacks (cap 5/8, or 10 @12% w/ Relentless Assault; timer floored at -90%)
-    if(id==='thunderfury' && classLevel(st,'thunderfury') >= 1) return 1 - 0.10 * Math.min(THUNDER_MAX_STACKS, st.thunderStacks || 0); // Chain Lightning crit stacks
+    if(id==='thunderfury' && classLevel(st,'thunderfury') >= 1) return 1 - 0.10 * Math.min(legThunderMaxStacks(st), st.thunderStacks || 0); // Chain Lightning crit stacks (Tempest raises the cap to 9 = -90%)
     if(id==='frostwarden' && classLevel(st,'frostwarden') >= 20) return 1 - frostwardenTimeDilation(st); // Time Dilation: quicken with the enemy's Chill
     if(id==='pyromancer' && classLevel(st,'pyromancer') >= 80) return 1 - pyromancerFeverHaste(st); // Fever Pitch: quicken with the enemy's Burn
     if(id==='reaver' && classLevel(st,'reaver') >= 40 && st.activity && st.activity.type==='combat' && (st.activity.bleedStacks||0) >= REAVER_BLEED_MAX && (st.activity.bleedUntil||0) > Date.now()) return 0.85; // Frenzied Rending: +15% attack speed at max Bleed stacks
@@ -5701,6 +5702,22 @@
   function legRangerAilmentRolls(st){ st = st || state; return legActive('compoundarrows', st) ? 2 : 1; }
   // Chain Shot (quickdraw/bowShort): Trick Shot's free arrow can itself crit into another (bounded chain).
   var LEG_CHAINSHOT_MAX = 5;
+  // --- Arcane weapon group (Batch 7) ---
+  var LEG_SUNDER_MS = 4000;          // Cursebringer: each hit refreshes a Sunder debuff on the foe
+  var LEG_DEEPFREEZE_CHANCE = 0.20;  // Deep Freeze: per-hit Freeze chance while the foe is at max Chill
+  var LEG_DEEPFREEZE_MS = 1500;      // ... the Freeze (action-bar stun) duration
+  var LEG_EMBERSTORM_CHANCE = 0.25;  // Ember Storm: per-second chance a Burn tick spreads another Burn stack
+  var LEG_AEGISBREAK_MULT = 1.0;     // Aegis Break: shield-break burst = this * the shield's value at break
+  var LEG_RETRIBUTION_MULT = 1.5;    // Retribution: the next strike after a Holy shield absorbs hits +50%
+  // Tempest (thunderfury/wandEarth): lifts Chain Lightning's crit ceiling by +15% (50% -> effective 65%) and
+  // raises the attack-speed-stack cap from 7 (-70%) to 9 (-90%).
+  function legendaryCritChance(st){ st = st || state; return legActive('tempest', st) ? 0.15 : 0; }
+  function legThunderMaxStacks(st){ st = st || state; return legActive('tempest', st) ? 9 : THUNDER_MAX_STACKS; }
+  // Retribution: a "next strike +50%" charge armed when a Holy shield (Aegis / Radiant Barrier) absorbs a hit.
+  function legRetributionArmed(st){ st = st || state; return legActive('retribution', st) && !!st.retributionCharged; }
+  function legRetributionConsume(st){ st = st || state; if(legRetributionArmed(st)){ st.retributionCharged = false; return LEG_RETRIBUTION_MULT; } return 1; }
+  // Rapid Conjuring (summoner/staff): familiars cast 20% faster (folded into familiarCastIntervalMs).
+  function legFamiliarHasteMult(st){ st = st || state; return legActive('rapidconjuring', st) ? 0.80 : 1; }
   // Bonus lifesteal fraction from equipped legendary weapons (folded into the lifesteal sum).
   function legendaryLifestealPct(st){ st = st || state; return (legActive('crimsonharvest', st) && enemyBleeding(st)) ? LEG_CRIMSON_PER * ((st.activity && st.activity.bleedStacks) || 0) : 0; } // Crimson Harvest: +2% lifesteal per Bleed stack
   // Wasting Curse: a poisoned foe's outgoing damage decays -5%/sec poisoned (cap -40%). Reads act.poisonSince.
@@ -10716,6 +10733,18 @@
     if(!act || act.type!=='combat' || (act.burnUntil||0) <= Date.now()) return;
     var dps = act.burnDps || 0; if(dps <= 0) return;
     act.monsterHp = Math.max(1, act.monsterHp - dps * dtMs / 1000);
+    // Ember Storm (legendary fire wand): each 1s of Burn can self-spread another Burn stack (up to the cap).
+    if(legActive('emberstorm')){
+      act.burnSpreadAccum = (act.burnSpreadAccum || 0) + dtMs;
+      while(act.burnSpreadAccum >= 1000){
+        act.burnSpreadAccum -= 1000;
+        if(!offlineCapture && enemyBurnStacks() < PYRO_BURN_MAX_STACKS && Math.random() < LEG_EMBERSTORM_CHANCE){
+          var _es = pyromancerApplyBurn(act);
+          act.burnDps = act.burnStacks * combatLevelEquivalent(state) * PYRO_BURN_PCT;
+          spawnFloatingText('Ember Storm x'+_es, 'ft-rare');
+        }
+      }
+    }
   }
   // ---- Player damage modifiers ----
   // Every multiplicative class/status term applied to a landed player hit, in application order.
@@ -10806,7 +10835,7 @@
     var forcedCrit = !isOffhand && duelistBonus(80) && (state.duelistGuaranteedCrits || 0) > 0;
     var samuraiFirstStrike = !isOffhand && samuraiBonus(1) && !!(act && act.samuraiFirstStrike); // Samurai Iaijutsu: the opening landed strike of each duel is a guaranteed crit
     var juggernautSmash = !isOffhand && juggernautSmashReady(state); // Juggernaut Overhead Smash: every 4th landed main-hand hit is a guaranteed crit
-    var isCrit = forcedCrit || samuraiFirstStrike || juggernautSmash || Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawEagleEyeCrit(monster) + spellbladeCriticalRunesCrit() + newClassCritChance() + legendaryCloakBonus('critchance', state) + (enchTot.critChance||0)/100); // + Quickdraw Eagle Eye (overflow accuracy), Spellblade Critical Runes, new-class passives, legendary Shroud, equipped Crit Chance enchants
+    var isCrit = forcedCrit || samuraiFirstStrike || juggernautSmash || Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawEagleEyeCrit(monster) + spellbladeCriticalRunesCrit() + newClassCritChance() + legendaryCloakBonus('critchance', state) + legendaryCritChance(state) + (enchTot.critChance||0)/100); // + Quickdraw Eagle Eye, Spellblade Critical Runes, new-class passives, legendary Shroud, Tempest, equipped Crit Chance enchants
     // A Critical Hit that ignores the foe's armour: Juggernaut Pulverize (Lv80) / Sharpshooter Armor-Splitter (Lv60).
     if(!isOffhand && advantage < 1){ var _critPierce = Math.max(juggernautArmorPierce(isCrit, state), sharpshooterArmorPierce(isCrit, state)); if(_critPierce > 0) advantage += (1 - advantage) * _critPierce; }
     // Wands are magical, so the melee/bow strength physiques don't scale them -- only the generic
@@ -10848,7 +10877,9 @@
     var _dmgCtx = { monster:monster, weaponStyle:weaponStyle, enchTot:enchTot, isCrit:isCrit, isOffhand:isOffhand, isWandAttack:isWandAttack, isScepterAttack:isScepterAttack, assassinVanish:assassinVanish, unfletched:unfletched };
     var _earthshake = isOffhand ? 1 : legEarthshakerConsume(act, state); // Earthshaker (legendary sledge): a primed swing hits x4
     if(_earthshake > 1) spawnCombatFloat('EARTHSHAKER!', 'ft-crit', true);
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * critMult * _earthshake * playerDamageMultiplier(_dmgCtx));
+    var _retribution = isOffhand ? 1 : legRetributionConsume(state); // Retribution (legendary scepter): +50% on the strike after a Holy shield absorb
+    if(_retribution > 1) spawnCombatFloat('Retribution!', 'ft-crit', true);
+    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * critMult * _earthshake * _retribution * playerDamageMultiplier(_dmgCtx));
     dmgToMonster += Math.round(enchTot.flatDamage||0); // + equipped-item Flat Damage enchants
     if(!isOffhand) dmgToMonster += berserkerTitansHeftDmg(state); // Berserker Titan's Heft (Lv1): +2% of max HP as flat hit damage
     var monsterHpBeforeHit = act.monsterHp;
@@ -10953,7 +10984,7 @@
       // Thunderfury (Chain Lightning, Lv1): a Critical Hit builds a crit-stack (attack speed); a non-crit resets.
       if(thunderfuryBonus(1)){
         if(isCrit){
-          state.thunderStacks = Math.min(THUNDER_MAX_STACKS, (state.thunderStacks || 0) + 1);
+          state.thunderStacks = Math.min(legThunderMaxStacks(state), (state.thunderStacks || 0) + 1);
           // Concussive Bolt (Lv60): 10% chance a crit stuns the enemy, freezing its action bar for 2s.
           if(thunderfuryBonus(60) && !offlineCapture && Math.random() < 0.10){ act.enemyStunUntil = Date.now() + 2000; spawnFloatingText('Stunned!', 'ft-rare'); }
           // Galvanize (Lv80): each crit permanently adds +10% crit damage for the rest of this fight (folded into critMult).
@@ -10976,6 +11007,16 @@
       if(frostwardenBonus(1)){
         var _cs = frostwardenApplyChill(act);
         spawnFloatingText('Chill x'+_cs, 'ft-bonus');
+      }
+      // Deep Freeze (legendary water wand): at max Chill, a hit can Freeze the foe (action-bar stun).
+      if(legActive('deepfreeze') && enemyChillStacks() >= FROST_CHILL_MAX_STACKS && !offlineCapture && Math.random() < LEG_DEEPFREEZE_CHANCE){
+        act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + LEG_DEEPFREEZE_MS);
+        spawnFloatingText('Frozen!', 'ft-rare');
+      }
+      // Cursebringer (legendary dark wand): every hit Sunders the foe -- a second debuff feeding Void Resonance / Soul Tax.
+      if(legActive('cursebringer')){
+        if(!state.classDebuffs || typeof state.classDebuffs !== 'object') state.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
+        state.classDebuffs.enemyArmorUntil = Date.now() + LEG_SUNDER_MS;
       }
       // Frostwarden Frostbite (Lv60): each hit stacks a Water damage-over-time (refreshes for 4s).
       if(frostwardenBonus(60)){
@@ -11186,6 +11227,7 @@
     act.poisonSince = 0; // the Wasting Curse ramp restarts against each foe (the poison DoT lapses on its own timer)
     act.tremorStacks = 0; act.tremorReady = false; // Earthshaker's Tremor meter doesn't carry between foes
     act.trickChain = 0; // Chain Shot's follow-up counter resets per foe
+    act.burnSpreadAccum = 0; // Ember Storm's spread timer resets with the Burn
     act.juggernautSwings = 0; act.juggernautFuryStacks = 0; // Juggernaut Overhead Smash tally + Building Fury reset per foe
     state.heraldGuardStacks = 0; // Herald Perfect Guard streak starts fresh against each foe
     // Duelist: each new foe is a fresh duel -- reset the ramp clock, the once-per-fight Disengage, and the stacks.
@@ -11307,6 +11349,7 @@
       var _aegis = Math.min(state.templarShield, dmgToPlayer);
       state.templarShield -= _aegis; dmgToPlayer -= _aegis;
       if(_aegis > 0) spawnFloatingText('Aegis '+Math.round(_aegis), 'ft-success');
+      if(_aegis > 0 && legActive('retribution')) state.retributionCharged = true; // Retribution: a Holy shield absorb empowers your next strike
     }
     // Reaper Siphon Shield + Lumen Radiant Barrier: absorbs soak incoming damage before your own HP.
     if((state.reaperShield||0) > 0 && dmgToPlayer > 0){
@@ -11315,9 +11358,16 @@
       if(_absorbed > 0) spawnFloatingText('Absorbed '+Math.round(_absorbed)+'!', 'ft-success');
     }
     if((state.lumenShield||0) > 0 && dmgToPlayer > 0){
+      var _lBefore = state.lumenShield;
       var _lAbsorbed = Math.min(state.lumenShield, dmgToPlayer);
       state.lumenShield -= _lAbsorbed; dmgToPlayer -= _lAbsorbed;
       if(_lAbsorbed > 0) spawnFloatingText('Barrier absorbed '+Math.round(_lAbsorbed)+'!', 'ft-success');
+      if(_lAbsorbed > 0 && legActive('retribution')) state.retributionCharged = true; // the Radiant Barrier is a Holy shield too
+      // Aegis Break (legendary light wand): when the Barrier is spent by this hit, it bursts for Light damage.
+      if(legActive('aegisbreak') && _lBefore > 0 && state.lumenShield <= 0){
+        var _burst = Math.max(1, Math.round(_lBefore * LEG_AEGISBREAK_MULT * (monster ? elementAdvantage('light', monster.element) : 1)));
+        applyChipDamage(_burst); spawnCombatFloat('Aegis Break -'+fmt(_burst), 'ft-crit', true);
+      }
     }
     state.playerHp -= dmgToPlayer;
     // Knight Counterweight (Lv 20): a hit you take also builds a Momentum stack -- the blows you take feed your tempo.
@@ -13967,7 +14017,7 @@
     }
     html += '<div class="stat-row"><span class="stat-label">Damage Type</span><span class="stat-value">'+dmgTypeHtml+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">'+(isWandMain?'Wands Proficiency':(isScepterMain?'Scepters Proficiency':'Weapon Proficiency'))+'</span><span class="stat-value">+'+Math.round((weaponProficiency-1)*100)+'%</span></div>';
-    var _critChancePct = Math.round((criticalEyeCritChance(state)+newClassCritChance()+legendaryCloakBonus('critchance',state)+enchCrit)*10000)/100;
+    var _critChancePct = Math.round((criticalEyeCritChance(state)+newClassCritChance()+legendaryCloakBonus('critchance',state)+legendaryCritChance(state)+enchCrit)*10000)/100;
     html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+_critChancePct+'%'+(enchCrit>0?' <span style="color:var(--gold)">(+'+(Math.round(enchTot.critChance*10)/10)+'% ench)</span>':'')+'</span></div>';
     var _critDmgMult = Math.round((Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + newClassCritDmg() + legendaryCloakBonus('critdmg',state) + legendaryCritDmg(state) + enchCritDmg)*100)/100;
     html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+_critDmgMult+'x'+(enchCritDmg>0?' <span style="color:var(--gold)">(+'+(Math.round(enchTot.critDamage*10)/10)+'% ench)</span>':'')+'</span></div>';
@@ -24123,7 +24173,7 @@
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, sharpshooterAccOverDodge:sharpshooterAccOverDodge, sharpshooterEagleEyeCrit:sharpshooterEagleEyeCrit, sharpshooterPinpointMult:sharpshooterPinpointMult, sharpshooterFocusCritDmg:sharpshooterFocusCritDmg, sharpshooterArmorPierce:sharpshooterArmorPierce, sharpshooterPatienceMult:sharpshooterPatienceMult, SHARP_EAGLE_CAP:SHARP_EAGLE_CAP, SHARP_PINPOINT_CAP:SHARP_PINPOINT_CAP, SHARP_FOCUS_CAP:SHARP_FOCUS_CAP, SHARP_PATIENCE_CAP:SHARP_PATIENCE_CAP, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautSmashReady:juggernautSmashReady, juggernautFuryStacks:juggernautFuryStacks, juggernautArmorPierce:juggernautArmorPierce, JUG_WINDUP_DMG:JUG_WINDUP_DMG, JUG_WINDUP_SLOW:JUG_WINDUP_SLOW, JUG_SMASH_EVERY:JUG_SMASH_EVERY, JUG_CONCUSS_MS:JUG_CONCUSS_MS, JUG_FURY_PER:JUG_FURY_PER, JUG_FURY_MAX:JUG_FURY_MAX, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
-      frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeRuneHungerMult:spellbladeRuneHungerMult, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, spellbladeEchoChance:spellbladeEchoChance, equippedEnchantCount:equippedEnchantCount, spellbladeEnchantBoost:spellbladeEnchantBoost, SPELLBLADE_RUNEHUNGER_PER:SPELLBLADE_RUNEHUNGER_PER, SPELLBLADE_CRITRUNE_PER:SPELLBLADE_CRITRUNE_PER, SPELLBLADE_ECHO_PCT:SPELLBLADE_ECHO_PCT, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, legendaryDmgMult:legendaryDmgMult, legendaryDodgeBonus:legendaryDodgeBonus, legendaryLifestealPct:legendaryLifestealPct, legWastingCurseIncomingMult:legWastingCurseIncomingMult, legNotePoisonStart:legNotePoisonStart, legVanishWindowReady:legVanishWindowReady, samuraiFocusCap:samuraiFocusCap, knightMomentumPerStack:knightMomentumPerStack, legDistinctEnchantCount:legDistinctEnchantCount, legEchoDmgMult:legEchoDmgMult, legShieldBashDamage:legShieldBashDamage, legReflectCanCrit:legReflectCanCrit, legReflectCritMult:legReflectCritMult, legendaryCritDmg:legendaryCritDmg, legEarthshakerBuild:legEarthshakerBuild, legEarthshakerConsume:legEarthshakerConsume, LEG_TREMOR_CAP:LEG_TREMOR_CAP, LEG_TREMOR_MULT:LEG_TREMOR_MULT, CRIT_DAMAGE_MULT:CRIT_DAMAGE_MULT, legendaryAccuracyBonus:legendaryAccuracyBonus, legRangerAilmentRolls:legRangerAilmentRolls, LEG_CHAINSHOT_MAX:LEG_CHAINSHOT_MAX, defeatMonster:defeatMonster, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
+      frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeRuneHungerMult:spellbladeRuneHungerMult, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, spellbladeEchoChance:spellbladeEchoChance, equippedEnchantCount:equippedEnchantCount, spellbladeEnchantBoost:spellbladeEnchantBoost, SPELLBLADE_RUNEHUNGER_PER:SPELLBLADE_RUNEHUNGER_PER, SPELLBLADE_CRITRUNE_PER:SPELLBLADE_CRITRUNE_PER, SPELLBLADE_ECHO_PCT:SPELLBLADE_ECHO_PCT, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, legendaryDmgMult:legendaryDmgMult, legendaryDodgeBonus:legendaryDodgeBonus, legendaryLifestealPct:legendaryLifestealPct, legWastingCurseIncomingMult:legWastingCurseIncomingMult, legNotePoisonStart:legNotePoisonStart, legVanishWindowReady:legVanishWindowReady, samuraiFocusCap:samuraiFocusCap, knightMomentumPerStack:knightMomentumPerStack, legDistinctEnchantCount:legDistinctEnchantCount, legEchoDmgMult:legEchoDmgMult, legShieldBashDamage:legShieldBashDamage, legReflectCanCrit:legReflectCanCrit, legReflectCritMult:legReflectCritMult, legendaryCritDmg:legendaryCritDmg, legEarthshakerBuild:legEarthshakerBuild, legEarthshakerConsume:legEarthshakerConsume, LEG_TREMOR_CAP:LEG_TREMOR_CAP, LEG_TREMOR_MULT:LEG_TREMOR_MULT, CRIT_DAMAGE_MULT:CRIT_DAMAGE_MULT, legendaryAccuracyBonus:legendaryAccuracyBonus, legRangerAilmentRolls:legRangerAilmentRolls, LEG_CHAINSHOT_MAX:LEG_CHAINSHOT_MAX, legendaryCritChance:legendaryCritChance, legThunderMaxStacks:legThunderMaxStacks, legRetributionArmed:legRetributionArmed, legRetributionConsume:legRetributionConsume, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, defeatMonster:defeatMonster, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, assassinRhythmRegister:assassinRhythmRegister, ASSASSIN_RHYTHM_MAX:ASSASSIN_RHYTHM_MAX, assassinApplyLacerate:assassinApplyLacerate, assassinLacerateMaxStacks:assassinLacerateMaxStacks, ASSASSIN_BLEED_MAX:ASSASSIN_BLEED_MAX, assassinHemorrhageCritMult:assassinHemorrhageCritMult, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,

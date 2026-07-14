@@ -2276,6 +2276,57 @@
     eq(FF.legActive('chainshot', legSt('steadyaim')), false, 'Chain Shot inert without its legendary');
   });
 
+  // ---- D1 legendary gear COMBAT effects, Batch 7: the seven Arcane weapons ----------------------------
+  suite('mastercraft: legendary arcane weapon effects', function(){
+    function armor(mat){ return { material:mat, tier:5 }; }
+    function legSt(key, base, extra){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+        uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'wandFire')+'_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 } },
+        equippedMainhandUid:'L' };
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+
+    // Tempest (thunderfury/wandEarth): +15% crit chance and a deeper Chain Lightning attack-speed ramp (cap 9 = -90%).
+    near(FF.legendaryCritChance(legSt('tempest', 'wandEarth')), 0.15, 'Tempest: +15% Critical Hit chance');
+    near(FF.legendaryCritChance(legSt('emberstorm')), 0, 'no crit-chance bonus without Tempest');
+    eq(FF.legThunderMaxStacks(legSt('tempest', 'wandEarth')), 9, 'Tempest raises the Chain Lightning stack cap to 9');
+    eq(FF.legThunderMaxStacks(legSt('emberstorm')), FF.THUNDER_MAX_STACKS, 'the base Chain Lightning stack cap is 7');
+    // On a live Thunderfury, the deeper ramp reaches -90% attack timer at 9 stacks.
+    function tfSt(stacks, tempest){
+      var st = { xp:{ thunderfury: FF.xpFloorForLevel(85) }, physique:{}, equippedMainhand:'wandEarth', equippedOffhand:'wardEarth',
+        bodyArmor:{ helmet:armor('tailoring'), chest:armor('tailoring'), gauntlets:armor('tailoring'), boots:armor('tailoring') },
+        activity:{type:'combat'}, playerHp:100, thunderStacks:stacks, uniqueItems:{}, equippedMainhandUid:null };
+      if(tempest){ st.uniqueItems.L = { uid:'L', leg:'tempest', kind:'weapon', base:'stweapon_wandEarth_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 }; st.equippedMainhandUid = 'L'; }
+      return st;
+    }
+    eq(FF.activeClassId(tfSt(0, false)), 'thunderfury', 'earth wand + ward + full cloth => Thunderfury');
+    near(FF.classAttackSpeedMult(tfSt(7, false)), 0.30, 'base Chain Lightning caps at 7 stacks (-70%)', 1e-9);
+    near(FF.classAttackSpeedMult(tfSt(9, true)), 0.10, 'Tempest lets Chain Lightning reach 9 stacks (-90%)', 1e-9);
+
+    // Rapid Conjuring (summoner/staff): familiars cast 20% faster.
+    near(FF.legFamiliarHasteMult(legSt('rapidconjuring', 'staff')), 0.80, 'Rapid Conjuring: familiars cast 20% faster');
+    near(FF.legFamiliarHasteMult(legSt('tempest', 'wandEarth')), 1, 'no familiar haste without Rapid Conjuring');
+
+    // Retribution (templar/scepter): a Holy shield absorb arms a +50% next strike, consumed once.
+    var rSt = legSt('retribution', 'scepter');
+    eq(FF.legRetributionArmed(rSt), false, 'Retribution is unarmed until a Holy shield absorbs');
+    rSt.retributionCharged = true;
+    eq(FF.legRetributionArmed(rSt), true, 'a Holy shield absorb arms Retribution');
+    near(FF.legRetributionConsume(rSt), 1.5, 'the armed strike deals +50%');
+    eq(rSt.retributionCharged, false, 'consuming Retribution disarms it');
+    near(FF.legRetributionConsume(rSt), 1, 'Retribution only empowers one strike');
+    var rOff = legSt('emberstorm'); rOff.retributionCharged = true;
+    near(FF.legRetributionConsume(rOff), 1, 'Retribution is inert without its legendary');
+
+    // Cursebringer / Deep Freeze / Ember Storm / Aegis Break: detection + tuning constants (behaviour driven live).
+    eq(FF.legActive('cursebringer', legSt('cursebringer', 'wandDark')), true, 'legActive detects Cursebringer');
+    eq(FF.LEG_SUNDER_MS, 4000, 'Cursebringer refreshes a 4s Sunder');
+    eq(FF.legActive('deepfreeze', legSt('deepfreeze', 'wandWater')), true, 'legActive detects Deep Freeze');
+    eq(FF.legActive('aegisbreak', legSt('aegisbreak', 'wandLight')), true, 'legActive detects Aegis Break');
+    eq(FF.legActive('emberstorm', legSt('emberstorm', 'wandFire')), true, 'legActive detects Ember Storm');
+  });
+
   // ---- Dungeon gate: a minimum Total Level to enter ANY dungeon, plus the clear-the-previous-boss chain --
   suite('dungeons: Total Level gate + unlock chain', function(){
     var s = FF._state, saved = s.dungeonsCleared;
