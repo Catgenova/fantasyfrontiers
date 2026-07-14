@@ -2248,6 +2248,34 @@
     eq(FF.legEarthshakerConsume(pact, plain), 1, 'Earthshaker never empowers without its legendary');
   });
 
+  // ---- D1 legendary gear COMBAT effects, Batch 6: the three Ranged weapons ----------------------------
+  suite('mastercraft: legendary ranged effects', function(){
+    function legSt(key, base, extra){
+      var st = { xp:{ bowLong: FF.xpFloorForLevel(50) }, physique:{ perception: FF.xpFloorForLevel(40) }, bodyArmor:{},
+        activity:{type:'combat', monsterHp:100}, playerHp:100, equippedMainhand:'bowLong',
+        uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'bowLong')+'_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 } },
+        equippedMainhandUid:'L' };
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+
+    // Steady Aim (sharpshooter/bowLong): flat +30% Accuracy.
+    near(FF.legendaryAccuracyBonus(legSt('steadyaim')), 0.30, 'Steady Aim: +30% Accuracy bonus');
+    near(FF.legendaryAccuracyBonus(legSt('chainshot')), 0, 'no accuracy bonus without Steady Aim');
+    var aimOn = legSt('steadyaim'), aimOff = legSt('chainshot');
+    ok(FF.playerAccuracy(aimOff) > 0, 'the base profile has positive Accuracy');
+    near(FF.playerAccuracy(aimOn) / FF.playerAccuracy(aimOff), 1.30, 'Steady Aim raises live Accuracy by ~30%', 0.02);
+
+    // Compound Arrows (ranger/bowMedium): each hit rolls its ailment volley twice.
+    eq(FF.legRangerAilmentRolls(legSt('compoundarrows', 'bowMedium')), 2, 'Compound Arrows rolls the ailment volley twice');
+    eq(FF.legRangerAilmentRolls(legSt('steadyaim')), 1, 'a single ailment roll without Compound Arrows');
+
+    // Chain Shot (quickdraw/bowShort): the free arrow can chain, bounded by LEG_CHAINSHOT_MAX.
+    eq(FF.LEG_CHAINSHOT_MAX, 5, 'the Chain Shot follow-up chain is bounded at 5');
+    eq(FF.legActive('chainshot', legSt('chainshot', 'bowShort')), true, 'legActive detects an equipped Chain Shot bow');
+    eq(FF.legActive('chainshot', legSt('steadyaim')), false, 'Chain Shot inert without its legendary');
+  });
+
   // ---- Dungeon gate: a minimum Total Level to enter ANY dungeon, plus the clear-the-previous-boss chain --
   suite('dungeons: Total Level gate + unlock chain', function(){
     var s = FF._state, saved = s.dungeonsCleared;
