@@ -2621,6 +2621,71 @@
     near(FF.longShotMult(setSt('sharpshooter',2, { activity:{type:'combat', lastDamagedAt: now-4000} })), 1, 'no Long Shot below the full set');
   });
 
+  // ---- D1 set bonuses, Batch 3: tank / block / shield / heal -----------------------------------------
+  suite('D1 set bonuses: tank / block / shield / heal', function(){
+    function setSt(cls, count, extra){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, activity:{type:'combat', monsterHp:100}, playerHp:100 };
+      var slots = Object.keys(FF.D1_SET_DEFS[cls].pieces);
+      for(var i=0;i<count && i<slots.length;i++){ var uid='sp'+i; st.uniqueItems[uid] = { uid:uid, set:cls };
+        st.bodyArmor[slots[i]] = { uid:uid, material:FF.D1_SET_DEFS[cls].pieces[slots[i]], tier:22, rarity:'rare' }; }
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+
+    // Herald Full Retort (2pc): a Block reflects 100% of what it prevented (up from 50%).
+    near(FF.heraldRipostePct(setSt('herald',2)), 1.0, 'Full Retort (2pc): reflect 100% of a Block');
+    near(FF.heraldRipostePct(setSt('herald',1)), FF.HERALD_RIPOSTE_PCT, '1 piece -> base 50% Riposte');
+    // Herald Bastion (full): no single blow exceeds 25% of max HP.
+    var hFull = setSt('herald',4); var hCap = Math.max(1, Math.round(FF.maxHp(hFull) * 0.25));
+    eq(FF.bastionCapHit(999999, hFull), hCap, 'Bastion (full): a huge hit is capped at 25% max HP');
+    eq(FF.bastionCapHit(3, hFull), 3, 'Bastion: a small hit passes through untouched');
+    eq(FF.bastionCapHit(999999, setSt('herald',2)), 999999, 'no Bastion cap below the full set');
+
+    // Sentinel Unbreakable Will (full): +30% Armor.
+    near(FF.sentinelUnbreakableArmorMult(setSt('sentinel',4)), 1.30, 'Unbreakable Will (full): +30% Armor');
+    near(FF.sentinelUnbreakableArmorMult(setSt('sentinel',2)), 1, 'no Unbreakable Will below the full set');
+    // Sentinel Barbed Plating (2pc): thorns also return half your Armor rating -- needs the class active.
+    function sentSt(asSet){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, equippedMainhand:'maul', equippedOffhand:'shieldMedium', activity:{type:'combat', monsterHp:100}, playerHp:55 };
+      st.xp.sentinel = FF.xpFloorForLevel(80);
+      ['helmet','chest','gauntlets','boots'].forEach(function(slot,i){
+        if(asSet){ var uid='ss'+i; st.uniqueItems[uid] = { uid:uid, set:'sentinel' }; st.bodyArmor[slot] = { uid:uid, material:'chain', tier:22, rarity:'rare' }; }
+        else st.bodyArmor[slot] = { material:'chain', tier:5 };
+      });
+      return st;
+    }
+    eq(FF.activeClassId(sentSt(true)), 'sentinel', 'a full Sentinel set still activates the Sentinel class');
+    ok(FF.setFull('sentinel', sentSt(true)), 'four Sentinel pieces = full set');
+    var rSet = FF.sentinelReflectDamage(100, 0, 200, sentSt(true));
+    var rPlain = FF.sentinelReflectDamage(100, 0, 200, sentSt(false));
+    near(rSet - rPlain, 100, 'Barbed Plating (2pc): thorns return an extra half of Armor (200 x 0.5)');
+
+    // Berserker Undying Rage (2pc): -25% incoming damage below 30% HP.
+    near(FF.undyingRageIncomingMult(setSt('berserker',2, { playerHp:1 })), 0.75, 'Undying Rage (2pc): -25% incoming below 30% HP');
+    near(FF.undyingRageIncomingMult(setSt('berserker',2, { playerHp:9999 })), 1, 'no Undying Rage while healthy');
+    near(FF.undyingRageIncomingMult(setSt('berserker',1, { playerHp:1 })), 1, '1 piece -> no Undying Rage');
+    // Berserker Frenzied Blows (full): attack timer shrinks up to -30% as HP falls.
+    var bFull = setSt('berserker',3, { playerHp:1 });
+    ok(FF.berserkerFrenziedBlowsMult(bFull) < FF.berserkerFrenziedBlowsMult(setSt('berserker',3, { playerHp:9999 })), 'Frenzied Blows: faster while hurt than while full');
+    near(FF.berserkerFrenziedBlowsMult(setSt('berserker',3, { playerHp:9999 })), 1, 'Frenzied Blows: no haste at full HP');
+    near(FF.berserkerFrenziedBlowsMult(setSt('berserker',2, { playerHp:1 })), 1, 'no Frenzied Blows below the full set');
+
+    // Templar Mercy (2pc): Lay on Hands mends 40% (up from 20%).
+    near(FF.templarLayOnHandsPct(setSt('templar',2)), 0.40, 'Mercy (2pc): Lay on Hands heals 40%');
+    near(FF.templarLayOnHandsPct(setSt('templar',1)), 0.20, '1 piece -> base 20% Lay on Hands');
+    // Templar Blessing of Haste (full): -15% attack timer.
+    near(FF.templarBlessingOfHasteMult(setSt('templar',4)), 0.85, 'Blessing of Haste (full): -15% attack timer');
+    near(FF.templarBlessingOfHasteMult(setSt('templar',2)), 1, 'no Blessing of Haste below the full set');
+
+    // Lumen Radiant Surge (2pc): Reflected Light heals 25% (up from 15%).
+    near(FF.lumenReflectPct(setSt('lumen',2)), 0.25, 'Radiant Surge (2pc): Reflected Light 25%');
+    near(FF.lumenReflectPct(setSt('lumen',1)), FF.LUMEN_REFLECT_PCT, '1 piece -> base Reflected Light');
+    // Lumen Sanctuary (full): Radiant Barrier cap 30% -> 40% max HP.
+    near(FF.lumenSanctuaryCapPct(setSt('lumen',4)), 0.40, 'Sanctuary (full): Barrier cap 40% max HP');
+    near(FF.lumenSanctuaryCapPct(setSt('lumen',2)), FF.LUMEN_SHIELD_MAX_PCT, 'no Sanctuary below the full set');
+    ok(FF.lumenShieldCap(setSt('lumen',4)) > FF.lumenShieldCap(setSt('lumen',2)), 'Sanctuary raises the actual shield cap');
+  });
+
   suite('mastercraft: D1 legendary amulets', function(){
     // A state with a legendary Pendant seated in the Amulet slot.
     function amSt(key, rarity, extra){
