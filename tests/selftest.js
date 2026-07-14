@@ -2746,9 +2746,11 @@
     near(FF.setTreasureMult(setSt('treasureHunter', 2)), 1, 'no Wider Appraisal below the full set');
     near(FF.legTreasureMult(setSt('treasureHunter', 4)), 1.25, 'Wider Appraisal folds into the Treasure Find multiplier');
 
-    // Executioner Execute (2pc): Reap the Weak hits +50%.
-    near(FF.execReapMult(setSt('executioner', 2)), 1.50, 'Execute (2pc): Reap the Weak x1.50');
-    near(FF.execReapMult(setSt('executioner', 1)), 1.30, '1 piece -> base Reap x1.30');
+    // Executioner Execute (2pc): a non-boss foe below 15% Health is slain instantly (threshold constant;
+    // the kill itself is exercised in the drive harness).
+    near(FF.EXEC_SET_EXECUTE_FRAC, 0.15, 'Execute (2pc): instant-kill threshold is 15% max HP');
+    ok(FF.set2('executioner', setSt('executioner', 2)), 'two Executioner pieces arm Execute');
+    ok(!FF.set2('executioner', setSt('executioner', 1)), 'one piece does not arm Execute');
   });
 
   suite('mastercraft: D1 legendary amulets', function(){
