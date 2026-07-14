@@ -2082,6 +2082,74 @@
     s.uniqueItems=sv.uniq; s.xp=sv.xp;
   });
 
+  // ---- D1 legendary gear COMBAT effects, Batch 3: the six Slash weapons ------------------------------
+  suite('mastercraft: legendary slash effects', function(){
+    // A minimal state with a legendary weapon slotted to the main hand (legActive only reads the uid + uniqueItems).
+    function legSt(key, extra){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+        uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_scimitar_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } },
+        equippedMainhandUid:'L' };
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+    var MON = { hp:100 };
+    // The legendary damage term is a NAMED row in PLAYER_DMG_MODS (not spliced into the damage line).
+    ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'legendaryGear'; }), 'legendaryGear is a named PLAYER_DMG_MODS row');
+
+    // Cull (executioner/fullmoonaxe): +2% damage per 1% of the foe's missing Health, capped at +100%.
+    var cullFull = legSt('cull', { activity:{type:'combat', monsterHp:100} });
+    near(FF.legendaryDmgMult(MON, cullFull), 1, 'Cull adds nothing at full enemy HP');
+    var cullHalf = legSt('cull', { activity:{type:'combat', monsterHp:50} });
+    near(FF.legendaryDmgMult(MON, cullHalf), 2.0, 'Cull: 50% missing HP -> +100% (x2.0)');
+    var cullQuarter = legSt('cull', { activity:{type:'combat', monsterHp:75} });
+    near(FF.legendaryDmgMult(MON, cullQuarter), 1.5, 'Cull: 25% missing HP -> +50% (x1.5)');
+    var cullExec = legSt('cull', { activity:{type:'combat', monsterHp:1} });
+    near(FF.legendaryDmgMult(MON, cullExec), 2.0, 'Cull caps at +100% below 50% HP');
+    near(FF.legendaryDmgMult(MON, legSt('crimsonharvest', { activity:{type:'combat', monsterHp:1} })), 1, 'Cull is inert without the Cull legendary');
+
+    // Phantom Assault (assassin/claw): while the 4s-untouched Vanish window is ready, +25% damage and +20% Dodge.
+    var paReady = legSt('phantomassault', { activity:{type:'combat', monsterHp:100, lastDamagedAt: Date.now() - 5000} });
+    ok(FF.legVanishWindowReady(paReady), 'the Vanish window is ready after 4s untouched');
+    near(FF.legendaryDmgMult(MON, paReady), 1.25, 'Phantom Assault: +25% damage while Vanish ready');
+    near(FF.legendaryDodgeBonus(paReady), 0.20, 'Phantom Assault: +20% Dodge while Vanish ready');
+    var paHit = legSt('phantomassault', { activity:{type:'combat', monsterHp:100, lastDamagedAt: Date.now()} });
+    ok(!FF.legVanishWindowReady(paHit), 'the Vanish window closes when freshly hit');
+    near(FF.legendaryDmgMult(MON, paHit), 1, 'Phantom Assault gives no damage while recently hit');
+    near(FF.legendaryDodgeBonus(paHit), 0, 'Phantom Assault gives no Dodge while recently hit');
+
+    // Crimson Harvest (reaver/halfmoonaxe): +2% lifesteal per Bleed stack on the foe.
+    var chBleed = legSt('crimsonharvest', { activity:{type:'combat', monsterHp:100, bleedStacks:3, bleedUntil: Date.now()+4000} });
+    near(FF.legendaryLifestealPct(chBleed), 0.06, 'Crimson Harvest: 3 Bleed stacks -> +6% lifesteal');
+    var chNoBleed = legSt('crimsonharvest', { activity:{type:'combat', monsterHp:100, bleedStacks:0} });
+    near(FF.legendaryLifestealPct(chNoBleed), 0, 'Crimson Harvest gives no lifesteal against an unbled foe');
+    near(FF.legendaryLifestealPct(legSt('cull', { activity:{type:'combat', bleedStacks:3, bleedUntil: Date.now()+4000} })), 0, 'Crimson Harvest is inert without its legendary');
+
+    // Wasting Curse (plaguebearer/hatchet): a poisoned foe deals -5% damage per second poisoned (cap -40%).
+    var wcNone = legSt('wastingcurse', { activity:{type:'combat', monsterHp:100} });
+    near(FF.legWastingCurseIncomingMult(wcNone), 1, 'Wasting Curse is inert against an unpoisoned foe');
+    var wc3 = legSt('wastingcurse', { activity:{type:'combat', monsterHp:100, potionPoisonUntil: Date.now()+4000, poisonSince: Date.now()-3000} });
+    near(FF.legWastingCurseIncomingMult(wc3), 0.85, 'Wasting Curse: 3s poisoned -> incoming x0.85', 1e-3);
+    var wc10 = legSt('wastingcurse', { activity:{type:'combat', monsterHp:100, potionPoisonUntil: Date.now()+4000, poisonSince: Date.now()-10000} });
+    near(FF.legWastingCurseIncomingMult(wc10), 0.60, 'Wasting Curse caps at -40% (x0.60)', 1e-3);
+    // legNotePoisonStart stamps the start of a fresh poison, but leaves an already-active poison's clock alone.
+    var actFresh = { potionPoisonUntil: 0 }; FF.legNotePoisonStart(actFresh); ok(actFresh.poisonSince > 0, 'legNotePoisonStart stamps a fresh poison start');
+    var actLive = { potionPoisonUntil: Date.now()+4000, poisonSince: 111 }; FF.legNotePoisonStart(actLive); eq(actLive.poisonSince, 111, 'legNotePoisonStart does not reset an ongoing poison');
+
+    // Relic Reaver (treasureHunter/scimitar): +25% damage while Faith is above half.
+    var rrHi = legSt('relicreaver', { xp:{ prayer:0 }, faith:9999 });
+    rrHi.faith = FF.faithMax(rrHi) * 0.75;
+    near(FF.legendaryDmgMult(MON, rrHi), 1.25, 'Relic Reaver: +25% while Faith above half');
+    var rrLo = legSt('relicreaver', { xp:{ prayer:0 } });
+    rrLo.faith = FF.faithMax(rrLo) * 0.25;
+    near(FF.legendaryDmgMult(MON, rrLo), 1, 'Relic Reaver: no bonus while Faith at or below half');
+
+    // Spectral Aegis (reaper/scythe): the Siphon Shield cap doubles to 40% of max Health.
+    var saOff = legSt('cull', { xp:{ vitality: FF.xpFloorForLevel(30) } });
+    var saOn = legSt('spectralaegis', { xp:{ vitality: FF.xpFloorForLevel(30) } });
+    eq(FF.reaperShieldCap(saOn), 2 * FF.reaperShieldCap(saOff), 'Spectral Aegis doubles the Siphon Shield cap');
+    near(FF.reaperShieldCap(saOn), Math.round(FF.maxHp(saOn) * 0.40), 'Spectral Aegis cap = 40% of max HP');
+  });
+
   // ---- Dungeon gate: a minimum Total Level to enter ANY dungeon, plus the clear-the-previous-boss chain --
   suite('dungeons: Total Level gate + unlock chain', function(){
     var s = FF._state, saved = s.dungeonsCleared;
