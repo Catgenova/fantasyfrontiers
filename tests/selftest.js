@@ -3230,6 +3230,44 @@
     ok(fam.spells.some(function(sp){ return sp.type==='hit'; }), 'knight familiar has a damaging spell');
   });
 
+  // ---- Class registration integrity: adding a class touches several registries; this suite
+  // fails CI loudly when one is missed (instead of a silently missing familiar/icon/element,
+  // or the leaderboard freezing because the skill set outgrew submit_profile's MAX_SKILLS). ----
+  suite('classes: registration integrity', function(){
+    var defs = FF.CLASS_DEFS;
+    ok(Array.isArray(defs) && defs.length >= 20, 'CLASS_DEFS present ('+defs.length+' classes)');
+    eq(FF.CLASS_SKILL_IDS.join(','), defs.map(function(c){ return c.id; }).join(','), 'CLASS_SKILL_IDS is derived from CLASS_DEFS');
+    // Summoner deliberately has no class familiar of its own -- its kit amplifies OTHER familiars
+    // (extra companion slot, familiar-damage passives). Every other class must have the full kit.
+    var NO_OWN_FAMILIAR = ['summoner'];
+    var ELEMENTS = ['fire','water','earth','light','dark'];
+    defs.forEach(function(cd){
+      var id = cd.id;
+      // submit_profile stores the class id only if it matches this exact pattern -- a mismatch
+      // silently nulls the player's leaderboard class icon (this caught 'treasureHunter' once).
+      ok(/^[a-z][a-zA-Z0-9_]{0,23}$/.test(id), id+': id is a slug submit_profile accepts');
+      ok(cd.name && cd.icon && cd.blurb, id+': has name/icon/blurb');
+      ok(Array.isArray(cd.reqParts) && cd.reqParts.length >= 1, id+': has gear requirements');
+      cd.reqParts.forEach(function(p){ ok(typeof p.met === 'function' && p.label, id+': req part has met() + label'); });
+      eq((cd.passives||[]).map(function(p){ return p.level; }).join(','), '1,20,40,60,80', id+': passive tiers are 1/20/40/60/80');
+      cd.passives.forEach(function(p){ ok(p.name && p.desc, id+': passive '+p.level+' has name + desc'); });
+      ok(id in FF._state.xp, id+': xp seeded in newGame');
+      if(NO_OWN_FAMILIAR.indexOf(id) === -1){
+        var fam = FF.FAMILIAR_DATA[id];
+        ok(fam && fam.name && fam.icon, id+': has a class familiar');
+        eq((fam && fam.spells || []).length, 4, id+': class familiar has 4 spells');
+        eq((FF.FAMILIAR_SPELLS[id]||[]).length, 4, id+': FAMILIAR_SPELLS kit has 4 spells');
+        ok(ELEMENTS.indexOf(FF.FAMILIAR_ELEMENT[id]) !== -1, id+': familiar element is valid');
+      }
+      ok(FF.FAM_SKIN[id], id+': familiar skin defined');
+    });
+    // MAX_SKILLS headroom: the deployed submit_profile rejects submissions with more skills than
+    // its MAX_SKILLS (currently 400) -- and when that trips, the WHOLE leaderboard silently stops
+    // updating (it has happened). Fail here first, with room to react.
+    var skillCount = Object.keys(FF.computeProfileStats().skills).length;
+    ok(skillCount < 380, 'profile skill set ('+skillCount+') stays well under the deployed MAX_SKILLS=400 -- if this fails, RAISE MAX_SKILLS in submit_profile and redeploy BEFORE merging');
+  });
+
   // ---- PLAYER_DMG_MODS: the named damage-modifier table behind the damage formula ---------
   suite('combat: player damage modifier table', function(){
     var mods = FF.PLAYER_DMG_MODS;

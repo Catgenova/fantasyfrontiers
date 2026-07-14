@@ -153,8 +153,11 @@ Deno.serve(async (req) => {
 
   // Currently-equipped Class id (for the leaderboard's class icon). Cosmetic + client-authoritative;
   // stored as a bounded slug or null. The client maps it to an icon (unknown/null -> neutral figure).
+  // Pattern allows camelCase: class ids like 'treasureHunter' are legitimate (the old lowercase-only
+  // pattern silently nulled them, hiding those players' class icons). The client selftest asserts
+  // every CLASS_DEFS id matches this exact pattern so the two can't drift apart again.
   const clsRaw = (body as { class?: unknown }).class;
-  const cls = (typeof clsRaw === "string" && /^[a-z][a-z0-9_]{0,23}$/.test(clsRaw)) ? clsRaw : null;
+  const cls = (typeof clsRaw === "string" && /^[a-z][a-zA-Z0-9_]{0,23}$/.test(clsRaw)) ? clsRaw : null;
 
   // Optional public estate snapshot (render-only) so others can view it read-only from the
   // leaderboard. Cosmetic + client-authoritative; never reject the submission over it. Bounded by a
