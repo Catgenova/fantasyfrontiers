@@ -1369,12 +1369,36 @@
     ok(Math.abs(FF.newClassDmgMult(monFull, stFor('sharpshooter',80)) - 1.20) < 1e-9, 'Sharpshooter Piercing Shot +20%');
     eq(FF.classAccuracyMult(stFor('sharpshooter',80)), 1.3, 'Sharpshooter Steady Aim +30% Accuracy');
     ok(Math.abs(FF.newClassCritChance(stFor('sharpshooter',80)) - 0.12) < 1e-9, 'Sharpshooter Deadeye +12% crit chance');
-    // Juggernaut: Crushing +30%; Bulwark +15% Block; Ironclad +25% armor; Unstoppable -20% incoming; Devastate +60% crit dmg.
-    ok(Math.abs(FF.newClassDmgMult(monFull, stFor('juggernaut',80)) - 1.30) < 1e-9, 'Juggernaut Crushing Blows +30%');
-    eq(FF.classBlockBonus(stFor('juggernaut',80)), 0.15, 'Juggernaut Bulwark +15% Block');
-    eq(FF.juggernautArmorMult(stFor('juggernaut',80)), 1.25, 'Juggernaut Ironclad +25% Armor');
-    eq(FF.juggernautIncomingMult(stFor('juggernaut',80)), 0.80, 'Juggernaut Unstoppable -20% incoming');
-    ok(Math.abs(FF.newClassCritDmg(stFor('juggernaut',80)) - 0.60) < 1e-9, 'Juggernaut Devastate +60% crit dmg');
+    // Juggernaut rework: Wind-Up (Lv1) / Overhead Smash (Lv20) / Concussive Crits (Lv40) /
+    // Building Fury (Lv60) / Pulverize (Lv80). Slow, hard-hitting crit bruiser; the old defensive kit is gone.
+    var jugNames = FF.CLASS_DEFS_BY_ID.juggernaut.passives.map(function(p){ return p.name; });
+    eq(JSON.stringify(jugNames), JSON.stringify(['Wind-Up','Overhead Smash','Concussive Crits','Building Fury','Pulverize']), 'Juggernaut ladder is the reworked five');
+    // Wind-Up (Lv1): +45% damage, +25% attack timer (25% slower). The old flat Crushing Blows +30% is gone.
+    ok(Math.abs(FF.newClassDmgMult(monFull, stFor('juggernaut',80)) - 1.45) < 1e-9, 'Wind-Up: +45% damage');
+    ok(Math.abs(FF.classAttackSpeedMult(stFor('juggernaut',1)) - 1.25) < 1e-9, 'Wind-Up: swings 25% slower (attack timer x1.25)');
+    ok(Math.abs(FF.classAttackSpeedMult(stFor('pyromancer',80)) - 1) < 1e-9, 'a non-Juggernaut class does not slow its swings via Wind-Up');
+    // The reworked kit drops all defensive perks: no Block, no Armor mult, no incoming reduction.
+    eq(FF.classBlockBonus(stFor('juggernaut',80)), 0, 'Juggernaut no longer grants Block (Bulwark removed)');
+    ok(typeof FF.juggernautArmorMult === 'undefined', 'Ironclad armor helper removed');
+    ok(typeof FF.juggernautIncomingMult === 'undefined', 'Unstoppable incoming helper removed');
+    // Overhead Smash (Lv20): every 4th landed hit is a guaranteed crit -> the NEXT hit crits when the tally is at 3, 7, ...
+    eq(FF.juggernautSmashReady(stFor('juggernaut',20,{activity:{type:'combat',monsterHp:100,juggernautSwings:3}})), true, 'Overhead Smash: the 4th landed hit (tally 3 -> next) is forced-crit');
+    eq(FF.juggernautSmashReady(stFor('juggernaut',20,{activity:{type:'combat',monsterHp:100,juggernautSwings:7}})), true, 'Overhead Smash repeats every 4 hits (tally 7 -> next)');
+    eq(FF.juggernautSmashReady(stFor('juggernaut',20,{activity:{type:'combat',monsterHp:100,juggernautSwings:1}})), false, 'Overhead Smash does not fire between the 4th hits');
+    eq(FF.juggernautSmashReady(stFor('juggernaut',1,{activity:{type:'combat',monsterHp:100,juggernautSwings:3}})), false, 'Overhead Smash inactive below Lv20');
+    // Concussive Crits (Lv40): a crit stuns for 1.5s.
+    eq(FF.JUG_CONCUSS_MS, 1500, 'Concussive Crits stun window is 1.5s');
+    // Building Fury (Lv60): +12% crit dmg per banked stack (cap 8 -> +96%), read from the activity.
+    eq(FF.juggernautFuryStacks(stFor('juggernaut',60,{activity:{type:'combat',monsterHp:100,juggernautFuryStacks:3}})), 3, 'Building Fury: banked stacks read from the fight');
+    eq(FF.juggernautFuryStacks(stFor('juggernaut',60,{activity:{type:'combat',monsterHp:100,juggernautFuryStacks:20}})), 8, 'Building Fury caps at 8 stacks');
+    eq(FF.juggernautFuryStacks(stFor('juggernaut',40,{activity:{type:'combat',monsterHp:100,juggernautFuryStacks:3}})), 0, 'Building Fury inactive below Lv60');
+    ok(Math.abs(FF.newClassCritDmg(stFor('juggernaut',60,{activity:{type:'combat',monsterHp:100,juggernautFuryStacks:3}})) - 0.36) < 1e-9, 'Building Fury: 3 stacks -> +36% crit damage');
+    ok(Math.abs(FF.newClassCritDmg(stFor('juggernaut',60,{activity:{type:'combat',monsterHp:100,juggernautFuryStacks:20}})) - 0.96) < 1e-9, 'Building Fury at cap -> +96% crit damage');
+    eq(FF.newClassCritDmg(stFor('juggernaut',80)), 0, 'no banked Fury -> no crit-damage bonus (flat Devastate removed)');
+    // Pulverize (Lv80): a Critical Hit ignores 100% of the foe\'s armour; a non-crit (or below Lv80) ignores none.
+    eq(FF.juggernautArmorPierce(true, stFor('juggernaut',80)), 1, 'Pulverize: a crit ignores all armour at Lv80');
+    eq(FF.juggernautArmorPierce(false, stFor('juggernaut',80)), 0, 'Pulverize only applies on a crit');
+    eq(FF.juggernautArmorPierce(true, stFor('juggernaut',60)), 0, 'Pulverize inactive below Lv80');
     // Voidshadow rework: Mark of the Void (Lv1) / Enfeeble (Lv20) / Void Resonance (Lv40) /
     // Soul Tax (Lv60) / Doom (Lv80). Curses stack on the foe; the old flat Hex/Siphon/Shadowstep are gone.
     var nbNames = FF.CLASS_DEFS_BY_ID.nightblade.passives.map(function(p){ return p.name; });
@@ -1452,7 +1476,8 @@
     eq(FF.newClassCritChance(none), 0, 'no class -> new-class crit chance neutral');
     eq(FF.newClassCritDmg(none), 0, 'no class -> new-class crit dmg neutral');
     eq(FF.nightbladeLifestealPct(none), 0, 'no class -> no siphon');
-    eq(FF.juggernautIncomingMult(none), 1, 'no class -> incoming neutral');
+    eq(FF.juggernautFuryStacks(none), 0, 'no class -> no Building Fury stacks');
+    eq(FF.juggernautArmorPierce(true, none), 0, 'no class -> no Pulverize armour ignore');
     // enemyHpFrac reads current/max cleanly.
     ok(Math.abs(FF.enemyHpFrac({hp:100}, {activity:{monsterHp:40}}) - 0.4) < 1e-9, 'enemyHpFrac = current/max');
     eq(FF.enemyHpFrac({hp:0}, {activity:{monsterHp:0}}), 1, 'enemyHpFrac guards against a zero max');
