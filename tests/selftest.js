@@ -3230,6 +3230,29 @@
     ok(fam.spells.some(function(sp){ return sp.type==='hit'; }), 'knight familiar has a damaging spell');
   });
 
+  // ---- activeClassId memo: live-state gear changes must invalidate the cached class ------
+  suite('classes: activeClassId memo invalidation', function(){
+    var s = FF._state;
+    function plate(){ return {tier:1, rarity:'normal', material:'plate'}; }
+    function chain(){ return {tier:1, rarity:'normal', material:'chain'}; }
+    var snap = { main:s.equippedMainhand, off:s.equippedOffhand, helm:s.bodyArmor.helmet, chest:s.bodyArmor.chest, gaunt:s.bodyArmor.gauntlets, boots:s.bodyArmor.boots };
+    s.equippedMainhand = 'claymore'; s.equippedOffhand = null;
+    s.bodyArmor.helmet = chain(); s.bodyArmor.chest = plate(); s.bodyArmor.gauntlets = chain(); s.bodyArmor.boots = plate();
+    eq(FF.activeClassId(), 'knight', 'live state derives Knight (memoized path)');
+    s.equippedMainhand = null;
+    ok(FF.activeClassId() !== 'knight', 'unequipping the mainhand invalidates the memo');
+    s.equippedMainhand = 'claymore';
+    eq(FF.activeClassId(), 'knight', 're-equipping re-derives Knight');
+    s.bodyArmor.chest = chain();
+    ok(FF.activeClassId() !== 'knight', 'an armor material change invalidates the memo');
+    s.bodyArmor.chest = plate();
+    eq(FF.activeClassId(), 'knight', '...and restoring it re-derives Knight again');
+    // restore
+    s.equippedMainhand = snap.main; s.equippedOffhand = snap.off;
+    s.bodyArmor.helmet = snap.helm; s.bodyArmor.chest = snap.chest; s.bodyArmor.gauntlets = snap.gaunt; s.bodyArmor.boots = snap.boots;
+    FF.activeClassId(); // re-derive once so the memo reflects the restored gear for later suites
+  });
+
   // ---- Elemental attunement physiques (per-element damage + resistance) -----------------
   suite('elemental attunements', function(){
     var els = ['fire','water','earth','light','dark'];

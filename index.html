@@ -3754,8 +3754,26 @@
   STACKABLE_SHIELD_TYPES.forEach(function(s){ STACKABLE_SHIELD_TYPE_MAP[s.id] = s; });
   function isStackableShield(typeId){ return !!STACKABLE_SHIELD_TYPE_MAP[typeId]; }
 
-  function getWeaponStyle(id){ if(!id) return UNARMED_STYLE; return WEAPON_STYLES.filter(function(w){ return w.id===id; })[0] || UNARMED_STYLE; }
-  function getOffhandStyle(id){ return id ? (OFFHAND_STYLES.filter(function(o){ return o.id===id; })[0] || null) : null; }
+  // Hot-path style lookups (several calls per combat tick + per render). Lazy id->style maps,
+  // rebuilt automatically if the source array is ever reassigned or grown after this point.
+  var _weaponStyleMap = null, _weaponStyleSrc = null, _weaponStyleLen = 0;
+  function getWeaponStyle(id){
+    if(!id) return UNARMED_STYLE;
+    if(_weaponStyleSrc !== WEAPON_STYLES || _weaponStyleLen !== WEAPON_STYLES.length){
+      _weaponStyleMap = {}; WEAPON_STYLES.forEach(function(w){ _weaponStyleMap[w.id] = w; });
+      _weaponStyleSrc = WEAPON_STYLES; _weaponStyleLen = WEAPON_STYLES.length;
+    }
+    return _weaponStyleMap[id] || UNARMED_STYLE;
+  }
+  var _offhandStyleMap = null, _offhandStyleSrc = null, _offhandStyleLen = 0;
+  function getOffhandStyle(id){
+    if(!id) return null;
+    if(_offhandStyleSrc !== OFFHAND_STYLES || _offhandStyleLen !== OFFHAND_STYLES.length){
+      _offhandStyleMap = {}; OFFHAND_STYLES.forEach(function(o){ _offhandStyleMap[o.id] = o; });
+      _offhandStyleSrc = OFFHAND_STYLES; _offhandStyleLen = OFFHAND_STYLES.length;
+    }
+    return _offhandStyleMap[id] || null;
+  }
 
   // Armor Proficiencies: one per body-armor material, leveled by taking damage while
   // wearing a piece made of that material. Each level adds 1% to the armor value of
@@ -3946,7 +3964,8 @@
     {id:'supreme', label:'Supreme ', mult:4},
     {id:'fantastic', label:'Fantastic ', mult:8}
   ];
-  function getRarity(id){ return RARITY_TIERS.filter(function(r){ return r.id===id; })[0] || RARITY_TIERS[0]; }
+  var RARITY_BY_ID = {}; RARITY_TIERS.forEach(function(r){ RARITY_BY_ID[r.id] = r; });
+  function getRarity(id){ return RARITY_BY_ID[id] || RARITY_TIERS[0]; } // hot path: damage formula + every card render
   function applyRarity(item, rarityId){
     if(!item || !rarityId || rarityId==='normal') return item;
     var r = getRarity(rarityId);
@@ -5024,7 +5043,29 @@
   ALL_MAIN_SKILL_IDS = ALL_MAIN_SKILL_IDS.concat(CLASS_SKILL_IDS);
   function classReqMet(cd, st){ return cd.reqParts.every(function(p){ return p.met(st); }); }
   // Only one class can be active at a time; the first whose full gear set is worn wins.
-  function activeClassId(st){ st = st || state; for(var i=0;i<CLASS_DEFS.length;i++){ if(classReqMet(CLASS_DEFS[i], st)) return CLASS_DEFS[i].id; } return null; }
+  function activeClassIdUncached(st){ for(var i=0;i<CLASS_DEFS.length;i++){ if(classReqMet(CLASS_DEFS[i], st)) return CLASS_DEFS[i].id; } return null; }
+  // activeClassId is a scorching hot path: every swing evaluates ~25 class-mult helpers, each of
+  // which re-derives it (~125 met() closures per derivation). Memoize on a signature of EVERYTHING
+  // the met() closures can read -- mainhand, offhand, offhand-claw tier presence, and each armor
+  // slot's material + worn flag. If a future class requirement reads a NEW state field (e.g. a
+  // rarity), it MUST be added to classGearSig or the memo will serve stale results.
+  // Synthetic states (selftest fixtures, previews) bypass the memo: it only caches the live `state`.
+  function classGearSig(st){
+    var b = st.bodyArmor || {}, sig = (st.equippedMainhand||'') + '|' + (st.equippedOffhand||'') + '|' + ((st.equippedOffhandTier||0) > 0 ? 1 : 0);
+    for(var i=0;i<BODY_ARMOR_SLOTS.length;i++){
+      var s = b[BODY_ARMOR_SLOTS[i]];
+      sig += '|' + (s ? (s.material||'') + (s.tier > 0 ? 1 : 0) : '');
+    }
+    return sig;
+  }
+  var _activeClassSig = null, _activeClassMemo = null;
+  function activeClassId(st){
+    st = st || state;
+    if(st !== state) return activeClassIdUncached(st);
+    var sig = classGearSig(st);
+    if(sig !== _activeClassSig){ _activeClassMemo = activeClassIdUncached(st); _activeClassSig = sig; }
+    return _activeClassMemo;
+  }
   function classLevel(st, id){ st = st || state; return getLevel((st.xp && st.xp[id]) || 0); }
   // A tiered passive is live only while its class is the active (equipped) class and high enough level.
   function classBonusActive(id, reqLevel, st){ st = st || state; return activeClassId(st)===id && classLevel(st, id) >= reqLevel; }
