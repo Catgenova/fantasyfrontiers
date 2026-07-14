@@ -2686,6 +2686,71 @@
     ok(FF.lumenShieldCap(setSt('lumen',4)) > FF.lumenShieldCap(setSt('lumen',2)), 'Sanctuary raises the actual shield cap');
   });
 
+  // ---- D1 set bonuses, Batch 4: casters / familiars / echoes / void / misc --------------------------
+  suite('D1 set bonuses: casters / familiars / echoes / void', function(){
+    function setSt(cls, count, extra){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, activity:{type:'combat', monsterHp:100}, playerHp:100 };
+      var slots = Object.keys(FF.D1_SET_DEFS[cls].pieces);
+      for(var i=0;i<count && i<slots.length;i++){ var uid='sp'+i; st.uniqueItems[uid] = { uid:uid, set:cls };
+        st.bodyArmor[slots[i]] = { uid:uid, material:FF.D1_SET_DEFS[cls].pieces[slots[i]], tier:22, rarity:'rare' }; }
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+    var now = Date.now();
+
+    // Summoner Pack Tactics (2pc): +8% familiar damage per active familiar.
+    var packSt = setSt('summoner', 2, { activeCompanions:['woodcutting'], familiars:{ woodcutting:{owned:true} } });
+    near(FF.summonerPackTacticsMult(packSt), 1.08, 'Pack Tactics (2pc): +8% per active familiar');
+    near(FF.summonerPackTacticsMult(setSt('summoner', 2, { activeCompanions:[], familiars:{} })), 1, 'Pack Tactics: no bonus with no familiars');
+    near(FF.summonerPackTacticsMult(setSt('summoner', 1, { activeCompanions:['woodcutting'], familiars:{ woodcutting:{owned:true} } })), 1, '1 piece -> no Pack Tactics');
+
+    // Spellblade Resonant Crit (full): echoes can Critically Hit.
+    ok(FF.spellbladeResonantCrit(setSt('spellblade', 4)), 'Resonant Crit (full): echoes can crit');
+    ok(!FF.spellbladeResonantCrit(setSt('spellblade', 2)), 'no Resonant Crit below the full set');
+    // Echo Chamber (2pc): +15% echo chance where an echo mechanic already exists (base 0 without the class stays 0).
+    eq(FF.spellbladeEchoChance(setSt('spellblade', 2)), 0, 'Echo Chamber does not fabricate echoes without the Spellblade echo perk');
+    // With the Spellblade class active (greatsword + chain/leather set that doubles as its gear), Echo Chamber adds 15%.
+    function sbSt(asSet, level){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, equippedMainhand:'greatsword', activity:{type:'combat', monsterHp:100}, playerHp:55 };
+      st.xp.spellblade = FF.xpFloorForLevel(level);
+      var mats = { helmet:'chain', chest:'chain', gauntlets:'leather', boots:'leather' };
+      Object.keys(mats).forEach(function(slot,i){
+        if(asSet){ var uid='sb'+i; st.uniqueItems[uid] = { uid:uid, set:'spellblade' }; st.bodyArmor[slot] = { uid:uid, material:mats[slot], tier:22, rarity:'rare' }; }
+        else st.bodyArmor[slot] = { material:mats[slot], tier:5 };
+      });
+      return st;
+    }
+    eq(FF.activeClassId(sbSt(true,40)), 'spellblade', 'a full Spellblade set doubles as its class gear');
+    near(FF.spellbladeEchoChance(sbSt(true,40)), 0.30, 'Echo Chamber (2pc): Spell Echo 15% -> 30%');
+    near(FF.spellbladeEchoChance(sbSt(false,40)), 0.15, 'plain Spellblade Lv40 -> base 15% echo chance');
+
+    // Voidshadow Resistance Rot (2pc): Vulnerability bites +3%/stack.
+    near(FF.voidVulnPerStack(setSt('nightblade', 2)), 0.03, 'Resistance Rot (2pc): +3%/Vulnerability stack');
+    near(FF.voidVulnPerStack(setSt('nightblade', 1)), FF.VOID_VULN_PER_STACK, '1 piece -> base +2%/stack');
+    var vulnSt = setSt('nightblade', 2, { activity:{ type:'combat', monsterHp:100, voidVulnStacks:5, voidVulnUntil: now+4000 } });
+    near(FF.voidVulnMult(vulnSt), 1.15, 'Resistance Rot: 5 stacks -> +15% damage taken (up from +10%)');
+    // Malediction (full): each hit sinks 2 Vulnerability stacks.
+    eq(FF.voidMarkPerHit(setSt('nightblade', 4)), 2, 'Malediction (full): 2 Vulnerability stacks per hit');
+    eq(FF.voidMarkPerHit(setSt('nightblade', 2)), 1, 'no Malediction below the full set');
+
+    // Quickdraw Venom Glut (2pc) + Trick Volley (full).
+    near(FF.quickdrawVenomPct(setSt('quickdraw', 2)), 0.50, "Venom Glut (2pc): Serpent's Sting injects 50%");
+    near(FF.quickdrawVenomPct(setSt('quickdraw', 1)), 0.30, '1 piece -> base 30%');
+    near(FF.quickdrawTwinFangChance(setSt('quickdraw', 4)), 0.30, 'Trick Volley (full): Twin Fang 30%');
+    near(FF.quickdrawTwinFangChance(setSt('quickdraw', 2)), 0.15, 'no Trick Volley below the full set');
+
+    // Treasure Hunter Blessed Arsenal (2pc) + Wider Appraisal (full).
+    near(FF.treasureProspectorPer(setSt('treasureHunter', 2)), 0.15, 'Blessed Arsenal (2pc): +15%/Rare+ item');
+    near(FF.treasureProspectorPer(setSt('treasureHunter', 1)), 0.10, '1 piece -> base +10%');
+    near(FF.setTreasureMult(setSt('treasureHunter', 4)), 1.25, 'Wider Appraisal (full): +25% Treasure Find');
+    near(FF.setTreasureMult(setSt('treasureHunter', 2)), 1, 'no Wider Appraisal below the full set');
+    near(FF.legTreasureMult(setSt('treasureHunter', 4)), 1.25, 'Wider Appraisal folds into the Treasure Find multiplier');
+
+    // Executioner Execute (2pc): Reap the Weak hits +50%.
+    near(FF.execReapMult(setSt('executioner', 2)), 1.50, 'Execute (2pc): Reap the Weak x1.50');
+    near(FF.execReapMult(setSt('executioner', 1)), 1.30, '1 piece -> base Reap x1.30');
+  });
+
   suite('mastercraft: D1 legendary amulets', function(){
     // A state with a legendary Pendant seated in the Amulet slot.
     function amSt(key, rarity, extra){

@@ -5318,6 +5318,17 @@
   function templarBlessingOfHasteMult(st){ return setFull('templar', st) ? 0.85 : 1; }               // Blessing of Haste (full): -15% attack timer
   function lumenReflectPct(st){ return set2('lumen', st) ? 0.25 : LUMEN_REFLECT_PCT; }               // Radiant Surge (2pc): Reflected Light heals 25% (up from 15%)
   function lumenSanctuaryCapPct(st){ return setFull('lumen', st) ? 0.40 : LUMEN_SHIELD_MAX_PCT; }     // Sanctuary (full): Radiant Barrier cap rises to 40% of max HP (up from 30%)
+  // Batch 4 -- casters / familiars / echoes / void / misc.
+  var SET_TWINCAST_CHANCE = 0.35, _twinCasting = false;
+  function summonerPackTacticsMult(st){ st = st || state; if(!set2('summoner', st)) return 1; return 1 + 0.08 * Math.max(0, activeCompanionList(st).length); } // Pack Tactics (2pc): +8% familiar damage per active familiar
+  function spellbladeResonantCrit(st){ return setFull('spellblade', st); }                            // Resonant Crit (full): Spell Echoes can Critically Hit
+  function voidVulnPerStack(st){ return set2('nightblade', st) ? 0.03 : VOID_VULN_PER_STACK; }         // Resistance Rot (2pc): Vulnerability bites +3%/stack (up from 2%)
+  function voidMarkPerHit(st){ return setFull('nightblade', st) ? 2 : 1; }                             // Malediction (full): each hit sinks 2 Vulnerability stacks
+  function quickdrawVenomPct(st){ return set2('quickdraw', st) ? 0.50 : 0.30; }                        // Venom Glut (2pc): Serpent's Sting injects 50% (up from 30%)
+  function quickdrawTwinFangChance(st){ return setFull('quickdraw', st) ? 0.30 : 0.15; }               // Trick Volley (full): Twin Fang fires 30% of the time (up from 15%)
+  function treasureProspectorPer(st){ return set2('treasureHunter', st) ? 0.15 : 0.10; }              // Blessed Arsenal (2pc): +15% damage per Rare+ item (up from 10%)
+  function setTreasureMult(st){ return setFull('treasureHunter', st) ? 1.25 : 1; }                     // Wider Appraisal (full): +25% Treasure Find (gold + loot)
+  function execReapMult(st){ return set2('executioner', st) ? 1.50 : 1.30; }                           // Execute (2pc): Reap the Weak hits +50% (up from +30%)
   ALL_MAIN_SKILL_IDS = ALL_MAIN_SKILL_IDS.concat(CLASS_SKILL_IDS);
   function classReqMet(cd, st){ return cd.reqParts.every(function(p){ return p.met(st); }); }
   // Only one class can be active at a time; the first whose full gear set is worn wins.
@@ -5455,7 +5466,7 @@
   // Count of equipped items at or above a rarity rank (1=Rare, 2=Supreme, 3=Fantastic).
   function treasureHunterCount(st, minRank){ return equippedGearRarities(st).filter(function(r){ return rarityRank(r) >= minRank; }).length; }
   // Lv 1 (Prospector): +10% damage per Rare-or-higher item.
-  function treasureHunterDmgMult(st){ st = st || state; return treasureHunterBonus(1, st) ? (1 + 0.10 * treasureHunterCount(st, 1)) : 1; }
+  function treasureHunterDmgMult(st){ st = st || state; return treasureHunterBonus(1, st) ? (1 + treasureProspectorPer(st) * treasureHunterCount(st, 1)) : 1; }
   // Lv 40 (Connoisseur): +25% Critical Hit damage per Fantastic item.
   function treasureHunterCritDmgBonus(st){ st = st || state; return treasureHunterBonus(40, st) ? 0.25 * treasureHunterCount(st, 3) : 0; }
   // Lv 60 (Tithe) is applied on kill (defeatMonster); Lv 80 (Golden Devotion) is applied in faithRarityBonus.
@@ -5684,7 +5695,7 @@
   // Critical Runes (Lv20): +1% crit per 5% Critical-Damage enchant (boosted by Empowered Runes, like the crit-dmg itself).
   function spellbladeCriticalRunesCrit(st){ st = st || state; if(!spellbladeBonus(20, st)) return 0; var cd = (equippedEnchantTotals(st).critDamage||0) * spellbladeEnchantBoost(st); return (cd/5) * SPELLBLADE_CRITRUNE_PER; }
   // Echo chance: Spell Echo (Lv40) 15%; Twin Echo (Lv60) 30% and echoes can re-echo (handled in playerAttackTick).
-  function spellbladeEchoChance(st){ st = st || state; return spellbladeBonus(60, st) ? 0.30 : (spellbladeBonus(40, st) ? 0.15 : 0); }
+  function spellbladeEchoChance(st){ st = st || state; var base = spellbladeBonus(60, st) ? 0.30 : (spellbladeBonus(40, st) ? 0.15 : 0); if(base > 0 && set2('spellblade', st)) base += 0.15; return base; } // Echo Chamber (2pc): +15% echo chance
   // ===== New classes: Pyromancer / Sharpshooter / Juggernaut / Nightblade / Executioner =====
   function pyromancerBonus(reqLevel, st){ return classBonusActive('pyromancer', reqLevel, st); }
   function sharpshooterBonus(reqLevel, st){ return classBonusActive('sharpshooter', reqLevel, st); }
@@ -5715,7 +5726,7 @@
   // Mark of the Void's +damage-taken multiplier on the current foe; Doom upgrades it at max stacks.
   function voidVulnMult(st){ st = st || state; var s = voidVulnStacks(st); if(s <= 0) return 1;
     if(nightbladeBonus(80, st) && s >= VOID_VULN_MAX) return 1 + VOID_DOOM_MULT;   // Doom: +40% at max
-    return 1 + Math.min(VOID_VULN_MAX, s) * VOID_VULN_PER_STACK;
+    return 1 + Math.min(VOID_VULN_MAX, s) * voidVulnPerStack(st);                  // Resistance Rot (2pc) deepens the per-stack bite
   }
   // Distinct debuffs currently on the foe (drives Void Resonance + Soul Tax). Reads the shared channels.
   function enemyDebuffCount(st){ st = st || state; var a = st.activity; if(!a || a.type!=='combat') return 0;
@@ -5803,7 +5814,7 @@
     m *= sharpshooterPatienceMult(st);                                      // Sharpshooter Sniper's Patience (Lv80): ramps on one foe
     if(juggernautBonus(1, st)) m *= jugWindupDmg(st);                        // Juggernaut Wind-Up: +45% damage (+60% with Heavy Hitter set); swings 25% slower
     m *= voidDmgMult(st);                                                    // Voidshadow: Vulnerability x Void Resonance x Soul Tax
-    if(executionerBonus(20, st) && enemyHpFrac(monster, st) < executionerReapThreshold(st)) m *= 1.30; // Executioner Reap the Weak (Lv20); threshold raised by Rising Guillotine (Lv40)
+    if(executionerBonus(20, st) && enemyHpFrac(monster, st) < executionerReapThreshold(st)) m *= execReapMult(st); // Executioner Reap the Weak (Lv20); threshold raised by Rising Guillotine (Lv40); Execute set hits harder
     if(reaverBonus(1, st)) m *= 1.25;                                        // Reaver Savagery
     if(rangerBonus(80, st) && rangerAllStatuses(st)) m *= RANGER_ONSLAUGHT_MULT; // Ranger Apex Predator: x3 vs a fully-ailed foe
     if(samuraiBonus(40, st) && enemyBleeding(st)) m *= SAMURAI_CRIMSON_MULT; // Samurai Crimson Edge: +30% vs a Bleeding foe
@@ -6711,6 +6722,7 @@
         if(spell.type==='hit' && spell.dmgType!=='void' && cmon){ var atkMix={}; atkMix[spell.dmgType]=1; dmg *= weightedAdvantage(atkMix, cmon.armorTypes || {blunt:1/3,slashing:1/3,piercing:1/3}); }
         dmg *= elementAdvantage(spell.element, cmon && cmon.element); // +20% when the spell's element beats the enemy's
         dmg *= elementDmgMult(state, spell.element); // your Elemental Attunement boosts the familiar's element damage
+        dmg *= summonerPackTacticsMult(state); // Pack Tactics (Summoner 2pc): +8% familiar damage per active familiar
         if(summonerBonus(40) && state.playerHp < maxHp(state)*0.25) dmg *= 1.30; // Summoner Lv 40 (Desperate Summons): +30% familiar damage while you're low
         if(summonerBonus(20) && (state.summonerEnrageUntil||0) > Date.now()) dmg *= 1.30; // Summoner Lv 20 (Guardian Bond): enraged host after a familiar intercepts a blow
         if(spell.type==='siphon' && reaperBonus(20)) dmg *= 3; // Reaper Lv 20: familiar life-drain (siphon) spells deal triple damage
@@ -6735,6 +6747,14 @@
       }
     }
     if(!offlineCapture) addLog((FAMILIAR_DATA[casterId]||{}).name + ' casts ' + spell.name + '!', 'important'); // suppress per-cast spam during the offline fast-forward
+    // Twin Cast (Summoner full): a familiar's spell has a chance to immediately cast a second time.
+    // A re-entry guard keeps the twin from twinning again (at most one echo per cast).
+    if(setFull('summoner') && !_twinCasting && Math.random() < SET_TWINCAST_CHANCE){
+      _twinCasting = true;
+      if(!offlineCapture) spawnFloatingText('Twin Cast!', 'ft-rare');
+      castFamiliarSpell(spell, level, casterId);
+      _twinCasting = false;
+    }
   }
   function activateCompanion(skillId){
     if(!Array.isArray(state.activeCompanions)) state.activeCompanions = [];
@@ -8359,8 +8379,8 @@
   function legAmuletEquipped(effectKey, st){ st = st || state; var a = st.jewelrySlots && st.jewelrySlots.amulet; return !!(a && a.leg === effectKey); }
   function countRareT20Amulets(){ var n = 0; AMULET_TYPES.forEach(function(at){ n += state.inventory[amuletBaseId(at.id, TIER_COUNT-1, 'rare')] || 0; }); return n; }
   function consumeRareT20Amulets(count){ AMULET_TYPES.forEach(function(at){ if(count <= 0) return; var id = amuletBaseId(at.id, TIER_COUNT-1, 'rare'); var have = state.inventory[id] || 0; var take = Math.min(have, count); if(take > 0){ state.inventory[id] = have - take; count -= take; } }); }
-  // Treasure Find (Pendant of Fortune): +gold and +loot from kills.
-  function legTreasureMult(st){ st = st || state; return 1 + legendaryAmuletBonus('treasure', st); }
+  // Treasure Find (Pendant of Fortune + Treasure Hunter Wider Appraisal set): +gold and +loot from kills.
+  function legTreasureMult(st){ st = st || state; return (1 + legendaryAmuletBonus('treasure', st)) * setTreasureMult(st); }
   function craftMastercraft(blueprintId){
     var bp = BLUEPRINT_ITEMS[blueprintId]; if(!bp) return;
     if(((state.blueprints && state.blueprints[blueprintId]) || 0) <= 0){ addLog('You don’t hold that Blueprint.', 'danger'); return; }
@@ -11253,7 +11273,7 @@
       if(nightbladeBonus(1)){
         if((act.voidVulnUntil||0) <= Date.now()) act.voidVulnStacks = 0;   // a lapsed Mark starts fresh
         var _prevVuln = act.voidVulnStacks || 0;
-        act.voidVulnStacks = Math.min(VOID_VULN_MAX, _prevVuln + 1);
+        act.voidVulnStacks = Math.min(VOID_VULN_MAX, _prevVuln + voidMarkPerHit(state)); // Malediction (full): 2 stacks/hit
         act.voidVulnUntil = Date.now() + VOID_VULN_MS;
         if(!offlineCapture){
           if(nightbladeBonus(80) && act.voidVulnStacks >= VOID_VULN_MAX && _prevVuln < VOID_VULN_MAX) spawnFloatingText('Doomed!', 'ft-rare');
@@ -11400,7 +11420,7 @@
       }
       // Quickdraw Lv 80 (Serpent's Sting): a Critical Hit injects venom = 30% of the hit dealt over 4s (shares the Coating/poison channel).
       if(quickdrawBonus(80) && isCrit && act.monsterHp > 0){
-        var _ssDps = Math.max(1, Math.round(dmgToMonster * 0.30 / 4));
+        var _ssDps = Math.max(1, Math.round(dmgToMonster * quickdrawVenomPct(state) / 4));
         if(_ssDps > (act.potionPoisonDps || 0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = Math.max(act.potionPoisonDps || 0, _ssDps);
         legNotePoisonStart(act); // Wasting Curse ramp
         act.potionPoisonUntil = Math.max(act.potionPoisonUntil || 0, Date.now() + 4000);
@@ -11439,8 +11459,11 @@
       var _echoGuard = 0; // safety bound on the chain length
       while(_echoChance > 0 && Math.random() < _echoChance && state.activity && state.activity.type==='combat' && act.monsterHp > 0 && _echoGuard < 20){
         _echoGuard++;
-        var echo = Math.max(1, Math.round(dmgToMonster * SPELLBLADE_ECHO_PCT * legEchoDmgMult(state))); // Resonant Echo: +10% per distinct enchant carried
-        act.monsterHp -= echo; spawnFloatingText((_echoChain ? 'Twin Echo ' : 'Spell Echo ')+echo+'!', 'ft-rare');
+        // Resonant Crit (Spellblade full): an echo can Critically Hit, borrowing the hero's crit chance & damage.
+        var _echoCrit = spellbladeResonantCrit(state) && Math.random() < (criticalEyeCritChance(state) + newClassCritChance());
+        var _echoCritMult = _echoCrit ? (CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) : 1;
+        var echo = Math.max(1, Math.round(dmgToMonster * SPELLBLADE_ECHO_PCT * legEchoDmgMult(state) * _echoCritMult)); // Resonant Echo: +10% per distinct enchant carried
+        act.monsterHp -= echo; spawnFloatingText((_echoCrit?'✦ ':'')+(_echoChain ? 'Twin Echo ' : 'Spell Echo ')+echo+'!', _echoCrit?'ft-crit':'ft-rare');
         if(act.monsterHp <= 0){ defeatMonster(monster); break; }
         if(!_echoChain) break; // Spell Echo alone fires at most once per hit
       }
@@ -11472,7 +11495,7 @@
         }
       }
       // Quickdraw Lv 40 (Twin Fang): 15% chance a landed shot nocks a second arrow that rolls hit + crit on its own.
-      if(!isBonus && quickdrawBonus(40) && Math.random() < 0.15 && state.activity && state.activity.type==='combat'){
+      if(!isBonus && quickdrawBonus(40) && Math.random() < quickdrawTwinFangChance(state) && state.activity && state.activity.type==='combat'){
         spawnFloatingText('Twin Fang!', 'ft-rare');
         playerAttackTick(true);
       }
@@ -11492,6 +11515,7 @@
     var _emberCarry = (setFull('pyromancer') && act && (act.burnStacks||0) > 0 && enemyBurning(state)) ? act.burnStacks : 0;
     var _pestCarry = (setFull('plaguebearer') && act && (act.potionPoisonUntil||0) > Date.now() && (act.potionPoisonDps||0) > 0) ? act.potionPoisonDps : 0;
     if(executionerBonus(60)) headsmanTallyKill(); // Headsman's Tally: every kill this session grows your max HP (dungeon foes included)
+    if(setFull('executioner') && executionerBonus(1)) execVigorAddStack(); // Adrenal Vigor (full): a kill also banks a Reaping Vigor stack
     if(act && act.dungeon){ dungeonOnKill(monster); return; } // dungeon foe -> advance the run instead of re-engaging
     bumpStat('kills');
     var goldWon = Math.round(randInt(monster.goldMin, monster.goldMax) * legTreasureMult()); // Pendant of Fortune: +Treasure Find gold
@@ -24560,7 +24584,7 @@
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
-      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, SET_TIER_INDEX:SET_TIER_INDEX, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, knightUnstoppableMult:knightUnstoppableMult, thunderStaticPerHit:thunderStaticPerHit, thunderStaticThreshold:thunderStaticThreshold, thunderDischargeMult:thunderDischargeMult, deadeyeAccuracyBonus:deadeyeAccuracyBonus, duelistFlourishStabs:duelistFlourishStabs, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, heraldRipostePct:heraldRipostePct, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, undyingRageIncomingMult:undyingRageIncomingMult, berserkerFrenziedBlowsMult:berserkerFrenziedBlowsMult, templarLayOnHandsPct:templarLayOnHandsPct, templarBlessingOfHasteMult:templarBlessingOfHasteMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
+      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, SET_TIER_INDEX:SET_TIER_INDEX, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, knightUnstoppableMult:knightUnstoppableMult, thunderStaticPerHit:thunderStaticPerHit, thunderStaticThreshold:thunderStaticThreshold, thunderDischargeMult:thunderDischargeMult, deadeyeAccuracyBonus:deadeyeAccuracyBonus, duelistFlourishStabs:duelistFlourishStabs, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, heraldRipostePct:heraldRipostePct, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, undyingRageIncomingMult:undyingRageIncomingMult, berserkerFrenziedBlowsMult:berserkerFrenziedBlowsMult, templarLayOnHandsPct:templarLayOnHandsPct, templarBlessingOfHasteMult:templarBlessingOfHasteMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, spellbladeResonantCrit:spellbladeResonantCrit, voidVulnPerStack:voidVulnPerStack, voidMarkPerHit:voidMarkPerHit, quickdrawVenomPct:quickdrawVenomPct, quickdrawTwinFangChance:quickdrawTwinFangChance, treasureProspectorPer:treasureProspectorPer, setTreasureMult:setTreasureMult, execReapMult:execReapMult, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, sharpshooterAccOverDodge:sharpshooterAccOverDodge, sharpshooterEagleEyeCrit:sharpshooterEagleEyeCrit, sharpshooterPinpointMult:sharpshooterPinpointMult, sharpshooterFocusCritDmg:sharpshooterFocusCritDmg, sharpshooterArmorPierce:sharpshooterArmorPierce, sharpshooterPatienceMult:sharpshooterPatienceMult, SHARP_EAGLE_CAP:SHARP_EAGLE_CAP, SHARP_PINPOINT_CAP:SHARP_PINPOINT_CAP, SHARP_FOCUS_CAP:SHARP_FOCUS_CAP, SHARP_PATIENCE_CAP:SHARP_PATIENCE_CAP, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautSmashReady:juggernautSmashReady, juggernautFuryStacks:juggernautFuryStacks, juggernautArmorPierce:juggernautArmorPierce, JUG_WINDUP_DMG:JUG_WINDUP_DMG, JUG_WINDUP_SLOW:JUG_WINDUP_SLOW, JUG_SMASH_EVERY:JUG_SMASH_EVERY, JUG_CONCUSS_MS:JUG_CONCUSS_MS, JUG_FURY_PER:JUG_FURY_PER, JUG_FURY_MAX:JUG_FURY_MAX, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_SHIELD_MAX_PCT:LUMEN_SHIELD_MAX_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, HERALD_RIPOSTE_PCT:HERALD_RIPOSTE_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeRuneHungerMult:spellbladeRuneHungerMult, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, spellbladeEchoChance:spellbladeEchoChance, equippedEnchantCount:equippedEnchantCount, spellbladeEnchantBoost:spellbladeEnchantBoost, SPELLBLADE_RUNEHUNGER_PER:SPELLBLADE_RUNEHUNGER_PER, SPELLBLADE_CRITRUNE_PER:SPELLBLADE_CRITRUNE_PER, SPELLBLADE_ECHO_PCT:SPELLBLADE_ECHO_PCT, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, legendaryDmgMult:legendaryDmgMult, legendaryDodgeBonus:legendaryDodgeBonus, legendaryLifestealPct:legendaryLifestealPct, legWastingCurseIncomingMult:legWastingCurseIncomingMult, legNotePoisonStart:legNotePoisonStart, legVanishWindowReady:legVanishWindowReady, samuraiFocusCap:samuraiFocusCap, knightMomentumPerStack:knightMomentumPerStack, legDistinctEnchantCount:legDistinctEnchantCount, legEchoDmgMult:legEchoDmgMult, legShieldBashDamage:legShieldBashDamage, legReflectCanCrit:legReflectCanCrit, legReflectCritMult:legReflectCritMult, legendaryCritDmg:legendaryCritDmg, legEarthshakerBuild:legEarthshakerBuild, legEarthshakerConsume:legEarthshakerConsume, LEG_TREMOR_CAP:LEG_TREMOR_CAP, LEG_TREMOR_MULT:LEG_TREMOR_MULT, CRIT_DAMAGE_MULT:CRIT_DAMAGE_MULT, legendaryAccuracyBonus:legendaryAccuracyBonus, legRangerAilmentRolls:legRangerAilmentRolls, LEG_CHAINSHOT_MAX:LEG_CHAINSHOT_MAX, legendaryCritChance:legendaryCritChance, legThunderMaxStacks:legThunderMaxStacks, legRetributionArmed:legRetributionArmed, legRetributionConsume:legRetributionConsume, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, heraldGuardMaxStacks:heraldGuardMaxStacks, HERALD_GUARD_MAX_STACKS:HERALD_GUARD_MAX_STACKS, HERALD_GUARD_PER_STACK:HERALD_GUARD_PER_STACK, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legChargedRiposteArmed:legChargedRiposteArmed, legChargedRiposteConsume:legChargedRiposteConsume, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
