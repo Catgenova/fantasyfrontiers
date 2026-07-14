@@ -738,6 +738,44 @@
     ok(typeof p === 'number' && p >= 0 && p <= 100, 'anySkillProgress is a 0-100 percentage');
   });
 
+  // ---- Gathering tools: success scales by TIER only, reaching +25% at the top tier -------
+  suite('gather tool success is tier-scaled and rarity-independent', function(){
+    eq(FF.GATHER_TOOL_SUCCESS_MAX, 0.25, 'a top-tier gather tool adds +25% success');
+    eq(FF.gatherToolSuccessBonus(0), 0, 'no tool -> no success bonus');
+    eq(FF.gatherToolSuccessBonus(1), 0, 'the first tool tier adds nothing yet');
+    near(FF.gatherToolSuccessBonus(21), 0.25, 'the top tool tier (stored 21 = index 20) adds +25%');
+    // Strictly monotonic across the ladder.
+    var prev = -1, mono = true;
+    for(var t = 0; t <= 21; t++){ var b = FF.gatherToolSuccessBonus(t); if(b < prev) mono = false; prev = b; }
+    ok(mono, 'the success bonus never decreases as tier climbs');
+
+    var S = FF._state, savedT = S.gatherTools, savedR = S.gatherToolRarities;
+    try {
+      S.gatherTools = {}; S.gatherToolRarities = {};
+      // 70%-base gathers reach the 95% cap exactly at Tier 20 (top tool = stored tier 21), not before.
+      S.gatherTools.mining = 21;
+      near(FF.miningMainChance(S), 0.95, 'a top-tier Pickaxe reaches the 95% mining cap');
+      S.gatherTools.mining = 20; // one tier short of the top
+      ok(FF.miningMainChance(S) < 0.95, 'one tier below the top is still under 95%');
+      near(FF.miningMainChance(S), 0.70 + 0.25*(19/20), 'mining success is a clean linear ramp', 1e-6);
+      // Rarity no longer inflates success: a Fantastic mid-tier tool matches a Normal one.
+      S.gatherTools.mining = 14; // ~cobalt tier
+      S.gatherToolRarities.mining = 'fantastic';
+      var fant = FF.miningMainChance(S);
+      S.gatherToolRarities.mining = 'normal';
+      var norm = FF.miningMainChance(S);
+      near(fant, norm, 'tool rarity does not change gathering success (speed only)');
+      ok(fant < 0.95, 'a cobalt-tier tool no longer hits the 95% cap');
+      // Fishing/digging share the same tier-scaled bonus (lower/equal bases).
+      S.gatherTools.fishing = 21;
+      near(FF.fishingCatchChance(S), 0.75, 'fishing tops out at base 50% + 25% tool = 75%');
+      S.gatherTools.digging = 21;
+      near(FF.diggingMainChance(S), 0.95, 'digging reaches 95% at the top tier');
+    } finally {
+      S.gatherTools = savedT; S.gatherToolRarities = savedR;
+    }
+  });
+
   // ---- Guild estate: leader-set demolition permission (who may remove buildings / pavement) ----------
   suite('guild demolition permission', function(){
     eq(FF.GUILD_RANK_ORDER.leader, 3, 'rank order leader(3) > officer(2) > member(1)');

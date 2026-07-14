@@ -6931,10 +6931,18 @@
       state.activity = { type:'craft', skill:'fletching', itemId:'fletching_shaft', progress:0, logTierIndex: logTierIndex };
     }
   }
+  // Gathering tools raise the main-output SUCCESS rate purely by their tier -- rarity boosts a tool's
+  // SPEED only, never its success. A top-tier tool adds +25%, so a 70%-base gather reaches its 95% cap
+  // exactly at Tier 20 (the top tool tier), rather than maxing out several tiers early on a rare tool.
+  var GATHER_TOOL_SUCCESS_MAX = 0.25;
+  function gatherToolSuccessBonus(toolTier){
+    if(!(toolTier > 0)) return 0;
+    return GATHER_TOOL_SUCCESS_MAX * Math.min(1, (toolTier - 1) / (TIER_COUNT - 1)); // +25% at the top tier
+  }
   var BASE_BUTCHER_CHANCE = 0.40;
   function butcherOutputChance(state, physiqueId){
     var toolTier = state.gatherTools.butchering||0;
-    var toolBonus = getEquippedGatherTool('butchering', toolTier, state.gatherToolRarities.butchering).speedBonus || 0;
+    var toolBonus = gatherToolSuccessBonus(toolTier);
     var physLevel = getLevel(state.physique[physiqueId]||0);
     var physBonus = Math.min(0.25, physLevel*0.0025);
     return Math.min(0.95, BASE_BUTCHER_CHANCE + toolBonus + physBonus + huntsmanOutputBonus());
@@ -6945,13 +6953,11 @@
   // climbing toward a 95% hard cap as its gather tool improves. Digging/Mining/Fishing keep their own rolls
   // (all already anchored at this 70% base); every other gather is gated through this helper.
   var BASE_GATHER_MAIN_CHANCE = 0.70;
-  var GATHER_MAIN_TOOL_CAP = 0.28;
   function genericGatherMainChance(state, skillId){
     var tier = (state.gatherTools && state.gatherTools[skillId]) || 0;
-    return Math.min(0.95, BASE_GATHER_MAIN_CHANCE + GATHER_MAIN_TOOL_CAP * (tier/TIER_COUNT));
+    return Math.min(0.95, BASE_GATHER_MAIN_CHANCE + gatherToolSuccessBonus(tier));
   }
   var BASE_DIG_MAIN_CHANCE = 0.70;
-  var DIG_MAIN_TOOL_CAP = 0.28;
   var BASE_COAL_CHANCE = 0.10;
   var COAL_PHYSIQUE = 'armStrength';
   var COAL_PHYSIQUE_CAP = 0.15;
@@ -6960,8 +6966,7 @@
   var ARTIFACT_PHYSIQUE_CAP = 0.10;
   function diggingMainChance(state){
     var tier = state.gatherTools.digging||0;
-    var toolBonus = DIG_MAIN_TOOL_CAP * (tier/TIER_COUNT);
-    return Math.min(0.95, BASE_DIG_MAIN_CHANCE + toolBonus);
+    return Math.min(0.95, BASE_DIG_MAIN_CHANCE + gatherToolSuccessBonus(tier));
   }
   function diggingSideChance(baseChance, physiqueId, physiqueCap, physiqueScale){
     var physLevel = getLevel(state.physique[physiqueId]||0);
@@ -7036,8 +7041,7 @@
   }
   function miningMainChance(state){
     var tier = state.gatherTools.mining||0;
-    var toolBonus = getEquippedGatherTool('mining', tier, state.gatherToolRarities.mining).speedBonus || 0;
-    return Math.min(0.95, BASE_MINE_MAIN_CHANCE + toolBonus);
+    return Math.min(0.95, BASE_MINE_MAIN_CHANCE + gatherToolSuccessBonus(tier));
   }
   function miningSideChance(baseChance, physiqueId, physiqueCap, physiqueScale){
     var physLevel = getLevel(state.physique[physiqueId]||0);
@@ -7072,8 +7076,7 @@
   var BASE_FISH_CHANCE = 0.50;
   function fishingCatchChance(state){
     var tier = state.gatherTools.fishing||0;
-    var toolBonus = getEquippedGatherTool('fishing', tier, state.gatherToolRarities.fishing).speedBonus || 0;
-    return Math.min(0.95, BASE_FISH_CHANCE + toolBonus);
+    return Math.min(0.95, BASE_FISH_CHANCE + gatherToolSuccessBonus(tier));
   }
   function processFishingRoll(mainItemId){
     if(Math.random() < fishingCatchChance(state)){
@@ -24625,7 +24628,7 @@
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       tierStepper:tierStepper, tierRange:tierRange,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
-      GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, anySkillProgress:anySkillProgress,
+      GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
