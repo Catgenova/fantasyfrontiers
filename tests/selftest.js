@@ -51,6 +51,45 @@
     for(var xp = 0; xp <= 20000000; xp += 50000){ var lv = FF.getLevel(xp); ok(lv >= prev && lv >= 1 && lv <= 100, 'getLevel monotonic & in [1,100] @' + xp); prev = lv; }
   });
 
+  // ---- Over-100 Mastery: gathering & crafting overlevel + double output ------------------
+  suite('over-100 mastery', function(){
+    var EXT = FF.SKILL_XP_FLOOR_EXT, MAX = FF.MAX_SKILL_LEVEL;
+    // The extended table reuses the 0..100 floors verbatim, then each level past 100 doubles the prior cost.
+    eq(EXT[100], FF.xpFloorForLevel(100), 'the extended table matches the classic floor at level 100');
+    eq(EXT[99], FF.xpFloorForLevel(99), '...and at 99');
+    var base = EXT[100] - EXT[99];              // cost(99 -> 100)
+    near((EXT[101]-EXT[100]) / base, 2.0, 'cost(100->101) doubles cost(99->100)', 1e-6);
+    near((EXT[102]-EXT[101]) / (EXT[101]-EXT[100]), 2.0, 'cost(101->102) doubles cost(100->101)', 1e-6);
+    near((EXT[110]-EXT[109]) / base, Math.pow(2,10), 'cost keeps doubling per level past 100', 1e-3);
+
+    // getLevelExt agrees with getLevel below 100, and keeps climbing above it.
+    for(var L = 1; L <= 100; L++){ eq(FF.getLevelExt(EXT[L]), L, 'getLevelExt(floor('+L+')) = '+L); }
+    eq(FF.getLevelExt(EXT[105]), 105, 'level 105 is reachable in the extended table');
+    eq(FF.getLevelExt(EXT[105]-1), 104, 'one XP short of 105 is still 104');
+    eq(FF.getLevelExt(EXT[FF.SKILL_MAX_LEVEL_EXT] * 4), FF.SKILL_MAX_LEVEL_EXT, 'the extended table has its own ceiling');
+
+    // Only gathering & crafting skills overlevel; combat/proficiency skills stay capped at 100.
+    ok(FF.skillCanOverlevel('mining'), 'a gathering skill can overlevel');
+    ok(FF.skillCanOverlevel('weaponsmithing'), 'a crafting skill can overlevel');
+    ok(!FF.skillCanOverlevel('sword'), 'a weapon proficiency does not overlevel');
+    ok(!FF.skillCanOverlevel('platearmor'), 'an armor proficiency does not overlevel');
+    eq(FF.skillLevel('mining', EXT[108]), 108, 'skillLevel reads the extended table for gathering');
+    eq(FF.skillLevel('sword', EXT[150]), 100, 'skillLevel caps a combat skill at 100 regardless of XP');
+    eq(FF.skillLevel('mining', FF.xpFloorForLevel(60)), 60, 'below 100 the two ladders agree');
+
+    // Progress bar past 100: 0% at a fresh level, ~50% halfway, respects the doubled cost.
+    near(FF.skillLevelProgress('mining', EXT[103]), 0, 'progress resets to 0 at a freshly-reached level', 1e-6);
+    near(FF.skillLevelProgress('mining', EXT[103] + (EXT[104]-EXT[103])/2), 50, 'progress is ~50% halfway to 104', 0.5);
+    eq(FF.skillLevelProgress('sword', 1e18), 100, 'a maxed combat skill shows a full bar');
+
+    // Output-double bonus: +1% per level over 100, zero at/under 100 and for non-overlevel skills.
+    near(FF.overLevelDoublePct('mining', EXT[101]), 0.01, 'level 101 -> +1% double output');
+    near(FF.overLevelDoublePct('mining', EXT[110]), 0.10, 'level 110 -> +10% double output');
+    near(FF.overLevelDoublePct('mining', EXT[100]), 0, 'no bonus exactly at 100');
+    near(FF.overLevelDoublePct('mining', FF.xpFloorForLevel(80)), 0, 'no bonus below 100');
+    near(FF.overLevelDoublePct('sword', EXT[150]), 0, 'combat skills never get the double-output bonus');
+  });
+
   // ---- Tier scaling helpers -------------------------------------------------------------
   suite('tier formulas', function(){
     eq(FF.tierXp(10, 0), 10, 'tierXp base');
