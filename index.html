@@ -5276,6 +5276,21 @@
     return setPiecesWorn(cls, st) >= (threshold === 'full' ? d.full : threshold); }
   function set2(cls, st){ return setBonusActive(cls, 2, st); }
   function setFull(cls, st){ return setBonusActive(cls, 'full', st); }
+  // ===== D1 set-bonus combat effects =====
+  // Batch 1 -- DoT caps & procs. Each is gated on set2(cls)/setFull(cls) (pieces worn), so it only bites
+  // for a player wearing that class's set (the class mechanics it enhances are naturally inert otherwise).
+  function reaverBleedCap(st){ return set2('reaver', st) ? 8 : REAVER_BLEED_MAX; }              // Reaver Rabid (2pc)
+  function pyroBurnCap(st){ return set2('pyromancer', st) ? 8 : PYRO_BURN_MAX_STACKS; }          // Pyromancer Wildfire (2pc)
+  function frostChillCap(st){ return set2('frostwarden', st) ? 8 : FROST_CHILL_MAX_STACKS; }     // Frostwarden Deep Chill (2pc)
+  function samuraiFocusPerHit(st){ return set2('samurai', st) ? 2 : 1; }                         // Samurai Unbroken Focus (2pc)
+  function rangerProcChance(st){ return setFull('ranger', st) ? 0.40 : RANGER_PROC_CHANCE; }     // Ranger Toxic Fletching (full)
+  function rangerAilmentDurMult(st){ return set2('ranger', st) ? 1.5 : 1; }                      // Ranger Persistent Ailments (2pc)
+  function plagueBloomMult(st){ return set2('plaguebearer', st) ? 1.5 : 1; }                     // Plaguebearer Plague Bloom (2pc): poison ticks harder
+  // Hoarfrost (Frostwarden full): a Chilled foe's outgoing damage falls -4% per Chill stack (cap -30%).
+  function hoarfrostIncomingMult(st){ st = st || state; if(!setFull('frostwarden', st) || !enemyChilled(st)) return 1; return 1 - Math.min(0.30, enemyChillStacks(st) * 0.04); }
+  // Feeding Frenzy (Reaver full) / Flowing Strikes (Samurai full): attack-speed set capstones (folded into classAttackSpeedMult).
+  function reaverFeedingFrenzyMult(st){ st = st || state; if(!setFull('reaver', st)) return 1; var a = st.activity; var stacks = (a && a.type==='combat' && (a.bleedUntil||0) > Date.now()) ? (a.bleedStacks||0) : 0; return 1 - Math.min(0.30, stacks * 0.04); }
+  function samuraiFlowingStrikesMult(st){ st = st || state; return (setFull('samurai', st) && samuraiFocusStacks(st) >= samuraiFocusCap(st)) ? 0.80 : 1; }
   ALL_MAIN_SKILL_IDS = ALL_MAIN_SKILL_IDS.concat(CLASS_SKILL_IDS);
   function classReqMet(cd, st){ return cd.reqParts.every(function(p){ return p.met(st); }); }
   // Only one class can be active at a time; the first whose full gear set is worn wins.
@@ -5475,7 +5490,11 @@
     if(id==='thunderfury' && classLevel(st,'thunderfury') >= 1) return 1 - 0.10 * Math.min(legThunderMaxStacks(st), st.thunderStacks || 0); // Chain Lightning crit stacks (Tempest raises the cap to 9 = -90%)
     if(id==='frostwarden' && classLevel(st,'frostwarden') >= 20) return 1 - frostwardenTimeDilation(st); // Time Dilation: quicken with the enemy's Chill
     if(id==='pyromancer' && classLevel(st,'pyromancer') >= 80) return 1 - pyromancerFeverHaste(st); // Fever Pitch: quicken with the enemy's Burn
-    if(id==='reaver' && classLevel(st,'reaver') >= 40 && st.activity && st.activity.type==='combat' && (st.activity.bleedStacks||0) >= REAVER_BLEED_MAX && (st.activity.bleedUntil||0) > Date.now()) return 0.85; // Frenzied Rending: +15% attack speed at max Bleed stacks
+    if(id==='reaver' && classLevel(st,'reaver') >= 1){ // Frenzied Rending (+15% at max Bleed) x Feeding Frenzy set capstone (scales with Bleed stacks)
+      var _frMax = (classLevel(st,'reaver') >= 40 && st.activity && st.activity.type==='combat' && (st.activity.bleedStacks||0) >= reaverBleedCap(st) && (st.activity.bleedUntil||0) > Date.now()) ? 0.85 : 1;
+      return _frMax * reaverFeedingFrenzyMult(st);
+    }
+    if(id==='samurai' && setFull('samurai', st)) return samuraiFlowingStrikesMult(st); // Flowing Strikes: +20% attack speed at max Focus
     if(id==='juggernaut' && classLevel(st,'juggernaut') >= 1) return 1.25; // Wind-Up: heavier, slower swings (+25% attack timer)
     return 1;
   }
@@ -5582,9 +5601,9 @@
   var FROST_RESONANCE_DMG_MULT = 1.25;     // ... and you deal +25% to Chilled enemies
   function enemyChilled(st){ st = st || state; return !!(st.activity && st.activity.enemyChillUntil && st.activity.enemyChillUntil > Date.now()); }
   function enemyChillStacks(st){ st = st || state; return enemyChilled(st) ? (st.activity.chillStacks || 0) : 0; }
-  function enemyChillSlowMult(st){ return Math.min(FROST_CHILL_MAX_STACKS*FROST_CHILL_SLOW_PER_STACK, enemyChillStacks(st) * FROST_CHILL_SLOW_PER_STACK); } // added into the enemy action-bar interval
+  function enemyChillSlowMult(st){ return Math.min(frostChillCap(st)*FROST_CHILL_SLOW_PER_STACK, enemyChillStacks(st) * FROST_CHILL_SLOW_PER_STACK); } // added into the enemy action-bar interval (Deep Chill deepens the cap)
   // Permafrost (Lv1): stack one Chill on the activity, refreshing its duration; returns the new stack count.
-  function frostwardenApplyChill(act){ if(!act) return 0; if((act.enemyChillUntil||0) <= Date.now()) act.chillStacks = 0; act.chillStacks = Math.min(FROST_CHILL_MAX_STACKS, (act.chillStacks||0) + 1); act.enemyChillUntil = Date.now() + FROST_CHILL_MS; return act.chillStacks; }
+  function frostwardenApplyChill(act){ if(!act) return 0; if((act.enemyChillUntil||0) <= Date.now()) act.chillStacks = 0; act.chillStacks = Math.min(frostChillCap(state), (act.chillStacks||0) + 1); act.enemyChillUntil = Date.now() + FROST_CHILL_MS; return act.chillStacks; }
   // Time Dilation (Lv20): your action bar quickens by a fraction of the enemy's current Chill slow.
   function frostwardenTimeDilation(st){ st = st || state; return frostwardenBonus(20, st) ? Math.min(FROST_TIME_DILATION_CAP, enemyChillSlowMult(st) * FROST_TIME_DILATION_FRAC) : 0; }
   // Rime Resonance (Lv80): you deal +25% damage to a Chilled foe. (Reuses the old frostwardenDmgMult call site.)
@@ -5892,7 +5911,7 @@
   function enemyBurnStacks(st){ st = st || state; return enemyBurning(st) ? (st.activity.burnStacks || 0) : 0; }
   // Ignite (Lv1): stack one Burn on the activity, refreshing its duration; returns the new stack count.
   // (The dps is recomputed by the caller from live combat power, matching the Frostbite/Bleed pattern.)
-  function pyromancerApplyBurn(act){ if(!act) return 0; if((act.burnUntil||0) <= Date.now() && !legBurnNeverExpires()) act.burnStacks = 0; act.burnStacks = Math.min(PYRO_BURN_MAX_STACKS, (act.burnStacks||0) + 1); act.burnUntil = Date.now() + PYRO_BURN_MS; return act.burnStacks; }
+  function pyromancerApplyBurn(act){ if(!act) return 0; if((act.burnUntil||0) <= Date.now() && !legBurnNeverExpires()) act.burnStacks = 0; act.burnStacks = Math.min(pyroBurnCap(state), (act.burnStacks||0) + 1); act.burnUntil = Date.now() + PYRO_BURN_MS; return act.burnStacks; }
   // Combust (Lv20): the burst a Critical Hit deals by detonating current Burn stacks (gated on crit inline).
   function pyromancerCombustDmg(hitDmg, st){ st = st || state; return (pyromancerBonus(20, st) && enemyBurning(st)) ? Math.round((hitDmg||0) * PYRO_COMBUST_PER_STACK * enemyBurnStacks(st)) : 0; }
   // Kindling Crits (Lv40): +crit damage that scales with the enemy's current Burn stacks.
@@ -10922,7 +10941,7 @@
   function applyPotionPoisonTick(dtMs){
     var act = state.activity;
     if(!act || act.type!=='combat' || (act.potionPoisonUntil||0) <= Date.now()) return;
-    var dps = act.potionPoisonDps || 0; if(dps <= 0) return;
+    var dps = (act.potionPoisonDps || 0) * plagueBloomMult(state); if(dps <= 0) return; // Plague Bloom: poison ticks +50%
     var dmg = dps * dtMs / 1000;
     act.monsterHp = Math.max(1, act.monsterHp - dmg);
     if(plaguebearerBonus(40)){ // Toxic Blood: heal 5% of poison damage dealt
@@ -11173,7 +11192,7 @@
         }
       }
       // Samurai Bushido (Lv60): each landed hit builds a Focus stack (capped); a miss resets it (miss branch above).
-      if(samuraiBonus(60)) act.samuraiFocus = Math.min(samuraiFocusCap(state), (act.samuraiFocus||0) + 1); // Flowing Blade raises the cap to 15
+      if(samuraiBonus(60)) act.samuraiFocus = Math.min(samuraiFocusCap(state), (act.samuraiFocus||0) + samuraiFocusPerHit(state)); // Flowing Blade raises the cap to 15; Unbroken Focus builds 2/hit
       // Knight (Momentum): each landed hit adds a -10% attack-speed stack (cap 5, or 8 with Relentless).
       if(knightBonus(1)) state.knightStacks = Math.min(knightStackCap(state), (state.knightStacks || 0) + 1);
       // Berserker Blood Pact (Lv20): each landed hit spends 2% of current HP to fuel its +50% damage (never self-lethal).
@@ -11203,7 +11222,7 @@
       // adds an extra stack (the frenzy attack-speed bonus at max stacks lives in classAttackSpeedMult).
       if(reaverBonus(40)){
         if((act.bleedUntil||0) <= Date.now()) act.bleedStacks = 0;        // a lapsed Bleed starts fresh
-        act.bleedStacks = Math.min(REAVER_BLEED_MAX, (act.bleedStacks||0) + (Math.random() < 0.25 ? 2 : 1));
+        act.bleedStacks = Math.min(reaverBleedCap(state), (act.bleedStacks||0) + (Math.random() < 0.25 ? 2 : 1)); // Rabid raises the cap to 8
         act.bleedDps = act.bleedStacks * combatLevelEquivalent(state) * REAVER_BLEED_PCT;
         act.bleedUntil = Date.now() + REAVER_BLEED_MS;
         spawnFloatingText('Rend x'+act.bleedStacks, 'ft-bonus');
@@ -11298,26 +11317,28 @@
       // Compound Arrows (legendary bow) rolls the whole ailment volley twice.
       var _rangerRolls = legRangerAilmentRolls(state);
       for(var _rr=0; _rr<_rangerRolls; _rr++){
-      if(rangerBonus(1) && Math.random() < RANGER_PROC_CHANCE){ // Venom Arrows (Lv1): poison
+      if(rangerBonus(1) && Math.random() < rangerProcChance(state)){ // Venom Arrows (Lv1): poison
         var _rvd = combatLevelEquivalent(state) * RANGER_POISON_PCT;
         if(_rvd > (act.potionPoisonDps||0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = Math.max(act.potionPoisonDps||0, _rvd);
         legNotePoisonStart(act); // Wasting Curse ramp
-        act.potionPoisonUntil = Math.max(act.potionPoisonUntil||0, Date.now() + RANGER_POISON_MS);
+        act.potionPoisonUntil = Math.max(act.potionPoisonUntil||0, Date.now() + RANGER_POISON_MS * rangerAilmentDurMult(state)); // Persistent Ailments extends it
         spawnFloatingText('Venom!', 'ft-bonus');
       }
-      if(rangerBonus(20) && Math.random() < RANGER_PROC_CHANCE){ // Barbed Arrows (Lv20): bleed
+      if(rangerBonus(20) && Math.random() < rangerProcChance(state)){ // Barbed Arrows (Lv20): bleed
         if((act.bleedUntil||0) <= Date.now()) act.bleedStacks = 0;
         act.bleedStacks = Math.min(RANGER_BLEED_MAX, (act.bleedStacks||0) + 1);
         act.bleedDps = act.bleedStacks * combatLevelEquivalent(state) * RANGER_BLEED_PCT;
-        act.bleedUntil = Date.now() + RANGER_BLEED_MS;
+        act.bleedUntil = Date.now() + RANGER_BLEED_MS * rangerAilmentDurMult(state);
         spawnFloatingText('Bleed x'+act.bleedStacks, 'ft-bonus');
       }
-      if(rangerBonus(40) && Math.random() < RANGER_PROC_CHANCE){ // Frost Arrows (Lv40): chill
+      if(rangerBonus(40) && Math.random() < rangerProcChance(state)){ // Frost Arrows (Lv40): chill
         spawnFloatingText('Chill x'+frostwardenApplyChill(act), 'ft-bonus');
+        if(set2('ranger')) act.enemyChillUntil = Date.now() + FROST_CHILL_MS * rangerAilmentDurMult(state); // Persistent Ailments
       }
-      if(rangerBonus(60) && Math.random() < RANGER_PROC_CHANCE){ // Fire Arrows (Lv60): burn
+      if(rangerBonus(60) && Math.random() < rangerProcChance(state)){ // Fire Arrows (Lv60): burn
         var _rbs = pyromancerApplyBurn(act);
         act.burnDps = act.burnStacks * combatLevelEquivalent(state) * PYRO_BURN_PCT;
+        if(set2('ranger')) act.burnUntil = Date.now() + PYRO_BURN_MS * rangerAilmentDurMult(state); // Persistent Ailments
         spawnFloatingText('Burn x'+_rbs, 'ft-bonus');
       }
       } // end Compound Arrows ailment-roll loop
@@ -11419,6 +11440,9 @@
     var act = state.activity;
     // Reaver Arterial Spray (Lv60): a Bleeding foe's stacks carry to the next foe. Captured before the reset.
     var _arterialCarry = (reaverBonus(60) && act && (act.bleedStacks||0) > 0 && (act.bleedUntil||0) > Date.now()) ? act.bleedStacks : 0;
+    // Set capstones captured before the per-foe reset: Ember Burst (Burn) + Pestilence (Poison) carry to the next foe.
+    var _emberCarry = (setFull('pyromancer') && act && (act.burnStacks||0) > 0 && enemyBurning(state)) ? act.burnStacks : 0;
+    var _pestCarry = (setFull('plaguebearer') && act && (act.potionPoisonUntil||0) > Date.now() && (act.potionPoisonDps||0) > 0) ? act.potionPoisonDps : 0;
     if(executionerBonus(60)) headsmanTallyKill(); // Headsman's Tally: every kill this session grows your max HP (dungeon foes included)
     if(act && act.dungeon){ dungeonOnKill(monster); return; } // dungeon foe -> advance the run instead of re-engaging
     bumpStat('kills');
@@ -11460,8 +11484,17 @@
     act.staticCharge = 0; act.galvanizeStacks = 0; // Thunderfury: fresh Static meter + Galvanize ramp against each foe
     act.chillStacks = 0; act.enemyChillUntil = 0; act.frostbiteStacks = 0; act.frostbiteDps = 0; act.frostbiteUntil = 0; // Frostwarden Chill/Frostbite don't carry between foes
     act.burnStacks = 0; act.burnUntil = 0; act.burnDps = 0; // Pyromancer Burn doesn't carry between foes
+    if(_emberCarry > 0){ // Ember Burst (Pyromancer full): the next foe inherits the slain foe's Burn
+      act.burnStacks = _emberCarry; act.burnUntil = Date.now() + PYRO_BURN_MS;
+      act.burnDps = act.burnStacks * combatLevelEquivalent(state) * PYRO_BURN_PCT;
+      spawnFloatingText('Ember Burst x'+_emberCarry, 'ft-bonus');
+    }
     act.voidVulnStacks = 0; act.voidVulnUntil = 0; // Voidshadow Mark of the Void / Doom don't carry between foes
     act.poisonSince = 0; // the Wasting Curse ramp restarts against each foe (the poison DoT lapses on its own timer)
+    if(_pestCarry > 0){ // Pestilence (Plaguebearer full): the slain foe's poison spreads to the next foe
+      act.potionPoisonDps = _pestCarry; act.potionPoisonUntil = Date.now() + POTION_POISON_DURATION_MS; act.poisonSince = Date.now();
+      spawnFloatingText('Pestilence!', 'ft-rare');
+    }
     act.tremorStacks = 0; act.tremorReady = false; // Earthshaker's Tremor meter doesn't carry between foes
     act.trickChain = 0; // Chain Shot's follow-up counter resets per foe
     act.burnSpreadAccum = 0; // Ember Storm's spread timer resets with the Burn
@@ -11509,7 +11542,7 @@
     // The hit lands its physical type AND the enemy's element together: the element is amplified by
     // the player's armor weakness to it (leather->fire, chain->earth, plate->water).
     var elementMult = incomingElementMult(state, monster);
-    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldGuardMult(state) * templarIncomingDmgMult() * knightDamageTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getWardResistanceBonus(state)) * legWastingCurseIncomingMult(state) * legImmunizeIncomingMult(state) * legNightshroudIncomingMult(state)); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring/amulet flat resistance, Wasting Curse poison decay, Immunize (-25% vs a poisoned foe), Nightshroud Enfeeble
+    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldGuardMult(state) * templarIncomingDmgMult() * knightDamageTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getWardResistanceBonus(state)) * legWastingCurseIncomingMult(state) * legImmunizeIncomingMult(state) * legNightshroudIncomingMult(state) * hoarfrostIncomingMult(state)); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring/amulet flat resistance, Wasting Curse poison decay, Immunize (-25% vs a poisoned foe), Nightshroud Enfeeble, Hoarfrost (Chilled foe)
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
     var blockChance = playerBlockChance(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
@@ -24476,7 +24509,7 @@
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
-      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, SET_TIER_INDEX:SET_TIER_INDEX, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
+      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, SET_TIER_INDEX:SET_TIER_INDEX, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, sharpshooterAccOverDodge:sharpshooterAccOverDodge, sharpshooterEagleEyeCrit:sharpshooterEagleEyeCrit, sharpshooterPinpointMult:sharpshooterPinpointMult, sharpshooterFocusCritDmg:sharpshooterFocusCritDmg, sharpshooterArmorPierce:sharpshooterArmorPierce, sharpshooterPatienceMult:sharpshooterPatienceMult, SHARP_EAGLE_CAP:SHARP_EAGLE_CAP, SHARP_PINPOINT_CAP:SHARP_PINPOINT_CAP, SHARP_FOCUS_CAP:SHARP_FOCUS_CAP, SHARP_PATIENCE_CAP:SHARP_PATIENCE_CAP, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautSmashReady:juggernautSmashReady, juggernautFuryStacks:juggernautFuryStacks, juggernautArmorPierce:juggernautArmorPierce, JUG_WINDUP_DMG:JUG_WINDUP_DMG, JUG_WINDUP_SLOW:JUG_WINDUP_SLOW, JUG_SMASH_EVERY:JUG_SMASH_EVERY, JUG_CONCUSS_MS:JUG_CONCUSS_MS, JUG_FURY_PER:JUG_FURY_PER, JUG_FURY_MAX:JUG_FURY_MAX, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeRuneHungerMult:spellbladeRuneHungerMult, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, spellbladeEchoChance:spellbladeEchoChance, equippedEnchantCount:equippedEnchantCount, spellbladeEnchantBoost:spellbladeEnchantBoost, SPELLBLADE_RUNEHUNGER_PER:SPELLBLADE_RUNEHUNGER_PER, SPELLBLADE_CRITRUNE_PER:SPELLBLADE_CRITRUNE_PER, SPELLBLADE_ECHO_PCT:SPELLBLADE_ECHO_PCT, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, legendaryDmgMult:legendaryDmgMult, legendaryDodgeBonus:legendaryDodgeBonus, legendaryLifestealPct:legendaryLifestealPct, legWastingCurseIncomingMult:legWastingCurseIncomingMult, legNotePoisonStart:legNotePoisonStart, legVanishWindowReady:legVanishWindowReady, samuraiFocusCap:samuraiFocusCap, knightMomentumPerStack:knightMomentumPerStack, legDistinctEnchantCount:legDistinctEnchantCount, legEchoDmgMult:legEchoDmgMult, legShieldBashDamage:legShieldBashDamage, legReflectCanCrit:legReflectCanCrit, legReflectCritMult:legReflectCritMult, legendaryCritDmg:legendaryCritDmg, legEarthshakerBuild:legEarthshakerBuild, legEarthshakerConsume:legEarthshakerConsume, LEG_TREMOR_CAP:LEG_TREMOR_CAP, LEG_TREMOR_MULT:LEG_TREMOR_MULT, CRIT_DAMAGE_MULT:CRIT_DAMAGE_MULT, legendaryAccuracyBonus:legendaryAccuracyBonus, legRangerAilmentRolls:legRangerAilmentRolls, LEG_CHAINSHOT_MAX:LEG_CHAINSHOT_MAX, legendaryCritChance:legendaryCritChance, legThunderMaxStacks:legThunderMaxStacks, legRetributionArmed:legRetributionArmed, legRetributionConsume:legRetributionConsume, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, heraldGuardMaxStacks:heraldGuardMaxStacks, HERALD_GUARD_MAX_STACKS:HERALD_GUARD_MAX_STACKS, HERALD_GUARD_PER_STACK:HERALD_GUARD_PER_STACK, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legChargedRiposteArmed:legChargedRiposteArmed, legChargedRiposteConsume:legChargedRiposteConsume, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,

@@ -2529,6 +2529,54 @@
     s.inventory = svInv; s.uniqueItems = svUniq; s.bodyArmor = svBody; s.blueprints = svBp; s.xp = svXp; s.physique = svPhys;
   });
 
+  // ---- D1 set bonuses, Batch 1: DoT caps & procs ------------------------------------------------------
+  suite('D1 set bonuses: DoT caps & procs', function(){
+    // Build a state wearing `count` of a class's set pieces (unique.set on body-armor slots).
+    function setSt(cls, count, extra){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, activity:{type:'combat', monsterHp:100}, playerHp:100 };
+      var slots = Object.keys(FF.D1_SET_DEFS[cls].pieces);
+      for(var i=0;i<count && i<slots.length;i++){ var uid='sp'+i; st.uniqueItems[uid] = { uid:uid, set:cls };
+        st.bodyArmor[slots[i]] = { uid:uid, material:FF.D1_SET_DEFS[cls].pieces[slots[i]], tier:22, rarity:'rare' }; }
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+    var now = Date.now();
+
+    // 2-piece cap raises: Bleed / Burn / Chill 5 -> 8; Samurai Focus 1 -> 2/hit.
+    eq(FF.reaverBleedCap(setSt('reaver',2)), 8, 'Rabid (2pc): Reaver Bleed cap -> 8');
+    eq(FF.reaverBleedCap(setSt('reaver',1)), 5, '1 piece -> base Bleed cap 5');
+    eq(FF.pyroBurnCap(setSt('pyromancer',2)), 8, 'Wildfire (2pc): Burn cap -> 8');
+    eq(FF.pyroBurnCap(setSt('pyromancer',1)), FF.PYRO_BURN_MAX_STACKS, '1 piece -> base Burn cap');
+    eq(FF.frostChillCap(setSt('frostwarden',2)), 8, 'Deep Chill (2pc): Chill cap -> 8');
+    eq(FF.frostChillCap(setSt('frostwarden',1)), FF.FROST_CHILL_MAX_STACKS, '1 piece -> base Chill cap');
+    eq(FF.samuraiFocusPerHit(setSt('samurai',2)), 2, 'Unbroken Focus (2pc): +2 Focus per hit');
+    eq(FF.samuraiFocusPerHit(setSt('samurai',1)), 1, '1 piece -> +1 Focus per hit');
+
+    // Poison / ailment multipliers.
+    near(FF.plagueBloomMult(setSt('plaguebearer',2)), 1.5, 'Plague Bloom (2pc): poison ticks x1.5');
+    near(FF.plagueBloomMult(setSt('plaguebearer',1)), 1, '1 piece -> poison unmodified');
+    near(FF.rangerAilmentDurMult(setSt('ranger',2)), 1.5, 'Persistent Ailments (2pc): ailments last x1.5');
+    near(FF.rangerProcChance(setSt('ranger',4)), 0.40, 'Toxic Fletching (full): ailment proc chance 40%');
+    near(FF.rangerProcChance(setSt('ranger',2)), 0.25, '2 of 4 -> base 25% proc (full-set not met)');
+
+    // Full-set capstones.
+    var frFull = setSt('frostwarden',4, { activity:{type:'combat', chillStacks:5, enemyChillUntil: now+4000} });
+    near(FF.hoarfrostIncomingMult(frFull), 1 - 0.20, 'Hoarfrost (full): a 5-Chill foe deals -20%', 1e-9);
+    near(FF.hoarfrostIncomingMult(setSt('frostwarden',2, { activity:{type:'combat', chillStacks:5, enemyChillUntil: now+4000} })), 1, 'no Hoarfrost below the full set');
+    var rvFull = setSt('reaver',4, { activity:{type:'combat', bleedStacks:5, bleedUntil: now+4000} });
+    near(FF.reaverFeedingFrenzyMult(rvFull), 1 - 0.20, 'Feeding Frenzy (full): 5 Bleed stacks -> -20% attack timer', 1e-9);
+    near(FF.reaverFeedingFrenzyMult(setSt('reaver',1, { activity:{type:'combat', bleedStacks:5, bleedUntil: now+4000} })), 1, 'no Feeding Frenzy below the full set');
+
+    // Flowing Strikes integrates through classAttackSpeedMult on a live Samurai (leather set = the class armor).
+    function armor(mat){ return { material:mat, tier:5 }; }
+    var samu = setSt('samurai',4, { equippedMainhand:'falchion', xp:{ samurai: FF.xpFloorForLevel(85) } });
+    samu.activity = { type:'combat', samuraiFocus:10 }; // at Focus cap
+    eq(FF.activeClassId(samu), 'samurai', 'a full leather set + katana activates Samurai');
+    near(FF.classAttackSpeedMult(samu), 0.80, 'Flowing Strikes: +20% attack speed at max Focus', 1e-9);
+    samu.activity.samuraiFocus = 3; // below cap
+    near(FF.classAttackSpeedMult(samu), 1, 'no Flowing Strikes below max Focus');
+  });
+
   suite('mastercraft: D1 legendary amulets', function(){
     // A state with a legendary Pendant seated in the Amulet slot.
     function amSt(key, rarity, extra){
