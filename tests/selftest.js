@@ -2327,6 +2327,74 @@
     eq(FF.legActive('emberstorm', legSt('emberstorm', 'wandFire')), true, 'legActive detects Ember Storm');
   });
 
+  // ---- D1 legendary gear COMBAT effects, Batch 8: the six Shields (all offhand) -----------------------
+  suite('mastercraft: legendary shield effects', function(){
+    function armor(mat){ return { material:mat, tier:5 }; }
+    function legSt(key, base, extra){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+        uniqueItems:{ L:{ uid:'L', leg:key, kind:'offhand', base:'stshield_'+(base||'shieldSmall')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } },
+        equippedOffhandUid:'L' };
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+
+    // Fortune's Riposte (treasureHunter/shieldSmall): a Block arms a +40% next strike, consumed once.
+    var frp = legSt('fortunesriposte');
+    eq(FF.legRiposteArmed(frp), false, "Fortune's Riposte is unarmed until a Block");
+    frp.riposteCharged = true;
+    eq(FF.legRiposteArmed(frp), true, 'a Block arms the Riposte');
+    near(FF.legRiposteConsume(frp), 1.4, 'the armed strike deals +40%');
+    eq(frp.riposteCharged, false, 'consuming disarms it');
+    near(FF.legRiposteConsume(frp), 1, 'it only empowers one strike');
+    var frpOff = legSt('immunize'); frpOff.riposteCharged = true;
+    near(FF.legRiposteConsume(frpOff), 1, "Fortune's Riposte is inert without its legendary");
+
+    // Immunize (plaguebearer/shieldSmall): take 25% less damage from a poisoned foe.
+    var imP = legSt('immunize', 'shieldSmall', { activity:{type:'combat', monsterHp:100, potionPoisonUntil: Date.now()+4000} });
+    near(FF.legImmunizeIncomingMult(imP), 0.75, 'Immunize: -25% incoming from a poisoned foe');
+    var imU = legSt('immunize', 'shieldSmall', { activity:{type:'combat', monsterHp:100} });
+    near(FF.legImmunizeIncomingMult(imU), 1, 'Immunize is inert against an unpoisoned foe');
+    near(FF.legImmunizeIncomingMult(legSt('frenziedguard', 'shieldSmall', { activity:{type:'combat', potionPoisonUntil: Date.now()+4000} })), 1, 'Immunize is inert without its legendary');
+
+    // Frenzied Guard (reaver/shieldSmall): a Block grants +10% attack speed (x0.90 timer) for a few seconds.
+    near(FF.legAttackSpeedMult(legSt('frenziedguard', 'shieldSmall', { frenziedGuardUntil: Date.now()+2000 })), 0.90, 'Frenzied Guard: +10% attack speed while the window is live');
+    near(FF.legAttackSpeedMult(legSt('frenziedguard', 'shieldSmall', { frenziedGuardUntil: Date.now()-1 })), 1, 'the Frenzied Guard window expires');
+    near(FF.legAttackSpeedMult(legSt('immunize', 'shieldSmall', { frenziedGuardUntil: Date.now()+2000 })), 1, 'no haste without Frenzied Guard');
+
+    // Perfect Bulwark (herald/shieldLarge): the Perfect Guard stack cap rises to 8 (-40%); a miss drops one stack.
+    eq(FF.heraldGuardMaxStacks(legSt('perfectbulwark', 'shieldLarge')), 8, 'Perfect Bulwark raises the Perfect Guard cap to 8');
+    eq(FF.heraldGuardMaxStacks(legSt('immunize')), FF.HERALD_GUARD_MAX_STACKS, 'the base Perfect Guard cap is 5');
+    function hgear(stacks, bulwark){
+      var st = { xp:{ herald: FF.xpFloorForLevel(85) }, physique:{}, equippedMainhand:'mace', equippedOffhand:'shieldLarge',
+        bodyArmor:{ helmet:armor('plate'), chest:armor('plate'), gauntlets:armor('plate'), boots:armor('plate') },
+        activity:{type:'combat'}, playerHp:100, heraldGuardStacks:stacks, uniqueItems:{}, equippedOffhandUid:null };
+      if(bulwark){ st.uniqueItems.L = { uid:'L', leg:'perfectbulwark', kind:'offhand', base:'stshield_shieldLarge_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 }; st.equippedOffhandUid = 'L'; }
+      return st;
+    }
+    eq(FF.activeClassId(hgear(0, false)), 'herald', 'mace + large shield + full plate => Herald');
+    near(FF.heraldGuardMult(hgear(5, false)), 0.75, 'base Perfect Guard caps at -25% (5 stacks)', 1e-9);
+    near(FF.heraldGuardMult(hgear(8, true)), 0.60, 'Perfect Bulwark deepens Perfect Guard to -40% (8 stacks)', 1e-9);
+
+    // Thornmail Shield (sentinel/shieldMedium): while at full Health, the thorns reflect is doubled.
+    function sgear(hp, thornmail){
+      var st = { xp:{ sentinel: FF.xpFloorForLevel(85) }, physique:{}, equippedMainhand:'maul', equippedOffhand:'shieldMedium',
+        bodyArmor:{ helmet:armor('chain'), chest:armor('chain'), gauntlets:armor('chain'), boots:armor('chain') },
+        activity:{type:'combat'}, playerHp:hp, uniqueItems:{}, equippedOffhandUid:null };
+      if(thornmail){ st.uniqueItems.L = { uid:'L', leg:'thornmailshield', kind:'offhand', base:'stshield_shieldMedium_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 }; st.equippedOffhandUid = 'L'; }
+      return st;
+    }
+    var sFull = sgear(FF.maxHp(sgear(9999, false)), false); // full HP, no legendary
+    var baseRefl = FF.sentinelReflectDamage(100, 0, 0, sFull); // Spiked Barrier: 25% of 100
+    ok(baseRefl > 0, 'Sentinel Spiked Barrier reflects a positive share');
+    var sFullTm = sgear(FF.maxHp(sgear(9999, true)), true); // full HP + Thornmail
+    near(FF.sentinelReflectDamage(100, 0, 0, sFullTm), baseRefl * 2, 'Thornmail Shield doubles the reflect at full Health');
+    var sHurtTm = sgear(1, true); // 1 HP + Thornmail -> not full, no doubling
+    near(FF.sentinelReflectDamage(100, 0, 0, sHurtTm), baseRefl, 'Thornmail Shield does nothing below full Health');
+
+    // Cold Snap (frostwarden/shieldMedium): detection + tuning constant (Freeze-on-Block is behaviour-driven).
+    eq(FF.legActive('coldsnap', legSt('coldsnap', 'shieldMedium')), true, 'legActive detects Cold Snap');
+  });
+
   // ---- Dungeon gate: a minimum Total Level to enter ANY dungeon, plus the clear-the-previous-boss chain --
   suite('dungeons: Total Level gate + unlock chain', function(){
     var s = FF._state, saved = s.dungeonsCleared;
