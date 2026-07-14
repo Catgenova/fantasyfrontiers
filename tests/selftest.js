@@ -1307,9 +1307,28 @@
     ok(Math.abs(FF.frostwardenDmgMult(fw) - 1.25) < 1e-9, 'Rime Resonance: +25% damage vs a Chilled foe at Lv80');
     eq(FF.frostwardenDmgMult(stFor('frostwarden',80)), 1, 'Rime Resonance neutral vs an unchilled foe');
     eq(FF.frostwardenDmgMult(stFor('frostwarden',40)), 1, 'no +25% below Lv80');
-    // Sentinel Bracing +25% armor, Immovable -30% incoming.
-    eq(FF.sentinelArmorMult(stFor('sentinel',20)), 1.25, 'Sentinel Bracing +25% Armor');
-    eq(FF.sentinelIncomingMult(stFor('sentinel',60)), 0.70, 'Sentinel Immovable -30% incoming');
+    // Sentinel rework: Spiked Barrier (Lv1) / Iron Maiden (Lv20) / Reckoning (Lv40) / Brittle Guard (Lv60) / Bulwark's Wrath (Lv80).
+    var senNames = FF.CLASS_DEFS_BY_ID.sentinel.passives.map(function(p){ return p.name; });
+    eq(JSON.stringify(senNames), JSON.stringify(['Spiked Barrier','Iron Maiden','Reckoning','Brittle Guard',"Bulwark's Wrath"]), 'Sentinel ladder is the reworked five');
+    // Spiked Barrier (Lv1): reflect 25% of every incoming hit (blocked or not).
+    ok(Math.abs(FF.sentinelReflectDamage(100, 0, 999, stFor('sentinel',1)) - 25) < 1e-9, 'Spiked Barrier: reflect 25% of a 100 hit (unblocked)');
+    ok(Math.abs(FF.sentinelReflectDamage(100, 80, 999, stFor('sentinel',1)) - 25) < 1e-9, 'Spiked Barrier alone ignores the blocked share below Lv20');
+    // Iron Maiden (Lv20): + 150% of the damage a Block prevented, on top of Spiked Barrier.
+    ok(Math.abs(FF.sentinelReflectDamage(100, 80, 999, stFor('sentinel',20)) - (25 + 120)) < 1e-9, 'Iron Maiden: +150% of the 80 prevented (=120) atop Spiked Barrier 25');
+    ok(Math.abs(FF.sentinelReflectDamage(100, 0, 999, stFor('sentinel',20)) - 25) < 1e-9, 'Iron Maiden adds nothing on an unblocked hit');
+    // Bulwark's Wrath (Lv80): +40% Armor, and every reflect adds your full Armor rating.
+    eq(FF.sentinelArmorMult(stFor('sentinel',80)), 1.40, "Bulwark's Wrath +40% Armor");
+    eq(FF.sentinelArmorMult(stFor('sentinel',60)), 1, 'no Armor bonus below Lv80 (Bracing removed)');
+    ok(Math.abs(FF.sentinelReflectDamage(100, 80, 50, stFor('sentinel',80)) - (25 + 120 + 50)) < 1e-9, "Bulwark's Wrath adds the 50 Armor rating to the reflect");
+    eq(FF.sentinelReflectDamage(100, 80, 50, stFor('sentinel',60)), 25 + 120, 'below Lv80 the Armor rating is not added to reflect');
+    // Sentinel is the shield-wall: a solid innate Block chance so its Block-payoff perks reliably fire.
+    ok(FF.classBlockBonus(stFor('sentinel',1)) >= 0.30, 'Sentinel gains innate Block chance');
+    eq(FF.classBlockBonus(stFor('spellblade',80)), 0, 'a non-Sentinel class gets no innate Block bonus');
+    // Brittle Guard (Lv60) shreds via the shared Sunder window; its constants are exported.
+    eq(FF.SENTINEL_BRITTLE_MS, 6000, 'Brittle Guard Sunder window is 6s');
+    eq(FF.SENTINEL_SHRED_FRAC, 0.5, 'Sunder ignores 50% of enemy armour');
+    // No Sentinel reflect without the class.
+    eq(FF.sentinelReflectDamage(100, 80, 999, {xp:{},physique:{},bodyArmor:{},equippedMainhand:null,equippedOffhand:null,activity:{type:'combat'},playerHp:1}), 0, 'no class -> no reflect');
     // Spellblade Momentum stacks (+6% each) and Overwhelm at max.
     var sb = stFor('spellblade',80); sb.spellbladeStacks = 5;
     ok(Math.abs(FF.spellbladeMomentumMult(sb) - 1.30) < 1e-9, 'Spellblade Momentum = +6%/stack (x1.30 at 5)');
@@ -1318,7 +1337,7 @@
     var none = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat'}, playerHp:1 };
     eq(FF.berserkerRageMult(none), 1, 'no class -> Rage neutral');
     eq(FF.frostwardenDmgMult(none), 1, 'no class -> Frostwarden damage neutral');
-    eq(FF.sentinelIncomingMult(none), 1, 'no class -> Immovable neutral');
+    eq(FF.sentinelArmorMult(none), 1, 'no class -> Sentinel armor neutral');
     eq(FF.enemyChillSlowMult(none), 0, 'no chill -> no enemy slow');
   });
 
