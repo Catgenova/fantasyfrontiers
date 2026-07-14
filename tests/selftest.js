@@ -1265,11 +1265,34 @@
     eq(FF.activeClassId(stFor('frostwarden',80)), 'frostwarden', 'frostwarden gear activates Frostwarden');
     eq(FF.activeClassId(stFor('sentinel',80)), 'sentinel', 'sentinel gear activates Sentinel');
     eq(FF.activeClassId(stFor('spellblade',80)), 'spellblade', 'spellblade gear activates Spellblade');
-    // Berserker Rage scales with missing Health; Reckless +25%; Bloodthirst 8%.
-    eq(FF.berserkerRageMult(stFor('berserker',1,{playerHp:55})), 1, 'Berserker Rage = x1 at full HP');
-    ok(Math.abs(FF.berserkerRageMult(stFor('berserker',1,{playerHp:0})) - 1.5) < 1e-9, 'Berserker Rage = x1.5 near death');
-    eq(FF.berserkerRecklessMult(stFor('berserker',40)), 1.25, 'Berserker Reckless +25% dealt');
-    ok(Math.abs(FF.berserkerLifestealPct(stFor('berserker',20)) - 0.08) < 1e-9, 'Berserker Bloodthirst 8%');
+    // Berserker rework: Titan's Heft (Lv1) / Blood Pact (Lv20) / Glass Titan (Lv40) / Rage (Lv60) / Berserk Toll (Lv80).
+    var bNames = FF.CLASS_DEFS_BY_ID.berserker.passives.map(function(p){ return p.name; });
+    eq(JSON.stringify(bNames), JSON.stringify(["Titan's Heft",'Blood Pact','Glass Titan','Rage','Berserk Toll']), 'Berserker ladder is the reworked five');
+    // Titan's Heft (Lv1): flat bonus damage = 2% of max HP.
+    var bHeft = stFor('berserker',1);
+    eq(FF.berserkerTitansHeftDmg(bHeft), Math.round(0.02 * FF.maxHp(bHeft)), "Titan's Heft = 2% of max HP as flat damage");
+    ok(FF.berserkerTitansHeftDmg(bHeft) > 0, "Titan's Heft grants a positive flat bonus");
+    // Blood Pact (Lv20): +50% damage.
+    eq(FF.berserkerBloodPactMult(stFor('berserker',20)), 1.5, 'Blood Pact +50% damage');
+    eq(FF.berserkerBloodPactMult(stFor('berserker',1)), 1, 'Blood Pact inactive below Lv20');
+    // Glass Titan (Lv40): +100% max HP (doubles the pool), -40% Armor & Dodge.
+    eq(FF.berserkerGlassTitanHpMult(stFor('berserker',40)), 2, 'Glass Titan doubles max HP');
+    eq(FF.berserkerGlassTitanHpMult(stFor('berserker',20)), 1, 'Glass Titan HP boost inactive below Lv40');
+    eq(FF.maxHp(stFor('berserker',40)), 2 * FF.maxHp(stFor('berserker',20)), 'Glass Titan: max HP at Lv40 is double the pre-Lv40 pool');
+    eq(FF.berserkerGlassMult(stFor('berserker',40)), 0.60, 'Glass Titan -40% Armor & Dodge (x0.60)');
+    eq(FF.berserkerGlassMult(stFor('berserker',20)), 1, 'Glass Titan Armor/Dodge penalty inactive below Lv40');
+    // Rage (Lv60, moved from Lv1): +1% dmg per 2% HP missing (up to +50%).
+    eq(FF.berserkerRageMult(stFor('berserker',60,{playerHp: FF.maxHp(stFor('berserker',60))})), 1, 'Rage = x1 at full HP');
+    ok(Math.abs(FF.berserkerRageMult(stFor('berserker',60,{playerHp:0})) - 1.5) < 1e-9, 'Rage = x1.5 near death');
+    eq(FF.berserkerRageMult(stFor('berserker',40)), 1, 'Rage inactive below Lv60 (even while hurt)');
+    // Berserk Toll (Lv80): +80% damage, and a hard 50%-max-HP heal ceiling.
+    eq(FF.berserkerTollMult(stFor('berserker',80)), 1.8, 'Berserk Toll +80% damage');
+    eq(FF.berserkerTollMult(stFor('berserker',60)), 1, 'Berserk Toll inactive below Lv80');
+    var bToll = stFor('berserker',80); var bCeil = Math.round(0.5 * FF.maxHp(bToll));
+    eq(FF.hpHealCeil(bToll), bCeil, 'Berserk Toll caps the heal ceiling at 50% of max HP');
+    eq(FF.hpHealCeil(stFor('berserker',60)), FF.maxHp(stFor('berserker',60)), 'without Berserk Toll the heal ceiling is full max HP');
+    eq(FF.healRoom(stFor('berserker',80,{playerHp: bCeil - 10})), 10, 'Berserk Toll: heal room stops at the 50% ceiling');
+    eq(FF.healRoom(stFor('berserker',80,{playerHp: bCeil + 20})), 0, 'Berserk Toll: no heal room while above the 50% ceiling');
     // Frostwarden rework: Permafrost stacks Chill (10% enemy slow each, cap 5/50%); Time Dilation quickens
     // you by half the slow (cap 30%); Rime Resonance grants +25% damage vs a Chilled foe.
     var fw = stFor('frostwarden',80);

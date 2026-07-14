@@ -4803,7 +4803,7 @@
     },
     {
       id:'berserker', name:'Berserker', icon:svgIcon('hornedskull','#c85a2a'),
-      blurb:'A wild-eyed reaver who fights hardest with death breathing down his neck.',
+      blurb:'A wild-eyed titan who forges a monstrous health pool into raw damage — then spends it, exposes it, and dares death to collect.',
       reqText:'Warhammer + bare head, Leather Chest, Cloth Gloves & Shoes',
       reqParts:[
         { icon:svgIcon('hammer','#5a5a60'),             label:'Warhammer',   met:function(st){ return st.equippedMainhand==='warhammer'; } },
@@ -4813,11 +4813,11 @@
         { icon:svgIcon('boots',CLASS_CLOTH_COLOR),      label:'Cloth Shoes', met:function(st){ return clothPieceEquipped(st,'boots'); } }
       ],
       passives:[
-        { level:1,  name:'Rage',         desc:'+1% damage for every 2% of your Health that is missing (up to +50%).' },
-        { level:20, name:'Bloodthirst',  desc:'You heal 8% of the damage you deal.' },
-        { level:40, name:'Reckless',     desc:'+25% damage dealt, but you take +15% damage.' },
-        { level:60, name:'Undying Fury', desc:'Your attack timer is reduced by up to 30% as your Health falls (fastest near death).' },
-        { level:80, name:'Last Stand',   desc:'Once per fight, a killing blow leaves you at 1 HP and grants +100% damage for 6s.' }
+        { level:1,  name:"Titan's Heft", desc:'Every hit deals bonus damage equal to 2% of your max Health — the bigger your health pool, the harder you hit.' },
+        { level:20, name:'Blood Pact',   desc:'Every hit costs 2% of your current Health but deals +50% damage.' },
+        { level:40, name:'Glass Titan',  desc:'+100% max Health, but −40% Armor and Dodge — a colossal, exposed health bar.' },
+        { level:60, name:'Rage',         desc:'+1% damage for every 2% of your Health that is missing (up to +50%).' },
+        { level:80, name:'Berserk Toll', desc:'+80% damage, but you can no longer be healed above 50% of your max Health.' }
       ]
     },
     {
@@ -5085,7 +5085,7 @@
   // on top only at the moment of a monster attack, so it is NOT folded in here.
   function playerDodgeChance(st){
     st = st || state;
-    return getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + pyromancerHeatHazeDodge(st) + quickdrawSecondWindDodge(st) + legendaryRingBonus('dodge', st); // + Pyromancer Heat Haze; + Quickdraw Second Wind; + Cave Signet of Evasion
+    return (getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + pyromancerHeatHazeDodge(st) + quickdrawSecondWindDodge(st) + legendaryRingBonus('dodge', st)) * berserkerGlassMult(st); // + Pyromancer Heat Haze; + Quickdraw Second Wind; + Cave Signet of Evasion; x Berserker Glass Titan (-40% Dodge)
   }
   // ===== Assassin (twin Claws): reworked ladder =====
   //  Lv1  Rhythm        -- alternating main/off-hand hits build a meter; at full, the next two landed
@@ -5233,7 +5233,6 @@
     if(id==='quickdraw' && quickdrawSecondWind(st)) return 0.80; // Second Wind: -20% attack timer below 40% HP
     if(id==='knight' && classLevel(st,'knight') >= 1) return 1 - 0.10 * Math.min(knightStackCap(st), st.knightStacks || 0); // Momentum stacks (cap 5, or 8 with Relentless)
     if(id==='thunderfury' && classLevel(st,'thunderfury') >= 1) return 1 - 0.10 * Math.min(THUNDER_MAX_STACKS, st.thunderStacks || 0); // Chain Lightning crit stacks
-    if(id==='berserker' && classLevel(st,'berserker') >= 60) return 1 - 0.30 * berserkerMissingFrac(st); // Undying Fury: up to -30% as Health falls
     if(id==='frostwarden' && classLevel(st,'frostwarden') >= 20) return 1 - frostwardenTimeDilation(st); // Time Dilation: quicken with the enemy's Chill
     if(id==='pyromancer' && classLevel(st,'pyromancer') >= 80) return 1 - pyromancerFeverHaste(st); // Fever Pitch: quicken with the enemy's Burn
     if(id==='reaver' && classLevel(st,'reaver') >= 40 && st.activity && st.activity.type==='combat' && (st.activity.bleedStacks||0) >= REAVER_BLEED_MAX && (st.activity.bleedUntil||0) > Date.now()) return 0.85; // Frenzied Rending: +15% attack speed at max Bleed stacks
@@ -5353,13 +5352,18 @@
   function frostwardenDmgMult(st){ st = st || state; return (frostwardenBonus(80, st) && enemyChilled(st)) ? FROST_RESONANCE_DMG_MULT : 1; }
   // --- Plaguebearer --- Lv20 Contagion: +15% damage to a poisoned enemy. (Lv1/40/60/80 live in the poison paths.)
   function plaguebearerContagionMult(st){ st = st || state; return (plaguebearerBonus(20, st) && st.activity && (st.activity.potionPoisonUntil||0) > Date.now()) ? 1.15 : 1; }
-  // --- Berserker --- rage scales with missing Health; Reckless trades offense for defense; Last Stand is a per-fight save.
+  // --- Berserker --- reworked into a risk-reward HP-stacking DPS: Titan's Heft (Lv1) turns max HP into
+  //     flat hit damage; Blood Pact (Lv20) spends current HP for +50%; Glass Titan (Lv40) doubles the pool
+  //     but strips Armor/Dodge; Rage (Lv60) rewards being hurt; Berserk Toll (Lv80) is +80% dmg with a hard
+  //     50%-HP heal ceiling. The big, exposed health bar IS the weapon.
   function berserkerMissingFrac(st){ st = st || state; var mh = maxHp(st); return mh > 0 ? Math.max(0, Math.min(1, 1 - st.playerHp/mh)) : 0; }
-  function berserkerRageMult(st){ return berserkerBonus(1, st) ? (1 + 0.5 * berserkerMissingFrac(st)) : 1; }        // Lv1 up to +50%
-  function berserkerRecklessMult(st){ return berserkerBonus(40, st) ? 1.25 : 1; }                                  // Lv40 +25% dealt
-  function berserkerRecklessTakenMult(st){ return berserkerBonus(40, st) ? 1.15 : 1; }                             // Lv40 +15% taken
-  function berserkerLifestealPct(st){ return berserkerBonus(20, st) ? 0.08 : 0; }                                  // Lv20 Bloodthirst 8%
-  function berserkerFuryMult(st){ st = st || state; return (berserkerBonus(80, st) && (st.berserkerFuryUntil||0) > Date.now()) ? 2.0 : 1; } // Lv80 +100% for 6s
+  var BERSERK_HEFT_PCT = 0.02, BERSERK_BLOODPACT_COST = 0.02, BERSERK_TOLL_HEAL_CEIL = 0.5;
+  function berserkerTitansHeftDmg(st){ st = st || state; return berserkerBonus(1, st) ? Math.round(BERSERK_HEFT_PCT * maxHp(st)) : 0; } // Lv1: +2% max HP as flat hit damage
+  function berserkerBloodPactMult(st){ return berserkerBonus(20, st) ? 1.5 : 1; }                                  // Lv20 +50% dealt (costs 2% current HP/hit)
+  function berserkerGlassTitanHpMult(st){ return berserkerBonus(40, st) ? 2.0 : 1; }                               // Lv40 +100% max HP
+  function berserkerGlassMult(st){ return berserkerBonus(40, st) ? 0.60 : 1; }                                    // Lv40 -40% Armor and Dodge
+  function berserkerRageMult(st){ return berserkerBonus(60, st) ? (1 + 0.5 * berserkerMissingFrac(st)) : 1; }      // Lv60 up to +50% as HP falls
+  function berserkerTollMult(st){ return berserkerBonus(80, st) ? 1.8 : 1; }                                      // Lv80 +80% dealt (heal ceiling 50%)
   // --- Sentinel --- (Riposte Guard / Thorns live in the block path; here: armor + incoming reduction.)
   function sentinelArmorMult(st){ return sentinelBonus(20, st) ? 1.25 : 1; }                                       // Lv20 Bracing +25% Armor
   function sentinelIncomingMult(st){ return sentinelBonus(60, st) ? 0.70 : 1; }                                    // Lv60 Immovable -30% incoming
@@ -5573,7 +5577,7 @@
   function lumenApplyHeal(amount){
     amount = Math.round(amount); if(!(amount > 0)) return 0;
     lumenHealTarget(); // intended recipient (self when solo); cross-player application is the pending server hook
-    var healed = Math.max(0, Math.min(amount, maxHp(state) - state.playerHp));
+    var healed = Math.max(0, Math.min(amount, healRoom(state)));
     var overheal = amount - healed;
     if(healed > 0) state.playerHp += healed;
     if(overheal > 0 && lumenBonus(60)) lumenAddShield(overheal);                 // Everfull: overheal -> shield
@@ -6234,7 +6238,7 @@
     var durMult = familiarBuffDurationMult(); // Herald Lv 80: familiar buffs last twice as long
 
     if(spell.type==='heal'){
-      var healed = Math.min(Math.round(spell.amount*potency), maxHp(state) - state.playerHp);
+      var healed = Math.min(Math.round(spell.amount*potency), healRoom(state));
       state.playerHp += healed;
       spawnFloatingText('+' + healed + ' HP (' + spell.name + ')', 'ft-success');
     } else if(spell.type==='armorBuff'){
@@ -6300,7 +6304,7 @@
         spawnCombatFloat(escapeHtml(famName) + ' <b>-' + dmg + '</b>' + (famCrit ? ' CRIT' : ''), famCrit ? 'ft-crit' : 'ft-rare', true);
         if(dmg > 0){ addXp(STAVES_SKILL_ID, dmg); awardClassXp(dmg); awardElementXp(spell.element, dmg); } // Staves proficiency + active Class + Elemental Attunement train on familiar damage
         if(spell.type==='siphon'){
-          var stolen = Math.min(dmg, maxHp(state) - state.playerHp);
+          var stolen = Math.min(dmg, healRoom(state));
           if(stolen>0){ state.playerHp += stolen; spawnFloatingText('+'+stolen+' HP', 'ft-success'); }
         }
       }
@@ -6398,8 +6402,13 @@
   function maxHp(state){
     var base = 50 + getLevel(state.physique.fortitude||0)*5 + Math.round(((equippedEnchantTotals(state).maxHp)||0) * spellbladeEnchantBoost(state));
     base += headsmanTallyBonusHp(state);                          // Executioner Headsman's Tally (Lv60): flat session HP
-    return Math.round(base * (1 + execVigorMaxHpBonus(state)));   // Executioner Reaping Vigor (Lv1): stacking transient +max HP
+    return Math.round(base * (1 + execVigorMaxHpBonus(state)) * berserkerGlassTitanHpMult(state)); // Executioner Reaping Vigor + Berserker Glass Titan (Lv40): +100% max HP
   }
+  // Effective heal ceiling: Berserker's Berserk Toll (Lv80) caps healing at 50% of max HP; everyone else heals to full.
+  function hpHealCeil(st){ st = st || state; var mh = maxHp(st); return berserkerBonus(80, st) ? Math.round(mh * BERSERK_TOLL_HEAL_CEIL) : mh; }
+  // Room left to heal into (0 when already at/over the ceiling). Replaces the old `maxHp - playerHp` gap at every
+  // heal site, so Berserk Toll's 50% ceiling applies uniformly. A no-op (== maxHp - playerHp) for everyone else.
+  function healRoom(st){ st = st || state; return Math.max(0, hpHealCeil(st) - st.playerHp); }
   function fmt(n){ return Math.floor(n).toLocaleString(); }
   var BASE_CRAFT_SUCCESS = 0.7;
   function sleightOfHandCraftSpeedBonus(state){ return Math.min(0.15, getLevel(state.physique.sleightOfHand||0)*0.003); }
@@ -10424,7 +10433,7 @@
     var dmg = dps * dtMs / 1000;
     act.monsterHp = Math.max(1, act.monsterHp - dmg);
     if(plaguebearerBonus(40)){ // Toxic Blood: heal 5% of poison damage dealt
-      var heal = Math.min(Math.round(dmg * 0.05), maxHp(state) - state.playerHp);
+      var heal = Math.min(Math.round(dmg * 0.05), healRoom(state));
       if(heal > 0) state.playerHp += heal;
     }
     if(plaguebearerBonus(80)){ // Pandemic: roll a Dark explosion on each discrete 1s tick
@@ -10449,7 +10458,7 @@
     var dps = act.bleedDps || 0; if(dps <= 0) return;
     var dmg = dps * dtMs / 1000;
     act.monsterHp = Math.max(1, act.monsterHp - dmg);
-    if(reaverBonus(20)){ var heal = Math.min(Math.round(dmg * 0.08), maxHp(state) - state.playerHp); if(heal > 0) state.playerHp += heal; } // Bloodletting
+    if(reaverBonus(20)){ var heal = Math.min(Math.round(dmg * 0.08), healRoom(state)); if(heal > 0) state.playerHp += heal; } // Bloodletting
   }
   // Frostwarden Frostbite (Lv60): a stacking Water DoT on its own channel; floors the enemy at 1 HP so a
   // shatter/hit lands the kill. Mirrors the Bleed tick.
@@ -10485,8 +10494,8 @@
     { name:'frostwarden',           fn:function(c){ return frostwardenDmgMult(); } },
     { name:'plaguebearerContagion', fn:function(c){ return plaguebearerContagionMult(); } },
     { name:'berserkerRage',         fn:function(c){ return berserkerRageMult(); } },
-    { name:'berserkerReckless',     fn:function(c){ return berserkerRecklessMult(); } },
-    { name:'berserkerFury',         fn:function(c){ return berserkerFuryMult(); } },
+    { name:'berserkerBloodPact',    fn:function(c){ return berserkerBloodPactMult(); } },
+    { name:'berserkerToll',         fn:function(c){ return berserkerTollMult(); } },
     { name:'spellbladeMomentum',    fn:function(c){ return spellbladeMomentumMult(); } },
     { name:'spellbladeOverwhelm',   fn:function(c){ return spellbladeOverwhelmMult(); } },
     { name:'newClassPassives',      fn:function(c){ return newClassDmgMult(c.monster); } },
@@ -10596,6 +10605,7 @@
     var _dmgCtx = { monster:monster, weaponStyle:weaponStyle, enchTot:enchTot, isCrit:isCrit, isOffhand:isOffhand, isWandAttack:isWandAttack, isScepterAttack:isScepterAttack, assassinVanish:assassinVanish, unfletched:unfletched };
     var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * critMult * playerDamageMultiplier(_dmgCtx));
     dmgToMonster += Math.round(enchTot.flatDamage||0); // + equipped-item Flat Damage enchants
+    if(!isOffhand) dmgToMonster += berserkerTitansHeftDmg(state); // Berserker Titan's Heft (Lv1): +2% of max HP as flat hit damage
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     // Assassin twin-claw on-hit (both hands): Lacerate bleed, Hemorrhage refresh, Vanish consume, Rhythm flurry.
@@ -10652,6 +10662,8 @@
       if(samuraiBonus(60)) act.samuraiFocus = Math.min(SAMURAI_FOCUS_MAX, (act.samuraiFocus||0) + 1);
       // Knight (Momentum): each landed hit adds a -10% attack-speed stack (cap 5, or 8 with Relentless).
       if(knightBonus(1)) state.knightStacks = Math.min(knightStackCap(state), (state.knightStacks || 0) + 1);
+      // Berserker Blood Pact (Lv20): each landed hit spends 2% of current HP to fuel its +50% damage (never self-lethal).
+      if(berserkerBonus(20) && state.playerHp > 1) state.playerHp = Math.max(1, state.playerHp - Math.round(BERSERK_BLOODPACT_COST * state.playerHp));
       // Lumen Oracle on-hit: Lv1 Flashbang (8% stun); Lv40 Reflected Light (a share of the hit heals the lowest ally / you).
       if(lumenBonus(1) && !offlineCapture && Math.random() < 0.08){ act.enemyStunUntil = Date.now() + 2000; spawnFloatingText('Flashed!', 'ft-rare'); }
       if(lumenBonus(40)){ var _lr = lumenApplyHeal(dmgToMonster * LUMEN_REFLECT_PCT); if(_lr > 0 && !offlineCapture) spawnFloatingText('+'+_lr+' HP', 'ft-success'); }
@@ -10797,18 +10809,18 @@
       // Templar Lv 1 (Lay on Hands): a Critical Hit mends you for 20% of the damage dealt (the lowest-HP
       // party ally in a networked dungeon is a server-side extension; solo, that ally is always you).
       if(templarBonus(1) && isCrit){
-        var _loh = Math.min(Math.round(dmgToMonster * 0.20), maxHp(state) - state.playerHp);
+        var _loh = Math.min(Math.round(dmgToMonster * 0.20), healRoom(state));
         if(_loh > 0){ state.playerHp += _loh; spawnFloatingText('Lay on Hands +'+_loh, 'ft-success'); }
       }
       // Spellblade (Momentum): each landed hit adds a +6% damage stack (cap 5); a miss resets it (below).
       if(spellbladeBonus(60)) state.spellbladeStacks = Math.min(5, (state.spellbladeStacks || 0) + 1);
     }
-    // Reaper (Lv 40/80) + Berserker (Lv 20 Bloodthirst) + Knight (Lv 60 Warlord's Presence, below-half HP):
+    // Reaper (Lv 40/80) + Voidshadow (Soul Tax) + Knight (Lv 60 Warlord's Presence, below-half HP):
     // heal a share of the damage actually inflicted.
-    var lifestealPct = reaperLifestealPct() + berserkerLifestealPct() + nightbladeLifestealPct() + knightWarlordLifestealPct();
+    var lifestealPct = reaperLifestealPct() + nightbladeLifestealPct() + knightWarlordLifestealPct();
     if(lifestealPct > 0){
       var wouldHeal = Math.round(effDmg * lifestealPct);
-      var healed = Math.min(wouldHeal, maxHp(state) - state.playerHp);
+      var healed = Math.min(wouldHeal, healRoom(state));
       if(healed > 0){ state.playerHp += healed; spawnFloatingText('+'+healed+' HP', 'ft-success'); }
       // Reaper Siphon Shield (Lv 40): life-steal beyond full Health banks as a spectral absorb (cap 20% max HP).
       if(reaperBonus(40)){
@@ -10927,7 +10939,7 @@
       return;
     }
     var relicBonus = getEquippedRelicBonus(state);
-    var armorDefense = getTotalArmorDefense(state) * (1 + relicBonus) * getFamiliarArmorMult() * (1 + resolveArmorMult(state)) * heraldFortressArmorMult(state) * sentinelArmorMult(state) * armorerTemperMult();
+    var armorDefense = getTotalArmorDefense(state) * (1 + relicBonus) * getFamiliarArmorMult() * (1 + resolveArmorMult(state)) * heraldFortressArmorMult(state) * sentinelArmorMult(state) * armorerTemperMult() * berserkerGlassMult(state); // Berserker Glass Titan (Lv40): -40% Armor
     var offhandItem = getEquippedOffhandItem(state);
     var offhandStyle = getOffhandStyle(state.equippedOffhand);
     var offhandProficiency = (offhandStyle && state.equippedOffhand) ? (1 + Math.min(0.15, getLevel(state.xp[offhandStyle.id]||0)*0.005)) : 1;
@@ -10937,7 +10949,7 @@
     // The hit lands its physical type AND the enemy's element together: the element is amplified by
     // the player's armor weakness to it (leather->fire, chain->earth, plate->water).
     var elementMult = incomingElementMult(state, monster);
-    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldGuardMult(state) * templarIncomingDmgMult() * sentinelIncomingMult(state) * berserkerRecklessTakenMult(state) * knightDamageTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getWardResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring/amulet flat resistance
+    var rawDmg = Math.round(randInt(monster.atkMin, monster.atkMax) * monsterAdvantage * elementMult * (1 - getFamiliarEnemyWeakenPct()) * famResistMult(monster.attackTypes) * heraldGuardMult(state) * templarIncomingDmgMult() * sentinelIncomingMult(state) * knightDamageTakenMult(state) * (1 - scrollDamageReduction()) * elementResistMult(state, monster.element) * (1 - getWardResistanceBonus(state))); // + class resist/reckless mods, Inscription ward, Elemental Attunement resistance, Warding ring/amulet flat resistance
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
     var blockChance = playerBlockChance(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
@@ -11042,12 +11054,6 @@
       addLog('A protective bubble absorbed a fatal blow!', 'important');
       spawnFloatingText('Bubble saved you!', 'ft-rare');
     }
-    // Berserker Last Stand (Lv80): once per fight, a killing blow leaves you at 1 HP and enrages you (+100% dmg, 6s).
-    if(state.playerHp <= 0 && berserkerBonus(80) && !act.berserkerLastStandUsed){
-      act.berserkerLastStandUsed = true; state.playerHp = 1; state.berserkerFuryUntil = Date.now() + 6000;
-      addLog('You refuse to fall &mdash; Last Stand!', 'important');
-      spawnFloatingText('Last Stand!', 'ft-rare');
-    }
     var hitFeed = [['fortitude', dmgToPlayer]]; // fortitude keeps scaling with damage taken
     if(blocked || (armorDefense + effectiveShieldDefense) > 0) hitFeed.push(['blocking', monster.tierIndex+1]);
     addPhysiqueXp(hitFeed);
@@ -11116,7 +11122,7 @@
     var best = candidates.filter(function(c){ return (state.inventory[c.id]||0) > 0; })[0];
     if(!best) return;
     state.inventory[best.id] -= 1;
-    var healed = Math.min(best.heal, maxHp(state) - state.playerHp);
+    var healed = Math.min(best.heal, healRoom(state));
     state.playerHp += healed;
     addLog('You ate ' + best.name + ' and recovered ' + healed + ' HP.');
   }
@@ -11163,7 +11169,7 @@
       addLog('Auto-Eat: HP dropped to ' + Math.round(hpPct*100) + '%, eating Roasted Food / Cooked Meals to recover.', 'important');
     }
     state.inventory[next.id] -= 1;
-    var healed = Math.min(next.heal, maxHp(state) - state.playerHp);
+    var healed = Math.min(next.heal, healRoom(state));
     state.playerHp += healed;
     spawnFloatingText('Auto-Eat +' + healed + ' HP', 'ft-success');
   }
@@ -11208,7 +11214,7 @@
     if((state.inventory[itemId]||0) <= 0) return;
     state.inventory[itemId] -= 1;
     var _frMult = fieldRationsDurationMult(); // Field Rations: longer, more nourishing feasts
-    var healed = Math.min(Math.round((recipe.heal||0) * _frMult), maxHp(state) - state.playerHp);
+    var healed = Math.min(Math.round((recipe.heal||0) * _frMult), healRoom(state));
     if(healed > 0) state.playerHp += healed;
     var _feastDur = Math.round(recipe.feastDurationMs * _frMult);
     state.activeFeast = {
@@ -11397,7 +11403,7 @@
     var capped = Math.min(elapsedMs, 12*3600*1000);   // offline progress caps at 12 hours
     if(capped < 3000) return;
     var regenSeconds = Math.floor(capped/1000/15);
-    if(regenSeconds > 0) state.playerHp = Math.min(maxHp(state), state.playerHp + regenSeconds);
+    if(regenSeconds > 0) state.playerHp += Math.min(regenSeconds, healRoom(state));
     var act = state.activity;
     var goldBefore = state.gold;
     offlineCapture = { xp:{}, physique:{}, items:{}, gold:0, elapsedMs:capped, activityType:(act&&act.type)||null, familiars:[] };
@@ -11493,7 +11499,7 @@
           applyPyromancerBurnTick(_chunk);
           applyReaperWitherTick(_chunk);
           applyLumenMendingTick(_chunk);
-          var _rh = famRegenHps(); if(_rh>0 && state.playerHp>0) state.playerHp = Math.min(maxHp(state), state.playerHp + _rh*_chunk/1000);
+          var _rh = famRegenHps(); if(_rh>0 && state.playerHp>0) state.playerHp += Math.min(_rh*_chunk/1000, healRoom(state));
           // Each active companion casts one spell every 10s, cycling its list (same cadence as live).
           activeCompanionList(state).forEach(function(cid){
             if(!FAMILIAR_DATA[cid]) return;
@@ -11872,7 +11878,7 @@
     "The <b>Duelist</b> wields a lone Rapier and turns dodges into free familiar spells and lethal ripostes.",
     "The <b>Reaper</b> reaps with a bare-headed Scythe: bigger crits and life-stealing strikes.",
     "The <b>Assassin</b> dual-wields Claws for speed, dodge, and shredded enemy armor.",
-    "The <b>Berserker's</b> Warhammer grows deadlier the more Health you're missing — fight on the edge.",
+    "The <b>Berserker</b> forges a huge, exposed health pool into raw damage — stack HP, spend it, and dare death to collect.",
     "<b>Thunderfury's</b> Earth Wand chains crits into ever-faster, ever-deadlier lightning.",
     "The <b>Sharpshooter's</b> Long Bow trades draw speed for devastating, armor-splitting aimed shots.",
     "The <b>Juggernaut's</b> Sledge shatters defenses in heavy plate; the <b>Executioner's</b> Full-Moon Axe reaps the wounded.",
@@ -14882,7 +14888,6 @@
     add('regen', fb.regenUntil, 'Regen', '#5c8a3c');
     add('bubble', fb.bubbleUntil, 'Bubble', '#5fd0e0');
     Object.keys(COMBAT_BUFF_META).forEach(function(k){ var mm=COMBAT_BUFF_META[k]; add(k, fb[k+'Until'], mm.n, mm.c); });
-    add('fury', state.berserkerFuryUntil, 'Fury', '#c8302a');
     add('enrage', state.summonerEnrageUntil, 'Host Enraged', '#c8302a');
     return out;
   }
@@ -23226,7 +23231,7 @@
       state._regenAccum = (state._regenAccum||0) + dt;
       if(state._regenAccum >= 15000){
         state._regenAccum -= 15000;
-        state.playerHp = Math.min(maxHp(state), state.playerHp + 1);
+        state.playerHp += Math.min(1, healRoom(state));
       }
     }
 
@@ -23289,10 +23294,10 @@
         applyLumenMendingTick(dt);
         // Regen: familiar heal-over-time restores player HP while the buff is up.
         var regenHps = famRegenHps();
-        if(regenHps > 0 && state.playerHp > 0){ state.playerHp = Math.min(maxHp(state), state.playerHp + regenHps*dt/1000); }
+        if(regenHps > 0 && state.playerHp > 0){ state.playerHp += Math.min(regenHps*dt/1000, healRoom(state)); }
         // Templar Lv 60 (Holy Light): a radiant heal-over-time while you're below 40% HP.
         var _hlHps = templarHolyLightHps();
-        if(_hlHps > 0 && state.playerHp > 0){ state.playerHp = Math.min(maxHp(state), state.playerHp + _hlHps*dt/1000); }
+        if(_hlHps > 0 && state.playerHp > 0){ state.playerHp += Math.min(_hlHps*dt/1000, healRoom(state)); }
         // Templar Lv 80 (Aegis of Dawn): every 10s in combat, refresh a Holy absorb shield to 15% max HP.
         if(templarBonus(80)){
           if(!state.templarShieldAt || Date.now() - state.templarShieldAt >= 10000){
@@ -23831,7 +23836,7 @@
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautSmashReady:juggernautSmashReady, juggernautFuryStacks:juggernautFuryStacks, juggernautArmorPierce:juggernautArmorPierce, JUG_WINDUP_DMG:JUG_WINDUP_DMG, JUG_WINDUP_SLOW:JUG_WINDUP_SLOW, JUG_SMASH_EVERY:JUG_SMASH_EVERY, JUG_CONCUSS_MS:JUG_CONCUSS_MS, JUG_FURY_PER:JUG_FURY_PER, JUG_FURY_MAX:JUG_FURY_MAX, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
-      frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerFuryMult:berserkerFuryMult, berserkerLifestealPct:berserkerLifestealPct, berserkerRecklessMult:berserkerRecklessMult, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
+      frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelIncomingMult:sentinelIncomingMult, spellbladeMomentumMult:spellbladeMomentumMult, spellbladeOverwhelmMult:spellbladeOverwhelmMult, spellbladeEnchantBoost:spellbladeEnchantBoost, spellbladeCritChance:spellbladeCritChance, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, assassinRhythmRegister:assassinRhythmRegister, ASSASSIN_RHYTHM_MAX:ASSASSIN_RHYTHM_MAX, assassinApplyLacerate:assassinApplyLacerate, assassinLacerateMaxStacks:assassinLacerateMaxStacks, ASSASSIN_BLEED_MAX:ASSASSIN_BLEED_MAX, assassinHemorrhageCritMult:assassinHemorrhageCritMult, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,
