@@ -2150,6 +2150,52 @@
     near(FF.reaperShieldCap(saOn), Math.round(FF.maxHp(saOn) * 0.40), 'Spectral Aegis cap = 40% of max HP');
   });
 
+  // ---- D1 legendary gear COMBAT effects, Batch 4: the four Pierce weapons -----------------------------
+  suite('mastercraft: legendary pierce effects', function(){
+    function armor(mat){ return { material:mat, tier:5 }; }
+    // A minimal state with a legendary main-hand weapon and (optionally) class gear/enchants layered on.
+    function legSt(key, extra){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+        uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_rapier_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } },
+        equippedMainhandUid:'L' };
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+
+    // En Garde (duelist/rapier): flat +15% Dodge.
+    near(FF.legendaryDodgeBonus(legSt('engarde')), 0.15, 'En Garde: flat +15% Dodge');
+    near(FF.legendaryDodgeBonus(legSt('flowingblade')), 0, 'a non-En-Garde legendary gives no flat Dodge');
+
+    // Flowing Blade (samurai/falchion): the Bushido Focus cap rises to 15 (from 10).
+    eq(FF.samuraiFocusCap(legSt('flowingblade')), 15, 'Flowing Blade raises the Focus cap to 15');
+    eq(FF.samuraiFocusCap(legSt('engarde')), 10, 'the Focus cap is 10 without Flowing Blade');
+
+    // Relentless Assault (knight/claymore): Momentum cap -> 10 stacks, per-stack speed bonus -> 12%.
+    eq(FF.knightStackCap(legSt('relentlessassault')), 10, 'Relentless Assault raises the Momentum cap to 10');
+    near(FF.knightMomentumPerStack(legSt('relentlessassault')), 0.12, 'Relentless Assault: 12% per Momentum stack');
+    near(FF.knightMomentumPerStack(legSt('engarde')), 0.10, 'Momentum is 10% per stack without Relentless Assault');
+    eq(FF.knightStackCap(legSt('engarde')), 5, 'the base Momentum cap is 5 without the legendary or Lv80');
+    // On a live Knight, the legendary deepens the attack-speed ramp but the timer is floored at -90% (x0.10).
+    function kgear(lvl, ex){ var st = { xp:{ knight: FF.xpFloorForLevel(lvl||85) }, physique:{}, equippedMainhand:'claymore', equippedOffhand:null,
+      bodyArmor:{ helmet:armor('chain'), chest:armor('plate'), gauntlets:armor('chain'), boots:armor('plate') }, activity:{type:'combat'}, playerHp:100 };
+      if(ex) for(var k in ex) st[k]=ex[k]; return st; }
+    eq(FF.activeClassId(kgear()), 'knight', 'claymore + plate/chain set => Knight');
+    var kBase = kgear(85, { knightStacks: 5 });
+    near(FF.classAttackSpeedMult(kBase), 0.50, 'base Knight: 5 Momentum stacks -> -50% timer (10% each)', 1e-9);
+    // Same Knight, now wielding Relentless Assault: 10 stacks * 12% = -120%, floored to -90% (x0.10).
+    var kLeg = kgear(85, { knightStacks: 10, uniqueItems:{ L:{ uid:'L', leg:'relentlessassault', kind:'weapon', base:'stweapon_claymore_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' });
+    near(FF.classAttackSpeedMult(kLeg), 0.10, 'Relentless Assault: the attack timer floors at -90% (x0.10)', 1e-9);
+
+    // Resonant Echo (spellblade/greatsword): each Spell Echo hits +10% harder per DISTINCT enchant carried.
+    var reSt = legSt('resonantecho');
+    reSt.uniqueItems.L.enchants = [ {mod:'critDamage', roll:10}, {mod:'critChance', roll:5}, {mod:'weaponDamage', roll:8} ]; // 3 distinct weapon-enchant stats
+    eq(FF.legDistinctEnchantCount(reSt), 3, 'legDistinctEnchantCount reads the distinct equipped-enchant stats');
+    near(FF.legEchoDmgMult(reSt), 1.30, 'Resonant Echo: 3 distinct enchants -> echoes hit +30%');
+    var reNone = legSt('resonantecho'); // no enchants on the item
+    near(FF.legEchoDmgMult(reNone), 1, 'Resonant Echo with no enchants is a no-op multiplier');
+    near(FF.legEchoDmgMult(legSt('engarde')), 1, 'Resonant Echo is inert without its legendary');
+  });
+
   // ---- Dungeon gate: a minimum Total Level to enter ANY dungeon, plus the clear-the-previous-boss chain --
   suite('dungeons: Total Level gate + unlock chain', function(){
     var s = FF._state, saved = s.dungeonsCleared;
