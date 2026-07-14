@@ -4483,6 +4483,25 @@
         value: Math.round(d.base * LEGENDARY_RARITY_MULT[r] * 1000) / 1000, statLabel: d.stat, sell:0 };
     });
   });
+  // ---- D1 (Cave) Amulets: one of three Pendants, worn in the single Amulet jewelry slot (displacing a
+  // normal/unique amulet). Same 2x/4x/8x rarity scaling as the Signets; a Pendant grants no base amulet
+  // stat -- its effect is inherent. Universal effects every class benefits from (no class gating).
+  var D1_LEG_AMULET_DEFS = [
+    { key:'maxhealth',  name:'Pendant of Vitality', short:'Vitality', stat:'Max Health',    base:0.10, icon:svgIcon('heart','#c9a227') },
+    { key:'treasure',   name:'Pendant of Fortune',  short:'Fortune',  stat:'Treasure Find',  base:0.25, icon:svgIcon('gem','#c9a227') },
+    { key:'cheatdeath', name:'Pendant of Undying',  short:'Undying',  stat:'Cheat Death HP', base:0.15, icon:svgIcon('ghost','#c9a227') }
+  ];
+  var D1_LEG_AMULET_MAP = {}; D1_LEG_AMULET_DEFS.forEach(function(d){ D1_LEG_AMULET_MAP[d.key] = d; });
+  function legAmuletItemId(key, rarity){ return 'legamulet_d1_' + key + '_' + rarity; }
+  var LEGENDARY_AMULET_ITEMS = {};
+  D1_LEG_AMULET_DEFS.forEach(function(d){
+    LEG_RING_RARITIES.forEach(function(r){
+      var id = legAmuletItemId(d.key, r);
+      LEGENDARY_AMULET_ITEMS[id] = { id:id, legKey:d.key, dungeon:'d1', rarity:r, slot:'amulet', legendary:true,
+        name: d.name + (r==='normal' ? '' : ' (' + getRarity(r).label + ')'), icon: d.icon,
+        value: Math.round(d.base * LEGENDARY_RARITY_MULT[r] * 1000) / 1000, statLabel: d.stat, sell:0 };
+    });
+  });
   // ---- D1 legendary WEAPONS / SHIELDS / WARDS ----
   // Each forges from its formula into a UNIQUE that carries one legendary effect -- a 6th class-perk-style
   // passive, active while the item is equipped. One legendary per class's signature gear (24 weapons + 6
@@ -4591,6 +4610,12 @@
       defMap: D1_LEG_RING_MAP, itemMap: LEGENDARY_RING_ITEMS, itemId: legRingItemId,
       countRare: countRareT20Rings, consumeRare: consumeRareT20Rings,
       outcomes: D1_LEG_RING_DEFS.map(function(d){ return d.key; }) },
+    d1_amulet: { layer:'d1', slot:'amulet',
+      inputs: { metallurgy_t20:1000, twine_t20:100, diving_t20:100 }, // 1000 ingots + 100 twine + 100 pearls
+      rareCount: 10, rareLabel:'Rare Tier-20 Amulets', xpSkill:'jewelrycrafting',
+      defMap: D1_LEG_AMULET_MAP, itemMap: LEGENDARY_AMULET_ITEMS, itemId: legAmuletItemId,
+      countRare: countRareT20Amulets, consumeRare: consumeRareT20Amulets,
+      outcomes: D1_LEG_AMULET_DEFS.map(function(d){ return d.key; }) },
     d1_cape: { layer:'d1', slot:'cape',
       inputs: { weaving_t20:1000 },              // 1000 Tier-20 refined Cloths
       rareCount: 10, rareLabel:'Rare Tier-20 Cloaks', xpSkill:'tailoring',
@@ -6657,7 +6682,7 @@
   function maxHp(state){
     var base = 50 + getLevel(state.physique.fortitude||0)*5 + Math.round(((equippedEnchantTotals(state).maxHp)||0) * spellbladeEnchantBoost(state));
     base += headsmanTallyBonusHp(state);                          // Executioner Headsman's Tally (Lv60): flat session HP
-    return Math.round(base * (1 + execVigorMaxHpBonus(state)) * berserkerGlassTitanHpMult(state)); // Executioner Reaping Vigor + Berserker Glass Titan (Lv40): +100% max HP
+    return Math.round(base * (1 + execVigorMaxHpBonus(state) + legendaryAmuletBonus('maxhealth', state)) * berserkerGlassTitanHpMult(state)); // Executioner Reaping Vigor + Pendant of Vitality + Berserker Glass Titan (Lv40): +100% max HP
   }
   // Effective heal ceiling: Berserker's Berserk Toll (Lv80) caps healing at 50% of max HP; everyone else heals to full.
   function hpHealCeil(st){ st = st || state; var mh = maxHp(st); return berserkerBonus(80, st) ? Math.round(mh * BERSERK_TOLL_HEAL_CEIL) : mh; }
@@ -8135,6 +8160,13 @@
   // Sum of a legendary ring effect across equipped ring slots (one-of-each keeps this to one, but it's additive-safe).
   function legendaryRingBonus(effectKey, st){ st = st || state; var sum = 0, def = D1_LEG_RING_MAP[effectKey]; if(!def || !st.jewelrySlots) return 0; RING_SLOT_IDS.forEach(function(sid){ var s = st.jewelrySlots[sid]; if(s && s.leg === effectKey) sum += def.base * (LEGENDARY_RARITY_MULT[s.rarity] || 1); }); return sum; }
   function legRingEquipped(effectKey, st){ st = st || state; if(!st.jewelrySlots) return false; return RING_SLOT_IDS.some(function(sid){ var s = st.jewelrySlots[sid]; return s && s.leg === effectKey; }); }
+  // Legendary Amulet (Pendant): a single amulet slot, effect scaled by rarity like a Signet.
+  function legendaryAmuletBonus(effectKey, st){ st = st || state; var def = D1_LEG_AMULET_MAP[effectKey]; if(!def || !st.jewelrySlots) return 0; var a = st.jewelrySlots.amulet; return (a && a.leg === effectKey) ? def.base * (LEGENDARY_RARITY_MULT[a.rarity] || 1) : 0; }
+  function legAmuletEquipped(effectKey, st){ st = st || state; var a = st.jewelrySlots && st.jewelrySlots.amulet; return !!(a && a.leg === effectKey); }
+  function countRareT20Amulets(){ var n = 0; AMULET_TYPES.forEach(function(at){ n += state.inventory[amuletBaseId(at.id, TIER_COUNT-1, 'rare')] || 0; }); return n; }
+  function consumeRareT20Amulets(count){ AMULET_TYPES.forEach(function(at){ if(count <= 0) return; var id = amuletBaseId(at.id, TIER_COUNT-1, 'rare'); var have = state.inventory[id] || 0; var take = Math.min(have, count); if(take > 0){ state.inventory[id] = have - take; count -= take; } }); }
+  // Treasure Find (Pendant of Fortune): +gold and +loot from kills.
+  function legTreasureMult(st){ st = st || state; return 1 + legendaryAmuletBonus('treasure', st); }
   function craftMastercraft(blueprintId){
     var bp = BLUEPRINT_ITEMS[blueprintId]; if(!bp) return;
     if(((state.blueprints && state.blueprints[blueprintId]) || 0) <= 0){ addLog('You don’t hold that Blueprint.', 'danger'); return; }
@@ -8194,6 +8226,24 @@
     addItem(legRingItemId(cur.leg, cur.rarity), 1);
     state.jewelrySlots[slotId] = { typeId:null, tier:0, rarity:'normal' };
   }
+  // ---- Mastercraft: legendary amulet (Pendant), worn in the single Amulet jewelry slot ----
+  function equipLegAmulet(itemId){
+    var item = LEGENDARY_AMULET_ITEMS[itemId];
+    if(!item || (state.inventory[itemId] || 0) <= 0) return;
+    var cur = state.jewelrySlots.amulet;
+    // Return whatever the slot held (a legendary Pendant, or a normal amulet; a unique stays in its table).
+    if(cur){ if(cur.leg){ addItem(legAmuletItemId(cur.leg, cur.rarity), 1); } else if(!cur.uid && cur.tier > 0){ addItem(amuletBaseId(amuletSlotType(cur), cur.tier - 1, cur.rarity), 1); } }
+    state.inventory[itemId] -= 1;
+    state.jewelrySlots.amulet = { leg: item.legKey, rarity: item.rarity };
+    armorPanelExpanded = true;
+    addLog('You equipped the ' + item.name + '.', 'important');
+  }
+  function unequipLegAmulet(){
+    var cur = state.jewelrySlots.amulet;
+    if(!cur || !cur.leg) return;
+    addItem(legAmuletItemId(cur.leg, cur.rarity), 1);
+    state.jewelrySlots.amulet = { tier:0, rarity:'normal' };
+  }
   // ---- Mastercraft: legendary cloak (Shroud), worn in the single Back body-armor slot ----
   function countRareT20Cloaks(){ return state.inventory['bodyarmor_tailoring_back_t20_rare'] || 0; }
   function consumeRareT20Cloaks(count){ var id = 'bodyarmor_tailoring_back_t20_rare'; state.inventory[id] = Math.max(0, (state.inventory[id] || 0) - count); }
@@ -8225,6 +8275,7 @@
     if(!item || (state.inventory[itemId]||0) <= 0) return;
     var cur = state.jewelrySlots.amulet;
     if(cur.uid){ /* displaced unique stays in the table */ }
+    else if(cur.leg){ addItem(legAmuletItemId(cur.leg, cur.rarity), 1); } // displaced legendary Pendant returns
     else if(cur.tier > 0){
       addItem(amuletBaseId(amuletSlotType(cur), cur.tier-1, cur.rarity), 1);
     }
@@ -9870,7 +9921,7 @@
   }
   function equipUniqueAmulet(uid){
     var u = state.uniqueItems[uid], cur = state.jewelrySlots.amulet;
-    if(cur.uid){ /* release previously-equipped unique */ } else if(cur.tier>0){ addItem(amuletBaseId(amuletSlotType(cur), cur.tier-1, cur.rarity), 1); }
+    if(cur.uid){ /* release previously-equipped unique */ } else if(cur.leg){ addItem(legAmuletItemId(cur.leg, cur.rarity), 1); } else if(cur.tier>0){ addItem(amuletBaseId(amuletSlotType(cur), cur.tier-1, cur.rarity), 1); }
     var pa = parseAmuletId(u.base);
     state.jewelrySlots.amulet = { tier: u.tier+1, rarity: u.rarity, uid: uid, typeId: (pa ? pa.typeId : 'plain') };
     addLog('You equipped '+uniqueDisplayName(u)+'.','important'); return true;
@@ -10572,7 +10623,7 @@
     var m = monsterById(monsterId);
     if(!m) return;
     if(combatLevelEquivalent(state) < m.levelReq) return;
-    state.activity = { type:'combat', monsterId:monsterId, monsterHp:m.hp, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), disengageUsed:false, guardianBondUsed:false, samuraiFirstStrike:true, samuraiFocus:0, staticCharge:0, galvanizeStacks:0 };
+    state.activity = { type:'combat', monsterId:monsterId, monsterHp:m.hp, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), disengageUsed:false, guardianBondUsed:false, cheatDeathUsed:false, samuraiFirstStrike:true, samuraiFocus:0, staticCharge:0, galvanizeStacks:0 };
     state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0; // fresh Duelist combat state
   }
 
@@ -10594,31 +10645,33 @@
   }
   function applyMonsterCategoryLoot(monster){
     var i = monster.tierIndex;
+    var _tm = legTreasureMult(); // Pendant of Fortune: +Treasure Find scales drop chance + quantity
     if(monster.category==='wildlife'){
-      addItem('corpse_t'+i, 1);
-      addLog('The ' + monster.name + ' left behind a ' + CORPSE_ITEM_MAP['corpse_t'+i].name + '.', '');
+      var cQty = Math.max(1, Math.round(_tm));
+      addItem('corpse_t'+i, cQty);
+      addLog('The ' + monster.name + ' left behind ' + (cQty>1?cQty+'x ':'a ') + CORPSE_ITEM_MAP['corpse_t'+i].name + '.', '');
     } else if(monster.category==='elemental'){
       // Elementals drop only Glyphs of their own element (the sole source of Glyphs, which Runesmithing
       // needs to inscribe Wards) -- no raw-material burst. Quantity scales with the elemental's tier band.
       var gEl = monster.element, gId = gEl && glyphIdFor(gEl);
-      if(gId && GLYPH_ITEMS[gId] && Math.random() < GLYPH_DROP_CHANCE){
-        var gQty = randInt(1, glyphDropMax(i));
+      if(gId && GLYPH_ITEMS[gId] && Math.random() < GLYPH_DROP_CHANCE * _tm){
+        var gQty = Math.max(1, Math.round(randInt(1, glyphDropMax(i)) * _tm));
         addItem(gId, gQty);
         addLog('The ' + monster.name + ' shattered into ' + gQty + 'x ' + GLYPH_ITEMS[gId].name + '.', 'important');
       }
     } else if(monster.category==='demonspawn'){
       // Demonspawn no longer drop Broken Relics (those still come from failed Archaeology digs) -- they
       // instead occasionally yield Enchant Crystals of their tier, the Improvement-tab enchant input.
-      if(Math.random() < 0.05){
-        var eQty = randInt(1,2), eId = 'enchant_t'+i;
+      if(Math.random() < 0.05 * _tm){
+        var eQty = Math.max(1, Math.round(randInt(1,2) * _tm)), eId = 'enchant_t'+i;
         addItem(eId, eQty);
         addLog('The ' + monster.name + ' dropped ' + eQty + 'x ' + (ALL_SELLABLE[eId]||{name:'Enchant Crystal'}).name + '.', 'important');
       }
     } else if(monster.category==='kinsworn'){
       // Kin-sworn no longer drop gear -- instead they occasionally carry Inscription Scrolls of their
       // tier (read one to ward yourself, or spend them enhancing gear in the Improvement tab).
-      if(Math.random() < 0.05){
-        var sQty = randInt(1,2), sId = 'scroll_t'+i;
+      if(Math.random() < 0.05 * _tm){
+        var sQty = Math.max(1, Math.round(randInt(1,2) * _tm)), sId = 'scroll_t'+i;
         addItem(sId, sQty);
         addLog('The ' + monster.name + ' carried ' + sQty + 'x ' + SCROLL_NAMES[i] + '.', 'important');
       }
@@ -11214,7 +11267,7 @@
     if(executionerBonus(60)) headsmanTallyKill(); // Headsman's Tally: every kill this session grows your max HP (dungeon foes included)
     if(act && act.dungeon){ dungeonOnKill(monster); return; } // dungeon foe -> advance the run instead of re-engaging
     bumpStat('kills');
-    var goldWon = randInt(monster.goldMin, monster.goldMax);
+    var goldWon = Math.round(randInt(monster.goldMin, monster.goldMax) * legTreasureMult()); // Pendant of Fortune: +Treasure Find gold
     earnGold(goldWon);
     addPhysiqueXp(physTierPairs([['resolve',1]], monster.tierIndex));
     addLog('Defeated the ' + monster.name + '! +' + goldWon + ' gold.', 'important');
@@ -11261,7 +11314,7 @@
     act.juggernautSwings = 0; act.juggernautFuryStacks = 0; // Juggernaut Overhead Smash tally + Building Fury reset per foe
     state.heraldGuardStacks = 0; // Herald Perfect Guard streak starts fresh against each foe
     // Duelist: each new foe is a fresh duel -- reset the ramp clock, the once-per-fight Disengage, and the stacks.
-    act.duelStartedAt = Date.now(); act.disengageUsed = false; act.guardianBondUsed = false;
+    act.duelStartedAt = Date.now(); act.disengageUsed = false; act.guardianBondUsed = false; act.cheatDeathUsed = false;
     state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0;
   }
   // Familiar/DoT/reflect damage normally floors the enemy at 1 HP so YOUR attack lands the kill --
@@ -11405,6 +11458,15 @@
         var _burst = Math.max(1, Math.round(_lBefore * LEG_AEGISBREAK_MULT * (monster ? elementAdvantage('light', monster.element) : 1)));
         applyChipDamage(_burst); spawnCombatFloat('Aegis Break -'+fmt(_burst), 'ft-crit', true);
       }
+    }
+    // Cheat Death (Pendant of Undying): once per fight, a blow that would kill you instead leaves you at X%
+    // of max Health (X scales with the Pendant's rarity, from a 15% base). Consumed for the rest of the fight.
+    if(dmgToPlayer > 0 && legAmuletEquipped('cheatdeath') && act && !act.cheatDeathUsed && (state.playerHp - dmgToPlayer) <= 0){
+      act.cheatDeathUsed = true;
+      state.playerHp = Math.max(1, Math.round(maxHp(state) * Math.min(1, legendaryAmuletBonus('cheatdeath', state))));
+      dmgToPlayer = 0;
+      addLog('The Pendant of Undying pulls you back from death!', 'important');
+      spawnFloatingText('Cheat Death!', 'ft-rare');
     }
     state.playerHp -= dmgToPlayer;
     // Knight Counterweight (Lv 20): a hit you take also builds a Momentum stack -- the blows you take feed your tempo.
@@ -14279,12 +14341,17 @@
   function renderAmuletEquipSection(){
     var html = '<h3>Amulet</h3>';
     var currentAmulet = getEquippedAmuletItem(state);
+    var slotAm = state.jewelrySlots && state.jewelrySlots.amulet;
+    var legAm = (slotAm && slotAm.leg) ? LEGENDARY_AMULET_ITEMS[legAmuletItemId(slotAm.leg, slotAm.rarity)] : null;
     var ownedAmulets = Object.keys(AMULET_ITEMS).filter(function(id){ return (state.inventory[id]||0)>0; })
       .sort(function(a,b){ return AMULET_ITEMS[a].tierIndex - AMULET_ITEMS[b].tierIndex; });
+    var ownedLegAm = Object.keys(LEGENDARY_AMULET_ITEMS).filter(function(id){ return (state.inventory[id]||0)>0; });
     html += '<div class="card-grid"><div class="item-card">';
-    html += '<div class="item-top"><div class="item-icon">'+svgIcon('amulet','#c9a227')+'</div><div><div class="item-name">Amulet</div><div class="item-meta">'+(currentAmulet ? escapeHtml(currentAmulet.name)+' &bull; '+amuletStatText(currentAmulet) : 'Not equipped')+'</div></div></div>';
-    if(ownedAmulets.length===0){
-      html += '<div class="empty-note">No Amulets in inventory. Forge one in Crafting &rarr; Jewelrycrafting.</div>';
+    var metaTxt = legAm ? (escapeHtml(legAm.name)+' &bull; +'+Math.round(legAm.value*100)+'% '+escapeHtml(legAm.statLabel))
+      : (currentAmulet ? escapeHtml(currentAmulet.name)+' &bull; '+amuletStatText(currentAmulet) : 'Not equipped');
+    html += '<div class="item-top"><div class="item-icon">'+svgIcon('amulet','#c9a227')+'</div><div><div class="item-name">Amulet</div><div class="item-meta">'+metaTxt+'</div></div></div>';
+    if(ownedAmulets.length===0 && ownedLegAm.length===0){
+      html += '<div class="empty-note">No Amulets in inventory. Forge one in Crafting &rarr; Jewelrycrafting, or Mastercraft a Pendant.</div>';
     } else {
       html += '<div class="style-row">';
       ownedAmulets.forEach(function(id){
@@ -14296,9 +14363,16 @@
         else amcmp = '';
         html += '<button class="style-btn" data-action="equipAmulet" data-item="'+id+'">'+item.icon+' '+escapeHtml(item.name)+' <span class="style-lvl">x'+qty+'</span><span class="style-type">'+amuletStatText(item)+' '+amcmp+'</span></button>';
       });
+      ownedLegAm.forEach(function(id){
+        var item = LEGENDARY_AMULET_ITEMS[id];
+        var qty = state.inventory[id]||0;
+        var worn = legAmuletEquipped(item.legKey);
+        html += '<button class="style-btn'+(worn?' locked':'')+'" data-action="equipLegAmulet" data-item="'+id+'" '+(worn?'disabled':'')+'>'+item.icon+' '+escapeHtml(item.name)+' <span class="style-lvl">x'+qty+'</span><span class="style-type" style="text-transform:none">+'+Math.round(item.value*100)+'% '+escapeHtml(item.statLabel)+(worn?' &bull; worn':'')+'</span></button>';
+      });
       html += '</div>';
     }
-    if(currentAmulet) html += '<button class="action-btn stop" data-action="unequipAmulet">Unequip</button>';
+    if(legAm) html += '<button class="action-btn stop" data-action="unequipLegAmulet">Unequip</button>';
+    else if(currentAmulet) html += '<button class="action-btn stop" data-action="unequipAmulet">Unequip</button>';
     html += '</div></div>';
     html += renderUniqueEquipOptions('amulet', null, 'Amulets');
     return html;
@@ -15385,7 +15459,7 @@
     var enemy = dungeonSoloEnemy(_base); // solo faces a 30%-scaled clone (HP + attack) of the group foe
     dungeonRun.idx = idx;
     state.activity = { type:'combat', monsterId:enemy.id, monsterHp:enemy.hp, tickAccum:0, monsterTickAccum:0,
-      duelStartedAt:Date.now(), disengageUsed:false, guardianBondUsed:false,
+      duelStartedAt:Date.now(), disengageUsed:false, guardianBondUsed:false, cheatDeathUsed:false,
       samuraiFirstStrike:true, samuraiFocus:0, staticCharge:0, galvanizeStacks:0,
       dungeon:dungeonRun.def.id, dungeonIndex:idx };
     state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0;
@@ -22021,6 +22095,7 @@
     if(itemId.indexOf('relic_t')===0) return 'equipRelic';
     if(itemId.indexOf('legring_')===0) return 'equipLegRing';
     if(itemId.indexOf('ring_')===0) return 'equipRing';
+    if(itemId.indexOf('legamulet_')===0) return 'equipLegAmulet';
     if(itemId.indexOf('amulet_')===0) return 'equipAmulet';
     return null;
   }
@@ -23224,6 +23299,8 @@
     forgeAmulet: function(btn, e){ craftAmulet(btn.getAttribute('data-type')||'plain', parseInt(btn.getAttribute('data-tier'),10)); },
     equipAmulet: function(btn, e){ equipAmulet(btn.getAttribute('data-item')); },
     unequipAmulet: function(btn, e){ unequipAmulet(); },
+    equipLegAmulet: function(btn, e){ equipLegAmulet(btn.getAttribute('data-item')); render(); },
+    unequipLegAmulet: function(btn, e){ unequipLegAmulet(); render(); },
     stopExtraSlot: function(btn, e){
       var extraIdx = parseInt(btn.getAttribute('data-slot'),10);
       state.extraCraftSlots[extraIdx] = {type:null};
@@ -24205,7 +24282,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,

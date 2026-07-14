@@ -2442,6 +2442,87 @@
     eq(FF.legActive('holyward', legSt('holyward', 'wardLight')), true, 'legActive detects Holy Ward');
   });
 
+  // ---- D1 legendary AMULETS (Pendants): 3 universal effects, worn in the single Amulet slot -----------
+  suite('mastercraft: D1 legendary amulets', function(){
+    // A state with a legendary Pendant seated in the Amulet slot.
+    function amSt(key, rarity, extra){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, jewelrySlots:{ amulet:{ leg:key, rarity:rarity||'normal' } },
+        activity:{type:'combat', monsterHp:100}, playerHp:100 };
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+
+    // Data model: 3 Pendants x 4 rarities = 12 inventory items.
+    eq(FF.D1_LEG_AMULET_DEFS.length, 3, 'three D1 legendary amulet effects');
+    var keys = FF.D1_LEG_AMULET_DEFS.map(function(d){ return d.key; });
+    eq(JSON.stringify(keys), JSON.stringify(['maxhealth','treasure','cheatdeath']), 'the three chosen effects: Max Health, Treasure, Cheat Death');
+    eq(Object.keys(FF.LEGENDARY_AMULET_ITEMS).length, 12, '3 effects x 4 rarities = 12 Pendant items');
+    eq(FF.legAmuletItemId('maxhealth','rare'), 'legamulet_d1_maxhealth_rare', 'Pendant item id format');
+
+    // Bonus scaling: base value x the 2x/4x/8x rarity ladder.
+    near(FF.legendaryAmuletBonus('maxhealth', amSt('maxhealth','normal')), 0.10, 'Max Health: +10% at Normal');
+    near(FF.legendaryAmuletBonus('maxhealth', amSt('maxhealth','rare')), 0.20, 'Max Health: +20% at Rare (2x)');
+    near(FF.legendaryAmuletBonus('maxhealth', amSt('maxhealth','fantastic')), 0.80, 'Max Health: +80% at Fantastic (8x)');
+    near(FF.legendaryAmuletBonus('treasure', amSt('treasure','normal')), 0.25, 'Treasure: +25% at Normal');
+    near(FF.legendaryAmuletBonus('cheatdeath', amSt('cheatdeath','normal')), 0.15, 'Cheat Death: revive to 15% at Normal');
+    near(FF.legendaryAmuletBonus('maxhealth', amSt('treasure','normal')), 0, 'a Pendant only grants its own effect');
+    eq(FF.legAmuletEquipped('cheatdeath', amSt('cheatdeath','supreme')), true, 'legAmuletEquipped detects the seated Pendant');
+    eq(FF.legAmuletEquipped('cheatdeath', amSt('maxhealth','supreme')), false, 'legAmuletEquipped false for a different effect');
+
+    // Max Health folds into maxHp: +10% at Normal.
+    var mhBase = { xp:{}, physique:{}, bodyArmor:{}, jewelrySlots:{ amulet:{ tier:0, rarity:'normal' } } };
+    var mhAmu  = { xp:{}, physique:{}, bodyArmor:{}, jewelrySlots:{ amulet:{ leg:'maxhealth', rarity:'normal' } } };
+    eq(FF.maxHp(mhAmu), Math.round(FF.maxHp(mhBase) * 1.10), 'Pendant of Vitality raises max HP by +10% at Normal');
+    var mhFan  = { xp:{}, physique:{}, bodyArmor:{}, jewelrySlots:{ amulet:{ leg:'maxhealth', rarity:'fantastic' } } };
+    eq(FF.maxHp(mhFan), Math.round(FF.maxHp(mhBase) * 1.80), 'Fantastic Pendant of Vitality raises max HP by +80%');
+
+    // Treasure multiplier.
+    near(FF.legTreasureMult(amSt('treasure','normal')), 1.25, 'Treasure Find multiplier is 1.25x at Normal');
+    near(FF.legTreasureMult(amSt('treasure','supreme')), 2.0, 'Treasure Find multiplier is 2.0x at Supreme (4x base)');
+    near(FF.legTreasureMult(amSt('maxhealth','normal')), 1, 'no Treasure bonus without the Fortune Pendant');
+
+    // Forge recipe: exact input bill the user specified.
+    var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','amulet')]);
+    ok(rec, 'a d1 amulet Mastercraft recipe exists');
+    eq(rec.inputs.metallurgy_t20, 1000, 'amulet formula costs 1000 t20 ingots');
+    eq(rec.inputs.twine_t20, 100, 'amulet formula costs 100 t20 twine');
+    eq(rec.inputs.diving_t20, 100, 'amulet formula costs 100 t20 pearls');
+    eq(rec.rareCount, 10, 'amulet formula needs 10 rare t20 amulets');
+    eq(rec.outcomes.length, 3, 'the amulet formula forges one of three Pendants');
+
+    // Rare-amulet counter reads plain + warding t20 rares.
+    var s = FF._state, svInv = s.inventory, svJewel = s.jewelrySlots, svBp = s.blueprints;
+    s.inventory = { amulet_t20_rare: 6, amulet_warding_t20_rare: 4 };
+    eq(FF.countRareT20Amulets(), 10, 'countRareT20Amulets sums plain + warding rare t20 amulets');
+
+    // Full forge mints a legendary Pendant inventory item.
+    s.inventory = { metallurgy_t20:1000, twine_t20:100, diving_t20:100, amulet_t20_rare:10 };
+    s.blueprints = {}; var bpId = FF.masterworkBlueprintId('d1','amulet'); s.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var minted = Object.keys(s.inventory).filter(function(id){ return id.indexOf('legamulet_d1_')===0 && s.inventory[id]>0; });
+    eq(minted.length, 1, 'the forge mints exactly one legendary Pendant');
+    eq(s.inventory.metallurgy_t20, 0, 'the forge consumes the 1000 ingots');
+    eq(s.inventory.amulet_t20_rare, 0, 'the forge consumes the 10 rare amulets');
+    eq(s.blueprints[bpId], 0, 'the forge consumes the Blueprint');
+
+    // Equip / unequip round-trips through the single Amulet slot.
+    s.jewelrySlots = { amulet:{ tier:0, rarity:'normal' } };
+    s.inventory = { legamulet_d1_maxhealth_rare: 1 };
+    FF.equipLegAmulet('legamulet_d1_maxhealth_rare');
+    eq(s.jewelrySlots.amulet.leg, 'maxhealth', 'equipLegAmulet seats the Pendant');
+    eq(s.jewelrySlots.amulet.rarity, 'rare', 'the seated Pendant keeps its rarity');
+    eq(s.inventory.legamulet_d1_maxhealth_rare || 0, 0, 'equipping consumes the inventory copy');
+    FF.unequipLegAmulet();
+    eq(s.inventory.legamulet_d1_maxhealth_rare, 1, 'unequip returns the Pendant to inventory');
+    ok(!s.jewelrySlots.amulet.leg, 'the slot is cleared after unequip');
+    // A normal amulet equipped over a legendary returns the legendary.
+    s.jewelrySlots = { amulet:{ leg:'treasure', rarity:'supreme' } };
+    s.inventory = { amulet_t0_normal: 1 };
+    FF.equipAmulet('amulet_t0_normal');
+    eq(s.inventory.legamulet_d1_treasure_supreme, 1, 'a normal amulet displaces the legendary back to inventory');
+    s.inventory = svInv; s.jewelrySlots = svJewel; s.blueprints = svBp;
+  });
+
   // ---- Dungeon gate: a minimum Total Level to enter ANY dungeon, plus the clear-the-previous-boss chain --
   suite('dungeons: Total Level gate + unlock chain', function(){
     var s = FF._state, saved = s.dungeonsCleared;
