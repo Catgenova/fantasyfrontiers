@@ -372,6 +372,21 @@
     }
   });
 
+  // ---- Task slots: free base slot, belt + Logic stacking, cap at 15 ----------------------
+  suite('task slots: everyone gets a base slot, capped at 15', function(){
+    eq(FF.MAX_TASK_SLOTS, 15, 'the task-slot ceiling is 15');
+    // Brand-new player: no belt, no Logic -> 2 concurrent actions (was 1).
+    eq(FF.getMaxCraftSlots({ physique:{} }), 2, 'a fresh player runs 2 tasks (base + free slot)');
+    // A normal belt adds nothing over base; each higher rarity adds one, on top of the free slot.
+    eq(FF.getMaxCraftSlots({ equippedBeltTier:1, equippedBeltRarity:'normal', physique:{} }), 2, 'a normal belt still yields 2');
+    eq(FF.getMaxCraftSlots({ equippedBeltTier:1, equippedBeltRarity:'rare', physique:{} }), 3, 'a rare belt yields 3');
+    eq(FF.getMaxCraftSlots({ equippedBeltTier:1, equippedBeltRarity:'fantastic', physique:{} }), 5, 'a fantastic belt yields 5');
+    // Logic adds +1 per 10 levels; the fully-kitted maximum is exactly 15.
+    var logic100 = { logic: FF.xpFloorForLevel(100) };
+    eq(FF.getMaxCraftSlots({ physique: logic100 }), 12, 'Logic Lv100 alone -> 2 base + 10 = 12');
+    eq(FF.getMaxCraftSlots({ equippedBeltTier:1, equippedBeltRarity:'fantastic', physique: logic100 }), 15, 'fantastic belt + Logic Lv100 caps at 15');
+  });
+
   // ---- Action HUD task rows: remaining runs, success chance, and nav category ------------
   suite('describeTask reports runs remaining, success chance, and nav target', function(){
     var S = FF._state;

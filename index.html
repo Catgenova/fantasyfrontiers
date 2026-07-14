@@ -8233,9 +8233,11 @@
   }
   // Logic (a physique) grants +1 concurrent craft slot for every 10 levels, base +0.
   function logicSlotBonus(state){ return Math.floor(getLevel(state.physique.logic||0) / 10); }
+  var MAX_TASK_SLOTS = 15; // hard ceiling: fantastic Belt (4) + Logic Lv100 (10) + the free base slot (1)
   function getMaxCraftSlots(state){
     var beltSlots = (!state.equippedBeltTier || state.equippedBeltTier<=0) ? 1 : (BELT_RARITY_SLOTS[state.equippedBeltRarity] || 1);
-    return beltSlots + logicSlotBonus(state);
+    // Every player gets one free action slot on top of the Belt's, so a brand-new player runs 2 concurrent tasks.
+    return Math.min(MAX_TASK_SLOTS, beltSlots + logicSlotBonus(state) + 1);
   }
   // Craft slots beyond the primary live in state.extraCraftSlots. Belt rarity used to cap
   // that at 3 extra, so the array was a fixed length 3; Logic can push the total higher, so
@@ -22455,7 +22457,7 @@
       html += '<div class="skill-group-header" style="--group-color:var(--gold)">Task Slots</div>';
       var primaryUses = (state.activity.type==='craft' || state.activity.type==='gather' || state.activity.type==='pray') ? 1 : 0;
       var usedSlots = primaryUses + state.extraCraftSlots.filter(function(s){ return s.type; }).length;
-      html += '<div class="empty-note" style="margin:-2px 0 6px">'+usedSlots+' / '+maxCraftSlotsSidebar+' in use (Belt + Logic) &bull; craft, gather, or faith</div>';
+      html += '<div class="empty-note" style="margin:-2px 0 6px">'+usedSlots+' / '+maxCraftSlotsSidebar+' in use (base + Belt + Logic) &bull; craft, gather, or faith</div>';
       state.extraCraftSlots.forEach(function(s, idx){
         if(!s.type) return;
         var info = extraCraftSlotInfo(s);
@@ -24624,7 +24626,7 @@
       tierStepper:tierStepper, tierRange:tierRange,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, anySkillProgress:anySkillProgress,
-      _state:state, getMaxCraftSlots:getMaxCraftSlots, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
+      _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
       parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant,
