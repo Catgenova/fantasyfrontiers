@@ -2463,6 +2463,11 @@
     eq(FF.D1_SET_DEFS.summoner.b2.name, 'Pack Tactics', 'Summoner 2pc is Pack Tactics');
     eq(FF.D1_SET_DEFS.reaver.bf.name, 'Feeding Frenzy', 'Reaver capstone is Feeding Frenzy');
     eq(FF.D1_SET_DEFS.nightblade.b2.name, 'Resistance Rot', 'Voidshadow (nightblade) 2pc is Resistance Rot');
+    // Themed set names: every class has one, and pieces read "<Slot> of <SetName>".
+    ids.forEach(function(id){ ok(FF.SET_NAMES[id] && FF.setName(id) === FF.SET_NAMES[id], id + ' has a themed set name'); });
+    eq(FF.setPieceName('nightblade', 'helmet'), 'Helmet of the Umbral Coil', 'a Voidshadow helm reads "Helmet of the Umbral Coil"');
+    eq(FF.setPieceName('herald', 'chest'), 'Chest of Chitinwall', 'a Herald chest reads "Chest of Chitinwall"');
+    eq(FF.setPieceName('reaver', 'gauntlets'), 'Gauntlets of the Bloodspinner', 'a Reaver piece reads "Gauntlets of the Bloodspinner"');
     // Detection: seat set pieces via unique.set on body-armor slots.
     var st = { bodyArmor:{ helmet:{uid:'a'}, chest:{uid:'b'}, gauntlets:{uid:'c'}, boots:{} },
       uniqueItems:{ a:{set:'summoner'}, b:{set:'summoner'}, c:{set:'summoner'} } };
