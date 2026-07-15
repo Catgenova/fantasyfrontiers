@@ -7898,11 +7898,15 @@
     var namePrefix = mat.tierNames()[tierIndex];
     var slotLabel = mat.slotLabels[slot];
     var fullName = mat.label ? (namePrefix+' '+mat.label+' '+slotLabel) : (namePrefix+' '+slotLabel);
+    // XP scales with the material used, so a Chest (which costs more base material than the other slots)
+    // grants proportionally more XP. Anchored to the material's cheapest slot so the standard pieces keep
+    // their existing XP and only the pricier Chest is boosted (e.g. a 3-leather Gambeson = 1.5x a 2-leather piece).
+    if(mat._minMatQty == null) mat._minMatQty = Math.min.apply(null, Object.keys(mat.matQty).map(function(k){ return mat.matQty[k]; }));
     return {
       tierIndex: tierIndex,
       name: fullName,
       levelReq: TIER_LEVELS[tierIndex],
-      xp: craftXp(tierIndex),
+      xp: Math.round(craftXp(tierIndex) * mat.matQty[slot] / mat._minMatQty),
       defense: tierStat(mat.baseDefense[slot], tierIndex),
       inputs: inputs,
       time: tierTime(7,0.3,tierIndex)

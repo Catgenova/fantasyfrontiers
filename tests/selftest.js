@@ -1351,6 +1351,24 @@
     ok(FF.CRAFT_PHYSIQUE.tanning && FF.CRAFT_PHYSIQUE.weaving, 'physique tables include the new skills');
   });
 
+  // ---- Body-armour XP scales with the material each slot consumes ------------------------------
+  suite('body armour XP scales per material used (Gambeson fix)', function(){
+    function xp(mat, slot){ return FF.getBodyArmorTierData(mat, slot, 5).xp; }
+    function qty(mat, slot){ var inp = FF.getBodyArmorTierData(mat, slot, 5).inputs; for(var k in inp){ if(/_t5$/.test(k)) return inp[k]; } return 0; } // the raw-material key ends in _t5 (the prev-tier key ends in _normal)
+    ['leather','chain','plate','tailoring'].forEach(function(mat){
+      // The Chest's XP tracks its material cost relative to the cheapest slot (rounding aside).
+      var cheapSlot = 'gauntlets';
+      var ratio = qty(mat,'chest') / qty(mat, cheapSlot);
+      var expected = xp(mat, cheapSlot) * ratio;
+      near(xp(mat,'chest'), expected, mat + ' chest XP scales with its material cost', Math.max(1, expected * 0.02));
+      ok(xp(mat,'chest') > xp(mat, cheapSlot), mat + ' chest (more material) grants more XP than the cheap slot');
+      // Non-chest slots that cost the same as the cheapest keep identical XP (no global inflation).
+      eq(xp(mat,'boots'), xp(mat,'gauntlets'), mat + ' equal-cost slots keep equal XP');
+    });
+    // Concrete: leather Gambeson (3 leather) = 1.5x a 2-leather leather piece.
+    near(xp('leather','chest') / xp('leather','gauntlets'), 1.5, 'leather Gambeson gives 1.5x a 2-leather piece', 1.02);
+  });
+
   // ---- Refinement layer: Pottery (clay->Crucible) + Goldsmithing (ingot+Crucible->Setting) ------
   suite('skills: pottery / goldsmithing refinement', function(){
     ok(FF.CRAFTING_SKILLS.pottery, 'pottery is a crafting skill');
