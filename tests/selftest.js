@@ -551,6 +551,18 @@
     ok(ids.indexOf('mining') !== -1 && ids.indexOf('carpentry') !== -1, 'regular skills still trackable');
   });
 
+  // ---- Butchering trains Logic (it leads the Refining tab) ------------------------------
+  suite('butchering trains the Logic physique', function(){
+    // Logic is the Refining physique; Butchering is a gathering skill shown in the Refining tab.
+    ok(FF.physiqueTrainedBySkill('butchering').indexOf('logic') !== -1, 'butchering earns Logic XP');
+    ok(FF.physiqueBenefitsForSkill('butchering').some(function(e){ return e[0] === 'logic'; }), 'the (?) "trained by" list shows Logic for butchering');
+    ok((FF.GATHER_PHYSIQUE.butchering || []).some(function(p){ return p[0] === 'logic'; }), 'GATHER_PHYSIQUE.butchering includes a logic pair');
+    // Other gathering skills do NOT grant Logic -- it stays a Refining-only physique.
+    ['mining','fishing','forestry','herbalism','foraging'].forEach(function(sk){
+      ok(FF.physiqueTrainedBySkill(sk).indexOf('logic') === -1, sk + ' does not train Logic');
+    });
+  });
+
   // ---- Farming: Harvest All / Plant All bulk actions -----------------------------------
   suite('farming bulk actions', function(){
     var S = FF._state, grid = S.estate.grid, pm = FF.farmPlotMap('personal');
