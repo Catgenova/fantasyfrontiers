@@ -4518,6 +4518,17 @@
     var twoFire = st([sl('fire', TC, 'normal'), sl('fire', TC, 'normal')]);
     near(FF.getRingElementDamageBonus(twoFire, 'fire'), 1.00, 'two fire rings stack to +100%');
 
+    // Enhance scales a UNIQUE ring's base stat, like weapons/belts (a +6 rare Copper Water ring: +10% -> +30%).
+    function enhRingSt(enh){
+      return { physique:{}, xp:{},
+        uniqueItems:{ RW:{ uid:'RW', kind:'ring', base:'ring_water_t0_rare', tier:0, rarity:'rare', enchants:[], enhance:enh } },
+        jewelrySlots:{ ring1:{typeId:'water',tier:1,rarity:'rare',uid:'RW'}, ring2:empty(), ring3:empty(), ring4:empty(), ring5:empty(), amulet:{tier:0,rarity:'normal'} } };
+    }
+    near(FF.getRingItemInSlot(enhRingSt(0),'ring1').bonus, 0.10, '+0 enhance: base rare Copper Water ring is +10%');
+    near(FF.getRingItemInSlot(enhRingSt(6),'ring1').bonus, 0.30, '+6 enhance triples the base ring stat to +30%');
+    near(FF.getRingElementDamageBonus(enhRingSt(6), 'water'), 0.30, '+6 enhance: combat Water bonus is +30%');
+    near(FF.getRingElementDamageBonus(enhRingSt(15), 'water'), 0.60, '+15 (max) enhance: x6 -> +60%');
+
     // Folds into elementDmgMult on top of attunement.
     var baseMult = FF.elementDmgMult(st([]), 'fire');
     near(FF.elementDmgMult(oneFire, 'fire') - baseMult, 0.50, 'fire ring adds +0.50 to the fire damage multiplier');

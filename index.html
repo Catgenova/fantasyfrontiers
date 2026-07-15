@@ -8603,15 +8603,32 @@
     addItem(amuletBaseId(amuletSlotType(cur), cur.tier-1, cur.rarity), 1);
     state.jewelrySlots.amulet = { tier:0, rarity:'normal' };
   }
+  // A unique (enhanced) ring/amulet scales its BASE stat by the enhance multiplier -- just like unique
+  // weapons/belts/relics do. Returns a scaled copy so combat AND the equip UI both read the boosted value
+  // (a +6 rare Copper Ring of Water goes from +10% to +30%). Enchant mods are handled separately.
+  function applyJewelryEnhance(item, uid, st){
+    if(!item || !uid) return item;
+    var u = st && st.uniqueItems && st.uniqueItems[uid];
+    if(!u) return item;
+    var mult = enhanceStatMult(u.enhance);
+    if(mult === 1) return item;
+    var out = Object.assign({}, item);
+    if(out.dmgBonus != null) out.dmgBonus *= mult;
+    if(out.bonus != null) out.bonus *= mult;
+    if(out.defense != null) out.defense *= mult;
+    return out;
+  }
   function getRingItemInSlot(state, slotId){
     var s = state.jewelrySlots && state.jewelrySlots[slotId];
     if(!s || !s.typeId || s.tier<=0) return null;
-    return RING_ITEMS['ring_'+s.typeId+'_t'+(s.tier-1)+'_'+s.rarity] || null;
+    var item = RING_ITEMS['ring_'+s.typeId+'_t'+(s.tier-1)+'_'+s.rarity] || null;
+    return applyJewelryEnhance(item, s.uid, state);
   }
   function getEquippedAmuletItem(state){
     var s = state.jewelrySlots && state.jewelrySlots.amulet;
     if(!s || s.tier<=0) return null;
-    return AMULET_ITEMS[amuletBaseId(amuletSlotType(s), s.tier-1, s.rarity)] || null;
+    var item = AMULET_ITEMS[amuletBaseId(amuletSlotType(s), s.tier-1, s.rarity)] || null;
+    return applyJewelryEnhance(item, s.uid, state);
   }
   // Sums every equipped ring's contribution (up to 5 at once) for the type(s) that
   // actually matter to this weapon -- scaled per-ring by how much of the weapon's own
@@ -14810,8 +14827,9 @@
       var ss = state.jewelrySlots[slotId];
       var legItem = (ss && ss.leg) ? LEGENDARY_RING_ITEMS[legRingItemId(ss.leg, ss.rarity)] : null;
       html += '<div class="item-card">';
+      var slotRingName = (ss && ss.uid && state.uniqueItems && state.uniqueItems[ss.uid]) ? escapeHtml(uniqueDisplayName(state.uniqueItems[ss.uid])) : (slotRing ? slotRing.name : '');
       var metaTxt = legItem ? (escapeHtml(legItem.name)+' &bull; +'+Math.round(legItem.value*100)+'% '+escapeHtml(legItem.statLabel))
-        : (slotRing ? slotRing.name+' &bull; +'+Math.round(ringItemBonus(slotRing)*100)+'% '+ringBonusLabel(slotRing) : 'Empty');
+        : (slotRing ? slotRingName+' &bull; +'+Math.round(ringItemBonus(slotRing)*100)+'% '+ringBonusLabel(slotRing) : 'Empty');
       html += '<div class="item-top"><div class="item-icon">'+svgIcon('ring','#c9a227')+'</div><div><div class="item-name">Ring Slot '+(slotIdx+1)+'</div><div class="item-meta">'+metaTxt+'</div></div></div>';
       if(ownedRings.length===0 && ownedLeg.length===0){
         html += '<div class="empty-note">No Rings in inventory. Forge one in Crafting &rarr; Jewelrycrafting, or Mastercraft a Signet.</div>';
