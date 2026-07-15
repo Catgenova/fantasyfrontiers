@@ -19761,10 +19761,12 @@
     // Load the guild + its shared estate in the background (idempotent, guarded) so the Guild FAB can
     // appear anywhere -- otherwise the estate is only ever loaded on the Guild / Peons tabs.
     if(enabled){ guildEnsureLoaded(); if(guildState.guild) guildEstateEnsure(); }
-    var onEstate = currentCategory === 'estate';
-    var onGuildEstate = currentCategory === 'guild' && guildSub === 'estate';
-    var showMy = enabled && !onEstate && !!(state.estate && state.estate.grid) && !estateJobActive('personal');
-    var showGuild = enabled && !onGuildEstate && guildEstateReachable() && !estateJobActive('guild');
+    // Hide BOTH bubbles while viewing EITHER estate -- you don't need a jump-to-estate button there, and
+    // a right-anchored FAB would otherwise overlap (and swallow taps on) the right-aligned tile-action
+    // buttons like "Clear".
+    var onAnyEstate = (currentCategory === 'estate') || (currentCategory === 'guild' && guildSub === 'estate');
+    var showMy = enabled && !onAnyEstate && !!(state.estate && state.estate.grid) && !estateJobActive('personal');
+    var showGuild = enabled && !onAnyEstate && guildEstateReachable() && !estateJobActive('guild');
     em.classList.toggle('on', showMy);
     gm.classList.toggle('on', showGuild);
   }
