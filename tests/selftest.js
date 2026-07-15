@@ -4296,6 +4296,22 @@
     eq(FF.bowArrowToConsume({ equippedMainhandTier:6, inventory:{} }), null, 'no arrows -> null (shoot unfletched)');
     eq(FF.bowArrowToConsume({ equippedMainhandTier:2, inventory:{ fletching_arrow_t10:5 } }), null, 'arrows fancier than the bow are not usable');
     eq(FF.UNFLETCHED_DMG_MULT, 0.25, 'an unfletched bow deals 25% damage');
+
+    // Arrow base damage equals a same-tier bow (handBonus 1.0), so a nocked arrow adds bow-equivalent damage.
+    [0, 5, 12, 19].forEach(function(i){
+      var bow = FF.getStackableWeaponTierData('bowShort', i);
+      var ar = FF.arrowBaseDamage('fletching_arrow_t'+i);
+      eq(ar.dmgMin, bow.dmgMin, 'arrow t'+i+' min damage matches a tier-'+i+' bow');
+      eq(ar.dmgMax, bow.dmgMax, 'arrow t'+i+' max damage matches a tier-'+i+' bow');
+    });
+    ok(FF.arrowBaseDamage('fletching_arrow_t19').dmgMax > FF.arrowBaseDamage('fletching_arrow_t0').dmgMax, 'higher-tier arrows hit harder');
+    eq(FF.arrowBaseDamage(null), null, 'no arrow id -> no arrow damage');
+    eq(FF.arrowBaseDamage('not_an_arrow'), null, 'a non-arrow id -> no arrow damage');
+
+    // bowArrowsAvailable: total usable arrows at or below the bow's tier (live combat ammo counter).
+    eq(FF.bowArrowsAvailable({ equippedMainhandTier:6, inventory:{ fletching_arrow_t0:10, fletching_arrow_t3:5 } }), 15, 'sums all usable arrows');
+    eq(FF.bowArrowsAvailable({ equippedMainhandTier:3, inventory:{ fletching_arrow_t0:4, fletching_arrow_t10:99 } }), 4, 'arrows fancier than the bow are excluded from the count');
+    eq(FF.bowArrowsAvailable({ equippedMainhandTier:6, inventory:{} }), 0, 'no arrows -> 0');
   });
 
   // ---- Classes: Knight (claymore offtank brawler: momentum + counterweight/bulwark/warlord/relentless) ----

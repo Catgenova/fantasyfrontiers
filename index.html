@@ -4043,6 +4043,23 @@
     for(var i = Math.min(ARROW_MAX_INDEX, bowTierIdx); i >= 0; i--){ if(((st.inventory && st.inventory['fletching_arrow_t'+i]) || 0) > 0) return 'fletching_arrow_t'+i; }
     return null;
   }
+  // Total usable arrows for the equipped bow (any tier at or below the bow's tier) -- powers the live
+  // combat-screen ammo counter.
+  function bowArrowsAvailable(st){
+    st = st || state;
+    var bowTierIdx = Math.max(0, (st.equippedMainhandTier || 1) - 1);
+    var n = 0;
+    for(var i = Math.min(ARROW_MAX_INDEX, bowTierIdx); i >= 0; i--){ n += (st.inventory && st.inventory['fletching_arrow_t'+i]) || 0; }
+    return n;
+  }
+  // A nocked arrow adds base damage equal to a same-tier bow (handBonus 1.0), so higher-tier arrows hit
+  // meaningfully harder. Returns {dmgMin,dmgMax} for the arrow id, or null.
+  function arrowBaseDamage(arrowId){
+    var m = /^fletching_arrow_t(\d+)$/.exec(arrowId || '');
+    if(!m) return null;
+    var i = +m[1];
+    return { dmgMin: Math.max(1, Math.round(tierStat(2, i))), dmgMax: Math.max(2, Math.round(tierStat(5, i))) };
+  }
   // Off-hand Claw: a second weapon sharing the off-hand slot (equippedOffhand='claw'). Only valid while
   // a Claw is the main hand. getEquippedOffhandItem returns null for it (it's a weapon, not defensive gear).
   function hasClawMainhand(st){ st = st || state; return st.equippedMainhand==='claw'; }
@@ -11407,9 +11424,10 @@
     // Bow ammo: each shot (hit or miss) spends one Fletching Arrow unless the Quiver preserves it. With
     // no usable arrows the shot is "unfletched" and deals only a fraction of its damage (never blocked).
     var unfletched = false;
+    var _arrowDmg = null; // base damage the nocked arrow adds to this bow shot (same-tier bow damage)
     if(!isOffhand && weaponStyle.hand === 'bow'){
       var _arrowId = bowArrowToConsume(state);
-      if(_arrowId){ if(Math.random() >= quiverAmmoPreserve(state)) state.inventory[_arrowId] = Math.max(0, (state.inventory[_arrowId] || 0) - 1); }
+      if(_arrowId){ _arrowDmg = arrowBaseDamage(_arrowId); if(Math.random() >= quiverAmmoPreserve(state)) state.inventory[_arrowId] = Math.max(0, (state.inventory[_arrowId] || 0) - 1); }
       else { unfletched = true; if(Math.random() < 0.25) spawnCombatFloat('No arrows!', 'ft-miss', true); }
     }
 
@@ -11440,7 +11458,11 @@
     if(_retribution > 1) spawnCombatFloat('Retribution!', 'ft-crit', true);
     var _riposte = isOffhand ? 1 : legRiposteConsume(state); // Fortune's Riposte (legendary shield): +40% on the strike after a Block
     if(_riposte > 1) spawnCombatFloat('Riposte!', 'ft-crit', true);
-    var dmgToMonster = Math.round(randInt(weapon.dmgMin, weapon.dmgMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * critMult * _earthshake * _retribution * _riposte * playerDamageMultiplier(_dmgCtx));
+    // The nocked arrow adds its base damage (equal to a same-tier bow) to the weapon roll, so it scales
+    // with every multiplier below exactly like the bow's own damage does.
+    var _rollMin = weapon.dmgMin + (_arrowDmg ? _arrowDmg.dmgMin : 0);
+    var _rollMax = weapon.dmgMax + (_arrowDmg ? _arrowDmg.dmgMax : 0);
+    var dmgToMonster = Math.round(randInt(_rollMin, _rollMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * critMult * _earthshake * _retribution * _riposte * playerDamageMultiplier(_dmgCtx));
     dmgToMonster += Math.round(enchTot.flatDamage||0); // + equipped-item Flat Damage enchants
     if(!isOffhand) dmgToMonster += berserkerTitansHeftDmg(state); // Berserker Titan's Heft (Lv1): +2% of max HP as flat hit damage
     var monsterHpBeforeHit = act.monsterHp;
@@ -13656,6 +13678,7 @@
     html += '</div></div>';
 
     html += '<h3>Fletch Arrows</h3>';
+    html += '<div class="section-intro" style="margin:0 0 6px">Each Arrow now carries <b>base damage equal to a bow of the same tier</b> — a nocked Arrow adds its damage on top of the bow, so keeping high-tier ammo stocked hits far harder than firing unfletched.</div>';
     html += '<div class="inputs-line" style="margin:0 0 6px">Shafts owned: <b>'+fmt(state.inventory.shaft||0)+'</b></div>';
     html += renderRecipeGrid('fletching', CRAFTING_SKILLS.fletching.recipes);
     return html;
@@ -14637,8 +14660,12 @@
     var physDmgMult = isWandMain ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
     var mainProfId = isWandMain ? WANDS_SKILL_ID : (isScepterMain ? SCEPTERS_SKILL_ID : state.equippedMainhand);
     var weaponProficiency = state.equippedMainhand ? (1 + getLevel(state.xp[mainProfId]||0)/100) : 1;
-    var effMin = Math.max(1, Math.round(weapon.dmgMin * physDmgMult * weaponProficiency));
-    var effMax = Math.max(effMin+1, Math.round(weapon.dmgMax * physDmgMult * weaponProficiency));
+    // A bow shot's base damage includes the nocked arrow (same-tier bow damage), so reflect it here.
+    var _bowArrowDmg = weaponStyle.hand==='bow' ? arrowBaseDamage(bowArrowToConsume(state)) : null;
+    var _dmgBaseMin = weapon.dmgMin + (_bowArrowDmg ? _bowArrowDmg.dmgMin : 0);
+    var _dmgBaseMax = weapon.dmgMax + (_bowArrowDmg ? _bowArrowDmg.dmgMax : 0);
+    var effMin = Math.max(1, Math.round(_dmgBaseMin * physDmgMult * weaponProficiency));
+    var effMax = Math.max(effMin+1, Math.round(_dmgBaseMax * physDmgMult * weaponProficiency));
     var armor = getTotalArmorDefense(state) * heraldFortressArmorMult(state);
     var weaponMix = weaponStyle.attackTypes || {blunt:1};
     var armorMix = getPlayerArmorTypeMix(state);
@@ -14653,10 +14680,9 @@
     html += '<div class="stats-group"><h4>'+svgIcon('sword','currentColor')+' Offense</h4>';
     html += '<div class="stat-row"><span class="stat-label">Attack Damage</span><span class="stat-value">'+effMin+'-'+effMax+'</span></div>';
     if(weaponStyle.hand==='bow'){
-      var _bowTierIdx = Math.max(0, (state.equippedMainhandTier||1)-1);
-      var _arrows = 0; for(var _ai=Math.min(ARROW_MAX_INDEX,_bowTierIdx); _ai>=0; _ai--) _arrows += state.inventory['fletching_arrow_t'+_ai]||0;
+      var _arrows = bowArrowsAvailable(state);
       var _keepPct = Math.round(quiverAmmoPreserve(state)*100);
-      html += '<div class="stat-row"><span class="stat-label">Arrows</span><span class="stat-value">'+(_arrows>0 ? fmt(_arrows)+(_keepPct?' <span style="color:var(--gold)">('+_keepPct+'% keep)</span>':'') : '<span style="color:var(--hp-bad)">none — unfletched &times;'+UNFLETCHED_DMG_MULT+'</span>')+'</span></div>';
+      html += '<div class="stat-row"><span class="stat-label">Arrows</span><span class="stat-value" id="statArrowsVal">'+(_arrows>0 ? fmt(_arrows)+(_keepPct?' <span style="color:var(--gold)">('+_keepPct+'% keep)</span>':'') : '<span style="color:var(--hp-bad)">none — unfletched &times;'+UNFLETCHED_DMG_MULT+'</span>')+'</span></div>';
     }
     var effAtkTime = Math.round(weaponStyle.attackSpeed * classAttackSpeedMult(state) * 100) / 100;
     html += '<div class="stat-row"><span class="stat-label">Attack Time</span><span class="stat-value">'+effAtkTime+'s'+(effAtkTime<weaponStyle.attackSpeed?' <span style="color:var(--gold)">(class)</span>':'')+'</span></div>';
@@ -16523,6 +16549,11 @@
         var offAtkPct = clamp((act.offhandTickAccum||0)/offAtkIntervalMs*100,0,100);
         html += '<div class="hp-track" style="height:8px;margin-top:6px"><div class="hp-fill" id="arenaOffhandAtkFill" style="width:'+offAtkPct+'%;background:#b0757a;transition:none"></div></div>';
         html += '<div class="hp-label"><span>'+svgIcon('claw','#b0757a')+' Off-hand</span><span>'+(Math.round(offAtkIntervalMs/100)/10)+'s</span></div>';
+      }
+      if(weaponStyle.hand === 'bow'){
+        // Live ammo counter -- updated in place each tick as shots spend arrows (no refresh needed).
+        var _arenaArrows = bowArrowsAvailable(state);
+        html += '<div class="hp-label" style="margin-top:6px"><span>'+svgIcon('arrow', _arenaArrows>0?'#a8895c':'var(--hp-bad)')+' Arrows</span><span id="arenaPlayerArrows"'+(_arenaArrows>0?'':' style="color:var(--hp-bad)"')+'>'+(_arenaArrows>0 ? fmt(_arenaArrows) : 'none &mdash; &times;'+UNFLETCHED_DMG_MULT)+'</span></div>';
       }
     }
     html += '<div class="hp-track" style="margin-top:6px"><div class="hp-fill" id="arenaPlayerFill" style="width:'+pPct+'%;background:var(--hp-bad)"></div></div>';
@@ -23629,6 +23660,20 @@
       if(pl) pl.textContent = fmt(state.playerHp) + ' / ' + maxHpVal;
       var shp = document.getElementById('statPlayerHpVal'); // Health row in the combat stats panel
       if(shp) shp.textContent = fmt(state.playerHp) + ' / ' + fmt(maxHpVal);
+      // Live bow-ammo counters (arena card + combat stats panel), updated only when the count changes.
+      var _arN = bowArrowsAvailable(state);
+      var par = document.getElementById('arenaPlayerArrows');
+      if(par && par._arrowN !== _arN){
+        par._arrowN = _arN;
+        par.innerHTML = _arN>0 ? fmt(_arN) : ('none &mdash; &times;'+UNFLETCHED_DMG_MULT);
+        par.style.color = _arN>0 ? '' : 'var(--hp-bad)';
+      }
+      var sar = document.getElementById('statArrowsVal');
+      if(sar && sar._arrowN !== _arN){
+        sar._arrowN = _arN;
+        var _keepPct = Math.round(quiverAmmoPreserve(state)*100);
+        sar.innerHTML = _arN>0 ? (fmt(_arN)+(_keepPct?' <span style="color:var(--gold)">('+_keepPct+'% keep)</span>':'')) : ('<span style="color:var(--hp-bad)">none — unfletched &times;'+UNFLETCHED_DMG_MULT+'</span>');
+      }
       var pcl = document.getElementById('potionChargeLabel');
       if(pcl) pcl.textContent = (state.potionCharges||0);
       var paf = document.getElementById('arenaPlayerAtkFill');
@@ -25054,6 +25099,7 @@
       wardingReflectBonus:wardingReflectBonus, WARDING_SKILL_ID:WARDING_SKILL_ID, WARDING_BONUS_MIN:WARDING_BONUS_MIN, WARDING_BONUS_MAX:WARDING_BONUS_MAX, OFFHAND_STYLE_IDS:OFFHAND_STYLE_IDS,
       GLYPH_ITEMS:GLYPH_ITEMS, glyphIdFor:glyphIdFor, glyphDropMax:glyphDropMax, GLYPH_DROP_CHANCE:GLYPH_DROP_CHANCE, ELEMENTAL_ELEMENT_OVERRIDES:ELEMENTAL_ELEMENT_OVERRIDES, getMonsterLootChance:getMonsterLootChance, getMonsterLootLabel:getMonsterLootLabel, MONSTER_CATEGORIES:MONSTER_CATEGORIES, applyMonsterCategoryLoot:applyMonsterCategoryLoot,
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
+      bowArrowToConsume:bowArrowToConsume, bowArrowsAvailable:bowArrowsAvailable, arrowBaseDamage:arrowBaseDamage, quiverAmmoPreserve:quiverAmmoPreserve, ARROW_MAX_INDEX:ARROW_MAX_INDEX, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, SET_TIER_INDEX:SET_TIER_INDEX, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, SET_NAMES:SET_NAMES, setName:setName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, combatPlayerBuffs:combatPlayerBuffs, combatEnemyDebuffs:combatEnemyDebuffs, renderFxBars:renderFxBars, captureCombatLoadout:captureCombatLoadout, applyCombatLoadout:applyCombatLoadout, saveLoadoutPreset:saveLoadoutPreset, equipLoadoutPreset:equipLoadoutPreset, clearLoadoutPreset:clearLoadoutPreset, renameLoadoutPreset:renameLoadoutPreset, ensureLoadouts:ensureLoadouts, loadoutSummary:loadoutSummary, LOADOUT_SLOT_COUNT:LOADOUT_SLOT_COUNT, combatLocksGear:combatLocksGear, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, knightUnstoppableMult:knightUnstoppableMult, thunderStaticPerHit:thunderStaticPerHit, thunderStaticThreshold:thunderStaticThreshold, thunderDischargeMult:thunderDischargeMult, deadeyeAccuracyBonus:deadeyeAccuracyBonus, duelistFlourishStabs:duelistFlourishStabs, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, heraldRipostePct:heraldRipostePct, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, undyingRageIncomingMult:undyingRageIncomingMult, berserkerFrenziedBlowsMult:berserkerFrenziedBlowsMult, templarLayOnHandsPct:templarLayOnHandsPct, templarBlessingOfHasteMult:templarBlessingOfHasteMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, spellbladeResonantCrit:spellbladeResonantCrit, voidVulnPerStack:voidVulnPerStack, voidMarkPerHit:voidMarkPerHit, quickdrawVenomPct:quickdrawVenomPct, quickdrawTwinFangChance:quickdrawTwinFangChance, treasureProspectorPer:treasureProspectorPer, setTreasureMult:setTreasureMult, EXEC_SET_EXECUTE_FRAC:EXEC_SET_EXECUTE_FRAC, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
