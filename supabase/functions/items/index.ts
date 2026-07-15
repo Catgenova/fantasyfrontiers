@@ -5,8 +5,9 @@
 //   { action:"sync", inventory:{…} } -> { ok, items: { item_key: qty } }   reconcile the full inventory
 //
 // EARNING is client-reported (the server can't simulate gathering/crafting) but RATE-LIMITED per item
-// type: item_sync grandfathers the existing inventory once, then caps how fast any one item's count can
-// grow and clamps the stored qty to what the client reports (a spoofed-high count can't raise it).
+// type: item_sync grandfathers the existing inventory once (bounded by ACCOUNT AGE, so a fresh/tampered
+// account can't seed a spoofed stock), then caps how fast any one item's count can grow and clamps the
+// stored qty to what the client reports (a spoofed-high count can't raise it).
 // SPENDING (Stage 3: market list / bank deposit) will be hard-enforced against this ledger via
 // item_debit. Mirrors the wallet's trust model exactly.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -71,8 +72,12 @@ Deno.serve(async (req) => {
       clean[k] = Math.min(1_000_000_000_000, Math.floor(q));
       if (++n >= MAX_KEYS) break;
     }
+    // Pass the account's created_at so item_sync can bound the one-time grandfather by account age --
+    // a fresh/tampered account can't seed the ledger with a spoofed inventory (only an established
+    // account has the age headroom to grandfather a large legit stock). See the item_sync migration.
     const { data, error } = await admin.rpc("item_sync", {
       p_user: userId, p_items: clean, p_per_hour: ITEM_PER_HOUR, p_burst: ITEM_BURST,
+      p_created_at: user.created_at,
     });
     if (error) return json({ ok: false, error: "Sync failed." }, 500);
     const out: Record<string, number> = {};
