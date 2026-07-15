@@ -16369,7 +16369,9 @@
     html += '<div class="hp-track"><div class="hp-fill" id="arenaMonsterFill" style="width:'+hpPct+'%;background:var(--hp-bad)"></div></div>';
     html += '<div class="hp-label"><span>Monster HP</span><span id="arenaMonsterLabel">'+fmt(act.monsterHp)+' / '+m.hp+'</span></div>';
     html += '<div class="hp-track" style="height:8px;margin-top:6px"><div class="hp-fill" id="arenaMonsterAtkFill" style="width:'+monsterAtkPct+'%;background:'+(_stunned?'#e8d84a':'var(--gold)')+';transition:none"></div></div>';
-    html += '<div class="hp-label"><span id="arenaMonsterAtkLabel">'+(_stunned ? svgIcon('lightning','#e8d84a')+' Stunned!' : 'Monster Attack')+'</span><span>'+m.attackSpeed+'s</span></div>';
+    var _mAtkSpd = m.attackSpeed*(1+getFamiliarEnemySlowPct()+enemyChillSlowMult()); // actual cadence incl. Slow/Chill
+    var _mSlowed = _mAtkSpd > m.attackSpeed + 1e-9;
+    html += '<div class="hp-label"><span id="arenaMonsterAtkLabel">'+(_stunned ? svgIcon('lightning','#e8d84a')+' Stunned!' : 'Monster Attack')+'</span><span id="arenaMonsterAtkSpeed"'+(_mSlowed?' style="color:#7fd9d4"':'')+'>'+(+_mAtkSpd.toFixed(1))+'s'+(_mSlowed?' &#9660;':'')+'</span></div>';
     html += renderFxBars(combatEnemyDebuffs(), 'Enemy Effects');
     html += '</div>'; // arena-enemy
     html += '</div>'; // arena-cols
@@ -23292,6 +23294,10 @@
         maf.style.background = _stun ? '#e8d84a' : 'var(--gold)';
         var mal = document.getElementById('arenaMonsterAtkLabel');
         if(mal){ var _want = _stun ? '⚡ Stunned!' : 'Monster Attack'; if(mal.textContent.replace(/\s+/g,' ').trim() !== _want) mal.innerHTML = _stun ? (svgIcon('lightning','#e8d84a')+' Stunned!') : 'Monster Attack'; }
+        // Attack-speed readout reflects the live slowed cadence (Slow + Chill), tinted when reduced.
+        var mas = document.getElementById('arenaMonsterAtkSpeed');
+        if(mas){ var _spd = m.attackSpeed*(1+getFamiliarEnemySlowPct()+enemyChillSlowMult()); var _slw = _spd > m.attackSpeed + 1e-9;
+          var _txt = (+_spd.toFixed(1))+'s'+(_slw?' ▼':''); if(mas.textContent.replace(/\s+/g,' ').trim() !== _txt) mas.innerHTML = _txt; mas.style.color = _slw ? '#7fd9d4' : ''; }
       }
       var pf = document.getElementById('arenaPlayerFill');
       var pl = document.getElementById('arenaPlayerLabel');
