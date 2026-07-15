@@ -458,6 +458,25 @@
       ok(FF.CRAFT_SKILL_IDS.indexOf(id) !== -1, id + ' remains a crafting skill functionally');
     });
   });
+
+  suite('gathering & crafting skill tabs render alphabetically by label', function(){
+    function labelOf(id){ return (FF.CRAFTING_SKILLS[id] || FF.GATHERING_SKILLS[id] || {}).label || id; }
+    function isAlpha(ids){
+      var labels = ids.map(labelOf);
+      for(var i=1;i<labels.length;i++){ if(labels[i-1].localeCompare(labels[i]) > 0) return false; }
+      return true;
+    }
+    // Each gathering/crafting sub-tab group is displayed in alphabetical label order.
+    [FF.GATHERING_TAB_SKILL_IDS, FF.OUTFITTING_SKILL_IDS, FF.REFINING_TAB_SKILL_IDS, FF.COOKING_SKILL_IDS, FF.BUILDING_SKILL_IDS, FF.CRAFTING_TAB_SKILL_IDS].forEach(function(group){
+      ok(isAlpha(FF.skillTabsByLabel(group)), 'sorted group is alphabetical by label: ' + FF.skillTabsByLabel(group).map(labelOf).join(', '));
+    });
+    // Concrete order check: Outfitting tabs come out A->Z by their display names.
+    eq(FF.skillTabsByLabel(FF.OUTFITTING_SKILL_IDS).map(labelOf).join(','),
+       'Arcanism,Armorsmithing,Bowyer,Fletching,Jewelrycrafting,Leatherworking,Runesmithing,Shieldsmithing,Tailoring,Weaponsmithing',
+       'outfitting tabs are alphabetical');
+    // The sort returns a COPY -- the source array keeps its functional order untouched.
+    eq(FF.OUTFITTING_SKILL_IDS[0], 'weaponsmithing', 'source OUTFITTING_SKILL_IDS order is not mutated');
+  });
   suite('tierStepper disables at the ends and when locked', function(){
     var lowest = FF.tierStepper('ring', 'r', FF.tierRange(4), 0, 'x', false);
     // The − button (dir=-1) sits before the + button; at the lowest tier only − is disabled.

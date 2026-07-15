@@ -13150,11 +13150,20 @@
     miracle: { label:'Miracle', icon:svgIcon('starburst','var(--rarity-fantastic)'), color:'var(--rarity-fantastic)' }
   };
 
+  // Gathering & crafting skill sub-tabs are shown alphabetically by their display label. Sorts a COPY so
+  // the source arrays (used elsewhere for membership checks / iteration) keep their order.
+  function skillTabsByLabel(ids){
+    return ids.slice().sort(function(a, b){
+      var la = (CRAFTING_SKILLS[a] || GATHERING_SKILLS[a] || {}).label || a;
+      var lb = (CRAFTING_SKILLS[b] || GATHERING_SKILLS[b] || {}).label || b;
+      return la.localeCompare(lb);
+    });
+  }
   function renderSubTabs(){
     var el = document.getElementById('subTabs');
     if(currentCategory==='gathering'){
       el.style.display = 'flex';
-      el.innerHTML = GATHERING_TAB_SKILL_IDS.map(function(sk){
+      el.innerHTML = skillTabsByLabel(GATHERING_TAB_SKILL_IDS).map(function(sk){
         var s = GATHERING_SKILLS[sk];
         var active = sk===currentSub ? ' active' : '';
         return '<button class="sub-btn'+active+'" data-sub="'+sk+'" style="--sub-color:'+s.color+'">'+s.icon+' '+s.label+'</button>';
@@ -13166,7 +13175,7 @@
                    : currentCategory==='refining' ? REFINING_TAB_SKILL_IDS
                    : currentCategory==='cooking' ? COOKING_SKILL_IDS
                    : CRAFTING_TAB_SKILL_IDS;
-      el.innerHTML = craftIds.map(function(sk){
+      el.innerHTML = skillTabsByLabel(craftIds).map(function(sk){
         var s = CRAFTING_SKILLS[sk] || GATHERING_SKILLS[sk]; // Butchering (in Refining) lives in GATHERING_SKILLS
         var active = sk===currentSub ? ' active' : '';
         return '<button class="sub-btn'+active+'" data-sub="'+sk+'" style="--sub-color:'+s.color+'">'+s.icon+' '+s.label+'</button>';
@@ -25070,7 +25079,7 @@
       startGather:startGather, startCraft:startCraft, startPray:startPray,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
-      GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS,
+      GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, skillTabsByLabel:skillTabsByLabel,
       renderGlobalActionBar:renderGlobalActionBar, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
