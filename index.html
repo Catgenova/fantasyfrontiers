@@ -13368,7 +13368,9 @@
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: <span id="craftOwned-'+recipe.id+'">'+fmt(state.inventory[recipe.id]||0)+'</span></div></div></div>';
-      html += '<div class="item-stats"><span>+'+Math.round(recipe.xp*1.5)+' XP</span><span>'+recipe.time+'s</span><span>'+recipe.sell+'g each</span></div>';
+      // Arrows add flat base damage (a same-tier bow) to a bow shot -- surface it right on the card.
+      var _arrowDmg = arrowBaseDamage(recipe.id);
+      html += '<div class="item-stats"><span>+'+Math.round(recipe.xp*1.5)+' XP</span><span>'+recipe.time+'s</span><span>'+recipe.sell+'g each</span>'+(_arrowDmg ? '<span style="color:var(--gold)">'+_arrowDmg.dmgMin+'-'+_arrowDmg.dmgMax+' dmg</span>' : '')+'</div>';
       html += '<div class="chance-line">Output: <b>'+(recipe.outputQty||1)+'x '+recipe.name+'</b> &nbsp;|&nbsp; Success Chance: <b>'+successPctCard+'%</b></div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(recipe.inputs, 'inp-'+recipe.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
