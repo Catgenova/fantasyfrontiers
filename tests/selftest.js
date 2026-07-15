@@ -540,7 +540,22 @@
       ok(FF.estateJobActive('personal'), 'a personal clear/build/terraform job -> running an action (FAB hides)');
       S.estate.job = null;
       // Guild estate: busy only when a job in the shared array is owned by THIS player.
-      ok(!FF.estateJobActive('guild'), 'no guild job for me -> not running a guild action');
+      var ge = FF.guildEstate, gs = FF.guildState;
+      var gsnap = { gjobs:ge.jobs, gstatus:ge.status, gid:ge.guildId, ggrid:ge.grid, guild:gs.guild };
+      try {
+        ge.jobs = [];
+        ok(!FF.estateJobActive('guild'), 'no guild job for me -> not running a guild action');
+        ge.jobs = [{ owner:'_local', kind:'clear', x:0, y:0 }]; // signed-out player's id is '_local'
+        ok(FF.estateJobActive('guild'), 'a guild job I own -> running a guild action');
+        ge.jobs = [{ owner:'someone-else', kind:'clear', x:1, y:1 }];
+        ok(!FF.estateJobActive('guild'), "another member's guild job doesn't count as mine");
+        // guildEstateReachable needs an in-guild player with a loaded shared estate.
+        gs.guild = null; ok(!FF.guildEstateReachable(), 'not reachable when not in a guild');
+        gs.guild = { id:'g1' }; ge.status='ready'; ge.guildId='g1'; ge.grid=[[{}]];
+        ok(FF.guildEstateReachable(), 'reachable once in a guild with a ready, loaded estate');
+      } finally {
+        ge.jobs=gsnap.gjobs; ge.status=gsnap.gstatus; ge.guildId=gsnap.gid; ge.grid=gsnap.ggrid; gs.guild=gsnap.guild;
+      }
     } finally {
       S.estate.job = snap.job;
     }

@@ -19758,6 +19758,9 @@
     var em = document.getElementById('ffEstateFab'), gm = document.getElementById('ffGuildEstateFab');
     if(!em || !gm) return;
     var enabled = !(state.settings && state.settings.showEstateFabs === false);
+    // Load the guild + its shared estate in the background (idempotent, guarded) so the Guild FAB can
+    // appear anywhere -- otherwise the estate is only ever loaded on the Guild / Peons tabs.
+    if(enabled){ guildEnsureLoaded(); if(guildState.guild) guildEstateEnsure(); }
     var onEstate = currentCategory === 'estate';
     var onGuildEstate = currentCategory === 'guild' && guildSub === 'estate';
     var showMy = enabled && !onEstate && !!(state.estate && state.estate.grid) && !estateJobActive('personal');
