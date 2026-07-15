@@ -528,6 +528,33 @@
     ok(ttd && ttd.inputs, 'peon tool act resolves at top tier (tierIndex+1 offset in-bounds)');
   });
 
+  // ---- Idle-Peon count that drives the Estate / Guild-Estate quick-jump FABs ------------
+  suite('idlePeonSlots counts unworked cottage sources', function(){
+    var S = FF._state;
+    var snap = { grid:S.estate.grid, peons:S.peons, gp:S.guildPeons };
+    try {
+      var g = S.estate.grid;
+      // Two adjacent real cells become a cottage+workshop peon source.
+      g[0][0].cottageId='cottage_t0'; g[0][0].workshopId=null;
+      g[0][1].workshopId='workshop_forestry_t0'; g[0][1].cottageId=null;
+      S.peons=[];
+      eq(FF.estatePeonSources(g).length, 1, 'one cottage-next-to-workshop source exists');
+      eq(FF.idlePeonSlots('personal'), 1, 'an unassigned source counts as one idle Peon slot');
+      // Assigning a Peon to that source drops the idle count to zero.
+      S.peons=[{x:0,y:0,skillId:'forestry',kind:'gather',itemId:'x',progress:0}];
+      eq(FF.idlePeonSlots('personal'), 0, 'a worked source is not idle');
+      // Idle count never exceeds the free task slots left in the scope: with every task slot filled
+      // (by unrelated tasks), an unworked source still reports 0 because none can be assigned.
+      var full=[]; for(var i=0;i<FF.PEON_MAX_SLOTS;i++) full.push({x:99,y:i,skillId:'forestry',kind:'gather',itemId:'x',progress:0});
+      S.peons=full;
+      eq(FF.idlePeonSlots('personal'), 0, 'no idle slots reported once all peon task slots are used');
+      // No guild grid loaded -> guild scope reports zero (FAB stays hidden).
+      eq(FF.idlePeonSlots('guild'), 0, 'guild scope is 0 without a loaded guild estate');
+    } finally {
+      S.estate.grid=snap.grid; S.peons=snap.peons; S.guildPeons=snap.gp;
+    }
+  });
+
   // ---- Farming Fields (estate-built farming plots) -------------------------------------
   suite('farming fields', function(){
     var F = FF.FARM_FIELD_TIERS;
