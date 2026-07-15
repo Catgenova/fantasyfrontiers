@@ -738,6 +738,21 @@
     S.inventory.seed_t5 = savedSeed; S.inventory.farming_t5 = savedCrop;
   });
 
+  // ---- Cancel a growing crop (frees the plot; the seed is forfeit) -----------------------------
+  suite('farming: cancel a growing crop', function(){
+    var pm = FF.farmPlotMap('personal');
+    var savedCrop = FF._state.inventory.farming_t2 || 0, savedSeed = FF._state.inventory.seed_t2 || 0;
+    pm['7,7'] = { cropType:'fiber', tierIndex:2, plantedAt:Date.now(), readyAt:Date.now()+999999 };
+    ok(pm['7,7'] && pm['7,7'].cropType, 'crop is growing before cancel');
+    ok(FF.cancelCropAt('personal', '7,7') === true, 'cancel reports success');
+    ok(!pm['7,7'], 'the plot is empty after cancelling');
+    // No refund: cancelling does not return the crop or the seed to inventory.
+    eq(FF._state.inventory.farming_t2 || 0, savedCrop, 'no crop is granted by cancelling');
+    eq(FF._state.inventory.seed_t2 || 0, savedSeed, 'no seed is refunded by cancelling');
+    // Cancelling an empty plot is a safe no-op.
+    ok(FF.cancelCropAt('personal', '8,8') === false, 'cancelling an empty plot does nothing');
+  });
+
   // ---- Cross-skill physiques: 20 new physiques trained by one skill, feeding another --------------
   suite('cross-skill physiques', function(){
     var NEW = ['anglersEye','prospectorsNose','huntsman','sylvanBond','quartermaster','masterwork','diligence','weaponsmithsEdge','armorersTemper','greenThumb','composter','apothecarysHand','demolitionist','runicAttunement','wardersFocus','zealotry','oblation','fieldRations','menagerist','merchantsSavvy'];

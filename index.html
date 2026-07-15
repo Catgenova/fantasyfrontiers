@@ -7279,6 +7279,21 @@
     needsRender = true;
     return cropData;
   }
+  // Clear a growing crop from a plot without harvesting (the planted seed is forfeit). Frees the field to
+  // replant something else. Two-step confirm in the UI guards against accidental loss.
+  var farmCancelArmed = null; // "scope|key" of the plot whose Cancel is armed for a confirm click, or null
+  function cancelCropAt(scope, key){
+    var map = farmPlotMap(scope);
+    var plot = map[key];
+    if(isPlotEmpty(plot)){ farmCancelArmed = null; return false; }
+    var cd = getCropDataForPlot(plot);
+    delete map[key];
+    farmCancelArmed = null;
+    addLog('You cleared the growing ' + ((cd && cd.name) || 'crop') + ' from the field — the seed is lost.', 'danger');
+    saveGame();
+    needsRender = true;
+    return true;
+  }
 
   // ---- Bulk field actions (Harvest All / Plant All -- desktop buttons + mobile FABs) ----
   // Every field plot across your estate and the guild estate: {scope, key, tier, plot}.
@@ -19498,7 +19513,11 @@
               var pct = clamp((cd.durationMs-remaining)/cd.durationMs*100,0,100);
               out += '<div class="item-top" style="margin-top:6px"><div class="item-icon">'+cd.icon+'</div><div><div class="item-name">'+cd.name+'</div><div class="item-meta" id="plot-timer-'+domId+'">Ready in '+formatDuration(remaining)+'</div>'+fertBadge+'</div></div>';
               out += '<div class="progress-track"><div class="progress-fill" id="plot-fill-'+domId+'" style="width:'+pct+'%"></div></div>';
-              out += '<button class="action-btn" disabled>Growing&hellip;</button>'+fertBtn;
+              // Cancel the growing crop (two-step to avoid accidentally forfeiting the seed).
+              var cancelBtn = (farmCancelArmed === (scope+'|'+key))
+                ? '<button class="mini-btn" data-action="cancelCropConfirm" data-scope="'+scope+'" data-key="'+key+'" style="color:var(--hp-bad);border-color:var(--hp-bad)">Confirm clear?</button>'
+                : '<button class="mini-btn" data-action="cancelCropArm" data-scope="'+scope+'" data-key="'+key+'" title="Clear this growing crop — the seed is lost">Cancel</button>';
+              out += '<button class="action-btn" disabled>Growing&hellip;</button>'+fertBtn+cancelBtn;
             }
           }
         }
@@ -24187,6 +24206,8 @@
     plantSeed: function(btn, e){ plantSeed(btn.getAttribute('data-scope'), btn.getAttribute('data-key'), btn.getAttribute('data-seed')); },
     harvestPlot: function(btn, e){ harvestPlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); },
     fertilizePlot: function(btn, e){ fertilizePlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); render(); },
+    cancelCropArm: function(btn, e){ farmCancelArmed = btn.getAttribute('data-scope') + '|' + btn.getAttribute('data-key'); },
+    cancelCropConfirm: function(btn, e){ cancelCropAt(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); render(); },
     harvestAllFarm: function(btn, e){ farmingHarvestAll(); render(); },
     plantAllFarm: function(btn, e){ farmingPlantAll(false); render(); },
     fertilizeAllFarm: function(btn, e){ farmingFertilizeAll(false); render(); },
@@ -25188,7 +25209,7 @@
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       guildLogPush:guildLogPush, renderGuildActivityLog:renderGuildActivityLog, GUILD_LOG_MAX:GUILD_LOG_MAX, guildIsOfficerPlus:guildIsOfficerPlus,
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
-      fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE,
+      fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, serverBuffGrant:serverBuffGrant, lastBuffGrantReason:lastBuffGrantReason, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
