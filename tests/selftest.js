@@ -1052,6 +1052,39 @@
     eq(c('look {{i:AbC123deF}}'), 'look {{i:AbC123deF}}', 'an item-link token is not a website link');
   });
 
+  // ---- Chat unread counter ---------------------------------------------------------------------
+  suite('chat: unread count + "Chat (N)" suffix', function(){
+    var s = FF._state;
+    s.settings = s.settings || {};
+    s.settings.chatFlash = true;
+    FF.clearChatUnread();
+    eq(FF.getChatUnreadCount(), 0, 'starts at 0');
+    eq(FF.chatUnreadSuffix(), '', 'no suffix when nothing unread');
+    // A message arriving while chat isn't focused/on-screen accrues an unread.
+    FF.noteChatActivity(); FF.noteChatActivity(); FF.noteChatActivity(); FF.noteChatActivity();
+    eq(FF.getChatUnreadCount(), 4, 'four notes -> count 4');
+    eq(FF.chatUnreadSuffix(), ' (4)', 'suffix reads " (4)"');
+    // Mobile FAB badge reflects the same count and flashes.
+    var badge = document.getElementById('ffChatFabBadge');
+    ok(badge && badge.textContent === '4', 'FAB badge shows 4');
+    ok(document.getElementById('ffChatFab').classList.contains('ff-chatfab-alert'), 'FAB flashes while unread');
+    // Reading chat clears everything.
+    FF.clearChatUnread();
+    eq(FF.getChatUnreadCount(), 0, 'clear resets to 0');
+    eq(FF.chatUnreadSuffix(), '', 'suffix gone after clear');
+    ok(badge.textContent === '', 'FAB badge cleared');
+    ok(!document.getElementById('ffChatFab').classList.contains('ff-chatfab-alert'), 'FAB no longer flashes');
+    // Count caps its label at 99+.
+    for(var i=0;i<120;i++) FF.noteChatActivity();
+    eq(FF.chatUnreadSuffix(), ' (99+)', 'label caps at 99+');
+    FF.clearChatUnread();
+    // Respecting the setting: with chatFlash off, no unread accrues.
+    s.settings.chatFlash = false;
+    FF.noteChatActivity();
+    eq(FF.getChatUnreadCount(), 0, 'no unread when chatFlash disabled');
+    s.settings.chatFlash = true;
+  });
+
   // ---- Guild membership cap --------------------------------------------------------------------
   suite('guild: 10-member cap', function(){
     eq(FF.GUILD_MAX_MEMBERS, 10, 'cap is 10');

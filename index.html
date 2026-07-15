@@ -276,9 +276,10 @@
     .ff-dock-btn .ico{display:block;line-height:0;} .ff-dock-btn .ico svg{width:21px;height:21px;} .ff-dock-btn .lbl{font-family:var(--font-display);font-size:10px;letter-spacing:.5px;margin-top:2px;}
     .ff-dock-btn.on{background:rgba(111,149,56,.14);color:#a9c47e;border-top:3px solid var(--gold-bright);}
     .ff-chatfab{display:flex;align-items:center;justify-content:center;position:absolute;right:14px;bottom:66px;z-index:22;width:50px;height:50px;border-radius:50%;background:linear-gradient(180deg,#5c7f34,#3c5a24);border:2px solid #24380f;color:#f2f8e6;font-size:20px;cursor:pointer;box-shadow:0 5px 14px rgba(0,0,0,.45);}
-    /* Unread indicator: gold ring + a small dot badge, pulsing to draw the eye. */
+    /* Unread indicator: gold ring pulsing to draw the eye, plus a numeric unread-count badge. */
     .ff-chatfab-alert{border-color:var(--gold-bright);animation:ffFabPulse 1.4s ease-in-out infinite;}
-    .ff-chatfab-alert::after{content:'';position:absolute;top:-2px;right:-2px;width:14px;height:14px;border-radius:50%;background:var(--gold-bright);border:2px solid #24380f;}
+    .ff-chatfab-badge{position:absolute;top:-5px;right:-5px;min-width:19px;height:19px;padding:0 4px;box-sizing:border-box;border-radius:10px;background:var(--gold-bright);border:2px solid #24380f;color:#24380f;font-size:11px;font-weight:800;line-height:1;display:none;align-items:center;justify-content:center;font-family:var(--font-mono,monospace);}
+    .ff-chatfab-badge:not(:empty){display:flex;}
     /* On mobile the FABs re-anchor to stack directly above the chat bubble (which is absolute at
        bottom:66px). Colours/size/visibility come from the base rules above. */
     .ff-farmfab{position:absolute;right:14px;z-index:22;width:50px;height:50px;}
@@ -1615,7 +1616,7 @@
     </div>
   </div>
   <nav class="ff-bottomdock" id="ffBottomDock"></nav>
-  <button class="ff-chatfab" id="ffChatFab" data-action="toggleChatDrawer"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-chat"></use></svg></button>
+  <button class="ff-chatfab" id="ffChatFab" data-action="toggleChatDrawer"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-chat"></use></svg><span class="ff-chatfab-badge" id="ffChatFabBadge"></span></button>
   <button class="ff-farmfab ff-farmfab-harvest" id="ffHarvestFab" data-action="harvestAllFarm" title="Harvest all ready crops"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-herb"></use></svg><span class="ff-farmfab-badge" id="ffHarvestFabBadge"></span></button>
   <button class="ff-farmfab ff-farmfab-plant" id="ffPlantFab" data-action="plantAllFarm" title="Plant all empty fields"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-seed"></use></svg><span class="ff-farmfab-badge" id="ffPlantFabBadge"></span></button>
   <button class="ff-farmfab ff-farmfab-fertilize" id="ffFertilizeFab" data-action="fertilizeAllFarm" title="Fertilize all growing crops"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-spice"></use></svg><span class="ff-farmfab-badge" id="ffFertilizeFabBadge"></span></button>
@@ -13003,7 +13004,7 @@
       // login inputs' ids and break the real login gate. Show a placeholder instead.
       html = '<div class="ff-dock-title">Chat</div><div class="empty-note">Sign in to chat with the realm.</div>';
     } else {
-      var head = '<div class="ff-dock-title ff-chat-head"><span>Chat</span>'
+      var head = '<div class="ff-dock-title ff-chat-head"><span id="chatDockTitle">Chat'+chatUnreadSuffix()+'</span>'
         + '<button class="ff-chat-expand-btn" data-action="toggleChatExpand" title="Expand chat to full screen" aria-label="Expand chat">'+CHAT_EXPAND_ICON+'</button></div>';
       // While full-screen chat is open, the overlay owns the live #chatInput/#chatMessages; keep this
       // rail copy inert (no duplicate ids) and just point back to the expanded view.
@@ -19637,17 +19638,31 @@
   };
   var CHAT_ENABLED = !!(CHAT_CONFIG.supabaseUrl && CHAT_CONFIG.supabaseAnonKey);
   var chatMessages = [];
-  var chatHasUnread = false;   // set when a message arrives while chat isn't on-screen -> flashes the mobile FAB
+  var chatUnreadCount = 0;   // count of messages that arrived while chat wasn't on-screen -> flashes the mobile FAB + shows a count
   // Chat is on-screen when the full-screen overlay is up, the Chat category page is open, or (on desktop)
   // the always-visible dock is showing; on mobile it's hidden behind the FAB unless the drawer is open.
   function chatIsOnScreen(){
     if(chatExpanded) return true;
     if(currentCategory==='chat') return true;
-    return isMobileView() ? chatDrawerOpen : true;
+    if(isMobileView()) return chatDrawerOpen;
+    // Desktop: the rail dock is always visible, but only count as "read" while the player is
+    // actually engaged with it (chat input focused). Otherwise new messages accrue an unread
+    // count shown as "Chat (N)" on the dock title -- cleared when they click into chat.
+    var ci = document.getElementById('chatInput');
+    return !!(ci && document.activeElement === ci);
   }
+  function chatUnreadLabel(){ return chatUnreadCount > 99 ? '99+' : String(chatUnreadCount); }
+  // Suffix appended to the "Chat" title, e.g. "Chat (4)", so unread count is visible on the chat card/dock.
+  function chatUnreadSuffix(){ return chatUnreadCount > 0 ? ' (' + chatUnreadLabel() + ')' : ''; }
+  // Refresh the unread surfaces in place (no panel rebuild -> the live #chatInput keeps focus/value):
+  // the mobile FAB flash + count badge, and the desktop dock's "Chat (N)" title.
   function updateChatFab(){
     var fab = document.getElementById('ffChatFab');
-    if(fab) fab.classList.toggle('ff-chatfab-alert', chatHasUnread);
+    if(fab) fab.classList.toggle('ff-chatfab-alert', chatUnreadCount > 0);
+    var badge = document.getElementById('ffChatFabBadge');
+    if(badge) badge.textContent = chatUnreadCount > 0 ? chatUnreadLabel() : '';
+    var title = document.getElementById('chatDockTitle');
+    if(title) title.textContent = 'Chat' + chatUnreadSuffix();
   }
   // Show/hide the Harvest All / Plant All FABs (mobile) based on what's actionable right now, with a
   // count badge. CSS keeps them hidden on desktop regardless of the .on class.
@@ -19671,12 +19686,12 @@
   function noteChatActivity(){
     if(!(state.settings && state.settings.chatFlash)) return;
     if(chatIsOnScreen()) return;
-    chatHasUnread = true;
+    chatUnreadCount++;
     updateChatFab();
   }
   function clearChatUnread(){
-    if(!chatHasUnread) return;
-    chatHasUnread = false;
+    if(!chatUnreadCount) return;
+    chatUnreadCount = 0;
     updateChatFab();
   }
   var chatClient = null;
@@ -20377,6 +20392,7 @@
     if(!name){ addLog('Sign in to chat.', 'danger'); return; }
     var now = Date.now();
     if(now - chatLastSentAt < 1200) return; // client-side rate limit
+    clearChatUnread(); // sending is engagement -> mark chat read
     input.value = '';
     chatDraft = '';
     if(!CHAT_ENABLED || !chatClient){
@@ -22052,6 +22068,7 @@
     text=censorChat(text);
     var name=chatName(); if(!name) return;
     var now=Date.now(); if(now-guildChatLastSentAt<1200) return;
+    clearChatUnread(); // sending is engagement -> mark chat read
     input.value=''; guildChatDraft=''; guildChatLastSentAt=now;
     chatClient.from('guild_messages').insert({ guild_id:guildState.guild.id, username:name, body:text }).then(function(res){
       if(res && res.error) addLog('Guild message failed to send.','danger');
@@ -24346,6 +24363,11 @@
     needsRender = false;
   });
 
+  // Focusing the chat input means the player is reading chat -> clear the unread count/badge.
+  document.getElementById('app').addEventListener('focusin', function(e){
+    if(e.target && e.target.id === 'chatInput') clearChatUnread();
+  });
+
   document.getElementById('app').addEventListener('keydown', function(e){
     if(e.key !== 'Enter' || !e.target) return;
     if(e.target.id === 'chatInput'){ e.preventDefault(); if(chatChannel==='guild' && guildState.guild) guildChatSend(); else chatSend(); } // route by active channel (chat lives in the rail dock, so currentCategory isn't 'chat')
@@ -24991,6 +25013,7 @@
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
       GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS,
       renderGlobalActionBar:renderGlobalActionBar, describeTask:describeTask, censorChat:censorChat,
+      noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS,
       TOOL_TYPES:TOOL_TYPES, toolBenefitLabel:toolBenefitLabel, BLACKSMITH_TOOL_GROUPS:BLACKSMITH_TOOL_GROUPS, blacksmithToolGroupKey:blacksmithToolGroupKey, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupsOpen:blacksmithGroupsOpen,
