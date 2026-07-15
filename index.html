@@ -656,6 +656,7 @@
   .profile-group-head{font-family:var(--font-display);font-size:13px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;}
   .profile-group-body{display:flex;flex-wrap:wrap;gap:6px;}
   .profile-skill{font-family:var(--font-body);font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-panel);color:var(--text-dim);}
+  .profile-skill-mastery{border-color:var(--gold);color:var(--text);} .profile-skill-mastery b{color:var(--gold);}
   .profile-skill b{color:var(--text);}
   .chance-line{font-family:var(--font-mono);font-size:11px;margin:4px 0;line-height:1.6;color:var(--text-faint);}
   .chance-line b{color:var(--text);}
@@ -16718,9 +16719,10 @@
     ov.innerHTML = html;
   }
   // Current level of any trackable skill -- physiques live in state.physique, everything else in state.xp.
-  function anySkillLevel(id){ return PHYSIQUE_SKILL_MAP[id] ? getLevel((state.physique && state.physique[id]) || 0) : getLevel((state.xp && state.xp[id]) || 0); }
+  // Physiques cap at 100; main skills use skillLevel(), which lets gathering/crafting show past 100.
+  function anySkillLevel(id){ return PHYSIQUE_SKILL_MAP[id] ? getLevel((state.physique && state.physique[id]) || 0) : skillLevel(id, (state.xp && state.xp[id]) || 0); }
   // Progress toward the next level (0-100) for any trackable skill or physique.
-  function anySkillProgress(id){ return levelProgress(PHYSIQUE_SKILL_MAP[id] ? ((state.physique && state.physique[id]) || 0) : ((state.xp && state.xp[id]) || 0)); }
+  function anySkillProgress(id){ return PHYSIQUE_SKILL_MAP[id] ? levelProgress((state.physique && state.physique[id]) || 0) : skillLevelProgress(id, (state.xp && state.xp[id]) || 0); }
   // Resources > Skills tab: same grouped list as Settings, but every skill also gets a live progress bar.
   function renderSkillsTab(){
     var total = 0;
@@ -20354,17 +20356,22 @@
     return out;
   }
   function computeProfileStats(){
-    var skills = {}, total = 0;
+    var skills = {}, mastery = {}, total = 0;
     for(var i=0;i<ALL_MAIN_SKILL_IDS.length;i++){
-      var lv = getLevel(state.xp[ALL_MAIN_SKILL_IDS[i]]||0);
-      skills[ALL_MAIN_SKILL_IDS[i]] = lv; total += lv;
+      var id = ALL_MAIN_SKILL_IDS[i], xp = state.xp[id]||0;
+      var lv = getLevel(xp);                              // capped 1..100: the ranked value (total_level, gate)
+      skills[id] = lv; total += lv;
+      // Over-100 Mastery (gathering/crafting) rides along in a SEPARATE display-only map so the
+      // leaderboard can SHOW the true level without changing total_level / ranking / the dungeon gate.
+      var ext = skillLevel(id, xp);
+      if(ext > MAX_SKILL_LEVEL) mastery[id] = ext;
     }
     // Physiques (body physiques + elemental attunements) are stored under state.physique, not
     // state.xp, so fold them into the same skills map for the leaderboard's Physique rankings and
     // profile display. They also count toward total_level (which the server validates as the sum of
     // every submitted skill level), so physique training raises your ranked Total too.
     PHYSIQUE_SKILLS.forEach(function(p){ var pl = getLevel(state.physique[p.id]||0); skills[p.id] = pl; total += pl; });
-    return { total_level: total, gold: Math.floor(state.gold||0), skills: skills, equipment: computeEquipment(), stats: buildProfileStats() };
+    return { total_level: total, gold: Math.floor(state.gold||0), skills: skills, mastery: mastery, equipment: computeEquipment(), stats: buildProfileStats() };
   }
   // Currently-equipped weapons + armor (NOT tools), captured as display-ready
   // {slot,name,rarity} entries for a player's public leaderboard profile. Names are
@@ -20424,7 +20431,7 @@
       // `estate` is a compact render-only snapshot so others can view it from the leaderboard.
       // It's tens of KB, so it rides along ONLY when it changed since the last accepted send --
       // the server leaves the stored estate untouched when the field is absent from the body.
-      var body = { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, equipment: stats.equipment, stats: stats.stats, mortal: isMortal(), class: activeClassId(state) || null };
+      var body = { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, mastery: stats.mastery, equipment: stats.equipment, stats: stats.stats, mortal: isMortal(), class: activeClassId(state) || null };
       var estJson = null;
       try{ estJson = JSON.stringify(computeEstateSnapshot()); }catch(e2){}
       if(estJson !== null && estJson !== _lastEstateJson) body.estate = JSON.parse(estJson);
@@ -20631,13 +20638,13 @@
     if(!chatClient){ if(!(await authEnsureClient())){ leaderboardStatus='error'; if(currentCategory==='leaderboard') render(); return; } }
     try{
       var res = await chatClient.from('profiles')
-        .select('id,username,total_level,gold,skills,equipment,stats,mortal,class,has_estate,updated_at')
+        .select('id,username,total_level,gold,skills,mastery,equipment,stats,mortal,class,has_estate,updated_at')
         .order('total_level', { ascending:false })
         .limit(LEADERBOARD_LIMIT);
       if(res.error){
-        // The `class`/`has_estate` columns may not be migrated yet -- retry WITHOUT them but keep
-        // stats/mortal, so the board doesn't lose its stat rankings or Mortal styling. When has_estate
-        // is absent the "Visit Estate" button simply stays hidden (graceful pre-deploy degradation).
+        // The `class`/`has_estate`/`mastery` columns may not be migrated yet -- retry WITHOUT them but
+        // keep stats/mortal, so the board doesn't lose its stat rankings or Mortal styling. When mastery
+        // is absent over-100 skills just show as 100 (graceful pre-deploy degradation).
         res = await chatClient.from('profiles')
           .select('id,username,total_level,gold,skills,equipment,stats,mortal,updated_at')
           .order('total_level', { ascending:false })
@@ -20661,7 +20668,7 @@
   function lbMetricValue(p, metric){
     if(metric==='gold') return p.gold||0;
     if(metric==='combat') return lbCombatScore(p);
-    if(metric.indexOf('skill:')===0) return (p.skills && p.skills[metric.slice(6)])||0;
+    if(metric.indexOf('skill:')===0){ var _sk = metric.slice(6); return (p.mastery && p.mastery[_sk] > 100) ? p.mastery[_sk] : ((p.skills && p.skills[_sk])||0); } // rank by the over-100 Mastery value when present
     if(metric.indexOf('stat:')===0) return (p.stats && p.stats[metric.slice(5)])||0;
     return p.total_level||0; // 'total'
   }
@@ -20748,13 +20755,19 @@
       html += '<div class="profile-skills">'+eqGroup('Weapons', eq.weapons)+eqGroup('Armor', eq.armor)+'</div>';
     }
     var skills = p.skills || {};
+    var mastery = p.mastery || {};   // over-100 gathering/crafting levels (display-only; absent on older rows)
+    // Effective displayed level for a skill: the over-100 Mastery value if present, else the capped level.
+    function lbLevel(sk){ return (mastery[sk] > 100) ? mastery[sk] : (skills[sk] || 0); }
     html += '<div class="profile-skills">';
     SKILL_GROUPS.forEach(function(g){
       var rows = g.skills.filter(function(sk){ return skills[sk] !== undefined; });
       if(!rows.length) return;
-      rows = rows.slice().sort(function(a,b){ return (skills[b]||0)-(skills[a]||0); });
+      rows = rows.slice().sort(function(a,b){ return lbLevel(b) - lbLevel(a); });
       html += '<div class="profile-group"><div class="profile-group-head" style="color:'+g.color+'">'+g.label+'</div><div class="profile-group-body">';
-      rows.forEach(function(sk){ html += '<span class="profile-skill">'+escapeHtml(SKILL_LABELS[sk]||sk)+' <b>'+(skills[sk]||0)+'</b></span>'; });
+      rows.forEach(function(sk){
+        var lv = lbLevel(sk), over = lv > 100;
+        html += '<span class="profile-skill'+(over?' profile-skill-mastery':'')+'">'+escapeHtml(SKILL_LABELS[sk]||sk)+' <b>'+lv+(over?'★':'')+'</b></span>';
+      });
       html += '</div></div>';
     });
     html += '</div></div>';

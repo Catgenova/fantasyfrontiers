@@ -172,6 +172,25 @@ Deno.serve(async (req) => {
     try { if (JSON.stringify(estRaw).length <= ESTATE_MAX_BYTES) estate = estRaw; } catch { estate = null; }
   }
 
+  // Over-100 Mastery: a DISPLAY-ONLY { skill_id: extended_level } map for gathering/crafting skills past
+  // 100. Kept out of `skills`/`total_level` (those stay capped for ranking), so it's cosmetic + never
+  // rejects the submission. Bounded: valid skill-id keys, integer values 101..MAX, capped count. Only
+  // touched when the body carries the field, so an older client never clobbers a stored mastery map.
+  const MASTERY_MAX_LEVEL = 200, MASTERY_MAX_KEYS = 200;
+  const masteryProvided = Object.prototype.hasOwnProperty.call(body, "mastery");
+  let mastery: Record<string, number> | null = null;
+  const mRaw = (body as { mastery?: unknown }).mastery;
+  if (mRaw && typeof mRaw === "object" && !Array.isArray(mRaw)) {
+    const clean: Record<string, number> = {}; let n = 0;
+    for (const [k, v] of Object.entries(mRaw as Record<string, unknown>)) {
+      if (typeof k !== "string" || k.length > 40) continue;
+      if (typeof v !== "number" || !Number.isInteger(v) || v <= MAX_SKILL_LEVEL || v > MASTERY_MAX_LEVEL) continue;
+      clean[k] = v;
+      if (++n >= MASTERY_MAX_KEYS) break;
+    }
+    mastery = Object.keys(clean).length ? clean : null;
+  }
+
   // 4. Accept.
   const record: Record<string, unknown> = {
     id: userId,
@@ -185,12 +204,13 @@ Deno.serve(async (req) => {
     class: cls,
     updated_at: new Date(nowMs).toISOString(),
   };
-  if (estateProvided) record.estate = estate; // omit entirely -> upsert leaves any existing estate untouched
+  if (estateProvided) record.estate = estate;   // omit entirely -> upsert leaves any existing estate untouched
+  if (masteryProvided) record.mastery = mastery; // same: absent field never clobbers the stored mastery
   let { error: upErr } = await admin.from("profiles").upsert(record, { onConflict: "id" });
-  if (upErr && estateProvided) {
-    // The `estate` column may not be migrated yet -- retry WITHOUT it so a new client never loses its
-    // leaderboard update just because the estate migration hasn't been applied. (Deploy-order safety.)
-    delete record.estate;
+  if (upErr && (estateProvided || masteryProvided)) {
+    // The `estate`/`mastery` columns may not be migrated yet -- retry WITHOUT them so a new client never
+    // loses its leaderboard update just because those migrations haven't been applied. (Deploy-order safety.)
+    delete record.estate; delete record.mastery;
     ({ error: upErr } = await admin.from("profiles").upsert(record, { onConflict: "id" }));
   }
   if (upErr) return json({ ok: false, error: "Could not save profile." }, 500);

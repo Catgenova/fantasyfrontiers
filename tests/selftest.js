@@ -5051,6 +5051,24 @@
     eq(R(50000, 50000, 0, 50000, 0), 50000, 'chest gold banked into server balance survives reconcile');
   });
 
+  // ---- Leaderboard over-100 Mastery: capped `skills` + separate display-only `mastery` -----
+  suite('leaderboard: over-100 mastery split', function(){
+    var s = FF._state;
+    var gid = FF.GATHER_SKILL_IDS[0];                 // a gathering skill (over-levelable)
+    var lvl105 = FF.SKILL_XP_FLOOR_EXT[105];          // xp for extended level 105
+    var saved = s.xp[gid];
+    s.xp[gid] = lvl105;
+    ok(FF.skillLevel(gid, lvl105) >= 105, 'gathering skill reads extended level past 100');
+    var ps = FF.computeProfileStats();
+    eq(ps.skills[gid], FF.MAX_SKILL_LEVEL, 'submitted `skills` value stays capped at 100 (ranking/gate unchanged)');
+    ok(ps.mastery && ps.mastery[gid] >= 105, 'the true over-100 level rides in the separate `mastery` map');
+    // A non-overlevelable skill (or one at/under 100) never appears in mastery.
+    ok(!(ps.mastery && (gid+'_never') in ps.mastery), 'mastery only holds genuine over-100 entries');
+    s.xp[gid] = saved;
+    // Back at a normal level, mastery drops the key entirely.
+    ok(!FF.computeProfileStats().mastery[gid], 'mastery omits a skill once it is back at/under 100');
+  });
+
   // ---- Server-authoritative inventory: recipe manifest (Stage A2) -----------------------
   suite('inventory: recipe manifest', function(){
     var m = FF.buildRecipeManifest();
