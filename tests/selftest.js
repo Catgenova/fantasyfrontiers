@@ -2944,6 +2944,11 @@
       // Gear/familiar changes are locked mid-fight.
       var _sa = S.activity; S.activity = { type:null }; ok(!FF.combatLocksGear(), 'no gear lock outside combat');
       S.activity = { type:'combat', monsterHp:100 }; ok(FF.combatLocksGear(), 'gear is locked during combat'); S.activity = _sa;
+      // Activating/deactivating a companion is locked mid-fight, but examining a familiar card
+      // (toggleFamiliar just expands/collapses it) must stay allowed so players can inspect spells.
+      ok(FF.COMBAT_LOCKED_ACTIONS.activateCompanion, 'activate/deactivate companion is combat-locked');
+      ok(FF.COMBAT_LOCKED_ACTIONS.equipLoadout, 'equipping a loadout is combat-locked');
+      ok(!FF.COMBAT_LOCKED_ACTIONS.toggleFamiliar, 'expanding a familiar card to examine it is NOT combat-locked');
       var SW='stweapon_sword_t0_normal', CH='bodyarmor_chain_chest_t0_normal';
       FF.applyCombatLoadout({}); // naked
       S.inventory = {}; S.inventory[SW]=1; S.inventory[CH]=1;
