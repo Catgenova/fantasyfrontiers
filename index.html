@@ -226,11 +226,14 @@
   .ff-farmfab-harvest{bottom:20px;background:linear-gradient(180deg,#c79a2a,#8a6a18);}
   .ff-farmfab-plant{bottom:84px;background:linear-gradient(180deg,#5aa06a,#2f6a3c);}
   .ff-farmfab-fertilize{bottom:148px;background:linear-gradient(180deg,#8aa84e,#4f6a24);}
-  /* Estate / Guild-Estate quick-jump FABs: reuse the farm-FAB shape/badge, stacked above the farm ones.
-     Shown only when that estate has idle Peons (renderEstateFabs), and hideable via settings. */
-  .ff-estatefab-my{bottom:212px;background:linear-gradient(180deg,#8a6a3a,#5a3f1e);}
-  .ff-estatefab-guild{bottom:276px;background:linear-gradient(180deg,#5a7ab0,#2f4a78);}
   .ff-farmfab-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--gold-bright);color:#3a2a08;border:2px solid #24380f;font-family:var(--font-mono);font-size:10px;font-weight:700;line-height:14px;text-align:center;}
+  /* Estate / Guild-Estate quick-jump FABs -- mobile-only (desktop navigates via the always-visible rail),
+     anchored bottom-LEFT so they don't collide with the right-side farm/chat bubbles. Shown by
+     renderEstateFabs() whenever you're not already on that estate and not running an action on it. */
+  .ff-estatefab{display:none;align-items:center;justify-content:center;position:absolute;left:14px;z-index:22;width:50px;height:50px;border-radius:50%;border:2px solid #24380f;color:#f2f8e6;cursor:pointer;box-shadow:0 5px 14px rgba(0,0,0,.45);}
+  .ff-estatefab:hover{filter:brightness(1.08);}
+  .ff-estatefab-my{bottom:20px;background:linear-gradient(180deg,#8a6a3a,#5a3f1e);}
+  .ff-estatefab-guild{bottom:84px;background:linear-gradient(180deg,#5a7ab0,#2f4a78);}
   .ff-ivy{position:absolute;top:-8px;z-index:9;pointer-events:none;width:70px;height:60px;}
   .ff-ivy-l{left:-4px;} .ff-ivy-r{right:-4px;transform:scaleX(-1);}
   @keyframes ffChipFlash{0%,100%{opacity:1;}50%{opacity:.45;}}
@@ -290,8 +293,10 @@
     .ff-farmfab-harvest{bottom:126px;}
     .ff-farmfab-plant{bottom:186px;}
     .ff-farmfab-fertilize{bottom:246px;}
-    .ff-estatefab-my{bottom:306px;}
-    .ff-estatefab-guild{bottom:366px;}
+    /* Estate nav bubbles are mobile-only: reveal them here and lift them above the bottom dock. */
+    .ff-estatefab.on{display:flex;}
+    .ff-estatefab-my{bottom:66px;}
+    .ff-estatefab-guild{bottom:126px;}
   }
   @keyframes ffFabPulse{
     0%,100%{box-shadow:0 5px 14px rgba(0,0,0,.45), 0 0 0 0 rgba(230,196,90,.55);}
@@ -1626,8 +1631,8 @@
   <button class="ff-farmfab ff-farmfab-harvest" id="ffHarvestFab" data-action="harvestAllFarm" title="Harvest all ready crops"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-herb"></use></svg><span class="ff-farmfab-badge" id="ffHarvestFabBadge"></span></button>
   <button class="ff-farmfab ff-farmfab-plant" id="ffPlantFab" data-action="plantAllFarm" title="Plant all empty fields"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-seed"></use></svg><span class="ff-farmfab-badge" id="ffPlantFabBadge"></span></button>
   <button class="ff-farmfab ff-farmfab-fertilize" id="ffFertilizeFab" data-action="fertilizeAllFarm" title="Fertilize all growing crops"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-spice"></use></svg><span class="ff-farmfab-badge" id="ffFertilizeFabBadge"></span></button>
-  <button class="ff-farmfab ff-estatefab ff-estatefab-my" id="ffEstateFab" data-action="gotoEstate" title="Idle Peons on your Estate"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-castle"></use></svg><span class="ff-farmfab-badge" id="ffEstateFabBadge"></span></button>
-  <button class="ff-farmfab ff-estatefab ff-estatefab-guild" id="ffGuildEstateFab" data-action="gotoGuildEstate" title="Idle Peons on the Guild Estate"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-shield"></use></svg><span class="ff-farmfab-badge" id="ffGuildEstateFabBadge"></span></button>
+  <button class="ff-estatefab ff-estatefab-my" id="ffEstateFab" data-action="gotoEstate" title="Go to your Estate"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-castle"></use></svg></button>
+  <button class="ff-estatefab ff-estatefab-guild" id="ffGuildEstateFab" data-action="gotoGuildEstate" title="Go to the Guild Estate"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-shield"></use></svg></button>
   <div class="ff-ivy ff-ivy-l" id="ffIvyL"></div>
   <div class="ff-ivy ff-ivy-r" id="ffIvyR"></div>
   <div id="chatDrawerOverlay"></div>
@@ -16863,7 +16868,7 @@
     {key:'popupFamiliar', label:'Familiar popup', desc:'Show a popup when a familiar is summoned or levels up'},
     {key:'chatFlash', label:'Chat tab flash', desc:'Flash the Chat tab when a new message arrives'},
     {key:'chatFilter', label:'Chat profanity filter', desc:'Mask profanity in chat messages. Turn off to read chat unfiltered (links are always removed).'},
-    {key:'showEstateFabs', label:'Estate quick-jump buttons', desc:'Show floating buttons that jump to your Estate or Guild Estate when idle Peons are waiting for a job.'},
+    {key:'showEstateFabs', label:'Estate quick-jump buttons', desc:'Show floating buttons (mobile) that jump to your Estate or Guild Estate whenever you are not already there or busy building on it.'},
     {key:'compactMobile', label:'Compact layout (mobile)', desc:'Zoom out to the denser multi-column layout on phones (off = large single-column). No effect on tablets or desktop.'},
     {key:'autoOpenCaches', label:'Auto-open Critter Caches', desc:'Automatically open Critter Caches as they drop (no popup).'},
     {key:'autoOpenChests', label:'Auto-open Treasure Chests', desc:'Automatically open Treasure Chests as they drop (no popup).'},
@@ -19743,36 +19748,26 @@
     pl.title = 'Plant all empty fields (' + plantN + ')';
     if(fz) fz.title = 'Fertilize all growing crops (' + fertN + ')';
   }
-  // "Idle Peons" on an estate: cottage+workshop peon sources with no Peon assigned, bounded by the free
-  // task slots left in that scope (you can't assign more than PEON_MAX_SLOTS). 0 if the grid isn't loaded.
-  function idlePeonSlots(scope){
-    var grid = peonGridFor(scope);
-    if(!grid) return 0;
-    var tasks = peonTasksFor(scope) || [];
-    var free = PEON_MAX_SLOTS - tasks.length;
-    if(free <= 0) return 0;
-    var idle = 0;
-    estatePeonSources(grid).forEach(function(s){ if(!peonTaskAt(scope, s.x, s.y)) idle++; });
-    return Math.max(0, Math.min(idle, free));
+  // Is the player currently running a build/clear/terraform action on this estate? Personal estates hold a
+  // single job (state.estate.job); the guild estate holds a per-member jobs array keyed by owner id.
+  function estateJobActive(scope){
+    if(scope === 'guild') return (typeof guildEstate !== 'undefined') && (guildEstate.jobs || []).some(function(j){ return j && j.owner === estMyId(); });
+    return !!(state.estate && state.estate.job);
   }
-  // Quick-jump FABs to your Estate / the Guild Estate, shown only when that estate has idle Peons waiting
-  // for a job (and you're not already looking at it). Toggle off entirely with the "Estate quick-jump" setting.
+  function guildEstateReachable(){ return !!(guildState.guild && typeof guildEstate !== 'undefined' && guildEstate.status === 'ready' && guildEstate.grid); }
+  // Quick-jump FABs (mobile) to your Estate / the Guild Estate. Shown whenever you're NOT already viewing
+  // that estate and NOT running an action on it (clearing, building, terraforming). The Guild one also
+  // needs a loaded guild estate to jump to. Toggle both off with the "Estate quick-jump" setting.
   function renderEstateFabs(){
     var em = document.getElementById('ffEstateFab'), gm = document.getElementById('ffGuildEstateFab');
     if(!em || !gm) return;
     var enabled = !(state.settings && state.settings.showEstateFabs === false);
     var onEstate = currentCategory === 'estate';
     var onGuildEstate = currentCategory === 'guild' && guildSub === 'estate';
-    var myIdle = enabled ? idlePeonSlots('personal') : 0;
-    var guildIdle = enabled ? idlePeonSlots('guild') : 0;
-    var showMy = myIdle > 0 && !onEstate;
-    var showGuild = guildIdle > 0 && !onGuildEstate;
+    var showMy = enabled && !onEstate && !!(state.estate && state.estate.grid) && !estateJobActive('personal');
+    var showGuild = enabled && !onGuildEstate && guildEstateReachable() && !estateJobActive('guild');
     em.classList.toggle('on', showMy);
     gm.classList.toggle('on', showGuild);
-    var eb = document.getElementById('ffEstateFabBadge'); if(eb) eb.textContent = showMy ? (myIdle > 99 ? '99+' : myIdle) : '';
-    var gb = document.getElementById('ffGuildEstateFabBadge'); if(gb) gb.textContent = showGuild ? (guildIdle > 99 ? '99+' : guildIdle) : '';
-    em.title = 'Idle Peons on your Estate (' + myIdle + ') — tap to jump there';
-    gm.title = 'Idle Peons on the Guild Estate (' + guildIdle + ') — tap to jump there';
   }
   // Flag unread + flash the FAB when a message lands while chat isn't visible (respecting the setting).
   function noteChatActivity(){
@@ -25161,7 +25156,7 @@
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS,
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,
-      TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS, idlePeonSlots:idlePeonSlots, estatePeonSources:estatePeonSources, peonGridFor:peonGridFor,
+      TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS, estatePeonSources:estatePeonSources, peonGridFor:peonGridFor, estateJobActive:estateJobActive, guildEstateReachable:guildEstateReachable,
       GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, FARMING_PHYSIQUE:FARMING_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
       physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
       SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, TICKER_TIPS:TICKER_TIPS, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,

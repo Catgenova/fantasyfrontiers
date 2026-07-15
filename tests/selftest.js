@@ -528,30 +528,21 @@
     ok(ttd && ttd.inputs, 'peon tool act resolves at top tier (tierIndex+1 offset in-bounds)');
   });
 
-  // ---- Idle-Peon count that drives the Estate / Guild-Estate quick-jump FABs ------------
-  suite('idlePeonSlots counts unworked cottage sources', function(){
+  // ---- "Running an estate action?" signal that gates the Estate / Guild-Estate quick-jump FABs ------
+  suite('estateJobActive tracks the player running an estate action', function(){
     var S = FF._state;
-    var snap = { grid:S.estate.grid, peons:S.peons, gp:S.guildPeons };
+    var snap = { job:S.estate.job };
     try {
-      var g = S.estate.grid;
-      // Two adjacent real cells become a cottage+workshop peon source.
-      g[0][0].cottageId='cottage_t0'; g[0][0].workshopId=null;
-      g[0][1].workshopId='workshop_forestry_t0'; g[0][1].cottageId=null;
-      S.peons=[];
-      eq(FF.estatePeonSources(g).length, 1, 'one cottage-next-to-workshop source exists');
-      eq(FF.idlePeonSlots('personal'), 1, 'an unassigned source counts as one idle Peon slot');
-      // Assigning a Peon to that source drops the idle count to zero.
-      S.peons=[{x:0,y:0,skillId:'forestry',kind:'gather',itemId:'x',progress:0}];
-      eq(FF.idlePeonSlots('personal'), 0, 'a worked source is not idle');
-      // Idle count never exceeds the free task slots left in the scope: with every task slot filled
-      // (by unrelated tasks), an unworked source still reports 0 because none can be assigned.
-      var full=[]; for(var i=0;i<FF.PEON_MAX_SLOTS;i++) full.push({x:99,y:i,skillId:'forestry',kind:'gather',itemId:'x',progress:0});
-      S.peons=full;
-      eq(FF.idlePeonSlots('personal'), 0, 'no idle slots reported once all peon task slots are used');
-      // No guild grid loaded -> guild scope reports zero (FAB stays hidden).
-      eq(FF.idlePeonSlots('guild'), 0, 'guild scope is 0 without a loaded guild estate');
+      // Personal estate: idle when there's no active job; busy while clearing/building/terraforming.
+      S.estate.job = null;
+      ok(!FF.estateJobActive('personal'), 'no personal estate job -> not running an action (FAB may show)');
+      S.estate.job = { kind:'clear', x:0, y:0, startAt:0, readyAt:1 };
+      ok(FF.estateJobActive('personal'), 'a personal clear/build/terraform job -> running an action (FAB hides)');
+      S.estate.job = null;
+      // Guild estate: busy only when a job in the shared array is owned by THIS player.
+      ok(!FF.estateJobActive('guild'), 'no guild job for me -> not running a guild action');
     } finally {
-      S.estate.grid=snap.grid; S.peons=snap.peons; S.guildPeons=snap.gp;
+      S.estate.job = snap.job;
     }
   });
 
