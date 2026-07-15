@@ -9520,6 +9520,7 @@
       xp: xpObj,
       physique: physique,
       inventory: {},
+      itemEarnedTotal: {},   // per-item monotonic lifetime received (item-ledger reconcile anchor; the item analog of goldEarnedTotal)
       blueprints: {},        // Masterwork Blueprints -- their own separate inventory (dungeon boss drops)
       dungeonsCleared: {},   // layer id -> true once its boss has been beaten (gates the next dungeon)
       gatherTools: gatherTools,
@@ -9982,13 +9983,17 @@
   // in the Character tab; accrues during offline progress too, since the sim runs the
   // same tick functions.
   function bumpStat(key, n){ if(!state.stats) state.stats = {}; state.stats[key] = (state.stats[key]||0) + (n||1); }
-  function addItem(id, qty){
+  // opts.noEarn: this add is NOT new production (a pure local move that the server ledger doesn't credit
+  // -- e.g. returning a displaced stackable on unequip, or an Oblation refund). Skipping the earned bump
+  // keeps the per-item earned anchor honest; the min(localInv) cap in itemReconcile makes a miss harmless.
+  function addItem(id, qty, opts){
     qty = Math.floor(qty);
     if(!(qty > 0) || !isFinite(qty)) return; // ignore NaN / Infinity / zero / negative grants so inventory can't hold a broken entry
     if(offlineCapture){ offlineCapture.items[id] = (offlineCapture.items[id]||0) + qty; }
     if(gabCapture){ gabCapture.items[id] = (gabCapture.items[id]||0) + qty; }
     var wasZero = !(state.inventory[id] > 0);
     state.inventory[id] = (state.inventory[id]||0) + qty;
+    if(!(opts && opts.noEarn)){ if(!state.itemEarnedTotal) state.itemEarnedTotal = {}; state.itemEarnedTotal[id] = (state.itemEarnedTotal[id]||0) + qty; } // monotonic lifetime-received anchor
     if(wasZero) needsRender = true;
   }
   // Masterwork Blueprints live in their own inventory (state.blueprints), separate from items.
@@ -12463,6 +12468,7 @@
           ['autoOpenCaches','autoOpenChests','autoHarvest','autoFertilize','autoPlant'].forEach(function(k){ if(typeof state.settings[k] !== 'boolean') state.settings[k] = false; }); // opt-in automation, off by default
           if(state.dungeonProgress) delete state.dungeonProgress; // dungeons feature removed; shed legacy field
           if(!state.lockedItems || typeof state.lockedItems !== 'object') state.lockedItems = {};
+          if(!state.itemEarnedTotal || typeof state.itemEarnedTotal !== 'object' || Array.isArray(state.itemEarnedTotal)) state.itemEarnedTotal = {}; // item-ledger reconcile anchor
           if(!Array.isArray(state.trackedSkills)) state.trackedSkills = [];
           state.trackedSkills = state.trackedSkills.filter(function(id){ return typeof id === 'string'; }).slice(0, TRACK_MAX); // single-select: keep only the first
           if(state.accuracyPhysiques) delete state.accuracyPhysiques; // accuracy physiques are now a fixed set, no longer player-chosen
@@ -20522,27 +20528,35 @@
   // Pure per-item reconcile -- the item analog of walletReconcileGold. For each item key the adopted qty
   // is the server ledger PLUS legit earnings the server hasn't credited yet (localEarned - serverEarned,
   // floored at 0, bounded by the monotonic per-item earned anchor) PLUS local drift during the round
-  // trip. A spoofed-high local count with no matching earned anchor collapses to the ledger; legit
-  // just-gathered items (still accruing under the rate cap) survive. serverEarned absent (older server)
-  // -> pending 0, i.e. straight clamp to the ledger. Maps are { item_key: number }.
+  // trip -- but CAPPED at what the client locally holds. A spoofed-high local count with no matching
+  // earned anchor collapses to the ledger; legit just-gathered items (still accruing under the rate cap)
+  // survive. serverEarned absent (older server) -> pending 0, i.e. straight clamp to the ledger.
+  //
+  // The min(localInv) cap is the safety net: adoption can only ever REMOVE items (clamp a spoof), never
+  // CREATE them beyond what the client already shows. So any imperfection in the earned anchor (e.g. an
+  // equip-return that wrongly bumped it) degrades to "spoof not clamped", never a mint. Maps are
+  // { item_key: number }.
   function itemReconcile(localInv, sentInv, localEarned, serverLedger, serverEarned){
     var hasEarned = serverEarned && typeof serverEarned === 'object';
     var out = {}, keys = {};
     [localInv, serverLedger].forEach(function(m){ if(m) Object.keys(m).forEach(function(k){ keys[k] = 1; }); });
     Object.keys(keys).forEach(function(k){
+      var local = Math.floor((localInv && localInv[k]) || 0);
       var server = Math.floor((serverLedger && serverLedger[k]) || 0);
       var pending = hasEarned ? Math.max(0, Math.floor((localEarned && localEarned[k]) || 0) - Math.floor(serverEarned[k] || 0)) : 0;
-      var drift = Math.floor((localInv && localInv[k]) || 0) - Math.floor((sentInv && sentInv[k]) || 0);
-      var q = Math.max(0, server + pending + drift);
+      var drift = local - Math.floor((sentInv && sentInv[k]) || 0);
+      var q = Math.max(0, Math.min(local, server + pending + drift));
       if(q > 0) out[k] = q;
     });
     return out;
   }
   // The item counterpart of walletSync. Posts the full inventory to items.sync; the server grandfathers
-  // it once, then rate-caps each item's increase and clamps to what we report, and returns the
-  // reconciled ledger. (Stage B will make the client ADOPT the reconciled ledger via itemReconcile; for
-  // now it is read-only into itemLedger, the Stage 3 market-list / bank-deposit gate.) Kill switch: ITEM_SYNC_ENABLED.
+  // it once, then rate-caps each item's increase and clamps to what we report, and returns the reconciled
+  // ledger + the per-item earned anchor. When ITEM_ADOPT_ENABLED, the client ADOPTS the reconciled ledger
+  // as state.inventory (items-as-gold, Stage B-2) via itemReconcile; otherwise it's read-only into
+  // itemLedger, the market-list / bank-deposit gate. Kill switches: ITEM_SYNC_ENABLED, ITEM_ADOPT_ENABLED.
   var ITEM_SYNC_ENABLED = true;
+  var ITEM_ADOPT_ENABLED = false;   // Stage B-2 cutover -- OFF until validated live (fresh/returning/spoofed accounts)
   var itemLastSync = 0;
   var itemLedger = null;            // last reconciled server ledger { item_key: qty }, or null
   var itemLedgerEarned = null;      // per-item lifetime-earned anchor from the server (for Stage B-2 adoption)
@@ -20558,7 +20572,22 @@
     try{
       var res = await chatClient.functions.invoke('items', { body: { action:'sync', inventory: inv } });
       var d = res && res.data;
-      if(d && d.ok && d.items){ itemLedger = d.items; itemLedgerEarned = d.earned || null; }
+      if(d && d.ok && d.items){
+        itemLedger = d.items; itemLedgerEarned = d.earned || null;
+        // Stage B-2: adopt the reconciled ledger as inventory truth (gated). One-time bootstrap of the
+        // per-item earned anchor from the server's grandfathered earned (kept >= anything already tracked
+        // locally), so an existing player's real stock is preserved while a spoof collapses to the cap.
+        if(ITEM_ADOPT_ENABLED){
+          if(!state._itemEarnedSeeded){
+            var seed = {}; if(itemLedgerEarned){ for(var ek in itemLedgerEarned){ if(itemLedgerEarned[ek] > 0) seed[ek] = Math.floor(itemLedgerEarned[ek]); } }
+            var prevE = state.itemEarnedTotal || {};
+            for(var lk in prevE){ if(prevE[lk] > 0) seed[lk] = Math.max(seed[lk] || 0, Math.floor(prevE[lk])); }
+            state.itemEarnedTotal = seed; state._itemEarnedSeeded = true;
+          }
+          state.inventory = itemReconcile(state.inventory, inv, state.itemEarnedTotal, itemLedger, itemLedgerEarned);
+          needsRender = true;
+        }
+      }
     }catch(e){}
   }
   async function leaderboardFetch(force){

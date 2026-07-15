@@ -5091,7 +5091,28 @@
     eq(R({iron:120}, {iron:100}, {iron:100}, {iron:100}, {iron:100}).iron, 120, 'drift gathered mid-request is not clobbered');
     eq(R({sand:100000000}, {sand:100000000}, {sand:100000000}, {sand:25000}, undefined).sand, 25000, 'no serverEarned -> clamp to ledger');
     ok(!('iron' in R({iron:0}, {iron:0}, {}, {}, {})), 'a zero item is omitted');
-    eq(R({}, {}, {}, {gold_bar:5}, {gold_bar:5}).gold_bar, 5, 'ledger-held item with no local entry adopts the ledger value');
+    // The min(localInv) safety cap: adoption never CREATES items beyond what the client locally holds,
+    // so an over-counted earned anchor (e.g. a missed equip-return) can't mint -- it just fails to clamp.
+    ok(!('gold_bar' in R({}, {}, {}, {gold_bar:5}, {gold_bar:5})), 'ledger-only item (no local entry) is NOT created');
+    eq(R({iron:1}, {iron:1}, {iron:9}, {iron:1}, {iron:1}).iron, 1, 'inflated earned anchor cannot push adoption above local (cap)');
+  });
+
+  // ---- addItem maintains the per-item lifetime-earned anchor (default), skips on noEarn -------
+  suite('inventory: addItem earned anchor', function(){
+    var s = FF._state;
+    var K = '__ff_test_earn_item__';
+    var savedInv = s.inventory[K], savedEarn = (s.itemEarnedTotal||{})[K];
+    if(!s.itemEarnedTotal) s.itemEarnedTotal = {};
+    delete s.inventory[K]; delete s.itemEarnedTotal[K];
+    FF.addItem(K, 10);                 // production -> bumps the anchor
+    eq(s.inventory[K], 10, 'addItem added to inventory');
+    eq(s.itemEarnedTotal[K], 10, 'addItem bumped the earned anchor by default');
+    FF.addItem(K, 5, { noEarn:true }); // pure local move -> inventory rises, anchor does NOT
+    eq(s.inventory[K], 15, 'noEarn add still adds to inventory');
+    eq(s.itemEarnedTotal[K], 10, 'noEarn add did NOT bump the earned anchor');
+    // restore
+    if(savedInv === undefined) delete s.inventory[K]; else s.inventory[K] = savedInv;
+    if(savedEarn === undefined) delete s.itemEarnedTotal[K]; else s.itemEarnedTotal[K] = savedEarn;
   });
 
   // ---- Improvement system: enchant foundation (Stage 1a) --------------------------------
