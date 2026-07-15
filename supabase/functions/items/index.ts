@@ -120,15 +120,22 @@ Deno.serve(async (req) => {
     // Pass the account's created_at so item_sync can bound the one-time grandfather by account age --
     // a fresh/tampered account can't seed the ledger with a spoofed inventory (only an established
     // account has the age headroom to grandfather a large legit stock). See the item_sync migration.
-    const { data, error } = await admin.rpc("item_sync", {
+    const { error } = await admin.rpc("item_sync", {
       p_user: userId, p_items: clean, p_per_hour: ITEM_PER_HOUR, p_burst: ITEM_BURST,
       p_created_at: user.created_at,
     });
     if (error) return json({ ok: false, error: "Sync failed." }, 500);
+    // Re-read the reconciled ledger + the per-item lifetime-earned anchor. `earned` lets the client
+    // adopt the ledger without dropping legit gathered items the rate cap hasn't credited yet (Stage B-2).
+    const { data: rows } = await admin.from("player_items").select("item_key, qty, earned_total").eq("user_id", userId);
     const out: Record<string, number> = {};
-    const rec = (data || {}) as Record<string, unknown>;
-    for (const [k, v] of Object.entries(rec)) { const q = Number(v); if (q > 0) out[k] = q; }
-    return json({ ok: true, items: out });
+    const earned: Record<string, number> = {};
+    for (const r of rows || []) {
+      const q = Number(r.qty), e = Number(r.earned_total);
+      if (q > 0) out[r.item_key as string] = q;
+      if (e > 0) earned[r.item_key as string] = e;
+    }
+    return json({ ok: true, items: out, earned });
   }
 
   return json({ ok: false, error: "Unknown action." }, 400);

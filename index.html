@@ -20545,6 +20545,7 @@
   var ITEM_SYNC_ENABLED = true;
   var itemLastSync = 0;
   var itemLedger = null;            // last reconciled server ledger { item_key: qty }, or null
+  var itemLedgerEarned = null;      // per-item lifetime-earned anchor from the server (for Stage B-2 adoption)
   async function itemSync(force){
     if(!ITEM_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id) return;
     var now = Date.now();
@@ -20557,7 +20558,7 @@
     try{
       var res = await chatClient.functions.invoke('items', { body: { action:'sync', inventory: inv } });
       var d = res && res.data;
-      if(d && d.ok && d.items) itemLedger = d.items;
+      if(d && d.ok && d.items){ itemLedger = d.items; itemLedgerEarned = d.earned || null; }
     }catch(e){}
   }
   async function leaderboardFetch(force){
