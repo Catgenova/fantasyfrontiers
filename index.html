@@ -9562,6 +9562,7 @@
         amulet: {tier:0, rarity:'normal'}
       },
       extraCraftSlots: [{type:null},{type:null},{type:null}],
+      loadouts: [null,null,null,null,null],   // 5 saved combat-gear presets (Equipment & Stats screen)
       faith: 50,
       faithActivity: { type:null, tier:0 },
       playerHp: 50,
@@ -10290,6 +10291,111 @@
   }
   // Base-stat scaling for an equipped unique WEAPON: its base damage scales up to +500% at +15.
   function mainhandEnhanceMult(){ var uid = state.equippedMainhandUid, u = uid && state.uniqueItems && state.uniqueItems[uid]; return u ? enhanceStatMult(u.enhance) : 1; }
+
+  // ================= LOADOUTS =================
+  // Save the full combat kit (weapon, offhand, all 5 body-armor pieces, belt, all 5 rings, amulet, relic)
+  // into one of 5 presets and swap it all at once. Each slot descriptor knows how to snapshot its pointer,
+  // compute the inventory item id it maps to (null for a unique, which lives in state.uniqueItems), set it
+  // back, and clear it. Applying a preset strips the current kit back to inventory, then re-equips the saved
+  // kit -- consuming from inventory for stackables/legendaries and validating uniques still exist, so no item
+  // is ever duplicated or lost. A slot whose item you no longer own is simply left empty.
+  var LOADOUT_SLOT_COUNT = 5;
+  function _ldClone(o){ return o == null ? null : JSON.parse(JSON.stringify(o)); }
+  function _ldBodyDesc(slot){
+    return { key: slot,
+      get: function(){ return _ldClone(state.bodyArmor && state.bodyArmor[slot]) || {tier:0, rarity:'normal', material:null}; },
+      uid: function(v){ return v.uid || null; },
+      invId: function(v){ if(v.uid) return null; if(v.leg) return slot==='back' ? legCloakItemId(v.leg, v.rarity) : null; if(v.tier>0 && v.material) return 'bodyarmor_'+v.material+'_'+slot+'_t'+(v.tier-1)+'_'+v.rarity; return null; },
+      set: function(v){ state.bodyArmor[slot] = _ldClone(v); },
+      clear: function(){ state.bodyArmor[slot] = {tier:0, rarity:'normal', material:null, uid:null}; } };
+  }
+  function _ldRingDesc(slot){
+    return { key: slot,
+      get: function(){ return _ldClone(state.jewelrySlots && state.jewelrySlots[slot]) || {typeId:null, tier:0, rarity:'normal'}; },
+      uid: function(v){ return v.uid || null; },
+      invId: function(v){ if(v.uid) return null; if(v.leg) return legRingItemId(v.leg, v.rarity); if(v.typeId && v.tier>0) return 'ring_'+v.typeId+'_t'+(v.tier-1)+'_'+v.rarity; return null; },
+      set: function(v){ state.jewelrySlots[slot] = _ldClone(v); },
+      clear: function(){ state.jewelrySlots[slot] = {typeId:null, tier:0, rarity:'normal'}; } };
+  }
+  var LOADOUT_SLOTS = [
+    { key:'mainhand',
+      get: function(){ return { id: state.equippedMainhand, tier: state.equippedMainhandTier||0, rarity: state.equippedMainhandRarity||'normal', uid: state.equippedMainhandUid||null }; },
+      uid: function(v){ return v.uid || null; },
+      invId: function(v){ if(v.uid || !v.id || !(v.tier>0)) return null; return 'stweapon_'+v.id+'_t'+(v.tier-1)+'_'+v.rarity; },
+      set: function(v){ state.equippedMainhand=v.id||null; state.equippedMainhandTier=v.tier||0; state.equippedMainhandRarity=v.rarity||'normal'; state.equippedMainhandUid=v.uid||null; },
+      clear: function(){ state.equippedMainhand=null; state.equippedMainhandTier=0; state.equippedMainhandRarity='normal'; state.equippedMainhandUid=null; } },
+    { key:'offhand',
+      get: function(){ return { id: state.equippedOffhand, tier: state.equippedOffhandTier||0, rarity: state.equippedOffhandRarity||'normal', uid: state.equippedOffhandUid||null }; },
+      uid: function(v){ return v.uid || null; },
+      invId: function(v){ if(v.uid || !v.id || !(v.tier>0)) return null; var pfx = isWard(v.id) ? 'stward_' : (isStackableShield(v.id) ? 'stshield_' : 'stweapon_'); return pfx+v.id+'_t'+(v.tier-1)+'_'+v.rarity; },
+      set: function(v){ state.equippedOffhand=v.id||null; state.equippedOffhandTier=v.tier||0; state.equippedOffhandRarity=v.rarity||'normal'; state.equippedOffhandUid=v.uid||null; },
+      clear: function(){ state.equippedOffhand=null; state.equippedOffhandTier=0; state.equippedOffhandRarity='normal'; state.equippedOffhandUid=null; } }
+  ].concat(BODY_ARMOR_SLOTS.map(_ldBodyDesc)).concat([
+    { key:'belt',
+      get: function(){ return { tier: state.equippedBeltTier||0, rarity: state.equippedBeltRarity||'normal', uid: state.equippedBeltUid||null }; },
+      uid: function(v){ return v.uid || null; },
+      invId: function(v){ if(v.uid || !(v.tier>0)) return null; return 'belt_t'+(v.tier-1)+'_'+v.rarity; },
+      set: function(v){ state.equippedBeltTier=v.tier||0; state.equippedBeltRarity=v.rarity||'normal'; state.equippedBeltUid=v.uid||null; },
+      clear: function(){ state.equippedBeltTier=0; state.equippedBeltRarity='normal'; state.equippedBeltUid=null; } }
+  ]).concat(RING_SLOT_IDS.map(_ldRingDesc)).concat([
+    { key:'amulet',
+      get: function(){ return _ldClone(state.jewelrySlots && state.jewelrySlots.amulet) || {tier:0, rarity:'normal'}; },
+      uid: function(v){ return v.uid || null; },
+      invId: function(v){ if(v.uid) return null; if(v.leg) return legAmuletItemId(v.leg, v.rarity); if(v.tier>0) return amuletBaseId(amuletSlotType(v), v.tier-1, v.rarity); return null; },
+      set: function(v){ state.jewelrySlots.amulet = _ldClone(v); },
+      clear: function(){ state.jewelrySlots.amulet = {tier:0, rarity:'normal'}; } },
+    { key:'relic',
+      get: function(){ return { tier: state.equippedRelicTier||0, rarity: state.equippedRelicRarity||'normal', uid: state.equippedRelicUid||null }; },
+      uid: function(v){ return v.uid || null; },
+      invId: function(v){ if(v.uid || !(v.tier>0)) return null; return 'relic_t'+(v.tier-1)+'_'+v.rarity; },
+      set: function(v){ state.equippedRelicTier=v.tier||0; state.equippedRelicRarity=v.rarity||'normal'; state.equippedRelicUid=v.uid||null; },
+      clear: function(){ state.equippedRelicTier=0; state.equippedRelicRarity='normal'; state.equippedRelicUid=null; } }
+  ]);
+  var LOADOUT_SLOT_MAP = {}; LOADOUT_SLOTS.forEach(function(s){ LOADOUT_SLOT_MAP[s.key] = s; });
+  function ensureLoadouts(){ if(!Array.isArray(state.loadouts)) state.loadouts = []; while(state.loadouts.length < LOADOUT_SLOT_COUNT) state.loadouts.push(null); if(state.loadouts.length > LOADOUT_SLOT_COUNT) state.loadouts.length = LOADOUT_SLOT_COUNT; }
+  // Snapshot every combat slot's pointer as a plain object (a preset the swap can restore later).
+  function captureCombatLoadout(){ var g = {}; LOADOUT_SLOTS.forEach(function(s){ g[s.key] = s.get(); }); return g; }
+  // Count filled slots in a saved kit (for the readout).
+  function loadoutFilledCount(gear){ var n = 0; if(!gear) return 0; LOADOUT_SLOTS.forEach(function(s){ var v = gear[s.key]; if(v && (s.uid(v) || s.invId(v))) n++; }); return n; }
+  // Short human summary: the weapon name + how many pieces the kit carries.
+  function loadoutSummary(gear){
+    if(!gear) return 'empty';
+    var w = gear.mainhand, wn = 'Unarmed';
+    if(w){ if(w.uid && state.uniqueItems && state.uniqueItems[w.uid]) wn = uniqueDisplayName(state.uniqueItems[w.uid]); else if(w.id){ var ws = getWeaponStyle(w.id); wn = (ws && ws.name) || w.id; } }
+    return wn + ' · ' + loadoutFilledCount(gear) + ' pieces';
+  }
+  // Apply a saved kit: strip the current kit back to inventory, then re-equip the saved kit, consuming from
+  // inventory for stackables/legendaries and keeping only uniques that still exist. Returns how many slots
+  // were restored vs dropped (item no longer owned).
+  function applyCombatLoadout(gear){
+    LOADOUT_SLOTS.forEach(function(s){ var v = s.get(); var id = s.invId(v); if(id) addItem(id, 1); s.clear(); });
+    var restored = 0, dropped = 0;
+    LOADOUT_SLOTS.forEach(function(s){
+      var v = gear && gear[s.key]; if(!v) return;
+      var uid = s.uid(v);
+      if(uid){ if(state.uniqueItems && state.uniqueItems[uid]){ s.set(v); restored++; } else dropped++; return; }
+      var id = s.invId(v);
+      if(!id) return; // an empty slot in the saved kit
+      if((state.inventory[id]||0) > 0){ state.inventory[id] -= 1; s.set(v); restored++; }
+      else dropped++;
+    });
+    return { restored: restored, dropped: dropped };
+  }
+  function saveLoadoutPreset(i){
+    ensureLoadouts(); if(i < 0 || i >= LOADOUT_SLOT_COUNT) return;
+    var existing = state.loadouts[i];
+    state.loadouts[i] = { name: (existing && existing.name) || ('Loadout ' + (i+1)), gear: captureCombatLoadout() };
+    addLog('Saved your current gear to ' + state.loadouts[i].name + '.', 'important');
+    armorPanelExpanded = true; saveGame();
+  }
+  function equipLoadoutPreset(i){
+    ensureLoadouts(); var lo = state.loadouts[i]; if(!lo || !lo.gear){ addLog('That loadout is empty. Save your gear to it first.', 'danger'); return; }
+    var r = applyCombatLoadout(lo.gear);
+    addLog('Equipped ' + lo.name + (r.dropped ? (' (' + r.dropped + ' slot' + (r.dropped>1?'s':'') + ' left empty — those items are no longer in your bag)') : '') + '.', 'important');
+    armorPanelExpanded = true; saveGame();
+  }
+  function clearLoadoutPreset(i){ ensureLoadouts(); if(i < 0 || i >= LOADOUT_SLOT_COUNT) return; state.loadouts[i] = null; saveGame(); }
+  function renameLoadoutPreset(i, name){ ensureLoadouts(); var lo = state.loadouts[i]; if(!lo) return; name = (name||'').trim().slice(0, 24); lo.name = name || ('Loadout ' + (i+1)); saveGame(); }
 
   // ---- Enhance (Stage 2) ----
   // Success starts at 95% and drops 5% per level already reached (floor 5%). A failure DESTROYS the
@@ -14934,7 +15040,32 @@
     html += '</div>';
     html += '<div class="equip-stats-col">'+renderCombatStatsPanel()+'</div>';
     html += '</div>';
+    html += renderLoadoutsPanel(); // Save/swap full combat kits
     html += renderAccuracyPanel(); // Accuracy Training pinned to the bottom of Equipment & Stats
+    return html;
+  }
+  function renderLoadoutsPanel(){
+    ensureLoadouts();
+    var html = '<div class="loadouts-panel" style="margin-top:16px;background:var(--panel,#1e1b26);border:1px solid var(--line,#332c40);border-radius:12px;padding:14px 16px;">';
+    html += '<h3 style="margin:0 0 4px">Loadouts</h3>';
+    html += '<div class="section-intro" style="margin:0 0 8px">Save your full combat kit &mdash; weapon, offhand, armor, belt, rings, amulet &amp; relic &mdash; to a preset, then swap it all at once. Applying a preset returns your current gear to your bag first, so nothing is lost.</div>';
+    for(var i=0;i<LOADOUT_SLOT_COUNT;i++){
+      var lo = state.loadouts[i];
+      html += '<div class="loadout-row" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-top:1px solid var(--line-soft,#2a2434);">';
+      html += '<span style="font-family:var(--font-mono,monospace);font-size:11px;color:var(--ink-faint,#7d7590);min-width:16px;text-align:right">'+(i+1)+'</span>';
+      if(lo){
+        html += '<input class="loadout-name" id="loadoutName-'+i+'" value="'+escapeHtml(lo.name||('Loadout '+(i+1)))+'" maxlength="24" aria-label="Loadout name" style="flex:0 1 150px;min-width:100px;background:var(--panel2,#252030);border:1px solid var(--line,#332c40);border-radius:6px;color:var(--ink,#ece7dd);padding:4px 8px;font-size:13px;" />';
+        html += '<span style="flex:1 1 auto;min-width:110px;font-size:12px;color:var(--ink-soft,#b3aabf);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(loadoutSummary(lo.gear))+'</span>';
+        html += '<button class="action-btn" data-action="equipLoadout" data-index="'+i+'" style="width:auto;flex:0 0 auto;padding:4px 14px;">Equip</button>';
+        html += '<button class="action-btn" data-action="saveLoadout" data-index="'+i+'" style="width:auto;flex:0 0 auto;padding:4px 10px;background:var(--panel2,#252030);" title="Overwrite this preset with your current gear">Overwrite</button>';
+        html += '<button class="action-btn stop" data-action="clearLoadout" data-index="'+i+'" style="width:auto;flex:0 0 auto;padding:4px 11px;" title="Delete this preset">&#10005;</button>';
+      } else {
+        html += '<span style="flex:1 1 auto;min-width:110px;font-size:12px;color:var(--ink-faint,#7d7590);">Empty preset</span>';
+        html += '<button class="action-btn" data-action="saveLoadout" data-index="'+i+'" style="width:auto;flex:0 0 auto;padding:4px 14px;">Save current gear</button>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
     return html;
   }
 
@@ -24138,7 +24269,10 @@
     guildBankWithdrawGold: function(btn, e){ guildBankWithdrawGold(); },
     guildBossSummon: function(btn, e){ guildBossSummon(btn.getAttribute('data-key')); },
     guildBossAssault: function(btn, e){ guildBossAssault(true); },
-    guildBossClaim: function(btn, e){ guildBossClaim(); }
+    guildBossClaim: function(btn, e){ guildBossClaim(); },
+    saveLoadout: function(btn){ saveLoadoutPreset(parseInt(btn.getAttribute('data-index'),10)); },
+    equipLoadout: function(btn){ equipLoadoutPreset(parseInt(btn.getAttribute('data-index'),10)); },
+    clearLoadout: function(btn){ clearLoadoutPreset(parseInt(btn.getAttribute('data-index'),10)); }
   };
 
   document.getElementById('app').addEventListener('click', function(e){
@@ -24181,6 +24315,9 @@
     }
     if(e.target && e.target.id === 'invSortSelect'){
       inventorySort = e.target.value; renderInventoryPanel(); return;
+    }
+    if(e.target && e.target.id && e.target.id.indexOf('loadoutName-')===0){
+      renameLoadoutPreset(parseInt(e.target.id.split('-')[1],10), e.target.value); return;
     }
   });
 
@@ -24835,7 +24972,7 @@
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
-      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, SET_TIER_INDEX:SET_TIER_INDEX, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, SET_NAMES:SET_NAMES, setName:setName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, combatPlayerBuffs:combatPlayerBuffs, combatEnemyDebuffs:combatEnemyDebuffs, renderFxBars:renderFxBars, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, knightUnstoppableMult:knightUnstoppableMult, thunderStaticPerHit:thunderStaticPerHit, thunderStaticThreshold:thunderStaticThreshold, thunderDischargeMult:thunderDischargeMult, deadeyeAccuracyBonus:deadeyeAccuracyBonus, duelistFlourishStabs:duelistFlourishStabs, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, heraldRipostePct:heraldRipostePct, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, undyingRageIncomingMult:undyingRageIncomingMult, berserkerFrenziedBlowsMult:berserkerFrenziedBlowsMult, templarLayOnHandsPct:templarLayOnHandsPct, templarBlessingOfHasteMult:templarBlessingOfHasteMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, spellbladeResonantCrit:spellbladeResonantCrit, voidVulnPerStack:voidVulnPerStack, voidMarkPerHit:voidMarkPerHit, quickdrawVenomPct:quickdrawVenomPct, quickdrawTwinFangChance:quickdrawTwinFangChance, treasureProspectorPer:treasureProspectorPer, setTreasureMult:setTreasureMult, EXEC_SET_EXECUTE_FRAC:EXEC_SET_EXECUTE_FRAC, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
+      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, SET_TIER_INDEX:SET_TIER_INDEX, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, SET_NAMES:SET_NAMES, setName:setName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, combatPlayerBuffs:combatPlayerBuffs, combatEnemyDebuffs:combatEnemyDebuffs, renderFxBars:renderFxBars, captureCombatLoadout:captureCombatLoadout, applyCombatLoadout:applyCombatLoadout, saveLoadoutPreset:saveLoadoutPreset, equipLoadoutPreset:equipLoadoutPreset, clearLoadoutPreset:clearLoadoutPreset, renameLoadoutPreset:renameLoadoutPreset, ensureLoadouts:ensureLoadouts, loadoutSummary:loadoutSummary, LOADOUT_SLOT_COUNT:LOADOUT_SLOT_COUNT, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, knightUnstoppableMult:knightUnstoppableMult, thunderStaticPerHit:thunderStaticPerHit, thunderStaticThreshold:thunderStaticThreshold, thunderDischargeMult:thunderDischargeMult, deadeyeAccuracyBonus:deadeyeAccuracyBonus, duelistFlourishStabs:duelistFlourishStabs, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, heraldRipostePct:heraldRipostePct, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, undyingRageIncomingMult:undyingRageIncomingMult, berserkerFrenziedBlowsMult:berserkerFrenziedBlowsMult, templarLayOnHandsPct:templarLayOnHandsPct, templarBlessingOfHasteMult:templarBlessingOfHasteMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, spellbladeResonantCrit:spellbladeResonantCrit, voidVulnPerStack:voidVulnPerStack, voidMarkPerHit:voidMarkPerHit, quickdrawVenomPct:quickdrawVenomPct, quickdrawTwinFangChance:quickdrawTwinFangChance, treasureProspectorPer:treasureProspectorPer, setTreasureMult:setTreasureMult, EXEC_SET_EXECUTE_FRAC:EXEC_SET_EXECUTE_FRAC, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, sharpshooterAccOverDodge:sharpshooterAccOverDodge, sharpshooterEagleEyeCrit:sharpshooterEagleEyeCrit, sharpshooterPinpointMult:sharpshooterPinpointMult, sharpshooterFocusCritDmg:sharpshooterFocusCritDmg, sharpshooterArmorPierce:sharpshooterArmorPierce, sharpshooterPatienceMult:sharpshooterPatienceMult, SHARP_EAGLE_CAP:SHARP_EAGLE_CAP, SHARP_PINPOINT_CAP:SHARP_PINPOINT_CAP, SHARP_FOCUS_CAP:SHARP_FOCUS_CAP, SHARP_PATIENCE_CAP:SHARP_PATIENCE_CAP, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautSmashReady:juggernautSmashReady, juggernautFuryStacks:juggernautFuryStacks, juggernautArmorPierce:juggernautArmorPierce, JUG_WINDUP_DMG:JUG_WINDUP_DMG, JUG_WINDUP_SLOW:JUG_WINDUP_SLOW, JUG_SMASH_EVERY:JUG_SMASH_EVERY, JUG_CONCUSS_MS:JUG_CONCUSS_MS, JUG_FURY_PER:JUG_FURY_PER, JUG_FURY_MAX:JUG_FURY_MAX, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_SHIELD_MAX_PCT:LUMEN_SHIELD_MAX_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, HERALD_RIPOSTE_PCT:HERALD_RIPOSTE_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeRuneHungerMult:spellbladeRuneHungerMult, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, spellbladeEchoChance:spellbladeEchoChance, equippedEnchantCount:equippedEnchantCount, spellbladeEnchantBoost:spellbladeEnchantBoost, SPELLBLADE_RUNEHUNGER_PER:SPELLBLADE_RUNEHUNGER_PER, SPELLBLADE_CRITRUNE_PER:SPELLBLADE_CRITRUNE_PER, SPELLBLADE_ECHO_PCT:SPELLBLADE_ECHO_PCT, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, legendaryDmgMult:legendaryDmgMult, legendaryDodgeBonus:legendaryDodgeBonus, legendaryLifestealPct:legendaryLifestealPct, legWastingCurseIncomingMult:legWastingCurseIncomingMult, legNotePoisonStart:legNotePoisonStart, legVanishWindowReady:legVanishWindowReady, samuraiFocusCap:samuraiFocusCap, knightMomentumPerStack:knightMomentumPerStack, legDistinctEnchantCount:legDistinctEnchantCount, legEchoDmgMult:legEchoDmgMult, legShieldBashDamage:legShieldBashDamage, legReflectCanCrit:legReflectCanCrit, legReflectCritMult:legReflectCritMult, legendaryCritDmg:legendaryCritDmg, legEarthshakerBuild:legEarthshakerBuild, legEarthshakerConsume:legEarthshakerConsume, LEG_TREMOR_CAP:LEG_TREMOR_CAP, LEG_TREMOR_MULT:LEG_TREMOR_MULT, CRIT_DAMAGE_MULT:CRIT_DAMAGE_MULT, legendaryAccuracyBonus:legendaryAccuracyBonus, legRangerAilmentRolls:legRangerAilmentRolls, LEG_CHAINSHOT_MAX:LEG_CHAINSHOT_MAX, legendaryCritChance:legendaryCritChance, legThunderMaxStacks:legThunderMaxStacks, legRetributionArmed:legRetributionArmed, legRetributionConsume:legRetributionConsume, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, heraldGuardMaxStacks:heraldGuardMaxStacks, HERALD_GUARD_MAX_STACKS:HERALD_GUARD_MAX_STACKS, HERALD_GUARD_PER_STACK:HERALD_GUARD_PER_STACK, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legChargedRiposteArmed:legChargedRiposteArmed, legChargedRiposteConsume:legChargedRiposteConsume, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,

@@ -2877,6 +2877,41 @@
     } finally { S.activity = savedAct; }
   });
 
+  // ---- Loadouts: save & swap the full combat kit, inventory-safe ------------------------
+  suite('loadouts: capture / apply / conserve', function(){
+    var S = FF._state;
+    var saved = { inv:S.inventory, uq:S.uniqueItems, lo:S.loadouts,
+      mh:S.equippedMainhand, mht:S.equippedMainhandTier, mhr:S.equippedMainhandRarity, mhu:S.equippedMainhandUid,
+      ba:S.bodyArmor, js:S.jewelrySlots };
+    try {
+      FF.ensureLoadouts(); eq(S.loadouts.length, FF.LOADOUT_SLOT_COUNT, 'ensureLoadouts pads to 5 presets');
+      var SW='stweapon_sword_t0_normal', CH='bodyarmor_chain_chest_t0_normal';
+      FF.applyCombatLoadout({}); // naked
+      S.inventory = {}; S.inventory[SW]=1; S.inventory[CH]=1;
+      S.uniqueItems = { UZ:{ uid:'UZ', kind:'weapon', base:'x', tier:20, rarity:'rare', enchants:[], enhance:0 } };
+      // capture snapshots every slot
+      var snap = FF.captureCombatLoadout();
+      ok(snap && 'mainhand' in snap && 'offhand' in snap && 'helmet' in snap && 'ring1' in snap && 'amulet' in snap && 'relic' in snap, 'capture snapshots every combat slot');
+      // apply a kit: unique weapon + chain chest
+      var gearA = { mainhand:{id:'sword',tier:0,rarity:'rare',uid:'UZ'}, chest:{tier:1,rarity:'normal',material:'chain'} };
+      var r = FF.applyCombatLoadout(gearA);
+      eq(S.equippedMainhandUid, 'UZ', 'apply equips the unique (uid pointer)');
+      eq(S.bodyArmor.chest.material, 'chain', 'apply equips the chain chest');
+      eq(S.inventory[CH]||0, 0, 'the chest was consumed from the bag');
+      eq(r.dropped, 0, 'nothing dropped when everything is owned');
+      // strip back to nothing returns the consumed item
+      FF.applyCombatLoadout({});
+      eq(S.inventory[CH]||0, 1, 'unequipping returns the chest to the bag (conserved)');
+      ok(!!S.uniqueItems.UZ, 'the unique is never consumed — it stays in uniqueItems');
+      // summary text
+      ok(/pieces/.test(FF.loadoutSummary(gearA)), 'loadoutSummary reports the piece count');
+    } finally {
+      S.inventory=saved.inv; S.uniqueItems=saved.uq; S.loadouts=saved.lo;
+      S.equippedMainhand=saved.mh; S.equippedMainhandTier=saved.mht; S.equippedMainhandRarity=saved.mhr; S.equippedMainhandUid=saved.mhu;
+      S.bodyArmor=saved.ba; S.jewelrySlots=saved.js;
+    }
+  });
+
   suite('mastercraft: D1 legendary amulets', function(){
     // A state with a legendary Pendant seated in the Amulet slot.
     function amSt(key, rarity, extra){
