@@ -223,17 +223,14 @@
   .ff-farmfab{display:none;align-items:center;justify-content:center;position:fixed;right:20px;z-index:40;width:52px;height:52px;border-radius:50%;border:2px solid #24380f;color:#f2f8e6;cursor:pointer;box-shadow:0 5px 14px rgba(0,0,0,.45);}
   .ff-farmfab.on{display:flex;}
   .ff-farmfab:hover{filter:brightness(1.08);}
-  .ff-farmfab-harvest{bottom:20px;background:linear-gradient(180deg,#c79a2a,#8a6a18);}
-  .ff-farmfab-plant{bottom:84px;background:linear-gradient(180deg,#5aa06a,#2f6a3c);}
-  .ff-farmfab-fertilize{bottom:148px;background:linear-gradient(180deg,#8aa84e,#4f6a24);}
-  .ff-farmfab-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--gold-bright);color:#3a2a08;border:2px solid #24380f;font-family:var(--font-mono);font-size:10px;font-weight:700;line-height:14px;text-align:center;}
-  /* Estate / Guild-Estate quick-jump FABs -- mobile-only (desktop navigates via the always-visible rail),
-     anchored bottom-LEFT so they don't collide with the right-side farm/chat bubbles. Shown by
-     renderEstateFabs() whenever you're not already on that estate and not running an action on it. */
-  .ff-estatefab{display:none;align-items:center;justify-content:center;position:absolute;left:14px;z-index:22;width:50px;height:50px;border-radius:50%;border:2px solid #24380f;color:#f2f8e6;cursor:pointer;box-shadow:0 5px 14px rgba(0,0,0,.45);}
-  .ff-estatefab:hover{filter:brightness(1.08);}
+  /* Estate quick-jump FABs (right-side cluster, both platforms) anchor the BOTTOM of the stack; the
+     conditional farm FABs sit above them, so there's no gap when the farm ones are hidden. */
   .ff-estatefab-my{bottom:20px;background:linear-gradient(180deg,#8a6a3a,#5a3f1e);}
   .ff-estatefab-guild{bottom:84px;background:linear-gradient(180deg,#5a7ab0,#2f4a78);}
+  .ff-farmfab-harvest{bottom:148px;background:linear-gradient(180deg,#c79a2a,#8a6a18);}
+  .ff-farmfab-plant{bottom:212px;background:linear-gradient(180deg,#5aa06a,#2f6a3c);}
+  .ff-farmfab-fertilize{bottom:276px;background:linear-gradient(180deg,#8aa84e,#4f6a24);}
+  .ff-farmfab-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--gold-bright);color:#3a2a08;border:2px solid #24380f;font-family:var(--font-mono);font-size:10px;font-weight:700;line-height:14px;text-align:center;}
   .ff-ivy{position:absolute;top:-8px;z-index:9;pointer-events:none;width:70px;height:60px;}
   .ff-ivy-l{left:-4px;} .ff-ivy-r{right:-4px;transform:scaleX(-1);}
   @keyframes ffChipFlash{0%,100%{opacity:1;}50%{opacity:.45;}}
@@ -290,13 +287,12 @@
     /* On mobile the FABs re-anchor to stack directly above the chat bubble (which is absolute at
        bottom:66px). Colours/size/visibility come from the base rules above. */
     .ff-farmfab{position:absolute;right:14px;z-index:22;width:50px;height:50px;}
-    .ff-farmfab-harvest{bottom:126px;}
-    .ff-farmfab-plant{bottom:186px;}
-    .ff-farmfab-fertilize{bottom:246px;}
-    /* Estate nav bubbles are mobile-only: reveal them here and lift them above the bottom dock. */
-    .ff-estatefab.on{display:flex;}
-    .ff-estatefab-my{bottom:66px;}
-    .ff-estatefab-guild{bottom:126px;}
+    /* Estate bubbles anchor just above the chat bubble (66px); farm bubbles stack above them. */
+    .ff-estatefab-my{bottom:126px;}
+    .ff-estatefab-guild{bottom:186px;}
+    .ff-farmfab-harvest{bottom:246px;}
+    .ff-farmfab-plant{bottom:306px;}
+    .ff-farmfab-fertilize{bottom:366px;}
   }
   @keyframes ffFabPulse{
     0%,100%{box-shadow:0 5px 14px rgba(0,0,0,.45), 0 0 0 0 rgba(230,196,90,.55);}
@@ -1631,8 +1627,8 @@
   <button class="ff-farmfab ff-farmfab-harvest" id="ffHarvestFab" data-action="harvestAllFarm" title="Harvest all ready crops"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-herb"></use></svg><span class="ff-farmfab-badge" id="ffHarvestFabBadge"></span></button>
   <button class="ff-farmfab ff-farmfab-plant" id="ffPlantFab" data-action="plantAllFarm" title="Plant all empty fields"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-seed"></use></svg><span class="ff-farmfab-badge" id="ffPlantFabBadge"></span></button>
   <button class="ff-farmfab ff-farmfab-fertilize" id="ffFertilizeFab" data-action="fertilizeAllFarm" title="Fertilize all growing crops"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-spice"></use></svg><span class="ff-farmfab-badge" id="ffFertilizeFabBadge"></span></button>
-  <button class="ff-estatefab ff-estatefab-my" id="ffEstateFab" data-action="gotoEstate" title="Go to your Estate"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-castle"></use></svg></button>
-  <button class="ff-estatefab ff-estatefab-guild" id="ffGuildEstateFab" data-action="gotoGuildEstate" title="Go to the Guild Estate"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-shield"></use></svg></button>
+  <button class="ff-farmfab ff-estatefab-my" id="ffEstateFab" data-action="gotoEstate" title="Go to your Estate"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-castle"></use></svg></button>
+  <button class="ff-farmfab ff-estatefab-guild" id="ffGuildEstateFab" data-action="gotoGuildEstate" title="Go to the Guild Estate"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-shield"></use></svg></button>
   <div class="ff-ivy ff-ivy-l" id="ffIvyL"></div>
   <div class="ff-ivy ff-ivy-r" id="ffIvyR"></div>
   <div id="chatDrawerOverlay"></div>
@@ -16868,7 +16864,7 @@
     {key:'popupFamiliar', label:'Familiar popup', desc:'Show a popup when a familiar is summoned or levels up'},
     {key:'chatFlash', label:'Chat tab flash', desc:'Flash the Chat tab when a new message arrives'},
     {key:'chatFilter', label:'Chat profanity filter', desc:'Mask profanity in chat messages. Turn off to read chat unfiltered (links are always removed).'},
-    {key:'showEstateFabs', label:'Estate quick-jump buttons', desc:'Show floating buttons (mobile) that jump to your Estate or Guild Estate whenever you are not already there or busy building on it.'},
+    {key:'showEstateFabs', label:'Estate quick-jump buttons', desc:'Show floating buttons that jump to your Estate or Guild Estate whenever you are not already there or busy building on it.'},
     {key:'compactMobile', label:'Compact layout (mobile)', desc:'Zoom out to the denser multi-column layout on phones (off = large single-column). No effect on tablets or desktop.'},
     {key:'autoOpenCaches', label:'Auto-open Critter Caches', desc:'Automatically open Critter Caches as they drop (no popup).'},
     {key:'autoOpenChests', label:'Auto-open Treasure Chests', desc:'Automatically open Treasure Chests as they drop (no popup).'},
@@ -19755,7 +19751,7 @@
     return !!(state.estate && state.estate.job);
   }
   function guildEstateReachable(){ return !!(guildState.guild && typeof guildEstate !== 'undefined' && guildEstate.status === 'ready' && guildEstate.grid); }
-  // Quick-jump FABs (mobile) to your Estate / the Guild Estate. Shown whenever you're NOT already viewing
+  // Quick-jump FABs to your Estate / the Guild Estate (right-side FAB cluster, both platforms). Shown whenever you're NOT already viewing
   // that estate and NOT running an action on it (clearing, building, terraforming). The Guild one also
   // needs a loaded guild estate to jump to. Toggle both off with the "Estate quick-jump" setting.
   function renderEstateFabs(){
