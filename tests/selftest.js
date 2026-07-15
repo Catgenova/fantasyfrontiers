@@ -1052,6 +1052,29 @@
     eq(c('look {{i:AbC123deF}}'), 'look {{i:AbC123deF}}', 'an item-link token is not a website link');
   });
 
+  // ---- Chat profanity filter: per-viewer display toggle ----------------------------------------
+  suite('chat: profanity filter is an opt-out display setting', function(){
+    var s = FF._state;
+    s.settings = s.settings || {};
+    var prev = s.settings.chatFilter;
+    var d = FF.chatDisplayCensor;
+    // Default (filter ON): profanity is masked at display, links always stripped.
+    s.settings.chatFilter = true;
+    ok(d('you fuck').indexOf('*') !== -1, 'filter on -> profanity masked at display');
+    eq(d('visit http://evil.com now'), 'visit [link removed] now', 'filter on -> links removed');
+    // Opted out (filter OFF): the raw words come through, but links are STILL stripped (scam prevention).
+    s.settings.chatFilter = false;
+    eq(d('you fuck'), 'you fuck', 'filter off -> profanity shown raw');
+    eq(d('visit http://evil.com now'), 'visit [link removed] now', 'filter off -> links still removed');
+    // Undefined setting is treated as ON (safe default), so it never leaks profanity by accident.
+    delete s.settings.chatFilter;
+    ok(d('you fuck').indexOf('*') !== -1, 'missing setting defaults to masking');
+    // The underlying helpers are independent: maskProfanity always masks, censorChat is the full pass.
+    ok(FF.maskProfanity('shit').charAt(0) === 's' && FF.maskProfanity('shit').slice(1) === '***', 'maskProfanity masks unconditionally');
+    ok(FF.censorChat('you fuck').indexOf('*') !== -1 && FF.censorChat('go to www.x.io').indexOf('[link removed]') !== -1, 'censorChat still does links + profanity');
+    s.settings.chatFilter = prev;
+  });
+
   // ---- Chat unread counter ---------------------------------------------------------------------
   suite('chat: unread count + "Chat (N)" suffix', function(){
     var s = FF._state;
