@@ -2885,6 +2885,9 @@
       ba:S.bodyArmor, js:S.jewelrySlots };
     try {
       FF.ensureLoadouts(); eq(S.loadouts.length, FF.LOADOUT_SLOT_COUNT, 'ensureLoadouts pads to 5 presets');
+      // Gear/familiar changes are locked mid-fight.
+      var _sa = S.activity; S.activity = { type:null }; ok(!FF.combatLocksGear(), 'no gear lock outside combat');
+      S.activity = { type:'combat', monsterHp:100 }; ok(FF.combatLocksGear(), 'gear is locked during combat'); S.activity = _sa;
       var SW='stweapon_sword_t0_normal', CH='bodyarmor_chain_chest_t0_normal';
       FF.applyCombatLoadout({}); // naked
       S.inventory = {}; S.inventory[SW]=1; S.inventory[CH]=1;
