@@ -24511,6 +24511,24 @@
     else if(e.target.id === 'authUsername' || e.target.id === 'authPassword' || e.target.id === 'authConfirm'){ e.preventDefault(); authSubmit(); }
   });
 
+  // Escape closes the topmost open popup (matching the DOM paint order: tracker over settings over the
+  // notification popup), one per press.
+  document.addEventListener('keydown', function(e){
+    if(e.key !== 'Escape' && e.key !== 'Esc') return;
+    if(trackerPickerOpen){ trackerPickerOpen = false; renderTrackerPicker(); e.preventDefault(); return; }
+    if(settingsOpen){ settingsOpen = false; renderSettingsModal(); e.preventDefault(); return; }
+    if(state.popupQueue && state.popupQueue.length){ state.popupQueue.shift(); if(state.popupQueue.length === 0) state.popupBatchTotal = 0; renderPopupQueue(); e.preventDefault(); return; }
+  });
+
+  // Click the dimmed backdrop (only the overlay itself, never its card/inputs) to close these popups.
+  function bindBackdropClose(overlayId, close){
+    var ov = document.getElementById(overlayId);
+    if(ov) ov.addEventListener('click', function(e){ if(e.target === ov) close(); });
+  }
+  bindBackdropClose('trackerPickerOverlay', function(){ if(trackerPickerOpen){ trackerPickerOpen = false; renderTrackerPicker(); } });
+  bindBackdropClose('settingsOverlay', function(){ if(settingsOpen){ settingsOpen = false; renderSettingsModal(); } });
+  bindBackdropClose('familiarPopupOverlay', function(){ if(state.popupQueue && state.popupQueue.length){ state.popupQueue.shift(); if(state.popupQueue.length === 0) state.popupBatchTotal = 0; renderPopupQueue(); } });
+
   document.getElementById('app').addEventListener('input', function(e){
     if(e.target.id === 'invSearchInput'){
       inventorySearchQuery = e.target.value;
