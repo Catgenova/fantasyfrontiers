@@ -20574,19 +20574,50 @@
       var d = res && res.data;
       if(d && d.ok && d.items){
         itemLedger = d.items; itemLedgerEarned = d.earned || null;
-        // Stage B-2: adopt the reconciled ledger as inventory truth (gated). One-time bootstrap of the
-        // per-item earned anchor from the server's grandfathered earned (kept >= anything already tracked
-        // locally), so an existing player's real stock is preserved while a spoof collapses to the cap.
+        // One-time bootstrap of the per-item earned anchor from the server's grandfathered earned (kept
+        // >= anything already tracked locally), so an existing player's real stock is preserved while a
+        // spoof collapses to the cap. Pure (no state writes) so the shadow path can reuse it.
+        function seedEarned(){
+          var seed = {}; if(itemLedgerEarned){ for(var ek in itemLedgerEarned){ if(itemLedgerEarned[ek] > 0) seed[ek] = Math.floor(itemLedgerEarned[ek]); } }
+          var prevE = state.itemEarnedTotal || {};
+          for(var lk in prevE){ if(prevE[lk] > 0) seed[lk] = Math.max(seed[lk] || 0, Math.floor(prevE[lk])); }
+          return seed;
+        }
         if(ITEM_ADOPT_ENABLED){
-          if(!state._itemEarnedSeeded){
-            var seed = {}; if(itemLedgerEarned){ for(var ek in itemLedgerEarned){ if(itemLedgerEarned[ek] > 0) seed[ek] = Math.floor(itemLedgerEarned[ek]); } }
-            var prevE = state.itemEarnedTotal || {};
-            for(var lk in prevE){ if(prevE[lk] > 0) seed[lk] = Math.max(seed[lk] || 0, Math.floor(prevE[lk])); }
-            state.itemEarnedTotal = seed; state._itemEarnedSeeded = true;
-          }
+          // Stage B-2 ACTIVE: adopt the reconciled ledger as inventory truth.
+          if(!state._itemEarnedSeeded){ state.itemEarnedTotal = seedEarned(); state._itemEarnedSeeded = true; }
           state.inventory = itemReconcile(state.inventory, inv, state.itemEarnedTotal, itemLedger, itemLedgerEarned);
           needsRender = true;
+        } else {
+          // SHADOW / dry-run: compute what adoption WOULD do (incl. the one-time bootstrap) WITHOUT
+          // applying it, so it can be validated on a real account before flipping. The full report is
+          // stashed on window.__ffItemShadow; a summary logs to the console only with ?itemshadow.
+          var earnedShadow = state._itemEarnedSeeded ? (state.itemEarnedTotal || {}) : seedEarned();
+          var wouldAdopt = itemReconcile(state.inventory, inv, earnedShadow, itemLedger, itemLedgerEarned);
+          itemShadowReport(state.inventory, wouldAdopt, itemLedger, earnedShadow);
         }
+      }
+    }catch(e){}
+  }
+  var ITEM_ADOPT_SHADOW_LOG = /[?&]itemshadow\b/.test(location.search);
+  // Build + stash the dry-run adoption report (window.__ffItemShadow), and log a concise summary when
+  // ?itemshadow is present. A "clamp" (adopt < local) is what adoption would REMOVE -- ideally only
+  // spoofed items (low earned anchor); a legit item being clamped would surface here BEFORE we flip.
+  function itemShadowReport(localInv, wouldAdopt, ledger, earned){
+    try{
+      var keys = {}, k;
+      for(k in localInv){ if(localInv[k] > 0) keys[k] = 1; }
+      for(k in wouldAdopt){ if(wouldAdopt[k] > 0) keys[k] = 1; }
+      var changes = [];
+      Object.keys(keys).forEach(function(kk){
+        var loc = Math.floor(localInv[kk] || 0), ad = Math.floor(wouldAdopt[kk] || 0);
+        if(loc !== ad) changes.push({ item:kk, local:loc, adopt:ad, ledger:Math.floor((ledger && ledger[kk]) || 0), earned:Math.floor((earned && earned[kk]) || 0) });
+      });
+      var clamps = changes.filter(function(c){ return c.adopt < c.local; });
+      window.__ffItemShadow = { at:new Date().toISOString(), changeCount:changes.length, clampCount:clamps.length,
+        clampTotal:clamps.reduce(function(s,c){ return s + (c.local - c.adopt); }, 0), clamps:clamps };
+      if(ITEM_ADOPT_SHADOW_LOG && changes.length){
+        console.log('[item-shadow] adoption would clamp '+clamps.length+'/'+changes.length+' item(s) (total -'+window.__ffItemShadow.clampTotal+'):', clamps.slice(0, 30));
       }
     }catch(e){}
   }
