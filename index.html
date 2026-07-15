@@ -20349,15 +20349,16 @@
         .limit(CHAT_CONFIG.historyLimit);
       if(res.error) throw res.error;
       chatMessages = (res.data || []).slice().reverse();
-      // Reload persisted supreme/fantastic craft "blasts" (from the chronicle table) as system messages,
-      // merged into the timeline -- previously these were live-only and vanished on refresh.
+      // Reload persisted server-wide "blasts" (from the chronicle table) as system messages, merged into
+      // the timeline -- both supreme/fantastic craft forges AND +10-or-higher improvement enhances, which
+      // were previously live-only and vanished on refresh.
       try{
         var chron = await chatClient.from('chronicle')
-          .select('id,created_at,username,body')
-          .eq('kind','craft')
+          .select('id,created_at,username,body,kind')
+          .in('kind', ['craft','enhance'])
           .order('created_at', { ascending:false })
-          .limit(60);
-        var sysMsgs = ((chron && chron.data) || []).map(chronicleCraftToSystemMsg).filter(Boolean);
+          .limit(80);
+        var sysMsgs = ((chron && chron.data) || []).map(chronicleRowToSystemMsg).filter(Boolean);
         if(sysMsgs.length){
           chatMessages = chatMessages.concat(sysMsgs).sort(function(a,b){ return new Date(a.created_at) - new Date(b.created_at); });
           if(chatMessages.length > 120) chatMessages = chatMessages.slice(-120);
@@ -20497,6 +20498,23 @@
     var rar = craftBodyRarity(c && c.body);
     if(!rar) return null;
     return { id:'sys-'+c.id, username:null, body:(c.username||'Someone')+' forged a '+String(c.body||'')+'!', rarity:rar, created_at:c.created_at, system:true };
+  }
+  // The rarity tint of an enhance blast: +15-or-higher reads Fantastic, otherwise Supreme (matches the
+  // live path in chronicleOnIncoming / announceEnhance).
+  function enhanceBodyRarity(body){ var m = /\+(\d+)/.exec(String(body||'')); return (m && parseInt(m[1],10) >= 15) ? 'fantastic' : 'supreme'; }
+  // Map a persisted 'enhance' chronicle row to a global-chat system message, so +10-or-higher improvement
+  // blasts reload on refresh instead of vanishing -- the same treatment supreme/fantastic crafts get.
+  function chronicleEnhanceToSystemMsg(c){
+    var body = String((c && c.body) || '');
+    if(!body) return null;
+    return { id:'sys-'+c.id, username:null, body:(c.username||'Someone')+' enhanced their '+body+'!', rarity:enhanceBodyRarity(body), created_at:c.created_at, system:true };
+  }
+  // Dispatch a persisted chronicle row to the right system-message synthesizer by kind (null if it isn't
+  // a globally-blasted event -- level/familiar/buff events live only in the Chronicle feed).
+  function chronicleRowToSystemMsg(c){
+    if(!c) return null;
+    if(c.kind === 'enhance') return chronicleEnhanceToSystemMsg(c);
+    return chronicleCraftToSystemMsg(c); // 'craft' (default): only supreme/fantastic map to a blast
   }
   // Inject a client-side system announcement into global chat (ephemeral -- not persisted to the
   // messages table). Each online client synthesizes its own copy from the chronicle broadcast.
@@ -25103,7 +25121,7 @@
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, serverBuffGrant:serverBuffGrant, lastBuffGrantReason:lastBuffGrantReason, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey,
-      craftBodyRarity:craftBodyRarity, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
+      craftBodyRarity:craftBodyRarity, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, enhanceBodyRarity:enhanceBodyRarity, chronicleEnhanceToSystemMsg:chronicleEnhanceToSystemMsg, chronicleRowToSystemMsg:chronicleRowToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, ALL_SELLABLE:ALL_SELLABLE, ALL_DROP_ITEMS:ALL_DROP_ITEMS, FAT_ITEMS:FAT_ITEMS, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES, vendorSellValue:vendorSellValue, SELL_RARITY_MULT:SELL_RARITY_MULT,

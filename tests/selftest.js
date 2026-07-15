@@ -835,6 +835,22 @@
     ok(FF.chronicleCraftToSystemMsg({ id:10, username:'A', body:'Iron Sword', created_at:'x' }) === null, 'a plain craft is not blasted');
   });
 
+  // ---- Persisted server-wide IMPROVEMENT (enhance) blasts reload into chat too ----------------------
+  suite('persistent improvement blasts', function(){
+    // Enhance body carries the "+N" level; +15 or higher reads Fantastic, otherwise Supreme.
+    eq(FF.enhanceBodyRarity('Willow Fire Wand to +12'), 'supreme', '+12 improvement -> supreme tint');
+    eq(FF.enhanceBodyRarity('Dragon Bow to +15'), 'fantastic', '+15 improvement -> fantastic tint');
+    eq(FF.enhanceBodyRarity('Sword to +20'), 'fantastic', '+20 improvement -> fantastic tint');
+    var e = FF.chronicleEnhanceToSystemMsg({ id:42, username:'Nyx', body:'Willow Fire Wand to +12', created_at:'2026-07-10T00:00:00Z' });
+    ok(e && e.system === true && e.rarity === 'supreme', 'an enhance row -> a persistent system message');
+    ok(e.id === 'sys-42' && e.username === null && /Nyx enhanced their Willow Fire Wand to \+12!/.test(e.body), 'improvement blast carries the enhancer + item + level');
+    ok(FF.chronicleEnhanceToSystemMsg({ id:43, username:'A', body:'', created_at:'x' }) === null, 'an empty enhance body -> no blast');
+    // The kind-dispatcher routes each chronicle row to the right synthesizer.
+    ok(/enhanced their/.test(FF.chronicleRowToSystemMsg({ kind:'enhance', id:1, username:'A', body:'X to +11', created_at:'x' }).body), 'row dispatcher handles enhance rows');
+    ok(/forged a/.test(FF.chronicleRowToSystemMsg({ kind:'craft', id:2, username:'A', body:'Supreme Y', created_at:'x' }).body), 'row dispatcher handles craft rows');
+    ok(FF.chronicleRowToSystemMsg({ kind:'level', id:3, username:'A', body:'Mining 50', created_at:'x' }) === null, 'non-blast chronicle kinds (level) produce no chat message');
+  });
+
   // ---- Top-bar tips & tricks ticker ------------------------------------------------------------------
   suite('tips ticker', function(){
     var T = FF.TICKER_TIPS;
