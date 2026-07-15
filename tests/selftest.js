@@ -5390,6 +5390,34 @@
   });
 
   // ---- Improvement system: combat aggregate (Stage 1c) ----------------------------------
+  // ---- Thorns armour enchant now reflects flat damage on every landed hit --------------------------
+  suite('thorns armour enchant reflects damage in combat', function(){
+    var S = FF._state;
+    var snap = { ba:S.bodyArmor, uq:S.uniqueItems, act:S.activity, hp:S.playerHp, mh:S.equippedMainhand, oh:S.equippedOffhand };
+    try {
+      var mon = FF.MONSTERS[0];
+      var bare = { helmet:{tier:0}, chest:{tier:0}, gauntlets:{tier:0}, boots:{tier:0}, back:{tier:0} };
+      // Control: with no thorns/ward/sentinel source, a monster's attack never touches its own HP.
+      S.uniqueItems = {}; S.bodyArmor = bare; S.equippedOffhand = null; S.playerHp = 1e9;
+      S.activity = { type:'combat', monsterId:mon.id, monsterHp:100000, tickAccum:0, monsterTickAccum:0 };
+      for(var i=0;i<40;i++){ FF.monsterAttackTick(); if(S.activity.monsterHp<50000) S.activity.monsterHp=100000; }
+      eq(100000 - S.activity.monsterHp, 0, 'no reflect fires without a thorns source');
+      // +18 Thorns on the chest: the aggregate reads 18, and every landed hit reflects exactly 18.
+      S.uniqueItems = { TH:{ uid:'TH', kind:'bodyarmor', tier:5, rarity:'rare', enhance:0, enchants:[{mod:'thorns', roll:18}] } };
+      S.bodyArmor = { helmet:{tier:0}, chest:{material:'chain',tier:5,rarity:'rare',uid:'TH'}, gauntlets:{tier:0}, boots:{tier:0}, back:{tier:0} };
+      eq(FF.equippedEnchantTotals(S).thorns, 18, 'thorns enchant feeds the aggregate (+18)');
+      S.playerHp = 1e9;
+      S.activity = { type:'combat', monsterId:mon.id, monsterHp:100000, tickAccum:0, monsterTickAccum:0 };
+      var drops = {};
+      for(var j=0;j<120;j++){ var b=S.activity.monsterHp; FF.monsterAttackTick(); var d=b-S.activity.monsterHp; if(d>0) drops[d]=(drops[d]||0)+1; }
+      var sizes = Object.keys(drops).map(Number);
+      ok(sizes.length===1 && sizes[0]===18, 'every landed-hit reflect is exactly the flat +18 thorns');
+      ok((drops[18]||0) > 0, 'thorns actually fired on the hits that landed');
+    } finally {
+      S.bodyArmor=snap.ba; S.uniqueItems=snap.uq; S.activity=snap.act; S.playerHp=snap.hp; S.equippedMainhand=snap.mh; S.equippedOffhand=snap.oh;
+    }
+  });
+
   suite('improvement: enchant combat aggregate', function(){
     ok(typeof FF.equippedEnchantTotals === 'function', 'aggregate exported');
     // enhance scaling: +0 = x1, +15 = x6 (base + up to +500%)

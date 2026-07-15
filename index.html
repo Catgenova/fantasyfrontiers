@@ -11934,6 +11934,13 @@
         spawnCombatFloat((_rcrit?'✦ ':'')+'Thorns -'+fmt(_rdmg), 'ft-crit', true);
       }
     }
+    // Thorns armour enchant: a flat share of damage returned to the attacker on every landed hit,
+    // available to any class (Spellblade Empowered Runes amplifies it like every other enchant).
+    var _thornsEnch = Math.round((equippedEnchantTotals(state).thorns || 0) * spellbladeEnchantBoost(state));
+    if(_thornsEnch > 0){
+      applyChipDamage(_thornsEnch);
+      spawnCombatFloat('Thorns -'+fmt(_thornsEnch), 'ft-crit', true);
+    }
     var shieldCounter = weightedShieldCounter(offhandStyle, monster.attackTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
     var effectiveShieldDefense = (offhandStyle && offhandStyle.type==='shield' && offhandItem) ? offhandItem.defense * shieldCounter * offhandProficiency * (1 + shieldProfMult(state)) : 0;
     var dmgToPlayer = Math.max(1, Math.round((rawDmg - armorDefense - effectiveShieldDefense) / tenacityLowHpMult(state)));
