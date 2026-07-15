@@ -20488,12 +20488,60 @@
       }
     }catch(e){ fallback(); }
   }
-  // ===== Server-authoritative ITEM ledger (Stage 2 reconcile) =====
+  // ===== Server-authoritative inventory (items-as-gold migration) =====
+  // Recipe input manifest for server-canonical craft debits: { recipe_key -> {item_key: qty} }. The
+  // server's recipe_inputs table is seeded from THIS (scripts/dump-recipes.mjs), and the client sends
+  // the matching recipe_key to the `craft` action. Covers the static-input recipes:
+  //   std:<recipeId>   standard ALL_CRAFT_RECIPES entries (recipeId == the craft's act.itemId)
+  //   wep:<style>:<t>  melee weapon tier recipes;  off:<style>:<t>  offhand tier recipes
+  // Dynamic-input recipes (shaft craft, mastercraft rare-sweep, enchant/enhance plans, get*TierData
+  // special crafts) are intentionally excluded here -- Stage C debits those via an explicit bill
+  // (item_debit_bill) and Stage D ports their formulas server-side. Pure/deterministic -> unit-tested.
+  function buildRecipeManifest(){
+    var out = {};
+    function billOf(inputs){
+      var bill = {}, any = false;
+      if(inputs) Object.keys(inputs).forEach(function(k){ var q = Math.floor(inputs[k]); if(q > 0){ bill[k] = q; any = true; } });
+      return any ? bill : null;
+    }
+    Object.keys(ALL_CRAFT_RECIPES).forEach(function(id){
+      var r = ALL_CRAFT_RECIPES[id];
+      if(!r || r.shaftCraft) return;            // shaft inputs resolve dynamically from the log tier
+      var bill = billOf(r.inputs); if(bill) out['std:'+id] = bill;
+    });
+    [['wep', WEAPON_TYPE_RECIPES], ['off', OFFHAND_TYPE_RECIPES]].forEach(function(pair){
+      var prefix = pair[0], map = pair[1];
+      Object.keys(map).forEach(function(styleId){
+        (map[styleId] || []).forEach(function(def, tierIdx){
+          var bill = billOf(def && def.inputs); if(bill) out[prefix+':'+styleId+':'+tierIdx] = bill;
+        });
+      });
+    });
+    return out;
+  }
+  // Pure per-item reconcile -- the item analog of walletReconcileGold. For each item key the adopted qty
+  // is the server ledger PLUS legit earnings the server hasn't credited yet (localEarned - serverEarned,
+  // floored at 0, bounded by the monotonic per-item earned anchor) PLUS local drift during the round
+  // trip. A spoofed-high local count with no matching earned anchor collapses to the ledger; legit
+  // just-gathered items (still accruing under the rate cap) survive. serverEarned absent (older server)
+  // -> pending 0, i.e. straight clamp to the ledger. Maps are { item_key: number }.
+  function itemReconcile(localInv, sentInv, localEarned, serverLedger, serverEarned){
+    var hasEarned = serverEarned && typeof serverEarned === 'object';
+    var out = {}, keys = {};
+    [localInv, serverLedger].forEach(function(m){ if(m) Object.keys(m).forEach(function(k){ keys[k] = 1; }); });
+    Object.keys(keys).forEach(function(k){
+      var server = Math.floor((serverLedger && serverLedger[k]) || 0);
+      var pending = hasEarned ? Math.max(0, Math.floor((localEarned && localEarned[k]) || 0) - Math.floor(serverEarned[k] || 0)) : 0;
+      var drift = Math.floor((localInv && localInv[k]) || 0) - Math.floor((sentInv && sentInv[k]) || 0);
+      var q = Math.max(0, server + pending + drift);
+      if(q > 0) out[k] = q;
+    });
+    return out;
+  }
   // The item counterpart of walletSync. Posts the full inventory to items.sync; the server grandfathers
   // it once, then rate-caps each item's increase and clamps to what we report, and returns the
-  // reconciled ledger. Unlike gold we do NOT overwrite state.inventory from it -- the ledger is the
-  // server truth that the Stage 3 market-list / bank-deposit gates check; dropping real items off a
-  // player's screen would be riskier than clamping a gold number. Kill switch: ITEM_SYNC_ENABLED.
+  // reconciled ledger. (Stage B will make the client ADOPT the reconciled ledger via itemReconcile; for
+  // now it is read-only into itemLedger, the Stage 3 market-list / bank-deposit gate.) Kill switch: ITEM_SYNC_ENABLED.
   var ITEM_SYNC_ENABLED = true;
   var itemLastSync = 0;
   var itemLedger = null;            // last reconciled server ledger { item_key: qty }, or null
@@ -24661,7 +24709,7 @@
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
-      earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync,
+      earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, itemReconcile:itemReconcile,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
       parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,

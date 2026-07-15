@@ -5051,6 +5051,49 @@
     eq(R(50000, 50000, 0, 50000, 0), 50000, 'chest gold banked into server balance survives reconcile');
   });
 
+  // ---- Server-authoritative inventory: recipe manifest (Stage A2) -----------------------
+  suite('inventory: recipe manifest', function(){
+    var m = FF.buildRecipeManifest();
+    ok(m && typeof m === 'object', 'buildRecipeManifest returns a map');
+    var keys = Object.keys(m);
+    ok(keys.length > 20, 'manifest has many recipes ('+keys.length+')');
+    // Every entry is a { item_key: positive-integer } bill; every key carries a known prefix.
+    var badBill = keys.filter(function(k){
+      var bill = m[k]; if(!bill || typeof bill !== 'object' || !Object.keys(bill).length) return true;
+      return Object.keys(bill).some(function(ik){ var q = bill[ik]; return !(q > 0) || Math.floor(q) !== q; });
+    });
+    eq(badBill.length, 0, 'every recipe bill is {key: positive int}');
+    var badPrefix = keys.filter(function(k){ return !/^(std|wep|off):/.test(k); });
+    eq(badPrefix.length, 0, 'every recipe_key is prefixed std:/wep:/off:');
+    // Cross-check one real standard recipe: the manifest must reproduce its input bill exactly.
+    var stdId = Object.keys(FF.ALL_CRAFT_RECIPES).filter(function(id){
+      var r = FF.ALL_CRAFT_RECIPES[id]; return r && !r.shaftCraft && r.inputs && Object.keys(r.inputs).length;
+    })[0];
+    ok(stdId, 'found a standard recipe to cross-check');
+    var man = m['std:'+stdId];
+    ok(man, 'manifest contains std:'+stdId);
+    Object.keys(FF.ALL_CRAFT_RECIPES[stdId].inputs).forEach(function(ik){
+      eq(man[ik], Math.floor(FF.ALL_CRAFT_RECIPES[stdId].inputs[ik]), 'std:'+stdId+' input '+ik+' matches');
+    });
+    // Shaft craft (dynamic inputs) is intentionally excluded.
+    var shaftId = Object.keys(FF.ALL_CRAFT_RECIPES).filter(function(id){ return FF.ALL_CRAFT_RECIPES[id] && FF.ALL_CRAFT_RECIPES[id].shaftCraft; })[0];
+    if(shaftId) ok(!m['std:'+shaftId], 'dynamic shaft craft is excluded from the manifest');
+  });
+
+  // ---- Server-authoritative inventory: itemReconcile (item analog of walletReconcileGold) ----
+  suite('inventory: itemReconcile', function(){
+    var R = FF.itemReconcile;
+    ok(typeof R === 'function', 'itemReconcile exported');
+    eq(R({iron:100}, {iron:100}, {iron:100}, {iron:100}, {iron:100}).iron, 100, 'fully-credited item preserved');
+    eq(R({iron:100}, {iron:100}, {iron:100}, {iron:40}, {iron:40}).iron, 100, 'throttled legit earn kept via pending');
+    eq(R({sand:100000000}, {sand:100000000}, {sand:0}, {sand:25000}, {sand:0}).sand, 25000, 'spoofed item (no earned anchor) collapses to the ledger');
+    eq(R({iron:40}, {iron:40}, {iron:100}, {iron:40}, {iron:100}).iron, 40, 'a spend sticks (ledger adopted the lower count)');
+    eq(R({iron:120}, {iron:100}, {iron:100}, {iron:100}, {iron:100}).iron, 120, 'drift gathered mid-request is not clobbered');
+    eq(R({sand:100000000}, {sand:100000000}, {sand:100000000}, {sand:25000}, undefined).sand, 25000, 'no serverEarned -> clamp to ledger');
+    ok(!('iron' in R({iron:0}, {iron:0}, {}, {}, {})), 'a zero item is omitted');
+    eq(R({}, {}, {}, {gold_bar:5}, {gold_bar:5}).gold_bar, 5, 'ledger-held item with no local entry adopts the ledger value');
+  });
+
   // ---- Improvement system: enchant foundation (Stage 1a) --------------------------------
   suite('improvement: enchant foundation', function(){
     ok(typeof FF.rollEnchant === 'function' && FF.ENCHANT_MODS, 'enchant pools + roll exported');
