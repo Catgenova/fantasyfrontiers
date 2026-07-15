@@ -529,26 +529,26 @@
   });
 
   // ---- "Running an estate action?" signal that gates the Estate / Guild-Estate quick-jump FABs ------
-  suite('estateJobActive tracks the player running an estate action', function(){
+  suite('estateScopeHasJob tracks the player running an estate action', function(){
     var S = FF._state;
     var snap = { job:S.estate.job };
     try {
       // Personal estate: idle when there's no active job; busy while clearing/building/terraforming.
       S.estate.job = null;
-      ok(!FF.estateJobActive('personal'), 'no personal estate job -> not running an action (FAB may show)');
+      ok(!FF.estateScopeHasJob('personal'), 'no personal estate job -> not running an action (FAB may show)');
       S.estate.job = { kind:'clear', x:0, y:0, startAt:0, readyAt:1 };
-      ok(FF.estateJobActive('personal'), 'a personal clear/build/terraform job -> running an action (FAB hides)');
+      ok(FF.estateScopeHasJob('personal'), 'a personal clear/build/terraform job -> running an action (FAB hides)');
       S.estate.job = null;
       // Guild estate: busy only when a job in the shared array is owned by THIS player.
       var ge = FF.guildEstate, gs = FF.guildState;
       var gsnap = { gjobs:ge.jobs, gstatus:ge.status, gid:ge.guildId, ggrid:ge.grid, guild:gs.guild };
       try {
         ge.jobs = [];
-        ok(!FF.estateJobActive('guild'), 'no guild job for me -> not running a guild action');
+        ok(!FF.estateScopeHasJob('guild'), 'no guild job for me -> not running a guild action');
         ge.jobs = [{ owner:'_local', kind:'clear', x:0, y:0 }]; // signed-out player's id is '_local'
-        ok(FF.estateJobActive('guild'), 'a guild job I own -> running a guild action');
+        ok(FF.estateScopeHasJob('guild'), 'a guild job I own -> running a guild action');
         ge.jobs = [{ owner:'someone-else', kind:'clear', x:1, y:1 }];
-        ok(!FF.estateJobActive('guild'), "another member's guild job doesn't count as mine");
+        ok(!FF.estateScopeHasJob('guild'), "another member's guild job doesn't count as mine");
         // guildEstateReachable needs an in-guild player with a loaded shared estate.
         gs.guild = null; ok(!FF.guildEstateReachable(), 'not reachable when not in a guild');
         gs.guild = { id:'g1' }; ge.status='ready'; ge.guildId='g1'; ge.grid=[[{}]];
@@ -558,6 +558,29 @@
       }
     } finally {
       S.estate.job = snap.job;
+    }
+  });
+
+  // ---- The no-arg estateJobActive() must reflect the ACTIVE estate, not always the personal one -----
+  // Regression: a scoped estateScopeHasJob(scope) helper once shadowed this via a duplicate function name,
+  // making every estate action's "one job at a time" guard read the personal job even on the guild estate,
+  // which broke Clear/Pave/Build there while a personal job was running.
+  suite('estateJobActive() keys off the active estate (no name-collision)', function(){
+    var S = FF._state, ge = FF.guildEstate;
+    var snap = { job:S.estate.job, gjobs:ge.jobs };
+    try {
+      // Personal estate active, personal job running -> active.
+      FF.estUse(false); S.estate.job = { kind:'clear', x:0, y:0 }; ge.jobs = [];
+      ok(FF.estActiveIsGuild()===false && FF.estateJobActive(), 'personal estate + personal job -> job active');
+      // Switch to the GUILD estate: a lingering PERSONAL job must NOT count as the guild estate being busy.
+      FF.estUse(true);
+      ok(FF.estActiveIsGuild()===true, 'estUse(true) makes the guild estate the active one');
+      ok(!FF.estateJobActive(), 'guild estate with no guild job of mine -> NOT busy, even while a personal job runs (the collision bug)');
+      // A guild job I own -> the guild estate reads busy.
+      ge.jobs = [{ owner:'_local', kind:'clear', x:1, y:1 }];
+      ok(FF.estateJobActive(), 'guild estate + my guild job -> busy');
+    } finally {
+      FF.estUse(false); S.estate.job = snap.job; ge.jobs = snap.gjobs;
     }
   });
 

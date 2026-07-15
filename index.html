@@ -19744,9 +19744,10 @@
     pl.title = 'Plant all empty fields (' + plantN + ')';
     if(fz) fz.title = 'Fertilize all growing crops (' + fertN + ')';
   }
-  // Is the player currently running a build/clear/terraform action on this estate? Personal estates hold a
+  // Is the player running a build/clear/terraform action on a SPECIFIC estate scope? (Distinct from the
+  // no-arg estateJobActive() above, which checks the currently-active estate.) Personal estates hold a
   // single job (state.estate.job); the guild estate holds a per-member jobs array keyed by owner id.
-  function estateJobActive(scope){
+  function estateScopeHasJob(scope){
     if(scope === 'guild') return (typeof guildEstate !== 'undefined') && (guildEstate.jobs || []).some(function(j){ return j && j.owner === estMyId(); });
     return !!(state.estate && state.estate.job);
   }
@@ -19765,8 +19766,8 @@
     // a right-anchored FAB would otherwise overlap (and swallow taps on) the right-aligned tile-action
     // buttons like "Clear".
     var onAnyEstate = (currentCategory === 'estate') || (currentCategory === 'guild' && guildSub === 'estate');
-    var showMy = enabled && !onAnyEstate && !!(state.estate && state.estate.grid) && !estateJobActive('personal');
-    var showGuild = enabled && !onAnyEstate && guildEstateReachable() && !estateJobActive('guild');
+    var showMy = enabled && !onAnyEstate && !!(state.estate && state.estate.grid) && !estateScopeHasJob('personal');
+    var showGuild = enabled && !onAnyEstate && guildEstateReachable() && !estateScopeHasJob('guild');
     em.classList.toggle('on', showMy);
     gm.classList.toggle('on', showGuild);
   }
@@ -25157,7 +25158,7 @@
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS,
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,
-      TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS, estatePeonSources:estatePeonSources, peonGridFor:peonGridFor, estateJobActive:estateJobActive, guildEstateReachable:guildEstateReachable,
+      TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS, estatePeonSources:estatePeonSources, peonGridFor:peonGridFor, estateScopeHasJob:estateScopeHasJob, estateJobActive:estateJobActive, estActiveIsGuild:function(){ return estIsGuild; }, guildEstateReachable:guildEstateReachable,
       GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, FARMING_PHYSIQUE:FARMING_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
       physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
       SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, TICKER_TIPS:TICKER_TIPS, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
