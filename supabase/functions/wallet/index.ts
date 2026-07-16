@@ -11,49 +11,51 @@
 // EARNING is client-reported (the server can't simulate combat/gathering) but RATE-LIMITED: the credit
 // per call is capped by real time elapsed, the same way submit_profile caps leaderboard gains, so a
 // spoofed "earned_total" only ever banks at the honest rate -- and that rate RAMPS with account age
-// (rateFracFor), so a throwaway account can't farm at endgame speed. Spoof-shaped requests are logged
+// (dailyAllowanceFor), so a throwaway account can't farm at endgame speed. Spoof-shaped requests are logged
 // to wallet_audit (see migration 20260716010000). SPENDING is hard-enforced against the server balance
 // (wallet_debit fails when the gold isn't there). Existing balances are grandfathered from the player's
 // current save the first time the wallet is touched.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Rate limits (token bucket). Allowance accrues at GOLD_PER_HOUR and CARRIES between claims up to
-// BURST_GOLD (see bucketState). A scripted earn loop can't beat the sustained time-based rate, but a
-// single legit burst up to BURST_GOLD credits in full -- so opening a stack of treasure chests isn't
-// throttled away. A freshly-seeded wallet starts with a FULL bucket (see ensureWallet).
-const GOLD_PER_HOUR = 20_000_000;
-const BURST_GOLD = 10_000_000;
+// Rate limits (token bucket). The bucket holds ONE DAY's allowance and refills continuously over 24h;
+// unused allowance CARRIES between claims up to the full bucket (see bucketState). A scripted earn loop
+// can't beat the sustained time-based rate, but a single legit burst up to a full day's allowance
+// credits at once -- so opening a chest stack or banking a long offline haul isn't throttled away. A
+// freshly-seeded wallet starts with a FULL bucket (see ensureWallet).
 const HARD_CAP = 1_000_000_000_000_000; // 1e15, keeps totals safe JS integers
-const BUCKET_FILL_MS = Math.floor((BURST_GOLD / GOLD_PER_HOUR) * 3_600_000); // time to refill to BURST (30 min)
+const BUCKET_FILL_MS = 86_400_000;      // the bucket is one day's allowance, refilling over 24h
 
-// Account-age ramp: the FULL 20M/hr rate is endgame-scale, so a freshly-registered (bot) account
-// shouldn't get it. Allowance scales with the auth account's age (server-trusted created_at, the same
-// anti-spoof anchor as the item-ledger grandfather cap): 5% at day 0 ramping linearly to 100% at 14
-// days. Both the sustained rate and the burst scale, so the refill TIME stays 30 min at any age.
-// FF_RATE_RAMP_OFF=1 (staging secret) disables the ramp so integration tests can fund fresh accounts.
-const RATE_RAMP_DAYS = 14;
-const RATE_MIN_FRAC = 0.05;
+// Account-age ramp: the full daily allowance is endgame-scale, so a freshly-registered (bot) account
+// shouldn't get it. The allowance scales with the auth account's age (server-trusted created_at, the
+// same anti-spoof anchor as the item-ledger grandfather cap): 10M gold/day at <=1 day, ramping linearly
+// to 500M gold/day at >=7 days (~= the old 20M/hr sustained rate). Day-one legit players earn a tiny
+// fraction of 10M, so the ramp is invisible to them; it only starves day-zero farm bots.
+// FF_RATE_RAMP_OFF=1 (staging secret) pins the full allowance for integration runs.
+const RAMP_DAY1_GOLD = 10_000_000;    // daily allowance at account age <= 1 day
+const RAMP_DAY7_GOLD = 500_000_000;   // daily allowance at account age >= 7 days
+const RAMP_START_DAYS = 1, RAMP_END_DAYS = 7;
 const RAMP_OFF = Deno.env.get("FF_RATE_RAMP_OFF") === "1";
-function rateFracFor(createdAtIso: string | undefined): number {
-  if (RAMP_OFF || !createdAtIso) return 1;
+function dailyAllowanceFor(createdAtIso: string | undefined): number {
+  if (RAMP_OFF || !createdAtIso) return RAMP_DAY7_GOLD;
   const days = Math.max(0, (Date.now() - new Date(createdAtIso).getTime()) / 86_400_000);
-  return Math.min(1, Math.max(RATE_MIN_FRAC, days / RATE_RAMP_DAYS));
+  const t = Math.min(1, Math.max(0, (days - RAMP_START_DAYS) / (RAMP_END_DAYS - RAMP_START_DAYS)));
+  return Math.floor(RAMP_DAY1_GOLD + (RAMP_DAY7_GOLD - RAMP_DAY1_GOLD) * t);
 }
 
 // Proper token bucket keyed off `updated_at`: allowance = time since updated_at at the (age-scaled)
-// hourly rate, capped at the scaled burst and CARRIED between claims (unused allowance persists).
+// daily rate, capped at a full day's allowance and CARRIED between claims (unused allowance persists).
 // `bucketState` reports the available allowance and the effective start; `bucketAdvance` moves the
 // clock forward only by what was actually consumed. This fixes the old bug where a legit earn right
 // after a credit/seed was throttled to ~0 and the sync-clamp then wiped the balance.
-function bucketState(updatedAtIso: string, frac: number): { available: number; from: number } {
+function bucketState(updatedAtIso: string, perDay: number): { available: number; from: number } {
   const now = Date.now();
   const from = Math.max(new Date(updatedAtIso).getTime(), now - BUCKET_FILL_MS); // cap the backlog at a full bucket
-  const available = Math.min(Math.floor(BURST_GOLD * frac), Math.floor((GOLD_PER_HOUR * frac * (now - from)) / 3_600_000));
+  const available = Math.min(perDay, Math.floor((perDay * (now - from)) / 86_400_000));
   return { available, from };
 }
-function bucketAdvance(from: number, consumed: number, frac: number): string {
+function bucketAdvance(from: number, consumed: number, perDay: number): string {
   if (consumed <= 0) return new Date(from).toISOString();
-  return new Date(Math.min(Date.now(), from + Math.floor((consumed / (GOLD_PER_HOUR * frac)) * 3_600_000))).toISOString();
+  return new Date(Math.min(Date.now(), from + Math.floor((consumed / perDay) * 86_400_000))).toISOString();
 }
 
 // Audit thresholds: rows land in wallet_audit (service-role-only table) when a request looks like a
@@ -86,7 +88,7 @@ Deno.serve(async (req) => {
   const user = userData?.user;
   if (userErr || !user) return json({ ok: false, error: "Not authenticated." }, 401);
   const userId = user.id;
-  const rateFrac = rateFracFor(user.created_at);
+  const perDay = dailyAllowanceFor(user.created_at);
 
   // Best-effort audit trail for spoof-shaped requests (never blocks the response path).
   async function audit(note: string, extra: Record<string, unknown>): Promise<void> {
@@ -138,7 +140,7 @@ Deno.serve(async (req) => {
     }
     const w = await ensureWallet();
     const delta = Math.max(0, Math.floor(reported) - w.earned_total);
-    const { available, from } = bucketState(w.updated_at, rateFrac);
+    const { available, from } = bucketState(w.updated_at, perDay);
     let credited = Math.max(0, Math.min(delta, available));
     if (delta > AUDIT_HUGE_DELTA) await audit("earn_delta_huge", { action, reported_earned: Math.floor(reported), credited, server_gold: w.gold });
     if (credited > 0) {
@@ -147,7 +149,7 @@ Deno.serve(async (req) => {
       const { data: applied } = await admin.from("player_wallet").update({
         gold: Math.min(HARD_CAP, w.gold + credited),
         earned_total: w.earned_total + credited, // advance only by what we credited, so un-credited earnings stay claimable
-        updated_at: bucketAdvance(from, credited, rateFrac),
+        updated_at: bucketAdvance(from, credited, perDay),
       }).eq("user_id", userId).eq("earned_total", w.earned_total).select("user_id");
       if (!applied || applied.length === 0) credited = 0; // lost the race -- report what actually happened
     }
@@ -199,7 +201,7 @@ Deno.serve(async (req) => {
     }
     const w = await ensureWallet();
     const delta = Math.max(0, Math.floor(reported) - w.earned_total);
-    const { available, from } = bucketState(w.updated_at, rateFrac);
+    const { available, from } = bucketState(w.updated_at, perDay);
     const credited = Math.max(0, Math.min(delta, available));
     const goldAfterCredit = Math.min(HARD_CAP, w.gold + credited);
     const clamped = Math.max(0, Math.min(goldAfterCredit, Math.floor(Math.min(reportedGold, HARD_CAP))));
@@ -219,7 +221,7 @@ Deno.serve(async (req) => {
     const { data: applied } = await admin.from("player_wallet").update({
       gold: clamped,
       earned_total: earnedTotal,
-      updated_at: stuckCredit > 0 ? bucketAdvance(from, stuckCredit, rateFrac) : w.updated_at, // carry the clock otherwise
+      updated_at: stuckCredit > 0 ? bucketAdvance(from, stuckCredit, perDay) : w.updated_at, // carry the clock otherwise
     }).eq("user_id", userId).eq("earned_total", w.earned_total).select("user_id");
     if (!applied || applied.length === 0) {
       const { data: cur } = await admin.from("player_wallet").select("gold, earned_total").eq("user_id", userId).maybeSingle();
