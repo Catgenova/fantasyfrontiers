@@ -4057,20 +4057,33 @@
   var ARROW_MAX_INDEX = 19;         // fletching_arrow_t0 .. t19 (20 tiers; Copper is skipped)
   // The Quiver's chance a shot doesn't consume its arrow, rarity-scaled (x2/4/8), capped at 95%.
   function quiverAmmoPreserve(st){ st = st || state; if(st.equippedOffhand !== 'quiver') return 0; var oi = getEquippedOffhandItem(st); return oi ? Math.min(0.95, oi.ammoPreserve || 0) : 0; }
-  // The arrow a bow shot spends: the highest-tier Arrow you own that isn't fancier than the bow, or null.
+  // The highest usable arrow tier for the equipped bow (arrows fancier than the bow can't be nocked).
+  function bowArrowTierCap(st){ st = st || state; return Math.min(ARROW_MAX_INDEX, Math.max(0, (st.equippedMainhandTier || 1) - 1)); }
+  // Is an arrow id usable with the equipped bow (a real arrow tier, at or below the bow's tier)?
+  function arrowUsableWithBow(st, arrowId){
+    var m = /^fletching_arrow_t(\d+)$/.exec(arrowId || '');
+    return !!m && +m[1] <= bowArrowTierCap(st);
+  }
+  // The arrow a bow shot spends. If the player has EQUIPPED a specific arrow (state.equippedArrow), only
+  // that arrow is ever nocked -- when they run out of it the shot goes unfletched. Otherwise ("Auto") the
+  // highest-tier Arrow they own that isn't fancier than the bow is used. Returns the arrow id or null.
   function bowArrowToConsume(st){
     st = st || state;
-    var bowTierIdx = Math.max(0, (st.equippedMainhandTier || 1) - 1);
-    for(var i = Math.min(ARROW_MAX_INDEX, bowTierIdx); i >= 0; i--){ if(((st.inventory && st.inventory['fletching_arrow_t'+i]) || 0) > 0) return 'fletching_arrow_t'+i; }
+    var cap = bowArrowTierCap(st);
+    var sel = st.equippedArrow;
+    if(sel){ return (arrowUsableWithBow(st, sel) && ((st.inventory && st.inventory[sel]) || 0) > 0) ? sel : null; }
+    for(var i = cap; i >= 0; i--){ if(((st.inventory && st.inventory['fletching_arrow_t'+i]) || 0) > 0) return 'fletching_arrow_t'+i; }
     return null;
   }
-  // Total usable arrows for the equipped bow (any tier at or below the bow's tier) -- powers the live
-  // combat-screen ammo counter.
+  // Arrows the equipped bow can actually fire right now -- powers the live combat-screen ammo counter. With
+  // a specific arrow equipped it's that arrow's stock; on Auto it's every usable arrow at or below the bow.
   function bowArrowsAvailable(st){
     st = st || state;
-    var bowTierIdx = Math.max(0, (st.equippedMainhandTier || 1) - 1);
+    var cap = bowArrowTierCap(st);
+    var sel = st.equippedArrow;
+    if(sel){ return arrowUsableWithBow(st, sel) ? ((st.inventory && st.inventory[sel]) || 0) : 0; }
     var n = 0;
-    for(var i = Math.min(ARROW_MAX_INDEX, bowTierIdx); i >= 0; i--){ n += (st.inventory && st.inventory['fletching_arrow_t'+i]) || 0; }
+    for(var i = cap; i >= 0; i--){ n += (st.inventory && st.inventory['fletching_arrow_t'+i]) || 0; }
     return n;
   }
   // A nocked arrow adds base damage equal to a same-tier bow (handBonus 1.0), so higher-tier arrows hit
@@ -7906,6 +7919,15 @@
     state.equippedOffhandTier = 0;
     state.equippedOffhandRarity = 'normal';
   }
+  // Choose which Fletching Arrow a bow nocks. '' / null = Auto (highest usable). A specific arrow id
+  // means only that arrow is ever fired (see bowArrowToConsume). Arrows only matter with a bow equipped.
+  function equipArrow(arrowId){
+    if(!arrowId){ state.equippedArrow = null; addLog('Arrows set to Auto (highest usable).', 'important'); return; }
+    if(!/^fletching_arrow_t\d+$/.test(arrowId)) return;
+    state.equippedArrow = arrowId;
+    var nm = (ALL_SELLABLE[arrowId]||{}).name || arrowId;
+    addLog('You nocked ' + nm + '.', 'important');
+  }
   function craftWard(typeId, tierIndex){
     var w = WARD_TYPE_MAP[typeId];
     if(!w) return;
@@ -9722,6 +9744,7 @@
       equippedOffhand: null,
       equippedOffhandTier: 0,
       equippedOffhandRarity: 'normal',
+      equippedArrow: null,      // null = Auto (highest usable arrow); or a specific fletching_arrow_t<n> id
       equippedRelicTier: 0,
       equippedRelicRarity: 'normal',
       equippedRelicUid: null,   // set when a unique (enchanted/enhanced) Relic is equipped
@@ -14488,6 +14511,45 @@
     return html;
   }
 
+  // Arrow picker: choose which Fletching Arrow the bow nocks. Only meaningful with a bow equipped, and
+  // only arrows at or below the bow's tier can be fired. 'Auto' always fires the highest usable arrow.
+  function renderEquipArrowSection(){
+    var mh = getWeaponStyle(state.equippedMainhand);
+    var html = '<h3>Nock Arrows</h3>';
+    if(mh.hand !== 'bow'){
+      html += '<div class="section-intro">Arrows only fire from a bow. Equip a bow as your Mainhand to choose which arrow to nock.</div>';
+      return html;
+    }
+    var cap = bowArrowTierCap(state);
+    var sel = state.equippedArrow || null;      // null = Auto
+    var activeId = bowArrowToConsume(state);     // the arrow actually firing right now (respects the choice)
+    // Every usable arrow the player owns (tier <= bow tier, qty > 0), lowest tier first.
+    var owned = [];
+    for(var i=0;i<=cap;i++){ var id='fletching_arrow_t'+i; if((state.inventory[id]||0)>0) owned.push(id); }
+    var curLabel = sel ? ((ALL_SELLABLE[sel]||{}).name||sel) : 'Auto (highest usable)';
+    var curDmg = activeId ? arrowBaseDamage(activeId) : null;
+    html += '<div class="section-intro">Choose which arrow your bow fires. Only that arrow is spent and counted for damage; when you run out the shot goes unfletched (&times;'+UNFLETCHED_DMG_MULT+' damage). Arrows fancier than your bow can\'t be nocked.</div>';
+    html += '<div class="card-grid"><div class="item-card">';
+    html += '<div class="item-top"><div class="item-icon">'+svgIcon('arrow','#a8895c')+'</div><div><div class="item-name">Arrow</div><div class="item-meta">'+escapeHtml(curLabel)+(curDmg ? ' &bull; +'+curDmg.dmgMin+'-'+curDmg.dmgMax+' dmg' : (sel ? ' &bull; <span style="color:var(--hp-bad)">none owned — unfletched</span>' : ''))+'</div></div></div>';
+    html += '<div class="style-row">';
+    // Auto option.
+    html += '<button class="style-btn'+(sel===null?' active':'')+'" data-action="equipArrow" data-item="">'+svgIcon('arrow','currentColor')+' Auto <span class="style-type">highest usable arrow</span></button>';
+    if(owned.length===0){
+      html += '</div><div class="empty-note">No usable arrows in inventory. Craft some via Outfitting &rarr; Fletching (arrows fancier than your bow can\'t be fired).</div>';
+    } else {
+      owned.forEach(function(id){
+        var item = ALL_SELLABLE[id]||{};
+        var qty = state.inventory[id]||0;
+        var d = arrowBaseDamage(id);
+        var active = sel===id;
+        html += '<button class="style-btn'+(active?' active':'')+'" data-action="equipArrow" data-item="'+id+'">'+(item.icon||svgIcon('arrow','#a8895c'))+' '+escapeHtml(item.name||id)+' <span class="style-lvl">x'+fmt(qty)+'</span><span class="style-type">+'+d.dmgMin+'-'+d.dmgMax+' dmg</span></button>';
+      });
+      html += '</div>';
+    }
+    html += '</div></div>';
+    return html;
+  }
+
   function renderOffhandSmithTab(){
     var lvl = getLevel(state.xp.shieldsmithing);
     var html = '';
@@ -14876,6 +14938,9 @@
     if(weaponStyle.hand==='bow'){
       var _arrows = bowArrowsAvailable(state);
       var _keepPct = Math.round(quiverAmmoPreserve(state)*100);
+      var _nockId = bowArrowToConsume(state);
+      var _nockLabel = state.equippedArrow ? ((ALL_SELLABLE[state.equippedArrow]||{}).name||state.equippedArrow) : ('Auto'+(_nockId ? ' &bull; '+((ALL_SELLABLE[_nockId]||{}).name||_nockId) : ''));
+      html += '<div class="stat-row"><span class="stat-label">Nocked Arrow</span><span class="stat-value">'+_nockLabel+'</span></div>';
       html += '<div class="stat-row"><span class="stat-label">Arrows</span><span class="stat-value" id="statArrowsVal">'+(_arrows>0 ? fmt(_arrows)+(_keepPct?' <span style="color:var(--gold)">('+_keepPct+'% keep)</span>':'') : '<span style="color:var(--hp-bad)">none — unfletched &times;'+UNFLETCHED_DMG_MULT+'</span>')+'</span></div>';
     }
     var effAtkTime = Math.round(weaponStyle.attackSpeed * classAttackSpeedMult(state) * 100) / 100;
@@ -15038,6 +15103,7 @@
     html += '<div class="section-intro" style="margin-top:10px">One-handed weapons free up your offhand for a shield or ward; bows pair with a quiver instead; two-handed weapons need both hands. Forge new gear via Outfitting &rarr; Weaponsmithing / Shieldsmithing / Runesmithing. Damage types cycle slashing &gt; piercing &gt; blunt &gt; slashing.</div>';
     if(weaponStyle.hand==='bow'){
       html += renderEquipQuiverSection();
+      html += renderEquipArrowSection();
     } else {
       html += renderEquipShieldSection();
       html += renderEquipWardSection();
@@ -24514,6 +24580,7 @@
     forgeStackableQuiver: function(btn, e){ craftStackableQuiver(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10)); },
     equipStackableQuiver: function(btn, e){ equipStackableQuiver(btn.getAttribute('data-item')); },
     unequipStackableQuiver: function(btn, e){ unequipStackableQuiver(); },
+    equipArrow: function(btn, e){ equipArrow(btn.getAttribute('data-item')); },
     forgeWard: function(btn, e){ craftWard(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10)); },
     equipWard: function(btn, e){ equipWard(btn.getAttribute('data-item')); },
     unequipWard: function(btn, e){ unequipWard(); },
@@ -24669,7 +24736,7 @@
   // Equip / unequip / loadout-swap / familiar-toggle actions are barred while a fight is live.
   var COMBAT_LOCKED_ACTIONS = {
     equipStackableWeapon:1, unequipStackableWeapon:1, equipStackableShield:1, unequipStackableShield:1,
-    equipStackableQuiver:1, unequipStackableQuiver:1,
+    equipStackableQuiver:1, unequipStackableQuiver:1, equipArrow:1,
     equipWard:1, unequipWard:1, equipOffhand:1, equipOffhandClaw:1, unequipOffhandClaw:1,
     equipBodyArmor:1, unequipBodyArmor:1, equipBelt:1, unequipBelt:1, equipRelic:1, unequipRelic:1,
     equipRing:1, unequipRing:1, equipAmulet:1, unequipAmulet:1,
@@ -25397,7 +25464,7 @@
       wardingReflectBonus:wardingReflectBonus, WARDING_SKILL_ID:WARDING_SKILL_ID, WARDING_BONUS_MIN:WARDING_BONUS_MIN, WARDING_BONUS_MAX:WARDING_BONUS_MAX, OFFHAND_STYLE_IDS:OFFHAND_STYLE_IDS,
       GLYPH_ITEMS:GLYPH_ITEMS, glyphIdFor:glyphIdFor, glyphDropMax:glyphDropMax, GLYPH_DROP_CHANCE:GLYPH_DROP_CHANCE, ELEMENTAL_ELEMENT_OVERRIDES:ELEMENTAL_ELEMENT_OVERRIDES, getMonsterLootChance:getMonsterLootChance, getMonsterLootLabel:getMonsterLootLabel, MONSTER_CATEGORIES:MONSTER_CATEGORIES, applyMonsterCategoryLoot:applyMonsterCategoryLoot,
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
-      bowArrowToConsume:bowArrowToConsume, bowArrowsAvailable:bowArrowsAvailable, arrowBaseDamage:arrowBaseDamage, quiverAmmoPreserve:quiverAmmoPreserve, ARROW_MAX_INDEX:ARROW_MAX_INDEX, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT,
+      bowArrowToConsume:bowArrowToConsume, bowArrowsAvailable:bowArrowsAvailable, bowArrowTierCap:bowArrowTierCap, arrowUsableWithBow:arrowUsableWithBow, equipArrow:equipArrow, arrowBaseDamage:arrowBaseDamage, quiverAmmoPreserve:quiverAmmoPreserve, ARROW_MAX_INDEX:ARROW_MAX_INDEX, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, SET_TIER_INDEX:SET_TIER_INDEX, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, SET_NAMES:SET_NAMES, setName:setName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, combatPlayerBuffs:combatPlayerBuffs, combatEnemyDebuffs:combatEnemyDebuffs, renderFxBars:renderFxBars, captureCombatLoadout:captureCombatLoadout, applyCombatLoadout:applyCombatLoadout, saveLoadoutPreset:saveLoadoutPreset, equipLoadoutPreset:equipLoadoutPreset, clearLoadoutPreset:clearLoadoutPreset, renameLoadoutPreset:renameLoadoutPreset, ensureLoadouts:ensureLoadouts, loadoutSummary:loadoutSummary, LOADOUT_SLOT_COUNT:LOADOUT_SLOT_COUNT, combatLocksGear:combatLocksGear, COMBAT_LOCKED_ACTIONS:COMBAT_LOCKED_ACTIONS, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, knightUnstoppableMult:knightUnstoppableMult, thunderStaticPerHit:thunderStaticPerHit, thunderStaticThreshold:thunderStaticThreshold, thunderDischargeMult:thunderDischargeMult, deadeyeAccuracyBonus:deadeyeAccuracyBonus, duelistFlourishStabs:duelistFlourishStabs, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, heraldRipostePct:heraldRipostePct, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, undyingRageIncomingMult:undyingRageIncomingMult, berserkerFrenziedBlowsMult:berserkerFrenziedBlowsMult, templarLayOnHandsPct:templarLayOnHandsPct, templarBlessingOfHasteMult:templarBlessingOfHasteMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, spellbladeResonantCrit:spellbladeResonantCrit, voidVulnPerStack:voidVulnPerStack, voidMarkPerHit:voidMarkPerHit, quickdrawVenomPct:quickdrawVenomPct, quickdrawTwinFangChance:quickdrawTwinFangChance, treasureProspectorPer:treasureProspectorPer, setTreasureMult:setTreasureMult, EXEC_SET_EXECUTE_FRAC:EXEC_SET_EXECUTE_FRAC, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,

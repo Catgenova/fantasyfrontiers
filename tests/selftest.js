@@ -4485,6 +4485,25 @@
     eq(FF.bowArrowsAvailable({ equippedMainhandTier:6, inventory:{ fletching_arrow_t0:10, fletching_arrow_t3:5 } }), 15, 'sums all usable arrows');
     eq(FF.bowArrowsAvailable({ equippedMainhandTier:3, inventory:{ fletching_arrow_t0:4, fletching_arrow_t10:99 } }), 4, 'arrows fancier than the bow are excluded from the count');
     eq(FF.bowArrowsAvailable({ equippedMainhandTier:6, inventory:{} }), 0, 'no arrows -> 0');
+
+    // Equipping a specific arrow (state.equippedArrow) fires ONLY that arrow -- higher owned arrows are
+    // ignored, and running out shoots unfletched rather than falling back to a different arrow.
+    var invMix = { fletching_arrow_t0:10, fletching_arrow_t3:5 };
+    eq(FF.bowArrowToConsume({ equippedMainhandTier:6, equippedArrow:'fletching_arrow_t0', inventory:invMix }), 'fletching_arrow_t0', 'a chosen arrow is used even when a higher one is owned');
+    eq(FF.bowArrowsAvailable({ equippedMainhandTier:6, equippedArrow:'fletching_arrow_t0', inventory:invMix }), 10, 'ammo count reflects only the chosen arrow');
+    eq(FF.bowArrowToConsume({ equippedMainhandTier:6, equippedArrow:'fletching_arrow_t5', inventory:invMix }), null, 'chosen arrow you own none of -> unfletched (no fallback)');
+    eq(FF.bowArrowsAvailable({ equippedMainhandTier:6, equippedArrow:'fletching_arrow_t5', inventory:invMix }), 0, 'ammo count is 0 for a chosen arrow you have none of');
+    // A chosen arrow fancier than the bow can't be nocked.
+    eq(FF.bowArrowToConsume({ equippedMainhandTier:2, equippedArrow:'fletching_arrow_t9', inventory:{ fletching_arrow_t9:5 } }), null, 'a chosen arrow above the bow tier is unusable');
+    ok(!FF.arrowUsableWithBow({ equippedMainhandTier:2 }, 'fletching_arrow_t9'), 'arrowUsableWithBow rejects an over-tier arrow');
+    ok(FF.arrowUsableWithBow({ equippedMainhandTier:6 }, 'fletching_arrow_t3'), 'arrowUsableWithBow accepts an in-tier arrow');
+    eq(FF.bowArrowTierCap({ equippedMainhandTier:6 }), 5, 'bow tier cap is bow tier - 1');
+    // equipArrow mutates the shared state; snapshot/restore so other suites are unaffected.
+    var _savedArrow = FF._state.equippedArrow;
+    FF.equipArrow('fletching_arrow_t3'); eq(FF._state.equippedArrow, 'fletching_arrow_t3', 'equipArrow sets the chosen arrow');
+    FF.equipArrow(''); eq(FF._state.equippedArrow, null, 'equipArrow with empty id resets to Auto');
+    FF.equipArrow('not_an_arrow'); eq(FF._state.equippedArrow, null, 'equipArrow ignores a non-arrow id');
+    FF._state.equippedArrow = _savedArrow;
   });
 
   // ---- Classes: Knight (claymore offtank brawler: momentum + counterweight/bulwark/warlord/relentless) ----
