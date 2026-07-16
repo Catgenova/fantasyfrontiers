@@ -24198,6 +24198,9 @@
     for(var mu=0; mu<TIER_COUNT; mu++){ if(TIER_LEVELS[mu] <= blacksmithLvlForTools) maxUnlockedTool = mu; }
     TOOL_TYPES.forEach(function(tt){
       var sel = Math.min(selectedToolTier[tt.skillId]||0, maxUnlockedTool);
+      // Mirror the render's affordable-tier drop so this tick targets the SAME card the render drew --
+      // otherwise the Forge button flickers (render enables the affordable tier, this disables the selected one).
+      sel = craftFilterTier(sel, maxUnlockedTool, function(t){ return (tt.isGather ? getGatherToolTierData(tt.skillId, t+1) : getCraftToolTierData(tt.skillId, t+1)).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('tool', {skillId:tt.skillId, tierIndex:t}); });
       var data = tt.isGather ? getGatherToolTierData(tt.skillId, sel+1) : getCraftToolTierData(tt.skillId, sel+1);
       Object.keys(data.inputs).forEach(function(k){
         var el = document.getElementById('inp-tool-'+tt.skillId+'-'+k);
@@ -24220,6 +24223,7 @@
       var maxUnlocked = 0;
       for(var mi=0; mi<w.tierCount; mi++){ if(TIER_LEVELS[mi] <= skillLvl) maxUnlocked = mi; }
       var sel = Math.min(selectedMeleeWeaponTier[w.id]||0, maxUnlocked);
+      sel = craftFilterTier(sel, maxUnlocked, function(t){ return getStackableWeaponTierData(w.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('stackweapon', {typeId:w.id, tierIndex:t}); });
       var data = getStackableWeaponTierData(w.id, sel);
       Object.keys(data.inputs).forEach(function(k){
         var el = document.getElementById('inp-stw-'+w.id+'-'+k);
@@ -24242,6 +24246,7 @@
       var shieldMaxUnlocked = 0;
       for(var smi=0; smi<s.tierCount; smi++){ if(TIER_LEVELS[smi] <= shieldSkillLvl) shieldMaxUnlocked = smi; }
       var shieldSel = Math.min(selectedShieldTier[s.id]||0, shieldMaxUnlocked);
+      shieldSel = craftFilterTier(shieldSel, shieldMaxUnlocked, function(t){ return getStackableShieldTierData(s.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('stackshield', {typeId:s.id, tierIndex:t}); });
       var shieldData = getStackableShieldTierData(s.id, shieldSel);
       Object.keys(shieldData.inputs).forEach(function(k){
         var el = document.getElementById('inp-sts-'+s.id+'-'+k);
@@ -24263,6 +24268,7 @@
       var quiverMaxUnlocked = 0;
       for(var qmi=0; qmi<q.tierCount; qmi++){ if(TIER_LEVELS[qmi] <= quiverSkillLvl) quiverMaxUnlocked = qmi; }
       var quiverSel = Math.min(selectedQuiverTier[q.id]||0, quiverMaxUnlocked);
+      quiverSel = craftFilterTier(quiverSel, quiverMaxUnlocked, function(t){ return getStackableQuiverTierData(q.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('stackquiver', {typeId:q.id, tierIndex:t}); });
       var quiverData = getStackableQuiverTierData(q.id, quiverSel);
       Object.keys(quiverData.inputs).forEach(function(k){
         var el = document.getElementById('inp-stq-'+q.id+'-'+k);
@@ -24284,6 +24290,7 @@
       var wMax = 0;
       for(var wmi=0; wmi<w.tierCount; wmi++){ if(TIER_LEVELS[wmi] <= runeLvl) wMax = wmi; }
       var wSel = Math.min(selectedWardTier[w.id]||0, wMax);
+      wSel = craftFilterTier(wSel, wMax, function(t){ return getWardTierData(w.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('ward', {typeId:w.id, tierIndex:t}); });
       var wData = getWardTierData(w.id, wSel);
       Object.keys(wData.inputs).forEach(function(k){
         var el = document.getElementById('inp-ward-'+w.id+'-'+k);
@@ -24302,6 +24309,7 @@
       var sMax = 0;
       for(var smi=0; smi<s.tierCount; smi++){ if(TIER_LEVELS[smi] <= runeLvl) sMax = smi; }
       var sSel = Math.min(selectedWandTier[s.id]||0, sMax);
+      sSel = craftFilterTier(sSel, sMax, function(t){ return getStackableWeaponTierData(s.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('stackweapon', {typeId:s.id, tierIndex:t}); });
       var sData = getStackableWeaponTierData(s.id, sSel);
       Object.keys(sData.inputs).forEach(function(k){
         var el = document.getElementById('inp-scepter-'+s.id+'-'+k);
@@ -24321,6 +24329,7 @@
       var wMax = 0;
       for(var wmi=0; wmi<w.tierCount; wmi++){ if(TIER_LEVELS[wmi] <= arcLvl) wMax = wmi; }
       var wSel = Math.min(selectedWandTier[w.id]||0, wMax);
+      wSel = craftFilterTier(wSel, wMax, function(t){ return getStackableWeaponTierData(w.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('stackweapon', {typeId:w.id, tierIndex:t}); });
       var wData = getStackableWeaponTierData(w.id, wSel);
       Object.keys(wData.inputs).forEach(function(k){
         var el = document.getElementById('inp-wand-'+w.id+'-'+k);
