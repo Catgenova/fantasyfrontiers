@@ -20135,7 +20135,7 @@
   var authMode = 'login';        // 'register' | 'login' -- default to Log In; Register is the off tab
   var authError = '';
   var authBusy = false;
-  var authUsernameDraft = '';
+  var authUsernameDraft = '', authPasswordDraft = ''; // kept in sync with the inputs so a re-render (e.g. ticking a T&C box) doesn't wipe what was typed
   // Login-screen conveniences (localStorage). 'Remember username' stores the username only;
   // 'auto-login' relies on the persisted Supabase session (no password is ever stored).
   var authRememberUser = false, authAutoLogin = true;
@@ -20200,7 +20200,7 @@
         if(authRememberUser) localStorage.setItem('ff-remember-username', username); else localStorage.removeItem('ff-remember-username');
         localStorage.setItem('ff-autologin', authAutoLogin ? '1' : '0');
       }catch(e){}
-      authError = ''; authUsernameDraft = ''; authBusy = false;
+      authError = ''; authUsernameDraft = ''; authPasswordDraft = ''; authBusy = false; // clear the drafts on success (about to leave the gate)
       await startGameOnline();     // ONLINE-ONLY: load state from the backend and begin play
       return;
     }catch(err){ authError = authFriendlyError(err, authMode); }
@@ -20441,7 +20441,7 @@
     var html = '<div class="auth-card">';
     html += '<div class="auth-tabs"><button class="auth-tab'+(isReg?' on':'')+'" data-action="authMode" data-mode="register">Register</button><button class="auth-tab'+(!isReg?' on':'')+'" data-action="authMode" data-mode="login">Log In</button></div>';
     html += '<input id="authUsername" class="chat-input" maxlength="'+USERNAME_MAX+'" placeholder="Username" autocomplete="off" spellcheck="false" value="'+escapeHtml(authUsernameDraft)+'">';
-    html += '<input id="authPassword" class="chat-input" type="password" placeholder="Password" autocomplete="'+(isReg?'new-password':'current-password')+'">';
+    html += '<input id="authPassword" class="chat-input" type="password" placeholder="Password" autocomplete="'+(isReg?'new-password':'current-password')+'" value="'+escapeHtml(authPasswordDraft)+'">';
     if(isReg) html += '<input id="authConfirm" class="chat-input" type="password" placeholder="Confirm password" autocomplete="new-password">';
     // "Remember username" / "auto-login" only apply when signing back in, so they're login-only.
     if(!isReg){
@@ -25240,6 +25240,11 @@
   }
   function renderLoginGate(){
     ensureLandingStyle();
+    // Preserve typed Username/Password across a re-render (ticking a Privacy/Rules checkbox, a failed
+    // submit, or a mode switch all rebuild this form). Snapshot the live input values into drafts BEFORE
+    // the rebuild so they're restored below instead of wiped.
+    var _capU = document.getElementById('authUsername'); if(_capU) authUsernameDraft = _capU.value;
+    var _capP = document.getElementById('authPassword'); if(_capP) authPasswordDraft = _capP.value;
     var app = document.getElementById('app');
     var gate = document.getElementById('loginGate');
     if(!gate){
