@@ -92,6 +92,17 @@ USER_A="${RUN}_a"
 fund_wallet "$TOK_A"   # gold is server-authoritative -- fund the wallet before guild create / treasury donations
 
 # --------------------------------------------------------------------------------------------
+sect "Wallet: spoofed earn/sync is clamped"
+# The support-ticket exploit shape: intercept the sync and report ~1T earned_total + 1T gold. The token
+# bucket + min() clamp must bound the result at the burst ceiling (10M full-rate; far less on ramped
+# fresh accounts) -- never honor the claim. The request also lands in wallet_audit for review.
+mkuser wspoof; TOK_W="$TOK"
+WS=$(fn wallet "$TOK_W" '{"action":"sync","earned_total":999999999999,"gold":999999999999}')
+assert_ok "$WS" "spoofed sync returns ok (clamped, not honored)"
+WG="$(field "$WS" gold)"; WGI="${WG%.*}"
+if [ -n "$WGI" ] && [ "$WGI" -le 20000000 ] 2>/dev/null; then pass "spoofed gold clamped by the bucket (gold=$WG)"; else faild "spoofed gold clamped by the bucket" "gold=$WG"; fi
+
+# --------------------------------------------------------------------------------------------
 sect "Guild create & validation"
 GNAME="Guild ${RUN:3:10}"; GTAG="T$((RANDOM%9000+1000))"
 GC=$(fn guild_action "$TOK_A" "{\"action\":\"create\",\"name\":\"$GNAME\",\"tag\":\"$GTAG\"}")
