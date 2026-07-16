@@ -188,15 +188,19 @@ sect "submit_profile validation"
 assert_ok  "$(fn submit_profile "$TOK_A" '{"total_level":3,"gold":100,"skills":{"mining":3}}')" "valid profile accepted"
 assert_err "$(fn submit_profile "$TOK_A" '{"total_level":5,"gold":100,"skills":{"mining":3}}')" "total_level != sum(skills) rejected"
 assert_err "$(fn submit_profile "$TOK_A" '{"total_level":999,"gold":100,"skills":{"mining":999}}')" "out-of-range skill level rejected"
-# Rapid-fire injection: each submit used to grant a fresh BURST (400 levels), so firing N in a row banked
-# 400*N onto the leaderboard in seconds (and unlocked the total_level-gated gold rate). The token bucket
-# must bound repeated jumps -- after several instant 800-level submits the stored total_level stays near
-# one burst (~400), not 800. profiles is publicly readable, so read it back via REST.
+# Injection via a big first-submit: the token-bucket grandfather used to back-date a flat fill window, so a
+# BRAND-NEW account got a full BURST (400 levels) allowance on its very first submit -- enough to inject a
+# whole leaderboard rank in one shot (reported: user "test3" jumped digging 1->97 + forestry 1->81 ~= 178).
+# The grandfather is now keyed to account age (created_at), so a seconds-old account's allowance is ~0 and a
+# big first submit is clamped near zero, not to 400. Firing several more can't ratchet it up either (bucket
+# carries). profiles is publicly readable, so read it back via REST.
 mkuser lvl; TOK_L="$TOK"; LID="$(jwtsub "$TOK_L")"
 LVLBIG='{"total_level":800,"gold":100,"skills":{"a":100,"b":100,"c":100,"d":100,"e":100,"f":100,"g":100,"h":100}}'
 fn submit_profile "$TOK_L" "$LVLBIG" >/dev/null; fn submit_profile "$TOK_L" "$LVLBIG" >/dev/null; fn submit_profile "$TOK_L" "$LVLBIG" >/dev/null
 LVLNOW="$(field "$(rest GET "profiles?id=eq.$LID&select=total_level" "$TOK_L")" total_level)"
-if [ -n "$LVLNOW" ] && [ "$LVLNOW" -le 500 ] 2>/dev/null; then pass "rapid submit_profile is bucket-bounded (total_level=$LVLNOW, not 800)"; else faild "rapid submit_profile is bucket-bounded" "total_level=$LVLNOW"; fi
+# A seconds-old account accrues <1 level/hr*age, so its stored total must stay tiny (<=50 gives margin for
+# creation->submit latency). The old flat-grandfather bug would leave it at 400 here -- this catches it.
+if [ -n "$LVLNOW" ] && [ "$LVLNOW" -le 50 ] 2>/dev/null; then pass "fresh-account submit_profile is age-grandfathered (total_level=$LVLNOW, not 400)"; else faild "fresh-account submit_profile is age-grandfathered" "total_level=$LVLNOW (expected <=50)"; fi
 
 # --------------------------------------------------------------------------------------------
 sect "Marketplace"

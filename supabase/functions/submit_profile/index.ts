@@ -31,8 +31,8 @@ const GOLD_ABS_CAP = 1_000_000_000_000; // 1e12 sanity ceiling
 // gate that reads profiles.total_level). The bucket accrues at LEVELS_PER_HOUR up to BURST_LEVELS and
 // CARRIES between writes; rapid resubmits drain it and then get ~0 until real time passes.
 const LEVELS_PER_HOUR = 200;      // total-level gain/hour (ranking metric — the strict one)
-const BURST_LEVELS = 400;         // bucket size: max levels bankable in one burst
-const LEVEL_FILL_MS = Math.floor((BURST_LEVELS / LEVELS_PER_HOUR) * 3_600_000); // time to refill the burst (2h)
+const BURST_LEVELS = 400;         // bucket size: max levels bankable in one burst (also caps a first-sync grandfather)
+const LEVEL_FILL_MS = Math.floor((BURST_LEVELS / LEVELS_PER_HOUR) * 3_600_000); // time to refill the burst (2h); floors the clock so unused allowance can't exceed BURST
 const GOLD_PER_HOUR = 20_000_000; // loose; profiles.gold is a secondary DISPLAY column (player_wallet is authoritative)
 const BURST_GOLD = 10_000_000;
 
@@ -97,23 +97,28 @@ Deno.serve(async (req) => {
 
   // 3. Rate validation against the previous accepted row (or account age for the first).
   const { data: prev } = await admin.from("profiles")
-    .select("total_level, gold, updated_at").eq("id", userId).maybeSingle();
+    .select("total_level, gold, updated_at, skills").eq("id", userId).maybeSingle();
 
   const nowMs = Date.now();
   const prevTotal = prev?.total_level ?? 0;
   const prevGold = prev?.gold ?? 0;
 
-  // Token bucket for the ranking metric. The clock is the stored row's updated_at (or, on the first
-  // submission, a full bucket back-dated by the fill window so a new account can grandfather its real
-  // starting level up to BURST in one go). Allowance = time since the clock at LEVELS_PER_HOUR, capped at
-  // BURST_LEVELS and carried between writes. We CLAMP (accept, trim to the allowance) rather than reject,
-  // so a legit big/offline gain is never blocked -- it catches up over the next writes as the bucket
-  // refills -- while a cheater firing rapid submissions is bounded to the sustained rate.
-  const bucketFromMs = Math.max(
-    prev?.updated_at ? new Date(prev.updated_at).getTime() : nowMs - LEVEL_FILL_MS,
-    nowMs - LEVEL_FILL_MS,
-  );
-  const levelAllow = Math.min(BURST_LEVELS, Math.floor(LEVELS_PER_HOUR * (nowMs - bucketFromMs) / 3_600_000));
+  // Token bucket for the ranking metric. The clock is the stored row's updated_at, or -- on the FIRST
+  // submission (no prior row) -- the account's auth creation time, exactly like the gold clamp below and
+  // the item-ledger/wallet age grandfathering. Using account age (not a flat fill-window back-date) is the
+  // fix for the reported injection: the old code handed EVERY brand-new account a full BURST_LEVELS (400)
+  // grandfather, so a seconds-old account could inject ~400 levels in one shot (test3 jumped digging 1->97
+  // + forestry 1->81 = ~178, well under 400). Age-keyed, a fresh account's allowance is ~0 and its real
+  // progress catches up at LEVELS_PER_HOUR; a genuinely old account syncing for the first time still gets
+  // the full BURST (levelAllow caps there regardless of how far back created_at is).
+  // Allowance = time since the clock at LEVELS_PER_HOUR, capped at BURST_LEVELS and carried between writes.
+  // We CLAMP (accept, trim to the allowance) rather than reject, so a legit big/offline gain is never
+  // blocked -- it catches up over the next writes -- while a cheater is bounded to the sustained rate.
+  const clockBase = prev?.updated_at ? new Date(prev.updated_at).getTime() : new Date(user.created_at).getTime();
+  // Floor the clock at now-FILL so a deep-past base (old account's first sync, or a drifted clock) can bank
+  // at most BURST -- never an unbounded, repeatable grandfather.
+  const bucketFromMs = Math.max(clockBase, nowMs - LEVEL_FILL_MS);
+  const levelAllow = Math.min(BURST_LEVELS, Math.floor(LEVELS_PER_HOUR * Math.max(0, nowMs - bucketFromMs) / 3_600_000));
   const allowedTotal = totalLevel <= prevTotal ? totalLevel : Math.min(totalLevel, prevTotal + levelAllow); // decreases (resets) always allowed
   const consumedLevels = Math.max(0, allowedTotal - prevTotal);
   // Advance the bucket clock ONLY by what was consumed (so unused allowance persists; a burst of writes
@@ -121,6 +126,12 @@ Deno.serve(async (req) => {
   const nextClockMs = consumedLevels > 0
     ? Math.min(nowMs, bucketFromMs + Math.floor((consumedLevels / LEVELS_PER_HOUR) * 3_600_000))
     : bucketFromMs;
+  // A too-fast jump (submitted > allowance). When this happens we clamp total_level to the allowance AND
+  // refuse to publish the submitted per-skill map -- otherwise the inflated skills (e.g. digging 97) would
+  // still display on the profile even though the ranking total is clamped. On a clamp we keep the last
+  // accepted skills (or {} for a first submission), so a burst can't flash fake per-skill levels.
+  const clamped = allowedTotal < totalLevel;
+  const storedSkills = clamped ? (prev?.skills ?? {}) : skills;
   if (totalLevel - allowedTotal > 100) {
     console.warn(`submit_profile level clamp: user=${userId} submitted=${totalLevel} prev=${prevTotal} stored=${allowedTotal}`);
   }
@@ -215,7 +226,7 @@ Deno.serve(async (req) => {
     username,
     total_level: allowedTotal,   // clamped to the bucket allowance (ranking metric)
     gold: allowedGold,           // clamped display gold
-    skills,
+    skills: storedSkills,        // submitted map only when within allowance; otherwise the last accepted (no fake per-skill flash)
     equipment,
     stats,
     mortal,
