@@ -3734,7 +3734,7 @@
     {id:'shieldSmall',  name:'Small Shield',  icon:svgIcon('shield','#8a97a6'), type:'shield', countersType:'slashing', requiresHand:'1h', stackable:true, skillId:'shieldsmithing', matPrefix:'metallurgy', tierCount:20},
     {id:'shieldMedium', name:'Medium Shield', icon:svgIcon('shield','#5a7a9a'), type:'shield', countersType:'piercing', requiresHand:'1h', stackable:true, skillId:'shieldsmithing', matPrefix:'metallurgy', tierCount:20},
     {id:'shieldLarge',  name:'Large Shield',  icon:svgIcon('shield','#8a6a3a'), type:'shield', countersType:'blunt', requiresHand:'1h', stackable:true, skillId:'shieldsmithing', matPrefix:'metallurgy', tierCount:20},
-    {id:'quiver',       name:'Quiver',        icon:svgIcon('arrow','#a8895c'), type:'quiver', requiresHand:'bow'}
+    {id:'quiver',       name:'Quiver',        icon:svgIcon('arrow','#a8895c'), type:'quiver', requiresHand:'bow', stackable:true, skillId:'leatherworking', matPrefix:'tanning', tierCount:TIER_COUNT}
   ];
   // ===== Wards (Runesmithing offhands) =====
   // A Ward is an offhand like a shield but provides NO armor. Instead it reflects a share of incoming
@@ -3770,10 +3770,16 @@
   var OFFHAND_STYLE_IDS = OFFHAND_STYLES.filter(function(s){ return !s.ward; }).map(function(s){ return s.id; });
   var WARDING_SKILL_ID = 'warding'; // shared offhand proficiency for every Ward, trained by reflected damage
   var UNARMED_STYLE = {id:null, name:'Fists', icon:svgIcon('fist','#c8a888'), damageType:'blunt', attackTypes:{blunt:1}, hand:'1h', attackSpeed:2};
-  var STACKABLE_SHIELD_TYPES = OFFHAND_STYLES.filter(function(o){ return o.stackable; });
+  var STACKABLE_SHIELD_TYPES = OFFHAND_STYLES.filter(function(o){ return o.stackable && o.type==='shield'; });
   var STACKABLE_SHIELD_TYPE_MAP = {};
   STACKABLE_SHIELD_TYPES.forEach(function(s){ STACKABLE_SHIELD_TYPE_MAP[s.id] = s; });
   function isStackableShield(typeId){ return !!STACKABLE_SHIELD_TYPE_MAP[typeId]; }
+  // Quivers are stackable offhands too, but with their own stat profile (arrow damage + ammo-preserve,
+  // Leatherworking + Leather), so they get a parallel family instead of riding the shield tier-data.
+  var STACKABLE_QUIVER_TYPES = OFFHAND_STYLES.filter(function(o){ return o.stackable && o.type==='quiver'; });
+  var STACKABLE_QUIVER_TYPE_MAP = {};
+  STACKABLE_QUIVER_TYPES.forEach(function(s){ STACKABLE_QUIVER_TYPE_MAP[s.id] = s; });
+  function isStackableQuiver(typeId){ return !!STACKABLE_QUIVER_TYPE_MAP[typeId]; }
 
   // Hot-path style lookups (several calls per combat tick + per render). Lazy id->style maps,
   // rebuilt automatically if the source array is ever reassigned or grown after this point.
@@ -4032,6 +4038,10 @@
       if(!state.equippedOffhandTier || state.equippedOffhandTier<=0) return null;
       var itemId = 'stshield_'+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity;
       return STACKABLE_SHIELD_ITEMS[itemId] || null;
+    }
+    if(isStackableQuiver(state.equippedOffhand)){
+      if(!state.equippedOffhandTier || state.equippedOffhandTier<=0) return null;
+      return STACKABLE_QUIVER_ITEMS['stquiver_'+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity] || null;
     }
     if(isWard(state.equippedOffhand)){
       if(!state.equippedOffhandTier || state.equippedOffhandTier<=0) return null;
@@ -7709,6 +7719,45 @@
     });
   });
   Object.assign(ALL_SELLABLE, STACKABLE_SHIELD_ITEMS);
+  // ---- Stackable Quivers (Leatherworking) -- the shield analog for bow offhands. Named after the
+  // Wildlife tier, built from Leather, granting arrow damage + a chance a shot doesn't spend its arrow.
+  function getStackableQuiverTierData(typeId, tierIndex){
+    var s = STACKABLE_QUIVER_TYPE_MAP[typeId];
+    var inputs = tierInput('tanning', 3)(tierIndex);
+    if(tierIndex > 0) inputs['stquiver_'+typeId+'_t'+(tierIndex-1)+'_normal'] = 1;
+    return {
+      tierIndex: tierIndex,
+      name: WILDLIFE_NAMES[tierIndex] + ' ' + s.name,
+      levelReq: TIER_LEVELS[tierIndex],
+      xp: craftXp(tierIndex),
+      dmgBonus: tierCappedBonus(0.05, 0.014, 0.35, tierIndex),   // +5% arrow dmg t0 -> +35%
+      ammoPreserve: tierCappedBonus(0.05, 0.0075, 0.20, tierIndex), // 5% keep-arrow t0 -> 20% (x2/4/8 by rarity)
+      inputs: inputs,
+      time: tierTime(7,0.3,tierIndex)
+    };
+  }
+  var STACKABLE_QUIVER_ITEMS = {};
+  STACKABLE_QUIVER_TYPES.forEach(function(s){
+    ['normal','rare','supreme','fantastic'].forEach(function(rarityId){
+      var r = getRarity(rarityId);
+      for(var i=0;i<s.tierCount;i++){
+        var data = getStackableQuiverTierData(s.id, i);
+        var id = 'stquiver_'+s.id+'_t'+i+'_'+rarityId;
+        STACKABLE_QUIVER_ITEMS[id] = {
+          id: id,
+          name: r.label + data.name,
+          icon: s.icon,
+          sell: tierSell(12, i) * r.mult,
+          typeId: s.id,
+          tierIndex: i,
+          rarity: rarityId,
+          dmgBonus: Math.round(data.dmgBonus * r.mult * 1000)/1000,
+          ammoPreserve: Math.round(data.ammoPreserve * r.mult * 1000)/1000
+        };
+      }
+    });
+  });
+  Object.assign(ALL_SELLABLE, STACKABLE_QUIVER_ITEMS);
   // ---- Elemental Glyphs: tierless drops from Elementals, used only to inscribe Wards (never crafted).
   function glyphIdFor(element){ return 'glyph_'+element; }
   var GLYPH_ITEMS = {};
@@ -7765,6 +7814,8 @@
     if(state.equippedOffhand && isStackableShield(state.equippedOffhand) && state.equippedOffhandTier > 0){
       var oldId = 'stshield_'+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity;
       addItem(oldId, 1);
+    } else if(state.equippedOffhand && isStackableQuiver(state.equippedOffhand) && state.equippedOffhandTier > 0){
+      addItem('stquiver_'+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity, 1);
     } else if(state.equippedOffhand && isWard(state.equippedOffhand) && state.equippedOffhandTier > 0){
       addItem('stward_'+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity, 1);
     } else if(state.equippedOffhand==='claw' && state.equippedOffhandTier > 0){
@@ -7818,6 +7869,38 @@
   }
   function unequipStackableShield(){
     if(!state.equippedOffhand || !isStackableShield(state.equippedOffhand)) return;
+    unequipCurrentOffhandToInventory();
+    state.equippedOffhand = null;
+    state.equippedOffhandTier = 0;
+    state.equippedOffhandRarity = 'normal';
+  }
+  // Quivers: the shield analog, but they pair with a BOW mainhand instead of a 1h weapon.
+  function craftStackableQuiver(typeId, tierIndex){
+    var s = STACKABLE_QUIVER_TYPE_MAP[typeId];
+    if(!s) return;
+    var data = getStackableQuiverTierData(typeId, tierIndex);
+    if(getLevel(state.xp[s.skillId]) < data.levelReq) return;
+    if(!hasInputs(data.inputs)){ addLog('Not enough materials to craft ' + data.name + '.', 'danger'); return; }
+    placeNewCraftActivity(s.skillId, null, 'stackquiver', { type:'craft', craftKind:'stackquiver', typeId:typeId, tierIndex:tierIndex, progress:0 });
+  }
+  function equipStackableQuiver(itemId){
+    var item = STACKABLE_QUIVER_ITEMS[itemId];
+    if(!item || (state.inventory[itemId]||0) <= 0) return;
+    var mh = getWeaponStyle(state.equippedMainhand);
+    if(mh.hand !== 'bow'){ addLog('A Quiver can only be equipped alongside a bow.', 'danger'); return; }
+    if(!meetsProficiencyRequirement(state.xp[item.typeId], item.tierIndex)){
+      addLog('Your ' + (SKILL_LABELS[item.typeId]||item.typeId) + ' proficiency isn\'t high enough to equip ' + item.name + ' yet.', 'danger');
+      return;
+    }
+    unequipCurrentOffhandToInventory();
+    state.inventory[itemId] -= 1;
+    state.equippedOffhand = item.typeId;
+    state.equippedOffhandTier = item.tierIndex+1;
+    state.equippedOffhandRarity = item.rarity;
+    addLog('You equipped the ' + item.name + '.', 'important');
+  }
+  function unequipStackableQuiver(){
+    if(!state.equippedOffhand || !isStackableQuiver(state.equippedOffhand)) return;
     unequipCurrentOffhandToInventory();
     state.equippedOffhand = null;
     state.equippedOffhandTier = 0;
@@ -8796,6 +8879,7 @@
     if(craftKind==='tool') return act.skillId===params.skillId && act.tierIndex===params.tierIndex;
     if(craftKind==='stackweapon') return act.typeId===params.typeId && act.tierIndex===params.tierIndex;
     if(craftKind==='stackshield') return act.typeId===params.typeId && act.tierIndex===params.tierIndex;
+    if(craftKind==='stackquiver') return act.typeId===params.typeId && act.tierIndex===params.tierIndex;
     if(craftKind==='bodyarmor') return act.material===params.material && act.slot===params.slot && act.tierIndex===params.tierIndex;
     if(craftKind==='belt') return act.tierIndex===params.tierIndex;
     if(craftKind==='offhand') return act.typeId===params.typeId;
@@ -8881,6 +8965,7 @@
     if(act.craftKind==='tool') return 'blacksmithing';
     if(act.craftKind==='stackweapon') return STACKABLE_WEAPON_TYPE_MAP[act.typeId].skillId;
     if(act.craftKind==='stackshield') return STACKABLE_SHIELD_TYPE_MAP[act.typeId].skillId;
+    if(act.craftKind==='stackquiver') return STACKABLE_QUIVER_TYPE_MAP[act.typeId].skillId;
     if(act.craftKind==='ward') return WARD_TYPE_MAP[act.typeId].skillId;
     if(act.craftKind==='bodyarmor') return BODY_ARMOR_MATERIALS[act.material].skillId;
     if(act.craftKind==='belt') return 'leatherworking';
@@ -8899,6 +8984,7 @@
     }
     if(act.craftKind==='stackweapon') return getStackableWeaponTierData(act.typeId, act.tierIndex);
     if(act.craftKind==='stackshield') return getStackableShieldTierData(act.typeId, act.tierIndex);
+    if(act.craftKind==='stackquiver') return getStackableQuiverTierData(act.typeId, act.tierIndex);
     if(act.craftKind==='ward') return getWardTierData(act.typeId, act.tierIndex);
     if(act.craftKind==='bodyarmor') return getBodyArmorTierData(act.material, act.slot, act.tierIndex);
     if(act.craftKind==='belt') return getBeltTierData(act.tierIndex);
@@ -8915,7 +9001,7 @@
   }
   // Item-producing special crafts a Workshop can double (tier-UPGRADE kinds like offhand
   // can't be doubled). Each doubled output rolls its rarity independently.
-  var SPECIAL_DOUBLEABLE_KINDS = ['tool','stackweapon','stackshield','ward','bodyarmor','belt','ring','amulet','workshop'];
+  var SPECIAL_DOUBLEABLE_KINDS = ['tool','stackweapon','stackshield','stackquiver','ward','bodyarmor','belt','ring','amulet','workshop'];
   // Produce ONE output for this special craft at the given rarity; returns the rarity
   // actually used (bodyarmor clamps to its material's allowed set; workshops are always normal).
   function produceSpecialOutput(act, rarity){
@@ -8925,6 +9011,8 @@
       addItem('stweapon_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
     } else if(act.craftKind==='stackshield'){
       addItem('stshield_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
+    } else if(act.craftKind==='stackquiver'){
+      addItem('stquiver_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
     } else if(act.craftKind==='ward'){
       addItem('stward_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
     } else if(act.craftKind==='bodyarmor'){
@@ -9736,6 +9824,7 @@
   var selectedBeltTier = null;
   var selectedMeleeWeaponTier = {};
   var selectedShieldTier = {};
+  var selectedQuiverTier = {};
   var selectedWardTier = {};
   var selectedWandTier = {};
   var selectedRingTier = {};
@@ -10958,7 +11047,7 @@
     return Math.round(15 * Math.pow(1.25, tier-1) * (jewelryBoost ? 1.5 : 1) * getRarity(rarity||'normal').mult);
   }
   function sacrificeItem(category, id, silent){
-    var STACKABLE_SAC_CATEGORIES = ['stackweapon','stackshield','ring','amulet','relic','tool','belt'];
+    var STACKABLE_SAC_CATEGORIES = ['stackweapon','stackshield','stackquiver','ring','amulet','relic','tool','belt'];
     if(STACKABLE_SAC_CATEGORIES.indexOf(category)!==-1 && state.lockedItems[id]){
       addLog('That item is locked. Unlock it first to sacrifice it.', 'danger');
       return;
@@ -10993,6 +11082,13 @@
       tier = stShieldItem.tierIndex + 1;
       rarity = stShieldItem.rarity || 'normal';
       label = stShieldItem.name;
+      state.inventory[id] -= 1;
+    } else if(category==='stackquiver'){
+      var stQuiverItem = STACKABLE_QUIVER_ITEMS[id];
+      if(!stQuiverItem || (state.inventory[id]||0) <= 0) return;
+      tier = stQuiverItem.tierIndex + 1;
+      rarity = stQuiverItem.rarity || 'normal';
+      label = stQuiverItem.name;
       state.inventory[id] -= 1;
     } else if(category==='ring'){
       var ringItem = RING_ITEMS[id];
@@ -12602,6 +12698,22 @@
               }
             }
           });
+          // Migrate the legacy sequential Quiver (offhandTiers.quiver) into a stackable Equipment item,
+          // exactly like the Shield migration above -- keep it worn if equipped, else bank one in inventory.
+          STACKABLE_QUIVER_TYPES.forEach(function(q){
+            var oldTier = (loaded.offhandTiers||{})[q.id]||0;
+            if(oldTier > 0){
+              var oldRarity = (loaded.offhandRarities||{})[q.id] || 'normal';
+              state.offhandTiers[q.id] = 0;
+              state.offhandRarities[q.id] = 'normal';
+              if(state.equippedOffhand === q.id){
+                state.equippedOffhandTier = oldTier;
+                state.equippedOffhandRarity = oldRarity;
+              } else {
+                addItem('stquiver_'+q.id+'_t'+(oldTier-1)+'_'+oldRarity, 1);
+              }
+            }
+          });
           state.bodyArmor = Object.assign(newGame().bodyArmor, loaded.bodyArmor||{});
           // Farming plots moved from a 40-slot level-gated array to per-field keyed maps ("x,y" -> crop
           // state) provided by placed Fields. Legacy array saves are dropped (the mechanic changed);
@@ -14032,35 +14144,35 @@
     // Quivers: bow offhands, cured from Leather (a sequential single-tier upgrade like the Belt).
     html += '<h3 style="margin-top:14px">Forge Quivers</h3>';
     html += '<div class="card-grid">';
-    OFFHAND_STYLES.filter(function(o){ return !o.stackable && !o.ward; }).forEach(function(o){
-      var tier = state.offhandTiers[o.id]||0;
-      var current = tier>0 ? OFFHAND_TYPE_RECIPES[o.id][tier-1] : null;
-      var statLabel = function(item){ return '+'+Math.round(item.dmgBonus*100)+'% arrow dmg'+(item.ammoPreserve ? ' &bull; '+Math.round(item.ammoPreserve*100)+'% keep ammo' : ''); };
-      var activeSlot = findActiveSpecialCraftSlotFor('offhand', {typeId:o.id});
+    STACKABLE_QUIVER_TYPES.forEach(function(q){
+      var maxUnlocked = 0;
+      for(var mi=0; mi<q.tierCount; mi++){ if(TIER_LEVELS[mi] <= lvl) maxUnlocked = mi; }
+      if(selectedQuiverTier[q.id] === undefined) selectedQuiverTier[q.id] = maxUnlocked;
+      var sel = Math.min(selectedQuiverTier[q.id], maxUnlocked);
+      sel = craftFilterTier(sel, maxUnlocked, function(t){ return getStackableQuiverTierData(q.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('stackquiver', {typeId:q.id, tierIndex:t}); });
+      var data = getStackableQuiverTierData(q.id, sel);
+      var statLabel = function(d){ return '+'+Math.round(d.dmgBonus*100)+'% arrow dmg'+(d.ammoPreserve ? ' &bull; '+Math.round(d.ammoPreserve*100)+'% keep ammo' : ''); };
+      var activeSlot = findActiveSpecialCraftSlotFor('stackquiver', {typeId:q.id, tierIndex:sel});
       var isActive = !!activeSlot;
+      var effTime = data.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, q.skillId);
+      var pct = isActive ? clamp(activeSlot.act.progress/effTime*100,0,100) : 0;
+      var ready = lvl >= data.levelReq && hasInputs(data.inputs);
+      var successPct = Math.round(craftSuccessRate(state, q.skillId)*100);
+      var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
+      var stqOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'stquiver_'+q.id+'_t'+sel+'_'+r; }));
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+o.icon+'</div><div><div class="item-name">'+o.name+'</div><div class="item-meta">'+(current ? current.name+' &bull; '+statLabel(current) : 'Not forged')+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+q.icon+'</div><div><div class="item-name">'+q.name+'</div><div class="item-meta">Boosts arrow dmg &bull; Owned: '+stqOwnedTotal+'</div></div></div>';
+      html += '<div class="inputs-line">Tier: '+tierStepper('quiver',q.id,tierRange(maxUnlocked),sel,WILDLIFE_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
+      html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>'+statLabel(data)+'</span></div>';
+      html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
+      html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-stq-'+q.id)+'</div>';
+      html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
       if(isActive){
-        var nextDataActive = getSpecialTierData(activeSlot.act);
-        var effTimeO = nextDataActive.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, 'leatherworking');
-        var pctO = clamp(activeSlot.act.progress/effTimeO*100,0,100);
-        var fillIdO = activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index;
-        html += '<div class="item-stats"><span>+'+Math.round(nextDataActive.xp*1.5)+' XP</span><span>Forging: '+nextDataActive.name+'</span><span>'+statLabel(nextDataActive)+'</span></div>';
-        html += '<div class="progress-track"><div class="progress-fill" id="'+fillIdO+'" style="width:'+pctO+'%"></div></div>';
         html += activeSlot.primary
           ? '<button class="action-btn stop" data-action="stop">Stop</button>'
           : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
-      } else if(tier < TIER_COUNT){
-        var nextData = OFFHAND_TYPE_RECIPES[o.id][tier];
-        var ready = lvl >= nextData.levelReq && hasInputs(nextData.inputs);
-        var offhandSuccessPct = Math.round(craftSuccessRate(state, 'leatherworking')*100);
-        html += '<div class="item-stats"><span>Next: '+nextData.name+'</span><span>'+statLabel(nextData)+'</span><span>Req. Lv '+nextData.levelReq+'</span></div>';
-        html += '<div class="chance-line">Output: <b>1x '+nextData.name+'</b> at <b>'+offhandSuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
-        html += '<div class="inputs-line">Needs: '+inputsLine(nextData.inputs, 'inp-otype-'+o.id)+'</div>';
-        html += '<div class="progress-track"><div class="progress-fill" style="width:0%"></div></div>';
-        html += '<button class="action-btn" data-action="forgeOffhandType" data-type="'+o.id+'" '+(ready?'':'disabled')+'>Forge</button>';
       } else {
-        html += '<div class="empty-note">Maxed out.</div>';
+        html += '<button class="action-btn" data-action="forgeStackableQuiver" data-type="'+q.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
       }
       html += '</div>';
     });
@@ -14339,6 +14451,39 @@
       html += '</div>';
     }
     if(current) html += '<button class="action-btn stop" data-action="unequipStackableShield">Unequip</button>';
+    html += '</div></div>';
+    return html;
+  }
+
+  function renderEquipQuiverSection(){
+    var current = (state.equippedOffhand && isStackableQuiver(state.equippedOffhand) && state.equippedOffhandTier>0)
+      ? STACKABLE_QUIVER_ITEMS['stquiver_'+state.equippedOffhand+'_t'+(state.equippedOffhandTier-1)+'_'+state.equippedOffhandRarity] : null;
+    var owned = Object.keys(STACKABLE_QUIVER_ITEMS).filter(function(id){ return (state.inventory[id]||0)>0; })
+      .sort(function(a,b){ return STACKABLE_QUIVER_ITEMS[a].tierIndex - STACKABLE_QUIVER_ITEMS[b].tierIndex; });
+    var mh = getWeaponStyle(state.equippedMainhand);
+    var html = '<h3>Equip Quiver</h3>';
+    if(mh.hand !== 'bow'){
+      html += '<div class="section-intro">Quivers need a bow equipped as your Mainhand. '+(mh.hand==='2h' ? 'Your two-handed weapon occupies both hands.' : 'A one-handed weapon uses a Shield or Ward instead -- see above.')+'</div>';
+      return html;
+    }
+    var statLabel = function(item){ return '+'+Math.round(item.dmgBonus*100)+'% arrow dmg'+(item.ammoPreserve ? ' &bull; '+Math.round(item.ammoPreserve*100)+'% keep ammo' : ''); };
+    html += '<div class="section-intro">Pick which owned Quiver is your Offhand. Forged quivers sit in inventory, stacked by type, tier, and rarity, until equipped here.</div>';
+    html += '<div class="card-grid"><div class="item-card">';
+    html += '<div class="item-top"><div class="item-icon">'+svgIcon('arrow','#a8895c')+'</div><div><div class="item-name">Offhand</div><div class="item-meta">'+(current ? current.name+' &bull; '+statLabel(current) : 'No quiver equipped')+'</div></div></div>';
+    if(owned.length===0){
+      html += '<div class="empty-note">No quivers in inventory. Forge one via Outfitting &rarr; Leatherworking.</div>';
+    } else {
+      html += '<div class="style-row">';
+      owned.forEach(function(id){
+        var item = STACKABLE_QUIVER_ITEMS[id];
+        var qty = state.inventory[id]||0;
+        var canEquip = meetsProficiencyRequirement(state.xp[item.typeId], item.tierIndex);
+        var scmp = (current && current.id===id) ? '<span class="equip-cmp eq">equipped</span>' : (' vs equipped '+equipDeltaChip(item.dmgBonus, current?current.dmgBonus:0)+' arrow dmg');
+        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipStackableQuiver" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">'+Math.round(item.dmgBonus*100)+'% dmg '+scmp+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS.leatherworking||'Leatherworking')+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
+      });
+      html += '</div>';
+    }
+    if(current) html += '<button class="action-btn stop" data-action="unequipStackableQuiver">Unequip</button>';
     html += '</div></div>';
     return html;
   }
@@ -14683,21 +14828,16 @@
       }
       return html3;
     }
-    // bow mainhand: Quiver is still a single sequential upgrade, toggled directly here
-    var options = OFFHAND_STYLES.filter(function(o){ return o.requiresHand===mh.hand; });
-    var current = state.equippedOffhand;
-    var html2 = '<div class="style-row">';
-    html2 += '<button class="style-btn'+(current===null?' active':'')+'" data-action="equipOffhand" data-type="">'+svgIcon('noicon','currentColor')+' None</button>';
-    options.forEach(function(s){
-      var tier = state.offhandTiers[s.id]||0;
-      var owned = tier>0;
-      var active = current===s.id;
-      var typeLabel = 'boosts arrow dmg';
-      var statusLabel = owned ? OFFHAND_TYPE_RECIPES[s.id][tier-1].name : 'Not forged';
-      html2 += '<button class="style-btn'+(active?' active':'')+(owned?'':' style-btn-locked')+'" data-action="equipOffhand" data-type="'+s.id+'" '+(owned?'':'disabled')+'>'+s.icon+' '+s.name+' <span class="style-lvl">'+statusLabel+'</span><span class="style-type">'+typeLabel+'</span></button>';
-    });
-    html2 += '</div>';
-    return html2;
+    // bow mainhand: Quivers are Equipment now -- forged in bulk in Leatherworking and equipped below.
+    var ohEqBow = getEquippedOffhandItem(state);
+    var htmlBow = '';
+    if(ohEqBow && isStackableQuiver(state.equippedOffhand)){
+      htmlBow += '<div class="shop-current">Equipped: <b style="color:var(--text)">'+escapeHtml(ohEqBow.name)+'</b> (+'+Math.round((ohEqBow.dmgBonus||0)*100)+'% arrow dmg'+(ohEqBow.ammoPreserve ? ', '+Math.round(ohEqBow.ammoPreserve*100)+'% keep ammo' : '')+')</div>';
+    } else {
+      htmlBow += '<div class="shop-current">Equipped: <b style="color:var(--text)">No quiver</b></div>';
+    }
+    htmlBow += '<div class="section-intro" style="margin-top:6px">Quivers are Equipment now: forge one from Outfitting &rarr; Leatherworking, then equip it from the Equip Quiver section below.</div>';
+    return htmlBow;
   }
 
   function formatTypeMix(mix){
@@ -14896,8 +15036,12 @@
     html += renderGearSelector('offhand');
     if(weaponStyle.hand!=='2h') html += renderUniqueEquipOptions('offhand', null, 'Offhands');
     html += '<div class="section-intro" style="margin-top:10px">One-handed weapons free up your offhand for a shield or ward; bows pair with a quiver instead; two-handed weapons need both hands. Forge new gear via Outfitting &rarr; Weaponsmithing / Shieldsmithing / Runesmithing. Damage types cycle slashing &gt; piercing &gt; blunt &gt; slashing.</div>';
-    html += renderEquipShieldSection();
-    html += renderEquipWardSection();
+    if(weaponStyle.hand==='bow'){
+      html += renderEquipQuiverSection();
+    } else {
+      html += renderEquipShieldSection();
+      html += renderEquipWardSection();
+    }
     return html;
   }
   function renderBeltEquipSection(){
@@ -19624,6 +19768,12 @@
         rows.push({category:'stackshield', id:id, icon:item.icon, item:item, tier:item.tierIndex+1});
       }
     });
+    Object.keys(STACKABLE_QUIVER_ITEMS).forEach(function(id){
+      if((state.inventory[id]||0)>0 && !state.lockedItems[id]){
+        var item = STACKABLE_QUIVER_ITEMS[id];
+        rows.push({category:'stackquiver', id:id, icon:item.icon, item:item, tier:item.tierIndex+1});
+      }
+    });
     Object.keys(RING_ITEMS).forEach(function(id){
       if((state.inventory[id]||0)>0 && !state.lockedItems[id]){
         var item = RING_ITEMS[id];
@@ -22965,6 +23115,7 @@
     if(itemId.indexOf('tool_')===0) return 'equipTool';
     if(itemId.indexOf('stweapon_')===0) return 'equipStackableWeapon';
     if(itemId.indexOf('stshield_')===0) return 'equipStackableShield';
+    if(itemId.indexOf('stquiver_')===0) return 'equipStackableQuiver';
     if(itemId.indexOf('stward_')===0) return 'equipWard';
     if(itemId.indexOf('legcloak_')===0) return 'equipLegCloak';
     if(itemId.indexOf('bodyarmor_')===0) return 'equipBodyArmor';
@@ -23988,6 +24139,27 @@
       if(sBtn) sBtn.disabled = !(shieldSkillLvl >= shieldData.levelReq && hasInputs(shieldData.inputs));
     });
 
+    // Leatherworking quivers: mirror the shield input/button live-update.
+    STACKABLE_QUIVER_TYPES.forEach(function(q){
+      var quiverSkillLvl = getLevel(state.xp[q.skillId]);
+      var quiverMaxUnlocked = 0;
+      for(var qmi=0; qmi<q.tierCount; qmi++){ if(TIER_LEVELS[qmi] <= quiverSkillLvl) quiverMaxUnlocked = qmi; }
+      var quiverSel = Math.min(selectedQuiverTier[q.id]||0, quiverMaxUnlocked);
+      var quiverData = getStackableQuiverTierData(q.id, quiverSel);
+      Object.keys(quiverData.inputs).forEach(function(k){
+        var el = document.getElementById('inp-stq-'+q.id+'-'+k);
+        if(el){
+          var have = state.inventory[k]||0;
+          var need = quiverData.inputs[k];
+          var name = (ALL_SELLABLE[k]||{}).name || k;
+          el.textContent = need+'x '+name+' ('+have+' owned)';
+          el.className = have>=need ? 'ok' : 'bad';
+        }
+      });
+      var qBtn = document.querySelector('[data-action="forgeStackableQuiver"][data-type="'+q.id+'"]');
+      if(qBtn) qBtn.disabled = !(quiverSkillLvl >= quiverData.levelReq && hasInputs(quiverData.inputs));
+    });
+
     // Runesmithing wards: mirror the shield input/button live-update.
     var runeLvl = getLevel(state.xp.runesmithing);
     WARD_TYPES.forEach(function(w){
@@ -24044,26 +24216,6 @@
       if(wBtn2) wBtn2.disabled = !(arcLvl >= wData.levelReq && hasInputs(wData.inputs));
     });
 
-    // Quiver: owned counts + ok/bad state + Forge button availability (still sequential)
-    var shieldsmithLvl = getLevel(state.xp.shieldsmithing);
-    OFFHAND_STYLES.filter(function(o){ return !o.stackable && !o.ward; }).forEach(function(o){
-      var tier = state.offhandTiers[o.id]||0;
-      if(tier >= TIER_COUNT) return;
-      var nextData = OFFHAND_TYPE_RECIPES[o.id][tier];
-      Object.keys(nextData.inputs).forEach(function(k){
-        var el = document.getElementById('inp-otype-'+o.id+'-'+k);
-        if(el){
-          var have = state.inventory[k]||0;
-          var need = nextData.inputs[k];
-          var name = (ALL_SELLABLE[k]||{}).name || k;
-          el.textContent = need+'x '+name+' ('+have+' owned)';
-          el.className = have>=need ? 'ok' : 'bad';
-        }
-      });
-      var oBtn = document.querySelector('[data-action="forgeOffhandType"][data-type="'+o.id+'"]');
-      if(oBtn) oBtn.disabled = !(shieldsmithLvl >= nextData.levelReq && hasInputs(nextData.inputs));
-    });
-
     if(logVersion !== lastRenderedLogVersion){ chronicleRenderOnly(); lastRenderedLogVersion = logVersion; }
   }
 
@@ -24113,6 +24265,7 @@
     belt:     { get:function(){ return selectedBeltTier; },                set:function(sub,v){ selectedBeltTier=v; } },
     melee:    { get:function(sub){ return selectedMeleeWeaponTier[sub]; }, set:function(sub,v){ selectedMeleeWeaponTier[sub]=v; } },
     shield:   { get:function(sub){ return selectedShieldTier[sub]; },      set:function(sub,v){ selectedShieldTier[sub]=v; } },
+    quiver:   { get:function(sub){ return selectedQuiverTier[sub]; },      set:function(sub,v){ selectedQuiverTier[sub]=v; } },
     ward:     { get:function(sub){ return selectedWardTier[sub]; },        set:function(sub,v){ selectedWardTier[sub]=v; } },
     wand:     { get:function(sub){ return selectedWandTier[sub]; },        set:function(sub,v){ selectedWandTier[sub]=v; } },
     ring:     { get:function(sub){ return selectedRingTier[sub]; },        set:function(sub,v){ selectedRingTier[sub]=v; } },
@@ -24358,6 +24511,9 @@
     forgeStackableShield: function(btn, e){ craftStackableShield(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10)); },
     equipStackableShield: function(btn, e){ equipStackableShield(btn.getAttribute('data-item')); },
     unequipStackableShield: function(btn, e){ unequipStackableShield(); },
+    forgeStackableQuiver: function(btn, e){ craftStackableQuiver(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10)); },
+    equipStackableQuiver: function(btn, e){ equipStackableQuiver(btn.getAttribute('data-item')); },
+    unequipStackableQuiver: function(btn, e){ unequipStackableQuiver(); },
     forgeWard: function(btn, e){ craftWard(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10)); },
     equipWard: function(btn, e){ equipWard(btn.getAttribute('data-item')); },
     unequipWard: function(btn, e){ unequipWard(); },
@@ -24513,6 +24669,7 @@
   // Equip / unequip / loadout-swap / familiar-toggle actions are barred while a fight is live.
   var COMBAT_LOCKED_ACTIONS = {
     equipStackableWeapon:1, unequipStackableWeapon:1, equipStackableShield:1, unequipStackableShield:1,
+    equipStackableQuiver:1, unequipStackableQuiver:1,
     equipWard:1, unequipWard:1, equipOffhand:1, equipOffhandClaw:1, unequipOffhandClaw:1,
     equipBodyArmor:1, unequipBodyArmor:1, equipBelt:1, unequipBelt:1, equipRelic:1, unequipRelic:1,
     equipRing:1, unequipRing:1, equipAmulet:1, unequipAmulet:1,
@@ -25250,7 +25407,7 @@
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, assassinRhythmRegister:assassinRhythmRegister, ASSASSIN_RHYTHM_MAX:ASSASSIN_RHYTHM_MAX, assassinApplyLacerate:assassinApplyLacerate, assassinLacerateMaxStacks:assassinLacerateMaxStacks, ASSASSIN_BLEED_MAX:ASSASSIN_BLEED_MAX, assassinHemorrhageCritMult:assassinHemorrhageCritMult, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
-      BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, OFFHAND_TYPE_RECIPES:OFFHAND_TYPE_RECIPES, getSpecialSkillId:getSpecialSkillId, WILDLIFE_NAMES:WILDLIFE_NAMES, quiverAmmoPreserve:quiverAmmoPreserve, bowArrowToConsume:bowArrowToConsume, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT, applyRarity:applyRarity, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
+      BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, OFFHAND_TYPE_RECIPES:OFFHAND_TYPE_RECIPES, getStackableQuiverTierData:getStackableQuiverTierData, STACKABLE_QUIVER_ITEMS:STACKABLE_QUIVER_ITEMS, isStackableQuiver:isStackableQuiver, getEquippedOffhandItem:getEquippedOffhandItem, getSpecialSkillId:getSpecialSkillId, WILDLIFE_NAMES:WILDLIFE_NAMES, quiverAmmoPreserve:quiverAmmoPreserve, bowArrowToConsume:bowArrowToConsume, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT, applyRarity:applyRarity, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
       DAMAGE_TYPES:DAMAGE_TYPES
     };
   }

@@ -4430,29 +4430,38 @@
     ok(fam.spells.some(function(sp){ return sp.type==='hit'; }), 'templar familiar has damaging spells');
   });
 
-  // ---- Quiver is now a Leatherworking item (Wildlife-named, built from Leather) ---------
-  suite('quiver: leatherworking item', function(){
-    var q = FF.OFFHAND_TYPE_RECIPES.quiver;
-    ok(q && q.length === 21, 'the quiver has 21 tiers');
+  // ---- Quiver is now a stackable Leatherworking Equipment item (crafted like shields) --------
+  suite('quiver: stackable leatherworking equipment', function(){
+    var q0 = FF.getStackableQuiverTierData('quiver', 0);
+    var q20 = FF.getStackableQuiverTierData('quiver', 20);
     // Named after the leather (Wildlife) tier, not a metal ingot.
-    eq(q[0].name, FF.WILDLIFE_NAMES[0] + ' Quiver', 'tier-1 quiver is named after the Wildlife tier');
-    eq(q[20].name, FF.WILDLIFE_NAMES[20] + ' Quiver', 'top-tier quiver is Wildlife-named too');
+    eq(q0.name, FF.WILDLIFE_NAMES[0] + ' Quiver', 'tier-1 quiver is named after the Wildlife tier');
+    eq(q20.name, FF.WILDLIFE_NAMES[20] + ' Quiver', 'top-tier quiver is Wildlife-named too');
     // Built from Leather (Tanning's cured hide, tanning_t<n>), not Metallurgy bars.
-    ok(q[0].inputs.tanning_t0 > 0, 'tier-1 quiver costs Leather (tanning_t0)');
-    ok(!q[0].inputs.metallurgy_t0, 'the quiver no longer costs metal bars');
-    ok(q[5].inputs.tanning_t5 > 0, 'tier-6 quiver costs the matching-tier Leather');
-    // The craft engine routes its XP / success / tool-speed to Leatherworking.
-    eq(FF.getSpecialSkillId({ craftKind:'offhand', typeId:'quiver' }), 'leatherworking', 'a quiver craft trains Leatherworking');
-    // Still a damage-boost offhand, not defense.
-    ok(q[0].dmgBonus > 0 && q[0].defense === undefined, 'the quiver grants arrow damage, no defense');
+    ok(q0.inputs.tanning_t0 > 0, 'tier-1 quiver costs Leather (tanning_t0)');
+    ok(!q0.inputs.metallurgy_t0, 'the quiver no longer costs metal bars');
+    ok(FF.getStackableQuiverTierData('quiver', 5).inputs.tanning_t5 > 0, 'tier-6 quiver costs the matching-tier Leather');
+    // A damage-boost offhand, not defense.
+    ok(q0.dmgBonus > 0 && q0.defense === undefined, 'the quiver grants arrow damage, no defense');
+    // Ammo-preservation bonus: 5% at t0 -> 20% at t20 on the base tier data.
+    near(q0.ammoPreserve, 0.05, 't0 quiver keeps ammo 5% of the time');
+    near(q20.ammoPreserve, 0.20, 't20 quiver keeps ammo 20% of the time');
 
-    // Ammo-preservation bonus: 5% at t0 -> 20% at t20, scaled x2/4/8 by rarity.
-    near(q[0].ammoPreserve, 0.05, 't0 quiver keeps ammo 5% of the time');
-    near(q[20].ammoPreserve, 0.20, 't20 quiver keeps ammo 20% of the time');
-    near(FF.applyRarity(q[20], 'fantastic').ammoPreserve, 1.60, 'rarity scales ammo-keep x8 (0.20 -> 1.60 pre-cap)');
+    // The stackable items live in ALL_SELLABLE and carry rarity-scaled bonuses (x2/4/8).
+    var stq0 = FF.ALL_SELLABLE['stquiver_quiver_t0_normal'];
+    ok(stq0 && stq0.tierIndex === 0, 'stquiver_quiver_t0_normal exists as a sellable equipment item');
+    near(stq0.ammoPreserve, 0.05, 't0 normal stack quiver keeps 5%');
+    near(FF.ALL_SELLABLE['stquiver_quiver_t20_fantastic'].ammoPreserve, 1.60, 'rarity scales ammo-keep x8 (0.20 -> 1.60 pre-cap)');
+
+    // The craft engine routes its XP / success / tool-speed to Leatherworking.
+    eq(FF.getSpecialSkillId({ craftKind:'stackquiver', typeId:'quiver' }), 'leatherworking', 'a quiver craft trains Leatherworking');
+
+    // getEquippedOffhandItem resolves the stackable quiver from the equipped tier/rarity.
+    var worn = FF.getEquippedOffhandItem({ equippedOffhand:'quiver', equippedOffhandTier:21, equippedOffhandRarity:'fantastic' });
+    ok(worn && worn.id === 'stquiver_quiver_t20_fantastic', 'a worn quiver resolves to its stack item');
     // quiverAmmoPreserve reads the equipped quiver and caps the effective chance at 95%.
-    eq(FF.quiverAmmoPreserve({ equippedOffhand:'quiver', offhandTiers:{quiver:21}, offhandRarities:{quiver:'fantastic'} }), 0.95, 'a t20 fantastic quiver caps ammo-keep at 95%');
-    near(FF.quiverAmmoPreserve({ equippedOffhand:'quiver', offhandTiers:{quiver:1}, offhandRarities:{quiver:'normal'} }), 0.05, 'a t1 normal quiver keeps 5%');
+    eq(FF.quiverAmmoPreserve({ equippedOffhand:'quiver', equippedOffhandTier:21, equippedOffhandRarity:'fantastic' }), 0.95, 'a t20 fantastic quiver caps ammo-keep at 95%');
+    near(FF.quiverAmmoPreserve({ equippedOffhand:'quiver', equippedOffhandTier:1, equippedOffhandRarity:'normal' }), 0.05, 'a t1 normal quiver keeps 5%');
     eq(FF.quiverAmmoPreserve({ equippedOffhand:null }), 0, 'no quiver equipped -> 0% keep');
 
     // bowArrowToConsume: the highest-tier Fletching Arrow you own that isn't fancier than the bow.
