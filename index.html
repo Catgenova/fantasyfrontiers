@@ -10852,7 +10852,11 @@
       var _wem = (d.kind==='weapon') ? enhanceStatMult(d.enhance||0) : 1;
       // Enhancing jewelry scales its stat (applyJewelryEnhance multiplies bonus/defense), so reflect +N here too.
       var _jEnh = (d.kind==='ring'||d.kind==='amulet') ? enhanceStatMult(d.enhance||0) : 1;
-      if(b.dmgMin||b.dmgMax) baseLines.push('Damage '+Math.round((b.dmgMin||0)*_wem)+'–'+Math.round((b.dmgMax||0)*_wem)+(_wem>1?' (+'+d.enhance+')':''));
+      // Weapon damage -- wands are fully elemental, so name the element on the damage line.
+      if(b.dmgMin||b.dmgMax){
+        var _elemTag = (d.kind==='weapon' && b.element && isWandWeapon(b.typeId)) ? (' '+ELEMENT_META[b.element].label) : '';
+        baseLines.push('Damage '+Math.round((b.dmgMin||0)*_wem)+'–'+Math.round((b.dmgMax||0)*_wem)+_elemTag+(_wem>1?' (+'+d.enhance+')':''));
+      }
       // A ring's / amulet's inherent typed value (fire damage, familiar potency = summon efficiency,
       // accuracy, damage resistance, defense, ...) -- shown with its precise label and +enhance, so the
       // card says WHAT the piece boosts and by how much, not just a bare "% damage".
@@ -10862,8 +10866,14 @@
         baseLines.push('+'+Math.round((b.bonus||0)*_jEnh*100)+'% damage resistance'+(_jEnh>1?' (+'+d.enhance+')':''));
       } else {
         if(b.defense) baseLines.push('Defense '+(Math.round(b.defense*_jEnh*10)/10)+(_jEnh>1?' (+'+d.enhance+')':''));
-        if(b.dmgBonus) baseLines.push('+'+Math.round(b.dmgBonus*100)+'% damage');
+        // Ward: reflects a share of matching-element hits (rarity adds a full-reflect chance).
+        if(b.reflect!=null) baseLines.push('Reflects '+Math.round(b.reflect*100)+'% '+(b.element?ELEMENT_META[b.element].label+' ':'')+'damage'+(b.fullReflectChance?' • '+Math.round(b.fullReflectChance*100)+'% full reflect':''));
+        // Quiver: arrow-damage bonus + chance a shot keeps its arrow.
+        else if(b.ammoPreserve!=null) baseLines.push('+'+Math.round((b.dmgBonus||0)*100)+'% arrow damage'+(b.ammoPreserve?' • '+Math.round(b.ammoPreserve*100)+'% keep ammo':''));
+        else if(b.dmgBonus) baseLines.push('+'+Math.round(b.dmgBonus*100)+'% damage');
       }
+      // Staff: extra active-familiar (summon) slots + its Block chance.
+      if(b.familiarSlots) baseLines.push('+'+b.familiarSlots+' familiar slot'+(b.familiarSlots>1?'s':''));
       if(b.block) baseLines.push('Block '+Math.round(b.block*100)+'%');
     }
     // Relics carry no static stat field -- their %dmg/armour bonus is computed from tier+rarity (and +enhance).

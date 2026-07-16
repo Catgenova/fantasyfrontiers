@@ -5656,6 +5656,22 @@
     ok(m5 && +m5[1] === Math.round(0.05 * FF.enhanceStatMult(5) * 100), '+5 fire ring shows the enhanced Fire-damage value');
     // Warding amulet base line shows damage resistance.
     ok(/damage resistance/.test(FF.uniqueCardBody({ base:'amulet_warding_t0_normal', kind:'amulet', tier:0, rarity:'normal', enhance:0, enchants:[] })), 'warding amulet card shows damage resistance');
+
+    // Weapons: a wand names its element on the Damage line; a staff shows its extra familiar (summon)
+    // slots and Block chance -- values that weren't surfaced on the card before.
+    var wandId = Object.keys(FF.STACKABLE_WEAPON_ITEMS).filter(function(k){ var it=FF.STACKABLE_WEAPON_ITEMS[k]; return FF.isWandWeapon(it.typeId) && it.element==='fire' && it.rarity==='normal' && it.tierIndex===0; })[0];
+    var wandItem = FF.STACKABLE_WEAPON_ITEMS[wandId];
+    var wandCard = FF.uniqueCardBody({ base:wandId, kind:'weapon', tier:wandItem.tierIndex, rarity:'normal', enhance:0, enchants:[] });
+    ok(/Damage \d+[–-]\d+ Fire/.test(wandCard), 'a wand card names its element on the damage line');
+    var staffId = Object.keys(FF.STACKABLE_WEAPON_ITEMS).filter(function(k){ var it=FF.STACKABLE_WEAPON_ITEMS[k]; return (it.familiarSlots||0)>0 && it.rarity==='fantastic' && it.tierIndex===0; })[0];
+    var staffItem = FF.STACKABLE_WEAPON_ITEMS[staffId];
+    var staffCard = FF.uniqueCardBody({ base:staffId, kind:'weapon', tier:staffItem.tierIndex, rarity:'fantastic', enhance:0, enchants:[] });
+    ok(new RegExp('\\+'+staffItem.familiarSlots+' familiar slot').test(staffCard), 'a staff card shows its extra familiar (summon) slots');
+    ok(/Block \d+%/.test(staffCard), 'a staff card shows its Block chance');
+
+    // Field-driven ward / quiver lines (surfaced if such a card is ever shown): reflect % and arrow dmg + keep-ammo.
+    ok(/Reflects \d+% \w+ damage/.test(FF.uniqueCardBody({ base:'stward_wardFire_t0_normal', kind:'offhand', tier:0, rarity:'normal', enhance:0, enchants:[] })), 'ward card shows its elemental reflect');
+    ok(/arrow damage/.test(FF.uniqueCardBody({ base:'stquiver_quiver_t0_normal', kind:'offhand', tier:0, rarity:'normal', enhance:0, enchants:[] })), 'quiver card shows its arrow-damage bonus');
   });
 
   // ---- Improvement system: enhance (Stage 2) --------------------------------------------
