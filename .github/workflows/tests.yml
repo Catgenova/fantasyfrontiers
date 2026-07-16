@@ -39,10 +39,9 @@ jobs:
     name: Typecheck (checkJs, high-signal only)
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
-    # ADVISORY for now (continue-on-error): the harness reports high-signal type issues in index.html's
-    # inline script -- undefined identifiers, wrong-arity calls, use-before-def -- but doesn't gate the
-    # build yet. Once the baseline is driven to zero, drop continue-on-error to make it blocking.
-    continue-on-error: true
+    # BLOCKING: the baseline is clean (0 high-signal), so this gate now fails the build on any new
+    # undefined identifier / renamed-key typo / use-before-def / redeclare / assign-to-const in the
+    # inline game script. See scripts/typecheck.mjs for the curated code set + rationale.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
