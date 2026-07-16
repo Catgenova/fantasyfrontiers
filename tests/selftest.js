@@ -5598,6 +5598,23 @@
     eq(ta.critChance, 5, 'equipped ring enchant feeds the aggregate');
     eq(ta.maxHp, 50, 'amulet + body-armour Max HP enchants stack (20+30)');
     eq(ta.blockChance, 4, 'equipped offhand enchant feeds the aggregate');
+    // Block Chance enchant must actually reach the combat block roll. playerBlockChance folds in
+    // enchantBlockChance(st) (percent -> fraction), so a blockChance:4 enchant contributes +0.04 to the
+    // roll -- and the stat-panel Block display (which reads playerBlockChance) now shows it too.
+    ok(typeof FF.enchantBlockChance==='function' && typeof FF.enchantDamageReductionMult==='function', 'block/DR enchant helpers exported');
+    eq(Math.round(FF.enchantBlockChance(stAll)*100), 4, 'blockChance:4 enchant -> +0.04 block chance folded into playerBlockChance');
+    var stNoEnch = { uniqueItems:{}, jewelrySlots:{}, bodyArmor:{} };
+    eq(FF.enchantBlockChance(stNoEnch), 0, 'no block enchant -> +0 block chance');
+    // Damage Reduction enchant must reach the incoming-damage chain: a dmgReduction:7 enchant returns a
+    // 0.93 multiplier (7% off), and it's capped at 90% off so a hit can never be fully negated.
+    var stDR = { uniqueItems:{ ch:{uid:'ch',kind:'bodyarmor',enhance:0,enchants:[{mod:'dmgReduction',roll:7}]} },
+                 bodyArmor:{ chest:{uid:'ch'} }, jewelrySlots:{} };
+    eq(FF.equippedEnchantTotals(stDR).dmgReduction, 7, 'dmgReduction enchant feeds the aggregate');
+    ok(Math.abs(FF.enchantDamageReductionMult(stDR) - 0.93) < 1e-9, 'dmgReduction:7 -> incoming damage x0.93');
+    eq(FF.enchantDamageReductionMult(stNoEnch), 1, 'no DR enchant -> incoming damage unchanged (x1)');
+    var stDRmax = { uniqueItems:{ ch:{uid:'ch',kind:'bodyarmor',enhance:0,enchants:[{mod:'dmgReduction',roll:200}]} },
+                    bodyArmor:{ chest:{uid:'ch'} }, jewelrySlots:{} };
+    ok(FF.enchantDamageReductionMult(stDRmax) >= 0.1 - 1e-9, 'DR is capped at 90% off (mult never below 0.10)');
     ok(typeof FF.equipUnique==='function' && typeof FF.unequipUnique==='function' && typeof FF.uniqueSellValue==='function', 'stage-3 equip/trade fns exported');
     // Chat item links: a unique round-trips through encode -> decode with base/enhance/enchants intact.
     var linkU = { base:'stweapon_wandFire_t3_rare', kind:'weapon', tier:3, rarity:'rare', enhance:4, enchants:[{mod:'critDamage',roll:12},{mod:'lifesteal',roll:7}] };
