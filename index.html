@@ -2286,7 +2286,7 @@
         for(var i=0;i<TIER_COUNT;i++){
           var inputs = {};
           inputs['roasting_meat_t'+i] = 1;
-          inputs['herb_t'+i] = 1;
+          inputs['herbalism_t'+i] = 1; // the unified herb (gathered OR farmed both yield herbalism_t)
           inputs['foraging_t'+i] = 1;
           list.push({
             id:'cooking_t'+i,
@@ -7219,7 +7219,7 @@
   function getCropDataForPlot(plot){
     if(plot.cropType === 'fiber') return FARMING_ITEMS['farming_t'+plot.tierIndex];
     if(plot.cropType === 'grain') return GRAIN_ITEMS['grain_t'+plot.tierIndex];
-    if(plot.cropType === 'herb') return HERB_ITEMS['herb_t'+plot.tierIndex];
+    if(plot.cropType === 'herb') return HERB_ITEMS['herbalism_t'+plot.tierIndex];
     return null;
   }
 
@@ -7269,7 +7269,7 @@
   // Resolve a seed id -> its crop line + tier + grown-crop data (across fiber/grain/herb).
   function seedInfo(seedId){
     if(GRAIN_SEED_ITEMS[seedId]) return { def:GRAIN_SEED_ITEMS[seedId], cropType:'grain', tier:GRAIN_SEED_ITEMS[seedId].tierIndex, crop:GRAIN_ITEMS['grain_t'+GRAIN_SEED_ITEMS[seedId].tierIndex] };
-    if(HERB_SEED_ITEMS[seedId])  return { def:HERB_SEED_ITEMS[seedId],  cropType:'herb',  tier:HERB_SEED_ITEMS[seedId].tierIndex,  crop:HERB_ITEMS['herb_t'+HERB_SEED_ITEMS[seedId].tierIndex] };
+    if(HERB_SEED_ITEMS[seedId])  return { def:HERB_SEED_ITEMS[seedId],  cropType:'herb',  tier:HERB_SEED_ITEMS[seedId].tierIndex,  crop:HERB_ITEMS['herbalism_t'+HERB_SEED_ITEMS[seedId].tierIndex] };
     if(SEED_ITEMS[seedId])       return { def:SEED_ITEMS[seedId],       cropType:'fiber', tier:SEED_ITEMS[seedId].tierIndex,       crop:FARMING_ITEMS['farming_t'+SEED_ITEMS[seedId].tierIndex] };
     return null;
   }
@@ -7543,13 +7543,16 @@
   for(var _hj=0; _hj<TIER_COUNT; _hj++){
     var herbSeedId = 'herbseed_t'+_hj;
     HERB_SEED_ITEMS[herbSeedId] = { id:herbSeedId, name: HERBALISM_NAMES[_hj]+' Seed', icon:svgIcon('seed',HERBALISM_COLORS[_hj]), sell: tierSell(3,_hj), tierIndex:_hj };
-    var herbCropId = 'herb_t'+_hj;
+    // Farmed herbs now yield the SAME item as GATHERED herbs (herbalism_t<i>), so one "Chamomile" works
+    // in both Alchemy and Cooking. HERB_ITEMS is pure crop-DATA (grow timing/xp) keyed by the unified
+    // gather id; the sellable/inventory item is the gather item, already in ALL_SELLABLE via ALL_GATHER_ITEMS.
+    var herbCropId = 'herbalism_t'+_hj;
     HERB_ITEMS[herbCropId] = {
-      id:herbCropId, name: HERBALISM_NAMES[_hj], icon:svgIcon('herb',HERBALISM_COLORS[_hj]), sell: tierSell(6,_hj), tierIndex:_hj,
+      id:herbCropId, name: HERBALISM_NAMES[_hj], icon:svgIcon('herb',HERBALISM_COLORS[_hj]), tierIndex:_hj,
       levelReq: TIER_LEVELS[_hj], xp: tierXp(50,_hj), durationMs: 5*(_hj+1)*60*1000
     };
   }
-  Object.assign(ALL_SELLABLE, HERB_SEED_ITEMS, HERB_ITEMS);
+  Object.assign(ALL_SELLABLE, HERB_SEED_ITEMS); // HERB_ITEMS is crop-data keyed by the gather id (herbalism_t) -- NOT re-registered (the gather item already owns that ALL_SELLABLE key)
   function maybeDropHerbSeed(tierIndex){
     if(Math.random() < seedDropChance(state)){
       var herbSeedId = 'herbseed_t'+tierIndex;
@@ -12793,6 +12796,13 @@
           for(var _mi=0; _mi<TIER_COUNT; _mi++){
             var _oldFat = state.inventory['trapping_t'+_mi];
             if(_oldFat){ state.inventory['fat_t'+_mi] = (state.inventory['fat_t'+_mi]||0) + _oldFat; delete state.inventory['trapping_t'+_mi]; }
+          }
+          // Farmed herbs (herb_t<n>) and gathered herbs (herbalism_t<n>) were duplicate same-named items;
+          // they're unified on the gather id now (so one Chamomile works in Alchemy AND Cooking). Fold any
+          // legacy farmed-herb stock into the gather id so old saves don't strand it or hit "no chamomile".
+          for(var _hi=0; _hi<TIER_COUNT; _hi++){
+            var _oldHerb = state.inventory['herb_t'+_hi];
+            if(_oldHerb){ state.inventory['herbalism_t'+_hi] = (state.inventory['herbalism_t'+_hi]||0) + _oldHerb; delete state.inventory['herb_t'+_hi]; }
           }
           // Metallurgy's Sand->Glass Bottle side-recipe was retired; Alchemy now bottles in tier-matched
           // Glassblowing goods. Fold any legacy metallurgy_glass stock into glassblowing_t3 (the "Glass

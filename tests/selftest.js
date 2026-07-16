@@ -729,6 +729,11 @@
     eq(FF.cropSeedId('grain', 3), 'grainseed_t3', 'grain crop -> grainseed_t');
     eq(FF.cropSeedId('herb', 7), 'herbseed_t7', 'herb crop -> herbseed_t');
     eq(FF.cropSeedId('fiber', 999), null, 'out-of-range tier -> null');
+    // Herbs are UNIFIED: gathered (Herbalism) and farmed (herb crop) both yield herbalism_t<i>, so a single
+    // "Chamomile" works in both Alchemy and Cooking (fixes the "have chamomile but recipe says none" report).
+    eq(FF.seedInfo('herbseed_t0').crop.id, 'herbalism_t0', 'farming an herb yields the gather item (herbalism_t0), not a separate herb_t0');
+    ok(!FF.ALL_SELLABLE['herb_t0'], 'the duplicate farmed-herb item (herb_t0) no longer exists');
+    ok(FF.ALL_CRAFT_RECIPES['cooking_t0'].inputs['herbalism_t0'] && !FF.ALL_CRAFT_RECIPES['cooking_t0'].inputs['herb_t0'], 'a Meal consumes the unified herbalism_t herb, not herb_t');
     // Statistical: harvest a ripe t5 fiber plot many times; ~75% of harvests return a seed_t5.
     var S = FF._state, grid = S.estate.grid, pm = FF.farmPlotMap('personal');
     var cell=null; for(var x=0;x<grid.length && !cell;x++){ if(!grid[x]) continue; for(var y=0;y<grid[x].length && !cell;y++){ if(grid[x][y]) cell=[x,y]; } }
