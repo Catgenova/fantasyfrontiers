@@ -7,19 +7,27 @@
 # row-level security + the optimistic version guard, and submit_profile validation. Assertions
 # check the actual HTTP/JSON responses.
 #
-# These hit the LIVE project and create throwaway accounts (prefixed `it_<runid>_`). Guilds are
-# disbanded at the end (cascade), but Supabase Auth users can't be deleted with the publishable
-# key -- the script prints the accounts it made so you can remove them under Authentication > Users.
+# These hit whatever project SUPABASE_URL points at and create throwaway accounts (prefixed
+# `it_<runid>_`). Guilds are disbanded at the end (cascade), but Supabase Auth users can't be deleted
+# with the publishable key -- the script prints the accounts it made so you can remove them under
+# Authentication > Users. Point this at a STAGING project, not production.
 #
-# Usage:   bash tests/integration.sh
-# Config:  SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY  (env vars override the defaults below)
+# Usage:   SUPABASE_URL=... SUPABASE_PUBLISHABLE_KEY=... bash tests/integration.sh
+# Config:  SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY  (REQUIRED -- no production fallback)
 #
 # Requires: bash + curl. No jq needed. Exits non-zero if any assertion fails.
 
 set -uo pipefail
 
-BASE="${SUPABASE_URL:-https://varyclnmlrgdzgdxhcyd.supabase.co}"
-PUB="${SUPABASE_PUBLISHABLE_KEY:-sb_publishable_NH0IJ65wCtOk3_2RfALDRg_qRFrmekL}"
+BASE="${SUPABASE_URL:-}"
+PUB="${SUPABASE_PUBLISHABLE_KEY:-}"
+# No production fallback: if a staging target isn't configured, SKIP cleanly rather than churn accounts
+# on the live project. Set both secrets (to a staging Supabase project) to actually run.
+if [ -z "$BASE" ] || [ -z "$PUB" ]; then
+  echo "SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY not set -- skipping integration tests."
+  echo "Point them at a STAGING project to run (refusing to fall back to production)."
+  exit 0
+fi
 RUN="it_$(date +%s)_$((RANDOM%9000+1000))"
 PASS=0; FAIL=0
 declare -a ACCOUNTS=()
@@ -58,8 +66,15 @@ rest(){ # rest METHOD PATH TOKEN [BODY]  -> REST API with return=representation
 rpc_call(){ # rpc_call NAME TOKEN [BODY] -> POST /rest/v1/rpc/NAME, prints "<body>\n<http_status>"
   curl -s -w '\n%{http_code}' -X POST "$BASE/rest/v1/rpc/$1" -H "apikey: $PUB" -H "Authorization: Bearer $2" -H "Content-Type: application/json" -d "${3:-{}}"
 }
-# mkuser SUFFIX -> sets USER + TOK for a freshly registered + signed-in account
-mkuser(){ USER="${RUN}_$1"; ACCOUNTS+=("$USER"); reg "{\"username\":\"$USER\",\"password\":\"testpass12345\"}" >/dev/null; TOK="$(signin "{\"email\":\"$USER@players.fantasyfrontiers.app\",\"password\":\"testpass12345\"}")"; }
+# Fund a signed-in account's SERVER wallet (gold is server-authoritative -- guild create, treasury
+# donations and market buys all debit it). The earn bucket starts full, so one legit earn credits up to
+# BURST_GOLD in full; 10M covers everything the suite spends.
+fund_wallet(){ fn wallet "$1" '{"action":"earn","earned_total":10000000}' >/dev/null; }
+# Fund a signed-in account's item LEDGER (market SELL debits it). First sync grandfathers the reported
+# stock (age-capped, well above these small test quantities).
+fund_items(){ fn items "$1" "{\"action\":\"sync\",\"inventory\":$2}" >/dev/null; }
+# mkuser SUFFIX -> sets USER + TOK for a freshly registered + signed-in account, wallet pre-funded.
+mkuser(){ USER="${RUN}_$1"; ACCOUNTS+=("$USER"); reg "{\"username\":\"$USER\",\"password\":\"testpass12345\"}" >/dev/null; TOK="$(signin "{\"email\":\"$USER@players.fantasyfrontiers.app\",\"password\":\"testpass12345\"}")"; fund_wallet "$TOK"; }
 
 printf '\033[1mFantasy Frontiers integration tests\033[0m  (run id: %s)\n' "$RUN"
 printf 'target: %s\n' "$BASE"
@@ -74,6 +89,7 @@ assert_err "$(reg "{\"username\":\"${RUN}_a\",\"password\":\"short\"}")" "too-sh
 TOK_A="$(signin "{\"email\":\"${RUN}_a@players.fantasyfrontiers.app\",\"password\":\"testpass12345\"}")"
 [ -n "$TOK_A" ] && pass "sign in returns an access token" || faild "sign in returns an access token"
 USER_A="${RUN}_a"
+fund_wallet "$TOK_A"   # gold is server-authoritative -- fund the wallet before guild create / treasury donations
 
 # --------------------------------------------------------------------------------------------
 sect "Guild create & validation"
@@ -163,6 +179,7 @@ sect "Marketplace"
 IKEY="itest_${RANDOM}${RANDOM}"
 mkuser d; TOK_MA="$TOK"
 mkuser e; TOK_MB="$TOK"
+fund_items "$TOK_MA" "{\"$IKEY\":100}"   # market SELL debits the item ledger -- give the seller stock
 
 MS1=$(fn marketplace "$TOK_MA" "{\"action\":\"place\",\"side\":\"sell\",\"item_key\":\"$IKEY\",\"unit_price\":100,\"qty\":10}")
 assert_ok "$MS1" "A places a sell order (10 @ 100)"
