@@ -184,6 +184,15 @@ sect "submit_profile validation"
 assert_ok  "$(fn submit_profile "$TOK_A" '{"total_level":3,"gold":100,"skills":{"mining":3}}')" "valid profile accepted"
 assert_err "$(fn submit_profile "$TOK_A" '{"total_level":5,"gold":100,"skills":{"mining":3}}')" "total_level != sum(skills) rejected"
 assert_err "$(fn submit_profile "$TOK_A" '{"total_level":999,"gold":100,"skills":{"mining":999}}')" "out-of-range skill level rejected"
+# Rapid-fire injection: each submit used to grant a fresh BURST (400 levels), so firing N in a row banked
+# 400*N onto the leaderboard in seconds (and unlocked the total_level-gated gold rate). The token bucket
+# must bound repeated jumps -- after several instant 800-level submits the stored total_level stays near
+# one burst (~400), not 800. profiles is publicly readable, so read it back via REST.
+mkuser lvl; TOK_L="$TOK"; LID="$(jwtsub "$TOK_L")"
+LVLBIG='{"total_level":800,"gold":100,"skills":{"a":100,"b":100,"c":100,"d":100,"e":100,"f":100,"g":100,"h":100}}'
+fn submit_profile "$TOK_L" "$LVLBIG" >/dev/null; fn submit_profile "$TOK_L" "$LVLBIG" >/dev/null; fn submit_profile "$TOK_L" "$LVLBIG" >/dev/null
+LVLNOW="$(field "$(rest GET "profiles?id=eq.$LID&select=total_level" "$TOK_L")" total_level)"
+if [ -n "$LVLNOW" ] && [ "$LVLNOW" -le 500 ] 2>/dev/null; then pass "rapid submit_profile is bucket-bounded (total_level=$LVLNOW, not 800)"; else faild "rapid submit_profile is bucket-bounded" "total_level=$LVLNOW"; fi
 
 # --------------------------------------------------------------------------------------------
 sect "Marketplace"

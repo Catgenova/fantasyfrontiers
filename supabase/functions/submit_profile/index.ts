@@ -4,10 +4,11 @@
 //   1. Verifies the caller's auth token and derives id + username from it (no spoofing).
 //   2. Runs STRUCTURAL checks: each skill level 1..100, total_level == sum(skills),
 //      skill count in bounds, gold within an absolute cap.
-//   3. Runs RATE checks: the INCREASE since the last accepted submission can't exceed
-//      what's earnable in that much real time; the first submission is anchored to the
-//      account's age so a fresh account can't already be maxed.
-//   4. Upserts the row with the service role (bypasses RLS) if everything passes.
+//   3. Runs RATE checks via a TOKEN BUCKET on total_level (the ranking metric): the stored value is
+//      CLAMPED to what's earnable at the sustained rate since the last write (burst carried, not re-granted
+//      per call), so rapid repeat submissions can't ratchet the leaderboard up -- and a legit big/offline
+//      gain is trimmed, never rejected, then catches up over subsequent writes.
+//   4. Upserts the row with the service role (bypasses RLS) if the structural checks pass.
 // Progress is still computed client-side, so this stops impossible values / impossible
 // speed — not a determined cheater who stays within plausible rates. Full authority
 // would require simulating the game server-side.
@@ -23,12 +24,16 @@ const MAX_SKILLS = 400;           // main skills + proficiencies + classes + phy
                                  // updating. 400 leaves generous headroom while still bounding abuse.
 const GOLD_ABS_CAP = 1_000_000_000_000; // 1e12 sanity ceiling
 
-// Rate limits. Allowed increase = BURST + PER_HOUR * hoursElapsed.
-// Long gaps (incl. offline idle) grant proportionally larger allowances, so returning
-// players are never falsely rejected; only implausibly fast jumps are blocked.
+// Rate limits. The ranking metric (total_level) is bounded by a proper TOKEN BUCKET keyed off the
+// stored row's clock, NOT a flat "BURST + rate*hours". The old flat form reset `hours` to ~0 right after
+// every accepted write, so it handed out the full BURST on EVERY call -- firing N rapid submissions banked
+// BURST*N levels in seconds (the reported "inject XP onto the leaderboard", which also unlocked the gold
+// gate that reads profiles.total_level). The bucket accrues at LEVELS_PER_HOUR up to BURST_LEVELS and
+// CARRIES between writes; rapid resubmits drain it and then get ~0 until real time passes.
 const LEVELS_PER_HOUR = 200;      // total-level gain/hour (ranking metric — the strict one)
-const BURST_LEVELS = 400;
-const GOLD_PER_HOUR = 20_000_000; // loose; gold is secondary display, not the rank key
+const BURST_LEVELS = 400;         // bucket size: max levels bankable in one burst
+const LEVEL_FILL_MS = Math.floor((BURST_LEVELS / LEVELS_PER_HOUR) * 3_600_000); // time to refill the burst (2h)
+const GOLD_PER_HOUR = 20_000_000; // loose; profiles.gold is a secondary DISPLAY column (player_wallet is authoritative)
 const BURST_GOLD = 10_000_000;
 
 const CORS = {
@@ -95,23 +100,36 @@ Deno.serve(async (req) => {
     .select("total_level, gold, updated_at").eq("id", userId).maybeSingle();
 
   const nowMs = Date.now();
-  const sinceMs = prev?.updated_at
-    ? new Date(prev.updated_at).getTime()
-    : new Date(user.created_at).getTime();
-  const hours = Math.max(0, (nowMs - sinceMs) / 3_600_000);
-
   const prevTotal = prev?.total_level ?? 0;
   const prevGold = prev?.gold ?? 0;
 
-  // Only increases are limited; decreases (e.g. after a reset) are always allowed.
-  const levelGain = totalLevel - prevTotal;
-  if (levelGain > BURST_LEVELS + LEVELS_PER_HOUR * hours) {
-    return json({ ok: false, error: "Progress increased faster than possible." }, 422);
+  // Token bucket for the ranking metric. The clock is the stored row's updated_at (or, on the first
+  // submission, a full bucket back-dated by the fill window so a new account can grandfather its real
+  // starting level up to BURST in one go). Allowance = time since the clock at LEVELS_PER_HOUR, capped at
+  // BURST_LEVELS and carried between writes. We CLAMP (accept, trim to the allowance) rather than reject,
+  // so a legit big/offline gain is never blocked -- it catches up over the next writes as the bucket
+  // refills -- while a cheater firing rapid submissions is bounded to the sustained rate.
+  const bucketFromMs = Math.max(
+    prev?.updated_at ? new Date(prev.updated_at).getTime() : nowMs - LEVEL_FILL_MS,
+    nowMs - LEVEL_FILL_MS,
+  );
+  const levelAllow = Math.min(BURST_LEVELS, Math.floor(LEVELS_PER_HOUR * (nowMs - bucketFromMs) / 3_600_000));
+  const allowedTotal = totalLevel <= prevTotal ? totalLevel : Math.min(totalLevel, prevTotal + levelAllow); // decreases (resets) always allowed
+  const consumedLevels = Math.max(0, allowedTotal - prevTotal);
+  // Advance the bucket clock ONLY by what was consumed (so unused allowance persists; a burst of writes
+  // drains it). No consumption -> keep the clock so allowance keeps accruing across idle no-op submits.
+  const nextClockMs = consumedLevels > 0
+    ? Math.min(nowMs, bucketFromMs + Math.floor((consumedLevels / LEVELS_PER_HOUR) * 3_600_000))
+    : bucketFromMs;
+  if (totalLevel - allowedTotal > 100) {
+    console.warn(`submit_profile level clamp: user=${userId} submitted=${totalLevel} prev=${prevTotal} stored=${allowedTotal}`);
   }
-  const goldGain = gold - prevGold;
-  if (goldGain > BURST_GOLD + GOLD_PER_HOUR * hours) {
-    return json({ ok: false, error: "Gold increased faster than possible." }, 422);
-  }
+
+  // profiles.gold is a DISPLAY column (player_wallet is the authority), so clamp it the same way with a
+  // loose flat allowance -- never reject the whole submission over a gold jump, but don't let a spoof
+  // flex the leaderboard's gold number arbitrarily either.
+  const goldHours = Math.max(0, (nowMs - (prev?.updated_at ? new Date(prev.updated_at).getTime() : new Date(user.created_at).getTime())) / 3_600_000);
+  const allowedGold = gold <= prevGold ? gold : Math.min(gold, prevGold + BURST_GOLD + Math.floor(GOLD_PER_HOUR * goldHours));
 
   // Sanitize optional equipment (weapons/armor loadout for the profile view). Cosmetic, so
   // never reject the whole submission over it -- coerce to bounded strings or drop it.
@@ -195,14 +213,14 @@ Deno.serve(async (req) => {
   const record: Record<string, unknown> = {
     id: userId,
     username,
-    total_level: totalLevel,
-    gold,
+    total_level: allowedTotal,   // clamped to the bucket allowance (ranking metric)
+    gold: allowedGold,           // clamped display gold
     skills,
     equipment,
     stats,
     mortal,
     class: cls,
-    updated_at: new Date(nowMs).toISOString(),
+    updated_at: new Date(nextClockMs).toISOString(), // bucket clock (advances only by consumed levels)
   };
   if (estateProvided) record.estate = estate;   // omit entirely -> upsert leaves any existing estate untouched
   if (masteryProvided) record.mastery = mastery; // same: absent field never clobbers the stored mastery
