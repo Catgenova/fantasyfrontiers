@@ -8853,6 +8853,15 @@
     if(o.kind==='familiar') return 'familiar potency';
     return TYPE_ICON[o.damageType]+' '+o.damageType+' dmg';
   }
+  // Plain-text (icon-free) version of ringBonusLabel, for contexts that HTML-escape their text (the
+  // unique item-card Base section). Communion's "familiar potency" is the game's summon-efficiency stat.
+  function ringBonusPlainLabel(o){
+    if(o.kind==='elementDamage') return ELEMENT_META[o.element].label+' damage';
+    if(o.kind==='accuracy') return 'accuracy';
+    if(o.kind==='resistance') return 'damage resistance';
+    if(o.kind==='familiar') return 'familiar potency';
+    return (o.damageType||'physical')+' damage';
+  }
   function getAmuletDefenseBonus(state){
     var amulet = getEquippedAmuletItem(state);
     return (amulet && amulet.defense) ? amulet.defense : 0; // only the plain Amulet carries defense
@@ -10841,10 +10850,21 @@
       // Enhancing a weapon scales its base damage in combat (mainhandEnhanceMult === enhanceStatMult),
       // so show the enhanced range here too -- otherwise +N looks like it only touches the enchants.
       var _wem = (d.kind==='weapon') ? enhanceStatMult(d.enhance||0) : 1;
+      // Enhancing jewelry scales its stat (applyJewelryEnhance multiplies bonus/defense), so reflect +N here too.
+      var _jEnh = (d.kind==='ring'||d.kind==='amulet') ? enhanceStatMult(d.enhance||0) : 1;
       if(b.dmgMin||b.dmgMax) baseLines.push('Damage '+Math.round((b.dmgMin||0)*_wem)+'–'+Math.round((b.dmgMax||0)*_wem)+(_wem>1?' (+'+d.enhance+')':''));
-      if(b.defense) baseLines.push('Defense '+(Math.round(b.defense*10)/10));
+      // A ring's / amulet's inherent typed value (fire damage, familiar potency = summon efficiency,
+      // accuracy, damage resistance, defense, ...) -- shown with its precise label and +enhance, so the
+      // card says WHAT the piece boosts and by how much, not just a bare "% damage".
+      if(d.kind==='ring'){
+        baseLines.push('+'+Math.round(ringItemBonus(b)*_jEnh*100)+'% '+ringBonusPlainLabel(b)+(_jEnh>1?' (+'+d.enhance+')':''));
+      } else if(d.kind==='amulet' && b.kind==='resistance'){
+        baseLines.push('+'+Math.round((b.bonus||0)*_jEnh*100)+'% damage resistance'+(_jEnh>1?' (+'+d.enhance+')':''));
+      } else {
+        if(b.defense) baseLines.push('Defense '+(Math.round(b.defense*_jEnh*10)/10)+(_jEnh>1?' (+'+d.enhance+')':''));
+        if(b.dmgBonus) baseLines.push('+'+Math.round(b.dmgBonus*100)+'% damage');
+      }
       if(b.block) baseLines.push('Block '+Math.round(b.block*100)+'%');
-      if(b.dmgBonus) baseLines.push('+'+Math.round(b.dmgBonus*100)+'% damage');
     }
     // Relics carry no static stat field -- their %dmg/armour bonus is computed from tier+rarity (and +enhance).
     if(d.kind==='relic') baseLines.push('+'+Math.round(getRelicBonusPct(d.tier, d.rarity) * enhanceStatMult(d.enhance||0) * 100)+'% Damage & Armour');

@@ -5641,6 +5641,21 @@
     eq(d7[0], Math.round(wb.dmgMin * FF.enhanceStatMult(7)), '+7 card min = raw x enhanceStatMult(7)');
     eq(d7[1], Math.round(wb.dmgMax * FF.enhanceStatMult(7)), '+7 card max = raw x enhanceStatMult(7)');
     ok(d7[1] > d0[1], 'enhancing a weapon raises its shown base damage');
+
+    // The unique card's BASE section now names a ring's / amulet's inherent typed value (fire damage,
+    // familiar potency = summon efficiency, damage resistance), scaled by its Enhance.
+    function ringCard(base, enh){ return FF.uniqueCardBody({ base:base, kind:'ring', tier:0, rarity:'normal', enhance:enh||0, enchants:[] }); }
+    var fireCard = ringCard('ring_fire_t0_normal', 0);
+    ok(/\+5% Fire damage/.test(fireCard), 'fire ring card shows its Fire damage value');
+    ok(/\+5% familiar potency/.test(ringCard('ring_communion_t0_normal', 0)), 'communion ring card shows familiar potency (summon efficiency)');
+    ok(/\+5% accuracy/.test(ringCard('ring_precision_t0_normal', 0)), 'precision ring card shows accuracy');
+    // Physical rings say WHICH type, not a bare "% damage".
+    ok(/slashing damage/.test(ringCard('ring_slash_t0_normal', 0)), 'physical ring card names its damage type');
+    // Enhancing a ring scales the shown value (applyJewelryEnhance multiplies bonus by enhanceStatMult).
+    var m5 = ringCard('ring_fire_t0_normal', 5).match(/\+(\d+)% Fire damage/);
+    ok(m5 && +m5[1] === Math.round(0.05 * FF.enhanceStatMult(5) * 100), '+5 fire ring shows the enhanced Fire-damage value');
+    // Warding amulet base line shows damage resistance.
+    ok(/damage resistance/.test(FF.uniqueCardBody({ base:'amulet_warding_t0_normal', kind:'amulet', tier:0, rarity:'normal', enhance:0, enchants:[] })), 'warding amulet card shows damage resistance');
   });
 
   // ---- Improvement system: enhance (Stage 2) --------------------------------------------
