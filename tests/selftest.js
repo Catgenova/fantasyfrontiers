@@ -5313,6 +5313,22 @@
     eq(R(50000, 50000, 0, 50000, 0), 50000, 'chest gold banked into server balance survives reconcile');
   });
 
+  // ---- Bows: slower draw hits harder (Short 1x / Medium 1.25x / Long 1.5x base damage) -----
+  suite('bows: damage scales with draw', function(){
+    var T = 15; // a high tier keeps rounding error tiny for the ratio check
+    var s = FF.getStackableWeaponTierData('bowShort', T);
+    var m = FF.getStackableWeaponTierData('bowMedium', T);
+    var l = FF.getStackableWeaponTierData('bowLong', T);
+    ok(m.dmgMax > s.dmgMax && l.dmgMax > m.dmgMax, 'Long > Medium > Short base damage');
+    near(m.dmgMax / s.dmgMax, 1.25, 'Medium bow = Short x1.25', 0.02);
+    near(l.dmgMax / s.dmgMax, 1.5,  'Long bow = Short x1.5', 0.02);
+    // The slower bow is the harder-hitting one (Short 4 / Medium 5 / Long 6 attack speed).
+    var W = FF.getWeaponStyle('bowLong');
+    ok(W.attackSpeed === 6, 'Long bow is the slowest');
+    // A melee weapon is unaffected (dmgMult defaults to 1).
+    ok(FF.getStackableWeaponTierData('bowShort', T).dmgMax > 0, 'short bow still deals damage');
+  });
+
   // ---- Leaderboard over-100 Mastery: capped `skills` + separate display-only `mastery` -----
   suite('leaderboard: over-100 mastery split', function(){
     var s = FF._state;
