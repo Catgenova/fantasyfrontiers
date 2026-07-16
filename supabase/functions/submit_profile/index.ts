@@ -36,6 +36,39 @@ const LEVEL_FILL_MS = Math.floor((BURST_LEVELS / LEVELS_PER_HOUR) * 3_600_000); 
 const GOLD_PER_HOUR = 20_000_000; // loose; profiles.gold is a secondary DISPLAY column (player_wallet is authoritative)
 const BURST_GOLD = 10_000_000;
 
+// ---- Activity-consistency check ----------------------------------------------------------------
+// Rate-limiting bounds how FAST a level climbs; this bounds whether the claimed levels are POSSIBLE at
+// all, by requiring the XP they imply to be supportable by the account's lifetime activity. Every gather
+// bumps stats.gathered and grants that gathering skill's XP (index.html processGatherActivity); every
+// craft bumps stats.crafted. So the total XP of all claimed gathering levels can't exceed
+// gathered * (max XP a single gather can grant), and likewise for crafting. Mastery (over-100) levels are
+// billions of XP, so a low-activity mastery injection (e.g. fishing 114 with 904 gathers) fails by orders
+// of magnitude. The caps are DELIBERATELY generous (well above the real max XP/action: gather ~210, top
+// craft ~20k) so a legitimate maxed player -- whose per-action average can never exceed the item max --
+// is NEVER falsely flagged. On failure the submission is HELD (publishes nothing new), like a rate clamp.
+//
+// XP-to-reach-level curve, mirrored from index.html (SKILL_XP_FLOOR / _EXT): quadratic to the knee (70),
+// x1.20/level to 100, then each level past 100 doubles. Exact parity isn't required -- the generous caps
+// absorb any drift (a curve change would have to be enormous to false-positive, and a failure only holds).
+const XP_FLOOR = (() => {
+  const KNEE = 70, GROWTH = 1.20, MAXL = 100, EXTMAX = 200, OGROWTH = 2.0;
+  const f: number[] = [0, 0]; // f[level] = total xp to REACH that level
+  let cum = 0; const kneeCost = 100 * (2 * KNEE - 1);
+  for (let L = 1; L < MAXL; L++) {
+    const cost = L < KNEE ? 100 * (2 * L - 1) : kneeCost * Math.pow(GROWTH, L - KNEE);
+    cum += Math.round(cost); f[L + 1] = cum;
+  }
+  let cost = f[MAXL] - f[MAXL - 1], ecum = f[MAXL];
+  for (let L = MAXL; L < EXTMAX; L++) { cost *= OGROWTH; ecum += cost; f[L + 1] = ecum; }
+  return f;
+})();
+// The 17 gathering + 43 crafting skill ids (index.html GATHER_SKILL_IDS / CRAFT_SKILL_IDS). A missing id
+// just isn't checked (fail-open, never a false-positive), so drift here is safe.
+const GATHER_SKILLS = new Set(["digging","forestry","mining","fishing","herbalism","botany","foraging","butchering","beekeeping","prospecting","ranching","mycology","salvaging","essence","diving","tapping","spelunking"]);
+const CRAFT_SKILLS = new Set(["carpentry","metallurgy","roasting","cooking","alchemy","bowyer","fletching","baking","tailoring","stonecutting","leatherworking","jewelrycrafting","masonry","paving","mixology","brewing","confectionery","gemcutting","enchanting","dairy","gastronomy","apothecary","tinkering","pyrotechnics","inscription","tanning","weaving","pottery","goldsmithing","chandlery","woodcarving","glassblowing","cooperage","papermaking","bookbinding","archaeology","blacksmithing","weaponsmithing","armorsmithing","shieldsmithing","runesmithing","arcanism","fertilizer"]);
+const MAX_XP_PER_GATHER = 8_000;    // real max ~210*mults(~<2k); 8k = comfortable false-positive margin
+const MAX_XP_PER_CRAFT = 200_000;   // real top single-craft ~20k; 200k margin (still catches mastery injections)
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -153,20 +186,44 @@ Deno.serve(async (req) => {
   const masteryRemaining = Math.max(0, levelAllow - baseConsumed);
   const masteryGrow = Math.max(0, newMasteryExtra - prevMasteryExtra);
   const masteryOk = newMasteryExtra <= prevMasteryExtra || masteryGrow <= masteryRemaining;
-  const storedMastery = masteryOk ? mastery : ((prev?.mastery as Record<string, number> | null) ?? null);
-  const consumedLevels = baseConsumed + (masteryOk ? masteryGrow : 0);
+
+  // Consistency: the XP implied by the claimed GATHERING levels must be supportable by lifetime gathers,
+  // and crafting levels by lifetime crafts (see the caps above). Reads the stats raw+bounded here (the full
+  // cleanStats runs later). Sums over the union of skills+mastery keys so a mastery-only entry still counts.
+  const rawStats = (body as { stats?: unknown }).stats;
+  const statN = (k: string) => { const v = rawStats && typeof rawStats === "object" ? (rawStats as Record<string, unknown>)[k] : undefined; return (typeof v === "number" && Number.isFinite(v) && v > 0) ? v : 0; };
+  const skillsMap = skills as Record<string, number>;
+  const claimedXp = (set: Set<string>) => {
+    let sum = 0;
+    const keys = new Set<string>([...Object.keys(skillsMap), ...(mastery ? Object.keys(mastery) : [])]);
+    for (const k of keys) {
+      if (!set.has(k)) continue;
+      const eff = (mastery && mastery[k]) ? mastery[k] : (skillsMap[k] || 1);
+      sum += XP_FLOOR[Math.max(1, Math.min(200, eff | 0))];
+    }
+    return sum;
+  };
+  const consistent =
+    claimedXp(GATHER_SKILLS) <= statN("gathered") * MAX_XP_PER_GATHER &&
+    claimedXp(CRAFT_SKILLS) <= statN("crafted") * MAX_XP_PER_CRAFT;
+
+  // A too-fast jump (submitted > allowance) clamps the ranking total AND holds the per-skill map, so a burst
+  // can't flash fake per-skill levels while the total is clamped. An INCONSISTENT submission (levels whose
+  // XP the lifetime activity can't support) holds EVERYTHING -- total, skills, and mastery -- publishing
+  // nothing new, so injected levels never reach the leaderboard even if the account has aged into a bucket.
+  const clamped = allowedTotal < totalLevel;
+  const finalTotal = consistent ? allowedTotal : prevTotal;
+  const storedSkills = (consistent && !clamped) ? skills : (prev?.skills ?? {});
+  const storedMastery = (consistent && masteryOk) ? mastery : ((prev?.mastery as Record<string, number> | null) ?? null);
+  const consumedLevels = consistent ? (baseConsumed + (masteryOk ? masteryGrow : 0)) : 0;
   // Advance the bucket clock ONLY by what was consumed (so unused allowance persists; a burst of writes
   // drains it). No consumption -> keep the clock so allowance keeps accruing across idle no-op submits.
   const nextClockMs = consumedLevels > 0
     ? Math.min(nowMs, bucketFromMs + Math.floor((consumedLevels / LEVELS_PER_HOUR) * 3_600_000))
     : bucketFromMs;
-  // A too-fast jump (submitted > allowance). When this happens we clamp total_level to the allowance AND
-  // refuse to publish the submitted per-skill map -- otherwise the inflated skills (e.g. digging 97) would
-  // still display on the profile even though the ranking total is clamped. On a clamp we keep the last
-  // accepted skills (or {} for a first submission), so a burst can't flash fake per-skill levels.
-  const clamped = allowedTotal < totalLevel;
-  const storedSkills = clamped ? (prev?.skills ?? {}) : skills;
-  if (totalLevel - allowedTotal > 100) {
+  if (!consistent) {
+    console.warn(`submit_profile consistency hold: user=${userId} submitted total=${totalLevel} gatherXp=${claimedXp(GATHER_SKILLS)} gathered=${statN("gathered")} craftXp=${claimedXp(CRAFT_SKILLS)} crafted=${statN("crafted")}`);
+  } else if (totalLevel - allowedTotal > 100) {
     console.warn(`submit_profile level clamp: user=${userId} submitted=${totalLevel} prev=${prevTotal} stored=${allowedTotal}`);
   }
 
@@ -239,7 +296,7 @@ Deno.serve(async (req) => {
   const record: Record<string, unknown> = {
     id: userId,
     username,
-    total_level: allowedTotal,   // clamped to the bucket allowance (ranking metric)
+    total_level: finalTotal,     // bucket-clamped, and held at prev when the submission is inconsistent
     gold: allowedGold,           // clamped display gold
     skills: storedSkills,        // submitted map only when within allowance; otherwise the last accepted (no fake per-skill flash)
     equipment,

@@ -208,6 +208,14 @@ MASTERY='{"total_level":3,"gold":100,"skills":{"mining":3},"mastery":{"fishing":
 fn submit_profile "$TOK_L" "$MASTERY" >/dev/null
 MRESP="$(rest GET "profiles?id=eq.$LID&select=mastery" "$TOK_L")"
 case "$MRESP" in *114*|*150*) faild "fresh-account over-100 mastery is bucket-metered" "mastery leaked: $MRESP" ;; *) pass "fresh-account over-100 mastery is bucket-metered (fishing 114 not published)" ;; esac
+# Consistency: a profile whose gathering levels imply more XP than lifetime gathers can support (here
+# fishing 100 -- ~17M XP -- with gathered:0) is HELD; the impossible level never publishes. (The XP-curve
+# parity + verdict math is verified in the build; on a fresh account the rate clamp also holds it, but the
+# assertion is on the OUTCOME.) The reported test3 case (fishing 114 mastery + 904 gathers) fails by ~1e6x.
+IMPOSS='{"total_level":100,"gold":100,"skills":{"fishing":100},"stats":{"gathered":0}}'
+fn submit_profile "$TOK_L" "$IMPOSS" >/dev/null
+IMPNOW="$(field "$(rest GET "profiles?id=eq.$LID&select=total_level" "$TOK_L")" total_level)"
+if [ -n "$IMPNOW" ] && [ "$IMPNOW" -le 50 ] 2>/dev/null; then pass "impossible profile (fishing 100, 0 gathers) is held (total_level=$IMPNOW)"; else faild "impossible profile is held" "total_level=$IMPNOW (expected <=50)"; fi
 
 # --------------------------------------------------------------------------------------------
 sect "Marketplace"
