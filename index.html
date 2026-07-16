@@ -15000,10 +15000,22 @@
     var enchBoost = spellbladeEnchantBoost(state);
     if(enchBoost!==1){ for(var _ek in enchTot) enchTot[_ek] *= enchBoost; }
     var enchCrit = (enchTot.critChance||0)/100, enchCritDmg = (enchTot.critDamage||0)/100;
+    // Inline gold "(+X ench)" tag appended to a base-stat row whose TOTAL already folds the enchant in
+    // (Health, Armor, Accuracy, Block, Attack Damage) -- so the number shows the effect and the tag shows
+    // the enchant's share. _enchRow is a standalone gold row for enchant-only effects with no base stat
+    // (Lifesteal, Armour Pierce, Damage Reduction, Resistance, Thorns, HP Regen). enchTot is already
+    // Spellblade-amplified, so both match what combat uses.
+    var _et = function(stat, pct){ var v = enchTot[stat]||0; if(!v) return ''; return ' <span style="color:var(--gold);font-size:11px">(+'+(pct ? (Math.round(v*10)/10)+'%' : Math.round(v))+' ench)</span>'; };
+    var _enchRow = function(label, stat, pct, suffix){ var v = enchTot[stat]||0; if(!v) return ''; var disp = pct ? ('+'+(Math.round(v*10)/10)+'%') : ('+'+Math.round(v)); return '<div class="stat-row"><span class="stat-label"><span style="color:var(--gold)">&#10022;</span> '+label+'</span><span class="stat-value" style="color:var(--gold)">'+disp+(suffix||'')+'</span></div>'; };
+    // Fold the Weapon/All Damage (%) and Flat Damage enchants into the displayed Attack Damage so the
+    // number reflects them (they were previously only listed in a separate block).
+    var _dmgEnchMult = 1 + (enchTot.pctDamage||0)/100, _flatEnch = Math.round(enchTot.flatDamage||0);
+    effMin = Math.max(1, Math.round(_dmgBaseMin * physDmgMult * weaponProficiency * _mhEnh * _dmgEnchMult)) + _flatEnch;
+    effMax = Math.max(effMin+1, Math.round(_dmgBaseMax * physDmgMult * weaponProficiency * _mhEnh * _dmgEnchMult)) + _flatEnch;
     var html = '<div class="stats-panel">';
     html += '<div class="stats-group" style="grid-column:1/-1"><div class="stat-row"><span class="stat-label">Combat Score</span><span class="stat-value">'+combatLevelEquivalent(state)+'</span></div></div>';
     html += '<div class="stats-group"><h4>'+svgIcon('sword','currentColor')+' Offense</h4>';
-    html += '<div class="stat-row"><span class="stat-label">Attack Damage</span><span class="stat-value">'+effMin+'-'+effMax+'</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Attack Damage</span><span class="stat-value">'+effMin+'-'+effMax+_et('pctDamage',true)+_et('flatDamage',false)+'</span></div>';
     if(weaponStyle.hand==='bow'){
       var _arrows = bowArrowsAvailable(state);
       var _keepPct = Math.round(quiverAmmoPreserve(state)*100);
@@ -15028,19 +15040,27 @@
     html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+_critChancePct+'%'+(enchCrit>0?' <span style="color:var(--gold)">(+'+(Math.round(enchTot.critChance*10)/10)+'% ench)</span>':'')+'</span></div>';
     var _critDmgMult = Math.round((Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + newClassCritDmg() + legendaryCloakBonus('critdmg',state) + legendaryCritDmg(state) + enchCritDmg)*100)/100;
     html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+_critDmgMult+'x'+(enchCritDmg>0?' <span style="color:var(--gold)">(+'+(Math.round(enchTot.critDamage*10)/10)+'% ench)</span>':'')+'</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Accuracy</span><span class="stat-value">'+playerAccuracy(state)+'</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Accuracy</span><span class="stat-value">'+playerAccuracy(state)+_et('accuracy',true)+'</span></div>';
     if(weaponStyle.hand==='bow'){
       html += '<div class="stat-row"><span class="stat-label">Leather Bow Bonus</span><span class="stat-value">+'+Math.round(getLeatherArmorBonuses(state).bowDmgBonus*100)+'%</span></div>';
     } else {
       html += '<div class="stat-row"><span class="stat-label">Chain Melee Bonus</span><span class="stat-value">+'+Math.round(getChainArmorMeleeBonus(state)*100)+'%</span></div>';
     }
+    // Enchant-only offensive effects (no base stat of their own): gold ✦ rows shown only when worn.
+    html += _enchRow('Lifesteal','lifesteal',true,' of dmg');
+    html += _enchRow('Armour Pierce','penetration',true,'');
     html += '<div class="stat-row"><span class="stat-label">Slash / Pierce / Blunt Dmg</span><span class="stat-value" style="font-size:11px">'+formatTypeMix(weaponMix)+'</span></div>';
     html += '</div>';
     html += '<div class="stats-group"><h4>'+svgIcon('shield','currentColor')+' Defense</h4>';
-    html += '<div class="stat-row"><span class="stat-label">'+svgIcon('heart','var(--hp-bad)')+' Health</span><span class="stat-value" id="statPlayerHpVal">'+fmt(state.playerHp)+' / '+fmt(maxHp(state))+'</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Armor</span><span class="stat-value">'+(Math.round(armor*100)/100)+'</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">'+svgIcon('heart','var(--hp-bad)')+' Health</span><span class="stat-value" id="statPlayerHpVal">'+fmt(state.playerHp)+' / '+fmt(maxHp(state))+_et('maxHp',false)+'</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Armor</span><span class="stat-value">'+(Math.round(armor*100)/100)+_et('defense',true)+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Dodge Chance</span><span class="stat-value">'+(Math.round(playerDodgeChance(state)*1000)/10)+'%</span></div>';
-    html += '<div class="stat-row"><span class="stat-label">Block Chance</span><span class="stat-value">'+(Math.round(playerBlockChance(state)*1000)/10)+'% (halves dmg)</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Block Chance</span><span class="stat-value">'+(Math.round(playerBlockChance(state)*1000)/10)+'% (halves dmg)'+_et('blockChance',true)+'</span></div>';
+    // Enchant-only defensive effects (no base stat of their own): shown as gold ✦ rows only when worn.
+    html += _enchRow('Damage Reduction','dmgReduction',true,' incoming');
+    html += _enchRow('Resistance','resistance',true,' incoming');
+    html += _enchRow('Thorns','thorns',false,' reflected');
+    html += _enchRow('HP Regen','hpRegen',false,' / tick');
     var wornMaterialsPreview = {};
     BODY_ARMOR_SLOTS.forEach(function(slot){
       var s = state.bodyArmor && state.bodyArmor[slot];
@@ -15075,18 +15095,11 @@
       }
     }
     html += '</div>';
-    // Aggregated enchant bonuses from every equipped unique -- summed by stat, so two +6% Critical
-    // Chance enchants read as a single +12% here (the same total combat uses). Only shown when the
-    // player has enchanted gear equipped.
-    var _enchKeys = Object.keys(enchTot).filter(function(k){ return enchTot[k] && ENCHANT_STAT_DISPLAY[k]; });
-    if(_enchKeys.length){
-      html += '<div class="stats-group" style="grid-column:1/-1"><h4><span style="color:var(--gold)">&#10022;</span> Enchantments'+(enchBoost!==1?' <span style="color:var(--gold);font-size:11px">(Spellblade &times;'+(Math.round(enchBoost*100)/100)+')</span>':'')+'</h4>';
-      _enchKeys.forEach(function(k){
-        var d = ENCHANT_STAT_DISPLAY[k], v = enchTot[k];
-        var disp = d.pct ? ('+'+(Math.round(v*10)/10)+'%') : ('+'+Math.round(v));
-        html += '<div class="stat-row"><span class="stat-label">'+d.label+'</span><span class="stat-value" style="color:var(--gold)">'+disp+'</span></div>';
-      });
-      html += '</div>';
+    // Every enchant bonus is now folded into the stat row it affects above (base-stat totals carry a gold
+    // "(+X ench)" tag; enchant-only effects appear as gold ✦ rows in Offense/Defense). When Spellblade's
+    // Empowered Runes is amplifying those enchants, note the multiplier so the inflated tags make sense.
+    if(hasEquippedEnchants(state) && enchBoost!==1){
+      html += '<div class="stats-group" style="grid-column:1/-1"><div class="stat-row"><span class="stat-label"><span style="color:var(--gold)">&#10022;</span> Spellblade Empowered Runes</span><span class="stat-value" style="color:var(--gold)">enchant bonuses &times;'+(Math.round(enchBoost*100)/100)+'</span></div></div>';
     }
     // Familiar / summoning modifiers -- spell potency (efficiency) and where it comes from, plus the
     // companion slot count and cast cadence. Block / Dodge / Ward Reflect live in the Defense group above.
