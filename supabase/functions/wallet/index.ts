@@ -10,11 +10,13 @@
 //
 // EARNING is client-reported (the server can't simulate combat/gathering) but RATE-LIMITED: the credit
 // per call is capped by real time elapsed, the same way submit_profile caps leaderboard gains, so a
-// spoofed "earned_total" only ever banks at the honest rate -- and that rate RAMPS with account age
-// (dailyAllowanceFor), so a throwaway account can't farm at endgame speed. Spoof-shaped requests are logged
-// to wallet_audit (see migration 20260716010000). SPENDING is hard-enforced against the server balance
-// (wallet_debit fails when the gold isn't there). Existing balances are grandfathered from the player's
-// current save the first time the wallet is touched.
+// spoofed "earned_total" only ever banks at the honest rate. That rate is gated on the account's
+// server-VALIDATED progression (profiles.total_level) and age (dailyAllowanceFor), so the "fetch the
+// wallet sync, bump gold+earned_total, re-send" injection only ever banks what your legitimately-earned
+// level already permits -- a fresh/bot account is pinned to the early-game floor. Spoof-shaped requests
+// are logged to wallet_audit (migration 20260716010000). SPENDING is hard-enforced against the server
+// balance (wallet_debit fails when the gold isn't there). Existing balances are grandfathered from the
+// player's current save the first time the wallet is touched.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // Rate limits (token bucket). The bucket holds ONE DAY's allowance and refills continuously over 24h;
@@ -25,21 +27,40 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const HARD_CAP = 1_000_000_000_000_000; // 1e15, keeps totals safe JS integers
 const BUCKET_FILL_MS = 86_400_000;      // the bucket is one day's allowance, refilling over 24h
 
-// Account-age ramp: the full daily allowance is endgame-scale, so a freshly-registered (bot) account
-// shouldn't get it. The allowance scales with the auth account's age (server-trusted created_at, the
-// same anti-spoof anchor as the item-ledger grandfather cap): 10M gold/day at <=1 day, ramping linearly
-// to 500M gold/day at >=7 days (~= the old 20M/hr sustained rate). Day-one legit players earn a tiny
-// fraction of 10M, so the ramp is invisible to them; it only starves day-zero farm bots.
-// FF_RATE_RAMP_OFF=1 (staging secret) pins the full allowance for integration runs.
-const RAMP_DAY1_GOLD = 10_000_000;    // daily allowance at account age <= 1 day
-const RAMP_DAY7_GOLD = 500_000_000;   // daily allowance at account age >= 7 days
+// The daily earn allowance is gated on TWO server-trusted anchors, whichever is LOWER:
+//
+//  (1) PROGRESSION -- profiles.total_level, which submit_profile independently validates and rate-limits
+//      to LEVELS_PER_HOUR=200. Earning is client-reported, so the wallet can't tell a real earn from a
+//      fabricated `earned_total` bump (the reported-fetch-inject exploit). But it CAN cap how much you're
+//      allowed to bank against how far you've LEGITIMATELY progressed: near-nothing at the early-game
+//      floor, rising to the full endgame rate only once you've grinded ~thousands of levels (which takes
+//      real, rate-limited time). A day-zero bot at total_level ~170 is stuck at the floor.
+//  (2) ACCOUNT AGE -- created_at, a belt-and-suspenders cap so a not-yet-caught high level on a
+//      brand-new account still can't unlock the full rate: 10M/day at <=1 day -> 500M/day at >=7 days.
+//
+// perDay = min(level-allowance, age-allowance). Legit players earn a tiny fraction of the floor, so the
+// gate is invisible to them; it only bites accounts trying to bank far more gold than their (validated)
+// progression could plausibly have produced. FF_RATE_RAMP_OFF=1 (staging secret) pins the full rate.
+const RAMP_DAY1_GOLD = 10_000_000;    // age cap at account age <= 1 day
+const RAMP_DAY7_GOLD = 500_000_000;   // age cap at account age >= 7 days  (also the absolute per-day ceiling)
 const RAMP_START_DAYS = 1, RAMP_END_DAYS = 7;
+const LVL_FLOOR_GOLD = 250_000;       // daily allowance at/below the early-game level floor
+const LVL_FULL_GOLD = 500_000_000;    // daily allowance at/above the endgame total_level
+const LVL_LO = 500, LVL_HI = 8000;    // total_level band the allowance ramps across
 const RAMP_OFF = Deno.env.get("FF_RATE_RAMP_OFF") === "1";
-function dailyAllowanceFor(createdAtIso: string | undefined): number {
-  if (RAMP_OFF || !createdAtIso) return RAMP_DAY7_GOLD;
+function ageAllowance(createdAtIso: string | undefined): number {
+  if (!createdAtIso) return RAMP_DAY1_GOLD;
   const days = Math.max(0, (Date.now() - new Date(createdAtIso).getTime()) / 86_400_000);
   const t = Math.min(1, Math.max(0, (days - RAMP_START_DAYS) / (RAMP_END_DAYS - RAMP_START_DAYS)));
   return Math.floor(RAMP_DAY1_GOLD + (RAMP_DAY7_GOLD - RAMP_DAY1_GOLD) * t);
+}
+function levelAllowance(totalLevel: number): number {
+  const t = Math.min(1, Math.max(0, (totalLevel - LVL_LO) / (LVL_HI - LVL_LO)));
+  return Math.floor(LVL_FLOOR_GOLD + (LVL_FULL_GOLD - LVL_FLOOR_GOLD) * t);
+}
+function dailyAllowanceFor(createdAtIso: string | undefined, totalLevel: number): number {
+  if (RAMP_OFF) return RAMP_DAY7_GOLD;
+  return Math.min(ageAllowance(createdAtIso), levelAllowance(totalLevel));
 }
 
 // Proper token bucket keyed off `updated_at`: allowance = time since updated_at at the (age-scaled)
@@ -88,7 +109,11 @@ Deno.serve(async (req) => {
   const user = userData?.user;
   if (userErr || !user) return json({ ok: false, error: "Not authenticated." }, 401);
   const userId = user.id;
-  const perDay = dailyAllowanceFor(user.created_at);
+  // Server-validated progression anchor (0 if the player hasn't submitted a leaderboard profile yet ->
+  // treated as the early-game floor). Only submit_profile can write this, and it rate-limits growth.
+  const { data: prof } = await admin.from("profiles").select("total_level").eq("id", userId).maybeSingle();
+  const totalLevel = Number(prof?.total_level ?? 0);
+  const perDay = dailyAllowanceFor(user.created_at, totalLevel);
 
   // Best-effort audit trail for spoof-shaped requests (never blocks the response path).
   async function audit(note: string, extra: Record<string, unknown>): Promise<void> {

@@ -67,8 +67,10 @@ rpc_call(){ # rpc_call NAME TOKEN [BODY] -> POST /rest/v1/rpc/NAME, prints "<bod
   curl -s -w '\n%{http_code}' -X POST "$BASE/rest/v1/rpc/$1" -H "apikey: $PUB" -H "Authorization: Bearer $2" -H "Content-Type: application/json" -d "${3:-{}}"
 }
 # Fund a signed-in account's SERVER wallet (gold is server-authoritative -- guild create, treasury
-# donations and market buys all debit it). The earn bucket starts full, so one legit earn credits up to
-# BURST_GOLD in full; 10M covers everything the suite spends.
+# donations and market buys all debit it). The earn allowance is now gated on account age AND validated
+# progression (profiles.total_level), so a fresh test account (level 0, no profile) is pinned to the
+# early-game floor and this 10M earn would be throttled -- STAGING MUST SET secret FF_RATE_RAMP_OFF=1,
+# which pins the full allowance so one earn banks 10M in full.
 fund_wallet(){ fn wallet "$1" '{"action":"earn","earned_total":10000000}' >/dev/null; }
 # Fund a signed-in account's item LEDGER (market SELL debits it). First sync grandfathers the reported
 # stock (age-capped, well above these small test quantities).
@@ -93,9 +95,9 @@ fund_wallet "$TOK_A"   # gold is server-authoritative -- fund the wallet before 
 
 # --------------------------------------------------------------------------------------------
 sect "Wallet: spoofed earn/sync is clamped"
-# The support-ticket exploit shape: intercept the sync and report ~1T earned_total + 1T gold. The token
-# bucket + min() clamp must bound the result at ONE DAY's allowance at most (500M with FF_RATE_RAMP_OFF
-# set on staging; 10M on a ramped fresh account) -- never honor the claim. Lands in wallet_audit too.
+# The reported-fetch-inject exploit shape: intercept the sync and report ~1T earned_total + 1T gold. The
+# allowance bucket + min() clamp must bound the result at ONE DAY's allowance at most (500M under
+# FF_RATE_RAMP_OFF; the early-game FLOOR of 250k on a real fresh account) -- never honor the claim.
 mkuser wspoof; TOK_W="$TOK"
 WS=$(fn wallet "$TOK_W" '{"action":"sync","earned_total":999999999999,"gold":999999999999}')
 assert_ok "$WS" "spoofed sync returns ok (clamped, not honored)"
