@@ -46,6 +46,8 @@ Deno.serve(async (req) => {
   const user = userData?.user;
   if (userErr || !user) return json({ ok: false, error: "Not authenticated." }, 401);
   const userId = user.id;
+  // Volume rate limit (Postgres rl_hit; see migration 20260716200000). Fail-open if the limiter is down.
+  try { const { data: _over } = await admin.rpc("rl_hit", { p_subject: userId, p_bucket: "items", p_limit: 300, p_window_secs: 60 }); if (_over === true) return json({ ok: false, error: "Too many requests." }, 429); } catch { /* limiter unavailable -> allow */ }
 
   let body: { action?: unknown; inventory?: unknown; bill?: unknown; recipe_key?: unknown; mult?: unknown };
   try { body = await req.json(); } catch { return json({ ok: false, error: "Invalid request." }, 400); }

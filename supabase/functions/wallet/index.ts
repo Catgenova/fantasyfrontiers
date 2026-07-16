@@ -109,6 +109,8 @@ Deno.serve(async (req) => {
   const user = userData?.user;
   if (userErr || !user) return json({ ok: false, error: "Not authenticated." }, 401);
   const userId = user.id;
+  // Volume rate limit (Postgres rl_hit; see migration 20260716200000). Fail-open if the limiter is down.
+  try { const { data: _over } = await admin.rpc("rl_hit", { p_subject: userId, p_bucket: "wallet", p_limit: 300, p_window_secs: 60 }); if (_over === true) return json({ ok: false, error: "Too many requests." }, 429); } catch { /* limiter unavailable -> allow */ }
   // Server-validated progression anchor (0 if the player hasn't submitted a leaderboard profile yet ->
   // treated as the early-game floor). Only submit_profile can write this, and it rate-limits growth.
   const { data: prof } = await admin.from("profiles").select("total_level").eq("id", userId).maybeSingle();
