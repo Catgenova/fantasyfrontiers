@@ -5615,6 +5615,35 @@
     var stDRmax = { uniqueItems:{ ch:{uid:'ch',kind:'bodyarmor',enhance:0,enchants:[{mod:'dmgReduction',roll:200}]} },
                     bodyArmor:{ chest:{uid:'ch'} }, jewelrySlots:{} };
     ok(FF.enchantDamageReductionMult(stDRmax) >= 0.1 - 1e-9, 'DR is capped at 90% off (mult never below 0.10)');
+    // The remaining armour/jewelry/weapon enchants that used to be inert are now wired into combat. Each
+    // helper (or the aggregate for the two inline weapon reads) proves the stat reaches its combat site.
+    ok(typeof FF.enchantResistanceMult==='function' && typeof FF.enchantAccuracyBonus==='function' && typeof FF.enchantHpRegen==='function' && typeof FF.enchantDefenseMult==='function', 'resistance/accuracy/hpRegen/defense enchant helpers exported');
+    // Resistance (jewelry): a flat % off incoming damage, capped at 90%, separate from Damage Reduction.
+    var stRes = { uniqueItems:{ am:{uid:'am',kind:'amulet',enhance:0,enchants:[{mod:'resistance',roll:12}]} },
+                  jewelrySlots:{ amulet:{uid:'am'} }, bodyArmor:{} };
+    eq(FF.equippedEnchantTotals(stRes).resistance, 12, 'resistance enchant feeds the aggregate');
+    ok(Math.abs(FF.enchantResistanceMult(stRes) - 0.88) < 1e-9, 'resistance:12 -> incoming damage x0.88');
+    eq(FF.enchantResistanceMult(stNoEnch), 1, 'no resistance enchant -> incoming unchanged (x1)');
+    // Accuracy (weapon): a % boost folded into playerAccuracy's bonus group.
+    var stAcc = { uniqueItems:{ w:{uid:'w',kind:'weapon',enhance:0,enchants:[{mod:'accuracy',roll:15}]} },
+                  equippedMainhandUid:'w', jewelrySlots:{}, bodyArmor:{} };
+    ok(Math.abs(FF.enchantAccuracyBonus(stAcc) - 0.15) < 1e-9, 'accuracy:15 enchant -> +0.15 accuracy multiplier');
+    // HP Regen (armour): a FLAT bonus (pct:false) added to each passive regen tick.
+    var stReg = { uniqueItems:{ ch:{uid:'ch',kind:'bodyarmor',enhance:0,enchants:[{mod:'hpRegen',roll:6}]} },
+                  bodyArmor:{ chest:{uid:'ch'} }, jewelrySlots:{} };
+    eq(FF.enchantHpRegen(stReg), 6, 'hpRegen:6 enchant -> +6 flat HP per regen tick');
+    eq(FF.enchantHpRegen(stNoEnch), 0, 'no hpRegen enchant -> +0');
+    // Defense (armour): a % multiplier on total Armor (also lifts the stat-panel Armor row).
+    var stDef = { uniqueItems:{ ch:{uid:'ch',kind:'bodyarmor',enhance:0,enchants:[{mod:'defense',roll:30}]} },
+                  bodyArmor:{ chest:{uid:'ch'} }, jewelrySlots:{} };
+    ok(Math.abs(FF.enchantDefenseMult(stDef) - 1.30) < 1e-9, 'defense:30 enchant -> x1.30 armour');
+    eq(FF.enchantDefenseMult(stNoEnch), 1, 'no defense enchant -> armour unchanged (x1)');
+    // Lifesteal + Armour Pierce (weapon) are read inline from the (Spellblade-boosted) enchTot in
+    // playerAttackTick; assert both reach the aggregate so the /100 combat reads have a value to use.
+    var stWpn = { uniqueItems:{ w:{uid:'w',kind:'weapon',enhance:0,enchants:[{mod:'lifesteal',roll:8},{mod:'penetration',roll:15}]} },
+                  equippedMainhandUid:'w', jewelrySlots:{}, bodyArmor:{} };
+    eq(FF.equippedEnchantTotals(stWpn).lifesteal, 8, 'lifesteal enchant feeds the aggregate (combat heals dmg x 8%)');
+    eq(FF.equippedEnchantTotals(stWpn).penetration, 15, 'penetration enchant feeds the aggregate (combat pierces 15% armour)');
     ok(typeof FF.equipUnique==='function' && typeof FF.unequipUnique==='function' && typeof FF.uniqueSellValue==='function', 'stage-3 equip/trade fns exported');
     // Chat item links: a unique round-trips through encode -> decode with base/enhance/enchants intact.
     var linkU = { base:'stweapon_wandFire_t3_rare', kind:'weapon', tier:3, rarity:'rare', enhance:4, enchants:[{mod:'critDamage',roll:12},{mod:'lifesteal',roll:7}] };
