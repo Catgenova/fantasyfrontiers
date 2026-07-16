@@ -82,6 +82,19 @@
     near(FF.skillLevelProgress('mining', EXT[103] + (EXT[104]-EXT[103])/2), 50, 'progress is ~50% halfway to 104', 0.5);
     eq(FF.skillLevelProgress('sword', 1e18), 100, 'a maxed combat skill shows a full bar');
 
+    // Skill-bar XP readout: "into / span" of the current level, shown beside the percentage.
+    var midXp = FF.xpFloorForLevel(50) + Math.round((FF.xpForNextLevel(50) - FF.xpFloorForLevel(50)) / 2);
+    var sp = FF.skillLevelXpSpan('sword', midXp);
+    eq(sp.span, FF.xpForNextLevel(50) - FF.xpFloorForLevel(50), 'xp span is the level width');
+    eq(sp.into, midXp - FF.xpFloorForLevel(50), 'xp into level is xp above the floor');
+    ok(!sp.maxed, 'a mid-level skill is not maxed');
+    ok(FF.skillLevelXpSpan('sword', 1e18).maxed, 'a capped combat skill reports maxed');
+    ok(/\bXP\b/.test(FF.skillBarRightLabel('sword', midXp)) && /50%/.test(FF.skillBarRightLabel('sword', midXp)), 'the bar label shows both an XP count and the percentage');
+    eq(FF.skillBarRightLabel('sword', 1e18), 'MAX', 'a maxed skill bar reads MAX');
+    // Gathering skills keep leveling past 100 -- the readout follows the extended (doubled-cost) ladder.
+    var extSpan = FF.skillLevelXpSpan('mining', EXT[103] + (EXT[104]-EXT[103])/2);
+    eq(extSpan.span, EXT[104]-EXT[103], 'over-100 xp span uses the extended ladder');
+
     // Output-double bonus: +1% per level over 100, zero at/under 100 and for non-overlevel skills.
     near(FF.overLevelDoublePct('mining', EXT[101]), 0.01, 'level 101 -> +1% double output');
     near(FF.overLevelDoublePct('mining', EXT[110]), 0.10, 'level 110 -> +10% double output');

@@ -110,6 +110,7 @@
   }
   .ff-topbar{
     display:flex;align-items:center;gap:12px;padding:9px 14px;flex-wrap:wrap;z-index:8;flex-shrink:0;
+    cursor:default; /* non-interactive text (brand, coin, buff chip) shouldn't show the I-beam; buttons re-set pointer */
     background-color:var(--stone-dk);
     background-image:radial-gradient(circle at 20% 30%, rgba(120,140,90,.08), transparent 30%),repeating-linear-gradient(90deg, rgba(0,0,0,.28) 0 2px, transparent 2px 28px);
     border-bottom:2px solid #000;box-shadow:inset 0 -2px 4px rgba(0,0,0,.35);
@@ -6925,6 +6926,24 @@
     if(lvl >= SKILL_MAX_LEVEL_EXT) return 100;
     var floor = SKILL_XP_FLOOR_EXT[lvl], ceil = SKILL_XP_FLOOR_EXT[lvl + 1];
     return clamp((xp - floor) / (ceil - floor) * 100, 0, 100);
+  }
+  // XP earned into the current level and the level's total span, for the "1,234 / 2,700 XP" readout on
+  // skill bars. `maxed` when there is no next level (capped at 100, or the extended ceiling).
+  function skillLevelXpSpan(skillId, xp){
+    xp = xp || 0;
+    var ext = skillCanOverlevel(skillId);
+    var lvl = ext ? getLevelExt(xp) : getLevel(xp);
+    var maxLvl = ext ? SKILL_MAX_LEVEL_EXT : MAX_SKILL_LEVEL;
+    if(lvl >= maxLvl) return { into:0, span:0, maxed:true };
+    var floor = ext ? SKILL_XP_FLOOR_EXT[lvl] : xpFloorForLevel(lvl);
+    var ceil  = ext ? SKILL_XP_FLOOR_EXT[lvl + 1] : xpForNextLevel(lvl);
+    return { into: Math.max(0, xp - floor), span: Math.max(0, ceil - floor), maxed:false };
+  }
+  // The right-hand readout on a skill progress bar: "1,234 / 2,700 XP · 45%" (or "MAX" at the cap).
+  function skillBarRightLabel(skillId, xp){
+    var s = skillLevelXpSpan(skillId, xp);
+    if(s.maxed) return 'MAX';
+    return fmt(Math.floor(s.into)) + ' / ' + fmt(Math.round(s.span)) + ' XP &middot; ' + Math.round(skillLevelProgress(skillId, xp)) + '%';
   }
   // Output-double chance for a gathering/crafting skill: +1% per level over 100 (0 below).
   function overLevelDoublePct(skillId, xp){
@@ -23133,7 +23152,7 @@
     var mastery = (lvl > MAX_SKILL_LEVEL) ? ' <span style="color:var(--gold)">&bull; +'+Math.round(overLevelDoublePct(skillId, xp)*100)+'% double output</span>' : '';
     return '<div class="top-skill-bar">'+
       '<div class="top-skill-track"><div class="top-skill-fill" id="topbar-'+skillId+'" style="width:'+pct+'%;background:'+skillBarColor(skillId)+'"></div></div>'+
-      '<div class="top-skill-label"><span>'+label+' '+(SKILL_INFO[skillId]?skillInfoBtn(skillId):'')+' &bull; Level <b>'+lvl+'</b>'+mastery+'</span><span id="topbar-pct-'+skillId+'">'+Math.round(pct)+'%</span></div>'+
+      '<div class="top-skill-label"><span>'+label+' '+(SKILL_INFO[skillId]?skillInfoBtn(skillId):'')+' &bull; Level <b>'+lvl+'</b>'+mastery+'</span><span id="topbar-pct-'+skillId+'">'+skillBarRightLabel(skillId, xp)+'</span></div>'+
     '</div>';
   }
 
@@ -24136,7 +24155,7 @@
       var tf = document.getElementById('topbar-'+sk);
       if(tf) tf.style.width = _p + '%';
       var tp = document.getElementById('topbar-pct-'+sk);
-      if(tp) tp.textContent = Math.round(_p) + '%';
+      if(tp) tp.innerHTML = skillBarRightLabel(sk, state.xp[sk]);
       var sl = document.getElementById('slvl-'+sk);
       if(sl) sl.textContent = 'Lv ' + skillLevel(sk, state.xp[sk]);
     });
@@ -25462,7 +25481,7 @@
   // the page is opened with ?selftest. Production loads never touch this. ----
   if(typeof location !== 'undefined' && /[?&]selftest\b/.test(location.search)){
     window.__FF = {
-      getLevel:getLevel, xpFloorForLevel:xpFloorForLevel, xpForNextLevel:xpForNextLevel, levelProgress:levelProgress, MAX_SKILL_LEVEL:MAX_SKILL_LEVEL, SKILL_CURVE_KNEE:SKILL_CURVE_KNEE, getLevelExt:getLevelExt, skillLevel:skillLevel, skillLevelProgress:skillLevelProgress, skillCanOverlevel:skillCanOverlevel, overLevelDoublePct:overLevelDoublePct, overLevelDoubles:overLevelDoubles, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, SKILL_MAX_LEVEL_EXT:SKILL_MAX_LEVEL_EXT, OVERLEVEL_DOUBLE_PER_LEVEL:OVERLEVEL_DOUBLE_PER_LEVEL, SKILL_OVERLEVEL_GROWTH:SKILL_OVERLEVEL_GROWTH, renderSkillProgressBar:renderSkillProgressBar, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
+      getLevel:getLevel, xpFloorForLevel:xpFloorForLevel, xpForNextLevel:xpForNextLevel, levelProgress:levelProgress, MAX_SKILL_LEVEL:MAX_SKILL_LEVEL, SKILL_CURVE_KNEE:SKILL_CURVE_KNEE, getLevelExt:getLevelExt, skillLevel:skillLevel, skillLevelProgress:skillLevelProgress, skillLevelXpSpan:skillLevelXpSpan, skillBarRightLabel:skillBarRightLabel, skillCanOverlevel:skillCanOverlevel, overLevelDoublePct:overLevelDoublePct, overLevelDoubles:overLevelDoubles, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, SKILL_MAX_LEVEL_EXT:SKILL_MAX_LEVEL_EXT, OVERLEVEL_DOUBLE_PER_LEVEL:OVERLEVEL_DOUBLE_PER_LEVEL, SKILL_OVERLEVEL_GROWTH:SKILL_OVERLEVEL_GROWTH, renderSkillProgressBar:renderSkillProgressBar, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
       isMortal:isMortal, MORTAL_XP_MULT:MORTAL_XP_MULT, addXp:addXp, choosePath:choosePath, mortalDeath:mortalDeath, pathSelectNeeded:pathSelectNeeded, PATH_CHOICES:PATH_CHOICES, renderPathSelect:renderPathSelect, removePathSelect:removePathSelect, lbRow:lbRow,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
