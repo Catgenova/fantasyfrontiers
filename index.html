@@ -10724,7 +10724,10 @@
     html += '<div class="inv-detail-meta">'+escapeHtml(getRarity(d.rarity).label||'')+' &bull; Tier '+(d.tier+1)+(d.enhance>0?' &bull; <b>+'+d.enhance+'</b>':'')+'</div>';
     var baseLines = [];
     if(b){
-      if(b.dmgMin||b.dmgMax) baseLines.push('Damage '+(b.dmgMin||0)+'–'+(b.dmgMax||0));
+      // Enhancing a weapon scales its base damage in combat (mainhandEnhanceMult === enhanceStatMult),
+      // so show the enhanced range here too -- otherwise +N looks like it only touches the enchants.
+      var _wem = (d.kind==='weapon') ? enhanceStatMult(d.enhance||0) : 1;
+      if(b.dmgMin||b.dmgMax) baseLines.push('Damage '+Math.round((b.dmgMin||0)*_wem)+'–'+Math.round((b.dmgMax||0)*_wem)+(_wem>1?' (+'+d.enhance+')':''));
       if(b.defense) baseLines.push('Defense '+(Math.round(b.defense*10)/10));
       if(b.block) baseLines.push('Block '+Math.round(b.block*100)+'%');
       if(b.dmgBonus) baseLines.push('+'+Math.round(b.dmgBonus*100)+'% damage');
@@ -14712,8 +14715,9 @@
     var _bowArrowDmg = weaponStyle.hand==='bow' ? arrowBaseDamage(bowArrowToConsume(state)) : null;
     var _dmgBaseMin = weapon.dmgMin + (_bowArrowDmg ? _bowArrowDmg.dmgMin : 0);
     var _dmgBaseMax = weapon.dmgMax + (_bowArrowDmg ? _bowArrowDmg.dmgMax : 0);
-    var effMin = Math.max(1, Math.round(_dmgBaseMin * physDmgMult * weaponProficiency));
-    var effMax = Math.max(effMin+1, Math.round(_dmgBaseMax * physDmgMult * weaponProficiency));
+    var _mhEnh = mainhandEnhanceMult(); // the equipped mainhand's Enhance scales its base damage in combat
+    var effMin = Math.max(1, Math.round(_dmgBaseMin * physDmgMult * weaponProficiency * _mhEnh));
+    var effMax = Math.max(effMin+1, Math.round(_dmgBaseMax * physDmgMult * weaponProficiency * _mhEnh));
     var armor = getTotalArmorDefense(state) * heraldFortressArmorMult(state);
     var weaponMix = weaponStyle.attackTypes || {blunt:1};
     var armorMix = getPlayerArmorTypeMix(state);

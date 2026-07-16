@@ -5586,6 +5586,17 @@
     var _r0 = FF.getEquippedRelicBonus({ equippedRelicTier:4, equippedRelicRarity:'supreme', equippedRelicUid:null, uniqueItems:{} });
     var _r15 = FF.getEquippedRelicBonus({ equippedRelicTier:4, equippedRelicRarity:'supreme', equippedRelicUid:'ur', uniqueItems:{ ur:{ uid:'ur', base:'relic_t3_supreme', kind:'relic', tier:3, rarity:'supreme', enhance:15, enchants:[] } } });
     ok(_r0 > 0 && Math.abs(_r15 - _r0*6) < 1e-9, 'a +15 unique relic scales its bonus 6x');
+    // The unique card's BASE damage line scales a weapon by its Enhance (combat uses mainhandEnhanceMult
+    // === enhanceStatMult), so +N no longer looks like it only touches the enchants.
+    var wid = Object.keys(FF.STACKABLE_WEAPON_ITEMS).filter(function(k){ return /wandWater_t5_fantastic$/.test(k); })[0];
+    var wb = FF.STACKABLE_WEAPON_ITEMS[wid];
+    function shownDmg(enh){ var m = FF.uniqueCardBody({ base:wid, kind:'weapon', tier:5, rarity:'fantastic', enhance:enh, enchants:[] }).match(/Damage (\d+)[–-](\d+)/); return m ? [+m[1], +m[2]] : null; }
+    var d0 = shownDmg(0), d7 = shownDmg(7);
+    eq(d0[0], wb.dmgMin, 'a +0 weapon card shows its raw min damage');
+    eq(d0[1], wb.dmgMax, 'a +0 weapon card shows its raw max damage');
+    eq(d7[0], Math.round(wb.dmgMin * FF.enhanceStatMult(7)), '+7 card min = raw x enhanceStatMult(7)');
+    eq(d7[1], Math.round(wb.dmgMax * FF.enhanceStatMult(7)), '+7 card max = raw x enhanceStatMult(7)');
+    ok(d7[1] > d0[1], 'enhancing a weapon raises its shown base damage');
   });
 
   // ---- Improvement system: enhance (Stage 2) --------------------------------------------
