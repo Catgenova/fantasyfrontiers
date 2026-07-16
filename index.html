@@ -688,6 +688,9 @@
   .action-btn:hover{background:linear-gradient(180deg,#6f9538,#4a6b2c);}
   .action-btn.stop{background:linear-gradient(180deg,#b0503f,#7f2f24);border-color:#5a1f16;color:#fbeae4;}
   .action-btn:disabled{background:#b8a374;border-color:#a98f5e;color:#8a7850;cursor:not-allowed;}
+  /* Farming plot cards: 4 small green action buttons (Sow/Fertilize/Harvest/Cancel) in one row. */
+  .plot-btns{display:flex;gap:5px;margin-top:7px;}
+  .plot-btns .action-btn{width:auto;flex:1 1 0;min-width:0;margin-top:0;padding:6px 3px;font-size:10.5px;letter-spacing:0.3px;}
   .lock-note{font-family:var(--font-mono);font-size:11px;color:var(--hp-bad);margin-top:6px;}
 
   /* Combat arena: matches the action-bar card (solid tan + ivy frame, no gradient). Two columns --
@@ -7307,6 +7310,7 @@
   // Clear a growing crop from a plot without harvesting (the planted seed is forfeit). Frees the field to
   // replant something else. Two-step confirm in the UI guards against accidental loss.
   var farmCancelArmed = null; // "scope|key" of the plot whose Cancel is armed for a confirm click, or null
+  var farmSowArmed = null;    // "scope|key" of the empty plot whose Sow button has opened its seed picker, or null
   function cancelCropAt(scope, key){
     var map = farmPlotMap(scope);
     var plot = map[key];
@@ -19739,34 +19743,51 @@
         var fdef = FARM_FIELD_TIERS['field_t'+fc.tier];
         out += '<div class="item-card">';
         out += '<div class="item-top"><div class="item-icon">'+(fdef?fdef.icon:'')+'</div><div><div class="item-name">'+DIGGING_NAMES[fc.tier]+' Field</div><div class="item-meta">Grows up to '+TIER_NAMES[fc.tier]+' &bull; ('+fc.x+','+fc.y+')</div></div></div>';
-        if(isPlotEmpty(plot)){
-          var picker = '';
-          ownedSeedList.forEach(function(s){ if(s.tier <= fc.tier){ picker += '<button class="style-btn" data-action="plantSeed" data-scope="'+scope+'" data-key="'+key+'" data-seed="'+s.id+'">'+s.def.icon+' '+escapeHtml(s.def.name)+' <span class="style-lvl">x'+fmt(state.inventory[s.id]||0)+'</span><span class="style-type">'+Math.round(s.crop.durationMs/60000)+'m</span></button>'; } });
-          out += picker ? ('<div class="style-row">'+picker+'</div>') : '<div class="empty-note">No plantable seed for this tier yet — gather/roll a tier ≤ '+TIER_NAMES[fc.tier]+' seed.</div>';
+        // Per-plot state used to enable/disable the four action buttons below (Sow / Fertilize / Harvest / Cancel).
+        var empty = isPlotEmpty(plot);
+        var cd = null, remaining = 0, ready = false, canFert = false, hasCrop = false;
+        var hasPlantable = false;
+        ownedSeedList.forEach(function(s){ if(s.tier <= fc.tier) hasPlantable = true; });
+        if(empty){
+          if(!hasPlantable){ out += '<div class="empty-note">No plantable seed for this tier yet — gather/roll a tier ≤ '+TIER_NAMES[fc.tier]+' seed.</div>'; }
+          // When Sow has been tapped for this plot, reveal the seed picker so a specific crop can be chosen.
+          if(hasPlantable && farmSowArmed === (scope+'|'+key)){
+            var picker = '';
+            ownedSeedList.forEach(function(s){ if(s.tier <= fc.tier){ picker += '<button class="style-btn" data-action="plantSeed" data-scope="'+scope+'" data-key="'+key+'" data-seed="'+s.id+'">'+s.def.icon+' '+escapeHtml(s.def.name)+' <span class="style-lvl">x'+fmt(state.inventory[s.id]||0)+'</span><span class="style-type">'+Math.round(s.crop.durationMs/60000)+'m</span></button>'; } });
+            out += '<div class="style-row" style="margin-top:8px;margin-bottom:2px">'+picker+'</div>';
+          }
         } else {
-          var cd = getCropDataForPlot(plot);
-          if(!cd){ delete map[key]; out += '<div class="empty-note">Empty.</div>'; }
+          cd = getCropDataForPlot(plot);
+          if(!cd){ delete map[key]; empty = true; out += '<div class="empty-note">Empty.</div>'; }
           else {
-            var remaining = plot.readyAt - Date.now();
-            // Fertilizer: an unfertilized growing crop can be doubled if a same-tier Fertilizer is owned.
+            hasCrop = true;
+            remaining = plot.readyAt - Date.now();
+            ready = remaining <= 0;
             var fid = 'fertilizer_t' + plot.tierIndex, fertOwned = state.inventory[fid]||0;
+            canFert = !plot.fertilized && fertOwned > 0;
             var fertBadge = plot.fertilized ? '<div class="item-meta" style="color:#7fbf5a;font-weight:700">&#10003; Fertilized &mdash; yields 2&times;</div>' : '';
-            var fertBtn = (!plot.fertilized && fertOwned > 0) ? ('<button class="mini-btn" data-action="fertilizePlot" data-scope="'+scope+'" data-key="'+key+'" title="Apply '+escapeHtml((ALL_CRAFT_RECIPES[fid]&&ALL_CRAFT_RECIPES[fid].name)||'Fertilizer')+' (x'+fmt(fertOwned)+')">Fertilize 2&times;</button>') : '';
-            if(remaining <= 0){
+            if(ready){
               out += '<div class="item-top" style="margin-top:6px"><div class="item-icon">'+cd.icon+'</div><div><div class="item-name">'+cd.name+'</div><div class="item-meta">Ready!</div>'+fertBadge+'</div></div>';
-              out += '<button class="action-btn" data-action="harvestPlot" data-scope="'+scope+'" data-key="'+key+'">Harvest</button>'+fertBtn;
             } else {
               var pct = clamp((cd.durationMs-remaining)/cd.durationMs*100,0,100);
               out += '<div class="item-top" style="margin-top:6px"><div class="item-icon">'+cd.icon+'</div><div><div class="item-name">'+cd.name+'</div><div class="item-meta" id="plot-timer-'+domId+'">Ready in '+formatDuration(remaining)+'</div>'+fertBadge+'</div></div>';
               out += '<div class="progress-track"><div class="progress-fill" id="plot-fill-'+domId+'" style="width:'+pct+'%"></div></div>';
-              // Cancel the growing crop (two-step to avoid accidentally forfeiting the seed).
-              var cancelBtn = (farmCancelArmed === (scope+'|'+key))
-                ? '<button class="mini-btn" data-action="cancelCropConfirm" data-scope="'+scope+'" data-key="'+key+'" style="color:var(--hp-bad);border-color:var(--hp-bad)">Confirm clear?</button>'
-                : '<button class="mini-btn" data-action="cancelCropArm" data-scope="'+scope+'" data-key="'+key+'" title="Clear this growing crop — the seed is lost">Cancel</button>';
-              out += '<button class="action-btn" disabled>Growing&hellip;</button>'+fertBtn+cancelBtn;
             }
           }
         }
+        // Four small green buttons, always shown, each acting on THIS plot only (the FABs act on all plots).
+        // Cancel is a two-step confirm (armed -> red "Confirm clear?") so a growing seed isn't lost by accident.
+        var sowArmedHere = (farmSowArmed === (scope+'|'+key));
+        var cancelArmedHere = (farmCancelArmed === (scope+'|'+key));
+        var btn = function(label, action, on, extra){ return '<button class="action-btn'+(extra||'')+'" data-action="'+action+'" data-scope="'+scope+'" data-key="'+key+'" '+(on?'':'disabled')+'>'+label+'</button>'; };
+        out += '<div class="plot-btns">';
+        out += btn(sowArmedHere ? 'Close' : 'Sow', 'sowToggle', empty && hasPlantable);
+        out += btn('Fertilize', 'fertilizePlot', canFert);
+        out += btn('Harvest', 'harvestPlot', hasCrop && ready);
+        out += cancelArmedHere
+          ? btn('Confirm?', 'cancelCropConfirm', true, ' stop')
+          : btn('Cancel', 'cancelCropArm', hasCrop);
+        out += '</div>';
         out += '</div>';
       });
       return { html:out, count:cells.length };
@@ -24458,10 +24479,11 @@
       var extraIdx = parseInt(btn.getAttribute('data-slot'),10);
       state.extraCraftSlots[extraIdx] = {type:null};
     },
-    plantSeed: function(btn, e){ plantSeed(btn.getAttribute('data-scope'), btn.getAttribute('data-key'), btn.getAttribute('data-seed')); },
+    plantSeed: function(btn, e){ plantSeed(btn.getAttribute('data-scope'), btn.getAttribute('data-key'), btn.getAttribute('data-seed')); farmSowArmed = null; },
+    sowToggle: function(btn, e){ var k = btn.getAttribute('data-scope') + '|' + btn.getAttribute('data-key'); farmSowArmed = (farmSowArmed === k) ? null : k; farmCancelArmed = null; },
     harvestPlot: function(btn, e){ harvestPlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); },
     fertilizePlot: function(btn, e){ fertilizePlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); render(); },
-    cancelCropArm: function(btn, e){ farmCancelArmed = btn.getAttribute('data-scope') + '|' + btn.getAttribute('data-key'); },
+    cancelCropArm: function(btn, e){ farmCancelArmed = btn.getAttribute('data-scope') + '|' + btn.getAttribute('data-key'); farmSowArmed = null; },
     cancelCropConfirm: function(btn, e){ cancelCropAt(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); render(); },
     harvestAllFarm: function(btn, e){ farmingHarvestAll(); render(); },
     plantAllFarm: function(btn, e){ farmingPlantAll(false); render(); },
