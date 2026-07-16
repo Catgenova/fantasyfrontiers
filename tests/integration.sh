@@ -178,6 +178,10 @@ UP1=$(rest PATCH "guild_estate?guild_id=eq.$GID&version=eq.0" "$TOK_A" "{\"data\
 assert_has "$UP1" "\"version\":1" "version-guarded update at v0 succeeds"
 UP2=$(rest PATCH "guild_estate?guild_id=eq.$GID&version=eq.0" "$TOK_A" "{\"data\":{\"grid\":[],\"jobs\":[]},\"version\":2}")
 assert_eq "stale update (v0 again) matches no rows" "$(printf '%s' "$UP2" | tr -d '[:space:]')" "[]"
+# The old guild_estate task-slot EDGE FUNCTION is decommissioned (it minted items into the bank with no
+# input debit). Every action must now be refused, so the mint path is closed.
+assert_err "$(fn guild_estate "$TOK_A" '{"action":"start","slot":0,"skill_id":"paving","output_key":"fantastic_relic","batches":100,"time_per_batch_ms":3000}')" "decommissioned guild_estate start is refused"
+assert_err "$(fn guild_estate "$TOK_A" '{"action":"collect","slot":0}')" "decommissioned guild_estate collect is refused"
 
 # --------------------------------------------------------------------------------------------
 sect "submit_profile validation"

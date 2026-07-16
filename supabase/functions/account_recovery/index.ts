@@ -24,7 +24,11 @@ function json(body: unknown, status = 200): Response {
 }
 
 const QUESTION_COUNT = 3;   // users author this many
-const NEEDED = 1;           // ...and must answer at least this many correctly to recover
+const NEEDED = 2;           // ...and must answer at least this many correctly to recover. Raised 1 -> 2:
+                            // with only 1-of-3 required, and questions readable unauthenticated via
+                            // get_questions, a single guessable user-authored answer was a plausible
+                            // account-takeover under the 5-try/15-min lockout. Requiring 2 correct makes
+                            // brute-forcing two independent answers far harder while staying user-friendly.
 const MAX_FAIL = 5;         // failed recovery attempts before a temporary lock
 const LOCK_MINUTES = 15;
 const Q_MIN = 3, Q_MAX = 120;
