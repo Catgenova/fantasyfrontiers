@@ -97,11 +97,36 @@ Deno.serve(async (req) => {
 
   // 3. Rate validation against the previous accepted row (or account age for the first).
   const { data: prev } = await admin.from("profiles")
-    .select("total_level, gold, updated_at, skills").eq("id", userId).maybeSingle();
+    .select("*").eq("id", userId).maybeSingle(); // "*" so reading prev.mastery never fails if that column isn't migrated yet
 
   const nowMs = Date.now();
   const prevTotal = prev?.total_level ?? 0;
   const prevGold = prev?.gold ?? 0;
+
+  // Over-100 Mastery: a DISPLAY-ONLY { skill_id: extended_level } map for gathering/crafting skills past
+  // 100 (kept out of skills/total_level, which stay capped at 100 for ranking). Cleaned here -- valid keys,
+  // integer 101..MAX, capped count -- BEFORE the rate section so its over-100 "extra" levels can be metered
+  // through the SAME token bucket. It used to be stored verbatim with NO rate limit, so a cheater could
+  // flash e.g. fishing 114 instantly (reported). Only touched when the body carries the field.
+  const MASTERY_MAX_LEVEL = 200, MASTERY_MAX_KEYS = 200;
+  const masteryProvided = Object.prototype.hasOwnProperty.call(body, "mastery");
+  let mastery: Record<string, number> | null = null;
+  const mRaw = (body as { mastery?: unknown }).mastery;
+  if (mRaw && typeof mRaw === "object" && !Array.isArray(mRaw)) {
+    const clean: Record<string, number> = {}; let n = 0;
+    for (const [k, v] of Object.entries(mRaw as Record<string, unknown>)) {
+      if (typeof k !== "string" || k.length > 40) continue;
+      if (typeof v !== "number" || !Number.isInteger(v) || v <= MAX_SKILL_LEVEL || v > MASTERY_MAX_LEVEL) continue;
+      clean[k] = v;
+      if (++n >= MASTERY_MAX_KEYS) break;
+    }
+    mastery = Object.keys(clean).length ? clean : null;
+  }
+  // Sum of over-100 "extra" levels claimed (each entry 101..200, so v-100 is the grind past the cap).
+  const masteryExtraOf = (m: Record<string, number> | null | undefined) =>
+    m ? Object.values(m).reduce((s, v) => s + Math.max(0, Number(v) - MAX_SKILL_LEVEL), 0) : 0;
+  const prevMasteryExtra = masteryExtraOf(prev?.mastery as Record<string, number> | null | undefined);
+  const newMasteryExtra = masteryExtraOf(mastery);
 
   // Token bucket for the ranking metric. The clock is the stored row's updated_at, or -- on the FIRST
   // submission (no prior row) -- the account's auth creation time, exactly like the gold clamp below and
@@ -120,7 +145,16 @@ Deno.serve(async (req) => {
   const bucketFromMs = Math.max(clockBase, nowMs - LEVEL_FILL_MS);
   const levelAllow = Math.min(BURST_LEVELS, Math.floor(LEVELS_PER_HOUR * Math.max(0, nowMs - bucketFromMs) / 3_600_000));
   const allowedTotal = totalLevel <= prevTotal ? totalLevel : Math.min(totalLevel, prevTotal + levelAllow); // decreases (resets) always allowed
-  const consumedLevels = Math.max(0, allowedTotal - prevTotal);
+  const baseConsumed = Math.max(0, allowedTotal - prevTotal);
+  // Over-100 mastery shares the SAME bucket, base levels first. Publish the new mastery map only if its
+  // growth since the last accepted map fits the leftover allowance; otherwise hold the last accepted map --
+  // so a fresh/cheating account whose bucket is empty (or spent on base) can't flash fake mastery (fishing
+  // 114). Whole-map hold (not a partial trim) keeps it simple; a legit grind catches up as the bucket refills.
+  const masteryRemaining = Math.max(0, levelAllow - baseConsumed);
+  const masteryGrow = Math.max(0, newMasteryExtra - prevMasteryExtra);
+  const masteryOk = newMasteryExtra <= prevMasteryExtra || masteryGrow <= masteryRemaining;
+  const storedMastery = masteryOk ? mastery : ((prev?.mastery as Record<string, number> | null) ?? null);
+  const consumedLevels = baseConsumed + (masteryOk ? masteryGrow : 0);
   // Advance the bucket clock ONLY by what was consumed (so unused allowance persists; a burst of writes
   // drains it). No consumption -> keep the clock so allowance keeps accruing across idle no-op submits.
   const nextClockMs = consumedLevels > 0
@@ -201,25 +235,6 @@ Deno.serve(async (req) => {
     try { if (JSON.stringify(estRaw).length <= ESTATE_MAX_BYTES) estate = estRaw; } catch { estate = null; }
   }
 
-  // Over-100 Mastery: a DISPLAY-ONLY { skill_id: extended_level } map for gathering/crafting skills past
-  // 100. Kept out of `skills`/`total_level` (those stay capped for ranking), so it's cosmetic + never
-  // rejects the submission. Bounded: valid skill-id keys, integer values 101..MAX, capped count. Only
-  // touched when the body carries the field, so an older client never clobbers a stored mastery map.
-  const MASTERY_MAX_LEVEL = 200, MASTERY_MAX_KEYS = 200;
-  const masteryProvided = Object.prototype.hasOwnProperty.call(body, "mastery");
-  let mastery: Record<string, number> | null = null;
-  const mRaw = (body as { mastery?: unknown }).mastery;
-  if (mRaw && typeof mRaw === "object" && !Array.isArray(mRaw)) {
-    const clean: Record<string, number> = {}; let n = 0;
-    for (const [k, v] of Object.entries(mRaw as Record<string, unknown>)) {
-      if (typeof k !== "string" || k.length > 40) continue;
-      if (typeof v !== "number" || !Number.isInteger(v) || v <= MAX_SKILL_LEVEL || v > MASTERY_MAX_LEVEL) continue;
-      clean[k] = v;
-      if (++n >= MASTERY_MAX_KEYS) break;
-    }
-    mastery = Object.keys(clean).length ? clean : null;
-  }
-
   // 4. Accept.
   const record: Record<string, unknown> = {
     id: userId,
@@ -234,7 +249,7 @@ Deno.serve(async (req) => {
     updated_at: new Date(nextClockMs).toISOString(), // bucket clock (advances only by consumed levels)
   };
   if (estateProvided) record.estate = estate;   // omit entirely -> upsert leaves any existing estate untouched
-  if (masteryProvided) record.mastery = mastery; // same: absent field never clobbers the stored mastery
+  if (masteryProvided) record.mastery = storedMastery; // bucket-metered map (held at last accepted when over-rate); absent field never clobbers
   let { error: upErr } = await admin.from("profiles").upsert(record, { onConflict: "id" });
   if (upErr && (estateProvided || masteryProvided)) {
     // The `estate`/`mastery` columns may not be migrated yet -- retry WITHOUT them so a new client never

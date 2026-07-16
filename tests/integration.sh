@@ -201,6 +201,13 @@ LVLNOW="$(field "$(rest GET "profiles?id=eq.$LID&select=total_level" "$TOK_L")" 
 # A seconds-old account accrues <1 level/hr*age, so its stored total must stay tiny (<=50 gives margin for
 # creation->submit latency). The old flat-grandfather bug would leave it at 400 here -- this catches it.
 if [ -n "$LVLNOW" ] && [ "$LVLNOW" -le 50 ] 2>/dev/null; then pass "fresh-account submit_profile is age-grandfathered (total_level=$LVLNOW, not 400)"; else faild "fresh-account submit_profile is age-grandfathered" "total_level=$LVLNOW (expected <=50)"; fi
+# Over-100 Mastery (gathering/crafting past 100) was stored VERBATIM with no rate limit, so a cheater could
+# flash e.g. fishing 114 instantly. It now shares the level token bucket, so a fresh account (empty bucket)
+# can't publish inflated mastery either -- the map is held at the last accepted (none here).
+MASTERY='{"total_level":3,"gold":100,"skills":{"mining":3},"mastery":{"fishing":114,"mining":150}}'
+fn submit_profile "$TOK_L" "$MASTERY" >/dev/null
+MRESP="$(rest GET "profiles?id=eq.$LID&select=mastery" "$TOK_L")"
+case "$MRESP" in *114*|*150*) faild "fresh-account over-100 mastery is bucket-metered" "mastery leaked: $MRESP" ;; *) pass "fresh-account over-100 mastery is bucket-metered (fishing 114 not published)" ;; esac
 
 # --------------------------------------------------------------------------------------------
 sect "Marketplace"
