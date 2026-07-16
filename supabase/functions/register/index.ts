@@ -83,5 +83,12 @@ Deno.serve(async (req) => {
     }
     return json({ ok: false, error: "Registration failed." }, 400);
   }
+
+  // A fresh registration gifts the whole server 1h of +50% XP. This runs HERE (server-authoritative,
+  // exactly once per real account creation) rather than via a client call -- the old client-callable
+  // server_buff `grant` action was removed because any player could replay it for a free server buff.
+  // Best-effort: never fail the registration if the buff extension hiccups.
+  try { await admin.rpc("server_buff_extend", { p_kind: "exp", p_seconds: 3600 }); } catch { /* buff is a nicety, not part of signup success */ }
+
   return json({ ok: true });
 });

@@ -7,7 +7,10 @@
 //
 // Actions (POST { action, ... }):
 //   get              -> { buffs: { exp: <iso active_until | null> } }   (current server buff state)
-//   buy { kind }     -> AUTH; extend that buff by its fixed duration; returns the new active_until
+//   buy { kind }     -> AUTH + gold charge (wallet_debit); extend that buff; returns new active_until
+//
+// There is NO free "grant" action anymore (it let any player pin the server buff on for free). The one
+// legitimate free grant -- a fresh registration -- now runs server-side inside the `register` function.
 //
 // Verify JWT must be OFF (publishable key isn't a JWT; token validated internally).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -29,10 +32,12 @@ const BUFF_SECONDS: Record<string, number> = { exp: 3600, test: 1 };
 // SERVER_BUFF_EXP_COST). The `test` kind is free so the integration script doesn't need a funded wallet.
 const BUFF_COST: Record<string, number> = { exp: 100000, test: 0 };
 
-// Auto-granted (no gold) extensions to the shared `exp` buff, keyed by reason. A fresh registration
-// gifts 1h; finding a familiar gifts 5min. Server-side extension only -- same trust model as `buy`
-// (the client can already extend for free there), so this doesn't widen the abuse surface.
-const GRANT_SECONDS: Record<string, number> = { register: 3600, familiar: 300 };
+// NOTE: there is intentionally NO free client-callable "grant" action. It used to auto-extend the shared
+// exp buff on a client-sent `reason` ("register" 1h / "familiar" 5min) with no gold and no verification
+// -- any logged-in player could pin the server-wide +50% XP on for free, defeating the 100k/hr `buy`
+// price. The one legitimately server-verifiable grant (a fresh registration) now fires INSIDE the
+// `register` edge function (service role, exactly once per real account). Finding a familiar is
+// client-only state the server can't verify, so it no longer gifts a server-wide buff.
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -82,14 +87,9 @@ Deno.serve(async (req) => {
     return json({ ok: true, kind, active_until: until, buffs: await snapshot() });
   }
 
-  if (action === "grant") {
-    const reason = String(body.reason || "");
-    const secs = GRANT_SECONDS[reason];
-    if (!secs) return json({ ok: false, error: "Unknown grant." }, 400);
-    const { data: until, error } = await admin.rpc("server_buff_extend", { p_kind: "exp", p_seconds: secs });
-    if (error || !until) return json({ ok: false, error: "Grant failed." }, 500);
-    return json({ ok: true, kind: "exp", reason, active_until: until, buffs: await snapshot() });
-  }
+  // "grant" is deliberately gone -- it was a free, unverified server-wide buff extender (see the note by
+  // BUFF_SECONDS). Reject it explicitly so an old client calling it fails loudly instead of silently.
+  if (action === "grant") return json({ ok: false, error: "Grants are no longer client-callable." }, 403);
 
   return json({ ok: false, error: "Unknown action." }, 400);
 });

@@ -246,6 +246,12 @@ SBB=$(fn server_buff "$TOK_MA" '{"action":"buy","kind":"test"}')
 assert_ok  "$SBB" "buy a buff (test kind)"
 assert_has "$SBB" "\"active_until\"" "buy returns the new active_until"
 assert_err "$(fn server_buff "$TOK_MA" '{"action":"buy","kind":"nope"}')" "unknown buff kind rejected"
+# The free, unverified `grant` action (any player could pin the server-wide +50% XP buff on for free)
+# is removed -- it must be rejected now. Also confirm it did NOT extend the exp timer.
+EXP_BEFORE="$(field "$(fn server_buff "$TOK_MA" '{"action":"get"}')" exp)"
+assert_err "$(fn server_buff "$TOK_MA" '{"action":"grant","reason":"register"}')" "free server-buff grant is rejected"
+assert_err "$(fn server_buff "$TOK_MA" '{"action":"grant","reason":"familiar"}')" "free familiar grant is rejected"
+assert_eq "grant did not extend the exp buff" "$(field "$(fn server_buff "$TOK_MA" '{"action":"get"}')" exp)" "$EXP_BEFORE"
 
 # --------------------------------------------------------------------------------------------
 sect "RPC lockdown (SECURITY DEFINER RPCs are service_role-only, not callable via REST)"

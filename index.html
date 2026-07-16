@@ -6696,7 +6696,8 @@
         addLog(fam.icon + ' A familiar has joined you! ' + fam.name + ' (' + (SKILL_LABELS[skillId]||skillId) + ') answered your call.', 'important');
         spawnFloatingText('Familiar summoned: ' + fam.name + '!', 'ft-rare');
         chronicleBroadcast('familiar', fam.name);   // new summon -> global feed
-        if(!offlineCapture) serverBuffGrant('familiar'); // finding a familiar gifts a 5min server +50% EXP buff
+        // (Finding a familiar no longer gifts a server-wide buff: that ran through the free, unverifiable
+        //  server_buff `grant` action, which was removed. The familiar itself is the reward.)
         // Offline: collect into one consolidated notification instead of a popup per familiar.
         if(offlineCapture){ if(offlineCapture.familiars) offlineCapture.familiars.push({ skillId:skillId, leveledUp:false, level:1 }); }
         else if(state.settings.popupFamiliar){ state.popupQueue.push({ type:'familiar', skillId:skillId, leveledUp:false }); state.popupBatchTotal = (state.popupBatchTotal||0) + 1; }
@@ -10140,27 +10141,9 @@
       renderSettingsModal(); render();
     });
   }
-  // Auto-granted server buffs (no gold): registering gifts 1h of +50% EXP to everyone; finding a
-  // familiar gifts 5min. Fire-and-forget; the server extends the shared timer and we apply the result.
-  var _lastBuffGrantReason = null;   // most recent grant we requested (diagnostics + regression tests)
-  function lastBuffGrantReason(){ return _lastBuffGrantReason; }
-  function serverBuffGrant(reason){
-    _lastBuffGrantReason = reason;   // record the intent even if the network call is skipped (offline/no-chat)
-    if(!CHAT_ENABLED || !chatClient || !authUser) return;
-    chatClient.functions.invoke('server_buff', { body:{ action:'grant', reason:reason } }).then(function(r){
-      var res = r && r.data;
-      if(res && res.ok){
-        serverBuffApply(res.buffs);
-        if(reason==='register'){ addLog('Welcome! Your registration set off a server-wide +50% EXP buff (1 hour) for every player.', 'important'); chronicleBroadcast('buff', 'registered — a +50% EXP server buff (1 hour) is on for everyone!'); }
-        else if(reason==='familiar'){ addLog('Finding a familiar sparked a server-wide +50% EXP buff (+5 min) for everyone!', 'important'); chronicleBroadcast('buff', 'found a familiar — a +50% EXP server buff (+5 min) is on for everyone!'); }
-        needsRender = true;
-      } else if(typeof console !== 'undefined' && console.warn){
-        // A stale server_buff edge function (missing the 'grant' action) would fail here silently --
-        // surface it so a familiar not extending the buff is diagnosable rather than invisible.
-        console.warn('server_buff grant("' + reason + '") did not apply; redeploy the server_buff edge function?', (res && res.error) || 'no response');
-      }
-    }, function(){});
-  }
+  // Server-wide buffs are extended two ways, both SERVER-side: the paid `buy` action (gold-charged) and a
+  // fresh registration (1h, fired inside the `register` edge function). There is no client-callable free
+  // grant anymore -- it let any player pin the buff on for free -- so there's no serverBuffGrant() here.
   function renderServerBuffSettings(){
     var html = '<div style="border-top:1px solid var(--border);margin:12px 0 4px;padding-top:10px;">';
     html += '<div class="settings-row-label">Server Buffs</div>';
@@ -20200,7 +20183,8 @@
       if(!u || !res.data.session) throw new Error('invalid credentials');
       authUser = { username: (u && u.user_metadata && u.user_metadata.username) || username, id: u && u.id };
       if(res.data.session.access_token) cloudAccessToken = res.data.session.access_token;
-      if(authMode==='register') serverBuffGrant('register'); // new player -> gift the server a 1h +50% EXP buff
+      // (New players still gift the server a 1h +50% EXP buff, but that now fires server-side inside the
+      //  `register` edge function -- the free client-callable server_buff `grant` action was removed.)
       try{
         if(authRememberUser) localStorage.setItem('ff-remember-username', username); else localStorage.removeItem('ff-remember-username');
         localStorage.setItem('ff-autologin', authAutoLogin ? '1' : '0');
@@ -25523,7 +25507,7 @@
       fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
-      expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, serverBuffGrant:serverBuffGrant, lastBuffGrantReason:lastBuffGrantReason, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
+      expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey,
       craftBodyRarity:craftBodyRarity, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, enhanceBodyRarity:enhanceBodyRarity, chronicleEnhanceToSystemMsg:chronicleEnhanceToSystemMsg, chronicleRowToSystemMsg:chronicleRowToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
