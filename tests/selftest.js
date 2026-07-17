@@ -771,6 +771,26 @@
     ok(FF.cancelCropAt('personal', '8,8') === false, 'cancelling an empty plot does nothing');
   });
 
+  // ---- Critter Cache: one of each seed type + Botany/Herbalism drop it at 5% base --------------
+  suite('critter cache: all three seed types', function(){
+    var S = FF._state;
+    function seedTotals(){
+      var f=0,g=0,h=0;
+      for(var i=0;i<21;i++){ f+=S.inventory['seed_t'+i]||0; g+=S.inventory['grainseed_t'+i]||0; h+=S.inventory['herbseed_t'+i]||0; }
+      return {f:f,g:g,h:h};
+    }
+    var before = seedTotals();
+    S.inventory.critter_cache = (S.inventory.critter_cache||0) + 50;
+    FF.openCritterCaches(50, true); // silent
+    var after = seedTotals();
+    eq(after.f - before.f, 50, 'each cache drops exactly one Fiber seed');
+    eq(after.g - before.g, 50, 'each cache drops exactly one Grain seed');
+    eq(after.h - before.h, 50, 'each cache drops exactly one Herb seed');
+    eq(S.inventory.critter_cache || 0, 0, 'all 50 caches were consumed');
+    // Base drop chance is 5% (Forestry, Botany, and Herbalism share critterCacheChance, whose base is this).
+    eq(FF.BASE_NEST_CHANCE, 0.05, 'critter cache base chance is 5%');
+  });
+
   // ---- Cross-skill physiques: 20 new physiques trained by one skill, feeding another --------------
   suite('cross-skill physiques', function(){
     var NEW = ['anglersEye','prospectorsNose','huntsman','sylvanBond','quartermaster','masterwork','diligence','weaponsmithsEdge','armorersTemper','greenThumb','composter','apothecarysHand','demolitionist','runicAttunement','wardersFocus','zealotry','oblation','fieldRations','menagerist','merchantsSavvy'];
