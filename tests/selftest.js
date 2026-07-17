@@ -5269,6 +5269,26 @@
     }
   });
 
+  // ---- Sacrifice UI: each item card shows a live remaining/owned counter ----------------
+  suite('sacrifice UI: item cards show remaining count', function(){
+    ok(typeof FF.renderSacrificeTab === 'function', 'renderSacrificeTab exported');
+    var s = FF._state;
+    var save = { inv:s.inventory, locked:s.lockedItems };
+    try {
+      var wid = Object.keys(FF.STACKABLE_WEAPON_ITEMS)[0];
+      s.inventory = {}; s.lockedItems = {};
+      s.inventory[wid] = 7;
+      var html = FF.renderSacrificeTab();
+      ok(/Owned:\s*7/.test(html), 'a stack of 7 renders "Owned: 7" on its card');
+      ok(/Tier 1 · Owned: 7/.test(html), 'the counter sits alongside the tier line');
+      // The count reflects the live inventory: drop it to 2 and it re-reads.
+      s.inventory[wid] = 2;
+      ok(/Owned:\s*2/.test(FF.renderSacrificeTab()) && !/Owned:\s*7/.test(FF.renderSacrificeTab()), 'counter tracks the current quantity');
+    } finally {
+      s.inventory = save.inv; s.lockedItems = save.locked;
+    }
+  });
+
   // ---- Faith: sacrifice value scales with rarity (2x/4x/8x) -----------------------------
   suite('faith: sacrifice rarity scaling', function(){
     // Base (normal) value: tier curve, with a +50% jewelry boost. The rarity multiplier (2x/4x/8x) is

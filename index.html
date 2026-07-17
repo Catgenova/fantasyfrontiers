@@ -19999,7 +19999,10 @@
       var restorePreview = r.category==='relic'
         ? Math.round(30*Math.pow(1.3, r.relicTierIndex))
         : sacrificeGearFaith(r.tier, r.jewelryBoost, r.item && r.item.rarity);
-      var metaText = r.category==='relic' ? ('Owned: '+r.tier) : ('Tier '+r.tier);
+      // Non-stackable off-hands are a single held item; everything else stacks in inventory. This count
+      // is the number remaining and ticks down live as you sacrifice (the card vanishes when it hits 0).
+      var qty = r.category==='offhand' ? 1 : (state.inventory[r.id]||0);
+      var metaText = r.category==='relic' ? ('Owned: '+qty) : ('Tier '+r.tier+' · Owned: '+qty);
       html += '<div class="item-card">';
       html += '<div class="item-top"><div class="item-icon">'+r.icon+'</div><div><div class="item-name">'+r.item.name+'</div><div class="item-meta">'+metaText+'</div></div></div>';
       html += '<div class="item-stats"><span>Restores ~'+restorePreview+' Faith</span></div>';
@@ -25560,7 +25563,7 @@
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
       GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, skillTabsByLabel:skillTabsByLabel,
-      renderGlobalActionBar:renderGlobalActionBar, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
+      renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS,
