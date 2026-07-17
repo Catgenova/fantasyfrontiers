@@ -5775,6 +5775,32 @@
     s.inventory = savedInv;
   });
 
+  // ---- Enhance: first-ever enhance warns it permanently locks the item out of enchanting ---------
+  suite('enhance: first-enhance enchant-lock confirmation', function(){
+    var s = FF._state;
+    var sv = { ui:s.uniqueItems, inv:s.inventory, ack:s.enhanceLockWarnAck, mh:s.equippedMainhandUid };
+    s.uniqueItems = { u_lock:{ uid:'u_lock', base:'stweapon_rapier_t2_rare', kind:'weapon', tier:2, rarity:'rare', enchants:[], enhance:0 } };
+    s.inventory = { scroll_t2: 50 };
+    s.enhanceLockWarnAck = false;
+    s.equippedMainhandUid = null;
+    var rnd = Math.random; Math.random = function(){ return 0; }; // force enhance success (0 < chance)
+    // First click on a never-enhanced item ARMS the warning: it must not enhance or spend scrolls yet.
+    FF.enhanceItem('u_lock');
+    eq(s.uniqueItems.u_lock.enhance, 0, 'first click arms the warning, does not enhance');
+    eq(s.inventory.scroll_t2, 50, 'first click spends no Inscription Scrolls');
+    eq(s.enhanceLockWarnAck, false, 'acknowledgment not set until the confirming click');
+    // Second click confirms.
+    FF.enhanceItem('u_lock');
+    eq(s.uniqueItems.u_lock.enhance, 1, 'confirming click enhances to +1');
+    eq(s.enhanceLockWarnAck, true, 'acknowledgment recorded game-wide after confirming');
+    // Once acknowledged, a fresh item's first enhance no longer re-prompts.
+    s.uniqueItems.u_lock2 = { uid:'u_lock2', base:'stweapon_rapier_t2_rare', kind:'weapon', tier:2, rarity:'rare', enchants:[], enhance:0 };
+    FF.enhanceItem('u_lock2');
+    eq(s.uniqueItems.u_lock2.enhance, 1, 'once acknowledged, later first-enhances skip the confirmation');
+    Math.random = rnd;
+    s.uniqueItems = sv.ui; s.inventory = sv.inv; s.enhanceLockWarnAck = sv.ack; s.equippedMainhandUid = sv.mh;
+  });
+
   // ---- Improvement: an equipped base is improvable even if a stale mainhand uid lingers ----------
   suite('improvement: equipped base vs stale uid', function(){
     ok(typeof FF.equippedImprovableBases === 'function', 'equippedImprovableBases exported');

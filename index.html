@@ -9785,6 +9785,7 @@
       uniqueItems: {},       // uid -> unique enchanted/enhanced equipment instance (Improvement system)
       uidSeq: 0,             // monotonic counter for unique-instance ids
       enchantWarnHiTier: true, enhanceWarnHiTier: true, // show higher-tier-input warnings (toggleable)
+      enhanceLockWarnAck: false, // one-time acknowledgment that enhancing permanently blocks enchanting
       xp: xpObj,
       physique: physique,
       inventory: {},
@@ -10676,6 +10677,12 @@
     var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
     if(!isImprovableRarity(u.rarity)){ addLog('Only Rare-or-better gear can be enhanced.','danger'); return; }
     if(u.enhance >= ENHANCE_MAX){ addLog('Already at the maximum +'+ENHANCE_MAX+'.','danger'); return; }
+    // First-ever enhance: warn that it permanently locks the item out of enchanting, then require a
+    // second confirming click. Acknowledged once, game-wide (players know the trade-off after that).
+    if(u.enhance===0 && !state.enhanceLockWarnAck){
+      if(!enhanceLockArmed){ enhanceLockArmed = true; render(); return; }
+      enhanceLockArmed = false; state.enhanceLockWarnAck = true;
+    }
     var cost = u.enhance + 1;
     var planned = planInscriptions(u.tier, cost);
     if(!planned){ addLog('You need '+cost+' Inscription Scroll'+(cost===1?'':'s')+' (e.g. Warding Scrap) of tier '+(u.tier+1)+' or higher.','danger'); return; }
@@ -10703,8 +10710,9 @@
   var improvePending = null;    // { uid, roll } awaiting placement when slots are full
   var improveWarnArmed = false; // higher-tier-crystal warning acknowledged for the next click
   var enhanceWarnArmed = false; // higher-tier-inscription warning acknowledged for the next click
+  var enhanceLockArmed = false; // first-enhance enchant-lock warning acknowledged for the next click
   var improveConfirm = null;    // 'sell:<uid>' | 'sacrifice:<uid>' — arms a destructive action for a second confirming click
-  function improveSelect(id){ improveSel = id; improvePending = null; improveWarnArmed = false; improveConfirm = null; render(); }
+  function improveSelect(id){ improveSel = id; improvePending = null; improveWarnArmed = false; enhanceWarnArmed = false; enhanceLockArmed = false; improveConfirm = null; render(); }
   // Currently-equipped BASE pieces (a filled slot with no unique uid). These live in their equip slot,
   // not in state.inventory, so the normal inventory picker can't see them -- surfaced here so equipped
   // gear can be Enchanted/Enhanced without unequipping first.
@@ -11058,6 +11066,7 @@
       if(eLvl>=ENHANCE_MAX){ html += '<div class="lock-note">Maxed at +'+ENHANCE_MAX+'.</div>'; }
       else {
         html += '<div class="inputs-line">Next: <b>'+ecost+'</b> Inscription Scroll'+(ecost===1?'':'s')+' (tier '+(tier+1)+'+) · <b>you have '+improveMaterialSpan('scroll_t', tier, ecost)+'</b> · <b style="color:var(--gold);">'+chance+'%</b> success · <b style="color:var(--danger);">a failure destroys the item.</b></div>';
+        if(enhanceLockArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ Enhancing <b>permanently</b> locks this item out of enchanting — you\'ll no longer be able to add or change enchants. Click Enhance again to confirm.</div>';
         if(enhanceWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No tier-'+(tier+1)+' Scrolls — this spends higher-tier ones. Click Enhance again to confirm.</div>';
         html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn stop" data-action="improveEnhance" data-uid="'+enhTarget+'" style="width:auto;flex:0 0 auto;">Enhance ('+ecost+')</button>';
         html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleEnhanceWarn"'+(state.enhanceWarnHiTier?' checked':'')+'> warn on higher-tier Scrolls</label></div>';
