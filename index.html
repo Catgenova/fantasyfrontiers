@@ -5455,8 +5455,10 @@
   function enchantResistanceMult(st){ st = st || state; return 1 - Math.min(0.9, (equippedEnchantTotals(st).resistance || 0) * spellbladeEnchantBoost(st) / 100); }
   // Weapon Accuracy enchant: a percent boost to Accuracy (folded into playerAccuracy's bonus group).
   function enchantAccuracyBonus(st){ st = st || state; return (equippedEnchantTotals(st).accuracy || 0) * spellbladeEnchantBoost(st) / 100; }
-  // Armor HP Regen enchant: flat HP added to each passive regen tick (pct:false), amplified by Spellblade.
-  function enchantHpRegen(st){ st = st || state; return (equippedEnchantTotals(st).hpRegen || 0) * spellbladeEnchantBoost(st); }
+  // Armor HP Regen enchant: flat HP added to each 5-second passive regen tick (pct:false), amplified by
+  // Spellblade. Capped at 10 HP per 5s so stacking the enchant across many slots can't trivialise sustain.
+  var ENCHANT_HP_REGEN_CAP = 10;
+  function enchantHpRegen(st){ st = st || state; return Math.min(ENCHANT_HP_REGEN_CAP, (equippedEnchantTotals(st).hpRegen || 0) * spellbladeEnchantBoost(st)); }
   function assassinBonus(reqLevel, st){ return classBonusActive('assassin', reqLevel, st); }
   // Total persistent Dodge chance (gear + physiques + class); the temporary familiar 'dodge' buff is added
   // on top only at the moment of a monster attack, so it is NOT folded in here.
@@ -6176,7 +6178,9 @@
   // (pierce/slash/blunt, or "void" which ignores enemy armour); siphon: damage + heal the player;
   // buffSpell: a timed self-buff of a given kind. The magnitude (val/amount/hps) is the "x" that
   // scales with familiar level, cloth-armour spell bonus, and Catalyst potions (via potency).
-  function regenSpell(name, hps, durSec){ return { name:name, type:'regen', hps:hps, durationMs:durSec*1000 }; }
+  // Familiar regen heals in a lump every 5 seconds; `hps` is the per-5s tick amount. Base values are
+  // doubled and the buff lasts 3x as long as the authored numbers (a game-wide regen rework).
+  function regenSpell(name, hps, durSec){ return { name:name, type:'regen', hps:hps*2, durationMs:durSec*3*1000 }; }
   function bubbleSpell(name, durSec){ return { name:name, type:'bubble', durSec:durSec }; } // durSec is the "x" (scales with potency)
   function hitSpell(name, dmgType, amount){ return { name:name, type:'hit', dmgType:dmgType, amount:amount }; } // dmgType: piercing|slashing|blunt|void
   function siphonSpell(name, amount){ return { name:name, type:'siphon', amount:amount }; }
@@ -10352,7 +10356,7 @@
     var mod = pool[Math.floor(Math.random()*pool.length)];
     return { mod: mod.id, roll: mod.min + Math.floor(Math.random()*(mod.max - mod.min + 1)) };
   }
-  function enchantLabel(kind, e){ var m = enchantModById(kind, e.mod); if(!m) return '+'+e.roll+' ?'; return '+'+e.roll+(m.pct?'%':'')+' '+m.label; }
+  function enchantLabel(kind, e){ var m = enchantModById(kind, e.mod); if(!m) return '+'+e.roll+' ?'; return '+'+e.roll+(m.pct?'%':'')+' '+m.label+(m.id==='hpRegen'?' / 5s':''); }
   // Crystal cost for the NEXT enchant on an item = (current enchant count) + 1.
   function enchantCrystalCost(u){ return ((u && u.enchants) ? u.enchants.length : 0) + 1; }
   // Monotonic unique-instance id per save.
@@ -12616,8 +12620,8 @@
   function applyOfflineProgress(elapsedMs){
     var capped = Math.min(elapsedMs, 12*3600*1000);   // offline progress caps at 12 hours
     if(capped < 3000) return;
-    var regenSeconds = Math.floor(capped/1000/15);
-    if(regenSeconds > 0) state.playerHp += Math.min(regenSeconds, healRoom(state));
+    var regenTicks = Math.floor(capped/5000);   // passive HP regen resolves every 5 seconds
+    if(regenTicks > 0) state.playerHp += Math.min(regenTicks * (1 + enchantHpRegen(state)), healRoom(state));
     var act = state.activity;
     var goldBefore = state.gold;
     offlineCapture = { xp:{}, physique:{}, items:{}, gold:0, elapsedMs:capped, activityType:(act&&act.type)||null, familiars:[] };
@@ -12713,7 +12717,7 @@
           applyPyromancerBurnTick(_chunk);
           applyReaperWitherTick(_chunk);
           applyLumenMendingTick(_chunk);
-          var _rh = famRegenHps(); if(_rh>0 && state.playerHp>0) state.playerHp += Math.min(_rh*_chunk/1000, healRoom(state));
+          var _rh = famRegenHps(); if(_rh>0 && state.playerHp>0) state.playerHp += Math.min(_rh*_chunk/5000, healRoom(state)); // _rh is the per-5s tick amount
           // Each active companion casts one spell every 10s, cycling its list (same cadence as live).
           activeCompanionList(state).forEach(function(cid){
             if(!FAMILIAR_DATA[cid]) return;
@@ -15013,6 +15017,7 @@
     var enchTot = equippedEnchantTotals(state);
     var enchBoost = spellbladeEnchantBoost(state);
     if(enchBoost!==1){ for(var _ek in enchTot) enchTot[_ek] *= enchBoost; }
+    if(enchTot.hpRegen) enchTot.hpRegen = Math.min(ENCHANT_HP_REGEN_CAP, enchTot.hpRegen); // HP Regen is capped at 10/5s (matches combat)
     var enchCrit = (enchTot.critChance||0)/100, enchCritDmg = (enchTot.critDamage||0)/100;
     // Inline gold "(+X ench)" tag appended to a base-stat row whose TOTAL already folds the enchant in
     // (Health, Armor, Accuracy, Block, Attack Damage) -- so the number shows the effect and the tag shows
@@ -15074,7 +15079,7 @@
     html += _enchRow('Damage Reduction','dmgReduction',true,' incoming');
     html += _enchRow('Resistance','resistance',true,' incoming');
     html += _enchRow('Thorns','thorns',false,' reflected');
-    html += _enchRow('HP Regen','hpRegen',false,' / tick');
+    html += _enchRow('HP Regen','hpRegen',false,' / 5s');
     var wornMaterialsPreview = {};
     BODY_ARMOR_SLOTS.forEach(function(slot){
       var s = state.bodyArmor && state.bodyArmor[slot];
@@ -17029,7 +17034,7 @@
     if(spell.type==='slowEnemy') return 'Slows enemy attack speed by '+Math.round(Math.min(STATUS_DEBUFF_CAP,spell.pct*potency)*100)+'% for '+(spell.durationMs/1000)+'s';
     if(spell.type==='weakenEnemy') return 'Reduces enemy damage by '+Math.round(Math.min(STATUS_DEBUFF_CAP,spell.pct*potency)*100)+'% for '+(spell.durationMs/1000)+'s';
     if(spell.type==='poison') return 'Deals '+(Math.round(spell.dps*potency*10)/10)+' dmg/s to the enemy for '+(spell.durationMs/1000)+'s'+elemSuffix;
-    if(spell.type==='regen') return 'Regenerates '+(Math.round(spell.hps*potency*10)/10)+' HP/s for '+(spell.durationMs/1000)+'s';
+    if(spell.type==='regen') return 'Regenerates '+(Math.round(spell.hps*potency*10)/10)+' HP / 5s for '+(spell.durationMs/1000)+'s';
     if(spell.type==='bubble') return 'Negates a killing blow for '+(Math.round(spell.durSec*potency*10)/10)+'s';
     if(spell.type==='hit'){ var tl = spell.dmgType==='void'?'armour-ignoring':spell.dmgType; return 'Deals '+Math.round(spell.amount*potency)+' '+tl+' damage'+elemSuffix; }
     if(spell.type==='siphon') return 'Siphons '+Math.round(spell.amount*potency)+' HP from the enemy to you'+elemSuffix;
@@ -24979,14 +24984,14 @@
       state._medAccum = 0;
     }
 
-    // HP regenerates passively at a fixed rate no matter what you're doing --
+    // HP regenerates passively every 5 seconds no matter what you're doing --
     // gathering, crafting, praying, or mid-fight -- capping at max HP. The only way
-    // back to full HP faster than this slow trickle is eating food.
+    // back to full HP faster than this trickle is eating food.
     if(state.playerHp < maxHp(state)){
       state._regenAccum = (state._regenAccum||0) + dt;
-      if(state._regenAccum >= 15000){
-        state._regenAccum -= 15000;
-        // Base +1 HP/tick, plus any flat HP Regen armour enchant (Spellblade-amplified).
+      while(state._regenAccum >= 5000){
+        state._regenAccum -= 5000;
+        // Base +1 HP per 5s, plus any flat HP Regen armour enchant (Spellblade-amplified, capped at 10).
         state.playerHp += Math.min(1 + enchantHpRegen(state), healRoom(state));
       }
     }
@@ -25048,9 +25053,12 @@
         applyPyromancerBurnTick(dt);
         applyReaperWitherTick(dt);
         applyLumenMendingTick(dt);
-        // Regen: familiar heal-over-time restores player HP while the buff is up.
-        var regenHps = famRegenHps();
-        if(regenHps > 0 && state.playerHp > 0){ state.playerHp += Math.min(regenHps*dt/1000, healRoom(state)); }
+        // Regen: familiar restores a lump of HP every 5 seconds while the buff is up.
+        var regenPer5s = famRegenHps();
+        if(regenPer5s > 0 && state.playerHp > 0){
+          state._famRegenAccum = (state._famRegenAccum||0) + dt;
+          while(state._famRegenAccum >= 5000){ state._famRegenAccum -= 5000; state.playerHp += Math.min(regenPer5s, healRoom(state)); }
+        } else { state._famRegenAccum = 0; }
         // Templar Lv 60 (Holy Light): a radiant heal-over-time while you're below 40% HP.
         var _hlHps = templarHolyLightHps();
         if(_hlHps > 0 && state.playerHp > 0){ state.playerHp += Math.min(_hlHps*dt/1000, healRoom(state)); }

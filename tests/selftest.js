@@ -3545,8 +3545,13 @@
     ok(!dupe, 'every familiar kit is a unique effect combination' + (dupe ? ' -- dupe: ' + dupe : ''));
     // spot-check a couple of new spell types describe sensibly
     ok(/damage/.test(FF.describeSpell({type:'hit',dmgType:'piercing',amount:14}, 1)), 'hit spell describes damage');
-    ok(/HP\/s/.test(FF.describeSpell({type:'regen',hps:4,durationMs:6000}, 1)), 'regen spell describes HP/s');
+    ok(/HP \/ 5s/.test(FF.describeSpell({type:'regen',hps:4,durationMs:6000}, 1)), 'regen spell describes HP per 5s');
     ok(/killing blow/.test(FF.describeSpell({type:'bubble',durSec:3}, 1)), 'bubble spell describes killing blow');
+    // Familiar regen rework: base value doubled, buff duration tripled (regenSpell('Patch Job',4,6)).
+    var patch = FF.FAMILIAR_SPELLS.salvaging.filter(function(s){ return s.type==='regen'; })[0];
+    ok(patch, 'salvaging familiar has a regen spell');
+    eq(patch.hps, 8, 'familiar regen base value doubled (4 -> 8 HP per 5s)');
+    eq(patch.durationMs, 18000, 'familiar regen buff duration tripled (6s -> 18s)');
   });
 
   // ---- Familiar companion avatars: every familiar has a bespoke avatar with its skill crest ----
@@ -5651,8 +5656,16 @@
     // HP Regen (armour): a FLAT bonus (pct:false) added to each passive regen tick.
     var stReg = { uniqueItems:{ ch:{uid:'ch',kind:'bodyarmor',enhance:0,enchants:[{mod:'hpRegen',roll:6}]} },
                   bodyArmor:{ chest:{uid:'ch'} }, jewelrySlots:{} };
-    eq(FF.enchantHpRegen(stReg), 6, 'hpRegen:6 enchant -> +6 flat HP per regen tick');
+    eq(FF.enchantHpRegen(stReg), 6, 'hpRegen:6 enchant -> +6 flat HP per 5s regen tick');
     eq(FF.enchantHpRegen(stNoEnch), 0, 'no hpRegen enchant -> +0');
+    // The enchant HP regen is capped at 10 HP / 5s no matter how many armour slots stack it.
+    var stRegCap = { uniqueItems:{ a:{uid:'a',kind:'bodyarmor',enhance:0,enchants:[{mod:'hpRegen',roll:6}]},
+                                   b:{uid:'b',kind:'bodyarmor',enhance:0,enchants:[{mod:'hpRegen',roll:6}]},
+                                   c:{uid:'c',kind:'bodyarmor',enhance:0,enchants:[{mod:'hpRegen',roll:6}]} },
+                     bodyArmor:{ chest:{uid:'a'}, helmet:{uid:'b'}, back:{uid:'c'} }, jewelrySlots:{} };
+    eq(FF.enchantHpRegen(stRegCap), 10, 'stacked hpRegen enchants (18 raw) cap at 10 HP / 5s');
+    // The enchant reads as a per-5s regen on the item card.
+    eq(FF.enchantLabel('bodyarmor', {mod:'hpRegen', roll:6}), '+6 HP Regen / 5s', 'HP Regen enchant label reads per 5s');
     // Defense (armour): a % multiplier on total Armor (also lifts the stat-panel Armor row).
     var stDef = { uniqueItems:{ ch:{uid:'ch',kind:'bodyarmor',enhance:0,enchants:[{mod:'defense',roll:30}]} },
                   bodyArmor:{ chest:{uid:'ch'} }, jewelrySlots:{} };
