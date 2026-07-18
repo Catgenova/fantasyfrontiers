@@ -2016,6 +2016,40 @@
   });
 
   // ---- Dungeons: D1 "Cave" (25 arachnids, L100->125, ~10x boss, threat targeting) ---------
+  // ---- Destroying a unique must never leave it "equipped" -------------------------------------
+  // Regression: a shattered Enhancement only cleared the MAINHAND, so a destroyed offhand / armour /
+  // ring / amulet stayed equipped -- still drawn, still satisfying its class requirement.
+  suite('uniques: destroying one clears every slot', function(){
+    var s = FF._state;
+    var savedU = s.uniqueItems, savedArmor = s.bodyArmor, savedJewel = s.jewelrySlots;
+    var savedBelt = s.equippedBeltUid, savedRelic = s.equippedRelicUid, savedMain = s.equippedMainhandUid;
+    // Each case: put a uid in a slot, destroy it, assert nothing still references it.
+    function destroyedFromSlot(label, place, check){
+      s.uniqueItems = {}; s.uniqueItems['u1'] = { uid:'u1', base:'stweapon_sword_t5_rare', kind:'weapon', tier:5, rarity:'rare', enhance:0, enchants:[] };
+      place('u1');
+      ok(FF.uniqueIsEquipped('u1'), label + ': starts equipped');
+      FF.removeUnique('u1');
+      eq(!!(s.uniqueItems && s.uniqueItems['u1']), false, label + ': removed from the unique table');
+      eq(FF.uniqueIsEquipped('u1'), false, label + ': no slot still points at it');
+      if(check) check(label);
+    }
+    s.bodyArmor = s.bodyArmor || {}; s.jewelrySlots = s.jewelrySlots || {};
+    destroyedFromSlot('mainhand', function(uid){ s.equippedMainhandUid = uid; });
+    destroyedFromSlot('body armour', function(uid){ s.bodyArmor.chest = { uid:uid, tier:5, rarity:'rare', material:'plate' }; },
+      function(l){ eq(s.bodyArmor.chest.uid, null, l + ': the armour slot is emptied, not left half-set'); });
+    destroyedFromSlot('amulet', function(uid){ s.jewelrySlots.amulet = { uid:uid, tier:5, rarity:'rare' }; });
+    destroyedFromSlot('belt', function(uid){ s.equippedBeltUid = uid; });
+    destroyedFromSlot('relic', function(uid){ s.equippedRelicUid = uid; });
+    // Destroying something that was never equipped must still drop it, and not throw.
+    s.uniqueItems = { u2:{ uid:'u2', base:'stweapon_sword_t1_normal', kind:'weapon', tier:1, rarity:'normal' } };
+    FF.removeUnique('u2');
+    eq(!!s.uniqueItems['u2'], false, 'an unequipped unique is still removed');
+    FF.removeUnique(null); FF.removeUnique('nope');   // must be no-ops, not crashes
+    ok(true, 'removing a null / unknown uid is a safe no-op');
+    s.uniqueItems = savedU; s.bodyArmor = savedArmor; s.jewelrySlots = savedJewel;
+    s.equippedBeltUid = savedBelt; s.equippedRelicUid = savedRelic; s.equippedMainhandUid = savedMain;
+  });
+
   // ---- Enemy cards: the "damage to YOU" range (post-mitigation, current gear) ------------------
   suite('combat: enemy damage vs player', function(){
     var s = FF._state;

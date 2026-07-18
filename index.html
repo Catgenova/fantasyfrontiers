@@ -10406,7 +10406,16 @@
     return uid; // lives in state.uniqueItems only (kept out of state.inventory so name/icon lookups don't break)
   }
   // Drop a unique instance entirely (on sell/sacrifice, Stage 3): remove from the table (saves storage).
-  function removeUnique(uid){ if(state.uniqueItems) delete state.uniqueItems[uid]; }
+  // Destroying a unique must NEVER leave a slot pointing at it. A dangling uid keeps the item drawn as
+  // equipped, keeps its class requirement satisfied (so the class stays "active"), and keeps its base
+  // stats being read -- exactly what a shattered Enhancement used to leave behind for any slot other
+  // than the mainhand. Clearing happens here, at the single point of destruction, so every caller
+  // (shatter / sell / sacrifice / bank deposit) is safe by construction.
+  function removeUnique(uid){
+    if(!uid) return;
+    clearUniqueSlots(uid);   // silent: callers do their own logging + render
+    if(state.uniqueItems) delete state.uniqueItems[uid];
+  }
   // Plan `count` Enchant Crystals of tier >= itemTier, cheapest (lowest) tiers first.
   // Returns { plan:{enchant_t<n>:qty}, maxTier } or null if the player can't cover it.
   function planEnchantCrystals(itemTier, count){
@@ -10554,8 +10563,10 @@
   // +enhance base-stat scaling for a unique Belt (defense) / Relic (dmg&armor %), mirroring mainhandEnhanceMult.
   function beltEnhanceMult(st){ st = st || state; var uid = st.equippedBeltUid, u = uid && st.uniqueItems && st.uniqueItems[uid]; return u ? enhanceStatMult(u.enhance) : 1; }
   function relicEnhanceMult(st){ st = st || state; var uid = st.equippedRelicUid, u = uid && st.uniqueItems && st.uniqueItems[uid]; return u ? enhanceStatMult(u.enhance) : 1; }
-  function unequipUnique(uid){
-    var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
+  // Clear EVERY slot that could point at this uid (mainhand, offhand, the six armour slots, rings,
+  // amulet, belt, relic). Returns whether a slot was cleared. Silent by design -- no log, no save, no
+  // render -- so both "player unequipped it" and "the item was destroyed" can reuse it.
+  function clearUniqueSlots(uid){
     var done = false;
     if(state.equippedMainhandUid===uid){ unequipMainhandAny(); done=true; }
     if(!done && state.equippedOffhandUid===uid){ unequipOffhandAny(); done=true; }
@@ -10566,7 +10577,11 @@
     }
     if(!done && state.equippedBeltUid===uid){ state.equippedBeltUid=null; state.equippedBeltTier=0; state.equippedBeltRarity='normal'; done=true; }
     if(!done && state.equippedRelicUid===uid){ state.equippedRelicUid=null; state.equippedRelicTier=0; state.equippedRelicRarity='normal'; done=true; }
-    if(done){ addLog('Unequipped '+uniqueDisplayName(u)+'.','chronicle'); saveGame(); render(); }
+    return done;
+  }
+  function unequipUnique(uid){
+    var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
+    if(clearUniqueSlots(uid)){ addLog('Unequipped '+uniqueDisplayName(u)+'.','chronicle'); saveGame(); render(); }
   }
   // Base-stat scaling for an equipped unique WEAPON: its base damage scales up to +500% at +15.
   function mainhandEnhanceMult(){ var uid = state.equippedMainhandUid, u = uid && state.uniqueItems && state.uniqueItems[uid]; return u ? enhanceStatMult(u.enhance) : 1; }
@@ -10724,7 +10739,8 @@
     } else {
       addLog(uniqueBaseName(u)+' shattered during Enhancement and was destroyed!','danger');
       enhancePopupData = { ok:false, name:uniqueBaseName(u), icon:uniqueIcon(u) }; // capture before removeUnique drops it
-      if(state.equippedMainhandUid===uid) unequipMainhandAny();
+      // removeUnique() clears whichever slot held it -- this used to only handle the mainhand, so a
+      // shattered offhand / armour / ring / amulet stayed "equipped" with its class still active.
       if(improveSel===uid) improveSel = null;
       improvePending = null;
       removeUnique(uid);
@@ -13058,6 +13074,22 @@
           if(typeof state.mortal !== 'boolean') state.mortal = false;
           if(!state.stats || typeof state.stats !== 'object') state.stats = {};
           ['kills','deaths','gathered','crafted','craftedRare','craftedSupreme','craftedFantastic','hoursBuffed'].forEach(function(k){ if(typeof state.stats[k] !== 'number') state.stats[k] = 0; });
+          // REPAIR: clear any slot pointing at a unique that no longer exists. Saves written before the
+          // shatter fix can hold a dangling uid (a destroyed offhand/armour/ring stayed "equipped",
+          // keeping its class active), so heal those on load instead of making players notice it.
+          (function(){
+            var have = state.uniqueItems || {};
+            var dangling = function(uid){ return !!uid && !have[uid]; };
+            if(dangling(state.equippedMainhandUid)){ state.equippedMainhandUid = null; state.equippedMainhand = null; state.equippedMainhandTier = 0; state.equippedMainhandRarity = 'normal'; }
+            if(dangling(state.equippedOffhandUid)){ state.equippedOffhandUid = null; state.equippedOffhand = null; state.equippedOffhandTier = 0; state.equippedOffhandRarity = 'normal'; }
+            if(dangling(state.equippedBeltUid)){ state.equippedBeltUid = null; state.equippedBeltTier = 0; state.equippedBeltRarity = 'normal'; }
+            if(dangling(state.equippedRelicUid)){ state.equippedRelicUid = null; state.equippedRelicTier = 0; state.equippedRelicRarity = 'normal'; }
+            if(state.bodyArmor) BODY_ARMOR_SLOTS.forEach(function(sl){ var s2 = state.bodyArmor[sl]; if(s2 && dangling(s2.uid)){ state.bodyArmor[sl] = { tier:0, rarity:'normal', material:null, uid:null }; } });
+            if(state.jewelrySlots){
+              RING_SLOT_IDS.forEach(function(sl){ var s3 = state.jewelrySlots[sl]; if(s3 && dangling(s3.uid)) state.jewelrySlots[sl] = { typeId:null, tier:0, rarity:'normal' }; });
+              if(state.jewelrySlots.amulet && dangling(state.jewelrySlots.amulet.uid)) state.jewelrySlots.amulet = { tier:0, rarity:'normal' };
+            }
+          })();
           if(!state.activeTea || typeof state.activeTea !== 'object') state.activeTea = { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 };
           if(!state.activeFeast || typeof state.activeFeast !== 'object') state.activeFeast = { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 };
           if(!state.activeTome || typeof state.activeTome !== 'object') state.activeTome = { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 };
