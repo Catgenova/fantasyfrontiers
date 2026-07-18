@@ -5207,6 +5207,26 @@
     // Off-hand attack interval = main-hand interval x1.30.
     near(FF.offhandClawAttackIntervalMs(dual), FF.playerAttackIntervalMs(dual)*1.30, 'off-hand interval is +30% of the main-hand interval');
     ok(FF.offhandClawAttackIntervalMs(dual) > FF.playerAttackIntervalMs(dual), 'off-hand swings slower than the main hand');
+
+    // Equipment doll: the off-hand Claw must render as a FILLED offhand slot (it's a weapon, so the
+    // usual getEquippedOffhandItem() returns null -- regression guard for it showing "Empty").
+    var s = FF._state;
+    var sv = { mh:s.equippedMainhand, mt:s.equippedMainhandTier, mr:s.equippedMainhandRarity, oh:s.equippedOffhand, ot:s.equippedOffhandTier, or:s.equippedOffhandRarity, muid:s.equippedMainhandUid, ouid:s.equippedOffhandUid };
+    try {
+      s.equippedMainhandUid = null; s.equippedOffhandUid = null;
+      s.equippedMainhand='claw'; s.equippedMainhandTier=6; s.equippedMainhandRarity='rare';
+      s.equippedOffhand='claw'; s.equippedOffhandTier=6; s.equippedOffhandRarity='rare';
+      var offSlot = FF.equipSlotState('offhand');
+      eq(offSlot.filled, true, 'off-hand Claw renders the offhand slot as filled');
+      eq(offSlot.rarity, 'rare', 'off-hand Claw slot carries its rarity');
+      ok(/Claws/.test(offSlot.name), 'off-hand Claw slot shows the claw name, not "Empty"');
+      ok(offSlot.icon && offSlot.icon.length > 0, 'off-hand Claw slot has an icon');
+      // Without a claw main hand the off-hand claw is invalid -> slot falls back to empty.
+      s.equippedMainhand='rapier';
+      eq(FF.equipSlotState('offhand').name, 'Empty', 'off-hand claw slot is Empty when the main hand is not a claw');
+    } finally {
+      s.equippedMainhand=sv.mh; s.equippedMainhandTier=sv.mt; s.equippedMainhandRarity=sv.mr; s.equippedOffhand=sv.oh; s.equippedOffhandTier=sv.ot; s.equippedOffhandRarity=sv.or; s.equippedMainhandUid=sv.muid; s.equippedOffhandUid=sv.ouid;
+    }
   });
 
   // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------
