@@ -5227,6 +5227,32 @@
     } finally {
       s.equippedMainhand=sv.mh; s.equippedMainhandTier=sv.mt; s.equippedMainhandRarity=sv.mr; s.equippedOffhand=sv.oh; s.equippedOffhandTier=sv.ot; s.equippedOffhandRarity=sv.or; s.equippedMainhandUid=sv.muid; s.equippedOffhandUid=sv.ouid;
     }
+
+    // A UNIQUE (enchanted) Claw is kind 'weapon', so equipUnique routes it to the main hand -- it must
+    // still be equippable in the off-hand via equipUniqueOffhandClaw (regression: it couldn't before).
+    ok(typeof FF.equipUniqueOffhandClaw === 'function', 'equipUniqueOffhandClaw exported');
+    var sv2 = { mh:s.equippedMainhand, mt:s.equippedMainhandTier, mr:s.equippedMainhandRarity, oh:s.equippedOffhand, ot:s.equippedOffhandTier, or:s.equippedOffhandRarity, muid:s.equippedMainhandUid, ouid:s.equippedOffhandUid, ui:s.uniqueItems, cx:s.xp.claw };
+    try {
+      s.uniqueItems = { uc:{ uid:'uc', base:'stweapon_claw_t5_rare', kind:'weapon', tier:5, rarity:'rare', enchants:[{mod:'flatDamage',roll:17}], enhance:0 } };
+      s.xp.claw = 5e7;
+      s.equippedMainhand='claw'; s.equippedMainhandTier=6; s.equippedMainhandRarity='rare'; s.equippedMainhandUid=null;
+      s.equippedOffhand=null; s.equippedOffhandTier=0; s.equippedOffhandRarity='normal'; s.equippedOffhandUid=null;
+      eq(FF.equipUniqueOffhandClaw('uc'), true, 'a unique Claw equips into the off-hand with a Claw main hand');
+      eq(s.equippedOffhandUid, 'uc', 'the off-hand slot points at the unique');
+      eq(FF.hasOffhandClaw(s), true, 'hasOffhandClaw is true for a unique off-hand Claw');
+      eq(FF.uniqueIsEquipped('uc'), true, 'the unique reads as equipped');
+      // Damage pipeline: the unique's enchants flow through the equipped totals via the off-hand uid.
+      eq(FF.equippedEnchantTotals(s).flatDamage, 17, 'the off-hand unique Claw\'s enchant is in the equipped totals');
+      // Guard: the same unique can't be off-handed while it's in the main hand.
+      s.equippedMainhandUid='uc';
+      eq(FF.equipUniqueOffhandClaw('uc'), false, 'cannot off-hand the Claw already in the main hand');
+      s.equippedMainhandUid=null;
+      // Guard: no unique off-hand Claw without a Claw main hand.
+      s.equippedMainhand='rapier';
+      eq(FF.equipUniqueOffhandClaw('uc'), false, 'cannot off-hand a unique Claw without a Claw main hand');
+    } finally {
+      s.equippedMainhand=sv2.mh; s.equippedMainhandTier=sv2.mt; s.equippedMainhandRarity=sv2.mr; s.equippedOffhand=sv2.oh; s.equippedOffhandTier=sv2.ot; s.equippedOffhandRarity=sv2.or; s.equippedMainhandUid=sv2.muid; s.equippedOffhandUid=sv2.ouid; s.uniqueItems=sv2.ui; s.xp.claw=sv2.cx;
+    }
   });
 
   // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------

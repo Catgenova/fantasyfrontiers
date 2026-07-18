@@ -10465,6 +10465,19 @@
     state.equippedOffhand = typeId; state.equippedOffhandTier = u.tier+1; state.equippedOffhandRarity = u.rarity; state.equippedOffhandUid = uid;
     addLog('You equipped '+uniqueDisplayName(u)+'.','important'); return true;
   }
+  // A unique Claw is kind 'weapon' (equipUnique routes it to the main hand). This is the off-hand path:
+  // it dual-wields the unique Claw the same way a base off-hand Claw works, but keeps the uid so its
+  // enchants/enhance flow through equippedEnchantTotals. Requires a Claw already in the main hand.
+  function equipUniqueOffhandClaw(uid){
+    var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return false;
+    if(!/^stweapon_claw_t\d+_\w+$/.test(u.base)){ addLog('Only a Claw can be worn in the off-hand.','danger'); return false; }
+    if(!hasClawMainhand(state)){ addLog('You can only wield an off-hand Claw while a Claw is in your main hand.','danger'); return false; }
+    if(state.equippedMainhandUid===uid){ addLog('That Claw is already in your main hand.','danger'); return false; }
+    if(!meetsProficiencyRequirement(state.xp.claw, u.tier)){ addLog('Your Claws proficiency isn’t high enough to equip '+uniqueDisplayName(u)+' yet.','danger'); return false; }
+    unequipOffhandAny();
+    state.equippedOffhand = 'claw'; state.equippedOffhandTier = u.tier+1; state.equippedOffhandRarity = u.rarity; state.equippedOffhandUid = uid;
+    addLog('You equipped '+uniqueDisplayName(u)+' in your off-hand.','important'); return true;
+  }
   function equipUniqueBodyArmor(uid){
     var u = state.uniqueItems[uid];
     var m = /^bodyarmor_(.+)_(gauntlets|boots|chest|helmet|back)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
@@ -10989,6 +11002,34 @@
     });
     var head = label ? '<div class="section-intro" style="margin-top:10px"><b style="color:var(--gold)">&#10022; Unique '+escapeHtml(label)+'</b> you own &mdash; Equip directly; every enchantment is shown.</div>' : '';
     return head + '<div class="unique-inv-grid">'+uids.map(function(uid){ return renderUniqueEquipCard(state.uniqueItems[uid]); }).join('')+'</div>';
+  }
+  // Unique Claws offered for the OFF-HAND slot (a unique Claw is a 'weapon' kind, so it never shows up in
+  // renderUniqueEquipOptions('offhand', ...) -- surface it here so a dual-wielder can off-hand it).
+  function renderUniqueOffhandClawCard(u){
+    var inOff = state.equippedOffhandUid===u.uid, inMain = state.equippedMainhandUid===u.uid;
+    var lock = (!inOff && !inMain && !meetsProficiencyRequirement(state.xp.claw, u.tier)) ? ('Requires '+escapeHtml(SKILL_LABELS.claw||'Claws')+' Lv '+TIER_LEVELS[u.tier]) : null;
+    var btn;
+    if(inOff) btn = '<button class="mini-btn stop" data-action="improveUnequip" data-uid="'+u.uid+'" style="margin-top:9px;width:100%;">Unequip</button>';
+    else if(inMain) btn = '<button class="mini-btn" disabled style="margin-top:9px;width:100%;opacity:.5;">In main hand</button>';
+    else if(lock) btn = '<button class="mini-btn" disabled style="margin-top:9px;width:100%;opacity:.5;">'+svgIcon('lock','currentColor')+' '+lock+'</button>';
+    else btn = '<button class="mini-btn" data-action="equipUniqueOffhandClaw" data-uid="'+u.uid+'" style="margin-top:9px;width:100%;">Equip off-hand</button>';
+    return '<div class="unique-inv-card rar-'+u.rarity+'" style="cursor:default;">'
+      + (inOff ? '<div class="unique-inv-eq">'+svgIcon('claw','var(--gold)')+' Off-hand</div>' : '')
+      + uniqueCardBody(u) + btn + '</div>';
+  }
+  function renderUniqueOffhandClawOptions(){
+    if(!hasClawMainhand(state) || !state.uniqueItems) return '';
+    var uids = Object.keys(state.uniqueItems).filter(function(uid){
+      var u=state.uniqueItems[uid]; return u && u.kind==='weapon' && /^stweapon_claw_t\d+_\w+$/.test(u.base);
+    });
+    if(!uids.length) return '';
+    uids.sort(function(a,b){
+      var ea=(state.equippedOffhandUid===a)?1:0, eb=(state.equippedOffhandUid===b)?1:0;
+      if(ea!==eb) return eb-ea;
+      return (state.uniqueItems[b].tier-state.uniqueItems[a].tier) || ((state.uniqueItems[b].enhance||0)-(state.uniqueItems[a].enhance||0));
+    });
+    return '<div class="section-intro" style="margin-top:10px"><b style="color:var(--gold)">&#10022; Unique Claws</b> you own &mdash; dual-wield a second Claw in your off-hand (&minus;30% dmg, +30% timer).</div>'
+      + '<div class="unique-inv-grid">'+uids.map(function(uid){ return renderUniqueOffhandClawCard(state.uniqueItems[uid]); }).join('')+'</div>';
   }
   // Split a raw chat body into escaped text + rendered item chips (censor only the text segments so a
   // base64 payload is never mangled by the profanity filter).
@@ -15190,6 +15231,7 @@
     }
     html += renderGearSelector('offhand');
     if(weaponStyle.hand!=='2h') html += renderUniqueEquipOptions('offhand', null, 'Offhands');
+    if(hasClawMainhand(state)) html += renderUniqueOffhandClawOptions();
     html += '<div class="section-intro" style="margin-top:10px">One-handed weapons free up your offhand for a shield or ward; bows pair with a quiver instead; two-handed weapons need both hands. Forge new gear via Outfitting &rarr; Weaponsmithing / Shieldsmithing / Runesmithing. Damage types cycle slashing &gt; piercing &gt; blunt &gt; slashing.</div>';
     if(weaponStyle.hand==='bow'){
       html += renderEquipQuiverSection();
@@ -15374,8 +15416,11 @@
       // An off-hand Claw is a weapon, not defensive gear, so getEquippedOffhandItem() returns null for it
       // -- surface it explicitly here or the slot renders "Empty" even while a second Claw is equipped.
       if(hasOffhandClaw(state)){
+        var uOff = state.equippedOffhandUid && state.uniqueItems && state.uniqueItems[state.equippedOffhandUid];
         var ohc = getEquippedOffhandClawItem(state), cst = getWeaponStyle('claw');
-        return { label:'Offhand', filled:true, icon: (ohc && ohc.icon) ? ohc.icon : ((cst && cst.icon) || svgIcon('claw',EMPTY)), name: (ohc && ohc.name) || 'Claws', rarity: state.equippedOffhandRarity||'normal' };
+        return { label:'Offhand', filled:true, icon: (ohc && ohc.icon) ? ohc.icon : ((cst && cst.icon) || svgIcon('claw',EMPTY)),
+          name: uOff ? uniqueDisplayName(uOff) : ((ohc && ohc.name) || 'Claws'),
+          rarity: uOff ? (uOff.rarity||'normal') : (state.equippedOffhandRarity||'normal') };
       }
       var oh = getEquippedOffhandItem(state), os = getOffhandStyle(state.equippedOffhand);
       return { label:'Offhand', filled:!!oh, icon: (oh && os && os.icon) ? os.icon : svgIcon('shield',EMPTY), name: oh && os ? os.name : 'Empty', rarity: oh ? (state.equippedOffhandRarity||'normal') : 'normal' };
@@ -24844,6 +24889,7 @@
     forgeStackableWeapon: function(btn, e){ craftStackableWeapon(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10)); },
     equipStackableWeapon: function(btn, e){ equipStackableWeapon(btn.getAttribute('data-item')); },
     equipOffhandClaw: function(btn, e){ equipOffhandClaw(btn.getAttribute('data-item')); },
+    equipUniqueOffhandClaw: function(btn, e){ if(equipUniqueOffhandClaw(btn.getAttribute('data-uid'))){ armorPanelExpanded = true; saveGame(); } },
     unequipOffhandClaw: function(btn, e){ unequipOffhandClaw(); },
     unequipStackableWeapon: function(btn, e){ unequipStackableWeapon(); },
     forgeStackableShield: function(btn, e){ craftStackableShield(btn.getAttribute('data-type'), parseInt(btn.getAttribute('data-tier'),10)); },
@@ -25009,7 +25055,7 @@
   var COMBAT_LOCKED_ACTIONS = {
     equipStackableWeapon:1, unequipStackableWeapon:1, equipStackableShield:1, unequipStackableShield:1,
     equipStackableQuiver:1, unequipStackableQuiver:1, equipArrow:1,
-    equipWard:1, unequipWard:1, equipOffhand:1, equipOffhandClaw:1, unequipOffhandClaw:1,
+    equipWard:1, unequipWard:1, equipOffhand:1, equipOffhandClaw:1, equipUniqueOffhandClaw:1, unequipOffhandClaw:1,
     equipBodyArmor:1, unequipBodyArmor:1, equipBelt:1, unequipBelt:1, equipRelic:1, unequipRelic:1,
     equipRing:1, unequipRing:1, equipAmulet:1, unequipAmulet:1,
     equipLegRing:1, unequipLegRing:1, equipLegAmulet:1, unequipLegAmulet:1, equipLegCloak:1,
@@ -25706,7 +25752,7 @@
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, itemReconcile:itemReconcile,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
       parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant,
-      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
+      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
