@@ -5766,6 +5766,16 @@
     eq(FF.enchantHpRegen(stRegCap), 10, 'stacked hpRegen enchants (18 raw) cap at 10 HP / 5s');
     // The enchant reads as a per-5s regen on the item card.
     eq(FF.enchantLabel('bodyarmor', {mod:'hpRegen', roll:6}), '+6 HP Regen / 5s', 'HP Regen enchant label reads per 5s');
+    // The Improvement card lists every possible enchant roll for the item's kind, with min-max ranges.
+    ok(typeof FF.enchantPoolListHtml === 'function', 'enchantPoolListHtml exported');
+    var poolW = FF.enchantPoolListHtml('weapon');
+    eq((poolW.match(/inputs-line/g)||[]).length, FF.ENCHANT_MODS.weapon.length, 'weapon pool lists every weapon enchant mod');
+    ok(/Critical Damage/.test(poolW) && /\+5% – \+30%/.test(poolW), 'weapon pool shows Critical Damage +5% to +30%');
+    ok(/Flat Damage/.test(poolW) && /\+3 – \+20/.test(poolW), 'flat (non-pct) mods show a plain +min to +max range');
+    var poolA = FF.enchantPoolListHtml('bodyarmor');
+    eq((poolA.match(/inputs-line/g)||[]).length, FF.ENCHANT_MODS.armor.length, 'armour pool lists every armour enchant mod');
+    ok(/HP Regen \/ 5s/.test(poolA) && /\+1 – \+6/.test(poolA), 'armour pool shows HP Regen per 5s with its range');
+    eq((FF.enchantPoolListHtml('ring').match(/inputs-line/g)||[]).length, FF.ENCHANT_MODS.jewelry.length, 'jewelry (ring) pool lists every jewelry enchant mod');
     // Defense (armour): a % multiplier on total Armor (also lifts the stat-panel Armor row).
     var stDef = { uniqueItems:{ ch:{uid:'ch',kind:'bodyarmor',enhance:0,enchants:[{mod:'defense',roll:30}]} },
                   bodyArmor:{ chest:{uid:'ch'} }, jewelrySlots:{} };

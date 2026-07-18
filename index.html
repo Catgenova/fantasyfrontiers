@@ -10346,6 +10346,15 @@
     return { mod: mod.id, roll: mod.min + Math.floor(Math.random()*(mod.max - mod.min + 1)) };
   }
   function enchantLabel(kind, e){ var m = enchantModById(kind, e.mod); if(!m) return '+'+e.roll+' ?'; return '+'+e.roll+(m.pct?'%':'')+' '+m.label+(m.id==='hpRegen'?' / 5s':''); }
+  // Every enchant this item's kind can roll, with each mod's min-max range, so the player knows the pool
+  // (and the value bands) before spending a Crystal. Shown on the Improvement card while it's enchantable.
+  function enchantPoolListHtml(kind){
+    var pool = ENCHANT_MODS[enchantCategoryForKind(kind)]; if(!pool || !pool.length) return '';
+    var rows = pool.map(function(m){
+      return '<div class="inputs-line" style="display:flex;justify-content:space-between;gap:10px;padding:1px 0;"><span>'+escapeHtml(m.label)+(m.id==='hpRegen'?' / 5s':'')+'</span><span style="color:var(--gold);font-family:var(--font-mono);">'+('+'+m.min+(m.pct?'%':''))+' – '+('+'+m.max+(m.pct?'%':''))+'</span></div>';
+    }).join('');
+    return '<details class="enchant-pool" style="margin-top:8px;"><summary style="cursor:pointer;font-size:12px;color:var(--text-dim);">Possible enchant rolls ('+pool.length+') &amp; their ranges</summary><div style="margin-top:4px;">'+rows+'</div></details>';
+  }
   // Crystal cost for the NEXT enchant on an item = (current enchant count) + 1.
   function enchantCrystalCost(u){ return ((u && u.enchants) ? u.enchants.length : 0) + 1; }
   // Monotonic unique-instance id per save.
@@ -11101,6 +11110,8 @@
       html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn" data-action="improveEnchant" style="width:auto;flex:0 0 auto;">Enchant ('+cost+')</button>';
       html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleWarn"'+(state.enchantWarnHiTier?' checked':'')+'> warn on higher-tier crystals</label></div>';
     }
+    // While the item can still be enchanted, list every roll its kind can produce and each roll's range.
+    if(enhance===0) html += enchantPoolListHtml(isU2 ? u.kind : (pp && pp.kind));
     if(isU2 || isEq){
       var eLvl = isU2 ? u.enhance : 0, ecost = eLvl+1, chance = Math.round(enhanceSuccessChance(eLvl)*100);
       var enhTarget = isU2 ? u.uid : improveSel; // for an equipped base, the equip token (converts on click)
@@ -25815,7 +25826,7 @@
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, itemReconcile:itemReconcile,
-      ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
+      ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX,
       parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, mainhandEnhanceMult:mainhandEnhanceMult,
