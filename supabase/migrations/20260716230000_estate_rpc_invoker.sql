@@ -1,0 +1,11 @@
+-- Flip get_profile_estate to SECURITY INVOKER to clear the Supabase advisor 0028/0029 warnings.
+--
+-- It only reads a single player's PUBLIC estate (viewable from the leaderboard anyway), so it never needed
+-- definer rights. Running as the CALLER means no RLS bypass and no advisor flag (the linter only flags
+-- SECURITY DEFINER functions). anon/authenticated already have select on profiles, so the function keeps
+-- working for the "Visit Estate" button and the client needs no change.
+--
+-- This SUPERSEDES the Phase-2 "revoke select (estate) on profiles" plan noted in 20260716210000: we do NOT
+-- lock the estate column, because that would break this invoker function and direct reads. Estate is public
+-- data, and bulk reads are bounded by the Data API "Max Rows" cap (~100) -- the proportionate mitigation.
+alter function public.get_profile_estate(uuid) security invoker;
