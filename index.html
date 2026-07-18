@@ -21296,9 +21296,27 @@
     if(chatChannel==='global') chatRenderMessagesOnly(); // refresh in place if the global feed is showing
     noteChatActivity();
   }
+  // ---- Scrolling feeds (chat / guild chat / chronicle) ----------------------------------------
+  // These re-render constantly -- on every incoming message AND on every full render, which rebuilds
+  // #content wholesale. Snapping to the newest entry unconditionally yanked a reader who had scrolled
+  // up into history straight back to the bottom every few seconds. Only follow the live feed when the
+  // reader was already parked at the bottom; otherwise leave them exactly where they were.
+  var FEED_STICK_PX = 30;   // "within 30px of the bottom" counts as following along
+  function feedAtBottom(el){ return !el || (el.scrollHeight - el.scrollTop - el.clientHeight) < FEED_STICK_PX; }
+  function feedRenderStick(el, html){
+    if(!el) return;
+    var stick = feedAtBottom(el), prev = el.scrollTop;
+    el.innerHTML = html;
+    el.scrollTop = stick ? el.scrollHeight : prev;
+  }
+  // For feeds destroyed by a full #content rebuild: snapshot BEFORE the swap, restore after.
+  function feedSnapshot(id){ var el = document.getElementById(id); return el ? { stick: feedAtBottom(el), top: el.scrollTop } : null; }
+  function feedRestore(id, snap){
+    var el = document.getElementById(id); if(!el) return;
+    el.scrollTop = (!snap || snap.stick) ? el.scrollHeight : snap.top;   // no snapshot = first open -> newest
+  }
   function chatRenderMessagesOnly(){
-    var el = document.getElementById('chatMessages');
-    if(el){ el.innerHTML = chatMessagesHtml(); el.scrollTop = el.scrollHeight; }
+    feedRenderStick(document.getElementById('chatMessages'), chatMessagesHtml());
   }
   // Chronicle now lives as a tab inside the Chat panel (read-only event feed).
   function chronicleFeedHtml(){
@@ -21307,7 +21325,7 @@
   }
   function chronicleRenderOnly(){
     var el = document.getElementById('chronicleFeed');
-    if(el){ var atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30; el.innerHTML = chronicleFeedHtml(); if(atBottom) el.scrollTop = el.scrollHeight; }
+    feedRenderStick(el, chronicleFeedHtml());
   }
   function renderChatTab(){
     guildEnsureLoaded();
@@ -22841,7 +22859,7 @@
     if(!guildChatMessages.length) return '<div class="chat-empty">No guild messages yet &mdash; say hello to your guildmates!</div>';
     return guildChatMessages.map(function(m){ return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+chatBodyHtml(m.body||'')+'</span></div>'; }).join('');
   }
-  function guildChatRenderOnly(){ var el=document.getElementById('chatMessages'); if(el){ el.innerHTML=guildChatMessagesHtml(); el.scrollTop=el.scrollHeight; } }
+  function guildChatRenderOnly(){ feedRenderStick(document.getElementById('chatMessages'), guildChatMessagesHtml()); }
   function guildChatOnIncoming(m){
     if(!m || guildChatMessages.some(function(x){ return x.id===m.id; })) return;
     guildChatMessages.push(m);
@@ -23234,11 +23252,15 @@
     else if(currentCategory==='guild'){ guildEnsureLoaded(); html = renderGuildTab(); }
     else if(currentCategory==='chat') html = renderChatTab();
     else if(currentCategory==='leaderboard'){ leaderboardFetch(); html = renderLeaderboardTab(); }
+    // The chat + chronicle feeds live inside #content, so this swap destroys them. Capture where the
+    // reader was BEFORE replacing, so a full render (which fires constantly) can't drag someone who
+    // scrolled up into history back down to the newest message.
+    var _chatSnap = feedSnapshot('chatMessages'), _chronSnap = feedSnapshot('chronicleFeed');
     document.getElementById('content').innerHTML = html;
     if(currentCategory==='estate'){ estUse(false); renderEstateCanvas(); }
     if(currentCategory==='visitestate' && estateVisit.estate){ estActive = estateVisit.estate; estIsGuild = false; estReadOnly = true; renderEstateCanvas(); }
     if(currentCategory==='guild' && guildSub==='estate' && guildEstate.status==='ready'){ estUse(true); estReadOnly=false; renderEstateCanvas(); }
-    if(currentCategory==='chat'){ var _cm=document.getElementById('chatMessages'); if(_cm) _cm.scrollTop=_cm.scrollHeight; }
+    if(currentCategory==='chat'){ feedRestore('chatMessages', _chatSnap); feedRestore('chronicleFeed', _chronSnap); }
   }
 
   // ================= RENDER: SIDEBAR =================
