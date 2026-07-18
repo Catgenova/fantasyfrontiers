@@ -787,8 +787,13 @@
     eq(after.g - before.g, 50, 'each cache drops exactly one Grain seed');
     eq(after.h - before.h, 50, 'each cache drops exactly one Herb seed');
     eq(S.inventory.critter_cache || 0, 0, 'all 50 caches were consumed');
-    // Base drop chance is 5% (Forestry, Botany, and Herbalism share critterCacheChance, whose base is this).
+    // Base drop chance is 5% (Forestry, Botany, Herbalism & Foraging share critterCacheChance).
     eq(FF.BASE_NEST_CHANCE, 0.05, 'critter cache base chance is 5%');
+    // Herbalism & Foraging traded raw seed side-drops for the Critter Cache; Botany still drops raw seeds.
+    ['forestry','botany','herbalism','foraging'].forEach(function(sk){ ok(FF.CRITTER_CACHE_SKILLS.indexOf(sk) !== -1, sk+' drops Critter Caches'); });
+    eq(FF.SEED_DROP_SKILLS.indexOf('foraging'), -1, 'Foraging no longer drops raw seeds');
+    eq(FF.SEED_DROP_SKILLS.indexOf('herbalism'), -1, 'Herbalism no longer drops raw seeds');
+    ok(FF.SEED_DROP_SKILLS.indexOf('botany') !== -1, 'Botany still drops raw seeds directly');
   });
 
   // ---- Cross-skill physiques: 20 new physiques trained by one skill, feeding another --------------

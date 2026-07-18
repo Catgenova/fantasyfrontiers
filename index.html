@@ -7544,8 +7544,11 @@
     }
   }
 
-  // Botany, Herbalism, and Foraging: flat 1% chance per action for a seed matching that tier.
-  var SEED_DROP_SKILLS = ['botany','foraging'];
+  // Gathers that turn up a Critter Cache (a rare drop that opens into a mix of seeds). Herbalism &
+  // Foraging trade their old raw seed side-drops for this cache instead (seeds now come from caches).
+  var CRITTER_CACHE_SKILLS = ['forestry','botany','herbalism','foraging'];
+  // Botany is the one gather that still drops raw seeds directly (its dedicated seed line).
+  var SEED_DROP_SKILLS = ['botany'];
   var BASE_SEED_DROP_CHANCE = 0.01;
   var BOTANY_SEED_DROP_CHANCE = 0.15; // Botany is the dedicated seed source; higher base than Foraging's.
   function maybeDropSeed(skillId, tierIndex){
@@ -9282,18 +9285,13 @@
         addItem(act.itemId, 1);
         spawnFloatingText('+1 ' + item.name, 'ft-success');
         gatherDoubleRoll(act.itemId, act.skill);
-        if(act.skill === 'forestry'){
+        // Forestry, Botany, Herbalism & Foraging turn up Critter Caches (5% base). Herbalism & Foraging
+        // no longer drop raw seeds -- their seeds now come from opening those caches instead.
+        if(CRITTER_CACHE_SKILLS.indexOf(act.skill) !== -1){
           maybeDropCritterCache();
-        } else if(SEED_DROP_SKILLS.indexOf(act.skill) !== -1){
+        }
+        if(SEED_DROP_SKILLS.indexOf(act.skill) !== -1){
           maybeDropSeed(act.skill, parseInt(act.itemId.split('_t')[1], 10));
-        }
-        // Botany & Herbalism also turn up Critter Caches (5% base), on top of their own seed drops.
-        if(act.skill === 'botany' || act.skill === 'herbalism'){
-          maybeDropCritterCache();
-        }
-        if(act.skill === 'herbalism'){
-          maybeDropGrainSeed(parseInt(act.itemId.split('_t')[1], 10));
-          maybeDropHerbSeed(parseInt(act.itemId.split('_t')[1], 10));
         }
         if(act.skill === 'foraging'){
           maybeDropPowder(parseInt(act.itemId.split('_t')[1], 10));
@@ -13160,7 +13158,7 @@
     "<b>Fishing</b> can snag a Treasure Chest on a cast that comes up empty. Even a whiff can pay off.",
     "<b>Mining</b> yields ore for Metallurgy, plus the odd Coal and Gem. A better Pickaxe finds more.",
     "<b>Forestry</b> logs feed Carpentry, Bowyer, and Fletching — the whole wooden supply chain starts with a tree.",
-    "<b>Herbalism</b> gathers Herbs for Hot Food Cooking and can turn up Grain and Herb Seeds for Farming.",
+    "<b>Herbalism</b> gathers Herbs for Hot Food Cooking and can turn up a Critter Cache — open it for a mix of Farming Seeds.",
     "<b>Foraging</b> berries feed Baking, and a lucky forage turns up Powder for Pyrotechnics.",
     "<b>Beekeeping</b> harvests Honey — sweet stuff for Confectionery and Baking.",
     "<b>Ranching's</b> Milk churns into Cheese in Dairy, which Gastronomy plates into the game's best Feasts.",
@@ -13584,11 +13582,9 @@
       } else if(skillKey==='botany'){
         html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> &nbsp;|&nbsp; Bonus: Seed <b>'+Math.round(BOTANY_SEED_DROP_CHANCE*100)+'%</b></div>';
       } else if(skillKey==='herbalism'){
-        var itemTierIdx = parseInt(item.id.split('_t')[1], 10);
-        var grainNote = itemTierIdx >= GRAIN_TIER_COUNT ? 'none at this tier' : Math.round(grainSeedChance(state)*100)+'%';
-        html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> &nbsp;|&nbsp; Bonus: Herb Seed <b>'+Math.round(BASE_SEED_DROP_CHANCE*100)+'%</b>, Grain Seed <b>'+grainNote+'</b></div>';
+        html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> &nbsp;|&nbsp; Bonus: Critter Cache <b>'+Math.round(critterCacheChance(state)*100)+'%</b></div>';
       } else if(skillKey==='foraging'){
-        html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> &nbsp;|&nbsp; Bonus: Seed <b>'+Math.round(BASE_SEED_DROP_CHANCE*100)+'%</b>, Powder <b>'+Math.round(foragingPowderChance(state)*100)+'%</b>, Artifact <b>'+Math.round(foragingArtifactChance(state)*100)+'%</b></div>';
+        html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> &nbsp;|&nbsp; Bonus: Critter Cache <b>'+Math.round(critterCacheChance(state)*100)+'%</b>, Powder <b>'+Math.round(foragingPowderChance(state)*100)+'%</b>, Artifact <b>'+Math.round(foragingArtifactChance(state)*100)+'%</b></div>';
       } else {
         html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> &nbsp;|&nbsp; Chance: <b>100%</b></div>';
       }
@@ -23114,7 +23110,7 @@
     forestry: 'Chop logs from increasingly exotic trees, from Willow up to Sequoia.',
     mining: 'Mine stone and ore, with a chance for bonus Coal and Gems.',
     fishing: 'Catch fish, from common Bluegill up to legendary Bluefin Tuna.',
-    herbalism: 'Gather medicinal herbs, with a chance for bonus Grain Seeds and Herb Seeds.',
+    herbalism: 'Gather medicinal herbs, with a chance for a Critter Cache that opens into Farming Seeds.',
     botany: 'Gather culinary herbs and spices, from Basil up to Truffle.',
     foraging: 'Forage wild berries, with a chance for bonus Powder and Muddy Artifacts.',
     butchering: 'Hunt wildlife directly for Hide, from Rabbit up to Apex Titan-Beast.',
@@ -23291,8 +23287,8 @@
   var SKILL_BENEFIT_EXTRA = {
     digging:     [['focus','Coal find chance'],['criticalThinking','Muddy Artifact chance']],
     mining:      [['endurance','Coal find chance'],['solving','Gem find chance']],
-    herbalism:   [['fineMotor','Grain Seed drop chance']],
-    foraging:    [['solving','Powder drop chance']],
+    herbalism:   [['armStrength','Critter Cache chance']],
+    foraging:    [['solving','Powder drop chance'],['armStrength','Critter Cache chance']],
     archaeology: [['focus','success rate'],['criticalThinking','success rate']]
   };
   function physiqueBenefitsForSkill(skillId){
@@ -23385,10 +23381,9 @@
       } else if(skillId==='botany'){
         lines.push('Seed Chance: <b>'+Math.round(BOTANY_SEED_DROP_CHANCE*100)+'%</b> (flat, matches the tier you\'re working)');
       } else if(skillId==='herbalism'){
-        lines.push('Herb Seed Chance: <b>'+Math.round(BASE_SEED_DROP_CHANCE*100)+'%</b> (flat)');
-        lines.push('Grain Seed Chance: <b>'+Math.round(grainSeedChance(state)*100)+'%</b> (base 5%, Fine Motor adds more, caps at 10%; none from the top tier)');
+        lines.push('Critter Cache Chance: <b>'+Math.round(critterCacheChance(state)*100)+'%</b> (base 5%, Arm Strength adds more) &mdash; open one from your Inventory for a mix of Seeds');
       } else if(skillId==='foraging'){
-        lines.push('Seed Chance: <b>'+Math.round(BASE_SEED_DROP_CHANCE*100)+'%</b> (flat)');
+        lines.push('Critter Cache Chance: <b>'+Math.round(critterCacheChance(state)*100)+'%</b> (base 5%, Arm Strength adds more) &mdash; open one from your Inventory for a mix of Seeds');
         lines.push('Powder Chance: <b>'+Math.round(foragingPowderChance(state)*100)+'%</b> (base 3%, Solving adds more, caps at 8%)');
         lines.push('Artifact Chance: <b>'+Math.round(foragingArtifactChance(state)*100)+'%</b> (flat)');
       }
@@ -25861,7 +25856,7 @@
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       guildLogPush:guildLogPush, renderGuildActivityLog:renderGuildActivityLog, GUILD_LOG_MAX:GUILD_LOG_MAX, guildIsOfficerPlus:guildIsOfficerPlus,
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
-      fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE, openCritterCaches:openCritterCaches, critterCacheChance:critterCacheChance, BASE_NEST_CHANCE:BASE_NEST_CHANCE,
+      fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE, openCritterCaches:openCritterCaches, critterCacheChance:critterCacheChance, BASE_NEST_CHANCE:BASE_NEST_CHANCE, CRITTER_CACHE_SKILLS:CRITTER_CACHE_SKILLS, SEED_DROP_SKILLS:SEED_DROP_SKILLS,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
