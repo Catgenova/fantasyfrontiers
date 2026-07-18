@@ -29,13 +29,13 @@ function json(body: unknown, status = 200): Response {
 
 // Server-authoritative dungeon roster. These MUST match the client's DUNGEON_D1_ENEMIES:
 //   hp[i]  = round(50000 * 1.05^i) for i < 24; hp[24] = round(hp[23]*10)   (boss ~10x the 24th)
-//   atk[i] = round((round(200*1.04^i) + round(500*1.04^i)) / 2)            (avg enemy hit)
+//   atk[i] = round((round(80*1.04^i) + round(200*1.04^i)) / 2)             (avg enemy hit; group offense cut 60%, was 200/500)
 //   spd_ms[i] = round((2.2 + (i%5)*0.3) * 1000)                            (enemy attack interval)
 function d1Roster(): { hp: number[]; atk: number[]; spd: number[] } {
   const hp: number[] = [], atk: number[] = [], spd: number[] = [];
   for (let i = 0; i < 25; i++) {
     hp.push(Math.round(50000 * Math.pow(1.05, i)));
-    atk.push(Math.round((Math.round(200 * Math.pow(1.04, i)) + Math.round(500 * Math.pow(1.04, i))) / 2));
+    atk.push(Math.round((Math.round(80 * Math.pow(1.04, i)) + Math.round(200 * Math.pow(1.04, i))) / 2));
     spd.push(Math.round((2.2 + (i % 5) * 0.3) * 1000));
   }
   hp[24] = Math.round(hp[23] * 10);
