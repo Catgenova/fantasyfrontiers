@@ -1353,6 +1353,31 @@
     ok(FF.feastDamageBonus() > 0, 'active feast adds weapon damage');
     ok(FF._state.playerHp > 1, 'serving a feast also heals');
     ok(FF.GATHER_PHYSIQUE.ranching && FF.CRAFT_PHYSIQUE.dairy && FF.CRAFT_PHYSIQUE.gastronomy, 'physique tables include the new skills');
+
+    // Combat UI: Feasts + Confections surface as usable item buffs like Potions/Bombs do.
+    ok(typeof FF.foodConsumableList === 'function' && typeof FF.eatConfection === 'function', 'food-consumable helpers exported');
+    var _sv = { inv: FF._state.inventory, hp: FF._state.playerHp, feast: FF._state.activeFeast };
+    try {
+      FF._state.inventory = { gastronomy_t3:2, confectionery_t2:3 };
+      FF._state.activeFeast = { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 };
+      FF._state.playerHp = 1;
+      var flist = FF.foodConsumableList();
+      eq(flist.length, 2, 'a Feast and a Confection both surface as combat consumables');
+      ok(flist.some(function(x){ return x.id==='gastronomy_t3' && x.action==='serveFeast'; }), 'Feast uses the serveFeast action');
+      ok(flist.some(function(x){ return x.id==='confectionery_t2' && x.action==='eatConfection'; }), 'Confection uses the eatConfection action');
+      var fpanel = FF.renderFoodConsumablesPanel();
+      ok(/data-action="serveFeast"/.test(fpanel) && /data-action="eatConfection"/.test(fpanel), 'the panel offers both Serve and Eat buttons');
+      var beforeHp = FF._state.playerHp;
+      FF.eatConfection('confectionery_t2');
+      ok(FF._state.playerHp > beforeHp, 'eating a Confection heals');
+      eq(FF._state.inventory['confectionery_t2'], 2, 'eating a Confection consumes exactly one');
+      // At full HP a Confection is not wasted.
+      FF._state.playerHp = FF.maxHp(FF._state);
+      FF.eatConfection('confectionery_t2');
+      eq(FF._state.inventory['confectionery_t2'], 2, 'a Confection is not consumed at full HP');
+    } finally {
+      FF._state.inventory = _sv.inv; FF._state.playerHp = _sv.hp; FF._state.activeFeast = _sv.feast;
+    }
   });
 
   // ---- Mycology / Apothecary vertical slice (poison Weapon Coatings) --------------------------

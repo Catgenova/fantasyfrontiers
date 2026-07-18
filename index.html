@@ -12476,6 +12476,34 @@
     addLog('You feast on a ' + recipe.name + (healed>0 ? (', recovering ' + healed + ' HP and') : ',') + ' empowering your attacks +' + Math.round(recipe.feastBonus*100) + '% for ' + Math.round(recipe.feastDurationMs/60000) + ' minutes.', 'important');
     needsRender = true;
   }
+  // Eat a specific Confectionery snack (Confectionery): an instant heal, usable mid-fight from the combat
+  // consumables UI. Unlike auto-eat food it's manual/on-demand, so a player can top up exactly when needed.
+  function eatConfection(itemId){
+    var recipe = ALL_CRAFT_RECIPES[itemId];
+    if(!recipe || typeof recipe.heal !== 'number') return;
+    if((state.inventory[itemId]||0) <= 0) return;
+    var room = healRoom(state);
+    if(room <= 0){ addLog('You are already at full Health.', 'danger'); return; }
+    state.inventory[itemId] -= 1;
+    var healed = Math.min(recipe.heal, room);
+    state.playerHp += healed;
+    addLog('You ate a ' + recipe.name + ' and recovered ' + healed + ' HP.', 'important');
+    if(state.activity && state.activity.type==='combat') spawnFloatingText('+' + healed + ' HP', 'ft-success');
+    needsRender = true;
+  }
+  // Owned Gastronomy Feasts (timed +dmg buff) + Confectionery snacks (instant heal) as combat consumables,
+  // surfaced in the same combat UI as Potions/Bombs so they can be used mid-fight without leaving the screen.
+  function foodConsumableList(){
+    var out = [];
+    for(var i=0;i<TIER_COUNT;i++){ var fid='gastronomy_t'+i, fq=state.inventory[fid]||0; if(fq>0){ var fr=ALL_CRAFT_RECIPES[fid]||{};
+      out.push({ id:fid, name:fr.name||fid, icon:fr.icon||'', qty:fq, action:'serveFeast', kind:'feast',
+        desc:'+'+Math.round((fr.feastBonus||0)*100)+'% dmg · '+Math.round((fr.feastDurationMs||0)/60000)+'m',
+        active:(isFeastActive() && state.activeFeast.itemId===fid) }); } }
+    for(var j=0;j<TIER_COUNT;j++){ var cid='confectionery_t'+j, cq=state.inventory[cid]||0; if(cq>0){ var cr=ALL_CRAFT_RECIPES[cid]||{};
+      out.push({ id:cid, name:cr.name||cid, icon:cr.icon||'', qty:cq, action:'eatConfection', kind:'snack',
+        desc:'+'+(cr.heal||0)+' HP', active:false }); } }
+    return out;
+  }
   // Studying a Tome (Bookbinding): starts/refreshes the timed work-speed buff. Doesn't stack.
   function studyTome(itemId){
     var recipe = ALL_CRAFT_RECIPES[itemId];
@@ -15616,6 +15644,25 @@
       html += '</div>';
     });
     if(!any) html += '<div class="empty-note">No combat consumables in your bag. Craft Potions (Alchemy), Weapon Coatings (Apothecary), Bombs (Tinkering), or Flash Bombs (Pyrotechnics).</div>';
+    html += renderFoodConsumablesPanel();
+    return html;
+  }
+  // Gastronomy Feasts + Confectionery snacks as combat item buffs, styled to match the Combat Potions panel.
+  function renderFoodConsumablesPanel(){
+    var food = foodConsumableList();
+    if(!food.length) return '';
+    var html = '<h3 style="margin-top:16px">'+svgIcon('meal','#d8a02a')+' Feasts &amp; Snacks</h3>';
+    html += '<div class="section-intro">Serve a Gastronomy Feast for a timed weapon-damage buff, or eat a Confectionery snack for an instant heal — usable any time, including mid-fight. Feasts don\'t stack (a new one refreshes the buff).</div>';
+    if(isFeastActive()){
+      html += '<div class="physique-bonus">Feast active: <b>'+state.activeFeast.icon+' '+escapeHtml(state.activeFeast.name)+'</b> &mdash; +'+Math.round(state.activeFeast.dmgBonus*100)+'% damage &bull; '+formatDuration(state.activeFeast.expiresAt-Date.now())+' left</div>';
+    }
+    html += '<div class="style-row">';
+    food.forEach(function(f){
+      html += '<button class="style-btn'+(f.active?' active':'')+'" data-action="'+f.action+'" data-item="'+f.id+'">'
+        + '<span>'+(f.icon||'')+' '+escapeHtml(f.name)+' <span class="style-lvl">x'+f.qty+'</span></span>'
+        + '<span class="style-type" style="text-transform:none;">'+f.desc+'</span></button>';
+    });
+    html += '</div>';
     return html;
   }
   // Accuracy training card: shows the current Accuracy rating and the fixed set of combat-reflex
@@ -16422,6 +16469,13 @@
     });
     if(chips.length) h += '<div style="display:flex;flex-wrap:wrap;gap:5px;">'+chips.join('')+'</div>';
     else if(!state.activePotion) h += '<div class="empty-note" style="margin:0">No combat consumables in your bag &mdash; craft Potions, Coatings, Bombs, or Flash Bombs.</div>';
+    // Gastronomy Feasts (timed +dmg buff) + Confectionery snacks (instant heal), usable mid-fight.
+    var food = foodConsumableList();
+    if(food.length){
+      h += '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;">'+food.map(function(f){
+        return '<button class="arena-item-chip'+(f.active?' on':'')+'" data-action="'+f.action+'" data-item="'+f.id+'" title="'+escapeHtml(f.name+' — '+f.desc)+'"><span>'+(f.icon||'')+' '+escapeHtml(f.name)+'</span><span class="qty">'+escapeHtml(f.desc)+' &bull; x'+f.qty+'</span></button>';
+      }).join('')+'</div>';
+    }
     return h+'</div>';
   }
   // ================= DUNGEON RUNS =================
@@ -24931,6 +24985,7 @@
     deactivatePotion: function(btn, e){ deactivatePotion(); },
     drinkTea: function(btn, e){ drinkTea(btn.getAttribute('data-item')); },
     serveFeast: function(btn, e){ serveFeast(btn.getAttribute('data-item')); },
+    eatConfection: function(btn, e){ eatConfection(btn.getAttribute('data-item')); },
     studyTome: function(btn, e){ studyTome(btn.getAttribute('data-item')); },
     readScroll: function(btn, e){ readScroll(btn.getAttribute('data-item')); },
     drinkBestTea: function(btn, e){ drinkBestTea(); },
@@ -25784,7 +25839,7 @@
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, ALL_SELLABLE:ALL_SELLABLE, ALL_DROP_ITEMS:ALL_DROP_ITEMS, FAT_ITEMS:FAT_ITEMS, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES, vendorSellValue:vendorSellValue, SELL_RARITY_MULT:SELL_RARITY_MULT,
-      isFeastActive:isFeastActive, feastDamageBonus:feastDamageBonus, serveFeast:serveFeast,
+      isFeastActive:isFeastActive, feastDamageBonus:feastDamageBonus, serveFeast:serveFeast, eatConfection:eatConfection, foodConsumableList:foodConsumableList, renderFoodConsumablesPanel:renderFoodConsumablesPanel,
       isTomeActive:isTomeActive, tomeSpeedBonus:tomeSpeedBonus, studyTome:studyTome, bestAvailableTome:bestAvailableTome, ownedTomes:ownedTomes, speedMultiplier:speedMultiplier,
       isScrollActive:isScrollActive, scrollDamageReduction:scrollDamageReduction, readScroll:readScroll,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
