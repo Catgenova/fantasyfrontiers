@@ -6049,6 +6049,33 @@
     });
   });
 
+  // ---- Blacksmithing: "Equip Best" picks and equips the top owned tool for a skill --------------
+  suite('blacksmithing: equip best tool', function(){
+    ok(typeof FF.equipBestTool === 'function' && typeof FF.bestOwnedToolForSkill === 'function', 'equip-best helpers exported');
+    var s = FF._state;
+    var sv = { inv:s.inventory, gt:s.gatherTools, gr:s.gatherToolRarities };
+    try {
+      var sk = 'herbalism';
+      s.inventory = {}; s.gatherTools = {}; s.gatherToolRarities = {};
+      s.gatherTools[sk] = 0; s.gatherToolRarities[sk] = 'normal';
+      s.inventory['tool_'+sk+'_t2_normal'] = 1;
+      s.inventory['tool_'+sk+'_t5_rare'] = 1;
+      // best = highest tier, then highest rarity -> the t5 rare.
+      eq(FF.bestOwnedToolForSkill(sk).id, 'tool_'+sk+'_t5_rare', 'best owned tool is the highest tier/rarity');
+      FF.equipBestTool(sk);
+      eq(s.gatherTools[sk], 6, 'Equip Best equips the tier-5 tool (stored as tier+1)');
+      eq(s.gatherToolRarities[sk], 'rare', 'Equip Best carries the rarity');
+      eq(s.inventory['tool_'+sk+'_t5_rare']||0, 0, 'the equipped tool is consumed from the bag');
+      eq(s.inventory['tool_'+sk+'_t2_normal']||0, 1, 'lesser tools stay in the bag');
+      ok(FF.equippedToolAtLeast(sk, FF.TOOL_ITEMS['tool_'+sk+'_t2_normal']), 'the equipped tool now beats the leftover');
+      // A second Equip Best does not downgrade to the leftover t2.
+      FF.equipBestTool(sk);
+      eq(s.gatherTools[sk], 6, 'Equip Best never downgrades when the equipped tool is already best');
+    } finally {
+      s.inventory = sv.inv; s.gatherTools = sv.gt; s.gatherToolRarities = sv.gr;
+    }
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }
