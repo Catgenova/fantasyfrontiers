@@ -12,14 +12,16 @@
 --   * `get_profile_estate(id)`  -- one player's estate on demand (scalar => can't be bulk-scraped).
 -- The client is repointed at these (with a fallback to the base table so deploy order doesn't matter).
 --
--- PHASE 2 (run only AFTER the new client has fully rolled out -- see the revoke block shipped separately):
---   revoke select on public.profiles from anon, authenticated;   -- locks the base table to the service role
--- Until then, set Dashboard -> Settings -> API -> Max Rows to a small cap (~100) for immediate mitigation.
+-- PHASE 2 (run only AFTER the new client has fully rolled out):
+--   revoke select (estate) on public.profiles from anon, authenticated;  -- hides the heavy estate blob from
+--   direct/bulk reads. Leaderboard columns stay public BY DESIGN; the estate RPC still serves it one row at
+--   a time. (Column-level, not a full-table revoke, so the security_invoker view below keeps working.)
+-- Until then, set Dashboard -> Project Settings -> API -> Max Rows to a small cap (~100) for immediate mitigation.
 
--- Bounded public projection. A SECURITY DEFINER view (the default): it reads profiles as the view owner,
--- so it keeps serving the leaderboard after the base table is later locked to the service role, while
--- exposing ONLY these columns -- never the estate blob.
-create or replace view public.leaderboard as
+-- Bounded public projection: the leaderboard/profile-card columns, never the estate blob. `security_invoker`
+-- so it runs with the CALLER's privileges (respects RLS -> no "Security Definer View" advisor warning);
+-- callers keep direct select on these public columns, so Phase 2 only needs to revoke the estate column.
+create or replace view public.leaderboard with (security_invoker = on) as
   select id, username, total_level, gold, skills, mastery, equipment, stats, mortal, class, has_estate, updated_at
   from public.profiles;
 
