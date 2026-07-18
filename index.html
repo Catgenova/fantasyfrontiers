@@ -17338,6 +17338,7 @@
       html += '<button class="action-btn" data-action="changePassword"'+(pwChangeBusy?' disabled':'')+'>'+(pwChangeBusy?'Saving…':'Update password')+'</button>';
       html += '</div>';
       html += renderRecoverySettings();
+      html += renderDiscordSettings();
       html += renderServerBuffSettings();
       html += '</div>';
     }
@@ -20504,6 +20505,11 @@
     if(authError) html += '<div class="auth-error">'+escapeHtml(authError)+'</div>';
     var submitDisabled = authBusy || (isReg && !(authPrivacyAccepted && authRulesAccepted));
     html += '<button class="action-btn" data-action="authSubmit" '+(submitDisabled?'disabled':'')+'>'+(authBusy?'Please wait\u2026':(isReg?'Create Account':'Log In'))+'</button>';
+    if(!isReg){
+      html += '<div style="display:flex;align-items:center;gap:8px;margin:9px 2px 5px;"><div style="flex:1;height:1px;background:var(--border);"></div><span style="font-size:11px;color:var(--text-dim);">or</span><div style="flex:1;height:1px;background:var(--border);"></div></div>';
+      html += '<button class="action-btn" data-action="discordLogin"'+(authBusy?' disabled':'')+' style="background:#5865F2;border-color:#4752c4;color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;">'+discordIconSvg('#fff')+'<span>Log in with Discord</span></button>';
+      html += '<div class="auth-note" style="text-align:center;font-size:11px;">Works once you\u2019ve linked Discord in Settings.</div>';
+    }
     if(!isReg) html += '<div class="auth-note" style="text-align:center;"><a href="#" data-action="recoverOpen" style="color:var(--gold);">Forgot your password?</a></div>';
     html += '<div class="auth-note">'+(isReg?'Choose a username and password &mdash; no email required.':'Welcome back, adventurer.')+(CHAT_ENABLED?'':' <b>Local preview:</b> accounts aren\'t real until a backend is connected.')+'</div>';
     html += '</div>';
@@ -20517,6 +20523,10 @@
   var RECOVERY_Q_COUNT = 3, RECOVERY_NEEDED = 2; // must match NEEDED in the account_recovery edge fn (2-of-3)
   var RECOVERY_A_MIN = 5; // must match A_MIN in the account_recovery edge fn; checked on the normalized answer
   var recoveryStatus = null, recoveryStatusLoading = false;    // settings: {has_questions, questions:[q,...]}
+  // Discord linking (linking-first): Discord attaches to an existing username account; it is never a
+  // standalone signup. discordLinked: null=unknown/loading, true/false once identities are checked.
+  var discordLinked = null, discordBusy = false, discordMsg = '';
+  var authOrphanSession = false; // a signed-in session with NO game username = an unlinked Discord sign-in
   var recoveryBusy = false, recoveryMsg = '', recoveryOk = false, recoveryEditing = false;
   var recoverOpen = false, recoverStep = 'username', recoverUsername = '', recoverQuestions = null, recoverBusy = false, recoverMsg = '';
   function accountRecoveryInvoke(action, payload){
@@ -20556,6 +20566,94 @@
       else { recoveryMsg = (res && res.error) || 'Could not save recovery questions.'; recoveryOk = false; }
       renderSettingsModal();
     });
+  }
+  // ======== Discord identity linking (linking-first) ========
+  // Land back on this exact page (no query/hash) after the OAuth round-trip. This URL must be in the
+  // Supabase Auth "Redirect URLs" allowlist.
+  function discordRedirectUrl(){ try{ return location.origin + location.pathname; }catch(e){ return location.href; } }
+  // Flag an in-flight OAuth round-trip so the boot sequence treats the return as an explicit login
+  // (and doesn't sign the player straight back out when "auto-login" is off).
+  function discordMarkPending(){ try{ localStorage.setItem('ff-oauth-pending','1'); }catch(e){} }
+  function discordFriendlyError(err){
+    var m = ((err && err.message) || '').toLowerCase();
+    if(m.indexOf('manual linking')!==-1 || m.indexOf('not enabled')!==-1 || m.indexOf('disabled')!==-1) return 'Discord linking isn’t enabled on the server yet.';
+    if(m.indexOf('already')!==-1) return 'That Discord account is already linked to another player.';
+    if(m) return 'Could not link Discord. Please try again.';
+    return 'Could not reach the server.';
+  }
+  // Settings: check whether the current account already has a Discord identity attached.
+  function discordLoadStatus(){
+    if(discordLinked !== null || !chatClient || !authUser) return;
+    discordLinked = false; // provisional (also guards against re-entry while the async check runs)
+    try{
+      chatClient.auth.getUserIdentities().then(function(r){
+        var ids = (r && r.data && r.data.identities) || [];
+        discordLinked = ids.some(function(x){ return x && x.provider==='discord'; });
+        renderSettingsModal();
+      }, function(){ /* leave provisional false; button still lets them try to link */ });
+    }catch(e){}
+  }
+  function linkDiscord(){
+    if(discordBusy || !chatClient) return;
+    discordBusy = true; discordMsg = ''; renderSettingsModal();
+    discordMarkPending();
+    chatClient.auth.linkIdentity({ provider:'discord', options:{ redirectTo: discordRedirectUrl() } }).then(function(r){
+      // On success the browser redirects to Discord; only an immediate error lands here.
+      if(r && r.error){ discordBusy = false; discordMsg = discordFriendlyError(r.error); try{ localStorage.removeItem('ff-oauth-pending'); }catch(e){} renderSettingsModal(); }
+    }, function(err){ discordBusy = false; discordMsg = discordFriendlyError(err); try{ localStorage.removeItem('ff-oauth-pending'); }catch(e){} renderSettingsModal(); });
+  }
+  function unlinkDiscord(){
+    if(discordBusy || !chatClient) return;
+    discordBusy = true; discordMsg = ''; renderSettingsModal();
+    chatClient.auth.getUserIdentities().then(function(r){
+      var ids = (r && r.data && r.data.identities) || [];
+      var d = ids.filter(function(x){ return x && x.provider==='discord'; })[0];
+      if(!d){ discordBusy = false; discordLinked = false; renderSettingsModal(); return; }
+      chatClient.auth.unlinkIdentity(d).then(function(r2){
+        discordBusy = false;
+        if(r2 && r2.error){ discordMsg = discordFriendlyError(r2.error); }
+        else { discordLinked = false; discordMsg = 'Discord unlinked.'; }
+        renderSettingsModal();
+      }, function(err){ discordBusy = false; discordMsg = discordFriendlyError(err); renderSettingsModal(); });
+    }, function(){ discordBusy = false; renderSettingsModal(); });
+  }
+  // Landing gate: sign in with Discord. Reaches a real account only if that Discord was linked in
+  // Settings first; an unlinked Discord lands as a usernameless session, handled at boot.
+  function discordLogin(){
+    if(authBusy) return;
+    authError = ''; authBusy = true; authRender();
+    authEnsureClient().then(function(ok){
+      if(!ok){ authBusy = false; authError = 'Could not reach the server.'; authRender(); return; }
+      discordMarkPending();
+      chatClient.auth.signInWithOAuth({ provider:'discord', options:{ redirectTo: discordRedirectUrl() } }).then(function(r){
+        if(r && r.error){ authBusy = false; authError = discordFriendlyError(r.error); try{ localStorage.removeItem('ff-oauth-pending'); }catch(e){} authRender(); }
+      }, function(err){ authBusy = false; authError = discordFriendlyError(err); try{ localStorage.removeItem('ff-oauth-pending'); }catch(e){} authRender(); });
+    });
+  }
+  // A Discord sign-in that isn't linked to any account lands as a usernameless session. Have that
+  // throwaway user delete itself (freeing the Discord identity for later linking), sign out, and steer
+  // the player to register + link. Best-effort: even if cleanup fails, we still sign out.
+  async function discordHandleOrphan(){
+    try{ await chatClient.functions.invoke('discord_link', { body:{ action:'cleanup_orphan' } }); }catch(e){}
+    try{ if(chatClient && chatClient.auth) await chatClient.auth.signOut(); }catch(e){}
+    authUser = null; authOrphanSession = false;
+    authError = 'That Discord isn’t linked to any account yet. Log in or create your account, then link Discord in Settings → Discord.';
+  }
+  function renderDiscordSettings(){
+    if(!authUser) return '';
+    discordLoadStatus();
+    var html = '<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px;">';
+    html += '<div class="settings-row-label">Discord</div>';
+    var stateTxt = discordLinked===null ? 'Checking…' : (discordLinked ? 'Linked ✓' : 'Not linked');
+    html += '<div class="settings-row-desc">Link your Discord to log in with one click and as a backup way to recover your account. Status: <b>'+stateTxt+'</b>.</div>';
+    if(discordLinked){
+      html += '<button class="action-btn stop" data-action="unlinkDiscord" style="width:auto;flex:0 0 auto;"'+(discordBusy?' disabled':'')+'>'+(discordBusy?'Please wait…':'Unlink Discord')+'</button>';
+    } else {
+      html += '<button class="action-btn" data-action="linkDiscord" style="width:auto;flex:0 0 auto;background:#5865F2;border-color:#4752c4;color:#fff;display:inline-flex;align-items:center;gap:8px;"'+(discordBusy?' disabled':'')+'>'+discordIconSvg('#fff')+'<span>'+(discordBusy?'Please wait…':'Link Discord')+'</span></button>';
+    }
+    if(discordMsg){ html += '<div style="font-size:12px;color:var(--text-dim);">'+escapeHtml(discordMsg)+'</div>'; }
+    html += '</div>';
+    return html;
   }
   function renderRecoverySettings(){
     if(!authUser) return '';
@@ -24605,6 +24703,9 @@
     toggleCraftFilter: function(btn, e){ craftOnlyAffordable = !craftOnlyAffordable; },
     chatSend: function(btn, e){ chatSend(); },
     authSubmit: function(btn, e){ authSubmit(); },
+    discordLogin: function(btn, e){ discordLogin(); },
+    linkDiscord: function(btn, e){ linkDiscord(); },
+    unlinkDiscord: function(btn, e){ unlinkDiscord(); },
     authToggleRemember: function(btn, e){ authRememberUser = !authRememberUser; authRender(); },
     authToggleAutoLogin: function(btn, e){ authAutoLogin = !authAutoLogin; authRender(); },
     authMode: function(btn, e){ authMode = btn.getAttribute('data-mode')==='login' ? 'login' : 'register'; authError=''; authRender(); },
@@ -25214,7 +25315,11 @@
       if(!chatClient){ chatClient = window.supabase.createClient(CHAT_CONFIG.supabaseUrl, CHAT_CONFIG.supabaseAnonKey); }
       var res = await chatClient.auth.getSession();
       var sess = res.data && res.data.session;
-      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; if(sess.access_token) cloudAccessToken = sess.access_token; }
+      if(sess && sess.user){
+        var _un = sess.user.user_metadata && sess.user.user_metadata.username;
+        if(_un){ authUser = { username: _un, id: sess.user.id }; if(sess.access_token) cloudAccessToken = sess.access_token; }
+        else { authOrphanSession = true; } // signed in but no game username = an unlinked Discord sign-in
+      }
     }catch(e){}
   }
   // One-time injected stylesheet for the landing screen (theme-variable driven, responsive).
@@ -25541,12 +25646,17 @@
     if(pathSelectNeeded()) renderPathSelect();   // brand-new account: pick Immortal vs Mortal before playing
   }
   (async function onlineBoot(){
+    // Did we just return from a Discord OAuth round-trip? That's an explicit login intent, so honor it
+    // even if "auto-login" is off. Consume the one-shot flag regardless of outcome.
+    var oauthReturn = false;
+    try{ oauthReturn = localStorage.getItem('ff-oauth-pending')==='1'; if(oauthReturn) localStorage.removeItem('ff-oauth-pending'); }catch(e){}
     await onlineAuthInit();
+    if(authOrphanSession){ await discordHandleOrphan(); renderLoginGate(); return; } // unlinked Discord -> clean up + explain
     if(authUser && authUser.id){
-      // A session was restored. Only auto-login if the player opted in; otherwise sign out
-      // and show the gate (their remembered username still autofills).
+      // A session was restored. Only auto-login if the player opted in (or they just logged in via
+      // Discord); otherwise sign out and show the gate (their remembered username still autofills).
       var autoOn = (function(){ try{ return localStorage.getItem('ff-autologin') !== '0'; }catch(e){ return true; } })();
-      if(autoOn){ await startGameOnline(); return; }
+      if(autoOn || oauthReturn){ await startGameOnline(); return; }
       try{ if(chatClient && chatClient.auth) await chatClient.auth.signOut(); }catch(e){}
       authUser = null;
     }
