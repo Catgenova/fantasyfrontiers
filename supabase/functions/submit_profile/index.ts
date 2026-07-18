@@ -62,9 +62,13 @@ const XP_FLOOR = (() => {
   for (let L = MAXL; L < EXTMAX; L++) { cost *= OGROWTH; ecum += cost; f[L + 1] = ecum; }
   return f;
 })();
-// The 17 gathering + 43 crafting skill ids (index.html GATHER_SKILL_IDS / CRAFT_SKILL_IDS). A missing id
-// just isn't checked (fail-open, never a false-positive), so drift here is safe.
-const GATHER_SKILLS = new Set(["digging","forestry","mining","fishing","herbalism","botany","foraging","butchering","beekeeping","prospecting","ranching","mycology","salvaging","essence","diving","tapping","spelunking"]);
+// The gathering + crafting skill ids (index.html GATHER_SKILL_IDS / CRAFT_SKILL_IDS). A missing id just
+// isn't checked (fail-open, never a false-positive), so drift here is safe. NOTE: `butchering` is a
+// gathering skill BUT earns a chunk of its XP from the carcass-processing CRAFT path (bumps stats.crafted,
+// not gathered -- index.html:9195), so checking it against `gathered` would falsely (and permanently) hold
+// a carcass-heavy player. It's deliberately omitted from BOTH sets; the pure-gather skills below still
+// catch broad injections. (salvaging IS a pure gather node, so it stays.)
+const GATHER_SKILLS = new Set(["digging","forestry","mining","fishing","herbalism","botany","foraging","beekeeping","prospecting","ranching","mycology","salvaging","essence","diving","tapping","spelunking"]);
 const CRAFT_SKILLS = new Set(["carpentry","metallurgy","roasting","cooking","alchemy","bowyer","fletching","baking","tailoring","stonecutting","leatherworking","jewelrycrafting","masonry","paving","mixology","brewing","confectionery","gemcutting","enchanting","dairy","gastronomy","apothecary","tinkering","pyrotechnics","inscription","tanning","weaving","pottery","goldsmithing","chandlery","woodcarving","glassblowing","cooperage","papermaking","bookbinding","archaeology","blacksmithing","weaponsmithing","armorsmithing","shieldsmithing","runesmithing","arcanism","fertilizer"]);
 const MAX_XP_PER_GATHER = 8_000;    // real max ~210*mults(~<2k); 8k = comfortable false-positive margin
 const MAX_XP_PER_CRAFT = 200_000;   // real top single-craft ~20k; 200k margin (still catches mastery injections)
