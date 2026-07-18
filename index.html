@@ -22864,7 +22864,7 @@
   function marketTax(gold){ return Math.floor(gold * MARKET_TAX * merchantTaxMult()); }
   function marketSellNet(price, qty){ var g = price * qty; return g - marketTax(g); }
   function marketBuyCost(price, qty){ return price * qty; }
-  var marketState = { mode:'forsale', status:'idle', selectedItem:null, book:null, bookItem:null, orders:[], proceeds:{gold:0,items:[]}, listings:[], search:'', busy:false };
+  var marketState = { mode:'forsale', status:'idle', selectedItem:null, book:null, bookItem:null, orders:[], proceeds:{gold:0,items:[]}, listings:[], search:'', busy:false, sellMsg:'' };
   function marketInvoke(action, payload){
     if(!chatClient || !authUser) return Promise.resolve({ ok:false, error:'Sign in first.' });
     var body = { action:action };
@@ -22876,6 +22876,14 @@
   }
   function marketItemMeta(id){ var it = ALL_SELLABLE[id] || {}; return { name: it.name || id, icon: it.icon || svgIcon('chest','var(--text-faint)') }; }
   function marketItemName(id){ return (ALL_SELLABLE[id]||{}).name || id; }
+  // A SELL debits the SERVER ledger, not local inventory, so the two can disagree (the reconcile's
+  // earned anchor keeps showing stock the ledger's rate cap hasn't credited yet). Surface that number
+  // in the Sell form rather than letting the order fail with a reason that only lands in the log.
+  // null = the ledger hasn't been fetched yet, so we make no claim.
+  function marketLedgerQty(id){ return (itemLedger && typeof itemLedger[id] === 'number') ? itemLedger[id] : null; }
+  // Report a sell failure BOTH inline in the form and in the Chronicle -- the log alone scrolls away,
+  // which is why "I can't list this" reports arrived with no reason attached.
+  function marketSellFail(msg){ marketState.sellMsg = msg; addLog(msg, 'danger'); render(); }
   var _marketTradeable = null;
   function marketTradeableIds(){
     if(!_marketTradeable){ _marketTradeable = Object.keys(ALL_SELLABLE).filter(function(k){ return k!=='gold' && /^[A-Za-z0-9_]{1,64}$/.test(k); }); }
@@ -22934,8 +22942,11 @@
   }
   function renderMarketTradePanel(item){
     var m = marketItemMeta(item), owned = state.inventory[item]||0, base = (ALL_SELLABLE[item]||{}).sell || 0;
+    var tradable = marketLedgerQty(item);   // what the server will actually let you list (null = unknown)
     var html = '<button class="mini-btn" data-action="marketClearItem" style="margin-bottom:10px;">← Back</button>';
-    html += '<div class="market-trade-head"><span class="market-item-ico">'+m.icon+'</span><div><div class="market-trade-name">'+escapeHtml(m.name)+'</div><div class="item-meta">You own '+fmt(owned)+' • Your gold: '+fmt(state.gold)+'</div></div></div>';
+    html += '<div class="market-trade-head"><span class="market-item-ico">'+m.icon+'</span><div><div class="market-trade-name">'+escapeHtml(m.name)+'</div><div class="item-meta">You own '+fmt(owned)
+      + (tradable !== null && tradable < owned ? ' • <b style="color:var(--hp-bad)">'+fmt(tradable)+' tradable</b>' : '')
+      + ' • Your gold: '+fmt(state.gold)+'</div></div></div>';
     html += '<div class="market-book">';
     var book = (marketState.book && marketState.bookItem===item) ? marketState.book : null;
     if(!book){ html += '<div class="empty-note">Loading order book…</div>'; }
@@ -22956,7 +22967,17 @@
     html += '<div class="market-forms">';
     html += '<div class="market-form"><div class="market-form-h">Sell</div><div class="market-form-row"><input id="marketSellQty" class="market-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Qty (own '+fmt(owned)+')"><input id="marketSellPrice" class="market-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Price each"></div>';
     html += '<div class="item-meta" id="marketSellPreview">'+(base? 'Vendor pays '+fmt(base)+'g each.':'Enter a price to preview your take.')+'</div>';
-    html += '<button class="action-btn" data-action="marketPlaceSell"'+(owned<=0?' disabled':'')+'>Place Sell Order</button></div>';
+    // State the reason a listing can't be placed UP FRONT, instead of only after a failed submit.
+    var sellBlock = '';
+    if(owned <= 0) sellBlock = 'You have none of this item.';
+    else if(state.lockedItems && state.lockedItems[item]) sellBlock = 'Locked — unlock it in your inventory to sell it.';
+    if(!sellBlock && tradable === 0){
+      html += '<div class="item-meta" style="color:var(--hp-bad)">None of these are tradable yet — the server hasn’t credited them. Keep playing a few minutes and try again.</div>';
+    }
+    if(marketState.sellMsg) html += '<div class="item-meta" style="color:var(--hp-bad)">'+escapeHtml(marketState.sellMsg)+'</div>';
+    html += '<button class="action-btn" data-action="marketPlaceSell"'+(sellBlock?' disabled':'')+'>Place Sell Order</button>';
+    if(sellBlock) html += '<div class="item-meta" style="color:var(--text-faint)">'+escapeHtml(sellBlock)+'</div>';
+    html += '</div>';
     html += '<div class="market-form"><div class="market-form-h">Buy</div><div class="market-form-row"><input id="marketBuyQty" class="market-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Qty"><input id="marketBuyPrice" class="market-num" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Max price each"></div>';
     html += '<div class="item-meta" id="marketBuyPreview">Your gold: '+fmt(state.gold)+'.</div>';
     html += '<div class="market-form-btns"><button class="action-btn" data-action="marketPlaceBuy">Place Buy Order</button>';
@@ -23035,21 +23056,31 @@
       if(currentCategory==='market') render();
     });
   }
-  function marketPickItem(item){ marketState.selectedItem = item; marketState.book = null; marketState.bookItem = null; render(); marketLoadBook(item); }
+  function marketPickItem(item){ marketState.selectedItem = item; marketState.sellMsg = ''; marketState.book = null; marketState.bookItem = null; render(); marketLoadBook(item); }
   async function marketPlaceSell(){
     var item = marketState.selectedItem; if(!item || marketState.busy) return;
     var q = document.getElementById('marketSellQty'), p = document.getElementById('marketSellPrice');
-    if(state.lockedItems && state.lockedItems[item]){ addLog('That item is locked. Unlock it first to sell it on the market.','danger'); return; }
+    marketState.sellMsg = '';
+    if(state.lockedItems && state.lockedItems[item]){ marketSellFail('That item is locked. Unlock it first to sell it on the market.'); return; }
     var qty = parseInt(q&&q.value,10), price = parseInt(p&&p.value,10);
-    if(!(qty>0) || !(price>0)){ addLog('Enter a quantity and price to sell.','danger'); return; }
-    if(price>MARKET_MAX_PRICE || qty>MARKET_MAX_QTY){ addLog('Price or quantity is too large.','danger'); return; }
-    if((state.inventory[item]||0) < qty){ addLog('You don’t have that many to sell.','danger'); return; }
+    if(!(qty>0) || !(price>0)){ marketSellFail('Enter a quantity and price to sell.'); return; }
+    if(price>MARKET_MAX_PRICE || qty>MARKET_MAX_QTY){ marketSellFail('Price or quantity is too large.'); return; }
+    if((state.inventory[item]||0) < qty){ marketSellFail('You don’t have that many to sell.'); return; }
     marketState.busy = true;                       // lock before the async sync
     await itemSync(true);                            // reconcile the ledger (reports the full inventory) so just-gathered items count
+    // The server debits the LEDGER. If it can't cover the order, explain that here rather than firing a
+    // request that comes back "You don't have those items to sell" with no indication of the real cause.
+    var _led = marketLedgerQty(item);
+    if(_led !== null && _led < qty){
+      marketState.busy = false;
+      marketSellFail('Only '+fmt(_led)+' of your '+fmt(state.inventory[item]||0)+' '+marketItemName(item)+' are tradable so far — the server is still crediting the rest. Try a smaller amount, or again shortly.');
+      return;
+    }
     state.inventory[item] = (state.inventory[item]||0) - qty; saveGame(); // escrow items
     marketInvoke('place', { side:'sell', item_key:item, unit_price:price, qty:qty }).then(function(res){
       marketState.busy = false;
-      if(!res || !res.ok){ addItem(item, qty); saveGame(); addLog('Sell order failed: '+((res&&res.error)||'try again')+'.','danger'); render(); return; }
+      if(!res || !res.ok){ addItem(item, qty); saveGame(); marketSellFail('Sell order failed: '+((res&&res.error)||'try again')+'.'); return; }
+      marketState.sellMsg = '';
       addLog('Listed '+fmt(qty)+' '+marketItemName(item)+' to sell @ '+fmt(price)+'g'+(res.filled>0? ' — '+fmt(res.filled)+' sold instantly':'')+'.', 'chronicle');
       marketReload();
     });
