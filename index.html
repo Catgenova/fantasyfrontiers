@@ -16532,7 +16532,7 @@
   // damage as a clamped power*elapsed proxy (the server can't run the JS combat engine), and the
   // shared HP + advancement stream back over realtime. Stage A is the co-op DPS core (the enemy does
   // not yet attack back); Stage B adds threat targeting, death/wipe, and the Formula claim.
-  var dungeonNet = { status:'idle', session:null, members:[], subSession:null, subMembers:null, _subId:null, busy:false, error:'', lastAssault:0, lobbiesByLayer:{}, clearedHandled:false };
+  var dungeonNet = { status:'idle', session:null, members:[], subSession:null, subMembers:null, _subId:null, busy:false, error:'', lastAssault:0, lobbiesByLayer:{}, clearedHandled:false, deathHandled:false };
   var dungeonJoinCodeDraft = '';   // in-progress "Join by ID" input, preserved across re-renders
   // A representative DPS proxy (avg weapon damage / attack interval, folding the always-on mults).
   // The server clamps it, so an inflated value can't dump impossible damage.
@@ -16568,13 +16568,30 @@
     dungeonNet.status = 'ready';
     dungeonNetResubscribe();
     // The descent just started (lobby -> active): stop any lobby crafting/gathering. From here actions lock.
-    if(dungeonNet.session && dungeonNet.session.status === 'active' && _prevStatus !== 'active') dungeonStopAllTasks();
+    // A fresh descent also re-arms the death latch so a new run's death can be counted.
+    if(dungeonNet.session && dungeonNet.session.status === 'active' && _prevStatus !== 'active'){ dungeonStopAllTasks(); dungeonNet.deathHandled = false; }
+    // Stage B: a group dungeon's enemy is server-authoritative, so a player's death is reported as MY
+    // member row going alive:false (hp hit 0) -- it never runs the solo monsterAttackTick death path. Record
+    // it as a REAL death here, exactly once (the realtime subscription re-applies on every change, so the
+    // deathHandled latch prevents double-counting), mirroring a solo dungeon death incl. Mortal permadeath.
+    if(dungeonNet.session && !dungeonNet.deathHandled){
+      var _me = dungeonNetMyMember();
+      if(_me && (_me.alive === false || (typeof _me.hp === 'number' && _me.hp <= 0))){
+        dungeonNet.deathHandled = true;
+        bumpStat('deaths');
+        var _dcat = DUNGEON_DEFS[dungeonNet.session.layer] ? DUNGEON_DEFS[dungeonNet.session.layer].category : 'dungeon';
+        addLog('You fell in the depths of the ' + _dcat + ' — your party fights on without you.', 'danger');
+        if(isMortal()) mortalDeath(null); // a Mortal's death is final wherever it happens, group runs included
+        cloudSave(); // persist the death promptly (it adds no XP, but equal-progress saves are accepted)
+        needsRender = true;
+      }
+    }
     // On a clear, claim the Formula -- the server grants it only to SURVIVORS, once each.
     if(dungeonNet.session && dungeonNet.session.status === 'cleared'){
       dungeonMarkCleared(dungeonNet.session.layer); // party clear unlocks the next dungeon for everyone present
       if(!dungeonNet.clearedHandled){ dungeonNet.clearedHandled = true; dungeonNetClaim(); }
     }
-    if(!dungeonNet.session) dungeonNet.clearedHandled = false;
+    if(!dungeonNet.session){ dungeonNet.clearedHandled = false; dungeonNet.deathHandled = false; }
   }
   function dungeonNetLoad(){ if(!chatClient || !authUser){ dungeonNet.status = 'idle'; return; } dungeonNet.status = 'loading'; dungeonNetInvoke('get', {}).then(function(res){ if(res.ok) dungeonNetApply(res); else dungeonNet.status = 'ready'; if(!dungeonNet.session) DUNGEON_ORDER.forEach(function(l){ dungeonNetListLobbies(l); }); if(currentCategory === 'dungeons') render(); }); }
   var _dungeonRefreshT = 0;
