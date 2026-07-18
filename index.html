@@ -21308,10 +21308,18 @@
     if(currentCategory==='leaderboard' && !profileView) render();
     if(!chatClient){ if(!(await authEnsureClient())){ leaderboardStatus='error'; if(currentCategory==='leaderboard') render(); return; } }
     try{
-      var res = await chatClient.from('profiles')
+      // Read the bounded `leaderboard` view (public projection, no heavy estate blob). Fall back to the
+      // base `profiles` table on servers where the view isn't migrated yet, so deploy order can't break it.
+      var res = await chatClient.from('leaderboard')
         .select('id,username,total_level,gold,skills,mastery,equipment,stats,mortal,class,has_estate,updated_at')
         .order('total_level', { ascending:false })
         .limit(LEADERBOARD_LIMIT);
+      if(res.error){
+        res = await chatClient.from('profiles')
+          .select('id,username,total_level,gold,skills,mastery,equipment,stats,mortal,class,has_estate,updated_at')
+          .order('total_level', { ascending:false })
+          .limit(LEADERBOARD_LIMIT);
+      }
       if(res.error){
         // The `class`/`has_estate`/`mastery` columns may not be migrated yet -- retry WITHOUT them but
         // keep stats/mortal, so the board doesn't lose its stat rankings or Mortal styling. When mastery
@@ -21471,10 +21479,17 @@
     (async function(){
       try{
         if(!chatClient){ if(!(await authEnsureClient())){ estateVisit.loading=false; estateVisit.error='Could not connect.'; if(currentCategory==='visitestate') render(); return; } }
-        var res = await chatClient.from('profiles').select('estate').eq('id', playerId).maybeSingle();
+        // Estate is served one-at-a-time through a gated RPC (get_profile_estate) rather than a
+        // bulk-readable column; fall back to a direct read on older servers where the RPC isn't migrated.
+        var res = await chatClient.rpc('get_profile_estate', { p_id: playerId });
+        var estateVal = res && !res.error ? res.data : null;
+        if(res && res.error){
+          res = await chatClient.from('profiles').select('estate').eq('id', playerId).maybeSingle();
+          estateVal = res && res.data ? res.data.estate : null;
+        }
         if(!estateVisit.active) return; // user already left
         if(res.error){ estateVisit.loading=false; estateVisit.error='Estate viewing isn’t available yet.'; }
-        else if(res.data && visitEstateGridOk(res.data.estate)){ estateVisit.estate = res.data.estate; estateVisit.loading=false; }
+        else if(visitEstateGridOk(estateVal)){ estateVisit.estate = estateVal; estateVisit.loading=false; }
         else { estateVisit.loading=false; } // no estate published -> renderEstateTab shows the soft empty note
       }catch(e){ estateVisit.loading=false; estateVisit.error='Could not load their estate.'; }
       if(currentCategory==='visitestate') render();
