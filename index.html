@@ -10939,6 +10939,15 @@
   function renderLinkedItemCard(b64){ var d = decodeItemLink(b64); if(!d) return ''; return uniqueCardBody(d); }
   // One card in the Inventory "Unique" section: the full stat card for a unique you own; tapping it
   // opens the manage popup (equip / enchant / sell / link).
+  // "Equip off-hand" button for a unique Claw -- shown only when a Claw main hand makes dual-wield valid
+  // and this exact unique isn't already worn. Shared by the Inventory detail popup and the Improvement card
+  // (a unique Claw is kind 'weapon', so the plain Equip button always routes it to the main hand).
+  function uniqueOffhandClawBtn(u){
+    if(!u || uniqueIsEquipped(u.uid)) return '';
+    if(!(u.kind==='weapon' && /^stweapon_claw_t\d+_\w+$/.test(u.base))) return '';
+    if(!hasClawMainhand(state)) return '';
+    return '<button class="mini-btn" data-action="equipUniqueOffhandClaw" data-uid="'+u.uid+'">Equip off-hand</button>';
+  }
   function renderUniqueInvCard(u){
     var eq = uniqueIsEquipped(u.uid);
     return '<div class="unique-inv-card" data-action="openUniqueDetail" data-uid="'+u.uid+'">'
@@ -11077,7 +11086,7 @@
     var name = isU2 ? uniqueDisplayName(u) : (ALL_SELLABLE[isEq ? eqBaseId : improveSel]||{name:'Equipment'}).name;
     var html = '<div class="guild-section-title" style="margin-top:4px;">'+escapeHtml(name)+'</div>';
     html += '<div class="item-card" style="max-width:540px;"><div class="item-meta" style="margin-bottom:6px;">'+escapeHtml(getRarity(rarity).label)+' · Tier '+(tier+1)+' · '+count+'/'+slots+' enchant slots'+(enhance>0?' · <b>+'+enhance+'</b>':'')+'</div>';
-    if(isU2){ var _eq = uniqueIsEquipped(u.uid); html += '<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><button class="mini-btn" data-action="'+(_eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(_eq?'Unequip':'Equip')+'</button><button class="mini-btn" data-action="improveLinkChat" data-uid="'+u.uid+'" title="Share this item\'s stats in chat">🔗 Link in chat</button>'+(_eq?'<span class="item-meta" style="color:var(--gold);">equipped</span>':'')+'</div>'; }
+    if(isU2){ var _eq = uniqueIsEquipped(u.uid); var _ohBtn = uniqueOffhandClawBtn(u); html += '<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><button class="mini-btn" data-action="'+(_eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(_eq?'Unequip':(_ohBtn?'Equip main':'Equip'))+'</button>'+_ohBtn+'<button class="mini-btn" data-action="improveLinkChat" data-uid="'+u.uid+'" title="Share this item\'s stats in chat">🔗 Link in chat</button>'+(_eq?'<span class="item-meta" style="color:var(--gold);">equipped</span>':'')+'</div>'; }
     else if(isEq){ html += '<div style="margin-bottom:8px;"><span class="item-meta" style="color:var(--gold);">equipped</span> <span class="item-meta">· becomes a unique when you Enchant or Enhance it</span></div>'; }
     if(isU2 && u.enchants.length){ u.enchants.forEach(function(e,i){ html += '<div class="inputs-line"><span style="color:var(--gold);">'+escapeHtml(enchantLabel(u.kind,e))+'</span>'+((improvePending&&improvePending.uid===u.uid)?' <button class="mini-btn" data-action="improvePlace" data-idx="'+i+'">Replace</button>':'')+'</div>'; }); }
     else if(isU2 || isEq){ html += '<div class="empty-note" style="margin-bottom:6px;">No enchants yet.</div>'; }
@@ -23782,7 +23791,8 @@
     overlay.style.display = 'flex';
     overlay.innerHTML = '<div class="skill-info-card">'+card
       + '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px;">'
-      + '<button class="mini-btn" data-action="'+(eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(eq?'Unequip':'Equip')+'</button>'
+      + '<button class="mini-btn" data-action="'+(eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(eq?'Unequip':(uniqueOffhandClawBtn(u)?'Equip main':'Equip'))+'</button>'
+      + uniqueOffhandClawBtn(u)
       + '<button class="mini-btn" data-action="uniqueManage" data-uid="'+u.uid+'">Manage</button>'
       + '<button class="mini-btn" data-action="improveLinkChat" data-uid="'+u.uid+'">🔗 Link in chat</button>'
       + '</div>'
@@ -25807,7 +25817,7 @@
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, itemReconcile:itemReconcile,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, ENHANCE_MAX:ENHANCE_MAX,
       parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant,
-      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
+      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,

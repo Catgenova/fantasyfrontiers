@@ -5268,6 +5268,15 @@
       eq(FF.uniqueIsEquipped('uc'), true, 'the unique reads as equipped');
       // Damage pipeline: the unique's enchants flow through the equipped totals via the off-hand uid.
       eq(FF.equippedEnchantTotals(s).flatDamage, 17, 'the off-hand unique Claw\'s enchant is in the equipped totals');
+      // Inventory/Improvement "Equip off-hand" button appears only for an unworn unique Claw with a Claw main hand.
+      ok(typeof FF.uniqueOffhandClawBtn === 'function', 'uniqueOffhandClawBtn exported');
+      // (it's equipped off-hand right now -> no button)
+      eq(FF.uniqueOffhandClawBtn(s.uniqueItems.uc), '', 'no off-hand button while the Claw is already worn');
+      FF.unequipUnique('uc');
+      ok(/equipUniqueOffhandClaw/.test(FF.uniqueOffhandClawBtn(s.uniqueItems.uc)), 'an unworn unique Claw offers the off-hand button with a Claw main hand');
+      s.equippedMainhand='rapier';
+      eq(FF.uniqueOffhandClawBtn(s.uniqueItems.uc), '', 'no off-hand button without a Claw main hand');
+      s.equippedMainhand='claw';
       // Guard: the same unique can't be off-handed while it's in the main hand.
       s.equippedMainhandUid='uc';
       eq(FF.equipUniqueOffhandClaw('uc'), false, 'cannot off-hand the Claw already in the main hand');
