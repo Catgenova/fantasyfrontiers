@@ -5940,6 +5940,30 @@
     s.equippedMainhand=sv.mh; s.equippedMainhandTier=sv.t; s.equippedMainhandRarity=sv.r; s.equippedMainhandUid=sv.uid; s.uniqueItems=sv.ui;
   });
 
+  // ---- Improvement tab: equipped gear is grouped at the top so you know what to improve ---------
+  suite('improvement tab: equipped gear first', function(){
+    ok(typeof FF.renderImprovementTab === 'function', 'renderImprovementTab exported');
+    var s = FF._state;
+    var sv = { mh:s.equippedMainhand, mt:s.equippedMainhandTier, mr:s.equippedMainhandRarity, muid:s.equippedMainhandUid, ui:s.uniqueItems, js:s.jewelrySlots };
+    try {
+      s.uniqueItems = {
+        ueq:{ uid:'ueq', base:'stweapon_rapier_t5_rare', kind:'weapon', tier:5, rarity:'rare', enchants:[], enhance:0 },
+        ubag:{ uid:'ubag', base:'ring_plain_t5_supreme', kind:'ring', tier:5, rarity:'supreme', enchants:[], enhance:0 }
+      };
+      s.equippedMainhand='rapier'; s.equippedMainhandTier=6; s.equippedMainhandRarity='rare'; s.equippedMainhandUid='ueq';
+      s.jewelrySlots = s.jewelrySlots || {};
+      var html = FF.renderImprovementTab();
+      var eqIdx = html.indexOf('>Equipped<'), bagIdx = html.indexOf('>In your bags<');
+      ok(eqIdx >= 0, 'an "Equipped" section is rendered');
+      ok(bagIdx >= 0, 'an "In your bags" section is rendered');
+      ok(eqIdx < bagIdx, 'equipped gear is listed before bag gear');
+      ok(html.indexOf('data-uid="ueq"') >= 0 && html.indexOf('data-uid="ueq"') < bagIdx, 'the equipped unique sits in the Equipped section');
+      ok(html.indexOf('data-uid="ubag"') > bagIdx, 'the unequipped unique sits in the In-your-bags section');
+    } finally {
+      s.equippedMainhand=sv.mh; s.equippedMainhandTier=sv.mt; s.equippedMainhandRarity=sv.mr; s.equippedMainhandUid=sv.muid; s.uniqueItems=sv.ui; s.jewelrySlots=sv.js;
+    }
+  });
+
   // ---- Improvement: only Rare-or-better gear can be improved (Normal is excluded) ---------------
   suite('improvement: Normal gear cannot be improved', function(){
     ok(typeof FF.isImprovableRarity === 'function', 'rarity gate exported');

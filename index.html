@@ -11149,17 +11149,27 @@
     var bases = [], uniques = Object.keys(state.uniqueItems||{}).filter(function(uid){ var u=state.uniqueItems[uid]; return u && isImprovableRarity(u.rarity); });
     Object.keys(state.inventory).forEach(function(id){ if((state.inventory[id]||0)>0){ var p=parseImprovable(id); if(p && isImprovableRarity(p.rarity)) bases.push(id); } });
     var eqBases = equippedImprovableBases();
+    var eqUniqueIds = uniques.filter(function(uid){ return uniqueIsEquipped(uid); });
+    var bagUniqueIds = uniques.filter(function(uid){ return !uniqueIsEquipped(uid); });
     html += '<div class="guild-section-title" style="margin-top:14px;">Choose equipment</div>';
-    if(!bases.length && !uniques.length && !eqBases.length) html += '<div class="empty-note">No weapons, armour, or jewelry to improve yet — forge, find, or equip some first.</div>';
-    html += '<div class="card-grid">';
-    // Currently-equipped base gear first -- improving it keeps it equipped.
-    eqBases.forEach(function(e){ var b=ALL_SELLABLE[e.baseId]; if(!b) return;
-      html += '<button class="item-card" data-action="improveFromEquipped" data-slot="'+e.slot+'" style="text-align:left;"><div class="item-top"><div class="item-icon">'+(b.icon||'')+'</div><div><div class="item-name">'+escapeHtml(b.name)+'</div><div class="item-meta" style="color:var(--gold);">Equipped · tap to improve</div></div></div></button>'; });
-    uniques.forEach(function(uid){ var u=state.uniqueItems[uid]; if(!u) return;
-      html += '<button class="item-card'+(improveSel===uid?' active-item':'')+'" data-action="improveSelect" data-uid="'+uid+'" style="text-align:left;"><div class="item-top"><div class="item-icon">'+uniqueIcon(u)+'</div><div><div class="item-name">'+escapeHtml(uniqueDisplayName(u))+'</div><div class="item-meta">'+escapeHtml(getRarity(u.rarity).label)+' · '+u.enchants.length+'/'+enchantSlotsFor(u.rarity)+' enchants</div></div></div>'+uniqueEnchantChips(u)+'</button>'; });
-    bases.forEach(function(id){ var p=parseImprovable(id), b=ALL_SELLABLE[id]; if(!b) return;
-      html += '<button class="item-card'+(improveSel===id?' active-item':'')+'" data-action="improveSelect" data-uid="'+id+'" style="text-align:left;"><div class="item-top"><div class="item-icon">'+(b.icon||'')+'</div><div><div class="item-name">'+escapeHtml(b.name)+'</div><div class="item-meta">'+escapeHtml(getRarity(p.rarity).label)+' · ×'+(state.inventory[id]||0)+'</div></div></div></button>'; });
-    html += '</div>';
+    if(!bases.length && !uniques.length && !eqBases.length){ html += '<div class="empty-note">No weapons, armour, or jewelry to improve yet — forge, find, or equip some first.</div>'; return html; }
+    // Card builders (an equipped base converts to a unique on tap; a unique/inventory base selects in place).
+    var eqBaseCard = function(e){ var b=ALL_SELLABLE[e.baseId]; if(!b) return '';
+      return '<button class="item-card" data-action="improveFromEquipped" data-slot="'+e.slot+'" style="text-align:left;"><div class="item-top"><div class="item-icon">'+(b.icon||'')+'</div><div><div class="item-name">'+escapeHtml(b.name)+'</div><div class="item-meta" style="color:var(--gold);">Equipped · tap to improve</div></div></div></button>'; };
+    var uniqueCard = function(uid){ var u=state.uniqueItems[uid]; if(!u) return ''; var eqd=uniqueIsEquipped(uid);
+      return '<button class="item-card'+(improveSel===uid?' active-item':'')+'" data-action="improveSelect" data-uid="'+uid+'" style="text-align:left;"><div class="item-top"><div class="item-icon">'+uniqueIcon(u)+'</div><div><div class="item-name">'+escapeHtml(uniqueDisplayName(u))+'</div><div class="item-meta"'+(eqd?' style="color:var(--gold);"':'')+'>'+(eqd?'Equipped · ':'')+escapeHtml(getRarity(u.rarity).label)+' · '+u.enchants.length+'/'+enchantSlotsFor(u.rarity)+' enchants</div></div></div>'+uniqueEnchantChips(u)+'</button>'; };
+    var baseCard = function(id){ var p=parseImprovable(id), b=ALL_SELLABLE[id]; if(!b) return '';
+      return '<button class="item-card'+(improveSel===id?' active-item':'')+'" data-action="improveSelect" data-uid="'+id+'" style="text-align:left;"><div class="item-top"><div class="item-icon">'+(b.icon||'')+'</div><div><div class="item-name">'+escapeHtml(b.name)+'</div><div class="item-meta">'+escapeHtml(getRarity(p.rarity).label)+' · ×'+(state.inventory[id]||0)+'</div></div></div></button>'; };
+    // Equipped gear first -- what you're actually wearing, so it's obvious what to improve.
+    if(eqBases.length || eqUniqueIds.length){
+      html += '<div class="guild-section-title" style="margin-top:8px;font-size:12px;color:var(--gold);">Equipped</div>';
+      html += '<div class="card-grid">'+eqBases.map(eqBaseCard).join('')+eqUniqueIds.map(uniqueCard).join('')+'</div>';
+    }
+    // Everything else you own, still in your bags.
+    if(bagUniqueIds.length || bases.length){
+      html += '<div class="guild-section-title" style="margin-top:12px;font-size:12px;color:var(--text-dim);">In your bags</div>';
+      html += '<div class="card-grid">'+bagUniqueIds.map(uniqueCard).join('')+bases.map(baseCard).join('')+'</div>';
+    }
     return html;
   }
 
@@ -25834,7 +25844,7 @@
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
       GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, skillTabsByLabel:skillTabsByLabel,
-      renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, equipSlotState:equipSlotState, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
+      renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS,
