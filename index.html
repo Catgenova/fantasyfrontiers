@@ -233,6 +233,14 @@
   .ff-farmfab-plant{bottom:212px;background:linear-gradient(180deg,#5aa06a,#2f6a3c);}
   .ff-farmfab-fertilize{bottom:276px;background:linear-gradient(180deg,#8aa84e,#4f6a24);}
   .ff-farmfab-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--gold-bright);color:#3a2a08;border:2px solid #24380f;font-family:var(--font-mono);font-size:10px;font-weight:700;line-height:14px;text-align:center;}
+  /* Themed hover tooltip (data-tip). Native title= waits ~1s, is unstyled, and never fires on touch;
+     this shows instantly and matches the UI. One reused element, positioned in JS. */
+  .ff-tip{position:fixed;z-index:10060;pointer-events:none;opacity:0;transform:translateY(3px);
+    transition:opacity .12s ease,transform .12s ease;max-width:240px;
+    background:var(--bg-panel-raised,#241d16);color:var(--text,#ece7dd);border:1px solid var(--border,#4a3f2f);
+    border-radius:7px;padding:5px 9px;font-family:var(--font-mono,monospace);font-size:11.5px;line-height:1.35;
+    box-shadow:0 4px 14px rgba(0,0,0,.45);white-space:normal;text-align:center;}
+  .ff-tip.on{opacity:1;transform:translateY(0);}
   .ff-ivy{position:absolute;top:-8px;z-index:9;pointer-events:none;width:70px;height:60px;}
   .ff-ivy-l{left:-4px;} .ff-ivy-r{right:-4px;transform:scaleX(-1);}
   @keyframes ffChipFlash{0%,100%{opacity:1;}50%{opacity:.45;}}
@@ -1629,12 +1637,12 @@
     </div>
   </div>
   <nav class="ff-bottomdock" id="ffBottomDock"></nav>
-  <button class="ff-chatfab" id="ffChatFab" data-action="toggleChatDrawer" title="Open chat"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-chat"></use></svg><span class="ff-chatfab-badge" id="ffChatFabBadge"></span></button>
-  <button class="ff-farmfab ff-farmfab-harvest" id="ffHarvestFab" data-action="harvestAllFarm" title="Harvest all ready crops"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-herb"></use></svg><span class="ff-farmfab-badge" id="ffHarvestFabBadge"></span></button>
-  <button class="ff-farmfab ff-farmfab-plant" id="ffPlantFab" data-action="plantAllFarm" title="Plant all empty fields"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-seed"></use></svg><span class="ff-farmfab-badge" id="ffPlantFabBadge"></span></button>
-  <button class="ff-farmfab ff-farmfab-fertilize" id="ffFertilizeFab" data-action="fertilizeAllFarm" title="Fertilize all growing crops"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-spice"></use></svg><span class="ff-farmfab-badge" id="ffFertilizeFabBadge"></span></button>
-  <button class="ff-farmfab ff-estatefab-my" id="ffEstateFab" data-action="gotoEstate" title="Go to your Estate"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-castle"></use></svg></button>
-  <button class="ff-farmfab ff-estatefab-guild" id="ffGuildEstateFab" data-action="gotoGuildEstate" title="Go to the Guild Estate"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-shield"></use></svg></button>
+  <button class="ff-chatfab" id="ffChatFab" data-action="toggleChatDrawer" data-tip="Open chat" aria-label="Open chat"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-chat"></use></svg><span class="ff-chatfab-badge" id="ffChatFabBadge"></span></button>
+  <button class="ff-farmfab ff-farmfab-harvest" id="ffHarvestFab" data-action="harvestAllFarm" data-tip="Harvest all ready crops" aria-label="Harvest all ready crops"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-herb"></use></svg><span class="ff-farmfab-badge" id="ffHarvestFabBadge"></span></button>
+  <button class="ff-farmfab ff-farmfab-plant" id="ffPlantFab" data-action="plantAllFarm" data-tip="Plant all empty fields" aria-label="Plant all empty fields"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-seed"></use></svg><span class="ff-farmfab-badge" id="ffPlantFabBadge"></span></button>
+  <button class="ff-farmfab ff-farmfab-fertilize" id="ffFertilizeFab" data-action="fertilizeAllFarm" data-tip="Fertilize all growing crops" aria-label="Fertilize all growing crops"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-spice"></use></svg><span class="ff-farmfab-badge" id="ffFertilizeFabBadge"></span></button>
+  <button class="ff-farmfab ff-estatefab-my" id="ffEstateFab" data-action="gotoEstate" data-tip="Go to your Estate" aria-label="Go to your Estate"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-castle"></use></svg></button>
+  <button class="ff-farmfab ff-estatefab-guild" id="ffGuildEstateFab" data-action="gotoGuildEstate" data-tip="Go to the Guild Estate" aria-label="Go to the Guild Estate"><svg class="game-icon" viewBox="0 0 24 24" style="width:22px;height:22px;"><use href="#shape-shield"></use></svg></button>
   <div class="ff-ivy ff-ivy-l" id="ffIvyL"></div>
   <div class="ff-ivy ff-ivy-r" id="ffIvyR"></div>
   <div id="chatDrawerOverlay"></div>
@@ -19811,12 +19819,12 @@
       if(estateVisit.error) return vh + '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad)">'+escapeHtml(estateVisit.error)+'</div>';
       if(!estateVisit.estate || !estateVisit.estate.grid) return vh + '<div class="empty-note">'+vName+' hasn’t published an estate yet.</div>';
       vh += '<div class="estate-canvas-wrap">'+
-        '<button class="estate-zoom-btn estate-zoom-out" data-action="estateZoomOut" title="Zoom out">−</button>'+
-        '<button class="estate-rotate-btn estate-rotate-left" data-action="estateRotateLeft" title="Rotate 90° left">↺</button>'+
+        '<button class="estate-zoom-btn estate-zoom-out" data-action="estateZoomOut" data-tip="Zoom out" aria-label="Zoom out">−</button>'+
+        '<button class="estate-rotate-btn estate-rotate-left" data-action="estateRotateLeft" data-tip="Rotate 90° left" aria-label="Rotate 90° left">↺</button>'+
         '<canvas id="estateCanvas" width="580" height="490"></canvas>'+
-        '<button class="estate-zoom-btn estate-zoom-in" data-action="estateZoomIn" title="Zoom in">+</button>'+
-        '<button class="estate-rotate-btn estate-rotate-right" data-action="estateRotateRight" title="Rotate 90° right">↻</button>'+
-        '<button class="estate-view-btn'+(estateTopDown?' on':'')+'" data-action="estateToggleTopDown" title="Toggle top-down view">'+(estateTopDown?'▦ 2D':'◈ 3D')+'</button>'+
+        '<button class="estate-zoom-btn estate-zoom-in" data-action="estateZoomIn" data-tip="Zoom in" aria-label="Zoom in">+</button>'+
+        '<button class="estate-rotate-btn estate-rotate-right" data-action="estateRotateRight" data-tip="Rotate 90° right" aria-label="Rotate 90° right">↻</button>'+
+        '<button class="estate-view-btn'+(estateTopDown?' on':'')+'" data-action="estateToggleTopDown" data-tip="Toggle top-down view" aria-label="Toggle top-down view">'+(estateTopDown?'▦ 2D':'◈ 3D')+'</button>'+
         '</div>';
       vh += '<div class="estate-hover-info" id="estateHoverInfo">Read-only view — hover a tile to inspect it. Drag to pan, +/− to zoom, arrows to rotate.</div>';
       return vh;
@@ -19837,12 +19845,12 @@
       : 'Your home plot -- terraformable up to 20 layers tall, and expandable one tile at a time with gold. ')
       + 'Click a tile to see what you can do with it, or click one of its 4 borders (highlighted along its edges) to select that border instead -- this is where fences, walls, and doors will eventually go. Drag to pan the view, use the +/- buttons to zoom, and the turn arrows to rotate the estate 90\u00b0 at a time. Each tile starts covered by a natural obstacle (trees, berries, herbs, rocks, or ore) that must be cleared with the matching Gathering skill before you can raise, lower, or pave it.</div>';
     html += '<div class="estate-canvas-wrap">'+
-      '<button class="estate-zoom-btn estate-zoom-out" data-action="estateZoomOut" title="Zoom out">\u2212</button>'+
-      '<button class="estate-rotate-btn estate-rotate-left" data-action="estateRotateLeft" title="Rotate estate 90\u00b0 left">\u21ba</button>'+
+      '<button class="estate-zoom-btn estate-zoom-out" data-action="estateZoomOut" data-tip="Zoom out" aria-label="Zoom out">\u2212</button>'+
+      '<button class="estate-rotate-btn estate-rotate-left" data-action="estateRotateLeft" data-tip="Rotate estate 90\u00b0 left" aria-label="Rotate estate 90\u00b0 left">\u21ba</button>'+
       '<canvas id="estateCanvas" width="580" height="490"></canvas>'+
-      '<button class="estate-zoom-btn estate-zoom-in" data-action="estateZoomIn" title="Zoom in">+</button>'+
-      '<button class="estate-rotate-btn estate-rotate-right" data-action="estateRotateRight" title="Rotate estate 90\u00b0 right">\u21bb</button>'+
-      '<button class="estate-view-btn'+(estateTopDown?' on':'')+'" data-action="estateToggleTopDown" title="Toggle top-down view">'+(estateTopDown?'\u25a6 2D':'\u25c8 3D')+'</button>'+
+      '<button class="estate-zoom-btn estate-zoom-in" data-action="estateZoomIn" data-tip="Zoom in" aria-label="Zoom in">+</button>'+
+      '<button class="estate-rotate-btn estate-rotate-right" data-action="estateRotateRight" data-tip="Rotate estate 90\u00b0 right" aria-label="Rotate estate 90\u00b0 right">\u21bb</button>'+
+      '<button class="estate-view-btn'+(estateTopDown?' on':'')+'" data-action="estateToggleTopDown" data-tip="Toggle top-down view" aria-label="Toggle top-down view">'+(estateTopDown?'\u25a6 2D':'\u25c8 3D')+'</button>'+
       '</div>';
     html += '<div class="estate-hover-info" id="estateHoverInfo">Hover a tile or its borders to inspect it. Drag to pan, +/- to zoom, arrows to rotate.</div>';
     html += '<div class="estate-options-panel">';
@@ -20271,13 +20279,63 @@
   function chatUnreadLabel(){ return chatUnreadCount > 99 ? '99+' : String(chatUnreadCount); }
   // Suffix appended to the "Chat" title, e.g. "Chat (4)", so unread count is visible on the chat card/dock.
   function chatUnreadSuffix(){ return chatUnreadCount > 0 ? ' (' + chatUnreadLabel() + ')' : ''; }
+  // ======== Themed hover tooltips ========
+  // Any element carrying data-tip gets an instant, styled tooltip. Replaces native title= on the
+  // icon-only controls (FABs, estate camera buttons), which otherwise waited ~1s and rendered as an
+  // unstyled OS box. Icon-only buttons also carry aria-label so removing title costs no accessibility.
+  // One reused node + delegated listeners, so it covers markup that re-renders (the FABs do, constantly).
+  var _tipEl = null;
+  function tipEnsure(){
+    if(_tipEl && _tipEl.parentNode) return _tipEl;
+    _tipEl = document.createElement('div');
+    _tipEl.className = 'ff-tip';
+    document.body.appendChild(_tipEl);
+    return _tipEl;
+  }
+  function tipHide(){ if(_tipEl) _tipEl.classList.remove('on'); }
+  // Set/refresh a control's tip (and its accessible name). Live-updating tips -- the FAB counts --
+  // go through here so the two never drift apart. Refreshes the visible tooltip if it's showing.
+  function tipSet(el, txt){
+    if(!el) return;
+    el.setAttribute('data-tip', txt);
+    el.setAttribute('aria-label', txt);
+    if(_tipEl && _tipEl.classList.contains('on') && el.matches(':hover')) tipShowFor(el);
+  }
+  function tipShowFor(el){
+    var txt = el.getAttribute('data-tip');
+    if(!txt){ tipHide(); return; }
+    var t = tipEnsure();
+    t.textContent = txt;
+    t.classList.add('on');
+    // Centre above the control; drop below when there's no room, and clamp inside the viewport.
+    var r = el.getBoundingClientRect(), tw = t.offsetWidth, th = t.offsetHeight;
+    var left = r.left + r.width / 2 - tw / 2;
+    var top = r.top - th - 8;
+    if(top < 6) top = r.bottom + 8;
+    left = Math.max(6, Math.min(left, window.innerWidth - tw - 6));
+    t.style.left = Math.round(left) + 'px';
+    t.style.top = Math.round(top) + 'px';
+  }
+  function tipTargetFrom(e){
+    var n = e.target;
+    return (n && n.closest) ? n.closest('[data-tip]') : null;
+  }
+  document.addEventListener('mouseover', function(e){ var el = tipTargetFrom(e); if(el) tipShowFor(el); else tipHide(); });
+  document.addEventListener('mouseout',  function(e){ if(tipTargetFrom(e)) tipHide(); });
+  // Keyboard users get the same hint on focus.
+  document.addEventListener('focusin',  function(e){ var el = tipTargetFrom(e); if(el) tipShowFor(el); });
+  document.addEventListener('focusout', tipHide);
+  // A tap fires the button's action, so never leave a tooltip stranded on touch; same on scroll.
+  document.addEventListener('touchstart', tipHide, { passive:true });
+  document.addEventListener('click', tipHide, true);
+  window.addEventListener('scroll', tipHide, true);
   // Refresh the unread surfaces in place (no panel rebuild -> the live #chatInput keeps focus/value):
   // the mobile FAB flash + count badge, and the desktop dock's "Chat (N)" title.
   function updateChatFab(){
     var fab = document.getElementById('ffChatFab');
     if(fab){
       fab.classList.toggle('ff-chatfab-alert', chatUnreadCount > 0);
-      fab.title = chatUnreadCount > 0 ? ('Open chat (' + chatUnreadLabel() + ' unread)') : 'Open chat';
+      tipSet(fab, chatUnreadCount > 0 ? ('Open chat (' + chatUnreadLabel() + ' unread)') : 'Open chat');
     }
     var badge = document.getElementById('ffChatFabBadge');
     if(badge) badge.textContent = chatUnreadCount > 0 ? chatUnreadLabel() : '';
@@ -20298,9 +20356,9 @@
     var hb = document.getElementById('ffHarvestFabBadge'); if(hb) hb.textContent = readyN > 0 ? (readyN > 99 ? '99+' : readyN) : '';
     var pb = document.getElementById('ffPlantFabBadge'); if(pb) pb.textContent = plantN > 0 ? (plantN > 99 ? '99+' : plantN) : '';
     var fb = document.getElementById('ffFertilizeFabBadge'); if(fb) fb.textContent = fertN > 0 ? (fertN > 99 ? '99+' : fertN) : '';
-    hv.title = 'Harvest all ready crops (' + readyN + ')';
-    pl.title = 'Plant all empty fields (' + plantN + ')';
-    if(fz) fz.title = 'Fertilize all growing crops (' + fertN + ')';
+    tipSet(hv, 'Harvest all ready crops (' + readyN + ')');
+    tipSet(pl, 'Plant all empty fields (' + plantN + ')');
+    tipSet(fz, 'Fertilize all growing crops (' + fertN + ')');
   }
   // Is the player running a build/clear/terraform action on a SPECIFIC estate scope? (Distinct from the
   // no-arg estateJobActive() above, which checks the currently-active estate.) Personal estates hold a
@@ -25723,12 +25781,12 @@
       // Interactive estate preview -- a blank plot potential players can drag/zoom/rotate.
       + '<div class="ff-land-estate"><div class="ff-land-show-t">Your estate awaits &mdash; drag to look around, zoom &amp; rotate</div>'
         + '<div class="estate-canvas-wrap">'
-          + '<button class="estate-zoom-btn estate-zoom-out" data-action="landingEstZoom" data-d="-0.15" title="Zoom out">−</button>'
-          + '<button class="estate-rotate-btn estate-rotate-left" data-action="landingEstRotate" data-d="-1" title="Rotate left">↺</button>'
+          + '<button class="estate-zoom-btn estate-zoom-out" data-action="landingEstZoom" data-d="-0.15" data-tip="Zoom out" aria-label="Zoom out">−</button>'
+          + '<button class="estate-rotate-btn estate-rotate-left" data-action="landingEstRotate" data-d="-1" data-tip="Rotate left" aria-label="Rotate left">↺</button>'
           + '<canvas id="estateCanvas" width="600" height="360"></canvas>'
-          + '<button class="estate-zoom-btn estate-zoom-in" data-action="landingEstZoom" data-d="0.15" title="Zoom in">+</button>'
-          + '<button class="estate-rotate-btn estate-rotate-right" data-action="landingEstRotate" data-d="1" title="Rotate right">↻</button>'
-          + '<button class="estate-view-btn'+(estateTopDown?' on':'')+'" data-action="landingEstToggle" title="Toggle top-down view">'+(estateTopDown?'▦ 2D':'◈ 3D')+'</button>'
+          + '<button class="estate-zoom-btn estate-zoom-in" data-action="landingEstZoom" data-d="0.15" data-tip="Zoom in" aria-label="Zoom in">+</button>'
+          + '<button class="estate-rotate-btn estate-rotate-right" data-action="landingEstRotate" data-d="1" data-tip="Rotate right" aria-label="Rotate right">↻</button>'
+          + '<button class="estate-view-btn'+(estateTopDown?' on':'')+'" data-action="landingEstToggle" data-tip="Toggle top-down view" aria-label="Toggle top-down view">'+(estateTopDown?'▦ 2D':'◈ 3D')+'</button>'
         + '</div></div>'
       + (ports ? '<div class="ff-land-show"><div class="ff-land-show-t">All 24 Classes</div><div class="ff-land-ports">' + ports + '</div></div>' : '')
       + '<div style="display:flex;flex-direction:column;align-items:center;gap:7px;margin-top:22px;"><div class="ff-land-show-t" style="margin:0;">Join the community</div>' + discordLinkHtml('Fantasy Frontiers Discord') + '</div>'
