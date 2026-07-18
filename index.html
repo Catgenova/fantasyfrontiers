@@ -20515,6 +20515,7 @@
   // answers over TLS to be checked, never stores them. Users author RECOVERY_Q_COUNT questions and
   // must answer at least RECOVERY_NEEDED correctly to reset their password.
   var RECOVERY_Q_COUNT = 3, RECOVERY_NEEDED = 2; // must match NEEDED in the account_recovery edge fn (2-of-3)
+  var RECOVERY_A_MIN = 5; // must match A_MIN in the account_recovery edge fn; checked on the normalized answer
   var recoveryStatus = null, recoveryStatusLoading = false;    // settings: {has_questions, questions:[q,...]}
   var recoveryBusy = false, recoveryMsg = '', recoveryOk = false, recoveryEditing = false;
   var recoverOpen = false, recoverStep = 'username', recoverUsername = '', recoverQuestions = null, recoverBusy = false, recoverMsg = '';
@@ -20543,7 +20544,9 @@
       var qEl = document.getElementById('recQ'+i), aEl = document.getElementById('recA'+i);
       var q = qEl ? qEl.value.trim() : '', a = aEl ? aEl.value : '';
       if(q.length < 3){ recoveryMsg = 'Question '+(i+1)+' is too short.'; recoveryOk = false; renderSettingsModal(); return; }
-      if(!a.trim()){ recoveryMsg = 'Question '+(i+1)+' needs an answer.'; recoveryOk = false; renderSettingsModal(); return; }
+      // Normalize the same way the server does (trim + collapse whitespace) so the length check matches.
+      var aNorm = String(a).trim().replace(/\s+/g,' ');
+      if(aNorm.length < RECOVERY_A_MIN){ recoveryMsg = 'Answer '+(i+1)+' must be at least '+RECOVERY_A_MIN+' characters.'; recoveryOk = false; renderSettingsModal(); return; }
       qs.push({ q:q, a:a });
     }
     recoveryBusy = true; recoveryMsg = ''; renderSettingsModal();
@@ -20565,7 +20568,7 @@
       html += '<button class="action-btn" data-action="toggleRecoveryEdit" style="width:auto;flex:0 0 auto;">'+((recoveryStatus && recoveryStatus.has_questions)?'Replace recovery questions':'Set up recovery questions')+'</button>';
       if(recoveryMsg){ html += '<div style="font-size:12px;'+(recoveryOk?'color:var(--hp-good)':'color:var(--hp-bad)')+'">'+escapeHtml(recoveryMsg)+'</div>'; }
     } else {
-      html += '<div class="settings-row-desc">Write '+RECOVERY_Q_COUNT+' questions only you can answer, and their answers. Answers ignore case and extra spaces. Keep them memorable — there is no email backup.</div>';
+      html += '<div class="settings-row-desc">Write '+RECOVERY_Q_COUNT+' questions only you can answer, and their answers (at least '+RECOVERY_A_MIN+' characters each). Answers ignore case and extra spaces. Keep them memorable — there is no email backup.</div>';
       var existingQs = (recoveryStatus && recoveryStatus.questions) || [];
       for(var i=0;i<RECOVERY_Q_COUNT;i++){
         html += '<input id="recQ'+i+'" class="chat-input" maxlength="120" placeholder="Question '+(i+1)+'" value="'+escapeHtml(existingQs[i]||'')+'">';

@@ -32,7 +32,9 @@ const NEEDED = 2;           // ...and must answer at least this many correctly t
 const MAX_FAIL = 5;         // failed recovery attempts before a temporary lock
 const LOCK_MINUTES = 15;
 const Q_MIN = 3, Q_MAX = 120;
-const A_MIN = 1, A_MAX = 80;
+const A_MIN = 5, A_MAX = 80;  // min answer length, checked on the NORMALIZED answer (trimmed/collapsed), so
+                              // 5 = five meaningful chars -- single-char answers are too guessable/brute-forceable.
+                              // Only enforced on `set`; existing shorter answers still work for `recover`.
 const PW_MIN = 8;
 
 // Identical normalization on set + verify so matching is forgiving of case/spacing.
@@ -73,7 +75,7 @@ Deno.serve(async (req) => {
       const q = String((it && (it as Record<string, unknown>).q) ?? "").trim();
       const a = normAnswer(it && (it as Record<string, unknown>).a);
       if (q.length < Q_MIN || q.length > Q_MAX) return json({ ok: false, error: "Each question must be 3–120 characters." }, 400);
-      if (a.length < A_MIN) return json({ ok: false, error: "Every question needs an answer." }, 400);
+      if (a.length < A_MIN) return json({ ok: false, error: `Each answer must be at least ${A_MIN} characters.` }, 400);
       items.push({ q, a });
     }
     const { error } = await admin.rpc("recovery_set", { p_user: user.id, p_username: username, p_items: items });
