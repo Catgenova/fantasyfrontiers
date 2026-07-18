@@ -17679,7 +17679,10 @@
     needsRender = true;
   }
   function estateLowerLayer(x, y){
-    if(guildDestroyBlocked()) return;
+    // Lowering is TERRAFORM (dirt-only, demolishes nothing built), so -- like its siblings estateRaiseLayer
+    // and estateClearObstacle -- it is NOT gated by the guild demolish permission. (It previously carried a
+    // stray guildDestroyBlocked() check copy-pasted from the remove/destroy actions, which silently no-op'd
+    // the Lower button for any guild member below the demolish rank even with all shown requirements met.)
     var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || cell.type !== 'dirt') return;
     if(cell.obstacle){ addLog('Clear the obstacle on this tile before terraforming it.', 'danger'); return; }
