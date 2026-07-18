@@ -241,6 +241,10 @@
     border-radius:7px;padding:5px 9px;font-family:var(--font-mono,monospace);font-size:11.5px;line-height:1.35;
     box-shadow:0 4px 14px rgba(0,0,0,.45);white-space:normal;text-align:center;}
   .ff-tip.on{opacity:1;transform:translateY(0);}
+  /* "What this foe actually hits YOU for" -- the post-mitigation range. Deliberately its own colour so
+     it never reads as just another neutral stat next to gold/loot; this is the survivability number. */
+  .dmg-vs-you{color:#ff8a4c;font-weight:800;background:rgba(255,138,76,.13);border:1px solid rgba(255,138,76,.38);
+    border-radius:5px;padding:0 6px;white-space:nowrap;cursor:help;}
   .ff-ivy{position:absolute;top:-8px;z-index:9;pointer-events:none;width:70px;height:60px;}
   .ff-ivy-l{left:-4px;} .ff-ivy-r{right:-4px;transform:scaleX(-1);}
   @keyframes ffChipFlash{0%,100%{opacity:1;}50%{opacity:.45;}}
@@ -12168,6 +12172,56 @@
       act.monsterHp = Math.max(1, act.monsterHp - dmg);
     }
   }
+  // ---- "What does this foe actually hit ME for?" ------------------------------------------------
+  // The enemy cards used to print the foe's RAW atkMin-atkMax, which is not what a player experiences:
+  // armour, shield, resistances, class mods and enchants all sit between that number and their health
+  // bar. These two helpers replay the SAME chain monsterAttackTick applies, so the card can show the
+  // real post-mitigation range. IF YOU CHANGE THE DAMAGE CHAIN IN monsterAttackTick, CHANGE IT HERE TOO
+  // (a selftest pins the two together on a known loadout).
+  //
+  // The player-side half is identical for every foe, so it's computed once per render and passed in.
+  function playerDefenseProfile(st){
+    st = st || state;
+    var offhandStyle = getOffhandStyle(st.equippedOffhand);
+    var offhandItem = getEquippedOffhandItem(st);
+    return {
+      armorDefense: getTotalArmorDefense(st) * (1 + getEquippedRelicBonus(st)) * getFamiliarArmorMult() * (1 + resolveArmorMult(st)) * heraldFortressArmorMult(st) * sentinelArmorMult(st) * sentinelUnbreakableArmorMult(st) * armorerTemperMult() * berserkerGlassMult(st),
+      offhandStyle: offhandStyle,
+      offhandItem: offhandItem,
+      offhandProf: (offhandStyle && st.equippedOffhand) ? (1 + Math.min(0.15, getLevel(st.xp[offhandStyle.id] || 0) * 0.005)) : 1,
+      armorMix: getPlayerArmorTypeMix(st),
+      shieldProf: 1 + shieldProfMult(st),
+      // Every foe-independent multiplier on the incoming hit, folded once.
+      flat: (1 - getFamiliarEnemyWeakenPct()) * heraldGuardMult(st) * templarIncomingDmgMult() * knightDamageTakenMult(st)
+          * (1 - scrollDamageReduction()) * (1 - getWardResistanceBonus(st)) * legWastingCurseIncomingMult(st)
+          * legImmunizeIncomingMult(st) * legNightshroudIncomingMult(st) * hoarfrostIncomingMult(st)
+          * undyingRageIncomingMult(st) * enchantDamageReductionMult(st) * enchantResistanceMult(st),
+      tenacity: tenacityLowHpMult(st)
+    };
+  }
+  // Range of an UNBLOCKED hit at full Health -- the honest worst case. A Block cuts it further, and
+  // in-fight stacks (Herald guard, low-HP scaling) read neutral out of combat.
+  function enemyDamageRangeVsPlayer(monster, st, prof){
+    st = st || state;
+    if(!monster) return { min:0, max:0 };
+    prof = prof || playerDefenseProfile(st);
+    var atkTypes = monster.attackTypes || { blunt:1/3, slashing:1/3, piercing:1/3 };
+    var mult = weightedAdvantage(atkTypes, prof.armorMix) * incomingElementMult(st, monster)
+             * famResistMult(atkTypes) * elementResistMult(st, monster.element) * prof.flat;
+    var shieldDef = (prof.offhandStyle && prof.offhandStyle.type === 'shield' && prof.offhandItem)
+      ? prof.offhandItem.defense * weightedShieldCounter(prof.offhandStyle, atkTypes) * prof.offhandProf * prof.shieldProf : 0;
+    // A matching Elemental Ward negates a share of whatever still lands.
+    var wardCut = 0;
+    if(prof.offhandStyle && prof.offhandStyle.type === 'ward' && prof.offhandItem && monster.element === prof.offhandStyle.element){
+      wardCut = Math.min(1, (prof.offhandItem.reflect || 0) + wardingReflectBonus(st) + wardersFocusReflectBonus());
+    }
+    function hit(raw){
+      var d = Math.max(1, Math.round((Math.round(raw * mult) - prof.armorDefense - shieldDef) / prof.tenacity));
+      if(wardCut > 0) d = Math.max(0, d - Math.round(d * wardCut));
+      return d;
+    }
+    return { min: hit(monster.atkMin), max: hit(monster.atkMax) };
+  }
   function monsterAttackTick(){
     var act = state.activity;
     var monster = monsterById(act.monsterId);
@@ -17176,13 +17230,21 @@
     html += '<h3>'+categoryMeta.icon+' '+categoryMeta.label+'</h3>';
     html += '<div class="section-intro">'+categoryMeta.desc+'</div>';
     html += '<div class="card-grid">';
+    var _defProf = playerDefenseProfile(state);   // player-side mitigation is the same for every card
     categoryMonsters.forEach(function(m){
       var locked = lvl < m.levelReq;
       var isActive = act.type==='combat' && act.monsterId===m.id;
       var matchup = weightedMatchupLabel(weaponStyle.attackTypes || {blunt:1}, m.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+monsterPortrait(m)+'</div><div><div class="item-name">'+m.name+'</div><div class="item-meta">Req. Lv '+m.levelReq+' &bull; '+m.hp+' HP &bull; '+m.attackSpeed+'s attack</div></div></div>';
-      html += '<div class="item-stats"><span>'+m.goldMin+'-'+m.goldMax+'g</span><span>'+m.atkMin+'-'+m.atkMax+' dmg</span><span>'+getMonsterLootChance(m)+'% '+getMonsterLootLabel(m)+'</span><span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
+      // Show what this foe lands on YOU after your gear, not its raw weapon damage -- the raw numbers
+      // stay in the tooltip so the mitigation you're getting is visible by comparison.
+      var _dvy = enemyDamageRangeVsPlayer(m, state, _defProf);
+      var _dvyTip = 'Damage this foe actually lands on YOU per hit, after your armour, shield, resistances, class mods and enchants. '
+        + 'Unblocked, at full Health. Its raw damage is ' + m.atkMin + '–' + m.atkMax + '.';
+      html += '<div class="item-stats"><span>'+m.goldMin+'-'+m.goldMax+'g</span>'
+        + '<span class="dmg-vs-you" data-tip="'+escapeHtml(_dvyTip)+'">'+fmt(_dvy.min)+'–'+fmt(_dvy.max)+' to you</span>'
+        + '<span>'+getMonsterLootChance(m)+'% '+getMonsterLootLabel(m)+'</span><span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
       html += '<div class="chance-line" style="font-size:11px">Dodge '+monsterDodge(m)+' &bull; '+(locked?'':'Your hit chance '+Math.round(playerHitChance(m)*100)+'%')+'<br>Attack: '+formatTypeMix(m.attackTypes)+'<br>Armor: '+formatTypeMix(m.armorTypes)+'</div>';
       html += '<div class="elem-line">'+elementBadge(m)+incomingElementNote(m)+'</div>';
       if(locked){
@@ -26059,6 +26121,7 @@
       monsterById:monsterById, addItem:addItem,
       DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
+      playerDefenseProfile:playerDefenseProfile, enemyDamageRangeVsPlayer:enemyDamageRangeVsPlayer,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,
       WARD_TYPES:WARD_TYPES, WARD_TYPE_MAP:WARD_TYPE_MAP, isWard:isWard, WARD_ITEMS:WARD_ITEMS, wardReflectPct:wardReflectPct, WARD_FULL_REFLECT_CHANCE:WARD_FULL_REFLECT_CHANCE, getWardTierData:getWardTierData, WARD_ELEMENTS:WARD_ELEMENTS,

@@ -2016,6 +2016,29 @@
   });
 
   // ---- Dungeons: D1 "Cave" (25 arachnids, L100->125, ~10x boss, threat targeting) ---------
+  // ---- Enemy cards: the "damage to YOU" range (post-mitigation, current gear) ------------------
+  suite('combat: enemy damage vs player', function(){
+    var s = FF._state;
+    var foe = { name:'Test Foe', atkMin:100, atkMax:200, attackTypes:{blunt:1}, armorTypes:{blunt:1}, element:null };
+    ok(typeof FF.enemyDamageRangeVsPlayer === 'function', 'enemyDamageRangeVsPlayer is exported');
+    ok(typeof FF.playerDefenseProfile === 'function', 'playerDefenseProfile is exported');
+    var r = FF.enemyDamageRangeVsPlayer(foe, s);
+    ok(r && typeof r.min === 'number' && typeof r.max === 'number', 'returns a {min,max} pair');
+    ok(r.min >= 1 && r.max >= 1, 'a landed hit is always at least 1 (never zero/negative)');
+    ok(r.min <= r.max, 'min never exceeds max');
+    // Mitigation must never INFLATE the foe's raw damage -- the displayed number is what lands.
+    ok(r.max <= foe.atkMax, 'post-mitigation max never exceeds the raw max');
+    // Harder-hitting foe -> strictly larger (or equal, if both floor at 1) landed damage.
+    var big = FF.enemyDamageRangeVsPlayer({ name:'Big', atkMin:1000, atkMax:2000, attackTypes:{blunt:1}, armorTypes:{blunt:1}, element:null }, s);
+    ok(big.max >= r.max, 'a foe with higher raw damage lands at least as much on the same gear');
+    // Passing a precomputed profile (what the card grid does) must match computing it inline.
+    var prof = FF.playerDefenseProfile(s);
+    var viaProf = FF.enemyDamageRangeVsPlayer(foe, s, prof);
+    eq(viaProf.min, r.min, 'precomputed profile gives the same min as an inline profile');
+    eq(viaProf.max, r.max, 'precomputed profile gives the same max as an inline profile');
+    eq(FF.enemyDamageRangeVsPlayer(null, s).max, 0, 'a null foe yields a zero range (no crash)');
+  });
+
   suite('dungeons: D1 Cave', function(){
     var def = FF.DUNGEON_DEFS.d1;
     ok(def, 'D1 dungeon defined');
