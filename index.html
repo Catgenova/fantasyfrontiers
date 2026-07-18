@@ -17531,8 +17531,23 @@
       + discordLinkHtml('Join our Discord', 'padding:10px 22px;') + '</div>';
     html += '<button class="action-btn settings-close" data-action="closeSettings">Close</button>';
     html += '</div>';
+    // This modal is rebuilt by EVERY render() (it's in the main render list), which fires constantly
+    // during play -- plus again when the recovery/Discord status loads land a second or two after it
+    // opens. Replacing innerHTML would reset the scroll box (snapping a reader at the bottom back to
+    // the top) and blank anything half-typed, so carry scroll + typed values + focus/caret across.
+    var _prevCard = overlay.querySelector('.settings-card');
+    var _prevScroll = _prevCard ? _prevCard.scrollTop : 0;
+    var _vals = {}, _prevIn = overlay.querySelectorAll('input[id]');
+    for(var _vi = 0; _vi < _prevIn.length; _vi++){ if(_prevIn[_vi].type !== 'checkbox') _vals[_prevIn[_vi].id] = _prevIn[_vi].value; }
+    var _act = document.activeElement;
+    var _actId = (_act && _act.id && overlay.contains(_act)) ? _act.id : null;
+    var _selS = null, _selE = null;
+    if(_actId){ try{ _selS = _act.selectionStart; _selE = _act.selectionEnd; }catch(e){} }
     overlay.className = 'familiar-popup-overlay';
     overlay.innerHTML = html;
+    for(var _k in _vals){ if(_vals[_k]){ var _el = document.getElementById(_k); if(_el) _el.value = _vals[_k]; } }
+    if(_prevScroll > 0){ var _card = overlay.querySelector('.settings-card'); if(_card) _card.scrollTop = _prevScroll; }
+    if(_actId){ var _re = document.getElementById(_actId); if(_re){ try{ _re.focus(); if(_selS !== null) _re.setSelectionRange(_selS, _selE); }catch(e){} } }
   }
   // Standardize how a class's required gear is displayed: always Mainhand -> Offhand -> Helm -> Chest ->
   // Gloves -> Boots, regardless of the order each class happens to declare its reqParts in. The slot is
