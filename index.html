@@ -9927,6 +9927,23 @@
   // each second went to simulation vs full renders vs the light in-place pass, plus how many full
   // rebuilds actually happened. Whatever dominates is the thing worth fixing. Zero cost when off --
   // every probe is behind PERF_ON, so a normal build never calls performance.now().
+  // ---- Per-frame memo ---------------------------------------------------------------------------
+  // Within ONE animation frame the player's gear, physique and workshops cannot change, so every
+  // slot's effTime depends on multipliers that are constant for that frame. They were being
+  // recomputed per slot -- with ~15 running slots, and describeTask doing it again, that's ~30 full
+  // walks of the equipment/physique/workshop stack EVERY frame. The ?perf profiler measured that pass
+  // at ~90% of wall clock (~40ms/frame), which is the actual cause of the choppiness. Cache them for
+  // the life of the frame; the counter bumps in loop(), so nothing can go stale across frames.
+  var _frameId = 0, _frameMemo = { _f:-1 };
+  var _totalLevelCache = 0, _totalLevelAt = 0;   // header Total Level: recomputed twice a second, not per frame
+  function frameMemo(key, fn){
+    if(_frameMemo._f !== _frameId) _frameMemo = { _f:_frameId };
+    if(!(key in _frameMemo)) _frameMemo[key] = fn();
+    return _frameMemo[key];
+  }
+  function memoSpeedMult(){ return frameMemo('spd', function(){ return speedMultiplier(state); }); }
+  function memoToolSpeed(skillId){ return frameMemo('tool:'+skillId, function(){ return toolSpeedMultiplier(state, skillId); }); }
+  function memoGatherToolSpeed(skillId){ return frameMemo('gtool:'+skillId, function(){ return gatherToolSpeedMultiplier(state, skillId); }); }
   var PERF_ON = /[?&]perf\b/.test(location.search);
   var _perf = { sim:0, render:0, dynamic:0, frame:0, frames:0, renders:0, since:0 };
   function perfReport(){
@@ -24181,10 +24198,14 @@
 
   function updateHeader(){
     var hg = document.getElementById('hdrGold'); if(hg) hg.textContent = fmt(state.gold);
-    var totalLevel = ALL_MAIN_SKILL_IDS.reduce(function(sum,sk){
-      return sum + getLevel(state.xp[sk]);
-    }, 0);
-    var hl = document.getElementById('hdrLevel'); if(hl) hl.textContent = totalLevel;
+    // Total Level walks every skill through getLevel(). That ran on EVERY frame just to refresh a
+    // number that changes a few times an hour, so recompute it at most twice a second.
+    var _tlNow = Date.now();
+    if(_tlNow - _totalLevelAt >= 500){
+      _totalLevelAt = _tlNow;
+      _totalLevelCache = ALL_MAIN_SKILL_IDS.reduce(function(sum,sk){ return sum + getLevel(state.xp[sk]); }, 0);
+    }
+    var hl = document.getElementById('hdrLevel'); if(hl) hl.textContent = _totalLevelCache;
     updateTopbarLive(); // refresh coin/buff/tracker text in place; only rebuilds on a structural change
   }
 
@@ -24196,21 +24217,21 @@
     if(slot.type==='gather'){
       var gi = ALL_GATHER_ITEMS[slot.itemId];
       return { name: gi?gi.name:slot.itemId, icon: gi?gi.icon:svgIcon('chest','var(--cat-gathering)'),
-        effTime: gi ? gi.time*1000*speedMultiplier(state)*gatherToolSpeedMultiplier(state, slot.skill)*(PHYS_LONG_GATHER.indexOf(slot.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1) : 1000, progress: slot.progress||0 };
+        effTime: gi ? gi.time*1000*memoSpeedMult()*memoGatherToolSpeed(slot.skill)*(PHYS_LONG_GATHER.indexOf(slot.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1) : 1000, progress: slot.progress||0 };
     }
     if(slot.type==='pray'){
       var pt = PRAYER_TIERS.filter(function(t){ return t.id===slot.itemId; })[0];
       return { name: pt?pt.name:'Prayer', icon: svgIcon('prayinghands','var(--cat-faith)'),
-        effTime: pt ? pt.time*1000*speedMultiplier(state) : 1000, progress: slot.progress||0 };
+        effTime: pt ? pt.time*1000*memoSpeedMult() : 1000, progress: slot.progress||0 };
     }
     if(slot.craftKind){
       var d = getSpecialTierData(slot), sk = getSpecialSkillId(slot);
       return { name: d?d.name:slot.craftKind, icon: svgIcon('hammer','var(--cat-crafting)'),
-        effTime: d ? d.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, sk) : 1000, progress: slot.progress||0 };
+        effTime: d ? d.time*1000*memoSpeedMult()*memoToolSpeed(sk) : 1000, progress: slot.progress||0 };
     }
     var r = ALL_CRAFT_RECIPES[slot.itemId];
     return { name: r?r.name:slot.itemId, icon: r?r.icon:svgIcon('hammer','var(--cat-crafting)'),
-      effTime: r ? r.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, slot.skill) : 1000, progress: slot.progress||0 };
+      effTime: r ? r.time*1000*memoSpeedMult()*memoToolSpeed(slot.skill) : 1000, progress: slot.progress||0 };
   }
   // Every task currently running: the primary slot (any type) plus each active belt slot. Each
   // gets a stable key ('p' for primary, 'e<idx>' for extra) used for the live-update element ids.
@@ -24257,13 +24278,13 @@
     if(act.type==='gather'){
       var gi = ALL_GATHER_ITEMS[act.itemId];
       return { name:'Gathering: '+(gi?gi.name:act.itemId), icon: gi?gi.icon:svgIcon('chest','var(--cat-gathering)'),
-        effTime: gi ? gi.time*1000*speedMultiplier(state)*gatherToolSpeedMultiplier(state, act.skill)*(PHYS_LONG_GATHER.indexOf(act.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1) : 1000,
+        effTime: gi ? gi.time*1000*memoSpeedMult()*memoGatherToolSpeed(act.skill)*(PHYS_LONG_GATHER.indexOf(act.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1) : 1000,
         progress: act.progress||0, remaining: Infinity, successPct: gatherSuccessPct(act.skill), navCat:'gathering', navSub:act.skill };
     }
     if(act.type==='pray'){
       var pt = PRAYER_TIERS.filter(function(t){ return t.id===act.itemId; })[0];
       return { name:'Praying: '+(pt?pt.name:act.itemId), icon: svgIcon('prayinghands','var(--cat-faith)'),
-        effTime: pt ? pt.time*1000*speedMultiplier(state) : 1000, progress: act.progress||0, remaining: Infinity, successPct: 100, navCat:'faith', navSub:'prayer' };
+        effTime: pt ? pt.time*1000*memoSpeedMult() : 1000, progress: act.progress||0, remaining: Infinity, successPct: 100, navCat:'faith', navSub:'prayer' };
     }
     if(act.type==='combat'){
       var m = monsterById(act.monsterId);
@@ -24275,7 +24296,7 @@
       var d = getSpecialTierData(act), sk = getSpecialSkillId(act);
       var sChance = (act.craftKind==='ring' || act.craftKind==='amulet') ? jewelrySuccessRate(state) : craftSuccessRate(state, sk);
       return { name:'Crafting: '+(d?d.name:act.craftKind), icon: svgIcon('hammer','var(--cat-crafting)'),
-        effTime: d ? d.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, sk) : 1000, progress: act.progress||0,
+        effTime: d ? d.time*1000*memoSpeedMult()*memoToolSpeed(sk) : 1000, progress: act.progress||0,
         remaining: d ? taskRunsRemaining(d.inputs) : null, successPct: Math.round(sChance*100), navCat: craftCatForSkill(sk), navSub: sk };
     }
     var r = ALL_CRAFT_RECIPES[act.itemId];
@@ -24286,7 +24307,7 @@
     else if(r && r.meatId) cpct = 100;
     else cpct = Math.round(craftSuccessRate(state, act.skill)*100);
     return { name:'Crafting: '+(r?r.name:act.itemId), icon: r?r.icon:svgIcon('hammer','var(--cat-crafting)'),
-      effTime: r ? r.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, act.skill) : 1000, progress: act.progress||0,
+      effTime: r ? r.time*1000*memoSpeedMult()*memoToolSpeed(act.skill) : 1000, progress: act.progress||0,
       remaining: taskRunsRemaining(inputs), successPct: cpct, navCat: craftCatForSkill(act.skill), navSub: act.skill };
   }
   function gabTaskRemainText(rem){ return rem===Infinity ? '∞' : (rem!=null ? rem+' left' : ''); }
@@ -25560,6 +25581,7 @@
   // ================= MAIN LOOP =================
   var lastTick = Date.now();
   function loop(){
+    _frameId++;                                  // invalidates the per-frame multiplier memo
     var _pf = PERF_ON ? performance.now() : 0;   // frame start (perf build only)
     var now = Date.now();
     var dt = now - lastTick;
