@@ -3414,6 +3414,46 @@
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.activity=sv.act; s.d3Souls=sv.souls; }
   });
 
+  // ---- D3 sets: Batch N — Decay sets (necrotic DoT appliers + amplifiers) ----------------------------
+  suite('D3 sets: Batch N — Decay sets', function(){
+    var s = FF._state, sv = { ba:s.bodyArmor, ui:s.uniqueItems, act:s.activity };
+    function wearD3(cls, n){
+      var order = FF.D3_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
+      s.bodyArmor = {}; s.uniqueItems = {};
+      for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d3' }; s.bodyArmor[order[i]] = { uid:uid }; }
+    }
+    function wearFull(cls){ wearD3(cls, FF.D3_SET_DEFS[cls].full); }
+    var now = Date.now();
+    try {
+      // Decay-tick multipliers (fulls).
+      wearFull('ranger'); s.activity = { type:'combat', monsterHp:500 };
+      near(FF.d3DecayTickMult(s), 1.40, 'Ranger Plague Hunter: Decay ticks +40%');
+      wearFull('pyromancer'); s.activity = { type:'combat', monsterHp:500, burnUntil:now+4000, burnStacks:1 };
+      near(FF.d3DecayTickMult(s), 1.50, 'Pyromancer Cremation: +50% Decay on a burning foe');
+      s.activity = { type:'combat', monsterHp:500 }; near(FF.d3DecayTickMult(s), 1.0, 'Cremation inert on an unburnt foe');
+      wearFull('frostwarden'); s.activity = { type:'combat', monsterHp:500, enemyChillUntil:now+4000 };
+      near(FF.d3DecayTickMult(s), 1.20, 'Frostwarden Deathfrost: +20% Decay on a Chilled foe');
+      // Damage / crit / incoming amplifiers vs a Decayed foe.
+      wearFull('quickdraw'); s.activity = { type:'combat', monsterHp:500, decayStacks:3, decayUntil:now+4000 };
+      near(FF.d3SetDmgMult({}, s), 1.15, 'Quickdraw Grave Toxin: +15% vs a Decayed foe');
+      s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Grave Toxin inert on a clean foe');
+      wearFull('assassin'); s.activity = { type:'combat', monsterHp:500, decayStacks:3, decayUntil:now+4000 };
+      near(FF.d3SetCritDmgBonus(s), 0.30, 'Assassin Death Mark: +30% crit damage vs a Decayed foe');
+      s.activity.decayUntil = now-1; near(FF.d3SetCritDmgBonus(s), 0, 'Death Mark inert on a clean foe');
+      wearFull('sentinel'); s.activity = { type:'combat', monsterHp:500, decayStacks:3, decayUntil:now+4000 };
+      near(FF.d3SetIncomingMult(s), 0.80, 'Sentinel Crypt Wall: Decayed foes deal 20% less');
+      s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetIncomingMult(s), 1.0, 'Crypt Wall inert on a clean foe');
+      // Grave Chill applier (2pc): a chilling hit also applies Decay (tested through the shared chill helper).
+      wearD3('frostwarden', 2); s.activity = { type:'combat', monsterHp:500 };
+      FF.frostwardenApplyChill(s.activity);
+      ok((s.activity.decayStacks||0) >= 1 && FF.enemyDecaying(s), 'Grave Chill: a chilling hit also applies Decay');
+      // The remaining 2pc appliers (Soul Rend / Marrow Shot / Bone Thorns / Necrosis / Funeral Pyre / Decaying
+      // Traps) fire at their own combat hooks; confirm every Decay set is defined.
+      ['plaguebearer','pyromancer','frostwarden','quickdraw','ranger','assassin','sharpshooter','sentinel'].forEach(function(c){
+        ok(FF.D3_SET_DEFS[c] && FF.D3_SET_DEFS[c].b2 && FF.D3_SET_DEFS[c].bf, c+' has a full D3 Decay set'); });
+    } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.activity=sv.act; }
+  });
+
   // ---- D2 sets: Batch B effects (damage & tempo) -----------------------------------------------------
   suite('D2 sets: Batch B combat effects', function(){
     var s = FF._state;
