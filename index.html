@@ -24486,6 +24486,10 @@
     if(_ci){ if(chatChannel==='guild') guildChatDraft = _ci.value; else chatDraft = _ci.value; } // #chatInput is the guild input whenever the guild channel is active (dock/drawer/tab)
     currentArea = areaOf(currentCategory); // keep the rail's active area in sync with the content
     updateHeader();
+    // NOTE: not memoized like #content. renderGlobalActionBar() bakes each slot's live progress % into
+    // the markup, so the string differs every tick and a compare would never hit. Making it skippable
+    // means emitting a stable bar and letting updateGlobalActionBarLive() own the width -- worth doing,
+    // but it changes the most-watched element in the game, so it wants visual verification first.
     document.getElementById('globalActionBar').innerHTML = renderGlobalActionBar();
     flushGabRewardQueue(); // reward floats on render frames too (loop uses render OR updateDynamic)
     renderCatTabs();
