@@ -2016,6 +2016,38 @@
   });
 
   // ---- Dungeons: D1 "Cave" (25 arachnids, L100->125, ~10x boss, threat targeting) ---------
+  // ---- Every special craft kind must be matchable ---------------------------------------------
+  // Regression: 'ward' (Runesmithing) was missing from matchesSpecialCraft, so a running ward craft
+  // could never be found by its card -- the Inscribe button never became Stop and the progress bar
+  // never filled. A kind that can be STARTED but not MATCHED is always this bug, so pin all of them.
+  suite('crafting: special craft kinds are all matchable', function(){
+    ok(typeof FF.matchesSpecialCraft === 'function', 'matchesSpecialCraft is exported');
+    // One representative activity per kind, shaped exactly as its craft* function creates it.
+    var cases = [
+      { kind:'tool',        act:{ skillId:'mining', tierIndex:3 },                       params:{ skillId:'mining', tierIndex:3 } },
+      { kind:'stackweapon', act:{ typeId:'sword', tierIndex:4 },                         params:{ typeId:'sword', tierIndex:4 } },
+      { kind:'stackshield', act:{ typeId:'shieldSmall', tierIndex:2 },                   params:{ typeId:'shieldSmall', tierIndex:2 } },
+      { kind:'stackquiver', act:{ typeId:'quiver', tierIndex:1 },                        params:{ typeId:'quiver', tierIndex:1 } },
+      { kind:'ward',        act:{ typeId:'wardFire', tierIndex:5 },                      params:{ typeId:'wardFire', tierIndex:5 } },
+      { kind:'bodyarmor',   act:{ material:'plate', slot:'chest', tierIndex:6 },         params:{ material:'plate', slot:'chest', tierIndex:6 } },
+      { kind:'belt',        act:{ tierIndex:7 },                                         params:{ tierIndex:7 } },
+      { kind:'offhand',     act:{ typeId:'torch' },                                      params:{ typeId:'torch' } },
+      { kind:'ring',        act:{ typeId:'plain', tierIndex:2 },                         params:{ typeId:'plain', tierIndex:2 } },
+      { kind:'amulet',      act:{ typeId:'plain', tierIndex:2 },                         params:{ typeId:'plain', tierIndex:2 } },
+      { kind:'workshop',    act:{ skillId:'mining', tierIndex:1 },                       params:{ skillId:'mining', tierIndex:1 } },
+      { kind:'cottage',     act:{ tierIndex:3 },                                         params:{ tierIndex:3 } }
+    ];
+    cases.forEach(function(c){
+      var act = Object.assign({ type:'craft', craftKind:c.kind }, c.act);
+      eq(FF.matchesSpecialCraft(act, c.kind, c.params), true, c.kind + ': a running craft matches its own card');
+    });
+    // A different tier / type must NOT match, or every card would show Stop at once.
+    eq(FF.matchesSpecialCraft({ type:'craft', craftKind:'ward', typeId:'wardFire', tierIndex:5 }, 'ward', { typeId:'wardFire', tierIndex:6 }), false, 'ward: a different tier does not match');
+    eq(FF.matchesSpecialCraft({ type:'craft', craftKind:'ward', typeId:'wardFire', tierIndex:5 }, 'ward', { typeId:'wardWater', tierIndex:5 }), false, 'ward: a different element does not match');
+    eq(FF.matchesSpecialCraft(null, 'ward', { typeId:'wardFire', tierIndex:5 }), false, 'a null activity matches nothing');
+    eq(FF.matchesSpecialCraft({ type:'gather' }, 'ward', { typeId:'wardFire', tierIndex:5 }), false, 'a non-craft activity matches nothing');
+  });
+
   // ---- Destroying a unique must never leave it "equipped" -------------------------------------
   // Regression: a shattered Enhancement only cleared the MAINHAND, so a destroyed offhand / armour /
   // ring / amulet stayed equipped -- still drawn, still satisfying its class requirement.
