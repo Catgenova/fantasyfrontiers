@@ -3064,6 +3064,54 @@
     } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; }
   });
 
+  // ---- D2 sets: Batch B effects (damage & tempo) -----------------------------------------------------
+  suite('D2 sets: Batch B combat effects', function(){
+    var s = FF._state;
+    var sv = { ba:s.bodyArmor, ui:s.uniqueItems, hp:s.playerHp, act:s.activity };
+    function wearD2(cls, n){ // seat n D2 pieces of a class on the body-armour slots
+      var order = FF.D2_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
+      s.bodyArmor = {}; s.uniqueItems = {};
+      for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d2' }; s.bodyArmor[order[i]] = { uid:uid }; }
+    }
+    var foe = { hp:1000 };
+    try {
+      var mh = FF.maxHp(s);
+      s.playerHp = mh; s.activity = { type:'combat', monsterHp:800 };
+      // Berserker Reckless (2pc): +18% out, +8% in.
+      wearD2('berserker', 2);
+      near(FF.d2SetDmgMult(foe, s), 1.18, 'Berserker Reckless: +18% damage');
+      near(FF.d2IncomingDmgMult(s), 1.08, 'Berserker Reckless: +8% damage taken');
+      // Berserker Last Stand (full, bare-head 3pc): +50% below 25% HP, stacking with Reckless.
+      wearD2('berserker', 3); s.playerHp = Math.round(mh*0.2);
+      near(FF.d2SetDmgMult(foe, s), 1.18*1.5, 'Berserker Last Stand stacks with Reckless below 25% HP');
+      s.playerHp = mh;
+      // Templar Zealous Wrath (2pc): +15% above 75% HP only.
+      wearD2('templar', 2);
+      near(FF.d2SetDmgMult(foe, s), 1.15, 'Templar Zealous Wrath: +15% above 75% HP');
+      s.playerHp = Math.round(mh*0.5); near(FF.d2SetDmgMult(foe, s), 1.0, 'Zealous Wrath inert below 75% HP'); s.playerHp = mh;
+      // Templar Radiant Aegis (full): +50% Holy shield cap.
+      wearD2('templar', 4); near(FF.templarAegisCapMult(s), 1.5, 'Templar Radiant Aegis: +50% shield cap');
+      // Juggernaut Crushing Blows (2pc): +15% vs foe above 50% HP (reads pre-hit HP).
+      wearD2('juggernaut', 2); s.activity.monsterHp = 800; near(FF.d2SetDmgMult({hp:1000}, s), 1.15, 'Juggernaut Crushing Blows: +15% vs a healthy foe');
+      s.activity.monsterHp = 300; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, 'Crushing Blows inert on a wounded foe');
+      // Sharpshooter Steady Aim (2pc): +12% crit damage.
+      wearD2('sharpshooter', 2); near(FF.d2SetCritDmgBonus(s), 0.12, 'Sharpshooter Steady Aim: +12% crit damage');
+      // Nightblade Creeping Doom (2pc): Vulnerability cap +4; Eclipse (full): +25% at max Vuln.
+      wearD2('nightblade', 2); eq(FF.voidVulnCap(s), 10+4, 'Nightblade Creeping Doom: Vulnerability cap +4');
+      wearD2('nightblade', 4); s.activity = { type:'combat', monsterHp:800, voidVulnStacks:FF.voidVulnCap(s), voidVulnUntil:Date.now()+9999 };
+      near(FF.d2SetDmgMult({hp:1000}, s), 1.25, 'Nightblade Eclipse: +25% at max Vulnerability');
+      // Reaver Savage Wounds (2pc): Bleed cap +3; Bloodfrenzy (full): faster as HP falls.
+      wearD2('reaver', 2); eq(FF.reaverBleedCap(s), 5+3, 'Reaver Savage Wounds: Bleed cap 5 -> 8');
+      wearD2('reaver', 4); s.playerHp = Math.round(mh*0.5);
+      ok(FF.reaverBloodfrenzyMult(s) < 1, 'Reaver Bloodfrenzy: attack timer shrinks as HP falls');
+      near(FF.reaverBloodfrenzyMult(s), 1 - 0.30*0.5, 'Reaver Bloodfrenzy: ~ -15% timer at half HP', 0.02);
+      // A class with NO D2 pieces gets none of these.
+      s.bodyArmor = {}; s.uniqueItems = {}; s.playerHp = mh;
+      near(FF.d2SetDmgMult(foe, s), 1.0, 'no D2 set -> no bonus damage');
+      near(FF.d2IncomingDmgMult(s), 1.0, 'no D2 set -> no extra damage taken');
+    } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; }
+  });
+
   // ---- D1 armor Set Items: t21 pieces, forge, equip, defense ------------------------------------------
   suite('D1 armor sets: forge + equip + t21 stats', function(){
     // The four material formulas exist with the right bill.
