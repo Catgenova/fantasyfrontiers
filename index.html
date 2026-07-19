@@ -22848,8 +22848,37 @@
   // Only the job's owner finalizes it, so rewards always reach the doer and there's no write
   // contention; the grid change is shared with everyone on the next save + realtime push.
   var guildJobDone = {}; // "owner|x|y|readyAt" -> 1, so a conflict-reload can't double-apply
+  // A guild job is only ever completed by its OWNER's client. So when someone leaves the guild -- or is
+  // ejected by a Mortal death -- their in-flight job is stranded: it sits past readyAt forever, keeps
+  // its tile marked busy, and shows "finishing…" in everyone's activity list with nobody able to clear
+  // it. Once such a job is due and its owner is no longer a member, any remaining member finishes it
+  // structurally and drops it from the queue.
+  // giveRewards=false on purpose: the materials were already spent so the guild keeps the build, but
+  // the departed owner's XP/resources are NOT handed to whoever happens to reap it.
+  function reapOrphanGuildEstateJobs(){
+    if(guildEstate.status !== 'ready') return false;
+    var members = guildState.members || [];
+    if(!members.length) return false;   // roster not loaded yet -- never reap on incomplete data
+    var ids = {};
+    members.forEach(function(m){ if(m && m.user_id) ids[m.user_id] = 1; });
+    var now = Date.now(), changed = false;
+    (guildEstate.jobs || []).slice().forEach(function(j){
+      if(!j || ids[j.owner]) return;      // owner is still here -> their job, their completion
+      if(now < j.readyAt) return;         // still running -> let it finish first
+      if(j.kind !== 'assist'){            // an orphaned assist grants nothing; just clear it
+        var key = j.owner+'|'+j.x+'|'+j.y+'|'+j.readyAt;
+        if(!guildJobDone[key]){ applyEstateJobCompletion(guildEstate, j, false, true); guildJobDone[key] = 1; }
+      }
+      guildEstate.jobs = (guildEstate.jobs || []).filter(function(x){ return x !== j; });
+      addLog('A departed member’s estate task finished and was cleared from the guild queue.', 'chronicle');
+      changed = true;
+    });
+    if(changed){ recomputeGuildWorkshops(); guildEstatePersist(); needsRender = true; }
+    return changed;
+  }
   function processGuildEstateJobs(){
     if(guildEstate.status!=='ready') return;
+    reapOrphanGuildEstateJobs();   // clear out departed members' finished jobs before handling my own
     var mine = guildEstate.job;
     if(!mine) return;
     if(mine.kind==='assist'){
