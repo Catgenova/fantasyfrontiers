@@ -3798,6 +3798,76 @@
     } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; s.activity = sv.act; s.d4Wrath = sv.w; s.d4WrathUntil = sv.wu; }
   });
 
+  // ---- D4 sets: Batch X — Attunement pillar (elemental offense fulls) ---------------------------------
+  suite('D4 sets: Batch X — Attunement pillar', function(){
+    var s = FF._state, sv = { ba:s.bodyArmor, ui:s.uniqueItems, act:s.activity };
+    function wearD4(cls, n){ s.bodyArmor = {}; s.uniqueItems = {};
+      var order = FF.D4_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
+      for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d4' }; s.bodyArmor[order[i]] = { uid:uid }; } }
+    function wearFull(cls){ wearD4(cls, FF.D4_SET_DEFS[cls].full); }
+    try {
+      // Frostwarden Absolute Zero (full): Chilled foes take +25% Water damage.
+      s.activity = { type:'combat', monsterHp:1000, chillStacks:3, enemyChillUntil:Date.now()+5000 };
+      wearFull('frostwarden'); near(FF.d4SetElementDmg(s, 'water'), 0.55, 'Absolute Zero: +25% Water on a Chilled foe (on top of +30% Frostheart)');
+      s.activity = { type:'combat', monsterHp:1000 }; near(FF.d4SetElementDmg(s, 'water'), 0.30, 'Absolute Zero inert on a non-Chilled foe');
+      // Thunderfury Overload (full): +5% Earth per Static Charge.
+      s.activity = { type:'combat', monsterHp:1000, staticCharge:4 };
+      wearFull('thunderfury'); near(FF.d4SetElementDmg(s, 'earth'), 0.30 + 0.20, 'Overload: +5% Earth per Static (4 -> +20%, on top of +30%)');
+      s.activity = { type:'combat', monsterHp:1000, staticCharge:0 }; near(FF.d4SetElementDmg(s, 'earth'), 0.30, 'Overload adds nothing at 0 Static');
+
+      // --- Foe elemental resistance + Attunement "never resisted" fulls (wand path) ---
+      var waterDragon = { dungeon:'d4', element:'water', armorTypes:{} };  // water beats fire -> resists Fire
+      var darkDragon  = { dungeon:'d4', element:'dark',  armorTypes:{} };  // dark beats light -> resists Light
+      var normalWater = { element:'water' };                              // not a D4 dragon
+      ok(FF.d4FoeResistsElement(waterDragon, 'fire'), 'a water dragon resists Fire');
+      ok(!FF.d4FoeResistsElement(waterDragon, 'earth'), 'a water dragon does not resist Earth');
+      ok(!FF.d4FoeResistsElement(normalWater, 'fire'), 'a non-dragon foe has no D4 elemental resistance');
+      s.bodyArmor = {}; s.uniqueItems = {};
+      near(FF.d4WandElementMult(s, 'fire', waterDragon), 0.85, 'Fire is resisted 15% by a water dragon');
+      near(FF.d4WandElementMult(s, 'fire', normalWater), 1.0, 'no resistance against a non-dragon');
+      wearFull('pyromancer'); near(FF.d4WandElementMult(s, 'fire', waterDragon), 1.0, 'Everflame: Fire is never resisted');
+      // Lumen Radiant Judgment (full): Light never resisted + 40% vs Dark.
+      s.bodyArmor = {}; s.uniqueItems = {};
+      near(FF.d4WandElementMult(s, 'light', darkDragon), 0.85, 'Light is resisted 15% by a dark dragon');
+      wearFull('lumen'); near(FF.d4WandElementMult(s, 'light', darkDragon), 1.40, 'Radiant Judgment: Light unresisted AND +40% vs a Dark foe');
+      near(FF.d4WandElementMult(s, 'light', { element:'dark' }), 1.40, 'Radiant Judgment +40% vs any Dark foe');
+      near(FF.d4WandElementMult(s, 'fire', waterDragon), 0.85, 'Radiant Judgment does not save Fire from resistance');
+
+      // --- Spellblade echoes (Rune Heart / Prismatic Edge) ---
+      s.bodyArmor = {}; s.uniqueItems = {};
+      wearD4('spellblade', 2); near(FF.d4EchoMult(s), 1.30, 'Rune Heart (2pc): echoes +30% elemental');
+      wearFull('spellblade'); near(FF.d4EchoMult(s), 1.30 * FF.ELEMENT_ADVANTAGE_MULT, 'Prismatic Edge (full): echoes also strike the weakness (advantage)');
+
+      // --- Summoner familiars (Brood Heart / Wyrmling Swarm) ---
+      s.bodyArmor = {}; s.uniqueItems = {};
+      wearD4('summoner', 2); near(FF.d4FamiliarElementMult(s, 'fire', { element:'earth' }), 1.30, 'Brood Heart (2pc): +30% familiar elemental');
+      wearFull('summoner');
+      near(FF.d4FamiliarElementMult(s, 'fire', { element:'water' }), 1.30 * FF.ELEMENT_ADVANTAGE_MULT, 'Wyrmling Swarm: grants the advantage bite when the familiar lacks it');
+      near(FF.d4FamiliarElementMult(s, 'fire', { element:'earth' }), 1.30, 'Wyrmling Swarm does not double an advantage the familiar already has');
+
+      // --- Templar Aegis of Light (full): Holy shield scales with Light Attunement ---
+      s.bodyArmor = {}; s.uniqueItems = {};
+      wearFull('templar'); near(FF.d4TemplarAegisMult(s), 1 + FF.elementDamageBonus(s, 'light'), 'Aegis of Light scales the shield by Light Attunement');
+      ok(FF.d4TemplarAegisMult(s) > 1, 'Aegis of Light always grows the shield at least a little');
+      s.bodyArmor = {}; s.uniqueItems = {}; near(FF.d4TemplarAegisMult(s), 1, 'no Aegis of Light without the full Sunwyrm set');
+
+      // --- Nightblade Eclipse (full): a Vulnerable foe's elemental advantage against you is stripped ---
+      // Seat leather weakness (fire) AND the nightblade set on the same slots (slot carries material+tier for
+      // playerElementWeakness; uniqueItems carries the set membership for setPiecesWorn).
+      var fireMon = { element:'fire' };
+      function wearNightbladeLeather(){ s.bodyArmor = {}; s.uniqueItems = {};
+        var order = ['helmet','chest','gauntlets','boots'];
+        for(var i=0;i<FF.D4_SET_DEFS.nightblade.full;i++){ s.uniqueItems['n'+i] = { set:'nightblade', setLayer:'d4' }; s.bodyArmor[order[i]] = { uid:'n'+i, material:'leather', tier:5 }; } }
+      wearNightbladeLeather(); s.activity = { type:'combat', monsterHp:1000 };
+      var weakBase = FF.incomingElementMult(s, fireMon); ok(weakBase > 1, 'leather armour is weak to a Fire foe (incoming > 1)');
+      s.activity = { type:'combat', monsterHp:1000, voidVulnStacks:3, voidVulnUntil:Date.now()+5000 };
+      near(FF.incomingElementMult(s, fireMon), 1, 'Eclipse: a Vulnerable foe deals no elemental advantage against you');
+      // Without the full nightblade set, the weakness stands even against a Vulnerable foe.
+      s.bodyArmor = { chest:{ material:'leather', tier:5 } }; s.uniqueItems = {};
+      ok(FF.incomingElementMult(s, fireMon) > 1, 'no Eclipse without the Duskwyrm full set — the weakness remains');
+    } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; s.activity = sv.act; }
+  });
+
   // ---- D2 sets: Batch B effects (damage & tempo) -----------------------------------------------------
   suite('D2 sets: Batch B combat effects', function(){
     var s = FF._state;
