@@ -13930,6 +13930,13 @@
       // Arrows add flat base damage (a same-tier bow) to a bow shot -- surface it right on the card.
       var _arrowDmg = arrowBaseDamage(recipe.id);
       html += '<div class="item-stats"><span>+'+Math.round(recipe.xp*1.5)+' XP</span><span>'+recipe.time+'s</span><span>'+recipe.sell+'g each</span>'+(_arrowDmg ? '<span style="color:var(--gold)">'+_arrowDmg.dmgMin+'-'+_arrowDmg.dmgMax+' dmg</span>' : '')+'</div>';
+      // Combat consumables (Apothecary coatings, Pyrotechnics flash bombs, Alchemy toxins/bombs...)
+      // stated what they COST but never what they DO, unlike a weapon card. potionEffectDesc already
+      // produces the exact per-tier numbers used in combat, so surface them on the card too.
+      // No potionType guard: Alchemy's toxin/firebomb/elixir/catalyst are identified by their id
+      // rather than a field, and potionEffectDesc returns '' for anything that isn't a consumable.
+      var _pEff = potionEffectDesc(recipe.id);
+      if(_pEff) html += '<div class="chance-line"><b style="color:var(--cat-combat)">In combat:</b> '+_pEff+' &bull; ready it from the Combat tab ('+(POTION_MAX_CHARGES + apothecaryExtraCharges())+' charges).</div>';
       html += '<div class="chance-line">Output: <b>'+(recipe.outputQty||1)+'x '+recipe.name+'</b> &nbsp;|&nbsp; Success Chance: <b>'+successPctCard+'%</b></div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(recipe.inputs, 'inp-'+recipe.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
