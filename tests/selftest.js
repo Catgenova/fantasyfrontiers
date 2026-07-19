@@ -2042,17 +2042,19 @@
       eq(FF.matchesSpecialCraft(act, kind, bad), false, kind + ': a different ' + k0 + ' does not match');
     });
 
-    // 2) doubleable flags must equal SPECIAL_DOUBLEABLE_KINDS exactly (both directions).
-    var regDouble = kinds.filter(function(k){ return F[k].doubleable; }).sort();
-    var listDouble = (FF.SPECIAL_DOUBLEABLE_KINDS || []).slice().sort();
-    eq(regDouble.join(','), listDouble.join(','), 'registry doubleable flags match SPECIAL_DOUBLEABLE_KINDS');
-
-    // 3) sacrifice categories must equal STACKABLE_SAC_CATEGORIES, minus 'relic' which is a Broken
-    //    Relic drop rather than a craft family -- encoded so the difference is intentional, not drift.
-    var regSac = kinds.map(function(k){ return F[k].sacrifice; }).filter(Boolean).sort();
-    var listSac = (FF.STACKABLE_SAC_CATEGORIES || []).filter(function(c){ return c !== 'relic'; }).sort();
-    eq(regSac.join(','), listSac.join(','), 'registry sacrifice categories match STACKABLE_SAC_CATEGORIES (relic aside)');
-    ok((FF.STACKABLE_SAC_CATEGORIES || []).indexOf('relic') !== -1, "'relic' is still a sacrifice category (not a craft family)");
+    // 2+3) SPECIAL_DOUBLEABLE_KINDS and STACKABLE_SAC_CATEGORIES are now DERIVED from the registry,
+    //      so comparing them back to it would be tautological. Pin the expected contents here instead
+    //      -- an independent copy, so a wrong flag in the registry changes the derived list and fails.
+    var EXPECTED_DOUBLEABLE = ['amulet','belt','bodyarmor','ring','stackquiver','stackshield','stackweapon','tool','ward','workshop'];
+    eq((FF.SPECIAL_DOUBLEABLE_KINDS || []).slice().sort().join(','), EXPECTED_DOUBLEABLE.slice().sort().join(','),
+       'derived SPECIAL_DOUBLEABLE_KINDS still holds exactly the 10 doubleable families');
+    var EXPECTED_SAC = ['amulet','belt','relic','ring','stackquiver','stackshield','stackweapon','tool'];
+    eq((FF.STACKABLE_SAC_CATEGORIES || []).slice().sort().join(','), EXPECTED_SAC.slice().sort().join(','),
+       'derived STACKABLE_SAC_CATEGORIES still holds the 7 sacrificeable families plus relic');
+    ok((FF.STACKABLE_SAC_CATEGORIES || []).indexOf('relic') !== -1, "'relic' survives derivation (a drop, not a craft family)");
+    // cottage/offhand must NOT be doubleable -- they were the two false flags, easy to flip by accident.
+    ok((FF.SPECIAL_DOUBLEABLE_KINDS || []).indexOf('cottage') === -1, 'cottage is not doubleable');
+    ok((FF.SPECIAL_DOUBLEABLE_KINDS || []).indexOf('offhand') === -1, 'offhand is not doubleable');
 
     // 4) Every card's tier-stepper target must exist, or its +/- stepper silently does nothing.
     kinds.forEach(function(kind){
@@ -2105,6 +2107,13 @@
     // A different tier / type must NOT match, or every card would show Stop at once.
     eq(FF.matchesSpecialCraft({ type:'craft', craftKind:'ward', typeId:'wardFire', tierIndex:5 }, 'ward', { typeId:'wardFire', tierIndex:6 }), false, 'ward: a different tier does not match');
     eq(FF.matchesSpecialCraft({ type:'craft', craftKind:'ward', typeId:'wardFire', tierIndex:5 }, 'ward', { typeId:'wardWater', tierIndex:5 }), false, 'ward: a different element does not match');
+    // Amulet carries a legacy 'plain' fallback: an omitted typeId on EITHER side means plain. The
+    // generic matcher has to preserve that or plain-amulet cards stop matching their own craft.
+    eq(FF.matchesSpecialCraft({ type:'craft', craftKind:'amulet', tierIndex:2 }, 'amulet', { typeId:'plain', tierIndex:2 }), true, 'amulet: omitted typeId on the activity means plain');
+    eq(FF.matchesSpecialCraft({ type:'craft', craftKind:'amulet', typeId:'plain', tierIndex:2 }, 'amulet', { tierIndex:2 }), true, 'amulet: omitted typeId in the params means plain');
+    eq(FF.matchesSpecialCraft({ type:'craft', craftKind:'amulet', typeId:'warding', tierIndex:2 }, 'amulet', { tierIndex:2 }), false, 'amulet: a warding amulet does not match the plain card');
+    // An unregistered kind can't match anything (previously the switch's default `return false`).
+    eq(FF.matchesSpecialCraft({ type:'craft', craftKind:'notafamily', tierIndex:1 }, 'notafamily', { tierIndex:1 }), false, 'an unregistered craft kind never matches');
     eq(FF.matchesSpecialCraft(null, 'ward', { typeId:'wardFire', tierIndex:5 }), false, 'a null activity matches nothing');
     eq(FF.matchesSpecialCraft({ type:'gather' }, 'ward', { typeId:'wardFire', tierIndex:5 }), false, 'a non-craft activity matches nothing');
   });

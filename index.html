@@ -8972,22 +8972,21 @@
   // Same idea as findActiveCraftSlotFor, but for the "special" instant-turned-timed
   // craft kinds (tool, stackweapon, bodyarmor, belt, offhand, ...), which are
   // identified by their own param shape rather than a fixed recipe id.
+  // Generic: a running special craft matches a card when every key the family declares as its identity
+  // agrees. This replaced a 12-branch switch in which a family could simply be absent -- 'ward' was,
+  // so a running ward craft could never be found by its own card (Inscribe never became Stop). An
+  // unregistered kind now returns false the same way, but the integrity selftest fails first.
   function matchesSpecialCraft(act, craftKind, params){
     if(!act || act.type!=='craft' || act.craftKind!==craftKind) return false;
-    if(craftKind==='tool') return act.skillId===params.skillId && act.tierIndex===params.tierIndex;
-    if(craftKind==='stackweapon') return act.typeId===params.typeId && act.tierIndex===params.tierIndex;
-    if(craftKind==='stackshield') return act.typeId===params.typeId && act.tierIndex===params.tierIndex;
-    if(craftKind==='stackquiver') return act.typeId===params.typeId && act.tierIndex===params.tierIndex;
-    if(craftKind==='ward') return act.typeId===params.typeId && act.tierIndex===params.tierIndex; // Runesmithing wards
-
-    if(craftKind==='bodyarmor') return act.material===params.material && act.slot===params.slot && act.tierIndex===params.tierIndex;
-    if(craftKind==='belt') return act.tierIndex===params.tierIndex;
-    if(craftKind==='offhand') return act.typeId===params.typeId;
-    if(craftKind==='ring') return act.typeId===params.typeId && act.tierIndex===params.tierIndex;
-    if(craftKind==='amulet') return (act.typeId||'plain')===(params.typeId||'plain') && act.tierIndex===params.tierIndex;
-    if(craftKind==='workshop') return act.skillId===params.skillId && act.tierIndex===params.tierIndex;
-    if(craftKind==='cottage') return act.tierIndex===params.tierIndex;
-    return false;
+    var fam = CRAFT_FAMILIES[craftKind];
+    if(!fam || !params) return false;
+    var defs = fam.defaults || {};
+    for(var i = 0; i < fam.match.length; i++){
+      var k = fam.match[i], a = act[k], p = params[k];
+      if(k in defs){ a = a || defs[k]; p = p || defs[k]; }   // amulet's legacy 'plain' fallback
+      if(a !== p) return false;
+    }
+    return true;
   }
   function findActiveSpecialCraftSlotFor(craftKind, params){
     if(matchesSpecialCraft(state.activity, craftKind, params)) return {primary:true, act:state.activity};
@@ -9101,20 +9100,16 @@
   }
   // Item-producing special crafts a Workshop can double (tier-UPGRADE kinds like offhand
   // can't be doubled). Each doubled output rolls its rarity independently.
-  var SPECIAL_DOUBLEABLE_KINDS = ['tool','stackweapon','stackshield','stackquiver','ward','bodyarmor','belt','ring','amulet','workshop'];
-  // Sacrificeable categories. Hoisted out of sacrificeItem() so the craft-family integrity test can
-  // assert against it -- 'relic' is deliberately here but is NOT a craft family (Broken Relics drop).
-  var STACKABLE_SAC_CATEGORIES = ['stackweapon','stackshield','stackquiver','ring','amulet','relic','tool','belt'];
-  // ---- CRAFT FAMILY REGISTRY (Stage 0: descriptive only -- nothing consumes it yet) --------------
+  // ---- CRAFT FAMILY REGISTRY (the single source of truth for craft families) --------------------
   // Adding a craft family currently means registering it in ~12 hand-maintained places, and a family
   // present in 11 of 12 is invisible: that is exactly how 'ward' went missing from matchesSpecialCraft
   // (Inscribe never became Stop) and 'ring'/'amulet' from the live inputs updater (material counts
   // lagged several crafts). This table states each family ONCE; the selftest asserts it still matches
   // every hand-written list, so an incomplete family fails CI instead of reaching players.
   //
-  // Deliberately descriptive for now -- no runtime behaviour reads it. Later stages derive the lists.
   // Note a kind can own SEVERAL UI cards (stackweapon renders melee, wand and scepter separately),
   // and idPrefix:null records "this card has no live inputs updater" -- a known gap, not an omission.
+  // `defaults` gives a match key a fallback when either side omits it (amulet's legacy 'plain').
   var CRAFT_FAMILIES = {
     tool:        { match:['skillId','tierIndex'],          doubleable:true,  sacrifice:'tool',        cards:[{ idPrefix:'inp-tool',      tierTarget:'tool' }] },
     stackweapon: { match:['typeId','tierIndex'],           doubleable:true,  sacrifice:'stackweapon', cards:[{ idPrefix:'inp-stw',       tierTarget:'melee' },
@@ -9125,7 +9120,8 @@
     ward:        { match:['typeId','tierIndex'],           doubleable:true,  sacrifice:null,          cards:[{ idPrefix:'inp-ward',      tierTarget:'ward' }] },
     bodyarmor:   { match:['material','slot','tierIndex'],  doubleable:true,  sacrifice:null,          cards:[{ idPrefix:'inp-bodyarmor', tierTarget:'armor' }] },
     ring:        { match:['typeId','tierIndex'],           doubleable:true,  sacrifice:'ring',        cards:[{ idPrefix:'inp-ring',      tierTarget:'ring' }] },
-    amulet:      { match:['typeId','tierIndex'],           doubleable:true,  sacrifice:'amulet',      cards:[{ idPrefix:'inp-amulet',    tierTarget:'amulet' }] },
+    amulet:      { match:['typeId','tierIndex'], defaults:{ typeId:'plain' },
+                                                           doubleable:true,  sacrifice:'amulet',      cards:[{ idPrefix:'inp-amulet',    tierTarget:'amulet' }] },
     workshop:    { match:['skillId','tierIndex'],          doubleable:true,  sacrifice:null,          cards:[{ idPrefix:'inp-workshop',  tierTarget:'workshop' }] },
     belt:        { match:['tierIndex'],                    doubleable:true,  sacrifice:'belt',        cards:[{ idPrefix:null,            tierTarget:'belt' }] },
     cottage:     { match:['tierIndex'],                    doubleable:false, sacrifice:null,          cards:[{ idPrefix:null,            tierTarget:'cottage' }] },
@@ -9134,6 +9130,15 @@
   // Families whose cards have no live inputs updater today. Listed so the test locks the CURRENT set:
   // a NEW family landing here fails, rather than silently repeating the ring/amulet lag.
   var CRAFT_FAMILIES_WITHOUT_LIVE_INPUTS = ['belt','cottage','offhand'];
+  // DERIVED from the registry. These were two more hand-maintained lists that had to be kept in step
+  // with every other one by hand; computing them means a family can no longer be doubleable in the
+  // registry but absent here (or vice versa) -- the failure mode that made 'ward' and 'ring' invisible.
+  var SPECIAL_DOUBLEABLE_KINDS = Object.keys(CRAFT_FAMILIES).filter(function(k){ return CRAFT_FAMILIES[k].doubleable; });
+  // 'relic' is a Broken Relic drop rather than a craft family, so it's appended, not derived.
+  var STACKABLE_SAC_CATEGORIES = Object.keys(CRAFT_FAMILIES)
+    .map(function(k){ return CRAFT_FAMILIES[k].sacrifice; })
+    .filter(Boolean)
+    .concat(['relic']);
   // Produce ONE output for this special craft at the given rarity; returns the rarity
   // actually used (bodyarmor clamps to its material's allowed set; workshops are always normal).
   function produceSpecialOutput(act, rarity){
