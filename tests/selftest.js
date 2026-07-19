@@ -3811,6 +3811,47 @@
     s.inventory = svInv; s.uniqueItems = svUniq; s.bodyArmor = svBody; s.blueprints = svBp; s.xp = svXp; s.physique = svPhys;
   });
 
+  // ---- D3 armor Set Items: t23 pieces, forge, equip, layer isolation (Batch Q) -----------------------
+  suite('D3 armor sets: forge + equip + t23 stats', function(){
+    ['cloth','leather','chain','plate'].forEach(function(slot){
+      var r = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3', slot)]);
+      ok(r && r.setarmor, 'the D3 ' + slot + ' formula is a set-armor recipe');
+      eq(r.layer, 'd3', 'the D3 ' + slot + ' formula is a d3-layer recipe');
+      eq(r.rareCount, 30, 'D3 set formulas need 30 rare t20 armor (triple D1)');
+    });
+    eq(FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','chain')]).inputs.metallurgy_t20, 3000, 'D3 Chain formula costs 3000 t20 ingots');
+    eq(FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','cloth')]).inputs.weaving_t20, 3000, 'D3 Cloth formula costs 3000 t20 cloth');
+
+    var s = FF._state, svInv = s.inventory, svUniq = s.uniqueItems, svBody = s.bodyArmor, svBp = s.blueprints, svXp = s.xp, svPhys = s.physique;
+    // Full forge: give the bill, craft a D3 Chain set piece, confirm a t23 set unique on the d3 layer.
+    s.uniqueItems = {}; s.blueprints = {};
+    s.inventory = { metallurgy_t20: 3000 };
+    FF.setArmorRareIds('chain').forEach(function(id){ s.inventory[id] = 10; }); // 4 slots x 10 = 40 rare t20 chain
+    var bp = FF.masterworkBlueprintId('d3','chain'); s.blueprints[bp] = 1;
+    FF.craftMastercraft(bp);
+    var mintedUid = Object.keys(s.uniqueItems)[0];
+    var u = s.uniqueItems[mintedUid];
+    ok(u && u.set && FF.D3_SET_DEFS[u.set], 'the D3 forge mints a set-piece unique carrying its class-set');
+    eq(u.setLayer, 'd3', 'the minted piece is tagged as a D3-layer set piece');
+    eq(u.material, 'chain', 'a D3 Chain formula forges a chain piece');
+    eq(u.tier, FF.SET_TIER_INDEX_D3, 'the D3 set piece is t23 (three above the t20 cap)');
+    ok(/^bodyarmor_chain_(helmet|chest|gauntlets|boots)_t23_(rare|supreme|fantastic)$/.test(u.base), 'the base is a t23 chain armor item, floored at Rare');
+    eq(s.inventory.metallurgy_t20, 0, 'the forge consumes the 3000 ingots');
+    var rareLeft = FF.setArmorRareIds('chain').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
+    eq(rareLeft, 4*10 - 30, 'the forge consumes exactly 30 rare chain armor pieces');
+
+    // Equip it: t23 pieces gate on maxed Chain proficiency, and count toward the D3 layer only.
+    s.bodyArmor = { helmet:{tier:0,rarity:'normal'}, chest:{tier:0,rarity:'normal'}, gauntlets:{tier:0,rarity:'normal'}, boots:{tier:0,rarity:'normal'}, back:{tier:0,rarity:'normal'} };
+    s.physique = {}; s.xp = { chainmailarmor: FF.xpFloorForLevel(100) };
+    eq(FF.equipUniqueBodyArmor(mintedUid), true, 'with maxed Chain proficiency, the D3 set piece equips');
+    eq(s.bodyArmor[u.slot].uid, mintedUid, 'the piece seats in its slot');
+    eq(FF.setPiecesWorn(u.set, s, 'd3'), 1, 'the equipped piece counts toward its class D3 set');
+    eq(FF.setPiecesWorn(u.set, s, 'd2'), 0, 'a D3 piece does NOT count toward the D2 set');
+    eq(FF.setPiecesWorn(u.set, s, 'd1'), 0, 'a D3 piece does NOT count toward the D1 set (layer isolation)');
+
+    s.inventory = svInv; s.uniqueItems = svUniq; s.bodyArmor = svBody; s.blueprints = svBp; s.xp = svXp; s.physique = svPhys;
+  });
+
   // ---- D1 set bonuses, Batch 1: DoT caps & procs ------------------------------------------------------
   suite('D1 set bonuses: DoT caps & procs', function(){
     // Build a state wearing `count` of a class's set pieces (unique.set on body-armor slots).
