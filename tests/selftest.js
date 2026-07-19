@@ -3868,6 +3868,69 @@
     } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; s.activity = sv.act; }
   });
 
+  // ---- D4 sets: Batch Y — Dragonscale pillar (elemental defense) --------------------------------------
+  suite('D4 sets: Batch Y — Dragonscale pillar', function(){
+    var s = FF._state, sv = { ba:s.bodyArmor, ui:s.uniqueItems, act:s.activity, hp:s.playerHp, ks:s.knightStacks };
+    function wearD4(cls, n){ s.bodyArmor = {}; s.uniqueItems = {};
+      var order = FF.D4_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
+      for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d4' }; s.bodyArmor[order[i]] = { uid:uid }; } }
+    function wearFull(cls){ wearD4(cls, FF.D4_SET_DEFS[cls].full); }
+    var mhp = FF.maxHp(s);
+    try {
+      // Knight Warscale (2pc): +12% all-element resist at max Momentum.
+      wearD4('knight', 2); s.knightStacks = FF.knightStackCap(s);
+      near(FF.d4SetElementResist(s, 'fire'), 0.12, 'Warscale: +12% resist at max Momentum');
+      near(FF.d4SetElementResist(s, 'dark'), 0.12, 'Warscale covers every element');
+      s.knightStacks = 0; near(FF.d4SetElementResist(s, 'fire'), 0, 'Warscale inert below max Momentum');
+
+      // Berserker Burning Blood (2pc) / Dragonrage (full): low-HP outgoing scaling.
+      wearD4('berserker', 2); s.playerHp = Math.round(mhp * 0.40);
+      near(FF.d4SetDmgMult({}, s), 1.20, 'Burning Blood: +20% below 50% Health');
+      s.playerHp = mhp; near(FF.d4SetDmgMult({}, s), 1.0, 'Burning Blood inert at full Health');
+      wearFull('berserker'); s.playerHp = Math.round(mhp * 0.40); var f = s.playerHp / mhp;
+      near(FF.d4SetDmgMult({}, s), 1.20 * (1 + 0.30 * (1 - f)), 'Dragonrage stacks with Burning Blood below 50% Health', 0.02);
+      s.playerHp = 1; f = s.playerHp / mhp;
+      near(FF.d4SetDmgMult({}, s), 1.20 * (1 + 0.30 * (1 - f)), 'Dragonrage: near-max +30% near death, with Burning Blood', 0.02);
+      s.playerHp = mhp; near(FF.d4SetDmgMult({}, s), 1.0, 'Wrathscale outgoing is inert at full Health');
+
+      // Juggernaut Emberhide (2pc): -20% Fire + heal 25% of the avoided.
+      wearD4('juggernaut', 2);
+      var mit = FF.d4DragonscaleIncoming(s, { element:'fire' }, 1000);
+      near(mit.mult, 0.80, 'Emberhide: -20% Fire');
+      eq(mit.heal, 50, 'Emberhide heals 25% of the 200 avoided');
+      var mitW = FF.d4DragonscaleIncoming(s, { element:'water' }, 1000);
+      near(mitW.mult, 1.0, 'Emberhide only mitigates Fire');
+      // Knight Unbreakable Scales (full): a big elemental hit is halved.
+      wearFull('knight');
+      near(FF.d4DragonscaleIncoming(s, { element:'earth' }, mhp).mult, 0.50, 'Unbreakable Scales halves an elemental hit above 12% max Health');
+      near(FF.d4DragonscaleIncoming(s, { element:'earth' }, 1).mult, 1.0, 'a tiny elemental hit is under the Unbreakable Scales threshold');
+      near(FF.d4DragonscaleIncoming(s, { element:'earth' }, mhp*10, mhp).heal, 0, 'Unbreakable Scales heals nothing (it is a cap, not a leech)');
+
+      // Sentinel Molten Thorns (2pc) / Dragon's Retort (full): reflect amplifier.
+      wearD4('sentinel', 2);
+      near(FF.d4SentinelThornsMult({ element:'fire' }, s), FF.elementDmgMult(s, 'fire'), 'Molten Thorns: reflect carries the attacker element (scaled by Attunement)');
+      near(FF.d4SentinelThornsMult({ element:null }, s), 1.0, 'Molten Thorns needs the attacker to have an element');
+      wearFull('sentinel');
+      near(FF.d4SentinelThornsMult({ element:'fire' }, s), FF.elementDmgMult(s, 'fire') * 1.50, "Dragon's Retort: +50% on top of Molten Thorns");
+
+      // Herald Elemental Bastion (full): a Perfect Guard reflects an elemental burst of the prevented damage.
+      wearFull('herald');
+      near(FF.d4HeraldBastionReflect(1000, { element:'fire' }, s), Math.round(1000 * 0.50 * FF.elementDmgMult(s, 'fire')), 'Elemental Bastion reflects half the prevented, scaled by Attunement');
+      eq(FF.d4HeraldBastionReflect(0, { element:'fire' }, s), 0, 'no Bastion reflect when nothing was prevented');
+      wearD4('herald', 2); eq(FF.d4HeraldBastionReflect(1000, { element:'fire' }, s), 0, 'no Bastion reflect without the full Bulwark of Scales');
+
+      // Reaver Searing Wounds (2pc) / Cauterize (full): Bleeds gain a Fire component; the full heals from it.
+      function bleedDrop(){ s.activity = { type:'combat', monsterHp:1000000, bleedDps:1000, bleedUntil:Date.now()+9999 };
+        var before = s.activity.monsterHp; FF.applyReaverBleedTick(1000); return before - s.activity.monsterHp; }
+      s.bodyArmor = {}; s.uniqueItems = {}; s.playerHp = mhp;
+      var plain = bleedDrop();
+      wearD4('reaver', 2); var seared = bleedDrop();
+      near(seared - plain, 1000 * 0.25 * FF.elementDmgMult(s, 'fire'), 'Searing Wounds adds a ~25% Fire component to Bleed ticks', 3);
+      wearFull('reaver'); s.playerHp = Math.round(mhp * 0.5); var hpBefore = s.playerHp; bleedDrop();
+      ok(s.playerHp > hpBefore, 'Cauterize heals you from the Bleed Fire damage');
+    } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; s.activity = sv.act; s.playerHp = sv.hp; s.knightStacks = sv.ks; }
+  });
+
   // ---- D2 sets: Batch B effects (damage & tempo) -----------------------------------------------------
   suite('D2 sets: Batch B combat effects', function(){
     var s = FF._state;
