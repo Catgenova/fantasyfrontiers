@@ -2175,6 +2175,24 @@
     eq(FF.enemyDamageRangeVsPlayer(null, s).max, 0, 'a null foe yields a zero range (no crash)');
   });
 
+  // ---- Battle IA: a live-fight "Combat" tab, split from an "Enemies" selection tab ---------------
+  suite('battle tabs: Combat (live fight) vs Enemies (selection)', function(){
+    ok(typeof FF.renderCombatTab === 'function' && typeof FF.renderEnemiesTab === 'function', 'both battle tabs exported');
+    var battle = FF.AREAS.filter(function(a){ return a.id==='battle'; })[0];
+    var subIds = battle.subs.map(function(x){ return x[0]; });
+    ok(subIds.indexOf('enemies') !== -1 && subIds.indexOf('combat') !== -1, 'Battle exposes both Enemies and Combat tabs');
+    ok(subIds.indexOf('enemies') < subIds.indexOf('combat'), 'Enemies is listed before Combat');
+    var s = FF._state, savedAct = s.activity;
+    try {
+      s.activity = { type:null, tier:0 };  // out of combat
+      var enemiesHtml = FF.renderEnemiesTab();
+      ok(/data-action="fight"/.test(enemiesHtml), 'the Enemies tab lists foes with Fight buttons');
+      var combatHtml = FF.renderCombatTab();
+      ok(!/data-action="fight"/.test(combatHtml), 'the Combat tab has NO enemy Fight buttons (moved to Enemies)');
+      ok(/Enemies/.test(combatHtml), 'the idle Combat tab points players to the Enemies tab');
+    } finally { s.activity = savedAct; }
+  });
+
   suite('dungeons: D1 Cave', function(){
     var def = FF.DUNGEON_DEFS.d1;
     ok(def, 'D1 dungeon defined');

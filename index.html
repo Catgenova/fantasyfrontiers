@@ -1674,7 +1674,7 @@
     {id:'leaderboard', label:'Leaderboard', icon:svgIcon('trophy','var(--cat-leaderboard)'), color:'var(--cat-leaderboard)'}
   ];
 
-  var DEFAULT_SUB = { gathering:'digging', crafting:'metallurgy', refining:'butchering', cooking:'roasting', building:'carpentry', outfitting:'weaponsmithing', faith:'prayer', combat:'wildlife' };
+  var DEFAULT_SUB = { gathering:'digging', crafting:'metallurgy', refining:'butchering', cooking:'roasting', building:'carpentry', outfitting:'weaponsmithing', faith:'prayer', enemies:'wildlife' };
 
   var SUB_PALETTE = ['#8a6a45','#6f8a4a','#4a7a8a','#9a6a8a','#7a8a45','#8a5a5a','#5a7a9a','#8a7a3a','#4a8a6a','#9a7a5a','#6a5a9a','#8a4a6a','#4a9a7a','#9a5a4a','#5a9a8a'];
 
@@ -9934,7 +9934,7 @@
   var AREAS = [
     { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['improvement','Improvement'],['faith','Faith'],['building','Construction'],['masterwork','Blueprints'],['inventory','Inventory'],['skills','Skills']] },
     { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['peons','Peons'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
-    { id:'battle', label:'Battle', icon:'crossedswords', subs:[['combat','Combat'],['dungeons','Dungeons'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] }
+    { id:'battle', label:'Battle', icon:'crossedswords', subs:[['enemies','Enemies'],['combat','Combat'],['dungeons','Dungeons'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] }
   ];
   function areaOf(cat){ for(var i=0;i<AREAS.length;i++){ if(AREAS[i].subs.some(function(s){ return s[0]===cat; })) return AREAS[i].id; } return 'resources'; }
   var currentArea = areaOf(currentCategory);
@@ -13764,7 +13764,7 @@
         var active = sk===currentSub ? ' active' : '';
         return '<button class="sub-btn'+active+'" data-sub="'+sk+'" style="--sub-color:'+s.color+'">'+s.icon+' '+s.label+'</button>';
       }).join('');
-    } else if(currentCategory==='combat'){
+    } else if(currentCategory==='enemies'){
       el.style.display = 'flex';
       el.innerHTML = MONSTER_CATEGORIES.map(function(c){
         var active = c.id===currentSub ? ' active' : '';
@@ -17347,12 +17347,10 @@
     _arenaFxSig = combatFxSignature();
     return html;
   }
+  // The Combat tab is the live fight itself: the arena while a battle is on, and combat stats. When no
+  // fight is running it points you at the Enemies tab. Enemy selection lives on renderEnemiesTab().
   function renderCombatTab(){
-    var lvl = combatLevelEquivalent(state);
     var act = state.activity;
-    var weaponStyle = getWeaponStyle(state.equippedMainhand);
-    // The combat card (arena) is pinned to the very top of the screen while you're fighting; the
-    // stats / accuracy / auto-eat panels sit below it. Out of combat there's no card, so those panels lead.
     var html = '';
     if(act.type==='combat' && act.dungeon){
       // A dungeon fight lives on the Dungeons tab -- keep the Combat tab clean while it's running.
@@ -17362,14 +17360,31 @@
     }
     if(act.type==='combat'){
       html += renderArena();
-    } else if(state.playerHp <= 0){
-      html += '<div class="idle-note">You are recovering. HP regenerates slowly, or eat food from the sidebar.</div>';
+      html += renderCombatStatsPanel();
+      return html;
     }
-    // Below the combat card: your combat stats. Out of combat, Auto-Eat + consumable prep show here
-    // (in combat they move into the card). Accuracy Training lives at the bottom of Equipment & Stats.
+    // No active fight.
+    if(state.playerHp <= 0){
+      html += '<div class="idle-note">You are recovering. HP regenerates every 5 seconds, or eat food from the sidebar. Pick your next foe on the <b>Enemies</b> tab.</div>';
+    } else {
+      html += '<div class="idle-note">No active fight. Choose a foe on the <b>Enemies</b> tab &mdash; the battle will appear here. <button class="mini-btn" data-action="navToActivity" data-nav-cat="enemies" style="margin-left:6px;">Go to Enemies</button></div>';
+    }
     html += renderCombatStatsPanel();
-    if(act.type!=='combat'){ html += renderAutoEatPanel(); html += renderCombatPotionsPanel(); }
-    html += '<div class="section-intro">Combat Score '+lvl+' &mdash; choose a foe below. Manage your equipped weapon, offhand, relic, armor, and tools from the Character tab.</div>';
+    return html;
+  }
+  // The Enemies tab: pick a foe to fight (starting a fight jumps you to the Combat tab). Also hosts the
+  // out-of-combat prep (Auto-Eat + combat consumables) since that's where you gear up before a fight.
+  function renderEnemiesTab(){
+    var lvl = combatLevelEquivalent(state);
+    var act = state.activity;
+    var weaponStyle = getWeaponStyle(state.equippedMainhand);
+    var html = '';
+    if(act.type==='combat'){
+      html += '<div class="idle-note">A fight is underway &mdash; watch it on the <b>Combat</b> tab. <button class="mini-btn" data-action="navToActivity" data-nav-cat="combat" style="margin-left:6px;">Go to Combat</button></div>';
+    }
+    html += renderAutoEatPanel();
+    html += renderCombatPotionsPanel();
+    html += '<div class="section-intro">Combat Score '+lvl+' &mdash; choose a foe below. Manage your equipped weapon, offhand, relic, armor, and tools from the Equipment &amp; Stats tab.</div>';
 
     var categoryMeta = MONSTER_CATEGORIES.filter(function(c){ return c.id===currentSub; })[0] || MONSTER_CATEGORIES[0];
     var categoryMonsters = MONSTERS.filter(function(m){ return m.category===categoryMeta.id; });
@@ -23501,6 +23516,7 @@
     else if(currentCategory==='market') html = renderMarketTab();
     else if(currentCategory==='farming') html = renderFarmingTab();
     else if(currentCategory==='combat') html = renderCombatTab();
+    else if(currentCategory==='enemies') html = renderEnemiesTab();
     else if(currentCategory==='dungeons') html = renderDungeonsTab();
     else if(currentCategory==='classes') html = renderClassesTab();
     else if(currentCategory==='faith') html = renderFaithTab(currentSub);
@@ -25238,7 +25254,7 @@
         render();
       }
     },
-    fight: function(btn, e){ startCombat(btn.getAttribute('data-monster')); },
+    fight: function(btn, e){ startCombat(btn.getAttribute('data-monster')); if(state.activity && state.activity.type==='combat'){ currentCategory='combat'; currentArea=areaOf('combat'); } },
     navToActivity: function(btn, e){
       var navCat = btn.getAttribute('data-nav-cat');
       var navSub = btn.getAttribute('data-nav-sub');
@@ -26332,7 +26348,7 @@
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
       GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, skillTabsByLabel:skillTabsByLabel,
-      renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
+      renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS,
