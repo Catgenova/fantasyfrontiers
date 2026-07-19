@@ -2449,7 +2449,7 @@
   // ---- Mastercrafting: D1 Ring Blueprint -> one of 5 Legendary Signets (effect scaled 2x/4x/8x) --------
   suite('mastercraft: D1 legendary rings', function(){
     var s = FF._state;
-    eq(Object.keys(FF.LEGENDARY_RING_ITEMS).length, 20, '5 effects x 4 rarities = 20 legendary ring items');
+    eq(Object.keys(FF.LEGENDARY_RING_ITEMS).filter(function(id){ return FF.LEGENDARY_RING_ITEMS[id].dungeon==='d1'; }).length, 20, '5 D1 effects x 4 rarities = 20 D1 legendary ring items');
     eq(FF.LEGENDARY_RING_ITEMS[FF.legRingItemId('block','normal')].value, 0.05, 'block Signet base is 5%');
     eq(FF.LEGENDARY_RING_ITEMS[FF.legRingItemId('block','rare')].value, 0.10, 'rare = 2x');
     eq(FF.LEGENDARY_RING_ITEMS[FF.legRingItemId('block','supreme')].value, 0.20, 'supreme = 4x');
@@ -2457,7 +2457,7 @@
     // Recipe matches the spec; only D1 Ring exists so far.
     var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','ring')]);
     ok(rec && rec.inputs.metallurgy_t20===1000 && rec.inputs.gem_voidcrystal===100 && rec.inputs.twine_t20===100 && rec.inputs.goldsmithing_t20===100 && rec.rareCount===10, 'D1 Ring recipe = 1000 ingots / 100 gems / 100 twine / 100 settings / 10 rare rings');
-    eq(FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2','ring')]), null, 'D2 Ring mastercraft is not available yet');
+    ok(FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2','ring')]) !== null, 'D2 Ring mastercraft is now available (Batch K)');
     // Effect aggregation from an equipped Signet.
     var svJ = s.jewelrySlots;
     s.jewelrySlots = { ring1:{leg:'block',rarity:'rare'}, ring2:{typeId:null,tier:0,rarity:'normal'}, ring3:{typeId:null,tier:0,rarity:'normal'}, ring4:{typeId:null,tier:0,rarity:'normal'}, ring5:{typeId:null,tier:0,rarity:'normal'} };
@@ -2481,7 +2481,7 @@
 
   suite('mastercraft: D1 legendary cloaks (Shrouds)', function(){
     var s = FF._state;
-    eq(Object.keys(FF.LEGENDARY_CLOAK_ITEMS).length, 12, '3 effects x 4 rarities = 12 legendary cloak items');
+    eq(Object.keys(FF.LEGENDARY_CLOAK_ITEMS).filter(function(id){ return FF.LEGENDARY_CLOAK_ITEMS[id].dungeon==='d1'; }).length, 12, '3 D1 effects x 4 rarities = 12 D1 legendary cloak items');
     // Each effect has its own base, scaled 2x/4x/8x by rarity.
     eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('accuracy','normal')].value, 0.50, 'accuracy Shroud base is 50%');
     eq(FF.LEGENDARY_CLOAK_ITEMS[FF.legCloakItemId('accuracy','fantastic')].value, 4.00, 'accuracy fantastic = 8x = 400%');
@@ -2492,7 +2492,7 @@
     // Recipe = 1000 Tier-20 Cloths + 10 rare Tier-20 Cloaks.
     var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','cape')]);
     ok(rec && rec.inputs.weaving_t20===1000 && rec.rareCount===10, 'D1 Cloak recipe = 1000 refined cloths / 10 rare cloaks');
-    eq(FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2','cape')]), null, 'D2 Cloak mastercraft is not available yet');
+    ok(FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2','cape')]) !== null, 'D2 Cloak mastercraft is now available (Batch K)');
     // Effect aggregation from an equipped Shroud in the Back slot.
     var svB = s.bodyArmor.back;
     s.bodyArmor.back = { leg:'critchance', rarity:'supreme', tier:0, material:null };
@@ -3199,6 +3199,51 @@
     s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
   });
 
+  // ---- D2 (Tunnel) universal accessories: Signets / Shrouds / Pendants (Batch K) ---------------------
+  suite('mastercraft: D2 legendary accessories', function(){
+    var ring = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2','ring')]);
+    var cape = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2','cape')]);
+    var amu  = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2','amulet')]);
+    ok(ring && ring.layer==='d2' && ring.rareCount===20 && ring.outcomes.length===5, 'D2 ring: d2 recipe, 20 rare, 5 Signets');
+    ok(cape && cape.layer==='d2' && cape.rareCount===20 && cape.outcomes.length===3, 'D2 cape: d2 recipe, 20 rare, 3 Shrouds');
+    ok(amu  && amu.layer==='d2'  && amu.rareCount===20  && amu.outcomes.length===3, 'D2 amulet: d2 recipe, 20 rare, 3 Pendants');
+    eq(ring.inputs.metallurgy_t20, 2000, 'D2 ring costs 2000 ingots');
+    eq(cape.inputs.weaving_t20, 2000, 'D2 cape costs 2000 cloth');
+    eq(FF.D2_LEG_RING_DEFS.length, 5, '5 D2 Signets'); eq(FF.D2_LEG_CLOAK_DEFS.length, 3, '3 D2 Shrouds'); eq(FF.D2_LEG_AMULET_DEFS.length, 3, '3 D2 Pendants');
+    eq(Object.keys(FF.LEGENDARY_RING_ITEMS).filter(function(id){ return FF.LEGENDARY_RING_ITEMS[id].dungeon==='d2'; }).length, 20, '5 Signets x 4 rarities = 20 D2 ring items');
+    eq(Object.keys(FF.LEGENDARY_CLOAK_ITEMS).filter(function(id){ return FF.LEGENDARY_CLOAK_ITEMS[id].dungeon==='d2'; }).length, 12, '3 Shrouds x 4 = 12 D2 cloak items');
+    eq(Object.keys(FF.LEGENDARY_AMULET_ITEMS).filter(function(id){ return FF.LEGENDARY_AMULET_ITEMS[id].dungeon==='d2'; }).length, 12, '3 Pendants x 4 = 12 D2 amulet items');
+    // Bonus readers pick up the merged D2 keys and scale by rarity (rare = x2).
+    var R = FF.RING_SLOT_IDS[0];
+    function ringSt(key, r){ var js = {}; js[R] = { leg:key, rarity:r||'rare' }; return { jewelrySlots: js }; }
+    function cloakSt(key, r){ return { bodyArmor: { back: { leg:key, rarity:r||'rare' } } }; }
+    function amuSt(key, r){ return { jewelrySlots: { amulet: { leg:key, rarity:r||'rare' } } }; }
+    near(FF.legendaryRingBonus('d2_leech', ringSt('d2_leech')), 0.10, 'Signet of the Leech (Rare): +10% Lifesteal');
+    near(FF.legendaryRingBonus('d2_fury', ringSt('d2_fury','fantastic')), 0.40, 'Signet of Fury (Fantastic): +40% Attack Speed');
+    near(FF.legendaryRingBonus('d2_bramble', ringSt('d2_bramble')), 0.30, 'Signet of the Bramble (Rare): +30% Reflect');
+    near(FF.legendaryRingBonus('d2_goldfind', ringSt('d2_goldfind')), 0.50, 'Signet of Plunder (Rare): +50% Gold Find');
+    ok(FF.legRingEquipped('d2_feast', ringSt('d2_feast')), 'legRingEquipped detects an equipped D2 Signet');
+    near(FF.legendaryCloakBonus('d2_ruin', cloakSt('d2_ruin')), 0.16, 'Shroud of Ruin (Rare): +16% All Damage');
+    near(FF.legendaryCloakBonus('d2_tunnelborn', cloakSt('d2_tunnelborn')), 0.16, 'Shroud of the Tunnelborn (Rare): +16% Damage Reduction');
+    near(FF.legendaryCloakBonus('d2_warpack', cloakSt('d2_warpack')), 0.30, 'Shroud of the Warpack (Rare): +30% Elemental Damage');
+    near(FF.legendaryAmuletBonus('d2_ironhide', amuSt('d2_ironhide')), 0.50, 'Pendant of Ironhide (Rare): +50% Armor');
+    near(FF.legendaryAmuletBonus('d2_veteran', amuSt('d2_veteran')), 0.40, 'Pendant of the Veteran (Rare): +40% XP');
+    near(FF.legendaryAmuletBonus('d2_zealot', amuSt('d2_zealot')), 0.50, 'Pendant of the Zealot (Rare): +50% Faith');
+    // Full forge (ring): give the bill + 20 rare t20 rings, craft, confirm a d2 Signet is added to inventory.
+    var s = FF._state, svInv=s.inventory, svBp=s.blueprints;
+    var catId = 'ring_' + FF.RING_TYPES[0].id + '_t20_rare';
+    s.inventory = { metallurgy_t20:2000, gem_voidcrystal:200, twine_t20:200, goldsmithing_t20:200 }; s.inventory[catId] = 20;
+    s.blueprints = {};
+    var bpId = FF.masterworkBlueprintId('d2','ring'); s.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var mintedId = Object.keys(s.inventory).filter(function(id){ return /^legring_d2_/.test(id) && s.inventory[id] > 0; })[0];
+    ok(mintedId, 'the D2 ring forge adds a d2 Signet to inventory');
+    ok(FF.LEGENDARY_RING_ITEMS[mintedId] && ring.outcomes.indexOf(FF.LEGENDARY_RING_ITEMS[mintedId].legKey) !== -1, 'the forged Signet carries a D2 ring-group effect');
+    eq(s.inventory.metallurgy_t20, 0, 'the forge consumes the 2000 ingots');
+    eq(s.inventory[catId], 0, 'the forge consumes 20 rare t20 rings');
+    s.inventory=svInv; s.blueprints=svBp;
+  });
+
   // ---- D1 legendary AMULETS (Pendants): 3 universal effects, worn in the single Amulet slot -----------
   // ---- D1 armor Set Items: data model + set-piece detection ------------------------------------------
   suite('D1 armor sets: data model + detection', function(){
@@ -3881,7 +3926,7 @@
     eq(FF.D1_LEG_AMULET_DEFS.length, 3, 'three D1 legendary amulet effects');
     var keys = FF.D1_LEG_AMULET_DEFS.map(function(d){ return d.key; });
     eq(JSON.stringify(keys), JSON.stringify(['maxhealth','treasure','cheatdeath']), 'the three chosen effects: Max Health, Treasure, Cheat Death');
-    eq(Object.keys(FF.LEGENDARY_AMULET_ITEMS).length, 12, '3 effects x 4 rarities = 12 Pendant items');
+    eq(Object.keys(FF.LEGENDARY_AMULET_ITEMS).filter(function(id){ return FF.LEGENDARY_AMULET_ITEMS[id].dungeon==='d1'; }).length, 12, '3 D1 effects x 4 rarities = 12 D1 Pendant items');
     eq(FF.legAmuletItemId('maxhealth','rare'), 'legamulet_d1_maxhealth_rare', 'Pendant item id format');
 
     // Bonus scaling: base value x the 2x/4x/8x rarity ladder.
