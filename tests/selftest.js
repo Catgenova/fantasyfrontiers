@@ -3486,6 +3486,38 @@
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.activity=sv.act; }
   });
 
+  // ---- D3 sets: Batch P — Undeath + Treasure sets ---------------------------------------------------
+  suite('D3 sets: Batch P — Undeath + Treasure sets', function(){
+    var s = FF._state, sv = { ba:s.bodyArmor, ui:s.uniqueItems, act:s.activity, ks:s.knightStacks };
+    function wearD3(cls, n){
+      var order = FF.D3_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
+      s.bodyArmor = {}; s.uniqueItems = {};
+      for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d3' }; s.bodyArmor[order[i]] = { uid:uid }; }
+    }
+    function wearFull(cls){ wearD3(cls, FF.D3_SET_DEFS[cls].full); }
+    try {
+      s.activity = { type:'combat', monsterHp:500 };
+      // Knight Grave Momentum (2pc): -10% incoming at max Momentum.
+      wearD3('knight', 2); s.knightStacks = FF.knightStackCap(s);
+      near(FF.d3SetIncomingMult(s), 0.90, 'Knight Grave Momentum: -10% damage at max Momentum');
+      s.knightStacks = 0; near(FF.d3SetIncomingMult(s), 1.0, 'Grave Momentum inert below max Momentum');
+      // Treasure Hunter Cursed Hoard (full): +50% Treasure Find (ratio cancels amulet/D1 factors).
+      wearFull('treasureHunter'); var withF = FF.legTreasureMult(s);
+      s.bodyArmor = {}; s.uniqueItems = {}; var without = FF.legTreasureMult(s);
+      near(withF / without, 1.50, 'Treasure Hunter Cursed Hoard: +50% Treasure Find');
+      // Grave Robber (2pc) gold bonus rides on enemyCursed at kill time; and its crit-Curse applier is a combat hook.
+      ok(FF.D3_SET_DEFS.treasureHunter.b2.name === 'Grave Robber', 'TH D3 2pc is Grave Robber');
+      // The Undeath revives / Grave Ward / Consecrate / Soulguard fire at combat hooks (lethal-blow guard,
+      // shield-absorb, tick loop). Confirm each set is defined with its named bonuses.
+      ['berserker','templar','knight','lumen','treasureHunter'].forEach(function(c){
+        ok(FF.D3_SET_DEFS[c] && FF.D3_SET_DEFS[c].b2.name && FF.D3_SET_DEFS[c].bf.name, c+' has a full D3 set'); });
+      eq(FF.D3_SET_DEFS.berserker.bf.name, 'Second Death', 'Berserker D3 full is Second Death');
+      eq(FF.D3_SET_DEFS.templar.bf.name, 'Resurrection', 'Templar D3 full is Resurrection');
+      eq(FF.D3_SET_DEFS.knight.bf.name, 'Undying March', 'Knight D3 full is Undying March');
+      eq(FF.D3_SET_DEFS.lumen.bf.name, 'Soulguard', 'Lumen D3 full is Soulguard');
+    } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.activity=sv.act; s.knightStacks=sv.ks; }
+  });
+
   // ---- D2 sets: Batch B effects (damage & tempo) -----------------------------------------------------
   suite('D2 sets: Batch B combat effects', function(){
     var s = FF._state;

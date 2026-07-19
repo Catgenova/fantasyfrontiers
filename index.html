@@ -5673,6 +5673,7 @@
   function d3SetIncomingMult(st){ st = st || state; var m = 1;
     if(setFullD3('sentinel', st) && enemyDecaying(st)) m *= 0.80;                     // Crypt Wall: Decayed attackers deal 20% less
     if(setFullD3('herald', st) && enemyCursed(st)) m *= 0.85;                         // Mausoleum: Cursed foes deal 15% less
+    if(set2D3('knight', st) && (st.knightStacks||0) >= knightStackCap(st)) m *= 0.90; // Grave Momentum: -10% damage at max Momentum
     return m;
   }
   // ===== D1 set-bonus combat effects =====
@@ -9179,7 +9180,7 @@
   function countRareT20Amulets(){ var n = 0; AMULET_TYPES.forEach(function(at){ n += state.inventory[amuletBaseId(at.id, TIER_COUNT-1, 'rare')] || 0; }); return n; }
   function consumeRareT20Amulets(count){ AMULET_TYPES.forEach(function(at){ if(count <= 0) return; var id = amuletBaseId(at.id, TIER_COUNT-1, 'rare'); var have = state.inventory[id] || 0; var take = Math.min(have, count); if(take > 0){ state.inventory[id] = have - take; count -= take; } }); }
   // Treasure Find (Pendant of Fortune + Treasure Hunter Wider Appraisal set): +gold and +loot from kills.
-  function legTreasureMult(st){ st = st || state; return (1 + legendaryAmuletBonus('treasure', st)) * setTreasureMult(st) * (setFullD2('treasureHunter', st) ? 1.40 : 1); } // + Plunder (TH D2 full): +40% Treasure Find
+  function legTreasureMult(st){ st = st || state; return (1 + legendaryAmuletBonus('treasure', st)) * setTreasureMult(st) * (setFullD2('treasureHunter', st) ? 1.40 : 1) * (setFullD3('treasureHunter', st) ? 1.50 : 1); } // + Plunder (TH D2 full): +40%; Cursed Hoard (TH D3 full): +50% Treasure Find
   function craftMastercraft(blueprintId){
     var bp = BLUEPRINT_ITEMS[blueprintId]; if(!bp) return;
     if(((state.blueprints && state.blueprints[blueprintId]) || 0) <= 0){ addLog('You don’t hold that Blueprint.', 'danger'); return; }
@@ -12486,11 +12487,13 @@
       if(!isOffhand && isCrit && set2D3('sharpshooter')) decayApply(act, 2); // Marrow Shot (2 stacks)
       // Gravestone (Juggernaut D3 2pc): your hits Curse the foe.
       if(!isOffhand && set2D3('juggernaut')) curseApply(act);
+      // Grave Robber (Treasure Hunter D3 2pc): your Critical Hits Curse the foe (Cursed foes drop more gold).
+      if(!isOffhand && isCrit && set2D3('treasureHunter')) curseApply(act);
       // Berserker Blood Pact (Lv20): each landed hit spends 2% of current HP to fuel its +50% damage (never self-lethal).
       if(berserkerBonus(20) && state.playerHp > 1) state.playerHp = Math.max(1, state.playerHp - Math.round(BERSERK_BLOODPACT_COST * state.playerHp));
       // Lumen Oracle on-hit: Lv1 Flashbang (8% stun); Lv40 Reflected Light (a share of the hit heals the lowest ally / you).
       if(lumenBonus(1) && !offlineCapture && Math.random() < 0.08){ act.enemyStunUntil = Date.now() + 2000; spawnFloatingText('Flashed!', 'ft-rare'); }
-      if(lumenBonus(40)){ var _lr = lumenApplyHeal(dmgToMonster * lumenReflectPct(state) * lumenReflectD2Mult(state)); if(_lr > 0 && !offlineCapture) spawnFloatingText('+'+_lr+' HP', 'ft-success'); } // Radiance (Lumen D2 2pc): +50% reflect heal
+      if(lumenBonus(40)){ var _lr = lumenApplyHeal(dmgToMonster * lumenReflectPct(state) * lumenReflectD2Mult(state) * (set2D3('lumen') ? 1.5 : 1)); if(_lr > 0 && !offlineCapture) spawnFloatingText('+'+_lr+' HP', 'ft-success'); } // Radiance (Lumen D2 2pc) + Grave Light (Lumen D3 2pc): +50% reflect heal each
       // Voidshadow on-hit: Lv1 Mark of the Void stacks Vulnerability (cap 10, refreshed each hit); at max,
       // Lv80 Doom deepens it. Lv20 Enfeeble saps enemy damage 25% for 5s via the shared enemy-damage window.
       if(nightbladeBonus(1)){
@@ -12760,7 +12763,7 @@
     if(legRingEquipped('d2_feast', state)){ var _feast = Math.min(Math.round(maxHp(state) * legendaryRingBonus('d2_feast', state)), healRoom(state)); if(_feast > 0){ state.playerHp += _feast; spawnFloatingText('+'+_feast+' HP', 'ft-success'); } } // Signet of the Feast (D2): Life on Kill
     if(act && act.dungeon){ dungeonOnKill(monster); return; } // dungeon foe -> advance the run instead of re-engaging
     bumpStat('kills');
-    var goldWon = Math.round(randInt(monster.goldMin, monster.goldMax) * legTreasureMult() * (legActive('goldgorge') ? LEG_GOLDGORGE_KILL : 1) * (1 + legendaryRingBonus('d2_goldfind', state))); // Pendant of Fortune: +Treasure Find gold; Goldgorge (D2 scimitar): +30% kill gold; Signet of Plunder (D2): +Gold Find
+    var goldWon = Math.round(randInt(monster.goldMin, monster.goldMax) * legTreasureMult() * (legActive('goldgorge') ? LEG_GOLDGORGE_KILL : 1) * (1 + legendaryRingBonus('d2_goldfind', state)) * ((set2D3('treasureHunter') && enemyCursed(state)) ? 1.50 : 1)); // Pendant of Fortune: +Treasure Find gold; Goldgorge (D2 scimitar): +30% kill gold; Signet of Plunder (D2): +Gold Find; Grave Robber (TH D3 2pc): +50% gold from a Cursed foe
     earnGold(goldWon);
     addPhysiqueXp(physTierPairs([['resolve',1]], monster.tierIndex));
     addLog('Defeated the ' + monster.name + '! +' + goldWon + ' gold.', 'important');
@@ -13052,6 +13055,7 @@
       state.lumenShield -= _lAbsorbed; dmgToPlayer -= _lAbsorbed;
       if(_lAbsorbed > 0) spawnFloatingText('Barrier absorbed '+Math.round(_lAbsorbed)+'!', 'ft-success');
       if(_lAbsorbed > 0 && legActive('retribution')) state.retributionCharged = true; // the Radiant Barrier is a Holy shield too
+      if(_lAbsorbed > 0 && setFullD3('lumen')) decayApply(act, 1); // Soulguard (Lumen D3 full): your Barrier also reflects Decay to attackers
       // Aegis Break (legendary light wand): when the Barrier is spent by this hit, it bursts for Light damage.
       if(legActive('aegisbreak') && _lBefore > 0 && state.lumenShield <= 0){
         var _burst = Math.max(1, Math.round(_lBefore * LEG_AEGISBREAK_MULT * (monster ? elementAdvantage('light', monster.element) : 1)));
@@ -13067,9 +13071,26 @@
       addLog('The Pendant of Undying pulls you back from death!', 'important');
       spawnFloatingText('Cheat Death!', 'ft-rare');
     }
+    // D3 Undeath: cheat a lethal blow. Resurrection spends the Holy shield; Second Death / Undying March fire once per fight.
+    if(dmgToPlayer > 0 && act && act.type==='combat' && (state.playerHp - dmgToPlayer) <= 0){
+      if(setFullD3('templar') && (state.templarShield||0) > 0){ // Resurrection (Templar D3 full): consume the Holy shield to survive
+        state.templarShield = 0; state.playerHp = Math.max(1, Math.round(maxHp(state) * 0.30)); dmgToPlayer = 0;
+        addLog('Your Holy shield shatters and pulls you back — Resurrection!', 'important'); spawnFloatingText('Resurrection!', 'ft-rare');
+      } else if(setFullD3('berserker') && !act.d3ReviveUsed){ // Second Death (Berserker D3 full): revive at 30% HP, once per fight
+        act.d3ReviveUsed = true; state.playerHp = Math.max(1, Math.round(maxHp(state) * 0.30)); dmgToPlayer = 0;
+        addLog('You rise from death — Second Death!', 'important'); spawnFloatingText('Second Death!', 'ft-rare');
+      } else if(setFullD3('knight') && (state.knightStacks||0) >= knightStackCap(state) && !act.d3UndyingUsed){ // Undying March (Knight D3 full): survive at 1 HP at max Momentum
+        act.d3UndyingUsed = true; state.playerHp = 1; dmgToPlayer = 0;
+        addLog('You refuse to fall — Undying March!', 'important'); spawnFloatingText('Undying March!', 'ft-rare');
+      }
+    }
     // Bastion (Herald full): cap any single blow at 25% of max Health before it reaches you.
     if(dmgToPlayer > 0 && setFull('herald')){ var _capped = bastionCapHit(dmgToPlayer, state); if(_capped < dmgToPlayer){ dmgToPlayer = _capped; spawnFloatingText('Bastion!', 'ft-success'); } }
     state.playerHp -= dmgToPlayer;
+    // Grave Ward (Berserker D3 2pc): the first time you drop below 25% Health each fight, gain a Barrier worth 15% max Health.
+    if(dmgToPlayer > 0 && set2D3('berserker') && act && act.type==='combat' && !act.d3GraveWardUsed && state.playerHp > 0 && state.playerHp < maxHp(state) * 0.25){
+      act.d3GraveWardUsed = true; legBarrierAdd(maxHp(state) * 0.15); if(!offlineCapture) spawnFloatingText('Grave Ward!', 'ft-rare');
+    }
     // Knight Counterweight (Lv 20): a hit you take also builds a Momentum stack -- the blows you take feed your tempo.
     if(dmgToPlayer > 0 && knightBonus(20)) state.knightStacks = Math.min(knightStackCap(state), (state.knightStacks || 0) + 1);
     if(dmgToPlayer > 0 && act && act.type==='combat') act.lastDamagedAt = Date.now(); // Assassin Vanish: a landed blow restarts the 4s-untouched clock
@@ -26432,6 +26453,8 @@
         applyLumenMendingTick(dt);
         // Dawnbrand (D2 light wand): the Radiant Barrier regenerates while you're in combat.
         if(legActive('dawnbrand') && state.playerHp > 0){ var _dbCap = legBarrierCap(state); if((state.lumenShield||0) < _dbCap) state.lumenShield = Math.min(_dbCap, (state.lumenShield||0) + maxHp(state) * LEG_DAWNBRAND_HPS * dt / 1000); }
+        // Consecrate (Templar D3 2pc): while your Holy shield holds, it also heals you 2% max Health per second.
+        if(set2D3('templar') && (state.templarShield||0) > 0 && state.playerHp > 0) state.playerHp += Math.min(maxHp(state) * 0.02 * dt / 1000, healRoom(state));
         // Regen: familiar restores a lump of HP every 5 seconds while the buff is up.
         var regenPer5s = famRegenHps();
         if(regenPer5s > 0 && state.playerHp > 0){
