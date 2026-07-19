@@ -11595,14 +11595,15 @@
   var POTION_MAX_CHARGES = 10;
   var POTION_POISON_DURATION_MS = 3000;
   function potionLerp(a, b, tier){ tier = Math.max(0, Math.min(TIER_COUNT-1, tier)); return a + (b-a)*tier/(TIER_COUNT-1); }
-  function parsePotionId(id){ var m = /^(toxin|firebomb|elixir|catalyst|enchant|coating|bomb|flash)_t(\d+)$/.exec(id||''); return m ? { type:m[1], tier:+m[2] } : null; }
+  // 'enchant' is NOT here: Enchant Crystals (enchant_t<n>) are the Improvement-tab enchant INPUT now, not a
+  // combat consumable -- so they must never parse as a potion (that's what showed the stale "In combat" card).
+  function parsePotionId(id){ var m = /^(toxin|firebomb|elixir|catalyst|coating|bomb|flash)_t(\d+)$/.exec(id||''); return m ? { type:m[1], tier:+m[2] } : null; }
   function potionEffect(id){
     var p = parsePotionId(id); if(!p) return null;
     if(p.type==='toxin')    return { type:'toxin',    tier:p.tier, pct: potionLerp(0.01, 0.10, p.tier) };     // % combat score / sec for 3s
     if(p.type==='firebomb') return { type:'firebomb', tier:p.tier, dmg: Math.round(potionLerp(5, 210, p.tier)) };
     if(p.type==='elixir')   return { type:'elixir',   tier:p.tier, crit: potionLerp(0.05, 1.10, p.tier) };    // + crit-damage multiplier
     if(p.type==='catalyst') return { type:'catalyst', tier:p.tier, fam: potionLerp(0.05, 1.10, p.tier) };     // + familiar spell potency
-    if(p.type==='enchant')  return { type:'enchant',  tier:p.tier, dmg: potionLerp(0.05, 0.40, p.tier) };     // + weapon-damage multiplier on every hit
     if(p.type==='coating')  return { type:'coating',  tier:p.tier, pct: potionLerp(0.015, 0.14, p.tier), durationMs: 6000 }; // longer, stronger poison than Toxin
     if(p.type==='bomb')     return { type:'bomb',     tier:p.tier, dmg: Math.round(potionLerp(10, 350, p.tier)) };        // heavy raw burst per hit (bigger than a Firebomb)
     if(p.type==='flash')    return { type:'flash',    tier:p.tier, stun: potionLerp(0.08, 0.20, p.tier) };                // chance per hit to stun the enemy
@@ -11611,14 +11612,12 @@
   function activePotionEffect(){ return (state.activePotion && (state.potionCharges||0) > 0) ? potionEffect(state.activePotion) : null; }
   function elixirCritBonus(){ var e = activePotionEffect(); return (e && e.type==='elixir') ? e.crit : 0; }
   function catalystFamiliarBonus(){ var e = activePotionEffect(); return (e && e.type==='catalyst') ? e.fam : 0; }
-  function enchantDamageBonus(){ var e = activePotionEffect(); return (e && e.type==='enchant') ? e.dmg : 0; } // active Weapon Enchant: +dmg fraction per hit
   function potionEffectDesc(id){
     var e = potionEffect(id); if(!e) return '';
     if(e.type==='toxin')    return 'Poison '+Math.round(e.pct*100)+'% combat score/s for 3s';
     if(e.type==='firebomb') return '~'+e.dmg+' fire damage per hit';
     if(e.type==='elixir')   return '+'+Math.round(e.crit*100)+'% crit damage';
     if(e.type==='catalyst') return '+'+Math.round(e.fam*100)+'% familiar spell power';
-    if(e.type==='enchant')  return '+'+Math.round(e.dmg*100)+'% weapon damage';
     if(e.type==='coating')  return 'Poison '+Math.round(e.pct*100)+'% combat score/s for '+Math.round(e.durationMs/1000)+'s';
     if(e.type==='bomb')     return '~'+e.dmg+' burst damage per hit';
     if(e.type==='flash')    return Math.round(e.stun*100)+'% chance to stun per hit';
@@ -13936,7 +13935,7 @@
       // No potionType guard: Alchemy's toxin/firebomb/elixir/catalyst are identified by their id
       // rather than a field, and potionEffectDesc returns '' for anything that isn't a consumable.
       var _pEff = potionEffectDesc(recipe.id);
-      if(_pEff) html += '<div class="chance-line"><b style="color:var(--cat-combat)">In combat:</b> '+_pEff+' &bull; ready it from the Combat tab ('+(POTION_MAX_CHARGES + apothecaryExtraCharges())+' charges).</div>';
+      if(_pEff) html += '<div class="chance-line"><b style="color:var(--cat-combat)">In combat:</b> '+_pEff+' &bull; ready it from the Enemies tab, or mid-fight from the Combat tab ('+(POTION_MAX_CHARGES + apothecaryExtraCharges())+' charges).</div>';
       html += '<div class="chance-line">Output: <b>'+(recipe.outputQty||1)+'x '+recipe.name+'</b> &nbsp;|&nbsp; Success Chance: <b>'+successPctCard+'%</b></div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(recipe.inputs, 'inp-'+recipe.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';

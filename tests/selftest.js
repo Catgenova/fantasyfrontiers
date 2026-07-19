@@ -1327,6 +1327,9 @@
     // Enchant Crystals are the Improvement-tab enchant INPUT, no longer a Battle-tab combat consumable.
     ok(FF.POTION_TYPE_IDS.indexOf('enchant') === -1, 'enchant is NOT a combat consumable line (retired)');
     ok(ench5.potionType === undefined, 'enchant recipe carries no potionType (retired consumable)');
+    // An Enchant Crystal must NOT read as a potion (that stale path put a bogus "In combat" line on its card).
+    eq(FF.potionEffectDesc('enchant_t5'), '', 'an Enchant Crystal has no combat-consumable effect text');
+    ok(FF.potionEffectDesc('coating_t5') !== '', 'a real consumable (coating) still describes its combat effect');
     ok(FF.GATHER_PHYSIQUE.prospecting && FF.CRAFT_PHYSIQUE.gemcutting && FF.CRAFT_PHYSIQUE.enchanting, 'physique tables include the new skills');
   });
 
