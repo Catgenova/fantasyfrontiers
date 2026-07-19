@@ -3344,6 +3344,82 @@
     s.inventory = svInv; s.blueprints = svBp; s.uniqueItems = svUniq;
   });
 
+  // ---- D4 legendary arcane weapons + wards + Scorch (Batch CC) --------------------------------------
+  suite('mastercraft: D4 legendary arcane (Scorch + forge + effects)', function(){
+    var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d4','arcane')]);
+    ok(rec && rec.gear === true && rec.layer === 'd4', 'D4 arcane has a d4-layer gear recipe');
+    eq(rec.rareCount, 40, 'D4 arcane needs 40 rare Tier-20 items (quadruple D1)');
+    eq(rec.outcomes.length, 12, 'the D4 arcane pool forges one of 7 weapons + 5 wards');
+    eq(rec.inputs.forestry_t20, 4000, 'D4 arcane costs 4000 t20 wood');
+    ['fire','water','earth','light','dark'].forEach(function(el){ eq(rec.inputs['glyph_'+el], 800, 'D4 arcane costs 800 '+el+' glyphs'); });
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D4[id].group==='arcane'; }).length, 48, '12 arcane effects x 4 rarities = 48 D4 arcane gear items');
+    ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).every(function(id){ var it = FF.LEGENDARY_GEAR_ITEMS_D4[id]; return it.legendary && it.gear && it.dungeon==='d4' && it.sell===0 && /<svg/.test(it.icon); }), 'every D4 gear item is flagged, d4-layer, non-vendorable, iconned');
+
+    function legSt(key, base, kind, extra){
+      var isOff = kind === 'offhand';
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:1e9,
+        uniqueItems:{ L:{ uid:'L', leg:key, kind:kind||'weapon', base:'st'+(isOff?'ward':'weapon')+'_'+(base||'wandFire')+'_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 } } };
+      st[isOff ? 'equippedOffhandUid' : 'equippedMainhandUid'] = 'L';
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+    var now = Date.now();
+
+    // --- Scorch mechanic ---
+    var sc = { type:'combat', monsterHp:1000 };
+    FF.scorchApply(sc, 3); eq(sc.scorchStacks, 3, 'scorchApply stacks Scorch');
+    ok(sc.scorchUntil > now, 'Scorch opens a window');
+    FF.scorchApply(sc, 99); eq(sc.scorchStacks, FF.SCORCH_MAX_STACKS, 'Scorch caps at 15 stacks');
+    var scst = { activity: sc }; near(FF.scorchDmgMult(scst), 1 + 0.02*FF.SCORCH_MAX_STACKS, 'Scorch: +2% damage per stack');
+    ok(FF.enemyScorched(scst), 'a Scorched foe reads as Scorched');
+    sc.scorchUntil = now - 1; ok(!FF.enemyScorched(scst), 'Scorch lapses after its window'); near(FF.scorchDmgMult(scst), 1.0, 'a non-Scorched foe has no Scorch bonus');
+    // Scorch's amplifier rides d4LegDmgMult for anyone.
+    near(FF.d4LegDmgMult({}, { activity:{type:'combat', monsterHp:100, scorchStacks:5, scorchUntil:now+4000} }), 1 + 0.02*5, 'd4LegDmgMult folds in Scorch (+10% at 5 stacks)');
+
+    // --- Read-only weapon amplifiers ---
+    // Rimewyrm's Fang: +20% vs a Scorched foe.
+    near(FF.d4LegDmgMult({}, legSt('rimewyrm','wandWater','weapon',{ activity:{type:'combat', monsterHp:100, scorchStacks:1, scorchUntil:now+4000} })), (1+0.02) * 1.20, 'Rimewyrm: +20% vs a Scorched foe (atop the Scorch stack)');
+    near(FF.d4LegDmgMult({}, legSt('rimewyrm','wandWater')), 1.0, 'Rimewyrm inert on an unscorched foe');
+    // Sunwyrm's Verdict: +30% vs a Dark foe.
+    near(FF.d4LegDmgMult({ element:'dark' }, legSt('sunwyrm','scepter')), 1.30, "Sunwyrm's Verdict: +30% vs a Dark foe");
+    near(FF.d4LegDmgMult({ element:'fire' }, legSt('sunwyrm','scepter')), 1.0, 'Sunwyrm inert vs a non-Dark foe');
+    // Dawnwyrm's Radiance: while a Radiant Barrier holds, +Light Attunement to all damage.
+    var dw = legSt('dawnwyrm','wandLight','weapon',{ lumenShield:500 });
+    near(FF.d4LegDmgMult({}, dw), 1 + FF.elementDamageBonus(dw, 'light'), 'Dawnwyrm: Barrier lends your Light Attunement');
+    near(FF.d4LegDmgMult({}, legSt('dawnwyrm','wandLight')), 1.0, 'Dawnwyrm inert with no Barrier up');
+
+    // Duskwyrm's Whisper: each Vulnerability stack strips 1.5% of a dragon's resistance to your wand.
+    var waterDragon = { dungeon:'d4', element:'water' };
+    near(FF.d4WandElementMult(legSt('duskwyrm','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, voidVulnStacks:4, voidVulnUntil:now+4000} }), 'fire', waterDragon), 1 - (0.15 - 0.06), 'Duskwyrm: 4 Vulnerability -> resistance 15% -> 9%');
+    near(FF.d4WandElementMult(legSt('duskwyrm','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, voidVulnStacks:10, voidVulnUntil:now+4000} }), 'fire', waterDragon), 1.0, 'Duskwyrm: 10 Vulnerability fully strips the resistance');
+
+    // Broodwyrm's Chorus: familiars always fight with advantage.
+    near(FF.d4FamiliarElementMult(legSt('broodwyrm','staff'), 'fire', { element:'water' }), FF.ELEMENT_ADVANTAGE_MULT, "Broodwyrm's Chorus: familiars gain the advantage bite when they lack it");
+    near(FF.d4FamiliarElementMult(legSt('broodwyrm','staff'), 'fire', { element:'earth' }), 1.0, 'Broodwyrm does not double an advantage the familiar already has (Fire already beats Earth)');
+
+    // Detection for the behaviour-driven weapons + all 5 wards.
+    ['cinderwyrm','stormwyrm'].forEach(function(k){ var b = FF.D4_LEG_GEAR_MAP[k].base; eq(FF.legActive(k, legSt(k, b)), true, 'legActive detects '+k); });
+    ['emberscale','stormscale','duskscale','dawnscale','sunscale'].forEach(function(k){ var b = FF.D4_LEG_GEAR_MAP[k].base; eq(FF.legActive(k, legSt(k, b, 'offhand')), true, 'legActive detects '+k); });
+
+    // Full forge: give the bill, craft, confirm a d4 legendary UNIQUE with an arcane-group leg + display name.
+    var s = FF._state, svInv = s.inventory, svBp = s.blueprints, svUniq = s.uniqueItems;
+    s.inventory = { forestry_t20: 4000, glyph_fire:800, glyph_water:800, glyph_earth:800, glyph_light:800, glyph_dark:800 };
+    s.blueprints = {}; s.uniqueItems = {};
+    FF.legGearRareIds('arcane').forEach(function(id){ s.inventory[id] = 4; });
+    var bpId = FF.masterworkBlueprintId('d4','arcane'); s.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
+    eq(minted.length, 1, 'the D4 forge mints exactly one legendary unique');
+    var u = minted[0];
+    ok(u && u.leg && FF.D4_LEG_GEAR_MAP[u.leg], 'the unique carries a D4 arcane-group legendary effect');
+    ok(/^st(weapon|ward)_.+_t20_(rare|supreme|fantastic)$/.test(u.base), 'the unique is a top-tier wand/scepter/staff/ward base');
+    ok(FF.uniqueDisplayName(u).indexOf(FF.D4_LEG_GEAR_MAP[u.leg].name) === 0, 'the forged D4 legendary displays its effect name');
+    eq(s.inventory.forestry_t20, 0, 'the forge consumes the 4000 wood');
+    var rareLeft = FF.legGearRareIds('arcane').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
+    eq(rareLeft, FF.legGearRareIds('arcane').length * 4 - 40, 'the forge consumes exactly 40 rare arcane items');
+    s.inventory = svInv; s.blueprints = svBp; s.uniqueItems = svUniq;
+  });
+
   // ---- D3 (Underground) legendary shields (Batch S) -------------------------------------------------
   suite('mastercraft: D3 legendary shields', function(){
     var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','defense')]);
