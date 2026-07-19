@@ -6160,6 +6160,22 @@
       // A second Equip Best does not downgrade to the leftover t2.
       FF.equipBestTool(sk);
       eq(s.gatherTools[sk], 6, 'Equip Best never downgrades when the equipped tool is already best');
+
+      // Outlier: "best" is the aggregate speed/success score (rarity-scaled), NOT raw tier -- a lower-tier
+      // higher-rarity tool (Supreme) can beat a higher-tier lower-rarity one (Rare). Find such a pair.
+      var mk = 'mining', pair = null;
+      for(var hi=1; hi<21 && !pair; hi++){ for(var lo=0; lo<hi; lo++){
+        if(FF.toolAggregateScore(mk,true,lo,'supreme') > FF.toolAggregateScore(mk,true,hi,'rare')){ pair = {lo:lo, hi:hi}; break; }
+      } }
+      ok(pair, 'a lower-tier Supreme out-scores a higher-tier Rare somewhere on the ladder');
+      s.inventory = {}; s.gatherTools[mk] = 0; s.gatherToolRarities[mk] = 'normal';
+      s.inventory['tool_'+mk+'_t'+pair.hi+'_rare'] = 1;   // higher tier, lower rarity
+      s.inventory['tool_'+mk+'_t'+pair.lo+'_supreme'] = 1; // lower tier, higher rarity -- actually better
+      eq(FF.bestOwnedToolForSkill(mk).id, 'tool_'+mk+'_t'+pair.lo+'_supreme', 'best picks the higher-scoring Supreme, not the higher tier');
+      FF.equipBestTool(mk);
+      eq(s.gatherTools[mk], pair.lo+1, 'Equip Best equips the higher-scoring (lower-tier) Supreme');
+      eq(s.gatherToolRarities[mk], 'supreme', 'the equipped tool is the Supreme');
+      eq(s.inventory['tool_'+mk+'_t'+pair.hi+'_rare']||0, 1, 'the higher-tier Rare stays in the bag (it scored lower)');
     } finally {
       s.inventory = sv.inv; s.gatherTools = sv.gt; s.gatherToolRarities = sv.gr;
     }

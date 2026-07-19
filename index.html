@@ -12743,25 +12743,38 @@
     tiers[skillId] = 0;
     rarities[skillId] = 'normal';
   }
-  // Best tool for a skill sitting in your bag (highest tier, then highest rarity). The equipped tool lives
-  // in gatherTools/craftTools, not inventory, so this only sees spares you could swap in.
+  // Effective value of a tool = its speed bonus plus (for craft tools) its success bonus, AFTER the rarity
+  // multiplier is applied. This is what actually matters in play -- a lower-tier but higher-rarity tool
+  // (e.g. Supreme Adamantite) can beat a higher-tier lower-rarity one (Rare Chromium), so "best" must
+  // compare this aggregate, not raw tier.
+  function toolAggregateScore(skillId, isGather, tierIndex, rarityId){
+    var d = isGather ? getEquippedGatherTool(skillId, tierIndex+1, rarityId) : getEquippedCraftTool(skillId, tierIndex+1, rarityId);
+    return (d.speedBonus||0) + (d.successBonus||0);
+  }
+  // Best tool for a skill sitting in your bag, by aggregate score. The equipped tool lives in
+  // gatherTools/craftTools, not inventory, so this only sees spares you could swap in.
   function bestOwnedToolForSkill(skillId){
-    var best = null;
+    var best = null, bestScore = -1;
     for(var id in state.inventory){
       if((state.inventory[id]||0) <= 0) continue;
       var it = TOOL_ITEMS[id]; if(!it || it.skillId !== skillId) continue;
-      if(!best || it.tierIndex > best.tierIndex || (it.tierIndex === best.tierIndex && rarityRank(it.rarity) > rarityRank(best.rarity))) best = it;
+      var sc = toolAggregateScore(it.skillId, it.isGather, it.tierIndex, it.rarity);
+      if(sc > bestScore){ bestScore = sc; best = it; }
     }
     return best;
   }
-  // True when the equipped tool for a skill is already at least as good as `cand` (tier first, then rarity).
-  function equippedToolAtLeast(skillId, cand){
-    var tt = findToolType(skillId); if(!tt || !cand) return false;
+  // The aggregate score of the tool currently equipped for a skill (0 when none).
+  function equippedToolScore(skillId){
+    var tt = findToolType(skillId); if(!tt) return 0;
     var tiers = tt.isGather ? state.gatherTools : state.craftTools;
     var rarities = tt.isGather ? state.gatherToolRarities : state.craftToolRarities;
-    var curTier = tiers[skillId]||0; if(curTier <= 0) return false;
-    var curTi = curTier - 1, curR = rarities[skillId] || 'normal';
-    return curTi > cand.tierIndex || (curTi === cand.tierIndex && rarityRank(curR) >= rarityRank(cand.rarity));
+    var curTier = tiers[skillId]||0; if(curTier <= 0) return 0;
+    return toolAggregateScore(skillId, tt.isGather, curTier-1, rarities[skillId] || 'normal');
+  }
+  // True when the equipped tool is already at least as effective as `cand` (compares aggregate score).
+  function equippedToolAtLeast(skillId, cand){
+    if(!cand) return false;
+    return equippedToolScore(skillId) >= toolAggregateScore(cand.skillId, cand.isGather, cand.tierIndex, cand.rarity);
   }
   // One-tap "Equip Best": pick the best owned tool for a skill and equip it (no-op if it's already best).
   function equipBestTool(skillId){
@@ -26136,7 +26149,7 @@
       guildLogPush:guildLogPush, renderGuildActivityLog:renderGuildActivityLog, GUILD_LOG_MAX:GUILD_LOG_MAX, guildIsOfficerPlus:guildIsOfficerPlus,
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
       fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE, openCritterCaches:openCritterCaches, critterCacheChance:critterCacheChance, BASE_NEST_CHANCE:BASE_NEST_CHANCE, CRITTER_CACHE_SKILLS:CRITTER_CACHE_SKILLS, SEED_DROP_SKILLS:SEED_DROP_SKILLS,
-      TOOL_ITEMS:TOOL_ITEMS, equipTool:equipTool, equipBestTool:equipBestTool, bestOwnedToolForSkill:bestOwnedToolForSkill, equippedToolAtLeast:equippedToolAtLeast, findToolType:findToolType,
+      TOOL_ITEMS:TOOL_ITEMS, equipTool:equipTool, equipBestTool:equipBestTool, bestOwnedToolForSkill:bestOwnedToolForSkill, equippedToolAtLeast:equippedToolAtLeast, equippedToolScore:equippedToolScore, toolAggregateScore:toolAggregateScore, findToolType:findToolType,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
