@@ -2982,6 +2982,83 @@
     eq(FF.legActive('holyward', legSt('holyward', 'wardLight')), true, 'legActive detects Holy Ward');
   });
 
+  // ---- D2 (Tunnel) legendary gear: arcane forge (Batch G) --------------------------------------------
+  suite('mastercraft: D2 legendary gear forge (arcane group)', function(){
+    var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2','arcane')]);
+    ok(rec && rec.gear === true, 'D2 arcane has a gear forge recipe');
+    eq(rec.layer, 'd2', 'the D2 arcane recipe is a d2-layer recipe');
+    eq(rec.rareCount, 20, 'D2 arcane needs 20 rare Tier-20 items (double D1)');
+    eq(rec.outcomes.length, 12, 'the D2 arcane pool forges one of 7 weapons + 5 wards');
+    eq(rec.inputs.forestry_t20, 2000, 'D2 arcane formula costs 2000 t20 wood');
+    ['fire','water','earth','light','dark'].forEach(function(el){ eq(rec.inputs['glyph_'+el], 400, 'D2 arcane costs 400 '+el+' glyphs'); });
+    // Item table: 12 effects x 4 rarities = 48 D2 gear items, all d2-tagged.
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D2).length, 48, '12 x 4 rarities = 48 D2 legendary gear items');
+    ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D2).every(function(id){ var it = FF.LEGENDARY_GEAR_ITEMS_D2[id]; return it.legendary && it.gear && it.dungeon==='d2' && it.sell===0 && /<svg/.test(it.icon); }), 'every D2 gear item is flagged, d2-layer, non-vendorable, iconned');
+    eq(FF.LEGENDARY_GEAR_ITEMS_D2[FF.legGearItemIdD2('cindermaw','normal')].name, 'Cindermaw', 'Normal D2 legendary name is bare');
+    ok(/Fantastic/.test(FF.LEGENDARY_GEAR_ITEMS_D2[FF.legGearItemIdD2('cindermaw','fantastic')].name), 'Fantastic D2 legendary carries the rarity suffix');
+    // Full forge: give the bill + a blueprint, craft, confirm a d2 legendary UNIQUE with an arcane-group leg.
+    var s = FF._state, svInv = s.inventory, svBp = s.blueprints, svUniq = s.uniqueItems;
+    s.inventory = { forestry_t20: 2000, glyph_fire:400, glyph_water:400, glyph_earth:400, glyph_light:400, glyph_dark:400 };
+    s.blueprints = {}; s.uniqueItems = {};
+    FF.legGearRareIds('arcane').forEach(function(id){ s.inventory[id] = 3; });
+    var bpId = FF.masterworkBlueprintId('d2','arcane'); s.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
+    eq(minted.length, 1, 'the D2 forge mints exactly one legendary unique');
+    var u = minted[0];
+    ok(u && u.leg && FF.D2_LEG_GEAR_MAP[u.leg], 'the unique carries a D2 arcane-group legendary effect');
+    ok(/^st(weapon|ward)_.+_t20_(rare|supreme|fantastic)$/.test(u.base), 'the unique is a top-tier wand/scepter/staff/ward base, floored at Rare');
+    ok(FF.uniqueDisplayName(u).indexOf(FF.D2_LEG_GEAR_MAP[u.leg].name) === 0, 'the forged D2 legendary displays its effect name, not the base wand/ward');
+    eq(s.blueprints[bpId], 0, 'the forge consumes the Blueprint');
+    eq(s.inventory.forestry_t20, 0, 'the forge consumes the 2000 wood');
+    var rareLeft = FF.legGearRareIds('arcane').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
+    eq(rareLeft, FF.legGearRareIds('arcane').length * 3 - 20, 'the forge consumes exactly 20 rare arcane items');
+    s.inventory = svInv; s.blueprints = svBp; s.uniqueItems = svUniq;
+  });
+
+  // ---- D2 legendary arcane weapon + ward effects (Batch G) -------------------------------------------
+  suite('mastercraft: D2 legendary arcane effects', function(){
+    function legSt(key, base, kind, extra){
+      var isOff = kind === 'offhand';
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+        uniqueItems:{ L:{ uid:'L', leg:key, kind:kind||'weapon', base:'st'+(isOff?'ward':'weapon')+'_'+(base||'wandFire')+'_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 } } };
+      st[isOff ? 'equippedOffhandUid' : 'equippedMainhandUid'] = 'L';
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+    var now = Date.now();
+    // Cindermaw (fire wand): +3 Burn cap; burning foes take +12%.
+    eq(FF.pyroBurnCap(legSt('cindermaw','wandFire')), 8, 'Cindermaw: Burn cap 5 -> 8 (+3)');
+    near(FF.d2LegDmgMult({}, legSt('cindermaw','wandFire','weapon',{ activity:{type:'combat', monsterHp:100, burnUntil: now+4000, burnStacks:1} })), 1.12, 'Cindermaw: +12% vs a burning foe');
+    near(FF.d2LegDmgMult({}, legSt('cindermaw','wandFire')), 1.0, 'Cindermaw inert on an unburnt foe');
+    // Rimefang (water wand): Chilled foes take +15%.
+    near(FF.d2LegDmgMult({}, legSt('rimefang','wandWater','weapon',{ activity:{type:'combat', monsterHp:100, enemyChillUntil: now+4000} })), 1.15, 'Rimefang: +15% vs a Chilled foe');
+    near(FF.d2LegDmgMult({}, legSt('rimefang','wandWater')), 1.0, 'Rimefang inert on an un-chilled foe');
+    // Stormbrand (earth wand): +8% crit chance per Galvanize stack.
+    near(FF.legStormbrandCrit(legSt('stormbrand','wandEarth','weapon',{ activity:{type:'combat', monsterHp:100, galvanizeStacks:3} })), 0.24, 'Stormbrand: +8% crit chance per Galvanize stack');
+    near(FF.legStormbrandCrit(legSt('cindermaw','wandFire')), 0, 'no Stormbrand crit without the wand');
+    // Voidfang (dark wand): each Vulnerability stack shreds 3% armour (cap 60%).
+    near(FF.legVoidfangShred(legSt('voidfang','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, voidVulnStacks:5, voidVulnUntil: now+4000} })), 0.15, 'Voidfang: 5 Vuln stacks shred 15% armour');
+    near(FF.legVoidfangShred(legSt('voidfang','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, voidVulnStacks:99, voidVulnUntil: now+4000} })), 0.60, 'Voidfang armour shred caps at 60%');
+    near(FF.legVoidfangShred(legSt('cindermaw','wandFire')), 0, 'no Voidfang shred without the wand');
+    // Sunbrand / Packbrand / Dawnbrand (behaviour-driven live): detection only.
+    eq(FF.legActive('sunbrand', legSt('sunbrand','scepter')), true, 'legActive detects Sunbrand');
+    eq(FF.legActive('packbrand', legSt('packbrand','staff')), true, 'legActive detects Packbrand');
+    eq(FF.legActive('dawnbrand', legSt('dawnbrand','wandLight')), true, 'legActive detects Dawnbrand');
+    // Wards: detection.
+    eq(FF.legActive('emberveil', legSt('emberveil','wardFire','offhand')), true, 'legActive detects Emberveil');
+    eq(FF.legActive('stormveil', legSt('stormveil','wardEarth','offhand')), true, 'legActive detects Stormveil');
+    eq(FF.legActive('voidveil', legSt('voidveil','wardDark','offhand')), true, 'legActive detects Voidveil');
+    eq(FF.legActive('lumenveil', legSt('lumenveil','wardLight','offhand')), true, 'legActive detects Lumenveil');
+    eq(FF.legActive('aegisveil', legSt('aegisveil','wardLight','offhand')), true, 'legActive detects Aegisveil');
+    // legBarrierAdd banks a Barrier on the live state, capped at >= 40% max HP for any class (Emberveil/Dawnbrand).
+    var s = FF._state, svShield = s.lumenShield;
+    s.lumenShield = 0; FF.legBarrierAdd(7);
+    ok(Math.abs(s.lumenShield - 7) < 1e-9, 'legBarrierAdd banks the Barrier amount');
+    ok(FF.legBarrierCap(s) >= Math.round(FF.maxHp(s) * 0.40) - 1e-9, 'the Barrier cap is at least 40% of max Health');
+    s.lumenShield = svShield;
+  });
+
   // ---- D1 legendary AMULETS (Pendants): 3 universal effects, worn in the single Amulet slot -----------
   // ---- D1 armor Set Items: data model + set-piece detection ------------------------------------------
   suite('D1 armor sets: data model + detection', function(){
