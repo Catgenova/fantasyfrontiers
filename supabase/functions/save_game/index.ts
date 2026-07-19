@@ -6,6 +6,30 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const MAX_BYTES = 500_000; // keep under the table's ~512KB column guard
+// Absolute ceiling on the stored progress score. Far above any real play, but FINITE: an unbounded
+// value pinned the row's progress so high that every later legitimate save was rejected as stale,
+// which locked the account out of saving entirely.
+const MAX_PROGRESS = 1_000_000_000_000_000; // 1e15
+
+// Derive the progress score from the SUBMITTED SAVE instead of trusting a client-sent number.
+// Previously `progress` was read straight off the body with only a `>= 0` floor, so a request could
+// claim an arbitrarily large value, sail past the forward-only guard forever, and (because the guard
+// only ever compares against the stored number) keep doing so. Mirrors the client's
+// saveProgressScore(): the sum of all skill XP + physique XP.
+function deriveProgress(d: Record<string, unknown>): number {
+  let total = 0;
+  for (const key of ["xp", "physique"]) {
+    const m = d[key];
+    if (m && typeof m === "object" && !Array.isArray(m)) {
+      for (const v of Object.values(m as Record<string, unknown>)) {
+        const n = Number(v);
+        if (Number.isFinite(n) && n > 0) total += n;
+      }
+    }
+  }
+  if (!Number.isFinite(total) || total < 0) total = 0;
+  return Math.min(MAX_PROGRESS, Math.floor(total));
+}
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -42,18 +66,23 @@ Deno.serve(async (req) => {
   if (typeof data !== "object" || data === null) return json({ ok: false, error: "Invalid save." }, 400);
   const savedAt = typeof body.client_saved_at === "number" && Number.isFinite(body.client_saved_at)
     ? Math.floor(body.client_saved_at) : 0;
-  const progress = typeof body.progress === "number" && Number.isFinite(body.progress) && body.progress >= 0
-    ? Math.floor(body.progress) : 0;
+  // NOTE: body.progress is deliberately IGNORED -- it's computed from `data` below. Accepting it was
+  // the reported hole (no upper bound), and a client-declared score can always disagree with the save
+  // it claims to describe.
+  const progress = deriveProgress(data as Record<string, unknown>);
   const force = body.force === true;
   if (JSON.stringify(data).length > MAX_BYTES) return json({ ok: false, error: "Save too large." }, 413);
 
   // Forward-only PROGRESS guard: never let a lower-progress state overwrite a higher one
-  // (this is what stops an empty/regressed save from clobbering real progress). A deliberate
-  // reset passes force:true to override it.
+  // (this is what stops an empty/regressed save from clobbering real progress).
   const { data: prev } = await admin.from("saves")
     .select("progress, version").eq("user_id", userId).maybeSingle();
-  if (prev && !force && progress < (prev.progress ?? 0)) {
-    return json({ ok: false, stale: true, server_progress: prev.progress }, 409);
+  const prevProgress = prev?.progress ?? 0;
+  // `force` exists for a deliberate RESET, which by definition LOWERS progress. It must never be a
+  // way to push progress UP -- otherwise it's a blanket bypass of the guard for anyone who sets the
+  // flag, which is exactly what a client-controlled override becomes.
+  if (prev && progress < prevProgress && !force) {
+    return json({ ok: false, stale: true, server_progress: prevProgress }, 409);
   }
 
   const nextVersion = (prev?.version ?? 0) + 1;
