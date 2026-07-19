@@ -4684,7 +4684,19 @@
     { key:'goreshell',     name:'Goreshell',             group:'defense', slot:'offhand', base:'shieldSmall',  cls:'reaver',         desc:'Blocking heals you for 6% of max Health.' },
     { key:'rimeshell',     name:'Rimeshell',             group:'defense', slot:'offhand', base:'shieldMedium', cls:'frostwarden',    desc:'Blocking adds 2 Chill stacks to the attacker.' },
     { key:'thornwall',     name:'Thornwall',             group:'defense', slot:'offhand', base:'shieldMedium', cls:'sentinel',       desc:'Blocked hits are reflected at 120% of the amount stopped.' },
-    { key:'bulwarkbreach', name:'Bulwark of the Breach', group:'defense', slot:'offhand', base:'shieldLarge',  cls:'herald',         desc:'Each Block also banks a Barrier worth 2% of max Health.' }
+    { key:'bulwarkbreach', name:'Bulwark of the Breach', group:'defense', slot:'offhand', base:'shieldLarge',  cls:'herald',         desc:'Each Block also banks a Barrier worth 2% of max Health.' },
+    // Slash weapons (mainhand)
+    { key:'goldgorge',     name:'Goldgorge',     group:'slash', slot:'mainhand', base:'scimitar',    cls:'treasureHunter', desc:"Critical Hits pilfer bonus gold from the foe; +30% gold from kills." },
+    { key:'blightfang',    name:'Blightfang',    group:'slash', slot:'mainhand', base:'hatchet',     cls:'plaguebearer',   desc:'Your poison ticks heal you for 25% of the damage they deal.' },
+    { key:'marrowsplitter',name:'Marrowsplitter',group:'slash', slot:'mainhand', base:'halfmoonaxe', cls:'reaver',         desc:'+3% direct damage per Bleed stack on the foe.' },
+    { key:'throatripper',  name:'Throatripper',  group:'slash', slot:'mainhand', base:'claw',        cls:'assassin',       desc:'Your first three strikes on each new foe always Critically Hit.' },
+    { key:'headtaker',     name:'Headtaker',     group:'slash', slot:'mainhand', base:'fullmoonaxe', cls:'executioner',    desc:'Each kill grants a stacking +10% damage for 6s (max 5).' },
+    { key:'soulflay',      name:'Soulflay',      group:'slash', slot:'mainhand', base:'scythe',      cls:'reaper',         desc:'Your Siphon hits heal +60%, and any overheal banks a shield.' },
+    // Pierce weapons (mainhand)
+    { key:'bloodwaltz',    name:'Bloodwaltz',    group:'pierce', slot:'mainhand', base:'rapier',     cls:'duelist',        desc:'Each landed hit without being struck adds +5% damage (max +50%); a hit taken resets it.' },
+    { key:'ironwind',      name:'Ironwind',      group:'pierce', slot:'mainhand', base:'falchion',   cls:'samurai',        desc:'At max Focus, every strike is a guaranteed Critical Hit.' },
+    { key:'runegorge',     name:'Runegorge',     group:'pierce', slot:'mainhand', base:'greatsword', cls:'spellblade',     desc:'+3% Critical Damage per equipped enchant.' },
+    { key:'breachblade',   name:'Breachblade',   group:'pierce', slot:'mainhand', base:'claymore',   cls:'knight',         desc:"At max Momentum, your hits ignore 25% of the foe's armour." }
   ];
   var D2_LEG_GEAR_MAP = {}; D2_LEG_GEAR_DEFS.forEach(function(d){ D2_LEG_GEAR_MAP[d.key] = d; });
   function legGearItemIdD2(key, rarity){ return 'leggear_d2_' + key + '_' + rarity; }
@@ -4759,7 +4771,9 @@
     // D2 (Tunnel) arcane formula -> one random D2 legendary wand/scepter/staff/ward. Doubled bill + 20 rare
     // catalysts, mirroring the D2 armor-set escalation over D1.
     d2_arcane:  legGearRecipeD2('arcane', { forestry_t20:2000, glyph_fire:400, glyph_water:400, glyph_earth:400, glyph_light:400, glyph_dark:400 }, 'arcanism', 'Rare Tier-20 Arcane Gear'),
-    d2_defense: legGearRecipeD2('defense', { metallurgy_t20:2000 }, 'shieldsmithing', 'Rare Tier-20 Shields')
+    d2_defense: legGearRecipeD2('defense', { metallurgy_t20:2000 }, 'shieldsmithing', 'Rare Tier-20 Shields'),
+    d2_slash:   legGearRecipeD2('slash',   { metallurgy_t20:2000 }, 'weaponsmithing', 'Rare Tier-20 Slash Weapons'),
+    d2_pierce:  legGearRecipeD2('pierce',  { metallurgy_t20:2000 }, 'weaponsmithing', 'Rare Tier-20 Pierce Weapons')
   };
   function mastercraftRecipeFor(bpItem){ return bpItem ? (MASTERCRAFT_RECIPES[bpItem.dungeon + '_' + bpItem.slot] || null) : null; }
   var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS);
@@ -6244,12 +6258,32 @@
   var LEG_GORESHELL_PCT = 0.06;    // Goreshell: a Block heals this fraction of max Health
   var LEG_THORNWALL_MULT = 1.20;   // Thornwall: a Block reflects this multiple of the damage it prevented
   var LEG_BULWARKBREACH_PCT = 0.02;// Bulwark of the Breach: a Block banks a Barrier worth this fraction of max Health
+  // --- D2 melee legendary tuning (Batch I) ---
+  var LEG_MARROW_PER = 0.03;        // Marrowsplitter: +3% direct damage per Bleed stack on the foe
+  var LEG_HEADTAKER_PER = 0.10, LEG_HEADTAKER_MAX = 5, LEG_HEADTAKER_MS = 6000; // Headtaker: stacking +10% damage per recent kill
+  var LEG_BLOODWALTZ_PER = 0.05, LEG_BLOODWALTZ_MAX = 10; // Bloodwaltz: +5% per untouched hit, cap +50%
+  var LEG_RUNEGORGE_PER = 0.03;     // Runegorge: +3% crit damage per equipped enchant
+  var LEG_BREACHBLADE_PIERCE = 0.25;// Breachblade: ignore 25% of the foe's armour at max Momentum
+  var LEG_SOULFLAY_MULT = 1.6;      // Soulflay: Siphon (lifesteal) hits heal +60%
+  var LEG_BLIGHTFANG_FRAC = 0.25;   // Blightfang: poison ticks heal you this share of the damage
+  var LEG_GOLDGORGE_KILL = 1.30;    // Goldgorge: +30% gold from kills
+  var LEG_GOLDGORGE_CRIT_FRAC = 0.25; // ... plus a crit pilfers this share of the foe's gold reward
   // Outgoing-damage D2 legendary bonuses, folded into one PLAYER_DMG_MODS row (below).
-  function d2LegDmgMult(monster, st){ st = st || state; var m = 1;
+  function d2LegDmgMult(monster, st){ st = st || state; var m = 1; var a = st.activity, now = Date.now();
     if(legActive('cindermaw', st) && enemyBurning(st)) m *= 1.12;   // Cindermaw: burning foes take +12%
     if(legActive('rimefang', st) && enemyChilled(st)) m *= 1.15;    // Rimefang: Chilled foes take +15%
+    if(legActive('marrowsplitter', st)){ var _bs = (a && a.type==='combat' && (a.bleedUntil||0) > now) ? (a.bleedStacks||0) : 0; m *= (1 + LEG_MARROW_PER * _bs); } // Marrowsplitter: +3%/Bleed
+    if(legActive('headtaker', st) && (st.d2HeadtakerUntil||0) > now) m *= (1 + LEG_HEADTAKER_PER * (st.d2HeadtakerStacks||0)); // Headtaker: +10%/recent kill
+    if(legActive('bloodwaltz', st)) m *= (1 + LEG_BLOODWALTZ_PER * Math.min(LEG_BLOODWALTZ_MAX, st.d2BloodwaltzStacks||0)); // Bloodwaltz: +5%/untouched hit
     return m;
   }
+  // Headtaker (D2 full-moon axe): each kill refreshes a short stacking damage window. Called from defeatMonster.
+  function d2HeadtakerOnKill(st){ st = st || state; if(!legActive('headtaker', st)) return; var now = Date.now();
+    var cur = ((st.d2HeadtakerUntil||0) > now) ? (st.d2HeadtakerStacks||0) : 0;
+    st.d2HeadtakerStacks = Math.min(LEG_HEADTAKER_MAX, cur + 1); st.d2HeadtakerUntil = now + LEG_HEADTAKER_MS;
+  }
+  // Runegorge (D2 greatsword): +3% crit damage per equipped enchant (folded into the crit multiplier).
+  function legRunegorgeCritDmg(st){ st = st || state; return legActive('runegorge', st) ? LEG_RUNEGORGE_PER * equippedEnchantCount(st) : 0; }
   // Stormbrand: each Galvanize stack also grants crit chance (folded into the crit roll + stat panel).
   function legStormbrandCrit(st){ st = st || state; if(!legActive('stormbrand', st)) return 0; var a = st.activity; var n = (a && a.type==='combat') ? Math.min(THUNDER_GALVANIZE_MAX, a.galvanizeStacks||0) : 0; return n * LEG_STORMBRAND_CRIT; }
   // Voidfang: Vulnerability stacks shred the foe's armour mitigation (applied in playerAttackTick, advantage < 1).
@@ -11925,6 +11959,7 @@
       var heal = Math.min(Math.round(dmg * 0.05), healRoom(state));
       if(heal > 0) state.playerHp += heal;
     }
+    if(legActive('blightfang')){ var _bf = Math.min(Math.round(dmg * LEG_BLIGHTFANG_FRAC), healRoom(state)); if(_bf > 0) state.playerHp += _bf; } // Blightfang (D2 hatchet): poison ticks heal you 25%
     if(plaguebearerBonus(80)){ // Pandemic: roll a Dark explosion on each discrete 1s tick
       act.poisonTickAccum = (act.poisonTickAccum || 0) + dtMs;
       while(act.poisonTickAccum >= 1000){
@@ -12078,19 +12113,23 @@
     var _setRiposte = !isOffhand && set2('duelist') && !!state.duelistRiposteReady; // Riposte (Duelist set): the first strike after a Dodge is a guaranteed crit
     if(_setRiposte) state.duelistRiposteReady = false; // consumed by this strike
     var _setKillShot = !isOffhand && setFullD2('sharpshooter') && monster && enemyHpFrac(monster, state) < 0.30; // Kill Shot (Sharpshooter D2 full): hits on foes below 30% HP always crit
-    var isCrit = forcedCrit || samuraiFirstStrike || juggernautSmash || _chargedRiposteCrit || _setAmbush || _setRiposte || _setKillShot || Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawEagleEyeCrit(monster) + spellbladeCriticalRunesCrit() + newClassCritChance() + legendaryCloakBonus('critchance', state) + legendaryCritChance(state) + d2SetCritChance(state) + legStormbrandCrit(state) + (enchTot.critChance||0)/100); // + Quickdraw Eagle Eye, Spellblade Critical Runes, new-class passives, legendary Shroud, Tempest, Sharp Eye (TH D2 2pc), Stormbrand (D2 earth wand), equipped Crit Chance enchants
+    var _legThroat = !isOffhand && legActive('throatripper') && act && (act.throatripperHits||0) < 3; // Throatripper (D2 claw): the first 3 strikes on each new foe crit
+    var _legIronwind = !isOffhand && legActive('ironwind') && samuraiFocusStacks(state) >= samuraiFocusCap(state); // Ironwind (D2 falchion): every strike crits at max Focus
+    var isCrit = forcedCrit || samuraiFirstStrike || juggernautSmash || _chargedRiposteCrit || _setAmbush || _setRiposte || _setKillShot || _legThroat || _legIronwind || Math.random() < (criticalEyeCritChance(state) + getFamBuff('critChance') + quickdrawEagleEyeCrit(monster) + spellbladeCriticalRunesCrit() + newClassCritChance() + legendaryCloakBonus('critchance', state) + legendaryCritChance(state) + d2SetCritChance(state) + legStormbrandCrit(state) + (enchTot.critChance||0)/100); // + Quickdraw Eagle Eye, Spellblade Critical Runes, new-class passives, legendary Shroud, Tempest, Sharp Eye (TH D2 2pc), Stormbrand (D2 earth wand), equipped Crit Chance enchants
     // A Critical Hit that ignores the foe's armour: Juggernaut Pulverize (Lv80) / Sharpshooter Armor-Splitter (Lv60).
     if(!isOffhand && advantage < 1){ var _critPierce = Math.max(juggernautArmorPierce(isCrit, state), sharpshooterArmorPierce(isCrit, state)); if(_critPierce > 0) advantage += (1 - advantage) * _critPierce; }
     // Sunder (Juggernaut D2 full): your hits ignore 20% of the foe's armour mitigation.
     if(!isOffhand && advantage < 1 && setFullD2('juggernaut', state)) advantage += (1 - advantage) * 0.20;
     // Voidfang (D2 dark wand): each Vulnerability stack shreds 3% of the foe's armour mitigation (cap 60%).
     if(!isOffhand && advantage < 1){ var _vf = legVoidfangShred(state); if(_vf > 0) advantage += (1 - advantage) * _vf; }
+    // Breachblade (D2 claymore): at max Momentum, hits ignore 25% of the foe's armour mitigation.
+    if(!isOffhand && advantage < 1 && legActive('breachblade') && (state.knightStacks||0) >= knightStackCap(state)) advantage += (1 - advantage) * LEG_BREACHBLADE_PIERCE;
     // Wands are magical, so the melee/bow strength physiques don't scale them -- only the generic
     // low-HP tenacity bonus. Melee/bow keep their class physique multipliers.
     var physDmgMult = isWandAttack ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
     physDmgMult *= tenacityLowHpMult(state);
     // Elixir potions + familiar crit-damage buffs stack on top of the (capped) base+exploitation crit.
-    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + thunderGalvanizeCritDmg() + treasureHunterCritDmgBonus() + newClassCritDmg() + pyromancerKindlingCritDmg(state) + legendaryCloakBonus('critdmg', state) + legendaryCritDmg(state) + d2SetCritDmgBonus(state) + (enchTot.critDamage||0)/100) : 1; // + Titanic Crits, Steady Aim (Sharpshooter D2 2pc)
+    var critMult = isCrit ? (Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + elixirCritBonus() + getFamBuff('critDmg') + thunderGalvanizeCritDmg() + treasureHunterCritDmgBonus() + newClassCritDmg() + pyromancerKindlingCritDmg(state) + legendaryCloakBonus('critdmg', state) + legendaryCritDmg(state) + d2SetCritDmgBonus(state) + legRunegorgeCritDmg(state) + (enchTot.critDamage||0)/100) : 1; // + Titanic Crits, Steady Aim (Sharpshooter D2 2pc), Runegorge (D2 greatsword)
 
     // Bow ammo: each shot (hit or miss) spends one Fletching Arrow unless the Quiver preserves it. With
     // no usable arrows the shot is "unfletched" and deals only a fraction of its damage (never blocked).
@@ -12215,6 +12254,12 @@
       if(samuraiBonus(60)) act.samuraiFocus = Math.min(samuraiFocusCap(state), (act.samuraiFocus||0) + samuraiFocusPerHit(state)); // Flowing Blade raises the cap to 15; Unbroken Focus builds 2/hit
       // Knight (Momentum): each landed hit adds a -10% attack-speed stack (cap 5, or 8 with Relentless).
       if(knightBonus(1)) state.knightStacks = Math.min(knightStackCap(state), (state.knightStacks || 0) + 1);
+      // Throatripper (D2 claw): tally main-hand strikes so the first 3 per foe are forced crits.
+      if(!isOffhand && legActive('throatripper') && act) act.throatripperHits = (act.throatripperHits||0) + 1;
+      // Bloodwaltz (D2 rapier): each untouched landed hit builds a damage stack (reset when you're struck).
+      if(!isOffhand && legActive('bloodwaltz')) state.d2BloodwaltzStacks = Math.min(LEG_BLOODWALTZ_MAX, (state.d2BloodwaltzStacks||0) + 1);
+      // Goldgorge (D2 scimitar): a Critical Hit pilfers bonus gold, scaling with the foe's gold reward.
+      if(!isOffhand && isCrit && legActive('goldgorge') && monster){ var _gg = Math.max(1, Math.round(randInt(monster.goldMin, monster.goldMax) * LEG_GOLDGORGE_CRIT_FRAC)); earnGold(_gg); spawnCombatFloat('+'+fmt(_gg)+'g', 'ft-success', false); }
       // Berserker Blood Pact (Lv20): each landed hit spends 2% of current HP to fuel its +50% damage (never self-lethal).
       if(berserkerBonus(20) && state.playerHp > 1) state.playerHp = Math.max(1, state.playerHp - Math.round(BERSERK_BLOODPACT_COST * state.playerHp));
       // Lumen Oracle on-hit: Lv1 Flashbang (8% stun); Lv40 Reflected Light (a share of the hit heals the lowest ally / you).
@@ -12392,11 +12437,11 @@
     // heal a share of the damage actually inflicted.
     var lifestealPct = reaperLifestealPct() + nightbladeLifestealPct() + knightWarlordLifestealPct() + legendaryLifestealPct(state) + ((enchTot.lifesteal||0)/100); // + Crimson Harvest (per Bleed stack); + Lifesteal enchant (weapon/jewelry, enchTot already Spellblade-boosted)
     if(lifestealPct > 0){
-      var wouldHeal = Math.round(effDmg * lifestealPct);
+      var wouldHeal = Math.round(effDmg * lifestealPct * (legActive('soulflay') ? LEG_SOULFLAY_MULT : 1)); // Soulflay (D2 scythe): Siphon heals +60%
       var healed = Math.min(wouldHeal, healRoom(state));
       if(healed > 0){ state.playerHp += healed; spawnFloatingText('+'+healed+' HP', 'ft-success'); }
-      // Reaper Siphon Shield (Lv 40): life-steal beyond full Health banks as a spectral absorb (cap 20% max HP).
-      if(reaperBonus(40)){
+      // Reaper Siphon Shield (Lv 40) / Soulflay (D2 scythe): life-steal beyond full Health banks as a spectral absorb (cap 20% max HP).
+      if(reaperBonus(40) || legActive('soulflay')){
         var overheal = wouldHeal - Math.max(0, healed);
         if(overheal > 0){
           var _before = state.reaperShield || 0;
@@ -12476,9 +12521,10 @@
     if(executionerBonus(60)) headsmanTallyKill(); // Headsman's Tally: every kill this session grows your max HP (dungeon foes included)
     if(setFull('executioner') && executionerBonus(1)) execVigorAddStack(); // Adrenal Vigor (full): a kill also banks a Reaping Vigor stack
     d2BloodthirstOnKill(state); // Bloodthirst (Executioner D2 full): each kill stacks a short attack-speed buff (dungeon foes included)
+    d2HeadtakerOnKill(state); // Headtaker (D2 full-moon axe): each kill stacks a short damage buff
     if(act && act.dungeon){ dungeonOnKill(monster); return; } // dungeon foe -> advance the run instead of re-engaging
     bumpStat('kills');
-    var goldWon = Math.round(randInt(monster.goldMin, monster.goldMax) * legTreasureMult()); // Pendant of Fortune: +Treasure Find gold
+    var goldWon = Math.round(randInt(monster.goldMin, monster.goldMax) * legTreasureMult() * (legActive('goldgorge') ? LEG_GOLDGORGE_KILL : 1)); // Pendant of Fortune: +Treasure Find gold; Goldgorge (D2 scimitar): +30% kill gold
     earnGold(goldWon);
     addPhysiqueXp(physTierPairs([['resolve',1]], monster.tierIndex));
     addLog('Defeated the ' + monster.name + '! +' + goldWon + ' gold.', 'important');
@@ -12529,6 +12575,7 @@
       spawnFloatingText('Ember Burst x'+_emberCarry, 'ft-bonus');
     }
     act.voidVulnStacks = 0; act.voidVulnUntil = 0; // Voidshadow Mark of the Void / Doom don't carry between foes
+    act.throatripperHits = 0; // Throatripper (D2 claw): the first-3-strikes crit window restarts against each foe
     act.poisonSince = 0; // the Wasting Curse ramp restarts against each foe (the poison DoT lapses on its own timer)
     if(_pestCarry > 0){ // Pestilence (Plaguebearer full): the slain foe's poison spreads to the next foe
       act.potionPoisonDps = _pestCarry; act.potionPoisonUntil = Date.now() + POTION_POISON_DURATION_MS; act.poisonSince = Date.now();
@@ -12778,6 +12825,7 @@
     // Knight Counterweight (Lv 20): a hit you take also builds a Momentum stack -- the blows you take feed your tempo.
     if(dmgToPlayer > 0 && knightBonus(20)) state.knightStacks = Math.min(knightStackCap(state), (state.knightStacks || 0) + 1);
     if(dmgToPlayer > 0 && act && act.type==='combat') act.lastDamagedAt = Date.now(); // Assassin Vanish: a landed blow restarts the 4s-untouched clock
+    if(dmgToPlayer > 0 && legActive('bloodwaltz')) state.d2BloodwaltzStacks = 0; // Bloodwaltz (D2 rapier): being struck resets the untouched-hit stacks
     if(dmgToPlayer > 0 && act && act.type==='combat' && legActive('nightshroud')) act.nightshroudUntil = Date.now() + LEG_NIGHTSHROUD_MS; // Nightshroud: a foe that damages you is Enfeebled
     // Voidveil (D2 dark ward): a foe that damages you gains a Vulnerability stack.
     if(dmgToPlayer > 0 && act && act.type==='combat' && legActive('voidveil')){
@@ -15695,7 +15743,7 @@
     html += '<div class="stat-row"><span class="stat-label">'+(isWandMain?'Wands Proficiency':(isScepterMain?'Scepters Proficiency':'Weapon Proficiency'))+'</span><span class="stat-value">+'+Math.round((weaponProficiency-1)*100)+'%</span></div>';
     var _critChancePct = Math.round((criticalEyeCritChance(state)+newClassCritChance()+legendaryCloakBonus('critchance',state)+legendaryCritChance(state)+d2SetCritChance(state)+legStormbrandCrit(state)+enchCrit)*10000)/100;
     html += '<div class="stat-row"><span class="stat-label">Critical Hit Chance</span><span class="stat-value">'+_critChancePct+'%'+(enchCrit>0?' <span style="color:var(--gold)">(+'+(Math.round(enchTot.critChance*10)/10)+'% ench)</span>':'')+'</span></div>';
-    var _critDmgMult = Math.round((Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + newClassCritDmg() + legendaryCloakBonus('critdmg',state) + legendaryCritDmg(state) + enchCritDmg)*100)/100;
+    var _critDmgMult = Math.round((Math.min(MAX_CRIT_DAMAGE_MULT, CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) + newClassCritDmg() + legendaryCloakBonus('critdmg',state) + legendaryCritDmg(state) + d2SetCritDmgBonus(state) + legRunegorgeCritDmg(state) + enchCritDmg)*100)/100;
     html += '<div class="stat-row"><span class="stat-label">Critical Hit Damage</span><span class="stat-value">'+_critDmgMult+'x'+(enchCritDmg>0?' <span style="color:var(--gold)">(+'+(Math.round(enchTot.critDamage*10)/10)+'% ench)</span>':'')+'</span></div>';
     html += '<div class="stat-row"><span class="stat-label">Accuracy</span><span class="stat-value">'+playerAccuracy(state)+_et('accuracy',true)+'</span></div>';
     if(weaponStyle.hand==='bow'){
@@ -26696,7 +26744,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, D2_LEG_GEAR_DEFS:D2_LEG_GEAR_DEFS, D2_LEG_GEAR_MAP:D2_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D2:LEGENDARY_GEAR_ITEMS_D2, legGearItemIdD2:legGearItemIdD2, LEG_GEAR_GROUP_KEYS_D2:LEG_GEAR_GROUP_KEYS_D2, d2LegDmgMult:d2LegDmgMult, legStormbrandCrit:legStormbrandCrit, legVoidfangShred:legVoidfangShred, legBarrierAdd:legBarrierAdd, legBarrierCap:legBarrierCap, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, D2_LEG_GEAR_DEFS:D2_LEG_GEAR_DEFS, D2_LEG_GEAR_MAP:D2_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D2:LEGENDARY_GEAR_ITEMS_D2, legGearItemIdD2:legGearItemIdD2, LEG_GEAR_GROUP_KEYS_D2:LEG_GEAR_GROUP_KEYS_D2, d2LegDmgMult:d2LegDmgMult, legStormbrandCrit:legStormbrandCrit, legVoidfangShred:legVoidfangShred, legBarrierAdd:legBarrierAdd, legBarrierCap:legBarrierCap, d2HeadtakerOnKill:d2HeadtakerOnKill, legRunegorgeCritDmg:legRunegorgeCritDmg, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerDefenseProfile:playerDefenseProfile, enemyDamageRangeVsPlayer:enemyDamageRangeVsPlayer,
       matchesSpecialCraft:matchesSpecialCraft,

@@ -3068,7 +3068,7 @@
     eq(rec.inputs.metallurgy_t20, 2000, 'D2 defense formula costs 2000 t20 ingots');
     eq(rec.outcomes.length, 6, 'the D2 defense pool forges one of 6 shields');
     eq(FF.LEG_GEAR_GROUP_KEYS_D2.defense.length, 6, 'six D2 shield effects in the defense group');
-    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D2).length, 72, '18 D2 effects (12 arcane + 6 defense) x 4 rarities = 72 items');
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D2).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D2[id].group==='defense'; }).length, 24, '6 defense effects x 4 rarities = 24 D2 shield items');
     // Detection: each shield legendary is picked up by legActive when slotted to the off-hand.
     function legSt(key, base){ return { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
       uniqueItems:{ L:{ uid:'L', leg:key, kind:'offhand', base:'stshield_'+(base||'shieldSmall')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedOffhandUid:'L' }; }
@@ -3089,6 +3089,61 @@
     eq(s.inventory.metallurgy_t20, 0, 'the forge consumes the 2000 ingots');
     var rareLeft = FF.legGearRareIds('defense').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
     eq(rareLeft, FF.legGearRareIds('defense').length * 8 - 20, 'the forge consumes exactly 20 rare shields');
+    s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
+  });
+
+  // ---- D2 (Tunnel) legendary melee: slash + pierce (Batch I) -----------------------------------------
+  suite('mastercraft: D2 legendary melee (slash + pierce)', function(){
+    ['slash','pierce'].forEach(function(g){
+      var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2',g)]);
+      ok(rec && rec.gear === true && rec.layer === 'd2', 'D2 '+g+' has a d2-layer gear recipe');
+      eq(rec.rareCount, 20, 'D2 '+g+' needs 20 rare Tier-20 weapons');
+      eq(rec.inputs.metallurgy_t20, 2000, 'D2 '+g+' costs 2000 t20 ingots');
+    });
+    eq(FF.LEG_GEAR_GROUP_KEYS_D2.slash.length, 6, 'six D2 slash effects');
+    eq(FF.LEG_GEAR_GROUP_KEYS_D2.pierce.length, 4, 'four D2 pierce effects');
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D2).filter(function(id){ var g=FF.LEGENDARY_GEAR_ITEMS_D2[id].group; return g==='slash'||g==='pierce'; }).length, 40, '10 melee effects (6 slash + 4 pierce) x 4 rarities = 40 items');
+
+    function legSt(key, base, extra){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+        uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'scimitar')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' };
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+    var now = Date.now();
+    // Marrowsplitter (reaver/halfmoonaxe): +3% per Bleed stack.
+    near(FF.d2LegDmgMult({}, legSt('marrowsplitter','halfmoonaxe',{ activity:{type:'combat', monsterHp:100, bleedStacks:5, bleedUntil:now+4000} })), 1.15, 'Marrowsplitter: +3% per Bleed stack (5 -> +15%)');
+    near(FF.d2LegDmgMult({}, legSt('marrowsplitter','halfmoonaxe')), 1.0, 'Marrowsplitter inert on an unbled foe');
+    // Headtaker (executioner/fullmoonaxe): stacking +10% per kill; d2HeadtakerOnKill builds a stack.
+    var ht = legSt('headtaker','fullmoonaxe'); FF.d2HeadtakerOnKill(ht);
+    eq(ht.d2HeadtakerStacks, 1, 'a kill adds a Headtaker stack'); ok(ht.d2HeadtakerUntil > now, 'and opens the window');
+    ht.d2HeadtakerStacks = 3; ht.d2HeadtakerUntil = now + 9999;
+    near(FF.d2LegDmgMult({}, ht), 1.30, 'Headtaker: +10% per kill stack (3 -> +30%)');
+    ht.d2HeadtakerUntil = now - 1; near(FF.d2LegDmgMult({}, ht), 1.0, 'Headtaker lapses after its window');
+    // Bloodwaltz (duelist/rapier): +5% per untouched hit, cap +50%.
+    near(FF.d2LegDmgMult({}, legSt('bloodwaltz','rapier',{ d2BloodwaltzStacks:4 })), 1.20, 'Bloodwaltz: +5% per untouched hit (4 -> +20%)');
+    near(FF.d2LegDmgMult({}, legSt('bloodwaltz','rapier',{ d2BloodwaltzStacks:99 })), 1.50, 'Bloodwaltz caps at +50%');
+    // Runegorge (spellblade/greatsword): +3% crit damage per equipped enchant.
+    var rg = legSt('runegorge','greatsword'); rg.uniqueItems.L.enchants = [{},{}]; // 2 enchants on the equipped weapon
+    near(FF.legRunegorgeCritDmg(rg), 0.06, 'Runegorge: +3% crit damage per equipped enchant');
+    near(FF.legRunegorgeCritDmg(legSt('marrowsplitter','halfmoonaxe')), 0, 'no Runegorge crit dmg without the greatsword');
+    // Detection for the behaviour-driven effects (gold/heal/crit/armour handled live).
+    eq(FF.legActive('goldgorge', legSt('goldgorge','scimitar')), true, 'legActive detects Goldgorge');
+    eq(FF.legActive('blightfang', legSt('blightfang','hatchet')), true, 'legActive detects Blightfang');
+    eq(FF.legActive('throatripper', legSt('throatripper','claw')), true, 'legActive detects Throatripper');
+    eq(FF.legActive('soulflay', legSt('soulflay','scythe')), true, 'legActive detects Soulflay');
+    eq(FF.legActive('ironwind', legSt('ironwind','falchion')), true, 'legActive detects Ironwind');
+    eq(FF.legActive('breachblade', legSt('breachblade','claymore')), true, 'legActive detects Breachblade');
+    // Full forge (slash): give the bill, craft, confirm a d2 slash-group unique.
+    var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
+    s.inventory = { metallurgy_t20: 2000 }; s.blueprints = {}; s.uniqueItems = {};
+    FF.legGearRareIds('slash').forEach(function(id){ s.inventory[id] = 4; });
+    var bpId = FF.masterworkBlueprintId('d2','slash'); s.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
+    eq(minted.length, 1, 'the D2 slash forge mints exactly one legendary unique');
+    ok(minted[0].leg && FF.LEG_GEAR_GROUP_KEYS_D2.slash.indexOf(minted[0].leg) !== -1, 'the unique carries a D2 slash-group effect');
+    ok(/^stweapon_.+_t19_(rare|supreme|fantastic)$/.test(minted[0].base), 'the unique is a top-tier slashing weapon base');
     s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
   });
 
