@@ -4793,7 +4793,16 @@
     { key:'phantomthrust',name:'Phantomthrust',group:'pierce', slot:'mainhand', base:'rapier',     cls:'duelist',        desc:'Every Dodge also Curses the foe and banks a Soul Charge.' },
     { key:'ghostblade',   name:'Ghostblade',   group:'pierce', slot:'mainhand', base:'falchion',   cls:'samurai',        desc:'At max Focus, your strikes apply Decay and cannot be Dodged.' },
     { key:'runegrave',    name:'Runegrave',    group:'pierce', slot:'mainhand', base:'greatsword', cls:'spellblade',     desc:'Each Spell Echo applies Decay; your echoes deal +15% to Decayed foes.' },
-    { key:'gravewarden',  name:'Gravewarden',  group:'pierce', slot:'mainhand', base:'claymore',   cls:'knight',         desc:'At max Momentum, a lethal blow is survived at 1 HP (once/fight) and Curses the attacker.' }
+    { key:'gravewarden',  name:'Gravewarden',  group:'pierce', slot:'mainhand', base:'claymore',   cls:'knight',         desc:'At max Momentum, a lethal blow is survived at 1 HP (once/fight) and Curses the attacker.' },
+    // Blunt weapons (mainhand)
+    { key:'tombshatter', name:'Tombshatter', group:'blunt', slot:'mainhand', base:'mace',      cls:'herald',     desc:'Each Perfect Guard also Curses the attacker and reflects Decay.' },
+    { key:'bonecrusher', name:'Bonecrusher', group:'blunt', slot:'mainhand', base:'maul',      cls:'sentinel',   desc:'Your reflect applies Decay, and deals +50% to Decayed foes.' },
+    { key:'gravewrath',  name:'Gravewrath',  group:'blunt', slot:'mainhand', base:'warhammer', cls:'berserker',  desc:'Below 30% Health, your hits apply Decay and you heal from Decay ticks.' },
+    { key:'monolith',    name:'Monolith',    group:'blunt', slot:'mainhand', base:'sledge',    cls:'juggernaut', desc:"Your Wind-Up swings Curse the foe and ignore 25% of a Cursed foe's armour." },
+    // Ranged weapons (mainhand)
+    { key:'cryptvenom',  name:'Cryptvenom',  group:'ranged', slot:'mainhand', base:'bowShort',  cls:'quickdraw',    desc:'Your venom also applies Decay; a venomed + Decayed foe is slowed.' },
+    { key:'bonevolley',  name:'Bonevolley',  group:'ranged', slot:'mainhand', base:'bowMedium', cls:'ranger',       desc:'Each ailment you apply also applies Decay; +15% vs a Decayed foe.' },
+    { key:'gravesight',  name:'Gravesight',  group:'ranged', slot:'mainhand', base:'bowLong',   cls:'sharpshooter', desc:'Your crits apply 3 Decay stacks, and your Decay ticks can Critically Hit.' }
   ];
   var D3_LEG_GEAR_MAP = {}; D3_LEG_GEAR_DEFS.forEach(function(d){ D3_LEG_GEAR_MAP[d.key] = d; });
   function legGearItemIdD3(key, rarity){ return 'leggear_d3_' + key + '_' + rarity; }
@@ -4896,7 +4905,9 @@
     d3_arcane:  legGearRecipeD3('arcane', { forestry_t20:3000, glyph_fire:600, glyph_water:600, glyph_earth:600, glyph_light:600, glyph_dark:600 }, 'arcanism', 'Rare Tier-20 Arcane Gear'),
     d3_defense: legGearRecipeD3('defense', { metallurgy_t20:3000 }, 'shieldsmithing', 'Rare Tier-20 Shields'),
     d3_slash:   legGearRecipeD3('slash',   { metallurgy_t20:3000 }, 'weaponsmithing', 'Rare Tier-20 Slash Weapons'),
-    d3_pierce:  legGearRecipeD3('pierce',  { metallurgy_t20:3000 }, 'weaponsmithing', 'Rare Tier-20 Pierce Weapons')
+    d3_pierce:  legGearRecipeD3('pierce',  { metallurgy_t20:3000 }, 'weaponsmithing', 'Rare Tier-20 Pierce Weapons'),
+    d3_blunt:   legGearRecipeD3('blunt',   { metallurgy_t20:3000 }, 'weaponsmithing', 'Rare Tier-20 Blunt Weapons'),
+    d3_ranged:  legGearRecipeD3('ranged',  { forestry_t20:3000 },   'bowyer',         'Rare Tier-20 Bows')
   };
   function mastercraftRecipeFor(bpItem){ return bpItem ? (MASTERCRAFT_RECIPES[bpItem.dungeon + '_' + bpItem.slot] || null) : null; }
   var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS);
@@ -5703,12 +5714,12 @@
     var act = state.activity; if(!act || act.type!=='combat' || !enemyDecaying(state)) return;
     var dps = (act.decayDps||0) * d3DecayTickMult(state); if(dps <= 0) return;
     var dmg = dps * dtMs / 1000;
-    // Death's Aim (Sharpshooter D3 full): Decay ticks can Critically Hit, borrowing your crit chance/damage.
-    if(setFullD3('sharpshooter') && !offlineCapture && Math.random() < (criticalEyeCritChance(state) + newClassCritChance())) dmg *= (CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state));
+    // Death's Aim (Sharpshooter D3 full) / Gravesight (D3 long bow): Decay ticks can Critically Hit, borrowing your crit chance/damage.
+    if((setFullD3('sharpshooter') || legActive('gravesight')) && !offlineCapture && Math.random() < (criticalEyeCritChance(state) + newClassCritChance())) dmg *= (CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state));
     dmg = Math.round(dmg);
     if(dmg > 0) act.monsterHp = Math.max(1, act.monsterHp - dmg); // necrotic: ignores armour, never lands the kill
-    // Rotmaw (D3 hatchet): your Decay ticks heal you 20% of their damage.
-    if(dmg > 0 && legActive('rotmaw')){ var _dh = Math.min(Math.round(dmg * 0.20), healRoom(state)); if(_dh > 0) state.playerHp += _dh; }
+    // Rotmaw (D3 hatchet) / Gravewrath (D3 warhammer, below 30% HP): your Decay ticks heal you 20% of their damage.
+    if(dmg > 0 && (legActive('rotmaw') || (legActive('gravewrath') && state.playerHp > 0 && state.playerHp < maxHp(state) * 0.30))){ var _dh = Math.min(Math.round(dmg * 0.20), healRoom(state)); if(_dh > 0) state.playerHp += _dh; }
   }
   // CURSE: a mark laid on the foe (act.curseUntil). While Cursed the foe takes more from you / deals less to
   // you -- the per-set fulls read enemyCursed() from the damage chains. Curse 2-piece bonuses lay the mark.
@@ -5747,6 +5758,8 @@
     if(legActive('pyresoul', st) && enemyDecaying(st)) m *= 1.15;                                     // Pyresoul: +15% vs a Decayed foe
     if(legActive('soulrend', st) && enemyCursed(st) && voidVulnStacks(st) > 0) m *= 1.25;             // Soulrend: +25% vs a Cursed + Vulnerable foe
     if(legActive('lichbane', st) && st.playerHp >= maxHp(st) * 0.75) m *= 1.30;                       // Lichbane: +30% above 75% Health
+    if(legActive('bonecrusher', st) && enemyDecaying(st)) m *= 1.50;                                  // Bonecrusher: +50% vs a Decayed foe
+    if(legActive('bonevolley', st) && enemyDecaying(st)) m *= 1.15;                                   // Bonevolley: +15% vs a Decayed foe
     return m;
   }
   // ===== D1 set-bonus combat effects =====
@@ -5842,7 +5855,9 @@
   // Paralytic Venom (Quickdraw full): while the foe is venomed by Serpent's Sting, slow its attacks by 30%.
   function quickdrawParalyticSlow(st){ st = st || state; if(!setFullD2('quickdraw', st)) return 0; var a = st.activity; return (a && a.type==='combat' && (a.potionPoisonUntil||0) > Date.now() && (a.potionPoisonDps||0) > 0) ? 0.30 : 0; }
   // Combined enemy attack-slow: familiar slow + Chill slow + Quickdraw Paralytic Venom, capped like the others.
-  function enemyExtraSlowPct(st){ st = st || state; return getFamiliarEnemySlowPct() + enemyChillSlowMult() + quickdrawParalyticSlow(st); }
+  // Cryptvenom (D3 short bow): a venomed + Decayed foe is slowed.
+  function cryptvenomSlow(st){ st = st || state; if(!legActive('cryptvenom', st)) return 0; var a = st.activity; return (a && a.type==='combat' && (a.potionPoisonUntil||0) > Date.now() && (a.potionPoisonDps||0) > 0 && enemyDecaying(st)) ? 0.30 : 0; }
+  function enemyExtraSlowPct(st){ st = st || state; return getFamiliarEnemySlowPct() + enemyChillSlowMult() + quickdrawParalyticSlow(st) + cryptvenomSlow(st); }
   // Any DoT/ailment currently on the foe (drives Hunter's Mark). Reads the shared activity channels.
   function enemyHasAilment(st){ st = st || state; var a = st.activity; if(!a || a.type!=='combat') return false; var now = Date.now();
     return (((a.potionPoisonUntil||0) > now) && ((a.potionPoisonDps||0) > 0)) || ((a.bleedUntil||0) > now) || ((a.frostbiteUntil||0) > now) || enemyBurning(st) || (((a.voidVulnUntil||0) > now) && ((a.voidVulnStacks||0) > 0)); }
@@ -12254,7 +12269,7 @@
     }
     if(legActive('blightfang')){ var _bf = Math.min(Math.round(dmg * LEG_BLIGHTFANG_FRAC), healRoom(state)); if(_bf > 0) state.playerHp += _bf; } // Blightfang (D2 hatchet): poison ticks heal you 25%
     // Necrosis (Plaguebearer D3 2pc) / Necrotic Venom (Quickdraw D3 2pc) / Rotmaw (D3 hatchet): your poison also applies Decay, once per discrete second.
-    if(set2D3('plaguebearer') || set2D3('quickdraw') || legActive('rotmaw')){ act.d3PoisonDecayAccum = (act.d3PoisonDecayAccum||0) + dtMs; while(act.d3PoisonDecayAccum >= 1000){ act.d3PoisonDecayAccum -= 1000; decayApply(act, 1); } }
+    if(set2D3('plaguebearer') || set2D3('quickdraw') || legActive('rotmaw') || legActive('cryptvenom')){ act.d3PoisonDecayAccum = (act.d3PoisonDecayAccum||0) + dtMs; while(act.d3PoisonDecayAccum >= 1000){ act.d3PoisonDecayAccum -= 1000; decayApply(act, 1); } }
     if(plaguebearerBonus(80)){ // Pandemic: roll a Dark explosion on each discrete 1s tick
       act.poisonTickAccum = (act.poisonTickAccum || 0) + dtMs;
       while(act.poisonTickAccum >= 1000){
@@ -12426,8 +12441,8 @@
     if(!isOffhand && advantage < 1){ var _vf = legVoidfangShred(state); if(_vf > 0) advantage += (1 - advantage) * _vf; }
     // Breachblade (D2 claymore): at max Momentum, hits ignore 25% of the foe's armour mitigation.
     if(!isOffhand && advantage < 1 && legActive('breachblade') && (state.knightStacks||0) >= knightStackCap(state)) advantage += (1 - advantage) * LEG_BREACHBLADE_PIERCE;
-    // Tombstone (Juggernaut D3 full): your hits ignore 25% of a Cursed foe's armour mitigation.
-    if(!isOffhand && advantage < 1 && setFullD3('juggernaut', state) && enemyCursed(state)) advantage += (1 - advantage) * 0.25;
+    // Tombstone (Juggernaut D3 full) / Monolith (D3 sledge): your hits ignore 25% of a Cursed foe's armour mitigation.
+    if(!isOffhand && advantage < 1 && (setFullD3('juggernaut', state) || legActive('monolith')) && enemyCursed(state)) advantage += (1 - advantage) * 0.25;
     // Wands are magical, so the melee/bow strength physiques don't scale them -- only the generic
     // low-HP tenacity bonus. Melee/bow keep their class physique multipliers.
     var physDmgMult = isWandAttack ? 1 : ((weaponStyle.hand==='bow') ? bodyControlBowMult(state) : (bodyStrengthMeleeMult(state) * (weaponStyle.hand==='2h' ? balanceTwoHandMult(state) : 1)));
@@ -12583,6 +12598,12 @@
       if(!isOffhand && set2D3('juggernaut')) curseApply(act);
       // Wraithclaw (D3 claw): your Critical Hits apply both Decay and Curse.
       if(!isOffhand && isCrit && legActive('wraithclaw')){ decayApply(act, 1); curseApply(act); }
+      // Gravewrath (D3 warhammer): below 30% Health, your hits apply Decay.
+      if(!isOffhand && legActive('gravewrath') && state.playerHp > 0 && state.playerHp < maxHp(state) * 0.30) decayApply(act, 1);
+      // Monolith (D3 sledge): your hits Curse the foe.
+      if(!isOffhand && legActive('monolith')) curseApply(act);
+      // Gravesight (D3 long bow): your Critical Hits apply 3 Decay stacks.
+      if(!isOffhand && isCrit && legActive('gravesight')) decayApply(act, 3);
       // Grave Robber (Treasure Hunter D3 2pc): your Critical Hits Curse the foe (Cursed foes drop more gold).
       if(!isOffhand && isCrit && set2D3('treasureHunter')) curseApply(act);
       // Berserker Blood Pact (Lv20): each landed hit spends 2% of current HP to fuel its +50% damage (never self-lethal).
@@ -12739,8 +12760,8 @@
         spawnFloatingText('Burn x'+_rbs, 'ft-bonus');
       }
       } // end Compound Arrows ailment-roll loop
-      // Decaying Traps (Ranger D3 2pc): while your ailments are on the foe, your hits also apply Decay.
-      if(set2D3('ranger') && enemyHasAilment(state)) decayApply(act, 1);
+      // Decaying Traps (Ranger D3 2pc) / Bonevolley (D3 medium bow): while your ailments are on the foe, your hits also apply Decay.
+      if((set2D3('ranger') || legActive('bonevolley')) && enemyHasAilment(state)) decayApply(act, 1);
       // Plaguebearer (Virulence): 20% chance a hit poisons even with no Coating charges (never weakens an active one).
       if(plaguebearerBonus(60) && Math.random() < 0.20){
         var vDps = combatLevelEquivalent(state) * 0.06 * (1 + getFamBuff('potionPoison'));
@@ -13043,6 +13064,8 @@
       if(sentinelBonus(60)){ state.classDebuffs.enemyArmorUntil = Date.now() + SENTINEL_BRITTLE_MS; spawnFloatingText('Sundered!', 'ft-bonus'); }
       // Grave Guard (Herald D3 2pc): a Perfect Guard Curses the attacker.
       if(set2D3('herald')) curseApply(act);
+      // Tombshatter (D3 mace): a Perfect Guard Curses the attacker and reflects Decay.
+      if(legActive('tombshatter')){ curseApply(act); decayApply(act, 1); }
       // Shield Bash (legendary mace): a Block smashes the attacker for a share of your Armor rating.
       var _sb = legShieldBashDamage(armorDefense, state);
       if(_sb > 0){ applyChipDamage(_sb); spawnCombatFloat('Shield Bash -'+fmt(_sb), 'ft-crit', true); }
@@ -13093,7 +13116,7 @@
         spawnCombatFloat((_rcrit?'✦ ':'')+'Thorns -'+fmt(_rdmg), 'ft-crit', true);
         // Spineshatter (D2 maul): each reflect stacks a lasting enemy-damage debuff on the foe (cap -40%).
         if(legActive('spineshatter') && act && act.type==='combat'){ act.spineshatterStacks = Math.min(LEG_SPINESHATTER_MAX, (act.spineshatterStacks||0) + 1); act.spineshatterUntil = Date.now() + LEG_SPINESHATTER_MS; }
-        if(set2D3('sentinel') && act && act.type==='combat') decayApply(act, 1); // Bone Thorns (Sentinel D3 2pc): your reflect also applies Decay
+        if((set2D3('sentinel') || legActive('bonecrusher')) && act && act.type==='combat') decayApply(act, 1); // Bone Thorns (Sentinel D3 2pc) / Bonecrusher (D3 maul): your reflect also applies Decay
       }
     }
     // Thorns armour enchant: a flat share of damage returned to the attacker on every landed hit,

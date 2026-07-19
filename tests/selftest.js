@@ -3363,6 +3363,44 @@
     s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
   });
 
+  // ---- D3 (Underground) legendary melee: blunt + ranged (Batch U) ------------------------------------
+  suite('mastercraft: D3 legendary blunt + ranged', function(){
+    var blunt = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','blunt')]);
+    var ranged = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','ranged')]);
+    ok(blunt && blunt.gear && blunt.layer==='d3' && blunt.rareCount===30 && blunt.inputs.metallurgy_t20===3000, 'D3 blunt: d3 gear recipe, 30 rare, 3000 ingots');
+    ok(ranged && ranged.gear && ranged.layer==='d3' && ranged.rareCount===30 && ranged.inputs.forestry_t20===3000, 'D3 ranged: d3 gear recipe, 30 rare, 3000 wood');
+    eq(FF.LEG_GEAR_GROUP_KEYS_D3.blunt.length, 4, 'four D3 blunt effects');
+    eq(FF.LEG_GEAR_GROUP_KEYS_D3.ranged.length, 3, 'three D3 ranged effects');
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D3).filter(function(id){ var g=FF.LEGENDARY_GEAR_ITEMS_D3[id].group; return g==='blunt'||g==='ranged'; }).length, 28, '7 effects (4 blunt + 3 ranged) x 4 rarities = 28 items');
+
+    function legSt(key, base, extra){ var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+      uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'mace')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' };
+      if(extra) for(var k in extra) st[k]=extra[k]; return st; }
+    var now = Date.now();
+    // Bonecrusher (+50% vs Decayed) / Bonevolley (+15% vs Decayed) via d3LegDmgMult.
+    near(FF.d3LegDmgMult({}, legSt('bonecrusher','maul', { activity:{type:'combat', monsterHp:100, decayStacks:2, decayUntil:now+4000} })), 1.50, 'Bonecrusher: +50% vs a Decayed foe');
+    near(FF.d3LegDmgMult({}, legSt('bonecrusher','maul')), 1.0, 'Bonecrusher inert on a clean foe');
+    near(FF.d3LegDmgMult({}, legSt('bonevolley','bowMedium', { activity:{type:'combat', monsterHp:100, decayStacks:2, decayUntil:now+4000} })), 1.15, 'Bonevolley: +15% vs a Decayed foe');
+    // Cryptvenom slow: a venomed + Decayed foe is slowed +30% (measured as a delta so global familiar-slow cancels).
+    var cvOn = legSt('cryptvenom','bowShort', { activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+4000, potionPoisonDps:5, decayStacks:1, decayUntil:now+4000} });
+    var cvOff = legSt('cryptvenom','bowShort', { activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+4000, potionPoisonDps:5, decayStacks:1, decayUntil:now-1} });
+    near(FF.enemyExtraSlowPct(cvOn) - FF.enemyExtraSlowPct(cvOff), 0.30, 'Cryptvenom: a venomed + Decayed foe is slowed +30%');
+    var cvNoVenom = legSt('cryptvenom','bowShort', { activity:{type:'combat', monsterHp:100, decayStacks:1, decayUntil:now+4000} });
+    near(FF.enemyExtraSlowPct(cvOn) - FF.enemyExtraSlowPct(cvNoVenom), 0.30, 'Cryptvenom slow needs venom too (no venom -> no slow)');
+    // Detection.
+    ['tombshatter','bonecrusher','gravewrath','monolith','cryptvenom','bonevolley','gravesight'].forEach(function(k){ var b = FF.D3_LEG_GEAR_MAP[k].base; eq(FF.legActive(k, legSt(k, b)), true, 'legActive detects '+k); });
+    // Full forge (blunt).
+    var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
+    s.inventory = { metallurgy_t20: 3000 }; s.blueprints = {}; s.uniqueItems = {};
+    FF.legGearRareIds('blunt').forEach(function(id){ s.inventory[id] = 8; });
+    var bpId = FF.masterworkBlueprintId('d3','blunt'); s.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
+    eq(minted.length, 1, 'the D3 blunt forge mints exactly one legendary unique');
+    ok(minted[0].leg && FF.LEG_GEAR_GROUP_KEYS_D3.blunt.indexOf(minted[0].leg) !== -1, 'the unique carries a D3 blunt-group effect');
+    s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
+  });
+
   // ---- D1 legendary AMULETS (Pendants): 3 universal effects, worn in the single Amulet slot -----------
   // ---- D1 armor Set Items: data model + set-piece detection ------------------------------------------
   suite('D1 armor sets: data model + detection', function(){
