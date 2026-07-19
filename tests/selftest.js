@@ -3112,6 +3112,43 @@
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; }
   });
 
+  // ---- D2 sets: Batch C effects (tank / defense / utility) -------------------------------------------
+  suite('D2 sets: Batch C combat effects', function(){
+    var s = FF._state;
+    var sv = { ba:s.bodyArmor, ui:s.uniqueItems, hp:s.playerHp, act:s.activity, hg:s.heraldGuardStacks, ks:s.knightStacks, cs:s.d2CounterstanceUntil };
+    function wearD2(cls, n){
+      var order = FF.D2_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
+      s.bodyArmor = {}; s.uniqueItems = {};
+      for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d2' }; s.bodyArmor[order[i]] = { uid:uid }; }
+    }
+    var foe = { hp:1000 };
+    try {
+      s.playerHp = FF.maxHp(s); s.activity = { type:'combat', monsterHp:800 };
+      // Herald Momentum Guard (2pc): +2% damage per Perfect Guard stack.
+      wearD2('herald', 2); var gmax = FF.heraldGuardMaxStacks(s); s.heraldGuardStacks = Math.min(gmax, 3);
+      near(FF.d2SetDmgMult(foe, s), 1 + 0.02*Math.min(gmax,3), 'Herald Momentum Guard: +2% per Perfect Guard stack');
+      // Herald Immovable (full): -15% damage taken at max Perfect Guard.
+      wearD2('herald', 4); s.heraldGuardStacks = gmax; near(FF.d2IncomingDmgMult(s), 0.85, 'Herald Immovable: -15% damage at max Guard');
+      s.heraldGuardStacks = 0; near(FF.d2IncomingDmgMult(s), 1.0, 'Immovable inert below max Guard');
+      // Duelist En Garde (full): +12% Dodge; Counterstance (2pc): -35% for 2s after a Dodge.
+      wearD2('duelist', 4); near(FF.d2SetDodgeBonus(s), 0.12, 'Duelist En Garde: +12% Dodge');
+      wearD2('duelist', 2); s.d2CounterstanceUntil = Date.now()+2000; near(FF.d2IncomingDmgMult(s), 0.65, 'Duelist Counterstance: -35% just after a Dodge');
+      s.d2CounterstanceUntil = Date.now()-1; near(FF.d2IncomingDmgMult(s), 1.0, 'Counterstance lapses after its window');
+      // Frostwarden Brittle (2pc): Chilled foes take +12%.
+      wearD2('frostwarden', 2); s.activity = { type:'combat', monsterHp:800, enemyChillUntil:Date.now()+9999 };
+      near(FF.d2SetDmgMult({hp:1000}, s), 1.12, 'Frostwarden Brittle: +12% vs a Chilled foe');
+      s.activity.enemyChillUntil = Date.now()-1; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, 'Brittle inert on an un-chilled foe');
+      // Treasure Hunter Sharp Eye (2pc): +8% crit chance; Plunder (full): +40% Treasure Find.
+      wearD2('treasureHunter', 2); near(FF.d2SetCritChance(s), 0.08, 'TH Sharp Eye: +8% crit chance');
+      wearD2('treasureHunter', 4); ok(FF.legTreasureMult(s) >= 1.40 - 1e-9, 'TH Plunder: +40% Treasure Find folded into the treasure multiplier');
+      // Knight Bulwark March (2pc): +12% Armor at max Momentum.
+      wearD2('knight', 2); s.knightStacks = FF.knightStackCap(s); near(FF.knightBulwarkMarchMult(s), 1.12, 'Knight Bulwark March: +12% Armor at max Momentum');
+      s.knightStacks = 0; near(FF.knightBulwarkMarchMult(s), 1.0, 'Bulwark March inert below max Momentum');
+      // Lumen Radiance (2pc): Reflected Light heals +50%.
+      wearD2('lumen', 2); near(FF.lumenReflectD2Mult(s), 1.5, 'Lumen Radiance: +50% Reflected Light heal');
+    } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; s.heraldGuardStacks=sv.hg; s.knightStacks=sv.ks; s.d2CounterstanceUntil=sv.cs; }
+  });
+
   // ---- D1 armor Set Items: t21 pieces, forge, equip, defense ------------------------------------------
   suite('D1 armor sets: forge + equip + t21 stats', function(){
     // The four material formulas exist with the right bill.
