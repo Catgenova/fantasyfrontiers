@@ -3244,6 +3244,60 @@
     s.inventory=svInv; s.blueprints=svBp;
   });
 
+  // ---- D3 (Underground) legendary gear: arcane forge + effects (Batch R) -----------------------------
+  suite('mastercraft: D3 legendary arcane (forge + effects)', function(){
+    var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','arcane')]);
+    ok(rec && rec.gear === true && rec.layer === 'd3', 'D3 arcane has a d3-layer gear recipe');
+    eq(rec.rareCount, 30, 'D3 arcane needs 30 rare Tier-20 items (triple D1)');
+    eq(rec.outcomes.length, 12, 'the D3 arcane pool forges one of 7 weapons + 5 wards');
+    eq(rec.inputs.forestry_t20, 3000, 'D3 arcane costs 3000 t20 wood');
+    ['fire','water','earth','light','dark'].forEach(function(el){ eq(rec.inputs['glyph_'+el], 600, 'D3 arcane costs 600 '+el+' glyphs'); });
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D3).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D3[id].group==='arcane'; }).length, 48, '12 arcane effects x 4 rarities = 48 D3 arcane gear items');
+    ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D3).every(function(id){ var it = FF.LEGENDARY_GEAR_ITEMS_D3[id]; return it.legendary && it.gear && it.dungeon==='d3' && it.sell===0 && /<svg/.test(it.icon); }), 'every D3 gear item is flagged, d3-layer, non-vendorable, iconned');
+
+    function legSt(key, base, kind, extra){
+      var isOff = kind === 'offhand';
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:1e9,
+        uniqueItems:{ L:{ uid:'L', leg:key, kind:kind||'weapon', base:'st'+(isOff?'ward':'weapon')+'_'+(base||'wandFire')+'_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 } } };
+      st[isOff ? 'equippedOffhandUid' : 'equippedMainhandUid'] = 'L';
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+    var now = Date.now();
+    // Pyresoul: +15% vs a Decayed foe.
+    near(FF.d3LegDmgMult({}, legSt('pyresoul','wandFire','weapon',{ activity:{type:'combat', monsterHp:100, decayStacks:2, decayUntil:now+4000} })), 1.15, 'Pyresoul: +15% vs a Decayed foe');
+    near(FF.d3LegDmgMult({}, legSt('pyresoul','wandFire')), 1.0, 'Pyresoul inert on a clean foe');
+    // Soulrend: +25% vs a Cursed + Vulnerable foe (both required).
+    near(FF.d3LegDmgMult({}, legSt('soulrend','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, curseUntil:now+4000, voidVulnStacks:3, voidVulnUntil:now+4000} })), 1.25, 'Soulrend: +25% vs a Cursed + Vulnerable foe');
+    near(FF.d3LegDmgMult({}, legSt('soulrend','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, curseUntil:now+4000} })), 1.0, 'Soulrend needs Vulnerability too');
+    // Lichbane: +30% above 75% HP.
+    near(FF.d3LegDmgMult({}, legSt('lichbane','scepter')), 1.30, 'Lichbane: +30% above 75% Health');
+    near(FF.d3LegDmgMult({}, legSt('lichbane','scepter','weapon',{ playerHp:1 })), 1.0, 'Lichbane inert below 75% HP');
+    // Gravefrost: Chilled foes take +20% Decay (via the Decay tick multiplier).
+    near(FF.d3DecayTickMult(legSt('gravefrost','wandWater','weapon',{ activity:{type:'combat', monsterHp:100, enemyChillUntil:now+4000} })), 1.20, 'Gravefrost: Chilled foes take +20% Decay');
+    // Detection for the behaviour-driven arcane weapons + all 5 wards.
+    ['stormtomb','gravelight','necrocaller'].forEach(function(k){ var b = FF.D3_LEG_GEAR_MAP[k].base; eq(FF.legActive(k, legSt(k, b)), true, 'legActive detects '+k); });
+    ['ashveil','voltveil','shadeveil','gleamveil','sanctveil'].forEach(function(k){ var b = FF.D3_LEG_GEAR_MAP[k].base; eq(FF.legActive(k, legSt(k, b, 'offhand')), true, 'legActive detects '+k); });
+
+    // Full forge: give the bill, craft, confirm a d3 legendary UNIQUE with an arcane-group leg + display name.
+    var s = FF._state, svInv = s.inventory, svBp = s.blueprints, svUniq = s.uniqueItems;
+    s.inventory = { forestry_t20: 3000, glyph_fire:600, glyph_water:600, glyph_earth:600, glyph_light:600, glyph_dark:600 };
+    s.blueprints = {}; s.uniqueItems = {};
+    FF.legGearRareIds('arcane').forEach(function(id){ s.inventory[id] = 3; });
+    var bpId = FF.masterworkBlueprintId('d3','arcane'); s.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
+    eq(minted.length, 1, 'the D3 forge mints exactly one legendary unique');
+    var u = minted[0];
+    ok(u && u.leg && FF.D3_LEG_GEAR_MAP[u.leg], 'the unique carries a D3 arcane-group legendary effect');
+    ok(/^st(weapon|ward)_.+_t20_(rare|supreme|fantastic)$/.test(u.base), 'the unique is a top-tier wand/scepter/staff/ward base');
+    ok(FF.uniqueDisplayName(u).indexOf(FF.D3_LEG_GEAR_MAP[u.leg].name) === 0, 'the forged D3 legendary displays its effect name');
+    eq(s.inventory.forestry_t20, 0, 'the forge consumes the 3000 wood');
+    var rareLeft = FF.legGearRareIds('arcane').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
+    eq(rareLeft, FF.legGearRareIds('arcane').length * 3 - 30, 'the forge consumes exactly 30 rare arcane items');
+    s.inventory = svInv; s.blueprints = svBp; s.uniqueItems = svUniq;
+  });
+
   // ---- D1 legendary AMULETS (Pendants): 3 universal effects, worn in the single Amulet slot -----------
   // ---- D1 armor Set Items: data model + set-piece detection ------------------------------------------
   suite('D1 armor sets: data model + detection', function(){

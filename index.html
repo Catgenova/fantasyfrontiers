@@ -4756,6 +4756,43 @@
       itemMap:LEGENDARY_GEAR_ITEMS_D2, itemId:legGearItemIdD2, defMap:D2_LEG_GEAR_MAP, outcomes:LEG_GEAR_GROUP_KEYS_D2[group],
       countRare:function(){ return legGearCountRare(group); }, consumeRare:function(c){ legGearConsumeRare(group, c); } };
   }
+  // ---- D3 (Underground) legendary WEAPONS / WARDS ----
+  // Undead crypt-relics forged from the D3 formulas. Same base types + plumbing as D1/D2 legendaries, but every
+  // effect is a BRAND-NEW mechanic that plugs into the D3 necromancy systems (Souls / Decay / Curse). Batch R
+  // lands the whole 'arcane' group (7 wands/scepter/staff + 5 wards); later batches append the melee/shield groups.
+  var D3_LEG_GEAR_DEFS = [
+    // Arcane weapons (mainhand)
+    { key:'pyresoul',   name:'Pyresoul',   group:'arcane', slot:'mainhand', base:'wandFire',  cls:'pyromancer',  desc:'Your Burn also applies Decay, and you deal +15% to Decayed foes.' },
+    { key:'gravefrost', name:'Gravefrost', group:'arcane', slot:'mainhand', base:'wandWater', cls:'frostwarden', desc:'Chilling a foe also applies Decay, and Chilled foes take +20% Decay.' },
+    { key:'stormtomb',  name:'Stormtomb',  group:'arcane', slot:'mainhand', base:'wandEarth', cls:'thunderfury', desc:'Your Static discharge Curses and Decays the foe.' },
+    { key:'gravelight', name:'Gravelight', group:'arcane', slot:'mainhand', base:'wandLight', cls:'lumen',       desc:'When your Barrier absorbs a hit it applies Decay, and your reflect heals more per Decay stack.' },
+    { key:'soulrend',   name:'Soulrend',   group:'arcane', slot:'mainhand', base:'wandDark',  cls:'nightblade',  desc:'Each Vulnerability stack also Curses; Cursed + Vulnerable foes take +25%.' },
+    { key:'lichbane',   name:'Lichbane',   group:'arcane', slot:'mainhand', base:'scepter',   cls:'templar',     desc:'+30% damage while above 75% Health; a spent Holy shield reflects Decay.' },
+    { key:'necrocaller',name:'Necrocaller',group:'arcane', slot:'mainhand', base:'staff',     cls:'summoner',    desc:'Your familiar casts can raise a Skeletal Wraith — a bonus necrotic strike that also Decays.' },
+    // Wards (offhand)
+    { key:'ashveil',    name:'Ashveil',    group:'arcane', slot:'offhand', base:'wardFire',  cls:'pyromancer',  desc:'Your Burn also applies Decay and banks a Barrier.' },
+    { key:'voltveil',   name:'Voltveil',   group:'arcane', slot:'offhand', base:'wardEarth', cls:'thunderfury', desc:'Reflecting a hit discharges Static and Curses the foe.' },
+    { key:'shadeveil',  name:'Shadeveil',  group:'arcane', slot:'offhand', base:'wardDark',  cls:'nightblade',  desc:'Foes that damage you gain Decay and a Vulnerability stack.' },
+    { key:'gleamveil',  name:'Gleamveil',  group:'arcane', slot:'offhand', base:'wardLight', cls:'lumen',       desc:'Your ward reflect applies Decay and heals more per Decay stack on the foe.' },
+    { key:'sanctveil',  name:'Sanctveil',  group:'arcane', slot:'offhand', base:'wardLight', cls:'templar',     desc:'Reflecting a hit grants a Holy shield and Curses the foe.' }
+  ];
+  var D3_LEG_GEAR_MAP = {}; D3_LEG_GEAR_DEFS.forEach(function(d){ D3_LEG_GEAR_MAP[d.key] = d; });
+  function legGearItemIdD3(key, rarity){ return 'leggear_d3_' + key + '_' + rarity; }
+  var LEGENDARY_GEAR_ITEMS_D3 = {};
+  D3_LEG_GEAR_DEFS.forEach(function(d){
+    LEG_RING_RARITIES.forEach(function(r){
+      var id = legGearItemIdD3(d.key, r);
+      LEGENDARY_GEAR_ITEMS_D3[id] = { id:id, legKey:d.key, dungeon:'d3', group:d.group, slot:d.slot, base:d.base, cls:d.cls,
+        rarity:r, legendary:true, gear:true, sell:0, desc:d.desc,
+        name: d.name + (r==='normal' ? '' : ' (' + getRarity(r).label + ')'), icon: legGearBaseIcon(d.base) };
+    });
+  });
+  var LEG_GEAR_GROUP_KEYS_D3 = {}; D3_LEG_GEAR_DEFS.forEach(function(d){ (LEG_GEAR_GROUP_KEYS_D3[d.group] = LEG_GEAR_GROUP_KEYS_D3[d.group] || []).push(d.key); });
+  function legGearRecipeD3(group, inputs, xpSkill, rareLabel){
+    return { layer:'d3', slot:group, gear:true, group:group, inputs:inputs, rareCount:30, rareLabel:rareLabel, xpSkill:xpSkill,
+      itemMap:LEGENDARY_GEAR_ITEMS_D3, itemId:legGearItemIdD3, defMap:D3_LEG_GEAR_MAP, outcomes:LEG_GEAR_GROUP_KEYS_D3[group],
+      countRare:function(){ return legGearCountRare(group); }, consumeRare:function(c){ legGearConsumeRare(group, c); } };
+  }
   // Which legendary effect (if any) is carried by the equipped mainhand / offhand unique. These gate every
   // legendary effect in combat, the way classBonusActive gates class perks.
   function legMainhandEffect(st){ st = st || state; var u = st.equippedMainhandUid && st.uniqueItems && st.uniqueItems[st.equippedMainhandUid]; return (u && u.leg) || null; }
@@ -4835,7 +4872,9 @@
       rareCount: 20, rareLabel:'Rare Tier-20 Cloaks', xpSkill:'tailoring',
       defMap: D1_LEG_CLOAK_MAP, itemMap: LEGENDARY_CLOAK_ITEMS, itemId: legCloakItemIdD2,
       countRare: countRareT20Cloaks, consumeRare: consumeRareT20Cloaks,
-      outcomes: D2_LEG_CLOAK_DEFS.map(function(d){ return d.key; }) }
+      outcomes: D2_LEG_CLOAK_DEFS.map(function(d){ return d.key; }) },
+    // D3 (Underground) arcane formula -> one random D3 legendary wand/scepter/staff/ward. Tripled bill + 30 catalysts.
+    d3_arcane:  legGearRecipeD3('arcane', { forestry_t20:3000, glyph_fire:600, glyph_water:600, glyph_earth:600, glyph_light:600, glyph_dark:600 }, 'arcanism', 'Rare Tier-20 Arcane Gear')
   };
   function mastercraftRecipeFor(bpItem){ return bpItem ? (MASTERCRAFT_RECIPES[bpItem.dungeon + '_' + bpItem.slot] || null) : null; }
   var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS);
@@ -5636,6 +5675,7 @@
     if(setFullD3('ranger', st)) m *= 1.40;
     if(setFullD3('pyromancer', st) && enemyBurning(st)) m *= 1.50;
     if(setFullD3('frostwarden', st) && enemyChilled(st)) m *= 1.20;
+    if(legActive('gravefrost', st) && enemyChilled(st)) m *= 1.20;   // Gravefrost (D3 water wand): Chilled foes take +20% Decay
     return m; }
   function applyDecayTick(dtMs){
     var act = state.activity; if(!act || act.type!=='combat' || !enemyDecaying(state)) return;
@@ -5674,6 +5714,14 @@
     if(setFullD3('sentinel', st) && enemyDecaying(st)) m *= 0.80;                     // Crypt Wall: Decayed attackers deal 20% less
     if(setFullD3('herald', st) && enemyCursed(st)) m *= 0.85;                         // Mausoleum: Cursed foes deal 15% less
     if(set2D3('knight', st) && (st.knightStacks||0) >= knightStackCap(st)) m *= 0.90; // Grave Momentum: -10% damage at max Momentum
+    return m;
+  }
+  // Outgoing-damage D3 LEGENDARY bonuses (Batch R), folded into one PLAYER_DMG_MODS row. Appliers/utility live
+  // at their combat hooks; these are the read-only damage amplifiers.
+  function d3LegDmgMult(monster, st){ st = st || state; var m = 1;
+    if(legActive('pyresoul', st) && enemyDecaying(st)) m *= 1.15;                                     // Pyresoul: +15% vs a Decayed foe
+    if(legActive('soulrend', st) && enemyCursed(st) && voidVulnStacks(st) > 0) m *= 1.25;             // Soulrend: +25% vs a Cursed + Vulnerable foe
+    if(legActive('lichbane', st) && st.playerHp >= maxHp(st) * 0.75) m *= 1.30;                       // Lichbane: +30% above 75% Health
     return m;
   }
   // ===== D1 set-bonus combat effects =====
@@ -6140,7 +6188,7 @@
   function frostwardenApplyChill(act){ if(!act) return 0; if((act.enemyChillUntil||0) <= Date.now()) act.chillStacks = 0; act.chillStacks = Math.min(frostChillCap(state), (act.chillStacks||0) + 1); act.enemyChillUntil = Date.now() + FROST_CHILL_MS;
     // Flash Freeze (Frostwarden D2 full): reaching max Chill briefly Freezes (stuns) the foe.
     if(setFullD2('frostwarden') && act.chillStacks >= frostChillCap(state)){ act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + 1500); if(!offlineCapture) spawnFloatingText('Flash Freeze!', 'ft-rare'); }
-    if(set2D3('frostwarden')) decayApply(act, 1); // Grave Chill (Frostwarden D3 2pc): Chilling a foe also applies Decay
+    if(set2D3('frostwarden') || legActive('gravefrost')) decayApply(act, 1); // Grave Chill (Frostwarden D3 2pc) / Gravefrost (D3 water wand): Chilling a foe also applies Decay
     return act.chillStacks; }
   // Time Dilation (Lv20): your action bar quickens by a fraction of the enemy's current Chill slow.
   function frostwardenTimeDilation(st){ st = st || state; return frostwardenBonus(20, st) ? Math.min(FROST_TIME_DILATION_CAP, enemyChillSlowMult(st) * FROST_TIME_DILATION_FRAC) : 0; }
@@ -7239,6 +7287,9 @@
     var durMult = familiarBuffDurationMult(); // Herald Lv 80: familiar buffs last twice as long
     d2FeralOnCast(state); // Feral Surge (Summoner 2pc): each familiar cast builds a short self-damage buff
     if(set2D3('summoner')) d3SoulsAdd(1); // Raise Dead (Summoner D3 2pc): each familiar cast banks a Soul Charge
+    // Necrocaller (D3 staff): a familiar cast can raise a Skeletal Wraith -- a bonus necrotic strike that also Decays.
+    if(legActive('necrocaller') && !offlineCapture && Math.random() < 0.35){ var _ncAct = state.activity;
+      if(_ncAct && _ncAct.type==='combat'){ var _wr = Math.max(1, Math.round(combatLevelEquivalent(state) * 0.5)); applyChipDamage(_wr); decayApply(_ncAct, 1); spawnCombatFloat('Skeletal Wraith -'+fmt(_wr), 'ft-rare', true); } }
 
     if(spell.type==='heal'){
       var healed = Math.min(Math.round(spell.amount*potency), healRoom(state));
@@ -10981,6 +11032,7 @@
     if(u.leg){
       if(LEGENDARY_GEAR_ITEMS[legGearItemId(u.leg, u.rarity)]) return LEGENDARY_GEAR_ITEMS[legGearItemId(u.leg, u.rarity)].name;
       if(LEGENDARY_GEAR_ITEMS_D2[legGearItemIdD2(u.leg, u.rarity)]) return LEGENDARY_GEAR_ITEMS_D2[legGearItemIdD2(u.leg, u.rarity)].name;
+      if(LEGENDARY_GEAR_ITEMS_D3[legGearItemIdD3(u.leg, u.rarity)]) return LEGENDARY_GEAR_ITEMS_D3[legGearItemIdD3(u.leg, u.rarity)].name;
     }
     var _lyr = u.setLayer || 'd1';
     if(u.set && SET_DEFS_BY_LAYER[_lyr] && SET_DEFS_BY_LAYER[_lyr][u.set]) return setPieceName(u.set, u.slot, _lyr);
@@ -12217,8 +12269,9 @@
     var _burnDmg = dps * dtMs / 1000;
     act.monsterHp = Math.max(1, act.monsterHp - _burnDmg);
     if(legActive('emberveil')) legBarrierAdd(_burnDmg * LEG_EMBERVEIL_FRAC); // Emberveil (D2 fire ward): a share of Burn damage banks a Barrier
-    // Funeral Pyre (Pyromancer D3 2pc): your Burn also applies Decay, once per discrete second.
-    if(set2D3('pyromancer')){ act.d3BurnDecayAccum = (act.d3BurnDecayAccum||0) + dtMs; while(act.d3BurnDecayAccum >= 1000){ act.d3BurnDecayAccum -= 1000; decayApply(act, 1); } }
+    if(legActive('ashveil')) legBarrierAdd(_burnDmg * LEG_EMBERVEIL_FRAC);   // Ashveil (D3 fire ward): a share of Burn damage banks a Barrier
+    // Funeral Pyre (Pyromancer D3 2pc) / Pyresoul (D3 fire wand) / Ashveil (D3 fire ward): your Burn also applies Decay, once per discrete second.
+    if(set2D3('pyromancer') || legActive('pyresoul') || legActive('ashveil')){ act.d3BurnDecayAccum = (act.d3BurnDecayAccum||0) + dtMs; while(act.d3BurnDecayAccum >= 1000){ act.d3BurnDecayAccum -= 1000; decayApply(act, 1); } }
     // Ember Storm (legendary fire wand): each 1s of Burn can self-spread another Burn stack (up to the cap).
     if(legActive('emberstorm')){
       act.burnSpreadAccum = (act.burnSpreadAccum || 0) + dtMs;
@@ -12260,6 +12313,7 @@
     { name:'setBonusesD2',          fn:function(c){ return d2SetDmgMult(c.monster); } },
     { name:'setBonusesD3',          fn:function(c){ return d3SetDmgMult(c.monster); } },
     { name:'legBonusesD2',          fn:function(c){ return d2LegDmgMult(c.monster); } },
+    { name:'legBonusesD3',          fn:function(c){ return d3LegDmgMult(c.monster); } },
     { name:'shroudRuinD2',          fn:function(c){ return 1 + legendaryCloakBonus('d2_ruin'); } },
     { name:'weaponsmithEdge',       fn:function(c){ return weaponsmithEdgeMult(); } },
     { name:'zealotry',              fn:function(c){ return zealotryDmgMult(); } },
@@ -12499,7 +12553,7 @@
       if(berserkerBonus(20) && state.playerHp > 1) state.playerHp = Math.max(1, state.playerHp - Math.round(BERSERK_BLOODPACT_COST * state.playerHp));
       // Lumen Oracle on-hit: Lv1 Flashbang (8% stun); Lv40 Reflected Light (a share of the hit heals the lowest ally / you).
       if(lumenBonus(1) && !offlineCapture && Math.random() < 0.08){ act.enemyStunUntil = Date.now() + 2000; spawnFloatingText('Flashed!', 'ft-rare'); }
-      if(lumenBonus(40)){ var _lr = lumenApplyHeal(dmgToMonster * lumenReflectPct(state) * lumenReflectD2Mult(state) * (set2D3('lumen') ? 1.5 : 1)); if(_lr > 0 && !offlineCapture) spawnFloatingText('+'+_lr+' HP', 'ft-success'); } // Radiance (Lumen D2 2pc) + Grave Light (Lumen D3 2pc): +50% reflect heal each
+      if(lumenBonus(40)){ var _lr = lumenApplyHeal(dmgToMonster * lumenReflectPct(state) * lumenReflectD2Mult(state) * (set2D3('lumen') ? 1.5 : 1) * (legActive('gravelight') ? (1 + 0.05 * (act.decayStacks||0)) : 1)); if(_lr > 0 && !offlineCapture) spawnFloatingText('+'+_lr+' HP', 'ft-success'); } // Radiance (Lumen D2 2pc) + Grave Light (Lumen D3 2pc): +50% reflect heal each; Gravelight (D3 light wand): +5%/Decay stack
       // Voidshadow on-hit: Lv1 Mark of the Void stacks Vulnerability (cap 10, refreshed each hit); at max,
       // Lv80 Doom deepens it. Lv20 Enfeeble saps enemy damage 25% for 5s via the shared enemy-damage window.
       if(nightbladeBonus(1)){
@@ -12511,7 +12565,7 @@
           if(nightbladeBonus(80) && act.voidVulnStacks >= voidVulnCap(state) && _prevVuln < voidVulnCap(state)) spawnFloatingText('Doomed!', 'ft-rare');
           else spawnFloatingText('Vuln x'+act.voidVulnStacks, 'ft-bonus');
         }
-        if(set2D3('nightblade')) curseApply(act); // Cursemark (Nightblade D3 2pc): your Vulnerability stacks also Curse the foe
+        if(set2D3('nightblade') || legActive('soulrend')) curseApply(act); // Cursemark (Nightblade D3 2pc) / Soulrend (D3 dark wand): your Vulnerability stacks also Curse the foe
       }
       if(nightbladeBonus(20)){ state.classDebuffs.enemyDmgUntil = Date.now() + 5000; if(!offlineCapture) spawnFloatingText('Enfeebled!', 'ft-bonus'); }
       // Juggernaut on-hit: Lv20 Overhead Smash advances the landed-hit tally (every 4th is the forced crit,
@@ -12561,6 +12615,7 @@
           if(_discharge > 0){ act.monsterHp -= _discharge; spawnCombatFloat('⚡ Discharge -'+fmt(_discharge), 'ft-crit', true); }
           if(setFullD2('thunderfury')){ act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + 1500); if(!offlineCapture) spawnFloatingText('Thunderclap!', 'ft-rare'); } // Thunderclap (D2 full): a discharge briefly stuns
           if(set2D3('thunderfury')) curseApply(act); // Grave Spark (Thunderfury D3 2pc): a Static discharge Curses the foe
+          if(legActive('stormtomb')){ curseApply(act); decayApply(act, 1); } // Stormtomb (D3 earth wand): a discharge Curses and Decays the foe
         }
       }
       // Frostwarden Permafrost (Lv1): every landed hit stacks Chill, slowing the enemy's action bar.
@@ -13048,6 +13103,7 @@
         var _sb = Math.max(1, Math.round(_tShieldBefore * LEG_SUNBRAND_MULT * (monster ? elementAdvantage('light', monster.element) : 1)));
         applyChipDamage(_sb); spawnCombatFloat('Sunburst -'+fmt(_sb), 'ft-crit', true);
       }
+      if(_aegis > 0 && legActive('lichbane')) decayApply(act, 1); // Lichbane (D3 scepter): your spent Holy shield reflects Decay to the attacker
     }
     // Reaper Siphon Shield + Lumen Radiant Barrier: absorbs soak incoming damage before your own HP.
     if((state.reaperShield||0) > 0 && dmgToPlayer > 0){
@@ -13061,7 +13117,7 @@
       state.lumenShield -= _lAbsorbed; dmgToPlayer -= _lAbsorbed;
       if(_lAbsorbed > 0) spawnFloatingText('Barrier absorbed '+Math.round(_lAbsorbed)+'!', 'ft-success');
       if(_lAbsorbed > 0 && legActive('retribution')) state.retributionCharged = true; // the Radiant Barrier is a Holy shield too
-      if(_lAbsorbed > 0 && setFullD3('lumen')) decayApply(act, 1); // Soulguard (Lumen D3 full): your Barrier also reflects Decay to attackers
+      if(_lAbsorbed > 0 && (setFullD3('lumen') || legActive('gravelight'))) decayApply(act, 1); // Soulguard (Lumen D3 full) / Gravelight (D3 light wand): your Barrier also applies Decay to attackers
       // Aegis Break (legendary light wand): when the Barrier is spent by this hit, it bursts for Light damage.
       if(legActive('aegisbreak') && _lBefore > 0 && state.lumenShield <= 0){
         var _burst = Math.max(1, Math.round(_lBefore * LEG_AEGISBREAK_MULT * (monster ? elementAdvantage('light', monster.element) : 1)));
@@ -13102,11 +13158,12 @@
     if(dmgToPlayer > 0 && act && act.type==='combat') act.lastDamagedAt = Date.now(); // Assassin Vanish: a landed blow restarts the 4s-untouched clock
     if(dmgToPlayer > 0 && legActive('bloodwaltz')) state.d2BloodwaltzStacks = 0; // Bloodwaltz (D2 rapier): being struck resets the untouched-hit stacks
     if(dmgToPlayer > 0 && act && act.type==='combat' && legActive('nightshroud')) act.nightshroudUntil = Date.now() + LEG_NIGHTSHROUD_MS; // Nightshroud: a foe that damages you is Enfeebled
-    // Voidveil (D2 dark ward): a foe that damages you gains a Vulnerability stack.
-    if(dmgToPlayer > 0 && act && act.type==='combat' && legActive('voidveil')){
+    // Voidveil (D2 dark ward) / Shadeveil (D3 dark ward): a foe that damages you gains a Vulnerability stack (Shadeveil also Decays it).
+    if(dmgToPlayer > 0 && act && act.type==='combat' && (legActive('voidveil') || legActive('shadeveil'))){
       if((act.voidVulnUntil||0) <= Date.now()) act.voidVulnStacks = 0;
       act.voidVulnStacks = Math.min(voidVulnCap(state), (act.voidVulnStacks||0) + 1);
       act.voidVulnUntil = Date.now() + VOID_VULN_MS;
+      if(legActive('shadeveil')) decayApply(act, 1);
     }
     // Thunderfury Grounding Rod (Lv40): a blow you take earths part of its force into a Static stack, charging your discharge faster.
     if(dmgToPlayer > 0 && thunderfuryBonus(40) && act && act.type==='combat'){ act.staticCharge = Math.min(THUNDER_STATIC_MAX, (act.staticCharge || 0) + thunderStaticPerHit(state)); }
@@ -13128,6 +13185,12 @@
       if(legActive('lumenveil')){ var _room = healRoom(state), _lvHeal = Math.min(wardReflected, _room); if(_lvHeal > 0){ state.playerHp += _lvHeal; spawnFloatingText('Lumen +'+_lvHeal, 'ft-success'); } if(wardReflected - _room > 0) legBarrierAdd(wardReflected - _room); }
       // Aegisveil (D2 light ward): a reflect grants a Holy shield worth 10% of max Health.
       if(legActive('aegisveil')) state.templarShield = (state.templarShield||0) + Math.round(maxHp(state) * LEG_AEGISVEIL_PCT);
+      // Voltveil (D3 earth ward): a reflect discharges Static and Curses the foe.
+      if(legActive('voltveil') && act && act.type==='combat'){ var _vv = Math.round(wardReflected * thunderDischargeMult(state)); if(_vv > 0){ applyChipDamage(_vv); spawnCombatFloat('⚡ Discharge -'+fmt(_vv), 'ft-crit', true); } curseApply(act); }
+      // Gleamveil (D3 light ward): a reflect applies Decay and heals more per Decay stack on the foe.
+      if(legActive('gleamveil') && act && act.type==='combat'){ decayApply(act, 1); var _gh = Math.min(Math.round(wardReflected * (1 + 0.05 * (act.decayStacks||0))), healRoom(state)); if(_gh > 0){ state.playerHp += _gh; spawnFloatingText('Gleam +'+_gh, 'ft-success'); } }
+      // Sanctveil (D3 light ward): a reflect grants a Holy shield and Curses the foe.
+      if(legActive('sanctveil')){ state.templarShield = (state.templarShield||0) + Math.round(maxHp(state) * LEG_AEGISVEIL_PCT); if(act && act.type==='combat') curseApply(act); }
     }
     // Bubble: negate a would-be killing blow (consumed once), while the buff is up.
     if(state.playerHp <= 0 && isFamiliarBuffActive('bubble')){
@@ -27026,7 +27089,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, D2_LEG_GEAR_DEFS:D2_LEG_GEAR_DEFS, D2_LEG_GEAR_MAP:D2_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D2:LEGENDARY_GEAR_ITEMS_D2, legGearItemIdD2:legGearItemIdD2, LEG_GEAR_GROUP_KEYS_D2:LEG_GEAR_GROUP_KEYS_D2, d2LegDmgMult:d2LegDmgMult, legStormbrandCrit:legStormbrandCrit, legVoidfangShred:legVoidfangShred, legBarrierAdd:legBarrierAdd, legBarrierCap:legBarrierCap, d2HeadtakerOnKill:d2HeadtakerOnKill, legRunegorgeCritDmg:legRunegorgeCritDmg, legSpineshatterMult:legSpineshatterMult, legPoisonTickMult:legPoisonTickMult, legFarstrikeCritDmg:legFarstrikeCritDmg, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D2_LEG_RING_DEFS:D2_LEG_RING_DEFS, D2_LEG_CLOAK_DEFS:D2_LEG_CLOAK_DEFS, D2_LEG_AMULET_DEFS:D2_LEG_AMULET_DEFS, legRingItemIdD2:legRingItemIdD2, legCloakItemIdD2:legCloakItemIdD2, legAmuletItemIdD2:legAmuletItemIdD2, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, D2_LEG_GEAR_DEFS:D2_LEG_GEAR_DEFS, D2_LEG_GEAR_MAP:D2_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D2:LEGENDARY_GEAR_ITEMS_D2, legGearItemIdD2:legGearItemIdD2, LEG_GEAR_GROUP_KEYS_D2:LEG_GEAR_GROUP_KEYS_D2, D3_LEG_GEAR_DEFS:D3_LEG_GEAR_DEFS, D3_LEG_GEAR_MAP:D3_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D3:LEGENDARY_GEAR_ITEMS_D3, legGearItemIdD3:legGearItemIdD3, LEG_GEAR_GROUP_KEYS_D3:LEG_GEAR_GROUP_KEYS_D3, d3LegDmgMult:d3LegDmgMult, d2LegDmgMult:d2LegDmgMult, legStormbrandCrit:legStormbrandCrit, legVoidfangShred:legVoidfangShred, legBarrierAdd:legBarrierAdd, legBarrierCap:legBarrierCap, d2HeadtakerOnKill:d2HeadtakerOnKill, legRunegorgeCritDmg:legRunegorgeCritDmg, legSpineshatterMult:legSpineshatterMult, legPoisonTickMult:legPoisonTickMult, legFarstrikeCritDmg:legFarstrikeCritDmg, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D2_LEG_RING_DEFS:D2_LEG_RING_DEFS, D2_LEG_CLOAK_DEFS:D2_LEG_CLOAK_DEFS, D2_LEG_AMULET_DEFS:D2_LEG_AMULET_DEFS, legRingItemIdD2:legRingItemIdD2, legCloakItemIdD2:legCloakItemIdD2, legAmuletItemIdD2:legAmuletItemIdD2, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerDefenseProfile:playerDefenseProfile, enemyDamageRangeVsPlayer:enemyDamageRangeVsPlayer,
       matchesSpecialCraft:matchesSpecialCraft,
