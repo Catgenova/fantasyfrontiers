@@ -9918,6 +9918,12 @@
   // place every frame. User gestures call render(true) directly and are never delayed by this.
   var RENDER_MIN_MS = 100;   // <=10 full rebuilds/sec; a task finishing still shows within 100ms
   var _lastRenderAt = 0;
+  // Markup last written into #content. render() compares against it and skips the DOM write when the
+  // panel is byte-identical, so an unchanged tab costs a string compare instead of a full re-parse.
+  var _lastContentHtml = null;
+  // Anything that writes into #content OUTSIDE render() (the in-place feed/list updaters) must clear
+  // this, or a later render producing the pre-update markup would wrongly decide "nothing changed".
+  function invalidateContentCache(){ _lastContentHtml = null; }
   var armorPanelExpanded = false;
   var toolPanelExpanded = false;
   var equipPickerSlot = 'mainhand'; // which paper-doll slot's equip picker is open on the Equipment tab
@@ -21451,6 +21457,7 @@
     el.scrollTop = (!snap || snap.stick) ? el.scrollHeight : snap.top;   // no snapshot = first open -> newest
   }
   function chatRenderMessagesOnly(){
+    invalidateContentCache();   // wrote into #content outside render()
     feedRenderStick(document.getElementById('chatMessages'), chatMessagesHtml());
   }
   // Chronicle now lives as a tab inside the Chat panel (read-only event feed).
@@ -21460,6 +21467,7 @@
   }
   function chronicleRenderOnly(){
     var el = document.getElementById('chronicleFeed');
+    invalidateContentCache();   // wrote into #content outside render()
     feedRenderStick(el, chronicleFeedHtml());
   }
   function renderChatTab(){
@@ -22994,7 +23002,7 @@
     if(!guildChatMessages.length) return '<div class="chat-empty">No guild messages yet &mdash; say hello to your guildmates!</div>';
     return guildChatMessages.map(function(m){ return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+chatBodyHtml(m.body||'')+'</span></div>'; }).join('');
   }
-  function guildChatRenderOnly(){ feedRenderStick(document.getElementById('chatMessages'), guildChatMessagesHtml()); }
+  function guildChatRenderOnly(){ invalidateContentCache(); feedRenderStick(document.getElementById('chatMessages'), guildChatMessagesHtml()); }
   function guildChatOnIncoming(m){
     if(!m || guildChatMessages.some(function(x){ return x.id===m.id; })) return;
     guildChatMessages.push(m);
@@ -23162,7 +23170,7 @@
     });
     return h;
   }
-  function renderMarketResults(){ var el = document.getElementById('marketResults'); if(el) el.innerHTML = marketListHtml(); }
+  function renderMarketResults(){ var el = document.getElementById('marketResults'); if(el){ invalidateContentCache(); el.innerHTML = marketListHtml(); } }
   function renderMarketList(){
     var ph = marketState.mode==='sell' ? 'Search your items to sell…' : (marketState.mode==='buy' ? 'Search any item to bid on…' : 'Search items for sale…');
     var html = '<div class="market-search"><input id="marketSearch" class="market-search-input" type="text" placeholder="'+ph+'" value="'+escapeHtml(marketState.search)+'" autocomplete="off"></div>';
@@ -23387,17 +23395,26 @@
     else if(currentCategory==='guild'){ guildEnsureLoaded(); html = renderGuildTab(); }
     else if(currentCategory==='chat') html = renderChatTab();
     else if(currentCategory==='leaderboard'){ leaderboardFetch(); html = renderLeaderboardTab(); }
-    // The chat + chronicle feeds live inside #content, so this swap destroys them. Capture where the
-    // reader was BEFORE replacing, so a full render (which fires constantly) can't drag someone who
-    // scrolled up into history back down to the newest message.
-    var _chatSnap = feedSnapshot('chatMessages'), _chronSnap = feedSnapshot('chronicleFeed');
-    var _detSnap = detailsSnapshot(document.getElementById('content'));
-    document.getElementById('content').innerHTML = html;
-    detailsRestore(_detSnap);   // re-open any collapsible the player had expanded
+    // Skip the DOM write entirely when the markup is byte-identical to what's already there. BUILDING
+    // the string is cheap; PARSING it and re-laying-out hundreds of rows is what actually costs, so on
+    // a big inventory this is the difference between a rebuild and a string compare. It also means an
+    // unchanged panel keeps its live DOM -- scroll position, focus, open <details>, and the bars
+    // updateDynamic() has been animating are all left untouched rather than destroyed and restored.
+    var _contentEl = document.getElementById('content');
+    if(html !== _lastContentHtml){
+      // Only when we really are replacing: carry the reader's place across the swap.
+      var _chatSnap = feedSnapshot('chatMessages'), _chronSnap = feedSnapshot('chronicleFeed');
+      var _detSnap = detailsSnapshot(_contentEl);
+      _contentEl.innerHTML = html;
+      _lastContentHtml = html;
+      detailsRestore(_detSnap);   // re-open any collapsible the player had expanded
+      if(currentCategory==='chat'){ feedRestore('chatMessages', _chatSnap); feedRestore('chronicleFeed', _chronSnap); }
+    }
+    // Canvas-backed views redraw REGARDLESS: their pixels aren't part of the HTML string, so identical
+    // markup does not mean an unchanged estate.
     if(currentCategory==='estate'){ estUse(false); renderEstateCanvas(); }
     if(currentCategory==='visitestate' && estateVisit.estate){ estActive = estateVisit.estate; estIsGuild = false; estReadOnly = true; renderEstateCanvas(); }
     if(currentCategory==='guild' && guildSub==='estate' && guildEstate.status==='ready'){ estUse(true); estReadOnly=false; renderEstateCanvas(); }
-    if(currentCategory==='chat'){ feedRestore('chatMessages', _chatSnap); feedRestore('chronicleFeed', _chronSnap); }
   }
 
   // ================= RENDER: SIDEBAR =================
