@@ -3023,6 +3023,47 @@
     eq(FF.setFull('reaper', rst), true, 'a bare-head 3-piece set hits its capstone at 3 pieces');
   });
 
+  // ---- D2 armor sets: t22 tier, all-new bonuses, layer-isolated from D1 -------------------------------
+  suite('D2 sets: foundation', function(){
+    eq(FF.D2_SET_CLASS_IDS.length, 24, 'D2 has a set for all 24 classes');
+    eq(FF.SET_TIER_INDEX_D2, FF.SET_TIER_INDEX + 1, 'D2 set pieces sit one tier (t22) above D1 (t21)');
+    // Every D2 bonus is a NEW key vs the class's D1 set (the "all-new effects" decision).
+    var clash = FF.D2_SET_CLASS_IDS.filter(function(cls){ var a=FF.D1_SET_DEFS[cls], b=FF.D2_SET_DEFS[cls];
+      return b.b2.key===a.b2.key || b.bf.key===a.bf.key; });
+    eq(clash.length, 0, 'every D2 set bonus uses a fresh key, distinct from its D1 set');
+    FF.D2_SET_CLASS_IDS.forEach(function(cls){ var d=FF.D2_SET_DEFS[cls];
+      ok(d.b2 && d.b2.name && d.b2.desc, cls+' D2 has a named 2-piece bonus');
+      ok(d.bf && d.bf.name && d.bf.desc, cls+' D2 has a named full-set bonus'); });
+    // Bare-head classes stay 3-piece in D2 too.
+    ['reaper','berserker','executioner'].forEach(function(id){ eq(FF.D2_SET_DEFS[id].full, 3, id+' D2 is a 3-piece set'); });
+    // t22 base armour exists and out-defends the t21 piece of the same slot/material/rarity.
+    var t21 = FF.BODY_ARMOR_ITEMS['bodyarmor_plate_chest_t'+FF.SET_TIER_INDEX+'_rare'];
+    var t22 = FF.BODY_ARMOR_ITEMS['bodyarmor_plate_chest_t'+FF.SET_TIER_INDEX_D2+'_rare'];
+    ok(t21 && t22, 'both t21 and t22 plate chest bases exist');
+    ok(t22.defense > t21.defense, 't22 base armour rolls higher defense than t21');
+    // Layer isolation: a D1 piece and a D2 piece of the SAME class never merge into one set.
+    var s = FF._state, sv = { ba:s.bodyArmor, ui:s.uniqueItems };
+    try {
+      s.uniqueItems = {}; s.bodyArmor = {};
+      var d2uid = FF.mintSetPiece('summoner','chest','rare','d2');
+      var d1uid = FF.mintSetPiece('summoner','helmet','rare','d1');
+      eq(s.uniqueItems[d2uid].setLayer, 'd2', 'a D2 piece carries setLayer d2');
+      eq(s.uniqueItems[d2uid].tier, FF.SET_TIER_INDEX_D2, 'a D2 piece is minted at t22');
+      ok(!s.uniqueItems[d1uid].setLayer || s.uniqueItems[d1uid].setLayer==='d1', 'a D1 piece stays layer d1');
+      s.bodyArmor = { chest:{uid:d2uid}, helmet:{uid:d1uid} };
+      eq(FF.setPiecesWorn('summoner', s, 'd2'), 1, 'the D2 layer counts only the D2 piece');
+      eq(FF.setPiecesWorn('summoner', s, 'd1'), 1, 'the D1 layer counts only the D1 piece');
+      eq(FF.set2('summoner', s), false, 'a mixed D1+D2 pair does NOT trigger the D1 2-piece');
+      eq(FF.set2D2('summoner', s), false, 'a mixed D1+D2 pair does NOT trigger the D2 2-piece');
+      // Two genuine D2 pieces DO trigger the D2 2-piece.
+      s.bodyArmor.helmet = { uid: FF.mintSetPiece('summoner','helmet','rare','d2') };
+      eq(FF.set2D2('summoner', s), true, 'two D2 pieces trigger the D2 2-piece bonus');
+      // Names are orc-themed and distinct from D1.
+      ok(FF.setPieceName('summoner','chest','d2') !== FF.setPieceName('summoner','chest','d1'), 'D2 piece names differ from D1');
+      ok(/Warbeast/.test(FF.setPieceName('summoner','chest','d2')), 'the D2 Summoner set is the Warbeast Harness');
+    } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; }
+  });
+
   // ---- D1 armor Set Items: t21 pieces, forge, equip, defense ------------------------------------------
   suite('D1 armor sets: forge + equip + t21 stats', function(){
     // The four material formulas exist with the right bill.

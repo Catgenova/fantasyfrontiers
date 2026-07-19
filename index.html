@@ -5346,18 +5346,86 @@
   // Full-set threshold per class (bare-head classes are 3-piece sets, everyone else 4).
   Object.keys(D1_SET_DEFS).forEach(function(id){ var d = D1_SET_DEFS[id]; d.full = Object.keys(d.pieces).length; });
   var D1_SET_CLASS_IDS = Object.keys(D1_SET_DEFS);
+
+  // ===== D2 (Tunnel / orc warband) armor sets =====
+  // A second class-set tier that sits one armour tier above D1 (t22 base pieces). Reuses each class's D1
+  // piece/material layout, but every 2-piece and full-set bonus is a BRAND-NEW mechanic (distinct from the
+  // class's D1 set). Bonus effect functions live in their own block below and gate on set2D2/setFullD2.
+  var D2_SET_BONUSES = {
+    summoner:      { name:'Warbeast Harness',      b2:{ key:'d2_feralsurge',   name:'Feral Surge',       desc:'Each familiar spell cast grants you +5% damage for a few seconds, stacking up to your active-familiar count.' },
+                                                   bf:{ key:'d2_bloodmoonpack',name:'Bloodmoon Pack',    desc:'Your familiars cast 25% faster.' } },
+    duelist:       { name:"Bladedancer's Wrap",    b2:{ key:'d2_counterstance',name:'Counterstance',     desc:'For 2s after a Dodge, you take 35% less damage.' },
+                                                   bf:{ key:'d2_engarde',      name:'En Garde',          desc:'+12% Dodge chance.' } },
+    reaper:        { name:'Gravebinder Shroud',    b2:{ key:'d2_soulglut',     name:'Soul Glut',         desc:'+6% lifesteal on your Siphon hits.' },
+                                                   bf:{ key:'d2_reap',         name:'Reap',              desc:'Foes below 25% Health take +30% from all your damage.' } },
+    herald:        { name:'Wallbreaker Plate',     b2:{ key:'d2_momentumguard',name:'Momentum Guard',    desc:'Each Perfect Guard stack also adds +2% to your damage.' },
+                                                   bf:{ key:'d2_immovable',    name:'Immovable',         desc:'At max Perfect Guard stacks you cannot be Critically Hit and take 15% less damage.' } },
+    quickdraw:     { name:'Snakebite Leathers',    b2:{ key:'d2_rapidreload',  name:'Rapid Reload',      desc:'+12% attack speed with a bow.' },
+                                                   bf:{ key:'d2_paralyticvenom',name:'Paralytic Venom',  desc:"Serpent's Sting venom also slows the foe's attacks." } },
+    templar:       { name:'Sunforged Plate',       b2:{ key:'d2_zealouswrath', name:'Zealous Wrath',     desc:'+15% damage while above 75% Health.' },
+                                                   bf:{ key:'d2_radiantaegis', name:'Radiant Aegis',     desc:'Your Holy shield cap rises by 50%.' } },
+    knight:        { name:'Ironcharge Harness',    b2:{ key:'d2_bulwarkmarch', name:'Bulwark March',     desc:'+12% Armor rating while at max Momentum.' },
+                                                   bf:{ key:'d2_warcharge',    name:'Warcharge',         desc:'At max Momentum you also attack 10% faster.' } },
+    assassin:      { name:'Throatcutter Garb',     b2:{ key:'d2_exsanguinate', name:'Exsanguinate',      desc:'Your Lacerate Bleeds tick 50% harder.' },
+                                                   bf:{ key:'d2_firstblood',   name:'First Blood',       desc:'Your first strike on a full-Health foe deals +40%.' } },
+    thunderfury:   { name:'Stormcaller Weave',     b2:{ key:'d2_groundingrod', name:'Grounding Rod',     desc:'+50% Galvanize crit damage per stack.' },
+                                                   bf:{ key:'d2_thunderclap',  name:'Thunderclap',       desc:'A Static discharge briefly stuns the foe.' } },
+    treasureHunter:{ name:"Grave-Robber's Kit",    b2:{ key:'d2_sharpeye',     name:'Sharp Eye',         desc:'+8% Critical Hit chance.' },
+                                                   bf:{ key:'d2_plunder',      name:'Plunder',           desc:'+40% Treasure Find, and kills restore a little Faith.' } },
+    frostwarden:   { name:'Rimeguard Mail',        b2:{ key:'d2_brittle',      name:'Brittle',           desc:'Chilled foes take +12% from you.' },
+                                                   bf:{ key:'d2_flashfreeze',  name:'Flash Freeze',      desc:'At max Chill the foe is briefly Frozen (stunned).' } },
+    plaguebearer:  { name:'Rotcarrier Hide',       b2:{ key:'d2_virulence',    name:'Virulence',         desc:'Your poison ticks 40% harder.' },
+                                                   bf:{ key:'d2_miasma',       name:'Miasma',            desc:'Poisoned foes take +15% from all your damage.' } },
+    berserker:     { name:'Bloodrage Hide',        b2:{ key:'d2_reckless',     name:'Reckless',          desc:'+18% damage dealt, but +8% damage taken.' },
+                                                   bf:{ key:'d2_laststand',    name:'Last Stand',        desc:'While below 25% Health, +50% damage.' } },
+    sentinel:      { name:'Thornmaw Bulwark',      b2:{ key:'d2_spikedretort', name:'Spiked Retort',     desc:'+25% reflect damage.' },
+                                                   bf:{ key:'d2_retribution',  name:'Retribution',       desc:'Your reflect deals +50% while you are at full Health.' } },
+    spellblade:    { name:'Runecarved Mail',       b2:{ key:'d2_arcaneoverflow',name:'Arcane Overflow',  desc:'+2% damage per equipped enchant.' },
+                                                   bf:{ key:'d2_runicdetonation',name:'Runic Detonation',desc:'Your Spell Echoes stack a +5% damage-taken debuff on the foe.' } },
+    pyromancer:    { name:'Cinderhide Wrap',       b2:{ key:'d2_conflagration',name:'Conflagration',     desc:'Your Burn ticks 40% harder.' },
+                                                   bf:{ key:'d2_immolate',     name:'Immolate',          desc:'At max Burn your direct hits deal bonus fire damage.' } },
+    sharpshooter:  { name:'Eagle-Eye Leathers',    b2:{ key:'d2_steadyaim',    name:'Steady Aim',        desc:'+12% Critical Damage.' },
+                                                   bf:{ key:'d2_killshot',     name:'Kill Shot',         desc:'Your hits on foes below 30% Health always Critically Hit.' } },
+    juggernaut:    { name:'Siegebreaker Plate',    b2:{ key:'d2_crushingblows',name:'Crushing Blows',    desc:'+15% damage against foes above 50% Health.' },
+                                                   bf:{ key:'d2_sunder',       name:'Sunder',            desc:"Your hits ignore 20% of the foe's armour." } },
+    nightblade:    { name:'Voidshroud Leathers',   b2:{ key:'d2_creepingdoom', name:'Creeping Doom',     desc:'Vulnerability stacks cap 4 higher.' },
+                                                   bf:{ key:'d2_eclipse',      name:'Eclipse',           desc:'+25% damage while the foe is at max Vulnerability.' } },
+    executioner:   { name:"Headsman's Harness",    b2:{ key:'d2_cleave',       name:'Cleave',            desc:'+20% damage against non-boss foes.' },
+                                                   bf:{ key:'d2_bloodthirst',  name:'Bloodthirst',       desc:'Each kill grants a stacking +8% attack speed for a few seconds.' } },
+    ranger:        { name:"Trapper's Garb",        b2:{ key:'d2_barbedailments',name:'Barbed Ailments',  desc:'Your ailments deal +25%.' },
+                                                   bf:{ key:'d2_huntersmark',  name:"Hunter's Mark",     desc:'Ailing foes take +15% from all your damage.' } },
+    samurai:       { name:'Bushido Wrap',          b2:{ key:'d2_iaijutsu',     name:'Iaijutsu Mastery',  desc:'The opening strike of each fight deals +50%.' },
+                                                   bf:{ key:'d2_zanshin',      name:'Zanshin',           desc:'+15% Critical Hit chance while at max Focus.' } },
+    lumen:         { name:'Dawnweave Vestments',   b2:{ key:'d2_radiance',     name:'Radiance',          desc:'Reflected Light heals 50% more.' },
+                                                   bf:{ key:'d2_guardianbeacon',name:'Guardian Beacon',  desc:'Healing beyond full Health converts into a protective shield.' } },
+    reaver:        { name:"Ripper's Hide",         b2:{ key:'d2_savagewounds', name:'Savage Wounds',     desc:'Frenzied Rending Bleed stacks cap 3 higher.' },
+                                                   bf:{ key:'d2_bloodfrenzy',  name:'Bloodfrenzy',       desc:'Your attack speed scales with your missing Health.' } }
+  };
+  var D2_SET_DEFS = {};
+  D1_SET_CLASS_IDS.forEach(function(cls){ var d1 = D1_SET_DEFS[cls], b = D2_SET_BONUSES[cls]; if(!b) return;
+    D2_SET_DEFS[cls] = { cls:cls, bareHead:!!d1.bareHead, pieces:d1.pieces, b2:b.b2, bf:b.bf, setName:b.name }; });
+  Object.keys(D2_SET_DEFS).forEach(function(id){ D2_SET_DEFS[id].full = Object.keys(D2_SET_DEFS[id].pieces).length; });
+  var D2_SET_CLASS_IDS = Object.keys(D2_SET_DEFS);
+  // Layer registry so shared helpers (detection, minting, naming, forge) can serve either tier by id.
+  var SET_DEFS_BY_LAYER = { d1:D1_SET_DEFS, d2:D2_SET_DEFS };
   // Count how many of a class's set pieces are currently equipped (a worn body-armor slot whose unique
   // carries set===cls). Gated on pieces worn -- NOT on the active class -- so the 2-piece tier is reachable
   // before the full class kit is assembled, and mixed-set builds are allowed (like the legendaries).
-  function setPiecesWorn(cls, st){ st = st || state; if(!st.bodyArmor) return 0; var n = 0;
+  // Count a class's set pieces worn FOR ONE LAYER. A worn body-armor slot counts only if its unique carries
+  // set===cls AND belongs to the requested layer (u.setLayer, defaulting to 'd1' for older/D1 pieces). This
+  // keeps D1 and D2 pieces of the same class from ever merging into one set.
+  function setPiecesWorn(cls, st, layer){ st = st || state; layer = layer || 'd1'; if(!st.bodyArmor) return 0; var n = 0;
     for(var i=0;i<BODY_ARMOR_SLOTS.length;i++){ var s = st.bodyArmor[BODY_ARMOR_SLOTS[i]]; if(!s || !s.uid) continue;
-      var u = st.uniqueItems && st.uniqueItems[s.uid]; if(u && u.set === cls) n++; }
+      var u = st.uniqueItems && st.uniqueItems[s.uid]; if(u && u.set === cls && (u.setLayer || 'd1') === layer) n++; }
     return n; }
   // Is a class's set bonus live? threshold: 2 for the 2-piece bonus, 'full' for the capstone (3 or 4 pieces).
-  function setBonusActive(cls, threshold, st){ st = st || state; var d = D1_SET_DEFS[cls]; if(!d) return false;
-    return setPiecesWorn(cls, st) >= (threshold === 'full' ? d.full : threshold); }
-  function set2(cls, st){ return setBonusActive(cls, 2, st); }
-  function setFull(cls, st){ return setBonusActive(cls, 'full', st); }
+  function setBonusActive(cls, threshold, st, layer){ st = st || state; layer = layer || 'd1';
+    var d = SET_DEFS_BY_LAYER[layer] && SET_DEFS_BY_LAYER[layer][cls]; if(!d) return false;
+    return setPiecesWorn(cls, st, layer) >= (threshold === 'full' ? d.full : threshold); }
+  function set2(cls, st){ return setBonusActive(cls, 2, st, 'd1'); }
+  function setFull(cls, st){ return setBonusActive(cls, 'full', st, 'd1'); }
+  function set2D2(cls, st){ return setBonusActive(cls, 2, st, 'd2'); }
+  function setFullD2(cls, st){ return setBonusActive(cls, 'full', st, 'd2'); }
   // ===== D1 set-bonus combat effects =====
   // Batch 1 -- DoT caps & procs. Each is gated on set2(cls)/setFull(cls) (pieces worn), so it only bites
   // for a player wearing that class's set (the class mechanics it enhances are naturally inert otherwise).
@@ -8137,21 +8205,27 @@
   // Best-in-slot base defense scaled 2x/4x/8x by rarity (cloth keeps flat defense like normal cloth, its
   // rarity instead pumping the familiar-efficiency bonus). Not craftable in the normal ladder -- these
   // items exist purely so an equipped Set piece resolves its stats through the usual armor plumbing.
-  var SET_TIER_INDEX = TIER_COUNT; // 21
+  var SET_TIER_INDEX = TIER_COUNT;          // 21 -- D1 set pieces
+  var SET_TIER_INDEX_D2 = TIER_COUNT + 1;   // 22 -- D2 set pieces sit one tier above D1
+  var SET_TIER_BY_LAYER = { d1:SET_TIER_INDEX, d2:SET_TIER_INDEX_D2 };
   var SET_ARMOR_SLOTS = ['helmet','chest','gauntlets','boots'];
-  BODY_ARMOR_MATERIAL_IDS.forEach(function(material){
-    var mat = BODY_ARMOR_MATERIALS[material];
-    SET_ARMOR_SLOTS.forEach(function(slot){
-      if(mat.baseDefense[slot] == null) return;
-      ['normal','rare','supreme','fantastic'].forEach(function(rarityId){
-        var r = getRarity(rarityId);
-        var id = 'bodyarmor_'+material+'_'+slot+'_t'+SET_TIER_INDEX+'_'+rarityId;
-        BODY_ARMOR_ITEMS[id] = {
-          id:id, name: r.label + (mat.label ? mat.label+' ' : '') + (mat.slotLabels[slot]||slot),
-          icon: svgIcon(BODY_ARMOR_SLOT_SHAPE[slot] || 'chestarmor', BODY_ARMOR_MATERIAL_COLOR[material] || '#8a8a8a'),
-          sell:0, material:material, slot:slot, tierIndex:SET_TIER_INDEX, rarity:rarityId,
-          defense: Math.round(tierStat(mat.baseDefense[slot], SET_TIER_INDEX) * (material==='tailoring' ? 1 : r.mult))
-        };
+  // Generate the base body-armour items for BOTH set tiers (t21 for D1, t22 for D2). t22 rolls higher
+  // defense than t21 via tierStat, giving D2 sets a real base-armour upgrade over D1.
+  [SET_TIER_INDEX, SET_TIER_INDEX_D2].forEach(function(setTier){
+    BODY_ARMOR_MATERIAL_IDS.forEach(function(material){
+      var mat = BODY_ARMOR_MATERIALS[material];
+      SET_ARMOR_SLOTS.forEach(function(slot){
+        if(mat.baseDefense[slot] == null) return;
+        ['normal','rare','supreme','fantastic'].forEach(function(rarityId){
+          var r = getRarity(rarityId);
+          var id = 'bodyarmor_'+material+'_'+slot+'_t'+setTier+'_'+rarityId;
+          BODY_ARMOR_ITEMS[id] = {
+            id:id, name: r.label + (mat.label ? mat.label+' ' : '') + (mat.slotLabels[slot]||slot),
+            icon: svgIcon(BODY_ARMOR_SLOT_SHAPE[slot] || 'chestarmor', BODY_ARMOR_MATERIAL_COLOR[material] || '#8a8a8a'),
+            sell:0, material:material, slot:slot, tierIndex:setTier, rarity:rarityId,
+            defense: Math.round(tierStat(mat.baseDefense[slot], setTier) * (material==='tailoring' ? 1 : r.mult))
+          };
+        });
       });
     });
   });
@@ -8160,7 +8234,9 @@
   Object.keys(D1_SET_DEFS).forEach(function(cls){ var d = D1_SET_DEFS[cls];
     Object.keys(d.pieces).forEach(function(slot){ var m = d.pieces[slot];
       (SET_PIECES_BY_MATERIAL[m] = SET_PIECES_BY_MATERIAL[m] || []).push({ cls:cls, slot:slot }); }); });
-  function setPieceBaseId(cls, slot, rarity){ var d = D1_SET_DEFS[cls]; if(!d || !d.pieces[slot]) return null; return 'bodyarmor_'+d.pieces[slot]+'_'+slot+'_t'+SET_TIER_INDEX+'_'+rarity; }
+  // Layout is shared across layers (D2 reuses each class's D1 piece/material map), so SET_PIECES_BY_MATERIAL
+  // serves both. Base-id + tier differ by layer (t21 vs t22).
+  function setPieceBaseId(cls, slot, rarity, layer){ layer = layer || 'd1'; var d = SET_DEFS_BY_LAYER[layer] && SET_DEFS_BY_LAYER[layer][cls]; if(!d || !d.pieces[slot]) return null; return 'bodyarmor_'+d.pieces[slot]+'_'+slot+'_t'+SET_TIER_BY_LAYER[layer]+'_'+rarity; }
   // Cave / spider / darkness set names -- each themed to the class fantasy and its two set bonuses.
   var SET_NAMES = {
     summoner:      'Broodweave',           // cloth brood of familiars (Pack Tactics / Twin Cast)
@@ -8188,19 +8264,22 @@
     lumen:         'the Glimmerhollow',    // Reflected Light + bigger Sanctuary shield
     reaver:        'the Bloodspinner'      // Bleed cap + Feeding Frenzy speed
   };
-  function setName(cls){ return SET_NAMES[cls] || (((CLASS_DEFS_BY_ID[cls]||{}).name || cls) + ' set'); }
-  function setPieceName(cls, slot){ return (BODY_ARMOR_LABELS[slot]||slot) + ' of ' + setName(cls); }
-  function mintSetPiece(cls, slot, rarity){
-    var base = setPieceBaseId(cls, slot, rarity); if(!base) return null;
+  function setName(cls, layer){ if((layer||'d1')==='d2'){ var d2=D2_SET_DEFS[cls]; return (d2 && d2.setName) || (((CLASS_DEFS_BY_ID[cls]||{}).name || cls) + ' warband'); } return SET_NAMES[cls] || (((CLASS_DEFS_BY_ID[cls]||{}).name || cls) + ' set'); }
+  function setPieceName(cls, slot, layer){ return (BODY_ARMOR_LABELS[slot]||slot) + ' of ' + setName(cls, layer); }
+  function mintSetPiece(cls, slot, rarity, layer){
+    layer = layer || 'd1';
+    var base = setPieceBaseId(cls, slot, rarity, layer); if(!base) return null;
+    var d = SET_DEFS_BY_LAYER[layer][cls];
     var uid = genUid();
-    state.uniqueItems[uid] = { uid:uid, base:base, kind:'bodyarmor', slot:slot, material:D1_SET_DEFS[cls].pieces[slot],
-      tier:SET_TIER_INDEX, rarity:rarity, enchants:[], enhance:0, set:cls }; // tier=21 base INDEX (equip adds +1)
+    state.uniqueItems[uid] = { uid:uid, base:base, kind:'bodyarmor', slot:slot, material:d.pieces[slot],
+      tier:SET_TIER_BY_LAYER[layer], rarity:rarity, enchants:[], enhance:0, set:cls, setLayer:layer }; // tier = base INDEX (equip adds +1)
     return uid;
   }
   // Rare Tier-20 armor of a material (any slot) -- the forge catalyst.
   function setArmorRareIds(material){ return SET_ARMOR_SLOTS.filter(function(slot){ return BODY_ARMOR_MATERIALS[material].baseDefense[slot] != null; }).map(function(slot){ return 'bodyarmor_'+material+'_'+slot+'_t20_rare'; }); }
-  function setArmorRecipe(material, matInput, xpSkill, rareLabel){
-    return { layer:'d1', setarmor:true, material:material, inputs:matInput, rareCount:10, rareLabel:rareLabel, xpSkill:xpSkill,
+  function setArmorRecipe(material, matInput, xpSkill, rareLabel, layer){
+    layer = layer || 'd1';
+    return { layer:layer, setarmor:true, material:material, inputs:matInput, rareCount:10, rareLabel:rareLabel, xpSkill:xpSkill,
       outcomes: SET_PIECES_BY_MATERIAL[material] || [],
       countRare: function(){ return setArmorRareIds(material).reduce(function(n,id){ return n + (state.inventory[id]||0); }, 0); },
       consumeRare: function(count){ setArmorRareIds(material).forEach(function(id){ if(count<=0) return; var have = state.inventory[id]||0, take = Math.min(have,count); if(take>0){ state.inventory[id] = have-take; count -= take; } }); } };
@@ -8712,10 +8791,11 @@
     var ftClass = rarity === 'fantastic' ? 'ft-fantastic' : rarity === 'supreme' ? 'ft-supreme' : rarity === 'rare' ? 'ft-rare' : 'ft-success';
     bumpStat('crafted'); addXp(recipe.xpSkill || 'jewelrycrafting', 20000);
     if(recipe.setarmor){
-      // D1 armor Set piece: mint a t21 UNIQUE carrying its class-set membership. Best-in-slot -> floor at Rare.
+      // Armor Set piece: mint a UNIQUE carrying its class-set membership + layer (t21 for D1, t22 for D2).
+      // Best-in-slot -> floor at Rare.
       if(rarityRank(rarity) < 1){ rarity = 'rare'; ftClass = 'ft-rare'; }
-      mintSetPiece(key.cls, key.slot, rarity);
-      var pname = getRarity(rarity).label + setPieceName(key.cls, key.slot);
+      mintSetPiece(key.cls, key.slot, rarity, recipe.layer);
+      var pname = getRarity(rarity).label + setPieceName(key.cls, key.slot, recipe.layer);
       addLog('Mastercraft! You forged the ' + pname + ' — part of the ' + ((CLASS_DEFS_BY_ID[key.cls]||{}).name || key.cls) + ' set.', 'important');
       spawnFloatingText('+1 ' + pname, ftClass);
       needsRender = true;
@@ -26399,7 +26479,7 @@
       bowArrowToConsume:bowArrowToConsume, bowArrowsAvailable:bowArrowsAvailable, bowArrowTierCap:bowArrowTierCap, arrowUsableWithBow:arrowUsableWithBow, equipArrow:equipArrow, arrowBaseDamage:arrowBaseDamage, quiverAmmoPreserve:quiverAmmoPreserve, ARROW_MAX_INDEX:ARROW_MAX_INDEX, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
-      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, SET_TIER_INDEX:SET_TIER_INDEX, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, SET_NAMES:SET_NAMES, setName:setName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, combatPlayerBuffs:combatPlayerBuffs, combatEnemyDebuffs:combatEnemyDebuffs, renderFxBars:renderFxBars, captureCombatLoadout:captureCombatLoadout, applyCombatLoadout:applyCombatLoadout, saveLoadoutPreset:saveLoadoutPreset, equipLoadoutPreset:equipLoadoutPreset, clearLoadoutPreset:clearLoadoutPreset, renameLoadoutPreset:renameLoadoutPreset, ensureLoadouts:ensureLoadouts, loadoutSummary:loadoutSummary, LOADOUT_SLOT_COUNT:LOADOUT_SLOT_COUNT, combatLocksGear:combatLocksGear, COMBAT_LOCKED_ACTIONS:COMBAT_LOCKED_ACTIONS, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, knightUnstoppableMult:knightUnstoppableMult, thunderStaticPerHit:thunderStaticPerHit, thunderStaticThreshold:thunderStaticThreshold, thunderDischargeMult:thunderDischargeMult, deadeyeAccuracyBonus:deadeyeAccuracyBonus, duelistFlourishStabs:duelistFlourishStabs, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, heraldRipostePct:heraldRipostePct, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, undyingRageIncomingMult:undyingRageIncomingMult, berserkerFrenziedBlowsMult:berserkerFrenziedBlowsMult, templarLayOnHandsPct:templarLayOnHandsPct, templarBlessingOfHasteMult:templarBlessingOfHasteMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, spellbladeResonantCrit:spellbladeResonantCrit, voidVulnPerStack:voidVulnPerStack, voidMarkPerHit:voidMarkPerHit, quickdrawVenomPct:quickdrawVenomPct, quickdrawTwinFangChance:quickdrawTwinFangChance, treasureProspectorPer:treasureProspectorPer, setTreasureMult:setTreasureMult, EXEC_SET_EXECUTE_FRAC:EXEC_SET_EXECUTE_FRAC, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
+      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, D2_SET_DEFS:D2_SET_DEFS, D2_SET_CLASS_IDS:D2_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, set2D2:set2D2, setFullD2:setFullD2, SET_TIER_INDEX:SET_TIER_INDEX, SET_TIER_INDEX_D2:SET_TIER_INDEX_D2, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, SET_NAMES:SET_NAMES, setName:setName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, combatPlayerBuffs:combatPlayerBuffs, combatEnemyDebuffs:combatEnemyDebuffs, renderFxBars:renderFxBars, captureCombatLoadout:captureCombatLoadout, applyCombatLoadout:applyCombatLoadout, saveLoadoutPreset:saveLoadoutPreset, equipLoadoutPreset:equipLoadoutPreset, clearLoadoutPreset:clearLoadoutPreset, renameLoadoutPreset:renameLoadoutPreset, ensureLoadouts:ensureLoadouts, loadoutSummary:loadoutSummary, LOADOUT_SLOT_COUNT:LOADOUT_SLOT_COUNT, combatLocksGear:combatLocksGear, COMBAT_LOCKED_ACTIONS:COMBAT_LOCKED_ACTIONS, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, knightUnstoppableMult:knightUnstoppableMult, thunderStaticPerHit:thunderStaticPerHit, thunderStaticThreshold:thunderStaticThreshold, thunderDischargeMult:thunderDischargeMult, deadeyeAccuracyBonus:deadeyeAccuracyBonus, duelistFlourishStabs:duelistFlourishStabs, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, heraldRipostePct:heraldRipostePct, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, undyingRageIncomingMult:undyingRageIncomingMult, berserkerFrenziedBlowsMult:berserkerFrenziedBlowsMult, templarLayOnHandsPct:templarLayOnHandsPct, templarBlessingOfHasteMult:templarBlessingOfHasteMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, spellbladeResonantCrit:spellbladeResonantCrit, voidVulnPerStack:voidVulnPerStack, voidMarkPerHit:voidMarkPerHit, quickdrawVenomPct:quickdrawVenomPct, quickdrawTwinFangChance:quickdrawTwinFangChance, treasureProspectorPer:treasureProspectorPer, setTreasureMult:setTreasureMult, EXEC_SET_EXECUTE_FRAC:EXEC_SET_EXECUTE_FRAC, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, sharpshooterAccOverDodge:sharpshooterAccOverDodge, sharpshooterEagleEyeCrit:sharpshooterEagleEyeCrit, sharpshooterPinpointMult:sharpshooterPinpointMult, sharpshooterFocusCritDmg:sharpshooterFocusCritDmg, sharpshooterArmorPierce:sharpshooterArmorPierce, sharpshooterPatienceMult:sharpshooterPatienceMult, SHARP_EAGLE_CAP:SHARP_EAGLE_CAP, SHARP_PINPOINT_CAP:SHARP_PINPOINT_CAP, SHARP_FOCUS_CAP:SHARP_FOCUS_CAP, SHARP_PATIENCE_CAP:SHARP_PATIENCE_CAP, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautSmashReady:juggernautSmashReady, juggernautFuryStacks:juggernautFuryStacks, juggernautArmorPierce:juggernautArmorPierce, JUG_WINDUP_DMG:JUG_WINDUP_DMG, JUG_WINDUP_SLOW:JUG_WINDUP_SLOW, JUG_SMASH_EVERY:JUG_SMASH_EVERY, JUG_CONCUSS_MS:JUG_CONCUSS_MS, JUG_FURY_PER:JUG_FURY_PER, JUG_FURY_MAX:JUG_FURY_MAX, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_SHIELD_MAX_PCT:LUMEN_SHIELD_MAX_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, HERALD_RIPOSTE_PCT:HERALD_RIPOSTE_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeRuneHungerMult:spellbladeRuneHungerMult, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, spellbladeEchoChance:spellbladeEchoChance, equippedEnchantCount:equippedEnchantCount, spellbladeEnchantBoost:spellbladeEnchantBoost, SPELLBLADE_RUNEHUNGER_PER:SPELLBLADE_RUNEHUNGER_PER, SPELLBLADE_CRITRUNE_PER:SPELLBLADE_CRITRUNE_PER, SPELLBLADE_ECHO_PCT:SPELLBLADE_ECHO_PCT, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, legendaryDmgMult:legendaryDmgMult, legendaryDodgeBonus:legendaryDodgeBonus, legendaryLifestealPct:legendaryLifestealPct, legWastingCurseIncomingMult:legWastingCurseIncomingMult, legNotePoisonStart:legNotePoisonStart, legVanishWindowReady:legVanishWindowReady, samuraiFocusCap:samuraiFocusCap, knightMomentumPerStack:knightMomentumPerStack, legDistinctEnchantCount:legDistinctEnchantCount, legEchoDmgMult:legEchoDmgMult, legShieldBashDamage:legShieldBashDamage, legReflectCanCrit:legReflectCanCrit, legReflectCritMult:legReflectCritMult, legendaryCritDmg:legendaryCritDmg, legEarthshakerBuild:legEarthshakerBuild, legEarthshakerConsume:legEarthshakerConsume, LEG_TREMOR_CAP:LEG_TREMOR_CAP, LEG_TREMOR_MULT:LEG_TREMOR_MULT, CRIT_DAMAGE_MULT:CRIT_DAMAGE_MULT, legendaryAccuracyBonus:legendaryAccuracyBonus, legRangerAilmentRolls:legRangerAilmentRolls, LEG_CHAINSHOT_MAX:LEG_CHAINSHOT_MAX, legendaryCritChance:legendaryCritChance, legThunderMaxStacks:legThunderMaxStacks, legRetributionArmed:legRetributionArmed, legRetributionConsume:legRetributionConsume, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, heraldGuardMaxStacks:heraldGuardMaxStacks, HERALD_GUARD_MAX_STACKS:HERALD_GUARD_MAX_STACKS, HERALD_GUARD_PER_STACK:HERALD_GUARD_PER_STACK, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legChargedRiposteArmed:legChargedRiposteArmed, legChargedRiposteConsume:legChargedRiposteConsume, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
