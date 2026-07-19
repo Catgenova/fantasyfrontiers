@@ -3986,6 +3986,59 @@
     } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; s.activity = sv.act; s.playerHp = sv.hp; }
   });
 
+  // ---- D4 sets: Batch AA — Wrath pillar (draconic Wrath scaling) --------------------------------------
+  suite('D4 sets: Batch AA — Wrath pillar', function(){
+    var s = FF._state, sv = { ba:s.bodyArmor, ui:s.uniqueItems, act:s.activity, w:s.d4Wrath, wu:s.d4WrathUntil };
+    function wearD4(cls, n, extra){ s.bodyArmor = {}; s.uniqueItems = {};
+      var order = FF.D4_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
+      for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d4' }; s.bodyArmor[order[i]] = extra ? { uid:uid, rarity:extra } : { uid:uid }; } }
+    function wearFull(cls, extra){ wearD4(cls, FF.D4_SET_DEFS[cls].full, extra); }
+    function setWrath(n){ s.d4Wrath = n; s.d4WrathUntil = Date.now() + 9999; }
+    try {
+      // --- Wrath generation: any Wrath set builds a stack per hit; no set builds nothing ---
+      s.activity = { type:'combat', monsterHp:1000 };
+      s.bodyArmor = {}; s.uniqueItems = {}; FF.d4WrathReset(s); FF.d4WrathOnHit(s); eq(FF.d4WrathStacks(s), 0, 'no Wrath set -> no Wrath builds');
+      wearD4('duelist', 2); FF.d4WrathReset(s); FF.d4WrathOnHit(s); FF.d4WrathOnHit(s); eq(FF.d4WrathStacks(s), 2, 'a Wrath set banks a stack per hit');
+
+      // --- Flame Waltz (Duelist 2pc): +3% damage per Wrath stack ---
+      wearD4('duelist', 2); setWrath(5); near(FF.d4SetDmgMult({}, s), 1.15, 'Flame Waltz: +3% per Wrath (5 -> +15%)');
+      setWrath(0); near(FF.d4SetDmgMult({}, s), 1.0, 'Flame Waltz is flat with no Wrath');
+
+      // --- Kindled Focus (Samurai 2pc): +2% damage per Focus stack ---
+      wearD4('samurai', 2); FF.d4WrathReset(s); s.activity = { type:'combat', monsterHp:1000, samuraiFocus:10 };
+      near(FF.d4SetDmgMult({}, s), 1.20, 'Kindled Focus: +2% per Focus (10 -> +20%)');
+      // --- Blazing Iaijutsu (Samurai full): opener +20% ---
+      wearFull('samurai'); s.activity = { type:'combat', monsterHp:1000, samuraiFocus:0, samuraiFirstStrike:true };
+      near(FF.d4SetDmgMult({}, s), 1.20, 'Blazing Iaijutsu: the opening strike hits +20%');
+      s.activity.samuraiFirstStrike = false; near(FF.d4SetDmgMult({}, s), 1.0, 'Blazing Iaijutsu only rides the opener');
+
+      // --- Dragon Hoard (Treasure Hunter 2pc): +8% per Supreme item, cap +40% ---
+      FF.d4WrathReset(s); s.activity = { type:'combat', monsterHp:1000 };
+      s.bodyArmor = {}; var base = FF.d4SupremeItemCount(s);
+      s.bodyArmor = { chest:{ rarity:'supreme' }, boots:{ rarity:'fantastic' }, helmet:{ rarity:'rare' } };
+      eq(FF.d4SupremeItemCount(s) - base, 2, 'd4SupremeItemCount counts Supreme + Fantastic gear (not Rare)');
+      wearD4('treasureHunter', 2, 'supreme'); var cnt = FF.d4SupremeItemCount(s);
+      near(FF.d4SetDmgMult({}, s), 1 + 0.08 * Math.min(5, cnt), 'Dragon Hoard: +8% per Supreme item');
+      ok(cnt >= 2, 'the two Supreme set pieces count toward Dragon Hoard');
+
+      // --- Plaguebreath (Plaguebearer full): +20% vs a Poisoned foe ---
+      wearFull('plaguebearer'); FF.d4WrathReset(s);
+      s.activity = { type:'combat', monsterHp:1000, potionPoisonUntil:Date.now()+5000, potionPoisonDps:100 };
+      ok(FF.enemyPoisonedFoe(s), 'a foe on the poison channel reads as Poisoned');
+      near(FF.d4SetDmgMult({}, s), 1.20, 'Plaguebreath: +20% vs a Poisoned foe');
+      s.activity = { type:'combat', monsterHp:1000 }; near(FF.d4SetDmgMult({}, s), 1.0, 'Plaguebreath inert on a clean foe');
+
+      // --- Firestorm (Duelist full): +12% Dodge AND never-resisted at max Wrath ---
+      wearFull('duelist'); setWrath(FF.D4_WRATH_CAP);
+      near(FF.d4FirestormDodge(s), 0.12, 'Firestorm: +12% Dodge at max Wrath');
+      var waterDragon = { dungeon:'d4', element:'water' };
+      near(FF.d4WandElementMult(s, 'fire', waterDragon), 1.0, 'Firestorm: at max Wrath your elemental damage is never resisted');
+      setWrath(FF.D4_WRATH_CAP - 1);
+      near(FF.d4FirestormDodge(s), 0, 'Firestorm needs max Wrath for the Dodge');
+      near(FF.d4WandElementMult(s, 'fire', waterDragon), 0.85, 'below max Wrath, Firestorm does not lift the resistance');
+    } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; s.activity = sv.act; s.d4Wrath = sv.w; s.d4WrathUntil = sv.wu; }
+  });
+
   // ---- D2 sets: Batch B effects (damage & tempo) -----------------------------------------------------
   suite('D2 sets: Batch B combat effects', function(){
     var s = FF._state;
