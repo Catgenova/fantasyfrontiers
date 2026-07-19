@@ -9921,6 +9921,28 @@
   // Markup last written into #content. render() compares against it and skips the DOM write when the
   // panel is byte-identical, so an unchanged tab costs a string compare instead of a full re-parse.
   var _lastContentHtml = null;
+  // ---- Frame profiler (?perf) -----------------------------------------------------------------
+  // Two rounds of reasoned optimisation moved the needle less than expected, so measure instead of
+  // guessing again: open the game with ?perf and the console prints, once a second, how many ms of
+  // each second went to simulation vs full renders vs the light in-place pass, plus how many full
+  // rebuilds actually happened. Whatever dominates is the thing worth fixing. Zero cost when off --
+  // every probe is behind PERF_ON, so a normal build never calls performance.now().
+  var PERF_ON = /[?&]perf\b/.test(location.search);
+  var _perf = { sim:0, render:0, dynamic:0, frame:0, frames:0, renders:0, since:0 };
+  function perfReport(){
+    var t = performance.now();
+    if(!_perf.since){ _perf.since = t; return; }
+    if(t - _perf.since < 1000) return;
+    var span = t - _perf.since;
+    var pctOf = function(ms){ return (ms / span * 100).toFixed(1) + '%'; };
+    console.log('[perf] ' + _perf.frames + ' frames, ' + _perf.renders + ' full renders | '
+      + 'sim ' + _perf.sim.toFixed(1) + 'ms (' + pctOf(_perf.sim) + ') | '
+      + 'render ' + _perf.render.toFixed(1) + 'ms (' + pctOf(_perf.render) + ') | '
+      + 'inplace ' + _perf.dynamic.toFixed(1) + 'ms (' + pctOf(_perf.dynamic) + ') | '
+      + 'loop total ' + _perf.frame.toFixed(1) + 'ms (' + pctOf(_perf.frame) + ')'
+      + (_perf.renders ? ' | avg render ' + (_perf.render / _perf.renders).toFixed(1) + 'ms' : ''));
+    _perf.sim = _perf.render = _perf.dynamic = _perf.frame = 0; _perf.frames = _perf.renders = 0; _perf.since = t;
+  }
   // Anything that writes into #content OUTSIDE render() (the in-place feed/list updaters) must clear
   // this, or a later render producing the pre-update markup would wrongly decide "nothing changed".
   function invalidateContentCache(){ _lastContentHtml = null; }
@@ -25538,6 +25560,7 @@
   // ================= MAIN LOOP =================
   var lastTick = Date.now();
   function loop(){
+    var _pf = PERF_ON ? performance.now() : 0;   // frame start (perf build only)
     var now = Date.now();
     var dt = now - lastTick;
     if(dt > 60000) dt = 60000;
@@ -25723,11 +25746,22 @@
     // Rebuild at most every RENDER_MIN_MS; on every other frame run only the light in-place pass, which
     // is what actually animates the bars. This is the difference between "rebuild 700 rows 60x/sec" and
     // "rebuild them 10x/sec while the bars still move at 60fps".
+    var _pSim = PERF_ON ? performance.now() : 0;   // everything above is simulation; below is UI
     if(needsRender && !isEditingField() && (Date.now() - _lastRenderAt) >= RENDER_MIN_MS){
       needsRender = false;
+      var _pr = PERF_ON ? performance.now() : 0;
       render();
+      if(PERF_ON){ _perf.render += performance.now() - _pr; _perf.renders++; }
     } else {
+      var _pd = PERF_ON ? performance.now() : 0;
       updateDynamic();
+      if(PERF_ON) _perf.dynamic += performance.now() - _pd;
+    }
+    if(PERF_ON){
+      _perf.sim += _pSim - _pf;
+      _perf.frame += performance.now() - _pf;
+      _perf.frames++;
+      perfReport();
     }
     requestAnimationFrame(loop);
   }
