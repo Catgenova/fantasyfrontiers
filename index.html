@@ -4886,7 +4886,16 @@
     { key:'wyrmdancer', name:"Wyrmdancer's Fang", group:'pierce', slot:'mainhand', base:'rapier',     cls:'duelist',        desc:'Your hits build Wrath (twice as fast), and you deal +6% per Wrath stack.' },
     { key:'emberdraw',  name:'Emberdraw',         group:'pierce', slot:'mainhand', base:'falchion',   cls:'samurai',        desc:'Your opening strike hits the weakness for +50% damage.' },
     { key:'runewyrm',   name:'Runewyrm Blade',    group:'pierce', slot:'mainhand', base:'greatsword', cls:'spellblade',     desc:"Every Spell Echo strikes the foe's elemental weakness (+20%)." },
-    { key:'drakelance', name:'Drakelance',        group:'pierce', slot:'mainhand', base:'claymore',   cls:'knight',         desc:'At max Momentum, your hits deal +20% weakness-element damage.' }
+    { key:'drakelance', name:'Drakelance',        group:'pierce', slot:'mainhand', base:'claymore',   cls:'knight',         desc:'At max Momentum, your hits deal +20% weakness-element damage.' },
+    // Blunt weapons (mainhand)
+    { key:'bastionbreaker', name:'Bastionbreaker', group:'blunt', slot:'mainhand', base:'mace',      cls:'herald',     desc:"A Perfect Guard reflects the attacker's element for the full damage it prevented." },
+    { key:'wyrmthornmaul',  name:'Wyrmthorn Maul', group:'blunt', slot:'mainhand', base:'maul',      cls:'sentinel',   desc:'Your reflect deals +50% and Scorches the attacker.' },
+    { key:'wrathscale',     name:'Wrathscale Hammer', group:'blunt', slot:'mainhand', base:'warhammer', cls:'berserker', desc:'Below 50% Health, your damage rises with your wounds — up to +40% near death.' },
+    { key:'magmacore',      name:'Magmacore Sledge', group:'blunt', slot:'mainhand', base:'sledge',   cls:'juggernaut', desc:'Your Wind-Up swings erupt with a Fire nova (+25%).' },
+    // Ranged weapons (mainhand)
+    { key:'breathfang',  name:'Breathfang Bow',  group:'ranged', slot:'mainhand', base:'bowShort',  cls:'quickdraw',    desc:"Your shots charge Dragon's Breath 50% faster and can unleash it; the burst hits twice." },
+    { key:'wyrmstalker', name:'Wyrmstalker Bow', group:'ranged', slot:'mainhand', base:'bowMedium', cls:'ranger',       desc:'Your hits Scorch a foe that already carries an ailment.' },
+    { key:'dragoneye',   name:'Dragoneye Bow',   group:'ranged', slot:'mainhand', base:'bowLong',   cls:'sharpshooter', desc:"Your Critical Hits also strike the foe's elemental weakness (+20%)." }
   ];
   var D4_LEG_GEAR_MAP = {}; D4_LEG_GEAR_DEFS.forEach(function(d){ D4_LEG_GEAR_MAP[d.key] = d; });
   function legGearItemIdD4(key, rarity){ return 'leggear_d4_' + key + '_' + rarity; }
@@ -5015,7 +5024,9 @@
     d4_arcane:  legGearRecipeD4('arcane', { forestry_t20:4000, glyph_fire:800, glyph_water:800, glyph_earth:800, glyph_light:800, glyph_dark:800 }, 'arcanism', 'Rare Tier-20 Arcane Gear'),
     d4_defense: legGearRecipeD4('defense', { metallurgy_t20:4000 }, 'shieldsmithing', 'Rare Tier-20 Shields'),
     d4_slash:   legGearRecipeD4('slash',   { metallurgy_t20:4000 }, 'weaponsmithing', 'Rare Tier-20 Slash Weapons'),
-    d4_pierce:  legGearRecipeD4('pierce',  { metallurgy_t20:4000 }, 'weaponsmithing', 'Rare Tier-20 Pierce Weapons')
+    d4_pierce:  legGearRecipeD4('pierce',  { metallurgy_t20:4000 }, 'weaponsmithing', 'Rare Tier-20 Pierce Weapons'),
+    d4_blunt:   legGearRecipeD4('blunt',   { metallurgy_t20:4000 }, 'weaponsmithing', 'Rare Tier-20 Blunt Weapons'),
+    d4_ranged:  legGearRecipeD4('ranged',  { forestry_t20:4000 },   'bowyer',         'Rare Tier-20 Bows')
   };
   function mastercraftRecipeFor(bpItem){ return bpItem ? (MASTERCRAFT_RECIPES[bpItem.dungeon + '_' + bpItem.slot] || null) : null; }
   var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS);
@@ -6055,6 +6066,7 @@
     if(set2D4('sentinel', st) && monster && monster.element) m *= elementDmgMult(st, monster.element);
     if(setFullD4('sentinel', st)) m *= 1.50;
     if(legActive('wyrmthornwall', st) && monster && monster.element) m *= 1.50;              // Wyrmthorn Wall (D4 shield): reflect carries the element, +50%
+    if(legActive('wyrmthornmaul', st)) m *= 1.50;                                            // Wyrmthorn Maul (D4 maul): reflect +50%
     return m; }
   // Herald Elemental Bastion (full): a Perfect Guard reflects an elemental burst worth half the damage it
   // prevented, scaled by your Attunement to the attacker's element.
@@ -6070,11 +6082,12 @@
     if(set2D4('sharpshooter', st)) gain += isCrit ? 14 : 4;        // Focused Breath: crits charge faster
     if(set2D4('reaper', st)) gain += 8;                            // Soulfire Siphon: lifesteal charges
     if(set2D4('ranger', st) && enemyHasAilment(st)) gain += 10;    // Elemental Traps: ailment procs charge
-    if(gain > 0) d4BreathAdd(a, gain);
-    return gain; }
+    if(legActive('breathfang', st)) gain = gain * 1.5 + 8;         // Breathfang Bow: charges 50% faster (and on its own)
+    if(gain > 0) d4BreathAdd(a, Math.round(gain));
+    return Math.round(gain); }
   // Which full Breath set is worn (the breath weapon it fires). Only one variant fires per readiness.
   function d4BreathFullSet(st){ st = st || state;
-    if(setFullD4('quickdraw', st)) return 'quickdraw';       // Dragon's Breath: a devastating burst shot
+    if(setFullD4('quickdraw', st) || legActive('breathfang', st)) return 'quickdraw'; // Dragon's Breath / Breathfang Bow: a devastating burst shot
     if(setFullD4('ranger', st)) return 'ranger';             // Venombreath: burst + apply your ailments
     if(setFullD4('sharpshooter', st)) return 'sharpshooter'; // Piercing Breath: ignores armour, strikes the weakness
     if(setFullD4('executioner', st)) return 'executioner';   // Immolation Breath: executes a foe below 25% HP
@@ -6094,6 +6107,7 @@
       var slain = a.monsterHp; a.monsterHp = 0; return slain; }
     var burst = Math.max(1, Math.round((hitDmg||0) * D4_BREATH_BURST_MULT * elementDmgMult(st, 'fire')));
     if(which==='sharpshooter') burst = Math.round(burst * ELEMENT_ADVANTAGE_MULT); // Piercing Breath: strikes the weakness
+    if(legActive('breathfang', st)) burst = burst * 2;                              // Breathfang Bow: the burst hits twice
     a.monsterHp -= burst;
     awardElementXp('fire', burst);
     if(which==='reaper'){ var heal = Math.min(Math.round(burst * 0.30), healRoom(st)); if(heal > 0) st.playerHp += heal; } // Spirit Breath
@@ -6139,6 +6153,9 @@
     if(legActive('wyrmdancer', st)) m *= (1 + 0.06 * d4WrathStacks(st));                                       // Wyrmdancer's Fang: +6% per Wrath stack
     if(legActive('emberdraw', st) && st.activity && st.activity.type==='combat' && st.activity.samuraiFirstStrike) m *= 1.50; // Emberdraw: opener +50%
     if(legActive('drakelance', st) && (st.knightStacks||0) >= knightStackCap(st)) m *= 1.20;                   // Drakelance: +20% at max Momentum
+    // --- Batch FF (blunt weapon amplifiers) ---
+    if(legActive('wrathscale', st) && st.playerHp > 0 && st.playerHp < maxHp(st) * 0.50) m *= (1 + 0.40 * (1 - st.playerHp / (maxHp(st) * 0.50))); // Wrathscale Hammer: up to +40% as Health falls below 50%
+    if(legActive('magmacore', st) && juggernautBonus(1, st)) m *= 1.25;                                        // Magmacore Sledge: Wind-Up erupts (+25%)
     return m; }
   // ===== D1 set-bonus combat effects =====
   // Batch 1 -- DoT caps & procs. Each is gated on set2(cls)/setFull(cls) (pieces worn), so it only bites
@@ -12955,6 +12972,8 @@
       var _soul = d4SoulflameBurst(dmgToMonster, state); if(_soul > 0){ act.monsterHp -= _soul; awardElementXp('fire', _soul); if(!offlineCapture) spawnCombatFloat('Soulflame -'+fmt(_soul), 'ft-crit', true); }
       if(assassinVanish){ var _imm = d4ShadowwyrmBurst(dmgToMonster, monster, state); if(_imm > 0){ act.monsterHp -= _imm; awardElementXp('fire', _imm); if(!offlineCapture) spawnCombatFloat('🔥 Immolation -'+fmt(_imm), 'ft-crit', true); } }
       if(act.monsterHp > 0 && d4EmberwyrmExecutes(monster, state)){ act.monsterHp = 0; if(!offlineCapture) spawnCombatFloat('EXECUTE!', 'ft-crit', true); }
+      if(legActive('wyrmstalker', state) && enemyHasAilment(state)) scorchApply(act, 1);                    // Wyrmstalker Bow: hits Scorch an afflicted foe
+      if(isCrit && legActive('dragoneye', state) && act.monsterHp > 0){ var _de = Math.max(1, Math.round(dmgToMonster * 0.20)); act.monsterHp -= _de; if(!offlineCapture) spawnCombatFloat('Dragoneye -'+fmt(_de), 'ft-crit', true); } // Dragoneye Bow: crits strike the weakness
     }
     if(!isOffhand && isCrit) legEarthshakerBuild(act, state); // Earthshaker: each crit charges the Tremor meter (primes the NEXT swing)
     // Onslaught (Knight full): at max Momentum, every 5th strike lands a heavy bonus blow.
@@ -13561,6 +13580,8 @@
       if(legActive('rimescale')){ frostwardenApplyChill(act); scorchApply(act, 2); }
       // Dragonscale Bulwark (D4): a Perfect Guard reflects an elemental burst of the prevented damage.
       if(legActive('dragonbulwark') && monster.element){ var _db = Math.max(1, Math.round((_preBlock - rawDmg) * 0.50 * elementDmgMult(state, monster.element))); applyChipDamage(_db); spawnCombatFloat('Dragonscale -'+fmt(_db), 'ft-crit', true); }
+      // Bastionbreaker (D4 mace): a Perfect Guard reflects the attacker's element for the FULL prevented damage.
+      if(legActive('bastionbreaker') && monster.element){ var _bb = Math.max(1, Math.round((_preBlock - rawDmg) * 1.00 * elementDmgMult(state, monster.element))); applyChipDamage(_bb); spawnCombatFloat('Bastionbreaker -'+fmt(_bb), 'ft-crit', true); }
     }
     // Sentinel thorns reflect (Spiked Barrier reflects ALL incoming; Iron Maiden adds the blocked share;
     // Bulwark's Wrath adds your Armor rating). Reckoning (Lv40) lets the reflect Critically Hit.
@@ -13577,6 +13598,7 @@
         // Spineshatter (D2 maul): each reflect stacks a lasting enemy-damage debuff on the foe (cap -40%).
         if(legActive('spineshatter') && act && act.type==='combat'){ act.spineshatterStacks = Math.min(LEG_SPINESHATTER_MAX, (act.spineshatterStacks||0) + 1); act.spineshatterUntil = Date.now() + LEG_SPINESHATTER_MS; }
         if((set2D3('sentinel') || legActive('bonecrusher')) && act && act.type==='combat') decayApply(act, 1); // Bone Thorns (Sentinel D3 2pc) / Bonecrusher (D3 maul): your reflect also applies Decay
+        if(legActive('wyrmthornmaul') && act && act.type==='combat') scorchApply(act, 1); // Wyrmthorn Maul (D4 maul): your reflect Scorches the attacker
       }
     }
     // Thorns armour enchant: a flat share of damage returned to the attacker on every landed hit,

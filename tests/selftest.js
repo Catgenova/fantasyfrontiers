@@ -3537,6 +3537,60 @@
     s2.inventory=svInv; s2.blueprints=svBp; s2.uniqueItems=svUniq;
   });
 
+  // ---- D4 legendary melee/ranged: blunt + ranged (Batch FF) ----------------------------------------
+  suite('mastercraft: D4 legendary blunt + ranged', function(){
+    var rb = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d4','blunt')]);
+    ok(rb && rb.gear === true && rb.layer === 'd4' && rb.rareCount === 40, 'D4 blunt has a d4-layer gear recipe (40 catalysts)');
+    eq(rb.inputs.metallurgy_t20, 4000, 'D4 blunt costs 4000 t20 ingots');
+    var rr = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d4','ranged')]);
+    ok(rr && rr.gear === true && rr.layer === 'd4' && rr.rareCount === 40, 'D4 ranged has a d4-layer gear recipe (40 catalysts)');
+    eq(rr.inputs.forestry_t20, 4000, 'D4 ranged costs 4000 t20 wood');
+    eq(FF.LEG_GEAR_GROUP_KEYS_D4.blunt.length, 4, 'four D4 blunt effects');
+    eq(FF.LEG_GEAR_GROUP_KEYS_D4.ranged.length, 3, 'three D4 ranged effects');
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D4[id].group==='blunt'; }).length, 16, '4 blunt effects x 4 rarities');
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D4[id].group==='ranged'; }).length, 12, '3 ranged effects x 4 rarities');
+    function legSt(key, base, extra){ var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:1e9,
+      uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'mace')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' };
+      if(extra) for(var k in extra) st[k]=extra[k]; return st; }
+
+    // Wrathscale Hammer: up to +40% as Health falls below 50%.
+    var wsSt = legSt('wrathscale','warhammer'); var mh = FF.maxHp(wsSt);
+    wsSt.playerHp = Math.round(mh * 0.25); near(FF.d4LegDmgMult({}, wsSt), 1 + 0.40 * (1 - (Math.round(mh*0.25)/(mh*0.5))), 'Wrathscale: scales up as Health falls (below 50%)', 0.03);
+    wsSt.playerHp = mh; near(FF.d4LegDmgMult({}, wsSt), 1.0, 'Wrathscale inert at full Health');
+    // Wyrmthorn Maul: reflect +50%.
+    near(FF.d4SentinelThornsMult({ element:'fire' }, legSt('wyrmthornmaul','maul')), 1.50, 'Wyrmthorn Maul: +50% reflect');
+    near(FF.d4SentinelThornsMult({ element:null }, legSt('wyrmthornmaul','maul')), 1.50, 'Wyrmthorn Maul reflects regardless of the foe element');
+
+    // Breathfang Bow: charges the meter (on its own), fires the burst, and the burst hits twice.
+    var bf = legSt('breathfang','bowShort');
+    eq(FF.d4BreathFullSet(bf), 'quickdraw', 'Breathfang Bow fires the Dragon\'s Breath burst');
+    bf.activity = { type:'combat', monsterHp:1000000, breathCharge:0 };
+    eq(FF.d4BreathChargeOnHit(bf, false), 8, 'Breathfang charges Dragon\'s Breath on every shot');
+    bf.activity = { type:'combat', monsterHp:1000000, breathCharge:100 };
+    var expBurst = Math.round(1000 * FF.D4_BREATH_BURST_MULT * FF.elementDmgMult(bf, 'fire')) * 2;
+    eq(FF.d4BreathFire(bf, { element:'water' }, 1000), expBurst, 'Breathfang: the breath burst hits twice');
+
+    // Detection for all 7 (block/on-hit/Magmacore effects are behavioural).
+    ['bastionbreaker','wyrmthornmaul','wrathscale','magmacore'].forEach(function(k){ eq(FF.legActive(k, legSt(k, FF.D4_LEG_GEAR_MAP[k].base)), true, 'legActive detects '+k); });
+    ['breathfang','wyrmstalker','dragoneye'].forEach(function(k){ eq(FF.legActive(k, legSt(k, FF.D4_LEG_GEAR_MAP[k].base)), true, 'legActive detects '+k); });
+    // Magmacore is inert without the juggernaut class (Wind-Up gates it).
+    near(FF.d4LegDmgMult({}, legSt('magmacore','sledge')), 1.0, 'Magmacore inert without the juggernaut Wind-Up');
+
+    // Full forge (ranged).
+    var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
+    s.inventory = { forestry_t20: 4000 }; s.blueprints = {}; s.uniqueItems = {};
+    FF.legGearRareIds('ranged').forEach(function(id){ s.inventory[id] = 15; }); // 3 bow types x 15 = 45 >= 40
+    var bpId = FF.masterworkBlueprintId('d4','ranged'); s.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
+    eq(minted.length, 1, 'the D4 ranged forge mints one legendary unique');
+    ok(minted[0].leg && FF.LEG_GEAR_GROUP_KEYS_D4.ranged.indexOf(minted[0].leg) !== -1, 'the unique carries a D4 ranged-group effect');
+    ok(/^stweapon_bow.+_t\d+_(rare|supreme|fantastic)$/.test(minted[0].base), 'the unique is a top-tier bow base');
+    var rareLeft = FF.legGearRareIds('ranged').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
+    eq(rareLeft, FF.legGearRareIds('ranged').length * 15 - 40, 'the forge consumes exactly 40 rare bows');
+    s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
+  });
+
   // ---- D3 (Underground) legendary shields (Batch S) -------------------------------------------------
   suite('mastercraft: D3 legendary shields', function(){
     var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','defense')]);
