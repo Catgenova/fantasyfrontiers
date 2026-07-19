@@ -3931,6 +3931,61 @@
     } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; s.activity = sv.act; s.playerHp = sv.hp; s.knightStacks = sv.ks; }
   });
 
+  // ---- D4 sets: Batch Z — Dragon's Breath pillar (charge meter + breath weapon) -----------------------
+  suite('D4 sets: Batch Z — Dragon\'s Breath pillar', function(){
+    var s = FF._state, sv = { ba:s.bodyArmor, ui:s.uniqueItems, act:s.activity, hp:s.playerHp };
+    function wearD4(cls, n){ s.bodyArmor = {}; s.uniqueItems = {};
+      var order = FF.D4_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
+      for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d4' }; s.bodyArmor[order[i]] = { uid:uid }; } }
+    function wearFull(cls){ wearD4(cls, FF.D4_SET_DEFS[cls].full); }
+    var mhp = FF.maxHp(s);
+    try {
+      // --- Charging (2pc) ---
+      s.activity = { type:'combat', monsterHp:1000000, breathCharge:0 };
+      wearD4('quickdraw', 2); s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, false), 8, 'Elemental Arrows: +8 charge per shot');
+      eq(FF.d4BreathCharge(s), 8, 'the charge is banked onto the meter');
+      wearD4('sharpshooter', 2); s.activity.breathCharge = 0;
+      eq(FF.d4BreathChargeOnHit(s, false), 4, 'Focused Breath: +4 on a normal hit');
+      s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, true), 14, 'Focused Breath: crits charge faster (+14)');
+      wearD4('reaper', 2); s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, false), 8, 'Soulfire Siphon: +8 per lifesteal hit');
+      wearD4('ranger', 2); s.activity = { type:'combat', monsterHp:1000000, breathCharge:0 }; // clean, no ailment
+      eq(FF.d4BreathChargeOnHit(s, false), 0, 'Elemental Traps: no charge without an ailment on the foe');
+      s.activity.bleedUntil = Date.now() + 5000; eq(FF.d4BreathChargeOnHit(s, false), 10, 'Elemental Traps: +10 when the foe is afflicted');
+
+      // --- Full-set selection ---
+      wearFull('quickdraw'); eq(FF.d4BreathFullSet(s), 'quickdraw', 'the full Breathfang set fires Dragon\'s Breath');
+      wearFull('reaper'); eq(FF.d4BreathFullSet(s), 'reaper', 'the full Wyrmsoul set fires Spirit Breath');
+      wearD4('quickdraw', 2); eq(FF.d4BreathFullSet(s), null, 'a 2-piece set does not fire a breath weapon');
+
+      // --- Firing (full) ---
+      // Not ready -> no fire.
+      wearFull('quickdraw'); s.activity = { type:'combat', monsterHp:1000000, breathCharge:50 };
+      eq(FF.d4BreathFire(s, { element:'water' }, 1000), 0, 'the breath does not fire below full charge');
+      // Quickdraw Dragon's Breath: a devastating elemental burst; resets the meter.
+      s.activity = { type:'combat', monsterHp:1000000, breathCharge:100 };
+      var expBurst = Math.round(1000 * FF.D4_BREATH_BURST_MULT * FF.elementDmgMult(s, 'fire'));
+      eq(FF.d4BreathFire(s, { element:'water' }, 1000), expBurst, 'Dragon\'s Breath bursts for 5x the strike (x Fire Attunement)');
+      eq(FF.d4BreathCharge(s), 0, 'firing resets the Breath meter');
+      // Sharpshooter Piercing Breath: strikes the weakness (+20%). (Recompute the base — earlier breaths trained Fire Attunement.)
+      wearFull('sharpshooter'); s.activity = { type:'combat', monsterHp:1000000, breathCharge:100 };
+      var baseSharp = Math.round(1000 * FF.D4_BREATH_BURST_MULT * FF.elementDmgMult(s, 'fire'));
+      eq(FF.d4BreathFire(s, { element:'water' }, 1000), Math.round(baseSharp * FF.ELEMENT_ADVANTAGE_MULT), 'Piercing Breath strikes the weakness (+20%)');
+      // Reaper Spirit Breath: burst + heal.
+      wearFull('reaper'); s.activity = { type:'combat', monsterHp:1000000, breathCharge:100 }; s.playerHp = Math.round(mhp * 0.5); var hpBefore = s.playerHp;
+      var rb = FF.d4BreathFire(s, { element:'water' }, 1000); ok(rb > 0 && s.playerHp > hpBefore, 'Spirit Breath heals you for a share of its damage');
+      // Executioner Immolation Breath: executes a foe below 25% Health.
+      wearFull('executioner'); s.activity = { type:'combat', monsterHp:200, breathCharge:100 }; var exMon = { isBoss:false, hp:1000 };
+      var slain = FF.d4BreathFire(s, exMon, 10); eq(s.activity.monsterHp, 0, 'Immolation Breath executes a foe below 25% Health');
+      ok(slain >= 200, 'the execute reports the slain HP');
+      s.activity = { type:'combat', monsterHp:500, breathCharge:100 }; // 50% -> no execute, normal burst
+      var nb = FF.d4BreathFire(s, exMon, 10); ok(s.activity.monsterHp > 0 && s.activity.monsterHp < 500, 'above 25% Health, Immolation Breath just bursts');
+      // Ranger Venombreath: burst + apply your ailments (Chill / Decay / Curse).
+      wearFull('ranger'); s.activity = { type:'combat', monsterHp:1000000, breathCharge:100 };
+      FF.d4BreathFire(s, { element:'water' }, 1000);
+      ok(FF.enemyChilled(s) && FF.enemyDecaying(s) && FF.enemyCursed(s), 'Venombreath applies Chill, Decay and a Curse');
+    } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; s.activity = sv.act; s.playerHp = sv.hp; }
+  });
+
   // ---- D2 sets: Batch B effects (damage & tempo) -----------------------------------------------------
   suite('D2 sets: Batch B combat effects', function(){
     var s = FF._state;
