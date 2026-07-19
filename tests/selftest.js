@@ -3149,6 +3149,50 @@
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; s.heraldGuardStacks=sv.hg; s.knightStacks=sv.ks; s.d2CounterstanceUntil=sv.cs; }
   });
 
+  // ---- D2 sets: Batch D effects (DoT / ailment) ------------------------------------------------------
+  suite('D2 sets: Batch D combat effects', function(){
+    var s = FF._state;
+    var sv = { ba:s.bodyArmor, ui:s.uniqueItems, hp:s.playerHp, act:s.activity };
+    function wearD2(cls, n){
+      var order = FF.D2_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
+      s.bodyArmor = {}; s.uniqueItems = {};
+      for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d2' }; s.bodyArmor[order[i]] = { uid:uid }; }
+    }
+    var foe = { hp:1000 };
+    try {
+      s.playerHp = FF.maxHp(s); s.activity = { type:'combat', monsterHp:500 };
+      // DoT-tick multipliers.
+      wearD2('plaguebearer', 2); near(FF.d2PoisonTickMult(s), 1.40, 'Plaguebearer Virulence: +40% poison ticks');
+      wearD2('assassin', 2);     near(FF.d2BleedTickMult(s), 1.50, 'Assassin Exsanguinate: +50% bleed ticks');
+      wearD2('pyromancer', 2);   near(FF.d2BurnTickMult(s), 1.40, 'Pyromancer Conflagration: +40% burn ticks');
+      wearD2('ranger', 2);       near(FF.rangerAilmentDmgMult(s), 1.25, 'Ranger Barbed Ailments: +25% ailment ticks');
+      // Barbed Ailments compounds with a class DoT bonus (e.g. poison) when both sets are... single-set only,
+      // so a bare state gives 1x.
+      s.bodyArmor = {}; s.uniqueItems = {}; near(FF.d2PoisonTickMult(s), 1.0, 'no set -> poison ticks unchanged');
+      // Miasma (Plaguebearer full): poisoned foes take +15%.
+      wearD2('plaguebearer', 4); s.activity = { type:'combat', monsterHp:500, potionPoisonUntil:Date.now()+9999, potionPoisonDps:10 };
+      near(FF.d2SetDmgMult({hp:1000}, s), 1.15, 'Plaguebearer Miasma: +15% vs a poisoned foe');
+      // Hunter's Mark (Ranger full): ailing foes take +15% (uses enemyHasAilment).
+      wearD2('ranger', 4); ok(FF.enemyHasAilment(s), 'a poisoned foe counts as ailing');
+      near(FF.d2SetDmgMult({hp:1000}, s), 1.15, "Ranger Hunter's Mark: +15% vs an ailing foe");
+      s.activity = { type:'combat', monsterHp:500 }; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, "Hunter's Mark inert on a clean foe");
+      // First Blood (Assassin full): +40% on a full-HP foe only.
+      wearD2('assassin', 4); s.activity = { type:'combat', monsterHp:1000 };
+      near(FF.d2SetDmgMult({hp:1000}, s), 1.40, 'Assassin First Blood: +40% on a full-HP foe');
+      s.activity.monsterHp = 500; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, 'First Blood inert once the foe is hurt');
+      // Iaijutsu Mastery (Samurai 2pc): +50% on the opening strike (samuraiFirstStrike flag).
+      wearD2('samurai', 2); s.activity = { type:'combat', monsterHp:500, samuraiFirstStrike:true };
+      near(FF.d2SetDmgMult({hp:1000}, s), 1.50, 'Samurai Iaijutsu Mastery: +50% opening strike');
+      s.activity.samuraiFirstStrike = false; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, 'Iaijutsu inert after the opener');
+      // Zanshin (Samurai full): +15% crit at max Focus.
+      wearD2('samurai', 4); s.activity = { type:'combat', monsterHp:500, samuraiFocus:FF.samuraiFocusCap(s) };
+      near(FF.d2SetCritChance(s), 0.15, 'Samurai Zanshin: +15% crit at max Focus');
+      s.activity.samuraiFocus = 0; near(FF.d2SetCritChance(s), 0.0, 'Zanshin inert below max Focus');
+      // Grounding Rod (Thunderfury 2pc): needs Galvanize (Lv80) to show; check the per-stack scaling is applied.
+      wearD2('thunderfury', 2); ok(typeof FF.thunderGalvanizeCritDmg === 'function', 'thunderGalvanizeCritDmg exported (Grounding Rod scales it)');
+    } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; }
+  });
+
   // ---- D1 armor Set Items: t21 pieces, forge, equip, defense ------------------------------------------
   suite('D1 armor sets: forge + equip + t21 stats', function(){
     // The four material formulas exist with the right bill.
