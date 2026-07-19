@@ -3193,6 +3193,77 @@
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; }
   });
 
+  // ---- D2 sets: Batch E effects (Summoner / Spellblade / Quickdraw / Executioner) --------------------
+  suite('D2 sets: Batch E combat effects', function(){
+    var s = FF._state;
+    var sv = { ba:s.bodyArmor, ui:s.uniqueItems, hp:s.playerHp, act:s.activity,
+               fs:s.d2FeralStacks, fu:s.d2FeralUntil, bs:s.d2BloodthirstStacks, bu:s.d2BloodthirstUntil,
+               mh:s.equippedMainhandUid, oh:s.equippedOffhandUid, be:s.equippedBeltUid, rl:s.equippedRelicUid, js:s.jewelrySlots };
+    function wearD2(cls, n){
+      var order = FF.D2_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
+      s.bodyArmor = {}; s.uniqueItems = {};
+      for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d2' }; s.bodyArmor[order[i]] = { uid:uid }; }
+    }
+    var foe = { hp:1000 };
+    try {
+      // Isolate the enchant counter: null every other equipped slot so equippedEnchantCount only sees worn D2 pieces.
+      s.equippedMainhandUid = s.equippedOffhandUid = s.equippedBeltUid = s.equippedRelicUid = null; s.jewelrySlots = {};
+      var mh = FF.maxHp(s); s.playerHp = mh; s.activity = { type:'combat', monsterHp:800 };
+      // Summoner Feral Surge (2pc): +5% per stack while the window is live.
+      wearD2('summoner', 2); s.d2FeralStacks = 3; s.d2FeralUntil = Date.now()+9999;
+      near(FF.d2SetDmgMult(foe, s), 1 + 0.05*3, 'Summoner Feral Surge: +5% per recent familiar cast');
+      s.d2FeralUntil = Date.now()-1; near(FF.d2SetDmgMult(foe, s), 1.0, 'Feral Surge lapses after its window');
+      s.d2FeralStacks = 0; s.d2FeralUntil = 0; FF.d2FeralOnCast(s);
+      eq(s.d2FeralStacks, 1, 'a familiar cast adds a Feral Surge stack (cap = active-familiar count, min 1)');
+      ok(s.d2FeralUntil > Date.now(), 'a familiar cast opens the Feral Surge window');
+      // Summoner Bloodmoon Pack (full): familiars cast 25% faster.
+      s.bodyArmor = {}; s.uniqueItems = {}; var baseMs = FF.familiarCastIntervalMs();
+      wearD2('summoner', 4); var setMs = FF.familiarCastIntervalMs();
+      near(setMs/baseMs, 0.75, 'Summoner Bloodmoon Pack: familiars cast 25% faster');
+      // Spellblade Arcane Overflow (2pc): +2% per equipped enchant.
+      wearD2('spellblade', 2); s.uniqueItems.w0.enchants = [{},{},{}];
+      eq(FF.equippedEnchantCount(s), 3, 'the worn Spellblade piece carries 3 enchants');
+      near(FF.d2SetDmgMult(foe, s), 1 + 0.02*3, 'Spellblade Arcane Overflow: +2% per equipped enchant');
+      // Spellblade Runic Detonation (full): +5% per Echo debuff stack (no enchants -> Arcane Overflow = 1).
+      wearD2('spellblade', 4); s.activity = { type:'combat', monsterHp:800, d2RunicStacks:4, d2RunicUntil:Date.now()+9999 };
+      near(FF.d2SetDmgMult(foe, s), 1 + 0.05*4, 'Spellblade Runic Detonation: +5% per Echo stack');
+      s.activity.d2RunicUntil = Date.now()-1; near(FF.d2SetDmgMult(foe, s), 1.0, 'Runic Detonation lapses after its window');
+      // Executioner Cleave (2pc): +20% vs non-boss; inert vs a boss.
+      wearD2('executioner', 2);
+      near(FF.d2SetDmgMult({hp:1000}, s), 1.20, 'Executioner Cleave: +20% vs a non-boss foe');
+      near(FF.d2SetDmgMult({hp:1000, isBoss:true}, s), 1.0, 'Cleave inert against a boss');
+      // Executioner Bloodthirst (full): stacking attack speed after kills.
+      wearD2('executioner', 3); s.d2BloodthirstStacks = 3; s.d2BloodthirstUntil = Date.now()+9999;
+      near(FF.d2BloodthirstSpeedMult(s), 1 - 0.08*3, 'Executioner Bloodthirst: -8% attack timer per kill stack');
+      s.d2BloodthirstUntil = Date.now()-1; near(FF.d2BloodthirstSpeedMult(s), 1.0, 'Bloodthirst lapses after its window');
+      s.d2BloodthirstStacks = 0; s.d2BloodthirstUntil = 0; FF.d2BloodthirstOnKill(s);
+      eq(s.d2BloodthirstStacks, 1, 'a kill adds a Bloodthirst stack');
+      // Quickdraw Paralytic Venom (full): a venomed foe's attacks are slowed 30%.
+      wearD2('quickdraw', 4); s.activity = { type:'combat', monsterHp:800, potionPoisonUntil:Date.now()+9999, potionPoisonDps:10 };
+      near(FF.quickdrawParalyticSlow(s), 0.30, 'Quickdraw Paralytic Venom: -30% enemy attack speed vs a venomed foe');
+      ok(FF.enemyExtraSlowPct(s) >= 0.30 - 1e-9, 'Paralytic Venom folds into the enemy slow total');
+      s.activity.potionPoisonUntil = Date.now()-1; near(FF.quickdrawParalyticSlow(s), 0.0, 'Paralytic Venom inert without venom');
+    } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; s.d2FeralStacks=sv.fs; s.d2FeralUntil=sv.fu; s.d2BloodthirstStacks=sv.bs; s.d2BloodthirstUntil=sv.bu; s.equippedMainhandUid=sv.mh; s.equippedOffhandUid=sv.oh; s.equippedBeltUid=sv.be; s.equippedRelicUid=sv.rl; s.jewelrySlots=sv.js; }
+  });
+
+  // ---- D2 sets: Quickdraw Rapid Reload integrates through classAttackSpeedMult on a live Quickdraw -----
+  suite('D2 sets: Quickdraw Rapid Reload (attack speed)', function(){
+    function u(cls){ return { set:cls, setLayer:'d2' }; }
+    function slot(mat, uid){ return { material:mat, tier:22, rarity:'fantastic', uid:uid }; }
+    var hi = FF.xpFloorForLevel(85);
+    var st = { xp:{ quickdraw: hi }, physique:{}, playerHp:1e9,
+               equippedMainhand:'bowShort', equippedMainhandRarity:'normal', equippedOffhand:'quiver',
+               uniqueItems:{ q0:u('quickdraw'), q1:u('quickdraw'), q2:u('quickdraw'), q3:u('quickdraw') },
+               bodyArmor:{ helmet:slot('leather','q0'), chest:slot('leather','q1'), gauntlets:slot('leather','q2'), boots:slot('plate','q3') } };
+    eq(FF.activeClassId(st), 'quickdraw', 'D2 Quickdraw armor + short bow + quiver activates Quickdraw');
+    eq(FF.set2D2('quickdraw', st), true, 'the four D2 pieces trigger the Quickdraw 2-piece bonus');
+    near(FF.classAttackSpeedMult(st), 0.88, 'Rapid Reload: +12% attack speed with a bow (x0.88 timer)', 1e-9);
+    var bare = { xp:{ quickdraw: hi }, physique:{}, playerHp:1e9,
+                 equippedMainhand:'bowShort', equippedMainhandRarity:'normal', equippedOffhand:'quiver',
+                 bodyArmor:{ helmet:{material:'leather',tier:5}, chest:{material:'leather',tier:5}, gauntlets:{material:'leather',tier:5}, boots:{material:'plate',tier:5} } };
+    near(FF.classAttackSpeedMult(bare), 1.0, 'no D2 set -> no Rapid Reload', 1e-9);
+  });
+
   // ---- D1 armor Set Items: t21 pieces, forge, equip, defense ------------------------------------------
   suite('D1 armor sets: forge + equip + t21 stats', function(){
     // The four material formulas exist with the right bill.
