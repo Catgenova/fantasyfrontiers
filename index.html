@@ -9910,6 +9910,14 @@
   var craftOnlyAffordable = false; // Crafting: hide recipe cards the player lacks materials for
   var saveAccum = 0;
   var needsRender = false;
+  // A full render() rebuilds all of #content. On a big inventory that's hundreds of rows (the
+  // Sacrifice list alone can be 700+), and with many tasks running SOMETHING sets needsRender almost
+  // every frame -- so the loop was free to rebuild that list up to 60x a second, which is what made
+  // the tab drag and the progress bars stutter (each rebuild threw the bars away and re-created them).
+  // Cap the loop's INVOLUNTARY renders; bars stay smooth because updateDynamic() keeps ticking them in
+  // place every frame. User gestures call render(true) directly and are never delayed by this.
+  var RENDER_MIN_MS = 100;   // <=10 full rebuilds/sec; a task finishing still shows within 100ms
+  var _lastRenderAt = 0;
   var armorPanelExpanded = false;
   var toolPanelExpanded = false;
   var equipPickerSlot = 'mainhand'; // which paper-doll slot's equip picker is open on the Equipment tab
@@ -24452,6 +24460,7 @@
     // central click handler calls render(true), and tapping a button consumes the field anyway).
     // The deferred render flushes via the loop the moment the field blurs.
     if(!force && isEditingField()){ needsRender = true; return; }
+    _lastRenderAt = Date.now();   // paces the loop's involuntary renders (see the loop's gate)
     // Preserve the in-progress chat message + focus/cursor across full re-renders -- otherwise
     // a popup (or any needsRender) mid-typing rebuilds the input and wipes the draft.
     var _ci = document.getElementById('chatInput');
@@ -25690,7 +25699,10 @@
     // keyboard closes (making it impossible to type an amount, price, chat message, etc.). While
     // ANY input/textarea/select is focused, defer the render (keep needsRender set) and run only
     // the light live-update pass; incoming chat/XP still update in place. It flushes on blur.
-    if(needsRender && !isEditingField()){
+    // Rebuild at most every RENDER_MIN_MS; on every other frame run only the light in-place pass, which
+    // is what actually animates the bars. This is the difference between "rebuild 700 rows 60x/sec" and
+    // "rebuild them 10x/sec while the bars still move at 60fps".
+    if(needsRender && !isEditingField() && (Date.now() - _lastRenderAt) >= RENDER_MIN_MS){
       needsRender = false;
       render();
     } else {
