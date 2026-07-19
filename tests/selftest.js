@@ -3331,6 +3331,38 @@
     s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
   });
 
+  // ---- D3 (Underground) legendary melee: slash + pierce (Batch T) ------------------------------------
+  suite('mastercraft: D3 legendary melee (slash + pierce)', function(){
+    ['slash','pierce'].forEach(function(g){
+      var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3',g)]);
+      ok(rec && rec.gear === true && rec.layer === 'd3', 'D3 '+g+' has a d3-layer gear recipe');
+      eq(rec.rareCount, 30, 'D3 '+g+' needs 30 rare Tier-20 weapons');
+      eq(rec.inputs.metallurgy_t20, 3000, 'D3 '+g+' costs 3000 t20 ingots');
+    });
+    eq(FF.LEG_GEAR_GROUP_KEYS_D3.slash.length, 6, 'six D3 slash effects');
+    eq(FF.LEG_GEAR_GROUP_KEYS_D3.pierce.length, 4, 'four D3 pierce effects');
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D3).filter(function(id){ var g=FF.LEGENDARY_GEAR_ITEMS_D3[id].group; return g==='slash'||g==='pierce'; }).length, 40, '10 melee effects x 4 rarities = 40 items');
+
+    function legSt(key, base){ return { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+      uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'scimitar')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' }; }
+    // Deathshepherd (D3 scythe): Siphon Shield cap +50% (observable via reaperShieldCap).
+    near(FF.reaperShieldCap(legSt('deathshepherd','scythe')) / FF.reaperShieldCap(legSt('wraithclaw','claw')), 1.5, 'Deathshepherd: Siphon Shield cap +50%', 0.06);
+    // Detection for the behaviour-driven slash + pierce weapons.
+    ['gravepilfer','rotmaw','bonereaver','wraithclaw','soulharvester','deathshepherd'].forEach(function(k){ var b = FF.D3_LEG_GEAR_MAP[k].base; eq(FF.legActive(k, legSt(k, b)), true, 'legActive detects '+k); });
+    ['phantomthrust','ghostblade','runegrave','gravewarden'].forEach(function(k){ var b = FF.D3_LEG_GEAR_MAP[k].base; eq(FF.legActive(k, legSt(k, b)), true, 'legActive detects '+k); });
+    // Full forge (slash).
+    var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
+    s.inventory = { metallurgy_t20: 3000 }; s.blueprints = {}; s.uniqueItems = {};
+    FF.legGearRareIds('slash').forEach(function(id){ s.inventory[id] = 6; });
+    var bpId = FF.masterworkBlueprintId('d3','slash'); s.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
+    eq(minted.length, 1, 'the D3 slash forge mints exactly one legendary unique');
+    ok(minted[0].leg && FF.LEG_GEAR_GROUP_KEYS_D3.slash.indexOf(minted[0].leg) !== -1, 'the unique carries a D3 slash-group effect');
+    ok(/^stweapon_.+_t19_(rare|supreme|fantastic)$/.test(minted[0].base), 'the unique is a top-tier slashing weapon base');
+    s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
+  });
+
   // ---- D1 legendary AMULETS (Pendants): 3 universal effects, worn in the single Amulet slot -----------
   // ---- D1 armor Set Items: data model + set-piece detection ------------------------------------------
   suite('D1 armor sets: data model + detection', function(){

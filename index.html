@@ -4781,7 +4781,19 @@
     { key:'boneshell',     name:'Boneshell',       group:'defense', slot:'offhand', base:'shieldSmall',  cls:'reaver',         desc:'Blocking banks a Soul Charge and heals you 4% of max Health.' },
     { key:'rimecrypt',     name:'Rimecrypt',       group:'defense', slot:'offhand', base:'shieldMedium', cls:'frostwarden',    desc:'Blocking Chills and Decays the attacker.' },
     { key:'tombwall',      name:'Tombwall',        group:'defense', slot:'offhand', base:'shieldMedium', cls:'sentinel',       desc:'Blocking applies Decay; Decayed attackers deal 20% less to you.' },
-    { key:'mausoleumwall', name:'Mausoleum Wall',  group:'defense', slot:'offhand', base:'shieldLarge',  cls:'herald',         desc:'A Perfect Guard Curses the attacker; at max Guard a Cursed attacker is briefly stunned.' }
+    { key:'mausoleumwall', name:'Mausoleum Wall',  group:'defense', slot:'offhand', base:'shieldLarge',  cls:'herald',         desc:'A Perfect Guard Curses the attacker; at max Guard a Cursed attacker is briefly stunned.' },
+    // Slash weapons (mainhand)
+    { key:'gravepilfer',  name:'Gravepilfer',  group:'slash', slot:'mainhand', base:'scimitar',    cls:'treasureHunter', desc:'Kills on a Cursed or Decayed foe drop +100% gold.' },
+    { key:'rotmaw',       name:'Rotmaw',       group:'slash', slot:'mainhand', base:'hatchet',     cls:'plaguebearer',   desc:'Your poison also applies Decay, and your Decay ticks heal you for 20% of their damage.' },
+    { key:'bonereaver',   name:'Bonereaver',   group:'slash', slot:'mainhand', base:'halfmoonaxe', cls:'reaver',         desc:'A foe that dies Bleeding erupts — healing you 10% max Health and Bleeding the next foe.' },
+    { key:'wraithclaw',   name:'Wraithclaw',   group:'slash', slot:'mainhand', base:'claw',        cls:'assassin',       desc:'Your Critical Hits apply both Decay and Curse.' },
+    { key:'soulharvester',name:'Soulharvester',group:'slash', slot:'mainhand', base:'fullmoonaxe', cls:'executioner',    desc:'Each kill raises your Execute threshold by 2% for the rest of the fight (base 10%, cap 30%).' },
+    { key:'deathshepherd',name:'Deathshepherd',group:'slash', slot:'mainhand', base:'scythe',      cls:'reaper',         desc:'While a Siphon Shield holds, the foe rots (Decay); your Siphon can overfill the shield +50%.' },
+    // Pierce weapons (mainhand)
+    { key:'phantomthrust',name:'Phantomthrust',group:'pierce', slot:'mainhand', base:'rapier',     cls:'duelist',        desc:'Every Dodge also Curses the foe and banks a Soul Charge.' },
+    { key:'ghostblade',   name:'Ghostblade',   group:'pierce', slot:'mainhand', base:'falchion',   cls:'samurai',        desc:'At max Focus, your strikes apply Decay and cannot be Dodged.' },
+    { key:'runegrave',    name:'Runegrave',    group:'pierce', slot:'mainhand', base:'greatsword', cls:'spellblade',     desc:'Each Spell Echo applies Decay; your echoes deal +15% to Decayed foes.' },
+    { key:'gravewarden',  name:'Gravewarden',  group:'pierce', slot:'mainhand', base:'claymore',   cls:'knight',         desc:'At max Momentum, a lethal blow is survived at 1 HP (once/fight) and Curses the attacker.' }
   ];
   var D3_LEG_GEAR_MAP = {}; D3_LEG_GEAR_DEFS.forEach(function(d){ D3_LEG_GEAR_MAP[d.key] = d; });
   function legGearItemIdD3(key, rarity){ return 'leggear_d3_' + key + '_' + rarity; }
@@ -4882,7 +4894,9 @@
       outcomes: D2_LEG_CLOAK_DEFS.map(function(d){ return d.key; }) },
     // D3 (Underground) arcane formula -> one random D3 legendary wand/scepter/staff/ward. Tripled bill + 30 catalysts.
     d3_arcane:  legGearRecipeD3('arcane', { forestry_t20:3000, glyph_fire:600, glyph_water:600, glyph_earth:600, glyph_light:600, glyph_dark:600 }, 'arcanism', 'Rare Tier-20 Arcane Gear'),
-    d3_defense: legGearRecipeD3('defense', { metallurgy_t20:3000 }, 'shieldsmithing', 'Rare Tier-20 Shields')
+    d3_defense: legGearRecipeD3('defense', { metallurgy_t20:3000 }, 'shieldsmithing', 'Rare Tier-20 Shields'),
+    d3_slash:   legGearRecipeD3('slash',   { metallurgy_t20:3000 }, 'weaponsmithing', 'Rare Tier-20 Slash Weapons'),
+    d3_pierce:  legGearRecipeD3('pierce',  { metallurgy_t20:3000 }, 'weaponsmithing', 'Rare Tier-20 Pierce Weapons')
   };
   function mastercraftRecipeFor(bpItem){ return bpItem ? (MASTERCRAFT_RECIPES[bpItem.dungeon + '_' + bpItem.slot] || null) : null; }
   var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS);
@@ -5693,6 +5707,8 @@
     if(setFullD3('sharpshooter') && !offlineCapture && Math.random() < (criticalEyeCritChance(state) + newClassCritChance())) dmg *= (CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state));
     dmg = Math.round(dmg);
     if(dmg > 0) act.monsterHp = Math.max(1, act.monsterHp - dmg); // necrotic: ignores armour, never lands the kill
+    // Rotmaw (D3 hatchet): your Decay ticks heal you 20% of their damage.
+    if(dmg > 0 && legActive('rotmaw')){ var _dh = Math.min(Math.round(dmg * 0.20), healRoom(state)); if(_dh > 0) state.playerHp += _dh; }
   }
   // CURSE: a mark laid on the foe (act.curseUntil). While Cursed the foe takes more from you / deals less to
   // you -- the per-set fulls read enemyCursed() from the damage chains. Curse 2-piece bonuses lay the mark.
@@ -6147,13 +6163,14 @@
     if(set2('duelist')) state.duelistRiposteReady = true; // Riposte set: the next strike after a Dodge is a guaranteed crit
     if(set2D2('duelist')) state.d2CounterstanceUntil = Date.now() + 2000; // Counterstance (D2 2pc): -35% damage for 2s after a Dodge
     if(set2D3('duelist')) curseApply(state.activity); // Ghost Step (Duelist D3 2pc): a Dodge Curses the foe
+    if(legActive('phantomthrust')){ curseApply(state.activity); d3SoulsAdd(1); } // Phantomthrust (D3 rapier): a Dodge Curses the foe and banks a Soul Charge
   }
   function reaperBonus(reqLevel, st){ return classBonusActive('reaper', reqLevel, st); }
   // Reaper Lv 1 (Death's Harvest): steal 10% of the damage you deal as Health.
   function reaperLifestealPct(st){ return reaperBonus(1, st) ? 0.10 : 0; }
   // Reaper Lv 40 (Siphon Shield): the spectral absorb caps at 20% of max HP.
   var REAPER_SHIELD_MAX_PCT = 0.20;
-  function reaperShieldCap(st){ st = st || state; return Math.round(maxHp(st) * REAPER_SHIELD_MAX_PCT * (legActive('spectralaegis', st) ? 2 : 1)); } // Spectral Aegis doubles the Siphon Shield cap to 40% max HP
+  function reaperShieldCap(st){ st = st || state; return Math.round(maxHp(st) * REAPER_SHIELD_MAX_PCT * (legActive('spectralaegis', st) ? 2 : 1) * (legActive('deathshepherd', st) ? 1.5 : 1)); } // Spectral Aegis doubles the Siphon Shield cap; Deathshepherd (D3 scythe): +50%
   // Reaper Lv 60 (Grim Resolve): up to +30% crit chance, scaling with missing Health.
   function reaperGrimResolveCrit(st){
     st = st || state; if(!reaperBonus(60, st)) return 0;
@@ -12236,8 +12253,8 @@
       if(heal > 0) state.playerHp += heal;
     }
     if(legActive('blightfang')){ var _bf = Math.min(Math.round(dmg * LEG_BLIGHTFANG_FRAC), healRoom(state)); if(_bf > 0) state.playerHp += _bf; } // Blightfang (D2 hatchet): poison ticks heal you 25%
-    // Necrosis (Plaguebearer D3 2pc) / Necrotic Venom (Quickdraw D3 2pc): your poison also applies Decay, once per discrete second.
-    if(set2D3('plaguebearer') || set2D3('quickdraw')){ act.d3PoisonDecayAccum = (act.d3PoisonDecayAccum||0) + dtMs; while(act.d3PoisonDecayAccum >= 1000){ act.d3PoisonDecayAccum -= 1000; decayApply(act, 1); } }
+    // Necrosis (Plaguebearer D3 2pc) / Necrotic Venom (Quickdraw D3 2pc) / Rotmaw (D3 hatchet): your poison also applies Decay, once per discrete second.
+    if(set2D3('plaguebearer') || set2D3('quickdraw') || legActive('rotmaw')){ act.d3PoisonDecayAccum = (act.d3PoisonDecayAccum||0) + dtMs; while(act.d3PoisonDecayAccum >= 1000){ act.d3PoisonDecayAccum -= 1000; decayApply(act, 1); } }
     if(plaguebearerBonus(80)){ // Pandemic: roll a Dark explosion on each discrete 1s tick
       act.poisonTickAccum = (act.poisonTickAccum || 0) + dtMs;
       while(act.poisonTickAccum >= 1000){
@@ -12430,7 +12447,9 @@
 
     // Accuracy vs Dodge: roll to land the hit. A miss deals no damage and fires no on-hit effects
     // (potions, proficiency XP), but you still trained your reflexes by swinging so accuracy can grow.
-    if(Math.random() >= playerHitChance(monster)){
+    // Never-miss: Earthrender (D2 sledge) always lands; Ghostblade (D3 falchion) can't be Dodged at max Focus.
+    var _neverMiss = !isOffhand && (legActive('earthrender') || (legActive('ghostblade') && samuraiFocusStacks(state) >= samuraiFocusCap(state)));
+    if(!_neverMiss && Math.random() >= playerHitChance(monster)){
       if(!isOffhand) spawnCombatFloat('Miss', 'ft-miss', true);
       addPhysiqueXp(physTierPairs([['agility',2]], monster.tierIndex));
       // The following class procs belong to the main-hand swing only (an off-hand Claw is pure extra DPS).
@@ -12482,6 +12501,10 @@
     // Execute (Executioner 2pc): a non-boss foe this hit leaves below 15% Health is slain outright.
     if(!isOffhand && set2('executioner') && monster && !monster.isBoss && act.monsterHp > 0 && act.monsterHp <= monster.hp * EXEC_SET_EXECUTE_FRAC){
       act.monsterHp = 0; spawnCombatFloat('EXECUTE!', 'ft-crit', true);
+    }
+    // Soulharvester (D3 full-moon axe): its own Execute, whose threshold grows +2% per kill this fight (base 10%, cap 30%).
+    if(!isOffhand && legActive('soulharvester') && monster && !monster.isBoss && act.monsterHp > 0 && act.monsterHp <= monster.hp * Math.min(0.30, 0.10 + 0.02 * (state.d3ExecStacks||0))){
+      act.monsterHp = 0; spawnCombatFloat('Soul Harvest!', 'ft-crit', true);
     }
     if(!isOffhand && isCrit) legEarthshakerBuild(act, state); // Earthshaker: each crit charges the Tremor meter (primes the NEXT swing)
     // Onslaught (Knight full): at max Momentum, every 5th strike lands a heavy bonus blow.
@@ -12543,6 +12566,8 @@
       // Samurai Bushido (Lv60): each landed hit builds a Focus stack (capped); a miss resets it (miss branch above).
       if(samuraiBonus(60)){ var _fPrev = act.samuraiFocus||0; act.samuraiFocus = Math.min(samuraiFocusCap(state), _fPrev + samuraiFocusPerHit(state)); // Flowing Blade raises the cap to 15; Unbroken Focus builds 2/hit
         if(set2D3('samurai') && _fPrev < samuraiFocusCap(state) && act.samuraiFocus >= samuraiFocusCap(state)) d3SoulsAdd(3); } // Soul Focus (Samurai D3 2pc): reaching max Focus banks 3 Soul Charges
+      // Ghostblade (D3 falchion): at max Focus, your strikes also apply Decay.
+      if(!isOffhand && legActive('ghostblade') && samuraiFocusStacks(state) >= samuraiFocusCap(state)) decayApply(act, 1);
       // Knight (Momentum): each landed hit adds a -10% attack-speed stack (cap 5, or 8 with Relentless).
       if(knightBonus(1)) state.knightStacks = Math.min(knightStackCap(state), (state.knightStacks || 0) + 1);
       // Throatripper (D2 claw): tally main-hand strikes so the first 3 per foe are forced crits.
@@ -12556,6 +12581,8 @@
       if(!isOffhand && isCrit && set2D3('sharpshooter')) decayApply(act, 2); // Marrow Shot (2 stacks)
       // Gravestone (Juggernaut D3 2pc): your hits Curse the foe.
       if(!isOffhand && set2D3('juggernaut')) curseApply(act);
+      // Wraithclaw (D3 claw): your Critical Hits apply both Decay and Curse.
+      if(!isOffhand && isCrit && legActive('wraithclaw')){ decayApply(act, 1); curseApply(act); }
       // Grave Robber (Treasure Hunter D3 2pc): your Critical Hits Curse the foe (Cursed foes drop more gold).
       if(!isOffhand && isCrit && set2D3('treasureHunter')) curseApply(act);
       // Berserker Blood Pact (Lv20): each landed hit spends 2% of current HP to fuel its +50% damage (never self-lethal).
@@ -12767,13 +12794,14 @@
         // Resonant Crit (Spellblade full): an echo can Critically Hit, borrowing the hero's crit chance & damage.
         var _echoCrit = spellbladeResonantCrit(state) && Math.random() < (criticalEyeCritChance(state) + newClassCritChance());
         var _echoCritMult = _echoCrit ? (CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) : 1;
-        var echo = Math.max(1, Math.round(dmgToMonster * SPELLBLADE_ECHO_PCT * legEchoDmgMult(state) * _echoCritMult)); // Resonant Echo: +10% per distinct enchant carried
+        var echo = Math.max(1, Math.round(dmgToMonster * SPELLBLADE_ECHO_PCT * legEchoDmgMult(state) * _echoCritMult * (legActive('runegrave') && enemyDecaying(state) ? 1.15 : 1))); // Resonant Echo: +10% per distinct enchant carried; Runegrave (D3 greatsword): +15% vs Decayed
         act.monsterHp -= echo; spawnFloatingText((_echoCrit?'✦ ':'')+(_echoChain ? 'Twin Echo ' : 'Spell Echo ')+echo+'!', _echoCrit?'ft-crit':'ft-rare');
         if(setFullD2('spellblade', state)){ // Runic Detonation (full): each echo stacks a damage-taken debuff on the foe
           act.d2RunicStacks = Math.min(D2_RUNIC_MAX, ((act.d2RunicUntil||0) > Date.now() ? (act.d2RunicStacks||0) : 0) + 1);
           act.d2RunicUntil = Date.now() + D2_RUNIC_MS;
         }
         if(set2D3('spellblade', state)) d3SoulsAdd(1); // Soul Runes (Spellblade D3 2pc): each Spell Echo banks a Soul Charge
+        if(legActive('runegrave')) decayApply(act, 1); // Runegrave (D3 greatsword): each Spell Echo applies Decay
         if(act.monsterHp <= 0){ defeatMonster(monster); break; }
         if(!_echoChain) break; // Spell Echo alone fires at most once per hit
       }
@@ -12820,7 +12848,7 @@
   function defeatMonster(monster){
     var act = state.activity;
     // Reaver Arterial Spray (Lv60): a Bleeding foe's stacks carry to the next foe. Captured before the reset.
-    var _arterialCarry = (reaverBonus(60) && act && (act.bleedStacks||0) > 0 && (act.bleedUntil||0) > Date.now()) ? act.bleedStacks : 0;
+    var _arterialCarry = ((reaverBonus(60) || legActive('bonereaver')) && act && (act.bleedStacks||0) > 0 && (act.bleedUntil||0) > Date.now()) ? act.bleedStacks : 0; // + Bonereaver (D3 half-moon axe): a Bleeding foe's Bleed carries to the next foe
     // Set capstones captured before the per-foe reset: Ember Burst (Burn) + Pestilence (Poison) carry to the next foe.
     var _emberCarry = (setFull('pyromancer') && act && (act.burnStacks||0) > 0 && enemyBurning(state)) ? act.burnStacks : 0;
     var _pestCarry = (setFull('plaguebearer') && act && (act.potionPoisonUntil||0) > Date.now() && (act.potionPoisonDps||0) > 0) ? act.potionPoisonDps : 0;
@@ -12830,10 +12858,12 @@
     d2BloodthirstOnKill(state); // Bloodthirst (Executioner D2 full): each kill stacks a short attack-speed buff (dungeon foes included)
     d2HeadtakerOnKill(state); // Headtaker (D2 full-moon axe): each kill stacks a short damage buff
     if(set2D3('executioner')) d3SoulsAdd(2); // Harvest (Executioner D3 2pc): each kill banks 2 Soul Charges
+    if(legActive('soulharvester')) state.d3ExecStacks = Math.min(10, (state.d3ExecStacks||0) + 1); // Soulharvester (D3 full-moon axe): each kill raises the Execute threshold (+2%/kill, cap +20%)
+    if(legActive('bonereaver') && enemyBleeding(state)){ var _br = Math.min(Math.round(maxHp(state) * 0.10), healRoom(state)); if(_br > 0){ state.playerHp += _br; spawnFloatingText('+'+_br+' HP', 'ft-success'); } } // Bonereaver (D3 half-moon axe): a Bleeding foe's death heals you (its Bleed carry is captured below)
     if(legRingEquipped('d2_feast', state)){ var _feast = Math.min(Math.round(maxHp(state) * legendaryRingBonus('d2_feast', state)), healRoom(state)); if(_feast > 0){ state.playerHp += _feast; spawnFloatingText('+'+_feast+' HP', 'ft-success'); } } // Signet of the Feast (D2): Life on Kill
     if(act && act.dungeon){ dungeonOnKill(monster); return; } // dungeon foe -> advance the run instead of re-engaging
     bumpStat('kills');
-    var goldWon = Math.round(randInt(monster.goldMin, monster.goldMax) * legTreasureMult() * (legActive('goldgorge') ? LEG_GOLDGORGE_KILL : 1) * (1 + legendaryRingBonus('d2_goldfind', state)) * ((set2D3('treasureHunter') && enemyCursed(state)) ? 1.50 : 1)); // Pendant of Fortune: +Treasure Find gold; Goldgorge (D2 scimitar): +30% kill gold; Signet of Plunder (D2): +Gold Find; Grave Robber (TH D3 2pc): +50% gold from a Cursed foe
+    var goldWon = Math.round(randInt(monster.goldMin, monster.goldMax) * legTreasureMult() * (legActive('goldgorge') ? LEG_GOLDGORGE_KILL : 1) * (1 + legendaryRingBonus('d2_goldfind', state)) * ((set2D3('treasureHunter') && enemyCursed(state)) ? 1.50 : 1) * ((legActive('gravepilfer') && (enemyCursed(state) || enemyDecaying(state))) ? 2 : 1)); // Pendant of Fortune: +Treasure Find gold; Goldgorge (D2 scimitar): +30% kill gold; Signet of Plunder (D2): +Gold Find; Grave Robber (TH D3 2pc): +50% gold from a Cursed foe; Gravepilfer (D3 scimitar): +100% from a Cursed/Decayed foe
     earnGold(goldWon);
     addPhysiqueXp(physTierPairs([['resolve',1]], monster.tierIndex));
     addLog('Defeated the ' + monster.name + '! +' + goldWon + ' gold.', 'important');
@@ -13166,6 +13196,9 @@
       } else if(setFullD3('knight') && (state.knightStacks||0) >= knightStackCap(state) && !act.d3UndyingUsed){ // Undying March (Knight D3 full): survive at 1 HP at max Momentum
         act.d3UndyingUsed = true; state.playerHp = 1; dmgToPlayer = 0;
         addLog('You refuse to fall — Undying March!', 'important'); spawnFloatingText('Undying March!', 'ft-rare');
+      } else if(legActive('gravewarden') && (state.knightStacks||0) >= knightStackCap(state) && !act.d3GravewardenUsed){ // Gravewarden (D3 claymore): survive at 1 HP at max Momentum + Curse the attacker
+        act.d3GravewardenUsed = true; state.playerHp = 1; dmgToPlayer = 0; curseApply(act);
+        addLog('The grave will not have you — Gravewarden!', 'important'); spawnFloatingText('Gravewarden!', 'ft-rare');
       }
     }
     // Bastion (Herald full): cap any single blow at 25% of max Health before it reaches you.
@@ -13245,6 +13278,7 @@
       state.lumenShield = 0;  // a Radiant Barrier shatters when you fall
       state.templarShield = 0; // Aegis of Dawn shatters on death too
       state.d3Souls = 0; // banked Soul Charges scatter when you fall
+      state.d3ExecStacks = 0; // Soulharvester's growing Execute threshold resets when you fall
       state.activity = { type:null };
       if(_diedInDungeon) dungeonEndRun('death'); // a dungeon run ends when you fall
       if(isMortal()) mortalDeath(monster); // permadeath: the profile passes into Immortal play
@@ -26546,6 +26580,8 @@
         if(legActive('dawnbrand') && state.playerHp > 0){ var _dbCap = legBarrierCap(state); if((state.lumenShield||0) < _dbCap) state.lumenShield = Math.min(_dbCap, (state.lumenShield||0) + maxHp(state) * LEG_DAWNBRAND_HPS * dt / 1000); }
         // Consecrate (Templar D3 2pc): while your Holy shield holds, it also heals you 2% max Health per second.
         if(set2D3('templar') && (state.templarShield||0) > 0 && state.playerHp > 0) state.playerHp += Math.min(maxHp(state) * 0.02 * dt / 1000, healRoom(state));
+        // Deathshepherd (D3 scythe): while a Siphon Shield holds, the foe rots (Decay) once per second.
+        if(legActive('deathshepherd') && (state.reaperShield||0) > 0 && state.activity && state.activity.type==='combat'){ state._d3DeathshepAccum = (state._d3DeathshepAccum||0) + dt; while(state._d3DeathshepAccum >= 1000){ state._d3DeathshepAccum -= 1000; decayApply(state.activity, 1); } }
         // Regen: familiar restores a lump of HP every 5 seconds while the buff is up.
         var regenPer5s = famRegenHps();
         if(regenPer5s > 0 && state.playerHp > 0){
