@@ -4373,6 +4373,47 @@
     s.inventory = svInv; s.uniqueItems = svUniq; s.bodyArmor = svBody; s.blueprints = svBp; s.xp = svXp; s.physique = svPhys;
   });
 
+  // ---- D4 armor sets: forge + equip + t24 stats (Batch BB) --------------------------------------------
+  suite('D4 armor sets: forge + equip + t24 stats', function(){
+    ['cloth','leather','chain','plate'].forEach(function(slot){
+      var r = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d4', slot)]);
+      ok(r && r.setarmor, 'the D4 ' + slot + ' formula is a set-armor recipe');
+      eq(r.layer, 'd4', 'the D4 ' + slot + ' formula is a d4-layer recipe');
+      eq(r.rareCount, 40, 'D4 set formulas need 40 rare t20 armor (quadruple D1)');
+    });
+    eq(FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d4','plate')]).inputs.metallurgy_t20, 4000, 'D4 Plate formula costs 4000 t20 ingots');
+    eq(FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d4','cloth')]).inputs.weaving_t20, 4000, 'D4 Cloth formula costs 4000 t20 cloth');
+
+    var s = FF._state, svInv = s.inventory, svUniq = s.uniqueItems, svBody = s.bodyArmor, svBp = s.blueprints, svXp = s.xp, svPhys = s.physique;
+    // Full forge: give the bill, craft a D4 Plate set piece, confirm a t24 set unique on the d4 layer.
+    s.uniqueItems = {}; s.blueprints = {};
+    s.inventory = { metallurgy_t20: 4000 };
+    FF.setArmorRareIds('plate').forEach(function(id){ s.inventory[id] = 12; }); // 4 slots x 12 = 48 rare t20 plate
+    var bp = FF.masterworkBlueprintId('d4','plate'); s.blueprints[bp] = 1;
+    FF.craftMastercraft(bp);
+    var mintedUid = Object.keys(s.uniqueItems)[0];
+    var u = s.uniqueItems[mintedUid];
+    ok(u && u.set && FF.D4_SET_DEFS[u.set], 'the D4 forge mints a set-piece unique carrying its class-set');
+    eq(u.setLayer, 'd4', 'the minted piece is tagged as a D4-layer set piece');
+    eq(u.material, 'plate', 'a D4 Plate formula forges a plate piece');
+    eq(u.tier, FF.SET_TIER_INDEX_D4, 'the D4 set piece is t24 (four above the t20 cap)');
+    ok(/^bodyarmor_plate_(helmet|chest|gauntlets|boots)_t24_(rare|supreme|fantastic)$/.test(u.base), 'the base is a t24 plate armor item, floored at Rare');
+    eq(s.inventory.metallurgy_t20, 0, 'the forge consumes the 4000 ingots');
+    var rareLeft = FF.setArmorRareIds('plate').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
+    eq(rareLeft, 4*12 - 40, 'the forge consumes exactly 40 rare plate armor pieces');
+
+    // Equip it: t24 pieces gate on maxed Plate proficiency, and count toward the D4 layer only.
+    s.bodyArmor = { helmet:{tier:0,rarity:'normal'}, chest:{tier:0,rarity:'normal'}, gauntlets:{tier:0,rarity:'normal'}, boots:{tier:0,rarity:'normal'}, back:{tier:0,rarity:'normal'} };
+    s.physique = {}; s.xp = { platearmor: FF.xpFloorForLevel(100) };
+    eq(FF.equipUniqueBodyArmor(mintedUid), true, 'with maxed Plate proficiency, the D4 set piece equips');
+    eq(s.bodyArmor[u.slot].uid, mintedUid, 'the piece seats in its slot');
+    eq(FF.setPiecesWorn(u.set, s, 'd4'), 1, 'the equipped piece counts toward its class D4 set');
+    eq(FF.setPiecesWorn(u.set, s, 'd3'), 0, 'a D4 piece does NOT count toward the D3 set');
+    eq(FF.setPiecesWorn(u.set, s, 'd1'), 0, 'a D4 piece does NOT count toward the D1 set (layer isolation)');
+
+    s.inventory = svInv; s.uniqueItems = svUniq; s.bodyArmor = svBody; s.blueprints = svBp; s.xp = svXp; s.physique = svPhys;
+  });
+
   // ---- D1 set bonuses, Batch 1: DoT caps & procs ------------------------------------------------------
   suite('D1 set bonuses: DoT caps & procs', function(){
     // Build a state wearing `count` of a class's set pieces (unique.set on body-armor slots).
