@@ -3147,6 +3147,58 @@
     s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
   });
 
+  // ---- D2 (Tunnel) legendary melee: blunt + ranged (Batch J) -----------------------------------------
+  suite('mastercraft: D2 legendary blunt + ranged', function(){
+    var blunt = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2','blunt')]);
+    var ranged = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2','ranged')]);
+    ok(blunt && blunt.gear && blunt.layer==='d2' && blunt.rareCount===20 && blunt.inputs.metallurgy_t20===2000, 'D2 blunt: d2 gear recipe, 20 rare, 2000 ingots');
+    ok(ranged && ranged.gear && ranged.layer==='d2' && ranged.rareCount===20 && ranged.inputs.forestry_t20===2000, 'D2 ranged: d2 gear recipe, 20 rare, 2000 wood');
+    eq(FF.LEG_GEAR_GROUP_KEYS_D2.blunt.length, 4, 'four D2 blunt effects');
+    eq(FF.LEG_GEAR_GROUP_KEYS_D2.ranged.length, 3, 'three D2 ranged effects');
+    // With all 46-slot vision, the D2 gear table now holds every group except accessories: 35 effects x 4 = 140.
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D2).filter(function(id){ var g=FF.LEGENDARY_GEAR_ITEMS_D2[id].group; return g==='blunt'||g==='ranged'; }).length, 28, '7 effects (4 blunt + 3 ranged) x 4 rarities = 28 items');
+
+    function legSt(key, base, extra){
+      var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+        uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'mace')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' };
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+    var now = Date.now();
+    // Wallbreaker (herald/mace): +4% damage per Perfect Guard stack.
+    near(FF.d2LegDmgMult({}, legSt('wallbreaker','mace',{ heraldGuardStacks:3 })), 1.12, 'Wallbreaker: +4% per Perfect Guard stack (3 -> +12%)');
+    near(FF.d2LegDmgMult({}, legSt('wallbreaker','mace')), 1.0, 'Wallbreaker inert with no Guard stacks');
+    // Trapmaster (ranger/bowMedium): +20% vs an ailing foe.
+    near(FF.d2LegDmgMult({}, legSt('trapmaster','bowMedium',{ activity:{type:'combat', monsterHp:100, bleedUntil:now+4000} })), 1.20, 'Trapmaster: +20% vs an ailing (bleeding) foe');
+    near(FF.d2LegDmgMult({}, legSt('trapmaster','bowMedium')), 1.0, 'Trapmaster inert on a clean foe');
+    // Earthrender (juggernaut/sledge): +30% and never miss (the +30% is the readable part).
+    near(FF.d2LegDmgMult({}, legSt('earthrender','sledge')), 1.30, 'Earthrender: Wind-Up swings hit +30%');
+    // Spineshatter (sentinel/maul): stacking -4% enemy damage per reflect (cap -40%).
+    near(FF.legSpineshatterMult(legSt('spineshatter','maul',{ activity:{type:'combat', monsterHp:100, spineshatterStacks:5, spineshatterUntil:now+4000} })), 0.80, 'Spineshatter: -4% enemy damage per reflect (5 -> -20%)');
+    near(FF.legSpineshatterMult(legSt('spineshatter','maul',{ activity:{type:'combat', monsterHp:100, spineshatterStacks:99, spineshatterUntil:now+4000} })), 0.60, 'Spineshatter caps at -40%');
+    near(FF.legSpineshatterMult(legSt('wallbreaker','mace')), 1.0, 'no Spineshatter debuff without the maul');
+    // Serpentcoil (quickdraw/bowShort): +30% poison ticks.
+    near(FF.legPoisonTickMult(legSt('serpentcoil','bowShort')), 1.30, 'Serpentcoil: +30% poison ticks');
+    near(FF.legPoisonTickMult(legSt('trapmaster','bowMedium')), 1.0, 'no Serpentcoil poison boost without the short bow');
+    // Farstrike (sharpshooter/bowLong): +40% crit damage.
+    near(FF.legFarstrikeCritDmg(legSt('farstrike','bowLong')), 0.40, 'Farstrike: +40% crit damage');
+    near(FF.legFarstrikeCritDmg(legSt('trapmaster','bowMedium')), 0, 'no Farstrike crit dmg without the long bow');
+    // Detection for the behaviour-driven crit effects (Skullcleaver / Ironwind handled in the crit roll).
+    eq(FF.legActive('skullcleaver', legSt('skullcleaver','warhammer')), true, 'legActive detects Skullcleaver');
+    // Full forge (ranged): give the bill, craft, confirm a d2 ranged-group unique.
+    var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
+    s.inventory = { forestry_t20: 2000 }; s.blueprints = {}; s.uniqueItems = {};
+    FF.legGearRareIds('ranged').forEach(function(id){ s.inventory[id] = 8; }); // 3 bow types x 8 = 24 >= 20
+    var bpId = FF.masterworkBlueprintId('d2','ranged'); s.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
+    eq(minted.length, 1, 'the D2 ranged forge mints exactly one legendary unique');
+    ok(minted[0].leg && FF.LEG_GEAR_GROUP_KEYS_D2.ranged.indexOf(minted[0].leg) !== -1, 'the unique carries a D2 ranged-group effect');
+    ok(/^stweapon_bow.+_t20_(rare|supreme|fantastic)$/.test(minted[0].base), 'the unique is a top-tier bow base');
+    eq(s.inventory.forestry_t20, 0, 'the forge consumes the 2000 wood');
+    s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
+  });
+
   // ---- D1 legendary AMULETS (Pendants): 3 universal effects, worn in the single Amulet slot -----------
   // ---- D1 armor Set Items: data model + set-piece detection ------------------------------------------
   suite('D1 armor sets: data model + detection', function(){
