@@ -3384,6 +3384,36 @@
     } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; s.activity = sv.act; s.d3Souls = sv.souls; }
   });
 
+  // ---- D3 sets: Batch M — Souls sets (build + spend Soul Charges) ------------------------------------
+  suite('D3 sets: Batch M — Souls sets', function(){
+    var s = FF._state, sv = { ba:s.bodyArmor, ui:s.uniqueItems, act:s.activity, souls:s.d3Souls };
+    function wearD3(cls, n){
+      var order = FF.D3_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
+      s.bodyArmor = {}; s.uniqueItems = {};
+      for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d3' }; s.bodyArmor[order[i]] = { uid:uid }; }
+    }
+    try {
+      s.activity = { type:'combat', monsterHp:500 };
+      // Reaper Soul Harvest (full): +5% damage per Soul Charge (cap 10).
+      wearD3('reaper', 3); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.25, 'Reaper Soul Harvest: +5% per Soul (5 -> +25%)');
+      s.d3Souls = 0; near(FF.d3SetDmgMult({}, s), 1.0, 'Soul Harvest inert at 0 Souls');
+      s.d3Souls = 99; near(FF.d3SetDmgMult({}, s), 1.50, 'Soul count caps at 10 (Soul Harvest maxes at +50%)');
+      // 2-piece alone (builder) grants no spender.
+      wearD3('reaper', 2); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.0, '2-piece Reaper has no Soul Harvest (full only)');
+      // Executioner Death Toll (full): +4% per Soul.
+      wearD3('executioner', 3); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.20, 'Executioner Death Toll: +4% per Soul');
+      // Spellblade Necroblade (full, 4pc): +4% per Soul.
+      wearD3('spellblade', 4); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.20, 'Spellblade Necroblade: +4% per Soul');
+      wearD3('spellblade', 2); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.0, 'Necroblade needs the full set');
+      // Reaver Exsanguinate (full): +5% per Soul, but only vs a bleeding foe.
+      wearD3('reaver', 4); s.d3Souls = 4; s.activity = { type:'combat', monsterHp:500, bleedStacks:3, bleedUntil:Date.now()+4000 };
+      near(FF.d3SetDmgMult({}, s), 1.20, 'Reaver Exsanguinate: +5% per Soul vs a bleeding foe (4 -> +20%)');
+      s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Exsanguinate inert on an unbled foe');
+      // A class with no D3 set gets none of it.
+      s.bodyArmor = {}; s.uniqueItems = {}; s.d3Souls = 8; near(FF.d3SetDmgMult({}, s), 1.0, 'no D3 set -> no Souls damage');
+    } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.activity=sv.act; s.d3Souls=sv.souls; }
+  });
+
   // ---- D2 sets: Batch B effects (damage & tempo) -----------------------------------------------------
   suite('D2 sets: Batch B combat effects', function(){
     var s = FF._state;
