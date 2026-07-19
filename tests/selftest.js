@@ -3721,6 +3721,83 @@
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.activity=sv.act; s.knightStacks=sv.ks; }
   });
 
+  // ---- D4 sets: foundation (t24, layer isolation, elemental aggregators, Breath + Wrath) — Batch W ----
+  suite('D4 sets: foundation', function(){
+    eq(FF.D4_SET_CLASS_IDS.length, 24, 'D4 has a set for all 24 classes');
+    eq(FF.SET_TIER_INDEX_D4, FF.SET_TIER_INDEX_D3 + 1, 'D4 set pieces sit one tier (t24) above D3 (t23)');
+    // Every D4 bonus key is fresh vs the class's D1, D2 AND D3 sets.
+    var clash = FF.D4_SET_CLASS_IDS.filter(function(cls){ var a=FF.D1_SET_DEFS[cls], b=FF.D2_SET_DEFS[cls], c=FF.D3_SET_DEFS[cls], d=FF.D4_SET_DEFS[cls];
+      return [a,b,c].some(function(o){ return o.b2.key===d.b2.key || o.bf.key===d.bf.key; }); });
+    eq(clash.length, 0, 'every D4 set bonus uses a fresh key, distinct from its D1/D2/D3 sets');
+    FF.D4_SET_CLASS_IDS.forEach(function(cls){ var d=FF.D4_SET_DEFS[cls];
+      ok(d.b2 && d.b2.name && d.b2.desc, cls+' D4 has a named 2-piece bonus');
+      ok(d.bf && d.bf.name && d.bf.desc, cls+' D4 has a named full-set bonus'); });
+    ['reaper','berserker','executioner'].forEach(function(id){ eq(FF.D4_SET_DEFS[id].full, 3, id+' D4 is a 3-piece set'); });
+    // t24 base armour exists and out-defends t23.
+    var t23 = FF.BODY_ARMOR_ITEMS['bodyarmor_plate_chest_t'+FF.SET_TIER_INDEX_D3+'_rare'];
+    var t24 = FF.BODY_ARMOR_ITEMS['bodyarmor_plate_chest_t'+FF.SET_TIER_INDEX_D4+'_rare'];
+    ok(t23 && t24, 'both t23 and t24 plate chest bases exist');
+    ok(t24.defense > t23.defense, 't24 base armour rolls higher defense than t23');
+    var s = FF._state, sv = { ba:s.bodyArmor, ui:s.uniqueItems, act:s.activity, w:s.d4Wrath, wu:s.d4WrathUntil };
+    try {
+      // --- Layer isolation across all four layers ---
+      s.uniqueItems = {}; s.bodyArmor = {};
+      var d4uid = FF.mintSetPiece('pyromancer','chest','rare','d4');
+      eq(s.uniqueItems[d4uid].setLayer, 'd4', 'a D4 piece carries setLayer d4');
+      eq(s.uniqueItems[d4uid].tier, FF.SET_TIER_INDEX_D4, 'a D4 piece is minted at t24');
+      s.bodyArmor = { chest:{uid:d4uid}, gauntlets:{uid:FF.mintSetPiece('pyromancer','gauntlets','rare','d3')}, boots:{uid:FF.mintSetPiece('pyromancer','boots','rare','d1')} };
+      eq(FF.setPiecesWorn('pyromancer', s, 'd4'), 1, 'the D4 layer counts only the D4 piece');
+      eq(FF.setPiecesWorn('pyromancer', s, 'd3'), 1, 'the D3 layer counts only the D3 piece');
+      eq(FF.setPiecesWorn('pyromancer', s, 'd1'), 1, 'the D1 layer counts only the D1 piece');
+      eq(FF.set2D4('pyromancer', s), false, 'one D4 piece is not the D4 2-piece');
+      s.bodyArmor.gauntlets = { uid: FF.mintSetPiece('pyromancer','gauntlets','rare','d4') };
+      eq(FF.set2D4('pyromancer', s), true, 'two D4 pieces trigger the D4 2-piece');
+      // Dragon-themed D4 names, distinct from D3.
+      ok(/Cinderwyrm/.test(FF.setPieceName('pyromancer','chest','d4')), 'the D4 Pyromancer set is Cinderwyrm Scales');
+      ok(FF.setPieceName('pyromancer','chest','d4') !== FF.setPieceName('pyromancer','chest','d3'), 'D4 names differ from D3');
+
+      // --- Attunement offense aggregator (2pc +30% single element) ---
+      function wearD4(cls, n){ s.bodyArmor = {}; s.uniqueItems = {};
+        var order = FF.D4_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
+        for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d4' }; s.bodyArmor[order[i]] = { uid:uid }; } }
+      wearD4('pyromancer', 2);
+      near(FF.d4SetElementDmg(s, 'fire'), 0.30, 'Emberheart: +30% Fire (2pc)');
+      near(FF.d4SetElementDmg(s, 'water'), 0, 'Emberheart does not boost other elements');
+      var baseFire = FF.elementDmgMult(s, 'fire'); s.bodyArmor = {}; s.uniqueItems = {};
+      near(baseFire - FF.elementDmgMult(s, 'fire'), 0.30, 'Emberheart folds +0.30 into elementDmgMult(fire)');
+      wearD4('frostwarden', 2); near(FF.d4SetElementDmg(s, 'water'), 0.30, 'Frostheart: +30% Water (2pc)');
+      wearD4('thunderfury', 2); near(FF.d4SetElementDmg(s, 'earth'), 0.30, 'Galvanic Heart: +30% Earth (2pc)');
+      wearD4('lumen', 2); near(FF.d4SetElementDmg(s, 'light'), 0.30, 'Radiant Heart: +30% Light (2pc)');
+      wearD4('templar', 2); near(FF.d4SetElementDmg(s, 'light'), 0.30, 'Solar Heart: +30% Light (2pc)');
+      wearD4('nightblade', 2); near(FF.d4SetElementDmg(s, 'dark'), 0.30, 'Umbral Heart: +30% Dark (2pc)');
+      // 1 piece does not trip the 2pc.
+      wearD4('pyromancer', 1); near(FF.d4SetElementDmg(s, 'fire'), 0, 'one Cinderwyrm piece is not the 2pc');
+
+      // --- Dragonscale defense aggregator (Scaleward +15% all-element resist) ---
+      wearD4('herald', 2); near(FF.d4SetElementResist(s, 'fire'), 0.15, 'Scaleward: +15% resist, all elements');
+      near(FF.d4SetElementResist(s, 'dark'), 0.15, 'Scaleward applies to every element');
+      near(FF.elementResistMult(s, 'fire'), (1 - FF.elementResistBonus(s,'fire')) * 0.85, 'Scaleward folds x0.85 into elementResistMult');
+      s.bodyArmor = {}; s.uniqueItems = {}; near(FF.d4SetElementResist(s, 'fire'), 0, 'no Dragonscale set -> no D4 resist');
+
+      // --- Dragon's Breath charge meter ---
+      s.activity = { type:'combat', monsterHp:1000 };
+      eq(FF.d4BreathCharge(s), 0, 'a fresh fight starts with no Breath charge');
+      FF.d4BreathAdd(s.activity, 40); eq(FF.d4BreathCharge(s), 40, 'd4BreathAdd banks charge');
+      ok(!FF.d4BreathReady(s), '40/100 is not a ready Breath');
+      FF.d4BreathAdd(s.activity, 999); eq(FF.d4BreathCharge(s), FF.D4_BREATH_MAX, 'Breath charge caps at 100');
+      ok(FF.d4BreathReady(s), 'a full meter is a ready Breath');
+      near(FF.d4BreathPct(s), 1, 'a full meter reads 100%');
+      FF.d4BreathReset(s.activity); eq(FF.d4BreathCharge(s), 0, 'd4BreathReset empties the meter');
+
+      // --- Wrath stacking buff ---
+      FF.d4WrathReset(s); eq(FF.d4WrathStacks(s), 0, 'Wrath starts empty');
+      FF.d4WrathAdd(3, s); eq(FF.d4WrathStacks(s), 3, 'd4WrathAdd stacks Wrath');
+      FF.d4WrathAdd(50, s); eq(FF.d4WrathStacks(s), FF.D4_WRATH_CAP, 'Wrath caps at 10');
+      s.d4WrathUntil = Date.now() - 1; eq(FF.d4WrathStacks(s), 0, 'Wrath decays once its window lapses');
+      FF.d4WrathAdd(2, s); FF.d4WrathReset(s); eq(FF.d4WrathStacks(s), 0, 'd4WrathReset clears Wrath');
+    } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; s.activity = sv.act; s.d4Wrath = sv.w; s.d4WrathUntil = sv.wu; }
+  });
+
   // ---- D2 sets: Batch B effects (damage & tempo) -----------------------------------------------------
   suite('D2 sets: Batch B combat effects', function(){
     var s = FF._state;
