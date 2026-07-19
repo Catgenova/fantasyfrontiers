@@ -3454,6 +3454,38 @@
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.activity=sv.act; }
   });
 
+  // ---- D3 sets: Batch O — Curse sets (mark the foe, cash it in) --------------------------------------
+  suite('D3 sets: Batch O — Curse sets', function(){
+    var s = FF._state, sv = { ba:s.bodyArmor, ui:s.uniqueItems, act:s.activity };
+    function wearD3(cls, n){
+      var order = FF.D3_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
+      s.bodyArmor = {}; s.uniqueItems = {};
+      for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d3' }; s.bodyArmor[order[i]] = { uid:uid }; }
+    }
+    function wearFull(cls){ wearD3(cls, FF.D3_SET_DEFS[cls].full); }
+    var now = Date.now();
+    try {
+      // Full-set amplifiers vs a Cursed foe (outgoing).
+      wearFull('nightblade'); s.activity = { type:'combat', monsterHp:500, curseUntil:now+4000 };
+      near(FF.d3SetDmgMult({}, s), 1.20, 'Nightblade Doomcurse: +20% vs a Cursed foe');
+      s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Doomcurse inert on an uncursed foe');
+      wearFull('duelist'); s.activity = { type:'combat', monsterHp:500, curseUntil:now+4000 };
+      near(FF.d3SetDmgMult({}, s), 1.15, 'Duelist Spectral Grace: +15% vs a Cursed foe');
+      wearFull('thunderfury'); s.activity = { type:'combat', monsterHp:500, curseUntil:now+4000 };
+      near(FF.d3SetDmgMult({}, s), 1.12, 'Thunderfury Death Static: +12% vs a Cursed foe');
+      // Herald Mausoleum (incoming): Cursed foes deal 15% less.
+      wearFull('herald'); s.activity = { type:'combat', monsterHp:500, curseUntil:now+4000 };
+      near(FF.d3SetIncomingMult(s), 0.85, 'Herald Mausoleum: Cursed foes deal 15% less');
+      s.activity.curseUntil = now-1; near(FF.d3SetIncomingMult(s), 1.0, 'Mausoleum inert once the Curse lapses');
+      // Curse appliers (2pc) reach curseApply through their hooks; verify curse tracking + one applier (Ghost Step via a Dodge).
+      wearD3('duelist', 2); s.activity = { type:'combat', monsterHp:500 };
+      ok(!FF.enemyCursed(s), 'no Curse before a Dodge');
+      FF.onPlayerDodged(); ok(FF.enemyCursed(s), 'Ghost Step (Duelist D3 2pc): a Dodge Curses the foe');
+      // The other appliers (Cursemark / Gravestone / Grave Guard / Grave Spark) fire at their combat hooks — set is defined.
+      ['nightblade','juggernaut','herald','thunderfury'].forEach(function(c){ ok(FF.D3_SET_DEFS[c], c+' has a D3 Curse set'); });
+    } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.activity=sv.act; }
+  });
+
   // ---- D2 sets: Batch B effects (damage & tempo) -----------------------------------------------------
   suite('D2 sets: Batch B combat effects', function(){
     var s = FF._state;
