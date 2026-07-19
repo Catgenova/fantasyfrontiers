@@ -14650,7 +14650,9 @@
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
       var ringPct = (data.dmgBonus != null) ? data.dmgBonus : data.bonus;
       var ringFantasticMult = rt.kind ? WAND_RARITY_DMG_MULT.fantastic : getRarity('fantastic').mult;
-      html += '<div class="item-top"><div class="item-icon">'+rt.icon+'</div><div><div class="item-name">'+rt.name+'</div><div class="item-meta">+'+Math.round(ringPct*100)+'% '+ringBonusLabel(rt)+' (Normal)</div></div></div>';
+      // Match every other forge card: requirement + live owned count, not just the bonus.
+      var ringOwned = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'ring_'+rt.id+'_t'+sel+'_'+r; }));
+      html += '<div class="item-top"><div class="item-icon">'+rt.icon+'</div><div><div class="item-name">'+rt.name+'</div><div class="item-meta">Req. Lv '+data.levelReq+' &bull; +'+Math.round(ringPct*100)+'% '+ringBonusLabel(rt)+' (Normal) &bull; Owned: '+ringOwned+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('ring',rt.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
       html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>+'+Math.round(ringPct*100)+'% (Normal)</span><span>+'+Math.round(ringPct*100*ringFantasticMult)+'% (Fantastic)</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+jewelrySuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
@@ -14684,7 +14686,8 @@
       var isWard = at.kind==='resistance';
       var normPct = isWard ? Math.round(amData.bonus*100) : 0;
       html += '<div class="item-card'+(amIsActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+at.icon+'</div><div><div class="item-name">'+at.name+'</div><div class="item-meta">'+(isWard ? 'Flat damage resistance' : 'Flat armor bonus')+'</div></div></div>';
+      var amOwned = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return amuletBaseId(at.id, amSel, r); }));
+      html += '<div class="item-top"><div class="item-icon">'+at.icon+'</div><div><div class="item-name">'+at.name+'</div><div class="item-meta">Req. Lv '+amData.levelReq+' &bull; '+(isWard ? 'Flat damage resistance' : 'Flat armor bonus')+' &bull; Owned: '+amOwned+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('amulet',at.id,tierRange(maxUnlocked),amSel,METAL_TIER_NAMES[amSel]+' (Lv'+TIER_LEVELS[amSel]+')',amIsActive)+'</div>';
       html += '<div class="item-stats"><span>+'+Math.round(amData.xp*1.5)+' XP</span><span>'+amData.name+'</span>'+(isWard ? '<span>+'+normPct+'% resist (Normal)</span><span>+'+Math.round(normPct*WAND_RARITY_DMG_MULT.fantastic)+'% (Fantastic)</span>' : '<span>defense '+amData.defense+'</span>')+'</div>';
       html += '<div class="chance-line">Output: <b>1x '+amData.name+'</b> at <b>'+jewelrySuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
@@ -25007,6 +25010,43 @@
       });
       var qBtn = document.querySelector('[data-action="forgeStackableQuiver"][data-type="'+q.id+'"]');
       if(qBtn) qBtn.disabled = !(quiverSkillLvl >= quiverData.levelReq && hasInputs(quiverData.inputs));
+    });
+
+    // Jewelrycrafting rings + amulets: these emitted inp- ids but had no live updater, so their
+    // "(N owned)" counts only refreshed on a full render -- which read as several crafts passing
+    // between updates while every other forge ticked down immediately.
+    var jewelLvl = getLevel(state.xp.jewelrycrafting);
+    var jewelMax = 0;
+    for(var jmi=0; jmi<TIER_COUNT; jmi++){ if(TIER_LEVELS[jmi] <= jewelLvl) jewelMax = jmi; }
+    RING_TYPES.forEach(function(rt){
+      var rSel = Math.min(selectedRingTier[rt.id]||0, jewelMax);
+      rSel = craftFilterTier(rSel, jewelMax, function(t){ return getRingTierData(rt.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('ring', {typeId:rt.id, tierIndex:t}); });
+      var rData = getRingTierData(rt.id, rSel);
+      Object.keys(rData.inputs).forEach(function(k){
+        var el = document.getElementById('inp-ring-'+rt.id+'-'+k);
+        if(el){
+          var have = state.inventory[k]||0, need = rData.inputs[k];
+          el.textContent = need+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+have+' owned)';
+          el.className = have>=need ? 'ok' : 'bad';
+        }
+      });
+      var rBtn = document.querySelector('[data-action="forgeRing"][data-type="'+rt.id+'"]');
+      if(rBtn) rBtn.disabled = !(jewelLvl >= rData.levelReq && hasInputs(rData.inputs));
+    });
+    AMULET_TYPES.forEach(function(at){
+      var aSel = Math.min(selectedAmuletTier[at.id]||0, jewelMax);
+      aSel = craftFilterTier(aSel, jewelMax, function(t){ return getAmuletTierData(at.id, t).inputs; }, function(t){ return !!findActiveSpecialCraftSlotFor('amulet', {typeId:at.id, tierIndex:t}); });
+      var aData = getAmuletTierData(at.id, aSel);
+      Object.keys(aData.inputs).forEach(function(k){
+        var el = document.getElementById('inp-amulet-'+at.id+'-'+k);
+        if(el){
+          var have = state.inventory[k]||0, need = aData.inputs[k];
+          el.textContent = need+'x '+((ALL_SELLABLE[k]||{}).name || k)+' ('+have+' owned)';
+          el.className = have>=need ? 'ok' : 'bad';
+        }
+      });
+      var aBtn = document.querySelector('[data-action="forgeAmulet"][data-type="'+at.id+'"]');
+      if(aBtn) aBtn.disabled = !(jewelLvl >= aData.levelReq && hasInputs(aData.inputs));
     });
 
     // Runesmithing wards: mirror the shield input/button live-update.
