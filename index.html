@@ -8356,9 +8356,9 @@
   }
   // Rare Tier-20 armor of a material (any slot) -- the forge catalyst.
   function setArmorRareIds(material){ return SET_ARMOR_SLOTS.filter(function(slot){ return BODY_ARMOR_MATERIALS[material].baseDefense[slot] != null; }).map(function(slot){ return 'bodyarmor_'+material+'_'+slot+'_t20_rare'; }); }
-  function setArmorRecipe(material, matInput, xpSkill, rareLabel, layer){
+  function setArmorRecipe(material, matInput, xpSkill, rareLabel, layer, rareCount){
     layer = layer || 'd1';
-    return { layer:layer, setarmor:true, material:material, inputs:matInput, rareCount:10, rareLabel:rareLabel, xpSkill:xpSkill,
+    return { layer:layer, setarmor:true, material:material, inputs:matInput, rareCount:rareCount || 10, rareLabel:rareLabel, xpSkill:xpSkill,
       outcomes: SET_PIECES_BY_MATERIAL[material] || [],
       countRare: function(){ return setArmorRareIds(material).reduce(function(n,id){ return n + (state.inventory[id]||0); }, 0); },
       consumeRare: function(count){ setArmorRareIds(material).forEach(function(id){ if(count<=0) return; var have = state.inventory[id]||0, take = Math.min(have,count); if(take>0){ state.inventory[id] = have-take; count -= take; } }); } };
@@ -8368,6 +8368,12 @@
   MASTERCRAFT_RECIPES.d1_leather = setArmorRecipe('leather',   { tanning_t20:1000 },     'leatherworking', 'Rare Tier-20 Leather armor');
   MASTERCRAFT_RECIPES.d1_chain   = setArmorRecipe('chain',     { metallurgy_t20:1000 },  'armorsmithing',  'Rare Tier-20 Chain armor');
   MASTERCRAFT_RECIPES.d1_plate   = setArmorRecipe('plate',     { metallurgy_t20:1000 },  'armorsmithing',  'Rare Tier-20 Plate armor');
+  // D2 (Tunnel) set formulas forge the t22 pieces -- a full tier above D1. Double the refined bill and the
+  // rare-armor catalyst so the orc warband gear is a real end-game grind over the D1 (cave) sets.
+  MASTERCRAFT_RECIPES.d2_cloth   = setArmorRecipe('tailoring', { weaving_t20:2000 },    'tailoring',      'Rare Tier-20 Cloth armor',   'd2', 20);
+  MASTERCRAFT_RECIPES.d2_leather = setArmorRecipe('leather',   { tanning_t20:2000 },     'leatherworking', 'Rare Tier-20 Leather armor', 'd2', 20);
+  MASTERCRAFT_RECIPES.d2_chain   = setArmorRecipe('chain',     { metallurgy_t20:2000 },  'armorsmithing',  'Rare Tier-20 Chain armor',   'd2', 20);
+  MASTERCRAFT_RECIPES.d2_plate   = setArmorRecipe('plate',     { metallurgy_t20:2000 },  'armorsmithing',  'Rare Tier-20 Plate armor',   'd2', 20);
   // Leatherworking-only body armor bonus: each equipped Leather piece (any of the 4
   // Chain/Plate-style slots) adds a flat +5% Bow damage and +1% dodge chance, scaled by
   // that piece's own rarity multiplier. Flat per slot -- does not grow with tier.
