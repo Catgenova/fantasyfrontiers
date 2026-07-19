@@ -2992,7 +2992,7 @@
     eq(rec.inputs.forestry_t20, 2000, 'D2 arcane formula costs 2000 t20 wood');
     ['fire','water','earth','light','dark'].forEach(function(el){ eq(rec.inputs['glyph_'+el], 400, 'D2 arcane costs 400 '+el+' glyphs'); });
     // Item table: 12 effects x 4 rarities = 48 D2 gear items, all d2-tagged.
-    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D2).length, 48, '12 x 4 rarities = 48 D2 legendary gear items');
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D2).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D2[id].group==='arcane'; }).length, 48, '12 arcane effects x 4 rarities = 48 D2 arcane gear items');
     ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D2).every(function(id){ var it = FF.LEGENDARY_GEAR_ITEMS_D2[id]; return it.legendary && it.gear && it.dungeon==='d2' && it.sell===0 && /<svg/.test(it.icon); }), 'every D2 gear item is flagged, d2-layer, non-vendorable, iconned');
     eq(FF.LEGENDARY_GEAR_ITEMS_D2[FF.legGearItemIdD2('cindermaw','normal')].name, 'Cindermaw', 'Normal D2 legendary name is bare');
     ok(/Fantastic/.test(FF.LEGENDARY_GEAR_ITEMS_D2[FF.legGearItemIdD2('cindermaw','fantastic')].name), 'Fantastic D2 legendary carries the rarity suffix');
@@ -3057,6 +3057,39 @@
     ok(Math.abs(s.lumenShield - 7) < 1e-9, 'legBarrierAdd banks the Barrier amount');
     ok(FF.legBarrierCap(s) >= Math.round(FF.maxHp(s) * 0.40) - 1e-9, 'the Barrier cap is at least 40% of max Health');
     s.lumenShield = svShield;
+  });
+
+  // ---- D2 (Tunnel) legendary shields (Batch H) -------------------------------------------------------
+  suite('mastercraft: D2 legendary shields (defense group)', function(){
+    var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2','defense')]);
+    ok(rec && rec.gear === true, 'D2 defense has a gear forge recipe');
+    eq(rec.layer, 'd2', 'the D2 defense recipe is a d2-layer recipe');
+    eq(rec.rareCount, 20, 'D2 defense needs 20 rare Tier-20 shields (double D1)');
+    eq(rec.inputs.metallurgy_t20, 2000, 'D2 defense formula costs 2000 t20 ingots');
+    eq(rec.outcomes.length, 6, 'the D2 defense pool forges one of 6 shields');
+    eq(FF.LEG_GEAR_GROUP_KEYS_D2.defense.length, 6, 'six D2 shield effects in the defense group');
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D2).length, 72, '18 D2 effects (12 arcane + 6 defense) x 4 rarities = 72 items');
+    // Detection: each shield legendary is picked up by legActive when slotted to the off-hand.
+    function legSt(key, base){ return { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+      uniqueItems:{ L:{ uid:'L', leg:key, kind:'offhand', base:'stshield_'+(base||'shieldSmall')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedOffhandUid:'L' }; }
+    ['cofferguard','rotshell','goreshell','rimeshell','thornwall','bulwarkbreach'].forEach(function(k){ eq(FF.legActive(k, legSt(k)), true, 'legActive detects '+k); });
+    ok(/Bulwark of the Breach/.test(FF.LEGENDARY_GEAR_ITEMS_D2[FF.legGearItemIdD2('bulwarkbreach','normal')].name), 'the herald D2 shield is Bulwark of the Breach');
+    // Full forge: give the bill, craft, confirm a d2 defense-group unique on a top-tier shield base.
+    var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
+    s.inventory = { metallurgy_t20: 2000 }; s.blueprints = {}; s.uniqueItems = {};
+    FF.legGearRareIds('defense').forEach(function(id){ s.inventory[id] = 8; }); // 3 shield types x 8 = 24 >= 20
+    var bpId = FF.masterworkBlueprintId('d2','defense'); s.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
+    eq(minted.length, 1, 'the D2 defense forge mints exactly one legendary unique');
+    var u = minted[0];
+    ok(u && u.leg && FF.LEG_GEAR_GROUP_KEYS_D2.defense.indexOf(u.leg) !== -1, 'the unique carries a D2 defense-group effect');
+    ok(/^stshield_.+_t19_(rare|supreme|fantastic)$/.test(u.base), 'the unique is a top-tier shield base, floored at Rare');
+    ok(FF.uniqueDisplayName(u).indexOf(FF.D2_LEG_GEAR_MAP[u.leg].name) === 0, 'the forged D2 shield displays its effect name');
+    eq(s.inventory.metallurgy_t20, 0, 'the forge consumes the 2000 ingots');
+    var rareLeft = FF.legGearRareIds('defense').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
+    eq(rareLeft, FF.legGearRareIds('defense').length * 8 - 20, 'the forge consumes exactly 20 rare shields');
+    s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
   });
 
   // ---- D1 legendary AMULETS (Pendants): 3 universal effects, worn in the single Amulet slot -----------
