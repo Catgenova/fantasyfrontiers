@@ -10616,7 +10616,7 @@
     var u = state.uniqueItems[uid];
     var m = /^ring_(.+)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
     var slotId = findEmptyRingSlot();
-    if(!slotId){ addLog('All 5 Ring slots are full. Unequip one first.','danger'); return false; }
+    if(!slotId){ addLog('All 5 Ring slots are full. Unequip one first.','danger'); spawnFloatingText('All 5 Ring slots full — unequip one', 'ft-fail'); return false; }
     state.jewelrySlots[slotId] = { typeId: m[1], tier: u.tier+1, rarity: u.rarity, uid: uid };
     addLog('You equipped '+uniqueDisplayName(u)+'.','important'); return true;
   }
@@ -11085,10 +11085,11 @@
       + '<div class="unique-inv-hint">Tap to equip · enchant · sell · link</div>'
       + '</div>';
   }
-  // Static proficiency gate for equipping a unique (dynamic conditions -- a 2h weapon occupying the
-  // offhand, all ring slots full -- are left to the equip call, which messages on failure). Returns a
-  // short "Requires X Lv Y" string when the piece can't be equipped yet, else null.
+  // Gate for equipping a unique: a proficiency requirement, or (for rings) no free slot. Returns a short
+  // reason string when the piece can't be equipped right now, else null. Rings are the one slot that can't
+  // auto-swap (5 interchangeable slots), so a full set is surfaced here instead of failing on click.
   function uniqueEquipLock(u){
+    if(u.kind==='ring' && !findEmptyRingSlot()) return 'All 5 Ring slots full — unequip one';
     if(u.kind==='weapon'){
       var mw=/^stweapon_(.+)_t\d+_\w+$/.exec(u.base); if(!mw) return 'Cannot equip';
       var tw=mw[1];

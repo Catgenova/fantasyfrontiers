@@ -6176,6 +6176,32 @@
     s.equippedMainhand=sv.mh; s.equippedMainhandTier=sv.t; s.equippedMainhandRarity=sv.r; s.equippedMainhandUid=sv.uid; s.uniqueItems=sv.ui;
   });
 
+  // ---- Equip a unique ring: full slots must show a reason, not silently do nothing --------------
+  suite('unique ring: full-slots feedback', function(){
+    var s = FF._state;
+    var sv = { ui:s.uniqueItems, js:s.jewelrySlots };
+    try {
+      var u = { uid:'ur', base:'ring_plain_t0_rare', kind:'ring', tier:0, rarity:'rare', enchants:[], enhance:0 };
+      s.uniqueItems = { ur:u };
+      // All 5 ring slots occupied -> equipping the unique ring is blocked with a clear reason.
+      s.jewelrySlots = {};
+      FF.RING_SLOT_IDS.forEach(function(id){ s.jewelrySlots[id] = { typeId:'plain', tier:1, rarity:'normal' }; });
+      ok(/Ring slots full/.test(FF.uniqueEquipLock(u) || ''), 'a full ring set reports "slots full" instead of null');
+      var cardFull = FF.renderUniqueEquipCard(u);
+      ok(/disabled/.test(cardFull) && !/data-action="improveEquip"/.test(cardFull), 'the card shows a disabled button (no live Equip) when slots are full');
+      FF.equipUnique('ur');
+      eq(FF.uniqueIsEquipped('ur'), false, 'equipping is a no-op while every ring slot is full');
+      // Free a slot -> it becomes equippable and equips.
+      s.jewelrySlots[FF.RING_SLOT_IDS[0]] = { typeId:null, tier:0, rarity:'normal' };
+      eq(FF.uniqueEquipLock(u), null, 'a free slot clears the lock');
+      ok(/data-action="improveEquip"/.test(FF.renderUniqueEquipCard(u)), 'the card offers a live Equip button once a slot frees');
+      FF.equipUnique('ur');
+      eq(FF.uniqueIsEquipped('ur'), true, 'the unique ring equips into the free slot');
+    } finally {
+      s.uniqueItems = sv.ui; s.jewelrySlots = sv.js;
+    }
+  });
+
   // ---- Mortal / Immortal path -------------------------------------------------------------
   suite('mortal path: half XP + death conversion', function(){
     ok(typeof FF.isMortal === 'function', 'isMortal exported');
