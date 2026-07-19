@@ -2162,8 +2162,17 @@
     ok(r && typeof r.min === 'number' && typeof r.max === 'number', 'returns a {min,max} pair');
     ok(r.min >= 1 && r.max >= 1, 'a landed hit is always at least 1 (never zero/negative)');
     ok(r.min <= r.max, 'min never exceeds max');
-    // Mitigation must never INFLATE the foe's raw damage -- the displayed number is what lands.
-    ok(r.max <= foe.atkMax, 'post-mitigation max never exceeds the raw max');
+    // Mitigation LOWERS the landed hit: the same foe lands strictly less on an armoured profile than a
+    // bare one. Note "never exceeds raw" is NOT an invariant -- a bad type/element matchup multiplies the
+    // hit above raw (weightedAdvantage averages >1), exactly as monsterAttackTick does, so the honest
+    // displayed number can top the foe's raw max on a poor matchup. What must hold is that armour reduces it.
+    var _neutralMix = { slashing:1/3, piercing:1/3, blunt:1/3 };
+    var _bareProf = { armorDefense:0, offhandStyle:null, offhandItem:null, offhandProf:1, armorMix:_neutralMix, shieldProf:1, flat:1, tenacity:1 };
+    var _armProf  = { armorDefense:60, offhandStyle:null, offhandItem:null, offhandProf:1, armorMix:_neutralMix, shieldProf:1, flat:1, tenacity:1 };
+    var _bareMax = FF.enemyDamageRangeVsPlayer(foe, s, _bareProf).max;
+    var _armMax  = FF.enemyDamageRangeVsPlayer(foe, s, _armProf).max;
+    ok(_armMax < _bareMax, 'armour mitigates: the same foe lands less on an armoured profile');
+    ok(_armMax < foe.atkMax, 'a well-armoured profile takes less than the foe\'s raw max');
     // Harder-hitting foe -> strictly larger (or equal, if both floor at 1) landed damage.
     var big = FF.enemyDamageRangeVsPlayer({ name:'Big', atkMin:1000, atkMax:2000, attackTypes:{blunt:1}, armorTypes:{blunt:1}, element:null }, s);
     ok(big.max >= r.max, 'a foe with higher raw damage lands at least as much on the same gear');
