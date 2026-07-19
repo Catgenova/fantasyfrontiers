@@ -3298,6 +3298,39 @@
     s.inventory = svInv; s.blueprints = svBp; s.uniqueItems = svUniq;
   });
 
+  // ---- D3 (Underground) legendary shields (Batch S) -------------------------------------------------
+  suite('mastercraft: D3 legendary shields', function(){
+    var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','defense')]);
+    ok(rec && rec.gear === true && rec.layer === 'd3', 'D3 defense has a d3-layer gear recipe');
+    eq(rec.rareCount, 30, 'D3 defense needs 30 rare Tier-20 shields');
+    eq(rec.inputs.metallurgy_t20, 3000, 'D3 defense costs 3000 t20 ingots');
+    eq(rec.outcomes.length, 6, 'the D3 defense pool forges one of 6 shields');
+    eq(FF.LEG_GEAR_GROUP_KEYS_D3.defense.length, 6, 'six D3 shield effects');
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D3).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D3[id].group==='defense'; }).length, 24, '6 defense effects x 4 rarities = 24 D3 shield items');
+    function legSt(key){ return { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+      uniqueItems:{ L:{ uid:'L', leg:key, kind:'offhand', base:'stshield_shieldSmall_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedOffhandUid:'L' }; }
+    ['cryptguard','blightshell','boneshell','rimecrypt','tombwall','mausoleumwall'].forEach(function(k){ eq(FF.legActive(k, legSt(k)), true, 'legActive detects '+k); });
+    ok(/Mausoleum Wall/.test(FF.LEGENDARY_GEAR_ITEMS_D3[FF.legGearItemIdD3('mausoleumwall','normal')].name), 'the herald D3 shield is Mausoleum Wall');
+    // Tombwall incoming reduction (folds into d3SetIncomingMult) vs a Decayed foe.
+    var now = Date.now();
+    var tw = { activity:{type:'combat', monsterHp:100, decayStacks:3, decayUntil:now+4000}, uniqueItems:{ L:{ uid:'L', leg:'tombwall', kind:'offhand', base:'stshield_shieldMedium_t19_rare', tier:19, rarity:'rare' } }, equippedOffhandUid:'L' };
+    near(FF.d3SetIncomingMult(tw), 0.80, 'Tombwall: Decayed attackers deal 20% less');
+    tw.activity = { type:'combat', monsterHp:100 }; near(FF.d3SetIncomingMult(tw), 1.0, 'Tombwall inert on a clean foe');
+    // Full forge.
+    var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
+    s.inventory = { metallurgy_t20: 3000 }; s.blueprints = {}; s.uniqueItems = {};
+    FF.legGearRareIds('defense').forEach(function(id){ s.inventory[id] = 12; }); // 3 shield types x 12 = 36 >= 30
+    var bpId = FF.masterworkBlueprintId('d3','defense'); s.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
+    eq(minted.length, 1, 'the D3 defense forge mints exactly one legendary unique');
+    ok(minted[0].leg && FF.LEG_GEAR_GROUP_KEYS_D3.defense.indexOf(minted[0].leg) !== -1, 'the unique carries a D3 defense-group effect');
+    ok(/^stshield_.+_t19_(rare|supreme|fantastic)$/.test(minted[0].base), 'the unique is a top-tier shield base');
+    var rareLeft = FF.legGearRareIds('defense').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
+    eq(rareLeft, FF.legGearRareIds('defense').length * 12 - 30, 'the forge consumes exactly 30 rare shields');
+    s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
+  });
+
   // ---- D1 legendary AMULETS (Pendants): 3 universal effects, worn in the single Amulet slot -----------
   // ---- D1 armor Set Items: data model + set-piece detection ------------------------------------------
   suite('D1 armor sets: data model + detection', function(){

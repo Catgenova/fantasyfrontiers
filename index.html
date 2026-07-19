@@ -4774,7 +4774,14 @@
     { key:'voltveil',   name:'Voltveil',   group:'arcane', slot:'offhand', base:'wardEarth', cls:'thunderfury', desc:'Reflecting a hit discharges Static and Curses the foe.' },
     { key:'shadeveil',  name:'Shadeveil',  group:'arcane', slot:'offhand', base:'wardDark',  cls:'nightblade',  desc:'Foes that damage you gain Decay and a Vulnerability stack.' },
     { key:'gleamveil',  name:'Gleamveil',  group:'arcane', slot:'offhand', base:'wardLight', cls:'lumen',       desc:'Your ward reflect applies Decay and heals more per Decay stack on the foe.' },
-    { key:'sanctveil',  name:'Sanctveil',  group:'arcane', slot:'offhand', base:'wardLight', cls:'templar',     desc:'Reflecting a hit grants a Holy shield and Curses the foe.' }
+    { key:'sanctveil',  name:'Sanctveil',  group:'arcane', slot:'offhand', base:'wardLight', cls:'templar',     desc:'Reflecting a hit grants a Holy shield and Curses the foe.' },
+    // Shields (offhand, defense formula) — all Block-triggered
+    { key:'cryptguard',    name:'Cryptguard',      group:'defense', slot:'offhand', base:'shieldSmall',  cls:'treasureHunter', desc:'Blocking Curses the attacker; blocking a Cursed foe scatters bonus gold.' },
+    { key:'blightshell',   name:'Blightshell',     group:'defense', slot:'offhand', base:'shieldSmall',  cls:'plaguebearer',   desc:'Blocking applies Decay to the attacker.' },
+    { key:'boneshell',     name:'Boneshell',       group:'defense', slot:'offhand', base:'shieldSmall',  cls:'reaver',         desc:'Blocking banks a Soul Charge and heals you 4% of max Health.' },
+    { key:'rimecrypt',     name:'Rimecrypt',       group:'defense', slot:'offhand', base:'shieldMedium', cls:'frostwarden',    desc:'Blocking Chills and Decays the attacker.' },
+    { key:'tombwall',      name:'Tombwall',        group:'defense', slot:'offhand', base:'shieldMedium', cls:'sentinel',       desc:'Blocking applies Decay; Decayed attackers deal 20% less to you.' },
+    { key:'mausoleumwall', name:'Mausoleum Wall',  group:'defense', slot:'offhand', base:'shieldLarge',  cls:'herald',         desc:'A Perfect Guard Curses the attacker; at max Guard a Cursed attacker is briefly stunned.' }
   ];
   var D3_LEG_GEAR_MAP = {}; D3_LEG_GEAR_DEFS.forEach(function(d){ D3_LEG_GEAR_MAP[d.key] = d; });
   function legGearItemIdD3(key, rarity){ return 'leggear_d3_' + key + '_' + rarity; }
@@ -4874,7 +4881,8 @@
       countRare: countRareT20Cloaks, consumeRare: consumeRareT20Cloaks,
       outcomes: D2_LEG_CLOAK_DEFS.map(function(d){ return d.key; }) },
     // D3 (Underground) arcane formula -> one random D3 legendary wand/scepter/staff/ward. Tripled bill + 30 catalysts.
-    d3_arcane:  legGearRecipeD3('arcane', { forestry_t20:3000, glyph_fire:600, glyph_water:600, glyph_earth:600, glyph_light:600, glyph_dark:600 }, 'arcanism', 'Rare Tier-20 Arcane Gear')
+    d3_arcane:  legGearRecipeD3('arcane', { forestry_t20:3000, glyph_fire:600, glyph_water:600, glyph_earth:600, glyph_light:600, glyph_dark:600 }, 'arcanism', 'Rare Tier-20 Arcane Gear'),
+    d3_defense: legGearRecipeD3('defense', { metallurgy_t20:3000 }, 'shieldsmithing', 'Rare Tier-20 Shields')
   };
   function mastercraftRecipeFor(bpItem){ return bpItem ? (MASTERCRAFT_RECIPES[bpItem.dungeon + '_' + bpItem.slot] || null) : null; }
   var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS);
@@ -5714,6 +5722,7 @@
     if(setFullD3('sentinel', st) && enemyDecaying(st)) m *= 0.80;                     // Crypt Wall: Decayed attackers deal 20% less
     if(setFullD3('herald', st) && enemyCursed(st)) m *= 0.85;                         // Mausoleum: Cursed foes deal 15% less
     if(set2D3('knight', st) && (st.knightStacks||0) >= knightStackCap(st)) m *= 0.90; // Grave Momentum: -10% damage at max Momentum
+    if(legActive('tombwall', st) && enemyDecaying(st)) m *= 0.80;                     // Tombwall (D3 shield): Decayed attackers deal 20% less
     return m;
   }
   // Outgoing-damage D3 LEGENDARY bonuses (Batch R), folded into one PLAYER_DMG_MODS row. Appliers/utility live
@@ -13026,6 +13035,19 @@
       if(legActive('thornwall')){ var _tw = Math.max(1, Math.round((_preBlock - rawDmg) * LEG_THORNWALL_MULT)); applyChipDamage(_tw); spawnCombatFloat('Thornwall -'+fmt(_tw), 'ft-crit', true); }
       // Bulwark of the Breach (D2): every Block banks a Barrier worth 2% of max Health.
       if(legActive('bulwarkbreach')) legBarrierAdd(maxHp(state) * LEG_BULWARKBREACH_PCT);
+      // ---- D3 (Underground) legendary shields (Batch S): all Block-triggered ----
+      // Cryptguard (D3): a Block Curses the attacker; blocking an already-Cursed foe scatters bonus gold.
+      if(legActive('cryptguard')){ if(enemyCursed(state)){ var _cq = Math.max(1, Math.round(randInt(monster.goldMin, monster.goldMax) * LEG_COFFER_FRAC)); earnGold(_cq); spawnCombatFloat('+'+fmt(_cq)+'g', 'ft-success', false); } curseApply(act); }
+      // Blightshell (D3): a Block applies Decay to the attacker.
+      if(legActive('blightshell')) decayApply(act, 1);
+      // Boneshell (D3): a Block banks a Soul Charge and heals you 4% of max Health.
+      if(legActive('boneshell')){ d3SoulsAdd(1); var _bh = Math.min(Math.round(maxHp(state) * 0.04), healRoom(state)); if(_bh > 0){ state.playerHp += _bh; spawnFloatingText('+'+_bh+' HP', 'ft-success'); } }
+      // Rimecrypt (D3): a Block Chills and Decays the attacker.
+      if(legActive('rimecrypt')){ frostwardenApplyChill(act); decayApply(act, 1); }
+      // Tombwall (D3): a Block applies Decay (its damage-reduction rides d3SetIncomingMult).
+      if(legActive('tombwall')) decayApply(act, 1);
+      // Mausoleum Wall (D3): a Perfect Guard Curses the attacker; at max Guard a Cursed attacker is briefly stunned.
+      if(legActive('mausoleumwall')){ if((state.heraldGuardStacks||0) >= heraldGuardMaxStacks(state) && enemyCursed(state)){ act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + 1500); if(!offlineCapture) spawnFloatingText('Entombed!', 'ft-rare'); } curseApply(act); }
     }
     // Sentinel thorns reflect (Spiked Barrier reflects ALL incoming; Iron Maiden adds the blocked share;
     // Bulwark's Wrath adds your Armor rating). Reckoning (Lv40) lets the reflect Critically Hit.
