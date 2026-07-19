@@ -3244,6 +3244,52 @@
     s.inventory=svInv; s.blueprints=svBp;
   });
 
+  // ---- D3 (Underground) universal accessories: Signets / Shrouds / Pendants (Batch V) ---------------
+  suite('mastercraft: D3 legendary accessories', function(){
+    var ring = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','ring')]);
+    var cape = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','cape')]);
+    var amu  = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','amulet')]);
+    ok(ring && ring.layer==='d3' && ring.rareCount===30 && ring.outcomes.length===5, 'D3 ring: d3 recipe, 30 rare, 5 Signets');
+    ok(cape && cape.layer==='d3' && cape.rareCount===30 && cape.outcomes.length===3, 'D3 cape: d3 recipe, 30 rare, 3 Shrouds');
+    ok(amu  && amu.layer==='d3'  && amu.rareCount===30  && amu.outcomes.length===3, 'D3 amulet: d3 recipe, 30 rare, 3 Pendants');
+    eq(FF.D3_LEG_RING_DEFS.length, 5, '5 D3 Signets'); eq(FF.D3_LEG_CLOAK_DEFS.length, 3, '3 D3 Shrouds'); eq(FF.D3_LEG_AMULET_DEFS.length, 3, '3 D3 Pendants');
+    eq(Object.keys(FF.LEGENDARY_RING_ITEMS).filter(function(id){ return FF.LEGENDARY_RING_ITEMS[id].dungeon==='d3'; }).length, 20, '5 Signets x 4 = 20 D3 ring items');
+    eq(Object.keys(FF.LEGENDARY_CLOAK_ITEMS).filter(function(id){ return FF.LEGENDARY_CLOAK_ITEMS[id].dungeon==='d3'; }).length, 12, '3 Shrouds x 4 = 12 D3 cloak items');
+    eq(Object.keys(FF.LEGENDARY_AMULET_ITEMS).filter(function(id){ return FF.LEGENDARY_AMULET_ITEMS[id].dungeon==='d3'; }).length, 12, '3 Pendants x 4 = 12 D3 amulet items');
+
+    var R = FF.RING_SLOT_IDS[0], now = Date.now();
+    function ringSt(key, r){ var js={}; js[R]={leg:key,rarity:r||'rare'}; return { jewelrySlots:js }; }
+    function ringDmgSt(key, act){ var js={}; js[R]={leg:key,rarity:'rare'}; return { jewelrySlots:js, bodyArmor:{}, activity:act, playerHp:1e9, physique:{}, xp:{} }; }
+    function cloakDmgSt(key, act){ return { jewelrySlots:{}, bodyArmor:{ back:{leg:key,rarity:'rare'} }, activity:act, playerHp:1e9, physique:{}, xp:{} }; }
+    // Grave (vs Cursed) / Wight (vs afflicted) / Reap (vs low-HP) — via d3AccessoryDmgMult.
+    near(FF.d3AccessoryDmgMult({hp:1000}, ringDmgSt('d3_grave', {type:'combat', monsterHp:800, curseUntil:now+4000})), 1.20, 'Signet of the Grave: +20% vs a Cursed foe (rare)');
+    near(FF.d3AccessoryDmgMult({hp:1000}, ringDmgSt('d3_grave', {type:'combat', monsterHp:800})), 1.0, 'Grave inert on an uncursed foe');
+    near(FF.d3AccessoryDmgMult({hp:1000}, ringDmgSt('d3_wight', {type:'combat', monsterHp:800, decayStacks:1, decayUntil:now+4000})), 1.16, 'Signet of the Wight: +16% vs an afflicted (Decaying) foe');
+    near(FF.d3AccessoryDmgMult({hp:1000}, cloakDmgSt('d3_reaper', {type:'combat', monsterHp:200})), 1.24, 'Shroud of the Reaper: +24% vs a foe below 30% HP');
+    near(FF.d3AccessoryDmgMult({hp:1000}, cloakDmgSt('d3_reaper', {type:'combat', monsterHp:800})), 1.0, 'Reap inert on a healthy foe');
+    // Decay Power (Crypt) via d3DecayTickMult.
+    near(FF.d3DecayTickMult(ringSt('d3_crypt')), 1.40, 'Signet of the Crypt: +40% Decay Power (rare)');
+    // Deathless (Undeath) via d3SetIncomingMult, only below 50% HP.
+    var lowHp = { bodyArmor:{ back:{leg:'d3_undeath',rarity:'rare'} }, jewelrySlots:{}, physique:{}, xp:{}, activity:{type:'combat',monsterHp:100}, playerHp:1 };
+    near(FF.d3SetIncomingMult(lowHp), 0.80, 'Shroud of Undeath: -20% Damage Reduction below 50% HP (rare)');
+    lowHp.playerHp = 1e9; near(FF.d3SetIncomingMult(lowHp), 1.0, 'Undeath inert above 50% HP');
+    // enemyAfflicted spans DoT / Decay / Curse.
+    ok(FF.enemyAfflicted({ activity:{type:'combat', monsterHp:100, curseUntil:now+4000} }), 'a Cursed foe is afflicted');
+    ok(!FF.enemyAfflicted({ activity:{type:'combat', monsterHp:100} }), 'a clean foe is not afflicted');
+    // Full forge (ring).
+    var s = FF._state, svInv=s.inventory, svBp=s.blueprints;
+    var catId = 'ring_' + FF.RING_TYPES[0].id + '_t20_rare';
+    s.inventory = { metallurgy_t20:3000, gem_voidcrystal:300, twine_t20:300, goldsmithing_t20:300 }; s.inventory[catId] = 30;
+    s.blueprints = {};
+    var bpId = FF.masterworkBlueprintId('d3','ring'); s.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var mintedId = Object.keys(s.inventory).filter(function(id){ return /^legring_d3_/.test(id) && s.inventory[id] > 0; })[0];
+    ok(mintedId, 'the D3 ring forge adds a d3 Signet to inventory');
+    ok(FF.LEGENDARY_RING_ITEMS[mintedId] && ring.outcomes.indexOf(FF.LEGENDARY_RING_ITEMS[mintedId].legKey) !== -1, 'the forged Signet carries a D3 ring-group effect');
+    eq(s.inventory[catId], 0, 'the forge consumes 30 rare t20 rings');
+    s.inventory=svInv; s.blueprints=svBp;
+  });
+
   // ---- D3 (Underground) legendary gear: arcane forge + effects (Batch R) -----------------------------
   suite('mastercraft: D3 legendary arcane (forge + effects)', function(){
     var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','arcane')]);

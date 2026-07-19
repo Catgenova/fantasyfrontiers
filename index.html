@@ -4616,6 +4616,36 @@
     LEGENDARY_CLOAK_ITEMS[id] = { id:id, legKey:d.key, dungeon:'d2', rarity:r, slot:'back', legendary:true, name:d.name + (r==='normal'?'':' ('+getRarity(r).label+')'), icon:d.icon, value:Math.round(d.base*LEGENDARY_RARITY_MULT[r]*1000)/1000, statLabel:d.stat, sell:0 }; }); });
   D2_LEG_AMULET_DEFS.forEach(function(d){ D1_LEG_AMULET_MAP[d.key] = d; LEG_RING_RARITIES.forEach(function(r){ var id = legAmuletItemIdD2(d.key, r);
     LEGENDARY_AMULET_ITEMS[id] = { id:id, legKey:d.key, dungeon:'d2', rarity:r, slot:'amulet', legendary:true, name:d.name + (r==='normal'?'':' ('+getRarity(r).label+')'), icon:d.icon, value:Math.round(d.base*LEGENDARY_RARITY_MULT[r]*1000)/1000, statLabel:d.stat, sell:0 }; }); });
+  // ---- D3 (Underground) universal accessories: Signets / Shrouds / Pendants (Batch V) ----
+  // Undead-themed universal stats built on the D3 necromancy systems (Decay / Curse / Souls). Effect keys are
+  // unique, so their defs merge into the D1 lookup maps + item tables (like the D2 accessories) — equip,
+  // display, and legendaryRingBonus/CloakBonus/AmuletBonus all work unchanged.
+  var D3_LEG_RING_DEFS = [
+    { key:'d3_crypt',   name:'Signet of the Crypt',   short:'Crypt',   stat:'Decay Power',      base:0.20, icon:svgIcon('droplet','#c9a227') },
+    { key:'d3_grave',   name:'Signet of the Grave',   short:'Grave',   stat:'vs Cursed',        base:0.10, icon:svgIcon('ghost','#c9a227') },
+    { key:'d3_ossuary', name:'Signet of the Ossuary', short:'Ossuary', stat:'Souls on Kill',    base:1,    icon:svgIcon('gem','#c9a227') },
+    { key:'d3_wight',   name:'Signet of the Wight',   short:'Wight',   stat:'vs Afflicted',     base:0.08, icon:svgIcon('starburst','#c9a227') },
+    { key:'d3_vampire', name:'Signet of the Vampire', short:'Vampire', stat:'Lifesteal vs Afflicted', base:0.06, icon:svgIcon('heart','#c9a227') }
+  ];
+  var D3_LEG_CLOAK_DEFS = [
+    { key:'d3_undeath', name:'Shroud of Undeath',    short:'Undeath', stat:'DR below 50% HP',  base:0.10, icon:svgIcon('shield','#c9a227') },
+    { key:'d3_reaper',  name:'Shroud of the Reaper', short:'Reaper',  stat:'vs low-HP foes',   base:0.12, icon:svgIcon('crossedswords','#c9a227') },
+    { key:'d3_wraith',  name:'Shroud of the Wraith', short:'Wraith',  stat:'Dodge Chance',     base:0.06, icon:svgIcon('balancepose','#c9a227') }
+  ];
+  var D3_LEG_AMULET_DEFS = [
+    { key:'d3_lich',       name:'Pendant of the Lich',     short:'Lich',       stat:'DoT Damage',   base:0.15, icon:svgIcon('starburst','#c9a227') },
+    { key:'d3_revenant',   name:'Pendant of the Revenant', short:'Revenant',   stat:'Revive HP',    base:0.20, icon:svgIcon('ghost','#c9a227') },
+    { key:'d3_malediction',name:'Pendant of Malediction',  short:'Malediction',stat:'Curse Power',  base:0.12, icon:svgIcon('droplet','#c9a227') }
+  ];
+  function legRingItemIdD3(key, rarity){ return 'legring_d3_' + key + '_' + rarity; }
+  function legCloakItemIdD3(key, rarity){ return 'legcloak_d3_' + key + '_' + rarity; }
+  function legAmuletItemIdD3(key, rarity){ return 'legamulet_d3_' + key + '_' + rarity; }
+  D3_LEG_RING_DEFS.forEach(function(d){ D1_LEG_RING_MAP[d.key] = d; LEG_RING_RARITIES.forEach(function(r){ var id = legRingItemIdD3(d.key, r);
+    LEGENDARY_RING_ITEMS[id] = { id:id, legKey:d.key, dungeon:'d3', rarity:r, slot:'ring', legendary:true, name:d.name + (r==='normal'?'':' ('+getRarity(r).label+')'), icon:d.icon, value:Math.round(d.base*LEGENDARY_RARITY_MULT[r]*1000)/1000, statLabel:d.stat, sell:0 }; }); });
+  D3_LEG_CLOAK_DEFS.forEach(function(d){ D1_LEG_CLOAK_MAP[d.key] = d; LEG_RING_RARITIES.forEach(function(r){ var id = legCloakItemIdD3(d.key, r);
+    LEGENDARY_CLOAK_ITEMS[id] = { id:id, legKey:d.key, dungeon:'d3', rarity:r, slot:'back', legendary:true, name:d.name + (r==='normal'?'':' ('+getRarity(r).label+')'), icon:d.icon, value:Math.round(d.base*LEGENDARY_RARITY_MULT[r]*1000)/1000, statLabel:d.stat, sell:0 }; }); });
+  D3_LEG_AMULET_DEFS.forEach(function(d){ D1_LEG_AMULET_MAP[d.key] = d; LEG_RING_RARITIES.forEach(function(r){ var id = legAmuletItemIdD3(d.key, r);
+    LEGENDARY_AMULET_ITEMS[id] = { id:id, legKey:d.key, dungeon:'d3', rarity:r, slot:'amulet', legendary:true, name:d.name + (r==='normal'?'':' ('+getRarity(r).label+')'), icon:d.icon, value:Math.round(d.base*LEGENDARY_RARITY_MULT[r]*1000)/1000, statLabel:d.stat, sell:0 }; }); });
   // ---- D1 legendary WEAPONS / SHIELDS / WARDS ----
   // Each forges from its formula into a UNIQUE that carries one legendary effect -- a 6th class-perk-style
   // passive, active while the item is equipped. One legendary per class's signature gear (24 weapons + 6
@@ -4901,6 +4931,25 @@
       defMap: D1_LEG_CLOAK_MAP, itemMap: LEGENDARY_CLOAK_ITEMS, itemId: legCloakItemIdD2,
       countRare: countRareT20Cloaks, consumeRare: consumeRareT20Cloaks,
       outcomes: D2_LEG_CLOAK_DEFS.map(function(d){ return d.key; }) },
+    // D3 universal accessories -> one random D3 Signet / Shroud / Pendant. Tripled bill + 30 catalysts.
+    d3_ring: { layer:'d3', slot:'ring',
+      inputs: { metallurgy_t20:3000, gem_voidcrystal:300, twine_t20:300, goldsmithing_t20:300 },
+      rareCount: 30, rareLabel:'Rare Tier-20 Rings', xpSkill:'jewelrycrafting',
+      defMap: D1_LEG_RING_MAP, itemMap: LEGENDARY_RING_ITEMS, itemId: legRingItemIdD3,
+      countRare: countRareT20Rings, consumeRare: consumeRareT20Rings,
+      outcomes: D3_LEG_RING_DEFS.map(function(d){ return d.key; }) },
+    d3_amulet: { layer:'d3', slot:'amulet',
+      inputs: { metallurgy_t20:3000, twine_t20:300, diving_t20:300 },
+      rareCount: 30, rareLabel:'Rare Tier-20 Amulets', xpSkill:'jewelrycrafting',
+      defMap: D1_LEG_AMULET_MAP, itemMap: LEGENDARY_AMULET_ITEMS, itemId: legAmuletItemIdD3,
+      countRare: countRareT20Amulets, consumeRare: consumeRareT20Amulets,
+      outcomes: D3_LEG_AMULET_DEFS.map(function(d){ return d.key; }) },
+    d3_cape: { layer:'d3', slot:'cape',
+      inputs: { weaving_t20:3000 },
+      rareCount: 30, rareLabel:'Rare Tier-20 Cloaks', xpSkill:'tailoring',
+      defMap: D1_LEG_CLOAK_MAP, itemMap: LEGENDARY_CLOAK_ITEMS, itemId: legCloakItemIdD3,
+      countRare: countRareT20Cloaks, consumeRare: consumeRareT20Cloaks,
+      outcomes: D3_LEG_CLOAK_DEFS.map(function(d){ return d.key; }) },
     // D3 (Underground) arcane formula -> one random D3 legendary wand/scepter/staff/ward. Tripled bill + 30 catalysts.
     d3_arcane:  legGearRecipeD3('arcane', { forestry_t20:3000, glyph_fire:600, glyph_water:600, glyph_earth:600, glyph_light:600, glyph_dark:600 }, 'arcanism', 'Rare Tier-20 Arcane Gear'),
     d3_defense: legGearRecipeD3('defense', { metallurgy_t20:3000 }, 'shieldsmithing', 'Rare Tier-20 Shields'),
@@ -5709,10 +5758,11 @@
     if(setFullD3('pyromancer', st) && enemyBurning(st)) m *= 1.50;
     if(setFullD3('frostwarden', st) && enemyChilled(st)) m *= 1.20;
     if(legActive('gravefrost', st) && enemyChilled(st)) m *= 1.20;   // Gravefrost (D3 water wand): Chilled foes take +20% Decay
+    m *= (1 + legendaryRingBonus('d3_crypt', st));                    // Signet of the Crypt (D3): +Decay Power
     return m; }
   function applyDecayTick(dtMs){
     var act = state.activity; if(!act || act.type!=='combat' || !enemyDecaying(state)) return;
-    var dps = (act.decayDps||0) * d3DecayTickMult(state); if(dps <= 0) return;
+    var dps = (act.decayDps||0) * d3DecayTickMult(state) * legNecromancyDoTMult(state); if(dps <= 0) return;
     var dmg = dps * dtMs / 1000;
     // Death's Aim (Sharpshooter D3 full) / Gravesight (D3 long bow): Decay ticks can Critically Hit, borrowing your crit chance/damage.
     if((setFullD3('sharpshooter') || legActive('gravesight')) && !offlineCapture && Math.random() < (criticalEyeCritChance(state) + newClassCritChance())) dmg *= (CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state));
@@ -5725,7 +5775,7 @@
   // you -- the per-set fulls read enemyCursed() from the damage chains. Curse 2-piece bonuses lay the mark.
   var CURSE_MS = 6000;
   function enemyCursed(st){ st = st || state; var a = st.activity; return !!(a && a.type==='combat' && (a.curseUntil||0) > Date.now()); }
-  function curseApply(act){ if(act && act.type==='combat') act.curseUntil = Date.now() + CURSE_MS; }
+  function curseApply(act){ if(act && act.type==='combat') act.curseUntil = Date.now() + CURSE_MS * (1 + legendaryAmuletBonus('d3_malediction')); } // Pendant of Malediction (D3): Curses last longer
   // Outgoing-damage D3 set bonuses (folded into one PLAYER_DMG_MODS row). Souls spenders + Curse amplifiers
   // live here; Decay/Curse appliers and per-class builders are wired at their combat hooks.
   function d3SetDmgMult(monster, st){ st = st || state; var m = 1; var souls = d3SoulCount(st);
@@ -5750,6 +5800,7 @@
     if(setFullD3('herald', st) && enemyCursed(st)) m *= 0.85;                         // Mausoleum: Cursed foes deal 15% less
     if(set2D3('knight', st) && (st.knightStacks||0) >= knightStackCap(st)) m *= 0.90; // Grave Momentum: -10% damage at max Momentum
     if(legActive('tombwall', st) && enemyDecaying(st)) m *= 0.80;                     // Tombwall (D3 shield): Decayed attackers deal 20% less
+    if(st.playerHp > 0 && st.playerHp < maxHp(st) * 0.50) m *= (1 - Math.min(0.9, legendaryCloakBonus('d3_undeath', st))); // Shroud of Undeath (D3): Damage Reduction below 50% HP
     return m;
   }
   // Outgoing-damage D3 LEGENDARY bonuses (Batch R), folded into one PLAYER_DMG_MODS row. Appliers/utility live
@@ -5760,6 +5811,17 @@
     if(legActive('lichbane', st) && st.playerHp >= maxHp(st) * 0.75) m *= 1.30;                       // Lichbane: +30% above 75% Health
     if(legActive('bonecrusher', st) && enemyDecaying(st)) m *= 1.50;                                  // Bonecrusher: +50% vs a Decayed foe
     if(legActive('bonevolley', st) && enemyDecaying(st)) m *= 1.15;                                   // Bonevolley: +15% vs a Decayed foe
+    return m;
+  }
+  // Any affliction on the foe (drives the Wight/Vampire accessories): a DoT/ailment, Decay, or Curse.
+  function enemyAfflicted(st){ st = st || state; return enemyHasAilment(st) || enemyDecaying(st) || enemyCursed(st); }
+  // Pendant of the Lich (D3): every damage-over-time you inflict (poison/bleed/burn/frostbite/Decay) ticks harder.
+  function legNecromancyDoTMult(st){ st = st || state; return 1 + legendaryAmuletBonus('d3_lich', st); }
+  // D3 universal-accessory outgoing-damage bonuses (Batch V), folded into a PLAYER_DMG_MODS row.
+  function d3AccessoryDmgMult(monster, st){ st = st || state; var m = 1;
+    if(enemyCursed(st)) m *= (1 + legendaryRingBonus('d3_grave', st) + legendaryAmuletBonus('d3_malediction', st)); // Curse Power (Grave) + Hex (Malediction)
+    if(enemyAfflicted(st)) m *= (1 + legendaryRingBonus('d3_wight', st));                             // Dread: vs any afflicted foe
+    if(monster && enemyHpFrac(monster, st) < 0.30) m *= (1 + legendaryCloakBonus('d3_reaper', st));   // Reap: vs foes below 30% HP
     return m;
   }
   // ===== D1 set-bonus combat effects =====
@@ -5951,7 +6013,7 @@
   // on top only at the moment of a monster attack, so it is NOT folded in here.
   function playerDodgeChance(st){
     st = st || state;
-    return (getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + pyromancerHeatHazeDodge(st) + quickdrawSecondWindDodge(st) + legendaryRingBonus('dodge', st) + legendaryDodgeBonus(st) + d2SetDodgeBonus(st)) * berserkerGlassMult(st); // + Pyromancer Heat Haze; + Quickdraw Second Wind; + Signet of the Skitter; + Phantom Assault; + En Garde (Duelist D2 full); x Berserker Glass Titan (-40% Dodge)
+    return (getLeatherArmorBonuses(st).dodgeBonus * (1 + agilityLeatherMult(st)) + agilityDodgeBonus(st) + reflexesDodgeBonus(st) + pyromancerHeatHazeDodge(st) + quickdrawSecondWindDodge(st) + legendaryRingBonus('dodge', st) + legendaryDodgeBonus(st) + d2SetDodgeBonus(st) + legendaryCloakBonus('d3_wraith', st)) * berserkerGlassMult(st); // + Pyromancer Heat Haze; + Quickdraw Second Wind; + Signet of the Skitter; + Phantom Assault; + En Garde (Duelist D2 full); + Shroud of the Wraith (D3 Dodge); x Berserker Glass Titan (-40% Dodge)
   }
   // ===== Assassin (twin Claws): reworked ladder =====
   //  Lv1  Rhythm        -- alternating main/off-hand hits build a meter; at full, the next two landed
@@ -12260,7 +12322,7 @@
   function applyPotionPoisonTick(dtMs){
     var act = state.activity;
     if(!act || act.type!=='combat' || (act.potionPoisonUntil||0) <= Date.now()) return;
-    var dps = (act.potionPoisonDps || 0) * plagueBloomMult(state) * d2PoisonTickMult(state) * legPoisonTickMult(state); if(dps <= 0) return; // Plague Bloom (D1) + Virulence/Barbed (D2) + Serpentcoil (D2 short bow): poison ticks harder
+    var dps = (act.potionPoisonDps || 0) * plagueBloomMult(state) * d2PoisonTickMult(state) * legPoisonTickMult(state) * legNecromancyDoTMult(state); if(dps <= 0) return; // Plague Bloom (D1) + Virulence/Barbed (D2) + Serpentcoil (D2) + Lich (D3): poison ticks harder
     var dmg = dps * dtMs / 1000;
     act.monsterHp = Math.max(1, act.monsterHp - dmg);
     if(plaguebearerBonus(40)){ // Toxic Blood: heal 5% of poison damage dealt
@@ -12289,7 +12351,7 @@
   function applyReaverBleedTick(dtMs){
     var act = state.activity;
     if(!act || act.type!=='combat' || (act.bleedUntil||0) <= Date.now()) return;
-    var dps = (act.bleedDps || 0) * d2BleedTickMult(state); if(dps <= 0) return; // Exsanguinate/Barbed (D2): bleed ticks harder
+    var dps = (act.bleedDps || 0) * d2BleedTickMult(state) * legNecromancyDoTMult(state); if(dps <= 0) return; // Exsanguinate/Barbed (D2) + Lich (D3): bleed ticks harder
     var dmg = dps * dtMs / 1000;
     act.monsterHp = Math.max(1, act.monsterHp - dmg);
     if(reaverBonus(20)){ var heal = Math.min(Math.round(dmg * 0.08), healRoom(state)); if(heal > 0) state.playerHp += heal; } // Bloodletting
@@ -12299,14 +12361,14 @@
   function applyFrostwardenFrostbiteTick(dtMs){
     var act = state.activity;
     if(!act || act.type!=='combat' || (act.frostbiteUntil||0) <= Date.now()) return;
-    var dps = (act.frostbiteDps || 0) * d2FrostbiteTickMult(state); if(dps <= 0) return; // Barbed Ailments (Ranger D2 2pc)
+    var dps = (act.frostbiteDps || 0) * d2FrostbiteTickMult(state) * legNecromancyDoTMult(state); if(dps <= 0) return; // Barbed Ailments (Ranger D2 2pc) + Lich (D3)
     act.monsterHp = Math.max(1, act.monsterHp - dps * dtMs / 1000);
   }
   // Pyromancer Ignite (Lv1): a stacking fire DoT on its own channel; floors the enemy at 1 HP.
   function applyPyromancerBurnTick(dtMs){
     var act = state.activity;
     if(!act || act.type!=='combat' || !enemyBurning(state)) return;
-    var dps = (act.burnDps || 0) * d2BurnTickMult(state); if(dps <= 0) return; // Conflagration/Barbed (D2): burn ticks harder
+    var dps = (act.burnDps || 0) * d2BurnTickMult(state) * legNecromancyDoTMult(state); if(dps <= 0) return; // Conflagration/Barbed (D2) + Lich (D3): burn ticks harder
     var _burnDmg = dps * dtMs / 1000;
     act.monsterHp = Math.max(1, act.monsterHp - _burnDmg);
     if(legActive('emberveil')) legBarrierAdd(_burnDmg * LEG_EMBERVEIL_FRAC); // Emberveil (D2 fire ward): a share of Burn damage banks a Barrier
@@ -12355,6 +12417,7 @@
     { name:'setBonusesD3',          fn:function(c){ return d3SetDmgMult(c.monster); } },
     { name:'legBonusesD2',          fn:function(c){ return d2LegDmgMult(c.monster); } },
     { name:'legBonusesD3',          fn:function(c){ return d3LegDmgMult(c.monster); } },
+    { name:'accessoriesD3',         fn:function(c){ return d3AccessoryDmgMult(c.monster); } },
     { name:'shroudRuinD2',          fn:function(c){ return 1 + legendaryCloakBonus('d2_ruin'); } },
     { name:'weaponsmithEdge',       fn:function(c){ return weaponsmithEdgeMult(); } },
     { name:'zealotry',              fn:function(c){ return zealotryDmgMult(); } },
@@ -12787,7 +12850,7 @@
     }
     // Reaper (Lv 40/80) + Voidshadow (Soul Tax) + Knight (Lv 60 Warlord's Presence, below-half HP):
     // heal a share of the damage actually inflicted.
-    var lifestealPct = reaperLifestealPct() + nightbladeLifestealPct() + knightWarlordLifestealPct() + legendaryLifestealPct(state) + legendaryRingBonus('d2_leech', state) + ((enchTot.lifesteal||0)/100); // + Crimson Harvest (per Bleed stack); + Signet of the Leech (D2); + Lifesteal enchant (weapon/jewelry, enchTot already Spellblade-boosted)
+    var lifestealPct = reaperLifestealPct() + nightbladeLifestealPct() + knightWarlordLifestealPct() + legendaryLifestealPct(state) + legendaryRingBonus('d2_leech', state) + (enemyAfflicted(state) ? legendaryRingBonus('d3_vampire', state) : 0) + ((enchTot.lifesteal||0)/100); // + Crimson Harvest (per Bleed stack); + Signet of the Leech (D2); + Necrotic Leech (D3, vs afflicted); + Lifesteal enchant
     if(lifestealPct > 0){
       var wouldHeal = Math.round(effDmg * lifestealPct * (legActive('soulflay') ? LEG_SOULFLAY_MULT : 1)); // Soulflay (D2 scythe): Siphon heals +60%
       var healed = Math.min(wouldHeal, healRoom(state));
@@ -12879,6 +12942,7 @@
     d2BloodthirstOnKill(state); // Bloodthirst (Executioner D2 full): each kill stacks a short attack-speed buff (dungeon foes included)
     d2HeadtakerOnKill(state); // Headtaker (D2 full-moon axe): each kill stacks a short damage buff
     if(set2D3('executioner')) d3SoulsAdd(2); // Harvest (Executioner D3 2pc): each kill banks 2 Soul Charges
+    if(legRingEquipped('d3_ossuary')) d3SoulsAdd(Math.round(legendaryRingBonus('d3_ossuary', state))); // Signet of the Ossuary (D3): each kill banks Soul Charges
     if(legActive('soulharvester')) state.d3ExecStacks = Math.min(10, (state.d3ExecStacks||0) + 1); // Soulharvester (D3 full-moon axe): each kill raises the Execute threshold (+2%/kill, cap +20%)
     if(legActive('bonereaver') && enemyBleeding(state)){ var _br = Math.min(Math.round(maxHp(state) * 0.10), healRoom(state)); if(_br > 0){ state.playerHp += _br; spawnFloatingText('+'+_br+' HP', 'ft-success'); } } // Bonereaver (D3 half-moon axe): a Bleeding foe's death heals you (its Bleed carry is captured below)
     if(legRingEquipped('d2_feast', state)){ var _feast = Math.min(Math.round(maxHp(state) * legendaryRingBonus('d2_feast', state)), healRoom(state)); if(_feast > 0){ state.playerHp += _feast; spawnFloatingText('+'+_feast+' HP', 'ft-success'); } } // Signet of the Feast (D2): Life on Kill
@@ -13222,6 +13286,9 @@
       } else if(legActive('gravewarden') && (state.knightStacks||0) >= knightStackCap(state) && !act.d3GravewardenUsed){ // Gravewarden (D3 claymore): survive at 1 HP at max Momentum + Curse the attacker
         act.d3GravewardenUsed = true; state.playerHp = 1; dmgToPlayer = 0; curseApply(act);
         addLog('The grave will not have you — Gravewarden!', 'important'); spawnFloatingText('Gravewarden!', 'ft-rare');
+      } else if(legAmuletEquipped('d3_revenant') && !act.d3RevenantUsed){ // Pendant of the Revenant (D3): once per fight, revive at a share of max Health
+        act.d3RevenantUsed = true; state.playerHp = Math.max(1, Math.round(maxHp(state) * Math.min(1, legendaryAmuletBonus('d3_revenant', state)))); dmgToPlayer = 0;
+        addLog('The Pendant of the Revenant drags you back — Undying!', 'important'); spawnFloatingText('Undying!', 'ft-rare');
       }
     }
     // Bastion (Herald full): cap any single blow at 25% of max Health before it reaches you.
@@ -27170,7 +27237,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, D2_LEG_GEAR_DEFS:D2_LEG_GEAR_DEFS, D2_LEG_GEAR_MAP:D2_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D2:LEGENDARY_GEAR_ITEMS_D2, legGearItemIdD2:legGearItemIdD2, LEG_GEAR_GROUP_KEYS_D2:LEG_GEAR_GROUP_KEYS_D2, D3_LEG_GEAR_DEFS:D3_LEG_GEAR_DEFS, D3_LEG_GEAR_MAP:D3_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D3:LEGENDARY_GEAR_ITEMS_D3, legGearItemIdD3:legGearItemIdD3, LEG_GEAR_GROUP_KEYS_D3:LEG_GEAR_GROUP_KEYS_D3, d3LegDmgMult:d3LegDmgMult, d2LegDmgMult:d2LegDmgMult, legStormbrandCrit:legStormbrandCrit, legVoidfangShred:legVoidfangShred, legBarrierAdd:legBarrierAdd, legBarrierCap:legBarrierCap, d2HeadtakerOnKill:d2HeadtakerOnKill, legRunegorgeCritDmg:legRunegorgeCritDmg, legSpineshatterMult:legSpineshatterMult, legPoisonTickMult:legPoisonTickMult, legFarstrikeCritDmg:legFarstrikeCritDmg, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D2_LEG_RING_DEFS:D2_LEG_RING_DEFS, D2_LEG_CLOAK_DEFS:D2_LEG_CLOAK_DEFS, D2_LEG_AMULET_DEFS:D2_LEG_AMULET_DEFS, legRingItemIdD2:legRingItemIdD2, legCloakItemIdD2:legCloakItemIdD2, legAmuletItemIdD2:legAmuletItemIdD2, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, D2_LEG_GEAR_DEFS:D2_LEG_GEAR_DEFS, D2_LEG_GEAR_MAP:D2_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D2:LEGENDARY_GEAR_ITEMS_D2, legGearItemIdD2:legGearItemIdD2, LEG_GEAR_GROUP_KEYS_D2:LEG_GEAR_GROUP_KEYS_D2, D3_LEG_GEAR_DEFS:D3_LEG_GEAR_DEFS, D3_LEG_GEAR_MAP:D3_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D3:LEGENDARY_GEAR_ITEMS_D3, legGearItemIdD3:legGearItemIdD3, LEG_GEAR_GROUP_KEYS_D3:LEG_GEAR_GROUP_KEYS_D3, d3LegDmgMult:d3LegDmgMult, D3_LEG_RING_DEFS:D3_LEG_RING_DEFS, D3_LEG_CLOAK_DEFS:D3_LEG_CLOAK_DEFS, D3_LEG_AMULET_DEFS:D3_LEG_AMULET_DEFS, legRingItemIdD3:legRingItemIdD3, legCloakItemIdD3:legCloakItemIdD3, legAmuletItemIdD3:legAmuletItemIdD3, d3AccessoryDmgMult:d3AccessoryDmgMult, enemyAfflicted:enemyAfflicted, legNecromancyDoTMult:legNecromancyDoTMult, d2LegDmgMult:d2LegDmgMult, legStormbrandCrit:legStormbrandCrit, legVoidfangShred:legVoidfangShred, legBarrierAdd:legBarrierAdd, legBarrierCap:legBarrierCap, d2HeadtakerOnKill:d2HeadtakerOnKill, legRunegorgeCritDmg:legRunegorgeCritDmg, legSpineshatterMult:legSpineshatterMult, legPoisonTickMult:legPoisonTickMult, legFarstrikeCritDmg:legFarstrikeCritDmg, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D2_LEG_RING_DEFS:D2_LEG_RING_DEFS, D2_LEG_CLOAK_DEFS:D2_LEG_CLOAK_DEFS, D2_LEG_AMULET_DEFS:D2_LEG_AMULET_DEFS, legRingItemIdD2:legRingItemIdD2, legCloakItemIdD2:legCloakItemIdD2, legAmuletItemIdD2:legAmuletItemIdD2, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerDefenseProfile:playerDefenseProfile, enemyDamageRangeVsPlayer:enemyDamageRangeVsPlayer,
       matchesSpecialCraft:matchesSpecialCraft,
