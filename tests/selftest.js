@@ -3420,6 +3420,47 @@
     s.inventory = svInv; s.blueprints = svBp; s.uniqueItems = svUniq;
   });
 
+  // ---- D4 legendary shields (Batch DD) -------------------------------------------------------------
+  suite('mastercraft: D4 legendary shields', function(){
+    var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d4','defense')]);
+    ok(rec && rec.gear === true && rec.layer === 'd4', 'D4 defense has a d4-layer gear recipe');
+    eq(rec.rareCount, 40, 'D4 defense needs 40 rare Tier-20 shields');
+    eq(rec.inputs.metallurgy_t20, 4000, 'D4 defense costs 4000 t20 ingots');
+    eq(rec.outcomes.length, 6, 'the D4 defense pool forges one of 6 shields');
+    eq(FF.LEG_GEAR_GROUP_KEYS_D4.defense.length, 6, 'six D4 shield effects');
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D4[id].group==='defense'; }).length, 24, '6 defense effects x 4 rarities = 24 D4 shield items');
+    function legSt(key, extra){ var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
+      uniqueItems:{ L:{ uid:'L', leg:key, kind:'offhand', base:'stshield_shieldSmall_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedOffhandUid:'L' };
+      if(extra) for(var k in extra) st[k]=extra[k]; return st; }
+    ['hoardwall','venomscale','bloodscale','rimescale','wyrmthornwall','dragonbulwark'].forEach(function(k){ eq(FF.legActive(k, legSt(k)), true, 'legActive detects '+k); });
+    ok(/Dragonscale Bulwark/.test(FF.LEGENDARY_GEAR_ITEMS_D4[FF.legGearItemIdD4('dragonbulwark','normal')].name), 'the herald D4 shield is Dragonscale Bulwark');
+    var now = Date.now();
+    // Dragonscale Bulwark: +12% resistance to all elements.
+    near(FF.d4SetElementResist(legSt('dragonbulwark'), 'fire'), 0.12, 'Dragonscale Bulwark: +12% resist, all elements');
+    near(FF.d4SetElementResist(legSt('dragonbulwark'), 'dark'), 0.12, 'Dragonscale Bulwark covers every element');
+    near(FF.d4SetElementResist(legSt('bloodscale'), 'fire'), 0, 'a non-resist shield adds no elemental resist');
+    // Venomscale Shield: -20% from a Poisoned, elemental foe.
+    near(FF.d4LegIncomingMult(legSt('venomscale', { activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+5000, potionPoisonDps:100} }), { element:'fire' }), 0.80, 'Venomscale: -20% from a Poisoned elemental foe');
+    near(FF.d4LegIncomingMult(legSt('venomscale', { activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+5000, potionPoisonDps:100} }), { element:null }), 1.0, 'Venomscale needs the foe to carry an element');
+    near(FF.d4LegIncomingMult(legSt('venomscale'), { element:'fire' }), 1.0, 'Venomscale inert vs an unpoisoned foe');
+    // Wyrmthorn Wall: reflect carries the attacker's element, +50%.
+    near(FF.d4SentinelThornsMult({ element:'fire' }, legSt('wyrmthornwall')), 1.50, 'Wyrmthorn Wall: +50% reflect carrying the element');
+    near(FF.d4SentinelThornsMult({ element:null }, legSt('wyrmthornwall')), 1.0, 'Wyrmthorn Wall needs the attacker to have an element');
+    // Full forge.
+    var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
+    s.inventory = { metallurgy_t20: 4000 }; s.blueprints = {}; s.uniqueItems = {};
+    FF.legGearRareIds('defense').forEach(function(id){ s.inventory[id] = 16; }); // 3 shield types x 16 = 48 >= 40
+    var bpId = FF.masterworkBlueprintId('d4','defense'); s.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
+    eq(minted.length, 1, 'the D4 defense forge mints exactly one legendary unique');
+    ok(minted[0].leg && FF.LEG_GEAR_GROUP_KEYS_D4.defense.indexOf(minted[0].leg) !== -1, 'the unique carries a D4 defense-group effect');
+    ok(/^stshield_.+_t19_(rare|supreme|fantastic)$/.test(minted[0].base), 'the unique is a top-tier shield base');
+    var rareLeft = FF.legGearRareIds('defense').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
+    eq(rareLeft, FF.legGearRareIds('defense').length * 16 - 40, 'the forge consumes exactly 40 rare shields');
+    s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
+  });
+
   // ---- D3 (Underground) legendary shields (Batch S) -------------------------------------------------
   suite('mastercraft: D3 legendary shields', function(){
     var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','defense')]);
