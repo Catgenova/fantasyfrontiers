@@ -9102,6 +9102,38 @@
   // Item-producing special crafts a Workshop can double (tier-UPGRADE kinds like offhand
   // can't be doubled). Each doubled output rolls its rarity independently.
   var SPECIAL_DOUBLEABLE_KINDS = ['tool','stackweapon','stackshield','stackquiver','ward','bodyarmor','belt','ring','amulet','workshop'];
+  // Sacrificeable categories. Hoisted out of sacrificeItem() so the craft-family integrity test can
+  // assert against it -- 'relic' is deliberately here but is NOT a craft family (Broken Relics drop).
+  var STACKABLE_SAC_CATEGORIES = ['stackweapon','stackshield','stackquiver','ring','amulet','relic','tool','belt'];
+  // ---- CRAFT FAMILY REGISTRY (Stage 0: descriptive only -- nothing consumes it yet) --------------
+  // Adding a craft family currently means registering it in ~12 hand-maintained places, and a family
+  // present in 11 of 12 is invisible: that is exactly how 'ward' went missing from matchesSpecialCraft
+  // (Inscribe never became Stop) and 'ring'/'amulet' from the live inputs updater (material counts
+  // lagged several crafts). This table states each family ONCE; the selftest asserts it still matches
+  // every hand-written list, so an incomplete family fails CI instead of reaching players.
+  //
+  // Deliberately descriptive for now -- no runtime behaviour reads it. Later stages derive the lists.
+  // Note a kind can own SEVERAL UI cards (stackweapon renders melee, wand and scepter separately),
+  // and idPrefix:null records "this card has no live inputs updater" -- a known gap, not an omission.
+  var CRAFT_FAMILIES = {
+    tool:        { match:['skillId','tierIndex'],          doubleable:true,  sacrifice:'tool',        cards:[{ idPrefix:'inp-tool',      tierTarget:'tool' }] },
+    stackweapon: { match:['typeId','tierIndex'],           doubleable:true,  sacrifice:'stackweapon', cards:[{ idPrefix:'inp-stw',       tierTarget:'melee' },
+                                                                                                             { idPrefix:'inp-wand',      tierTarget:'wand' },
+                                                                                                             { idPrefix:'inp-scepter',   tierTarget:'wand' }] },
+    stackshield: { match:['typeId','tierIndex'],           doubleable:true,  sacrifice:'stackshield', cards:[{ idPrefix:'inp-sts',       tierTarget:'shield' }] },
+    stackquiver: { match:['typeId','tierIndex'],           doubleable:true,  sacrifice:'stackquiver', cards:[{ idPrefix:'inp-stq',       tierTarget:'quiver' }] },
+    ward:        { match:['typeId','tierIndex'],           doubleable:true,  sacrifice:null,          cards:[{ idPrefix:'inp-ward',      tierTarget:'ward' }] },
+    bodyarmor:   { match:['material','slot','tierIndex'],  doubleable:true,  sacrifice:null,          cards:[{ idPrefix:'inp-bodyarmor', tierTarget:'armor' }] },
+    ring:        { match:['typeId','tierIndex'],           doubleable:true,  sacrifice:'ring',        cards:[{ idPrefix:'inp-ring',      tierTarget:'ring' }] },
+    amulet:      { match:['typeId','tierIndex'],           doubleable:true,  sacrifice:'amulet',      cards:[{ idPrefix:'inp-amulet',    tierTarget:'amulet' }] },
+    workshop:    { match:['skillId','tierIndex'],          doubleable:true,  sacrifice:null,          cards:[{ idPrefix:'inp-workshop',  tierTarget:'workshop' }] },
+    belt:        { match:['tierIndex'],                    doubleable:true,  sacrifice:'belt',        cards:[{ idPrefix:null,            tierTarget:'belt' }] },
+    cottage:     { match:['tierIndex'],                    doubleable:false, sacrifice:null,          cards:[{ idPrefix:null,            tierTarget:'cottage' }] },
+    offhand:     { match:['typeId'],                       doubleable:false, sacrifice:null,          cards:[{ idPrefix:null,            tierTarget:null }] }
+  };
+  // Families whose cards have no live inputs updater today. Listed so the test locks the CURRENT set:
+  // a NEW family landing here fails, rather than silently repeating the ring/amulet lag.
+  var CRAFT_FAMILIES_WITHOUT_LIVE_INPUTS = ['belt','cottage','offhand'];
   // Produce ONE output for this special craft at the given rarity; returns the rarity
   // actually used (bodyarmor clamps to its material's allowed set; workshops are always normal).
   function produceSpecialOutput(act, rarity){
@@ -11290,7 +11322,6 @@
     return Math.round(15 * Math.pow(1.25, tier-1) * (jewelryBoost ? 1.5 : 1) * getRarity(rarity||'normal').mult);
   }
   function sacrificeItem(category, id, silent){
-    var STACKABLE_SAC_CATEGORIES = ['stackweapon','stackshield','stackquiver','ring','amulet','relic','tool','belt'];
     if(STACKABLE_SAC_CATEGORIES.indexOf(category)!==-1 && state.lockedItems[id]){
       addLog('That item is locked. Unlock it first to sacrifice it.', 'danger');
       return;
@@ -26328,6 +26359,9 @@
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerDefenseProfile:playerDefenseProfile, enemyDamageRangeVsPlayer:enemyDamageRangeVsPlayer,
       matchesSpecialCraft:matchesSpecialCraft,
+      CRAFT_FAMILIES:CRAFT_FAMILIES, CRAFT_FAMILIES_WITHOUT_LIVE_INPUTS:CRAFT_FAMILIES_WITHOUT_LIVE_INPUTS,
+      SPECIAL_DOUBLEABLE_KINDS:SPECIAL_DOUBLEABLE_KINDS, STACKABLE_SAC_CATEGORIES:STACKABLE_SAC_CATEGORIES,
+      TIER_STEP_TARGETS:TIER_STEP_TARGETS,
       playerElementWeakness:playerElementWeakness, ARMOR_MATERIAL_WEAKNESS:ARMOR_MATERIAL_WEAKNESS, ARMOR_ELEMENT_WEAKNESS_PER_PIECE:ARMOR_ELEMENT_WEAKNESS_PER_PIECE, CHAINPLATE_SLOTS:CHAINPLATE_SLOTS, incomingElementMult:incomingElementMult,
       FAMILIAR_ELEMENT:FAMILIAR_ELEMENT, familiarElement:familiarElement, DAMAGE_SPELL_TYPES:DAMAGE_SPELL_TYPES,
       WARD_TYPES:WARD_TYPES, WARD_TYPE_MAP:WARD_TYPE_MAP, isWard:isWard, WARD_ITEMS:WARD_ITEMS, wardReflectPct:wardReflectPct, WARD_FULL_REFLECT_CHANCE:WARD_FULL_REFLECT_CHANCE, getWardTierData:getWardTierData, WARD_ELEMENTS:WARD_ELEMENTS,

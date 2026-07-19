@@ -2016,6 +2016,67 @@
   });
 
   // ---- Dungeons: D1 "Cave" (25 arachnids, L100->125, ~10x boss, threat targeting) ---------
+  // ---- CRAFT FAMILY REGISTRY INTEGRITY (Stage 0) ----------------------------------------------
+  // A craft family has to be registered in ~12 hand-maintained places. A family present in 11 of 12
+  // is invisible, which is how 'ward' went missing from matchesSpecialCraft and 'ring'/'amulet' from
+  // the live inputs updater -- both shipped to players. CRAFT_FAMILIES states each family once; these
+  // assertions prove it still agrees with every hand-written list, so an incomplete family fails here
+  // instead of in someone's game. Nothing consumes the registry yet -- this is the safety net first.
+  suite('craft families: registry matches every hand-written list', function(){
+    var F = FF.CRAFT_FAMILIES;
+    ok(F && typeof F === 'object', 'CRAFT_FAMILIES is exported');
+    var kinds = Object.keys(F);
+    eq(kinds.length, 12, 'all 12 craft families are described');
+
+    // 1) Every family is MATCHABLE, using the match keys the registry claims. This is the exact
+    //    failure ward had: startable but never matchable, so its card never showed Stop.
+    var sample = { skillId:'mining', typeId:'sword', tierIndex:3, material:'plate', slot:'chest' };
+    kinds.forEach(function(kind){
+      var act = { type:'craft', craftKind:kind }, params = {};
+      F[kind].match.forEach(function(k){ act[k] = sample[k]; params[k] = sample[k]; });
+      eq(FF.matchesSpecialCraft(act, kind, params), true, kind + ': matchable via its declared match keys');
+      // and a differing value on the FIRST match key must NOT match, or every card would show Stop.
+      var k0 = F[kind].match[0], bad = {};
+      F[kind].match.forEach(function(k){ bad[k] = sample[k]; });
+      bad[k0] = (k0 === 'tierIndex') ? 99 : 'zzz-not-a-real-value';
+      eq(FF.matchesSpecialCraft(act, kind, bad), false, kind + ': a different ' + k0 + ' does not match');
+    });
+
+    // 2) doubleable flags must equal SPECIAL_DOUBLEABLE_KINDS exactly (both directions).
+    var regDouble = kinds.filter(function(k){ return F[k].doubleable; }).sort();
+    var listDouble = (FF.SPECIAL_DOUBLEABLE_KINDS || []).slice().sort();
+    eq(regDouble.join(','), listDouble.join(','), 'registry doubleable flags match SPECIAL_DOUBLEABLE_KINDS');
+
+    // 3) sacrifice categories must equal STACKABLE_SAC_CATEGORIES, minus 'relic' which is a Broken
+    //    Relic drop rather than a craft family -- encoded so the difference is intentional, not drift.
+    var regSac = kinds.map(function(k){ return F[k].sacrifice; }).filter(Boolean).sort();
+    var listSac = (FF.STACKABLE_SAC_CATEGORIES || []).filter(function(c){ return c !== 'relic'; }).sort();
+    eq(regSac.join(','), listSac.join(','), 'registry sacrifice categories match STACKABLE_SAC_CATEGORIES (relic aside)');
+    ok((FF.STACKABLE_SAC_CATEGORIES || []).indexOf('relic') !== -1, "'relic' is still a sacrifice category (not a craft family)");
+
+    // 4) Every card's tier-stepper target must exist, or its +/- stepper silently does nothing.
+    kinds.forEach(function(kind){
+      (F[kind].cards || []).forEach(function(card){
+        if(card.tierTarget === null) return;   // offhand has no tier stepper
+        ok(!!FF.TIER_STEP_TARGETS[card.tierTarget], kind + ': tier target "' + card.tierTarget + '" exists in TIER_STEP_TARGETS');
+      });
+    });
+
+    // 5) Lock the set of families lacking a live inputs updater. ring/amulet were in this state and
+    //    their material counts lagged several crafts; a NEW family landing here must fail loudly.
+    var noLive = kinds.filter(function(k){
+      return (F[k].cards || []).every(function(c){ return !c.idPrefix; });
+    }).sort();
+    eq(noLive.join(','), (FF.CRAFT_FAMILIES_WITHOUT_LIVE_INPUTS || []).slice().sort().join(','),
+       'the set of families without a live inputs updater is unchanged (belt, cottage, offhand)');
+
+    // 6) Every family declares at least one card and at least one match key.
+    kinds.forEach(function(kind){
+      ok((F[kind].cards || []).length > 0, kind + ': declares at least one UI card');
+      ok((F[kind].match || []).length > 0, kind + ': declares at least one match key');
+    });
+  });
+
   // ---- Every special craft kind must be matchable ---------------------------------------------
   // Regression: 'ward' (Runesmithing) was missing from matchesSpecialCraft, so a running ward craft
   // could never be found by its card -- the Inscribe button never became Stop and the progress bar
