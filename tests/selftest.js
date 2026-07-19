@@ -3461,6 +3461,82 @@
     s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
   });
 
+  // ---- D4 legendary melee: slash + pierce (Batch EE) ------------------------------------------------
+  suite('mastercraft: D4 legendary slash + pierce', function(){
+    ['slash','pierce'].forEach(function(g){
+      var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d4', g)]);
+      ok(rec && rec.gear === true && rec.layer === 'd4', 'D4 '+g+' has a d4-layer gear recipe');
+      eq(rec.rareCount, 40, 'D4 '+g+' needs 40 rare Tier-20 weapons');
+      eq(rec.inputs.metallurgy_t20, 4000, 'D4 '+g+' costs 4000 t20 ingots');
+    });
+    eq(FF.LEG_GEAR_GROUP_KEYS_D4.slash.length, 6, 'six D4 slash effects');
+    eq(FF.LEG_GEAR_GROUP_KEYS_D4.pierce.length, 4, 'four D4 pierce effects');
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D4[id].group==='slash'; }).length, 24, '6 slash effects x 4 rarities');
+    eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).filter(function(id){ return FF.LEGENDARY_GEAR_ITEMS_D4[id].group==='pierce'; }).length, 16, '4 pierce effects x 4 rarities');
+    function legSt(key, base, extra){ var st = { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:1e9,
+      uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'scimitar')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' };
+      if(extra) for(var k in extra) st[k]=extra[k]; return st; }
+    var now = Date.now();
+
+    // --- Read-only amplifiers ---
+    // Greedwyrm's Claw: +2% per 1k gold this fight (cap +50%).
+    near(FF.d4LegDmgMult({}, legSt('greedwyrm','scimitar',{ activity:{type:'combat', monsterHp:100, goldEarned:3000} })), 1.06, 'Greedwyrm: +2% per 1k gold (3k -> +6%)');
+    near(FF.d4LegDmgMult({}, legSt('greedwyrm','scimitar',{ activity:{type:'combat', monsterHp:100, goldEarned:99000} })), 1.50, 'Greedwyrm caps at +50%');
+    near(FF.d4LegDmgMult({}, legSt('greedwyrm','scimitar')), 1.0, 'Greedwyrm inert with no gold this fight');
+    // Wyrmdancer's Fang: +6% per Wrath stack; builds Wrath twice as fast.
+    near(FF.d4LegDmgMult({}, legSt('wyrmdancer','rapier',{ d4Wrath:5, d4WrathUntil:now+9999 })), 1.30, "Wyrmdancer: +6% per Wrath (5 -> +30%)");
+    var wd = legSt('wyrmdancer','rapier'); wd.d4Wrath = 0; wd.d4WrathUntil = 0; FF.d4WrathOnHit(wd); eq(FF.d4WrathStacks(wd), 2, "Wyrmdancer's Fang builds 2 Wrath per hit");
+    // Emberdraw: opener +50%.
+    near(FF.d4LegDmgMult({}, legSt('emberdraw','falchion',{ activity:{type:'combat', monsterHp:100, samuraiFirstStrike:true} })), 1.50, 'Emberdraw: opening strike +50%');
+    near(FF.d4LegDmgMult({}, legSt('emberdraw','falchion')), 1.0, 'Emberdraw only rides the opener');
+    // Drakelance: +20% at max Momentum.
+    near(FF.d4LegDmgMult({}, legSt('drakelance','claymore',{ knightStacks:999 })), 1.20, 'Drakelance: +20% at max Momentum');
+    near(FF.d4LegDmgMult({}, legSt('drakelance','claymore',{ knightStacks:0 })), 1.0, 'Drakelance inert below max Momentum');
+    // Runewyrm Blade: echoes strike the weakness (advantage bite).
+    near(FF.d4EchoMult(legSt('runewyrm','greatsword')), FF.ELEMENT_ADVANTAGE_MULT, 'Runewyrm Blade: echoes strike the weakness');
+
+    // --- Bursts / execute helpers ---
+    var swMon = { hp:1000 };
+    var swSt = legSt('shadowwyrm','claw',{ activity:{type:'combat', monsterHp:250} }); // 25% HP -> 75% missing
+    near(FF.d4ShadowwyrmBurst(1000, swMon, swSt), Math.round(1000 * (0.50 + 1.50*0.75) * FF.elementDmgMult(swSt,'fire')), 'Shadowwyrm Immolation scales with the foe\'s missing Health');
+    eq(FF.d4ShadowwyrmBurst(1000, swMon, legSt('gorewyrm','halfmoonaxe')), 0, 'no Shadowwyrm burst without the claw');
+    var sfSt = legSt('soulflame','scythe');
+    near(FF.d4SoulflameBurst(1000, sfSt), Math.round(1000 * 0.12 * FF.elementDmgMult(sfSt,'fire')), 'Soulflame exhales a ~12% Fire burst');
+    var ewMon = { hp:1000, isBoss:false };
+    ok(FF.d4EmberwyrmExecutes(ewMon, legSt('emberwyrm','fullmoonaxe',{ activity:{type:'combat', monsterHp:200, burnUntil:now+5000, burnStacks:2} })), 'Emberwyrm executes a Burning foe below 25% Health');
+    ok(!FF.d4EmberwyrmExecutes(ewMon, legSt('emberwyrm','fullmoonaxe',{ activity:{type:'combat', monsterHp:200} })), 'Emberwyrm needs the foe Burning or Scorched');
+    ok(!FF.d4EmberwyrmExecutes({ hp:1000, isBoss:true }, legSt('emberwyrm','fullmoonaxe',{ activity:{type:'combat', monsterHp:200, burnUntil:now+5000, burnStacks:2} })), 'Emberwyrm never executes a boss');
+
+    // --- Behavioural: Gorewyrm bleed Fire lifesteal; Blightwyrm poison Scorch ---
+    var s = FF._state, sv = { ba:s.bodyArmor, ui:s.uniqueItems, act:s.activity, hp:s.playerHp, mh:s.equippedMainhandUid };
+    var mhp = FF.maxHp(s);
+    try {
+      s.bodyArmor = {}; s.uniqueItems = { G:{ uid:'G', leg:'gorewyrm', kind:'weapon', base:'stweapon_halfmoonaxe_t19_rare', tier:19, rarity:'rare' } }; s.equippedMainhandUid = 'G';
+      s.activity = { type:'combat', monsterHp:1000000, bleedDps:1000, bleedUntil:now+9999 }; s.playerHp = Math.round(mhp*0.5); var hp0 = s.playerHp;
+      var before = s.activity.monsterHp; FF.applyReaverBleedTick(1000); var drop = before - s.activity.monsterHp;
+      ok(drop > 1000, 'Gorewyrm adds a Fire component to Bleed ticks'); ok(s.playerHp > hp0, 'Gorewyrm lifesteals from the Bleed Fire');
+      s.uniqueItems = { B:{ uid:'B', leg:'blightwyrm', kind:'weapon', base:'stweapon_hatchet_t19_rare', tier:19, rarity:'rare' } }; s.equippedMainhandUid = 'B';
+      s.activity = { type:'combat', monsterHp:1000000, potionPoisonUntil:now+9999, potionPoisonDps:1000 };
+      FF.applyPotionPoisonTick(1000); ok(FF.enemyScorched(s), "Blightwyrm's poison applies Scorch");
+    } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.activity=sv.act; s.playerHp=sv.hp; s.equippedMainhandUid=sv.mh; }
+
+    // Detection for all 10.
+    ['greedwyrm','blightwyrm','gorewyrm','shadowwyrm','emberwyrm','soulflame'].forEach(function(k){ eq(FF.legActive(k, legSt(k, FF.D4_LEG_GEAR_MAP[k].base)), true, 'legActive detects '+k); });
+    ['wyrmdancer','emberdraw','runewyrm','drakelance'].forEach(function(k){ eq(FF.legActive(k, legSt(k, FF.D4_LEG_GEAR_MAP[k].base)), true, 'legActive detects '+k); });
+
+    // Full forge (slash).
+    var s2 = FF._state, svInv=s2.inventory, svBp=s2.blueprints, svUniq=s2.uniqueItems;
+    s2.inventory = { metallurgy_t20: 4000 }; s2.blueprints = {}; s2.uniqueItems = {};
+    FF.legGearRareIds('slash').forEach(function(id){ s2.inventory[id] = 8; });
+    var bpId = FF.masterworkBlueprintId('d4','slash'); s2.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var minted = Object.keys(s2.uniqueItems).map(function(k){ return s2.uniqueItems[k]; });
+    eq(minted.length, 1, 'the D4 slash forge mints one legendary unique');
+    ok(minted[0].leg && FF.LEG_GEAR_GROUP_KEYS_D4.slash.indexOf(minted[0].leg) !== -1, 'the unique carries a D4 slash-group effect');
+    ok(/^stweapon_.+_t19_(rare|supreme|fantastic)$/.test(minted[0].base), 'the unique is a top-tier slash-weapon base');
+    s2.inventory=svInv; s2.blueprints=svBp; s2.uniqueItems=svUniq;
+  });
+
   // ---- D3 (Underground) legendary shields (Batch S) -------------------------------------------------
   suite('mastercraft: D3 legendary shields', function(){
     var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','defense')]);
