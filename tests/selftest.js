@@ -3326,6 +3326,64 @@
     } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; }
   });
 
+  // ---- D3 sets: foundation (t23, layer isolation, necromancy systems) — Batch L ----------------------
+  suite('D3 sets: foundation', function(){
+    eq(FF.D3_SET_CLASS_IDS.length, 24, 'D3 has a set for all 24 classes');
+    eq(FF.SET_TIER_INDEX_D3, FF.SET_TIER_INDEX_D2 + 1, 'D3 set pieces sit one tier (t23) above D2 (t22)');
+    // Every D3 bonus key is fresh vs BOTH the class's D1 and D2 sets.
+    var clash = FF.D3_SET_CLASS_IDS.filter(function(cls){ var a=FF.D1_SET_DEFS[cls], b=FF.D2_SET_DEFS[cls], c=FF.D3_SET_DEFS[cls];
+      return c.b2.key===a.b2.key || c.bf.key===a.bf.key || c.b2.key===b.b2.key || c.bf.key===b.bf.key; });
+    eq(clash.length, 0, 'every D3 set bonus uses a fresh key, distinct from its D1 and D2 sets');
+    FF.D3_SET_CLASS_IDS.forEach(function(cls){ var d=FF.D3_SET_DEFS[cls];
+      ok(d.b2 && d.b2.name && d.b2.desc, cls+' D3 has a named 2-piece bonus');
+      ok(d.bf && d.bf.name && d.bf.desc, cls+' D3 has a named full-set bonus'); });
+    ['reaper','berserker','executioner'].forEach(function(id){ eq(FF.D3_SET_DEFS[id].full, 3, id+' D3 is a 3-piece set'); });
+    // t23 base armour exists and out-defends t22.
+    var t22 = FF.BODY_ARMOR_ITEMS['bodyarmor_plate_chest_t'+FF.SET_TIER_INDEX_D2+'_rare'];
+    var t23 = FF.BODY_ARMOR_ITEMS['bodyarmor_plate_chest_t'+FF.SET_TIER_INDEX_D3+'_rare'];
+    ok(t22 && t23, 'both t22 and t23 plate chest bases exist');
+    ok(t23.defense > t22.defense, 't23 base armour rolls higher defense than t22');
+    // Layer isolation across all three layers.
+    var s = FF._state, sv = { ba:s.bodyArmor, ui:s.uniqueItems, act:s.activity, souls:s.d3Souls };
+    try {
+      s.uniqueItems = {}; s.bodyArmor = {};
+      var d3uid = FF.mintSetPiece('reaper','chest','rare','d3');
+      eq(s.uniqueItems[d3uid].setLayer, 'd3', 'a D3 piece carries setLayer d3');
+      eq(s.uniqueItems[d3uid].tier, FF.SET_TIER_INDEX_D3, 'a D3 piece is minted at t23');
+      s.bodyArmor = { chest:{uid:d3uid}, gauntlets:{uid:FF.mintSetPiece('reaper','gauntlets','rare','d1')}, boots:{uid:FF.mintSetPiece('reaper','boots','rare','d2')} };
+      eq(FF.setPiecesWorn('reaper', s, 'd3'), 1, 'the D3 layer counts only the D3 piece');
+      eq(FF.setPiecesWorn('reaper', s, 'd2'), 1, 'the D2 layer counts only the D2 piece');
+      eq(FF.setPiecesWorn('reaper', s, 'd1'), 1, 'the D1 layer counts only the D1 piece');
+      eq(FF.set2D3('reaper', s), false, 'one D3 piece is not the D3 2-piece');
+      s.bodyArmor.gauntlets = { uid: FF.mintSetPiece('reaper','gauntlets','rare','d3') };
+      s.bodyArmor.boots = { uid: FF.mintSetPiece('reaper','boots','rare','d3') };
+      eq(FF.set2D3('reaper', s), true, 'two D3 pieces trigger the D3 2-piece');
+      eq(FF.setFullD3('reaper', s), true, 'three D3 pieces (bare-head) trigger the full set');
+      // D3 crypt-themed names, distinct from D1/D2.
+      ok(/Lich/.test(FF.setPieceName('reaper','chest','d3')), 'the D3 Reaper set is the Lich’s Vestments');
+      ok(FF.setPieceName('reaper','chest','d3') !== FF.setPieceName('reaper','chest','d2'), 'D3 names differ from D2');
+
+      // --- Necromancy systems ---
+      // Souls: bank + cap at 10; scattered on death is exercised elsewhere.
+      s.d3Souls = 0; FF.d3SoulsAdd(3); eq(FF.d3SoulCount(s), 3, 'd3SoulsAdd banks Soul Charges');
+      FF.d3SoulsAdd(20); eq(FF.d3SoulCount(s), FF.D3_SOUL_CAP, 'Soul Charges cap at 10');
+      // Decay: apply builds stacks + a live window; the tick chips HP (armour-ignoring, floors at 1).
+      s.activity = { type:'combat', monsterHp:1000 };
+      FF.decayApply(s.activity, 3); eq(s.activity.decayStacks, 3, 'decayApply stacks Decay');
+      ok(FF.enemyDecaying(s), 'a decaying foe reads as Decaying'); ok(s.activity.decayUntil > Date.now(), 'Decay opens a window');
+      s.activity = { type:'combat', monsterHp:1000, decayStacks:5, decayUntil:Date.now()+9999, decayDps:100 };
+      FF.applyDecayTick(1000); near(s.activity.monsterHp, 900, 'a 1s Decay tick chips ~decayDps HP', 2);
+      s.activity = { type:'combat', monsterHp:1, decayStacks:5, decayUntil:Date.now()+9999, decayDps:100 };
+      FF.applyDecayTick(1000); eq(s.activity.monsterHp, 1, 'Decay never lands the killing blow (floors at 1)');
+      near(FF.d3DecayTickMult(s), 1, 'Decay tick multiplier is 1 with no D3 Decay full set');
+      // Curse: apply sets the window; enemyCursed reads it.
+      s.activity = { type:'combat', monsterHp:1000 };
+      ok(!FF.enemyCursed(s), 'a clean foe is not Cursed');
+      FF.curseApply(s.activity); ok(FF.enemyCursed(s), 'curseApply marks the foe Cursed');
+      s.activity.curseUntil = Date.now()-1; ok(!FF.enemyCursed(s), 'Curse lapses after its window');
+    } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; s.activity = sv.act; s.d3Souls = sv.souls; }
+  });
+
   // ---- D2 sets: Batch B effects (damage & tempo) -----------------------------------------------------
   suite('D2 sets: Batch B combat effects', function(){
     var s = FF._state;

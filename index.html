@@ -5531,8 +5531,69 @@
     D2_SET_DEFS[cls] = { cls:cls, bareHead:!!d1.bareHead, pieces:d1.pieces, b2:b.b2, bf:b.bf, setName:b.name }; });
   Object.keys(D2_SET_DEFS).forEach(function(id){ D2_SET_DEFS[id].full = Object.keys(D2_SET_DEFS[id].pieces).length; });
   var D2_SET_CLASS_IDS = Object.keys(D2_SET_DEFS);
-  // Layer registry so shared helpers (detection, minting, naming, forge) can serve either tier by id.
-  var SET_DEFS_BY_LAYER = { d1:D1_SET_DEFS, d2:D2_SET_DEFS };
+  // ===== D3 (Underground Chamber) undead sets — built on four necromancy systems (Souls / Decay / Curse /
+  // Undeath). Same piece/material layout as D1/D2, t23 base tier, every bonus a fresh necromancy mechanic. =====
+  var D3_SET_BONUSES = {
+    // --- Souls: bank Soul Charges (cap 10), spend/scale with the count ---
+    reaper:        { name:"Lich's Vestments",      b2:{ key:'d3_soulreap',     name:'Soulreap',      desc:'Each lifesteal / Siphon hit banks a Soul Charge.' },
+                                                   bf:{ key:'d3_soulharvest',  name:'Soul Harvest',  desc:'+5% damage per Soul Charge.' } },
+    executioner:   { name:"Gravedigger's Harness", b2:{ key:'d3_harvest',      name:'Harvest',       desc:'Each kill banks 2 Soul Charges.' },
+                                                   bf:{ key:'d3_deathtoll',    name:'Death Toll',    desc:'+4% damage per Soul Charge.' } },
+    summoner:      { name:'Bonecaller Robes',      b2:{ key:'d3_raisedead',    name:'Raise Dead',    desc:'Each familiar cast banks a Soul Charge.' },
+                                                   bf:{ key:'d3_undeadlegion', name:'Undead Legion', desc:'Your familiars deal +6% per Soul Charge.' } },
+    samurai:       { name:'Deathblossom Wrap',     b2:{ key:'d3_soulfocus',    name:'Soul Focus',    desc:'Reaching max Focus banks 3 Soul Charges.' },
+                                                   bf:{ key:'d3_finalcut',     name:'Final Cut',     desc:'A Critical Hit spends all Souls for +10% damage each, then resets them.' } },
+    spellblade:    { name:'Runetomb Mail',         b2:{ key:'d3_soulrunes',    name:'Soul Runes',    desc:'Each Spell Echo banks a Soul Charge.' },
+                                                   bf:{ key:'d3_necroblade',   name:'Necroblade',    desc:'+4% damage per Soul Charge.' } },
+    reaver:        { name:'Gravemaw Hide',         b2:{ key:'d3_bloodharvest', name:'Blood Harvest', desc:'Each Bleed you apply banks a Soul Charge.' },
+                                                   bf:{ key:'d3_exsanguinate3',name:'Exsanguinate',  desc:'+5% damage per Soul Charge while the foe bleeds.' } },
+    // --- Decay: apply/boost the armour-ignoring necrotic DoT ---
+    plaguebearer:  { name:'Carrion Shroud',        b2:{ key:'d3_necrosis',     name:'Necrosis',      desc:'Your poison ticks also apply Decay.' },
+                                                   bf:{ key:'d3_rotspread',    name:'Rot Spread',    desc:'A foe that dies Decayed spreads its Decay to the next foe.' } },
+    pyromancer:    { name:'Pyre Shroud',           b2:{ key:'d3_funeralpyre',  name:'Funeral Pyre',  desc:'Your Burn also applies Decay.' },
+                                                   bf:{ key:'d3_cremation',    name:'Cremation',     desc:'Decay ticks +50% on a burning foe.' } },
+    frostwarden:   { name:'Gravefrost Mail',       b2:{ key:'d3_gravechill',   name:'Grave Chill',   desc:'Chilling a foe also applies Decay.' },
+                                                   bf:{ key:'d3_deathfrost',   name:'Deathfrost',    desc:'Chilled foes take +20% Decay.' } },
+    quickdraw:     { name:'Venomcrypt Leathers',   b2:{ key:'d3_necroticvenom',name:'Necrotic Venom',desc:'Your venom also applies Decay.' },
+                                                   bf:{ key:'d3_gravetoxin',   name:'Grave Toxin',   desc:'+15% damage vs a Decayed foe.' } },
+    ranger:        { name:'Bonestalker Garb',      b2:{ key:'d3_decayingtraps',name:'Decaying Traps',desc:'Your ailment procs also apply Decay.' },
+                                                   bf:{ key:'d3_plaguehunter', name:'Plague Hunter', desc:'Your Decay ticks +40%.' } },
+    assassin:      { name:'Nightreaper Garb',      b2:{ key:'d3_soulrend',     name:'Soul Rend',     desc:'Your Critical Hits apply Decay.' },
+                                                   bf:{ key:'d3_deathmark',    name:'Death Mark',    desc:'+30% Critical Damage vs a Decayed foe.' } },
+    sharpshooter:  { name:'Bonepiercer Leathers',  b2:{ key:'d3_marrowshot',   name:'Marrow Shot',   desc:'Critical Hits apply 2 Decay stacks.' },
+                                                   bf:{ key:'d3_deathsaim',    name:"Death's Aim",   desc:'Your Decay ticks can Critically Hit.' } },
+    sentinel:      { name:'Bonewall Bulwark',      b2:{ key:'d3_bonethorns',   name:'Bone Thorns',   desc:'Your reflect also applies Decay.' },
+                                                   bf:{ key:'d3_cryptwall',    name:'Crypt Wall',    desc:'Decayed attackers deal 20% less to you.' } },
+    // --- Curse: mark the foe, cash it in ---
+    nightblade:    { name:'Graveshadow Wrap',      b2:{ key:'d3_cursemark',    name:'Cursemark',     desc:'Your Vulnerability stacks also Curse the foe.' },
+                                                   bf:{ key:'d3_doomcurse',    name:'Doomcurse',     desc:'Cursed foes take +20% from you.' } },
+    juggernaut:    { name:'Monolith Plate',        b2:{ key:'d3_gravestone',   name:'Gravestone',    desc:'Your hits Curse the foe.' },
+                                                   bf:{ key:'d3_tombstone',    name:'Tombstone',     desc:"Cursed foes' armour is shredded 25%." } },
+    herald:        { name:'Tombguard Plate',       b2:{ key:'d3_graveguard',   name:'Grave Guard',   desc:'A Perfect Guard Curses the attacker.' },
+                                                   bf:{ key:'d3_mausoleum',    name:'Mausoleum',     desc:'Cursed foes deal 15% less to you.' } },
+    duelist:       { name:"Wraithdancer's Wrap",   b2:{ key:'d3_ghoststep',    name:'Ghost Step',    desc:'After a Dodge, your next hit Curses the foe.' },
+                                                   bf:{ key:'d3_spectralgrace',name:'Spectral Grace',desc:'+15% damage vs a Cursed foe.' } },
+    thunderfury:   { name:'Stormcrypt Weave',      b2:{ key:'d3_gravespark',   name:'Grave Spark',   desc:'Your Static discharge Curses the foe.' },
+                                                   bf:{ key:'d3_deathstatic',  name:'Death Static',  desc:'+12% damage vs a Cursed foe.' } },
+    // --- Undeath: cheat death ---
+    berserker:     { name:'Revenant Hide',         b2:{ key:'d3_graveward',    name:'Grave Ward',    desc:'Dropping below 25% Health grants a shield worth 15% max Health (once per fight).' },
+                                                   bf:{ key:'d3_seconddeath',  name:'Second Death',  desc:'The first lethal blow each fight revives you at 30% Health.' } },
+    templar:       { name:'Sanctified Bulwark',    b2:{ key:'d3_consecrate',   name:'Consecrate',    desc:'Your Holy shield also heals 2% max Health per second.' },
+                                                   bf:{ key:'d3_resurrection', name:'Resurrection',  desc:'Dying while your Holy shield holds consumes it and revives you instead.' } },
+    knight:        { name:'Deathmarch Plate',      b2:{ key:'d3_gravemomentum',name:'Grave Momentum',desc:'At max Momentum, take 10% less damage.' },
+                                                   bf:{ key:'d3_undyingmarch', name:'Undying March', desc:'A lethal blow at max Momentum is survived at 1 HP (once per fight).' } },
+    lumen:         { name:'Sepulcher Vestments',   b2:{ key:'d3_gravelight',   name:'Grave Light',   desc:'Your reflect heal is +50%.' },
+                                                   bf:{ key:'d3_soulguard',    name:'Soulguard',     desc:'Your Barrier also reflects Decay to attackers.' } },
+    treasureHunter:{ name:"Tombraider's Kit",      b2:{ key:'d3_graverobber',  name:'Grave Robber',  desc:'Your crits Curse the foe; Cursed foes drop +50% gold.' },
+                                                   bf:{ key:'d3_cursedhoard',  name:'Cursed Hoard',  desc:'+50% Treasure Find.' } }
+  };
+  var D3_SET_DEFS = {};
+  D1_SET_CLASS_IDS.forEach(function(cls){ var d1 = D1_SET_DEFS[cls], b = D3_SET_BONUSES[cls]; if(!b) return;
+    D3_SET_DEFS[cls] = { cls:cls, bareHead:!!d1.bareHead, pieces:d1.pieces, b2:b.b2, bf:b.bf, setName:b.name }; });
+  Object.keys(D3_SET_DEFS).forEach(function(id){ D3_SET_DEFS[id].full = Object.keys(D3_SET_DEFS[id].pieces).length; });
+  var D3_SET_CLASS_IDS = Object.keys(D3_SET_DEFS);
+  // Layer registry so shared helpers (detection, minting, naming, forge) can serve any tier by id.
+  var SET_DEFS_BY_LAYER = { d1:D1_SET_DEFS, d2:D2_SET_DEFS, d3:D3_SET_DEFS };
   // Count how many of a class's set pieces are currently equipped (a worn body-armor slot whose unique
   // carries set===cls). Gated on pieces worn -- NOT on the active class -- so the 2-piece tier is reachable
   // before the full class kit is assembled, and mixed-set builds are allowed (like the legendaries).
@@ -5551,6 +5612,45 @@
   function setFull(cls, st){ return setBonusActive(cls, 'full', st, 'd1'); }
   function set2D2(cls, st){ return setBonusActive(cls, 2, st, 'd2'); }
   function setFullD2(cls, st){ return setBonusActive(cls, 'full', st, 'd2'); }
+  function set2D3(cls, st){ return setBonusActive(cls, 2, st, 'd3'); }
+  function setFullD3(cls, st){ return setBonusActive(cls, 'full', st, 'd3'); }
+  // ===== D3 (Underground) necromancy systems — shared scaffolding for the Souls / Decay / Curse sets =====
+  // SOUL CHARGES: a per-fight resource (state.d3Souls, cap 10). Builder 2-piece bonuses bank charges; spender
+  // full-set bonuses read the count. Reset when you fall (in the death handler).
+  var D3_SOUL_CAP = 10;
+  function d3SoulCount(st){ st = st || state; return Math.min(D3_SOUL_CAP, st.d3Souls || 0); }
+  function d3SoulsAdd(n, st){ st = st || state; st.d3Souls = Math.min(D3_SOUL_CAP, (st.d3Souls || 0) + (n || 1)); }
+  // DECAY: a new stacking necrotic DoT on the foe (act.decayStacks/decayUntil/decayDps). Armour-ignoring,
+  // on its own tick beside poison/bleed/burn. Applied by Decay 2-piece bonuses; boosted by their fulls.
+  var DECAY_MS = 5000, DECAY_MAX_STACKS = 10, DECAY_PCT = 0.03; // per-stack DoT as a fraction of combat power/sec
+  function decayCap(st){ return DECAY_MAX_STACKS; }
+  function enemyDecaying(st){ st = st || state; var a = st.activity; return !!(a && a.type==='combat' && (a.decayUntil||0) > Date.now() && (a.decayStacks||0) > 0); }
+  function decayApply(act, n){ if(!act || act.type!=='combat') return 0;
+    if((act.decayUntil||0) <= Date.now()) act.decayStacks = 0;
+    act.decayStacks = Math.min(decayCap(state), (act.decayStacks||0) + (n||1));
+    act.decayUntil = Date.now() + DECAY_MS;
+    act.decayDps = act.decayStacks * combatLevelEquivalent(state) * DECAY_PCT;
+    return act.decayStacks; }
+  // Decay tick multiplier from Decay-set full bonuses (Plague Hunter +40%, Cremation +50% burning, Deathfrost +20% chilled).
+  function d3DecayTickMult(st){ st = st || state; var m = 1;
+    if(setFullD3('ranger', st)) m *= 1.40;
+    if(setFullD3('pyromancer', st) && enemyBurning(st)) m *= 1.50;
+    if(setFullD3('frostwarden', st) && enemyChilled(st)) m *= 1.20;
+    return m; }
+  function applyDecayTick(dtMs){
+    var act = state.activity; if(!act || act.type!=='combat' || !enemyDecaying(state)) return;
+    var dps = (act.decayDps||0) * d3DecayTickMult(state); if(dps <= 0) return;
+    var dmg = dps * dtMs / 1000;
+    // Death's Aim (Sharpshooter D3 full): Decay ticks can Critically Hit, borrowing your crit chance/damage.
+    if(setFullD3('sharpshooter') && !offlineCapture && Math.random() < (criticalEyeCritChance(state) + newClassCritChance())) dmg *= (CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state));
+    dmg = Math.round(dmg);
+    if(dmg > 0) act.monsterHp = Math.max(1, act.monsterHp - dmg); // necrotic: ignores armour, never lands the kill
+  }
+  // CURSE: a mark laid on the foe (act.curseUntil). While Cursed the foe takes more from you / deals less to
+  // you -- the per-set fulls read enemyCursed() from the damage chains. Curse 2-piece bonuses lay the mark.
+  var CURSE_MS = 6000;
+  function enemyCursed(st){ st = st || state; var a = st.activity; return !!(a && a.type==='combat' && (a.curseUntil||0) > Date.now()); }
+  function curseApply(act){ if(act && act.type==='combat') act.curseUntil = Date.now() + CURSE_MS; }
   // ===== D1 set-bonus combat effects =====
   // Batch 1 -- DoT caps & procs. Each is gated on set2(cls)/setFull(cls) (pieces worn), so it only bites
   // for a player wearing that class's set (the class mechanics it enhances are naturally inert otherwise).
@@ -8477,11 +8577,12 @@
   // items exist purely so an equipped Set piece resolves its stats through the usual armor plumbing.
   var SET_TIER_INDEX = TIER_COUNT;          // 21 -- D1 set pieces
   var SET_TIER_INDEX_D2 = TIER_COUNT + 1;   // 22 -- D2 set pieces sit one tier above D1
-  var SET_TIER_BY_LAYER = { d1:SET_TIER_INDEX, d2:SET_TIER_INDEX_D2 };
+  var SET_TIER_INDEX_D3 = TIER_COUNT + 2;   // 23 -- D3 (Underground) set pieces, one tier above D2
+  var SET_TIER_BY_LAYER = { d1:SET_TIER_INDEX, d2:SET_TIER_INDEX_D2, d3:SET_TIER_INDEX_D3 };
   var SET_ARMOR_SLOTS = ['helmet','chest','gauntlets','boots'];
-  // Generate the base body-armour items for BOTH set tiers (t21 for D1, t22 for D2). t22 rolls higher
-  // defense than t21 via tierStat, giving D2 sets a real base-armour upgrade over D1.
-  [SET_TIER_INDEX, SET_TIER_INDEX_D2].forEach(function(setTier){
+  // Generate the base body-armour items for ALL set tiers (t21 D1 / t22 D2 / t23 D3). Each higher tier rolls
+  // more defense via tierStat, giving each dungeon's sets a real base-armour upgrade over the last.
+  [SET_TIER_INDEX, SET_TIER_INDEX_D2, SET_TIER_INDEX_D3].forEach(function(setTier){
     BODY_ARMOR_MATERIAL_IDS.forEach(function(material){
       var mat = BODY_ARMOR_MATERIALS[material];
       SET_ARMOR_SLOTS.forEach(function(slot){
@@ -8534,7 +8635,7 @@
     lumen:         'the Glimmerhollow',    // Reflected Light + bigger Sanctuary shield
     reaver:        'the Bloodspinner'      // Bleed cap + Feeding Frenzy speed
   };
-  function setName(cls, layer){ if((layer||'d1')==='d2'){ var d2=D2_SET_DEFS[cls]; return (d2 && d2.setName) || (((CLASS_DEFS_BY_ID[cls]||{}).name || cls) + ' warband'); } return SET_NAMES[cls] || (((CLASS_DEFS_BY_ID[cls]||{}).name || cls) + ' set'); }
+  function setName(cls, layer){ layer = layer || 'd1'; if(layer !== 'd1'){ var d = SET_DEFS_BY_LAYER[layer] && SET_DEFS_BY_LAYER[layer][cls]; return (d && d.setName) || (((CLASS_DEFS_BY_ID[cls]||{}).name || cls) + (layer==='d2' ? ' warband' : ' crypt')); } return SET_NAMES[cls] || (((CLASS_DEFS_BY_ID[cls]||{}).name || cls) + ' set'); }
   function setPieceName(cls, slot, layer){ return (BODY_ARMOR_LABELS[slot]||slot) + ' of ' + setName(cls, layer); }
   function mintSetPiece(cls, slot, rarity, layer){
     layer = layer || 'd1';
@@ -12659,6 +12760,8 @@
     act.voidVulnStacks = 0; act.voidVulnUntil = 0; // Voidshadow Mark of the Void / Doom don't carry between foes
     act.throatripperHits = 0; // Throatripper (D2 claw): the first-3-strikes crit window restarts against each foe
     act.spineshatterStacks = 0; act.spineshatterUntil = 0; // Spineshatter (D2 maul): the enemy-damage debuff doesn't carry between foes
+    act.decayStacks = 0; act.decayUntil = 0; act.decayDps = 0; // D3 Decay doesn't carry between foes (Rot Spread re-applies it)
+    act.curseUntil = 0; // D3 Curse doesn't carry between foes
     act.poisonSince = 0; // the Wasting Curse ramp restarts against each foe (the poison DoT lapses on its own timer)
     if(_pestCarry > 0){ // Pestilence (Plaguebearer full): the slain foe's poison spreads to the next foe
       act.potionPoisonDps = _pestCarry; act.potionPoisonUntil = Date.now() + POTION_POISON_DURATION_MS; act.poisonSince = Date.now();
@@ -12972,6 +13075,7 @@
       state.reaperShield = 0; // a spectral guard shatters when you fall
       state.lumenShield = 0;  // a Radiant Barrier shatters when you fall
       state.templarShield = 0; // Aegis of Dawn shatters on death too
+      state.d3Souls = 0; // banked Soul Charges scatter when you fall
       state.activity = { type:null };
       if(_diedInDungeon) dungeonEndRun('death'); // a dungeon run ends when you fall
       if(isMortal()) mortalDeath(monster); // permadeath: the profile passes into Immortal play
@@ -13460,6 +13564,7 @@
           applyReaverBleedTick(_chunk);
           applyFrostwardenFrostbiteTick(_chunk);
           applyPyromancerBurnTick(_chunk);
+          applyDecayTick(_chunk);
           applyReaperWitherTick(_chunk);
           applyLumenMendingTick(_chunk);
           var _rh = famRegenHps(); if(_rh>0 && state.playerHp>0) state.playerHp += Math.min(_rh*_chunk/5000, healRoom(state)); // _rh is the per-5s tick amount
@@ -17136,6 +17241,8 @@
       else add('burn', a.burnUntil, 'Burning', '#e8641e', a.burnStacks);
     }
     add('ppoison', a.potionPoisonUntil, 'Poisoned', '#6fae3a');
+    add('decay', a.decayUntil, 'Decaying', '#7fb46a', a.decayStacks); // D3 necrotic DoT
+    add('curse', a.curseUntil, 'Cursed', '#a184c8'); // D3 Curse mark
     add('eslow', fb.enemySlowUntil, 'Slowed', '#7a8aa0');
     add('eweak', fb.enemyWeakenUntil, 'Weakened', '#8a97a6');
     add('fpoison', fb.poisonUntil, 'Poisoned', '#6fae3a');
@@ -26263,6 +26370,7 @@
         applyReaverBleedTick(dt);
         applyFrostwardenFrostbiteTick(dt);
         applyPyromancerBurnTick(dt);
+        applyDecayTick(dt);
         applyReaperWitherTick(dt);
         applyLumenMendingTick(dt);
         // Dawnbrand (D2 light wand): the Radiant Barrier regenerates while you're in combat.
@@ -26848,7 +26956,7 @@
       bowArrowToConsume:bowArrowToConsume, bowArrowsAvailable:bowArrowsAvailable, bowArrowTierCap:bowArrowTierCap, arrowUsableWithBow:arrowUsableWithBow, equipArrow:equipArrow, arrowBaseDamage:arrowBaseDamage, quiverAmmoPreserve:quiverAmmoPreserve, ARROW_MAX_INDEX:ARROW_MAX_INDEX, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT,
       STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
-      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, D2_SET_DEFS:D2_SET_DEFS, D2_SET_CLASS_IDS:D2_SET_CLASS_IDS, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, set2D2:set2D2, setFullD2:setFullD2, d2SetDmgMult:d2SetDmgMult, d2IncomingDmgMult:d2IncomingDmgMult, d2SetCritDmgBonus:d2SetCritDmgBonus, d2SetCritChance:d2SetCritChance, d2SetDodgeBonus:d2SetDodgeBonus, knightBulwarkMarchMult:knightBulwarkMarchMult, lumenReflectD2Mult:lumenReflectD2Mult, enemyHasAilment:enemyHasAilment, rangerAilmentDmgMult:rangerAilmentDmgMult, d2PoisonTickMult:d2PoisonTickMult, d2BleedTickMult:d2BleedTickMult, d2BurnTickMult:d2BurnTickMult, d2FrostbiteTickMult:d2FrostbiteTickMult, voidVulnCap:voidVulnCap, templarAegisCapMult:templarAegisCapMult, reaverBloodfrenzyMult:reaverBloodfrenzyMult, d2FeralOnCast:d2FeralOnCast, d2BloodthirstOnKill:d2BloodthirstOnKill, d2BloodthirstSpeedMult:d2BloodthirstSpeedMult, quickdrawParalyticSlow:quickdrawParalyticSlow, enemyExtraSlowPct:enemyExtraSlowPct, SET_TIER_INDEX:SET_TIER_INDEX, SET_TIER_INDEX_D2:SET_TIER_INDEX_D2, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, SET_NAMES:SET_NAMES, setName:setName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, combatPlayerBuffs:combatPlayerBuffs, combatEnemyDebuffs:combatEnemyDebuffs, renderFxBars:renderFxBars, captureCombatLoadout:captureCombatLoadout, applyCombatLoadout:applyCombatLoadout, saveLoadoutPreset:saveLoadoutPreset, equipLoadoutPreset:equipLoadoutPreset, clearLoadoutPreset:clearLoadoutPreset, renameLoadoutPreset:renameLoadoutPreset, ensureLoadouts:ensureLoadouts, loadoutSummary:loadoutSummary, LOADOUT_SLOT_COUNT:LOADOUT_SLOT_COUNT, combatLocksGear:combatLocksGear, COMBAT_LOCKED_ACTIONS:COMBAT_LOCKED_ACTIONS, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, knightUnstoppableMult:knightUnstoppableMult, thunderStaticPerHit:thunderStaticPerHit, thunderStaticThreshold:thunderStaticThreshold, thunderDischargeMult:thunderDischargeMult, deadeyeAccuracyBonus:deadeyeAccuracyBonus, duelistFlourishStabs:duelistFlourishStabs, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, heraldRipostePct:heraldRipostePct, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, undyingRageIncomingMult:undyingRageIncomingMult, berserkerFrenziedBlowsMult:berserkerFrenziedBlowsMult, templarLayOnHandsPct:templarLayOnHandsPct, templarBlessingOfHasteMult:templarBlessingOfHasteMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, spellbladeResonantCrit:spellbladeResonantCrit, voidVulnPerStack:voidVulnPerStack, voidMarkPerHit:voidMarkPerHit, quickdrawVenomPct:quickdrawVenomPct, quickdrawTwinFangChance:quickdrawTwinFangChance, treasureProspectorPer:treasureProspectorPer, setTreasureMult:setTreasureMult, EXEC_SET_EXECUTE_FRAC:EXEC_SET_EXECUTE_FRAC, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
+      CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, D2_SET_DEFS:D2_SET_DEFS, D2_SET_CLASS_IDS:D2_SET_CLASS_IDS, D3_SET_DEFS:D3_SET_DEFS, D3_SET_CLASS_IDS:D3_SET_CLASS_IDS, set2D3:set2D3, setFullD3:setFullD3, SET_TIER_INDEX_D3:SET_TIER_INDEX_D3, D3_SOUL_CAP:D3_SOUL_CAP, d3SoulCount:d3SoulCount, d3SoulsAdd:d3SoulsAdd, enemyDecaying:enemyDecaying, decayApply:decayApply, applyDecayTick:applyDecayTick, decayCap:decayCap, d3DecayTickMult:d3DecayTickMult, enemyCursed:enemyCursed, curseApply:curseApply, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, set2D2:set2D2, setFullD2:setFullD2, d2SetDmgMult:d2SetDmgMult, d2IncomingDmgMult:d2IncomingDmgMult, d2SetCritDmgBonus:d2SetCritDmgBonus, d2SetCritChance:d2SetCritChance, d2SetDodgeBonus:d2SetDodgeBonus, knightBulwarkMarchMult:knightBulwarkMarchMult, lumenReflectD2Mult:lumenReflectD2Mult, enemyHasAilment:enemyHasAilment, rangerAilmentDmgMult:rangerAilmentDmgMult, d2PoisonTickMult:d2PoisonTickMult, d2BleedTickMult:d2BleedTickMult, d2BurnTickMult:d2BurnTickMult, d2FrostbiteTickMult:d2FrostbiteTickMult, voidVulnCap:voidVulnCap, templarAegisCapMult:templarAegisCapMult, reaverBloodfrenzyMult:reaverBloodfrenzyMult, d2FeralOnCast:d2FeralOnCast, d2BloodthirstOnKill:d2BloodthirstOnKill, d2BloodthirstSpeedMult:d2BloodthirstSpeedMult, quickdrawParalyticSlow:quickdrawParalyticSlow, enemyExtraSlowPct:enemyExtraSlowPct, SET_TIER_INDEX:SET_TIER_INDEX, SET_TIER_INDEX_D2:SET_TIER_INDEX_D2, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, SET_NAMES:SET_NAMES, setName:setName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, combatPlayerBuffs:combatPlayerBuffs, combatEnemyDebuffs:combatEnemyDebuffs, renderFxBars:renderFxBars, captureCombatLoadout:captureCombatLoadout, applyCombatLoadout:applyCombatLoadout, saveLoadoutPreset:saveLoadoutPreset, equipLoadoutPreset:equipLoadoutPreset, clearLoadoutPreset:clearLoadoutPreset, renameLoadoutPreset:renameLoadoutPreset, ensureLoadouts:ensureLoadouts, loadoutSummary:loadoutSummary, LOADOUT_SLOT_COUNT:LOADOUT_SLOT_COUNT, combatLocksGear:combatLocksGear, COMBAT_LOCKED_ACTIONS:COMBAT_LOCKED_ACTIONS, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, knightUnstoppableMult:knightUnstoppableMult, thunderStaticPerHit:thunderStaticPerHit, thunderStaticThreshold:thunderStaticThreshold, thunderDischargeMult:thunderDischargeMult, deadeyeAccuracyBonus:deadeyeAccuracyBonus, duelistFlourishStabs:duelistFlourishStabs, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, heraldRipostePct:heraldRipostePct, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, undyingRageIncomingMult:undyingRageIncomingMult, berserkerFrenziedBlowsMult:berserkerFrenziedBlowsMult, templarLayOnHandsPct:templarLayOnHandsPct, templarBlessingOfHasteMult:templarBlessingOfHasteMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, spellbladeResonantCrit:spellbladeResonantCrit, voidVulnPerStack:voidVulnPerStack, voidMarkPerHit:voidMarkPerHit, quickdrawVenomPct:quickdrawVenomPct, quickdrawTwinFangChance:quickdrawTwinFangChance, treasureProspectorPer:treasureProspectorPer, setTreasureMult:setTreasureMult, EXEC_SET_EXECUTE_FRAC:EXEC_SET_EXECUTE_FRAC, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, sharpshooterAccOverDodge:sharpshooterAccOverDodge, sharpshooterEagleEyeCrit:sharpshooterEagleEyeCrit, sharpshooterPinpointMult:sharpshooterPinpointMult, sharpshooterFocusCritDmg:sharpshooterFocusCritDmg, sharpshooterArmorPierce:sharpshooterArmorPierce, sharpshooterPatienceMult:sharpshooterPatienceMult, SHARP_EAGLE_CAP:SHARP_EAGLE_CAP, SHARP_PINPOINT_CAP:SHARP_PINPOINT_CAP, SHARP_FOCUS_CAP:SHARP_FOCUS_CAP, SHARP_PATIENCE_CAP:SHARP_PATIENCE_CAP, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautSmashReady:juggernautSmashReady, juggernautFuryStacks:juggernautFuryStacks, juggernautArmorPierce:juggernautArmorPierce, JUG_WINDUP_DMG:JUG_WINDUP_DMG, JUG_WINDUP_SLOW:JUG_WINDUP_SLOW, JUG_SMASH_EVERY:JUG_SMASH_EVERY, JUG_CONCUSS_MS:JUG_CONCUSS_MS, JUG_FURY_PER:JUG_FURY_PER, JUG_FURY_MAX:JUG_FURY_MAX, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_SHIELD_MAX_PCT:LUMEN_SHIELD_MAX_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, HERALD_RIPOSTE_PCT:HERALD_RIPOSTE_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeRuneHungerMult:spellbladeRuneHungerMult, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, spellbladeEchoChance:spellbladeEchoChance, equippedEnchantCount:equippedEnchantCount, spellbladeEnchantBoost:spellbladeEnchantBoost, SPELLBLADE_RUNEHUNGER_PER:SPELLBLADE_RUNEHUNGER_PER, SPELLBLADE_CRITRUNE_PER:SPELLBLADE_CRITRUNE_PER, SPELLBLADE_ECHO_PCT:SPELLBLADE_ECHO_PCT, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, legendaryDmgMult:legendaryDmgMult, legendaryDodgeBonus:legendaryDodgeBonus, legendaryLifestealPct:legendaryLifestealPct, legWastingCurseIncomingMult:legWastingCurseIncomingMult, legNotePoisonStart:legNotePoisonStart, legVanishWindowReady:legVanishWindowReady, samuraiFocusCap:samuraiFocusCap, knightMomentumPerStack:knightMomentumPerStack, legDistinctEnchantCount:legDistinctEnchantCount, legEchoDmgMult:legEchoDmgMult, legShieldBashDamage:legShieldBashDamage, legReflectCanCrit:legReflectCanCrit, legReflectCritMult:legReflectCritMult, legendaryCritDmg:legendaryCritDmg, legEarthshakerBuild:legEarthshakerBuild, legEarthshakerConsume:legEarthshakerConsume, LEG_TREMOR_CAP:LEG_TREMOR_CAP, LEG_TREMOR_MULT:LEG_TREMOR_MULT, CRIT_DAMAGE_MULT:CRIT_DAMAGE_MULT, legendaryAccuracyBonus:legendaryAccuracyBonus, legRangerAilmentRolls:legRangerAilmentRolls, LEG_CHAINSHOT_MAX:LEG_CHAINSHOT_MAX, legendaryCritChance:legendaryCritChance, legThunderMaxStacks:legThunderMaxStacks, legRetributionArmed:legRetributionArmed, legRetributionConsume:legRetributionConsume, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, heraldGuardMaxStacks:heraldGuardMaxStacks, HERALD_GUARD_MAX_STACKS:HERALD_GUARD_MAX_STACKS, HERALD_GUARD_PER_STACK:HERALD_GUARD_PER_STACK, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legChargedRiposteArmed:legChargedRiposteArmed, legChargedRiposteConsume:legChargedRiposteConsume, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, applyReaperWitherTick:applyReaperWitherTick, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
