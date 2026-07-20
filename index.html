@@ -10999,6 +10999,35 @@
     }
     return grid;
   }
+  // Starter kit: every NEW player begins with a working Forestry peon setup already placed -- a first-tier
+  // (Willow, level-1) Forestry Workshop at (10,10) and a matching Cottage right beside it at (10,9), both
+  // sitting on first-tier paving. The two tiles are adjacent, so the Cottage is immediately linked to the
+  // Workshop and a Peon can be assigned on the very first visit to the Peons tab. This exists so a new
+  // player meets the Workshop/Cottage/Peon loop without first having to level Carpentry and Paving to
+  // build the pieces by hand.
+  //
+  // Tier ids are 0-indexed internally, so "tier 1" is `_t0` (TIER_LEVELS[0] === level 1).
+  var ESTATE_STARTER_WORKSHOP = { x:10, y:10, id:'workshop_forestry_t0' };
+  var ESTATE_STARTER_COTTAGE  = { x:10, y:9,  id:'cottage_t0' };
+  var ESTATE_STARTER_PAVING   = 'paving_t0';
+  function estateIsStarterTile(x, y){
+    return (x === ESTATE_STARTER_WORKSHOP.x && y === ESTATE_STARTER_WORKSHOP.y) ||
+           (x === ESTATE_STARTER_COTTAGE.x  && y === ESTATE_STARTER_COTTAGE.y);
+  }
+  // Overwrite the two starter tiles onto an already-generated grid. Clears any obstacle first -- resource
+  // generation must not seed a tree/rock on a tile we're about to pave over, and this is the single place
+  // that guarantees those two coordinates stay clear regardless of what generateEstateObstacle rolled.
+  function estatePlaceStarterKit(grid){
+    if(!grid) return;
+    var w = grid[ESTATE_STARTER_WORKSHOP.x] && grid[ESTATE_STARTER_WORKSHOP.x][ESTATE_STARTER_WORKSHOP.y];
+    var c = grid[ESTATE_STARTER_COTTAGE.x]  && grid[ESTATE_STARTER_COTTAGE.x][ESTATE_STARTER_COTTAGE.y];
+    if(w){ w.obstacle = null; w.type = 'paved'; w.paveTileId = ESTATE_STARTER_PAVING; w.workshopId = ESTATE_STARTER_WORKSHOP.id; w.cottageId = null; w.fieldTier = null; w.owned = true; }
+    if(c){ c.obstacle = null; c.type = 'paved'; c.paveTileId = ESTATE_STARTER_PAVING; c.cottageId = ESTATE_STARTER_COTTAGE.id;  c.workshopId = null; c.fieldTier = null; c.owned = true; }
+    return grid;
+  }
+  // A fresh PERSONAL estate ships with the starter kit; the plain generator (used by the guild estate,
+  // the landing preview, and old-save migration) does not, so this must not fold into generateEstateGrid.
+  function generatePersonalEstateGrid(){ return estatePlaceStarterKit(generateEstateGrid()); }
   // Every tile has 4 borders, each shared with exactly one neighbor (or the outer edge
   // of the plot). Stored once per shared border rather than once per tile-side, in two
   // grids: edgesY holds the borders that run along a row boundary (GRID_SIZE columns x
@@ -11160,7 +11189,7 @@
 
       peons: [],
       guildPeons: [],
-      estate: Object.assign({ grid: generateEstateGrid(), expansionsPurchased: 0, job: null }, generateEstateEdges()),
+      estate: Object.assign({ grid: generatePersonalEstateGrid(), expansionsPurchased: 0, job: null }, generateEstateEdges()),
       lockedItems: {},
       stats: { kills:0, deaths:0, gathered:0, crafted:0, craftedRare:0, craftedSupreme:0, craftedFantastic:0 },
       familiarCastIndex: 0,
@@ -14858,7 +14887,7 @@
               // new 20x20 layout as their owned core, rather than discarding it.
               state.estate = estateMigrateOldGridToNew(state.estate);
             } else if(!gridOk){
-              state.estate = Object.assign({ grid: generateEstateGrid(), expansionsPurchased: 0, job: null }, generateEstateEdges());
+              state.estate = Object.assign({ grid: generatePersonalEstateGrid(), expansionsPurchased: 0, job: null }, generateEstateEdges());
             } else {
               // Shape is valid -- backfill any fields added since this save was last written,
               // without wiping out any terraforming the player has already done.
@@ -14898,7 +14927,7 @@
               }
             }
           } catch(estateErr){
-            state.estate = Object.assign({ grid: generateEstateGrid(), expansionsPurchased: 0, job: null }, generateEstateEdges());
+            state.estate = Object.assign({ grid: generatePersonalEstateGrid(), expansionsPurchased: 0, job: null }, generateEstateEdges());
           }
           if(typeof state.familiarCastIndex !== 'number') state.familiarCastIndex = 0;
           if(typeof state.familiarCastAccum !== 'number') state.familiarCastAccum = 0;
@@ -28767,6 +28796,7 @@
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
       candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
       peonTaskTier:peonTaskTier, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
+      generatePersonalEstateGrid:generatePersonalEstateGrid, generateEstateGrid:generateEstateGrid, estatePlaceStarterKit:estatePlaceStarterKit, estateIsStarterTile:estateIsStarterTile, ESTATE_STARTER_WORKSHOP:ESTATE_STARTER_WORKSHOP, ESTATE_STARTER_COTTAGE:ESTATE_STARTER_COTTAGE, ESTATE_STARTER_PAVING:ESTATE_STARTER_PAVING, estatePeonSources:estatePeonSources,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
       estateUpgradePavement:estateUpgradePavement, pavementTierOf:pavementTierOf, ESTATE_PAVE_TILE_COST:ESTATE_PAVE_TILE_COST, estUse:estUse,

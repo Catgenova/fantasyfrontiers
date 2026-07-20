@@ -8322,6 +8322,54 @@
     }
   });
 
+  // ---- New players start with a placed Forestry workshop + cottage --------------------------------
+  suite('estate: new-player starter kit', function(){
+    ok(typeof FF.generatePersonalEstateGrid === 'function' && typeof FF.estatePlaceStarterKit === 'function', 'starter helpers exported');
+
+    var W = FF.ESTATE_STARTER_WORKSHOP, C = FF.ESTATE_STARTER_COTTAGE, PAVE = FF.ESTATE_STARTER_PAVING;
+    eq(W.x + ',' + W.y, '10,10', 'workshop starts at (10,10)');
+    eq(C.x + ',' + C.y, '10,9', 'cottage starts at (10,9)');
+    eq(Math.abs(W.x - C.x) + Math.abs(W.y - C.y), 1, 'workshop and cottage are orthogonally adjacent (so the cottage links)');
+
+    // The ids must resolve to REAL definitions, or the peon system silently no-ops on them.
+    ok(FF.WORKSHOP_ITEMS[W.id] && FF.WORKSHOP_ITEMS[W.id].skillId === 'forestry', 'the starter workshop id is a real Forestry workshop');
+    ok(FF.COTTAGE_ITEMS[C.id], 'the starter cottage id is a real cottage');
+    eq(FF.WORKSHOP_ITEMS[W.id].tierIndex, 0, 'workshop is tier 1 (index 0, the level-1 tier)');
+    eq(FF.COTTAGE_ITEMS[C.id].tierIndex, 0, 'cottage is tier 1 (index 0)');
+    ok(FF.getPavingRecipe(PAVE), 'the starter paving id is a real paving recipe');
+
+    // A freshly-minted personal estate has the kit; the plain generator (guild / landing / migration)
+    // does NOT -- that separation is the whole reason generatePersonalEstateGrid exists.
+    var pg = FF.generatePersonalEstateGrid(), plain = FF.generateEstateGrid();
+    var pw = pg[W.x][W.y], pc = pg[C.x][C.y];
+    eq(pw.workshopId, W.id, 'personal grid: workshop placed at (10,10)');
+    eq(pw.type, 'paved', 'personal grid: workshop tile is paved');
+    eq(pw.paveTileId, PAVE, 'personal grid: workshop tile is on tier-1 paving');
+    eq(pw.obstacle, null, 'personal grid: NO resource obstacle under the workshop');
+    ok(pw.owned, 'personal grid: workshop tile is owned');
+    eq(pc.cottageId, C.id, 'personal grid: cottage placed at (10,9)');
+    eq(pc.type, 'paved', 'personal grid: cottage tile is paved');
+    eq(pc.obstacle, null, 'personal grid: NO resource obstacle under the cottage');
+    eq(pc.workshopId, null, 'personal grid: cottage tile has no workshop of its own');
+
+    ok(!(plain[W.x][W.y].workshopId), 'plain generator does NOT place the starter workshop (guild/landing stay bare)');
+    ok(!(plain[C.x][C.y].cottageId), 'plain generator does NOT place the starter cottage');
+
+    // Resource generation skips ONLY the two starter tiles -- every other core/outer tile is untouched.
+    var startersCleared = 0, otherCleared = 0, others = 0;
+    for(var x=0; x<pg.length; x++){ for(var y=0; y<pg[x].length; y++){
+      if(FF.estateIsStarterTile(x,y)){ if(pg[x][y].obstacle === null) startersCleared++; }
+      else { others++; if(pg[x][y].obstacle === null && plain[x][y].obstacle !== null) otherCleared++; }
+    }}
+    eq(startersCleared, 2, 'both starter tiles are cleared of resources');
+    eq(otherCleared, 0, 'no non-starter tile had its resource removed by the kit');
+
+    // The payoff: estatePeonSources sees the pair as a staffable Forestry source on the fresh grid.
+    var sources = FF.estatePeonSources(pg);
+    var starterSrc = sources.filter(function(s){ return s.x === C.x && s.y === C.y; })[0];
+    ok(starterSrc && starterSrc.skillId === 'forestry', 'the starter cottage is immediately a staffable Forestry peon source');
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }
