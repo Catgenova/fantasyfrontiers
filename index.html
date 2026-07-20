@@ -11631,6 +11631,11 @@
       addLog('Your proficiency isn’t high enough to equip '+uniqueDisplayName(u)+' yet.','danger'); return false;
     }
     unequipMainhandAny();
+    // ONE physical item can't fill both hands. Since unique Claws became off-hand-equippable, a Claw
+    // sitting in the off-hand could be equipped into the main hand while the off-hand still pointed at
+    // the same uid -- and equippedEnchantTotals adds BOTH hands, so its enchants counted twice with the
+    // enhance multiplier applied twice. Free the off-hand when it holds this very item.
+    if(state.equippedOffhandUid === uid) unequipOffhandAny();
     state.equippedMainhand = typeId; state.equippedMainhandTier = u.tier+1; state.equippedMainhandRarity = u.rarity; state.equippedMainhandUid = uid;
     var w = STACKABLE_WEAPON_TYPE_MAP[typeId];
     if(w && w.hand==='2h'){ unequipOffhandAny(); }

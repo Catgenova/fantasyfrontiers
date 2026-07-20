@@ -2019,6 +2019,33 @@
   });
 
   // ---- Dungeons: D1 "Cave" (25 arachnids, L100->125, ~10x boss, threat targeting) ---------
+  // ---- One unique can never fill both hands ---------------------------------------------------
+  // Regression: once unique Claws became off-hand-equippable, equipping the SAME Claw into the main
+  // hand left the off-hand pointing at it too. equippedEnchantTotals adds both hands, so its enchants
+  // were counted twice (enhance multiplier included) -- a stat-duplication exploit, not just a display
+  // glitch.
+  suite('uniques: the same item cannot occupy both hands', function(){
+    var s = FF._state;
+    var savedU = s.uniqueItems, savedMain = s.equippedMainhandUid, savedOff = s.equippedOffhandUid;
+    var savedMainId = s.equippedMainhand, savedOffId = s.equippedOffhand, savedXp = s.xp;
+    // A tier-0 Claw with one known enchant, so double-counting is unmistakable in the totals.
+    var mod = (FF.ENCHANT_MODS && FF.ENCHANT_MODS.weapon && FF.ENCHANT_MODS.weapon[0]) || null;
+    if(mod){
+      s.uniqueItems = { c1:{ uid:'c1', base:'stweapon_claw_t0_normal', kind:'weapon', tier:0, rarity:'normal', enhance:0, enchants:[{ mod:mod.id, roll:10 }] } };
+      s.xp = Object.assign({}, s.xp, { claw: 1000000 });   // clear the proficiency gate
+      s.equippedMainhand = 'claw'; s.equippedMainhandTier = 1; s.equippedMainhandUid = null;
+      s.equippedOffhand = 'claw';  s.equippedOffhandTier = 1; s.equippedOffhandUid = 'c1';
+      var single = FF.equippedEnchantTotals(s)[mod.stat] || 0;
+      eq(single, 10, 'one equipped copy contributes its roll once');
+      FF.equipUniqueWeapon('c1');                      // equip the very item already in the off-hand
+      eq(s.equippedOffhandUid, null, 'equipping it into the main hand frees the off-hand');
+      eq(s.equippedMainhandUid, 'c1', 'it is now in the main hand');
+      eq(FF.equippedEnchantTotals(s)[mod.stat] || 0, 10, 'its enchant is still counted ONCE, not doubled');
+    }
+    s.uniqueItems = savedU; s.equippedMainhandUid = savedMain; s.equippedOffhandUid = savedOff;
+    s.equippedMainhand = savedMainId; s.equippedOffhand = savedOffId; s.xp = savedXp;
+  });
+
   // ---- CRAFT FAMILY REGISTRY INTEGRITY (Stage 0) ----------------------------------------------
   // A craft family has to be registered in ~12 hand-maintained places. A family present in 11 of 12
   // is invisible, which is how 'ward' went missing from matchesSpecialCraft and 'ring'/'amulet' from
