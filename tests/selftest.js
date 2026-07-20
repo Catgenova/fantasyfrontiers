@@ -817,9 +817,10 @@
     ok(feeds(FF.CRAFT_PHYSIQUE.inscription,'wardersFocus'), 'Inscription trains Warder\'s Focus');
     ok(feeds(FF.CRAFT_PHYSIQUE.gastronomy,'fieldRations'), 'Gastronomy trains Field Rations');
     ok(feeds(FF.FARMING_PHYSIQUE,'greenThumb'), 'Farming trains Green Thumb');
-    // Quartermaster + Diligence feed EVERY craft; Masterwork feeds outfitting crafts.
+    // Quartermaster + Diligence feed EVERY craft. Masterwork is NOT bundled into any craft's physique list —
+    // it now trains only when a craft yields rare+ equipment (see the 'masterwork physique: rare+ only' suite).
     ok(feeds(FF.CRAFT_PHYSIQUE.cooking,'quartermaster') && feeds(FF.CRAFT_PHYSIQUE.cooking,'diligence'), 'all crafts train Quartermaster + Diligence');
-    ok(feeds(FF.CRAFT_PHYSIQUE.weaponsmithing,'masterwork') && !feeds(FF.CRAFT_PHYSIQUE.cooking,'masterwork'), 'only outfitting crafts train Masterwork');
+    ok(!feeds(FF.CRAFT_PHYSIQUE.weaponsmithing,'masterwork') && !feeds(FF.CRAFT_PHYSIQUE.cooking,'masterwork'), 'Masterwork is no longer bundled into any per-craft physique list');
     // Logic trains ONLY from Refining skills (metallurgy/tanning/...), not cooking/outfitting/construction.
     ok(feeds(FF.CRAFT_PHYSIQUE.metallurgy,'logic') && feeds(FF.CRAFT_PHYSIQUE.tanning,'logic')
        && !feeds(FF.CRAFT_PHYSIQUE.cooking,'logic') && !feeds(FF.CRAFT_PHYSIQUE.weaponsmithing,'logic') && !feeds(FF.CRAFT_PHYSIQUE.carpentry,'logic'),
@@ -7338,6 +7339,24 @@
     // Warding is a single shared proficiency: the per-element ward styles are NOT proficiency skills.
     ok(FF.OFFHAND_STYLE_IDS.indexOf('warding') === -1, 'warding is not an offhand STYLE id');
     FF.WARD_TYPES.forEach(function(w){ ok(FF.OFFHAND_STYLE_IDS.indexOf(w.id) === -1, w.id+' is not a per-style proficiency'); });
+  });
+
+  // ---- Masterwork physique: trains ONLY when a craft yields rare+ equipment ----------------
+  suite('masterwork physique: rare+ only', function(){
+    // No longer bundled into any outfitting skill's per-craft physique list.
+    ['weaponsmithing','armorsmithing','tailoring','shieldsmithing','arcanism','bowyer','leatherworking','jewelrycrafting'].forEach(function(sk){
+      var list = FF.CRAFT_PHYSIQUE[sk] || [];
+      ok(!list.some(function(p){ return p[0]==='masterwork'; }), sk+' no longer bundles masterwork into every craft');
+    });
+    // awardMasterworkXp grants XP on rare+ outputs, nothing on a normal output.
+    var s = FF._state, sv = s.physique;
+    try {
+      s.physique = {};
+      FF.awardMasterworkXp('normal', 5); eq((s.physique.masterwork||0), 0, 'a normal craft grants no masterwork XP');
+      FF.awardMasterworkXp('rare', 5); ok((s.physique.masterwork||0) > 0, 'a rare craft grants masterwork XP');
+      var afterRare = s.physique.masterwork;
+      FF.awardMasterworkXp('fantastic', 5); ok(s.physique.masterwork > afterRare, 'a fantastic craft also grants masterwork XP');
+    } finally { s.physique = sv; }
   });
 
   // ---- Faith: auto-sacrifice Broken Relics to top up Faith (no-overflow) ----------------

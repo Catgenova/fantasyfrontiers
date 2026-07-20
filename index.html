@@ -5200,7 +5200,8 @@
     // All-crafting: Quartermaster (input refunds) + Diligence (craft XP).
     Object.keys(CRAFT_PHYSIQUE).forEach(function(k){ CRAFT_PHYSIQUE[k] = CRAFT_PHYSIQUE[k].concat([['quartermaster',1],['diligence',1]]); });
     // Outfitting crafts: Masterwork (rarity rolls).
-    OUTFITTING_SKILL_IDS.forEach(function(k){ if(CRAFT_PHYSIQUE[k]) CRAFT_PHYSIQUE[k] = CRAFT_PHYSIQUE[k].concat([['masterwork',1]]); });
+    // NOTE: masterwork is deliberately NOT bundled into the per-craft physique list -- it trains only when a
+    // craft yields rare+ equipment, awarded via awardMasterworkXp() at the two rarity-rolling craft sites.
     // Logic is the REFINING physique: it trains from (and ONLY from) the Refining skills. Ensure every
     // refining craft grants it, and strip it from every non-refining craft (cooking/outfitting/construction).
     REFINING_SKILL_IDS.forEach(function(k){
@@ -10423,6 +10424,10 @@
   // Paving is XP-boosted vs other crafting skills (it's slow, estate-only output). Doubled again by
   // request -> now 4x base craft XP.
   function craftXpBonus(skill){ return skill === 'paving' ? 4 : 1; }
+  // Masterwork physique lifts rare-or-better craft odds, so it should only TRAIN from actually producing
+  // rare+ equipment -- not from every craft. Tier-scaled like the other craft physiques. Called at the two
+  // sites that roll craft rarity (special crafts + the weapon-tier forge).
+  function awardMasterworkXp(rarity, tierIndex){ if(rarity && rarity !== 'normal') addPhysiqueXp(physTierPairs([['masterwork',1]], tierIndex||0)); }
   function completeSpecialCraft(act, tierData){
     var skillId = getSpecialSkillId(act);
     var successRate = (act.craftKind==='ring' || act.craftKind==='amulet') ? jewelrySuccessRate(state) : craftSuccessRate(state, skillId);
@@ -10435,6 +10440,7 @@
       for(var o=0;o<outputs;o++){
         var rarity = (act.craftKind==='workshop' || act.craftKind==='cottage') ? 'normal' : rollCraftRarity(state);
         rarity = produceSpecialOutput(act, rarity);
+        awardMasterworkXp(rarity, act.tierIndex); // Masterwork trains only on a rare+ output
         logForgeResult(rarity, tierData.name);
       }
       if(outputs===2) spawnFloatingText('Workshop: double output!', 'ft-rare');
@@ -12794,6 +12800,7 @@
       state.weaponTiers[typeId] = tier+1;
       var rarity = rollCraftRarity(state);
       state.weaponRarities[typeId] = rarity;
+      awardMasterworkXp(rarity, tier); // Masterwork trains only on a rare+ forge
       if(!state.equippedMainhand) equipMainhand(typeId);
       logForgeResult(rarity, next.name);
     } else {
@@ -29102,7 +29109,7 @@
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS, estatePeonSources:estatePeonSources, peonGridFor:peonGridFor, estateScopeHasJob:estateScopeHasJob, estateJobActive:estateJobActive, estActiveIsGuild:function(){ return estIsGuild; }, guildEstateReachable:guildEstateReachable,
       GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, FARMING_PHYSIQUE:FARMING_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
-      physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
+      physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, awardMasterworkXp:awardMasterworkXp, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
       SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, TICKER_TIPS:TICKER_TIPS, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
