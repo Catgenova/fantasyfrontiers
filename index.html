@@ -11189,7 +11189,7 @@
 
       peons: [],
       guildPeons: [],
-      estate: Object.assign({ grid: generatePersonalEstateGrid(), expansionsPurchased: 0, job: null }, generateEstateEdges()),
+      estate: Object.assign({ grid: generatePersonalEstateGrid(), expansionsPurchased: 0, job: null, queue: [] }, generateEstateEdges()),
       lockedItems: {},
       stats: { kills:0, deaths:0, gathered:0, crafted:0, craftedRare:0, craftedSupreme:0, craftedFantastic:0 },
       familiarCastIndex: 0,
@@ -14887,7 +14887,7 @@
               // new 20x20 layout as their owned core, rather than discarding it.
               state.estate = estateMigrateOldGridToNew(state.estate);
             } else if(!gridOk){
-              state.estate = Object.assign({ grid: generatePersonalEstateGrid(), expansionsPurchased: 0, job: null }, generateEstateEdges());
+              state.estate = Object.assign({ grid: generatePersonalEstateGrid(), expansionsPurchased: 0, job: null, queue: [] }, generateEstateEdges());
             } else {
               // Shape is valid -- backfill any fields added since this save was last written,
               // without wiping out any terraforming the player has already done.
@@ -14915,6 +14915,20 @@
                  (ej.kind==='cottage'  && typeof ej.cottageId==='string') ||
                  (ej.kind==='field'    && typeof ej.fieldTier==='number'));
               if(!ejOk) state.estate.job = null;
+              // Action queue: a saved queue must be an array of well-formed entries, or drop it whole
+              // (a malformed queue would spend materials advancing garbage). Cap to ESTATE_QUEUE_MAX.
+              if(!Array.isArray(state.estate.queue)){
+                state.estate.queue = [];
+              } else {
+                state.estate.queue = state.estate.queue.filter(function(q){
+                  return q && typeof q.kind==='string' && typeof q.x==='number' && typeof q.y==='number' &&
+                    (q.kind==='raise' || q.kind==='lower' || q.kind==='clear' ||
+                     (q.kind==='pave'     && typeof q.paveTileId==='string') ||
+                     (q.kind==='workshop' && typeof q.workshopId==='string') ||
+                     (q.kind==='cottage'  && typeof q.cottageId==='string') ||
+                     (q.kind==='field'    && typeof q.fieldTier==='number'));
+                }).slice(0, ESTATE_QUEUE_MAX);
+              }
               var edgesYOk = state.estate.edgesY && state.estate.edgesY.length === ESTATE_GRID_SIZE &&
                 state.estate.edgesY.every(function(col){ return Array.isArray(col) && col.length === ESTATE_GRID_SIZE+1 && col.every(function(e){ return !!e; }); });
               var edgesXOk = state.estate.edgesX && state.estate.edgesX.length === ESTATE_GRID_SIZE+1 &&
@@ -14927,7 +14941,7 @@
               }
             }
           } catch(estateErr){
-            state.estate = Object.assign({ grid: generatePersonalEstateGrid(), expansionsPurchased: 0, job: null }, generateEstateEdges());
+            state.estate = Object.assign({ grid: generatePersonalEstateGrid(), expansionsPurchased: 0, job: null, queue: [] }, generateEstateEdges());
           }
           if(typeof state.familiarCastIndex !== 'number') state.familiarCastIndex = 0;
           if(typeof state.familiarCastAccum !== 'number') state.familiarCastAccum = 0;
@@ -19907,10 +19921,11 @@
   // always-release, and a message on every path.
   var _estJobRpcBusy = false, _estJobRpcAt = 0;
   var EST_JOB_RPC_TIMEOUT_MS = 15000;
-  function estJobRpcLock(){
+  function estJobRpcLock(quiet){
     if(_estJobRpcBusy && (Date.now() - _estJobRpcAt) < EST_JOB_RPC_TIMEOUT_MS){
-      addLog('Still finishing your last estate request — try again in a moment.', 'danger');
-      needsRender = true;
+      // `quiet` is for the automatic queue-advance: it retries on a later tick, so it must not nag the
+      // player with a "still finishing" message every time it finds the lock held by a manual action.
+      if(!quiet){ addLog('Still finishing your last estate request — try again in a moment.', 'danger'); needsRender = true; }
       return false;
     }
     _estJobRpcBusy = true; _estJobRpcAt = Date.now();   // a lock older than the timeout is stale: take it
@@ -19983,38 +19998,243 @@
       needsRender = true;
     });
   }
+  // ---- Personal-estate ACTION QUEUE ---------------------------------------------------------------
+  // My Estate lets you line up to ESTATE_QUEUE_MAX actions behind the one that's running. The server
+  // still owns exactly one active job (estate_jobs PK on user_id), so the queue is purely client-side:
+  // pending descriptors that auto-dispatch to the server one at a time as the active job finishes. The
+  // guild estate is untouched -- it has its own per-member jobs[] path and no queue.
+  //
+  // Materials are reserved (removed from inventory) the moment an action is queued, and refunded if it's
+  // cancelled or skipped -- exactly the amounts estateJobMaterials lists, so reserve and refund can never
+  // drift. lower/clear reserve nothing (they produce, not consume). Reserving up front is what lets you
+  // queue five paving jobs and have the tiles set aside, and what makes same-tile chaining validate: each
+  // enqueue sees inventory already reduced by the ones ahead of it.
+  var ESTATE_QUEUE_MAX = 5;
+  function estateQueue(){ return (state.estate && state.estate.queue) || []; }
+  // Two guards, deliberately different. estateQueueGuard gates the ENQUEUE decision and is view-dependent:
+  // you can only queue while looking at My Estate (a guild action must never land in the personal queue).
+  // estatePersonalQueueReady gates ADVANCE/DISPATCH and is view-INDEPENDENT: the personal job completes
+  // and the queue must roll on no matter which estate you happen to be viewing, so it must not read
+  // estIsGuild -- an earlier version did, and the queue silently froze whenever the guild estate was open.
+  function estateQueueGuard(){ return !estIsGuild && estateJobServerOwned(); }
+  function estatePersonalQueueReady(){ return !!chatClient && !!authUser && !!authUser.id; }
+  // Materials a job holds while it's pending/running: [[itemId, qty], ...]. Single source for both the
+  // reserve at enqueue and the refund on cancel/skip. Mirrors what each starter used to consume inline.
+  function estateJobMaterials(job){
+    switch(job.kind){
+      case 'pave':     return [[job.paveTileId, ESTATE_PAVE_TILE_COST]];
+      case 'workshop': return [[job.workshopId, 1]];
+      case 'cottage':  return [[job.cottageId, 1]];
+      case 'field':    return [['digging_t'+job.fieldTier, 100]];
+      case 'raise':    return [[ESTATE_DIRT_ITEM_ID, ESTATE_RAISE_DIRT_COST]];
+      default:         return []; // lower, clear
+    }
+  }
+  function estateJobConsume(job){ estateJobMaterials(job).forEach(function(m){ if(m[0]) state.inventory[m[0]] = (state.inventory[m[0]]||0) - m[1]; }); }
+  function estateJobRefund(job){ estateJobMaterials(job).forEach(function(m){ if(m[0]) addItem(m[0], m[1]); }); }
+  // The tile as it WILL be once the active job and everything already queued FOR THIS TILE has finished.
+  // Pure -- it only reads, and only touches the fields validation cares about -- so it's safe to call
+  // freely (unlike applyEstateJobCompletion, which also recomputes workshop caches and grants rewards).
+  // This is what makes chaining correct: a second queued raise validates against the raised height, a
+  // queued workshop against the tile the queued pave will have created.
+  function estateApplyProjection(p, job){
+    if(job.kind === 'clear') p.obstacle = null;
+    else if(job.kind === 'pave'){ p.type = 'paved'; p.paveTileId = job.paveTileId; }
+    else if(job.kind === 'workshop') p.workshopId = job.workshopId;
+    else if(job.kind === 'cottage') p.cottageId = job.cottageId;
+    else if(job.kind === 'field') p.fieldTier = job.fieldTier;
+    else if(job.kind === 'raise') p.height = Math.min(ESTATE_MAX_HEIGHT-1, p.height + 1);
+    else if(job.kind === 'lower') p.height = Math.max(0, p.height - 1);
+  }
+  function estateProjectedCell(x, y){
+    var cell = state.estate && state.estate.grid[x] && state.estate.grid[x][y];
+    if(!cell) return null;
+    var p = { height:cell.height, type:cell.type, obstacle:cell.obstacle, paveTileId:cell.paveTileId,
+              workshopId:cell.workshopId, cottageId:cell.cottageId, fieldTier:cell.fieldTier, owned:cell.owned };
+    if(state.estate.job && state.estate.job.x === x && state.estate.job.y === y) estateApplyProjection(p, state.estate.job);
+    estateQueue().forEach(function(q){ if(q.x === x && q.y === y) estateApplyProjection(p, q); });
+    return p;
+  }
+  // Grid-state precondition for a queued job, checked against a cell (projected at enqueue, REAL at
+  // dispatch). Deliberately lighter than the full starter validation: level and materials don't need
+  // re-checking (levels never drop, materials are already reserved), only that the tile still allows it.
+  function estateQueuedJobValid(job, c){
+    if(!c) return { ok:false, msg:'That tile is gone.' };
+    switch(job.kind){
+      case 'clear':    return c.obstacle ? { ok:true } : { ok:false, msg:'nothing left to clear there' };
+      case 'raise':    if(c.type!=='dirt' || c.obstacle) return { ok:false, msg:'that tile can no longer be raised' };
+                       return (c.height < ESTATE_MAX_HEIGHT-1) ? { ok:true } : { ok:false, msg:'that tile is already at max height' };
+      case 'lower':    if(c.type!=='dirt' || c.obstacle) return { ok:false, msg:'that tile can no longer be dug down' };
+                       return (c.height > 0) ? { ok:true } : { ok:false, msg:'that tile is already at the waterline' };
+      case 'pave':     if(c.type!=='dirt') return { ok:false, msg:'that tile can no longer be paved' };
+                       if(c.obstacle) return { ok:false, msg:'that tile has an obstacle to clear first' };
+                       if((c.height|0) <= 0) return { ok:false, msg:'that tile is underwater' };
+                       return { ok:true };
+      case 'field':    if(c.type!=='dirt' || c.obstacle || c.fieldTier!=null) return { ok:false, msg:'that tile can no longer take a Field' };
+                       return { ok:true };
+      case 'workshop': if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
+                       if(c.workshopId) return { ok:false, msg:'that tile already has a workshop' };
+                       return { ok:true };
+      case 'cottage':  if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
+                       if(c.workshopId || c.cottageId) return { ok:false, msg:'that tile already has a building' };
+                       return { ok:true };
+    }
+    return { ok:true };
+  }
+  // The single tail every personal starter now calls in place of estateJobClaim. `spec` carries the flat
+  // job fields (paveTileId/workshopId/etc.), the localMs duration, and the three user-facing strings.
+  // Immediate start (nothing running, nothing queued) is byte-for-byte the old path: server claim first,
+  // materials consumed only once the claim is ours. Otherwise it queues.
+  function estateEnqueueOrStart(kind, x, y, payload, localMs, spec){
+    var jobFields = spec.jobFields || {};
+    var jobBase = Object.assign({ kind:kind, x:x, y:y }, jobFields);
+    // Start the action right now via the classic server/local claim. estateJobClaim captures estActive as
+    // its target and consumes materials only once the claim is ours, so a refused claim can't charge.
+    function startNow(){
+      estateJobClaim(kind, x, y, payload, localMs, function(target, startAt, readyAt){
+        estateJobConsume(jobBase);
+        target.job = Object.assign({ kind:kind, x:x, y:y, startAt:startAt, readyAt:readyAt }, jobFields);
+        if(spec.closeMenu) spec.closeMenu();
+        addLog(spec.startedMsg, 'important');
+        spawnFloatingText(spec.startedFt || 'Working…', 'ft-success');
+        estPersist();
+        needsRender = true;
+      });
+    }
+    // The QUEUE only exists on My Estate while logged in. The guild estate (its own per-member jobs path)
+    // and logged-out play keep the classic one-at-a-time flow, gated by THAT estate's active job. This is
+    // checked first because `running`/`queue` below read the personal estate specifically -- reading them
+    // for a guild action would wrongly conflate a personal job with a guild one.
+    if(!estateQueueGuard()){
+      if(estateJobActive()){
+        addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger');
+        needsRender = true; return;
+      }
+      startNow(); return;
+    }
+    // Personal + logged in: run immediately if the estate is idle and nothing is queued, else append.
+    if(!(state.estate && state.estate.job) && estateQueue().length === 0){ startNow(); return; }
+    if(estateQueue().length >= ESTATE_QUEUE_MAX){
+      addLog('Your estate queue is full (' + ESTATE_QUEUE_MAX + ' actions). Let one finish or cancel it first.', 'danger');
+      needsRender = true; return;
+    }
+    // Validate against where the tile will BE once everything ahead of this finishes.
+    var v = estateQueuedJobValid(jobBase, estateProjectedCell(x, y));
+    if(!v.ok){ addLog('Can\'t queue that — ' + v.msg + '.', 'danger'); needsRender = true; return; }
+    estateJobConsume(jobBase);                        // reserve materials now (refunded on cancel/skip)
+    var entry = Object.assign({ kind:kind, x:x, y:y, localMs:localMs, payload:payload || {} }, jobFields);
+    state.estate.queue.push(entry);
+    if(spec.closeMenu) spec.closeMenu();
+    addLog(spec.queuedMsg + ' Queued as #' + estateQueue().length + '.', 'important');
+    spawnFloatingText('Queued', 'ft-bonus');
+    estPersist();
+    needsRender = true;
+  }
+  // Kick off the next queued action once the active job clears. Called from processEstateJob after a
+  // completion, and after a cancel. Re-validates against the REAL grid (a queued build is void if you
+  // broke the pavement under it in the meantime) -- an invalid head is refunded, logged and skipped.
+  // `force` = true right after a completion/cancel (dispatch at once); the throttled path is the tick loop
+  // retrying a head that couldn't be claimed last time (RPC lock held by a manual action, transient error).
+  // Without the tick retry, a single busy moment would strand the whole queue until the next manual action.
+  var _estQueueAdvancing = false, _estQueueAdvanceAt = 0;
+  function estateQueueAdvance(force){
+    if(state.estate && state.estate.job) return;      // something already running -> wait
+    if(!estateQueue().length) return;
+    if(!estatePersonalQueueReady()) return;           // view-independent: advances even from the guild estate
+    if(_estQueueAdvancing) return;
+    if(!force && (Date.now() - _estQueueAdvanceAt) < 4000) return;  // throttle tick-loop retries
+    _estQueueAdvanceAt = Date.now();
+    // Drop any now-invalid heads up front (refunding each), so we dispatch the first one that still fits.
+    while(estateQueue().length){
+      var head = state.estate.queue[0];
+      var v = estateQueuedJobValid(head, state.estate.grid[head.x] && state.estate.grid[head.x][head.y]);
+      if(v.ok) break;
+      estateJobRefund(head);
+      state.estate.queue.shift();
+      addLog('Skipped a queued estate action — ' + v.msg + ' (materials returned).', 'danger');
+      needsRender = true;
+    }
+    if(!estateQueue().length){ estPersist(); return; }
+    var next = state.estate.queue[0];
+    // Server claim only -- materials were reserved at enqueue, so DO NOT consume again here. Quiet lock:
+    // if a manual estate action holds it, bail silently and the throttled tick retry picks it up.
+    if(!estJobRpcLock(true)) return;
+    _estQueueAdvancing = true;
+    var _p;
+    try { _p = chatClient.rpc('estate_job_start', { p_kind:next.kind, p_x:next.x, p_y:next.y, p_payload:next.payload || {} }); }
+    catch(e){ estJobRpcRelease(); _estQueueAdvancing = false; return; }
+    _p.then(function(res){
+      estJobRpcRelease(); _estQueueAdvancing = false;
+      var d = res && res.data;
+      if(!d || !d.ok || !d.claimed){
+        // Couldn't claim (another window is mid-job, or a transient error). Leave the item queued and
+        // retry on a later tick; adopt any server job the response reports so we don't double up.
+        if(d && d.job) state.estate.job = estateJobFromServer(d.job);
+        needsRender = true; return;
+      }
+      state.estate.queue.shift();
+      var jobFields = {};
+      if(next.paveTileId != null) jobFields.paveTileId = next.paveTileId;
+      if(next.workshopId != null) jobFields.workshopId = next.workshopId;
+      if(next.cottageId != null) jobFields.cottageId = next.cottageId;
+      if(next.fieldTier != null) jobFields.fieldTier = next.fieldTier;
+      state.estate.job = Object.assign({ kind:next.kind, x:next.x, y:next.y, startAt:Number(d.job.startAt), readyAt:Number(d.job.readyAt) }, jobFields);
+      addLog('Next estate action started: ' + estateJobLabel(next) + ' at (' + next.x + ', ' + next.y + ').', 'important');
+      estPersist();
+      needsRender = true;
+      cloudSave(false, true);
+    }, function(){ estJobRpcRelease(); _estQueueAdvancing = false; });
+  }
+  // Cancel one pending action by its queue index (0-based): refund its materials and drop it.
+  function estateCancelQueued(idx){
+    var q = estateQueue();
+    if(idx < 0 || idx >= q.length) return;
+    var entry = q[idx];
+    estateJobRefund(entry);
+    state.estate.queue.splice(idx, 1);
+    addLog('Removed ' + estateJobLabel(entry) + ' from the queue (materials returned).', 'important');
+    estPersist();
+    needsRender = true;
+  }
+  // Human-readable label for a job/queue entry, used in logs and the queue UI.
+  function estateJobLabel(job){
+    switch(job.kind){
+      case 'clear':    return 'Clear obstacle';
+      case 'raise':    return 'Raise tile';
+      case 'lower':    return 'Dig down tile';
+      case 'pave':     var pr = getPavingRecipe(job.paveTileId); return 'Pave' + (pr ? ' with ' + pr.name : '');
+      case 'workshop': return 'Build ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name || 'Workshop');
+      case 'cottage':  return 'Build ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name || 'Cottage');
+      case 'field':    return 'Till ' + ((FARM_FIELD_TIERS['field_t'+job.fieldTier]||{}).name || 'Field');
+    }
+    return job.kind;
+  }
   function estateClearObstacle(x, y){
     var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || !cell.obstacle) return;
-    if(estateJobActive()){
-      addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger');
-      return;
-    }
-    if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
+    if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
     var info = estateObstacleInfo(cell.obstacle);
     if(!info) return;
     if(getLevel(state.xp[info.def.skill]) < info.reqLevel){
       addLog('Clearing these ' + info.def.label + ' requires ' + SKILL_LABELS[info.def.skill] + ' level ' + info.reqLevel + '.', 'danger');
       return;
     }
-    estateJobClaim('clear', x, y, { type:cell.obstacle.type, tierIndex:cell.obstacle.tierIndex|0 }, info.durationMs, function(target, startAt, readyAt){
-      target.job = { kind:'clear', x:x, y:y, startAt:startAt, readyAt:readyAt };
-      addLog('You began clearing the ' + info.def.label + ' at (' + x + ', ' + y + ').', 'important');
-      spawnFloatingText('Clearing\u2026', 'ft-success');
-      estPersist();
-      needsRender = true;
+    estateEnqueueOrStart('clear', x, y, { type:cell.obstacle.type, tierIndex:cell.obstacle.tierIndex|0 }, info.durationMs, {
+      jobFields: {},
+      startedMsg: 'You began clearing the ' + info.def.label + ' at (' + x + ', ' + y + ').',
+      startedFt: 'Clearing\u2026',
+      queuedMsg: 'Queued clearing the ' + info.def.label + ' at (' + x + ', ' + y + ').'
     });
   }
   function estateRaiseLayer(x, y){
     var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || cell.type !== 'dirt') return;
     if(cell.obstacle){ addLog('Clear the obstacle on this tile before terraforming it.', 'danger'); return; }
-    if(estateJobActive()){
-      addLog('You can only terraform one tile at a time -- finish or cancel the current job first.', 'danger');
-      return;
-    }
-    if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
-    if(cell.height >= ESTATE_MAX_HEIGHT-1) return;
+    if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
+    // Validate the CAP against where the tile will be once anything already queued for it lands, so a
+    // stack of raises stops at the ceiling instead of over-queueing.
+    var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);
+    if(pc.height >= ESTATE_MAX_HEIGHT-1){ addLog('That tile is already at (or queued to) max height.', 'danger'); return; }
     if(getLevel(state.xp.digging) < ESTATE_RAISE_LEVEL){
       addLog('Raising this tile requires Digging level ' + ESTATE_RAISE_LEVEL + '.', 'danger');
       return;
@@ -20023,13 +20243,11 @@
       addLog('Raising this tile requires ' + ESTATE_RAISE_DIRT_COST + ' Dirt.', 'danger');
       return;
     }
-    estateJobClaim('raise', x, y, {}, ESTATE_TERRAFORM_MS, function(target, startAt, readyAt){
-      state.inventory[ESTATE_DIRT_ITEM_ID] -= ESTATE_RAISE_DIRT_COST;   // charge only once the claim is ours
-      target.job = { kind:'raise', x:x, y:y, startAt:startAt, readyAt:readyAt };
-      addLog('You began raising the tile at (' + x + ', ' + y + '). It will finish in 10 minutes.', 'important');
-      spawnFloatingText('Raising\u2026', 'ft-success');
-      estPersist();
-      needsRender = true;
+    estateEnqueueOrStart('raise', x, y, {}, ESTATE_TERRAFORM_MS, {
+      jobFields: {},
+      startedMsg: 'You began raising the tile at (' + x + ', ' + y + '). It will finish in 10 minutes.',
+      startedFt: 'Raising\u2026',
+      queuedMsg: 'Queued raising the tile at (' + x + ', ' + y + ').'
     });
   }
   function estateLowerLayer(x, y){
@@ -20040,23 +20258,21 @@
     var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || cell.type !== 'dirt') return;
     if(cell.obstacle){ addLog('Clear the obstacle on this tile before terraforming it.', 'danger'); return; }
-    if(estateJobActive()){
-      addLog('You can only terraform one tile at a time -- finish or cancel the current job first.', 'danger');
-      return;
-    }
-    if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
-    if(cell.height <= 0) return;
-    var reqLevel = estateLowerRequiredLevel(cell.height);
+    if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
+    // Height AND the level requirement are read from the PROJECTED height: digging deeper needs a higher
+    // Digging level, so a stack of lowers is gated by the deepest step it will reach, not the current top.
+    var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);
+    if(pc.height <= 0){ addLog('That tile is already at (or queued to) the waterline.', 'danger'); return; }
+    var reqLevel = estateLowerRequiredLevel(pc.height);
     if(getLevel(state.xp.digging) < reqLevel){
       addLog('Lowering this tile requires Digging level ' + reqLevel + '.', 'danger');
       return;
     }
-    estateJobClaim('lower', x, y, {}, ESTATE_TERRAFORM_MS, function(target, startAt, readyAt){
-      target.job = { kind:'lower', x:x, y:y, startAt:startAt, readyAt:readyAt };
-      addLog('You began digging down the tile at (' + x + ', ' + y + '). It will finish in 10 minutes.', 'important');
-      spawnFloatingText('Digging\u2026', 'ft-success');
-      estPersist();
-      needsRender = true;
+    estateEnqueueOrStart('lower', x, y, {}, ESTATE_TERRAFORM_MS, {
+      jobFields: {},
+      startedMsg: 'You began digging down the tile at (' + x + ', ' + y + '). It will finish in 10 minutes.',
+      startedFt: 'Digging\u2026',
+      queuedMsg: 'Queued digging down the tile at (' + x + ', ' + y + ').'
     });
   }
   function estateCancelJob(){
@@ -20120,6 +20336,7 @@
     target.job = null;
     estPersist();
     needsRender = true;
+    if(target === state.estate) estateQueueAdvance(true);   // cancelling the active job lets the queue proceed
   }
   // Guild-estate teamwork: a free member can pitch in on a busy teammate's task, halving its
   // remaining time. Both are then occupied on the shared estate -- the helper can't run their own
@@ -20244,7 +20461,7 @@
   var _estJobCompleteBusy = false;
   function processEstateJob(){
     var job = state.estate && state.estate.job;
-    if(!job) return;
+    if(!job){ if(estateQueue().length) estateQueueAdvance(); return; }  // idle with a queue -> (throttled) advance
     if(Date.now() < job.readyAt) return;          // local clock is a cheap pre-filter, never the authority
     // Logged out / no cloud save: no second session can exist, so finish locally as before.
     if(!chatClient || !authUser || !authUser.id){
@@ -20268,6 +20485,7 @@
         state.estate.job = null;
         needsRender = true;
         cloudSave(false, true);                   // flush the finished grid before another window pushes
+        estateQueueAdvance(true);                 // auto-start the next queued action, if any
       } else if(d && d.error === 'early' && d.job){
         // Our clock ran ahead of the server's -- adopt the real remaining time instead of completing.
         cur.readyAt = Number(d.job.readyAt) || cur.readyAt;
@@ -20277,6 +20495,7 @@
         // applying the completion -- this is the branch that stops a two-browser double-grant.
         state.estate.job = null;
         needsRender = true;
+        estateQueueAdvance(true);                 // the other window finished it -> our queue can proceed
       }
     }, function(){ _estJobCompleteBusy = false; });   // network blip: retry on a later tick
   }
@@ -20296,13 +20515,15 @@
   }
   function estatePaveTile(x, y, paveTileId){
     var cell = estActive.grid[x] && estActive.grid[x][y];
-    if(!cell || cell.type !== 'dirt') return;
-    // You can't lay stone on water. Raising the tile out of the water first is the intended route, and
-    // estateRaiseLayer deliberately still allows that from 0.
-    if(estateIsWater(cell)){ addLog('That tile is underwater — raise it above the waterline before paving.', 'danger'); return; }
-    if(cell.obstacle){ addLog('Clear the obstacle on this tile before paving it.', 'danger'); return; }
-    if(estateJobActive()){ addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger'); return; }
-    if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
+    if(!cell) return;
+    // Validate against the PROJECTED tile so raise-then-pave or clear-then-pave can be chained on one
+    // tile: for an immediate start (empty queue, nothing running) the projection equals the raw cell, so
+    // this is unchanged there.
+    var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);
+    if(pc.type !== 'dirt'){ if(cell.type !== 'dirt') return; addLog('That tile is already set to be paved or built on.', 'danger'); return; }
+    if(estateIsWater(pc)){ addLog('That tile is underwater — raise it above the waterline before paving.', 'danger'); return; }
+    if(pc.obstacle){ addLog('Clear the obstacle on this tile before paving it.', 'danger'); return; }
+    if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
     var recipe = getPavingRecipe(paveTileId);
     if(!recipe) return;
     if(getLevel(state.xp.paving) < recipe.levelReq){
@@ -20314,14 +20535,12 @@
       return;
     }
     var pTier = (parseInt(paveTileId.split('_t')[1],10)||0) + 1; // 10 min per tier
-    estateJobClaim('pave', x, y, { paveTileId:paveTileId }, pTier*ESTATE_PAVE_MS_PER_TIER, function(target, startAt, readyAt){
-    state.inventory[paveTileId] -= ESTATE_PAVE_TILE_COST;
-    target.job = { kind:'pave', x:x, y:y, paveTileId:paveTileId, startAt:startAt, readyAt:readyAt };
-    estatePavingMenuOpen = false;
-    addLog('You began paving (' + x + ', ' + y + ') with ' + recipe.name + ' — finishes in ' + (pTier*10) + ' minutes.', 'important');
-    spawnFloatingText('Paving…', 'ft-success');
-    estPersist();
-    needsRender = true;
+    estateEnqueueOrStart('pave', x, y, { paveTileId:paveTileId }, pTier*ESTATE_PAVE_MS_PER_TIER, {
+      jobFields: { paveTileId:paveTileId },
+      closeMenu: function(){ estatePavingMenuOpen = false; },
+      startedMsg: 'You began paving (' + x + ', ' + y + ') with ' + recipe.name + ' — finishes in ' + (pTier*10) + ' minutes.',
+      startedFt: 'Paving…',
+      queuedMsg: 'Queued paving (' + x + ', ' + y + ') with ' + recipe.name + '.'
     });
   }
   function estateBreakPavement(x, y){
@@ -20435,23 +20654,27 @@
   }
   function estatePlaceWorkshop(x, y, workshopId){
     var cell = estActive.grid[x] && estActive.grid[x][y];
-    if(!cell || cell.type!=='paved'){ addLog('Workshops can only be placed on paved tiles.', 'danger'); return; }
-    if(cell.workshopId){ addLog('That tile already has a workshop.', 'danger'); return; }
+    if(!cell) return;
+    var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);   // lets pave-then-build chain on one tile
+    if(pc.type!=='paved'){ addLog('Workshops can only be placed on paved tiles.', 'danger'); return; }
+    if(pc.workshopId){ addLog('That tile already has a workshop.', 'danger'); return; }
     var it = WORKSHOP_ITEMS[workshopId];
     if(!it || (state.inventory[workshopId]||0) <= 0){ addLog('You don\'t own that workshop.', 'danger'); return; }
-    if(it.tierIndex > pavementTierOf(cell)){ addLog('That workshop needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
+    if(it.tierIndex > pavementTierOf(pc)){ addLog('That workshop needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
     if(estWorkshopMap()[it.skillId] !== undefined){ addLog('This estate already has a ' + ((CRAFTING_SKILLS[it.skillId]||{}).label||it.skillId) + ' Workshop — only one per skill.', 'danger'); return; }
-    if(estateJobActive()){ addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger'); return; }
-    if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
+    // "One workshop per skill" also has to account for one ALREADY QUEUED -- estWorkshopMap only sees the
+    // real grid, so without this you could queue two Forestry workshops and get a duplicate.
+    if(!estIsGuild && estateQueue().some(function(q){ return q.kind==='workshop' && (WORKSHOP_ITEMS[q.workshopId]||{}).skillId === it.skillId; })){
+      addLog('You already have a ' + ((CRAFTING_SKILLS[it.skillId]||{}).label||it.skillId) + ' Workshop queued — only one per skill.', 'danger'); return;
+    }
+    if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
     var wTier = it.tierIndex + 1; // 30 min per tier
-    estateJobClaim('workshop', x, y, { workshopId:workshopId }, wTier*ESTATE_WORKSHOP_MS_PER_TIER, function(target, startAt, readyAt){
-      state.inventory[workshopId] -= 1;
-      target.job = { kind:'workshop', x:x, y:y, workshopId:workshopId, startAt:startAt, readyAt:readyAt };
-      estateWorkshopMenuOpen = false;
-      addLog('You began building a ' + it.name + ' at (' + x + ', ' + y + ') — finishes in ' + (wTier*30) + ' minutes.', 'important');
-      spawnFloatingText('Building…', 'ft-success');
-      estPersist();
-      needsRender = true;
+    estateEnqueueOrStart('workshop', x, y, { workshopId:workshopId }, wTier*ESTATE_WORKSHOP_MS_PER_TIER, {
+      jobFields: { workshopId:workshopId },
+      closeMenu: function(){ estateWorkshopMenuOpen = false; },
+      startedMsg: 'You began building a ' + it.name + ' at (' + x + ', ' + y + ') — finishes in ' + (wTier*30) + ' minutes.',
+      startedFt: 'Building…',
+      queuedMsg: 'Queued building a ' + it.name + ' at (' + x + ', ' + y + ').'
     });
   }
   function estateRemoveWorkshop(x, y){
@@ -20496,22 +20719,21 @@
   }
   function estatePlaceCottage(x, y, cottageId){
     var cell = estActive.grid[x] && estActive.grid[x][y];
-    if(!cell || cell.type!=='paved'){ addLog('Cottages can only be placed on paved tiles.', 'danger'); return; }
-    if(cell.workshopId || cell.cottageId){ addLog('That tile already has a building.', 'danger'); return; }
+    if(!cell) return;
+    var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);
+    if(pc.type!=='paved'){ addLog('Cottages can only be placed on paved tiles.', 'danger'); return; }
+    if(pc.workshopId || pc.cottageId){ addLog('That tile already has a building.', 'danger'); return; }
     var it = COTTAGE_ITEMS[cottageId];
     if(!it || (state.inventory[cottageId]||0) <= 0){ addLog('You don\'t own that cottage.', 'danger'); return; }
-    if(it.tierIndex > pavementTierOf(cell)){ addLog('That cottage needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
-    if(estateJobActive()){ addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger'); return; }
-    if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
+    if(it.tierIndex > pavementTierOf(pc)){ addLog('That cottage needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
+    if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
     var cTier = it.tierIndex + 1; // 10 min per tier
-    estateJobClaim('cottage', x, y, { cottageId:cottageId }, cTier*ESTATE_COTTAGE_MS_PER_TIER, function(target, startAt, readyAt){
-      state.inventory[cottageId] -= 1;
-      target.job = { kind:'cottage', x:x, y:y, cottageId:cottageId, startAt:startAt, readyAt:readyAt };
-      estateCottageMenuOpen = false;
-      addLog('You began building a ' + it.name + ' at (' + x + ', ' + y + ') — finishes in ' + (cTier*10) + ' minutes.', 'important');
-      spawnFloatingText('Building…', 'ft-success');
-      estPersist();
-      needsRender = true;
+    estateEnqueueOrStart('cottage', x, y, { cottageId:cottageId }, cTier*ESTATE_COTTAGE_MS_PER_TIER, {
+      jobFields: { cottageId:cottageId },
+      closeMenu: function(){ estateCottageMenuOpen = false; },
+      startedMsg: 'You began building a ' + it.name + ' at (' + x + ', ' + y + ') — finishes in ' + (cTier*10) + ' minutes.',
+      startedFt: 'Building…',
+      queuedMsg: 'Queued building a ' + it.name + ' at (' + x + ', ' + y + ').'
     });
   }
   function estateRemoveCottage(x, y){
@@ -20531,23 +20753,24 @@
   function diggingResName(tier){ return (ALL_SELLABLE['digging_t'+tier]||{}).name || (DIGGING_NAMES[tier]||'resource'); }
   function estatePlaceField(x, y, tier){
     var cell = estActive.grid[x] && estActive.grid[x][y];
-    if(!cell || cell.type!=='dirt'){ addLog('Fields go on empty, unpaved tiles.', 'danger'); return; }
+    if(!cell) return;
+    var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);   // clear-then-field can chain on one tile
+    if(pc.type!=='dirt'){ addLog('Fields go on empty, unpaved tiles.', 'danger'); return; }
     if(!cell.owned){ addLog('You can only place a Field on an owned tile.', 'danger'); return; }
-    if(cell.obstacle){ addLog('Clear the obstacle on this tile before placing a Field.', 'danger'); return; }
-    if(cell.fieldTier != null){ addLog('That tile already has a Field.', 'danger'); return; }
+    if(pc.obstacle){ addLog('Clear the obstacle on this tile before placing a Field.', 'danger'); return; }
+    if(pc.fieldTier != null){ addLog('That tile already has a Field.', 'danger'); return; }
     var def = FARM_FIELD_TIERS['field_t'+tier]; if(!def) return;
-    if(estateFieldCount(estActive.grid) >= ESTATE_MAX_FIELDS){ addLog('This estate already has the maximum of ' + ESTATE_MAX_FIELDS + ' Fields.', 'danger'); return; }
-    if(estateJobActive()){ addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger'); return; }
-    if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
+    // Cap counts fields ALREADY QUEUED as well, so you can't queue past the ESTATE_MAX_FIELDS ceiling.
+    var queuedFields = estIsGuild ? 0 : estateQueue().filter(function(q){ return q.kind==='field'; }).length;
+    if(estateFieldCount(estActive.grid) + queuedFields >= ESTATE_MAX_FIELDS){ addLog('This estate already has (or has queued) the maximum of ' + ESTATE_MAX_FIELDS + ' Fields.', 'danger'); return; }
+    if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
     if(!hasInputs(def.inputs)){ addLog('Tilling a ' + def.name + ' needs 100 ' + diggingResName(tier) + '.', 'danger'); return; }
-    estateJobClaim('field', x, y, { fieldTier:tier|0 }, fieldBuildMs(tier), function(target, startAt, readyAt){
-      consumeInputs(def.inputs);
-      target.job = { kind:'field', x:x, y:y, fieldTier:tier, startAt:startAt, readyAt:readyAt };
-      estateFieldMenuOpen = false;
-      addLog('You began tilling a ' + def.name + ' at (' + x + ', ' + y + ') — finishes in ' + ((tier+1)*5) + ' minutes.', 'important');
-      spawnFloatingText('Tilling…', 'ft-success');
-      estPersist();
-      needsRender = true;
+    estateEnqueueOrStart('field', x, y, { fieldTier:tier|0 }, fieldBuildMs(tier), {
+      jobFields: { fieldTier:tier },
+      closeMenu: function(){ estateFieldMenuOpen = false; },
+      startedMsg: 'You began tilling a ' + def.name + ' at (' + x + ', ' + y + ') — finishes in ' + ((tier+1)*5) + ' minutes.',
+      startedFt: 'Tilling…',
+      queuedMsg: 'Queued tilling a ' + def.name + ' at (' + x + ', ' + y + ').'
     });
   }
   function estateRemoveField(x, y){
@@ -22428,9 +22651,26 @@
   // Always-visible status for the background terraforming job, so it stays in view even
   // when a different tile (or none) is selected. The fill width and countdown are refreshed
   // every frame by updateDynamic without rebuilding the button, so the Cancel click is safe.
+  // The pending action queue (personal estate only), shown under the active-job status. Each entry has a
+  // Remove button that refunds its reserved materials. No live timer -- queued items don't start counting
+  // down until they reach the head, so a static "~Nm" estimate is the honest thing to show.
+  function renderEstateQueue(){
+    var q = estateQueue();
+    if(!q.length) return '';
+    var html = '<div class="estate-action-row" style="align-items:stretch;flex-direction:column;gap:6px;border-top:1px dashed var(--border-light);padding-top:12px;">';
+    html += '<div class="estate-action-info"><b>Action Queue</b> &bull; '+q.length+'/'+ESTATE_QUEUE_MAX+' &mdash; each starts automatically when the one before it finishes</div>';
+    q.forEach(function(entry, i){
+      var mins = Math.round((entry.localMs||0)/60000);
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:6px 9px;">';
+      html += '<div class="estate-action-info"><span style="color:var(--text-faint);">#'+(i+1)+'</span> '+escapeHtml(estateJobLabel(entry))+' <span style="color:var(--text-faint);">('+entry.x+', '+entry.y+')'+(mins?' &bull; ~'+mins+'m':'')+'</span></div>';
+      html += '<button class="mini-btn" data-action="estateCancelQueued" data-idx="'+i+'">Remove</button>';
+      html += '</div>';
+    });
+    return html + '</div>';
+  }
   function renderEstateJobStatus(){
     var job = estActive && estActive.job;
-    if(!job) return estIsGuild ? renderGuildOtherJobs() : '';
+    if(!job) return estIsGuild ? renderGuildOtherJobs() : renderEstateQueue();
     var now = Date.now();
     var total = job.readyAt - job.startAt;
     var pct = clamp((now - job.startAt) / total * 100, 0, 100);
@@ -22471,7 +22711,7 @@
     html += '<div class="progress-track"><div class="progress-fill" id="estateJobFill" style="width:'+pct+'%"></div></div>';
     html += '<div class="estate-action-info" style="text-align:center;font-family:var(--font-mono);" id="estateJobTimer">Finishes in '+formatDuration(remaining)+'</div>';
     html += '</div>';
-    return html + (estIsGuild ? renderGuildOtherJobs() : '');
+    return html + (estIsGuild ? renderGuildOtherJobs() : renderEstateQueue());
   }
   var GUILD_JOB_KIND_LABEL = { clear:'clearing', pave:'paving', workshop:'building', raise:'raising', lower:'digging down', field:'tilling', cottage:'building', assist:'assisting' };
   function guildJobTimerId(owner){ return 'gjobtimer_' + String(owner).replace(/[^a-zA-Z0-9]/g,''); }
@@ -27759,6 +27999,7 @@
     estateRaiseLayer: function(btn, e){ estateRaiseLayer(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
     estateLowerLayer: function(btn, e){ estateLowerLayer(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
     estateCancelJob: function(btn, e){ estateCancelJob(); },
+    estateCancelQueued: function(btn, e){ estateCancelQueued(parseInt(btn.getAttribute('data-idx'),10)); },
     estateAssistJob: function(btn, e){ estateAssistJob(btn.getAttribute('data-owner')); },
     estateExpand: function(btn, e){ estateExpand(); },
     estateZoomIn: function(btn, e){ estateZoomBy(ESTATE_ZOOM_STEP); },
@@ -28797,6 +29038,7 @@
       candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
       peonTaskTier:peonTaskTier, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
       generatePersonalEstateGrid:generatePersonalEstateGrid, generateEstateGrid:generateEstateGrid, estatePlaceStarterKit:estatePlaceStarterKit, estateIsStarterTile:estateIsStarterTile, ESTATE_STARTER_WORKSHOP:ESTATE_STARTER_WORKSHOP, ESTATE_STARTER_COTTAGE:ESTATE_STARTER_COTTAGE, ESTATE_STARTER_PAVING:ESTATE_STARTER_PAVING, estatePeonSources:estatePeonSources,
+      ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
       estateUpgradePavement:estateUpgradePavement, pavementTierOf:pavementTierOf, ESTATE_PAVE_TILE_COST:ESTATE_PAVE_TILE_COST, estUse:estUse,

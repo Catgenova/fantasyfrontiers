@@ -8370,6 +8370,100 @@
     ok(starterSrc && starterSrc.skillId === 'forestry', 'the starter cottage is immediately a staffable Forestry peon source');
   });
 
+  // ---- My Estate action queue --------------------------------------------------------------------
+  suite('estate: action queue', function(){
+    ok(typeof FF.estateProjectedCell === 'function' && typeof FF.estateQueuedJobValid === 'function', 'queue helpers exported');
+    eq(FF.ESTATE_QUEUE_MAX, 5, 'queue holds five actions');
+
+    // THE load-bearing invariant: the pure projector must predict EXACTLY the grid change that the real
+    // completion applies. If they drift, a chained action (queue 3 raises, pave-then-build) validates
+    // against a tile that differs from what actually gets built. Drive every kind through both and compare.
+    var kinds = [
+      { kind:'clear' },
+      { kind:'pave', paveTileId:'paving_t3' },
+      { kind:'workshop', workshopId:'workshop_forestry_t0' },
+      { kind:'cottage', cottageId:'cottage_t0' },
+      { kind:'field', fieldTier:4 },
+      { kind:'raise' },
+      { kind:'lower' }
+    ];
+    kinds.forEach(function(k){
+      var start = { height:9, type:(k.kind==='workshop'||k.kind==='cottage')?'paved':'dirt', obstacle:(k.kind==='clear'?{type:'trees',tierIndex:2}:null),
+                    paveTileId:(k.kind==='workshop'||k.kind==='cottage')?'paving_t5':null, workshopId:null, cottageId:null, fieldTier:null, owned:true };
+      var job = Object.assign({ x:0, y:0 }, k);
+      // real completion (grid-only, no rewards) on a one-cell mini estate
+      var real = JSON.parse(JSON.stringify(start));
+      var mini = { grid: [[real]] };
+      FF.applyEstateJobCompletion(mini, job, false, false);
+      // pure projection
+      var proj = JSON.parse(JSON.stringify(start));
+      FF.estateApplyProjection(proj, job);
+      ['height','type','obstacle','paveTileId','workshopId','cottageId','fieldTier'].forEach(function(f){
+        eq(JSON.stringify(proj[f]), JSON.stringify(real[f]), k.kind+': projection matches real completion for '+f);
+      });
+    });
+
+    // Reserve/refund symmetry -- what enqueue removes, cancel returns, for each consuming kind.
+    var s = FF._state, savedInv = s.inventory;
+    try {
+      [ { kind:'pave', paveTileId:'paving_t2' }, { kind:'workshop', workshopId:'workshop_forestry_t3' },
+        { kind:'cottage', cottageId:'cottage_t1' }, { kind:'field', fieldTier:6 }, { kind:'raise' } ].forEach(function(job){
+        s.inventory = {};
+        var mats = FF.estateJobMaterials(job);
+        mats.forEach(function(m){ s.inventory[m[0]] = 1000; });
+        var before = {}; mats.forEach(function(m){ before[m[0]] = s.inventory[m[0]]; });
+        FF.estateJobConsume(job);
+        mats.forEach(function(m){ ok(s.inventory[m[0]] === before[m[0]] - m[1], job.kind+': consume removes '+m[1]+' '+m[0]); });
+        FF.estateJobRefund(job);
+        mats.forEach(function(m){ ok(s.inventory[m[0]] === before[m[0]], job.kind+': refund restores '+m[0]); });
+      });
+      eq(FF.estateJobMaterials({ kind:'lower' }).length, 0, 'lower reserves nothing');
+      eq(FF.estateJobMaterials({ kind:'clear' }).length, 0, 'clear reserves nothing');
+    } finally { s.inventory = savedInv; }
+
+    // Projection chaining against the live personal grid: a stack of raises climbs, and the validator
+    // stops the stack exactly at the ceiling.
+    var savedJob = s.estate.job, savedQ = s.estate.queue;
+    var gx = 6, gy = 9, cell = s.estate.grid[gx] && s.estate.grid[gx][gy];
+    var savedCell = cell && JSON.parse(JSON.stringify(cell));
+    try {
+      if(cell){
+        cell.type='dirt'; cell.obstacle=null; cell.workshopId=null; cell.cottageId=null; cell.fieldTier=null; cell.paveTileId=null;
+        cell.height = 5;
+        s.estate.job = null; s.estate.queue = [];
+        eq(FF.estateProjectedCell(gx,gy).height, 5, 'projection with empty queue equals the raw tile');
+        s.estate.queue = [ {kind:'raise',x:gx,y:gy}, {kind:'raise',x:gx,y:gy} ];
+        eq(FF.estateProjectedCell(gx,gy).height, 7, 'two queued raises project +2 height');
+        // clear-then-pave chain: obstacle gone, then paved
+        cell.obstacle = {type:'rocks',tierIndex:1};
+        s.estate.queue = [ {kind:'clear',x:gx,y:gy} ];
+        var pc = FF.estateProjectedCell(gx,gy);
+        eq(pc.obstacle, null, 'queued clear projects the obstacle away');
+        eq(FF.estateQueuedJobValid({kind:'pave',paveTileId:'paving_t0'}, pc).ok, true, 'pave becomes valid once the queued clear has cleared it');
+        eq(FF.estateQueuedJobValid({kind:'clear'}, pc).ok, false, 'a second clear on the same tile is rejected (nothing left)');
+        // ceiling / floor
+        cell.obstacle = null; cell.height = FF.ESTATE_MAX_HEIGHT - 1; s.estate.queue = [];
+        eq(FF.estateQueuedJobValid({kind:'raise'}, FF.estateProjectedCell(gx,gy)).ok, false, 'raise rejected at max height');
+        cell.height = 0;
+        eq(FF.estateQueuedJobValid({kind:'lower'}, FF.estateProjectedCell(gx,gy)).ok, false, 'lower rejected at the waterline');
+        eq(FF.estateQueuedJobValid({kind:'pave',paveTileId:'paving_t0'}, FF.estateProjectedCell(gx,gy)).ok, false, 'pave rejected on an underwater tile');
+      }
+
+      // Cancelling a queued entry refunds its reserved materials and drops it.
+      s.inventory = {}; s.inventory['paving_t2'] = 100;
+      s.estate.queue = [];
+      FF.estateJobConsume({kind:'pave',paveTileId:'paving_t2'});   // simulate a reserve at enqueue
+      s.estate.queue = [ {kind:'pave',x:gx,y:gy,paveTileId:'paving_t2'} ];
+      eq(s.inventory['paving_t2'], 80, 'reserve removed 20 tiles');
+      FF.estateCancelQueued(0);
+      eq(s.inventory['paving_t2'], 100, 'cancelling the queued pave refunded the 20 tiles');
+      eq(s.estate.queue.length, 0, 'the entry was removed from the queue');
+    } finally {
+      s.estate.job = savedJob; s.estate.queue = savedQ; s.inventory = savedInv;
+      if(cell && savedCell){ Object.keys(savedCell).forEach(function(f){ cell[f] = savedCell[f]; }); }
+    }
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }
