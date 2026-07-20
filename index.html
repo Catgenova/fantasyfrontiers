@@ -19870,7 +19870,24 @@
   // The GUILD estate keeps its existing path (its jobs already round-trip through the synced
   // guild_estate blob), and logged-out play falls back to local-only timing -- with no cloud save
   // there's no second session to race.
-  var _estJobRpcBusy = false;
+  // One in-flight estate request at a time. This lock is SELF-HEALING and never silent, because the naive
+  // version of it took the estate down: a single shared flag guarded all seven job starters AND cancel, so
+  // if a request hung -- or chatClient.rpc threw synchronously, which no catch covered -- the flag stayed
+  // true forever and every estate click silently did nothing. Reported as "unable to select the tiles to
+  // pave". Same failure the guild bank's `busy` flag had, and it wants the same remedy: a timeout, an
+  // always-release, and a message on every path.
+  var _estJobRpcBusy = false, _estJobRpcAt = 0;
+  var EST_JOB_RPC_TIMEOUT_MS = 15000;
+  function estJobRpcLock(){
+    if(_estJobRpcBusy && (Date.now() - _estJobRpcAt) < EST_JOB_RPC_TIMEOUT_MS){
+      addLog('Still finishing your last estate request — try again in a moment.', 'danger');
+      needsRender = true;
+      return false;
+    }
+    _estJobRpcBusy = true; _estJobRpcAt = Date.now();   // a lock older than the timeout is stale: take it
+    return true;
+  }
+  function estJobRpcRelease(){ _estJobRpcBusy = false; }
   function estateJobServerOwned(){ return !estIsGuild && !!chatClient && !!authUser && !!authUser.id; }
   // Server row -> the flat job shape the rest of the estate code already expects.
   function estateJobFromServer(sj){
@@ -19907,10 +19924,14 @@
   function estateJobClaim(kind, x, y, payload, localMs, commit){
     var target = estActive;                       // capture: the callback may land after navigation
     if(!estateJobServerOwned()){ var n = Date.now(); commit(target, n, n + localMs); return; }
-    if(_estJobRpcBusy) return;
-    _estJobRpcBusy = true;
-    chatClient.rpc('estate_job_start', { p_kind:kind, p_x:x, p_y:y, p_payload:payload || {} }).then(function(res){
-      _estJobRpcBusy = false;
+    if(!estJobRpcLock()) return;
+    var _p;
+    // A synchronous throw here (no client, transport blown up) used to escape the handler and strand the
+    // lock, killing every later estate click.
+    try { _p = chatClient.rpc('estate_job_start', { p_kind:kind, p_x:x, p_y:y, p_payload:payload || {} }); }
+    catch(e){ estJobRpcRelease(); addLog('Could not reach the server — estate task not started.', 'danger'); needsRender = true; return; }
+    _p.then(function(res){
+      estJobRpcRelease();
       var d = res && res.data;
       if(!d || !d.ok){
         if(d && d.error === 'pending' && d.job){
@@ -19928,7 +19949,7 @@
       }
       commit(target, Number(d.job.startAt), Number(d.job.readyAt));
     }, function(){
-      _estJobRpcBusy = false;
+      estJobRpcRelease();
       addLog('Could not reach the server — estate task not started.', 'danger');
       needsRender = true;
     });
@@ -20015,17 +20036,19 @@
     // Personal jobs: release the server row FIRST. Refunding before the delete is confirmed would let a
     // failed cancel be retried for a second refund while the job is still running server-side.
     if(estateJobServerOwned()){
-      if(_estJobRpcBusy) return;
+      if(!estJobRpcLock()) return;
       var target = estActive;                     // bind now: the player may navigate mid-flight
-      _estJobRpcBusy = true;
-      chatClient.rpc('estate_job_cancel').then(function(res){
-        _estJobRpcBusy = false;
+      var _pc;
+      try { _pc = chatClient.rpc('estate_job_cancel'); }
+      catch(e){ estJobRpcRelease(); addLog('Could not reach the server — estate task not cancelled.', 'danger'); needsRender = true; return; }
+      _pc.then(function(res){
+        estJobRpcRelease();
         var d = res && res.data;
         if(d && d.ok){ estateCancelJobLocal(target); }
         else if(d && d.error === 'none'){ target.job = null; needsRender = true; }  // already gone elsewhere -- no refund
         else { addLog('Could not cancel that estate task. Try again in a moment.', 'danger'); needsRender = true; }
       }, function(){
-        _estJobRpcBusy = false;
+        estJobRpcRelease();
         addLog('Could not reach the server — estate task not cancelled.', 'danger');
         needsRender = true;
       });
