@@ -294,6 +294,23 @@ Deno.serve(async (req) => {
     return json({ ok: true, result: r, ...(await snapshotOf(sid)) });
   }
 
+  // Grant a barrier outright (Templar Aegis of Dawn's party half). Distinct from `heal` because a shield
+  // is not overheal -- it lands whether or not the target is hurt. Tops up rather than stacking.
+  if (action === "shield") {
+    const sid = String(body.session_id || "");
+    const target = String(body.target_id || "");
+    if (!sid || !target) return json({ ok: false, error: "Invalid grant." }, 400);
+    const amtRaw = Number(body.amount);
+    const amount = Number.isFinite(amtRaw) && amtRaw > 0 ? Math.floor(amtRaw) : 0;
+    if (amount <= 0) return json({ ok: true, result: { status: "ok", granted: 0 } });
+    const { data: r, error } = await admin.rpc("dungeon_shield", {
+      p_session: sid, p_granter: user.id, p_target: target,
+      p_amount: amount, p_max_shield: MAX_HEAL_PER_CALL,
+    });
+    if (error) return json({ ok: false, error: "Shield failed." }, 500);
+    return json({ ok: true, result: r, ...(await snapshotOf(sid)) });
+  }
+
   if (action === "claim") {
     const sid = String(body.session_id || "");
     const { data: s } = await admin.from("dungeon_sessions").select("id").eq("id", sid).maybeSingle();

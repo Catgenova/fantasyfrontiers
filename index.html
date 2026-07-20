@@ -18661,6 +18661,23 @@
   // Take a barrier an ally's overheal granted me (Radiant Barrier / Everfull) into my ordinary local
   // shield pool, where the damage chain already absorbs from it. lumenShieldCap isn't class-gated, so a
   // Sentinel can hold a Lumen's gift just fine. Returns the amount claimed so the server can drain it.
+  // Aegis of Dawn's party half: every 10s the Templar wards each living ally too. Sized from the
+  // RECIPIENT's own max HP (the perk is "a shield absorbing up to 15% max HP", theirs) but scaled by the
+  // GRANTER's set bonuses, since those are the Templar's. Naturally rate-limited by the 10s cadence, so
+  // it sends directly rather than joining the heal batch. The server tops up rather than stacking.
+  function dungeonNetGrantAegis(mult){
+    if(!dungeonNetInParty() || !authUser) return;
+    var s = dungeonNet.session;
+    if(!s || s.status !== 'active') return;
+    var me = dungeonNetMyMember();
+    if(me && !me.alive) return;                       // a fallen Templar wards nobody
+    (dungeonNet.members || []).forEach(function(m){
+      if(!m || !m.alive || m.user_id === authUser.id) return;   // self already handled locally
+      var amt = Math.round(0.15 * (m.max_hp || 0) * (mult || 1));
+      if(amt > 0) dungeonNetInvoke('shield', { session_id:s.id, target_id:m.user_id, amount:amt })
+        .then(function(res){ if(res.ok) dungeonNetApply(res); });
+    });
+  }
   function dungeonNetClaimShield(){
     var me = dungeonNetMyMember(); if(!me) return 0;
     var owed = Math.max(0, (me.shield|0) - dungeonNet.shieldTaken); // same unconfirmed-claim guard as swings
@@ -27758,8 +27775,10 @@
         if(templarBonus(80)){
           if(!state.templarShieldAt || Date.now() - state.templarShieldAt >= 10000){
             state.templarShieldAt = Date.now();
-            var _aegisCap = Math.round(0.15 * maxHp(state) * templarAegisCapMult(state) * d4TemplarAegisMult(state)); // Radiant Aegis (Templar D2 full): +50% cap; Aegis of Light (Templar D4 full): scales with Light Attunement
+            var _aegisMult = templarAegisCapMult(state) * d4TemplarAegisMult(state); // Radiant Aegis (Templar D2 full): +50% cap; Aegis of Light (Templar D4 full): scales with Light Attunement
+            var _aegisCap = Math.round(0.15 * maxHp(state) * _aegisMult);
             if((state.templarShield||0) < _aegisCap){ state.templarShield = _aegisCap; spawnFloatingText('Aegis of Dawn '+_aegisCap, 'ft-rare'); }
+            dungeonNetGrantAegis(_aegisMult); // "...and your party in a dungeon" -- the half that never fired
           }
         }
         // Familiar spell casting: each active companion casts one spell every 10s, cycling its list.
