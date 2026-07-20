@@ -2019,6 +2019,52 @@
   });
 
   // ---- Dungeons: D1 "Cave" (25 arachnids, L100->125, ~10x boss, threat targeting) ---------
+  // ---- Tier curves must not reverse direction --------------------------------------------------
+  // Balance II had to fix FIVE shipped tier inversions -- higher tiers weaker than lower ones. That's
+  // a mechanical property, so check it mechanically instead of catching it in a later balance pass.
+  //
+  // Deliberately NOT asserting "every stat increases": some fields legitimately fall with tier (costs,
+  // timers, penalties). What is never legitimate is a curve that REVERSES -- rises then falls, or falls
+  // then rises. So walk each tier-data function across all tiers and flag any numeric field whose
+  // direction flips. Flat stretches are fine (many curves plateau).
+  suite('balance: tier curves never reverse direction', function(){
+    var TC = FF.TIER_COUNT;
+    ok(TC > 1, 'TIER_COUNT is available');
+    // Only unambiguous POWER stats. Deliberately narrow: costs, timers and input counts can legitimately
+    // fall or plateau, and flagging those would red-CI on correct data. These are fields where a higher
+    // tier being worse than a lower one is always a bug. Widen the list as families are confirmed clean.
+    var POWER = { xp:1, sell:1, levelReq:1, defense:1, reflect:1, bonus:1, dmgBonus:1, ammoPreserve:1, dmgMin:1, dmgMax:1 };
+    function directionOf(vals){          // +1 rising, -1 falling, 0 flat -- ignoring equal steps
+      for(var i = 1; i < vals.length; i++){ if(vals[i] > vals[i-1]) return 1; if(vals[i] < vals[i-1]) return -1; }
+      return 0;
+    }
+    function checkCurve(label, getAt){
+      var rows = [];
+      for(var t = 0; t < TC; t++){ var d = null; try { d = getAt(t); } catch(e){ d = null; } if(d) rows.push(d); }
+      if(rows.length < 2) return;        // nothing to compare (family may not span all tiers)
+      var fields = {};
+      rows.forEach(function(r){ for(var k in r){ if(POWER[k] && typeof r[k] === 'number' && isFinite(r[k])) fields[k] = 1; } });
+      Object.keys(fields).forEach(function(k){
+        var vals = rows.map(function(r){ return typeof r[k] === 'number' ? r[k] : null; });
+        if(vals.some(function(v){ return v === null; })) return;   // field not present at every tier
+        var dir = directionOf(vals), bad = -1;
+        for(var i = 1; i < vals.length && dir !== 0; i++){
+          var step = vals[i] > vals[i-1] ? 1 : (vals[i] < vals[i-1] ? -1 : 0);
+          if(step !== 0 && step !== dir){ bad = i; break; }
+        }
+        ok(bad === -1, label + '.' + k + ' is monotonic across tiers' +
+          (bad === -1 ? '' : ' (reverses at tier ' + bad + ': ' + vals[bad-1] + ' -> ' + vals[bad] + ')'));
+      });
+    }
+    // Families whose type list AND tier-data fn are both exported.
+    (FF.WARD_TYPES || []).forEach(function(w){ checkCurve('ward:' + w.id, function(t){ return FF.getWardTierData(w.id, t); }); });
+    (FF.RING_TYPES || []).forEach(function(r){ checkCurve('ring:' + r.id, function(t){ return FF.getRingTierData(r.id, t); }); });
+    (FF.AMULET_TYPES || []).forEach(function(a){ checkCurve('amulet:' + a.id, function(t){ return FF.getAmuletTierData(a.id, t); }); });
+    // Single-argument families.
+    if(FF.getBeltTierData) checkCurve('belt', function(t){ return FF.getBeltTierData(t); });
+    if(FF.getCottageTierData) checkCurve('cottage', function(t){ return FF.getCottageTierData(t); });
+  });
+
   // ---- The enemy card and live combat share ONE damage chain -----------------------------------
   // The card preview used to MIRROR monsterAttackTick's ~20 reducers with only a comment keeping them
   // in step. It drifted twice: D2/D3 set reducers and the Tunnelborn cloak reached combat but not the
