@@ -20543,6 +20543,61 @@
   // base rate. Inputs + output always use the operating player's own inventory.
   var PEON_MAX_SLOTS = 5; // concurrent peon tasks per scope (personal + guild)
   function peonSpeedFactor(tier){ return 0.05 + (Math.max(0, Math.min(TIER_COUNT-1, tier))/(TIER_COUNT-1)) * 0.95; }
+  // ---- Candles: light a Cottage to speed its Peon (Chandlery's estate sink) ----
+  // A lit Cottage works CANDLE_LIT_SPEED_BONUS faster. Unlit behaves exactly as it did before candles
+  // existed, which is the whole point: this is opt-in acceleration, not an upkeep tax. Nobody's running
+  // peons got slower the day this shipped, and running out mid-session degrades to normal speed rather
+  // than stopping the task.
+  //
+  // The bonus is FLAT at every tier -- a candle's tier buys BURN TIME, not power. ~30 min at T0 up to
+  // ~19h at T20, so climbing Chandlery means fewer refills rather than a bigger number. Candle tier is
+  // deliberately NOT capped by cottage tier (unlike the action tierCap): since tier is only convenience
+  // now, capping it would be irritating rather than balancing, and high-tier candles are self-gating --
+  // chandlery_t<n> costs the same tier of Fat, which comes from butchering tier-appropriate monsters.
+  var CANDLE_LIT_SPEED_BONUS = 0.5;
+  var CANDLE_BURN_BASE_MS = 30 * 60 * 1000;
+  function candleBurnMs(tier){ return Math.round(CANDLE_BURN_BASE_MS * Math.pow(1.2, Math.max(0, Math.min(TIER_COUNT-1, tier)))); }
+  function candleTierOf(candleId){ var m = /_t(\d+)/.exec(candleId||''); return m ? parseInt(m[1],10) : 0; }
+  function peonIsLit(task){ return !!(task && task.candleId && (task.candleMs||0) > 0); }
+  // Single source for a peon action's duration -- processPeonScope and peonEffTime BOTH call this. They
+  // used to carry the same expression written out twice; if they drift the progress bar fills at a
+  // different rate than the work actually completes.
+  function peonActionTime(baseTime, tierCap, skillId, lit){
+    var t = (baseTime*1000) / peonSpeedFactor(tierCap) * (1 - workshopSpeedBonus(state, skillId));
+    if(lit) t /= (1 + CANDLE_LIT_SPEED_BONUS);
+    return Math.max(200, t);
+  }
+  // Light the candle a task is holding, if it isn't already burning. Returns whether it ended up lit.
+  function peonCandleLight(task){
+    if(!task || !task.candleId) return false;
+    if((task.candleMs||0) > 0) return true;
+    if((state.inventory[task.candleId]||0) > 0){
+      state.inventory[task.candleId]--;
+      task.candleMs = candleBurnMs(candleTierOf(task.candleId));
+      return true;
+    }
+    task.candleMs = 0;
+    return false;
+  }
+  // Draw one action's worth of burn, pulling a fresh candle from the inventory when the current one runs
+  // out. Charging per ACTION rather than per elapsed second is what makes the offline path free: the
+  // catch-up pass (processPeonScope with a big iterCap) replays actions, so a 12-hour absence burns
+  // exactly the candles those hours' actions consumed and going dark lands at the right moment instead of
+  // being applied retroactively to the whole window.
+  // Returns true if the lit/dark state flipped, so the caller can refresh the UI.
+  function peonCandleBurn(task, ms){
+    if(!task.candleId) return false;
+    var wasLit = (task.candleMs||0) > 0;
+    task.candleMs = (task.candleMs||0) - ms;
+    // Loop rather than branch: one action can in principle outlast a whole low-tier candle. Bounded by
+    // the stack size, and every pass decrements it.
+    while(task.candleMs <= 0 && (state.inventory[task.candleId]||0) > 0){
+      state.inventory[task.candleId]--;
+      task.candleMs += candleBurnMs(candleTierOf(task.candleId));
+    }
+    if(task.candleMs <= 0) task.candleMs = 0;
+    return wasLit !== ((task.candleMs||0) > 0);
+  }
   function peonItemTier(o){ if(o && typeof o.tierIndex === 'number') return o.tierIndex; var m = /_t(\d+)/.exec((o&&o.id)||''); return m ? parseInt(m[1],10) : 0; }
   function estatePeonSources(grid){
     var out = [];
@@ -20627,7 +20682,7 @@
       else if(task.kind==='special'){ act = peonSpecialAct(task.craftKind, task.params, task.tierIndex); var std = getSpecialTierData(act); if(!std || !std.inputs){ changed = true; continue; } baseTime = std.time; }
       else { conf = ALL_CRAFT_RECIPES[task.itemId]; if(!conf){ changed = true; continue; } baseTime = conf.time; }
       var tierCap = Math.min(cot.tierIndex, w.tierIndex);
-      var effTime = Math.max(200, (baseTime*1000) / peonSpeedFactor(tierCap) * (1 - workshopSpeedBonus(state, task.skillId)));
+      var effTime = peonActionTime(baseTime, tierCap, task.skillId, peonIsLit(task));
       var succ = (task.skillId==='jewelrycrafting') ? BASE_JEWELRY_SUCCESS : BASE_CRAFT_SUCCESS;
       task.progress = (task.progress||0) + dt;
       var guard = 0, stopped = false, iterCap = maxIters || 200; // offline catch-up passes a big cap
@@ -20645,6 +20700,13 @@
           consumeInputs(conf.inputs);
           if(Math.random() < succ) addItem(conf.id, 1 + ((Math.random() < workshopDoubleChance(state, task.skillId)) ? 1 : 0));
         }
+        // Burn AFTER the action, charging the effTime that action actually ran at, then re-price the next
+        // one -- a candle dying mid-loop has to slow the very next action, not the whole batch.
+        if(peonCandleBurn(task, effTime)){
+          changed = true;
+          if(!peonIsLit(task)) addLog('A Peon\'s cottage went dark — out of ' + ((ALL_SELLABLE[task.candleId]||{}).name || 'candles') + '.', '');
+          effTime = peonActionTime(baseTime, tierCap, task.skillId, peonIsLit(task));
+        }
       }
       if(stopped){ changed = true; addLog('A Peon ran out of materials for ' + peonTaskName(task) + '.', ''); continue; }
       keep.push(task);
@@ -20661,11 +20723,11 @@
     if(task.kind==='gather'){ var gi = ALL_GATHER_ITEMS[task.itemId]; if(!gi) return 0; baseTime = gi.time; }
     else if(task.kind==='special'){ var td = getSpecialTierData(peonSpecialAct(task.craftKind, task.params, task.tierIndex)); if(!td) return 0; baseTime = td.time; }
     else { var rc = ALL_CRAFT_RECIPES[task.itemId]; if(!rc) return 0; baseTime = rc.time; }
-    return Math.max(200, (baseTime*1000) / peonSpeedFactor(Math.min(cot.tierIndex, w.tierIndex)) * (1 - workshopSpeedBonus(state, task.skillId)));
+    return peonActionTime(baseTime, Math.min(cot.tierIndex, w.tierIndex), task.skillId, peonIsLit(task));
   }
 
   // ---- Peons UI (a category tab: PEON_MAX_SLOTS personal + PEON_MAX_SLOTS guild slots) ----
-  var peonPicker = { open:false, scope:null, x:null, y:null, producer:null };
+  var peonPicker = { open:false, scope:null, x:null, y:null, producer:null, candle:false };
   var peonPickerProducers = []; // equipment producers for the current cottage's skill, indexed for dispatch
   function peonSkillIcon(skillId){ return (GATHERING_SKILLS[skillId] && GATHERING_SKILLS[skillId].icon) || (CRAFTING_SKILLS[skillId] && CRAFTING_SKILLS[skillId].icon) || svgIcon('person','var(--text-faint)'); }
   function renderPeonsTab(){
@@ -20699,6 +20761,11 @@
         var nm = peonTaskName(t);
         html += '<div class="item-top"><div class="item-icon">'+peonSkillIcon(t.skillId)+'</div><div><div class="item-name">'+escapeHtml(workshopSkillLabel(t.skillId))+' Peon</div><div class="item-meta">'+(t.kind==='gather'?'Gathering ':'Crafting ')+escapeHtml(nm)+' &bull; ('+t.x+','+t.y+')</div></div></div>';
         html += '<div class="progress-track"><div class="progress-fill" id="peonFill-'+scope+'-'+i+'" style="width:0%"></div></div>';
+        var tLit = peonIsLit(t), tCandle = t.candleId ? ((ALL_SELLABLE[t.candleId]||{}).name || t.candleId) : null;
+        html += '<div class="item-meta" style="margin:4px 0 5px;">'+svgIcon('candle', tLit ? '#e8c84a' : 'var(--text-faint)')+' '
+             + (tLit ? '<span style="color:var(--gold);">'+escapeHtml(tCandle)+'</span> &bull; '+formatDuration(t.candleMs)+' left &bull; +'+Math.round(CANDLE_LIT_SPEED_BONUS*100)+'% speed'
+                     : (t.candleId ? 'Out of '+escapeHtml(tCandle) : 'Unlit'))+'</div>';
+        html += '<button class="mini-btn" data-action="peonOpenCandle" data-scope="'+scope+'" data-x="'+t.x+'" data-y="'+t.y+'" style="margin-bottom:5px;">'+(t.candleId?'Change candle':'Light a candle')+'</button>';
         html += '<button class="action-btn stop" data-action="peonStop" data-scope="'+scope+'" data-x="'+t.x+'" data-y="'+t.y+'">Stop</button>';
       } else if(freeCount > 0){
         html += '<div class="item-top"><div class="item-icon">'+svgIcon('person','var(--text-faint)')+'</div><div><div class="item-name">Empty slot</div><div class="item-meta">'+freeCount+' free cottage'+(freeCount===1?'':'s')+'</div></div></div>';
@@ -20736,9 +20803,36 @@
     saveGame(); peonPicker.open = false; render();
   }
   function peonStop(scope, x, y){ peonSetTasks(scope, peonTasksFor(scope).filter(function(t){ return !(t.x===x && t.y===y); })); saveGame(); render(); }
+  // Swapping candles discards whatever was left of the one alight -- you blew it out to fit a new one.
+  function peonSetCandle(scope, x, y, candleId){
+    var t = peonTaskAt(scope, x, y);
+    if(t && t.candleId !== (candleId||null)){ t.candleId = candleId || null; t.candleMs = 0; if(t.candleId) peonCandleLight(t); }
+    peonPicker.open = false; peonPicker.candle = false;
+    saveGame(); render();
+  }
+  function renderPeonCandlePicker(ov){
+    var scope = peonPicker.scope, task = peonTaskAt(scope, peonPicker.x, peonPicker.y);
+    var html = '<div class="familiar-popup-card" style="max-width:460px;text-align:left;max-height:82dvh;overflow:auto;">';
+    html += '<div class="familiar-popup-title">Light a Cottage &bull; '+(scope==='guild'?'Guild':'My')+' Estate</div>';
+    if(!task){ html += '<div class="empty-note">That peon is no longer there.</div>'; }
+    else {
+      var owned = (CRAFTING_SKILLS.chandlery.recipes||[]).filter(function(r){ return (state.inventory[r.id]||0) > 0; });
+      html += '<div class="empty-note" style="margin-bottom:10px;">A lit cottage works <b>+'+Math.round(CANDLE_LIT_SPEED_BONUS*100)+'%</b> faster &mdash; the same at every tier. A higher-tier candle doesn\'t burn brighter, it burns <b>longer</b>, so you refill less often. Candles are drawn from your own inventory as they burn, on the guild estate too.</div>';
+      if(!owned.length) html += '<div class="empty-note">You have no candles. Craft them in <b>Chandlery</b> &mdash; each one renders a Fat or Tallow from Butchering.</div>';
+      owned.forEach(function(r){
+        html += '<button class="tracker-chip'+(task.candleId===r.id?' on':'')+'" style="display:flex;width:100%;justify-content:space-between;margin-bottom:6px;" data-action="peonPickCandle" data-item="'+escapeHtml(r.id)+'">';
+        html += '<span>'+(r.icon||'')+' '+escapeHtml(r.name)+' &times;'+(state.inventory[r.id]||0)+'</span><span class="style-lvl">'+formatDuration(candleBurnMs(candleTierOf(r.id)))+' each</span></button>';
+      });
+      if(task.candleId) html += '<button class="mini-btn" data-action="peonPickCandle" data-item="" style="margin-top:8px;">Put it out</button>';
+    }
+    html += '<div style="margin-top:12px;"><button class="action-btn" data-action="peonClosePicker">Close</button></div>';
+    ov.className = 'familiar-popup-overlay';
+    ov.innerHTML = html;
+  }
   function renderPeonPicker(){
     var ov = document.getElementById('peonPickerOverlay'); if(!ov) return;
     if(!peonPicker.open){ ov.className=''; ov.innerHTML=''; return; }
+    if(peonPicker.candle){ renderPeonCandlePicker(ov); return; }
     var scope = peonPicker.scope, grid = peonGridFor(scope) || [];
     var sources = estatePeonSources(grid);
     var tasks = peonTasksFor(scope), occ = {}; tasks.forEach(function(t){ occ[t.x+'_'+t.y] = 1; });
@@ -21651,6 +21745,17 @@
         drawEstateWorkshopModel(ctx, pos.x, pos.y + ESTATE_TILE_H/2, WORKSHOP_ITEMS[cell.workshopId], estateRotation);
       }
       if(cell.cottageId){
+        // A lit cottage glows. There is no day/night cycle to gate this on, and that turns out to be the
+        // better design rather than a compromise: the glow is the entire UI for "is this peon boosted",
+        // readable at a glance from the estate view without opening the Peons tab.
+        if(peonIsLit(peonTaskAt(estIsGuild ? 'guild' : 'personal', x, y))){
+          var glowY = pos.y + ESTATE_TILE_H/2;
+          var glow = ctx.createRadialGradient(pos.x, glowY, 0, pos.x, glowY, ESTATE_TILE_W*0.55);
+          glow.addColorStop(0, 'rgba(240,200,90,0.34)');
+          glow.addColorStop(1, 'rgba(240,200,90,0)');
+          ctx.fillStyle = glow;
+          ctx.beginPath(); ctx.arc(pos.x, glowY, ESTATE_TILE_W*0.55, 0, Math.PI*2); ctx.fill();
+        }
         drawEstateCottageModel(ctx, pos.x, pos.y + ESTATE_TILE_H/2, COTTAGE_ITEMS[cell.cottageId], estateRotation);
       }
       if(cell.fieldTier != null){
@@ -27665,9 +27770,14 @@
     closeTrackerPicker: function(btn, e){ trackerPickerOpen = false; renderTrackerPicker(); },
     toggleTrackedSkill: function(btn, e){ toggleTrackedSkill(btn.getAttribute('data-skill')); },
     peonOpenPicker: function(btn, e){
-      peonPicker = { open:true, scope:btn.getAttribute('data-scope'), x:null, y:null, producer:null }; renderPeonPicker();
+      peonPicker = { open:true, scope:btn.getAttribute('data-scope'), x:null, y:null, producer:null, candle:false }; renderPeonPicker();
     },
-    peonClosePicker: function(btn, e){ peonPicker.open = false; renderPeonPicker(); },
+    peonClosePicker: function(btn, e){ peonPicker.open = false; peonPicker.candle = false; renderPeonPicker(); },
+    peonOpenCandle: function(btn, e){
+      peonPicker = { open:true, scope:btn.getAttribute('data-scope'), x:parseInt(btn.getAttribute('data-x'),10), y:parseInt(btn.getAttribute('data-y'),10), producer:null, candle:true };
+      renderPeonPicker();
+    },
+    peonPickCandle: function(btn, e){ peonSetCandle(peonPicker.scope, peonPicker.x, peonPicker.y, btn.getAttribute('data-item')); },
     peonPickSource: function(btn, e){
       peonPicker.x = parseInt(btn.getAttribute('data-x'),10); peonPicker.y = parseInt(btn.getAttribute('data-y'),10); peonPicker.producer = null; renderPeonPicker();
     },
@@ -28497,6 +28607,7 @@
       getLevel:getLevel, xpFloorForLevel:xpFloorForLevel, xpForNextLevel:xpForNextLevel, levelProgress:levelProgress, MAX_SKILL_LEVEL:MAX_SKILL_LEVEL, SKILL_CURVE_KNEE:SKILL_CURVE_KNEE, getLevelExt:getLevelExt, skillLevel:skillLevel, skillLevelProgress:skillLevelProgress, skillLevelXpSpan:skillLevelXpSpan, skillBarRightLabel:skillBarRightLabel, skillCanOverlevel:skillCanOverlevel, overLevelDoublePct:overLevelDoublePct, overLevelDoubles:overLevelDoubles, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, SKILL_MAX_LEVEL_EXT:SKILL_MAX_LEVEL_EXT, OVERLEVEL_DOUBLE_PER_LEVEL:OVERLEVEL_DOUBLE_PER_LEVEL, SKILL_OVERLEVEL_GROWTH:SKILL_OVERLEVEL_GROWTH, renderSkillProgressBar:renderSkillProgressBar, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
       isMortal:isMortal, MORTAL_XP_MULT:MORTAL_XP_MULT, addXp:addXp, choosePath:choosePath, mortalDeath:mortalDeath, pathSelectNeeded:pathSelectNeeded, PATH_CHOICES:PATH_CHOICES, renderPathSelect:renderPathSelect, removePathSelect:removePathSelect, lbRow:lbRow,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
+      candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
       estateUpgradePavement:estateUpgradePavement, pavementTierOf:pavementTierOf, ESTATE_PAVE_TILE_COST:ESTATE_PAVE_TILE_COST, estUse:estUse,

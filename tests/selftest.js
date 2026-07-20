@@ -8146,6 +8146,68 @@
     }
   });
 
+  // ---- Chandlery: candles light a Cottage to speed its Peon ------------------------------------
+  suite('chandlery: cottage candles', function(){
+    ok(typeof FF.peonCandleBurn === 'function' && typeof FF.candleBurnMs === 'function', 'candle helpers exported');
+
+    // Tier buys BURN TIME, not power. Both halves of that need pinning: the ladder climbs, and the
+    // speed bonus does NOT.
+    ok(FF.candleBurnMs(20) > FF.candleBurnMs(0) * 30, 'a T20 candle burns >30x as long as a T0');
+    var mono = true;
+    for(var ci=1; ci<21; ci++){ if(FF.candleBurnMs(ci) <= FF.candleBurnMs(ci-1)) mono = false; }
+    ok(mono, 'burn time climbs monotonically across the whole tier ladder');
+    eq(FF.candleTierOf('chandlery_t13'), 13, 'candle tier parses out of the item id');
+
+    // The flat-bonus property, checked at BOTH ends of the ladder -- a tier-scaled bonus would pass at
+    // one end and fail at the other. baseTime is large so the 200ms floor can't clamp either side and
+    // silently flatten the ratio.
+    [0, 10, 20].forEach(function(tier){
+      var unlit = FF.peonActionTime(100, tier, 'chandlery', false);
+      var lit   = FF.peonActionTime(100, tier, 'chandlery', true);
+      ok(Math.abs((unlit/lit) - (1 + FF.CANDLE_LIT_SPEED_BONUS)) < 1e-9,
+         'T'+tier+': lit is exactly +'+Math.round(FF.CANDLE_LIT_SPEED_BONUS*100)+'% faster (bonus is flat, not tier-scaled)');
+    });
+
+    var s = FF._state, savedInv = s.inventory;
+    try {
+      // An UNLIT peon must behave exactly as it did before candles existed -- this is the whole premise
+      // of shipping it as opt-in acceleration rather than an upkeep tax.
+      s.inventory = { 'chandlery_t0': 5 };
+      var plain = { x:0, y:0, skillId:'chandlery', kind:'craft', itemId:'chandlery_t0', progress:0 };
+      eq(FF.peonCandleBurn(plain, 999999), false, 'an unlit task never reports a lit/dark flip');
+      eq(s.inventory['chandlery_t0'], 5, 'an unlit task consumes no candles at all');
+      eq(FF.peonIsLit(plain), false, 'a task with no candle is not lit');
+
+      // Lighting draws one candle from the bag.
+      var t = { x:0, y:0, skillId:'chandlery', candleId:'chandlery_t0', candleMs:0 };
+      eq(FF.peonCandleLight(t), true, 'lighting succeeds while candles are in the bag');
+      eq(s.inventory['chandlery_t0'], 4, 'lighting consumes exactly one candle');
+      eq(t.candleMs, FF.candleBurnMs(0), 'the fresh candle starts at its full burn time');
+      ok(FF.peonIsLit(t), 'the cottage is now lit');
+
+      // One action longer than a whole candle drains several in a single call. This is the offline
+      // catch-up path: a big dt replays many actions and the burn must not stall at one candle per call.
+      s.inventory = { 'chandlery_t0': 5 };
+      var big = { candleId:'chandlery_t0', candleMs:0 };
+      FF.peonCandleBurn(big, FF.candleBurnMs(0) * 2.8);
+      eq(s.inventory['chandlery_t0'], 2, 'a burn spanning 2.8 candles consumes 3 and leaves 2');
+      ok(FF.peonIsLit(big), 'the partially-burnt third candle keeps it lit');
+
+      // Running out goes DARK, it does not destroy the task -- degradation, not failure.
+      s.inventory = { 'chandlery_t0': 0 };
+      var dying = { candleId:'chandlery_t0', candleMs:500 };
+      eq(FF.peonCandleBurn(dying, 1000), true, 'burning the last candle out reports the flip to dark');
+      eq(dying.candleMs, 0, 'burn time floors at zero rather than going negative');
+      eq(FF.peonIsLit(dying), false, 'the cottage is dark');
+      eq(dying.candleId, 'chandlery_t0', 'the candle choice is REMEMBERED so it relights when restocked');
+      eq(FF.peonCandleBurn(dying, 1000), false, 'a cottage already dark reports no further flips');
+      var relit = FF.peonActionTime(100, 5, 'chandlery', FF.peonIsLit(dying));
+      eq(relit, FF.peonActionTime(100, 5, 'chandlery', false), 'a dark cottage runs at exactly unlit speed');
+    } finally {
+      s.inventory = savedInv;
+    }
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }
