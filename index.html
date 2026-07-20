@@ -673,8 +673,10 @@
   @media (prefers-color-scheme: dark){ .lb-name.mortal{color:#e06576;} }
   :root[data-theme="dark"] .lb-name.mortal{color:#e06576;}
   :root[data-theme="light"] .lb-name.mortal{color:#8a1f2c;}
-  .lb-mortal-toggle{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);flex:0 0 auto;cursor:pointer;}
-  .lb-mortal-toggle input{cursor:pointer;}
+  /* Board filters (Mortals only / Online only). Was .lb-mortal-toggle; renamed once a second filter
+     joined it so the class name isn't lying about what it styles. */
+  .lb-filter-toggle{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);flex:0 0 auto;cursor:pointer;}
+  .lb-filter-toggle input{cursor:pointer;}
   .lb-lvl{flex:0 0 auto;font-family:var(--font-mono);color:var(--cat-leaderboard);}
   .lb-gold{flex:0 0 auto;font-family:var(--font-mono);color:var(--gold);}
   .profile-head{padding:12px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-panel-raised);}
@@ -22953,6 +22955,10 @@
   // Repaint the leaderboard's online/offline dots in place when presence changes, so the board
   // doesn't need a full re-render (which would fight any open field / scroll position).
   function updateLeaderboardPresence(){
+    // With "Online only" active, presence decides WHICH ROWS EXIST, not just their dot colour -- repainting
+    // dots in place would leave players who just left still listed and new arrivals missing. Rebuild instead.
+    // softRender defers if a field is focused, so this keeps the no-clobber promise the in-place path exists for.
+    if(leaderboardOnlineOnly && currentCategory==='leaderboard' && !profileView){ softRender(); return; }
     var dots = document.querySelectorAll('.lb-online[data-uid]');
     for(var i=0;i<dots.length;i++){
       var on = isPlayerOnline(dots[i].getAttribute('data-uid'));
@@ -23310,6 +23316,7 @@
   var leaderboardData = [];
   var leaderboardMetric = 'total'; // 'total' | 'gold' | 'skill:<id>' | 'stat:<key>'
   var leaderboardMortalOnly = false; // when true, the board lists only Mortal-path players
+  var leaderboardOnlineOnly = false; // when true, the board lists only players currently on the presence channel
   var leaderboardStatus = CHAT_ENABLED ? 'idle' : 'unconfigured'; // idle|loading|ready|error|unconfigured
   var leaderboardLastFetch = 0;
   var profileLastSync = 0;
@@ -23827,16 +23834,28 @@
     html += '<div class="lb-controls"><button class="action-btn" data-action="leaderboardRefresh" style="width:auto;flex:0 0 auto;">Refresh</button>';
     if(authUser) html += '<button class="action-btn" data-action="viewMyProfile" style="width:auto;flex:0 0 auto;">My Profile</button>';
     html += '<label class="lb-metric"><span>Rank by</span><select id="lbMetricSelect" class="chat-input">'+lbMetricOptions()+'</select></label>';
-    html += '<label class="lb-mortal-toggle" title="Show only Mortal-path players"><input type="checkbox" data-action="toggleMortalOnly"'+(leaderboardMortalOnly?' checked':'')+'> <span>Mortals only</span></label>';
+    html += '<label class="lb-filter-toggle" title="Show only Mortal-path players"><input type="checkbox" data-action="toggleMortalOnly"'+(leaderboardMortalOnly?' checked':'')+'> <span>Mortals only</span></label>';
+    html += '<label class="lb-filter-toggle" title="Show only players currently online"><input type="checkbox" data-action="toggleOnlineOnly"'+(leaderboardOnlineOnly?' checked':'')+'> <span>Online only</span></label>';
     html += '</div>';
     if(leaderboardStatus==='loading' && !leaderboardData.length){ html += '<div class="empty-note">Loading the rankings\u2026</div>'; }
     else if(leaderboardStatus==='error'){ html += '<div class="empty-note">Couldn\'t load the leaderboard. Make sure the <code>profiles</code> table and its read policy exist.</div>'; }
     else if(!leaderboardData.length){ html += '<div class="empty-note">No ranked players yet &mdash; be the first to make your mark!</div>'; }
     else {
-      // Mortals are otherwise mixed in with everyone; the toggle narrows the board to Mortal players only.
-      var rows = leaderboardMortalOnly ? leaderboardData.filter(function(p){ return p.mortal === true; }) : leaderboardData;
+      // Two independent narrowing filters, applied in sequence so they compose.
+      var rows = leaderboardData;
+      if(leaderboardMortalOnly) rows = rows.filter(function(p){ return p.mortal === true; });
+      // Online mirrors the row's own dot, which counts YOU as online unconditionally -- otherwise the
+      // filter would hide you from your own board in the moment before presence syncs.
+      if(leaderboardOnlineOnly) rows = rows.filter(function(p){ return isPlayerOnline(p.id) || !!(authUser && p.id===authUser.id); });
       var sorted = rows.slice().sort(function(a,b){ return lbMetricValue(b, leaderboardMetric) - lbMetricValue(a, leaderboardMetric); });
-      if(!sorted.length){ html += '<div class="empty-note">No Mortal-path players on the board yet &mdash; will you be the first to risk it all?</div>'; }
+      if(!sorted.length){
+        // Say which filter emptied it, rather than always blaming the Mortal one.
+        html += '<div class="empty-note">' + (
+            (leaderboardMortalOnly && leaderboardOnlineOnly) ? 'No Mortal-path players are online right now.'
+          : leaderboardOnlineOnly ? 'Nobody else is online right now &mdash; try again later, or untick Online only.'
+          : 'No Mortal-path players on the board yet &mdash; will you be the first to risk it all?'
+        ) + '</div>';
+      }
       else {
         html += '<div class="lb-list">';
         sorted.forEach(function(p, i){ html += lbRow(i+1, p, authUser && p.id===authUser.id, leaderboardMetric); });
@@ -27073,6 +27092,7 @@
     leaderboardRefresh: function(btn, e){ leaderboardFetch(true); },
     choosePath: function(btn, e){ choosePath(btn.getAttribute('data-path')); },
     toggleMortalOnly: function(btn, e){ leaderboardMortalOnly = !leaderboardMortalOnly; render(); },
+    toggleOnlineOnly: function(btn, e){ leaderboardOnlineOnly = !leaderboardOnlineOnly; render(); },
     viewProfile: function(btn, e){
       var _pid = btn.getAttribute('data-id');
       var _p = leaderboardData.filter(function(x){ return String(x.id)===String(_pid); })[0];
