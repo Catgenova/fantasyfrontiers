@@ -4057,14 +4057,16 @@
       // Souls: bank + cap at 10; scattered on death is exercised elsewhere.
       s.d3Souls = 0; FF.d3SoulsAdd(3); eq(FF.d3SoulCount(s), 3, 'd3SoulsAdd banks Soul Charges');
       FF.d3SoulsAdd(20); eq(FF.d3SoulCount(s), FF.D3_SOUL_CAP, 'Soul Charges cap at 10');
-      // Decay: apply builds stacks + a live window; the tick chips HP (armour-ignoring, floors at 1).
+      // Decay: apply builds stacks + a live window; the tick chips HP (armour-ignoring).
       s.activity = { type:'combat', monsterHp:1000 };
       FF.decayApply(s.activity, 3); eq(s.activity.decayStacks, 3, 'decayApply stacks Decay');
       ok(FF.enemyDecaying(s), 'a decaying foe reads as Decaying'); ok(s.activity.decayUntil > Date.now(), 'Decay opens a window');
       s.activity = { type:'combat', monsterHp:1000, decayStacks:5, decayUntil:Date.now()+9999, decayDps:100 };
       FF.applyDecayTick(1000); near(s.activity.monsterHp, 900, 'a 1s Decay tick chips ~decayDps HP', 2);
+      // The 1 HP floor is gone: every DoT can finish a foe. This fixture has no monsterId, so
+      // defeatMonster cannot fire and HP simply falls past 0 -- which is exactly what proves no floor.
       s.activity = { type:'combat', monsterHp:1, decayStacks:5, decayUntil:Date.now()+9999, decayDps:100 };
-      FF.applyDecayTick(1000); eq(s.activity.monsterHp, 1, 'Decay never lands the killing blow (floors at 1)');
+      FF.applyDecayTick(1000); ok(s.activity.monsterHp <= 0, 'Decay CAN land the killing blow (no 1 HP floor)');
       near(FF.d3DecayTickMult(s), 1, 'Decay tick multiplier is 1 with no D3 Decay full set');
       // Curse: apply sets the window; enemyCursed reads it.
       s.activity = { type:'combat', monsterHp:1000 };
@@ -5413,7 +5415,7 @@
     eq(FF.classAttackSpeedMult(fr20), 1, 'no frenzy haste before Lv40');
     // Bleed tick: it reads the global _state.activity. Snapshot the fields we touch, then restore.
     // With no Reaver kit equipped on _state, reaverBonus(60/80) are off, so we exercise the base tick:
-    // it chips the enemy and floors it at 1 (never the finishing blow), and an expired Bleed does nothing.
+    // it chips the enemy (no floor -- a Bleed can finish a foe), and an expired Bleed does nothing.
     var S = FF._state;
     var save = { act:S.activity, hp:S.playerHp, mh:S.equippedMainhand, oh:S.equippedOffhand };
     try {
@@ -5423,7 +5425,7 @@
       ok(Math.abs(S.activity.monsterHp - 80) < 1e-6, 'Bleed chips 20 damage over 1s (20 dps)');
       S.activity.monsterHp = 5; S.activity.bleedDps = 999;
       FF.applyReaverBleedTick(1000);
-      eq(S.activity.monsterHp, 1, 'Bleed floors the enemy at 1 (never the finishing blow)');
+      ok(S.activity.monsterHp <= 0, 'Bleed CAN land the killing blow (no 1 HP floor)');
       S.activity.monsterHp = 100; S.activity.bleedUntil = Date.now()-1;
       FF.applyReaverBleedTick(1000);
       eq(S.activity.monsterHp, 100, 'an expired Bleed deals no damage');
@@ -6318,7 +6320,14 @@
         s.reaperShield = 10; var before = s.activity.monsterHp;
         FF.applyReaperWitherTick(1000);
         ok(s.activity.monsterHp < before, 'Withering Harvest rots the foe while a Siphon Shield holds');
-        ok(s.activity.monsterHp >= 1, 'Withering Harvest floors the foe at 1 HP (never the finishing blow)');
+        // The 1 HP floor is gone, and this fixture has a REAL monster -- so unlike the Decay/Bleed cases
+        // the kill actually RESOLVES rather than leaving HP negative. Assert the resolution, not the HP:
+        // defeatMonster banks a kill and retargets the activity to a fresh foe at full health.
+        var _killsBefore = (s.stats && s.stats.kills) || 0;
+        s.activity.monsterHp = 1;
+        FF.applyReaperWitherTick(1000);
+        eq(((s.stats && s.stats.kills) || 0), _killsBefore + 1, 'a DoT tick CAN land the kill (Wither finishes a 1 HP foe)');
+        ok(s.activity.monsterHp > 1, 'the resolved kill retargets to a fresh foe rather than sitting at 0 HP');
         s.reaperShield = 0; s.activity.monsterHp = mon.hp; var b2 = s.activity.monsterHp;
         FF.applyReaperWitherTick(1000);
         eq(s.activity.monsterHp, b2, 'Withering Harvest is inert with no Siphon Shield');
