@@ -21405,18 +21405,37 @@
   // falling back to tile(x,GRID_SIZE-1)'s Bottom-Left edge for the outer y=GRID_SIZE
   // boundary. edgesX[x][y] (x from 0 to GRID_SIZE) works the same way with Left-Top /
   // Right-Bottom. This keeps every shared border stored exactly once.
+  // What ELEVATION a border sits at. An edge is shared by two tiles that may be at different heights, and
+  // anchoring it to whichever one the index happened to name put the line at the wrong elevation: one
+  // height step is 10px on screen against a 7px hit threshold, so on any terraced boundary the clickable
+  // line sat away from the wall the player could see -- and because hit-testing takes the NEAREST edge
+  // within the threshold, a displaced neighbour would win instead. Reported as the exterior of some tiles
+  // being impossible to select, which is exactly where terraformed ground meets untouched terrain.
+  //
+  // Anchor to the OWNED side when only one side is owned (that is whose boundary it is), and to the taller
+  // side when both are -- a wall reads as standing on top of the step, not buried in it.
+  function estateEdgeHeightOf(a, b){
+    if(a && b){
+      if(a.owned && !b.owned) return a.height;
+      if(b.owned && !a.owned) return b.height;
+      return Math.max(a.height, b.height);
+    }
+    return (a || b).height;
+  }
   function estateEdgeYEndpoints(x, y, originX, originY){
     var ty = Math.min(y, ESTATE_GRID_SIZE-1);
-    var cell = estActive.grid[x][ty];
-    var pos = estateTileScreenPos(x, ty, cell.height, originX, originY);
+    var h = estateEdgeHeightOf(y-1 >= 0 ? estActive.grid[x][y-1] : null,
+                               y < ESTATE_GRID_SIZE ? estActive.grid[x][y] : null);
+    var pos = estateTileScreenPos(x, ty, h, originX, originY);
     var se = ESTATE_Y_SCREEN_EDGE[estateRotation & 3];
     if(y >= ESTATE_GRID_SIZE) se = (se + 2) & 3; // outer boundary uses the opposite face
     return estateScreenEdgeEndpoints(pos, se);
   }
   function estateEdgeXEndpoints(x, y, originX, originY){
     var tx = Math.min(x, ESTATE_GRID_SIZE-1);
-    var cell = estActive.grid[tx][y];
-    var pos = estateTileScreenPos(tx, y, cell.height, originX, originY);
+    var h = estateEdgeHeightOf(x-1 >= 0 ? estActive.grid[x-1][y] : null,
+                               x < ESTATE_GRID_SIZE ? estActive.grid[x][y] : null);
+    var pos = estateTileScreenPos(tx, y, h, originX, originY);
     var se = ESTATE_X_SCREEN_EDGE[estateRotation & 3];
     if(x >= ESTATE_GRID_SIZE) se = (se + 2) & 3; // outer boundary uses the opposite face
     return estateScreenEdgeEndpoints(pos, se);
