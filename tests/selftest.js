@@ -8266,6 +8266,62 @@
     }
   });
 
+  // ---- Chandlery: the advertised OUTPUT rate matches what the peon loop actually produces -------
+  suite('chandlery: peon output rate', function(){
+    ok(typeof FF.peonYieldPerHour === 'function' && typeof FF.peonEffTime === 'function', 'yield helpers exported');
+
+    var s = FF._state;
+    var snap = { peons:s.peons, inv:s.inventory };
+    // Two adjacent tiles inside the always-owned 5..14 core. Stand up a real workshop+cottage there so
+    // peonEffTime resolves through the SAME path the burn loop uses -- a hand-built fixture wouldn't
+    // exercise estateAdjacentWorkshop / the tier caps.
+    var wx = 7, wy = 7, g = s.estate && s.estate.grid;
+    var cellW = g && g[wx] && g[wx][wy], cellC = g && g[wx+1] && g[wx+1][wy];
+    var saveW = cellW && { type:cellW.type, pave:cellW.paveTileId, ws:cellW.workshopId, cot:cellW.cottageId, obs:cellW.obstacle };
+    var saveC = cellC && { type:cellC.type, pave:cellC.paveTileId, ws:cellC.workshopId, cot:cellC.cottageId, obs:cellC.obstacle };
+    try {
+      var wId = 'workshop_herbalism_t20', cId = 'cottage_t20';
+      var haveDefs = FF.WORKSHOP_ITEMS && FF.WORKSHOP_ITEMS[wId] && FF.COTTAGE_ITEMS && FF.COTTAGE_ITEMS[cId];
+      ok(cellW && cellC && haveDefs, 'core tiles and tier-20 workshop/cottage defs exist');
+      if(cellW && cellC && haveDefs){
+        cellW.type='paved'; cellW.paveTileId='paving_t20'; cellW.workshopId=wId; cellW.cottageId=null; cellW.obstacle=null;
+        cellC.type='paved'; cellC.paveTileId='paving_t20'; cellC.cottageId=cId; cellC.workshopId=null; cellC.obstacle=null;
+        var gi = (FF.GATHERING_SKILLS.herbalism.items||[])[0];
+        var real = { x:wx+1, y:wy, skillId:'herbalism', kind:'gather', itemId:gi.id, progress:0, candleId:null, candleMs:0 };
+        s.peons = [real]; s.inventory = {};
+
+        var eff = FF.peonEffTime('personal', real);
+        ok(eff > 0, 'peonEffTime resolves against the placed cottage/workshop');
+        var y1 = FF.peonYieldPerHour('personal', real);
+        ok(y1, 'yield resolves for a real peon');
+        // The load-bearing identity: items/hr is exactly the loop's two rolls over the same effTime.
+        ok(Math.abs(y1.items - (3600000/eff) * y1.succ * (1 + y1.dbl)) < 1e-6, 'items/hr = (3600/effTime) * success * (1+double)');
+        ok(Math.abs(y1.attempts - 3600000/eff) < 1e-6, 'attempts/hr = 3600/effTime');
+        eq(y1.succ, 1, 'a simple gather never misses (100% success)');
+        eq(y1.consumes, false, 'a gather consumes no inputs');
+
+        // Output tracks speed: lighting the cottage raises items/hr by exactly the +50% speed bonus.
+        s.inventory = { 'chandlery_t0': 100 };
+        real.candleId = 'chandlery_t0'; FF.peonCandleLight(real);
+        var y2 = FF.peonYieldPerHour('personal', real);
+        ok(Math.abs(y2.items/y1.items - (1+FF.CANDLE_LIT_SPEED_BONUS)) < 1e-6, 'a lit peon produces exactly +'+Math.round(FF.CANDLE_LIT_SPEED_BONUS*100)+'% output');
+
+        // A crafting peon reports its consume flag and the base craft success.
+        cellW.workshopId = 'workshop_tailoring_t20';
+        if(FF.WORKSHOP_ITEMS['workshop_tailoring_t20']){
+          var craft = { x:wx+1, y:wy, skillId:'tailoring', kind:'craft', itemId:(FF.CRAFTING_SKILLS.tailoring.recipes[0]||{}).id, progress:0 };
+          s.peons = [craft];
+          var yc = FF.peonYieldPerHour('personal', craft);
+          if(yc){ eq(yc.consumes, true, 'a crafting peon consumes inputs each attempt'); ok(yc.succ < 1, 'craft success is below 100%'); }
+        }
+      }
+    } finally {
+      s.peons = snap.peons; s.inventory = snap.inv;
+      if(cellW && saveW){ cellW.type=saveW.type; cellW.paveTileId=saveW.pave; cellW.workshopId=saveW.ws; cellW.cottageId=saveW.cot; cellW.obstacle=saveW.obs; }
+      if(cellC && saveC){ cellC.type=saveC.type; cellC.paveTileId=saveC.pave; cellC.workshopId=saveC.ws; cellC.cottageId=saveC.cot; cellC.obstacle=saveC.obs; }
+    }
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }

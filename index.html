@@ -20618,6 +20618,33 @@
     if(!task || !task.candleId) return 0;
     return 3600000 / candleBurnMs(candleTierOf(task.candleId)) * peonBurnRate(task);
   }
+  // Expected OUTPUT of a peon, mirroring exactly what processPeonScope rolls: one success check, then a
+  // double-output check on top of it. Both loops apply the same two rolls -- if this drifts from them the
+  // card advertises a throughput the peon never hits.
+  // Returns per-hour figures. `attempts` is the input burn (crafts consume on every attempt, success or
+  // not), `items` is what lands in the bag.
+  function peonYieldPerHour(scope, task){
+    var effTime = peonEffTime(scope, task);
+    if(!effTime || effTime <= 0) return null;
+    var succ;
+    if(task.kind === 'gather'){
+      succ = task.skillId === 'digging' ? BASE_DIG_MAIN_CHANCE
+           : task.skillId === 'mining'  ? BASE_MINE_MAIN_CHANCE
+           : task.skillId === 'fishing' ? BASE_FISH_CHANCE
+           : 1; // simple gathers never miss
+    } else {
+      succ = task.skillId === 'jewelrycrafting' ? BASE_JEWELRY_SUCCESS : BASE_CRAFT_SUCCESS;
+    }
+    var dbl = workshopDoubleChance(state, task.skillId);
+    var attempts = 3600000 / effTime;
+    return { attempts:attempts, items:attempts * succ * (1 + dbl), succ:succ, dbl:dbl, effTime:effTime, consumes:(task.kind !== 'gather') };
+  }
+  function formatRatePerHour(n){
+    if(!isFinite(n) || n <= 0) return '0';
+    if(n >= 100) return Math.round(n).toLocaleString();
+    if(n >= 10) return n.toFixed(1);
+    return n.toFixed(2);
+  }
   function formatHoursCompact(ms){
     if(!isFinite(ms) || ms <= 0) return '0m';
     var mins = Math.round(ms/60000);
@@ -20865,6 +20892,23 @@
         var nm = peonTaskName(t);
         html += '<div class="item-top"><div class="item-icon">'+peonSkillIcon(t.skillId)+'</div><div><div class="item-name">'+escapeHtml(workshopSkillLabel(t.skillId))+' Peon</div><div class="item-meta">'+(t.kind==='gather'?'Gathering ':'Crafting ')+escapeHtml(nm)+' &bull; ('+t.x+','+t.y+')</div></div></div>';
         html += '<div class="progress-track"><div class="progress-fill" id="peonFill-'+scope+'-'+i+'" style="width:0%"></div></div>';
+        // Output rate. This is the number the whole peon is FOR, so it leads: what actually lands in the
+        // bag per hour, at the peon's current lit/unlit speed. The "at" clue-in tells the player the
+        // candle line below is what moves this number.
+        var tY = peonYieldPerHour(scope, t);
+        if(tY){
+          html += '<div class="item-meta" style="margin:5px 0 2px;">Produces <b style="color:var(--gold);">'+formatRatePerHour(tY.items)+' '+escapeHtml(nm)+'/hr</b>'
+               + (peonIsLit(t) ? ' <span style="color:var(--text-faint);">(lit)</span>' : '')+'</div>';
+          // Show the underlying attempt rate only when it differs from output -- i.e. when a success or
+          // double-output roll sits between attempts and items. A simple gather (100% success, no doubles)
+          // would just repeat the line above.
+          if(Math.abs(tY.attempts - tY.items) > 0.05){
+            html += '<div class="item-meta" style="margin:0 0 2px;color:var(--text-faint);">'
+                 + formatRatePerHour(tY.attempts)+' attempts/hr &bull; '+Math.round(tY.succ*100)+'% success'
+                 + (tY.dbl > 0 ? ' &bull; +'+Math.round(tY.dbl*100)+'% double' : '')
+                 + (tY.consumes ? ' &bull; consumes inputs each attempt' : '')+'</div>';
+          }
+        }
         var tLit = peonIsLit(t), tCandle = t.candleId ? ((ALL_SELLABLE[t.candleId]||{}).name || t.candleId) : null;
         html += '<div class="item-meta" style="margin:4px 0 2px;">'+svgIcon('candle', tLit ? '#e8c84a' : 'var(--text-faint)')+' '
              + (tLit ? '<span style="color:var(--gold);">'+escapeHtml(tCandle)+'</span> &bull; '+formatDuration(t.candleMs)+' left &bull; +'+Math.round(CANDLE_LIT_SPEED_BONUS*100)+'% speed'
@@ -28722,7 +28766,7 @@
       isMortal:isMortal, MORTAL_XP_MULT:MORTAL_XP_MULT, addXp:addXp, choosePath:choosePath, mortalDeath:mortalDeath, pathSelectNeeded:pathSelectNeeded, PATH_CHOICES:PATH_CHOICES, renderPathSelect:renderPathSelect, removePathSelect:removePathSelect, lbRow:lbRow,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
       candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
-      peonTaskTier:peonTaskTier, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER,
+      peonTaskTier:peonTaskTier, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
       estateUpgradePavement:estateUpgradePavement, pavementTierOf:pavementTierOf, ESTATE_PAVE_TILE_COST:ESTATE_PAVE_TILE_COST, estUse:estUse,
