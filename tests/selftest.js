@@ -3290,6 +3290,65 @@
     s.inventory=svInv; s.blueprints=svBp;
   });
 
+  // ---- D4 legendary accessories: Signets / Shrouds / Pendants (Batch GG) ----------------------------
+  suite('mastercraft: D4 legendary accessories', function(){
+    var ring = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d4','ring')]);
+    var cape = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d4','cape')]);
+    var amu  = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d4','amulet')]);
+    ok(ring && ring.layer==='d4' && ring.rareCount===40 && ring.outcomes.length===5, 'D4 ring: d4 recipe, 40 rare, 5 Signets');
+    ok(cape && cape.layer==='d4' && cape.rareCount===40 && cape.outcomes.length===3, 'D4 cape: d4 recipe, 40 rare, 3 Shrouds');
+    ok(amu  && amu.layer==='d4'  && amu.rareCount===40  && amu.outcomes.length===3, 'D4 amulet: d4 recipe, 40 rare, 3 Pendants');
+    eq(FF.D4_LEG_RING_DEFS.length, 5, '5 D4 Signets'); eq(FF.D4_LEG_CLOAK_DEFS.length, 3, '3 D4 Shrouds'); eq(FF.D4_LEG_AMULET_DEFS.length, 3, '3 D4 Pendants');
+    eq(Object.keys(FF.LEGENDARY_RING_ITEMS).filter(function(id){ return FF.LEGENDARY_RING_ITEMS[id].dungeon==='d4'; }).length, 20, '5 Signets x 4 = 20 D4 ring items');
+    eq(Object.keys(FF.LEGENDARY_CLOAK_ITEMS).filter(function(id){ return FF.LEGENDARY_CLOAK_ITEMS[id].dungeon==='d4'; }).length, 12, '3 Shrouds x 4 = 12 D4 cloak items');
+    eq(Object.keys(FF.LEGENDARY_AMULET_ITEMS).filter(function(id){ return FF.LEGENDARY_AMULET_ITEMS[id].dungeon==='d4'; }).length, 12, '3 Pendants x 4 = 12 D4 amulet items');
+
+    var R = FF.RING_SLOT_IDS[0], now = Date.now();
+    function ringSt(key, extra){ var js={}; js[R]={leg:key,rarity:'rare'}; var st = { jewelrySlots:js, bodyArmor:{}, physique:{}, xp:{}, activity:{type:'combat', monsterHp:100}, playerHp:1e9 }; if(extra) for(var k in extra) st[k]=extra[k]; return st; }
+    function cloakSt(key, extra){ var st = { jewelrySlots:{}, bodyArmor:{ back:{leg:key,rarity:'rare'} }, physique:{}, xp:{}, activity:{type:'combat', monsterHp:100}, playerHp:1e9 }; if(extra) for(var k in extra) st[k]=extra[k]; return st; }
+    function amuletSt(key, extra){ var st = { jewelrySlots:{ amulet:{leg:key,rarity:'rare'} }, bodyArmor:{}, physique:{}, xp:{}, activity:{type:'combat', monsterHp:100}, playerHp:1e9 }; if(extra) for(var k in extra) st[k]=extra[k]; return st; }
+
+    // Signet of the Wyrm: +Elemental Damage (rare = 0.15 x2 = +0.30 folded into elementDmgMult).
+    near(FF.elementDmgMult(ringSt('d4_wyrm'), 'fire') - FF.elementDmgMult(ringSt('d4_nothere'), 'fire'), 0.30, 'Signet of the Wyrm: +30% Elemental Damage (rare)');
+    // Signet of Scales: +Elemental Resistance (0.08 x2 = 0.16).
+    near(FF.d4SetElementResist(ringSt('d4_scales'), 'fire'), 0.16, 'Signet of Scales: +16% Elemental Resistance (rare)');
+    // Signet of Wrath: +damage per Wrath stack (0.02 x2 = 0.04/stack).
+    near(FF.d4LegDmgMult({}, ringSt('d4_wrath', { d4Wrath:5, d4WrathUntil:now+9999 })), 1 + 0.04*5, 'Signet of Wrath: +4% damage per Wrath stack (rare)');
+    // Signet of the Breath / Hoard: stat values (behaviour rides charge / kill hooks).
+    near(FF.legendaryRingBonus('d4_breath', ringSt('d4_breath')), 0.50, 'Signet of the Breath: +50% Breath Power (rare)');
+    near(FF.legendaryRingBonus('d4_hoard', ringSt('d4_hoard')), 1.00, 'Signet of the Hoard: +100% elemental-kill gold (rare)');
+
+    // Shroud of Scales: elemental DR (0.12 x2 = 0.24 -> x0.76 incoming from an elemental foe).
+    near(FF.d4LegIncomingMult(cloakSt('d4_scaleshroud'), { element:'fire' }), 0.76, 'Shroud of Scales: -24% elemental damage (rare)');
+    near(FF.d4LegIncomingMult(cloakSt('d4_scaleshroud'), { element:null }), 1.0, 'Shroud of Scales inert vs a non-elemental foe');
+    // Shroud of the Wyrm: +damage vs an elemental foe (0.12 x2 = +0.24).
+    near(FF.d4LegDmgMult({ element:'fire' }, cloakSt('d4_wyrmshroud')), 1.24, 'Shroud of the Wyrm: +24% vs an elemental foe (rare)');
+    near(FF.d4LegDmgMult({ element:null }, cloakSt('d4_wyrmshroud')), 1.0, 'Shroud of the Wyrm inert vs a non-elemental foe');
+    // Shroud of Cinders: stat value (retort rides the incoming hook).
+    near(FF.legendaryCloakBonus('d4_cinders', cloakSt('d4_cinders')), 0.30, 'Shroud of Cinders: 30% Fire retort (rare)');
+
+    // Pendant of the Elements: +damage vs a Scorched foe (0.15 x2 = +0.30).
+    near(FF.d4LegDmgMult({}, amuletSt('d4_scorchpend', { activity:{type:'combat', monsterHp:100, scorchStacks:1, scorchUntil:now+4000} })), (1+0.02) * 1.30, 'Pendant of the Elements: +30% vs a Scorched foe (atop the Scorch stack)');
+    near(FF.d4LegDmgMult({}, amuletSt('d4_scorchpend')), 1.0, 'Pendant of the Elements inert on an unscorched foe');
+    // Pendant of the Everflame: +DoT damage (0.15 x2 = +0.30 into legNecromancyDoTMult).
+    near(FF.legNecromancyDoTMult(amuletSt('d4_everflame')), 1.30, 'Pendant of the Everflame: elemental DoTs tick +30% (rare)');
+    // Pendant of the Dragon: +Attunement XP stat value.
+    near(FF.legendaryAmuletBonus('d4_dragon', amuletSt('d4_dragon')), 1.00, 'Pendant of the Dragon: +100% Attunement XP (rare)');
+
+    // Full forge (ring) — mirrors the D3 ring forge's known catalyst family.
+    var s = FF._state, svInv=s.inventory, svBp=s.blueprints;
+    var catId = 'ring_' + FF.RING_TYPES[0].id + '_t20_rare';
+    s.inventory = { metallurgy_t20:4000, gem_voidcrystal:400, twine_t20:400, goldsmithing_t20:400 }; s.inventory[catId] = 40;
+    s.blueprints = {};
+    var bpId = FF.masterworkBlueprintId('d4','ring'); s.blueprints[bpId] = 1;
+    FF.craftMastercraft(bpId);
+    var mintedId = Object.keys(s.inventory).filter(function(id){ return /^legring_d4_/.test(id) && s.inventory[id] > 0; })[0];
+    ok(mintedId, 'the D4 ring forge adds a d4 Signet to inventory');
+    ok(FF.LEGENDARY_RING_ITEMS[mintedId] && ring.outcomes.indexOf(FF.LEGENDARY_RING_ITEMS[mintedId].legKey) !== -1, 'the forged Signet carries a D4 ring-group effect');
+    eq(s.inventory[catId], 0, 'the forge consumes 40 rare t20 rings');
+    s.inventory=svInv; s.blueprints=svBp;
+  });
+
   // ---- D3 (Underground) legendary gear: arcane forge + effects (Batch R) -----------------------------
   suite('mastercraft: D3 legendary arcane (forge + effects)', function(){
     var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','arcane')]);
