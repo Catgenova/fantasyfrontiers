@@ -3406,6 +3406,32 @@
     near(FF.d4LegDmgMult({}, legSt('magmacore','sledge')), 1.0, 'M4: Magmacore inert without the juggernaut Wind-Up (value x1.35 when active)');
   });
 
+  // ---- Balance pass, Batch JJ: global incoming-damage floor (N1) -----------------------------------
+  suite('balance JJ: incoming mitigation floor', function(){
+    eq(FF.INCOMING_FLOOR_FRAC, 0.05, 'the incoming floor is 5% of the raw swing');
+    // A mitigation chain that would round the hit to 0 is clamped up to 5% of the raw roll.
+    eq(FF.incomingMitigationFloor(0, 1000), 50, 'a fully-mitigated 1000 swing still lands 50 (5%)');
+    eq(FF.incomingMitigationFloor(3, 1000), 50, 'near-zero mitigation is floored to 5%');
+    // A hit already above the floor is untouched.
+    eq(FF.incomingMitigationFloor(400, 1000), 400, 'a hit above the floor passes through unchanged');
+    eq(FF.incomingMitigationFloor(50, 1000), 50, 'exactly at the floor is unchanged');
+    // Tiny swings still land at least 1.
+    eq(FF.incomingMitigationFloor(0, 5), 1, 'a tiny swing still lands at least 1');
+    eq(FF.incomingMitigationFloor(0, 0), 1, 'floor never returns 0');
+    // End-to-end: drive one landed hit with a fixed roll and no dodge/block, confirm HP actually drops.
+    var s = FF._state, sv = { act:s.activity, hp:s.playerHp, ba:s.bodyArmor, ui:s.uniqueItems, js:s.jewelrySlots };
+    try {
+      s.bodyArmor = {}; s.uniqueItems = {}; s.jewelrySlots = {};
+      s.playerHp = FF.maxHp(s);
+      // A dungeon foe with a fixed swing (atkMin===atkMax) removes roll RNG; dodge/block are ~0 with no gear.
+      s.activity = { type:'combat', monsterId:'dungeon_d4_1', monsterHp: 1e9, tickAccum:0, monsterTickAccum:0 };
+      var before = s.playerHp;
+      // fire the monster's attack directly; a landed hit must reduce HP (never mitigated to 0)
+      var landed = false; for(var i=0;i<12 && !landed;i++){ s.playerHp = FF.maxHp(s); FF.monsterAttackTick(); if(s.playerHp < FF.maxHp(s)) landed = true; }
+      ok(landed, 'a landed enemy hit always deals at least the floor (never fully mitigated to 0)');
+    } finally { s.activity=sv.act; s.playerHp=sv.hp; s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.jewelrySlots=sv.js; }
+  });
+
   // ---- D3 (Underground) legendary gear: arcane forge + effects (Batch R) -----------------------------
   suite('mastercraft: D3 legendary arcane (forge + effects)', function(){
     var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','arcane')]);
