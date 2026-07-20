@@ -6325,7 +6325,10 @@
         // defeatMonster banks a kill and retargets the activity to a fresh foe at full health.
         var _killsBefore = (s.stats && s.stats.kills) || 0;
         s.activity.monsterHp = 1;
-        FF.applyReaperWitherTick(1000);
+        // Wither ticks 1.5% of MAX HP per second, so against a low-HP foe one second removes a fraction
+        // of a point -- a 1s tick left this at 0.85 and the kill never fired. Use a long dt so the tick is
+        // lethal regardless of which monster the roster puts first (0.015 * 200s = 3x its max health).
+        FF.applyReaperWitherTick(200000);
         eq(((s.stats && s.stats.kills) || 0), _killsBefore + 1, 'a DoT tick CAN land the kill (Wither finishes a 1 HP foe)');
         ok(s.activity.monsterHp > 1, 'the resolved kill retargets to a fresh foe rather than sitting at 0 HP');
         s.reaperShield = 0; s.activity.monsterHp = mon.hp; var b2 = s.activity.monsterHp;
