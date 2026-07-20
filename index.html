@@ -20268,6 +20268,9 @@
   function estatePaveTile(x, y, paveTileId){
     var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || cell.type !== 'dirt') return;
+    // You can't lay stone on water. Raising the tile out of the water first is the intended route, and
+    // estateRaiseLayer deliberately still allows that from 0.
+    if(estateIsWater(cell)){ addLog('That tile is underwater — raise it above the waterline before paving.', 'danger'); return; }
     if(cell.obstacle){ addLog('Clear the obstacle on this tile before paving it.', 'danger'); return; }
     if(estateJobActive()){ addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger'); return; }
     if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
@@ -21249,6 +21252,41 @@
     ctx.fillStyle = '#5aa63f'; // sprout dots
     [[-0.3,-0.15],[0.1,0.2],[0.3,-0.2],[-0.1,0.3]].forEach(function(p){ ctx.beginPath(); ctx.arc(cx+p[0]*s, cy+p[1]*s, s*0.05, 0, Math.PI*2); ctx.fill(); });
   }
+  // ---- Water --------------------------------------------------------------------------------------
+  // Height 0 is the water table: dig a tile all the way down and it floods. Purely derived from height,
+  // so nothing is stored on the cell and existing estates (whose generated terrain already contains
+  // height-0 tiles) start showing water immediately without a migration.
+  //
+  // A PAVED tile can never be water: estateLowerLayer only accepts type 'dirt', so pavement cannot be dug
+  // down to 0, and estatePaveTile now refuses at 0. The type check is belt-and-braces for old saves.
+  var ESTATE_WATER_COLOR = '#3f6f92';
+  function estateIsWater(cell){ return !!cell && (cell.height|0) <= 0 && cell.type !== 'paved'; }
+  // Ripples on the tile's top diamond. Deterministic per tile -- a random phase would make the whole
+  // estate shimmer differently on every repaint, and this canvas redraws constantly.
+  function drawEstateWaterModel(ctx, cx, cy, x, y, rot){
+    var w = ESTATE_TILE_W, h = ESTATE_TILE_H;
+    var phase = ((x * 7 + y * 13) % 5) / 5;
+    ctx.save();
+    ctx.beginPath();                                    // clip to the diamond so ripples never bleed out
+    ctx.moveTo(cx, cy - h/2);
+    ctx.lineTo(cx + w/2, cy);
+    ctx.lineTo(cx, cy + h/2);
+    ctx.lineTo(cx - w/2, cy);
+    ctx.closePath();
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+    ctx.lineWidth = 1.2;
+    for(var i=0; i<3; i++){
+      var yy = cy - h*0.22 + (h*0.22 * (i + phase));
+      var amp = w*0.06, half = w*0.22;
+      ctx.beginPath();
+      ctx.moveTo(cx - half, yy);
+      ctx.quadraticCurveTo(cx - half/2, yy - amp, cx, yy);
+      ctx.quadraticCurveTo(cx + half/2, yy + amp, cx + half, yy);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
   function drawEstateObstacleModel(ctx, cx, cy, obs, rot){
     if(!obs) return;
     estateModelScale = ESTATE_MODEL_TYPE_SCALE[obs.type] || 1;
@@ -21540,7 +21578,9 @@
       var cell = grid[x][y];
       var pos = estateTileScreenPos(x, y, cell.height, originX, originY);
       var t = cell.height/(ESTATE_MAX_HEIGHT-1);
-      var topColor = cell.type==='paved' ? estatePavedTileColor(cell.paveTileId) : estateHeightColor(t);
+      var _isWater = estateIsWater(cell);
+      var topColor = _isWater ? ESTATE_WATER_COLOR
+                   : (cell.type==='paved' ? estatePavedTileColor(cell.paveTileId) : estateHeightColor(t));
       // Two visible vertical side faces beneath the tile's top diamond, dropping straight
       // down to the shared base level. Drawn before the top, they always fall straight down
       // (so rotation-correct), and the back-to-front draw order lets nearer/lower tiles
@@ -21580,6 +21620,8 @@
         ctx.fillStyle = 'rgba(206,52,52,0.38)'; ctx.fill();
         ctx.strokeStyle = '#d23a3a'; ctx.lineWidth = 2; ctx.stroke();
       }
+      // Ripples sit on the water's top face, under anything standing on the tile.
+      if(_isWater) drawEstateWaterModel(ctx, pos.x, pos.y + ESTATE_TILE_H/2, x, y, estateRotation);
       if(cell.obstacle){
         var _canClear = estateCanClearObstacle(cell.obstacle);
         if(!_canClear) ctx.globalAlpha = 0.5; // dim resource models you can't yet clear (skill too low)
@@ -21847,6 +21889,7 @@
       var jobHere = jobActive && job.x===x && job.y===y;
       var tileBusy = estJobOnTile(x, y);            // any member's job on this tile
       var otherHere = tileBusy && !jobHere;          // a different member is working here
+      var _tileIsWater = estateIsWater(cell);        // height 0 -> flooded; raise it before paving
       if(cell.fieldTier != null){
         var fdef = FARM_FIELD_TIERS['field_t'+cell.fieldTier];
         html += '<div class="estate-action-row">';
@@ -21871,8 +21914,8 @@
       html += '<button class="action-btn" data-action="estateLowerLayer" data-x="'+x+'" data-y="'+y+'" '+((canLower&&lowerLevelOk&&!jobActive&&!tileBusy)?'':'disabled')+'>'+lowerLabel+'</button>';
       html += '</div>';
       html += '<div class="estate-action-row">';
-      html += '<div class="estate-action-info"><b>Pave Tile</b><br>Change this tile to a stone paving finish -- requires 20 of the matching Paving Tile and its Paving level.</div>';
-      html += '<button class="action-btn" data-action="estateTogglePavingMenu" '+((jobHere||otherHere)?'disabled':'')+'>'+(jobHere?'Busy':(otherHere?'In use':(estatePavingMenuOpen?'Close List':'Choose Finish')))+'</button>';
+      html += '<div class="estate-action-info"><b>Pave Tile</b><br>'+(_tileIsWater ? 'This tile is underwater. Raise it above the waterline before paving.' : 'Change this tile to a stone paving finish -- requires 20 of the matching Paving Tile and its Paving level.')+'</div>';
+      html += '<button class="action-btn" data-action="estateTogglePavingMenu" '+((jobHere||otherHere||_tileIsWater)?'disabled':'')+'>'+(jobHere?'Busy':(otherHere?'In use':(_tileIsWater?'Underwater':(estatePavingMenuOpen?'Close List':'Choose Finish'))))+'</button>';
       html += '</div>';
       if(estatePavingMenuOpen){
         var pavingLvl = getLevel(state.xp.paving);
