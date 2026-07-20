@@ -19237,19 +19237,21 @@
       var isActive = act.type==='combat' && act.monsterId===m.id;
       var matchup = weightedMatchupLabel(weaponStyle.attackTypes || {blunt:1}, m.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
-      html += '<div class="item-top"><div class="item-icon">'+monsterPortrait(m)+'</div><div><div class="item-name">'+m.name+'</div><div class="item-meta">Req. Lv '+m.levelReq+' &bull; '+m.hp+' HP &bull; '+m.attackSpeed+'s attack</div></div></div>';
-      // Show what this foe lands on YOU after your gear, not its raw weapon damage -- the raw numbers
-      // stay in the tooltip so the mitigation you're getting is visible by comparison.
+      html += '<div class="item-top"><div class="item-icon">'+monsterPortrait(m)+'</div><div><div class="item-name">'+m.name+'</div><div class="item-meta">Req. CS '+m.levelReq+' &bull; '+m.hp+' HP &bull; '+m.attackSpeed+'s attack</div></div></div>';
+      // Show BOTH the foe's raw swing and what it actually lands on YOU after your gear, so the mitigation
+      // you're getting is visible at a glance rather than buried in a tooltip.
       var _dvy = enemyDamageRangeVsPlayer(m, state, _defProf);
+      var _rawTip = 'This foe\'s raw hit before any of your mitigation.';
       var _dvyTip = 'Damage this foe actually lands on YOU per hit, after your armour, shield, resistances, class mods and enchants. '
         + 'Unblocked, at full Health. Its raw damage is ' + m.atkMin + '–' + m.atkMax + '.';
       html += '<div class="item-stats"><span>'+m.goldMin+'-'+m.goldMax+'g</span>'
+        + '<span data-tip="'+escapeHtml(_rawTip)+'">'+m.atkMin+'–'+m.atkMax+' raw</span>'
         + '<span class="dmg-vs-you" data-tip="'+escapeHtml(_dvyTip)+'">'+fmt(_dvy.min)+'–'+fmt(_dvy.max)+' to you</span>'
         + '<span>'+getMonsterLootChance(m)+'% '+getMonsterLootLabel(m)+'</span><span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
       html += '<div class="chance-line" style="font-size:11px">Dodge '+monsterDodge(m)+' &bull; '+(locked?'':'Your hit chance '+Math.round(playerHitChance(m)*100)+'%')+'<br>Attack: '+formatTypeMix(m.attackTypes)+'<br>Armor: '+formatTypeMix(m.armorTypes)+'</div>';
       html += '<div class="elem-line">'+elementBadge(m)+incomingElementNote(m)+'</div>';
       if(locked){
-        html += '<div class="lock-note">Locked until level '+m.levelReq+'</div>';
+        html += '<div class="lock-note">Locked until Combat Score '+m.levelReq+'</div>';
       } else if(isActive){
         html += '<button class="action-btn stop" data-action="stop">Stop</button>';
       } else {
