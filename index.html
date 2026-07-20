@@ -14008,6 +14008,9 @@
     });
     if(state.playerHp <= 0){
       bumpStat('deaths');
+      // Falling in a PARTY run: the local engine decided it, so latch the networked death handler to stop
+      // it counting the same death again when the server echoes alive:false back through dungeonNetApply.
+      if(state.activity && state.activity.netDungeon && typeof dungeonNet !== 'undefined') dungeonNet.deathHandled = true;
       var _diedInDungeon = state.activity && state.activity.dungeon;
       state.playerHp = 0;
       state.reaperShield = 0; // a spectral guard shatters when you fall
@@ -18402,7 +18405,9 @@
   // damage as a clamped power*elapsed proxy (the server can't run the JS combat engine), and the
   // shared HP + advancement stream back over realtime. Stage A is the co-op DPS core (the enemy does
   // not yet attack back); Stage B adds threat targeting, death/wipe, and the Formula claim.
-  var dungeonNet = { status:'idle', session:null, members:[], subSession:null, subMembers:null, _subId:null, busy:false, error:'', lastAssault:0, lobbiesByLayer:{}, clearedHandled:false, deathHandled:false };
+  // pendingDamage / lastEnemyHp drive the Phase 3 report: damage the local engine actually dealt since the
+  // last send, measured by watching the local foe's HP rather than instrumenting every damage site.
+  var dungeonNet = { status:'idle', session:null, members:[], subSession:null, subMembers:null, _subId:null, busy:false, error:'', lastAssault:0, lobbiesByLayer:{}, clearedHandled:false, deathHandled:false, pendingDamage:0, lastEnemyHp:null };
   var dungeonJoinCodeDraft = '';   // in-progress "Join by ID" input, preserved across re-renders
   // A representative DPS proxy (avg weapon damage / attack interval, folding the always-on mults).
   // The server clamps it, so an inflated value can't dump impossible damage.
@@ -18461,7 +18466,19 @@
       dungeonMarkCleared(dungeonNet.session.layer); // party clear unlocks the next dungeon for everyone present
       if(!dungeonNet.clearedHandled){ dungeonNet.clearedHandled = true; dungeonNetClaim(); }
     }
-    if(!dungeonNet.session){ dungeonNet.clearedHandled = false; dungeonNet.deathHandled = false; }
+    if(!dungeonNet.session){ dungeonNet.clearedHandled = false; dungeonNet.deathHandled = false; dungeonNetEndLocalFight(); }
+    // Run over (cleared / wiped / expired): stop the local fight so the engine isn't still swinging at a
+    // foe the party has finished with.
+    else if(dungeonNet.session.status !== 'active') dungeonNetEndLocalFight();
+  }
+  // Tear down the mirrored fight and drop any damage not yet reported. Called whenever the party run ends
+  // or the session goes away -- otherwise leaving a party strands a phantom combat in state.activity, and
+  // un-sent damage would leak into whatever run came next.
+  function dungeonNetEndLocalFight(){
+    dungeonNet.pendingDamage = 0;
+    dungeonNet.lastEnemyHp = null;
+    var act = state.activity;
+    if(act && act.type==='combat' && act.netDungeon){ state.activity = { type:null }; needsRender = true; }
   }
   function dungeonNetLoad(){ if(!chatClient || !authUser){ dungeonNet.status = 'idle'; return; } dungeonNet.status = 'loading'; dungeonNetInvoke('get', {}).then(function(res){ if(res.ok) dungeonNetApply(res); else dungeonNet.status = 'ready'; if(!dungeonNet.session) DUNGEON_ORDER.forEach(function(l){ dungeonNetListLobbies(l); }); if(currentCategory === 'dungeons') render(); }); }
   var _dungeonRefreshT = 0;
@@ -18523,20 +18540,100 @@
     try{ if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(function(){ addLog('Party code copied.', 'important'); }, function(){}); else addLog('Party code: ' + code, 'important'); }catch(e){ addLog('Party code: ' + code, 'important'); }
   }
   function dungeonNetClaim(){ if(!dungeonNet.session) return; dungeonNetInvoke('claim', { session_id:dungeonNet.session.id }).then(function(res){ if(res.ok){ var def = DUNGEON_DEFS[dungeonNet.session.layer]; if(def) grantMasterworkDrops(def.id); dungeonNetApply(res); } if(currentCategory === 'dungeons') render(); }); }
-  function dungeonNetLeave(){ if(!dungeonNet.session || dungeonNet.busy) return; dungeonNet.busy = true; var sid = dungeonNet.session.id; dungeonNetInvoke('leave', { session_id:sid }).then(function(res){ dungeonNet.busy = false; dungeonNet.session = null; dungeonNet.members = []; dungeonNet.clearedHandled = false; dungeonNetResubscribe(); if(currentCategory === 'dungeons') render(); }); }
+  function dungeonNetLeave(){ if(!dungeonNet.session || dungeonNet.busy) return; dungeonNet.busy = true; var sid = dungeonNet.session.id; dungeonNetInvoke('leave', { session_id:sid }).then(function(res){ dungeonNet.busy = false; dungeonNet.session = null; dungeonNet.members = []; dungeonNet.clearedHandled = false;  dungeonNetEndLocalFight(); dungeonNetResubscribe(); if(currentCategory === 'dungeons') render(); }); }
   function dungeonNetStart(){ if(!dungeonNet.session || dungeonNet.busy) return; dungeonNet.busy = true; dungeonNet.error = ''; var sid = dungeonNet.session.id; dungeonNetInvoke('start', { session_id:sid }).then(function(res){ dungeonNet.busy = false; if(!res.ok) dungeonNet.error = res.error || 'Could not start.'; else dungeonNetApply(res); if(currentCategory === 'dungeons') render(); }); }
   function dungeonNetListLobbies(layer){ dungeonNetInvoke('list', { layer:layer }).then(function(res){ if(res.ok){ dungeonNet.lobbiesByLayer[layer] = res.lobbies || []; if(currentCategory === 'dungeons') render(); } }); }
   // Assault pulse: while our party's run is active, drip power*elapsed into the shared pool. Driven off
   // the main loop (dungeonNetTick), rate-limited client-side; the server caps the credited elapsed too.
+  // ---- Phase 3: the party's foe is fought by the REAL engine ------------------------------------
+  // Phase 2 sent a `power` DPS proxy and let the server multiply it by elapsed time, so a party fight
+  // ignored crits, elements, set bonuses, legendaries, familiars and the whole incoming chain. Now the
+  // shared enemy is mirrored locally (from the SAME roster the server holds) and fought through the
+  // ordinary combat engine; we report the damage we actually dealt and adopt the shared HP back.
+  // The server stays the authority on enemy HP, progression and who the enemy is hitting.
+  var _dungeonNetEnemies = {};
+  function dungeonNetRoster(layer){
+    return layer==='d4' ? DUNGEON_D4_ENEMIES : layer==='d3' ? DUNGEON_D3_ENEMIES
+         : layer==='d2' ? DUNGEON_D2_ENEMIES : DUNGEON_D1_ENEMIES;
+  }
+  // A local stand-in for the shared foe. Group runs use the BASE roster (no solo difficulty scaling),
+  // which is what the edge function's d1..d4Roster() generate -- a selftest pins the two together.
+  function dungeonNetEnemy(layer, idx){
+    var base = dungeonNetRoster(layer)[idx]; if(!base) return null;
+    var nid = 'netdungeon_' + layer + '_' + idx;
+    if(!_dungeonNetEnemies[nid]){
+      var c = {}; for(var k in base){ if(base.hasOwnProperty(k)) c[k] = base[k]; }
+      c.id = nid;
+      _dungeonNetEnemies[nid] = c;
+      MONSTERS_BY_ID[nid] = c;
+    }
+    return _dungeonNetEnemies[nid];
+  }
+  // Enter (or re-target) the local fight so it matches the shared session.
+  function dungeonNetSyncCombat(){
+    var s = dungeonNet.session;
+    var me = dungeonNetMyMember();
+    var act = state.activity;
+    if(!s || s.status !== 'active' || (me && !me.alive)){
+      if(act && act.type==='combat' && act.netDungeon){ state.activity = { type:null }; needsRender = true; }
+      return;
+    }
+    var idx = s.enemy_index || 0;
+    var foe = dungeonNetEnemy(s.layer, idx); if(!foe) return;
+    if(!act || act.type!=='combat' || act.netDungeon !== s.id || act.netIndex !== idx){
+      // New foe (or first entry): start a fresh local fight seeded from the shared HP.
+      state.activity = { type:'combat', monsterId:foe.id, monsterHp:Math.max(1, s.enemy_hp||foe.hp),
+        netDungeon:s.id, netIndex:idx, tickAccum:0, offhandTickAccum:0, monsterTickAccum:0,
+        duelStartedAt:Date.now(), lastDamagedAt:0 };
+      dungeonNet.lastEnemyHp = state.activity.monsterHp;
+      needsRender = true;
+    }
+  }
+  // The enemy only swings at ME while the SERVER says I'm its target -- targeting is threat-weighted and
+  // shared, so every client agrees who is being hit. When it is me, the hit resolves through my own
+  // mitigation chain (armour, block, dodge, reflect, wards), which is the point of the rework.
+  function dungeonNetEnemySuppressed(){
+    var act = state.activity;
+    if(!act || !act.netDungeon) return false;              // not a party fight -> normal rules
+    var s = dungeonNet.session;
+    return !(s && authUser && s.target_id === authUser.id);
+  }
+  // Damage is measured, not instrumented: whatever the engine took off the local foe this frame -- crits,
+  // echoes, reflect, familiars, DoTs, everything -- is the delta we owe the shared pool. One hook instead
+  // of touching every damage site.
+  function dungeonNetCollectDamage(){
+    var act = state.activity;
+    if(!act || act.type!=='combat' || !act.netDungeon) return;
+    var prev = dungeonNet.lastEnemyHp;
+    if(typeof prev === 'number' && act.monsterHp < prev) dungeonNet.pendingDamage += (prev - act.monsterHp);
+    dungeonNet.lastEnemyHp = act.monsterHp;
+  }
   function dungeonNetTick(){
     var s = dungeonNet.session;
     if(!s || s.status !== 'active') return;
+    dungeonNetSyncCombat();
+    dungeonNetCollectDamage();
     var me = dungeonNetMyMember();
     if(me && !me.alive) return; // a downed delver can't attack; they spectate until wipe or clear
     var now = Date.now();
     if(now - dungeonNet.lastAssault < 2500) return;
     dungeonNet.lastAssault = now;
-    dungeonNetInvoke('assault', { session_id:s.id, power:dungeonPower() }).then(function(res){ if(res.ok){ dungeonNetApply(res); if(currentCategory === 'dungeons') render(); } });
+    var dmg = Math.max(0, Math.round(dungeonNet.pendingDamage));
+    dungeonNet.pendingDamage = 0;
+    // `power` rides along as the CEILING the server clamps the reported damage to, not as the damage.
+    dungeonNetInvoke('assault', { session_id:s.id, power:dungeonPower(), damage:dmg, hp:Math.max(0, Math.round(state.playerHp||0)) })
+      .then(function(res){
+        if(!res.ok){ dungeonNet.pendingDamage += dmg; return; } // failed send -> re-bank it rather than lose it
+        dungeonNetApply(res);
+        dungeonNetSyncCombat();
+        // Adopt the shared enemy HP: other delvers have been hitting it too.
+        var act = state.activity;
+        if(act && act.type==='combat' && act.netDungeon && dungeonNet.session){
+          act.monsterHp = Math.max(0, dungeonNet.session.enemy_hp||0);
+          dungeonNet.lastEnemyHp = act.monsterHp;
+        }
+        if(currentCategory === 'dungeons') render();
+      });
   }
   // On reload the module-scoped run state is gone but state.activity may still be a dungeon combat.
   // Rebuild a solo run from it so the descent resumes instead of stranding the player mid-fight.
@@ -27512,7 +27609,9 @@
       }
       if(state.activity.type==='combat'){
         // Thunderfury (Concussive Bolt): a stunned enemy's action bar is frozen -- it neither fills nor attacks.
-        if(!enemyStunned()){
+        // In a party run it also holds still for everyone it is NOT currently targeting (server-owned,
+        // threat-weighted), so exactly one delver takes each swing instead of all of them taking it.
+        if(!enemyStunned() && !dungeonNetEnemySuppressed()){
           var monsterForSpeed = monsterById(state.activity.monsterId);
           var monsterIntervalMs = (monsterForSpeed ? monsterForSpeed.attackSpeed : 3) * 1000 * (1 + enemyExtraSlowPct());
           state.activity.monsterTickAccum = (state.activity.monsterTickAccum||0) + dt;
