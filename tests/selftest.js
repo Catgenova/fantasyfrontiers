@@ -7333,6 +7333,8 @@
     ok(FF.wardingReflectBonus(st(200)) <= 0.20 + 1e-9, 'bonus clamps at +20% beyond Lv100');
     eq(FF.WARDING_BONUS_MIN, 0.01, 'min bonus 1%');
     eq(FF.WARDING_BONUS_MAX, 0.20, 'max bonus 20%');
+    eq(FF.WARDING_XP_PER_DMG, 2.0, 'Warding trains at 2 XP per point of damage reflected');
+    eq(FF.DEF_PROF_XP_PER_DMG, 1.0, 'armor proficiencies still train at 1 XP per point mitigated (unchanged)');
     // Warding is a single shared proficiency: the per-element ward styles are NOT proficiency skills.
     ok(FF.OFFHAND_STYLE_IDS.indexOf('warding') === -1, 'warding is not an offhand STYLE id');
     FF.WARD_TYPES.forEach(function(w){ ok(FF.OFFHAND_STYLE_IDS.indexOf(w.id) === -1, w.id+' is not a per-style proficiency'); });
