@@ -1088,6 +1088,17 @@
   .setbonus-chip{display:inline-block;padding:2px 9px;border-radius:6px;font-size:12px;margin:2px 5px 2px 0;
     background:var(--bg-deep);color:var(--text-dim);border:1px solid var(--border-light);opacity:.85;}
   .setbonus-chip.on{background:var(--gold);color:#f2f8e6;border-color:var(--green-deep);font-weight:600;opacity:1;}
+  /* Session-fence gate: this tab has stopped because the account opened elsewhere. Scrim is tinted with
+     --ink rather than a blue-black so the frozen game reads as dimmed parchment, not a different app.
+     Card follows the raised-panel idiom; heading matches the Choose Your Path gate (--font-display/--gold). */
+  .ff-fenced{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;
+    padding:24px;background:rgba(20,18,16,.72);backdrop-filter:blur(2px);}
+  .ff-fenced-card{max-width:430px;background:var(--bg-panel-raised);border:2px solid var(--border);
+    border-radius:var(--radius);padding:24px 26px;text-align:center;box-shadow:0 14px 40px rgba(20,18,16,.45);}
+  .ff-fenced-card h2{font-family:var(--font-display);font-size:20px;letter-spacing:1px;color:var(--gold);margin:0 0 12px;}
+  .ff-fenced-card p{margin:0 0 10px;line-height:1.6;font-size:13.5px;color:var(--text-dim);}
+  .ff-fenced-card p.last{margin-bottom:18px;}
+  .ff-fenced-card .action-btn{width:auto;padding:9px 30px;margin-top:0;}
   .physique-bonus b{color:var(--cat-physique);}
 
   ::-webkit-scrollbar{width:6px;}
@@ -22426,18 +22437,13 @@
     el.setAttribute('role', 'alertdialog');
     el.setAttribute('aria-modal', 'true');
     el.setAttribute('aria-labelledby', 'ffFencedTitle');
-    el.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(8,10,14,.88);display:flex;'
-      + 'align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(3px);';
-    el.innerHTML = '<div style="max-width:440px;background:#12161d;border:1px solid #2b323d;border-radius:6px;'
-      + 'padding:26px 28px;text-align:center;font-family:inherit;color:#e4e8ed;box-shadow:0 18px 50px rgba(0,0,0,.5)">'
-      + '<h2 id="ffFencedTitle" style="margin:0 0 12px;font-size:19px;color:var(--gold,#d9a24a)">Opened in another window</h2>'
-      + '<p style="margin:0 0 10px;line-height:1.6;font-size:14px;color:#b6bfca">'
-      + 'Fantasy Frontiers is now running in a different tab or on another device, so this one has stopped '
-      + 'to keep your progress from being overwritten.</p>'
-      + '<p style="margin:0 0 20px;line-height:1.6;font-size:14px;color:#b6bfca">'
-      + 'Your progress was saved up to a few seconds before this. Reload to play here instead.</p>'
-      + '<button id="ffFencedReload" style="font:inherit;font-size:14px;font-weight:600;cursor:pointer;'
-      + 'background:var(--gold,#d9a24a);color:#12161d;border:0;border-radius:4px;padding:11px 26px">Reload</button>'
+    el.className = 'ff-fenced';
+    el.innerHTML = '<div class="ff-fenced-card">'
+      + '<h2 id="ffFencedTitle">Opened in another window</h2>'
+      + '<p>Fantasy Frontiers is now running in a different tab or on another device, so this one has '
+      + 'stopped to keep your progress from being overwritten.</p>'
+      + '<p class="last">Your progress was saved up to a few seconds before this. Reload to play here instead.</p>'
+      + '<button id="ffFencedReload" class="action-btn">Reload</button>'
       + '</div>';
     document.body.appendChild(el);
     var btn = document.getElementById('ffFencedReload');
