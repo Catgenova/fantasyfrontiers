@@ -13521,7 +13521,8 @@
       flat: (1 - getFamiliarEnemyWeakenPct()) * heraldGuardMult(st) * templarIncomingDmgMult() * knightDamageTakenMult(st)
           * (1 - scrollDamageReduction()) * (1 - getWardResistanceBonus(st)) * legWastingCurseIncomingMult(st)
           * legImmunizeIncomingMult(st) * legNightshroudIncomingMult(st) * hoarfrostIncomingMult(st)
-          * undyingRageIncomingMult(st) * d2IncomingDmgMult(st) * enchantDamageReductionMult(st) * enchantResistanceMult(st),
+          * undyingRageIncomingMult(st) * d2IncomingDmgMult(st) * d3SetIncomingMult(st) * legSpineshatterMult(st)
+          * (1 - Math.min(0.9, legendaryCloakBonus('d2_tunnelborn', st))) * enchantDamageReductionMult(st) * enchantResistanceMult(st),
       tenacity: tenacityLowHpMult(st)
     };
   }
@@ -13542,7 +13543,10 @@
       wardCut = Math.min(1, (prof.offhandItem.reflect || 0) + wardingReflectBonus(st) + wardersFocusReflectBonus());
     }
     function hit(raw){
-      var d = Math.max(1, Math.round((Math.round(raw * mult) - prof.armorDefense - shieldDef) / prof.tenacity));
+      // The live chain floors the reduced swing at INCOMING_FLOOR_FRAC of the raw roll before armour is
+      // subtracted, so mirror that here or a heavily-mitigated card would promise less than it can land.
+      var reduced = incomingMitigationFloor(Math.round(raw * mult), raw);
+      var d = Math.max(1, Math.round((reduced - prof.armorDefense - shieldDef) / prof.tenacity));
       if(wardCut > 0) d = Math.max(0, d - Math.round(d * wardCut));
       return d;
     }
