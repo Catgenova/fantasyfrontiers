@@ -3311,9 +3311,9 @@
     // Signet of the Wyrm: +Elemental Damage (rare = 0.15 x2 = +0.30 folded into elementDmgMult).
     near(FF.elementDmgMult(ringSt('d4_wyrm'), 'fire') - FF.elementDmgMult(ringSt('d4_nothere'), 'fire'), 0.30, 'Signet of the Wyrm: +30% Elemental Damage (rare)');
     // Signet of Scales: +Elemental Resistance (0.08 x2 = 0.16).
-    near(FF.d4SetElementResist(ringSt('d4_scales'), 'fire'), 0.16, 'Signet of Scales: +16% Elemental Resistance (rare)');
+    near(FF.d4SetElementResist(ringSt('d4_scales'), 'fire'), 0.10, 'Signet of Scales: +10% Elemental Resistance (rare, base trimmed to 0.05)');
     // Signet of Wrath: +damage per Wrath stack (0.02 x2 = 0.04/stack).
-    near(FF.d4LegDmgMult({}, ringSt('d4_wrath', { d4Wrath:5, d4WrathUntil:now+9999 })), 1 + 0.04*5, 'Signet of Wrath: +4% damage per Wrath stack (rare)');
+    near(FF.d4LegDmgMult({}, ringSt('d4_wrath', { d4Wrath:5, d4WrathUntil:now+9999 })), 1 + 0.02*5, 'Signet of Wrath: +2% damage per Wrath stack (rare, base trimmed to 0.01)');
     // Signet of the Breath / Hoard: stat values (behaviour rides charge / kill hooks).
     near(FF.legendaryRingBonus('d4_breath', ringSt('d4_breath')), 0.50, 'Signet of the Breath: +50% Breath Power (rare)');
     near(FF.legendaryRingBonus('d4_hoard', ringSt('d4_hoard')), 1.00, 'Signet of the Hoard: +100% elemental-kill gold (rare)');
@@ -3322,13 +3322,13 @@
     near(FF.d4LegIncomingMult(cloakSt('d4_scaleshroud'), { element:'fire' }), 0.76, 'Shroud of Scales: -24% elemental damage (rare)');
     near(FF.d4LegIncomingMult(cloakSt('d4_scaleshroud'), { element:null }), 1.0, 'Shroud of Scales inert vs a non-elemental foe');
     // Shroud of the Wyrm: +damage vs an elemental foe (0.12 x2 = +0.24).
-    near(FF.d4LegDmgMult({ element:'fire' }, cloakSt('d4_wyrmshroud')), 1.24, 'Shroud of the Wyrm: +24% vs an elemental foe (rare)');
+    near(FF.d4LegDmgMult({ element:'fire' }, cloakSt('d4_wyrmshroud')), 1.16, 'Shroud of the Wyrm: +16% vs an elemental foe (rare, base trimmed to 0.08)');
     near(FF.d4LegDmgMult({ element:null }, cloakSt('d4_wyrmshroud')), 1.0, 'Shroud of the Wyrm inert vs a non-elemental foe');
     // Shroud of Cinders: stat value (retort rides the incoming hook).
     near(FF.legendaryCloakBonus('d4_cinders', cloakSt('d4_cinders')), 0.30, 'Shroud of Cinders: 30% Fire retort (rare)');
 
     // Pendant of the Elements: +damage vs a Scorched foe (0.15 x2 = +0.30).
-    near(FF.d4LegDmgMult({}, amuletSt('d4_scorchpend', { activity:{type:'combat', monsterHp:100, scorchStacks:1, scorchUntil:now+4000} })), (1+0.02) * 1.30, 'Pendant of the Elements: +30% vs a Scorched foe (atop the Scorch stack)');
+    near(FF.d4LegDmgMult({}, amuletSt('d4_scorchpend', { activity:{type:'combat', monsterHp:100, scorchStacks:1, scorchUntil:now+4000} })), (1+0.02) * 1.20, 'Pendant of the Elements: +20% vs a Scorched foe (rare, base trimmed to 0.10, atop the Scorch stack)');
     near(FF.d4LegDmgMult({}, amuletSt('d4_scorchpend')), 1.0, 'Pendant of the Elements inert on an unscorched foe');
     // Pendant of the Everflame: +DoT damage (0.15 x2 = +0.30 into legNecromancyDoTMult).
     near(FF.legNecromancyDoTMult(amuletSt('d4_everflame')), 1.30, 'Pendant of the Everflame: elemental DoTs tick +30% (rare)');
@@ -3357,15 +3357,18 @@
       var order = FF.D2_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
       for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d2' }; s.bodyArmor[order[i]] = { uid:uid }; } }
     try {
-      // C1: a fantastic Signet of Scales alone would give +0.64 resist; the aggregate must cap at 0.60 and
-      // elementResistMult must never go negative (no more enemy-heals-you bug).
-      s.bodyArmor = {}; s.uniqueItems = {}; s.knightStacks = 0;
+      // C1: stack Scaleward (herald 2pc, +0.15) + Warscale (knight 2pc @max Momentum, +0.12) + a fantastic
+      // Signet of Scales (+0.40) = 0.67 raw -> must clamp to 0.60, and elementResistMult must never go negative.
+      s.bodyArmor = { helmet:{uid:'h1'}, chest:{uid:'h2'}, gauntlets:{uid:'k1'}, boots:{uid:'k2'} };
+      s.uniqueItems = { h1:{set:'herald',setLayer:'d4'}, h2:{set:'herald',setLayer:'d4'}, k1:{set:'knight',setLayer:'d4'}, k2:{set:'knight',setLayer:'d4'} };
+      s.knightStacks = 999;
       s.jewelrySlots = {}; s.jewelrySlots[R] = { leg:'d4_scales', rarity:'fantastic' };
       ok(FF.d4SetElementResist(s, 'fire') <= 0.60 + 1e-9, 'd4SetElementResist is hard-capped at 0.60');
-      near(FF.d4SetElementResist(s, 'fire'), 0.60, 'a fantastic Signet of Scales is capped to 0.60');
+      near(FF.d4SetElementResist(s, 'fire'), 0.60, 'an over-cap aggregate (0.67 raw) is clamped to 0.60');
       ok(FF.elementResistMult(s, 'fire') > 0, 'elementResistMult stays positive — an elemental hit can never heal you');
       ok(FF.elementResistMult(s, 'fire') >= 0.05, 'elementResistMult respects the 5% floor');
-      s.jewelrySlots = {}; ok(FF.elementResistMult(s, 'fire') <= 1.0 && FF.elementResistMult(s, 'fire') > 0.7, 'with no resist gear, elementResistMult is ~1 (minus base attunement)');
+      s.bodyArmor = {}; s.uniqueItems = {}; s.knightStacks = 0; s.jewelrySlots = {};
+      ok(FF.elementResistMult(s, 'fire') <= 1.0 && FF.elementResistMult(s, 'fire') > 0.7, 'with no resist gear, elementResistMult is ~1 (minus base attunement)');
 
       // C2: Reap (reaper D2 full) — foes below 25% HP take +30%.
       s.jewelrySlots = {}; s.knightStacks = 0;
@@ -3382,6 +3385,25 @@
       s.playerHp = 1; near(FF.d2SentinelReflectMult(s), 1.25, 'Retribution drops off below full Health (2pc remains)');
       s.bodyArmor = {}; s.uniqueItems = {}; near(FF.d2SentinelReflectMult(s), 1.0, 'no sentinel D2 set -> no reflect bonus');
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.jewelrySlots=sv.js; s.playerHp=sv.hp; s.activity=sv.act; s.knightStacks=sv.ks; }
+  });
+
+  // ---- Balance pass, Batch II: tier-inversion fixes (D4/D3 now beat earlier tiers) -----------------
+  suite('balance II: tier inversions resolved', function(){
+    function legSt(key, base, kind){ var isOff = kind === 'offhand';
+      return { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:1e9,
+        uniqueItems:{ L:{ uid:'L', leg:key, kind:kind||'weapon', base:'st'+(isOff?'ward':'weapon')+'_'+(base||'scepter')+'_t19_rare', tier:19, rarity:'rare' } },
+        equippedMainhandUid: isOff?undefined:'L', equippedOffhandUid: isOff?'L':undefined }; }
+    var now = Date.now();
+    // M1 — Plaguebearer shield: D4 Venomscale (-30% -> x0.70) now beats D3 Immunize (-25% -> x0.75).
+    var vs = FF.d4LegIncomingMult(legSt('venomscale','shieldSmall','offhand'), { element:'fire' }); // no poison -> inert here
+    near(FF.d4LegIncomingMult({ uniqueItems:{L:{uid:'L',leg:'venomscale',kind:'offhand'}}, equippedOffhandUid:'L', activity:{type:'combat',monsterHp:100,potionPoisonUntil:now+5000,potionPoisonDps:100} }, { element:'fire' }), 0.70, 'M1: Venomscale x0.70 < D3 Immunize x0.75 (D4 now wins)');
+    // M3 — Ranger bow: D4 Wyrmstalker now carries a damage bonus (+25% vs Scorched), beating D2 Trapmaster x1.20.
+    near(FF.d4LegDmgMult({}, legSt('wyrmstalker','bowMedium')), 1.0, 'Wyrmstalker inert on an unscorched foe');
+    near(FF.d4LegDmgMult({}, legSt('wyrmstalker','bowMedium', undefined) ), 1.0, 'Wyrmstalker baseline');
+    var wsScorch = legSt('wyrmstalker','bowMedium'); wsScorch.activity = { type:'combat', monsterHp:100, scorchStacks:1, scorchUntil:now+4000 };
+    near(FF.d4LegDmgMult({}, wsScorch), (1+0.02) * 1.25, 'M3: Wyrmstalker +25% vs a Scorched foe (progresses past D2 Trapmaster x1.20)');
+    // M4 — Magmacore base value is now x1.35 (> D2 Earthrender x1.30); gated on the juggernaut Wind-Up so inert here.
+    near(FF.d4LegDmgMult({}, legSt('magmacore','sledge')), 1.0, 'M4: Magmacore inert without the juggernaut Wind-Up (value x1.35 when active)');
   });
 
   // ---- D3 (Underground) legendary gear: arcane forge + effects (Batch R) -----------------------------
@@ -3474,8 +3496,8 @@
     // Rimewyrm's Fang: +20% vs a Scorched foe.
     near(FF.d4LegDmgMult({}, legSt('rimewyrm','wandWater','weapon',{ activity:{type:'combat', monsterHp:100, scorchStacks:1, scorchUntil:now+4000} })), (1+0.02) * 1.20, 'Rimewyrm: +20% vs a Scorched foe (atop the Scorch stack)');
     near(FF.d4LegDmgMult({}, legSt('rimewyrm','wandWater')), 1.0, 'Rimewyrm inert on an unscorched foe');
-    // Sunwyrm's Verdict: +30% vs a Dark foe.
-    near(FF.d4LegDmgMult({ element:'dark' }, legSt('sunwyrm','scepter')), 1.30, "Sunwyrm's Verdict: +30% vs a Dark foe");
+    // Sunwyrm's Verdict: +40% vs a Dark foe (progresses past D3 Lichbane x1.30).
+    near(FF.d4LegDmgMult({ element:'dark' }, legSt('sunwyrm','scepter')), 1.40, "Sunwyrm's Verdict: +40% vs a Dark foe");
     near(FF.d4LegDmgMult({ element:'fire' }, legSt('sunwyrm','scepter')), 1.0, 'Sunwyrm inert vs a non-Dark foe');
     // Dawnwyrm's Radiance: while a Radiant Barrier holds, +Light Attunement to all damage.
     var dw = legSt('dawnwyrm','wandLight','weapon',{ lumenShield:500 });
@@ -3534,7 +3556,7 @@
     near(FF.d4SetElementResist(legSt('dragonbulwark'), 'dark'), 0.12, 'Dragonscale Bulwark covers every element');
     near(FF.d4SetElementResist(legSt('bloodscale'), 'fire'), 0, 'a non-resist shield adds no elemental resist');
     // Venomscale Shield: -20% from a Poisoned, elemental foe.
-    near(FF.d4LegIncomingMult(legSt('venomscale', { activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+5000, potionPoisonDps:100} }), { element:'fire' }), 0.80, 'Venomscale: -20% from a Poisoned elemental foe');
+    near(FF.d4LegIncomingMult(legSt('venomscale', { activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+5000, potionPoisonDps:100} }), { element:'fire' }), 0.70, 'Venomscale: -30% from a Poisoned elemental foe (beats D1 Immunize -25%)');
     near(FF.d4LegIncomingMult(legSt('venomscale', { activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+5000, potionPoisonDps:100} }), { element:null }), 1.0, 'Venomscale needs the foe to carry an element');
     near(FF.d4LegIncomingMult(legSt('venomscale'), { element:'fire' }), 1.0, 'Venomscale inert vs an unpoisoned foe');
     // Wyrmthorn Wall: reflect carries the attacker's element, +50%.
@@ -4011,7 +4033,7 @@
     try {
       // Full-set amplifiers vs a Cursed foe (outgoing).
       wearFull('nightblade'); s.activity = { type:'combat', monsterHp:500, curseUntil:now+4000 };
-      near(FF.d3SetDmgMult({}, s), 1.20, 'Nightblade Doomcurse: +20% vs a Cursed foe');
+      near(FF.d3SetDmgMult({}, s), 1.25, 'Nightblade Doomcurse: +25% vs a Cursed foe (bumped to match D2 Eclipse)');
       s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Doomcurse inert on an uncursed foe');
       wearFull('duelist'); s.activity = { type:'combat', monsterHp:500, curseUntil:now+4000 };
       near(FF.d3SetDmgMult({}, s), 1.15, 'Duelist Spectral Grace: +15% vs a Cursed foe');

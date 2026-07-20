@@ -4649,19 +4649,19 @@
   // ---- D4 (Nest of the Depths) universal accessories — dragon Signets / Shrouds / Pendants (Batch GG) ----
   var D4_LEG_RING_DEFS = [
     { key:'d4_wyrm',   name:'Signet of the Wyrm',   short:'Wyrm',   stat:'Elemental Damage',    base:0.15, icon:svgIcon('flame','#c9a227') },
-    { key:'d4_scales', name:'Signet of Scales',     short:'Scales', stat:'Elemental Resist',    base:0.08, icon:svgIcon('shield','#c9a227') },
+    { key:'d4_scales', name:'Signet of Scales',     short:'Scales', stat:'Elemental Resist',    base:0.05, icon:svgIcon('shield','#c9a227') },
     { key:'d4_breath', name:'Signet of the Breath', short:'Breath', stat:'Breath Power',        base:0.25, icon:svgIcon('droplet','#c9a227') },
-    { key:'d4_wrath',  name:'Signet of Wrath',      short:'Wrath',  stat:'Damage per Wrath',    base:0.02, icon:svgIcon('starburst','#c9a227') },
+    { key:'d4_wrath',  name:'Signet of Wrath',      short:'Wrath',  stat:'Damage per Wrath',    base:0.01, icon:svgIcon('starburst','#c9a227') },
     { key:'d4_hoard',  name:'Signet of the Hoard',  short:'Hoard',  stat:'Elemental Kill Gold', base:0.50, icon:svgIcon('gem','#c9a227') }
   ];
   var D4_LEG_CLOAK_DEFS = [
     { key:'d4_scaleshroud', name:'Shroud of Scales',    short:'Scales',  stat:'Elemental DR',      base:0.12, icon:svgIcon('shield','#c9a227') },
-    { key:'d4_wyrmshroud',  name:'Shroud of the Wyrm',  short:'Wyrm',    stat:'vs elemental foes', base:0.12, icon:svgIcon('crossedswords','#c9a227') },
+    { key:'d4_wyrmshroud',  name:'Shroud of the Wyrm',  short:'Wyrm',    stat:'vs elemental foes', base:0.08, icon:svgIcon('crossedswords','#c9a227') },
     { key:'d4_cinders',     name:'Shroud of Cinders',   short:'Cinders', stat:'Fire Retort',       base:0.15, icon:svgIcon('flame','#c9a227') }
   ];
   var D4_LEG_AMULET_DEFS = [
     { key:'d4_dragon',    name:'Pendant of the Dragon',    short:'Dragon',    stat:'Attunement XP', base:0.50, icon:svgIcon('starburst','#c9a227') },
-    { key:'d4_scorchpend',name:'Pendant of the Elements',  short:'Elements',  stat:'vs Scorched',   base:0.15, icon:svgIcon('flame','#c9a227') },
+    { key:'d4_scorchpend',name:'Pendant of the Elements',  short:'Elements',  stat:'vs Scorched',   base:0.10, icon:svgIcon('flame','#c9a227') },
     { key:'d4_everflame', name:'Pendant of the Everflame', short:'Everflame', stat:'DoT Damage',    base:0.15, icon:svgIcon('droplet','#c9a227') }
   ];
   function legRingItemIdD4(key, rarity){ return 'legring_d4_' + key + '_' + rarity; }
@@ -5967,7 +5967,7 @@
     // --- Decay amplifiers (Batch N) ---
     if(setFullD3('quickdraw', st) && enemyDecaying(st)) m *= 1.15;                    // Grave Toxin: +15% vs a Decayed foe
     // --- Curse amplifiers (Batch O) ---
-    if(setFullD3('nightblade', st) && enemyCursed(st)) m *= 1.20;                     // Doomcurse: +20% vs a Cursed foe
+    if(setFullD3('nightblade', st) && enemyCursed(st)) m *= 1.25;                     // Doomcurse: +25% vs a Cursed foe (matches D2 Eclipse; no longer a tier inversion)
     if(setFullD3('duelist', st) && enemyCursed(st)) m *= 1.15;                        // Spectral Grace: +15% vs a Cursed foe
     if(setFullD3('thunderfury', st) && enemyCursed(st)) m *= 1.12;                    // Death Static: +12% vs a Cursed foe
     return m;
@@ -6095,7 +6095,7 @@
     return { mult:mult, heal:Math.round(heal) }; }
   // D4 legendary incoming multiplier (Batch DD): Venomscale Shield's elemental damage reduction vs a Poisoned foe.
   function d4LegIncomingMult(st, monster){ st = st || state; var m = 1;
-    if(legActive('venomscale', st) && monster && monster.element && enemyPoisonedFoe(st)) m *= 0.80;         // Venomscale Shield: -20% from a Poisoned, elemental foe
+    if(legActive('venomscale', st) && monster && monster.element && enemyPoisonedFoe(st)) m *= 0.70;         // Venomscale Shield: -30% from a Poisoned, elemental foe (beats D1 Immunize -25%)
     if(monster && monster.element) m *= (1 - legendaryCloakBonus('d4_scaleshroud', st));                     // Shroud of Scales: flat elemental damage reduction
     return m; }
   // Shadowwyrm's Fang (D4 claw): a Vanish strike's Immolation burst — Fire scaling with the foe's missing Health.
@@ -6197,7 +6197,8 @@
     m *= scorchDmgMult(st);                                                                                    // Scorch: +2% per stack
     if(legActive('rimewyrm', st) && enemyScorched(st)) m *= 1.20;                                              // Rimewyrm's Fang: +20% vs a Scorched foe
     if(legActive('dawnwyrm', st) && (st.lumenShield||0) > 0) m *= (1 + elementDamageBonus(st, 'light'));       // Dawnwyrm's Radiance: Barrier lends your Light Attunement
-    if(legActive('sunwyrm', st) && monster && monster.element==='dark') m *= 1.30;                             // Sunwyrm's Verdict: +30% vs a Dark foe
+    if(legActive('sunwyrm', st) && monster && monster.element==='dark') m *= 1.40;                             // Sunwyrm's Verdict: +40% vs a Dark foe (progresses past D3 Lichbane x1.30)
+    if(legActive('wyrmstalker', st) && enemyScorched(st)) m *= 1.25;                                           // Wyrmstalker Bow: +25% vs a Scorched foe (progresses past D2 Trapmaster x1.20)
     // --- Batch EE (slash + pierce weapon amplifiers) ---
     if(legActive('greedwyrm', st)){ var _g = st.activity && st.activity.type==='combat' ? (st.activity.goldEarned||0) : 0; m *= (1 + Math.min(0.50, 0.02 * Math.floor(_g / 1000))); } // Greedwyrm's Claw: +2% per 1k gold this fight
     if(legActive('wyrmdancer', st)) m *= (1 + 0.06 * d4WrathStacks(st));                                       // Wyrmdancer's Fang: +6% per Wrath stack
@@ -6205,7 +6206,7 @@
     if(legActive('drakelance', st) && (st.knightStacks||0) >= knightStackCap(st)) m *= 1.20;                   // Drakelance: +20% at max Momentum
     // --- Batch FF (blunt weapon amplifiers) ---
     if(legActive('wrathscale', st) && st.playerHp > 0 && st.playerHp < maxHp(st) * 0.50) m *= (1 + 0.40 * (1 - st.playerHp / (maxHp(st) * 0.50))); // Wrathscale Hammer: up to +40% as Health falls below 50%
-    if(legActive('magmacore', st) && juggernautBonus(1, st)) m *= 1.25;                                        // Magmacore Sledge: Wind-Up erupts (+25%)
+    if(legActive('magmacore', st) && juggernautBonus(1, st)) m *= 1.35;                                        // Magmacore Sledge: Wind-Up erupts (+35%, beats D2 Earthrender x1.30)
     // --- Batch GG (universal accessories) ---
     m *= (1 + legendaryRingBonus('d4_wrath', st) * d4WrathStacks(st));                                         // Signet of Wrath: +damage per Wrath stack
     if(monster && monster.element) m *= (1 + legendaryCloakBonus('d4_wyrmshroud', st));                        // Shroud of the Wyrm: +damage vs an elemental foe
