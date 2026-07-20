@@ -93,6 +93,9 @@ const POWER_CEILING = 12000;         // max accepted DPS proxy (anti-cheat clamp
 const MAX_CREDIT_SECONDS = 30;       // max real-time credited per assault ping (anti-burst)
 const MAX_HP_CEILING = 100_000_000;  // clamp for the client-reported effective HP proxy
 const THREAT_CEILING = 1000;         // clamp for the client-reported threat proxy
+// Ceiling on a single party heal. Generous next to real HP pools (MAX_HP_CEILING) but finite, so a
+// tampered client can't hold the party at full health forever with one enormous claim.
+const MAX_HEAL_PER_CALL = 5_000_000;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -142,7 +145,7 @@ Deno.serve(async (req) => {
       .eq("id", sessionId).maybeSingle();
     if (!session) return { session: null, members: [] };
     const { data: members } = await admin.from("dungeon_members")
-      .select("user_id, username, power, damage, alive, claimed, hp, max_hp, threat").eq("session_id", sessionId).order("joined_at");
+      .select("user_id, username, power, damage, alive, claimed, hp, max_hp, threat, shield").eq("session_id", sessionId).order("joined_at");
     return { session, members: members || [] };
   }
 
@@ -226,11 +229,42 @@ Deno.serve(async (req) => {
     const { data: s } = await admin.from("dungeon_sessions").select("layer").eq("id", sid).maybeSingle();
     const def = s ? DUNGEONS[s.layer as string] : null;
     if (!def) return json({ ok: false, error: "Party not found." }, 404);
+    // Phase 3: the client runs the REAL combat engine and reports what happened -- damage it actually
+    // dealt, and its own HP after resolving the enemy's swings through its own mitigation chain.
+    // `power` is still sent, but now only as the CEILING the reported damage is clamped to
+    // (min(reported, power*elapsed) in the RPC), so real mechanics matter without unbounding the rate.
+    const ceiling = clampPower(body.power);
+    const dmg = Number(body.damage);
+    const reported = (Number.isFinite(dmg) && dmg > 0) ? Math.min(Math.floor(dmg), Number.MAX_SAFE_INTEGER) : 0;
+    const hpRaw = Number(body.hp);
+    const hpReport = Number.isFinite(hpRaw) && hpRaw >= 0 ? Math.min(Math.floor(hpRaw), MAX_HP_CEILING) : null;
     const { data: r, error } = await admin.rpc("dungeon_assault", {
-      p_session: sid, p_user: user.id, p_power: clampPower(body.power), p_max_seconds: MAX_CREDIT_SECONDS,
+      p_session: sid, p_user: user.id, p_damage: reported, p_hp_report: hpReport,
+      p_power_ceiling: ceiling, p_max_seconds: MAX_CREDIT_SECONDS,
       p_hp: def.hp, p_atk: def.atk, p_spd_ms: def.spd,
     });
     if (error) return json({ ok: false, error: "Assault failed." }, 500);
+    return json({ ok: true, result: r, ...(await snapshotOf(sid)) });
+  }
+
+  // Party heal: a targeted event, not a broadcast. The server owns every member's HP, so a heal is a
+  // delta aimed at one member -- that keeps a single writer per value instead of N clients racing their
+  // own view of the party's health. Bounded by MAX_HEAL_PER_CALL so a tampered client can't top the party
+  // up infinitely; overheal only becomes a barrier for healers whose perk grants one.
+  if (action === "heal") {
+    const sid = String(body.session_id || "");
+    const target = String(body.target_id || "");
+    if (!sid || !target) return json({ ok: false, error: "Invalid heal." }, 400);
+    const amtRaw = Number(body.amount);
+    const amount = Number.isFinite(amtRaw) && amtRaw > 0 ? Math.floor(amtRaw) : 0;
+    if (amount <= 0) return json({ ok: true, result: { status: "ok", healed: 0 } });
+    const sfRaw = Number(body.shield_frac);
+    const shieldFrac = Number.isFinite(sfRaw) ? Math.max(0, Math.min(1, sfRaw)) : 0;
+    const { data: r, error } = await admin.rpc("dungeon_heal", {
+      p_session: sid, p_healer: user.id, p_target: target,
+      p_amount: amount, p_shield_frac: shieldFrac, p_max_heal: MAX_HEAL_PER_CALL,
+    });
+    if (error) return json({ ok: false, error: "Heal failed." }, 500);
     return json({ ok: true, result: r, ...(await snapshotOf(sid)) });
   }
 
