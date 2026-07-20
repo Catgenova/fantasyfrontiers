@@ -5095,6 +5095,10 @@
   var REFINING_SKILL_IDS = CRAFTING_TAB_SKILL_IDS.filter(function(id){ return COOKING_SKILL_IDS.indexOf(id)===-1; });
   var REFINING_TAB_SKILL_IDS = ['butchering'].concat(REFINING_SKILL_IDS); // Butchering leads the Refining tab
   var GATHERING_TAB_SKILL_IDS = GATHER_SKILL_IDS.filter(function(id){ return id !== 'butchering'; });
+  // The only tabs that draw forge cards or Improvement material readouts -- i.e. the only tabs whose
+  // DOM the forge half of updateDynamic() can actually reach. Used as a per-frame guard; if a new tab
+  // starts emitting ownedSpan()/improveMaterialSpan()/inp- ids, add it here or its counts will go stale.
+  var FORGE_LIVE_CATEGORIES = ['crafting','building','outfitting','refining','cooking','improvement'];
   var ALL_MAIN_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['fiberharvesting','grainharvesting','herbharvesting']).concat(WEAPON_STYLE_IDS).concat([WANDS_SKILL_ID, STAVES_SKILL_ID, SCEPTERS_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS).concat(['prayer','sacrifice','devotion','blessing','miracle']);
   var FAITH_SKILL_IDS = ['prayer','sacrifice','devotion','blessing','miracle'];
 
@@ -26360,6 +26364,11 @@
       if(startBtn) startBtn.disabled = !hasInputs(recipe.inputs);
     });
 
+    // Everything below to the Chronicle check only touches forge/improvement cards, which exist on
+    // six tabs. Running it elsewhere cost ~66ms/frame (~95% of the loop) recomputing tier data for
+    // cards that aren't in the DOM -- that is what made Inventory choppy at ~700 items. See ?perf.
+    if(FORGE_LIVE_CATEGORIES.indexOf(currentCategory) !== -1){
+
     // Forge cards (tools/weapons/shields/body armor/belts/relics): live "Owned" totals. Each
     // span carries the exact inventory ids to sum, so this just re-sums them every tick.
     var ownedLive = document.getElementsByClassName('owned-live');
@@ -26560,6 +26569,8 @@
       var wBtn2 = document.querySelector('[data-action="forgeStackableWeapon"][data-type="'+w.id+'"]');
       if(wBtn2) wBtn2.disabled = !(arcLvl >= wData.levelReq && hasInputs(wData.inputs));
     });
+
+    } // end forge-card live updaters
 
     if(logVersion !== lastRenderedLogVersion){ chronicleRenderOnly(); lastRenderedLogVersion = logVersion; }
   }
