@@ -13385,7 +13385,11 @@
       while(_echoChance > 0 && Math.random() < _echoChance && state.activity && state.activity.type==='combat' && act.monsterHp > 0 && _echoGuard < 20){
         _echoGuard++;
         // Resonant Crit (Spellblade full): an echo can Critically Hit, borrowing the hero's crit chance & damage.
-        var _echoCrit = spellbladeResonantCrit(state) && Math.random() < (criticalEyeCritChance(state) + newClassCritChance());
+        // "borrowing the hero's crit chance" means the REAL one (playerCritChance) -- the same chain the
+        // main swing rolls and the stats screen shows. It previously used a private subset that excluded,
+        // among others, Spellblade's own Critical Runes, so a Spellblade's echoes ignored the Spellblade's
+        // own crit passive.
+        var _echoCrit = spellbladeResonantCrit(state) && Math.random() < playerCritChance(monster);
         var _echoCritMult = _echoCrit ? (CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) : 1;
         var echo = Math.max(1, Math.round(dmgToMonster * SPELLBLADE_ECHO_PCT * legEchoDmgMult(state) * _echoCritMult * d4EchoMult(state) * (legActive('runegrave') && enemyDecaying(state) ? 1.15 : 1))); // Resonant Echo: +10% per distinct enchant; Runegrave (D3): +15% vs Decayed; D4 Rune Heart/Prismatic Edge
         act.monsterHp -= echo; spawnFloatingText((_echoCrit?'✦ ':'')+(_echoChain ? 'Twin Echo ' : 'Spell Echo ')+echo+'!', _echoCrit?'ft-crit':'ft-rare');
