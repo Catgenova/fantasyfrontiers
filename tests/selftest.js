@@ -8464,6 +8464,31 @@
     }
   });
 
+  // ---- Lifesteal must never proc on reflected damage ---------------------------------------------
+  suite('combat: reflect does not lifesteal', function(){
+    ok(typeof FF.applyChipDamage === 'function', 'applyChipDamage exported');
+    var s = FF._state;
+    var snap = { act:s.activity, hp:s.playerHp };
+    try {
+      // applyChipDamage is the single path EVERY reflect source uses (Thorns, Iron Maiden, Riposte,
+      // Bastion, Thornwall, ward reflect, Thorns enchant, Bramble) as well as DoTs and echoes. Generic
+      // lifesteal is applied only in playerAttackTick on the direct hit's effDmg, so reflect must not heal.
+      // This pins that: chipping a foe's health leaves the player's HP untouched, even below max where a
+      // lifesteal WOULD have room to land. If a future edit adds a heal hook inside applyChipDamage --
+      // the natural place someone would wire "heal on reflect" -- this fails.
+      var mon = FF.MONSTERS[0];
+      s.activity = { type:'combat', monsterId:mon.id, monsterHp: mon.hp, tickAccum:0, monsterTickAccum:0 };
+      s.playerHp = Math.max(1, Math.round(FF.maxHp(s) * 0.5));   // well below max: any lifesteal has room
+      var hpBefore = s.playerHp;
+      var killed = FF.applyChipDamage(5);                        // a reflect tick against a healthy foe
+      eq(killed, false, 'a small chip against a full-HP foe does not kill it');
+      eq(s.playerHp, hpBefore, 'reflected/chip damage heals the player for exactly 0 (no lifesteal)');
+      eq(s.activity.monsterHp, mon.hp - 5, 'the chip still moved the monster health bar');
+    } finally {
+      s.activity = snap.act; s.playerHp = snap.hp;
+    }
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }
