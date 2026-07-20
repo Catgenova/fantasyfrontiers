@@ -13745,7 +13745,10 @@
       if(_refl > 0){
         var _rcrit = false;
         // Reckoning (Lv40) -- or the Crushing Reprisal legendary -- lets the reflect crit; Crushing Reprisal deals +100% extra crit damage.
-        if((sentinelBonus(40) || legReflectCanCrit(state)) && Math.random() < (criticalEyeCritChance(state) + newClassCritChance())){ _refl *= legReflectCritMult(state); _rcrit = true; }
+        // Reckoning rolls the SAME crit chance the stats screen shows (playerCritChance), not a private
+        // subset. It previously counted only criticalEye + new-class passives, so a Sentinel's enchants,
+        // legendaries and set bonuses were silently excluded and Reckoning crit far less than advertised.
+        if((sentinelBonus(40) || legReflectCanCrit(state)) && Math.random() < playerCritChance(monster)){ _refl *= legReflectCritMult(state); _rcrit = true; }
         var _rdmg = Math.max(1, Math.round(_refl));
         applyChipDamage(_rdmg);
         spawnCombatFloat((_rcrit?'✦ ':'')+'Thorns -'+fmt(_rdmg), 'ft-crit', true);
