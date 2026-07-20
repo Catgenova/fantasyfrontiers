@@ -3349,6 +3349,41 @@
     s.inventory=svInv; s.blueprints=svBp;
   });
 
+  // ---- Balance pass, Batch HH: critical fixes (elem-resist clamp + dead D2 sets) --------------------
+  suite('balance HH: critical fixes', function(){
+    var s = FF._state, sv = { ba:s.bodyArmor, ui:s.uniqueItems, js:s.jewelrySlots, hp:s.playerHp, act:s.activity, ks:s.knightStacks };
+    var R = FF.RING_SLOT_IDS[0];
+    function wearD2(cls, n){ s.bodyArmor = {}; s.uniqueItems = {};
+      var order = FF.D2_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
+      for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d2' }; s.bodyArmor[order[i]] = { uid:uid }; } }
+    try {
+      // C1: a fantastic Signet of Scales alone would give +0.64 resist; the aggregate must cap at 0.60 and
+      // elementResistMult must never go negative (no more enemy-heals-you bug).
+      s.bodyArmor = {}; s.uniqueItems = {}; s.knightStacks = 0;
+      s.jewelrySlots = {}; s.jewelrySlots[R] = { leg:'d4_scales', rarity:'fantastic' };
+      ok(FF.d4SetElementResist(s, 'fire') <= 0.60 + 1e-9, 'd4SetElementResist is hard-capped at 0.60');
+      near(FF.d4SetElementResist(s, 'fire'), 0.60, 'a fantastic Signet of Scales is capped to 0.60');
+      ok(FF.elementResistMult(s, 'fire') > 0, 'elementResistMult stays positive — an elemental hit can never heal you');
+      ok(FF.elementResistMult(s, 'fire') >= 0.05, 'elementResistMult respects the 5% floor');
+      s.jewelrySlots = {}; ok(FF.elementResistMult(s, 'fire') <= 1.0 && FF.elementResistMult(s, 'fire') > 0.7, 'with no resist gear, elementResistMult is ~1 (minus base attunement)');
+
+      // C2: Reap (reaper D2 full) — foes below 25% HP take +30%.
+      s.jewelrySlots = {}; s.knightStacks = 0;
+      wearD2('reaper', FF.D2_SET_DEFS.reaper.full); s.activity = { type:'combat', monsterHp:100 };
+      near(FF.d2SetDmgMult({ hp:1000 }, s), 1.30, 'Reap (reaper D2 full): +30% vs a foe below 25% Health');
+      s.activity = { type:'combat', monsterHp:800 }; near(FF.d2SetDmgMult({ hp:1000 }, s), 1.0, 'Reap inert on a healthy foe');
+      // C2: Soul Glut (reaper D2 2pc) is now a live lifesteal source (wired into the lifesteal sum).
+      wearD2('reaper', 2); ok(FF.set2D2('reaper', s), 'the reaper D2 2-piece is detectable (Soul Glut lifesteal live)');
+
+      // C2: Spiked Retort / Retribution (sentinel D2) — reflect amplifier.
+      s.playerHp = FF.maxHp(s);
+      wearD2('sentinel', 2); near(FF.d2SentinelReflectMult(s), 1.25, 'Spiked Retort (sentinel D2 2pc): +25% reflect');
+      wearD2('sentinel', FF.D2_SET_DEFS.sentinel.full); near(FF.d2SentinelReflectMult(s), 1.25 * 1.50, 'Retribution (full) adds +50% reflect at full Health');
+      s.playerHp = 1; near(FF.d2SentinelReflectMult(s), 1.25, 'Retribution drops off below full Health (2pc remains)');
+      s.bodyArmor = {}; s.uniqueItems = {}; near(FF.d2SentinelReflectMult(s), 1.0, 'no sentinel D2 set -> no reflect bonus');
+    } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.jewelrySlots=sv.js; s.playerHp=sv.hp; s.activity=sv.act; s.knightStacks=sv.ks; }
+  });
+
   // ---- D3 (Underground) legendary gear: arcane forge + effects (Batch R) -----------------------------
   suite('mastercraft: D3 legendary arcane (forge + effects)', function(){
     var rec = FF.mastercraftRecipeFor(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d3','arcane')]);
