@@ -901,6 +901,15 @@
   .gab-task-remain{flex:0 0 auto;color:var(--text-faint);}
   .gab-task-track{height:8px;border-radius:3px;background:var(--bg-deep);border:1px solid var(--border);overflow:hidden;}
   .gab-task-fill{height:100%;background:var(--gold);}
+  /* Action-bar bar colours by task kind, so a glance at the card says what's running:
+     green = ordinary open-ended work, orange = a queued run with a target, red = combat. */
+  .gab-task-fill.queued{background:#c8791f;}
+  .gab-task-fill.combat{background:#a8322a;}
+  /* Queue-length control. One global setting rather than a field per card -- see queueTargetOf(). */
+  .gab-queue{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);padding:6px 2px 0;}
+  .gab-queue input{width:66px;font-family:var(--font-mono);font-size:12px;padding:3px 6px;border-radius:6px;border:1px solid var(--ink);background:var(--input-fill);color:var(--text);}
+  .gab-queue .hint{color:var(--text-faint);}
+  .gab-task-count{flex:0 0 auto;font-family:var(--font-mono);font-size:11px;color:#c8791f;font-variant-numeric:tabular-nums;}
   .gab-task-chance{flex:0 0 auto;width:42px;text-align:right;font-family:var(--font-mono);font-size:12px;color:var(--text-dim);}
   /* Tea buff widget in the global action header */
   .gab-tea{margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);}
@@ -10222,8 +10231,48 @@
   function dungeonActionBlockedNotice(){ addLog('You’re in a dungeon — finish or leave the run before starting other tasks.', 'danger'); }
   // Places a newly-started task (craft/gather/pray) into a free Belt-granted slot if one is
   // available; otherwise it always wins, stopping whatever the primary slot was doing.
+  // ---- Queued runs ("make 100 copper swords") ----------------------------------------------------
+  // state.queueTarget is ONE global setting that every gathering/crafting start reads, rather than an
+  // input per card: there are hundreds of cards, render() rebuilds panels wholesale, and a per-card field
+  // would both bloat the frame loop and lose whatever you were typing on the next repaint.
+  //
+  // The target counts ITEMS OBTAINED, not attempts -- a 60%-success craft simply runs longer, and a
+  // recipe with outputQty 3 finishes in a third of the cycles. That is the whole point of the request:
+  // "make 100" should mean 100 in the bag.
+  var QUEUE_TARGET_MAX = 100000;
+  function queueTargetOf(){ var n = Math.floor(state.queueTarget || 0); return (n > 0) ? Math.min(QUEUE_TARGET_MAX, n) : 0; }
+  function setQueueTarget(n){
+    n = Math.floor(Number(n) || 0);
+    state.queueTarget = (n > 0) ? Math.min(QUEUE_TARGET_MAX, n) : 0;
+    saveGame();
+  }
+  // Credit whatever this cycle actually produced toward the run, and stop the slot once it's met. Called
+  // while gabCapture still holds the cycle's items, so it counts real output including bonus/rare rolls.
+  // Returns true if the run finished (the caller must not keep cycling a finished slot).
+  function queueCreditOutput(act){
+    if(!act || !act.targetQty || !gabCapture) return false;
+    var got = gabCapture.items[act.itemId] || 0;
+    if(got > 0) act.producedQty = (act.producedQty || 0) + got;
+    if((act.producedQty || 0) < act.targetQty) return false;
+    var nm = (ALL_SELLABLE[act.itemId] || ALL_GATHER_ITEMS[act.itemId] || {}).name || act.itemId;
+    addLog('Finished your run of ' + fmt(act.producedQty) + ' ' + nm + '.', 'important');
+    stopActivityForAct(act);
+    return true;
+  }
+  // Clear whichever slot this activity occupies -- the primary one or an extra belt slot.
+  function stopActivityForAct(act){
+    if(state.activity === act){ state.activity = { type:null }; }
+    else {
+      for(var i=0;i<state.extraCraftSlots.length;i++){ if(state.extraCraftSlots[i] === act) state.extraCraftSlots[i] = { type:null }; }
+    }
+    act.type = null;          // the in-flight while() loops test act.type and bail on this
+    needsRender = true;
+  }
   function placeNewActivity(newAct){
     if(dungeonLocksActions()){ dungeonActionBlockedNotice(); return; }
+    // Stamp the run target on gathering/crafting only -- combat, prayer and estate work aren't "queues".
+    var t = queueTargetOf();
+    if(t > 0 && (newAct.type === 'gather' || newAct.type === 'craft')){ newAct.targetQty = t; newAct.producedQty = 0; }
     var slot = findFreeCraftSlot();
     if(slot && !slot.primary){
       state.extraCraftSlots[slot.index] = newAct;
@@ -10391,6 +10440,7 @@
         completeSpecialCraft(act, tierData);
         maybeSummonFamiliar(specialSkillId);
         gabEmitReward(gabKeyForAct(act), gabCapture, null, Object.keys(gabCapture.items).length > 0);
+        queueCreditOutput(act);
         gabCapture = null;
         tierData = getSpecialTierData(act);
         if(!tierData){ act.type = null; needsRender = true; break; }
@@ -10463,6 +10513,7 @@
         maybeSummonFamiliar(recipe.shaftCraft ? 'fletching' : recipe.relicCraft ? 'archaeology' : act.skill);
         // Success = the craft produced any output (a plain craft fail yields nothing -> red X).
         gabEmitReward(gabKeyForAct(act), gabCapture, act.itemId, Object.keys(gabCapture.items).length > 0);
+        queueCreditOutput(act);
         gabCapture = null;
         var recheckInputs = recipe.shaftCraft ? makeShaftInputs(act.logTierIndex) : recipe.inputs;
         if(!hasInputs(recheckInputs)){
@@ -10527,6 +10578,7 @@
       maybeSummonFamiliar(act.skill);
       // Success = the main resource dropped (digging/mining/fishing can whiff; other gathers always hit).
       gabEmitReward(gabKeyForAct(act), gabCapture, act.itemId, (gabCapture.items[act.itemId]||0) > 0);
+      queueCreditOutput(act);
       gabCapture = null;
       effTime = item.time*1000*speedMultiplier(state)*gatherToolSpeedMultiplier(state, act.skill)*(PHYS_LONG_GATHER.indexOf(act.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1);
     }
@@ -11067,6 +11119,7 @@
       activeFeast: { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 },
       activeTome: { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 },
       activeScroll: { itemId:null, name:null, icon:null, wardPct:0, durationMs:0, expiresAt:0 },
+      queueTarget: 0,   // 0 = run until materials run out; N = stop after N of the item are obtained
       autoTea: false,
       autoTome: false,   // auto-study the best owned Tome when none is active
       familiars: {},
@@ -26400,13 +26453,32 @@
     return html + '</div>';
   }
 
+  // Which colour a slot's bar wears: red for combat, orange for a queued run, default otherwise.
+  function gabFillClass(act){
+    if(!act) return '';
+    if(act.type === 'combat') return ' combat';
+    if(act.targetQty) return ' queued';
+    return '';
+  }
+  // The global queue-length control. Rendered in both the idle and busy states of the card so it is
+  // always reachable; the value lives in state, so the card rebuilding (which it does whenever the set of
+  // running tasks changes) restores it instead of wiping what you typed.
+  function gabQueueHtml(){
+    var t = queueTargetOf();
+    return '<div class="gab-queue">'
+      + '<label for="gabQueueInput">Queue runs until</label>'
+      + '<input id="gabQueueInput" type="number" min="0" step="1" max="'+QUEUE_TARGET_MAX+'" value="'+(t || '')+'" placeholder="∞" '
+      + 'data-action="setQueueTarget" aria-label="Stop gathering or crafting after this many items" />'
+      + '<span class="hint">'+(t ? ('of an item is made, then stop') : 'items — blank runs until materials run out')+'</span>'
+      + '</div>';
+  }
   function renderGlobalActionBar(){
     var tasks = collectTasks();
     var slotCap = getMaxCraftSlots(state);              // total concurrent action slots
     var idleSlots = Math.max(0, slotCap - tasks.length); // how many aren't producing right now
     if(!tasks.length){
       var idleMsg = slotCap > 1 ? ('Idle — all ' + slotCap + ' action slots free') : 'Idle';
-      return '<div class="global-action-bar idle"><div class="gab-idle">'+idleMsg+'</div>'+gabBuffsHtml()+'</div>';
+      return '<div class="global-action-bar idle"><div class="gab-idle">'+idleMsg+'</div>'+gabQueueHtml()+gabBuffsHtml()+'</div>';
     }
     // One row per running task at a comfortable fixed height; the card simply grows taller as
     // more tasks run (no inner scrollbar), so every active task stays readable regardless of count.
@@ -26421,8 +26493,11 @@
       html += '<button class="gab-task-x" '+stop+' title="Cancel this task">✕</button>';
       html += '<div class="gab-task-body">';
       html += '<div class="gab-task-top"><span class="gab-task-name">'+d.icon+' '+escapeHtml(d.name)+'</span><span class="gab-task-remain" id="gabRem-'+t.key+'">'+gabTaskRemainText(d.remaining)+'</span></div>';
-      html += '<div class="gab-task-track"><div class="gab-task-fill" id="gabFill-'+t.key+'" style="width:'+pct+'%"></div></div>';
+      html += '<div class="gab-task-track"><div class="gab-task-fill'+gabFillClass(t.act)+'" id="gabFill-'+t.key+'" style="width:'+pct+'%"></div></div>';
       html += '</div>';
+      // A queued run shows how far through its TARGET it is, which the time-remaining figure can't convey
+      // (a 60%-success craft has no fixed end time).
+      if(t.act && t.act.targetQty) html += '<span class="gab-task-count" id="gabCount-'+t.key+'">'+fmt(t.act.producedQty||0)+'/'+fmt(t.act.targetQty)+'</span>';
       html += '<span class="gab-task-chance" id="gabChance-'+t.key+'">'+gabTaskChanceText(d.successPct)+'</span>';
       html += '</div>';
     });
@@ -26430,7 +26505,7 @@
     if(idleSlots > 0){
       html += '<div class="gab-idle-note"><span class="dot"></span>' + idleSlots + ' of ' + slotCap + ' action slots idle — put ' + (idleSlots===1?'it':'them') + ' to work</div>';
     }
-    html += gabBuffsHtml() + '</div>';
+    html += gabQueueHtml() + gabBuffsHtml() + '</div>';
     return html;
   }
 
@@ -26459,6 +26534,12 @@
       if(rem){ var rt = gabTaskRemainText(d.remaining); if(rem.textContent !== rt) rem.textContent = rt; }
       var ch = document.getElementById('gabChance-'+t.key);
       if(ch){ var ct = gabTaskChanceText(d.successPct); if(ch.textContent !== ct) ch.textContent = ct; }
+      // Queued run: tick the n/N counter in place rather than rebuilding the card each time an item lands.
+      var cnt = document.getElementById('gabCount-'+t.key);
+      if(cnt && t.act && t.act.targetQty){
+        var qt = fmt(t.act.producedQty||0)+'/'+fmt(t.act.targetQty);
+        if(cnt.textContent !== qt) cnt.textContent = qt;
+      }
     });
     // Tea buff: live countdown. Keep the legacy needsRender ping so other tea displays stay in sync.
     var teaNow = isTeaActive();
@@ -27651,6 +27732,11 @@
       marketUpdatePreview(); // live cost/net preview without a re-render (keeps input focus)
     } else if(e.target.id === 'dungeonJoinCodeInput'){
       dungeonJoinCodeDraft = e.target.value; // preserve the pasted party code across re-renders (no re-render here, keeps focus)
+    } else if(e.target.id === 'gabQueueInput'){
+      // Commit straight to state on every keystroke and do NOT re-render -- the action bar rebuilds
+      // whenever the running-task set changes, and re-rendering here would steal focus mid-number.
+      // Because the value lives in state, that rebuild restores what was typed rather than clearing it.
+      setQueueTarget(e.target.value);
     }
   });
 
