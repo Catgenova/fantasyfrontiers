@@ -2511,26 +2511,44 @@
       })() },
     brewing: { label:'Brewing', icon:svgIcon('mug','#c88a2a'),
       // Premium buff-drinks: Grain + Honey + a Botany spice per tier. These are Teas mechanically
-      // (drunk from the Drink section, boosting all XP) but a tier above Mixology's berry Teas --
-      // a slightly stronger boost and a much longer pour -- and, crucially, the first recipe to
-      // consume Botany's spices, closing that dead-end. Grain caps at 20 tiers, so it's clamped.
+      // (drunk from the Drink section, boosting all XP) but a tier above Mixology's berry Teas, and
+      // the first recipe to consume Botany's spices, closing that dead-end. Grain caps at 20 tiers,
+      // so it's clamped.
+      //
+      // BALANCE (player report, Marcoroni): Brewing was a strictly worse Mixology. Same craft time,
+      // only +16.7% XP, and its headline advantage -- a 2.5x longer pour -- is worth nothing, because
+      // duration only has value under SCARCITY and Mixology has none (foraging + herbalism gather
+      // continuously, while Brewing stalls on grain harvests, costs manual sowing, and takes estate
+      // plots from fiber). Four changes, addressing uptime rather than just paying more per craft:
+      //
+      //  * grain 2 -> 1: halves the farming demand and the plot competition with fiber.
+      //  * outputQty 3: one craft fills a cask, not a cup. A harvest now converts into a long stretch
+      //    of covered playtime, which is what actually fixes the stop-and-go.
+      //  * xpBoost step 0.02 -> 0.025: the 0.6 cap was previously UNREACHABLE (0.12 + 0.02*20 = 0.52),
+      //    so the intended endgame advantage never existed -- the real gap was a flat 2pp at every
+      //    tier. It now lands on 0.60 at t20 against Mixology's 0.50.
+      //  * xp base 14 -> 18: +50% per craft over Mixology.
+      //
+      // Deliberately stacked at the user's direction. NOT play-tested -- see the commit message for
+      // the combined magnitude; the xp base is the dial to turn down first if Brewing overshoots.
       recipes: (function(){
         var list = [];
         for(var i=0;i<TIER_COUNT;i++){
           var inputs = {};
-          inputs['grain_t'+Math.min(i, GRAIN_TIER_COUNT-1)] = 2;
+          inputs['grain_t'+Math.min(i, GRAIN_TIER_COUNT-1)] = 1;
           inputs['beekeeping_t'+i] = 2;
           inputs['botany_t'+i] = 1;
           list.push({
             id:'brewing_t'+i,
             name: BREW_NAMES[i],
             levelReq: TIER_LEVELS[i],
-            xp: tierXp(14,i),
+            xp: tierXp(18,i),
             time: tierTime(7,0.3,i),
             sell: tierSell(18,i),
             icon: svgIcon('mug',HONEY_COLORS[i]),
             inputs: inputs,
-            xpBoost: tierCappedBonus(0.12,0.02,0.6,i),
+            outputQty: 3,
+            xpBoost: tierCappedBonus(0.12,0.025,0.6,i),
             teaDurationMs: 5*(i+1)*60*1000
           });
         }
