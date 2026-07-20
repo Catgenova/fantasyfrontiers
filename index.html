@@ -1059,6 +1059,35 @@
   .physique-name{font-family:var(--font-display);font-size:13px;}
   .physique-lvl{font-family:var(--font-mono);font-size:11px;color:var(--cat-physique);margin-left:auto;}
   .physique-bonus{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:14px;font-family:var(--font-mono);font-size:12px;color:var(--text-dim);}
+  /* Loadouts: an inset card of preset rows. Shell mirrors .physique-bonus, dividers mirror .stat-row.
+     This block previously carried inline styles referencing --panel / --panel2 / --line / --line-soft /
+     --ink-soft / --ink-faint -- NONE of which exist in this stylesheet -- so every one fell through to a
+     hardcoded dark-purple fallback from some other design system, and the whole panel rendered near-black
+     against the tan UI with an unreadable heading. Keep it on real tokens. */
+  .loadouts-panel{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-top:16px;}
+  .loadouts-panel h3{margin:0 0 4px;}
+  .loadouts-panel .section-intro{margin-bottom:10px;}
+  .loadout-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-top:1px solid var(--border-light);}
+  .loadout-row:first-of-type{border-top:0;}
+  .loadout-num{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);min-width:16px;text-align:right;}
+  .loadout-name{flex:0 1 150px;min-width:100px;font-family:var(--font-body);font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--ink);background:var(--input-fill);color:var(--text);}
+  .loadout-summary{flex:1 1 auto;min-width:110px;font-family:var(--font-mono);font-size:11.5px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .loadout-empty{flex:1 1 auto;min-width:110px;font-size:12px;color:var(--text-dim);font-style:italic;}
+  .loadout-row .action-btn{width:auto;flex:0 0 auto;margin-top:0;padding:5px 14px;}
+  /* Secondary action inside a row: stone/tan rather than the green primary, so Equip stays the obvious one. */
+  .loadout-row .action-btn.btn-quiet{background:linear-gradient(180deg,#b6a480,#8f7f5e);border-color:#5a4c33;color:#2a2114;}
+  .loadout-row .action-btn.btn-quiet:hover{background:linear-gradient(180deg,#c6b48f,#a08e6b);}
+  .loadout-row .action-btn.stop{padding:5px 11px;}
+  /* Set-bonus chips: same phantom-token problem as the loadouts panel (--muted / --line don't exist), so
+     inactive chips were grey-purple on a near-invisible white wash over the tan card. */
+  .setbonus-head{color:var(--gold);font-weight:600;margin-bottom:4px;}
+  .setbonus-row{margin:6px 0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;}
+  .setbonus-name{min-width:180px;}
+  .setbonus-dim{color:var(--text-dim);}
+  .setbonus-count{color:var(--text-dim);font-variant-numeric:tabular-nums;}
+  .setbonus-chip{display:inline-block;padding:2px 9px;border-radius:6px;font-size:12px;margin:2px 5px 2px 0;
+    background:var(--bg-deep);color:var(--text-dim);border:1px solid var(--border-light);opacity:.85;}
+  .setbonus-chip.on{background:var(--gold);color:#f2f8e6;border-color:var(--green-deep);font-weight:600;opacity:1;}
   .physique-bonus b{color:var(--cat-physique);}
 
   ::-webkit-scrollbar{width:6px;}
@@ -15879,17 +15908,15 @@
     if(!state.uniqueItems) return '';
     var worn = {}; D1_SET_CLASS_IDS.forEach(function(cls){ var n = setPiecesWorn(cls); if(n > 0) worn[cls] = n; });
     var clsList = Object.keys(worn); if(!clsList.length) return '';
-    function chip(on, label){ return '<span style="display:inline-block;padding:2px 9px;border-radius:6px;font-size:12px;margin:2px 5px 2px 0;'
-      + (on ? 'background:rgba(201,162,39,.16);color:#e0b845;border:1px solid rgba(201,162,39,.45);font-weight:600;'
-            : 'background:rgba(255,255,255,.03);color:var(--muted,#8a8496);border:1px solid var(--line,#332c40);opacity:.75;')
-      + '">' + (on ? '&#10022; ' : '') + escapeHtml(label) + '</span>'; }
+    function chip(on, label){ return '<span class="setbonus-chip' + (on ? ' on' : '') + '">'
+      + (on ? '&#10022; ' : '') + escapeHtml(label) + '</span>'; }
     var rows = clsList.sort(function(a,b){ return worn[b]-worn[a] || a.localeCompare(b); }).map(function(cls){
       var d = D1_SET_DEFS[cls], n = worn[cls], full = d.full, cname = (CLASS_DEFS_BY_ID[cls]||{}).name || cls;
-      return '<div style="margin:6px 0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;">'
-        + '<span style="min-width:180px"><b>' + escapeHtml(setName(cls)) + '</b> <span style="color:var(--muted,#8a8496)">' + escapeHtml(cname) + '</span> <span style="color:var(--muted,#8a8496);font-variant-numeric:tabular-nums">' + n + '/' + full + '</span></span>'
+      return '<div class="setbonus-row">'
+        + '<span class="setbonus-name"><b>' + escapeHtml(setName(cls)) + '</b> <span class="setbonus-dim">' + escapeHtml(cname) + '</span> <span class="setbonus-count">' + n + '/' + full + '</span></span>'
         + '<span>' + chip(n >= 2, '(2) ' + d.b2.name) + chip(n >= full, '(' + full + ') ' + d.bf.name) + '</span></div>';
     }).join('');
-    return '<div class="section-intro" style="margin-bottom:10px"><div style="color:var(--gold,#c9a227);font-weight:600;margin-bottom:4px">&#10022; Set Bonuses</div>' + rows + '</div>';
+    return '<div class="section-intro" style="margin-bottom:10px"><div class="setbonus-head">&#10022; Set Bonuses</div>' + rows + '</div>';
   }
   function renderEquipBodyArmorSection(){
     var html = '<h3>Equip Body Armor</h3>';
@@ -17276,22 +17303,22 @@
   }
   function renderLoadoutsPanel(){
     ensureLoadouts();
-    var html = '<div class="loadouts-panel" style="margin-top:16px;background:var(--panel,#1e1b26);border:1px solid var(--line,#332c40);border-radius:12px;padding:14px 16px;">';
-    html += '<h3 style="margin:0 0 4px">Loadouts</h3>';
-    html += '<div class="section-intro" style="margin:0 0 8px">Save your full combat kit &mdash; weapon, offhand, armor, belt, rings, amulet &amp; relic &mdash; to a preset, then swap it all at once. Applying a preset returns your current gear to your bag first, so nothing is lost.</div>';
+    var html = '<div class="loadouts-panel">';
+    html += '<h3>Loadouts</h3>';
+    html += '<div class="section-intro">Save your full combat kit &mdash; weapon, offhand, armor, belt, rings, amulet &amp; relic &mdash; to a preset, then swap it all at once. Applying a preset returns your current gear to your bag first, so nothing is lost.</div>';
     for(var i=0;i<LOADOUT_SLOT_COUNT;i++){
       var lo = state.loadouts[i];
-      html += '<div class="loadout-row" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-top:1px solid var(--line-soft,#2a2434);">';
-      html += '<span style="font-family:var(--font-mono,monospace);font-size:11px;color:var(--ink-faint,#7d7590);min-width:16px;text-align:right">'+(i+1)+'</span>';
+      html += '<div class="loadout-row">';
+      html += '<span class="loadout-num">'+(i+1)+'</span>';
       if(lo){
-        html += '<input class="loadout-name" id="loadoutName-'+i+'" value="'+escapeHtml(lo.name||('Loadout '+(i+1)))+'" maxlength="24" aria-label="Loadout name" style="flex:0 1 150px;min-width:100px;background:var(--panel2,#252030);border:1px solid var(--line,#332c40);border-radius:6px;color:var(--ink,#ece7dd);padding:4px 8px;font-size:13px;" />';
-        html += '<span style="flex:1 1 auto;min-width:110px;font-size:12px;color:var(--ink-soft,#b3aabf);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(loadoutSummary(lo.gear))+'</span>';
-        html += '<button class="action-btn" data-action="equipLoadout" data-index="'+i+'" style="width:auto;flex:0 0 auto;padding:4px 14px;">Equip</button>';
-        html += '<button class="action-btn" data-action="saveLoadout" data-index="'+i+'" style="width:auto;flex:0 0 auto;padding:4px 10px;background:var(--panel2,#252030);" title="Overwrite this preset with your current gear">Overwrite</button>';
-        html += '<button class="action-btn stop" data-action="clearLoadout" data-index="'+i+'" style="width:auto;flex:0 0 auto;padding:4px 11px;" title="Delete this preset">&#10005;</button>';
+        html += '<input class="loadout-name" id="loadoutName-'+i+'" value="'+escapeHtml(lo.name||('Loadout '+(i+1)))+'" maxlength="24" aria-label="Loadout name" />';
+        html += '<span class="loadout-summary">'+escapeHtml(loadoutSummary(lo.gear))+'</span>';
+        html += '<button class="action-btn" data-action="equipLoadout" data-index="'+i+'">Equip</button>';
+        html += '<button class="action-btn btn-quiet" data-action="saveLoadout" data-index="'+i+'" title="Overwrite this preset with your current gear">Overwrite</button>';
+        html += '<button class="action-btn stop" data-action="clearLoadout" data-index="'+i+'" title="Delete this preset" aria-label="Delete this preset">&#10005;</button>';
       } else {
-        html += '<span style="flex:1 1 auto;min-width:110px;font-size:12px;color:var(--ink-faint,#7d7590);">Empty preset</span>';
-        html += '<button class="action-btn" data-action="saveLoadout" data-index="'+i+'" style="width:auto;flex:0 0 auto;padding:4px 14px;">Save current gear</button>';
+        html += '<span class="loadout-empty">Empty preset</span>';
+        html += '<button class="action-btn" data-action="saveLoadout" data-index="'+i+'">Save current gear</button>';
       }
       html += '</div>';
     }
