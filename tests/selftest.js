@@ -8208,6 +8208,64 @@
     }
   });
 
+  // ---- Chandlery: burn RATE scales with task tier, and the UI figures must match the loop -------
+  suite('chandlery: candle burn rates', function(){
+    ok(typeof FF.peonCandlesPerHour === 'function' && typeof FF.candleStoreSummary === 'function', 'rate helpers exported');
+
+    eq(FF.peonTaskTier({ kind:'special', tierIndex:13 }), 13, 'special-craft task tier reads tierIndex');
+    eq(FF.peonTaskTier({ kind:'craft', itemId:'chandlery_t7' }), 7, 'standard-craft task tier reads the recipe');
+    ok(Math.abs(FF.peonBurnRate({ kind:'special', tierIndex:0 }) - 1) < 1e-9, 'a T0 task burns at the base rate');
+    ok(Math.abs(FF.peonBurnRate({ kind:'special', tierIndex:20 }) - (1 + 20*FF.CANDLE_TASK_BURN_PER_TIER)) < 1e-9, 'a T20 task burns at the full multiplier');
+    ok(FF.peonBurnRate({ kind:'special', tierIndex:20 }) > FF.peonBurnRate({ kind:'special', tierIndex:0 }), 'higher-tier work drains faster');
+
+    var s = FF._state, savedInv = s.inventory, savedP = s.peons, savedG = s.guildPeons;
+    try {
+      // THE load-bearing test. peonCandlesPerHour is what the card and the top bar both display; the
+      // actual drain is peonCandleBurn charging effTime*burnRate per action. Those are two separate
+      // expressions and nothing structural keeps them in step -- if they drift, the UI quietly lies about
+      // runway and the player finds out by going dark early. Simulate a real day of actions and count.
+      var task = { kind:'craft', itemId:'chandlery_t10', skillId:'chandlery', candleId:'chandlery_t0', candleMs:0 };
+      s.inventory = { 'chandlery_t0': 100000 };
+      FF.peonCandleLight(task);
+      var stock0 = s.inventory['chandlery_t0'];
+      var rate = FF.peonBurnRate(task), eff = FF.peonActionTime(10, 10, 'chandlery', true);
+      var DAY = 24*3600000, elapsed = 0;
+      while(elapsed < DAY){ FF.peonCandleBurn(task, eff*rate); elapsed += eff; }
+      var actual = stock0 - s.inventory['chandlery_t0'];
+      var advertised = FF.peonCandlesPerHour(task) * 24;
+      ok(Math.abs(actual - advertised) <= 2,
+         'the advertised candles/hr matches a simulated day of real burning (' + actual + ' burnt vs ' + advertised.toFixed(1) + ' advertised)');
+      ok(advertised > 0, 'a lit task advertises a non-zero rate');
+      eq(FF.peonCandlesPerHour({ kind:'craft', itemId:'chandlery_t0' }), 0, 'a task with no candle advertises no burn');
+
+      // Both estates draw on ONE inventory. A per-estate summary would tell each side it had the whole
+      // stack, so the aggregate has to span scopes and peons sharing a candle type must share a group.
+      var mk = function(x){ return { x:x, y:0, skillId:'chandlery', kind:'craft', itemId:'chandlery_t0', candleId:'chandlery_t0', candleMs:5000 }; };
+      s.inventory = { 'chandlery_t0': 100 };
+      s.peons = [mk(0)]; s.guildPeons = [mk(1)];
+      var sum = FF.candleStoreSummary();
+      eq(sum.litCount, 2, 'the summary counts lit cottages on BOTH estates');
+      eq(Object.keys(sum.groups).length, 1, 'peons burning the same candle type share one pool');
+      ok(Math.abs(sum.totalPerHour - 2*FF.peonCandlesPerHour(mk(0))) < 1e-9, 'drain rates add across scopes');
+      ok(Math.abs(sum.totalStoredMs - 100*FF.candleBurnMs(0)) < 1e-9, 'stored burn is the whole bag, not just what is alight');
+      ok(sum.runwayMs > 0 && sum.soonest && sum.soonest.id === 'chandlery_t0', 'runway names the type that empties first');
+
+      // Two peons on one stack drain it in half the time one would.
+      s.guildPeons = [];
+      var solo = FF.candleStoreSummary();
+      ok(Math.abs(solo.runwayMs - sum.runwayMs*2) < 1e-6, 'dropping one of two peons doubles the runway on a shared stack');
+
+      // A candle type nobody burns must not claim a runway, but still counts toward stored burn.
+      s.peons = []; s.guildPeons = [];
+      var idle = FF.candleStoreSummary();
+      eq(idle.totalPerHour, 0, 'no lit peons -> no drain');
+      eq(idle.soonest, null, 'no drain -> nothing is "first to run dry"');
+      ok(idle.totalStoredMs > 0, 'unassigned candles still count as stored burn');
+    } finally {
+      s.inventory = savedInv; s.peons = savedP; s.guildPeons = savedG;
+    }
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }
