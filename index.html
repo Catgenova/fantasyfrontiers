@@ -905,10 +905,12 @@
      green = ordinary open-ended work, orange = a queued run with a target, red = combat. */
   .gab-task-fill.queued{background:#c8791f;}
   .gab-task-fill.combat{background:#a8322a;}
-  /* Queue-length control. One global setting rather than a field per card -- see queueTargetOf(). */
-  .gab-queue{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);padding:6px 2px 0;}
-  .gab-queue input{width:66px;font-family:var(--font-mono);font-size:12px;padding:3px 6px;border-radius:6px;border:1px solid var(--ink);background:var(--input-fill);color:var(--text);}
-  .gab-queue .hint{color:var(--text-faint);}
+  /* Per-card run length, sitting beside each Start/Forge button. Its value is persisted per card key
+     (state.queueTargets) rather than living in the element, because these cards are rebuilt constantly. */
+  .card-queue{width:100%;margin-top:4px;font-family:var(--font-mono);font-size:12px;text-align:center;
+    padding:5px 6px;border-radius:6px;border:1px solid var(--border-light);background:var(--input-fill);color:var(--text);}
+  .card-queue::placeholder{color:var(--text-faint);}
+  .card-queue:focus{outline:2px solid var(--gold);outline-offset:1px;border-color:var(--gold);}
   .gab-task-count{flex:0 0 auto;font-family:var(--font-mono);font-size:11px;color:#c8791f;font-variant-numeric:tabular-nums;}
   .gab-task-chance{flex:0 0 auto;width:42px;text-align:right;font-family:var(--font-mono);font-size:12px;color:var(--text-dim);}
   /* Tea buff widget in the global action header */
@@ -10240,12 +10242,32 @@
   // recipe with outputQty 3 finishes in a third of the cycles. That is the whole point of the request:
   // "make 100" should mean 100 in the bag.
   var QUEUE_TARGET_MAX = 100000;
-  function queueTargetOf(){ var n = Math.floor(state.queueTarget || 0); return (n > 0) ? Math.min(QUEUE_TARGET_MAX, n) : 0; }
-  function setQueueTarget(n){
+  function queueTargetFor(key){
+    var m = state.queueTargets; if(!m || !key) return 0;
+    var n = Math.floor(m[key] || 0); return (n > 0) ? Math.min(QUEUE_TARGET_MAX, n) : 0;
+  }
+  function setQueueTargetFor(key, n){
+    if(!key) return;
+    if(!state.queueTargets || typeof state.queueTargets !== 'object') state.queueTargets = {};
     n = Math.floor(Number(n) || 0);
-    state.queueTarget = (n > 0) ? Math.min(QUEUE_TARGET_MAX, n) : 0;
+    if(n > 0) state.queueTargets[key] = Math.min(QUEUE_TARGET_MAX, n);
+    else delete state.queueTargets[key];   // blank clears rather than storing 0, so the map stays small
     saveGame();
   }
+  // The per-card run-length box, rendered beside every gather/craft/forge Start button. The value is
+  // PERSISTED per card key rather than living in the DOM: render() rebuilds whole panels and updateDynamic
+  // walks these cards every frame, so anything held only in the element is wiped on the next repaint --
+  // the render-loop state-loss failure this codebase has already been bitten by twice.
+  function queueInputHtml(key){
+    var v = queueTargetFor(key);
+    return '<input class="card-queue" type="number" min="0" step="1" max="'+QUEUE_TARGET_MAX+'"'
+      + ' value="'+(v || '')+'" placeholder="∞" data-qkey="'+escapeHtml(String(key))+'"'
+      + ' title="Stop after this many are made — blank runs until materials run out"'
+      + ' aria-label="Run length" />';
+  }
+  // Set by the click handler from the card that was actually clicked, consumed by placeNewActivity. Keeps
+  // the target out of all 18 individual start handlers.
+  var pendingQueueTarget = 0;
   // Credit whatever this cycle actually produced toward the run, and stop the slot once it's met. Called
   // while gabCapture still holds the cycle's items, so it counts real output including bonus/rare rolls.
   // Returns true if the run finished (the caller must not keep cycling a finished slot).
@@ -10271,8 +10293,8 @@
   function placeNewActivity(newAct){
     if(dungeonLocksActions()){ dungeonActionBlockedNotice(); return; }
     // Stamp the run target on gathering/crafting only -- combat, prayer and estate work aren't "queues".
-    var t = queueTargetOf();
-    if(t > 0 && (newAct.type === 'gather' || newAct.type === 'craft')){ newAct.targetQty = t; newAct.producedQty = 0; }
+    var t = pendingQueueTarget; pendingQueueTarget = 0;
+    if(t > 0){ newAct.targetQty = t; newAct.producedQty = 0; }
     var slot = findFreeCraftSlot();
     if(slot && !slot.primary){
       state.extraCraftSlots[slot.index] = newAct;
@@ -11119,7 +11141,7 @@
       activeFeast: { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 },
       activeTome: { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 },
       activeScroll: { itemId:null, name:null, icon:null, wardPct:0, durationMs:0, expiresAt:0 },
-      queueTarget: 0,   // 0 = run until materials run out; N = stop after N of the item are obtained
+      queueTargets: {},  // per-card run lengths keyed by card; absent = run until materials run out
       autoTea: false,
       autoTome: false,   // auto-study the best owned Tome when none is active
       familiars: {},
@@ -15414,7 +15436,7 @@
       } else if(isActive){
         html += gslot.primary ? '<button class="action-btn stop" data-action="stop">Stop</button>' : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+gslot.index+'">Stop</button>';
       } else {
-        html += '<button class="action-btn" data-action="gather" data-skill="'+skillKey+'" data-item="'+item.id+'">Start</button>';
+        html += queueInputHtml('gather:'+item.id)+'<button class="action-btn" data-action="gather" data-skill="'+skillKey+'" data-item="'+item.id+'">Start</button>';
       }
       html += '</div>';
     });
@@ -15450,7 +15472,7 @@
           ? '<button class="action-btn stop" data-action="stop">Stop</button>'
           : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
       } else {
-        html += '<button class="action-btn" data-action="craft" data-skill="'+skillKey+'" data-item="'+recipe.id+'" '+(canStart?'':'disabled')+'>Process</button>';
+        html += queueInputHtml('craft:'+recipe.id)+'<button class="action-btn" data-action="craft" data-skill="'+skillKey+'" data-item="'+recipe.id+'" '+(canStart?'':'disabled')+'>Process</button>';
       }
       html += '</div>';
     });
@@ -15538,7 +15560,7 @@
           ? '<button class="action-btn stop" data-action="stop">Stop</button>'
           : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
       } else {
-        html += '<button class="action-btn" data-action="craft" data-skill="'+skillKey+'" data-item="'+recipe.id+'" '+(canStart?'':'disabled')+'>Start</button>';
+        html += queueInputHtml('craft:'+recipe.id)+'<button class="action-btn" data-action="craft" data-skill="'+skillKey+'" data-item="'+recipe.id+'" '+(canStart?'':'disabled')+'>Start</button>';
       }
       html += '</div>';
     });
@@ -15819,7 +15841,7 @@
           ? '<button class="action-btn stop" data-action="stop">Stop</button>'
           : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
       } else {
-        html += '<button class="action-btn" data-action="craft" data-skill="archaeology" data-item="'+recipe.id+'" '+(canStart?'':'disabled')+'>Extract</button>';
+        html += queueInputHtml('craft:'+recipe.id)+'<button class="action-btn" data-action="craft" data-skill="archaeology" data-item="'+recipe.id+'" '+(canStart?'':'disabled')+'>Extract</button>';
       }
       html += '</div>';
     });
@@ -15925,7 +15947,7 @@
         ? '<button class="action-btn stop" data-action="stop">Stop</button>'
         : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
     } else {
-      html += '<button class="action-btn" data-action="forgeTool" data-skill="'+tt.skillId+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
+      html += queueInputHtml('forgeTool:'+tt.skillId+':t'+sel)+'<button class="action-btn" data-action="forgeTool" data-skill="'+tt.skillId+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
     }
     // One-tap upgrade: shows only when a better tool than the equipped one is sitting in your bag.
     var bestOwned = bestOwnedToolForSkill(tt.skillId);
@@ -16004,7 +16026,7 @@
             ? '<button class="action-btn stop" data-action="stop">Stop</button>'
             : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
         } else {
-          html += '<button class="action-btn" data-action="forgeBodyArmor" data-material="'+material+'" data-slot="'+slot+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
+          html += queueInputHtml('forgeBodyArmor:'+material+':'+slot+':t'+sel)+'<button class="action-btn" data-action="forgeBodyArmor" data-material="'+material+'" data-slot="'+slot+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
         }
         html += '</div>';
       });
@@ -16127,7 +16149,7 @@
             ? '<button class="action-btn stop" data-action="stop">Stop</button>'
             : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
         } else {
-          html += '<button class="action-btn" data-action="forgeBodyArmor" data-material="'+material+'" data-slot="'+slot+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
+          html += queueInputHtml('forgeBodyArmor:'+material+':'+slot+':t'+sel)+'<button class="action-btn" data-action="forgeBodyArmor" data-material="'+material+'" data-slot="'+slot+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
         }
         html += '</div>';
       });
@@ -16160,7 +16182,7 @@
         ? '<button class="action-btn stop" data-action="stop">Stop</button>'
         : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+beltActiveSlot.index+'">Stop</button>';
     } else {
-      html += '<button class="action-btn" data-action="forgeBelt" data-tier="'+beltSel+'" '+(beltReady?'':'disabled')+'>Forge</button>';
+      html += queueInputHtml('forgeBelt:t'+beltSel)+'<button class="action-btn" data-action="forgeBelt" data-tier="'+beltSel+'" '+(beltReady?'':'disabled')+'>Forge</button>';
     }
     html += '</div></div>';
 
@@ -16195,7 +16217,7 @@
           ? '<button class="action-btn stop" data-action="stop">Stop</button>'
           : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
       } else {
-        html += '<button class="action-btn" data-action="forgeStackableQuiver" data-type="'+q.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
+        html += queueInputHtml('forgeStackableQuiver:'+q.id+':t'+sel)+'<button class="action-btn" data-action="forgeStackableQuiver" data-type="'+q.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
       }
       html += '</div>';
     });
@@ -16243,7 +16265,7 @@
             ? '<button class="action-btn stop" data-action="stop">Stop</button>'
             : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
         } else {
-          html += '<button class="action-btn" data-action="forgeBodyArmor" data-material="'+material+'" data-slot="'+slot+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
+          html += queueInputHtml('forgeBodyArmor:'+material+':'+slot+':t'+sel)+'<button class="action-btn" data-action="forgeBodyArmor" data-material="'+material+'" data-slot="'+slot+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
         }
         html += '</div>';
       });
@@ -16295,7 +16317,7 @@
           ? '<button class="action-btn stop" data-action="stop">Stop</button>'
           : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
       } else {
-        html += '<button class="action-btn" data-action="forgeRing" data-type="'+rt.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
+        html += queueInputHtml('forgeRing:'+rt.id+':t'+sel)+'<button class="action-btn" data-action="forgeRing" data-type="'+rt.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
       }
       html += '</div>';
     });
@@ -16330,7 +16352,7 @@
           ? '<button class="action-btn stop" data-action="stop">Stop</button>'
           : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+amActiveSlot.index+'">Stop</button>';
       } else {
-        html += '<button class="action-btn" data-action="forgeAmulet" data-type="'+at.id+'" data-tier="'+amSel+'" '+(amReady?'':'disabled')+'>Forge</button>';
+        html += queueInputHtml('forgeAmulet:'+at.id+':t'+amSel)+'<button class="action-btn" data-action="forgeAmulet" data-type="'+at.id+'" data-tier="'+amSel+'" '+(amReady?'':'disabled')+'>Forge</button>';
       }
       html += '</div>';
     });
@@ -16371,7 +16393,7 @@
           ? '<button class="action-btn stop" data-action="stop">Stop</button>'
           : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
       } else {
-        html += '<button class="action-btn" data-action="forgeStackableWeapon" data-type="'+w.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
+        html += queueInputHtml('forgeStackableWeapon:'+w.id+':t'+sel)+'<button class="action-btn" data-action="forgeStackableWeapon" data-type="'+w.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
       }
       html += '</div>';
     });
@@ -16588,7 +16610,7 @@
           ? '<button class="action-btn stop" data-action="stop">Stop</button>'
           : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
       } else {
-        html += '<button class="action-btn" data-action="forgeStackableShield" data-type="'+s.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
+        html += queueInputHtml('forgeStackableShield:'+s.id+':t'+sel)+'<button class="action-btn" data-action="forgeStackableShield" data-type="'+s.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
       }
       html += '</div>';
     });
@@ -16661,7 +16683,7 @@
           ? '<button class="action-btn stop" data-action="stop">Stop</button>'
           : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
       } else {
-        html += '<button class="action-btn" data-action="forgeWard" data-type="'+w.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Inscribe</button>';
+        html += queueInputHtml('forgeWard:'+w.id+':t'+sel)+'<button class="action-btn" data-action="forgeWard" data-type="'+w.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Inscribe</button>';
       }
       html += '</div>';
     });
@@ -16702,7 +16724,7 @@
     if(isActive){
       html += activeSlot.primary ? '<button class="action-btn stop" data-action="stop">Stop</button>' : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
     } else {
-      html += '<button class="action-btn" data-action="forgeStackableWeapon" data-type="'+w.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
+      html += queueInputHtml('forgeStackableWeapon:'+w.id+':t'+sel)+'<button class="action-btn" data-action="forgeStackableWeapon" data-type="'+w.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
     }
     html += '</div></div>';
     // Equip scepter
@@ -16784,7 +16806,7 @@
           ? '<button class="action-btn stop" data-action="stop">Stop</button>'
           : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
       } else {
-        html += '<button class="action-btn" data-action="forgeStackableWeapon" data-type="'+w.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Craft</button>';
+        html += queueInputHtml('forgeStackableWeapon:'+w.id+':t'+sel)+'<button class="action-btn" data-action="forgeStackableWeapon" data-type="'+w.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Craft</button>';
       }
       html += '</div>';
     });
@@ -16824,7 +16846,7 @@
     if(isActive){
       html += activeSlot.primary ? '<button class="action-btn stop" data-action="stop">Stop</button>' : '<button class="action-btn stop" data-action="stopExtraSlot" data-slot="'+activeSlot.index+'">Stop</button>';
     } else {
-      html += '<button class="action-btn" data-action="forgeStackableWeapon" data-type="'+w.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Carve</button>';
+      html += queueInputHtml('forgeStackableWeapon:'+w.id+':t'+sel)+'<button class="action-btn" data-action="forgeStackableWeapon" data-type="'+w.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Carve</button>';
     }
     html += '</div></div>';
     // Equip staff
@@ -26460,25 +26482,13 @@
     if(act.targetQty) return ' queued';
     return '';
   }
-  // The global queue-length control. Rendered in both the idle and busy states of the card so it is
-  // always reachable; the value lives in state, so the card rebuilding (which it does whenever the set of
-  // running tasks changes) restores it instead of wiping what you typed.
-  function gabQueueHtml(){
-    var t = queueTargetOf();
-    return '<div class="gab-queue">'
-      + '<label for="gabQueueInput">Queue runs until</label>'
-      + '<input id="gabQueueInput" type="number" min="0" step="1" max="'+QUEUE_TARGET_MAX+'" value="'+(t || '')+'" placeholder="∞" '
-      + 'data-action="setQueueTarget" aria-label="Stop gathering or crafting after this many items" />'
-      + '<span class="hint">'+(t ? ('of an item is made, then stop') : 'items — blank runs until materials run out')+'</span>'
-      + '</div>';
-  }
   function renderGlobalActionBar(){
     var tasks = collectTasks();
     var slotCap = getMaxCraftSlots(state);              // total concurrent action slots
     var idleSlots = Math.max(0, slotCap - tasks.length); // how many aren't producing right now
     if(!tasks.length){
       var idleMsg = slotCap > 1 ? ('Idle — all ' + slotCap + ' action slots free') : 'Idle';
-      return '<div class="global-action-bar idle"><div class="gab-idle">'+idleMsg+'</div>'+gabQueueHtml()+gabBuffsHtml()+'</div>';
+      return '<div class="global-action-bar idle"><div class="gab-idle">'+idleMsg+'</div>'+gabBuffsHtml()+'</div>';
     }
     // One row per running task at a comfortable fixed height; the card simply grows taller as
     // more tasks run (no inner scrollbar), so every active task stays readable regardless of count.
@@ -26505,7 +26515,7 @@
     if(idleSlots > 0){
       html += '<div class="gab-idle-note"><span class="dot"></span>' + idleSlots + ' of ' + slotCap + ' action slots idle — put ' + (idleSlots===1?'it':'them') + ' to work</div>';
     }
-    html += gabQueueHtml() + gabBuffsHtml() + '</div>';
+    html += gabBuffsHtml() + '</div>';
     return html;
   }
 
@@ -27686,6 +27696,14 @@
     if(!btn) return;
     var action = btn.getAttribute('data-action');
     if(COMBAT_LOCKED_ACTIONS[action] && combatLocksGear()){ combatGearLockNotice(); render(true); needsRender = false; return; }
+    // Read the run length off the card that was clicked and hand it to placeNewActivity. Done here, once,
+    // rather than in each of the 18 gather/craft/forge start handlers.
+    pendingQueueTarget = 0;
+    if(/^(gather|craft|forge)/.test(action)){
+      var _card = btn.closest && btn.closest('.item-card');
+      var _qin = _card && _card.querySelector('.card-queue');
+      if(_qin) pendingQueueTarget = Math.max(0, Math.min(QUEUE_TARGET_MAX, Math.floor(Number(_qin.value) || 0)));
+    }
     var handler = ACTIONS[action];
     if(handler) handler(btn, e);
     render(true); // user gesture -- rebuild even if a field was focused (the tap consumes it)
@@ -27732,11 +27750,10 @@
       marketUpdatePreview(); // live cost/net preview without a re-render (keeps input focus)
     } else if(e.target.id === 'dungeonJoinCodeInput'){
       dungeonJoinCodeDraft = e.target.value; // preserve the pasted party code across re-renders (no re-render here, keeps focus)
-    } else if(e.target.id === 'gabQueueInput'){
-      // Commit straight to state on every keystroke and do NOT re-render -- the action bar rebuilds
-      // whenever the running-task set changes, and re-rendering here would steal focus mid-number.
-      // Because the value lives in state, that rebuild restores what was typed rather than clearing it.
-      setQueueTarget(e.target.value);
+    } else if(e.target.classList && e.target.classList.contains('card-queue')){
+      // Persist per card key on every keystroke and do NOT re-render -- a repaint here would steal focus
+      // mid-number. Because the value lives in state, the next rebuild restores what was typed.
+      setQueueTargetFor(e.target.getAttribute('data-qkey'), e.target.value);
     }
   });
 
