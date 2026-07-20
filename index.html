@@ -6016,7 +6016,7 @@
     // Death's Aim (Sharpshooter D3 full) / Gravesight (D3 long bow): Decay ticks can Critically Hit, borrowing your crit chance/damage.
     if((setFullD3('sharpshooter') || legActive('gravesight')) && !offlineCapture && Math.random() < (criticalEyeCritChance(state) + newClassCritChance())) dmg *= (CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state));
     dmg = Math.round(dmg);
-    if(dmg > 0) act.monsterHp = Math.max(1, act.monsterHp - dmg); // necrotic: ignores armour, never lands the kill
+    if(dmg > 0) applyChipDamage(dmg); // necrotic: ignores armour
     // Rotmaw (D3 hatchet) / Gravewrath (D3 warhammer, below 30% HP): your Decay ticks heal you 20% of their damage.
     if(dmg > 0 && (legActive('rotmaw') || (legActive('gravewrath') && state.playerHp > 0 && state.playerHp < maxHp(state) * 0.30))){ var _dh = Math.min(Math.round(dmg * 0.20), healRoom(state)); if(_dh > 0) state.playerHp += _dh; }
   }
@@ -6723,7 +6723,7 @@
     var act = state.activity;
     if(!act || act.type!=='combat' || !reaperBonus(80) || (state.reaperShield||0) <= 0) return;
     var mon = monsterById(act.monsterId); if(!mon || !mon.hp) return;
-    act.monsterHp = Math.max(1, act.monsterHp - mon.hp * 0.015 * dtMs / 1000);
+    applyChipDamage(mon.hp * 0.015 * dtMs / 1000);
   }
 
   // ===== New classes: Frostwarden / Plaguebearer / Berserker / Sentinel / Spellblade =====
@@ -7976,7 +7976,7 @@
           dmg = Math.round(dmg * famCritMult);
           famCrit = true;
         }
-        applyChipDamage(dmg); // floors at 1 unless you wield a Staff (then summons can land the kill)
+        applyChipDamage(dmg);
         if(frostwardenBonus(80)) frostwardenApplyChill(cact); // Rime Resonance: familiar frost spells also Chill
         // Familiar damage floats over the enemy on the combat card, tagged with the familiar's name.
         spawnCombatFloat(escapeHtml(famName) + ' <b>-' + dmg + '</b>' + (famCrit ? ' CRIT' : ''), famCrit ? 'ft-crit' : 'ft-rare', true);
@@ -12833,7 +12833,7 @@
       act.potionPoisonDps = combatLevelEquivalent(state) * _cpct * (1 + getFamBuff('potionPoison'));
       act.potionPoisonUntil = Date.now() + _cdur;
     } else if(e.type==='bomb'){
-      // Tinkering Bomb: a heavy raw burst on each hit (never the finishing blow via poison rules -- this is direct).
+      // Tinkering Bomb: a heavy raw burst on each hit.
       var bb = Math.round(randInt(Math.round(e.dmg*0.6), Math.round(e.dmg*1.4)) * demolitionistMult()); // Demolitionist: bigger bang
       act.monsterHp -= bb;
       spawnFloatingText('💣 '+bb, 'ft-rare');
@@ -12849,7 +12849,7 @@
     }
   }
   // Toxin/Coating poison damage-over-time. Called from both the live sub-loop and the main loop with the
-  // elapsed ms. Continuous damage keeps DPS smooth (floors the enemy at 1 -- never the finishing blow);
+  // elapsed ms. Continuous damage keeps DPS smooth;
   // Plaguebearer folds in Toxic Blood (Lv40 heal) and Pandemic (Lv80: each 1s tick can erupt in Dark damage).
   function applyPotionPoisonTick(dtMs){
     var act = state.activity;
@@ -12861,7 +12861,7 @@
     // Toxic Flames (Plaguebearer D4 2pc): your poison also deals Fire — an added component scaled by Fire Attunement.
     var _toxFire = set2D4('plaguebearer', state) ? dmg * 0.25 * elementDmgMult(state, 'fire') : 0;
     dmg += _toxFire;
-    act.monsterHp = Math.max(1, act.monsterHp - dmg);
+    applyChipDamage(dmg);
     if(_toxFire > 0) awardElementXp('fire', _toxFire);
     if(plaguebearerBonus(40)){ // Toxic Blood: heal 5% of poison damage dealt
       var heal = Math.min(Math.round(dmg * 0.05), healRoom(state));
@@ -12877,14 +12877,17 @@
         if(!offlineCapture && Math.random() < 0.10){
           var mon = monsterById(act.monsterId);
           var boom = Math.round(dps * 3 * (mon ? elementAdvantage('dark', mon.element) : 1));
-          act.monsterHp = Math.max(1, act.monsterHp - boom);
+          var _boomKilled = applyChipDamage(boom);
           spawnFloatingText('💥 '+boom+' Dark', 'ft-rare');
+          // Stop the accumulator here if that finished the foe -- otherwise the banked ticks would keep
+          // detonating into whatever the fight advanced to.
+          if(_boomKilled) break;
         }
       }
     }
   }
   // Reaver Rend: a stacking physical Bleed DoT on its own activity channel (separate from potion poison).
-  // Mirrors the poison tick -- floors the enemy at 1 HP (never the finishing blow) -- plus Reaver's own
+  // Mirrors the poison tick, plus Reaver's own
   // Lv20 Bloodletting (heal 8% of the Bleed damage dealt).
   function applyReaverBleedTick(dtMs){
     var act = state.activity;
@@ -12895,26 +12898,26 @@
     // by your Fire Attunement. Cauterize (full set) and Gorewyrm both lifesteal from that Fire.
     var _searFire = (set2D4('reaver', state) || legActive('gorewyrm', state)) ? dmg * 0.25 * elementDmgMult(state, 'fire') : 0;
     dmg += _searFire;
-    act.monsterHp = Math.max(1, act.monsterHp - dmg);
+    applyChipDamage(dmg);
     if(_searFire > 0) awardElementXp('fire', _searFire);
     if(reaverBonus(20)){ var heal = Math.min(Math.round(dmg * 0.08), healRoom(state)); if(heal > 0) state.playerHp += heal; } // Bloodletting
     if(_searFire > 0 && (setFullD4('reaver', state) || legActive('gorewyrm', state))){ var _cau = Math.min(Math.round(_searFire * 0.15), healRoom(state)); if(_cau > 0) state.playerHp += _cau; } // Cauterize / Gorewyrm: heal 15% of the Fire damage
   }
-  // Frostwarden Frostbite (Lv60): a stacking Water DoT on its own channel; floors the enemy at 1 HP so a
+  // Frostwarden Frostbite (Lv60): a stacking Water DoT on its own channel; a
   // shatter/hit lands the kill. Mirrors the Bleed tick.
   function applyFrostwardenFrostbiteTick(dtMs){
     var act = state.activity;
     if(!act || act.type!=='combat' || (act.frostbiteUntil||0) <= Date.now()) return;
     var dps = (act.frostbiteDps || 0) * d2FrostbiteTickMult(state) * legNecromancyDoTMult(state); if(dps <= 0) return; // Barbed Ailments (Ranger D2 2pc) + Lich (D3)
-    act.monsterHp = Math.max(1, act.monsterHp - dps * dtMs / 1000);
+    applyChipDamage(dps * dtMs / 1000);
   }
-  // Pyromancer Ignite (Lv1): a stacking fire DoT on its own channel; floors the enemy at 1 HP.
+  // Pyromancer Ignite (Lv1): a stacking fire DoT on its own channel.
   function applyPyromancerBurnTick(dtMs){
     var act = state.activity;
     if(!act || act.type!=='combat' || !enemyBurning(state)) return;
     var dps = (act.burnDps || 0) * d2BurnTickMult(state) * legNecromancyDoTMult(state); if(dps <= 0) return; // Conflagration/Barbed (D2) + Lich (D3): burn ticks harder
     var _burnDmg = dps * dtMs / 1000;
-    act.monsterHp = Math.max(1, act.monsterHp - _burnDmg);
+    applyChipDamage(_burnDmg);
     if(legActive('emberveil')) legBarrierAdd(_burnDmg * LEG_EMBERVEIL_FRAC); // Emberveil (D2 fire ward): a share of Burn damage banks a Barrier
     if(legActive('ashveil')) legBarrierAdd(_burnDmg * LEG_EMBERVEIL_FRAC);   // Ashveil (D3 fire ward): a share of Burn damage banks a Barrier
     // Funeral Pyre (Pyromancer D3 2pc) / Pyresoul (D3 fire wand) / Ashveil (D3 fire ward): your Burn also applies Decay, once per discrete second.
@@ -13615,19 +13618,23 @@
     act.duelStartedAt = Date.now(); act.disengageUsed = false; act.guardianBondUsed = false; act.cheatDeathUsed = false;
     state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0;
   }
-  // Familiar/DoT/reflect damage normally floors the enemy at 1 HP so YOUR attack lands the kill --
-  // except when you wield a Staff (no attack), where your summons must be able to finish the fight.
-  // Chip damage from a non-player source: familiar spells, reflect/thorns, ward reflect, shield-break
-  // bursts, Discharge. It kills like anything else.
+  // Chip damage from any non-player source -- familiar spells, reflect/thorns, ward reflect, shield-break
+  // bursts, Discharge, and every DoT (poison, bleed, burn, frostbite, decay, wither). It kills like
+  // anything else.
   //
   // There used to be a floor at 1 HP unless you wielded a Staff (familiarCanKill), so only a summoner
-  // build could finish with chip. That gate quietly invalidated every build whose kill condition IS chip
-  // -- a Sentinel stacking armour and thorns to kill by being hit could never take the last sliver off a
-  // foe. familiarCanKill went with it; nothing else referenced it.
+  // build could finish with chip. That gate quietly invalidated every build whose kill condition IS chip:
+  // a Sentinel stacking armour and thorns to kill by being hit could never take the last sliver off a
+  // foe, and a Plaguebearer's poison could not finish what it had spent the whole fight applying.
+  // familiarCanKill went with it; nothing else referenced it.
+  //
+  // Returns true if this chip landed the kill, so a caller ticking inside a loop can stop instead of
+  // carrying the rest of its damage into the next foe.
   function applyChipDamage(dmg){
-    var act = state.activity; if(!act || act.type!=='combat') return;
+    var act = state.activity; if(!act || act.type!=='combat') return false;
     act.monsterHp -= dmg;
-    if(act.monsterHp <= 0){ var m = monsterById(act.monsterId); if(m) defeatMonster(m); }
+    if(act.monsterHp <= 0){ var m = monsterById(act.monsterId); if(m) defeatMonster(m); return true; }
+    return false;
   }
   // ---- "What does this foe actually hit ME for?" ------------------------------------------------
   // The enemy cards used to print the foe's RAW atkMin-atkMax, which is not what a player experiences:
@@ -14537,7 +14544,7 @@
           _mAcc += _chunk;
           while(_mAcc >= _mInt && state.activity.type==='combat'){ _mAcc -= _mInt; monsterAttackTick(); autoEatCheck(); _mInt = Math.max(200, _monster.attackSpeed*1000*(1+enemyExtraSlowPct())); }
           if(state.activity.type!=='combat') break;
-          // Familiar poison + toxin-potion poison chip the enemy (never the finishing blow); familiar regen heals.
+          // Familiar poison + toxin-potion poison chip the enemy; familiar regen heals.
           var _pd = getFamiliarPoisonDps(); if(_pd>0) applyChipDamage(_pd*_chunk/1000);
           applyPotionPoisonTick(_chunk);
           applyReaverBleedTick(_chunk);
@@ -27769,12 +27776,12 @@
             monsterIntervalMs = (monsterForSpeed ? monsterForSpeed.attackSpeed : 3) * 1000 * (1 + enemyExtraSlowPct());
           }
         }
-        // Poison from an active companion chips the monster; it can only land the kill if you wield a Staff.
+        // Poison from an active companion chips the monster.
         var poisonDps = getFamiliarPoisonDps();
         if(poisonDps > 0 && state.activity.type==='combat'){
           applyChipDamage(poisonDps*dt/1000);
         }
-        // Toxin/Coating poison: ticks the enemy for its remaining duration (never the finishing blow).
+        // Toxin/Coating poison: ticks the enemy for its remaining duration.
         applyPotionPoisonTick(dt);
         applyReaverBleedTick(dt);
         applyFrostwardenFrostbiteTick(dt);
