@@ -19459,6 +19459,81 @@
   }
 
   function estateJobActive(){ return !!(estActive && estActive.job); }               // MY job (guild getter returns my own)
+
+  // ---- Server-authoritative PERSONAL estate cooldowns ---------------------------------------------
+  // The active personal job lives in Supabase (estate_jobs, migration 20260720120000); what's in
+  // state.estate.job is only a mirror of it. Two browsers on one account used to each run their own
+  // copy of the timer -- the reported bug where a 10-minute tile clear in one window showed as already
+  // cleared in the other. Now the row's PRIMARY KEY on user_id makes "one task at a time" a database
+  // invariant and ready_at is stamped by the server's clock, so a second window can neither start a
+  // parallel job nor short-circuit the cooldown.
+  //
+  // The GUILD estate keeps its existing path (its jobs already round-trip through the synced
+  // guild_estate blob), and logged-out play falls back to local-only timing -- with no cloud save
+  // there's no second session to race.
+  var _estJobRpcBusy = false;
+  function estateJobServerOwned(){ return !estIsGuild && !!chatClient && !!authUser && !!authUser.id; }
+  // Server row -> the flat job shape the rest of the estate code already expects.
+  function estateJobFromServer(sj){
+    if(!sj) return null;
+    var p = sj.payload || {};
+    var job = { kind:sj.kind, x:sj.x|0, y:sj.y|0, startAt:Number(sj.startAt)||Date.now(), readyAt:Number(sj.readyAt)||Date.now() };
+    if(p.paveTileId != null) job.paveTileId = p.paveTileId;
+    if(p.workshopId != null) job.workshopId = p.workshopId;
+    if(p.cottageId != null) job.cottageId = p.cottageId;
+    if(p.fieldTier != null) job.fieldTier = p.fieldTier|0;
+    return job;
+  }
+  // Pull the authoritative job on load / auth restore, so a second window opens showing the REAL
+  // remaining time rather than its own stale idea of the tile.
+  function estateJobSync(){
+    if(!chatClient || !authUser || !authUser.id) return;
+    try{
+      chatClient.rpc('estate_job_get').then(function(res){
+        var d = res && res.data; if(!d || !d.ok) return;
+        var srv = estateJobFromServer(d.job);
+        var cur = state.estate && state.estate.job;
+        // Server says nothing is running but we think something is -> the other window already
+        // collected it. Drop ours WITHOUT applying rewards; the window that won the delete granted them.
+        if(!srv){ if(cur){ state.estate.job = null; needsRender = true; } return; }
+        if(!cur || cur.kind!==srv.kind || cur.x!==srv.x || cur.y!==srv.y || cur.readyAt!==srv.readyAt){
+          state.estate.job = srv; needsRender = true;
+        }
+      }, function(){});
+    }catch(e){}
+  }
+  // Claim the job server-side BEFORE spending anything. `commit(target, startAt, readyAt)` runs only on
+  // a granted claim -- every starter does its resource consumption in there, so a refused claim (another
+  // window already working) can never charge the player.
+  function estateJobClaim(kind, x, y, payload, localMs, commit){
+    var target = estActive;                       // capture: the callback may land after navigation
+    if(!estateJobServerOwned()){ var n = Date.now(); commit(target, n, n + localMs); return; }
+    if(_estJobRpcBusy) return;
+    _estJobRpcBusy = true;
+    chatClient.rpc('estate_job_start', { p_kind:kind, p_x:x, p_y:y, p_payload:payload || {} }).then(function(res){
+      _estJobRpcBusy = false;
+      var d = res && res.data;
+      if(!d || !d.ok){
+        if(d && d.error === 'pending' && d.job){
+          state.estate.job = estateJobFromServer(d.job);
+          addLog('An estate task has already finished — collect it before starting another.', 'danger');
+        } else {
+          addLog('Could not start that estate task. Try again in a moment.', 'danger');
+        }
+        needsRender = true; return;
+      }
+      if(!d.claimed){                              // another window holds the job -- adopt it, charge nothing
+        state.estate.job = estateJobFromServer(d.job);
+        addLog('You already have an estate task running (started in another window).', 'danger');
+        needsRender = true; return;
+      }
+      commit(target, Number(d.job.startAt), Number(d.job.readyAt));
+    }, function(){
+      _estJobRpcBusy = false;
+      addLog('Could not reach the server — estate task not started.', 'danger');
+      needsRender = true;
+    });
+  }
   function estateClearObstacle(x, y){
     var cell = estActive.grid[x] && estActive.grid[x][y];
     if(!cell || !cell.obstacle) return;
@@ -19473,12 +19548,13 @@
       addLog('Clearing these ' + info.def.label + ' requires ' + SKILL_LABELS[info.def.skill] + ' level ' + info.reqLevel + '.', 'danger');
       return;
     }
-    var nowC = Date.now();
-    estActive.job = { kind:'clear', x:x, y:y, startAt:nowC, readyAt:nowC + info.durationMs };
-    addLog('You began clearing the ' + info.def.label + ' at (' + x + ', ' + y + ').', 'important');
-    spawnFloatingText('Clearing\u2026', 'ft-success');
-    estPersist();
-    needsRender = true;
+    estateJobClaim('clear', x, y, { type:cell.obstacle.type, tierIndex:cell.obstacle.tierIndex|0 }, info.durationMs, function(target, startAt, readyAt){
+      target.job = { kind:'clear', x:x, y:y, startAt:startAt, readyAt:readyAt };
+      addLog('You began clearing the ' + info.def.label + ' at (' + x + ', ' + y + ').', 'important');
+      spawnFloatingText('Clearing\u2026', 'ft-success');
+      estPersist();
+      needsRender = true;
+    });
   }
   function estateRaiseLayer(x, y){
     var cell = estActive.grid[x] && estActive.grid[x][y];
@@ -19498,13 +19574,14 @@
       addLog('Raising this tile requires ' + ESTATE_RAISE_DIRT_COST + ' Dirt.', 'danger');
       return;
     }
-    state.inventory[ESTATE_DIRT_ITEM_ID] -= ESTATE_RAISE_DIRT_COST;
-    var nowR = Date.now();
-    estActive.job = { kind:'raise', x:x, y:y, startAt:nowR, readyAt:nowR + ESTATE_TERRAFORM_MS };
-    addLog('You began raising the tile at (' + x + ', ' + y + '). It will finish in 10 minutes.', 'important');
-    spawnFloatingText('Raising\u2026', 'ft-success');
-    estPersist();
-    needsRender = true;
+    estateJobClaim('raise', x, y, {}, ESTATE_TERRAFORM_MS, function(target, startAt, readyAt){
+      state.inventory[ESTATE_DIRT_ITEM_ID] -= ESTATE_RAISE_DIRT_COST;   // charge only once the claim is ours
+      target.job = { kind:'raise', x:x, y:y, startAt:startAt, readyAt:readyAt };
+      addLog('You began raising the tile at (' + x + ', ' + y + '). It will finish in 10 minutes.', 'important');
+      spawnFloatingText('Raising\u2026', 'ft-success');
+      estPersist();
+      needsRender = true;
+    });
   }
   function estateLowerLayer(x, y){
     // Lowering is TERRAFORM (dirt-only, demolishes nothing built), so -- like its siblings estateRaiseLayer
@@ -19525,15 +19602,43 @@
       addLog('Lowering this tile requires Digging level ' + reqLevel + '.', 'danger');
       return;
     }
-    var nowL = Date.now();
-    estActive.job = { kind:'lower', x:x, y:y, startAt:nowL, readyAt:nowL + ESTATE_TERRAFORM_MS };
-    addLog('You began digging down the tile at (' + x + ', ' + y + '). It will finish in 10 minutes.', 'important');
-    spawnFloatingText('Digging\u2026', 'ft-success');
-    estPersist();
-    needsRender = true;
+    estateJobClaim('lower', x, y, {}, ESTATE_TERRAFORM_MS, function(target, startAt, readyAt){
+      target.job = { kind:'lower', x:x, y:y, startAt:startAt, readyAt:readyAt };
+      addLog('You began digging down the tile at (' + x + ', ' + y + '). It will finish in 10 minutes.', 'important');
+      spawnFloatingText('Digging\u2026', 'ft-success');
+      estPersist();
+      needsRender = true;
+    });
   }
   function estateCancelJob(){
     var job = estActive && estActive.job;
+    if(!job) return;
+    // Personal jobs: release the server row FIRST. Refunding before the delete is confirmed would let a
+    // failed cancel be retried for a second refund while the job is still running server-side.
+    if(estateJobServerOwned()){
+      if(_estJobRpcBusy) return;
+      var target = estActive;                     // bind now: the player may navigate mid-flight
+      _estJobRpcBusy = true;
+      chatClient.rpc('estate_job_cancel').then(function(res){
+        _estJobRpcBusy = false;
+        var d = res && res.data;
+        if(d && d.ok){ estateCancelJobLocal(target); }
+        else if(d && d.error === 'none'){ target.job = null; needsRender = true; }  // already gone elsewhere -- no refund
+        else { addLog('Could not cancel that estate task. Try again in a moment.', 'danger'); needsRender = true; }
+      }, function(){
+        _estJobRpcBusy = false;
+        addLog('Could not reach the server — estate task not cancelled.', 'danger');
+        needsRender = true;
+      });
+      return;
+    }
+    estateCancelJobLocal(estActive);
+  }
+  // The refund + local clear half of a cancel, split out so the personal path can defer it until the
+  // server has actually released the job. `target` is bound by the caller rather than re-read from
+  // estActive, so a cancel that resolves after the player switches estates can't refund the wrong one.
+  function estateCancelJobLocal(target){
+    var job = target && target.job;
     if(!job) return;
     if(job.kind === 'pave'){
       addItem(job.paveTileId, ESTATE_PAVE_TILE_COST); // refund the paving tiles
@@ -19561,7 +19666,7 @@
     } else {
       addLog('You cancelled digging down (' + job.x + ', ' + job.y + ').', 'important');
     }
-    estActive.job = null;
+    target.job = null;
     estPersist();
     needsRender = true;
   }
@@ -19685,13 +19790,44 @@
   }
   // Completes the personal estate job once its timer elapses. Runs every loop tick (and
   // therefore also on load), so a job started before the tab was closed finishes offline.
+  var _estJobCompleteBusy = false;
   function processEstateJob(){
     var job = state.estate && state.estate.job;
     if(!job) return;
-    if(Date.now() < job.readyAt) return;
-    applyEstateJobCompletion(state.estate, job, true, false);
-    state.estate.job = null;
-    needsRender = true;
+    if(Date.now() < job.readyAt) return;          // local clock is a cheap pre-filter, never the authority
+    // Logged out / no cloud save: no second session can exist, so finish locally as before.
+    if(!chatClient || !authUser || !authUser.id){
+      applyEstateJobCompletion(state.estate, job, true, false);
+      state.estate.job = null;
+      needsRender = true;
+      return;
+    }
+    // Server owns the cooldown. The DELETE inside estate_job_complete is what makes this safe with two
+    // windows open: exactly one caller can win it, so rewards are granted exactly once no matter how
+    // many browsers are racing the same finished job.
+    if(_estJobCompleteBusy) return;
+    _estJobCompleteBusy = true;
+    chatClient.rpc('estate_job_complete').then(function(res){
+      _estJobCompleteBusy = false;
+      var d = res && res.data;
+      var cur = state.estate && state.estate.job;
+      if(!cur) return;
+      if(d && d.ok && d.job){
+        applyEstateJobCompletion(state.estate, cur, true, false);
+        state.estate.job = null;
+        needsRender = true;
+        cloudSave(false, true);                   // flush the finished grid before another window pushes
+      } else if(d && d.error === 'early' && d.job){
+        // Our clock ran ahead of the server's -- adopt the real remaining time instead of completing.
+        cur.readyAt = Number(d.job.readyAt) || cur.readyAt;
+        needsRender = true;
+      } else if(d && d.error === 'none'){
+        // Another window already collected this job and took the rewards. Drop our mirror WITHOUT
+        // applying the completion -- this is the branch that stops a two-browser double-grant.
+        state.estate.job = null;
+        needsRender = true;
+      }
+    }, function(){ _estJobCompleteBusy = false; });   // network blip: retry on a later tick
   }
   // Paving: turns a Dirt tile into a stone-paved tile, its appearance drawn from the
   // full 21-item library the Paving crafting skill already produces (7 stones x 3
@@ -19723,15 +19859,16 @@
       addLog('Paving with ' + recipe.name + ' requires ' + ESTATE_PAVE_TILE_COST + ' of it (have ' + (state.inventory[paveTileId]||0) + ').', 'danger');
       return;
     }
-    state.inventory[paveTileId] -= ESTATE_PAVE_TILE_COST;
     var pTier = (parseInt(paveTileId.split('_t')[1],10)||0) + 1; // 10 min per tier
-    var nowP = Date.now();
-    estActive.job = { kind:'pave', x:x, y:y, paveTileId:paveTileId, startAt:nowP, readyAt:nowP + pTier*ESTATE_PAVE_MS_PER_TIER };
+    estateJobClaim('pave', x, y, { paveTileId:paveTileId }, pTier*ESTATE_PAVE_MS_PER_TIER, function(target, startAt, readyAt){
+    state.inventory[paveTileId] -= ESTATE_PAVE_TILE_COST;
+    target.job = { kind:'pave', x:x, y:y, paveTileId:paveTileId, startAt:startAt, readyAt:readyAt };
     estatePavingMenuOpen = false;
     addLog('You began paving (' + x + ', ' + y + ') with ' + recipe.name + ' — finishes in ' + (pTier*10) + ' minutes.', 'important');
     spawnFloatingText('Paving…', 'ft-success');
     estPersist();
     needsRender = true;
+    });
   }
   function estateBreakPavement(x, y){
     var cell = estActive.grid[x] && estActive.grid[x][y];
@@ -19852,15 +19989,16 @@
     if(estWorkshopMap()[it.skillId] !== undefined){ addLog('This estate already has a ' + ((CRAFTING_SKILLS[it.skillId]||{}).label||it.skillId) + ' Workshop — only one per skill.', 'danger'); return; }
     if(estateJobActive()){ addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger'); return; }
     if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
-    state.inventory[workshopId] -= 1;
     var wTier = it.tierIndex + 1; // 30 min per tier
-    var nowW = Date.now();
-    estActive.job = { kind:'workshop', x:x, y:y, workshopId:workshopId, startAt:nowW, readyAt:nowW + wTier*ESTATE_WORKSHOP_MS_PER_TIER };
-    estateWorkshopMenuOpen = false;
-    addLog('You began building a ' + it.name + ' at (' + x + ', ' + y + ') — finishes in ' + (wTier*30) + ' minutes.', 'important');
-    spawnFloatingText('Building…', 'ft-success');
-    estPersist();
-    needsRender = true;
+    estateJobClaim('workshop', x, y, { workshopId:workshopId }, wTier*ESTATE_WORKSHOP_MS_PER_TIER, function(target, startAt, readyAt){
+      state.inventory[workshopId] -= 1;
+      target.job = { kind:'workshop', x:x, y:y, workshopId:workshopId, startAt:startAt, readyAt:readyAt };
+      estateWorkshopMenuOpen = false;
+      addLog('You began building a ' + it.name + ' at (' + x + ', ' + y + ') — finishes in ' + (wTier*30) + ' minutes.', 'important');
+      spawnFloatingText('Building…', 'ft-success');
+      estPersist();
+      needsRender = true;
+    });
   }
   function estateRemoveWorkshop(x, y){
     if(guildDestroyBlocked()) return;
@@ -19911,15 +20049,16 @@
     if(it.tierIndex > pavementTierOf(cell)){ addLog('That cottage needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
     if(estateJobActive()){ addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger'); return; }
     if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
-    state.inventory[cottageId] -= 1;
     var cTier = it.tierIndex + 1; // 10 min per tier
-    var nowCot = Date.now();
-    estActive.job = { kind:'cottage', x:x, y:y, cottageId:cottageId, startAt:nowCot, readyAt:nowCot + cTier*ESTATE_COTTAGE_MS_PER_TIER };
-    estateCottageMenuOpen = false;
-    addLog('You began building a ' + it.name + ' at (' + x + ', ' + y + ') — finishes in ' + (cTier*10) + ' minutes.', 'important');
-    spawnFloatingText('Building…', 'ft-success');
-    estPersist();
-    needsRender = true;
+    estateJobClaim('cottage', x, y, { cottageId:cottageId }, cTier*ESTATE_COTTAGE_MS_PER_TIER, function(target, startAt, readyAt){
+      state.inventory[cottageId] -= 1;
+      target.job = { kind:'cottage', x:x, y:y, cottageId:cottageId, startAt:startAt, readyAt:readyAt };
+      estateCottageMenuOpen = false;
+      addLog('You began building a ' + it.name + ' at (' + x + ', ' + y + ') — finishes in ' + (cTier*10) + ' minutes.', 'important');
+      spawnFloatingText('Building…', 'ft-success');
+      estPersist();
+      needsRender = true;
+    });
   }
   function estateRemoveCottage(x, y){
     if(guildDestroyBlocked()) return;
@@ -19947,14 +20086,15 @@
     if(estateJobActive()){ addLog('You can only run one estate task at a time -- finish or cancel the current one first.', 'danger'); return; }
     if(estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
     if(!hasInputs(def.inputs)){ addLog('Tilling a ' + def.name + ' needs 100 ' + diggingResName(tier) + '.', 'danger'); return; }
-    consumeInputs(def.inputs);
-    var nowF = Date.now();
-    estActive.job = { kind:'field', x:x, y:y, fieldTier:tier, startAt:nowF, readyAt:nowF + fieldBuildMs(tier) };
-    estateFieldMenuOpen = false;
-    addLog('You began tilling a ' + def.name + ' at (' + x + ', ' + y + ') — finishes in ' + ((tier+1)*5) + ' minutes.', 'important');
-    spawnFloatingText('Tilling…', 'ft-success');
-    estPersist();
-    needsRender = true;
+    estateJobClaim('field', x, y, { fieldTier:tier|0 }, fieldBuildMs(tier), function(target, startAt, readyAt){
+      consumeInputs(def.inputs);
+      target.job = { kind:'field', x:x, y:y, fieldTier:tier, startAt:startAt, readyAt:readyAt };
+      estateFieldMenuOpen = false;
+      addLog('You began tilling a ' + def.name + ' at (' + x + ', ' + y + ') — finishes in ' + ((tier+1)*5) + ' minutes.', 'important');
+      spawnFloatingText('Tilling…', 'ft-success');
+      estPersist();
+      needsRender = true;
+    });
   }
   function estateRemoveField(x, y){
     if(guildDestroyBlocked()) return;
@@ -22155,7 +22295,7 @@
       if(!chatClient) return;
       var res = await chatClient.auth.getSession();
       var sess = res.data && res.data.session;
-      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; profileSync(true); walletSync(true); itemSync(true); }
+      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; profileSync(true); walletSync(true); itemSync(true); estateJobSync(); cloudClaimSession(); }
     }catch(e){}
   }
 
@@ -22169,6 +22309,55 @@
   var CLOUD_PUSH_INTERVAL = 8000;   // debounce between cloud pushes (was 30s -> tightened so inventory/gold changes reach Supabase quickly)
   var cloudLastPush = 0;
   var cloudAccessToken = null;      // cached bearer token so the unload beacon can authenticate synchronously
+
+  // ---- Session fencing: ONE simulating tab per account ------------------------------------------
+  // The forward-only progress guard stops a REGRESSION, not two live sessions. Two browsers on one
+  // account were two independent simulations pushing full blobs every 8s, and the higher-XP blob won
+  // wholesale -- that's how a 10-minute estate cooldown could be bypassed in a second window, and how
+  // combat drops got collected twice. Each tab now claims the save with a random id (see migration
+  // 20260720140000 + the save_game claim action); the server refuses writes from a session that no
+  // longer holds the claim, and the losing tab freezes here rather than silently losing its progress.
+  // Last claim wins, so opening a second window takes over and the FIRST one stops.
+  var cloudSessionId = (function(){
+    try{ if(window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID(); }catch(e){}
+    return 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+  })();
+  var cloudFenced = false;          // true once another window took the claim -- all writes stop
+  // Take the claim. Called on auth restore, before this tab has anything new to push.
+  function cloudClaimSession(){
+    if(!CLOUD_SYNC_ENABLED || !CHAT_ENABLED || !chatClient || !authUser || !authUser.id) return;
+    try{
+      chatClient.functions.invoke('save_game', { body: { action:'claim', session_id: cloudSessionId } })
+        .then(function(){}, function(){});   // best-effort: a failed claim just means no fence this session
+    }catch(e){}
+  }
+  // Another window owns the save. Stop simulating and stop writing IMMEDIATELY -- continuing would keep
+  // accruing progress this tab can never persist, which is exactly the "I lost an hour" report.
+  function cloudEnterFenced(){
+    if(cloudFenced) return;
+    cloudFenced = true;
+    var el = document.createElement('div');
+    el.id = 'ffFencedOverlay';
+    el.setAttribute('role', 'alertdialog');
+    el.setAttribute('aria-modal', 'true');
+    el.setAttribute('aria-labelledby', 'ffFencedTitle');
+    el.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(8,10,14,.88);display:flex;'
+      + 'align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(3px);';
+    el.innerHTML = '<div style="max-width:440px;background:#12161d;border:1px solid #2b323d;border-radius:6px;'
+      + 'padding:26px 28px;text-align:center;font-family:inherit;color:#e4e8ed;box-shadow:0 18px 50px rgba(0,0,0,.5)">'
+      + '<h2 id="ffFencedTitle" style="margin:0 0 12px;font-size:19px;color:var(--gold,#d9a24a)">Opened in another window</h2>'
+      + '<p style="margin:0 0 10px;line-height:1.6;font-size:14px;color:#b6bfca">'
+      + 'Fantasy Frontiers is now running in a different tab or on another device, so this one has stopped '
+      + 'to keep your progress from being overwritten.</p>'
+      + '<p style="margin:0 0 20px;line-height:1.6;font-size:14px;color:#b6bfca">'
+      + 'Your progress was saved up to a few seconds before this. Reload to play here instead.</p>'
+      + '<button id="ffFencedReload" style="font:inherit;font-size:14px;font-weight:600;cursor:pointer;'
+      + 'background:var(--gold,#d9a24a);color:#12161d;border:0;border-radius:4px;padding:11px 26px">Reload</button>'
+      + '</div>';
+    document.body.appendChild(el);
+    var btn = document.getElementById('ffFencedReload');
+    if(btn){ btn.addEventListener('click', function(){ location.reload(); }); btn.focus(); }
+  }
   function cloudRefreshToken(){
     try{ if(!chatClient) return; chatClient.auth.getSession().then(function(r){ var s = r && r.data && r.data.session; if(s && s.access_token) cloudAccessToken = s.access_token; }); }catch(e){}
   }
@@ -22179,9 +22368,10 @@
   function cloudSaveBeacon(){
     try{
       if(!CLOUD_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id || !cloudAccessToken) return;
+      if(cloudFenced) return;   // another window owns the save -- this tab's state is stale, never push it
       var score = saveProgressScore(state); if(score <= 0) return;
       state.lastSaved = Date.now();
-      var body = JSON.stringify({ data: state, client_saved_at: state.lastSaved, progress: score });
+      var body = JSON.stringify({ data: state, client_saved_at: state.lastSaved, progress: score, session_id: cloudSessionId });
       if(body.length > 60000) return; // over the keepalive cap -> the async flush (visibilitychange) handles it
       fetch(CHAT_CONFIG.supabaseUrl.replace(/\/+$/,'') + '/functions/v1/save_game', {
         method:'POST', keepalive:true,
@@ -22207,6 +22397,7 @@
   async function cloudSave(force, flush){
     if(!CLOUD_SYNC_ENABLED) return;
     if(!CHAT_ENABLED || !authUser || !authUser.id) return;
+    if(cloudFenced) return;   // fenced out by another window -- writing would clobber the live session
     cloudRefreshToken(); // keep the cached token fresh for the unload beacon
     var score = saveProgressScore(state);
     // Never push an empty/zero-progress state (unless a deliberate, forced reset) -- this is
@@ -22218,10 +22409,14 @@
     if(!chatClient){ if(!(await authEnsureClient())) return; }
     try{
       var res = await chatClient.functions.invoke('save_game', {
-        body: { data: state, client_saved_at: state.lastSaved || 0, progress: score, force: !!force }
+        body: { data: state, client_saved_at: state.lastSaved || 0, progress: score, force: !!force, session_id: cloudSessionId }
       });
       // A non-ok/'stale' result means the cloud holds a higher-progress save; leave both
       // sides untouched (non-destructive) and reconcile on the next load.
+      // `fenced` is different: another window took the claim, so this tab must stop entirely.
+      // The server returns it as a 200 body (not a 4xx) precisely so this hot path can read it
+      // without unpacking a FunctionsHttpError on every push.
+      if(res && res.data && res.data.fenced) cloudEnterFenced();
     }catch(e){}
   }
   // ---- Game Rules + Privacy Policy (must be accepted before registering) ----
@@ -26582,6 +26777,7 @@
     profileView = null;
     chatDrawerOpen = false;
     if(cat==='chat') clearChatUnread();
+    if(cat==='estate') estateJobSync();  // opening My Estate re-reads the authoritative job (the reported repro)
     if(DEFAULT_SUB[cat]) currentSub = DEFAULT_SUB[cat];
     if(cat==='market') marketState.status = 'idle'; // reload + auto-collect on each entry
     render();
@@ -27114,6 +27310,10 @@
   // ================= MAIN LOOP =================
   var lastTick = Date.now();
   function loop(){
+    // Fenced out by another window: stop the simulation dead and do NOT reschedule. Continuing would
+    // accrue progress this tab can never persist (cloudSave is closed), which reads to the player as
+    // lost hours. The overlay from cloudEnterFenced() is already up asking them to reload.
+    if(cloudFenced) return;
     _frameId++;                                  // invalidates the per-frame multiplier memo
     var _pf = PERF_ON ? performance.now() : 0;   // frame start (perf build only)
     var now = Date.now();
@@ -27338,6 +27538,7 @@
   // instead -- resume exactly where the player left off. Progress is credited and saved BEFORE the
   // update check, which may hard-reload the page when a new build landed while the tab was away.
   document.addEventListener('visibilitychange', function(){
+    if(cloudFenced) return;   // dead tab: don't credit catch-up progress it can never save, or show a stale away-summary
     if(document.hidden){
       if(gameStarted){ saveGame(); cloudSave(false, true); cloudSaveBeacon(); }
       return;
