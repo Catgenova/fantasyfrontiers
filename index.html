@@ -7193,13 +7193,36 @@
   var LUMEN_SHIELD_MAX_PCT = 0.30;   // Everfull / Radiant Barrier shield cap (30% of max HP)
   var LUMEN_BARRIER_PCT = 0.30;      // Radiant Barrier (Lv80): shield = 30% of the amount healed
   // Resolve who a Lumen heal mends: the party's lowest-HP living teammate, else YOU (solo / you're lowest).
+  // Who a "lowest-HP ally" heal is actually for. Solo -- and in a lobby, where nobody is hurt yet -- that
+  // is always you, which is why every one of these perks reads "yourself when solo". In an ACTIVE party
+  // run it is the most wounded living delver, who may well be someone else.
   function lumenHealTarget(){
-    if(typeof dungeonNetInParty === 'function' && dungeonNetInParty() && authUser){
+    if(typeof dungeonNetInParty === 'function' && dungeonNetInParty() && authUser
+       && dungeonNet.session && dungeonNet.session.status === 'active'){
       var lowest = null, lowestFrac = Infinity;
       (dungeonNet.members || []).forEach(function(m){ if(!m || !m.alive) return; var frac = (m.max_hp > 0) ? (m.hp / m.max_hp) : 1; if(frac < lowestFrac){ lowestFrac = frac; lowest = m; } });
       if(lowest && lowest.user_id !== authUser.id) return { isSelf:false, member:lowest };
     }
     return { isSelf:true };
+  }
+  // THE seam every "lowest-HP ally" perk routes through -- Templar Lay on Hands, Lumen Mending Ray /
+  // Reflected Light / Radiant Barrier, and the Glimmerward legendary. All of them shipped describing party
+  // healing ("the lowest-HP ally", "yourself when solo") but had nowhere to send it, so they only ever
+  // mended the caster. Solo behaviour is unchanged; in a party the heal is queued as a targeted event.
+  //
+  // `shieldFrac` is the healer's own overheal-to-barrier perk (Radiant Barrier), applied to the TARGET by
+  // the server -- the barrier belongs to whoever received the heal.
+  // Returns the amount healed LOCALLY (0 when it went to an ally), so callers can float their own numbers.
+  function healAlly(amount, shieldFrac){
+    amount = Math.round(amount); if(!(amount > 0)) return 0;
+    var tgt = lumenHealTarget();
+    if(!tgt.isSelf && tgt.member){
+      dungeonNetQueueHeal(tgt.member.user_id, amount, shieldFrac || 0);
+      return 0;                                  // it went to an ally; nothing landed on me
+    }
+    var healed = Math.max(0, Math.min(amount, healRoom(state)));
+    if(healed > 0) state.playerHp += healed;
+    return healed;
   }
   function lumenShieldCap(st){ st = st || state; return Math.round(maxHp(st) * lumenSanctuaryCapPct(st)); }
   function lumenAddShield(amount){
@@ -7212,7 +7235,14 @@
   // banks overheal as shield, Radiant Barrier (Lv80) adds a shield worth 30% of the HP restored.
   function lumenApplyHeal(amount){
     amount = Math.round(amount); if(!(amount > 0)) return 0;
-    lumenHealTarget(); // intended recipient (self when solo); cross-player application is the pending server hook
+    var tgt = lumenHealTarget();
+    if(!tgt.isSelf && tgt.member){
+      // Straight to the wounded ally. Radiant Barrier (Lv80) rides along so the barrier lands on THEM;
+      // Everfull's overheal-to-shield is resolved server-side from the same fraction.
+      var frac = (lumenBonus(80) ? LUMEN_BARRIER_PCT : 0) || (lumenBonus(60) || setFullD2('lumen') ? 1 : 0);
+      dungeonNetQueueHeal(tgt.member.user_id, amount, frac);
+      return 0;
+    }
     var healed = Math.max(0, Math.min(amount, healRoom(state)));
     var overheal = amount - healed;
     if(healed > 0) state.playerHp += healed;
@@ -13395,8 +13425,12 @@
       // Templar Lv 1 (Lay on Hands): a Critical Hit mends you for 20% of the damage dealt (the lowest-HP
       // party ally in a networked dungeon is a server-side extension; solo, that ally is always you).
       if(templarBonus(1) && isCrit){
-        var _loh = Math.min(Math.round(dmgToMonster * templarLayOnHandsPct(state)), healRoom(state));
-        if(_loh > 0){ state.playerHp += _loh; spawnFloatingText('Lay on Hands +'+_loh, 'ft-success'); }
+        // Routed through healAlly so a party Templar actually mends the most wounded delver, which is
+        // what the perk has always said it does. Solo, the ally is still you.
+        var _lohAmt = Math.round(dmgToMonster * templarLayOnHandsPct(state));
+        var _loh = healAlly(_lohAmt);
+        if(_loh > 0) spawnFloatingText('Lay on Hands +'+_loh, 'ft-success');
+        else if(_lohAmt > 0 && !lumenHealTarget().isSelf) spawnFloatingText('Lay on Hands → ally', 'ft-success');
       }
     }
     // Reaper (Lv 40/80) + Voidshadow (Soul Tax) + Knight (Lv 60 Warlord's Presence, below-half HP):
@@ -13956,7 +13990,8 @@
       // Charged Riposte (legendary ward): a reflect primes your next hit as a guaranteed Critical Hit.
       if(legActive('chargedriposte')) state.chargedRiposteReady = true;
       // Beacon Ward (legendary light ward): a reflect also heals the lowest-HP ally -- yourself when solo.
-      if(legActive('beaconward')){ var _bw = Math.min(wardReflected, healRoom(state)); if(_bw > 0){ state.playerHp += _bw; spawnFloatingText('Beacon +'+_bw, 'ft-success'); } }
+      // Glimmerward: "heals the lowest-HP ally (yourself when solo)" -- now literally true in a party.
+      if(legActive('beaconward')){ var _bw = healAlly(wardReflected); if(_bw > 0) spawnFloatingText('Beacon +'+_bw, 'ft-success'); }
       // Holy Ward (legendary light ward): a reflect grants you a Holy shield (Radiant Barrier).
       if(legActive('holyward')) lumenAddShield(wardReflected);
       // Stormveil (D2 earth ward): a reflect instantly discharges Static at the foe.
@@ -18407,7 +18442,7 @@
   // not yet attack back); Stage B adds threat targeting, death/wipe, and the Formula claim.
   // pendingDamage / lastEnemyHp drive the Phase 3 report: damage the local engine actually dealt since the
   // last send, measured by watching the local foe's HP rather than instrumenting every damage site.
-  var dungeonNet = { status:'idle', session:null, members:[], subSession:null, subMembers:null, _subId:null, busy:false, error:'', lastAssault:0, lobbiesByLayer:{}, clearedHandled:false, deathHandled:false, pendingDamage:0, lastEnemyHp:null };
+  var dungeonNet = { status:'idle', session:null, members:[], subSession:null, subMembers:null, _subId:null, busy:false, error:'', lastAssault:0, lobbiesByLayer:{}, clearedHandled:false, deathHandled:false, pendingDamage:0, lastEnemyHp:null, pendingHeal:{} };
   var dungeonJoinCodeDraft = '';   // in-progress "Join by ID" input, preserved across re-renders
   // A representative DPS proxy (avg weapon damage / attack interval, folding the always-on mults).
   // The server clamps it, so an inflated value can't dump impossible damage.
@@ -18476,6 +18511,7 @@
   // un-sent damage would leak into whatever run came next.
   function dungeonNetEndLocalFight(){
     dungeonNet.pendingDamage = 0;
+    dungeonNet.pendingHeal = {};           // drop un-sent heals too; the run they were for is over
     dungeonNet.lastEnemyHp = null;
     var act = state.activity;
     if(act && act.type==='combat' && act.netDungeon){ state.activity = { type:null }; needsRender = true; }
@@ -18608,6 +18644,29 @@
     if(typeof prev === 'number' && act.monsterHp < prev) dungeonNet.pendingDamage += (prev - act.monsterHp);
     dungeonNet.lastEnemyHp = act.monsterHp;
   }
+  // Party heals BATCH. Mending Ray is a per-frame heal-over-time, so sending one request per tick would
+  // hammer the edge function for a few HP at a time; instead heals accumulate per target and flush on the
+  // same 2.5s cadence as the assault. shieldFrac is kept per target (last writer wins -- in practice one
+  // healer's perk set, and the server clamps it anyway).
+  function dungeonNetQueueHeal(userId, amount, shieldFrac){
+    if(!userId || !(amount > 0)) return;
+    var q = dungeonNet.pendingHeal[userId] || (dungeonNet.pendingHeal[userId] = { amount:0, shieldFrac:0 });
+    q.amount += amount;
+    if(shieldFrac > q.shieldFrac) q.shieldFrac = shieldFrac;
+  }
+  function dungeonNetFlushHeals(sessionId){
+    var pend = dungeonNet.pendingHeal;
+    dungeonNet.pendingHeal = {};
+    Object.keys(pend).forEach(function(uid){
+      var q = pend[uid], amt = Math.round(q.amount);
+      if(!(amt > 0)) return;
+      dungeonNetInvoke('heal', { session_id:sessionId, target_id:uid, amount:amt, shield_frac:q.shieldFrac })
+        .then(function(res){
+          if(!res.ok){ dungeonNetQueueHeal(uid, amt, q.shieldFrac); return; } // re-bank a failed heal
+          dungeonNetApply(res);
+        });
+    });
+  }
   function dungeonNetTick(){
     var s = dungeonNet.session;
     if(!s || s.status !== 'active') return;
@@ -18620,6 +18679,7 @@
     dungeonNet.lastAssault = now;
     var dmg = Math.max(0, Math.round(dungeonNet.pendingDamage));
     dungeonNet.pendingDamage = 0;
+    dungeonNetFlushHeals(s.id);            // party heals ride the same 2.5s cadence (it clears the queue itself)
     // `power` rides along as the CEILING the server clamps the reported damage to, not as the damage.
     dungeonNetInvoke('assault', { session_id:s.id, power:dungeonPower(), damage:dmg, hp:Math.max(0, Math.round(state.playerHp||0)) })
       .then(function(res){
