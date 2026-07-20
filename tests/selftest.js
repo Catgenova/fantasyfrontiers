@@ -2019,6 +2019,31 @@
   });
 
   // ---- Dungeons: D1 "Cave" (25 arachnids, L100->125, ~10x boss, threat targeting) ---------
+  // ---- The enemy card and live combat share ONE damage chain -----------------------------------
+  // The card preview used to MIRROR monsterAttackTick's ~20 reducers with only a comment keeping them
+  // in step. It drifted twice: D2/D3 set reducers and the Tunnelborn cloak reached combat but not the
+  // card, so cards overstated incoming damage for anyone wearing them. Both now call incomingDamageMult.
+  suite('combat: card preview and live chain share one reduction fn', function(){
+    var s = FF._state;
+    ok(typeof FF.incomingDamageMult === 'function', 'incomingDamageMult is exported as the single source');
+    var foe = { name:'T', atkMin:100, atkMax:200, attackTypes:{blunt:1}, armorTypes:{blunt:1}, element:null };
+    var mult = FF.incomingDamageMult(s, foe, foe.attackTypes);
+    ok(typeof mult === 'number' && isFinite(mult) && mult > 0, 'the chain yields a positive finite multiplier');
+    // The card must be derivable from that same multiplier: reproduce its per-hit math independently
+    // and require it to match. If someone re-inlines a private chain in either place, this fails.
+    var prof = FF.playerDefenseProfile(s);
+    var r = FF.enemyDamageRangeVsPlayer(foe, s, prof);
+    function expected(raw){
+      var reduced = FF.incomingMitigationFloor(Math.round(raw * mult), raw);
+      return Math.max(1, Math.round((reduced - prof.armorDefense) / prof.tenacity));
+    }
+    eq(r.min, expected(foe.atkMin), 'card min equals the shared chain applied to atkMin');
+    eq(r.max, expected(foe.atkMax), 'card max equals the shared chain applied to atkMax');
+    // The floor is part of the shared path: an absurdly mitigated hit still lands >= the floor share.
+    eq(FF.incomingMitigationFloor(0, 200), Math.round(200 * FF.INCOMING_FLOOR_FRAC), 'a fully-reduced swing floors at INCOMING_FLOOR_FRAC of the roll');
+    eq(FF.incomingMitigationFloor(500, 200), 500, 'the floor never REDUCES a hit that already exceeds it');
+  });
+
   // ---- One unique can never fill both hands ---------------------------------------------------
   // Regression: once unique Claws became off-hand-equippable, equipping the SAME Claw into the main
   // hand left the off-hand pointing at it too. equippedEnchantTotals adds both hands, so its enchants
