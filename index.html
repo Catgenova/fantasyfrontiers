@@ -18442,7 +18442,7 @@
   // not yet attack back); Stage B adds threat targeting, death/wipe, and the Formula claim.
   // pendingDamage / lastEnemyHp drive the Phase 3 report: damage the local engine actually dealt since the
   // last send, measured by watching the local foe's HP rather than instrumenting every damage site.
-  var dungeonNet = { status:'idle', session:null, members:[], subSession:null, subMembers:null, _subId:null, busy:false, error:'', lastAssault:0, lobbiesByLayer:{}, clearedHandled:false, deathHandled:false, pendingDamage:0, lastEnemyHp:null, pendingHeal:{} };
+  var dungeonNet = { status:'idle', session:null, members:[], subSession:null, subMembers:null, _subId:null, busy:false, error:'', lastAssault:0, lobbiesByLayer:{}, clearedHandled:false, deathHandled:false, pendingDamage:0, lastEnemyHp:null, pendingHeal:{}, swingsResolved:0, shieldTaken:0 };
   var dungeonJoinCodeDraft = '';   // in-progress "Join by ID" input, preserved across re-renders
   // A representative DPS proxy (avg weapon damage / attack interval, folding the always-on mults).
   // The server clamps it, so an inflated value can't dump impossible damage.
@@ -18512,6 +18512,7 @@
   function dungeonNetEndLocalFight(){
     dungeonNet.pendingDamage = 0;
     dungeonNet.pendingHeal = {};           // drop un-sent heals too; the run they were for is over
+    dungeonNet.swingsResolved = 0; dungeonNet.shieldTaken = 0;
     dungeonNet.lastEnemyHp = null;
     var act = state.activity;
     if(act && act.type==='combat' && act.netDungeon){ state.activity = { type:null }; needsRender = true; }
@@ -18625,14 +18626,48 @@
       needsRender = true;
     }
   }
-  // The enemy only swings at ME while the SERVER says I'm its target -- targeting is threat-weighted and
-  // shared, so every client agrees who is being hit. When it is me, the hit resolves through my own
-  // mitigation chain (armour, block, dodge, reflect, wards), which is the point of the rework.
+  // In a party fight the local attack TIMER never drives the foe: the server owns both who it hits and
+  // when, and hands each swing to the target as a queued debt (dungeon_members.pending_swings) which
+  // dungeonNetResolveSwings applies. Leaving the timer running as well would double up the hits.
   function dungeonNetEnemySuppressed(){
     var act = state.activity;
-    if(!act || !act.netDungeon) return false;              // not a party fight -> normal rules
-    var s = dungeonNet.session;
-    return !(s && authUser && s.target_id === authUser.id);
+    return !!(act && act.netDungeon);
+  }
+  // Apply the swings the server assigned to me. It says WHO and WHEN and HOW MANY; my client says HOW
+  // HARD -- each monsterAttackTick rolls this foe's own atkMin..atkMax with its damage types and element
+  // from my roster copy, then runs the whole chain: dodge, block (and its legendaries), armour, shields,
+  // resistances, damage-reduction enchants, the incoming floor, Bastion's cap, reflect back at it, and
+  // the death-cheat perks. Returns how many actually landed so the server drains exactly that many.
+  function dungeonNetResolveSwings(){
+    var me = dungeonNetMyMember(); if(!me) return 0;
+    // Subtract swings already applied but not yet confirmed drained. Without this, any roster refresh
+    // between applying and confirming (a realtime push, or a failed report that re-banks the count)
+    // shows the debt still outstanding and the client hits itself with the same volley AGAIN. Caught by
+    // replaying the protocol with a dropped response: 3 swings became 6.
+    var owed = Math.max(0, Math.min(20, (me.pending_swings|0) - dungeonNet.swingsResolved));
+    if(!owed) return 0;
+    var act = state.activity;
+    if(!act || act.type!=='combat' || !act.netDungeon) return 0;
+    var done = 0;
+    for(var i=0; i<owed; i++){
+      if(!state.activity || state.activity.type!=='combat') break; // fell mid-volley; the rest are moot
+      monsterAttackTick();
+      done++;
+    }
+    // Optimistically clear locally so the next frame doesn't replay them before the server confirms.
+    me.pending_swings = Math.max(0, (me.pending_swings|0) - done);
+    return done;
+  }
+  // Take a barrier an ally's overheal granted me (Radiant Barrier / Everfull) into my ordinary local
+  // shield pool, where the damage chain already absorbs from it. lumenShieldCap isn't class-gated, so a
+  // Sentinel can hold a Lumen's gift just fine. Returns the amount claimed so the server can drain it.
+  function dungeonNetClaimShield(){
+    var me = dungeonNetMyMember(); if(!me) return 0;
+    var owed = Math.max(0, (me.shield|0) - dungeonNet.shieldTaken); // same unconfirmed-claim guard as swings
+    if(!owed) return 0;
+    lumenAddShield(owed);
+    me.shield = 0;
+    return owed;
   }
   // Damage is measured, not instrumented: whatever the engine took off the local foe this frame -- crits,
   // echoes, reflect, familiars, DoTs, everything -- is the delta we owe the shared pool. One hook instead
@@ -18671,6 +18706,10 @@
     var s = dungeonNet.session;
     if(!s || s.status !== 'active') return;
     dungeonNetSyncCombat();
+    // Take the enemy's swings and any ally barrier BEFORE measuring damage, so reflect/thorns triggered
+    // by those hits are counted in this window's contribution rather than lagging a tick behind.
+    dungeonNet.swingsResolved += dungeonNetResolveSwings();
+    dungeonNet.shieldTaken    += dungeonNetClaimShield();
     dungeonNetCollectDamage();
     var me = dungeonNetMyMember();
     if(me && !me.alive) return; // a downed delver can't attack; they spectate until wipe or clear
@@ -18681,9 +18720,15 @@
     dungeonNet.pendingDamage = 0;
     dungeonNetFlushHeals(s.id);            // party heals ride the same 2.5s cadence (it clears the queue itself)
     // `power` rides along as the CEILING the server clamps the reported damage to, not as the damage.
-    dungeonNetInvoke('assault', { session_id:s.id, power:dungeonPower(), damage:dmg, hp:Math.max(0, Math.round(state.playerHp||0)) })
+    // swings_resolved / shield_taken drain the two server->client queues by exactly what was applied.
+    var sw = dungeonNet.swingsResolved, sh = dungeonNet.shieldTaken;
+    dungeonNet.swingsResolved = 0; dungeonNet.shieldTaken = 0;
+    dungeonNetInvoke('assault', { session_id:s.id, power:dungeonPower(), damage:dmg,
+        hp:Math.max(0, Math.round(state.playerHp||0)), swings_resolved:sw, shield_taken:sh })
       .then(function(res){
-        if(!res.ok){ dungeonNet.pendingDamage += dmg; return; } // failed send -> re-bank it rather than lose it
+        if(!res.ok){ // failed send -> re-bank everything rather than lose it (or double-apply it)
+          dungeonNet.pendingDamage += dmg; dungeonNet.swingsResolved += sw; dungeonNet.shieldTaken += sh; return;
+        }
         dungeonNetApply(res);
         dungeonNetSyncCombat();
         // Adopt the shared enemy HP: other delvers have been hitting it too.

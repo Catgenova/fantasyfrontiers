@@ -1,10 +1,24 @@
-// Fantasy Frontiers — server-authoritative synchronous Dungeons (Phase 2, Stage A).
+// Fantasy Frontiers — server-authoritative synchronous Dungeons (Phase 3).
 //
-// 1-4 players form a party in a lobby, then descend together. The server owns the SHARED
-// run state (which enemy, its shared HP, the roster, status). Each member's damage is a
-// clamped power*elapsed proxy accrued into the shared pool (the server can't run the JS
-// combat engine), consistent with the Guild Boss / economy trust model. On a kill the server
-// advances to the next foe; clearing the 25th boss flips the run to 'cleared'.
+// 1-4 players form a party in a lobby, then descend together. Division of labour:
+//
+//   SERVER owns   the shared run state (which enemy, its HP, the roster, status), WHO the foe is
+//                 attacking (threat-weighted) and WHEN it swings (the cadence), plus every member's
+//                 authoritative HP, alive/dead, and the two delivery queues below.
+//   CLIENT owns   how hard everything hits. Each client fights the shared foe with the REAL combat
+//                 engine, so crits, elements, set bonuses, legendaries, familiars, block/dodge/reflect
+//                 and the full mitigation chain all count -- Phase 2's power*elapsed proxy is gone.
+//
+// Two server -> client queues, each drained by the client reporting what it actually applied (so a
+// dropped response replays instead of the effect vanishing):
+//   pending_swings  enemy hits owed to a member; its client rolls the foe's own atkMin..atkMax with
+//                   its damage types and element, mitigates, and reports post-blow HP
+//   shield          barrier owed to a member from an ally's overheal (Radiant Barrier / Everfull)
+//
+// TRUST: outgoing damage stays BOUNDED -- `power` survives only as the CEILING the reported damage is
+// clamped to (min(reported, power*elapsed)). Incoming damage is TRUSTED: a member reports its own HP,
+// so a tampered client can claim immortality. Accepted deliberately (PvE); the hook to close it is a
+// server floor derived from the atk/spd arrays this function already passes in.
 //
 // Actions (POST { action, ... }):
 //   get                          -> my current session + roster (or null)
@@ -13,7 +27,10 @@
 //   join { session_id }          -> join an open lobby
 //   leave { session_id }         -> leave (host or last member disbands it)
 //   start { session_id }         -> (host) begin the descent; seeds enemy 0's HP
-//   assault { session_id, power }-> accrue shared damage against the current foe
+//   assault { session_id, power, damage, hp, swings_resolved, shield_taken }
+//                                -> credit my damage, adopt my HP, drain my queues
+//   heal { session_id, target_id, amount, shield_frac }
+//                                -> apply a party heal to one member (batched client-side)
 //
 // Verify JWT must be OFF (the publishable key isn't a JWT; the token is validated internally).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -145,7 +162,7 @@ Deno.serve(async (req) => {
       .eq("id", sessionId).maybeSingle();
     if (!session) return { session: null, members: [] };
     const { data: members } = await admin.from("dungeon_members")
-      .select("user_id, username, power, damage, alive, claimed, hp, max_hp, threat, shield").eq("session_id", sessionId).order("joined_at");
+      .select("user_id, username, power, damage, alive, claimed, hp, max_hp, threat, shield, pending_swings").eq("session_id", sessionId).order("joined_at");
     return { session, members: members || [] };
   }
 
@@ -238,10 +255,19 @@ Deno.serve(async (req) => {
     const reported = (Number.isFinite(dmg) && dmg > 0) ? Math.min(Math.floor(dmg), Number.MAX_SAFE_INTEGER) : 0;
     const hpRaw = Number(body.hp);
     const hpReport = Number.isFinite(hpRaw) && hpRaw >= 0 ? Math.min(Math.floor(hpRaw), MAX_HP_CEILING) : null;
+    // Stage D: the client also reports how much of each server->client queue it drained -- swings it
+    // actually resolved through its mitigation chain, and barrier it took into its local shield pool.
+    // Only what it claims to have applied is drained, so a dropped response replays instead of the hit
+    // vanishing.
+    const swRaw = Number(body.swings_resolved);
+    const swings = Number.isFinite(swRaw) && swRaw > 0 ? Math.min(Math.floor(swRaw), 20) : 0;
+    const shRaw = Number(body.shield_taken);
+    const shieldTaken = Number.isFinite(shRaw) && shRaw > 0 ? Math.floor(shRaw) : 0;
     const { data: r, error } = await admin.rpc("dungeon_assault", {
       p_session: sid, p_user: user.id, p_damage: reported, p_hp_report: hpReport,
       p_power_ceiling: ceiling, p_max_seconds: MAX_CREDIT_SECONDS,
       p_hp: def.hp, p_atk: def.atk, p_spd_ms: def.spd,
+      p_swings_resolved: swings, p_shield_taken: shieldTaken,
     });
     if (error) return json({ ok: false, error: "Assault failed." }, 500);
     return json({ ok: true, result: r, ...(await snapshotOf(sid)) });
