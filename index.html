@@ -22406,6 +22406,23 @@
     if(!cell) return '';
     var digLvl = getLevel(state.xp.digging);
     var dirtOwned = state.inventory[ESTATE_DIRT_ITEM_ID] || 0;
+    // Queue-aware gating for a tile-action button. Before the queue shipped these buttons hard-disabled
+    // ("Busy") whenever ANY job was running -- which is why a busy estate showed every tile as unusable.
+    // Now: idle -> act now with the verb; a running/queued personal estate -> "Queue" (until it's full);
+    // the guild estate and logged-out play keep the classic one-at-a-time "Busy". Returns { off, label }.
+    function estQBtn(precondsOk, precondLabel, actLabel){
+      if(estIsGuild && estJobOnTile(x, y)) return { off:true, label:'In use' };   // another guild member here
+      if(!precondsOk) return { off:true, label:precondLabel };
+      var busy = !!(estActive && estActive.job) || (!estIsGuild && estateQueue().length > 0);
+      if(!busy) return { off:false, label:actLabel };
+      if(estIsGuild || !estatePersonalQueueReady()) return { off:true, label:'Busy' };
+      if(estateQueue().length >= ESTATE_QUEUE_MAX) return { off:true, label:'Queue full' };
+      return { off:false, label:'Queue' };
+    }
+    // A menu-opening toggle (pave / field / workshop / cottage): the menu is harmless to open while busy,
+    // and the option you pick inside it routes through the queue. So it's blocked only by "no options" or
+    // another guild member on the tile -- never merely because a job is running.
+    function estToggleBlockedByOther(){ return estIsGuild && estJobOnTile(x, y); }
     var html = '<div class="estate-options-panel">';
     html += '<h3 style="margin-top:0">Tile ('+x+', '+y+') &bull; Height '+cell.height+' / '+(ESTATE_MAX_HEIGHT-1)+' &bull; '+cell.type.charAt(0).toUpperCase()+cell.type.slice(1)+'</h3>';
     if(cell.type === 'dirt' && cell.obstacle){
@@ -22414,10 +22431,11 @@
       var oJobActive = !!oJob, oJobHere = oJobActive && oJob.x===x && oJob.y===y;
       var oTileBusy = estJobOnTile(x, y); // includes other guild members' jobs
       var oLevelOk = getLevel(state.xp[oinfo.def.skill]) >= oinfo.reqLevel;
-      var clearLabel = oJobHere ? 'Clearing\u2026' : (oTileBusy ? 'In use' : (oJobActive ? 'Busy' : (!oLevelOk ? 'Lv '+oinfo.reqLevel+' Req.' : 'Clear')));
+      // A clear already running on THIS tile can't be queued again (there's one obstacle) -> "Clearing\u2026".
+      var cs = oJobHere && oJob.kind==='clear' ? { off:true, label:'Clearing\u2026' } : estQBtn(oLevelOk, 'Lv '+oinfo.reqLevel+' Req.', 'Clear');
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Obstacle: '+oinfo.def.emoji+' '+oinfo.def.label+'</b> &mdash; '+oinfo.icon+' '+oinfo.itemName+' (Tier '+oinfo.tierNum+')<br>Requires '+SKILL_LABELS[oinfo.def.skill]+' '+oinfo.reqLevel+' &bull; Takes '+(oinfo.durationMs/60000)+' min<br>Yields +'+oinfo.resourceAmount+' '+oinfo.itemName+' &amp; +'+oinfo.xp+' '+SKILL_LABELS[oinfo.def.skill]+' XP<br><span style="color:var(--text-faint)">Must be cleared before this tile can be raised, lowered, or paved.</span></div>';
-      html += '<button class="action-btn" data-action="estateClearObstacle" data-x="'+x+'" data-y="'+y+'" '+((oLevelOk && !oJobActive && !oTileBusy)?'':'disabled')+'>'+clearLabel+'</button>';
+      html += '<button class="action-btn" data-action="estateClearObstacle" data-x="'+x+'" data-y="'+y+'" '+(cs.off?'disabled':'')+'>'+cs.label+'</button>';
       html += '</div>';
     } else if(cell.type === 'dirt'){
       var job = (estActive && estActive.job) || null;
@@ -22436,22 +22454,23 @@
       var canRaise = cell.height < ESTATE_MAX_HEIGHT-1;
       var raiseLevelOk = digLvl >= ESTATE_RAISE_LEVEL;
       var raiseDirtOk = dirtOwned >= ESTATE_RAISE_DIRT_COST;
-      var raiseLabel = jobHere&&job.kind==='raise' ? 'Working\u2026' : (otherHere ? 'In use' : (jobActive ? 'Busy' : (!canRaise?'Max Height':(!raiseLevelOk?'Lv '+ESTATE_RAISE_LEVEL+' Req.':(!raiseDirtOk?'Need Dirt':'Raise')))));
+      var raisePrecondLabel = !canRaise?'Max Height':(!raiseLevelOk?'Lv '+ESTATE_RAISE_LEVEL+' Req.':'Need Dirt');
+      var rs = estQBtn(canRaise&&raiseLevelOk&&raiseDirtOk, raisePrecondLabel, 'Raise');
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Raise Layer</b><br>Requires Digging '+ESTATE_RAISE_LEVEL+' &bull; Costs '+ESTATE_RAISE_DIRT_COST+' Dirt (have '+dirtOwned+')<br>Takes 10 min &bull; +'+ESTATE_TERRAFORM_XP+' Digging XP on completion</div>';
-      html += '<button class="action-btn" data-action="estateRaiseLayer" data-x="'+x+'" data-y="'+y+'" '+((canRaise&&raiseLevelOk&&raiseDirtOk&&!jobActive&&!tileBusy)?'':'disabled')+'>'+raiseLabel+'</button>';
+      html += '<button class="action-btn" data-action="estateRaiseLayer" data-x="'+x+'" data-y="'+y+'" '+(rs.off?'disabled':'')+'>'+rs.label+'</button>';
       html += '</div>';
       var canLower = cell.height > 0;
       var lowerReq = estateLowerRequiredLevel(cell.height);
       var lowerLevelOk = digLvl >= lowerReq;
-      var lowerLabel = jobHere&&job.kind==='lower' ? 'Working\u2026' : (otherHere ? 'In use' : (jobActive ? 'Busy' : (!canLower?'Bedrock':(!lowerLevelOk?'Lv '+lowerReq+' Req.':'Lower'))));
+      var ls = estQBtn(canLower&&lowerLevelOk, !canLower?'Bedrock':'Lv '+lowerReq+' Req.', 'Lower');
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Lower Layer</b><br>Requires Digging '+lowerReq+' &bull; Recovers '+ESTATE_LOWER_DIRT_REWARD+' Dirt<br>Takes 10 min &bull; +'+ESTATE_TERRAFORM_XP+' Digging XP on completion</div>';
-      html += '<button class="action-btn" data-action="estateLowerLayer" data-x="'+x+'" data-y="'+y+'" '+((canLower&&lowerLevelOk&&!jobActive&&!tileBusy)?'':'disabled')+'>'+lowerLabel+'</button>';
+      html += '<button class="action-btn" data-action="estateLowerLayer" data-x="'+x+'" data-y="'+y+'" '+(ls.off?'disabled':'')+'>'+ls.label+'</button>';
       html += '</div>';
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Pave Tile</b><br>'+(_tileIsWater ? 'This tile is underwater. Raise it above the waterline before paving.' : 'Change this tile to a stone paving finish -- requires 20 of the matching Paving Tile and its Paving level.')+'</div>';
-      html += '<button class="action-btn" data-action="estateTogglePavingMenu" '+((jobHere||otherHere||_tileIsWater)?'disabled':'')+'>'+(jobHere?'Busy':(otherHere?'In use':(_tileIsWater?'Underwater':(estatePavingMenuOpen?'Close List':'Choose Finish'))))+'</button>';
+      html += '<button class="action-btn" data-action="estateTogglePavingMenu" '+((estToggleBlockedByOther()||_tileIsWater)?'disabled':'')+'>'+(estToggleBlockedByOther()?'In use':(_tileIsWater?'Underwater':(estatePavingMenuOpen?'Close List':'Choose Finish')))+'</button>';
       html += '</div>';
       if(estatePavingMenuOpen){
         var pavingLvl = getLevel(state.xp.paving);
@@ -22471,7 +22490,7 @@
       var atFieldCap = estateFieldCount(estActive.grid) >= ESTATE_MAX_FIELDS;
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Place Field</b><br>Till this tile into a Farming plot from 100 of the matching Digging resource. Grows crops up to the field’s tier; takes 5 min/tier &amp; grants Digging XP. Max '+ESTATE_MAX_FIELDS+' per estate ('+estateFieldCount(estActive.grid)+' built).</div>';
-      html += '<button class="action-btn" data-action="estateToggleFieldMenu" '+((placeableFields.length&&!jobHere&&!otherHere)?'':'disabled')+'>'+(jobHere?'Busy':(otherHere?'In use':(atFieldCap?'Max Fields':(placeableFields.length?(estateFieldMenuOpen?'Close List':'Choose'):'None ready'))))+'</button>';
+      html += '<button class="action-btn" data-action="estateToggleFieldMenu" '+((placeableFields.length&&!estToggleBlockedByOther())?'':'disabled')+'>'+(estToggleBlockedByOther()?'In use':(atFieldCap?'Max Fields':(placeableFields.length?(estateFieldMenuOpen?'Close List':'Choose'):'None ready')))+'</button>';
       html += '</div>';
       if(estateFieldMenuOpen && placeableFields.length){
         html += '<div class="estate-paving-library">';
@@ -22524,7 +22543,7 @@
         var placeable = placeableWorkshopsFor(cell);
         html += '<div class="estate-action-row">';
         html += '<div class="estate-action-info"><b>Place Workshop</b><br>Boosts a skill’s speed &amp; grants a chance to double its output. Workshop tier must be ≤ this pavement ('+TIER_NAMES[Math.max(0,pavementTierOf(cell))]+'). One workshop per skill.</div>';
-        html += '<button class="action-btn" data-action="estateToggleWorkshopMenu" '+((placeable.length&&!pTileBusy)?'':'disabled')+'>'+(pTileBusy?'In use':(placeable.length?(estateWorkshopMenuOpen?'Close List':'Choose'):'None ready'))+'</button>';
+        html += '<button class="action-btn" data-action="estateToggleWorkshopMenu" '+((placeable.length&&!estToggleBlockedByOther())?'':'disabled')+'>'+(estToggleBlockedByOther()?'In use':(placeable.length?(estateWorkshopMenuOpen?'Close List':'Choose'):'None ready'))+'</button>';
         html += '</div>';
         if(estateWorkshopMenuOpen && placeable.length){
           html += '<div class="estate-paving-library">';
@@ -22538,7 +22557,7 @@
         var placeableC = placeableCottagesFor(cell);
         html += '<div class="estate-action-row">';
         html += '<div class="estate-action-info"><b>Place Cottage</b><br>Houses a Peon to work an adjacent Workshop’s skill (see the <b>Peons</b> tab). Cottage tier must be ≤ this pavement.</div>';
-        html += '<button class="action-btn" data-action="estateToggleCottageMenu" '+((placeableC.length&&!pTileBusy)?'':'disabled')+'>'+(pTileBusy?'In use':(placeableC.length?(estateCottageMenuOpen?'Close List':'Choose'):'None ready'))+'</button>';
+        html += '<button class="action-btn" data-action="estateToggleCottageMenu" '+((placeableC.length&&!estToggleBlockedByOther())?'':'disabled')+'>'+(estToggleBlockedByOther()?'In use':(placeableC.length?(estateCottageMenuOpen?'Close List':'Choose'):'None ready'))+'</button>';
         html += '</div>';
         if(estateCottageMenuOpen && placeableC.length){
           html += '<div class="estate-paving-library">';
