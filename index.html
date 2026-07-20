@@ -13618,11 +13618,19 @@
   // Familiar/DoT/reflect damage normally floors the enemy at 1 HP so YOUR attack lands the kill --
   // except when you wield a Staff (no attack), where your summons must be able to finish the fight.
   function familiarCanKill(){ var ws = getWeaponStyle(state.equippedMainhand); return !!ws.noAttack; }
-  // Apply chip damage from a non-player source (familiar spell/DoT, ward reflect). Kills only if the
-  // player can't attack (staff); otherwise floors at 1.
-  function applyChipDamage(dmg){
+  // Apply chip damage from a non-player source. DoT and familiar chip still floor the foe at 1 unless you
+  // wield a Staff (familiarCanKill) -- that gate exists so a summoner build can finish a kill its familiars
+  // did all the work for, and so passive ticks don't steal kills from your own swing.
+  //
+  // canKill=true opts a source OUT of that floor. RETALIATION damage passes it: Sentinel Thorns and Iron
+  // Maiden, Herald Riposte, Elemental Bastion, Shield Bash, Thornwall, Dragonscale, Bastionbreaker,
+  // Bramble, the Thorns enchant and Ward reflect. A reflect wall is an intentional, built-for kill
+  // condition -- a Sentinel stacking armour and thorns is choosing to kill by being hit -- and flooring it
+  // at 1 meant the last sliver of a foe could only ever be removed by swinging at it, which quietly
+  // invalidated the whole build.
+  function applyChipDamage(dmg, canKill){
     var act = state.activity; if(!act || act.type!=='combat') return;
-    if(familiarCanKill()){
+    if(canKill || familiarCanKill()){
       act.monsterHp -= dmg;
       if(act.monsterHp <= 0){ var m = monsterById(act.monsterId); if(m) defeatMonster(m); }
     } else {
@@ -13764,11 +13772,11 @@
       // Herald Riposte Guard (Lv20): reflect a share of the damage the block just prevented.
       if(heraldBonus(20)){
         var _hr = Math.max(1, Math.round((_preBlock - rawDmg) * heraldRipostePct(state)));
-        applyChipDamage(_hr); spawnCombatFloat('⟲ Riposte -'+fmt(_hr), 'ft-reflect', true);
+        applyChipDamage(_hr, true); spawnCombatFloat('⟲ Riposte -'+fmt(_hr), 'ft-reflect', true);
       }
       // Elemental Bastion (Herald D4 full): a Perfect Guard reflects an elemental burst of the prevented damage.
       var _eb = d4HeraldBastionReflect(_preBlock - rawDmg, monster, state);
-      if(_eb > 0){ applyChipDamage(_eb); spawnCombatFloat('⟲ Elemental Bastion -'+fmt(_eb), 'ft-reflect', true); }
+      if(_eb > 0){ applyChipDamage(_eb, true); spawnCombatFloat('⟲ Elemental Bastion -'+fmt(_eb), 'ft-reflect', true); }
       // Sentinel Brittle Guard (Lv60): a Block Sunders the foe's armour (consumed in playerAttackTick).
       if(sentinelBonus(60)){ state.classDebuffs.enemyArmorUntil = Date.now() + SENTINEL_BRITTLE_MS; spawnFloatingText('Sundered!', 'ft-bonus'); }
       // Grave Guard (Herald D3 2pc): a Perfect Guard Curses the attacker.
@@ -13777,7 +13785,7 @@
       if(legActive('tombshatter')){ curseApply(act); decayApply(act, 1); }
       // Shield Bash (legendary mace): a Block smashes the attacker for a share of your Armor rating.
       var _sb = legShieldBashDamage(armorDefense, state);
-      if(_sb > 0){ applyChipDamage(_sb); spawnCombatFloat('⟲ Shield Bash -'+fmt(_sb), 'ft-reflect', true); }
+      if(_sb > 0){ applyChipDamage(_sb, true); spawnCombatFloat('⟲ Shield Bash -'+fmt(_sb), 'ft-reflect', true); }
       // Fortune's Riposte (legendary shield): a Block empowers your next strike (+40%).
       if(legActive('fortunesriposte')) state.riposteCharged = true;
       // Frenzied Guard (legendary shield): a Block grants a brief attack-speed window.
@@ -13794,7 +13802,7 @@
       // Rimeshell (D2): a Block adds 2 Chill stacks to the attacker.
       if(legActive('rimeshell')){ frostwardenApplyChill(act); frostwardenApplyChill(act); }
       // Thornwall (D2): a Block reflects 120% of the damage it prevented.
-      if(legActive('thornwall')){ var _tw = Math.max(1, Math.round((_preBlock - rawDmg) * LEG_THORNWALL_MULT)); applyChipDamage(_tw); spawnCombatFloat('⟲ Thornwall -'+fmt(_tw), 'ft-reflect', true); }
+      if(legActive('thornwall')){ var _tw = Math.max(1, Math.round((_preBlock - rawDmg) * LEG_THORNWALL_MULT)); applyChipDamage(_tw, true); spawnCombatFloat('⟲ Thornwall -'+fmt(_tw), 'ft-reflect', true); }
       // Bulwark of the Breach (D2): every Block banks a Barrier worth 2% of max Health.
       if(legActive('bulwarkbreach')) legBarrierAdd(maxHp(state) * LEG_BULWARKBREACH_PCT);
       // ---- D3 (Underground) legendary shields (Batch S): all Block-triggered ----
@@ -13818,9 +13826,9 @@
       // Rimescale Shield (D4): a Block Chills and Scorches the attacker.
       if(legActive('rimescale')){ frostwardenApplyChill(act); scorchApply(act, 2); }
       // Dragonscale Bulwark (D4): a Perfect Guard reflects an elemental burst of the prevented damage.
-      if(legActive('dragonbulwark') && monster.element){ var _db = Math.max(1, Math.round((_preBlock - rawDmg) * 0.50 * elementDmgMult(state, monster.element))); applyChipDamage(_db); spawnCombatFloat('⟲ Dragonscale -'+fmt(_db), 'ft-reflect', true); }
+      if(legActive('dragonbulwark') && monster.element){ var _db = Math.max(1, Math.round((_preBlock - rawDmg) * 0.50 * elementDmgMult(state, monster.element))); applyChipDamage(_db, true); spawnCombatFloat('⟲ Dragonscale -'+fmt(_db), 'ft-reflect', true); }
       // Bastionbreaker (D4 mace): a Perfect Guard reflects the attacker's element for the FULL prevented damage.
-      if(legActive('bastionbreaker') && monster.element){ var _bb = Math.max(1, Math.round((_preBlock - rawDmg) * 1.00 * elementDmgMult(state, monster.element))); applyChipDamage(_bb); spawnCombatFloat('⟲ Bastionbreaker -'+fmt(_bb), 'ft-reflect', true); }
+      if(legActive('bastionbreaker') && monster.element){ var _bb = Math.max(1, Math.round((_preBlock - rawDmg) * 1.00 * elementDmgMult(state, monster.element))); applyChipDamage(_bb, true); spawnCombatFloat('⟲ Bastionbreaker -'+fmt(_bb), 'ft-reflect', true); }
     }
     // Sentinel thorns reflect (Spiked Barrier reflects ALL incoming; Iron Maiden adds the blocked share;
     // Bulwark's Wrath adds your Armor rating). Reckoning (Lv40) lets the reflect Critically Hit.
@@ -13835,7 +13843,7 @@
         // legendaries and set bonuses were silently excluded and Reckoning crit far less than advertised.
         if((sentinelBonus(40) || legReflectCanCrit(state)) && Math.random() < playerCritChance(monster)){ _refl *= legReflectCritMult(state); _rcrit = true; }
         var _rdmg = Math.max(1, Math.round(_refl));
-        applyChipDamage(_rdmg);
+        applyChipDamage(_rdmg, true);   // Sentinel Thorns / Iron Maiden: a reflect wall may land the kill
         // Name the source so a Sentinel can tell WHY it fired: a plain hit is Spiked Barrier, a blocked
         // one adds Iron Maiden's share. Thausale reported not being able to tell block-reflect apart.
         spawnCombatFloat('⟲ '+(_rcrit?'✦ ':'')+(blocked?'Iron Maiden':'Thorns')+' -'+fmt(_rdmg), _rcrit?'ft-reflect ft-reflect-crit':'ft-reflect', true);
@@ -13849,12 +13857,12 @@
     // available to any class (Spellblade Empowered Runes amplifies it like every other enchant).
     var _thornsEnch = Math.round((equippedEnchantTotals(state).thorns || 0) * spellbladeEnchantBoost(state));
     if(_thornsEnch > 0){
-      applyChipDamage(_thornsEnch);
+      applyChipDamage(_thornsEnch, true);
       spawnCombatFloat('⟲ Thorns (ench) -'+fmt(_thornsEnch), 'ft-reflect', true);
     }
     // Signet of the Bramble (D2): reflect a share of every incoming hit back at the attacker.
     var _bramble = legendaryRingBonus('d2_bramble', state);
-    if(_bramble > 0){ var _brd = Math.max(1, Math.round(incomingBeforeDefense * _bramble)); applyChipDamage(_brd); spawnCombatFloat('⟲ Bramble -'+fmt(_brd), 'ft-reflect', true); }
+    if(_bramble > 0){ var _brd = Math.max(1, Math.round(incomingBeforeDefense * _bramble)); applyChipDamage(_brd, true); spawnCombatFloat('⟲ Bramble -'+fmt(_brd), 'ft-reflect', true); }
     var shieldCounter = weightedShieldCounter(offhandStyle, monster.attackTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
     var effectiveShieldDefense = (offhandStyle && offhandStyle.type==='shield' && offhandItem) ? offhandItem.defense * shieldCounter * offhandProficiency * (1 + shieldProfMult(state)) : 0;
     var dmgToPlayer = Math.max(1, Math.round((rawDmg - armorDefense - effectiveShieldDefense) / tenacityLowHpMult(state)));
@@ -13982,7 +13990,7 @@
     if(dmgToPlayer > 0) spawnCombatFloat('-'+fmt(dmgToPlayer)+' '+(monster.element?elementIcon(monster.element):''), 'ft-taken', false); // damage taken + its element
     if(monster.element) awardElementXp(monster.element, dmgToPlayer); // Elemental Attunement also trains by taking that element's damage
     if(wardReflected > 0){
-      applyChipDamage(wardReflected); // reflected damage chips the enemy (floors at 1 unless you wield a Staff)
+      applyChipDamage(wardReflected, true); // a Ward reflect may land the kill
       // Was a player-side spawnFloatingText, which put damage dealt to the ENEMY over your own health bar
       // and styled it as a generic 'rare' proc. It's retaliation like the rest -- same anchor, same colour.
       spawnCombatFloat('⟲ Ward -'+fmt(wardReflected)+(monster.element?' '+elementIcon(monster.element):''), 'ft-reflect', true);
