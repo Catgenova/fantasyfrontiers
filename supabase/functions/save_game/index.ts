@@ -23,6 +23,10 @@ const MAX_BYTES = 500_000; // keep under the table's ~512KB column guard
 // value pinned the row's progress so high that every later legitimate save was rejected as stale,
 // which locked the account out of saving entirely.
 const MAX_PROGRESS = 1_000_000_000_000_000; // 1e15
+// How long a claim keeps fencing after its holder's last write. A live client pushes at least every 8s
+// (CLOUD_PUSH_INTERVAL), so anything past this means the tab is closed, asleep or gone -- and holding the
+// account hostage to a dead tab is worse than the rare double-session this guards against.
+const STALE_CLAIM_MS = 45_000;
 
 // Derive the progress score from the SUBMITTED SAVE instead of trusting a client-sent number.
 // Previously `progress` was read straight off the body with only a `>= 0` floor, so a request could
@@ -87,7 +91,9 @@ Deno.serve(async (req) => {
     // Only claims an EXISTING row. A brand-new account has no save yet; its first real write claims
     // implicitly (see the upsert below), so there is nothing to do here.
     const { data: row } = await admin.from("saves").select("version").eq("user_id", userId).maybeSingle();
-    if (row) await admin.from("saves").update({ active_session: sessionId }).eq("user_id", userId);
+    // Stamp updated_at too: a fresh claim must immediately look "live", or a third tab arriving seconds
+    // later would see a stale timestamp and take the save straight back off this one.
+    if (row) await admin.from("saves").update({ active_session: sessionId, updated_at: new Date().toISOString() }).eq("user_id", userId);
     return json({ ok: true, claimed: true, version: row?.version ?? 0 });
   }
 
@@ -105,15 +111,25 @@ Deno.serve(async (req) => {
   // Forward-only PROGRESS guard: never let a lower-progress state overwrite a higher one
   // (this is what stops an empty/regressed save from clobbering real progress).
   const { data: prev } = await admin.from("saves")
-    .select("progress, version, active_session").eq("user_id", userId).maybeSingle();
+    .select("progress, version, active_session, updated_at").eq("user_id", userId).maybeSingle();
   const prevProgress = prev?.progress ?? 0;
 
   // Session fence. Deliberately returns HTTP 200 with { fenced:true } rather than a 4xx: cloudSave runs
   // every 8s on the client's hot path, and supabase-js turns a non-2xx into a FunctionsHttpError whose
   // body must be read back off error.context -- extra async work on every push just to learn a flag.
   // The existing `stale` 409 is already ignored client-side for the same reason.
+  //
+  // A claim only fences while its holder is STILL WRITING. Reported live: a player closed every other tab
+  // and was still locked out, because active_session persisted forever with nothing to expire it -- a dead
+  // tab fenced them out of their own account permanently. A live client pushes at least every 8s, so if
+  // the holder has gone quiet for STALE_CLAIM_MS it is not playing and the newcomer silently takes over.
   if (sessionId && prev?.active_session && prev.active_session !== sessionId) {
-    return json({ ok: false, fenced: true, error: "This account is open in another window." });
+    const lastWrite = prev.updated_at ? Date.parse(prev.updated_at as string) : 0;
+    const quietFor = Date.now() - (Number.isFinite(lastWrite) ? lastWrite : 0);
+    if (quietFor < STALE_CLAIM_MS) {
+      return json({ ok: false, fenced: true, error: "This account is open in another window." });
+    }
+    // else: fall through and let this session take the save over (the upsert below re-stamps the claim).
   }
   // `force` exists for a deliberate RESET, which by definition LOWERS progress. It must never be a
   // way to push progress UP -- otherwise it's a blanket bypass of the guard for anyone who sets the

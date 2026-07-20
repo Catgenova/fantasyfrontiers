@@ -22640,13 +22640,33 @@
     return 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
   })();
   var cloudFenced = false;          // true once another window took the claim -- all writes stop
-  // Take the claim. Called on auth restore, before this tab has anything new to push.
+  // Kill switch: set false to disable fencing entirely (saves stop carrying a session id, so the server
+  // never fences). Here because this feature locked a player out of their own account once already.
+  var CLOUD_FENCE_ENABLED = true;
+  // Only send our session id AFTER the claim is confirmed. Reported live as an endless reload loop:
+  // cloudSave attached the new session id immediately on load, but the claim is an async round-trip, so
+  // the first push could reach the server while it still held the PREVIOUS tab's id -- and the client
+  // fenced itself against its own dead session. A cold tab open was slow enough for the claim to win the
+  // race; the overlay's own Reload button was not, which is exactly the asymmetry the player reported
+  // ("closing the tab and reopening fixes it, rather than the in-button reload").
+  var cloudClaimed = false;
+  var _cloudClaimTries = 0;
   function cloudClaimSession(){
-    if(!CLOUD_SYNC_ENABLED || !CHAT_ENABLED || !chatClient || !authUser || !authUser.id) return;
+    if(!CLOUD_SYNC_ENABLED || !CHAT_ENABLED || !CLOUD_FENCE_ENABLED || !chatClient || !authUser || !authUser.id) return;
     try{
       chatClient.functions.invoke('save_game', { body: { action:'claim', session_id: cloudSessionId } })
-        .then(function(){}, function(){});   // best-effort: a failed claim just means no fence this session
-    }catch(e){}
+        .then(function(res){
+          if(res && res.data && res.data.ok){ cloudClaimed = true; _cloudClaimTries = 0; return; }
+          cloudRetryClaim();
+        }, function(){ cloudRetryClaim(); });
+    }catch(e){ cloudRetryClaim(); }
+  }
+  // A dropped claim used to be silent and permanent: without it this tab never owns the save, so every
+  // push is fenced by whatever id is stored. Retry a few times with backoff instead.
+  function cloudRetryClaim(){
+    if(cloudClaimed || cloudFenced || _cloudClaimTries >= 4) return;
+    _cloudClaimTries++;
+    setTimeout(cloudClaimSession, 1500 * _cloudClaimTries);
   }
   // Another window owns the save. Stop simulating and stop writing IMMEDIATELY -- continuing would keep
   // accruing progress this tab can never persist, which is exactly the "I lost an hour" report.
@@ -22683,7 +22703,11 @@
       if(cloudFenced) return;   // another window owns the save -- this tab's state is stale, never push it
       var score = saveProgressScore(state); if(score <= 0) return;
       state.lastSaved = Date.now();
-      var body = JSON.stringify({ data: state, client_saved_at: state.lastSaved, progress: score, session_id: cloudSessionId });
+      // Same rule as cloudSave: only claim-confirmed tabs identify themselves, so an unclaimed tab's
+      // final save still lands instead of being fenced away on the way out the door.
+      var _beacon = { data: state, client_saved_at: state.lastSaved, progress: score };
+      if(CLOUD_FENCE_ENABLED && cloudClaimed) _beacon.session_id = cloudSessionId;
+      var body = JSON.stringify(_beacon);
       if(body.length > 60000) return; // over the keepalive cap -> the async flush (visibilitychange) handles it
       fetch(CHAT_CONFIG.supabaseUrl.replace(/\/+$/,'') + '/functions/v1/save_game', {
         method:'POST', keepalive:true,
@@ -22720,9 +22744,11 @@
     cloudLastPush = now;
     if(!chatClient){ if(!(await authEnsureClient())) return; }
     try{
-      var res = await chatClient.functions.invoke('save_game', {
-        body: { data: state, client_saved_at: state.lastSaved || 0, progress: score, force: !!force, session_id: cloudSessionId }
-      });
+      // session_id is attached ONLY once the claim is confirmed. An absent id is never fenced (the
+      // rollout-safe rule), so an unclaimed tab saves normally instead of locking itself out.
+      var _body = { data: state, client_saved_at: state.lastSaved || 0, progress: score, force: !!force };
+      if(CLOUD_FENCE_ENABLED && cloudClaimed) _body.session_id = cloudSessionId;
+      var res = await chatClient.functions.invoke('save_game', { body: _body });
       // A non-ok/'stale' result means the cloud holds a higher-progress save; leave both
       // sides untouched (non-destructive) and reconcile on the next load.
       // `fenced` is different: another window took the claim, so this tab must stop entirely.
