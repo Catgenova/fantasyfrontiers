@@ -10321,6 +10321,25 @@
     }
     return null;
   }
+  // Combat runs ONLY in the primary slot (all the fight plumbing reads state.activity). Before a
+  // fight claims it, move a running gather/craft/faith task into a free extra (belt) slot instead of
+  // silently killing it -- players with open queue slots kept losing their first task to every fight.
+  // With every slot full the fight still replaces the task (the pre-belt behavior), but says so.
+  function relocatePrimaryTaskToFreeSlot(){
+    var cur = state.activity;
+    if(!cur || (cur.type!=='gather' && cur.type!=='craft' && cur.type!=='pray')) return;
+    ensureCraftSlotCapacity();
+    var maxSlots = getMaxCraftSlots(state);
+    for(var i=0;i<state.extraCraftSlots.length && i<maxSlots-1;i++){
+      if(!state.extraCraftSlots[i].type){
+        state.extraCraftSlots[i] = cur;
+        state.activity = { type:null };
+        needsRender = true;
+        return;
+      }
+    }
+    addLog('No free task slot — the fight replaces your running task.', 'danger');
+  }
   // While the player is committed to a dungeon (a live solo fight, or a networked party in its lobby/
   // active run), they can't start ANY other action-bar task -- starting one would abandon or run
   // alongside the dungeon fight. Leaving/finishing the run clears the lock. (dungeonRun/dungeonNet are
@@ -13121,6 +13140,7 @@
     var m = monsterById(monsterId);
     if(!m) return;
     if(combatLevelEquivalent(state) < m.levelReq) return;
+    relocatePrimaryTaskToFreeSlot();
     state.activity = { type:'combat', monsterId:monsterId, monsterHp:m.hp, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), disengageUsed:false, guardianBondUsed:false, cheatDeathUsed:false, samuraiFirstStrike:true, samuraiFocus:0, staticCharge:0, galvanizeStacks:0 };
     state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0; // fresh Duelist combat state
   }
@@ -18835,6 +18855,7 @@
     var _base = dungeonRun.def.enemies[idx]; if(!_base) return;
     var enemy = dungeonSoloEnemy(_base); // solo faces a 30%-scaled clone (HP + attack) of the group foe
     dungeonRun.idx = idx;
+    relocatePrimaryTaskToFreeSlot();
     state.activity = { type:'combat', monsterId:enemy.id, monsterHp:enemy.hp, tickAccum:0, monsterTickAccum:0,
       duelStartedAt:Date.now(), disengageUsed:false, guardianBondUsed:false, cheatDeathUsed:false,
       samuraiFirstStrike:true, samuraiFocus:0, staticCharge:0, galvanizeStacks:0,
@@ -19115,6 +19136,7 @@
     var foe = dungeonNetEnemy(s.layer, idx); if(!foe) return;
     if(!act || act.type!=='combat' || act.netDungeon !== s.id || act.netIndex !== idx){
       // New foe (or first entry): start a fresh local fight seeded from the shared HP.
+      relocatePrimaryTaskToFreeSlot();
       state.activity = { type:'combat', monsterId:foe.id, monsterHp:Math.max(1, s.enemy_hp||foe.hp),
         netDungeon:s.id, netIndex:idx, tickAccum:0, offhandTickAccum:0, monsterTickAccum:0,
         duelStartedAt:Date.now(), lastDamagedAt:0 };
@@ -29650,7 +29672,7 @@
       parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, mainhandEnhanceMult:mainhandEnhanceMult,
-      startGather:startGather, startCraft:startCraft, startPray:startPray,
+      startGather:startGather, startCraft:startCraft, startPray:startPray, startCombat:startCombat, relocatePrimaryTaskToFreeSlot:relocatePrimaryTaskToFreeSlot,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
       GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, skillTabsByLabel:skillTabsByLabel,

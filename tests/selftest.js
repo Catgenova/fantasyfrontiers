@@ -672,6 +672,40 @@
     }
   });
 
+  // ---- Combat placement: a fight claims the primary slot without killing a queued task ----
+  // Regression: startCombat wrote state.activity directly, so starting a fight silently replaced
+  // the first task in the action queue even when an extra (belt) slot sat empty.
+  suite('combat: starting a fight relocates the primary task to a free slot', function(){
+    var S = FF._state;
+    var savedAct = S.activity, savedExtra = S.extraCraftSlots, savedBt = S.equippedBeltTier, savedBr = S.equippedBeltRarity;
+    try {
+      S.equippedBeltTier = 1; S.equippedBeltRarity = 'rare'; // 3 task slots: primary + 2 extras
+      var m0 = FF.MONSTERS.reduce(function(a,b){ return (b.levelReq||0) < (a.levelReq||0) ? b : a; });
+      // Free extra slot: the running task moves there (queue target intact) and the fight takes primary.
+      var task = { type:'craft', skill:'cooking', itemId:'cooking_t0', progress:0, targetQty:5, producedQty:0 };
+      S.activity = task; S.extraCraftSlots = [{type:null},{type:null}];
+      FF.startCombat(m0.id);
+      eq(S.activity.type, 'combat', 'the fight takes the primary slot');
+      ok(S.extraCraftSlots[0] === task, 'the running task moved to the free extra slot');
+      eq(task.targetQty, 5, 'the relocated task keeps its queue target');
+      // Every slot full: the fight still replaces the primary task (legacy), extras untouched.
+      var t2 = { type:'craft', skill:'cooking', itemId:'cooking_t0', progress:0 };
+      var e1 = { type:'gather', skill:'mining', itemId:'mining_t0', progress:0 };
+      var e2 = { type:'gather', skill:'fishing', itemId:'fishing_t0', progress:0 };
+      S.activity = t2; S.extraCraftSlots = [e1, e2];
+      FF.startCombat(m0.id);
+      eq(S.activity.type, 'combat', 'full slots: the fight still takes primary');
+      ok(S.extraCraftSlots[0] === e1 && S.extraCraftSlots[1] === e2, 'full slots: extra tasks are untouched');
+      // Idle primary: nothing to relocate, extras stay empty.
+      S.activity = { type:null }; S.extraCraftSlots = [{type:null},{type:null}];
+      FF.startCombat(m0.id);
+      eq(S.activity.type, 'combat', 'idle primary: the fight starts normally');
+      ok(!S.extraCraftSlots[0].type, 'idle primary: no phantom task appears in the extras');
+    } finally {
+      S.activity = savedAct; S.extraCraftSlots = savedExtra; S.equippedBeltTier = savedBt; S.equippedBeltRarity = savedBr;
+    }
+  });
+
   // ---- Task slots: free base slot, belt + Logic stacking, cap at 15 ----------------------
   suite('task slots: everyone gets a base slot, capped at 15', function(){
     eq(FF.MAX_TASK_SLOTS, 15, 'the task-slot ceiling is 15');
