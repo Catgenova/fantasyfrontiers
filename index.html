@@ -13960,7 +13960,7 @@
     // per-kill reward once on the confirmed advance.
     //
     // Before this guard the mirror ran the full solo kill path whenever high DPS zeroed it between the
-    // 2.5s assault syncs: it reset monsterHp back to FULL (so dungeonNetCollectDamage, which reports
+    // assault syncs: it reset monsterHp back to FULL (so dungeonNetCollectDamage, which reports
     // prev-monsterHp once per tick, then saw almost no drop and the real counter crawled) AND paid out
     // gold + loot + a kill each time (200+ phantom kills in the chronicle while the counter sat at 6/25).
     // Pin the mirror just above zero and bail; the tick still reports the real drop down to here.
@@ -18978,6 +18978,11 @@
   // pendingDamage / lastEnemyHp drive the Phase 3 report: damage the local engine actually dealt since the
   // last send, measured by watching the local foe's HP rather than instrumenting every damage site.
   var dungeonNet = { status:'idle', session:null, members:[], subSession:null, subMembers:null, _subId:null, busy:false, error:'', lastAssault:0, lobbiesByLayer:{}, clearedHandled:false, deathHandled:false, pendingDamage:0, lastEnemyHp:null, pendingHeal:{}, swingsResolved:0, shieldTaken:0, rewardedIndex:null };
+  // How often each client reports its damage/HP and pulls the shared enemy HP back. Also the cadence the
+  // party heals and the swing queue flush on. Lower = a snappier shared HP bar and faster heal/kill
+  // feedback, at more assault RPCs/sec per player (watch the rl_hit limiter for big parties). The server
+  // caps CREDITED damage by elapsed time, so a faster cadence doesn't speed the kill pace, only the UI.
+  var DUNGEON_ASSAULT_INTERVAL_MS = 500;
   var dungeonJoinCodeDraft = '';   // in-progress "Join by ID" input, preserved across re-renders
   // A representative DPS proxy (avg weapon damage / attack interval, folding the always-on mults).
   // The server clamps it, so an inflated value can't dump impossible damage.
@@ -19259,7 +19264,7 @@
   }
   // Party heals BATCH. Mending Ray is a per-frame heal-over-time, so sending one request per tick would
   // hammer the edge function for a few HP at a time; instead heals accumulate per target and flush on the
-  // same 2.5s cadence as the assault. shieldFrac is kept per target (last writer wins -- in practice one
+  // same cadence as the assault (DUNGEON_ASSAULT_INTERVAL_MS). shieldFrac is kept per target (last writer wins -- in practice one
   // healer's perk set, and the server clamps it anyway).
   function dungeonNetQueueHeal(userId, amount, shieldFrac){
     if(!userId || !(amount > 0)) return;
@@ -19292,11 +19297,11 @@
     var me = dungeonNetMyMember();
     if(me && !me.alive) return; // a downed delver can't attack; they spectate until wipe or clear
     var now = Date.now();
-    if(now - dungeonNet.lastAssault < 2500) return;
+    if(now - dungeonNet.lastAssault < DUNGEON_ASSAULT_INTERVAL_MS) return;
     dungeonNet.lastAssault = now;
     var dmg = Math.max(0, Math.round(dungeonNet.pendingDamage));
     dungeonNet.pendingDamage = 0;
-    dungeonNetFlushHeals(s.id);            // party heals ride the same 2.5s cadence (it clears the queue itself)
+    dungeonNetFlushHeals(s.id);            // party heals ride the same assault cadence (it clears the queue itself)
     // `power` rides along as the CEILING the server clamps the reported damage to, not as the damage.
     // swings_resolved / shield_taken drain the two server->client queues by exactly what was applied.
     var sw = dungeonNet.swingsResolved, sh = dungeonNet.shieldTaken;
