@@ -10401,13 +10401,22 @@
   var pendingQueueTarget = 0;
   // Credit whatever this cycle actually produced toward the run, and stop the slot once it's met. Called
   // while gabCapture still holds the cycle's items, so it counts real output including bonus/rare rolls.
+  // `countId` names the ONE item that advances the run -- gathers and plain crafts pass their output id
+  // so side drops (Coal, a gem, a Critter Cache) can't inflate the tally. Pass null/omit to credit
+  // EVERYTHING the cycle captured: special forges (tools/weapons/armor/...) mint rarity-suffixed ids
+  // under an act with no itemId at all, and shaft/butcher/relic recipes produce ids unrelated to their
+  // recipe key -- counting those by act.itemId never advanced producedQty, so a "craft N" run ignored
+  // its target and kept crafting until materials ran out.
   // Returns true if the run finished (the caller must not keep cycling a finished slot).
-  function queueCreditOutput(act){
+  function queueCreditOutput(act, countId){
     if(!act || !act.targetQty || !gabCapture) return false;
-    var got = gabCapture.items[act.itemId] || 0;
+    var got = 0;
+    if(countId != null){ got = gabCapture.items[countId] || 0; }
+    else { for(var k in gabCapture.items){ got += gabCapture.items[k] || 0; } }
     if(got > 0) act.producedQty = (act.producedQty || 0) + got;
     if((act.producedQty || 0) < act.targetQty) return false;
-    var nm = (ALL_SELLABLE[act.itemId] || ALL_GATHER_ITEMS[act.itemId] || {}).name || act.itemId;
+    var nm = act.craftKind ? ((getSpecialTierData(act)||{}).name || 'items')
+           : ((ALL_SELLABLE[act.itemId] || ALL_GATHER_ITEMS[act.itemId] || {}).name || act.itemId);
     addLog('Finished your run of ' + fmt(act.producedQty) + ' ' + nm + '.', 'important');
     stopActivityForAct(act);
     return true;
@@ -10598,7 +10607,7 @@
         completeSpecialCraft(act, tierData);
         maybeSummonFamiliar(specialSkillId);
         gabEmitReward(gabKeyForAct(act), gabCapture, null, Object.keys(gabCapture.items).length > 0);
-        queueCreditOutput(act);
+        queueCreditOutput(act, null); // special forges mint rarity-suffixed ids -- credit the whole capture
         gabCapture = null;
         tierData = getSpecialTierData(act);
         if(!tierData){ act.type = null; needsRender = true; break; }
@@ -10682,7 +10691,9 @@
         maybeSummonFamiliar(recipe.shaftCraft ? 'fletching' : recipe.relicCraft ? 'archaeology' : act.skill);
         // Success = the craft produced any output (a plain craft fail yields nothing -> red X).
         gabEmitReward(gabKeyForAct(act), gabCapture, act.itemId, Object.keys(gabCapture.items).length > 0);
-        queueCreditOutput(act);
+        // Shaft/butcher/relic outputs use ids unrelated to their recipe key (act.itemId) -- credit the
+        // whole capture for those. A plain craft counts only its own output id.
+        queueCreditOutput(act, (recipe.shaftCraft || recipe.relicCraft || (recipe.meatId && recipe.hideId)) ? null : act.itemId);
         gabCapture = null;
         var recheckInputs = recipe.shaftCraft ? makeShaftInputs(act.logTierIndex) : recipe.inputs;
         if(!hasInputs(recheckInputs)){
@@ -10747,7 +10758,7 @@
       maybeSummonFamiliar(act.skill);
       // Success = the main resource dropped (digging/mining/fishing can whiff; other gathers always hit).
       gabEmitReward(gabKeyForAct(act), gabCapture, act.itemId, (gabCapture.items[act.itemId]||0) > 0);
-      queueCreditOutput(act);
+      queueCreditOutput(act, act.itemId); // only the main resource advances the run (Coal/gem/cache side drops don't)
       gabCapture = null;
       effTime = item.time*1000*speedMultiplier(state)*gatherToolSpeedMultiplier(state, act.skill)*(PHYS_LONG_GATHER.indexOf(act.skill)!==-1?(1-enduranceGatherSpeedBonus(state)):1);
     }
@@ -29568,6 +29579,7 @@
   // ---- Test seam: expose pure logic to the browser test suite (tests/selftest.js), only when
   // the page is opened with ?selftest. Production loads never touch this. ----
   if(typeof location !== 'undefined' && /[?&]selftest\b/.test(location.search)){
+    DISCORD_FEED_WEBHOOK = ''; // never let a test craft roll (e.g. a fantastic relic) post to the real Discord channel
     window.__FF = {
       getLevel:getLevel, xpFloorForLevel:xpFloorForLevel, xpForNextLevel:xpForNextLevel, levelProgress:levelProgress, MAX_SKILL_LEVEL:MAX_SKILL_LEVEL, SKILL_CURVE_KNEE:SKILL_CURVE_KNEE, getLevelExt:getLevelExt, skillLevel:skillLevel, skillLevelProgress:skillLevelProgress, skillLevelXpSpan:skillLevelXpSpan, skillBarRightLabel:skillBarRightLabel, skillCanOverlevel:skillCanOverlevel, overLevelDoublePct:overLevelDoublePct, overLevelDoubles:overLevelDoubles, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, SKILL_MAX_LEVEL_EXT:SKILL_MAX_LEVEL_EXT, OVERLEVEL_DOUBLE_PER_LEVEL:OVERLEVEL_DOUBLE_PER_LEVEL, SKILL_OVERLEVEL_GROWTH:SKILL_OVERLEVEL_GROWTH, renderSkillProgressBar:renderSkillProgressBar, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
       isMortal:isMortal, MORTAL_XP_MULT:MORTAL_XP_MULT, addXp:addXp, choosePath:choosePath, mortalDeath:mortalDeath, pathSelectNeeded:pathSelectNeeded, PATH_CHOICES:PATH_CHOICES, renderPathSelect:renderPathSelect, removePathSelect:removePathSelect, lbRow:lbRow,

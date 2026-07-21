@@ -639,6 +639,39 @@
     }
   });
 
+  // ---- Queue targets: a finite "craft N" run credits its REAL output and stops on target --
+  // Regression: queueCreditOutput counted gabCapture.items[act.itemId], but special forges
+  // (craftKind acts) have no itemId at all and relic/butcher/shaft recipes produce ids unrelated
+  // to their recipe key -- producedQty never advanced, so a finite run ignored its target and
+  // kept crafting (and consuming materials) until they ran out.
+  suite('queue targets stop at the requested output', function(){
+    var S = FF._state;
+    var savedInv = S.inventory, savedAct = S.activity, savedExtra = S.extraCraftSlots;
+    try {
+      S.activity = { type:null }; S.extraCraftSlots = [];
+
+      // Relic extraction always yields exactly one item per cycle (a Relic or a Broken Relic),
+      // so a target of 3 must credit 3 cycles, consume exactly 3 artifacts, then stop the slot.
+      S.inventory = { muddyartifact_t0: 20 };
+      var ract = { type:'craft', skill:'archaeology', itemId:'archaeology_dig_t0', progress:0, targetQty:3, producedQty:0 };
+      FF.processCraftActivity(ract, 3600*1000);
+      eq(ract.producedQty, 3, 'relic run credits each cycle output and stops at 3');
+      eq(ract.type, null, 'relic run ends its activity at the target');
+      eq(S.inventory.muddyartifact_t0, 17, 'relic run consumed only the 3 cycles it needed');
+
+      // A special forge: a craftKind act with NO itemId (its outputs are rarity-suffixed ids).
+      // Two workshops requested with planks for 50 -- the run must stop once 2 are built.
+      S.inventory = { carpentry_t0: 500 };
+      var wact = { type:'craft', craftKind:'workshop', skillId:'mining', tierIndex:0, progress:0, targetQty:2, producedQty:0 };
+      FF.processCraftActivity(wact, 24*3600*1000);
+      eq(wact.producedQty, 2, 'special-forge run credits rarity-suffixed outputs and stops at 2');
+      eq(wact.type, null, 'special-forge run ends its activity at the target');
+      ok((S.inventory.carpentry_t0||0) > 0, 'special-forge run left the unneeded planks unconsumed');
+    } finally {
+      S.inventory = savedInv; S.activity = savedAct; S.extraCraftSlots = savedExtra;
+    }
+  });
+
   // ---- Task slots: free base slot, belt + Logic stacking, cap at 15 ----------------------
   suite('task slots: everyone gets a base slot, capped at 15', function(){
     eq(FF.MAX_TASK_SLOTS, 15, 'the task-slot ceiling is 15');
