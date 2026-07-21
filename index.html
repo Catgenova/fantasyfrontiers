@@ -10602,6 +10602,16 @@
         gabCapture = null;
         tierData = getSpecialTierData(act);
         if(!tierData){ act.type = null; needsRender = true; break; }
+        // Re-check materials for the NEXT craft right away (against the refreshed tierData --
+        // tier-advancing kinds like offhand change recipes mid-run), mirroring the generic branch
+        // below. Without this the activity only noticed empty inputs at the top of the next
+        // completed bar, so a full extra action ran before "Ran out of materials" fired.
+        if(!hasInputs(tierData.inputs)){
+          addLog('Ran out of materials for ' + tierData.name + '.', 'danger');
+          act.type = null;
+          needsRender = true;
+          break;
+        }
         effTimeSpecial = tierData.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state, specialSkillId);
       }
       return;
