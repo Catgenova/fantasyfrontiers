@@ -12277,6 +12277,8 @@
   var enhanceWarnArmed = false; // higher-tier-inscription warning acknowledged for the next click
   var enhanceLockArmed = false; // first-enhance enchant-lock warning acknowledged for the next click
   var improveConfirm = null;    // 'sell:<uid>' | 'sacrifice:<uid>' — arms a destructive action for a second confirming click
+  var improveAutoMod = null;    // Auto-roll: desired enchant mod id
+  var improveAutoMin = 1;       // Auto-roll: desired minimum roll value
   function improveSelect(id){ improveSel = id; improvePending = null; improveWarnArmed = false; enhanceWarnArmed = false; enhanceLockArmed = false; improveConfirm = null; render(); }
   // Currently-equipped BASE pieces (a filled slot with no unique uid). These live in their equip slot,
   // not in state.inventory, so the normal inventory picker can't see them -- surfaced here so equipped
@@ -12358,6 +12360,72 @@
     if(u && replaceIndex>=0 && replaceIndex<u.enchants.length){ u.enchants[replaceIndex] = improvePending.roll; addLog('Replaced an enchant with '+enchantLabel(u.kind,improvePending.roll)+'.','chronicle'); }
     else { addLog('Discarded the new roll.','chronicle'); }
     improvePending = null; saveGame(); render();
+  }
+  // Auto-roll: keep enchanting the selected item until the chosen mod lands at >= a target value, or the
+  // Enchant Crystals run out. Misses are DISCARDED (the crystal is still spent -- that's the gamble), which
+  // also keeps the per-roll cost stable: a free-slot run never grows the enchant list until the terminal
+  // hit, and a full-item "upgrade this same mod" run replaces in place, so the count -- and therefore the
+  // (count+1) crystal cost -- holds steady each roll. Only fills an empty slot or upgrades an existing copy
+  // of the target mod; it never overwrites an unrelated enchant. modIdArg/minArg/selOverride let the test
+  // suite drive it without the DOM. Returns { placed, spent } for tests.
+  function improveAutoRoll(modIdArg, minArg, selOverride){
+    if(improvePending) return null;
+    var sel = selOverride || improveSel; if(!sel) return null;
+    // Target selection: explicit args win (tests); otherwise read the live controls, falling back to state.
+    var modId, minWant;
+    if(modIdArg != null){ modId = modIdArg; minWant = minArg|0; }
+    else {
+      var selEl = (typeof document!=='undefined') && document.getElementById('improveAutoModSel');
+      var minEl = (typeof document!=='undefined') && document.getElementById('improveAutoMinInput');
+      modId = (selEl && selEl.value) || improveAutoMod;
+      minWant = minEl ? Math.floor(Number(minEl.value)) : improveAutoMin;
+    }
+    improveAutoMod = modId; improveAutoMin = Math.max(1, minWant||1);
+    // Resolve the selection to kind/tier/rarity/enhance/current-enchants (mirrors improveEnchant).
+    var isU = isUniqueId(sel), isEq = isEquipToken(sel);
+    var tier, enhance, kind, rarity, curEnchants;
+    if(isU){ var u0 = state.uniqueItems[sel]; if(!u0){ addLog('That item is gone.','danger'); return null; } tier=u0.tier; enhance=u0.enhance; kind=u0.kind; rarity=u0.rarity; curEnchants=u0.enchants; }
+    else if(isEq){ var eqm = equippedImprovableBases().filter(function(e){ return e.slot===equipTokenSlot(sel); })[0]; if(!eqm){ addLog('That item is no longer equipped.','danger'); return null; } var ep = parseImprovable(eqm.baseId); tier=ep.tier; enhance=0; kind=ep.kind; rarity=ep.rarity; curEnchants=[]; }
+    else { var p = parseImprovable(sel); if(!p || (state.inventory[sel]||0)<=0){ addLog('That item is no longer available.','danger'); return null; } tier=p.tier; enhance=0; kind=p.kind; rarity=p.rarity; curEnchants=[]; }
+    if(!isImprovableRarity(rarity)){ addLog('Only Rare-or-better gear can be enchanted.','danger'); return null; }
+    if(enhance>0){ addLog('Enhanced items (+'+enhance+') can no longer be enchanted.','danger'); return null; }
+    var m = enchantModById(kind, modId);
+    if(!m){ addLog('Choose a target enchant for Auto-roll first.','danger'); return null; }
+    var target = Math.max(m.min, improveAutoMin);       // any roll of that mod already clears m.min
+    if(target > m.max){ addLog('The most '+m.label+' can roll is +'+m.max+(m.pct?'%':'')+' — lower your target.','danger'); return null; }
+    var slots = enchantSlotsFor(rarity);
+    // Already satisfied?
+    for(var i=0;i<curEnchants.length;i++){ if(curEnchants[i].mod===modId && curEnchants[i].roll>=target){ addLog('This item already carries +'+curEnchants[i].roll+(m.pct?'%':'')+' '+m.label+' (≥ your +'+target+(m.pct?'%':'')+' target).','important'); render(); return null; } }
+    // Need somewhere to land a hit: an empty slot, or an existing copy of the SAME mod to upgrade.
+    var full = curEnchants.length >= slots, hasSameMod = false;
+    for(i=0;i<curEnchants.length;i++){ if(curEnchants[i].mod===modId){ hasSameMod = true; break; } }
+    if(full && !hasSameMod){ addLog('No free enchant slot — Auto-roll can only fill an empty slot or upgrade an existing '+m.label+'. Replace one manually first.','danger'); return null; }
+    // Convert the source into a unique now (like improveEnchant) so hits have a home.
+    var uid = isU ? sel : (isEq ? convertEquippedToUnique(equipTokenSlot(sel)) : makeUniqueFromBase(sel));
+    if(!uid){ return null; } improveSel = uid;
+    var u = state.uniqueItems[uid];
+    var spent = 0, placed = null, iters = 0;
+    while(iters++ < 200000){
+      var cost = u.enchants.length + 1;
+      var planned = planEnchantCrystals(u.tier, cost);
+      if(!planned) break;                               // crystals depleted
+      consumeInputs(planned.plan); spent += cost;
+      var roll = rollEnchant(u.kind);
+      if(roll.mod===modId && roll.roll>=target){
+        if(u.enchants.length < slots) u.enchants.push(roll);
+        else { var ri=-1; for(var j=0;j<u.enchants.length;j++){ if(u.enchants[j].mod===modId){ ri=j; break; } } if(ri>=0) u.enchants[ri]=roll; else u.enchants.push(roll); }
+        placed = roll; break;
+      }
+    }
+    if(placed){
+      addLog('Auto-roll landed '+enchantLabel(u.kind,placed)+' on '+uniqueBaseName(u)+' after '+spent+' Enchant Crystal'+(spent===1?'':'s')+'.','important');
+      spawnFloatingText('Auto-roll: '+enchantLabel(u.kind,placed), 'ft-success');
+    } else {
+      addLog('Auto-roll spent '+spent+' Enchant Crystal'+(spent===1?'':'s')+' without rolling +'+target+(m.pct?'%':'')+' '+m.label+' — crystals depleted.','danger');
+      if(spent>0) spawnFloatingText('Auto-roll: out of crystals', 'ft-fail');
+    }
+    saveGame(); render();
+    return { placed:placed, spent:spent };
   }
   // ---- Unique trade lifecycle (Stage 3): sell for gold or sacrifice for Faith, then drop the uid. ----
   // A unique never sits in state.inventory, so it can't be a craft input; sell/sacrifice removes it from
@@ -12634,6 +12702,28 @@
   }
   // The selected-item detail card (enchant + enhance + trade). Rendered at the TOP of the tab, right
   // under the intro, so the item you're working on stays the primary focus above the picker grid.
+  // Auto-roll controls: a mod picker + a minimum-value input + the Auto roll button. Keeps re-rolling the
+  // selected enchant until the target lands or crystals run out (see improveAutoRoll). Rendered only while
+  // an item is still enchantable (not Enhanced, no pending roll).
+  function renderAutoRollControls(kind){
+    var pool = ENCHANT_MODS[enchantCategoryForKind(kind)]; if(!pool || !pool.length) return '';
+    var curMod = (improveAutoMod && enchantModById(kind, improveAutoMod)) ? improveAutoMod : pool[0].id;
+    var md = enchantModById(kind, curMod);
+    var minVal = Math.max(md.min, Math.min(md.max, improveAutoMin || md.min));
+    var suf = md.pct ? '%' : '';
+    var opts = pool.map(function(m){ return '<option value="'+m.id+'"'+(m.id===curMod?' selected':'')+'>'+escapeHtml(m.label)+' (+'+m.min+(m.pct?'%':'')+'–+'+m.max+(m.pct?'%':'')+')</option>'; }).join('');
+    var inStyle = 'background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:5px 7px;font-size:12px;';
+    var html = '<div style="margin-top:10px;border-top:1px dashed var(--border-light);padding-top:8px;">';
+    html += '<div class="inputs-line" style="margin-bottom:5px;"><b>Auto-roll</b> — re-roll until a target enchant lands, or your crystals run out.</div>';
+    html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
+    html += '<select id="improveAutoModSel" style="'+inStyle+'max-width:260px;">'+opts+'</select>';
+    html += '<label style="font-size:12px;color:var(--text-dim);">min <input id="improveAutoMinInput" type="number" min="'+md.min+'" max="'+md.max+'" step="1" value="'+minVal+'" style="'+inStyle+'width:66px;"></label>';
+    html += '<button class="action-btn" data-action="improveAutoRoll" style="width:auto;flex:0 0 auto;">Auto roll ≥ +'+minVal+suf+'</button>';
+    html += '</div>';
+    html += '<div class="empty-note" style="margin-top:4px;">Spends Enchant Crystals repeatedly until <b style="color:var(--gold);">'+escapeHtml(md.label)+' ≥ +'+minVal+suf+'</b> is rolled, or you run out. Fills an empty slot, or upgrades your current '+escapeHtml(md.label)+' — other enchants are left untouched.</div>';
+    html += '</div>';
+    return html;
+  }
   function renderImproveDetail(){
     if(!improveSel) return '';
     var isU2 = isUniqueId(improveSel);
@@ -12660,6 +12750,7 @@
       if(improveWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No tier-'+(tier+1)+' crystals — this spends higher-tier ones. Click Enchant again to confirm.</div>';
       html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn" data-action="improveEnchant" style="width:auto;flex:0 0 auto;">Enchant ('+cost+')</button>';
       html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleWarn"'+(state.enchantWarnHiTier?' checked':'')+'> warn on higher-tier crystals</label></div>';
+      html += renderAutoRollControls(isU2 ? u.kind : (pp && pp.kind));
     }
     // While the item can still be enchanted, list every roll its kind can produce and each roll's range.
     if(enhance===0) html += enchantPoolListHtml(isU2 ? u.kind : (pp && pp.kind));
@@ -28171,6 +28262,7 @@
     improveSelect: function(btn, e){ improveSelect(btn.getAttribute('data-uid')); },
     improveFromEquipped: function(btn, e){ improveFromEquipped(btn.getAttribute('data-slot')); },
     improveEnchant: function(btn, e){ improveEnchant(); },
+    improveAutoRoll: function(btn, e){ improveAutoRoll(); },
     improvePlace: function(btn, e){ improvePlace(parseInt(btn.getAttribute('data-idx'),10)); },
     improveToggleWarn: function(btn, e){ improveToggleWarn(); },
     improveEquip: function(btn, e){ equipUnique(btn.getAttribute('data-uid')); },
@@ -28672,6 +28764,11 @@
       // Persist per card key on every keystroke and do NOT re-render -- a repaint here would steal focus
       // mid-number. Because the value lives in state, the next rebuild restores what was typed.
       setQueueTargetFor(e.target.getAttribute('data-qkey'), e.target.value);
+    } else if(e.target.id === 'improveAutoModSel'){
+      improveAutoMod = e.target.value || null;
+      render(); // refresh the min field's range + the button label for the newly-chosen mod (select, no text focus to lose)
+    } else if(e.target.id === 'improveAutoMinInput'){
+      improveAutoMin = Math.max(1, Math.floor(Number(e.target.value)||1)); // no re-render -> keep focus while typing
     }
   });
 
@@ -29347,7 +29444,7 @@
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, itemReconcile:itemReconcile,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX,
-      parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant,
+      parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray,

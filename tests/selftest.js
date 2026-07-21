@@ -1483,6 +1483,60 @@
     ok(FF.GATHER_PHYSIQUE.prospecting && FF.CRAFT_PHYSIQUE.gemcutting && FF.CRAFT_PHYSIQUE.enchanting, 'physique tables include the new skills');
   });
 
+  // ---- Improvement: Auto-roll enchanting (roll until a target mod/value or crystals deplete) ----
+  suite('improvement: auto-roll enchanting', function(){
+    var s = FF._state;
+    var savedU = s.uniqueItems, savedInv = s.inventory['enchant_t0'];
+    function setup(enchants, crystals){
+      s.uniqueItems = { u9001:{ uid:'u9001', base:'stweapon_sword_t0_rare', kind:'weapon', tier:0, rarity:'rare', enhance:0, enchants:enchants } };
+      s.inventory['enchant_t0'] = crystals;
+    }
+
+    // A) Keeps rolling until the requested mod lands, then stops with a single slot filled.
+    setup([], 500);
+    var a = FF.improveAutoRoll('critDamage', 5, 'u9001');
+    ok(a && a.placed && a.placed.mod==='critDamage' && a.placed.roll>=5, 'auto-roll lands the requested Critical Damage enchant');
+    eq(s.uniqueItems['u9001'].enchants.length, 1, 'exactly one enchant is placed');
+    eq(s.uniqueItems['u9001'].enchants[0].mod, 'critDamage', 'the placed enchant is the target mod');
+    eq(s.inventory['enchant_t0'], 500 - a.spent, 'crystals removed match the reported spend');
+    ok(a.spent >= 1, 'at least one crystal was spent');
+
+    // B) No affordable crystals -> spends nothing, places nothing.
+    setup([], 0);
+    var b = FF.improveAutoRoll('critDamage', 5, 'u9001');
+    ok(b && !b.placed && b.spent===0, 'no crystals -> auto-roll is inert');
+    eq(s.uniqueItems['u9001'].enchants.length, 0, 'the item is untouched when it cannot afford a roll');
+
+    // C) Target already met -> no-op, no spend.
+    setup([{mod:'critDamage', roll:25}], 100);
+    eq(FF.improveAutoRoll('critDamage', 20, 'u9001'), null, 'auto-roll no-ops when the target is already satisfied');
+    eq(s.inventory['enchant_t0'], 100, 'nothing spent when already satisfied');
+
+    // D) Full item with no copy of the target mod -> blocked, no spend (never overwrites unrelated enchants).
+    setup([{mod:'weaponDamage', roll:10},{mod:'flatDamage', roll:10}], 100);
+    eq(FF.improveAutoRoll('critDamage', 5, 'u9001'), null, 'auto-roll refuses a full item with no matching mod to upgrade');
+    eq(s.inventory['enchant_t0'], 100, 'nothing spent when blocked');
+
+    // E) Full item WITH the target mod -> upgrades it in place, leaving the other enchant alone.
+    setup([{mod:'critDamage', roll:8},{mod:'weaponDamage', roll:10}], 4000);
+    var e = FF.improveAutoRoll('critDamage', 25, 'u9001');
+    ok(e && e.placed && e.placed.roll>=25, 'auto-roll upgrades the existing Critical Damage to the target');
+    var en = s.uniqueItems['u9001'].enchants;
+    eq(en.length, 2, 'slot count is unchanged on an in-place upgrade');
+    var cd = en.filter(function(x){return x.mod==='critDamage';})[0];
+    var wd = en.filter(function(x){return x.mod==='weaponDamage';})[0];
+    ok(cd && cd.roll>=25, 'the Critical Damage slot now meets the target');
+    ok(wd && wd.roll===10, 'the unrelated Weapon Damage enchant is left untouched');
+
+    // F) A target above the mod ceiling is rejected up front.
+    setup([], 100);
+    eq(FF.improveAutoRoll('critChance', 999, 'u9001'), null, 'a target above the mod maximum is rejected');
+    eq(s.inventory['enchant_t0'], 100, 'no crystals spent on an impossible target');
+
+    // restore
+    s.uniqueItems = savedU; s.inventory['enchant_t0'] = savedInv;
+  });
+
   // ---- Ranching / Dairy / Gastronomy vertical slice + Feast buff channel ----------------------
   suite('skills: ranching / dairy / gastronomy', function(){
     ok(FF.GATHERING_SKILLS.ranching, 'ranching is a gathering skill');
