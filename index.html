@@ -12312,7 +12312,8 @@
   var improveConfirm = null;    // 'sell:<uid>' | 'sacrifice:<uid>' — arms a destructive action for a second confirming click
   var improveAutoMod = null;    // Auto-roll: desired enchant mod id
   var improveAutoMin = 1;       // Auto-roll: desired minimum roll value
-  function improveSelect(id){ improveSel = id; improvePending = null; improveWarnArmed = false; enhanceWarnArmed = false; enhanceLockArmed = false; improveConfirm = null; render(); }
+  var improveAutoSlot = 'auto'; // Auto-roll landing spot: 'auto' (fill empty / upgrade matching), 'new' (unused slot only), or an enchant INDEX to replace
+  function improveSelect(id){ improveSel = id; improvePending = null; improveWarnArmed = false; enhanceWarnArmed = false; enhanceLockArmed = false; improveConfirm = null; improveAutoSlot = 'auto'; render(); }
   // Currently-equipped BASE pieces (a filled slot with no unique uid). These live in their equip slot,
   // not in state.inventory, so the normal inventory picker can't see them -- surfaced here so equipped
   // gear can be Enchanted/Enhanced without unequipping first.
@@ -12397,11 +12398,17 @@
   // Auto-roll: keep enchanting the selected item until the chosen mod lands at >= a target value, or the
   // Enchant Crystals run out. Misses are DISCARDED (the crystal is still spent -- that's the gamble), which
   // also keeps the per-roll cost stable: a free-slot run never grows the enchant list until the terminal
-  // hit, and a full-item "upgrade this same mod" run replaces in place, so the count -- and therefore the
-  // (count+1) crystal cost -- holds steady each roll. Only fills an empty slot or upgrades an existing copy
-  // of the target mod; it never overwrites an unrelated enchant. modIdArg/minArg/selOverride let the test
-  // suite drive it without the DOM. Returns { placed, spent } for tests.
-  function improveAutoRoll(modIdArg, minArg, selOverride){
+  // hit, and a replace/upgrade run swaps in place, so the count -- and therefore the (count+1) crystal
+  // cost -- holds steady each roll. Where the hit lands is the slot choice:
+  //   'auto'  -- fill an empty slot or upgrade an existing copy of the target mod, never overwrite an
+  //              unrelated enchant, and no-op if ANY copy already meets the target (the legacy default);
+  //   'new'   -- land in an unused slot only, even when a satisfied copy already exists (a second copy
+  //              of the same mod is the explicit goal);
+  //   <index> -- replace exactly that enchant slot (whatever mod it holds), no-op only if THAT slot
+  //              already carries the target mod at >= the target value.
+  // modIdArg/minArg/selOverride/slotArg let the test suite drive it without the DOM.
+  // Returns { placed, spent } for tests.
+  function improveAutoRoll(modIdArg, minArg, selOverride, slotArg){
     if(improvePending) return null;
     var sel = selOverride || improveSel; if(!sel) return null;
     // Target selection: explicit args win (tests); otherwise read the live controls, falling back to state.
@@ -12414,6 +12421,18 @@
       minWant = minEl ? Math.floor(Number(minEl.value)) : improveAutoMin;
     }
     improveAutoMod = modId; improveAutoMin = Math.max(1, minWant||1);
+    // Slot choice mirrors the target resolution: explicit arg wins, then the live control, then state.
+    var slotChoice;
+    if(slotArg != null){ slotChoice = slotArg; }
+    else {
+      var slotEl = (typeof document!=='undefined') && document.getElementById('improveAutoSlotSel');
+      slotChoice = (slotEl && slotEl.value) || improveAutoSlot;
+    }
+    if(slotChoice !== 'auto' && slotChoice !== 'new'){
+      slotChoice = parseInt(slotChoice, 10);
+      if(isNaN(slotChoice) || slotChoice < 0) slotChoice = 'auto';
+    }
+    improveAutoSlot = slotChoice;
     // Resolve the selection to kind/tier/rarity/enhance/current-enchants (mirrors improveEnchant).
     var isU = isUniqueId(sel), isEq = isEquipToken(sel);
     var tier, enhance, kind, rarity, curEnchants;
@@ -12427,12 +12446,21 @@
     var target = Math.max(m.min, improveAutoMin);       // any roll of that mod already clears m.min
     if(target > m.max){ addLog('The most '+m.label+' can roll is +'+m.max+(m.pct?'%':'')+' — lower your target.','danger'); return null; }
     var slots = enchantSlotsFor(rarity);
-    // Already satisfied?
-    for(var i=0;i<curEnchants.length;i++){ if(curEnchants[i].mod===modId && curEnchants[i].roll>=target){ addLog('This item already carries +'+curEnchants[i].roll+(m.pct?'%':'')+' '+m.label+' (≥ your +'+target+(m.pct?'%':'')+' target).','important'); render(); return null; } }
-    // Need somewhere to land a hit: an empty slot, or an existing copy of the SAME mod to upgrade.
-    var full = curEnchants.length >= slots, hasSameMod = false;
-    for(i=0;i<curEnchants.length;i++){ if(curEnchants[i].mod===modId){ hasSameMod = true; break; } }
-    if(full && !hasSameMod){ addLog('No free enchant slot — Auto-roll can only fill an empty slot or upgrade an existing '+m.label+'. Replace one manually first.','danger'); return null; }
+    var i;
+    if(slotChoice === 'auto'){
+      // Already satisfied? (Only 'auto' checks the whole item -- 'new' explicitly wants ANOTHER copy,
+      // and a picked slot only cares about its own contents.)
+      for(i=0;i<curEnchants.length;i++){ if(curEnchants[i].mod===modId && curEnchants[i].roll>=target){ addLog('This item already carries +'+curEnchants[i].roll+(m.pct?'%':'')+' '+m.label+' (≥ your +'+target+(m.pct?'%':'')+' target). Pick "New unused slot" to roll a second copy.','important'); render(); return null; } }
+      // Need somewhere to land a hit: an empty slot, or an existing copy of the SAME mod to upgrade.
+      var full = curEnchants.length >= slots, hasSameMod = false;
+      for(i=0;i<curEnchants.length;i++){ if(curEnchants[i].mod===modId){ hasSameMod = true; break; } }
+      if(full && !hasSameMod){ addLog('No free enchant slot — pick a specific slot to replace in the Auto-roll slot picker, or replace one manually first.','danger'); return null; }
+    } else if(slotChoice === 'new'){
+      if(curEnchants.length >= slots){ addLog('No unused enchant slot — all '+slots+' are filled. Pick a slot to replace instead.','danger'); return null; }
+    } else {
+      if(slotChoice >= curEnchants.length){ addLog('That enchant slot no longer exists — pick a slot again.','danger'); improveAutoSlot = 'auto'; render(); return null; }
+      if(curEnchants[slotChoice].mod===modId && curEnchants[slotChoice].roll>=target){ addLog('Slot '+(slotChoice+1)+' already carries +'+curEnchants[slotChoice].roll+(m.pct?'%':'')+' '+m.label+' (≥ your +'+target+(m.pct?'%':'')+' target).','important'); render(); return null; }
+    }
     // Convert the source into a unique now (like improveEnchant) so hits have a home.
     var uid = isU ? sel : (isEq ? convertEquippedToUnique(equipTokenSlot(sel)) : makeUniqueFromBase(sel));
     if(!uid){ return null; } improveSel = uid;
@@ -12445,7 +12473,9 @@
       consumeInputs(planned.plan); spent += cost;
       var roll = rollEnchant(u.kind);
       if(roll.mod===modId && roll.roll>=target){
-        if(u.enchants.length < slots) u.enchants.push(roll);
+        if(slotChoice === 'new'){ u.enchants.push(roll); }
+        else if(slotChoice !== 'auto'){ u.enchants[slotChoice] = roll; }   // the picked slot, whatever it held
+        else if(u.enchants.length < slots){ u.enchants.push(roll); }
         else { var ri=-1; for(var j=0;j<u.enchants.length;j++){ if(u.enchants[j].mod===modId){ ri=j; break; } } if(ri>=0) u.enchants[ri]=roll; else u.enchants.push(roll); }
         placed = roll; break;
       }
@@ -12738,22 +12768,34 @@
   // Auto-roll controls: a mod picker + a minimum-value input + the Auto roll button. Keeps re-rolling the
   // selected enchant until the target lands or crystals run out (see improveAutoRoll). Rendered only while
   // an item is still enchantable (not Enhanced, no pending roll).
-  function renderAutoRollControls(kind){
+  function renderAutoRollControls(kind, curEnchants, slots){
     var pool = ENCHANT_MODS[enchantCategoryForKind(kind)]; if(!pool || !pool.length) return '';
+    curEnchants = curEnchants || [];
     var curMod = (improveAutoMod && enchantModById(kind, improveAutoMod)) ? improveAutoMod : pool[0].id;
     var md = enchantModById(kind, curMod);
     var minVal = Math.max(md.min, Math.min(md.max, improveAutoMin || md.min));
     var suf = md.pct ? '%' : '';
     var opts = pool.map(function(m){ return '<option value="'+m.id+'"'+(m.id===curMod?' selected':'')+'>'+escapeHtml(m.label)+' (+'+m.min+(m.pct?'%':'')+'–+'+m.max+(m.pct?'%':'')+')</option>'; }).join('');
     var inStyle = 'background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:5px 7px;font-size:12px;';
+    // Slot picker: where the winning roll lands. A stale index (item changed under it) falls back to auto.
+    var slotSel = improveAutoSlot;
+    if(slotSel !== 'auto' && slotSel !== 'new'){ slotSel = parseInt(slotSel, 10); if(isNaN(slotSel) || slotSel < 0 || slotSel >= curEnchants.length) slotSel = 'auto'; }
+    var free = curEnchants.length < slots;
+    var sopts = '<option value="auto"'+(slotSel==='auto'?' selected':'')+'>Slot: auto — fill empty / upgrade matching</option>';
+    sopts += '<option value="new"'+(slotSel==='new'?' selected':'')+(free?'':' disabled')+'>New unused slot ('+curEnchants.length+'/'+slots+' used)</option>';
+    curEnchants.forEach(function(e,i){ sopts += '<option value="'+i+'"'+(slotSel===i?' selected':'')+'>Replace slot '+(i+1)+': '+escapeHtml(enchantLabel(kind,e))+'</option>'; });
     var html = '<div style="margin-top:10px;border-top:1px dashed var(--border-light);padding-top:8px;">';
     html += '<div class="inputs-line" style="margin-bottom:5px;"><b>Auto-roll</b> — re-roll until a target enchant lands, or your crystals run out.</div>';
     html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
     html += '<select id="improveAutoModSel" style="'+inStyle+'max-width:260px;">'+opts+'</select>';
     html += '<label style="font-size:12px;color:var(--text-dim);">min <input id="improveAutoMinInput" type="number" min="'+md.min+'" max="'+md.max+'" step="1" value="'+minVal+'" style="'+inStyle+'width:66px;"></label>';
+    html += '<select id="improveAutoSlotSel" style="'+inStyle+'max-width:300px;" title="Where the winning roll lands">'+sopts+'</select>';
     html += '<button class="action-btn" data-action="improveAutoRoll" style="width:auto;flex:0 0 auto;">Auto roll ≥ +'+minVal+suf+'</button>';
     html += '</div>';
-    html += '<div class="empty-note" style="margin-top:4px;">Spends Enchant Crystals repeatedly until <b style="color:var(--gold);">'+escapeHtml(md.label)+' ≥ +'+minVal+suf+'</b> is rolled, or you run out. Fills an empty slot, or upgrades your current '+escapeHtml(md.label)+' — other enchants are left untouched.</div>';
+    var landNote = slotSel === 'new' ? 'The hit lands in a <b>new unused slot</b> — existing enchants (even a matching '+escapeHtml(md.label)+') are left untouched.'
+                 : slotSel !== 'auto' ? 'The hit <b>replaces slot '+(slotSel+1)+'</b> ('+escapeHtml(enchantLabel(kind, curEnchants[slotSel]))+') — other enchants are left untouched.'
+                 : 'Fills an empty slot, or upgrades your current '+escapeHtml(md.label)+' — other enchants are left untouched.';
+    html += '<div class="empty-note" style="margin-top:4px;">Spends Enchant Crystals repeatedly until <b style="color:var(--gold);">'+escapeHtml(md.label)+' ≥ +'+minVal+suf+'</b> is rolled, or you run out. '+landNote+'</div>';
     html += '</div>';
     return html;
   }
@@ -12783,7 +12825,7 @@
       if(improveWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No tier-'+(tier+1)+' crystals — this spends higher-tier ones. Click Enchant again to confirm.</div>';
       html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn" data-action="improveEnchant" style="width:auto;flex:0 0 auto;">Enchant ('+cost+')</button>';
       html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleWarn"'+(state.enchantWarnHiTier?' checked':'')+'> warn on higher-tier crystals</label></div>';
-      html += renderAutoRollControls(isU2 ? u.kind : (pp && pp.kind));
+      html += renderAutoRollControls(isU2 ? u.kind : (pp && pp.kind), isU2 ? u.enchants : [], slots);
     }
     // While the item can still be enchanted, list every roll its kind can produce and each roll's range.
     if(enhance===0) html += enchantPoolListHtml(isU2 ? u.kind : (pp && pp.kind));
@@ -28922,6 +28964,10 @@
     } else if(e.target.id === 'improveAutoModSel'){
       improveAutoMod = e.target.value || null;
       render(); // refresh the min field's range + the button label for the newly-chosen mod (select, no text focus to lose)
+    } else if(e.target.id === 'improveAutoSlotSel'){
+      var _v = e.target.value;
+      improveAutoSlot = (_v === 'auto' || _v === 'new') ? _v : parseInt(_v, 10);
+      render(); // refresh the landing-spot note under the controls (select, no text focus to lose)
     } else if(e.target.id === 'improveAutoMinInput'){
       improveAutoMin = Math.max(1, Math.floor(Number(e.target.value)||1)); // no re-render -> keep focus while typing
     }

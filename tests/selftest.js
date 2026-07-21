@@ -1671,6 +1671,36 @@
     eq(FF.improveAutoRoll('critChance', 999, 'u9001'), null, 'a target above the mod maximum is rejected');
     eq(s.inventory['enchant_t0'], 100, 'no crystals spent on an impossible target');
 
+    // G) Slot "new": a satisfied copy of the same mod no longer blocks rolling a SECOND copy.
+    setup([{mod:'critDamage', roll:25}], 4000);
+    var g = FF.improveAutoRoll('critDamage', 5, 'u9001', 'new');
+    ok(g && g.placed && g.placed.mod==='critDamage', 'slot "new" rolls another copy of an already-satisfied mod');
+    var gEn = s.uniqueItems['u9001'].enchants;
+    eq(gEn.length, 2, 'the second copy fills the unused slot');
+    eq(gEn[0].roll, 25, 'the original copy is untouched');
+    eq(gEn[1].mod, 'critDamage', 'the new slot holds the target mod');
+
+    // H) A picked slot replaces exactly that enchant, even an unrelated mod on a full item.
+    setup([{mod:'weaponDamage', roll:10},{mod:'flatDamage', roll:10}], 4000);
+    var h = FF.improveAutoRoll('critDamage', 5, 'u9001', 1);
+    ok(h && h.placed && h.placed.mod==='critDamage', 'a picked slot lets auto-roll replace an unrelated enchant');
+    var hEn = s.uniqueItems['u9001'].enchants;
+    eq(hEn.length, 2, 'slot count unchanged on a picked-slot replace');
+    ok(hEn[0].mod==='weaponDamage' && hEn[0].roll===10, 'the unpicked slot is untouched');
+    eq(hEn[1].mod, 'critDamage', 'the picked slot now holds the target mod');
+
+    // I) Slot "new" on a full item is blocked with nothing spent.
+    setup([{mod:'weaponDamage', roll:10},{mod:'flatDamage', roll:10}], 100);
+    eq(FF.improveAutoRoll('critDamage', 5, 'u9001', 'new'), null, 'slot "new" refuses a full item');
+    eq(s.inventory['enchant_t0'], 100, 'nothing spent when there is no unused slot');
+
+    // J) A picked slot no-ops only when THAT slot already meets the target; a stale index is rejected.
+    setup([{mod:'critDamage', roll:25},{mod:'weaponDamage', roll:10}], 100);
+    eq(FF.improveAutoRoll('critDamage', 20, 'u9001', 0), null, 'picked slot already satisfied -> no-op');
+    eq(s.inventory['enchant_t0'], 100, 'nothing spent on a satisfied picked slot');
+    eq(FF.improveAutoRoll('critDamage', 5, 'u9001', 7), null, 'an out-of-range slot index is rejected');
+    eq(s.inventory['enchant_t0'], 100, 'nothing spent on a stale slot index');
+
     // restore
     s.uniqueItems = savedU; s.inventory['enchant_t0'] = savedInv;
   });
