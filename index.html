@@ -15715,13 +15715,13 @@
     if(CRAFT_SKILL_IDS.indexOf(skill) !== -1) m *= diligenceCraftXpMult();
     return m;
   }
-  // base -> real earned. mode 'gather' folds in the Curiosity gather bonus; 'craft' folds in the paving
-  // craft-XP multiplier (x1 for every other craft); both then apply addXpAppliedMult. `baseXp` is the value
-  // already shown on the card (item.xp for gathers; recipe/tierData xp * 1.5 for crafts).
+  // base -> real earned. mode 'gather' folds in the Curiosity gather bonus; both then apply
+  // addXpAppliedMult. `baseXp` is the value already shown on the card (item.xp for gathers;
+  // recipe/tierData xp * 1.5 for crafts). NOTE: paving's intrinsic x4 craft-XP multiplier is part of
+  // the displayed BASE (folded in by xpStat), never the real figure -- it's the recipe's intended
+  // XP, not a boost the player is receiving.
   function cardRealXp(skill, baseXp, mode){
-    var pre = mode === 'gather' ? (1 + curiosityGatherXpBonus(state))
-            : mode === 'craft'  ? craftXpBonus(skill)
-            : 1;
+    var pre = mode === 'gather' ? (1 + curiosityGatherXpBonus(state)) : 1;
     return Math.round(baseXp * pre * addXpAppliedMult(skill));
   }
   function cardTierIndex(src){
@@ -15735,6 +15735,11 @@
   // real earned amount beside it whenever a modifier is changing it. `tierSrc` is a tierIndex, an id string,
   // or an object carrying tierIndex/id (all resolved by cardTierIndex).
   function xpStat(skill, baseXp, mode, tierSrc){
+    // Paving's x4 craft-XP multiplier applies to EVERY completion, so it belongs in the base the
+    // card states. Showing it inside "(+N real)" made the card read like an XP bug (a t9 tile
+    // showed +218 with a real figure over 7x that); with it in the base, the real span is a pure
+    // personal-boost readout (Tea, familiar, server buff, Diligence, Mortal), like every other card.
+    if(mode === 'craft') baseXp *= craftXpBonus(skill);
     baseXp = Math.round(baseXp);
     var real = cardRealXp(skill, baseXp, mode);
     var ti = cardTierIndex(tierSrc);

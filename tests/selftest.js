@@ -150,9 +150,12 @@
     clear(); s.mortal = true;
     eq(FF.cardRealXp('cooking', 100, 'craft'), 50, 'Mortal deficit halves real XP');
 
-    // Paving carries a x4 craft-XP bonus that the real figure surfaces.
+    // Paving's intrinsic x4 craft-XP multiplier lives in the displayed BASE (it applies to every
+    // completion), so the real figure stays a pure personal-boost readout.
     clear();
-    eq(FF.cardRealXp('paving', 100, 'craft'), 400, 'paving real folds in its x4 craft-XP bonus');
+    eq(FF.cardRealXp('paving', 100, 'craft'), 100, 'paving real carries no intrinsic multiplier');
+    var pav = FF.xpStat('paving', 100, 'craft', 8);
+    ok(/\+400 XP/.test(pav) && !/real/.test(pav), 'paving base states the x4 (+400); no real span when nothing else is active');
     eq(FF.cardRealXp('cooking', 100, 'craft'), 100, 'every other craft keeps the x1 bonus');
 
     // A Tea (Mixology/Brewing XP boost) multiplies the real figure.
