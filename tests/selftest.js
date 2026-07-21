@@ -8992,6 +8992,30 @@
     }
   });
 
+  // ---- Group boss clear guarantees at least one blueprint ----------------------------------------
+  suite('dungeon: group clear guarantees a blueprint', function(){
+    ok(typeof FF.grantMasterworkDrops === 'function', 'grantMasterworkDrops exported');
+    var s = FF._state, savedBp = s.blueprints, savedRand = Math.random;
+    try {
+      // Force every independent drop roll to MISS (Math.random always 1 -> 1 < chance is false), then a
+      // GROUP clear (guarantee flag) must still grant exactly one d2 blueprint.
+      s.blueprints = {}; Math.random = function(){ return 1; };
+      FF.grantMasterworkDrops('d2', 1, true);
+      Math.random = savedRand;
+      var total = Object.keys(s.blueprints).reduce(function(n, k){ return n + (s.blueprints[k] || 0); }, 0);
+      eq(total, 1, 'a dry GROUP clear still yields exactly one blueprint (guarantee floor)');
+      ok(Object.keys(s.blueprints).every(function(k){ return FF.BLUEPRINT_ITEMS[k] && FF.BLUEPRINT_ITEMS[k].dungeon === 'd2'; }), 'the guaranteed blueprint belongs to d2');
+
+      // A SOLO clear passes no guarantee -> a dry clear grants nothing (honest odds preserved).
+      s.blueprints = {}; Math.random = function(){ return 1; };
+      FF.grantMasterworkDrops('d2', FF.DUNGEON_SOLO_DROP_MULT);
+      Math.random = savedRand;
+      eq(Object.keys(s.blueprints).length, 0, 'a dry SOLO clear (no guarantee) still grants nothing');
+    } finally {
+      Math.random = savedRand; s.blueprints = savedBp;
+    }
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }
