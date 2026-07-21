@@ -13964,7 +13964,20 @@
     // prev-monsterHp once per tick, then saw almost no drop and the real counter crawled) AND paid out
     // gold + loot + a kill each time (200+ phantom kills in the chronicle while the counter sat at 6/25).
     // Pin the mirror just above zero and bail; the tick still reports the real drop down to here.
-    if(act && act.netDungeon){ act.monsterHp = 1; return; }
+    if(act && act.netDungeon){
+      // Report the FULL remaining shared HP so the server enemy actually reaches 0. dungeonNetCollectDamage
+      // reports (prev - monsterHp), and pinning the mirror at 1 meant the final point was never reported --
+      // harmless under the old power*elapsed credit, but with the trusted-damage credit the server enemy_hp
+      // asymptotes to 1 and the foe gets STUCK at 1 (most visibly the Broodmother boss with a lone attacker
+      // left, so the run can never clear). Bank the remaining here and zero lastEnemyHp so collectDamage
+      // doesn't double it, then pin the mirror.
+      if(typeof dungeonNet !== 'undefined' && typeof dungeonNet.lastEnemyHp === 'number' && dungeonNet.lastEnemyHp > 0){
+        dungeonNet.pendingDamage += dungeonNet.lastEnemyHp;
+        dungeonNet.lastEnemyHp = 0;
+      }
+      act.monsterHp = 1;
+      return;
+    }
     // Reaver Arterial Spray (Lv60): a Bleeding foe's stacks carry to the next foe. Captured before the reset.
     var _arterialCarry = ((reaverBonus(60) || legActive('bonereaver')) && act && (act.bleedStacks||0) > 0 && (act.bleedUntil||0) > Date.now()) ? act.bleedStacks : 0; // + Bonereaver (D3 half-moon axe): a Bleeding foe's Bleed carries to the next foe
     // Set capstones captured before the per-foe reset: Ember Burst (Burn) + Pestilence (Poison) carry to the next foe.
@@ -19386,15 +19399,20 @@
     html += '<div class="hp-track" style="margin-top:6px"><div class="hp-fill" style="width:' + pct + '%;background:var(--hp-bad)"></div></div>';
     html += '<div class="hp-label"><span>Shared HP</span><span>' + fmt(cur) + ' / ' + fmt(maxHp) + '</span></div>';
     html += '</div>';
-    // Party: HP bars + who the enemy is targeting + damage contribution.
-    var tgt = s.target_id, tName = '—';
-    dungeonNet.members.forEach(function(m){ if(m.user_id === tgt) tName = m.username; });
-    html += '<div class="item-card" style="margin-top:8px"><div class="inputs-line">Party &bull; the ' + escapeHtml(enemy.name) + ' is attacking <b style="color:var(--hp-bad)">' + escapeHtml(tName) + '</b></div>';
+    // Party: HP bars + who the enemy is targeting + damage contribution. target_id now persists between
+    // the enemy's swings (server-side), so this banner and the row highlight hold steady instead of
+    // blinking off on every no-swing tick.
+    var tgt = s.target_id, tName = null, maxThreat = 0;
+    dungeonNet.members.forEach(function(m){ if(m.alive) maxThreat = Math.max(maxThreat, m.threat || 0); if(m.user_id === tgt) tName = m.username; });
+    var tgtAlive = false; dungeonNet.members.forEach(function(m){ if(m.user_id === tgt && m.alive) tgtAlive = true; });
+    html += '<div class="item-card" style="margin-top:8px">';
+    html += '<div class="inputs-line" style="display:flex;align-items:center;gap:6px;font-weight:700">' + svgIcon('crossedswords', 'var(--hp-bad)') + '<span>' + (tName && tgtAlive ? ('The ' + escapeHtml(enemy.name) + ' is attacking <span style="color:var(--hp-bad)">' + escapeHtml(tName) + '</span>') : ('The ' + escapeHtml(enemy.name) + ' is choosing a target&hellip;')) + '</span></div>';
     dungeonNet.members.slice().sort(function(a, b){ return (b.damage || 0) - (a.damage || 0); }).forEach(function(m){
-      var isMe = authUser && m.user_id === authUser.id, targeted = m.user_id === tgt;
+      var isMe = authUser && m.user_id === authUser.id, targeted = m.alive && m.user_id === tgt;
+      var isTank = m.alive && maxThreat > 0 && (m.threat || 0) === maxThreat;
       var mh = Math.max(0, m.hp || 0), mm = Math.max(1, m.max_hp || 1), hpPct = clamp(mh / mm * 100, 0, 100);
-      html += '<div style="margin-top:6px">';
-      html += '<div class="hp-label" style="margin-bottom:2px"><span>' + (m.alive ? (targeted ? svgIcon('crossedswords', 'var(--hp-bad)') : svgIcon('person', 'var(--gold)')) : svgIcon('hornedskull', 'var(--text-faint)')) + ' ' + escapeHtml(m.username) + (isMe ? ' (you)' : '') + (targeted && m.alive ? ' <span style="color:var(--hp-bad)">◄ targeted</span>' : '') + (m.alive ? '' : ' <span style="color:var(--text-faint)">— downed</span>') + '</span><span>Threat ' + (m.threat || 0) + ' &bull; ' + fmt(m.damage || 0) + ' dmg</span></div>';
+      html += '<div style="margin-top:6px;padding:4px 6px;border-radius:var(--radius);' + (targeted ? 'background:rgba(206,52,52,0.14);border:1px solid var(--hp-bad)' : 'border:1px solid transparent') + '">';
+      html += '<div class="hp-label" style="margin-bottom:2px"><span>' + (m.alive ? (targeted ? svgIcon('crossedswords', 'var(--hp-bad)') : svgIcon('person', 'var(--gold)')) : svgIcon('hornedskull', 'var(--text-faint)')) + ' ' + escapeHtml(m.username) + (isMe ? ' (you)' : '') + (targeted ? ' <span style="color:var(--hp-bad);font-weight:800">&#9876; UNDER ATTACK</span>' : '') + (!m.alive ? ' <span style="color:var(--text-faint)">&mdash; downed</span>' : (isTank ? ' <span style="color:var(--gold);font-size:10px;font-weight:700">TANK</span>' : '')) + '</span><span>Threat <b>' + (m.threat || 0) + '</b> &bull; ' + fmt(m.damage || 0) + ' dmg</span></div>';
       html += '<div class="hp-track" style="height:8px"><div class="hp-fill" style="width:' + hpPct + '%;background:' + (m.alive ? 'var(--hp-good)' : 'var(--text-faint)') + '"></div></div>';
       html += '<div class="hp-label"><span></span><span>' + fmt(mh) + ' / ' + fmt(mm) + '</span></div>';
       html += '</div>';
