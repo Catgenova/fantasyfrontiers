@@ -8546,11 +8546,24 @@
     });
     return out;
   }
-  // Owned seed types, resolved to {id, tier}, sorted highest-tier first.
+  // Auto-plant seed filter (Farming screen). Without a Custom list, whole crop TYPES are toggled
+  // (plantFiber/plantGrain/plantHerb); with Custom on, an explicit per-seed exclusion set overrides the
+  // type toggles entirely. Empty exclusion set = every seed enabled, so new seed tiers are opted in by
+  // default. Governs Auto-plant only (live Plant All + the offline sim) -- manual Sow is always allowed.
+  function seedAllowedForPlanting(seedId){
+    var s = state.settings; if(!s) return true;
+    var si = seedInfo(seedId); if(!si) return false;
+    if(s.plantCustom) return !(s.plantSeedDisabled && s.plantSeedDisabled[seedId]);
+    if(si.cropType === 'fiber') return s.plantFiber !== false;
+    if(si.cropType === 'grain') return s.plantGrain !== false;
+    if(si.cropType === 'herb')  return s.plantHerb  !== false;
+    return true;
+  }
+  // Owned seed types, resolved to {id, tier}, sorted highest-tier first. Honours the Auto-plant filter.
   function ownedSeedTypesDesc(){
     var list = [];
     [SEED_ITEMS, GRAIN_SEED_ITEMS, HERB_SEED_ITEMS].forEach(function(pool){
-      Object.keys(pool).forEach(function(id){ if((state.inventory[id]||0) > 0){ var si = seedInfo(id); if(si && si.crop) list.push({ id:id, tier:si.tier }); } });
+      Object.keys(pool).forEach(function(id){ if((state.inventory[id]||0) > 0 && seedAllowedForPlanting(id)){ var si = seedInfo(id); if(si && si.crop) list.push({ id:id, tier:si.tier }); } });
     });
     list.sort(function(a,b){ return b.tier - a.tier; });
     return list;
@@ -8643,6 +8656,7 @@
     [SEED_ITEMS, GRAIN_SEED_ITEMS, HERB_SEED_ITEMS].forEach(function(pool){
       Object.keys(pool).forEach(function(id){
         if((state.inventory[id]||0) <= 0) return;
+        if(!seedAllowedForPlanting(id)) return;              // respect the Auto-plant seed filter
         var si = seedInfo(id); if(!si || !si.crop) return;
         if(!canPlantInField(fieldTier, si.tier)) return;
         if(si.tier > bestTier){ bestTier = si.tier; best = id; }
@@ -11298,7 +11312,7 @@
       potionCharges: 0,
       popupQueue: [],
       popupBatchTotal: 0,
-      settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true, chatFilter:true, showEstateFabs:true, compactMobile:true, autoOpenCaches:false, autoOpenChests:false, autoHarvest:false, autoFertilize:false, autoPlant:false },
+      settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true, chatFilter:true, showEstateFabs:true, compactMobile:true, autoOpenCaches:false, autoOpenChests:false, autoHarvest:false, autoFertilize:false, autoPlant:false, plantFiber:true, plantGrain:true, plantHerb:true, plantCustom:false, plantSeedDisabled:{} },
       trackedSkills: ['logic'], // new players start tracking Logic so the top-bar tracker isn't empty
 
       peons: [],
@@ -15005,6 +15019,9 @@
           if(typeof state.settings.showEstateFabs !== 'boolean') state.settings.showEstateFabs = true; // Estate/Guild-Estate quick-jump FABs on by default
           if(typeof state.settings.compactMobile !== 'boolean') state.settings.compactMobile = true; // existing players keep the new compact default
           ['autoOpenCaches','autoOpenChests','autoHarvest','autoFertilize','autoPlant'].forEach(function(k){ if(typeof state.settings[k] !== 'boolean') state.settings[k] = false; }); // opt-in automation, off by default
+          ['plantFiber','plantGrain','plantHerb'].forEach(function(k){ if(typeof state.settings[k] !== 'boolean') state.settings[k] = true; }); // auto-plant crop-type filters: all sown by default
+          if(typeof state.settings.plantCustom !== 'boolean') state.settings.plantCustom = false; // per-seed override, off by default
+          if(!state.settings.plantSeedDisabled || typeof state.settings.plantSeedDisabled !== 'object' || Array.isArray(state.settings.plantSeedDisabled)) state.settings.plantSeedDisabled = {}; // exclusion set: empty = every seed enabled
           if(state.dungeonProgress) delete state.dungeonProgress; // dungeons feature removed; shed legacy field
           if(!state.lockedItems || typeof state.lockedItems !== 'object') state.lockedItems = {};
           if(!state.itemEarnedTotal || typeof state.itemEarnedTotal !== 'object' || Array.isArray(state.itemEarnedTotal)) state.itemEarnedTotal = {}; // item-ledger reconcile anchor
@@ -22961,11 +22978,60 @@
     if(h > 0) return h+':'+(m<10?'0':'')+m+':'+(s<10?'0':'')+s;
     return m+':'+(s<10?'0':'')+s;
   }
+  // Auto-plant seed-selection panel. Four top-level checks (Fiber / Grain / Herb type toggles + a Custom
+  // switch); ticking Custom reveals the full per-seed list (all enabled by default) and overrides the type
+  // toggles. Governs Auto-plant only, so it's shown greyed-with-a-hint when Auto-plant is off.
+  function renderFarmPlantControls(){
+    var s = state.settings || {};
+    var custom = !!s.plantCustom;
+    var autoOn = s.autoPlant !== false && !!s.autoPlant;
+    var chk = function(on){ return on ? '☑' : '☐'; };
+    var typeChip = function(on, label, key){
+      return '<span class="gab-tea-auto" data-action="togglePlantFilter" data-key="'+key+'" style="cursor:pointer;'+(custom?'opacity:0.4;':'')+'" title="'+(custom?'Overridden by the Custom list below':'Toggle sowing '+label+' crops')+'">'+chk(on)+' '+label+'</span>';
+    };
+    var html = '<div class="physique-bonus" style="flex-direction:column;align-items:stretch;gap:8px;margin-top:10px;">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">'
+      + '<b>Auto-plant &mdash; which seeds</b>'
+      + '<span style="font-size:12px;color:var(--text-dim);">'+(autoOn ? 'Auto-plant sows only the crops ticked here.' : 'Enable <b>Auto-plant</b> in Settings to use this.')+'</span>'
+      + '</div>';
+    html += '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">'
+      + typeChip(s.plantFiber!==false, 'Fiber', 'plantFiber')
+      + typeChip(s.plantGrain!==false, 'Grain', 'plantGrain')
+      + typeChip(s.plantHerb!==false,  'Herb',  'plantHerb')
+      + '<span style="width:1px;height:16px;background:var(--border);"></span>'
+      + '<span class="gab-tea-auto" data-action="togglePlantFilter" data-key="plantCustom" style="cursor:pointer;'+(custom?'color:var(--gold);font-weight:700;':'')+'" title="Pick individual seeds instead of whole crop types">'+chk(custom)+' Custom</span>'
+      + '</div>';
+    if(custom){
+      html += '<div style="border-top:1px dashed var(--border-light);padding-top:8px;display:flex;flex-direction:column;gap:10px;">';
+      html += '<div style="font-size:12px;color:var(--text-dim);">Custom list active &mdash; the Fiber / Grain / Herb toggles above are ignored. Tick the exact seeds Auto-plant may sow.</div>';
+      [['fiber','Fiber',SEED_ITEMS],['grain','Grain',GRAIN_SEED_ITEMS],['herb','Herb',HERB_SEED_ITEMS]].forEach(function(grp){
+        var cropType = grp[0], label = grp[1], pool = grp[2];
+        var ids = Object.keys(pool).sort(function(a,b){ return (seedInfo(a)||{tier:0}).tier - (seedInfo(b)||{tier:0}).tier; });
+        html += '<div>';
+        html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap;">'
+          + '<b style="font-size:12px;">'+label+' seeds</b>'
+          + '<button class="mini-btn" data-action="setPlantSeedGroup" data-group="'+cropType+'" data-on="1">All</button>'
+          + '<button class="mini-btn" data-action="setPlantSeedGroup" data-group="'+cropType+'" data-on="0">None</button>'
+          + '</div>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:5px 14px;">';
+        ids.forEach(function(id){
+          var si = seedInfo(id); if(!si) return;
+          var on = !(s.plantSeedDisabled && s.plantSeedDisabled[id]);
+          html += '<span class="gab-tea-auto" data-action="togglePlantSeed" data-seed="'+id+'" style="cursor:pointer;font-size:12px;white-space:nowrap;'+(on?'':'opacity:0.5;')+'" title="Tier '+(si.tier+1)+'">'+chk(on)+' '+escapeHtml(si.def.name)+'</span>';
+        });
+        html += '</div></div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
   function renderFarmingTab(){
     var html = '<div class="section-intro">Farming plots now come from <b>Fields</b> you build on empty dirt tiles of your Estate (and your guild\'s) in the <b>Building</b> tab &mdash; each Field grows crops up to its tier. Up to '+ESTATE_MAX_FIELDS+' on your Estate + '+ESTATE_MAX_FIELDS+' on the guild Estate.</div>';
     html += renderSkillProgressBar('fiberharvesting');
     html += renderSkillProgressBar('grainharvesting');
     html += renderSkillProgressBar('herbharvesting');
+    html += renderFarmPlantControls();
 
     // Owned seeds across all three crop lines, resolved to {id, def, tier, crop}, sorted by tier.
     var ownedSeedList = [];
@@ -28458,6 +28524,34 @@
       if(setKey==='compactMobile') applyMobileLayoutPref(); // re-scale the viewport immediately
       if(setKey==='chatFilter'){ _chatDockSig = _chatDrawerSig = _chatExpandSig = null; } // force the chat panels to re-censor visible messages now
     },
+    // Auto-plant seed filter (Farming screen). These persist immediately so the choice survives a reload.
+    togglePlantFilter: function(btn, e){
+      var key = btn.getAttribute('data-key');
+      if(!state.settings) return;
+      state.settings[key] = !state.settings[key];
+      saveGame();
+    },
+    togglePlantSeed: function(btn, e){
+      var seed = btn.getAttribute('data-seed');
+      if(!state.settings) return;
+      if(!state.settings.plantSeedDisabled) state.settings.plantSeedDisabled = {};
+      var d = state.settings.plantSeedDisabled;
+      if(d[seed]) delete d[seed]; else d[seed] = true;  // absent = enabled
+      saveGame();
+    },
+    setPlantSeedGroup: function(btn, e){
+      var group = btn.getAttribute('data-group'), on = btn.getAttribute('data-on') === '1';
+      if(!state.settings) return;
+      if(!state.settings.plantSeedDisabled) state.settings.plantSeedDisabled = {};
+      var d = state.settings.plantSeedDisabled;
+      [SEED_ITEMS, GRAIN_SEED_ITEMS, HERB_SEED_ITEMS].forEach(function(pool){
+        Object.keys(pool).forEach(function(id){
+          var si = seedInfo(id); if(!si || si.cropType !== group) return;
+          if(on) delete d[id]; else d[id] = true;
+        });
+      });
+      saveGame();
+    },
     changePassword: function(btn, e){ changePassword(); },
     guildSubtab: function(btn, e){
       guildSub = btn.getAttribute('data-sub');
@@ -29240,7 +29334,7 @@
       candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
       peonTaskTier:peonTaskTier, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
       generatePersonalEstateGrid:generatePersonalEstateGrid, generateEstateGrid:generateEstateGrid, estatePlaceStarterKit:estatePlaceStarterKit, estateIsStarterTile:estateIsStarterTile, ESTATE_STARTER_WORKSHOP:ESTATE_STARTER_WORKSHOP, ESTATE_STARTER_COTTAGE:ESTATE_STARTER_COTTAGE, ESTATE_STARTER_PAVING:ESTATE_STARTER_PAVING, estatePeonSources:estatePeonSources,
-      ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline, simulateOfflineFarming:simulateOfflineFarming, bestOwnedSeedForField:bestOwnedSeedForField,
+      ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline, simulateOfflineFarming:simulateOfflineFarming, bestOwnedSeedForField:bestOwnedSeedForField, seedAllowedForPlanting:seedAllowedForPlanting, ownedSeedTypesDesc:ownedSeedTypesDesc, renderFarmPlantControls:renderFarmPlantControls,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
       estateUpgradePavement:estateUpgradePavement, pavementTierOf:pavementTierOf, ESTATE_PAVE_TILE_COST:ESTATE_PAVE_TILE_COST, estUse:estUse,

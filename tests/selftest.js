@@ -387,6 +387,49 @@
     s.inventory['farming_t0'] = saved.crop0;
   });
 
+  // ---- Farming: the Auto-plant seed filter (crop-type toggles + a Custom per-seed override) ----
+  suite('farming: auto-plant seed filter', function(){
+    var s = FF._state;
+    var orig = s.settings, oInv = { s0:s.inventory['seed_t0'], s1:s.inventory['seed_t1'], g0:s.inventory['grainseed_t0'], h0:s.inventory['herbseed_t0'] };
+    s.settings = Object.assign({}, orig, { plantFiber:true, plantGrain:true, plantHerb:true, plantCustom:false, plantSeedDisabled:{} });
+
+    // Default: every crop type is sown.
+    ok(FF.seedAllowedForPlanting('seed_t0'), 'fiber allowed by default');
+    ok(FF.seedAllowedForPlanting('grainseed_t0'), 'grain allowed by default');
+    ok(FF.seedAllowedForPlanting('herbseed_t0'), 'herb allowed by default');
+
+    // Type toggle: unticking Fiber blocks fiber seeds only.
+    s.settings.plantFiber = false;
+    ok(!FF.seedAllowedForPlanting('seed_t0'), 'fiber blocked when plantFiber is off');
+    ok(FF.seedAllowedForPlanting('grainseed_t0') && FF.seedAllowedForPlanting('herbseed_t0'), 'grain & herb unaffected');
+
+    // Custom overrides the type toggles: fiber is allowed again even with plantFiber still false.
+    s.settings.plantCustom = true;
+    ok(FF.seedAllowedForPlanting('seed_t0'), 'Custom on -> the fiber type toggle is overridden');
+    // ...except seeds explicitly unticked in the Custom list.
+    s.settings.plantSeedDisabled = { 'seed_t0':true };
+    ok(!FF.seedAllowedForPlanting('seed_t0'), 'an explicitly-disabled seed is blocked in Custom mode');
+    ok(FF.seedAllowedForPlanting('seed_t1'), 'other seeds stay enabled (absent from the exclusion set)');
+
+    // bestOwnedSeedForField (offline auto-plant) honours the filter.
+    s.settings.plantCustom = false; s.settings.plantFiber = false; s.settings.plantSeedDisabled = {};
+    s.inventory['seed_t0'] = 5; s.inventory['grainseed_t0'] = 0; s.inventory['herbseed_t0'] = 0;
+    ok(!FF.bestOwnedSeedForField(0), 'picker finds nothing when the only owned seed type is filtered out');
+    s.settings.plantFiber = true;
+    eq(FF.bestOwnedSeedForField(0), 'seed_t0', 'picker returns the fiber seed once its type is re-enabled');
+
+    // ownedSeedTypesDesc (live Plant All) filters too.
+    s.inventory['seed_t0'] = 3; s.inventory['grainseed_t0'] = 3;
+    s.settings.plantFiber = false; s.settings.plantGrain = true;
+    var ids = FF.ownedSeedTypesDesc().map(function(x){ return x.id; });
+    ok(ids.indexOf('seed_t0') === -1, 'Plant All drops filtered-out fiber seeds');
+    ok(ids.indexOf('grainseed_t0') !== -1, 'Plant All keeps enabled grain seeds');
+
+    // restore
+    s.settings = orig;
+    s.inventory['seed_t0']=oInv.s0; s.inventory['seed_t1']=oInv.s1; s.inventory['grainseed_t0']=oInv.g0; s.inventory['herbseed_t0']=oInv.h0;
+  });
+
   // ---- Guild activity + bank logs (shared blob, officer+ only, filtered by kind) ----
   suite('guild: activity & bank logs', function(){
     var ge = FF.guildEstate, gs = FF.guildState;
