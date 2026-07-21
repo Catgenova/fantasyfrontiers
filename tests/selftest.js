@@ -8948,6 +8948,50 @@
     }
   });
 
+  // ---- Dungeon Masterwork formulas drop AND forge for every layer (d1-d4) ------------------------
+  suite('dungeon: d2-d4 formulas wired', function(){
+    ok(typeof FF.rollMasterworkDrops === 'function' && typeof FF.mastercraftRecipeFor === 'function' && FF.BLUEPRINT_ITEMS && FF.MASTERWORK_SLOTS, 'masterwork helpers exported');
+    eq(JSON.stringify(FF.DUNGEON_ORDER), JSON.stringify(['d1','d2','d3','d4']), 'four dungeon layers');
+
+    // Every layer x every slot must (a) have a droppable Blueprint item and (b) resolve to a forge recipe.
+    // A blueprint that drops but can't be forged is a dead end; a slot with no blueprint never drops. This
+    // pins the whole chain so a future slot/layer edit can't silently strand d2-d4 (the reported worry).
+    FF.DUNGEON_ORDER.forEach(function(layer){
+      FF.MASTERWORK_SLOTS.forEach(function(slot){
+        var id = FF.masterworkBlueprintId(layer, slot.id);
+        var bp = FF.BLUEPRINT_ITEMS[id];
+        ok(bp, layer+'/'+slot.id+': blueprint exists to drop ('+id+')');
+        if(bp){
+          eq(bp.dungeon, layer, layer+'/'+slot.id+': blueprint tagged to its layer');
+          var rec = FF.mastercraftRecipeFor(bp);
+          ok(rec, layer+'/'+slot.id+': dropped blueprint resolves to a forge recipe');
+          if(rec){
+            eq(rec.layer, layer, layer+'/'+slot.id+': recipe is for the same layer');
+            ok((rec.setarmor && rec.material) || (rec.outcomes && rec.outcomes.length > 0), layer+'/'+slot.id+': recipe can produce an item');
+          }
+        }
+      });
+    });
+
+    // Runtime drop path: force every slot to roll and confirm rollMasterworkDrops actually GRANTS d2/d3/d4
+    // blueprints of the right layer (not just that the table is shaped right).
+    var s = FF._state, savedBp = s.blueprints, savedRand = Math.random;
+    try {
+      ['d2','d3','d4'].forEach(function(layer){
+        s.blueprints = {};
+        Math.random = function(){ return 0; };   // every slot.chance*mult > 0 -> all drop
+        var got = FF.rollMasterworkDrops(layer, 1);
+        Math.random = savedRand;
+        eq(got.length, FF.MASTERWORK_SLOTS.length, layer+': a full-luck clear drops one of every slot');
+        ok(got.every(function(bp){ return bp.dungeon === layer; }), layer+': every dropped blueprint belongs to '+layer);
+        eq((s.blueprints[FF.masterworkBlueprintId(layer,'plate')]||0), 1, layer+': the granted blueprint landed in inventory');
+      });
+    } finally {
+      Math.random = savedRand;
+      s.blueprints = savedBp;
+    }
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }
