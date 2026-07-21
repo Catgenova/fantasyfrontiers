@@ -281,6 +281,65 @@
     cell.type = saved.type; cell.paveTileId = saved.pave; cell.workshopId = saved.work; cell.height = saved.h; cell.owned = saved.owned;
   });
 
+  // ---- Estate: offline queue drain finishes every action the away-gap covers, not just the head ----
+  suite('estate: offline queue drain', function(){
+    var s = FF._state;
+    FF.estUse(false);                                  // personal estate is the drain target
+    var g = s.estate.grid;
+    var saved = { q:s.estate.queue, job:s.estate.job,
+      c10:Object.assign({}, g[1][0]), c11:Object.assign({}, g[1][1]),
+      c20:Object.assign({}, g[2][0]) };
+    // Three fresh, buildable tiles.
+    g[1][0] = { type:'dirt', height:1, owned:true };
+    g[1][1] = { type:'dirt', height:1, owned:true };
+    g[2][0] = { type:'dirt', height:1, owned:true };
+    var MIN = 60*1000;
+
+    // A) An overhang that covers exactly one 5-min field finishes ONE and leaves the rest queued.
+    s.estate.job = null;
+    s.estate.queue = [
+      { kind:'field', x:1, y:0, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } },
+      { kind:'field', x:1, y:1, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } }
+    ];
+    var n = FF.estateDrainQueueOffline(5*MIN);
+    eq(n, 1, 'a 5-min gap drains exactly one 5-min field');
+    eq(s.estate.queue.length, 1, 'the second field stays queued');
+    eq(g[1][0].fieldTier, 0, 'the drained field was applied to its tile');
+    ok(g[1][1].fieldTier == null, 'the still-queued field was not applied');
+
+    // B) A gap wider than the whole queue drains everything.
+    var n2 = FF.estateDrainQueueOffline(60*MIN);
+    eq(n2, 1, 'the remaining field drains once the gap covers it');
+    eq(s.estate.queue.length, 0, 'the queue is empty after a full drain');
+    eq(g[1][1].fieldTier, 0, 'the last field was applied');
+
+    // C) A zero/negative overhang (the live case: completion lands right at readyAt) drains nothing.
+    s.estate.queue = [{ kind:'field', x:2, y:0, fieldTier:0, localMs:5*MIN, payload:{ fieldTier:0 } }];
+    eq(FF.estateDrainQueueOffline(0), 0, 'no overhang -> nothing drains (live behaviour unchanged)');
+    eq(s.estate.queue.length, 1, 'the queued action is left for a live start');
+
+    // D) An invalid head (its tile can no longer take the action) is skipped without spending overhang.
+    g[2][0].fieldTier = 0;                             // tile already has a field -> the queued field is void
+    var n4 = FF.estateDrainQueueOffline(1*MIN);        // 1 min: too short to "afford" anything anyway
+    eq(n4, 0, 'a voided head drains nothing');
+    eq(s.estate.queue.length, 0, 'but it is dropped from the queue (refunded), not left to stall');
+
+    // E) A pave-then-build chain drains in order: the workshop validates against the freshly paved tile.
+    g[2][0] = { type:'dirt', height:1, owned:true };
+    s.estate.queue = [
+      { kind:'pave', x:2, y:0, paveTileId:'paving_t0', localMs:10*MIN, payload:{ paveTileId:'paving_t0' } },
+      { kind:'workshop', x:2, y:0, workshopId:'workshop_mining_t0', localMs:30*MIN, payload:{ workshopId:'workshop_mining_t0' } }
+    ];
+    var n5 = FF.estateDrainQueueOffline(90*MIN);
+    eq(n5, 2, 'a big gap drains both the pave and the workshop that depends on it');
+    eq(g[2][0].type, 'paved', 'the pave landed first');
+    eq(g[2][0].workshopId, 'workshop_mining_t0', 'the workshop built on top of the just-paved tile');
+
+    // restore
+    s.estate.queue = saved.q; s.estate.job = saved.job;
+    g[1][0] = saved.c10; g[1][1] = saved.c11; g[2][0] = saved.c20;
+  });
+
   // ---- Guild activity + bank logs (shared blob, officer+ only, filtered by kind) ----
   suite('guild: activity & bank logs', function(){
     var ge = FF.guildEstate, gs = FF.guildState;

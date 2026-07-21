@@ -20477,6 +20477,39 @@
     }
     return true;
   }
+  // Offline catch-up for the QUEUE. The server certifies exactly one finished job at a time and always
+  // restarts the next at now() -- it cannot backdate (see the estate_jobs migration) -- so a plain advance
+  // would finish only the head and run the rest live, one at a time. That is the "stalls after the current
+  // action" bug. Here we spend the OVERHANG (real elapsed time past the completed job's readyAt, which the
+  // server just certified by handing that job back) to finish as many fully-fitting queued actions locally
+  // as it covers. Each head is re-validated against the LIVE grid -- which the prior completions in this
+  // same loop have already mutated, so a queued pave-then-build chain still lines up -- and applied with
+  // rewards (materials were reserved at enqueue, so we do NOT consume again). Only the client that WON the
+  // completion DELETE reaches this branch, so two open windows cannot double-grant. The first job that does
+  // not fully fit is left in the queue for estateQueueAdvance to start live; its unspent overhang is lost,
+  // the one accepted cost of a server that cannot replay the idle sim. Returns the count drained.
+  function estateDrainQueueOffline(overhangMs){
+    if(!(overhangMs > 0)) return 0;
+    var drained = 0;
+    while(estateQueue().length){
+      var head = state.estate.queue[0];
+      var cell = state.estate.grid[head.x] && state.estate.grid[head.x][head.y];
+      var v = estateQueuedJobValid(head, cell);
+      if(!v.ok){                                    // a queued build voided in the meantime -> refund + skip
+        estateJobRefund(head);
+        state.estate.queue.shift();
+        addLog('Skipped a queued estate action — ' + v.msg + ' (materials returned).', 'danger');
+        continue;                                   // invalid heads cost no overhang
+      }
+      var dur = Math.max(1, head.localMs|0);
+      if(dur > overhangMs) break;                   // doesn't fully fit the gap -> start it live below
+      applyEstateJobCompletion(state.estate, head, true, false);
+      state.estate.queue.shift();
+      overhangMs -= dur;
+      drained++;
+    }
+    return drained;
+  }
   // Completes the personal estate job once its timer elapses. Runs every loop tick (and
   // therefore also on load), so a job started before the tab was closed finishes offline.
   var _estJobCompleteBusy = false;
@@ -20503,10 +20536,16 @@
       if(!cur) return;
       if(d && d.ok && d.job){
         applyEstateJobCompletion(state.estate, cur, true, false);
+        // Overhang = time elapsed past this job's finish. Live, this is ~0 (we complete right at readyAt),
+        // so the drain finishes nothing and behaviour is unchanged; after a long absence it can cover many
+        // queued actions, which is the fix for the queue stalling one-at-a-time on return.
+        var overhang = Date.now() - (Number(cur.readyAt) || Date.now());
         state.estate.job = null;
+        estateDrainQueueOffline(overhang);         // finish everything the offline gap fully covers
         needsRender = true;
+        estPersist();
         cloudSave(false, true);                   // flush the finished grid before another window pushes
-        estateQueueAdvance(true);                 // auto-start the next queued action, if any
+        estateQueueAdvance(true);                 // auto-start the first action the gap didn't cover, if any
       } else if(d && d.error === 'early' && d.job){
         // Our clock ran ahead of the server's -- adopt the real remaining time instead of completing.
         cur.readyAt = Number(d.job.readyAt) || cur.readyAt;
@@ -29078,7 +29117,7 @@
       candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
       peonTaskTier:peonTaskTier, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
       generatePersonalEstateGrid:generatePersonalEstateGrid, generateEstateGrid:generateEstateGrid, estatePlaceStarterKit:estatePlaceStarterKit, estateIsStarterTile:estateIsStarterTile, ESTATE_STARTER_WORKSHOP:ESTATE_STARTER_WORKSHOP, ESTATE_STARTER_COTTAGE:ESTATE_STARTER_COTTAGE, ESTATE_STARTER_PAVING:ESTATE_STARTER_PAVING, estatePeonSources:estatePeonSources,
-      ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion,
+      ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
       estateUpgradePavement:estateUpgradePavement, pavementTierOf:pavementTierOf, ESTATE_PAVE_TILE_COST:ESTATE_PAVE_TILE_COST, estUse:estUse,
