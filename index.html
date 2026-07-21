@@ -4069,6 +4069,9 @@
       spawnFloatingText('Forged ' + r.label + baseName + '!', 'ft-rare');
       maybeShowRarityPopup(rarityId, r.label + baseName);
       chronicleBroadcast('craft', r.label + baseName);   // rare/supreme/fantastic -> global feed
+      // Fantastic forges also hit the community Discord feed -- including ones rolled offline
+      // (chronicleBroadcast skips those, the Discord feed deliberately doesn't).
+      if(rarityId==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** forged a **' + r.label + baseName + '**!' + discordFeedOfflineTag());
       // Supreme/fantastic crafts also announce in global chat (crafter's own copy; other players
       // synthesize theirs from the chronicle broadcast in chronicleOnIncoming).
       if(!offlineCapture && authUser && (rarityId==='supreme' || rarityId==='fantastic')){
@@ -10025,6 +10028,7 @@
       mintSetPiece(key.cls, key.slot, rarity, recipe.layer);
       var pname = getRarity(rarity).label + setPieceName(key.cls, key.slot, recipe.layer);
       addLog('Mastercraft! You forged the ' + pname + ' — part of the ' + ((CLASS_DEFS_BY_ID[key.cls]||{}).name || key.cls) + ' set.', 'important');
+      if(rarity==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the **' + pname + '**!');
       spawnFloatingText('+1 ' + pname, ftClass);
       needsRender = true;
       return;
@@ -10043,6 +10047,7 @@
         tier: topIdx, rarity: rarity, enchants: [], enhance: 0, leg: key }; // tier = base tier INDEX (equip adds +1)
       var git = recipe.itemMap[itemId];
       addLog('Mastercraft! You forged the Legendary ' + git.name + ' — ' + gdef.desc, 'important');
+      if(rarity==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the Legendary **' + git.name + '**!');
       spawnFloatingText('+1 ' + git.name, ftClass);
       needsRender = true;
       return;
@@ -10050,6 +10055,7 @@
     addItem(itemId, 1);
     var it = recipe.itemMap[itemId];
     addLog('Mastercraft! You forged the ' + it.name + ' — +' + Math.round(it.value * 100) + '% ' + it.statLabel + '.', 'important');
+    if(rarity==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the **' + it.name + '**!');
     spawnFloatingText('+1 ' + it.name, ftClass);
     needsRender = true;
   }
@@ -10645,6 +10651,7 @@
             addLog('You recovered a ' + RELIC_ITEMS[relicId].name + '!', 'important');
             spawnFloatingText('+1 ' + RELIC_ITEMS[relicId].name + '!', rarityId==='normal' ? 'ft-success' : 'ft-rare');
             maybeShowRarityPopup(rarityId, RELIC_ITEMS[relicId].name, RELIC_ITEMS[relicId].icon);
+            if(rarityId==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** recovered a **' + RELIC_ITEMS[relicId].name + '**!' + discordFeedOfflineTag());
           } else {
             var brokenId = 'brokenrelic_t'+recipe.tierIndex;
             addItem(brokenId, 1);
@@ -12230,7 +12237,10 @@
   // +10-or-higher enhances are a big deal: announce them in global chat (own client shows it locally;
   // chronicleBroadcast relays to everyone else, who synthesize the same system message).
   var ENHANCE_ANNOUNCE_MIN = 10;
+  var DISCORD_ENHANCE_MIN = 12;   // +12 and above also reach the community Discord feed
   function announceEnhance(u){
+    // Enhancing is click-only (never runs in offline catch-up), so no offline tag needed here.
+    if(u.enhance >= DISCORD_ENHANCE_MIN) discordFeedPost('⚒️ **' + discordFeedName() + '** enhanced their **' + uniqueBaseName(u) + '** to **+' + u.enhance + '**!');
     if(u.enhance < ENHANCE_ANNOUNCE_MIN || !chatName()) return;
     var body = uniqueBaseName(u) + ' to +' + u.enhance;         // e.g. "Willow Fire Wand to +12"
     var rar = u.enhance >= 15 ? 'fantastic' : 'supreme';
@@ -24366,6 +24376,38 @@
       .subscribe(function(status){
         if(status === 'SUBSCRIBED'){ try{ ch.track({ at: Date.now() }); }catch(e){} }
       });
+  }
+
+  // ---- Discord feed webhook: mirrors headline moments -- Fantastic-rarity creations and
+  // +12-or-better Enhancements -- into the community Discord channel. Posts fire ONLY from the
+  // acting player's own client (chronicle listeners never re-post), so each event reaches
+  // Discord exactly once. Unlike chronicleBroadcast, events rolled during the offline
+  // catch-up ARE posted (tagged "offline catch-up"): fetch is async, so posts queued
+  // mid-catch-up simply go out once the synchronous pass finishes -- authUser is already
+  // restored by then (onlineBoot awaits auth before initGame), so the name resolves.
+  var DISCORD_FEED_WEBHOOK = 'https://discord.com/api/webhooks/1529166753811402793/g9qTJxiEmKTp9z3wZGk3Z7VnW0x0-hm4bYxpiz1ckblpApDBjMZtygz4HGijoPF-O3Wp';
+  var discordFeedQueue = [];
+  var discordFeedTimer = null;
+  function discordFeedName(){ return chatName() || 'An adventurer'; }
+  function discordFeedOfflineTag(){ return offlineCapture ? ' *(offline catch-up)*' : ''; }
+  function discordFeedPost(text){
+    if(!DISCORD_FEED_WEBHOOK || !text) return;
+    discordFeedQueue.push(String(text).slice(0, 1900));   // Discord caps message content at 2000 chars
+    if(!discordFeedTimer) discordFeedFlush();
+  }
+  function discordFeedFlush(){
+    var msg = discordFeedQueue.shift();
+    if(!msg){ discordFeedTimer = null; return; }
+    // Space posts ~1.5s apart so a burst (e.g. several Fantastic crafts in one offline pass)
+    // stays well inside Discord's webhook rate limit.
+    discordFeedTimer = setTimeout(discordFeedFlush, 1500);
+    try{
+      fetch(DISCORD_FEED_WEBHOOK, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ content: msg, allowed_mentions:{ parse:[] } })   // never ping anyone
+      }).then(function(){}, function(){});   // fire-and-forget: a feed hiccup must never break gameplay
+    }catch(e){}
   }
 
   // ---- Global Chronicle feed: broadcasts notable cross-player events into everyone's
