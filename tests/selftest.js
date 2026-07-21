@@ -131,6 +131,63 @@
     eq(FF.tierTime(7, 0.3, 1), 7.3, 'tierTime +step');
   });
 
+  // ---- Card XP preview: base vs. real earned (Mortal / server buff / Tea / familiar / Diligence / Curiosity) ----
+  suite('cards: base vs real XP', function(){
+    var s = FF._state;
+    var saved = { mortal:s.mortal, tea:s.activeTea, fam:s.familiars, dil:s.physique.diligence, cur:s.physique.curiosity };
+    function clear(){
+      s.mortal = false;
+      s.activeTea = { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 };
+      s.familiars = {};
+      s.physique.diligence = 0; s.physique.curiosity = 0;
+    }
+    // Neutral baseline: a craft skill with nothing active earns exactly its base.
+    clear();
+    eq(FF.addXpAppliedMult('cooking'), 1, 'no modifiers -> x1 applied multiplier');
+    eq(FF.cardRealXp('cooking', 100, 'craft'), 100, 'craft real == base with no bonuses');
+
+    // Mortal deficit halves the real XP.
+    clear(); s.mortal = true;
+    eq(FF.cardRealXp('cooking', 100, 'craft'), 50, 'Mortal deficit halves real XP');
+
+    // Paving carries a x4 craft-XP bonus that the real figure surfaces.
+    clear();
+    eq(FF.cardRealXp('paving', 100, 'craft'), 400, 'paving real folds in its x4 craft-XP bonus');
+    eq(FF.cardRealXp('cooking', 100, 'craft'), 100, 'every other craft keeps the x1 bonus');
+
+    // A Tea (Mixology/Brewing XP boost) multiplies the real figure.
+    clear(); s.activeTea = { itemId:'tea_x', name:'T', icon:'', xpBoost:0.2, durationMs:1e6, expiresAt:Date.now()+1e6 };
+    eq(FF.cardRealXp('cooking', 100, 'craft'), 120, 'an active Tea (+20%) lifts real XP');
+
+    // A skill familiar adds +1% per level.
+    clear(); s.familiars = { cooking:{ owned:true, level:10 } };
+    eq(FF.cardRealXp('cooking', 100, 'craft'), 110, 'a level-10 familiar adds +10%');
+
+    // Diligence lifts CRAFT XP but not gather; Curiosity lifts GATHER XP but not craft.
+    clear(); s.physique.diligence = 1e9;
+    ok(FF.cardRealXp('cooking', 1000, 'craft') > 1000, 'Diligence raises craft real XP');
+    eq(FF.cardRealXp('mining', 1000, 'gather'), Math.round(1000*(1+FF.curiosityGatherXpBonus(s))), 'gather ignores Diligence');
+    clear(); s.physique.curiosity = 1e9;
+    eq(FF.cardRealXp('mining', 1000, 'gather'), 1150, 'Curiosity (capped +15%) raises gather real XP');
+    eq(FF.cardRealXp('cooking', 1000, 'craft'), 1000, 'craft ignores Curiosity');
+
+    // xpStat markup: a tier chip always; the "(+N real)" only when a modifier is changing it.
+    clear();
+    var plain = FF.xpStat('cooking', 100, 'craft', 2);
+    ok(/t3/.test(plain) && /\+100 XP/.test(plain) && !/real/.test(plain), 'neutral: tier chip t3, base only, no real span');
+    s.mortal = true;
+    var mod = FF.xpStat('cooking', 100, 'craft', 4);
+    ok(/t5/.test(mod) && /\(\+50 real\)/.test(mod), 'with a modifier: tier chip t5 and a (+50 real) span');
+
+    // cardTierIndex resolves a number, an id string, or an object.
+    eq(FF.cardTierIndex(3), 3, 'tier from number');
+    eq(FF.cardTierIndex('paving_t7'), 7, 'tier from id');
+    eq(FF.cardTierIndex({ tierIndex:5 }), 5, 'tier from object');
+
+    s.mortal = saved.mortal; s.activeTea = saved.tea; s.familiars = saved.fam;
+    s.physique.diligence = saved.dil; s.physique.curiosity = saved.cur;
+  });
+
   // ---- Vendor sell values: flat linear curve, not the old exponential tierSell -----------
   suite('economy: vendor sell values', function(){
     var S = FF.ALL_SELLABLE;

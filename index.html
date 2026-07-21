@@ -599,6 +599,8 @@
   .item-name{font-family:var(--font-display);font-size:14px;color:var(--text);}
   .item-meta{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);margin-top:2px;}
   .item-stats{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin:8px 0;}
+  .tier-chip{display:inline-block;font-family:var(--font-mono);font-size:9px;font-weight:700;letter-spacing:0.5px;line-height:1.4;padding:1px 5px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-faint);}
+  .xp-real{color:var(--gold);font-weight:700;}
   .inputs-line{font-family:var(--font-mono);font-size:11px;margin:6px 0;line-height:1.6;}
   .inputs-line .ok{color:var(--hp-good);}
   .inputs-line .bad{color:var(--hp-bad);}
@@ -15681,6 +15683,48 @@
     }
   }
 
+  // ---- Card XP preview: base EXP vs. the REAL amount a completion grants ------------------------------
+  // The exact multiplier addXp() layers on top of the amount handed to it: an active Tea (Mixology/Brewing
+  // XP boost), a skill familiar, the server-wide EXP buff, the Mortal deficit, and -- craft skills only --
+  // Diligence. Mirrors addXp exactly so a card's "real" figure equals what one completion actually adds.
+  function addXpAppliedMult(skill){
+    var m = 1;
+    if(isTeaActive()) m *= (1 + (state.activeTea.xpBoost||0));
+    m *= familiarXpMult(skill) * serverBuffXpMult();
+    if(isMortal()) m *= MORTAL_XP_MULT;                       // Mortal deficit: half XP
+    if(CRAFT_SKILL_IDS.indexOf(skill) !== -1) m *= diligenceCraftXpMult();
+    return m;
+  }
+  // base -> real earned. mode 'gather' folds in the Curiosity gather bonus; 'craft' folds in the paving
+  // craft-XP multiplier (x1 for every other craft); both then apply addXpAppliedMult. `baseXp` is the value
+  // already shown on the card (item.xp for gathers; recipe/tierData xp * 1.5 for crafts).
+  function cardRealXp(skill, baseXp, mode){
+    var pre = mode === 'gather' ? (1 + curiosityGatherXpBonus(state))
+            : mode === 'craft'  ? craftXpBonus(skill)
+            : 1;
+    return Math.round(baseXp * pre * addXpAppliedMult(skill));
+  }
+  function cardTierIndex(src){
+    if(src == null) return -1;
+    if(typeof src === 'number') return src;
+    if(typeof src.tierIndex === 'number') return src.tierIndex;
+    var m = /_t(\d+)/.exec((typeof src === 'string' ? src : src.id) || '');
+    return m ? parseInt(m[1], 10) : -1;
+  }
+  // The <span>s that replace a bare "+N XP" in an item-stats row: a tier chip, then the base XP with the
+  // real earned amount beside it whenever a modifier is changing it. `tierSrc` is a tierIndex, an id string,
+  // or an object carrying tierIndex/id (all resolved by cardTierIndex).
+  function xpStat(skill, baseXp, mode, tierSrc){
+    baseXp = Math.round(baseXp);
+    var real = cardRealXp(skill, baseXp, mode);
+    var ti = cardTierIndex(tierSrc);
+    var chip = ti >= 0 ? '<span class="tier-chip" title="Tier '+(ti+1)+'">t'+(ti+1)+'</span>' : '';
+    var xp = (real !== baseXp)
+      ? '<span>+'+fmt(baseXp)+' <span class="xp-real" title="Real XP after your Tea, familiar, server buff, '+(CRAFT_SKILL_IDS.indexOf(skill)!==-1?'Diligence':'Curiosity')+', and the Mortal deficit">(+'+fmt(real)+' real)</span> XP</span>'
+      : '<span>+'+fmt(baseXp)+' XP</span>';
+    return chip + xp;
+  }
+
   // ================= RENDER: GATHERING =================
   function renderGatherTab(skillKey){ return renderGatherTabBody(skillKey) + renderToolCardFor(skillKey); }
   function renderGatherTabBody(skillKey){
@@ -15703,7 +15747,7 @@
       var pct = isActive ? clamp((gslot.act.progress||0)/effTime*100,0,100) : 0;
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+item.icon+'</div><div><div class="item-name">'+item.name+'</div><div class="item-meta">Req. Lv '+item.levelReq+'</div></div></div>';
-      html += '<div class="item-stats"><span>+'+item.xp+' XP</span><span>'+item.time+'s</span><span>'+item.sell+'g each</span></div>';
+      html += '<div class="item-stats">'+xpStat(skillKey, item.xp, 'gather', item)+'<span>'+item.time+'s</span><span>'+item.sell+'g each</span></div>';
       if(skillKey==='digging'){
         html += '<div class="chance-line">Output: <b>1x '+item.name+'</b> at <b>'+Math.round(diggingMainChance(state)*100)+'%</b> &nbsp;|&nbsp; Bonus: Coal (1-5x) <b>'+Math.round(diggingCoalChance(state)*100)+'%</b>, Artifact <b>'+Math.round(diggingArtifactChance(state)*100)+'%</b></div>';
       } else if(skillKey==='mining'){
@@ -15753,7 +15797,7 @@
       var fillId = isActive ? (activeSlot.primary ? 'liveActionFill' : 'extraSlotFill-'+activeSlot.index) : '';
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: '+(state.inventory[recipe.meatId]||0)+' Meat, '+(state.inventory[recipe.hideId]||0)+' Hide'+(recipe.fatId?', '+(state.inventory[recipe.fatId]||0)+' '+fatName:'')+'</div></div></div>';
-      html += '<div class="item-stats"><span>+'+Math.round(recipe.xp*1.5)+' XP</span><span>'+recipe.time+'s</span><span>'+meatChance+'% Meat</span><span>'+hideChance+'% Hide</span>'+(recipe.fatId?'<span>'+fatChance+'% Fat</span>':'')+'</div>';
+      html += '<div class="item-stats">'+xpStat(skillKey, recipe.xp*1.5, 'craft', recipe)+'<span>'+recipe.time+'s</span><span>'+meatChance+'% Meat</span><span>'+hideChance+'% Hide</span>'+(recipe.fatId?'<span>'+fatChance+'% Fat</span>':'')+'</div>';
       html += '<div class="chance-line">Output: <b>1x Meat</b> at <b>'+meatChance+'%</b> &nbsp;|&nbsp; <b>1x Hide</b> at <b>'+hideChance+'%</b>'+(recipe.fatId?' &nbsp;|&nbsp; <b>1x '+fatName+'</b> at <b>'+fatChance+'%</b>':'')+' (independent rolls)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(recipe.inputs, 'inp-'+recipe.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -15834,7 +15878,7 @@
       html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: <span id="craftOwned-'+recipe.id+'">'+fmt(state.inventory[recipe.id]||0)+'</span></div></div></div>';
       // Arrows add flat base damage (a same-tier bow) to a bow shot -- surface it right on the card.
       var _arrowDmg = arrowBaseDamage(recipe.id);
-      html += '<div class="item-stats"><span>+'+Math.round(recipe.xp*1.5)+' XP</span><span>'+recipe.time+'s</span><span>'+recipe.sell+'g each</span>'+(_arrowDmg ? '<span style="color:var(--gold)">'+_arrowDmg.dmgMin+'-'+_arrowDmg.dmgMax+' dmg</span>' : '')+'</div>';
+      html += '<div class="item-stats">'+xpStat(skillKey, recipe.xp*1.5, 'craft', recipe)+'<span>'+recipe.time+'s</span><span>'+recipe.sell+'g each</span>'+(_arrowDmg ? '<span style="color:var(--gold)">'+_arrowDmg.dmgMin+'-'+_arrowDmg.dmgMax+' dmg</span>' : '')+'</div>';
       // Combat consumables (Apothecary coatings, Pyrotechnics flash bombs, Alchemy toxins/bombs...)
       // stated what they COST but never what they DO, unlike a weapon card. potionEffectDesc already
       // produces the exact per-tier numbers used in combat, so surface them on the card too.
@@ -15936,7 +15980,7 @@
     html += '<div class="item-top"><div class="item-icon">'+svgIcon('log', cottageTierColor(sel))+'</div><div><div class="item-name">'+escapeHtml(FORESTRY_NAMES[sel])+' Cottage</div><div class="item-meta">Owned this tier: '+owned+'</div></div></div>';
     html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Houses a Peon &mdash; place next to a Workshop of tier '+ (sel+1) +' or higher</div>';
     html += '<div class="inputs-line">Tier: '+tierStepper('cottage','',tierRange(maxUnlocked),sel,FORESTRY_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-    html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>Req. Lv '+data.levelReq+'</span></div>';
+    html += '<div class="item-stats">'+xpStat('carpentry', data.xp*1.5, 'craft', sel)+'<span>Req. Lv '+data.levelReq+'</span></div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-cottage')+'</div>';
     html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
     if(isActive){
@@ -15966,7 +16010,7 @@
     html += '<div class="item-top"><div class="item-icon">'+wIcon+'</div><div><div class="item-name">'+escapeHtml(lbl)+' Workshop</div><div class="item-meta">Owned this tier: '+owned+'</div></div></div>';
     html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Boosts <b>'+escapeHtml(lbl)+'</b> &mdash; +'+Math.round(data.speedPct*100)+'% '+(isGather?'gathering':'crafting')+' speed, '+Math.round(data.doublePct*100)+'% double output</div>';
     html += '<div class="inputs-line">Tier: '+tierStepper('workshop',skillId,tierRange(maxUnlocked),sel,FORESTRY_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-    html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>Req. Lv '+data.levelReq+'</span></div>';
+    html += '<div class="item-stats">'+xpStat('carpentry', data.xp*1.5, 'craft', sel)+'<span>Req. Lv '+data.levelReq+'</span></div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-workshop-'+skillId)+'</div>';
     html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
     if(isActive){
@@ -16122,7 +16166,7 @@
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
       var relicOwnedTotal = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'relic_t'+recipe.tierIndex+'_'+r; }));
       html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: '+relicOwnedTotal+'</div></div></div>';
-      html += '<div class="item-stats"><span>+'+Math.round(recipe.xp*1.5)+' XP</span><span>'+recipe.time+'s</span><span>Normal: +'+Math.round(relicPreview*100)+'% dmg/armor</span></div>';
+      html += '<div class="item-stats">'+xpStat('archaeology', recipe.xp*1.5, 'craft', recipe)+'<span>'+recipe.time+'s</span><span>Normal: +'+Math.round(relicPreview*100)+'% dmg/armor</span></div>';
       html += '<div class="chance-line">Output: <b>1x Relic</b> at <b>'+successPct+'%</b> success (else a Broken Relic) &nbsp;|&nbsp; Rare <b>'+(chances.rare*100).toFixed(2)+'%</b>, Supreme <b>'+(chances.supreme*100).toFixed(2)+'%</b>, Fantastic <b>'+(chances.fantastic*100).toFixed(2)+'%</b></div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(recipe.inputs, 'inp-'+recipe.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -16163,7 +16207,7 @@
       var selLog = GATHERING_SKILLS.forestry.items[selectedShaftLogTier];
       html += '<div class="inputs-line">Log: '+tierStepper('shaft','',ownedLogTiers,selectedShaftLogTier,selLog.name+' (owned '+state.inventory[selLog.id]+')',false)+'</div>';
       var expectedShafts = shaftOutputFor(selectedShaftLogTier);
-      html += '<div class="item-stats"><span>+'+Math.round(expectedShafts*2*1.5)+' XP</span></div>';
+      html += '<div class="item-stats">'+xpStat('fletching', expectedShafts*2*1.5, 'craft', selectedShaftLogTier)+'</div>';
       html += '<div class="chance-line">Output: <b>'+expectedShafts+'x Shaft</b> at <b>'+shaftPct+'%</b> success (base 70%, Fletching Jig adds more)</div>';
       var effTimeShaft = CRAFTING_SKILLS.fletching.shaftRecipe.time*1000*speedMultiplier(state)*toolSpeedMultiplier(state,'fletching');
       var shaftBarPct = shaftIsActive ? clamp(act.progress/effTimeShaft*100,0,100) : 0;
@@ -16230,7 +16274,7 @@
     var statLine = tt.isGather
       ? ('+'+Math.round(data.speedBonus*100)+'% speed')
       : ('+'+Math.round(data.speedBonus*100)+'% spd, +'+Math.round(data.successBonus*100)+'% success');
-    html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>'+statLine+'</span></div>';
+    html += '<div class="item-stats">'+xpStat('blacksmithing', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+statLine+'</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-tool-'+tt.skillId)+'</div>';
     html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -16309,7 +16353,7 @@
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
         html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.label+' '+BODY_ARMOR_LABELS[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+armorOwnedTotal+'</div></div></div>';
         html += '<div class="inputs-line">Tier: '+tierStepper('armor',key,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-        html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>defense '+data.defense+'</span></div>';
+        html += '<div class="item-stats">'+xpStat(mat.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+data.defense+'</span></div>';
         html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare'+(mat.rarityIds.length>2?'/supreme/fantastic':'')+' odds)</div>';
         html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-bodyarmor-'+key)+'</div>';
         html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -16432,7 +16476,7 @@
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
         html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.slotLabels[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+leatherOwnedTotal+'</div></div></div>';
         html += '<div class="inputs-line">Wildlife: '+tierStepper('armor',key,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-        html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>defense '+data.defense+'</span></div>';
+        html += '<div class="item-stats">'+xpStat(mat.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+data.defense+'</span></div>';
         html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
         html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-bodyarmor-'+key)+'</div>';
         html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -16465,7 +16509,7 @@
     html += '<div class="card-grid"><div class="item-card'+(beltIsActive?' active-item':'')+'">';
     html += '<div class="item-top"><div class="item-icon">'+svgIcon('belt','#8a6a42')+'</div><div><div class="item-name">Belt</div><div class="item-meta">Rarity grants extra task slots (craft/gather/faith), not just more defense &bull; Owned: '+beltOwnedTotal+'</div></div></div>';
     html += '<div class="inputs-line">Wildlife: '+tierStepper('belt','',tierRange(maxUnlocked),beltSel,WILDLIFE_NAMES[beltSel]+' (Lv'+TIER_LEVELS[beltSel]+')',beltIsActive)+'</div>';
-    html += '<div class="item-stats"><span>+'+Math.round(beltData.xp*1.5)+' XP</span><span>'+beltData.name+'</span><span>defense '+beltData.defense+'</span></div>';
+    html += '<div class="item-stats">'+xpStat('leatherworking', beltData.xp*1.5, 'craft', beltSel)+'<span>'+beltData.name+'</span><span>defense '+beltData.defense+'</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+beltData.name+'</b> at <b>'+beltSuccessPct+'%</b> success &mdash; Rare = 2 slots, Supreme = 3, Fantastic = 4</div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(beltData.inputs, 'inp-belt')+'</div>';
     html += '<div class="progress-track"><div class="progress-fill"'+(beltIsActive?' id="'+beltFillId+'"':'')+' style="width:'+beltPct+'%"></div></div>';
@@ -16500,7 +16544,7 @@
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+q.icon+'</div><div><div class="item-name">'+q.name+'</div><div class="item-meta">Boosts arrow dmg &bull; Owned: '+stqOwnedTotal+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('quiver',q.id,tierRange(maxUnlocked),sel,WILDLIFE_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-      html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>'+statLabel(data)+'</span></div>';
+      html += '<div class="item-stats">'+xpStat(q.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+statLabel(data)+'</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-stq-'+q.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -16548,7 +16592,7 @@
         html += '<div class="item-card'+(isActive?' active-item':'')+'">';
         html += '<div class="item-top"><div class="item-icon">'+mat.icon+'</div><div><div class="item-name">'+mat.slotLabels[slot]+'</div><div class="item-meta">'+formatTypeMix(mat.armorTypes)+' &bull; Owned: '+tailorOwnedTotal+'</div></div></div>';
         html += '<div class="inputs-line">Fiber: '+tierStepper('armor',key,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-        html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>defense '+data.defense+'</span></div>';
+        html += '<div class="item-stats">'+xpStat(mat.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+data.defense+'</span></div>';
         html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
         html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-bodyarmor-'+key)+'</div>';
         html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -16600,7 +16644,7 @@
       var ringOwned = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return 'ring_'+rt.id+'_t'+sel+'_'+r; }));
       html += '<div class="item-top"><div class="item-icon">'+rt.icon+'</div><div><div class="item-name">'+rt.name+'</div><div class="item-meta">Req. Lv '+data.levelReq+' &bull; +'+Math.round(ringPct*100)+'% '+ringBonusLabel(rt)+' (Normal) &bull; Owned: '+ringOwned+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('ring',rt.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-      html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>+'+Math.round(ringPct*100)+'% (Normal)</span><span>+'+Math.round(ringPct*100*ringFantasticMult)+'% (Fantastic)</span></div>';
+      html += '<div class="item-stats">'+xpStat('jewelrycrafting', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>+'+Math.round(ringPct*100)+'% (Normal)</span><span>+'+Math.round(ringPct*100*ringFantasticMult)+'% (Fantastic)</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+jewelrySuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-ring-'+rt.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -16635,7 +16679,7 @@
       var amOwned = ownedSpan(['normal','rare','supreme','fantastic'].map(function(r){ return amuletBaseId(at.id, amSel, r); }));
       html += '<div class="item-top"><div class="item-icon">'+at.icon+'</div><div><div class="item-name">'+at.name+'</div><div class="item-meta">Req. Lv '+amData.levelReq+' &bull; '+(isWard ? 'Flat damage resistance' : 'Flat armor bonus')+' &bull; Owned: '+amOwned+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('amulet',at.id,tierRange(maxUnlocked),amSel,METAL_TIER_NAMES[amSel]+' (Lv'+TIER_LEVELS[amSel]+')',amIsActive)+'</div>';
-      html += '<div class="item-stats"><span>+'+Math.round(amData.xp*1.5)+' XP</span><span>'+amData.name+'</span>'+(isWard ? '<span>+'+normPct+'% resist (Normal)</span><span>+'+Math.round(normPct*WAND_RARITY_DMG_MULT.fantastic)+'% (Fantastic)</span>' : '<span>defense '+amData.defense+'</span>')+'</div>';
+      html += '<div class="item-stats">'+xpStat('jewelrycrafting', amData.xp*1.5, 'craft', amSel)+'<span>'+amData.name+'</span>'+(isWard ? '<span>+'+normPct+'% resist (Normal)</span><span>+'+Math.round(normPct*WAND_RARITY_DMG_MULT.fantastic)+'% (Fantastic)</span>' : '<span>defense '+amData.defense+'</span>')+'</div>';
       html += '<div class="chance-line">Output: <b>1x '+amData.name+'</b> at <b>'+jewelrySuccessPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(amData.inputs, 'inp-amulet-'+at.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(amIsActive?' id="'+amFillId+'"':'')+' style="width:'+amPct+'%"></div></div>';
@@ -16676,7 +16720,7 @@
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">'+w.weaponClass+' &bull; '+formatTypeMix(w.attackTypes)+' &bull; '+w.attackSpeed+'s attack &bull; Owned: '+stwOwnedTotal+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('melee',w.id,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-      html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>'+data.dmgMin+'-'+data.dmgMax+' dmg</span></div>';
+      html += '<div class="item-stats">'+xpStat(skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+data.dmgMin+'-'+data.dmgMax+' dmg</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-stw-'+w.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -16893,7 +16937,7 @@
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+s.icon+'</div><div><div class="item-name">'+s.name+'</div><div class="item-meta">Counters '+s.countersType+' &bull; Owned: '+stsOwnedTotal+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('shield',s.id,tierRange(maxUnlocked),sel,names[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-      html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>defense '+data.defense+'</span></div>';
+      html += '<div class="item-stats">'+xpStat(s.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>defense '+data.defense+'</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-sts-'+s.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -16966,7 +17010,7 @@
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">Reflects '+elementLabel(w.element)+' &bull; Owned: '+ownedTotal+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('ward',w.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-      html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>reflect '+Math.round(data.reflect*100)+'%</span></div>';
+      html += '<div class="item-stats">'+xpStat(w.skillId, data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>reflect '+Math.round(data.reflect*100)+'%</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the full-reflect rarity odds)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-ward-'+w.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -17009,7 +17053,7 @@
     html += '<div class="card-grid"><div class="item-card'+(isActive?' active-item':'')+'">';
     html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">Blunt + '+elementLabel('light')+' &bull; '+w.attackSpeed+'s attack &bull; Owned: '+ownedTotal+'</div></div></div>';
     html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-    html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>'+data.dmgMin+'-'+data.dmgMax+' dmg</span></div>';
+    html += '<div class="item-stats">'+xpStat('runesmithing', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+data.dmgMin+'-'+data.dmgMax+' dmg</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the 2x/4x/8x rarity odds)</div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-scepter-'+w.id)+'</div>';
     html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -17089,7 +17133,7 @@
       html += '<div class="item-card'+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">'+elementLabel(w.element)+' damage &bull; '+w.attackSpeed+'s attack &bull; Owned: '+ownedTotal+'</div></div></div>';
       html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,stackableWeaponTierNames(w)[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-      html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>'+data.dmgMin+'-'+data.dmgMax+' dmg</span></div>';
+      html += '<div class="item-stats">'+xpStat('arcanism', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+data.dmgMin+'-'+data.dmgMax+' dmg</span></div>';
       html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the 2x/4x/8x rarity odds)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-wand-'+w.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -17131,7 +17175,7 @@
     html += '<div class="card-grid"><div class="item-card'+(isActive?' active-item':'')+'">';
     html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">'+w.name+'</div><div class="item-meta">No attack &bull; +'+STAFF_BASE_FAMILIAR_SLOTS+' familiar slots &bull; Owned: '+ownedTotal+'</div></div></div>';
     html += '<div class="inputs-line">Tier: '+tierStepper('wand',w.id,tierRange(maxUnlocked),sel,stackableWeaponTierNames(w)[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-    html += '<div class="item-stats"><span>+'+Math.round(data.xp*1.5)+' XP</span><span>'+data.name+'</span><span>block '+Math.round(data.block*100)+'%</span></div>';
+    html += '<div class="item-stats">'+xpStat('arcanism', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>block '+Math.round(data.block*100)+'%</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises the rarity odds &mdash; higher rarity = more familiar slots)</div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-wand-'+w.id)+'</div>';
     html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
@@ -29477,6 +29521,7 @@
       ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline, simulateOfflineFarming:simulateOfflineFarming, bestOwnedSeedForField:bestOwnedSeedForField, seedAllowedForPlanting:seedAllowedForPlanting, ownedSeedTypesDesc:ownedSeedTypesDesc, renderFarmPlantControls:renderFarmPlantControls,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
+      addXpAppliedMult:addXpAppliedMult, cardRealXp:cardRealXp, cardTierIndex:cardTierIndex, xpStat:xpStat, curiosityGatherXpBonus:curiosityGatherXpBonus,
       estateUpgradePavement:estateUpgradePavement, pavementTierOf:pavementTierOf, ESTATE_PAVE_TILE_COST:ESTATE_PAVE_TILE_COST, estUse:estUse,
       estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, ESTATE_BUILDING_UPGRADE_PLANKS:ESTATE_BUILDING_UPGRADE_PLANKS, estRecomputeWorkshops:estRecomputeWorkshops,
       computeEstateSnapshot:computeEstateSnapshot,
