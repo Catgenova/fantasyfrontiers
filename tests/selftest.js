@@ -8915,6 +8915,39 @@
     }
   });
 
+  // ---- Party dungeon: the local mirror never kills or rewards locally ----------------------------
+  suite('dungeon: party mirror is inert locally', function(){
+    ok(typeof FF.defeatMonster === 'function', 'defeatMonster exported');
+    var s = FF._state;
+    var snap = { act:s.activity, gold:s.gold, kills:(s.stats && s.stats.kills) || 0 };
+    try {
+      var mon = FF.MONSTERS[0];
+      var goldBefore = s.gold, killsBefore = (s.stats && s.stats.kills) || 0;
+      // A PARTY fight is flagged netDungeon (NOT dungeon). High DPS can zero the mirror between the 2.5s
+      // server syncs -> defeatMonster is called. It must pin the mirror, reward nothing, and -- crucially
+      // -- NOT reset monsterHp to full (that reset is what made the reported damage vanish and the real
+      // counter crawl while the chronicle filled with phantom kills).
+      s.activity = { type:'combat', monsterId:mon.id, monsterHp:0, netDungeon:'sess-test', netIndex:0, tickAccum:0, monsterTickAccum:0 };
+      FF.defeatMonster(mon);
+      eq(s.activity.monsterHp, 1, 'the party mirror is pinned at 1 after a would-be kill');
+      ok(s.activity.monsterHp !== mon.hp, 'the mirror is NOT reset to full HP (full reset lost the reported damage)');
+      eq(s.gold, goldBefore, 'no local gold is paid on a party mirror death (server owns per-kill reward)');
+      eq((s.stats && s.stats.kills) || 0, killsBefore, 'no kill is counted locally on a party mirror death');
+
+      // applyChipDamage (the reflect/DoT path) must also report NO kill in a party, so reflect-kill
+      // follow-ups don't fire on a foe the server still owns.
+      s.activity.monsterHp = 0;
+      eq(FF.applyChipDamage(5), false, 'applyChipDamage reports no kill in a party dungeon');
+      eq(s.activity.monsterHp, 1, 'and re-pins the mirror at 1');
+      // A chip that does NOT empty the foe never reports a kill (party or not).
+      s.activity.monsterHp = 100;
+      eq(FF.applyChipDamage(5), false, 'a non-lethal chip reports no kill');
+      eq(s.activity.monsterHp, 95, 'and moves the mirror health bar normally');
+    } finally {
+      s.activity = snap.act; s.gold = snap.gold; if(s.stats) s.stats.kills = snap.kills;
+    }
+  });
+
   // ---- Report ---------------------------------------------------------------------------
   var summary = 'SELFTEST: ' + R.passed + ' passed, ' + R.failed + ' failed';
   if(window.console){ console.log(summary); if(R.failures.length) console.log('SELFTEST FAILURES:\n - ' + R.failures.join('\n - ')); }

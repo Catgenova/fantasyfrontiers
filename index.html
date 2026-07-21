@@ -13953,6 +13953,18 @@
   // reflection when the player wields a Staff (no auto-attack, so summons must land the finishing blow).
   function defeatMonster(monster){
     var act = state.activity;
+    // PARTY DUNGEON: the enemy is server-authoritative. This local foe is only a mirror of the shared HP,
+    // driven down by our own attacks so we can MEASURE and report damage -- it must never die or reward
+    // here. The server owns the kill count and advances the enemy when the party's (capped) reported
+    // damage depletes it; dungeonNetSyncCombat then re-seeds the next foe, and dungeonNetApply grants the
+    // per-kill reward once on the confirmed advance.
+    //
+    // Before this guard the mirror ran the full solo kill path whenever high DPS zeroed it between the
+    // 2.5s assault syncs: it reset monsterHp back to FULL (so dungeonNetCollectDamage, which reports
+    // prev-monsterHp once per tick, then saw almost no drop and the real counter crawled) AND paid out
+    // gold + loot + a kill each time (200+ phantom kills in the chronicle while the counter sat at 6/25).
+    // Pin the mirror just above zero and bail; the tick still reports the real drop down to here.
+    if(act && act.netDungeon){ act.monsterHp = 1; return; }
     // Reaver Arterial Spray (Lv60): a Bleeding foe's stacks carry to the next foe. Captured before the reset.
     var _arterialCarry = ((reaverBonus(60) || legActive('bonereaver')) && act && (act.bleedStacks||0) > 0 && (act.bleedUntil||0) > Date.now()) ? act.bleedStacks : 0; // + Bonereaver (D3 half-moon axe): a Bleeding foe's Bleed carries to the next foe
     // Set capstones captured before the per-foe reset: Ember Burst (Burn) + Pestilence (Poison) carry to the next foe.
@@ -14074,7 +14086,13 @@
   function applyChipDamage(dmg){
     var act = state.activity; if(!act || act.type!=='combat') return false;
     act.monsterHp -= dmg;
-    if(act.monsterHp <= 0){ var m = monsterById(act.monsterId); if(m) defeatMonster(m); return true; }
+    if(act.monsterHp <= 0){
+      var m = monsterById(act.monsterId);
+      // Party dungeon: defeatMonster pins the mirror above zero and never kills locally, so report NO
+      // kill to callers (reflect-kill follow-ups etc.) -- the server owns the kill.
+      if(act.netDungeon){ if(m) defeatMonster(m); return false; }
+      if(m) defeatMonster(m); return true;
+    }
     return false;
   }
   // ---- "What does this foe actually hit ME for?" ------------------------------------------------
@@ -18959,7 +18977,7 @@
   // not yet attack back); Stage B adds threat targeting, death/wipe, and the Formula claim.
   // pendingDamage / lastEnemyHp drive the Phase 3 report: damage the local engine actually dealt since the
   // last send, measured by watching the local foe's HP rather than instrumenting every damage site.
-  var dungeonNet = { status:'idle', session:null, members:[], subSession:null, subMembers:null, _subId:null, busy:false, error:'', lastAssault:0, lobbiesByLayer:{}, clearedHandled:false, deathHandled:false, pendingDamage:0, lastEnemyHp:null, pendingHeal:{}, swingsResolved:0, shieldTaken:0 };
+  var dungeonNet = { status:'idle', session:null, members:[], subSession:null, subMembers:null, _subId:null, busy:false, error:'', lastAssault:0, lobbiesByLayer:{}, clearedHandled:false, deathHandled:false, pendingDamage:0, lastEnemyHp:null, pendingHeal:{}, swingsResolved:0, shieldTaken:0, rewardedIndex:null };
   var dungeonJoinCodeDraft = '';   // in-progress "Join by ID" input, preserved across re-renders
   // A representative DPS proxy (avg weapon damage / attack interval, folding the always-on mults).
   // The server clamps it, so an inflated value can't dump impossible damage.
@@ -18988,6 +19006,30 @@
     }, function(){ return { ok:false, error:'Network error.' }; });
   }
   function dungeonNetInParty(){ return !!(dungeonNet.session); }
+  // Server-confirmed per-kill reward. The server owns the kill count (enemy_index); each client grants
+  // its OWN gold + kill stat once per confirmed advance, so a party earns per-kill gold like a solo run
+  // does -- but paced by the REAL (capped) kills, never the local mirror, which no longer kills at all.
+  // Bounded by the run's own enemy count, so it can't pay out more than the party actually felled. The
+  // rewardedIndex latch survives the many realtime re-applies; it's seeded from the CURRENT index on first
+  // sight (a mid-run join or a reload does not retroactively pay for kills that happened before).
+  function dungeonNetGrantKills(){
+    var s = dungeonNet.session;
+    if(!s || (s.status !== 'active' && s.status !== 'cleared')) return;
+    var total = dungeonNetRoster(s.layer).length;
+    if(dungeonNet.rewardedIndex == null){ dungeonNet.rewardedIndex = Math.min(s.enemy_index || 0, total); return; }
+    // A clear kills the last foe (the boss) without necessarily ticking enemy_index past it, so on a
+    // cleared run reward right up to the full roster.
+    var target = (s.status === 'cleared') ? total : Math.min(s.enemy_index || 0, total);
+    while(dungeonNet.rewardedIndex < target){
+      var foe = dungeonNetEnemy(s.layer, dungeonNet.rewardedIndex);
+      dungeonNet.rewardedIndex++;
+      if(!foe) continue;
+      bumpStat('kills');
+      var g = randInt(foe.goldMin, foe.goldMax); earnGold(g);
+      addLog('The party felled the ' + foe.name + '! +' + g + ' gold.', 'important');
+      var _cls = activeClassId(state); if(_cls) maybeSummonFamiliar(_cls);
+    }
+  }
   function dungeonNetApply(res){
     var _prevStatus = dungeonNet.session && dungeonNet.session.status;
     dungeonNet.session = res.session || null;
@@ -18995,8 +19037,9 @@
     dungeonNet.status = 'ready';
     dungeonNetResubscribe();
     // The descent just started (lobby -> active): stop any lobby crafting/gathering. From here actions lock.
-    // A fresh descent also re-arms the death latch so a new run's death can be counted.
-    if(dungeonNet.session && dungeonNet.session.status === 'active' && _prevStatus !== 'active'){ dungeonStopAllTasks(); dungeonNet.deathHandled = false; }
+    // A fresh descent also re-arms the death latch AND re-baselines the kill-reward latch to the run start.
+    if(dungeonNet.session && dungeonNet.session.status === 'active' && _prevStatus !== 'active'){ dungeonStopAllTasks(); dungeonNet.deathHandled = false; dungeonNet.rewardedIndex = null; }
+    dungeonNetGrantKills();   // pay out gold for any newly server-confirmed kills
     // Stage B: a group dungeon's enemy is server-authoritative, so a player's death is reported as MY
     // member row going alive:false (hp hit 0) -- it never runs the solo monsterAttackTick death path. Record
     // it as a REAL death here, exactly once (the realtime subscription re-applies on every change, so the
@@ -19018,7 +19061,7 @@
       dungeonMarkCleared(dungeonNet.session.layer); // party clear unlocks the next dungeon for everyone present
       if(!dungeonNet.clearedHandled){ dungeonNet.clearedHandled = true; dungeonNetClaim(); }
     }
-    if(!dungeonNet.session){ dungeonNet.clearedHandled = false; dungeonNet.deathHandled = false; dungeonNetEndLocalFight(); }
+    if(!dungeonNet.session){ dungeonNet.clearedHandled = false; dungeonNet.deathHandled = false; dungeonNet.rewardedIndex = null; dungeonNetEndLocalFight(); }
     // Run over (cleared / wiped / expired): stop the local fight so the engine isn't still swinging at a
     // foe the party has finished with.
     else if(dungeonNet.session.status !== 'active') dungeonNetEndLocalFight();
