@@ -20054,6 +20054,8 @@
   var estateVisit = { active:false, estate:null, name:'', loading:false, error:'' };
   var estatePavingMenuOpen = false;
   var estateWorkshopMenuOpen = false;
+  var estatePaveUpgradeMenuOpen = false;  // tier picker for upgrading a paved tile to any higher tier
+  var estateBuildUpgradeMenuOpen = false; // tier picker for upgrading the Workshop/Cottage on a tile
   var estateFieldMenuOpen = false;
   // Terraforming: Raise Layer needs Digging 20 (the same level Digging's own Dirt tier
   // requires) and consumes 100 Dirt. Lower Layer gives back 20 Dirt, but gets harder the
@@ -20123,6 +20125,7 @@
     if(guild !== estIsGuild){ // switching estates -- clear selection/menus so they don't bleed across maps
       estateSelectedTile = null; estateSelectedEdge = null; estateHoveredTile = null; estateHoveredEdge = null;
       estatePavingMenuOpen = false; estateWorkshopMenuOpen = false; estateBorderMenuOpen = null;
+      estatePaveUpgradeMenuOpen = false; estateBuildUpgradeMenuOpen = false;
     }
     estIsGuild = guild; estActive = guild ? guildEstate : state.estate;
   }
@@ -20852,12 +20855,18 @@
   }
   // Upgrade a placed pavement one tier for 20x the next-tier tile. Instant, and it keeps any Workshop or
   // Cottage already on the tile -- the building is untouched (a higher pavement supports the same building).
-  function estateUpgradePavement(x, y){
+  // Upgrade a paved tile to ANY higher tier in one step (not just the next), provided the player owns the
+  // required tiles of that target tier. Cost is ESTATE_PAVE_TILE_COST of the TARGET paving tile. targetTier
+  // is optional and defaults to the next tier (keeps the old one-step callers/tests working).
+  function estateUpgradePavement(x, y, targetTier){
     var cell = estActive && estActive.grid[x] && estActive.grid[x][y];
     if(!cell || cell.type !== 'paved' || !cell.paveTileId) return;
     var curTier = pavementTierOf(cell);
     if(curTier < 0 || curTier >= TIER_COUNT - 1){ addLog('This pavement is already the top tier.', 'danger'); return; }
-    var nextId = 'paving_t' + (curTier + 1);
+    var tgt = (targetTier == null) ? curTier + 1 : parseInt(targetTier, 10);
+    if(!(tgt > curTier)){ addLog('Choose a higher pavement tier to upgrade to.', 'danger'); return; }
+    if(tgt > TIER_COUNT - 1) tgt = TIER_COUNT - 1;
+    var nextId = 'paving_t' + tgt;
     var recipe = getPavingRecipe(nextId);
     var owned = state.inventory[nextId] || 0;
     if(owned < ESTATE_PAVE_TILE_COST){
@@ -20872,41 +20881,46 @@
     estPersist();
     needsRender = true;
   }
-  // Upgrade a placed Workshop or Cottage one tier for 100x the next-tier Plank (carpentry_t<n>). Instant,
-  // in place; the pavement must already support the higher tier (upgrade the pavement first if not).
+  // Upgrade a placed Workshop or Cottage to ANY higher tier the pavement supports (in one step), for 100x
+  // that target tier's Plank (carpentry_t<n>). Instant, in place; the target tier is capped at the tile's
+  // pavement tier -- pave higher to go higher. targetTier defaults to the next tier (old callers/tests).
   var ESTATE_BUILDING_UPGRADE_PLANKS = 100;
-  function estateUpgradeWorkshop(x, y){
+  function estateUpgradeWorkshop(x, y, targetTier){
     var cell = estActive && estActive.grid[x] && estActive.grid[x][y];
     if(!cell || !cell.workshopId) return;
     var wIt = WORKSHOP_ITEMS[cell.workshopId]; if(!wIt) return;
-    var nextTier = wIt.tierIndex + 1;
-    if(nextTier >= TIER_COUNT){ addLog('This Workshop is already the top tier.', 'danger'); return; }
-    if(pavementTierOf(cell) < nextTier){ addLog('The pavement under this Workshop is too low — upgrade the pavement first.', 'danger'); return; }
-    var plankId = 'carpentry_t' + nextTier, owned = state.inventory[plankId] || 0;
-    if(owned < ESTATE_BUILDING_UPGRADE_PLANKS){ addLog('Upgrading this Workshop costs ' + ESTATE_BUILDING_UPGRADE_PLANKS + ' ' + FORESTRY_NAMES[nextTier] + ' Planks (you have ' + owned + ').', 'danger'); return; }
+    var cur = wIt.tierIndex, paveT = pavementTierOf(cell);
+    var tgt = (targetTier == null) ? cur + 1 : parseInt(targetTier, 10);
+    if(!(tgt > cur)){ addLog('Choose a higher Workshop tier to upgrade to.', 'danger'); return; }
+    if(tgt >= TIER_COUNT){ addLog('This Workshop is already the top tier.', 'danger'); return; }
+    if(paveT < tgt){ addLog('The pavement under this Workshop only supports ' + (paveT>=0?FORESTRY_NAMES[paveT]:'no') + ' tier — upgrade the pavement first.', 'danger'); return; }
+    var plankId = 'carpentry_t' + tgt, owned = state.inventory[plankId] || 0;
+    if(owned < ESTATE_BUILDING_UPGRADE_PLANKS){ addLog('Upgrading this Workshop to ' + FORESTRY_NAMES[tgt] + ' costs ' + ESTATE_BUILDING_UPGRADE_PLANKS + ' ' + FORESTRY_NAMES[tgt] + ' Planks (you have ' + owned + ').', 'danger'); return; }
     state.inventory[plankId] -= ESTATE_BUILDING_UPGRADE_PLANKS;
-    cell.workshopId = 'workshop_' + wIt.skillId + '_t' + nextTier;
+    cell.workshopId = 'workshop_' + wIt.skillId + '_t' + tgt;
     estRecomputeWorkshops();
-    addLog('You upgraded the ' + workshopSkillLabel(wIt.skillId) + ' Workshop at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[nextTier] + '.', 'important');
+    addLog('You upgraded the ' + workshopSkillLabel(wIt.skillId) + ' Workshop at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[tgt] + '.', 'important');
     spawnFloatingText('Workshop upgraded!', 'ft-success');
-    if(estIsGuild) guildLogPush('estate', 'upgraded the '+workshopSkillLabel(wIt.skillId)+' Workshop at ('+x+', '+y+') to '+FORESTRY_NAMES[nextTier]);
+    if(estIsGuild) guildLogPush('estate', 'upgraded the '+workshopSkillLabel(wIt.skillId)+' Workshop at ('+x+', '+y+') to '+FORESTRY_NAMES[tgt]);
     estPersist();
     needsRender = true;
   }
-  function estateUpgradeCottage(x, y){
+  function estateUpgradeCottage(x, y, targetTier){
     var cell = estActive && estActive.grid[x] && estActive.grid[x][y];
     if(!cell || !cell.cottageId) return;
     var cIt = COTTAGE_ITEMS[cell.cottageId]; if(!cIt) return;
-    var nextTier = cIt.tierIndex + 1;
-    if(nextTier >= TIER_COUNT){ addLog('This Cottage is already the top tier.', 'danger'); return; }
-    if(pavementTierOf(cell) < nextTier){ addLog('The pavement under this Cottage is too low — upgrade the pavement first.', 'danger'); return; }
-    var plankId = 'carpentry_t' + nextTier, owned = state.inventory[plankId] || 0;
-    if(owned < ESTATE_BUILDING_UPGRADE_PLANKS){ addLog('Upgrading this Cottage costs ' + ESTATE_BUILDING_UPGRADE_PLANKS + ' ' + FORESTRY_NAMES[nextTier] + ' Planks (you have ' + owned + ').', 'danger'); return; }
+    var cur = cIt.tierIndex, paveT = pavementTierOf(cell);
+    var tgt = (targetTier == null) ? cur + 1 : parseInt(targetTier, 10);
+    if(!(tgt > cur)){ addLog('Choose a higher Cottage tier to upgrade to.', 'danger'); return; }
+    if(tgt >= TIER_COUNT){ addLog('This Cottage is already the top tier.', 'danger'); return; }
+    if(paveT < tgt){ addLog('The pavement under this Cottage only supports ' + (paveT>=0?FORESTRY_NAMES[paveT]:'no') + ' tier — upgrade the pavement first.', 'danger'); return; }
+    var plankId = 'carpentry_t' + tgt, owned = state.inventory[plankId] || 0;
+    if(owned < ESTATE_BUILDING_UPGRADE_PLANKS){ addLog('Upgrading this Cottage to ' + FORESTRY_NAMES[tgt] + ' costs ' + ESTATE_BUILDING_UPGRADE_PLANKS + ' ' + FORESTRY_NAMES[tgt] + ' Planks (you have ' + owned + ').', 'danger'); return; }
     state.inventory[plankId] -= ESTATE_BUILDING_UPGRADE_PLANKS;
-    cell.cottageId = 'cottage_t' + nextTier;
-    addLog('You upgraded the Cottage at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[nextTier] + '.', 'important');
+    cell.cottageId = 'cottage_t' + tgt;
+    addLog('You upgraded the Cottage at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[tgt] + '.', 'important');
     spawnFloatingText('Cottage upgraded!', 'ft-success');
-    if(estIsGuild) guildLogPush('estate', 'upgraded the Cottage at ('+x+', '+y+') to '+FORESTRY_NAMES[nextTier]);
+    if(estIsGuild) guildLogPush('estate', 'upgraded the Cottage at ('+x+', '+y+') to '+FORESTRY_NAMES[tgt]);
     estPersist();
     needsRender = true;
   }
@@ -22552,6 +22566,8 @@
         estateSelectedEdge = null;
         estatePavingMenuOpen = false;
         estateWorkshopMenuOpen = false;
+        estatePaveUpgradeMenuOpen = false;
+        estateBuildUpgradeMenuOpen = false;
       }
       render();
     }
@@ -22806,12 +22822,21 @@
         html += '<div class="estate-action-info"><b>Workshop:</b> '+(wIt?wIt.icon+' '+escapeHtml(wIt.name):'Unknown')+'<br>+'+wPct+'% '+escapeHtml(workshopSkillLabel(wIt?wIt.skillId:''))+(isGatherWorkshop(wIt?wIt.skillId:'')?' gathering':' crafting')+' speed &bull; '+wPct+'% double output</div>';
         html += '<button class="action-btn stop" data-action="estateRemoveWorkshop" data-x="'+x+'" data-y="'+y+'">Remove</button>';
         html += '</div>';
-        var wNext = (wIt?wIt.tierIndex:0) + 1;
-        if(wNext < TIER_COUNT){
-          var wPaveOk = pavementTierOf(cell) >= wNext, wPlankOwned = state.inventory['carpentry_t'+wNext] || 0;
-          var wUpOk = wPaveOk && wPlankOwned >= ESTATE_BUILDING_UPGRADE_PLANKS;
-          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade Workshop</b><br>To '+escapeHtml(FORESTRY_NAMES[wNext])+' &bull; '+ESTATE_BUILDING_UPGRADE_PLANKS+'&times; '+escapeHtml(FORESTRY_NAMES[wNext])+' Plank (have '+wPlankOwned+')'+(wPaveOk?'':' &bull; <span style="color:var(--hp-bad)">needs higher pavement</span>')+'</div>';
-          html += '<button class="action-btn" data-action="estateUpgradeWorkshop" data-x="'+x+'" data-y="'+y+'" '+(wUpOk?'':'disabled')+'>'+(wUpOk?'Upgrade':(wPaveOk?'Need '+ESTATE_BUILDING_UPGRADE_PLANKS:'Pave higher'))+'</button></div>';
+        var wCur = wIt?wIt.tierIndex:0, wPaveT = pavementTierOf(cell), wMax = Math.min(wPaveT, TIER_COUNT-1);
+        if(wCur < TIER_COUNT-1){
+          var wCanAny = wMax > wCur; // the pavement supports at least the next tier up
+          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade Workshop</b><br>Jump to any tier the pavement supports (up to '+(wPaveT>=0?escapeHtml(FORESTRY_NAMES[wMax]):'—')+') &bull; '+ESTATE_BUILDING_UPGRADE_PLANKS+'&times; that tier’s Plank'+(wCanAny?'':' &bull; <span style="color:var(--hp-bad)">pave higher first</span>')+'</div>';
+          html += '<button class="action-btn" data-action="estateToggleBuildUpgradeMenu" '+(wCanAny?'':'disabled')+'>'+(wCanAny?(estateBuildUpgradeMenuOpen?'Close List':'Choose Tier'):'Pave higher')+'</button></div>';
+          if(estateBuildUpgradeMenuOpen && wCanAny){
+            html += '<div class="estate-paving-library">';
+            for(var wt=wCur+1; wt<=wMax; wt++){
+              var wpid='carpentry_t'+wt, wpown=state.inventory[wpid]||0, waff=wpown>=ESTATE_BUILDING_UPGRADE_PLANKS, wico=(WORKSHOP_ITEMS['workshop_'+wIt.skillId+'_t'+wt]||{}).icon||'';
+              html += '<button class="estate-paving-option'+(waff?'':' locked')+'" data-action="estateUpgradeWorkshop" data-x="'+x+'" data-y="'+y+'" data-tier="'+wt+'" '+(waff?'':'disabled')+'>';
+              html += '<span>'+wico+' '+escapeHtml(FORESTRY_NAMES[wt]+' '+workshopSkillLabel(wIt.skillId))+'</span><span class="style-lvl">x'+wpown+'/'+ESTATE_BUILDING_UPGRADE_PLANKS+'</span>';
+              html += '</button>';
+            }
+            html += '</div>';
+          }
         }
       } else if(cell.cottageId){
         var cIt = COTTAGE_ITEMS[cell.cottageId];
@@ -22820,12 +22845,21 @@
         html += '<div class="estate-action-info"><b>Cottage:</b> '+(cIt?cIt.icon+' '+escapeHtml(cIt.name):'Unknown')+'<br>'+(cAdj ? ('Linked to the '+escapeHtml(workshopSkillLabel(WORKSHOP_ITEMS[cAdj.workshopId].skillId))+' Workshop &mdash; assign a Peon in the <b>Peons</b> tab.') : 'Not linked &mdash; place beside exactly one Workshop.')+'</div>';
         html += '<button class="action-btn stop" data-action="estateRemoveCottage" data-x="'+x+'" data-y="'+y+'">Remove</button>';
         html += '</div>';
-        var cNext = (cIt?cIt.tierIndex:0) + 1;
-        if(cNext < TIER_COUNT){
-          var cPaveOk = pavementTierOf(cell) >= cNext, cPlankOwned = state.inventory['carpentry_t'+cNext] || 0;
-          var cUpOk = cPaveOk && cPlankOwned >= ESTATE_BUILDING_UPGRADE_PLANKS;
-          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade Cottage</b><br>To '+escapeHtml(FORESTRY_NAMES[cNext])+' &bull; '+ESTATE_BUILDING_UPGRADE_PLANKS+'&times; '+escapeHtml(FORESTRY_NAMES[cNext])+' Plank (have '+cPlankOwned+')'+(cPaveOk?'':' &bull; <span style="color:var(--hp-bad)">needs higher pavement</span>')+'</div>';
-          html += '<button class="action-btn" data-action="estateUpgradeCottage" data-x="'+x+'" data-y="'+y+'" '+(cUpOk?'':'disabled')+'>'+(cUpOk?'Upgrade':(cPaveOk?'Need '+ESTATE_BUILDING_UPGRADE_PLANKS:'Pave higher'))+'</button></div>';
+        var cCur = cIt?cIt.tierIndex:0, cPaveT = pavementTierOf(cell), cMax = Math.min(cPaveT, TIER_COUNT-1);
+        if(cCur < TIER_COUNT-1){
+          var cCanAny = cMax > cCur;
+          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade Cottage</b><br>Jump to any tier the pavement supports (up to '+(cPaveT>=0?escapeHtml(FORESTRY_NAMES[cMax]):'—')+') &bull; '+ESTATE_BUILDING_UPGRADE_PLANKS+'&times; that tier’s Plank'+(cCanAny?'':' &bull; <span style="color:var(--hp-bad)">pave higher first</span>')+'</div>';
+          html += '<button class="action-btn" data-action="estateToggleBuildUpgradeMenu" '+(cCanAny?'':'disabled')+'>'+(cCanAny?(estateBuildUpgradeMenuOpen?'Close List':'Choose Tier'):'Pave higher')+'</button></div>';
+          if(estateBuildUpgradeMenuOpen && cCanAny){
+            html += '<div class="estate-paving-library">';
+            for(var ct=cCur+1; ct<=cMax; ct++){
+              var cpid='carpentry_t'+ct, cpown=state.inventory[cpid]||0, caff=cpown>=ESTATE_BUILDING_UPGRADE_PLANKS, cico=(COTTAGE_ITEMS['cottage_t'+ct]||{}).icon||'';
+              html += '<button class="estate-paving-option'+(caff?'':' locked')+'" data-action="estateUpgradeCottage" data-x="'+x+'" data-y="'+y+'" data-tier="'+ct+'" '+(caff?'':'disabled')+'>';
+              html += '<span>'+cico+' '+escapeHtml(FORESTRY_NAMES[ct]+' Cottage')+'</span><span class="style-lvl">x'+cpown+'/'+ESTATE_BUILDING_UPGRADE_PLANKS+'</span>';
+              html += '</button>';
+            }
+            html += '</div>';
+          }
         }
       } else {
         var placeable = placeableWorkshopsFor(cell);
@@ -22857,17 +22891,24 @@
           html += '</div>';
         }
       }
-      // Upgrade the pavement to the next tier -- works even with a building on it.
+      // Upgrade the pavement to ANY higher tier -- works even with a building on it. Pick the target from
+      // the list of higher tiers; the cost is ESTATE_PAVE_TILE_COST of that target tile.
       var upTier = pavementTierOf(cell);
       if(upTier >= 0 && upTier < TIER_COUNT - 1){
-        var upNextId = 'paving_t' + (upTier + 1);
-        var upRecipe = getPavingRecipe(upNextId);
-        var upOwned = state.inventory[upNextId] || 0;
-        var upOk = upOwned >= ESTATE_PAVE_TILE_COST;
         html += '<div class="estate-action-row">';
-        html += '<div class="estate-action-info"><b>Upgrade Pavement</b><br>Raise to '+(upRecipe?upRecipe.icon+' '+escapeHtml(upRecipe.name):escapeHtml(upNextId))+' &bull; costs '+ESTATE_PAVE_TILE_COST+'&times; that tile (have '+upOwned+') &bull; any building stays put</div>';
-        html += '<button class="action-btn" data-action="estateUpgradePavement" data-x="'+x+'" data-y="'+y+'" '+(upOk?'':'disabled')+'>'+(upOk?'Upgrade':'Need '+ESTATE_PAVE_TILE_COST)+'</button>';
+        html += '<div class="estate-action-info"><b>Upgrade Pavement</b><br>Jump straight to any higher tier you own '+ESTATE_PAVE_TILE_COST+' tiles of &bull; any building stays put</div>';
+        html += '<button class="action-btn" data-action="estateTogglePaveUpgradeMenu">'+(estatePaveUpgradeMenuOpen?'Close List':'Choose Tier')+'</button>';
         html += '</div>';
+        if(estatePaveUpgradeMenuOpen){
+          html += '<div class="estate-paving-library">';
+          for(var put=upTier+1; put<TIER_COUNT; put++){
+            var pupId='paving_t'+put, pupRec=getPavingRecipe(pupId), pupOwn=state.inventory[pupId]||0, pupAff=pupOwn>=ESTATE_PAVE_TILE_COST;
+            html += '<button class="estate-paving-option'+(pupAff?'':' locked')+'" data-action="estateUpgradePavement" data-x="'+x+'" data-y="'+y+'" data-tier="'+put+'" '+(pupAff?'':'disabled')+'>';
+            html += '<span>'+(pupRec?pupRec.icon+' '+escapeHtml(pupRec.name):escapeHtml(pupId))+'</span><span class="style-lvl">x'+pupOwn+'/'+ESTATE_PAVE_TILE_COST+'</span>';
+            html += '</button>';
+          }
+          html += '</div>';
+        }
       }
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Break Pavement</b><br>Requires Digging '+ESTATE_BREAK_PAVEMENT_LEVEL+' &bull; Returns the tile to Dirt (no materials given back)</div>';
@@ -28431,9 +28472,11 @@
       estatePaveTile(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-tile'));
     },
     estateBreakPavement: function(btn, e){ estateBreakPavement(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
-    estateUpgradePavement: function(btn, e){ estateUpgradePavement(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
-    estateUpgradeWorkshop: function(btn, e){ estateUpgradeWorkshop(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
-    estateUpgradeCottage: function(btn, e){ estateUpgradeCottage(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
+    estateTogglePaveUpgradeMenu: function(btn, e){ estatePaveUpgradeMenuOpen = !estatePaveUpgradeMenuOpen; },
+    estateToggleBuildUpgradeMenu: function(btn, e){ estateBuildUpgradeMenuOpen = !estateBuildUpgradeMenuOpen; },
+    estateUpgradePavement: function(btn, e){ estateUpgradePavement(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-tier')); estatePaveUpgradeMenuOpen = false; },
+    estateUpgradeWorkshop: function(btn, e){ estateUpgradeWorkshop(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-tier')); estateBuildUpgradeMenuOpen = false; },
+    estateUpgradeCottage: function(btn, e){ estateUpgradeCottage(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-tier')); estateBuildUpgradeMenuOpen = false; },
     estateToggleWorkshopMenu: function(btn, e){ estateWorkshopMenuOpen = !estateWorkshopMenuOpen; },
     estatePlaceWorkshop: function(btn, e){
       estatePlaceWorkshop(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-workshop'));
