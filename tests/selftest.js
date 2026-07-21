@@ -150,9 +150,12 @@
     clear(); s.mortal = true;
     eq(FF.cardRealXp('cooking', 100, 'craft'), 50, 'Mortal deficit halves real XP');
 
-    // Paving carries a x4 craft-XP bonus that the real figure surfaces.
+    // Paving's intrinsic x4 craft-XP multiplier lives in the displayed BASE (it applies to every
+    // completion), so the real figure stays a pure personal-boost readout.
     clear();
-    eq(FF.cardRealXp('paving', 100, 'craft'), 400, 'paving real folds in its x4 craft-XP bonus');
+    eq(FF.cardRealXp('paving', 100, 'craft'), 100, 'paving real carries no intrinsic multiplier');
+    var pav = FF.xpStat('paving', 100, 'craft', 8);
+    ok(/\+400 XP/.test(pav) && !/real/.test(pav), 'paving base states the x4 (+400); no real span when nothing else is active');
     eq(FF.cardRealXp('cooking', 100, 'craft'), 100, 'every other craft keeps the x1 bonus');
 
     // A Tea (Mixology/Brewing XP boost) multiplies the real figure.
@@ -633,6 +636,39 @@
     } finally {
       S.activity = savedActivity; S.extraCraftSlots = savedExtra;
       S.equippedBeltTier = savedBt; S.equippedBeltRarity = savedBr;
+    }
+  });
+
+  // ---- Queue targets: a finite "craft N" run credits its REAL output and stops on target --
+  // Regression: queueCreditOutput counted gabCapture.items[act.itemId], but special forges
+  // (craftKind acts) have no itemId at all and relic/butcher/shaft recipes produce ids unrelated
+  // to their recipe key -- producedQty never advanced, so a finite run ignored its target and
+  // kept crafting (and consuming materials) until they ran out.
+  suite('queue targets stop at the requested output', function(){
+    var S = FF._state;
+    var savedInv = S.inventory, savedAct = S.activity, savedExtra = S.extraCraftSlots;
+    try {
+      S.activity = { type:null }; S.extraCraftSlots = [];
+
+      // Relic extraction always yields exactly one item per cycle (a Relic or a Broken Relic),
+      // so a target of 3 must credit 3 cycles, consume exactly 3 artifacts, then stop the slot.
+      S.inventory = { muddyartifact_t0: 20 };
+      var ract = { type:'craft', skill:'archaeology', itemId:'archaeology_dig_t0', progress:0, targetQty:3, producedQty:0 };
+      FF.processCraftActivity(ract, 3600*1000);
+      eq(ract.producedQty, 3, 'relic run credits each cycle output and stops at 3');
+      eq(ract.type, null, 'relic run ends its activity at the target');
+      eq(S.inventory.muddyartifact_t0, 17, 'relic run consumed only the 3 cycles it needed');
+
+      // A special forge: a craftKind act with NO itemId (its outputs are rarity-suffixed ids).
+      // Two workshops requested with planks for 50 -- the run must stop once 2 are built.
+      S.inventory = { carpentry_t0: 500 };
+      var wact = { type:'craft', craftKind:'workshop', skillId:'mining', tierIndex:0, progress:0, targetQty:2, producedQty:0 };
+      FF.processCraftActivity(wact, 24*3600*1000);
+      eq(wact.producedQty, 2, 'special-forge run credits rarity-suffixed outputs and stops at 2');
+      eq(wact.type, null, 'special-forge run ends its activity at the target');
+      ok((S.inventory.carpentry_t0||0) > 0, 'special-forge run left the unneeded planks unconsumed');
+    } finally {
+      S.inventory = savedInv; S.activity = savedAct; S.extraCraftSlots = savedExtra;
     }
   });
 
@@ -1634,6 +1670,36 @@
     setup([], 100);
     eq(FF.improveAutoRoll('critChance', 999, 'u9001'), null, 'a target above the mod maximum is rejected');
     eq(s.inventory['enchant_t0'], 100, 'no crystals spent on an impossible target');
+
+    // G) Slot "new": a satisfied copy of the same mod no longer blocks rolling a SECOND copy.
+    setup([{mod:'critDamage', roll:25}], 4000);
+    var g = FF.improveAutoRoll('critDamage', 5, 'u9001', 'new');
+    ok(g && g.placed && g.placed.mod==='critDamage', 'slot "new" rolls another copy of an already-satisfied mod');
+    var gEn = s.uniqueItems['u9001'].enchants;
+    eq(gEn.length, 2, 'the second copy fills the unused slot');
+    eq(gEn[0].roll, 25, 'the original copy is untouched');
+    eq(gEn[1].mod, 'critDamage', 'the new slot holds the target mod');
+
+    // H) A picked slot replaces exactly that enchant, even an unrelated mod on a full item.
+    setup([{mod:'weaponDamage', roll:10},{mod:'flatDamage', roll:10}], 4000);
+    var h = FF.improveAutoRoll('critDamage', 5, 'u9001', 1);
+    ok(h && h.placed && h.placed.mod==='critDamage', 'a picked slot lets auto-roll replace an unrelated enchant');
+    var hEn = s.uniqueItems['u9001'].enchants;
+    eq(hEn.length, 2, 'slot count unchanged on a picked-slot replace');
+    ok(hEn[0].mod==='weaponDamage' && hEn[0].roll===10, 'the unpicked slot is untouched');
+    eq(hEn[1].mod, 'critDamage', 'the picked slot now holds the target mod');
+
+    // I) Slot "new" on a full item is blocked with nothing spent.
+    setup([{mod:'weaponDamage', roll:10},{mod:'flatDamage', roll:10}], 100);
+    eq(FF.improveAutoRoll('critDamage', 5, 'u9001', 'new'), null, 'slot "new" refuses a full item');
+    eq(s.inventory['enchant_t0'], 100, 'nothing spent when there is no unused slot');
+
+    // J) A picked slot no-ops only when THAT slot already meets the target; a stale index is rejected.
+    setup([{mod:'critDamage', roll:25},{mod:'weaponDamage', roll:10}], 100);
+    eq(FF.improveAutoRoll('critDamage', 20, 'u9001', 0), null, 'picked slot already satisfied -> no-op');
+    eq(s.inventory['enchant_t0'], 100, 'nothing spent on a satisfied picked slot');
+    eq(FF.improveAutoRoll('critDamage', 5, 'u9001', 7), null, 'an out-of-range slot index is rejected');
+    eq(s.inventory['enchant_t0'], 100, 'nothing spent on a stale slot index');
 
     // restore
     s.uniqueItems = savedU; s.inventory['enchant_t0'] = savedInv;
