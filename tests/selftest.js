@@ -340,6 +340,53 @@
     g[1][0] = saved.c10; g[1][1] = saved.c11; g[2][0] = saved.c20;
   });
 
+  // ---- Farming: offline auto-farm turns fields over across the away window (not one-and-done) ----
+  suite('farming: offline auto-farm cycles fields', function(){
+    var s = FF._state;
+    var saved = { grid:s.estate.grid, plots:s.farmingPlots, settings:Object.assign({}, s.settings),
+      gt:s.physique.greenThumb, s0:s.inventory['seed_t0'], g0:s.inventory['grainseed_t0'],
+      h0:s.inventory['herbseed_t0'], s5:s.inventory['seed_t5'], crop0:s.inventory['farming_t0'] };
+    // Controlled single-field estate; only tier-0 fiber seed fits, so every harvest is a farming_t0.
+    s.estate.grid = [[{ type:'dirt', fieldTier:0, owned:true }]];
+    s.farmingPlots = {};
+    s.physique.greenThumb = 0;                        // exact 5-min growth, no bonus-yield roll
+    s.inventory['seed_t0'] = 1000;
+    s.inventory['grainseed_t0'] = 0; s.inventory['herbseed_t0'] = 0;
+    s.inventory['farming_t0'] = 0;
+    s.settings.autoHarvest = true; s.settings.autoPlant = true; s.settings.autoFertilize = false;
+
+    // A) 32 min away: an empty field is planted at the window's start and the 5-min crop turns over 6 times.
+    var n = FF.simulateOfflineFarming('personal', 32*60*1000);
+    eq(n, 6, '32 min of offline auto-farm turns a 5-min field over 6 times');
+    eq(s.inventory['farming_t0'], 6, 'six crops were harvested into inventory');
+    var plot = FF.farmPlotMap('personal')['0,0'];
+    ok(plot && plot.cropType, 'the field is left growing its next crop, not idle');
+
+    // B) Auto-harvest OFF -> the offline simulation is a no-op.
+    s.farmingPlots = {}; s.inventory['farming_t0'] = 0;
+    s.settings.autoHarvest = false;
+    eq(FF.simulateOfflineFarming('personal', 60*60*1000), 0, 'no auto-harvest -> no offline farming');
+    eq(s.inventory['farming_t0'], 0, 'nothing harvested with auto-harvest off');
+
+    // C) Harvest ON, Plant OFF -> a standing crop is reaped exactly once, then the field stays empty.
+    s.settings.autoHarvest = true; s.settings.autoPlant = false;
+    FF.farmPlotMap('personal')['0,0'] = { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000 };
+    eq(FF.simulateOfflineFarming('personal', 60*60*1000), 1, 'harvest-only reaps the standing crop once');
+    eq(s.inventory['farming_t0'], 1, 'one crop harvested, no replant cycles');
+    ok(!FF.farmPlotMap('personal')['0,0'], 'the field is left empty when auto-plant is off');
+
+    // D) The seed picker never overshoots the field's tier cap.
+    s.inventory['seed_t5'] = 5;
+    eq(FF.seedInfo(FF.bestOwnedSeedForField(0)).tier, 0, 'a tier-0 field never takes the tier-5 seed');
+
+    // restore
+    s.estate.grid = saved.grid; s.farmingPlots = saved.plots; s.settings = saved.settings;
+    s.physique.greenThumb = saved.gt;
+    s.inventory['seed_t0'] = saved.s0; s.inventory['grainseed_t0'] = saved.g0;
+    s.inventory['herbseed_t0'] = saved.h0; s.inventory['seed_t5'] = saved.s5;
+    s.inventory['farming_t0'] = saved.crop0;
+  });
+
   // ---- Guild activity + bank logs (shared blob, officer+ only, filtered by kind) ----
   suite('guild: activity & bank logs', function(){
     var ge = FF.guildEstate, gs = FF.guildState;

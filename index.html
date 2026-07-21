@@ -8626,6 +8626,113 @@
   }
   function farmingFertilizableCount(){ return farmingFertilizeAll(true); }
 
+  // ---- Offline auto-farming -----------------------------------------------------------------------
+  // Live, autoActionsCheck cycles the fields every ~1.5s: harvest ready -> replant empties -> fertilize.
+  // Offline, none of that runs, so a field only ever finishes the ONE crop that was growing when you left
+  // and then sits idle -- the "farming stalls offline" bug. This replays that same harvest->replant->grow
+  // loop across the away window for players who opted into auto-farm, so a field that could have turned over
+  // a dozen crops while you were gone actually does. Gated on autoHarvest (without it nothing cycles);
+  // autoPlant controls replanting and autoFertilize controls fertilizing, exactly as they do live.
+  //
+  // Highest-tier field that owns the highest-tier seed we can plant -> best seeds to best fields, mirroring
+  // Plant All. Each plot is stepped independently along its own clock; the only cross-plot coupling is the
+  // shared seed/fertilizer inventory, which we mutate directly (harvested seed drops feed later replants,
+  // just like live). addItem/addXp/addPhysiqueXp flow into the offline summary automatically.
+  function bestOwnedSeedForField(fieldTier){
+    var best = null, bestTier = -1;
+    [SEED_ITEMS, GRAIN_SEED_ITEMS, HERB_SEED_ITEMS].forEach(function(pool){
+      Object.keys(pool).forEach(function(id){
+        if((state.inventory[id]||0) <= 0) return;
+        var si = seedInfo(id); if(!si || !si.crop) return;
+        if(!canPlantInField(fieldTier, si.tier)) return;
+        if(si.tier > bestTier){ bestTier = si.tier; best = id; }
+      });
+    });
+    return best;
+  }
+  // Plant the best owned seed on an empty plot at a GIVEN time (not Date.now()), returning the new plot or
+  // null when out of seeds. Auto-fertilizes on plant when enabled and a matching-tier Fertilizer is owned --
+  // equivalent to live's separate Fertilize-All pass, since the flag persists until harvest.
+  function offlinePlantBest(scope, key, fieldTier, plantedAt){
+    var seedId = bestOwnedSeedForField(fieldTier);
+    if(!seedId) return null;
+    var si = seedInfo(seedId);
+    if(!si || !si.crop) return null;
+    if((state.inventory[seedId]||0) <= 0) return null;
+    state.inventory[seedId] -= 1;
+    var dur = Math.max(1000, Math.round(si.crop.durationMs * greenThumbGrowthMult()));
+    var plot = { cropType:si.cropType, tierIndex:si.tier, plantedAt:plantedAt, readyAt:plantedAt + dur };
+    if(state.settings && state.settings.autoFertilize){
+      var fid = 'fertilizer_t' + si.tier;
+      if((state.inventory[fid]||0) > 0){
+        state.inventory[fid] -= 1;
+        if(composterRefund()) state.inventory[fid] += 1;   // Composter: chance the Fertilizer isn't used up
+        plot.fertilized = true;
+      }
+    }
+    farmPlotMap(scope)[key] = plot;
+    return plot;
+  }
+  // Apply one harvest's rewards for a plot known to be ready. Mirrors harvestPlot's reward block (yield,
+  // seed drop, XP, physique, familiar) minus the live-only Date.now() gate, log/toast and save. Removes the
+  // crop from the map.
+  function offlineHarvestPlot(scope, key, plot){
+    var map = farmPlotMap(scope);
+    var cropData = getCropDataForPlot(plot);
+    if(!cropData){ delete map[key]; return; }
+    var yieldQty = plot.fertilized ? (composterTripleYield() ? 3 : 2) : 1;
+    yieldQty += greenThumbExtraYield();
+    addItem(cropData.id, yieldQty);
+    var seedId = cropSeedId(plot.cropType, plot.tierIndex);
+    if(seedId && Math.random() < HARVEST_SEED_DROP_CHANCE) addItem(seedId, 1);  // self-sustaining fields
+    addXp(FARMING_CROP_SKILL[plot.cropType] || 'fiberharvesting', cropData.xp);
+    addPhysiqueXp(physTierPairs(FARMING_PHYSIQUE, itemTierFromId(cropData.id)));
+    maybeSummonFamiliar('farming');
+    delete map[key];
+  }
+  // Turn one field over as many times as the away window covers. Returns the number of harvests taken.
+  function simulateOfflineFarmPlot(scope, key, fieldTier, windowStart, endAt){
+    var s = state.settings;
+    var map = farmPlotMap(scope);
+    var plot = map[key];
+    // An empty field would be auto-planted right after you left -> seed it at the window's start.
+    if(isPlotEmpty(plot)){
+      if(!s.autoPlant) return 0;
+      plot = offlinePlantBest(scope, key, fieldTier, windowStart);
+      if(!plot) return 0;
+    }
+    var cycles = 0, guard = 0;
+    while(guard++ < 100000){
+      if(isPlotEmpty(plot) || plot.readyAt > endAt) break;   // still growing at window end -> leave it live
+      // A crop that finished before the (12h-capped) window even opened harvests at the window's start.
+      var harvestTime = Math.max(plot.readyAt, windowStart);
+      offlineHarvestPlot(scope, key, plot);
+      cycles++;
+      plot = null;
+      if(!s.autoPlant) break;                                // harvest-only: one crop, no replant
+      plot = offlinePlantBest(scope, key, fieldTier, harvestTime);
+      if(!plot) break;                                       // out of seeds -> field goes idle
+    }
+    return cycles;
+  }
+  // Replay auto-farming across `capped` ms of absence for every field on the given estate. No-op unless the
+  // player enabled auto-harvest. Returns total harvests taken (for the away-summary line).
+  function simulateOfflineFarming(scope, capped){
+    var s = state.settings;
+    if(!s || !s.autoHarvest) return 0;
+    if(capped < 3000) return 0;
+    var grid = fieldGridFor(scope);
+    if(!grid) return 0;
+    var endAt = Date.now(), windowStart = endAt - capped;
+    var fields = [];
+    for(var x=0;x<grid.length;x++){ var col=grid[x]; if(!col) continue;
+      for(var y=0;y<col.length;y++){ var c=col[y]; if(c && c.fieldTier!=null) fields.push({ key:x+','+y, tier:c.fieldTier }); } }
+    fields.sort(function(a,b){ return b.tier - a.tier; });   // best fields first, matching Plant All
+    var total = 0;
+    fields.forEach(function(f){ total += simulateOfflineFarmPlot(scope, f.key, f.tier, windowStart, endAt); });
+    return total;
+  }
+
   function pickWeightedFarmingTier(){
     var weights = [], total = 0, i;
     for(i=0;i<TIER_COUNT;i++){ var w = Math.pow(0.65, i); weights.push(w); total += w; }
@@ -11320,6 +11427,17 @@
       processPeonScope('guild', ms, 300000);
       saveGame();
       addLog('Your guild-estate Peons worked through ' + formatDuration(ms) + ' of your time away.', 'chronicle');
+    }
+  }
+  var guildFarmOfflineMs = 0;      // deferred guild-field auto-farm catch-up (applied once the guild estate loads)
+  function maybeGuildFarmCatchup(){
+    if(guildFarmOfflineMs < 3000){ guildFarmOfflineMs = 0; return; }
+    if(!fieldGridFor('guild')) return;                 // guild grid not ready yet -> keep waiting
+    var ms = guildFarmOfflineMs; guildFarmOfflineMs = 0;
+    var cycles = simulateOfflineFarming('guild', ms);
+    if(cycles > 0){
+      saveGame();
+      addLog('Your guild-estate fields auto-farmed ' + cycles + ' harvest' + (cycles===1?'':'s') + ' through ' + formatDuration(ms) + ' of your time away.', 'chronicle');
     }
   }
   function addLog(msg, cls){
@@ -14702,10 +14820,14 @@
     // Personal-estate Peons produce/consume through the whole away period (big iter cap so a
     // fast peon isn't truncated by the live 200-tick guard).
     processPeonScope('personal', capped, 300000);
+    // Auto-farm cycles the personal fields through the away window (no-op unless auto-harvest is on).
+    simulateOfflineFarming('personal', capped);
     }catch(e){}
     // Guild-estate peons run client-side against the shared grid, which isn't loaded yet at
     // login — defer their catch-up until the guild estate becomes ready (see the loop).
     if(state.guildPeons && state.guildPeons.length) guildPeonOfflineMs = capped;
+    // Guild fields auto-farm too, but the shared grid isn't loaded yet -> defer like the guild peons.
+    if(state.settings && state.settings.autoHarvest) guildFarmOfflineMs = capped;
     offlineCapture.gold = state.gold - goldBefore;
     var _sum = offlineCapture;
     offlineCapture = null;
@@ -28507,6 +28629,7 @@
     processEstateJob();
     processGuildEstateJobs(); // complete this member's guild-estate activity when its timer elapses
     if(guildPeonOfflineMs) maybeGuildPeonCatchup(); // apply deferred guild-peon offline work once the estate loads
+    if(guildFarmOfflineMs) maybeGuildFarmCatchup(); // apply deferred guild-field auto-farm once the estate loads
     processPeons(dt);         // cottage peons work in the background, independent of the player
     if(CHAT_ENABLED && authUser && chatClient && now - _lastBuffPoll > 60000){ _lastBuffPoll = now; serverBuffFetch(); } // refresh the server-wide buff timer
 
@@ -29117,7 +29240,7 @@
       candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
       peonTaskTier:peonTaskTier, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
       generatePersonalEstateGrid:generatePersonalEstateGrid, generateEstateGrid:generateEstateGrid, estatePlaceStarterKit:estatePlaceStarterKit, estateIsStarterTile:estateIsStarterTile, ESTATE_STARTER_WORKSHOP:ESTATE_STARTER_WORKSHOP, ESTATE_STARTER_COTTAGE:ESTATE_STARTER_COTTAGE, ESTATE_STARTER_PAVING:ESTATE_STARTER_PAVING, estatePeonSources:estatePeonSources,
-      ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline,
+      ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline, simulateOfflineFarming:simulateOfflineFarming, bestOwnedSeedForField:bestOwnedSeedForField,
       workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
       estateUpgradePavement:estateUpgradePavement, pavementTierOf:pavementTierOf, ESTATE_PAVE_TILE_COST:ESTATE_PAVE_TILE_COST, estUse:estUse,
