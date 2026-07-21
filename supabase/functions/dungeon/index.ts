@@ -129,7 +129,11 @@ Deno.serve(async (req) => {
   const user = userData?.user;
   if (userErr || !user) return json({ ok: false, error: "Not authenticated." }, 401);
   // Volume rate limit (Postgres rl_hit; see migration 20260716200000). Fail-open if the limiter is down.
-  try { const { data: _over } = await admin.rpc("rl_hit", { p_subject: user.id, p_bucket: "dungeon", p_limit: 300, p_window_secs: 60 }); if (_over === true) return json({ ok: false, error: "Too many requests." }, 429); } catch { /* limiter unavailable -> allow */ }
+  // Sized for the client's 0.5s assault cadence (DUNGEON_ASSAULT_INTERVAL_MS): ~2 assault/s per player,
+  // PLUS one heal RPC per healed ally on the same cadence, so a healer in a full party can run ~8/s. The
+  // limit covers every dungeon action on this one bucket, so it's set well above that worst case; a 429
+  // still fails safe (the client re-banks the damage/heal and retries), this just stops it stuttering.
+  try { const { data: _over } = await admin.rpc("rl_hit", { p_subject: user.id, p_bucket: "dungeon", p_limit: 1200, p_window_secs: 60 }); if (_over === true) return json({ ok: false, error: "Too many requests." }, 429); } catch { /* limiter unavailable -> allow */ }
   const username = (user.user_metadata && (user.user_metadata as Record<string, unknown>).username) as string | undefined;
   if (!username) return json({ ok: false, error: "Account has no username." }, 400);
 
