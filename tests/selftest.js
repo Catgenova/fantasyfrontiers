@@ -5783,19 +5783,25 @@
     s.dungeonsCleared = saved;
   });
 
-  // ---- Joining a party: Total Level 5000 + must have beaten THIS dungeon (Cave excepted) ----
+  // ---- Joining a party: Total Level 5000 + the PREVIOUS layer cleared (like starting your own) ----
   suite('dungeons: join requirements + party code', function(){
     var s = FF._state, savedCleared = s.dungeonsCleared, savedXp = s.xp, savedPhys = s.physique;
-    // Force the profile over the Total Level gate so the join test isolates the beaten-this-dungeon rule.
+    // Force the profile over the Total Level gate so the join test isolates the progression rule.
     // (playerTotalLevel sums skill + physique levels; a big fake skill map clears 5000 handily.)
     var bigXp = {}; if (FF.ALL_MAIN_SKILL_IDS) FF.ALL_MAIN_SKILL_IDS.forEach(function(id){ bigXp[id] = 1e12; });
     s.xp = bigXp; s.physique = {};
     ok(FF.playerTotalLevel(s) >= FF.DUNGEON_MIN_TOTAL_LEVEL, 'the boosted profile clears the Total Level gate');
     s.dungeonsCleared = {};
-    eq(FF.dungeonJoinBlock('d1'), null, 'the Cave has no beaten-before requirement to join');
-    ok(FF.dungeonJoinBlock('d2') !== null, 'joining a Tunnel party requires having beaten the Tunnel');
+    eq(FF.dungeonJoinBlock('d1'), null, 'the Cave has no prerequisite to join');
+    ok(FF.dungeonJoinBlock('d2') !== null, 'joining a Tunnel party requires the Cave cleared first');
+    // Beating D1 (solo OR group -- both call dungeonMarkCleared) unlocks joining D2 parties;
+    // a prior D2 clear must NOT be required (that locked group progression behind solo play).
+    FF.dungeonMarkCleared('d1');
+    eq(FF.dungeonJoinBlock('d2'), null, 'clearing the Cave unlocks joining Tunnel parties -- no Tunnel clear needed');
+    ok(FF.dungeonJoinBlock('d3') !== null, 'D3 parties still need the Tunnel cleared');
     FF.dungeonMarkCleared('d2');
-    eq(FF.dungeonJoinBlock('d2'), null, 'once you have beaten the Tunnel you can join its parties');
+    eq(FF.dungeonJoinBlock('d3'), null, 'the chain continues: clearing D2 unlocks joining D3 parties');
+    ok(FF.dungeonJoinBlock('d4') !== null, '...and D4 parties still need D3 cleared');
     // Below the Total Level gate, even the Cave blocks joining.
     s.xp = {}; s.physique = {};
     ok((FF.dungeonJoinBlock('d1') || '').indexOf('Total Level') === 0, 'below the Total Level gate even the Cave blocks joining');
