@@ -424,6 +424,17 @@
   .quest-acc-body{padding:2px 14px 14px;border-top:1px dashed var(--border-light);}
   .quest-acc-desc{color:var(--text-dim);font-size:13px;line-height:1.6;margin:10px 0 8px;}
   .quest-acc-row{font-size:12.5px;color:var(--text-dim);margin:4px 0;}
+  .quest-group-head{font-family:var(--font-display);font-weight:700;font-size:13px;color:var(--gold);margin:14px 0 6px;padding-bottom:3px;border-bottom:1px solid var(--border-light);}
+  /* ---- Titles browser ---- */
+  .title-list{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+  .title-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border);border-radius:7px;background:var(--bg-card);}
+  .title-row.locked{opacity:.62;}
+  .title-row.equipped{border-color:#c9a227;box-shadow:0 0 0 1px rgba(201,162,39,.25);}
+  .title-name{font-family:var(--font-display);font-weight:700;font-size:13.5px;color:var(--text);flex:0 1 auto;}
+  .title-row.locked .title-name{color:var(--text-dim);}
+  .title-help{flex:0 0 auto;width:16px;height:16px;border-radius:50%;border:1px solid var(--border-light);color:var(--text-dim);font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;cursor:help;}
+  .title-status{margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}
+  .title-row .mini-btn{margin-left:auto;flex:0 0 auto;}
 
   .layout{display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start;}
   @media (max-width:860px){.layout{grid-template-columns:1fr;}}
@@ -11398,6 +11409,7 @@
       monsterKills: {},          // per-monster-id kill tally (Quest progress source)
       quests: { claimed: {} },   // quest progression: { claimed: { questId: true } }
       titles: {},                // unlocked quest/achievement titles (cosmetic), by id
+      equippedTitle: null,       // the currently-worn title id (shown on Profile), or null
       tower: {},                 // The Tower: per-entrance progress { <entranceId>: { floor, best } }
 
       familiarCastIndex: 0,
@@ -11419,7 +11431,7 @@
     { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['improvement','Improvement'],['faith','Faith'],['building','Construction'],['masterwork','Blueprints'],['inventory','Inventory'],['skills','Skills']] },
     { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['peons','Peons'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
     { id:'battle', label:'Battle', icon:'crossedswords', subs:[['enemies','Enemies'],['combat','Combat'],['tower','The Tower'],['dungeons','Dungeons'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] },
-    { id:'quests', label:'Quests', icon:'compass', subs:[['gettingstarted','Getting Started']] }
+    { id:'quests', label:'Quests', icon:'compass', subs:[['gettingstarted','Getting Started'],['towerquests','Tower'],['titles','Titles']] }
   ];
   function areaOf(cat){ for(var i=0;i<AREAS.length;i++){ if(AREAS[i].subs.some(function(s){ return s[0]===cat; })) return AREAS[i].id; } return 'resources'; }
   var currentArea = areaOf(currentCategory);
@@ -15255,6 +15267,8 @@
           if(!state.quests || typeof state.quests !== 'object') state.quests = { claimed:{} };
           if(!state.quests.claimed || typeof state.quests.claimed !== 'object') state.quests.claimed = {};
           if(!state.titles || typeof state.titles !== 'object') state.titles = {};
+          if(typeof state.equippedTitle === 'undefined') state.equippedTitle = null;
+          if(state.equippedTitle && !(state.titles && state.titles[state.equippedTitle])) state.equippedTitle = null; // drop a stale/unowned equipped title
           // REPAIR: clear any slot pointing at a unique that no longer exists. Saves written before the
           // shatter fix can hold a dangling uid (a destroyed offhand/armour/ring stayed "equipped",
           // keeping its class active), so heal those on load instead of making players notice it.
@@ -19907,8 +19921,12 @@
   // and the quest's Claim button all flash. Each quest renders as an ACCORDION: the always-visible bar
   // carries the name + progress bar + Go/Claim button; expanding reveals the story, the how-to
   // instructions, and the reward. An unfinished quest's "Go" button jumps to where it's completed.
+  // Quest categories are the tabs inside the Quests area. 'titles' is special: its tab shows the earned/
+  // obtainable TITLES browser rather than a quest list (see renderTitlesTab).
   var QUEST_CATEGORIES = [
-    { id:'gettingstarted', label:'Getting Started' }
+    { id:'gettingstarted', label:'Getting Started' },
+    { id:'towerquests', label:'Tower' },
+    { id:'titles', label:'Titles' }
   ];
   var QUEST_CATEGORY_IDS = QUEST_CATEGORIES.map(function(c){ return c.id; });
   function isQuestCategory(cat){ return QUEST_CATEGORY_IDS.indexOf(cat) !== -1; }
@@ -19922,7 +19940,41 @@
       nav:{ cat:'enemies', sub:'wildlife' },
       reward:{ kind:'item', itemId:'corpse_t0', qty:10, label:'10 Rabbit Corpses' } }
   ];
-  var QUEST_BY_ID = {}; QUESTS.forEach(function(q){ QUEST_BY_ID[q.id] = q; });
+  // ---- Tower quests (generated): a Floor-milestone quest per entrance, each rewarding a unique TITLE.
+  // Every entrance gets 25/50/75/100; the All Classes entrance climbs on to 500 (grand titles). Progress
+  // reads that entrance's best floor, so the bar fills as you climb and completes at the milestone.
+  var TOWER_QUEST_TIERS = [ { floor:25, suffix:'Initiate' }, { floor:50, suffix:'Adept' }, { floor:75, suffix:'Master' }, { floor:100, suffix:'Ascendant' } ];
+  var TOWER_ALLCLASS_GRAND = ['Skyward Vanguard','Cloudbreaker','Stormcrown','Starclimber','Voidtouched','Astral Sovereign','Celestial Warlord','Firmament Titan','Empyrean Conqueror','Heaven’s Bane','Cosmic Ascendant','Eternal Colossus','Godspire Warden','Infinite Sovereign','Apex Immortal','Lord of the Endless Tower'];
+  function makeTowerQuest(entranceId, entranceLabel, floor, titleName){
+    return {
+      id: 'tq_' + entranceId + '_f' + floor, cat: 'towerquests', towerEntrance: entranceId, towerFloor: floor,
+      title: entranceLabel + ' — Floor ' + floor,
+      desc: 'Prove yourself on the ' + entranceLabel + ' entrance of the Tower by reaching Floor ' + floor + '.',
+      how: 'In Battle → The Tower, clear Floor ' + floor + ' on the ' + entranceLabel + ' entrance (tracked by your best floor).',
+      target: floor,
+      progress: (function(en){ return function(st){ return (st.tower && st.tower[en] && st.tower[en].best) || 0; }; })(entranceId),
+      nav: { cat:'tower' },
+      reward: { kind:'title', titleId: 'title_' + entranceId + '_f' + floor, name: titleName }
+    };
+  }
+  TOWER_ENTRANCES.forEach(function(en){
+    TOWER_QUEST_TIERS.forEach(function(t){
+      QUESTS.push(makeTowerQuest(en.id, en.label, t.floor, (en.id === 'all') ? ('Tower ' + t.suffix) : (en.label + ' ' + t.suffix)));
+    });
+  });
+  for(var _tgi = 0; _tgi < TOWER_ALLCLASS_GRAND.length; _tgi++){
+    QUESTS.push(makeTowerQuest('all', 'All Classes', 125 + _tgi * 25, TOWER_ALLCLASS_GRAND[_tgi]));
+  }
+  // Derived lookups, rebuilt whenever QUESTS changes. TITLES is the flat, ordered registry every
+  // title-rewarding quest contributes to (drives the Titles browser + equip system).
+  var QUEST_BY_ID = {}, TITLES = [], TITLE_BY_ID = {};
+  function questRebuildDerived(){
+    QUEST_BY_ID = {}; QUESTS.forEach(function(q){ QUEST_BY_ID[q.id] = q; });
+    TITLES = QUESTS.filter(function(q){ return q.reward && q.reward.kind === 'title'; })
+      .map(function(q){ return { id: q.reward.titleId, name: q.reward.name, how: q.how || q.desc, questId: q.id }; });
+    TITLE_BY_ID = {}; TITLES.forEach(function(t){ TITLE_BY_ID[t.id] = t; });
+  }
+  questRebuildDerived();
   var questExpanded = {}; // which quest accordions are open, by id -- persists across re-renders
   function questById(id){ return QUEST_BY_ID[id] || null; }
   function questProgress(q){ return Math.max(0, Math.min(q.target, q.progress(state)|0)); }
@@ -19957,8 +20009,58 @@
   function questToggleExpand(id){ if(id) questExpanded[id] = !questExpanded[id]; }
   // Per-monster kill tally (Quest progress). Called from defeatMonster on every non-dungeon kill.
   function bumpMonsterKill(id){ if(!id) return; if(!state.monsterKills) state.monsterKills = {}; state.monsterKills[id] = (state.monsterKills[id]||0) + 1; }
+  // One quest accordion (bar: name + progress + Go/Claim; body on expand: story, how-to, reward).
+  function renderQuestAccordion(q){
+    var prog = questProgress(q), done = questComplete(q), claimed = questClaimed(q), canClaim = done && !claimed;
+    var pct = q.target > 0 ? Math.round(prog / q.target * 100) : 100;
+    var open = !!questExpanded[q.id];
+    var html = '<div class="quest-acc' + (canClaim ? ' claimable' : '') + (open ? ' open' : '') + '">';
+    // Clicking the bar (but not the button) toggles the accordion; the delegated dispatcher resolves to
+    // the innermost data-action, so the button wins its own tap.
+    html += '<div class="quest-acc-bar" data-action="questToggle" data-quest="' + q.id + '" role="button" aria-expanded="' + (open ? 'true' : 'false') + '">';
+    html += '<span class="quest-acc-chev" aria-hidden="true">▸</span>';
+    html += '<span class="quest-acc-title">' + escapeHtml(q.title) + '</span>';
+    html += '<span class="quest-acc-prog"><span class="quest-acc-track"><span class="quest-acc-fill" style="width:' + pct + '%"></span></span><span class="quest-acc-count">' + fmt(prog) + ' / ' + fmt(q.target) + '</span></span>';
+    if(claimed) html += '<button class="action-btn quest-acc-btn" disabled style="width:auto;flex:0 0 auto;opacity:.6;">Claimed ✓</button>';
+    else if(canClaim) html += '<button class="action-btn quest-acc-btn quest-claim" data-action="questClaim" data-quest="' + q.id + '" style="width:auto;flex:0 0 auto;">Claim</button>';
+    else html += '<button class="action-btn quest-acc-btn" data-action="navToActivity" data-nav-cat="' + q.nav.cat + '"' + (q.nav.sub ? ' data-nav-sub="' + q.nav.sub + '"' : '') + ' style="width:auto;flex:0 0 auto;">Go</button>';
+    html += '</div>';
+    if(open){
+      html += '<div class="quest-acc-body">';
+      html += '<p class="quest-acc-desc">' + escapeHtml(q.desc) + '</p>';
+      html += '<div class="quest-acc-row"><b>How to complete:</b> ' + escapeHtml(q.how) + '</div>';
+      html += '<div class="quest-acc-row"><b>Reward:</b> <span style="color:var(--gold);">' + escapeHtml(questRewardLabel(q)) + '</span></div>';
+      html += '</div>';
+    }
+    return html + '</div>';
+  }
+  // Equip/unequip a title (one at a time). Only earned titles can be equipped. Equipping the equipped one
+  // (or Unequip) clears it. Display on the player Profile lands when the backend is back.
+  function equipTitle(id){ if(!id || !(state.titles && state.titles[id])) return; state.equippedTitle = (state.equippedTitle === id) ? null : id; saveGame(); render(); }
+  function unequipTitle(){ state.equippedTitle = null; saveGame(); render(); }
+  function renderTitlesTab(){
+    var owned = 0; TITLES.forEach(function(t){ if(state.titles && state.titles[t.id]) owned++; });
+    var eq = state.equippedTitle;
+    var html = '<div class="section-intro"><b>Titles</b> — earned by completing quests. Equip one to wear it (it will appear on your Profile). You’ve unlocked <b>' + owned + ' / ' + TITLES.length + '</b>. Hover the <b>?</b> on a locked title to see how to earn it.</div>';
+    html += '<div class="guild-section-title" style="margin-top:4px;">Your Titles</div>';
+    if(eq && TITLE_BY_ID[eq]) html += '<div class="inputs-line">Equipped: <b style="color:var(--gold);">' + escapeHtml(TITLE_BY_ID[eq].name) + '</b></div>';
+    else html += '<div class="inputs-line">Equipped: <span class="empty-note" style="display:inline;">none</span></div>';
+    html += '<div class="title-list">';
+    TITLES.forEach(function(t){
+      var has = !!(state.titles && state.titles[t.id]), isEq = eq === t.id;
+      html += '<div class="title-row' + (has ? ' owned' : ' locked') + (isEq ? ' equipped' : '') + '">';
+      html += '<span class="title-name">' + escapeHtml(t.name) + '</span>';
+      html += '<span class="title-help" title="How to earn: ' + escapeHtml(t.how) + '">?</span>';
+      if(!has) html += '<span class="title-status">Locked</span>';
+      else if(isEq) html += '<button class="mini-btn" data-action="titleUnequip">Unequip</button>';
+      else html += '<button class="mini-btn" data-action="titleEquip" data-title="' + escapeHtml(t.id) + '">Equip</button>';
+      html += '</div>';
+    });
+    return html + '</div>';
+  }
   function renderQuestsTab(){
     var catId = isQuestCategory(currentCategory) ? currentCategory : QUEST_CATEGORY_IDS[0];
+    if(catId === 'titles') return renderTitlesTab();
     var cat = QUEST_CATEGORIES.filter(function(c){ return c.id===catId; })[0];
     var list = QUESTS.filter(function(q){ return q.cat===catId; });
     var claimable = list.filter(questClaimable).length;
@@ -19966,30 +20068,18 @@
       + (claimable ? '<span style="color:var(--gold);font-weight:700;">' + claimable + ' ready to claim!</span>' : 'Each rewards an item, skill XP, or a title.') + '</div>';
     html += '<div class="guild-section-title" style="margin-top:4px;">' + escapeHtml(cat.label) + '</div>';
     if(!list.length) return html + '<div class="empty-note">More quests coming soon.</div>';
-    list.forEach(function(q){
-      var prog = questProgress(q), done = questComplete(q), claimed = questClaimed(q), canClaim = done && !claimed;
-      var pct = q.target > 0 ? Math.round(prog / q.target * 100) : 100;
-      var open = !!questExpanded[q.id];
-      html += '<div class="quest-acc' + (canClaim ? ' claimable' : '') + (open ? ' open' : '') + '">';
-      // The bar: name + progress + Go/Claim. Clicking the bar (but not the button) toggles the accordion;
-      // the delegated click dispatcher resolves to the innermost data-action, so the button wins its own tap.
-      html += '<div class="quest-acc-bar" data-action="questToggle" data-quest="' + q.id + '" role="button" aria-expanded="' + (open ? 'true' : 'false') + '">';
-      html += '<span class="quest-acc-chev" aria-hidden="true">▸</span>';
-      html += '<span class="quest-acc-title">' + escapeHtml(q.title) + '</span>';
-      html += '<span class="quest-acc-prog"><span class="quest-acc-track"><span class="quest-acc-fill" style="width:' + pct + '%"></span></span><span class="quest-acc-count">' + fmt(prog) + ' / ' + fmt(q.target) + '</span></span>';
-      if(claimed) html += '<button class="action-btn quest-acc-btn" disabled style="width:auto;flex:0 0 auto;opacity:.6;">Claimed ✓</button>';
-      else if(canClaim) html += '<button class="action-btn quest-acc-btn quest-claim" data-action="questClaim" data-quest="' + q.id + '" style="width:auto;flex:0 0 auto;">Claim</button>';
-      else html += '<button class="action-btn quest-acc-btn" data-action="navToActivity" data-nav-cat="' + q.nav.cat + '"' + (q.nav.sub ? ' data-nav-sub="' + q.nav.sub + '"' : '') + ' style="width:auto;flex:0 0 auto;">Go</button>';
-      html += '</div>';
-      if(open){
-        html += '<div class="quest-acc-body">';
-        html += '<p class="quest-acc-desc">' + escapeHtml(q.desc) + '</p>';
-        html += '<div class="quest-acc-row"><b>How to complete:</b> ' + escapeHtml(q.how) + '</div>';
-        html += '<div class="quest-acc-row"><b>Reward:</b> <span style="color:var(--gold);">' + escapeHtml(questRewardLabel(q)) + '</span></div>';
-        html += '</div>';
-      }
-      html += '</div>';
-    });
+    if(catId === 'towerquests'){
+      // Grouped by entrance (All Classes first, then each class) so the long milestone list stays navigable.
+      TOWER_ENTRANCES.forEach(function(en){
+        var qs = list.filter(function(q){ return q.towerEntrance === en.id; }).sort(function(a, b){ return a.towerFloor - b.towerFloor; });
+        if(!qs.length) return;
+        var ready = qs.filter(questClaimable).length;
+        html += '<div class="quest-group-head">' + escapeHtml(en.label) + (ready ? ' <span style="color:var(--gold);">• ' + ready + ' to claim</span>' : '') + '</div>';
+        qs.forEach(function(q){ html += renderQuestAccordion(q); });
+      });
+      return html;
+    }
+    list.forEach(function(q){ html += renderQuestAccordion(q); });
     return html;
   }
 
@@ -29085,6 +29175,8 @@
     chatSend: function(btn, e){ chatSend(); },
     questClaim: function(btn, e){ claimQuest(btn.getAttribute('data-quest')); },
     questToggle: function(btn, e){ questToggleExpand(btn.getAttribute('data-quest')); },
+    titleEquip: function(btn, e){ equipTitle(btn.getAttribute('data-title')); },
+    titleUnequip: function(btn, e){ unequipTitle(); },
     authSubmit: function(btn, e){ authSubmit(); },
     discordLogin: function(btn, e){ discordLogin(); },
     linkDiscord: function(btn, e){ linkDiscord(); },
@@ -30100,7 +30192,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.35.2';
+  var GAME_VERSION = '0.0.36.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -30221,7 +30313,8 @@
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
-      QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questClaimable:questClaimable, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash,
+      QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questClaimable:questClaimable, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash,
+      TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, questRebuildDerived:questRebuildDerived,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, towerOnKill:towerOnKill, towerEnter:towerEnter, renderTowerTab:renderTowerTab, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, itemReconcile:itemReconcile,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },

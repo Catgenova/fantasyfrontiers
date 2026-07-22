@@ -5785,6 +5785,54 @@
 
   // ---- Quests: own area, Getting Started category, accordion + complete/claim/flash flow ----
   // ---- The Tower: floors, rotation, scaling, rewards, progress ----
+  // ---- Tower quests + Titles system (equip, browser, how-to) ----
+  suite('quests: tower milestones + titles', function(){
+    var s = FF._state;
+    var savedTower = s.tower, savedQ = s.quests, savedTitles = s.titles, savedEq = s.equippedTitle;
+    s.tower = {}; s.quests = { claimed:{} }; s.titles = {}; s.equippedTitle = null;
+    // Generation: every entrance gets 25/50/75/100 (25*4=100) + All Classes 125..500 (16) = 116 tower quests.
+    var towerQs = FF.QUESTS.filter(function(q){ return q.cat==='towerquests'; });
+    eq(towerQs.length, 116, '116 tower quests generated (25 entrances x4 + All Classes 125-500)');
+    eq(FF.isQuestCategory('towerquests'), true, 'Tower is a quest category');
+    eq(FF.isQuestCategory('titles'), true, 'Titles is a quest category');
+    // A class entrance stops at floor 100; All Classes climbs to 500.
+    ok(FF.questById('tq_pyromancer_f100') != null && FF.questById('tq_pyromancer_f125') == null, 'class entrances cap at floor 100');
+    ok(FF.questById('tq_all_f500') != null, 'All Classes has a Floor 500 quest');
+    // A milestone quest: reward is a unique title; progress reads that entrance's best floor.
+    var q = FF.questById('tq_all_f100');
+    ok(q && q.cat==='towerquests' && q.target===100, 'the Floor-100 All Classes quest exists with target 100');
+    ok(q.reward.kind==='title' && q.reward.titleId==='title_all_f100' && q.reward.name==='Tower Ascendant', 'it rewards the "Tower Ascendant" title');
+    eq(FF.questById('tq_pyromancer_f25').reward.name, 'Pyromancer Initiate', 'a class quest names its class title');
+    eq(FF.questById('tq_all_f500').reward.name, 'Lord of the Endless Tower', 'the Floor-500 title is the grand finale');
+    // Progress + claim -> unlock the title.
+    eq(FF.questComplete(q), false, 'no climb yet -> not complete');
+    s.tower.all = { floor:101, best:100 };
+    ok(FF.questComplete(q) && FF.questClaimable(q), 'reaching best floor 100 completes + arms the quest');
+    eq(FF.questClaimableInCat('towerquests'), true, 'the Tower quest tab has a claimable');
+    eq(FF.railSubFlash('towerquests'), true, 'the Tower quest tab flashes when a milestone is claimable');
+    ok(FF.claimQuest('tq_all_f100'), 'claim succeeds');
+    ok(s.titles['title_all_f100'] === true, 'claiming unlocks the title');
+    // TITLES registry: flat, ordered, one per title-rewarding quest.
+    eq(FF.TITLES.length, 116, 'the Titles registry has one entry per tower quest');
+    ok(FF.TITLE_BY_ID['title_all_f100'] && FF.TITLE_BY_ID['title_all_f100'].name==='Tower Ascendant', 'the registry is keyed by title id');
+    ok(FF.TITLE_BY_ID['title_all_f100'].how && /Floor 100/.test(FF.TITLE_BY_ID['title_all_f100'].how), 'each title carries a how-to (drives the ? tooltip)');
+    // Equip system: only earned titles equip; toggling / unequip clears.
+    FF.equipTitle('title_all_f500'); // locked -> no-op
+    ok(s.equippedTitle == null, 'a locked title cannot be equipped');
+    FF.equipTitle('title_all_f100');
+    eq(s.equippedTitle, 'title_all_f100', 'an earned title equips');
+    FF.equipTitle('title_all_f100'); // toggle off
+    ok(s.equippedTitle == null, 're-equipping the worn title takes it off');
+    FF.equipTitle('title_all_f100'); FF.unequipTitle();
+    ok(s.equippedTitle == null, 'unequip clears the worn title');
+    // Titles browser markup: earned -> Equip button; locked -> a ? tooltip with the how-to.
+    var th = FF.renderTitlesTab();
+    ok(/Tower Ascendant/.test(th) && /data-action="titleEquip"/.test(th), 'the browser lists an earned title with an Equip control');
+    ok(/title-help/.test(th) && /How to earn/.test(th), 'locked titles show a ? with how-to-earn');
+    // restore
+    s.tower = savedTower; s.quests = savedQ; s.titles = savedTitles; s.equippedTitle = savedEq;
+  });
+
   suite('tower: floors, rotation, scaling + rewards', function(){
     var s = FF._state;
     var savedTower = s.tower, savedFam = s.familiars, savedAct = s.activity, savedCat = FF._state.__cat;
