@@ -3129,7 +3129,7 @@
   }
   function getGatherToolTierData(skillId, tier){
     var t = tier - 1;
-    return {
+    var d = {
       tier: tier,
       name: METAL_TIER_NAMES[t] + ' ' + GATHER_TOOL_NAMES[skillId],
       levelReq: ARMOR_TIER_LEVELS[t],
@@ -3138,6 +3138,11 @@
       inputs: withPrevTierRequirement(ARMOR_TIER_INPUTS[t], 'tool_'+skillId+'_t'+(t-1)+'_normal', t),
       time: tierTime(7,0.3,t)
     };
+    // Butchering is a Refining activity: its Cleaver raises butcher output chance like a CRAFT tool raises
+    // craft success -- same per-tier curve (CRAFT_TOOL_SUCCESS) AND rarity scaling (applyToolRarity lifts
+    // successBonus). Other gather tools carry no success field (their success is the tier-only main-chance).
+    if(skillId === 'butchering') d.successBonus = CRAFT_TOOL_SUCCESS[t];
+    return d;
   }
   function getEquippedGatherTool(skillId, tier, rarityId){
     if(tier<=0) return {tier:0, name:'Empty', speedBonus:0};
@@ -8252,7 +8257,9 @@
   var BASE_BUTCHER_CHANCE = 0.40;
   function butcherOutputChance(state, physiqueId){
     var toolTier = state.gatherTools.butchering||0;
-    var toolBonus = gatherToolSuccessBonus(toolTier);
+    // The Cleaver's success bonus scales with BOTH tier and rarity (like every other crafting tool),
+    // via the successBonus stored on its gather-tool data (getGatherToolTierData) and lifted by rarity.
+    var toolBonus = toolTier > 0 ? (getEquippedGatherTool('butchering', toolTier, state.gatherToolRarities.butchering).successBonus || 0) : 0;
     var physLevel = getLevel(state.physique[physiqueId]||0);
     var physBonus = Math.min(0.25, physLevel*0.0025);
     return Math.min(0.95, BASE_BUTCHER_CHANCE + toolBonus + physBonus + huntsmanOutputBonus());
@@ -16537,9 +16544,9 @@
     html += '<div class="item-top"><div class="item-icon">'+tt.icon+'</div><div><div class="item-name">'+tt.name+'</div><div class="item-meta">Equipped: '+equippedLabel+' &bull; Owned: '+toolOwnedTotal+'</div></div></div>';
     html += '<div style="font-size:11px;color:var(--gold);margin:1px 0 3px;">Boosts your <b>'+escapeHtml(toolBenefitLabel(tt))+'</b> '+(tt.isGather?'gathering':'crafting')+'</div>';
     html += '<div class="inputs-line">Tier: '+tierStepper('tool',tt.skillId,tierRange(maxUnlocked),sel,METAL_TIER_NAMES[sel]+' (Lv'+TIER_LEVELS[sel]+')',isActive)+'</div>';
-    var statLine = tt.isGather
-      ? ('+'+Math.round(data.speedBonus*100)+'% speed')
-      : ('+'+Math.round(data.speedBonus*100)+'% spd, +'+Math.round(data.successBonus*100)+'% success');
+    var statLine = (data.successBonus != null)
+      ? ('+'+Math.round(data.speedBonus*100)+'% spd, +'+Math.round(data.successBonus*100)+'% success')
+      : ('+'+Math.round(data.speedBonus*100)+'% speed');
     html += '<div class="item-stats">'+xpStat('blacksmithing', data.xp*1.5, 'craft', sel)+'<span>'+data.name+'</span><span>'+statLine+'</span></div>';
     html += '<div class="chance-line">Output: <b>1x '+data.name+'</b> at <b>'+successPct+'%</b> success (Faith raises rare/supreme/fantastic odds)</div>';
     html += '<div class="inputs-line">Needs: '+inputsLine(data.inputs, 'inp-tool-'+tt.skillId)+'</div>';
@@ -17868,7 +17875,7 @@
     var rarities = tt.isGather ? state.gatherToolRarities : state.craftToolRarities;
     var tier = tiers[tt.skillId]||0;
     var current = tier>0 ? (tt.isGather?getEquippedGatherTool(tt.skillId,tier,rarities[tt.skillId]):getEquippedCraftTool(tt.skillId,tier,rarities[tt.skillId])) : null;
-    var currentStat = current ? (tt.isGather ? ('+'+Math.round(current.speedBonus*100)+'% speed') : ('+'+Math.round(current.speedBonus*100)+'% spd, +'+Math.round(current.successBonus*100)+'% success')) : '';
+    var currentStat = current ? ((current.successBonus != null) ? ('+'+Math.round(current.speedBonus*100)+'% spd, +'+Math.round(current.successBonus*100)+'% success') : ('+'+Math.round(current.speedBonus*100)+'% speed')) : '';
     var owned = Object.keys(TOOL_ITEMS).filter(function(id){ return TOOL_ITEMS[id].skillId===tt.skillId && (state.inventory[id]||0)>0; })
       .sort(function(a,b){ return TOOL_ITEMS[a].tierIndex - TOOL_ITEMS[b].tierIndex; });
     var html = '<h3 style="margin-top:16px">Tool</h3><div class="card-grid"><div class="item-card">';
@@ -27684,9 +27691,11 @@
       var gt = getEquippedGatherTool(skillId, state.gatherTools[skillId]||0, state.gatherToolRarities[skillId]);
       var gp = Math.round(gt.speedBonus*100);
       if(skillId==='butchering'){
-        lines.push('Tool: <b>'+gt.name+'</b>');
-        lines.push('Meat Chance Bonus: <b>+'+gp+'%</b> from tool (Hand Strength adds more)');
-        lines.push('Hide Chance Bonus: <b>+'+gp+'%</b> from tool (Fine Motor Control adds more)');
+        var gsucc = Math.round((gt.successBonus||0)*100);
+        lines.push('Tool: <b>'+gt.name+'</b> &bull; Speed Bonus: <b>+'+gp+'%</b>');
+        lines.push('Output Success Bonus: <b>+'+gsucc+'%</b> from tool (scales with tier &amp; rarity, like crafting tools)');
+        lines.push('Meat Chance: <b>'+Math.round(butcherOutputChance(state,'handStrength')*100)+'%</b> (Hand Strength adds more)');
+        lines.push('Hide Chance: <b>'+Math.round(butcherOutputChance(state,'fineMotor')*100)+'%</b> (Fine Motor Control adds more)');
         return lines;
       }
       lines.push('Tool: <b>'+gt.name+'</b> &bull; Speed Bonus: <b>+'+gp+'%</b> <span style="color:var(--text-faint)">(forge one in Blacksmithing)</span>');
@@ -30266,7 +30275,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.37.1';
+  var GAME_VERSION = '0.0.37.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -30420,6 +30429,7 @@
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
       fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE, openCritterCaches:openCritterCaches, critterCacheChance:critterCacheChance, BASE_NEST_CHANCE:BASE_NEST_CHANCE, CRITTER_CACHE_SKILLS:CRITTER_CACHE_SKILLS, SEED_DROP_SKILLS:SEED_DROP_SKILLS,
       TOOL_ITEMS:TOOL_ITEMS, equipTool:equipTool, equipBestTool:equipBestTool, bestOwnedToolForSkill:bestOwnedToolForSkill, equippedToolAtLeast:equippedToolAtLeast, equippedToolScore:equippedToolScore, toolAggregateScore:toolAggregateScore, findToolType:findToolType,
+      butcherOutputChance:butcherOutputChance, getEquippedGatherTool:getEquippedGatherTool, getGatherToolTierData:getGatherToolTierData, getEquippedCraftTool:getEquippedCraftTool,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER, ESTATE_PAVE_MS_PER_TIER:ESTATE_PAVE_MS_PER_TIER, ESTATE_WORKSHOP_MS_PER_TIER:ESTATE_WORKSHOP_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
