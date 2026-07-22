@@ -19733,7 +19733,11 @@
   var TOWER_CLASS_FAMILIAR_CHANCE = 0.5;     // per-floor (<=cap) chance a class entrance summons its familiar
   var TOWER_ELEM_CYCLE = ['fire','water','earth','light','dark'];   // every 5th floor -> dark
   var TOWER_PTYPE_CYCLE = ['piercing','blunt','slashing'];          // every 3rd floor -> slashing
-  var TOWER_BASE_CATS = ['wildlife','elemental','demonspawn','kinsworn'];
+  // Enemies-tab monsters grouped by their intrinsic element, each pool climbing by tier, so a floor can
+  // borrow a foe whose element MATCHES the floor's element rotation (name and element always agree).
+  var MONSTERS_BY_ELEMENT = {};
+  MONSTERS.forEach(function(m){ (MONSTERS_BY_ELEMENT[m.element] = MONSTERS_BY_ELEMENT[m.element] || []).push(m); });
+  Object.keys(MONSTERS_BY_ELEMENT).forEach(function(el){ MONSTERS_BY_ELEMENT[el].sort(function(a, b){ return a.tierIndex - b.tierIndex; }); });
   // The 25 entrances: All Classes first, then one per class (labelled/iconned by its class familiar).
   var TOWER_ENTRANCES = [{ id:'all', label:'All Classes', icon:svgIcon('starburst','var(--gold)'),
       desc:'A random familiar every floor you clear — forever.' }]
@@ -19749,11 +19753,12 @@
   function towerFloorTier(floor){ return TOWER_START_TIER + (Math.max(1, floor) - 1) * TOWER_TIERS_PER_FLOOR; }
   function towerFloorElement(floor){ return TOWER_ELEM_CYCLE[(Math.max(1, floor) - 1) % TOWER_ELEM_CYCLE.length]; }
   function towerFloorType(floor){ return TOWER_PTYPE_CYCLE[(Math.max(1, floor) - 1) % TOWER_PTYPE_CYCLE.length]; }
-  // The base Enemies-tab monster a floor borrows its name/portrait from (stats are overridden below).
+  // The base Enemies-tab monster a floor borrows its name/portrait from -- chosen so its ELEMENT matches
+  // the floor's element rotation (so a "Dark" floor fields a genuinely Dark-element foe, etc.). The stats
+  // are re-scaled below; only the name/portrait/element are borrowed. Climbs the element's roster by floor.
   function towerBaseMonster(floor){
-    var cat = TOWER_BASE_CATS[(Math.max(1, floor) - 1) % TOWER_BASE_CATS.length];
-    var pool = MONSTERS.filter(function(m){ return m.category === cat; });
-    if(!pool.length) pool = MONSTERS;
+    var pool = MONSTERS_BY_ELEMENT[towerFloorElement(floor)];
+    if(!pool || !pool.length) pool = MONSTERS;
     var idx = Math.min(pool.length - 1, Math.floor((Math.max(1, floor) - 1) / 2)); // climb the roster as floors rise
     return pool[idx] || pool[pool.length - 1] || MONSTERS[0];
   }
@@ -30095,7 +30100,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.35.1';
+  var GAME_VERSION = '0.0.35.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
