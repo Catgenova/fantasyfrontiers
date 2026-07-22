@@ -1007,6 +1007,17 @@
   .inv-cat-head:first-child{margin-top:0;}
   .inv-cat-head .game-icon{width:15px;height:15px;}
   .inv-cat-head .n{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-transform:none;letter-spacing:0;}
+  /* ---- Inventory accordions (replace the category filter chips) ---- */
+  .inv-acc{border:1px solid var(--border);border-radius:8px;background:var(--bg-card);margin-bottom:8px;overflow:hidden;}
+  .inv-acc-bar{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;}
+  .inv-acc-bar:hover{background:rgba(255,255,255,.03);}
+  .inv-acc-chev{flex:0 0 auto;color:var(--text-dim);font-size:12px;line-height:1;transition:transform .15s ease;}
+  .inv-acc.open .inv-acc-chev{transform:rotate(90deg);}
+  .inv-acc-ico{flex:0 0 auto;display:inline-flex;}
+  .inv-acc-ico .game-icon{width:16px;height:16px;}
+  .inv-acc-title{flex:1 1 auto;font-family:var(--font-display);font-weight:700;font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--gold);}
+  .inv-acc-n{flex:0 0 auto;font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}
+  .inv-acc-body{padding:10px 12px 12px;border-top:1px dashed var(--border-light);}
   .inv-cell{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;
     padding:9px 5px 7px;background:var(--bg-card);border:2px solid var(--ink);border-radius:8px;cursor:pointer;
     box-shadow:inset 0 1px 3px rgba(0,0,0,.14),0 2px 5px rgba(20,18,16,.22);transition:transform .08s,border-color .12s,box-shadow .12s;}
@@ -28066,9 +28077,68 @@
     return 'crafting';
   }
   var inventorySearchQuery = '';
-  var inventoryFilterCat = 'all';      // 'all' or an INVENTORY_CATEGORIES id
-  var inventorySort = 'category';      // category | name | qty | value | tier
+  var inventoryFilterCat = 'all';      // 'all' or an INVENTORY_CATEGORIES id (legacy; chips replaced by accordions)
+  var inventorySort = 'category';      // category | name | qty | value | tier (applied WITHIN each accordion)
   var inventoryDetailItem = null;      // item id whose detail modal is open, or null
+  var inventoryAccOpen = {};           // accordion group id -> open? (ephemeral, like questExpanded; default open)
+  // ---- Fine-grained accordion groups: replace the single "Equipment" blob + filter chips with many
+  // collapsible sections -- weapons by family, armour by material, jewelry/tools each their own -- so a
+  // player can fold away what they don't need. Groups render in this order; only non-empty ones appear.
+  var INV_GROUPS = [
+    { id:'gathering', label:'Gathering',     icon:svgIcon('chest','var(--cat-gathering)') },
+    { id:'crafting',  label:'Crafting',      icon:svgIcon('hammer','var(--cat-crafting)') },
+    { id:'estate',    label:'Estate',        icon:svgIcon('castle','var(--cat-estate)') },
+    { id:'w_swords',  label:'Swords',        icon:svgIcon('sword','var(--gold)') },
+    { id:'w_axes',    label:'Axes',          icon:svgIcon('axe','var(--gold)') },
+    { id:'w_hammers', label:'Hammers',       icon:svgIcon('hammer','var(--gold)') },
+    { id:'w_bows',    label:'Bows',          icon:svgIcon('bow','var(--gold)') },
+    { id:'w_wands',   label:'Wands',         icon:svgIcon('corespiral','var(--gold)') },
+    { id:'w_staves',  label:'Staves',        icon:svgIcon('dowel','var(--gold)') },
+    { id:'w_scepters',label:'Scepters',      icon:svgIcon('sun','var(--gold)') },
+    { id:'w_claws',   label:'Claws',         icon:svgIcon('claw','var(--gold)') },
+    { id:'a_tailoring',label:'Cloth Armor',  icon:(BODY_ARMOR_MATERIALS.tailoring||{}).icon || svgIcon('chestarmor','var(--gold)') },
+    { id:'a_leather', label:'Leather Armor', icon:(BODY_ARMOR_MATERIALS.leather||{}).icon || svgIcon('chestarmor','var(--gold)') },
+    { id:'a_chain',   label:'Chain Mail',    icon:(BODY_ARMOR_MATERIALS.chain||{}).icon || svgIcon('chestarmor','var(--gold)') },
+    { id:'a_plate',   label:'Plate Armor',   icon:(BODY_ARMOR_MATERIALS.plate||{}).icon || svgIcon('chestarmor','var(--gold)') },
+    { id:'shields',   label:'Shields',       icon:svgIcon('shield','var(--gold)') },
+    { id:'wards',     label:'Wards',         icon:svgIcon('yinyang','var(--gold)') },
+    { id:'quivers',   label:'Quivers',       icon:svgIcon('arrow','var(--gold)') },
+    { id:'rings',     label:'Rings',         icon:svgIcon('ring','var(--gold)') },
+    { id:'amulets',   label:'Amulets',       icon:svgIcon('amulet','var(--gold)') },
+    { id:'relics',    label:'Relics',        icon:svgIcon('urn','var(--gold)') },
+    { id:'belts',     label:'Belts',         icon:svgIcon('belt','var(--gold)') },
+    { id:'cloaks',    label:'Cloaks',        icon:svgIcon('cloak','var(--gold)') },
+    { id:'tools',     label:'Tools',         icon:svgIcon('gear','var(--gold)') },
+    { id:'unique',    label:'Unique',        icon:svgIcon('starburst','var(--rarity-fantastic)') }
+  ];
+  var INV_GROUP_BY_ID = {}; INV_GROUPS.forEach(function(g){ INV_GROUP_BY_ID[g.id] = g; });
+  function invWeaponFamily(typeId){
+    var w = STACKABLE_WEAPON_TYPE_MAP[typeId], cls = (w && w.weaponClass) || '';
+    if(w && w.wand) return 'w_wands';
+    if(cls==='Staff' || typeId==='staff') return 'w_staves';
+    if(cls==='Scepter' || typeId==='scepter') return 'w_scepters';
+    if(cls==='Claws' || typeId==='claw') return 'w_claws';
+    if(cls==='Bow' || typeId.indexOf('bow')===0) return 'w_bows';
+    if(cls.indexOf('Sword')!==-1) return 'w_swords';
+    if(cls.indexOf('Axe')!==-1) return 'w_axes';
+    if(cls.indexOf('Hammer')!==-1) return 'w_hammers';
+    return 'w_swords'; // safety fallback for any un-mapped melee id
+  }
+  // Which accordion group a stackable item belongs to (uniques are bucketed to 'unique' by the caller).
+  function invGroupFor(id){
+    if(id.indexOf('stweapon_')===0){ var m = /^stweapon_(.+)_t\d+_\w+$/.exec(id); return invWeaponFamily(m ? m[1] : ''); }
+    if(id.indexOf('bodyarmor_')===0){ var am = /^bodyarmor_([^_]+)_/.exec(id); var mat = am ? am[1] : ''; return INV_GROUP_BY_ID['a_'+mat] ? 'a_'+mat : 'a_chain'; }
+    if(id.indexOf('stshield_')===0) return 'shields';
+    if(id.indexOf('stward_')===0) return 'wards';
+    if(id.indexOf('stquiver_')===0) return 'quivers';
+    if(id.indexOf('legcloak_')===0) return 'cloaks';
+    if(id.indexOf('ring_')===0 || id.indexOf('legring_')===0) return 'rings';
+    if(id.indexOf('amulet_')===0 || id.indexOf('legamulet_')===0) return 'amulets';
+    if(id.indexOf('relic_t')===0) return 'relics';
+    if(id.indexOf('belt_t')===0) return 'belts';
+    if(id.indexOf('tool_')===0) return 'tools';
+    return getInventoryCategory(id); // non-equipment: gathering / crafting / estate
+  }
   // Rarity embedded in equipment ids as a trailing _rare/_supreme/_fantastic suffix.
   function itemRarityId(id){
     if(/_fantastic$/.test(id)) return 'fantastic';
@@ -28110,28 +28180,20 @@
       rows.push({ id:uid, unique:true, u:u, item:{ name:uniqueDisplayName(u), icon:uniqueIcon(u), sell:uniqueSellValue(u) }, qty:1, cat:'unique', rar:u.rarity });
     });
 
-    // ---- Toolbar: search + category filter chips + sort dropdown ----
+    // ---- Toolbar: search + sort dropdown + expand/collapse-all (the old category chips are now accordions) ----
     var html = '<h3>Inventory</h3>';
     html += '<div class="inv-toolbar">';
     html += '<input type="text" id="invSearchInput" class="inv-search" placeholder="Search inventory..." value="'+inventorySearchQuery.replace(/"/g,'&quot;')+'">';
     html += '<div class="inv-sort"><span>Sort</span><select id="invSortSelect">'+INVENTORY_SORTS.map(function(s){
       return '<option value="'+s.id+'"'+(inventorySort===s.id?' selected':'')+'>'+s.label+'</option>';
     }).join('')+'</select></div>';
-    html += '</div>';
-    html += '<div class="inv-filters">';
-    html += '<button class="inv-chip'+(inventoryFilterCat==='all'?' on':'')+'" data-action="invFilterCat" data-cat="all">All</button>';
-    INVENTORY_CATEGORIES.forEach(function(cat){
-      html += '<button class="inv-chip'+(inventoryFilterCat===cat.id?' on':'')+'" data-action="invFilterCat" data-cat="'+cat.id+'">'+cat.icon+' '+cat.label+'</button>';
-    });
+    html += '<button class="inv-chip" data-action="invExpandAll">Expand all</button>';
+    html += '<button class="inv-chip" data-action="invCollapseAll">Collapse all</button>';
     html += '</div>';
 
-    // ---- Apply search + category filter ----
+    // ---- Apply search (category chips removed; navigation is by accordion now) ----
     var query = inventorySearchQuery.trim().toLowerCase();
-    var shown = rows.filter(function(r){
-      if(inventoryFilterCat!=='all' && r.cat!==inventoryFilterCat) return false;
-      if(query && r.item.name.toLowerCase().indexOf(query) === -1) return false;
-      return true;
-    });
+    var shown = rows.filter(function(r){ return !query || r.item.name.toLowerCase().indexOf(query) !== -1; });
 
     function cellHtml(r){
       if(r.unique){
@@ -28153,54 +28215,55 @@
       c += '</div>';
       return c;
     }
+    // Sort rows WITHIN a group per the sort dropdown ('category' = family then tier, the default).
+    function sortInvRows(list){
+      var s = list.slice();
+      function byName(a,b){ return a.item.name.localeCompare(b.item.name); }
+      if(inventorySort==='name') s.sort(byName);
+      else if(inventorySort==='qty') s.sort(function(a,b){ return b.qty - a.qty || byName(a,b); });
+      else if(inventorySort==='value') s.sort(function(a,b){ return (b.qty*(b.item.sell||0)) - (a.qty*(a.item.sell||0)) || byName(a,b); });
+      else if(inventorySort==='tier') s.sort(function(a,b){ return itemTierFromId(b.id) - itemTierFromId(a.id) || byName(a,b); });
+      else s.sort(function(a,b){ return invFamilyKey(a.id).localeCompare(invFamilyKey(b.id)) || (itemTierFromId(a.id) - itemTierFromId(b.id)) || byName(a,b); });
+      return s;
+    }
 
     if(rows.length===0){
       html += '<div class="empty-note">Nothing collected yet.</div>';
     } else if(shown.length===0){
-      html += '<div class="inv-count-note">0 items</div><div class="empty-note">No items match your filters.</div>';
+      html += '<div class="inv-count-note">0 items</div><div class="empty-note">No items match your search.</div>';
     } else {
-      html += '<div class="inv-count-note">'+shown.length+' item'+(shown.length===1?'':'s')+(query||inventoryFilterCat!=='all'?' shown':'')+'</div>';
-      // Unique (enchanted) equipment is pulled out of the compact grid into its own section that shows
-      // the FULL card (base stats + all enchants) for each item -- tap one to equip / enchant / link it.
-      var uniRows = shown.filter(function(r){ return r.unique; });
-      var normalRows = shown.filter(function(r){ return !r.unique; });
-      if(normalRows.length){
-        if(inventorySort==='category'){
-          // Grouped grid: a full-width header per category (in the canonical order), items A–Z within.
-          html += '<div class="inv-grid">';
-          INVENTORY_CATEGORIES.forEach(function(cat){
-            if(cat.id==='unique') return; // handled by the full-card section below
-            var catRows = normalRows.filter(function(r){ return r.cat===cat.id; })
-              .sort(function(a,b){
-                // Group each item's tiers together (family), ascending tier within, then by name.
-                return invFamilyKey(a.id).localeCompare(invFamilyKey(b.id))
-                  || (itemTierFromId(a.id) - itemTierFromId(b.id))
-                  || a.item.name.localeCompare(b.item.name);
-              });
-            if(catRows.length===0) return;
-            html += '<div class="inv-cat-head">'+cat.icon+' '+cat.label+' <span class="n">'+catRows.length+'</span></div>';
-            catRows.forEach(function(r){ html += cellHtml(r); });
-          });
-          html += '</div>';
-        } else {
-          var sorted = normalRows.slice();
-          if(inventorySort==='name') sorted.sort(function(a,b){ return a.item.name.localeCompare(b.item.name); });
-          else if(inventorySort==='qty') sorted.sort(function(a,b){ return b.qty - a.qty || a.item.name.localeCompare(b.item.name); });
-          else if(inventorySort==='value') sorted.sort(function(a,b){ return (b.qty*(b.item.sell||0)) - (a.qty*(a.item.sell||0)) || a.item.name.localeCompare(b.item.name); });
-          else if(inventorySort==='tier') sorted.sort(function(a,b){ return itemTierFromId(b.id) - itemTierFromId(a.id) || a.item.name.localeCompare(b.item.name); });
-          html += '<div class="inv-grid">';
-          sorted.forEach(function(r){ html += cellHtml(r); });
-          html += '</div>';
-        }
-      }
-      if(uniRows.length){
-        var ucat = INVENTORY_CATEGORIES.filter(function(c){ return c.id==='unique'; })[0] || {icon:'',label:'Unique'};
-        uniRows.sort(function(a,b){ return (b.u.enhance-a.u.enhance) || (b.u.enchants.length-a.u.enchants.length) || a.item.name.localeCompare(b.item.name); });
-        html += '<div class="inv-cat-head"'+(normalRows.length?' style="margin-top:14px"':'')+'>'+ucat.icon+' '+ucat.label+' <span class="n">'+uniRows.length+'</span></div>';
-        html += '<div class="unique-inv-grid">';
-        uniRows.forEach(function(r){ html += renderUniqueInvCard(r.u); });
+      html += '<div class="inv-count-note">'+shown.length+' item'+(shown.length===1?'':'s')+(query?' shown':'')+'</div>';
+      // Bucket every shown item into its fine-grained accordion group.
+      var byGroup = {};
+      shown.forEach(function(r){ var g = r.unique ? 'unique' : invGroupFor(r.id); (byGroup[g] = byGroup[g] || []).push(r); });
+      var searching = !!query; // while searching, force groups open so a match is never hidden behind a collapsed header
+      INV_GROUPS.forEach(function(g){
+        var grp = byGroup[g.id]; if(!grp || !grp.length) return;
+        var open = searching || (inventoryAccOpen[g.id] !== false); // default open; a collapsed group is stored as false
+        // Unique items keep their full-card sort (best first); everything else uses the chosen sort.
+        var sortedRows = (g.id==='unique')
+          ? grp.slice().sort(function(a,b){ return (b.u.enhance-a.u.enhance) || (b.u.enchants.length-a.u.enchants.length) || a.item.name.localeCompare(b.item.name); })
+          : sortInvRows(grp);
+        html += '<div class="inv-acc'+(open?' open':'')+'">';
+        html += '<div class="inv-acc-bar" data-action="invAccToggle" data-group="'+g.id+'" role="button" aria-expanded="'+(open?'true':'false')+'">';
+        html += '<span class="inv-acc-chev" aria-hidden="true">▸</span>';
+        html += '<span class="inv-acc-ico">'+g.icon+'</span>';
+        html += '<span class="inv-acc-title">'+escapeHtml(g.label)+'</span>';
+        html += '<span class="inv-acc-n">'+grp.length+'</span>';
         html += '</div>';
-      }
+        if(open){
+          if(g.id==='unique'){
+            html += '<div class="unique-inv-grid inv-acc-body">';
+            sortedRows.forEach(function(r){ html += renderUniqueInvCard(r.u); });
+            html += '</div>';
+          } else {
+            html += '<div class="inv-grid inv-acc-body">';
+            sortedRows.forEach(function(r){ html += cellHtml(r); });
+            html += '</div>';
+          }
+        }
+        html += '</div>';
+      });
     }
     var _invEl = document.getElementById('inventoryPanel'); if(!_invEl) return; // only present on the Inventory view
     _invEl.innerHTML = html;
@@ -29560,6 +29623,9 @@
     },
     togglePhysiquePanel: function(btn, e){ physiquePanelExpanded = !physiquePanelExpanded; },
     invFilterCat: function(btn, e){ inventoryFilterCat = btn.getAttribute('data-cat'); },
+    invAccToggle: function(btn, e){ var g = btn.getAttribute('data-group'); if(g) inventoryAccOpen[g] = (inventoryAccOpen[g] === false); }, // default-open -> collapse on first tap
+    invExpandAll: function(btn, e){ inventoryAccOpen = {}; },                                   // clear all -> every group defaults open
+    invCollapseAll: function(btn, e){ INV_GROUPS.forEach(function(g){ inventoryAccOpen[g.id] = false; }); },
     openInvDetail: function(btn, e){ inventoryDetailItem = btn.getAttribute('data-item'); },
     closeInvDetail: function(btn, e){ inventoryDetailItem = null; },
     sellOne: function(btn, e){ sellOne(btn.getAttribute('data-item')); },
@@ -30420,7 +30486,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.37.14';
+  var GAME_VERSION = '0.0.38.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -30578,7 +30644,7 @@
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER, ESTATE_PAVE_MS_PER_TIER:ESTATE_PAVE_MS_PER_TIER, ESTATE_WORKSHOP_MS_PER_TIER:ESTATE_WORKSHOP_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
-      physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey,
+      physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey, invGroupFor:invGroupFor, INV_GROUPS:INV_GROUPS,
       craftBodyRarity:craftBodyRarity, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, enhanceBodyRarity:enhanceBodyRarity, chronicleEnhanceToSystemMsg:chronicleEnhanceToSystemMsg, chronicleRowToSystemMsg:chronicleRowToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
