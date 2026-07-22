@@ -1230,6 +1230,10 @@
     eq(after.g - before.g, 50, 'each cache drops exactly one Grain seed');
     eq(after.h - before.h, 50, 'each cache drops exactly one Herb seed');
     eq(S.inventory.critter_cache || 0, 0, 'all 50 caches were consumed');
+    // Grain has one fewer tier than Fiber/Herb -- caches must never mint a nonexistent 'grainseed_t20'.
+    ok(!S.inventory.grainseed_t20, 'caches never grant the out-of-range grainseed_t20');
+    ok(Object.keys(S.inventory).filter(function(id){ return id.indexOf('grainseed_t')===0 && S.inventory[id]>0; })
+      .every(function(id){ return !!FF.ALL_SELLABLE[id]; }), 'every granted Grain seed resolves to a real named item');
     // Base drop chance is 5% (Forestry, Botany, Herbalism & Foraging share critterCacheChance).
     eq(FF.BASE_NEST_CHANCE, 0.05, 'critter cache base chance is 5%');
     // Herbalism & Foraging traded raw seed side-drops for the Critter Cache; Botany still drops raw seeds.
@@ -1256,6 +1260,9 @@
     for(var k=0;k<4000;k++){ var t = FF.pickWeightedFarmingTier(); if(!(t>=0 && t<N && t===(t|0))) allValid=false; if(t>=15) sawHigh = true; }
     ok(allValid, 'the roll always returns a valid tier index');
     ok(sawHigh, 'sampling actually turns up t15+ seeds');
+    // Passing a line's own tier count caps the roll -- Grain (20 tiers) must never roll t20.
+    var grainMax = -1; for(var gk=0;gk<4000;gk++){ var gt = FF.pickWeightedFarmingTier(FF.GRAIN_TIER_COUNT); if(gt > grainMax) grainMax = gt; }
+    ok(grainMax === FF.GRAIN_TIER_COUNT - 1, 'grain rolls span its own tiers (top index is GRAIN_TIER_COUNT-1, never 20)');
   });
 
   // ---- Cross-skill physiques: 20 new physiques trained by one skill, feeding another --------------
