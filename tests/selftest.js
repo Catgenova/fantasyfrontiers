@@ -5963,6 +5963,27 @@
     s.quests = { claimed:{} }; s.monsterKills = {};
     var goHtml = FF.renderQuestsTab();
     ok(/data-action="navToActivity"/.test(goHtml) && /data-nav-cat="enemies"/.test(goHtml) && /data-nav-sub="wildlife"/.test(goHtml), 'incomplete quest renders a Go button to Enemies -> Wildlife');
+    // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
+    var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
+    s.estateClears = 0; s.quests = { claimed:{} };
+    // 'estatequests' is a distinct quest category id -- it must NOT collide with the 'estate' map category.
+    eq(FF.isQuestCategory('estatequests'), true, 'estatequests is a quest category');
+    eq(FF.isQuestCategory('estate'), false, 'the estate map category is NOT a quest category (no collision)');
+    var eArea = FF.AREAS.filter(function(a){ return a.id==='quests'; })[0];
+    ok(eArea.subs.some(function(sub){ return sub[0]==='estatequests'; }), 'Estate is a tab within Quests');
+    var eq2 = FF.questById('clearing_the_land');
+    ok(!!eq2 && eq2.cat==='estatequests', 'the Clearing the Land quest lives in the Estate category');
+    eq(eq2.target, 10, 'its target is 10 cleared obstacles');
+    ok(eq2.reward.kind==='item' && eq2.reward.itemId==='paving_t5' && eq2.reward.qty===20, 'reward is 20x tier-5 paving tiles (paving_t5)');
+    ok(eq2.nav.cat==='estate', 'its Go destination is the estate');
+    eq(FF.questComplete(eq2), false, 'no clears -> not complete');
+    s.estateClears = 10;
+    ok(FF.questComplete(eq2) && FF.questClaimable(eq2), 'reaching 10 clears completes + arms the quest');
+    eq(FF.questClaimableInCat('estatequests'), true, 'the Estate tab reports a claimable');
+    var pBefore = s.inventory['paving_t5'] || 0;
+    ok(FF.claimQuest('clearing_the_land'), 'claim succeeds');
+    eq((s.inventory['paving_t5']||0) - pBefore, 20, 'claim grants 20 tier-5 paving tiles');
+    s.estateClears = savedClears; if(savedPave===undefined) delete s.inventory['paving_t5']; else s.inventory['paving_t5'] = savedPave;
     // restore
     s.monsterKills = savedMK; s.quests = savedQ; s.inventory['corpse_t0'] = savedInv; s.titles = savedTitles;
   });
