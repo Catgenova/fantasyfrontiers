@@ -8800,9 +8800,14 @@
     return total;
   }
 
+  // Per-tier weight falloff for a cache seed's tier. The old 0.65 decayed so steeply that t15+ was
+  // ~0.15% and t20 ~0.0006% per seed -- players never saw them. 0.85 keeps the roll skewed toward the
+  // low tiers (t0 stays ~26x more likely than t20) while making the high tiers actually attainable
+  // (t15+ ~5.6%, t20 ~0.6% per seed), so a top-tier seed is uncommon rather than mythical.
+  var CACHE_SEED_TIER_DECAY = 0.85;
   function pickWeightedFarmingTier(){
     var weights = [], total = 0, i;
-    for(i=0;i<TIER_COUNT;i++){ var w = Math.pow(0.65, i); weights.push(w); total += w; }
+    for(i=0;i<TIER_COUNT;i++){ var w = Math.pow(CACHE_SEED_TIER_DECAY, i); weights.push(w); total += w; }
     var r = Math.random()*total;
     for(i=0;i<TIER_COUNT;i++){ r -= weights[i]; if(r<=0) return i; }
     return 0;
@@ -30412,7 +30417,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.37.11';
+  var GAME_VERSION = '0.0.37.12';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -30564,7 +30569,7 @@
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       guildLogPush:guildLogPush, renderGuildActivityLog:renderGuildActivityLog, GUILD_LOG_MAX:GUILD_LOG_MAX, guildIsOfficerPlus:guildIsOfficerPlus,
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
-      fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE, openCritterCaches:openCritterCaches, critterCacheChance:critterCacheChance, BASE_NEST_CHANCE:BASE_NEST_CHANCE, CRITTER_CACHE_SKILLS:CRITTER_CACHE_SKILLS, SEED_DROP_SKILLS:SEED_DROP_SKILLS,
+      fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE, openCritterCaches:openCritterCaches, critterCacheChance:critterCacheChance, pickWeightedFarmingTier:pickWeightedFarmingTier, CACHE_SEED_TIER_DECAY:CACHE_SEED_TIER_DECAY, BASE_NEST_CHANCE:BASE_NEST_CHANCE, CRITTER_CACHE_SKILLS:CRITTER_CACHE_SKILLS, SEED_DROP_SKILLS:SEED_DROP_SKILLS,
       TOOL_ITEMS:TOOL_ITEMS, equipTool:equipTool, equipBestTool:equipBestTool, bestOwnedToolForSkill:bestOwnedToolForSkill, equippedToolAtLeast:equippedToolAtLeast, equippedToolScore:equippedToolScore, toolAggregateScore:toolAggregateScore, findToolType:findToolType,
       butcherOutputChance:butcherOutputChance, getEquippedGatherTool:getEquippedGatherTool, getGatherToolTierData:getGatherToolTierData, getEquippedCraftTool:getEquippedCraftTool,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,

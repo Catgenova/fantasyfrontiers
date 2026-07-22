@@ -1239,6 +1239,25 @@
     ok(FF.SEED_DROP_SKILLS.indexOf('botany') !== -1, 'Botany still drops raw seeds directly');
   });
 
+  // ---- Cache seed tier distribution: skewed low, but high tiers actually attainable ----
+  suite('critter cache: seed tier distribution reaches the high tiers', function(){
+    var N = FF.TIER_COUNT, b = FF.CACHE_SEED_TIER_DECAY;
+    ok(b > 0.65, 'the per-tier falloff is gentler than the old 0.65 (higher tiers more frequent)');
+    // Closed-form probability per tier from the decay base (matches pickWeightedFarmingTier's weights).
+    var w = [], total = 0; for(var i=0;i<N;i++){ w[i] = Math.pow(b,i); total += w[i]; }
+    function p(i){ return w[i]/total; }
+    ok(p(N-1) > 0.003, 't20 is attainable (>0.3% per seed, vs ~0.0002% under the old rate)');
+    var pHigh = 0; for(var j=15;j<N;j++) pHigh += p(j);
+    ok(pHigh > 0.02, 't15+ is reached meaningfully often (>2% per seed) — no longer effectively zero');
+    ok(p(0) > p(N-1), 'still skewed toward the low tiers (t0 far more likely than t20)');
+    ok(p(0) > p(5) && p(5) > p(15), 'the weighting is monotonically skewed toward lower tiers');
+    // The roll only ever returns a valid tier index, and (statistically) reaches the top tier.
+    var allValid = true, sawHigh = false;
+    for(var k=0;k<4000;k++){ var t = FF.pickWeightedFarmingTier(); if(!(t>=0 && t<N && t===(t|0))) allValid=false; if(t>=15) sawHigh = true; }
+    ok(allValid, 'the roll always returns a valid tier index');
+    ok(sawHigh, 'sampling actually turns up t15+ seeds');
+  });
+
   // ---- Cross-skill physiques: 20 new physiques trained by one skill, feeding another --------------
   suite('cross-skill physiques', function(){
     var NEW = ['anglersEye','prospectorsNose','huntsman','sylvanBond','quartermaster','masterwork','diligence','weaponsmithsEdge','armorersTemper','greenThumb','composter','apothecarysHand','demolitionist','runicAttunement','wardersFocus','zealotry','oblation','fieldRations','menagerist','merchantsSavvy'];
