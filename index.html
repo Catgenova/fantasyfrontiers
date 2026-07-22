@@ -19895,10 +19895,12 @@
     floor = Math.max(1, floor|0);
     var i = towerFloorTier(floor), base = towerBaseMonster(floor);
     function pw(b, r){ var v = Math.round(b * Math.pow(r, i)); return Math.min(TOWER_STAT_CAP, Math.max(1, isFinite(v) ? v : TOWER_STAT_CAP)); }
+    // The Tower gives NO gold (its reward is the familiar) -- only HP + attack scale. Gentler curves than
+    // the bestiary: HP x1.2^tier, attack x1.1^tier, so the climb lasts far longer before stats blow up.
     return {
       tier: i, baseName: base.name, baseId: base.id, icon: base.icon, attackSpeed: base.attackSpeed || 3,
       element: towerFloorElement(floor), type: towerFloorType(floor),
-      hp: pw(20, 1.40), atkMin: pw(1, 1.32), atkMax: pw(3, 1.32), goldMin: pw(3, 1.40), goldMax: pw(6, 1.40)
+      hp: pw(20, 1.2), atkMin: pw(1, 1.1), atkMax: pw(3, 1.1)
     };
   }
   // Build (and register for combat lookup) the scaled foe for an entrance's floor.
@@ -19911,7 +19913,7 @@
       name: 'Floor ' + floor + ' — ' + st.baseName,
       icon: st.icon, category: 'tower', tierIndex: Math.min(st.tier, TIER_COUNT - 1),
       element: st.element, levelReq: 0,
-      hp: st.hp, atkMin: st.atkMin, atkMax: st.atkMax, goldMin: st.goldMin, goldMax: st.goldMax,
+      hp: st.hp, atkMin: st.atkMin, atkMax: st.atkMax, goldMin: 0, goldMax: 0, // Tower foes drop no gold
       damageType: st.type, attackTypes: atkT, armorTypes: armT, attackSpeed: st.attackSpeed
     };
     MONSTERS_BY_ID[mon.id] = mon;
@@ -30486,7 +30488,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.38.0';
+  var GAME_VERSION = '0.0.38.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
