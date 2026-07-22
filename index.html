@@ -11930,15 +11930,30 @@
   var ENHANCE_MAX = 15;
   // Broad modifier pools. Each mod: id, label, stat (the combat hook Stage 1c reads), min/max (inclusive
   // integer roll), pct (value is a percent). Weapons, armour (all body slots + shields), and jewelry differ.
+  // Raw-damage weapon enchants: flat PHYSICAL plus one per element. Melee & ranged weapons deal physical
+  // damage ONLY until one of these is rolled; an elemental line makes the weapon also deal that element's
+  // damage (a flat add, scaled by element advantage vs the foe). Unlike the percent mods, their roll RANGE
+  // scales with the weapon's TIER (rawEnchantRange) instead of a fixed band. Barred from wands/staffs/
+  // scepters -- those magic weapons already cast their own element, so a raw-damage line makes no sense.
+  // A raw mod carries raw:true and (for the elementals) elem:'<element>'; its `stat` is a distinct sum key.
+  var ELEM_RAW_STATS = { fire:'flatElemFire', water:'flatElemWater', earth:'flatElemEarth', light:'flatElemLight', dark:'flatElemDark' };
+  function rawEnchantRange(tier){ tier = Math.max(0, Math.min(TIER_COUNT-1, tier|0)); return { min: tierStat(3, tier), max: tierStat(8, tier) }; }
+  function enchantModRange(m, tier){ return (m && m.raw) ? rawEnchantRange(tier) : { min: m.min, max: m.max }; }
   var ENCHANT_MODS = {
     weapon: [
       { id:'critDamage',   label:'Critical Damage', stat:'critDamage',  min:5, max:30, pct:true },
       { id:'critChance',   label:'Critical Chance', stat:'critChance',  min:2, max:12, pct:true },
       { id:'weaponDamage', label:'Weapon Damage',   stat:'pctDamage',   min:5, max:25, pct:true },
-      { id:'flatDamage',   label:'Flat Damage',     stat:'flatDamage',  min:3, max:20, pct:false },
       { id:'lifesteal',    label:'Lifesteal',       stat:'lifesteal',   min:1, max:8,  pct:true },
       { id:'accuracy',     label:'Accuracy',        stat:'accuracy',    min:3, max:15, pct:true },
-      { id:'penetration',  label:'Armour Pierce',   stat:'penetration', min:3, max:15, pct:true }
+      { id:'penetration',  label:'Armour Pierce',   stat:'penetration', min:3, max:15, pct:true },
+      // Raw-damage lines (tier-scaled range; melee/ranged only). Flat physical + one per element.
+      { id:'flatDamage',   label:'Flat Physical Damage', stat:'flatDamage',      pct:false, raw:true },
+      { id:'fireDamage',   label:'Fire Damage',          stat:'flatElemFire',    pct:false, raw:true, elem:'fire' },
+      { id:'waterDamage',  label:'Water Damage',         stat:'flatElemWater',   pct:false, raw:true, elem:'water' },
+      { id:'earthDamage',  label:'Earth Damage',         stat:'flatElemEarth',   pct:false, raw:true, elem:'earth' },
+      { id:'lightDamage',  label:'Light Damage',         stat:'flatElemLight',   pct:false, raw:true, elem:'light' },
+      { id:'darkDamage',   label:'Dark Damage',          stat:'flatElemDark',    pct:false, raw:true, elem:'dark' }
     ],
     armor: [
       { id:'defense',      label:'Defense',          stat:'defense',      min:5, max:30, pct:true },
@@ -11960,19 +11975,40 @@
   // kind -> modifier pool. weapon->weapon; ring/amulet/relic->jewelry; body armour + shields + belts->armor.
   function enchantCategoryForKind(kind){ return kind==='weapon' ? 'weapon' : (kind==='ring'||kind==='amulet'||kind==='relic') ? 'jewelry' : 'armor'; }
   function enchantModById(kind, id){ var pool = ENCHANT_MODS[enchantCategoryForKind(kind)]; for(var i=0;i<pool.length;i++){ if(pool[i].id===id) return pool[i]; } return null; }
-  // Roll one enchant: a random mod from the kind's pool at a random inclusive value in its range.
-  function rollEnchant(kind){
-    var pool = ENCHANT_MODS[enchantCategoryForKind(kind)];
-    var mod = pool[Math.floor(Math.random()*pool.length)];
-    return { mod: mod.id, roll: mod.min + Math.floor(Math.random()*(mod.max - mod.min + 1)) };
+  // Is this weapon base a wand/staff/scepter (magic weapon)? Those can't roll the raw-damage lines.
+  function baseIsMagicWeapon(baseId){
+    if(typeof baseId !== 'string') return false;
+    var m = /^stweapon_(.+)_t\d+_\w+$/.exec(baseId); if(!m) return false;
+    var t = m[1]; return isWandWeapon(t) || isStaff(t) || isScepter(t);
   }
-  function enchantLabel(kind, e){ var m = enchantModById(kind, e.mod); if(!m) return '+'+e.roll+' ?'; return '+'+e.roll+(m.pct?'%':'')+' '+m.label+(m.id==='hpRegen'?' / 5s':''); }
-  // Every enchant this item's kind can roll, with each mod's min-max range, so the player knows the pool
-  // (and the value bands) before spending a Crystal. Shown on the Improvement card while it's enchantable.
-  function enchantPoolListHtml(kind){
-    var pool = ENCHANT_MODS[enchantCategoryForKind(kind)]; if(!pool || !pool.length) return '';
+  // The enchant pool for a SPECIFIC item: a magic weapon (wand/staff/scepter) drops the raw-damage lines.
+  function enchantPoolForItem(kind, magicWeapon){
+    var pool = ENCHANT_MODS[enchantCategoryForKind(kind)];
+    if(kind==='weapon' && magicWeapon) return pool.filter(function(m){ return !m.raw; });
+    return pool;
+  }
+  // Enchant context {tier, magicWeapon} used for range-scaling and raw-mod filtering. Works off a unique.
+  function enchantCtxForUnique(u){ return { tier: (u && u.tier)|0, magicWeapon: baseIsMagicWeapon(u && u.base) }; }
+  // Roll one enchant: a random mod from the item's pool (raw lines excluded for magic weapons) at a random
+  // inclusive value in its range (raw lines' range scales with the weapon's tier).
+  function rollEnchant(kind, ctx){
+    ctx = ctx || {};
+    var pool = enchantPoolForItem(kind, !!ctx.magicWeapon);
+    var mod = pool[Math.floor(Math.random()*pool.length)];
+    var r = enchantModRange(mod, ctx.tier||0);
+    return { mod: mod.id, roll: r.min + Math.floor(Math.random()*(r.max - r.min + 1)) };
+  }
+  function enchantLabel(kind, e){ var m = enchantModById(kind, e.mod); if(!m) return '+'+e.roll+' ?'; return (m.elem?elementIcon(m.elem)+' ':'')+'+'+e.roll+(m.pct?'%':'')+' '+m.label+(m.id==='hpRegen'?' / 5s':''); }
+  // Every enchant this item can roll, with each mod's range, so the player knows the pool (and the value
+  // bands) before spending a Crystal. Shown on the Improvement card while enchantable. ctx {tier,magicWeapon}
+  // scales the raw-damage ranges to the weapon's tier and hides the raw lines on wands/staffs/scepters.
+  function enchantPoolListHtml(kind, ctx){
+    ctx = ctx || {};
+    var pool = enchantPoolForItem(kind, !!ctx.magicWeapon); if(!pool || !pool.length) return '';
+    var tier = ctx.tier||0;
     var rows = pool.map(function(m){
-      return '<div class="inputs-line" style="display:flex;justify-content:space-between;gap:10px;padding:1px 0;"><span>'+escapeHtml(m.label)+(m.id==='hpRegen'?' / 5s':'')+'</span><span style="color:var(--gold);font-family:var(--font-mono);">'+('+'+m.min+(m.pct?'%':''))+' – '+('+'+m.max+(m.pct?'%':''))+'</span></div>';
+      var r = enchantModRange(m, tier);
+      return '<div class="inputs-line" style="display:flex;justify-content:space-between;gap:10px;padding:1px 0;"><span>'+(m.elem?elementIcon(m.elem)+' ':'')+escapeHtml(m.label)+(m.id==='hpRegen'?' / 5s':'')+'</span><span style="color:var(--gold);font-family:var(--font-mono);">'+('+'+r.min+(m.pct?'%':''))+' – '+('+'+r.max+(m.pct?'%':''))+'</span></div>';
     }).join('');
     // Stable id so the open/closed state survives a full re-render (see detailsSnapshot/detailsRestore).
     var _poolId = 'enchpool_' + String(kind).replace(/[^A-Za-z0-9_]/g, '');
@@ -12063,6 +12099,15 @@
     if(st.jewelrySlots){ RING_SLOT_IDS.forEach(function(sl){ var s=st.jewelrySlots[sl]; if(s && s.uid) addUid(s.uid); }); if(st.jewelrySlots.amulet && st.jewelrySlots.amulet.uid) addUid(st.jewelrySlots.amulet.uid); }
     if(st.bodyArmor) BODY_ARMOR_SLOTS.forEach(function(sl){ var s=st.bodyArmor[sl]; if(s && s.uid) addUid(s.uid); });
     return tot;
+  }
+  // Elemental raw-damage enchants as a flat hit addition: each element's summed total, scaled by its
+  // advantage vs the foe's element (+20% on a beat). Added on each swing exactly like the flat physical
+  // line. Only melee/ranged weapons carry these (wands/staffs/scepters can't roll them).
+  function elementalRawHitDamage(enchTot, monster){
+    if(!enchTot) return 0;
+    var total = 0, defEl = monster && monster.element;
+    for(var el in ELEM_RAW_STATS){ var v = enchTot[ELEM_RAW_STATS[el]] || 0; if(v > 0) total += v * elementAdvantage(el, defEl); }
+    return Math.round(total);
   }
   // Total number of enchant instances across all equipped gear (drives Spellblade Rune Hunger). Mirrors
   // equippedEnchantTotals' slot walk but counts each filled enchant slot rather than summing rolls.
@@ -12457,7 +12502,7 @@
     var uid = isU ? sel : (isEq ? convertEquippedToUnique(equipTokenSlot(sel)) : makeUniqueFromBase(sel)); if(!uid){ return; } improveSel = uid;
     var u = state.uniqueItems[uid];
     consumeInputs(planned.plan);
-    var roll = rollEnchant(u.kind);
+    var roll = rollEnchant(u.kind, enchantCtxForUnique(u));
     if(u.enchants.length < enchantSlotsFor(u.rarity)){ u.enchants.push(roll); addLog('Enchanted '+uniqueBaseName(u)+': '+enchantLabel(u.kind,roll)+'.','important'); }
     else { improvePending = { uid:uid, roll:roll }; addLog('Rolled '+enchantLabel(u.kind,roll)+' — replace an enchant or discard it.','important'); }
     saveGame(); render();
@@ -12509,16 +12554,19 @@
     improveAutoSlot = slotChoice;
     // Resolve the selection to kind/tier/rarity/enhance/current-enchants (mirrors improveEnchant).
     var isU = isUniqueId(sel), isEq = isEquipToken(sel);
-    var tier, enhance, kind, rarity, curEnchants;
-    if(isU){ var u0 = state.uniqueItems[sel]; if(!u0){ addLog('That item is gone.','danger'); return null; } tier=u0.tier; enhance=u0.enhance; kind=u0.kind; rarity=u0.rarity; curEnchants=u0.enchants; }
-    else if(isEq){ var eqm = equippedImprovableBases().filter(function(e){ return e.slot===equipTokenSlot(sel); })[0]; if(!eqm){ addLog('That item is no longer equipped.','danger'); return null; } var ep = parseImprovable(eqm.baseId); tier=ep.tier; enhance=0; kind=ep.kind; rarity=ep.rarity; curEnchants=[]; }
-    else { var p = parseImprovable(sel); if(!p || (state.inventory[sel]||0)<=0){ addLog('That item is no longer available.','danger'); return null; } tier=p.tier; enhance=0; kind=p.kind; rarity=p.rarity; curEnchants=[]; }
+    var tier, enhance, kind, rarity, curEnchants, baseId;
+    if(isU){ var u0 = state.uniqueItems[sel]; if(!u0){ addLog('That item is gone.','danger'); return null; } tier=u0.tier; enhance=u0.enhance; kind=u0.kind; rarity=u0.rarity; curEnchants=u0.enchants; baseId=u0.base; }
+    else if(isEq){ var eqm = equippedImprovableBases().filter(function(e){ return e.slot===equipTokenSlot(sel); })[0]; if(!eqm){ addLog('That item is no longer equipped.','danger'); return null; } var ep = parseImprovable(eqm.baseId); tier=ep.tier; enhance=0; kind=ep.kind; rarity=ep.rarity; curEnchants=[]; baseId=eqm.baseId; }
+    else { var p = parseImprovable(sel); if(!p || (state.inventory[sel]||0)<=0){ addLog('That item is no longer available.','danger'); return null; } tier=p.tier; enhance=0; kind=p.kind; rarity=p.rarity; curEnchants=[]; baseId=sel; }
     if(!isImprovableRarity(rarity)){ addLog('Only Rare-or-better gear can be enchanted.','danger'); return null; }
     if(enhance>0){ addLog('Enhanced items (+'+enhance+') can no longer be enchanted.','danger'); return null; }
+    var magicWeapon = baseIsMagicWeapon(baseId);
     var m = enchantModById(kind, modId);
     if(!m){ addLog('Choose a target enchant for Auto-roll first.','danger'); return null; }
-    var target = Math.max(m.min, improveAutoMin);       // any roll of that mod already clears m.min
-    if(target > m.max){ addLog('The most '+m.label+' can roll is +'+m.max+(m.pct?'%':'')+' — lower your target.','danger'); return null; }
+    if(m.raw && magicWeapon){ addLog('Wands, staffs and scepters can’t roll raw-damage enchants.','danger'); return null; }
+    var mRange = enchantModRange(m, tier);
+    var target = Math.max(mRange.min, improveAutoMin);   // any roll of that mod already clears its floor
+    if(target > mRange.max){ addLog('The most '+m.label+' can roll on this weapon is +'+mRange.max+(m.pct?'%':'')+' — lower your target.','danger'); return null; }
     var slots = enchantSlotsFor(rarity);
     var i;
     if(slotChoice === 'auto'){
@@ -12545,7 +12593,7 @@
       var planned = planEnchantCrystals(u.tier, cost);
       if(!planned) break;                               // crystals depleted
       consumeInputs(planned.plan); spent += cost;
-      var roll = rollEnchant(u.kind);
+      var roll = rollEnchant(u.kind, enchantCtxForUnique(u));
       if(roll.mod===modId && roll.roll>=target){
         if(slotChoice === 'new'){ u.enchants.push(roll); }
         else if(slotChoice !== 'auto'){ u.enchants[slotChoice] = roll; }   // the picked slot, whatever it held
@@ -12851,14 +12899,18 @@
   // Auto-roll controls: a mod picker + a minimum-value input + the Auto roll button. Keeps re-rolling the
   // selected enchant until the target lands or crystals run out (see improveAutoRoll). Rendered only while
   // an item is still enchantable (not Enhanced, no pending roll).
-  function renderAutoRollControls(kind, curEnchants, slots){
-    var pool = ENCHANT_MODS[enchantCategoryForKind(kind)]; if(!pool || !pool.length) return '';
+  function renderAutoRollControls(kind, curEnchants, slots, ctx){
+    ctx = ctx || {};
+    var tier = ctx.tier||0;
+    var pool = enchantPoolForItem(kind, !!ctx.magicWeapon); if(!pool || !pool.length) return '';
     curEnchants = curEnchants || [];
-    var curMod = (improveAutoMod && enchantModById(kind, improveAutoMod)) ? improveAutoMod : pool[0].id;
+    var poolHas = function(id){ return pool.some(function(m){ return m.id===id; }); };
+    var curMod = (improveAutoMod && poolHas(improveAutoMod)) ? improveAutoMod : pool[0].id;
     var md = enchantModById(kind, curMod);
-    var minVal = Math.max(md.min, Math.min(md.max, improveAutoMin || md.min));
+    var mdRange = enchantModRange(md, tier);
+    var minVal = Math.max(mdRange.min, Math.min(mdRange.max, improveAutoMin || mdRange.min));
     var suf = md.pct ? '%' : '';
-    var opts = pool.map(function(m){ return '<option value="'+m.id+'"'+(m.id===curMod?' selected':'')+'>'+escapeHtml(m.label)+' (+'+m.min+(m.pct?'%':'')+'–+'+m.max+(m.pct?'%':'')+')</option>'; }).join('');
+    var opts = pool.map(function(m){ var r = enchantModRange(m, tier); return '<option value="'+m.id+'"'+(m.id===curMod?' selected':'')+'>'+escapeHtml(m.label)+' (+'+r.min+(m.pct?'%':'')+'–+'+r.max+(m.pct?'%':'')+')</option>'; }).join('');
     var inStyle = 'background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:5px 7px;font-size:12px;';
     // Slot picker: where the winning roll lands. A stale index (item changed under it) falls back to auto.
     var slotSel = improveAutoSlot;
@@ -12871,7 +12923,7 @@
     html += '<div class="inputs-line" style="margin-bottom:5px;"><b>Auto-roll</b> — re-roll until a target enchant lands, or your crystals run out.</div>';
     html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
     html += '<select id="improveAutoModSel" style="'+inStyle+'max-width:260px;">'+opts+'</select>';
-    html += '<label style="font-size:12px;color:var(--text-dim);">min <input id="improveAutoMinInput" type="number" min="'+md.min+'" max="'+md.max+'" step="1" value="'+minVal+'" style="'+inStyle+'width:66px;"></label>';
+    html += '<label style="font-size:12px;color:var(--text-dim);">min <input id="improveAutoMinInput" type="number" min="'+mdRange.min+'" max="'+mdRange.max+'" step="1" value="'+minVal+'" style="'+inStyle+'width:66px;"></label>';
     html += '<select id="improveAutoSlotSel" style="'+inStyle+'max-width:300px;" title="Where the winning roll lands">'+sopts+'</select>';
     html += '<button class="action-btn" data-action="improveAutoRoll" style="width:auto;flex:0 0 auto;">Auto roll ≥ +'+minVal+suf+'</button>';
     html += '</div>';
@@ -12890,6 +12942,7 @@
     var u = isU2 ? state.uniqueItems[improveSel] : null, pp = isU2 ? null : parseImprovable(isEq ? eqBaseId : improveSel);
     if(!isU2 && !pp) return '';
     var tier = isU2 ? u.tier : pp.tier, rarity = isU2 ? u.rarity : pp.rarity, enhance = isU2 ? u.enhance : 0;
+    var enchCtx = { tier: tier, magicWeapon: baseIsMagicWeapon(isU2 ? u.base : (isEq ? eqBaseId : improveSel)) };
     var slots = enchantSlotsFor(rarity), count = isU2 ? u.enchants.length : 0;
     var name = isU2 ? uniqueDisplayName(u) : (ALL_SELLABLE[isEq ? eqBaseId : improveSel]||{name:'Equipment'}).name;
     var html = '<div class="guild-section-title" style="margin-top:4px;">'+escapeHtml(name)+'</div>';
@@ -12908,10 +12961,10 @@
       if(improveWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No tier-'+(tier+1)+' crystals — this spends higher-tier ones. Click Enchant again to confirm.</div>';
       html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn" data-action="improveEnchant" style="width:auto;flex:0 0 auto;">Enchant ('+cost+')</button>';
       html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleWarn"'+(state.enchantWarnHiTier?' checked':'')+'> warn on higher-tier crystals</label></div>';
-      html += renderAutoRollControls(isU2 ? u.kind : (pp && pp.kind), isU2 ? u.enchants : [], slots);
+      html += renderAutoRollControls(isU2 ? u.kind : (pp && pp.kind), isU2 ? u.enchants : [], slots, enchCtx);
     }
-    // While the item can still be enchanted, list every roll its kind can produce and each roll's range.
-    if(enhance===0) html += enchantPoolListHtml(isU2 ? u.kind : (pp && pp.kind));
+    // While the item can still be enchanted, list every roll this item can produce and each roll's range.
+    if(enhance===0) html += enchantPoolListHtml(isU2 ? u.kind : (pp && pp.kind), enchCtx);
     if(isU2 || isEq){
       var eLvl = isU2 ? u.enhance : 0, ecost = eLvl+1, chance = Math.round(enhanceSuccessChance(eLvl)*100);
       var enhTarget = isU2 ? u.uid : improveSel; // for an equipped base, the equip token (converts on click)
@@ -12942,7 +12995,7 @@
     return html;
   }
   function renderImprovementTab(){
-    var html = '<div class="section-intro">Turn a piece of equipment into a unique item and <b>Enchant</b> it with random modifiers. <b>Only Rare-or-better gear can be improved</b> — Normal items don\'t appear here. Rarity sets how many enchants it can hold (Rare 2 · Supreme 3 · Fantastic 4). Each enchant costs Enchant Crystals of equal-or-higher tier; the cost rises by one per enchant. Enchant freely — but once you <b>Enhance</b> an item (with Inscription Scrolls) it can no longer be enchanted. <b>Currently-equipped gear appears here too</b> — improving it keeps it equipped.</div>';
+    var html = '<div class="section-intro">Turn a piece of equipment into a unique item and <b>Enchant</b> it with random modifiers. <b>Only Rare-or-better gear can be improved</b> — Normal items don\'t appear here. Rarity sets how many enchants it can hold (Rare 2 · Supreme 3 · Fantastic 4). Each enchant costs Enchant Crystals of equal-or-higher tier; the cost rises by one per enchant. <b>Melee &amp; ranged weapons deal physical damage only</b> — roll a <b>Flat Physical</b> or an <b>elemental damage</b> line (Fire/Water/Earth/Light/Dark) to add raw damage; those raw lines scale with the weapon\'s tier and aren\'t available on wands, staffs or scepters. Enchant freely — but once you <b>Enhance</b> an item (with Inscription Scrolls) it can no longer be enchanted. <b>Currently-equipped gear appears here too</b> — improving it keeps it equipped.</div>';
     // Selected item first (top priority, right under the intro), then the equipment picker.
     html += renderImproveDetail();
     // Only Rare-or-better gear is improvable: Normal inventory bases and any Normal uniques are excluded.
@@ -13603,7 +13656,8 @@
     var _rollMin = weapon.dmgMin + (_arrowDmg ? _arrowDmg.dmgMin : 0);
     var _rollMax = weapon.dmgMax + (_arrowDmg ? _arrowDmg.dmgMax : 0);
     var dmgToMonster = Math.round(randInt(_rollMin, _rollMax) * physDmgMult * advantage * elementMult * weaponProficiency * quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus) * critMult * _earthshake * _retribution * _riposte * playerDamageMultiplier(_dmgCtx));
-    dmgToMonster += Math.round(enchTot.flatDamage||0); // + equipped-item Flat Damage enchants
+    dmgToMonster += Math.round(enchTot.flatDamage||0); // + equipped-item Flat Physical Damage enchants
+    dmgToMonster += elementalRawHitDamage(enchTot, monster); // + Elemental Damage enchants (per-element, element-advantage scaled)
     if(!isOffhand) dmgToMonster += berserkerTitansHeftDmg(state); // Berserker Titan's Heft (Lv1): +2% of max HP as flat hit damage
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
@@ -17519,6 +17573,8 @@
     html += '<div class="stats-group" style="grid-column:1/-1"><div class="stat-row"><span class="stat-label">Combat Score</span><span class="stat-value">'+combatLevelEquivalent(state)+'</span></div></div>';
     html += '<div class="stats-group"><h4>'+svgIcon('sword','currentColor')+' Offense</h4>';
     html += '<div class="stat-row"><span class="stat-label">Attack Damage</span><span class="stat-value">'+effMin+'-'+effMax+_et('pctDamage',true)+_et('flatDamage',false)+'</span></div>';
+    // Elemental raw-damage enchants: one gold row per element carried (added flat per hit, element-advantage scaled).
+    for(var _erEl in ELEM_RAW_STATS){ if(enchTot[ELEM_RAW_STATS[_erEl]]){ html += '<div class="stat-row"><span class="stat-label">'+elementIcon(_erEl)+' '+elementLabel(_erEl)+' Damage</span><span class="stat-value" style="color:var(--gold)">+'+Math.round(enchTot[ELEM_RAW_STATS[_erEl]])+'</span></div>'; } }
     if(weaponStyle.hand==='bow'){
       var _arrows = bowArrowsAvailable(state);
       var _keepPct = Math.round(quiverAmmoPreserve(state)*100);
@@ -30200,7 +30256,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.36.1';
+  var GAME_VERSION = '0.0.37.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -30327,6 +30383,7 @@
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, itemReconcile:itemReconcile,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX,
+      ELEM_RAW_STATS:ELEM_RAW_STATS, rawEnchantRange:rawEnchantRange, enchantModRange:enchantModRange, baseIsMagicWeapon:baseIsMagicWeapon, enchantPoolForItem:enchantPoolForItem, enchantCtxForUnique:enchantCtxForUnique, elementalRawHitDamage:elementalRawHitDamage,
       parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, uniqueBaseStatLines:uniqueBaseStatLines, discordItemStatsText:discordItemStatsText, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, mainhandEnhanceMult:mainhandEnhanceMult,

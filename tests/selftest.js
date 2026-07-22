@@ -8341,14 +8341,48 @@
     ['weapon','armor','jewelry'].forEach(function(cat){
       var pool = FF.ENCHANT_MODS[cat];
       ok(pool && pool.length >= 4, cat + ' pool is a broad list');
-      pool.forEach(function(m){ ok(m.id && m.label && m.stat && m.min <= m.max, cat + '/' + m.id + ' well-formed'); });
+      pool.forEach(function(m){ var r = FF.enchantModRange(m, 0); ok(m.id && m.label && m.stat && r.min <= r.max, cat + '/' + m.id + ' well-formed'); });
     });
     for(var i=0;i<50;i++){
-      var e = FF.rollEnchant('weapon'); var m = FF.enchantModById('weapon', e.mod);
-      ok(m && e.roll >= m.min && e.roll <= m.max, 'weapon roll lands in the mod range');
+      var e = FF.rollEnchant('weapon', { tier: 5 }); var m = FF.enchantModById('weapon', e.mod);
+      var r = FF.enchantModRange(m, 5);
+      ok(m && e.roll >= r.min && e.roll <= r.max, 'weapon roll lands in the mod range');
     }
     eq(FF.enchantCrystalCost({enchants:[]}), 1, 'first enchant costs 1 crystal');
     eq(FF.enchantCrystalCost({enchants:[1,2,3]}), 4, 'each extra enchant adds +1 crystal');
+  });
+
+  // ---- Weapon raw-damage enchants: tier-scaled physical + elemental, barred from magic weapons -----
+  suite('improvement: elemental & tier-scaled raw-damage enchants', function(){
+    ok(typeof FF.rawEnchantRange==='function' && typeof FF.elementalRawHitDamage==='function' && FF.ELEM_RAW_STATS, 'raw-damage helpers exported');
+    // The weapon pool carries flat physical + one raw line per element, all flagged raw.
+    var wpool = FF.ENCHANT_MODS.weapon;
+    var raws = wpool.filter(function(m){ return m.raw; });
+    eq(raws.length, 6, 'six raw-damage lines: flat physical + 5 elements');
+    ['fire','water','earth','light','dark'].forEach(function(el){
+      var m = wpool.filter(function(x){ return x.elem===el; })[0];
+      ok(m && m.raw && m.stat===FF.ELEM_RAW_STATS[el], el + ' damage line exists with its own stat key');
+    });
+    ok(FF.enchantModById('weapon','flatDamage').raw && !FF.enchantModById('weapon','flatDamage').elem, 'flat physical is a raw line with no element');
+    // Tier scaling: the range grows with weapon tier (was a fixed band before).
+    var r0 = FF.rawEnchantRange(0), r10 = FF.rawEnchantRange(10), r20 = FF.rawEnchantRange(20);
+    ok(r0.min <= r0.max && r10.min > r0.max && r20.min > r10.max, 'raw-damage range scales up with tier');
+    ok(FF.enchantModRange(FF.enchantModById('weapon','critChance'), 20).max === 12, 'a percent mod ignores tier (fixed range)');
+    // Magic weapons (wand/staff/scepter) can't roll raw lines; melee/ranged can.
+    ok(FF.baseIsMagicWeapon('stweapon_wandFire_t5_rare'), 'a wand base is a magic weapon');
+    ok(FF.baseIsMagicWeapon('stweapon_staff_t5_rare'), 'a staff base is a magic weapon');
+    ok(!FF.baseIsMagicWeapon('stweapon_rapier_t5_rare'), 'a rapier is not a magic weapon');
+    var magicPool = FF.enchantPoolForItem('weapon', true), meleePool = FF.enchantPoolForItem('weapon', false);
+    ok(!magicPool.some(function(m){ return m.raw; }), 'magic-weapon pool drops every raw line');
+    ok(meleePool.some(function(m){ return m.elem==='fire'; }), 'melee/ranged pool keeps the elemental lines');
+    // 400 rolls on a magic weapon never produce a raw line.
+    var badRaw = 0; for(var i=0;i<400;i++){ if(FF.enchantModById('weapon', FF.rollEnchant('weapon',{tier:8, magicWeapon:true}).mod).raw) badRaw++; }
+    eq(badRaw, 0, 'wands/staffs/scepters never roll a raw-damage line');
+    // Combat: elemental raw damage is a flat add, scaled by element advantage vs the foe (fire beats earth).
+    var enchTot = {}; enchTot[FF.ELEM_RAW_STATS.fire] = 100;
+    eq(FF.elementalRawHitDamage(enchTot, { element:'grass' }), 100, 'neutral matchup adds the raw total flat');
+    eq(FF.elementalRawHitDamage(enchTot, { element:'earth' }), 120, 'fire vs earth gets the +20% element-advantage bonus');
+    eq(FF.elementalRawHitDamage({}, { element:'earth' }), 0, 'no elemental lines -> no elemental damage');
   });
 
   // ---- Improvement system: enchant engine (Stage 1b) ------------------------------------
@@ -8515,7 +8549,14 @@
     var poolW = FF.enchantPoolListHtml('weapon');
     eq((poolW.match(/inputs-line/g)||[]).length, FF.ENCHANT_MODS.weapon.length, 'weapon pool lists every weapon enchant mod');
     ok(/Critical Damage/.test(poolW) && /\+5% – \+30%/.test(poolW), 'weapon pool shows Critical Damage +5% to +30%');
-    ok(/Flat Damage/.test(poolW) && /\+3 – \+20/.test(poolW), 'flat (non-pct) mods show a plain +min to +max range');
+    ok(/Flat Physical Damage/.test(poolW), 'the flat physical raw line is listed');
+    ok(/Fire Damage/.test(poolW) && /Dark Damage/.test(poolW), 'elemental raw lines are listed for a melee/ranged weapon');
+    // Raw lines scale with the weapon's tier: a tier-10 card shows a larger band than the tier-0 default.
+    var r10 = FF.rawEnchantRange(10);
+    ok(FF.enchantPoolListHtml('weapon', { tier:10 }).indexOf('+'+r10.min+' – +'+r10.max) !== -1, 'raw lines show a tier-scaled range');
+    // A magic weapon's card hides every raw line.
+    var poolMagic = FF.enchantPoolListHtml('weapon', { magicWeapon:true });
+    ok(!/Fire Damage/.test(poolMagic) && !/Flat Physical Damage/.test(poolMagic), 'a wand/staff/scepter card hides the raw-damage lines');
     var poolA = FF.enchantPoolListHtml('bodyarmor');
     eq((poolA.match(/inputs-line/g)||[]).length, FF.ENCHANT_MODS.armor.length, 'armour pool lists every armour enchant mod');
     ok(/HP Regen \/ 5s/.test(poolA) && /\+1 – \+6/.test(poolA), 'armour pool shows HP Regen per 5s with its range');
