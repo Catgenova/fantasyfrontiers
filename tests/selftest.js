@@ -5783,6 +5783,25 @@
     s.dungeonsCleared = saved;
   });
 
+  // ---- Auth identity guard: cross-account write prevention (shared per-origin auth session) ----
+  suite('auth: identity-mismatch guard', function(){
+    var saved = FF._authBoundUserId();
+    // No binding yet -> nothing is a mismatch (an unbound tab never false-fences).
+    FF.authBindIdentity(null);
+    eq(FF.authIdentityMismatch('user-A'), false, 'an unbound tab never reports a mismatch');
+    // Bound to account A: A's own session matches; a foreign id (shared-storage swap) mismatches.
+    FF.authBindIdentity('user-A');
+    eq(FF.authIdentityMismatch('user-A'), false, 'the bound account is not a mismatch');
+    ok(FF.authIdentityMismatch('user-B') === true, 'a different account on the shared session IS a mismatch');
+    // A missing session id (mid-refresh) is not treated as a swap.
+    eq(FF.authIdentityMismatch(null), false, 'a null session id does not fence');
+    eq(FF.authIdentityMismatch(undefined), false, 'an undefined session id does not fence');
+    // Deliberate in-tab switch: clearing the binding first means the imminent SIGNED_IN isn't misread.
+    FF.authBindIdentity(null);
+    eq(FF.authIdentityMismatch('user-B'), false, 'cleared binding: a fresh login is not a foreign swap');
+    FF.authBindIdentity(saved || null);
+  });
+
   // ---- Joining a party: Total Level 5000 + the PREVIOUS layer cleared (like starting your own) ----
   suite('dungeons: join requirements + party code', function(){
     var s = FF._state, savedCleared = s.dungeonsCleared, savedXp = s.xp, savedPhys = s.physique;

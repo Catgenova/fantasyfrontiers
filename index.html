@@ -23947,6 +23947,7 @@
     if(authMode==='register' && !(authPrivacyAccepted && authRulesAccepted)){ authError = 'Please accept both the Privacy Policy and the Game Rules to create an account.'; authRender(); return; }
     authError = '';
     authBusy = true; authRender();
+    authBindIdentity(null);   // deliberate login: clear the binding so the imminent SIGNED_IN event isn't misread as a foreign swap
     var ok = await authEnsureClient();
     if(!ok){ authBusy = false; authError = 'Could not reach the server.'; authRender(); return; }
     try{
@@ -23961,6 +23962,7 @@
       var u = res.data && res.data.user;
       if(!u || !res.data.session) throw new Error('invalid credentials');
       authUser = { username: (u && u.user_metadata && u.user_metadata.username) || username, id: u && u.id };
+      authBindIdentity(u && u.id); authWatchIdentity();   // this tab is now bound to THIS account; fence if the shared session later swaps
       if(res.data.session.access_token) cloudAccessToken = res.data.session.access_token;
       // (New players still gift the server a 1h +50% EXP buff, but that now fires server-side inside the
       //  `register` edge function -- the free client-callable server_buff `grant` action was removed.)
@@ -23976,6 +23978,7 @@
   }
   async function authLogout(){
     try{ await cloudSave(false, true); }catch(e){}   // flush the latest save up before signing out
+    authBindIdentity(null);   // deliberate sign-out: drop the binding so signOut's auth event doesn't fence
     try{ if(chatClient && chatClient.auth) await chatClient.auth.signOut(); }catch(e){}
     authUser = null;
     location.reload();   // ONLINE-ONLY: fresh boot shows the login gate
@@ -23990,7 +23993,7 @@
       if(!chatClient) return;
       var res = await chatClient.auth.getSession();
       var sess = res.data && res.data.session;
-      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; profileSync(true); walletSync(true); itemSync(true); estateJobSync(); cloudClaimSession(); }
+      if(sess && sess.user){ authUser = { username: (sess.user.user_metadata && sess.user.user_metadata.username) || 'player', id: sess.user.id }; authBindIdentity(sess.user.id); authWatchIdentity(); profileSync(true); walletSync(true); itemSync(true); estateJobSync(); cloudClaimSession(); }
     }catch(e){}
   }
 
@@ -24018,6 +24021,27 @@
     return 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
   })();
   var cloudFenced = false;          // true once another window took the claim -- all writes stop
+  // ---- Auth identity guard (cross-account write prevention) ----
+  // Supabase persists the session to localStorage under ONE per-origin key, so two tabs in the same
+  // browser share a single auth session: a second tab logging in as another account overwrites the
+  // first tab's token. Every server write authenticates with the LIVE token, while authUser (the
+  // in-memory identity this tab plays as) is captured once at login and never re-checked -- so a
+  // desynced tab would persist ITS state under the OTHER account (the reported cross-account gold dup).
+  // authBoundUserId records the account this tab authenticated as; if the live session ever diverges
+  // from it, we stop every write exactly like a session fence.
+  var authBoundUserId = null;
+  function authBindIdentity(id){ authBoundUserId = id || null; } // set on each explicit login/restore; cleared before a deliberate switch
+  function authIdentityMismatch(sessUserId){ return !!(authBoundUserId && sessUserId && sessUserId !== authBoundUserId); }
+  var _authIdentityWatched = false;
+  function authWatchIdentity(){
+    if(_authIdentityWatched || !chatClient || !chatClient.auth || !chatClient.auth.onAuthStateChange) return;
+    _authIdentityWatched = true;
+    try{ chatClient.auth.onAuthStateChange(function(_evt, session){
+      // A background swap (another tab logged in) surfaces here as a session whose user id isn't the
+      // one this tab bound to. Never fence during our OWN login (authBoundUserId is cleared to null first).
+      if(session && session.user && authIdentityMismatch(session.user.id)) cloudEnterFenced(true);
+    }); }catch(e){}
+  }
   // Kill switch: set false to disable fencing entirely (saves stop carrying a session id, so the server
   // never fences). Here because this feature locked a player out of their own account once already.
   var CLOUD_FENCE_ENABLED = true;
@@ -24048,7 +24072,9 @@
   }
   // Another window owns the save. Stop simulating and stop writing IMMEDIATELY -- continuing would keep
   // accruing progress this tab can never persist, which is exactly the "I lost an hour" report.
-  function cloudEnterFenced(){
+  // identityLost = the stronger case: a DIFFERENT account took over this browser's shared auth session,
+  // so this tab must never write again (its state belongs to the old account). Same stop, clearer copy.
+  function cloudEnterFenced(identityLost){
     if(cloudFenced) return;
     cloudFenced = true;
     var el = document.createElement('div');
@@ -24058,10 +24084,14 @@
     el.setAttribute('aria-labelledby', 'ffFencedTitle');
     el.className = 'ff-fenced';
     el.innerHTML = '<div class="ff-fenced-card">'
-      + '<h2 id="ffFencedTitle">Opened in another window</h2>'
-      + '<p>Fantasy Frontiers is now running in a different tab or on another device, so this one has '
-      + 'stopped to keep your progress from being overwritten.</p>'
-      + '<p class="last">Your progress was saved up to a few seconds before this. Reload to play here instead.</p>'
+      + '<h2 id="ffFencedTitle">' + (identityLost ? 'Another account was opened' : 'Opened in another window') + '</h2>'
+      + (identityLost
+          ? '<p>A different account signed in in this browser, so this tab has stopped to keep the two '
+            + 'accounts from writing over each other.</p>'
+            + '<p class="last">Your progress here was saved up to a few seconds before this. Reload to sign back in as this account.</p>'
+          : '<p>Fantasy Frontiers is now running in a different tab or on another device, so this one has '
+            + 'stopped to keep your progress from being overwritten.</p>'
+            + '<p class="last">Your progress was saved up to a few seconds before this. Reload to play here instead.</p>')
       + '<button id="ffFencedReload" class="action-btn">Reload</button>'
       + '</div>';
     document.body.appendChild(el);
@@ -24069,7 +24099,13 @@
     if(btn){ btn.addEventListener('click', function(){ location.reload(); }); btn.focus(); }
   }
   function cloudRefreshToken(){
-    try{ if(!chatClient) return; chatClient.auth.getSession().then(function(r){ var s = r && r.data && r.data.session; if(s && s.access_token) cloudAccessToken = s.access_token; }); }catch(e){}
+    try{ if(!chatClient) return; chatClient.auth.getSession().then(function(r){
+      var s = r && r.data && r.data.session; if(!s) return;
+      // If the live session is now a DIFFERENT account (shared-storage swap), fence instead of caching
+      // its token -- caching it would let the unload beacon persist THIS tab's state under that account.
+      if(s.user && authIdentityMismatch(s.user.id)){ cloudEnterFenced(true); return; }
+      if(s.access_token) cloudAccessToken = s.access_token;
+    }); }catch(e){}
   }
   // Best-effort save that survives page unload (hard refresh / tab close): a keepalive fetch straight
   // to the save_game function with the cached token, so the LATEST state (inventory, gold, everything)
@@ -24516,6 +24552,7 @@
           recoverBusy = false;
           if(r.error || !r.data || !r.data.session){ recoverMsg = 'Password reset. Please log in with your new password.'; recoverOpen = false; recoverStep = 'username'; renderLoginGate(); return; }
           var u = r.data.user; authUser = { username:(u && u.user_metadata && u.user_metadata.username) || recoverUsername, id:u && u.id };
+          authBindIdentity(u && u.id); authWatchIdentity();
           try{ localStorage.setItem('ff-remember-username', recoverUsername); localStorage.setItem('ff-autologin', '1'); }catch(e){}
           recoverOpen = false; recoverStep = 'username'; startGameOnline();
         }, function(){ recoverBusy = false; recoverMsg = 'Password reset. Please log in with your new password.'; recoverOpen = false; renderLoginGate(); });
@@ -25089,6 +25126,7 @@
   var _lastEstateJson = null; // last estate snapshot ACCEPTED by submit_profile, serialized -- resend only on change
   async function profileSync(force){
     if(!CHAT_ENABLED || !authUser || !authUser.id) return;
+    if(cloudFenced) return;   // fenced (another window / another account owns the live session) -- never write
     var now = Date.now();
     if(!force && now - profileLastSync < 90000) return;
     profileLastSync = now;
@@ -25129,6 +25167,7 @@
   }
   async function walletSync(force){
     if(!WALLET_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id) return;
+    if(cloudFenced) return;   // fenced (another window / another account owns the live session) -- never credit this tab's gold to it
     var now = Date.now();
     if(!force && now - walletLastSync < WALLET_SYNC_MS) return;
     walletLastSync = now;
@@ -25239,6 +25278,7 @@
   var itemLedgerEarned = null;      // per-item lifetime-earned anchor from the server (for Stage B-2 adoption)
   async function itemSync(force){
     if(!ITEM_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id) return;
+    if(cloudFenced) return;   // fenced (another window / another account owns the live session) -- never write this tab's ledger to it
     var now = Date.now();
     if(!force && now - itemLastSync < WALLET_SYNC_MS) return;
     itemLastSync = now;
@@ -29459,7 +29499,7 @@
       var sess = res.data && res.data.session;
       if(sess && sess.user){
         var _un = sess.user.user_metadata && sess.user.user_metadata.username;
-        if(_un){ authUser = { username: _un, id: sess.user.id }; if(sess.access_token) cloudAccessToken = sess.access_token; }
+        if(_un){ authUser = { username: _un, id: sess.user.id }; authBindIdentity(sess.user.id); authWatchIdentity(); if(sess.access_token) cloudAccessToken = sess.access_token; }
         else { authOrphanSession = true; } // signed in but no game username = an unlinked Discord sign-in
       }
     }catch(e){}
@@ -29714,7 +29754,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.33.9';
+  var GAME_VERSION = '0.0.33.10';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -29833,6 +29873,7 @@
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, itemReconcile:itemReconcile,
+      authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX,
       parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, uniqueBaseStatLines:uniqueBaseStatLines, discordItemStatsText:discordItemStatsText, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
