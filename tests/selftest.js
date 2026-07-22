@@ -6511,6 +6511,46 @@
     eq(sorted.join(','), 'digging_t0,digging_t2,forestry_t0,forestry_t1', 'family then tier ordering');
   });
 
+  // ---- Inventory accordions: fine-grained groups replace the category filter chips ----
+  suite('inventory: accordion groups (weapons by family, armour by material)', function(){
+    ok(typeof FF.invGroupFor === 'function' && Array.isArray(FF.INV_GROUPS), 'accordion group helpers exported');
+    // Weapons split by family.
+    eq(FF.invGroupFor('stweapon_greatsword_t5_rare'), 'w_swords', 'greatsword -> Swords');
+    eq(FF.invGroupFor('stweapon_sledge_t3_normal'),   'w_hammers','sledge -> Hammers');
+    eq(FF.invGroupFor('stweapon_hatchet_t3_normal'),  'w_axes',   'hatchet -> Axes');
+    eq(FF.invGroupFor('stweapon_bowLong_t3_normal'),  'w_bows',   'long bow -> Bows');
+    eq(FF.invGroupFor('stweapon_wandFire_t3_normal'), 'w_wands',  'fire wand -> Wands');
+    eq(FF.invGroupFor('stweapon_claw_t3_normal'),     'w_claws',  'claws -> Claws');
+    // Armour split by material.
+    eq(FF.invGroupFor('bodyarmor_plate_chest_t5_rare'),     'a_plate',     'plate -> Plate Armor');
+    eq(FF.invGroupFor('bodyarmor_tailoring_chest_t5_normal'),'a_tailoring','cloth -> Cloth Armor');
+    eq(FF.invGroupFor('bodyarmor_leather_boots_t5_normal'), 'a_leather',   'leather -> Leather Armor');
+    // Jewelry / offhands / tools each their own group; raw materials fall to the broad buckets.
+    eq(FF.invGroupFor('stshield_medium_t5_normal'), 'shields', 'shield -> Shields');
+    eq(FF.invGroupFor('ring_fire_t5_rare'),   'rings',   'ring -> Rings');
+    eq(FF.invGroupFor('amulet_t5_rare'),      'amulets', 'amulet -> Amulets');
+    eq(FF.invGroupFor('relic_t5_rare'),       'relics',  'relic -> Relics');
+    eq(FF.invGroupFor('tool_mining_t5_normal'),'tools',  'tool -> Tools');
+    eq(FF.invGroupFor('digging_t5'),          'gathering','raw material -> Gathering');
+    eq(FF.invGroupFor('metallurgy_t5'),       'crafting', 'refined bar -> Crafting');
+    // Render: the panel emits collapsible accordions + keeps the search box; the old chips are gone.
+    var S = FF._state, savedInv = S.inventory, savedCat = FF.currentCategoryId();
+    try {
+      var wid = Object.keys(FF.ALL_SELLABLE).filter(function(id){ return id.indexOf('stweapon_greatsword_')===0; })[0];
+      var aid = Object.keys(FF.ALL_SELLABLE).filter(function(id){ return id.indexOf('bodyarmor_plate_chest_')===0; })[0];
+      ok(wid && aid, 'sample weapon + armour ids resolve in ALL_SELLABLE');
+      var inv = { digging_t5:20 }; inv[wid] = 1; inv[aid] = 1;
+      S.inventory = inv;
+      FF.navPickCat('inventory');
+      var h = document.getElementById('inventoryPanel').innerHTML;
+      ok(/inv-acc-bar/.test(h) && /data-action="invAccToggle"/.test(h), 'items render inside collapsible accordions');
+      ok(/Swords/.test(h) && /Plate Armor/.test(h) && /Gathering/.test(h), 'weapons/armour/materials each get their own group');
+      ok(/id="invSearchInput"/.test(h), 'the search box is preserved');
+      ok(/data-action="invExpandAll"/.test(h) && /data-action="invCollapseAll"/.test(h), 'expand/collapse-all controls exist');
+      ok(!/data-action="invFilterCat"/.test(h), 'the old category filter chips are gone');
+    } finally { S.inventory = savedInv; if(savedCat) FF.navPickCat(savedCat); }
+  });
+
   // ---- Marketplace pricing helpers (must match the server RPC's tax math) --------------
   suite('marketplace pricing', function(){
     eq(FF.MARKET_TAX, 0.05, 'market tax is 5%');
