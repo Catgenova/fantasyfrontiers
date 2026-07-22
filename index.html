@@ -404,6 +404,10 @@
   }
   .sub-btn:hover{color:var(--text);border-color:var(--border-light);}
   .sub-btn.active{color:#fbf6ea;background:var(--sub-color);border-color:var(--sub-color);font-weight:700;}
+  /* Attention flash reused across the sub-tab chips, the rail area button, and the mobile dock (quest reward claimable). */
+  .sub-btn.flash{color:#f2d98a;border-color:#c9a227;animation:ffChipFlash 1s ease-in-out infinite;}
+  .ff-area-btn.flash,.ff-dock-btn.flash{animation:ffChipFlash 1s ease-in-out infinite;}
+  .quest-claim{background:linear-gradient(180deg,#caa23a,#a5811f);border-color:#8a6c17;color:#1c1608;font-weight:700;animation:ffChipFlash 1.1s ease-in-out infinite;}
 
   .layout{display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start;}
   @media (max-width:860px){.layout{grid-template-columns:1fr;}}
@@ -1734,7 +1738,7 @@
     {id:'leaderboard', label:'Leaderboard', icon:svgIcon('trophy','var(--cat-leaderboard)'), color:'var(--cat-leaderboard)'}
   ];
 
-  var DEFAULT_SUB = { gathering:'digging', crafting:'metallurgy', refining:'butchering', cooking:'roasting', building:'carpentry', outfitting:'weaponsmithing', faith:'prayer', enemies:'wildlife' };
+  var DEFAULT_SUB = { gathering:'digging', crafting:'metallurgy', refining:'butchering', cooking:'roasting', building:'carpentry', outfitting:'weaponsmithing', faith:'prayer', enemies:'wildlife', quests:'gettingstarted' };
 
   var SUB_PALETTE = ['#8a6a45','#6f8a4a','#4a7a8a','#9a6a8a','#7a8a45','#8a5a5a','#5a7a9a','#8a7a3a','#4a8a6a','#9a7a5a','#6a5a9a','#8a4a6a','#4a9a7a','#9a5a4a','#5a9a8a'];
 
@@ -11373,6 +11377,10 @@
       estate: Object.assign({ grid: generatePersonalEstateGrid(), expansionsPurchased: 0, job: null, queue: [] }, generateEstateEdges()),
       lockedItems: {},
       stats: { kills:0, deaths:0, gathered:0, crafted:0, craftedRare:0, craftedSupreme:0, craftedFantastic:0 },
+      monsterKills: {},          // per-monster-id kill tally (Quest progress source)
+      quests: { claimed: {} },   // quest progression: { claimed: { questId: true } }
+      titles: {},                // unlocked quest/achievement titles (cosmetic), by id
+
       familiarCastIndex: 0,
       familiarCastAccum: 0,
       familiarBuffs: { armorMult:1, armorUntil:0, damageMult:1, damageUntil:0, enemySlowPct:0, enemySlowUntil:0, enemyWeakenPct:0, enemyWeakenUntil:0, poisonDps:0, poisonUntil:0 },
@@ -11391,7 +11399,7 @@
   var AREAS = [
     { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['improvement','Improvement'],['faith','Faith'],['building','Construction'],['masterwork','Blueprints'],['inventory','Inventory'],['skills','Skills']] },
     { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['peons','Peons'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
-    { id:'battle', label:'Battle', icon:'crossedswords', subs:[['enemies','Enemies'],['combat','Combat'],['dungeons','Dungeons'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] }
+    { id:'battle', label:'Battle', icon:'crossedswords', subs:[['enemies','Enemies'],['combat','Combat'],['quests','Quests'],['dungeons','Dungeons'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] }
   ];
   function areaOf(cat){ for(var i=0;i<AREAS.length;i++){ if(AREAS[i].subs.some(function(s){ return s[0]===cat; })) return AREAS[i].id; } return 'resources'; }
   var currentArea = areaOf(currentCategory);
@@ -14028,6 +14036,7 @@
     }
     if(act && act.dungeon){ dungeonOnKill(monster); return; } // dungeon foe -> advance the run instead of re-engaging
     bumpStat('kills');
+    bumpMonsterKill(monster.id); // per-monster tally powers Quest progress (e.g. "kill 10 Rabbits")
     var goldWon = Math.round(randInt(monster.goldMin, monster.goldMax) * legTreasureMult() * (legActive('goldgorge') ? LEG_GOLDGORGE_KILL : 1) * (1 + legendaryRingBonus('d2_goldfind', state)) * ((set2D3('treasureHunter') && enemyCursed(state)) ? 1.50 : 1) * ((legActive('gravepilfer') && (enemyCursed(state) || enemyDecaying(state))) ? 2 : 1)); // Pendant of Fortune: +Treasure Find gold; Goldgorge (D2 scimitar): +30% kill gold; Signet of Plunder (D2): +Gold Find; Grave Robber (TH D3 2pc): +50% gold from a Cursed foe; Gravepilfer (D3 scimitar): +100% from a Cursed/Decayed foe
     earnGold(goldWon);
     addPhysiqueXp(physTierPairs([['resolve',1]], monster.tierIndex));
@@ -15219,6 +15228,11 @@
           if(typeof state.mortal !== 'boolean') state.mortal = false;
           if(!state.stats || typeof state.stats !== 'object') state.stats = {};
           ['kills','deaths','gathered','crafted','craftedRare','craftedSupreme','craftedFantastic','hoursBuffed'].forEach(function(k){ if(typeof state.stats[k] !== 'number') state.stats[k] = 0; });
+          // Quests (added post-launch): give existing saves the new fields without clobbering progress.
+          if(!state.monsterKills || typeof state.monsterKills !== 'object') state.monsterKills = {};
+          if(!state.quests || typeof state.quests !== 'object') state.quests = { claimed:{} };
+          if(!state.quests.claimed || typeof state.quests.claimed !== 'object') state.quests.claimed = {};
+          if(!state.titles || typeof state.titles !== 'object') state.titles = {};
           // REPAIR: clear any slot pointing at a unique that no longer exists. Saves written before the
           // shatter fix can hold a dangling uid (a destroyed offhand/armour/ring stayed "equipped",
           // keeping its class active), so heal those on load instead of making players notice it.
@@ -15380,19 +15394,22 @@
     function anyReady(map){ if(!map) return false; return Object.keys(map).some(function(k){ var p = map[k]; return p && p.cropType && now >= p.readyAt; }); }
     return anyReady(state.farmingPlots) || anyReady(state.guildFarmingPlots);
   }
-  function railSubFlash(cat){ return (cat==='farming' && hasReadyFarmingPlot()); } // draw attention when a plot is ready
+  function railSubFlash(cat){ return (cat==='farming' && hasReadyFarmingPlot()) || (cat==='quests' && questAnyClaimable()); } // draw attention when a plot is ready / a quest reward is claimable
+  // An area button flashes when ANY of its sub-views wants attention (so a claimable quest is visible from
+  // anywhere, not only while the Battle area is already open).
+  function railAreaFlash(areaId){ var a = AREAS.filter(function(x){ return x.id===areaId; })[0]; return !!(a && a.subs.some(function(s){ return railSubFlash(s[0]); })); }
   // Renders the left rail (areas + nested sub-views), the mobile bottom dock, and the mobile sub-view chip row.
   function renderCatTabs(){
     var railHtml = '', dockHtml = '', chipHtml = '';
     AREAS.forEach(function(a){
       var aon = a.id===currentArea;
-      railHtml += '<button class="ff-area-btn'+(aon?' on':'')+'" data-area="'+a.id+'"><span class="ico">'+shellIcon(a.icon)+'</span>'+a.label+'</button>';
+      railHtml += '<button class="ff-area-btn'+(aon?' on':'')+(railAreaFlash(a.id)?' flash':'')+'" data-area="'+a.id+'"><span class="ico">'+shellIcon(a.icon)+'</span>'+a.label+'</button>';
       if(aon){
         railHtml += '<div class="ff-subnest">';
         a.subs.forEach(function(s){ railHtml += '<button class="ff-sub-btn'+(s[0]===currentCategory?' on':'')+(railSubFlash(s[0])?' flash':'')+'" data-cat="'+s[0]+'">'+escapeHtml(s[1])+'</button>'; });
         railHtml += '</div>';
       }
-      dockHtml += '<button class="ff-dock-btn'+(aon?' on':'')+'" data-area="'+a.id+'"><span class="ico">'+shellIcon(a.icon)+'</span><span class="lbl">'+a.label+'</span></button>';
+      dockHtml += '<button class="ff-dock-btn'+(aon?' on':'')+(railAreaFlash(a.id)?' flash':'')+'" data-area="'+a.id+'"><span class="ico">'+shellIcon(a.icon)+'</span><span class="lbl">'+a.label+'</span></button>';
     });
     railHtml += '<div class="panel ff-rail-panel ff-chatpanel ff-rail-chat" id="chatDockPanel"></div>';
     var area = AREAS.filter(function(x){ return x.id===currentArea; })[0];
@@ -15827,6 +15844,13 @@
       el.innerHTML = MONSTER_CATEGORIES.map(function(c){
         var active = c.id===currentSub ? ' active' : '';
         return '<button class="sub-btn'+active+'" data-sub="'+c.id+'" style="--sub-color:'+c.color+'">'+c.icon+' '+c.label+'</button>';
+      }).join('');
+    } else if(currentCategory==='quests'){
+      el.style.display = 'flex';
+      el.innerHTML = QUEST_SUBS.map(function(su){
+        var active = su.id===currentSub ? ' active' : '';
+        var flash = questClaimableInSub(su.id) ? ' flash' : ''; // the owning track flashes while a reward is claimable
+        return '<button class="sub-btn'+active+flash+'" data-sub="'+su.id+'">'+escapeHtml(su.label)+'</button>';
       }).join('');
     } else {
       el.style.display = 'none';
@@ -19704,6 +19728,85 @@
   }
   // The Enemies tab: pick a foe to fight (starting a fight jumps you to the Combat tab). Also hosts the
   // out-of-combat prep (Auto-Eat + combat consumables) since that's where you gear up before a fight.
+  // ================= QUESTS =================
+  // A guided progression layer under the Quests tab (Battle area), grouped into sub-tracks. Each quest
+  // completes the INSTANT its requirement is met (no accept step) and can be done in any order; the player
+  // then clicks Claim to receive the reward (an item, skill XP, or a title). While a reward is claimable
+  // the Battle area, the Quests tab, and the owning sub-track all flash. An unfinished quest's button reads
+  // "Go" and jumps the player to where the objective is completed (via navToActivity).
+  var QUEST_SUBS = [
+    { id:'gettingstarted', label:'Getting Started' }
+  ];
+  // Each quest: id, sub (track), title, desc, target + progress(state)->count, nav (the Go destination),
+  // and reward { kind:'item'|'xp'|'title', ... }. progress is clamped to [0,target] by questProgress.
+  var QUESTS = [
+    { id:'watership_down', sub:'gettingstarted', title:'Watership Down',
+      desc:'Every legend starts small. Slay 10 Rabbits in the wild to prove your blade.',
+      target:10, progress:function(st){ return (st.monsterKills && st.monsterKills['wildlife_rabbit']) || 0; },
+      nav:{ cat:'enemies', sub:'wildlife' },
+      reward:{ kind:'item', itemId:'corpse_t0', qty:10, label:'10 Rabbit Corpses' } }
+  ];
+  var QUEST_BY_ID = {}; QUESTS.forEach(function(q){ QUEST_BY_ID[q.id] = q; });
+  function questById(id){ return QUEST_BY_ID[id] || null; }
+  function questProgress(q){ return Math.max(0, Math.min(q.target, q.progress(state)|0)); }
+  function questComplete(q){ return questProgress(q) >= q.target; }
+  function questClaimed(q){ return !!(state.quests && state.quests.claimed && state.quests.claimed[q.id]); }
+  function questClaimable(q){ return questComplete(q) && !questClaimed(q); }
+  function questClaimableInSub(subId){ return QUESTS.some(function(q){ return q.sub===subId && questClaimable(q); }); }
+  function questAnyClaimable(){ return QUESTS.some(questClaimable); }
+  function questRewardLabel(q){
+    var r = q.reward;
+    if(r.kind==='item') return r.label || (r.qty + 'x ' + ((ALL_SELLABLE[r.itemId]||{}).name || r.itemId));
+    if(r.kind==='xp') return '+' + fmt(r.amount) + ' ' + (SKILL_LABELS[r.skill] || r.skill) + ' XP';
+    if(r.kind==='title') return 'Title: ' + r.name;
+    return '';
+  }
+  // Grant a completed quest's reward, exactly once. Idempotent: a second click (or a claimed quest) no-ops.
+  function claimQuest(id){
+    var q = questById(id); if(!q) return false;
+    if(!questClaimable(q)){ addLog('That quest isn’t ready to claim yet.', 'danger'); return false; }
+    if(!state.quests) state.quests = { claimed:{} };
+    if(!state.quests.claimed) state.quests.claimed = {};
+    state.quests.claimed[q.id] = true;
+    var r = q.reward;
+    if(r.kind==='item') addItem(r.itemId, r.qty);
+    else if(r.kind==='xp') addXp(r.skill, r.amount);
+    else if(r.kind==='title'){ if(!state.titles) state.titles = {}; state.titles[r.titleId] = true; }
+    addLog('Quest complete: ' + q.title + ' — received ' + questRewardLabel(q) + '.', 'important');
+    spawnFloatingText('Quest: ' + q.title + ' ✓', 'ft-rare');
+    saveGame(); render();
+    return true;
+  }
+  // Per-monster kill tally (Quest progress). Called from defeatMonster on every non-dungeon kill.
+  function bumpMonsterKill(id){ if(!id) return; if(!state.monsterKills) state.monsterKills = {}; state.monsterKills[id] = (state.monsterKills[id]||0) + 1; }
+  function renderQuestsTab(){
+    var subId = currentSub;
+    if(!QUEST_SUBS.some(function(s){ return s.id===subId; })) subId = QUEST_SUBS[0].id;
+    var sub = QUEST_SUBS.filter(function(s){ return s.id===subId; })[0];
+    var list = QUESTS.filter(function(q){ return q.sub===subId; });
+    var claimable = list.filter(questClaimable).length;
+    var html = '<div class="section-intro"><b>Quests</b> — guided goals that walk you through the game. Do them in any order; a quest completes the moment you meet the requirement, then <b>Claim</b> your reward. '
+      + (claimable ? '<span style="color:var(--gold);font-weight:700;">' + claimable + ' ready to claim!</span>' : 'Each rewards an item, skill XP, or a title.') + '</div>';
+    html += '<div class="guild-section-title" style="margin-top:4px;">' + escapeHtml(sub.label) + '</div>';
+    if(!list.length) return html + '<div class="empty-note">More quests coming soon.</div>';
+    html += '<div class="card-grid">';
+    list.forEach(function(q){
+      var prog = questProgress(q), done = questComplete(q), claimed = questClaimed(q), canClaim = done && !claimed;
+      var pct = q.target > 0 ? Math.round(prog / q.target * 100) : 100;
+      html += '<div class="item-card' + (canClaim ? ' active-item' : '') + '">';
+      html += '<div class="item-top"><div class="item-icon">' + svgIcon('trophy', canClaim ? 'var(--gold)' : '#9a8c6a') + '</div><div><div class="item-name">' + escapeHtml(q.title) + '</div><div class="item-meta">' + (claimed ? 'Completed' : (done ? 'Ready to claim' : 'In progress')) + '</div></div></div>';
+      html += '<div class="chance-line">' + escapeHtml(q.desc) + '</div>';
+      html += '<div class="inputs-line">Reward: <b style="color:var(--gold);">' + escapeHtml(questRewardLabel(q)) + '</b></div>';
+      html += '<div class="item-stats"><span>Progress: <b>' + fmt(prog) + ' / ' + fmt(q.target) + '</b></span></div>';
+      html += '<div class="progress-track"><div class="progress-fill" style="width:' + pct + '%"></div></div>';
+      if(claimed) html += '<button class="action-btn" disabled style="opacity:.6;">Claimed ✓</button>';
+      else if(canClaim) html += '<button class="action-btn quest-claim" data-action="questClaim" data-quest="' + q.id + '">Claim</button>';
+      else html += '<button class="action-btn" data-action="navToActivity" data-nav-cat="' + q.nav.cat + '"' + (q.nav.sub ? ' data-nav-sub="' + q.nav.sub + '"' : '') + '>Go</button>';
+      html += '</div>';
+    });
+    return html + '</div>';
+  }
+
   function renderEnemiesTab(){
     var lvl = combatLevelEquivalent(state);
     var act = state.activity;
@@ -26939,6 +27042,7 @@
     else if(currentCategory==='market') html = renderMarketTab();
     else if(currentCategory==='farming') html = renderFarmingTab();
     else if(currentCategory==='combat') html = renderCombatTab();
+    else if(currentCategory==='quests') html = renderQuestsTab();
     else if(currentCategory==='enemies') html = renderEnemiesTab();
     else if(currentCategory==='dungeons') html = renderDungeonsTab();
     else if(currentCategory==='classes') html = renderClassesTab();
@@ -28791,6 +28895,7 @@
     },
     toggleCraftFilter: function(btn, e){ craftOnlyAffordable = !craftOnlyAffordable; },
     chatSend: function(btn, e){ chatSend(); },
+    questClaim: function(btn, e){ claimQuest(btn.getAttribute('data-quest')); },
     authSubmit: function(btn, e){ authSubmit(); },
     discordLogin: function(btn, e){ discordLogin(); },
     linkDiscord: function(btn, e){ linkDiscord(); },
@@ -29806,7 +29911,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.33.11';
+  var GAME_VERSION = '0.0.34.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -29927,6 +30032,7 @@
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
+      QUESTS:QUESTS, QUEST_SUBS:QUEST_SUBS, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questClaimable:questClaimable, questClaimableInSub:questClaimableInSub, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, itemReconcile:itemReconcile,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX,
