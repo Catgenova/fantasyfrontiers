@@ -257,35 +257,55 @@
     FF.estUse(false);                                  // point estActive at the personal estate
     var cell = s.estate.grid[0][0];
     var saved = { type:cell.type, pave:cell.paveTileId, work:cell.workshopId };
+    var savedJob = s.estate.job, savedQueue = s.estate.queue;
     var savedInv = { t4:s.inventory['paving_t4'], t5:s.inventory['paving_t5'] };
+    s.estate.job = null; s.estate.queue = [];
     cell.type = 'paved'; cell.paveTileId = 'paving_t3'; cell.workshopId = 'workshop_mining_t0'; // a building is present
     s.inventory['paving_t4'] = 25;
     FF.estateUpgradePavement(0, 0);
-    eq(cell.paveTileId, 'paving_t4', 'the pavement rose one tier');
-    eq(s.inventory['paving_t4'], 5, 'the upgrade spent 20 of the next-tier tile');
+    // The upgrade is now a TIMED JOB, taking as long as paving that tier fresh (10 min/tier).
+    var job = s.estate.job;
+    ok(job && job.kind === 'pave' && job.upgrade === true, 'the upgrade starts a pave job flagged as an upgrade');
+    eq(job.readyAt - job.startAt, 5 * FF.ESTATE_PAVE_MS_PER_TIER, 'a t5 (index 4) upgrade takes the same 50 min as paving it fresh');
+    eq(cell.paveTileId, 'paving_t3', 'the pavement is untouched until the job completes');
+    eq(s.inventory['paving_t4'], 5, 'the 20 target-tier tiles are consumed when the job starts');
+    FF.applyEstateJobCompletion(s.estate, job, false, false);
+    s.estate.job = null;
+    eq(cell.paveTileId, 'paving_t4', 'completion raises the pavement one tier');
     eq(cell.workshopId, 'workshop_mining_t0', 'the building on the tile is kept');
     s.inventory['paving_t5'] = 3;                       // not enough for the next upgrade
     FF.estateUpgradePavement(0, 0);
+    ok(!s.estate.job, 'no job starts without 20 of the next-tier tile');
     eq(cell.paveTileId, 'paving_t4', 'no upgrade without 20 of the next-tier tile');
     // restore
     cell.type = saved.type; cell.paveTileId = saved.pave; cell.workshopId = saved.work;
+    s.estate.job = savedJob; s.estate.queue = savedQueue;
     s.inventory['paving_t4'] = savedInv.t4; s.inventory['paving_t5'] = savedInv.t5;
   });
 
   // ---- The SAME upgrade works on the guild estate (shared estActive engine, not a copy) ----
   suite('estate: upgrade guild pavement', function(){
     var s = FF._state, ge = FF.guildEstate;
-    var savedGrid = ge.grid, savedStatus = ge.status, savedInv = s.inventory['paving_t2'];
+    var savedGrid = ge.grid, savedStatus = ge.status, savedJob = ge.job, savedInv = s.inventory['paving_t2'];
+    var savedPJob = s.estate.job, savedPQueue = s.estate.queue;
+    s.estate.job = null; s.estate.queue = [];
     ge.grid = [[{ type:'paved', paveTileId:'paving_t1', workshopId:'workshop_mining_t0' }]]; // a paved guild tile with a building
-    ge.status = 'ready';
+    ge.status = 'ready'; ge.job = null;
     FF.estUse(true);                                   // point the shared engine at the guild estate
     s.inventory['paving_t2'] = 20;
     FF.estateUpgradePavement(0, 0);
-    eq(ge.grid[0][0].paveTileId, 'paving_t2', 'the guild pavement upgraded through the shared engine');
-    eq(ge.grid[0][0].workshopId, 'workshop_mining_t0', 'the guild building on the tile is kept');
+    var job = ge.job;
+    ok(job && job.kind === 'pave' && job.upgrade === true, 'the guild upgrade starts a timed job through the shared engine');
+    eq(job.readyAt - job.startAt, 3 * FF.ESTATE_PAVE_MS_PER_TIER, 'a t3 (index 2) upgrade takes the fresh-pave 30 min');
+    eq(ge.grid[0][0].paveTileId, 'paving_t1', 'the guild pavement waits for the job to finish');
     eq(s.inventory['paving_t2'], 0, 'the upgrade spent 20 next-tier tiles from personal inventory');
+    FF.applyEstateJobCompletion(ge, job, false, true);
+    ge.job = null;
+    eq(ge.grid[0][0].paveTileId, 'paving_t2', 'completion upgrades the guild pavement');
+    eq(ge.grid[0][0].workshopId, 'workshop_mining_t0', 'the guild building on the tile is kept');
     // restore
-    FF.estUse(false); ge.grid = savedGrid; ge.status = savedStatus; s.inventory['paving_t2'] = savedInv;
+    FF.estUse(false); ge.grid = savedGrid; ge.status = savedStatus; ge.job = savedJob;
+    s.estate.job = savedPJob; s.estate.queue = savedPQueue; s.inventory['paving_t2'] = savedInv;
   });
 
   // ---- Estate: upgrade a Workshop / Cottage (100x next-tier planks, gated by pavement) ----
@@ -295,26 +315,42 @@
     FF.estUse(false);
     var cell = s.estate.grid[0][0];
     var saved = { type:cell.type, pave:cell.paveTileId, work:cell.workshopId, cot:cell.cottageId };
+    var savedJob = s.estate.job, savedQueue = s.estate.queue;
     var savedInv = { c2:s.inventory['carpentry_t2'], c3:s.inventory['carpentry_t3'], c4:s.inventory['carpentry_t4'] };
-    // Workshop t2 on t5 pavement -> upgrade to t3 for 100x the t3 plank.
+    s.estate.job = null; s.estate.queue = [];
+    // Workshop t2 on t5 pavement -> upgrade to t3 for 100x the t3 plank, taking the fresh t3 build time.
     cell.type = 'paved'; cell.paveTileId = 'paving_t5'; cell.cottageId = null; cell.workshopId = 'workshop_mining_t2';
     s.inventory['carpentry_t3'] = 100;
     FF.estateUpgradeWorkshop(0, 0);
-    eq(cell.workshopId, 'workshop_mining_t3', 'the workshop rose one tier, same skill');
-    eq(s.inventory['carpentry_t3'], 0, 'the upgrade spent 100 next-tier planks');
+    var wjob = s.estate.job;
+    ok(wjob && wjob.kind === 'workshop' && wjob.upgrade === true, 'the workshop upgrade starts a timed job');
+    eq(wjob.readyAt - wjob.startAt, 4 * FF.ESTATE_WORKSHOP_MS_PER_TIER, 'a t4 (index 3) upgrade takes the fresh-build 120 min');
+    eq(cell.workshopId, 'workshop_mining_t2', 'the old workshop keeps working until the job completes');
+    eq(s.inventory['carpentry_t3'], 0, 'the upgrade consumed 100 next-tier planks at start');
+    FF.applyEstateJobCompletion(s.estate, wjob, false, false);
+    s.estate.job = null;
+    eq(cell.workshopId, 'workshop_mining_t3', 'completion raises the workshop one tier, same skill');
     // Pavement too low blocks it: workshop t3 -> t4 needs pavement >= t4, but the pavement is t3.
     cell.paveTileId = 'paving_t3'; s.inventory['carpentry_t4'] = 100;
     FF.estateUpgradeWorkshop(0, 0);
+    ok(!s.estate.job, 'no job while the pavement is too low');
     eq(cell.workshopId, 'workshop_mining_t3', 'no upgrade while the pavement is too low');
     eq(s.inventory['carpentry_t4'], 100, '...and no planks are spent when blocked');
-    // Cottage t1 on t5 pavement -> upgrade to t2 for 100x the t2 plank.
+    // Cottage t1 on t5 pavement -> upgrade to t2 for 100x the t2 plank, taking the fresh t2 build time.
     cell.workshopId = null; cell.cottageId = 'cottage_t1'; cell.paveTileId = 'paving_t5';
     s.inventory['carpentry_t2'] = 100;
     FF.estateUpgradeCottage(0, 0);
-    eq(cell.cottageId, 'cottage_t2', 'the cottage rose one tier');
+    var cjob = s.estate.job;
+    ok(cjob && cjob.kind === 'cottage' && cjob.upgrade === true, 'the cottage upgrade starts a timed job');
+    eq(cjob.readyAt - cjob.startAt, 3 * FF.ESTATE_COTTAGE_MS_PER_TIER, 'a t3 (index 2) cottage upgrade takes the fresh-build 30 min');
+    eq(cell.cottageId, 'cottage_t1', 'the old cottage stands until the job completes');
+    FF.applyEstateJobCompletion(s.estate, cjob, false, false);
+    s.estate.job = null;
+    eq(cell.cottageId, 'cottage_t2', 'completion raises the cottage one tier');
     eq(s.inventory['carpentry_t2'], 0, 'the cottage upgrade spent 100 next-tier planks');
     // restore
     cell.type = saved.type; cell.paveTileId = saved.pave; cell.workshopId = saved.work; cell.cottageId = saved.cot;
+    s.estate.job = savedJob; s.estate.queue = savedQueue;
     s.inventory['carpentry_t2'] = savedInv.c2; s.inventory['carpentry_t3'] = savedInv.c3; s.inventory['carpentry_t4'] = savedInv.c4;
     FF.estRecomputeWorkshops(); // rebuild the workshop cache from the restored grid
   });
@@ -325,19 +361,27 @@
     FF.estUse(false);
     var cell = s.estate.grid[0][0];
     var saved = { type:cell.type, pave:cell.paveTileId, work:cell.workshopId, cot:cell.cottageId };
+    var savedJob = s.estate.job, savedQueue = s.estate.queue;
     var savedInv = { p5:s.inventory['paving_t5'], p7:s.inventory['paving_t7'], c5:s.inventory['carpentry_t5'], c6:s.inventory['carpentry_t6'] };
+    s.estate.job = null; s.estate.queue = [];
+    function finishJob(){ var j = s.estate.job; if(j){ FF.applyEstateJobCompletion(s.estate, j, false, false); s.estate.job = null; } }
 
-    // A) Pavement jumps straight from t2 to t7 in one step, costing 20 of the TARGET tile only.
+    // A) Pavement jumps straight from t2 to t7 in one step, costing 20 of the TARGET tile only, and
+    //    the job runs as long as paving t7 (index 7 -> 80 min) fresh would.
     cell.type='paved'; cell.paveTileId='paving_t2'; cell.workshopId=null; cell.cottageId=null;
     s.inventory['paving_t5']=999; s.inventory['paving_t7']=20;
     FF.estateUpgradePavement(0,0,7);
+    ok(s.estate.job && s.estate.job.upgrade, 'the multi-tier jump runs as a timed job');
+    eq(s.estate.job.readyAt - s.estate.job.startAt, 8 * FF.ESTATE_PAVE_MS_PER_TIER, 'the jump costs the TARGET tier fresh-pave time');
+    finishJob();
     eq(cell.paveTileId, 'paving_t7', 'pavement jumps multiple tiers in a single upgrade');
     eq(s.inventory['paving_t7'], 0, 'the jump spent 20 of the target-tier tile');
     eq(s.inventory['paving_t5'], 999, 'intermediate tiers are not consumed');
 
-    // B) A jump you cannot cover is refused, nothing spent.
+    // B) A jump you cannot cover is refused, nothing spent, no job.
     cell.paveTileId='paving_t2'; s.inventory['paving_t7']=5;
     FF.estateUpgradePavement(0,0,7);
+    ok(!s.estate.job, 'no job on an unaffordable jump');
     eq(cell.paveTileId, 'paving_t2', 'no upgrade without 20 of the target tile');
     eq(s.inventory['paving_t7'], 5, 'nothing spent on an unaffordable jump');
 
@@ -345,20 +389,24 @@
     cell.paveTileId='paving_t9'; cell.workshopId='workshop_mining_t1'; cell.cottageId=null;
     s.inventory['carpentry_t5']=100;
     FF.estateUpgradeWorkshop(0,0,5);
+    finishJob();
     eq(cell.workshopId, 'workshop_mining_t5', 'workshop jumps from t1 to t5 in one step, same skill');
     eq(s.inventory['carpentry_t5'], 0, 'spent 100 of the target-tier plank');
 
     // D) A target above the pavement tier is blocked; up to the pavement tier is allowed.
     cell.paveTileId='paving_t5'; cell.workshopId='workshop_mining_t1'; s.inventory['carpentry_t6']=100;
     FF.estateUpgradeWorkshop(0,0,6);
+    ok(!s.estate.job, 'no job past what the pavement supports');
     eq(cell.workshopId, 'workshop_mining_t1', 'no upgrade past what the pavement supports');
     eq(s.inventory['carpentry_t6'], 100, 'nothing spent when the target exceeds pavement support');
     s.inventory['carpentry_t5']=100;
     FF.estateUpgradeWorkshop(0,0,5);
+    finishJob();
     eq(cell.workshopId, 'workshop_mining_t5', 'jumping up to exactly the pavement tier is allowed');
 
     // restore
     cell.type=saved.type; cell.paveTileId=saved.pave; cell.workshopId=saved.work; cell.cottageId=saved.cot;
+    s.estate.job = savedJob; s.estate.queue = savedQueue;
     s.inventory['paving_t5']=savedInv.p5; s.inventory['paving_t7']=savedInv.p7;
     s.inventory['carpentry_t5']=savedInv.c5; s.inventory['carpentry_t6']=savedInv.c6;
     FF.estRecomputeWorkshops();
