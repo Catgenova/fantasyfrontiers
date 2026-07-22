@@ -11407,6 +11407,7 @@
       lockedItems: {},
       stats: { kills:0, deaths:0, gathered:0, crafted:0, craftedRare:0, craftedSupreme:0, craftedFantastic:0 },
       monsterKills: {},          // per-monster-id kill tally (Quest progress source)
+      estateClears: 0,           // count of estate obstacles cleared (Quest progress source)
       quests: { claimed: {} },   // quest progression: { claimed: { questId: true } }
       titles: {},                // unlocked quest/achievement titles (cosmetic), by id
       equippedTitle: null,       // the currently-worn title id (shown on Profile), or null
@@ -11431,7 +11432,7 @@
     { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['improvement','Improvement'],['faith','Faith'],['building','Construction'],['masterwork','Blueprints'],['inventory','Inventory'],['skills','Skills']] },
     { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['peons','Peons'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
     { id:'battle', label:'Battle', icon:'crossedswords', subs:[['enemies','Enemies'],['combat','Combat'],['tower','The Tower'],['dungeons','Dungeons'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] },
-    { id:'quests', label:'Quests', icon:'compass', subs:[['gettingstarted','Getting Started'],['towerquests','Tower'],['titles','Titles']] }
+    { id:'quests', label:'Quests', icon:'compass', subs:[['gettingstarted','Getting Started'],['estatequests','Estate'],['towerquests','Tower'],['titles','Titles']] }
   ];
   function areaOf(cat){ for(var i=0;i<AREAS.length;i++){ if(AREAS[i].subs.some(function(s){ return s[0]===cat; })) return AREAS[i].id; } return 'resources'; }
   var currentArea = areaOf(currentCategory);
@@ -15317,6 +15318,7 @@
           ['kills','deaths','gathered','crafted','craftedRare','craftedSupreme','craftedFantastic','hoursBuffed'].forEach(function(k){ if(typeof state.stats[k] !== 'number') state.stats[k] = 0; });
           // Quests (added post-launch): give existing saves the new fields without clobbering progress.
           if(!state.monsterKills || typeof state.monsterKills !== 'object') state.monsterKills = {};
+          if(typeof state.estateClears !== 'number') state.estateClears = 0;
           if(!state.tower || typeof state.tower !== 'object') state.tower = {};
           if(!state.quests || typeof state.quests !== 'object') state.quests = { claimed:{} };
           if(!state.quests.claimed || typeof state.quests.claimed !== 'object') state.quests.claimed = {};
@@ -19981,6 +19983,7 @@
   // obtainable TITLES browser rather than a quest list (see renderTitlesTab).
   var QUEST_CATEGORIES = [
     { id:'gettingstarted', label:'Getting Started' },
+    { id:'estatequests', label:'Estate' },
     { id:'towerquests', label:'Tower' },
     { id:'titles', label:'Titles' }
   ];
@@ -19994,7 +19997,13 @@
       how:'Open the Enemies tab, choose the Wildlife category, and fight Rabbits until you have slain 10.',
       target:10, progress:function(st){ return (st.monsterKills && st.monsterKills['wildlife_rabbit']) || 0; },
       nav:{ cat:'enemies', sub:'wildlife' },
-      reward:{ kind:'item', itemId:'corpse_t0', qty:10, label:'10 Rabbit Corpses' } }
+      reward:{ kind:'item', itemId:'corpse_t0', qty:10, label:'10 Rabbit Corpses' } },
+    { id:'clearing_the_land', cat:'estatequests', title:'Clearing the Land',
+      desc:'Before a frontier estate can rise, the wild has to be tamed. Every tree, berry bush, herb, rock, and ore vein is one more patch of ground reclaimed.',
+      how:'Open Lands → My Estate, tap a tile with a natural obstacle, and Clear it with the matching Gathering skill. Clear 10 obstacles in all.',
+      target:10, progress:function(st){ return st.estateClears || 0; },
+      nav:{ cat:'estate' },
+      reward:{ kind:'item', itemId:'paving_t5', qty:20, label:'20× Sandstone Ornate Tile (Tier 5 paving)' } }
   ];
   // ---- Tower quests (generated): a Floor-milestone quest per entrance, each rewarding a unique TITLE.
   // Every entrance gets 25/50/75/100; the All Classes entrance climbs on to 500 (grand titles). Progress
@@ -21349,6 +21358,7 @@
           if(!isMortalGuild()) guildLogPush('bank', '+' + oinfo.resourceAmount + ' ' + oinfo.itemName + ' (cleared)');
         }
       }
+      if(giveRewards) state.estateClears = (state.estateClears || 0) + 1; // Quest tally: obstacles cleared
       cell.obstacle = null;
       return true;
     }
@@ -30256,7 +30266,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.37.0';
+  var GAME_VERSION = '0.0.37.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
