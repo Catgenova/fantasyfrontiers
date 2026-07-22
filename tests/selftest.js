@@ -8682,6 +8682,20 @@
     eq(FF.elementalRawHitDamage(enchTot, { element:'grass' }), 100, 'neutral matchup adds the raw total flat');
     eq(FF.elementalRawHitDamage(enchTot, { element:'earth' }), 120, 'fire vs earth gets the +20% element-advantage bonus');
     eq(FF.elementalRawHitDamage({}, { element:'earth' }), 0, 'no elemental lines -> no elemental damage');
+    // Label rendering: the HTML label carries the element's <svg> icon (injected, never escaped); the
+    // text label drops it. This guards against the "<svg ...> +4 Fire Damage" raw-markup regression.
+    var fireEnch = { mod:'fireDamage', roll:4 };
+    var htmlLbl = FF.enchantLabel('weapon', fireEnch), txtLbl = FF.enchantLabelText('weapon', fireEnch);
+    ok(/<svg/.test(htmlLbl) && /Fire Damage/.test(htmlLbl), 'enchantLabel renders the element icon as real <svg> markup');
+    ok(!/<svg/.test(txtLbl) && /\+4 Fire Damage/.test(txtLbl), 'enchantLabelText is icon-free plain text for options/prose/floats');
+    // The improve detail card injects the label as HTML, so the icon shows instead of escaped markup.
+    var S = FF._state, savedU = S.uniqueItems;
+    try {
+      S.uniqueItems = { u_test:{ uid:'u_test', kind:'weapon', base:'stweapon_rapier_t5_normal', rarity:'rare', tier:5, enhance:0, enchants:[fireEnch] } };
+      FF.improveSelect('u_test');
+      var card = FF.renderImproveDetail();
+      ok(/<svg/.test(card) && !/&lt;svg/.test(card), 'the enchant card shows the icon (no escaped &lt;svg raw text)');
+    } finally { S.uniqueItems = savedU; FF.improveSelect(null); }
   });
 
   // ---- Improvement system: enchant engine (Stage 1b) ------------------------------------

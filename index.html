@@ -12037,7 +12037,11 @@
     var r = enchantModRange(mod, ctx.tier||0);
     return { mod: mod.id, roll: r.min + Math.floor(Math.random()*(r.max - r.min + 1)) };
   }
+  // enchantLabel returns HTML: elemental enchants carry an <svg> element icon, so inject it as HTML (never
+  // through escapeHtml, or the raw <svg> markup shows as text). For plain-text spots (<option> labels, prose,
+  // floating combat text via textContent) use enchantLabelText, which drops the icon.
   function enchantLabel(kind, e){ var m = enchantModById(kind, e.mod); if(!m) return '+'+e.roll+' ?'; return (m.elem?elementIcon(m.elem)+' ':'')+'+'+e.roll+(m.pct?'%':'')+' '+m.label+(m.id==='hpRegen'?' / 5s':''); }
+  function enchantLabelText(kind, e){ var m = enchantModById(kind, e.mod); if(!m) return '+'+e.roll+' ?'; return '+'+e.roll+(m.pct?'%':'')+' '+m.label+(m.id==='hpRegen'?' / 5s':''); }
   // Every enchant this item can roll, with each mod's range, so the player knows the pool (and the value
   // bands) before spending a Crystal. Shown on the Improvement card while enchantable. ctx {tier,magicWeapon}
   // scales the raw-damage ranges to the weapon's tier and hides the raw lines on wands/staffs/scepters.
@@ -12643,7 +12647,7 @@
     }
     if(placed){
       addLog('Auto-roll landed '+enchantLabel(u.kind,placed)+' on '+uniqueBaseName(u)+' after '+spent+' Enchant Crystal'+(spent===1?'':'s')+'.','important');
-      spawnFloatingText('Auto-roll: '+enchantLabel(u.kind,placed), 'ft-success');
+      spawnFloatingText('Auto-roll: '+enchantLabelText(u.kind,placed), 'ft-success');
     } else {
       addLog('Auto-roll spent '+spent+' Enchant Crystal'+(spent===1?'':'s')+' without rolling +'+target+(m.pct?'%':'')+' '+m.label+' — crystals depleted.','danger');
       if(spent>0) spawnFloatingText('Auto-roll: out of crystals', 'ft-fail');
@@ -12957,7 +12961,7 @@
     var free = curEnchants.length < slots;
     var sopts = '<option value="auto"'+(slotSel==='auto'?' selected':'')+'>Slot: auto — fill empty / upgrade matching</option>';
     sopts += '<option value="new"'+(slotSel==='new'?' selected':'')+(free?'':' disabled')+'>New unused slot ('+curEnchants.length+'/'+slots+' used)</option>';
-    curEnchants.forEach(function(e,i){ sopts += '<option value="'+i+'"'+(slotSel===i?' selected':'')+'>Replace slot '+(i+1)+': '+escapeHtml(enchantLabel(kind,e))+'</option>'; });
+    curEnchants.forEach(function(e,i){ sopts += '<option value="'+i+'"'+(slotSel===i?' selected':'')+'>Replace slot '+(i+1)+': '+escapeHtml(enchantLabelText(kind,e))+'</option>'; });
     var html = '<div style="margin-top:10px;border-top:1px dashed var(--border-light);padding-top:8px;">';
     html += '<div class="inputs-line" style="margin-bottom:5px;"><b>Auto-roll</b> — re-roll until a target enchant lands, or your crystals run out.</div>';
     html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
@@ -12967,7 +12971,7 @@
     html += '<button class="action-btn" data-action="improveAutoRoll" style="width:auto;flex:0 0 auto;">Auto roll ≥ +'+minVal+suf+'</button>';
     html += '</div>';
     var landNote = slotSel === 'new' ? 'The hit lands in a <b>new unused slot</b> — existing enchants (even a matching '+escapeHtml(md.label)+') are left untouched.'
-                 : slotSel !== 'auto' ? 'The hit <b>replaces slot '+(slotSel+1)+'</b> ('+escapeHtml(enchantLabel(kind, curEnchants[slotSel]))+') — other enchants are left untouched.'
+                 : slotSel !== 'auto' ? 'The hit <b>replaces slot '+(slotSel+1)+'</b> ('+escapeHtml(enchantLabelText(kind, curEnchants[slotSel]))+') — other enchants are left untouched.'
                  : 'Fills an empty slot, or upgrades your current '+escapeHtml(md.label)+' — other enchants are left untouched.';
     html += '<div class="empty-note" style="margin-top:4px;">Spends Enchant Crystals repeatedly until <b style="color:var(--gold);">'+escapeHtml(md.label)+' ≥ +'+minVal+suf+'</b> is rolled, or you run out. '+landNote+'</div>';
     html += '</div>';
@@ -12988,12 +12992,12 @@
     html += '<div class="item-card" style="max-width:540px;"><div class="item-meta" style="margin-bottom:6px;">'+escapeHtml(getRarity(rarity).label)+' · Tier '+(tier+1)+' · '+count+'/'+slots+' enchant slots'+(enhance>0?' · <b>+'+enhance+'</b>':'')+'</div>';
     if(isU2){ var _eq = uniqueIsEquipped(u.uid); var _ohBtn = uniqueOffhandClawBtn(u); html += '<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><button class="mini-btn" data-action="'+(_eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(_eq?'Unequip':(_ohBtn?'Equip main':'Equip'))+'</button>'+_ohBtn+'<button class="mini-btn" data-action="improveLinkChat" data-uid="'+u.uid+'" title="Share this item\'s stats in chat">🔗 Link in chat</button>'+(_eq?'<span class="item-meta" style="color:var(--gold);">equipped</span>':'')+'</div>'; }
     else if(isEq){ html += '<div style="margin-bottom:8px;"><span class="item-meta" style="color:var(--gold);">equipped</span> <span class="item-meta">· becomes a unique when you Enchant or Enhance it</span></div>'; }
-    if(isU2 && u.enchants.length){ u.enchants.forEach(function(e,i){ html += '<div class="inputs-line"><span style="color:var(--gold);">'+escapeHtml(enchantLabel(u.kind,e))+'</span>'+((improvePending&&improvePending.uid===u.uid)?' <button class="mini-btn" data-action="improvePlace" data-idx="'+i+'">Replace</button>':'')+'</div>'; }); }
+    if(isU2 && u.enchants.length){ u.enchants.forEach(function(e,i){ html += '<div class="inputs-line"><span style="color:var(--gold);">'+enchantLabel(u.kind,e)+'</span>'+((improvePending&&improvePending.uid===u.uid)?' <button class="mini-btn" data-action="improvePlace" data-idx="'+i+'">Replace</button>':'')+'</div>'; }); }
     else if(isU2 || isEq){ html += '<div class="empty-note" style="margin-bottom:6px;">No enchants yet.</div>'; }
     var cost = count + 1;
     if(enhance>0){ html += '<div class="lock-note">Enhanced items can’t be enchanted.</div>'; }
     else if(improvePending && u && improvePending.uid===u.uid){
-      html += '<div class="inputs-line" style="color:var(--gold);">New roll: '+escapeHtml(enchantLabel(u.kind,improvePending.roll))+'</div>';
+      html += '<div class="inputs-line" style="color:var(--gold);">New roll: '+enchantLabel(u.kind,improvePending.roll)+'</div>';
       html += '<div class="empty-note">Slots full — <b>Replace</b> one above, or <button class="mini-btn" data-action="improvePlace" data-idx="-1">Discard</button> the new roll.</div>';
     } else {
       html += '<div class="inputs-line">Next enchant: <b>'+cost+'</b> Enchant Crystal'+(cost===1?'':'s')+' (tier '+(tier+1)+'+) · <b>you have '+improveMaterialSpan('enchant_t', tier, cost)+'</b>.</div>';
@@ -30588,7 +30592,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.1';
+  var GAME_VERSION = '0.0.39.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -30714,7 +30718,7 @@
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, towerOnKill:towerOnKill, towerEnter:towerEnter, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, itemReconcile:itemReconcile,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
-      ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX,
+      ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
       ELEM_RAW_STATS:ELEM_RAW_STATS, rawEnchantRange:rawEnchantRange, enchantModRange:enchantModRange, baseIsMagicWeapon:baseIsMagicWeapon, enchantPoolForItem:enchantPoolForItem, enchantCtxForUnique:enchantCtxForUnique, elementalRawHitDamage:elementalRawHitDamage,
       parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, uniqueBaseStatLines:uniqueBaseStatLines, discordItemStatsText:discordItemStatsText, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
