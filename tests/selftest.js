@@ -1029,6 +1029,34 @@
     });
   });
 
+  // ---- Butchering tool: success bonus that scales with tier AND rarity, like other crafting tools ----
+  suite('butchering tool raises success chance (tier + rarity, like craft tools)', function(){
+    var s = FF._state;
+    var savedTiers = s.gatherTools.butchering, savedRar = s.gatherToolRarities.butchering, savedPhys = s.physique.handStrength;
+    s.physique.handStrength = 0; // isolate the tool's contribution from physique
+    // The Cleaver's gather-tool data now carries a successBonus (other gather tools do not).
+    var cleaver = FF.getGatherToolTierData('butchering', 11);
+    ok(typeof cleaver.successBonus === 'number' && cleaver.successBonus > 0, 'the Cleaver has a successBonus like a craft tool');
+    ok(FF.getGatherToolTierData('mining', 11).successBonus == null, 'a normal gather tool (Pickaxe) has no successBonus');
+    // Its success curve matches the craft-tool success curve at the same tier.
+    eq(cleaver.successBonus, FF.getEquippedCraftTool('metallurgy', 11, 'normal').successBonus, 'the Cleaver uses the same per-tier success curve as craft tools');
+    // Higher tier -> more butcher output chance.
+    s.gatherTools.butchering = 0; s.gatherToolRarities.butchering = 'normal';
+    var none = FF.butcherOutputChance(s, 'handStrength');
+    s.gatherTools.butchering = 5;
+    var t5 = FF.butcherOutputChance(s, 'handStrength');
+    s.gatherTools.butchering = 21;
+    var t21 = FF.butcherOutputChance(s, 'handStrength');
+    ok(t5 > none && t21 > t5, 'a better Cleaver raises butcher output chance');
+    // Higher RARITY at the SAME tier -> more output chance (this is the "like craft tools" part).
+    s.gatherTools.butchering = 11;
+    s.gatherToolRarities.butchering = 'normal';   var norm = FF.butcherOutputChance(s, 'handStrength');
+    s.gatherToolRarities.butchering = 'fantastic'; var fant = FF.butcherOutputChance(s, 'handStrength');
+    ok(fant > norm, 'a Fantastic Cleaver beats a Normal one of the same tier (rarity scales success)');
+    // restore
+    s.gatherTools.butchering = savedTiers; s.gatherToolRarities.butchering = savedRar; s.physique.handStrength = savedPhys;
+  });
+
   // ---- Farming: Harvest All / Plant All bulk actions -----------------------------------
   suite('farming bulk actions', function(){
     var S = FF._state, grid = S.estate.grid, pm = FF.farmPlotMap('personal');
