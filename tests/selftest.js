@@ -5817,6 +5817,8 @@
     var pv = FF.towerFloorStats(5);
     ok(pv.hp === m5.hp && pv.atkMin === m5.atkMin && pv.atkMax === m5.atkMax, 'the entrance-card preview matches the real foe stats');
     ok(pv.element === 'dark' && pv.type === 'blunt' && pv.baseName && pv.attackSpeed > 0, 'the preview carries element/type/foe/speed');
+    // The borrowed foe's element ALWAYS agrees with the floor's element rotation (name and element match).
+    for(var f=1; f<=10; f++){ eq(FF.towerBaseMonster(f).element, FF.towerFloorElement(f), 'floor '+f+' foe element matches the floor element'); }
     ok(m1.attackTypes.piercing === 1 && m1.armorTypes.piercing === 1, 'floor 1 foe is a piercing type');
     ok(FF.monsterById('tower_all_f7') != null, 'a tower foe rebuilds from its id after a reload (monsterById fallback)');
     // Progress defaults + advance/reward on kill (All Classes: guaranteed random familiar).
