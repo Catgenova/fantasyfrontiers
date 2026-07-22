@@ -14572,6 +14572,7 @@
     }
     // Bastion (Herald full): cap any single blow at 25% of max Health before it reaches you.
     if(dmgToPlayer > 0 && setFull('herald')){ var _capped = bastionCapHit(dmgToPlayer, state); if(_capped < dmgToPlayer){ dmgToPlayer = _capped; spawnCombatFloat('Bastion!', 'ft-success', false); } }
+    var _preHitHp = state.playerHp; // HP right before this swing lands (for the death chronicle's "final hit" line)
     state.playerHp -= dmgToPlayer;
     // Shroud of Cinders (D4 cloak): a hit you take exhales a Fire retort at the attacker.
     if(dmgToPlayer > 0 && legendaryCloakBonus('d4_cinders', state) > 0 && act && act.type==='combat' && act.monsterHp > 0){
@@ -14660,6 +14661,7 @@
     });
     if(state.playerHp <= 0){
       bumpStat('deaths');
+      addLog(deathBlowChronicle(monster, dmgToPlayer, incomingBeforeDefense, mitigated, blocked, _preHitHp), 'danger');
       // Falling in a PARTY run: the local engine decided it, so latch the networked death handler to stop
       // it counting the same death again when the server echoes alive:false back through dungeonNetApply.
       if(state.activity && state.activity.netDungeon && typeof dungeonNet !== 'undefined') dungeonNet.deathHandled = true;
@@ -14677,6 +14679,23 @@
       else if(!_diedInDungeon) addLog('You were defeated by the ' + monster.name + ' and retreat to recover.', 'danger');
       needsRender = true;
     }
+  }
+  // A detailed Chronicle line explaining the KILLING BLOW: which foe, how much the final hit landed for,
+  // its damage type + element, the raw swing and how much your armour/shield soaked, whether you Blocked,
+  // and the Health you fell from. Reads the same numbers the live tick used, so it's always accurate.
+  function deathBlowChronicle(monster, dmg, rawIncoming, mitigated, blocked, preHitHp){
+    var name = (monster && monster.name) || 'a foe';
+    var dtype = (monster && monster.damageType) ? (monster.damageType.charAt(0).toUpperCase() + monster.damageType.slice(1)) : 'physical';
+    var elem = (monster && monster.element) ? (elementLabel(monster.element) + ' ') : '';
+    var parts = [];
+    parts.push('💀 Slain by the ' + name + '.');
+    parts.push('Final blow: ' + fmt(Math.max(0, Math.round(dmg))) + ' ' + elem + dtype + ' damage');
+    var extras = [];
+    if(rawIncoming > dmg && mitigated > 0) extras.push('raw ' + fmt(Math.round(rawIncoming)) + ', ' + fmt(Math.round(mitigated)) + ' soaked by armour/shield');
+    if(blocked) extras.push('partly Blocked');
+    var line = parts.join(' ') + (extras.length ? ' (' + extras.join('; ') + ')' : '') + '.';
+    if(preHitHp > 0) line += ' You fell from ' + fmt(Math.round(preHitHp)) + ' HP.';
+    return line;
   }
   // A Mortal's death is final: their profile becomes Immortal and continues on into standard play,
   // and they are cast out of any Mortal guild (a Mortal guild would no longer accept them). The gear,
@@ -30390,7 +30409,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.37.8';
+  var GAME_VERSION = '0.0.37.9';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -30563,7 +30582,7 @@
       monsterById:monsterById, addItem:addItem, applyChipDamage:applyChipDamage,
       DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, grantMasterworkDrops:grantMasterworkDrops, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, D2_LEG_GEAR_DEFS:D2_LEG_GEAR_DEFS, D2_LEG_GEAR_MAP:D2_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D2:LEGENDARY_GEAR_ITEMS_D2, legGearItemIdD2:legGearItemIdD2, LEG_GEAR_GROUP_KEYS_D2:LEG_GEAR_GROUP_KEYS_D2, D3_LEG_GEAR_DEFS:D3_LEG_GEAR_DEFS, D3_LEG_GEAR_MAP:D3_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D3:LEGENDARY_GEAR_ITEMS_D3, legGearItemIdD3:legGearItemIdD3, LEG_GEAR_GROUP_KEYS_D3:LEG_GEAR_GROUP_KEYS_D3, d3LegDmgMult:d3LegDmgMult, D4_LEG_GEAR_DEFS:D4_LEG_GEAR_DEFS, D4_LEG_GEAR_MAP:D4_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D4:LEGENDARY_GEAR_ITEMS_D4, legGearItemIdD4:legGearItemIdD4, LEG_GEAR_GROUP_KEYS_D4:LEG_GEAR_GROUP_KEYS_D4, d4LegDmgMult:d4LegDmgMult, d4LegIncomingMult:d4LegIncomingMult, d4ShadowwyrmBurst:d4ShadowwyrmBurst, d4SoulflameBurst:d4SoulflameBurst, d4EmberwyrmExecutes:d4EmberwyrmExecutes, enemyScorched:enemyScorched, scorchApply:scorchApply, scorchStacks:scorchStacks, scorchDmgMult:scorchDmgMult, SCORCH_MAX_STACKS:SCORCH_MAX_STACKS, D3_LEG_RING_DEFS:D3_LEG_RING_DEFS, D3_LEG_CLOAK_DEFS:D3_LEG_CLOAK_DEFS, D3_LEG_AMULET_DEFS:D3_LEG_AMULET_DEFS, legRingItemIdD3:legRingItemIdD3, legCloakItemIdD3:legCloakItemIdD3, legAmuletItemIdD3:legAmuletItemIdD3, D4_LEG_RING_DEFS:D4_LEG_RING_DEFS, D4_LEG_CLOAK_DEFS:D4_LEG_CLOAK_DEFS, D4_LEG_AMULET_DEFS:D4_LEG_AMULET_DEFS, legRingItemIdD4:legRingItemIdD4, legCloakItemIdD4:legCloakItemIdD4, legAmuletItemIdD4:legAmuletItemIdD4, d3AccessoryDmgMult:d3AccessoryDmgMult, enemyAfflicted:enemyAfflicted, legNecromancyDoTMult:legNecromancyDoTMult, d2LegDmgMult:d2LegDmgMult, legStormbrandCrit:legStormbrandCrit, legVoidfangShred:legVoidfangShred, legBarrierAdd:legBarrierAdd, legBarrierCap:legBarrierCap, d2HeadtakerOnKill:d2HeadtakerOnKill, legRunegorgeCritDmg:legRunegorgeCritDmg, legSpineshatterMult:legSpineshatterMult, legPoisonTickMult:legPoisonTickMult, legFarstrikeCritDmg:legFarstrikeCritDmg, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D2_LEG_RING_DEFS:D2_LEG_RING_DEFS, D2_LEG_CLOAK_DEFS:D2_LEG_CLOAK_DEFS, D2_LEG_AMULET_DEFS:D2_LEG_AMULET_DEFS, legRingItemIdD2:legRingItemIdD2, legCloakItemIdD2:legCloakItemIdD2, legAmuletItemIdD2:legAmuletItemIdD2, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
-      playerDefenseProfile:playerDefenseProfile, enemyDamageRangeVsPlayer:enemyDamageRangeVsPlayer,
+      playerDefenseProfile:playerDefenseProfile, enemyDamageRangeVsPlayer:enemyDamageRangeVsPlayer, deathBlowChronicle:deathBlowChronicle,
       matchesSpecialCraft:matchesSpecialCraft,
       CRAFT_FAMILIES:CRAFT_FAMILIES, CRAFT_FAMILIES_WITHOUT_LIVE_INPUTS:CRAFT_FAMILIES_WITHOUT_LIVE_INPUTS,
       SPECIAL_DOUBLEABLE_KINDS:SPECIAL_DOUBLEABLE_KINDS, STACKABLE_SAC_CATEGORIES:STACKABLE_SAC_CATEGORIES,
