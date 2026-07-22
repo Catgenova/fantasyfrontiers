@@ -19757,20 +19757,30 @@
     var idx = Math.min(pool.length - 1, Math.floor((Math.max(1, floor) - 1) / 2)); // climb the roster as floors rise
     return pool[idx] || pool[pool.length - 1] || MONSTERS[0];
   }
+  // Pure preview of a floor's scaled foe (no registration) -- shared by the entrance-card preview and the
+  // real monster build, so the numbers a player sees before entering are exactly what they'll fight.
+  function towerFloorStats(floor){
+    floor = Math.max(1, floor|0);
+    var i = towerFloorTier(floor), base = towerBaseMonster(floor);
+    function pw(b, r){ var v = Math.round(b * Math.pow(r, i)); return Math.min(TOWER_STAT_CAP, Math.max(1, isFinite(v) ? v : TOWER_STAT_CAP)); }
+    return {
+      tier: i, baseName: base.name, baseId: base.id, icon: base.icon, attackSpeed: base.attackSpeed || 3,
+      element: towerFloorElement(floor), type: towerFloorType(floor),
+      hp: pw(20, 1.40), atkMin: pw(1, 1.32), atkMax: pw(3, 1.32), goldMin: pw(3, 1.40), goldMax: pw(6, 1.40)
+    };
+  }
   // Build (and register for combat lookup) the scaled foe for an entrance's floor.
   function buildTowerMonster(entrance, floor){
     floor = Math.max(1, floor|0);
-    var i = towerFloorTier(floor), base = towerBaseMonster(floor);
-    var elem = towerFloorElement(floor), ptype = towerFloorType(floor);
-    function pw(b, r){ var v = Math.round(b * Math.pow(r, i)); return Math.min(TOWER_STAT_CAP, Math.max(1, isFinite(v) ? v : TOWER_STAT_CAP)); }
-    var atkT = {}; atkT[ptype] = 1; var armT = {}; armT[ptype] = 1;
+    var st = towerFloorStats(floor);
+    var atkT = {}; atkT[st.type] = 1; var armT = {}; armT[st.type] = 1;
     var mon = {
       id: 'tower_' + entrance + '_f' + floor,
-      name: 'Floor ' + floor + ' — ' + base.name,
-      icon: base.icon, category: 'tower', tierIndex: Math.min(i, TIER_COUNT - 1),
-      element: elem, levelReq: 0,
-      hp: pw(20, 1.40), atkMin: pw(1, 1.32), atkMax: pw(3, 1.32), goldMin: pw(3, 1.40), goldMax: pw(6, 1.40),
-      damageType: ptype, attackTypes: atkT, armorTypes: armT, attackSpeed: base.attackSpeed || 3
+      name: 'Floor ' + floor + ' — ' + st.baseName,
+      icon: st.icon, category: 'tower', tierIndex: Math.min(st.tier, TIER_COUNT - 1),
+      element: st.element, levelReq: 0,
+      hp: st.hp, atkMin: st.atkMin, atkMax: st.atkMax, goldMin: st.goldMin, goldMax: st.goldMax,
+      damageType: st.type, attackTypes: atkT, armorTypes: armT, attackSpeed: st.attackSpeed
     };
     MONSTERS_BY_ID[mon.id] = mon;
     return mon;
@@ -19842,12 +19852,14 @@
     else if(busy) html += '<div class="idle-note">Finish your current fight before entering the Tower.</div>';
     html += '<div class="card-grid">';
     TOWER_ENTRANCES.forEach(function(en){
-      var e = towerEntry(en.id), floor = e.floor, elem = towerFloorElement(floor), ptype = towerFloorType(floor);
+      var e = towerEntry(en.id), floor = e.floor, st = towerFloorStats(floor);
       var atThis = busy && act.tower && act.tower.entrance === en.id;
       html += '<div class="item-card' + (atThis ? ' active-item' : '') + '">';
       html += '<div class="item-top"><div class="item-icon">' + en.icon + '</div><div><div class="item-name">' + escapeHtml(en.label) + '</div><div class="item-meta">Best: Floor ' + (e.best || 0) + '</div></div></div>';
       html += '<div class="chance-line">' + escapeHtml(en.desc) + '</div>';
-      html += '<div class="item-stats"><span>Next: <b>Floor ' + floor + '</b></span><span>' + elementIcon(elem) + ' ' + elementLabel(elem) + '</span><span style="text-transform:capitalize;">' + ptype + '</span></div>';
+      // Next-floor preview: element/type + the exact foe (name from the Enemies roster) and its scaled stats.
+      html += '<div class="item-stats"><span>Next: <b>Floor ' + floor + '</b></span><span>' + elementIcon(st.element) + ' ' + elementLabel(st.element) + '</span><span style="text-transform:capitalize;">' + st.type + '</span></div>';
+      html += '<div class="inputs-line" style="font-size:11px;line-height:1.6;">Foe: <b>' + escapeHtml(st.baseName) + '</b> &bull; HP <b>' + fmt(st.hp) + '</b> &bull; Dmg <b>' + fmt(st.atkMin) + '–' + fmt(st.atkMax) + '</b> <span style="text-transform:capitalize;">' + st.type + '</span> &bull; Speed <b>' + st.attackSpeed + 's</b></div>';
       html += '<button class="action-btn" data-action="towerEnter" data-tower="' + en.id + '"' + (busy ? ' disabled' : '') + '>' + (busy ? (atThis ? 'In the Tower…' : 'Busy') : 'Enter Floor ' + floor) + '</button>';
       html += '</div>';
     });
@@ -30083,7 +30095,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.35.0';
+  var GAME_VERSION = '0.0.35.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -30205,7 +30217,7 @@
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questClaimable:questClaimable, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash,
-      TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, towerOnKill:towerOnKill, towerEnter:towerEnter, renderTowerTab:renderTowerTab, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
+      TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, towerOnKill:towerOnKill, towerEnter:towerEnter, renderTowerTab:renderTowerTab, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, itemReconcile:itemReconcile,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX,

@@ -5813,6 +5813,10 @@
     ok(m5.hp > m1.hp && m40.hp > m5.hp, 'each floor is harder (HP climbs)');
     ok(isFinite(m40.hp) && m40.hp <= 1e15, 'deep-floor stats stay finite and capped');
     ok(m5.element === 'dark' && m5.attackTypes.slashing == null, 'floor 5 foe is Dark (element rotation)');
+    // The card preview is the SAME scaled stats the fight uses (pure, no registration).
+    var pv = FF.towerFloorStats(5);
+    ok(pv.hp === m5.hp && pv.atkMin === m5.atkMin && pv.atkMax === m5.atkMax, 'the entrance-card preview matches the real foe stats');
+    ok(pv.element === 'dark' && pv.type === 'blunt' && pv.baseName && pv.attackSpeed > 0, 'the preview carries element/type/foe/speed');
     ok(m1.attackTypes.piercing === 1 && m1.armorTypes.piercing === 1, 'floor 1 foe is a piercing type');
     ok(FF.monsterById('tower_all_f7') != null, 'a tower foe rebuilds from its id after a reload (monsterById fallback)');
     // Progress defaults + advance/reward on kill (All Classes: guaranteed random familiar).
