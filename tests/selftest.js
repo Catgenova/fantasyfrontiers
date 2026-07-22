@@ -2852,6 +2852,29 @@
     ok(typeof FF.deathBlowChronicle(null, 5, 5, 0, false, 5) === 'string', 'tolerates a missing foe');
   });
 
+  // ---- Death resets HP to 1, not 0 (no 0-HP re-entry window) ----
+  suite('combat: a death lands you at 1 HP, alive and recovering', function(){
+    var S = FF._state;
+    var saved = { act:S.activity, hp:S.playerHp, deaths:(S.stats&&S.stats.deaths)||0 };
+    try {
+      // A tier-20 Tower foe hits for hundreds -- a lethal blow from 1 HP, guaranteed to trip the death path.
+      var mon = FF.buildTowerMonster('all', 20);
+      FF.startCombat(mon.id);
+      ok(S.activity.type === 'combat', 'the fight started');
+      var died = false;
+      for(var i=0;i<80 && !died;i++){
+        S.playerHp = 1;                 // sit at 1 HP; the next landed hit is lethal
+        FF.monsterAttackTick();
+        if(S.activity.type === null) died = true; // the death handler ends the fight
+      }
+      ok(died, 'a lethal hit triggered the death handler');
+      eq(S.playerHp, 1, 'HP resets to 1 after death (not 0), so there is no 0-HP re-entry window');
+      eq(S.activity.type, null, 'the fight ends on death');
+    } finally {
+      S.activity = saved.act; S.playerHp = saved.hp; if(S.stats) S.stats.deaths = saved.deaths;
+    }
+  });
+
   // ---- Battle IA: a live-fight "Combat" tab, split from an "Enemies" selection tab ---------------
   suite('battle tabs: Combat (live fight) vs Enemies (selection)', function(){
     ok(typeof FF.renderCombatTab === 'function' && typeof FF.renderEnemiesTab === 'function', 'both battle tabs exported');
