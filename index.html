@@ -19921,6 +19921,9 @@
     addLog('The Tower (' + towerEntranceLabel(t.entrance) + '): cleared Floor ' + cleared + '! Floor ' + (cleared + 1) + ' awaits.', 'important');
     spawnFloatingText('Tower Floor ' + cleared + ' cleared!', 'ft-rare');
     state.activity = { type:null };
+    // Land back in the Tower category (not the now-idle Combat tab) so the next floor is one tap away.
+    // Only when the player was actually watching the arena live -- don't yank a wandering or offline view.
+    if(!offlineCapture && currentCategory === 'combat'){ currentCategory = 'tower'; currentArea = areaOf('tower'); }
     saveGame();
     needsRender = true;
   }
@@ -30282,7 +30285,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.37.3';
+  var GAME_VERSION = '0.0.37.4';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -30420,7 +30423,7 @@
       renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
-      render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS,
+      render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; },
       TOOL_TYPES:TOOL_TYPES, toolBenefitLabel:toolBenefitLabel, BLACKSMITH_TOOL_GROUPS:BLACKSMITH_TOOL_GROUPS, blacksmithToolGroupKey:blacksmithToolGroupKey, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupsOpen:blacksmithGroupsOpen,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
