@@ -5952,7 +5952,7 @@
     var card = FF.towerPreviewCardHtml('all');
     ok(/Floor 5/.test(card), 'the preview names the floor being entered');
     ok(/to you/.test(card) && /dmg-vs-you/.test(card), 'the preview shows the "Damage to You" stat like a normal enemy card');
-    ok(/Offense/.test(card) && /Defense/.test(card) && /Vs you/.test(card), 'the preview shows a full offensive/defensive breakdown');
+    ok(/Offense/.test(card) && /Defense/.test(card) && /Versus you/.test(card), 'the preview shows a full offensive/defensive breakdown');
     ok(/matchup-badge/.test(card) && /Your hit chance/.test(card), 'it carries the weapon matchup and your hit chance');
     ok(/data-action="towerEnter" data-tower="all"/.test(card), 'the preview Enter button commits to the fight');
     ok(/data-action="towerPreviewClose"/.test(card), 'the preview has a Cancel button');
