@@ -5857,10 +5857,17 @@
     ok(s.equippedTitle == null, 're-equipping the worn title takes it off');
     FF.equipTitle('title_all_f100'); FF.unequipTitle();
     ok(s.equippedTitle == null, 'unequip clears the worn title');
-    // Titles browser markup: earned -> Equip button; locked -> a ? tooltip with the how-to.
+    // Titles browser markup: earned -> Equip button; the ? is a TAPPABLE toggle (touch-friendly, not hover).
     var th = FF.renderTitlesTab();
     ok(/Tower Ascendant/.test(th) && /data-action="titleEquip"/.test(th), 'the browser lists an earned title with an Equip control');
-    ok(/title-help/.test(th) && /How to earn/.test(th), 'locked titles show a ? with how-to-earn');
+    ok(/data-action="titleHelpToggle"/.test(th), 'the ? is a tappable toggle (works on touch, not just hover)');
+    // Collapsed by default: the how-to line is not shown until the ? is tapped.
+    ok(!/title-help-text/.test(FF.renderTitlesTab()), 'the how-to text is hidden until tapped');
+    FF.titleHelpToggle('title_all_f100');
+    var thOpen = FF.renderTitlesTab();
+    ok(/title-help-text/.test(thOpen) && /How to earn/.test(thOpen), 'tapping the ? reveals the how-to-earn line inline');
+    FF.titleHelpToggle('title_all_f100'); // collapse again (restore state)
+    ok(!/title-help-text/.test(FF.renderTitlesTab()), 'tapping again collapses it');
     // restore
     s.tower = savedTower; s.quests = savedQ; s.titles = savedTitles; s.equippedTitle = savedEq;
   });
