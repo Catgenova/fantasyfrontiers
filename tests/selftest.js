@@ -1027,6 +1027,24 @@
     ['mining','fishing','forestry','herbalism','foraging'].forEach(function(sk){
       ok(FF.physiqueTrainedBySkill(sk).indexOf('logic') === -1, sk + ' does not train Logic');
     });
+    // Processing a carcass (the butcher craft path) must actually AWARD Logic -- it used to read an
+    // undefined CRAFT_PHYSIQUE.butchering table and grant no physique XP at all. And at the crafting rate.
+    function logicAmt(pairs){ var p = (pairs||[]).filter(function(x){ return x[0]==='logic'; })[0]; return p ? p[1] : 0; }
+    eq(logicAmt(FF.physTierPairs(FF.GATHER_PHYSIQUE.butchering, 5)),
+       logicAmt(FF.physTierPairs(FF.CRAFT_PHYSIQUE.metallurgy, 5)),
+       'Butchering trains Logic at the same per-tier rate as a crafting skill');
+    var S = FF._state;
+    var saved = { inv:S.inventory, act:S.activity, logic:S.physique.logic, str:S.physique.bodyStrength };
+    try {
+      S.activity = { type:null };
+      S.physique.logic = 0; S.physique.bodyStrength = 0;
+      S.inventory = { corpse_t5: 1 };
+      FF.processCraftActivity({ type:'craft', skill:'butchering', itemId:'butcher_process_t5', progress:0 }, 3600*1000);
+      ok((S.physique.logic||0) > 0, 'processing a carcass grants Logic physique XP (it granted none before this fix)');
+      ok((S.physique.bodyStrength||0) > 0, '...along with its other gather physiques');
+    } finally {
+      S.inventory = saved.inv; S.activity = saved.act; S.physique.logic = saved.logic; S.physique.bodyStrength = saved.str;
+    }
   });
 
   // ---- Butchering tool: success bonus that scales with tier AND rarity, like other crafting tools ----
