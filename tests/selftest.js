@@ -5945,6 +5945,16 @@
     FF.towerEnter('pyromancer');
     ok(s.activity.type === 'combat' && s.activity.tower && s.activity.tower.entrance === 'pyromancer' && s.activity.tower.floor === 2, 'towerEnter starts the entrance\'s current floor');
     ok(FF.monsterById(s.activity.monsterId) != null, 'the started fight has a resolvable foe');
+    // "Enter Floor" opens a detailed foe-preview popup FIRST (with the Damage-to-You stat), then commits.
+    s.activity = { type:null }; s.tower = { all:{ floor:5, best:4 } };
+    ok(/data-action="towerPreviewOpen"/.test(FF.renderTowerTab()) && !/data-action="towerEnter"/.test(FF.renderTowerTab()), 'the tower card Enter button opens the preview, not the fight directly');
+    var card = FF.towerPreviewCardHtml('all');
+    ok(/Floor 5/.test(card), 'the preview names the floor being entered');
+    ok(/to you/.test(card) && /dmg-vs-you/.test(card), 'the preview shows the "Damage to You" stat like a normal enemy card');
+    ok(/Offense/.test(card) && /Defense/.test(card) && /Vs you/.test(card), 'the preview shows a full offensive/defensive breakdown');
+    ok(/matchup-badge/.test(card) && /Your hit chance/.test(card), 'it carries the weapon matchup and your hit chance');
+    ok(/data-action="towerEnter" data-tower="all"/.test(card), 'the preview Enter button commits to the fight');
+    ok(/data-action="towerPreviewClose"/.test(card), 'the preview has a Cancel button');
     // restore
     s.tower = savedTower; s.familiars = savedFam; s.activity = savedAct;
     if(savedCat) FF.navPickCat(savedCat);
