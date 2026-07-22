@@ -6551,6 +6551,56 @@
     } finally { S.inventory = savedInv; if(savedCat) FF.navPickCat(savedCat); }
   });
 
+  suite('equip picker: best-first, grouped, filterable candidate list', function(){
+    ok(typeof FF.sortEquipCandidates==='function' && typeof FF.renderEquipCandidatePicker==='function', 'equip picker helpers exported');
+    // Sort: equipped pinned to the top, usable by score desc, locked sunk to the bottom.
+    var srt = FF.sortEquipCandidates([
+      {name:'weak',  score:5,   canEquip:true,  equipped:false},
+      {name:'strong',score:9,   canEquip:true,  equipped:false},
+      {name:'locked',score:100, canEquip:false, equipped:false},
+      {name:'worn',  score:1,   canEquip:true,  equipped:true}
+    ]);
+    eq(srt[0].name,'worn',   'equipped pinned first');
+    eq(srt[1].name,'strong', 'then the strongest usable');
+    eq(srt[2].name,'weak',   'then the next usable');
+    eq(srt[3].name,'locked', 'locked (even if higher score) sinks to the bottom');
+    // Render: Equip best points at the strongest USABLE piece (never the locked one), hide-locked toggle
+    // appears when a locked candidate exists, and the toggle actually filters the locked row out.
+    var groups = [{ key:'g', title:'G', candidates:[
+      { icon:'', name:'Weak',   qty:1, score:2,  statHtml:'', deltaHtml:'', equipped:false, canEquip:true,  lockHtml:'', action:'equipX', data:'data-item="weak"' },
+      { icon:'', name:'Strong', qty:1, score:9,  statHtml:'', deltaHtml:'', equipped:false, canEquip:true,  lockHtml:'', action:'equipX', data:'data-item="strong"' },
+      { icon:'', name:'Locked', qty:1, score:99, statHtml:'', deltaHtml:'', equipped:false, canEquip:false, lockHtml:'', action:'equipX', data:'data-item="locked"' }
+    ]}];
+    var savedHL = FF.getEquipHideLocked();
+    try {
+      FF.setEquipHideLocked(false);
+      var h = FF.renderEquipCandidatePicker(groups, {flat:true, bestLabel:'Equip best'});
+      var toolbar = (h.match(/<div class="equip-picker-tools">[\s\S]*?<\/div>/) || [''])[0];
+      ok(/data-item="strong"/.test(toolbar) && !/data-item="locked"/.test(toolbar), 'Equip best targets the strongest usable piece, not the locked higher-score one');
+      ok(/data-action="equipHideLockedToggle"/.test(h), 'the hide-locked toggle shows when a locked candidate exists');
+      ok(h.indexOf('data-item="strong"') < h.indexOf('data-item="weak"'), 'rows render strongest-first');
+      FF.setEquipHideLocked(true);
+      var h2 = FF.renderEquipCandidatePicker(groups, {flat:true});
+      ok(!/data-item="locked"/.test(h2), 'hide-locked filters the locked candidate out of the list');
+      ok(/data-item="strong"/.test(h2), '...but keeps the usable ones');
+    } finally { FF.setEquipHideLocked(savedHL); }
+
+    // Body-armour picker is scoped to the tapped slot and groups owned pieces by material accordion.
+    var S = FF._state, savedInv=S.inventory, savedBody=S.bodyArmor, savedXp=S.xp, savedUniq=S.uniqueItems;
+    try {
+      var chestId = Object.keys(FF.ALL_SELLABLE).filter(function(id){ return id.indexOf('bodyarmor_plate_chest_t0_')===0 && /_normal$/.test(id); })[0];
+      var helmId  = Object.keys(FF.ALL_SELLABLE).filter(function(id){ return id.indexOf('bodyarmor_plate_helmet_t0_')===0 && /_normal$/.test(id); })[0];
+      ok(chestId && helmId, 'sample plate chest + helmet ids resolve');
+      S.xp = { chainmailarmor:1e9, platearmor:1e9, leatherarmor:1e9, clotharmor:1e9 };
+      S.bodyArmor = {}; S.uniqueItems = {};
+      var invA = {}; invA[chestId] = 1; invA[helmId] = 1; S.inventory = invA;
+      var ch = FF.renderEquipBodyArmorSection('chest');
+      ok(ch.indexOf(chestId) !== -1, 'the chest picker offers the owned chest piece');
+      ok(ch.indexOf(helmId) === -1, 'the chest picker is scoped to the chest slot (no helmet pieces leak in)');
+      ok(/inv-acc-bar/.test(ch) && /Plate/.test(ch), 'owned pieces are grouped into a Plate material accordion');
+    } finally { S.inventory=savedInv; S.bodyArmor=savedBody; S.xp=savedXp; S.uniqueItems=savedUniq; }
+  });
+
   // ---- Marketplace pricing helpers (must match the server RPC's tax math) --------------
   suite('marketplace pricing', function(){
     eq(FF.MARKET_TAX, 0.05, 'market tax is 5%');
