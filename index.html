@@ -19986,7 +19986,7 @@
   // Pure builder for the foe-preview modal card (offense/defense/vs-you + "Damage to You"), so it can be
   // unit-tested without the DOM. Mirrors the Enemies-tab card, plus a detailed breakdown and Enter/Cancel.
   function towerPreviewCardHtml(en){
-    var e = towerEntry(en), floor = e.floor;
+    var e = towerEntry(en), floor = e.floor || 1;
     var m = buildTowerMonster(en, floor);
     var prof = playerDefenseProfile(state);
     var weaponStyle = getWeaponStyle(state.equippedMainhand);
@@ -19994,31 +19994,47 @@
     var dvy = enemyDamageRangeVsPlayer(m, state, prof);
     var dps = Math.round(((m.atkMin + m.atkMax) / 2) / (m.attackSpeed || 3));
     var label = towerEntranceLabel(en);
-    var _rawTip = 'This foe\'s raw hit before any of your mitigation.';
-    var _dvyTip = 'Damage this foe actually lands on YOU per hit, after your armour, shield, resistances, class mods and enchants. Unblocked, at full Health. Its raw damage is ' + m.atkMin + '–' + m.atkMax + '.';
-    var html = '<div class="familiar-popup-card" style="max-width:480px;text-align:left;max-height:86dvh;overflow:auto;">';
-    html += '<div class="familiar-popup-title">The Tower — Floor ' + floor + '</div>';
-    html += '<div class="empty-note" style="margin-bottom:10px;">' + escapeHtml(label) + ' entrance &bull; your best is Floor ' + (e.best || 0) + '. Review the foe below, then commit to the climb.</div>';
-    // The full enemy card, mirroring the Enemies tab (same stat rows + "to you"), then an extra detail block.
-    html += '<div class="item-card" style="margin:0;">';
-    html += '<div class="item-top"><div class="item-icon">' + monsterPortrait(m) + '</div><div><div class="item-name">' + escapeHtml(m.name) + '</div><div class="item-meta">Tier ' + (m.tierIndex + 1) + ' &bull; ' + fmt(m.hp) + ' HP &bull; ' + m.attackSpeed + 's attack</div></div></div>';
-    html += '<div class="item-stats"><span>' + fmt(m.goldMin) + '-' + fmt(m.goldMax) + 'g</span>'
-      + '<span data-tip="' + escapeHtml(_rawTip) + '">' + fmt(m.atkMin) + '–' + fmt(m.atkMax) + ' raw</span>'
-      + '<span class="dmg-vs-you" data-tip="' + escapeHtml(_dvyTip) + '">' + fmt(dvy.min) + '–' + fmt(dvy.max) + ' to you</span>'
-      + '<span class="matchup-badge matchup-' + matchup + '">' + matchup + '</span></div>';
-    html += '<div class="chance-line" style="font-size:11px">Dodge ' + monsterDodge(m) + ' &bull; Your hit chance ' + Math.round(playerHitChance(m) * 100) + '%<br>Attack: ' + formatTypeMix(m.attackTypes) + '<br>Armor: ' + formatTypeMix(m.armorTypes) + '</div>';
-    html += '<div class="elem-line">' + elementBadge(m) + incomingElementNote(m) + '</div>';
+    var weak = ELEMENT_WEAKNESS[m.element];
+    function row(lbl, val){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:5px 0;border-top:1px solid var(--border-light);"><span style="color:var(--text-dim);font-size:12px;">' + lbl + '</span><span style="text-align:right;font-size:12px;">' + val + '</span></div>'; }
+    function head(t){ return '<div style="font-family:var(--font-display);color:var(--gold);font-size:11px;text-transform:uppercase;letter-spacing:0.6px;margin:14px 0 2px;">' + t + '</div>'; }
+    var html = '<div class="familiar-popup-card" style="max-width:400px;text-align:left;max-height:88dvh;overflow:auto;">';
+    html += '<div class="familiar-popup-title" style="text-align:center;">The Tower — Floor ' + floor + '</div>';
+    html += '<div class="empty-note" style="text-align:center;margin:-4px 0 14px;">' + escapeHtml(label) + ' entrance &bull; your best is Floor ' + (e.best || 0) + '</div>';
+    // Foe header: portrait + name + tier/hp/speed.
+    html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">';
+    html += '<div style="font-size:34px;line-height:1;flex:0 0 auto;">' + monsterPortrait(m) + '</div>';
+    html += '<div style="min-width:0;"><div style="font-family:var(--font-display);font-size:15px;color:var(--text);line-height:1.2;">' + escapeHtml(m.name) + '</div>'
+      + '<div style="font-size:11px;color:var(--text-dim);margin-top:3px;">Tier ' + (m.tierIndex + 1) + ' &bull; ' + fmt(m.hp) + ' HP &bull; ' + m.attackSpeed + 's attack</div></div>';
     html += '</div>';
-    // Extra offensive/defensive breakdown (the "extremely detailed" part).
-    html += '<div class="chance-line" style="font-size:11px;margin-top:8px;line-height:1.7;">'
-      + '<b>Offense</b> — Raw hit <b>' + fmt(m.atkMin) + '–' + fmt(m.atkMax) + '</b> &bull; ~<b>' + fmt(dps) + '</b> DPS &bull; ' + formatTypeMix(m.attackTypes) + ' &bull; ' + elementIcon(m.element) + ' ' + elementLabel(m.element) + '<br>'
-      + '<b>Defense</b> — <b>' + fmt(m.hp) + '</b> HP &bull; Armor ' + formatTypeMix(m.armorTypes) + ' &bull; Dodge <b>' + monsterDodge(m) + '</b><br>'
-      + '<b>Vs you</b> — <b>' + fmt(dvy.min) + '–' + fmt(dvy.max) + '</b> to you per hit &bull; your hit chance <b>' + Math.round(playerHitChance(m) * 100) + '%</b> &bull; weapon matchup <b style="text-transform:capitalize;">' + matchup + '</b>'
-      + '</div>';
-    html += '<div class="inputs-line" style="font-size:11px;margin-top:8px;">Reward: ' + (en === 'all' ? 'a random familiar' : 'a chance at the ' + escapeHtml(label) + ' familiar (through Floor ' + TOWER_CLASS_FAMILIAR_FLOOR_CAP + ')') + '.</div>';
-    html += '<div style="display:flex;gap:10px;margin-top:12px;">';
-    html += '<button class="action-btn" data-action="towerEnter" data-tower="' + en + '" style="flex:1;">Enter Floor ' + floor + '</button>';
-    html += '<button class="action-btn stop" data-action="towerPreviewClose" style="flex:0 0 auto;">Cancel</button>';
+    // Headline stat: Damage to You (the whole reason for the preview), highlighted.
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border-radius:8px;background:rgba(255,138,76,.13);border:1px solid rgba(255,138,76,.38);">'
+      + '<span style="font-size:12px;color:var(--text-dim);">Damage to you <span style="font-size:10px;">/ hit, after mitigation</span></span>'
+      + '<b class="dmg-vs-you" style="font-size:15px;border:none;background:none;padding:0;">' + fmt(dvy.min) + '–' + fmt(dvy.max) + '</b></div>';
+    // Offense.
+    html += head('Offense');
+    html += row('Raw hit', '<b>' + fmt(m.atkMin) + '–' + fmt(m.atkMax) + '</b>');
+    html += row('Damage type', formatTypeMix(m.attackTypes));
+    html += row('Element', m.element ? (elementIcon(m.element) + ' ' + elementLabel(m.element)) : '—');
+    html += row('Attack speed', m.attackSpeed + 's &bull; ~<b>' + fmt(dps) + '</b> DPS');
+    // Defense.
+    html += head('Defense');
+    html += row('Health', '<b>' + fmt(m.hp) + '</b>');
+    html += row('Armor', formatTypeMix(m.armorTypes));
+    html += row('Dodge', monsterDodge(m));
+    html += row('Weak to', weak ? (elementIcon(weak) + ' ' + elementLabel(weak)) : '—');
+    // Versus you.
+    html += head('Versus you');
+    html += row('Damage to you', '<b class="dmg-vs-you" style="border:none;background:none;padding:0;">' + fmt(dvy.min) + '–' + fmt(dvy.max) + '</b> / hit');
+    html += row('Your hit chance', '<b>' + Math.round(playerHitChance(m) * 100) + '%</b>');
+    html += row('Weapon matchup', '<span class="matchup-badge matchup-' + matchup + '">' + matchup + '</span>');
+    var ien = incomingElementNote(m); if(ien) html += row('Armor warning', ien);
+    // Reward.
+    html += head('Reward');
+    html += '<div style="font-size:12px;padding:5px 0;">' + (en === 'all' ? 'A <b>random familiar</b> on every floor cleared.' : 'A chance at the <b>' + escapeHtml(label) + '</b> familiar (through Floor ' + TOWER_CLASS_FAMILIAR_FLOOR_CAP + ').') + '</div>';
+    // Equal-size buttons.
+    html += '<div style="display:flex;gap:10px;margin-top:16px;">';
+    html += '<button class="action-btn stop" data-action="towerPreviewClose" style="flex:1 1 0;min-width:0;width:auto;margin-top:0;">Cancel</button>';
+    html += '<button class="action-btn" data-action="towerEnter" data-tower="' + en + '" style="flex:1 1 0;min-width:0;width:auto;margin-top:0;">Enter Floor ' + floor + '</button>';
     html += '</div>';
     html += '</div>';
     return html;
@@ -30361,7 +30377,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.37.6';
+  var GAME_VERSION = '0.0.37.7';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
