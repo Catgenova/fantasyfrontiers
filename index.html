@@ -19876,6 +19876,11 @@
     return m ? buildTowerMonster(m[1], parseInt(m[2], 10) || 1) : null;
   }
   // ---- Familiar grants (GUARANTEED, unlike the chance-gated maybeSummonFamiliar) ----
+  // Show the SAME "familiar earned" popup a normal summon shows (offline folds it into the away batch).
+  function queueTowerFamiliarPopup(id, leveledUp, level){
+    if(offlineCapture){ if(offlineCapture.familiars) offlineCapture.familiars.push({ skillId:id, leveledUp:leveledUp, level:level }); return; }
+    if(state.settings.popupFamiliar){ state.popupQueue.push({ type:'familiar', skillId:id, leveledUp:leveledUp }); state.popupBatchTotal = (state.popupBatchTotal||0) + 1; }
+  }
   function towerGrantFamiliar(id){
     if(!id || !FAMILIAR_DATA[id]) return false;
     var cur = state.familiars[id], fam = FAMILIAR_DATA[id];
@@ -19884,11 +19889,13 @@
       cur.level = Math.min(FAMILIAR_MAX_LEVEL, cur.level + 1);
       addLog(fam.icon + ' ' + fam.name + ' grows stronger in the Tower! Now level ' + cur.level + '.', 'important');
       spawnFloatingText(fam.name + ' leveled up!', 'ft-rare');
+      queueTowerFamiliarPopup(id, true, cur.level);
     } else {
       state.familiars[id] = { owned:true, level:1 };
       addLog(fam.icon + ' A familiar answered your call in the Tower! ' + fam.name + ' has joined you.', 'important');
       spawnFloatingText('Familiar summoned: ' + fam.name + '!', 'ft-rare');
       if(!offlineCapture) chronicleBroadcast('familiar', fam.name);
+      queueTowerFamiliarPopup(id, false, 1);
     }
     needsRender = true;
     return true;
@@ -20343,7 +20350,7 @@
       var fam = FAMILIAR_DATA[skillId];
       if(!fam){ queue.shift(); overlay.className=''; overlay.innerHTML=''; return; }
       var physiqueMeta = PHYSIQUE_SKILLS.filter(function(p){ return p.id===skillId; })[0];
-      var label = SKILL_LABELS[skillId] || (physiqueMeta ? physiqueMeta.name : skillId);
+      var label = SKILL_LABELS[skillId] || (physiqueMeta ? physiqueMeta.name : ((CLASS_DEFS_BY_ID[skillId]||{}).name || skillId));
       var famLevel = getFamiliarLevel(skillId);
       html += counterHtml;
       html += '<div class="familiar-popup-title">'+(pending.leveledUp ? 'Your Familiar Has Grown Stronger!' : 'A Familiar Has Answered Your Call')+'</div>';
@@ -20377,7 +20384,7 @@
       html += '<div class="familiar-popup-spells">';
       fams.forEach(function(f){
         var fd = FAMILIAR_DATA[f.skillId];
-        var lbl = SKILL_LABELS[f.skillId] || ((PHYSIQUE_SKILL_MAP[f.skillId]||{}).name) || f.skillId;
+        var lbl = SKILL_LABELS[f.skillId] || ((PHYSIQUE_SKILL_MAP[f.skillId]||{}).name) || ((CLASS_DEFS_BY_ID[f.skillId]||{}).name) || f.skillId;
         html += '<div><span style="display:inline-block;width:18px;height:18px;vertical-align:middle;margin-right:4px;">'+fd.icon+'</span><b>'+fd.name+'</b> <span style="color:var(--text-dim)">('+escapeHtml(lbl)+')</span> &mdash; '+(f.leveledUp ? 'grew to Lv '+f.level : 'joined you at Lv '+f.level)+'</div>';
       });
       html += '</div>';
@@ -30275,7 +30282,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.37.2';
+  var GAME_VERSION = '0.0.37.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
