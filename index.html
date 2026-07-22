@@ -6771,7 +6771,7 @@
   // Permafrost (Lv1): stack one Chill on the activity, refreshing its duration; returns the new stack count.
   function frostwardenApplyChill(act){ if(!act) return 0; if((act.enemyChillUntil||0) <= Date.now()) act.chillStacks = 0; act.chillStacks = Math.min(frostChillCap(state), (act.chillStacks||0) + 1); act.enemyChillUntil = Date.now() + FROST_CHILL_MS;
     // Flash Freeze (Frostwarden D2 full): reaching max Chill briefly Freezes (stuns) the foe.
-    if(setFullD2('frostwarden') && act.chillStacks >= frostChillCap(state)){ act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + 1500); if(!offlineCapture) spawnFloatingText('Flash Freeze!', 'ft-rare'); }
+    if(setFullD2('frostwarden') && act.chillStacks >= frostChillCap(state)){ act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + 1500); if(!offlineCapture) spawnCombatFloat('Flash Freeze!', 'ft-rare', true); }
     if(set2D3('frostwarden') || legActive('gravefrost')) decayApply(act, 1); // Grave Chill (Frostwarden D3 2pc) / Gravefrost (D3 water wand): Chilling a foe also applies Decay
     return act.chillStacks; }
   // Time Dilation (Lv20): your action bar quickens by a fraction of the enemy's current Chill slow.
@@ -7153,7 +7153,7 @@
   // A Barrier top-up usable by any class (Emberveil / Dawnbrand): reuses the lumenShield absorb channel, but
   // caps independently of Lumen's Sanctuary so a non-Lumen wielder still benefits.
   function legBarrierCap(st){ st = st || state; return Math.max(lumenShieldCap(st), Math.round(maxHp(st) * 0.40)); }
-  function legBarrierAdd(amount){ amount = Math.round(amount); if(!(amount > 0)) return; var before = state.lumenShield || 0; state.lumenShield = Math.min(legBarrierCap(state), before + amount); if(state.lumenShield > before && !offlineCapture) spawnFloatingText('Barrier ' + Math.round(state.lumenShield), 'ft-success'); }
+  function legBarrierAdd(amount){ amount = Math.round(amount); if(!(amount > 0)) return; var before = state.lumenShield || 0; state.lumenShield = Math.min(legBarrierCap(state), before + amount); if(state.lumenShield > before && !offlineCapture) spawnCombatFloat('Barrier ' + Math.round(state.lumenShield), 'ft-success', false); }
   // --- Pyromancer --- Reworked ladder: Ignite (Lv1) / Combust (Lv20) / Kindling Crits (Lv40) /
   // Heat Haze (Lv60) / Fever Pitch (Lv80). Burn is a STACKING fire DoT on the activity (burnStacks +
   // burnUntil + burnDps); the higher perks all read the enemy's current Burn stacks.
@@ -7247,7 +7247,7 @@
     amount = Math.round(amount); if(!(amount > 0)) return;
     var before = state.lumenShield || 0;
     state.lumenShield = Math.min(lumenShieldCap(state), before + amount);
-    if(state.lumenShield > before && !offlineCapture) spawnFloatingText('Barrier ' + Math.round(state.lumenShield), 'ft-success');
+    if(state.lumenShield > before && !offlineCapture) spawnCombatFloat('Barrier ' + Math.round(state.lumenShield), 'ft-success', false);
   }
   // Apply a Lumen heal to the resolved target. Solo (and, for now, always) it mends YOU: Everfull (Lv60)
   // banks overheal as shield, Radiant Barrier (Lv80) adds a shield worth 30% of the HP restored.
@@ -7932,41 +7932,41 @@
     if(spell.type==='heal'){
       var healed = Math.min(Math.round(spell.amount*potency), healRoom(state));
       state.playerHp += healed;
-      spawnFloatingText('+' + healed + ' HP (' + spell.name + ')', 'ft-success');
+      spawnCombatFloat('+' + healed + ' HP (' + spell.name + ')', 'ft-success', false);
     } else if(spell.type==='armorBuff'){
       state.familiarBuffs.armorMult = 1 + (spell.mult-1)*potency;
       state.familiarBuffs.armorUntil = now + spell.durationMs*durMult;
-      spawnFloatingText(spell.name + '!', 'ft-rare');
+      spawnCombatFloat(spell.name + '!', 'ft-rare', false);
     } else if(spell.type==='damageBuff'){
       state.familiarBuffs.damageMult = 1 + (spell.mult-1)*potency;
       state.familiarBuffs.damageUntil = now + spell.durationMs*durMult;
-      spawnFloatingText(spell.name + '!', 'ft-rare');
+      spawnCombatFloat(spell.name + '!', 'ft-rare', false);
     } else if(spell.type==='slowEnemy'){
       state.familiarBuffs.enemySlowPct = Math.min(STATUS_DEBUFF_CAP, spell.pct*potency);
       state.familiarBuffs.enemySlowUntil = now + spell.durationMs*durMult;
-      spawnFloatingText(spell.name + '!', 'ft-rare');
+      spawnCombatFloat(spell.name + '!', 'ft-rare', true);
     } else if(spell.type==='weakenEnemy'){
       state.familiarBuffs.enemyWeakenPct = Math.min(STATUS_DEBUFF_CAP, spell.pct*potency);
       state.familiarBuffs.enemyWeakenUntil = now + spell.durationMs*durMult;
-      spawnFloatingText(spell.name + '!', 'ft-rare');
+      spawnCombatFloat(spell.name + '!', 'ft-rare', true);
     } else if(spell.type==='poison'){
       // Bake the elemental advantage vs the current enemy into the DoT rate (the DoT ticks generically
       // in the loop, so it can't re-evaluate the element per tick).
       var _pmon = (state.activity && state.activity.type==='combat') ? monsterById(state.activity.monsterId) : null;
       state.familiarBuffs.poisonDps = spell.dps*potency*elementAdvantage(spell.element, _pmon && _pmon.element)*elementDmgMult(state, spell.element);
       state.familiarBuffs.poisonUntil = now + spell.durationMs*durMult;
-      spawnFloatingText(spell.name + '!', 'ft-rare');
+      spawnCombatFloat(spell.name + '!', 'ft-rare', true);
     } else if(spell.type==='regen'){
       state.familiarBuffs.regenHps = spell.hps*potency;
       state.familiarBuffs.regenUntil = now + spell.durationMs*durMult;
-      spawnFloatingText(spell.name + '!', 'ft-success');
+      spawnCombatFloat(spell.name + '!', 'ft-success', false);
     } else if(spell.type==='bubble'){
       state.familiarBuffs.bubbleUntil = now + Math.round(spell.durSec*potency*1000*durMult);
-      spawnFloatingText(spell.name + '!', 'ft-rare');
+      spawnCombatFloat(spell.name + '!', 'ft-rare', false);
     } else if(spell.type==='timedBuff'){
       state.familiarBuffs[spell.kind+'Val'] = spell.val*potency;
       state.familiarBuffs[spell.kind+'Until'] = now + spell.durationMs*durMult;
-      spawnFloatingText(spell.name + '!', 'ft-rare');
+      spawnCombatFloat(spell.name + '!', 'ft-rare', false);
     } else if(spell.type==='hit' || spell.type==='siphon'){
       // Direct damage to the enemy (only in combat). Typed hits are mitigated by the monster's armour
       // of that type; "void" ignores armour. Chips HP but never lands the finishing blow.
@@ -8001,7 +8001,7 @@
         if(dmg > 0){ addXp(STAVES_SKILL_ID, dmg); awardClassXp(dmg); awardElementXp(spell.element, dmg); } // Staves proficiency + active Class + Elemental Attunement train on familiar damage
         if(spell.type==='siphon'){
           var stolen = Math.min(dmg, healRoom(state));
-          if(stolen>0){ state.playerHp += stolen; spawnFloatingText('+'+stolen+' HP', 'ft-success'); }
+          if(stolen>0){ state.playerHp += stolen; spawnCombatFloat('+'+stolen+' HP', 'ft-success', false); }
         }
       }
     }
@@ -8010,7 +8010,7 @@
     // A re-entry guard keeps the twin from twinning again (at most one echo per cast).
     if(setFull('summoner') && !_twinCasting && Math.random() < SET_TWINCAST_CHANCE){
       _twinCasting = true;
-      if(!offlineCapture) spawnFloatingText('Twin Cast!', 'ft-rare');
+      if(!offlineCapture) spawnCombatFloat('Twin Cast!', 'ft-rare', false);
       castFamiliarSpell(spell, level, casterId);
       _twinCasting = false;
     }
@@ -11862,7 +11862,7 @@
       if(gbp){ addBlueprint(gbp.id, 1); got.push(gbp); }
     }
     if(got.length){
-      got.forEach(function(bp){ spawnFloatingText('+1 ' + bp.name, 'ft-rare'); });
+      got.forEach(function(bp){ spawnCombatFloat('+1 ' + bp.name, 'ft-rare', false); });
       addLog('The ' + def.category + ' is cleared! You recover: ' + got.map(function(bp){ return bp.name; }).join(', ') + '.', 'important');
     } else {
       addLog('The ' + def.category + ' is cleared! No Masterwork Blueprint dropped this run — descend again for another chance.', 'important');
@@ -13274,7 +13274,7 @@
     if(e.type==='firebomb'){
       var fb = Math.round(randInt(Math.round(e.dmg*0.5), Math.round(e.dmg*1.5)) * (1 + getFamBuff('firebomb'))); // wide range, + familiar firebomb buff
       act.monsterHp -= fb;
-      spawnFloatingText('🔥 '+fb, 'ft-rare');
+      spawnCombatFloat('🔥 '+fb, 'ft-rare', true);
     } else if(e.type==='toxin'){
       legNotePoisonStart(act); // Wasting Curse: stamp the start of a fresh poison
       act.potionPoisonDps = combatLevelEquivalent(state) * e.pct * (1 + getFamBuff('potionPoison')); // % of combat score per second, + familiar poison buff
@@ -13291,10 +13291,10 @@
       // Tinkering Bomb: a heavy raw burst on each hit.
       var bb = Math.round(randInt(Math.round(e.dmg*0.6), Math.round(e.dmg*1.4)) * demolitionistMult()); // Demolitionist: bigger bang
       act.monsterHp -= bb;
-      spawnFloatingText('💣 '+bb, 'ft-rare');
+      spawnCombatFloat('💣 '+bb, 'ft-rare', true);
     } else if(e.type==='flash'){
       // Pyrotechnics Flash Bomb: a chance to stun the enemy, freezing its action bar for 1.5s.
-      if(!offlineCapture && Math.random() < e.stun * demolitionistMult()){ act.enemyStunUntil = Date.now() + 1500; spawnFloatingText('Flashed!', 'ft-rare'); } // Demolitionist: better stun odds
+      if(!offlineCapture && Math.random() < e.stun * demolitionistMult()){ act.enemyStunUntil = Date.now() + 1500; spawnCombatFloat('Flashed!', 'ft-rare', true); } // Demolitionist: better stun odds
     }
     state.potionCharges = (state.potionCharges||0) - 1;
     if(state.potionCharges <= 0){
@@ -13333,7 +13333,7 @@
           var mon = monsterById(act.monsterId);
           var boom = Math.round(dps * 3 * (mon ? elementAdvantage('dark', mon.element) : 1));
           var _boomKilled = applyChipDamage(boom);
-          spawnFloatingText('💥 '+boom+' Dark', 'ft-rare');
+          spawnCombatFloat('💥 '+boom+' Dark', 'ft-rare', true);
           // Stop the accumulator here if that finished the foe -- otherwise the banked ticks would keep
           // detonating into whatever the fight advanced to.
           if(_boomKilled) break;
@@ -13387,7 +13387,7 @@
         if(!offlineCapture && enemyBurnStacks() < PYRO_BURN_MAX_STACKS && Math.random() < LEG_EMBERSTORM_CHANCE){
           var _es = pyromancerApplyBurn(act);
           act.burnDps = act.burnStacks * combatLevelEquivalent(state) * PYRO_BURN_PCT;
-          spawnFloatingText('Ember Storm x'+_es, 'ft-rare');
+          spawnCombatFloat('Ember Storm x'+_es, 'ft-rare', true);
         }
       }
     }
@@ -13636,11 +13636,11 @@
       if(assassinVanish){                                                                  // Vanish: consumed by this strike
         act.lastDamagedAt = Date.now();                                                    // restart the untouched clock (one Vanish per window)
         if(assassinBonus(40)) assassinLacerateMaxStacks(act);                              // ...and slam full Lacerate stacks
-        spawnFloatingText('Vanish!', 'ft-rare');
+        spawnCombatFloat('Vanish!', 'ft-rare', false);
       }
       if(assassinBonus(1) && !isBonus && assassinRhythmRegister(act, isOffhand ? 'off' : 'main')
          && state.activity && state.activity.type==='combat' && act.monsterHp > 0){
-        spawnFloatingText('Rhythm!', 'ft-bonus');
+        spawnCombatFloat('Rhythm!', 'ft-bonus', false);
         playerAttackTick(true, 1, isOffhand);                                              // a flurry echo of this claw
       }
     }
@@ -13676,7 +13676,7 @@
           act.bleedStacks = SAMURAI_FIRSTBLOOD_STACKS;
           act.bleedDps = act.bleedStacks * combatLevelEquivalent(state) * SAMURAI_BLEED_PCT;
           act.bleedUntil = Date.now() + SAMURAI_BLEED_MS;
-          spawnFloatingText('First Blood!', 'ft-rare');
+          spawnCombatFloat('First Blood!', 'ft-rare', true);
         }
       }
       // Samurai Bushido (Lv60): each landed hit builds a Focus stack (capped); a miss resets it (miss branch above).
@@ -13710,8 +13710,8 @@
       // Berserker Blood Pact (Lv20): each landed hit spends 2% of current HP to fuel its +50% damage (never self-lethal).
       if(berserkerBonus(20) && state.playerHp > 1) state.playerHp = Math.max(1, state.playerHp - Math.round(BERSERK_BLOODPACT_COST * state.playerHp));
       // Lumen Oracle on-hit: Lv1 Flashbang (8% stun); Lv40 Reflected Light (a share of the hit heals the lowest ally / you).
-      if(lumenBonus(1) && !offlineCapture && Math.random() < 0.08){ act.enemyStunUntil = Date.now() + 2000; spawnFloatingText('Flashed!', 'ft-rare'); }
-      if(lumenBonus(40)){ var _lr = lumenApplyHeal(dmgToMonster * lumenReflectPct(state) * lumenReflectD2Mult(state) * (set2D3('lumen') ? 1.5 : 1) * (legActive('gravelight') ? (1 + 0.05 * (act.decayStacks||0)) : 1)); if(_lr > 0 && !offlineCapture) spawnFloatingText('+'+_lr+' HP', 'ft-success'); } // Radiance (Lumen D2 2pc) + Grave Light (Lumen D3 2pc): +50% reflect heal each; Gravelight (D3 light wand): +5%/Decay stack
+      if(lumenBonus(1) && !offlineCapture && Math.random() < 0.08){ act.enemyStunUntil = Date.now() + 2000; spawnCombatFloat('Flashed!', 'ft-rare', true); }
+      if(lumenBonus(40)){ var _lr = lumenApplyHeal(dmgToMonster * lumenReflectPct(state) * lumenReflectD2Mult(state) * (set2D3('lumen') ? 1.5 : 1) * (legActive('gravelight') ? (1 + 0.05 * (act.decayStacks||0)) : 1)); if(_lr > 0 && !offlineCapture) spawnCombatFloat('+'+_lr+' HP', 'ft-success', false); } // Radiance (Lumen D2 2pc) + Grave Light (Lumen D3 2pc): +50% reflect heal each; Gravelight (D3 light wand): +5%/Decay stack
       // Voidshadow on-hit: Lv1 Mark of the Void stacks Vulnerability (cap 10, refreshed each hit); at max,
       // Lv80 Doom deepens it. Lv20 Enfeeble saps enemy damage 25% for 5s via the shared enemy-damage window.
       if(nightbladeBonus(1)){
@@ -13720,17 +13720,17 @@
         act.voidVulnStacks = Math.min(voidVulnCap(state), _prevVuln + voidMarkPerHit(state)); // Malediction (full): 2 stacks/hit; Creeping Doom (D2 2pc) raises the cap
         act.voidVulnUntil = Date.now() + VOID_VULN_MS;
         if(!offlineCapture){
-          if(nightbladeBonus(80) && act.voidVulnStacks >= voidVulnCap(state) && _prevVuln < voidVulnCap(state)) spawnFloatingText('Doomed!', 'ft-rare');
-          else spawnFloatingText('Vuln x'+act.voidVulnStacks, 'ft-bonus');
+          if(nightbladeBonus(80) && act.voidVulnStacks >= voidVulnCap(state) && _prevVuln < voidVulnCap(state)) spawnCombatFloat('Doomed!', 'ft-rare', true);
+          else spawnCombatFloat('Vuln x'+act.voidVulnStacks, 'ft-bonus', true);
         }
         if(set2D3('nightblade') || legActive('soulrend')) curseApply(act); // Cursemark (Nightblade D3 2pc) / Soulrend (D3 dark wand): your Vulnerability stacks also Curse the foe
       }
-      if(nightbladeBonus(20)){ state.classDebuffs.enemyDmgUntil = Date.now() + 5000; if(!offlineCapture) spawnFloatingText('Enfeebled!', 'ft-bonus'); }
+      if(nightbladeBonus(20)){ state.classDebuffs.enemyDmgUntil = Date.now() + 5000; if(!offlineCapture) spawnCombatFloat('Enfeebled!', 'ft-bonus', true); }
       // Juggernaut on-hit: Lv20 Overhead Smash advances the landed-hit tally (every 4th is the forced crit,
       // already applied above); Lv40 Concussive Crits stun on a crit; Lv60 Building Fury banks crit damage.
-      if(juggernautBonus(20)){ act.juggernautSwings = (act.juggernautSwings||0) + 1; if(juggernautSmash && !offlineCapture) spawnFloatingText('Overhead Smash!', 'ft-rare'); }
-      if(juggernautBonus(40) && isCrit){ act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + JUG_CONCUSS_MS); if(!offlineCapture) spawnFloatingText('Concussed!', 'ft-bonus'); }
-      if(juggernautBonus(60) && isCrit){ act.juggernautFuryStacks = Math.min(JUG_FURY_MAX, (act.juggernautFuryStacks||0) + 1); if(!offlineCapture) spawnFloatingText('Fury x'+act.juggernautFuryStacks, 'ft-bonus'); }
+      if(juggernautBonus(20)){ act.juggernautSwings = (act.juggernautSwings||0) + 1; if(juggernautSmash && !offlineCapture) spawnCombatFloat('Overhead Smash!', 'ft-rare', true); }
+      if(juggernautBonus(40) && isCrit){ act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + JUG_CONCUSS_MS); if(!offlineCapture) spawnCombatFloat('Concussed!', 'ft-bonus', true); }
+      if(juggernautBonus(60) && isCrit){ act.juggernautFuryStacks = Math.min(JUG_FURY_MAX, (act.juggernautFuryStacks||0) + 1); if(!offlineCapture) spawnCombatFloat('Fury x'+act.juggernautFuryStacks, 'ft-bonus', false); }
       // Reaver Frenzied Rending (Lv 40): each hit stacks a Bleed (up to 5) and refreshes it; a 25% chance
       // adds an extra stack (the frenzy attack-speed bonus at max stacks lives in classAttackSpeedMult).
       if(reaverBonus(40)){
@@ -13738,7 +13738,7 @@
         act.bleedStacks = Math.min(reaverBleedCap(state), (act.bleedStacks||0) + (Math.random() < 0.25 ? 2 : 1)); // Rabid raises the cap to 8
         act.bleedDps = act.bleedStacks * combatLevelEquivalent(state) * REAVER_BLEED_PCT;
         act.bleedUntil = Date.now() + REAVER_BLEED_MS;
-        spawnFloatingText('Rend x'+act.bleedStacks, 'ft-bonus');
+        spawnCombatFloat('Rend x'+act.bleedStacks, 'ft-bonus', true);
         if(set2D3('reaver')) d3SoulsAdd(1); // Blood Harvest (Reaver D3 2pc): each Bleed application banks a Soul Charge
       }
       // Reaver Hemorrhagic Burst (Lv 80): a Critical Hit detonates the foe's Bleed for instant damage
@@ -13750,13 +13750,13 @@
         act.bleedStacks = 1; act.bleedDps = combatLevelEquivalent(state) * REAVER_BLEED_PCT; act.bleedUntil = Date.now() + REAVER_BLEED_MS;
       }
       // Executioner Reaping Vigor (Lv1): a landed Critical Hit banks a stacking +25% max-HP buff (30s).
-      if(executionerBonus(1) && isCrit){ execVigorAddStack(); spawnFloatingText('Reaping Vigor!', 'ft-rare'); }
+      if(executionerBonus(1) && isCrit){ execVigorAddStack(); spawnCombatFloat('Reaping Vigor!', 'ft-rare', false); }
       // Thunderfury (Chain Lightning, Lv1): a Critical Hit builds a crit-stack (attack speed); a non-crit resets.
       if(thunderfuryBonus(1)){
         if(isCrit){
           state.thunderStacks = Math.min(legThunderMaxStacks(state), (state.thunderStacks || 0) + 1);
           // Concussive Bolt (Lv60): 10% chance a crit stuns the enemy, freezing its action bar for 2s.
-          if(thunderfuryBonus(60) && !offlineCapture && Math.random() < 0.10){ act.enemyStunUntil = Date.now() + 2000; spawnFloatingText('Stunned!', 'ft-rare'); }
+          if(thunderfuryBonus(60) && !offlineCapture && Math.random() < 0.10){ act.enemyStunUntil = Date.now() + 2000; spawnCombatFloat('Stunned!', 'ft-rare', true); }
           // Galvanize (Lv80): each crit permanently adds +10% crit damage for the rest of this fight (folded into critMult).
           if(thunderfuryBonus(80)) act.galvanizeStacks = Math.min(THUNDER_GALVANIZE_MAX, (act.galvanizeStacks || 0) + 1);
         } else {
@@ -13771,7 +13771,7 @@
           act.staticCharge = 0;
           var _discharge = Math.round(dmgToMonster * thunderDischargeMult(state));
           if(_discharge > 0){ act.monsterHp -= _discharge; spawnCombatFloat('⚡ Discharge -'+fmt(_discharge), 'ft-crit', true); }
-          if(setFullD2('thunderfury')){ act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + 1500); if(!offlineCapture) spawnFloatingText('Thunderclap!', 'ft-rare'); } // Thunderclap (D2 full): a discharge briefly stuns
+          if(setFullD2('thunderfury')){ act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + 1500); if(!offlineCapture) spawnCombatFloat('Thunderclap!', 'ft-rare', true); } // Thunderclap (D2 full): a discharge briefly stuns
           if(set2D3('thunderfury')) curseApply(act); // Grave Spark (Thunderfury D3 2pc): a Static discharge Curses the foe
           if(legActive('stormtomb')){ curseApply(act); decayApply(act, 1); } // Stormtomb (D3 earth wand): a discharge Curses and Decays the foe
           if(legActive('stormwyrm')) scorchApply(act, 2); // Stormwyrm's Horn (D4 earth wand): a discharge applies 2 Scorch stacks
@@ -13780,14 +13780,14 @@
       // Frostwarden Permafrost (Lv1): every landed hit stacks Chill, slowing the enemy's action bar.
       if(frostwardenBonus(1)){
         var _cs = frostwardenApplyChill(act);
-        spawnFloatingText('Chill x'+_cs, 'ft-bonus');
+        spawnCombatFloat('Chill x'+_cs, 'ft-bonus', true);
       }
       // Rimefang (D2 water wand): every hit deepens the Chill by 2 (works even without the Frostwarden class).
       if(!isOffhand && legActive('rimefang')){ frostwardenApplyChill(act); frostwardenApplyChill(act); }
       // Deep Freeze (legendary water wand): at max Chill, a hit can Freeze the foe (action-bar stun).
       if(legActive('deepfreeze') && enemyChillStacks() >= FROST_CHILL_MAX_STACKS && !offlineCapture && Math.random() < LEG_DEEPFREEZE_CHANCE){
         act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + LEG_DEEPFREEZE_MS);
-        spawnFloatingText('Frozen!', 'ft-rare');
+        spawnCombatFloat('Frozen!', 'ft-rare', true);
       }
       // Cursebringer (legendary dark wand): every hit Sunders the foe -- a second debuff feeding Void Resonance / Soul Tax.
       if(legActive('cursebringer')){
@@ -13800,7 +13800,7 @@
         act.frostbiteStacks = Math.min(FROST_FROSTBITE_MAX, (act.frostbiteStacks||0) + 1);
         act.frostbiteDps = act.frostbiteStacks * combatLevelEquivalent(state) * FROST_FROSTBITE_PCT;
         act.frostbiteUntil = Date.now() + FROST_FROSTBITE_MS;
-        spawnFloatingText('Frostbite x'+act.frostbiteStacks, 'ft-bonus');
+        spawnCombatFloat('Frostbite x'+act.frostbiteStacks, 'ft-bonus', true);
       }
       // Frostwarden Shatter (Lv40): striking a Chilled foe can detonate the Chill for burst Water damage.
       if(frostwardenBonus(40) && enemyChilled(state) && Math.random() < FROST_SHATTER_CHANCE){
@@ -13815,7 +13815,7 @@
       if(pyromancerBonus(1)){
         var _bs = pyromancerApplyBurn(act);
         act.burnDps = act.burnStacks * combatLevelEquivalent(state) * PYRO_BURN_PCT;
-        spawnFloatingText('Ignite x'+_bs, 'ft-bonus');
+        spawnCombatFloat('Ignite x'+_bs, 'ft-bonus', true);
       }
       // Pyromancer Combust (Lv20): a Critical Hit detonates all Burn stacks for burst fire damage.
       if(pyromancerBonus(20) && isCrit && enemyBurning(state)){
@@ -13842,24 +13842,24 @@
         if(_rvd > (act.potionPoisonDps||0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = Math.max(act.potionPoisonDps||0, _rvd);
         legNotePoisonStart(act); // Wasting Curse ramp
         act.potionPoisonUntil = Math.max(act.potionPoisonUntil||0, Date.now() + RANGER_POISON_MS * rangerAilmentDurMult(state)); // Persistent Ailments extends it
-        spawnFloatingText('Venom!', 'ft-bonus');
+        spawnCombatFloat('Venom!', 'ft-bonus', true);
       }
       if(rangerBonus(20) && Math.random() < rangerProcChance(state)){ // Barbed Arrows (Lv20): bleed
         if((act.bleedUntil||0) <= Date.now()) act.bleedStacks = 0;
         act.bleedStacks = Math.min(RANGER_BLEED_MAX, (act.bleedStacks||0) + 1);
         act.bleedDps = act.bleedStacks * combatLevelEquivalent(state) * RANGER_BLEED_PCT;
         act.bleedUntil = Date.now() + RANGER_BLEED_MS * rangerAilmentDurMult(state);
-        spawnFloatingText('Bleed x'+act.bleedStacks, 'ft-bonus');
+        spawnCombatFloat('Bleed x'+act.bleedStacks, 'ft-bonus', true);
       }
       if(rangerBonus(40) && Math.random() < rangerProcChance(state)){ // Frost Arrows (Lv40): chill
-        spawnFloatingText('Chill x'+frostwardenApplyChill(act), 'ft-bonus');
+        spawnCombatFloat('Chill x'+frostwardenApplyChill(act), 'ft-bonus', true);
         if(set2('ranger')) act.enemyChillUntil = Date.now() + FROST_CHILL_MS * rangerAilmentDurMult(state); // Persistent Ailments
       }
       if(rangerBonus(60) && Math.random() < rangerProcChance(state)){ // Fire Arrows (Lv60): burn
         var _rbs = pyromancerApplyBurn(act);
         act.burnDps = act.burnStacks * combatLevelEquivalent(state) * PYRO_BURN_PCT;
         if(set2('ranger')) act.burnUntil = Date.now() + PYRO_BURN_MS * rangerAilmentDurMult(state); // Persistent Ailments
-        spawnFloatingText('Burn x'+_rbs, 'ft-bonus');
+        spawnCombatFloat('Burn x'+_rbs, 'ft-bonus', true);
       }
       } // end Compound Arrows ailment-roll loop
       // Decaying Traps (Ranger D3 2pc) / Bonevolley (D3 medium bow): while your ailments are on the foe, your hits also apply Decay.
@@ -13870,7 +13870,7 @@
         if(vDps > (act.potionPoisonDps || 0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = Math.max(act.potionPoisonDps || 0, vDps);
         legNotePoisonStart(act); // Wasting Curse ramp
         act.potionPoisonUntil = Math.max(act.potionPoisonUntil || 0, Date.now() + 4000);
-        spawnFloatingText('Envenomed!', 'ft-rare');
+        spawnCombatFloat('Envenomed!', 'ft-rare', true);
       }
       // Quickdraw Lv 80 (Serpent's Sting): a Critical Hit injects venom = 30% of the hit dealt over 4s (shares the Coating/poison channel).
       if(quickdrawBonus(80) && isCrit && act.monsterHp > 0){
@@ -13878,7 +13878,7 @@
         if(_ssDps > (act.potionPoisonDps || 0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = Math.max(act.potionPoisonDps || 0, _ssDps);
         legNotePoisonStart(act); // Wasting Curse ramp
         act.potionPoisonUntil = Math.max(act.potionPoisonUntil || 0, Date.now() + 4000);
-        spawnFloatingText("Serpent's Sting!", 'ft-crit', true);
+        spawnCombatFloat("Serpent's Sting!", 'ft-crit', true);
       }
       // Templar Lv 1 (Lay on Hands): a Critical Hit mends you for 20% of the damage dealt (the lowest-HP
       // party ally in a networked dungeon is a server-side extension; solo, that ally is always you).
@@ -13887,8 +13887,8 @@
         // what the perk has always said it does. Solo, the ally is still you.
         var _lohAmt = Math.round(dmgToMonster * templarLayOnHandsPct(state));
         var _loh = healAlly(_lohAmt);
-        if(_loh > 0) spawnFloatingText('Lay on Hands +'+_loh, 'ft-success');
-        else if(_lohAmt > 0 && !lumenHealTarget().isSelf) spawnFloatingText('Lay on Hands → ally', 'ft-success');
+        if(_loh > 0) spawnCombatFloat('Lay on Hands +'+_loh, 'ft-success', false);
+        else if(_lohAmt > 0 && !lumenHealTarget().isSelf) spawnCombatFloat('Lay on Hands → ally', 'ft-success', false);
       }
     }
     // Reaper (Lv 40/80) + Voidshadow (Soul Tax) + Knight (Lv 60 Warlord's Presence, below-half HP):
@@ -13897,7 +13897,7 @@
     if(lifestealPct > 0){
       var wouldHeal = Math.round(effDmg * lifestealPct * (legActive('soulflay') ? LEG_SOULFLAY_MULT : 1)); // Soulflay (D2 scythe): Siphon heals +60%
       var healed = Math.min(wouldHeal, healRoom(state));
-      if(healed > 0){ state.playerHp += healed; spawnFloatingText('+'+healed+' HP', 'ft-success'); }
+      if(healed > 0){ state.playerHp += healed; spawnCombatFloat('+'+healed+' HP', 'ft-success', false); }
       if(!isOffhand && set2D3('reaper')) d3SoulsAdd(1); // Soulreap (Reaper D3 2pc): each lifesteal hit banks a Soul Charge
       // Reaper Siphon Shield (Lv 40) / Soulflay (D2 scythe): life-steal beyond full Health banks as a spectral absorb (cap 20% max HP).
       if(reaperBonus(40) || legActive('soulflay')){
@@ -13905,7 +13905,7 @@
         if(overheal > 0){
           var _before = state.reaperShield || 0;
           state.reaperShield = Math.min(reaperShieldCap(state), _before + overheal);
-          if(state.reaperShield > _before) spawnFloatingText('Siphon Shield '+Math.round(state.reaperShield), 'ft-rare');
+          if(state.reaperShield > _before) spawnCombatFloat('Siphon Shield '+Math.round(state.reaperShield), 'ft-rare', false);
         }
       }
     }
@@ -13947,7 +13947,7 @@
         state.duelistPoise = (state.duelistPoise || 0) + 1;
         if(state.duelistPoise >= DUELIST_POISE_MAX){
           state.duelistPoise = 0;
-          spawnFloatingText('Flourish!', 'ft-rare');
+          spawnCombatFloat('Flourish!', 'ft-rare', true);
           for(var _fl=0; _fl<duelistFlourishStabs(state) && state.activity && state.activity.type==='combat' && state.activity.monsterHp>0; _fl++) playerAttackTick(true); // Redoublement set: 5 stabs
         }
       }
@@ -13957,17 +13957,17 @@
       if(quickdrawBonus(1) && isCrit && state.activity && state.activity.type==='combat'){
         if(!isBonus){
           act.trickChain = 0;
-          spawnFloatingText('Trick Shot!', 'ft-rare');
+          spawnCombatFloat('Trick Shot!', 'ft-rare', true);
           playerAttackTick(true);
         } else if(legActive('chainshot') && (act.trickChain||0) < LEG_CHAINSHOT_MAX){
           act.trickChain = (act.trickChain||0) + 1;
-          spawnFloatingText('Chain Shot!', 'ft-rare');
+          spawnCombatFloat('Chain Shot!', 'ft-rare', true);
           playerAttackTick(true);
         }
       }
       // Quickdraw Lv 40 (Twin Fang): 15% chance a landed shot nocks a second arrow that rolls hit + crit on its own.
       if(!isBonus && quickdrawBonus(40) && Math.random() < quickdrawTwinFangChance(state) && state.activity && state.activity.type==='combat'){
-        spawnFloatingText('Twin Fang!', 'ft-rare');
+        spawnCombatFloat('Twin Fang!', 'ft-rare', true);
         playerAttackTick(true);
       }
     }
@@ -14018,8 +14018,8 @@
     if(set2D3('executioner')) d3SoulsAdd(2); // Harvest (Executioner D3 2pc): each kill banks 2 Soul Charges
     if(legRingEquipped('d3_ossuary')) d3SoulsAdd(Math.round(legendaryRingBonus('d3_ossuary', state))); // Signet of the Ossuary (D3): each kill banks Soul Charges
     if(legActive('soulharvester')) state.d3ExecStacks = Math.min(10, (state.d3ExecStacks||0) + 1); // Soulharvester (D3 full-moon axe): each kill raises the Execute threshold (+2%/kill, cap +20%)
-    if(legActive('bonereaver') && enemyBleeding(state)){ var _br = Math.min(Math.round(maxHp(state) * 0.10), healRoom(state)); if(_br > 0){ state.playerHp += _br; spawnFloatingText('+'+_br+' HP', 'ft-success'); } } // Bonereaver (D3 half-moon axe): a Bleeding foe's death heals you (its Bleed carry is captured below)
-    if(legRingEquipped('d2_feast', state)){ var _feast = Math.min(Math.round(maxHp(state) * legendaryRingBonus('d2_feast', state)), healRoom(state)); if(_feast > 0){ state.playerHp += _feast; spawnFloatingText('+'+_feast+' HP', 'ft-success'); } } // Signet of the Feast (D2): Life on Kill
+    if(legActive('bonereaver') && enemyBleeding(state)){ var _br = Math.min(Math.round(maxHp(state) * 0.10), healRoom(state)); if(_br > 0){ state.playerHp += _br; spawnCombatFloat('+'+_br+' HP', 'ft-success', false); } } // Bonereaver (D3 half-moon axe): a Bleeding foe's death heals you (its Bleed carry is captured below)
+    if(legRingEquipped('d2_feast', state)){ var _feast = Math.min(Math.round(maxHp(state) * legendaryRingBonus('d2_feast', state)), healRoom(state)); if(_feast > 0){ state.playerHp += _feast; spawnCombatFloat('+'+_feast+' HP', 'ft-success', false); } } // Signet of the Feast (D2): Life on Kill
     // Wyrm's Greed (Treasure Hunter D4 full) / Signet of the Hoard (D4 ring): an elemental kill drops bonus gold.
     if(monster && monster.element){
       var _greedFrac = (setFullD4('treasureHunter', state) ? 0.50 : 0) + legendaryRingBonus('d4_hoard', state);
@@ -14039,14 +14039,14 @@
       var _before = state.faith;
       state.faith = Math.min(faithMax(state), state.faith + _tithe);
       var _gained = Math.round(state.faith - _before);
-      if(_gained > 0) spawnFloatingText('+' + _gained + ' Faith', 'ft-success');
+      if(_gained > 0) spawnCombatFloat('+' + _gained + ' Faith', 'ft-success', false);
     }
     // Plunder (Treasure Hunter D2 full): every kill restores a little Faith (tier-scaled), on top of the Treasure Find boost.
     if(setFullD2('treasureHunter')){
       var _pl = Math.round((Math.floor((monster.tierIndex || 0) / 2) + 1) * (1 + legendaryAmuletBonus('d2_zealot', state))), _pb = state.faith; // + Pendant of the Zealot (D2): +Faith Gain
       state.faith = Math.min(faithMax(state), state.faith + _pl);
       var _pg = Math.round(state.faith - _pb);
-      if(_pg > 0) spawnFloatingText('+' + _pg + ' Faith', 'ft-success');
+      if(_pg > 0) spawnCombatFloat('+' + _pg + ' Faith', 'ft-success', false);
     }
     var _cls = activeClassId(state); if(_cls) maybeSummonFamiliar(_cls); // an active Class can summon its own familiar in combat
     // Relic Reaver (legendary scimitar): a kill can unearth a Broken Relic; the chance climbs with the foe's tier.
@@ -14056,7 +14056,7 @@
         var _relic = BROKEN_RELIC_ITEMS[_rrTier];
         addItem(_relic.id, 1); // route through addItem so it credits the earned anchor (adoption-safe)
         addLog('Relic Reaver unearths a ' + _relic.name + '!', 'important');
-        spawnFloatingText('+1 ' + _relic.name, 'ft-rare');
+        spawnCombatFloat('+1 ' + _relic.name, 'ft-rare', false);
       }
     }
     act.monsterHp = monster.hp;
@@ -14066,7 +14066,7 @@
       act.bleedStacks = _arterialCarry;
       act.bleedDps = act.bleedStacks * combatLevelEquivalent(state) * REAVER_BLEED_PCT;
       act.bleedUntil = Date.now() + REAVER_BLEED_MS;
-      spawnFloatingText('Arterial Spray x'+_arterialCarry, 'ft-bonus');
+      spawnCombatFloat('Arterial Spray x'+_arterialCarry, 'ft-bonus', true);
     }
     act.rhythmStacks = 0; act.rhythmFlurry = 0; act.rhythmLastHand = null; act.lastDamagedAt = Date.now(); // Assassin: fresh Rhythm meter + Vanish clock per foe
     act.samuraiFirstStrike = true; act.samuraiFocus = 0; // Samurai: arm the Iaijutsu/First Blood opener and reset the Bushido Focus combo
@@ -14076,18 +14076,18 @@
     if(_emberCarry > 0){ // Ember Burst (Pyromancer full): the next foe inherits the slain foe's Burn
       act.burnStacks = _emberCarry; act.burnUntil = Date.now() + PYRO_BURN_MS;
       act.burnDps = act.burnStacks * combatLevelEquivalent(state) * PYRO_BURN_PCT;
-      spawnFloatingText('Ember Burst x'+_emberCarry, 'ft-bonus');
+      spawnCombatFloat('Ember Burst x'+_emberCarry, 'ft-bonus', true);
     }
     act.voidVulnStacks = 0; act.voidVulnUntil = 0; // Voidshadow Mark of the Void / Doom don't carry between foes
     act.throatripperHits = 0; // Throatripper (D2 claw): the first-3-strikes crit window restarts against each foe
     act.spineshatterStacks = 0; act.spineshatterUntil = 0; // Spineshatter (D2 maul): the enemy-damage debuff doesn't carry between foes
     act.decayStacks = 0; act.decayUntil = 0; act.decayDps = 0; // D3 Decay doesn't carry between foes (Rot Spread re-applies it)
     act.curseUntil = 0; // D3 Curse doesn't carry between foes
-    if(_rotCarry > 0){ decayApply(act, _rotCarry); spawnFloatingText('Rot Spread!', 'ft-rare'); } // Rot Spread (Plaguebearer D3 full): the slain foe's Decay carries on
+    if(_rotCarry > 0){ decayApply(act, _rotCarry); spawnCombatFloat('Rot Spread!', 'ft-rare', true); } // Rot Spread (Plaguebearer D3 full): the slain foe's Decay carries on
     act.poisonSince = 0; // the Wasting Curse ramp restarts against each foe (the poison DoT lapses on its own timer)
     if(_pestCarry > 0){ // Pestilence (Plaguebearer full): the slain foe's poison spreads to the next foe
       act.potionPoisonDps = _pestCarry; act.potionPoisonUntil = Date.now() + POTION_POISON_DURATION_MS; act.poisonSince = Date.now();
-      spawnFloatingText('Pestilence!', 'ft-rare');
+      spawnCombatFloat('Pestilence!', 'ft-rare', true);
     }
     act.tremorStacks = 0; act.tremorReady = false; // Earthshaker's Tremor meter doesn't carry between foes
     act.trickChain = 0; // Chain Shot's follow-up counter resets per foe
@@ -14255,7 +14255,7 @@
     var _d4mit = d4DragonscaleIncoming(state, monster, rawDmg);
     if(_d4mit.mult !== 1) rawDmg = Math.round(rawDmg * _d4mit.mult);
     var _d4li = d4LegIncomingMult(state, monster); if(_d4li !== 1) rawDmg = Math.round(rawDmg * _d4li); // Venomscale Shield (D4)
-    if(_d4mit.heal > 0){ var _d4h = Math.min(_d4mit.heal, healRoom(state)); if(_d4h > 0){ state.playerHp += _d4h; if(!offlineCapture) spawnFloatingText('+'+_d4h+' HP', 'ft-success'); } }
+    if(_d4mit.heal > 0){ var _d4h = Math.min(_d4mit.heal, healRoom(state)); if(_d4h > 0){ state.playerHp += _d4h; if(!offlineCapture) spawnCombatFloat('+'+_d4h+' HP', 'ft-success', false); } }
     var incomingBeforeDefense = rawDmg; // full attempted hit, before block/armor/shield reduce it
     var blockChance = playerBlockChance(state) + getFamBuff('block');
     var blocked = blockChance > 0 && Math.random() < blockChance;
@@ -14276,7 +14276,7 @@
       var _eb = d4HeraldBastionReflect(_preBlock - rawDmg, monster, state);
       if(_eb > 0){ applyChipDamage(_eb); spawnCombatFloat('⟲ Elemental Bastion -'+fmt(_eb), 'ft-reflect', true); }
       // Sentinel Brittle Guard (Lv60): a Block Sunders the foe's armour (consumed in playerAttackTick).
-      if(sentinelBonus(60)){ state.classDebuffs.enemyArmorUntil = Date.now() + SENTINEL_BRITTLE_MS; spawnFloatingText('Sundered!', 'ft-bonus'); }
+      if(sentinelBonus(60)){ state.classDebuffs.enemyArmorUntil = Date.now() + SENTINEL_BRITTLE_MS; spawnCombatFloat('Sundered!', 'ft-bonus', true); }
       // Grave Guard (Herald D3 2pc): a Perfect Guard Curses the attacker.
       if(set2D3('herald')) curseApply(act);
       // Tombshatter (D3 mace): a Perfect Guard Curses the attacker and reflects Decay.
@@ -14287,16 +14287,16 @@
       // Fortune's Riposte (legendary shield): a Block empowers your next strike (+40%).
       if(legActive('fortunesriposte')) state.riposteCharged = true;
       // Frenzied Guard (legendary shield): a Block grants a brief attack-speed window.
-      if(legActive('frenziedguard')){ state.frenziedGuardUntil = Date.now() + LEG_FRENZIED_MS; spawnFloatingText('Frenzied Guard!', 'ft-bonus'); }
+      if(legActive('frenziedguard')){ state.frenziedGuardUntil = Date.now() + LEG_FRENZIED_MS; spawnCombatFloat('Frenzied Guard!', 'ft-bonus', false); }
       // Cold Snap (legendary shield): a Block briefly Freezes (stuns) the attacker.
-      if(legActive('coldsnap')){ act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + LEG_COLDSNAP_MS); spawnFloatingText('Cold Snap!', 'ft-rare'); }
+      if(legActive('coldsnap')){ act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + LEG_COLDSNAP_MS); spawnCombatFloat('Cold Snap!', 'ft-rare', true); }
       // ---- D2 (Tunnel) legendary shields (Batch H): all Block-triggered ----
       // Cofferguard (D2): a Block scatters bonus gold, scaling with the foe's tier via its gold reward.
       if(legActive('cofferguard')){ var _cg = Math.max(1, Math.round(randInt(monster.goldMin, monster.goldMax) * LEG_COFFER_FRAC)); earnGold(_cg); spawnCombatFloat('+'+fmt(_cg)+'g', 'ft-success', false); }
       // Rotshell (D2): a Block poisons the attacker (mirrors the venom channel so DoT multipliers apply).
-      if(legActive('rotshell')){ legNotePoisonStart(act); var _rp = combatLevelEquivalent(state) * LEG_ROTSHELL_PCT; if(_rp > (act.potionPoisonDps||0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = Math.max(act.potionPoisonDps||0, _rp); act.potionPoisonUntil = Math.max(act.potionPoisonUntil||0, Date.now() + LEG_ROTSHELL_MS); spawnFloatingText('Rotshell!', 'ft-bonus'); }
+      if(legActive('rotshell')){ legNotePoisonStart(act); var _rp = combatLevelEquivalent(state) * LEG_ROTSHELL_PCT; if(_rp > (act.potionPoisonDps||0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = Math.max(act.potionPoisonDps||0, _rp); act.potionPoisonUntil = Math.max(act.potionPoisonUntil||0, Date.now() + LEG_ROTSHELL_MS); spawnCombatFloat('Rotshell!', 'ft-bonus', true); }
       // Goreshell (D2): a Block heals you for 6% of max Health.
-      if(legActive('goreshell')){ var _gh = Math.min(Math.round(maxHp(state) * LEG_GORESHELL_PCT), healRoom(state)); if(_gh > 0){ state.playerHp += _gh; spawnFloatingText('+'+_gh+' HP', 'ft-success'); } }
+      if(legActive('goreshell')){ var _gh = Math.min(Math.round(maxHp(state) * LEG_GORESHELL_PCT), healRoom(state)); if(_gh > 0){ state.playerHp += _gh; spawnCombatFloat('+'+_gh+' HP', 'ft-success', false); } }
       // Rimeshell (D2): a Block adds 2 Chill stacks to the attacker.
       if(legActive('rimeshell')){ frostwardenApplyChill(act); frostwardenApplyChill(act); }
       // Thornwall (D2): a Block reflects 120% of the damage it prevented.
@@ -14309,18 +14309,18 @@
       // Blightshell (D3): a Block applies Decay to the attacker.
       if(legActive('blightshell')) decayApply(act, 1);
       // Boneshell (D3): a Block banks a Soul Charge and heals you 4% of max Health.
-      if(legActive('boneshell')){ d3SoulsAdd(1); var _bh = Math.min(Math.round(maxHp(state) * 0.04), healRoom(state)); if(_bh > 0){ state.playerHp += _bh; spawnFloatingText('+'+_bh+' HP', 'ft-success'); } }
+      if(legActive('boneshell')){ d3SoulsAdd(1); var _bh = Math.min(Math.round(maxHp(state) * 0.04), healRoom(state)); if(_bh > 0){ state.playerHp += _bh; spawnCombatFloat('+'+_bh+' HP', 'ft-success', false); } }
       // Rimecrypt (D3): a Block Chills and Decays the attacker.
       if(legActive('rimecrypt')){ frostwardenApplyChill(act); decayApply(act, 1); }
       // Tombwall (D3): a Block applies Decay (its damage-reduction rides d3SetIncomingMult).
       if(legActive('tombwall')) decayApply(act, 1);
       // Mausoleum Wall (D3): a Perfect Guard Curses the attacker; at max Guard a Cursed attacker is briefly stunned.
-      if(legActive('mausoleumwall')){ if((state.heraldGuardStacks||0) >= heraldGuardMaxStacks(state) && enemyCursed(state)){ act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + 1500); if(!offlineCapture) spawnFloatingText('Entombed!', 'ft-rare'); } curseApply(act); }
+      if(legActive('mausoleumwall')){ if((state.heraldGuardStacks||0) >= heraldGuardMaxStacks(state) && enemyCursed(state)){ act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + 1500); if(!offlineCapture) spawnCombatFloat('Entombed!', 'ft-rare', true); } curseApply(act); }
       // ---- D4 (Nest of the Depths) legendary shields (Batch DD) ----
       // Hoardwall (D4): blocking an elemental foe scatters bonus gold.
       if(legActive('hoardwall') && monster.element){ var _hw = Math.max(1, Math.round(randInt(monster.goldMin, monster.goldMax) * LEG_COFFER_FRAC)); earnGold(_hw); spawnCombatFloat('+'+fmt(_hw)+'g', 'ft-success', false); }
       // Bloodscale Shield (D4): blocking a Fire hit heals you for a share of what the block prevented.
-      if(legActive('bloodscale') && monster.element==='fire'){ var _bs = Math.min(Math.round((_preBlock - rawDmg) * 0.30), healRoom(state)); if(_bs > 0){ state.playerHp += _bs; spawnFloatingText('+'+_bs+' HP', 'ft-success'); } }
+      if(legActive('bloodscale') && monster.element==='fire'){ var _bs = Math.min(Math.round((_preBlock - rawDmg) * 0.30), healRoom(state)); if(_bs > 0){ state.playerHp += _bs; spawnCombatFloat('+'+_bs+' HP', 'ft-success', false); } }
       // Rimescale Shield (D4): a Block Chills and Scorches the attacker.
       if(legActive('rimescale')){ frostwardenApplyChill(act); scorchApply(act, 2); }
       // Dragonscale Bulwark (D4): a Perfect Guard reflects an elemental burst of the prevented damage.
@@ -14383,7 +14383,7 @@
       act.disengageUsed = true;
       state.duelistGuaranteedCrits = 3;
       addLog('You disengage with a fencer\'s retreat!', 'important');
-      spawnFloatingText('Disengage!', 'ft-rare');
+      spawnCombatFloat('Disengage!', 'ft-rare', false);
       onPlayerDodged();
       return;
     }
@@ -14395,7 +14395,7 @@
       act.guardianBondUsed = true;
       state.summonerEnrageUntil = Date.now() + 6000;
       addLog('A familiar throws itself before the blow &mdash; Guardian Bond!', 'important');
-      spawnFloatingText('Guardian Bond!', 'ft-rare');
+      spawnCombatFloat('Guardian Bond!', 'ft-rare', false);
       return;
     }
     // Templar Aegis of Dawn: the Holy shield soaks incoming damage before your own HP.
@@ -14403,7 +14403,7 @@
       var _tShieldBefore = state.templarShield;
       var _aegis = Math.min(state.templarShield, dmgToPlayer);
       state.templarShield -= _aegis; dmgToPlayer -= _aegis;
-      if(_aegis > 0) spawnFloatingText('Aegis '+Math.round(_aegis), 'ft-success');
+      if(_aegis > 0) spawnCombatFloat('Aegis '+Math.round(_aegis), 'ft-success', false);
       if(_aegis > 0 && legActive('retribution')) state.retributionCharged = true; // Retribution: a Holy shield absorb empowers your next strike
       // Sunbrand (D2 scepter): a hit that fully spends the Holy shield detonates it for Light damage.
       if(legActive('sunbrand') && _tShieldBefore > 0 && state.templarShield <= 0){
@@ -14416,13 +14416,13 @@
     if((state.reaperShield||0) > 0 && dmgToPlayer > 0){
       var _absorbed = Math.min(state.reaperShield, dmgToPlayer);
       state.reaperShield -= _absorbed; dmgToPlayer -= _absorbed;
-      if(_absorbed > 0) spawnFloatingText('Absorbed '+Math.round(_absorbed)+'!', 'ft-success');
+      if(_absorbed > 0) spawnCombatFloat('Absorbed '+Math.round(_absorbed)+'!', 'ft-success', false);
     }
     if((state.lumenShield||0) > 0 && dmgToPlayer > 0){
       var _lBefore = state.lumenShield;
       var _lAbsorbed = Math.min(state.lumenShield, dmgToPlayer);
       state.lumenShield -= _lAbsorbed; dmgToPlayer -= _lAbsorbed;
-      if(_lAbsorbed > 0) spawnFloatingText('Barrier absorbed '+Math.round(_lAbsorbed)+'!', 'ft-success');
+      if(_lAbsorbed > 0) spawnCombatFloat('Barrier absorbed '+Math.round(_lAbsorbed)+'!', 'ft-success', false);
       if(_lAbsorbed > 0 && legActive('retribution')) state.retributionCharged = true; // the Radiant Barrier is a Holy shield too
       if(_lAbsorbed > 0 && (setFullD3('lumen') || legActive('gravelight'))) decayApply(act, 1); // Soulguard (Lumen D3 full) / Gravelight (D3 light wand): your Barrier also applies Decay to attackers
       // Aegis Break (legendary light wand): when the Barrier is spent by this hit, it bursts for Light damage.
@@ -14438,29 +14438,29 @@
       state.playerHp = Math.max(1, Math.round(maxHp(state) * Math.min(1, legendaryAmuletBonus('cheatdeath', state))));
       dmgToPlayer = 0;
       addLog('The Pendant of Undying pulls you back from death!', 'important');
-      spawnFloatingText('Cheat Death!', 'ft-rare');
+      spawnCombatFloat('Cheat Death!', 'ft-rare', false);
     }
     // D3 Undeath: cheat a lethal blow. Resurrection spends the Holy shield; Second Death / Undying March fire once per fight.
     if(dmgToPlayer > 0 && act && act.type==='combat' && (state.playerHp - dmgToPlayer) <= 0){
       if(setFullD3('templar') && (state.templarShield||0) > 0){ // Resurrection (Templar D3 full): consume the Holy shield to survive
         state.templarShield = 0; state.playerHp = Math.max(1, Math.round(maxHp(state) * 0.30)); dmgToPlayer = 0;
-        addLog('Your Holy shield shatters and pulls you back — Resurrection!', 'important'); spawnFloatingText('Resurrection!', 'ft-rare');
+        addLog('Your Holy shield shatters and pulls you back — Resurrection!', 'important'); spawnCombatFloat('Resurrection!', 'ft-rare', false);
       } else if(setFullD3('berserker') && !act.d3ReviveUsed){ // Second Death (Berserker D3 full): revive at 30% HP, once per fight
         act.d3ReviveUsed = true; state.playerHp = Math.max(1, Math.round(maxHp(state) * 0.30)); dmgToPlayer = 0;
-        addLog('You rise from death — Second Death!', 'important'); spawnFloatingText('Second Death!', 'ft-rare');
+        addLog('You rise from death — Second Death!', 'important'); spawnCombatFloat('Second Death!', 'ft-rare', false);
       } else if(setFullD3('knight') && (state.knightStacks||0) >= knightStackCap(state) && !act.d3UndyingUsed){ // Undying March (Knight D3 full): survive at 1 HP at max Momentum
         act.d3UndyingUsed = true; state.playerHp = 1; dmgToPlayer = 0;
-        addLog('You refuse to fall — Undying March!', 'important'); spawnFloatingText('Undying March!', 'ft-rare');
+        addLog('You refuse to fall — Undying March!', 'important'); spawnCombatFloat('Undying March!', 'ft-rare', false);
       } else if(legActive('gravewarden') && (state.knightStacks||0) >= knightStackCap(state) && !act.d3GravewardenUsed){ // Gravewarden (D3 claymore): survive at 1 HP at max Momentum + Curse the attacker
         act.d3GravewardenUsed = true; state.playerHp = 1; dmgToPlayer = 0; curseApply(act);
-        addLog('The grave will not have you — Gravewarden!', 'important'); spawnFloatingText('Gravewarden!', 'ft-rare');
+        addLog('The grave will not have you — Gravewarden!', 'important'); spawnCombatFloat('Gravewarden!', 'ft-rare', false);
       } else if(legAmuletEquipped('d3_revenant') && !act.d3RevenantUsed){ // Pendant of the Revenant (D3): once per fight, revive at a share of max Health
         act.d3RevenantUsed = true; state.playerHp = Math.max(1, Math.round(maxHp(state) * Math.min(1, legendaryAmuletBonus('d3_revenant', state)))); dmgToPlayer = 0;
-        addLog('The Pendant of the Revenant drags you back — Undying!', 'important'); spawnFloatingText('Undying!', 'ft-rare');
+        addLog('The Pendant of the Revenant drags you back — Undying!', 'important'); spawnCombatFloat('Undying!', 'ft-rare', false);
       }
     }
     // Bastion (Herald full): cap any single blow at 25% of max Health before it reaches you.
-    if(dmgToPlayer > 0 && setFull('herald')){ var _capped = bastionCapHit(dmgToPlayer, state); if(_capped < dmgToPlayer){ dmgToPlayer = _capped; spawnFloatingText('Bastion!', 'ft-success'); } }
+    if(dmgToPlayer > 0 && setFull('herald')){ var _capped = bastionCapHit(dmgToPlayer, state); if(_capped < dmgToPlayer){ dmgToPlayer = _capped; spawnCombatFloat('Bastion!', 'ft-success', false); } }
     state.playerHp -= dmgToPlayer;
     // Shroud of Cinders (D4 cloak): a hit you take exhales a Fire retort at the attacker.
     if(dmgToPlayer > 0 && legendaryCloakBonus('d4_cinders', state) > 0 && act && act.type==='combat' && act.monsterHp > 0){
@@ -14469,7 +14469,7 @@
     }
     // Grave Ward (Berserker D3 2pc): the first time you drop below 25% Health each fight, gain a Barrier worth 15% max Health.
     if(dmgToPlayer > 0 && set2D3('berserker') && act && act.type==='combat' && !act.d3GraveWardUsed && state.playerHp > 0 && state.playerHp < maxHp(state) * 0.25){
-      act.d3GraveWardUsed = true; legBarrierAdd(maxHp(state) * 0.15); if(!offlineCapture) spawnFloatingText('Grave Ward!', 'ft-rare');
+      act.d3GraveWardUsed = true; legBarrierAdd(maxHp(state) * 0.15); if(!offlineCapture) spawnCombatFloat('Grave Ward!', 'ft-rare', false);
     }
     // Knight Counterweight (Lv 20): a hit you take also builds a Momentum stack -- the blows you take feed your tempo.
     if(dmgToPlayer > 0 && knightBonus(20)) state.knightStacks = Math.min(knightStackCap(state), (state.knightStacks || 0) + 1);
@@ -14497,30 +14497,30 @@
       if(legActive('chargedriposte')) state.chargedRiposteReady = true;
       // Beacon Ward (legendary light ward): a reflect also heals the lowest-HP ally -- yourself when solo.
       // Glimmerward: "heals the lowest-HP ally (yourself when solo)" -- now literally true in a party.
-      if(legActive('beaconward')){ var _bw = healAlly(wardReflected); if(_bw > 0) spawnFloatingText('Beacon +'+_bw, 'ft-success'); }
+      if(legActive('beaconward')){ var _bw = healAlly(wardReflected); if(_bw > 0) spawnCombatFloat('Beacon +'+_bw, 'ft-success', false); }
       // Holy Ward (legendary light ward): a reflect grants you a Holy shield (Radiant Barrier).
       if(legActive('holyward')) lumenAddShield(wardReflected);
       // Stormveil (D2 earth ward): a reflect instantly discharges Static at the foe.
       if(legActive('stormveil') && act && act.type==='combat'){ var _sv = Math.round(wardReflected * thunderDischargeMult(state)); if(_sv > 0){ applyChipDamage(_sv); spawnCombatFloat('⚡ Discharge -'+fmt(_sv), 'ft-crit', true); } }
       // Lumenveil (D2 light ward): a reflect also heals you, and any overheal banks a Barrier.
-      if(legActive('lumenveil')){ var _room = healRoom(state), _lvHeal = Math.min(wardReflected, _room); if(_lvHeal > 0){ state.playerHp += _lvHeal; spawnFloatingText('Lumen +'+_lvHeal, 'ft-success'); } if(wardReflected - _room > 0) legBarrierAdd(wardReflected - _room); }
+      if(legActive('lumenveil')){ var _room = healRoom(state), _lvHeal = Math.min(wardReflected, _room); if(_lvHeal > 0){ state.playerHp += _lvHeal; spawnCombatFloat('Lumen +'+_lvHeal, 'ft-success', false); } if(wardReflected - _room > 0) legBarrierAdd(wardReflected - _room); }
       // Aegisveil (D2 light ward): a reflect grants a Holy shield worth 10% of max Health.
       if(legActive('aegisveil')) state.templarShield = (state.templarShield||0) + Math.round(maxHp(state) * LEG_AEGISVEIL_PCT);
       // Voltveil (D3 earth ward): a reflect discharges Static and Curses the foe.
       if(legActive('voltveil') && act && act.type==='combat'){ var _vv = Math.round(wardReflected * thunderDischargeMult(state)); if(_vv > 0){ applyChipDamage(_vv); spawnCombatFloat('⚡ Discharge -'+fmt(_vv), 'ft-crit', true); } curseApply(act); }
       // Gleamveil (D3 light ward): a reflect applies Decay and heals more per Decay stack on the foe.
-      if(legActive('gleamveil') && act && act.type==='combat'){ decayApply(act, 1); var _gh = Math.min(Math.round(wardReflected * (1 + 0.05 * (act.decayStacks||0))), healRoom(state)); if(_gh > 0){ state.playerHp += _gh; spawnFloatingText('Gleam +'+_gh, 'ft-success'); } }
+      if(legActive('gleamveil') && act && act.type==='combat'){ decayApply(act, 1); var _gh = Math.min(Math.round(wardReflected * (1 + 0.05 * (act.decayStacks||0))), healRoom(state)); if(_gh > 0){ state.playerHp += _gh; spawnCombatFloat('Gleam +'+_gh, 'ft-success', false); } }
       // Sanctveil (D3 light ward): a reflect grants a Holy shield and Curses the foe.
       if(legActive('sanctveil')){ state.templarShield = (state.templarShield||0) + Math.round(maxHp(state) * LEG_AEGISVEIL_PCT); if(act && act.type==='combat') curseApply(act); }
       // ---- D4 (Nest of the Depths) legendary wards (Batch CC) ----
       // Emberscale (D4 fire ward): a Fire reflect heals you and banks Dragon's Breath charge.
-      if(legActive('emberscale')){ var _eh = Math.min(wardReflected, healRoom(state)); if(_eh > 0){ state.playerHp += _eh; spawnFloatingText('Ember +'+_eh, 'ft-success'); } if(act && act.type==='combat') d4BreathAdd(act, 10); }
+      if(legActive('emberscale')){ var _eh = Math.min(wardReflected, healRoom(state)); if(_eh > 0){ state.playerHp += _eh; spawnCombatFloat('Ember +'+_eh, 'ft-success', false); } if(act && act.type==='combat') d4BreathAdd(act, 10); }
       // Stormscale (D4 earth ward): an Earth reflect instantly discharges Static at the foe.
       if(legActive('stormscale') && act && act.type==='combat'){ var _ss = Math.round(wardReflected * thunderDischargeMult(state)); if(_ss > 0){ applyChipDamage(_ss); spawnCombatFloat('⚡ Discharge -'+fmt(_ss), 'ft-crit', true); } }
       // Duskscale (D4 dark ward): a Dark reflect Scorches the attacker.
       if(legActive('duskscale') && act && act.type==='combat') scorchApply(act, 2);
       // Dawnscale (D4 light ward): a Light reflect heals you and grants a Radiant Barrier scaling with Light Attunement.
-      if(legActive('dawnscale')){ var _dh = Math.min(wardReflected, healRoom(state)); if(_dh > 0){ state.playerHp += _dh; spawnFloatingText('Dawn +'+_dh, 'ft-success'); } lumenAddShield(Math.round(wardReflected * (1 + elementDamageBonus(state, 'light')))); }
+      if(legActive('dawnscale')){ var _dh = Math.min(wardReflected, healRoom(state)); if(_dh > 0){ state.playerHp += _dh; spawnCombatFloat('Dawn +'+_dh, 'ft-success', false); } lumenAddShield(Math.round(wardReflected * (1 + elementDamageBonus(state, 'light')))); }
       // Sunscale (D4 light ward): a reflect grants a Holy shield scaling with your Light Attunement.
       if(legActive('sunscale')) state.templarShield = (state.templarShield||0) + Math.round(maxHp(state) * LEG_AEGISVEIL_PCT * (1 + elementDamageBonus(state, 'light')));
     }
@@ -14528,7 +14528,7 @@
     if(state.playerHp <= 0 && isFamiliarBuffActive('bubble')){
       state.playerHp = 1; state.familiarBuffs.bubbleUntil = 0;
       addLog('A protective bubble absorbed a fatal blow!', 'important');
-      spawnFloatingText('Bubble saved you!', 'ft-rare');
+      spawnCombatFloat('Bubble saved you!', 'ft-rare', false);
     }
     var hitFeed = [['fortitude', dmgToPlayer]]; // fortitude keeps scaling with damage taken
     if(blocked || (armorDefense + effectiveShieldDefense) > 0) hitFeed.push(['blocking', monster.tierIndex+1]);
@@ -14653,7 +14653,7 @@
     state.inventory[next.id] -= 1;
     var healed = Math.min(next.heal, healRoom(state));
     state.playerHp += healed;
-    spawnFloatingText('Auto-Eat +' + healed + ' HP', 'ft-success');
+    spawnCombatFloat('Auto-Eat +' + healed + ' HP', 'ft-success', false);
   }
 
   // ---- Teas (Mixology): manually-drunk consumables that temporarily boost all skill
@@ -14722,7 +14722,7 @@
     var healed = Math.min(recipe.heal, room);
     state.playerHp += healed;
     addLog('You ate a ' + recipe.name + ' and recovered ' + healed + ' HP.', 'important');
-    if(state.activity && state.activity.type==='combat') spawnFloatingText('+' + healed + ' HP', 'ft-success');
+    if(state.activity && state.activity.type==='combat') spawnCombatFloat('+' + healed + ' HP', 'ft-success', false);
     needsRender = true;
   }
   // Owned Gastronomy Feasts (timed +dmg buff) + Confectionery snacks (instant heal) as combat consumables,
@@ -29271,7 +29271,7 @@
             state.templarShieldAt = Date.now();
             var _aegisMult = templarAegisCapMult(state) * d4TemplarAegisMult(state); // Radiant Aegis (Templar D2 full): +50% cap; Aegis of Light (Templar D4 full): scales with Light Attunement
             var _aegisCap = Math.round(0.15 * maxHp(state) * _aegisMult);
-            if((state.templarShield||0) < _aegisCap){ state.templarShield = _aegisCap; spawnFloatingText('Aegis of Dawn '+_aegisCap, 'ft-rare'); }
+            if((state.templarShield||0) < _aegisCap){ state.templarShield = _aegisCap; spawnCombatFloat('Aegis of Dawn '+_aegisCap, 'ft-rare', false); }
             dungeonNetGrantAegis(_aegisMult); // "...and your party in a dungeon" -- the half that never fired
           }
         }
@@ -29672,7 +29672,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.33.5';
+  var GAME_VERSION = '0.0.33.6';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
