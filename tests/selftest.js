@@ -5783,6 +5783,60 @@
     s.dungeonsCleared = saved;
   });
 
+  // ---- Quests: Getting Started track + the complete/claim/flash flow ----
+  suite('quests: getting started + claim flow', function(){
+    var s = FF._state;
+    var savedMK = s.monsterKills, savedQ = s.quests, savedInv = s.inventory['corpse_t0'], savedTitles = s.titles;
+    s.monsterKills = {}; s.quests = { claimed:{} }; s.titles = {};
+    var q = FF.questById('watership_down');
+    ok(!!q, 'the Watership Down quest exists');
+    eq(q.sub, 'gettingstarted', 'it lives in the Getting Started track');
+    eq(q.target, 10, 'its target is 10 rabbits');
+    ok(q.reward.kind==='item' && q.reward.itemId==='corpse_t0' && q.reward.qty===10, 'reward is 10 Rabbit Corpses (corpse_t0)');
+    ok(q.nav.cat==='enemies' && q.nav.sub==='wildlife', 'its Go destination is Enemies -> Wildlife');
+    // Incomplete: not complete, not claimable, nothing flashes.
+    eq(FF.questComplete(q), false, 'no kills -> not complete');
+    eq(FF.questClaimable(q), false, 'incomplete -> not claimable');
+    eq(FF.questAnyClaimable(), false, 'nothing claimable yet');
+    eq(FF.railSubFlash('quests'), false, 'Quests tab does not flash while nothing is claimable');
+    eq(FF.railAreaFlash('battle'), false, 'Battle area does not flash yet');
+    // 9 kills is still short; the 10th completes it.
+    for(var i=0;i<9;i++) FF.bumpMonsterKill('wildlife_rabbit');
+    eq(FF.questProgress(q), 9, 'progress tracks rabbit kills');
+    eq(FF.questComplete(q), false, '9/10 is not complete');
+    FF.bumpMonsterKill('wildlife_rabbit');
+    eq(FF.questProgress(q), 10, 'the 10th kill meets the target');
+    ok(FF.questComplete(q) && FF.questClaimable(q), 'complete + claimable at 10 kills');
+    eq(FF.questClaimableInSub('gettingstarted'), true, 'the owning sub-track is claimable');
+    eq(FF.railSubFlash('quests'), true, 'the Quests tab flashes when a reward is claimable');
+    eq(FF.railAreaFlash('battle'), true, 'the Battle area flashes so it is visible from anywhere');
+    // Only the wildlife_rabbit tally counts; a different monster does not advance it.
+    FF.bumpMonsterKill('demonspawn_imp');
+    eq(FF.questProgress(q), 10, 'progress is clamped at the target and only counts rabbits');
+    // Claim grants the reward exactly once.
+    var before = s.inventory['corpse_t0'] || 0;
+    ok(FF.claimQuest('watership_down'), 'claim succeeds when claimable');
+    eq((s.inventory['corpse_t0']||0) - before, 10, 'claim grants 10 Rabbit Corpses');
+    eq(FF.questClaimed(q), true, 'the quest is marked claimed');
+    eq(FF.questClaimable(q), false, 'a claimed quest is no longer claimable');
+    eq(FF.railSubFlash('quests'), false, 'the flash clears after claiming');
+    // Idempotent: a second claim grants nothing.
+    var after = s.inventory['corpse_t0'] || 0;
+    eq(FF.claimQuest('watership_down'), false, 'a claimed quest cannot be re-claimed');
+    eq(s.inventory['corpse_t0']||0, after, 'no extra corpses from a double-claim');
+    // Cannot claim an incomplete quest.
+    s.quests = { claimed:{} }; s.monsterKills = {};
+    eq(FF.claimQuest('watership_down'), false, 'cannot claim an incomplete quest');
+    // renderQuestsTab reflects the button states.
+    var goHtml = FF.renderQuestsTab();
+    ok(/Watership Down/.test(goHtml) && /data-action="navToActivity"/.test(goHtml) && /data-nav-cat="enemies"/.test(goHtml), 'incomplete quest renders a Go button to Enemies');
+    for(var k=0;k<10;k++) FF.bumpMonsterKill('wildlife_rabbit');
+    var claimHtml = FF.renderQuestsTab();
+    ok(/data-action="questClaim"/.test(claimHtml) && /data-quest="watership_down"/.test(claimHtml), 'a completed quest renders a Claim button');
+    // restore
+    s.monsterKills = savedMK; s.quests = savedQ; s.inventory['corpse_t0'] = savedInv; s.titles = savedTitles;
+  });
+
   // ---- Auth identity guard: cross-account write prevention (shared per-origin auth session) ----
   suite('auth: identity-mismatch guard', function(){
     var saved = FF._authBoundUserId();
