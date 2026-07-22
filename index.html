@@ -4231,8 +4231,9 @@
     st = st || state;
     var cap = bowArrowTierCap(st);
     var sel = st.equippedArrow;
-    if(sel){ return (arrowUsableWithBow(st, sel) && ((st.inventory && st.inventory[sel]) || 0) > 0) ? sel : null; }
-    for(var i = cap; i >= 0; i--){ if(((st.inventory && st.inventory['fletching_arrow_t'+i]) || 0) > 0) return 'fletching_arrow_t'+i; }
+    var locked = st.lockedItems || {};   // locked arrows are protected -- never nocked/fired until unlocked
+    if(sel){ return (arrowUsableWithBow(st, sel) && ((st.inventory && st.inventory[sel]) || 0) > 0 && !locked[sel]) ? sel : null; }
+    for(var i = cap; i >= 0; i--){ var aid = 'fletching_arrow_t'+i; if(((st.inventory && st.inventory[aid]) || 0) > 0 && !locked[aid]) return aid; }
     return null;
   }
   // Arrows the equipped bow can actually fire right now -- powers the live combat-screen ammo counter. With
@@ -4241,9 +4242,10 @@
     st = st || state;
     var cap = bowArrowTierCap(st);
     var sel = st.equippedArrow;
-    if(sel){ return arrowUsableWithBow(st, sel) ? ((st.inventory && st.inventory[sel]) || 0) : 0; }
+    var locked = st.lockedItems || {};   // the live counter reflects only arrows that can actually fire (unlocked)
+    if(sel){ return (arrowUsableWithBow(st, sel) && !locked[sel]) ? ((st.inventory && st.inventory[sel]) || 0) : 0; }
     var n = 0;
-    for(var i = cap; i >= 0; i--){ n += (st.inventory && st.inventory['fletching_arrow_t'+i]) || 0; }
+    for(var i = cap; i >= 0; i--){ var aid = 'fletching_arrow_t'+i; if(!locked[aid]) n += (st.inventory && st.inventory[aid]) || 0; }
     return n;
   }
   // A nocked arrow adds base damage equal to a same-tier bow (handBonus 1.0), so higher-tier arrows hit
@@ -13428,7 +13430,9 @@
     }
     state.potionCharges = (state.potionCharges||0) - 1;
     if(state.potionCharges <= 0){
-      if((state.inventory[state.activePotion]||0) > 0){ state.inventory[state.activePotion]--; state.potionCharges = POTION_MAX_CHARGES + apothecaryExtraCharges(); }
+      // Auto-reload the next unit from the bag -- but a locked stack is protected, so it stows instead of
+      // being drawn down automatically. Unlock it to keep the auto-reload going.
+      if((state.inventory[state.activePotion]||0) > 0 && !state.lockedItems[state.activePotion]){ state.inventory[state.activePotion]--; state.potionCharges = POTION_MAX_CHARGES + apothecaryExtraCharges(); }
       else { state.activePotion = null; state.potionCharges = 0; }
       needsRender = true; // reload/deplete changes the picker; charge countdown updates live otherwise
     }
@@ -14777,10 +14781,11 @@
   }
   function getNextAutoEatFood(){
     var types = getAutoEatFoodTypes();
-    return types.filter(function(c){ return (state.inventory[c.id]||0) > 0; })[0] || null;
+    // Locked food is protected -- Auto-Eat skips it and never consumes it until it's unlocked.
+    return types.filter(function(c){ return (state.inventory[c.id]||0) > 0 && !state.lockedItems[c.id]; })[0] || null;
   }
   function getTotalAutoEatFoodQty(){
-    return getAutoEatFoodTypes().reduce(function(sum, c){ return sum + (state.inventory[c.id]||0); }, 0);
+    return getAutoEatFoodTypes().reduce(function(sum, c){ return sum + (state.lockedItems[c.id] ? 0 : (state.inventory[c.id]||0)); }, 0);
   }
   function setAutoEatThreshold(value){
     state.autoEatThreshold = value;
@@ -17293,7 +17298,7 @@
     for(var i=0;i<=cap;i++){ var id='fletching_arrow_t'+i; if((state.inventory[id]||0)>0) owned.push(id); }
     var curLabel = sel ? ((ALL_SELLABLE[sel]||{}).name||sel) : 'Auto (highest usable)';
     var curDmg = activeId ? arrowBaseDamage(activeId) : null;
-    html += '<div class="section-intro">Choose which arrow your bow fires. Only that arrow is spent and counted for damage; when you run out the shot goes unfletched (&times;'+UNFLETCHED_DMG_MULT+' damage). Arrows fancier than your bow can\'t be nocked.</div>';
+    html += '<div class="section-intro">Choose which arrow your bow fires. Only that arrow is spent and counted for damage; when you run out the shot goes unfletched (&times;'+UNFLETCHED_DMG_MULT+' damage). Arrows fancier than your bow can\'t be nocked. <b>Locked</b> arrows are never fired &mdash; unlock them in your Inventory to use them.</div>';
     html += '<div class="card-grid"><div class="item-card">';
     html += '<div class="item-top"><div class="item-icon">'+svgIcon('arrow','#a8895c')+'</div><div><div class="item-name">Arrow</div><div class="item-meta">'+escapeHtml(curLabel)+(curDmg ? ' &bull; +'+curDmg.dmgMin+'-'+curDmg.dmgMax+' dmg' : (sel ? ' &bull; <span style="color:var(--hp-bad)">none owned — unfletched</span>' : ''))+'</div></div></div>';
     html += '<div class="style-row">';
@@ -17837,7 +17842,7 @@
   }
   function renderAutoEatPanel(){
     var html = '<h3 style="margin-top:0">Auto-Eat</h3>';
-    html += '<div class="section-intro">During combat only, automatically eats your best available Roasted Food or Cooked Meal (highest heal first) once your HP drops to or below the chosen threshold. Off by default.</div>';
+    html += '<div class="section-intro">During combat only, automatically eats your best available Roasted Food or Cooked Meal (highest heal first) once your HP drops to or below the chosen threshold. Off by default. <b>Locked</b> food is skipped &mdash; unlock it in your Inventory to let Auto-Eat use it.</div>';
     html += '<div class="style-row">';
     html += '<button class="style-btn'+(!state.autoEatThreshold?' active':'')+'" data-action="setAutoEatThreshold" data-value="0">'+svgIcon('noicon','currentColor')+' Off</button>';
     AUTO_EAT_THRESHOLDS.forEach(function(t){
@@ -18253,7 +18258,7 @@
   function deactivatePotion(){ state.activePotion = null; state.potionCharges = 0; saveGame(); render(); }
   function renderCombatPotionsPanel(){
     var html = '<h3 style="margin-top:16px">'+svgIcon('potion','#8a5aaa')+' Combat Potions</h3>';
-    html += '<div class="section-intro">Ready one combat consumable for battle — it triggers on every attack, spending 1 of its 10 charges, then auto-reloads the next from your bag. Only one active at a time. Craft them in Alchemy (potions), Apothecary (Weapon Coatings), Tinkering (Bombs), or Pyrotechnics (Flash Bombs).</div>';
+    html += '<div class="section-intro">Ready one combat consumable for battle — it triggers on every attack, spending 1 of its 10 charges, then auto-reloads the next from your bag. Only one active at a time. A <b>locked</b> stack won\'t auto-reload — it stows instead, so unlock it in your Inventory to keep it feeding. Craft them in Alchemy (potions), Apothecary (Weapon Coatings), Tinkering (Bombs), or Pyrotechnics (Flash Bombs).</div>';
     if(state.activePotion){
       var an = (ALL_SELLABLE[state.activePotion]||{}).name || state.activePotion;
       html += '<div class="physique-bonus">Active: <b>'+escapeHtml(an)+'</b> &mdash; '+potionEffectDesc(state.activePotion)
@@ -30583,7 +30588,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.0';
+  var GAME_VERSION = '0.0.39.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -30743,6 +30748,7 @@
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey, invGroupFor:invGroupFor, INV_GROUPS:INV_GROUPS,
       sortEquipCandidates:sortEquipCandidates, renderEquipCandidatePicker:renderEquipCandidatePicker, renderEquipBodyArmorSection:renderEquipBodyArmorSection, renderMainhandEquipSection:renderMainhandEquipSection, equipPickerHtml:equipPickerHtml,
+      getNextAutoEatFood:getNextAutoEatFood, getTotalAutoEatFoodQty:getTotalAutoEatFoodQty, getAutoEatFoodTypes:getAutoEatFoodTypes,
       setEquipHideLocked:function(v){ equipHideLocked = !!v; }, getEquipHideLocked:function(){ return equipHideLocked; },
       craftBodyRarity:craftBodyRarity, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, enhanceBodyRarity:enhanceBodyRarity, chronicleEnhanceToSystemMsg:chronicleEnhanceToSystemMsg, chronicleRowToSystemMsg:chronicleRowToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,

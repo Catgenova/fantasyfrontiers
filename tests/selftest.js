@@ -7563,12 +7563,37 @@
     ok(!FF.arrowUsableWithBow({ equippedMainhandTier:2 }, 'fletching_arrow_t9'), 'arrowUsableWithBow rejects an over-tier arrow');
     ok(FF.arrowUsableWithBow({ equippedMainhandTier:6 }, 'fletching_arrow_t3'), 'arrowUsableWithBow accepts an in-tier arrow');
     eq(FF.bowArrowTierCap({ equippedMainhandTier:6 }), 5, 'bow tier cap is bow tier - 1');
+    // Locked ammunition is protected -- never auto-nocked/fired and not counted as available, until unlocked.
+    eq(FF.bowArrowToConsume({ equippedMainhandTier:6, inventory:{ fletching_arrow_t0:10, fletching_arrow_t3:5 }, lockedItems:{ fletching_arrow_t3:true } }), 'fletching_arrow_t0', 'Auto skips a locked arrow and falls to the next unlocked one');
+    eq(FF.bowArrowToConsume({ equippedMainhandTier:6, inventory:{ fletching_arrow_t3:5 }, lockedItems:{ fletching_arrow_t3:true } }), null, 'Auto with only locked arrows -> null (shoot unfletched, never consume the lock)');
+    eq(FF.bowArrowsAvailable({ equippedMainhandTier:6, inventory:{ fletching_arrow_t0:10, fletching_arrow_t3:5 }, lockedItems:{ fletching_arrow_t3:true } }), 10, 'locked arrows are excluded from the available count');
+    eq(FF.bowArrowToConsume({ equippedMainhandTier:6, equippedArrow:'fletching_arrow_t3', inventory:{ fletching_arrow_t3:5 }, lockedItems:{ fletching_arrow_t3:true } }), null, 'a locked chosen arrow is not fired');
+    eq(FF.bowArrowsAvailable({ equippedMainhandTier:6, equippedArrow:'fletching_arrow_t3', inventory:{ fletching_arrow_t3:5 }, lockedItems:{ fletching_arrow_t3:true } }), 0, 'a locked chosen arrow counts as 0 available');
     // equipArrow mutates the shared state; snapshot/restore so other suites are unaffected.
     var _savedArrow = FF._state.equippedArrow;
     FF.equipArrow('fletching_arrow_t3'); eq(FF._state.equippedArrow, 'fletching_arrow_t3', 'equipArrow sets the chosen arrow');
     FF.equipArrow(''); eq(FF._state.equippedArrow, null, 'equipArrow with empty id resets to Auto');
     FF.equipArrow('not_an_arrow'); eq(FF._state.equippedArrow, null, 'equipArrow ignores a non-arrow id');
     FF._state.equippedArrow = _savedArrow;
+  });
+
+  suite('locked consumables are never auto-used (food / potions / ammo)', function(){
+    var S = FF._state, savedInv = S.inventory, savedLock = S.lockedItems;
+    try {
+      var foods = FF.getAutoEatFoodTypes();
+      ok(foods.length >= 2, 'there are auto-eat food types to test');
+      var hi = foods[0], lo = foods[1];   // getAutoEatFoodTypes is sorted by heal desc
+      S.inventory = {}; S.inventory[hi.id] = 3; S.inventory[lo.id] = 5;
+      S.lockedItems = {};
+      eq(FF.getNextAutoEatFood().id, hi.id, 'Auto-Eat picks the strongest food when nothing is locked');
+      eq(FF.getTotalAutoEatFoodQty(), 8, 'total auto-eat food counts every unlocked stack');
+      S.lockedItems[hi.id] = true;
+      eq(FF.getNextAutoEatFood().id, lo.id, 'Auto-Eat skips the locked strongest food and eats the next unlocked one');
+      eq(FF.getTotalAutoEatFoodQty(), 5, 'a locked food stack is excluded from the auto-eat total');
+      S.lockedItems[lo.id] = true;
+      eq(FF.getNextAutoEatFood(), null, 'with every food locked, Auto-Eat has nothing to eat (protects the locks)');
+      eq(FF.getTotalAutoEatFoodQty(), 0, 'all food locked -> auto-eat total is 0');
+    } finally { S.inventory = savedInv; S.lockedItems = savedLock; }
   });
 
   // ---- Classes: Knight (claymore offtank brawler: momentum + counterweight/bulwark/warlord/relentless) ----
