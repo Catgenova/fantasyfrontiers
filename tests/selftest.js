@@ -672,6 +672,34 @@
     }
   });
 
+  // ---- Discord feed: the stats tail appended to fantastic-craft / enhance blasts ----------
+  suite('discord feed: item stats tail', function(){
+    // A fantastic relic reads its computed %dmg/armour bonus.
+    var relic = FF.discordItemStatsText('relic_t0_fantastic');
+    ok(/^ \(.*\)$/.test(relic), 'stats tail is wrapped in " (...)"');
+    ok(relic.indexOf('% Damage & Armour') !== -1, 'relic tail carries the dmg/armour bonus');
+
+    // A fantastic tool reads its tier speed bonus scaled by the rarity multiplier.
+    var toolId = Object.keys(FF.TOOL_ITEMS).filter(function(id){ return /_fantastic$/.test(id); })[0];
+    ok(!!toolId, 'a fantastic tool item exists');
+    ok(FF.discordItemStatsText(toolId).indexOf('speed') !== -1, 'tool tail states its speed bonus');
+
+    // A fantastic belt leads with its task slots; a stackable weapon leads with damage.
+    ok(FF.discordItemStatsText('belt_t0_fantastic').indexOf('4 task slots') !== -1, 'belt tail states its 4 task slots');
+    var wid = Object.keys(FF.ALL_SELLABLE).filter(function(id){ return id.indexOf('stweapon_')===0 && /_fantastic$/.test(id); })[0];
+    ok(!!wid, 'a fantastic stackable weapon exists');
+    ok(FF.discordItemStatsText(wid).indexOf('Damage ') !== -1, 'weapon tail states its damage range');
+
+    // An enhance blast passes the unique: enhance-scaled base stats + its enchant list.
+    var u = { base:wid, kind:'weapon', tier:0, rarity:'fantastic', enhance:12, enchants:[{mod:'critDamage', roll:10}] };
+    var tail = FF.discordItemStatsText(null, u);
+    ok(tail.indexOf('Damage ') !== -1 && tail.indexOf('(+12)') !== -1, 'enhanced weapon tail shows the +12-scaled damage');
+    ok(/Critical/i.test(tail), 'enhanced tail lists the enchant');
+
+    // Unknown ids stay silent rather than posting junk.
+    eq(FF.discordItemStatsText('no_such_item'), '', 'an unknown id yields an empty tail');
+  });
+
   // ---- Combat placement: a fight claims the primary slot without killing a queued task ----
   // Regression: startCombat wrote state.activity directly, so starting a fight silently replaced
   // the first task in the action queue even when an extra (belt) slot sat empty.

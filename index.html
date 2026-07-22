@@ -4060,7 +4060,7 @@
     state.popupBatchTotal = (state.popupBatchTotal||0) + 1;
     needsRender = true;
   }
-  function logForgeResult(rarityId, baseName){
+  function logForgeResult(rarityId, baseName, statsText){
     bumpStat('crafted');
     if(rarityId && rarityId!=='normal'){
       bumpStat('crafted' + rarityId.charAt(0).toUpperCase() + rarityId.slice(1)); // craftedRare/Supreme/Fantastic
@@ -4070,8 +4070,9 @@
       maybeShowRarityPopup(rarityId, r.label + baseName);
       chronicleBroadcast('craft', r.label + baseName);   // rare/supreme/fantastic -> global feed
       // Fantastic forges also hit the community Discord feed -- including ones rolled offline
-      // (chronicleBroadcast skips those, the Discord feed deliberately doesn't).
-      if(rarityId==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** forged a **' + r.label + baseName + '**!' + discordFeedOfflineTag());
+      // (chronicleBroadcast skips those, the Discord feed deliberately doesn't). statsText is the
+      // caller-supplied " (stat · stat)" tail (see discordItemStatsText).
+      if(rarityId==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** forged a **' + r.label + baseName + '**!' + (statsText||'') + discordFeedOfflineTag());
       // Supreme/fantastic crafts also announce in global chat (crafter's own copy; other players
       // synthesize theirs from the chronicle broadcast in chronicleOnIncoming).
       if(!offlineCapture && authUser && (rarityId==='supreme' || rarityId==='fantastic')){
@@ -10028,7 +10029,7 @@
       mintSetPiece(key.cls, key.slot, rarity, recipe.layer);
       var pname = getRarity(rarity).label + setPieceName(key.cls, key.slot, recipe.layer);
       addLog('Mastercraft! You forged the ' + pname + ' — part of the ' + ((CLASS_DEFS_BY_ID[key.cls]||{}).name || key.cls) + ' set.', 'important');
-      if(rarity==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the **' + pname + '**!');
+      if(rarity==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the **' + pname + '**! (part of the ' + ((CLASS_DEFS_BY_ID[key.cls]||{}).name || key.cls) + ' set)');
       spawnFloatingText('+1 ' + pname, ftClass);
       needsRender = true;
       return;
@@ -10047,7 +10048,7 @@
         tier: topIdx, rarity: rarity, enchants: [], enhance: 0, leg: key }; // tier = base tier INDEX (equip adds +1)
       var git = recipe.itemMap[itemId];
       addLog('Mastercraft! You forged the Legendary ' + git.name + ' — ' + gdef.desc, 'important');
-      if(rarity==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the Legendary **' + git.name + '**!');
+      if(rarity==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the Legendary **' + git.name + '**! (' + gdef.desc + ')');
       spawnFloatingText('+1 ' + git.name, ftClass);
       needsRender = true;
       return;
@@ -10055,7 +10056,7 @@
     addItem(itemId, 1);
     var it = recipe.itemMap[itemId];
     addLog('Mastercraft! You forged the ' + it.name + ' — +' + Math.round(it.value * 100) + '% ' + it.statLabel + '.', 'important');
-    if(rarity==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the **' + it.name + '**!');
+    if(rarity==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the **' + it.name + '**! (+' + Math.round(it.value * 100) + '% ' + it.statLabel + ')');
     spawnFloatingText('+1 ' + it.name, ftClass);
     needsRender = true;
   }
@@ -10544,38 +10545,40 @@
   // Produce ONE output for this special craft at the given rarity; returns the rarity
   // actually used (bodyarmor clamps to its material's allowed set; workshops are always normal).
   function produceSpecialOutput(act, rarity){
+    var itemId = null;
     if(act.craftKind==='tool'){
-      addItem('tool_'+act.skillId+'_t'+act.tierIndex+'_'+rarity, 1);
+      itemId = 'tool_'+act.skillId+'_t'+act.tierIndex+'_'+rarity;
     } else if(act.craftKind==='stackweapon'){
-      addItem('stweapon_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
+      itemId = 'stweapon_'+act.typeId+'_t'+act.tierIndex+'_'+rarity;
     } else if(act.craftKind==='stackshield'){
-      addItem('stshield_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
+      itemId = 'stshield_'+act.typeId+'_t'+act.tierIndex+'_'+rarity;
     } else if(act.craftKind==='stackquiver'){
-      addItem('stquiver_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
+      itemId = 'stquiver_'+act.typeId+'_t'+act.tierIndex+'_'+rarity;
     } else if(act.craftKind==='ward'){
-      addItem('stward_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
+      itemId = 'stward_'+act.typeId+'_t'+act.tierIndex+'_'+rarity;
     } else if(act.craftKind==='bodyarmor'){
       var mat = BODY_ARMOR_MATERIALS[act.material];
       if(mat.rarityIds.indexOf(rarity)===-1) rarity = mat.rarityIds[mat.rarityIds.length-1];
-      addItem('bodyarmor_'+act.material+'_'+act.slot+'_t'+act.tierIndex+'_'+rarity, 1);
+      itemId = 'bodyarmor_'+act.material+'_'+act.slot+'_t'+act.tierIndex+'_'+rarity;
     } else if(act.craftKind==='belt'){
-      addItem('belt_t'+act.tierIndex+'_'+rarity, 1);
+      itemId = 'belt_t'+act.tierIndex+'_'+rarity;
     } else if(act.craftKind==='offhand'){
       var oTier2 = state.offhandTiers[act.typeId]||0;
       state.offhandTiers[act.typeId] = oTier2+1;
       state.offhandRarities[act.typeId] = rarity;
     } else if(act.craftKind==='ring'){
-      addItem('ring_'+act.typeId+'_t'+act.tierIndex+'_'+rarity, 1);
+      itemId = 'ring_'+act.typeId+'_t'+act.tierIndex+'_'+rarity;
     } else if(act.craftKind==='amulet'){
-      addItem(amuletBaseId(act.typeId||'plain', act.tierIndex, rarity), 1);
+      itemId = amuletBaseId(act.typeId||'plain', act.tierIndex, rarity);
     } else if(act.craftKind==='workshop'){
-      addItem('workshop_'+act.skillId+'_t'+act.tierIndex, 1);
+      itemId = 'workshop_'+act.skillId+'_t'+act.tierIndex;
       rarity = 'normal';
     } else if(act.craftKind==='cottage'){
-      addItem('cottage_t'+act.tierIndex, 1);
+      itemId = 'cottage_t'+act.tierIndex;
       rarity = 'normal';
     }
-    return rarity;
+    if(itemId) addItem(itemId, 1);
+    return { rarity:rarity, itemId:itemId };
   }
   // Paving crafts yield double the experience of any other crafting skill.
   // Paving is XP-boosted vs other crafting skills (it's slow, estate-only output). Doubled again by
@@ -10596,9 +10599,10 @@
       var outputs = (SPECIAL_DOUBLEABLE_KINDS.indexOf(act.craftKind)!==-1 && Math.random() < workshopDoubleChance(state, skillId)) ? 2 : 1;
       for(var o=0;o<outputs;o++){
         var rarity = (act.craftKind==='workshop' || act.craftKind==='cottage') ? 'normal' : rollCraftRarity(state);
-        rarity = produceSpecialOutput(act, rarity);
+        var made = produceSpecialOutput(act, rarity);
+        rarity = made.rarity;
         awardMasterworkXp(rarity, act.tierIndex); // Masterwork trains only on a rare+ output
-        logForgeResult(rarity, tierData.name);
+        logForgeResult(rarity, tierData.name, rarity==='fantastic' ? discordItemStatsText(made.itemId) : '');
       }
       if(outputs===2) spawnFloatingText('Workshop: double output!', 'ft-rare');
     } else {
@@ -10689,7 +10693,7 @@
             addLog('You recovered a ' + RELIC_ITEMS[relicId].name + '!', 'important');
             spawnFloatingText('+1 ' + RELIC_ITEMS[relicId].name + '!', rarityId==='normal' ? 'ft-success' : 'ft-rare');
             maybeShowRarityPopup(rarityId, RELIC_ITEMS[relicId].name, RELIC_ITEMS[relicId].icon);
-            if(rarityId==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** recovered a **' + RELIC_ITEMS[relicId].name + '**!' + discordFeedOfflineTag());
+            if(rarityId==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** recovered a **' + RELIC_ITEMS[relicId].name + '**!' + discordItemStatsText(relicId) + discordFeedOfflineTag());
           } else {
             var brokenId = 'brokenrelic_t'+recipe.tierIndex;
             addItem(brokenId, 1);
@@ -12291,7 +12295,7 @@
   var DISCORD_ENHANCE_MIN = 12;   // +12 and above also reach the community Discord feed
   function announceEnhance(u){
     // Enhancing is click-only (never runs in offline catch-up), so no offline tag needed here.
-    if(u.enhance >= DISCORD_ENHANCE_MIN) discordFeedPost('⚒️ **' + discordFeedName() + '** enhanced their **' + uniqueBaseName(u) + '** to **+' + u.enhance + '**!');
+    if(u.enhance >= DISCORD_ENHANCE_MIN) discordFeedPost('⚒️ **' + discordFeedName() + '** enhanced their **' + uniqueBaseName(u) + '** to **+' + u.enhance + '**!' + discordItemStatsText(null, u));
     if(u.enhance < ENHANCE_ANNOUNCE_MIN || !chatName()) return;
     var body = uniqueBaseName(u) + ' to +' + u.enhance;         // e.g. "Willow Fire Wand to +12"
     var rar = u.enhance >= 15 ? 'fantastic' : 'supreme';
@@ -12607,12 +12611,10 @@
   // Full stat card body for a unique-like { base, kind, tier, rarity, enhance, enchants }: icon, name,
   // rarity/tier/+enhance, base stats, and the ALWAYS-visible enhance-scaled enchant list. Shared by the
   // chat-link popup, the Inventory "Unique" section, and the unique detail popup.
-  function uniqueCardBody(d){
+  // Plain-text base stat lines for a unique-like { base, kind, tier, rarity, enhance } -- shared by the
+  // stat card below (uniqueCardBody) and the Discord feed blast (discordItemStatsText).
+  function uniqueBaseStatLines(d){
     var b = ALL_SELLABLE[d.base];
-    var nm = (b?b.name:'Equipment') + (d.enhance>0?' +'+d.enhance:'');
-    var html = '<div class="inv-detail-icon">'+((b&&b.icon)||svgIcon('sword','var(--gold)'))+'</div>';
-    html += '<div class="skill-info-title">'+escapeHtml(nm)+'</div>';
-    html += '<div class="inv-detail-meta">'+escapeHtml(getRarity(d.rarity).label||'')+' &bull; Tier '+(d.tier+1)+(d.enhance>0?' &bull; <b>+'+d.enhance+'</b>':'')+'</div>';
     var baseLines = [];
     if(b){
       // Enhancing a weapon scales its base damage in combat (mainhandEnhanceMult === enhanceStatMult),
@@ -12646,6 +12648,17 @@
     }
     // Relics carry no static stat field -- their %dmg/armour bonus is computed from tier+rarity (and +enhance).
     if(d.kind==='relic') baseLines.push('+'+Math.round(getRelicBonusPct(d.tier, d.rarity) * enhanceStatMult(d.enhance||0) * 100)+'% Damage & Armour');
+    // A Belt's headline stat is its concurrent task slots (rarity-scaled).
+    if(d.kind==='belt' && BELT_RARITY_SLOTS[d.rarity]) baseLines.push(BELT_RARITY_SLOTS[d.rarity]+' task slot'+(BELT_RARITY_SLOTS[d.rarity]>1?'s':''));
+    return baseLines;
+  }
+  function uniqueCardBody(d){
+    var b = ALL_SELLABLE[d.base];
+    var nm = (b?b.name:'Equipment') + (d.enhance>0?' +'+d.enhance:'');
+    var html = '<div class="inv-detail-icon">'+((b&&b.icon)||svgIcon('sword','var(--gold)'))+'</div>';
+    html += '<div class="skill-info-title">'+escapeHtml(nm)+'</div>';
+    html += '<div class="inv-detail-meta">'+escapeHtml(getRarity(d.rarity).label||'')+' &bull; Tier '+(d.tier+1)+(d.enhance>0?' &bull; <b>+'+d.enhance+'</b>':'')+'</div>';
+    var baseLines = uniqueBaseStatLines(d);
     if(baseLines.length) html += '<div class="skill-info-section"><div class="skill-info-section-label">Base</div><div class="skill-info-section-body">'+baseLines.map(escapeHtml).join(' &bull; ')+'</div></div>';
     // Inherent, rarity-scaled material bonus (body armor only) -- what the piece adds just by being worn.
     if(b && b.material && b.slot){
@@ -13130,7 +13143,8 @@
       state.weaponRarities[typeId] = rarity;
       awardMasterworkXp(rarity, tier); // Masterwork trains only on a rare+ forge
       if(!state.equippedMainhand) equipMainhand(typeId);
-      logForgeResult(rarity, next.name);
+      // Typed weapons never become inventory items -- build the damage tail from the recipe + rarity mult.
+      logForgeResult(rarity, next.name, rarity==='fantastic' ? ' (Damage '+Math.round(next.dmgMin*getRarity(rarity).mult)+'–'+Math.round(next.dmgMax*getRarity(rarity).mult)+')' : '');
     } else {
       logForgeFailure(next.name);
     }
@@ -24557,6 +24571,31 @@
   var discordFeedTimer = null;
   function discordFeedName(){ return chatName() || 'An adventurer'; }
   function discordFeedOfflineTag(){ return offlineCapture ? ' *(offline catch-up)*' : ''; }
+  // Compact " (stat · stat · ...)" tail for a feed blast: base stats, body-armor material bonus, and
+  // any enchants (enhance-scaled). Takes a produced item id (fresh forges) or a unique record
+  // (enhance announcements). Tool items carry no stat fields -- their benefit lives in the tier
+  // tables -- so tools read their speed/success bonus from there, scaled by the rarity multiplier.
+  function discordItemStatsText(itemId, u){
+    var d = u || null, lines = [];
+    if(!d && itemId){
+      var t = TOOL_ITEMS[itemId];
+      if(t){
+        var td = t.isGather ? getGatherToolTierData(t.skillId, t.tierIndex+1) : getCraftToolTierData(t.skillId, t.tierIndex+1);
+        var tm = TOOL_RARITY_MULT[t.rarity] || 1;
+        if(td && td.speedBonus) lines.push('+'+Math.round(td.speedBonus*tm*100)+'% '+toolBenefitLabel(t)+' speed');
+        if(td && td.successBonus) lines.push('+'+Math.round(td.successBonus*tm*100)+'% success');
+        return lines.length ? ' ('+lines.join(' · ')+')' : '';
+      }
+      var p = parseImprovable(itemId); // kind:null still yields the generic lines (damage/defense/reflect/...)
+      d = { base:itemId, kind:(p&&p.kind)||null, tier:(p&&p.tier)||0, rarity:(p&&p.rarity)||itemRarityId(itemId)||'normal', enhance:0, enchants:[] };
+    }
+    if(!d) return '';
+    lines = uniqueBaseStatLines(d);
+    var b = ALL_SELLABLE[d.base];
+    if(b && b.material && b.slot) lines = lines.concat(armorMaterialBonusLines(b.material, b.slot, d.rarity));
+    lines = lines.concat(uniqueEnchantLines(d) || []);
+    return lines.length ? ' ('+lines.join(' · ')+')' : '';
+  }
   function discordFeedPost(text){
     if(!DISCORD_FEED_WEBHOOK || !text) return;
     discordFeedQueue.push(String(text).slice(0, 1900));   // Discord caps message content at 2000 chars
@@ -29747,7 +29786,7 @@
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, itemReconcile:itemReconcile,
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX,
       parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
-      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
+      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, uniqueBaseStatLines:uniqueBaseStatLines, discordItemStatsText:discordItemStatsText, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray, startCombat:startCombat, relocatePrimaryTaskToFreeSlot:relocatePrimaryTaskToFreeSlot,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
