@@ -2795,6 +2795,26 @@
     eq(FF.enemyDamageRangeVsPlayer(null, s).max, 0, 'a null foe yields a zero range (no crash)');
   });
 
+  // ---- Death chronicle: a detailed "final hit" line when the player is slain ----
+  suite('combat: death chronicle explains the final hit', function(){
+    ok(typeof FF.deathBlowChronicle === 'function', 'deathBlowChronicle is exported');
+    var foe = { name:'Obsidian Elemental', damageType:'piercing', element:'light' };
+    // Killed by a hit that landed 42 after soaking 18 of a 60 raw swing, from 30 HP, with a Block.
+    var line = FF.deathBlowChronicle(foe, 42, 60, 18, true, 30);
+    ok(/Obsidian Elemental/.test(line), 'names the foe that killed you');
+    ok(/42/.test(line), 'reports the final hit damage');
+    ok(/Light/.test(line) && /Piercing/.test(line), 'reports the damage element and type');
+    ok(/raw 60/.test(line) && /18 soaked/.test(line), 'reports the raw swing and how much armour/shield soaked');
+    ok(/Blocked/.test(line), 'notes a Block');
+    ok(/fell from 30 HP/.test(line), 'reports the Health you fell from');
+    // A clean hit with no mitigation and no element: still coherent, no "raw" clause, physical type.
+    var plain = FF.deathBlowChronicle({ name:'Rabbit' }, 10, 10, 0, false, 10);
+    ok(/Rabbit/.test(plain) && /10/.test(plain) && /physical/.test(plain), 'handles a plain physical kill');
+    ok(!/soaked/.test(plain), 'omits the mitigation clause when nothing was soaked');
+    // No crash / sane output on a missing foe.
+    ok(typeof FF.deathBlowChronicle(null, 5, 5, 0, false, 5) === 'string', 'tolerates a missing foe');
+  });
+
   // ---- Battle IA: a live-fight "Combat" tab, split from an "Enemies" selection tab ---------------
   suite('battle tabs: Combat (live fight) vs Enemies (selection)', function(){
     ok(typeof FF.renderCombatTab === 'function' && typeof FF.renderEnemiesTab === 'function', 'both battle tabs exported');
