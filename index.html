@@ -3315,6 +3315,8 @@
       var base = MONSTERS_BY_ID[id.slice(0, -5)];
       if(base) return dungeonSoloEnemy(base);
     }
+    // A tower foe ('tower_<entrance>_f<floor>') is synthetic -- rebuild it on demand after a reload.
+    if(typeof id === 'string' && id.indexOf('tower_') === 0){ var tm = towerMonsterFromId(id); if(tm) return tm; }
     return null;
   }
 
@@ -11396,6 +11398,7 @@
       monsterKills: {},          // per-monster-id kill tally (Quest progress source)
       quests: { claimed: {} },   // quest progression: { claimed: { questId: true } }
       titles: {},                // unlocked quest/achievement titles (cosmetic), by id
+      tower: {},                 // The Tower: per-entrance progress { <entranceId>: { floor, best } }
 
       familiarCastIndex: 0,
       familiarCastAccum: 0,
@@ -11415,7 +11418,7 @@
   var AREAS = [
     { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['improvement','Improvement'],['faith','Faith'],['building','Construction'],['masterwork','Blueprints'],['inventory','Inventory'],['skills','Skills']] },
     { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['peons','Peons'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
-    { id:'battle', label:'Battle', icon:'crossedswords', subs:[['enemies','Enemies'],['combat','Combat'],['dungeons','Dungeons'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] },
+    { id:'battle', label:'Battle', icon:'crossedswords', subs:[['enemies','Enemies'],['combat','Combat'],['tower','The Tower'],['dungeons','Dungeons'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] },
     { id:'quests', label:'Quests', icon:'compass', subs:[['gettingstarted','Getting Started']] }
   ];
   function areaOf(cat){ for(var i=0;i<AREAS.length;i++){ if(AREAS[i].subs.some(function(s){ return s[0]===cat; })) return AREAS[i].id; } return 'resources'; }
@@ -14051,6 +14054,7 @@
       if(_greedFrac > 0){ var _wg = Math.max(1, Math.round(randInt(monster.goldMin, monster.goldMax) * _greedFrac)); earnGold(_wg); if(!offlineCapture) spawnCombatFloat('+'+fmt(_wg)+'g', 'ft-success', false); }
       if(setFullD4('treasureHunter', state)) awardElementXp(monster.element, combatLevelEquivalent(state) * 2); // Wyrm's Greed also grants Attunement XP
     }
+    if(act && act.tower){ towerOnKill(monster); return; } // tower foe -> bank the floor + advance, don't re-engage
     if(act && act.dungeon){ dungeonOnKill(monster); return; } // dungeon foe -> advance the run instead of re-engaging
     bumpStat('kills');
     bumpMonsterKill(monster.id); // per-monster tally powers Quest progress (e.g. "kill 10 Rabbits")
@@ -15247,6 +15251,7 @@
           ['kills','deaths','gathered','crafted','craftedRare','craftedSupreme','craftedFantastic','hoursBuffed'].forEach(function(k){ if(typeof state.stats[k] !== 'number') state.stats[k] = 0; });
           // Quests (added post-launch): give existing saves the new fields without clobbering progress.
           if(!state.monsterKills || typeof state.monsterKills !== 'object') state.monsterKills = {};
+          if(!state.tower || typeof state.tower !== 'object') state.tower = {};
           if(!state.quests || typeof state.quests !== 'object') state.quests = { claimed:{} };
           if(!state.quests.claimed || typeof state.quests.claimed !== 'object') state.quests.claimed = {};
           if(!state.titles || typeof state.titles !== 'object') state.titles = {};
@@ -19713,9 +19718,148 @@
   }
   // The Combat tab is the live fight itself: the arena while a battle is on, and combat stats. When no
   // fight is running it points you at the Enemies tab. Enemy selection lives on renderEnemiesTab().
+  // ================= THE TOWER =================
+  // An endless combat climb: one entrance per class + an "All Classes" entrance (25 total). Floor 1
+  // fields ~tier-10 enemies; each floor is ~2 tiers harder, with NO ceiling. Enemy TYPE and ELEMENT
+  // rotate per floor (every 3rd floor is Slashing, every 5th is Dark). Each floor's foe is a real
+  // Enemies-tab monster (borrowing its name/portrait) with its stats re-scaled to the floor's virtual
+  // tier. Rewards: the All Classes entrance grants a RANDOM familiar every floor clear; a class entrance
+  // summons THAT class's familiar on random floors through Floor 25 (challenge-only beyond that). Best
+  // floor reached is tracked per entrance.
+  var TOWER_START_TIER = 10;                 // floor 1 fields ~tier-10 enemies
+  var TOWER_TIERS_PER_FLOOR = 2;             // each floor jumps ~2 tiers
+  var TOWER_STAT_CAP = 1e15;                 // keep synthetic stats safe integers (the climb is exponential)
+  var TOWER_CLASS_FAMILIAR_FLOOR_CAP = 25;   // class entrances stop granting their familiar past this floor
+  var TOWER_CLASS_FAMILIAR_CHANCE = 0.5;     // per-floor (<=cap) chance a class entrance summons its familiar
+  var TOWER_ELEM_CYCLE = ['fire','water','earth','light','dark'];   // every 5th floor -> dark
+  var TOWER_PTYPE_CYCLE = ['piercing','blunt','slashing'];          // every 3rd floor -> slashing
+  var TOWER_BASE_CATS = ['wildlife','elemental','demonspawn','kinsworn'];
+  // The 25 entrances: All Classes first, then one per class (labelled/iconned by its class familiar).
+  var TOWER_ENTRANCES = [{ id:'all', label:'All Classes', icon:svgIcon('starburst','var(--gold)'),
+      desc:'A random familiar every floor you clear — forever.' }]
+    .concat(CLASS_DEFS.map(function(c){
+      var fam = FAMILIAR_DATA[c.id];
+      return { id:c.id, label:c.name, icon:(fam && fam.icon) || svgIcon('starburst','#7a5aa8'),
+        desc:'Summons ' + ((fam && fam.name) || 'this class’s familiar') + ' — its class familiar — on the climb through Floor ' + TOWER_CLASS_FAMILIAR_FLOOR_CAP + '.' };
+    }));
+  var TOWER_ENTRANCE_BY_ID = {}; TOWER_ENTRANCES.forEach(function(en){ TOWER_ENTRANCE_BY_ID[en.id] = en; });
+  function isTowerEntrance(id){ return !!TOWER_ENTRANCE_BY_ID[id]; }
+  function towerEntranceLabel(id){ return (TOWER_ENTRANCE_BY_ID[id] || {}).label || id; }
+  function towerEntry(id){ if(!state.tower || typeof state.tower !== 'object') state.tower = {}; if(!state.tower[id]) state.tower[id] = { floor:1, best:0 }; return state.tower[id]; }
+  function towerFloorTier(floor){ return TOWER_START_TIER + (Math.max(1, floor) - 1) * TOWER_TIERS_PER_FLOOR; }
+  function towerFloorElement(floor){ return TOWER_ELEM_CYCLE[(Math.max(1, floor) - 1) % TOWER_ELEM_CYCLE.length]; }
+  function towerFloorType(floor){ return TOWER_PTYPE_CYCLE[(Math.max(1, floor) - 1) % TOWER_PTYPE_CYCLE.length]; }
+  // The base Enemies-tab monster a floor borrows its name/portrait from (stats are overridden below).
+  function towerBaseMonster(floor){
+    var cat = TOWER_BASE_CATS[(Math.max(1, floor) - 1) % TOWER_BASE_CATS.length];
+    var pool = MONSTERS.filter(function(m){ return m.category === cat; });
+    if(!pool.length) pool = MONSTERS;
+    var idx = Math.min(pool.length - 1, Math.floor((Math.max(1, floor) - 1) / 2)); // climb the roster as floors rise
+    return pool[idx] || pool[pool.length - 1] || MONSTERS[0];
+  }
+  // Build (and register for combat lookup) the scaled foe for an entrance's floor.
+  function buildTowerMonster(entrance, floor){
+    floor = Math.max(1, floor|0);
+    var i = towerFloorTier(floor), base = towerBaseMonster(floor);
+    var elem = towerFloorElement(floor), ptype = towerFloorType(floor);
+    function pw(b, r){ var v = Math.round(b * Math.pow(r, i)); return Math.min(TOWER_STAT_CAP, Math.max(1, isFinite(v) ? v : TOWER_STAT_CAP)); }
+    var atkT = {}; atkT[ptype] = 1; var armT = {}; armT[ptype] = 1;
+    var mon = {
+      id: 'tower_' + entrance + '_f' + floor,
+      name: 'Floor ' + floor + ' — ' + base.name,
+      icon: base.icon, category: 'tower', tierIndex: Math.min(i, TIER_COUNT - 1),
+      element: elem, levelReq: 0,
+      hp: pw(20, 1.40), atkMin: pw(1, 1.32), atkMax: pw(3, 1.32), goldMin: pw(3, 1.40), goldMax: pw(6, 1.40),
+      damageType: ptype, attackTypes: atkT, armorTypes: armT, attackSpeed: base.attackSpeed || 3
+    };
+    MONSTERS_BY_ID[mon.id] = mon;
+    return mon;
+  }
+  // Rebuild a tower foe from its id ('tower_<entrance>_f<floor>') so a fight survives a page reload
+  // (MONSTERS_BY_ID is rebuilt from MONSTERS on load, without synthetic foes) -- mirrors the _solo path.
+  function towerMonsterFromId(id){
+    var m = /^tower_(.+)_f(\d+)$/.exec(id || '');
+    return m ? buildTowerMonster(m[1], parseInt(m[2], 10) || 1) : null;
+  }
+  // ---- Familiar grants (GUARANTEED, unlike the chance-gated maybeSummonFamiliar) ----
+  function towerGrantFamiliar(id){
+    if(!id || !FAMILIAR_DATA[id]) return false;
+    var cur = state.familiars[id], fam = FAMILIAR_DATA[id];
+    if(cur && cur.owned && cur.level >= FAMILIAR_MAX_LEVEL) return false; // already maxed
+    if(cur && cur.owned){
+      cur.level = Math.min(FAMILIAR_MAX_LEVEL, cur.level + 1);
+      addLog(fam.icon + ' ' + fam.name + ' grows stronger in the Tower! Now level ' + cur.level + '.', 'important');
+      spawnFloatingText(fam.name + ' leveled up!', 'ft-rare');
+    } else {
+      state.familiars[id] = { owned:true, level:1 };
+      addLog(fam.icon + ' A familiar answered your call in the Tower! ' + fam.name + ' has joined you.', 'important');
+      spawnFloatingText('Familiar summoned: ' + fam.name + '!', 'ft-rare');
+      if(!offlineCapture) chronicleBroadcast('familiar', fam.name);
+    }
+    needsRender = true;
+    return true;
+  }
+  function randomTowerFamiliarId(){
+    var pool = FAMILIAR_SKILL_IDS.concat(CLASS_SKILL_IDS).filter(function(id){ return !!FAMILIAR_DATA[id]; });
+    var unowned = pool.filter(function(id){ return !(state.familiars[id] && state.familiars[id].owned); });
+    var src = unowned.length ? unowned : pool.filter(function(id){ return !state.familiars[id] || state.familiars[id].level < FAMILIAR_MAX_LEVEL; });
+    return src.length ? src[Math.floor(Math.random() * src.length)] : null;
+  }
+  function grantTowerReward(entrance, floor){
+    if(entrance === 'all'){ towerGrantFamiliar(randomTowerFamiliarId()); return; }
+    if(floor <= TOWER_CLASS_FAMILIAR_FLOOR_CAP && Math.random() < TOWER_CLASS_FAMILIAR_CHANCE) towerGrantFamiliar(entrance);
+  }
+  // Enemy defeated in a tower fight: bank the clear, advance the floor, grant the reward, end the run.
+  function towerOnKill(monster){
+    var t = state.activity && state.activity.tower; if(!t){ state.activity = { type:null }; return; }
+    var e = towerEntry(t.entrance), cleared = t.floor;
+    bumpStat('kills');
+    e.best = Math.max(e.best || 0, cleared);
+    e.floor = cleared + 1;
+    grantTowerReward(t.entrance, cleared);
+    addLog('The Tower (' + towerEntranceLabel(t.entrance) + '): cleared Floor ' + cleared + '! Floor ' + (cleared + 1) + ' awaits.', 'important');
+    spawnFloatingText('Tower Floor ' + cleared + ' cleared!', 'ft-rare');
+    state.activity = { type:null };
+    saveGame();
+    needsRender = true;
+  }
+  function towerEnter(entrance){
+    if(!isTowerEntrance(entrance)) return;
+    if(dungeonLocksActions()){ dungeonActionBlockedNotice(); return; }
+    if(state.activity && state.activity.type === 'combat'){ addLog('Finish your current fight before entering the Tower.', 'danger'); return; }
+    var e = towerEntry(entrance), floor = e.floor, mon = buildTowerMonster(entrance, floor);
+    relocatePrimaryTaskToFreeSlot();
+    state.activity = { type:'combat', monsterId:mon.id, monsterHp:mon.hp, tower:{ entrance:entrance, floor:floor },
+      tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), disengageUsed:false, guardianBondUsed:false,
+      cheatDeathUsed:false, samuraiFirstStrike:true, samuraiFocus:0, staticCharge:0, galvanizeStacks:0 };
+    state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0;
+    currentCategory = 'combat'; currentArea = areaOf('combat'); // jump to the arena to watch the climb
+  }
+  function renderTowerTab(){
+    var act = state.activity, busy = !!(act && act.type === 'combat');
+    var html = '<div class="section-intro"><b>The Tower</b> — an endless climb. Floor 1 fields tier-' + TOWER_START_TIER + ' foes; every floor is ~' + TOWER_TIERS_PER_FLOOR + ' tiers harder than the last, rotating enemy type and element (every 3rd floor Slashing, every 5th Dark), with no ceiling. <b>All Classes</b> grants a random familiar every floor; a class entrance summons that class’s familiar on the climb through Floor ' + TOWER_CLASS_FAMILIAR_FLOOR_CAP + '.</div>';
+    if(busy && act.tower) html += '<div class="idle-note">Tower fight underway — watch it on the <b>Combat</b> tab. <button class="mini-btn" data-action="navToActivity" data-nav-cat="combat">Go to Combat</button></div>';
+    else if(busy) html += '<div class="idle-note">Finish your current fight before entering the Tower.</div>';
+    html += '<div class="card-grid">';
+    TOWER_ENTRANCES.forEach(function(en){
+      var e = towerEntry(en.id), floor = e.floor, elem = towerFloorElement(floor), ptype = towerFloorType(floor);
+      var atThis = busy && act.tower && act.tower.entrance === en.id;
+      html += '<div class="item-card' + (atThis ? ' active-item' : '') + '">';
+      html += '<div class="item-top"><div class="item-icon">' + en.icon + '</div><div><div class="item-name">' + escapeHtml(en.label) + '</div><div class="item-meta">Best: Floor ' + (e.best || 0) + '</div></div></div>';
+      html += '<div class="chance-line">' + escapeHtml(en.desc) + '</div>';
+      html += '<div class="item-stats"><span>Next: <b>Floor ' + floor + '</b></span><span>' + elementIcon(elem) + ' ' + elementLabel(elem) + '</span><span style="text-transform:capitalize;">' + ptype + '</span></div>';
+      html += '<button class="action-btn" data-action="towerEnter" data-tower="' + en.id + '"' + (busy ? ' disabled' : '') + '>' + (busy ? (atThis ? 'In the Tower…' : 'Busy') : 'Enter Floor ' + floor) + '</button>';
+      html += '</div>';
+    });
+    return html + '</div>';
+  }
+
   function renderCombatTab(){
     var act = state.activity;
     var html = '';
+    if(act.type==='combat' && act.tower){
+      html += '<div class="idle-note" style="border-color:#c9a227;">The Tower — <b>Floor ' + act.tower.floor + '</b> (' + escapeHtml(towerEntranceLabel(act.tower.entrance)) + '). Defeat the foe to climb; the next floor is harder.</div>';
+    }
     if(act.type==='combat' && act.dungeon){
       // A dungeon fight lives on the Dungeons tab -- keep the Combat tab clean while it's running.
       html += '<div class="idle-note">You are in the '+((DUNGEON_DEFS[act.dungeon]||{}).category||'dungeon')+'. Manage the fight on the <b>Dungeons</b> tab.</div>';
@@ -27067,6 +27211,7 @@
     else if(currentCategory==='market') html = renderMarketTab();
     else if(currentCategory==='farming') html = renderFarmingTab();
     else if(currentCategory==='combat') html = renderCombatTab();
+    else if(currentCategory==='tower') html = renderTowerTab();
     else if(isQuestCategory(currentCategory)) html = renderQuestsTab();
     else if(currentCategory==='enemies') html = renderEnemiesTab();
     else if(currentCategory==='dungeons') html = renderDungeonsTab();
@@ -28832,6 +28977,7 @@
       }
     },
     fight: function(btn, e){ startCombat(btn.getAttribute('data-monster')); if(state.activity && state.activity.type==='combat'){ currentCategory='combat'; currentArea=areaOf('combat'); } },
+    towerEnter: function(btn, e){ towerEnter(btn.getAttribute('data-tower')); },
     navToActivity: function(btn, e){
       var navCat = btn.getAttribute('data-nav-cat');
       var navSub = btn.getAttribute('data-nav-sub');
@@ -29937,7 +30083,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.34.1';
+  var GAME_VERSION = '0.0.35.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -30059,6 +30205,7 @@
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questClaimable:questClaimable, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash,
+      TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, towerOnKill:towerOnKill, towerEnter:towerEnter, renderTowerTab:renderTowerTab, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, itemReconcile:itemReconcile,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX,
