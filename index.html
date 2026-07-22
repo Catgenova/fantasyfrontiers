@@ -15865,6 +15865,8 @@
   // The <span>s that replace a bare "+N XP" in an item-stats row: a tier chip, then the base XP with the
   // real earned amount beside it whenever a modifier is changing it. `tierSrc` is a tierIndex, an id string,
   // or an object carrying tierIndex/id (all resolved by cardTierIndex).
+  // The small t1..t21 chip used on crafting cards AND the estate placement pickers.
+  function tierChipHtml(ti){ return (typeof ti === 'number' && ti >= 0) ? '<span class="tier-chip" title="Tier '+(ti+1)+'">t'+(ti+1)+'</span>' : ''; }
   function xpStat(skill, baseXp, mode, tierSrc){
     // Paving's x4 craft-XP multiplier applies to EVERY completion, so it belongs in the base the
     // card states. Showing it inside "(+N real)" made the card read like an XP bug (a t9 tile
@@ -15873,8 +15875,7 @@
     if(mode === 'craft') baseXp *= craftXpBonus(skill);
     baseXp = Math.round(baseXp);
     var real = cardRealXp(skill, baseXp, mode);
-    var ti = cardTierIndex(tierSrc);
-    var chip = ti >= 0 ? '<span class="tier-chip" title="Tier '+(ti+1)+'">t'+(ti+1)+'</span>' : '';
+    var chip = tierChipHtml(cardTierIndex(tierSrc));
     var xp = (real !== baseXp)
       ? '<span>+'+fmt(baseXp)+' <span class="xp-real" title="Real XP after your Tea, familiar, server buff, '+(CRAFT_SKILL_IDS.indexOf(skill)!==-1?'Diligence':'Curiosity')+', and the Mortal deficit">(+'+fmt(real)+' real)</span> XP</span>'
       : '<span>+'+fmt(baseXp)+' XP</span>';
@@ -22959,7 +22960,7 @@
               return itemName+' x'+r.inputs[k]+' (have '+owned+')';
             }).join(', ');
             html += '<button class="estate-paving-option'+((levelOk&&matsOk)?'':' locked')+'" data-action="estateBuildBorder" data-orient="'+edge.orient+'" data-x="'+edge.x+'" data-y="'+edge.y+'" data-tile="'+r.id+'" '+((levelOk&&matsOk)?'':'disabled')+'>';
-            html += '<span>'+r.icon+' '+r.name+'</span><span class="style-lvl">Lv'+r.levelReq+' &bull; '+matsSummary+'</span>';
+            html += '<span>'+tierChipHtml(cardTierIndex(r.id))+' '+r.icon+' '+r.name+'</span><span class="style-lvl">Lv'+r.levelReq+' &bull; '+matsSummary+'</span>';
             html += '</button>';
           });
           html += '</div>';
@@ -23061,7 +23062,7 @@
           var qtyOk = owned >= ESTATE_PAVE_TILE_COST;
           html += '<button class="estate-paving-option'+((levelOk&&qtyOk)?'':' locked')+'" data-action="estatePaveTile" data-x="'+x+'" data-y="'+y+'" data-tile="'+r.id+'" '+((levelOk&&qtyOk)?'':'disabled')+'>';
           html += '<span class="estate-paving-swatch" style="background:'+estatePavedTileColor(r.id)+'"></span>';
-          html += '<span>'+r.icon+' '+r.name+'</span><span class="style-lvl">Lv'+r.levelReq+' &bull; x'+owned+'/'+ESTATE_PAVE_TILE_COST+'</span>';
+          html += '<span>'+tierChipHtml(cardTierIndex(r.id))+' '+r.icon+' '+r.name+'</span><span class="style-lvl">Lv'+r.levelReq+' &bull; x'+owned+'/'+ESTATE_PAVE_TILE_COST+'</span>';
           html += '</button>';
         });
         html += '</div>';
@@ -23077,7 +23078,7 @@
         placeableFields.forEach(function(def){
           var owned = state.inventory['digging_t'+def.tierIndex]||0;
           html += '<button class="estate-paving-option" data-action="estatePlaceField" data-x="'+x+'" data-y="'+y+'" data-tier="'+def.tierIndex+'">';
-          html += '<span>'+def.icon+' '+escapeHtml(def.name)+'</span><span class="style-lvl">x'+fmt(owned)+'/100</span>';
+          html += '<span>'+tierChipHtml(def.tierIndex)+' '+def.icon+' '+escapeHtml(def.name)+'</span><span class="style-lvl">x'+fmt(owned)+'/100</span>';
           html += '</button>';
         });
         html += '</div>';
@@ -23108,7 +23109,7 @@
             for(var wt=wCur+1; wt<=wMax; wt++){
               var wpid='carpentry_t'+wt, wpown=state.inventory[wpid]||0, waff=wpown>=ESTATE_BUILDING_UPGRADE_PLANKS, wico=(WORKSHOP_ITEMS['workshop_'+wIt.skillId+'_t'+wt]||{}).icon||'';
               html += '<button class="estate-paving-option'+(waff?'':' locked')+'" data-action="estateUpgradeWorkshop" data-x="'+x+'" data-y="'+y+'" data-tier="'+wt+'" '+(waff?'':'disabled')+'>';
-              html += '<span>'+wico+' '+escapeHtml(FORESTRY_NAMES[wt]+' '+workshopSkillLabel(wIt.skillId))+'</span><span class="style-lvl">x'+wpown+'/'+ESTATE_BUILDING_UPGRADE_PLANKS+'</span>';
+              html += '<span>'+tierChipHtml(wt)+' '+wico+' '+escapeHtml(FORESTRY_NAMES[wt]+' '+workshopSkillLabel(wIt.skillId))+'</span><span class="style-lvl">x'+wpown+'/'+ESTATE_BUILDING_UPGRADE_PLANKS+'</span>';
               html += '</button>';
             }
             html += '</div>';
@@ -23131,7 +23132,7 @@
             for(var ct=cCur+1; ct<=cMax; ct++){
               var cpid='carpentry_t'+ct, cpown=state.inventory[cpid]||0, caff=cpown>=ESTATE_BUILDING_UPGRADE_PLANKS, cico=(COTTAGE_ITEMS['cottage_t'+ct]||{}).icon||'';
               html += '<button class="estate-paving-option'+(caff?'':' locked')+'" data-action="estateUpgradeCottage" data-x="'+x+'" data-y="'+y+'" data-tier="'+ct+'" '+(caff?'':'disabled')+'>';
-              html += '<span>'+cico+' '+escapeHtml(FORESTRY_NAMES[ct]+' Cottage')+'</span><span class="style-lvl">x'+cpown+'/'+ESTATE_BUILDING_UPGRADE_PLANKS+'</span>';
+              html += '<span>'+tierChipHtml(ct)+' '+cico+' '+escapeHtml(FORESTRY_NAMES[ct]+' Cottage')+'</span><span class="style-lvl">x'+cpown+'/'+ESTATE_BUILDING_UPGRADE_PLANKS+'</span>';
               html += '</button>';
             }
             html += '</div>';
@@ -23147,7 +23148,7 @@
           html += '<div class="estate-paving-library">';
           placeable.forEach(function(it){
             html += '<button class="estate-paving-option" data-action="estatePlaceWorkshop" data-x="'+x+'" data-y="'+y+'" data-workshop="'+it.id+'">';
-            html += '<span>'+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">x'+(state.inventory[it.id]||0)+'</span>';
+            html += '<span>'+tierChipHtml(it.tierIndex)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">x'+(state.inventory[it.id]||0)+'</span>';
             html += '</button>';
           });
           html += '</div>';
@@ -23161,7 +23162,7 @@
           html += '<div class="estate-paving-library">';
           placeableC.forEach(function(it){
             html += '<button class="estate-paving-option" data-action="estatePlaceCottage" data-x="'+x+'" data-y="'+y+'" data-cottage="'+it.id+'">';
-            html += '<span>'+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">x'+(state.inventory[it.id]||0)+'</span>';
+            html += '<span>'+tierChipHtml(it.tierIndex)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">x'+(state.inventory[it.id]||0)+'</span>';
             html += '</button>';
           });
           html += '</div>';
@@ -23180,7 +23181,7 @@
           for(var put=upTier+1; put<TIER_COUNT; put++){
             var pupId='paving_t'+put, pupRec=getPavingRecipe(pupId), pupOwn=state.inventory[pupId]||0, pupAff=pupOwn>=ESTATE_PAVE_TILE_COST;
             html += '<button class="estate-paving-option'+(pupAff?'':' locked')+'" data-action="estateUpgradePavement" data-x="'+x+'" data-y="'+y+'" data-tier="'+put+'" '+(pupAff?'':'disabled')+'>';
-            html += '<span>'+(pupRec?pupRec.icon+' '+escapeHtml(pupRec.name):escapeHtml(pupId))+'</span><span class="style-lvl">x'+pupOwn+'/'+ESTATE_PAVE_TILE_COST+'</span>';
+            html += '<span>'+tierChipHtml(put)+' '+(pupRec?pupRec.icon+' '+escapeHtml(pupRec.name):escapeHtml(pupId))+'</span><span class="style-lvl">x'+pupOwn+'/'+ESTATE_PAVE_TILE_COST+'</span>';
             html += '</button>';
           }
           html += '</div>';
@@ -29710,7 +29711,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.33.7';
+  var GAME_VERSION = '0.0.33.8';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
