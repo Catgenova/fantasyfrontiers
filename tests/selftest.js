@@ -5940,10 +5940,11 @@
     s.familiars = {};
     var rid = FF.randomTowerFamiliarId();
     ok(rid && FF.FAMILIAR_DATA[rid], 'randomTowerFamiliarId returns a valid familiar id');
-    // towerEnter starts a scaled fight from idle.
-    s.activity = { type:null }; s.tower = { pyromancer:{ floor:2, best:1 } };
-    FF.towerEnter('pyromancer');
-    ok(s.activity.type === 'combat' && s.activity.tower && s.activity.tower.entrance === 'pyromancer' && s.activity.tower.floor === 2, 'towerEnter starts the entrance\'s current floor');
+    // towerEnter starts a scaled fight from idle. Use the always-open All Classes entrance (a class
+    // entrance now requires that class equipped -- covered by the class-lock assertions below).
+    s.activity = { type:null }; s.tower = { all:{ floor:2, best:1 } };
+    FF.towerEnter('all');
+    ok(s.activity.type === 'combat' && s.activity.tower && s.activity.tower.entrance === 'all' && s.activity.tower.floor === 2, 'towerEnter starts the entrance\'s current floor');
     ok(FF.monsterById(s.activity.monsterId) != null, 'the started fight has a resolvable foe');
     // "Enter Floor" opens a detailed foe-preview popup FIRST (with the Damage-to-You stat), then commits.
     s.activity = { type:null }; s.tower = { all:{ floor:5, best:4 } };
@@ -5955,6 +5956,23 @@
     ok(/matchup-badge/.test(card) && /Your hit chance/.test(card), 'it carries the weapon matchup and your hit chance');
     ok(/data-action="towerEnter" data-tower="all"/.test(card), 'the preview Enter button commits to the fight');
     ok(/data-action="towerPreviewClose"/.test(card), 'the preview has a Cancel button');
+    // Class-entrance lock: only the entrance matching your EQUIPPED class (+ All Classes) is enterable.
+    function _armor(mat){ return { material:mat, tier:5 }; }
+    var fwState = { xp:{}, physique:{}, bodyArmor:{ helmet:_armor('chain'), chest:_armor('chain'), gauntlets:_armor('tailoring'), boots:_armor('tailoring') }, equippedMainhand:'wandWater', equippedOffhand:'shieldMedium', activity:{type:'combat'}, playerHp:55 };
+    fwState.xp.frostwarden = FF.xpFloorForLevel(80);
+    eq(FF.activeClassId(fwState), 'frostwarden', 'the mock state activates Frostwarden');
+    eq(FF.towerEntranceClassLocked('all', fwState), false, 'All Classes is never class-locked');
+    eq(FF.towerEntranceClassLocked('frostwarden', fwState), false, 'your equipped class entrance is open');
+    eq(FF.towerEntranceClassLocked('berserker', fwState), true, 'a class you have NOT equipped is locked');
+    var noneState = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:null} };
+    eq(FF.towerEntranceClassLocked('all', noneState), false, 'All Classes stays open with no class equipped');
+    eq(FF.towerEntranceClassLocked('frostwarden', noneState), true, 'every class entrance locks with no class equipped');
+    // The tower cards grey out non-equipped class entrances (disabled button, no preview action) while
+    // All Classes stays enterable. The selftest state has no class equipped.
+    s.activity = { type:null };
+    var tabHtml = FF.renderTowerTab();
+    ok(/Class not equipped/.test(tabHtml), 'locked class entrances render a disabled "Class not equipped" button');
+    ok(/data-action="towerPreviewOpen" data-tower="all"/.test(tabHtml), 'All Classes stays enterable');
     // restore
     s.tower = savedTower; s.familiars = savedFam; s.activity = savedAct;
     if(savedCat) FF.navPickCat(savedCat);
