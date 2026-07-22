@@ -20434,6 +20434,7 @@
     if(p.workshopId != null) job.workshopId = p.workshopId;
     if(p.cottageId != null) job.cottageId = p.cottageId;
     if(p.fieldTier != null) job.fieldTier = p.fieldTier|0;
+    if(p.upgrade) job.upgrade = true;
     return job;
   }
   // Pull the authoritative job on load / auth restore, so a second window opens showing the REAL
@@ -20514,9 +20515,9 @@
   // reserve at enqueue and the refund on cancel/skip. Mirrors what each starter used to consume inline.
   function estateJobMaterials(job){
     switch(job.kind){
-      case 'pave':     return [[job.paveTileId, ESTATE_PAVE_TILE_COST]];
-      case 'workshop': return [[job.workshopId, 1]];
-      case 'cottage':  return [[job.cottageId, 1]];
+      case 'pave':     return [[job.paveTileId, ESTATE_PAVE_TILE_COST]]; // upgrades cost the same 20 TARGET tiles as a fresh pave
+      case 'workshop': return job.upgrade ? [['carpentry_t'+itemTierFromId(job.workshopId), ESTATE_BUILDING_UPGRADE_PLANKS]] : [[job.workshopId, 1]];
+      case 'cottage':  return job.upgrade ? [['carpentry_t'+itemTierFromId(job.cottageId), ESTATE_BUILDING_UPGRADE_PLANKS]] : [[job.cottageId, 1]];
       case 'field':    return [['digging_t'+job.fieldTier, 100]];
       case 'raise':    return [[ESTATE_DIRT_ITEM_ID, ESTATE_RAISE_DIRT_COST]];
       default:         return []; // lower, clear
@@ -20558,16 +20559,36 @@
                        return (c.height < ESTATE_MAX_HEIGHT-1) ? { ok:true } : { ok:false, msg:'that tile is already at max height' };
       case 'lower':    if(c.type!=='dirt' || c.obstacle) return { ok:false, msg:'that tile can no longer be dug down' };
                        return (c.height > 0) ? { ok:true } : { ok:false, msg:'that tile is already at the waterline' };
-      case 'pave':     if(c.type!=='dirt') return { ok:false, msg:'that tile can no longer be paved' };
+      case 'pave':     if(job.upgrade){
+                         if(c.type!=='paved' || !c.paveTileId) return { ok:false, msg:'that tile is no longer paved' };
+                         if(itemTierFromId(c.paveTileId) >= itemTierFromId(job.paveTileId)) return { ok:false, msg:'that pavement is already at or above the target tier' };
+                         return { ok:true };
+                       }
+                       if(c.type!=='dirt') return { ok:false, msg:'that tile can no longer be paved' };
                        if(c.obstacle) return { ok:false, msg:'that tile has an obstacle to clear first' };
                        if((c.height|0) <= 0) return { ok:false, msg:'that tile is underwater' };
                        return { ok:true };
       case 'field':    if(c.type!=='dirt' || c.obstacle || c.fieldTier!=null) return { ok:false, msg:'that tile can no longer take a Field' };
                        return { ok:true };
-      case 'workshop': if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
+      case 'workshop': if(job.upgrade){
+                         var _uw = WORKSHOP_ITEMS[c.workshopId], _uwT = itemTierFromId(job.workshopId);
+                         if(c.type!=='paved' || !_uw) return { ok:false, msg:'that tile no longer has a workshop' };
+                         if('workshop_'+_uw.skillId+'_t'+_uwT !== job.workshopId) return { ok:false, msg:'a different workshop stands there now' };
+                         if(_uw.tierIndex >= _uwT) return { ok:false, msg:'that workshop is already at or above the target tier' };
+                         if(pavementTierOf(c) < _uwT) return { ok:false, msg:'the pavement no longer supports that tier' };
+                         return { ok:true };
+                       }
+                       if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
                        if(c.workshopId) return { ok:false, msg:'that tile already has a workshop' };
                        return { ok:true };
-      case 'cottage':  if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
+      case 'cottage':  if(job.upgrade){
+                         var _uc = COTTAGE_ITEMS[c.cottageId], _ucT = itemTierFromId(job.cottageId);
+                         if(c.type!=='paved' || !_uc) return { ok:false, msg:'that tile no longer has a cottage' };
+                         if(_uc.tierIndex >= _ucT) return { ok:false, msg:'that cottage is already at or above the target tier' };
+                         if(pavementTierOf(c) < _ucT) return { ok:false, msg:'the pavement no longer supports that tier' };
+                         return { ok:true };
+                       }
+                       if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
                        if(c.workshopId || c.cottageId) return { ok:false, msg:'that tile already has a building' };
                        return { ok:true };
     }
@@ -20670,6 +20691,7 @@
       if(next.workshopId != null) jobFields.workshopId = next.workshopId;
       if(next.cottageId != null) jobFields.cottageId = next.cottageId;
       if(next.fieldTier != null) jobFields.fieldTier = next.fieldTier;
+      if(next.upgrade) jobFields.upgrade = true;
       state.estate.job = Object.assign({ kind:next.kind, x:next.x, y:next.y, startAt:Number(d.job.startAt), readyAt:Number(d.job.readyAt) }, jobFields);
       addLog('Next estate action started: ' + estateJobLabel(next) + ' at (' + next.x + ', ' + next.y + ').', 'important');
       estPersist();
@@ -20694,9 +20716,9 @@
       case 'clear':    return 'Clear obstacle';
       case 'raise':    return 'Raise tile';
       case 'lower':    return 'Dig down tile';
-      case 'pave':     var pr = getPavingRecipe(job.paveTileId); return 'Pave' + (pr ? ' with ' + pr.name : '');
-      case 'workshop': return 'Build ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name || 'Workshop');
-      case 'cottage':  return 'Build ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name || 'Cottage');
+      case 'pave':     var pr = getPavingRecipe(job.paveTileId); return job.upgrade ? ('Upgrade pavement' + (pr ? ' to ' + pr.name : '')) : ('Pave' + (pr ? ' with ' + pr.name : ''));
+      case 'workshop': return (job.upgrade ? 'Upgrade to ' : 'Build ') + ((WORKSHOP_ITEMS[job.workshopId]||{}).name || 'Workshop');
+      case 'cottage':  return (job.upgrade ? 'Upgrade to ' : 'Build ') + ((COTTAGE_ITEMS[job.cottageId]||{}).name || 'Cottage');
       case 'field':    return 'Till ' + ((FARM_FIELD_TIERS['field_t'+job.fieldTier]||{}).name || 'Field');
     }
     return job.kind;
@@ -20889,9 +20911,9 @@
         var pr = getPavingRecipe(job.paveTileId);
         var pavXp = estateBuildXp(itemTierFromId(job.paveTileId));
         addXp('paving', pavXp);
-        addLog('Finished paving (' + job.x + ', ' + job.y + ')' + (pr?' with '+pr.name:'') + '. +' + pavXp + ' Paving XP.', 'important');
-        spawnFloatingText('Tile Paved! +' + pavXp + ' Paving XP', 'ft-success');
-        if(isGuild) guildLogPush('estate', 'paved (' + job.x + ', ' + job.y + ')' + (pr ? ' with ' + pr.name : ''));
+        addLog('Finished ' + (job.upgrade?'upgrading the pavement at (':'paving (') + job.x + ', ' + job.y + ')' + (pr?(job.upgrade?' to ':' with ')+pr.name:'') + '. +' + pavXp + ' Paving XP.', 'important');
+        spawnFloatingText((job.upgrade?'Pavement upgraded!':'Tile Paved!') + ' +' + pavXp + ' Paving XP', 'ft-success');
+        if(isGuild) guildLogPush('estate', (job.upgrade?'upgraded pavement at (':'paved (') + job.x + ', ' + job.y + ')' + (pr ? (job.upgrade?' to ':' with ') + pr.name : ''));
       }
       return true;
     }
@@ -20901,9 +20923,9 @@
       if(giveRewards){
         var wsXp = estateBuildXp((WORKSHOP_ITEMS[job.workshopId]||{}).tierIndex);
         addXp('carpentry', wsXp);
-        addLog('Finished building the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'workshop') + '. +' + wsXp + ' Carpentry XP.', 'important');
-        spawnFloatingText('Workshop built! +' + wsXp + ' Carpentry XP', 'ft-bonus');
-        if(isGuild) guildLogPush('estate', 'built the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'Workshop') + ' at (' + job.x + ', ' + job.y + ')');
+        addLog('Finished ' + (job.upgrade?'upgrading to':'building') + ' the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'workshop') + '. +' + wsXp + ' Carpentry XP.', 'important');
+        spawnFloatingText((job.upgrade?'Workshop upgraded!':'Workshop built!') + ' +' + wsXp + ' Carpentry XP', 'ft-bonus');
+        if(isGuild) guildLogPush('estate', (job.upgrade?'upgraded to':'built') + ' the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'Workshop') + ' at (' + job.x + ', ' + job.y + ')');
       }
       return true;
     }
@@ -20913,9 +20935,9 @@
         var cadj = estateAdjacentWorkshop(estate.grid, job.x, job.y);
         var cotXp = estateBuildXp((COTTAGE_ITEMS[job.cottageId]||{}).tierIndex);
         addXp('carpentry', cotXp);
-        addLog('Finished building the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + '. +' + cotXp + ' Carpentry XP.' + (cadj ? ' Linked to the adjacent ' + workshopSkillLabel(WORKSHOP_ITEMS[cadj.workshopId].skillId) + ' Workshop.' : ' Place it beside a single Workshop to house a Peon.'), 'important');
-        spawnFloatingText('Cottage built! +' + cotXp + ' Carpentry XP', 'ft-bonus');
-        if(isGuild) guildLogPush('estate', 'built the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'Cottage') + ' at (' + job.x + ', ' + job.y + ')');
+        addLog('Finished ' + (job.upgrade?'upgrading to':'building') + ' the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + '. +' + cotXp + ' Carpentry XP.' + (cadj ? ' Linked to the adjacent ' + workshopSkillLabel(WORKSHOP_ITEMS[cadj.workshopId].skillId) + ' Workshop.' : ' Place it beside a single Workshop to house a Peon.'), 'important');
+        spawnFloatingText((job.upgrade?'Cottage upgraded!':'Cottage built!') + ' +' + cotXp + ' Carpentry XP', 'ft-bonus');
+        if(isGuild) guildLogPush('estate', (job.upgrade?'upgraded to':'built') + ' the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'Cottage') + ' at (' + job.x + ', ' + job.y + ')');
       }
       return true;
     }
@@ -21091,15 +21113,21 @@
     estPersist();
     needsRender = true;
   }
-  // Upgrade a placed pavement one tier for 20x the next-tier tile. Instant, and it keeps any Workshop or
-  // Cottage already on the tile -- the building is untouched (a higher pavement supports the same building).
   // Upgrade a paved tile to ANY higher tier in one step (not just the next), provided the player owns the
-  // required tiles of that target tier. Cost is ESTATE_PAVE_TILE_COST of the TARGET paving tile. targetTier
-  // is optional and defaults to the next tier (keeps the old one-step callers/tests working).
+  // required tiles of that target tier. Cost is ESTATE_PAVE_TILE_COST of the TARGET paving tile, and the
+  // job takes as long as paving that tier FRESH would (same server-canonical duration -- the job goes out
+  // as kind 'pave' with upgrade:true, so estate_job_duration_ms already charges the fresh-pave time). The
+  // old pavement (and any building on it) keeps working until the upgrade completes. targetTier is
+  // optional and defaults to the next tier (keeps the old one-step callers/tests working).
   function estateUpgradePavement(x, y, targetTier){
     var cell = estActive && estActive.grid[x] && estActive.grid[x][y];
-    if(!cell || cell.type !== 'paved' || !cell.paveTileId) return;
-    var curTier = pavementTierOf(cell);
+    if(!cell) return;
+    // Validate against the PROJECTED tile (personal estate) so an upgrade can be queued behind the pave
+    // that creates the tile; the guild estate has no queue, so it validates the raw cell.
+    var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);
+    if(pc.type !== 'paved' || !pc.paveTileId) return;
+    if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
+    var curTier = pavementTierOf(pc);
     if(curTier < 0 || curTier >= TIER_COUNT - 1){ addLog('This pavement is already the top tier.', 'danger'); return; }
     var tgt = (targetTier == null) ? curTier + 1 : parseInt(targetTier, 10);
     if(!(tgt > curTier)){ addLog('Choose a higher pavement tier to upgrade to.', 'danger'); return; }
@@ -21111,56 +21139,66 @@
       addLog('Upgrading to ' + (recipe ? recipe.name : nextId) + ' costs ' + ESTATE_PAVE_TILE_COST + ' of it (you have ' + owned + ').', 'danger');
       return;
     }
-    state.inventory[nextId] -= ESTATE_PAVE_TILE_COST;
-    cell.paveTileId = nextId;
-    addLog('You upgraded the pavement at (' + x + ', ' + y + ') to ' + (recipe ? recipe.name : nextId) + '.', 'important');
-    spawnFloatingText('Pavement upgraded!', 'ft-success');
-    if(estIsGuild) guildLogPush('estate', 'upgraded pavement at ('+x+', '+y+') to '+(recipe ? recipe.name : nextId));
-    estPersist();
-    needsRender = true;
+    var pTier = tgt + 1; // same 10 min/tier as paving this tier fresh
+    estateEnqueueOrStart('pave', x, y, { paveTileId:nextId, upgrade:true }, pTier*ESTATE_PAVE_MS_PER_TIER, {
+      jobFields: { paveTileId:nextId, upgrade:true },
+      startedMsg: 'You began upgrading the pavement at (' + x + ', ' + y + ') to ' + (recipe ? recipe.name : nextId) + ' — finishes in ' + (pTier*10) + ' minutes.',
+      startedFt: 'Upgrading…',
+      queuedMsg: 'Queued the pavement upgrade at (' + x + ', ' + y + ') to ' + (recipe ? recipe.name : nextId) + '.'
+    });
   }
   // Upgrade a placed Workshop or Cottage to ANY higher tier the pavement supports (in one step), for 100x
-  // that target tier's Plank (carpentry_t<n>). Instant, in place; the target tier is capped at the tile's
-  // pavement tier -- pave higher to go higher. targetTier defaults to the next tier (old callers/tests).
+  // that target tier's Plank (carpentry_t<n>). The job takes as long as building that tier FRESH would
+  // (kind 'workshop'/'cottage' with upgrade:true -- the server's duration table already charges the fresh
+  // build time for the target id). The old building keeps working until the upgrade completes. The target
+  // tier is capped at the tile's pavement tier -- pave higher to go higher. targetTier defaults to the
+  // next tier (old callers/tests).
   var ESTATE_BUILDING_UPGRADE_PLANKS = 100;
   function estateUpgradeWorkshop(x, y, targetTier){
     var cell = estActive && estActive.grid[x] && estActive.grid[x][y];
-    if(!cell || !cell.workshopId) return;
-    var wIt = WORKSHOP_ITEMS[cell.workshopId]; if(!wIt) return;
-    var cur = wIt.tierIndex, paveT = pavementTierOf(cell);
+    if(!cell) return;
+    var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell); // projected: an upgrade can queue behind the build/pave ahead of it
+    if(!pc.workshopId) return;
+    var wIt = WORKSHOP_ITEMS[pc.workshopId]; if(!wIt) return;
+    if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
+    var cur = wIt.tierIndex, paveT = pavementTierOf(pc);
     var tgt = (targetTier == null) ? cur + 1 : parseInt(targetTier, 10);
     if(!(tgt > cur)){ addLog('Choose a higher Workshop tier to upgrade to.', 'danger'); return; }
     if(tgt >= TIER_COUNT){ addLog('This Workshop is already the top tier.', 'danger'); return; }
     if(paveT < tgt){ addLog('The pavement under this Workshop only supports ' + (paveT>=0?FORESTRY_NAMES[paveT]:'no') + ' tier — upgrade the pavement first.', 'danger'); return; }
     var plankId = 'carpentry_t' + tgt, owned = state.inventory[plankId] || 0;
     if(owned < ESTATE_BUILDING_UPGRADE_PLANKS){ addLog('Upgrading this Workshop to ' + FORESTRY_NAMES[tgt] + ' costs ' + ESTATE_BUILDING_UPGRADE_PLANKS + ' ' + FORESTRY_NAMES[tgt] + ' Planks (you have ' + owned + ').', 'danger'); return; }
-    state.inventory[plankId] -= ESTATE_BUILDING_UPGRADE_PLANKS;
-    cell.workshopId = 'workshop_' + wIt.skillId + '_t' + tgt;
-    estRecomputeWorkshops();
-    addLog('You upgraded the ' + workshopSkillLabel(wIt.skillId) + ' Workshop at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[tgt] + '.', 'important');
-    spawnFloatingText('Workshop upgraded!', 'ft-success');
-    if(estIsGuild) guildLogPush('estate', 'upgraded the '+workshopSkillLabel(wIt.skillId)+' Workshop at ('+x+', '+y+') to '+FORESTRY_NAMES[tgt]);
-    estPersist();
-    needsRender = true;
+    var newId = 'workshop_' + wIt.skillId + '_t' + tgt;
+    var wTier = tgt + 1; // same 30 min/tier as building this tier fresh
+    estateEnqueueOrStart('workshop', x, y, { workshopId:newId, upgrade:true }, wTier*ESTATE_WORKSHOP_MS_PER_TIER, {
+      jobFields: { workshopId:newId, upgrade:true },
+      startedMsg: 'You began upgrading the ' + workshopSkillLabel(wIt.skillId) + ' Workshop at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[tgt] + ' — finishes in ' + (wTier*30) + ' minutes.',
+      startedFt: 'Upgrading…',
+      queuedMsg: 'Queued the ' + workshopSkillLabel(wIt.skillId) + ' Workshop upgrade at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[tgt] + '.'
+    });
   }
   function estateUpgradeCottage(x, y, targetTier){
     var cell = estActive && estActive.grid[x] && estActive.grid[x][y];
-    if(!cell || !cell.cottageId) return;
-    var cIt = COTTAGE_ITEMS[cell.cottageId]; if(!cIt) return;
-    var cur = cIt.tierIndex, paveT = pavementTierOf(cell);
+    if(!cell) return;
+    var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);
+    if(!pc.cottageId) return;
+    var cIt = COTTAGE_ITEMS[pc.cottageId]; if(!cIt) return;
+    if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
+    var cur = cIt.tierIndex, paveT = pavementTierOf(pc);
     var tgt = (targetTier == null) ? cur + 1 : parseInt(targetTier, 10);
     if(!(tgt > cur)){ addLog('Choose a higher Cottage tier to upgrade to.', 'danger'); return; }
     if(tgt >= TIER_COUNT){ addLog('This Cottage is already the top tier.', 'danger'); return; }
     if(paveT < tgt){ addLog('The pavement under this Cottage only supports ' + (paveT>=0?FORESTRY_NAMES[paveT]:'no') + ' tier — upgrade the pavement first.', 'danger'); return; }
     var plankId = 'carpentry_t' + tgt, owned = state.inventory[plankId] || 0;
     if(owned < ESTATE_BUILDING_UPGRADE_PLANKS){ addLog('Upgrading this Cottage to ' + FORESTRY_NAMES[tgt] + ' costs ' + ESTATE_BUILDING_UPGRADE_PLANKS + ' ' + FORESTRY_NAMES[tgt] + ' Planks (you have ' + owned + ').', 'danger'); return; }
-    state.inventory[plankId] -= ESTATE_BUILDING_UPGRADE_PLANKS;
-    cell.cottageId = 'cottage_t' + tgt;
-    addLog('You upgraded the Cottage at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[tgt] + '.', 'important');
-    spawnFloatingText('Cottage upgraded!', 'ft-success');
-    if(estIsGuild) guildLogPush('estate', 'upgraded the Cottage at ('+x+', '+y+') to '+FORESTRY_NAMES[tgt]);
-    estPersist();
-    needsRender = true;
+    var newId = 'cottage_t' + tgt;
+    var cTier = tgt + 1; // same 10 min/tier as building this tier fresh
+    estateEnqueueOrStart('cottage', x, y, { cottageId:newId, upgrade:true }, cTier*ESTATE_COTTAGE_MS_PER_TIER, {
+      jobFields: { cottageId:newId, upgrade:true },
+      startedMsg: 'You began upgrading the Cottage at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[tgt] + ' — finishes in ' + (cTier*10) + ' minutes.',
+      startedFt: 'Upgrading…',
+      queuedMsg: 'Queued the Cottage upgrade at (' + x + ', ' + y + ') to ' + FORESTRY_NAMES[tgt] + '.'
+    });
   }
 
   // ---- Carpentry Workshops: placement on paved tiles + the crafting bonuses ----
@@ -29672,7 +29710,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.33.6';
+  var GAME_VERSION = '0.0.33.7';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -29819,7 +29857,7 @@
       fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE, openCritterCaches:openCritterCaches, critterCacheChance:critterCacheChance, BASE_NEST_CHANCE:BASE_NEST_CHANCE, CRITTER_CACHE_SKILLS:CRITTER_CACHE_SKILLS, SEED_DROP_SKILLS:SEED_DROP_SKILLS,
       TOOL_ITEMS:TOOL_ITEMS, equipTool:equipTool, equipBestTool:equipBestTool, bestOwnedToolForSkill:bestOwnedToolForSkill, equippedToolAtLeast:equippedToolAtLeast, equippedToolScore:equippedToolScore, toolAggregateScore:toolAggregateScore, findToolType:findToolType,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
-      ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER,
+      ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER, ESTATE_PAVE_MS_PER_TIER:ESTATE_PAVE_MS_PER_TIER, ESTATE_WORKSHOP_MS_PER_TIER:ESTATE_WORKSHOP_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey,
       craftBodyRarity:craftBodyRarity, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, enhanceBodyRarity:enhanceBodyRarity, chronicleEnhanceToSystemMsg:chronicleEnhanceToSystemMsg, chronicleRowToSystemMsg:chronicleRowToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
