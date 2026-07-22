@@ -5814,6 +5814,10 @@
     ok(s.titles['title_all_f100'] === true, 'claiming unlocks the title');
     // TITLES registry: flat, ordered, one per title-rewarding quest.
     eq(FF.TITLES.length, 116, 'the Titles registry has one entry per tower quest');
+    // Order: the whole All Classes ladder (25..500 = 20 titles) comes first, then the per-class titles.
+    var _allTitles = FF.TITLES.slice(0, 20);
+    ok(_allTitles.every(function(t){ return /^title_all_f/.test(t.id); }), 'the first 20 titles are the full All Classes ladder (25-500)');
+    ok(!/^title_all_f/.test(FF.TITLES[20].id), 'the individual class titles follow the All Classes block');
     ok(FF.TITLE_BY_ID['title_all_f100'] && FF.TITLE_BY_ID['title_all_f100'].name==='Tower Ascendant', 'the registry is keyed by title id');
     ok(FF.TITLE_BY_ID['title_all_f100'].how && /Floor 100/.test(FF.TITLE_BY_ID['title_all_f100'].how), 'each title carries a how-to (drives the ? tooltip)');
     // Equip system: only earned titles equip; toggling / unequip clears.

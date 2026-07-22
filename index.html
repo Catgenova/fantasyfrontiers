@@ -19957,14 +19957,22 @@
       reward: { kind:'title', titleId: 'title_' + entranceId + '_f' + floor, name: titleName }
     };
   }
-  TOWER_ENTRANCES.forEach(function(en){
-    TOWER_QUEST_TIERS.forEach(function(t){
-      QUESTS.push(makeTowerQuest(en.id, en.label, t.floor, (en.id === 'all') ? ('Tower ' + t.suffix) : (en.label + ' ' + t.suffix)));
-    });
+  // Order matters: the Titles registry follows QUESTS order, so push the ENTIRE All Classes ladder
+  // (25/50/75/100 + the grand 125..500) as one contiguous block FIRST, then each individual class
+  // entrance (25/50/75/100). This groups every All Classes title together at the top of the Titles list,
+  // ahead of the per-class titles. (The Tower quest tab groups by entrance independently of this order.)
+  TOWER_QUEST_TIERS.forEach(function(t){
+    QUESTS.push(makeTowerQuest('all', 'All Classes', t.floor, 'Tower ' + t.suffix));
   });
   for(var _tgi = 0; _tgi < TOWER_ALLCLASS_GRAND.length; _tgi++){
     QUESTS.push(makeTowerQuest('all', 'All Classes', 125 + _tgi * 25, TOWER_ALLCLASS_GRAND[_tgi]));
   }
+  TOWER_ENTRANCES.forEach(function(en){
+    if(en.id === 'all') return;
+    TOWER_QUEST_TIERS.forEach(function(t){
+      QUESTS.push(makeTowerQuest(en.id, en.label, t.floor, en.label + ' ' + t.suffix));
+    });
+  });
   // Derived lookups, rebuilt whenever QUESTS changes. TITLES is the flat, ordered registry every
   // title-rewarding quest contributes to (drives the Titles browser + equip system).
   var QUEST_BY_ID = {}, TITLES = [], TITLE_BY_ID = {};
@@ -30192,7 +30200,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.36.0';
+  var GAME_VERSION = '0.0.36.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
