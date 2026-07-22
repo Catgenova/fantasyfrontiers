@@ -5914,8 +5914,20 @@
     ok(Object.keys(s.familiars).length > ownedBefore, 'All Classes grants a familiar every clear');
     // A class entrance summons THAT class familiar; the guaranteed grant path owns it.
     s.familiars = {};
+    // A tower familiar grant queues the SAME popup a normal summon shows (respecting the popup setting).
+    var savedPopupQ = s.popupQueue, savedPopupTotal = s.popupBatchTotal, savedPopupSetting = s.settings.popupFamiliar;
+    s.settings.popupFamiliar = true; s.popupQueue = []; s.popupBatchTotal = 0;
     ok(FF.towerGrantFamiliar('pyromancer') === true, 'towerGrantFamiliar grants the class familiar');
     ok(s.familiars['pyromancer'] && s.familiars['pyromancer'].owned, 'the pyromancer familiar is now owned');
+    eq(s.popupQueue.length, 1, 'a first-time tower grant queues one familiar popup');
+    ok(s.popupQueue[0].type === 'familiar' && s.popupQueue[0].skillId === 'pyromancer' && s.popupQueue[0].leveledUp === false, 'the popup is the "answered your call" familiar popup for the earned familiar');
+    FF.towerGrantFamiliar('pyromancer'); // level it up
+    ok(s.popupQueue.length === 2 && s.popupQueue[1].leveledUp === true, 'a repeat grant queues a "grew stronger" popup');
+    // With the setting off, no popup is queued.
+    s.settings.popupFamiliar = false; s.popupQueue = []; s.familiars = {};
+    FF.towerGrantFamiliar('pyromancer');
+    eq(s.popupQueue.length, 0, 'no popup when the familiar-popup setting is off');
+    s.popupQueue = savedPopupQ; s.popupBatchTotal = savedPopupTotal; s.settings.popupFamiliar = savedPopupSetting; s.familiars = {};
     ok(FF.grantTowerReward != null, 'grantTowerReward exists for class/all reward routing');
     // randomTowerFamiliarId returns a real familiar key.
     s.familiars = {};
