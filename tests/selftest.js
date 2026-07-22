@@ -1246,9 +1246,9 @@
     // Closed-form probability per tier from the decay base (matches pickWeightedFarmingTier's weights).
     var w = [], total = 0; for(var i=0;i<N;i++){ w[i] = Math.pow(b,i); total += w[i]; }
     function p(i){ return w[i]/total; }
-    ok(p(N-1) > 0.003, 't20 is attainable (>0.3% per seed, vs ~0.0002% under the old rate)');
+    ok(p(N-1) > 0.012 && p(N-1) < 0.018, 't20 is tuned to about 1.5% per seed');
     var pHigh = 0; for(var j=15;j<N;j++) pHigh += p(j);
-    ok(pHigh > 0.02, 't15+ is reached meaningfully often (>2% per seed) — no longer effectively zero');
+    ok(pHigh > 0.08, 't15+ is common (~11.6% per seed) — no longer effectively zero');
     ok(p(0) > p(N-1), 'still skewed toward the low tiers (t0 far more likely than t20)');
     ok(p(0) > p(5) && p(5) > p(15), 'the weighting is monotonically skewed toward lower tiers');
     // The roll only ever returns a valid tier index, and (statistically) reaches the top tier.
