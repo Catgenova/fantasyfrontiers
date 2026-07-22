@@ -1018,6 +1018,7 @@
   .inv-acc-title{flex:1 1 auto;font-family:var(--font-display);font-weight:700;font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--gold);}
   .inv-acc-n{flex:0 0 auto;font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}
   .inv-acc-body{padding:10px 12px 12px;border-top:1px dashed var(--border-light);}
+  .equip-picker-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 10px;}
   .inv-cell{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;
     padding:9px 5px 7px;background:var(--bg-card);border:2px solid var(--ink);border-radius:8px;cursor:pointer;
     box-shadow:inset 0 1px 3px rgba(0,0,0,.14),0 2px 5px rgba(20,18,16,.22);transition:transform .08s,border-color .12s,box-shadow .12s;}
@@ -11534,6 +11535,8 @@
   var armorPanelExpanded = false;
   var toolPanelExpanded = false;
   var equipPickerSlot = 'mainhand'; // which paper-doll slot's equip picker is open on the Equipment tab
+  var equipAccOpen = {};            // equip-picker accordion group key -> open? (persists across renders)
+  var equipHideLocked = false;      // hide proficiency-locked candidates you can't use yet in the equip pickers
   var skillGroupExpanded = {};
   var physiquePanelExpanded = false;
   var menagerieExpanded = {};
@@ -16708,55 +16711,73 @@
     }).join('');
     return '<div class="section-intro" style="margin-bottom:10px"><div class="setbonus-head">&#10022; Set Bonuses</div>' + rows + '</div>';
   }
-  function renderEquipBodyArmorSection(){
-    var html = '<h3>Equip Body Armor</h3>';
-    html += '<div class="section-intro">Pick which owned Gauntlets/Boots/Chest/Helmet/Back is active -- Chain, Plate, Leather, or Cloth, whichever you have. Forged pieces sit in inventory, stacked by material, tier, and rarity, until equipped here.</div>';
+  var ARMOR_MAT_ORDER = ['plate','chain','leather','tailoring'];
+  var ARMOR_MAT_LABEL = { chain:'Chainmail', plate:'Plate', leather:'Leather', tailoring:'Cloth' };
+  // The equip picker scopes this to the tapped slot (onlySlot); without one it falls back to every slot.
+  // Owned pieces are grouped into per-material accordions (equipped material open) and sorted best-first.
+  function renderEquipBodyArmorSection(onlySlot){
+    var slots = (onlySlot && BODY_ARMOR_SLOTS.indexOf(onlySlot)!==-1) ? [onlySlot] : BODY_ARMOR_SLOTS;
+    var html = '<h3>Equip '+(onlySlot ? (BODY_ARMOR_LABELS[onlySlot]||'Body Armor') : 'Body Armor')+'</h3>';
+    html += '<div class="section-intro">'+(onlySlot ? 'Owned '+BODY_ARMOR_LABELS[onlySlot]+' pieces, grouped by material (Chainmail, Plate, Leather, Cloth) and sorted strongest-first.' : 'Pick which owned Gauntlets/Boots/Chest/Helmet/Back is active.')+' Forged pieces sit in inventory, stacked by material, tier, and rarity, until equipped here.</div>';
     html += renderSetBonusReadout();
     html += '<div class="card-grid">';
-    BODY_ARMOR_SLOTS.forEach(function(slot){
+    slots.forEach(function(slot){
       var s = state.bodyArmor[slot];
       var current = (s && s.tier>0) ? BODY_ARMOR_ITEMS['bodyarmor_'+s.material+'_'+slot+'_t'+(s.tier-1)+'_'+s.rarity] : null;
       var legCloak = (s && s.leg) ? LEGENDARY_CLOAK_ITEMS[legCloakItemId(s.leg, s.rarity)] : null;
-      var owned = Object.keys(BODY_ARMOR_ITEMS).filter(function(id){ return BODY_ARMOR_ITEMS[id].slot===slot && (state.inventory[id]||0)>0; })
-        .sort(function(a,b){ return BODY_ARMOR_ITEMS[a].tierIndex - BODY_ARMOR_ITEMS[b].tierIndex; });
+      var owned = Object.keys(BODY_ARMOR_ITEMS).filter(function(id){ return BODY_ARMOR_ITEMS[id].slot===slot && (state.inventory[id]||0)>0; });
       // Owned legendary Shrouds (Mastercrafted from a Cave Cape Blueprint) equip into the Back slot here.
       var ownedLegCloaks = (slot==='back') ? Object.keys(LEGENDARY_CLOAK_ITEMS).filter(function(id){ return (state.inventory[id]||0)>0; }) : [];
       // Owned UNIQUE (enchanted, uid-tracked) pieces for this slot -- equippable right here too.
       var equippedUnique = (s && s.uid && state.uniqueItems && state.uniqueItems[s.uid]) ? state.uniqueItems[s.uid] : null;
       var slotUniques = Object.keys(state.uniqueItems||{}).map(function(uid){ return state.uniqueItems[uid]; })
-        .filter(function(u){ if(u.kind!=='bodyarmor') return false; var mm=/^bodyarmor_.+_(gauntlets|boots|chest|helmet|back)_t\d+_\w+$/.exec(u.base); return mm && mm[1]===slot; })
-        .sort(function(a,b){ return (b.enhance-a.enhance) || (b.enchants.length-a.enchants.length); });
+        .filter(function(u){ if(u.kind!=='bodyarmor') return false; var mm=/^bodyarmor_.+_(gauntlets|boots|chest|helmet|back)_t\d+_\w+$/.exec(u.base); return mm && mm[1]===slot; });
       html += '<div class="item-card">';
       var curMat = current ? armorMaterialBonusLines(current.material, current.slot, current.rarity) : [];
       var curName = equippedUnique ? uniqueDisplayName(equippedUnique) : (current ? current.name : '');
       var curMeta = legCloak ? (escapeHtml(legCloak.name)+' &bull; +'+Math.round(legCloak.value*100)+'% '+escapeHtml(legCloak.statLabel))
         : current ? (escapeHtml(curName)+' &bull; defense '+current.defense+(curMat.length ? ' &bull; '+curMat.join(' &bull; ') : '')) : 'Not equipped';
       html += '<div class="item-top"><div class="item-icon">'+BODY_ARMOR_ICONS[slot]+'</div><div><div class="item-name">'+BODY_ARMOR_LABELS[slot]+'</div><div class="item-meta">'+curMeta+'</div></div></div>';
-      if(owned.length===0 && slotUniques.length===0 && ownedLegCloaks.length===0){
+      // Group the owned plain pieces by material, then order the groups plate>chain>leather>cloth (any
+      // stray materials appended after). The equipped material's group opens by default.
+      var byMat = {};
+      owned.forEach(function(id){ var m = BODY_ARMOR_ITEMS[id].material; (byMat[m] = byMat[m] || []).push(id); });
+      var equippedMat = (current && !(s && s.uid)) ? current.material : null;
+      var matOrder = ARMOR_MAT_ORDER.filter(function(m){ return byMat[m]; })
+        .concat(Object.keys(byMat).filter(function(m){ return ARMOR_MAT_ORDER.indexOf(m)===-1; }));
+      var groups = matOrder.map(function(mat){
+        var profId = MATERIAL_TO_PROFICIENCY[mat];
+        var cands = byMat[mat].map(function(id){
+          var item = BODY_ARMOR_ITEMS[id];
+          return {
+            icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:item.defense,
+            statHtml:'def '+item.defense, deltaHtml:'vs equipped '+equipDeltaChip(item.defense, current?current.defense:0)+' def',
+            equipped:(!(s&&s.uid) && current && current.id===id),
+            canEquip:meetsProficiencyRequirement(profId ? state.xp[profId] : 0, item.tierIndex),
+            lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(ARMOR_PROFICIENCY_LABELS[profId]||mat)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>',
+            action:'equipBodyArmor', data:'data-item="'+id+'"'
+          };
+        });
+        return { key:slot+'_'+mat, title:(ARMOR_MAT_LABEL[mat]||mat), icon:ARMOR_PROFICIENCY_ICONS[profId], candidates:cands, defaultOpen:(mat===equippedMat) };
+      });
+      if(ownedLegCloaks.length){
+        groups.push({ key:slot+'_legcloak', title:'Legendary Shrouds', icon:svgIcon('cloak','var(--gold)'), defaultOpen:!!(s && s.leg), candidates: ownedLegCloaks.map(function(id){
+          var item = LEGENDARY_CLOAK_ITEMS[id]; var worn = !!(s && s.leg===item.legKey && s.rarity===item.rarity);
+          return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:0, noBest:true,
+            statHtml:'+'+Math.round(item.value*100)+'% '+escapeHtml(item.statLabel), deltaHtml:'', equipped:worn, canEquip:true, lockHtml:'',
+            action:'equipLegCloak', data:'data-item="'+id+'"' };
+        }) });
+      }
+      // If nothing is equipped (no group opened yet), open whichever group holds the strongest piece.
+      if(groups.length && !groups.some(function(g){ return g.defaultOpen; })){
+        var bestG = groups[0], bestScore = -1;
+        groups.forEach(function(g){ g.candidates.forEach(function(c){ if(!c.noBest && (c.score||0) > bestScore){ bestScore = c.score||0; bestG = g; } }); });
+        bestG.defaultOpen = true;
+      }
+      if(groups.length===0 && slotUniques.length===0){
         html += '<div class="empty-note">No '+BODY_ARMOR_LABELS[slot]+' in inventory. Forge one above.</div>';
       } else {
-        if(owned.length){
-          html += '<div class="style-row">';
-          owned.forEach(function(id){
-            var item = BODY_ARMOR_ITEMS[id];
-            var qty = state.inventory[id]||0;
-            var profId = MATERIAL_TO_PROFICIENCY[item.material];
-            var canEquip = meetsProficiencyRequirement(profId ? state.xp[profId] : 0, item.tierIndex);
-            var acmp = (!(s&&s.uid) && current && current.id===id) ? '<span class="equip-cmp eq">equipped</span>' : (' vs equipped '+equipDeltaChip(item.defense, current?current.defense:0)+' def');
-            html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipBodyArmor" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">def '+item.defense+' '+acmp+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(ARMOR_PROFICIENCY_LABELS[profId]||item.material)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
-          });
-          html += '</div>';
-        }
-        if(ownedLegCloaks.length){
-          html += '<div class="style-row">';
-          ownedLegCloaks.forEach(function(id){
-            var item = LEGENDARY_CLOAK_ITEMS[id];
-            var qty = state.inventory[id]||0;
-            var worn = !!(s && s.leg===item.legKey && s.rarity===item.rarity);
-            html += '<button class="style-btn'+(worn?' locked':'')+'" data-action="equipLegCloak" data-item="'+id+'" '+(worn?'disabled':'')+'>'+item.icon+' '+escapeHtml(item.name)+' <span class="style-lvl">x'+qty+'</span><span class="style-type" style="text-transform:none">+'+Math.round(item.value*100)+'% '+escapeHtml(item.statLabel)+(worn?' &bull; worn':'')+'</span></button>';
-          });
-          html += '</div>';
-        }
+        html += renderEquipCandidatePicker(groups, {keyPrefix:'arm_'});
         // Unique (enchanted) pieces for this slot: full cards so every enchantment is visible.
         html += renderUniqueEquipOptions('bodyarmor', slot);
       }
@@ -17070,6 +17091,74 @@
     if(Math.abs(v) < 0.05) return '<span class="equip-cmp eq">±0'+(pct?'%':'')+'</span>';
     return '<span class="equip-cmp '+(v>0?'up':'down')+'">'+(v>0?'+':'')+v+(pct?'%':'')+'</span>';
   }
+  // ---- Equip picker: shared best-first, grouped, filterable candidate list ----------------------
+  // Every equip picker used to hand-build a worst-first <div class="style-row"> of every owned piece,
+  // so at midgame a single slot showed a wall of cards. The pickers now normalise their owned gear
+  // into candidate objects and hand them to renderEquipCandidatePicker(), which sorts best-first
+  // (equipped pinned to the top, proficiency-locked sunk to the bottom), optionally groups them into
+  // collapsible accordions, honours the "hide locked" toggle, and surfaces an "Equip best" button
+  // pointing straight at the strongest piece you can actually use.
+  //
+  // A candidate: { icon, name, qty, score (higher = better), statHtml, deltaHtml, equipped, canEquip,
+  //                lockHtml, action, data (extra data-* attrs string) }.
+  function sortEquipCandidates(list){
+    return list.slice().sort(function(a,b){
+      if(!!a.equipped !== !!b.equipped) return a.equipped ? -1 : 1;   // equipped pinned to the very top
+      if(!!a.canEquip !== !!b.canEquip) return a.canEquip ? -1 : 1;   // usable above locked
+      return (b.score||0) - (a.score||0);                            // then strongest first
+    });
+  }
+  function equipCandidateRowHtml(c){
+    var cls = 'style-btn'+(c.canEquip?'':' locked')+(c.equipped?' active':'');
+    var attrs = c.equipped ? '' : ('data-action="'+c.action+'" '+(c.data||''));  // equipped row is inert
+    return '<button class="'+cls+'" '+attrs+(c.canEquip?'':' disabled')+'>'
+      + c.icon+' '+escapeHtml(c.name)+' <span class="style-lvl">x'+fmt(c.qty||0)+'</span>'
+      + '<span class="style-type" style="text-transform:none">'+(c.statHtml||'')+' '
+      + (c.equipped ? '<span class="equip-cmp eq">equipped</span>' : (c.deltaHtml||''))+'</span>'
+      + (c.canEquip ? '' : (c.lockHtml||''))
+      + '</button>';
+  }
+  // groups: [{ key, title, icon, candidates:[...], defaultOpen }]. ctx: { keyPrefix, flat, bestLabel }.
+  // flat renders every candidate in one style-row (no accordion) -- used by single-list slots.
+  function renderEquipCandidatePicker(groups, ctx){
+    ctx = ctx || {};
+    var best = null, anyLocked = false, total = 0;
+    groups.forEach(function(g){
+      (g.candidates||[]).forEach(function(c){
+        total++;
+        if(!c.canEquip){ anyLocked = true; return; }
+        if(!c.equipped && !c.noBest && (!best || (c.score||0) > (best.score||0))) best = c;
+      });
+    });
+    if(!total) return '';
+    var html = '';
+    var tools = '';
+    if(best) tools += '<button class="action-btn" style="width:auto;flex:0 0 auto;padding:4px 12px;" data-action="'+best.action+'" '+(best.data||'')+' title="Equip the strongest piece you can use">&#9650; '+(ctx.bestLabel||'Equip best')+'</button>';
+    if(anyLocked) tools += '<button class="inv-chip'+(equipHideLocked?' on':'')+'" data-action="equipHideLockedToggle">'+(equipHideLocked?'Show locked':'Hide locked')+'</button>';
+    if(tools) html += '<div class="equip-picker-tools">'+tools+'</div>';
+    var filter = function(cands){ return equipHideLocked ? cands.filter(function(c){ return c.canEquip || c.equipped; }) : cands; };
+    if(ctx.flat){
+      var flatC = filter(groups.reduce(function(acc,g){ return acc.concat(g.candidates||[]); }, []));
+      if(!flatC.length) return html;  // everything filtered out (all locked, hidden)
+      html += '<div class="style-row">'+sortEquipCandidates(flatC).map(equipCandidateRowHtml).join('')+'</div>';
+      return html;
+    }
+    groups.forEach(function(g){
+      var cands = filter(g.candidates||[]);
+      if(!cands.length) return;
+      var key = (ctx.keyPrefix||'') + g.key;
+      var open = (equipAccOpen[key] !== undefined) ? equipAccOpen[key] : !!g.defaultOpen;
+      html += '<div class="inv-acc'+(open?' open':'')+'">';
+      html += '<div class="inv-acc-bar" data-action="equipAccToggle" data-key="'+key+'" data-open="'+(open?1:0)+'" role="button" aria-expanded="'+(open?'true':'false')+'">';
+      html += '<span class="inv-acc-chev" aria-hidden="true">&#9656;</span>';
+      if(g.icon) html += '<span class="inv-acc-ico">'+g.icon+'</span>';
+      html += '<span class="inv-acc-title">'+escapeHtml(g.title)+'</span>';
+      html += '<span class="inv-acc-n">'+cands.length+'</span></div>';
+      if(open) html += '<div class="inv-acc-body"><div class="style-row">'+sortEquipCandidates(cands).map(equipCandidateRowHtml).join('')+'</div></div>';
+      html += '</div>';
+    });
+    return html;
+  }
   function stackableEquipGate(item){
     var t = item.tierIndex, lvl = TIER_LEVELS[t];
     if(isWandWeapon(item.typeId) || isStaff(item.typeId)) return { ok: getLevel(state.xp.arcanism||0) >= lvl, label:'Arcanism', lvl:lvl };
@@ -17078,36 +17167,32 @@
   }
   // A staff deals no damage (support weapon) -- show its block instead of a 0-0 dmg range.
   function stackableWeaponStatLabel(item){ return (isStaff(item.typeId) && !item.dmgMax) ? ('block '+Math.round((item.block||0)*100)+'%') : (item.dmgMin+'-'+item.dmgMax+' dmg'); }
-  function renderStackableWeaponEquipSection(types, title, hideIfEmpty){
+  // Build one accordion group of owned weapons of a family (melee/bow/wand/staff/scepter) for the
+  // mainhand picker, sorted best-first. Returns null when you own none, so empty families never clutter
+  // the picker. The equipped weapon's family opens by default.
+  function weaponFamilyGroup(types, title){
     var typeIds = types.map(function(w){ return w.id; });
     var current = (state.equippedMainhand && typeIds.indexOf(state.equippedMainhand)!==-1 && state.equippedMainhandTier>0)
       ? STACKABLE_WEAPON_ITEMS['stweapon_'+state.equippedMainhand+'_t'+(state.equippedMainhandTier-1)+'_'+state.equippedMainhandRarity] : null;
-    var owned = Object.keys(STACKABLE_WEAPON_ITEMS).filter(function(id){ return typeIds.indexOf(STACKABLE_WEAPON_ITEMS[id].typeId)!==-1 && (state.inventory[id]||0)>0; })
-      .sort(function(a,b){ return STACKABLE_WEAPON_ITEMS[a].tierIndex - STACKABLE_WEAPON_ITEMS[b].tierIndex; });
-    if(hideIfEmpty && owned.length===0 && !current) return ''; // don't clutter the picker with weapon classes you don't use
-    var html = '<h3>Equip '+title+'</h3>';
-    html += '<div class="section-intro">Pick which owned '+title.toLowerCase()+' is your Mainhand. Forged weapons sit in inventory, stacked by type, tier, and rarity, until equipped here.</div>';
-    html += '<div class="card-grid"><div class="item-card">';
-    html += '<div class="item-top"><div class="item-icon">'+(current?current.icon:svgIcon('sword','#9aa0a8'))+'</div><div><div class="item-name">Mainhand</div><div class="item-meta">'+(current ? current.name+' &bull; '+stackableWeaponStatLabel(current)+' &bull; '+STACKABLE_WEAPON_TYPE_MAP[current.typeId].attackSpeed+'s attack' : 'No '+title.toLowerCase()+' equipped')+'</div></div></div>';
-    if(owned.length===0){
-      html += '<div class="empty-note">No '+title.toLowerCase()+' in inventory. Forge one above.</div>';
-    } else {
-      var eqW = getEquippedWeaponItem(state);             // baseline = the weapon you have equipped now
-      var curAvg = ((eqW.dmgMin||0)+(eqW.dmgMax||0))/2;
-      html += '<div class="style-row">';
-      owned.forEach(function(id){
-        var item = STACKABLE_WEAPON_ITEMS[id];
-        var qty = state.inventory[id]||0;
-        var gate = stackableEquipGate(item);
-        var isCur = current && current.id===id;         // the currently-equipped item of this type
-        var cmp = isCur ? '<span class="equip-cmp eq">equipped</span>' : (' vs equipped '+equipDeltaChip(((item.dmgMin||0)+(item.dmgMax||0))/2, curAvg)+' avg dmg');
-        html += '<button class="style-btn'+(gate.ok?'':' locked')+'" data-action="equipStackableWeapon" data-item="'+id+'" '+(gate.ok?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">'+stackableWeaponStatLabel(item)+' &bull; '+STACKABLE_WEAPON_TYPE_MAP[item.typeId].attackSpeed+'s '+cmp+'</span>'+(gate.ok?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(gate.label)+' Lv '+gate.lvl+'</span>')+'</button>';
-      });
-      html += '</div>';
-    }
-    if(current) html += '<button class="action-btn stop" data-action="unequipStackableWeapon">Unequip</button>';
-    html += '</div></div>';
-    return html;
+    var owned = Object.keys(STACKABLE_WEAPON_ITEMS).filter(function(id){ return typeIds.indexOf(STACKABLE_WEAPON_ITEMS[id].typeId)!==-1 && (state.inventory[id]||0)>0; });
+    if(owned.length===0) return null;
+    var eqW = getEquippedWeaponItem(state);             // baseline = the weapon you have equipped now
+    var curAvg = ((eqW.dmgMin||0)+(eqW.dmgMax||0))/2;
+    var cands = owned.map(function(id){
+      var item = STACKABLE_WEAPON_ITEMS[id];
+      var gate = stackableEquipGate(item);
+      var noDmg = isStaff(item.typeId) && !item.dmgMax;    // staves deal no damage -- rank by block
+      var avg = ((item.dmgMin||0)+(item.dmgMax||0))/2;
+      return {
+        icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:(noDmg ? (item.block||0) : avg),
+        statHtml: stackableWeaponStatLabel(item)+' &bull; '+STACKABLE_WEAPON_TYPE_MAP[item.typeId].attackSpeed+'s',
+        deltaHtml: noDmg ? '' : ('vs equipped '+equipDeltaChip(avg, curAvg)+' avg dmg'),
+        equipped: !!(current && current.id===id), canEquip: gate.ok,
+        lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(gate.label)+' Lv '+gate.lvl+'</span>',
+        action:'equipStackableWeapon', data:'data-item="'+id+'"'
+      };
+    });
+    return { key:(typeIds[0]||title), title:title, icon:(current?current.icon:cands[0].icon), candidates:cands, defaultOpen:!!current };
   }
 
   function renderWeaponSmithTab(){
@@ -17145,15 +17230,14 @@
     if(owned.length===0){
       html += '<div class="empty-note">No shields in inventory. Forge one above.</div>';
     } else {
-      html += '<div class="style-row">';
-      owned.forEach(function(id){
+      html += renderEquipCandidatePicker([{ key:'shield', title:'Shields', candidates: owned.map(function(id){
         var item = STACKABLE_SHIELD_ITEMS[id];
-        var qty = state.inventory[id]||0;
-        var canEquip = meetsProficiencyRequirement(state.xp[item.typeId], item.tierIndex);
-        var scmp = (current && current.id===id) ? '<span class="equip-cmp eq">equipped</span>' : (' vs equipped '+equipDeltaChip(item.defense, current?current.defense:0)+' def');
-        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipStackableShield" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">defense '+item.defense+' '+scmp+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS[item.typeId]||item.typeId)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
-      });
-      html += '</div>';
+        return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:item.defense,
+          statHtml:'defense '+item.defense, deltaHtml:'vs equipped '+equipDeltaChip(item.defense, current?current.defense:0)+' def',
+          equipped:!!(current && current.id===id), canEquip:meetsProficiencyRequirement(state.xp[item.typeId], item.tierIndex),
+          lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS[item.typeId]||item.typeId)+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>',
+          action:'equipStackableShield', data:'data-item="'+id+'"' };
+      }) }], {flat:true});
     }
     if(current) html += '<button class="action-btn stop" data-action="unequipStackableShield">Unequip</button>';
     html += '</div></div>';
@@ -17178,15 +17262,14 @@
     if(owned.length===0){
       html += '<div class="empty-note">No quivers in inventory. Forge one via Outfitting &rarr; Leatherworking.</div>';
     } else {
-      html += '<div class="style-row">';
-      owned.forEach(function(id){
+      html += renderEquipCandidatePicker([{ key:'quiver', title:'Quivers', candidates: owned.map(function(id){
         var item = STACKABLE_QUIVER_ITEMS[id];
-        var qty = state.inventory[id]||0;
-        var canEquip = meetsProficiencyRequirement(state.xp[item.typeId], item.tierIndex);
-        var scmp = (current && current.id===id) ? '<span class="equip-cmp eq">equipped</span>' : (' vs equipped '+equipDeltaChip(item.dmgBonus, current?current.dmgBonus:0)+' arrow dmg');
-        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipStackableQuiver" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">'+Math.round(item.dmgBonus*100)+'% dmg '+scmp+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS.leatherworking||'Leatherworking')+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
-      });
-      html += '</div>';
+        return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:item.dmgBonus,
+          statHtml:Math.round(item.dmgBonus*100)+'% dmg', deltaHtml:'vs equipped '+equipDeltaChip(item.dmgBonus, current?current.dmgBonus:0)+' arrow dmg',
+          equipped:!!(current && current.id===id), canEquip:meetsProficiencyRequirement(state.xp[item.typeId], item.tierIndex),
+          lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS.leatherworking||'Leatherworking')+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>',
+          action:'equipStackableQuiver', data:'data-item="'+id+'"' };
+      }) }], {flat:true});
     }
     if(current) html += '<button class="action-btn stop" data-action="unequipStackableQuiver">Unequip</button>';
     html += '</div></div>';
@@ -17293,15 +17376,15 @@
     if(owned.length===0){
       html += '<div class="empty-note">No wards in inventory. Inscribe one above.</div>';
     } else {
-      html += '<div class="style-row">';
-      owned.forEach(function(id){
+      html += renderEquipCandidatePicker([{ key:'ward', title:'Wards', candidates: owned.map(function(id){
         var item = WARD_ITEMS[id];
-        var qty = state.inventory[id]||0;
-        var canEquip = getLevel(state.xp.runesmithing) >= TIER_LEVELS[item.tierIndex];
-        var wcmp = (current && current.id===id) ? ' <span class="equip-cmp eq">equipped</span>' : (' &bull; vs equipped '+equipDeltaChip(item.reflect, current?current.reflect:0, true)+' reflect');
-        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipWard" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type" style="text-transform:none">reflects '+Math.round(item.reflect*100)+'% '+elementLabel(item.element)+(item.fullReflectChance>0?' &bull; '+Math.round(item.fullReflectChance*100)+'% full':'')+wcmp+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires Runesmithing Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
-      });
-      html += '</div>';
+        return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:item.reflect,
+          statHtml:'reflects '+Math.round(item.reflect*100)+'% '+elementLabel(item.element)+(item.fullReflectChance>0?' &bull; '+Math.round(item.fullReflectChance*100)+'% full':''),
+          deltaHtml:'vs equipped '+equipDeltaChip(item.reflect, current?current.reflect:0, true)+' reflect',
+          equipped:!!(current && current.id===id), canEquip:(getLevel(state.xp.runesmithing) >= TIER_LEVELS[item.tierIndex]),
+          lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires Runesmithing Lv '+TIER_LEVELS[item.tierIndex]+'</span>',
+          action:'equipWard', data:'data-item="'+id+'"' };
+      }) }], {flat:true});
     }
     if(current) html += '<button class="action-btn stop" data-action="unequipWard">Unequip</button>';
     html += '</div></div>';
@@ -17774,11 +17857,19 @@
     html += renderGearSelector('mainhand');
     if(state.equippedMainhand) html += '<button class="action-btn stop" data-action="unequipStackableWeapon">Unequip</button>';
     html += renderUniqueEquipOptions('weapon', null, 'Weapons');
-    html += renderStackableWeaponEquipSection(MELEE_WEAPON_TYPES, 'Melee Weapon');
-    html += renderStackableWeaponEquipSection(BOW_WEAPON_TYPES, 'Bow');
-    html += renderStackableWeaponEquipSection(WAND_TYPES, 'Wand', true);
-    html += renderStackableWeaponEquipSection([STAFF_TYPE], 'Staff', true);
-    html += renderStackableWeaponEquipSection([SCEPTER_TYPE], 'Scepter', true);
+    var groups = [
+      weaponFamilyGroup(MELEE_WEAPON_TYPES, 'Melee Weapons'),
+      weaponFamilyGroup(BOW_WEAPON_TYPES, 'Bows'),
+      weaponFamilyGroup(WAND_TYPES, 'Wands'),
+      weaponFamilyGroup([STAFF_TYPE], 'Staves'),
+      weaponFamilyGroup([SCEPTER_TYPE], 'Scepters')
+    ].filter(Boolean);
+    if(groups.length){
+      if(!groups.some(function(g){ return g.defaultOpen; })) groups[0].defaultOpen = true;  // open the top family
+      html += renderEquipCandidatePicker(groups, {keyPrefix:'mh_', bestLabel:'Equip best weapon'});
+    } else {
+      html += '<div class="empty-note" style="margin-top:10px">No forged weapons in inventory. Forge one via Outfitting &rarr; Weaponsmithing (melee) or Bowyer (bows).</div>';
+    }
     return html;
   }
   function renderOffhandEquipFullSection(){
@@ -17819,13 +17910,13 @@
     if(ownedBelts.length===0){
       html += '<div class="empty-note">No Belts in inventory. Forge one in Outfitting &rarr; Leatherworking.</div>';
     } else {
-      html += '<div class="style-row">';
-      ownedBelts.forEach(function(id){
+      html += renderEquipCandidatePicker([{ key:'belt', title:'Belts', candidates: ownedBelts.map(function(id){
         var item = BELT_ITEMS[id];
-        var qty = state.inventory[id]||0;
-        html += '<button class="style-btn" data-action="equipBelt" data-item="'+id+'">'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">'+BELT_RARITY_SLOTS[item.rarity]+' slots</span></button>';
-      });
-      html += '</div>';
+        return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:(item.tierIndex*10 + (BELT_RARITY_SLOTS[item.rarity]||1)),
+          statHtml:BELT_RARITY_SLOTS[item.rarity]+' slots &bull; def '+item.defense, deltaHtml:'',
+          equipped:!!(currentBelt && currentBelt.id===id), canEquip:true, lockHtml:'',
+          action:'equipBelt', data:'data-item="'+id+'"' };
+      }) }], {flat:true});
     }
     if(currentBelt) html += '<button class="action-btn stop" data-action="unequipBelt">Unequip</button>';
     html += '</div></div>';
@@ -17851,19 +17942,21 @@
       if(ownedRings.length===0 && ownedLeg.length===0){
         html += '<div class="empty-note">No Rings in inventory. Forge one in Outfitting &rarr; Jewelrycrafting, or Mastercraft a Signet.</div>';
       } else {
-        html += '<div class="style-row">';
-        ownedRings.forEach(function(id){
+        var slotIsPlain = !(ss && (ss.leg || ss.uid));
+        var ringCands = ownedRings.map(function(id){
           var item = RING_ITEMS[id];
-          var qty = state.inventory[id]||0;
-          html += '<button class="style-btn" data-action="equipRing" data-item="'+id+'" data-slot="'+slotId+'">'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">+'+Math.round(ringItemBonus(item)*100)+'%</span></button>';
-        });
-        ownedLeg.forEach(function(id){
-          var item = LEGENDARY_RING_ITEMS[id];
-          var qty = state.inventory[id]||0;
-          var worn = legRingEquipped(item.legKey);
-          html += '<button class="style-btn'+(worn?' locked':'')+'" data-action="equipLegRing" data-item="'+id+'" data-slot="'+slotId+'" '+(worn?'disabled':'')+'>'+item.icon+' '+escapeHtml(item.name)+' <span class="style-lvl">x'+qty+'</span><span class="style-type" style="text-transform:none">+'+Math.round(item.value*100)+'% '+escapeHtml(item.statLabel)+(worn?' &bull; worn':'')+'</span></button>';
-        });
-        html += '</div>';
+          return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:ringItemBonus(item),
+            statHtml:'+'+Math.round(ringItemBonus(item)*100)+'% '+ringBonusLabel(item), deltaHtml:'',
+            equipped:!!(slotIsPlain && slotRing && slotRing.id===id), canEquip:true, lockHtml:'',
+            action:'equipRing', data:'data-item="'+id+'" data-slot="'+slotId+'"' };
+        }).concat(ownedLeg.map(function(id){
+          var item = LEGENDARY_RING_ITEMS[id]; var worn = legRingEquipped(item.legKey);
+          return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:(item.value||0), noBest:true,
+            statHtml:'+'+Math.round(item.value*100)+'% '+escapeHtml(item.statLabel)+(worn?' &bull; worn':''), deltaHtml:'',
+            equipped:false, canEquip:!worn, lockHtml:'',
+            action:'equipLegRing', data:'data-item="'+id+'" data-slot="'+slotId+'"' };
+        }));
+        html += renderEquipCandidatePicker([{ key:'ring_'+slotId, title:'Rings', candidates:ringCands }], {flat:true});
       }
       if(legItem) html += '<button class="action-btn stop" data-action="unequipLegRing" data-slot="'+slotId+'">Unequip</button>';
       else if(slotRing) html += '<button class="action-btn stop" data-action="unequipRing" data-slot="'+slotId+'">Unequip</button>';
@@ -17890,23 +17983,23 @@
     if(ownedAmulets.length===0 && ownedLegAm.length===0){
       html += '<div class="empty-note">No Amulets in inventory. Forge one in Outfitting &rarr; Jewelrycrafting, or Mastercraft a Pendant.</div>';
     } else {
-      html += '<div class="style-row">';
-      ownedAmulets.forEach(function(id){
+      var amCands = ownedAmulets.map(function(id){
         var item = AMULET_ITEMS[id];
-        var qty = state.inventory[id]||0;
-        var amcmp;
-        if(currentAmulet && currentAmulet.id===id) amcmp = '<span class="equip-cmp eq">equipped</span>';
-        else if(currentAmulet && currentAmulet.kind===item.kind) amcmp = ' vs equipped '+(item.kind==='resistance' ? equipDeltaChip(item.bonus, currentAmulet.bonus, true) : (equipDeltaChip(item.defense, currentAmulet.defense)+' def'));
-        else amcmp = '';
-        html += '<button class="style-btn" data-action="equipAmulet" data-item="'+id+'">'+item.icon+' '+escapeHtml(item.name)+' <span class="style-lvl">x'+qty+'</span><span class="style-type">'+amuletStatText(item)+' '+amcmp+'</span></button>';
-      });
-      ownedLegAm.forEach(function(id){
-        var item = LEGENDARY_AMULET_ITEMS[id];
-        var qty = state.inventory[id]||0;
-        var worn = legAmuletEquipped(item.legKey);
-        html += '<button class="style-btn'+(worn?' locked':'')+'" data-action="equipLegAmulet" data-item="'+id+'" '+(worn?'disabled':'')+'>'+item.icon+' '+escapeHtml(item.name)+' <span class="style-lvl">x'+qty+'</span><span class="style-type" style="text-transform:none">+'+Math.round(item.value*100)+'% '+escapeHtml(item.statLabel)+(worn?' &bull; worn':'')+'</span></button>';
-      });
-      html += '</div>';
+        var delta = (currentAmulet && currentAmulet.kind===item.kind && currentAmulet.id!==id)
+          ? ('vs equipped '+(item.kind==='resistance' ? equipDeltaChip(item.bonus, currentAmulet.bonus, true) : (equipDeltaChip(item.defense, currentAmulet.defense)+' def'))) : '';
+        return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0),
+          score:(item.kind==='resistance' ? (item.bonus||0)*100 : (item.defense||0)),
+          statHtml:amuletStatText(item), deltaHtml:delta,
+          equipped:!!(currentAmulet && currentAmulet.id===id), canEquip:true, lockHtml:'',
+          action:'equipAmulet', data:'data-item="'+id+'"' };
+      }).concat(ownedLegAm.map(function(id){
+        var item = LEGENDARY_AMULET_ITEMS[id]; var worn = legAmuletEquipped(item.legKey);
+        return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:(item.value||0), noBest:true,
+          statHtml:'+'+Math.round(item.value*100)+'% '+escapeHtml(item.statLabel)+(worn?' &bull; worn':''), deltaHtml:'',
+          equipped:false, canEquip:!worn, lockHtml:'',
+          action:'equipLegAmulet', data:'data-item="'+id+'"' };
+      }));
+      html += renderEquipCandidatePicker([{ key:'amulet', title:'Amulets', candidates:amCands }], {flat:true});
     }
     if(legAm) html += '<button class="action-btn stop" data-action="unequipLegAmulet">Unequip</button>';
     else if(currentAmulet) html += '<button class="action-btn stop" data-action="unequipAmulet">Unequip</button>';
@@ -18071,7 +18164,7 @@
     if(slotId==='belt')     return renderBeltEquipSection();
     if(slotId==='amulet')   return renderAmuletEquipSection();
     if(slotId && slotId.indexOf('ring')===0) return renderRingsEquipSection();
-    if(['helmet','chest','gauntlets','boots','back'].indexOf(slotId) >= 0) return renderEquipBodyArmorSection();
+    if(['helmet','chest','gauntlets','boots','back'].indexOf(slotId) >= 0) return renderEquipBodyArmorSection(slotId);
     return renderMainhandEquipSection();
   }
   function renderCharacterTab(){
@@ -18130,17 +18223,17 @@
       html += '<div class="shop-current">Equipped: <b style="color:var(--text)">None</b></div>';
     }
     var ownedRelics = Object.keys(RELIC_ITEMS).filter(function(id){ return (state.inventory[id]||0) > 0; });
+    var equippedRelicIdNow = state.equippedRelicTier>0 ? ('relic_t'+(state.equippedRelicTier-1)+'_'+state.equippedRelicRarity) : null;
     if(ownedRelics.length === 0){
       html += '<div class="empty-note">No Relics in inventory. Extract some in Refining &rarr; Archaeology.</div>';
     } else {
-      html += '<div class="style-row">';
-      ownedRelics.forEach(function(id){
-        var relic = RELIC_ITEMS[id];
-        var pct = Math.round(getRelicBonusPct(relic.tierIndex, relic.rarity)*100);
-        var qty = state.inventory[id]||0;
-        html += '<button class="style-btn" data-action="equipRelic" data-item="'+id+'">'+svgIcon('trophy','#c9a227')+' '+relic.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type">+'+pct+'% dmg/armor</span></button>';
-      });
-      html += '</div>';
+      html += renderEquipCandidatePicker([{ key:'relic', title:'Relics', candidates: ownedRelics.map(function(id){
+        var relic = RELIC_ITEMS[id]; var pct = getRelicBonusPct(relic.tierIndex, relic.rarity);
+        return { icon:svgIcon('trophy','#c9a227'), name:relic.name, qty:(state.inventory[id]||0), score:pct,
+          statHtml:'+'+Math.round(pct*100)+'% dmg/armor', deltaHtml:'',
+          equipped:(id===equippedRelicIdNow), canEquip:true, lockHtml:'',
+          action:'equipRelic', data:'data-item="'+id+'"' };
+      }) }], {flat:true});
     }
     html += '<div class="section-intro" style="margin-top:6px">Relics are your first equipment that lives in inventory until equipped. Find Muddy Artifacts while Digging, then extract them in Archaeology.</div>';
     html += renderUniqueEquipOptions('relic', null, 'Relics');
@@ -29408,6 +29501,8 @@
     },
     equipBodyArmor: function(btn, e){ equipBodyArmor(btn.getAttribute('data-item')); },
     unequipBodyArmor: function(btn, e){ unequipBodyArmor(btn.getAttribute('data-slot')); },
+    equipAccToggle: function(btn, e){ var k = btn.getAttribute('data-key'); if(k) equipAccOpen[k] = !(btn.getAttribute('data-open')==='1'); }, // flip whatever is currently shown
+    equipHideLockedToggle: function(btn, e){ equipHideLocked = !equipHideLocked; },
     forgeBelt: function(btn, e){ craftBelt(parseInt(btn.getAttribute('data-tier'),10)); },
     openEquipPicker: function(btn, e){ equipPickerSlot = btn.getAttribute('data-slot'); render(); },
     equipBelt: function(btn, e){ equipBelt(btn.getAttribute('data-item')); },
@@ -30488,7 +30583,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.38.1';
+  var GAME_VERSION = '0.0.39.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -30647,6 +30742,8 @@
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER, ESTATE_PAVE_MS_PER_TIER:ESTATE_PAVE_MS_PER_TIER, ESTATE_WORKSHOP_MS_PER_TIER:ESTATE_WORKSHOP_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey, invGroupFor:invGroupFor, INV_GROUPS:INV_GROUPS,
+      sortEquipCandidates:sortEquipCandidates, renderEquipCandidatePicker:renderEquipCandidatePicker, renderEquipBodyArmorSection:renderEquipBodyArmorSection, renderMainhandEquipSection:renderMainhandEquipSection, equipPickerHtml:equipPickerHtml,
+      setEquipHideLocked:function(v){ equipHideLocked = !!v; }, getEquipHideLocked:function(){ return equipHideLocked; },
       craftBodyRarity:craftBodyRarity, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, enhanceBodyRarity:enhanceBodyRarity, chronicleEnhanceToSystemMsg:chronicleEnhanceToSystemMsg, chronicleRowToSystemMsg:chronicleRowToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
