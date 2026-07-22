@@ -5784,6 +5784,66 @@
   });
 
   // ---- Quests: own area, Getting Started category, accordion + complete/claim/flash flow ----
+  // ---- The Tower: floors, rotation, scaling, rewards, progress ----
+  suite('tower: floors, rotation, scaling + rewards', function(){
+    var s = FF._state;
+    var savedTower = s.tower, savedFam = s.familiars, savedAct = s.activity, savedCat = FF._state.__cat;
+    s.tower = {}; s.familiars = {}; s.activity = { type:null };
+    // 25 entrances: All Classes first, then one per class.
+    eq(FF.TOWER_ENTRANCES.length, 25, '25 entrances (All Classes + 24 classes)');
+    eq(FF.TOWER_ENTRANCES[0].id, 'all', 'the first entrance is All Classes');
+    ok(FF.TOWER_ENTRANCES.some(function(en){ return en.id==='pyromancer'; }), 'there is a class entrance (pyromancer)');
+    ok(FF.isTowerEntrance('all') && FF.isTowerEntrance('pyromancer') && !FF.isTowerEntrance('nope'), 'isTowerEntrance gates real entrances');
+    // Floor tier: floor 1 = tier 10, +2 per floor, unbounded.
+    eq(FF.towerFloorTier(1), 10, 'floor 1 = tier 10');
+    eq(FF.towerFloorTier(2), 12, 'floor 2 = tier 12');
+    eq(FF.towerFloorTier(6), 20, 'floor 6 = tier 20');
+    eq(FF.towerFloorTier(7), 22, 'floor 7 climbs past the normal tier ceiling');
+    // Rotation: every 3rd floor is slashing, every 5th is dark.
+    eq(FF.towerFloorType(3), 'slashing', 'floor 3 is slashing');
+    eq(FF.towerFloorType(6), 'slashing', 'floor 6 is slashing');
+    eq(FF.towerFloorType(1), 'piercing', 'floor 1 is not slashing');
+    eq(FF.towerFloorElement(5), 'dark', 'floor 5 is dark');
+    eq(FF.towerFloorElement(10), 'dark', 'floor 10 is dark');
+    eq(FF.towerFloorElement(1), 'fire', 'floor 1 is not dark');
+    // Scaled monster: registered, resolvable, monotonically harder, finite/capped, carries the rotation.
+    var m1 = FF.buildTowerMonster('all', 1), m5 = FF.buildTowerMonster('all', 5), m40 = FF.buildTowerMonster('all', 40);
+    ok(m1.id === 'tower_all_f1' && m1.category === 'tower', 'the foe id/category are tower-scoped');
+    ok(FF.monsterById('tower_all_f1') != null, 'the tower foe resolves via monsterById (registered)');
+    ok(m5.hp > m1.hp && m40.hp > m5.hp, 'each floor is harder (HP climbs)');
+    ok(isFinite(m40.hp) && m40.hp <= 1e15, 'deep-floor stats stay finite and capped');
+    ok(m5.element === 'dark' && m5.attackTypes.slashing == null, 'floor 5 foe is Dark (element rotation)');
+    ok(m1.attackTypes.piercing === 1 && m1.armorTypes.piercing === 1, 'floor 1 foe is a piercing type');
+    ok(FF.monsterById('tower_all_f7') != null, 'a tower foe rebuilds from its id after a reload (monsterById fallback)');
+    // Progress defaults + advance/reward on kill (All Classes: guaranteed random familiar).
+    eq(FF.towerEntry('all').floor, 1, 'a fresh entrance starts on floor 1');
+    eq(FF.towerEntry('all').best, 0, '...with no best yet');
+    s.activity = { type:'combat', tower:{ entrance:'all', floor:3 }, monsterId:'tower_all_f3' };
+    s.tower.all = { floor:3, best:2 };
+    var ownedBefore = Object.keys(s.familiars).length;
+    FF.towerOnKill(FF.buildTowerMonster('all', 3));
+    eq(s.tower.all.best, 3, 'clearing floor 3 banks best=3');
+    eq(s.tower.all.floor, 4, '...and advances to floor 4');
+    eq(s.activity.type, null, 'the run ends after a clear (re-enter for the next floor)');
+    ok(Object.keys(s.familiars).length > ownedBefore, 'All Classes grants a familiar every clear');
+    // A class entrance summons THAT class familiar; the guaranteed grant path owns it.
+    s.familiars = {};
+    ok(FF.towerGrantFamiliar('pyromancer') === true, 'towerGrantFamiliar grants the class familiar');
+    ok(s.familiars['pyromancer'] && s.familiars['pyromancer'].owned, 'the pyromancer familiar is now owned');
+    ok(FF.grantTowerReward != null, 'grantTowerReward exists for class/all reward routing');
+    // randomTowerFamiliarId returns a real familiar key.
+    s.familiars = {};
+    var rid = FF.randomTowerFamiliarId();
+    ok(rid && FF.FAMILIAR_DATA[rid], 'randomTowerFamiliarId returns a valid familiar id');
+    // towerEnter starts a scaled fight from idle.
+    s.activity = { type:null }; s.tower = { pyromancer:{ floor:2, best:1 } };
+    FF.towerEnter('pyromancer');
+    ok(s.activity.type === 'combat' && s.activity.tower && s.activity.tower.entrance === 'pyromancer' && s.activity.tower.floor === 2, 'towerEnter starts the entrance\'s current floor');
+    ok(FF.monsterById(s.activity.monsterId) != null, 'the started fight has a resolvable foe');
+    // restore
+    s.tower = savedTower; s.familiars = savedFam; s.activity = savedAct;
+  });
+
   suite('quests: area, category, accordion + claim flow', function(){
     var s = FF._state;
     var savedMK = s.monsterKills, savedQ = s.quests, savedInv = s.inventory['corpse_t0'], savedTitles = s.titles;
