@@ -8819,11 +8819,14 @@
   // seed and works back from there: still skewed toward the low tiers (t0 ~10.8%, ~7x more likely than
   // t20) but the high band is common (t15+ ~11.6%), so a top-tier seed is uncommon, not mythical.
   var CACHE_SEED_TIER_DECAY = 0.906;
-  function pickWeightedFarmingTier(){
+  // count = how many tiers this seed line actually has. Fiber/Herb run the full 21 tiers, but Grain only
+  // has 20 -- passing the wrong ceiling here is what once minted a nonexistent 'grainseed_t20'.
+  function pickWeightedFarmingTier(count){
+    count = count || TIER_COUNT;
     var weights = [], total = 0, i;
-    for(i=0;i<TIER_COUNT;i++){ var w = Math.pow(CACHE_SEED_TIER_DECAY, i); weights.push(w); total += w; }
+    for(i=0;i<count;i++){ var w = Math.pow(CACHE_SEED_TIER_DECAY, i); weights.push(w); total += w; }
     var r = Math.random()*total;
-    for(i=0;i<TIER_COUNT;i++){ r -= weights[i]; if(r<=0) return i; }
+    for(i=0;i<count;i++){ r -= weights[i]; if(r<=0) return i; }
     return 0;
   }
   var lootPopupData = null;   // aggregated results of a chest/cache open, shown in a popup until dismissed
@@ -8858,7 +8861,8 @@
     for(var i=0;i<n;i++){
       state.inventory.critter_cache -= 1;
       // One of EACH seed type (Fiber / Grain / Herb), each at its own weighted tier -- 3 seeds per cache.
-      ['seed_t','grainseed_t','herbseed_t'].forEach(function(prefix){ var sid = prefix + pickWeightedFarmingTier(); addItem(sid, 1); items[sid] = (items[sid]||0) + 1; });
+      // Grain has one fewer tier than Fiber/Herb, so roll each line within its OWN tier count (never t20 grain).
+      [['seed_t',TIER_COUNT],['grainseed_t',GRAIN_TIER_COUNT],['herbseed_t',TIER_COUNT]].forEach(function(line){ var sid = line[0] + pickWeightedFarmingTier(line[1]); addItem(sid, 1); items[sid] = (items[sid]||0) + 1; });
     }
     addLog('You opened ' + n + ' Critter Cache' + (n===1?'':'s') + ' and found ' + (n*3) + ' seeds.', 'important');
     spawnFloatingText('+' + (n*3) + ' Seeds', 'ft-bonus');
@@ -15441,6 +15445,13 @@
           if(!state.settings.plantSeedDisabled || typeof state.settings.plantSeedDisabled !== 'object' || Array.isArray(state.settings.plantSeedDisabled)) state.settings.plantSeedDisabled = {}; // exclusion set: empty = every seed enabled
           if(state.dungeonProgress) delete state.dungeonProgress; // dungeons feature removed; shed legacy field
           if(!state.lockedItems || typeof state.lockedItems !== 'object') state.lockedItems = {};
+          // Grain only has 20 tiers, but an old Critter Cache bug could mint a nonexistent 'grainseed_t20'
+          // (shown as a raw id, unplantable). Fold any into the real top-tier Grain Seed so nothing is lost.
+          if(state.inventory && state.inventory.grainseed_t20){
+            state.inventory['grainseed_t'+(GRAIN_TIER_COUNT-1)] = (state.inventory['grainseed_t'+(GRAIN_TIER_COUNT-1)]||0) + state.inventory.grainseed_t20;
+            delete state.inventory.grainseed_t20;
+            if(state.lockedItems.grainseed_t20) delete state.lockedItems.grainseed_t20;
+          }
           if(!state.itemEarnedTotal || typeof state.itemEarnedTotal !== 'object' || Array.isArray(state.itemEarnedTotal)) state.itemEarnedTotal = {}; // item-ledger reconcile anchor
           if(!Array.isArray(state.trackedSkills)) state.trackedSkills = [];
           state.trackedSkills = state.trackedSkills.filter(function(id){ return typeof id === 'string'; }).slice(0, TRACK_MAX); // single-select: keep only the first
@@ -30592,7 +30603,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.2';
+  var GAME_VERSION = '0.0.39.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -30744,7 +30755,7 @@
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       guildLogPush:guildLogPush, renderGuildActivityLog:renderGuildActivityLog, GUILD_LOG_MAX:GUILD_LOG_MAX, guildIsOfficerPlus:guildIsOfficerPlus,
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
-      fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE, openCritterCaches:openCritterCaches, critterCacheChance:critterCacheChance, pickWeightedFarmingTier:pickWeightedFarmingTier, CACHE_SEED_TIER_DECAY:CACHE_SEED_TIER_DECAY, BASE_NEST_CHANCE:BASE_NEST_CHANCE, CRITTER_CACHE_SKILLS:CRITTER_CACHE_SKILLS, SEED_DROP_SKILLS:SEED_DROP_SKILLS,
+      fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE, openCritterCaches:openCritterCaches, critterCacheChance:critterCacheChance, pickWeightedFarmingTier:pickWeightedFarmingTier, CACHE_SEED_TIER_DECAY:CACHE_SEED_TIER_DECAY, GRAIN_TIER_COUNT:GRAIN_TIER_COUNT, BASE_NEST_CHANCE:BASE_NEST_CHANCE, CRITTER_CACHE_SKILLS:CRITTER_CACHE_SKILLS, SEED_DROP_SKILLS:SEED_DROP_SKILLS,
       TOOL_ITEMS:TOOL_ITEMS, equipTool:equipTool, equipBestTool:equipBestTool, bestOwnedToolForSkill:bestOwnedToolForSkill, equippedToolAtLeast:equippedToolAtLeast, equippedToolScore:equippedToolScore, toolAggregateScore:toolAggregateScore, findToolType:findToolType,
       butcherOutputChance:butcherOutputChance, getEquippedGatherTool:getEquippedGatherTool, getGatherToolTierData:getGatherToolTierData, getEquippedCraftTool:getEquippedCraftTool,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
