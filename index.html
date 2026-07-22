@@ -18991,13 +18991,16 @@
     if(prev && !dungeonBossCleared(prev)) return 'Clear the ' + (DUNGEON_DEFS[prev] ? DUNGEON_DEFS[prev].category : prev) + ' first';
     return null;
   }
-  // Reason the player can't JOIN someone else's party for a layer, or null if they can. Joining is
-  // stricter than starting your own: besides the Total Level gate, you must have BEATEN that dungeon
-  // yourself already (so you're not carried through content you haven't earned) -- the Cave excepted.
+  // Reason the player can't JOIN someone else's party for a layer, or null if they can. Joining
+  // requires the SAME progression as starting your own run: the previous layer's boss beaten --
+  // solo or in a group, both mark it cleared. It must NOT demand beating the layer itself: that
+  // forced a solo clear of D2 before anyone could join a D2 party, locking group progression
+  // behind solo play (beating D1 is what earns the Tunnel, however you then run it).
   function dungeonJoinBlock(layer){
     if(!DUNGEON_DEFS[layer]) return 'Unknown dungeon';
     if(playerTotalLevel(state) < DUNGEON_MIN_TOTAL_LEVEL) return 'Total Level ' + fmt(DUNGEON_MIN_TOTAL_LEVEL) + ' required';
-    if(layer !== 'd1' && !dungeonBossCleared(layer)) return 'Beat the ' + DUNGEON_DEFS[layer].category + ' yourself first';
+    var prev = dungeonPrevId(layer);
+    if(prev && !dungeonBossCleared(prev)) return 'Clear the ' + (DUNGEON_DEFS[prev] ? DUNGEON_DEFS[prev].category : prev) + ' first';
     return null;
   }
   // Shareable party code = "<layer>:<sessionId>" (e.g. "d2:3f9a…"). Encoding the layer lets a joiner
@@ -19489,7 +19492,7 @@
   function renderDungeonLayerPanel(layer, myTotal){
     var def = DUNGEON_DEFS[layer]; if(!def) return '';
     var block = dungeonEntryBlock(def); var canEnter = !block;
-    var joinBlock = dungeonJoinBlock(def.id); var canJoin = !joinBlock;   // joining is gated on beating THIS dungeon (Cave aside), not the prior one
+    var joinBlock = dungeonJoinBlock(def.id); var canJoin = !joinBlock;   // joining is gated like entry: the PREVIOUS layer cleared (solo or group)
     var boss = def.enemies[def.enemies.length - 1];
     var html = '<h3 style="margin-top:4px">' + svgIcon('gem', '#8a5fb0') + ' ' + escapeHtml(def.category) + '</h3>';
     html += '<div class="item-card">';
@@ -29711,7 +29714,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.33.8';
+  var GAME_VERSION = '0.0.33.9';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
