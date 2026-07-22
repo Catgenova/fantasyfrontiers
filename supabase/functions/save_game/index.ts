@@ -23,6 +23,12 @@ const MAX_BYTES = 500_000; // keep under the table's ~512KB column guard
 // value pinned the row's progress so high that every later legitimate save was rejected as stale,
 // which locked the account out of saving entirely.
 const MAX_PROGRESS = 1_000_000_000_000_000; // 1e15
+// The wallet is the authoritative gold store (HARD_CAP 1e15 there); a legit balance never exceeds it.
+// The save blob, though, was stored VERBATIM, so a tampered `data.gold` (e.g. a memory/localStorage edit)
+// persisted at face value -- surviving the round-trip, showing up as an absurd balance, AND feeding the
+// wallet's first-touch seed (ensureWallet reads saves.data.gold). Clamp it here so a tampered value can
+// never be stored or laundered into a real wallet seed. Legit gold is unaffected (already <= this).
+const GOLD_CAP = 1_000_000_000_000_000; // 1e15, mirrors the wallet's HARD_CAP
 // How long a claim keeps fencing after its holder's last write. A live client pushes at least every 8s
 // (CLOUD_PUSH_INTERVAL), so anything past this means the tab is closed, asleep or gone -- and holding the
 // account hostage to a dead tab is worse than the rare double-session this guards against.
@@ -99,6 +105,13 @@ Deno.serve(async (req) => {
 
   const data = body.data;
   if (typeof data !== "object" || data === null) return json({ ok: false, error: "Invalid save." }, 400);
+  // Clamp the stored gold so a tampered save blob can't persist an absurd balance or seed the wallet high.
+  {
+    const g = (data as Record<string, unknown>).gold;
+    const gn = Number(g);
+    if (!Number.isFinite(gn) || gn < 0) (data as Record<string, unknown>).gold = 0;
+    else if (gn > GOLD_CAP) (data as Record<string, unknown>).gold = GOLD_CAP;
+  }
   const savedAt = typeof body.client_saved_at === "number" && Number.isFinite(body.client_saved_at)
     ? Math.floor(body.client_saved_at) : 0;
   // NOTE: body.progress is deliberately IGNORED -- it's computed from `data` below. Accepting it was
