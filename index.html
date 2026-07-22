@@ -13926,7 +13926,9 @@
         var _echoCrit = spellbladeResonantCrit(state) && Math.random() < playerCritChance(monster);
         var _echoCritMult = _echoCrit ? (CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state)) : 1;
         var echo = Math.max(1, Math.round(dmgToMonster * SPELLBLADE_ECHO_PCT * legEchoDmgMult(state) * _echoCritMult * d4EchoMult(state) * (legActive('runegrave') && enemyDecaying(state) ? 1.15 : 1))); // Resonant Echo: +10% per distinct enchant; Runegrave (D3): +15% vs Decayed; D4 Rune Heart/Prismatic Edge
-        act.monsterHp -= echo; spawnFloatingText((_echoCrit?'✦ ':'')+(_echoChain ? 'Twin Echo ' : 'Spell Echo ')+echo+'!', _echoCrit?'ft-crit':'ft-rare');
+        // A real ARENA float (like every other combat number): spawnFloatingText anchors to the
+        // action bar and is gated on ACTION_BAR_RESULT_TEXT (false), so echo damage never showed.
+        act.monsterHp -= echo; spawnCombatFloat((_echoCrit?'✦ ':'')+(_echoChain ? 'Twin Echo' : 'Spell Echo')+' -'+fmt(echo), _echoCrit?'ft-crit':'ft-rare', true);
         if(setFullD2('spellblade', state)){ // Runic Detonation (full): each echo stacks a damage-taken debuff on the foe
           act.d2RunicStacks = Math.min(D2_RUNIC_MAX, ((act.d2RunicUntil||0) > Date.now() ? (act.d2RunicStacks||0) : 0) + 1);
           act.d2RunicUntil = Date.now() + D2_RUNIC_MS;
@@ -29670,7 +29672,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.33.4';
+  var GAME_VERSION = '0.0.33.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
