@@ -5867,7 +5867,7 @@
 
   suite('tower: floors, rotation, scaling + rewards', function(){
     var s = FF._state;
-    var savedTower = s.tower, savedFam = s.familiars, savedAct = s.activity, savedCat = FF._state.__cat;
+    var savedTower = s.tower, savedFam = s.familiars, savedAct = s.activity, savedCat = FF.currentCategoryId();
     s.tower = {}; s.familiars = {}; s.activity = { type:null };
     // 25 entrances: All Classes first, then one per class.
     eq(FF.TOWER_ENTRANCES.length, 25, '25 entrances (All Classes + 24 classes)');
@@ -5907,11 +5907,18 @@
     s.activity = { type:'combat', tower:{ entrance:'all', floor:3 }, monsterId:'tower_all_f3' };
     s.tower.all = { floor:3, best:2 };
     var ownedBefore = Object.keys(s.familiars).length;
+    FF.navPickCat('combat'); // watching the arena live, as after towerEnter
     FF.towerOnKill(FF.buildTowerMonster('all', 3));
     eq(s.tower.all.best, 3, 'clearing floor 3 banks best=3');
     eq(s.tower.all.floor, 4, '...and advances to floor 4');
     eq(s.activity.type, null, 'the run ends after a clear (re-enter for the next floor)');
+    eq(FF.currentCategoryId(), 'tower', 'clearing a floor lands back in the Tower category, not Combat');
     ok(Object.keys(s.familiars).length > ownedBefore, 'All Classes grants a familiar every clear');
+    // If the player wandered off the arena during the fight, a clear does NOT yank the view back.
+    FF.navPickCat('inventory');
+    s.activity = { type:'combat', tower:{ entrance:'all', floor:4 }, monsterId:'tower_all_f4' };
+    FF.towerOnKill(FF.buildTowerMonster('all', 4));
+    eq(FF.currentCategoryId(), 'inventory', 'a clear while viewing another tab leaves that view alone');
     // A class entrance summons THAT class familiar; the guaranteed grant path owns it.
     s.familiars = {};
     // A tower familiar grant queues the SAME popup a normal summon shows (respecting the popup setting).
@@ -5940,6 +5947,7 @@
     ok(FF.monsterById(s.activity.monsterId) != null, 'the started fight has a resolvable foe');
     // restore
     s.tower = savedTower; s.familiars = savedFam; s.activity = savedAct;
+    if(savedCat) FF.navPickCat(savedCat);
   });
 
   suite('quests: area, category, accordion + claim flow', function(){
