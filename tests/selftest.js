@@ -6484,6 +6484,40 @@
     eq(patch.durationMs, 18000, 'familiar regen buff duration tripled (6s -> 18s)');
   });
 
+  suite('familiars: direct-damage spells scale from a T2 weapon (Lv1) to a Rare top weapon (Lv100)', function(){
+    var wl = FF.STACKABLE_WEAPON_ITEMS;
+    var t2 = wl['stweapon_rapier_t2_normal'], topRare = wl['stweapon_rapier_t19_rare']; // rapier: clean 1h, no dmgMult
+    ok(t2 && topRare, 'reference rapier tiers resolve (Tier-2 normal + Rare top tier)');
+    // A reference spell (amount 15) reads like a Tier-2 weapon at Lv1 and a Rare top-tier weapon at Lv100.
+    var l1 = FF.familiarHitLevelDamage(1, FF.FAM_HIT_REF_AMOUNT), l100 = FF.familiarHitLevelDamage(100, FF.FAM_HIT_REF_AMOUNT);
+    ok(l1 >= t2.dmgMin && l1 <= t2.dmgMax, 'Lv1 reference spell sits in the Tier-2 weapon raw range ('+t2.dmgMin+'-'+t2.dmgMax+'), got '+Math.round(l1*10)/10);
+    ok(l100 >= topRare.dmgMin && l100 <= topRare.dmgMax, 'Lv100 reference spell sits in the Rare top-tier weapon raw range ('+topRare.dmgMin+'-'+topRare.dmgMax+'), got '+Math.round(l100));
+    // Monotonic climb, and far steeper than the old +5%/lvl linear potency (~6x) it replaced.
+    var prev = -1, mono = true; for(var lv=1; lv<=100; lv++){ var d = FF.familiarHitLevelDamage(lv, 15); if(d < prev) mono = false; prev = d; }
+    ok(mono, 'familiar hit damage climbs monotonically from Lv1 to Lv100');
+    ok(l100 / l1 > 200, 'the Lv1 -> Lv100 climb is ~270x (far steeper than the old ~6x linear potency)');
+    // Per-spell weighting preserved: a higher-amount spell hits harder at the same level.
+    ok(FF.familiarHitLevelDamage(50,16) > FF.familiarHitLevelDamage(50,13), 'a higher-amount spell hits harder at the same level');
+    // Heals/buffs keep the gentle linear potency (unchanged) -- only direct damage got the steep curve.
+    ok(Math.abs(FF.familiarPotencyMult(100) / FF.familiarPotencyMult(1) - 5.95) < 0.5, 'non-damage potency still ~6x at Lv100 (linear, unchanged)');
+    // Every hit/siphon spell across every familiar lands in the weapon bands at both ends.
+    var bad1 = [], bad100 = [];
+    Object.keys(FF.FAMILIAR_SPELLS).forEach(function(k){
+      FF.FAMILIAR_SPELLS[k].forEach(function(s){
+        if(s.type!=='hit' && s.type!=='siphon') return;
+        var d1 = FF.familiarHitLevelDamage(1, s.amount), d100 = FF.familiarHitLevelDamage(100, s.amount);
+        if(!(d1 >= t2.dmgMin && d1 <= t2.dmgMax)) bad1.push(k+':'+s.name+'='+(Math.round(d1*10)/10));
+        if(!(d100 >= topRare.dmgMin && d100 <= topRare.dmgMax)) bad100.push(k+':'+s.name+'='+Math.round(d100));
+      });
+    });
+    ok(bad1.length===0, 'every hit/siphon at Lv1 lands in the Tier-2 weapon raw range' + (bad1.length?': '+bad1.slice(0,5).join(', '):''));
+    ok(bad100.length===0, 'every hit/siphon at Lv100 lands in the Rare top-tier weapon raw range' + (bad100.length?': '+bad100.slice(0,5).join(', '):''));
+    // Poison DoT familiars ride the SAME steep curve: a poison's per-application total (dps*duration) is
+    // weighted through familiarHitLevelDamage, so poison keeps pace at Lv100 instead of falling behind.
+    var pL1 = FF.familiarHitLevelDamage(1, 6*6), pL100 = FF.familiarHitLevelDamage(100, 6*6);
+    ok(pL100 / pL1 > 200, 'poison per-application total climbs on the same ~270x curve as direct hits');
+  });
+
   // ---- Familiar companion avatars: every familiar has a bespoke avatar with its skill crest ----
   suite('familiar avatars', function(){
     var ids = Object.keys(FF.FAMILIAR_DATA);
