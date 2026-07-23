@@ -11555,7 +11555,7 @@
     { id:'resources', label:'Resources', icon:'pickaxe', subs:[['gathering','Gathering'],['refining','Refining'],['cooking','Cooking'],['outfitting','Outfitting'],['improvement','Improvement'],['faith','Faith'],['building','Construction'],['masterwork','Blueprints'],['inventory','Inventory'],['skills','Skills']] },
     { id:'lands', label:'Lands', icon:'castle', subs:[['estate','My Estate'],['peons','Peons'],['guild','Guilds'],['farming','Farming'],['market','Auction House'],['leaderboard','Leaderboard']] },
     { id:'battle', label:'Battle', icon:'crossedswords', subs:[['enemies','Enemies'],['combat','Combat'],['tower','The Tower'],['dungeons','Dungeons'],['classes','Classes'],['character','Equipment & Stats'],['menagerie','Menagerie']] },
-    { id:'quests', label:'Quests', icon:'compass', subs:[['gettingstarted','Getting Started'],['estatequests','Estate'],['towerquests','Tower'],['titles','Titles']] }
+    { id:'quests', label:'Quests', icon:'compass', subs:[['gettingstarted','First Frontier'],['estatequests','Estate'],['towerquests','Tower'],['titles','Titles']] }
   ];
   function areaOf(cat){ for(var i=0;i<AREAS.length;i++){ if(AREAS[i].subs.some(function(s){ return s[0]===cat; })) return AREAS[i].id; } return 'resources'; }
   var currentArea = areaOf(currentCategory);
@@ -12544,6 +12544,7 @@
     consumeInputs(planned.plan);
     if(Math.random() < enhanceSuccessChance(u.enhance)){
       u.enhance += 1;
+      if(!state.stats) state.stats = {}; if(u.enhance > (state.stats.enhance_best||0)) state.stats.enhance_best = u.enhance; // best +N ever reached on ANY item, powers "Steel Sharpened" (never regresses if the item later shatters)
       addLog(uniqueBaseName(u)+' was Enhanced to +'+u.enhance+'!','important');
       enhancePopupData = { ok:true, name:uniqueBaseName(u), icon:uniqueIcon(u), enhance:u.enhance };
       announceEnhance(u);
@@ -20399,7 +20400,7 @@
   // out-of-combat prep (Auto-Eat + combat consumables) since that's where you gear up before a fight.
   // ================= QUESTS =================
   // Quests is its OWN top-level area (a major tab), split into quest-category tabs (QUEST_CATEGORIES) --
-  // "Getting Started" is the first. Each quest completes the INSTANT its requirement is met (no accept
+  // "First Frontier" is the first. Each quest completes the INSTANT its requirement is met (no accept
   // step) and can be done in any order; the player then clicks Claim to receive the reward (an item,
   // skill XP, or a title). While a reward is claimable the Quests area button, the owning category tab,
   // and the quest's Claim button all flash. Each quest renders as an ACCORDION: the always-visible bar
@@ -20408,7 +20409,7 @@
   // Quest categories are the tabs inside the Quests area. 'titles' is special: its tab shows the earned/
   // obtainable TITLES browser rather than a quest list (see renderTitlesTab).
   var QUEST_CATEGORIES = [
-    { id:'gettingstarted', label:'Getting Started' },
+    { id:'gettingstarted', label:'First Frontier' },
     { id:'estatequests', label:'Estate' },
     { id:'towerquests', label:'Tower' },
     { id:'titles', label:'Titles' }
@@ -20703,14 +20704,14 @@
       nav:{ cat:'outfitting', sub:'jewelrycrafting' },
       reward:{ items:[ { itemId:'amulet_t0_normal', qty:1 } ], gold:1000 } },
     { id:'steel_sharpened', cat:'gettingstarted', title:'Steel Sharpened',
-      desc:'Good gear is a starting point, not a ceiling. Take a fine piece — a mastercrafted or set item — to the Improvement bench and enhance it five times, each strike sharper and riskier than the last, until the numbers on it read like a hero’s and not a novice’s. The frontier respects a well-kept edge.',
-      how:'In Resources → Improvement, enhance a piece of gear to +5.',
-      target:5, progress:function(st){ var m=0,u=st.uniqueItems||{}; for(var k in u){ if((u[k].enhance||0)>m) m=u[k].enhance; } return m; },
+      desc:'Good gear is a starting point, not a ceiling. Take any Rare-or-better piece — a lucky craft, a quest reward, anything with an edge worth keeping — to the Improvement bench and enhance it five times, each strike sharper and riskier than the last, until the numbers read like a hero’s and not a novice’s. The frontier respects a well-kept edge.',
+      how:'In Resources → Improvement, enhance any Rare-or-better piece of gear to +5.',
+      target:5, progress:function(st){ return (st.stats && st.stats['enhance_best']) || 0; },
       nav:{ cat:'improvement' },
       reward:{ gold:2000 } },
     { id:'bind_the_crystal', cat:'gettingstarted', title:'Bind the Crystal',
-      desc:'Demonspawn carry more than menace — cut from their remains come Enchant Crystals, raw magic waiting for a home. Bind one to a piece of your gear at the Improvement bench and watch a plain item wake up with a new power. This is where equipment stops being found and starts being made yours.',
-      how:'In Resources → Improvement, enchant a piece of gear with an Enchant Crystal.',
+      desc:'Demonspawn carry more than menace — cut from their remains come Enchant Crystals, raw magic waiting for a home. Bind one to any piece of your gear at the Improvement bench — even a plain copper trinket — and watch it wake up with a new power. This is where equipment stops being found and starts being made yours.',
+      how:'In Resources → Improvement, enchant any piece of gear with an Enchant Crystal.',
       target:1, progress:function(st){ return (st.stats && st.stats['enchants_applied']) || 0; },
       nav:{ cat:'improvement' },
       reward:{ items:[ { itemId:'enchant_t0', qty:5 } ], gold:1000 } },
@@ -20751,8 +20752,8 @@
       nav:{ cat:'skills' },
       reward:{ gold:5000 } },
     { id:'frontier_hero', cat:'gettingstarted', title:'Frontier Hero',
-      desc:'You came to the edge of the map with nothing but resolve, and you leave this chapter with a legend’s beginnings: fed, armed, armored, housed, adorned, and skilled at a hundred honest trades. Every other Getting Started quest done — the whole arc of a hero’s first days, from a borrowed scimitar to a mastered craft. The frontier no longer asks who you are. It knows. Wear the title, cinch the belt, and go write the rest.',
-      how:'Complete all 50 other Getting Started quests. Claiming this crowns you a Frontier Hero.',
+      desc:'You came to the edge of the map with nothing but resolve, and you leave this chapter with a legend’s beginnings: fed, armed, armored, housed, adorned, and skilled at a hundred honest trades. Every other First Frontier quest done — the whole arc of a hero’s first days, from a borrowed scimitar to a mastered craft. The frontier no longer asks who you are. It knows. Wear the title, cinch the belt, and go write the rest.',
+      how:'Complete all 50 other First Frontier quests. Claiming this crowns you a Frontier Hero.',
       target:50, progress:function(st){ var c=(st.quests&&st.quests.claimed)||{}, n=0; QUESTS.forEach(function(q){ if(q.cat==='gettingstarted' && q.id!=='frontier_hero' && c[q.id]) n++; }); return n; },
       nav:{ cat:'gettingstarted' },
       reward:{ titleId:'title_frontier_hero', name:'Frontier Hero', items:[ { itemId:'belt_t0_supreme', qty:1 } ] } },
@@ -31218,7 +31219,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.26';
+  var GAME_VERSION = '0.0.39.27';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
