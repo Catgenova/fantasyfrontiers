@@ -921,6 +921,21 @@
     S.activity = sv.act; S.gold = sv.gold; S.inventory = sv.inv; S.stats = sv.stats; S.monsterKills = sv.mk; S.physique = sv.phys; S.xp = sv.xp; S.faith = sv.faith;
   });
 
+  // ---- Combat: enemies drop no flat gold reward on kill ---------------------------------
+  suite('combat: killing an enemy awards no gold', function(){
+    var S = FF._state;
+    var sv = { act:S.activity, gold:S.gold, inv:S.inventory, stats:S.stats, mk:S.monsterKills, phys:S.physique, xp:S.xp, faith:S.faith, get:S.goldEarnedTotal };
+    S.gold = 0; S.goldEarnedTotal = 0; S.inventory = {}; S.stats = {}; S.monsterKills = {}; S.physique = {}; S.xp = {}; S.faith = 0;
+    // A gold-bearing foe (its goldMin/goldMax are > 0) killed on the plain solo path.
+    var mon = FF.MONSTERS[FF.MONSTERS.length - 1]; // a high-tier foe -> a large would-be gold drop
+    ok(mon.goldMax > 0, 'the sampled foe still carries a gold RANGE (used by Treasure Hunter scatter effects)');
+    S.activity = { type:'combat', monsterId:mon.id, monsterHp:0, fightTarget:1, fightsWon:0, monsterTickAccum:0 };
+    FF.defeatMonster(mon);
+    eq(S.gold, 0, 'a kill pays no flat gold (base enemy gold loot removed)');
+    eq(S.goldEarnedTotal, 0, 'and nothing enters the lifetime gold-earned anchor');
+    S.activity = sv.act; S.gold = sv.gold; S.goldEarnedTotal = sv.get; S.inventory = sv.inv; S.stats = sv.stats; S.monsterKills = sv.mk; S.physique = sv.phys; S.xp = sv.xp; S.faith = sv.faith;
+  });
+
   // ---- Gathering workshops (parallel to crafting workshops) -----------------------------
   suite('gathering workshops', function(){
     var w = FF.WORKSHOP_ITEMS;
