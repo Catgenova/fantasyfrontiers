@@ -3190,7 +3190,34 @@
     ok(granted.length > 0, 'over many clears, some Blueprints drop');
     ok(granted.every(function(b){ return b.dungeon === 'd1'; }), 'a d1 clear only drops d1 Blueprints');
     ok(Object.keys(s.blueprints).every(function(id){ return FF.BLUEPRINT_ITEMS[id] && FF.BLUEPRINT_ITEMS[id].dungeon === 'd1'; }), 'the Blueprint inventory only holds d1 Blueprints after d1 clears');
+    // grantMasterworkDrops returns the granted Blueprints so a clear can show a result popup.
+    s.blueprints = {};
+    var guaranteed = FF.grantMasterworkDrops('d1', 1, true); // guarantee => a group clear never comes up empty
+    ok(Array.isArray(guaranteed) && guaranteed.length >= 1, 'a guaranteed clear returns at least one Blueprint');
+    ok(guaranteed.every(function(b){ return b && b.dungeon === 'd1' && b.blueprint === true; }), 'returned items are this layer\'s Blueprints');
+    eq(FF.grantMasterworkDrops('nope_layer', 1, true).length, 0, 'an unknown layer returns an empty drop list');
     s.blueprints = svB; s.inventory = svI;
+  });
+
+  // ---- Dungeon-clear result popup: shows the Blueprint(s) dropped, or that nothing was found ---------
+  suite('dungeon clear: blueprint result popup', function(){
+    ok(typeof FF.dungeonResultPopupHtml === 'function', 'dungeonResultPopupHtml exported');
+    // Nothing found: names the dungeon and states plainly that no Blueprint dropped.
+    var empty = FF.dungeonResultPopupHtml('Cave', []);
+    ok(/Cave Cleared!/.test(empty), 'the empty popup titles the cleared dungeon');
+    ok(/No Masterwork Blueprint dropped this run/.test(empty), 'the empty popup states nothing was found');
+    ok(/closeDungeonResult/.test(empty), 'the empty popup has a dismiss button');
+    ok(!/recovered/.test(empty), 'the empty popup does not claim a recovery');
+    // A drop: lists each Blueprint by name and points to the Blueprints tab.
+    var bp1 = FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','plate')];
+    var bp2 = FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d1','ring')];
+    var full = FF.dungeonResultPopupHtml('Cave', [bp1, bp2]);
+    ok(full.indexOf(bp1.name) !== -1 && full.indexOf(bp2.name) !== -1, 'each dropped Blueprint is listed by name');
+    ok(/Blueprints recovered/.test(full), 'a multi-drop reads "Blueprints recovered"');
+    ok(/Resources &rarr; Blueprints/.test(full), 'the drop popup points to the Blueprints tab');
+    ok(!/No Masterwork Blueprint dropped/.test(full), 'the drop popup does not also say nothing was found');
+    // Singular wording for exactly one drop.
+    ok(/Blueprint recovered/.test(FF.dungeonResultPopupHtml('Cave', [bp1])) && !/Blueprints recovered/.test(FF.dungeonResultPopupHtml('Cave', [bp1])), 'a single drop reads "Blueprint recovered" (singular)');
   });
 
   // ---- Solo dungeon tuning: 30% difficulty + 25% Formula drop vs the group (server) baseline ---------
