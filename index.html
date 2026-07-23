@@ -7378,7 +7378,18 @@
   // itself casts, and only one can accompany the player in combat at a time.
   var FAMILIAR_SUMMON_CHANCE = 1/3000; // 1/3000 per completed action -- keeps rolling even after a familiar is owned
   var FAMILIAR_MAX_LEVEL = 100;
-  var FAMILIAR_POTENCY_PER_LEVEL = 0.05; // +5% spell potency per level above 1 (+495% at level 100)
+  var FAMILIAR_POTENCY_PER_LEVEL = 0.05; // +5% spell potency per level above 1 (+495% at level 100) -- heals/buffs/debuffs
+  // Familiar DIRECT-damage curve (hit + siphon spells). These should read like a weapon of the player's era:
+  // at familiar level 1 a reference spell lands about a Tier-2 weapon's raw hit, and by level 100 about a
+  // Rare (x2) Tier-20 weapon's raw hit -- roughly a 300x climb, far steeper than the +5%/lvl linear potency
+  // (which only reaches ~6x and is kept for heals/buffs). The endpoints are derived from the same
+  // tierStat()/rarity math the weapons use, so they track any future weapon-scaling change. Per-spell
+  // strength is preserved by weighting each spell's own amount against FAM_HIT_REF_AMOUNT.
+  var FAM_HIT_REF_AMOUNT   = 15;                                                      // a "standard" hit/siphon amount
+  var FAM_HIT_TOP_WEAPON_TIER = 19;                                                   // weapons craft 20 tiers (index 0-19); the 20th ("Tier 20") is index 19
+  var FAM_HIT_DMG_L1       = (tierStat(2,2) + tierStat(5,2)) / 2;                     // ~6    : a Tier-2 weapon's avg raw hit
+  var FAM_HIT_DMG_L100     = ((tierStat(2,FAM_HIT_TOP_WEAPON_TIER) + tierStat(5,FAM_HIT_TOP_WEAPON_TIER)) / 2) * RARITY_TIERS[1].mult; // ~1368 : a Rare (x2) top-tier ("Tier 20") weapon's avg raw hit (range 782-1954)
+  var FAM_HIT_DMG_GROWTH   = Math.pow(FAM_HIT_DMG_L100 / FAM_HIT_DMG_L1, 1/99);       // per-level geometric growth (~1.056)
   // Elemental attunement physiques have no familiar, so they're excluded from the familiar roster.
   var FAMILIAR_PHYSIQUE_IDS = PHYSIQUE_SKILLS.filter(function(p){ return !p.element; }).map(function(p){ return p.id; });
   var FAMILIAR_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['farming']).concat(FAITH_SKILL_IDS).concat(FAMILIAR_PHYSIQUE_IDS);
@@ -7900,7 +7911,16 @@
   function getFamiliarLevel(skillId){
     return (state.familiars[skillId] && state.familiars[skillId].level) || 1;
   }
-  function familiarPotencyMult(level){ return (1 + (Math.max(1,level)-1)*FAMILIAR_POTENCY_PER_LEVEL) * (1 + getClothArmorSpellBonus(state)) * (1 + stavesEfficiencyBonus(state)) * (1 + getRingFamiliarBonus(state)) * menageristPotencyMult() * templarBeaconPotencyMult(); }
+  // Gear/skill potency shared by every familiar spell (cloth armour, staves, Communion rings, Menagerist,
+  // Templar beacon). The level term is applied on top per spell family: linear for heals/buffs (potency),
+  // geometric weapon-tier for direct damage (familiarHitLevelDamage).
+  function familiarGearPotencyMult(){ return (1 + getClothArmorSpellBonus(state)) * (1 + stavesEfficiencyBonus(state)) * (1 + getRingFamiliarBonus(state)) * menageristPotencyMult() * templarBeaconPotencyMult(); }
+  function familiarPotencyMult(level){ return (1 + (Math.max(1,level)-1)*FAMILIAR_POTENCY_PER_LEVEL) * familiarGearPotencyMult(); }
+  // Base direct-damage for a hit/siphon at this familiar level (before gear/potion bonuses): the weapon-tier
+  // curve, weighted by the spell's own amount vs a standard spell. familiarHitDamageResting folds in gear so
+  // it matches what the tooltip and combat show at rest (Catalyst potion multiplies on top only in combat).
+  function familiarHitLevelDamage(level, amount){ return FAM_HIT_DMG_L1 * Math.pow(FAM_HIT_DMG_GROWTH, Math.max(1,level) - 1) * ((amount || FAM_HIT_REF_AMOUNT) / FAM_HIT_REF_AMOUNT); }
+  function familiarHitDamageResting(level, amount){ return familiarHitLevelDamage(level, amount) * familiarGearPotencyMult(); }
   // ---- Staff & multi-familiar helpers ----
   // The Staves proficiency (trained by familiar damage) boosts familiar efficiency (spell potency):
   // +1% at Lv 1 up to +100% at Lv 100. Applies to every familiar cast.
@@ -8010,9 +8030,13 @@
       spawnCombatFloat(spell.name + '!', 'ft-rare', true);
     } else if(spell.type==='poison'){
       // Bake the elemental advantage vs the current enemy into the DoT rate (the DoT ticks generically
-      // in the loop, so it can't re-evaluate the element per tick).
+      // in the loop, so it can't re-evaluate the element per tick). The poison's TOTAL over its duration
+      // rides the same weapon-tier curve as a hit (weighted by its old dps*duration), so poison familiars
+      // keep pace at level 100 while preserving their historical relative strength; dps = total / duration.
       var _pmon = (state.activity && state.activity.type==='combat') ? monsterById(state.activity.monsterId) : null;
-      state.familiarBuffs.poisonDps = spell.dps*potency*elementAdvantage(spell.element, _pmon && _pmon.element)*elementDmgMult(state, spell.element);
+      var _pdur = (spell.durationMs/1000) || 6;
+      var _ptotal = familiarHitDamageResting(level, spell.dps * _pdur) * (1 + catalystFamiliarBonus());
+      state.familiarBuffs.poisonDps = (_ptotal/_pdur)*elementAdvantage(spell.element, _pmon && _pmon.element)*elementDmgMult(state, spell.element);
       state.familiarBuffs.poisonUntil = now + spell.durationMs*durMult;
       spawnCombatFloat(spell.name + '!', 'ft-rare', true);
     } else if(spell.type==='regen'){
@@ -8032,8 +8056,9 @@
       var cact = state.activity;
       if(cact && cact.type==='combat'){
         var cmon = monsterById(cact.monsterId);
-        // Familiars always land their damaging spells now -- no accuracy roll.
-        var dmg = spell.amount * potency;
+        // Familiars always land their damaging spells now -- no accuracy roll. Direct damage follows the
+        // weapon-tier curve (Tier-2 raw at Lv1 -> Rare Tier-20 raw at Lv100), with gear + Catalyst on top.
+        var dmg = familiarHitDamageResting(level, spell.amount) * (1 + catalystFamiliarBonus());
         if(spell.type==='hit' && spell.dmgType!=='void' && cmon){ var atkMix={}; atkMix[spell.dmgType]=1; dmg *= weightedAdvantage(atkMix, cmon.armorTypes || {blunt:1/3,slashing:1/3,piercing:1/3}); }
         dmg *= elementAdvantage(spell.element, cmon && cmon.element); // +20% when the spell's element beats the enemy's
         dmg *= elementDmgMult(state, spell.element); // your Elemental Attunement boosts the familiar's element damage
@@ -20485,11 +20510,11 @@
     if(spell.type==='damageBuff') return '+'+Math.round((spell.mult-1)*potency*100)+'% player damage for '+(spell.durationMs/1000)+'s';
     if(spell.type==='slowEnemy') return 'Slows enemy attack speed by '+Math.round(Math.min(STATUS_DEBUFF_CAP,spell.pct*potency)*100)+'% for '+(spell.durationMs/1000)+'s';
     if(spell.type==='weakenEnemy') return 'Reduces enemy damage by '+Math.round(Math.min(STATUS_DEBUFF_CAP,spell.pct*potency)*100)+'% for '+(spell.durationMs/1000)+'s';
-    if(spell.type==='poison') return 'Deals '+(Math.round(spell.dps*potency*10)/10)+' dmg/s to the enemy for '+(spell.durationMs/1000)+'s'+elemSuffix;
+    if(spell.type==='poison'){ var _pd=(spell.durationMs/1000)||6; return 'Deals '+(Math.round((familiarHitDamageResting(level||1, spell.dps*_pd)/_pd)*10)/10)+' dmg/s to the enemy for '+_pd+'s'+elemSuffix; }
     if(spell.type==='regen') return 'Regenerates '+(Math.round(spell.hps*potency*10)/10)+' HP / 5s for '+(spell.durationMs/1000)+'s';
     if(spell.type==='bubble') return 'Negates a killing blow for '+(Math.round(spell.durSec*potency*10)/10)+'s';
-    if(spell.type==='hit'){ var tl = spell.dmgType==='void'?'armour-ignoring':spell.dmgType; return 'Deals '+Math.round(spell.amount*potency)+' '+tl+' damage'+elemSuffix; }
-    if(spell.type==='siphon') return 'Siphons '+Math.round(spell.amount*potency)+' HP from the enemy to you'+elemSuffix;
+    if(spell.type==='hit'){ var tl = spell.dmgType==='void'?'armour-ignoring':spell.dmgType; return 'Deals '+Math.round(familiarHitDamageResting(level||1, spell.amount))+' '+tl+' damage'+elemSuffix; }
+    if(spell.type==='siphon') return 'Siphons '+Math.round(familiarHitDamageResting(level||1, spell.amount))+' HP from the enemy to you'+elemSuffix;
     if(spell.type==='timedBuff'){
       var v = spell.val*potency, s = (spell.durationMs/1000);
       var pct = Math.round(v*100);
@@ -30603,7 +30628,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.3';
+  var GAME_VERSION = '0.0.39.4';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -30767,6 +30792,7 @@
       setEquipHideLocked:function(v){ equipHideLocked = !!v; }, getEquipHideLocked:function(){ return equipHideLocked; },
       craftBodyRarity:craftBodyRarity, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, enhanceBodyRarity:enhanceBodyRarity, chronicleEnhanceToSystemMsg:chronicleEnhanceToSystemMsg, chronicleRowToSystemMsg:chronicleRowToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
+      familiarHitLevelDamage:familiarHitLevelDamage, familiarHitDamageResting:familiarHitDamageResting, familiarPotencyMult:familiarPotencyMult, FAM_HIT_REF_AMOUNT:FAM_HIT_REF_AMOUNT, FAM_HIT_DMG_L1:FAM_HIT_DMG_L1, FAM_HIT_DMG_L100:FAM_HIT_DMG_L100,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, ALL_SELLABLE:ALL_SELLABLE, ALL_DROP_ITEMS:ALL_DROP_ITEMS, FAT_ITEMS:FAT_ITEMS, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES, vendorSellValue:vendorSellValue, SELL_RARITY_MULT:SELL_RARITY_MULT,
       isFeastActive:isFeastActive, feastDamageBonus:feastDamageBonus, serveFeast:serveFeast, eatConfection:eatConfection, foodConsumableList:foodConsumableList, renderFoodConsumablesPanel:renderFoodConsumablesPanel,
