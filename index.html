@@ -10587,12 +10587,13 @@
   // PERSISTED per card key rather than living in the DOM: render() rebuilds whole panels and updateDynamic
   // walks these cards every frame, so anything held only in the element is wiped on the next repaint --
   // the render-loop state-loss failure this codebase has already been bitten by twice.
-  function queueInputHtml(key){
+  function queueInputHtml(key, opts){
+    opts = opts || {};
     var v = queueTargetFor(key);
     return '<input class="card-queue" type="number" min="0" step="1" max="'+QUEUE_TARGET_MAX+'"'
       + ' value="'+(v || '')+'" placeholder="∞" data-qkey="'+escapeHtml(String(key))+'"'
-      + ' title="Stop after this many are made — blank runs until materials run out"'
-      + ' aria-label="Run length" />';
+      + ' title="'+escapeHtml(opts.title || 'Stop after this many are made — blank runs until materials run out')+'"'
+      + ' aria-label="'+escapeHtml(opts.aria || 'Run length')+'" />';
   }
   // Set by the click handler from the card that was actually clicked, consumed by placeNewActivity. Keeps
   // the target out of all 18 individual start handlers.
@@ -13455,6 +13456,10 @@
     if(combatLevelEquivalent(state) < m.levelReq) return;
     relocatePrimaryTaskToFreeSlot();
     state.activity = { type:'combat', monsterId:monsterId, monsterHp:m.hp, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), disengageUsed:false, guardianBondUsed:false, cheatDeathUsed:false, samuraiFirstStrike:true, samuraiFocus:0, staticCharge:0, galvanizeStacks:0 };
+    // Optional limited run: fight this many, then stop (mirrors a craft/gather queue length). pendingQueueTarget
+    // is set by the click handler from the enemy card's run-length input; blank/0 fights on until you retreat.
+    var _ft = pendingQueueTarget; pendingQueueTarget = 0;
+    if(_ft > 0){ state.activity.fightTarget = _ft; state.activity.fightsWon = 0; }
     state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0; // fresh Duelist combat state
   }
 
@@ -14350,6 +14355,15 @@
         addItem(_relic.id, 1); // route through addItem so it credits the earned anchor (adoption-safe)
         addLog('Relic Reaver unearths a ' + _relic.name + '!', 'important');
         spawnCombatFloat('+1 ' + _relic.name, 'ft-rare', false);
+      }
+    }
+    // Limited run: this kill counts toward the chosen fight target; once met, stop instead of re-engaging.
+    if(act.fightTarget){
+      act.fightsWon = (act.fightsWon || 0) + 1;
+      if(act.fightsWon >= act.fightTarget){
+        addLog('Finished your run of ' + fmt(act.fightsWon) + ' ' + monster.name + ' fight' + (act.fightsWon===1?'':'s') + '.', 'important');
+        stopActivity(); needsRender = true;
+        return;
       }
     }
     act.monsterHp = monster.hp;
@@ -21096,7 +21110,9 @@
       } else if(isActive){
         html += '<button class="action-btn stop" data-action="stop">Stop</button>';
       } else {
-        html += '<button class="action-btn" data-action="fight" data-monster="'+m.id+'">Fight</button>';
+        // Optional run length: fight this many, then stop. Blank = fight until you retreat or fall.
+        html += queueInputHtml('fight:'+m.id, { title:'Stop after winning this many fights — blank fights on until you retreat or fall', aria:'Number of fights' })
+          + '<button class="action-btn" data-action="fight" data-monster="'+m.id+'">Fight</button>';
       }
       html += '</div>';
     });
@@ -29436,6 +29452,7 @@
       // A queued run shows how far through its TARGET it is, which the time-remaining figure can't convey
       // (a 60%-success craft has no fixed end time).
       if(t.act && t.act.targetQty) html += '<span class="gab-task-count" id="gabCount-'+t.key+'">'+fmt(t.act.producedQty||0)+'/'+fmt(t.act.targetQty)+'</span>';
+      else if(t.act && t.act.fightTarget) html += '<span class="gab-task-count" id="gabCount-'+t.key+'">'+fmt(t.act.fightsWon||0)+'/'+fmt(t.act.fightTarget)+'</span>'; // limited combat run
       html += '<span class="gab-task-chance" id="gabChance-'+t.key+'">'+gabTaskChanceText(d.successPct)+'</span>';
       html += '</div>';
     });
@@ -29478,6 +29495,9 @@
       if(cnt && t.act && t.act.targetQty){
         var qt = fmt(t.act.producedQty||0)+'/'+fmt(t.act.targetQty);
         if(cnt.textContent !== qt) cnt.textContent = qt;
+      } else if(cnt && t.act && t.act.fightTarget){
+        var fq = fmt(t.act.fightsWon||0)+'/'+fmt(t.act.fightTarget);
+        if(cnt.textContent !== fq) cnt.textContent = fq;
       }
     });
     // Tea buff: live countdown. Keep the legacy needsRender ping so other tea displays stay in sync.
@@ -30702,7 +30722,7 @@
     // Read the run length off the card that was clicked and hand it to placeNewActivity. Done here, once,
     // rather than in each of the 18 gather/craft/forge start handlers.
     pendingQueueTarget = 0;
-    if(/^(gather|craft|forge)/.test(action)){
+    if(/^(gather|craft|forge|fight)/.test(action)){
       var _card = btn.closest && btn.closest('.item-card');
       var _qin = _card && _card.querySelector('.card-queue');
       if(_qin) pendingQueueTarget = Math.max(0, Math.min(QUEUE_TARGET_MAX, Math.floor(Number(_qin.value) || 0)));
@@ -31387,7 +31407,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.33';
+  var GAME_VERSION = '0.0.39.34';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
