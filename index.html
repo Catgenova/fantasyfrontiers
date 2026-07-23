@@ -1979,7 +1979,11 @@
   // Hide) and feed Chandlery (Candles). Tapping (tree -> Resin) feeds Woodcarving (carved goods);
   // Spelunking (cave -> Minerals) feeds Glassblowing (Glass). Cooperage is a standalone refinement
   // (Planks + Ingot bands -> Barrels).
-  var FAT_NAMES = ['Rat Fat','Sparrow Fat','Rabbit Tallow','Squirrel Tallow','Weasel Tallow','Quail Fat','Hare Tallow','Fox Tallow','Marten Tallow','Pheasant Fat','Ermine Tallow','Boar Lard','Elk Tallow','Bison Tallow','Bear Grease','Mammoth Tallow','Yeti Fat','Drake Tallow','Phoenix Wax','Griffon Tallow','Behemoth Tallow'];
+  // Fat/Tallow/Grease -- the rendered-fat Butchering byproduct. Each tier is named for its OWN wildlife
+  // animal (so butchering a Rabbit yields Rabbit Tallow, a Bear yields Bear Grease), matching the Meat and
+  // Hide lines which already use the animal name. A flavor suffix (Tallow / Grease / Lard / Fat / Oil) fits
+  // each beast. Index-aligned to WILDLIFE_NAMES below; ids stay fat_t<i>, so this is a display-only rename.
+  var FAT_NAMES = ['Rabbit Tallow','Rat Fat','Fox Tallow','Wild Boar Lard','Wolf Tallow','Bear Grease','Bull Tallow','Panther Fat','Crocodile Fat','Rhino Fat','Elephant Fat','Lion Fat','Tiger Fat','Grizzly Grease','Mammoth Tallow','Direwolf Tallow','Sabertooth Cat Fat','Giant Squid Oil','Roc Fat','Behemoth Tallow','Apex Titan-Beast Tallow'];
   var FAT_COLORS = _rampColors([0xe8,0xe0,0xc8], [0x6a,0x4a,0x2a]);   // pale fat -> dark grease
   var FAT_ICONS = FAT_COLORS.map(function(c){ return svgIcon('droplet', c); });
   var TAPPING_NAMES = ['Birch Sap','Pine Resin','Maple Syrup','Fir Resin','Cedar Resin','Spruce Gum','Amber Bead','Larch Balsam','Copal Resin','Dammar Gum','Mastic Resin','Frankincense','Myrrh Resin','Dragon Sap','Sunbark Resin','Moonsap','Ambergris','Elderwood Resin','Heartwood Amber','Worldtree Sap','Eternal Amber'];
@@ -10806,10 +10810,12 @@
           }
         } else if(recipe.meatId && recipe.hideId){
           addXp(act.skill, recipe.xp*1.5);
+          var _butcherTier = recipeTier(recipe, act.itemId);
+          bumpStat('butcher_' + _butcherTier); // per-tier corpses-butchered tally, powers Quest progress ("Butcher 10 Rabbit corpses")
           // Butchering is a GATHER skill (no CRAFT_PHYSIQUE entry), so processing a carcass read an
           // undefined table and awarded NO physique XP -- including no Logic. Use its gather physique list
           // (which carries Logic, the Refining physique), so a butcher grants Logic at the crafting rate.
-          addPhysiqueXp(physTierPairs(GATHER_PHYSIQUE[act.skill] || CRAFT_PHYSIQUE[act.skill], recipeTier(recipe, act.itemId)));
+          addPhysiqueXp(physTierPairs(GATHER_PHYSIQUE[act.skill] || CRAFT_PHYSIQUE[act.skill], _butcherTier));
           // A carcass can yield Meat, Hide, and rendered Fat/Tallow/Grease -- each an independent roll.
           var got = [];
           if(Math.random() < butcherOutputChance(state, recipe.meatPhysique)){ addItem(recipe.meatId, 1); got.push('Meat'); }
@@ -20443,6 +20449,17 @@
       target:1, progress:function(st){ return (st.gatherTools && (st.gatherTools.butchering||0) > 0) ? 1 : 0; },
       nav:{ cat:'refining', sub:'butchering' },
       reward:{ kind:'item', itemId:'corpse_t0', qty:10 } },
+    { id:'render_the_kill', cat:'gettingstarted', title:'Render the Kill',
+      desc:'A good hunter wastes nothing the land gives up. Set your Cleaver to those ten rabbit carcasses and render each one down — hide for the tanner, fat for the chandler, meat for the pot. Nothing left on the ground but a lesson learned, and a knife earned to turn that raw hide into something worth wearing.',
+      how:'In Refining → Butchering, process 10 Rabbit Carcasses (butcher your 10 Rabbit Corpses).',
+      target:10, progress:function(st){ return (st.stats && st.stats['butcher_0']) || 0; },
+      nav:{ cat:'refining', sub:'butchering' },
+      reward:{ kind:'items', items:[
+        { itemId:'butchering_t0', qty:10 },
+        { itemId:'fat_t0', qty:10 },
+        { itemId:'meat_t0', qty:10 },
+        { itemId:'tool_tanning_t0_normal', qty:1 }
+      ] } },
     { id:'clearing_the_land', cat:'estatequests', title:'Clearing the Land',
       desc:'Before a frontier estate can rise, the wild has to be tamed. Every tree, berry bush, herb, rock, and ore vein is one more patch of ground reclaimed.',
       how:'Open Lands → My Estate, tap a tile with a natural obstacle, and Clear it with the matching Gathering skill. Clear 10 obstacles in all.',
@@ -30884,7 +30901,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.21';
+  var GAME_VERSION = '0.0.39.22';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

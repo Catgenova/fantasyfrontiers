@@ -6307,6 +6307,40 @@
     eq(FF.claimQuest('take_up_the_cleaver'), false, 'a claimed quest cannot be re-claimed');
     s.gatherTools = savedGT;
     if(savedCorpse===undefined) delete s.inventory['corpse_t0']; else s.inventory['corpse_t0'] = savedCorpse;
+    // ---- Quest 7: "Render the Kill" -- butcher 10 Rabbit corpses -> 10 hide + 10 fat + 10 meat + a Copper Tanning Knife ----
+    // First, the fat-line realignment this quest surfaced: a Rabbit's rendered fat must READ as a Rabbit's.
+    eq(FF.ALL_SELLABLE['meat_t0'].name, 'Rabbit Meat', 'tier-0 Meat is Rabbit Meat');
+    eq(FF.ALL_SELLABLE['butchering_t0'].name, 'Rabbit Hide', 'tier-0 Hide is Rabbit Hide');
+    ok(/^Rabbit /.test(FF.ALL_SELLABLE['fat_t0'].name), 'tier-0 Fat now names the Rabbit (was the misaligned "Rat Fat")');
+    ok(/^Bear /.test(FF.ALL_SELLABLE['fat_t5'].name), 'tier-5 Fat now names the Bear (each fat matches its own animal)');
+    var q7 = FF.questById('render_the_kill');
+    ok(!!q7 && q7.cat==='gettingstarted', 'Render the Kill lives in Getting Started');
+    eq(q7.target, 10, 'its target is 10 butchered corpses');
+    eq(q7.reward.kind, 'items', 'it grants a multi-item reward');
+    var r7 = q7.reward.items.map(function(it){ return it.itemId; });
+    ok(r7.indexOf('butchering_t0')!==-1 && r7.indexOf('fat_t0')!==-1 && r7.indexOf('meat_t0')!==-1 && r7.indexOf('tool_tanning_t0_normal')!==-1,
+      'reward is 10 Rabbit Hide + 10 Rabbit fat + 10 Rabbit Meat + a Copper Tanning Knife');
+    ok(r7.every(function(id){ return !!FF.ALL_SELLABLE[id]; }), 'every reward item resolves to a real item');
+    ok(/Tanning Knife/.test(FF.questRewardLabel(q7)) && /Copper/.test(FF.questRewardLabel(q7)), 'the reward line names the Copper Tanning Knife');
+    var savedStats = s.stats, savedR7 = r7.map(function(id){ return s.inventory[id]; });
+    s.quests = { claimed:{} };
+    s.stats = {};
+    eq(FF.questProgress(q7), 0, 'no corpses butchered -> 0 progress');
+    s.stats['butcher_1'] = 10; // butchering a higher-tier animal must not count for the Rabbit quest
+    eq(FF.questProgress(q7), 0, 'butchering other-tier carcasses does not advance the Rabbit-corpse tally');
+    s.stats['butcher_0'] = 9;
+    eq(FF.questComplete(q7), false, '9 butchered is not enough');
+    s.stats['butcher_0'] = 10;
+    ok(FF.questComplete(q7) && FF.questClaimable(q7), 'the 10th butchered Rabbit corpse completes + arms the quest');
+    var r7Before = r7.map(function(id){ return s.inventory[id]||0; });
+    ok(FF.claimQuest('render_the_kill'), 'claim succeeds');
+    eq((s.inventory['butchering_t0']||0) - r7Before[0], 10, 'claim grants 10 Rabbit Hide');
+    eq((s.inventory['fat_t0']||0) - r7Before[1], 10, 'claim grants 10 Rabbit fat');
+    eq((s.inventory['meat_t0']||0) - r7Before[2], 10, 'claim grants 10 Rabbit Meat');
+    eq((s.inventory['tool_tanning_t0_normal']||0) - r7Before[3], 1, 'claim grants a Copper Tanning Knife');
+    eq(FF.claimQuest('render_the_kill'), false, 'a claimed quest cannot be re-claimed');
+    s.stats = savedStats;
+    r7.forEach(function(id, i){ if(savedR7[i]===undefined) delete s.inventory[id]; else s.inventory[id] = savedR7[i]; });
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
