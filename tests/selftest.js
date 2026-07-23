@@ -2304,6 +2304,18 @@
     // Iron Maiden (Lv20): + 150% of the damage a Block prevented, on top of Spiked Barrier.
     ok(Math.abs(FF.sentinelReflectDamage(100, 80, 999, stFor('sentinel',20)) - (25 + 120)) < 1e-9, 'Iron Maiden: +150% of the 80 prevented (=120) atop Spiked Barrier 25');
     ok(Math.abs(FF.sentinelReflectDamage(100, 0, 999, stFor('sentinel',20)) - 25) < 1e-9, 'Iron Maiden adds nothing on an unblocked hit');
+    // Reflect float LABEL (bug: a sub-Lv20 Sentinel saw "Iron Maiden" on a Block though it hadn't
+    // unlocked). The label reads "Iron Maiden" ONLY when that blocked share actually contributes --
+    // the exact same condition sentinelReflectDamage gates it on (Lv20 unlocked AND prevented > 0). [regression]
+    eq(FF.sentinelReflectSourceName(false, 80), 'Spiked Barrier', 'Iron Maiden locked -> a blocked reflect reads Spiked Barrier');
+    eq(FF.sentinelReflectSourceName(true, 80), 'Iron Maiden', 'Iron Maiden unlocked + Block prevented -> reads Iron Maiden');
+    eq(FF.sentinelReflectSourceName(true, 0), 'Spiked Barrier', 'Iron Maiden unlocked but nothing prevented -> pure Spiked Barrier');
+    eq(FF.sentinelReflectSourceName(false, 0), 'Spiked Barrier', 'unblocked and locked -> Spiked Barrier');
+    // Tie the "unlocked" flag to real reflect behaviour: the Block share contributes iff a blocked
+    // reflect exceeds the unblocked one -- true only at Lv20+, so the label can only truthfully say
+    // Iron Maiden there.
+    ok(!(FF.sentinelReflectDamage(100,80,999,stFor('sentinel',1)) > FF.sentinelReflectDamage(100,0,999,stFor('sentinel',1))), 'below Lv20 the Block share never adds to the reflect');
+    ok(FF.sentinelReflectDamage(100,80,999,stFor('sentinel',20)) > FF.sentinelReflectDamage(100,0,999,stFor('sentinel',20)), 'at Lv20 the Block share adds to the reflect');
     // Bulwark's Wrath (Lv80): +40% Armor, and every reflect adds your full Armor rating.
     eq(FF.sentinelArmorMult(stFor('sentinel',80)), 1.40, "Bulwark's Wrath +40% Armor");
     eq(FF.sentinelArmorMult(stFor('sentinel',60)), 1, 'no Armor bonus below Lv80 (Bracing removed)');
