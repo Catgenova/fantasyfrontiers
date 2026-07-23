@@ -6162,8 +6162,9 @@
     eq(q2.reward.kind, 'items', 'it grants a multi-item reward');
     var kitIds = q2.reward.items.map(function(it){ return it.itemId; });
     ok(kitIds.indexOf('bodyarmor_plate_chest_t0_normal')!==-1 && kitIds.indexOf('bodyarmor_chain_boots_t0_normal')!==-1
-      && kitIds.indexOf('bodyarmor_chain_helmet_t0_normal')!==-1 && kitIds.indexOf('bodyarmor_tailoring_gauntlets_t0_normal')!==-1,
-      'the kit is t0 plate chest + chain boots + chain helm + cloth gloves (all equippable at Lv 1)');
+      && kitIds.indexOf('bodyarmor_chain_helmet_t0_normal')!==-1 && kitIds.indexOf('bodyarmor_tailoring_gauntlets_t0_normal')!==-1
+      && kitIds.indexOf('stshield_shieldSmall_t0_normal')!==-1,
+      'the kit is t0 plate chest + chain boots + chain helm + cloth gloves + a small shield (all equippable at Lv 1)');
     ok(kitIds.every(function(id){ return !!FF.ALL_SELLABLE[id]; }), 'every kit item resolves to a real armor piece');
     // Progress tracks whether a scimitar is equipped.
     var savedMH = s.equippedMainhand;
