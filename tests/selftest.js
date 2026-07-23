@@ -10371,6 +10371,60 @@
     }
   });
 
+  // ---- Cooperage: Provision Barrels keep a Peon working past the 12h offline cap --------------
+  suite('cooperage: provision barrels', function(){
+    ok(typeof FF.peonBarrelBurn === 'function' && typeof FF.barrelProvisionMs === 'function', 'barrel helpers exported');
+    // Barrels are a real Cooperage output.
+    ok(FF.CRAFTING_SKILLS.cooperage && FF.ALL_CRAFT_RECIPES['cooperage_t0'], 'cooperage recipes exist');
+    // Tier buys DURATION (how much past-cap runtime a barrel covers), climbing monotonically.
+    eq(FF.barrelTierOf('cooperage_t9'), 9, 'barrel tier parses out of the item id');
+    ok(FF.barrelProvisionMs(20) > FF.barrelProvisionMs(0) * 30, 'a T20 barrel covers >30x the runtime of a T0');
+    var bmono = true; for(var bi=1; bi<21; bi++){ if(FF.barrelProvisionMs(bi) <= FF.barrelProvisionMs(bi-1)) bmono = false; }
+    ok(bmono, 'provision duration climbs monotonically across the ladder');
+
+    var s = FF._state, savedInv = s.inventory;
+    try {
+      // Unprovisioned peons: no barrel, so they can never do past-cap work.
+      s.inventory = { 'cooperage_t0': 5 };
+      var plain = { skillId:'cooperage', kind:'craft', itemId:'cooperage_t0', progress:0 };
+      ok(!FF.peonProvisioned(plain) && !FF.peonHasProvisionStock(plain), 'a peon with no barrel is not provisioned');
+      FF.peonBarrelBurn(plain, 999999); // no-op without a barrelId
+      eq(s.inventory['cooperage_t0'], 5, 'an unprovisioned peon consumes no barrels');
+
+      // Provisioned with stock: has provision even before the first barrel is loaded (barrelMs starts 0).
+      var t = { skillId:'cooperage', kind:'craft', itemId:'cooperage_t0', barrelId:'cooperage_t0', barrelMs:0 };
+      ok(FF.peonHasProvisionStock(t), 'a provisioned peon with barrels in the bag can fund past-cap work');
+      // First burn self-loads a barrel from the bag, then decrements (mirrors peonCandleBurn).
+      FF.peonBarrelBurn(t, 1000);
+      eq(s.inventory['cooperage_t0'], 4, 'the first past-cap action pulls one barrel from the bag');
+      eq(t.barrelMs, FF.barrelProvisionMs(0) - 1000, 'the pulled barrel starts full, minus the action just charged');
+
+      // A single big burn spanning multiple barrels drains them all in one call (offline catch-up path).
+      s.inventory = { 'cooperage_t0': 5 };
+      var big = { barrelId:'cooperage_t0', barrelMs:0 };
+      FF.peonBarrelBurn(big, FF.barrelProvisionMs(0) * 2.8);
+      eq(s.inventory['cooperage_t0'], 2, 'a burn spanning 2.8 barrels consumes 3 and leaves 2');
+      ok(FF.peonHasProvisionStock(big), 'the partially-drained third barrel still has provision');
+
+      // Running dry: no more barrels -> no more past-cap work (the peon simply stops, no failure).
+      s.inventory = { 'cooperage_t0': 0 };
+      var dry = { barrelId:'cooperage_t0', barrelMs:500 };
+      FF.peonBarrelBurn(dry, 1000);
+      eq(dry.barrelMs, 0, 'provision floors at zero rather than going negative');
+      ok(!FF.peonHasProvisionStock(dry), 'with the last barrel gone the peon can do no more past-cap work');
+      eq(dry.barrelId, 'cooperage_t0', 'the barrel choice is REMEMBERED so it resumes when restocked');
+
+      // Coverage figure: current barrel + full stock, scaled by the task burn rate.
+      s.inventory = { 'cooperage_t0': 3 };
+      var cov = { barrelId:'cooperage_t0', barrelMs:0, kind:'special', tierIndex:0 }; // T0 task -> burn rate 1.0
+      ok(Math.abs(FF.peonProvisionCoverageMs(cov) - 3 * FF.barrelProvisionMs(0)) < 1e-6, 'coverage counts the whole bag at the T0 burn rate');
+      var covHi = { barrelId:'cooperage_t0', barrelMs:0, kind:'special', tierIndex:20 }; // faster drain -> less coverage
+      ok(FF.peonProvisionCoverageMs(covHi) < FF.peonProvisionCoverageMs(cov), 'a higher-tier task drains provisions faster, so covers less time');
+    } finally {
+      s.inventory = savedInv;
+    }
+  });
+
   // ---- Chandlery: burn RATE scales with task tier, and the UI figures must match the loop -------
   suite('chandlery: candle burn rates', function(){
     ok(typeof FF.peonCandlesPerHour === 'function' && typeof FF.candleStoreSummary === 'function', 'rate helpers exported');
