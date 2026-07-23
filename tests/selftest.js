@@ -900,6 +900,27 @@
     ok(!/data-tier-dir="-1"[^>]*disabled/.test(midCraft) && !/data-tier-dir="1"[^>]*disabled/.test(midCraft), 'the active-craft flag does NOT disable the stepper at a mid tier');
   });
 
+  // ---- Combat: limited fight runs (fight N enemies, then stop) ----
+  suite('combat: a chosen number of fights stops the run', function(){
+    var S = FF._state;
+    // Give defeatMonster fresh scratch objects to mutate (gold/loot/xp/etc.) so nothing leaks into other suites.
+    var sv = { act:S.activity, gold:S.gold, inv:S.inventory, stats:S.stats, mk:S.monsterKills, phys:S.physique, xp:S.xp, faith:S.faith };
+    S.gold = 0; S.inventory = {}; S.stats = {}; S.monsterKills = {}; S.physique = {}; S.xp = {}; S.faith = 0;
+    var mon = FF.MONSTERS[0]; // first wildlife foe (Rabbit)
+    S.activity = { type:'combat', monsterId:mon.id, monsterHp:0, fightTarget:2, fightsWon:0, monsterTickAccum:0 };
+    FF.defeatMonster(mon);
+    eq(S.activity.type, 'combat', 'after the 1st win the run keeps going');
+    eq(S.activity.fightsWon, 1, 'the 1st win is counted');
+    ok((S.activity.monsterHp||0) > 0, 'the foe is re-engaged at full HP for the next fight');
+    FF.defeatMonster(mon);
+    eq(S.activity.type, null, 'reaching the fight target stops the run');
+    // A blank/absent target fights on indefinitely (no fightTarget -> never auto-stops).
+    S.activity = { type:'combat', monsterId:mon.id, monsterHp:0, monsterTickAccum:0 };
+    FF.defeatMonster(mon);
+    eq(S.activity.type, 'combat', 'with no fight target the run never auto-stops');
+    S.activity = sv.act; S.gold = sv.gold; S.inventory = sv.inv; S.stats = sv.stats; S.monsterKills = sv.mk; S.physique = sv.phys; S.xp = sv.xp; S.faith = sv.faith;
+  });
+
   // ---- Gathering workshops (parallel to crafting workshops) -----------------------------
   suite('gathering workshops', function(){
     var w = FF.WORKSHOP_ITEMS;
