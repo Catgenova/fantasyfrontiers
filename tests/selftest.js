@@ -821,8 +821,18 @@
       eq(c.navCat, 'building', 'carpentry craft navigates to the Building tab');
       S.inventory['forestry_t0'] = 2;
       eq(FF.describeTask({ type:'craft', skill:'carpentry', itemId:'carpentry_t0', progress:0 }).remaining, 2, 'remaining tracks inventory');
+      // The old combined "Crafting" tab is retired -- it split into Refining + Cooking. A running action
+      // now routes to its real home category so its sub-tab bar matches (bug ticket-0037: routing every
+      // refining skill to 'crafting' left Butchering, which only lives on the Refining tab, with no tab).
       var mc = FF.describeTask({ type:'craft', skill:'metallurgy', itemId:'metallurgy_t0', progress:0 });
-      eq(mc.navCat, 'crafting', 'metallurgy craft navigates to the Crafting tab');
+      eq(mc.navCat, 'refining', 'metallurgy (a refining skill) navigates to the Refining tab');
+      eq(FF.craftCatForSkill('tanning'), 'refining', 'tanning routes to Refining');
+      eq(FF.craftCatForSkill('baking'), 'cooking', 'a cooking skill routes to the Cooking tab, not the retired Crafting tab');
+      eq(FF.craftCatForSkill('weaponsmithing'), 'outfitting', 'an outfitting skill still routes to Outfitting');
+      eq(FF.craftCatForSkill('carpentry'), 'building', 'a building skill still routes to Construction');
+      // The crux: a Refining action lands in a category whose sub-tab bar actually contains Butchering.
+      ok(FF.REFINING_TAB_SKILL_IDS.indexOf('butchering') !== -1, 'the Refining tab bar lists Butchering');
+      ok(FF.craftCatForSkill('tanning') === 'refining' && FF.REFINING_TAB_SKILL_IDS.indexOf('butchering') !== -1, 'jumping to a Refining action reaches a tab bar with Butchering');
       // Butchering processes corpses under the Refining tab (renderGatherTab), NOT the Crafting tab --
       // routing it to 'crafting' rendered it as a craft skill and threw, breaking render + chat.
       var bc = FF.describeTask({ type:'craft', skill:'butchering', itemId:'rabbit_carcass', progress:0 });

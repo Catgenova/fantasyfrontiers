@@ -29432,14 +29432,16 @@
   // Which Resources sub-category a crafting skill lives under (crafting/building/outfitting) --
   // so tapping a craft task navigates to the right tab after the cosmetic split.
   function craftCatForSkill(skill){
-    // Butchering is a gather skill that processes corpses under the Refining tab (rendered by
-    // renderGatherTab, NOT renderCraftTab) -- routing its task to 'crafting' rendered it as a craft
-    // skill, which threw and aborted render (and took chat down with it). Everything else keeps its
-    // existing category (the refining/cooking split is only a sub-tab grouping under 'crafting').
+    // Route a running action back to the SAME category the Resources menu files the skill under, so its
+    // sub-tab bar matches. The old "Crafting" category is retired -- it split into Refining + Cooking --
+    // and its combined tab bar excluded Butchering, so jumping to a running Refining action (e.g. Tanning)
+    // via 'crafting' left Butchering with no tab (bug ticket-0037). Butchering itself is a gather skill
+    // that renders its corpse UI under Refining (renderGatherTab, handled in renderContent).
     if(skill==='butchering') return 'refining';
     if(BUILDING_SKILL_IDS.indexOf(skill) !== -1) return 'building';
     if(OUTFITTING_SKILL_IDS.indexOf(skill) !== -1) return 'outfitting';
-    return 'crafting';
+    if(COOKING_SKILL_IDS.indexOf(skill) !== -1) return 'cooking';
+    return 'refining'; // every remaining craft skill is a Refining skill (its tab bar includes Butchering)
   }
   // Runs the current inventory supports for a recipe's inputs (Infinity if it needs none).
   function taskRunsRemaining(inputs){
@@ -31593,7 +31595,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.40.3';
+  var GAME_VERSION = '0.0.40.4';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -31712,7 +31714,7 @@
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       tierStepper:tierStepper, tierRange:tierRange,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
-      GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
+      GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
