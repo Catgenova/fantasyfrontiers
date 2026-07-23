@@ -28899,6 +28899,14 @@
     if(ARMOR_PROFICIENCY_IDS.indexOf(skillId)!==-1) return 'var(--cat-combat)';
     return 'var(--gold)';
   }
+  // Surface an active Workshop's boost on the action page's skill bar (personal + guild stacked). A placed
+  // Workshop speeds the skill and adds a double-output chance, but that only showed on the Estate tile --
+  // from an action screen the buff was invisible, so players couldn't tell it was doing anything (bug
+  // report ticket-0038). Pure (takes the already-resolved bonuses) so it's trivial to test.
+  function skillWorkshopBuffLabel(speedBonus, doubleChance){
+    if(!(speedBonus > 0) && !(doubleChance > 0)) return '';
+    return ' <span style="color:var(--gold)">&bull; Workshop +'+Math.round(speedBonus*100)+'% speed, +'+Math.round(doubleChance*100)+'% double output</span>';
+  }
   function renderSkillProgressBar(skillId){
     var xp = state.xp[skillId]||0;
     var lvl = skillLevel(skillId, xp);
@@ -28906,9 +28914,10 @@
     var label = SKILL_LABELS[skillId] || (skillId.charAt(0).toUpperCase()+skillId.slice(1));
     // Over-100 Mastery: show the current output-double bonus once a gathering/crafting skill passes 100.
     var mastery = (lvl > MAX_SKILL_LEVEL) ? ' <span style="color:var(--gold)">&bull; +'+Math.round(overLevelDoublePct(skillId, xp)*100)+'% double output</span>' : '';
+    var workshop = skillWorkshopBuffLabel(workshopSpeedBonus(state, skillId), workshopDoubleChance(state, skillId));
     return '<div class="top-skill-bar">'+
       '<div class="top-skill-track"><div class="top-skill-fill" id="topbar-'+skillId+'" style="width:'+pct+'%;background:'+skillBarColor(skillId)+'"></div></div>'+
-      '<div class="top-skill-label"><span>'+label+' '+(SKILL_INFO[skillId]?skillInfoBtn(skillId):'')+' &bull; Level <b>'+lvl+'</b>'+mastery+'</span><span id="topbar-pct-'+skillId+'">'+skillBarRightLabel(skillId, xp)+'</span></div>'+
+      '<div class="top-skill-label"><span>'+label+' '+(SKILL_INFO[skillId]?skillInfoBtn(skillId):'')+' &bull; Level <b>'+lvl+'</b>'+mastery+workshop+'</span><span id="topbar-pct-'+skillId+'">'+skillBarRightLabel(skillId, xp)+'</span></div>'+
     '</div>';
   }
 
@@ -31584,7 +31593,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.40.2';
+  var GAME_VERSION = '0.0.40.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -31687,14 +31696,14 @@
   if(typeof location !== 'undefined' && /[?&]selftest\b/.test(location.search)){
     DISCORD_FEED_WEBHOOK = ''; // never let a test craft roll (e.g. a fantastic relic) post to the real Discord channel
     window.__FF = {
-      getLevel:getLevel, xpFloorForLevel:xpFloorForLevel, xpForNextLevel:xpForNextLevel, levelProgress:levelProgress, MAX_SKILL_LEVEL:MAX_SKILL_LEVEL, SKILL_CURVE_KNEE:SKILL_CURVE_KNEE, getLevelExt:getLevelExt, skillLevel:skillLevel, skillLevelProgress:skillLevelProgress, skillLevelXpSpan:skillLevelXpSpan, skillBarRightLabel:skillBarRightLabel, skillCanOverlevel:skillCanOverlevel, overLevelDoublePct:overLevelDoublePct, overLevelDoubles:overLevelDoubles, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, SKILL_MAX_LEVEL_EXT:SKILL_MAX_LEVEL_EXT, OVERLEVEL_DOUBLE_PER_LEVEL:OVERLEVEL_DOUBLE_PER_LEVEL, SKILL_OVERLEVEL_GROWTH:SKILL_OVERLEVEL_GROWTH, renderSkillProgressBar:renderSkillProgressBar, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
+      getLevel:getLevel, xpFloorForLevel:xpFloorForLevel, xpForNextLevel:xpForNextLevel, levelProgress:levelProgress, MAX_SKILL_LEVEL:MAX_SKILL_LEVEL, SKILL_CURVE_KNEE:SKILL_CURVE_KNEE, getLevelExt:getLevelExt, skillLevel:skillLevel, skillLevelProgress:skillLevelProgress, skillLevelXpSpan:skillLevelXpSpan, skillBarRightLabel:skillBarRightLabel, skillCanOverlevel:skillCanOverlevel, overLevelDoublePct:overLevelDoublePct, overLevelDoubles:overLevelDoubles, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, SKILL_MAX_LEVEL_EXT:SKILL_MAX_LEVEL_EXT, OVERLEVEL_DOUBLE_PER_LEVEL:OVERLEVEL_DOUBLE_PER_LEVEL, SKILL_OVERLEVEL_GROWTH:SKILL_OVERLEVEL_GROWTH, renderSkillProgressBar:renderSkillProgressBar, skillWorkshopBuffLabel:skillWorkshopBuffLabel, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
       isMortal:isMortal, MORTAL_XP_MULT:MORTAL_XP_MULT, addXp:addXp, choosePath:choosePath, mortalDeath:mortalDeath, pathSelectNeeded:pathSelectNeeded, PATH_CHOICES:PATH_CHOICES, renderPathSelect:renderPathSelect, removePathSelect:removePathSelect, lbRow:lbRow,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
       candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
       peonTaskTier:peonTaskTier, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
       generatePersonalEstateGrid:generatePersonalEstateGrid, generateEstateGrid:generateEstateGrid, estatePlaceStarterKit:estatePlaceStarterKit, estateIsStarterTile:estateIsStarterTile, ESTATE_STARTER_WORKSHOP:ESTATE_STARTER_WORKSHOP, ESTATE_STARTER_COTTAGE:ESTATE_STARTER_COTTAGE, ESTATE_STARTER_PAVING:ESTATE_STARTER_PAVING, estatePeonSources:estatePeonSources,
       ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline, simulateOfflineFarming:simulateOfflineFarming, bestOwnedSeedForField:bestOwnedSeedForField, seedAllowedForPlanting:seedAllowedForPlanting, ownedSeedTypesDesc:ownedSeedTypesDesc, renderFarmPlantControls:renderFarmPlantControls,
-      workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData,
+      workshopBonusPct:workshopBonusPct, getWorkshopTierData:getWorkshopTierData, workshopSpeedBonus:workshopSpeedBonus, workshopDoubleChance:workshopDoubleChance, recomputePlacedWorkshops:recomputePlacedWorkshops,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
       addXpAppliedMult:addXpAppliedMult, cardRealXp:cardRealXp, cardTierIndex:cardTierIndex, xpStat:xpStat, curiosityGatherXpBonus:curiosityGatherXpBonus,
       estateUpgradePavement:estateUpgradePavement, pavementTierOf:pavementTierOf, ESTATE_PAVE_TILE_COST:ESTATE_PAVE_TILE_COST, estUse:estUse,

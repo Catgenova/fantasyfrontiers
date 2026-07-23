@@ -949,6 +949,33 @@
     near(FF.workshopBonusPct(FF.TIER_COUNT - 1), 0.30, 'gathering workshop top tier = 30%');
   });
 
+  // ---- Workshop buff shows on the action page's skill bar (bug ticket-0038) --------------
+  suite('workshop buff: surfaced on the action skill bar', function(){
+    ok(typeof FF.skillWorkshopBuffLabel === 'function', 'skillWorkshopBuffLabel exported');
+    // Pure label: hidden with no bonus; shows both speed and double-output when a Workshop is placed.
+    eq(FF.skillWorkshopBuffLabel(0, 0), '', 'no Workshop -> no buff label');
+    var lbl = FF.skillWorkshopBuffLabel(0.37, 0.37); // e.g. a 22% personal + 15% guild mining Workshop
+    ok(/Workshop \+37% speed/.test(lbl), 'label shows the stacked speed bonus');
+    ok(/\+37% double output/.test(lbl), 'label shows the stacked double-output chance');
+    ok(/Workshop \+30% speed, \+30% double output/.test(FF.skillWorkshopBuffLabel(0.30, 0.30)), 'top-tier single Workshop reads +30%/+30%');
+    // End to end: placing a Workshop makes the buff appear on renderSkillProgressBar for that skill,
+    // and skills without one stay clean.
+    var s = FF._state, svEstate = s.estate;
+    try {
+      s.estate = { grid: [[{ workshopId: 'workshop_mining_t20' }]] }; // one t20 mining Workshop
+      FF.recomputePlacedWorkshops();
+      ok(FF.workshopDoubleChance(s, 'mining') > 0 && FF.workshopSpeedBonus(s, 'mining') > 0, 'a placed Workshop yields a real speed + double bonus (buff is working)');
+      ok(/Workshop \+/.test(FF.renderSkillProgressBar('mining')), 'the mining action skill bar now shows the Workshop buff');
+      ok(!/Workshop \+/.test(FF.renderSkillProgressBar('fishing')), 'a skill with no Workshop shows no Workshop buff');
+    } finally {
+      // Restore the estate but leave the Workshop cache EMPTY -- the state every other suite here relies on
+      // (the test harness never syncs it; a real game load does). Recompute against an empty grid, then
+      // put the real estate back without re-syncing, so later suites keep assuming no ambient Workshop.
+      s.estate = { grid: [] }; FF.recomputePlacedWorkshops();
+      s.estate = svEstate;
+    }
+  });
+
   // ---- Cottages + peon speed (Peons feature) --------------------------------------------
   suite('cottages + peons', function(){
     var c = FF.COTTAGE_ITEMS;
@@ -1826,9 +1853,12 @@
   suite('brew buff: bonus-output, separate slot from Tea', function(){
     ok(typeof FF.isBrewActive==='function' && typeof FF.brewYieldRoll==='function' && typeof FF.drinkBrew==='function', 'brew buff helpers exported');
     var s = FF._state;
-    var sv = { inv:s.inventory, brew:s.activeBrew, tea:s.activeTea, stats:s.stats, phys:s.physique };
+    var sv = { inv:s.inventory, brew:s.activeBrew, tea:s.activeTea, stats:s.stats, phys:s.physique, est:s.estate };
     try {
       s.inventory = {}; s.stats = {}; s.physique = {};
+      // Isolate the gather-output integration from ambient Workshop doubles: an empty estate zeroes
+      // workshopDoubleChance for every skill, so the only bonus source left is the Brew under test.
+      s.estate = { grid: [] }; FF.recomputePlacedWorkshops();
       s.activeBrew = { itemId:null, name:null, icon:null, yield:0, durationMs:0, expiresAt:0 };
       s.activeTea  = { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 };
       // Inactive: no roll ever fires.
@@ -1855,6 +1885,9 @@
       eq(s.inventory['forestry_t3']||0, 0, 'no bonus output once the brew is gone');
     } finally {
       s.inventory = sv.inv; s.activeBrew = sv.brew; s.activeTea = sv.tea; s.stats = sv.stats; s.physique = sv.phys;
+      // Leave the Workshop cache EMPTY (its state before this suite), then restore the estate without
+      // re-syncing, so later suites keep assuming no ambient Workshop.
+      s.estate = { grid: [] }; FF.recomputePlacedWorkshops(); s.estate = sv.est;
     }
   });
 
