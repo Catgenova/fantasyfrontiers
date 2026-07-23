@@ -6830,6 +6830,20 @@
     eq((s.inventory['belt_t0_supreme']||0)-beltSupBefore, 1, 'claim grants a Supreme Rabbit Belt');
     eq(!!(s.titles && s.titles['title_frontier_hero']), true, 'claim grants the Frontier Hero title');
     s.titles = savedTitlesCap; if(savedBeltSup===undefined) delete s.inventory['belt_t0_supreme']; else s.inventory['belt_t0_supreme']=savedBeltSup;
+    // ---- Sorting: claimed quests sink to the bottom (stable); earned titles float to the top ----
+    var _qA = FF.questById('answer_the_call'), _qB = FF.questById('take_up_arms'), _qC = FF.questById('don_your_armor');
+    s.quests = { claimed:{} };
+    eq(FF.questsClaimedLast([_qA,_qB,_qC]).map(function(q){return q.id;}).join(','), 'answer_the_call,take_up_arms,don_your_armor', 'nothing claimed -> original order preserved');
+    s.quests.claimed['take_up_arms'] = true; // claim the MIDDLE one
+    eq(FF.questsClaimedLast([_qA,_qB,_qC]).map(function(q){return q.id;}).join(','), 'answer_the_call,don_your_armor,take_up_arms', 'a claimed quest sinks to the bottom; unclaimed keep order');
+    s.quests.claimed['answer_the_call'] = true; // claim the FIRST too
+    eq(FF.questsClaimedLast([_qA,_qB,_qC]).map(function(q){return q.id;}).join(','), 'don_your_armor,answer_the_call,take_up_arms', 'two claimed sink in their original order; unclaimed stays on top');
+    // Titles page: an earned title renders above an unearned one.
+    var _t0 = FF.TITLES[0].id, _t1 = FF.TITLES[1].id;
+    s.titles = {}; s.titles[_t1] = true; // own only the SECOND registry title
+    var _th = FF.renderTitlesTab();
+    ok(_th.indexOf('data-title="'+_t1+'"') !== -1 && _th.indexOf('data-title="'+_t1+'"') < _th.indexOf('data-title="'+_t0+'"'), 'an earned title renders above an unearned one');
+    s.titles = {};
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
