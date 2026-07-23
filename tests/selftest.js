@@ -6180,6 +6180,43 @@
     ok(kitIds.every(function(id, i){ return (s.inventory[id]||0) - kitBefore[i] === 1; }), 'claim grants one of each armor piece');
     kitIds.forEach(function(id){ if((s.inventory[id]||0) > 0) s.inventory[id] = Math.max(0, (s.inventory[id]||0) - 1); }); // undo the grant
     s.equippedMainhand = savedMH;
+    // ---- Quest 3: "Don Your Armor" -- equip all 5 starter pieces -> summon the Treasure Hunter familiar ----
+    var savedArmor = s.bodyArmor, savedOff = s.equippedOffhand, savedOffTier = s.equippedOffhandTier,
+        savedFams = s.familiars, savedPQ = s.popupQueue, savedPopFam = s.settings.popupFamiliar, savedPBT = s.popupBatchTotal;
+    var q3 = FF.questById('don_your_armor');
+    ok(!!q3 && q3.cat==='gettingstarted', 'Don Your Armor lives in Getting Started');
+    eq(q3.target, 5, 'its target is all 5 starter pieces');
+    eq(q3.reward.kind, 'familiar', 'it grants a familiar reward');
+    eq(q3.reward.familiarId, 'treasureHunter', 'the familiar granted is the Treasure Hunter');
+    ok(/Midas/.test(FF.questRewardLabel(q3)), 'the reward line names the Treasure Hunter familiar (Midas, its companion)');
+    // Progress counts each of the 5 equipped pieces (4 armor slots by material + the small shield offhand).
+    s.quests = { claimed:{} };
+    s.bodyArmor = {}; s.equippedOffhand = null; s.equippedOffhandTier = 0;
+    eq(FF.questProgress(q3), 0, 'nothing equipped -> 0 progress');
+    s.bodyArmor.chest = { material:'plate', tier:1 };
+    eq(FF.questProgress(q3), 1, 'copper plate chest counts');
+    s.bodyArmor.boots = { material:'chain', tier:1 };
+    s.bodyArmor.helmet = { material:'chain', tier:1 };
+    s.bodyArmor.gauntlets = { material:'tailoring', tier:1 };
+    eq(FF.questProgress(q3), 4, 'chain boots + chain helm + cotton gloves all count');
+    eq(FF.questComplete(q3), false, 'without the shield the quest is not complete');
+    s.equippedOffhand = 'shieldSmall'; s.equippedOffhandTier = 1;
+    eq(FF.questProgress(q3), 5, 'the copper small shield is the 5th piece');
+    ok(FF.questComplete(q3) && FF.questClaimable(q3), 'all 5 pieces equipped completes + arms the quest');
+    // A wrong material in a slot must not count (plate chest only, not chain chest, etc.).
+    s.bodyArmor.chest = { material:'chain', tier:1 };
+    eq(FF.questProgress(q3), 4, 'a chain chest does not satisfy the plate-chest requirement');
+    s.bodyArmor.chest = { material:'plate', tier:1 };
+    // Claim summons the Treasure Hunter as if found normally: familiar becomes owned + a summon popup queues.
+    s.familiars = {}; s.popupQueue = []; s.popupBatchTotal = 0; s.settings.popupFamiliar = true;
+    ok(!(s.familiars['treasureHunter'] && s.familiars['treasureHunter'].owned), 'Treasure Hunter is not owned before claiming');
+    ok(FF.claimQuest('don_your_armor'), 'claim succeeds');
+    ok(s.familiars['treasureHunter'] && s.familiars['treasureHunter'].owned && s.familiars['treasureHunter'].level===1, 'claim summons the Treasure Hunter at level 1');
+    ok(s.popupQueue.some(function(p){ return p.type==='familiar' && p.skillId==='treasureHunter'; }), 'a familiar summon popup is queued (as if found normally)');
+    eq(FF.questClaimed(q3), true, 'the quest is marked claimed');
+    eq(FF.claimQuest('don_your_armor'), false, 'a claimed quest cannot be re-claimed');
+    s.bodyArmor = savedArmor; s.equippedOffhand = savedOff; s.equippedOffhandTier = savedOffTier;
+    s.familiars = savedFams; s.popupQueue = savedPQ; s.settings.popupFamiliar = savedPopFam; s.popupBatchTotal = savedPBT;
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
