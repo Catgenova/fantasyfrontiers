@@ -6746,6 +6746,40 @@
     s.quests={claimed:{}}; s.stats={ crafted_alchemy:5 }; ok(FF.questComplete(q41), '5 potions completes');
     invGrantCheck('brew_a_draught','elixir_t0',10);
     s.stats = savedVIStats; s.gold = savedVIGold;
+    // ---- Act VII: Adornment & Enchantment (quests 42-45) ----
+    var savedVIIStats = s.stats, savedVIIGold = s.gold, savedJS = s.jewelrySlots, savedUniq = s.uniqueItems, savedOff7 = s.equippedOffhand, savedOffT7 = s.equippedOffhandTier;
+    // 42 Cut and Set: equip a ring -> Copper Amulet + gold
+    var q42 = FF.questById('cut_and_set');
+    ok(!!q42 && q42.target===1, 'Cut and Set: target 1');
+    s.quests={claimed:{}}; s.jewelrySlots={ ring1:{}, ring2:{}, ring3:{}, ring4:{}, ring5:{}, amulet:{} };
+    eq(FF.questComplete(q42), false, 'no ring equipped -> not complete');
+    s.jewelrySlots.ring1 = { typeId:'plain', tier:1, rarity:'normal' };
+    ok(FF.questComplete(q42), 'a ring in a ring slot completes');
+    invGrantCheck('cut_and_set','amulet_t0_normal',1);
+    // 43 Steel Sharpened: enhance a unique to +5 (progress = max enhance)
+    var q43 = FF.questById('steel_sharpened');
+    ok(!!q43 && q43.target===5, 'Steel Sharpened: to +5');
+    s.quests={claimed:{}}; s.uniqueItems={ u1:{ enhance:4 } };
+    eq(FF.questProgress(q43), 4, '+4 reads as 4/5 progress');
+    eq(FF.questComplete(q43), false, '+4 is not complete');
+    s.uniqueItems.u1.enhance = 5; ok(FF.questComplete(q43), '+5 completes');
+    s.gold=0; ok(FF.claimQuest('steel_sharpened'), 'claim steel_sharpened'); eq(s.gold, 2000, 'grants 2000 gold');
+    // 44 Bind the Crystal: enchant a piece -> 5 crystals
+    var q44 = FF.questById('bind_the_crystal');
+    ok(!!q44 && q44.target===1, 'Bind the Crystal: target 1');
+    s.quests={claimed:{}}; s.stats={};
+    eq(FF.questComplete(q44), false, 'no enchant applied -> not complete');
+    s.stats['enchants_applied']=1; ok(FF.questComplete(q44), 'one enchant completes');
+    invGrantCheck('bind_the_crystal','enchant_t0',5);
+    // 45 Ward and Glyph: equip a ward
+    var q45 = FF.questById('ward_and_glyph');
+    ok(!!q45 && q45.target===1, 'Ward and Glyph: target 1');
+    s.quests={claimed:{}}; s.equippedOffhand='shieldSmall'; s.equippedOffhandTier=1;
+    eq(FF.questComplete(q45), false, 'a shield is not a ward');
+    s.equippedOffhand='wardFire'; s.equippedOffhandTier=1;
+    ok(FF.questComplete(q45), 'an equipped Ward completes');
+    invGrantCheck('ward_and_glyph','stward_wardFire_t0_normal',1);
+    s.stats=savedVIIStats; s.gold=savedVIIGold; s.jewelrySlots=savedJS; s.uniqueItems=savedUniq; s.equippedOffhand=savedOff7; s.equippedOffhandTier=savedOffT7;
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };

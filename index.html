@@ -12639,6 +12639,7 @@
     var uid = isU ? sel : (isEq ? convertEquippedToUnique(equipTokenSlot(sel)) : makeUniqueFromBase(sel)); if(!uid){ return; } improveSel = uid;
     var u = state.uniqueItems[uid];
     consumeInputs(planned.plan);
+    bumpStat('enchants_applied'); // enchant crystals bound to gear, powers "Bind the Crystal"
     var roll = rollEnchant(u.kind, enchantCtxForUnique(u));
     if(u.enchants.length < enchantSlotsFor(u.rarity)){ u.enchants.push(roll); addLog('Enchanted '+uniqueBaseName(u)+': '+enchantLabel(u.kind,roll)+'.','important'); }
     else { improvePending = { uid:uid, roll:roll }; addLog('Rolled '+enchantLabel(u.kind,roll)+' — replace an enchant or discard it.','important'); }
@@ -20694,6 +20695,30 @@
       target:5, progress:function(st){ return (st.stats && st.stats['crafted_alchemy']) || 0; },
       nav:{ cat:'refining', sub:'alchemy' },
       reward:{ items:[ { itemId:'elixir_t0', qty:10 } ] } },
+    { id:'cut_and_set', cat:'gettingstarted', title:'Cut and Set',
+      desc:'A hero is known by their blade, but remembered by their rings. Craft a Copper Ring at the jeweler’s bench and slip it on — a small band with a quiet bonus, and the first of five slots you’ll one day fill with power. Adornment isn’t vanity on the frontier; it’s carried strength.',
+      how:'In Outfitting → Jewelrycrafting, craft a Copper Ring, then equip it from Equipment & Stats.',
+      target:1, progress:function(st){ return RING_SLOT_IDS.some(function(k){ var c=st.jewelrySlots&&st.jewelrySlots[k]; return c && (c.typeId||c.uid||c.leg); }) ? 1 : 0; },
+      nav:{ cat:'outfitting', sub:'jewelrycrafting' },
+      reward:{ items:[ { itemId:'amulet_t0_normal', qty:1 } ], gold:1000 } },
+    { id:'steel_sharpened', cat:'gettingstarted', title:'Steel Sharpened',
+      desc:'Good gear is a starting point, not a ceiling. Take a fine piece — a mastercrafted or set item — to the Improvement bench and enhance it five times, each strike sharper and riskier than the last, until the numbers on it read like a hero’s and not a novice’s. The frontier respects a well-kept edge.',
+      how:'In Resources → Improvement, enhance a piece of gear to +5.',
+      target:5, progress:function(st){ var m=0,u=st.uniqueItems||{}; for(var k in u){ if((u[k].enhance||0)>m) m=u[k].enhance; } return m; },
+      nav:{ cat:'improvement' },
+      reward:{ gold:2000 } },
+    { id:'bind_the_crystal', cat:'gettingstarted', title:'Bind the Crystal',
+      desc:'Demonspawn carry more than menace — cut from their remains come Enchant Crystals, raw magic waiting for a home. Bind one to a piece of your gear at the Improvement bench and watch a plain item wake up with a new power. This is where equipment stops being found and starts being made yours.',
+      how:'In Resources → Improvement, enchant a piece of gear with an Enchant Crystal.',
+      target:1, progress:function(st){ return (st.stats && st.stats['enchants_applied']) || 0; },
+      nav:{ cat:'improvement' },
+      reward:{ items:[ { itemId:'enchant_t0', qty:5 } ], gold:1000 } },
+    { id:'ward_and_glyph', cat:'gettingstarted', title:'Ward and Glyph',
+      desc:'Elementals shatter into Glyphs — frozen sparks of their own element — and a runesmith who gathers them can inscribe a Ward that turns an enemy’s magic back on itself. Craft one, fix it to your off-hand, and step into the fight ready to reflect what would have burned you. The best shield is one that bites back.',
+      how:'In Outfitting → Runesmithing, inscribe a Ward, then equip it in your off-hand.',
+      target:1, progress:function(st){ return (isWard(st.equippedOffhand) && (st.equippedOffhandTier||0) > 0) ? 1 : 0; },
+      nav:{ cat:'outfitting', sub:'runesmithing' },
+      reward:{ items:[ { itemId:'stward_wardFire_t0_normal', qty:1 } ], gold:2000 } },
     { id:'clearing_the_land', cat:'estatequests', title:'Clearing the Land',
       desc:'Before a frontier estate can rise, the wild has to be tamed. Every tree, berry bush, herb, rock, and ore vein is one more patch of ground reclaimed.',
       how:'Open Lands → My Estate, tap a tile with a natural obstacle, and Clear it with the matching Gathering skill. Clear 10 obstacles in all.',
