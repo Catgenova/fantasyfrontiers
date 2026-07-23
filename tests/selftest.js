@@ -6894,6 +6894,31 @@
       eq(_qtEl.innerHTML, '', 'the tracker empties out completely when nothing is tracked');
     }
     s.quests = { claimed:{} }; s.trackedQuests = savedTracked || [];
+    // ---- Quests page: 1-50 numbering, capstone thick border, claimable-to-top + Act grouping ----
+    eq(FF.QUEST_ORDINAL['answer_the_call'], 1, 'the first First Frontier quest is numbered 1');
+    eq(FF.QUEST_ORDINAL['master_of_the_frontier'], 50, 'the 50th First Frontier quest is numbered 50');
+    eq(FF.QUEST_ORDINAL['frontier_hero'], undefined, 'the capstone has no 1-50 number');
+    ok(/quest-acc-num">1</.test(FF.renderQuestAccordion(FF.questById('answer_the_call'))), 'quest 1 renders its number badge');
+    ok(/quest-acc-num">50</.test(FF.renderQuestAccordion(FF.questById('master_of_the_frontier'))), 'quest 50 renders its number badge');
+    var accCap = FF.renderQuestAccordion(FF.questById('frontier_hero'));
+    ok(/quest-acc\b[^"]*capstone/.test(accCap) || /class="quest-acc[^"]*capstone/.test(accCap), 'the capstone accordion carries the capstone (thick-border) class');
+    ok(/★/.test(accCap) && !/quest-acc-num">\d/.test(accCap), 'the capstone shows a ★ badge, not a 1-50 number');
+    // questsSorted: ready-to-claim first, then in-progress, then claimed.
+    var _qa=FF.questById('answer_the_call'), _qb=FF.questById('take_up_arms'), _qc=FF.questById('don_your_armor');
+    s.stats={}; s.equippedMainhand=null; s.bodyArmor={};
+    s.quests={ claimed:{ don_your_armor:true } }; // answer_the_call claimable, take_up_arms in-progress, don_your_armor claimed
+    var order = FF.questsSorted([_qc,_qb,_qa]).map(function(q){ return q.id; });
+    eq(order[0], 'answer_the_call', 'a claimable quest sorts to the front');
+    eq(order[order.length-1], 'don_your_armor', 'a claimed quest sorts to the back');
+    // renderQuestsTab (best-effort: only asserts when the First Frontier tab is the one that renders).
+    s.quests={ claimed:{} }; s.stats={}; s.equippedMainhand=null; s.bodyArmor={}; s.activeCompanions=[];
+    var qtHtml = FF.renderQuestsTab();
+    if(/Answer the Call/.test(qtHtml)){
+      ok(/Ready to Claim/.test(qtHtml), 'claimable quests get a Ready to Claim header');
+      ok(/Act I · First Steps/.test(qtHtml), 'in-progress quests are grouped under Act headers');
+      ok(qtHtml.indexOf('Ready to Claim') < qtHtml.indexOf('Act I'), 'Ready to Claim sits above the Acts');
+    }
+    s.quests={ claimed:{} };
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
