@@ -6133,7 +6133,15 @@
   suite('quests: area, category, accordion + claim flow', function(){
     var s = FF._state;
     var savedMK = s.monsterKills, savedQ = s.quests, savedInv = s.inventory['corpse_t0'], savedTitles = s.titles, savedFal = s.inventory['stweapon_scimitar_t0_normal'];
+    // Every field a Getting Started quest's progress() reads must start clean, or state leaked from an
+    // earlier suite could leave one of them complete+unclaimed and break the "only Answer the Call is
+    // claimable" flash assertions below. Saved here, restored at the end of the suite.
+    var savedStatsQ = s.stats, savedRelicQ = s.equippedRelicTier, savedBeltTQ = s.equippedBeltTier, savedBeltRQ = s.equippedBeltRarity,
+        savedGTQ = s.gatherTools, savedACQ = s.activeCompanions, savedMHQ = s.equippedMainhand, savedOffQ = s.equippedOffhand,
+        savedOffTQ = s.equippedOffhandTier, savedBAQ = s.bodyArmor;
     s.monsterKills = {}; s.quests = { claimed:{} }; s.titles = {};
+    s.stats = {}; s.equippedRelicTier = 0; s.equippedBeltTier = 0; s.equippedBeltRarity = 'normal';
+    s.gatherTools = {}; s.activeCompanions = []; s.equippedMainhand = null; s.equippedOffhand = null; s.equippedOffhandTier = 0; s.bodyArmor = {};
     // Quests is its OWN top-level area, with Getting Started as a category tab inside it (not under Battle).
     var qArea = FF.AREAS.filter(function(a){ return a.id==='quests'; })[0];
     ok(!!qArea, 'Quests is its own top-level area');
@@ -6413,6 +6421,84 @@
     eq(FF.claimQuest('cinch_it_on'), false, 'a claimed quest cannot be re-claimed');
     s.equippedBeltTier = savedBT; s.equippedBeltRarity = savedBR;
     if(savedShovel===undefined) delete s.inventory['tool_digging_t0_normal']; else s.inventory['tool_digging_t0_normal'] = savedShovel;
+    // ---- Quest 11: "Break Ground" -- dig 100 Sand -> 200 Sand + 10 Sand Artifacts + a Copper Excavation Brush ----
+    var q11 = FF.questById('break_ground');
+    ok(!!q11 && q11.cat==='gettingstarted', 'Break Ground lives in Getting Started');
+    eq(q11.target, 100, 'its target is 100 Sand dug');
+    eq(q11.reward.kind, 'items', 'it grants a multi-item reward');
+    var r11 = q11.reward.items.map(function(it){ return it.itemId; });
+    ok(r11.indexOf('digging_t0')!==-1 && r11.indexOf('muddyartifact_t0')!==-1 && r11.indexOf('tool_archaeology_t0_normal')!==-1, 'reward is 200 Sand + 10 Sand Artifacts + a Copper Excavation Brush');
+    ok(r11.every(function(id){ return !!FF.ALL_SELLABLE[id]; }), 'every reward item resolves to a real item');
+    eq(FF.ALL_SELLABLE['muddyartifact_t0'].name, 'Sand Artifact', 'tier-0 artifact is a Sand Artifact');
+    eq(q11.nav.cat, 'gathering', 'its Go destination is the Gathering tab');
+    eq(q11.nav.sub, 'digging', 'the Go destination drills into Digging');
+    var savedStats11 = s.stats, savedR11 = r11.map(function(id){ return s.inventory[id]; });
+    s.quests = { claimed:{} }; s.stats = {};
+    eq(FF.questProgress(q11), 0, 'no Sand dug -> 0 progress');
+    s.stats['gathered_digging_t1'] = 100; // a different soil must not count
+    eq(FF.questProgress(q11), 0, 'digging other soil does not advance the Sand tally');
+    s.stats['gathered_digging_t0'] = 100;
+    ok(FF.questComplete(q11) && FF.questClaimable(q11), '100 Sand completes + arms the quest');
+    var r11Before = r11.map(function(id){ return s.inventory[id]||0; });
+    ok(FF.claimQuest('break_ground'), 'claim succeeds');
+    eq((s.inventory['digging_t0']||0) - r11Before[0], 200, 'claim grants 200 Sand');
+    eq((s.inventory['muddyartifact_t0']||0) - r11Before[1], 10, 'claim grants 10 Sand Artifacts');
+    eq((s.inventory['tool_archaeology_t0_normal']||0) - r11Before[2], 1, 'claim grants a Copper Excavation Brush');
+    s.stats = savedStats11;
+    r11.forEach(function(id, i){ if(savedR11[i]===undefined) delete s.inventory[id]; else s.inventory[id] = savedR11[i]; });
+    // ---- Quest 12: "Extract the Past" -- excavate 10 Sand Artifacts -> a Sand Relic ----
+    var q12 = FF.questById('extract_the_past');
+    ok(!!q12 && q12.cat==='gettingstarted', 'Extract the Past lives in Getting Started');
+    eq(q12.target, 10, 'its target is 10 excavated artifacts');
+    ok(q12.reward.kind==='item' && q12.reward.itemId==='relic_t0_normal' && q12.reward.qty===1, 'reward is a Sand Relic (relic_t0_normal)');
+    eq(FF.ALL_SELLABLE['relic_t0_normal'].name, 'Sand Relic', 'the reward reads as a Sand Relic');
+    eq(q12.nav.cat, 'crafting', 'its Go destination is the Crafting tab');
+    eq(q12.nav.sub, 'archaeology', 'the Go destination drills into Archaeology');
+    var savedStats12 = s.stats, savedRelic = s.inventory['relic_t0_normal'];
+    s.quests = { claimed:{} }; s.stats = {};
+    eq(FF.questProgress(q12), 0, 'nothing excavated -> 0 progress');
+    s.stats['excavate_1'] = 10; // a different-tier artifact must not count
+    eq(FF.questProgress(q12), 0, 'excavating other-tier artifacts does not advance the Sand tally');
+    s.stats['excavate_0'] = 10;
+    ok(FF.questComplete(q12) && FF.questClaimable(q12), '10 excavated Sand Artifacts completes + arms the quest');
+    var relicBefore = s.inventory['relic_t0_normal'] || 0;
+    ok(FF.claimQuest('extract_the_past'), 'claim succeeds');
+    eq((s.inventory['relic_t0_normal']||0) - relicBefore, 1, 'claim grants a Sand Relic');
+    s.stats = savedStats12;
+    if(savedRelic===undefined) delete s.inventory['relic_t0_normal']; else s.inventory['relic_t0_normal'] = savedRelic;
+    // ---- Quest 13: "Bear the Relic" -- equip a relic -> 10 Critter Caches ----
+    var q13 = FF.questById('bear_the_relic');
+    ok(!!q13 && q13.cat==='gettingstarted', 'Bear the Relic lives in Getting Started');
+    eq(q13.target, 1, 'its target is 1 (equip the relic)');
+    ok(q13.reward.kind==='item' && q13.reward.itemId==='critter_cache' && q13.reward.qty===10, 'reward is 10 Critter Caches');
+    var savedRT = s.equippedRelicTier, savedCache = s.inventory['critter_cache'];
+    s.quests = { claimed:{} };
+    s.equippedRelicTier = 0;
+    eq(FF.questComplete(q13), false, 'no relic equipped -> not complete');
+    s.equippedRelicTier = 1;
+    ok(FF.questComplete(q13) && FF.questClaimable(q13), 'equipping the Sand Relic completes + arms the quest');
+    var cacheBefore = s.inventory['critter_cache'] || 0;
+    ok(FF.claimQuest('bear_the_relic'), 'claim succeeds');
+    eq((s.inventory['critter_cache']||0) - cacheBefore, 10, 'claim grants 10 Critter Caches');
+    s.equippedRelicTier = savedRT;
+    if(savedCache===undefined) delete s.inventory['critter_cache']; else s.inventory['critter_cache'] = savedCache;
+    // ---- Quest 14: "Crack the Cache" -- open a Critter Cache -> 10 Cotton Seeds ----
+    var q14 = FF.questById('crack_the_cache');
+    ok(!!q14 && q14.cat==='gettingstarted', 'Crack the Cache lives in Getting Started');
+    eq(q14.target, 1, 'its target is 1 opened cache');
+    ok(q14.reward.kind==='item' && q14.reward.itemId==='seed_t0' && q14.reward.qty===10, 'reward is 10 Cotton Seeds (seed_t0)');
+    eq(FF.ALL_SELLABLE['seed_t0'].name, 'Cotton Seed', 'the reward reads as Cotton Seed');
+    eq(q14.nav.cat, 'inventory', 'its Go destination is the Inventory');
+    var savedStats14 = s.stats, savedSeed = s.inventory['seed_t0'];
+    s.quests = { claimed:{} }; s.stats = {};
+    eq(FF.questComplete(q14), false, 'no cache opened -> not complete');
+    s.stats['caches_opened'] = 1;
+    ok(FF.questComplete(q14) && FF.questClaimable(q14), 'opening a Critter Cache completes + arms the quest');
+    var seedBefore = s.inventory['seed_t0'] || 0;
+    ok(FF.claimQuest('crack_the_cache'), 'claim succeeds');
+    eq((s.inventory['seed_t0']||0) - seedBefore, 10, 'claim grants 10 Cotton Seeds');
+    s.stats = savedStats14;
+    if(savedSeed===undefined) delete s.inventory['seed_t0']; else s.inventory['seed_t0'] = savedSeed;
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
@@ -6437,6 +6523,9 @@
     // restore
     s.monsterKills = savedMK; s.quests = savedQ; s.inventory['corpse_t0'] = savedInv; s.titles = savedTitles;
     if(savedFal===undefined) delete s.inventory['stweapon_scimitar_t0_normal']; else s.inventory['stweapon_scimitar_t0_normal'] = savedFal;
+    s.stats = savedStatsQ; s.equippedRelicTier = savedRelicQ; s.equippedBeltTier = savedBeltTQ; s.equippedBeltRarity = savedBeltRQ;
+    s.gatherTools = savedGTQ; s.activeCompanions = savedACQ; s.equippedMainhand = savedMHQ; s.equippedOffhand = savedOffQ;
+    s.equippedOffhandTier = savedOffTQ; s.bodyArmor = savedBAQ;
   });
 
   // ---- Auth identity guard: cross-account write prevention (shared per-origin auth session) ----

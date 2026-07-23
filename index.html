@@ -8392,6 +8392,7 @@
     var tierIndex = parseInt(mainItemId.split('_t')[1], 10);
     if(Math.random() < diggingMainChance(state)){
       addItem(mainItemId, 1);
+      bumpStat('gathered_' + mainItemId); // per-item gather tally (successful primary pulls), powers "Dig 100 Sand"
       spawnFloatingText('+1 ' + (ALL_SELLABLE[mainItemId]||{}).name, 'ft-success');
       gatherDoubleRoll(mainItemId, 'digging');
     } else {
@@ -8452,6 +8453,7 @@
     var tierIndex = parseInt(mainItemId.split('_t')[1], 10);
     if(Math.random() < miningMainChance(state)){
       addItem(mainItemId, 1);
+      bumpStat('gathered_' + mainItemId); // per-item gather tally (successful primary pulls), powers "Mine 100 Copper"
       spawnFloatingText('+1 ' + (ALL_SELLABLE[mainItemId]||{}).name, 'ft-success');
       gatherDoubleRoll(mainItemId, 'mining');
     } else {
@@ -8924,6 +8926,7 @@
       // Grain has one fewer tier than Fiber/Herb, so roll each line within its OWN tier count (never t20 grain).
       [['seed_t',TIER_COUNT],['grainseed_t',GRAIN_TIER_COUNT],['herbseed_t',TIER_COUNT]].forEach(function(line){ var sid = line[0] + pickWeightedFarmingTier(line[1]); addItem(sid, 1); items[sid] = (items[sid]||0) + 1; });
     }
+    bumpStat('caches_opened', n); // total Critter Caches opened, powers "Open a Critter Cache"
     addLog('You opened ' + n + ' Critter Cache' + (n===1?'':'s') + ' and found ' + (n*3) + ' seeds.', 'important');
     spawnFloatingText('+' + (n*3) + ' Seeds', 'ft-bonus');
     if(!silent) lootPopupData = { title:'Critter Cache'+(n===1?'':'s'), icon:(ALL_SELLABLE.critter_cache||{}).icon, opened:n, gold:0, items:items };
@@ -10828,6 +10831,7 @@
           else { spawnFloatingText('Nothing usable', 'ft-fail'); }
         } else if(recipe.relicCraft){
           addXp('archaeology', recipe.xp*1.5);
+          bumpStat('excavate_' + recipe.tierIndex); // per-tier artifacts excavated, powers "Excavate 10 Sand Artifacts"
           addPhysiqueXp(physTierPairs(CRAFT_PHYSIQUE.archaeology, recipeTier(recipe, act.itemId)));
           if(Math.random() < archaeologySuccessRate(state)){
             var rarityId = rollRelicRarity(state);
@@ -20485,6 +20489,34 @@
       target:1, progress:function(st){ return (st.equippedBeltTier===1 && st.equippedBeltRarity==='rare') ? 1 : 0; },
       nav:{ cat:'character' },
       reward:{ kind:'item', itemId:'tool_digging_t0_normal', qty:1 } },
+    { id:'break_ground', cat:'gettingstarted', title:'Break Ground',
+      desc:'A spade earns its keep in the sandpits. Turn a hundred loads of sand and the earth gives up more than grit — buried among it, the odd knot of caked artifact, waiting for a patient hand to lift it free. Dig deep; the frontier keeps its oldest secrets close to the surface here.',
+      how:'In Gathering → Digging, dig up 100 Sand.',
+      target:100, progress:function(st){ return (st.stats && st.stats['gathered_digging_t0']) || 0; },
+      nav:{ cat:'gathering', sub:'digging' },
+      reward:{ kind:'items', items:[
+        { itemId:'digging_t0', qty:200 },
+        { itemId:'muddyartifact_t0', qty:10 },
+        { itemId:'tool_archaeology_t0_normal', qty:1 }
+      ] } },
+    { id:'extract_the_past', cat:'gettingstarted', title:'Extract the Past',
+      desc:'A crusted artifact is a riddle in dried mud. Set your Excavation Brush to ten of them and coax each one whole — sweep away the ages grain by grain until an intact relic gleams beneath. Do it ten times and your hands will know the difference between rubble and treasure.',
+      how:'In Crafting → Archaeology, excavate 10 Sand Artifacts into relics.',
+      target:10, progress:function(st){ return (st.stats && st.stats['excavate_0']) || 0; },
+      nav:{ cat:'crafting', sub:'archaeology' },
+      reward:{ kind:'item', itemId:'relic_t0_normal', qty:1 } },
+    { id:'bear_the_relic', cat:'gettingstarted', title:'Bear the Relic',
+      desc:'An old relic is more than a curio — worn at your side, its lingering power hardens your blows and your guard alike. Fit the Sand Relic to your kit and carry the frontier’s history into the fight. Old things, it turns out, still have teeth.',
+      how:'Open Equipment & Stats and equip your Sand Relic.',
+      target:1, progress:function(st){ return (st.equippedRelicTier > 0) ? 1 : 0; },
+      nav:{ cat:'character' },
+      reward:{ kind:'item', itemId:'critter_cache', qty:10 } },
+    { id:'crack_the_cache', cat:'gettingstarted', title:'Crack the Cache',
+      desc:'A Critter Cache is a fistful of the frontier’s bounty, knotted shut — inside, seeds of every kind waiting for soil. Crack one open and you hold the beginnings of a farm in your palm: cotton to spin, grain to sow, herbs to steep. Every field starts with a single split seam.',
+      how:'Open a Critter Cache from your Inventory.',
+      target:1, progress:function(st){ return (st.stats && st.stats['caches_opened']) || 0; },
+      nav:{ cat:'inventory' },
+      reward:{ kind:'item', itemId:'seed_t0', qty:10 } },
     { id:'clearing_the_land', cat:'estatequests', title:'Clearing the Land',
       desc:'Before a frontier estate can rise, the wild has to be tamed. Every tree, berry bush, herb, rock, and ore vein is one more patch of ground reclaimed.',
       how:'Open Lands → My Estate, tap a tile with a natural obstacle, and Clear it with the matching Gathering skill. Clear 10 obstacles in all.',
