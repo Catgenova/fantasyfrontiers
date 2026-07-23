@@ -1018,6 +1018,12 @@
   .inv-acc-title{flex:1 1 auto;font-family:var(--font-display);font-weight:700;font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--gold);}
   .inv-acc-n{flex:0 0 auto;font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}
   .inv-acc-body{padding:10px 12px 12px;border-top:1px dashed var(--border-light);}
+  /* Nested (type) accordion inside a family accordion -- lighter chrome + smaller title so the two levels read clearly. */
+  .inv-acc .inv-acc-sub{background:rgba(0,0,0,.12);border-color:var(--border-light);margin-bottom:6px;}
+  .inv-acc .inv-acc-sub:last-child{margin-bottom:0;}
+  .inv-acc-sub > .inv-acc-bar{padding:7px 10px;}
+  .inv-acc-sub > .inv-acc-bar .inv-acc-title{font-size:12px;color:var(--text);letter-spacing:.3px;}
+  .inv-acc-sub > .inv-acc-body{padding:8px 10px 10px;}
   .equip-picker-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 10px;}
   .sac-filter-bar{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin:4px 0 12px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);}
   .sac-filter-group{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
@@ -17168,13 +17174,32 @@
       + (c.canEquip ? '' : (c.lockHtml||''))
       + '</button>';
   }
-  // groups: [{ key, title, icon, candidates:[...], defaultOpen }]. ctx: { keyPrefix, flat, bestLabel }.
-  // flat renders every candidate in one style-row (no accordion) -- used by single-list slots.
+  // Visit every candidate in a group, descending into its type sub-groups (a group carries EITHER a flat
+  // `candidates` list OR a `subgroups` array of { key, title, icon, candidates, defaultOpen }).
+  function eachGroupCandidate(g, cb){
+    (g.candidates||[]).forEach(cb);
+    (g.subgroups||[]).forEach(function(sg){ (sg.candidates||[]).forEach(cb); });
+  }
+  // One collapsible accordion (top-level or nested). `body` is pre-rendered HTML.
+  function equipAccHtml(key, title, icon, count, open, body, nested){
+    var h = '<div class="inv-acc'+(open?' open':'')+(nested?' inv-acc-sub':'')+'">';
+    h += '<div class="inv-acc-bar" data-action="equipAccToggle" data-key="'+key+'" data-open="'+(open?1:0)+'" role="button" aria-expanded="'+(open?'true':'false')+'">';
+    h += '<span class="inv-acc-chev" aria-hidden="true">&#9656;</span>';
+    if(icon) h += '<span class="inv-acc-ico">'+icon+'</span>';
+    h += '<span class="inv-acc-title">'+escapeHtml(title)+'</span>';
+    h += '<span class="inv-acc-n">'+count+'</span></div>';
+    if(open) h += '<div class="inv-acc-body">'+body+'</div>';
+    h += '</div>';
+    return h;
+  }
+  // groups: [{ key, title, icon, candidates | subgroups, defaultOpen }]. ctx: { keyPrefix, flat, bestLabel }.
+  // flat renders every candidate in one style-row (no accordion) -- used by single-list slots. A group with
+  // `subgroups` renders a second accordion level (e.g. Melee Weapons -> Rapier / Greatsword / ...).
   function renderEquipCandidatePicker(groups, ctx){
     ctx = ctx || {};
     var best = null, anyLocked = false, total = 0;
     groups.forEach(function(g){
-      (g.candidates||[]).forEach(function(c){
+      eachGroupCandidate(g, function(c){
         total++;
         if(!c.canEquip){ anyLocked = true; return; }
         if(!c.equipped && !c.noBest && (!best || (c.score||0) > (best.score||0))) best = c;
@@ -17187,25 +17212,37 @@
     if(anyLocked) tools += '<button class="inv-chip'+(equipHideLocked?' on':'')+'" data-action="equipHideLockedToggle">'+(equipHideLocked?'Show locked':'Hide locked')+'</button>';
     if(tools) html += '<div class="equip-picker-tools">'+tools+'</div>';
     var filter = function(cands){ return equipHideLocked ? cands.filter(function(c){ return c.canEquip || c.equipped; }) : cands; };
+    var rowsHtml = function(cands){ return '<div class="style-row">'+sortEquipCandidates(cands).map(equipCandidateRowHtml).join('')+'</div>'; };
     if(ctx.flat){
-      var flatC = filter(groups.reduce(function(acc,g){ return acc.concat(g.candidates||[]); }, []));
+      var flatC = []; groups.forEach(function(g){ eachGroupCandidate(g, function(c){ flatC.push(c); }); });
+      flatC = filter(flatC);
       if(!flatC.length) return html;  // everything filtered out (all locked, hidden)
-      html += '<div class="style-row">'+sortEquipCandidates(flatC).map(equipCandidateRowHtml).join('')+'</div>';
+      html += rowsHtml(flatC);
       return html;
     }
     groups.forEach(function(g){
-      var cands = filter(g.candidates||[]);
-      if(!cands.length) return;
       var key = (ctx.keyPrefix||'') + g.key;
-      var open = (equipAccOpen[key] !== undefined) ? equipAccOpen[key] : !!g.defaultOpen;
-      html += '<div class="inv-acc'+(open?' open':'')+'">';
-      html += '<div class="inv-acc-bar" data-action="equipAccToggle" data-key="'+key+'" data-open="'+(open?1:0)+'" role="button" aria-expanded="'+(open?'true':'false')+'">';
-      html += '<span class="inv-acc-chev" aria-hidden="true">&#9656;</span>';
-      if(g.icon) html += '<span class="inv-acc-ico">'+g.icon+'</span>';
-      html += '<span class="inv-acc-title">'+escapeHtml(g.title)+'</span>';
-      html += '<span class="inv-acc-n">'+cands.length+'</span></div>';
-      if(open) html += '<div class="inv-acc-body"><div class="style-row">'+sortEquipCandidates(cands).map(equipCandidateRowHtml).join('')+'</div></div>';
-      html += '</div>';
+      if(g.subgroups){
+        // Filter each type sub-group, drop empties, and nest the survivors under the family accordion.
+        var subs = g.subgroups.map(function(sg){ return { sg:sg, cands:filter(sg.candidates||[]) }; }).filter(function(x){ return x.cands.length; });
+        if(!subs.length) return;
+        var famCount = subs.reduce(function(n,x){ return n + x.cands.length; }, 0);
+        var famOpen = (equipAccOpen[key] !== undefined) ? equipAccOpen[key] : !!g.defaultOpen;
+        var body = '';
+        if(famOpen){
+          subs.forEach(function(x){
+            var subKey = key + '_' + x.sg.key;
+            var sOpen = (equipAccOpen[subKey] !== undefined) ? equipAccOpen[subKey] : !!x.sg.defaultOpen;
+            body += equipAccHtml(subKey, x.sg.title, x.sg.icon, x.cands.length, sOpen, rowsHtml(x.cands), true);
+          });
+        }
+        html += equipAccHtml(key, g.title, g.icon, famCount, famOpen, body, false);
+      } else {
+        var cands = filter(g.candidates||[]);
+        if(!cands.length) return;
+        var open = (equipAccOpen[key] !== undefined) ? equipAccOpen[key] : !!g.defaultOpen;
+        html += equipAccHtml(key, g.title, g.icon, cands.length, open, rowsHtml(cands), false);
+      }
     });
     return html;
   }
@@ -17217,32 +17254,52 @@
   }
   // A staff deals no damage (support weapon) -- show its block instead of a 0-0 dmg range.
   function stackableWeaponStatLabel(item){ return (isStaff(item.typeId) && !item.dmgMax) ? ('block '+Math.round((item.block||0)*100)+'%') : (item.dmgMin+'-'+item.dmgMax+' dmg'); }
-  // Build one accordion group of owned weapons of a family (melee/bow/wand/staff/scepter) for the
-  // mainhand picker, sorted best-first. Returns null when you own none, so empty families never clutter
-  // the picker. The equipped weapon's family opens by default.
+  // One equip candidate for a stackable weapon item.
+  function weaponCandidate(id, current, curAvg){
+    var item = STACKABLE_WEAPON_ITEMS[id];
+    var gate = stackableEquipGate(item);
+    var noDmg = isStaff(item.typeId) && !item.dmgMax;    // staves deal no damage -- rank by block
+    var avg = ((item.dmgMin||0)+(item.dmgMax||0))/2;
+    return {
+      icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:(noDmg ? (item.block||0) : avg),
+      statHtml: stackableWeaponStatLabel(item)+' &bull; '+STACKABLE_WEAPON_TYPE_MAP[item.typeId].attackSpeed+'s',
+      deltaHtml: noDmg ? '' : ('vs equipped '+equipDeltaChip(avg, curAvg)+' avg dmg'),
+      equipped: !!(current && current.id===id), canEquip: gate.ok,
+      lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(gate.label)+' Lv '+gate.lvl+'</span>',
+      action:'equipStackableWeapon', data:'data-item="'+id+'"'
+    };
+  }
+  // Build one accordion group of owned weapons of a family (melee/bow/wand/staff/scepter) for the mainhand
+  // picker, sorted best-first. Returns null when you own none, so empty families never clutter the picker.
+  // When more than one weapon TYPE is owned in the family, the family nests a sub-accordion per type
+  // (Rapier, Greatsword, ...) so a 100+ item melee list stops being a wall. The equipped family (and, within
+  // it, the equipped type) opens by default.
   function weaponFamilyGroup(types, title){
     var typeIds = types.map(function(w){ return w.id; });
     var current = (state.equippedMainhand && typeIds.indexOf(state.equippedMainhand)!==-1 && state.equippedMainhandTier>0)
       ? STACKABLE_WEAPON_ITEMS['stweapon_'+state.equippedMainhand+'_t'+(state.equippedMainhandTier-1)+'_'+state.equippedMainhandRarity] : null;
-    var owned = Object.keys(STACKABLE_WEAPON_ITEMS).filter(function(id){ return typeIds.indexOf(STACKABLE_WEAPON_ITEMS[id].typeId)!==-1 && (state.inventory[id]||0)>0; });
-    if(owned.length===0) return null;
     var eqW = getEquippedWeaponItem(state);             // baseline = the weapon you have equipped now
     var curAvg = ((eqW.dmgMin||0)+(eqW.dmgMax||0))/2;
-    var cands = owned.map(function(id){
-      var item = STACKABLE_WEAPON_ITEMS[id];
-      var gate = stackableEquipGate(item);
-      var noDmg = isStaff(item.typeId) && !item.dmgMax;    // staves deal no damage -- rank by block
-      var avg = ((item.dmgMin||0)+(item.dmgMax||0))/2;
-      return {
-        icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:(noDmg ? (item.block||0) : avg),
-        statHtml: stackableWeaponStatLabel(item)+' &bull; '+STACKABLE_WEAPON_TYPE_MAP[item.typeId].attackSpeed+'s',
-        deltaHtml: noDmg ? '' : ('vs equipped '+equipDeltaChip(avg, curAvg)+' avg dmg'),
-        equipped: !!(current && current.id===id), canEquip: gate.ok,
-        lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(gate.label)+' Lv '+gate.lvl+'</span>',
-        action:'equipStackableWeapon', data:'data-item="'+id+'"'
-      };
+    // Owned ids bucketed by weapon type, keeping the declared type order.
+    var byType = {};
+    types.forEach(function(w){
+      var owned = Object.keys(STACKABLE_WEAPON_ITEMS).filter(function(id){ return STACKABLE_WEAPON_ITEMS[id].typeId===w.id && (state.inventory[id]||0)>0; });
+      if(owned.length) byType[w.id] = owned;
     });
-    return { key:(typeIds[0]||title), title:title, icon:(current?current.icon:cands[0].icon), candidates:cands, defaultOpen:!!current };
+    var ownedTypes = types.filter(function(w){ return byType[w.id]; });
+    if(!ownedTypes.length) return null;
+    var famKey = (typeIds[0]||title) + '_fam';
+    var famIcon = current ? current.icon : STACKABLE_WEAPON_TYPE_MAP[ownedTypes[0].id].icon;
+    if(ownedTypes.length === 1){
+      // A single owned type needs no second nest -- render its candidates straight on the family accordion.
+      var cands = byType[ownedTypes[0].id].map(function(id){ return weaponCandidate(id, current, curAvg); });
+      return { key:famKey, title:title, icon:famIcon, candidates:cands, defaultOpen:!!current };
+    }
+    var subgroups = ownedTypes.map(function(w){
+      return { key:w.id, title:w.name, icon:w.icon, defaultOpen:!!(current && current.typeId===w.id),
+        candidates: byType[w.id].map(function(id){ return weaponCandidate(id, current, curAvg); }) };
+    });
+    return { key:famKey, title:title, icon:famIcon, subgroups:subgroups, defaultOpen:!!current };
   }
 
   function renderWeaponSmithTab(){
@@ -30673,7 +30730,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.5';
+  var GAME_VERSION = '0.0.39.6';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
