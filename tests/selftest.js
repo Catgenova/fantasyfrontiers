@@ -6236,6 +6236,34 @@
     eq(FF.claimQuest('don_your_armor'), false, 'a claimed quest cannot be re-claimed');
     s.bodyArmor = savedArmor; s.equippedOffhand = savedOff; s.equippedOffhandTier = savedOffTier;
     s.familiars = savedFams; s.popupQueue = savedPQ; s.settings.popupFamiliar = savedPopFam; s.popupBatchTotal = savedPBT;
+    // ---- Quest 4: "A Companion at Your Side" -- activate Midas (treasureHunter) -> 20 first-tier roasted fish ----
+    var savedAC = s.activeCompanions, savedFams4 = s.familiars, savedRoast = s.inventory['roasting_t0'];
+    var q4 = FF.questById('midas_at_your_side');
+    ok(!!q4 && q4.cat==='gettingstarted', 'A Companion at Your Side lives in Getting Started');
+    eq(q4.target, 1, 'its target is 1 (activate the companion)');
+    ok(q4.reward.kind==='item' && q4.reward.itemId==='roasting_t0' && q4.reward.qty===20, 'reward is 20x first-tier Roasted fish (roasting_t0)');
+    ok(/Roasted/.test(FF.questRewardLabel(q4)), 'the reward line reads as the real roasted fish');
+    eq(q4.nav.cat, 'menagerie', 'its Go destination is the Menagerie');
+    s.quests = { claimed:{} };
+    s.familiars = { treasureHunter:{ owned:true, level:1 } };
+    s.activeCompanions = [];
+    eq(FF.questComplete(q4), false, 'Midas summoned but not yet an active companion -> not complete');
+    s.activeCompanions = ['digging']; // some OTHER active companion doesn't count
+    eq(FF.questComplete(q4), false, 'a different active companion does not satisfy the quest');
+    s.familiars.digging = { owned:true, level:1 };
+    eq(FF.questComplete(q4), false, 'still not complete while only a non-Midas companion is active');
+    s.activeCompanions = ['treasureHunter'];
+    ok(FF.questComplete(q4) && FF.questClaimable(q4), 'making Midas an active companion completes + arms the quest');
+    // An unowned Midas in the slot must not count (activeCompanionList filters to owned).
+    s.familiars.treasureHunter = { owned:false, level:0 };
+    eq(FF.questComplete(q4), false, 'an un-summoned Midas in the slot does not count');
+    s.familiars.treasureHunter = { owned:true, level:1 };
+    var rBefore = s.inventory['roasting_t0'] || 0;
+    ok(FF.claimQuest('midas_at_your_side'), 'claim succeeds');
+    eq((s.inventory['roasting_t0']||0) - rBefore, 20, 'claim grants 20 Roasted Bluegill');
+    eq(FF.claimQuest('midas_at_your_side'), false, 'a claimed quest cannot be re-claimed');
+    s.activeCompanions = savedAC; s.familiars = savedFams4;
+    if(savedRoast===undefined) delete s.inventory['roasting_t0']; else s.inventory['roasting_t0'] = savedRoast;
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
