@@ -6113,7 +6113,7 @@
 
   suite('quests: area, category, accordion + claim flow', function(){
     var s = FF._state;
-    var savedMK = s.monsterKills, savedQ = s.quests, savedInv = s.inventory['corpse_t0'], savedTitles = s.titles, savedFal = s.inventory['stweapon_falchion_t1_normal'];
+    var savedMK = s.monsterKills, savedQ = s.quests, savedInv = s.inventory['corpse_t0'], savedTitles = s.titles, savedFal = s.inventory['stweapon_scimitar_t1_normal'];
     s.monsterKills = {}; s.quests = { claimed:{} }; s.titles = {};
     // Quests is its OWN top-level area, with Getting Started as a category tab inside it (not under Battle).
     var qArea = FF.AREAS.filter(function(a){ return a.id==='quests'; })[0];
@@ -6127,7 +6127,7 @@
     ok(!FF.questById('watership_down'), 'the old Watership Down quest was removed');
     eq(q.cat, 'gettingstarted', 'it lives in the Getting Started category');
     eq(q.target, 1, 'its target is 1 (a first-login welcome quest)');
-    ok(q.reward.kind==='item' && q.reward.itemId==='stweapon_falchion_t1_normal' && q.reward.qty===1, 'reward is a Tier-1 Falchion (stweapon_falchion_t1_normal)');
+    ok(q.reward.kind==='item' && q.reward.itemId==='stweapon_scimitar_t1_normal' && q.reward.qty===1, 'reward is a Tier-1 Scimitar (stweapon_scimitar_t1_normal)');
     ok(typeof q.how === 'string' && q.how.length > 0 && typeof q.desc === 'string' && q.desc.length > 0, 'it carries how-to + lore text');
     // A first-login welcome quest is immediately complete + claimable (progress is always met).
     ok(FF.questComplete(q) && FF.questClaimable(q), 'the welcome quest is immediately complete + claimable');
@@ -6144,17 +6144,17 @@
     ok(/quest-acc-body/.test(expanded) && /How to complete/.test(expanded) && /Reward:/.test(expanded), 'expanded: shows the how-to instructions and the reward');
     FF.questToggleExpand('answer_the_call'); // collapse again
     // Claim grants the blade exactly once and clears the flash.
-    var before = s.inventory['stweapon_falchion_t1_normal'] || 0;
+    var before = s.inventory['stweapon_scimitar_t1_normal'] || 0;
     ok(FF.claimQuest('answer_the_call'), 'claim succeeds when claimable');
-    eq((s.inventory['stweapon_falchion_t1_normal']||0) - before, 1, 'claim grants the Tier-1 Falchion');
+    eq((s.inventory['stweapon_scimitar_t1_normal']||0) - before, 1, 'claim grants the Tier-1 Scimitar');
     eq(FF.questClaimed(q), true, 'the quest is marked claimed');
     eq(FF.questClaimable(q), false, 'a claimed quest is no longer claimable');
     eq(FF.railSubFlash('gettingstarted'), false, 'the flash clears after claiming');
     eq(FF.railAreaFlash('quests'), false, 'the area flash clears after claiming');
     // Idempotent: a second claim grants nothing.
-    var after = s.inventory['stweapon_falchion_t1_normal'] || 0;
+    var after = s.inventory['stweapon_scimitar_t1_normal'] || 0;
     eq(FF.claimQuest('answer_the_call'), false, 'a claimed quest cannot be re-claimed');
-    eq(s.inventory['stweapon_falchion_t1_normal']||0, after, 'no extra blade from a double-claim');
+    eq(s.inventory['stweapon_scimitar_t1_normal']||0, after, 'no extra blade from a double-claim');
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
@@ -6178,7 +6178,7 @@
     s.estateClears = savedClears; if(savedPave===undefined) delete s.inventory['paving_t5']; else s.inventory['paving_t5'] = savedPave;
     // restore
     s.monsterKills = savedMK; s.quests = savedQ; s.inventory['corpse_t0'] = savedInv; s.titles = savedTitles;
-    if(savedFal===undefined) delete s.inventory['stweapon_falchion_t1_normal']; else s.inventory['stweapon_falchion_t1_normal'] = savedFal;
+    if(savedFal===undefined) delete s.inventory['stweapon_scimitar_t1_normal']; else s.inventory['stweapon_scimitar_t1_normal'] = savedFal;
   });
 
   // ---- Auth identity guard: cross-account write prevention (shared per-origin auth session) ----
