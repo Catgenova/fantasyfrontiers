@@ -6572,6 +6572,77 @@
     eq((s.inventory['tool_forestry_t0_rare']||0) - hatchetBefore, 1, 'claim grants a Rare Copper Hatchet');
     s.stats = savedStats18;
     if(savedHatchet===undefined) delete s.inventory['tool_forestry_t0_rare']; else s.inventory['tool_forestry_t0_rare'] = savedHatchet;
+    // ---- Quest 19: "Break the Sod" -- place a Sand Field -> 10 Fertilizer ----
+    var q19 = FF.questById('break_the_sod');
+    ok(!!q19 && q19.cat==='gettingstarted', 'Break the Sod lives in Getting Started');
+    eq(q19.target, 1, 'its target is 1 field placed');
+    ok(q19.reward.kind==='item' && q19.reward.itemId==='fertilizer_t0' && q19.reward.qty===10, 'reward is 10 tier-0 Fertilizer');
+    eq(q19.nav.cat, 'estate', 'its Go destination is the estate');
+    var savedStats19 = s.stats, savedFert = s.inventory['fertilizer_t0'];
+    s.quests = { claimed:{} }; s.stats = {};
+    s.stats['field_placed_1'] = 1; // a higher-tier field must not count
+    eq(FF.questProgress(q19), 0, 'placing a different-tier field does not advance the Sand-field tally');
+    s.stats['field_placed_0'] = 1;
+    ok(FF.questComplete(q19) && FF.questClaimable(q19), 'placing a Sand Field completes + arms the quest');
+    var fertBefore = s.inventory['fertilizer_t0'] || 0;
+    ok(FF.claimQuest('break_the_sod'), 'claim succeeds');
+    eq((s.inventory['fertilizer_t0']||0) - fertBefore, 10, 'claim grants 10 Fertilizer');
+    s.stats = savedStats19;
+    if(savedFert===undefined) delete s.inventory['fertilizer_t0']; else s.inventory['fertilizer_t0'] = savedFert;
+    // ---- Quest 20: "Sow the First Seed" -- sow a Cotton Seed -> 10 Cotton ----
+    var q20 = FF.questById('sow_the_first_seed');
+    ok(!!q20 && q20.cat==='gettingstarted', 'Sow the First Seed lives in Getting Started');
+    eq(q20.target, 1, 'its target is 1 seed sown');
+    ok(q20.reward.kind==='item' && q20.reward.itemId==='farming_t0' && q20.reward.qty===10, 'reward is 10 Cotton (farming_t0)');
+    eq(FF.ALL_SELLABLE['farming_t0'].name, 'Cotton', 'tier-0 crop is Cotton');
+    eq(q20.nav.cat, 'farming', 'its Go destination is the Farming tab');
+    var savedStats20 = s.stats, savedCotton20 = s.inventory['farming_t0'];
+    s.quests = { claimed:{} }; s.stats = {};
+    s.stats['sowed_seed_t1'] = 1; // a different seed must not count
+    eq(FF.questProgress(q20), 0, 'sowing a different seed does not advance the Cotton-seed tally');
+    s.stats['sowed_seed_t0'] = 1;
+    ok(FF.questComplete(q20) && FF.questClaimable(q20), 'sowing a Cotton Seed completes + arms the quest');
+    var cotton20Before = s.inventory['farming_t0'] || 0;
+    ok(FF.claimQuest('sow_the_first_seed'), 'claim succeeds');
+    eq((s.inventory['farming_t0']||0) - cotton20Before, 10, 'claim grants 10 Cotton');
+    s.stats = savedStats20;
+    if(savedCotton20===undefined) delete s.inventory['farming_t0']; else s.inventory['farming_t0'] = savedCotton20;
+    // ---- Quest 21: "Feed the Field" -- fertilize a Cotton plant -> 10 Cotton ----
+    var q21 = FF.questById('feed_the_field');
+    ok(!!q21 && q21.cat==='gettingstarted', 'Feed the Field lives in Getting Started');
+    eq(q21.target, 1, 'its target is 1 fertilized plant');
+    ok(q21.reward.kind==='item' && q21.reward.itemId==='farming_t0' && q21.reward.qty===10, 'reward is 10 Cotton');
+    var savedStats21 = s.stats, savedCotton21 = s.inventory['farming_t0'];
+    s.quests = { claimed:{} }; s.stats = {};
+    s.stats['fertilized_farming_t1'] = 1; // a different crop must not count
+    eq(FF.questProgress(q21), 0, 'fertilizing a different crop does not advance the Cotton tally');
+    s.stats['fertilized_farming_t0'] = 1;
+    ok(FF.questComplete(q21) && FF.questClaimable(q21), 'fertilizing a Cotton plant completes + arms the quest');
+    var cotton21Before = s.inventory['farming_t0'] || 0;
+    ok(FF.claimQuest('feed_the_field'), 'claim succeeds');
+    eq((s.inventory['farming_t0']||0) - cotton21Before, 10, 'claim grants 10 Cotton');
+    s.stats = savedStats21;
+    if(savedCotton21===undefined) delete s.inventory['farming_t0']; else s.inventory['farming_t0'] = savedCotton21;
+    // ---- Quest 22: "First Harvest" -- harvest Cotton -> 10 Cotton + a Copper Loom ----
+    var q22 = FF.questById('first_harvest');
+    ok(!!q22 && q22.cat==='gettingstarted', 'First Harvest lives in Getting Started');
+    eq(q22.target, 1, 'its target is 1 harvest');
+    eq(q22.reward.kind, 'items', 'it grants a multi-item reward');
+    var r22 = q22.reward.items.map(function(it){ return it.itemId; });
+    ok(r22.indexOf('farming_t0')!==-1 && r22.indexOf('tool_weaving_t0_normal')!==-1, 'reward is 10 Cotton + a Copper Weaving tool');
+    ok(/Loom/.test(FF.questRewardLabel(q22)), 'the reward line names the Copper Loom');
+    var savedStats22 = s.stats, savedR22 = r22.map(function(id){ return s.inventory[id]; });
+    s.quests = { claimed:{} }; s.stats = {};
+    s.stats['harvested_farming_t1'] = 1; // a different crop must not count
+    eq(FF.questProgress(q22), 0, 'harvesting a different crop does not advance the Cotton tally');
+    s.stats['harvested_farming_t0'] = 1;
+    ok(FF.questComplete(q22) && FF.questClaimable(q22), 'harvesting Cotton completes + arms the quest');
+    var r22Before = r22.map(function(id){ return s.inventory[id]||0; });
+    ok(FF.claimQuest('first_harvest'), 'claim succeeds');
+    eq((s.inventory['farming_t0']||0) - r22Before[0], 10, 'claim grants 10 Cotton');
+    eq((s.inventory['tool_weaving_t0_normal']||0) - r22Before[1], 1, 'claim grants a Copper Loom');
+    s.stats = savedStats22;
+    r22.forEach(function(id, i){ if(savedR22[i]===undefined) delete s.inventory[id]; else s.inventory[id] = savedR22[i]; });
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };

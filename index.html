@@ -8607,6 +8607,7 @@
     if((state.inventory[seedId]||0) <= 0) return false;
     if(!canPlantInField(fieldTier, si.tier)){ if(!batch) addLog('That ' + (DIGGING_NAMES[fieldTier]||'') + ' Field only grows crops up to ' + TIER_NAMES[fieldTier] + ' tier.', 'danger'); return false; }
     state.inventory[seedId] -= 1;
+    bumpStat('sowed_' + seedId); // seeds sown, powers "Sow 1 Cotton Seed"
     map[key] = { cropType:si.cropType, tierIndex:si.tier, plantedAt:Date.now(), readyAt:Date.now() + Math.round(si.crop.durationMs * greenThumbGrowthMult()) }; // Green Thumb: faster growth
     if(!batch){ addLog('You planted a ' + si.def.name + (scope==='guild'?' on the guild estate':'') + '.', 'important'); saveGame(); }
     needsRender = true;
@@ -8626,6 +8627,7 @@
     var yieldQty = plot.fertilized ? (composterTripleYield() ? 3 : 2) : 1;
     yieldQty += greenThumbExtraYield();
     addItem(cropData.id, yieldQty);
+    bumpStat('harvested_' + cropData.id); // crops harvested (by crop item), powers "Harvest 1 Cotton"
     // 75% chance to recover a seed of the crop just harvested (keeps fields self-sustaining).
     var seedId = cropSeedId(plot.cropType, plot.tierIndex);
     var gotSeed = !!(seedId && Math.random() < HARVEST_SEED_DROP_CHANCE);
@@ -8747,6 +8749,7 @@
     state.inventory[fid] -= 1;
     if(composterRefund()) state.inventory[fid] += 1; // Composter: a chance the Fertilizer isn't used up
     plot.fertilized = true;
+    var _fcd = getCropDataForPlot(plot); if(_fcd) bumpStat('fertilized_' + _fcd.id); // crops fertilized (by crop item), powers "Fertilize 1 Cotton plant"
     if(!batch){ addLog('You spread ' + (ALL_CRAFT_RECIPES[fid] ? ALL_CRAFT_RECIPES[fid].name : 'Fertilizer') + ' on your crop — it will yield double.', 'important'); spawnFloatingText('Fertilized (2×)', 'ft-success'); saveGame(); }
     needsRender = true;
     return true;
@@ -8826,6 +8829,7 @@
     var yieldQty = plot.fertilized ? (composterTripleYield() ? 3 : 2) : 1;
     yieldQty += greenThumbExtraYield();
     addItem(cropData.id, yieldQty);
+    bumpStat('harvested_' + cropData.id); // offline catch-up harvest counts too, powers "Harvest 1 Cotton"
     var seedId = cropSeedId(plot.cropType, plot.tierIndex);
     if(seedId && Math.random() < HARVEST_SEED_DROP_CHANCE) addItem(seedId, 1);  // self-sustaining fields
     addXp(FARMING_CROP_SKILL[plot.cropType] || 'fiberharvesting', cropData.xp);
@@ -20544,6 +20548,33 @@
       target:1, progress:function(st){ return (st.stats && st.stats['tool_made_forestry_0']) || 0; },
       nav:{ cat:'crafting', sub:'blacksmithing' },
       reward:{ kind:'item', itemId:'tool_forestry_t0_rare', qty:1 } },
+    { id:'break_the_sod', cat:'gettingstarted', title:'Break the Sod',
+      desc:'Cleared ground is not yet farmland — it has to be broken, turned, and tilled before a single seed will take. Work one patch of your estate into a proper Sand Field and you’ll have made the frontier’s hardest promise good: that this dirt will feed you. A field is a hearth without walls.',
+      how:'Open Lands → My Estate, pick a cleared dirt tile, and till a Sand Field on it.',
+      target:1, progress:function(st){ return (st.stats && st.stats['field_placed_0']) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ kind:'item', itemId:'fertilizer_t0', qty:10 } },
+    { id:'sow_the_first_seed', cat:'gettingstarted', title:'Sow the First Seed',
+      desc:'Here is the oldest magic there is: press a seed into broken earth and walk away, and the land does the rest. Sow a single cotton seed in your new field and you become a farmer — no longer only taking from the frontier, but teaching it to give. Small beginnings; white fields to come.',
+      how:'Open Lands → Farming, choose your Sand Field plot, and sow a Cotton Seed.',
+      target:1, progress:function(st){ return (st.stats && st.stats['sowed_seed_t0']) || 0; },
+      nav:{ cat:'farming' },
+      reward:{ kind:'item', itemId:'farming_t0', qty:10 } },
+    { id:'feed_the_field', cat:'gettingstarted', title:'Feed the Field',
+      desc:'A crop left to itself gives what it can; a crop that’s fed gives twice. Spread fertilizer over your growing cotton and the plant repays the kindness at harvest, doubling its yield. The frontier rewards the hand that tends as much as the hand that plants.',
+      how:'In Lands → Farming, spread Fertilizer on your growing Cotton plant.',
+      target:1, progress:function(st){ return (st.stats && st.stats['fertilized_farming_t0']) || 0; },
+      nav:{ cat:'farming' },
+      reward:{ kind:'item', itemId:'farming_t0', qty:10 } },
+    { id:'first_harvest', cat:'gettingstarted', title:'First Harvest',
+      desc:'Then comes the day the field pays you back. Pull the first white bolls of cotton from the stalk and hold the whole cycle in your hands — cleared, tilled, sown, tended, reaped. This is what it was all for. Now spin it into thread, and the frontier starts to look a little like home.',
+      how:'In Lands → Farming, harvest your ripe Cotton.',
+      target:1, progress:function(st){ return (st.stats && st.stats['harvested_farming_t0']) || 0; },
+      nav:{ cat:'farming' },
+      reward:{ kind:'items', items:[
+        { itemId:'farming_t0', qty:10 },
+        { itemId:'tool_weaving_t0_normal', qty:1 }
+      ] } },
     { id:'clearing_the_land', cat:'estatequests', title:'Clearing the Land',
       desc:'Before a frontier estate can rise, the wild has to be tamed. Every tree, berry bush, herb, rock, and ore vein is one more patch of ground reclaimed.',
       how:'Open Lands → My Estate, tap a tile with a natural obstacle, and Clear it with the matching Gathering skill. Clear 10 obstacles in all.',
@@ -21960,6 +21991,7 @@
     if(job.kind === 'field'){
       cell.fieldTier = job.fieldTier;
       if(giveRewards){
+        bumpStat('field_placed_' + job.fieldTier); // fields tilled on the estate (by tier), powers "Place 1 Sand Field"
         var fldXp = estateBuildXp(job.fieldTier);
         addXp('digging', fldXp);
         addLog('Finished the ' + (DIGGING_NAMES[job.fieldTier]||'') + ' Field at (' + job.x + ', ' + job.y + '). +' + fldXp + ' Digging XP. Plant crops up to that tier in the Farming tab.', 'important');
@@ -30985,7 +31017,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.23';
+  var GAME_VERSION = '0.0.39.24';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
