@@ -3290,6 +3290,27 @@
     s.inventory = svInv; s.blueprints = svBp; s.uniqueItems = svUniq;
   });
 
+  suite('mastercraft: a desynced uidSeq never overwrites an owned legendary', function(){
+    // Repro of the reported "consumed materials but no item appeared" bug: a pre-existing legendary at u1,
+    // but the uid counter has fallen behind (a save that kept uniqueItems yet lost uidSeq). genUid must skip
+    // the occupied uid so the new mint is ADDED, not recycled on top of the old legendary.
+    var s = FF._state, svInv = s.inventory, svBp = s.blueprints, svUniq = s.uniqueItems, svSeq = s.uidSeq;
+    try {
+      s.uniqueItems = { u1:{ uid:'u1', base:'stweapon_greatsword_t19_rare', kind:'weapon', tier:19, rarity:'rare', enchants:[], enhance:0, leg:'runegrave' } };
+      s.uidSeq = 0; // desynced: sits at/below an existing uid
+      s.inventory = { metallurgy_t20: 1000 };
+      FF.legGearRareIds('blunt').forEach(function(id){ s.inventory[id] = 4; });
+      var bpId = FF.masterworkBlueprintId('d1','blunt'); s.blueprints = {}; s.blueprints[bpId] = 1;
+      FF.craftMastercraft(bpId);
+      var uids = Object.keys(s.uniqueItems);
+      eq(uids.length, 2, 'the craft ADDS a new unique instead of overwriting the existing one');
+      ok(s.uniqueItems.u1 && s.uniqueItems.u1.leg === 'runegrave', 'the pre-existing legendary (u1) is left untouched');
+      var neu = uids.filter(function(k){ return k!=='u1'; }).map(function(k){ return s.uniqueItems[k]; })[0];
+      ok(neu && FF.LEG_GEAR_GROUP_KEYS.blunt.indexOf(neu.leg) !== -1, 'the added unique is the freshly forged blunt legendary');
+      ok(s.blueprints[bpId] === 0, 'the Blueprint was still consumed (materials + item both accounted for)');
+    } finally { s.inventory = svInv; s.blueprints = svBp; s.uniqueItems = svUniq; s.uidSeq = svSeq; }
+  });
+
   // ---- D1 legendary gear EQUIP: forged uniques slot into hand + expose their effect --------------------
   suite('mastercraft: legendary gear equip', function(){
     var s = FF._state;
