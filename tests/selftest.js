@@ -6499,6 +6499,79 @@
     eq((s.inventory['seed_t0']||0) - seedBefore, 10, 'claim grants 10 Cotton Seeds');
     s.stats = savedStats14;
     if(savedSeed===undefined) delete s.inventory['seed_t0']; else s.inventory['seed_t0'] = savedSeed;
+    // ---- Quest 15: "Tame the Wild" -- clear an estate resource -> a Copper Pickaxe ----
+    var q15 = FF.questById('tame_the_wild');
+    ok(!!q15 && q15.cat==='gettingstarted', 'Tame the Wild lives in Getting Started');
+    eq(q15.target, 1, 'its target is 1 cleared obstacle');
+    ok(q15.reward.kind==='item' && q15.reward.itemId==='tool_mining_t0_normal' && q15.reward.qty===1, 'reward is a first-tier Mining tool');
+    ok(/Copper/.test(FF.questRewardLabel(q15)) && /Pickaxe/.test(FF.questRewardLabel(q15)), 'the reward line names the Copper Pickaxe');
+    eq(q15.nav.cat, 'estate', 'its Go destination is the estate');
+    var savedClears15 = s.estateClears, savedPick = s.inventory['tool_mining_t0_normal'];
+    s.quests = { claimed:{} }; s.estateClears = 0;
+    eq(FF.questComplete(q15), false, 'no clears -> not complete');
+    s.estateClears = 1;
+    ok(FF.questComplete(q15) && FF.questClaimable(q15), 'clearing one obstacle completes + arms the quest');
+    var pickBefore = s.inventory['tool_mining_t0_normal'] || 0;
+    ok(FF.claimQuest('tame_the_wild'), 'claim succeeds');
+    eq((s.inventory['tool_mining_t0_normal']||0) - pickBefore, 1, 'claim grants a Copper Pickaxe');
+    s.estateClears = savedClears15;
+    if(savedPick===undefined) delete s.inventory['tool_mining_t0_normal']; else s.inventory['tool_mining_t0_normal'] = savedPick;
+    // ---- Quest 16: "Strike the Vein" -- mine 100 Copper -> 100 Coal + a Copper Bellows ----
+    var q16 = FF.questById('strike_the_vein');
+    ok(!!q16 && q16.cat==='gettingstarted', 'Strike the Vein lives in Getting Started');
+    eq(q16.target, 100, 'its target is 100 Copper mined');
+    var r16 = q16.reward.items.map(function(it){ return it.itemId; });
+    ok(r16.indexOf('coal')!==-1 && r16.indexOf('tool_metallurgy_t0_normal')!==-1, 'reward is 100 Coal + a Copper Metallurgy tool');
+    ok(/Bellows/.test(FF.questRewardLabel(q16)), 'the reward line names the Copper Bellows');
+    eq(q16.nav.sub, 'mining', 'the Go destination drills into Mining');
+    var savedStats16 = s.stats, savedR16 = r16.map(function(id){ return s.inventory[id]; });
+    s.quests = { claimed:{} }; s.stats = {};
+    s.stats['gathered_mining_t1'] = 100; // a different ore must not count
+    eq(FF.questProgress(q16), 0, 'mining other ore does not advance the Copper tally');
+    s.stats['gathered_mining_t0'] = 100;
+    ok(FF.questComplete(q16) && FF.questClaimable(q16), '100 Copper completes + arms the quest');
+    var r16Before = r16.map(function(id){ return s.inventory[id]||0; });
+    ok(FF.claimQuest('strike_the_vein'), 'claim succeeds');
+    eq((s.inventory['coal']||0) - r16Before[0], 100, 'claim grants 100 Coal');
+    eq((s.inventory['tool_metallurgy_t0_normal']||0) - r16Before[1], 1, 'claim grants a Copper Bellows');
+    s.stats = savedStats16;
+    r16.forEach(function(id, i){ if(savedR16[i]===undefined) delete s.inventory[id]; else s.inventory[id] = savedR16[i]; });
+    // ---- Quest 17: "Fire the Forge" -- smelt 100 Copper Bars -> 100 Copper Bars ----
+    var q17 = FF.questById('fire_the_forge');
+    ok(!!q17 && q17.cat==='gettingstarted', 'Fire the Forge lives in Getting Started');
+    eq(q17.target, 100, 'its target is 100 smelted bars');
+    ok(q17.reward.kind==='item' && q17.reward.itemId==='metallurgy_t0' && q17.reward.qty===100, 'reward is 100 Copper Bars (metallurgy_t0)');
+    eq(FF.ALL_SELLABLE['metallurgy_t0'].name, 'Copper Bar', 'tier-0 metallurgy is a Copper Bar');
+    eq(q17.nav.sub, 'metallurgy', 'the Go destination drills into Metallurgy');
+    var savedStats17 = s.stats, savedBars = s.inventory['metallurgy_t0'];
+    s.quests = { claimed:{} }; s.stats = {};
+    s.stats['made_metallurgy_t1'] = 100; // a different bar must not count
+    eq(FF.questProgress(q17), 0, 'smelting other bars does not advance the Copper-bar tally');
+    s.stats['made_metallurgy_t0'] = 100;
+    ok(FF.questComplete(q17) && FF.questClaimable(q17), '100 Copper Bars completes + arms the quest');
+    var barsBefore = s.inventory['metallurgy_t0'] || 0;
+    ok(FF.claimQuest('fire_the_forge'), 'claim succeeds');
+    eq((s.inventory['metallurgy_t0']||0) - barsBefore, 100, 'claim grants 100 Copper Bars');
+    s.stats = savedStats17;
+    if(savedBars===undefined) delete s.inventory['metallurgy_t0']; else s.inventory['metallurgy_t0'] = savedBars;
+    // ---- Quest 18: "Forge Your Tools" -- forge a Copper Hatchet -> a Rare Copper Hatchet ----
+    var q18 = FF.questById('forge_your_tools');
+    ok(!!q18 && q18.cat==='gettingstarted', 'Forge Your Tools lives in Getting Started');
+    eq(q18.target, 1, 'its target is 1 forged tool');
+    ok(q18.reward.kind==='item' && q18.reward.itemId==='tool_forestry_t0_rare' && q18.reward.qty===1, 'reward is a Rare tier-0 Forestry tool');
+    ok(/Rare/.test(FF.questRewardLabel(q18)) && /Hatchet/.test(FF.questRewardLabel(q18)), 'the reward line names the Rare Copper Hatchet');
+    eq(q18.nav.sub, 'blacksmithing', 'the Go destination drills into Blacksmithing');
+    var savedStats18 = s.stats, savedHatchet = s.inventory['tool_forestry_t0_rare'];
+    s.quests = { claimed:{} }; s.stats = {};
+    s.stats['tool_made_mining_0'] = 1; // forging a DIFFERENT skill's tool must not count
+    eq(FF.questProgress(q18), 0, 'forging another tool does not advance the Forestry-tool tally');
+    s.stats['tool_made_forestry_0'] = 1;
+    ok(FF.questComplete(q18) && FF.questClaimable(q18), 'forging a Copper Hatchet completes + arms the quest');
+    var hatchetBefore = s.inventory['tool_forestry_t0_rare'] || 0;
+    ok(FF.claimQuest('forge_your_tools'), 'claim succeeds');
+    eq((s.inventory['tool_forestry_t0_rare']||0) - hatchetBefore, 1, 'claim grants a Rare Copper Hatchet');
+    s.stats = savedStats18;
+    if(savedHatchet===undefined) delete s.inventory['tool_forestry_t0_rare']; else s.inventory['tool_forestry_t0_rare'] = savedHatchet;
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
