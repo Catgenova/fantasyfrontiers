@@ -6370,6 +6370,49 @@
     eq(FF.claimQuest('cure_the_hides'), false, 'a claimed quest cannot be re-claimed');
     s.stats = savedStats8;
     r8.forEach(function(id, i){ if(savedR8[i]===undefined) delete s.inventory[id]; else s.inventory[id] = savedR8[i]; });
+    // ---- Quest 9: "Belt and Buckle" -- make 10 Rabbit Belts -> a Rare Rabbit Belt ----
+    var q9 = FF.questById('belt_and_buckle');
+    ok(!!q9 && q9.cat==='gettingstarted', 'Belt and Buckle lives in Getting Started');
+    eq(q9.target, 10, 'its target is 10 crafted belts');
+    ok(q9.reward.kind==='item' && q9.reward.itemId==='belt_t0_rare' && q9.reward.qty===1, 'reward is a Rare tier-0 belt (belt_t0_rare)');
+    eq(FF.ALL_SELLABLE['belt_t0_rare'].name, 'Rare Rabbit Belt', 'the reward reads as a Rare Rabbit Belt');
+    eq(q9.nav.cat, 'outfitting', 'its Go destination is the Outfitting tab');
+    eq(q9.nav.sub, 'leatherworking', 'the Go destination drills into Leatherworking');
+    var savedStats9 = s.stats, savedBeltRare = s.inventory['belt_t0_rare'];
+    s.quests = { claimed:{} }; s.stats = {};
+    eq(FF.questProgress(q9), 0, 'no belts made -> 0 progress');
+    s.stats['belt_made_1'] = 10; // a higher-tier belt must not count
+    eq(FF.questProgress(q9), 0, 'making other-tier belts does not advance the Rabbit-belt tally');
+    s.stats['belt_made_0'] = 9;
+    eq(FF.questComplete(q9), false, '9 belts is not enough');
+    s.stats['belt_made_0'] = 10;
+    ok(FF.questComplete(q9) && FF.questClaimable(q9), 'the 10th Rabbit Belt completes + arms the quest');
+    var beltRareBefore = s.inventory['belt_t0_rare'] || 0;
+    ok(FF.claimQuest('belt_and_buckle'), 'claim succeeds');
+    eq((s.inventory['belt_t0_rare']||0) - beltRareBefore, 1, 'claim grants a Rare Rabbit Belt');
+    eq(FF.claimQuest('belt_and_buckle'), false, 'a claimed quest cannot be re-claimed');
+    s.stats = savedStats9;
+    if(savedBeltRare===undefined) delete s.inventory['belt_t0_rare']; else s.inventory['belt_t0_rare'] = savedBeltRare;
+    // ---- Quest 10: "Cinch It On" -- equip the Rare Rabbit Belt -> a Copper Shovel ----
+    var q10 = FF.questById('cinch_it_on');
+    ok(!!q10 && q10.cat==='gettingstarted', 'Cinch It On lives in Getting Started');
+    eq(q10.target, 1, 'its target is 1 (equip the belt)');
+    ok(q10.reward.kind==='item' && q10.reward.itemId==='tool_digging_t0_normal' && q10.reward.qty===1, 'reward is a first-tier Digging tool');
+    ok(/Copper/.test(FF.questRewardLabel(q10)) && /Shovel/.test(FF.questRewardLabel(q10)), 'the reward line names the Copper Shovel');
+    var savedBT = s.equippedBeltTier, savedBR = s.equippedBeltRarity, savedShovel = s.inventory['tool_digging_t0_normal'];
+    s.quests = { claimed:{} };
+    s.equippedBeltTier = 0; s.equippedBeltRarity = 'normal';
+    eq(FF.questComplete(q10), false, 'no belt equipped -> not complete');
+    s.equippedBeltTier = 1; s.equippedBeltRarity = 'normal';
+    eq(FF.questComplete(q10), false, 'a NORMAL rabbit belt does not satisfy the Rare requirement');
+    s.equippedBeltTier = 1; s.equippedBeltRarity = 'rare';
+    ok(FF.questComplete(q10) && FF.questClaimable(q10), 'equipping the Rare Rabbit Belt completes + arms the quest');
+    var shovelBefore = s.inventory['tool_digging_t0_normal'] || 0;
+    ok(FF.claimQuest('cinch_it_on'), 'claim succeeds');
+    eq((s.inventory['tool_digging_t0_normal']||0) - shovelBefore, 1, 'claim grants a Copper Shovel');
+    eq(FF.claimQuest('cinch_it_on'), false, 'a claimed quest cannot be re-claimed');
+    s.equippedBeltTier = savedBT; s.equippedBeltRarity = savedBR;
+    if(savedShovel===undefined) delete s.inventory['tool_digging_t0_normal']; else s.inventory['tool_digging_t0_normal'] = savedShovel;
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };

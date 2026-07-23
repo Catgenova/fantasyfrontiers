@@ -10739,6 +10739,9 @@
         awardMasterworkXp(rarity, act.tierIndex); // Masterwork trains only on a rare+ output
         logForgeResult(rarity, tierData.name, rarity==='fantastic' ? discordItemStatsText(made.itemId) : '');
       }
+      // Per-craft special-forge tallies (once per successful craft, rarity-agnostic), powering Quest progress.
+      if(act.craftKind==='belt') bumpStat('belt_made_' + act.tierIndex);                             // "Make 10 Rabbit Belts"
+      else if(act.craftKind==='tool') bumpStat('tool_made_' + act.skillId + '_' + act.tierIndex);    // "Forge a Copper <skill> tool"
       if(outputs===2) spawnFloatingText('Workshop: double output!', 'ft-rare');
     } else {
       logForgeFailure(tierData.name);
@@ -20470,6 +20473,18 @@
         { itemId:'tanning_t0', qty:10 },
         { itemId:'tool_leatherworking_t0_normal', qty:1 }
       ] } },
+    { id:'belt_and_buckle', cat:'gettingstarted', title:'Belt and Buckle',
+      desc:'A craftsman’s hands learn by repetition. Cut and stitch ten rabbit-leather belts, one after another, and somewhere in that honest work your fingers find the trick of it — a belt that comes out finer than the rest, worth wearing into the world. Ten made; one worth keeping.',
+      how:'In Outfitting → Leatherworking, forge 10 Rabbit Belts from your cured leather.',
+      target:10, progress:function(st){ return (st.stats && st.stats['belt_made_0']) || 0; },
+      nav:{ cat:'outfitting', sub:'leatherworking' },
+      reward:{ kind:'item', itemId:'belt_t0_rare', qty:1 } },
+    { id:'cinch_it_on', cat:'gettingstarted', title:'Cinch It On',
+      desc:'That fine rabbit-leather belt isn’t just for show — a Rare belt cinched at your waist lets you keep a second task running alongside the first, doubling the work your hands can hold. Buckle it on and the frontier opens up: gather while you craft, craft while you pray. Ground broken twice as fast wants a spade to match.',
+      how:'Open Equipment & Stats and equip your Rare Rabbit Belt.',
+      target:1, progress:function(st){ return (st.equippedBeltTier===1 && st.equippedBeltRarity==='rare') ? 1 : 0; },
+      nav:{ cat:'character' },
+      reward:{ kind:'item', itemId:'tool_digging_t0_normal', qty:1 } },
     { id:'clearing_the_land', cat:'estatequests', title:'Clearing the Land',
       desc:'Before a frontier estate can rise, the wild has to be tamed. Every tree, berry bush, herb, rock, and ore vein is one more patch of ground reclaimed.',
       how:'Open Lands → My Estate, tap a tile with a natural obstacle, and Clear it with the matching Gathering skill. Clear 10 obstacles in all.',
