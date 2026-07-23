@@ -6287,6 +6287,26 @@
     eq(FF.claimQuest('thin_the_warren'), false, 'a claimed quest cannot be re-claimed');
     s.monsterKills = {};
     if(savedTool===undefined) delete s.inventory['tool_butchering_t0_normal']; else s.inventory['tool_butchering_t0_normal'] = savedTool;
+    // ---- Quest 6: "Take Up the Cleaver" -- equip a Butchering tool -> 10 Rabbit Corpses (corpse_t0) ----
+    var savedGT = s.gatherTools, savedCorpse = s.inventory['corpse_t0'];
+    var q6 = FF.questById('take_up_the_cleaver');
+    ok(!!q6 && q6.cat==='gettingstarted', 'Take Up the Cleaver lives in Getting Started');
+    eq(q6.target, 1, 'its target is 1 (equip the Cleaver)');
+    ok(q6.reward.kind==='item' && q6.reward.itemId==='corpse_t0' && q6.reward.qty===10, 'reward is 10x first-tier Corpse (corpse_t0)');
+    ok(/Rabbit Corpse/.test(FF.questRewardLabel(q6)), 'the reward line reads as the real Rabbit Corpse');
+    eq(q6.nav.cat, 'refining', 'its Go destination is the Refining tab');
+    eq(q6.nav.sub, 'butchering', 'the Go destination drills into the Butchering sub-tab');
+    s.quests = { claimed:{} };
+    s.gatherTools = { butchering:0 };
+    eq(FF.questComplete(q6), false, 'no Butchering tool equipped -> not complete');
+    s.gatherTools.butchering = 1; // tierIndex 0 + 1 == the equipped Copper Cleaver
+    ok(FF.questComplete(q6) && FF.questClaimable(q6), 'equipping the Cleaver completes + arms the quest');
+    var cBefore = s.inventory['corpse_t0'] || 0;
+    ok(FF.claimQuest('take_up_the_cleaver'), 'claim succeeds');
+    eq((s.inventory['corpse_t0']||0) - cBefore, 10, 'claim grants 10 Rabbit Corpses');
+    eq(FF.claimQuest('take_up_the_cleaver'), false, 'a claimed quest cannot be re-claimed');
+    s.gatherTools = savedGT;
+    if(savedCorpse===undefined) delete s.inventory['corpse_t0']; else s.inventory['corpse_t0'] = savedCorpse;
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
