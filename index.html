@@ -20812,6 +20812,10 @@
   function questComplete(q){ return questProgress(q) >= q.target; }
   function questClaimed(q){ return !!(state.quests && state.quests.claimed && state.quests.claimed[q.id]); }
   function questClaimable(q){ return questComplete(q) && !questClaimed(q); }
+  // Stable partition: not-yet-claimed quests keep their guided order at the top; already-claimed ones fall
+  // to the bottom (also in their original order), so finished goals get out of the way. filter() preserves
+  // order, so each group stays as authored.
+  function questsClaimedLast(arr){ return arr.filter(function(q){ return !questClaimed(q); }).concat(arr.filter(questClaimed)); }
   function questClaimableInCat(catId){ return QUESTS.some(function(q){ return q.cat===catId && questClaimable(q); }); }
   function questAnyClaimable(){ return QUESTS.some(questClaimable); }
   // "Copper Small Shield" for a single item, "3x Copper Bar" when the qty > 1 -- reward lines read as the
@@ -20893,7 +20897,11 @@
     if(eq && TITLE_BY_ID[eq]) html += '<div class="inputs-line">Equipped: <b style="color:var(--gold);">' + escapeHtml(TITLE_BY_ID[eq].name) + '</b></div>';
     else html += '<div class="inputs-line">Equipped: <span class="empty-note" style="display:inline;">none</span></div>';
     html += '<div class="title-list">';
-    TITLES.forEach(function(t){
+    // Earned titles float to the top (stable), locked ones sink below -- the opposite of the quest pages,
+    // where finished goals get out of the way. filter() preserves the registry order within each group.
+    var _titleOwned = function(t){ return !!(state.titles && state.titles[t.id]); };
+    var titlesSorted = TITLES.filter(_titleOwned).concat(TITLES.filter(function(t){ return !_titleOwned(t); }));
+    titlesSorted.forEach(function(t){
       var has = !!(state.titles && state.titles[t.id]), isEq = eq === t.id, open = !!titleHelpOpen[t.id];
       html += '<div class="title-item">';
       html += '<div class="title-row' + (has ? ' owned' : ' locked') + (isEq ? ' equipped' : '') + '">';
@@ -20926,11 +20934,11 @@
         if(!qs.length) return;
         var ready = qs.filter(questClaimable).length;
         html += '<div class="quest-group-head">' + escapeHtml(en.label) + (ready ? ' <span style="color:var(--gold);">• ' + ready + ' to claim</span>' : '') + '</div>';
-        qs.forEach(function(q){ html += renderQuestAccordion(q); });
+        questsClaimedLast(qs).forEach(function(q){ html += renderQuestAccordion(q); }); // claimed milestones sink to the bottom of each entrance
       });
       return html;
     }
-    list.forEach(function(q){ html += renderQuestAccordion(q); });
+    questsClaimedLast(list).forEach(function(q){ html += renderQuestAccordion(q); }); // claimed quests sink to the bottom, unclaimed keep their guided order
     return html;
   }
 
@@ -31210,7 +31218,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.25';
+  var GAME_VERSION = '0.0.39.26';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -31331,7 +31339,7 @@
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
-      QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questClaimable:questClaimable, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash,
+      QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, towerOnKill:towerOnKill, towerEnter:towerEnter, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, itemReconcile:itemReconcile,
