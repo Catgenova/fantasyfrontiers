@@ -16333,11 +16333,14 @@
   // one, `label` the text shown between the buttons. Buttons disable at the ends of the list
   // or when `disabled` (an active craft locks the tier). tierRange builds a 0..max list.
   function tierRange(max){ var a=[]; for(var i=0;i<=max;i++) a.push(i); return a; }
+  // The `disabled` arg (an active-craft flag at each call site) NO LONGER locks the stepper: players can
+  // freely browse to any tier while a craft of another (or the same) tier is running, and start it in a new
+  // slot. The +/- are only bound by the tier range itself. Kept in the signature for call-site compatibility.
   function tierStepper(target, sub, values, cur, label, disabled){
     var idx = values.indexOf(cur);
     var d = ' data-tier-target="'+target+'" data-tier-sub="'+sub+'" data-tier-values="'+values.join(',')+'"';
-    var decOff = disabled || idx<=0;
-    var incOff = disabled || idx>=values.length-1;
+    var decOff = idx<=0;
+    var incOff = idx>=values.length-1;
     return '<span class="tier-stepper">'
       + '<button type="button" class="tier-step-btn" data-action="tierStep" data-tier-dir="-1"'+d+(decOff?' disabled':'')+' aria-label="Lower tier">&minus;</button>'
       + '<span class="tier-step-label">'+label+'</span>'
@@ -31384,7 +31387,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.32';
+  var GAME_VERSION = '0.0.39.33';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
