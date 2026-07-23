@@ -6640,6 +6640,28 @@
       ok(ch.indexOf(helmId) === -1, 'the chest picker is scoped to the chest slot (no helmet pieces leak in)');
       ok(/inv-acc-bar/.test(ch) && /Plate/.test(ch), 'owned pieces are grouped into a Plate material accordion');
     } finally { S.inventory=savedInv; S.bodyArmor=savedBody; S.xp=savedXp; S.uniqueItems=savedUniq; }
+
+    // Mainhand weapon picker nests a per-type sub-accordion when a family holds more than one owned type,
+    // so a 100+ item melee list stops being one flat wall.
+    var mSaved = { mh:S.equippedMainhand, mht:S.equippedMainhandTier, mhr:S.equippedMainhandRarity, inv:S.inventory, xp:S.xp, uniq:S.uniqueItems };
+    try {
+      S.xp = { rapier:1e9, greatsword:1e9, weaponsmithing:1e9 };
+      var rap = 'stweapon_rapier_t4_normal', rap2 = 'stweapon_rapier_t2_normal', gs = 'stweapon_greatsword_t4_normal';
+      ok(FF.STACKABLE_WEAPON_ITEMS[rap] && FF.STACKABLE_WEAPON_ITEMS[gs], 'sample rapier + greatsword ids resolve');
+      // Equip a rapier so the Rapier nest opens by default; the Greatsword nest stays collapsed.
+      S.equippedMainhand = 'rapier'; S.equippedMainhandTier = 5; S.equippedMainhandRarity = 'normal'; S.uniqueItems = {};
+      var inv = {}; inv[rap]=1; inv[rap2]=1; inv[gs]=1; S.inventory = inv;
+      var h = FF.renderMainhandEquipSection();
+      ok(/Melee Weapons/.test(h), 'the Melee Weapons family accordion renders');
+      ok(/inv-acc-sub/.test(h), 'multiple owned weapon types nest into per-type sub-accordions');
+      ok(/>Rapier<\/span>/.test(h) && />Greatsword<\/span>/.test(h), 'each owned weapon type gets its own nested accordion title');
+      ok(h.indexOf('data-item="'+rap2+'"')!==-1, 'the equipped type nest opens by default, showing its other items');
+      ok(/data-key="[^"]*_greatsword" data-open="0"/.test(h), 'a non-equipped type nest (Greatsword) is collapsed by default');
+      // A single owned weapon type skips the redundant second nest.
+      var inv2 = {}; inv2[rap]=1; inv2[rap2]=1; S.inventory = inv2;
+      var h1 = FF.renderMainhandEquipSection();
+      ok(/Melee Weapons/.test(h1) && !/inv-acc-sub/.test(h1), 'a single owned weapon type skips the redundant sub-nest');
+    } finally { S.equippedMainhand=mSaved.mh; S.equippedMainhandTier=mSaved.mht; S.equippedMainhandRarity=mSaved.mhr; S.inventory=mSaved.inv; S.xp=mSaved.xp; S.uniqueItems=mSaved.uniq; }
   });
 
   // ---- Marketplace pricing helpers (must match the server RPC's tax math) --------------
