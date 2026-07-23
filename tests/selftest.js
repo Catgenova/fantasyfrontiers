@@ -1799,12 +1799,18 @@
     // Gather items are registered and named.
     ok(FF.ALL_GATHER_ITEMS['beekeeping_t0'] && FF.ALL_GATHER_ITEMS['beekeeping_t20'], 'honey items registered t0..t20');
     eq(FF.ALL_GATHER_ITEMS['beekeeping_t19'].name, 'Royal Jelly', 'top honey tiers are Royal Jelly/Ambrosia');
-    // Brewing = drinkable buff (Tea-like) and finally consumes Botany spices + Honey + Grain.
+    // Brewing = drinkable BONUS-OUTPUT buff (a separate lever from Mixology's XP Tea), and finally
+    // consumes Botany spices + Honey + Grain.
     var brew5 = FF.ALL_CRAFT_RECIPES['brewing_t5'];
-    ok(brew5.teaDurationMs > 0 && brew5.xpBoost > 0, 'brews are XP buff-drinks');
+    ok(brew5.brewDurationMs > 0 && brew5.brewYield > 0, 'brews are bonus-output buff-drinks');
+    ok(brew5.teaDurationMs === undefined && brew5.xpBoost === undefined, 'brews no longer carry the Tea XP-boost fields');
     ok(brew5.inputs['beekeeping_t5'] && brew5.inputs['botany_t5'] && brew5.inputs['grain_t5'], 'brew uses honey + botany spice + grain');
-    ok(FF.TEA_DRINK_RECIPES.some(function(r){ return r.id === 'brewing_t5'; }), 'brews join the drinkable Tea/Brew pool');
-    ok(FF.TEA_DRINK_RECIPES.some(function(r){ return r.id === 'mixology_t5'; }), 'mixology teas still in the pool');
+    ok(FF.BREW_DRINK_RECIPES.some(function(r){ return r.id === 'brewing_t5'; }), 'brews join the drinkable Brew pool');
+    ok(!FF.TEA_DRINK_RECIPES.some(function(r){ return r.id === 'brewing_t5'; }), 'brews are NOT in the Tea pool (own buff slot)');
+    ok(FF.TEA_DRINK_RECIPES.some(function(r){ return r.id === 'mixology_t5'; }), 'mixology teas are the Tea pool');
+    // Yield curve: 5% at t0 climbing to the 20% cap at t20.
+    near(FF.ALL_CRAFT_RECIPES['brewing_t0'].brewYield, 0.05, 'brew bonus-output chance starts at 5% (t0)');
+    near(FF.ALL_CRAFT_RECIPES['brewing_t20'].brewYield, 0.20, 'brew bonus-output chance caps at 20% (t20)');
     // Grain clamps at its 20-tier ceiling for the top brew.
     ok(FF.ALL_CRAFT_RECIPES['brewing_t20'].inputs['grain_t19'], 'top brew clamps grain to t19');
     // Confectionery = manual-eat heal snack (heal, but not auto-eaten in combat).
@@ -1814,6 +1820,42 @@
     ok(conf5.inputs['beekeeping_t5'] && conf5.inputs['foraging_t5'], 'confection uses honey + foraged berry');
     // Physique training wired for all three.
     ok(FF.GATHER_PHYSIQUE.beekeeping && FF.CRAFT_PHYSIQUE.brewing && FF.CRAFT_PHYSIQUE.confectionery, 'physique tables include the new skills');
+  });
+
+  // ---- Brewing Brew buff: bonus-output throughput on its own slot ------------------------------
+  suite('brew buff: bonus-output, separate slot from Tea', function(){
+    ok(typeof FF.isBrewActive==='function' && typeof FF.brewYieldRoll==='function' && typeof FF.drinkBrew==='function', 'brew buff helpers exported');
+    var s = FF._state;
+    var sv = { inv:s.inventory, brew:s.activeBrew, tea:s.activeTea, stats:s.stats, phys:s.physique };
+    try {
+      s.inventory = {}; s.stats = {}; s.physique = {};
+      s.activeBrew = { itemId:null, name:null, icon:null, yield:0, durationMs:0, expiresAt:0 };
+      s.activeTea  = { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 };
+      // Inactive: no roll ever fires.
+      ok(!FF.isBrewActive(), 'no brew active to start');
+      ok(!FF.brewYieldRoll(), 'brewYieldRoll is false with no active brew');
+      // Drinking a Brew consumes one and starts the buff on the activeBrew slot (never activeTea).
+      s.inventory['brewing_t5'] = 2;
+      FF.drinkBrew('brewing_t5');
+      eq(s.inventory['brewing_t5'], 1, 'drinking a Brew consumes one from the stack');
+      ok(FF.isBrewActive(), 'the brew buff is now active');
+      eq(s.activeBrew.itemId, 'brewing_t5', 'activeBrew holds the drunk brew');
+      ok(!s.activeTea.itemId, 'the Tea slot is untouched -- Brews and Teas are separate buffs');
+      // A guaranteed-yield brew makes brewYieldRoll always true, and adds a bonus gather output.
+      s.activeBrew.yield = 1;
+      ok(FF.brewYieldRoll(), 'brewYieldRoll is true while an active brew has 100% yield');
+      s.inventory = {}; // clean slate for the gather-output integration (no workshops/mastery/prospector in this state)
+      FF.gatherDoubleRoll('forestry_t3', 'forestry'); // forestry avoids the Prospector bonus path
+      eq(s.inventory['forestry_t3']||0, 1, 'an active brew grants a bonus gather output');
+      // With the brew expired, the same roll grants nothing.
+      s.activeBrew.expiresAt = 0;
+      s.inventory = {};
+      ok(!FF.isBrewActive(), 'brew has expired');
+      FF.gatherDoubleRoll('forestry_t3', 'forestry');
+      eq(s.inventory['forestry_t3']||0, 0, 'no bonus output once the brew is gone');
+    } finally {
+      s.inventory = sv.inv; s.activeBrew = sv.brew; s.activeTea = sv.tea; s.stats = sv.stats; s.physique = sv.phys;
+    }
   });
 
   // ---- Prospecting / Gemcutting / Enchanting vertical slice -----------------------------------
