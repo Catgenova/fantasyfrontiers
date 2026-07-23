@@ -8453,6 +8453,41 @@
     }
   });
 
+  suite('sacrifice UI: category / rarity / tier filters', function(){
+    ok(typeof FF.sacSetFilters === 'function', 'sacSetFilters seam exported');
+    var S = FF._state, save = { inv:S.inventory, locked:S.lockedItems };
+    var W = 'stweapon_rapier_t4_rare', T = 'tool_mining_t2_normal'; // weapon: Rare, Tier 5 | tool: Normal, Tier 3
+    var hasW = function(h){ return h.indexOf('data-id="'+W+'"') !== -1; };
+    var hasT = function(h){ return h.indexOf('data-id="'+T+'"') !== -1; };
+    try {
+      ok(FF.STACKABLE_WEAPON_ITEMS[W] && FF.ALL_SELLABLE[T], 'sample weapon + tool ids resolve');
+      S.inventory = {}; S.inventory[W] = 1; S.inventory[T] = 1; S.lockedItems = {};
+      FF.sacSetFilters('all','all','all');
+      var h = FF.renderSacrificeTab();
+      ok(/class="sac-filter-bar"/.test(h), 'the filter bar renders');
+      ok(/data-action="sacFilterCat"/.test(h) && /data-action="sacFilterRarity"/.test(h) && /id="sacTierSelect"/.test(h), 'category, rarity, and tier controls are present');
+      ok(hasW(h) && hasT(h), 'All/All/All shows both the weapon and the tool');
+      FF.sacSetFilters('tools', null, null);
+      var ht = FF.renderSacrificeTab();
+      ok(hasT(ht) && !hasW(ht), 'the Tools category filter shows tools only');
+      FF.sacSetFilters('equipment', null, null);
+      var he = FF.renderSacrificeTab();
+      ok(hasW(he) && !hasT(he), 'the Equipment category filter excludes tools');
+      FF.sacSetFilters('all', 'rare', null);
+      var hr = FF.renderSacrificeTab();
+      ok(hasW(hr) && !hasT(hr), 'the Rare rarity filter keeps the rare weapon and drops the normal tool');
+      FF.sacSetFilters('all', 'all', '5');
+      var h5 = FF.renderSacrificeTab();
+      ok(hasW(h5) && !hasT(h5), 'the Tier 5 filter keeps the t5 weapon and drops the t3 tool');
+      FF.sacSetFilters('all', 'normal', '3');
+      var h3 = FF.renderSacrificeTab();
+      ok(hasT(h3) && !hasW(h3), 'Normal + Tier 3 shows the tool only');
+      // A tier with nothing owned falls back to All rather than rendering an empty grid.
+      FF.sacSetFilters('all', 'all', '20');
+      ok(hasW(FF.renderSacrificeTab()), 'a tier selection with no matching items resets to All');
+    } finally { FF.sacSetFilters('all','all','all'); S.inventory = save.inv; S.lockedItems = save.locked; }
+  });
+
   // ---- Faith: sacrifice value scales with rarity (2x/4x/8x) -----------------------------
   suite('faith: sacrifice rarity scaling', function(){
     // Base (normal) value: tier curve, with a +50% jewelry boost. The rarity multiplier (2x/4x/8x) is

@@ -1019,6 +1019,11 @@
   .inv-acc-n{flex:0 0 auto;font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}
   .inv-acc-body{padding:10px 12px 12px;border-top:1px dashed var(--border-light);}
   .equip-picker-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 10px;}
+  .sac-filter-bar{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin:4px 0 12px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);}
+  .sac-filter-group{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .sac-filter-label{font-family:var(--font-display);font-weight:700;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim);margin-right:2px;}
+  .sac-filter-select{background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:14px;padding:5px 10px;font-size:12px;cursor:pointer;}
+  .sac-filter-select:hover{border-color:var(--gold);}
   .inv-cell{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;
     padding:9px 5px 7px;background:var(--bg-card);border:2px solid var(--ink);border-radius:8px;cursor:pointer;
     box-shadow:inset 0 1px 3px rgba(0,0,0,.14),0 2px 5px rgba(20,18,16,.22);transition:transform .08s,border-color .12s,box-shadow .12s;}
@@ -24324,6 +24329,13 @@
     return html;
   }
 
+  // Sacrifice-tab filters (ephemeral UI state): narrow the offering grid by category / rarity / tier.
+  var sacFilterCat = 'all';      // 'all' | 'equipment' | 'tools'
+  var sacFilterRarity = 'all';   // 'all' | 'normal' | 'rare' | 'supreme' | 'fantastic'
+  var sacFilterTier = 'all';     // 'all' | tier number (1-based) as a string
+  function sacRowIsTool(r){ return r.category==='tool'; }
+  function sacRowRarity(r){ return (r.item && r.item.rarity) || 'normal'; }   // relics have no rarity -> 'normal'
+  function sacRowTier(r){ return r.category==='relic' ? (r.relicTierIndex+1) : r.tier; }
   function renderSacrificeTab(){
     var lvl = getLevel(state.xp.sacrifice);
     var html = '<div class="section-intro">Level '+lvl+' Sacrifice &mdash; destroy owned weapons, shields, tools, belts, rings, amulets, and relics to restore Faith and gain a flat 30 XP. Higher-tier items restore more Faith, and Rare/Supreme/Fantastic offerings restore 2x/4x/8x, but the item is consumed entirely. Equipped Tools and Armor can\'t be sacrificed.</div>';
@@ -24390,6 +24402,34 @@
     });
     if(rows.length===0){
       html += '<div class="empty-note">You have no crafted equipment to sacrifice yet. Forge something first.</div>';
+      return html;
+    }
+    // ---- Filters: category (equipment / tools), rarity, and tier level -------------------------
+    // Tier options are the tiers actually present in the offerings; a stale selection (its items all
+    // sacrificed) falls back to All so the grid never renders unexpectedly empty.
+    var presentTiers = {}; rows.forEach(function(r){ presentTiers[sacRowTier(r)] = true; });
+    var tierList = Object.keys(presentTiers).map(Number).sort(function(a,b){ return a-b; });
+    if(sacFilterTier !== 'all' && tierList.indexOf(+sacFilterTier) === -1) sacFilterTier = 'all';
+    var chipRow = function(label, action, opts, cur){
+      var h = '<div class="sac-filter-group"><span class="sac-filter-label">'+label+'</span>';
+      opts.forEach(function(o){ h += '<button class="inv-chip'+(cur===o[0]?' on':'')+'" data-action="'+action+'" data-val="'+o[0]+'">'+o[1]+'</button>'; });
+      return h + '</div>';
+    };
+    html += '<div class="sac-filter-bar">';
+    html += chipRow('Category', 'sacFilterCat', [['all','All'],['equipment','Equipment'],['tools','Tools']], sacFilterCat);
+    html += chipRow('Rarity', 'sacFilterRarity', [['all','All'],['normal','Normal'],['rare','Rare'],['supreme','Supreme'],['fantastic','Fantastic']], sacFilterRarity);
+    html += '<div class="sac-filter-group"><span class="sac-filter-label">Tier</span><select id="sacTierSelect" class="sac-filter-select"><option value="all"'+(sacFilterTier==='all'?' selected':'')+'>All</option>';
+    tierList.forEach(function(t){ html += '<option value="'+t+'"'+(sacFilterTier===String(t)?' selected':'')+'>Tier '+t+'</option>'; });
+    html += '</select></div></div>';
+    rows = rows.filter(function(r){
+      if(sacFilterCat==='tools' && !sacRowIsTool(r)) return false;
+      if(sacFilterCat==='equipment' && sacRowIsTool(r)) return false;
+      if(sacFilterRarity!=='all' && sacRowRarity(r)!==sacFilterRarity) return false;
+      if(sacFilterTier!=='all' && String(sacRowTier(r))!==sacFilterTier) return false;
+      return true;
+    });
+    if(rows.length===0){
+      html += '<div class="empty-note">No offerings match these filters. Adjust or clear them above.</div>';
       return html;
     }
     html += '<div class="card-grid">';
@@ -29755,6 +29795,8 @@
       var sacId = btn.getAttribute('data-id');
       sacrificeItem(sacCategory, sacId);
     },
+    sacFilterCat: function(btn, e){ sacFilterCat = btn.getAttribute('data-val'); },
+    sacFilterRarity: function(btn, e){ sacFilterRarity = btn.getAttribute('data-val'); },
     startFaith: function(btn, e){ startFaithActivity(btn.getAttribute('data-kind'), parseInt(btn.getAttribute('data-tier'),10)); },
     stopFaith: function(btn, e){ stopFaithActivity(); },
     toggleArmorPanel: function(btn, e){ armorPanelExpanded = !armorPanelExpanded; },
@@ -30028,6 +30070,9 @@
     }
     if(e.target && e.target.id === 'invSortSelect'){
       inventorySort = e.target.value; renderInventoryPanel(); return;
+    }
+    if(e.target && e.target.id === 'sacTierSelect'){
+      sacFilterTier = e.target.value; render(true); return;
     }
     if(e.target && e.target.id && e.target.id.indexOf('loadoutName-')===0){
       renameLoadoutPreset(parseInt(e.target.id.split('-')[1],10), e.target.value); return;
@@ -30628,7 +30673,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.4';
+  var GAME_VERSION = '0.0.39.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -30763,7 +30808,7 @@
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
       GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, skillTabsByLabel:skillTabsByLabel,
-      renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
+      renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; },
