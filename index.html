@@ -12100,7 +12100,14 @@
   // Crystal cost for the NEXT enchant on an item = (current enchant count) + 1.
   function enchantCrystalCost(u){ return ((u && u.enchants) ? u.enchants.length : 0) + 1; }
   // Monotonic unique-instance id per save.
-  function genUid(){ state.uidSeq = (state.uidSeq||0) + 1; return 'u'+state.uidSeq; }
+  function genUid(){
+    state.uidSeq = (state.uidSeq||0) + 1;
+    // Never hand out a uid an existing unique already uses. A save that kept uniqueItems but lost/undercounted
+    // uidSeq would otherwise recycle 'u1','u2',... and silently OVERWRITE an owned legendary -- the reported
+    // "mastercraft consumed materials but no new item appeared" bug (the new item replaced an old one in place).
+    if(state.uniqueItems) while(state.uniqueItems['u'+state.uidSeq]) state.uidSeq++;
+    return 'u'+state.uidSeq;
+  }
 
   // ---- Improvement engine (Stage 1b) ----
   // Parse an equipment inventory id into {kind,tier,rarity,baseId}; only weapons/shields/body-armour/
@@ -15399,6 +15406,10 @@
           // Improvement system (enchant/enhance): unique-instance table + id counter + warning toggles.
           if(!state.uniqueItems || typeof state.uniqueItems !== 'object' || Array.isArray(state.uniqueItems)) state.uniqueItems = {};
           if(typeof state.uidSeq !== 'number' || !isFinite(state.uidSeq)) state.uidSeq = 0;
+          // Heal a desynced counter: if uidSeq sits at or below an existing unique's number (a save that kept
+          // uniqueItems but lost uidSeq), the next mint would recycle that uid and overwrite the owned
+          // legendary. Bump the counter past the highest 'u<N>' already in the table.
+          for(var _uk in state.uniqueItems){ var _um = /^u(\d+)$/.exec(_uk); if(_um){ var _uv = +_um[1]; if(_uv > state.uidSeq) state.uidSeq = _uv; } }
           // Heal stale equip-slot uids: a uid that doesn't point to a real unique (e.g. left behind by
           // an older equip path that didn't clear it when swapping a unique out for a base) must be
           // cleared -- otherwise the slot is treated as a unique, hiding the base from the Improvement
@@ -30730,7 +30741,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.6';
+  var GAME_VERSION = '0.0.39.7';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
