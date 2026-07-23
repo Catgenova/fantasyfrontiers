@@ -5986,11 +5986,13 @@
     ok(FF.claimQuest('tq_all_f100'), 'claim succeeds');
     ok(s.titles['title_all_f100'] === true, 'claiming unlocks the title');
     // TITLES registry: flat, ordered, one per title-rewarding quest.
-    eq(FF.TITLES.length, 116, 'the Titles registry has one entry per tower quest');
-    // Order: the whole All Classes ladder (25..500 = 20 titles) comes first, then the per-class titles.
-    var _allTitles = FF.TITLES.slice(0, 20);
-    ok(_allTitles.every(function(t){ return /^title_all_f/.test(t.id); }), 'the first 20 titles are the full All Classes ladder (25-500)');
-    ok(!/^title_all_f/.test(FF.TITLES[20].id), 'the individual class titles follow the All Classes block');
+    eq(FF.TITLES.length, 117, 'the Titles registry has one entry per tower quest (116) plus the Frontier Hero capstone');
+    // The Getting Started capstone title is defined before the tower quests, so it leads the registry.
+    eq(FF.TITLES[0].id, 'title_frontier_hero', 'the Frontier Hero capstone title leads the registry');
+    // Order: the whole All Classes ladder (25..500 = 20 titles) comes next, then the per-class titles.
+    var _allTitles = FF.TITLES.slice(1, 21);
+    ok(_allTitles.every(function(t){ return /^title_all_f/.test(t.id); }), 'the first 20 tower titles are the full All Classes ladder (25-500)');
+    ok(!/^title_all_f/.test(FF.TITLES[21].id), 'the individual class titles follow the All Classes block');
     ok(FF.TITLE_BY_ID['title_all_f100'] && FF.TITLE_BY_ID['title_all_f100'].name==='Tower Ascendant', 'the registry is keyed by title id');
     ok(FF.TITLE_BY_ID['title_all_f100'].how && /Floor 100/.test(FF.TITLE_BY_ID['title_all_f100'].how), 'each title carries a how-to (drives the ? tooltip)');
     // Equip system: only earned titles equip; toggling / unequip clears.
@@ -6138,10 +6140,11 @@
     // claimable" flash assertions below. Saved here, restored at the end of the suite.
     var savedStatsQ = s.stats, savedRelicQ = s.equippedRelicTier, savedBeltTQ = s.equippedBeltTier, savedBeltRQ = s.equippedBeltRarity,
         savedGTQ = s.gatherTools, savedACQ = s.activeCompanions, savedMHQ = s.equippedMainhand, savedOffQ = s.equippedOffhand,
-        savedOffTQ = s.equippedOffhandTier, savedBAQ = s.bodyArmor;
+        savedOffTQ = s.equippedOffhandTier, savedBAQ = s.bodyArmor, savedXpQ = s.xp, savedUniqQ = s.uniqueItems, savedJSQ = s.jewelrySlots;
     s.monsterKills = {}; s.quests = { claimed:{} }; s.titles = {};
     s.stats = {}; s.equippedRelicTier = 0; s.equippedBeltTier = 0; s.equippedBeltRarity = 'normal';
     s.gatherTools = {}; s.activeCompanions = []; s.equippedMainhand = null; s.equippedOffhand = null; s.equippedOffhandTier = 0; s.bodyArmor = {};
+    s.xp = {}; s.uniqueItems = {}; s.jewelrySlots = {}; // master-of-the-frontier (skill Lv), steel-sharpened (uniques), cut-and-set (rings)
     // Quests is its OWN top-level area, with Getting Started as a category tab inside it (not under Battle).
     var qArea = FF.AREAS.filter(function(a){ return a.id==='quests'; })[0];
     ok(!!qArea, 'Quests is its own top-level area');
@@ -6643,6 +6646,190 @@
     eq((s.inventory['tool_weaving_t0_normal']||0) - r22Before[1], 1, 'claim grants a Copper Loom');
     s.stats = savedStats22;
     r22.forEach(function(id, i){ if(savedR22[i]===undefined) delete s.inventory[id]; else s.inventory[id] = savedR22[i]; });
+    // ---- Act IV: Cloth, Kitchen & Cup (quests 23-30) ----
+    // Reward system is now additive-by-field; a crafted_<skill> tally powers the crafting quests.
+    var savedActStats = s.stats, savedActBA = s.bodyArmor, savedActGold = s.gold;
+    function invGrantCheck(qid, itemId, n){ var b = s.inventory[itemId]||0; ok(FF.claimQuest(qid), 'claim '+qid+' succeeds'); eq((s.inventory[itemId]||0)-b, n, qid+' grants '+n+'x '+itemId); }
+    // 23 Weave the Bolt: weave 10 Cotton Cloth -> Sewing Kit + 10 cloth
+    var q23 = FF.questById('weave_the_bolt');
+    ok(!!q23 && q23.target===10, 'Weave the Bolt: craft 10');
+    ok(q23.reward.items.some(function(i){return i.itemId==='tool_tailoring_t0_normal';}) && q23.reward.items.some(function(i){return i.itemId==='weaving_t0';}), 'reward is Sewing Kit + Cotton Cloth');
+    eq(FF.ALL_SELLABLE['weaving_t0'].name, 'Cotton Cloth', 'weaving_t0 is Cotton Cloth');
+    s.quests={claimed:{}}; s.stats={};
+    s.stats['crafted_tanning']=10; eq(FF.questProgress(q23), 0, 'crafting a different skill does not advance weaving');
+    s.stats['crafted_weaving']=10; ok(FF.questComplete(q23), '10 weaves completes');
+    invGrantCheck('weave_the_bolt','tool_tailoring_t0_normal',1);
+    // 24 Dress the Part: equip a cloth (tailoring) chest -> Fishing Rod
+    var q24 = FF.questById('dress_the_part');
+    ok(!!q24 && q24.reward.items[0].itemId==='tool_fishing_t0_normal', 'Dress the Part rewards a Fishing Rod');
+    s.quests={claimed:{}}; s.bodyArmor={};
+    eq(FF.questComplete(q24), false, 'no cloth chest -> not complete');
+    s.bodyArmor.chest={material:'chain',tier:1}; eq(FF.questComplete(q24), false, 'a chain chest is not cloth');
+    s.bodyArmor.chest={material:'tailoring',tier:1}; ok(FF.questComplete(q24), 'a tailoring (cloth) chest completes');
+    invGrantCheck('dress_the_part','tool_fishing_t0_normal',1);
+    // 25 Cast a Line: catch 50 fish -> Roasting Spit + 30 fish
+    var q25 = FF.questById('cast_a_line');
+    ok(!!q25 && q25.target===50, 'Cast a Line: catch 50');
+    s.quests={claimed:{}}; s.stats={};
+    s.stats['gathered_fishing_t1']=50; eq(FF.questProgress(q25), 0, 'a different fish does not count');
+    s.stats['gathered_fishing_t0']=50; ok(FF.questComplete(q25), '50 fish completes');
+    invGrantCheck('cast_a_line','tool_roasting_t0_normal',1);
+    // 26-28 kitchen crafts (crafted_<skill>)
+    [['roast_the_catch','roasting',20,'tool_cooking_t0_normal'],['a_warm_meal','cooking',10,'tool_baking_t0_normal'],['break_bread','baking',10,'tool_mixology_t0_normal']].forEach(function(row){
+      var q = FF.questById(row[0]); ok(!!q && q.target===row[2], row[0]+' target '+row[2]);
+      s.quests={claimed:{}}; s.stats={};
+      s.stats['crafted_'+row[1]]=row[2]; ok(FF.questComplete(q), row[0]+' completes at target');
+      invGrantCheck(row[0], row[3], 1);
+    });
+    // 29 Steep the Leaves: brew 5 teas -> 10 teas
+    var q29 = FF.questById('steep_the_leaves');
+    ok(!!q29 && q29.target===5, 'Steep the Leaves: brew 5');
+    s.quests={claimed:{}}; s.stats={ crafted_mixology:5 }; ok(FF.questComplete(q29), '5 teas completes');
+    invGrantCheck('steep_the_leaves','mixology_t0',10);
+    // 30 A Restful Cup: drink a tea -> foraging + GOLD (additive reward)
+    var q30 = FF.questById('a_restful_cup');
+    ok(!!q30 && q30.reward.gold===500, 'A Restful Cup rewards 500 gold alongside items');
+    ok(/Gold/.test(FF.questRewardLabel(q30)) && /Blackberry/.test(FF.questRewardLabel(q30)), 'reward line shows both the berries and the gold');
+    s.quests={claimed:{}}; s.stats={}; s.gold=0;
+    eq(FF.questComplete(q30), false, 'no tea drunk -> not complete');
+    s.stats['teas_drunk']=1; ok(FF.questComplete(q30), 'drinking a tea completes');
+    var g30 = s.gold||0, f30 = s.inventory['foraging_t0']||0;
+    ok(FF.claimQuest('a_restful_cup'), 'claim a_restful_cup succeeds');
+    eq((s.gold||0)-g30, 500, 'claim grants 500 gold');
+    eq((s.inventory['foraging_t0']||0)-f30, 20, 'claim grants 20 Blackberries');
+    s.stats = savedActStats; s.bodyArmor = savedActBA; s.gold = savedActGold;
+    // ---- Act V: Wood, Stone & Home (quests 31-38) ----
+    var savedVStats = s.stats, savedVGold = s.gold;
+    // 31 Fell the Timber (gather forestry) + 32-34 build crafts (crafted_<skill>)
+    [['fell_the_timber','gathered_forestry_t0',100,'tool_carpentry_t0_normal'],
+     ['square_the_planks','crafted_carpentry',100,'tool_stonecutting_t0_normal'],
+     ['cut_the_stone','crafted_stonecutting',50,'tool_paving_t0_normal'],
+     ['lay_the_tiles','crafted_paving',20,'paving_t0']].forEach(function(row){
+      var q = FF.questById(row[0]); ok(!!q && q.target===row[2], row[0]+' target '+row[2]);
+      s.quests={claimed:{}}; s.stats={};
+      s.stats[row[1]] = row[2]-1; eq(FF.questComplete(q), false, row[0]+': one short is not complete');
+      s.stats[row[1]] = row[2]; ok(FF.questComplete(q), row[0]+' completes at target');
+      invGrantCheck(row[0], row[3], row[3]==='paving_t0'?20:1);
+    });
+    // 35 Pave the Estate, 36 Raise a Workshop, 37 Hearth and Home, 38 Put a Peon to Work
+    [['pave_the_estate','paved_estate'],['raise_a_workshop','workshop_built'],['hearth_and_home','cottage_built'],['put_a_peon_to_work','peons_housed']].forEach(function(row){
+      var q = FF.questById(row[0]); ok(!!q && q.target===1, row[0]+' target 1');
+      s.quests={claimed:{}}; s.stats={};
+      eq(FF.questComplete(q), false, row[0]+': not complete at 0');
+      s.stats[row[1]] = 1; ok(FF.questComplete(q), row[0]+' completes when the estate action fires');
+    });
+    // Verify the gold-only rewards actually pay out (Hearth and Home = 1000g).
+    var q37 = FF.questById('hearth_and_home');
+    eq(q37.reward.gold, 1000, 'Hearth and Home rewards 1000 gold');
+    ok(/1,000 Gold/.test(FF.questRewardLabel(q37)), 'its reward line reads as gold');
+    s.quests={claimed:{}}; s.stats={ cottage_built:1 }; s.gold=0;
+    ok(FF.claimQuest('hearth_and_home'), 'claim hearth_and_home succeeds');
+    eq(s.gold, 1000, 'claim pays 1000 gold');
+    s.stats = savedVStats; s.gold = savedVGold;
+    // ---- Act VI: Faith & Flask (quests 39-41) ----
+    var savedVIStats = s.stats, savedVIGold = s.gold;
+    // 39 Kneel and Pray: 10 prayers -> Sickle + gold
+    var q39 = FF.questById('kneel_and_pray');
+    ok(!!q39 && q39.target===10, 'Kneel and Pray: 10 prayers');
+    ok(/Sickle/.test(FF.questRewardLabel(q39)) && /Gold/.test(FF.questRewardLabel(q39)), 'reward is a Sickle + gold');
+    s.quests={claimed:{}}; s.stats={}; s.gold=0;
+    s.stats['prayers']=9; eq(FF.questComplete(q39), false, '9 prayers is not enough');
+    s.stats['prayers']=10; ok(FF.questComplete(q39), '10 prayers completes');
+    invGrantCheck('kneel_and_pray','tool_herbalism_t0_normal',1);
+    // 40 Green of Thumb: 100 herbs -> Mortar & Pestle + 20 herbs
+    var q40 = FF.questById('green_of_thumb');
+    ok(!!q40 && q40.target===100, 'Green of Thumb: 100 herbs');
+    eq(FF.ALL_SELLABLE['herbalism_t0'].name, 'Chamomile', 'herbalism_t0 is Chamomile');
+    s.quests={claimed:{}}; s.stats={ gathered_herbalism_t0:100 }; ok(FF.questComplete(q40), '100 herbs completes');
+    invGrantCheck('green_of_thumb','tool_alchemy_t0_normal',1);
+    // 41 Brew a Draught: 5 potions -> 10 elixirs
+    var q41 = FF.questById('brew_a_draught');
+    ok(!!q41 && q41.target===5, 'Brew a Draught: 5 potions');
+    ok(!!FF.ALL_SELLABLE['elixir_t0'], 'elixir_t0 is a real item');
+    s.quests={claimed:{}}; s.stats={ crafted_alchemy:5 }; ok(FF.questComplete(q41), '5 potions completes');
+    invGrantCheck('brew_a_draught','elixir_t0',10);
+    s.stats = savedVIStats; s.gold = savedVIGold;
+    // ---- Act VII: Adornment & Enchantment (quests 42-45) ----
+    var savedVIIStats = s.stats, savedVIIGold = s.gold, savedJS = s.jewelrySlots, savedUniq = s.uniqueItems, savedOff7 = s.equippedOffhand, savedOffT7 = s.equippedOffhandTier;
+    // 42 Cut and Set: equip a ring -> Copper Amulet + gold
+    var q42 = FF.questById('cut_and_set');
+    ok(!!q42 && q42.target===1, 'Cut and Set: target 1');
+    s.quests={claimed:{}}; s.jewelrySlots={ ring1:{}, ring2:{}, ring3:{}, ring4:{}, ring5:{}, amulet:{} };
+    eq(FF.questComplete(q42), false, 'no ring equipped -> not complete');
+    s.jewelrySlots.ring1 = { typeId:'plain', tier:1, rarity:'normal' };
+    ok(FF.questComplete(q42), 'a ring in a ring slot completes');
+    invGrantCheck('cut_and_set','amulet_t0_normal',1);
+    // 43 Steel Sharpened: enhance a unique to +5 (progress = max enhance)
+    var q43 = FF.questById('steel_sharpened');
+    ok(!!q43 && q43.target===5, 'Steel Sharpened: to +5');
+    s.quests={claimed:{}}; s.uniqueItems={ u1:{ enhance:4 } };
+    eq(FF.questProgress(q43), 4, '+4 reads as 4/5 progress');
+    eq(FF.questComplete(q43), false, '+4 is not complete');
+    s.uniqueItems.u1.enhance = 5; ok(FF.questComplete(q43), '+5 completes');
+    s.gold=0; ok(FF.claimQuest('steel_sharpened'), 'claim steel_sharpened'); eq(s.gold, 2000, 'grants 2000 gold');
+    // 44 Bind the Crystal: enchant a piece -> 5 crystals
+    var q44 = FF.questById('bind_the_crystal');
+    ok(!!q44 && q44.target===1, 'Bind the Crystal: target 1');
+    s.quests={claimed:{}}; s.stats={};
+    eq(FF.questComplete(q44), false, 'no enchant applied -> not complete');
+    s.stats['enchants_applied']=1; ok(FF.questComplete(q44), 'one enchant completes');
+    invGrantCheck('bind_the_crystal','enchant_t0',5);
+    // 45 Ward and Glyph: equip a ward
+    var q45 = FF.questById('ward_and_glyph');
+    ok(!!q45 && q45.target===1, 'Ward and Glyph: target 1');
+    s.quests={claimed:{}}; s.equippedOffhand='shieldSmall'; s.equippedOffhandTier=1;
+    eq(FF.questComplete(q45), false, 'a shield is not a ward');
+    s.equippedOffhand='wardFire'; s.equippedOffhandTier=1;
+    ok(FF.questComplete(q45), 'an equipped Ward completes');
+    invGrantCheck('ward_and_glyph','stward_wardFire_t0_normal',1);
+    s.stats=savedVIIStats; s.gold=savedVIIGold; s.jewelrySlots=savedJS; s.uniqueItems=savedUniq; s.equippedOffhand=savedOff7; s.equippedOffhandTier=savedOffT7;
+    // ---- Act VIII: Trade & Legacy (quests 46-50) ----
+    var savedVIIIStats = s.stats, savedVIIIGold = s.gold, savedXp = s.xp;
+    // 46 Light the Hall (chandlery), 47 Burn the Midnight Oil (peon_lit), 48 Study the Tomes (tomes_studied)
+    [['light_the_hall','crafted_chandlery',10,'chandlery_t0',20],['burn_the_midnight_oil','peon_lit',1,'chandlery_t0',10],['study_the_tomes','tomes_studied',1,'tome_t0',3]].forEach(function(row){
+      var q = FF.questById(row[0]); ok(!!q && q.target===row[2], row[0]+' target '+row[2]);
+      s.quests={claimed:{}}; s.stats={};
+      eq(FF.questComplete(q), false, row[0]+': not complete at 0');
+      s.stats[row[1]]=row[2]; ok(FF.questComplete(q), row[0]+' completes');
+      invGrantCheck(row[0], row[3], row[4]);
+    });
+    // 49 Kindred Spirits: visit the guild
+    var q49 = FF.questById('kindred_spirits');
+    ok(!!q49 && q49.target===1 && q49.reward.gold===2000, 'Kindred Spirits: visit guild -> 2000 gold');
+    s.quests={claimed:{}}; s.stats={}; eq(FF.questComplete(q49), false, 'not visited -> not complete');
+    s.stats['guild_visited']=1; ok(FF.questComplete(q49), 'visiting the guild completes');
+    // 50 Master of the Frontier: any skill to Lv 25
+    var q50 = FF.questById('master_of_the_frontier');
+    ok(!!q50 && q50.target===25, 'Master of the Frontier: to Lv 25');
+    s.quests={claimed:{}}; s.xp={ mining: FF.xpFloorForLevel(24) };
+    eq(FF.questComplete(q50), false, 'Lv 24 is not enough');
+    s.xp={ mining: FF.xpFloorForLevel(25) }; ok(FF.questComplete(q50), 'a skill at Lv 25 completes');
+    s.gold=0; ok(FF.claimQuest('master_of_the_frontier'), 'claim master_of_the_frontier'); eq(s.gold, 5000, 'grants 5000 gold');
+    s.stats=savedVIIIStats; s.gold=savedVIIIGold; s.xp=savedXp;
+    // ---- Capstone (quest 51): "Frontier Hero" -- complete all 50 -> Title + Supreme Rabbit Belt ----
+    var qCap = FF.questById('frontier_hero');
+    ok(!!qCap && qCap.cat==='gettingstarted', 'Frontier Hero lives in Getting Started');
+    eq(qCap.target, 50, 'its target is the other 50 Getting Started quests');
+    ok(qCap.reward.titleId==='title_frontier_hero' && qCap.reward.items[0].itemId==='belt_t0_supreme', 'reward is the Frontier Hero title + a Supreme Rabbit Belt');
+    eq(FF.ALL_SELLABLE['belt_t0_supreme'].name, 'Supreme Rabbit Belt', 'the belt reads as a Supreme Rabbit Belt');
+    ok(/Title: Frontier Hero/.test(FF.questRewardLabel(qCap)) && /Supreme Rabbit Belt/.test(FF.questRewardLabel(qCap)), 'reward line shows both the title and the belt');
+    // The capstone title must be registered in the TITLES browser.
+    ok(FF.TITLE_BY_ID ? !!FF.TITLE_BY_ID['title_frontier_hero'] : true, 'the Frontier Hero title is registered');
+    var gsIds = FF.QUESTS.filter(function(q){ return q.cat==='gettingstarted' && q.id!=='frontier_hero'; }).map(function(q){ return q.id; });
+    eq(gsIds.length, 50, 'there are exactly 50 other Getting Started quests');
+    var savedTitlesCap = s.titles, savedBeltSup = s.inventory['belt_t0_supreme'];
+    s.quests={claimed:{}}; s.titles={};
+    // Claim 49 of 50 -> not yet complete.
+    gsIds.slice(0,49).forEach(function(id){ s.quests.claimed[id]=true; });
+    eq(FF.questProgress(qCap), 49, '49 of 50 claimed reads as 49');
+    eq(FF.questComplete(qCap), false, '49 of 50 does not complete the capstone');
+    s.quests.claimed[gsIds[49]] = true;
+    ok(FF.questComplete(qCap) && FF.questClaimable(qCap), 'all 50 claimed arms the capstone');
+    var beltSupBefore = s.inventory['belt_t0_supreme']||0;
+    ok(FF.claimQuest('frontier_hero'), 'claim frontier_hero succeeds');
+    eq((s.inventory['belt_t0_supreme']||0)-beltSupBefore, 1, 'claim grants a Supreme Rabbit Belt');
+    eq(!!(s.titles && s.titles['title_frontier_hero']), true, 'claim grants the Frontier Hero title');
+    s.titles = savedTitlesCap; if(savedBeltSup===undefined) delete s.inventory['belt_t0_supreme']; else s.inventory['belt_t0_supreme']=savedBeltSup;
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
@@ -6669,7 +6856,7 @@
     if(savedFal===undefined) delete s.inventory['stweapon_scimitar_t0_normal']; else s.inventory['stweapon_scimitar_t0_normal'] = savedFal;
     s.stats = savedStatsQ; s.equippedRelicTier = savedRelicQ; s.equippedBeltTier = savedBeltTQ; s.equippedBeltRarity = savedBeltRQ;
     s.gatherTools = savedGTQ; s.activeCompanions = savedACQ; s.equippedMainhand = savedMHQ; s.equippedOffhand = savedOffQ;
-    s.equippedOffhandTier = savedOffTQ; s.bodyArmor = savedBAQ;
+    s.equippedOffhandTier = savedOffTQ; s.bodyArmor = savedBAQ; s.xp = savedXpQ; s.uniqueItems = savedUniqQ; s.jewelrySlots = savedJSQ;
   });
 
   // ---- Auth identity guard: cross-account write prevention (shared per-origin auth session) ----

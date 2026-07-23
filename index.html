@@ -8481,6 +8481,7 @@
   function processFishingRoll(mainItemId){
     if(Math.random() < fishingCatchChance(state)){
       addItem(mainItemId, 1);
+      bumpStat('gathered_' + mainItemId); // per-fish gather tally, powers "Catch 50 Fish"
       spawnFloatingText('+1 ' + (ALL_SELLABLE[mainItemId]||{}).name, 'ft-success');
       gatherDoubleRoll(mainItemId, 'fishing');
     } else if(Math.random() < fishingTreasureChance(mainItemId)){
@@ -10854,6 +10855,7 @@
           addXp(act.skill, recipe.xp*1.5*craftXpBonus(act.skill));
           var _wq = recipe.outputQty || 1;
           bumpStat('made_' + act.itemId); // per-recipe successful-craft tally (once per craft, doubles excluded), powers Quest progress ("Tan 10 Rabbit Leather")
+          bumpStat('crafted_' + act.skill); // per-SKILL successful-craft tally (any tier/recipe), powers "Cook 10 Meals", "Bake 10", etc.
           addItem(act.itemId, _wq);
           if(Math.random() < workshopDoubleChance(state, act.skill)){ addItem(act.itemId, _wq); spawnFloatingText('Workshop: double output!', 'ft-rare'); }
           var _cmastery = overLevelDoubles(act.skill); // Over-100 Mastery: +1% double-output per level past 100
@@ -10912,6 +10914,7 @@
       } else if(Math.random() < genericGatherMainChance(state, act.skill)){
         // Every other gather has a 70% base success (+ gather-tool bonus); a whiff yields nothing this tick.
         addItem(act.itemId, 1);
+        bumpStat('gathered_' + act.itemId); // per-item gather tally (forestry/herbalism/etc.), powers "Chop 100 Logs", "Gather 100 Herbs"
         spawnFloatingText('+1 ' + item.name, 'ft-success');
         gatherDoubleRoll(act.itemId, act.skill);
         // Forestry, Botany, Herbalism & Foraging turn up Critter Caches (5% base). Herbalism & Foraging
@@ -10948,6 +10951,7 @@
     while(act.type==='pray' && act.progress >= effTimeP){
       act.progress -= effTimeP;
       addXp('prayer', prayerTier.xp);
+      bumpStat('prayers'); // prayers completed, powers "Kneel and Pray"
       addPhysiqueXp(physTierPairs([['focus',1],['zealotry',1]], itemTierFromId(act.itemId)));
       maybeSummonFamiliar('prayer');
       effTimeP = prayerTier.time*1000*speedMultiplier(state);
@@ -12635,6 +12639,7 @@
     var uid = isU ? sel : (isEq ? convertEquippedToUnique(equipTokenSlot(sel)) : makeUniqueFromBase(sel)); if(!uid){ return; } improveSel = uid;
     var u = state.uniqueItems[uid];
     consumeInputs(planned.plan);
+    bumpStat('enchants_applied'); // enchant crystals bound to gear, powers "Bind the Crystal"
     var roll = rollEnchant(u.kind, enchantCtxForUnique(u));
     if(u.enchants.length < enchantSlotsFor(u.rarity)){ u.enchants.push(roll); addLog('Enchanted '+uniqueBaseName(u)+': '+enchantLabel(u.kind,roll)+'.','important'); }
     else { improvePending = { uid:uid, roll:roll }; addLog('Rolled '+enchantLabel(u.kind,roll)+' — replace an enchant or discard it.','important'); }
@@ -14949,6 +14954,7 @@
     if(!recipe || !recipe.teaDurationMs) return;
     if((state.inventory[itemId]||0) <= 0) return;
     state.inventory[itemId] -= 1;
+    bumpStat('teas_drunk'); // teas drunk for the XP buff, powers "A Restful Cup"
     state.activeTea = {
       itemId: itemId,
       name: recipe.name,
@@ -15016,6 +15022,7 @@
     if(!recipe || !recipe.tomeDurationMs) return;
     if((state.inventory[itemId]||0) <= 0) return;
     state.inventory[itemId] -= 1;
+    bumpStat('tomes_studied'); // tomes studied for the work-speed buff, powers "Study the Tomes"
     state.activeTome = {
       itemId: itemId,
       name: recipe.name,
@@ -20575,6 +20582,180 @@
         { itemId:'farming_t0', qty:10 },
         { itemId:'tool_weaving_t0_normal', qty:1 }
       ] } },
+    { id:'weave_the_bolt', cat:'gettingstarted', title:'Weave the Bolt',
+      desc:'Raw cotton is a cloud; cloth is a craft. Sit at the Loom and draw ten bolts of Cotton Cloth from your harvest — warp and weft, over and under, until soft white fiber becomes something a needle can bite. Cloth is the first step from a field to a wardrobe, and from a wanderer to someone dressed for the part.',
+      how:'In Refining → Weaving, weave 10 Cotton Cloth from your cotton.',
+      target:10, progress:function(st){ return (st.stats && st.stats['crafted_weaving']) || 0; },
+      nav:{ cat:'refining', sub:'weaving' },
+      reward:{ items:[ { itemId:'tool_tailoring_t0_normal', qty:1 }, { itemId:'weaving_t0', qty:10 } ] } },
+    { id:'dress_the_part', cat:'gettingstarted', title:'Dress the Part',
+      desc:'Armor turns blows; cloth turns weather. Cut and stitch a Cotton Tunic and pull it on — light on the shoulders, but warm against the frontier’s long nights, and the mark of someone who can now make what they wear. A hero clothed by their own hand answers to no outfitter.',
+      how:'In Outfitting → Tailoring, sew a Cotton Tunic, then equip it from Equipment & Stats.',
+      target:1, progress:function(st){ return armorPieceEquipped(st,'chest','tailoring') ? 1 : 0; },
+      nav:{ cat:'character' },
+      reward:{ items:[ { itemId:'tool_fishing_t0_normal', qty:1 } ] } },
+    { id:'cast_a_line', cat:'gettingstarted', title:'Cast a Line',
+      desc:'Not every meal has to be hunted down and wrestled home. Wade the shallows, cast your line, and pull fifty fish from the cold water — patient work, and the frontier’s most forgiving larder. A full creel is a hungry night forgotten.',
+      how:'In Gathering → Fishing, catch 50 fish.',
+      target:50, progress:function(st){ return (st.stats && st.stats['gathered_fishing_t0']) || 0; },
+      nav:{ cat:'gathering', sub:'fishing' },
+      reward:{ items:[ { itemId:'tool_roasting_t0_normal', qty:1 }, { itemId:'fishing_t0', qty:30 } ] } },
+    { id:'roast_the_catch', cat:'gettingstarted', title:'Roast the Catch',
+      desc:'A raw fish is bait; a roasted one is dinner. Skewer twenty over the coals and let the fire do its old, honest work — the smell alone will remind you the frontier can be kind. Cooked food mends you faster than any trickle of rest.',
+      how:'In Cooking → Roasting, roast 20 fish over the fire.',
+      target:20, progress:function(st){ return (st.stats && st.stats['crafted_roasting']) || 0; },
+      nav:{ cat:'cooking', sub:'roasting' },
+      reward:{ items:[ { itemId:'tool_cooking_t0_normal', qty:1 }, { itemId:'roasting_t0', qty:20 } ] } },
+    { id:'a_warm_meal', cat:'gettingstarted', title:'A Warm Meal',
+      desc:'Roasting fills a belly; cooking lifts a spirit. Turn meat and trimmings into ten proper hot meals — the kind that heal deeper than a fireside snack and taste like someone cared. A hero marches on their stomach, and yours is about to eat well.',
+      how:'In Cooking → Hot Food Cooking, cook 10 Meals.',
+      target:10, progress:function(st){ return (st.stats && st.stats['crafted_cooking']) || 0; },
+      nav:{ cat:'cooking', sub:'cooking' },
+      reward:{ items:[ { itemId:'tool_baking_t0_normal', qty:1 }, { itemId:'cooking_t0', qty:20 } ] } },
+    { id:'break_bread', cat:'gettingstarted', title:'Break Bread',
+      desc:'Nothing says a place is home like the smell of baking. Roll out dough and set ten baked goods to brown — bread for the road, pie for the table. The oven is the frontier’s quietest comfort, and now it’s yours to light.',
+      how:'In Cooking → Baking, bake 10 baked goods.',
+      target:10, progress:function(st){ return (st.stats && st.stats['crafted_baking']) || 0; },
+      nav:{ cat:'cooking', sub:'baking' },
+      reward:{ items:[ { itemId:'tool_mixology_t0_normal', qty:1 }, { itemId:'pie_t0', qty:20 } ] } },
+    { id:'steep_the_leaves', cat:'gettingstarted', title:'Steep the Leaves',
+      desc:'A good cup does more than warm your hands — steeped right, it sharpens the mind and quickens the work. Brew five teas at the mixing station and bottle the frontier’s best-kept secret: that the fastest way to master a skill is a well-timed drink.',
+      how:'In Cooking → Mixology, brew 5 Teas.',
+      target:5, progress:function(st){ return (st.stats && st.stats['crafted_mixology']) || 0; },
+      nav:{ cat:'cooking', sub:'mixology' },
+      reward:{ items:[ { itemId:'mixology_t0', qty:10 } ] } },
+    { id:'a_restful_cup', cat:'gettingstarted', title:'A Restful Cup',
+      desc:'Brewed and bottled means nothing until it’s drunk. Sit a moment, sip your tea, and feel every skill sharpen while the buff lasts — the frontier rewards the hero who knows when to push and when to pause. Rest is a tool like any other.',
+      how:'Drink one of your Teas to gain its XP-boost buff.',
+      target:1, progress:function(st){ return (st.stats && st.stats['teas_drunk']) || 0; },
+      nav:{ cat:'cooking', sub:'mixology' },
+      reward:{ items:[ { itemId:'foraging_t0', qty:20 } ], gold:500 } },
+    { id:'fell_the_timber', cat:'gettingstarted', title:'Fell the Timber',
+      desc:'A home is a forest, taken down and put back up in a better shape. Set your Hatchet to the treeline and fell a hundred logs — the bones of every workshop, cottage, and fence you’ll ever raise. The frontier gives its timber freely to the hero willing to swing for it.',
+      how:'In Gathering → Forestry, chop 100 logs.',
+      target:100, progress:function(st){ return (st.stats && st.stats['gathered_forestry_t0']) || 0; },
+      nav:{ cat:'gathering', sub:'forestry' },
+      reward:{ items:[ { itemId:'tool_carpentry_t0_normal', qty:1 }, { itemId:'forestry_t0', qty:50 } ] } },
+    { id:'square_the_planks', cat:'gettingstarted', title:'Square the Planks',
+      desc:'A log is a promise; a plank is a plan. Run a hundred rough logs through the saw and square them into clean, stackable timber — the difference between a woodpile and a workshop. Measure once, cut true, and the frontier starts to take the shape you give it.',
+      how:'In Construction → Carpentry, saw 100 Planks from your logs.',
+      target:100, progress:function(st){ return (st.stats && st.stats['crafted_carpentry']) || 0; },
+      nav:{ cat:'building', sub:'carpentry' },
+      reward:{ items:[ { itemId:'tool_stonecutting_t0_normal', qty:1 }, { itemId:'carpentry_t0', qty:100 } ] } },
+    { id:'cut_the_stone', cat:'gettingstarted', title:'Cut the Stone',
+      desc:'Wood warms and shelters, but stone endures. Take chisel to quarried rock and cut fifty clean blocks — the stuff of foundations, walls, and roads that outlast the hand that laid them. A frontier built in stone is a frontier that means to stay.',
+      how:'In Construction → Stonecutting, cut 50 stone blocks.',
+      target:50, progress:function(st){ return (st.stats && st.stats['crafted_stonecutting']) || 0; },
+      nav:{ cat:'building', sub:'stonecutting' },
+      reward:{ items:[ { itemId:'tool_paving_t0_normal', qty:1 }, { itemId:'stonecutting_t0', qty:20 } ] } },
+    { id:'lay_the_tiles', cat:'gettingstarted', title:'Lay the Tiles',
+      desc:'Loose stone is rubble; laid stone is a road. Cut and finish twenty paving tiles — flat, fitted, and ready to turn your muddy estate into something you can cross without losing a boot. Every great hall begins with a floor.',
+      how:'In Construction → Paving, make 20 paving tiles.',
+      target:20, progress:function(st){ return (st.stats && st.stats['crafted_paving']) || 0; },
+      nav:{ cat:'building', sub:'paving' },
+      reward:{ items:[ { itemId:'paving_t0', qty:20 } ] } },
+    { id:'pave_the_estate', cat:'gettingstarted', title:'Pave the Estate',
+      desc:'Tiles stacked in a crate pave nothing. Take them out to your land and lay one down — the first firm footing on ground that was wilderness a week ago. Stand on it a moment: that is your estate now, and you built the very floor of it.',
+      how:'Open Lands → My Estate, pick a cleared tile, and pave it.',
+      target:1, progress:function(st){ return (st.stats && st.stats['paved_estate']) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'paving_t0', qty:10 } ], gold:500 } },
+    { id:'raise_a_workshop', cat:'gettingstarted', title:'Raise a Workshop',
+      desc:'A workshop is where your estate starts working for you: place one on your land and its craft gains a chance to double every output. Raise your first — planks and stone finally becoming something that pays you back. A hero’s greatest tool is a place that makes more tools.',
+      how:'Open Lands → My Estate and build a Workshop on a cleared tile.',
+      target:1, progress:function(st){ return (st.stats && st.stats['workshop_built']) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'carpentry_t0', qty:50 } ], gold:500 } },
+    { id:'hearth_and_home', cat:'gettingstarted', title:'Hearth and Home',
+      desc:'A workshop makes things; a cottage makes a home for the hands that work it. Build a Cottage beside a Workshop and your frontier holding gains its first hearth — smoke from the chimney, a light in the window, the look of a place someone means to keep.',
+      how:'Open Lands → My Estate and build a Cottage next to a Workshop.',
+      target:1, progress:function(st){ return (st.stats && st.stats['cottage_built']) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ gold:1000 } },
+    { id:'put_a_peon_to_work', cat:'gettingstarted', title:'Put a Peon to Work',
+      desc:'A cottage beside a workshop can house a helper — a Peon who works its craft while you’re away, turning your estate into a wage that pays around the clock. House your first and you stop being one pair of hands. This is how a legend scales: not by working harder, but by no longer working alone.',
+      how:'In Lands → Peons, house a Peon in a Cottage next to a Workshop.',
+      target:1, progress:function(st){ return (st.stats && st.stats['peons_housed']) || 0; },
+      nav:{ cat:'peons' },
+      reward:{ gold:1000 } },
+    { id:'kneel_and_pray', cat:'gettingstarted', title:'Kneel and Pray',
+      desc:'Steel and sweat carry a hero far, but not all the way. Kneel at the shrine and offer ten prayers — quiet moments that steady the hand and remind you the frontier is older and larger than your ambitions. Faith is a strength that never dulls, and it costs only your patience.',
+      how:'In Resources → Faith, complete 10 Prayers.',
+      target:10, progress:function(st){ return (st.stats && st.stats['prayers']) || 0; },
+      nav:{ cat:'faith' },
+      reward:{ items:[ { itemId:'tool_herbalism_t0_normal', qty:1 } ], gold:500 } },
+    { id:'green_of_thumb', cat:'gettingstarted', title:'Green of Thumb',
+      desc:'The frontier’s hedgerows are a pharmacy for anyone who knows where to look. Gather a hundred wild herbs — chamomile, mint, and the rest — the bitter leaves and quiet roots that a steady hand can brew into medicine. Every healer starts as a forager with good eyes.',
+      how:'In Gathering → Herbalism, gather 100 herbs.',
+      target:100, progress:function(st){ return (st.stats && st.stats['gathered_herbalism_t0']) || 0; },
+      nav:{ cat:'gathering', sub:'herbalism' },
+      reward:{ items:[ { itemId:'tool_alchemy_t0_normal', qty:1 }, { itemId:'herbalism_t0', qty:20 } ] } },
+    { id:'brew_a_draught', cat:'gettingstarted', title:'Brew a Draught',
+      desc:'Herbs are potential; the flask is the payoff. Grind, steep, and distill five draughts at the alchemy bench — the potions that turn a losing fight around, whether they mend your wounds or poison your foe’s blade-edge. A hero who brews their own advantage never fights fair, and never has to.',
+      how:'In Refining → Alchemy, brew 5 potions.',
+      target:5, progress:function(st){ return (st.stats && st.stats['crafted_alchemy']) || 0; },
+      nav:{ cat:'refining', sub:'alchemy' },
+      reward:{ items:[ { itemId:'elixir_t0', qty:10 } ] } },
+    { id:'cut_and_set', cat:'gettingstarted', title:'Cut and Set',
+      desc:'A hero is known by their blade, but remembered by their rings. Craft a Copper Ring at the jeweler’s bench and slip it on — a small band with a quiet bonus, and the first of five slots you’ll one day fill with power. Adornment isn’t vanity on the frontier; it’s carried strength.',
+      how:'In Outfitting → Jewelrycrafting, craft a Copper Ring, then equip it from Equipment & Stats.',
+      target:1, progress:function(st){ return RING_SLOT_IDS.some(function(k){ var c=st.jewelrySlots&&st.jewelrySlots[k]; return c && (c.typeId||c.uid||c.leg); }) ? 1 : 0; },
+      nav:{ cat:'outfitting', sub:'jewelrycrafting' },
+      reward:{ items:[ { itemId:'amulet_t0_normal', qty:1 } ], gold:1000 } },
+    { id:'steel_sharpened', cat:'gettingstarted', title:'Steel Sharpened',
+      desc:'Good gear is a starting point, not a ceiling. Take a fine piece — a mastercrafted or set item — to the Improvement bench and enhance it five times, each strike sharper and riskier than the last, until the numbers on it read like a hero’s and not a novice’s. The frontier respects a well-kept edge.',
+      how:'In Resources → Improvement, enhance a piece of gear to +5.',
+      target:5, progress:function(st){ var m=0,u=st.uniqueItems||{}; for(var k in u){ if((u[k].enhance||0)>m) m=u[k].enhance; } return m; },
+      nav:{ cat:'improvement' },
+      reward:{ gold:2000 } },
+    { id:'bind_the_crystal', cat:'gettingstarted', title:'Bind the Crystal',
+      desc:'Demonspawn carry more than menace — cut from their remains come Enchant Crystals, raw magic waiting for a home. Bind one to a piece of your gear at the Improvement bench and watch a plain item wake up with a new power. This is where equipment stops being found and starts being made yours.',
+      how:'In Resources → Improvement, enchant a piece of gear with an Enchant Crystal.',
+      target:1, progress:function(st){ return (st.stats && st.stats['enchants_applied']) || 0; },
+      nav:{ cat:'improvement' },
+      reward:{ items:[ { itemId:'enchant_t0', qty:5 } ], gold:1000 } },
+    { id:'ward_and_glyph', cat:'gettingstarted', title:'Ward and Glyph',
+      desc:'Elementals shatter into Glyphs — frozen sparks of their own element — and a runesmith who gathers them can inscribe a Ward that turns an enemy’s magic back on itself. Craft one, fix it to your off-hand, and step into the fight ready to reflect what would have burned you. The best shield is one that bites back.',
+      how:'In Outfitting → Runesmithing, inscribe a Ward, then equip it in your off-hand.',
+      target:1, progress:function(st){ return (isWard(st.equippedOffhand) && (st.equippedOffhandTier||0) > 0) ? 1 : 0; },
+      nav:{ cat:'outfitting', sub:'runesmithing' },
+      reward:{ items:[ { itemId:'stward_wardFire_t0_normal', qty:1 } ], gold:2000 } },
+    { id:'light_the_hall', cat:'gettingstarted', title:'Light the Hall',
+      desc:'Nothing you butcher need be wasted — even the fat has a second life. Render ten candles from the tallow you’ve saved and drive the dark back from your holding. A lit hall is a working hall, and a hero who wastes nothing is a hero who never goes without.',
+      how:'In Refining → Chandlery, render 10 Candles from your fat.',
+      target:10, progress:function(st){ return (st.stats && st.stats['crafted_chandlery']) || 0; },
+      nav:{ cat:'refining', sub:'chandlery' },
+      reward:{ items:[ { itemId:'chandlery_t0', qty:20 } ] } },
+    { id:'burn_the_midnight_oil', cat:'gettingstarted', title:'Burn the Midnight Oil',
+      desc:'A candle in your pack is light; a candle in a peon’s cottage is labor. Light one of your workers and watch their cottage glow — and their output quicken while the wick lasts. This is the frontier’s oldest trick: turn a little warmth into a lot of work, and never let the night go to waste.',
+      how:'In Lands → Peons, assign a Candle to one of your working Peons.',
+      target:1, progress:function(st){ return (st.stats && st.stats['peon_lit']) || 0; },
+      nav:{ cat:'peons' },
+      reward:{ items:[ { itemId:'chandlery_t0', qty:10 } ], gold:500 } },
+    { id:'study_the_tomes', cat:'gettingstarted', title:'Study the Tomes',
+      desc:'Knowledge, bound and read, is a speed all its own. Study one of your Tomes and feel every gathering and crafting task quicken while the lesson holds. The frontier is won as much in the library as on the field — a hero who reads outworks a hero who only sweats.',
+      how:'In Refining → Bookbinding, study a Tome to gain its work-speed buff.',
+      target:1, progress:function(st){ return (st.stats && st.stats['tomes_studied']) || 0; },
+      nav:{ cat:'refining', sub:'bookbinding' },
+      reward:{ items:[ { itemId:'tome_t0', qty:3 } ] } },
+    { id:'kindred_spirits', cat:'gettingstarted', title:'Kindred Spirits',
+      desc:'No legend is written alone. Seek out the Guild hall and see what a company of heroes can do that one cannot — shared estates, pooled coin, and challenges too large for a single sword. The frontier is vast, but it is smaller and warmer with kin at your back.',
+      how:'Open Lands → Guilds and visit the Guild hall.',
+      target:1, progress:function(st){ return (st.stats && st.stats['guild_visited']) || 0; },
+      nav:{ cat:'guild' },
+      reward:{ gold:2000 } },
+    { id:'master_of_the_frontier', cat:'gettingstarted', title:'Master of the Frontier',
+      desc:'You arrived with a borrowed blade and a head full of hope. Look at you now: a skill honed to true mastery, a name the frontier has started to learn. Raise any craft or calling to Level 25 and prove the wilderness didn’t make you — you made yourself, out here, from nothing. One legend, nearly written.',
+      how:'Raise any single skill to Level 25 (check the Skills tab).',
+      target:25, progress:function(st){ var m=0; ALL_MAIN_SKILL_IDS.forEach(function(id){ var l=getLevel(st.xp[id]||0); if(l>m) m=l; }); return Math.min(25, m); },
+      nav:{ cat:'skills' },
+      reward:{ gold:5000 } },
+    { id:'frontier_hero', cat:'gettingstarted', title:'Frontier Hero',
+      desc:'You came to the edge of the map with nothing but resolve, and you leave this chapter with a legend’s beginnings: fed, armed, armored, housed, adorned, and skilled at a hundred honest trades. Every other Getting Started quest done — the whole arc of a hero’s first days, from a borrowed scimitar to a mastered craft. The frontier no longer asks who you are. It knows. Wear the title, cinch the belt, and go write the rest.',
+      how:'Complete all 50 other Getting Started quests. Claiming this crowns you a Frontier Hero.',
+      target:50, progress:function(st){ var c=(st.quests&&st.quests.claimed)||{}, n=0; QUESTS.forEach(function(q){ if(q.cat==='gettingstarted' && q.id!=='frontier_hero' && c[q.id]) n++; }); return n; },
+      nav:{ cat:'gettingstarted' },
+      reward:{ titleId:'title_frontier_hero', name:'Frontier Hero', items:[ { itemId:'belt_t0_supreme', qty:1 } ] } },
     { id:'clearing_the_land', cat:'estatequests', title:'Clearing the Land',
       desc:'Before a frontier estate can rise, the wild has to be tamed. Every tree, berry bush, herb, rock, and ore vein is one more patch of ground reclaimed.',
       how:'Open Lands → My Estate, tap a tile with a natural obstacle, and Clear it with the matching Gathering skill. Clear 10 obstacles in all.',
@@ -20620,7 +20801,7 @@
   var QUEST_BY_ID = {}, TITLES = [], TITLE_BY_ID = {};
   function questRebuildDerived(){
     QUEST_BY_ID = {}; QUESTS.forEach(function(q){ QUEST_BY_ID[q.id] = q; });
-    TITLES = QUESTS.filter(function(q){ return q.reward && q.reward.kind === 'title'; })
+    TITLES = QUESTS.filter(function(q){ return q.reward && q.reward.titleId; })
       .map(function(q){ return { id: q.reward.titleId, name: q.reward.name, how: q.how || q.desc, questId: q.id }; });
     TITLE_BY_ID = {}; TITLES.forEach(function(t){ TITLE_BY_ID[t.id] = t; });
   }
@@ -20636,14 +20817,20 @@
   // "Copper Small Shield" for a single item, "3x Copper Bar" when the qty > 1 -- reward lines read as the
   // real item the player receives.
   function questItemLabel(itemId, qty){ var nm = (ALL_SELLABLE[itemId]||{}).name || itemId; return ((qty||1) > 1 ? (fmt(qty) + 'x ') : '') + nm; }
+  // Reward labels/grants are ADDITIVE by field, so one quest can hand out any mix (e.g. the capstone's
+  // Title + Belt, or a tool + gold). A `label` override still wins for hand-authored lines. Legacy `kind`
+  // is ignored -- every reward already carries the fields (itemId/items/skill+amount/gold/familiarId/titleId).
   function questRewardLabel(q){
     var r = q.reward;
-    if(r.kind==='item') return r.label || questItemLabel(r.itemId, r.qty);
-    if(r.kind==='items') return r.label || (r.items||[]).map(function(it){ return questItemLabel(it.itemId, it.qty); }).join(', ');
-    if(r.kind==='xp') return '+' + fmt(r.amount) + ' ' + (SKILL_LABELS[r.skill] || r.skill) + ' XP';
-    if(r.kind==='title') return 'Title: ' + r.name;
-    if(r.kind==='familiar') return r.label || ('Familiar: ' + ((FAMILIAR_DATA[r.familiarId]||{}).name || r.familiarId));
-    return '';
+    if(r.label) return r.label;
+    var parts = [];
+    if(r.itemId) parts.push(questItemLabel(r.itemId, r.qty));
+    if(r.items) (r.items||[]).forEach(function(it){ parts.push(questItemLabel(it.itemId, it.qty)); });
+    if(r.skill && r.amount) parts.push('+' + fmt(r.amount) + ' ' + (SKILL_LABELS[r.skill] || r.skill) + ' XP');
+    if(r.gold) parts.push(fmt(r.gold) + ' Gold');
+    if(r.familiarId) parts.push('Familiar: ' + ((FAMILIAR_DATA[r.familiarId]||{}).name || r.familiarId));
+    if(r.titleId) parts.push('Title: ' + r.name);
+    return parts.join(', ');
   }
   // Grant a completed quest's reward, exactly once. Idempotent: a second click (or a claimed quest) no-ops.
   function claimQuest(id){
@@ -20652,12 +20839,13 @@
     if(!state.quests) state.quests = { claimed:{} };
     if(!state.quests.claimed) state.quests.claimed = {};
     state.quests.claimed[q.id] = true;
-    var r = q.reward;
-    if(r.kind==='item') addItem(r.itemId, r.qty);
-    else if(r.kind==='items'){ (r.items||[]).forEach(function(it){ addItem(it.itemId, it.qty); }); }
-    else if(r.kind==='xp') addXp(r.skill, r.amount);
-    else if(r.kind==='title'){ if(!state.titles) state.titles = {}; state.titles[r.titleId] = true; }
-    else if(r.kind==='familiar'){ towerGrantFamiliar(r.familiarId); } // grants (or levels) the familiar + queues the same summon popup a normal find shows
+    var r = q.reward; // additive: grant every field present, so a quest can give items + gold + a title at once
+    if(r.itemId) addItem(r.itemId, r.qty || 1);
+    if(r.items) (r.items||[]).forEach(function(it){ addItem(it.itemId, it.qty || 1); });
+    if(r.skill && r.amount) addXp(r.skill, r.amount);
+    if(r.gold) earnGold(r.gold);
+    if(r.familiarId) towerGrantFamiliar(r.familiarId); // grants (or levels) the familiar + queues the same summon popup a normal find shows
+    if(r.titleId){ if(!state.titles) state.titles = {}; state.titles[r.titleId] = true; }
     addLog('Quest complete: ' + q.title + ' — received ' + questRewardLabel(q) + '.', 'important');
     spawnFloatingText('Quest: ' + q.title + ' ✓', 'ft-rare');
     saveGame(); render();
@@ -21955,6 +22143,7 @@
     if(job.kind === 'pave'){
       cell.type = 'paved'; cell.paveTileId = job.paveTileId;
       if(giveRewards){
+        bumpStat('paved_estate'); // estate tiles paved, powers "Pave the Estate"
         var pr = getPavingRecipe(job.paveTileId);
         var pavXp = estateBuildXp(itemTierFromId(job.paveTileId));
         addXp('paving', pavXp);
@@ -21968,6 +22157,7 @@
       cell.workshopId = job.workshopId;
       if(isGuild) recomputeGuildWorkshops(); else recomputePlacedWorkshops();
       if(giveRewards){
+        if(!job.upgrade) bumpStat('workshop_built'); // workshops raised (not upgrades), powers "Raise a Workshop"
         var wsXp = estateBuildXp((WORKSHOP_ITEMS[job.workshopId]||{}).tierIndex);
         addXp('carpentry', wsXp);
         addLog('Finished ' + (job.upgrade?'upgrading to':'building') + ' the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'workshop') + '. +' + wsXp + ' Carpentry XP.', 'important');
@@ -21979,6 +22169,7 @@
     if(job.kind === 'cottage'){
       cell.cottageId = job.cottageId;
       if(giveRewards){
+        if(!job.upgrade) bumpStat('cottage_built'); // cottages raised (not upgrades), powers "Hearth and Home"
         var cadj = estateAdjacentWorkshop(estate.grid, job.x, job.y);
         var cotXp = estateBuildXp((COTTAGE_ITEMS[job.cottageId]||{}).tierIndex);
         addXp('carpentry', cotXp);
@@ -22830,19 +23021,21 @@
   function peonAssign(kind, itemId){
     var c = peonAssignCore(); if(!c) return;
     c.tasks.push({ x:peonPicker.x, y:peonPicker.y, skillId:c.skillId, kind:kind, itemId:itemId, progress:0 });
+    bumpStat('peons_housed'); // peons put to work, powers "Put a Peon to Work"
     saveGame(); peonPicker.open = false; render();
   }
   function peonAssignSpecial(tierIndex){
     var p = peonPicker.producer; if(!p) return;
     var c = peonAssignCore(); if(!c) return;
     c.tasks.push({ x:peonPicker.x, y:peonPicker.y, skillId:c.skillId, kind:'special', craftKind:p.craftKind, params:p.params, tierIndex:tierIndex, progress:0 });
+    bumpStat('peons_housed'); // peons put to work, powers "Put a Peon to Work"
     saveGame(); peonPicker.open = false; render();
   }
   function peonStop(scope, x, y){ peonSetTasks(scope, peonTasksFor(scope).filter(function(t){ return !(t.x===x && t.y===y); })); saveGame(); render(); }
   // Swapping candles discards whatever was left of the one alight -- you blew it out to fit a new one.
   function peonSetCandle(scope, x, y, candleId){
     var t = peonTaskAt(scope, x, y);
-    if(t && t.candleId !== (candleId||null)){ t.candleId = candleId || null; t.candleMs = 0; if(t.candleId) peonCandleLight(t); }
+    if(t && t.candleId !== (candleId||null)){ t.candleId = candleId || null; t.candleMs = 0; if(t.candleId){ peonCandleLight(t); bumpStat('peon_lit'); } } // peons lit with a candle, powers "Burn the Midnight Oil"
     peonPicker.open = false; peonPicker.candle = false;
     saveGame(); render();
   }
@@ -28026,7 +28219,7 @@
     else if(currentCategory==='faith') html = renderFaithTab(currentSub);
     else if(currentCategory==='character') html = renderCharacterTab();
     else if(currentCategory==='menagerie') html = renderMenagerieTab();
-    else if(currentCategory==='guild'){ guildEnsureLoaded(); html = renderGuildTab(); }
+    else if(currentCategory==='guild'){ guildEnsureLoaded(); if(!(state.stats && state.stats.guild_visited)) bumpStat('guild_visited'); html = renderGuildTab(); } // visiting the Guild hall powers "Kindred Spirits"
     else if(currentCategory==='chat') html = renderChatTab();
     else if(currentCategory==='leaderboard'){ leaderboardFetch(); html = renderLeaderboardTab(); }
     // Skip the DOM write entirely when the markup is byte-identical to what's already there. BUILDING
@@ -31017,7 +31210,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.24';
+  var GAME_VERSION = '0.0.39.25';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
