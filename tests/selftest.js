@@ -9324,6 +9324,41 @@
     } finally { FF.sacSetFilters('all','all','all'); S.inventory = save.inv; S.lockedItems = save.locked; }
   });
 
+  // ---- Sacrifice: equippable relics are offerable under Equipment -----------------------
+  suite('sacrifice: equippable relics are offerable', function(){
+    ok(FF.RELIC_ITEMS && typeof FF.RELIC_ITEMS === 'object', 'RELIC_ITEMS exported');
+    var s = FF._state, save = { inv:s.inventory, locked:s.lockedItems, faith:s.faith, sx:s.xp.sacrifice, obl:(s.physique&&s.physique.oblation) };
+    try {
+      if(s.physique) s.physique.oblation = 0; // deterministic: no return-chance / bonus
+      var rid = Object.keys(FF.RELIC_ITEMS)[0]; // a "relic_t<i>_<rarity>" equippable relic
+      ok(rid && FF.RELIC_ITEMS[rid], 'a sample equippable relic id resolves');
+      s.inventory = {}; s.lockedItems = {}; s.faith = 0;
+      s.inventory[rid] = 3;
+      FF.sacSetFilters('all','all','all');
+      var h = FF.renderSacrificeTab();
+      ok(h.indexOf('data-id="'+rid+'"') !== -1, 'an owned equippable relic appears as a sacrifice offering');
+      ok(h.indexOf('data-category="relicgear"') !== -1, 'it is offered under the relicgear category (not a Broken Relic)');
+      // It sits under the Equipment filter (it is gear, not a tool).
+      FF.sacSetFilters('equipment', null, null);
+      ok(FF.renderSacrificeTab().indexOf('data-id="'+rid+'"') !== -1, 'the equippable relic shows under the Equipment filter');
+      FF.sacSetFilters('tools', null, null);
+      ok(FF.renderSacrificeTab().indexOf('data-id="'+rid+'"') === -1, 'and is excluded from the Tools filter');
+      FF.sacSetFilters('all','all','all');
+      // Sacrificing it consumes one from the stack and restores Faith.
+      var before = s.faith;
+      FF.sacrificeItem('relicgear', rid, true);
+      eq(s.inventory[rid], 2, 'sacrificing an equippable relic consumes one from the stack');
+      ok(s.faith > before, 'and restores Faith');
+      // A locked relic is protected.
+      s.lockedItems[rid] = true;
+      FF.sacrificeItem('relicgear', rid, true);
+      eq(s.inventory[rid], 2, 'a locked equippable relic is protected from sacrifice');
+    } finally {
+      FF.sacSetFilters('all','all','all');
+      s.inventory = save.inv; s.lockedItems = save.locked; s.faith = save.faith; s.xp.sacrifice = save.sx; if(s.physique) s.physique.oblation = save.obl;
+    }
+  });
+
   // ---- Faith: sacrifice value scales with rarity (2x/4x/8x) -----------------------------
   suite('faith: sacrifice rarity scaling', function(){
     // Base (normal) value: tier curve, with a +50% jewelry boost. The rarity multiplier (2x/4x/8x) is
