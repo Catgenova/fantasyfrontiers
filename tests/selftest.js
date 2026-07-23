@@ -946,6 +946,60 @@
     S.activity = sv.act; S.gold = sv.gold; S.goldEarnedTotal = sv.get; S.inventory = sv.inv; S.stats = sv.stats; S.monsterKills = sv.mk; S.physique = sv.phys; S.xp = sv.xp; S.faith = sv.faith;
   });
 
+  // ---- Enemy special attacks: Wildlife extra action bars with primal effects -------------
+  suite('enemy specials: wildlife primal attacks', function(){
+    ok(typeof FF.monsterSpecialFire === 'function' && FF.MONSTER_SPECIALS, 'enemy-special helpers exported');
+    // The 7 chosen beasts carry their special; other beasts (and non-wildlife) do not.
+    var expect = { wildlife_wolf:'bleed', wildlife_crocodile:'poison', wildlife_rhino:'harden', wildlife_lion:'fear', wildlife_grizzly:'shred', wildlife_direwolf:'weaken', wildlife_behemoth:'regen' };
+    Object.keys(expect).forEach(function(id){ var m = FF.monsterById(id); ok(m && m.special && m.special.kind === expect[id], id + ' has the ' + expect[id] + ' special'); });
+    ok(!FF.monsterById('wildlife_rabbit').special, 'a beast with no special is unaffected');
+    ok(FF.MONSTERS.filter(function(m){ return m.special; }).length === 7, 'exactly 7 beasts carry a special');
+
+    var s = FF._state, sv = { act:s.activity, hp:s.playerHp };
+    function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', monsterId:id, monsterHp:m.hp }; return m; }
+    try {
+      // Rend -> player Bleed DoT; a second Rend within the window stacks it and hits harder.
+      var wolf = fresh('wildlife_wolf');
+      FF.monsterSpecialFire(wolf);
+      ok(FF.playerBleedActive(s.activity), 'Rend leaves you Bleeding');
+      var dps1 = s.activity.pBleedDps; eq(s.activity.pBleedStacks, 1, 'first Rend is 1 stack');
+      FF.monsterSpecialFire(wolf);
+      eq(s.activity.pBleedStacks, 2, 'a second Rend stacks the Bleed');
+      ok(s.activity.pBleedDps > dps1, 'more stacks -> more bleed damage per second');
+      // Venom -> player Poison DoT; playerDotDps sums both bleed and poison.
+      fresh('wildlife_crocodile'); FF.monsterSpecialFire(FF.monsterById('wildlife_crocodile'));
+      ok(FF.playerPoisonActive(s.activity), 'Venom Bite Poisons you');
+      s.activity.pBleedUntil = Date.now()+9999; s.activity.pBleedDps = 3;
+      eq(Math.round(FF.playerDotDps(s.activity)), Math.round(3 + s.activity.pPoisonDps), 'playerDotDps sums Bleed + Poison');
+      // Fear -> a miss-chance window.
+      fresh('wildlife_lion'); FF.monsterSpecialFire(FF.monsterById('wildlife_lion'));
+      ok(FF.playerFeared(s.activity) && s.activity.pFearMiss === 0.30, 'Terrifying Roar sets a 30% flinch-miss');
+      // Maul -> incoming-damage multiplier > 1 (you take more).
+      fresh('wildlife_grizzly'); FF.monsterSpecialFire(FF.monsterById('wildlife_grizzly'));
+      ok(Math.abs(FF.playerShredMult(s) - 1.30) < 1e-9, 'Maul makes you take +30% damage');
+      // Intimidate -> outgoing-damage multiplier < 1 (you deal less).
+      fresh('wildlife_direwolf'); FF.monsterSpecialFire(FF.monsterById('wildlife_direwolf'));
+      ok(Math.abs(FF.enemyWeakenMult() - 0.75) < 1e-9, 'Intimidate cuts your damage to 75%');
+      // Hardened Hide -> your hit -> enemy multiplier < 1.
+      fresh('wildlife_rhino'); FF.monsterSpecialFire(FF.monsterById('wildlife_rhino'));
+      ok(Math.abs(FF.enemyHardenMult(s.activity) - 0.50) < 1e-9, 'Hardened Hide halves your hit damage');
+      // Regenerate -> heals its own HP, never past its max.
+      var beh = fresh('wildlife_behemoth'); s.activity.monsterHp = 1;
+      FF.monsterSpecialFire(beh);
+      ok(s.activity.monsterHp > 1 && s.activity.monsterHp <= beh.hp, 'Regenerate heals the beast, capped at its max HP');
+      s.activity.monsterHp = beh.hp; FF.monsterSpecialFire(beh);
+      eq(s.activity.monsterHp, beh.hp, 'Regenerate never overheals past max');
+      // clearEnemySpecialState wipes every effect (fresh foe).
+      fresh('wildlife_wolf'); FF.monsterSpecialFire(FF.monsterById('wildlife_wolf'));
+      FF.clearEnemySpecialState(s.activity);
+      ok(!FF.playerBleedActive(s.activity) && FF.playerShredMult(s) === 1 && FF.enemyWeakenMult() === 1 && FF.enemyHardenMult(s.activity) === 1, 'clearEnemySpecialState wipes all specials for a fresh foe');
+      // Descriptions read sensibly for the enemy card.
+      ok(/Bleed/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.wildlife_wolf)) && /Regenerates/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.wildlife_behemoth)), 'special descriptions summarise the effect');
+    } finally {
+      s.activity = sv.act; s.playerHp = sv.hp;
+    }
+  });
+
   // ---- Gathering workshops (parallel to crafting workshops) -----------------------------
   suite('gathering workshops', function(){
     var w = FF.WORKSHOP_ITEMS;
