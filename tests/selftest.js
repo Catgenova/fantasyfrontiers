@@ -10376,9 +10376,10 @@
     ok(typeof FF.peonBarrelBurn === 'function' && typeof FF.barrelProvisionMs === 'function', 'barrel helpers exported');
     // Barrels are a real Cooperage output.
     ok(FF.CRAFTING_SKILLS.cooperage && FF.ALL_CRAFT_RECIPES['cooperage_t0'], 'cooperage recipes exist');
-    // Tier buys DURATION (how much past-cap runtime a barrel covers), climbing monotonically.
+    // Tier buys DURATION, climbing monotonically from a 5-min T0 floor to a 60-min T20 ceiling.
     eq(FF.barrelTierOf('cooperage_t9'), 9, 'barrel tier parses out of the item id');
-    ok(FF.barrelProvisionMs(20) > FF.barrelProvisionMs(0) * 30, 'a T20 barrel covers >30x the runtime of a T0');
+    near(FF.barrelProvisionMs(0), 5*60*1000, 'a T0 barrel covers 5 minutes of past-cap runtime', 1000);
+    near(FF.barrelProvisionMs(20), 60*60*1000, 'a T20 barrel covers 60 minutes', 1000);
     var bmono = true; for(var bi=1; bi<21; bi++){ if(FF.barrelProvisionMs(bi) <= FF.barrelProvisionMs(bi-1)) bmono = false; }
     ok(bmono, 'provision duration climbs monotonically across the ladder');
 
