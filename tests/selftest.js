@@ -6133,7 +6133,15 @@
   suite('quests: area, category, accordion + claim flow', function(){
     var s = FF._state;
     var savedMK = s.monsterKills, savedQ = s.quests, savedInv = s.inventory['corpse_t0'], savedTitles = s.titles, savedFal = s.inventory['stweapon_scimitar_t0_normal'];
+    // Every field a Getting Started quest's progress() reads must start clean, or state leaked from an
+    // earlier suite could leave one of them complete+unclaimed and break the "only Answer the Call is
+    // claimable" flash assertions below. Saved here, restored at the end of the suite.
+    var savedStatsQ = s.stats, savedRelicQ = s.equippedRelicTier, savedBeltTQ = s.equippedBeltTier, savedBeltRQ = s.equippedBeltRarity,
+        savedGTQ = s.gatherTools, savedACQ = s.activeCompanions, savedMHQ = s.equippedMainhand, savedOffQ = s.equippedOffhand,
+        savedOffTQ = s.equippedOffhandTier, savedBAQ = s.bodyArmor;
     s.monsterKills = {}; s.quests = { claimed:{} }; s.titles = {};
+    s.stats = {}; s.equippedRelicTier = 0; s.equippedBeltTier = 0; s.equippedBeltRarity = 'normal';
+    s.gatherTools = {}; s.activeCompanions = []; s.equippedMainhand = null; s.equippedOffhand = null; s.equippedOffhandTier = 0; s.bodyArmor = {};
     // Quests is its OWN top-level area, with Getting Started as a category tab inside it (not under Battle).
     var qArea = FF.AREAS.filter(function(a){ return a.id==='quests'; })[0];
     ok(!!qArea, 'Quests is its own top-level area');
@@ -6370,6 +6378,271 @@
     eq(FF.claimQuest('cure_the_hides'), false, 'a claimed quest cannot be re-claimed');
     s.stats = savedStats8;
     r8.forEach(function(id, i){ if(savedR8[i]===undefined) delete s.inventory[id]; else s.inventory[id] = savedR8[i]; });
+    // ---- Quest 9: "Belt and Buckle" -- make 10 Rabbit Belts -> a Rare Rabbit Belt ----
+    var q9 = FF.questById('belt_and_buckle');
+    ok(!!q9 && q9.cat==='gettingstarted', 'Belt and Buckle lives in Getting Started');
+    eq(q9.target, 10, 'its target is 10 crafted belts');
+    ok(q9.reward.kind==='item' && q9.reward.itemId==='belt_t0_rare' && q9.reward.qty===1, 'reward is a Rare tier-0 belt (belt_t0_rare)');
+    eq(FF.ALL_SELLABLE['belt_t0_rare'].name, 'Rare Rabbit Belt', 'the reward reads as a Rare Rabbit Belt');
+    eq(q9.nav.cat, 'outfitting', 'its Go destination is the Outfitting tab');
+    eq(q9.nav.sub, 'leatherworking', 'the Go destination drills into Leatherworking');
+    var savedStats9 = s.stats, savedBeltRare = s.inventory['belt_t0_rare'];
+    s.quests = { claimed:{} }; s.stats = {};
+    eq(FF.questProgress(q9), 0, 'no belts made -> 0 progress');
+    s.stats['belt_made_1'] = 10; // a higher-tier belt must not count
+    eq(FF.questProgress(q9), 0, 'making other-tier belts does not advance the Rabbit-belt tally');
+    s.stats['belt_made_0'] = 9;
+    eq(FF.questComplete(q9), false, '9 belts is not enough');
+    s.stats['belt_made_0'] = 10;
+    ok(FF.questComplete(q9) && FF.questClaimable(q9), 'the 10th Rabbit Belt completes + arms the quest');
+    var beltRareBefore = s.inventory['belt_t0_rare'] || 0;
+    ok(FF.claimQuest('belt_and_buckle'), 'claim succeeds');
+    eq((s.inventory['belt_t0_rare']||0) - beltRareBefore, 1, 'claim grants a Rare Rabbit Belt');
+    eq(FF.claimQuest('belt_and_buckle'), false, 'a claimed quest cannot be re-claimed');
+    s.stats = savedStats9;
+    if(savedBeltRare===undefined) delete s.inventory['belt_t0_rare']; else s.inventory['belt_t0_rare'] = savedBeltRare;
+    // ---- Quest 10: "Cinch It On" -- equip the Rare Rabbit Belt -> a Copper Shovel ----
+    var q10 = FF.questById('cinch_it_on');
+    ok(!!q10 && q10.cat==='gettingstarted', 'Cinch It On lives in Getting Started');
+    eq(q10.target, 1, 'its target is 1 (equip the belt)');
+    ok(q10.reward.kind==='item' && q10.reward.itemId==='tool_digging_t0_normal' && q10.reward.qty===1, 'reward is a first-tier Digging tool');
+    ok(/Copper/.test(FF.questRewardLabel(q10)) && /Shovel/.test(FF.questRewardLabel(q10)), 'the reward line names the Copper Shovel');
+    var savedBT = s.equippedBeltTier, savedBR = s.equippedBeltRarity, savedShovel = s.inventory['tool_digging_t0_normal'];
+    s.quests = { claimed:{} };
+    s.equippedBeltTier = 0; s.equippedBeltRarity = 'normal';
+    eq(FF.questComplete(q10), false, 'no belt equipped -> not complete');
+    s.equippedBeltTier = 1; s.equippedBeltRarity = 'normal';
+    eq(FF.questComplete(q10), false, 'a NORMAL rabbit belt does not satisfy the Rare requirement');
+    s.equippedBeltTier = 1; s.equippedBeltRarity = 'rare';
+    ok(FF.questComplete(q10) && FF.questClaimable(q10), 'equipping the Rare Rabbit Belt completes + arms the quest');
+    var shovelBefore = s.inventory['tool_digging_t0_normal'] || 0;
+    ok(FF.claimQuest('cinch_it_on'), 'claim succeeds');
+    eq((s.inventory['tool_digging_t0_normal']||0) - shovelBefore, 1, 'claim grants a Copper Shovel');
+    eq(FF.claimQuest('cinch_it_on'), false, 'a claimed quest cannot be re-claimed');
+    s.equippedBeltTier = savedBT; s.equippedBeltRarity = savedBR;
+    if(savedShovel===undefined) delete s.inventory['tool_digging_t0_normal']; else s.inventory['tool_digging_t0_normal'] = savedShovel;
+    // ---- Quest 11: "Break Ground" -- dig 100 Sand -> 200 Sand + 10 Sand Artifacts + a Copper Excavation Brush ----
+    var q11 = FF.questById('break_ground');
+    ok(!!q11 && q11.cat==='gettingstarted', 'Break Ground lives in Getting Started');
+    eq(q11.target, 100, 'its target is 100 Sand dug');
+    eq(q11.reward.kind, 'items', 'it grants a multi-item reward');
+    var r11 = q11.reward.items.map(function(it){ return it.itemId; });
+    ok(r11.indexOf('digging_t0')!==-1 && r11.indexOf('muddyartifact_t0')!==-1 && r11.indexOf('tool_archaeology_t0_normal')!==-1, 'reward is 200 Sand + 10 Sand Artifacts + a Copper Excavation Brush');
+    ok(r11.every(function(id){ return !!FF.ALL_SELLABLE[id]; }), 'every reward item resolves to a real item');
+    eq(FF.ALL_SELLABLE['muddyartifact_t0'].name, 'Sand Artifact', 'tier-0 artifact is a Sand Artifact');
+    eq(q11.nav.cat, 'gathering', 'its Go destination is the Gathering tab');
+    eq(q11.nav.sub, 'digging', 'the Go destination drills into Digging');
+    var savedStats11 = s.stats, savedR11 = r11.map(function(id){ return s.inventory[id]; });
+    s.quests = { claimed:{} }; s.stats = {};
+    eq(FF.questProgress(q11), 0, 'no Sand dug -> 0 progress');
+    s.stats['gathered_digging_t1'] = 100; // a different soil must not count
+    eq(FF.questProgress(q11), 0, 'digging other soil does not advance the Sand tally');
+    s.stats['gathered_digging_t0'] = 100;
+    ok(FF.questComplete(q11) && FF.questClaimable(q11), '100 Sand completes + arms the quest');
+    var r11Before = r11.map(function(id){ return s.inventory[id]||0; });
+    ok(FF.claimQuest('break_ground'), 'claim succeeds');
+    eq((s.inventory['digging_t0']||0) - r11Before[0], 200, 'claim grants 200 Sand');
+    eq((s.inventory['muddyartifact_t0']||0) - r11Before[1], 10, 'claim grants 10 Sand Artifacts');
+    eq((s.inventory['tool_archaeology_t0_normal']||0) - r11Before[2], 1, 'claim grants a Copper Excavation Brush');
+    s.stats = savedStats11;
+    r11.forEach(function(id, i){ if(savedR11[i]===undefined) delete s.inventory[id]; else s.inventory[id] = savedR11[i]; });
+    // ---- Quest 12: "Extract the Past" -- excavate 10 Sand Artifacts -> a Sand Relic ----
+    var q12 = FF.questById('extract_the_past');
+    ok(!!q12 && q12.cat==='gettingstarted', 'Extract the Past lives in Getting Started');
+    eq(q12.target, 10, 'its target is 10 excavated artifacts');
+    ok(q12.reward.kind==='item' && q12.reward.itemId==='relic_t0_normal' && q12.reward.qty===1, 'reward is a Sand Relic (relic_t0_normal)');
+    eq(FF.ALL_SELLABLE['relic_t0_normal'].name, 'Sand Relic', 'the reward reads as a Sand Relic');
+    eq(q12.nav.cat, 'crafting', 'its Go destination is the Crafting tab');
+    eq(q12.nav.sub, 'archaeology', 'the Go destination drills into Archaeology');
+    var savedStats12 = s.stats, savedRelic = s.inventory['relic_t0_normal'];
+    s.quests = { claimed:{} }; s.stats = {};
+    eq(FF.questProgress(q12), 0, 'nothing excavated -> 0 progress');
+    s.stats['excavate_1'] = 10; // a different-tier artifact must not count
+    eq(FF.questProgress(q12), 0, 'excavating other-tier artifacts does not advance the Sand tally');
+    s.stats['excavate_0'] = 10;
+    ok(FF.questComplete(q12) && FF.questClaimable(q12), '10 excavated Sand Artifacts completes + arms the quest');
+    var relicBefore = s.inventory['relic_t0_normal'] || 0;
+    ok(FF.claimQuest('extract_the_past'), 'claim succeeds');
+    eq((s.inventory['relic_t0_normal']||0) - relicBefore, 1, 'claim grants a Sand Relic');
+    s.stats = savedStats12;
+    if(savedRelic===undefined) delete s.inventory['relic_t0_normal']; else s.inventory['relic_t0_normal'] = savedRelic;
+    // ---- Quest 13: "Bear the Relic" -- equip a relic -> 10 Critter Caches ----
+    var q13 = FF.questById('bear_the_relic');
+    ok(!!q13 && q13.cat==='gettingstarted', 'Bear the Relic lives in Getting Started');
+    eq(q13.target, 1, 'its target is 1 (equip the relic)');
+    ok(q13.reward.kind==='item' && q13.reward.itemId==='critter_cache' && q13.reward.qty===10, 'reward is 10 Critter Caches');
+    var savedRT = s.equippedRelicTier, savedCache = s.inventory['critter_cache'];
+    s.quests = { claimed:{} };
+    s.equippedRelicTier = 0;
+    eq(FF.questComplete(q13), false, 'no relic equipped -> not complete');
+    s.equippedRelicTier = 1;
+    ok(FF.questComplete(q13) && FF.questClaimable(q13), 'equipping the Sand Relic completes + arms the quest');
+    var cacheBefore = s.inventory['critter_cache'] || 0;
+    ok(FF.claimQuest('bear_the_relic'), 'claim succeeds');
+    eq((s.inventory['critter_cache']||0) - cacheBefore, 10, 'claim grants 10 Critter Caches');
+    s.equippedRelicTier = savedRT;
+    if(savedCache===undefined) delete s.inventory['critter_cache']; else s.inventory['critter_cache'] = savedCache;
+    // ---- Quest 14: "Crack the Cache" -- open a Critter Cache -> 10 Cotton Seeds ----
+    var q14 = FF.questById('crack_the_cache');
+    ok(!!q14 && q14.cat==='gettingstarted', 'Crack the Cache lives in Getting Started');
+    eq(q14.target, 1, 'its target is 1 opened cache');
+    ok(q14.reward.kind==='item' && q14.reward.itemId==='seed_t0' && q14.reward.qty===10, 'reward is 10 Cotton Seeds (seed_t0)');
+    eq(FF.ALL_SELLABLE['seed_t0'].name, 'Cotton Seed', 'the reward reads as Cotton Seed');
+    eq(q14.nav.cat, 'inventory', 'its Go destination is the Inventory');
+    var savedStats14 = s.stats, savedSeed = s.inventory['seed_t0'];
+    s.quests = { claimed:{} }; s.stats = {};
+    eq(FF.questComplete(q14), false, 'no cache opened -> not complete');
+    s.stats['caches_opened'] = 1;
+    ok(FF.questComplete(q14) && FF.questClaimable(q14), 'opening a Critter Cache completes + arms the quest');
+    var seedBefore = s.inventory['seed_t0'] || 0;
+    ok(FF.claimQuest('crack_the_cache'), 'claim succeeds');
+    eq((s.inventory['seed_t0']||0) - seedBefore, 10, 'claim grants 10 Cotton Seeds');
+    s.stats = savedStats14;
+    if(savedSeed===undefined) delete s.inventory['seed_t0']; else s.inventory['seed_t0'] = savedSeed;
+    // ---- Quest 15: "Tame the Wild" -- clear an estate resource -> a Copper Pickaxe ----
+    var q15 = FF.questById('tame_the_wild');
+    ok(!!q15 && q15.cat==='gettingstarted', 'Tame the Wild lives in Getting Started');
+    eq(q15.target, 1, 'its target is 1 cleared obstacle');
+    ok(q15.reward.kind==='item' && q15.reward.itemId==='tool_mining_t0_normal' && q15.reward.qty===1, 'reward is a first-tier Mining tool');
+    ok(/Copper/.test(FF.questRewardLabel(q15)) && /Pickaxe/.test(FF.questRewardLabel(q15)), 'the reward line names the Copper Pickaxe');
+    eq(q15.nav.cat, 'estate', 'its Go destination is the estate');
+    var savedClears15 = s.estateClears, savedPick = s.inventory['tool_mining_t0_normal'];
+    s.quests = { claimed:{} }; s.estateClears = 0;
+    eq(FF.questComplete(q15), false, 'no clears -> not complete');
+    s.estateClears = 1;
+    ok(FF.questComplete(q15) && FF.questClaimable(q15), 'clearing one obstacle completes + arms the quest');
+    var pickBefore = s.inventory['tool_mining_t0_normal'] || 0;
+    ok(FF.claimQuest('tame_the_wild'), 'claim succeeds');
+    eq((s.inventory['tool_mining_t0_normal']||0) - pickBefore, 1, 'claim grants a Copper Pickaxe');
+    s.estateClears = savedClears15;
+    if(savedPick===undefined) delete s.inventory['tool_mining_t0_normal']; else s.inventory['tool_mining_t0_normal'] = savedPick;
+    // ---- Quest 16: "Strike the Vein" -- mine 100 Copper -> 100 Coal + a Copper Bellows ----
+    var q16 = FF.questById('strike_the_vein');
+    ok(!!q16 && q16.cat==='gettingstarted', 'Strike the Vein lives in Getting Started');
+    eq(q16.target, 100, 'its target is 100 Copper mined');
+    var r16 = q16.reward.items.map(function(it){ return it.itemId; });
+    ok(r16.indexOf('coal')!==-1 && r16.indexOf('tool_metallurgy_t0_normal')!==-1, 'reward is 100 Coal + a Copper Metallurgy tool');
+    ok(/Bellows/.test(FF.questRewardLabel(q16)), 'the reward line names the Copper Bellows');
+    eq(q16.nav.sub, 'mining', 'the Go destination drills into Mining');
+    var savedStats16 = s.stats, savedR16 = r16.map(function(id){ return s.inventory[id]; });
+    s.quests = { claimed:{} }; s.stats = {};
+    s.stats['gathered_mining_t1'] = 100; // a different ore must not count
+    eq(FF.questProgress(q16), 0, 'mining other ore does not advance the Copper tally');
+    s.stats['gathered_mining_t0'] = 100;
+    ok(FF.questComplete(q16) && FF.questClaimable(q16), '100 Copper completes + arms the quest');
+    var r16Before = r16.map(function(id){ return s.inventory[id]||0; });
+    ok(FF.claimQuest('strike_the_vein'), 'claim succeeds');
+    eq((s.inventory['coal']||0) - r16Before[0], 100, 'claim grants 100 Coal');
+    eq((s.inventory['tool_metallurgy_t0_normal']||0) - r16Before[1], 1, 'claim grants a Copper Bellows');
+    s.stats = savedStats16;
+    r16.forEach(function(id, i){ if(savedR16[i]===undefined) delete s.inventory[id]; else s.inventory[id] = savedR16[i]; });
+    // ---- Quest 17: "Fire the Forge" -- smelt 100 Copper Bars -> 100 Copper Bars ----
+    var q17 = FF.questById('fire_the_forge');
+    ok(!!q17 && q17.cat==='gettingstarted', 'Fire the Forge lives in Getting Started');
+    eq(q17.target, 100, 'its target is 100 smelted bars');
+    ok(q17.reward.kind==='item' && q17.reward.itemId==='metallurgy_t0' && q17.reward.qty===100, 'reward is 100 Copper Bars (metallurgy_t0)');
+    eq(FF.ALL_SELLABLE['metallurgy_t0'].name, 'Copper Bar', 'tier-0 metallurgy is a Copper Bar');
+    eq(q17.nav.sub, 'metallurgy', 'the Go destination drills into Metallurgy');
+    var savedStats17 = s.stats, savedBars = s.inventory['metallurgy_t0'];
+    s.quests = { claimed:{} }; s.stats = {};
+    s.stats['made_metallurgy_t1'] = 100; // a different bar must not count
+    eq(FF.questProgress(q17), 0, 'smelting other bars does not advance the Copper-bar tally');
+    s.stats['made_metallurgy_t0'] = 100;
+    ok(FF.questComplete(q17) && FF.questClaimable(q17), '100 Copper Bars completes + arms the quest');
+    var barsBefore = s.inventory['metallurgy_t0'] || 0;
+    ok(FF.claimQuest('fire_the_forge'), 'claim succeeds');
+    eq((s.inventory['metallurgy_t0']||0) - barsBefore, 100, 'claim grants 100 Copper Bars');
+    s.stats = savedStats17;
+    if(savedBars===undefined) delete s.inventory['metallurgy_t0']; else s.inventory['metallurgy_t0'] = savedBars;
+    // ---- Quest 18: "Forge Your Tools" -- forge a Copper Hatchet -> a Rare Copper Hatchet ----
+    var q18 = FF.questById('forge_your_tools');
+    ok(!!q18 && q18.cat==='gettingstarted', 'Forge Your Tools lives in Getting Started');
+    eq(q18.target, 1, 'its target is 1 forged tool');
+    ok(q18.reward.kind==='item' && q18.reward.itemId==='tool_forestry_t0_rare' && q18.reward.qty===1, 'reward is a Rare tier-0 Forestry tool');
+    ok(/Rare/.test(FF.questRewardLabel(q18)) && /Hatchet/.test(FF.questRewardLabel(q18)), 'the reward line names the Rare Copper Hatchet');
+    eq(q18.nav.sub, 'blacksmithing', 'the Go destination drills into Blacksmithing');
+    var savedStats18 = s.stats, savedHatchet = s.inventory['tool_forestry_t0_rare'];
+    s.quests = { claimed:{} }; s.stats = {};
+    s.stats['tool_made_mining_0'] = 1; // forging a DIFFERENT skill's tool must not count
+    eq(FF.questProgress(q18), 0, 'forging another tool does not advance the Forestry-tool tally');
+    s.stats['tool_made_forestry_0'] = 1;
+    ok(FF.questComplete(q18) && FF.questClaimable(q18), 'forging a Copper Hatchet completes + arms the quest');
+    var hatchetBefore = s.inventory['tool_forestry_t0_rare'] || 0;
+    ok(FF.claimQuest('forge_your_tools'), 'claim succeeds');
+    eq((s.inventory['tool_forestry_t0_rare']||0) - hatchetBefore, 1, 'claim grants a Rare Copper Hatchet');
+    s.stats = savedStats18;
+    if(savedHatchet===undefined) delete s.inventory['tool_forestry_t0_rare']; else s.inventory['tool_forestry_t0_rare'] = savedHatchet;
+    // ---- Quest 19: "Break the Sod" -- place a Sand Field -> 10 Fertilizer ----
+    var q19 = FF.questById('break_the_sod');
+    ok(!!q19 && q19.cat==='gettingstarted', 'Break the Sod lives in Getting Started');
+    eq(q19.target, 1, 'its target is 1 field placed');
+    ok(q19.reward.kind==='item' && q19.reward.itemId==='fertilizer_t0' && q19.reward.qty===10, 'reward is 10 tier-0 Fertilizer');
+    eq(q19.nav.cat, 'estate', 'its Go destination is the estate');
+    var savedStats19 = s.stats, savedFert = s.inventory['fertilizer_t0'];
+    s.quests = { claimed:{} }; s.stats = {};
+    s.stats['field_placed_1'] = 1; // a higher-tier field must not count
+    eq(FF.questProgress(q19), 0, 'placing a different-tier field does not advance the Sand-field tally');
+    s.stats['field_placed_0'] = 1;
+    ok(FF.questComplete(q19) && FF.questClaimable(q19), 'placing a Sand Field completes + arms the quest');
+    var fertBefore = s.inventory['fertilizer_t0'] || 0;
+    ok(FF.claimQuest('break_the_sod'), 'claim succeeds');
+    eq((s.inventory['fertilizer_t0']||0) - fertBefore, 10, 'claim grants 10 Fertilizer');
+    s.stats = savedStats19;
+    if(savedFert===undefined) delete s.inventory['fertilizer_t0']; else s.inventory['fertilizer_t0'] = savedFert;
+    // ---- Quest 20: "Sow the First Seed" -- sow a Cotton Seed -> 10 Cotton ----
+    var q20 = FF.questById('sow_the_first_seed');
+    ok(!!q20 && q20.cat==='gettingstarted', 'Sow the First Seed lives in Getting Started');
+    eq(q20.target, 1, 'its target is 1 seed sown');
+    ok(q20.reward.kind==='item' && q20.reward.itemId==='farming_t0' && q20.reward.qty===10, 'reward is 10 Cotton (farming_t0)');
+    eq(FF.ALL_SELLABLE['farming_t0'].name, 'Cotton', 'tier-0 crop is Cotton');
+    eq(q20.nav.cat, 'farming', 'its Go destination is the Farming tab');
+    var savedStats20 = s.stats, savedCotton20 = s.inventory['farming_t0'];
+    s.quests = { claimed:{} }; s.stats = {};
+    s.stats['sowed_seed_t1'] = 1; // a different seed must not count
+    eq(FF.questProgress(q20), 0, 'sowing a different seed does not advance the Cotton-seed tally');
+    s.stats['sowed_seed_t0'] = 1;
+    ok(FF.questComplete(q20) && FF.questClaimable(q20), 'sowing a Cotton Seed completes + arms the quest');
+    var cotton20Before = s.inventory['farming_t0'] || 0;
+    ok(FF.claimQuest('sow_the_first_seed'), 'claim succeeds');
+    eq((s.inventory['farming_t0']||0) - cotton20Before, 10, 'claim grants 10 Cotton');
+    s.stats = savedStats20;
+    if(savedCotton20===undefined) delete s.inventory['farming_t0']; else s.inventory['farming_t0'] = savedCotton20;
+    // ---- Quest 21: "Feed the Field" -- fertilize a Cotton plant -> 10 Cotton ----
+    var q21 = FF.questById('feed_the_field');
+    ok(!!q21 && q21.cat==='gettingstarted', 'Feed the Field lives in Getting Started');
+    eq(q21.target, 1, 'its target is 1 fertilized plant');
+    ok(q21.reward.kind==='item' && q21.reward.itemId==='farming_t0' && q21.reward.qty===10, 'reward is 10 Cotton');
+    var savedStats21 = s.stats, savedCotton21 = s.inventory['farming_t0'];
+    s.quests = { claimed:{} }; s.stats = {};
+    s.stats['fertilized_farming_t1'] = 1; // a different crop must not count
+    eq(FF.questProgress(q21), 0, 'fertilizing a different crop does not advance the Cotton tally');
+    s.stats['fertilized_farming_t0'] = 1;
+    ok(FF.questComplete(q21) && FF.questClaimable(q21), 'fertilizing a Cotton plant completes + arms the quest');
+    var cotton21Before = s.inventory['farming_t0'] || 0;
+    ok(FF.claimQuest('feed_the_field'), 'claim succeeds');
+    eq((s.inventory['farming_t0']||0) - cotton21Before, 10, 'claim grants 10 Cotton');
+    s.stats = savedStats21;
+    if(savedCotton21===undefined) delete s.inventory['farming_t0']; else s.inventory['farming_t0'] = savedCotton21;
+    // ---- Quest 22: "First Harvest" -- harvest Cotton -> 10 Cotton + a Copper Loom ----
+    var q22 = FF.questById('first_harvest');
+    ok(!!q22 && q22.cat==='gettingstarted', 'First Harvest lives in Getting Started');
+    eq(q22.target, 1, 'its target is 1 harvest');
+    eq(q22.reward.kind, 'items', 'it grants a multi-item reward');
+    var r22 = q22.reward.items.map(function(it){ return it.itemId; });
+    ok(r22.indexOf('farming_t0')!==-1 && r22.indexOf('tool_weaving_t0_normal')!==-1, 'reward is 10 Cotton + a Copper Weaving tool');
+    ok(/Loom/.test(FF.questRewardLabel(q22)), 'the reward line names the Copper Loom');
+    var savedStats22 = s.stats, savedR22 = r22.map(function(id){ return s.inventory[id]; });
+    s.quests = { claimed:{} }; s.stats = {};
+    s.stats['harvested_farming_t1'] = 1; // a different crop must not count
+    eq(FF.questProgress(q22), 0, 'harvesting a different crop does not advance the Cotton tally');
+    s.stats['harvested_farming_t0'] = 1;
+    ok(FF.questComplete(q22) && FF.questClaimable(q22), 'harvesting Cotton completes + arms the quest');
+    var r22Before = r22.map(function(id){ return s.inventory[id]||0; });
+    ok(FF.claimQuest('first_harvest'), 'claim succeeds');
+    eq((s.inventory['farming_t0']||0) - r22Before[0], 10, 'claim grants 10 Cotton');
+    eq((s.inventory['tool_weaving_t0_normal']||0) - r22Before[1], 1, 'claim grants a Copper Loom');
+    s.stats = savedStats22;
+    r22.forEach(function(id, i){ if(savedR22[i]===undefined) delete s.inventory[id]; else s.inventory[id] = savedR22[i]; });
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
@@ -6394,6 +6667,9 @@
     // restore
     s.monsterKills = savedMK; s.quests = savedQ; s.inventory['corpse_t0'] = savedInv; s.titles = savedTitles;
     if(savedFal===undefined) delete s.inventory['stweapon_scimitar_t0_normal']; else s.inventory['stweapon_scimitar_t0_normal'] = savedFal;
+    s.stats = savedStatsQ; s.equippedRelicTier = savedRelicQ; s.equippedBeltTier = savedBeltTQ; s.equippedBeltRarity = savedBeltRQ;
+    s.gatherTools = savedGTQ; s.activeCompanions = savedACQ; s.equippedMainhand = savedMHQ; s.equippedOffhand = savedOffQ;
+    s.equippedOffhandTier = savedOffTQ; s.bodyArmor = savedBAQ;
   });
 
   // ---- Auth identity guard: cross-account write prevention (shared per-origin auth session) ----
