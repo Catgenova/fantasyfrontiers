@@ -6695,6 +6695,34 @@
     eq((s.gold||0)-g30, 500, 'claim grants 500 gold');
     eq((s.inventory['foraging_t0']||0)-f30, 20, 'claim grants 20 Blackberries');
     s.stats = savedActStats; s.bodyArmor = savedActBA; s.gold = savedActGold;
+    // ---- Act V: Wood, Stone & Home (quests 31-38) ----
+    var savedVStats = s.stats, savedVGold = s.gold;
+    // 31 Fell the Timber (gather forestry) + 32-34 build crafts (crafted_<skill>)
+    [['fell_the_timber','gathered_forestry_t0',100,'tool_carpentry_t0_normal'],
+     ['square_the_planks','crafted_carpentry',100,'tool_stonecutting_t0_normal'],
+     ['cut_the_stone','crafted_stonecutting',50,'tool_paving_t0_normal'],
+     ['lay_the_tiles','crafted_paving',20,'paving_t0']].forEach(function(row){
+      var q = FF.questById(row[0]); ok(!!q && q.target===row[2], row[0]+' target '+row[2]);
+      s.quests={claimed:{}}; s.stats={};
+      s.stats[row[1]] = row[2]-1; eq(FF.questComplete(q), false, row[0]+': one short is not complete');
+      s.stats[row[1]] = row[2]; ok(FF.questComplete(q), row[0]+' completes at target');
+      invGrantCheck(row[0], row[3], row[3]==='paving_t0'?20:1);
+    });
+    // 35 Pave the Estate, 36 Raise a Workshop, 37 Hearth and Home, 38 Put a Peon to Work
+    [['pave_the_estate','paved_estate'],['raise_a_workshop','workshop_built'],['hearth_and_home','cottage_built'],['put_a_peon_to_work','peons_housed']].forEach(function(row){
+      var q = FF.questById(row[0]); ok(!!q && q.target===1, row[0]+' target 1');
+      s.quests={claimed:{}}; s.stats={};
+      eq(FF.questComplete(q), false, row[0]+': not complete at 0');
+      s.stats[row[1]] = 1; ok(FF.questComplete(q), row[0]+' completes when the estate action fires');
+    });
+    // Verify the gold-only rewards actually pay out (Hearth and Home = 1000g).
+    var q37 = FF.questById('hearth_and_home');
+    eq(q37.reward.gold, 1000, 'Hearth and Home rewards 1000 gold');
+    ok(/1,000 Gold/.test(FF.questRewardLabel(q37)), 'its reward line reads as gold');
+    s.quests={claimed:{}}; s.stats={ cottage_built:1 }; s.gold=0;
+    ok(FF.claimQuest('hearth_and_home'), 'claim hearth_and_home succeeds');
+    eq(s.gold, 1000, 'claim pays 1000 gold');
+    s.stats = savedVStats; s.gold = savedVGold;
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };

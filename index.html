@@ -20627,6 +20627,54 @@
       target:1, progress:function(st){ return (st.stats && st.stats['teas_drunk']) || 0; },
       nav:{ cat:'cooking', sub:'mixology' },
       reward:{ items:[ { itemId:'foraging_t0', qty:20 } ], gold:500 } },
+    { id:'fell_the_timber', cat:'gettingstarted', title:'Fell the Timber',
+      desc:'A home is a forest, taken down and put back up in a better shape. Set your Hatchet to the treeline and fell a hundred logs — the bones of every workshop, cottage, and fence you’ll ever raise. The frontier gives its timber freely to the hero willing to swing for it.',
+      how:'In Gathering → Forestry, chop 100 logs.',
+      target:100, progress:function(st){ return (st.stats && st.stats['gathered_forestry_t0']) || 0; },
+      nav:{ cat:'gathering', sub:'forestry' },
+      reward:{ items:[ { itemId:'tool_carpentry_t0_normal', qty:1 }, { itemId:'forestry_t0', qty:50 } ] } },
+    { id:'square_the_planks', cat:'gettingstarted', title:'Square the Planks',
+      desc:'A log is a promise; a plank is a plan. Run a hundred rough logs through the saw and square them into clean, stackable timber — the difference between a woodpile and a workshop. Measure once, cut true, and the frontier starts to take the shape you give it.',
+      how:'In Construction → Carpentry, saw 100 Planks from your logs.',
+      target:100, progress:function(st){ return (st.stats && st.stats['crafted_carpentry']) || 0; },
+      nav:{ cat:'building', sub:'carpentry' },
+      reward:{ items:[ { itemId:'tool_stonecutting_t0_normal', qty:1 }, { itemId:'carpentry_t0', qty:100 } ] } },
+    { id:'cut_the_stone', cat:'gettingstarted', title:'Cut the Stone',
+      desc:'Wood warms and shelters, but stone endures. Take chisel to quarried rock and cut fifty clean blocks — the stuff of foundations, walls, and roads that outlast the hand that laid them. A frontier built in stone is a frontier that means to stay.',
+      how:'In Construction → Stonecutting, cut 50 stone blocks.',
+      target:50, progress:function(st){ return (st.stats && st.stats['crafted_stonecutting']) || 0; },
+      nav:{ cat:'building', sub:'stonecutting' },
+      reward:{ items:[ { itemId:'tool_paving_t0_normal', qty:1 }, { itemId:'stonecutting_t0', qty:20 } ] } },
+    { id:'lay_the_tiles', cat:'gettingstarted', title:'Lay the Tiles',
+      desc:'Loose stone is rubble; laid stone is a road. Cut and finish twenty paving tiles — flat, fitted, and ready to turn your muddy estate into something you can cross without losing a boot. Every great hall begins with a floor.',
+      how:'In Construction → Paving, make 20 paving tiles.',
+      target:20, progress:function(st){ return (st.stats && st.stats['crafted_paving']) || 0; },
+      nav:{ cat:'building', sub:'paving' },
+      reward:{ items:[ { itemId:'paving_t0', qty:20 } ] } },
+    { id:'pave_the_estate', cat:'gettingstarted', title:'Pave the Estate',
+      desc:'Tiles stacked in a crate pave nothing. Take them out to your land and lay one down — the first firm footing on ground that was wilderness a week ago. Stand on it a moment: that is your estate now, and you built the very floor of it.',
+      how:'Open Lands → My Estate, pick a cleared tile, and pave it.',
+      target:1, progress:function(st){ return (st.stats && st.stats['paved_estate']) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'paving_t0', qty:10 } ], gold:500 } },
+    { id:'raise_a_workshop', cat:'gettingstarted', title:'Raise a Workshop',
+      desc:'A workshop is where your estate starts working for you: place one on your land and its craft gains a chance to double every output. Raise your first — planks and stone finally becoming something that pays you back. A hero’s greatest tool is a place that makes more tools.',
+      how:'Open Lands → My Estate and build a Workshop on a cleared tile.',
+      target:1, progress:function(st){ return (st.stats && st.stats['workshop_built']) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ items:[ { itemId:'carpentry_t0', qty:50 } ], gold:500 } },
+    { id:'hearth_and_home', cat:'gettingstarted', title:'Hearth and Home',
+      desc:'A workshop makes things; a cottage makes a home for the hands that work it. Build a Cottage beside a Workshop and your frontier holding gains its first hearth — smoke from the chimney, a light in the window, the look of a place someone means to keep.',
+      how:'Open Lands → My Estate and build a Cottage next to a Workshop.',
+      target:1, progress:function(st){ return (st.stats && st.stats['cottage_built']) || 0; },
+      nav:{ cat:'estate' },
+      reward:{ gold:1000 } },
+    { id:'put_a_peon_to_work', cat:'gettingstarted', title:'Put a Peon to Work',
+      desc:'A cottage beside a workshop can house a helper — a Peon who works its craft while you’re away, turning your estate into a wage that pays around the clock. House your first and you stop being one pair of hands. This is how a legend scales: not by working harder, but by no longer working alone.',
+      how:'In Lands → Peons, house a Peon in a Cottage next to a Workshop.',
+      target:1, progress:function(st){ return (st.stats && st.stats['peons_housed']) || 0; },
+      nav:{ cat:'peons' },
+      reward:{ gold:1000 } },
     { id:'clearing_the_land', cat:'estatequests', title:'Clearing the Land',
       desc:'Before a frontier estate can rise, the wild has to be tamed. Every tree, berry bush, herb, rock, and ore vein is one more patch of ground reclaimed.',
       how:'Open Lands → My Estate, tap a tile with a natural obstacle, and Clear it with the matching Gathering skill. Clear 10 obstacles in all.',
@@ -22014,6 +22062,7 @@
     if(job.kind === 'pave'){
       cell.type = 'paved'; cell.paveTileId = job.paveTileId;
       if(giveRewards){
+        bumpStat('paved_estate'); // estate tiles paved, powers "Pave the Estate"
         var pr = getPavingRecipe(job.paveTileId);
         var pavXp = estateBuildXp(itemTierFromId(job.paveTileId));
         addXp('paving', pavXp);
@@ -22027,6 +22076,7 @@
       cell.workshopId = job.workshopId;
       if(isGuild) recomputeGuildWorkshops(); else recomputePlacedWorkshops();
       if(giveRewards){
+        if(!job.upgrade) bumpStat('workshop_built'); // workshops raised (not upgrades), powers "Raise a Workshop"
         var wsXp = estateBuildXp((WORKSHOP_ITEMS[job.workshopId]||{}).tierIndex);
         addXp('carpentry', wsXp);
         addLog('Finished ' + (job.upgrade?'upgrading to':'building') + ' the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'workshop') + '. +' + wsXp + ' Carpentry XP.', 'important');
@@ -22038,6 +22088,7 @@
     if(job.kind === 'cottage'){
       cell.cottageId = job.cottageId;
       if(giveRewards){
+        if(!job.upgrade) bumpStat('cottage_built'); // cottages raised (not upgrades), powers "Hearth and Home"
         var cadj = estateAdjacentWorkshop(estate.grid, job.x, job.y);
         var cotXp = estateBuildXp((COTTAGE_ITEMS[job.cottageId]||{}).tierIndex);
         addXp('carpentry', cotXp);
@@ -22889,19 +22940,21 @@
   function peonAssign(kind, itemId){
     var c = peonAssignCore(); if(!c) return;
     c.tasks.push({ x:peonPicker.x, y:peonPicker.y, skillId:c.skillId, kind:kind, itemId:itemId, progress:0 });
+    bumpStat('peons_housed'); // peons put to work, powers "Put a Peon to Work"
     saveGame(); peonPicker.open = false; render();
   }
   function peonAssignSpecial(tierIndex){
     var p = peonPicker.producer; if(!p) return;
     var c = peonAssignCore(); if(!c) return;
     c.tasks.push({ x:peonPicker.x, y:peonPicker.y, skillId:c.skillId, kind:'special', craftKind:p.craftKind, params:p.params, tierIndex:tierIndex, progress:0 });
+    bumpStat('peons_housed'); // peons put to work, powers "Put a Peon to Work"
     saveGame(); peonPicker.open = false; render();
   }
   function peonStop(scope, x, y){ peonSetTasks(scope, peonTasksFor(scope).filter(function(t){ return !(t.x===x && t.y===y); })); saveGame(); render(); }
   // Swapping candles discards whatever was left of the one alight -- you blew it out to fit a new one.
   function peonSetCandle(scope, x, y, candleId){
     var t = peonTaskAt(scope, x, y);
-    if(t && t.candleId !== (candleId||null)){ t.candleId = candleId || null; t.candleMs = 0; if(t.candleId) peonCandleLight(t); }
+    if(t && t.candleId !== (candleId||null)){ t.candleId = candleId || null; t.candleMs = 0; if(t.candleId){ peonCandleLight(t); bumpStat('peon_lit'); } } // peons lit with a candle, powers "Burn the Midnight Oil"
     peonPicker.open = false; peonPicker.candle = false;
     saveGame(); render();
   }
