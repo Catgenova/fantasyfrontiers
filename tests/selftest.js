@@ -6113,7 +6113,7 @@
 
   suite('quests: area, category, accordion + claim flow', function(){
     var s = FF._state;
-    var savedMK = s.monsterKills, savedQ = s.quests, savedInv = s.inventory['corpse_t0'], savedTitles = s.titles, savedFal = s.inventory['stweapon_scimitar_t1_normal'];
+    var savedMK = s.monsterKills, savedQ = s.quests, savedInv = s.inventory['corpse_t0'], savedTitles = s.titles, savedFal = s.inventory['stweapon_scimitar_t0_normal'];
     s.monsterKills = {}; s.quests = { claimed:{} }; s.titles = {};
     // Quests is its OWN top-level area, with Getting Started as a category tab inside it (not under Battle).
     var qArea = FF.AREAS.filter(function(a){ return a.id==='quests'; })[0];
@@ -6127,7 +6127,7 @@
     ok(!FF.questById('watership_down'), 'the old Watership Down quest was removed');
     eq(q.cat, 'gettingstarted', 'it lives in the Getting Started category');
     eq(q.target, 1, 'its target is 1 (a first-login welcome quest)');
-    ok(q.reward.kind==='item' && q.reward.itemId==='stweapon_scimitar_t1_normal' && q.reward.qty===1, 'reward is a Tier-1 Scimitar (stweapon_scimitar_t1_normal)');
+    ok(q.reward.kind==='item' && q.reward.itemId==='stweapon_scimitar_t0_normal' && q.reward.qty===1, 'reward is a Tier-1 Scimitar (stweapon_scimitar_t0_normal)');
     ok(typeof q.how === 'string' && q.how.length > 0 && typeof q.desc === 'string' && q.desc.length > 0, 'it carries how-to + lore text');
     // A first-login welcome quest is immediately complete + claimable (progress is always met).
     ok(FF.questComplete(q) && FF.questClaimable(q), 'the welcome quest is immediately complete + claimable');
@@ -6144,17 +6144,41 @@
     ok(/quest-acc-body/.test(expanded) && /How to complete/.test(expanded) && /Reward:/.test(expanded), 'expanded: shows the how-to instructions and the reward');
     FF.questToggleExpand('answer_the_call'); // collapse again
     // Claim grants the blade exactly once and clears the flash.
-    var before = s.inventory['stweapon_scimitar_t1_normal'] || 0;
+    var before = s.inventory['stweapon_scimitar_t0_normal'] || 0;
     ok(FF.claimQuest('answer_the_call'), 'claim succeeds when claimable');
-    eq((s.inventory['stweapon_scimitar_t1_normal']||0) - before, 1, 'claim grants the Tier-1 Scimitar');
+    eq((s.inventory['stweapon_scimitar_t0_normal']||0) - before, 1, 'claim grants the Tier-1 Scimitar');
     eq(FF.questClaimed(q), true, 'the quest is marked claimed');
     eq(FF.questClaimable(q), false, 'a claimed quest is no longer claimable');
     eq(FF.railSubFlash('gettingstarted'), false, 'the flash clears after claiming');
     eq(FF.railAreaFlash('quests'), false, 'the area flash clears after claiming');
     // Idempotent: a second claim grants nothing.
-    var after = s.inventory['stweapon_scimitar_t1_normal'] || 0;
+    var after = s.inventory['stweapon_scimitar_t0_normal'] || 0;
     eq(FF.claimQuest('answer_the_call'), false, 'a claimed quest cannot be re-claimed');
-    eq(s.inventory['stweapon_scimitar_t1_normal']||0, after, 'no extra blade from a double-claim');
+    eq(s.inventory['stweapon_scimitar_t0_normal']||0, after, 'no extra blade from a double-claim');
+    // ---- Quest 2: "Take Up Arms" -- equip your scimitar -> a 4-piece starter armor kit (multi-item reward) ----
+    var q2 = FF.questById('take_up_arms');
+    ok(!!q2 && q2.cat==='gettingstarted', 'Take Up Arms lives in Getting Started');
+    eq(q2.target, 1, 'its target is 1 (equip a scimitar)');
+    eq(q2.reward.kind, 'items', 'it grants a multi-item reward');
+    var kitIds = q2.reward.items.map(function(it){ return it.itemId; });
+    ok(kitIds.indexOf('bodyarmor_plate_chest_t0_normal')!==-1 && kitIds.indexOf('bodyarmor_chain_boots_t0_normal')!==-1
+      && kitIds.indexOf('bodyarmor_chain_helmet_t0_normal')!==-1 && kitIds.indexOf('bodyarmor_tailoring_gauntlets_t0_normal')!==-1,
+      'the kit is t0 plate chest + chain boots + chain helm + cloth gloves (all equippable at Lv 1)');
+    ok(kitIds.every(function(id){ return !!FF.ALL_SELLABLE[id]; }), 'every kit item resolves to a real armor piece');
+    // Progress tracks whether a scimitar is equipped.
+    var savedMH = s.equippedMainhand;
+    s.quests = { claimed:{} }; s.equippedMainhand = null;
+    eq(FF.questComplete(q2), false, 'no weapon equipped -> not complete');
+    s.equippedMainhand = 'rapier';
+    eq(FF.questComplete(q2), false, 'a different weapon does not count');
+    s.equippedMainhand = 'scimitar';
+    ok(FF.questComplete(q2) && FF.questClaimable(q2), 'equipping a scimitar completes + arms the quest');
+    // Claim grants all four pieces.
+    var kitBefore = kitIds.map(function(id){ return s.inventory[id]||0; });
+    ok(FF.claimQuest('take_up_arms'), 'claim succeeds');
+    ok(kitIds.every(function(id, i){ return (s.inventory[id]||0) - kitBefore[i] === 1; }), 'claim grants one of each armor piece');
+    kitIds.forEach(function(id){ if((s.inventory[id]||0) > 0) s.inventory[id] = Math.max(0, (s.inventory[id]||0) - 1); }); // undo the grant
+    s.equippedMainhand = savedMH;
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
@@ -6178,7 +6202,7 @@
     s.estateClears = savedClears; if(savedPave===undefined) delete s.inventory['paving_t5']; else s.inventory['paving_t5'] = savedPave;
     // restore
     s.monsterKills = savedMK; s.quests = savedQ; s.inventory['corpse_t0'] = savedInv; s.titles = savedTitles;
-    if(savedFal===undefined) delete s.inventory['stweapon_scimitar_t1_normal']; else s.inventory['stweapon_scimitar_t1_normal'] = savedFal;
+    if(savedFal===undefined) delete s.inventory['stweapon_scimitar_t0_normal']; else s.inventory['stweapon_scimitar_t0_normal'] = savedFal;
   });
 
   // ---- Auth identity guard: cross-account write prevention (shared per-origin auth session) ----
