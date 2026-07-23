@@ -5986,11 +5986,13 @@
     ok(FF.claimQuest('tq_all_f100'), 'claim succeeds');
     ok(s.titles['title_all_f100'] === true, 'claiming unlocks the title');
     // TITLES registry: flat, ordered, one per title-rewarding quest.
-    eq(FF.TITLES.length, 116, 'the Titles registry has one entry per tower quest');
-    // Order: the whole All Classes ladder (25..500 = 20 titles) comes first, then the per-class titles.
-    var _allTitles = FF.TITLES.slice(0, 20);
-    ok(_allTitles.every(function(t){ return /^title_all_f/.test(t.id); }), 'the first 20 titles are the full All Classes ladder (25-500)');
-    ok(!/^title_all_f/.test(FF.TITLES[20].id), 'the individual class titles follow the All Classes block');
+    eq(FF.TITLES.length, 117, 'the Titles registry has one entry per tower quest (116) plus the Frontier Hero capstone');
+    // The Getting Started capstone title is defined before the tower quests, so it leads the registry.
+    eq(FF.TITLES[0].id, 'title_frontier_hero', 'the Frontier Hero capstone title leads the registry');
+    // Order: the whole All Classes ladder (25..500 = 20 titles) comes next, then the per-class titles.
+    var _allTitles = FF.TITLES.slice(1, 21);
+    ok(_allTitles.every(function(t){ return /^title_all_f/.test(t.id); }), 'the first 20 tower titles are the full All Classes ladder (25-500)');
+    ok(!/^title_all_f/.test(FF.TITLES[21].id), 'the individual class titles follow the All Classes block');
     ok(FF.TITLE_BY_ID['title_all_f100'] && FF.TITLE_BY_ID['title_all_f100'].name==='Tower Ascendant', 'the registry is keyed by title id');
     ok(FF.TITLE_BY_ID['title_all_f100'].how && /Floor 100/.test(FF.TITLE_BY_ID['title_all_f100'].how), 'each title carries a how-to (drives the ? tooltip)');
     // Equip system: only earned titles equip; toggling / unequip clears.
@@ -6138,10 +6140,11 @@
     // claimable" flash assertions below. Saved here, restored at the end of the suite.
     var savedStatsQ = s.stats, savedRelicQ = s.equippedRelicTier, savedBeltTQ = s.equippedBeltTier, savedBeltRQ = s.equippedBeltRarity,
         savedGTQ = s.gatherTools, savedACQ = s.activeCompanions, savedMHQ = s.equippedMainhand, savedOffQ = s.equippedOffhand,
-        savedOffTQ = s.equippedOffhandTier, savedBAQ = s.bodyArmor;
+        savedOffTQ = s.equippedOffhandTier, savedBAQ = s.bodyArmor, savedXpQ = s.xp, savedUniqQ = s.uniqueItems, savedJSQ = s.jewelrySlots;
     s.monsterKills = {}; s.quests = { claimed:{} }; s.titles = {};
     s.stats = {}; s.equippedRelicTier = 0; s.equippedBeltTier = 0; s.equippedBeltRarity = 'normal';
     s.gatherTools = {}; s.activeCompanions = []; s.equippedMainhand = null; s.equippedOffhand = null; s.equippedOffhandTier = 0; s.bodyArmor = {};
+    s.xp = {}; s.uniqueItems = {}; s.jewelrySlots = {}; // master-of-the-frontier (skill Lv), steel-sharpened (uniques), cut-and-set (rings)
     // Quests is its OWN top-level area, with Getting Started as a category tab inside it (not under Battle).
     var qArea = FF.AREAS.filter(function(a){ return a.id==='quests'; })[0];
     ok(!!qArea, 'Quests is its own top-level area');
@@ -6780,6 +6783,53 @@
     ok(FF.questComplete(q45), 'an equipped Ward completes');
     invGrantCheck('ward_and_glyph','stward_wardFire_t0_normal',1);
     s.stats=savedVIIStats; s.gold=savedVIIGold; s.jewelrySlots=savedJS; s.uniqueItems=savedUniq; s.equippedOffhand=savedOff7; s.equippedOffhandTier=savedOffT7;
+    // ---- Act VIII: Trade & Legacy (quests 46-50) ----
+    var savedVIIIStats = s.stats, savedVIIIGold = s.gold, savedXp = s.xp;
+    // 46 Light the Hall (chandlery), 47 Burn the Midnight Oil (peon_lit), 48 Study the Tomes (tomes_studied)
+    [['light_the_hall','crafted_chandlery',10,'chandlery_t0',20],['burn_the_midnight_oil','peon_lit',1,'chandlery_t0',10],['study_the_tomes','tomes_studied',1,'tome_t0',3]].forEach(function(row){
+      var q = FF.questById(row[0]); ok(!!q && q.target===row[2], row[0]+' target '+row[2]);
+      s.quests={claimed:{}}; s.stats={};
+      eq(FF.questComplete(q), false, row[0]+': not complete at 0');
+      s.stats[row[1]]=row[2]; ok(FF.questComplete(q), row[0]+' completes');
+      invGrantCheck(row[0], row[3], row[4]);
+    });
+    // 49 Kindred Spirits: visit the guild
+    var q49 = FF.questById('kindred_spirits');
+    ok(!!q49 && q49.target===1 && q49.reward.gold===2000, 'Kindred Spirits: visit guild -> 2000 gold');
+    s.quests={claimed:{}}; s.stats={}; eq(FF.questComplete(q49), false, 'not visited -> not complete');
+    s.stats['guild_visited']=1; ok(FF.questComplete(q49), 'visiting the guild completes');
+    // 50 Master of the Frontier: any skill to Lv 25
+    var q50 = FF.questById('master_of_the_frontier');
+    ok(!!q50 && q50.target===25, 'Master of the Frontier: to Lv 25');
+    s.quests={claimed:{}}; s.xp={ mining: FF.xpFloorForLevel(24) };
+    eq(FF.questComplete(q50), false, 'Lv 24 is not enough');
+    s.xp={ mining: FF.xpFloorForLevel(25) }; ok(FF.questComplete(q50), 'a skill at Lv 25 completes');
+    s.gold=0; ok(FF.claimQuest('master_of_the_frontier'), 'claim master_of_the_frontier'); eq(s.gold, 5000, 'grants 5000 gold');
+    s.stats=savedVIIIStats; s.gold=savedVIIIGold; s.xp=savedXp;
+    // ---- Capstone (quest 51): "Frontier Hero" -- complete all 50 -> Title + Supreme Rabbit Belt ----
+    var qCap = FF.questById('frontier_hero');
+    ok(!!qCap && qCap.cat==='gettingstarted', 'Frontier Hero lives in Getting Started');
+    eq(qCap.target, 50, 'its target is the other 50 Getting Started quests');
+    ok(qCap.reward.titleId==='title_frontier_hero' && qCap.reward.items[0].itemId==='belt_t0_supreme', 'reward is the Frontier Hero title + a Supreme Rabbit Belt');
+    eq(FF.ALL_SELLABLE['belt_t0_supreme'].name, 'Supreme Rabbit Belt', 'the belt reads as a Supreme Rabbit Belt');
+    ok(/Title: Frontier Hero/.test(FF.questRewardLabel(qCap)) && /Supreme Rabbit Belt/.test(FF.questRewardLabel(qCap)), 'reward line shows both the title and the belt');
+    // The capstone title must be registered in the TITLES browser.
+    ok(FF.TITLE_BY_ID ? !!FF.TITLE_BY_ID['title_frontier_hero'] : true, 'the Frontier Hero title is registered');
+    var gsIds = FF.QUESTS.filter(function(q){ return q.cat==='gettingstarted' && q.id!=='frontier_hero'; }).map(function(q){ return q.id; });
+    eq(gsIds.length, 50, 'there are exactly 50 other Getting Started quests');
+    var savedTitlesCap = s.titles, savedBeltSup = s.inventory['belt_t0_supreme'];
+    s.quests={claimed:{}}; s.titles={};
+    // Claim 49 of 50 -> not yet complete.
+    gsIds.slice(0,49).forEach(function(id){ s.quests.claimed[id]=true; });
+    eq(FF.questProgress(qCap), 49, '49 of 50 claimed reads as 49');
+    eq(FF.questComplete(qCap), false, '49 of 50 does not complete the capstone');
+    s.quests.claimed[gsIds[49]] = true;
+    ok(FF.questComplete(qCap) && FF.questClaimable(qCap), 'all 50 claimed arms the capstone');
+    var beltSupBefore = s.inventory['belt_t0_supreme']||0;
+    ok(FF.claimQuest('frontier_hero'), 'claim frontier_hero succeeds');
+    eq((s.inventory['belt_t0_supreme']||0)-beltSupBefore, 1, 'claim grants a Supreme Rabbit Belt');
+    eq(!!(s.titles && s.titles['title_frontier_hero']), true, 'claim grants the Frontier Hero title');
+    s.titles = savedTitlesCap; if(savedBeltSup===undefined) delete s.inventory['belt_t0_supreme']; else s.inventory['belt_t0_supreme']=savedBeltSup;
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
@@ -6806,7 +6856,7 @@
     if(savedFal===undefined) delete s.inventory['stweapon_scimitar_t0_normal']; else s.inventory['stweapon_scimitar_t0_normal'] = savedFal;
     s.stats = savedStatsQ; s.equippedRelicTier = savedRelicQ; s.equippedBeltTier = savedBeltTQ; s.equippedBeltRarity = savedBeltRQ;
     s.gatherTools = savedGTQ; s.activeCompanions = savedACQ; s.equippedMainhand = savedMHQ; s.equippedOffhand = savedOffQ;
-    s.equippedOffhandTier = savedOffTQ; s.bodyArmor = savedBAQ;
+    s.equippedOffhandTier = savedOffTQ; s.bodyArmor = savedBAQ; s.xp = savedXpQ; s.uniqueItems = savedUniqQ; s.jewelrySlots = savedJSQ;
   });
 
   // ---- Auth identity guard: cross-account write prevention (shared per-origin auth session) ----
