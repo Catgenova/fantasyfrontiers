@@ -1892,8 +1892,8 @@
 
   // ---- Beekeeping (gathering) + Brewing / Confectionery (crafting): the "hive" vertical slice ----
   // Beekeeping gathers a 21-tier honey/hive ladder culminating in Royal Jelly and Ambrosia. Those
-  // honeys sweeten Brewing's buff-drinks (Grain + Honey + Botany spices -> premium XP Brews, which
-  // finally give Botany's spices a consumer) and Confectionery's quick-eat heal snacks (Honey +
+  // honeys sweeten Brewing's buff-drinks (Grain + Honey + Botany spices -> Brews granting a timed
+  // bonus-output chance, which finally give Botany's spices a consumer) and Confectionery's quick-eat heal snacks (Honey +
   // Foraged berries -> candies/jams).
   var HONEY_NAMES = ['Wildflower Honey','Clover Honey','Acacia Honey','Orange Blossom Honey','Lavender Honey','Buckwheat Honey','Heather Honey','Sourwood Honey','Tupelo Honey','Chestnut Honey','Manuka Honey','Sidr Honey','Leatherwood Honey','Fireweed Honey','Ulmo Honey','Rewarewa Honey','Beeswax Comb','Royal Comb','Propolis','Royal Jelly','Ambrosia'];
   // Light gold -> deep amber ramp across the 21 tiers (interpolated so no hand-typed hex drift).
@@ -2671,27 +2671,23 @@
         return list;
       })() },
     brewing: { label:'Brewing', icon:svgIcon('mug','#c88a2a'),
-      // Premium buff-drinks: Grain + Honey + a Botany spice per tier. These are Teas mechanically
-      // (drunk from the Drink section, boosting all XP) but a tier above Mixology's berry Teas, and
-      // the first recipe to consume Botany's spices, closing that dead-end. Grain caps at 20 tiers,
-      // so it's clamped.
+      // Premium buff-drinks: Grain + Honey + a Botany spice per tier. The first recipe to consume
+      // Botany's spices, closing that dead-end. Grain caps at 20 tiers, so it's clamped.
       //
-      // BALANCE (player report, Marcoroni): Brewing was a strictly worse Mixology. Same craft time,
-      // only +16.7% XP, and its headline advantage -- a 2.5x longer pour -- is worth nothing, because
-      // duration only has value under SCARCITY and Mixology has none (foraging + herbalism gather
-      // continuously, while Brewing stalls on grain harvests, costs manual sowing, and takes estate
-      // plots from fiber). Four changes, addressing uptime rather than just paying more per craft:
+      // DIFFERENTIATION (player report, Marcoroni -> owner direction): Brewing used to be a strictly
+      // worse Mixology because BOTH poured the SAME buff -- a flat all-skill XP multiplier into the
+      // single activeTea slot, so drinking a Brew merely REPLACED your Tea and the two only ever
+      // differed by tuning numbers. Brews now pour their OWN buff on a SEPARATE slot (activeBrew), so
+      // a Tea and a Brew run at the same time and can never be "strictly better" than each other:
       //
-      //  * grain 2 -> 1: halves the farming demand and the plot competition with fiber.
-      //  * outputQty 3: one craft fills a cask, not a cup. A harvest now converts into a long stretch
-      //    of covered playtime, which is what actually fixes the stop-and-go.
-      //  * xpBoost step 0.02 -> 0.025: the 0.6 cap was previously UNREACHABLE (0.12 + 0.02*20 = 0.52),
-      //    so the intended endgame advantage never existed -- the real gap was a flat 2pp at every
-      //    tier. It now lands on 0.60 at t20 against Mixology's 0.50.
-      //  * xp base 14 -> 18: +50% per craft over Mixology.
+      //  * Mixology Teas  -> XP RATE: a flat multiplier on all skill XP gained (activeTea).
+      //  * Brewing Brews  -> THROUGHPUT: while active, every craft/gather completion has a % CHANCE to
+      //    yield one extra copy of what it made (activeBrew). It plugs into the same bonus-output
+      //    machinery as Workshops/Mastery. brewYield scales 5% at t0 -> 20% at t20.
       //
-      // Deliberately stacked at the user's direction. NOT play-tested -- see the commit message for
-      // the combined magnitude; the xp base is the dial to turn down first if Brewing overshoots.
+      // The farm-gated production (grain + honey + spice, stop-and-go) pays back as MATERIALS, which
+      // fits Brewing's heavier setup. outputQty 3 keeps one craft filling a cask, not a cup, so a
+      // harvest converts into a long covered stretch. brewYield is the dial to turn if it overshoots.
       recipes: (function(){
         var list = [];
         for(var i=0;i<TIER_COUNT;i++){
@@ -2709,8 +2705,8 @@
             icon: svgIcon('mug',HONEY_COLORS[i]),
             inputs: inputs,
             outputQty: 3,
-            xpBoost: tierCappedBonus(0.12,0.025,0.6,i),
-            teaDurationMs: 5*(i+1)*60*1000
+            brewYield: tierCappedBonus(0.05,0.0075,0.20,i), // bonus-output chance: 5% at t0 -> 20% at t20
+            brewDurationMs: 5*(i+1)*60*1000
           });
         }
         return list;
@@ -4665,10 +4661,15 @@
     if(block.recipes) block.recipes.forEach(function(r){ ALL_CRAFT_RECIPES[r.id] = r; });
   });
   ALL_CRAFT_RECIPES[CRAFTING_SKILLS.fletching.shaftRecipe.id] = CRAFTING_SKILLS.fletching.shaftRecipe;
-  // Every drinkable XP buff-drink, regardless of which skill brews it (Mixology Teas + Brewing Brews).
+  // Mixology Teas: the drinkable XP-rate buff (activeTea slot).
   var TEA_DRINK_RECIPES = Object.keys(ALL_CRAFT_RECIPES)
     .map(function(k){ return ALL_CRAFT_RECIPES[k]; })
     .filter(function(r){ return r && r.teaDurationMs; });
+  // Brewing Brews: the drinkable bonus-output (throughput) buff, on its OWN slot (activeBrew) so a
+  // Brew and a Tea run at once -- a different LEVER, never a strictly-better Tea.
+  var BREW_DRINK_RECIPES = Object.keys(ALL_CRAFT_RECIPES)
+    .map(function(k){ return ALL_CRAFT_RECIPES[k]; })
+    .filter(function(r){ return r && r.brewDurationMs; });
   var ALL_DROP_ITEMS = {};
   CORPSE_ITEMS.forEach(function(it){ ALL_DROP_ITEMS[it.id] = it; });
   BROKEN_RELIC_ITEMS.forEach(function(it){ ALL_DROP_ITEMS[it.id] = it; });
@@ -8420,6 +8421,10 @@
       addItem(itemId, 1);
       spawnFloatingText('Prospector: bonus find!', 'ft-rare');
     }
+    if(brewYieldRoll()){ // active Brewing Brew: a chance at one more of the gathered resource
+      addItem(itemId, 1);
+      spawnFloatingText('Brew: bonus output!', 'ft-rare');
+    }
     var _mastery = overLevelDoubles(skillId); // Over-100 Mastery: +1% double-output per level past 100
     if(_mastery > 0){ addItem(itemId, _mastery); spawnFloatingText('Mastery: double output!', 'ft-rare'); }
   }
@@ -10773,9 +10778,12 @@
     if(Math.random() < successRate){
       addXp(skillId, tierData.xp*1.5);
       addPhysiqueXp(physTierPairs(CRAFT_PHYSIQUE[skillId], act.tierIndex));
-      // A placed Workshop can double item-producing crafts. Each output rolls its OWN rarity,
-      // so a double never clones a Rare/Supreme/Fantastic.
-      var outputs = (SPECIAL_DOUBLEABLE_KINDS.indexOf(act.craftKind)!==-1 && Math.random() < workshopDoubleChance(state, skillId)) ? 2 : 1;
+      // A placed Workshop -- and an active Brewing Brew -- can each add a bonus copy of item-producing
+      // crafts. Each output rolls its OWN rarity, so a bonus never clones a Rare/Supreme/Fantastic.
+      var _canBonus = SPECIAL_DOUBLEABLE_KINDS.indexOf(act.craftKind)!==-1;
+      var _wsDouble = _canBonus && Math.random() < workshopDoubleChance(state, skillId);
+      var _brewBonus = _canBonus && brewYieldRoll();
+      var outputs = 1 + (_wsDouble?1:0) + (_brewBonus?1:0);
       for(var o=0;o<outputs;o++){
         var rarity = (act.craftKind==='workshop' || act.craftKind==='cottage') ? 'normal' : rollCraftRarity(state, act.tierIndex);
         var made = produceSpecialOutput(act, rarity);
@@ -10786,7 +10794,8 @@
       // Per-craft special-forge tallies (once per successful craft, rarity-agnostic), powering Quest progress.
       if(act.craftKind==='belt') bumpStat('belt_made_' + act.tierIndex);                             // "Make 10 Rabbit Belts"
       else if(act.craftKind==='tool') bumpStat('tool_made_' + act.skillId + '_' + act.tierIndex);    // "Forge a Copper <skill> tool"
-      if(outputs===2) spawnFloatingText('Workshop: double output!', 'ft-rare');
+      if(_wsDouble) spawnFloatingText('Workshop: double output!', 'ft-rare');
+      if(_brewBonus) spawnFloatingText('Brew: bonus output!', 'ft-rare');
     } else {
       logForgeFailure(tierData.name);
     }
@@ -10894,6 +10903,7 @@
           bumpStat('crafted_' + act.skill); // per-SKILL successful-craft tally (any tier/recipe), powers "Cook 10 Meals", "Bake 10", etc.
           addItem(act.itemId, _wq);
           if(Math.random() < workshopDoubleChance(state, act.skill)){ addItem(act.itemId, _wq); spawnFloatingText('Workshop: double output!', 'ft-rare'); }
+          if(brewYieldRoll()){ addItem(act.itemId, _wq); spawnFloatingText('Brew: bonus output!', 'ft-rare'); } // active Brewing Brew: a chance at a bonus craft output
           var _cmastery = overLevelDoubles(act.skill); // Over-100 Mastery: +1% double-output per level past 100
           if(_cmastery > 0){ addItem(act.itemId, _wq * _cmastery); spawnFloatingText('Mastery: double output!', 'ft-rare'); }
           addPhysiqueXp(physTierPairs(CRAFT_PHYSIQUE[act.skill], recipeTier(recipe, act.itemId)));
@@ -11543,9 +11553,11 @@
       activeFeast: { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 },
       activeTome: { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 },
       activeScroll: { itemId:null, name:null, icon:null, wardPct:0, durationMs:0, expiresAt:0 },
+      activeBrew: { itemId:null, name:null, icon:null, yield:0, durationMs:0, expiresAt:0 },
       queueTargets: {},  // per-card run lengths keyed by card; absent = run until materials run out
       autoTea: false,
       autoTome: false,   // auto-study the best owned Tome when none is active
+      autoBrew: false,   // auto-drink the best owned Brew when none is active
       familiars: {},
       activeCompanion: null,
       activeCompanions: [],   // multiple active familiars (1 base slot + a Staff's extra slots)
@@ -11885,6 +11897,13 @@
     return !!(state.activeTome && state.activeTome.itemId && state.activeTome.expiresAt > Date.now());
   }
   function tomeSpeedBonus(){ return isTomeActive() ? (state.activeTome.speedBonus||0) : 0; }
+  // Brew throughput: an active Brewing Brew gives every craft/gather completion a chance to yield one
+  // extra copy. Its own timed channel (separate from Teas' XP boost) -- the two stack. brewYieldRoll()
+  // is the per-completion coin-flip plugged into the same bonus-output spots as Workshops/Mastery.
+  function isBrewActive(){
+    return !!(state.activeBrew && state.activeBrew.itemId && state.activeBrew.expiresAt > Date.now());
+  }
+  function brewYieldRoll(){ return isBrewActive() && Math.random() < (state.activeBrew.yield||0); }
   // Scroll ward: reading an Inscription Scroll reduces all incoming damage for a while (folded into
   // the monster's attack). Its own timed channel -- the defensive counterpart to Feasts (offense).
   function isScrollActive(){
@@ -15107,6 +15126,39 @@
     if(state.autoTome && !isTomeActive()) studyBestTome(); // start immediately if a tome is on hand
     needsRender = true;
   }
+  // Brews (Brewing): manually-drunk consumables that add a timed CHANCE for a bonus output on every
+  // craft/gather. Their own buff slot (activeBrew), so a Brew and a Mixology Tea run at the same time.
+  // Like Teas, drinking another replaces the current Brew outright -- strength and timer don't stack.
+  function ownedBrews(){ return BREW_DRINK_RECIPES.filter(function(r){ return (state.inventory[r.id]||0) > 0; }); }
+  function drinkBrew(itemId){
+    var recipe = ALL_CRAFT_RECIPES[itemId];
+    if(!recipe || !recipe.brewDurationMs) return;
+    if((state.inventory[itemId]||0) <= 0) return;
+    state.inventory[itemId] -= 1;
+    bumpStat('brews_drunk'); // brews drunk for the bonus-output buff
+    state.activeBrew = {
+      itemId: itemId,
+      name: recipe.name,
+      icon: recipe.icon,
+      yield: recipe.brewYield,
+      durationMs: recipe.brewDurationMs,
+      expiresAt: Date.now() + recipe.brewDurationMs
+    };
+    addLog('You drink a ' + recipe.name + ', giving a ' + Math.round(recipe.brewYield*100) + '% chance of bonus output for ' + Math.round(recipe.brewDurationMs/60000) + ' minutes.', 'important');
+    needsRender = true;
+  }
+  // Best owned brew = highest bonus-output chance, tie-broken by longest duration (mirrors bestAvailableTea).
+  function bestAvailableBrew(){
+    var brews = ownedBrews();
+    if(!brews.length) return null;
+    return brews.slice().sort(function(a,b){ return (b.brewYield-a.brewYield) || (b.brewDurationMs-a.brewDurationMs); })[0];
+  }
+  function drinkBestBrew(){ var b = bestAvailableBrew(); if(b) drinkBrew(b.id); }
+  function toggleAutoBrew(){
+    state.autoBrew = !state.autoBrew;
+    if(state.autoBrew && !isBrewActive()) drinkBestBrew(); // start immediately if a brew is on hand
+    needsRender = true;
+  }
   // Reading a Scroll (Inscription): starts/refreshes the timed damage-reduction ward. Doesn't stack.
   function readScroll(itemId){
     var recipe = ALL_CRAFT_RECIPES[itemId];
@@ -15593,8 +15645,10 @@
           if(!state.activeFeast || typeof state.activeFeast !== 'object') state.activeFeast = { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 };
           if(!state.activeTome || typeof state.activeTome !== 'object') state.activeTome = { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 };
           if(!state.activeScroll || typeof state.activeScroll !== 'object') state.activeScroll = { itemId:null, name:null, icon:null, wardPct:0, durationMs:0, expiresAt:0 };
+          if(!state.activeBrew || typeof state.activeBrew !== 'object') state.activeBrew = { itemId:null, name:null, icon:null, yield:0, durationMs:0, expiresAt:0 };
           if(typeof state.autoTea !== 'boolean') state.autoTea = false;
           if(typeof state.autoTome !== 'boolean') state.autoTome = false;
+          if(typeof state.autoBrew !== 'boolean') state.autoBrew = false;
           if(!state.familiars || typeof state.familiars !== 'object') state.familiars = {};
           Object.keys(state.familiars).forEach(function(fid){
             var f = state.familiars[fid];
@@ -16199,9 +16253,10 @@
   }
 
   // ---- Card XP preview: base EXP vs. the REAL amount a completion grants ------------------------------
-  // The exact multiplier addXp() layers on top of the amount handed to it: an active Tea (Mixology/Brewing
-  // XP boost), a skill familiar, the server-wide EXP buff, the Mortal deficit, and -- craft skills only --
+  // The exact multiplier addXp() layers on top of the amount handed to it: an active Mixology Tea
+  // (XP boost), a skill familiar, the server-wide EXP buff, the Mortal deficit, and -- craft skills only --
   // Diligence. Mirrors addXp exactly so a card's "real" figure equals what one completion actually adds.
+  // (A Brewing Brew is a bonus-OUTPUT buff, not an XP one, so it never enters this XP multiplier.)
   function addXpAppliedMult(skill){
     var m = 1;
     if(isTeaActive()) m *= (1 + (state.activeTea.xpBoost||0));
@@ -16454,7 +16509,7 @@
     html += craftStatsLine(skillKey);
     html += renderRecipeGrid(skillKey, skill.recipes);
     if(skillKey==='carpentry') html += renderWorkshopForge();
-    if(skillKey==='brewing') html += renderTeaDrinkSection(); // Brews are drinkable like Teas
+    if(skillKey==='brewing') html += renderBrewDrinkSection(); // Brews start the bonus-output buff
     if(skillKey==='gastronomy') html += renderFeastSection(); // Feasts are servable for a combat buff
     if(skillKey==='bookbinding') html += renderTomeSection(); // Tomes are studyable for a work-speed buff
     if(skillKey==='inscription') html += renderScrollSection(); // Scrolls are readable for a damage-reduction ward
@@ -16549,17 +16604,17 @@
   }
 
   function renderTeaDrinkSection(){
-    var html = '<h3>Drink a Tea or Brew</h3>';
+    var html = '<h3>Drink a Tea</h3>';
     if(isTeaActive()){
       var remainingMs = state.activeTea.expiresAt - Date.now();
       html += '<div class="physique-bonus">Active: <b>'+state.activeTea.icon+' '+state.activeTea.name+'</b> &nbsp;|&nbsp; XP Boost: <b>+'+Math.round(state.activeTea.xpBoost*100)+'%</b> &nbsp;|&nbsp; Time Left: <b id="teaTabTimer">'+formatDuration(remainingMs)+'</b></div>';
-      html += '<div class="section-intro">Drinking another Tea or Brew replaces this buff outright -- its strength and timer don\'t stack.</div>';
+      html += '<div class="section-intro">Drinking another Tea replaces this buff outright -- its strength and timer don\'t stack. (A Brewing Brew is a separate buff and runs alongside it.)</div>';
     } else {
-      html += '<div class="section-intro">No buff active. Drink a Tea or Brew below to temporarily boost all skill XP gain.</div>';
+      html += '<div class="section-intro">No Tea active. Drink one below to temporarily boost all skill XP gain.</div>';
     }
     var owned = ownedTeas();
     if(owned.length===0){
-      html += '<div class="empty-note">No Teas or Brews in stock yet &mdash; craft some above.</div>';
+      html += '<div class="empty-note">No Teas in stock yet &mdash; craft some above.</div>';
       return html;
     }
     html += '<div class="card-grid">';
@@ -16569,6 +16624,34 @@
       html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+qty+'</div></div></div>';
       html += '<div class="item-stats"><span>+'+Math.round(recipe.xpBoost*100)+'% XP</span><span>'+Math.round(recipe.teaDurationMs/60000)+' min</span></div>';
       html += '<button class="action-btn" data-action="drinkTea" data-item="'+recipe.id+'">Drink</button>';
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+  // Brewing: drink a Brew to start the timed bonus-output buff (mirrors the Tea section). A different
+  // LEVER than Teas -- throughput, not XP -- on its own slot, so both can be active together.
+  function renderBrewDrinkSection(){
+    var html = '<h3>Drink a Brew</h3>';
+    if(isBrewActive()){
+      var remainingMs = state.activeBrew.expiresAt - Date.now();
+      html += '<div class="physique-bonus">Active: <b>'+state.activeBrew.icon+' '+state.activeBrew.name+'</b> &nbsp;|&nbsp; Bonus Output: <b>'+Math.round(state.activeBrew.yield*100)+'% chance</b> &nbsp;|&nbsp; Time Left: <b id="brewTabTimer">'+formatDuration(remainingMs)+'</b></div>';
+      html += '<div class="section-intro">Drinking another Brew replaces this buff outright -- its strength and timer don\'t stack. (A Mixology Tea is a separate buff and runs alongside it.)</div>';
+    } else {
+      html += '<div class="section-intro">No Brew active. Drink one below to give every craft &amp; gather a chance at a bonus output for a few minutes.</div>';
+    }
+    var owned = ownedBrews();
+    if(owned.length===0){
+      html += '<div class="empty-note">No Brews in stock yet &mdash; craft some above.</div>';
+      return html;
+    }
+    html += '<div class="card-grid">';
+    owned.forEach(function(recipe){
+      var qty = state.inventory[recipe.id]||0;
+      html += '<div class="item-card">';
+      html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+qty+'</div></div></div>';
+      html += '<div class="item-stats"><span>'+Math.round(recipe.brewYield*100)+'% bonus output</span><span>'+Math.round(recipe.brewDurationMs/60000)+' min</span></div>';
+      html += '<button class="action-btn" data-action="drinkBrew" data-item="'+recipe.id+'">Drink</button>';
       html += '</div>';
     });
     html += '</div>';
@@ -28452,7 +28535,7 @@
     masonry: 'Build Curbs, Fences, and Walls from Stonecutting\'s Bricks and Pillars -- usable on the Estate.',
     paving: 'Cut Stonecutting\'s Bricks into decorative floor Tiles -- usable on the Estate.',
     mixology: 'Brew Foraged Berries and Herbs into Teas that boost XP gain.',
-    brewing: 'Ferment Grain, Honey, and Botany spices into Brews -- premium buff-drinks that boost XP for longer than Mixology\'s Teas.',
+    brewing: 'Ferment Grain, Honey, and Botany spices into Brews -- drink one for a timed chance at bonus output on every craft and gather. A separate buff from Mixology\'s XP Teas, so both run at once.',
     confectionery: 'Cook Honey and Foraged berries into candies and jams -- quick-eat heal snacks.',
     gemcutting: 'Cut Prospecting\'s Rough Gems into faceted Cut Gems -- the base for Enchanting.',
     enchanting: 'Bind Cut Gems and metal into Weapon Enchants -- ready one in Battle to add bonus weapon damage to every hit.',
@@ -29379,9 +29462,28 @@
     }
     return html + '</div>';
   }
-  // Combined buff widget: the Tome section (top) and the Tea section (bottom), split vertically. Each
-  // has its own auto toggle. Returns '' when neither has anything to show.
-  function gabBuffsHtml(){ return gabTomeHtml() + gabTeaHtml(); }
+  // Combined buff widget: the Tome, Tea and Brew sections, split vertically. Each has its own auto
+  // toggle and its own slot, so all three can be active together. Returns '' when none has anything.
+  function gabBuffsHtml(){ return gabTomeHtml() + gabTeaHtml() + gabBrewHtml(); }
+  // Brew buff widget: drink an available Brew (or the active one's countdown) for a bonus-output buff,
+  // plus an Auto-drink toggle. Mirrors the Tea widget; a Brew and a Tea run as separate sections.
+  function gabBrewHtml(){
+    var active = isBrewActive();
+    var best = active ? null : bestAvailableBrew();
+    if(!active && !best) return '';
+    var auto = '<span class="gab-tea-auto" data-action="toggleAutoBrew">'+(state.autoBrew?'☑':'☐')+' Auto-drink next</span>';
+    var html = '<div class="gab-tea gab-brew">';
+    if(active){
+      var t = state.activeBrew;
+      var pct = clamp((t.expiresAt-Date.now())/t.durationMs*100, 0, 100);
+      html += '<div class="gab-tea-row"><span class="gab-tea-name">'+t.icon+' '+escapeHtml(t.name)+' <b>'+Math.round(t.yield*100)+'% BONUS</b></span>'+auto+'</div>';
+      html += '<div class="gab-tea-track"><div class="gab-tea-fill" id="gabBrewFill" style="width:'+pct.toFixed(1)+'%;background:#c88a2a"></div></div>';
+      html += '<div class="gab-tea-time" id="gabBrewTime">'+formatDuration(t.expiresAt-Date.now())+' left</div>';
+    } else {
+      html += '<div class="gab-tea-row"><button class="gab-tea-btn" data-action="drinkBestBrew">'+best.icon+' Drink '+escapeHtml(best.name)+' &bull; '+Math.round(best.brewYield*100)+'% BONUS</button>'+auto+'</div>';
+    }
+    return html + '</div>';
+  }
   // Tea buff widget in the header: drink an available tea (or the active one's countdown),
   // plus an Auto-drink toggle. Shown whenever a tea is active or one is owned.
   function gabTeaHtml(){
@@ -29480,6 +29582,7 @@
   var gabSig = '';
   var gabTeaWasActive = false;
   var gabTomeWasActive = false;
+  var gabBrewWasActive = false;
   function updateGlobalActionBarLive(){
     flushGabRewardQueue(); // anchor any pending reward floats to the current task rows
     renderQuestTracker(); // keep tracked-quest progress live between full renders (sig-guarded, cheap)
@@ -29530,6 +29633,15 @@
       if(_mf) _mf.style.width = clamp((state.activeTome.expiresAt-Date.now())/state.activeTome.durationMs*100, 0, 100) + '%';
       var _mt = document.getElementById('gabTomeTime');
       if(_mt) _mt.textContent = formatDuration(state.activeTome.expiresAt-Date.now()) + ' left';
+    }
+    // Brew buff: live countdown, same treatment (re-render on activate/expire so the section swaps).
+    var brewNow = isBrewActive();
+    if(brewNow !== gabBrewWasActive){ gabBrewWasActive = brewNow; needsRender = true; }
+    if(brewNow){
+      var _bf = document.getElementById('gabBrewFill');
+      if(_bf) _bf.style.width = clamp((state.activeBrew.expiresAt-Date.now())/state.activeBrew.durationMs*100, 0, 100) + '%';
+      var _bt = document.getElementById('gabBrewTime');
+      if(_bt) _bt.textContent = formatDuration(state.activeBrew.expiresAt-Date.now()) + ' left';
     }
   }
 
@@ -30560,6 +30672,7 @@
     activatePotion: function(btn, e){ activatePotion(btn.getAttribute('data-item')); },
     deactivatePotion: function(btn, e){ deactivatePotion(); },
     drinkTea: function(btn, e){ drinkTea(btn.getAttribute('data-item')); },
+    drinkBrew: function(btn, e){ drinkBrew(btn.getAttribute('data-item')); },
     serveFeast: function(btn, e){ serveFeast(btn.getAttribute('data-item')); },
     eatConfection: function(btn, e){ eatConfection(btn.getAttribute('data-item')); },
     studyTome: function(btn, e){ studyTome(btn.getAttribute('data-item')); },
@@ -30569,6 +30682,8 @@
     toggleAutoSacrificeRelics: function(btn, e){ toggleAutoSacrificeRelics(); },
     studyBestTome: function(btn, e){ studyBestTome(); },
     toggleAutoTome: function(btn, e){ toggleAutoTome(); },
+    drinkBestBrew: function(btn, e){ drinkBestBrew(); },
+    toggleAutoBrew: function(btn, e){ toggleAutoBrew(); },
     toggleFamiliar: function(btn, e){
       var famSkill = btn.getAttribute('data-skill');
       menagerieExpanded[famSkill] = !menagerieExpanded[famSkill];
@@ -30849,6 +30964,8 @@
     if(state.autoTea && !isTeaActive()) drinkBestTea();
     // Auto-study: same, for the best owned Tome (work-speed buff).
     if(state.autoTome && !isTomeActive()) studyBestTome();
+    // Auto-drink: same, for the best owned Brew (bonus-output buff).
+    if(state.autoBrew && !isBrewActive()) drinkBestBrew();
 
     // Estate terraforming runs entirely in the background, independent of state.activity,
     // so it keeps progressing (and can finish) no matter what the player is actively doing.
@@ -31420,7 +31537,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.36';
+  var GAME_VERSION = '0.0.40.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -31586,9 +31703,10 @@
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
       familiarHitLevelDamage:familiarHitLevelDamage, familiarHitDamageResting:familiarHitDamageResting, familiarPotencyMult:familiarPotencyMult, FAM_HIT_REF_AMOUNT:FAM_HIT_REF_AMOUNT, FAM_HIT_DMG_L1:FAM_HIT_DMG_L1, FAM_HIT_DMG_L100:FAM_HIT_DMG_L100,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
-      ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, ALL_SELLABLE:ALL_SELLABLE, ALL_DROP_ITEMS:ALL_DROP_ITEMS, FAT_ITEMS:FAT_ITEMS, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES, vendorSellValue:vendorSellValue, SELL_RARITY_MULT:SELL_RARITY_MULT,
+      ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, ALL_SELLABLE:ALL_SELLABLE, ALL_DROP_ITEMS:ALL_DROP_ITEMS, FAT_ITEMS:FAT_ITEMS, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES, BREW_DRINK_RECIPES:BREW_DRINK_RECIPES, vendorSellValue:vendorSellValue, SELL_RARITY_MULT:SELL_RARITY_MULT,
       isFeastActive:isFeastActive, feastDamageBonus:feastDamageBonus, serveFeast:serveFeast, eatConfection:eatConfection, foodConsumableList:foodConsumableList, renderFoodConsumablesPanel:renderFoodConsumablesPanel,
       isTomeActive:isTomeActive, tomeSpeedBonus:tomeSpeedBonus, studyTome:studyTome, bestAvailableTome:bestAvailableTome, ownedTomes:ownedTomes, speedMultiplier:speedMultiplier,
+      isBrewActive:isBrewActive, brewYieldRoll:brewYieldRoll, drinkBrew:drinkBrew, bestAvailableBrew:bestAvailableBrew, ownedBrews:ownedBrews, gatherDoubleRoll:gatherDoubleRoll,
       isScrollActive:isScrollActive, scrollDamageReduction:scrollDamageReduction, readScroll:readScroll,
       TIER_LEVELS:TIER_LEVELS, TIER_COUNT:TIER_COUNT, MINING_STONE_NAMES:MINING_STONE_NAMES,
       playerAccuracy:playerAccuracy, monsterDodge:monsterDodge, hitChanceVs:hitChanceVs, playerHitChance:playerHitChance,
