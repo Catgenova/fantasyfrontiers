@@ -6762,10 +6762,12 @@
     // 43 Steel Sharpened: enhance a unique to +5 (progress = max enhance)
     var q43 = FF.questById('steel_sharpened');
     ok(!!q43 && q43.target===5, 'Steel Sharpened: to +5');
-    s.quests={claimed:{}}; s.uniqueItems={ u1:{ enhance:4 } };
+    // Progress reads the non-regressing enhance_best stat (set on any successful enhance of ANY item, not
+    // just masterwork loot) so a later shatter can't drop the bar back below +5.
+    s.quests={claimed:{}}; s.stats={ enhance_best:4 };
     eq(FF.questProgress(q43), 4, '+4 reads as 4/5 progress');
     eq(FF.questComplete(q43), false, '+4 is not complete');
-    s.uniqueItems.u1.enhance = 5; ok(FF.questComplete(q43), '+5 completes');
+    s.stats.enhance_best = 5; ok(FF.questComplete(q43), '+5 on any item completes');
     s.gold=0; ok(FF.claimQuest('steel_sharpened'), 'claim steel_sharpened'); eq(s.gold, 2000, 'grants 2000 gold');
     // 44 Bind the Crystal: enchant a piece -> 5 crystals
     var q44 = FF.questById('bind_the_crystal');
