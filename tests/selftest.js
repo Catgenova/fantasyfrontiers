@@ -6264,6 +6264,29 @@
     eq(FF.claimQuest('midas_at_your_side'), false, 'a claimed quest cannot be re-claimed');
     s.activeCompanions = savedAC; s.familiars = savedFams4;
     if(savedRoast===undefined) delete s.inventory['roasting_t0']; else s.inventory['roasting_t0'] = savedRoast;
+    // ---- Quest 5: "Thin the Warren" -- kill 10 Rabbits -> a Copper Cleaver (first-tier Butchering tool) ----
+    var savedTool = s.inventory['tool_butchering_t0_normal'];
+    var q5 = FF.questById('thin_the_warren');
+    ok(!!q5 && q5.cat==='gettingstarted', 'Thin the Warren lives in Getting Started');
+    eq(q5.target, 10, 'its target is 10 Rabbit kills');
+    ok(q5.reward.kind==='item' && q5.reward.itemId==='tool_butchering_t0_normal' && q5.reward.qty===1, 'reward is a first-tier Butchering tool (tool_butchering_t0_normal)');
+    ok(/Copper/.test(FF.questRewardLabel(q5)) && /Cleaver/.test(FF.questRewardLabel(q5)), 'the reward line reads as the real Copper Cleaver');
+    eq(q5.nav.cat, 'enemies', 'its Go destination is the Enemies list');
+    s.quests = { claimed:{} };
+    s.monsterKills = {};
+    eq(FF.questProgress(q5), 0, 'no kills -> 0 progress');
+    s.monsterKills['wildlife_fox'] = 10; // a different animal must not count
+    eq(FF.questProgress(q5), 0, 'killing other wildlife does not advance the Rabbit tally');
+    s.monsterKills['wildlife_rabbit'] = 9;
+    eq(FF.questComplete(q5), false, '9 Rabbits is not enough');
+    s.monsterKills['wildlife_rabbit'] = 10;
+    ok(FF.questComplete(q5) && FF.questClaimable(q5), 'the 10th Rabbit completes + arms the quest');
+    var tBefore = s.inventory['tool_butchering_t0_normal'] || 0;
+    ok(FF.claimQuest('thin_the_warren'), 'claim succeeds');
+    eq((s.inventory['tool_butchering_t0_normal']||0) - tBefore, 1, 'claim grants one Copper Cleaver');
+    eq(FF.claimQuest('thin_the_warren'), false, 'a claimed quest cannot be re-claimed');
+    s.monsterKills = {};
+    if(savedTool===undefined) delete s.inventory['tool_butchering_t0_normal']; else s.inventory['tool_butchering_t0_normal'] = savedTool;
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
