@@ -10951,6 +10951,7 @@
     while(act.type==='pray' && act.progress >= effTimeP){
       act.progress -= effTimeP;
       addXp('prayer', prayerTier.xp);
+      bumpStat('prayers'); // prayers completed, powers "Kneel and Pray"
       addPhysiqueXp(physTierPairs([['focus',1],['zealotry',1]], itemTierFromId(act.itemId)));
       maybeSummonFamiliar('prayer');
       effTimeP = prayerTier.time*1000*speedMultiplier(state);
@@ -20675,6 +20676,24 @@
       target:1, progress:function(st){ return (st.stats && st.stats['peons_housed']) || 0; },
       nav:{ cat:'peons' },
       reward:{ gold:1000 } },
+    { id:'kneel_and_pray', cat:'gettingstarted', title:'Kneel and Pray',
+      desc:'Steel and sweat carry a hero far, but not all the way. Kneel at the shrine and offer ten prayers — quiet moments that steady the hand and remind you the frontier is older and larger than your ambitions. Faith is a strength that never dulls, and it costs only your patience.',
+      how:'In Resources → Faith, complete 10 Prayers.',
+      target:10, progress:function(st){ return (st.stats && st.stats['prayers']) || 0; },
+      nav:{ cat:'faith' },
+      reward:{ items:[ { itemId:'tool_herbalism_t0_normal', qty:1 } ], gold:500 } },
+    { id:'green_of_thumb', cat:'gettingstarted', title:'Green of Thumb',
+      desc:'The frontier’s hedgerows are a pharmacy for anyone who knows where to look. Gather a hundred wild herbs — chamomile, mint, and the rest — the bitter leaves and quiet roots that a steady hand can brew into medicine. Every healer starts as a forager with good eyes.',
+      how:'In Gathering → Herbalism, gather 100 herbs.',
+      target:100, progress:function(st){ return (st.stats && st.stats['gathered_herbalism_t0']) || 0; },
+      nav:{ cat:'gathering', sub:'herbalism' },
+      reward:{ items:[ { itemId:'tool_alchemy_t0_normal', qty:1 }, { itemId:'herbalism_t0', qty:20 } ] } },
+    { id:'brew_a_draught', cat:'gettingstarted', title:'Brew a Draught',
+      desc:'Herbs are potential; the flask is the payoff. Grind, steep, and distill five draughts at the alchemy bench — the potions that turn a losing fight around, whether they mend your wounds or poison your foe’s blade-edge. A hero who brews their own advantage never fights fair, and never has to.',
+      how:'In Refining → Alchemy, brew 5 potions.',
+      target:5, progress:function(st){ return (st.stats && st.stats['crafted_alchemy']) || 0; },
+      nav:{ cat:'refining', sub:'alchemy' },
+      reward:{ items:[ { itemId:'elixir_t0', qty:10 } ] } },
     { id:'clearing_the_land', cat:'estatequests', title:'Clearing the Land',
       desc:'Before a frontier estate can rise, the wild has to be tamed. Every tree, berry bush, herb, rock, and ore vein is one more patch of ground reclaimed.',
       how:'Open Lands → My Estate, tap a tile with a natural obstacle, and Clear it with the matching Gathering skill. Clear 10 obstacles in all.',

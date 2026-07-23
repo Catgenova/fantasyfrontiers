@@ -6723,6 +6723,29 @@
     ok(FF.claimQuest('hearth_and_home'), 'claim hearth_and_home succeeds');
     eq(s.gold, 1000, 'claim pays 1000 gold');
     s.stats = savedVStats; s.gold = savedVGold;
+    // ---- Act VI: Faith & Flask (quests 39-41) ----
+    var savedVIStats = s.stats, savedVIGold = s.gold;
+    // 39 Kneel and Pray: 10 prayers -> Sickle + gold
+    var q39 = FF.questById('kneel_and_pray');
+    ok(!!q39 && q39.target===10, 'Kneel and Pray: 10 prayers');
+    ok(/Sickle/.test(FF.questRewardLabel(q39)) && /Gold/.test(FF.questRewardLabel(q39)), 'reward is a Sickle + gold');
+    s.quests={claimed:{}}; s.stats={}; s.gold=0;
+    s.stats['prayers']=9; eq(FF.questComplete(q39), false, '9 prayers is not enough');
+    s.stats['prayers']=10; ok(FF.questComplete(q39), '10 prayers completes');
+    invGrantCheck('kneel_and_pray','tool_herbalism_t0_normal',1);
+    // 40 Green of Thumb: 100 herbs -> Mortar & Pestle + 20 herbs
+    var q40 = FF.questById('green_of_thumb');
+    ok(!!q40 && q40.target===100, 'Green of Thumb: 100 herbs');
+    eq(FF.ALL_SELLABLE['herbalism_t0'].name, 'Chamomile', 'herbalism_t0 is Chamomile');
+    s.quests={claimed:{}}; s.stats={ gathered_herbalism_t0:100 }; ok(FF.questComplete(q40), '100 herbs completes');
+    invGrantCheck('green_of_thumb','tool_alchemy_t0_normal',1);
+    // 41 Brew a Draught: 5 potions -> 10 elixirs
+    var q41 = FF.questById('brew_a_draught');
+    ok(!!q41 && q41.target===5, 'Brew a Draught: 5 potions');
+    ok(!!FF.ALL_SELLABLE['elixir_t0'], 'elixir_t0 is a real item');
+    s.quests={claimed:{}}; s.stats={ crafted_alchemy:5 }; ok(FF.questComplete(q41), '5 potions completes');
+    invGrantCheck('brew_a_draught','elixir_t0',10);
+    s.stats = savedVIStats; s.gold = savedVIGold;
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
