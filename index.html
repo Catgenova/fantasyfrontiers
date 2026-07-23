@@ -12751,22 +12751,29 @@
   // enchants ride along, so any reader can view the item with no server round-trip.
   function encodeItemLink(u){
     var ench = (u.enchants||[]).map(function(e){ return e.mod+','+e.roll; }).join(';');
-    try { return btoa([u.base, String(u.enhance||0), ench].join('|')); } catch(e){ return ''; }
+    // Carry the Legendary key (leg) and Armor-Set membership (set/setLayer) so a linked mastercraft shows its
+    // real name ("Rare Bonecrusher") instead of the base weapon ("Rare Tool Steel Maul"). Appended after the
+    // original 3 fields, so older 3-field links still decode.
+    try { return btoa([u.base, String(u.enhance||0), ench, u.leg||'', u.set||'', u.setLayer||''].join('|')); } catch(e){ return ''; }
   }
   function decodeItemLink(b64){
     try {
       var parts = atob(b64).split('|');
       var base = parts[0], p = parseImprovable(base); if(!p) return null;
       var enchants = (parts[2]||'').split(';').filter(Boolean).map(function(seg){ var kv=seg.split(','); return { mod:kv[0], roll:parseInt(kv[1],10)||0 }; });
-      return { base:base, kind:p.kind, tier:p.tier, rarity:p.rarity, enhance:parseInt(parts[1],10)||0, enchants:enchants };
+      var d = { base:base, kind:p.kind, tier:p.tier, rarity:p.rarity, enhance:parseInt(parts[1],10)||0, enchants:enchants };
+      if(parts[3]) d.leg = parts[3];                                    // Legendary gear key -> legendary name/effect
+      if(parts[4]){ d.set = parts[4]; d.setLayer = parts[5] || 'd1';    // Armor-set piece -> set name (needs the slot)
+        var mm = /^bodyarmor_[^_]+_([a-z]+)_t\d+_\w+$/.exec(base); if(mm) d.slot = mm[1]; }
+      return d;
     } catch(e){ return null; }
   }
-  // Inline chat chip (opens the stat card on click).
+  // Inline chat chip (opens the stat card on click). Uses the item's real display name/icon so a linked
+  // Legendary reads as itself.
   function itemLinkChipHtml(b64){
     var d = decodeItemLink(b64); if(!d) return '';
-    var b = ALL_SELLABLE[d.base];
-    var nm = (b?b.name:'Equipment') + (d.enhance>0?' +'+d.enhance:'');
-    return '<span class="chat-item-link rar-'+d.rarity+'" data-action="chatItemView" data-item="'+b64+'" title="View item stats">'+((b&&b.icon)?'<span class="chat-item-ico">'+b.icon+'</span>':'')+escapeHtml(nm)+'</span>';
+    var nm = uniqueDisplayName(d), icon = uniqueIcon(d);
+    return '<span class="chat-item-link rar-'+d.rarity+'" data-action="chatItemView" data-item="'+b64+'" title="View item stats">'+(icon?'<span class="chat-item-ico">'+icon+'</span>':'')+escapeHtml(nm)+'</span>';
   }
   // Enhance-scaled enchant labels for a unique-like { kind, enhance, enchants } -> ['+18% Critical Damage', ...].
   function uniqueEnchantLines(d){
@@ -30799,7 +30806,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.10';
+  var GAME_VERSION = '0.0.39.11';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -30928,7 +30935,7 @@
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
       ELEM_RAW_STATS:ELEM_RAW_STATS, rawEnchantRange:rawEnchantRange, enchantModRange:enchantModRange, baseIsMagicWeapon:baseIsMagicWeapon, enchantPoolForItem:enchantPoolForItem, enchantCtxForUnique:enchantCtxForUnique, elementalRawHitDamage:elementalRawHitDamage,
       parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
-      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, uniqueEnchantLines:uniqueEnchantLines, uniqueBaseStatLines:uniqueBaseStatLines, discordItemStatsText:discordItemStatsText, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
+      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, itemLinkChipHtml:itemLinkChipHtml, uniqueEnchantLines:uniqueEnchantLines, uniqueBaseStatLines:uniqueBaseStatLines, discordItemStatsText:discordItemStatsText, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray, startCombat:startCombat, relocatePrimaryTaskToFreeSlot:relocatePrimaryTaskToFreeSlot,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,

@@ -9031,6 +9031,18 @@
     ok(dec && dec.base==='stweapon_wandFire_t3_rare' && dec.tier===3 && dec.rarity==='rare' && dec.kind==='weapon', 'decode recovers base/tier/rarity/kind');
     ok(dec && dec.enhance===4 && dec.enchants.length===2 && dec.enchants[0].mod==='critDamage' && dec.enchants[0].roll===12 && dec.enchants[1].mod==='lifesteal' && dec.enchants[1].roll===7, 'decode recovers enhance + enchant rolls');
     ok(FF.decodeItemLink('!!!not-base64!!!')===null || FF.decodeItemLink('')===null, 'garbage payload decodes to null (safe fallback)');
+    // A linked MASTERCRAFT legendary carries its leg key so the chip/card show the Legendary name, not the base.
+    var legLink = { base:'stweapon_maul_t19_rare', kind:'weapon', tier:19, rarity:'rare', enhance:0, enchants:[], leg:'bonecrusher' };
+    var legDec = FF.decodeItemLink(FF.encodeItemLink(legLink));
+    ok(legDec && legDec.leg==='bonecrusher', 'a linked legendary round-trips its leg key through encode/decode');
+    var legName = FF.uniqueDisplayName(legDec).replace(/\s+/g,' ').trim();
+    eq(legName, 'Rare Bonecrusher', 'the linked legendary reads as "Rare Bonecrusher", not the base "... Maul"');
+    var chip = FF.itemLinkChipHtml(FF.encodeItemLink(legLink));
+    ok(/Bonecrusher/.test(chip) && !/Maul/.test(chip), 'the chat chip shows the Legendary name, not the base weapon');
+    // Old-format (3-field) links still decode safely (no leg -> falls back to the base name).
+    var oldTok = (function(){ try { return btoa(['stweapon_maul_t19_rare','0',''].join('|')); } catch(e){ return ''; } })();
+    var oldDec = FF.decodeItemLink(oldTok);
+    ok(oldDec && oldDec.base==='stweapon_maul_t19_rare' && !oldDec.leg, 'a legacy 3-field link still decodes (no leg field)');
     // Unique cards always list their enchants, enhance-scaled (mirrors the improvement/inventory cards).
     var uLines = FF.uniqueEnchantLines({ kind:'weapon', enhance:15, enchants:[{mod:'critDamage',roll:10}] });
     ok(uLines.length===1 && /Critical Damage/.test(uLines[0]) && /\+60(\.0)?%/.test(uLines[0]), 'enchant line is enhance-scaled (10% x6 = 60%)');
