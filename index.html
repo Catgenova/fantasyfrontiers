@@ -14333,10 +14333,11 @@
     if(act && act.dungeon){ dungeonOnKill(monster); return; } // dungeon foe -> advance the run instead of re-engaging
     bumpStat('kills');
     bumpMonsterKill(monster.id); // per-monster tally powers Quest progress (e.g. "kill 10 Rabbits")
-    var goldWon = Math.round(randInt(monster.goldMin, monster.goldMax) * legTreasureMult() * (legActive('goldgorge') ? LEG_GOLDGORGE_KILL : 1) * (1 + legendaryRingBonus('d2_goldfind', state)) * ((set2D3('treasureHunter') && enemyCursed(state)) ? 1.50 : 1) * ((legActive('gravepilfer') && (enemyCursed(state) || enemyDecaying(state))) ? 2 : 1)); // Pendant of Fortune: +Treasure Find gold; Goldgorge (D2 scimitar): +30% kill gold; Signet of Plunder (D2): +Gold Find; Grave Robber (TH D3 2pc): +50% gold from a Cursed foe; Gravepilfer (D3 scimitar): +100% from a Cursed/Decayed foe
-    earnGold(goldWon);
+    // Enemies no longer drop a flat gold reward on kill. (Treasure Hunter's legendary/set gold-scatter
+    // effects -- Goldgorge crits, Cofferguard/Cryptguard/Hoardwall blocks, Wyrm's Greed -- still pay out;
+    // those remain that class's niche and are handled elsewhere in the combat path.)
     addPhysiqueXp(physTierPairs([['resolve',1]], monster.tierIndex));
-    addLog('Defeated the ' + monster.name + '! +' + goldWon + ' gold.', 'important');
+    addLog('Defeated the ' + monster.name + '!', 'important');
     applyMonsterCategoryLoot(monster);
     // Treasure Hunter Lv 60 (Tithe): a kill grants Faith equal to the enemy's tier (Tier 1 = tierIndex 0 => +1).
     if(treasureHunterBonus(60)){
@@ -19448,8 +19449,7 @@
   function dungeonOnKill(monster){
     dungeonEnsureRun(); // resume a run whose module state was lost to a reload, so the kill still advances
     bumpStat('kills');
-    earnGold(randInt(monster.goldMin, monster.goldMax));
-    addLog('Defeated the ' + monster.name + '!', 'important');
+    addLog('Defeated the ' + monster.name + '!', 'important'); // enemies drop no flat gold reward
     var _cls = activeClassId(state); if(_cls) maybeSummonFamiliar(_cls);
     if(!dungeonRun || !dungeonRun.active){ stopActivity(); dungeonView = 'browse'; needsRender = true; return; }
     if(dungeonRun.idx >= dungeonRun.def.enemies.length - 1) dungeonComplete();
@@ -19583,8 +19583,7 @@
       dungeonNet.rewardedIndex++;
       if(!foe) continue;
       bumpStat('kills');
-      var g = randInt(foe.goldMin, foe.goldMax); earnGold(g);
-      addLog('The party felled the ' + foe.name + '! +' + g + ' gold.', 'important');
+      addLog('The party felled the ' + foe.name + '!', 'important'); // enemies drop no flat gold reward
       var _cls = activeClassId(state); if(_cls) maybeSummonFamiliar(_cls);
     }
   }
@@ -21106,8 +21105,7 @@
       var _rawTip = 'This foe\'s raw hit before any of your mitigation.';
       var _dvyTip = 'Damage this foe actually lands on YOU per hit, after your armour, shield, resistances, class mods and enchants. '
         + 'Unblocked, at full Health. Its raw damage is ' + m.atkMin + '–' + m.atkMax + '.';
-      html += '<div class="item-stats"><span>'+m.goldMin+'-'+m.goldMax+'g</span>'
-        + '<span data-tip="'+escapeHtml(_rawTip)+'">'+m.atkMin+'–'+m.atkMax+' raw</span>'
+      html += '<div class="item-stats"><span data-tip="'+escapeHtml(_rawTip)+'">'+m.atkMin+'–'+m.atkMax+' raw</span>'
         + '<span class="dmg-vs-you" data-tip="'+escapeHtml(_dvyTip)+'">'+fmt(_dvy.min)+'–'+fmt(_dvy.max)+' to you</span>'
         + '<span>'+getMonsterLootChance(m)+'% '+getMonsterLootLabel(m)+'</span><span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
       html += '<div class="chance-line" style="font-size:11px">Dodge '+monsterDodge(m)+' &bull; '+(locked?'':'Your hit chance '+Math.round(playerHitChance(m)*100)+'%')+'<br>Attack: '+formatTypeMix(m.attackTypes)+'<br>Armor: '+formatTypeMix(m.armorTypes)+'</div>';
@@ -31422,7 +31420,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.35';
+  var GAME_VERSION = '0.0.39.36';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
