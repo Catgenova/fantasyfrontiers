@@ -6867,6 +6867,33 @@
     var _th = FF.renderTitlesTab();
     ok(_th.indexOf('data-title="'+_t1+'"') !== -1 && _th.indexOf('data-title="'+_t1+'"') < _th.indexOf('data-title="'+_t0+'"'), 'an earned title renders above an unearned one');
     s.titles = {};
+    // ---- Quest tracker: pin/unpin quests to the persistent card; claiming untracks; empties when none ----
+    var savedTracked = s.trackedQuests;
+    s.quests = { claimed:{} }; s.trackedQuests = []; // prior sorting test left some quests claimed
+    FF.questToggleTrack('take_up_arms');
+    ok(FF.questTracked('take_up_arms') && s.trackedQuests.indexOf('take_up_arms')!==-1, 'toggling Track pins the quest');
+    FF.questToggleTrack('take_up_arms');
+    ok(!FF.questTracked('take_up_arms'), 'toggling Track again unpins it');
+    s.trackedQuests = []; s.quests = { claimed:{ don_your_armor:true } };
+    FF.questToggleTrack('don_your_armor');
+    ok(!FF.questTracked('don_your_armor'), 'a claimed quest cannot be tracked');
+    // Claiming a tracked quest removes it from the tracker.
+    s.quests = { claimed:{} }; s.trackedQuests = ['answer_the_call'];
+    ok(FF.questTracked('answer_the_call'), 'answer_the_call is tracked');
+    ok(FF.claimQuest('answer_the_call'), 'claim the tracked quest');
+    ok(!FF.questTracked('answer_the_call'), 'claiming a quest untracks it');
+    // renderQuestTracker: a card appears for a tracked quest and empties out when nothing is tracked.
+    var _qtEl = (typeof document !== 'undefined') && document.getElementById('questTracker');
+    if(_qtEl){
+      s.quests = { claimed:{} }; s.trackedQuests = ['take_up_arms'];
+      FF.renderQuestTracker();
+      ok(/Take Up Arms/.test(_qtEl.innerHTML) && /qtrack/.test(_qtEl.innerHTML), 'the tracker card renders the tracked quest');
+      ok(/data-action="questUntrack"/.test(_qtEl.innerHTML), 'the tracker card offers an untrack (✕) control');
+      s.trackedQuests = [];
+      FF.renderQuestTracker();
+      eq(_qtEl.innerHTML, '', 'the tracker empties out completely when nothing is tracked');
+    }
+    s.quests = { claimed:{} }; s.trackedQuests = savedTracked || [];
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
