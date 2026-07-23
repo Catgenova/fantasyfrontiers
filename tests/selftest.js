@@ -6113,7 +6113,7 @@
 
   suite('quests: area, category, accordion + claim flow', function(){
     var s = FF._state;
-    var savedMK = s.monsterKills, savedQ = s.quests, savedInv = s.inventory['corpse_t0'], savedTitles = s.titles;
+    var savedMK = s.monsterKills, savedQ = s.quests, savedInv = s.inventory['corpse_t0'], savedTitles = s.titles, savedFal = s.inventory['stweapon_falchion_t1_normal'];
     s.monsterKills = {}; s.quests = { claimed:{} }; s.titles = {};
     // Quests is its OWN top-level area, with Getting Started as a category tab inside it (not under Battle).
     var qArea = FF.AREAS.filter(function(a){ return a.id==='quests'; })[0];
@@ -6122,56 +6122,39 @@
     ok(!FF.AREAS.some(function(a){ return a.id==='battle' && a.subs.some(function(sub){ return sub[0]==='quests'; }); }), 'Quests is no longer a sub of Battle');
     eq(FF.isQuestCategory('gettingstarted'), true, 'gettingstarted is a quest category');
     eq(FF.isQuestCategory('enemies'), false, 'a normal category is not a quest category');
-    var q = FF.questById('watership_down');
-    ok(!!q, 'the Watership Down quest exists');
+    var q = FF.questById('answer_the_call');
+    ok(!!q, 'the first Getting Started quest (Answer the Call) exists');
+    ok(!FF.questById('watership_down'), 'the old Watership Down quest was removed');
     eq(q.cat, 'gettingstarted', 'it lives in the Getting Started category');
-    eq(q.target, 10, 'its target is 10 rabbits');
-    ok(q.reward.kind==='item' && q.reward.itemId==='corpse_t0' && q.reward.qty===10, 'reward is 10 Rabbit Corpses (corpse_t0)');
-    ok(q.nav.cat==='enemies' && q.nav.sub==='wildlife', 'its Go destination is Enemies -> Wildlife');
-    ok(typeof q.how === 'string' && q.how.length > 0, 'it carries how-to-complete instructions');
-    // Incomplete: not complete, not claimable, nothing flashes.
-    eq(FF.questComplete(q), false, 'no kills -> not complete');
-    eq(FF.questClaimable(q), false, 'incomplete -> not claimable');
-    eq(FF.questAnyClaimable(), false, 'nothing claimable yet');
-    eq(FF.railSubFlash('gettingstarted'), false, 'the Getting Started tab does not flash yet');
-    eq(FF.railAreaFlash('quests'), false, 'the Quests area does not flash yet');
-    // 9 kills is still short; the 10th completes it.
-    for(var i=0;i<9;i++) FF.bumpMonsterKill('wildlife_rabbit');
-    eq(FF.questProgress(q), 9, 'progress tracks rabbit kills');
-    eq(FF.questComplete(q), false, '9/10 is not complete');
-    FF.bumpMonsterKill('wildlife_rabbit');
-    eq(FF.questProgress(q), 10, 'the 10th kill meets the target');
-    ok(FF.questComplete(q) && FF.questClaimable(q), 'complete + claimable at 10 kills');
-    eq(FF.questClaimableInCat('gettingstarted'), true, 'the owning category is claimable');
+    eq(q.target, 1, 'its target is 1 (a first-login welcome quest)');
+    ok(q.reward.kind==='item' && q.reward.itemId==='stweapon_falchion_t1_normal' && q.reward.qty===1, 'reward is a Tier-1 Falchion (stweapon_falchion_t1_normal)');
+    ok(typeof q.how === 'string' && q.how.length > 0 && typeof q.desc === 'string' && q.desc.length > 0, 'it carries how-to + lore text');
+    // A first-login welcome quest is immediately complete + claimable (progress is always met).
+    ok(FF.questComplete(q) && FF.questClaimable(q), 'the welcome quest is immediately complete + claimable');
+    eq(FF.questProgress(q), 1, 'progress is met (and clamps at the target of 1)');
+    eq(FF.questClaimableInCat('gettingstarted'), true, 'the owning category reports a claimable');
     eq(FF.railSubFlash('gettingstarted'), true, 'the Getting Started tab flashes when a reward is claimable');
     eq(FF.railAreaFlash('quests'), true, 'the Quests area flashes so it is visible from anywhere');
-    // Only the wildlife_rabbit tally counts, and progress clamps at the target.
-    FF.bumpMonsterKill('demonspawn_imp');
-    eq(FF.questProgress(q), 10, 'progress is clamped at the target and only counts rabbits');
-    // Accordion: collapsed by default -> bar shows the Claim button but NOT the how/reward body; expand reveals them.
+    // Accordion: collapsed shows the Claim button but not the body; expand reveals how-to + reward.
     var collapsed = FF.renderQuestsTab();
-    ok(/data-action="questClaim"/.test(collapsed) && /data-quest="watership_down"/.test(collapsed), 'the bar renders a Claim button when complete');
+    ok(/data-action="questClaim"/.test(collapsed) && /data-quest="answer_the_call"/.test(collapsed), 'the bar renders a Claim button when complete');
     ok(/quest-acc-bar/.test(collapsed) && !/quest-acc-body/.test(collapsed), 'collapsed: no expanded body');
-    FF.questToggleExpand('watership_down');
+    FF.questToggleExpand('answer_the_call');
     var expanded = FF.renderQuestsTab();
     ok(/quest-acc-body/.test(expanded) && /How to complete/.test(expanded) && /Reward:/.test(expanded), 'expanded: shows the how-to instructions and the reward');
-    FF.questToggleExpand('watership_down'); // collapse again
-    // Claim grants the reward exactly once and clears the flash.
-    var before = s.inventory['corpse_t0'] || 0;
-    ok(FF.claimQuest('watership_down'), 'claim succeeds when claimable');
-    eq((s.inventory['corpse_t0']||0) - before, 10, 'claim grants 10 Rabbit Corpses');
+    FF.questToggleExpand('answer_the_call'); // collapse again
+    // Claim grants the blade exactly once and clears the flash.
+    var before = s.inventory['stweapon_falchion_t1_normal'] || 0;
+    ok(FF.claimQuest('answer_the_call'), 'claim succeeds when claimable');
+    eq((s.inventory['stweapon_falchion_t1_normal']||0) - before, 1, 'claim grants the Tier-1 Falchion');
     eq(FF.questClaimed(q), true, 'the quest is marked claimed');
     eq(FF.questClaimable(q), false, 'a claimed quest is no longer claimable');
     eq(FF.railSubFlash('gettingstarted'), false, 'the flash clears after claiming');
     eq(FF.railAreaFlash('quests'), false, 'the area flash clears after claiming');
     // Idempotent: a second claim grants nothing.
-    var after = s.inventory['corpse_t0'] || 0;
-    eq(FF.claimQuest('watership_down'), false, 'a claimed quest cannot be re-claimed');
-    eq(s.inventory['corpse_t0']||0, after, 'no extra corpses from a double-claim');
-    // An incomplete quest renders a Go button to its nav destination.
-    s.quests = { claimed:{} }; s.monsterKills = {};
-    var goHtml = FF.renderQuestsTab();
-    ok(/data-action="navToActivity"/.test(goHtml) && /data-nav-cat="enemies"/.test(goHtml) && /data-nav-sub="wildlife"/.test(goHtml), 'incomplete quest renders a Go button to Enemies -> Wildlife');
+    var after = s.inventory['stweapon_falchion_t1_normal'] || 0;
+    eq(FF.claimQuest('answer_the_call'), false, 'a claimed quest cannot be re-claimed');
+    eq(s.inventory['stweapon_falchion_t1_normal']||0, after, 'no extra blade from a double-claim');
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
@@ -6195,6 +6178,7 @@
     s.estateClears = savedClears; if(savedPave===undefined) delete s.inventory['paving_t5']; else s.inventory['paving_t5'] = savedPave;
     // restore
     s.monsterKills = savedMK; s.quests = savedQ; s.inventory['corpse_t0'] = savedInv; s.titles = savedTitles;
+    if(savedFal===undefined) delete s.inventory['stweapon_falchion_t1_normal']; else s.inventory['stweapon_falchion_t1_normal'] = savedFal;
   });
 
   // ---- Auth identity guard: cross-account write prevention (shared per-origin auth session) ----
