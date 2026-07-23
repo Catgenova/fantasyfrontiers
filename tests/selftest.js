@@ -3422,6 +3422,25 @@
     var saOn = legSt('spectralaegis', { xp:{ vitality: FF.xpFloorForLevel(30) } });
     eq(FF.reaperShieldCap(saOn), 2 * FF.reaperShieldCap(saOff), 'Spectral Aegis doubles the Siphon Shield cap');
     near(FF.reaperShieldCap(saOn), Math.round(FF.maxHp(saOn) * 0.40), 'Spectral Aegis cap = 40% of max HP');
+
+    // combatShieldTotal: sums every absorb pool that soaks hits before your Health (Aegis + Siphon + Barrier),
+    // which the combat UI draws as a blue overlay on the HP bar. Clamps at 0 (never negative / NaN).
+    eq(FF.combatShieldTotal({ templarShield:10, reaperShield:20, lumenShield:5 }), 35, 'combatShieldTotal sums Aegis + Siphon + Barrier');
+    eq(FF.combatShieldTotal({ reaperShield:12 }), 12, 'combatShieldTotal handles missing pools');
+    eq(FF.combatShieldTotal({}), 0, 'combatShieldTotal is 0 with no shields');
+    eq(FF.combatShieldTotal({ templarShield:-5 }), 0, 'combatShieldTotal never goes negative');
+
+    // clampPlayerHpToMax: Health can never sit above its CURRENT max. A temp max-HP buff that inflated the
+    // ceiling and then expired leaves playerHp stranded above the new max -- the clamp snaps it back down,
+    // and (crucially) leaves an at-or-below-max value untouched.
+    var _cs = FF._state, _svHp = _cs.playerHp;
+    var _mh = FF.maxHp(_cs);
+    _cs.playerHp = _mh + 40;
+    eq(FF.clampPlayerHpToMax(_cs), _mh, 'clampPlayerHpToMax snaps stranded over-max Health down to the max');
+    eq(_cs.playerHp, _mh, 'the clamp mutates state.playerHp');
+    _cs.playerHp = Math.max(1, _mh - 3);
+    eq(FF.clampPlayerHpToMax(_cs), Math.max(1, _mh - 3), 'clampPlayerHpToMax leaves an at-or-below-max value untouched');
+    _cs.playerHp = _svHp;
   });
 
   // ---- D1 legendary gear COMBAT effects, Batch 4: the four Pierce weapons -----------------------------
