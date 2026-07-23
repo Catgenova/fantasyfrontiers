@@ -6341,6 +6341,35 @@
     eq(FF.claimQuest('render_the_kill'), false, 'a claimed quest cannot be re-claimed');
     s.stats = savedStats;
     r7.forEach(function(id, i){ if(savedR7[i]===undefined) delete s.inventory[id]; else s.inventory[id] = savedR7[i]; });
+    // ---- Quest 8: "Cure the Hides" -- tan 10 Rabbit Leather -> 10 Rabbit Leather + a Copper Awl ----
+    var q8 = FF.questById('cure_the_hides');
+    ok(!!q8 && q8.cat==='gettingstarted', 'Cure the Hides lives in Getting Started');
+    eq(q8.target, 10, 'its target is 10 tanned Rabbit Leather');
+    eq(q8.reward.kind, 'items', 'it grants a multi-item reward');
+    var r8 = q8.reward.items.map(function(it){ return it.itemId; });
+    ok(r8.indexOf('tanning_t0')!==-1 && r8.indexOf('tool_leatherworking_t0_normal')!==-1, 'reward is 10 Rabbit Leather + a Copper Leatherworking tool');
+    ok(r8.every(function(id){ return !!FF.ALL_SELLABLE[id]; }), 'every reward item resolves to a real item');
+    eq(FF.ALL_SELLABLE['tanning_t0'].name, 'Rabbit Leather', 'tier-0 Leather is Rabbit Leather');
+    ok(/Awl/.test(FF.questRewardLabel(q8)) && /Copper/.test(FF.questRewardLabel(q8)), 'the reward line names the Copper Awl (Leatherworking tool)');
+    eq(q8.nav.cat, 'crafting', 'its Go destination is the Crafting tab');
+    eq(q8.nav.sub, 'tanning', 'the Go destination drills into the Tanning sub-tab');
+    var savedStats8 = s.stats, savedR8 = r8.map(function(id){ return s.inventory[id]; });
+    s.quests = { claimed:{} };
+    s.stats = {};
+    eq(FF.questProgress(q8), 0, 'nothing tanned -> 0 progress');
+    s.stats['made_tanning_t1'] = 10; // tanning a higher-tier leather must not count
+    eq(FF.questProgress(q8), 0, 'tanning other-tier leather does not advance the Rabbit tally');
+    s.stats['made_tanning_t0'] = 9;
+    eq(FF.questComplete(q8), false, '9 tanned is not enough');
+    s.stats['made_tanning_t0'] = 10;
+    ok(FF.questComplete(q8) && FF.questClaimable(q8), 'the 10th tanned Rabbit Leather completes + arms the quest');
+    var r8Before = r8.map(function(id){ return s.inventory[id]||0; });
+    ok(FF.claimQuest('cure_the_hides'), 'claim succeeds');
+    eq((s.inventory['tanning_t0']||0) - r8Before[0], 10, 'claim grants 10 Rabbit Leather');
+    eq((s.inventory['tool_leatherworking_t0_normal']||0) - r8Before[1], 1, 'claim grants a Copper Awl');
+    eq(FF.claimQuest('cure_the_hides'), false, 'a claimed quest cannot be re-claimed');
+    s.stats = savedStats8;
+    r8.forEach(function(id, i){ if(savedR8[i]===undefined) delete s.inventory[id]; else s.inventory[id] = savedR8[i]; });
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };

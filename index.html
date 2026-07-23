@@ -10842,6 +10842,7 @@
         } else if(Math.random() < craftSuccessRate(state, act.skill)){
           addXp(act.skill, recipe.xp*1.5*craftXpBonus(act.skill));
           var _wq = recipe.outputQty || 1;
+          bumpStat('made_' + act.itemId); // per-recipe successful-craft tally (once per craft, doubles excluded), powers Quest progress ("Tan 10 Rabbit Leather")
           addItem(act.itemId, _wq);
           if(Math.random() < workshopDoubleChance(state, act.skill)){ addItem(act.itemId, _wq); spawnFloatingText('Workshop: double output!', 'ft-rare'); }
           var _cmastery = overLevelDoubles(act.skill); // Over-100 Mastery: +1% double-output per level past 100
@@ -20459,6 +20460,15 @@
         { itemId:'fat_t0', qty:10 },
         { itemId:'meat_t0', qty:10 },
         { itemId:'tool_tanning_t0_normal', qty:1 }
+      ] } },
+    { id:'cure_the_hides', cat:'gettingstarted', title:'Cure the Hides',
+      desc:'Raw hide rots; cured leather endures. Work your Tanning Knife over ten rabbit hides and draw them into supple leather — the stuff of boots, straps, and armor that will carry you deeper into the frontier. Master the curing and you’ll have earned the awl to start shaping it.',
+      how:'In Crafting → Tanning, cure 10 Rabbit Leather from your Rabbit Hides.',
+      target:10, progress:function(st){ return (st.stats && st.stats['made_tanning_t0']) || 0; },
+      nav:{ cat:'crafting', sub:'tanning' },
+      reward:{ kind:'items', items:[
+        { itemId:'tanning_t0', qty:10 },
+        { itemId:'tool_leatherworking_t0_normal', qty:1 }
       ] } },
     { id:'clearing_the_land', cat:'estatequests', title:'Clearing the Land',
       desc:'Before a frontier estate can rise, the wild has to be tamed. Every tree, berry bush, herb, rock, and ore vein is one more patch of ground reclaimed.',
@@ -30901,7 +30911,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.22';
+  var GAME_VERSION = '0.0.39.23';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
