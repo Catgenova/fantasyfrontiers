@@ -6643,6 +6643,58 @@
     eq((s.inventory['tool_weaving_t0_normal']||0) - r22Before[1], 1, 'claim grants a Copper Loom');
     s.stats = savedStats22;
     r22.forEach(function(id, i){ if(savedR22[i]===undefined) delete s.inventory[id]; else s.inventory[id] = savedR22[i]; });
+    // ---- Act IV: Cloth, Kitchen & Cup (quests 23-30) ----
+    // Reward system is now additive-by-field; a crafted_<skill> tally powers the crafting quests.
+    var savedActStats = s.stats, savedActBA = s.bodyArmor, savedActGold = s.gold;
+    function invGrantCheck(qid, itemId, n){ var b = s.inventory[itemId]||0; ok(FF.claimQuest(qid), 'claim '+qid+' succeeds'); eq((s.inventory[itemId]||0)-b, n, qid+' grants '+n+'x '+itemId); }
+    // 23 Weave the Bolt: weave 10 Cotton Cloth -> Sewing Kit + 10 cloth
+    var q23 = FF.questById('weave_the_bolt');
+    ok(!!q23 && q23.target===10, 'Weave the Bolt: craft 10');
+    ok(q23.reward.items.some(function(i){return i.itemId==='tool_tailoring_t0_normal';}) && q23.reward.items.some(function(i){return i.itemId==='weaving_t0';}), 'reward is Sewing Kit + Cotton Cloth');
+    eq(FF.ALL_SELLABLE['weaving_t0'].name, 'Cotton Cloth', 'weaving_t0 is Cotton Cloth');
+    s.quests={claimed:{}}; s.stats={};
+    s.stats['crafted_tanning']=10; eq(FF.questProgress(q23), 0, 'crafting a different skill does not advance weaving');
+    s.stats['crafted_weaving']=10; ok(FF.questComplete(q23), '10 weaves completes');
+    invGrantCheck('weave_the_bolt','tool_tailoring_t0_normal',1);
+    // 24 Dress the Part: equip a cloth (tailoring) chest -> Fishing Rod
+    var q24 = FF.questById('dress_the_part');
+    ok(!!q24 && q24.reward.items[0].itemId==='tool_fishing_t0_normal', 'Dress the Part rewards a Fishing Rod');
+    s.quests={claimed:{}}; s.bodyArmor={};
+    eq(FF.questComplete(q24), false, 'no cloth chest -> not complete');
+    s.bodyArmor.chest={material:'chain',tier:1}; eq(FF.questComplete(q24), false, 'a chain chest is not cloth');
+    s.bodyArmor.chest={material:'tailoring',tier:1}; ok(FF.questComplete(q24), 'a tailoring (cloth) chest completes');
+    invGrantCheck('dress_the_part','tool_fishing_t0_normal',1);
+    // 25 Cast a Line: catch 50 fish -> Roasting Spit + 30 fish
+    var q25 = FF.questById('cast_a_line');
+    ok(!!q25 && q25.target===50, 'Cast a Line: catch 50');
+    s.quests={claimed:{}}; s.stats={};
+    s.stats['gathered_fishing_t1']=50; eq(FF.questProgress(q25), 0, 'a different fish does not count');
+    s.stats['gathered_fishing_t0']=50; ok(FF.questComplete(q25), '50 fish completes');
+    invGrantCheck('cast_a_line','tool_roasting_t0_normal',1);
+    // 26-28 kitchen crafts (crafted_<skill>)
+    [['roast_the_catch','roasting',20,'tool_cooking_t0_normal'],['a_warm_meal','cooking',10,'tool_baking_t0_normal'],['break_bread','baking',10,'tool_mixology_t0_normal']].forEach(function(row){
+      var q = FF.questById(row[0]); ok(!!q && q.target===row[2], row[0]+' target '+row[2]);
+      s.quests={claimed:{}}; s.stats={};
+      s.stats['crafted_'+row[1]]=row[2]; ok(FF.questComplete(q), row[0]+' completes at target');
+      invGrantCheck(row[0], row[3], 1);
+    });
+    // 29 Steep the Leaves: brew 5 teas -> 10 teas
+    var q29 = FF.questById('steep_the_leaves');
+    ok(!!q29 && q29.target===5, 'Steep the Leaves: brew 5');
+    s.quests={claimed:{}}; s.stats={ crafted_mixology:5 }; ok(FF.questComplete(q29), '5 teas completes');
+    invGrantCheck('steep_the_leaves','mixology_t0',10);
+    // 30 A Restful Cup: drink a tea -> foraging + GOLD (additive reward)
+    var q30 = FF.questById('a_restful_cup');
+    ok(!!q30 && q30.reward.gold===500, 'A Restful Cup rewards 500 gold alongside items');
+    ok(/Gold/.test(FF.questRewardLabel(q30)) && /Blackberry/.test(FF.questRewardLabel(q30)), 'reward line shows both the berries and the gold');
+    s.quests={claimed:{}}; s.stats={}; s.gold=0;
+    eq(FF.questComplete(q30), false, 'no tea drunk -> not complete');
+    s.stats['teas_drunk']=1; ok(FF.questComplete(q30), 'drinking a tea completes');
+    var g30 = s.gold||0, f30 = s.inventory['foraging_t0']||0;
+    ok(FF.claimQuest('a_restful_cup'), 'claim a_restful_cup succeeds');
+    eq((s.gold||0)-g30, 500, 'claim grants 500 gold');
+    eq((s.inventory['foraging_t0']||0)-f30, 20, 'claim grants 20 Blackberries');
+    s.stats = savedActStats; s.bodyArmor = savedActBA; s.gold = savedActGold;
     // ---- Estate quest category: "Clearing the Land" (clear 10 obstacles -> 20 tier-5 paving tiles) ----
     var savedClears = s.estateClears, savedPave = s.inventory['paving_t5'];
     s.estateClears = 0; s.quests = { claimed:{} };
