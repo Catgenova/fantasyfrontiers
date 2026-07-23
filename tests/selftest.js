@@ -3234,9 +3234,10 @@
     // 35 effects x 4 rarities = 140 generated items, all flagged + non-vendorable + iconned.
     eq(Object.keys(FF.LEGENDARY_GEAR_ITEMS).length, 140, '35 x 4 rarities = 140 legendary gear items');
     ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS).every(function(id){ var it = FF.LEGENDARY_GEAR_ITEMS[id]; return it.legendary === true && it.gear === true && it.sell === 0 && /<svg/.test(it.icon); }), 'every legendary gear item is flagged, non-vendorable, iconned');
-    // Names carry the rarity suffix; base Normal is bare.
+    // Names carry the rarity as a PREFIX (e.g. "Rare Tombshatter"); base Normal is bare.
     eq(FF.LEGENDARY_GEAR_ITEMS[FF.legGearItemId('cull','normal')].name, 'Huskmaker', 'Normal legendary name is bare');
-    ok(/^Huskmaker \(Fantastic\s*\)$/.test(FF.LEGENDARY_GEAR_ITEMS[FF.legGearItemId('cull','fantastic')].name), 'Fantastic legendary carries the rarity suffix');
+    eq(FF.LEGENDARY_GEAR_ITEMS[FF.legGearItemId('cull','fantastic')].name.replace(/\s+/g,' ').trim(), 'Fantastic Huskmaker', 'a non-Normal legendary carries the rarity as a prefix');
+    eq(FF.LEGENDARY_GEAR_ITEMS[FF.legGearItemId('cull','rare')].name.replace(/\s+/g,' ').trim(), 'Rare Huskmaker', 'a Rare legendary is "Rare <name>"');
     // Group -> outcome-key pools (what a formula can forge).
     eq(FF.LEG_GEAR_GROUP_KEYS.slash.length, 6, 'slash outcome pool has 6 keys');
     ok(FF.LEG_GEAR_GROUP_KEYS.arcane.indexOf('holyward') !== -1, 'wards live in the arcane outcome pool');
@@ -3741,7 +3742,7 @@
     var u = minted[0];
     ok(u && u.leg && FF.D2_LEG_GEAR_MAP[u.leg], 'the unique carries a D2 arcane-group legendary effect');
     ok(/^st(weapon|ward)_.+_t20_(rare|supreme|fantastic)$/.test(u.base), 'the unique is a top-tier wand/scepter/staff/ward base, floored at Rare');
-    ok(FF.uniqueDisplayName(u).indexOf(FF.D2_LEG_GEAR_MAP[u.leg].name) === 0, 'the forged D2 legendary displays its effect name, not the base wand/ward');
+    ok(FF.uniqueDisplayName(u).indexOf(FF.D2_LEG_GEAR_MAP[u.leg].name) !== -1, 'the forged D2 legendary displays its effect name, not the base wand/ward');
     eq(s.blueprints[bpId], 0, 'the forge consumes the Blueprint');
     eq(s.inventory.forestry_t20, 0, 'the forge consumes the 2000 wood');
     var rareLeft = FF.legGearRareIds('arcane').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
@@ -3818,7 +3819,7 @@
     var u = minted[0];
     ok(u && u.leg && FF.LEG_GEAR_GROUP_KEYS_D2.defense.indexOf(u.leg) !== -1, 'the unique carries a D2 defense-group effect');
     ok(/^stshield_.+_t19_(rare|supreme|fantastic)$/.test(u.base), 'the unique is a top-tier shield base, floored at Rare');
-    ok(FF.uniqueDisplayName(u).indexOf(FF.D2_LEG_GEAR_MAP[u.leg].name) === 0, 'the forged D2 shield displays its effect name');
+    ok(FF.uniqueDisplayName(u).indexOf(FF.D2_LEG_GEAR_MAP[u.leg].name) !== -1, 'the forged D2 shield displays its effect name');
     eq(s.inventory.metallurgy_t20, 0, 'the forge consumes the 2000 ingots');
     var rareLeft = FF.legGearRareIds('defense').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
     eq(rareLeft, FF.legGearRareIds('defense').length * 8 - 20, 'the forge consumes exactly 20 rare shields');
@@ -4212,7 +4213,7 @@
     var u = minted[0];
     ok(u && u.leg && FF.D3_LEG_GEAR_MAP[u.leg], 'the unique carries a D3 arcane-group legendary effect');
     ok(/^st(weapon|ward)_.+_t20_(rare|supreme|fantastic)$/.test(u.base), 'the unique is a top-tier wand/scepter/staff/ward base');
-    ok(FF.uniqueDisplayName(u).indexOf(FF.D3_LEG_GEAR_MAP[u.leg].name) === 0, 'the forged D3 legendary displays its effect name');
+    ok(FF.uniqueDisplayName(u).indexOf(FF.D3_LEG_GEAR_MAP[u.leg].name) !== -1, 'the forged D3 legendary displays its effect name');
     eq(s.inventory.forestry_t20, 0, 'the forge consumes the 3000 wood');
     var rareLeft = FF.legGearRareIds('arcane').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
     eq(rareLeft, FF.legGearRareIds('arcane').length * 3 - 30, 'the forge consumes exactly 30 rare arcane items');
@@ -4288,7 +4289,7 @@
     var u = minted[0];
     ok(u && u.leg && FF.D4_LEG_GEAR_MAP[u.leg], 'the unique carries a D4 arcane-group legendary effect');
     ok(/^st(weapon|ward)_.+_t20_(rare|supreme|fantastic)$/.test(u.base), 'the unique is a top-tier wand/scepter/staff/ward base');
-    ok(FF.uniqueDisplayName(u).indexOf(FF.D4_LEG_GEAR_MAP[u.leg].name) === 0, 'the forged D4 legendary displays its effect name');
+    ok(FF.uniqueDisplayName(u).indexOf(FF.D4_LEG_GEAR_MAP[u.leg].name) !== -1, 'the forged D4 legendary displays its effect name');
     eq(s.inventory.forestry_t20, 0, 'the forge consumes the 4000 wood');
     var rareLeft = FF.legGearRareIds('arcane').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
     eq(rareLeft, FF.legGearRareIds('arcane').length * 4 - 40, 'the forge consumes exactly 40 rare arcane items');
