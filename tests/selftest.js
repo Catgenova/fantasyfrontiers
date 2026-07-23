@@ -887,15 +887,17 @@
     // The sort returns a COPY -- the source array keeps its functional order untouched.
     eq(FF.OUTFITTING_SKILL_IDS[0], 'weaponsmithing', 'source OUTFITTING_SKILL_IDS order is not mutated');
   });
-  suite('tierStepper disables at the ends and when locked', function(){
+  suite('tierStepper disables only at the tier-range ends (not while crafting)', function(){
     var lowest = FF.tierStepper('ring', 'r', FF.tierRange(4), 0, 'x', false);
     // The − button (dir=-1) sits before the + button; at the lowest tier only − is disabled.
     ok(/data-tier-dir="-1"[^>]*disabled/.test(lowest), 'minus disabled at lowest tier');
     ok(!/data-tier-dir="1"[^>]*disabled/.test(lowest), 'plus enabled at lowest tier');
     var highest = FF.tierStepper('ring', 'r', FF.tierRange(4), 4, 'x', false);
     ok(/data-tier-dir="1"[^>]*disabled/.test(highest), 'plus disabled at highest tier');
-    var locked = FF.tierStepper('ring', 'r', FF.tierRange(4), 2, 'x', true);
-    ok(/data-tier-dir="-1"[^>]*disabled/.test(locked) && /data-tier-dir="1"[^>]*disabled/.test(locked), 'both disabled when locked');
+    // The active-craft flag (last arg) no longer locks the stepper: players can browse tiers mid-craft
+    // and queue a different tier in a new slot.
+    var midCraft = FF.tierStepper('ring', 'r', FF.tierRange(4), 2, 'x', true);
+    ok(!/data-tier-dir="-1"[^>]*disabled/.test(midCraft) && !/data-tier-dir="1"[^>]*disabled/.test(midCraft), 'the active-craft flag does NOT disable the stepper at a mid tier');
   });
 
   // ---- Gathering workshops (parallel to crafting workshops) -----------------------------
