@@ -22993,8 +22993,15 @@
   // past-cap runtime a barrel covers), the effect is flat, and provisions drain faster on higher-tier
   // tasks (shared peonBurnRate). Barrels come from your own inventory, guild estate included. Unlike
   // candles they are never pre-loaded on assign (that would waste a barrel for no online benefit).
-  var BARREL_PROVISION_BASE_MS = 30 * 60 * 1000; // a T0 barrel covers ~30 min of extra past-cap runtime
-  function barrelProvisionMs(tier){ return Math.round(BARREL_PROVISION_BASE_MS * Math.pow(1.2, Math.max(0, Math.min(TIER_COUNT-1, tier)))); }
+  // Duration climbs geometrically from a T0 floor to a T20 ceiling: 5 min of extra past-cap runtime at
+  // T0 up to 60 min at T20 (before the shared task-tier burn scaling). Deliberately modest -- provisions
+  // are a top-up for a long absence, not a way to run peons for days.
+  var BARREL_PROVISION_MIN_MS = 5 * 60 * 1000;   // T0 floor
+  var BARREL_PROVISION_MAX_MS = 60 * 60 * 1000;  // T20 ceiling
+  function barrelProvisionMs(tier){
+    var t = Math.max(0, Math.min(TIER_COUNT-1, tier));
+    return Math.round(BARREL_PROVISION_MIN_MS * Math.pow(BARREL_PROVISION_MAX_MS/BARREL_PROVISION_MIN_MS, t/(TIER_COUNT-1)));
+  }
   function barrelTierOf(barrelId){ var m = /_t(\d+)/.exec(barrelId||''); return m ? parseInt(m[1],10) : 0; }
   function peonProvisioned(task){ return !!(task && task.barrelId); }
   // Can this provisioned peon fund AT LEAST one more past-cap action right now (current barrel or stock)?
@@ -31683,7 +31690,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.41.0';
+  var GAME_VERSION = '0.0.41.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
