@@ -6889,6 +6889,7 @@
       FF.renderQuestTracker();
       ok(/Take Up Arms/.test(_qtEl.innerHTML) && /qtrack/.test(_qtEl.innerHTML), 'the tracker card renders the tracked quest');
       ok(/data-action="questUntrack"/.test(_qtEl.innerHTML), 'the tracker card offers an untrack (✕) control');
+      ok(/qtrack-how/.test(_qtEl.innerHTML) && /equip your Scimitar/.test(_qtEl.innerHTML), 'the tracker card shows the quest’s how-to action text');
       s.trackedQuests = [];
       FF.renderQuestTracker();
       eq(_qtEl.innerHTML, '', 'the tracker empties out completely when nothing is tracked');
