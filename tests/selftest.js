@@ -3311,6 +3311,23 @@
     } finally { s.inventory = svInv; s.blueprints = svBp; s.uniqueItems = svUniq; s.uidSeq = svSeq; }
   });
 
+  suite('mastercraft: a forged legendary reads as itself (name + effect) in cards + inventory', function(){
+    var u = { uid:'ux', base:'stweapon_warhammer_t19_rare', kind:'weapon', tier:19, rarity:'rare', enchants:[], enhance:0, leg:'gravewrath' };
+    var card = FF.uniqueCardBody(u);
+    ok(/Gravewrath/.test(card), 'the unique card shows the Legendary name (not the raw base weapon name)');
+    ok(!/Warhammer/.test(FF.uniqueDisplayName(u)), 'uniqueDisplayName returns the Legendary name, not the base');
+    ok(/Legendary Effect/.test(card) && /Decay/.test(card), 'the card surfaces the legendary effect blurb');
+    // It shows up in the Inventory "Unique" group under its Legendary name.
+    var S = FF._state, sInv=S.inventory, sUniq=S.uniqueItems, sCat=FF.currentCategoryId();
+    try {
+      S.inventory = {}; S.uniqueItems = { ux:u };
+      FF.navPickCat('inventory');
+      var h = document.getElementById('inventoryPanel').innerHTML;
+      ok(/inv-acc-title">Unique/.test(h), 'the Unique inventory group renders');
+      ok(/Gravewrath/.test(h), 'the forged legendary appears in the inventory under its Legendary name');
+    } finally { S.inventory=sInv; S.uniqueItems=sUniq; if(sCat) FF.navPickCat(sCat); }
+  });
+
   // ---- D1 legendary gear EQUIP: forged uniques slot into hand + expose their effect --------------------
   suite('mastercraft: legendary gear equip', function(){
     var s = FF._state;

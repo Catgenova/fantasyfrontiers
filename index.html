@@ -537,6 +537,9 @@
     background:linear-gradient(165deg,var(--bg-panel-raised),var(--bg-card)); border:2px solid var(--gold); border-radius:var(--radius);
     max-width:380px; width:100%; max-height:85dvh; overflow-y:auto; padding:20px; text-align:center; box-shadow:0 0 34px rgba(15,125,116,0.22), 0 10px 28px rgba(52,38,18,0.28);
   }
+  .mc-result-banner{display:flex; align-items:center; justify-content:center; gap:8px; font-family:var(--font-display); font-weight:700; letter-spacing:.5px; text-transform:uppercase; font-size:15px; color:#e6c24a; margin-bottom:12px; padding-bottom:10px; border-bottom:1px dashed var(--border-light);}
+  .mc-result-banner .game-icon{width:20px; height:20px;}
+  .mc-result-where{margin-top:12px; font-size:12px; line-height:1.5; color:var(--text-dim);}
   .skill-info-title{font-family:var(--font-display); color:var(--gold); font-size:18px; margin-bottom:10px;}
   .skill-info-desc{color:var(--text-dim); font-size:13px; line-height:1.6; margin-bottom:16px;}
   .familiar-popup-card{background:linear-gradient(165deg,var(--bg-panel-raised),var(--bg-card)); border:2px solid var(--gold); border-radius:var(--radius); max-width:420px; width:100%; max-height:88dvh; overflow-y:auto; padding:22px; text-align:center; box-shadow:0 0 34px rgba(15,125,116,0.22), 0 10px 28px rgba(52,38,18,0.28);}
@@ -1679,6 +1682,7 @@
   <div id="invDetailOverlay" class="skill-info-overlay" data-action="closeInvDetail" style="display:none"></div>
   <div id="itemLinkOverlay" class="skill-info-overlay" data-action="closeItemLink" style="display:none"></div>
   <div id="uniqueDetailOverlay" class="skill-info-overlay" data-action="closeUniqueDetail" style="display:none"></div>
+  <div id="mastercraftResultOverlay" class="skill-info-overlay" data-action="closeMastercraftResult" style="display:none"></div>
   <div id="settingsOverlay"></div>
   <div id="trackerPickerOverlay"></div>
   <div id="towerPreviewOverlay"></div>
@@ -10132,7 +10136,8 @@
       // Armor Set piece: mint a UNIQUE carrying its class-set membership + layer (t21 for D1, t22 for D2).
       // Best-in-slot -> floor at Rare.
       if(rarityRank(rarity) < 1){ rarity = 'rare'; ftClass = 'ft-rare'; }
-      mintSetPiece(key.cls, key.slot, rarity, recipe.layer);
+      var setUid = mintSetPiece(key.cls, key.slot, rarity, recipe.layer);
+      mastercraftResult = setUid ? { uid: setUid } : null;
       var pname = getRarity(rarity).label + setPieceName(key.cls, key.slot, recipe.layer);
       addLog('Mastercraft! You forged the ' + pname + ' — part of the ' + ((CLASS_DEFS_BY_ID[key.cls]||{}).name || key.cls) + ' set. It\'s a unique piece — find it in Equipment &amp; Stats and the Improvement tab, not your Inventory bag.', 'important');
       if(rarity==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the **' + pname + '**! (part of the ' + ((CLASS_DEFS_BY_ID[key.cls]||{}).name || key.cls) + ' set)');
@@ -10152,6 +10157,7 @@
       state.uniqueItems[uid] = { uid:uid, base: prefix + gdef.base + '_t' + topIdx + '_' + rarity,
         kind: (gdef.slot === 'mainhand' ? 'weapon' : 'offhand'),
         tier: topIdx, rarity: rarity, enchants: [], enhance: 0, leg: key }; // tier = base tier INDEX (equip adds +1)
+      mastercraftResult = { uid: uid };
       var git = recipe.itemMap[itemId];
       addLog('Mastercraft! You forged the Legendary ' + git.name + ' — ' + gdef.desc + ' It\'s a unique piece — find it in Equipment &amp; Stats and the Improvement tab (not your Inventory bag). A Tier-20 legendary needs that weapon\'s proficiency at Lv 95 to equip.', 'important');
       if(rarity==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the Legendary **' + git.name + '**! (' + gdef.desc + ')');
@@ -10161,6 +10167,9 @@
     }
     addItem(itemId, 1);
     var it = recipe.itemMap[itemId];
+    // Legendary accessories (rings/amulets/capes) live in their own tables, not ALL_SELLABLE, so carry the
+    // display name + icon on the result rather than making the modal look them up.
+    mastercraftResult = { itemId: itemId, name: it.name, icon: it.icon, statLine: '+' + Math.round(it.value * 100) + '% ' + escapeHtml(it.statLabel || '') };
     addLog('Mastercraft! You forged the ' + it.name + ' — +' + Math.round(it.value * 100) + '% ' + it.statLabel + '.', 'important');
     if(rarity==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the **' + it.name + '**! (+' + Math.round(it.value * 100) + '% ' + it.statLabel + ')');
     spawnFloatingText('+1 ' + it.name, ftClass);
@@ -12830,12 +12839,23 @@
     if(d.kind==='belt' && BELT_RARITY_SLOTS[d.rarity]) baseLines.push(BELT_RARITY_SLOTS[d.rarity]+' task slot'+(BELT_RARITY_SLOTS[d.rarity]>1?'s':''));
     return baseLines;
   }
+  // A Legendary gear unique's effect blurb (weapon/shield/ward), looked up across the four dungeon maps.
+  function uniqueLegDesc(d){
+    if(!d || !d.leg) return '';
+    var maps = [D1_LEG_GEAR_MAP, D2_LEG_GEAR_MAP, D3_LEG_GEAR_MAP, D4_LEG_GEAR_MAP];
+    for(var i=0;i<maps.length;i++){ if(maps[i] && maps[i][d.leg] && maps[i][d.leg].desc) return maps[i][d.leg].desc; }
+    return '';
+  }
   function uniqueCardBody(d){
     var b = ALL_SELLABLE[d.base];
-    var nm = (b?b.name:'Equipment') + (d.enhance>0?' +'+d.enhance:'');
-    var html = '<div class="inv-detail-icon">'+((b&&b.icon)||svgIcon('sword','var(--gold)'))+'</div>';
+    // Use the item's real display name (a Legendary's name like "Gravewrath", a set piece's name, else the
+    // base) instead of the raw base weapon name -- so a mastercrafted legendary reads as itself everywhere.
+    var nm = uniqueDisplayName(d);
+    var html = '<div class="inv-detail-icon">'+uniqueIcon(d)+'</div>';
     html += '<div class="skill-info-title">'+escapeHtml(nm)+'</div>';
     html += '<div class="inv-detail-meta">'+escapeHtml(getRarity(d.rarity).label||'')+' &bull; Tier '+(d.tier+1)+(d.enhance>0?' &bull; <b>+'+d.enhance+'</b>':'')+'</div>';
+    var legDesc = uniqueLegDesc(d);
+    if(legDesc) html += '<div class="skill-info-section"><div class="skill-info-section-label">Legendary Effect</div><div class="skill-info-section-body" style="color:var(--gold)">'+escapeHtml(legDesc)+'</div></div>';
     var baseLines = uniqueBaseStatLines(d);
     if(baseLines.length) html += '<div class="skill-info-section"><div class="skill-info-section-label">Base</div><div class="skill-info-section-body">'+baseLines.map(escapeHtml).join(' &bull; ')+'</div></div>';
     // Inherent, rarity-scaled material bonus (body armor only) -- what the piece adds just by being worn.
@@ -28591,6 +28611,41 @@
       + '<button class="action-btn" data-action="closeUniqueDetail" style="margin-top:12px">Close</button></div>';
   }
 
+  // Result modal shown right after a Mastercraft: what you forged + its full stats. Set by craftMastercraft
+  // to { uid } for a legendary/set UNIQUE (weapon/shield/ward/armor piece) or { itemId } for an accessory
+  // that stacks in your bag (ring/amulet/cape). Dismissed with Close.
+  var mastercraftResult = null;
+  function renderMastercraftResultOverlay(){
+    var overlay = document.getElementById('mastercraftResultOverlay'); if(!overlay) return;
+    var r = mastercraftResult;
+    if(!r){ overlay.style.display = 'none'; overlay.innerHTML = ''; return; }
+    var body = '', actions = '', where = '';
+    if(r.uid){
+      var u = state.uniqueItems && state.uniqueItems[r.uid];
+      if(!u){ overlay.style.display = 'none'; overlay.innerHTML = ''; mastercraftResult = null; return; }
+      body = uniqueCardBody(u);
+      var eq = uniqueIsEquipped(u.uid), lock = eq ? null : uniqueEquipLock(u);
+      if(eq) actions += '<button class="mini-btn stop" data-action="improveUnequip" data-uid="'+u.uid+'">Unequip</button>';
+      else if(lock) actions += '<button class="mini-btn" disabled style="opacity:.6;">'+svgIcon('lock','currentColor')+' '+lock+'</button>';
+      else actions += '<button class="mini-btn" data-action="mcResultEquip" data-uid="'+u.uid+'">Equip</button>';
+      actions += '<button class="mini-btn" data-action="uniqueManage" data-uid="'+u.uid+'">Improve</button>';
+      where = 'Kept in <b>Equipment &amp; Stats</b>, your Inventory’s <b>Unique</b> group, and the <b>Improvement</b> tab.';
+    } else if(r.itemId){
+      var it = ALL_SELLABLE[r.itemId] || {};
+      body = '<div class="inv-detail-icon">'+(r.icon||it.icon||svgIcon('starburst','var(--gold)'))+'</div>'
+        + '<div class="skill-info-title">'+escapeHtml(r.name||it.name||r.itemId)+'</div>'
+        + (r.statLine ? '<div class="inv-detail-meta">'+r.statLine+'</div>' : '');
+      where = 'Added to your <b>Inventory</b> bag.';
+    } else { overlay.style.display = 'none'; overlay.innerHTML = ''; mastercraftResult = null; return; }
+    overlay.style.display = 'flex';
+    overlay.innerHTML = '<div class="skill-info-card mc-result-card">'
+      + '<div class="mc-result-banner">'+svgIcon('trophy','#e6c24a')+' Mastercraft!</div>'
+      + body
+      + '<div class="mc-result-where">'+where+'</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:10px;">'+actions+'</div>'
+      + '<button class="action-btn" data-action="closeMastercraftResult" style="margin-top:12px">Close</button></div>';
+  }
+
   var lastRenderedLogVersion = -1;
   function renderLogPanel(){
     if(!document.getElementById('logPanel')) return; // only present on the Chronicle view now
@@ -28990,6 +29045,7 @@
     renderInvDetailOverlay();  // item detail modal for the grid inventory
     renderItemLinkPopup();     // chat item-link stat card
     renderUniqueDetailOverlay(); // Inventory "Unique" bucket item card
+    renderMastercraftResultOverlay(); // "You forged X" result modal after a Mastercraft
     renderOfflineSummary();
     renderLootPopup();
     renderEnhancePopup();
@@ -29818,6 +29874,8 @@
     closeItemLink: function(btn, e){ chatItemLinkView = null; },
     openUniqueDetail: function(btn, e){ uniqueDetailUid = btn.getAttribute('data-uid'); },
     closeUniqueDetail: function(btn, e){ uniqueDetailUid = null; },
+    closeMastercraftResult: function(btn, e){ mastercraftResult = null; },
+    mcResultEquip: function(btn, e){ equipUnique(btn.getAttribute('data-uid')); mastercraftResult = null; },
     uniqueManage: function(btn, e){ improveSelect(btn.getAttribute('data-uid')); uniqueDetailUid = null; navPickCat('improvement'); },
     improveLinkChat: function(btn, e){ improveLinkChat(btn.getAttribute('data-uid')); },
     toggleItemLock: function(btn, e){ toggleItemLock(btn.getAttribute('data-item')); },
@@ -30741,7 +30799,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.39.8';
+  var GAME_VERSION = '0.0.39.9';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
