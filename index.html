@@ -8240,6 +8240,28 @@
     }
     needsRender = true;
   }
+  // Swap a new familiar into an occupied companion slot in one step (no separate Deactivate then Activate).
+  // oldId names WHICH companion to bump (a picker offers one per slot when several are active); with a lone
+  // slot it defaults to the only companion. If a slot happens to be free, this just fills it.
+  function replaceCompanion(newId, oldId){
+    if(!Array.isArray(state.activeCompanions)) state.activeCompanions = [];
+    state.companionCast = state.companionCast || {};
+    if(!newId || !state.familiars[newId] || !state.familiars[newId].owned) return;
+    if(activeCompanionList(state).indexOf(newId) !== -1) return;   // already fighting alongside you
+    var comps = activeCompanionList(state);
+    var removeId = oldId || (comps.length ? comps[comps.length-1] : null); // default: bump the last-added companion
+    if(removeId && comps.indexOf(removeId) !== -1){
+      var i = state.activeCompanions.indexOf(removeId);
+      if(i !== -1){ state.activeCompanions.splice(i, 1); delete state.companionCast[removeId]; }
+    }
+    if(activeCompanionList(state).length < activeCompanionSlots(state)){
+      state.activeCompanions.push(newId);
+      state.companionCast[newId] = { accum:0, index:0 };
+      var fam = FAMILIAR_DATA[newId] || {}, oldFam = removeId ? (FAMILIAR_DATA[removeId] || {}) : null;
+      addLog((fam.name||newId) + (oldFam ? ' takes the field in place of ' + (oldFam.name||removeId) + '.' : ' joins you as a Companion.'), 'important');
+    }
+    needsRender = true;
+  }
 
   // ================= HELPERS =================
   function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
@@ -11740,6 +11762,7 @@
   var skillGroupExpanded = {};
   var physiquePanelExpanded = false;
   var menagerieExpanded = {};
+  var menagerieSearch = '';   // Menagerie search: matches by familiar name, skill, or spell name
   var settingsOpen = false;
   var settingsTab = 'profile';      // which Settings tab is showing (account/profile/interface/qol)
   var _lastSettingsTab = null;      // so a tab switch resets the scroll box instead of carrying it
@@ -21808,8 +21831,21 @@
         if(isCompanion){
           html += '<button class="action-btn stop" data-action="activateCompanion" data-skill="'+skillId+'">Deactivate Companion</button>';
         } else {
-          var _full = activeCompanionList(state).length >= activeCompanionSlots(state);
-          html += '<button class="action-btn" data-action="activateCompanion" data-skill="'+skillId+'" '+(_full?'disabled title="All companion slots are full (a Staff adds more)"':'')+'>Activate as Companion</button>';
+          var _comps = activeCompanionList(state), _slots = activeCompanionSlots(state);
+          if(_comps.length < _slots){
+            // A slot is free -> just equip. Multi-slot loadouts (Staff / Summoner) call it "Open Slot".
+            html += '<button class="action-btn" data-action="activateCompanion" data-skill="'+skillId+'">'+(_slots>1?'Equip to Open Slot':'Activate as Companion')+'</button>';
+          } else if(_comps.length === 1){
+            // One slot, full -> swap the lone companion out in a single tap (no Deactivate-then-Activate).
+            html += '<button class="action-btn" data-action="replaceCompanion" data-skill="'+skillId+'" data-old="'+_comps[0]+'">Replace Companion</button>';
+          } else {
+            // Several slots, all full -> choose WHICH companion this one replaces (a button per slot).
+            html += '<div class="inputs-line" style="margin-top:6px">All '+_slots+' slots full — replace a companion:</div>';
+            _comps.forEach(function(cid){
+              var cf = FAMILIAR_DATA[cid] || {};
+              html += '<button class="action-btn" data-action="replaceCompanion" data-skill="'+skillId+'" data-old="'+cid+'" style="margin-top:6px">Replace '+escapeHtml(cf.name||cid)+'</button>';
+            });
+          }
         }
       } else {
         html += '<div class="empty-note">Tap to expand</div>';
@@ -22273,6 +22309,47 @@
     });
     return html;
   }
+  // Does this familiar match the Menagerie search? Matches its SKILL label always (so a search finds even
+  // un-summoned familiars by their skill), and its NAME + SPELL names only once summoned (an unknown
+  // familiar shows as "???", so revealing its name/spells via search would spoil it).
+  function familiarMatchesSearch(skillId, q){
+    if(!q) return true;
+    var fam = FAMILIAR_DATA[skillId]; if(!fam) return false;
+    var physiqueMeta = PHYSIQUE_SKILLS.filter(function(p){ return p.id===skillId; })[0];
+    var label = SKILL_LABELS[skillId] || (physiqueMeta ? physiqueMeta.name : skillId);
+    if((label||'').toLowerCase().indexOf(q) !== -1) return true;
+    if(skillId.toLowerCase().indexOf(q) !== -1) return true;
+    var owned = state.familiars[skillId] && state.familiars[skillId].owned;
+    if(owned){
+      if((fam.name||'').toLowerCase().indexOf(q) !== -1) return true;
+      if((fam.spells||[]).some(function(sp){ return (sp.name||'').toLowerCase().indexOf(q) !== -1; })) return true;
+    }
+    return false;
+  }
+  var MENAGERIE_SECTIONS = [
+    {label:'Gathering', ids: GATHER_SKILL_IDS},
+    {label:'Crafting', ids: CRAFT_SKILL_IDS},
+    {label:'Farming', ids: ['farming']},
+    {label:'Faith', ids: FAITH_SKILL_IDS},
+    {label:'Physique', ids: FAMILIAR_PHYSIQUE_IDS},
+    {label:'Classes', ids: CLASS_SKILL_IDS}
+  ];
+  // The filterable list of familiar sections (re-rendered alone on each keystroke so the search box keeps
+  // focus). Sections with no matches are hidden; an empty search shows everything.
+  function renderMenagerieList(){
+    var q = (menagerieSearch||'').trim().toLowerCase();
+    var html = '', any = false;
+    MENAGERIE_SECTIONS.forEach(function(section){
+      var ids = q ? section.ids.filter(function(id){ return familiarMatchesSearch(id, q); }) : section.ids;
+      if(!ids.length) return;
+      any = true;
+      html += '<h3>'+section.label+'</h3><div class="card-grid">';
+      ids.forEach(function(skillId){ html += renderFamiliarCard(skillId); });
+      html += '</div>';
+    });
+    if(!any) html += '<div class="empty-note">No familiars match &ldquo;'+escapeHtml(menagerieSearch.trim())+'&rdquo; — try a familiar name, a skill (e.g. Mining), or a spell.</div>';
+    return html;
+  }
   function renderMenagerieTab(){
     var totalOwned = Object.keys(state.familiars).filter(function(k){ return state.familiars[k] && state.familiars[k].owned; }).length;
     var totalFamiliars = FAMILIAR_SKILL_IDS.length + CLASS_SKILL_IDS.length;
@@ -22282,19 +22359,8 @@
     html += renderActiveCompanionsSection();
     var clothBonusPct = Math.round(getClothArmorSpellBonus(state)*100);
     html += '<div class="physique-bonus">Cloth Armor Spell Bonus: <b>+'+clothBonusPct+'%</b> summon spell potency &mdash; each equipped Tailoring piece (Chest, Head, Gloves, Boots, Back) adds +5% at Normal, and cloth rarity pumps this bonus 2x/4x/8x (Rare +10%, Supreme +20%, Fantastic +40%) instead of raising the piece\'s armor. Doesn\'t grow with tier.</div>';
-    var sections = [
-      {label:'Gathering', ids: GATHER_SKILL_IDS},
-      {label:'Crafting', ids: CRAFT_SKILL_IDS},
-      {label:'Farming', ids: ['farming']},
-      {label:'Faith', ids: FAITH_SKILL_IDS},
-      {label:'Physique', ids: FAMILIAR_PHYSIQUE_IDS},
-      {label:'Classes', ids: CLASS_SKILL_IDS}
-    ];
-    sections.forEach(function(section){
-      html += '<h3>'+section.label+'</h3><div class="card-grid">';
-      section.ids.forEach(function(skillId){ html += renderFamiliarCard(skillId); });
-      html += '</div>';
-    });
+    html += '<input type="text" id="menagerieSearchInput" class="inv-search" style="margin-top:10px;" placeholder="Search familiars by name, skill, or spell…" value="'+menagerieSearch.replace(/"/g,'&quot;')+'" autocomplete="off">';
+    html += '<div id="menagerieList">'+renderMenagerieList()+'</div>';
     return html;
   }
 
@@ -31657,6 +31723,7 @@
       menagerieExpanded[famSkill] = !menagerieExpanded[famSkill];
     },
     activateCompanion: function(btn, e){ activateCompanion(btn.getAttribute('data-skill')); },
+    replaceCompanion: function(btn, e){ replaceCompanion(btn.getAttribute('data-skill'), btn.getAttribute('data-old')); },
     dismissPopup: function(btn, e){
       state.popupQueue.shift();
       if(state.popupQueue.length === 0) state.popupBatchTotal = 0;
@@ -31815,7 +31882,7 @@
     equipRing:1, unequipRing:1, equipAmulet:1, unequipAmulet:1,
     equipLegRing:1, unequipLegRing:1, equipLegAmulet:1, unequipLegAmulet:1, equipLegCloak:1,
     improveEquip:1, improveUnequip:1, equipLoadout:1,
-    activateCompanion:1 // NOTE: toggleFamiliar (expand/collapse a card to examine it) stays UNLOCKED -- only activating/deactivating a companion is blocked mid-fight
+    activateCompanion:1, replaceCompanion:1 // NOTE: toggleFamiliar (expand/collapse a card to examine it) stays UNLOCKED -- only activating/deactivating/swapping a companion is blocked mid-fight
   };
   document.getElementById('app').addEventListener('click', function(e){
     var btn = e.target.closest('[data-action]');
@@ -31871,6 +31938,9 @@
     if(e.target.id === 'invSearchInput'){
       inventorySearchQuery = e.target.value;
       renderInventoryPanel();
+    } else if(e.target.id === 'menagerieSearchInput'){
+      menagerieSearch = e.target.value;
+      var _ml = document.getElementById('menagerieList'); if(_ml) _ml.innerHTML = renderMenagerieList(); // update only the list so the search box keeps focus
     } else if(e.target.id === 'marketSearch'){
       marketState.search = e.target.value;
       renderMarketResults(); // update only the results list so the search box keeps focus
@@ -32530,7 +32600,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.42.23';
+  var GAME_VERSION = '0.0.42.24';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -32720,7 +32790,7 @@
       GLYPH_ITEMS:GLYPH_ITEMS, glyphIdFor:glyphIdFor, glyphDropMax:glyphDropMax, GLYPH_DROP_CHANCE:GLYPH_DROP_CHANCE, ELEMENTAL_ELEMENT_OVERRIDES:ELEMENTAL_ELEMENT_OVERRIDES, getMonsterLootChance:getMonsterLootChance, getMonsterLootLabel:getMonsterLootLabel, MONSTER_CATEGORIES:MONSTER_CATEGORIES, applyMonsterCategoryLoot:applyMonsterCategoryLoot,
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       bowArrowToConsume:bowArrowToConsume, bowArrowsAvailable:bowArrowsAvailable, bowArrowTierCap:bowArrowTierCap, arrowUsableWithBow:arrowUsableWithBow, equipArrow:equipArrow, arrowBaseDamage:arrowBaseDamage, quiverAmmoPreserve:quiverAmmoPreserve, ARROW_MAX_INDEX:ARROW_MAX_INDEX, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT,
-      STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
+      STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, activateCompanion:activateCompanion, replaceCompanion:replaceCompanion, renderFamiliarCard:renderFamiliarCard, renderMenagerieTab:renderMenagerieTab, renderMenagerieList:renderMenagerieList, familiarMatchesSearch:familiarMatchesSearch, _setMenagerieSearch:function(v){ menagerieSearch = v||''; }, _setMenagerieExpanded:function(id,v){ menagerieExpanded[id] = !!v; }, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, D2_SET_DEFS:D2_SET_DEFS, D2_SET_CLASS_IDS:D2_SET_CLASS_IDS, D3_SET_DEFS:D3_SET_DEFS, D3_SET_CLASS_IDS:D3_SET_CLASS_IDS, set2D3:set2D3, setFullD3:setFullD3, SET_TIER_INDEX_D3:SET_TIER_INDEX_D3, D4_SET_BONUSES:D4_SET_BONUSES, D4_SET_DEFS:D4_SET_DEFS, D4_SET_CLASS_IDS:D4_SET_CLASS_IDS, set2D4:set2D4, setFullD4:setFullD4, SET_TIER_INDEX_D4:SET_TIER_INDEX_D4, D4_BREATH_MAX:D4_BREATH_MAX, d4BreathCharge:d4BreathCharge, d4BreathPct:d4BreathPct, d4BreathReady:d4BreathReady, d4BreathAdd:d4BreathAdd, d4BreathReset:d4BreathReset, D4_WRATH_CAP:D4_WRATH_CAP, d4WrathStacks:d4WrathStacks, d4WrathAdd:d4WrathAdd, d4WrathReset:d4WrathReset, d4SetElementDmg:d4SetElementDmg, d4SetElementResist:d4SetElementResist, d4WandElementMult:d4WandElementMult, d4FoeResistsElement:d4FoeResistsElement, d4EchoMult:d4EchoMult, d4FamiliarElementMult:d4FamiliarElementMult, d4TemplarAegisMult:d4TemplarAegisMult, d4SetDmgMult:d4SetDmgMult, d4DragonscaleIncoming:d4DragonscaleIncoming, d4SentinelThornsMult:d4SentinelThornsMult, d4HeraldBastionReflect:d4HeraldBastionReflect, d4BreathChargeOnHit:d4BreathChargeOnHit, d4BreathFullSet:d4BreathFullSet, d4BreathFire:d4BreathFire, d4VenombreathApply:d4VenombreathApply, D4_BREATH_BURST_MULT:D4_BREATH_BURST_MULT, d4WrathOnHit:d4WrathOnHit, d4FirestormDodge:d4FirestormDodge, enemyPoisonedFoe:enemyPoisonedFoe, d4SupremeItemCount:d4SupremeItemCount, D3_SOUL_CAP:D3_SOUL_CAP, d3SoulCount:d3SoulCount, d3SoulsAdd:d3SoulsAdd, enemyDecaying:enemyDecaying, decayApply:decayApply, applyDecayTick:applyDecayTick, decayCap:decayCap, d3DecayTickMult:d3DecayTickMult, enemyCursed:enemyCursed, curseApply:curseApply, d3SetDmgMult:d3SetDmgMult, d3SetCritDmgBonus:d3SetCritDmgBonus, d3SetIncomingMult:d3SetIncomingMult, onPlayerDodged:onPlayerDodged, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, set2D2:set2D2, setFullD2:setFullD2, d2SetDmgMult:d2SetDmgMult, d2SentinelReflectMult:d2SentinelReflectMult, d2IncomingDmgMult:d2IncomingDmgMult, d2SetCritDmgBonus:d2SetCritDmgBonus, d2SetCritChance:d2SetCritChance, d2SetDodgeBonus:d2SetDodgeBonus, knightBulwarkMarchMult:knightBulwarkMarchMult, lumenReflectD2Mult:lumenReflectD2Mult, enemyHasAilment:enemyHasAilment, rangerAilmentDmgMult:rangerAilmentDmgMult, d2PoisonTickMult:d2PoisonTickMult, d2BleedTickMult:d2BleedTickMult, d2BurnTickMult:d2BurnTickMult, d2FrostbiteTickMult:d2FrostbiteTickMult, voidVulnCap:voidVulnCap, templarAegisCapMult:templarAegisCapMult, reaverBloodfrenzyMult:reaverBloodfrenzyMult, d2FeralOnCast:d2FeralOnCast, d2BloodthirstOnKill:d2BloodthirstOnKill, d2BloodthirstSpeedMult:d2BloodthirstSpeedMult, quickdrawParalyticSlow:quickdrawParalyticSlow, enemyExtraSlowPct:enemyExtraSlowPct, SET_TIER_INDEX:SET_TIER_INDEX, SET_TIER_INDEX_D2:SET_TIER_INDEX_D2, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, SET_NAMES:SET_NAMES, setName:setName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, combatPlayerBuffs:combatPlayerBuffs, combatEnemyDebuffs:combatEnemyDebuffs, renderFxBars:renderFxBars, captureCombatLoadout:captureCombatLoadout, applyCombatLoadout:applyCombatLoadout, saveLoadoutPreset:saveLoadoutPreset, equipLoadoutPreset:equipLoadoutPreset, clearLoadoutPreset:clearLoadoutPreset, renameLoadoutPreset:renameLoadoutPreset, ensureLoadouts:ensureLoadouts, loadoutSummary:loadoutSummary, LOADOUT_SLOT_COUNT:LOADOUT_SLOT_COUNT, combatLocksGear:combatLocksGear, COMBAT_LOCKED_ACTIONS:COMBAT_LOCKED_ACTIONS, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, knightUnstoppableMult:knightUnstoppableMult, thunderStaticPerHit:thunderStaticPerHit, thunderStaticThreshold:thunderStaticThreshold, thunderDischargeMult:thunderDischargeMult, deadeyeAccuracyBonus:deadeyeAccuracyBonus, duelistFlourishStabs:duelistFlourishStabs, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, heraldRipostePct:heraldRipostePct, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, undyingRageIncomingMult:undyingRageIncomingMult, berserkerFrenziedBlowsMult:berserkerFrenziedBlowsMult, templarLayOnHandsPct:templarLayOnHandsPct, templarBlessingOfHasteMult:templarBlessingOfHasteMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, spellbladeResonantCrit:spellbladeResonantCrit, playerCritChance:playerCritChance, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, voidVulnPerStack:voidVulnPerStack, voidMarkPerHit:voidMarkPerHit, quickdrawVenomPct:quickdrawVenomPct, quickdrawTwinFangChance:quickdrawTwinFangChance, treasureProspectorPer:treasureProspectorPer, setTreasureMult:setTreasureMult, EXEC_SET_EXECUTE_FRAC:EXEC_SET_EXECUTE_FRAC, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, sharpshooterAccOverDodge:sharpshooterAccOverDodge, sharpshooterEagleEyeCrit:sharpshooterEagleEyeCrit, sharpshooterPinpointMult:sharpshooterPinpointMult, sharpshooterFocusCritDmg:sharpshooterFocusCritDmg, sharpshooterArmorPierce:sharpshooterArmorPierce, sharpshooterPatienceMult:sharpshooterPatienceMult, SHARP_EAGLE_CAP:SHARP_EAGLE_CAP, SHARP_PINPOINT_CAP:SHARP_PINPOINT_CAP, SHARP_FOCUS_CAP:SHARP_FOCUS_CAP, SHARP_PATIENCE_CAP:SHARP_PATIENCE_CAP, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautSmashReady:juggernautSmashReady, juggernautFuryStacks:juggernautFuryStacks, juggernautArmorPierce:juggernautArmorPierce, JUG_WINDUP_DMG:JUG_WINDUP_DMG, JUG_WINDUP_SLOW:JUG_WINDUP_SLOW, JUG_SMASH_EVERY:JUG_SMASH_EVERY, JUG_CONCUSS_MS:JUG_CONCUSS_MS, JUG_FURY_PER:JUG_FURY_PER, JUG_FURY_MAX:JUG_FURY_MAX, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_SHIELD_MAX_PCT:LUMEN_SHIELD_MAX_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, HERALD_RIPOSTE_PCT:HERALD_RIPOSTE_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, applyPotionPoisonTick:applyPotionPoisonTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
