@@ -232,6 +232,49 @@
     });
   });
 
+  // ---- Per-card auto-sacrifice: refills Faith from flagged equipment when the full value fits ----
+  suite('sacrifice: per-item auto-sacrifice top-up', function(){
+    var S = FF._state;
+    var sv = { inv:S.inventory, faith:S.faith, auto:S.autoSacrifice, locked:S.lockedItems, xp:S.xp, phys:S.physique };
+    S.inventory = {}; S.autoSacrifice = {}; S.lockedItems = {}; S.physique = {}; // Oblation off -> deterministic restore
+    S.xp = Object.assign({}, sv.xp); S.xp.prayer = 1e9;                          // max Faith cap so the deficit, not the stack, is the binding constraint
+    // Use the smallest-restore stackable weapon so many offers fit under the cap (deficit binds, not supply).
+    var wid = null, perOffer = Infinity;
+    Object.keys(FF.STACKABLE_WEAPON_ITEMS).forEach(function(id){
+      var it = FF.STACKABLE_WEAPON_ITEMS[id];
+      var v = FF.sacRowRestore({ category:'stackweapon', id:id, tier:it.tierIndex+1, item:it });
+      if(v < perOffer){ perOffer = v; wid = id; }
+    });
+    var key = FF.sacRowKey({ category:'stackweapon', id:wid });
+    var mx = FF.faithMax(S);
+    ok(perOffer <= mx, 'a single offering fits under the Faith cap (test precondition)');
+
+    // Not flagged -> auto-check does nothing even at zero Faith.
+    S.inventory[wid] = 1000; S.faith = 0;
+    FF.autoSacrificeItemsCheck();
+    eq(S.inventory[wid], 1000, 'unflagged item is never auto-sacrificed');
+    eq(S.faith, 0, 'unflagged item leaves Faith untouched');
+
+    // Flag it, Faith empty -> tops up only while a FULL offer fits the deficit (never wasting overflow).
+    S.autoSacrifice[key] = true;
+    FF.autoSacrificeItemsCheck();
+    ok(S.faith <= mx + 1e-6, 'auto-sacrifice never pushes Faith past the cap');
+    ok(mx - S.faith < perOffer, 'stops once no full offer fits the remaining deficit (no waste)');
+    ok(S.inventory[wid] < 1000, 'consumed at least one flagged offering while it fit');
+
+    // Full Faith -> nothing happens.
+    S.faith = mx; var heldFull = S.inventory[wid]||0;
+    FF.autoSacrificeItemsCheck();
+    eq(S.inventory[wid]||0, heldFull, 'no auto-sacrifice while Faith is full');
+
+    // A locked flagged item is skipped even with room.
+    S.faith = 0; S.inventory[wid] = 1000; S.lockedItems[wid] = true;
+    FF.autoSacrificeItemsCheck();
+    eq(S.inventory[wid], 1000, 'locked items are never auto-sacrificed');
+
+    S.inventory = sv.inv; S.faith = sv.faith; S.autoSacrifice = sv.auto; S.lockedItems = sv.locked; S.xp = sv.xp; S.physique = sv.phys;
+  });
+
   // ---- Guild bank slot cost must match the server RPC formula ---------------------------
   suite('bankSlotCost matches server', function(){
     eq(FF.bankSlotCost(4), 10000, 'bankSlotCost clamps below 5 slots');
