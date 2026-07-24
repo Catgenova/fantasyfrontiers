@@ -2277,7 +2277,23 @@
     ok(/Duper/.test(panel2) && /progress \+1.2e13/.test(panel2), 'a clamped player shows its name + auto-detection signal');
     ok(/data-action="clampClear"[^>]*data-uid="u-cheat"/.test(panel2), 'each clamped player has a one-click Unclamp button');
     ok(/id="clampInput"/.test(panel2) && /data-action="clampApply"/.test(panel2) && /id="clampSurf_marketplace"/.test(panel2), 'the panel has a manual clamp box with per-surface toggles');
-    FF._setChatMod({ clamps:{} });
+
+    // Detection signals (shadow): recorded flags the owner can review + clamp with a click.
+    FF._setChatMod({
+      myRole:'owner',
+      names:{ 'u-mod':'Mod1', 'u-mod2':'Mod2', 'u-player':'Spammer', 'u-flag':'Suspect', 'u-done':'Handled' },
+      clamps:{},
+      signals:[
+        { id:1, user_id:'u-flag', username:'Suspect', kind:'progress_jump', detail:{ jump:1.2e13, elapsed_ms:8000 }, clamped:false, created_at:now },
+        { id:2, user_id:'u-done', username:'Handled', kind:'progress_jump', detail:{ jump:9e12 }, clamped:true, created_at:now }
+      ]
+    });
+    var panel3 = FF.renderChatModerationPanel();
+    ok(/Detection signals <span[^>]*>\(2, shadow\)/.test(panel3), 'the panel lists recorded detection signals in shadow mode');
+    ok(/Suspect/.test(panel3) && /progress_jump/.test(panel3), 'a signal shows the flagged player + evidence');
+    ok(/data-action="clampFromSignal"[^>]*data-uid="u-flag"/.test(panel3), 'an un-actioned signal has a one-click Clamp button');
+    ok((panel3.match(/data-action="clampFromSignal"/g)||[]).length === 1, 'an already-clamped signal shows no Clamp button');
+    FF._setChatMod({ clamps:{}, signals:[] });
     // chatNameFor falls back to a uid fragment when the name isn't cached.
     eq(FF.chatNameFor('u-mod'), 'Mod1', 'chatNameFor resolves a cached username');
     ok(/…$/.test(FF.chatNameFor('u-unknown-123456789')), 'chatNameFor falls back to a uid fragment');

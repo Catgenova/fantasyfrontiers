@@ -34,6 +34,18 @@ const GOLD_CAP = 1_000_000_000_000_000; // 1e15, mirrors the wallet's HARD_CAP
 // account hostage to a dead tab is worse than the rare double-session this guards against.
 const STALE_CLAIM_MS = 45_000;
 
+// ---- Auto-detection (account clamps; see migrations 20260724210000 / 220000) ----
+// SHADOW by default: a tripped signal is RECORDED for owner review but does NOT clamp. Flip this to true
+// only after the recorded signals confirm the threshold never fires on legitimate play.
+const CLAMP_AUTOENFORCE = false;
+// A progress jump this large (1e10 XP) inside a live save window (2s-2min elapsed) is impossible for real
+// play but far below an edited save (which lands 1e12-1e15). The window excludes offline returns, whose
+// elapsed is the whole away-time. Deliberately generous to avoid ever flagging a legit grind.
+const SIGNAL_MIN_ELAPSED_MS = 2_000;
+const SIGNAL_MAX_ELAPSED_MS = 120_000;
+const SIGNAL_PROGRESS_JUMP = 10_000_000_000; // 1e10
+const CLAMP_INDEFINITE_MS = 5_256_000 * 60_000; // ~10 years, matches the clamp RPC's cap
+
 // Derive the progress score from the SUBMITTED SAVE instead of trusting a client-sent number.
 // Previously `progress` was read straight off the body with only a `>= 0` floor, so a request could
 // claim an arbitrarily large value, sail past the forward-only guard forever, and (because the guard
@@ -170,5 +182,35 @@ Deno.serve(async (req) => {
     if (msg.includes("saves_size_chk") || msg.includes("check constraint")) return json({ ok: false, error: "Save too large." }, 413);
     return json({ ok: false, error: "Could not save." }, 500);
   }
+
+  // Auto-detection (see migrations 20260724210000 / 220000). A live client pushes progress every ~8s, so a
+  // huge Δprogress in a SUB-2-MINUTE window is not a fast player -- it's an edited save. Offline returns don't
+  // trip this: their elapsed is the whole away-window (>120s), so the same gain is spread over real time.
+  // SHADOW MODE: record the signal for owner review but DON'T clamp. Flip CLAMP_AUTOENFORCE to true only
+  // once the recorded signals confirm the threshold never fires on legit play. Best-effort: never fail a save.
+  try {
+    if (prev?.updated_at) {
+      const elapsed = Date.now() - Date.parse(prev.updated_at as string);
+      const jump = progress - prevProgress;
+      if (elapsed >= SIGNAL_MIN_ELAPSED_MS && elapsed <= SIGNAL_MAX_ELAPSED_MS && jump >= SIGNAL_PROGRESS_JUMP) {
+        // Rate-limit the audit log to ~1 row/hour/user so a cheater re-saving every 8s can't flood it.
+        const { data: recent } = await admin.from("clamp_signals").select("id")
+          .eq("user_id", userId).gte("created_at", new Date(Date.now() - 3_600_000).toISOString()).limit(1);
+        if (!recent || !recent.length) {
+          const detail = { jump, elapsed_ms: elapsed, prev_progress: prevProgress, progress };
+          console.warn(`clamp signal progress_jump: user=${userId} jump=${jump} elapsedMs=${elapsed}`);
+          await admin.from("clamp_signals").insert({ user_id: userId, kind: "progress_jump", detail, would_clamp: true });
+          if (CLAMP_AUTOENFORCE) {
+            await admin.from("account_clamps").upsert({
+              user_id: userId, surfaces: ["marketplace", "leaderboard", "guild", "chat"],
+              clamped_until: new Date(Date.now() + CLAMP_INDEFINITE_MS).toISOString(),
+              auto: true, signal: detail, clamped_by: null,
+            }, { onConflict: "user_id" });
+          }
+        }
+      }
+    }
+  } catch { /* detection is best-effort -- never block a save on it */ }
+
   return json({ ok: true, version: nextVersion });
 });

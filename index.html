@@ -26260,6 +26260,7 @@
   var myChatRole = null;     // this player's chat role, or null
   var chatModTarget = null;  // { mid, uid, name } while the moderate-player modal is open
   var accountClamps = {};    // uid -> clamp row { surfaces[], reason, auto, signal, clamped_until, username }, OWNER-only (private list)
+  var clampSignals = [];     // recent auto-detection signals (shadow mode) for owner review, newest first
   function chatRoleOf(uid){ return uid ? (chatRoles[uid] || null) : null; }
   function chatNameFor(uid){ return chatUserNames[uid] || (uid ? (String(uid).slice(0,8)+'…') : '?'); }
   // Fetch equipped titles for chat posters (once per uid) so a title tag can sit next to their name.
@@ -26308,17 +26309,27 @@
   // exist yet -- just leave the list empty, so the Moderation tab degrades gracefully.
   async function clampLoad(){
     if(!CHAT_ENABLED || !chatClient) return;
-    if(!chatIsOwner()){ accountClamps = {}; return; }   // only the owner may read who's clamped
+    if(!chatIsOwner()){ accountClamps = {}; clampSignals = []; return; }   // only the owner may read who's clamped
     try{
       var res = await chatClient.rpc('clamp_list');
       var d = res && res.data;
-      if((res && res.error) || !d || d.ok === false || !d.clamps){ return; }
-      var map = {};
-      d.clamps.forEach(function(row){
-        map[row.user_id] = row;
-        if(row.username) chatUserNames[row.user_id] = row.username;   // cache the joined name for the panel
-      });
-      accountClamps = map;
+      if(!((res && res.error) || !d || d.ok === false || !d.clamps)){
+        var map = {};
+        d.clamps.forEach(function(row){
+          map[row.user_id] = row;
+          if(row.username) chatUserNames[row.user_id] = row.username;   // cache the joined name for the panel
+        });
+        accountClamps = map;
+      }
+    }catch(e){}
+    // Recent auto-detection signals (shadow mode) -- a separate private RPC; swallow if not deployed yet.
+    try{
+      var sr = await chatClient.rpc('clamp_signals_list', { p_limit: 50 });
+      var sd = sr && sr.data;
+      if(!((sr && sr.error) || !sd || sd.ok === false || !sd.signals)){
+        clampSignals = sd.signals;
+        sd.signals.forEach(function(row){ if(row.username) chatUserNames[row.user_id] = row.username; });
+      }
     }catch(e){}
   }
   var CLAMP_SURFACES = ['marketplace','leaderboard','guild','chat'];
@@ -26401,6 +26412,21 @@
     html += '</div>';
     html += '<div style="display:flex;gap:6px;flex-wrap:wrap;"><input id="clampInput" class="chat-input" placeholder="Username" autocomplete="off" style="flex:1 1 120px;"><select id="clampDur" class="chat-input" style="flex:0 0 auto;width:auto;"><option value="5256000">Indefinite</option><option value="1440">1 day</option><option value="10080">7 days</option><option value="43200">30 days</option></select><button class="action-btn stop" data-action="clampApply" style="flex:0 0 auto;width:auto;">Clamp</button></div>';
     html += '</div>';
+
+    // ---- Detection signals: auto-flags from save_game (SHADOW mode -- recorded, not auto-clamped). Review
+    // one and clamp with a click. Empty is the healthy state; entries are worth a look before acting.
+    html += '<div class="settings-row-label" style="margin-top:14px;">Detection signals <span class="settings-row-desc" style="display:inline;">('+clampSignals.length+', shadow)</span></div>';
+    html += '<div class="settings-row-desc" style="margin-bottom:6px;">Impossible-progress flags the server recorded but did NOT act on. Review, then clamp if it looks like an exploit.</div>';
+    if(!clampSignals.length){ html += '<div class="settings-row-desc">No signals — nothing has tripped detection.</div>'; }
+    else clampSignals.forEach(function(sg){
+      var name = chatNameFor(sg.user_id);
+      var when = sg.created_at ? chatMuteLabel(sg.created_at).replace(/^until /,'') : '';
+      var det = sg.detail ? (typeof sg.detail === 'string' ? sg.detail : (sg.kind + ' ' + JSON.stringify(sg.detail))) : sg.kind;
+      var btn = sg.clamped
+        ? '<span class="settings-row-desc">Clamped</span>'
+        : '<button class="mini-btn" data-action="clampFromSignal" data-uid="'+escapeHtml(sg.user_id)+'">Clamp</button>';
+      html += '<div class="settings-row"><div><div class="settings-row-label">⚠ '+escapeHtml(name)+'</div><div class="settings-row-desc">'+escapeHtml(det)+'</div></div>'+btn+'</div>';
+    });
     return html;
   }
   // Fire a moderation RPC (mute / unmute / delete / set-role). The server re-checks the caller's role, so
@@ -32251,6 +32277,7 @@
     chatModSettingsUnmute: function(btn, e){ chatModAct('chat_unmute', { p_target: btn.getAttribute('data-uid') }); },
     clampApply: function(btn, e){ clampApply(); },
     clampClear: function(btn, e){ chatModAct('clamp_clear', { p_target: btn.getAttribute('data-uid') }); },
+    clampFromSignal: function(btn, e){ chatModAct('clamp_set', { p_target: btn.getAttribute('data-uid'), p_surfaces: CLAMP_SURFACES, p_minutes: 5256000, p_reason: 'auto-detection signal' }); },
     toggleSetting: function(btn, e){
       var setKey = btn.getAttribute('data-key');
       state.settings[setKey] = !state.settings[setKey];
@@ -33067,7 +33094,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.44.1';
+  var GAME_VERSION = '0.0.44.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -33205,7 +33232,7 @@
       renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
       combatLogPush:combatLogPush, combatLogHtml:combatLogHtml, advCombat:advCombat, _clReset:function(){ combatLog = []; }, _clGet:function(){ return combatLog; },
       chatMessagesHtml:chatMessagesHtml, chatRoleOf:chatRoleOf, chatIsMod:chatIsMod, chatIsOwner:chatIsOwner, chatMuteUntil:chatMuteUntil, chatAmIMuted:chatAmIMuted, chatMuteLabel:chatMuteLabel, renderChatModModal:renderChatModModal, renderChatModerationPanel:renderChatModerationPanel, chatNameFor:chatNameFor, titleName:titleName, profileCardBodyHtml:profileCardBodyHtml, renderPlayerProfileModal:renderPlayerProfileModal,
-      _setChatMod:function(o){ o=o||{}; if(o.roles) chatRoles=o.roles; if(o.mutes) chatMutes=o.mutes; if(o.names) chatUserNames=o.names; if(o.titles) chatTitles=o.titles; if(o.clamps) accountClamps=o.clamps; if('myRole' in o) myChatRole=o.myRole; if('messages' in o) chatMessages=o.messages; if('authUser' in o) authUser=o.authUser; if('target' in o) chatModTarget=o.target; if('profileTarget' in o) playerProfileTarget=o.profileTarget; },
+      _setChatMod:function(o){ o=o||{}; if(o.roles) chatRoles=o.roles; if(o.mutes) chatMutes=o.mutes; if(o.names) chatUserNames=o.names; if(o.titles) chatTitles=o.titles; if(o.clamps) accountClamps=o.clamps; if(o.signals) clampSignals=o.signals; if('myRole' in o) myChatRole=o.myRole; if('messages' in o) chatMessages=o.messages; if('authUser' in o) authUser=o.authUser; if('target' in o) chatModTarget=o.target; if('profileTarget' in o) playerProfileTarget=o.profileTarget; },
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; },
