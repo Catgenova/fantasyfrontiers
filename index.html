@@ -22720,7 +22720,9 @@
         estJobRpcRelease();
         var d = res && res.data;
         if(!d || !d.ok){
-          addLog(d && d.error === 'pending' ? 'Your last guild task just finished — collect it, then try again.' : 'Could not start that guild estate task. Try again.', 'danger');
+          addLog(d && d.error === 'clamped' ? 'This account is restricted from guild features.'
+            : d && d.error === 'pending' ? 'Your last guild task just finished — collect it, then try again.'
+            : 'Could not start that guild estate task. Try again.', 'danger');
           guildEstateJobsRefresh(); needsRender = true; return;
         }
         if(!d.claimed){                            // already have a running job -- adopt the server's list, charge nothing
@@ -23166,7 +23168,7 @@
     _ap.then(function(res){
       estJobRpcRelease();
       var d = res && res.data;
-      if(!d || !d.ok){ addLog(d && d.error === 'pending' ? 'Collect your finished task first.' : 'Could not assist that task right now.', 'danger'); guildEstateJobsRefresh(); needsRender = true; return; }
+      if(!d || !d.ok){ addLog(d && d.error === 'clamped' ? 'This account is restricted from guild features.' : d && d.error === 'pending' ? 'Collect your finished task first.' : 'Could not assist that task right now.', 'danger'); guildEstateJobsRefresh(); needsRender = true; return; }
       if(!d.claimed){ addLog('You already have a guild estate task running.', 'danger'); guildEstateJobsRefresh(); needsRender = true; return; }
       addLog('You\'re assisting ' + escapeHtml(target.ownerName||'a teammate') + '\'s task — its remaining time is halved.', 'important');
       guildEstateJobsRefresh(); needsRender = true;
@@ -33094,7 +33096,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.44.2';
+  var GAME_VERSION = '0.0.44.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
