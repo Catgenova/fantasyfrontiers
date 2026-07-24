@@ -31,6 +31,20 @@ const KEY_RE = /^[A-Za-z0-9_]{1,64}$/;
 const MAX_QTY = 1_000_000_000_000; // 1e12, matches the gold sanity ceiling
 const RANKVAL: Record<string, number> = { member: 1, officer: 2, leader: 3 };
 
+// ---- Unique-deposit rate cap + injection detection (account clamps; migrations 20260724210000 / 220000) ----
+// Uniques are client-authoritative and NOT ledger-tracked, so a forged top-tier item (a plausible-shaped
+// fantastic / +12 nobody earned) is the one remaining way to push fake value into the SHARED bank. We can't
+// verify provenance, but we can rate-limit: a 'notable' unique (fantastic rarity or +12-or-better enhance --
+// exactly what the community feed celebrates, and what a forger targets) is a rare, per-session event
+// legitimately. Two tiers, keyed on the depositor (rl_hit counters):
+//   SOFT: beyond this many notable deposits/hour, BLOCK further ones (protects the bank; no punishment --
+//         covers a veteran seeding a bank from a genuinely large hoard, who just spreads it out).
+//   HARD: continuing far past that is minting -> record a clamp_signal + clamp (Discord fires on the clamp).
+const UNIQUE_NOTABLE_ENHANCE = 12;      // +12-or-better is a celebrated/forger-targeted enhance
+const UNIQUE_DEPOSIT_SOFT_PER_HOUR = 15; // block notable deposits beyond this/hour
+const UNIQUE_DEPOSIT_HARD_PER_HOUR = 40; // clamp beyond this/hour (clearly minting)
+const CLAMP_INDEFINITE_MS = 5_256_000 * 60_000; // ~10 years, matches the clamp RPC's cap
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ ok: false, error: "Method not allowed." }, 405);
@@ -165,6 +179,40 @@ Deno.serve(async (req) => {
       const o = (e || {}) as Record<string, unknown>;
       return { mod: String(o.mod || "").slice(0, 32), roll: Math.max(0, Math.min(100000, Math.floor(Number(o.roll) || 0))) };
     }).filter((e) => e.mod);
+
+    // Rate-cap notable (high-value) unique deposits. Uniques carry no server provenance, so a plausible
+    // forged top-tier item can't be validated -- only throttled. SOFT breach blocks; HARD breach clamps.
+    const notable = rarity === "fantastic" || Math.max(0, Math.floor(enhance)) >= UNIQUE_NOTABLE_ENHANCE;
+    if (notable) {
+      let softOver = false, hardOver = false;
+      // Two counters increment together per notable attempt (incl. blocked ones, so a persistent dumper
+      // still escalates into the HARD clamp). Fail-open like every other limiter.
+      try { const { data } = await admin.rpc("rl_hit", { p_subject: user.id, p_bucket: "unique_dep_hard", p_limit: UNIQUE_DEPOSIT_HARD_PER_HOUR, p_window_secs: 3600 }); hardOver = data === true; } catch { hardOver = false; }
+      try { const { data } = await admin.rpc("rl_hit", { p_subject: user.id, p_bucket: "unique_dep_soft", p_limit: UNIQUE_DEPOSIT_SOFT_PER_HOUR, p_window_secs: 3600 }); softOver = data === true; } catch { softOver = false; }
+      if (hardOver) {
+        // Minting-scale dump of top-tier uniques into the shared bank -> clamp (sibling of item_inject).
+        try {
+          const detail = { kind: "unique_dump", base, rarity, tier, enhance: Math.max(0, Math.floor(enhance)), cap_per_hour: UNIQUE_DEPOSIT_HARD_PER_HOUR };
+          const { data: recent } = await admin.from("clamp_signals").select("id")
+            .eq("user_id", user.id).eq("kind", "unique_dump")
+            .gte("created_at", new Date(Date.now() - 3_600_000).toISOString()).limit(1);
+          if (!recent || !recent.length) {
+            console.warn(`clamp signal unique_dump: user=${user.id} base=${base} rarity=${rarity} enhance=${enhance}`);
+            await admin.from("clamp_signals").insert({ user_id: user.id, kind: "unique_dump", detail, would_clamp: true });
+            await admin.from("account_clamps").upsert({
+              user_id: user.id, surfaces: ["marketplace", "leaderboard", "guild", "chat"],
+              clamped_until: new Date(Date.now() + CLAMP_INDEFINITE_MS).toISOString(),
+              auto: true, signal: detail, clamped_by: null,
+            }, { onConflict: "user_id" });
+          }
+        } catch { /* best-effort */ }
+        return json({ ok: false, clamped: true, code: "clamped", error: "This account is restricted from guild features." });
+      }
+      if (softOver) {
+        // 200 (not 429) so supabase-js hands the client the body -> the message shows (like the clamp gates).
+        return json({ ok: false, error: "You’ve banked a lot of high-end items recently — try again later.", code: "rate" });
+      }
+    }
     const { data: id, error } = await admin.rpc("guild_bank_deposit_unique", {
       p_guild: guildId, p_base: base, p_kind: kind.slice(0, 24), p_tier: tier, p_rarity: rarity,
       p_enhance: Math.max(0, Math.min(15, Math.floor(enhance))), p_enchants: enchants,
