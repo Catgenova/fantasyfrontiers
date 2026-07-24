@@ -27283,6 +27283,23 @@
     });
     return out;
   }
+  // The server-side item allowlist (the item analog of buildRecipeManifest). Every key that can legitimately
+  // sit in state.inventory, mapped to whether it's MARKET-TRADEABLE (1) or ledger-only (0):
+  //   * tradeable (1): everything in ALL_SELLABLE -- exactly the market sell/buy universe (see _marketTradeable).
+  //   * ledger-only (0): Legendary equipment lives in inventory but is NOT in ALL_SELLABLE (untradeable).
+  //     It must still be in the catalog so the ledger's item_sync accepts it (otherwise adoption would clamp
+  //     a legit legendary away); the market gate rejects it because tradeable is 0.
+  // Dumped to supabase/seeds/item_catalog_seed.sql (scripts/dump-item-catalog.mjs) and CI-checked, so the
+  // server catalog can never silently drift behind a client that ships new items.
+  function buildItemCatalog(){
+    var out = {};
+    Object.keys(ALL_SELLABLE).forEach(function(k){ if(k !== 'gold' && /^[A-Za-z0-9_]{1,64}$/.test(k)) out[k] = 1; });
+    [LEGENDARY_GEAR_ITEMS, LEGENDARY_GEAR_ITEMS_D2, LEGENDARY_GEAR_ITEMS_D3, LEGENDARY_GEAR_ITEMS_D4,
+     LEGENDARY_RING_ITEMS, LEGENDARY_CLOAK_ITEMS, LEGENDARY_AMULET_ITEMS].forEach(function(map){
+      if(map) Object.keys(map).forEach(function(k){ if(/^[A-Za-z0-9_]{1,64}$/.test(k) && !(k in out)) out[k] = 0; });
+    });
+    return out;
+  }
   // Pure per-item reconcile -- the item analog of walletReconcileGold. For each item key the adopted qty
   // is the server ledger PLUS legit earnings the server hasn't credited yet (localEarned - serverEarned,
   // floored at 0, bounded by the monotonic per-item earned anchor) PLUS local drift during the round
@@ -28692,6 +28709,10 @@
   // inbox we collect. Server guarantees matching/tax integrity; names/icons come from ALL_SELLABLE.
   var MARKET_TAX = 0.05;
   var MARKET_MAX_PRICE = 1000000000, MARKET_MAX_QTY = 1000000, MARKET_MAX_ORDERS = 40;
+  // A SELL debits the rate-capped SERVER item ledger, which can briefly lag a just-gathered stack. On a
+  // sell we re-sync the ledger up to this many times (waiting between) so a legit order the ledger simply
+  // hasn't credited yet clears on ONE click instead of the 5-10 manual retries players reported.
+  var MARKET_SELL_SYNC_TRIES = 4, MARKET_SELL_SYNC_WAIT_MS = 600;
   function marketTax(gold){ return Math.floor(gold * MARKET_TAX * merchantTaxMult()); }
   function marketSellNet(price, qty){ var g = price * qty; return g - marketTax(g); }
   function marketBuyCost(price, qty){ return price * qty; }
@@ -28712,6 +28733,15 @@
   // in the Sell form rather than letting the order fail with a reason that only lands in the log.
   // null = the ledger hasn't been fetched yet, so we make no claim.
   function marketLedgerQty(id){ return (itemLedger && typeof itemLedger[id] === 'number') ? itemLedger[id] : null; }
+  // How many of `id` the SERVER ledger can currently cover for a sell. A number when we have a ledger to
+  // consult (0 when the item just isn't credited yet -- the server omits zero rows, so `null` from
+  // marketLedgerQty there means "not yet", not "unknown"); truly null only when there is NO server ledger
+  // at all (sync disabled / never ran), in which case selling proceeds unguarded exactly as offline.
+  function marketSellLedgerCoverage(id){
+    if(!ITEM_SYNC_ENABLED || itemLedger === null) return null; // no authoritative ledger -> don't gate
+    return marketLedgerQty(id) || 0;                           // present-but-omitted == 0 credited so far
+  }
+  function marketDelay(ms){ return new Promise(function(resolve){ setTimeout(resolve, ms); }); }
   // Report a sell failure BOTH inline in the form and in the Chronicle -- the log alone scrolls away,
   // which is why "I can't list this" reports arrived with no reason attached.
   function marketSellFail(msg){ marketState.sellMsg = msg; addLog(msg, 'danger'); render(); }
@@ -28897,14 +28927,28 @@
     if(!(qty>0) || !(price>0)){ marketSellFail('Enter a quantity and price to sell.'); return; }
     if(price>MARKET_MAX_PRICE || qty>MARKET_MAX_QTY){ marketSellFail('Price or quantity is too large.'); return; }
     if((state.inventory[item]||0) < qty){ marketSellFail('You don’t have that many to sell.'); return; }
-    marketState.busy = true;                       // lock before the async sync
-    await itemSync(true);                            // reconcile the ledger (reports the full inventory) so just-gathered items count
-    // The server debits the LEDGER. If it can't cover the order, explain that here rather than firing a
-    // request that comes back "You don't have those items to sell" with no indication of the real cause.
-    var _led = marketLedgerQty(item);
-    if(_led !== null && _led < qty){
+    marketState.busy = true;                       // lock before the async work (blocks double-submit)
+    // The server debits the rate-capped item LEDGER, which can lag a just-gathered stack. Re-sync it a few
+    // times (its burst grant / accrual fills a freshly-made item) so a legit sell the ledger simply hasn't
+    // caught up to yet clears on THIS click -- rather than failing quietly and needing 5-10 manual retries.
+    // Wrapped so a thrown sync (offline blip) always releases the lock and surfaces a reason, never a
+    // silent no-op with the form fields cleared (the reported symptom).
+    var led = null;
+    try {
+      for(var attempt = 0; attempt < MARKET_SELL_SYNC_TRIES; attempt++){
+        await itemSync(true);                        // reconcile the ledger (reports the full inventory)
+        led = marketSellLedgerCoverage(item);
+        if(led === null || led >= qty) break;        // no ledger to gate on, or it now covers the order
+        if(attempt < MARKET_SELL_SYNC_TRIES - 1) await marketDelay(MARKET_SELL_SYNC_WAIT_MS);
+      }
+    } catch(e){
       marketState.busy = false;
-      marketSellFail('Only '+fmt(_led)+' of your '+fmt(state.inventory[item]||0)+' '+marketItemName(item)+' are tradable so far — the server is still crediting the rest. Try a smaller amount, or again shortly.');
+      marketSellFail('Couldn’t reach the market just now — check your connection and try again.');
+      return;
+    }
+    if(led !== null && led < qty){                   // ledger still short after the retries -> say so clearly
+      marketState.busy = false;
+      marketSellFail('Only '+fmt(led)+' of your '+fmt(state.inventory[item]||0)+' '+marketItemName(item)+' are tradable yet — the server is still crediting freshly-made items. Give it a moment and try again'+(led>0?', or list '+fmt(led)+' now.':'.'));
       return;
     }
     state.inventory[item] = (state.inventory[item]||0) - qty; saveGame(); // escrow items
@@ -32086,7 +32130,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.42.8';
+  var GAME_VERSION = '0.0.42.9';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -32210,7 +32254,7 @@
       QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, towerOnKill:towerOnKill, towerEnter:towerEnter, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
-      earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, itemReconcile:itemReconcile,
+      earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
       ELEM_RAW_STATS:ELEM_RAW_STATS, rawEnchantRange:rawEnchantRange, enchantModRange:enchantModRange, baseIsMagicWeapon:baseIsMagicWeapon, enchantPoolForItem:enchantPoolForItem, enchantCtxForUnique:enchantCtxForUnique, elementalRawHitDamage:elementalRawHitDamage,

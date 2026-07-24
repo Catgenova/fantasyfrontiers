@@ -7905,6 +7905,41 @@
     ok(FF.marketSellNet(50, 3) === 50*3 - FF.marketTax(50*3), 'sell net stays consistent with marketTax');
   });
 
+  // ---- Item catalog (server allowlist) -- buildItemCatalog covers the whole inventory-key universe ----
+  // This map is dumped to the server (item_catalog) and GATES the item ledger + marketplace. If it ever
+  // misses a legit inventory key, that item becomes un-ledgerable/un-sellable, so completeness is load-
+  // bearing: every ALL_SELLABLE key must be tradeable(1), every Legendary key must be present (ledger-only,
+  // 0), and nothing made-up may appear.
+  suite('item catalog: allowlist covers every inventory key', function(){
+    var cat = FF.buildItemCatalog();
+    var keys = Object.keys(cat);
+    ok(keys.length > 1000, 'catalog is populated (' + keys.length + ' keys)');
+    // Charset: every catalog key is a legal item key (the server enforces the same regex).
+    var re = /^[A-Za-z0-9_]{1,64}$/;
+    ok(keys.every(function(k){ return re.test(k); }), 'every catalog key matches the item-key charset');
+    ok(keys.every(function(k){ return cat[k] === 1 || cat[k] === 0; }), 'every entry is a 1/0 tradeable flag');
+
+    // Every market-tradeable item (ALL_SELLABLE, minus gold, charset-valid) is present AND tradeable.
+    var sellable = Object.keys(FF.ALL_SELLABLE).filter(function(k){ return k !== 'gold' && re.test(k); });
+    var missingSellable = sellable.filter(function(k){ return cat[k] !== 1; });
+    eq(missingSellable.length, 0, 'all ALL_SELLABLE keys are catalogued as tradeable (missing: ' + missingSellable.slice(0,5).join(',') + ')');
+
+    // Every Legendary key (in inventory but NOT tradeable) is present so item_sync never drops it.
+    var legMaps = [FF.LEGENDARY_GEAR_ITEMS, FF.LEGENDARY_GEAR_ITEMS_D2, FF.LEGENDARY_GEAR_ITEMS_D3, FF.LEGENDARY_GEAR_ITEMS_D4,
+                   FF.LEGENDARY_RING_ITEMS, FF.LEGENDARY_CLOAK_ITEMS, FF.LEGENDARY_AMULET_ITEMS];
+    var legKeys = [];
+    legMaps.forEach(function(m){ if(m) Object.keys(m).forEach(function(k){ if(re.test(k)) legKeys.push(k); }); });
+    ok(legKeys.length > 0, 'there are Legendary item keys to catalog');
+    var missingLeg = legKeys.filter(function(k){ return !(k in cat); });
+    eq(missingLeg.length, 0, 'every Legendary key is catalogued (missing: ' + missingLeg.slice(0,5).join(',') + ')');
+    // A Legendary that isn't ALL_SELLABLE must be ledger-only (tradeable 0), so the market rejects it.
+    var pureLeg = legKeys.filter(function(k){ return sellable.indexOf(k) === -1; });
+    ok(pureLeg.length === 0 || pureLeg.every(function(k){ return cat[k] === 0; }), 'non-sellable Legendaries are catalogued as ledger-only (untradeable)');
+
+    // A made-up key is never in the catalog -> the server rejects orders/ledger entries for it.
+    ok(!('fake_item_does_not_exist' in cat), 'a made-up item key is absent from the catalog');
+  });
+
   // ---- Combat damage-type advantage triangle --------------------------------------------
   suite('weaponAdvantage', function(){
     FF.DAMAGE_TYPES.forEach(function(t){ eq(FF.weaponAdvantageMultiplier(t, t), 1.0, 'same type is neutral: ' + t); });

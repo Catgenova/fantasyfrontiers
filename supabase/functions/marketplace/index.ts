@@ -140,6 +140,9 @@ Deno.serve(async (req) => {
     if (error) { await refundEscrow(); return json({ ok: false, error: "Order failed." }, 500); }
     const res = r as { status?: string; filled?: number; rest?: number; refund?: number; order_id?: number };
     if (res?.status === "toomany") { await refundEscrow(); return json({ ok: false, error: "You already have the maximum of 40 open orders.", code: "toomany" }, 409); }
+    // Item-key allowlist rejection (see the item_catalog migration): the key isn't a real, tradeable item
+    // (e.g. a made-up key, or a non-tradeable Legendary). Return the escrow and say so plainly.
+    if (res?.status === "badkey") { await refundEscrow(); return json({ ok: false, error: "That item can’t be traded.", code: "badkey" }, 400); }
     if (res?.status !== "ok") { await refundEscrow(); return json({ ok: false, error: "Order rejected." }, 400); }
     return json({ ok: true, filled: Number(res.filled || 0), rest: Number(res.rest || 0), refund: Number(res.refund || 0), order_id: res.order_id ?? null });
   }
