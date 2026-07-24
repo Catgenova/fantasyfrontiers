@@ -2404,14 +2404,15 @@
     ok(feast5.feastRegen > 0 && feast5.feastDurationMs > 0, 'feasts carry a timed heal-over-time buff');
     ok(!('feastBonus' in feast5), 'the old timed damage bonus is gone');
     var f0 = FF.ALL_CRAFT_RECIPES['gastronomy_t0'], f20 = FF.ALL_CRAFT_RECIPES['gastronomy_t20'];
-    eq(f0.feastRegen, 50, 'feast regen is 50 HP/5s');
-    eq(f20.feastRegen, 50, 'feast regen is a flat 50 HP/5s across tiers');
+    eq(f0.feastRegen, 5, 'feast regen is 5 HP/5s at t0');
+    eq(f20.feastRegen, 50, 'feast regen is 50 HP/5s at t20');
+    ok(f20.feastRegen > f0.feastRegen && f20.feastDurationMs > f0.feastDurationMs, 'regen AND duration both scale up with tier');
     // Serving a feast activates the heal-over-time buff; no buff by default.
     eq(FF.feastRegenPer5s(), 0, 'no feast buff by default');
-    FF._state.inventory['gastronomy_t10'] = 1; FF._state.playerHp = 1;
-    FF.serveFeast('gastronomy_t10');
+    FF._state.inventory['gastronomy_t20'] = 1; FF._state.playerHp = 1;
+    FF.serveFeast('gastronomy_t20');
     ok(FF.isFeastActive(), 'serving a feast activates the buff');
-    eq(FF.feastRegenPer5s(), 50, 'active feast restores 50 HP/5s');
+    eq(FF.feastRegenPer5s(), 50, 'active t20 feast restores 50 HP/5s');
     ok(FF._state.playerHp > 1, 'serving a feast also heals up front');
     // Offline regen accounting: while still running, a window shorter than the feast counts fully;
     // a feast that expired before the offline window began contributes nothing.
