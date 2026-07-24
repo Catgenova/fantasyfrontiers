@@ -64,6 +64,9 @@ Deno.serve(async (req) => {
   const userId = user.id;
   // Volume rate limit (Postgres rl_hit; see migration 20260716200000). Fail-open if the limiter is down.
   try { const { data: _over } = await admin.rpc("rl_hit", { p_subject: userId, p_bucket: "guild_action", p_limit: 60, p_window_secs: 60 }); if (_over === true) return json({ ok: false, error: "Too many requests." }, 429); } catch { /* limiter unavailable -> allow */ }
+  // Clamp gate: an account quarantined from the guild surface is refused (see migration 20260724210000).
+  // Fail-open like the rate limiter -- a check that is DOWN must never lock a legit player out of their guild.
+  try { const { data: _cl } = await admin.rpc("is_clamped", { p_user: userId, p_surface: "guild" }); if (_cl === true) return json({ ok: false, clamped: true, error: "This account is restricted from guild features." }); } catch { /* clamp check unavailable -> allow */ }
   const username = (user.user_metadata && (user.user_metadata as Record<string, unknown>).username) as string | undefined;
   if (!username) return json({ ok: false, error: "Account has no username." }, 400);
 

@@ -320,6 +320,11 @@ Deno.serve(async (req) => {
   };
   if (estateProvided) record.estate = estate;   // omit entirely -> upsert leaves any existing estate untouched
   if (masteryProvided) record.mastery = storedMastery; // bucket-metered map (held at last accepted when over-rate); absent field never clobbers
+  // Leaderboard clamp: a quarantined account's public profile is NOT refreshed, so its tampered stats never
+  // land in the row the leaderboard / profile-card read (the leaderboard view also filters it out -- this is
+  // the belt to that suspenders). Report ok so the client doesn't error-loop; the write is simply a no-op.
+  // Fail-open: if the check is down, fall through and write normally rather than freeze a legit profile.
+  try { const { data: _cl } = await admin.rpc("is_clamped", { p_user: userId, p_surface: "leaderboard" }); if (_cl === true) return json({ ok: true, clamped: true }); } catch { /* clamp check unavailable -> write normally */ }
   let { error: upErr } = await admin.from("profiles").upsert(record, { onConflict: "id" });
   if (upErr) {
     // An optional cosmetic column (estate / mastery / title) may not be migrated yet -- retry WITHOUT them
