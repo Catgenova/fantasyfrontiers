@@ -24886,9 +24886,16 @@
       renderEstateCanvas();
     }
     function handleSelect(clientX, clientY){
-      if(estReadOnly) return; // visiting another player's estate: pan/zoom only, no tile selection
       var _os = estateCanvasOrigin(canvas), originX = _os.x, originY = _os.y;
       var p = toWorldCoords(clientX, clientY);
+      if(estReadOnly){
+        // Visiting another player's estate: let them TAP a tile to inspect its buildings/tiers/bonuses
+        // (read-only), but no edge selection and no actions. Panning/zooming are handled elsewhere.
+        estateSelectedTile = estateFindTileAt(p.x, p.y, originX, originY);
+        estateSelectedEdge = null;
+        render();
+        return;
+      }
       var edge = estateFindEdgeAt(p.x, p.y, originX, originY);
       if(edge){
         estateSelectedEdge = edge;
@@ -25251,6 +25258,41 @@
     html += '</div>';
     return html;
   }
+  // Read-only property inspector for a VISITED estate's selected tile: shows what's built and its tier /
+  // bonuses (workshop speed + double-output %, cottage link, field/pavement/obstacle tier) with no action
+  // buttons. Reuses the same info helpers as renderEstateTileOptions so the numbers match your own estate.
+  function renderEstateVisitTileInfo(){
+    var hint = 'Read-only view — tap a tile to inspect its buildings, tiers, and bonuses. Drag to pan, +/− to zoom, arrows to rotate.';
+    if(!estateSelectedTile) return '<div class="estate-hover-info" id="estateHoverInfo">'+hint+'</div>';
+    var x = estateSelectedTile.x, y = estateSelectedTile.y;
+    var cell = estActive.grid[x] && estActive.grid[x][y];
+    if(!cell) return '<div class="estate-hover-info" id="estateHoverInfo">'+hint+'</div>';
+    var html = '<div class="estate-options-panel">';
+    html += '<h3 style="margin-top:0">Tile ('+x+', '+y+') &bull; Height '+cell.height+' / '+(ESTATE_MAX_HEIGHT-1)+' &bull; '+cell.type.charAt(0).toUpperCase()+cell.type.slice(1)+'</h3>';
+    if(cell.type === 'dirt' && cell.obstacle){
+      var oinfo = estateObstacleInfo(cell.obstacle);
+      html += '<div class="estate-action-info"><b>Obstacle: '+oinfo.def.emoji+' '+oinfo.def.label+'</b> &mdash; '+oinfo.icon+' '+oinfo.itemName+' (Tier '+oinfo.tierNum+')<br>Cleared with '+SKILL_LABELS[oinfo.def.skill]+' '+oinfo.reqLevel+'.</div>';
+    } else if(cell.type === 'dirt' && cell.fieldTier != null){
+      var fdef = FARM_FIELD_TIERS['field_t'+cell.fieldTier];
+      html += '<div class="estate-action-info"><b>Field:</b> '+tierChipHtml(cell.fieldTier)+' '+(fdef?fdef.icon+' '+escapeHtml(fdef.name):'Field')+' &mdash; grows crops up to '+TIER_NAMES[cell.fieldTier]+' tier.</div>';
+    } else if(cell.type === 'paved'){
+      var pavedRecipe = getPavingRecipe(cell.paveTileId), pT = pavementTierOf(cell);
+      html += '<div class="estate-action-info"><b>Paved:</b> '+tierChipHtml(Math.max(0,pT))+' '+(pavedRecipe?pavedRecipe.icon+' '+escapeHtml(pavedRecipe.name):'Unknown')+'</div>';
+      if(cell.workshopId){
+        var wIt = WORKSHOP_ITEMS[cell.workshopId], wPct = Math.round(workshopBonusPct(wIt?wIt.tierIndex:0)*100);
+        html += '<div class="estate-action-info"><b>Workshop:</b> '+tierChipHtml(wIt?wIt.tierIndex:0)+' '+(wIt?wIt.icon+' '+escapeHtml(wIt.name):'Unknown')+'<br>+'+wPct+'% '+escapeHtml(workshopSkillLabel(wIt?wIt.skillId:''))+(isGatherWorkshop(wIt?wIt.skillId:'')?' gathering':' crafting')+' speed &bull; '+wPct+'% double output</div>';
+      } else if(cell.cottageId){
+        var cIt = COTTAGE_ITEMS[cell.cottageId], cAdj = estateAdjacentWorkshop(estActive.grid, x, y);
+        html += '<div class="estate-action-info"><b>Cottage:</b> '+tierChipHtml(cIt?cIt.tierIndex:0)+' '+(cIt?cIt.icon+' '+escapeHtml(cIt.name):'Unknown')+(cAdj?' &mdash; linked to an adjacent Workshop':' &mdash; not linked')+'</div>';
+      } else {
+        html += '<div class="estate-action-info">Empty paved tile — no building.</div>';
+      }
+    } else {
+      html += '<div class="estate-action-info">Bare dirt — nothing built here.</div>';
+    }
+    html += '</div>';
+    return html;
+  }
   function renderEstateTab(){
     // Read-only viewer for another player's published estate (opened from the leaderboard). Gated on
     // the transient 'visitestate' category too: this same function renders My Estate AND the guild
@@ -25259,7 +25301,7 @@
       var vName = escapeHtml(estateVisit.name || 'a player');
       var vh = '<div class="estate-visit-bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">'
         + '<button class="action-btn" data-action="leaveEstateVisit" style="width:auto;flex:0 0 auto;">‹ Leave</button>'
-        + '<div class="section-intro" style="margin:0;flex:1;min-width:200px;">Viewing <b>'+vName+'</b>’s estate — <b>read-only</b>. Drag to pan, use +/− to zoom, and the turn arrows to rotate.</div></div>';
+        + '<div class="section-intro" style="margin:0;flex:1;min-width:200px;">Viewing <b>'+vName+'</b>’s estate — <b>read-only</b>. Tap a tile to inspect its buildings &amp; tiers; drag to pan, +/− to zoom, turn arrows to rotate.</div></div>';
       if(estateVisit.loading) return vh + '<div class="empty-note">Loading their estate…</div>';
       if(estateVisit.error) return vh + '<div class="empty-note" style="border-color:var(--hp-bad);color:var(--hp-bad)">'+escapeHtml(estateVisit.error)+'</div>';
       if(!estateVisit.estate || !estateVisit.estate.grid) return vh + '<div class="empty-note">'+vName+' hasn’t published an estate yet.</div>';
@@ -25271,7 +25313,7 @@
         '<button class="estate-rotate-btn estate-rotate-right" data-action="estateRotateRight" data-tip="Rotate 90° right" aria-label="Rotate 90° right">↻</button>'+
         '<button class="estate-view-btn'+(estateTopDown?' on':'')+'" data-action="estateToggleTopDown" data-tip="Toggle top-down view" aria-label="Toggle top-down view">'+(estateTopDown?'▦ 2D':'◈ 3D')+'</button>'+
         '</div>';
-      vh += '<div class="estate-hover-info" id="estateHoverInfo">Read-only view — hover a tile to inspect it. Drag to pan, +/− to zoom, arrows to rotate.</div>';
+      vh += renderEstateVisitTileInfo();
       return vh;
     }
     var tilesOwned = 0;
@@ -32231,7 +32273,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.42.13';
+  var GAME_VERSION = '0.0.42.14';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
