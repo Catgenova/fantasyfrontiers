@@ -3395,10 +3395,23 @@
     wildlife_lion:      { id:'roar',       name:'Terrifying Roar', kind:'fear',   chargeMs:14000, durMs:5000, miss:0.30 },                    // 30% of your swings flinch and miss
     wildlife_grizzly:   { id:'maul',       name:'Maul',            kind:'shred',  chargeMs:12000, durMs:8000, mult:1.30 },                    // you take +30% damage while shredded
     wildlife_direwolf:  { id:'intimidate', name:'Intimidate',      kind:'weaken', chargeMs:12000, durMs:8000, mult:0.75 },                    // your outgoing damage drops 25%
-    wildlife_behemoth:  { id:'regen',      name:'Regenerate',      kind:'regen',  chargeMs:14000, healPct:0.12 }                              // heals 12% of its max HP each fire
+    wildlife_behemoth:  { id:'regen',      name:'Regenerate',      kind:'regen',  chargeMs:14000, healPct:0.12 },                             // heals 12% of its max HP each fire
+    // Elementals: two per element, themed to the beast's own element. Reuse the Wildlife engine (DoT /
+    // Shred / Weaken / Harden / heal) plus four new control primitives -- Chill (attack-speed slow),
+    // Blind (hit-chance down), Purge (buff strip), and Veil (the beast gains dodge).
+    elemental_fire_elemental:   { id:'immolate',   name:'Immolate',      kind:'burn',        chargeMs:12000, durMs:6000, pctPerSec:0.20, word:'Burning' },
+    elemental_magma_golem:      { id:'cinder',     name:'Cinder Burst',  kind:'cinder',      chargeMs:13000, durMs:6000, pctPerSec:0.15, word:'Burning', shredMult:1.30, shredMs:8000 },
+    elemental_ice_elemental:    { id:'frostbite',  name:'Frost Bite',    kind:'chill',       chargeMs:11000, durMs:6000, slowPct:0.30 },
+    elemental_frost_giant:      { id:'icycarapace',name:'Icy Carapace',  kind:'icycarapace', chargeMs:13000, hardenMult:0.50, hardenMs:5000, slowPct:0.30, chillMs:5000 },
+    elemental_stone_golem:      { id:'petrify',    name:'Petrify',       kind:'petrify',     chargeMs:13000, durMs:6000, slowPct:0.50, weakenMult:0.75 },
+    elemental_air_elemental:    { id:'sandblast',  name:'Sandblast',     kind:'blind',       chargeMs:11000, durMs:5000, hitMult:0.70 },
+    elemental_astral_elemental: { id:'purge',      name:'Purge',         kind:'purge',       chargeMs:15000 },
+    elemental_primal_elemental: { id:'searingray', name:'Searing Ray',   kind:'burn',        chargeMs:12000, durMs:6000, pctPerSec:0.20, word:'Searing' },
+    elemental_void_elemental:   { id:'lifedrain',  name:'Life Drain',    kind:'drain',       chargeMs:13000, durMs:5000, pctPerSec:0.15, healPct:0.08, word:'Draining' },
+    elemental_elemental_titan:  { id:'umbralveil', name:'Umbral Veil',   kind:'veil',        chargeMs:14000, durMs:6000, hitMult:0.70 }
   };
-  WILDLIFE_MONSTERS.forEach(function(m){ if(MONSTER_SPECIALS[m.id]) m.special = MONSTER_SPECIALS[m.id]; });
   var MONSTERS = WILDLIFE_MONSTERS.concat(ELEMENTAL_MONSTERS).concat(DEMONSPAWN_MONSTERS).concat(KINSWORN_MONSTERS);
+  MONSTERS.forEach(function(m){ if(MONSTER_SPECIALS[m.id]) m.special = MONSTER_SPECIALS[m.id]; }); // wildlife + elemental specials
   // id -> monster lookup so hot paths (the combat loop, action-bar live updates, attack ticks) don't
   // linear-scan every monster every frame.
   var MONSTERS_BY_ID = {};
@@ -6833,7 +6846,7 @@
   function playerAttackIntervalMs(st){
     st = st || state;
     var ws = getWeaponStyle(st.equippedMainhand);
-    return Math.max(200, ws.attackSpeed*1000 * (1 - Math.min(0.9, getFamBuff('haste'))) * classAttackSpeedMult(st) * legAttackSpeedMult(st) * (1 - Math.min(0.9, legendaryRingBonus('d2_fury', st)))); // + Frenzied Guard post-Block haste; Signet of Fury (D2): +Attack Speed
+    return Math.max(200, ws.attackSpeed*1000 * (1 - Math.min(0.9, getFamBuff('haste'))) * classAttackSpeedMult(st) * legAttackSpeedMult(st) * (1 - Math.min(0.9, legendaryRingBonus('d2_fury', st))) * playerChillSlowMult(st)); // + Frenzied Guard post-Block haste; Signet of Fury (D2): +Attack Speed; Chill (elemental special) slows you
   }
   // Duelist Lv 40: +30% Accuracy while the class is active.
   function classAccuracyMult(st){
@@ -13887,7 +13900,8 @@
       return;
     }
     var _neverMiss = !isOffhand && (legActive('earthrender') || (legActive('ghostblade') && samuraiFocusStacks(state) >= samuraiFocusCap(state)));
-    if(!_neverMiss && Math.random() >= playerHitChance(monster)){
+    // Blind (Sandblast) lowers your accuracy; Umbral Veil raises the foe's evasion. Both scale the hit roll.
+    if(!_neverMiss && Math.random() >= playerHitChance(monster) * playerBlindMult() * enemyVeilHitMult()){
       if(!isOffhand) spawnCombatFloat('Miss', 'ft-miss', true);
       addPhysiqueXp(physTierPairs([['agility',2]], monster.tierIndex));
       // The following class procs belong to the main-hand swing only (an off-hand Claw is pure extra DPS).
@@ -14509,11 +14523,26 @@
   // changes (clearEnemySpecialState) -- there is no lingering out-of-combat debuff.
   function playerBleedActive(act){ return !!(act && (act.pBleedUntil||0) > Date.now() && (act.pBleedDps||0) > 0); }
   function playerPoisonActive(act){ return !!(act && (act.pPoisonUntil||0) > Date.now() && (act.pPoisonDps||0) > 0); }
-  function playerDotDps(act){ return (playerBleedActive(act) ? act.pBleedDps : 0) + (playerPoisonActive(act) ? act.pPoisonDps : 0); }
+  function playerBurnActive(act){ return !!(act && (act.pBurnUntil||0) > Date.now() && (act.pBurnDps||0) > 0); } // Immolate / Searing Ray / Life Drain (elemental DoT)
+  function playerDotDps(act){ return (playerBleedActive(act) ? act.pBleedDps : 0) + (playerPoisonActive(act) ? act.pPoisonDps : 0) + (playerBurnActive(act) ? act.pBurnDps : 0); }
   function playerFeared(act){ return !!(act && (act.pFearUntil||0) > Date.now()); }
-  function enemyWeakenMult(){ var a = state.activity; return (a && (a.pWeakenUntil||0) > Date.now()) ? (a.pWeakenMult||1) : 1; }        // Intimidate: your outgoing damage
-  function playerShredMult(st){ st = st||state; var a = st.activity; return (a && (a.pShredUntil||0) > Date.now()) ? (a.pShredMult||1) : 1; } // Maul: your INCOMING damage multiplier
-  function enemyHardenMult(act){ return (act && (act.enemyHardenUntil||0) > Date.now()) ? (act.enemyHardenMult||1) : 1; }               // Hardened Hide: your hit -> the beast
+  function enemyWeakenMult(){ var a = state.activity; return (a && (a.pWeakenUntil||0) > Date.now()) ? (a.pWeakenMult||1) : 1; }        // Intimidate / Petrify: your outgoing damage
+  function playerShredMult(st){ st = st||state; var a = st.activity; return (a && (a.pShredUntil||0) > Date.now()) ? (a.pShredMult||1) : 1; } // Maul / Cinder Burst: your INCOMING damage multiplier
+  function enemyHardenMult(act){ return (act && (act.enemyHardenUntil||0) > Date.now()) ? (act.enemyHardenMult||1) : 1; }               // Hardened Hide / Icy Carapace: your hit -> the beast
+  // Chill (Frost Bite / Icy Carapace / Petrify): a multiplier ON your attack interval (>1 = slower).
+  function playerChillSlowMult(st){ st = st||state; var a = st.activity; return (a && (a.pChillUntil||0) > Date.now()) ? (1 + (a.pChillSlow||0)) : 1; }
+  // Blind (Sandblast) + Veil (Umbral Veil): multipliers ON your hit chance at the miss roll (<1 = more misses).
+  function playerBlindMult(){ var a = state.activity; return (a && (a.pBlindUntil||0) > Date.now()) ? (a.pBlindMult||1) : 1; }
+  function enemyVeilHitMult(){ var a = state.activity; return (a && (a.enemyVeilUntil||0) > Date.now()) ? (a.enemyVeilHit||1) : 1; }
+  // Purge (Astral Elemental): strip your single strongest active consumable buff. Returns its name, or null.
+  function purgePlayerBuff(){
+    var now = Date.now(), slots = [['activeFeast','Feast'],['activeTea','Tea'],['activeTome','Tome'],['activeScroll','Scroll'],['activeBrew','Brew']];
+    for(var i=0;i<slots.length;i++){
+      var b = state[slots[i][0]];
+      if(b && b.itemId && (b.expiresAt||0) > now){ var nm = b.name || slots[i][1]; b.expiresAt = 0; b.itemId = null; return nm; }
+    }
+    return null;
+  }
   // Wipe every enemy-special effect (player debuffs + the beast's own harden + its charge). Called when a
   // fresh foe engages so nothing carries between fights.
   function clearEnemySpecialState(act){
@@ -14521,10 +14550,14 @@
     act.specialAccum = 0;
     act.pBleedUntil = 0; act.pBleedDps = 0; act.pBleedStacks = 0;
     act.pPoisonUntil = 0; act.pPoisonDps = 0;
+    act.pBurnUntil = 0; act.pBurnDps = 0; act.pBurnWord = null;
     act.pFearUntil = 0; act.pFearMiss = 0;
     act.pShredUntil = 0; act.pShredMult = 1;
     act.pWeakenUntil = 0; act.pWeakenMult = 1;
+    act.pChillUntil = 0; act.pChillSlow = 0;
+    act.pBlindUntil = 0; act.pBlindMult = 1;
     act.enemyHardenUntil = 0; act.enemyHardenMult = 1;
+    act.enemyVeilUntil = 0; act.enemyVeilHit = 1;
   }
   // Human-readable summary of a beast's special, for the enemy card so players can anticipate it.
   function monsterSpecialDesc(sp){
@@ -14536,6 +14569,15 @@
     if(sp.kind==='weaken') return 'Weakens you — ' + Math.round((1-sp.mult)*100) + '% less outgoing damage';
     if(sp.kind==='harden') return 'hardens its hide — your hits deal ' + Math.round((1-sp.mult)*100) + '% less';
     if(sp.kind==='regen')  return 'Regenerates ' + Math.round(sp.healPct*100) + '% of its HP';
+    if(sp.kind==='burn')   return 'inflicts ' + (sp.word||'Burning') + ' — armour-ignoring damage over time';
+    if(sp.kind==='cinder') return 'Burns you and melts your armour — DoT + you take +' + Math.round((sp.shredMult-1)*100) + '% damage';
+    if(sp.kind==='chill')  return 'Chills you — your attack speed slows ' + Math.round(sp.slowPct*100) + '%';
+    if(sp.kind==='icycarapace') return 'ices over — takes ' + Math.round((1-sp.hardenMult)*100) + '% less, and Chills you (−' + Math.round(sp.slowPct*100) + '% attack speed)';
+    if(sp.kind==='petrify') return 'Petrifies you — −' + Math.round(sp.slowPct*100) + '% attack speed and −' + Math.round((1-sp.weakenMult)*100) + '% damage';
+    if(sp.kind==='blind')  return 'Blinds you — your hit chance drops to ' + Math.round(sp.hitMult*100) + '%';
+    if(sp.kind==='purge')  return 'Purges one of your active buffs';
+    if(sp.kind==='drain')  return 'Drains you — armour-ignoring DoT while it heals ' + Math.round(sp.healPct*100) + '% of its HP';
+    if(sp.kind==='veil')   return 'cloaks in shadow — your hit chance drops to ' + Math.round(sp.hitMult*100) + '%';
     return '';
   }
   // Fire a beast's special: apply its abnormal effect, telegraphed by a log + float. DoT dps scales with
@@ -14576,6 +14618,47 @@
       act.monsterHp = Math.min(monster.hp, (act.monsterHp||0) + heal);
       addLog('The ' + monster.name + ' regenerates ' + fmt(heal) + ' HP!', 'important');
       if(!offlineCapture) spawnCombatFloat('+' + fmt(heal) + ' HP', 'ft-success', true);
+    } else if(sp.kind==='burn'){
+      act.pBurnDps = Math.max(1, Math.round(monster.atkMax * sp.pctPerSec)); act.pBurnUntil = now + sp.durMs; act.pBurnWord = sp.word || 'Burning';
+      addLog('The ' + monster.name + ' sears you — you are ' + (sp.word||'Burning') + '!', 'danger');
+      if(!offlineCapture) spawnCombatFloat((sp.word||'Burning') + '!', 'ft-reflect', false);
+    } else if(sp.kind==='cinder'){
+      act.pBurnDps = Math.max(1, Math.round(monster.atkMax * sp.pctPerSec)); act.pBurnUntil = now + sp.durMs; act.pBurnWord = sp.word || 'Burning';
+      act.pShredUntil = now + sp.shredMs; act.pShredMult = sp.shredMult;
+      addLog('The ' + monster.name + ' bursts into cinders — your armour melts and you burn!', 'danger');
+      if(!offlineCapture) spawnCombatFloat('Cinder Burst!', 'ft-reflect', false);
+    } else if(sp.kind==='chill'){
+      act.pChillUntil = now + sp.durMs; act.pChillSlow = sp.slowPct;
+      addLog('The ' + monster.name + ' chills you to the bone — your strikes slow!', 'danger');
+      if(!offlineCapture) spawnCombatFloat('Chilled!', 'ft-miss', false);
+    } else if(sp.kind==='icycarapace'){
+      act.enemyHardenUntil = now + sp.hardenMs; act.enemyHardenMult = sp.hardenMult;
+      act.pChillUntil = now + sp.chillMs; act.pChillSlow = sp.slowPct;
+      addLog('The ' + monster.name + ' sheathes in ice — it takes less, and the cold slows you!', 'important');
+      if(!offlineCapture) spawnCombatFloat('Icy Carapace', 'ft-miss', true);
+    } else if(sp.kind==='petrify'){
+      act.pChillUntil = now + sp.durMs; act.pChillSlow = sp.slowPct;
+      act.pWeakenUntil = now + sp.durMs; act.pWeakenMult = sp.weakenMult;
+      addLog('The ' + monster.name + ' partly turns you to stone — you slow and weaken!', 'danger');
+      if(!offlineCapture) spawnCombatFloat('Petrified!', 'ft-miss', false);
+    } else if(sp.kind==='blind'){
+      act.pBlindUntil = now + sp.durMs; act.pBlindMult = sp.hitMult;
+      addLog('The ' + monster.name + ' blasts grit into your eyes — you can barely see!', 'danger');
+      if(!offlineCapture) spawnCombatFloat('Blinded!', 'ft-miss', false);
+    } else if(sp.kind==='purge'){
+      var purged = purgePlayerBuff();
+      if(purged){ addLog('The ' + monster.name + ' purges your ' + purged + ' — the buff is snuffed out!', 'danger'); if(!offlineCapture) spawnCombatFloat('Purged: ' + purged, 'ft-miss', false); }
+      else { addLog('The ' + monster.name + ' looses a purging light, but you had no buff to lose.', ''); }
+    } else if(sp.kind==='drain'){
+      var drainHeal = Math.max(1, Math.round(monster.hp * sp.healPct));
+      act.monsterHp = Math.min(monster.hp, (act.monsterHp||0) + drainHeal);
+      act.pBurnDps = Math.max(1, Math.round(monster.atkMax * sp.pctPerSec)); act.pBurnUntil = now + sp.durMs; act.pBurnWord = sp.word || 'Draining';
+      addLog('The ' + monster.name + ' drains your essence — it heals ' + fmt(drainHeal) + ' HP as you wither!', 'danger');
+      if(!offlineCapture){ spawnCombatFloat('Drained!', 'ft-reflect', false); spawnCombatFloat('+' + fmt(drainHeal) + ' HP', 'ft-success', true); }
+    } else if(sp.kind==='veil'){
+      act.enemyVeilUntil = now + sp.durMs; act.enemyVeilHit = sp.hitMult;
+      addLog('The ' + monster.name + ' cloaks in shadow — your blows start missing!', 'important');
+      if(!offlineCapture) spawnCombatFloat('Umbral Veil', 'ft-miss', true);
     }
     needsRender = true;
   }
@@ -19486,12 +19569,15 @@
     add('bubble', fb.bubbleUntil, 'Bubble', '#5fd0e0');
     Object.keys(COMBAT_BUFF_META).forEach(function(k){ var mm=COMBAT_BUFF_META[k]; add(k, fb[k+'Until'], mm.n, mm.c); });
     add('enrage', state.summonerEnrageUntil, 'Host Enraged', '#c8302a');
-    // Enemy-special DEBUFFS on YOU (Wildlife specials): shown here under "Your Effects".
+    // Enemy-special DEBUFFS on YOU (Wildlife + Elemental specials): shown here under "Your Effects".
     if(a && (a.pBleedUntil||0)>now) out.push({key:'pbleed', until:a.pBleedUntil, name:'Bleeding', color:'#a63a2f', stacks:((a.pBleedStacks||0)>1?a.pBleedStacks:undefined)});
     add('ppois',  a && a.pPoisonUntil, 'Poisoned',     '#6fae3a');
+    if(a && (a.pBurnUntil||0)>now) out.push({key:'pburn', until:a.pBurnUntil, name:(a.pBurnWord||'Burning'), color:'#e8641e'});
     add('pfear',  a && a.pFearUntil,   'Feared',        '#a184c8');
     add('pshred', a && a.pShredUntil,  'Armour Shred',  '#c85a2a');
     add('pweak',  a && a.pWeakenUntil, 'Weakened',      '#8a97a6');
+    add('pchill', a && a.pChillUntil,  'Chilled',       '#7fd9d4');
+    add('pblind', a && a.pBlindUntil,  'Blinded',       '#c8b84a');
     // Class stack-buffs -- timerless; the bar fills toward the stack cap and a xN badge shows the count.
     function addStack(key,active,val,cap,name,color){ if(active && (val||0) > 0) out.push({key:key,name:name,color:color,stacks:val,cap:Math.max(1,cap||1)}); }
     addStack('momentum', knightBonus(1), state.knightStacks, knightStackCap(state), 'Momentum', '#c8a24a');
@@ -19521,7 +19607,8 @@
     add('decay', a.decayUntil, 'Decaying', '#7fb46a', a.decayStacks); // D3 necrotic DoT
     add('curse', a.curseUntil, 'Cursed', '#a184c8'); // D3 Curse mark
     add('scorch', a.scorchUntil, 'Scorched', '#e0632f', a.scorchStacks); // D4 elemental Vulnerability
-    add('harden', a.enemyHardenUntil, 'Hardened Hide', '#8a7a5a'); // Rhino special: it takes less from you
+    add('harden', a.enemyHardenUntil, 'Hardened Hide', '#8a7a5a'); // Rhino / Icy Carapace: it takes less from you
+    add('veil', a.enemyVeilUntil, 'Umbral Veil', '#8a5fb0'); // Elemental Titan: it dodges more
     add('eslow', fb.enemySlowUntil, 'Slowed', '#7a8aa0');
     add('eweak', fb.enemyWeakenUntil, 'Weakened', '#8a97a6');
     add('fpoison', fb.poisonUntil, 'Poisoned', '#6fae3a');
@@ -31827,7 +31914,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.42.0';
+  var GAME_VERSION = '0.0.42.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -32022,7 +32109,8 @@
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, D2_SET_DEFS:D2_SET_DEFS, D2_SET_CLASS_IDS:D2_SET_CLASS_IDS, D3_SET_DEFS:D3_SET_DEFS, D3_SET_CLASS_IDS:D3_SET_CLASS_IDS, set2D3:set2D3, setFullD3:setFullD3, SET_TIER_INDEX_D3:SET_TIER_INDEX_D3, D4_SET_BONUSES:D4_SET_BONUSES, D4_SET_DEFS:D4_SET_DEFS, D4_SET_CLASS_IDS:D4_SET_CLASS_IDS, set2D4:set2D4, setFullD4:setFullD4, SET_TIER_INDEX_D4:SET_TIER_INDEX_D4, D4_BREATH_MAX:D4_BREATH_MAX, d4BreathCharge:d4BreathCharge, d4BreathPct:d4BreathPct, d4BreathReady:d4BreathReady, d4BreathAdd:d4BreathAdd, d4BreathReset:d4BreathReset, D4_WRATH_CAP:D4_WRATH_CAP, d4WrathStacks:d4WrathStacks, d4WrathAdd:d4WrathAdd, d4WrathReset:d4WrathReset, d4SetElementDmg:d4SetElementDmg, d4SetElementResist:d4SetElementResist, d4WandElementMult:d4WandElementMult, d4FoeResistsElement:d4FoeResistsElement, d4EchoMult:d4EchoMult, d4FamiliarElementMult:d4FamiliarElementMult, d4TemplarAegisMult:d4TemplarAegisMult, d4SetDmgMult:d4SetDmgMult, d4DragonscaleIncoming:d4DragonscaleIncoming, d4SentinelThornsMult:d4SentinelThornsMult, d4HeraldBastionReflect:d4HeraldBastionReflect, d4BreathChargeOnHit:d4BreathChargeOnHit, d4BreathFullSet:d4BreathFullSet, d4BreathFire:d4BreathFire, d4VenombreathApply:d4VenombreathApply, D4_BREATH_BURST_MULT:D4_BREATH_BURST_MULT, d4WrathOnHit:d4WrathOnHit, d4FirestormDodge:d4FirestormDodge, enemyPoisonedFoe:enemyPoisonedFoe, d4SupremeItemCount:d4SupremeItemCount, D3_SOUL_CAP:D3_SOUL_CAP, d3SoulCount:d3SoulCount, d3SoulsAdd:d3SoulsAdd, enemyDecaying:enemyDecaying, decayApply:decayApply, applyDecayTick:applyDecayTick, decayCap:decayCap, d3DecayTickMult:d3DecayTickMult, enemyCursed:enemyCursed, curseApply:curseApply, d3SetDmgMult:d3SetDmgMult, d3SetCritDmgBonus:d3SetCritDmgBonus, d3SetIncomingMult:d3SetIncomingMult, onPlayerDodged:onPlayerDodged, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, set2D2:set2D2, setFullD2:setFullD2, d2SetDmgMult:d2SetDmgMult, d2SentinelReflectMult:d2SentinelReflectMult, d2IncomingDmgMult:d2IncomingDmgMult, d2SetCritDmgBonus:d2SetCritDmgBonus, d2SetCritChance:d2SetCritChance, d2SetDodgeBonus:d2SetDodgeBonus, knightBulwarkMarchMult:knightBulwarkMarchMult, lumenReflectD2Mult:lumenReflectD2Mult, enemyHasAilment:enemyHasAilment, rangerAilmentDmgMult:rangerAilmentDmgMult, d2PoisonTickMult:d2PoisonTickMult, d2BleedTickMult:d2BleedTickMult, d2BurnTickMult:d2BurnTickMult, d2FrostbiteTickMult:d2FrostbiteTickMult, voidVulnCap:voidVulnCap, templarAegisCapMult:templarAegisCapMult, reaverBloodfrenzyMult:reaverBloodfrenzyMult, d2FeralOnCast:d2FeralOnCast, d2BloodthirstOnKill:d2BloodthirstOnKill, d2BloodthirstSpeedMult:d2BloodthirstSpeedMult, quickdrawParalyticSlow:quickdrawParalyticSlow, enemyExtraSlowPct:enemyExtraSlowPct, SET_TIER_INDEX:SET_TIER_INDEX, SET_TIER_INDEX_D2:SET_TIER_INDEX_D2, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, SET_NAMES:SET_NAMES, setName:setName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, combatPlayerBuffs:combatPlayerBuffs, combatEnemyDebuffs:combatEnemyDebuffs, renderFxBars:renderFxBars, captureCombatLoadout:captureCombatLoadout, applyCombatLoadout:applyCombatLoadout, saveLoadoutPreset:saveLoadoutPreset, equipLoadoutPreset:equipLoadoutPreset, clearLoadoutPreset:clearLoadoutPreset, renameLoadoutPreset:renameLoadoutPreset, ensureLoadouts:ensureLoadouts, loadoutSummary:loadoutSummary, LOADOUT_SLOT_COUNT:LOADOUT_SLOT_COUNT, combatLocksGear:combatLocksGear, COMBAT_LOCKED_ACTIONS:COMBAT_LOCKED_ACTIONS, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, knightUnstoppableMult:knightUnstoppableMult, thunderStaticPerHit:thunderStaticPerHit, thunderStaticThreshold:thunderStaticThreshold, thunderDischargeMult:thunderDischargeMult, deadeyeAccuracyBonus:deadeyeAccuracyBonus, duelistFlourishStabs:duelistFlourishStabs, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, heraldRipostePct:heraldRipostePct, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, undyingRageIncomingMult:undyingRageIncomingMult, berserkerFrenziedBlowsMult:berserkerFrenziedBlowsMult, templarLayOnHandsPct:templarLayOnHandsPct, templarBlessingOfHasteMult:templarBlessingOfHasteMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, spellbladeResonantCrit:spellbladeResonantCrit, playerCritChance:playerCritChance, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, voidVulnPerStack:voidVulnPerStack, voidMarkPerHit:voidMarkPerHit, quickdrawVenomPct:quickdrawVenomPct, quickdrawTwinFangChance:quickdrawTwinFangChance, treasureProspectorPer:treasureProspectorPer, setTreasureMult:setTreasureMult, EXEC_SET_EXECUTE_FRAC:EXEC_SET_EXECUTE_FRAC, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, sharpshooterAccOverDodge:sharpshooterAccOverDodge, sharpshooterEagleEyeCrit:sharpshooterEagleEyeCrit, sharpshooterPinpointMult:sharpshooterPinpointMult, sharpshooterFocusCritDmg:sharpshooterFocusCritDmg, sharpshooterArmorPierce:sharpshooterArmorPierce, sharpshooterPatienceMult:sharpshooterPatienceMult, SHARP_EAGLE_CAP:SHARP_EAGLE_CAP, SHARP_PINPOINT_CAP:SHARP_PINPOINT_CAP, SHARP_FOCUS_CAP:SHARP_FOCUS_CAP, SHARP_PATIENCE_CAP:SHARP_PATIENCE_CAP, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautSmashReady:juggernautSmashReady, juggernautFuryStacks:juggernautFuryStacks, juggernautArmorPierce:juggernautArmorPierce, JUG_WINDUP_DMG:JUG_WINDUP_DMG, JUG_WINDUP_SLOW:JUG_WINDUP_SLOW, JUG_SMASH_EVERY:JUG_SMASH_EVERY, JUG_CONCUSS_MS:JUG_CONCUSS_MS, JUG_FURY_PER:JUG_FURY_PER, JUG_FURY_MAX:JUG_FURY_MAX, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_SHIELD_MAX_PCT:LUMEN_SHIELD_MAX_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, HERALD_RIPOSTE_PCT:HERALD_RIPOSTE_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, applyPotionPoisonTick:applyPotionPoisonTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, sentinelReflectSourceName:sentinelReflectSourceName, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeRuneHungerMult:spellbladeRuneHungerMult, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, spellbladeEchoChance:spellbladeEchoChance, equippedEnchantCount:equippedEnchantCount, spellbladeEnchantBoost:spellbladeEnchantBoost, SPELLBLADE_RUNEHUNGER_PER:SPELLBLADE_RUNEHUNGER_PER, SPELLBLADE_CRITRUNE_PER:SPELLBLADE_CRITRUNE_PER, SPELLBLADE_ECHO_PCT:SPELLBLADE_ECHO_PCT, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, incomingDamageMult:incomingDamageMult, incomingMitigationFloor:incomingMitigationFloor, INCOMING_FLOOR_FRAC:INCOMING_FLOOR_FRAC, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, combatShieldTotal:combatShieldTotal, rollCraftRarity:rollCraftRarity, rarityRollDisabledForTier:rarityRollDisabledForTier, SETTINGS_TOGGLES:SETTINGS_TOGGLES, clampPlayerHpToMax:clampPlayerHpToMax, legendaryDmgMult:legendaryDmgMult, legendaryDodgeBonus:legendaryDodgeBonus, legendaryLifestealPct:legendaryLifestealPct, legWastingCurseIncomingMult:legWastingCurseIncomingMult, legNotePoisonStart:legNotePoisonStart, legVanishWindowReady:legVanishWindowReady, samuraiFocusCap:samuraiFocusCap, knightMomentumPerStack:knightMomentumPerStack, legDistinctEnchantCount:legDistinctEnchantCount, legEchoDmgMult:legEchoDmgMult, legShieldBashDamage:legShieldBashDamage, legReflectCanCrit:legReflectCanCrit, legReflectCritMult:legReflectCritMult, legendaryCritDmg:legendaryCritDmg, legEarthshakerBuild:legEarthshakerBuild, legEarthshakerConsume:legEarthshakerConsume, LEG_TREMOR_CAP:LEG_TREMOR_CAP, LEG_TREMOR_MULT:LEG_TREMOR_MULT, CRIT_DAMAGE_MULT:CRIT_DAMAGE_MULT, legendaryAccuracyBonus:legendaryAccuracyBonus, legRangerAilmentRolls:legRangerAilmentRolls, LEG_CHAINSHOT_MAX:LEG_CHAINSHOT_MAX, legendaryCritChance:legendaryCritChance, legThunderMaxStacks:legThunderMaxStacks, legRetributionArmed:legRetributionArmed, legRetributionConsume:legRetributionConsume, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, heraldGuardMaxStacks:heraldGuardMaxStacks, HERALD_GUARD_MAX_STACKS:HERALD_GUARD_MAX_STACKS, HERALD_GUARD_PER_STACK:HERALD_GUARD_PER_STACK, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legChargedRiposteArmed:legChargedRiposteArmed, legChargedRiposteConsume:legChargedRiposteConsume, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, applyReaperWitherTick:applyReaperWitherTick,
-      MONSTER_SPECIALS:MONSTER_SPECIALS, monsterSpecialFire:monsterSpecialFire, monsterSpecialDesc:monsterSpecialDesc, clearEnemySpecialState:clearEnemySpecialState, playerDotDps:playerDotDps, playerDotTick:playerDotTick, playerBleedActive:playerBleedActive, playerPoisonActive:playerPoisonActive, playerFeared:playerFeared, enemyWeakenMult:enemyWeakenMult, playerShredMult:playerShredMult, enemyHardenMult:enemyHardenMult, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
+      MONSTER_SPECIALS:MONSTER_SPECIALS, monsterSpecialFire:monsterSpecialFire, monsterSpecialDesc:monsterSpecialDesc, clearEnemySpecialState:clearEnemySpecialState, playerDotDps:playerDotDps, playerDotTick:playerDotTick, playerBleedActive:playerBleedActive, playerPoisonActive:playerPoisonActive, playerFeared:playerFeared, enemyWeakenMult:enemyWeakenMult, playerShredMult:playerShredMult, enemyHardenMult:enemyHardenMult,
+      playerBurnActive:playerBurnActive, playerChillSlowMult:playerChillSlowMult, playerBlindMult:playerBlindMult, enemyVeilHitMult:enemyVeilHitMult, purgePlayerBuff:purgePlayerBuff, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, assassinRhythmRegister:assassinRhythmRegister, ASSASSIN_RHYTHM_MAX:ASSASSIN_RHYTHM_MAX, assassinApplyLacerate:assassinApplyLacerate, assassinLacerateMaxStacks:assassinLacerateMaxStacks, ASSASSIN_BLEED_MAX:ASSASSIN_BLEED_MAX, assassinHemorrhageCritMult:assassinHemorrhageCritMult, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, RELIC_ITEMS:RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,

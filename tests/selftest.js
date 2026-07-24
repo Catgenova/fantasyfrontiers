@@ -953,7 +953,7 @@
     var expect = { wildlife_wolf:'bleed', wildlife_crocodile:'poison', wildlife_rhino:'harden', wildlife_lion:'fear', wildlife_grizzly:'shred', wildlife_direwolf:'weaken', wildlife_behemoth:'regen' };
     Object.keys(expect).forEach(function(id){ var m = FF.monsterById(id); ok(m && m.special && m.special.kind === expect[id], id + ' has the ' + expect[id] + ' special'); });
     ok(!FF.monsterById('wildlife_rabbit').special, 'a beast with no special is unaffected');
-    ok(FF.MONSTERS.filter(function(m){ return m.special; }).length === 7, 'exactly 7 beasts carry a special');
+    ok(FF.MONSTERS.filter(function(m){ return m.special && m.category==='wildlife'; }).length === 7, 'exactly 7 wildlife beasts carry a special');
 
     var s = FF._state, sv = { act:s.activity, hp:s.playerHp };
     function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', monsterId:id, monsterHp:m.hp }; return m; }
@@ -997,6 +997,54 @@
       ok(/Bleed/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.wildlife_wolf)) && /Regenerates/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.wildlife_behemoth)), 'special descriptions summarise the effect');
     } finally {
       s.activity = sv.act; s.playerHp = sv.hp;
+    }
+  });
+
+  // ---- Enemy specials: Elemental primal attacks (Chill / Blind / Purge / Veil + engine reuse) ----
+  suite('enemy specials: elemental primal attacks', function(){
+    var expect = { elemental_fire_elemental:'burn', elemental_magma_golem:'cinder', elemental_ice_elemental:'chill', elemental_frost_giant:'icycarapace', elemental_stone_golem:'petrify', elemental_air_elemental:'blind', elemental_astral_elemental:'purge', elemental_primal_elemental:'burn', elemental_void_elemental:'drain', elemental_elemental_titan:'veil' };
+    Object.keys(expect).forEach(function(id){ var m = FF.monsterById(id); ok(m && m.special && m.special.kind === expect[id], id + ' has the ' + expect[id] + ' special'); });
+    ok(FF.MONSTERS.filter(function(m){ return m.special && m.category==='elemental'; }).length === 10, 'exactly 10 elementals carry a special');
+
+    var s = FF._state, sv = { act:s.activity, hp:s.playerHp, feast:s.activeFeast, tea:s.activeTea };
+    function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', monsterId:id, monsterHp:m.hp }; return m; }
+    try {
+      // Immolate -> Burn DoT (armour-ignoring), folded into playerDotDps.
+      var fire = fresh('elemental_fire_elemental'); FF.monsterSpecialFire(fire);
+      ok(FF.playerBurnActive(s.activity) && FF.playerDotDps(s.activity) > 0, 'Immolate leaves you Burning (a DoT source)');
+      // Cinder Burst -> Burn AND Armour Shred together.
+      fresh('elemental_magma_golem'); FF.monsterSpecialFire(FF.monsterById('elemental_magma_golem'));
+      ok(FF.playerBurnActive(s.activity) && Math.abs(FF.playerShredMult(s) - 1.30) < 1e-9, 'Cinder Burst burns you and shreds your armour');
+      // Frost Bite -> Chill: your attack interval lengthens (>1 multiplier).
+      fresh('elemental_ice_elemental'); FF.monsterSpecialFire(FF.monsterById('elemental_ice_elemental'));
+      ok(Math.abs(FF.playerChillSlowMult(s) - 1.30) < 1e-9, 'Frost Bite slows your attack speed +30%');
+      // Icy Carapace -> Harden + Chill at once.
+      fresh('elemental_frost_giant'); FF.monsterSpecialFire(FF.monsterById('elemental_frost_giant'));
+      ok(Math.abs(FF.enemyHardenMult(s.activity) - 0.50) < 1e-9 && FF.playerChillSlowMult(s) > 1, 'Icy Carapace hardens the foe and Chills you');
+      // Petrify -> heavy Slow + Weaken.
+      fresh('elemental_stone_golem'); FF.monsterSpecialFire(FF.monsterById('elemental_stone_golem'));
+      ok(Math.abs(FF.playerChillSlowMult(s) - 1.50) < 1e-9 && Math.abs(FF.enemyWeakenMult() - 0.75) < 1e-9, 'Petrify slows +50% and weakens you 25%');
+      // Sandblast -> Blind: hit-chance multiplier < 1.
+      fresh('elemental_air_elemental'); FF.monsterSpecialFire(FF.monsterById('elemental_air_elemental'));
+      ok(Math.abs(FF.playerBlindMult() - 0.70) < 1e-9, 'Sandblast cuts your hit chance to 70%');
+      // Umbral Veil -> enemy evasion: hit-chance multiplier < 1.
+      fresh('elemental_elemental_titan'); FF.monsterSpecialFire(FF.monsterById('elemental_elemental_titan'));
+      ok(Math.abs(FF.enemyVeilHitMult() - 0.70) < 1e-9, 'Umbral Veil cuts your hit chance to 70%');
+      // Life Drain -> the foe heals AND you take a dark DoT.
+      var voidE = fresh('elemental_void_elemental'); s.activity.monsterHp = 1;
+      FF.monsterSpecialFire(voidE);
+      ok(s.activity.monsterHp > 1 && FF.playerBurnActive(s.activity), 'Life Drain heals the foe and leaves you withering');
+      // Purge -> strips your strongest active buff.
+      fresh('elemental_astral_elemental');
+      s.activeFeast = { itemId:'feast_x', name:'Test Feast', dmgBonus:0.2, durationMs:1e6, expiresAt:Date.now()+1e6 };
+      var purged = FF.purgePlayerBuff();
+      eq(purged, 'Test Feast', 'Purge strips the active Feast (top priority)');
+      ok(!(s.activeFeast.itemId), 'the purged buff is cleared');
+      eq(FF.purgePlayerBuff(), null, 'Purge finds nothing to strip when no buff is active');
+      // Descriptions read sensibly.
+      ok(/Chills/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.elemental_ice_elemental)) && /Purges/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.elemental_astral_elemental)), 'elemental descriptions summarise the effect');
+    } finally {
+      s.activity = sv.act; s.playerHp = sv.hp; s.activeFeast = sv.feast; s.activeTea = sv.tea;
     }
   });
 
