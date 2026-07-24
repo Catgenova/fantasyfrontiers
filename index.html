@@ -28641,7 +28641,8 @@
       var order={leader:0,officer:1,member:2};
       guildDir.viewMembers.slice().sort(function(a,b){ return (order[a.rank]!=null?order[a.rank]:3)-(order[b.rank]!=null?order[b.rank]:3); }).forEach(function(m){
         var isMe = authUser && m.user_id===authUser.id;
-        h += '<div class="guild-member-row"><div><b>'+escapeHtml(m.username)+'</b>'+(isMe?' <span class="item-meta">(you)</span>':'')+guildRankBadge(m.rank)+'</div></div>';
+        var vctl = isMe ? '' : '<div class="guild-row-actions"><button class="mini-btn" data-action="guildViewProfile" data-id="'+m.user_id+'" data-name="'+escapeHtml(m.username)+'">View Profile</button></div>';
+        h += '<div class="guild-member-row"><div><b>'+escapeHtml(m.username)+'</b>'+(isMe?' <span class="item-meta">(you)</span>':'')+guildRankBadge(m.rank)+'</div>'+vctl+'</div>';
       });
       return h;
     }
@@ -28673,6 +28674,8 @@
     html += '<div class="guild-section-title">Members <span class="item-meta">('+guildState.members.length+'/'+GUILD_MAX_MEMBERS+')</span></div>';
     guildState.members.forEach(function(m){
       var isMe=authUser&&m.user_id===authUser.id, ctl='';
+      // Everyone can pull up any member's public profile (same card the leaderboard/chat show).
+      if(!isMe) ctl += '<button class="mini-btn" data-action="guildViewProfile" data-id="'+m.user_id+'" data-name="'+escapeHtml(m.username)+'">View Profile</button>';
       if(isLeader && !isMe && m.rank!=='leader'){
         ctl += m.rank==='member' ? '<button class="mini-btn" data-action="guildPromote" data-id="'+m.user_id+'">Promote</button>' : '<button class="mini-btn" data-action="guildDemote" data-id="'+m.user_id+'">Demote</button>';
         ctl += '<button class="mini-btn" data-action="guildTransfer" data-id="'+m.user_id+'">Make Leader</button>';
@@ -32225,6 +32228,7 @@
       if(confirm('Make this member the guild leader? You will step down to Officer.')) guildAct('transfer', btn.getAttribute('data-id'));
     },
     guildKick: function(btn, e){ if(confirm('Remove this member from the guild?')) guildAct('kick', btn.getAttribute('data-id')); },
+    guildViewProfile: function(btn, e){ openPlayerProfile(btn.getAttribute('data-id'), btn.getAttribute('data-name')); },
     guildToggleOpen: function(btn, e){ guildSetOpen(!guildState.guild.open); },
     guildLeave: function(btn, e){ if(confirm('Leave your guild?')) guildAct('leave'); },
     guildDisband: function(btn, e){ if(confirm('Disband the guild? This permanently deletes it for every member.')) guildAct('disband'); },
@@ -32987,7 +32991,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.43.9';
+  var GAME_VERSION = '0.0.43.10';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
