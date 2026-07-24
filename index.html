@@ -22191,7 +22191,9 @@
     // tab isn't available (e.g. logged out on the Account tab), fall back to the first one.
     var _tabs = [];
     if(authUser) _tabs.push(['account','Account']);
-    _tabs.push(['profile','Profile'], ['interface','Interface'], ['qol','Quality of Life'], ['patch','Patch Notes']);
+    _tabs.push(['profile','Profile'], ['interface','Interface'], ['qol','Quality of Life']);
+    if(chatIsOwner()) _tabs.push(['moderation','Moderation']); // owner-only chat-moderator management
+    _tabs.push(['patch','Patch Notes']);
     if(!_tabs.some(function(t){ return t[0]===settingsTab; })) settingsTab = _tabs[0][0];
     html += '<div class="settings-tabs">';
     _tabs.forEach(function(t){ html += '<button class="settings-tab'+(settingsTab===t[0]?' active':'')+'" data-action="setSettingsTab" data-tab="'+t[0]+'">'+escapeHtml(t[1])+'</button>'; });
@@ -22221,6 +22223,8 @@
       html += SETTINGS_TOGGLES.filter(function(t){ return t.cat==='interface'; }).map(_toggleRow).join('');
     } else if(settingsTab==='qol'){
       html += SETTINGS_TOGGLES.filter(function(t){ return t.cat==='qol'; }).map(_toggleRow).join('');
+    } else if(settingsTab==='moderation' && chatIsOwner()){
+      html += renderChatModerationPanel();
     } else if(settingsTab==='patch'){
       html += renderPatchNotes();
     }
@@ -26176,9 +26180,11 @@
   // out and are swallowed), so the client is safe to ship before or after the backend lands.
   var chatRoles = {};        // uid -> 'owner' | 'moderator'
   var chatMutes = {};        // uid -> muted_until (epoch ms), active mutes only
+  var chatUserNames = {};    // uid -> username, for the owner's Moderation panel lists
   var myChatRole = null;     // this player's chat role, or null
   var chatModTarget = null;  // { mid, uid, name } while the moderate-player modal is open
   function chatRoleOf(uid){ return uid ? (chatRoles[uid] || null) : null; }
+  function chatNameFor(uid){ return chatUserNames[uid] || (uid ? (String(uid).slice(0,8)+'…') : '?'); }
   function chatIsMod(){ return myChatRole === 'owner' || myChatRole === 'moderator'; }
   function chatIsOwner(){ return myChatRole === 'owner'; }
   function chatMuteUntil(uid){ var u = uid && chatMutes[uid]; return (u && u > Date.now()) ? u : 0; }
@@ -26198,7 +26204,51 @@
       var m = await chatClient.from('chat_mutes').select('user_id,muted_until').gt('muted_until', new Date().toISOString());
       if(m && !m.error){ var mutes = {}; (m.data||[]).forEach(function(row){ mutes[row.user_id] = new Date(row.muted_until).getTime(); }); chatMutes = mutes; }
       myChatRole = (authUser && authUser.id) ? (chatRoles[authUser.id] || null) : null;
+      // Names for the owner's Moderation panel (roles + active mutes) -- profiles is public-readable.
+      var uids = Object.keys(chatRoles).concat(Object.keys(chatMutes)).filter(function(v, i, a){ return a.indexOf(v) === i; });
+      if(uids.length){
+        var p = await chatClient.from('profiles').select('id,username').in('id', uids);
+        if(p && !p.error){ (p.data||[]).forEach(function(row){ chatUserNames[row.id] = row.username; }); }
+      }
     }catch(e){}
+  }
+  // Owner-only: appoint a moderator by username. Resolves the name to a uid via profiles (public read),
+  // then fires chat_set_role -- the server re-checks that the caller is the owner.
+  function chatModAppoint(){
+    if(!chatIsOwner()){ addLog('Only the owner can appoint moderators.', 'danger'); return; }
+    var input = document.getElementById('modAppointInput');
+    var name = input ? (input.value||'').trim() : '';
+    if(!name){ addLog('Enter a username to appoint.', 'danger'); return; }
+    if(!CHAT_ENABLED || !chatClient){ addLog('Chat moderation needs the live backend.', 'danger'); return; }
+    chatClient.from('profiles').select('id,username').ilike('username', name).limit(1).then(function(res){
+      var row = res && res.data && res.data[0];
+      if((res && res.error) || !row){ addLog('No player named "'+name+'" was found.', 'danger'); return; }
+      if(input) input.value = '';
+      chatModAct('chat_set_role', { p_target: row.id, p_role: 'moderator' }); // server rejects if the target is the owner
+
+    }, function(){ addLog('Could not look up that player.', 'danger'); });
+  }
+  // The owner's Settings > Moderation panel: appoint by name, and lists of current mods + active mutes.
+  function renderChatModerationPanel(){
+    var html = '';
+    html += '<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px;">';
+    html += '<div class="settings-row-label">Appoint a moderator</div>';
+    html += '<div class="settings-row-desc">Type a player’s exact username. Moderators can mute / chat-ban and delete messages for regular players, but can’t touch each other or grant roles.</div>';
+    html += '<div style="display:flex;gap:6px;"><input id="modAppointInput" class="chat-input" placeholder="Username" autocomplete="off" style="flex:1 1 auto;"><button class="action-btn" data-action="chatModAppoint" style="flex:0 0 auto;width:auto;">Make Moderator</button></div>';
+    html += '</div>';
+    var mods = Object.keys(chatRoles).filter(function(uid){ return chatRoles[uid] === 'moderator'; });
+    html += '<div class="settings-row-label" style="margin-top:14px;">Moderators <span class="settings-row-desc" style="display:inline;">('+mods.length+')</span></div>';
+    if(!mods.length){ html += '<div class="settings-row-desc" style="margin-bottom:4px;">No moderators yet.</div>'; }
+    else mods.forEach(function(uid){
+      html += '<div class="settings-row"><div class="settings-row-label">⚑ '+escapeHtml(chatNameFor(uid))+'</div><button class="mini-btn" data-action="chatModRemove" data-uid="'+escapeHtml(uid)+'">Remove</button></div>';
+    });
+    var muted = Object.keys(chatMutes).filter(function(uid){ return chatMuteUntil(uid); });
+    html += '<div class="settings-row-label" style="margin-top:14px;">Muted players <span class="settings-row-desc" style="display:inline;">('+muted.length+')</span></div>';
+    if(!muted.length){ html += '<div class="settings-row-desc">Nobody is muted.</div>'; }
+    else muted.forEach(function(uid){
+      html += '<div class="settings-row"><div><div class="settings-row-label">🔇 '+escapeHtml(chatNameFor(uid))+'</div><div class="settings-row-desc">Muted '+escapeHtml(chatMuteLabel(chatMuteUntil(uid)))+'</div></div><button class="mini-btn" data-action="chatModSettingsUnmute" data-uid="'+escapeHtml(uid)+'">Unmute</button></div>';
+    });
+    return html;
   }
   // Fire a moderation RPC (mute / unmute / delete / set-role). The server re-checks the caller's role, so
   // this is just the trigger; realtime pushes the result to everyone. Reloads state proactively too.
@@ -31931,7 +31981,10 @@
       if(_offFams && _offFams.length) queueFamiliarBatch(_offFams); // second consolidated notification: all familiars found
     },
     closeSettings: function(btn, e){ settingsOpen = false; },
-    setSettingsTab: function(btn, e){ settingsTab = btn.getAttribute('data-tab') || 'profile'; renderSettingsModal(); },
+    setSettingsTab: function(btn, e){ settingsTab = btn.getAttribute('data-tab') || 'profile'; if(settingsTab==='moderation') chatModLoad().then(function(){ renderSettingsModal(); }); renderSettingsModal(); },
+    chatModAppoint: function(btn, e){ chatModAppoint(); },
+    chatModRemove: function(btn, e){ chatModAct('chat_set_role', { p_target: btn.getAttribute('data-uid'), p_role:'none' }); },
+    chatModSettingsUnmute: function(btn, e){ chatModAct('chat_unmute', { p_target: btn.getAttribute('data-uid') }); },
     toggleSetting: function(btn, e){
       var setKey = btn.getAttribute('data-key');
       state.settings[setKey] = !state.settings[setKey];
@@ -32741,7 +32794,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.43.0';
+  var GAME_VERSION = '0.0.43.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -32877,8 +32930,8 @@
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
       GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, skillTabsByLabel:skillTabsByLabel,
       renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
-      chatMessagesHtml:chatMessagesHtml, chatRoleOf:chatRoleOf, chatIsMod:chatIsMod, chatIsOwner:chatIsOwner, chatMuteUntil:chatMuteUntil, chatAmIMuted:chatAmIMuted, chatMuteLabel:chatMuteLabel, renderChatModModal:renderChatModModal,
-      _setChatMod:function(o){ o=o||{}; if(o.roles) chatRoles=o.roles; if(o.mutes) chatMutes=o.mutes; if('myRole' in o) myChatRole=o.myRole; if('messages' in o) chatMessages=o.messages; if('authUser' in o) authUser=o.authUser; if('target' in o) chatModTarget=o.target; },
+      chatMessagesHtml:chatMessagesHtml, chatRoleOf:chatRoleOf, chatIsMod:chatIsMod, chatIsOwner:chatIsOwner, chatMuteUntil:chatMuteUntil, chatAmIMuted:chatAmIMuted, chatMuteLabel:chatMuteLabel, renderChatModModal:renderChatModModal, renderChatModerationPanel:renderChatModerationPanel, chatNameFor:chatNameFor,
+      _setChatMod:function(o){ o=o||{}; if(o.roles) chatRoles=o.roles; if(o.mutes) chatMutes=o.mutes; if(o.names) chatUserNames=o.names; if('myRole' in o) myChatRole=o.myRole; if('messages' in o) chatMessages=o.messages; if('authUser' in o) authUser=o.authUser; if('target' in o) chatModTarget=o.target; },
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; },
