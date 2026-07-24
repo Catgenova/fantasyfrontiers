@@ -6698,6 +6698,58 @@
     if(savedCat) FF.navPickCat(savedCat);
   });
 
+  // ---- Tower auto-advance: keep climbing + one consolidated familiar summary at the end -------------
+  suite('tower: auto-advance + batched familiar summary', function(){
+    var s = FF._state;
+    var sv = { act:s.activity, fams:s.familiars, tower:s.tower, auto:s.towerAutoAdvance, pq:s.popupQueue, pbt:s.popupBatchTotal, hp:s.playerHp, pf:s.settings.popupFamiliar };
+    s.familiars = {}; s.tower = {}; s.popupQueue = []; s.popupBatchTotal = 0; s.playerHp = 1000; s.settings.popupFamiliar = true;
+
+    // The Enter modal exposes the auto-advance toggle, reflecting its state.
+    s.towerAutoAdvance = true;
+    var onCard = FF.towerPreviewCardHtml('all');
+    ok(/data-action="toggleTowerAutoAdvance"/.test(onCard), 'the Enter modal shows an auto-advance toggle');
+    ok(/☑ Auto-advance/.test(onCard), 'the toggle renders checked when on');
+    s.towerAutoAdvance = false;
+    ok(/☐ Auto-advance/.test(FF.towerPreviewCardHtml('all')), 'the toggle renders unchecked when off');
+
+    // Auto-advance run: each clear rolls straight into the next floor and banks its familiar into the run
+    // batch instead of firing a per-floor popup.
+    s.towerAutoAdvance = true;
+    s.activity = FF.makeTowerActivity('all', 1, true, []);
+    ok(s.activity.tower.autoAdvance === true && Array.isArray(s.activity.tower.familiarsGained), 'makeTowerActivity seeds the auto flag + batch');
+    FF.towerOnKill(null);
+    ok(s.activity.type === 'combat' && s.activity.tower, 'auto-advance rolls straight into the next fight');
+    eq(s.activity.tower.floor, 2, 'advanced to floor 2 automatically');
+    eq(s.popupQueue.length, 0, 'no per-floor familiar popup interrupts the climb');
+    var banked1 = s.activity.tower.familiarsGained.length;
+    ok(banked1 >= 1, "'All Classes' banks a familiar each floor into the run batch");
+    FF.towerOnKill(null);
+    eq(s.activity.tower.floor, 3, 'advanced again to floor 3');
+    ok(s.activity.tower.familiarsGained.length > banked1, 'the batch keeps accumulating across cleared floors');
+
+    // Ending the streak (a fall / manual Stop) surfaces ONE consolidated familiar-batch popup.
+    FF.flushTowerFamiliarBatch(s.activity);
+    eq(s.popupQueue.length, 1, 'the ended streak surfaces exactly one popup');
+    eq(s.popupQueue[0].type, 'familiarBatch', 'it is the consolidated familiar-batch modal, like the offline catch-up');
+    ok(s.popupQueue[0].familiars.length >= 2, 'the summary lists every familiar gained across the floors');
+    eq(s.activity.tower.familiarsGained.length, 0, 'the batch is drained once shown');
+
+    // A single-floor auto streak flushes as the normal single popup (not the batch modal).
+    s.popupQueue = []; s.popupBatchTotal = 0; s.familiars = {};
+    s.activity = FF.makeTowerActivity('all', 1, true, [{ skillId:'pyromancer', leveledUp:false, level:1 }]);
+    FF.flushTowerFamiliarBatch(s.activity);
+    ok(s.popupQueue.length === 1 && s.popupQueue[0].type === 'familiar', 'a single banked familiar uses the normal single popup');
+
+    // Without auto-advance a clear ends the run and shows the usual single popup -- no batching.
+    s.towerAutoAdvance = false; s.tower = {}; s.popupQueue = []; s.popupBatchTotal = 0; s.familiars = {};
+    s.activity = FF.makeTowerActivity('all', 1, false, []);
+    FF.towerOnKill(null);
+    eq(s.activity.type, null, 'a non-auto clear ends the run');
+    ok(s.popupQueue.length === 1 && s.popupQueue[0].type === 'familiar', 'non-auto keeps the normal single familiar popup');
+
+    s.activity = sv.act; s.familiars = sv.fams; s.tower = sv.tower; s.towerAutoAdvance = sv.auto; s.popupQueue = sv.pq; s.popupBatchTotal = sv.pbt; s.playerHp = sv.hp; s.settings.popupFamiliar = sv.pf;
+  });
+
   suite('quests: area, category, accordion + claim flow', function(){
     var s = FF._state;
     var savedMK = s.monsterKills, savedQ = s.quests, savedInv = s.inventory['corpse_t0'], savedTitles = s.titles, savedFal = s.inventory['stweapon_scimitar_t0_normal'];
