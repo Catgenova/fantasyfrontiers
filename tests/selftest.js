@@ -2265,6 +2265,19 @@
     ok(/Mod1/.test(panel) && /Mod2/.test(panel), 'moderators are listed by name');
     ok((panel.match(/data-action="chatModRemove"/g)||[]).length === 2, 'each moderator has a Remove button');
     ok(/Muted players <span[^>]*>\(1\)/.test(panel) && /Spammer/.test(panel) && /data-action="chatModSettingsUnmute"/.test(panel), 'muted players are listed with an Unmute button');
+
+    // Clamped players: owner sees the quarantine list + one-click Unclamp, plus a manual clamp box.
+    FF._setChatMod({
+      myRole:'owner',
+      names:{ 'u-mod':'Mod1', 'u-mod2':'Mod2', 'u-player':'Spammer', 'u-cheat':'Duper' },
+      clamps:{ 'u-cheat':{ user_id:'u-cheat', username:'Duper', surfaces:['marketplace','leaderboard','guild','chat'], auto:true, signal:'progress +1.2e13 in 6s' } }
+    });
+    var panel2 = FF.renderChatModerationPanel();
+    ok(/Clamped players <span[^>]*>\(1\)/.test(panel2), 'the panel lists the clamped-player count');
+    ok(/Duper/.test(panel2) && /progress \+1.2e13/.test(panel2), 'a clamped player shows its name + auto-detection signal');
+    ok(/data-action="clampClear"[^>]*data-uid="u-cheat"/.test(panel2), 'each clamped player has a one-click Unclamp button');
+    ok(/id="clampInput"/.test(panel2) && /data-action="clampApply"/.test(panel2) && /id="clampSurf_marketplace"/.test(panel2), 'the panel has a manual clamp box with per-surface toggles');
+    FF._setChatMod({ clamps:{} });
     // chatNameFor falls back to a uid fragment when the name isn't cached.
     eq(FF.chatNameFor('u-mod'), 'Mod1', 'chatNameFor resolves a cached username');
     ok(/…$/.test(FF.chatNameFor('u-unknown-123456789')), 'chatNameFor falls back to a uid fragment');
