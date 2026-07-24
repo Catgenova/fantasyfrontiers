@@ -22,6 +22,17 @@ const ITEM_BURST = 25_000;
 const MAX_KEYS = 2000;            // hard cap on distinct item types accepted in one sync (payload guard)
 const KEY_RE = /^[A-Za-z0-9_]{1,64}$/;
 
+// ---- Item-injection detection (account clamps; see migrations 20260724210000 / 220000) ----
+// item_sync clamps a tampered inventory to the age/rate allowance, so the gap between what the client
+// REQUESTED and what the ledger ACCEPTED for a single item is the injection signature. A legit haul is
+// fully credited (gap ~0); even a max ~12h offline gather of one item is only a few hundred thousand, so a
+// single-key DENIAL this large is impossible for real play but trivially hit by an edited stock (e.g. 1e9
+// tarpon -> ~1e9 denied). LIVE: a hard trip clamps immediately (this signal is clean enough to enforce,
+// unlike the fuzzier save_game progress signal which stays in shadow).
+const ITEM_INJECT_MIN_OVER = 10_000_000;      // 1e7 denied for one item in one sync
+const ITEM_CLAMP_ENFORCE = true;              // live enforcement (not shadow) for this detector
+const CLAMP_INDEFINITE_MS = 5_256_000 * 60_000; // ~10 years, matches the clamp RPC's cap
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -137,6 +148,36 @@ Deno.serve(async (req) => {
       if (q > 0) out[r.item_key as string] = q;
       if (e > 0) earned[r.item_key as string] = e;
     }
+
+    // Inventory-injection detection: the biggest single-item DENIAL (requested - accepted) this sync. A
+    // legit stock is credited in full so this is ~0; an edited inventory is denied by orders of magnitude.
+    // Best-effort -- never fail a sync on it.
+    try {
+      let worstKey = "", worstOver = 0;
+      for (const k in clean) {
+        const over = clean[k] - (out[k] || 0);
+        if (over > worstOver) { worstOver = over; worstKey = k; }
+      }
+      if (worstOver >= ITEM_INJECT_MIN_OVER) {
+        // Rate-limit the audit row to ~1/hr/user; the clamp itself already lands on the first trip.
+        const { data: recent } = await admin.from("clamp_signals").select("id")
+          .eq("user_id", userId).eq("kind", "item_inject")
+          .gte("created_at", new Date(Date.now() - 3_600_000).toISOString()).limit(1);
+        if (!recent || !recent.length) {
+          const detail = { item_key: worstKey, requested: clean[worstKey], accepted: out[worstKey] || 0, denied: worstOver };
+          console.warn(`clamp signal item_inject: user=${userId} key=${worstKey} denied=${worstOver}`);
+          await admin.from("clamp_signals").insert({ user_id: userId, kind: "item_inject", detail, would_clamp: true });
+          if (ITEM_CLAMP_ENFORCE) {
+            await admin.from("account_clamps").upsert({
+              user_id: userId, surfaces: ["marketplace", "leaderboard", "guild", "chat"],
+              clamped_until: new Date(Date.now() + CLAMP_INDEFINITE_MS).toISOString(),
+              auto: true, signal: detail, clamped_by: null,
+            }, { onConflict: "user_id" });
+          }
+        }
+      }
+    } catch { /* detection is best-effort -- never block a sync on it */ }
+
     return json({ ok: true, items: out, earned });
   }
 
