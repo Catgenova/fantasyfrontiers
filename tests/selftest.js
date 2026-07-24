@@ -1101,6 +1101,16 @@
       ok(!FF.playerBleedActive(s.activity) && FF.playerShredMult(s) === 1 && FF.enemyWeakenMult() === 1 && FF.enemyHardenMult(s.activity) === 1, 'clearEnemySpecialState wipes all specials for a fresh foe');
       // Descriptions read sensibly for the enemy card.
       ok(/Bleed/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.wildlife_wolf)) && /Regenerates/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.wildlife_behemoth)), 'special descriptions summarise the effect');
+      // A DoT never applies more than its own window in a single frame. The loop clamps dt to 60s (a brief
+      // alt-tab resumes as one giant frame); without the cap a 6s Bleed would land a full minute of DPS at
+      // once and one-shot the player. Here a 10 dps / 6s Bleed may chip at most 10*6 = 60, not 10*60 = 600.
+      fresh('wildlife_wolf');
+      s.activity.pBleedDps = 10; s.activity.pBleedDurMs = 6000; s.activity.pBleedUntil = Date.now() + 999999;
+      s.playerHp = 100000;
+      var _hp0 = s.playerHp; FF.playerDotTick(60000); var _lost = _hp0 - s.playerHp;
+      ok(Math.abs(_lost - 60) < 1e-6, 'a 6s Bleed caps at one window of damage in a 60s catch-up frame (got ' + _lost + ')');
+      // Live-scale frames are unaffected: a 50ms tick still applies dps*dt.
+      s.playerHp = 100000; var _hp1 = s.playerHp; FF.playerDotTick(50); ok(Math.abs((_hp1 - s.playerHp) - 0.5) < 1e-6, 'a normal 50ms frame applies dps*dt unchanged');
     } finally {
       s.activity = sv.act; s.playerHp = sv.hp;
     }

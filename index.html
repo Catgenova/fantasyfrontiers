@@ -14746,9 +14746,9 @@
   function clearEnemySpecialState(act){
     if(!act) return;
     act.specialAccum = 0;
-    act.pBleedUntil = 0; act.pBleedDps = 0; act.pBleedStacks = 0;
-    act.pPoisonUntil = 0; act.pPoisonDps = 0;
-    act.pBurnUntil = 0; act.pBurnDps = 0; act.pBurnWord = null;
+    act.pBleedUntil = 0; act.pBleedDps = 0; act.pBleedStacks = 0; act.pBleedDurMs = 0;
+    act.pPoisonUntil = 0; act.pPoisonDps = 0; act.pPoisonDurMs = 0;
+    act.pBurnUntil = 0; act.pBurnDps = 0; act.pBurnWord = null; act.pBurnDurMs = 0;
     act.pFearUntil = 0; act.pFearMiss = 0;
     act.pShredUntil = 0; act.pShredMult = 1;
     act.pWeakenUntil = 0; act.pWeakenMult = 1;
@@ -14795,12 +14795,12 @@
     if(sp.kind==='bleed'){
       act.pBleedStacks = ((act.pBleedUntil||0) > now) ? Math.min(sp.maxStacks||3, (act.pBleedStacks||0)+1) : 1;
       act.pBleedDps = Math.max(1, Math.round(monster.atkMax * sp.pctPerSec)) * act.pBleedStacks;
-      act.pBleedUntil = now + sp.durMs;
+      act.pBleedUntil = now + sp.durMs; act.pBleedDurMs = sp.durMs;
       addLog('The ' + monster.name + ' rends you open — you are Bleeding' + (act.pBleedStacks>1 ? ' (x'+act.pBleedStacks+')' : '') + '!', 'danger');
       if(!offlineCapture) spawnCombatFloat('Bleeding!', 'ft-reflect', false);
     } else if(sp.kind==='poison'){
       act.pPoisonDps = Math.max(1, Math.round(monster.atkMax * sp.pctPerSec));
-      act.pPoisonUntil = now + sp.durMs;
+      act.pPoisonUntil = now + sp.durMs; act.pPoisonDurMs = sp.durMs;
       addLog('The ' + monster.name + '’s venom courses through you — Poisoned!', 'danger');
       if(!offlineCapture) spawnCombatFloat('Poisoned!', 'ft-reflect', false);
     } else if(sp.kind==='fear'){
@@ -14825,11 +14825,11 @@
       addLog('The ' + monster.name + ' regenerates ' + fmt(heal) + ' HP!', 'important');
       if(!offlineCapture) spawnCombatFloat('+' + fmt(heal) + ' HP', 'ft-success', true);
     } else if(sp.kind==='burn'){
-      act.pBurnDps = Math.max(1, Math.round(monster.atkMax * sp.pctPerSec)); act.pBurnUntil = now + sp.durMs; act.pBurnWord = sp.word || 'Burning';
+      act.pBurnDps = Math.max(1, Math.round(monster.atkMax * sp.pctPerSec)); act.pBurnUntil = now + sp.durMs; act.pBurnDurMs = sp.durMs; act.pBurnWord = sp.word || 'Burning';
       addLog('The ' + monster.name + ' sears you — you are ' + (sp.word||'Burning') + '!', 'danger');
       if(!offlineCapture) spawnCombatFloat((sp.word||'Burning') + '!', 'ft-reflect', false);
     } else if(sp.kind==='cinder'){
-      act.pBurnDps = Math.max(1, Math.round(monster.atkMax * sp.pctPerSec)); act.pBurnUntil = now + sp.durMs; act.pBurnWord = sp.word || 'Burning';
+      act.pBurnDps = Math.max(1, Math.round(monster.atkMax * sp.pctPerSec)); act.pBurnUntil = now + sp.durMs; act.pBurnDurMs = sp.durMs; act.pBurnWord = sp.word || 'Burning';
       act.pShredUntil = now + sp.shredMs; act.pShredMult = sp.shredMult;
       addLog('The ' + monster.name + ' bursts into cinders — your armour melts and you burn!', 'danger');
       if(!offlineCapture) spawnCombatFloat('Cinder Burst!', 'ft-reflect', false);
@@ -14858,7 +14858,7 @@
     } else if(sp.kind==='drain'){
       var drainHeal = Math.max(1, Math.round(monster.hp * sp.healPct));
       act.monsterHp = Math.min(monster.hp, (act.monsterHp||0) + drainHeal);
-      act.pBurnDps = Math.max(1, Math.round(monster.atkMax * sp.pctPerSec)); act.pBurnUntil = now + sp.durMs; act.pBurnWord = sp.word || 'Draining';
+      act.pBurnDps = Math.max(1, Math.round(monster.atkMax * sp.pctPerSec)); act.pBurnUntil = now + sp.durMs; act.pBurnDurMs = sp.durMs; act.pBurnWord = sp.word || 'Draining';
       addLog('The ' + monster.name + ' drains your essence — it heals ' + fmt(drainHeal) + ' HP as you wither!', 'danger');
       if(!offlineCapture){ spawnCombatFloat('Drained!', 'ft-reflect', false); spawnCombatFloat('+' + fmt(drainHeal) + ' HP', 'ft-success', true); }
     } else if(sp.kind==='veil'){
@@ -14909,8 +14909,15 @@
   // A player DoT tick (Rend Bleed / Venom Poison): chips the player, ignoring armour, and can be lethal.
   function playerDotTick(dtMs){
     var act = state.activity; if(!act || act.type!=='combat') return;
-    var dps = playerDotDps(act); if(dps <= 0) return;
-    var amount = dps * dtMs / 1000; if(amount <= 0) return;
+    // Each active DoT deals damage for AT MOST its own window this frame. The loop clamps dt to 60s, so a
+    // brief alt-tab (<=60s) resumes as a single giant frame -- without this cap a 6s Bleed would apply a
+    // full minute of DPS in one lump (reading as the debuff "spamming" and often one-shotting the player
+    // on return). Live play (dt~16ms) and the offline sim (small steps) keep min(dt,dur)=dt, unchanged.
+    var bleedMs  = playerBleedActive(act)  ? Math.min(dtMs, act.pBleedDurMs  || dtMs) : 0;
+    var poisonMs = playerPoisonActive(act) ? Math.min(dtMs, act.pPoisonDurMs || dtMs) : 0;
+    var burnMs   = playerBurnActive(act)   ? Math.min(dtMs, act.pBurnDurMs   || dtMs) : 0;
+    var amount = (act.pBleedDps||0)*bleedMs/1000 + (act.pPoisonDps||0)*poisonMs/1000 + (act.pBurnDps||0)*burnMs/1000;
+    if(amount <= 0) return;
     var monster = monsterById(act.monsterId);
     state.playerHp -= amount;
     // Floating text for the ongoing debuff damage: accumulate the sub-frame chips and pop one red number
@@ -32479,8 +32486,12 @@
           var _spMon = monsterForSpeed;
           if(_spMon && _spMon.special && state.activity.type==='combat'){
             state.activity.specialAccum = (state.activity.specialAccum||0) + dt;
-            var _spGuard = 0;
-            while(state.activity.specialAccum >= _spMon.special.chargeMs && state.activity.type==='combat' && _spGuard++ < 20){
+            // Never bank more than one charge: the loop clamps dt to 60s, so a brief alt-tab resumes as one
+            // giant frame that would otherwise fire (and re-log/re-float) the same skill up to 6x at once --
+            // that burst was the "Rend spam". Refreshing a debuff once vs six times is mechanically the same
+            // (all these DoTs expire before they can re-charge), so cap the bar at a single ready charge.
+            if(state.activity.specialAccum > _spMon.special.chargeMs) state.activity.specialAccum = _spMon.special.chargeMs;
+            if(state.activity.specialAccum >= _spMon.special.chargeMs && state.activity.type==='combat'){
               state.activity.specialAccum -= _spMon.special.chargeMs;
               monsterSpecialFire(_spMon);
             }
@@ -32976,7 +32987,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.43.8';
+  var GAME_VERSION = '0.0.43.9';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
