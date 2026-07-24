@@ -168,20 +168,16 @@ Deno.serve(async (req) => {
   }
 
   if (action === "collect") {
-    const { data: r, error } = await admin.rpc("market_collect", { p_user: user.id });
+    // market_collect_tx DRAINS the proceeds inbox AND credits the wallet + item ledger in ONE transaction,
+    // so a mid-collect failure can't leave proceeds drained-but-uncredited (the settlement-loss risk). We
+    // therefore do NOT credit anything here anymore -- the RPC already did. The client still mirrors the
+    // returned gold/items locally; the wallet/item sync clamps reconcile it.
+    const { data: r, error } = await admin.rpc("market_collect_tx", { p_user: user.id });
     if (error) return json({ ok: false, error: "Collect failed." }, 500);
     const res = r as { status?: string; gold?: number; items?: { item_key: string; amount: number }[] };
     if (res?.status !== "ok") return json({ ok: false, error: "Collect rejected." }, 400);
-    // Gold proceeds (a seller's sale receipts + a buyer's price-improvement refunds) are credited
-    // into the server-authoritative wallet so they're real spendable balance. Verified transfer,
-    // so unthrottled. The client still adds the same gold locally; the sync clamp reconciles.
     const goldOut = Number(res.gold || 0);
-    if (goldOut > 0) await admin.rpc("wallet_credit", { p_user: user.id, p_amount: goldOut });
-    // Item proceeds (units a buyer bought, or items returned to a seller) become real ledger stock.
     const items = (res.items || []).map((i) => ({ item_key: i.item_key, amount: Number(i.amount) }));
-    for (const it of items) {
-      if (it.amount > 0 && KEY_RE.test(String(it.item_key))) await admin.rpc("item_credit", { p_user: user.id, p_key: it.item_key, p_qty: it.amount });
-    }
     return json({ ok: true, gold: goldOut, items });
   }
 
