@@ -9,9 +9,11 @@
 
 alter table public.profiles add column if not exists title text;
 
--- Recreate the public leaderboard view WITH the title column (mirrors 20260716210000_leaderboard_view.sql,
--- same security_invoker projection, plus `title`). Still never exposes the heavy `estate` blob.
+-- Recreate the public leaderboard view WITH the title column. `create or replace view` can only APPEND
+-- columns (never insert/rename mid-list), so `title` goes LAST -- after updated_at -- or Postgres reads it
+-- as renaming updated_at (error 42P16). The client selects by name, so column order is irrelevant. Still
+-- never exposes the heavy `estate` blob.
 create or replace view public.leaderboard with (security_invoker = on) as
-  select id, username, total_level, gold, skills, mastery, equipment, stats, mortal, class, has_estate, title, updated_at
+  select id, username, total_level, gold, skills, mastery, equipment, stats, mortal, class, has_estate, updated_at, title
   from public.profiles;
 grant select on public.leaderboard to anon, authenticated;
