@@ -6750,6 +6750,55 @@
     s.activity = sv.act; s.familiars = sv.fams; s.tower = sv.tower; s.towerAutoAdvance = sv.auto; s.popupQueue = sv.pq; s.popupBatchTotal = sv.pbt; s.playerHp = sv.hp; s.settings.popupFamiliar = sv.pf;
   });
 
+  // ---- Menagerie: one-tap Replace Companion + familiar search --------------------------------------
+  suite('menagerie: replace companion + search', function(){
+    var S = FF._state;
+    var sv = { fams:S.familiars, comps:S.activeCompanions, cast:S.companionCast, act:S.activity };
+    S.familiars = {}; S.activeCompanions = []; S.companionCast = {}; S.activity = { type:null };
+    var ids = Object.keys(FF.FAMILIAR_DATA);
+    var A = ids[0], B = ids[1];
+    S.familiars[A] = { owned:true, level:5 };
+    S.familiars[B] = { owned:true, level:5 };
+
+    // Single slot: Replace swaps in one step (no Deactivate-then-Activate).
+    FF.activateCompanion(A);
+    eq(FF.activeCompanionList(S).join(','), A, 'A is the lone active companion');
+    FF.replaceCompanion(B, A);
+    eq(FF.activeCompanionList(S).join(','), B, 'replaceCompanion swapped A out for B in one step');
+    ok(!S.companionCast[A] && !!S.companionCast[B], 'cast bookkeeping follows the swap');
+    FF.replaceCompanion(B, B);
+    eq(FF.activeCompanionList(S).join(','), B, 'replacing with the already-active companion is a no-op');
+
+    // Card buttons: active -> Deactivate; inactive with the slot full -> Replace targeting the active one.
+    FF._setMenagerieExpanded(A, true); FF._setMenagerieExpanded(B, true);
+    var cardB = FF.renderFamiliarCard(B), cardA = FF.renderFamiliarCard(A);
+    ok(/Deactivate Companion/.test(cardB), 'the active companion card shows Deactivate');
+    ok(/data-action="replaceCompanion"/.test(cardA) && /Replace Companion/.test(cardA), 'a full slot turns Activate into Replace Companion');
+    ok(new RegExp('data-old="'+B+'"').test(cardA), 'Replace targets the currently-active companion');
+    // Free the slot -> Activate returns (no Replace).
+    FF.activateCompanion(B);
+    var cardAopen = FF.renderFamiliarCard(A);
+    ok(/Activate as Companion/.test(cardAopen) && !/replaceCompanion/.test(cardAopen), 'with a free slot the card offers Activate, not Replace');
+
+    // Search: owned matches by name + spell + skill; unsummoned matches by skill only (no ??? spoiler).
+    var famA = FF.FAMILIAR_DATA[A];
+    ok(FF.familiarMatchesSearch(A, A.toLowerCase().slice(0,3)), 'matches by skill-id fragment');
+    ok(FF.familiarMatchesSearch(A, (famA.name||'').toLowerCase()), 'matches an owned familiar by name');
+    if(famA.spells && famA.spells[0]) ok(FF.familiarMatchesSearch(A, famA.spells[0].name.toLowerCase()), 'matches an owned familiar by spell name');
+    eq(FF.familiarMatchesSearch(A, 'zzq-not-a-thing'), false, 'a non-matching query returns false');
+    delete S.familiars[B];
+    ok(FF.familiarMatchesSearch(B, B.toLowerCase().slice(0,3)), 'an unsummoned familiar is still findable by its skill');
+
+    // The list re-renders filtered, with an empty note on no match.
+    FF._setMenagerieSearch('zzq-not-a-thing');
+    ok(/No familiars match/.test(FF.renderMenagerieList()), 'a no-match search shows the empty note');
+    FF._setMenagerieSearch(A.toLowerCase().slice(0,3));
+    ok(!/No familiars match/.test(FF.renderMenagerieList()), 'a matching search renders results');
+    FF._setMenagerieSearch('');
+
+    S.familiars = sv.fams; S.activeCompanions = sv.comps; S.companionCast = sv.cast; S.activity = sv.act;
+  });
+
   suite('quests: area, category, accordion + claim flow', function(){
     var s = FF._state;
     var savedMK = s.monsterKills, savedQ = s.quests, savedInv = s.inventory['corpse_t0'], savedTitles = s.titles, savedFal = s.inventory['stweapon_scimitar_t0_normal'];
