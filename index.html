@@ -683,6 +683,13 @@
   .chat-time{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);margin-right:6px;}
   .log-entry .chat-time{margin-right:5px;}
   .chat-body{color:var(--text);word-break:break-word;}
+  /* Chat moderation: role badges, a muted marker, and the per-message moderator button. */
+  .chat-mod-badge{font-size:10px;font-weight:700;margin-right:4px;vertical-align:1px;}
+  .chat-mod-owner{color:var(--gold);}
+  .chat-mod-moderator{color:var(--cat-chat);}
+  .chat-muted-tag{font-size:11px;margin-right:5px;opacity:0.8;}
+  .chat-mod-btn{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:13px;line-height:1;padding:0 5px;margin-right:4px;}
+  .chat-mod-btn:hover{color:var(--gold);}
   .chat-empty{margin:auto;color:var(--text-faint);font-style:italic;}
   /* Server-wide system announcements (e.g. supreme/fantastic crafts) shown inline in global chat. */
   .chat-msg.chat-system{display:flex;align-items:center;gap:6px;margin:3px 0;padding:5px 8px;border-radius:6px;background:rgba(138,79,176,.09);border-left:3px solid var(--rarity-superior);}
@@ -1721,6 +1728,7 @@
   <div id="settingsOverlay"></div>
   <div id="trackerPickerOverlay"></div>
   <div id="towerPreviewOverlay"></div>
+  <div id="chatModOverlay"></div>
   <div id="peonPickerOverlay"></div>
   <div class="ff-topbar" id="ffTopbar"></div>
   <div class="ff-ticker" id="ffTicker"><span class="ff-ticker-ico" aria-hidden="true">💡</span><div class="ff-ticker-view"><span class="ff-ticker-text" id="ffTickerText"></span></div></div>
@@ -26163,6 +26171,91 @@
   };
   var CHAT_ENABLED = !!(CHAT_CONFIG.supabaseUrl && CHAT_CONFIG.supabaseAnonKey);
   var chatMessages = [];
+  // ---- Chat moderation (server-authoritative; see 20260724190000_chat_moderation.sql). These stay empty
+  // and every mod feature stays inert until the migration is deployed (selects for the tables just error
+  // out and are swallowed), so the client is safe to ship before or after the backend lands.
+  var chatRoles = {};        // uid -> 'owner' | 'moderator'
+  var chatMutes = {};        // uid -> muted_until (epoch ms), active mutes only
+  var myChatRole = null;     // this player's chat role, or null
+  var chatModTarget = null;  // { mid, uid, name } while the moderate-player modal is open
+  function chatRoleOf(uid){ return uid ? (chatRoles[uid] || null) : null; }
+  function chatIsMod(){ return myChatRole === 'owner' || myChatRole === 'moderator'; }
+  function chatIsOwner(){ return myChatRole === 'owner'; }
+  function chatMuteUntil(uid){ var u = uid && chatMutes[uid]; return (u && u > Date.now()) ? u : 0; }
+  function chatAmIMuted(){ return (authUser && authUser.id) ? chatMuteUntil(authUser.id) : 0; }
+  function chatMuteLabel(ms){
+    if(!ms) return '';
+    if(ms - Date.now() > 30*24*3600*1000) return 'permanently';   // a ~10y chat-ban reads as permanent
+    try{ return 'until ' + new Date(ms).toLocaleString(); }catch(e){ return 'temporarily'; }
+  }
+  // Pull the current roles + active mutes. Swallows errors so a pre-migration backend just leaves mod
+  // features off. Runs on chat init and whenever a chat_roles/chat_mutes realtime change lands.
+  async function chatModLoad(){
+    if(!CHAT_ENABLED || !chatClient) return;
+    try{
+      var r = await chatClient.from('chat_roles').select('user_id,role');
+      if(r && !r.error){ var roles = {}; (r.data||[]).forEach(function(row){ roles[row.user_id] = row.role; }); chatRoles = roles; }
+      var m = await chatClient.from('chat_mutes').select('user_id,muted_until').gt('muted_until', new Date().toISOString());
+      if(m && !m.error){ var mutes = {}; (m.data||[]).forEach(function(row){ mutes[row.user_id] = new Date(row.muted_until).getTime(); }); chatMutes = mutes; }
+      myChatRole = (authUser && authUser.id) ? (chatRoles[authUser.id] || null) : null;
+    }catch(e){}
+  }
+  // Fire a moderation RPC (mute / unmute / delete / set-role). The server re-checks the caller's role, so
+  // this is just the trigger; realtime pushes the result to everyone. Reloads state proactively too.
+  function chatModAct(rpc, args){
+    if(!CHAT_ENABLED || !chatClient){ addLog('Chat moderation needs the live backend.', 'danger'); return; }
+    chatClient.rpc(rpc, args).then(function(res){
+      var d = res && res.data;
+      if((res && res.error) || (d && d.ok === false)){
+        var code = (d && d.error) || 'failed';
+        var msg = code==='forbidden' ? 'You don\'t have permission for that.'
+          : code==='protected' ? 'Only the owner can moderate a moderator.'
+          : code==='owner' ? 'The owner can\'t be moderated.'
+          : code==='gone' ? 'That message is already gone.'
+          : 'Moderation action failed ('+code+').';
+        addLog(msg, 'danger'); return;
+      }
+      chatModLoad().then(function(){ needsRender = true; if(gameStarted) render(); });
+    }, function(){ addLog('Moderation action failed.', 'danger'); });
+  }
+  function openChatModModal(t){ if(!chatIsMod()) return; chatModTarget = t; renderChatModModal(); }
+  function closeChatModModal(){ chatModTarget = null; renderChatModModal(); }
+  function renderChatModModal(){
+    var ov = document.getElementById('chatModOverlay'); if(!ov) return;
+    var t = chatModTarget;
+    if(!t || !t.uid || !chatIsMod()){ ov.className = ''; ov.innerHTML = ''; return; }
+    var uid = t.uid, name = t.name || 'this player';
+    var targetRole = chatRoleOf(uid), muted = chatMuteUntil(uid), iAmOwner = chatIsOwner();
+    var html = '<div class="familiar-popup-card" style="max-width:340px;text-align:left;">';
+    html += '<div class="familiar-popup-title" style="text-align:center;">Moderate ' + escapeHtml(name) + '</div>';
+    if(targetRole) html += '<div class="empty-note" style="text-align:center;margin:-4px 0 8px;">' + (targetRole==='owner'?'Owner':'Moderator') + '</div>';
+    if(targetRole && !iAmOwner){
+      html += '<div class="empty-note">Only the owner can moderate a ' + escapeHtml(targetRole) + '.</div>';
+    } else {
+      if(t.mid != null) html += '<button class="action-btn stop" data-action="chatModDelete" data-mid="' + escapeHtml(String(t.mid)) + '">Delete this message</button>';
+      if(muted){
+        html += '<div class="inputs-line" style="margin-top:8px">Muted ' + escapeHtml(chatMuteLabel(muted)) + '.</div>';
+        html += '<button class="action-btn" data-action="chatModUnmute" data-uid="' + escapeHtml(uid) + '">Unmute</button>';
+      } else {
+        html += '<div class="inputs-line" style="margin-top:10px">Silence ' + escapeHtml(name) + ':</div>';
+        html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">';
+        [['10 min',10],['1 hour',60],['1 day',1440],['1 week',10080]].forEach(function(p){
+          html += '<button class="mini-btn" data-action="chatModMute" data-uid="' + escapeHtml(uid) + '" data-min="' + p[1] + '">' + p[0] + '</button>';
+        });
+        html += '</div>';
+        html += '<button class="action-btn stop" data-action="chatModMute" data-uid="' + escapeHtml(uid) + '" data-min="5256000" style="margin-top:6px">Chat-ban (permanent)</button>';
+      }
+      if(iAmOwner && targetRole !== 'owner'){
+        html += '<div class="inputs-line" style="margin-top:12px">Role:</div>';
+        if(targetRole === 'moderator') html += '<button class="mini-btn" data-action="chatModSetRole" data-uid="' + escapeHtml(uid) + '" data-role="none">Remove Moderator</button>';
+        else html += '<button class="mini-btn" data-action="chatModSetRole" data-uid="' + escapeHtml(uid) + '" data-role="moderator">Make Moderator</button>';
+      }
+    }
+    html += '<button class="action-btn" data-action="chatModClose" style="margin-top:14px">Close</button>';
+    html += '</div>';
+    ov.className = 'familiar-popup-overlay';
+    ov.innerHTML = html;
+  }
   var chatUnreadCount = 0;   // count of messages that arrived while chat wasn't on-screen -> flashes the mobile FAB + shows a count
   // Chat is on-screen when the full-screen overlay is up, the Chat category page is open, or (on desktop)
   // the always-visible dock is showing; on mobile it's hidden behind the FAB unless the drawer is open.
@@ -27073,6 +27166,7 @@
     chatSubscribed = true;
     var ch = chatClient.channel('global-chat', { config:{ presence:{ key: chatPresenceId() } } });
     ch.on('postgres_changes', { event:'INSERT', schema:'public', table:CHAT_CONFIG.table }, function(payload){ chatOnIncoming(payload.new); })
+      .on('postgres_changes', { event:'DELETE', schema:'public', table:CHAT_CONFIG.table }, function(payload){ chatOnDeleted(payload.old && payload.old.id); })
       .on('presence', { event:'sync' }, function(){
         try{ var st = ch.presenceState(); chatOnlineKeys = st || {}; chatOnlineCount = Object.keys(chatOnlineKeys).length; }catch(e){ chatOnlineKeys = {}; chatOnlineCount = 0; }
         updateOnlineCount();
@@ -27081,6 +27175,21 @@
       .subscribe(function(status){
         if(status === 'SUBSCRIBED'){ try{ ch.track({ at: Date.now() }); }catch(e){} }
       });
+    // Moderation roles/mutes ride their OWN channel: if those tables aren't deployed yet, a failed
+    // subscription here can't take the live message/presence channel above down with it.
+    chatModEnsureSubscribed();
+  }
+  var chatModSubscribed = false;
+  function chatModEnsureSubscribed(){
+    if(chatModSubscribed || !chatClient) return;
+    chatModSubscribed = true;
+    var refresh = function(){ chatModLoad().then(function(){ needsRender = true; if(gameStarted) render(); }); };
+    try{
+      chatClient.channel('chat-mod')
+        .on('postgres_changes', { event:'*', schema:'public', table:'chat_roles' }, refresh)
+        .on('postgres_changes', { event:'*', schema:'public', table:'chat_mutes' }, refresh)
+        .subscribe();
+    }catch(e){}
   }
 
   // ---- Discord feed webhook: mirrors headline moments -- Fantastic-rarity creations and
@@ -27192,11 +27301,12 @@
       if(!chatClient){ chatClient = window.supabase.createClient(CHAT_CONFIG.supabaseUrl, CHAT_CONFIG.supabaseAnonKey); }
       await authRestore();
       var res = await chatClient.from(CHAT_CONFIG.table)
-        .select('id,created_at,username,body')
+        .select('id,created_at,user_id,username,body')   // user_id lets moderators target a poster from their message
         .order('created_at', { ascending:false })
         .limit(CHAT_CONFIG.historyLimit);
       if(res.error) throw res.error;
       chatMessages = (res.data || []).slice().reverse();
+      await chatModLoad();   // roles + active mutes for badges / mod controls / the muted-send notice
       // Reload persisted server-wide "blasts" (from the chronicle table) as system messages, merged into
       // the timeline -- both supreme/fantastic craft forges AND +10-or-higher improvement enhances, which
       // were previously live-only and vanished on refresh.
@@ -27224,6 +27334,13 @@
     if(chatMessages.length > 120) chatMessages = chatMessages.slice(-120);
     if(chatChannel==='global') chatRenderMessagesOnly(); // chat lives in the rail/drawer; refresh in place
     noteChatActivity();
+  }
+  // A moderator deleted a message -> drop it from the timeline for everyone (realtime DELETE).
+  function chatOnDeleted(id){
+    if(id == null) return;
+    var before = chatMessages.length;
+    chatMessages = chatMessages.filter(function(m){ return String(m.id) !== String(id); });
+    if(chatMessages.length !== before && chatChannel==='global') chatRenderMessagesOnly();
   }
   // ======== Chat profanity filter ========
   // Whole-token matching (after light leet/repeat normalization) against an inflected bad-word set.
@@ -27292,6 +27409,8 @@
     if(text.length > CHAT_CONFIG.maxLen) text = text.slice(0, CHAT_CONFIG.maxLen);
     var name = chatName();
     if(!name){ addLog('Sign in to chat.', 'danger'); return; }
+    var _muteUntil = chatAmIMuted();
+    if(_muteUntil){ addLog('You are muted '+chatMuteLabel(_muteUntil)+' and can\'t post in global chat.', 'danger'); return; } // server RLS blocks it too; this is the clear message
     var now = Date.now();
     if(now - chatLastSentAt < 1200) return; // client-side rate limit
     clearChatUnread(); // sending is engagement -> mark chat read
@@ -27329,7 +27448,14 @@
         var col = m.rarity==='fantastic' ? 'var(--rarity-fantastic)' : 'var(--rarity-superior)';
         return '<div class="chat-msg chat-system rar-'+(m.rarity||'supreme')+'"><span class="chat-sys-ico">'+svgIcon('starburst',col)+'</span><span class="chat-body">'+escapeHtml(m.body||'')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span></div>';
       }
-      return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+chatBodyHtml(m.body||'')+'</span></div>';
+      var uid = m.user_id, role = chatRoleOf(uid);
+      var badge = role ? '<span class="chat-mod-badge chat-mod-'+role+'" title="'+(role==='owner'?'Owner':'Moderator')+'">'+(role==='owner'?'★':'⚑')+'</span>' : '';
+      var mutedTag = chatMuteUntil(uid) ? '<span class="chat-muted-tag" title="Muted">🔇</span>' : '';
+      // A moderator (or the owner) can act on any message that carries a poster id and isn't their own.
+      var modBtn = (chatIsMod() && uid && !(authUser && uid===authUser.id))
+        ? '<button class="chat-mod-btn" data-action="chatModOpen" data-mid="'+escapeHtml(String(m.id))+'" data-uid="'+escapeHtml(uid)+'" data-name="'+escapeHtml(m.username||'')+'" title="Moderate">⋯</button>'
+        : '';
+      return '<div class="chat-msg">'+badge+'<span class="chat-user">'+escapeHtml(m.username||'anon')+'</span>'+mutedTag+'<span class="chat-time">'+msgTime(m.created_at)+'</span>'+modBtn+'<span class="chat-body">'+chatBodyHtml(m.body||'')+'</span></div>';
     }).join('');
   }
   // Map a broadcast craft body ("Supreme Iron Sword") to its rarity, or null for rare/normal. Only the
@@ -27452,8 +27578,14 @@
       + '</div>';
     html += '<div id="chatMessages" class="chat-messages">'+chatMessagesHtml()+'</div>';
     if(name){
-      html += '<div class="chat-account">Signed in as <b>'+escapeHtml(name)+'</b></div>';
-      html += '<div class="chat-send-row"><input id="chatInput" class="chat-input" maxlength="'+CHAT_CONFIG.maxLen+'" placeholder="Say something\u2026" value="'+escapeHtml(chatDraft)+'"><button class="action-btn" data-action="chatSend" style="flex:0 0 auto;width:auto;">Send</button></div>';
+      var _myMute = chatAmIMuted();
+      var _roleBadge = myChatRole ? ' <span class="chat-mod-badge chat-mod-'+myChatRole+'">'+(myChatRole==='owner'?'\u2605 Owner':'\u2691 Mod')+'</span>' : '';
+      html += '<div class="chat-account">Signed in as <b>'+escapeHtml(name)+'</b>'+_roleBadge+'</div>';
+      if(_myMute){
+        html += '<div class="empty-note" style="color:var(--hp-bad);border-color:var(--hp-bad);">You are muted '+escapeHtml(chatMuteLabel(_myMute))+' \u2014 you can\'t post in global chat right now.</div>';
+      } else {
+        html += '<div class="chat-send-row"><input id="chatInput" class="chat-input" maxlength="'+CHAT_CONFIG.maxLen+'" placeholder="Say something\u2026" value="'+escapeHtml(chatDraft)+'"><button class="action-btn" data-action="chatSend" style="flex:0 0 auto;width:auto;">Send</button></div>';
+      }
     } else {
       html += renderAuthPanel();
     }
@@ -30775,6 +30907,7 @@
     renderPopupQueue();
     renderTrackerPicker();
     renderTowerPreview();
+    renderChatModModal();
     renderPeonPicker();
     renderSettingsModal();
     renderSkillInfoPopup();
@@ -31524,6 +31657,12 @@
     toggleCraftFilter: function(btn, e){ craftOnlyAffordable = !craftOnlyAffordable; },
     toggleCraftFilterTier: function(btn, e){ craftFilterLowest = !craftFilterLowest; },
     chatSend: function(btn, e){ chatSend(); },
+    chatModOpen: function(btn, e){ openChatModModal({ mid: btn.getAttribute('data-mid'), uid: btn.getAttribute('data-uid'), name: btn.getAttribute('data-name') }); },
+    chatModClose: function(btn, e){ closeChatModModal(); },
+    chatModDelete: function(btn, e){ chatModAct('chat_delete_message', { p_id: Number(btn.getAttribute('data-mid')) }); closeChatModModal(); },
+    chatModMute: function(btn, e){ chatModAct('chat_mute', { p_target: btn.getAttribute('data-uid'), p_minutes: Number(btn.getAttribute('data-min')), p_reason: null }); closeChatModModal(); },
+    chatModUnmute: function(btn, e){ chatModAct('chat_unmute', { p_target: btn.getAttribute('data-uid') }); closeChatModModal(); },
+    chatModSetRole: function(btn, e){ chatModAct('chat_set_role', { p_target: btn.getAttribute('data-uid'), p_role: btn.getAttribute('data-role') }); closeChatModModal(); },
     questClaim: function(btn, e){ claimQuest(btn.getAttribute('data-quest')); },
     questToggle: function(btn, e){ questToggleExpand(btn.getAttribute('data-quest')); },
     questToggleTrack: function(btn, e){ questToggleTrack(btn.getAttribute('data-quest')); },
@@ -31919,6 +32058,7 @@
   document.addEventListener('keydown', function(e){
     if(e.key !== 'Escape' && e.key !== 'Esc') return;
     if(towerPreviewEntrance){ towerPreviewEntrance = null; renderTowerPreview(); e.preventDefault(); return; }
+    if(chatModTarget){ closeChatModModal(); e.preventDefault(); return; }
     if(trackerPickerOpen){ trackerPickerOpen = false; renderTrackerPicker(); e.preventDefault(); return; }
     if(settingsOpen){ settingsOpen = false; renderSettingsModal(); e.preventDefault(); return; }
     if(state.popupQueue && state.popupQueue.length){ state.popupQueue.shift(); if(state.popupQueue.length === 0) state.popupBatchTotal = 0; renderPopupQueue(); e.preventDefault(); return; }
@@ -31931,6 +32071,7 @@
   }
   bindBackdropClose('trackerPickerOverlay', function(){ if(trackerPickerOpen){ trackerPickerOpen = false; renderTrackerPicker(); } });
   bindBackdropClose('towerPreviewOverlay', function(){ if(towerPreviewEntrance){ towerPreviewEntrance = null; renderTowerPreview(); } });
+  bindBackdropClose('chatModOverlay', function(){ if(chatModTarget){ closeChatModModal(); } });
   bindBackdropClose('settingsOverlay', function(){ if(settingsOpen){ settingsOpen = false; renderSettingsModal(); } });
   bindBackdropClose('familiarPopupOverlay', function(){ if(state.popupQueue && state.popupQueue.length){ state.popupQueue.shift(); if(state.popupQueue.length === 0) state.popupBatchTotal = 0; renderPopupQueue(); } });
 
@@ -32600,7 +32741,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.42.24';
+  var GAME_VERSION = '0.0.43.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -32736,6 +32877,8 @@
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
       GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, skillTabsByLabel:skillTabsByLabel,
       renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
+      chatMessagesHtml:chatMessagesHtml, chatRoleOf:chatRoleOf, chatIsMod:chatIsMod, chatIsOwner:chatIsOwner, chatMuteUntil:chatMuteUntil, chatAmIMuted:chatAmIMuted, chatMuteLabel:chatMuteLabel, renderChatModModal:renderChatModModal,
+      _setChatMod:function(o){ o=o||{}; if(o.roles) chatRoles=o.roles; if(o.mutes) chatMutes=o.mutes; if('myRole' in o) myChatRole=o.myRole; if('messages' in o) chatMessages=o.messages; if('authUser' in o) authUser=o.authUser; if('target' in o) chatModTarget=o.target; },
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; },

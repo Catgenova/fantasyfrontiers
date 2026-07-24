@@ -2154,6 +2154,87 @@
     s.settings.chatFilter = prev;
   });
 
+  // ---- Chat moderation: role badges, muted state, mod-button gating, modal protection --------------
+  suite('chat: moderation roles + mute + mod controls', function(){
+    var savedAuth = FF.chatAmIMuted; // just to reference the module; real restore below via _setChatMod
+    var OWNER='u-owner', MOD='u-mod', PLAYER='u-player', ME='u-me';
+    var now = Date.now();
+    // Baseline: I'm a regular player. Roles map owner+mod; player u-player is muted.
+    FF._setChatMod({
+      roles: { 'u-owner':'owner', 'u-mod':'moderator' },
+      mutes: { 'u-player': now + 3600*1000 },
+      myRole: null,
+      authUser: { username:'Me', id:ME },
+      messages: [
+        { id:1, user_id:OWNER, username:'Boss', body:'hi', created_at:new Date(now).toISOString() },
+        { id:2, user_id:MOD,   username:'Mod1', body:'yo', created_at:new Date(now).toISOString() },
+        { id:3, user_id:PLAYER,username:'Spammer', body:'buy gold', created_at:new Date(now).toISOString() },
+        { id:4, user_id:ME,    username:'Me', body:'hello', created_at:new Date(now).toISOString() }
+      ]
+    });
+    // Helpers.
+    eq(FF.chatRoleOf(OWNER), 'owner', 'chatRoleOf reads the owner role');
+    eq(FF.chatRoleOf(MOD), 'moderator', 'chatRoleOf reads the moderator role');
+    eq(FF.chatRoleOf(PLAYER), null, 'a regular player has no role');
+    ok(FF.chatMuteUntil(PLAYER) > now, 'an active mute reports its expiry');
+    eq(FF.chatMuteUntil(OWNER), 0, 'no mute -> 0');
+    ok(!FF.chatIsMod() && !FF.chatIsOwner(), 'a regular player is neither mod nor owner');
+    eq(FF.chatAmIMuted(), 0, 'I am not muted');
+
+    // As a regular player: badges + muted tag show, but NO moderator buttons anywhere.
+    var htmlPlayer = FF.chatMessagesHtml();
+    ok(/chat-mod-owner/.test(htmlPlayer) && /chat-mod-moderator/.test(htmlPlayer), 'owner + moderator badges render for everyone');
+    ok(/chat-muted-tag/.test(htmlPlayer), 'a muted user shows the muted marker');
+    ok(!/data-action="chatModOpen"/.test(htmlPlayer), 'a non-moderator sees NO moderate buttons');
+
+    // As a moderator: moderate buttons appear on others (not on my own message).
+    FF._setChatMod({ myRole:'moderator' });
+    var htmlMod = FF.chatMessagesHtml();
+    ok(/data-action="chatModOpen"/.test(htmlMod), 'a moderator sees moderate buttons');
+    ok((htmlMod.match(/data-action="chatModOpen"/g)||[]).length === 3, 'exactly 3 moderate buttons across 4 messages -> my own message has none');
+    ok(htmlMod.indexOf('data-uid="'+ME+'"') === -1, 'no moderate button carries my own uid');
+
+    // Modal gating: a moderator opening a fellow-moderator sees the owner-only lock (no action buttons).
+    FF._setChatMod({ target:{ mid:2, uid:MOD, name:'Mod1' } });
+    FF.renderChatModModal();
+    var ovModOnMod = (typeof document !== 'undefined' && document.getElementById('chatModOverlay')) ? document.getElementById('chatModOverlay').innerHTML : '';
+    ok(/Only the owner can moderate/.test(ovModOnMod), 'a mod cannot moderate another mod (owner-only lock shown)');
+    ok(!/data-action="chatModMute"/.test(ovModOnMod), '...and no mute button is offered for a protected target');
+
+    // A moderator on a regular player: mute presets + permanent chat-ban + delete, but NO role controls.
+    FF._setChatMod({ target:{ mid:3, uid:PLAYER, name:'Spammer' } });
+    FF.renderChatModModal();
+    var ovModOnPlayer = document.getElementById('chatModOverlay').innerHTML;
+    // u-player is already muted in this fixture, so the modal offers Unmute; clear the mute to see mute presets.
+    ok(/data-action="chatModDelete"/.test(ovModOnPlayer), 'delete-message is offered');
+    ok(/data-action="chatModUnmute"/.test(ovModOnPlayer), 'an already-muted target offers Unmute');
+    ok(!/data-action="chatModSetRole"/.test(ovModOnPlayer), 'a moderator sees NO role controls (owner-only)');
+
+    // As the OWNER on an unmuted regular player: mute presets, chat-ban, AND Make Moderator.
+    FF._setChatMod({ myRole:'owner', mutes:{}, target:{ mid:3, uid:PLAYER, name:'Spammer' } });
+    FF.renderChatModModal();
+    var ovOwnerOnPlayer = document.getElementById('chatModOverlay').innerHTML;
+    ok(/data-action="chatModMute"[^>]*data-min="10"/.test(ovOwnerOnPlayer), 'mute presets shown for an unmuted target');
+    ok(/data-min="5256000"/.test(ovOwnerOnPlayer), 'permanent chat-ban offered');
+    ok(/Make Moderator/.test(ovOwnerOnPlayer), 'the owner can appoint a moderator');
+    // Owner on an existing moderator: Remove Moderator, and no owner-lock.
+    FF._setChatMod({ target:{ mid:2, uid:MOD, name:'Mod1' } });
+    FF.renderChatModModal();
+    var ovOwnerOnMod = document.getElementById('chatModOverlay').innerHTML;
+    ok(/Remove Moderator/.test(ovOwnerOnMod) && !/Only the owner can moderate/.test(ovOwnerOnMod), 'the owner can moderate a moderator (Remove Moderator shown)');
+
+    // Muted-self: chatAmIMuted reflects it; label reads permanent for a ~10y ban.
+    FF._setChatMod({ myRole:null, mutes:{ 'u-me': now + 60*1000 } });
+    ok(FF.chatAmIMuted() > now, 'a muted local player reports their own mute');
+    eq(FF.chatMuteLabel(now + 40*24*3600*1000), 'permanently', 'a >30-day mute reads as a permanent chat-ban');
+    ok(/^until /.test(FF.chatMuteLabel(now + 3600*1000)), 'a short mute reads as an until-timestamp');
+
+    // Clean up module state so later suites see a pristine chat.
+    FF._setChatMod({ roles:{}, mutes:{}, myRole:null, messages:[], authUser:null, target:null });
+    FF.renderChatModModal();
+    void savedAuth;
+  });
+
   // ---- Chat unread counter ---------------------------------------------------------------------
   suite('chat: unread count + "Chat (N)" suffix', function(){
     var s = FF._state;
