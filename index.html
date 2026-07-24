@@ -696,6 +696,8 @@
   .cl-row{font-family:var(--font-body);font-size:12.5px;line-height:1.4;padding:1px 0;}
   .cl-out{color:#7fae5a;} .cl-out b{color:#a9c47e;}
   .cl-in{color:#c98a6a;} .cl-in b{color:#e0a07a;}
+  .cl-special{color:#d9a441;font-weight:600;} .cl-special b{color:#f0c25a;}
+  .cl-dot{color:#b07fc9;} .cl-dot b{color:#c9a0e0;}
   .cl-faint{color:var(--text-faint);font-size:11.5px;}
   .cl-crit{color:var(--gold-bright);font-weight:800;font-size:10px;letter-spacing:.5px;}
   .cl-tag{color:var(--text-faint);font-size:10px;}
@@ -14792,6 +14794,9 @@
     var act = state.activity; if(!act || act.type!=='combat') return;
     var sp = spOverride || (monster && monster.special); if(!sp) return; // spOverride lets Chaos Bolt re-enter with a rolled sub-effect
     var now = Date.now();
+    // Combat-log entry announcing the SPECIAL attack, so it reads distinctly from the beast's raw swings.
+    // Only the top-level fire has a name (a Chaos sub-effect re-enters nameless), so this stays one line.
+    if(sp.name) combatLogPush({ dir:'special', target:(monster&&monster.name)||'', spName:sp.name, detail: advCombat() ? monsterSpecialDesc(sp) : '' });
     if(sp.kind==='bleed'){
       act.pBleedStacks = ((act.pBleedUntil||0) > now) ? Math.min(sp.maxStacks||3, (act.pBleedStacks||0)+1) : 1;
       act.pBleedDps = Math.max(1, Math.round(monster.atkMax * sp.pctPerSec)) * act.pBleedStacks;
@@ -14926,7 +14931,10 @@
       act.pDotFloatAcc = (act.pDotFloatAcc||0) + amount;
       act.pDotFloatT = (act.pDotFloatT||0) + dtMs;
       if(act.pDotFloatT >= 1000 && act.pDotFloatAcc >= 1){
-        spawnCombatFloat('-'+fmt(Math.round(act.pDotFloatAcc))+' '+playerDotWord(act), 'ft-taken', false);
+        var _dotShown = Math.round(act.pDotFloatAcc), _dotWord = playerDotWord(act);
+        spawnCombatFloat('-'+fmt(_dotShown)+' '+_dotWord, 'ft-taken', false);
+        // Combat-log entry, distinct from a raw hit: a status-effect tick (armour-ignoring DoT).
+        combatLogPush({ dir:'dot', dmg:_dotShown, word:_dotWord, target:monster ? monster.name : '', detail: advCombat() ? 'status tick — ignores armour & shields' : '' });
         act.pDotFloatAcc = 0; act.pDotFloatT = 0;
       }
     }
@@ -27752,6 +27760,8 @@
       var line;
       if(e.dir==='out') line = '<span class="cl-out">You hit '+escapeHtml(e.target||'the foe')+' for <b>'+fmt(e.dmg)+'</b>'+(e.crit?' <span class="cl-crit">CRIT</span>':'')+(e.off?' <span class="cl-tag">off-hand</span>':'')+'</span>';
       else if(e.dir==='in') line = '<span class="cl-in">'+escapeHtml(e.target||'The foe')+' hit you for <b>'+fmt(e.dmg)+'</b>'+(e.blocked?' <span class="cl-tag">blocked</span>':'')+'</span>';
+      else if(e.dir==='special') line = '<span class="cl-special">⚡ '+escapeHtml(e.target||'The foe')+' uses <b>'+escapeHtml(e.spName||'a special')+'</b></span>';
+      else if(e.dir==='dot') line = '<span class="cl-dot">✦ '+escapeHtml(e.word||'Status')+' ticks you for <b>'+fmt(e.dmg)+'</b></span>';
       else if(e.dir==='miss') line = '<span class="cl-faint">You missed '+escapeHtml(e.target||'the foe')+'</span>';
       else if(e.dir==='dodge') line = '<span class="cl-faint">You dodged '+escapeHtml(e.target||'the foe')+'</span>';
       else line = '<span class="cl-faint">'+escapeHtml(e.text||'')+'</span>';
@@ -32991,7 +33001,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.43.10';
+  var GAME_VERSION = '0.0.43.11';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

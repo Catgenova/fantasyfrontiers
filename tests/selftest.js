@@ -2327,6 +2327,16 @@
     ok(/You missed Wolf/.test(basic) && /You dodged Wolf/.test(basic), 'miss + dodge lines render');
     ok(!/cl-detail/.test(basic), 'no pipeline detail while Advanced is off');
 
+    // Special attacks and status-effect (DoT) ticks read distinctly from a raw swing.
+    FF._clReset(); s.settings.advancedCombatLog = false;
+    FF.combatLogPush({ dir:'in', dmg:9, target:'Wolf' });
+    FF.combatLogPush({ dir:'special', target:'Wolf', spName:'Rend' });
+    FF.combatLogPush({ dir:'dot', dmg:4, word:'🩸 Bleed', target:'Wolf' });
+    var kinds = FF.combatLogHtml();
+    ok(/Wolf hit you for <b>9<\/b>/.test(kinds), 'a raw swing reads as a plain hit');
+    ok(/cl-special/.test(kinds) && /Wolf uses <b>Rend<\/b>/.test(kinds), 'a special attack names the skill in its own style, distinct from a raw hit');
+    ok(/cl-dot/.test(kinds) && /Bleed ticks you for <b>4<\/b>/.test(kinds), 'a status tick reads as a DoT, not a raw hit');
+
     // Advanced on: an entry with a detail string renders the pipeline breakdown.
     s.settings.advancedCombatLog = true;
     eq(FF.advCombat(), true, 'advCombat reflects the QoL toggle');
