@@ -217,7 +217,9 @@
   .ff-chat-expand-btn:hover{border-color:var(--gold);color:var(--gold);}
   .ff-chat-expand-btn svg{width:13px;height:13px;}
   .ff-bottomdock{display:none;}
-  .ff-chatfab{display:none;}
+  /* Desktop: chat lives behind a bottom-left bubble (opens the drawer), same as mobile -- no rail dock. */
+  .ff-chatfab{display:flex;align-items:center;justify-content:center;position:fixed;left:20px;bottom:20px;z-index:40;width:52px;height:52px;border-radius:50%;background:linear-gradient(180deg,#5c7f34,#3c5a24);border:2px solid #24380f;color:#f2f8e6;font-size:20px;cursor:pointer;box-shadow:0 5px 14px rgba(0,0,0,.45);}
+  .ff-chatfab:hover{filter:brightness(1.08);}
   /* Harvest All / Plant All quick-action FABs. Base + desktop layout here (floating bottom-right,
      fixed to the viewport); the mobile media query below repositions them to stack above the chat
      bubble. Each is shown (display:flex) only when its action is available -- .on is toggled from
@@ -293,7 +295,7 @@
     .ff-dock-btn{flex:1;text-align:center;padding:9px 0;cursor:pointer;font-family:var(--font-body);border:none;background:transparent;color:#b3a37e;border-top:3px solid transparent;}
     .ff-dock-btn .ico{display:block;line-height:0;} .ff-dock-btn .ico svg{width:21px;height:21px;} .ff-dock-btn .lbl{font-family:var(--font-display);font-size:10px;letter-spacing:.5px;margin-top:2px;}
     .ff-dock-btn.on{background:rgba(111,149,56,.14);color:#a9c47e;border-top:3px solid var(--gold-bright);}
-    .ff-chatfab{display:flex;align-items:center;justify-content:center;position:absolute;right:14px;bottom:66px;z-index:22;width:50px;height:50px;border-radius:50%;background:linear-gradient(180deg,#5c7f34,#3c5a24);border:2px solid #24380f;color:#f2f8e6;font-size:20px;cursor:pointer;box-shadow:0 5px 14px rgba(0,0,0,.45);}
+    .ff-chatfab{display:flex;align-items:center;justify-content:center;position:absolute;left:auto;right:14px;bottom:66px;z-index:22;width:50px;height:50px;border-radius:50%;background:linear-gradient(180deg,#5c7f34,#3c5a24);border:2px solid #24380f;color:#f2f8e6;font-size:20px;cursor:pointer;box-shadow:0 5px 14px rgba(0,0,0,.45);}
     /* Unread indicator: gold ring pulsing to draw the eye, plus a numeric unread-count badge. */
     .ff-chatfab-alert{border-color:var(--gold-bright);animation:ffFabPulse 1.4s ease-in-out infinite;}
     .ff-chatfab-badge{position:absolute;top:-5px;right:-5px;min-width:19px;height:19px;padding:0 4px;box-sizing:border-box;border-radius:10px;background:var(--gold-bright);border:2px solid #24380f;color:#24380f;font-size:11px;font-weight:800;line-height:1;display:none;align-items:center;justify-content:center;font-family:var(--font-mono,monospace);}
@@ -13271,7 +13273,7 @@
     var next = (base ? base.replace(/\s+$/,'')+' ' : '') + token + ' ';
     if(guild) guildChatDraft = next; else chatDraft = next;
     if(ci) ci.value = next;                 // update the live input BEFORE render so its input->draft sync keeps the token
-    if(isMobileView()) chatDrawerOpen = true;
+    chatDrawerOpen = true;                   // chat lives in the drawer on every viewport now -> open it so the link is visible
     render();
     var ci2 = document.getElementById('chatInput'); if(ci2){ try{ ci2.focus(); ci2.setSelectionRange(ci2.value.length, ci2.value.length); }catch(e){} }
     addLog('Item link added to your chat — add a note and press Enter to send.','chronicle');
@@ -16255,7 +16257,8 @@
       }
       dockHtml += '<button class="ff-dock-btn'+(aon?' on':'')+(railAreaFlash(a.id)?' flash':'')+'" data-area="'+a.id+'"><span class="ico">'+shellIcon(a.icon)+'</span><span class="lbl">'+a.label+'</span></button>';
     });
-    railHtml += '<div class="panel ff-rail-panel ff-chatpanel ff-rail-chat" id="chatDockPanel"></div>';
+    // Chat no longer lives in the rail on ANY viewport -- it's behind the bottom-left chat bubble (the
+    // drawer), same as mobile. (renderChatDock() becomes a no-op with no #chatDockPanel to fill.)
     var area = AREAS.filter(function(x){ return x.id===currentArea; })[0];
     if(area) area.subs.forEach(function(s){ chipHtml += '<button class="chip'+(s[0]===currentCategory?' on':'')+(railSubFlash(s[0])?' flash':'')+'" data-cat="'+s[0]+'">'+escapeHtml(s[1])+'</button>'; });
     // Rebuilding the rail HTML recreates an EMPTY #chatDockPanel node; invalidate the dock signature
@@ -26384,12 +26387,8 @@
   function chatIsOnScreen(){
     if(chatExpanded) return true;
     if(currentCategory==='chat') return true;
-    if(isMobileView()) return chatDrawerOpen;
-    // Desktop: the rail dock is always visible, but only count as "read" while the player is
-    // actually engaged with it (chat input focused). Otherwise new messages accrue an unread
-    // count shown as "Chat (N)" on the dock title -- cleared when they click into chat.
-    var ci = document.getElementById('chatInput');
-    return !!(ci && document.activeElement === ci);
+    // Chat is behind the bubble/drawer on every viewport now -> on-screen only while the drawer is open.
+    return chatDrawerOpen;
   }
   function chatUnreadLabel(){ return chatUnreadCount > 99 ? '99+' : String(chatUnreadCount); }
   // Suffix appended to the "Chat" title, e.g. "Chat (4)", so unread count is visible on the chat card/dock.
@@ -31632,7 +31631,7 @@
   });
 
   var _ffResizeT = null;
-  window.addEventListener('resize', function(){ if(_ffResizeT) return; _ffResizeT = setTimeout(function(){ _ffResizeT = null; if(!isMobileView()){ chatDrawerOpen = false; clearChatUnread(); } render(); }, 180); });
+  window.addEventListener('resize', function(){ if(_ffResizeT) return; _ffResizeT = setTimeout(function(){ _ffResizeT = null; render(); }, 180); });
 
   // Maps a tier-stepper's data-tier-target to the state it reads/writes. Scalars ignore `sub`.
   // Optional `inputs(sub, tier)` returns that tier's craft inputs so the stepper can, under the
@@ -32886,7 +32885,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.43.4';
+  var GAME_VERSION = '0.0.43.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
