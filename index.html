@@ -22378,6 +22378,29 @@
   // window already working) can never charge the player.
   function estateJobClaim(kind, x, y, payload, localMs, commit){
     var target = estActive;                       // capture: the callback may land after navigation
+    if(estIsGuild){
+      // Guild estate: server-authoritative jobs (guild_estate_job_start). Only with no cloud is it local.
+      if(!chatClient || !authUser || !authUser.id){ var ng = Date.now(); commit(target, ng, ng + localMs); return; }
+      if(!estJobRpcLock()) return;
+      var _gp;
+      try { _gp = chatClient.rpc('guild_estate_job_start', { p_kind:kind, p_x:x, p_y:y, p_payload:payload || {} }); }
+      catch(e){ estJobRpcRelease(); addLog('Could not reach the server — guild estate task not started.', 'danger'); needsRender = true; return; }
+      _gp.then(function(res){
+        estJobRpcRelease();
+        var d = res && res.data;
+        if(!d || !d.ok){
+          addLog(d && d.error === 'pending' ? 'Your last guild task just finished — collect it, then try again.' : 'Could not start that guild estate task. Try again.', 'danger');
+          guildEstateJobsRefresh(); needsRender = true; return;
+        }
+        if(!d.claimed){                            // already have a running job -- adopt the server's list, charge nothing
+          addLog('You already have a guild estate task running.', 'danger');
+          guildEstateJobsRefresh(); needsRender = true; return;
+        }
+        commit(target, Number(d.job.startAt), Number(d.job.readyAt));   // consumes materials + optimistic local job
+        guildEstateJobsRefresh();
+      }, function(){ estJobRpcRelease(); addLog('Could not reach the server — guild estate task not started.', 'danger'); needsRender = true; });
+      return;
+    }
     if(!estateJobServerOwned()){ var n = Date.now(); commit(target, n, n + localMs); return; }
     if(!estJobRpcLock()) return;
     var _p;
@@ -22710,6 +22733,24 @@
   function estateCancelJob(){
     var job = estActive && estActive.job;
     if(!job) return;
+    if(estIsGuild){
+      // Guild jobs are server-authoritative: release the row FIRST (the RPC also frees an assisted job),
+      // then refund locally + refresh. Refunding before the delete confirms would allow a double-refund.
+      if(!chatClient || !authUser){ estateCancelJobLocal(estActive); return; }
+      if(!estJobRpcLock()) return;
+      var gtarget = estActive;
+      var _gc;
+      try { _gc = chatClient.rpc('guild_estate_job_cancel'); }
+      catch(e){ estJobRpcRelease(); addLog('Could not reach the server — guild estate task not cancelled.', 'danger'); needsRender = true; return; }
+      _gc.then(function(res){
+        estJobRpcRelease();
+        var d = res && res.data;
+        if(d && d.ok){ estateCancelJobLocal(gtarget); guildEstateJobsRefresh(); }
+        else if(d && d.error === 'none'){ guildEstateJobsRefresh(); needsRender = true; }  // already gone -- no refund
+        else { addLog('Could not cancel that guild estate task. Try again.', 'danger'); needsRender = true; }
+      }, function(){ estJobRpcRelease(); addLog('Could not reach the server — guild estate task not cancelled.', 'danger'); needsRender = true; });
+      return;
+    }
     // Personal jobs: release the server row FIRST. Refunding before the delete is confirmed would let a
     // failed cancel be retried for a second refund while the job is still running server-side.
     if(estateJobServerOwned()){
@@ -22784,14 +22825,21 @@
     if(target.assistedBy){ addLog((target.assistedByName||'Someone')+' is already assisting that task.', 'danger'); return; }
     var now = Date.now();
     if(now >= target.readyAt){ addLog('That task is already finishing.', 'danger'); return; }
-    // Halve the remaining time (floored at 1s) and mark the helper on the target job.
-    target.readyAt = now + Math.max(1000, Math.floor((target.readyAt - now) / 2));
-    target.assistedBy = myId; target.assistedByName = guildMyName();
-    // Occupy the helper with a matching 'assist' job that clears when the helped task finishes.
-    guildEstate.job = { kind:'assist', x:target.x, y:target.y, startAt:now, readyAt:target.readyAt, assistOf:targetOwner, assistOfName:target.ownerName };
-    addLog('You\'re assisting ' + escapeHtml(target.ownerName||'a teammate') + '\'s task -- its remaining time is halved.', 'important');
-    guildEstatePersist();
-    needsRender = true;
+    // The server owns the halving + the assist claim (guild_estate_job_assist): atomic, one assister per
+    // job, and it can't be replayed to shave the timer twice. The guards above are just for snappy UX.
+    if(!chatClient || !authUser){ addLog('Sign in to assist.', 'danger'); return; }
+    if(!estJobRpcLock()) return;
+    var _ap;
+    try { _ap = chatClient.rpc('guild_estate_job_assist', { p_target: targetOwner }); }
+    catch(e){ estJobRpcRelease(); addLog('Could not reach the server — could not assist.', 'danger'); needsRender = true; return; }
+    _ap.then(function(res){
+      estJobRpcRelease();
+      var d = res && res.data;
+      if(!d || !d.ok){ addLog(d && d.error === 'pending' ? 'Collect your finished task first.' : 'Could not assist that task right now.', 'danger'); guildEstateJobsRefresh(); needsRender = true; return; }
+      if(!d.claimed){ addLog('You already have a guild estate task running.', 'danger'); guildEstateJobsRefresh(); needsRender = true; return; }
+      addLog('You\'re assisting ' + escapeHtml(target.ownerName||'a teammate') + '\'s task — its remaining time is halved.', 'important');
+      guildEstateJobsRefresh(); needsRender = true;
+    }, function(){ estJobRpcRelease(); addLog('Could not reach the server — could not assist.', 'danger'); needsRender = true; });
   }
   // Applies one completed estate job to its grid. The grid change is ALWAYS applied (idempotent),
   // so on a shared guild estate every member's client converges on the same map. Rewards, XP,
@@ -28254,7 +28302,7 @@
   // The live shared-estate object. Shaped like state.estate (grid + edges + expansionsPurchased)
   // so the whole estate engine operates on it unchanged. `job` is a computed accessor mapping to
   // MY entry in the shared jobs[] (keyed by user id), so estActive.job behaves like personal.
-  var guildEstate = { status:'idle', guildId:null, version:0, error:'', busy:false, grid:null, jobs:[], expansionsPurchased:0, edgesX:null, edgesY:null, log:[], _sub:null, _subGuild:null };
+  var guildEstate = { status:'idle', guildId:null, version:0, error:'', busy:false, grid:null, jobs:[], expansionsPurchased:0, edgesX:null, edgesY:null, log:[], _sub:null, _subJobs:null, _subGuild:null };
   // Shared guild activity log (rides the synced estate blob so every officer sees everyone's actions).
   // Entries: { kind:'estate'|'bank', who, text, at }. Newest first, capped. Officer+ only in the UI.
   var GUILD_LOG_MAX = 120;
@@ -28302,7 +28350,8 @@
   function guildMyName(){ return (typeof authUser!=='undefined' && authUser && authUser.username) || 'A member'; }
   function guildEstateReset(){
     if(guildEstate._sub && chatClient){ try{ chatClient.removeChannel(guildEstate._sub); }catch(e){} }
-    guildEstate._sub=null; guildEstate._subGuild=null;
+    if(guildEstate._subJobs && chatClient){ try{ chatClient.removeChannel(guildEstate._subJobs); }catch(e){} }
+    guildEstate._sub=null; guildEstate._subJobs=null; guildEstate._subGuild=null;
     guildEstate.status='idle'; guildEstate.guildId=null; guildEstate.grid=null; guildEstate.jobs=[]; guildEstate.version=0; guildEstate.error=''; guildEstate.log=[];
     guildPlacedWorkshops={};
   }
@@ -28320,10 +28369,10 @@
   // and back-fills edges for older rows written before the estate stored them.
   function guildEstateHydrate(data, version){
     data = data || {};
-    var myId = estMyId();
-    var myJob = (guildEstate.jobs||[]).filter(function(j){ return j.owner===myId; })[0] || null;
     guildEstate.grid = data.grid || guildEstate.grid;
-    guildEstate.jobs = (data.jobs || []).slice();
+    // Jobs are NOT in the blob anymore -- they're server-authoritative (guild_estate_jobs) and loaded via
+    // guildEstateJobsRefresh(). Leaving guildEstate.jobs untouched here keeps the live job list intact
+    // across a blob (grid) re-hydrate.
     guildEstate.expansionsPurchased = data.expansionsPurchased || 0;
     guildEstate.destroyRole = data.destroyRole || 'officer'; // who may demolish on the guild estate
     if(data.edgesX && data.edgesY){ guildEstate.edgesX = data.edgesX; guildEstate.edgesY = data.edgesY; }
@@ -28331,10 +28380,6 @@
     guildEstate.log = Array.isArray(data.log) ? data.log : [];
     guildEstate.version = version;
     guildEstate.status = 'ready';
-    // Match my preserved job by tile only (not readyAt): a teammate assisting my job legitimately
-    // changes its readyAt, and the incoming copy is authoritative -- re-adding my stale copy would
-    // duplicate it. One job per owner+tile, so this is unambiguous.
-    if(myJob && !guildEstate.jobs.some(function(j){ return j.owner===myJob.owner && j.x===myJob.x && j.y===myJob.y; })) guildEstate.jobs.push(myJob);
   }
   function guildEstateEnsure(){
     if(!chatClient || !guildState.guild || !authUser) return;
@@ -28370,7 +28415,7 @@
   function guildEstatePersist(onOk){
     if(!chatClient || guildEstate.status!=='ready' || !guildState.guild) return;
     var expected = guildEstate.version, gid = guildState.guild.id;
-    var blob = { grid:guildEstate.grid, jobs:guildEstate.jobs, expansionsPurchased:guildEstate.expansionsPurchased, edgesX:guildEstate.edgesX, edgesY:guildEstate.edgesY, destroyRole:guildEstate.destroyRole||'officer', log:(guildEstate.log||[]).slice(0, GUILD_LOG_MAX) };
+    var blob = { grid:guildEstate.grid, expansionsPurchased:guildEstate.expansionsPurchased, edgesX:guildEstate.edgesX, edgesY:guildEstate.edgesY, destroyRole:guildEstate.destroyRole||'officer', log:(guildEstate.log||[]).slice(0, GUILD_LOG_MAX) };
     guildEstate.version = expected + 1;
     chatClient.from('guild_estate').update({ data:blob, version:guildEstate.version, updated_at:new Date().toISOString() }).eq('guild_id',gid).eq('version',expected).select('version').then(function(res){
       if(!res || res.error || !res.data || !res.data.length){
@@ -28384,6 +28429,7 @@
     var gid = guildState.guild.id;
     if(guildEstate._subGuild === gid && guildEstate._sub) return;
     if(guildEstate._sub){ try{ chatClient.removeChannel(guildEstate._sub); }catch(e){} guildEstate._sub=null; }
+    if(guildEstate._subJobs){ try{ chatClient.removeChannel(guildEstate._subJobs); }catch(e){} guildEstate._subJobs=null; }
     guildEstate._subGuild = gid;
     guildEstate._sub = chatClient.channel('guild_estate_'+gid)
       .on('postgres_changes', { event:'UPDATE', schema:'public', table:'guild_estate', filter:'guild_id=eq.'+gid }, function(payload){
@@ -28392,6 +28438,62 @@
         guildEstateHydrate(row.data, row.version); recomputeGuildWorkshops();
         if(currentCategory==='guild' && guildSub==='estate') needsRender = true;
       }).subscribe();
+    // Jobs live in their own server table now: any member's start/assist/complete/cancel lands here, so
+    // re-pull the whole list on any change (cheap; the grid still syncs via the blob channel above).
+    guildEstate._subJobs = chatClient.channel('guild_estate_jobs_'+gid)
+      .on('postgres_changes', { event:'*', schema:'public', table:'guild_estate_jobs', filter:'guild_id=eq.'+gid }, function(){
+        guildEstateJobsRefresh();
+      }).subscribe();
+    guildEstateJobsRefresh();   // initial load of the shared job list
+  }
+  // ---- Guild estate jobs are SERVER-authoritative (guild_estate_jobs table + RPCs), parity with the
+  // personal estate. guildEstate.jobs is a read model populated from the server (guild_estate_job_get +
+  // realtime), NOT the blob -- so a member can't restart a job's clock or start extras by editing the blob.
+  // Server row -> the flat client job shape, carrying owner + assist bookkeeping for the shared-grid view.
+  function guildJobFromServer(sj){
+    if(!sj) return null;
+    var job = estateJobFromServer(sj);                 // flattens payload + kind/x/y/startAt/readyAt
+    job.owner = sj.owner; job.ownerName = sj.ownerName || 'A member';
+    if(sj.assistedBy){ job.assistedBy = sj.assistedBy; job.assistedByName = sj.assistedByName; }
+    if(sj.kind === 'assist'){ job.assistOf = sj.assistOf; job.assistOfName = sj.assistOfName; }
+    return job;
+  }
+  // Pull every member's job for the guild. This is the ONLY writer of guildEstate.jobs now.
+  function guildEstateJobsRefresh(){
+    if(!chatClient || !authUser || !guildState.guild) return Promise.resolve();
+    return chatClient.rpc('guild_estate_job_get').then(function(res){
+      var d = res && res.data;
+      if(d && d.ok && Array.isArray(d.jobs)){
+        guildEstate.jobs = d.jobs.map(guildJobFromServer).filter(Boolean);
+        if(currentCategory==='guild' && guildSub==='estate') needsRender = true;
+      }
+    }, function(){});
+  }
+  var _guildJobRpcInFlight = false;   // one completion/assist-release RPC outstanding at a time (per-tick loop)
+  // Release MY finished job server-side, then apply its rewards + grid (owner-only) and refresh.
+  function guildCompleteMyJob(){
+    if(_guildJobRpcInFlight || !chatClient || !authUser) return;
+    _guildJobRpcInFlight = true;
+    chatClient.rpc('guild_estate_job_complete').then(function(res){
+      _guildJobRpcInFlight = false;
+      var d = res && res.data;
+      if(d && d.ok && d.job){
+        var done = d.job;
+        if(done.kind !== 'assist'){                    // an assist earns nothing; only the doer does
+          var key = done.owner+'|'+done.x+'|'+done.y+'|'+Number(done.readyAt);
+          if(!guildJobDone[key]){ applyEstateJobCompletion(guildEstate, guildJobFromServer(done), true, true); guildJobDone[key]=1; recomputeGuildWorkshops(); guildEstatePersist(); }
+        }
+        guildEstateJobsRefresh(); needsRender = true;
+      } else { guildEstateJobsRefresh(); }             // 'early' (client clock ahead) / 'none' -> resync
+    }, function(){ _guildJobRpcInFlight = false; });
+  }
+  // Stop my ASSIST early because the member I was helping cancelled (their job vanished before ready).
+  function guildReleaseMyAssist(){
+    if(_guildJobRpcInFlight || !chatClient || !authUser) return;
+    _guildJobRpcInFlight = true;
+    chatClient.rpc('guild_estate_job_cancel').then(function(res){
+      _guildJobRpcInFlight = false; guildEstateJobsRefresh(); needsRender = true;
+    }, function(){ _guildJobRpcInFlight = false; });
   }
   // Complete MY guild-estate job when its timer elapses (runs every loop tick, incl. on load).
   // Only the job's owner finalizes it, so rewards always reach the doer and there's no write
@@ -28427,27 +28529,20 @@
   }
   function processGuildEstateJobs(){
     if(guildEstate.status!=='ready') return;
-    reapOrphanGuildEstateJobs();   // clear out departed members' finished jobs before handling my own
+    // Departed members' jobs are reaped server-side (a trigger on guild_members delete), so there's no
+    // client reap here anymore -- guildEstate.jobs is the server's list.
     var mine = guildEstate.job;
     if(!mine) return;
     if(mine.kind==='assist'){
-      // The helper is freed once the assisted task finishes (its readyAt) or the owner cancels it
-      // (their job disappears from the shared blob). No rewards -- only the doer earns them.
+      // Freed once the helped task finishes (its readyAt) OR the doer cancels early (their job vanishes).
       var stillHelping = guildJobByOwner(mine.assistOf);
-      if(stillHelping && Date.now() < mine.readyAt) return;
-      if(stillHelping && stillHelping.assistedBy===mine.owner){ delete stillHelping.assistedBy; delete stillHelping.assistedByName; }
-      guildEstate.jobs = (guildEstate.jobs||[]).filter(function(j){ return j!==mine; });
-      guildEstatePersist();
-      needsRender = true;
+      if(stillHelping && Date.now() < mine.readyAt) return;          // still helping, not yet done
+      if(!stillHelping && Date.now() < mine.readyAt){ guildReleaseMyAssist(); return; } // doer stopped early
+      guildCompleteMyJob();                                          // time elapsed -> release the assist row
       return;
     }
     if(Date.now() < mine.readyAt) return;
-    var key = mine.owner+'|'+mine.x+'|'+mine.y+'|'+mine.readyAt;
-    if(!guildJobDone[key]){ applyEstateJobCompletion(guildEstate, mine, true, true); guildJobDone[key]=1; }
-    guildEstate.jobs = (guildEstate.jobs||[]).filter(function(j){ return j!==mine; });
-    recomputeGuildWorkshops();
-    guildEstatePersist();
-    needsRender = true;
+    guildCompleteMyJob();   // server releases the row, then applies rewards + grid (owner-only) and refreshes
   }
   // The guild estate subtab IS the My Estate UI, pointed at the shared object.
   function renderGuildEstate(){
@@ -32136,7 +32231,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.42.12';
+  var GAME_VERSION = '0.0.42.13';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -32284,7 +32379,7 @@
       GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, FARMING_PHYSIQUE:FARMING_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
       physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, awardMasterworkXp:awardMasterworkXp, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
       SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, PATCH_NOTES:PATCH_NOTES, renderPatchNotes:renderPatchNotes, TICKER_TIPS:TICKER_TIPS, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
-      guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate,
+      guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate, guildJobFromServer:guildJobFromServer,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       guildLogPush:guildLogPush, renderGuildActivityLog:renderGuildActivityLog, GUILD_LOG_MAX:GUILD_LOG_MAX, guildIsOfficerPlus:guildIsOfficerPlus,
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,

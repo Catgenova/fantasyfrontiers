@@ -1810,44 +1810,40 @@
   });
 
   // ---- Guild estate: assist a teammate's task ------------------------------------------
-  suite('guild estate assist', function(){
+  // Guild estate jobs are SERVER-authoritative now (guild_estate_jobs table + RPCs). The lifecycle
+  // (start/assist/complete/cancel) round-trips through Supabase, so it isn't unit-testable without a
+  // backend; what stays client-side and testable is the read model -- guildJobFromServer's mapping,
+  // guildJobByOwner's filtering, and that a blob (grid) hydrate no longer touches the job list.
+  suite('guild estate jobs (server model): read model', function(){
     var ge = FF.guildEstate;
     var saved = { status:ge.status, jobs:ge.jobs, version:ge.version };
     ge.status = 'ready'; ge.version = 0;
     var NOW = Date.now();
-    ge.jobs = [{ owner:'alice', ownerName:'Alice', kind:'clear', x:3, y:4, startAt:NOW-1000, readyAt:NOW+60000 }];
-    var remBefore = ge.jobs[0].readyAt - NOW;
 
-    // Assisting halves the target's remaining time, marks the target, and busies the helper.
-    FF.estateAssistJob('alice');
-    var tgt = FF.guildJobByOwner('alice');
-    var mine = ge.jobs.filter(function(j){ return j.kind==='assist'; })[0];
-    var myId = mine && mine.owner;
-    ok(mine && mine.assistOf==='alice', 'assisting creates an assist job for the helper');
-    ok(tgt.assistedBy===myId, 'target job is marked as assisted by the helper');
-    ok(Math.abs((tgt.readyAt-Date.now()) - remBefore/2) < 2000, 'remaining time is halved');
-    eq(mine.readyAt, tgt.readyAt, "helper's job ends exactly when the assisted task finishes");
+    // guildJobFromServer flattens a server row into the flat client job shape, carrying owner + assist info.
+    var row = { kind:'pave', x:3, y:4, owner:'alice', ownerName:'Alice',
+      payload:{ paveTileId:'paving_t2' }, startAt:NOW-1000, readyAt:NOW+60000 };
+    var mapped = FF.guildJobFromServer(row);
+    eq(mapped.owner, 'alice', 'server row -> client job keeps the owner');
+    eq(mapped.ownerName, 'Alice', 'server row -> client job keeps the owner name');
+    eq(mapped.paveTileId, 'paving_t2', 'server payload is flattened onto the job (paveTileId)');
+    eq(mapped.readyAt, NOW+60000, 'readyAt carries through as epoch ms');
+    var arow = { kind:'assist', x:3, y:4, owner:'bob', ownerName:'Bob', payload:{}, assistOf:'alice', assistOfName:'Alice', startAt:NOW, readyAt:NOW+30000 };
+    var amap = FF.guildJobFromServer(arow);
+    eq(amap.assistOf, 'alice', 'an assist job maps assistOf');
+    eq(amap.assistOfName, 'Alice', 'an assist job maps assistOfName');
 
-    // The helper is busy: cannot assist again.
-    var n1 = ge.jobs.length; FF.estateAssistJob('alice'); eq(ge.jobs.length, n1, 'cannot assist while already busy');
+    // guildJobByOwner returns a member's non-assist job (the assist row is excluded).
+    ge.jobs = [ FF.guildJobFromServer(row), amap ];
+    var byOwner = FF.guildJobByOwner('alice');
+    ok(byOwner && byOwner.kind==='pave', "guildJobByOwner finds a member's non-assist job");
+    ok(!FF.guildJobByOwner('bob'), 'guildJobByOwner excludes assist jobs');
 
-    // The helper is freed (with no reward job) when the assisted task finishes; marker clears.
-    mine.readyAt = Date.now()-1;
-    FF.processGuildEstateJobs();
-    ok(!ge.jobs.some(function(j){ return j.kind==='assist'; }), 'helper is freed when the task finishes');
-    ok(!FF.guildJobByOwner('alice').assistedBy, 'assist marker cleared once the helper is freed');
-
-    // An already-assisted job cannot be double-assisted.
-    var a2 = FF.guildJobByOwner('alice'); a2.assistedBy='bob'; a2.assistedByName='Bob';
-    var n2 = ge.jobs.length; FF.estateAssistJob('alice'); eq(ge.jobs.length, n2, 'an already-assisted job cannot be assisted again');
-    delete a2.assistedBy; delete a2.assistedByName;
-
-    // Duplicate guard: an incoming snapshot that changed MY job's readyAt (a teammate assisting me)
-    // must not leave two copies of my job.
-    ge.jobs = [{ owner:myId, ownerName:'Me', kind:'clear', x:1, y:1, startAt:NOW, readyAt:NOW+50000 }];
-    FF.guildEstateHydrate({ grid:ge.grid, jobs:[{ owner:myId, ownerName:'Me', kind:'clear', x:1, y:1, startAt:NOW, readyAt:NOW+25000 }], expansionsPurchased:0, edgesX:ge.edgesX, edgesY:ge.edgesY }, 9);
-    eq(ge.jobs.filter(function(j){ return j.owner===myId && j.x===1 && j.y===1; }).length, 1, 'an assisted (readyAt-changed) job is not duplicated on hydrate');
-    eq(ge.jobs.filter(function(j){ return j.owner===myId; })[0].readyAt, NOW+25000, 'hydrate adopts the incoming (halved) readyAt');
+    // A blob (grid) hydrate no longer carries jobs -- the server list is left intact across a grid sync.
+    var before = ge.jobs.slice();
+    FF.guildEstateHydrate({ grid:ge.grid, jobs:[{ owner:'zzz', kind:'clear', x:9, y:9, startAt:NOW, readyAt:NOW+1 }], expansionsPurchased:0, edgesX:ge.edgesX, edgesY:ge.edgesY }, 9);
+    eq(ge.jobs.length, before.length, 'a grid hydrate does not replace the (server-owned) job list');
+    ok(!ge.jobs.some(function(j){ return j.owner==='zzz'; }), "a blob's jobs field is ignored on hydrate");
 
     ge.status = saved.status; ge.jobs = saved.jobs; ge.version = saved.version;
   });
