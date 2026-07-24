@@ -11674,6 +11674,7 @@
   var CHAT_COLLAPSE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h6V4"/><path d="M20 14h-6v6"/><path d="M10 10L3 3"/><path d="M14 14l7 7"/></svg>';
   function isMobileView(){ return window.innerWidth < 860; } // matches the CSS rail/dock breakpoint
   var craftOnlyAffordable = false; // Crafting: hide recipe cards the player lacks materials for
+  var craftFilterLowest = false;   // when the filter's on, a tiered card auto-shows the LOWEST affordable tier (for stockpiling) instead of the highest
   var saveAccum = 0;
   var needsRender = false;
   // A full render() rebuilds all of #content. On a big inventory that's hundreds of rows (the
@@ -16872,8 +16873,12 @@
   function craftFilterTier(sel, maxTier, getInputs, isActiveAt){
     if(!craftOnlyAffordable) return sel;
     if(isActiveAt && isActiveAt(sel)) return sel;   // never move an in-progress craft off its own card
-    if(hasInputs(getInputs(sel))) return sel;
-    for(var t=maxTier; t>=0; t--){ if(hasInputs(getInputs(t))) return t; }
+    if(hasInputs(getInputs(sel))) return sel;        // the tier you've navigated to is affordable -> keep it
+    // Otherwise land on an affordable tier: the LOWEST one (for stockpiling low-tier stock) when the
+    // craftFilterLowest toggle is on, else the HIGHEST (the default).
+    var t;
+    if(craftFilterLowest){ for(t=0; t<=maxTier; t++){ if(hasInputs(getInputs(t))) return t; } }
+    else { for(t=maxTier; t>=0; t--){ if(hasInputs(getInputs(t))) return t; } }
     return sel;
   }
   function renderCottageForge(maxUnlocked, lvl){
@@ -29195,7 +29200,7 @@
     var html = '';
     if(currentCategory==='gathering') html = renderGatherTab(currentSub);
     else if(currentCategory==='refining' && currentSub==='butchering') html = renderGatherTab(currentSub); // Butchering keeps its corpse-processing UI
-    else if(currentCategory==='crafting' || currentCategory==='building' || currentCategory==='outfitting' || currentCategory==='refining' || currentCategory==='cooking') html = '<div class="'+(craftOnlyAffordable?'craft-filtering':'')+'"><div class="craft-filter-bar"><button class="craft-filter-btn'+(craftOnlyAffordable?' on':'')+'" data-action="toggleCraftFilter">'+(craftOnlyAffordable?'\u2611':'\u2610')+' Only show items I have materials for</button></div>'+renderCraftTab(currentSub)+'</div>';
+    else if(currentCategory==='crafting' || currentCategory==='building' || currentCategory==='outfitting' || currentCategory==='refining' || currentCategory==='cooking') html = '<div class="'+(craftOnlyAffordable?'craft-filtering':'')+'"><div class="craft-filter-bar"><button class="craft-filter-btn'+(craftOnlyAffordable?' on':'')+'" data-action="toggleCraftFilter">'+(craftOnlyAffordable?'\u2611':'\u2610')+' Only show items I have materials for</button>'+(craftOnlyAffordable ? '<button class="craft-filter-btn on" data-action="toggleCraftFilterTier" title="With the filter on, a tiered card auto-selects this end of the tiers you can afford">'+(craftFilterLowest?'\u2b07 Lowest tier':'\u2b06 Highest tier')+'</button>' : '')+'</div>'+renderCraftTab(currentSub)+'</div>';
     else if(currentCategory==='improvement') html = renderImprovementTab();
     else if(currentCategory==='skills') html = renderSkillsTab();
     else if(currentCategory==='estate'){ estUse(false); estReadOnly=false; html = renderEstateTab(); }
@@ -31248,6 +31253,7 @@
       estateToggleTopDown(); renderLoginGate(); // rebuild so the 3D/2D button label updates, then redraw
     },
     toggleCraftFilter: function(btn, e){ craftOnlyAffordable = !craftOnlyAffordable; },
+    toggleCraftFilterTier: function(btn, e){ craftFilterLowest = !craftFilterLowest; },
     chatSend: function(btn, e){ chatSend(); },
     questClaim: function(btn, e){ claimQuest(btn.getAttribute('data-quest')); },
     questToggle: function(btn, e){ questToggleExpand(btn.getAttribute('data-quest')); },
@@ -32313,7 +32319,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.42.15';
+  var GAME_VERSION = '0.0.42.16';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
