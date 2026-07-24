@@ -1072,6 +1072,11 @@
       ok(FF.playerPoisonActive(s.activity), 'Venom Bite Poisons you');
       s.activity.pBleedUntil = Date.now()+9999; s.activity.pBleedDps = 3;
       eq(Math.round(FF.playerDotDps(s.activity)), Math.round(3 + s.activity.pPoisonDps), 'playerDotDps sums Bleed + Poison');
+      // playerDotWord (the floating-text label) names the strongest active DoT.
+      var dw = { type:'combat', pBleedUntil:Date.now()+9999, pBleedDps:5, pPoisonUntil:Date.now()+9999, pPoisonDps:2, pBurnUntil:0, pBurnDps:0 };
+      ok(FF.playerDotWord(dw).indexOf('Bleed') !== -1, 'playerDotWord picks Bleed when it is strongest');
+      dw.pPoisonDps = 9; ok(FF.playerDotWord(dw).indexOf('Venom') !== -1, 'playerDotWord picks Venom when it is strongest');
+      dw.pBurnUntil = Date.now()+9999; dw.pBurnDps = 20; ok(FF.playerDotWord(dw).indexOf('Burn') !== -1, 'playerDotWord picks Burn when it is strongest');
       // Fear -> a miss-chance window.
       fresh('wildlife_lion'); FF.monsterSpecialFire(FF.monsterById('wildlife_lion'));
       ok(FF.playerFeared(s.activity) && s.activity.pFearMiss === 0.30, 'Terrifying Roar sets a 30% flinch-miss');
