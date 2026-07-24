@@ -1130,6 +1130,15 @@
     }
   });
 
+  // ---- In-game patch notes (Settings tab) ------------------------------------------------
+  suite('patch notes: settings tab content', function(){
+    ok(Array.isArray(FF.PATCH_NOTES) && FF.PATCH_NOTES.length > 0, 'PATCH_NOTES is a non-empty list');
+    ok(FF.PATCH_NOTES.every(function(r){ return r && r.v && r.heading && Array.isArray(r.items) && r.items.length > 0; }), 'every release entry has a version, heading, and at least one item');
+    var html = FF.renderPatchNotes();
+    ok(html.indexOf(FF.PATCH_NOTES[0].heading) !== -1, 'the rendered notes lead with the newest release heading');
+    ok(html.indexOf(FF.PATCH_NOTES[0].items[0]) !== -1, 'the newest release’s items render');
+  });
+
   // ---- Gathering workshops (parallel to crafting workshops) -----------------------------
   suite('gathering workshops', function(){
     var w = FF.WORKSHOP_ITEMS;

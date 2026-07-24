@@ -21861,6 +21861,40 @@
     html += '</div>';
     return html;
   }
+  // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
+  // per release, not one line per commit) so it reads like release notes rather than a git log.
+  var PATCH_NOTES = [
+    { v:'0.0.42', date:'Jul 24', heading:'Enemy special attacks + polish', items:[
+      'Added this Patch Notes tab — check back here to see what’s changed.',
+      'Every enemy family now has special-attack charge bars with abnormal effects — 31 in all: Wildlife (Bleed, Maul, Terrifying Roar…), Elemental (Burn, Chill, Petrify, Purge…), Demonspawn (Soul Siphon, Demonic Frenzy, Chaos Bolt…) and Kinsworn (Rally, Oathbound Might, Disarm…).',
+      'Cooperage finally does something — Provision Barrels keep your Peons working past the 12-hour offline cap.',
+      'Brewing is now its own thing, not a worse Mixology — Brews give a timed bonus-output chance that stacks with Mixology’s XP tea.',
+      'Clearing a dungeon pops a result window showing the Blueprint that dropped (or that nothing did this run).',
+      'Equippable relics can now be sacrificed for Faith; enemies no longer drop flat gold on kill.',
+      'The active Workshop buff (speed + double output) now shows on the action-page skill bar.',
+      'Rewrote ~50 skill descriptions to spell out each skill’s inputs and what it feeds into.',
+      'Fixes: Sentinel reflect mislabeled below Lv20, and Butchering going missing from the tab bar when you tapped a running Refining task.'
+    ]},
+    { v:'0.0.39', date:'Jul 23', heading:'The First Frontier questline', items:[
+      'Built out the full First Frontier questline — 50 numbered quests plus a “Frontier Hero” capstone, touring every skill and system.',
+      'New Quest Tracker card sticks above the action bar with the exact how-to for the quest you’re on.',
+      'Uncompleted quests group into Acts; claimable ones jump to the top, claimed drop to the bottom, and earned titles rise to the top of the Titles page.',
+      'Settings reorganized into Account / Profile / Interface / Quality-of-Life tabs, with new toggles to disable rarity rolls per tier band.',
+      'Enemy cards gained a run-length input (fight N, then stop); the tier stepper no longer locks while a craft is running.',
+      'Mastercraft fixes + a result popup, legendaries read as themselves everywhere, and the Sacrifice tab gained category / rarity / tier filters.'
+    ]}
+  ];
+  function renderPatchNotes(){
+    var html = '<div class="settings-row-desc" style="text-align:center;margin:0 0 12px;">What’s new in Fantasy Frontiers</div>';
+    PATCH_NOTES.forEach(function(rel){
+      html += '<div style="margin-bottom:16px;">';
+      html += '<div class="settings-row-label" style="color:var(--gold);">'+escapeHtml(rel.heading)+' <span style="color:var(--text-faint);font-weight:400;font-size:12px;">· v'+escapeHtml(rel.v)+' · '+escapeHtml(rel.date)+'</span></div>';
+      html += '<ul style="margin:6px 0 0;padding-left:18px;">';
+      rel.items.forEach(function(it){ html += '<li class="settings-row-desc" style="margin:5px 0;">'+it+'</li>'; });
+      html += '</ul></div>';
+    });
+    return html;
+  }
   function renderSettingsModal(){
     var overlay = document.getElementById('settingsOverlay');
     if(!settingsOpen){ overlay.className = ''; overlay.innerHTML = ''; return; }
@@ -21876,7 +21910,7 @@
     // tab isn't available (e.g. logged out on the Account tab), fall back to the first one.
     var _tabs = [];
     if(authUser) _tabs.push(['account','Account']);
-    _tabs.push(['profile','Profile'], ['interface','Interface'], ['qol','Quality of Life']);
+    _tabs.push(['profile','Profile'], ['interface','Interface'], ['qol','Quality of Life'], ['patch','Patch Notes']);
     if(!_tabs.some(function(t){ return t[0]===settingsTab; })) settingsTab = _tabs[0][0];
     html += '<div class="settings-tabs">';
     _tabs.forEach(function(t){ html += '<button class="settings-tab'+(settingsTab===t[0]?' active':'')+'" data-action="setSettingsTab" data-tab="'+t[0]+'">'+escapeHtml(t[1])+'</button>'; });
@@ -21905,6 +21939,8 @@
       html += SETTINGS_TOGGLES.filter(function(t){ return t.cat==='interface'; }).map(_toggleRow).join('');
     } else if(settingsTab==='qol'){
       html += SETTINGS_TOGGLES.filter(function(t){ return t.cat==='qol'; }).map(_toggleRow).join('');
+    } else if(settingsTab==='patch'){
+      html += renderPatchNotes();
     }
     html += '</div>'; // .settings-tabpanel
     html += '<div style="display:flex;flex-direction:column;align-items:center;gap:9px;margin:16px auto 14px;padding-top:16px;border-top:1px solid var(--border);max-width:320px;">'
@@ -31995,7 +32031,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.42.4';
+  var GAME_VERSION = '0.0.42.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -32142,7 +32178,7 @@
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS, estatePeonSources:estatePeonSources, peonGridFor:peonGridFor, estateScopeHasJob:estateScopeHasJob, estateJobActive:estateJobActive, estActiveIsGuild:function(){ return estIsGuild; }, guildEstateReachable:guildEstateReachable,
       GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, FARMING_PHYSIQUE:FARMING_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
       physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, awardMasterworkXp:awardMasterworkXp, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
-      SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, TICKER_TIPS:TICKER_TIPS, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
+      SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, PATCH_NOTES:PATCH_NOTES, renderPatchNotes:renderPatchNotes, TICKER_TIPS:TICKER_TIPS, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       guildLogPush:guildLogPush, renderGuildActivityLog:renderGuildActivityLog, GUILD_LOG_MAX:GUILD_LOG_MAX, guildIsOfficerPlus:guildIsOfficerPlus,
