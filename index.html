@@ -2798,8 +2798,8 @@
       })() },
     gastronomy: { label:'Gastronomy', icon:svgIcon('meal','#d8a02a'),
       // Feasts: a Cooking Meal elevated with Cheese and a Botany spice. The game's best food AND a
-      // timed combat buff -- serving one heals big and empowers every hit for a few minutes (see
-      // serveFeast). Consumes Botany spices, reinforcing that chain's payoff.
+      // timed combat buff -- serving one heals big up front and then restores HP over time (heal-over-time)
+      // for a few minutes (see serveFeast). Consumes Botany spices, reinforcing that chain's payoff.
       recipes: (function(){
         var list = [];
         for(var i=0;i<TIER_COUNT;i++){
@@ -2817,7 +2817,7 @@
             icon: svgIcon('meal',RANCH_COLORS[i]),
             inputs: inputs,
             heal: 60*(i+1),
-            feastBonus: tierCappedBonus(0.05,0.015,0.35,i),
+            feastRegen: 50,                 // HP restored every 5s while the feast buff is active (heal-over-time; replaced the old timed damage bonus)
             feastDurationMs: 3*(i+1)*60*1000
           });
         }
@@ -11610,7 +11610,7 @@
       autoSacrifice: {},   // per-card auto-sacrifice flags on the Sacrifice tab: { "<category>|<id>": true }
       mortal: null,   // Path: null = not yet chosen (prompt after registration), true = Mortal (permadeath -> immortal on death), false = Immortal (standard play)
       activeTea: { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 },
-      activeFeast: { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 },
+      activeFeast: { itemId:null, name:null, icon:null, regenPer5s:0, durationMs:0, expiresAt:0 },
       activeTome: { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 },
       activeScroll: { itemId:null, name:null, icon:null, wardPct:0, durationMs:0, expiresAt:0 },
       activeBrew: { itemId:null, name:null, icon:null, yield:0, durationMs:0, expiresAt:0 },
@@ -11989,14 +11989,22 @@
   function isTeaActive(){
     return !!(state.activeTea && state.activeTea.itemId && state.activeTea.expiresAt > Date.now());
   }
-  // Feast buff: a Gastronomy Feast, once served, empowers every hit for a few minutes. Its own timed
-  // channel (separate from Teas' XP boost and the single combat-potion slot). Read in the damage calc.
+  // Feast buff: a Gastronomy Feast, once served, restores HP over time for a few minutes (heal-over-time).
+  // Its own timed channel (separate from Teas' XP boost and the single combat-potion slot). Read by the
+  // passive-regen tick (live + offline).
   function isFeastActive(){
     return !!(state.activeFeast && state.activeFeast.itemId && state.activeFeast.expiresAt > Date.now());
   }
-  function feastDamageBonus(){ return isFeastActive() ? (state.activeFeast.dmgBonus||0) : 0; }
+  function feastRegenPer5s(){ return isFeastActive() ? (state.activeFeast.regenPer5s||0) : 0; }
+  // How much of an offline window (ms) the feast buff was still running for -- the feast may have expired
+  // partway through, so offline regen only counts the active portion. 0 if no feast record.
+  function feastOfflineActiveMs(windowMs){
+    if(!(state.activeFeast && state.activeFeast.itemId)) return 0;
+    var start = Date.now() - windowMs;                       // when the offline window began
+    return Math.max(0, Math.min(windowMs, state.activeFeast.expiresAt - start));
+  }
   // Tome buff: studying a Bookbinding Tome speeds ALL gathering & crafting for a while (folded into
-  // speedMultiplier). Its own timed channel, separate from Teas (XP) and Feasts (damage).
+  // speedMultiplier). Its own timed channel, separate from Teas (XP) and Feasts (heal-over-time).
   function isTomeActive(){
     return !!(state.activeTome && state.activeTome.itemId && state.activeTome.expiresAt > Date.now());
   }
@@ -13906,7 +13914,6 @@
     { name:'weaponsmithEdge',       fn:function(c){ return weaponsmithEdgeMult(); } },
     { name:'zealotry',              fn:function(c){ return zealotryDmgMult(); } },
     { name:'runicAttunement',       fn:function(c){ return (c.isWandAttack || c.isScepterAttack) ? runicAttunementMult() : 1; } },
-    { name:'feast',                 fn:function(c){ return 1 + feastDamageBonus(); } },
     { name:'enemyWeaken',           fn:function(c){ return enemyWeakenMult(); } }, // Intimidate (enemy special): your outgoing damage drops while Weakened
     { name:'offhandClawPenalty',    fn:function(c){ return c.isOffhand ? OFFHAND_CLAW_DMG_MULT : 1; } },
     { name:'damageEnchants',        fn:function(c){ return 1 + ((c.enchTot.pctDamage||0)/100); } }, // Weapon/All Damage enchants
@@ -15424,8 +15431,9 @@
     addLog('You drink a ' + recipe.name + ', boosting XP gain by ' + Math.round(recipe.xpBoost*100) + '% for ' + Math.round(recipe.teaDurationMs/60000) + ' minutes.', 'important');
     needsRender = true;
   }
-  // Serving a Feast (Gastronomy): heals a big chunk and starts/refreshes the timed weapon-damage buff.
-  // Like Teas, it doesn't stack -- serving another replaces the current buff outright.
+  // Serving a Feast (Gastronomy): heals a big chunk up front and starts/refreshes a timed heal-over-time
+  // buff (restores HP every 5s while active). Like Teas, it doesn't stack -- serving another replaces the
+  // current buff outright.
   function serveFeast(itemId){
     var recipe = ALL_CRAFT_RECIPES[itemId];
     if(!recipe || !recipe.feastDurationMs) return;
@@ -15439,11 +15447,11 @@
       itemId: itemId,
       name: recipe.name,
       icon: recipe.icon,
-      dmgBonus: recipe.feastBonus,
+      regenPer5s: recipe.feastRegen||0,
       durationMs: _feastDur,
       expiresAt: Date.now() + _feastDur
     };
-    addLog('You feast on a ' + recipe.name + (healed>0 ? (', recovering ' + healed + ' HP and') : ',') + ' empowering your attacks +' + Math.round(recipe.feastBonus*100) + '% for ' + Math.round(recipe.feastDurationMs/60000) + ' minutes.', 'important');
+    addLog('You feast on a ' + recipe.name + (healed>0 ? (', recovering ' + healed + ' HP and') : ',') + ' restoring +' + (recipe.feastRegen||0) + ' HP every 5s for ' + Math.round(_feastDur/60000) + ' minutes.', 'important');
     needsRender = true;
   }
   // Eat a specific Confectionery snack (Confectionery): an instant heal, usable mid-fight from the combat
@@ -15461,13 +15469,13 @@
     if(state.activity && state.activity.type==='combat') spawnCombatFloat('+' + healed + ' HP', 'ft-success', false);
     needsRender = true;
   }
-  // Owned Gastronomy Feasts (timed +dmg buff) + Confectionery snacks (instant heal) as combat consumables,
+  // Owned Gastronomy Feasts (timed heal-over-time buff) + Confectionery snacks (instant heal) as combat consumables,
   // surfaced in the same combat UI as Potions/Bombs so they can be used mid-fight without leaving the screen.
   function foodConsumableList(){
     var out = [];
     for(var i=0;i<TIER_COUNT;i++){ var fid='gastronomy_t'+i, fq=state.inventory[fid]||0; if(fq>0){ var fr=ALL_CRAFT_RECIPES[fid]||{};
       out.push({ id:fid, name:fr.name||fid, icon:fr.icon||'', qty:fq, action:'serveFeast', kind:'feast',
-        desc:'+'+Math.round((fr.feastBonus||0)*100)+'% dmg · '+Math.round((fr.feastDurationMs||0)/60000)+'m',
+        desc:'+'+(fr.feastRegen||0)+' HP/5s · '+Math.round((fr.feastDurationMs||0)/60000)+'m',
         active:(isFeastActive() && state.activeFeast.itemId===fid) }); } }
     for(var j=0;j<TIER_COUNT;j++){ var cid='confectionery_t'+j, cq=state.inventory[cid]||0; if(cq>0){ var cr=ALL_CRAFT_RECIPES[cid]||{};
       out.push({ id:cid, name:cr.name||cid, icon:cr.icon||'', qty:cq, action:'eatConfection', kind:'snack',
@@ -15730,7 +15738,12 @@
     // so it keeps pace with incoming damage exactly like the live loop; otherwise a regen-only build that
     // survives live takes the whole window of hits with nothing healing it and dies on login (reported).
     var regenTicks = Math.floor(capped/5000);
-    if(regenTicks > 0 && !(act && act.type==='combat')) state.playerHp += Math.min(regenTicks * (1 + enchantHpRegen(state)), healRoom(state));
+    if(regenTicks > 0 && !(act && act.type==='combat')){
+      // Base + enchant regen plus a Gastronomy Feast's heal-over-time for the part of the window it stayed active.
+      var feastTicks = Math.floor(feastOfflineActiveMs(capped)/5000);
+      var feastRegen5s = (state.activeFeast && state.activeFeast.regenPer5s) || 0;
+      state.playerHp += Math.min(regenTicks * (1 + enchantHpRegen(state)) + feastTicks * feastRegen5s, healRoom(state));
+    }
     var goldBefore = state.gold;
     offlineCapture = { xp:{}, physique:{}, items:{}, gold:0, elapsedMs:capped, activityType:(act&&act.type)||null, familiars:[] };
     // A primary activity whose item id was renamed/removed in an update must not throw here --
@@ -15795,6 +15808,8 @@
         var _step = 500; // ms per sim step (covers the 12h cap in ~86k steps, well under the guard)
         var _noAtk = !!_pStyle.noAttack; // a Staff never auto-attacks offline either
         var _passiveRegen5s = 1 + enchantHpRegen(state); // base +1/5s plus any HP Regen enchant, ticked per-step below
+        var _feastRegen5s = (state.activeFeast && state.activeFeast.regenPer5s) || 0; // Gastronomy Feast heal-over-time
+        var _feastActiveMs = feastOfflineActiveMs(capped);   // ticked per-step only while the feast is still running
         state.companionCast = state.companionCast || {};
         var _sim = 0, _pAcc = 0, _mAcc = 0, _offAcc = 0, _guard = 0;
         while(_sim < capped && state.activity.type==='combat' && _guard++ < 200000){
@@ -15828,6 +15843,7 @@
           applyReaperWitherTick(_chunk);
           applyLumenMendingTick(_chunk);
           if(state.playerHp>0) state.playerHp += Math.min(_passiveRegen5s*_chunk/5000, healRoom(state)); // base passive HP regen, matching the live loop's mid-fight regen
+          if(_feastRegen5s>0 && (_sim - _chunk) < _feastActiveMs && state.playerHp>0) state.playerHp += Math.min(_feastRegen5s*_chunk/5000, healRoom(state)); // Gastronomy Feast heal-over-time, while it lasts
           var _rh = famRegenHps(); if(_rh>0 && state.playerHp>0) state.playerHp += Math.min(_rh*_chunk/5000, healRoom(state)); // _rh is the per-5s tick amount
           // Each active companion casts one spell every 10s, cycling its list (same cadence as live).
           activeCompanionList(state).forEach(function(cid){
@@ -16030,7 +16046,9 @@
             }
           })();
           if(!state.activeTea || typeof state.activeTea !== 'object') state.activeTea = { itemId:null, name:null, icon:null, xpBoost:0, durationMs:0, expiresAt:0 };
-          if(!state.activeFeast || typeof state.activeFeast !== 'object') state.activeFeast = { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 };
+          if(!state.activeFeast || typeof state.activeFeast !== 'object') state.activeFeast = { itemId:null, name:null, icon:null, regenPer5s:0, durationMs:0, expiresAt:0 };
+          // Feast reworked from a timed damage buff to a heal-over-time: retire any in-flight damage-buff record.
+          if(state.activeFeast && state.activeFeast.dmgBonus != null && state.activeFeast.regenPer5s == null){ state.activeFeast = { itemId:null, name:null, icon:null, regenPer5s:0, durationMs:0, expiresAt:0 }; }
           if(!state.activeTome || typeof state.activeTome !== 'object') state.activeTome = { itemId:null, name:null, icon:null, speedBonus:0, durationMs:0, expiresAt:0 };
           if(!state.activeScroll || typeof state.activeScroll !== 'object') state.activeScroll = { itemId:null, name:null, icon:null, wardPct:0, durationMs:0, expiresAt:0 };
           if(!state.activeBrew || typeof state.activeBrew !== 'object') state.activeBrew = { itemId:null, name:null, icon:null, yield:0, durationMs:0, expiresAt:0 };
@@ -16234,7 +16252,7 @@
     "Place a <b>Workshop</b> on your Estate to speed a skill and add double-output. Put a Cottage beside it and idle Peons will work that skill for you.",
     "<b>Elemental Attunements</b> grow as you deal or take that element's damage, raising both the damage you deal and your resistance to it.",
     "Below 25% HP, <b>Tenacity</b> turns desperation into power: deal more and take less. Some classes fight hurt on purpose.",
-    "Brew <b>Teas</b> (Mixology) for XP, plate <b>Feasts</b> (Gastronomy) for damage, bind <b>Tomes</b> (Bookbinding) for work speed, and scribe <b>Scrolls</b> (Inscription) to ward off damage.",
+    "Brew <b>Teas</b> (Mixology) for XP, plate <b>Feasts</b> (Gastronomy) for HP regen, bind <b>Tomes</b> (Bookbinding) for work speed, and scribe <b>Scrolls</b> (Inscription) to ward off damage.",
     "Every craft can roll a rarity, and the <b>Treasure Hunter</b> class grows stronger the more Rare-or-better gear you wear. Dress to impress.",
     "Not every gather feeds a weapon: <b>Diving</b> turns up Pearls for Amulets, and <b>Prospecting</b> sifts Gems for Gemcutting.",
     "A <b>Belt</b> adds concurrent craft slots on top of what Logic grants — stack both to run more crafts at once.",
@@ -16271,7 +16289,7 @@
     "<b>Cooperage</b> binds Planks with a metal band into Barrels and Casks — a tidy standalone refinement.",
     "Every craft trains <b>Sleight of Hand</b> (faster crafting) and <b>Gross Motor Control</b> (higher success).",
     "<b>Roasting</b> turns raw Meat into Roasted Meat — the base Hot Food Cooking builds Meals from.",
-    "<b>Gastronomy</b> plates a Meal with Cheese and a Botany spice into a Feast that empowers your hits for minutes.",
+    "<b>Gastronomy</b> plates a Meal with Cheese and a Botany spice into a Feast that restores HP over time for minutes.",
     "<b>Mixology</b> shakes up Teas — drink one for an XP boost while you grind.",
     "<b>Brewing</b> casks Mead and <b>Confectionery</b> spins sugar into sweets — two tasty verticals of their own.",
     "<b>Weaponsmithing</b> forges every melee weapon, and the weapon you wield decides which Class you can become.",
@@ -16396,7 +16414,7 @@
     }
     if(isFeastActive()){
       var feastBuffPct = clamp((state.activeFeast.expiresAt-Date.now())/state.activeFeast.durationMs*100, 0, 100);
-      html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:#d8a02a"></span>+'+Math.round(state.activeFeast.dmgBonus*100)+'% DMG <span class="t" id="ffFeastBuffT">'+formatDuration(state.activeFeast.expiresAt-Date.now())+'</span></span>'
+      html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:#d8a02a"></span>+'+(state.activeFeast.regenPer5s||0)+' HP/5s <span class="t" id="ffFeastBuffT">'+formatDuration(state.activeFeast.expiresAt-Date.now())+'</span></span>'
         + '<span class="ff-buffbar"><span class="ff-buffbar-fill" id="ffFeastBuffBar" style="width:'+feastBuffPct+'%;background:#d8a02a"></span></span></div>';
     }
     var tk = state.trackedSkills && state.trackedSkills[0];
@@ -17059,16 +17077,16 @@
     html += '</div>';
     return html;
   }
-  // Gastronomy: serve a Feast to heal + start the timed weapon-damage buff (mirrors the Tea section).
+  // Gastronomy: serve a Feast to heal + start the timed heal-over-time buff (mirrors the Tea section).
   function ownedFeasts(){ return CRAFTING_SKILLS.gastronomy.recipes.filter(function(r){ return (state.inventory[r.id]||0) > 0; }); }
   function renderFeastSection(){
     var html = '<h3>Serve a Feast</h3>';
     if(isFeastActive()){
       var remainingMs = state.activeFeast.expiresAt - Date.now();
-      html += '<div class="physique-bonus">Active: <b>'+state.activeFeast.icon+' '+state.activeFeast.name+'</b> &nbsp;|&nbsp; Damage: <b>+'+Math.round(state.activeFeast.dmgBonus*100)+'%</b> &nbsp;|&nbsp; Time Left: <b id="feastTabTimer">'+formatDuration(remainingMs)+'</b></div>';
+      html += '<div class="physique-bonus">Active: <b>'+state.activeFeast.icon+' '+state.activeFeast.name+'</b> &nbsp;|&nbsp; Regen: <b>+'+(state.activeFeast.regenPer5s||0)+' HP/5s</b> &nbsp;|&nbsp; Time Left: <b id="feastTabTimer">'+formatDuration(remainingMs)+'</b></div>';
       html += '<div class="section-intro">Serving another Feast replaces this buff outright -- its strength and timer don\'t stack.</div>';
     } else {
-      html += '<div class="section-intro">No Feast active. Serve one below to heal and empower every hit for a few minutes.</div>';
+      html += '<div class="section-intro">No Feast active. Serve one below to heal up front and steadily restore HP for a few minutes.</div>';
     }
     var owned = ownedFeasts();
     if(owned.length===0){
@@ -17080,7 +17098,7 @@
       var qty = state.inventory[recipe.id]||0;
       html += '<div class="item-card">';
       html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Owned: '+qty+'</div></div></div>';
-      html += '<div class="item-stats"><span>+'+Math.round(recipe.feastBonus*100)+'% DMG</span><span>+'+recipe.heal+' HP &bull; '+Math.round(recipe.feastDurationMs/60000)+' min</span></div>';
+      html += '<div class="item-stats"><span>+'+(recipe.feastRegen||0)+' HP/5s</span><span>+'+recipe.heal+' HP &bull; '+Math.round(recipe.feastDurationMs/60000)+' min</span></div>';
       html += '<button class="action-btn" data-action="serveFeast" data-item="'+recipe.id+'">Serve</button>';
       html += '</div>';
     });
@@ -19027,9 +19045,9 @@
     var food = foodConsumableList();
     if(!food.length) return '';
     var html = '<h3 style="margin-top:16px">'+svgIcon('meal','#d8a02a')+' Feasts &amp; Snacks</h3>';
-    html += '<div class="section-intro">Serve a Gastronomy Feast for a timed weapon-damage buff, or eat a Confectionery snack for an instant heal — usable any time, including mid-fight. Feasts don\'t stack (a new one refreshes the buff).</div>';
+    html += '<div class="section-intro">Serve a Gastronomy Feast for a timed heal-over-time buff, or eat a Confectionery snack for an instant heal — usable any time, including mid-fight. Feasts don\'t stack (a new one refreshes the buff).</div>';
     if(isFeastActive()){
-      html += '<div class="physique-bonus">Feast active: <b>'+state.activeFeast.icon+' '+escapeHtml(state.activeFeast.name)+'</b> &mdash; +'+Math.round(state.activeFeast.dmgBonus*100)+'% damage &bull; '+formatDuration(state.activeFeast.expiresAt-Date.now())+' left</div>';
+      html += '<div class="physique-bonus">Feast active: <b>'+state.activeFeast.icon+' '+escapeHtml(state.activeFeast.name)+'</b> &mdash; +'+(state.activeFeast.regenPer5s||0)+' HP/5s &bull; '+formatDuration(state.activeFeast.expiresAt-Date.now())+' left</div>';
     }
     html += '<div class="style-row">';
     food.forEach(function(f){
@@ -19864,7 +19882,7 @@
     });
     if(chips.length) h += '<div style="display:flex;flex-wrap:wrap;gap:5px;">'+chips.join('')+'</div>';
     else if(!state.activePotion) h += '<div class="empty-note" style="margin:0">No combat consumables in your bag &mdash; craft Potions, Coatings, Bombs, or Flash Bombs.</div>';
-    // Gastronomy Feasts (timed +dmg buff) + Confectionery snacks (instant heal), usable mid-fight.
+    // Gastronomy Feasts (timed heal-over-time buff) + Confectionery snacks (instant heal), usable mid-fight.
     var food = foodConsumableList();
     if(food.length){
       h += '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;">'+food.map(function(f){
@@ -29409,7 +29427,7 @@
     gemcutting: 'Cut Prospecting\'s Rough Gems into faceted Cut Gems -- the base for Enchanting.',
     enchanting: 'Bind Cut Gems and Metal Bars into Enchant Crystals used in Improvement of your Rare-or-better gear through Enchantment. Note that this is distinct from Enhancement.',
     dairy: 'Age and press Ranching\'s Milk into Cheese -- a richer food input and the base for Gastronomy.',
-    gastronomy: 'Plate a Cooking Meal with Cheese and a Botany Spice into a Feast -- the best food, and serving one empowers your hits for a few minutes.',
+    gastronomy: 'Plate a Cooking Meal with Cheese and a Botany Spice into a Feast -- the best food, and serving one restores HP over time for a few minutes.',
     apothecary: 'Distil toxic Mushrooms and Herbs into Weapon Coatings -- ready one in Battle to poison enemies over time on every hit.',
     tinkering: 'Build Salvaged Scrap and Metal Bars into Bombs -- ready one in Battle to burst the enemy for heavy damage on every hit.',
     pyrotechnics: 'Pack Foraged Powder and various Salvaged Scrap into Flash Bombs -- ready one in Battle for a chance to stun the enemy on every hit.',
@@ -31905,8 +31923,9 @@
       state._regenAccum = (state._regenAccum||0) + dt;
       while(state._regenAccum >= 5000){
         state._regenAccum -= 5000;
-        // Base +1 HP per 5s, plus any flat HP Regen armour enchant (Spellblade-amplified, capped at 10).
-        state.playerHp += Math.min(1 + enchantHpRegen(state), healRoom(state));
+        // Base +1 HP per 5s, plus any flat HP Regen armour enchant (Spellblade-amplified, capped at 10),
+        // plus an active Gastronomy Feast's heal-over-time.
+        state.playerHp += Math.min(1 + enchantHpRegen(state) + feastRegenPer5s(), healRoom(state));
       }
     }
 
@@ -32458,7 +32477,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.42.20';
+  var GAME_VERSION = '0.0.42.21';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -32625,7 +32644,7 @@
       familiarHitLevelDamage:familiarHitLevelDamage, familiarHitDamageResting:familiarHitDamageResting, familiarPotencyMult:familiarPotencyMult, FAM_HIT_REF_AMOUNT:FAM_HIT_REF_AMOUNT, FAM_HIT_DMG_L1:FAM_HIT_DMG_L1, FAM_HIT_DMG_L100:FAM_HIT_DMG_L100,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,
       ALL_GATHER_ITEMS:ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES:ALL_CRAFT_RECIPES, ALL_SELLABLE:ALL_SELLABLE, ALL_DROP_ITEMS:ALL_DROP_ITEMS, FAT_ITEMS:FAT_ITEMS, TEA_DRINK_RECIPES:TEA_DRINK_RECIPES, BREW_DRINK_RECIPES:BREW_DRINK_RECIPES, vendorSellValue:vendorSellValue, SELL_RARITY_MULT:SELL_RARITY_MULT,
-      isFeastActive:isFeastActive, feastDamageBonus:feastDamageBonus, serveFeast:serveFeast, eatConfection:eatConfection, foodConsumableList:foodConsumableList, renderFoodConsumablesPanel:renderFoodConsumablesPanel,
+      isFeastActive:isFeastActive, feastRegenPer5s:feastRegenPer5s, feastOfflineActiveMs:feastOfflineActiveMs, serveFeast:serveFeast, eatConfection:eatConfection, foodConsumableList:foodConsumableList, renderFoodConsumablesPanel:renderFoodConsumablesPanel,
       isTomeActive:isTomeActive, tomeSpeedBonus:tomeSpeedBonus, studyTome:studyTome, bestAvailableTome:bestAvailableTome, ownedTomes:ownedTomes, speedMultiplier:speedMultiplier,
       isBrewActive:isBrewActive, brewYieldRoll:brewYieldRoll, drinkBrew:drinkBrew, bestAvailableBrew:bestAvailableBrew, ownedBrews:ownedBrews, gatherDoubleRoll:gatherDoubleRoll,
       isScrollActive:isScrollActive, scrollDamageReduction:scrollDamageReduction, readScroll:readScroll,

@@ -1221,7 +1221,7 @@
       ok(s.activity.monsterHp > 1 && FF.playerBurnActive(s.activity), 'Life Drain heals the foe and leaves you withering');
       // Purge -> strips your strongest active buff.
       fresh('elemental_astral_elemental');
-      s.activeFeast = { itemId:'feast_x', name:'Test Feast', dmgBonus:0.2, durationMs:1e6, expiresAt:Date.now()+1e6 };
+      s.activeFeast = { itemId:'feast_x', name:'Test Feast', regenPer5s:50, durationMs:1e6, expiresAt:Date.now()+1e6 };
       var purged = FF.purgePlayerBuff();
       eq(purged, 'Test Feast', 'Purge strips the active Feast (top priority)');
       ok(!(s.activeFeast.itemId), 'the purged buff is cleared');
@@ -2399,18 +2399,26 @@
     eq(cheese5.name, 'Camel Cheese', 'dairy yields Cheese');
     var feast5 = FF.ALL_CRAFT_RECIPES['gastronomy_t5'];
     ok(feast5.inputs['dairy_t5'] && feast5.inputs['botany_t5'] && feast5.inputs['cooking_t5'], 'feast plates cheese + botany spice + cooking meal');
-    // Feast is a food AND a timed combat buff -- a distinct channel.
-    ok(feast5.heal > 0, 'feasts heal');
-    ok(feast5.feastBonus > 0 && feast5.feastDurationMs > 0, 'feasts carry a timed damage buff');
+    // Feast is a food AND a timed combat buff -- now a heal-over-time (replaced the old damage bonus).
+    ok(feast5.heal > 0, 'feasts heal up front');
+    ok(feast5.feastRegen > 0 && feast5.feastDurationMs > 0, 'feasts carry a timed heal-over-time buff');
+    ok(!('feastBonus' in feast5), 'the old timed damage bonus is gone');
     var f0 = FF.ALL_CRAFT_RECIPES['gastronomy_t0'], f20 = FF.ALL_CRAFT_RECIPES['gastronomy_t20'];
-    ok(f20.feastBonus > f0.feastBonus && f20.feastBonus <= 0.35 + 1e-9, 'feast damage bonus scales with tier (cap 35%)');
-    // Serving a feast activates the buff and empowers hits; no buff by default.
-    eq(FF.feastDamageBonus(), 0, 'no feast buff by default');
+    eq(f0.feastRegen, 50, 'feast regen is 50 HP/5s');
+    eq(f20.feastRegen, 50, 'feast regen is a flat 50 HP/5s across tiers');
+    // Serving a feast activates the heal-over-time buff; no buff by default.
+    eq(FF.feastRegenPer5s(), 0, 'no feast buff by default');
     FF._state.inventory['gastronomy_t10'] = 1; FF._state.playerHp = 1;
     FF.serveFeast('gastronomy_t10');
     ok(FF.isFeastActive(), 'serving a feast activates the buff');
-    ok(FF.feastDamageBonus() > 0, 'active feast adds weapon damage');
-    ok(FF._state.playerHp > 1, 'serving a feast also heals');
+    eq(FF.feastRegenPer5s(), 50, 'active feast restores 50 HP/5s');
+    ok(FF._state.playerHp > 1, 'serving a feast also heals up front');
+    // Offline regen accounting: while still running, a window shorter than the feast counts fully;
+    // a feast that expired before the offline window began contributes nothing.
+    eq(FF.feastOfflineActiveMs(10000), 10000, 'offline feast-active window = the elapsed window while the feast still runs');
+    var _exp = FF._state.activeFeast.expiresAt; FF._state.activeFeast.expiresAt = Date.now() - 1e9;
+    eq(FF.feastOfflineActiveMs(10000), 0, 'a feast expired before the window contributes no offline regen');
+    FF._state.activeFeast.expiresAt = _exp;
     ok(FF.GATHER_PHYSIQUE.ranching && FF.CRAFT_PHYSIQUE.dairy && FF.CRAFT_PHYSIQUE.gastronomy, 'physique tables include the new skills');
 
     // Combat UI: Feasts + Confections surface as usable item buffs like Potions/Bombs do.
@@ -2418,7 +2426,7 @@
     var _sv = { inv: FF._state.inventory, hp: FF._state.playerHp, feast: FF._state.activeFeast };
     try {
       FF._state.inventory = { gastronomy_t3:2, confectionery_t2:3 };
-      FF._state.activeFeast = { itemId:null, name:null, icon:null, dmgBonus:0, durationMs:0, expiresAt:0 };
+      FF._state.activeFeast = { itemId:null, name:null, icon:null, regenPer5s:0, durationMs:0, expiresAt:0 };
       FF._state.playerHp = 1;
       var flist = FF.foodConsumableList();
       eq(flist.length, 2, 'a Feast and a Confection both surface as combat consumables');
