@@ -285,6 +285,12 @@ Deno.serve(async (req) => {
   const clsRaw = (body as { class?: unknown }).class;
   const cls = (typeof clsRaw === "string" && /^[a-z][a-zA-Z0-9_]{0,23}$/.test(clsRaw)) ? clsRaw : null;
 
+  // Equipped Title id (for the public profile card + the tag next to the player's name in chat). Cosmetic +
+  // client-authoritative; stored as a bounded "title_..." slug or null. The client resolves the id to a
+  // display name locally (TITLE_BY_ID), so only a safe id is stored, never free text.
+  const titleRaw = (body as { title?: unknown }).title;
+  const title = (typeof titleRaw === "string" && /^title_[a-zA-Z0-9_]{1,50}$/.test(titleRaw)) ? titleRaw : null;
+
   // Optional public estate snapshot (render-only) so others can view it read-only from the
   // leaderboard. Cosmetic + client-authoritative; never reject the submission over it. Bounded by a
   // size cap + a basic shape check so a client can't bloat the row. Stored verbatim (the viewer only
@@ -309,6 +315,7 @@ Deno.serve(async (req) => {
     stats,
     mortal,
     class: cls,
+    title,
     updated_at: new Date(nextClockMs).toISOString(), // bucket clock (advances only by consumed levels)
   };
   if (estateProvided) record.estate = estate;   // omit entirely -> upsert leaves any existing estate untouched
