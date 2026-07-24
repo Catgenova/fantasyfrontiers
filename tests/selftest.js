@@ -2289,6 +2289,50 @@
     void savedAuth;
   });
 
+  // ---- Combat log tab + advanced-pipeline toggle ------------------------------------------------
+  suite('chat: combat log + advanced toggle', function(){
+    var s = FF._state;
+    var sv = { adv: s.settings && s.settings.advancedCombatLog };
+    s.settings = s.settings || {};
+    FF._clReset();
+    eq(FF._clGet().length, 0, 'combat log starts empty');
+    ok(/No combat yet/.test(FF.combatLogHtml()), 'empty log shows the intro line');
+
+    // Basic entries (advanced off): no pipeline detail.
+    s.settings.advancedCombatLog = false;
+    eq(FF.advCombat(), false, 'advanced off by default');
+    FF.combatLogPush({ dir:'out', dmg:145, crit:true, target:'Wolf' });
+    FF.combatLogPush({ dir:'in', dmg:12, blocked:true, target:'Wolf' });
+    FF.combatLogPush({ dir:'miss', target:'Wolf' });
+    FF.combatLogPush({ dir:'dodge', target:'Wolf' });
+    eq(FF._clGet().length, 4, 'four events recorded');
+    var basic = FF.combatLogHtml();
+    ok(/You hit Wolf for <b>145<\/b>/.test(basic) && /cl-crit/.test(basic), 'a dealt hit shows damage + CRIT');
+    ok(/Wolf hit you for <b>12<\/b>/.test(basic) && /blocked/.test(basic), 'a taken hit shows damage + blocked tag');
+    ok(/You missed Wolf/.test(basic) && /You dodged Wolf/.test(basic), 'miss + dodge lines render');
+    ok(!/cl-detail/.test(basic), 'no pipeline detail while Advanced is off');
+
+    // Advanced on: an entry with a detail string renders the pipeline breakdown.
+    s.settings.advancedCombatLog = true;
+    eq(FF.advCombat(), true, 'advCombat reflects the QoL toggle');
+    FF.combatLogPush({ dir:'out', dmg:200, crit:false, target:'Bear', detail:'roll 10–20 × physique 1.2 = 200' });
+    var adv = FF.combatLogHtml();
+    ok(/cl-detail/.test(adv) && /physique 1.2/.test(adv), 'the pipeline detail renders when present');
+
+    // Ring buffer cap: never grows unbounded.
+    FF._clReset();
+    for(var i=0;i<260;i++) FF.combatLogPush({ dir:'out', dmg:1, target:'x' });
+    ok(FF._clGet().length <= 200, 'the combat log is capped (ring buffer)');
+
+    // A blank push and an offline capture are ignored (offline is exercised implicitly: push guards on it).
+    FF._clReset();
+    FF.combatLogPush(null);
+    eq(FF._clGet().length, 0, 'a null push is ignored');
+
+    FF._clReset();
+    s.settings.advancedCombatLog = sv.adv;
+  });
+
   // ---- Chat unread counter ---------------------------------------------------------------------
   suite('chat: unread count + "Chat (N)" suffix', function(){
     var s = FF._state;

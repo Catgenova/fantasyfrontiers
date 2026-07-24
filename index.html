@@ -692,6 +692,14 @@
   .chat-title{font-size:10px;color:var(--gold);font-style:italic;margin-right:5px;vertical-align:1px;}
   .chat-muted-tag{font-size:11px;margin-right:5px;opacity:0.8;}
   .profile-title{color:var(--gold);font-style:italic;font-size:13px;margin-top:2px;}
+  /* Combat log rows (the Combat chat tab). */
+  .cl-row{font-family:var(--font-body);font-size:12.5px;line-height:1.4;padding:1px 0;}
+  .cl-out{color:#7fae5a;} .cl-out b{color:#a9c47e;}
+  .cl-in{color:#c98a6a;} .cl-in b{color:#e0a07a;}
+  .cl-faint{color:var(--text-faint);font-size:11.5px;}
+  .cl-crit{color:var(--gold-bright);font-weight:800;font-size:10px;letter-spacing:.5px;}
+  .cl-tag{color:var(--text-faint);font-size:10px;}
+  .cl-detail{color:var(--text-faint);font-family:var(--font-mono);font-size:10px;line-height:1.5;margin:1px 0 2px 6px;word-break:break-word;}
   .chat-mod-btn{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:13px;line-height:1;padding:0 5px;margin-right:4px;}
   .chat-mod-btn:hover{color:var(--gold);}
   .chat-empty{margin:auto;color:var(--text-faint);font-style:italic;}
@@ -11664,7 +11672,7 @@
       potionCharges: 0,
       popupQueue: [],
       popupBatchTotal: 0,
-      settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true, chatFilter:true, showEstateFabs:true, compactMobile:true, autoOpenCaches:false, autoOpenChests:false, autoHarvest:false, autoFertilize:false, autoPlant:false, plantFiber:true, plantGrain:true, plantHerb:true, plantCustom:false, plantSeedDisabled:{} },
+      settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true, chatFilter:true, showEstateFabs:true, compactMobile:true, autoOpenCaches:false, autoOpenChests:false, autoHarvest:false, autoFertilize:false, autoPlant:false, advancedCombatLog:false, plantFiber:true, plantGrain:true, plantHerb:true, plantCustom:false, plantSeedDisabled:{} },
       trackedSkills: ['logic'], // new players start tracking Logic so the top-bar tracker isn't empty
 
       peons: [],
@@ -14064,6 +14072,7 @@
     // Blind (Sandblast) lowers your accuracy; Umbral Veil raises the foe's evasion. Both scale the hit roll.
     if(!_neverMiss && Math.random() >= playerHitChance(monster) * playerBlindMult() * enemyVeilHitMult()){
       if(!isOffhand) spawnCombatFloat('Miss', 'ft-miss', true);
+      if(!offlineCapture) combatLogPush({ dir:'miss', target:monster.name, off:isOffhand });
       addPhysiqueXp(physTierPairs([['agility',2]], monster.tierIndex));
       // The following class procs belong to the main-hand swing only (an off-hand Claw is pure extra DPS).
       if(!isOffhand){
@@ -14096,6 +14105,19 @@
     dmgToMonster += elementalRawHitDamage(enchTot, monster); // + Elemental Damage enchants (per-element, element-advantage scaled)
     if(!isOffhand) dmgToMonster += berserkerTitansHeftDmg(state); // Berserker Titan's Heft (Lv1): +2% of max HP as flat hit damage
     var _harden = enemyHardenMult(act); if(_harden !== 1) dmgToMonster = Math.max(1, Math.round(dmgToMonster * _harden)); // Hardened Hide (enemy special): your hit chips for less
+    // Combat log: record the hit dealt (with the full outgoing pipeline when Advanced is on).
+    if(!offlineCapture){
+      var _clOut = null;
+      if(advCombat()){
+        var _gear = quiverBonus * ringBonus * leatherBowBonus * chainMeleeBonus * (1 + relicBonus);
+        _clOut = 'roll ' + _rollMin + '–' + _rollMax + ' × physique ' + clRound(physDmgMult) + ' × type ' + clRound(advantage)
+          + ' × element ' + clRound(elementMult) + ' × prof ' + clRound(weaponProficiency) + ' × gear ' + clRound(_gear)
+          + ' × crit ' + clRound(critMult) + ' × class ' + clRound(playerDamageMultiplier(_dmgCtx))
+          + (_earthshake>1?' × earthshake '+clRound(_earthshake):'') + (_retribution>1?' × retribution '+clRound(_retribution):'') + (_riposte>1?' × riposte '+clRound(_riposte):'')
+          + ((enchTot.flatDamage||0)?' + flat '+Math.round(enchTot.flatDamage):'') + (_harden!==1?' × harden '+clRound(_harden):'') + ' = ' + fmt(dmgToMonster);
+      }
+      combatLogPush({ dir:'out', dmg:dmgToMonster, crit:isCrit, off:isOffhand, target:monster.name, detail:_clOut });
+    }
     var monsterHpBeforeHit = act.monsterHp;
     act.monsterHp -= dmgToMonster;
     // Immolate (Pyromancer D2 full): while the foe is at max Burn, each direct hit deals +20% as bonus fire.
@@ -14998,6 +15020,7 @@
     if(dodgeChance > 0 && Math.random() < dodgeChance){
       addLog('You dodged the ' + monster.name + '\'s attack!', 'important');
       spawnCombatFloat('Dodged', 'ft-miss', false);
+      if(!offlineCapture) combatLogPush({ dir:'dodge', target:monster.name });
       onPlayerDodged(); // Duelist: Lv 1 free familiar cast + Lv 20 Fleet Footwork stack
       return;
     }
@@ -15231,6 +15254,16 @@
     // Bastion (Herald full): cap any single blow at 25% of max Health before it reaches you.
     if(dmgToPlayer > 0 && setFull('herald')){ var _capped = bastionCapHit(dmgToPlayer, state); if(_capped < dmgToPlayer){ dmgToPlayer = _capped; spawnCombatFloat('Bastion!', 'ft-success', false); } }
     var _preHitHp = state.playerHp; // HP right before this swing lands (for the death chronicle's "final hit" line)
+    // Combat log: record the hit taken (with the full incoming mitigation pipeline when Advanced is on).
+    if(!offlineCapture){
+      var _clIn = null;
+      if(advCombat()){
+        _clIn = 'raw ' + fmt(Math.round(_atkRoll)) + ' → resist/floor ' + fmt(rawDmg) + (blocked ? ' (blocked)' : '')
+          + ' − armour ' + fmt(Math.round(armorDefense)) + (effectiveShieldDefense ? ' − shield ' + fmt(Math.round(effectiveShieldDefense)) : '')
+          + ' ÷ tenacity ' + clRound(tenacityLowHpMult(state)) + ' = ' + fmt(dmgToPlayer);
+      }
+      combatLogPush({ dir:'in', dmg:dmgToPlayer, blocked:blocked, target:monster.name, detail:_clIn });
+    }
     state.playerHp -= dmgToPlayer;
     // Soul Siphon (Demonspawn special): while active, a share of the damage it lands heals it.
     if(dmgToPlayer > 0 && enemySiphonActive(act) && act.monsterHp > 0){
@@ -21954,6 +21987,7 @@
     {key:'autoHarvest', cat:'qol', label:'Auto-harvest crops', desc:'Automatically harvest crops from your fields the moment they are ready.'},
     {key:'autoFertilize', cat:'qol', label:'Auto-fertilize crops', desc:'Automatically fertilize growing crops when you hold a matching-tier Fertilizer (doubles the yield).'},
     {key:'autoPlant', cat:'qol', label:'Auto-plant crops', desc:'Automatically replant empty fields, giving your best seeds to your best fields first.'},
+    {key:'advancedCombatLog', cat:'qol', label:'Advanced combat log', desc:'Expand the Combat chat tab so every hit also shows the full damage + mitigation pipeline (rolls, multipliers, armour, shield, tenacity).'},
     // Rarity-roll toggles: switch OFF Rare/Supreme/Fantastic rolls per tier band so crafting at those tiers
     // only yields Normal gear (keeps the bag -- and the Discord feed -- tidy). T20 always rolls.
     {key:'noRarityT0_5', cat:'qol', label:'No rarity rolls · T0–T5', desc:'Crafting at tier 0–5 always produces Normal gear (no Rare/Supreme/Fantastic rolls).'},
@@ -27671,6 +27705,38 @@
     invalidateContentCache();   // wrote into #content outside render()
     feedRenderStick(el, chronicleFeedHtml());
   }
+  // ---- Combat log: a blow-by-blow of every hit dealt/taken, shown as a Chat tab. Rolling ring buffer,
+  // NEVER recorded during the offline fast-forward sim (it would flood + slow the 200k-step loop). With the
+  // "Advanced combat log" QoL toggle on, each hit also carries the full damage / mitigation pipeline text.
+  var combatLog = [], COMBAT_LOG_MAX = 200;
+  function advCombat(){ return !!(state.settings && state.settings.advancedCombatLog); }
+  function clRound(n){ return Math.round((+n || 0) * 100) / 100; }   // 2dp for the pipeline multipliers
+  function combatLogPush(entry){
+    if(offlineCapture || !entry) return;
+    entry.t = Date.now();
+    combatLog.push(entry);
+    if(combatLog.length > COMBAT_LOG_MAX) combatLog = combatLog.slice(-COMBAT_LOG_MAX);
+    if(chatChannel === 'combat') combatLogRenderOnly();
+  }
+  function combatLogHtml(){
+    if(!combatLog.length) return '<div class="chat-empty">No combat yet — enter a fight to see the blow-by-blow.</div>';
+    return combatLog.slice(-120).map(function(e){
+      var time = e.t ? '<span class="chat-time">'+msgTime(e.t)+'</span> ' : '';
+      var line;
+      if(e.dir==='out') line = '<span class="cl-out">You hit '+escapeHtml(e.target||'the foe')+' for <b>'+fmt(e.dmg)+'</b>'+(e.crit?' <span class="cl-crit">CRIT</span>':'')+(e.off?' <span class="cl-tag">off-hand</span>':'')+'</span>';
+      else if(e.dir==='in') line = '<span class="cl-in">'+escapeHtml(e.target||'The foe')+' hit you for <b>'+fmt(e.dmg)+'</b>'+(e.blocked?' <span class="cl-tag">blocked</span>':'')+'</span>';
+      else if(e.dir==='miss') line = '<span class="cl-faint">You missed '+escapeHtml(e.target||'the foe')+'</span>';
+      else if(e.dir==='dodge') line = '<span class="cl-faint">You dodged '+escapeHtml(e.target||'the foe')+'</span>';
+      else line = '<span class="cl-faint">'+escapeHtml(e.text||'')+'</span>';
+      var detail = e.detail ? '<div class="cl-detail">'+escapeHtml(e.detail)+'</div>' : '';
+      return '<div class="log-entry cl-row cl-row-'+e.dir+'">'+time+line+detail+'</div>';
+    }).join('');
+  }
+  function combatLogRenderOnly(){
+    var el = document.getElementById('combatFeed'); if(!el) return;
+    invalidateContentCache();   // wrote into #content outside render()
+    feedRenderStick(el, combatLogHtml());
+  }
   function renderChatTab(){
     guildEnsureLoaded();
     var name = chatName();
@@ -27681,9 +27747,14 @@
     bar += '<button class="chat-channel-btn'+(chatChannel==='global'?' active':'')+'" data-action="guildChannel" data-channel="global">Global</button>';
     bar += '<button class="chat-channel-btn'+(chatChannel==='guild'?' active':'')+'" data-action="guildChannel" data-channel="guild" '+(inGuild?'':'disabled')+'>'+(inGuild?'['+escapeHtml(guildState.guild.tag)+'] Guild':'Guild')+'</button>';
     bar += '<button class="chat-channel-btn'+(chatChannel==='chronicle'?' active':'')+'" data-action="guildChannel" data-channel="chronicle">Chronicle</button>';
+    bar += '<button class="chat-channel-btn'+(chatChannel==='combat'?' active':'')+'" data-action="guildChannel" data-channel="combat">Combat</button>';
     bar += '</div>';
     if(chatChannel==='chronicle'){
       return bar + '<div class="chat-wrap"><div id="chronicleFeed" class="chat-messages log-list">'+chronicleFeedHtml()+'</div></div>';
+    }
+    if(chatChannel==='combat'){
+      var _cbHint = advCombat() ? '' : '<div class="chat-account" style="font-size:11px;">Turn on <b>Advanced combat log</b> in Settings &rsaquo; Quality of Life for the full damage &amp; mitigation breakdown.</div>';
+      return bar + '<div class="chat-wrap"><div id="combatFeed" class="chat-messages log-list">'+combatLogHtml()+'</div>'+_cbHint+'</div>';
     }
     if(chatChannel==='guild'){
       var ghtml = bar;
@@ -32132,7 +32203,7 @@
     guildDisband: function(btn, e){ if(confirm('Disband the guild? This permanently deletes it for every member.')) guildAct('disband'); },
     guildChannel: function(btn, e){
       var _ch = btn.getAttribute('data-channel');
-      chatChannel = (_ch==='guild' || _ch==='chronicle') ? _ch : 'global';
+      chatChannel = (_ch==='guild' || _ch==='chronicle' || _ch==='combat') ? _ch : 'global';
       if(chatChannel==='guild') guildChatMaybeSubscribe();
     },
     guildChatSend: function(btn, e){ guildChatSend(); },
@@ -32885,7 +32956,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.43.5';
+  var GAME_VERSION = '0.0.43.6';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -33021,6 +33092,7 @@
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
       GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, skillTabsByLabel:skillTabsByLabel,
       renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
+      combatLogPush:combatLogPush, combatLogHtml:combatLogHtml, advCombat:advCombat, _clReset:function(){ combatLog = []; }, _clGet:function(){ return combatLog; },
       chatMessagesHtml:chatMessagesHtml, chatRoleOf:chatRoleOf, chatIsMod:chatIsMod, chatIsOwner:chatIsOwner, chatMuteUntil:chatMuteUntil, chatAmIMuted:chatAmIMuted, chatMuteLabel:chatMuteLabel, renderChatModModal:renderChatModModal, renderChatModerationPanel:renderChatModerationPanel, chatNameFor:chatNameFor, titleName:titleName, profileCardBodyHtml:profileCardBodyHtml, renderPlayerProfileModal:renderPlayerProfileModal,
       _setChatMod:function(o){ o=o||{}; if(o.roles) chatRoles=o.roles; if(o.mutes) chatMutes=o.mutes; if(o.names) chatUserNames=o.names; if(o.titles) chatTitles=o.titles; if('myRole' in o) myChatRole=o.myRole; if('messages' in o) chatMessages=o.messages; if('authUser' in o) authUser=o.authUser; if('target' in o) chatModTarget=o.target; if('profileTarget' in o) playerProfileTarget=o.profileTarget; },
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
