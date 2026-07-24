@@ -1000,6 +1000,46 @@
     }
   });
 
+  // ---- Offline combat: passive HP Regen ticks per-step, matching the live loop (dies-on-logoff fix) ----
+  // Reported: a build whose only healing is HP Regen survives live fights but dies every time it logs off
+  // mid-combat. Cause: the offline sim front-loaded passive regen as a one-time lump, then took the whole
+  // away-window of hits with nothing healing in between. Fix: gate the lump to NON-combat, and tick base
+  // passive regen per sim step so it keeps pace with incoming damage exactly like the live loop.
+  suite('offline combat: passive hp regen keeps pace', function(){
+    var s = FF._state, sv = { act:s.activity, hp:s.playerHp };
+    var rabbit = FF.monsterById('wildlife_rabbit');            // a beast with no special (see wildlife suite)
+    var savedAtk = { spd:rabbit.attackSpeed, hp:rabbit.hp };
+    try {
+      // A) Logging off OUTSIDE combat still tops HP up in a single lump (unchanged behaviour).
+      s.activity = { type:null, tier:0 };
+      s.playerHp = 1;
+      FF.applyOfflineProgress(30*1000);
+      ok(s.playerHp > 1, 'non-combat log-off tops HP up from the passive-regen lump');
+
+      // B) Logging off IN combat must NOT front-load the lump. With an unresolvable foe the sim can't run,
+      //    so the only thing that could still move HP is the (now-gated) front-load -- HP must hold.
+      s.activity = { type:'combat', monsterId:'__no_such_monster__', monsterHp:10 };
+      s.playerHp = 1;
+      FF.applyOfflineProgress(30*1000);
+      eq(s.playerHp, 1, 'in-combat log-off no longer front-loads a full-window heal lump');
+
+      // C) A real offline fight against a foe that never gets to swing: base passive regen must tick per
+      //    step and heal the player. Before the fix nothing healed mid-fight, so a regen-only build died.
+      //    (A landed enemy hit always floors at >=1 dmg, so we stop the swing entirely rather than zero it:
+      //    a colossal attackSpeed means the swing timer never elapses inside the away window, and a colossal
+      //    HP pool means the player's own attacks never end the fight.)
+      rabbit.attackSpeed = 1e9; rabbit.hp = 1e12;
+      s.activity = { type:'combat', monsterId:'wildlife_rabbit', monsterHp:1e12 };
+      FF.clearEnemySpecialState(s.activity);
+      s.playerHp = 1;
+      FF.applyOfflineProgress(30*1000);
+      ok(s.playerHp > 1, 'offline combat regen heals per-step, matching the live mid-fight regen');
+    } finally {
+      rabbit.attackSpeed = savedAtk.spd; rabbit.hp = savedAtk.hp;
+      s.activity = sv.act; s.playerHp = sv.hp;
+    }
+  });
+
   // ---- Enemy specials: Elemental primal attacks (Chill / Blind / Purge / Veil + engine reuse) ----
   suite('enemy specials: elemental primal attacks', function(){
     var expect = { elemental_fire_elemental:'burn', elemental_magma_golem:'cinder', elemental_ice_elemental:'chill', elemental_frost_giant:'icycarapace', elemental_stone_golem:'petrify', elemental_air_elemental:'blind', elemental_astral_elemental:'purge', elemental_primal_elemental:'burn', elemental_void_elemental:'drain', elemental_elemental_titan:'veil' };
