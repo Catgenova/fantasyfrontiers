@@ -187,8 +187,8 @@ Deno.serve(async (req) => {
   // Auto-detection (see migrations 20260724210000 / 220000). A live client pushes progress every ~8s, so a
   // huge Δprogress in a SUB-2-MINUTE window is not a fast player -- it's an edited save. Offline returns don't
   // trip this: their elapsed is the whole away-window (>120s), so the same gain is spread over real time.
-  // SHADOW MODE: record the signal for owner review but DON'T clamp. Flip CLAMP_AUTOENFORCE to true only
-  // once the recorded signals confirm the threshold never fires on legit play. Best-effort: never fail a save.
+  // Records a signal always; also clamps when CLAMP_AUTOENFORCE is on (currently true). Best-effort: never
+  // fail a save on it.
   try {
     if (prev?.updated_at) {
       const elapsed = Date.now() - Date.parse(prev.updated_at as string);
