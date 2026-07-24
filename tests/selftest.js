@@ -1048,6 +1048,49 @@
     }
   });
 
+  // ---- Enemy specials: Demonspawn (Siphon / Frenzy / Chaos + engine reuse) ----------------
+  suite('enemy specials: demonspawn infernal attacks', function(){
+    var expect = { demonspawn_shade:'chill', demonspawn_tormentor:'shred', demonspawn_succubus:'weaken', demonspawn_soul_reaver:'siphon', demonspawn_infernal_beast:'frenzy', demonspawn_nether_fiend:'drain', demonspawn_chaos_spawn:'chaos' };
+    Object.keys(expect).forEach(function(id){ var m = FF.monsterById(id); ok(m && m.special && m.special.kind === expect[id], id + ' has the ' + expect[id] + ' special'); });
+    ok(FF.MONSTERS.filter(function(m){ return m.special && m.category==='demonspawn'; }).length === 7, 'exactly 7 demonspawn carry a special');
+
+    var s = FF._state, sv = { act:s.activity };
+    function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', monsterId:id, monsterHp:m.hp }; return m; }
+    try {
+      // Soul Siphon: a timed window during which the foe heals from its hits.
+      var reaver = fresh('demonspawn_soul_reaver'); FF.monsterSpecialFire(reaver);
+      ok(FF.enemySiphonActive(s.activity) && s.activity.siphonFrac === 0.5, 'Soul Siphon opens a 50% lifesteal window');
+      // Demonic Frenzy: no bonus at full HP, ramping as HP falls (faster + harder).
+      var beast = fresh('demonspawn_infernal_beast'); FF.monsterSpecialFire(beast);
+      s.activity.monsterHp = beast.hp; // full HP -> zero frenzy factor
+      ok(Math.abs(FF.enemyFrenzyFactor(s.activity, beast)) < 1e-9, 'no Frenzy bonus at full HP');
+      eq(FF.enemyFrenzySpeedMult(s.activity, beast), 1, 'at full HP the attack cadence is unchanged');
+      s.activity.monsterHp = 0; // near death -> max ramp
+      ok(Math.abs(FF.enemyFrenzyFactor(s.activity, beast) - 1) < 1e-9, 'full Frenzy factor at 0 HP');
+      ok(FF.enemyFrenzySpeedMult(s.activity, beast) < 1 && FF.enemyFrenzyDmgMult(s.activity, beast) > 1, 'a frenzied near-dead foe attacks faster and hits harder');
+      // Frenzy only applies while its window is active.
+      s.activity.enemyFrenzyUntil = 0;
+      eq(FF.enemyFrenzyDmgMult(s.activity, beast), 1, 'no Frenzy multiplier once the window lapses');
+      // Chaos Bolt: each fire lands exactly one of the engine effects (some player debuff or a heal).
+      var chaos = fresh('demonspawn_chaos_spawn');
+      var landed = false;
+      for(var ci=0; ci<40 && !landed; ci++){
+        FF.clearEnemySpecialState(s.activity); s.activity.monsterHp = chaos.hp - 1;
+        FF.monsterSpecialFire(chaos);
+        var a = s.activity;
+        if(FF.playerBurnActive(a) || FF.enemyWeakenMult()!==1 || FF.playerChillSlowMult(s)>1 || FF.playerFeared(a) || a.monsterHp > chaos.hp - 1) landed = true;
+      }
+      ok(landed, 'Chaos Bolt resolves into a real engine effect (burn / weaken / slow / fear / drain)');
+      // Reused engine kinds still map correctly on demonspawn.
+      fresh('demonspawn_succubus'); FF.monsterSpecialFire(FF.monsterById('demonspawn_succubus'));
+      ok(Math.abs(FF.enemyWeakenMult() - 0.75) < 1e-9, 'Curse of Weakness weakens you 25%');
+      // Descriptions.
+      ok(/Siphons/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.demonspawn_soul_reaver)) && /Frenzy/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.demonspawn_infernal_beast)) && /Chaos/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.demonspawn_chaos_spawn)), 'demonspawn descriptions summarise the effect');
+    } finally {
+      s.activity = sv.act;
+    }
+  });
+
   // ---- Gathering workshops (parallel to crafting workshops) -----------------------------
   suite('gathering workshops', function(){
     var w = FF.WORKSHOP_ITEMS;
