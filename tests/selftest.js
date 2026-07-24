@@ -1040,6 +1040,50 @@
     }
   });
 
+  // ---- Equipment & Stats: an equipped Relic's +% shows on BOTH Attack Damage and Armor --------------
+  // A Relic applies an always-on +% to damage AND armour in combat (dmg roll x (1+relic); armour x (1+relic)),
+  // but the stats panel used to omit it entirely, so the player couldn't see the relic doing anything. The
+  // panel now folds the bonus into both numbers and tags each row "(+X% relic)".
+  suite('stats panel: relic bonus shown on damage & armor', function(){
+    var s = FF._state;
+    var sv = { tier:s.equippedRelicTier, rar:s.equippedRelicRarity, uid:s.equippedRelicUid,
+               mh:s.equippedMainhand, mhTier:s.equippedMainhandTier, mhRar:s.equippedMainhandRarity, mhUid:s.equippedMainhandUid };
+    function armorOf(h){ var m = /Armor<\/span><span class="stat-value">([\d.]+)/.exec(h); return m ? parseFloat(m[1]) : null; }
+    function dmgMaxOf(h){ var m = /Attack Damage<\/span><span class="stat-value">(\d+)-(\d+)/.exec(h); return m ? parseInt(m[2],10) : null; }
+    try {
+      // A real T10 Greatsword (a stackable weapon -> equippedMainhandTier): base damage big enough that a
+      // +10% relic clearly moves the rounded number (a bare-Fists weapon rounds the 10% away, which would
+      // make the "damage rises" check meaningless).
+      s.equippedMainhand = 'greatsword'; s.equippedMainhandTier = 10; s.equippedMainhandRarity = 'normal'; s.equippedMainhandUid = null;
+
+      // Baseline: no relic -> no bonus, no tag.
+      s.equippedRelicUid = null; s.equippedRelicTier = 0; s.equippedRelicRarity = 'normal';
+      eq(FF.getEquippedRelicBonus(s), 0, 'no relic equipped -> zero bonus');
+      var htmlNo = FF.renderCombatStatsPanel();
+      ok(!/% relic\)/.test(htmlNo), 'no relic -> the panel carries no "% relic" tag');
+      var armorNo = armorOf(htmlNo), dmgNo = dmgMaxOf(htmlNo);
+      ok(dmgNo !== null && dmgNo > 0, 'panel reports a positive Attack Damage');
+
+      // Equip a T5 (index 4) normal relic: (4+1)*0.02 = +10% to damage and armour.
+      s.equippedRelicTier = 5; s.equippedRelicRarity = 'normal'; s.equippedRelicUid = null;
+      var bonus = FF.getEquippedRelicBonus(s);
+      near(bonus, 0.10, 'a T5 normal relic is a +10% bonus', 1e-9);
+      var htmlYes = FF.renderCombatStatsPanel();
+      ok(/\(\+10% relic\)/.test(htmlYes), 'the panel now tags the relic bonus "(+10% relic)"');
+      var dmgYes = dmgMaxOf(htmlYes);
+      ok(dmgYes > dmgNo, 'displayed Attack Damage rises once a relic is equipped');
+      // Armour only shows a value when armour is worn; check the scaling only if there is a base to scale.
+      var armorYes = armorOf(htmlYes);
+      if(armorNo && armorNo > 0){
+        ok(armorYes > armorNo, 'displayed Armor rises once a relic is equipped');
+        near(armorYes, armorNo * 1.10, 'displayed Armor scales by the relic bonus', Math.max(0.1, armorNo*0.005));
+      }
+    } finally {
+      s.equippedRelicTier = sv.tier; s.equippedRelicRarity = sv.rar; s.equippedRelicUid = sv.uid;
+      s.equippedMainhand = sv.mh; s.equippedMainhandTier = sv.mhTier; s.equippedMainhandRarity = sv.mhRar; s.equippedMainhandUid = sv.mhUid;
+    }
+  });
+
   // ---- Enemy specials: Elemental primal attacks (Chill / Blind / Purge / Veil + engine reuse) ----
   suite('enemy specials: elemental primal attacks', function(){
     var expect = { elemental_fire_elemental:'burn', elemental_magma_golem:'cinder', elemental_ice_elemental:'chill', elemental_frost_giant:'icycarapace', elemental_stone_golem:'petrify', elemental_air_elemental:'blind', elemental_astral_elemental:'purge', elemental_primal_elemental:'burn', elemental_void_elemental:'drain', elemental_elemental_titan:'veil' };
