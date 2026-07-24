@@ -84,6 +84,17 @@ Deno.serve(async (req) => {
     };
   }
 
+  // Item-key allowlist (item_catalog): reject made-up item keys so a tampered client can't bank a fake
+  // item (stackable deposit is already ledger-gated by item_debit, but deposit_unique is client-
+  // authoritative and bypasses the ledger entirely -- its `base` must still be a real catalogued item).
+  // Enforced only once the catalog is SEEDED; an empty catalog gates nothing (safe deploy window).
+  async function catalogRejects(key: string): Promise<boolean> {
+    const { data: hit } = await admin.from("item_catalog").select("item_key").eq("item_key", key).maybeSingle();
+    if (hit) return false;                                   // known item -> allowed
+    const { data: seeded } = await admin.from("item_catalog").select("item_key").limit(1);
+    return !!(seeded && seeded.length);                      // populated but absent -> reject; empty -> allow
+  }
+
   if (action === "get") {
     return json({ ok: true, ...(await snapshot()) });
   }
@@ -93,6 +104,7 @@ Deno.serve(async (req) => {
     const qty = Number(body.qty);
     if (!KEY_RE.test(key)) return json({ ok: false, error: "Invalid item." }, 400);
     if (!Number.isInteger(qty) || qty <= 0 || qty > MAX_QTY) return json({ ok: false, error: "Invalid quantity." }, 400);
+    if (await catalogRejects(key)) return json({ ok: false, error: "That item can’t be banked.", code: "badkey" }, 400);
     // Take the items from the depositor's server ledger first, so minted/spoofed items can't fill the
     // shared vault. Refund to the ledger if the deposit then fails (full / error / rejected).
     const { data: held } = await admin.rpc("item_debit", { p_user: user.id, p_key: key, p_qty: qty });
@@ -115,12 +127,13 @@ Deno.serve(async (req) => {
     const qty = Number(body.qty);
     if (!KEY_RE.test(key)) return json({ ok: false, error: "Invalid item." }, 400);
     if (!Number.isInteger(qty) || qty <= 0 || qty > MAX_QTY) return json({ ok: false, error: "Invalid quantity." }, 400);
-    const { data: r, error } = await admin.rpc("guild_bank_withdraw", { p_guild: guildId, p_key: key, p_qty: qty });
+    // guild_bank_withdraw_tx drains the vault AND credits the withdrawer's ledger in ONE transaction, so a
+    // mid-withdraw failure can't remove the item from the shared vault without delivering it. No separate
+    // item_credit here anymore -- the RPC did it.
+    const { data: r, error } = await admin.rpc("guild_bank_withdraw_tx", { p_guild: guildId, p_user: user.id, p_key: key, p_qty: qty });
     if (error) return json({ ok: false, error: "Withdraw failed." }, 500);
     if (r === "short") return json({ ok: false, error: "Not enough of that item in the bank.", code: "short" }, 409);
     if (r !== "ok") return json({ ok: false, error: "Withdraw rejected." }, 400);
-    // The withdrawn items become real ledger stock for the withdrawer (verified transfer).
-    await admin.rpc("item_credit", { p_user: user.id, p_key: key, p_qty: qty });
     return json({ ok: true, granted: qty, ...(await snapshot()) });
   }
 
@@ -136,6 +149,10 @@ Deno.serve(async (req) => {
     const tier = Number(u.tier);
     const enhance = Number(u.enhance) || 0;
     if (!KEY_RE.test(base)) return json({ ok: false, error: "Invalid item." }, 400);
+    // Uniques are client-authoritative (not in the item ledger), so the `base` is the one identity the
+    // server CAN verify: reject a made-up base outright. Every real unique's base is a catalogued
+    // equipment key (stackable weapon/shield/ward, body armour, etc.), so this never blocks legit gear.
+    if (await catalogRejects(base)) return json({ ok: false, error: "That item can’t be banked.", code: "badkey" }, 400);
     if (!["normal", "rare", "supreme", "fantastic"].includes(rarity)) return json({ ok: false, error: "Invalid item." }, 400);
     if (!Number.isInteger(tier) || tier < 0 || tier > 40) return json({ ok: false, error: "Invalid item." }, 400);
     // Enchants: an array of { mod:string, roll:number }, capped so the blob stays small.
@@ -213,15 +230,15 @@ Deno.serve(async (req) => {
     }
     const amount = Number(body.amount);
     if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_QTY) return json({ ok: false, error: "Invalid amount." }, 400);
-    const { data: r, error } = await admin.rpc("guild_treasury_withdraw", { p_guild: guildId, p_amount: amount });
+    // guild_treasury_withdraw_tx debits the treasury AND credits the withdrawer's wallet in ONE
+    // transaction, so a mid-withdraw failure can't remove gold from the treasury without delivering it.
+    // No separate wallet_credit here anymore -- the RPC did it.
+    const { data: r, error } = await admin.rpc("guild_treasury_withdraw_tx", { p_guild: guildId, p_user: user.id, p_amount: amount });
     if (error) return json({ ok: false, error: "Withdraw failed." }, 500);
     const res = r as { status?: string; granted?: number };
     if (res?.status === "short") return json({ ok: false, error: "Not enough gold in the treasury.", code: "short" }, 409);
     if (res?.status !== "ok") return json({ ok: false, error: "Withdraw rejected." }, 400);
-    // Credit the withdrawn gold into the withdrawer's server-authoritative wallet so it's real,
-    // spendable balance (not just a client-side number). Unthrottled: it's a verified transfer.
     const granted = Number(res.granted);
-    if (granted > 0) await admin.rpc("wallet_credit", { p_user: user.id, p_amount: granted });
     return json({ ok: true, granted, ...(await snapshot()) });
   }
 
