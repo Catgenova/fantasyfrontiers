@@ -3418,7 +3418,17 @@
     demonspawn_soul_reaver:    { id:'siphon',   name:'Soul Siphon',       kind:'siphon', chargeMs:13000, durMs:6000, frac:0.50 },
     demonspawn_infernal_beast: { id:'frenzy',   name:'Demonic Frenzy',    kind:'frenzy', chargeMs:12000, durMs:20000 },
     demonspawn_nether_fiend:   { id:'lifedrain',name:'Life Drain',        kind:'drain',  chargeMs:13000, durMs:5000, pctPerSec:0.15, healPct:0.08, word:'Draining' },
-    demonspawn_chaos_spawn:    { id:'chaos',    name:'Chaos Bolt',        kind:'chaos',  chargeMs:11000 }
+    demonspawn_chaos_spawn:    { id:'chaos',    name:'Chaos Bolt',        kind:'chaos',  chargeMs:11000 },
+    // Kinsworn: disciplined oath/blood warriors. Mostly engine reuse (Bleed / Weaken / Chill / Shred /
+    // Harden) plus two new martial self-buffs -- Rally (a timed damage boost) and Oathbound Might (a
+    // permanent damage step that stacks each fire).
+    kinsworn_sworn_scout:     { id:'hamstring', name:'Hamstring',       kind:'chill',  chargeMs:12000, durMs:6000, slowPct:0.30 },
+    kinsworn_oath_knight:     { id:'disarm',    name:'Disarm',          kind:'weaken', chargeMs:12000, durMs:6000, mult:0.65 },
+    kinsworn_blood_sworn:     { id:'rupture',   name:'Rupture',         kind:'bleed',  chargeMs:11000, durMs:6000, pctPerSec:0.15, maxStacks:4 },
+    kinsworn_sworn_berserker: { id:'sunder',    name:'Sunder Armor',    kind:'shred',  chargeMs:12000, durMs:8000, mult:1.30 },
+    kinsworn_sworn_champion:  { id:'rally',     name:'Rally',           kind:'rally',  chargeMs:12000, durMs:6000, mult:1.30 },
+    kinsworn_kinsworn_guard:  { id:'shieldwall',name:'Shield Wall',     kind:'harden', chargeMs:12000, durMs:5000, mult:0.50 },
+    kinsworn_oath_vanguard:   { id:'might',     name:'Oathbound Might', kind:'might',  chargeMs:11000, per:0.10, maxStacks:5 }
   };
   var MONSTERS = WILDLIFE_MONSTERS.concat(ELEMENTAL_MONSTERS).concat(DEMONSPAWN_MONSTERS).concat(KINSWORN_MONSTERS);
   MONSTERS.forEach(function(m){ if(MONSTER_SPECIALS[m.id]) m.special = MONSTER_SPECIALS[m.id]; }); // wildlife + elemental specials
@@ -14550,6 +14560,10 @@
   function enemyFrenzyDmgMult(act, monster){ return 1 + FRENZY_MAX_DMG * enemyFrenzyFactor(act, monster); }     // >1 = harder hits
   // Soul Siphon: while active, a share of the damage the beast lands on you heals it.
   function enemySiphonActive(act){ return !!(act && (act.enemySiphonUntil||0) > Date.now()); }
+  // Rally (Kinsworn): a TIMED flat boost to the foe's outgoing damage. Oathbound Might: a PERMANENT
+  // (per-fight) stacking boost. Both multiply the swing, alongside Frenzy.
+  function enemyRallyDmgMult(act){ return (act && (act.enemyRallyUntil||0) > Date.now()) ? (act.enemyRallyMult||1) : 1; }
+  function enemyMightDmgMult(act){ return act ? (1 + (act.enemyMightPer||0) * (act.enemyMightStacks||0)) : 1; }
   // Chill (Frost Bite / Icy Carapace / Petrify): a multiplier ON your attack interval (>1 = slower).
   function playerChillSlowMult(st){ st = st||state; var a = st.activity; return (a && (a.pChillUntil||0) > Date.now()) ? (1 + (a.pChillSlow||0)) : 1; }
   // Blind (Sandblast) + Veil (Umbral Veil): multipliers ON your hit chance at the miss roll (<1 = more misses).
@@ -14580,6 +14594,7 @@
     act.enemyHardenUntil = 0; act.enemyHardenMult = 1;
     act.enemyVeilUntil = 0; act.enemyVeilHit = 1;
     act.enemyFrenzyUntil = 0; act.enemySiphonUntil = 0;
+    act.enemyRallyUntil = 0; act.enemyMightStacks = 0;
   }
   // Human-readable summary of a beast's special, for the enemy card so players can anticipate it.
   function monsterSpecialDesc(sp){
@@ -14603,6 +14618,8 @@
     if(sp.kind==='siphon') return 'Siphons your soul — its hits heal it ' + Math.round(sp.frac*100) + '% of the damage dealt';
     if(sp.kind==='frenzy') return 'flies into a Frenzy — up to +' + Math.round(FRENZY_MAX_HASTE*100) + '% attack speed and +' + Math.round(FRENZY_MAX_DMG*100) + '% damage as its HP falls';
     if(sp.kind==='chaos')  return 'unleashes Chaos — a random curse each time (burn / weaken / slow / fear / drain)';
+    if(sp.kind==='rally')  return 'Rallies — +' + Math.round((sp.mult-1)*100) + '% to its own damage for a while';
+    if(sp.kind==='might')  return 'builds Oathbound Might — +' + Math.round(sp.per*100) + '% damage per stack (to +' + Math.round(sp.per*sp.maxStacks*100) + '%), and it keeps them';
     return '';
   }
   // Fire a beast's special: apply its abnormal effect, telegraphed by a log + float. DoT dps scales with
@@ -14705,6 +14722,14 @@
       ];
       addLog('The ' + monster.name + ' unleashes raw Chaos — reality twists!', 'danger');
       monsterSpecialFire(monster, _chaosOpts[Math.floor(Math.random()*_chaosOpts.length)]);
+    } else if(sp.kind==='rally'){
+      act.enemyRallyUntil = now + sp.durMs; act.enemyRallyMult = sp.mult;
+      addLog('The ' + monster.name + ' sounds a Rally — its blows hit harder!', 'important');
+      if(!offlineCapture) spawnCombatFloat('Rally!', 'ft-crit', true);
+    } else if(sp.kind==='might'){
+      act.enemyMightStacks = Math.min(sp.maxStacks||5, (act.enemyMightStacks||0) + 1); act.enemyMightPer = sp.per;
+      addLog('The ' + monster.name + ' swells with Oathbound Might (x' + act.enemyMightStacks + ') — its strikes grow stronger!', 'important');
+      if(!offlineCapture) spawnCombatFloat('Might x' + act.enemyMightStacks, 'ft-crit', true);
     }
     needsRender = true;
   }
@@ -14842,7 +14867,7 @@
 
     // The hit lands its physical type AND the enemy's element together: the element is amplified by
     // the player's armor weakness to it (leather->fire, chain->earth, plate->water).
-    var _atkRoll = randInt(monster.atkMin, monster.atkMax) * enemyFrenzyDmgMult(act, monster); // Demonic Frenzy ramps the swing as its HP falls
+    var _atkRoll = randInt(monster.atkMin, monster.atkMax) * enemyFrenzyDmgMult(act, monster) * enemyRallyDmgMult(act) * enemyMightDmgMult(act); // Frenzy (HP-scaled) x Rally (timed) x Oathbound Might (stacking) all raise the swing
     // Single source: incomingDamageMult() owns the whole reduction chain (see its definition). The old
     // ~20-term expression lived here AND was mirrored in the enemy-card preview; both now call one fn.
     var rawDmg = Math.round(_atkRoll * incomingDamageMult(state, monster, monster.attackTypes));
@@ -19663,6 +19688,8 @@
     add('veil', a.enemyVeilUntil, 'Umbral Veil', '#8a5fb0'); // Elemental Titan: it dodges more
     add('frenzy', a.enemyFrenzyUntil, 'Frenzied', '#c8302a'); // Infernal Beast: faster + harder as it weakens
     add('siphon', a.enemySiphonUntil, 'Soul Siphon', '#8a5fb0'); // Soul Reaver: its hits heal it
+    add('rally', a.enemyRallyUntil, 'Rallied', '#c8a24a'); // Sworn Champion: timed +damage
+    if((a.enemyMightStacks||0) > 0) out.push({key:'might', name:'Oathbound Might', color:'#c8a24a', stacks:a.enemyMightStacks, cap:5}); // Oath Vanguard: permanent stacking +damage
     add('eslow', fb.enemySlowUntil, 'Slowed', '#7a8aa0');
     add('eweak', fb.enemyWeakenUntil, 'Weakened', '#8a97a6');
     add('fpoison', fb.poisonUntil, 'Poisoned', '#6fae3a');
@@ -31968,7 +31995,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.42.2';
+  var GAME_VERSION = '0.0.42.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -32165,7 +32192,7 @@
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, sentinelReflectSourceName:sentinelReflectSourceName, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeRuneHungerMult:spellbladeRuneHungerMult, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, spellbladeEchoChance:spellbladeEchoChance, equippedEnchantCount:equippedEnchantCount, spellbladeEnchantBoost:spellbladeEnchantBoost, SPELLBLADE_RUNEHUNGER_PER:SPELLBLADE_RUNEHUNGER_PER, SPELLBLADE_CRITRUNE_PER:SPELLBLADE_CRITRUNE_PER, SPELLBLADE_ECHO_PCT:SPELLBLADE_ECHO_PCT, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, incomingDamageMult:incomingDamageMult, incomingMitigationFloor:incomingMitigationFloor, INCOMING_FLOOR_FRAC:INCOMING_FLOOR_FRAC, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, combatShieldTotal:combatShieldTotal, rollCraftRarity:rollCraftRarity, rarityRollDisabledForTier:rarityRollDisabledForTier, SETTINGS_TOGGLES:SETTINGS_TOGGLES, clampPlayerHpToMax:clampPlayerHpToMax, legendaryDmgMult:legendaryDmgMult, legendaryDodgeBonus:legendaryDodgeBonus, legendaryLifestealPct:legendaryLifestealPct, legWastingCurseIncomingMult:legWastingCurseIncomingMult, legNotePoisonStart:legNotePoisonStart, legVanishWindowReady:legVanishWindowReady, samuraiFocusCap:samuraiFocusCap, knightMomentumPerStack:knightMomentumPerStack, legDistinctEnchantCount:legDistinctEnchantCount, legEchoDmgMult:legEchoDmgMult, legShieldBashDamage:legShieldBashDamage, legReflectCanCrit:legReflectCanCrit, legReflectCritMult:legReflectCritMult, legendaryCritDmg:legendaryCritDmg, legEarthshakerBuild:legEarthshakerBuild, legEarthshakerConsume:legEarthshakerConsume, LEG_TREMOR_CAP:LEG_TREMOR_CAP, LEG_TREMOR_MULT:LEG_TREMOR_MULT, CRIT_DAMAGE_MULT:CRIT_DAMAGE_MULT, legendaryAccuracyBonus:legendaryAccuracyBonus, legRangerAilmentRolls:legRangerAilmentRolls, LEG_CHAINSHOT_MAX:LEG_CHAINSHOT_MAX, legendaryCritChance:legendaryCritChance, legThunderMaxStacks:legThunderMaxStacks, legRetributionArmed:legRetributionArmed, legRetributionConsume:legRetributionConsume, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, heraldGuardMaxStacks:heraldGuardMaxStacks, HERALD_GUARD_MAX_STACKS:HERALD_GUARD_MAX_STACKS, HERALD_GUARD_PER_STACK:HERALD_GUARD_PER_STACK, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legChargedRiposteArmed:legChargedRiposteArmed, legChargedRiposteConsume:legChargedRiposteConsume, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, applyReaperWitherTick:applyReaperWitherTick,
       MONSTER_SPECIALS:MONSTER_SPECIALS, monsterSpecialFire:monsterSpecialFire, monsterSpecialDesc:monsterSpecialDesc, clearEnemySpecialState:clearEnemySpecialState, playerDotDps:playerDotDps, playerDotTick:playerDotTick, playerBleedActive:playerBleedActive, playerPoisonActive:playerPoisonActive, playerFeared:playerFeared, enemyWeakenMult:enemyWeakenMult, playerShredMult:playerShredMult, enemyHardenMult:enemyHardenMult,
       playerBurnActive:playerBurnActive, playerChillSlowMult:playerChillSlowMult, playerBlindMult:playerBlindMult, enemyVeilHitMult:enemyVeilHitMult, purgePlayerBuff:purgePlayerBuff,
-      enemyFrenzyFactor:enemyFrenzyFactor, enemyFrenzySpeedMult:enemyFrenzySpeedMult, enemyFrenzyDmgMult:enemyFrenzyDmgMult, enemySiphonActive:enemySiphonActive, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
+      enemyFrenzyFactor:enemyFrenzyFactor, enemyFrenzySpeedMult:enemyFrenzySpeedMult, enemyFrenzyDmgMult:enemyFrenzyDmgMult, enemySiphonActive:enemySiphonActive, enemyRallyDmgMult:enemyRallyDmgMult, enemyMightDmgMult:enemyMightDmgMult, maxHp:maxHp, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, assassinRhythmRegister:assassinRhythmRegister, ASSASSIN_RHYTHM_MAX:ASSASSIN_RHYTHM_MAX, assassinApplyLacerate:assassinApplyLacerate, assassinLacerateMaxStacks:assassinLacerateMaxStacks, ASSASSIN_BLEED_MAX:ASSASSIN_BLEED_MAX, assassinHemorrhageCritMult:assassinHemorrhageCritMult, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, RELIC_ITEMS:RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,

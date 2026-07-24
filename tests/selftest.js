@@ -1091,6 +1091,45 @@
     }
   });
 
+  // ---- Enemy specials: Kinsworn (Rally / Oathbound Might + engine reuse) ------------------
+  suite('enemy specials: kinsworn martial attacks', function(){
+    var expect = { kinsworn_sworn_scout:'chill', kinsworn_oath_knight:'weaken', kinsworn_blood_sworn:'bleed', kinsworn_sworn_berserker:'shred', kinsworn_sworn_champion:'rally', kinsworn_kinsworn_guard:'harden', kinsworn_oath_vanguard:'might' };
+    Object.keys(expect).forEach(function(id){ var m = FF.monsterById(id); ok(m && m.special && m.special.kind === expect[id], id + ' has the ' + expect[id] + ' special'); });
+    ok(FF.MONSTERS.filter(function(m){ return m.special && m.category==='kinsworn'; }).length === 7, 'exactly 7 kinsworn carry a special');
+    // And the whole roster is exactly 7+10+7+7 = 31 specials across four families.
+    ok(FF.MONSTERS.filter(function(m){ return m.special; }).length === 31, 'all four families total 31 specials');
+
+    var s = FF._state, sv = { act:s.activity };
+    function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', monsterId:id, monsterHp:m.hp }; return m; }
+    try {
+      // Rally -> a TIMED flat boost to the foe's outgoing damage.
+      var champ = fresh('kinsworn_sworn_champion'); FF.monsterSpecialFire(champ);
+      ok(Math.abs(FF.enemyRallyDmgMult(s.activity) - 1.30) < 1e-9, 'Rally gives the foe +30% damage');
+      s.activity.enemyRallyUntil = 0;
+      eq(FF.enemyRallyDmgMult(s.activity), 1, 'the Rally boost lapses with its window');
+      // Oathbound Might -> a PERMANENT stacking damage boost, capped, that persists (no timer).
+      var van = fresh('kinsworn_oath_vanguard');
+      eq(FF.enemyMightDmgMult(s.activity), 1, 'no Might before it fires');
+      FF.monsterSpecialFire(van);
+      ok(Math.abs(FF.enemyMightDmgMult(s.activity) - 1.10) < 1e-9 && s.activity.enemyMightStacks === 1, 'one Oathbound Might stack = +10% damage');
+      for(var k=0;k<10;k++) FF.monsterSpecialFire(van); // spam past the cap
+      eq(s.activity.enemyMightStacks, 5, 'Oathbound Might caps at 5 stacks');
+      ok(Math.abs(FF.enemyMightDmgMult(s.activity) - 1.50) < 1e-9, 'capped Might = +50% damage');
+      // Rupture -> a stacking player Bleed (reuses the engine, to x4 here).
+      fresh('kinsworn_blood_sworn'); var bloodM = FF.monsterById('kinsworn_blood_sworn');
+      FF.monsterSpecialFire(bloodM); FF.monsterSpecialFire(bloodM);
+      ok(FF.playerBleedActive(s.activity) && s.activity.pBleedStacks === 2, 'Rupture stacks Bleed on you');
+      // clearEnemySpecialState wipes the martial self-buffs too (fresh foe).
+      FF.clearEnemySpecialState(s.activity);
+      eq(FF.enemyMightDmgMult(s.activity), 1, 'a fresh foe resets Oathbound Might');
+      eq(FF.enemyRallyDmgMult(s.activity), 1, 'a fresh foe resets Rally');
+      // Descriptions.
+      ok(/Rallies/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.kinsworn_sworn_champion)) && /Oathbound Might/.test(FF.monsterSpecialDesc(FF.MONSTER_SPECIALS.kinsworn_oath_vanguard)), 'kinsworn descriptions summarise the effect');
+    } finally {
+      s.activity = sv.act;
+    }
+  });
+
   // ---- Gathering workshops (parallel to crafting workshops) -----------------------------
   suite('gathering workshops', function(){
     var w = FF.WORKSHOP_ITEMS;
