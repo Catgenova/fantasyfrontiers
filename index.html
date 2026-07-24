@@ -687,7 +687,9 @@
   .chat-mod-badge{font-size:10px;font-weight:700;margin-right:4px;vertical-align:1px;}
   .chat-mod-owner{color:var(--gold);}
   .chat-mod-moderator{color:var(--cat-chat);}
+  .chat-title{font-size:10px;color:var(--gold);font-style:italic;margin-right:5px;vertical-align:1px;}
   .chat-muted-tag{font-size:11px;margin-right:5px;opacity:0.8;}
+  .profile-title{color:var(--gold);font-style:italic;font-size:13px;margin-top:2px;}
   .chat-mod-btn{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:13px;line-height:1;padding:0 5px;margin-right:4px;}
   .chat-mod-btn:hover{color:var(--gold);}
   .chat-empty{margin:auto;color:var(--text-faint);font-style:italic;}
@@ -1729,6 +1731,7 @@
   <div id="trackerPickerOverlay"></div>
   <div id="towerPreviewOverlay"></div>
   <div id="chatModOverlay"></div>
+  <div id="playerProfileOverlay"></div>
   <div id="peonPickerOverlay"></div>
   <div class="ff-topbar" id="ffTopbar"></div>
   <div class="ff-ticker" id="ffTicker"><span class="ff-ticker-ico" aria-hidden="true">💡</span><div class="ff-ticker-view"><span class="ff-ticker-text" id="ffTickerText"></span></div></div>
@@ -26181,10 +26184,24 @@
   var chatRoles = {};        // uid -> 'owner' | 'moderator'
   var chatMutes = {};        // uid -> muted_until (epoch ms), active mutes only
   var chatUserNames = {};    // uid -> username, for the owner's Moderation panel lists
+  var chatTitles = {};       // uid -> equipped title id ('' once fetched with none), for the tag next to chat names
   var myChatRole = null;     // this player's chat role, or null
   var chatModTarget = null;  // { mid, uid, name } while the moderate-player modal is open
   function chatRoleOf(uid){ return uid ? (chatRoles[uid] || null) : null; }
   function chatNameFor(uid){ return chatUserNames[uid] || (uid ? (String(uid).slice(0,8)+'…') : '?'); }
+  // Fetch equipped titles for chat posters (once per uid) so a title tag can sit next to their name.
+  // Reads the public leaderboard view; errors (e.g. pre-migration) just leave the tag off.
+  function chatFetchTitles(uids){
+    if(!CHAT_ENABLED || !chatClient || !uids || !uids.length) return;
+    var need = uids.filter(function(u){ return u && !(u in chatTitles); });
+    if(!need.length) return;
+    chatClient.from('leaderboard').select('id,title').in('id', need).then(function(res){
+      var byId = {};
+      if(res && !res.error && res.data){ res.data.forEach(function(row){ byId[row.id] = row.title || ''; }); }
+      need.forEach(function(u){ chatTitles[u] = byId[u] || ''; });  // mark fetched (empty if none/errored) so we don't re-query
+      if(chatChannel==='global') chatRenderMessagesOnly();
+    }, function(){ need.forEach(function(u){ chatTitles[u] = ''; }); });
+  }
   function chatIsMod(){ return myChatRole === 'owner' || myChatRole === 'moderator'; }
   function chatIsOwner(){ return myChatRole === 'owner'; }
   function chatMuteUntil(uid){ var u = uid && chatMutes[uid]; return (u && u > Date.now()) ? u : 0; }
@@ -26268,40 +26285,95 @@
       chatModLoad().then(function(){ needsRender = true; if(gameStarted) render(); });
     }, function(){ addLog('Moderation action failed.', 'danger'); });
   }
-  function openChatModModal(t){ if(!chatIsMod()) return; chatModTarget = t; renderChatModModal(); }
+  // The per-player actions menu (the chat "⋯"), open to EVERYONE. View Profile is universal; the
+  // moderation block only renders for a mod/owner. Guild invite lands here in a later update.
+  function openChatModModal(t){ if(!t || !t.uid) return; chatModTarget = t; renderChatModModal(); }
   function closeChatModModal(){ chatModTarget = null; renderChatModModal(); }
   function renderChatModModal(){
     var ov = document.getElementById('chatModOverlay'); if(!ov) return;
     var t = chatModTarget;
-    if(!t || !t.uid || !chatIsMod()){ ov.className = ''; ov.innerHTML = ''; return; }
+    if(!t || !t.uid){ ov.className = ''; ov.innerHTML = ''; return; }
     var uid = t.uid, name = t.name || 'this player';
-    var targetRole = chatRoleOf(uid), muted = chatMuteUntil(uid), iAmOwner = chatIsOwner();
+    var targetRole = chatRoleOf(uid), _title = titleName(chatTitles[uid]);
     var html = '<div class="familiar-popup-card" style="max-width:340px;text-align:left;">';
-    html += '<div class="familiar-popup-title" style="text-align:center;">Moderate ' + escapeHtml(name) + '</div>';
-    if(targetRole) html += '<div class="empty-note" style="text-align:center;margin:-4px 0 8px;">' + (targetRole==='owner'?'Owner':'Moderator') + '</div>';
-    if(targetRole && !iAmOwner){
-      html += '<div class="empty-note">Only the owner can moderate a ' + escapeHtml(targetRole) + '.</div>';
-    } else {
-      if(t.mid != null) html += '<button class="action-btn stop" data-action="chatModDelete" data-mid="' + escapeHtml(String(t.mid)) + '">Delete this message</button>';
-      if(muted){
-        html += '<div class="inputs-line" style="margin-top:8px">Muted ' + escapeHtml(chatMuteLabel(muted)) + '.</div>';
-        html += '<button class="action-btn" data-action="chatModUnmute" data-uid="' + escapeHtml(uid) + '">Unmute</button>';
+    html += '<div class="familiar-popup-title" style="text-align:center;">' + escapeHtml(name) + '</div>';
+    var sub = [];
+    if(_title) sub.push(escapeHtml(_title));
+    if(targetRole) sub.push(targetRole==='owner'?'Owner':'Moderator');
+    if(sub.length) html += '<div class="empty-note" style="text-align:center;margin:-4px 0 8px;">' + sub.join(' &bull; ') + '</div>';
+    // Everyone: view this player's public profile.
+    html += '<button class="action-btn" data-action="chatViewProfile" data-uid="' + escapeHtml(uid) + '" data-name="' + escapeHtml(name) + '">View Profile</button>';
+    // Moderators/owner: the silence / delete / role controls (same protections as before).
+    if(chatIsMod()){
+      var muted = chatMuteUntil(uid), iAmOwner = chatIsOwner();
+      html += '<div class="inputs-line" style="margin-top:12px;color:var(--gold);">Moderation</div>';
+      if(targetRole && !iAmOwner){
+        html += '<div class="empty-note">Only the owner can moderate a ' + escapeHtml(targetRole) + '.</div>';
       } else {
-        html += '<div class="inputs-line" style="margin-top:10px">Silence ' + escapeHtml(name) + ':</div>';
-        html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">';
-        [['10 min',10],['1 hour',60],['1 day',1440],['1 week',10080]].forEach(function(p){
-          html += '<button class="mini-btn" data-action="chatModMute" data-uid="' + escapeHtml(uid) + '" data-min="' + p[1] + '">' + p[0] + '</button>';
-        });
-        html += '</div>';
-        html += '<button class="action-btn stop" data-action="chatModMute" data-uid="' + escapeHtml(uid) + '" data-min="5256000" style="margin-top:6px">Chat-ban (permanent)</button>';
-      }
-      if(iAmOwner && targetRole !== 'owner'){
-        html += '<div class="inputs-line" style="margin-top:12px">Role:</div>';
-        if(targetRole === 'moderator') html += '<button class="mini-btn" data-action="chatModSetRole" data-uid="' + escapeHtml(uid) + '" data-role="none">Remove Moderator</button>';
-        else html += '<button class="mini-btn" data-action="chatModSetRole" data-uid="' + escapeHtml(uid) + '" data-role="moderator">Make Moderator</button>';
+        if(t.mid != null) html += '<button class="action-btn stop" data-action="chatModDelete" data-mid="' + escapeHtml(String(t.mid)) + '">Delete this message</button>';
+        if(muted){
+          html += '<div class="inputs-line" style="margin-top:8px">Muted ' + escapeHtml(chatMuteLabel(muted)) + '.</div>';
+          html += '<button class="action-btn" data-action="chatModUnmute" data-uid="' + escapeHtml(uid) + '">Unmute</button>';
+        } else {
+          html += '<div class="inputs-line" style="margin-top:8px">Silence ' + escapeHtml(name) + ':</div>';
+          html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">';
+          [['10 min',10],['1 hour',60],['1 day',1440],['1 week',10080]].forEach(function(p){
+            html += '<button class="mini-btn" data-action="chatModMute" data-uid="' + escapeHtml(uid) + '" data-min="' + p[1] + '">' + p[0] + '</button>';
+          });
+          html += '</div>';
+          html += '<button class="action-btn stop" data-action="chatModMute" data-uid="' + escapeHtml(uid) + '" data-min="5256000" style="margin-top:6px">Chat-ban (permanent)</button>';
+        }
+        if(iAmOwner && targetRole !== 'owner'){
+          html += '<div class="inputs-line" style="margin-top:10px">Role:</div>';
+          if(targetRole === 'moderator') html += '<button class="mini-btn" data-action="chatModSetRole" data-uid="' + escapeHtml(uid) + '" data-role="none">Remove Moderator</button>';
+          else html += '<button class="mini-btn" data-action="chatModSetRole" data-uid="' + escapeHtml(uid) + '" data-role="moderator">Make Moderator</button>';
+        }
       }
     }
     html += '<button class="action-btn" data-action="chatModClose" style="margin-top:14px">Close</button>';
+    html += '</div>';
+    ov.className = 'familiar-popup-overlay';
+    ov.innerHTML = html;
+  }
+  // ---- Public profile modal (opened from the chat player menu). Fetches fresh leaderboard data by uid so
+  // it reflects the player's latest published stats, and reuses the leaderboard profile card body.
+  var playerProfileTarget = null;   // { uid, name, data, loading, error }
+  function openPlayerProfile(uid, name){
+    if(!uid) return;
+    playerProfileTarget = { uid:uid, name:name||'', data:null, loading:true, error:false };
+    renderPlayerProfileModal();
+    if(!CHAT_ENABLED || !chatClient){ playerProfileTarget.loading = false; playerProfileTarget.error = true; renderPlayerProfileModal(); return; }
+    var settle = function(row, failed){
+      if(!playerProfileTarget || playerProfileTarget.uid !== uid) return; // a newer open superseded this
+      if(row){ playerProfileTarget.data = row; } else { playerProfileTarget.error = !!failed; }
+      playerProfileTarget.loading = false; renderPlayerProfileModal();
+    };
+    var base = 'id,username,total_level,gold,skills,mastery,equipment,stats,mortal,class,has_estate';
+    chatClient.from('leaderboard').select(base+',title').eq('id', uid).maybeSingle().then(function(res){
+      if(res && res.error){
+        // The title column may not be deployed yet -> retry without it so View Profile still works.
+        chatClient.from('leaderboard').select(base).eq('id', uid).maybeSingle().then(function(r2){ settle((r2 && !r2.error && r2.data) || null, !(r2 && r2.data)); }, function(){ settle(null, true); });
+        return;
+      }
+      settle((res && res.data) || null, !(res && res.data));
+    }, function(){ settle(null, true); });
+  }
+  function closePlayerProfile(){ playerProfileTarget = null; renderPlayerProfileModal(); }
+  function renderPlayerProfileModal(){
+    var ov = document.getElementById('playerProfileOverlay'); if(!ov) return;
+    var t = playerProfileTarget;
+    if(!t){ ov.className = ''; ov.innerHTML = ''; return; }
+    var html = '<div class="familiar-popup-card" style="max-width:440px;text-align:left;max-height:88dvh;overflow:auto;">';
+    if(t.loading){
+      html += '<div class="familiar-popup-title" style="text-align:center;">' + escapeHtml(t.name||'Profile') + '</div><div class="empty-note" style="text-align:center;">Loading profile…</div>';
+    } else if(t.error || !t.data){
+      html += '<div class="familiar-popup-title" style="text-align:center;">' + escapeHtml(t.name||'Profile') + '</div><div class="empty-note" style="text-align:center;">This player hasn\'t published a profile yet.</div>';
+    } else {
+      var p = t.data;
+      if(CHAT_ENABLED && p.id && p.has_estate) html += '<button class="action-btn" data-action="visitEstate" data-id="'+escapeHtml(String(p.id))+'" data-name="'+escapeHtml(String(p.username||'anon'))+'" style="width:auto;flex:0 0 auto;margin-bottom:8px;">🏡 Visit Estate</button>';
+      html += profileCardBodyHtml(p);
+    }
+    html += '<button class="action-btn" data-action="closePlayerProfile" style="margin-top:14px">Close</button>';
     html += '</div>';
     ov.className = 'familiar-popup-overlay';
     ov.innerHTML = html;
@@ -27357,6 +27429,7 @@
       if(res.error) throw res.error;
       chatMessages = (res.data || []).slice().reverse();
       await chatModLoad();   // roles + active mutes for badges / mod controls / the muted-send notice
+      chatFetchTitles(chatMessages.map(function(m){ return m.user_id; }).filter(Boolean)); // title tags next to names
       // Reload persisted server-wide "blasts" (from the chronicle table) as system messages, merged into
       // the timeline -- both supreme/fantastic craft forges AND +10-or-higher improvement enhances, which
       // were previously live-only and vanished on refresh.
@@ -27382,6 +27455,7 @@
     if(!msg || chatMessages.some(function(m){ return m.id===msg.id; })) return;
     chatMessages.push(msg);
     if(chatMessages.length > 120) chatMessages = chatMessages.slice(-120);
+    if(msg.user_id && !(msg.user_id in chatTitles)) chatFetchTitles([msg.user_id]); // pull this poster's title tag
     if(chatChannel==='global') chatRenderMessagesOnly(); // chat lives in the rail/drawer; refresh in place
     noteChatActivity();
   }
@@ -27501,11 +27575,14 @@
       var uid = m.user_id, role = chatRoleOf(uid);
       var badge = role ? '<span class="chat-mod-badge chat-mod-'+role+'" title="'+(role==='owner'?'Owner':'Moderator')+'">'+(role==='owner'?'★':'⚑')+'</span>' : '';
       var mutedTag = chatMuteUntil(uid) ? '<span class="chat-muted-tag" title="Muted">🔇</span>' : '';
-      // A moderator (or the owner) can act on any message that carries a poster id and isn't their own.
-      var modBtn = (chatIsMod() && uid && !(authUser && uid===authUser.id))
-        ? '<button class="chat-mod-btn" data-action="chatModOpen" data-mid="'+escapeHtml(String(m.id))+'" data-uid="'+escapeHtml(uid)+'" data-name="'+escapeHtml(m.username||'')+'" title="Moderate">⋯</button>'
+      var _title = titleName(chatTitles[uid]);
+      var titleTag = _title ? '<span class="chat-title" title="Title">'+escapeHtml(_title)+'</span>' : '';
+      // The "⋯" player menu is open to EVERYONE now (View Profile + Invite; mod actions gated inside the
+      // modal) -- shown on any message that carries a poster id and isn't your own.
+      var modBtn = (uid && !(authUser && uid===authUser.id))
+        ? '<button class="chat-mod-btn" data-action="chatModOpen" data-mid="'+escapeHtml(String(m.id))+'" data-uid="'+escapeHtml(uid)+'" data-name="'+escapeHtml(m.username||'')+'" title="Player options">⋯</button>'
         : '';
-      return '<div class="chat-msg">'+badge+'<span class="chat-user">'+escapeHtml(m.username||'anon')+'</span>'+mutedTag+'<span class="chat-time">'+msgTime(m.created_at)+'</span>'+modBtn+'<span class="chat-body">'+chatBodyHtml(m.body||'')+'</span></div>';
+      return '<div class="chat-msg">'+badge+'<span class="chat-user">'+escapeHtml(m.username||'anon')+'</span>'+titleTag+mutedTag+'<span class="chat-time">'+msgTime(m.created_at)+'</span>'+modBtn+'<span class="chat-body">'+chatBodyHtml(m.body||'')+'</span></div>';
     }).join('');
   }
   // Map a broadcast craft body ("Supreme Iron Sword") to its rarity, or null for rare/normal. Only the
@@ -27763,7 +27840,7 @@
       // `estate` is a compact render-only snapshot so others can view it from the leaderboard.
       // It's tens of KB, so it rides along ONLY when it changed since the last accepted send --
       // the server leaves the stored estate untouched when the field is absent from the body.
-      var body = { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, mastery: stats.mastery, equipment: stats.equipment, stats: stats.stats, mortal: isMortal(), class: activeClassId(state) || null };
+      var body = { total_level: stats.total_level, gold: stats.gold, skills: stats.skills, mastery: stats.mastery, equipment: stats.equipment, stats: stats.stats, mortal: isMortal(), class: activeClassId(state) || null, title: state.equippedTitle || null };
       var estJson = null;
       try{ estJson = JSON.stringify(computeEstateSnapshot()); }catch(e2){}
       if(estJson !== null && estJson !== _lastEstateJson) body.estate = JSON.parse(estJson);
@@ -28080,6 +28157,8 @@
     });
     return html;
   }
+  // Display name of a published title id (resolves locally -- TITLE_BY_ID is the same on every client).
+  function titleName(id){ var t = id && TITLE_BY_ID[id]; return t ? t.name : ''; }
   function renderProfileDetail(p){
     var html = '<div class="chat-wrap">';
     html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
@@ -28088,7 +28167,15 @@
     // Hidden until the backend publishes estates (p.estate is a small presence flag when available).
     if(CHAT_ENABLED && p.id && p.has_estate) html += '<button class="action-btn" data-action="visitEstate" data-id="'+escapeHtml(String(p.id))+'" data-name="'+escapeHtml(String(p.username||'anon'))+'" style="width:auto;flex:0 0 auto;">\ud83c\udfe1 Visit Estate</button>';
     html += '</div>';
-    html += '<div class="profile-head"><div class="profile-name">'+escapeHtml(p.username||'anon')+'</div>'
+    html += profileCardBodyHtml(p);
+    return html + '</div>';
+  }
+  // The reusable body of a public profile (name + title + headline stats + lifetime + equipment + skills),
+  // shared by the inline Leaderboard view and the chat "View Profile" modal. No wrapper / nav buttons.
+  function profileCardBodyHtml(p){
+    var _title = titleName(p.title);
+    var html = '<div class="profile-head"><div class="profile-name">'+escapeHtml(p.username||'anon')+'</div>'
+      +(_title ? '<div class="profile-title">'+escapeHtml(_title)+'</div>' : '')
       +'<div class="profile-stats"><span>Total Level <b>'+fmt(p.total_level||0)+'</b></span><span>Combat Score <b>'+fmt(lbCombatScore(p))+'</b></span><span>Gold <b>'+fmt(p.gold||0)+'</b></span></div></div>';
     var pst = p.stats || {};
     if(LB_STAT_METRICS.some(function(m){ return (pst[m.key]||0)>0; })){
@@ -28129,7 +28216,7 @@
       });
       html += '</div></div>';
     });
-    html += '</div></div>';
+    html += '</div>';   // close .profile-skills; the caller (renderProfileDetail / the modal) owns any outer wrapper
     return html;
   }
   // Sanity-check a fetched estate snapshot before pointing the canvas at it: profile blobs are
@@ -30958,6 +31045,7 @@
     renderTrackerPicker();
     renderTowerPreview();
     renderChatModModal();
+    renderPlayerProfileModal();
     renderPeonPicker();
     renderSettingsModal();
     renderSkillInfoPopup();
@@ -31709,6 +31797,8 @@
     chatSend: function(btn, e){ chatSend(); },
     chatModOpen: function(btn, e){ openChatModModal({ mid: btn.getAttribute('data-mid'), uid: btn.getAttribute('data-uid'), name: btn.getAttribute('data-name') }); },
     chatModClose: function(btn, e){ closeChatModModal(); },
+    chatViewProfile: function(btn, e){ var uid = btn.getAttribute('data-uid'), nm = btn.getAttribute('data-name'); closeChatModModal(); openPlayerProfile(uid, nm); },
+    closePlayerProfile: function(btn, e){ closePlayerProfile(); },
     chatModDelete: function(btn, e){ chatModAct('chat_delete_message', { p_id: Number(btn.getAttribute('data-mid')) }); closeChatModModal(); },
     chatModMute: function(btn, e){ chatModAct('chat_mute', { p_target: btn.getAttribute('data-uid'), p_minutes: Number(btn.getAttribute('data-min')), p_reason: null }); closeChatModModal(); },
     chatModUnmute: function(btn, e){ chatModAct('chat_unmute', { p_target: btn.getAttribute('data-uid') }); closeChatModModal(); },
@@ -32111,6 +32201,7 @@
   document.addEventListener('keydown', function(e){
     if(e.key !== 'Escape' && e.key !== 'Esc') return;
     if(towerPreviewEntrance){ towerPreviewEntrance = null; renderTowerPreview(); e.preventDefault(); return; }
+    if(playerProfileTarget){ closePlayerProfile(); e.preventDefault(); return; }
     if(chatModTarget){ closeChatModModal(); e.preventDefault(); return; }
     if(trackerPickerOpen){ trackerPickerOpen = false; renderTrackerPicker(); e.preventDefault(); return; }
     if(settingsOpen){ settingsOpen = false; renderSettingsModal(); e.preventDefault(); return; }
@@ -32125,6 +32216,7 @@
   bindBackdropClose('trackerPickerOverlay', function(){ if(trackerPickerOpen){ trackerPickerOpen = false; renderTrackerPicker(); } });
   bindBackdropClose('towerPreviewOverlay', function(){ if(towerPreviewEntrance){ towerPreviewEntrance = null; renderTowerPreview(); } });
   bindBackdropClose('chatModOverlay', function(){ if(chatModTarget){ closeChatModModal(); } });
+  bindBackdropClose('playerProfileOverlay', function(){ if(playerProfileTarget){ closePlayerProfile(); } });
   bindBackdropClose('settingsOverlay', function(){ if(settingsOpen){ settingsOpen = false; renderSettingsModal(); } });
   bindBackdropClose('familiarPopupOverlay', function(){ if(state.popupQueue && state.popupQueue.length){ state.popupQueue.shift(); if(state.popupQueue.length === 0) state.popupBatchTotal = 0; renderPopupQueue(); } });
 
@@ -32794,7 +32886,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.43.1';
+  var GAME_VERSION = '0.0.43.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -32930,8 +33022,8 @@
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
       GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, skillTabsByLabel:skillTabsByLabel,
       renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
-      chatMessagesHtml:chatMessagesHtml, chatRoleOf:chatRoleOf, chatIsMod:chatIsMod, chatIsOwner:chatIsOwner, chatMuteUntil:chatMuteUntil, chatAmIMuted:chatAmIMuted, chatMuteLabel:chatMuteLabel, renderChatModModal:renderChatModModal, renderChatModerationPanel:renderChatModerationPanel, chatNameFor:chatNameFor,
-      _setChatMod:function(o){ o=o||{}; if(o.roles) chatRoles=o.roles; if(o.mutes) chatMutes=o.mutes; if(o.names) chatUserNames=o.names; if('myRole' in o) myChatRole=o.myRole; if('messages' in o) chatMessages=o.messages; if('authUser' in o) authUser=o.authUser; if('target' in o) chatModTarget=o.target; },
+      chatMessagesHtml:chatMessagesHtml, chatRoleOf:chatRoleOf, chatIsMod:chatIsMod, chatIsOwner:chatIsOwner, chatMuteUntil:chatMuteUntil, chatAmIMuted:chatAmIMuted, chatMuteLabel:chatMuteLabel, renderChatModModal:renderChatModModal, renderChatModerationPanel:renderChatModerationPanel, chatNameFor:chatNameFor, titleName:titleName, profileCardBodyHtml:profileCardBodyHtml, renderPlayerProfileModal:renderPlayerProfileModal,
+      _setChatMod:function(o){ o=o||{}; if(o.roles) chatRoles=o.roles; if(o.mutes) chatMutes=o.mutes; if(o.names) chatUserNames=o.names; if(o.titles) chatTitles=o.titles; if('myRole' in o) myChatRole=o.myRole; if('messages' in o) chatMessages=o.messages; if('authUser' in o) authUser=o.authUser; if('target' in o) chatModTarget=o.target; if('profileTarget' in o) playerProfileTarget=o.profileTarget; },
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; },

@@ -2181,18 +2181,26 @@
     ok(!FF.chatIsMod() && !FF.chatIsOwner(), 'a regular player is neither mod nor owner');
     eq(FF.chatAmIMuted(), 0, 'I am not muted');
 
-    // As a regular player: badges + muted tag show, but NO moderator buttons anywhere.
+    // The "⋯" player menu is open to EVERYONE now (View Profile etc.) -- one per OTHER message, none on
+    // my own. Badges + muted tag still render for all.
     var htmlPlayer = FF.chatMessagesHtml();
     ok(/chat-mod-owner/.test(htmlPlayer) && /chat-mod-moderator/.test(htmlPlayer), 'owner + moderator badges render for everyone');
     ok(/chat-muted-tag/.test(htmlPlayer), 'a muted user shows the muted marker');
-    ok(!/data-action="chatModOpen"/.test(htmlPlayer), 'a non-moderator sees NO moderate buttons');
+    ok((htmlPlayer.match(/data-action="chatModOpen"/g)||[]).length === 3, 'a regular player sees the ⋯ menu on others (3 of 4 messages)');
+    ok(htmlPlayer.indexOf('data-uid="'+ME+'"') === -1, 'no ⋯ menu on my own message');
 
-    // As a moderator: moderate buttons appear on others (not on my own message).
+    // As a moderator, the ⋯ buttons are the same (moderation lives INSIDE the modal now).
     FF._setChatMod({ myRole:'moderator' });
     var htmlMod = FF.chatMessagesHtml();
-    ok(/data-action="chatModOpen"/.test(htmlMod), 'a moderator sees moderate buttons');
-    ok((htmlMod.match(/data-action="chatModOpen"/g)||[]).length === 3, 'exactly 3 moderate buttons across 4 messages -> my own message has none');
-    ok(htmlMod.indexOf('data-uid="'+ME+'"') === -1, 'no moderate button carries my own uid');
+    ok((htmlMod.match(/data-action="chatModOpen"/g)||[]).length === 3, 'a moderator sees the same 3 ⋯ menus');
+
+    // Modal for a regular player, viewed by a regular player: View Profile only, NO moderation section.
+    FF._setChatMod({ myRole:null, target:{ mid:3, uid:PLAYER, name:'Spammer' } });
+    FF.renderChatModModal();
+    var ovPlain = document.getElementById('chatModOverlay').innerHTML;
+    ok(/data-action="chatViewProfile"/.test(ovPlain), 'everyone gets View Profile');
+    ok(!/Moderation/.test(ovPlain) && !/data-action="chatModMute"/.test(ovPlain), 'a non-moderator sees no moderation controls in the menu');
+    FF._setChatMod({ myRole:'moderator' });
 
     // Modal gating: a moderator opening a fellow-moderator sees the owner-only lock (no action buttons).
     FF._setChatMod({ target:{ mid:2, uid:MOD, name:'Mod1' } });
@@ -2246,9 +2254,38 @@
     eq(FF.chatNameFor('u-mod'), 'Mod1', 'chatNameFor resolves a cached username');
     ok(/…$/.test(FF.chatNameFor('u-unknown-123456789')), 'chatNameFor falls back to a uid fragment');
 
+    // ---- Titles: label resolution + tag next to chat names + on the public profile card ----
+    var titleIds = Object.keys(FF.TITLE_BY_ID || {});
+    if(titleIds.length){
+      var tId = titleIds[0], tName = FF.TITLE_BY_ID[tId].name;
+      eq(FF.titleName(tId), tName, 'titleName resolves a published title id to its display name');
+      eq(FF.titleName('title_not_real_xyz'), '', 'an unknown title id resolves to no label');
+      // Title tag next to the poster's name in chat.
+      FF._setChatMod({ myRole:null, authUser:{ username:'Me', id:ME }, titles:{ 'u-owner':tId },
+        messages:[{ id:9, user_id:OWNER, username:'Boss', body:'hi', created_at:new Date(now).toISOString() }] });
+      var htmlTitle = FF.chatMessagesHtml();
+      ok(/class="chat-title"/.test(htmlTitle) && htmlTitle.indexOf(tName) !== -1, 'an equipped title renders as a tag next to the chat name');
+      // Same title on the public profile card body.
+      var card = FF.profileCardBodyHtml({ username:'Boss', total_level:120, gold:5, title:tId, skills:{}, stats:{} });
+      ok(/class="profile-title"/.test(card) && card.indexOf(tName) !== -1, 'the profile card shows the equipped title under the name');
+      ok(/Total Level/.test(card), 'the profile card still shows headline stats');
+    }
+
+    // ---- Public profile modal: loading / no-profile / populated states ----
+    FF._setChatMod({ profileTarget:{ uid:PLAYER, name:'Spammer', data:null, loading:true, error:false } });
+    FF.renderPlayerProfileModal();
+    ok(/Loading profile/.test(document.getElementById('playerProfileOverlay').innerHTML), 'the profile modal shows a loading state');
+    FF._setChatMod({ profileTarget:{ uid:PLAYER, name:'Spammer', data:null, loading:false, error:true } });
+    FF.renderPlayerProfileModal();
+    ok(/hasn.t published a profile/.test(document.getElementById('playerProfileOverlay').innerHTML), 'the profile modal handles a player with no published profile');
+    FF._setChatMod({ profileTarget:{ uid:PLAYER, name:'Spammer', loading:false, error:false, data:{ id:PLAYER, username:'Spammer', total_level:88, gold:12, skills:{}, stats:{} } } });
+    FF.renderPlayerProfileModal();
+    var pm = document.getElementById('playerProfileOverlay').innerHTML;
+    ok(/Spammer/.test(pm) && /Total Level/.test(pm) && /data-action="closePlayerProfile"/.test(pm), 'the profile modal renders a fetched profile with a Close button');
+
     // Clean up module state so later suites see a pristine chat.
-    FF._setChatMod({ roles:{}, mutes:{}, names:{}, myRole:null, messages:[], authUser:null, target:null });
-    FF.renderChatModModal();
+    FF._setChatMod({ roles:{}, mutes:{}, names:{}, titles:{}, myRole:null, messages:[], authUser:null, target:null, profileTarget:null });
+    FF.renderChatModModal(); FF.renderPlayerProfileModal();
     void savedAuth;
   });
 
