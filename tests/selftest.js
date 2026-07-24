@@ -2229,8 +2229,25 @@
     eq(FF.chatMuteLabel(now + 40*24*3600*1000), 'permanently', 'a >30-day mute reads as a permanent chat-ban');
     ok(/^until /.test(FF.chatMuteLabel(now + 3600*1000)), 'a short mute reads as an until-timestamp');
 
+    // Owner-only Moderation panel: appoint box + named lists of mods and muted players.
+    FF._setChatMod({
+      myRole:'owner',
+      roles:{ 'u-owner':'owner', 'u-mod':'moderator', 'u-mod2':'moderator' },
+      mutes:{ 'u-player': now + 3600*1000 },
+      names:{ 'u-mod':'Mod1', 'u-mod2':'Mod2', 'u-player':'Spammer' }
+    });
+    var panel = FF.renderChatModerationPanel();
+    ok(/id="modAppointInput"/.test(panel) && /data-action="chatModAppoint"/.test(panel), 'the panel has an appoint-by-username box');
+    ok(/Moderators <span[^>]*>\(2\)/.test(panel), 'it lists the moderator count');
+    ok(/Mod1/.test(panel) && /Mod2/.test(panel), 'moderators are listed by name');
+    ok((panel.match(/data-action="chatModRemove"/g)||[]).length === 2, 'each moderator has a Remove button');
+    ok(/Muted players <span[^>]*>\(1\)/.test(panel) && /Spammer/.test(panel) && /data-action="chatModSettingsUnmute"/.test(panel), 'muted players are listed with an Unmute button');
+    // chatNameFor falls back to a uid fragment when the name isn't cached.
+    eq(FF.chatNameFor('u-mod'), 'Mod1', 'chatNameFor resolves a cached username');
+    ok(/…$/.test(FF.chatNameFor('u-unknown-123456789')), 'chatNameFor falls back to a uid fragment');
+
     // Clean up module state so later suites see a pristine chat.
-    FF._setChatMod({ roles:{}, mutes:{}, myRole:null, messages:[], authUser:null, target:null });
+    FF._setChatMod({ roles:{}, mutes:{}, names:{}, myRole:null, messages:[], authUser:null, target:null });
     FF.renderChatModModal();
     void savedAuth;
   });
