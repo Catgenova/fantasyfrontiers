@@ -321,10 +321,10 @@ Deno.serve(async (req) => {
   if (estateProvided) record.estate = estate;   // omit entirely -> upsert leaves any existing estate untouched
   if (masteryProvided) record.mastery = storedMastery; // bucket-metered map (held at last accepted when over-rate); absent field never clobbers
   let { error: upErr } = await admin.from("profiles").upsert(record, { onConflict: "id" });
-  if (upErr && (estateProvided || masteryProvided)) {
-    // The `estate`/`mastery` columns may not be migrated yet -- retry WITHOUT them so a new client never
-    // loses its leaderboard update just because those migrations haven't been applied. (Deploy-order safety.)
-    delete record.estate; delete record.mastery;
+  if (upErr) {
+    // An optional cosmetic column (estate / mastery / title) may not be migrated yet -- retry WITHOUT them
+    // so a leaderboard update never fails purely on deploy order. (Deploy-order safety.)
+    delete record.estate; delete record.mastery; delete record.title;
     ({ error: upErr } = await admin.from("profiles").upsert(record, { onConflict: "id" }));
   }
   if (upErr) return json({ ok: false, error: "Could not save profile." }, 500);
