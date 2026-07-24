@@ -16802,8 +16802,18 @@
   // freely browse to any tier while a craft of another (or the same) tier is running, and start it in a new
   // slot. The +/- are only bound by the tier range itself. Kept in the signature for call-site compatibility.
   function tierStepper(target, sub, values, cur, label, disabled){
+    // With "Only show items I have materials for" on, the +/- cycle ONLY through tiers you can currently
+    // afford (plus the tier being shown), so a step never lands on an unaffordable tier that the
+    // affordable-tier display would just snap back away from -- which read as "the buttons do nothing".
+    var tgt = TIER_STEP_TARGETS[target];
+    if(craftOnlyAffordable && tgt && tgt.inputs){
+      var aff = values.filter(function(t){ return hasInputs(tgt.inputs(sub, t)); });
+      if(aff.indexOf(cur) === -1) aff.push(cur);         // keep the currently-shown tier selectable
+      aff.sort(function(a,b){ return a-b; });
+      if(aff.length) values = aff;                        // (if literally nothing fits, leave the full range)
+    }
     var idx = values.indexOf(cur);
-    var d = ' data-tier-target="'+target+'" data-tier-sub="'+sub+'" data-tier-values="'+values.join(',')+'"';
+    var d = ' data-tier-target="'+target+'" data-tier-sub="'+sub+'" data-tier-cur="'+cur+'" data-tier-values="'+values.join(',')+'"';
     var decOff = idx<=0;
     var incOff = idx>=values.length-1;
     return '<span class="tier-stepper">'
@@ -31218,19 +31228,24 @@
   window.addEventListener('resize', function(){ if(_ffResizeT) return; _ffResizeT = setTimeout(function(){ _ffResizeT = null; if(!isMobileView()){ chatDrawerOpen = false; clearChatUnread(); } render(); }, 180); });
 
   // Maps a tier-stepper's data-tier-target to the state it reads/writes. Scalars ignore `sub`.
+  // Optional `inputs(sub, tier)` returns that tier's craft inputs so the stepper can, under the
+  // "only show items I have materials for" filter, offer ONLY the tiers you can afford. It mirrors the
+  // getInputs closure each render passes to craftFilterTier. Targets without it (belt/shaft/amulet, which
+  // never went through craftFilterTier) keep the full tier range. tool inputs are tier+1 (tools are 1-based)
+  // and gather-vs-craft is decided by whether the skill is a gathering skill, matching each render's tt.isGather.
   var TIER_STEP_TARGETS = {
-    tool:     { get:function(sub){ return selectedToolTier[sub]; },        set:function(sub,v){ selectedToolTier[sub]=v; } },
-    workshop: { get:function(sub){ return selectedWorkshopTier[sub]; },    set:function(sub,v){ selectedWorkshopTier[sub]=v; } },
-    cottage:  { get:function(){ return selectedCottageTier; },             set:function(sub,v){ selectedCottageTier=v; } },
-    armor:    { get:function(sub){ return selectedBodyArmorTier[sub]; },   set:function(sub,v){ selectedBodyArmorTier[sub]=v; } },
+    tool:     { get:function(sub){ return selectedToolTier[sub]; },        set:function(sub,v){ selectedToolTier[sub]=v; },      inputs:function(sub,t){ return (GATHER_SKILL_IDS.indexOf(sub)!==-1 ? getGatherToolTierData(sub, t+1) : getCraftToolTierData(sub, t+1)).inputs; } },
+    workshop: { get:function(sub){ return selectedWorkshopTier[sub]; },    set:function(sub,v){ selectedWorkshopTier[sub]=v; },  inputs:function(sub,t){ return getWorkshopTierData(sub, t).inputs; } },
+    cottage:  { get:function(){ return selectedCottageTier; },             set:function(sub,v){ selectedCottageTier=v; },       inputs:function(sub,t){ return getCottageTierData(t).inputs; } },
+    armor:    { get:function(sub){ return selectedBodyArmorTier[sub]; },   set:function(sub,v){ selectedBodyArmorTier[sub]=v; }, inputs:function(sub,t){ var slot=null,material=null; for(var i=0;i<BODY_ARMOR_SLOTS.length;i++){ var s=BODY_ARMOR_SLOTS[i]; if(sub.length>s.length && sub.slice(-(s.length+1))==='_'+s){ slot=s; material=sub.slice(0, sub.length-s.length-1); break; } } return (slot&&material) ? getBodyArmorTierData(material, slot, t).inputs : {}; } },
     shaft:    { get:function(){ return selectedShaftLogTier; },            set:function(sub,v){ selectedShaftLogTier=v; } },
     belt:     { get:function(){ return selectedBeltTier; },                set:function(sub,v){ selectedBeltTier=v; } },
-    melee:    { get:function(sub){ return selectedMeleeWeaponTier[sub]; }, set:function(sub,v){ selectedMeleeWeaponTier[sub]=v; } },
-    shield:   { get:function(sub){ return selectedShieldTier[sub]; },      set:function(sub,v){ selectedShieldTier[sub]=v; } },
-    quiver:   { get:function(sub){ return selectedQuiverTier[sub]; },      set:function(sub,v){ selectedQuiverTier[sub]=v; } },
-    ward:     { get:function(sub){ return selectedWardTier[sub]; },        set:function(sub,v){ selectedWardTier[sub]=v; } },
-    wand:     { get:function(sub){ return selectedWandTier[sub]; },        set:function(sub,v){ selectedWandTier[sub]=v; } },
-    ring:     { get:function(sub){ return selectedRingTier[sub]; },        set:function(sub,v){ selectedRingTier[sub]=v; } },
+    melee:    { get:function(sub){ return selectedMeleeWeaponTier[sub]; }, set:function(sub,v){ selectedMeleeWeaponTier[sub]=v; }, inputs:function(sub,t){ return getStackableWeaponTierData(sub, t).inputs; } },
+    shield:   { get:function(sub){ return selectedShieldTier[sub]; },      set:function(sub,v){ selectedShieldTier[sub]=v; },    inputs:function(sub,t){ return getStackableShieldTierData(sub, t).inputs; } },
+    quiver:   { get:function(sub){ return selectedQuiverTier[sub]; },      set:function(sub,v){ selectedQuiverTier[sub]=v; },    inputs:function(sub,t){ return getStackableQuiverTierData(sub, t).inputs; } },
+    ward:     { get:function(sub){ return selectedWardTier[sub]; },        set:function(sub,v){ selectedWardTier[sub]=v; },      inputs:function(sub,t){ return getWardTierData(sub, t).inputs; } },
+    wand:     { get:function(sub){ return selectedWandTier[sub]; },        set:function(sub,v){ selectedWandTier[sub]=v; },      inputs:function(sub,t){ return getStackableWeaponTierData(sub, t).inputs; } },
+    ring:     { get:function(sub){ return selectedRingTier[sub]; },        set:function(sub,v){ selectedRingTier[sub]=v; },      inputs:function(sub,t){ return getRingTierData(sub, t).inputs; } },
     amulet:   { get:function(sub){ return selectedAmuletTier[sub]; },      set:function(sub,v){ selectedAmuletTier[sub]=v; } }
   };
 
@@ -31259,7 +31274,11 @@
       if(_tt && _vals.length){
         var _sub = btn.getAttribute('data-tier-sub')||'';
         var _dir = parseInt(btn.getAttribute('data-tier-dir'),10);
-        var _i = _vals.indexOf(_tt.get(_sub));
+        // Step relative to the tier actually SHOWN (data-tier-cur), not the stored selection -- with the
+        // affordable filter on, the stored tier may not even be in the (affordable-only) value list.
+        var _cur = parseInt(btn.getAttribute('data-tier-cur'),10);
+        var _base = isNaN(_cur) ? _tt.get(_sub) : _cur;
+        var _i = _vals.indexOf(_base);
         if(_i===-1) _i = 0;
         _i = Math.max(0, Math.min(_vals.length-1, _i+_dir));
         _tt.set(_sub, _vals[_i]);
@@ -32439,7 +32458,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.42.19';
+  var GAME_VERSION = '0.0.42.20';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -32556,7 +32575,7 @@
       estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, ESTATE_BUILDING_UPGRADE_PLANKS:ESTATE_BUILDING_UPGRADE_PLANKS, estRecomputeWorkshops:estRecomputeWorkshops,
       computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
-      tierStepper:tierStepper, tierRange:tierRange,
+      tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,

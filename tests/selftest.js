@@ -275,6 +275,64 @@
     S.inventory = sv.inv; S.faith = sv.faith; S.autoSacrifice = sv.auto; S.lockedItems = sv.locked; S.xp = sv.xp; S.physique = sv.phys;
   });
 
+  // ---- Craft filter: tier stepper's affordable-tier `inputs` reconstruction ----------------------
+  // The stepper offers only affordable tiers when the filter is on; TIER_STEP_TARGETS[x].inputs(sub,t)
+  // must rebuild the SAME inputs the render's craftFilterTier closure uses, or the +/- would cycle the
+  // wrong tiers. The tricky ones are armor (sub = "material_slot", slot can be the "_back" suffix) and
+  // tools (tier is 1-based, gather-vs-craft decided by skill id).
+  suite('craft filter: tier-step inputs reconstruction', function(){
+    var T = FF.TIER_STEP_TARGETS;
+    // Armor: "material_slot" splits correctly, including the trailing "_back" slot.
+    var eqInp = function(a, b, msg){ eq(JSON.stringify(a), JSON.stringify(b), msg); };
+    eqInp(T.armor.inputs('chain_back', 3), FF.getBodyArmorTierData('chain','back',3).inputs, 'armor inputs: chain_back tier 3');
+    eqInp(T.armor.inputs('plate_chest', 1), FF.getBodyArmorTierData('plate','chest',1).inputs, 'armor inputs: plate_chest tier 1');
+    eqInp(T.armor.inputs('chain_gauntlets', 0), FF.getBodyArmorTierData('chain','gauntlets',0).inputs, 'armor inputs: chain_gauntlets tier 0');
+    eq(JSON.stringify(T.armor.inputs('totally_bogus_key_xyz', 0)), '{}', 'armor inputs: unparseable key -> {} (treated affordable)');
+    // Tools: gather skills route to the gather getter and use tier+1 (tools are 1-indexed).
+    var gs = FF.GATHER_SKILL_IDS[0];
+    eqInp(T.tool.inputs(gs, 2), FF.getGatherToolTierData(gs, 3).inputs, 'tool inputs: gather skill uses gather getter at tier+1');
+    // Workshop: simple passthrough by craft skill id.
+    var cs = FF.CRAFT_SKILL_IDS[0];
+    eqInp(T.workshop.inputs(cs, 1), FF.getWorkshopTierData(cs, 1).inputs, 'workshop inputs: passthrough at tier');
+    // Targets that never went through craftFilterTier stay unfiltered (no inputs fn -> full tier range).
+    ok(!T.amulet.inputs && !T.belt.inputs && !T.shaft.inputs, 'amulet/belt/shaft have no affordable filter (full range)');
+    ok(typeof T.melee.inputs === 'function' && typeof T.ring.inputs === 'function', 'filtered targets expose inputs()');
+  });
+
+  // ---- Craft filter: with the filter ON, the tier stepper offers ONLY affordable tiers ----------
+  // Reproduces the report ("+/- do nothing with the box checked"): the stepper used the full tier range,
+  // so a step landed on an unaffordable tier the display immediately snapped away from. Now the emitted
+  // data-tier-values (what the +/- actually cycle) must contain only affordable tiers, plus the shown one.
+  suite('craft filter: stepper cycles only affordable tiers', function(){
+    var S = FF._state, sv = { inv:S.inventory };
+    // A melee weapon type with several unlocked tiers; give mats for only SOME tiers.
+    var wid = 'rapier';
+    var vals = [0,1,2,3,4];
+    // Make tiers 1 and 3 affordable, others not, by stocking exactly their inputs.
+    S.inventory = {};
+    [1,3].forEach(function(t){ var inp = FF.TIER_STEP_TARGETS.melee.inputs(wid, t); Object.keys(inp).forEach(function(k){ S.inventory[k] = (S.inventory[k]||0) + inp[k]; }); });
+    var affordable = vals.filter(function(t){ return FF.hasInputs(FF.TIER_STEP_TARGETS.melee.inputs(wid, t)); });
+    ok(affordable.length >= 1 && affordable.length < vals.length, 'test setup: some but not all tiers affordable ('+affordable.join(',')+')');
+
+    var readVals = function(html){ var m = /data-tier-values="([^"]*)"/.exec(html); return m ? m[1].split(',').map(Number) : null; };
+    // Filter OFF -> full range offered.
+    FF._setCraftOnlyAffordable(false);
+    var off = readVals(FF.tierStepper('melee', wid, vals, affordable[0], 'x', false));
+    eq(JSON.stringify(off), JSON.stringify(vals), 'filter off: stepper offers the full tier range');
+    // Filter ON, showing an affordable tier -> only affordable tiers offered.
+    FF._setCraftOnlyAffordable(true);
+    var on = readVals(FF.tierStepper('melee', wid, vals, affordable[0], 'x', false));
+    on.forEach(function(t){ ok(affordable.indexOf(t) !== -1, 'filter on: offered tier '+t+' is affordable'); });
+    affordable.forEach(function(t){ ok(on.indexOf(t) !== -1, 'filter on: affordable tier '+t+' is offered'); });
+    // Showing an UNaffordable tier (e.g. one an in-progress craft sits on) -> it stays selectable too.
+    var unaff = vals.filter(function(t){ return affordable.indexOf(t) === -1; })[0];
+    var on2 = readVals(FF.tierStepper('melee', wid, vals, unaff, 'x', false));
+    ok(on2.indexOf(unaff) !== -1, 'filter on: the currently-shown (unaffordable) tier stays selectable');
+    affordable.forEach(function(t){ ok(on2.indexOf(t) !== -1, 'filter on: affordable tiers still offered alongside the shown one'); });
+
+    FF._setCraftOnlyAffordable(false); S.inventory = sv.inv;
+  });
+
   // ---- Guild bank slot cost must match the server RPC formula ---------------------------
   suite('bankSlotCost matches server', function(){
     eq(FF.bankSlotCost(4), 10000, 'bankSlotCost clamps below 5 slots');
