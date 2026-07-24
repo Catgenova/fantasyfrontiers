@@ -29833,8 +29833,12 @@
       return res;
     });
   }
+  // Refresh the market view WITHOUT auto-collecting: sale gold / bought items stay in the proceeds inbox
+  // until the player taps Collect (marketCollectNow). Auto-collecting here swept proceeds straight into the
+  // wallet on every reload, so the Collect button never had anything -- "it blew right past the collect
+  // button and just added the gold to my vault".
   function marketReload(){
-    marketCollectNow().then(function(){ return marketInvoke('mine'); }).then(function(res){
+    marketInvoke('mine').then(function(res){
       if(res && res.ok){ marketState.orders = res.orders||[]; marketState.proceeds = res.proceeds||{gold:0,items:[]}; }
       return marketInvoke('listings');
     }).then(function(lres){
@@ -32270,7 +32274,7 @@
     marketQuickBuy: function(btn, e){ marketQuickBuy(btn.getAttribute('data-item'), parseInt(btn.getAttribute('data-price'),10)); },
     marketBuyNow: function(btn, e){ marketBuyNow(); },
     marketCancel: function(btn, e){ marketCancelOrder(parseInt(btn.getAttribute('data-order'),10)); },
-    marketCollect: function(btn, e){ marketReload(); },
+    marketCollect: function(btn, e){ marketCollectNow().then(function(){ marketReload(); }); },
     openSettings: function(btn, e){
       settingsOpen = true; recoveryStatus = null; recoveryEditing = false; recoveryMsg = '';
       serverBuffFetch(); // refresh the buff status when the menu opens
@@ -33115,7 +33119,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.44.11';
+  var GAME_VERSION = '0.0.44.12';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
