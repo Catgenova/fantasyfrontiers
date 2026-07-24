@@ -35,12 +35,13 @@ const GOLD_CAP = 1_000_000_000_000_000; // 1e15, mirrors the wallet's HARD_CAP
 const STALE_CLAIM_MS = 45_000;
 
 // ---- Auto-detection (account clamps; see migrations 20260724210000 / 220000) ----
-// SHADOW by default: a tripped signal is RECORDED for owner review but does NOT clamp. Flip this to true
-// only after the recorded signals confirm the threshold never fires on legitimate play.
-const CLAMP_AUTOENFORCE = false;
+// ENFORCING: a tripped signal is recorded AND clamps the account (a review of the shadow signals confirmed
+// the threshold has a ~1000x margin over legit play). Set back to false to return to shadow (record-only).
+const CLAMP_AUTOENFORCE = true;
 // A progress jump this large (1e10 XP) inside a live save window (2s-2min elapsed) is impossible for real
-// play but far below an edited save (which lands 1e12-1e15). The window excludes offline returns, whose
-// elapsed is the whole away-time. Deliberately generous to avoid ever flagging a legit grind.
+// play but far below an edited save (which lands 1e12-1e15). Per-action XP is capped in the economy
+// (submit_profile: gather <=8k, craft <=200k), so a legit ~120s window accrues at most ~1e6-1e7 across all
+// skills -- 1000x under this line. The window excludes offline returns, whose elapsed is the whole away-time.
 const SIGNAL_MIN_ELAPSED_MS = 2_000;
 const SIGNAL_MAX_ELAPSED_MS = 120_000;
 const SIGNAL_PROGRESS_JUMP = 10_000_000_000; // 1e10
