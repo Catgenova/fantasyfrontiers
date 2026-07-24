@@ -11644,6 +11644,7 @@
       titles: {},                // unlocked quest/achievement titles (cosmetic), by id
       equippedTitle: null,       // the currently-worn title id (shown on Profile), or null
       tower: {},                 // The Tower: per-entrance progress { <entranceId>: { floor, best } }
+      towerAutoAdvance: false,   // Tower: auto-enter the next floor after each clear (toggled in the Enter modal)
 
       familiarCastIndex: 0,
       familiarCastAccum: 0,
@@ -14854,6 +14855,7 @@
     if(causeLog) addLog(causeLog, 'danger');
     if(state.activity && state.activity.netDungeon && typeof dungeonNet !== 'undefined') dungeonNet.deathHandled = true;
     var diedInDungeon = state.activity && state.activity.dungeon;
+    flushTowerFamiliarBatch(state.activity); // a fatal fall ends an auto-advance streak -> show every familiar it banked
     state.playerHp = 1; // land in a distinct "alive, recovering" state (see the note that used to live inline)
     state.reaperShield = 0; state.lumenShield = 0; state.templarShield = 0; state.d3Souls = 0;
     d4WrathReset(state); state.d3ExecStacks = 0;
@@ -16024,6 +16026,7 @@
           if(typeof state.estateClears !== 'number') state.estateClears = 0;
           if(!Array.isArray(state.trackedQuests)) state.trackedQuests = [];
           if(!state.tower || typeof state.tower !== 'object') state.tower = {};
+          if(typeof state.towerAutoAdvance !== 'boolean') state.towerAutoAdvance = false;
           if(!state.quests || typeof state.quests !== 'object') state.quests = { claimed:{} };
           if(!state.quests.claimed || typeof state.quests.claimed !== 'object') state.quests.claimed = {};
           if(!state.titles || typeof state.titles !== 'object') state.titles = {};
@@ -20805,9 +20808,25 @@
   }
   // ---- Familiar grants (GUARANTEED, unlike the chance-gated maybeSummonFamiliar) ----
   // Show the SAME "familiar earned" popup a normal summon shows (offline folds it into the away batch).
+  // During an auto-advance Tower streak, grants collect in _towerBatchSink instead and surface as ONE
+  // consolidated modal when the streak ends (flushTowerFamiliarBatch), mirroring the offline catch-up.
+  var _towerBatchSink = null;
   function queueTowerFamiliarPopup(id, leveledUp, level){
+    if(_towerBatchSink){ _towerBatchSink.push({ skillId:id, leveledUp:leveledUp, level:level }); return; }
     if(offlineCapture){ if(offlineCapture.familiars) offlineCapture.familiars.push({ skillId:id, leveledUp:leveledUp, level:level }); return; }
     if(state.settings.popupFamiliar){ state.popupQueue.push({ type:'familiar', skillId:id, leveledUp:leveledUp }); state.popupBatchTotal = (state.popupBatchTotal||0) + 1; }
+  }
+  // End of an auto-advance streak (death / manual Stop / an offline resolve): surface every familiar the
+  // streak banked. One gain -> the normal single popup; several -> the consolidated "all familiars" modal
+  // (queueFamiliarBatch), the same one the offline summary uses. Offline, they ride the offline summary.
+  function flushTowerFamiliarBatch(act){
+    act = act || state.activity;
+    var t = act && act.tower;
+    if(!t || !t.familiarsGained || !t.familiarsGained.length) return;
+    var list = t.familiarsGained; t.familiarsGained = [];
+    if(offlineCapture){ if(offlineCapture.familiars){ list.forEach(function(f){ offlineCapture.familiars.push(f); }); } return; }
+    if(list.length === 1) queueTowerFamiliarPopup(list[0].skillId, list[0].leveledUp, list[0].level);
+    else queueFamiliarBatch(list);
   }
   function towerGrantFamiliar(id){
     if(!id || !FAMILIAR_DATA[id]) return false;
@@ -20838,20 +20857,49 @@
     if(entrance === 'all'){ towerGrantFamiliar(randomTowerFamiliarId()); return; }
     if(floor <= TOWER_CLASS_FAMILIAR_FLOOR_CAP && Math.random() < TOWER_CLASS_FAMILIAR_CHANCE) towerGrantFamiliar(entrance);
   }
-  // Enemy defeated in a tower fight: bank the clear, advance the floor, grant the reward, end the run.
+  // Build the combat activity for a given tower floor. `carriedFamiliars` threads an in-flight auto-advance
+  // batch through to the next floor; `auto` marks the run as auto-advancing so towerOnKill keeps climbing.
+  function makeTowerActivity(entrance, floor, auto, carriedFamiliars){
+    var mon = buildTowerMonster(entrance, floor);
+    return { type:'combat', monsterId:mon.id, monsterHp:mon.hp,
+      tower:{ entrance:entrance, floor:floor, autoAdvance:!!auto, familiarsGained:carriedFamiliars || [] },
+      tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), disengageUsed:false, guardianBondUsed:false,
+      cheatDeathUsed:false, samuraiFirstStrike:true, samuraiFocus:0, staticCharge:0, galvanizeStacks:0 };
+  }
+  // Enemy defeated in a tower fight: bank the clear and advance the floor. With auto-advance on (live only,
+  // and while the class entrance is still open), immediately roll into the next floor -- accumulating each
+  // floor's familiar into the run's batch so they surface together when the streak ends. Otherwise the run
+  // ends here (and any batch a prior streak banked is flushed).
   function towerOnKill(monster){
     var t = state.activity && state.activity.tower; if(!t){ state.activity = { type:null }; return; }
     var e = towerEntry(t.entrance), cleared = t.floor;
     bumpStat('kills');
     e.best = Math.max(e.best || 0, cleared);
     e.floor = cleared + 1;
-    grantTowerReward(t.entrance, cleared);
+    var carried = t.familiarsGained || [];
+    // Auto-advance only lives: an offline resolve clears exactly one floor (its familiar rides the offline
+    // summary), and a class entrance that's no longer equipped stops the streak.
+    var auto = t.autoAdvance && !offlineCapture && state.playerHp > 0 && !towerEntranceClassLocked(t.entrance, state);
+    if(auto){
+      _towerBatchSink = carried;                 // this floor's familiar joins the run batch, not a solo popup
+      grantTowerReward(t.entrance, cleared);
+      _towerBatchSink = null;
+    } else {
+      grantTowerReward(t.entrance, cleared);      // normal: a solo popup live, or straight to the offline summary
+    }
     addLog('The Tower (' + towerEntranceLabel(t.entrance) + '): cleared Floor ' + cleared + '! Floor ' + (cleared + 1) + ' awaits.', 'important');
     spawnFloatingText('Tower Floor ' + cleared + ' cleared!', 'ft-rare');
-    state.activity = { type:null };
-    // Land back in the Tower category (not the now-idle Combat tab) so the next floor is one tap away.
-    // Only when the player was actually watching the arena live -- don't yank a wandering or offline view.
-    if(!offlineCapture && currentCategory === 'combat'){ currentCategory = 'tower'; currentArea = areaOf('tower'); }
+    if(auto){
+      // Keep climbing on the same Combat view the player is already watching; carry the batch forward.
+      state.activity = makeTowerActivity(t.entrance, e.floor, true, carried);
+      state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0;
+    } else {
+      flushTowerFamiliarBatch(state.activity);   // an auto streak that ended on this floor (offline resolve) shows its batch
+      state.activity = { type:null };
+      // Land back in the Tower category (not the now-idle Combat tab) so the next floor is one tap away.
+      // Only when the player was actually watching the arena live -- don't yank a wandering or offline view.
+      if(!offlineCapture && currentCategory === 'combat'){ currentCategory = 'tower'; currentArea = areaOf('tower'); }
+    }
     saveGame();
     needsRender = true;
   }
@@ -20862,11 +20910,9 @@
     if(dungeonLocksActions()){ dungeonActionBlockedNotice(); return; }
     if(towerEntranceClassLocked(entrance, state)){ addLog('You must have the ' + towerEntranceLabel(entrance) + ' class equipped to enter its Tower.', 'danger'); return; }
     if(state.activity && state.activity.type === 'combat'){ addLog('Finish your current fight before entering the Tower.', 'danger'); return; }
-    var e = towerEntry(entrance), floor = e.floor, mon = buildTowerMonster(entrance, floor);
+    var e = towerEntry(entrance), floor = e.floor;
     relocatePrimaryTaskToFreeSlot();
-    state.activity = { type:'combat', monsterId:mon.id, monsterHp:mon.hp, tower:{ entrance:entrance, floor:floor },
-      tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), disengageUsed:false, guardianBondUsed:false,
-      cheatDeathUsed:false, samuraiFirstStrike:true, samuraiFocus:0, staticCharge:0, galvanizeStacks:0 };
+    state.activity = makeTowerActivity(entrance, floor, !!state.towerAutoAdvance, []); // carry the Enter-modal toggle into the run
     state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0;
     towerPreviewEntrance = null; renderTowerPreview();   // close the preview modal if it was open
     currentCategory = 'combat'; currentArea = areaOf('combat'); // jump to the arena to watch the climb
@@ -20958,8 +21004,14 @@
     // Reward.
     html += head('Reward');
     html += '<div style="font-size:12px;padding:5px 0;">' + (en === 'all' ? 'A <b>random familiar</b> on every floor cleared.' : 'A chance at the <b>' + escapeHtml(label) + '</b> familiar (through Floor ' + TOWER_CLASS_FAMILIAR_FLOOR_CAP + ').') + '</div>';
+    // Auto-advance toggle: keep entering the next floor after each clear until you fall or Stop. Familiars
+    // banked across the climb are shown together in one summary (like the offline catch-up) at the end.
+    html += '<div style="display:flex;flex-direction:column;gap:3px;margin-top:12px;padding:9px 12px;border-radius:8px;background:var(--bg-panel);border:1px solid var(--border);">'
+      + '<span data-action="toggleTowerAutoAdvance" style="cursor:pointer;font-size:13px;">' + (state.towerAutoAdvance ? '☑' : '☐') + ' Auto-advance to the next floor</span>'
+      + '<span style="font-size:11px;color:var(--text-dim);">Keeps climbing after each clear until you fall or Stop. Familiars earned along the way are shown together at the end.</span>'
+      + '</div>';
     // Equal-size buttons.
-    html += '<div style="display:flex;gap:10px;margin-top:16px;">';
+    html += '<div style="display:flex;gap:10px;margin-top:14px;">';
     html += '<button class="action-btn stop" data-action="towerPreviewClose" style="flex:1 1 0;min-width:0;width:auto;margin-top:0;">Cancel</button>';
     html += '<button class="action-btn" data-action="towerEnter" data-tower="' + en + '" style="flex:1 1 0;min-width:0;width:auto;margin-top:0;">Enter Floor ' + floor + '</button>';
     html += '</div>';
@@ -31314,6 +31366,7 @@
       towerPreviewEntrance = en; renderTowerPreview();
     },
     towerPreviewClose: function(btn, e){ towerPreviewEntrance = null; renderTowerPreview(); },
+    toggleTowerAutoAdvance: function(btn, e){ state.towerAutoAdvance = !state.towerAutoAdvance; saveGame(); renderTowerPreview(); },
     navToActivity: function(btn, e){
       var navCat = btn.getAttribute('data-nav-cat');
       var navSub = btn.getAttribute('data-nav-sub');
@@ -31325,7 +31378,7 @@
     },
     stop: function(btn, e){
       if(state.activity && state.activity.dungeon) dungeonEndRun('retreat'); // retreating from a dungeon abandons the run
-      else stopActivity();
+      else { flushTowerFamiliarBatch(state.activity); stopActivity(); } // stopping mid-climb shows the auto-advance batch
     },
     dungeonTab: function(btn, e){ dungeonBrowseLayer = btn.getAttribute('data-id'); render(); },
     dungeonEnter: function(btn, e){ dungeonEnterLobby(btn.getAttribute('data-id')); },
@@ -32477,7 +32530,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.42.22';
+  var GAME_VERSION = '0.0.42.23';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -32600,7 +32653,7 @@
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
-      TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, towerOnKill:towerOnKill, towerEnter:towerEnter, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
+      TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, flushTowerFamiliarBatch:flushTowerFamiliarBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
