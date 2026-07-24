@@ -10155,6 +10155,21 @@
       s.inventory = {}; s.inventory[t0] = 1; s.lockedItems[t0] = true; s.faith = 0;
       FF.autoSacrificeRelicsCheck();
       eq(s.inventory[t0], 1, 'locked Broken Relics are protected from auto-sacrifice');
+
+      // Low-Faith fallback: when every owned relic restores MORE than the pool holds (so nothing can ever
+      // fully fit) and Faith has run low, the smallest is sacrificed anyway -- overflow accepted -- so a
+      // miracle doesn't die. This is the reported bug: it used to leave Faith to run dry.
+      s.inventory = {}; s.lockedItems = {};
+      var topI = FF.BROKEN_RELIC_ITEMS.length - 1, big = FF.BROKEN_RELIC_ITEMS[topI].id;
+      ok(FF.brokenRelicFaithRestore(topI) > mx, 'the top-tier relic restores more than the whole Faith pool');
+      s.inventory[big] = 2; s.faith = 0;                       // low Faith; nothing can fully fit
+      FF.autoSacrificeRelicsCheck();
+      ok((s.inventory[big]||0) === 1 && s.faith > 0, 'low-Faith fallback sacrifices an over-value relic to top Faith up');
+
+      // Above half Faith with only over-value relics: the fallback holds off (no waste while comfortable).
+      s.inventory = {}; s.inventory[big] = 1; s.faith = mx * 0.8;
+      FF.autoSacrificeRelicsCheck();
+      eq(s.inventory[big], 1, 'above half Faith, an over-value relic is NOT wasted (fallback holds off)');
     } finally {
       s.inventory=save.inv; s.faith=save.faith; s.autoSacrificeRelics=save.auto; s.lockedItems=save.locked; s.xp.sacrifice=save.sx; if(s.physique) s.physique.oblation=save.obl;
     }

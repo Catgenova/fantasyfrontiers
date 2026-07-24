@@ -13606,22 +13606,26 @@
   function brokenRelicFaithRestore(relicTierIndex){
     return Math.round(Math.round(30 * Math.pow(1.3, relicTierIndex)) * (1 + physBonus('oblation', 0.25)));
   }
-  // Auto-sacrifice Broken Relics to top up Faith: only when a relic's FULL restore fits the current
-  // deficit (so the overflow past the cap is never wasted). Prefers the largest-fitting relic each pass
-  // for an efficient top-up. Fires from the game loop while state.autoSacrificeRelics is on.
+  // Auto-sacrifice Broken Relics to top up Faith. Prefers a relic whose FULL restore fits the current
+  // deficit (no overflow waste), largest-fitting first. BUT if nothing fully fits and Faith has run low
+  // (e.g. every owned relic restores more than the whole pool holds), fall back to the SMALLEST relic even
+  // though it overflows the cap -- keeping Faith up (so a miracle doesn't die) beats saving a little
+  // overflow. Above half Faith we hold out for a clean fit. Fires from the loop while the toggle is on.
   function autoSacrificeRelicsCheck(){
     if(!state.autoSacrificeRelics) return;
     var mx = faithMax(state), guard = 0, count = 0, gained = 0;
     while(guard++ < 500){
       var deficit = mx - state.faith;
       if(deficit <= 0) break;
-      var best = null;
+      var best = null, smallest = null;
       for(var i=0;i<BROKEN_RELIC_ITEMS.length;i++){
         var rid = BROKEN_RELIC_ITEMS[i].id;
         if(state.lockedItems[rid] || (state.inventory[rid]||0) <= 0) continue;
         var restore = brokenRelicFaithRestore(i);
         if(restore <= deficit && (!best || restore > best.restore)) best = { id:rid, restore:restore };
+        if(!smallest || restore < smallest.restore) smallest = { id:rid, restore:restore };
       }
+      if(!best && smallest && state.faith <= mx * 0.5) best = smallest; // low-Faith fallback (accept overflow)
       if(!best) break;
       gained += sacrificeItem('relic', best.id, true) || 0; // silent -- summarised below
       count++;
@@ -26116,7 +26120,7 @@
     while(guard++ < 500){
       var deficit = mx - state.faith;
       if(deficit <= 0.5) break;
-      var best = null;
+      var best = null, smallest = null;
       var rows = collectSacrificeRows();  // re-read each pass: quantities/faith change as we sacrifice
       for(var i=0;i<rows.length;i++){
         var r = rows[i];
@@ -26124,7 +26128,9 @@
         if(!flag[sacRowKey(r)]) continue;
         var restore = sacRowRestore(r);
         if(restore <= deficit && (!best || restore > best.restore)) best = { r:r, restore:restore };
+        if(!smallest || restore < smallest.restore) smallest = { r:r, restore:restore };
       }
+      if(!best && smallest && state.faith <= mx * 0.5) best = smallest; // low-Faith fallback (accept overflow) -- same rule as Broken Relics
       if(!best) break;
       gained += sacrificeItem(best.r.category, best.r.id, true) || 0; // silent -- summarised below
       count++;
@@ -33109,7 +33115,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.44.10';
+  var GAME_VERSION = '0.0.44.11';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
