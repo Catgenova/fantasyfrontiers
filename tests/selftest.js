@@ -103,6 +103,19 @@
       ok(!/MASTERY/.test(FF.physiqueLevelLabel(PHYS0)) && /Lv 100/.test(FF.physiqueLevelLabel(PHYS0)), 'exactly Lv100 shows no mastery tag yet');
       s.physique[PHYS0] = savedXp;
     })();
+    // The Resources > Skills tab reads levels via anySkillLevel/anySkillProgress. These used getLevel/
+    // levelProgress for physiques -> hard-capped at 100 (the reported "not going to mastery" bug on that
+    // screen). They must now overlevel a physique like every other display.
+    (function(){
+      var s = FF._state, savedXp = s.physique[PHYS0];
+      s.physique[PHYS0] = PEXT[107];
+      eq(FF.anySkillLevel(PHYS0), 107, 'Skills-tab helper overlevels a physique past 100 (was capped)');
+      ok(FF.anySkillProgress(PHYS0) >= 0 && FF.anySkillProgress(PHYS0) < 100, 'a fresh over-100 level is not a full/again-capped bar');
+      s.physique[PHYS0] = PEXT[100];
+      eq(FF.anySkillLevel(PHYS0), 100, 'exactly Lv100 reads 100');
+      near(FF.anySkillProgress(PHYS0), 0, 'a physique sitting at the L100 floor shows ~0% toward 101 (not a full bar)', 1e-6);
+      s.physique[PHYS0] = savedXp;
+    })();
 
     // Progress bar past 100: 0% at a fresh level, ~50% halfway, respects the doubled cost.
     near(FF.skillLevelProgress('mining', EXT[103]), 0, 'progress resets to 0 at a freshly-reached level', 1e-6);

@@ -19396,7 +19396,7 @@
     html += '<div class="tracker-picker-grid">';
     chosen.forEach(function(id){
       var p = PHYSIQUE_SKILL_MAP[id]; if(!p) return;
-      var lvl = getLevel(state.physique[id] || 0);
+      var lvl = skillLevel(id, state.physique[id] || 0);   // overlevel-aware (physiques mastery past 100)
       html += '<span class="tracker-chip on" title="'+escapeHtml(p.name)+' — Lv '+lvl+'">'+p.icon+' '+escapeHtml(p.name)+' <span style="opacity:.65;font-family:var(--font-mono);">Lv '+lvl+'</span> '+skillInfoBtn(id)+'</span>';
     });
     html += '</div></div>';
@@ -22368,11 +22368,12 @@
     html += '</div>';
     ov.innerHTML = html;
   }
-  // Current level of any trackable skill -- physiques live in state.physique, everything else in state.xp.
-  // Physiques cap at 100; main skills use skillLevel(), which lets gathering/crafting show past 100.
-  function anySkillLevel(id){ return PHYSIQUE_SKILL_MAP[id] ? getLevel((state.physique && state.physique[id]) || 0) : skillLevel(id, (state.xp && state.xp[id]) || 0); }
-  // Progress toward the next level (0-100) for any trackable skill or physique.
-  function anySkillProgress(id){ return PHYSIQUE_SKILL_MAP[id] ? levelProgress((state.physique && state.physique[id]) || 0) : skillLevelProgress(id, (state.xp && state.xp[id]) || 0); }
+  // XP of any trackable skill -- physiques live in state.physique, everything else in state.xp.
+  function anySkillXpVal(id){ return PHYSIQUE_SKILL_MAP[id] ? ((state.physique && state.physique[id]) || 0) : ((state.xp && state.xp[id]) || 0); }
+  // Level & progress via the overlevel-aware functions, so physiques mastery past 100 here too (they used
+  // to be hard-capped at 100 on this Skills tab via getLevel/levelProgress -- the reported bug).
+  function anySkillLevel(id){ return skillLevel(id, anySkillXpVal(id)); }
+  function anySkillProgress(id){ return skillLevelProgress(id, anySkillXpVal(id)); }
   // Resources > Skills tab: same grouped list as Settings, but every skill also gets a live progress bar.
   function renderSkillsTab(){
     var total = 0;
@@ -22384,8 +22385,11 @@
       html += '<div class="settings-col"><h4 style="color:'+g.color+'">'+escapeHtml(g.label)+'</h4>';
       g.skills.forEach(function(id){
         var info = (SKILL_INFO[id] || PHYSIQUE_SKILL_MAP[id]) ? ' '+skillInfoBtn(id) : '';
-        html += '<div class="settings-skill-row"><span>'+escapeHtml(SKILL_LABELS[id]||id)+info+'</span><b>Lv '+anySkillLevel(id)+'</b></div>';
-        html += '<div class="progress-track" style="height:5px;margin:0 0 7px;"><div class="progress-fill" style="width:'+anySkillProgress(id)+'%"></div></div>';
+        var _xp = anySkillXpVal(id), _lv = skillLevel(id, _xp);
+        var _tag = _lv > MAX_SKILL_LEVEL ? ' <span style="color:var(--gold);font-size:9px;letter-spacing:.5px">✦</span>' : '';
+        html += '<div class="settings-skill-row"><span>'+escapeHtml(SKILL_LABELS[id]||id)+info+'</span><b>Lv '+_lv+_tag+'</b></div>';
+        html += '<div class="progress-track" style="height:5px;margin:0 0 1px;"><div class="progress-fill" style="width:'+skillLevelProgress(id, _xp)+'%"></div></div>';
+        html += '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-faint);text-align:right;margin:0 0 6px">'+skillBarRightLabel(id, _xp)+'</div>';
       });
       html += '</div>';
     });
@@ -33338,7 +33342,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.46.0';
+  var GAME_VERSION = '0.0.46.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -33472,7 +33476,7 @@
       startGather:startGather, startCraft:startCraft, startPray:startPray, startCombat:startCombat, relocatePrimaryTaskToFreeSlot:relocatePrimaryTaskToFreeSlot,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
-      GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, planOfflineFaithActivity:planOfflineFaithActivity, physiqueLevelLabel:physiqueLevelLabel, skillTabsByLabel:skillTabsByLabel,
+      GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, planOfflineFaithActivity:planOfflineFaithActivity, physiqueLevelLabel:physiqueLevelLabel, anySkillLevel:anySkillLevel, anySkillProgress:anySkillProgress, anySkillXpVal:anySkillXpVal, skillTabsByLabel:skillTabsByLabel,
       renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
       combatLogPush:combatLogPush, combatLogHtml:combatLogHtml, advCombat:advCombat, _clReset:function(){ combatLog = []; }, _clGet:function(){ return combatLog; },
       chatMessagesHtml:chatMessagesHtml, chatRoleOf:chatRoleOf, chatIsMod:chatIsMod, chatIsOwner:chatIsOwner, chatMuteUntil:chatMuteUntil, chatAmIMuted:chatAmIMuted, chatMuteLabel:chatMuteLabel, renderChatModModal:renderChatModModal, renderChatModerationPanel:renderChatModerationPanel, chatNameFor:chatNameFor, titleName:titleName, profileCardBodyHtml:profileCardBodyHtml, renderPlayerProfileModal:renderPlayerProfileModal,
