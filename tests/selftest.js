@@ -68,13 +68,17 @@
     eq(FF.getLevelExt(EXT[105]-1), 104, 'one XP short of 105 is still 104');
     eq(FF.getLevelExt(EXT[FF.SKILL_MAX_LEVEL_EXT] * 4), FF.SKILL_MAX_LEVEL_EXT, 'the extended table has its own ceiling');
 
-    // Only gathering & crafting skills overlevel; combat/proficiency skills stay capped at 100.
+    // Gathering, crafting, classes, and weapon/armor proficiencies all overlevel now (mastery). Physiques
+    // level past 100 too but through their own state.physique map, not this skill-id set.
     ok(FF.skillCanOverlevel('mining'), 'a gathering skill can overlevel');
     ok(FF.skillCanOverlevel('weaponsmithing'), 'a crafting skill can overlevel');
-    ok(!FF.skillCanOverlevel('sword'), 'a weapon proficiency does not overlevel');
-    ok(!FF.skillCanOverlevel('platearmor'), 'an armor proficiency does not overlevel');
+    ok(FF.skillCanOverlevel('platearmor'), 'an armor proficiency can overlevel (mastery)');
+    ok(FF.skillCanOverlevel(FF.WEAPON_STYLE_IDS[0]), 'a weapon proficiency can overlevel (mastery)');
+    ok(FF.skillCanOverlevel(FF.CLASS_SKILL_IDS[0]), 'a class can overlevel (mastery)');
+    ok(!FF.skillCanOverlevel('not_a_real_skill_xyz'), 'an unknown skill does not overlevel');
     eq(FF.skillLevel('mining', EXT[108]), 108, 'skillLevel reads the extended table for gathering');
-    eq(FF.skillLevel('sword', EXT[150]), 100, 'skillLevel caps a combat skill at 100 regardless of XP');
+    eq(FF.skillLevel('platearmor', EXT[150]), 150, 'skillLevel reads the extended table for an armor proficiency (mastery)');
+    eq(FF.skillLevel('not_a_real_skill_xyz', EXT[150]), 100, 'skillLevel caps a non-overlevel skill at 100 regardless of XP');
     eq(FF.skillLevel('mining', FF.xpFloorForLevel(60)), 60, 'below 100 the two ladders agree');
 
     // Progress bar past 100: 0% at a fresh level, ~50% halfway, respects the doubled cost.
@@ -10179,6 +10183,43 @@
       eq(s.inventory[big], 1, 'above half Faith, an over-value relic is NOT wasted (fallback holds off)');
     } finally {
       s.inventory=save.inv; s.faith=save.faith; s.autoSacrificeRelics=save.auto; s.lockedItems=save.locked; s.xp.sacrifice=save.sx; if(s.physique) s.physique.oblation=save.obl;
+    }
+  });
+
+  // ---- Combat mastery: over-100 levels for classes / proficiencies / physiques ------------------
+  suite('combat mastery: over-100 bonuses', function(){
+    ok(typeof FF.masteryLevel === 'function' && FF.SKILL_XP_FLOOR_EXT, 'mastery helpers exported');
+    var s = FF._state, EXT = FF.SKILL_XP_FLOOR_EXT;
+    var xpFor = function(lvl){ return EXT[lvl]; };            // exact XP to sit at the start of a level
+    // masteryLevel = levels above 100 (0 at/below 100).
+    eq(FF.masteryLevel(0), 0, 'no mastery below level 100');
+    eq(FF.masteryLevel(xpFor(100)), 0, 'level 100 is 0 mastery levels');
+    eq(FF.masteryLevel(xpFor(105)), 5, 'level 105 is 5 mastery levels');
+
+    var save = { xp:s.xp, phys:s.physique };
+    try {
+      // Armor-proficiency mastery: -2% incoming per summed level, capped at 75%.
+      s.xp = {}; FF.ARMOR_PROFICIENCY_IDS.forEach(function(id){ s.xp[id] = 0; });
+      s.xp.clotharmor = xpFor(103); s.xp.platearmor = xpFor(102);   // 3 + 2 = 5 mastery levels
+      eq(FF.armorMasteryTotal(), 5, 'armor mastery sums across the material profs');
+      ok(Math.abs(FF.armorMasteryIncomingMult() - 0.90) < 1e-9, '5 armor-mastery levels = -10% incoming');
+      s.xp.clotharmor = xpFor(200);                                  // huge -> past the cap
+      ok(Math.abs(FF.armorMasteryIncomingMult() - (1 - FF.ARMOR_MASTERY_DR_CAP)) < 1e-9, 'armor-mastery reduction is capped');
+
+      // Physique mastery: +20 max HP per summed level, and maxHp reflects it.
+      s.xp = {}; s.physique = { fortitude: xpFor(100) };             // level 100 fortitude, no physique mastery yet
+      var hp0 = FF.maxHp(s);
+      eq(FF.physiqueMasteryTotal(), 0, 'no physique mastery at level 100');
+      s.physique = { fortitude: xpFor(104), balance: xpFor(102) };   // 4 + 2 = 6 mastery levels
+      eq(FF.physiqueMasteryTotal(), 6, 'physique mastery sums across every physique');
+      ok(FF.maxHp(s) - hp0 >= 20*6 - 1, 'physique mastery adds at least 20 max HP per level');
+
+      // Class mastery: the PLAYER_DMG_MODS row and the HP hook both scale by classMasteryLevel().
+      ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'classMastery'; }), 'a classMastery damage row exists');
+      eq(FF.CLASS_MASTERY_HP, 10, 'class mastery grants 10 HP/level'); eq(FF.CLASS_MASTERY_DMG, 0.10, 'class mastery grants 10% damage/level');
+      eq(FF.WEAPON_MASTERY_DMG, 0.15, 'weapon mastery grants 15% damage/level');
+    } finally {
+      s.xp = save.xp; s.physique = save.phys;
     }
   });
 
