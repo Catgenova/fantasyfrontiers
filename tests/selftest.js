@@ -84,6 +84,18 @@
     var PHYS0 = FF.PHYSIQUE_SKILLS[0].id;
     ok(FF.skillCanOverlevel(PHYS0), 'a physique can overlevel (mastery display)');
     eq(FF.skillLevel(PHYS0, EXT[112]), 112, 'skillLevel reads the extended table for a physique');
+    // A Lv100 physique bar shows real XP progress (not "MAX") so it no longer reads as maxed; the MASTERY
+    // tag only appears once past 100.
+    eq(FF.skillBarRightLabel(PHYS0, EXT[100] + (EXT[101]-EXT[100])*0.5).indexOf('MAX'), -1, 'a Lv100 physique bar shows XP progress, not MAX');
+    ok(/MAX/.test(FF.skillBarRightLabel(PHYS0, EXT[FF.SKILL_MAX_LEVEL_EXT]*4)), 'only the true extended ceiling reads MAX');
+    (function(){
+      var s = FF._state, savedXp = s.physique[PHYS0];
+      s.physique[PHYS0] = EXT[103];
+      ok(/MASTERY/.test(FF.physiqueLevelLabel(PHYS0)) && /Lv 103/.test(FF.physiqueLevelLabel(PHYS0)), 'a physique past 100 shows Lv + a MASTERY tag');
+      s.physique[PHYS0] = EXT[100];
+      ok(!/MASTERY/.test(FF.physiqueLevelLabel(PHYS0)) && /Lv 100/.test(FF.physiqueLevelLabel(PHYS0)), 'exactly Lv100 shows no mastery tag yet');
+      s.physique[PHYS0] = savedXp;
+    })();
 
     // Progress bar past 100: 0% at a fresh level, ~50% halfway, respects the doubled cost.
     near(FF.skillLevelProgress('mining', EXT[103]), 0, 'progress resets to 0 at a freshly-reached level', 1e-6);

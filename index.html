@@ -8439,6 +8439,12 @@
     if(s.maxed) return 'MAX';
     return fmt(Math.floor(s.into)) + ' / ' + fmt(Math.round(s.span)) + ' XP &middot; ' + Math.round(skillLevelProgress(skillId, xp)) + '%';
   }
+  // Physique-bar level label: adds a gold MASTERY tag once past 100 so "Lv 100" no longer reads as maxed
+  // (100 was the old cap; the bar now climbs to the extended ceiling, and the XP readout shows the rest).
+  function physiqueLevelLabel(id){
+    var lv = skillLevel(id, (state.physique && state.physique[id]) || 0);
+    return 'Lv ' + lv + (lv > MAX_SKILL_LEVEL ? ' <span style="color:var(--gold);font-size:10px;letter-spacing:.5px">✦ MASTERY</span>' : '');
+  }
   // Output-double chance for a gathering/crafting skill: +1% per level over 100 (0 below).
   function overLevelDoublePct(skillId, xp){
     if(!skillCanOverlevel(skillId)) return 0;
@@ -30627,10 +30633,11 @@
     html += '<div class="empty-note" style="margin:-2px 0 6px">+'+physSpeedPct+'% overall action speed &bull; each Physique also has its own specific effect (tap ? )</div>';
     if(physiquePanelExpanded){
       PHYSIQUE_SKILLS.forEach(function(p){
-        var lvl = skillLevel(p.id, state.physique[p.id]||0);        // shows mastery (>100) once earned
-        var pct = skillLevelProgress(p.id, state.physique[p.id]||0);
-        html += '<div class="skill-row"><div class="skill-row-top"><span class="sname">'+p.icon+' '+p.name+' '+skillInfoBtn(p.id)+'</span><span class="slvl" id="cp-plvl-'+p.id+'">Lv '+lvl+'</span></div>';
-        html += '<div class="mini-track"><div class="mini-fill" id="cp-pfill-'+p.id+'" style="width:'+pct+'%;background:var(--cat-physique)"></div></div></div>';
+        var pxp = state.physique[p.id]||0;
+        var pct = skillLevelProgress(p.id, pxp);
+        html += '<div class="skill-row"><div class="skill-row-top"><span class="sname">'+p.icon+' '+p.name+' '+skillInfoBtn(p.id)+'</span><span class="slvl" id="cp-plvl-'+p.id+'">'+physiqueLevelLabel(p.id)+'</span></div>';
+        html += '<div class="mini-track"><div class="mini-fill" id="cp-pfill-'+p.id+'" style="width:'+pct+'%;background:var(--cat-physique)"></div></div>';
+        html += '<div class="skill-xp-readout" id="cp-pxp-'+p.id+'" style="font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-align:right;margin:1px 0 0">'+skillBarRightLabel(p.id, pxp)+'</div></div>';
       });
     }
 
@@ -31756,10 +31763,13 @@
       if(sl) sl.textContent = 'Lv ' + skillLevel(sk, state.xp[sk]);
     });
     PHYSIQUE_SKILLS.forEach(function(p){
+      var pxp = state.physique[p.id]||0;
       var cf = document.getElementById('cp-pfill-'+p.id);
-      if(cf) cf.style.width = skillLevelProgress(p.id, state.physique[p.id]||0) + '%';
+      if(cf) cf.style.width = skillLevelProgress(p.id, pxp) + '%';
       var cl = document.getElementById('cp-plvl-'+p.id);
-      if(cl) cl.textContent = 'Lv ' + skillLevel(p.id, state.physique[p.id]||0);
+      if(cl) cl.innerHTML = physiqueLevelLabel(p.id);
+      var cx = document.getElementById('cp-pxp-'+p.id);
+      if(cx) cx.innerHTML = skillBarRightLabel(p.id, pxp);
     });
 
     Object.keys(ALL_SELLABLE).forEach(function(id){
@@ -33304,7 +33314,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.45.10';
+  var GAME_VERSION = '0.0.45.11';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -33438,7 +33448,7 @@
       startGather:startGather, startCraft:startCraft, startPray:startPray, startCombat:startCombat, relocatePrimaryTaskToFreeSlot:relocatePrimaryTaskToFreeSlot,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
-      GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, planOfflineFaithActivity:planOfflineFaithActivity, skillTabsByLabel:skillTabsByLabel,
+      GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, planOfflineFaithActivity:planOfflineFaithActivity, physiqueLevelLabel:physiqueLevelLabel, skillTabsByLabel:skillTabsByLabel,
       renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
       combatLogPush:combatLogPush, combatLogHtml:combatLogHtml, advCombat:advCombat, _clReset:function(){ combatLog = []; }, _clGet:function(){ return combatLog; },
       chatMessagesHtml:chatMessagesHtml, chatRoleOf:chatRoleOf, chatIsMod:chatIsMod, chatIsOwner:chatIsOwner, chatMuteUntil:chatMuteUntil, chatAmIMuted:chatAmIMuted, chatMuteLabel:chatMuteLabel, renderChatModModal:renderChatModModal, renderChatModerationPanel:renderChatModerationPanel, chatNameFor:chatNameFor, titleName:titleName, profileCardBodyHtml:profileCardBodyHtml, renderPlayerProfileModal:renderPlayerProfileModal,
