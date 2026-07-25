@@ -84,6 +84,26 @@ function bucketAdvance(from: number, consumed: number, perDay: number): string {
 const AUDIT_HUGE_DELTA = 1_000_000_000;   // one request claiming >1B new earnings
 const AUDIT_GOLD_ABS = 1_000_000;         // sync-clamp trip: reported gold exceeds server by >1M AND >2x
 
+// ---- One-time SEED grandfather cap + gold-injection clamp (account clamps; migrations 210000/220000) ----
+// The first wallet touch seeds from saves.data.gold. Un-bounded, that let a BRAND-NEW/tampered account seed
+// a spoofed balance (edit data.gold=1e9, save, first wallet call -> 1e9 real gold). Bound the seed by
+// account age at the same daily rate the earn path uses -- mirrors the item-ledger grandfather cap
+// (20260715020000). A fresh account seeds ~0; a genuinely-old dormant account still gets its legit balance.
+// Gold beyond the cap is the injection signature -> record a clamp_signal + clamp (LIVE: the seed cap makes
+// the over-cap amount unambiguous). Reuses clamp_signals / account_clamps (no migration).
+const SEED_BURST_GOLD = 100_000;          // small floor so legit starter/early gold at first touch isn't zeroed
+const GOLD_INJECT_MIN_OVER = 10_000_000;  // seed exceeding the age cap by >=1e7 is an injection, not rounding
+const GOLD_INJECT_CLAMP_MAX_AGE_DAYS = 14; // only CLAMP a young account; an old dormant one (legit pre-wallet
+                                          // balance predating the rate limit) is capped but never punished
+const GOLD_CLAMP_ENFORCE = true;          // live enforcement (this signal is clean, like item_inject)
+const CLAMP_INDEFINITE_MS = 5_256_000 * 60_000; // ~10 years, matches the clamp RPC's cap
+// Age-bounded ceiling on the one-time seed: max(burst, plausible earnings over the account's whole life).
+function seedCapFor(createdAtIso: string | undefined, totalLevel: number): number {
+  if (RAMP_OFF) return HARD_CAP;          // staging: seeding unbounded, like the earn ramp
+  const days = createdAtIso ? Math.max(0, (Date.now() - new Date(createdAtIso).getTime()) / 86_400_000) : 0;
+  return Math.min(HARD_CAP, Math.max(SEED_BURST_GOLD, Math.floor(dailyAllowanceFor(createdAtIso, totalLevel) * days)));
+}
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -131,17 +151,47 @@ Deno.serve(async (req) => {
     const { data: row } = await admin.from("player_wallet")
       .select("gold, earned_total, updated_at, seeded").eq("user_id", userId).maybeSingle();
     if (row) return { gold: Number(row.gold), earned_total: Number(row.earned_total), updated_at: row.updated_at };
-    // No row yet -> read the player's save gold and seed once.
+    // No row yet -> read the player's save gold and seed once, AGE-BOUNDED so a fresh/tampered account
+    // can't grandfather a spoofed balance (the reported "1B gold on a brand-new account" hole).
     const { data: save } = await admin.from("saves").select("data").eq("user_id", userId).maybeSingle();
     let seedGold = 0;
     const g = (save?.data as Record<string, unknown> | undefined)?.gold;
     if (typeof g === "number" && Number.isFinite(g) && g > 0) seedGold = Math.floor(g);
-    const { data: seeded } = await admin.rpc("wallet_seed", { p_user: userId, p_gold: Math.min(seedGold, HARD_CAP) });
+    const seedCap = seedCapFor(user.created_at, totalLevel);
+    const cappedSeed = Math.min(seedGold, seedCap, HARD_CAP);
+    const over = seedGold - cappedSeed;
+    // Age gate for the PUNITIVE clamp only: a young account seeding far over its cap is an injection; an
+    // OLD dormant account carrying a legit pre-wallet balance predating the rate limit is capped (seed is
+    // trimmed above regardless) but never clamped.
+    const accountDays = user.created_at ? Math.max(0, (Date.now() - new Date(user.created_at).getTime()) / 86_400_000) : 0;
+    if (over >= GOLD_INJECT_MIN_OVER && accountDays < GOLD_INJECT_CLAMP_MAX_AGE_DAYS) {
+      // The save claims far more gold than this young account's age could plausibly hold -> injection.
+      // Best-effort clamp (Discord fires on the clamp) + audit; the seed itself is already trimmed regardless.
+      try {
+        await audit("gold_inject_seed", { seed_gold: seedGold, seed_cap: seedCap, over });
+        const detail = { kind: "gold_inject", seed_gold: seedGold, seed_cap: seedCap, over };
+        const { data: recent } = await admin.from("clamp_signals").select("id")
+          .eq("user_id", userId).eq("kind", "gold_inject")
+          .gte("created_at", new Date(Date.now() - 3_600_000).toISOString()).limit(1);
+        if (!recent || !recent.length) {
+          console.warn(`clamp signal gold_inject: user=${userId} seed=${seedGold} cap=${seedCap}`);
+          await admin.from("clamp_signals").insert({ user_id: userId, kind: "gold_inject", detail, would_clamp: true });
+          if (GOLD_CLAMP_ENFORCE) {
+            await admin.from("account_clamps").upsert({
+              user_id: userId, surfaces: ["marketplace", "leaderboard", "guild", "chat"],
+              clamped_until: new Date(Date.now() + CLAMP_INDEFINITE_MS).toISOString(),
+              auto: true, signal: detail, clamped_by: null,
+            }, { onConflict: "user_id" });
+          }
+        }
+      } catch { /* detection is best-effort -- never block seeding */ }
+    }
+    const { data: seeded } = await admin.rpc("wallet_seed", { p_user: userId, p_gold: cappedSeed });
     // Start the bucket FULL: back-date updated_at by the fill window so the first legit earn after
     // seeding isn't throttled to ~0 (which, on a 0-gold seed, wiped freshly-earned gold to 0).
     const backdated = new Date(Date.now() - BUCKET_FILL_MS).toISOString();
     await admin.from("player_wallet").update({ updated_at: backdated }).eq("user_id", userId);
-    return { gold: Number(seeded ?? seedGold), earned_total: 0, updated_at: backdated };
+    return { gold: Number(seeded ?? cappedSeed), earned_total: 0, updated_at: backdated };
   }
 
   if (action === "get") {
