@@ -46,6 +46,16 @@ const SIGNAL_MIN_ELAPSED_MS = 2_000;
 const SIGNAL_MAX_ELAPSED_MS = 120_000;
 const SIGNAL_PROGRESS_JUMP = 10_000_000_000; // 1e10
 const CLAMP_INDEFINITE_MS = 5_256_000 * 60_000; // ~10 years, matches the clamp RPC's cap
+// Gold-injection HARD CLAMP at the entry point. The exploit lands data.gold / data.goldEarnedTotal HERE;
+// a young account (< HARD_CLAMP_MAX_AGE_DAYS) whose save carries >= HARD_CLAMP_GOLD gold OR lifetime
+// earnings is injecting -> clamp on the NEXT save push (every ~8s), instead of waiting for a wallet sync.
+// Mirrors the wallet earn-path rule; age-gated so it never touches an established account. 500M is the
+// full-rate allowance for a whole week -- no legit sub-7-day save reaches it.
+const HARD_CLAMP_MAX_AGE_DAYS = 7;
+const HARD_CLAMP_GOLD = 500_000_000;
+function accountAgeDays(createdAtIso: string | undefined): number {
+  return createdAtIso ? Math.max(0, (Date.now() - new Date(createdAtIso).getTime()) / 86_400_000) : 0;
+}
 
 // Derive the progress score from the SUBMITTED SAVE instead of trusting a client-sent number.
 // Previously `progress` was read straight off the body with only a `>= 0` floor, so a request could
@@ -208,6 +218,39 @@ Deno.serve(async (req) => {
               auto: true, signal: detail, clamped_by: null,
             }, { onConflict: "user_id" });
           }
+        }
+      }
+    }
+  } catch { /* detection is best-effort -- never block a save on it */ }
+
+  // Gold-injection detector (mirrors the wallet earn-path hard clamp). The injection lands here first, so
+  // catching it here clamps an ACTIVE injector on their next push rather than waiting for a wallet sync.
+  // data.gold was already clamped to GOLD_CAP above (values <=1e15 pass unchanged, so 1e9 is intact);
+  // goldEarnedTotal is read raw. Age-gated so an established account is never touched. Best-effort.
+  try {
+    const ageDays = accountAgeDays(user.created_at);
+    const gNum = Number((data as Record<string, unknown>).gold);
+    const eNum = Number((data as Record<string, unknown>).goldEarnedTotal);
+    const worst = Math.max(Number.isFinite(gNum) ? gNum : 0, Number.isFinite(eNum) ? eNum : 0);
+    if (ageDays < HARD_CLAMP_MAX_AGE_DAYS && worst >= HARD_CLAMP_GOLD) {
+      const { data: recent } = await admin.from("clamp_signals").select("id")
+        .eq("user_id", userId).eq("kind", "gold_inject")
+        .gte("created_at", new Date(Date.now() - 3_600_000).toISOString()).limit(1);
+      if (!recent || !recent.length) {
+        const detail = {
+          kind: "gold_inject", via: "save",
+          save_gold: Math.floor(Number.isFinite(gNum) ? gNum : 0),
+          save_earned: Math.floor(Number.isFinite(eNum) ? eNum : 0),
+          age_days: Math.floor(ageDays),
+        };
+        console.warn(`clamp signal gold_inject(save): user=${userId} worst=${Math.floor(worst)} ageDays=${ageDays.toFixed(2)}`);
+        await admin.from("clamp_signals").insert({ user_id: userId, kind: "gold_inject", detail, would_clamp: true });
+        if (CLAMP_AUTOENFORCE) {
+          await admin.from("account_clamps").upsert({
+            user_id: userId, surfaces: ["marketplace", "leaderboard", "guild", "chat"],
+            clamped_until: new Date(Date.now() + CLAMP_INDEFINITE_MS).toISOString(),
+            auto: true, signal: detail, clamped_by: null,
+          }, { onConflict: "user_id" });
         }
       }
     }
