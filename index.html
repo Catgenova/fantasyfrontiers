@@ -8384,6 +8384,13 @@
   var SKILL_MAX_LEVEL_EXT = 200;          // ceiling of the extended floor table (unreachable in practice)
   var SKILL_OVERLEVEL_GROWTH = 2.0;       // each level past 100 doubles the prior level's XP cost
   var OVERLEVEL_DOUBLE_PER_LEVEL = 0.01;  // +1% output-double chance per level over 100
+  // Physiques get their OWN, far gentler over-100 curve: they earn only ~1-21 XP per action (vs hundreds
+  // for gathering/crafting), so the shared 2x skill curve (5.5M XP for level 101) made physique mastery
+  // effectively unreachable. Here 100->101 costs PHYSIQUE_OVERLEVEL_BASE and each further level costs
+  // PHYSIQUE_OVERLEVEL_GROWTH x the last (101 ~= 500k, 105 ~= 5M, 110 ~= 27M, 120 ~= 580M) -- a real, hard
+  // grind instead of impossible. Gathering/crafting/classes/proficiencies keep the 2x curve.
+  var PHYSIQUE_OVERLEVEL_BASE = 500000;
+  var PHYSIQUE_OVERLEVEL_GROWTH = 1.35;
   var SKILL_XP_FLOOR_EXT = (function(){
     var f = SKILL_XP_FLOOR.slice();                          // reuse the 0..100 floors verbatim
     var cost = f[MAX_SKILL_LEVEL] - f[MAX_SKILL_LEVEL - 1];  // cost(99 -> 100), the base to double from
@@ -8395,6 +8402,18 @@
     }
     return f;
   })();
+  var PHYSIQUE_XP_FLOOR_EXT = (function(){
+    var f = SKILL_XP_FLOOR.slice();                          // shared 0..100 floors, then the gentle physique tail
+    var cost = PHYSIQUE_OVERLEVEL_BASE, cum = f[MAX_SKILL_LEVEL]; // 100->101 = the base cost (not the 2.75M skill step)
+    for(var L = MAX_SKILL_LEVEL; L < SKILL_MAX_LEVEL_EXT; L++){
+      cum += cost;
+      f[L + 1] = cum;
+      cost *= PHYSIQUE_OVERLEVEL_GROWTH;                     // each further level costs 1.35x the last
+    }
+    return f;
+  })();
+  // The extended floor table a skill overlevels on: physiques ride the gentle curve, everything else the 2x one.
+  function extFloorTableFor(skillId){ return (skillId && PHYSIQUE_SKILL_MAP[skillId]) ? PHYSIQUE_XP_FLOOR_EXT : SKILL_XP_FLOOR_EXT; }
   var OVERLEVEL_SKILL_SET = {}; GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).forEach(function(id){ OVERLEVEL_SKILL_SET[id] = 1; });
   // Classes, weapon proficiencies and armor proficiencies keep leveling past 100 too -- their over-100
   // "mastery" levels grant combat bonuses (see masteryLevel + the mastery constants below). They now
@@ -8405,20 +8424,23 @@
     PHYSIQUE_SKILLS.map(function(p){ return p.id; })   // physiques overlevel for DISPLAY; physBonus effects still cap at 100
   ).forEach(function(id){ OVERLEVEL_SKILL_SET[id] = 1; });
   function skillCanOverlevel(skillId){ return OVERLEVEL_SKILL_SET[skillId] === 1; }
-  function getLevelExt(xp){
+  function getLevelExt(xp, table){
+    table = table || SKILL_XP_FLOOR_EXT;                     // caller passes the physique table for physiques
     if(!(xp > 0)) return 1;
     var lo = 1, hi = SKILL_MAX_LEVEL_EXT;
-    while(lo < hi){ var mid = (lo + hi + 1) >> 1; if(SKILL_XP_FLOOR_EXT[mid] <= xp) lo = mid; else hi = mid - 1; }
+    while(lo < hi){ var mid = (lo + hi + 1) >> 1; if(table[mid] <= xp) lo = mid; else hi = mid - 1; }
     return lo;
   }
-  // Skill-aware level & progress: gathering/crafting read the extended table; everything else caps at 100.
-  function skillLevel(skillId, xp){ return skillCanOverlevel(skillId) ? getLevelExt(xp || 0) : getLevel(xp || 0); }
+  // Skill-aware level & progress: overlevel skills read their extended table (physiques the gentle one);
+  // everything else caps at 100.
+  function skillLevel(skillId, xp){ return skillCanOverlevel(skillId) ? getLevelExt(xp || 0, extFloorTableFor(skillId)) : getLevel(xp || 0); }
   function skillLevelProgress(skillId, xp){
     if(!skillCanOverlevel(skillId)) return levelProgress(xp || 0);
     xp = xp || 0;
-    var lvl = getLevelExt(xp);
+    var table = extFloorTableFor(skillId);
+    var lvl = getLevelExt(xp, table);
     if(lvl >= SKILL_MAX_LEVEL_EXT) return 100;
-    var floor = SKILL_XP_FLOOR_EXT[lvl], ceil = SKILL_XP_FLOOR_EXT[lvl + 1];
+    var floor = table[lvl], ceil = table[lvl + 1];
     return clamp((xp - floor) / (ceil - floor) * 100, 0, 100);
   }
   // XP earned into the current level and the level's total span, for the "1,234 / 2,700 XP" readout on
@@ -8426,11 +8448,12 @@
   function skillLevelXpSpan(skillId, xp){
     xp = xp || 0;
     var ext = skillCanOverlevel(skillId);
-    var lvl = ext ? getLevelExt(xp) : getLevel(xp);
+    var table = ext ? extFloorTableFor(skillId) : null;
+    var lvl = ext ? getLevelExt(xp, table) : getLevel(xp);
     var maxLvl = ext ? SKILL_MAX_LEVEL_EXT : MAX_SKILL_LEVEL;
     if(lvl >= maxLvl) return { into:0, span:0, maxed:true };
-    var floor = ext ? SKILL_XP_FLOOR_EXT[lvl] : xpFloorForLevel(lvl);
-    var ceil  = ext ? SKILL_XP_FLOOR_EXT[lvl + 1] : xpForNextLevel(lvl);
+    var floor = ext ? table[lvl] : xpFloorForLevel(lvl);
+    var ceil  = ext ? table[lvl + 1] : xpForNextLevel(lvl);
     return { into: Math.max(0, xp - floor), span: Math.max(0, ceil - floor), maxed:false };
   }
   // The right-hand readout on a skill progress bar: "1,234 / 2,700 XP · 45%" (or "MAX" at the cap).
@@ -8470,8 +8493,9 @@
   var WEAPON_MASTERY_DMG = 0.15;
   var ARMOR_MASTERY_DR = 0.02, ARMOR_MASTERY_DR_CAP = 0.75;   // capped so armor mastery can never fully negate a hit
   var PHYSIQUE_MASTERY_HP = 20;
-  // Levels a total sits above 100 (0 below). Works on any xp via the extended (doubling) floor table.
-  function masteryLevel(xp){ return Math.max(0, getLevelExt(xp || 0) - MAX_SKILL_LEVEL); }
+  // Levels a total sits above 100 (0 below). Defaults to the 2x skill table (classes/weapon/armor profs);
+  // pass PHYSIQUE_XP_FLOOR_EXT for physiques, which mastery on the gentler curve.
+  function masteryLevel(xp, table){ return Math.max(0, getLevelExt(xp || 0, table) - MAX_SKILL_LEVEL); }
   // All take the state they operate on (default: the global `state`), so maxHp() can compute for a state
   // being built during init before the global is assigned -- reading the global there threw on bodyArmor.
   // Active class's mastery level (0 when no class is equipped, or the state isn't ready).
@@ -8480,7 +8504,7 @@
   function weaponMasteryLevel(profId, st){ st = st || state; return (profId && st && st.xp) ? masteryLevel(st.xp[profId] || 0) : 0; }
   // Total physique mastery levels across every physique (each grants flat max HP).
   function physiqueMasteryTotal(st){
-    st = st || state; var t = 0, ph = (st && st.physique) || {}; for(var k in ph){ if(ph.hasOwnProperty(k)) t += masteryLevel(ph[k] || 0); }
+    st = st || state; var t = 0, ph = (st && st.physique) || {}; for(var k in ph){ if(ph.hasOwnProperty(k)) t += masteryLevel(ph[k] || 0, PHYSIQUE_XP_FLOOR_EXT); }
     return t;
   }
   // Total armor-proficiency mastery across the four material profs (each grants flat incoming reduction).
@@ -33314,7 +33338,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.45.11';
+  var GAME_VERSION = '0.0.46.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -33514,7 +33538,7 @@
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerRageMult:berserkerRageMult, berserkerMissingFrac:berserkerMissingFrac, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerTollMult:berserkerTollMult, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_TOLL_HEAL_CEIL:BERSERK_TOLL_HEAL_CEIL, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, sentinelReflectSourceName:sentinelReflectSourceName, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeRuneHungerMult:spellbladeRuneHungerMult, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, spellbladeEchoChance:spellbladeEchoChance, equippedEnchantCount:equippedEnchantCount, spellbladeEnchantBoost:spellbladeEnchantBoost, SPELLBLADE_RUNEHUNGER_PER:SPELLBLADE_RUNEHUNGER_PER, SPELLBLADE_CRITRUNE_PER:SPELLBLADE_CRITRUNE_PER, SPELLBLADE_ECHO_PCT:SPELLBLADE_ECHO_PCT, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistDuelMult:duelistDuelMult, DUELIST_POISE_MAX:DUELIST_POISE_MAX, DUELIST_FOOTWORK_MAX:DUELIST_FOOTWORK_MAX, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, incomingDamageMult:incomingDamageMult, incomingMitigationFloor:incomingMitigationFloor, INCOMING_FLOOR_FRAC:INCOMING_FLOOR_FRAC, startCombat:startCombat, reaperBonus:reaperBonus, reaperLifestealPct:reaperLifestealPct, reaperGrimResolveCrit:reaperGrimResolveCrit, reaperShieldCap:reaperShieldCap, combatShieldTotal:combatShieldTotal, rollCraftRarity:rollCraftRarity, rarityRollDisabledForTier:rarityRollDisabledForTier, SETTINGS_TOGGLES:SETTINGS_TOGGLES, clampPlayerHpToMax:clampPlayerHpToMax, legendaryDmgMult:legendaryDmgMult, legendaryDodgeBonus:legendaryDodgeBonus, legendaryLifestealPct:legendaryLifestealPct, legWastingCurseIncomingMult:legWastingCurseIncomingMult, legNotePoisonStart:legNotePoisonStart, legVanishWindowReady:legVanishWindowReady, samuraiFocusCap:samuraiFocusCap, knightMomentumPerStack:knightMomentumPerStack, legDistinctEnchantCount:legDistinctEnchantCount, legEchoDmgMult:legEchoDmgMult, legShieldBashDamage:legShieldBashDamage, legReflectCanCrit:legReflectCanCrit, legReflectCritMult:legReflectCritMult, legendaryCritDmg:legendaryCritDmg, legEarthshakerBuild:legEarthshakerBuild, legEarthshakerConsume:legEarthshakerConsume, LEG_TREMOR_CAP:LEG_TREMOR_CAP, LEG_TREMOR_MULT:LEG_TREMOR_MULT, CRIT_DAMAGE_MULT:CRIT_DAMAGE_MULT, legendaryAccuracyBonus:legendaryAccuracyBonus, legRangerAilmentRolls:legRangerAilmentRolls, LEG_CHAINSHOT_MAX:LEG_CHAINSHOT_MAX, legendaryCritChance:legendaryCritChance, legThunderMaxStacks:legThunderMaxStacks, legRetributionArmed:legRetributionArmed, legRetributionConsume:legRetributionConsume, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, heraldGuardMaxStacks:heraldGuardMaxStacks, HERALD_GUARD_MAX_STACKS:HERALD_GUARD_MAX_STACKS, HERALD_GUARD_PER_STACK:HERALD_GUARD_PER_STACK, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legChargedRiposteArmed:legChargedRiposteArmed, legChargedRiposteConsume:legChargedRiposteConsume, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, applyReaperWitherTick:applyReaperWitherTick,
       MONSTER_SPECIALS:MONSTER_SPECIALS, monsterSpecialFire:monsterSpecialFire, monsterSpecialDesc:monsterSpecialDesc, clearEnemySpecialState:clearEnemySpecialState, playerDotDps:playerDotDps, playerDotTick:playerDotTick, playerDotWord:playerDotWord, playerBleedActive:playerBleedActive, playerPoisonActive:playerPoisonActive, playerFeared:playerFeared, enemyWeakenMult:enemyWeakenMult, playerShredMult:playerShredMult, enemyHardenMult:enemyHardenMult,
       playerBurnActive:playerBurnActive, playerChillSlowMult:playerChillSlowMult, playerBlindMult:playerBlindMult, enemyVeilHitMult:enemyVeilHitMult, purgePlayerBuff:purgePlayerBuff,
-      enemyFrenzyFactor:enemyFrenzyFactor, enemyFrenzySpeedMult:enemyFrenzySpeedMult, enemyFrenzyDmgMult:enemyFrenzyDmgMult, enemySiphonActive:enemySiphonActive, enemyRallyDmgMult:enemyRallyDmgMult, enemyMightDmgMult:enemyMightDmgMult, maxHp:maxHp, getLevel:getLevel, getLevelExt:getLevelExt, skillLevel:skillLevel, masteryLevel:masteryLevel, classMasteryLevel:classMasteryLevel, weaponMasteryLevel:weaponMasteryLevel, physiqueMasteryTotal:physiqueMasteryTotal, armorMasteryTotal:armorMasteryTotal, armorMasteryIncomingMult:armorMasteryIncomingMult, CLASS_MASTERY_HP:CLASS_MASTERY_HP, CLASS_MASTERY_DMG:CLASS_MASTERY_DMG, WEAPON_MASTERY_DMG:WEAPON_MASTERY_DMG, ARMOR_MASTERY_DR:ARMOR_MASTERY_DR, ARMOR_MASTERY_DR_CAP:ARMOR_MASTERY_DR_CAP, PHYSIQUE_MASTERY_HP:PHYSIQUE_MASTERY_HP, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, applyOfflineProgress:applyOfflineProgress, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
+      enemyFrenzyFactor:enemyFrenzyFactor, enemyFrenzySpeedMult:enemyFrenzySpeedMult, enemyFrenzyDmgMult:enemyFrenzyDmgMult, enemySiphonActive:enemySiphonActive, enemyRallyDmgMult:enemyRallyDmgMult, enemyMightDmgMult:enemyMightDmgMult, maxHp:maxHp, getLevel:getLevel, getLevelExt:getLevelExt, skillLevel:skillLevel, masteryLevel:masteryLevel, classMasteryLevel:classMasteryLevel, weaponMasteryLevel:weaponMasteryLevel, physiqueMasteryTotal:physiqueMasteryTotal, armorMasteryTotal:armorMasteryTotal, armorMasteryIncomingMult:armorMasteryIncomingMult, CLASS_MASTERY_HP:CLASS_MASTERY_HP, CLASS_MASTERY_DMG:CLASS_MASTERY_DMG, WEAPON_MASTERY_DMG:WEAPON_MASTERY_DMG, ARMOR_MASTERY_DR:ARMOR_MASTERY_DR, ARMOR_MASTERY_DR_CAP:ARMOR_MASTERY_DR_CAP, PHYSIQUE_MASTERY_HP:PHYSIQUE_MASTERY_HP, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, PHYSIQUE_XP_FLOOR_EXT:PHYSIQUE_XP_FLOOR_EXT, applyOfflineProgress:applyOfflineProgress, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldGuardMult:heraldGuardMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, quickdrawSecondWind:quickdrawSecondWind, quickdrawSecondWindDodge:quickdrawSecondWindDodge, quickdrawEagleEyeCrit:quickdrawEagleEyeCrit, templarBeaconPotencyMult:templarBeaconPotencyMult, templarDawnbreakerMult:templarDawnbreakerMult, templarHolyLightHps:templarHolyLightHps, templarIncomingDmgMult:templarIncomingDmgMult, knightStacks:knightStacks, knightStackCap:knightStackCap, knightBulwarkDR:knightBulwarkDR, knightHurt:knightHurt, knightWarlordDmgMult:knightWarlordDmgMult, knightWarlordDR:knightWarlordDR, knightWarlordLifestealPct:knightWarlordLifestealPct, knightDamageTakenMult:knightDamageTakenMult, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, assassinRhythmRegister:assassinRhythmRegister, ASSASSIN_RHYTHM_MAX:ASSASSIN_RHYTHM_MAX, assassinApplyLacerate:assassinApplyLacerate, assassinLacerateMaxStacks:assassinLacerateMaxStacks, ASSASSIN_BLEED_MAX:ASSASSIN_BLEED_MAX, assassinHemorrhageCritMult:assassinHemorrhageCritMult, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderStacks:thunderStacks, thunderStaticCharge:thunderStaticCharge, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, enemyStunned:enemyStunned, THUNDER_MAX_STACKS:THUNDER_MAX_STACKS, THUNDER_STATIC_MAX:THUNDER_STATIC_MAX, THUNDER_GALVANIZE_MAX:THUNDER_GALVANIZE_MAX,
       treasureHunterDmgMult:treasureHunterDmgMult, treasureHunterCritDmgBonus:treasureHunterCritDmgBonus, treasureHunterCount:treasureHunterCount, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, RELIC_ITEMS:RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, autoSacrificeItemsCheck:autoSacrificeItemsCheck, collectSacrificeRows:collectSacrificeRows, sacRowRestore:sacRowRestore, sacRowKey:sacRowKey, toggleAutoSacItem:toggleAutoSacItem, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,

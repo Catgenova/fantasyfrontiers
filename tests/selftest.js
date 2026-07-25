@@ -81,18 +81,25 @@
     eq(FF.skillLevel('not_a_real_skill_xyz', EXT[150]), 100, 'skillLevel caps a non-overlevel skill at 100 regardless of XP');
     eq(FF.skillLevel('mining', FF.xpFloorForLevel(60)), 60, 'below 100 the two ladders agree');
     // Physiques overlevel for DISPLAY (the character panel reads skillLevel(p.id, ...)).
-    var PHYS0 = FF.PHYSIQUE_SKILLS[0].id;
+    var PHYS0 = FF.PHYSIQUE_SKILLS[0].id, PEXT = FF.PHYSIQUE_XP_FLOOR_EXT;
     ok(FF.skillCanOverlevel(PHYS0), 'a physique can overlevel (mastery display)');
-    eq(FF.skillLevel(PHYS0, EXT[112]), 112, 'skillLevel reads the extended table for a physique');
+    // Physiques read their OWN gentler extended table, not the 2x skill one.
+    eq(FF.skillLevel(PHYS0, PEXT[112]), 112, 'skillLevel reads the PHYSIQUE table for a physique');
+    eq(PEXT[100], EXT[100], 'the physique table shares the 0..100 floors');
+    ok(PEXT[101]-PEXT[100] < EXT[101]-EXT[100], 'the physique 100->101 step is far cheaper than the skill one');
+    near(PEXT[101]-PEXT[100], 500000, 'physique 100->101 costs ~500k', 1);
+    near((PEXT[102]-PEXT[101])/(PEXT[101]-PEXT[100]), 1.35, 'each physique mastery level costs 1.35x the last', 1e-6);
+    near(PEXT[110]-PEXT[100], 27300000, 'reaching physique L110 costs ~27M past L100', 5e5);
+    ok(EXT[110]-EXT[100] > 5e9, 'the skill curve stays brutal past 100 (unchanged)');
     // A Lv100 physique bar shows real XP progress (not "MAX") so it no longer reads as maxed; the MASTERY
     // tag only appears once past 100.
-    eq(FF.skillBarRightLabel(PHYS0, EXT[100] + (EXT[101]-EXT[100])*0.5).indexOf('MAX'), -1, 'a Lv100 physique bar shows XP progress, not MAX');
-    ok(/MAX/.test(FF.skillBarRightLabel(PHYS0, EXT[FF.SKILL_MAX_LEVEL_EXT]*4)), 'only the true extended ceiling reads MAX');
+    eq(FF.skillBarRightLabel(PHYS0, PEXT[100] + (PEXT[101]-PEXT[100])*0.5).indexOf('MAX'), -1, 'a Lv100 physique bar shows XP progress, not MAX');
+    ok(/MAX/.test(FF.skillBarRightLabel(PHYS0, PEXT[FF.SKILL_MAX_LEVEL_EXT]*4)), 'only the true extended ceiling reads MAX');
     (function(){
       var s = FF._state, savedXp = s.physique[PHYS0];
-      s.physique[PHYS0] = EXT[103];
+      s.physique[PHYS0] = PEXT[103];
       ok(/MASTERY/.test(FF.physiqueLevelLabel(PHYS0)) && /Lv 103/.test(FF.physiqueLevelLabel(PHYS0)), 'a physique past 100 shows Lv + a MASTERY tag');
-      s.physique[PHYS0] = EXT[100];
+      s.physique[PHYS0] = PEXT[100];
       ok(!/MASTERY/.test(FF.physiqueLevelLabel(PHYS0)) && /Lv 100/.test(FF.physiqueLevelLabel(PHYS0)), 'exactly Lv100 shows no mastery tag yet');
       s.physique[PHYS0] = savedXp;
     })();
@@ -10308,11 +10315,13 @@
       s.xp.clotharmor = xpFor(200);                                  // huge -> past the cap
       ok(Math.abs(FF.armorMasteryIncomingMult() - (1 - FF.ARMOR_MASTERY_DR_CAP)) < 1e-9, 'armor-mastery reduction is capped');
 
-      // Physique mastery: +20 max HP per summed level, and maxHp reflects it.
-      s.xp = {}; s.physique = { fortitude: xpFor(100) };             // level 100 fortitude, no physique mastery yet
+      // Physique mastery: +20 max HP per summed level, and maxHp reflects it. Physiques use the gentler
+      // PHYSIQUE table, so their XP-for-level comes from PEXT, not the 2x skill table.
+      var PEXT = FF.PHYSIQUE_XP_FLOOR_EXT, pxpFor = function(lvl){ return PEXT[lvl]; };
+      s.xp = {}; s.physique = { fortitude: pxpFor(100) };            // level 100 fortitude, no physique mastery yet
       var hp0 = FF.maxHp(s);
       eq(FF.physiqueMasteryTotal(), 0, 'no physique mastery at level 100');
-      s.physique = { fortitude: xpFor(104), balance: xpFor(102) };   // 4 + 2 = 6 mastery levels
+      s.physique = { fortitude: pxpFor(104), balance: pxpFor(102) }; // 4 + 2 = 6 mastery levels
       eq(FF.physiqueMasteryTotal(), 6, 'physique mastery sums across every physique');
       ok(FF.maxHp(s) - hp0 >= 20*6 - 1, 'physique mastery adds at least 20 max HP per level');
 
