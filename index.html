@@ -8804,6 +8804,7 @@
   // Inverse of seedInfo: the seed id for a growing crop (its type + tier). Harvesting has a chance to
   // drop one back (self-sustaining fields).
   var HARVEST_SEED_DROP_CHANCE = 0.75;   // chance a harvest returns a seed of the crop harvested
+  var FARM_BASE_YIELD = 5;               // crops per harvest before perks; fertilizer doubles it to 10
   function cropSeedId(cropType, tierIndex){
     var id = cropType==='grain' ? 'grainseed_t'+tierIndex : cropType==='herb' ? 'herbseed_t'+tierIndex : 'seed_t'+tierIndex;
     return (SEED_ITEMS[id] || GRAIN_SEED_ITEMS[id] || HERB_SEED_ITEMS[id]) ? id : null;
@@ -8837,8 +8838,9 @@
     if(Date.now() < plot.readyAt) return null;
     var cropData = getCropDataForPlot(plot);
     if(!cropData){ delete map[key]; needsRender = true; return null; } // self-heal a bad cropType
-    // Fertilizer doubles the harvest (Composter can push a fertilized plot to 3x); Green Thumb may add one more.
-    var yieldQty = plot.fertilized ? (composterTripleYield() ? 3 : 2) : 1;
+    // Base 5 per harvest; fertilizer doubles it to 10 (Composter can push a fertilized plot to 3x = 15);
+    // Green Thumb may add one more.
+    var yieldQty = FARM_BASE_YIELD * (plot.fertilized ? (composterTripleYield() ? 3 : 2) : 1);
     yieldQty += greenThumbExtraYield();
     addItem(cropData.id, yieldQty);
     bumpStat('harvested_' + cropData.id); // crops harvested (by crop item), powers "Harvest 1 Cotton"
@@ -9040,7 +9042,7 @@
     var map = farmPlotMap(scope);
     var cropData = getCropDataForPlot(plot);
     if(!cropData){ delete map[key]; return; }
-    var yieldQty = plot.fertilized ? (composterTripleYield() ? 3 : 2) : 1;
+    var yieldQty = FARM_BASE_YIELD * (plot.fertilized ? (composterTripleYield() ? 3 : 2) : 1);
     yieldQty += greenThumbExtraYield();
     addItem(cropData.id, yieldQty);
     bumpStat('harvested_' + cropData.id); // offline catch-up harvest counts too, powers "Harvest 1 Cotton"
@@ -33210,7 +33212,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.45.7';
+  var GAME_VERSION = '0.0.45.8';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

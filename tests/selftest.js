@@ -616,7 +616,7 @@
     // A) 32 min away: an empty field is planted at the window's start and the 5-min crop turns over 6 times.
     var n = FF.simulateOfflineFarming('personal', 32*60*1000);
     eq(n, 6, '32 min of offline auto-farm turns a 5-min field over 6 times');
-    eq(s.inventory['farming_t0'], 6, 'six crops were harvested into inventory');
+    eq(s.inventory['farming_t0'], 30, 'six harvests at the base yield of 5 = 30 crops');
     var plot = FF.farmPlotMap('personal')['0,0'];
     ok(plot && plot.cropType, 'the field is left growing its next crop, not idle');
 
@@ -630,7 +630,7 @@
     s.settings.autoHarvest = true; s.settings.autoPlant = false;
     FF.farmPlotMap('personal')['0,0'] = { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000 };
     eq(FF.simulateOfflineFarming('personal', 60*60*1000), 1, 'harvest-only reaps the standing crop once');
-    eq(s.inventory['farming_t0'], 1, 'one crop harvested, no replant cycles');
+    eq(s.inventory['farming_t0'], 5, 'one harvest yields the base 5, no replant cycles');
     ok(!FF.farmPlotMap('personal')['0,0'], 'the field is left empty when auto-plant is off');
 
     // D) The seed picker never overshoots the field's tier cap.
@@ -643,6 +643,32 @@
     s.inventory['seed_t0'] = saved.s0; s.inventory['grainseed_t0'] = saved.g0;
     s.inventory['herbseed_t0'] = saved.h0; s.inventory['seed_t5'] = saved.s5;
     s.inventory['farming_t0'] = saved.crop0;
+  });
+
+  // ---- Farming: harvest yield -- base 5, doubled to 10 with fertilizer ----
+  suite('farming: base yield 5, fertilized 10', function(){
+    var s = FF._state;
+    var saved = { grid:s.estate.grid, plots:s.farmingPlots, gt:s.physique.greenThumb,
+      comp:s.physique.composter, crop0:s.inventory['farming_t0'] };
+    s.estate.grid = [[{ type:'dirt', fieldTier:0, owned:true }]];
+    s.farmingPlots = {};
+    s.physique.greenThumb = 0; s.physique.composter = 0;  // deterministic: no bonus-yield / triple-yield rolls
+    s.inventory['farming_t0'] = 0;
+
+    // Unfertilized -> exactly the base yield.
+    FF.farmPlotMap('personal')['0,0'] = { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000 };
+    FF.harvestPlot('personal', '0,0', true);
+    eq(s.inventory['farming_t0'], 5, 'an unfertilized crop yields 5');
+
+    // Fertilized -> double.
+    s.inventory['farming_t0'] = 0;
+    FF.farmPlotMap('personal')['0,0'] = { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000, fertilized:true };
+    FF.harvestPlot('personal', '0,0', true);
+    eq(s.inventory['farming_t0'], 10, 'a fertilized crop yields double (10)');
+
+    // restore
+    s.estate.grid = saved.grid; s.farmingPlots = saved.plots; s.physique.greenThumb = saved.gt;
+    s.physique.composter = saved.comp; s.inventory['farming_t0'] = saved.crop0;
   });
 
   // ---- Farming: the Auto-plant seed filter (crop-type toggles + a Custom per-seed override) ----
@@ -1628,13 +1654,13 @@
     var fertKey = pm[k0].fertilized ? k0 : k1, plainKey = fertKey===k0 ? k1 : k0;
     ok(pm[fertKey].fertilized && !pm[plainKey].fertilized, 'exactly one plot is fertilized');
 
-    // Ripen + harvest: fertilized plot yields 2, the other yields 1.
+    // Ripen + harvest: fertilized plot yields 10 (base 5 doubled), the other yields the base 5.
     pm[k0].readyAt = pm[k1].readyAt = Date.now()-1;
     S.inventory.farming_t5 = 0;
     FF.harvestPlot('personal', fertKey);
-    eq(S.inventory.farming_t5, 2, 'fertilized crop yields 2x');
+    eq(S.inventory.farming_t5, 10, 'fertilized crop yields 10 (base 5 x2)');
     FF.harvestPlot('personal', plainKey);
-    eq(S.inventory.farming_t5, 3, 'plain crop yields 1x (total 3)');
+    eq(S.inventory.farming_t5, 15, 'plain crop yields the base 5 (total 15)');
 
     // restore
     Object.keys(pm).forEach(function(k){ delete pm[k]; });
