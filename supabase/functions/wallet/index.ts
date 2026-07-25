@@ -73,14 +73,13 @@ function dailyAllowanceFor(createdAtIso: string | undefined, totalLevel: number)
   // Flag ON: full rate for established accounts, but a young account stays gated (see RAMP_OFF_MATURE_DAYS).
   return accountAgeDays(createdAtIso) >= RAMP_OFF_MATURE_DAYS ? RAMP_DAY7_GOLD : gated;
 }
-// Even at the most generous rate the system EVER grants (RAMP_DAY7_GOLD/day), an account of age D days
-// could accrue at most ~(D+1)*RAMP_DAY7_GOLD in lifetime gold. A reported lifetime earned_total above that
-// is arithmetically impossible -> goldEarnedTotal injection. Used to CLAMP young injectors on the earn path
-// (older accounts predate the throttle / may carry legit history, so they're exempt). The +1 day and the
-// full-rate basis give a wide margin so a legit grinder is never caught.
-function maxLifetimeEarned(createdAtIso: string | undefined): number {
-  return Math.max(RAMP_DAY1_GOLD, Math.floor((accountAgeDays(createdAtIso) + 1) * RAMP_DAY7_GOLD));
-}
+// HARD CLAMP on the earn path: no account younger than HARD_CLAMP_MAX_AGE_DAYS can legitimately have
+// received HARD_CLAMP_EARNED gold in its lifetime (that's the full-rate allowance for a WHOLE WEEK). A
+// young account reporting an earned_total at/above this line is injecting goldEarnedTotal -> clamp,
+// unconditionally and regardless of FF_RATE_RAMP_OFF. Flat threshold (not age-scaled) so it bites the
+// entire pre-7-day window, not just day zero.
+const HARD_CLAMP_MAX_AGE_DAYS = 7;
+const HARD_CLAMP_EARNED = 500_000_000; // 500M lifetime earned on a <7-day account == injection
 
 // Proper token bucket keyed off `updated_at`: allowance = time since updated_at at the (age-scaled)
 // daily rate, capped at a full day's allowance and CARRIED between claims (unused allowance persists).
@@ -170,18 +169,17 @@ Deno.serve(async (req) => {
     try { await admin.from("wallet_audit").insert({ user_id: userId, note, ...extra }); } catch { /* table missing / transient -- don't fail the request */ }
   }
 
-  // Gold-injection tripwire on the earn/sync path. The throttle already bounds what a spoofed
-  // goldEarnedTotal can BANK, but a young account reporting a lifetime earned_total beyond even the
-  // full-rate ceiling for its age is unambiguously injecting -> clamp all shared surfaces (Discord fires
-  // on the clamp) + signal, rate-limited ~1/hr. Only YOUNG accounts, only past the arithmetically-
-  // impossible ceiling, so it can't false-positive a legit grinder. Best-effort; never blocks the credit.
+  // Gold-injection HARD CLAMP on the earn/sync path. The throttle bounds what a spoofed goldEarnedTotal
+  // can BANK, but a young account (< HARD_CLAMP_MAX_AGE_DAYS) reporting a lifetime earned_total at/above
+  // HARD_CLAMP_EARNED (500M) is unambiguously injecting -> clamp all shared surfaces (Discord fires on the
+  // clamp) + signal, rate-limited ~1/hr, regardless of FF_RATE_RAMP_OFF. Flat, well past any legit
+  // sub-week total, so it can't false-positive a real player. Best-effort; never blocks the credit.
   async function flagEarnInjection(reportedEarned: number): Promise<void> {
     try {
-      if (accountAgeDays(user.created_at) >= GOLD_INJECT_CLAMP_MAX_AGE_DAYS) return;
-      const ceiling = maxLifetimeEarned(user.created_at);
-      if (!Number.isFinite(reportedEarned) || reportedEarned <= ceiling) return;
-      await audit("gold_inject_earn", { reported_earned: Math.floor(reportedEarned), ceiling });
-      const detail = { kind: "gold_inject", via: "earn", reported_earned: Math.floor(reportedEarned), ceiling };
+      if (accountAgeDays(user.created_at) >= HARD_CLAMP_MAX_AGE_DAYS) return;
+      if (!Number.isFinite(reportedEarned) || reportedEarned < HARD_CLAMP_EARNED) return;
+      await audit("gold_inject_earn", { reported_earned: Math.floor(reportedEarned), ceiling: HARD_CLAMP_EARNED });
+      const detail = { kind: "gold_inject", via: "earn", reported_earned: Math.floor(reportedEarned), ceiling: HARD_CLAMP_EARNED };
       const { data: recent } = await admin.from("clamp_signals").select("id")
         .eq("user_id", userId).eq("kind", "gold_inject")
         .gte("created_at", new Date(Date.now() - 3_600_000).toISOString()).limit(1);
