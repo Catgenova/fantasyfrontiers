@@ -48,6 +48,15 @@ const LVL_FLOOR_GOLD = 250_000;       // daily allowance at/below the early-game
 const LVL_FULL_GOLD = 500_000_000;    // daily allowance at/above the endgame total_level
 const LVL_LO = 500, LVL_HI = 8000;    // total_level band the allowance ramps across
 const RAMP_OFF = Deno.env.get("FF_RATE_RAMP_OFF") === "1";
+// RAMP_OFF lifts the earn throttle only for accounts AT LEAST this old. A younger account keeps the
+// normal age+level gate even with the flag on -- so gold injection (spoofing goldEarnedTotal through
+// save_game, which the wallet credits under this throttle) on a fresh account can NEVER bank at the full
+// rate, even if FF_RATE_RAMP_OFF is mistakenly set in production. The flag is meant to stop throttling
+// established real players, not to disable fraud protection on brand-new ones.
+const RAMP_OFF_MATURE_DAYS = 14;
+function accountAgeDays(createdAtIso: string | undefined): number {
+  return createdAtIso ? Math.max(0, (Date.now() - new Date(createdAtIso).getTime()) / 86_400_000) : 0;
+}
 function ageAllowance(createdAtIso: string | undefined): number {
   if (!createdAtIso) return RAMP_DAY1_GOLD;
   const days = Math.max(0, (Date.now() - new Date(createdAtIso).getTime()) / 86_400_000);
@@ -59,8 +68,18 @@ function levelAllowance(totalLevel: number): number {
   return Math.floor(LVL_FLOOR_GOLD + (LVL_FULL_GOLD - LVL_FLOOR_GOLD) * t);
 }
 function dailyAllowanceFor(createdAtIso: string | undefined, totalLevel: number): number {
-  if (RAMP_OFF) return RAMP_DAY7_GOLD;
-  return Math.min(ageAllowance(createdAtIso), levelAllowance(totalLevel));
+  const gated = Math.min(ageAllowance(createdAtIso), levelAllowance(totalLevel));
+  if (!RAMP_OFF) return gated;
+  // Flag ON: full rate for established accounts, but a young account stays gated (see RAMP_OFF_MATURE_DAYS).
+  return accountAgeDays(createdAtIso) >= RAMP_OFF_MATURE_DAYS ? RAMP_DAY7_GOLD : gated;
+}
+// Even at the most generous rate the system EVER grants (RAMP_DAY7_GOLD/day), an account of age D days
+// could accrue at most ~(D+1)*RAMP_DAY7_GOLD in lifetime gold. A reported lifetime earned_total above that
+// is arithmetically impossible -> goldEarnedTotal injection. Used to CLAMP young injectors on the earn path
+// (older accounts predate the throttle / may carry legit history, so they're exempt). The +1 day and the
+// full-rate basis give a wide margin so a legit grinder is never caught.
+function maxLifetimeEarned(createdAtIso: string | undefined): number {
+  return Math.max(RAMP_DAY1_GOLD, Math.floor((accountAgeDays(createdAtIso) + 1) * RAMP_DAY7_GOLD));
 }
 
 // Proper token bucket keyed off `updated_at`: allowance = time since updated_at at the (age-scaled)
@@ -151,6 +170,34 @@ Deno.serve(async (req) => {
     try { await admin.from("wallet_audit").insert({ user_id: userId, note, ...extra }); } catch { /* table missing / transient -- don't fail the request */ }
   }
 
+  // Gold-injection tripwire on the earn/sync path. The throttle already bounds what a spoofed
+  // goldEarnedTotal can BANK, but a young account reporting a lifetime earned_total beyond even the
+  // full-rate ceiling for its age is unambiguously injecting -> clamp all shared surfaces (Discord fires
+  // on the clamp) + signal, rate-limited ~1/hr. Only YOUNG accounts, only past the arithmetically-
+  // impossible ceiling, so it can't false-positive a legit grinder. Best-effort; never blocks the credit.
+  async function flagEarnInjection(reportedEarned: number): Promise<void> {
+    try {
+      if (accountAgeDays(user.created_at) >= GOLD_INJECT_CLAMP_MAX_AGE_DAYS) return;
+      const ceiling = maxLifetimeEarned(user.created_at);
+      if (!Number.isFinite(reportedEarned) || reportedEarned <= ceiling) return;
+      await audit("gold_inject_earn", { reported_earned: Math.floor(reportedEarned), ceiling });
+      const detail = { kind: "gold_inject", via: "earn", reported_earned: Math.floor(reportedEarned), ceiling };
+      const { data: recent } = await admin.from("clamp_signals").select("id")
+        .eq("user_id", userId).eq("kind", "gold_inject")
+        .gte("created_at", new Date(Date.now() - 3_600_000).toISOString()).limit(1);
+      if (recent && recent.length) return;
+      console.warn(`clamp signal gold_inject(earn): user=${userId} reported=${Math.floor(reportedEarned)} ceiling=${ceiling}`);
+      await admin.from("clamp_signals").insert({ user_id: userId, kind: "gold_inject", detail, would_clamp: true });
+      if (GOLD_CLAMP_ENFORCE) {
+        await admin.from("account_clamps").upsert({
+          user_id: userId, surfaces: ["marketplace", "leaderboard", "guild", "chat"],
+          clamped_until: new Date(Date.now() + CLAMP_INDEFINITE_MS).toISOString(),
+          auto: true, signal: detail, clamped_by: null,
+        }, { onConflict: "user_id" });
+      }
+    } catch { /* detection is best-effort -- never block the credit path */ }
+  }
+
   let body: { action?: unknown; earned_total?: unknown; amount?: unknown; count?: unknown; gold?: unknown };
   try { body = await req.json(); } catch { return json({ ok: false, error: "Invalid request." }, 400); }
   const action = String(body.action || "get");
@@ -229,6 +276,7 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "Invalid earned_total." }, 400);
     }
     const w = await ensureWallet();
+    await flagEarnInjection(Math.floor(reported)); // young account reporting an impossible lifetime -> clamp
     const delta = Math.max(0, Math.floor(reported) - w.earned_total);
     const { available, from } = bucketState(w.updated_at, perDay);
     let credited = Math.max(0, Math.min(delta, available));
@@ -290,6 +338,7 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "Invalid gold." }, 400);
     }
     const w = await ensureWallet();
+    await flagEarnInjection(Math.floor(reported)); // young account reporting an impossible lifetime -> clamp
     const delta = Math.max(0, Math.floor(reported) - w.earned_total);
     const { available, from } = bucketState(w.updated_at, perDay);
     const credited = Math.max(0, Math.min(delta, available));
