@@ -80,6 +80,10 @@
     eq(FF.skillLevel('platearmor', EXT[150]), 150, 'skillLevel reads the extended table for an armor proficiency (mastery)');
     eq(FF.skillLevel('not_a_real_skill_xyz', EXT[150]), 100, 'skillLevel caps a non-overlevel skill at 100 regardless of XP');
     eq(FF.skillLevel('mining', FF.xpFloorForLevel(60)), 60, 'below 100 the two ladders agree');
+    // Physiques overlevel for DISPLAY (the character panel reads skillLevel(p.id, ...)).
+    var PHYS0 = FF.PHYSIQUE_SKILLS[0].id;
+    ok(FF.skillCanOverlevel(PHYS0), 'a physique can overlevel (mastery display)');
+    eq(FF.skillLevel(PHYS0, EXT[112]), 112, 'skillLevel reads the extended table for a physique');
 
     // Progress bar past 100: 0% at a fresh level, ~50% halfway, respects the doubled cost.
     near(FF.skillLevelProgress('mining', EXT[103]), 0, 'progress resets to 0 at a freshly-reached level', 1e-6);
