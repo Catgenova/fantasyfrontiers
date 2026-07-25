@@ -97,9 +97,18 @@ const GOLD_INJECT_CLAMP_MAX_AGE_DAYS = 14; // only CLAMP a young account; an old
                                           // balance predating the rate limit) is capped but never punished
 const GOLD_CLAMP_ENFORCE = true;          // live enforcement (this signal is clean, like item_inject)
 const CLAMP_INDEFINITE_MS = 5_256_000 * 60_000; // ~10 years, matches the clamp RPC's cap
+// Ramp-INDEPENDENT absolute ceiling on a YOUNG account's first-touch seed. No account younger than
+// GOLD_INJECT_CLAMP_MAX_AGE_DAYS can legitimately hold this much gold, so this cap + the injection
+// clamp must hold EVEN when FF_RATE_RAMP_OFF is set. RAMP_OFF is only meant to relax the legit EARN
+// throttle for real players -- it must NEVER disable fraud detection on brand-new accounts (that hole
+// let a billion-gold seed sail through with no cap and no clamp). Generous enough to cover any
+// plausible first-fortnight legit gold.
+const YOUNG_SEED_ABS_CAP = 25_000_000;
 // Age-bounded ceiling on the one-time seed: max(burst, plausible earnings over the account's whole life).
+// Under RAMP_OFF this relaxes to HARD_CAP for OLD accounts (legit big dormant balances), but young
+// accounts are still pinned by YOUNG_SEED_ABS_CAP at the call site regardless of the ramp.
 function seedCapFor(createdAtIso: string | undefined, totalLevel: number): number {
-  if (RAMP_OFF) return HARD_CAP;          // staging: seeding unbounded, like the earn ramp
+  if (RAMP_OFF) return HARD_CAP;          // staging: seeding unbounded for OLD accounts, like the earn ramp
   const days = createdAtIso ? Math.max(0, (Date.now() - new Date(createdAtIso).getTime()) / 86_400_000) : 0;
   return Math.min(HARD_CAP, Math.max(SEED_BURST_GOLD, Math.floor(dailyAllowanceFor(createdAtIso, totalLevel) * days)));
 }
@@ -157,14 +166,18 @@ Deno.serve(async (req) => {
     let seedGold = 0;
     const g = (save?.data as Record<string, unknown> | undefined)?.gold;
     if (typeof g === "number" && Number.isFinite(g) && g > 0) seedGold = Math.floor(g);
-    const seedCap = seedCapFor(user.created_at, totalLevel);
-    const cappedSeed = Math.min(seedGold, seedCap, HARD_CAP);
-    const over = seedGold - cappedSeed;
-    // Age gate for the PUNITIVE clamp only: a young account seeding far over its cap is an injection; an
-    // OLD dormant account carrying a legit pre-wallet balance predating the rate limit is capped (seed is
-    // trimmed above regardless) but never clamped.
+    // A young account (< GOLD_INJECT_CLAMP_MAX_AGE_DAYS) is pinned by the ramp-INDEPENDENT absolute cap so
+    // fraud detection survives FF_RATE_RAMP_OFF; an older account uses the (ramp-aware) age-bounded cap.
     const accountDays = user.created_at ? Math.max(0, (Date.now() - new Date(user.created_at).getTime()) / 86_400_000) : 0;
-    if (over >= GOLD_INJECT_MIN_OVER && accountDays < GOLD_INJECT_CLAMP_MAX_AGE_DAYS) {
+    const young = accountDays < GOLD_INJECT_CLAMP_MAX_AGE_DAYS;
+    const seedCap = young ? Math.min(seedCapFor(user.created_at, totalLevel), YOUNG_SEED_ABS_CAP)
+                          : seedCapFor(user.created_at, totalLevel);
+    const cappedSeed = Math.min(seedGold, seedCap, HARD_CAP);
+    // Injection is measured against the young absolute cap (ramp-independent) so RAMP_OFF can't zero `over`
+    // and silence the clamp -- the previous hole. Only young accounts are clamped; an OLD dormant account
+    // carrying a legit pre-wallet balance is capped by seedCapFor but never punished.
+    const over = young ? seedGold - Math.min(seedGold, YOUNG_SEED_ABS_CAP) : 0;
+    if (over >= GOLD_INJECT_MIN_OVER) {
       // The save claims far more gold than this young account's age could plausibly hold -> injection.
       // Best-effort clamp (Discord fires on the clamp) + audit; the seed itself is already trimmed regardless.
       try {
