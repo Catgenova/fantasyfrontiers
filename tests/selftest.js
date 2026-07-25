@@ -1552,6 +1552,48 @@
     }
   });
 
+  // ---- Offline faith: a running miracle keeps its rarity buff, at the cost of Faith + relics ----
+  suite('offline faith activity: buff costs faith + relics, ends when dry', function(){
+    var s = FF._state;
+    var saved = { fa:s.faithActivity, faith:s.faith, auto:s.autoSacrificeRelics,
+      xpM:s.xp.miracle, prayer:s.xp.prayer, phys:Object.assign({}, s.physique) };
+    s.xp.prayer = 0;                              // faithMax = 100 (no prayer levels)
+    // Zero the physiques that feed faithMax so the cap is a clean 100 for the arithmetic below.
+    Object.keys(s.physique).forEach(function(k){ s.physique[k] = 0; });
+    s.faithActivity = { type:'miracle', tier:0 };
+    s.autoSacrificeRelics = false;
+    var perSec = FF.FAITH_ACTIVITY_TIERS.miracle[0].faithPerSec;
+
+    // A) Runs dry mid-window: 80 Faith, 1h window, no relics -> alive = 80 / drain-rate seconds.
+    s.faith = 80;
+    var pA = FF.planOfflineFaithActivity(3600*1000);
+    ok(pA.died, 'a short Faith pool runs the miracle dry before the window ends');
+    eq(Math.round(pA.aliveMs), Math.round(80/perSec*1000), 'alive time = Faith / drain rate');
+    eq(pA.finalFaith, 0, 'Faith ends at 0 when it runs dry');
+    ok(pA.fraction > 0 && pA.fraction < 1, 'the buff covers only part of a window it cannot outlast');
+    eq(s.faith, 80, 'planning does not mutate live Faith (the offline pass applies it)');
+
+    // B) Ample Faith outlasts a short window -> buff active the whole time, Faith just drains.
+    s.faith = 100;
+    var pB = FF.planOfflineFaithActivity(10*1000);      // 10s
+    ok(!pB.died && pB.fraction === 1, 'ample Faith keeps the buff active the whole short window');
+    eq(pB.finalFaith, 100 - perSec*10, 'Faith drains by rate x time');
+    eq(pB.relicCount, 0, 'no relics spent while Faith alone covers the window');
+
+    // C) Auto-sacrificed relics extend a dying miracle (more alive time than with no relics).
+    s.faith = 80; s.autoSacrificeRelics = true;
+    var rid0 = FF.BROKEN_RELIC_ITEMS[0].id, savedRelic = s.inventory[rid0]||0, savedLock = s.lockedItems[rid0];
+    s.lockedItems[rid0] = false; s.inventory[rid0] = 50;
+    var pC = FF.planOfflineFaithActivity(3600*1000);
+    ok(pC.relicCount > 0, 'relics are auto-sacrificed to feed the miracle');
+    ok(pC.aliveMs > pA.aliveMs, 'relics extend how long the buff stays alive');
+    s.inventory[rid0] = savedRelic; s.lockedItems[rid0] = savedLock;
+
+    // restore
+    s.faithActivity = saved.fa; s.faith = saved.faith; s.autoSacrificeRelics = saved.auto;
+    s.xp.miracle = saved.xpM; s.xp.prayer = saved.prayer; s.physique = saved.phys;
+  });
+
   // ---- Butchering yield: each output is 0-3 (three independent rolls), not 0-1 ----
   suite('butchering yields 0-3 of each output', function(){
     var s = FF._state;
