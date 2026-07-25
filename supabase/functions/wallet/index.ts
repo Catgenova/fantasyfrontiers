@@ -184,7 +184,7 @@ Deno.serve(async (req) => {
         .eq("user_id", userId).eq("kind", "gold_inject")
         .gte("created_at", new Date(Date.now() - 3_600_000).toISOString()).limit(1);
       if (recent && recent.length) return;
-      console.warn(`clamp signal gold_inject(earn): user=${userId} reported=${Math.floor(reportedEarned)} ceiling=${ceiling}`);
+      console.warn(`clamp signal gold_inject(earn): user=${userId} reported=${Math.floor(reportedEarned)} ceiling=${HARD_CLAMP_EARNED}`);
       await admin.from("clamp_signals").insert({ user_id: userId, kind: "gold_inject", detail, would_clamp: true });
       if (GOLD_CLAMP_ENFORCE) {
         await admin.from("account_clamps").upsert({
