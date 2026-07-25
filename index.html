@@ -3469,7 +3469,24 @@
     kinsworn_oath_vanguard:   { id:'might',     name:'Oathbound Might', kind:'might',  chargeMs:11000, per:0.10, maxStacks:5 }
   };
   var MONSTERS = WILDLIFE_MONSTERS.concat(ELEMENTAL_MONSTERS).concat(DEMONSPAWN_MONSTERS).concat(KINSWORN_MONSTERS);
-  MONSTERS.forEach(function(m){ if(MONSTER_SPECIALS[m.id]) m.special = MONSTER_SPECIALS[m.id]; }); // wildlife + elemental specials
+  MONSTERS.forEach(function(m){ if(MONSTER_SPECIALS[m.id]) m.special = MONSTER_SPECIALS[m.id]; }); // hand-authored, named specials (take priority)
+  // FILL THE GAPS so EVERY beast in the four families carries a special (and thus shows the skill charge
+  // bar in combat) -- the hand-authored set above only covers scattered tiers, so early/most enemies had no
+  // bar. Each remaining monster inherits one from its OWN family's special pool, cycled by tier. The def is
+  // read-only (per-fight state lives on state.activity), so sharing a def across monsters is safe, and DoT
+  // magnitudes scale with the monster's atkMax at fire time, so a low-tier fill stays tier-appropriate.
+  (function(){
+    var pools = {};                                  // category -> [special defs], in declaration order
+    Object.keys(MONSTER_SPECIALS).forEach(function(id){
+      var cat = id.split('_')[0];
+      (pools[cat] = pools[cat] || []).push(MONSTER_SPECIALS[id]);
+    });
+    MONSTERS.forEach(function(m){
+      if(m.special) return;                          // keep the named special where one exists
+      var pool = pools[m.category];
+      if(pool && pool.length) m.special = pool[(m.tierIndex || 0) % pool.length];
+    });
+  })();
   // id -> monster lookup so hot paths (the combat loop, action-bar live updates, attack ticks) don't
   // linear-scan every monster every frame.
   var MONSTERS_BY_ID = {};
@@ -33130,7 +33147,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.44.13';
+  var GAME_VERSION = '0.0.44.14';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

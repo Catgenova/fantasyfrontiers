@@ -1050,11 +1050,18 @@
   // ---- Enemy special attacks: Wildlife extra action bars with primal effects -------------
   suite('enemy specials: wildlife primal attacks', function(){
     ok(typeof FF.monsterSpecialFire === 'function' && FF.MONSTER_SPECIALS, 'enemy-special helpers exported');
-    // The 7 chosen beasts carry their special; other beasts (and non-wildlife) do not.
+    // The named beasts keep their hand-authored special (these take priority over the gap-fill).
     var expect = { wildlife_wolf:'bleed', wildlife_crocodile:'poison', wildlife_rhino:'harden', wildlife_lion:'fear', wildlife_grizzly:'shred', wildlife_direwolf:'weaken', wildlife_behemoth:'regen' };
     Object.keys(expect).forEach(function(id){ var m = FF.monsterById(id); ok(m && m.special && m.special.kind === expect[id], id + ' has the ' + expect[id] + ' special'); });
-    ok(!FF.monsterById('wildlife_rabbit').special, 'a beast with no special is unaffected');
-    ok(FF.MONSTERS.filter(function(m){ return m.special && m.category==='wildlife'; }).length === 7, 'exactly 7 wildlife beasts carry a special');
+    // Gap-fill: EVERY beast in the four special-carrying families now has a special (so the skill charge bar
+    // always shows), inherited from its own family's pool. A gap-filled beast (e.g. the Rabbit) gets a
+    // wildlife-family special, not one from another family.
+    var rabbit = FF.monsterById('wildlife_rabbit');
+    ok(rabbit && rabbit.special && typeof rabbit.special.kind === 'string', 'a formerly-blank beast now carries a (gap-filled) special');
+    ['wildlife','elemental','demonspawn','kinsworn'].forEach(function(cat){
+      var fam = FF.MONSTERS.filter(function(m){ return m.category===cat; });
+      ok(fam.length > 0 && fam.every(function(m){ return !!m.special; }), 'every '+cat+' beast now carries a special');
+    });
 
     var s = FF._state, sv = { act:s.activity, hp:s.playerHp };
     function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', monsterId:id, monsterHp:m.hp }; return m; }
@@ -1204,7 +1211,7 @@
   suite('enemy specials: elemental primal attacks', function(){
     var expect = { elemental_fire_elemental:'burn', elemental_magma_golem:'cinder', elemental_ice_elemental:'chill', elemental_frost_giant:'icycarapace', elemental_stone_golem:'petrify', elemental_air_elemental:'blind', elemental_astral_elemental:'purge', elemental_primal_elemental:'burn', elemental_void_elemental:'drain', elemental_elemental_titan:'veil' };
     Object.keys(expect).forEach(function(id){ var m = FF.monsterById(id); ok(m && m.special && m.special.kind === expect[id], id + ' has the ' + expect[id] + ' special'); });
-    ok(FF.MONSTERS.filter(function(m){ return m.special && m.category==='elemental'; }).length === 10, 'exactly 10 elementals carry a special');
+    var _elem = FF.MONSTERS.filter(function(m){ return m.category==='elemental'; }); ok(_elem.length > 0 && _elem.every(function(m){ return !!m.special; }), 'every elemental now carries a special (gap-fill)');
 
     var s = FF._state, sv = { act:s.activity, hp:s.playerHp, feast:s.activeFeast, tea:s.activeTea };
     function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', monsterId:id, monsterHp:m.hp }; return m; }
@@ -1252,7 +1259,7 @@
   suite('enemy specials: demonspawn infernal attacks', function(){
     var expect = { demonspawn_shade:'chill', demonspawn_tormentor:'shred', demonspawn_succubus:'weaken', demonspawn_soul_reaver:'siphon', demonspawn_infernal_beast:'frenzy', demonspawn_nether_fiend:'drain', demonspawn_chaos_spawn:'chaos' };
     Object.keys(expect).forEach(function(id){ var m = FF.monsterById(id); ok(m && m.special && m.special.kind === expect[id], id + ' has the ' + expect[id] + ' special'); });
-    ok(FF.MONSTERS.filter(function(m){ return m.special && m.category==='demonspawn'; }).length === 7, 'exactly 7 demonspawn carry a special');
+    var _demon = FF.MONSTERS.filter(function(m){ return m.category==='demonspawn'; }); ok(_demon.length > 0 && _demon.every(function(m){ return !!m.special; }), 'every demonspawn now carries a special (gap-fill)');
 
     var s = FF._state, sv = { act:s.activity };
     function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', monsterId:id, monsterHp:m.hp }; return m; }
@@ -1295,9 +1302,9 @@
   suite('enemy specials: kinsworn martial attacks', function(){
     var expect = { kinsworn_sworn_scout:'chill', kinsworn_oath_knight:'weaken', kinsworn_blood_sworn:'bleed', kinsworn_sworn_berserker:'shred', kinsworn_sworn_champion:'rally', kinsworn_kinsworn_guard:'harden', kinsworn_oath_vanguard:'might' };
     Object.keys(expect).forEach(function(id){ var m = FF.monsterById(id); ok(m && m.special && m.special.kind === expect[id], id + ' has the ' + expect[id] + ' special'); });
-    ok(FF.MONSTERS.filter(function(m){ return m.special && m.category==='kinsworn'; }).length === 7, 'exactly 7 kinsworn carry a special');
-    // And the whole roster is exactly 7+10+7+7 = 31 specials across four families.
-    ok(FF.MONSTERS.filter(function(m){ return m.special; }).length === 31, 'all four families total 31 specials');
+    var _kin = FF.MONSTERS.filter(function(m){ return m.category==='kinsworn'; }); ok(_kin.length > 0 && _kin.every(function(m){ return !!m.special; }), 'every kinsworn now carries a special (gap-fill)');
+    // Gap-fill: every beast in the four families now carries a special, so the skill charge bar always shows.
+    ok(FF.MONSTERS.every(function(m){ return !!m.special; }), 'every beast in the four families now carries a special');
 
     var s = FF._state, sv = { act:s.activity };
     function fresh(id){ var m = FF.monsterById(id); s.activity = { type:'combat', monsterId:id, monsterHp:m.hp }; return m; }
