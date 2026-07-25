@@ -1552,6 +1552,24 @@
     }
   });
 
+  // ---- Butchering yield: each output is 0-3 (three independent rolls), not 0-1 ----
+  suite('butchering yields 0-3 of each output', function(){
+    var s = FF._state;
+    var saved = { tier:s.gatherTools.butchering, rar:s.gatherToolRarities.butchering, hs:s.physique.handStrength, hunt:s.physique.huntsman };
+    s.gatherTools.butchering = 0; s.gatherToolRarities.butchering = 'normal';
+    s.physique.handStrength = 0; s.physique.huntsman = 0;   // base 40% chance, no bonuses
+    eq(FF.BUTCHER_OUTPUT_ROLLS, 3, 'each output rolls up to three times');
+    var origRandom = Math.random;
+    try {
+      Math.random = function(){ return 0; };      // every roll succeeds
+      eq(FF.butcherOutputQty(s, 'handStrength'), 3, 'all three rolls succeed -> 3 of the output (the new max)');
+      Math.random = function(){ return 0.999; };  // every roll fails (above the 95% cap)
+      eq(FF.butcherOutputQty(s, 'handStrength'), 0, 'all three rolls fail -> 0 of the output');
+    } finally { Math.random = origRandom; }
+    s.gatherTools.butchering = saved.tier; s.gatherToolRarities.butchering = saved.rar;
+    s.physique.handStrength = saved.hs; s.physique.huntsman = saved.hunt;
+  });
+
   // ---- Butchering tool: success bonus that scales with tier AND rarity, like other crafting tools ----
   suite('butchering tool raises success chance (tier + rarity, like craft tools)', function(){
     var s = FF._state;

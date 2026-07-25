@@ -8554,6 +8554,14 @@
     var physBonus = Math.min(0.25, physLevel*0.0025);
     return Math.min(0.95, BASE_BUTCHER_CHANCE + toolBonus + physBonus + huntsmanOutputBonus());
   }
+  // A carcass yields 0-3 of each output (Meat/Hide/Fat): BUTCHER_OUTPUT_ROLLS independent rolls at the
+  // output chance, so a better Cleaver/physique both raises the odds AND lifts the typical count.
+  var BUTCHER_OUTPUT_ROLLS = 3;
+  function butcherOutputQty(state, physiqueId){
+    var chance = butcherOutputChance(state, physiqueId), qty = 0;
+    for(var r=0; r<BUTCHER_OUTPUT_ROLLS; r++){ if(Math.random() < chance) qty++; }
+    return qty;
+  }
 
   // ---- Digging: main output chance (Shovel-boosted) + two independent rare side-drops (physique-boosted) ----
   // Uniform Gathering success: every gathering skill's main resource drops 70% of the time at base,
@@ -11047,11 +11055,16 @@
           // undefined table and awarded NO physique XP -- including no Logic. Use its gather physique list
           // (which carries Logic, the Refining physique), so a butcher grants Logic at the crafting rate.
           addPhysiqueXp(physTierPairs(GATHER_PHYSIQUE[act.skill] || CRAFT_PHYSIQUE[act.skill], _butcherTier));
-          // A carcass can yield Meat, Hide, and rendered Fat/Tallow/Grease -- each an independent roll.
+          // A carcass can yield Meat, Hide, and rendered Fat/Tallow/Grease -- each 0-3 (three independent rolls).
           var got = [];
-          if(Math.random() < butcherOutputChance(state, recipe.meatPhysique)){ addItem(recipe.meatId, 1); got.push('Meat'); }
-          if(Math.random() < butcherOutputChance(state, recipe.hidePhysique)){ addItem(recipe.hideId, 1); got.push('Hide'); }
-          if(recipe.fatId && Math.random() < butcherOutputChance(state, recipe.fatPhysique)){ addItem(recipe.fatId, 1); got.push((FAT_ITEM_MAP[recipe.fatId]||{}).name || 'Fat'); }
+          var meatQty = butcherOutputQty(state, recipe.meatPhysique);
+          if(meatQty > 0){ addItem(recipe.meatId, meatQty); got.push(meatQty + ' Meat'); }
+          var hideQty = butcherOutputQty(state, recipe.hidePhysique);
+          if(hideQty > 0){ addItem(recipe.hideId, hideQty); got.push(hideQty + ' Hide'); }
+          if(recipe.fatId){
+            var fatQty = butcherOutputQty(state, recipe.fatPhysique);
+            if(fatQty > 0){ addItem(recipe.fatId, fatQty); got.push(fatQty + ' ' + ((FAT_ITEM_MAP[recipe.fatId]||{}).name || 'Fat')); }
+          }
           if(got.length){ addLog('You butchered the carcass and recovered ' + got.join(', ') + '.', 'important'); spawnFloatingText('+' + got.join(', +'), 'ft-success'); }
           else { spawnFloatingText('Nothing usable', 'ft-fail'); }
         } else if(recipe.relicCraft){
@@ -16967,7 +16980,7 @@
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+recipe.icon+'</div><div><div class="item-name">'+recipe.name+'</div><div class="item-meta">Req. Lv '+recipe.levelReq+' &bull; Owned: '+(state.inventory[recipe.meatId]||0)+' Meat, '+(state.inventory[recipe.hideId]||0)+' Hide'+(recipe.fatId?', '+(state.inventory[recipe.fatId]||0)+' '+fatName:'')+'</div></div></div>';
       html += '<div class="item-stats">'+xpStat(skillKey, recipe.xp*1.5, 'craft', recipe)+'<span>'+recipe.time+'s</span><span>'+meatChance+'% Meat</span><span>'+hideChance+'% Hide</span>'+(recipe.fatId?'<span>'+fatChance+'% Fat</span>':'')+'</div>';
-      html += '<div class="chance-line">Output: <b>1x Meat</b> at <b>'+meatChance+'%</b> &nbsp;|&nbsp; <b>1x Hide</b> at <b>'+hideChance+'%</b>'+(recipe.fatId?' &nbsp;|&nbsp; <b>1x '+fatName+'</b> at <b>'+fatChance+'%</b>':'')+' (independent rolls)</div>';
+      html += '<div class="chance-line">Output: <b>0-3 Meat</b> at <b>'+meatChance+'%</b>/ea &nbsp;|&nbsp; <b>0-3 Hide</b> at <b>'+hideChance+'%</b>/ea'+(recipe.fatId?' &nbsp;|&nbsp; <b>0-3 '+fatName+'</b> at <b>'+fatChance+'%</b>/ea':'')+' (three independent rolls each)</div>';
       html += '<div class="inputs-line">Needs: '+inputsLine(recipe.inputs, 'inp-'+recipe.id)+'</div>';
       html += '<div class="progress-track"><div class="progress-fill"'+(isActive?' id="'+fillId+'"':'')+' style="width:'+pct+'%"></div></div>';
       if(locked){
@@ -33212,7 +33225,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.45.8';
+  var GAME_VERSION = '0.0.45.9';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -33369,7 +33382,7 @@
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
       fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE, openCritterCaches:openCritterCaches, critterCacheChance:critterCacheChance, pickWeightedFarmingTier:pickWeightedFarmingTier, CACHE_SEED_TIER_DECAY:CACHE_SEED_TIER_DECAY, GRAIN_TIER_COUNT:GRAIN_TIER_COUNT, BASE_NEST_CHANCE:BASE_NEST_CHANCE, CRITTER_CACHE_SKILLS:CRITTER_CACHE_SKILLS, SEED_DROP_SKILLS:SEED_DROP_SKILLS,
       TOOL_ITEMS:TOOL_ITEMS, equipTool:equipTool, equipBestTool:equipBestTool, bestOwnedToolForSkill:bestOwnedToolForSkill, equippedToolAtLeast:equippedToolAtLeast, equippedToolScore:equippedToolScore, toolAggregateScore:toolAggregateScore, findToolType:findToolType,
-      butcherOutputChance:butcherOutputChance, getEquippedGatherTool:getEquippedGatherTool, getGatherToolTierData:getGatherToolTierData, getEquippedCraftTool:getEquippedCraftTool,
+      butcherOutputChance:butcherOutputChance, butcherOutputQty:butcherOutputQty, BUTCHER_OUTPUT_ROLLS:BUTCHER_OUTPUT_ROLLS, getEquippedGatherTool:getEquippedGatherTool, getGatherToolTierData:getGatherToolTierData, getEquippedCraftTool:getEquippedCraftTool,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER, ESTATE_PAVE_MS_PER_TIER:ESTATE_PAVE_MS_PER_TIER, ESTATE_WORKSHOP_MS_PER_TIER:ESTATE_WORKSHOP_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
