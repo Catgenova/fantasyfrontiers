@@ -4535,7 +4535,7 @@
       desc:'Deft, economical hand movements.',
       levels:'All Crafting skills.',
       affects:'Speeds up all crafting, up to +15%.'},
-    {id:'logic',            name:'Logic', icon:svgIcon('gear','#5a5f9a'),
+    {id:'logic',            name:'Multitasking', icon:svgIcon('gear','#5a5f9a'),
       desc:'A systematic mind that keeps more work organised and running at once.',
       levels:'Refining skills, including Butchering.',
       affects:'Grants +1 additional concurrent craft slot for every 10 levels reached (base +0), stacking on top of any Belt slots.'},
@@ -10248,9 +10248,9 @@
     var item = BELT_ITEMS['belt_t'+(state.equippedBeltTier-1)+'_'+state.equippedBeltRarity];
     return item ? Math.round(item.defense * beltEnhanceMult(state)) : 0; // a unique belt's +enhance scales its defense
   }
-  // Logic (a physique) grants +1 concurrent craft slot for every 10 levels, base +0.
+  // Multitasking (the 'logic' physique) grants +1 concurrent craft slot for every 10 levels, base +0.
   function logicSlotBonus(state){ return Math.floor(getLevel(state.physique.logic||0) / 10); }
-  var MAX_TASK_SLOTS = 15; // hard ceiling: fantastic Belt (4) + Logic Lv100 (10) + the free base slot (1)
+  var MAX_TASK_SLOTS = 15; // hard ceiling: fantastic Belt (4) + Multitasking Lv100 (10) + the free base slot (1)
   function getMaxCraftSlots(state){
     var beltSlots = (!state.equippedBeltTier || state.equippedBeltTier<=0) ? 1 : (BELT_RARITY_SLOTS[state.equippedBeltRarity] || 1);
     // Every player gets one free action slot on top of the Belt's, so a brand-new player runs 2 concurrent tasks.
@@ -16701,7 +16701,7 @@
   // Tips & tricks scrolled across the top-bar ticker (see #ffTicker). One shows at a time; the next
   // is swapped in each time the marquee completes a pass. <b> highlights the key term.
   var TICKER_TIPS = [
-    "<b>Logic:</b> every 10 levels earned in Logic grants one extra active craft slot — train it by refining materials!",
+    "<b>Multitasking:</b> every 10 levels earned in Multitasking grants one extra active craft slot — train it by refining materials!",
     "<b>Sand</b> you dig fires into Crucibles in Pottery. Dig long enough and you'll turn up Muddy Artifacts to clean off in Archaeology.",
     "<b>Classes</b> aren't unlocked, they're worn: equip a full matching gear set (Cloth robes + a Staff = Summoner) and its passives switch on. Swap a piece out and it goes dormant.",
     "Finding a <b>familiar</b> sets off a server-wide +50% EXP buff for everyone for 5 minutes — and registering a new account triggers a full hour.",
@@ -16720,7 +16720,7 @@
     "Brew <b>Teas</b> (Mixology) for XP, plate <b>Feasts</b> (Gastronomy) for HP regen, bind <b>Tomes</b> (Bookbinding) for work speed, and scribe <b>Scrolls</b> (Inscription) to ward off damage.",
     "Every craft can roll a rarity, and the <b>Treasure Hunter</b> class grows stronger the more Rare-or-better gear you wear. Dress to impress.",
     "Not every gather feeds a weapon: <b>Diving</b> turns up Pearls for Amulets, and <b>Prospecting</b> sifts Gems for Gemcutting.",
-    "A <b>Belt</b> adds concurrent craft slots on top of what Logic grants — stack both to run more crafts at once.",
+    "A <b>Belt</b> adds concurrent craft slots on top of what Multitasking grants — stack both to run more crafts at once.",
     "<b>Merchant's Savvy</b> sharpens your prices: better vendor payouts and a lighter Marketplace tax, and it levels just by selling.",
     "<b>Sacrifice</b> unwanted gear for Faith — and slay Demonspawn for Broken Relics, since sacrificing one is worth a huge burst of Faith.",
     "Your guild shares an <b>Estate</b> funded by the treasury, and the leader decides who may demolish buildings or tear up pavement.",
@@ -16811,7 +16811,7 @@
     "Rarity ranks go Normal, Rare, Supreme, Fantastic — each a stronger stat roll on the same item.",
     "The <b>Treasure Hunter</b> grows stronger the more Rare-or-better gear you're wearing. Bling is a build.",
     "Physiques never need equipping — they train from what you do and buff you forever. Check the Skills tab.",
-    "A <b>Belt</b> and the <b>Logic</b> physique both add concurrent craft slots — stack them to craft in parallel.",
+    "A <b>Belt</b> and the <b>Multitasking</b> physique both add concurrent craft slots — stack them to craft in parallel.",
     "Cloth gear boosts your familiar's spells; a Catalyst potion stacks on top for a truly overpowered summon.",
     "Guild Estate expansion is paid from the treasury — officers and the leader spend the coffers.",
     "<b>Green Thumb</b> ripens crops faster; <b>Composter</b> can spare your Fertilizer or push a plot to a triple harvest.",
@@ -31121,7 +31121,7 @@
       html += '<div class="skill-group-header" style="--group-color:var(--gold)">Task Slots</div>';
       var primaryUses = (state.activity.type==='craft' || state.activity.type==='gather' || state.activity.type==='pray') ? 1 : 0;
       var usedSlots = primaryUses + state.extraCraftSlots.filter(function(s){ return s.type; }).length;
-      html += '<div class="empty-note" style="margin:-2px 0 6px">'+usedSlots+' / '+maxCraftSlotsSidebar+' in use (base + Belt + Logic) &bull; craft, gather, or faith</div>';
+      html += '<div class="empty-note" style="margin:-2px 0 6px">'+usedSlots+' / '+maxCraftSlotsSidebar+' in use (base + Belt + Multitasking) &bull; craft, gather, or faith</div>';
       state.extraCraftSlots.forEach(function(s, idx){
         if(!s.type) return;
         var info = extraCraftSlotInfo(s);
@@ -33805,7 +33805,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.48.10';
+  var GAME_VERSION = '0.0.48.11';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
