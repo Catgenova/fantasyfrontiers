@@ -8020,6 +8020,37 @@
     }
   });
 
+  // ---- Estate Buildings list: workshops with attached-cottage-by-tier counts, cottage links ----
+  suite('estate: buildings list groups attached cottages by tier', function(){
+    // Build a small grid[x][y] with a workshop at (2,2) and cottages around it.
+    function cell(){ return { workshopId:null, cottageId:null, height:0 }; }
+    var g = []; for(var x=0;x<6;x++){ g[x]=[]; for(var y=0;y<6;y++){ g[x][y]=cell(); } }
+    var wsId = Object.keys(FF.WORKSHOP_ITEMS).filter(function(id){ return FF.WORKSHOP_ITEMS[id].tierIndex===4; })[0];
+    var cot1 = Object.keys(FF.COTTAGE_ITEMS).filter(function(id){ return FF.COTTAGE_ITEMS[id].tierIndex===1; })[0];
+    var cot3 = Object.keys(FF.COTTAGE_ITEMS).filter(function(id){ return FF.COTTAGE_ITEMS[id].tierIndex===3; })[0];
+    var cot1b = cot1;
+    g[2][2].workshopId = wsId;         // the workshop
+    g[2][1].cottageId = cot1;          // adjacent (orthogonal) -> attaches, tier 1
+    g[3][2].cottageId = cot3;          // adjacent -> attaches, tier 3
+    g[2][3].cottageId = cot1b;         // adjacent -> attaches, tier 1 (a second T1)
+    g[0][0].cottageId = cot3;          // isolated -> unattached
+    var data = FF.estateBuildingList(g);
+    eq(data.workshops.length, 1, 'one workshop found');
+    eq(data.cottages.length, 4, 'four cottages found');
+    var w = data.workshops[0];
+    eq(w.x, 2, 'workshop x'); eq(w.y, 2, 'workshop y');
+    eq(w.attached.total, 3, 'three cottages attach to the workshop');
+    eq(w.attached.byTier[1], 2, 'two tier-1 cottages attached');
+    eq(w.attached.byTier[3], 1, 'one tier-3 cottage attached');
+    var isolated = data.cottages.filter(function(c){ return c.x===0 && c.y===0; })[0];
+    eq(isolated.linked, null, 'a cottage with no adjacent workshop is unattached');
+    // Fresh grid: a cottage between TWO workshops links to neither (estateAdjacentWorkshop needs exactly one).
+    var g2 = []; for(var gx=0;gx<4;gx++){ g2[gx]=[]; for(var gy=0;gy<4;gy++){ g2[gx][gy]=cell(); } }
+    g2[1][2].workshopId = wsId; g2[3][2].workshopId = wsId; g2[2][2].cottageId = cot1;
+    var between = FF.estateBuildingList(g2).cottages.filter(function(c){ return c.x===2 && c.y===2; })[0];
+    eq(between.linked, null, 'a cottage adjacent to two workshops attaches to neither');
+  });
+
   // ---- Miracle cards show the Fantastic chance to a thousandths place (adjacent tiers are distinct) ----
   suite('faith cards: Miracle Fantastic chance shows 3 decimals', function(){
     var s = FF._state, saved = { m:s.xp.miracle, d:s.xp.devotion };
