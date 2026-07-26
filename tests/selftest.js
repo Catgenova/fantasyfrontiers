@@ -8020,6 +8020,19 @@
     }
   });
 
+  // ---- Miracle cards show the Fantastic chance to a thousandths place (adjacent tiers are distinct) ----
+  suite('faith cards: Miracle Fantastic chance shows 3 decimals', function(){
+    var s = FF._state, saved = { m:s.xp.miracle, d:s.xp.devotion };
+    try {
+      s.xp.miracle = 1e12; s.xp.devotion = 1e12; // max level so every tier card renders
+      var m = FF.renderFaithActivityTab('miracle');
+      ok(/\d\.\d{3}% Fantastic/.test(m), 'Miracle cards show a thousandths place on the Fantastic chance');
+      // Rare odds are larger, so Devotion keeps 2 decimals (no needless thousandths).
+      var d = FF.renderFaithActivityTab('devotion');
+      ok(/\d\.\d{2}% Rare/.test(d) && !/\d\.\d{3}% Rare/.test(d), 'Devotion keeps 2 decimals on the Rare chance');
+    } finally { s.xp.miracle = saved.m; s.xp.devotion = saved.d; }
+  });
+
   // ---- Equip: wands & scepters gate on their PROFICIENCY, not the crafting skill (like melee/ranged) ----
   suite('equip: wands & scepters require proficiency for higher tiers', function(){
     var s = FF._state, items = FF.STACKABLE_WEAPON_ITEMS;

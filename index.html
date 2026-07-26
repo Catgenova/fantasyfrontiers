@@ -26471,6 +26471,9 @@
     var lvl = getLevel(state.xp[kind]);
     var rarityLabel = getRarity(FAITH_RARITY_RESULT[kind]).label.trim();
     var baseChance = kind==='devotion' ? FAITH_BASE_RARE : kind==='blessing' ? FAITH_BASE_SUPREME : FAITH_BASE_FANTASTIC;
+    // Fantastic (Miracle) odds sit around 0.04%, so 2 decimals round adjacent tiers to the same value -- show
+    // a thousandths place there so each tier's step (and its increase) is visible. Rare/Supreme are larger.
+    var chanceDp = kind==='miracle' ? 3 : 2;
     var html = '<div class="section-intro">Level '+lvl+' '+meta.label+' &mdash; while active, adds to the baseline '+(baseChance*100).toFixed(2)+'% chance any equipment you forge comes out '+rarityLabel+' (baseline applies at all times, Faith or not; running '+meta.label+' at its highest tier brings the total to 5x baseline). Only one Faith activity can run at a time.</div>';
     html += renderSkillProgressBar(kind);
     html += renderFaithBar();
@@ -26481,7 +26484,7 @@
       var totalChance = baseChance + t.chance;
       html += '<div class="item-card'+(locked?' locked':'')+(isActive?' active-item':'')+'">';
       html += '<div class="item-top"><div class="item-icon">'+meta.icon+'</div><div><div class="item-name">'+TIER_NAMES[i]+' '+meta.label+'</div><div class="item-meta">Req. Lv '+t.levelReq+'</div></div></div>';
-      html += '<div class="item-stats"><span>+'+t.xpPerSec+' xp/s</span><span>-'+t.faithPerSec+' faith/s</span><span>'+(totalChance*100).toFixed(2)+'% '+rarityLabel+'</span></div>';
+      html += '<div class="item-stats"><span>+'+t.xpPerSec+' xp/s</span><span>-'+t.faithPerSec+' faith/s</span><span>'+(totalChance*100).toFixed(chanceDp)+'% '+rarityLabel+'</span></div>';
       if(locked){
         html += '<div class="lock-note">Locked until level '+t.levelReq+'</div>';
       } else if(isActive){
@@ -33372,7 +33375,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.46.4';
+  var GAME_VERSION = '0.0.46.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -33506,7 +33509,7 @@
       startGather:startGather, startCraft:startCraft, startPray:startPray, startCombat:startCombat, relocatePrimaryTaskToFreeSlot:relocatePrimaryTaskToFreeSlot,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
-      GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, planOfflineFaithActivity:planOfflineFaithActivity, physiqueLevelLabel:physiqueLevelLabel, anySkillLevel:anySkillLevel, anySkillProgress:anySkillProgress, anySkillXpVal:anySkillXpVal, skillTabsByLabel:skillTabsByLabel,
+      GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, renderFaithActivityTab:renderFaithActivityTab, planOfflineFaithActivity:planOfflineFaithActivity, physiqueLevelLabel:physiqueLevelLabel, anySkillLevel:anySkillLevel, anySkillProgress:anySkillProgress, anySkillXpVal:anySkillXpVal, skillTabsByLabel:skillTabsByLabel,
       renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
       combatLogPush:combatLogPush, combatLogHtml:combatLogHtml, advCombat:advCombat, _clReset:function(){ combatLog = []; }, _clGet:function(){ return combatLog; },
       chatMessagesHtml:chatMessagesHtml, chatRoleOf:chatRoleOf, chatIsMod:chatIsMod, chatIsOwner:chatIsOwner, chatMuteUntil:chatMuteUntil, chatAmIMuted:chatAmIMuted, chatMuteLabel:chatMuteLabel, renderChatModModal:renderChatModModal, renderChatModerationPanel:renderChatModerationPanel, chatNameFor:chatNameFor, titleName:titleName, profileCardBodyHtml:profileCardBodyHtml, renderPlayerProfileModal:renderPlayerProfileModal,
