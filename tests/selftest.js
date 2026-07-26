@@ -8597,6 +8597,25 @@
       ok(/data-item="strong"/.test(h2), '...but keeps the usable ones');
     } finally { FF.setEquipHideLocked(savedHL); }
 
+    // Regression (reported): a rare and a normal cloak of the SAME tier have identical defense -- cloth
+    // rarity pumps a familiar bonus, not armor -- so their `score` ties. "Equip best" (which skips the worn
+    // piece) used to keep flipping between them. Rarity, then tier, breaks the tie.
+    ok(typeof FF.candBetter === 'function', 'candBetter exported');
+    ok(FF.candBetter({score:12,rarityRank:1,tier:3},{score:12,rarityRank:0,tier:3}), 'same defense: higher rarity wins');
+    ok(!FF.candBetter({score:12,rarityRank:0,tier:3},{score:12,rarityRank:1,tier:3}), 'lower rarity is NOT better than the equal-defense higher rarity');
+    ok(FF.candBetter({score:20,rarityRank:0,tier:5},{score:12,rarityRank:1,tier:3}), 'a strictly higher defense still wins regardless of rarity');
+    ok(FF.candBetter({score:12,rarityRank:1,tier:4},{score:12,rarityRank:1,tier:3}), 'same defense + rarity: higher tier breaks the tie');
+    var cloak = function(worn){ return [{ key:'back', title:'Back', candidates:[
+      { icon:'', name:'Rare Cloak',   qty:1, score:12, rarityRank:1, tier:3, statHtml:'', deltaHtml:'', equipped:(worn==='rare'),   canEquip:true, lockHtml:'', action:'equipBodyArmor', data:'data-item="cloak_rare"' },
+      { icon:'', name:'Normal Cloak', qty:1, score:12, rarityRank:0, tier:3, statHtml:'', deltaHtml:'', equipped:(worn==='normal'), canEquip:true, lockHtml:'', action:'equipBodyArmor', data:'data-item="cloak_normal"' }
+    ]}]; };
+    // Rare worn: the normal is equal defense but lower rarity -> not strictly better -> no Equip best at all
+    // (so no flip-flop / downgrade).
+    ok(!/equip-picker-tools/.test(FF.renderEquipCandidatePicker(cloak('rare'), {flat:true, bestLabel:'Equip best'})), 'rare worn: Equip best is not offered (the normal is not an upgrade)');
+    // Normal worn: the rare IS strictly better -> Equip best offered, targeting the rare.
+    var tbN = (FF.renderEquipCandidatePicker(cloak('normal'), {flat:true, bestLabel:'Equip best'}).match(/<div class="equip-picker-tools">[\s\S]*?<\/div>/) || [''])[0];
+    ok(/data-item="cloak_rare"/.test(tbN) && !/data-item="cloak_normal"/.test(tbN), 'normal worn: Equip best upgrades to the same-tier rare');
+
     // Body-armour picker is scoped to the tapped slot and groups owned pieces by material accordion.
     var S = FF._state, savedInv=S.inventory, savedBody=S.bodyArmor, savedXp=S.xp, savedUniq=S.uniqueItems;
     try {

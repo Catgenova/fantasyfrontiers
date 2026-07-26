@@ -17796,6 +17796,7 @@
           var item = BODY_ARMOR_ITEMS[id];
           return {
             icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:item.defense,
+            rarityRank:rarityRank(item.rarity), tier:item.tierIndex, // tiebreak equal-defense pieces (cloth rarity doesn't change defense)
             statHtml:'def '+item.defense, deltaHtml:'vs equipped '+equipDeltaChip(item.defense, current?current.defense:0)+' def',
             equipped:(!(s&&s.uid) && current && current.id===id),
             canEquip:meetsProficiencyRequirement(profId ? state.xp[profId] : 0, item.tierIndex),
@@ -18184,16 +18185,32 @@
   // groups: [{ key, title, icon, candidates | subgroups, defaultOpen }]. ctx: { keyPrefix, flat, bestLabel }.
   // flat renders every candidate in one style-row (no accordion) -- used by single-list slots. A group with
   // `subgroups` renders a second accordion level (e.g. Melee Weapons -> Rapier / Greatsword / ...).
+  // Is candidate a STRICTLY better equip than b? Score (defense/damage) first, then rarity, then tier.
+  // The rarity tiebreak is what fixes the cloak toggle: cloth armor's rarity pumps a familiar bonus, NOT
+  // its defense (see BODY_ARMOR_ITEMS), so a rare and a normal cloak of the same tier share one `score`.
+  // Without the tiebreak they compare equal, and "Equip best" (which skips the worn piece) kept flipping
+  // between them. rarityRank/tier are optional -- pickers that don't set them fall back to pure score.
+  function candBetter(a, b){
+    var sa=a.score||0, sb=b.score||0; if(sa!==sb) return sa>sb;
+    var ra=a.rarityRank||0, rb=b.rarityRank||0; if(ra!==rb) return ra>rb;
+    return (a.tier||0) > (b.tier||0);
+  }
   function renderEquipCandidatePicker(groups, ctx){
     ctx = ctx || {};
-    var best = null, anyLocked = false, total = 0;
+    var best = null, equippedC = null, anyLocked = false, total = 0;
     groups.forEach(function(g){
       eachGroupCandidate(g, function(c){
         total++;
+        if(c.equipped) equippedC = c;
         if(!c.canEquip){ anyLocked = true; return; }
-        if(!c.equipped && !c.noBest && (!best || (c.score||0) > (best.score||0))) best = c;
+        if(!c.equipped && !c.noBest && (!best || candBetter(c, best))) best = c;
       });
     });
+    // Only surface "Equip best" when it STRICTLY beats what's already worn -- otherwise clicking it just
+    // swaps between two equal-value pieces forever (the reported rare<->normal cloak flip) or downgrades a
+    // piece that was already the strongest. An equipped legendary/special (noBest) is never traded down to
+    // a plain piece.
+    if(best && equippedC && (equippedC.noBest || !candBetter(best, equippedC))) best = null;
     if(!total) return '';
     var html = '';
     var tools = '';
@@ -33510,7 +33527,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.46.10';
+  var GAME_VERSION = '0.0.46.11';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -33672,7 +33689,7 @@
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER, ESTATE_PAVE_MS_PER_TIER:ESTATE_PAVE_MS_PER_TIER, ESTATE_WORKSHOP_MS_PER_TIER:ESTATE_WORKSHOP_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey, invGroupFor:invGroupFor, INV_GROUPS:INV_GROUPS,
-      sortEquipCandidates:sortEquipCandidates, renderEquipCandidatePicker:renderEquipCandidatePicker, renderEquipBodyArmorSection:renderEquipBodyArmorSection, renderMainhandEquipSection:renderMainhandEquipSection, equipPickerHtml:equipPickerHtml,
+      sortEquipCandidates:sortEquipCandidates, candBetter:candBetter, renderEquipCandidatePicker:renderEquipCandidatePicker, renderEquipBodyArmorSection:renderEquipBodyArmorSection, renderMainhandEquipSection:renderMainhandEquipSection, equipPickerHtml:equipPickerHtml,
       getNextAutoEatFood:getNextAutoEatFood, getTotalAutoEatFoodQty:getTotalAutoEatFoodQty, getAutoEatFoodTypes:getAutoEatFoodTypes,
       setEquipHideLocked:function(v){ equipHideLocked = !!v; }, getEquipHideLocked:function(){ return equipHideLocked; },
       craftBodyRarity:craftBodyRarity, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, enhanceBodyRarity:enhanceBodyRarity, chronicleEnhanceToSystemMsg:chronicleEnhanceToSystemMsg, chronicleRowToSystemMsg:chronicleRowToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
