@@ -11368,6 +11368,29 @@
     ok(/arrow damage/.test(FF.uniqueCardBody({ base:'stquiver_quiver_t0_normal', kind:'offhand', tier:0, rarity:'normal', enhance:0, enchants:[] })), 'quiver card shows its arrow-damage bonus');
   });
 
+  // ---- Treasure chests: per-chest gold cap is 5000 -------------------------------------------------
+  suite('treasure chest: gold caps at 5000', function(){
+    var s = FF._state;
+    eq(FF.CHEST_MAX_GOLD, 5000, 'the per-chest gold ceiling is 5000');
+    var sv = { inv:s.inventory.treasure_chest, gold:s.gold, earned:s.goldEarnedTotal };
+    var rnd = Math.random;
+    try {
+      // A max roll: every chest hits the ceiling. Cubic skew still floors at CHEST_MAX_GOLD.
+      Math.random = function(){ return 0.9999999; };
+      s.inventory.treasure_chest = 3; var g0 = s.gold;
+      FF.openTreasureChests(3, true); // silent
+      eq(s.gold - g0, 3 * 5000, 'three max-roll chests give exactly 3 x 5000');
+      // A min roll: every chest still gives at least 1.
+      Math.random = function(){ return 0; };
+      s.inventory.treasure_chest = 4; var g1 = s.gold;
+      FF.openTreasureChests(4, true);
+      eq(s.gold - g1, 4, 'four min-roll chests give at least 1 gold each');
+    } finally {
+      Math.random = rnd;
+      s.inventory.treasure_chest = sv.inv; s.gold = sv.gold; s.goldEarnedTotal = sv.earned;
+    }
+  });
+
   // ---- Improvement system: enhance (Stage 2) --------------------------------------------
   suite('improvement: enhance', function(){
     ok(typeof FF.enhanceItem === 'function' && typeof FF.enhanceSuccessChance === 'function', 'enhance exported');

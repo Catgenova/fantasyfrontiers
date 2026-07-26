@@ -325,7 +325,7 @@ Deno.serve(async (req) => {
     const { data: debited } = await admin.rpc("item_debit", { p_user: userId, p_key: "treasure_chest", p_qty: count });
     if (debited !== true) return json({ ok: false, error: "Chests not available in the ledger." });
     const w = await ensureWallet();
-    const CHEST_MAX_GOLD = 10_000; // per-chest gold ceiling (matches openTreasureChests' roll cap)
+    const CHEST_MAX_GOLD = 5_000; // per-chest gold ceiling (matches openTreasureChests' roll cap)
     const credit = Math.max(0, Math.min(Math.floor(reportedGold), count * CHEST_MAX_GOLD));
     const newGold = Math.min(HARD_CAP, w.gold + credit);
     await admin.from("player_wallet").update({ gold: newGold }).eq("user_id", userId); // earned_total & updated_at unchanged: exempt from the bucket
