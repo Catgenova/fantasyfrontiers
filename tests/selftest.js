@@ -7129,13 +7129,26 @@
     eq(s.activity.tower.floor, 3, 'advanced again to floor 3');
     eq(s.inventory.barrier_shard, 2, 'floor 2 banked another Barrier Shard (2 total)');
 
-    // Without auto-advance a clear ends the run and still banks the floor's Shards.
+    // Ending the auto streak (a fall / manual Stop) surfaces ONE aggregate Barrier Shard popup.
+    eq(s.activity.tower.shardsGained, 2, 'the run carries the running Shard tally forward');
+    eq(s.activity.tower.floorsGained, 2, '...and the floors-cleared count');
+    FF.flushTowerShardBatch(s.activity);
+    eq(s.popupQueue.length, 1, 'ending the streak surfaces exactly one Barrier Shard popup');
+    eq(s.popupQueue[0].type, 'towerShards', 'it is the tower-shards summary popup');
+    eq(s.popupQueue[0].count, 2, 'the summary aggregates every cleared floor\'s Shards (2)');
+    eq(s.popupQueue[0].floors, 2, 'and reports the number of floors cleared');
+    eq(s.activity.tower.shardsGained, 0, 'the tally is drained once shown');
+
+    // Without auto-advance a clear ends the run, banks the floor's Shards, and shows a single-floor popup.
     s.towerAutoAdvance = false; s.tower = {}; s.popupQueue = []; s.popupBatchTotal = 0; s.familiars = {}; s.inventory.barrier_shard = 0;
     s.activity = FF.makeTowerActivity('all', 1, false, []);
     FF.towerOnKill(null);
     eq(s.activity.type, null, 'a non-auto clear ends the run');
     eq(s.inventory.barrier_shard, 1, 'a non-auto clear still banks the floor\'s Barrier Shard');
-    eq(s.popupQueue.length, 0, 'no familiar popup fires from a Tower clear');
+    eq(s.popupQueue.length, 1, 'a single-floor clear surfaces one Barrier Shard popup');
+    eq(s.popupQueue[0].type, 'towerShards', 'the single-floor summary is a tower-shards popup');
+    eq(s.popupQueue[0].count, 1, 'it shows the floor\'s 1 Shard');
+    eq(s.popupQueue[0].floors, 1, 'and reports 1 floor cleared');
 
     s.activity = sv.act; s.familiars = sv.fams; s.tower = sv.tower; s.towerAutoAdvance = sv.auto; s.popupQueue = sv.pq; s.popupBatchTotal = sv.pbt; s.playerHp = sv.hp; s.settings.popupFamiliar = sv.pf;
     if(sv.shards===undefined) delete s.inventory.barrier_shard; else s.inventory.barrier_shard = sv.shards;
