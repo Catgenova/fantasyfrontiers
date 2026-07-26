@@ -12976,6 +12976,50 @@
     }
     saveGame(); render();
   }
+  // Auto-inscribe: keep attempting the Enhance, letting Barrier Shards absorb every failure, until the item
+  // improves +1 OR the Barrier Shards run out (or Inscription Scrolls do). It only ever attempts while a
+  // Shard is on hand to absorb a failure, so the item can NEVER be destroyed by this action -- the whole
+  // point is a safe, hands-off push for one more +level. Ignores the Barrier toggle (it always protects).
+  function autoInscribe(uid){
+    if(isEquipToken(uid)){ var nu = convertEquippedToUnique(equipTokenSlot(uid)); if(!nu){ addLog('That item is no longer equipped.','danger'); return; } improveSel = nu; uid = nu; }
+    var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
+    if(!isImprovableRarity(u.rarity)){ addLog('Only Rare-or-better gear can be enhanced.','danger'); return; }
+    if(u.enhance >= ENHANCE_MAX){ addLog('Already at the maximum +'+ENHANCE_MAX+'.','danger'); return; }
+    if((state.inventory.barrier_shard||0) < 1){ addLog('Auto-inscribe needs Barrier Shards to absorb failures — climb the Tower to earn some.','danger'); return; }
+    // Same one-time, game-wide first-enhance lock acknowledgment as a manual Enhance.
+    if(u.enhance===0 && !state.enhanceLockWarnAck){
+      if(!enhanceLockArmed){ enhanceLockArmed = true; render(); return; }
+      enhanceLockArmed = false; state.enhanceLockWarnAck = true;
+    }
+    enhanceWarnArmed = false;
+    var attempts = 0, scrollsSpent = 0, shardsSpent = 0, success = false, outOfScrolls = false;
+    // Only attempt while a Shard is available to absorb a failure -- so the item is never at risk.
+    while((state.inventory.barrier_shard||0) >= 1 && u.enhance < ENHANCE_MAX){
+      var cost = u.enhance + 1;
+      var planned = planInscriptions(u.tier, cost);
+      if(!planned){ outOfScrolls = true; break; }
+      consumeInputs(planned.plan); scrollsSpent += cost; attempts++;
+      if(Math.random() < enhanceSuccessChance(u.enhance)){
+        u.enhance += 1;
+        if(!state.stats) state.stats = {}; if(u.enhance > (state.stats.enhance_best||0)) state.stats.enhance_best = u.enhance;
+        success = true;
+        announceEnhance(u);
+        break;                                   // improved +1 -> done
+      }
+      consumeInputs({ barrier_shard:1 }); shardsSpent++;  // failure absorbed by a Barrier Shard
+    }
+    var shardsLeft = state.inventory.barrier_shard||0;
+    var summary = { attempts:attempts, shardsSpent:shardsSpent, scrollsSpent:scrollsSpent };
+    if(success){
+      addLog(uniqueBaseName(u)+' was Enhanced to +'+u.enhance+'! (Auto-inscribe: '+attempts+' attempt'+(attempts===1?'':'s')+', '+shardsSpent+' Barrier Shard'+(shardsSpent===1?'':'s')+' spent)','important');
+      enhancePopupData = { ok:true, auto:true, name:uniqueBaseName(u), icon:uniqueIcon(u), enhance:u.enhance, summary:summary };
+    } else {
+      var reason = outOfScrolls ? 'scrolls' : 'shards';
+      addLog('Auto-inscribe on '+uniqueBaseName(u)+' stopped — '+(outOfScrolls?'out of Inscription Scrolls':'out of Barrier Shards')+'. The item is safe at +'+u.enhance+' after '+attempts+' attempt'+(attempts===1?'':'s')+' ('+shardsSpent+' Shard'+(shardsSpent===1?'':'s')+' spent).','danger');
+      enhancePopupData = { ok:false, barrier:true, auto:true, reason:reason, name:uniqueBaseName(u), icon:uniqueIcon(u), enhance:u.enhance, shardsLeft:shardsLeft, summary:summary };
+    }
+    saveGame(); render();
+  }
 
   // ---- Improvement UI state + actions ----
   var improveSel = null;        // selected item: a base equipment id OR a unique uid
@@ -13578,6 +13622,11 @@
         // Barrier Shard toggle: on a failed Enhance, shatter a Barrier Shard instead of the item.
         html += '<label style="display:inline-flex;gap:6px;align-items:center;font-size:11px;color:var(--text-dim);cursor:pointer;margin-top:6px;"><input type="checkbox" data-action="improveToggleEnhanceBarrier"'+(_barrierOn?' checked':'')+'> '+BARRIER_SHARD_ITEM.icon+' Use a <b style="color:var(--gold);">Barrier Shard</b> on failure — you have <b'+(_shards>0?' style="color:var(--gold);"':'')+'>'+_shards+'</b></label>';
         if(_barrierOn && _shards===0) html += '<div class="empty-note" style="font-size:11px;">No Barrier Shards left — the item is at risk. Climb the Tower to earn more.</div>';
+        // Auto-inscribe: keep enhancing (Barrier Shards absorbing every failure) until it hits +1 or the
+        // Shards run out. Always Shard-protected, so the item is never at risk here.
+        if(_shards > 0){
+          html += '<div style="margin-top:8px;"><button class="action-btn" data-action="improveAutoInscribe" data-uid="'+enhTarget+'" style="width:auto;flex:0 0 auto;background:var(--bg-panel);color:var(--gold);border:1px solid var(--gold);" title="Retry the Enhance, spending a Barrier Shard per failure, until it improves +1 or your Barrier Shards run out">Auto-inscribe until +1 or Shards gone</button></div>';
+        }
       }
     }
     if(isU2){
@@ -22500,16 +22549,24 @@
     if(!ov){ ov = document.createElement('div'); ov.id = 'enhanceOverlay'; ov.className = 'familiar-popup-overlay'; ov.style.zIndex = '10006'; ov.setAttribute('data-action','closeEnhancePopup'); document.getElementById('app').appendChild(ov); }
     var html = '<div class="familiar-popup-card" data-action="noop" style="max-width:380px;text-align:center;">';
     html += '<div class="familiar-popup-icon">'+(d.icon||'')+'</div>';
+    var _autoSummary = (d.auto && d.summary) ? ('<div style="font-size:12px;color:var(--text-dim);margin-top:6px;">Auto-inscribe: '+d.summary.attempts+' attempt'+(d.summary.attempts===1?'':'s')+', <b>'+d.summary.shardsSpent+'</b> Barrier Shard'+(d.summary.shardsSpent===1?'':'s')+' + <b>'+d.summary.scrollsSpent+'</b> Scroll'+(d.summary.scrollsSpent===1?'':'s')+' spent.</div>') : '';
     if(d.ok){
-      html += '<div class="familiar-popup-title" style="color:var(--gold);">Enhancement Success!</div>';
+      html += '<div class="familiar-popup-title" style="color:var(--gold);">'+(d.auto?'Auto-inscribe Success!':'Enhancement Success!')+'</div>';
       html += '<div style="margin:8px 0 3px;font-size:15px;"><b>'+escapeHtml(d.name)+'</b> is now <b style="color:var(--gold);">+'+d.enhance+'</b>.</div>';
       html += '<div style="font-size:12px;color:var(--text-dim);">Base &amp; enchant stats scaled to <b style="color:var(--gold);">+'+Math.round((enhanceStatMult(d.enhance)-1)*100)+'%</b>.</div>';
+      html += _autoSummary;
       html += '<button class="action-btn" data-action="closeEnhancePopup" style="margin-top:14px">Nice!</button>';
     } else if(d.barrier){
-      html += '<div class="familiar-popup-title" style="color:var(--gold);">Barrier Held!</div>';
-      html += '<div style="margin:8px 0 3px;font-size:15px;">The Enhance failed, but a <b style="color:var(--gold);">Barrier Shard</b> shattered in its place — your <b>'+escapeHtml(d.name)+'</b> is safe at <b>+'+d.enhance+'</b>.</div>';
+      var _autoStopped = d.auto;
+      html += '<div class="familiar-popup-title" style="color:var(--gold);">'+(_autoStopped?'Auto-inscribe Stopped':'Barrier Held!')+'</div>';
+      if(_autoStopped){
+        html += '<div style="margin:8px 0 3px;font-size:15px;">Ran out of <b>'+(d.reason==='scrolls'?'Inscription Scrolls':'Barrier Shards')+'</b> before landing a +1. Your <b>'+escapeHtml(d.name)+'</b> is safe at <b>+'+d.enhance+'</b>.</div>';
+      } else {
+        html += '<div style="margin:8px 0 3px;font-size:15px;">The Enhance failed, but a <b style="color:var(--gold);">Barrier Shard</b> shattered in its place — your <b>'+escapeHtml(d.name)+'</b> is safe at <b>+'+d.enhance+'</b>.</div>';
+      }
       html += '<div style="font-size:12px;color:var(--text-dim);">'+d.shardsLeft+' Barrier Shard'+(d.shardsLeft===1?'':'s')+' remaining. When they run out, the item is at risk again.</div>';
-      html += '<button class="action-btn" data-action="closeEnhancePopup" style="margin-top:14px">Phew!</button>';
+      html += _autoSummary;
+      html += '<button class="action-btn" data-action="closeEnhancePopup" style="margin-top:14px">'+(_autoStopped?'OK':'Phew!')+'</button>';
     } else {
       html += '<div class="familiar-popup-title" style="color:var(--danger);">Enhancement Failed!</div>';
       html += '<div style="margin:8px 0 3px;font-size:15px;">Your <b>'+escapeHtml(d.name)+'</b> shattered and was <b style="color:var(--danger);">destroyed</b>.</div>';
@@ -32412,6 +32469,7 @@
     improveEnhance: function(btn, e){ enhanceItem(btn.getAttribute('data-uid')); },
     improveToggleEnhanceWarn: function(btn, e){ improveToggleEnhanceWarn(); },
     improveToggleEnhanceBarrier: function(btn, e){ improveToggleEnhanceBarrier(); },
+    improveAutoInscribe: function(btn, e){ autoInscribe(btn.getAttribute('data-uid')); },
     improveSellUnique: function(btn, e){ improveSellUnique(btn.getAttribute('data-uid')); },
     improveSacrificeUnique: function(btn, e){ improveSacrificeUnique(btn.getAttribute('data-uid')); },
     tierStep: function(btn, e){
@@ -33645,7 +33703,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.48.2';
+  var GAME_VERSION = '0.0.48.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -33775,7 +33833,7 @@
       ELEM_RAW_STATS:ELEM_RAW_STATS, rawEnchantRange:rawEnchantRange, enchantModRange:enchantModRange, baseIsMagicWeapon:baseIsMagicWeapon, enchantPoolForItem:enchantPoolForItem, enchantCtxForUnique:enchantCtxForUnique, elementalRawHitDamage:elementalRawHitDamage,
       parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
       equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, itemLinkChipHtml:itemLinkChipHtml, uniqueEnchantLines:uniqueEnchantLines, uniqueBaseStatLines:uniqueBaseStatLines, discordItemStatsText:discordItemStatsText, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
-      enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, mainhandEnhanceMult:mainhandEnhanceMult,
+      enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, autoInscribe:autoInscribe, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray, startCombat:startCombat, relocatePrimaryTaskToFreeSlot:relocatePrimaryTaskToFreeSlot,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,

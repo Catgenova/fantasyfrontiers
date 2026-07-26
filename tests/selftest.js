@@ -11345,6 +11345,52 @@
     }
   });
 
+  // ---- Enhance: auto-inscribe retries until +1 or Barrier Shards run out (item never at risk) -------
+  suite('enhance: auto-inscribe', function(){
+    var s = FF._state;
+    var sv = { ui:s.uniqueItems, inv:s.inventory, ack:s.enhanceLockWarnAck, mh:s.equippedMainhandUid };
+    var rnd = Math.random;
+    function mk(uid, enh){ var o = {}; o[uid] = { uid:uid, base:'stweapon_rapier_t2_rare', kind:'weapon', tier:2, rarity:'rare', enchants:[], enhance:enh }; return o; }
+    try {
+      s.enhanceLockWarnAck = true; s.equippedMainhandUid = null;
+      // Every attempt fails -> loops until all Barrier Shards are spent; the item is NEVER destroyed.
+      Math.random = function(){ return 0.999; };
+      s.uniqueItems = mk('u_a', 3);
+      s.inventory = { scroll_t2:100, barrier_shard:3 };
+      FF.autoInscribe('u_a');
+      ok(s.uniqueItems.u_a, 'the item survives (auto-inscribe only attempts while a Shard can absorb a failure)');
+      eq(s.uniqueItems.u_a.enhance, 3, 'no +level gained when every attempt failed');
+      eq(s.inventory.barrier_shard, 0, 'it keeps going until every Barrier Shard is spent');
+      eq(s.inventory.scroll_t2, 100 - 3*4, 'each of the 3 attempts spent 4 Scrolls (cost = enhance+1)');
+      // First-try success -> stops immediately at +1, no Shard spent.
+      Math.random = function(){ return 0; };
+      s.uniqueItems = mk('u_b', 3);
+      s.inventory = { scroll_t2:100, barrier_shard:5 };
+      FF.autoInscribe('u_b');
+      eq(s.uniqueItems.u_b.enhance, 4, 'a success improves the item +1 and stops');
+      eq(s.inventory.barrier_shard, 5, 'no Barrier Shard is spent on a success');
+      eq(s.inventory.scroll_t2, 96, 'exactly one attempt (4 Scrolls) was made');
+      // Out of Scrolls before a success -> stops safely, item intact.
+      Math.random = function(){ return 0.999; };
+      s.uniqueItems = mk('u_c', 3);
+      s.inventory = { scroll_t2:4, barrier_shard:9 }; // only enough Scrolls for one attempt
+      FF.autoInscribe('u_c');
+      ok(s.uniqueItems.u_c, 'the item is intact after running out of Scrolls');
+      eq(s.uniqueItems.u_c.enhance, 3, 'still at +3 (no success)');
+      eq(s.inventory.scroll_t2, 0, 'the one affordable attempt spent its Scrolls');
+      eq(s.inventory.barrier_shard, 8, 'that single failure spent one Barrier Shard');
+      // Guard: with no Barrier Shards, auto-inscribe is a no-op (never risks the item).
+      s.uniqueItems = mk('u_d', 3);
+      s.inventory = { scroll_t2:100, barrier_shard:0 };
+      FF.autoInscribe('u_d');
+      eq(s.uniqueItems.u_d.enhance, 3, 'no attempt is made without a Barrier Shard to absorb a failure');
+      eq(s.inventory.scroll_t2, 100, 'no Scrolls spent when there are no Barrier Shards');
+    } finally {
+      Math.random = rnd;
+      s.uniqueItems = sv.ui; s.inventory = sv.inv; s.enhanceLockWarnAck = sv.ack; s.equippedMainhandUid = sv.mh;
+    }
+  });
+
   // ---- Tower: Barrier Shards per floor (scaling with depth), and no more familiar drops -----------
   suite('tower: Barrier Shards replace familiar drops', function(){
     var B = FF.barrierShardsForFloor;
