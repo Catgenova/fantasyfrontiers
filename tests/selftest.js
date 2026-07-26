@@ -6988,8 +6988,8 @@
 
   suite('tower: floors, rotation, scaling + rewards', function(){
     var s = FF._state;
-    var savedTower = s.tower, savedFam = s.familiars, savedAct = s.activity, savedCat = FF.currentCategoryId();
-    s.tower = {}; s.familiars = {}; s.activity = { type:null };
+    var savedTower = s.tower, savedFam = s.familiars, savedAct = s.activity, savedCat = FF.currentCategoryId(), savedShards = s.inventory.barrier_shard;
+    s.tower = {}; s.familiars = {}; s.activity = { type:null }; s.inventory.barrier_shard = 0;
     // 25 entrances: All Classes first, then one per class.
     eq(FF.TOWER_ENTRANCES.length, 25, '25 entrances (All Classes + 24 classes)');
     eq(FF.TOWER_ENTRANCES[0].id, 'all', 'the first entrance is All Classes');
@@ -7022,19 +7022,20 @@
     for(var f=1; f<=10; f++){ eq(FF.towerBaseMonster(f).element, FF.towerFloorElement(f), 'floor '+f+' foe element matches the floor element'); }
     ok(m1.attackTypes.piercing === 1 && m1.armorTypes.piercing === 1, 'floor 1 foe is a piercing type');
     ok(FF.monsterById('tower_all_f7') != null, 'a tower foe rebuilds from its id after a reload (monsterById fallback)');
-    // Progress defaults + advance/reward on kill (All Classes: guaranteed random familiar).
+    // Progress defaults + advance/reward on kill (a clear now grants Barrier Shards, not familiars).
     eq(FF.towerEntry('all').floor, 1, 'a fresh entrance starts on floor 1');
     eq(FF.towerEntry('all').best, 0, '...with no best yet');
     s.activity = { type:'combat', tower:{ entrance:'all', floor:3 }, monsterId:'tower_all_f3' };
     s.tower.all = { floor:3, best:2 };
-    var ownedBefore = Object.keys(s.familiars).length;
+    var shardsBefore = s.inventory.barrier_shard||0, ownedFamsBefore = Object.keys(s.familiars).length;
     FF.navPickCat('combat'); // watching the arena live, as after towerEnter
     FF.towerOnKill(FF.buildTowerMonster('all', 3));
     eq(s.tower.all.best, 3, 'clearing floor 3 banks best=3');
     eq(s.tower.all.floor, 4, '...and advances to floor 4');
     eq(s.activity.type, null, 'the run ends after a clear (re-enter for the next floor)');
     eq(FF.currentCategoryId(), 'tower', 'clearing a floor lands back in the Tower category, not Combat');
-    ok(Object.keys(s.familiars).length > ownedBefore, 'All Classes grants a familiar every clear');
+    eq((s.inventory.barrier_shard||0) - shardsBefore, 1, 'clearing floor 3 grants 1 Barrier Shard');
+    eq(Object.keys(s.familiars).length, ownedFamsBefore, 'a Tower clear no longer grants a familiar');
     // If the player wandered off the arena during the fight, a clear does NOT yank the view back.
     FF.navPickCat('inventory');
     s.activity = { type:'combat', tower:{ entrance:'all', floor:4 }, monsterId:'tower_all_f4' };
@@ -7096,14 +7097,15 @@
     ok(/data-action="towerPreviewOpen" data-tower="all"/.test(tabHtml), 'All Classes stays enterable');
     // restore
     s.tower = savedTower; s.familiars = savedFam; s.activity = savedAct;
+    if(savedShards===undefined) delete s.inventory.barrier_shard; else s.inventory.barrier_shard = savedShards;
     if(savedCat) FF.navPickCat(savedCat);
   });
 
-  // ---- Tower auto-advance: keep climbing + one consolidated familiar summary at the end -------------
-  suite('tower: auto-advance + batched familiar summary', function(){
+  // ---- Tower auto-advance: keep climbing, banking Barrier Shards each floor (no per-floor popups) -----
+  suite('tower: auto-advance banks Barrier Shards each floor', function(){
     var s = FF._state;
-    var sv = { act:s.activity, fams:s.familiars, tower:s.tower, auto:s.towerAutoAdvance, pq:s.popupQueue, pbt:s.popupBatchTotal, hp:s.playerHp, pf:s.settings.popupFamiliar };
-    s.familiars = {}; s.tower = {}; s.popupQueue = []; s.popupBatchTotal = 0; s.playerHp = 1000; s.settings.popupFamiliar = true;
+    var sv = { act:s.activity, fams:s.familiars, tower:s.tower, auto:s.towerAutoAdvance, pq:s.popupQueue, pbt:s.popupBatchTotal, hp:s.playerHp, pf:s.settings.popupFamiliar, shards:s.inventory.barrier_shard };
+    s.familiars = {}; s.tower = {}; s.popupQueue = []; s.popupBatchTotal = 0; s.playerHp = 1000; s.settings.popupFamiliar = true; s.inventory.barrier_shard = 0;
 
     // The Enter modal exposes the auto-advance toggle, reflecting its state.
     s.towerAutoAdvance = true;
@@ -7113,42 +7115,30 @@
     s.towerAutoAdvance = false;
     ok(/☐ Auto-advance/.test(FF.towerPreviewCardHtml('all')), 'the toggle renders unchecked when off');
 
-    // Auto-advance run: each clear rolls straight into the next floor and banks its familiar into the run
-    // batch instead of firing a per-floor popup.
+    // Auto-advance run: each clear rolls straight into the next floor and banks that floor's Barrier
+    // Shards into the inventory, with no per-floor popup interrupting the climb.
     s.towerAutoAdvance = true;
     s.activity = FF.makeTowerActivity('all', 1, true, []);
-    ok(s.activity.tower.autoAdvance === true && Array.isArray(s.activity.tower.familiarsGained), 'makeTowerActivity seeds the auto flag + batch');
+    ok(s.activity.tower.autoAdvance === true, 'makeTowerActivity seeds the auto flag');
     FF.towerOnKill(null);
     ok(s.activity.type === 'combat' && s.activity.tower, 'auto-advance rolls straight into the next fight');
     eq(s.activity.tower.floor, 2, 'advanced to floor 2 automatically');
-    eq(s.popupQueue.length, 0, 'no per-floor familiar popup interrupts the climb');
-    var banked1 = s.activity.tower.familiarsGained.length;
-    ok(banked1 >= 1, "'All Classes' banks a familiar each floor into the run batch");
+    eq(s.popupQueue.length, 0, 'no per-floor popup interrupts the climb');
+    eq(s.inventory.barrier_shard, 1, 'floor 1 banked 1 Barrier Shard');
     FF.towerOnKill(null);
     eq(s.activity.tower.floor, 3, 'advanced again to floor 3');
-    ok(s.activity.tower.familiarsGained.length > banked1, 'the batch keeps accumulating across cleared floors');
+    eq(s.inventory.barrier_shard, 2, 'floor 2 banked another Barrier Shard (2 total)');
 
-    // Ending the streak (a fall / manual Stop) surfaces ONE consolidated familiar-batch popup.
-    FF.flushTowerFamiliarBatch(s.activity);
-    eq(s.popupQueue.length, 1, 'the ended streak surfaces exactly one popup');
-    eq(s.popupQueue[0].type, 'familiarBatch', 'it is the consolidated familiar-batch modal, like the offline catch-up');
-    ok(s.popupQueue[0].familiars.length >= 2, 'the summary lists every familiar gained across the floors');
-    eq(s.activity.tower.familiarsGained.length, 0, 'the batch is drained once shown');
-
-    // A single-floor auto streak flushes as the normal single popup (not the batch modal).
-    s.popupQueue = []; s.popupBatchTotal = 0; s.familiars = {};
-    s.activity = FF.makeTowerActivity('all', 1, true, [{ skillId:'pyromancer', leveledUp:false, level:1 }]);
-    FF.flushTowerFamiliarBatch(s.activity);
-    ok(s.popupQueue.length === 1 && s.popupQueue[0].type === 'familiar', 'a single banked familiar uses the normal single popup');
-
-    // Without auto-advance a clear ends the run and shows the usual single popup -- no batching.
-    s.towerAutoAdvance = false; s.tower = {}; s.popupQueue = []; s.popupBatchTotal = 0; s.familiars = {};
+    // Without auto-advance a clear ends the run and still banks the floor's Shards.
+    s.towerAutoAdvance = false; s.tower = {}; s.popupQueue = []; s.popupBatchTotal = 0; s.familiars = {}; s.inventory.barrier_shard = 0;
     s.activity = FF.makeTowerActivity('all', 1, false, []);
     FF.towerOnKill(null);
     eq(s.activity.type, null, 'a non-auto clear ends the run');
-    ok(s.popupQueue.length === 1 && s.popupQueue[0].type === 'familiar', 'non-auto keeps the normal single familiar popup');
+    eq(s.inventory.barrier_shard, 1, 'a non-auto clear still banks the floor\'s Barrier Shard');
+    eq(s.popupQueue.length, 0, 'no familiar popup fires from a Tower clear');
 
     s.activity = sv.act; s.familiars = sv.fams; s.tower = sv.tower; s.towerAutoAdvance = sv.auto; s.popupQueue = sv.pq; s.popupBatchTotal = sv.pbt; s.playerHp = sv.hp; s.settings.popupFamiliar = sv.pf;
+    if(sv.shards===undefined) delete s.inventory.barrier_shard; else s.inventory.barrier_shard = sv.shards;
   });
 
   // ---- Menagerie: one-tap Replace Companion + familiar search --------------------------------------
@@ -11252,6 +11242,67 @@
     eq(s.uniqueItems.u_lock2.enhance, 1, 'once acknowledged, later first-enhances skip the confirmation');
     Math.random = rnd;
     s.uniqueItems = sv.ui; s.inventory = sv.inv; s.enhanceLockWarnAck = sv.ack; s.equippedMainhandUid = sv.mh;
+  });
+
+  // ---- Enhance: a Barrier Shard absorbs a failed enhance instead of the item being destroyed ------
+  suite('enhance: Barrier Shard shields a failed enhance', function(){
+    var s = FF._state;
+    var sv = { ui:s.uniqueItems, inv:s.inventory, ack:s.enhanceLockWarnAck, mh:s.equippedMainhandUid, barrier:s.settings.enhanceUseBarrier };
+    var rnd = Math.random;
+    try {
+      s.enhanceLockWarnAck = true; s.equippedMainhandUid = null; s.settings.enhanceUseBarrier = true;
+      Math.random = function(){ return 0.999; }; // force failure (above the 95% success cap)
+      // With Barrier Shards held + the toggle on, a failed enhance shatters a Shard, NOT the item.
+      s.uniqueItems = { u_b:{ uid:'u_b', base:'stweapon_rapier_t2_rare', kind:'weapon', tier:2, rarity:'rare', enchants:[], enhance:3 } };
+      s.inventory = { scroll_t2:50, barrier_shard:2 };
+      FF.enhanceItem('u_b');
+      ok(s.uniqueItems.u_b, 'the item survives a failed enhance while a Barrier Shard is held');
+      eq(s.uniqueItems.u_b.enhance, 3, 'its +level is unchanged by the absorbed failure');
+      eq(s.inventory.barrier_shard, 1, 'exactly one Barrier Shard is consumed');
+      eq(s.inventory.scroll_t2, 46, 'the Inscription Scrolls are still spent (cost 4 at +3)');
+      // Spend the last Shard, then the next failure has nothing to absorb it and destroys the item.
+      FF.enhanceItem('u_b');
+      eq(s.inventory.barrier_shard, 0, 'the second failure consumes the last Shard, item still alive');
+      ok(s.uniqueItems.u_b, 'item survives while a Shard remained');
+      FF.enhanceItem('u_b');
+      ok(!s.uniqueItems.u_b, 'with no Barrier Shards left, a failed enhance destroys the item');
+      // Toggle OFF: the item is at risk even while holding Shards, and no Shard is spent.
+      s.uniqueItems = { u_c:{ uid:'u_c', base:'stweapon_rapier_t2_rare', kind:'weapon', tier:2, rarity:'rare', enchants:[], enhance:3 } };
+      s.inventory = { scroll_t2:50, barrier_shard:5 };
+      s.settings.enhanceUseBarrier = false;
+      FF.enhanceItem('u_c');
+      ok(!s.uniqueItems.u_c, 'toggle off: a failed enhance destroys the item even with Shards held');
+      eq(s.inventory.barrier_shard, 5, 'no Shard is spent while the toggle is off');
+    } finally {
+      Math.random = rnd;
+      s.uniqueItems = sv.ui; s.inventory = sv.inv; s.enhanceLockWarnAck = sv.ack; s.equippedMainhandUid = sv.mh; s.settings.enhanceUseBarrier = sv.barrier;
+    }
+  });
+
+  // ---- Tower: Barrier Shards per floor (scaling with depth), and no more familiar drops -----------
+  suite('tower: Barrier Shards replace familiar drops', function(){
+    var B = FF.barrierShardsForFloor;
+    ok(typeof B === 'function', 'barrierShardsForFloor exported');
+    eq(B(1), 1, 'floor 1 -> 1 shard');
+    eq(B(24), 1, 'floor 24 -> 1 shard');
+    eq(B(25), 2, 'floor 25 -> 2 shards');
+    eq(B(49), 2, 'floor 49 -> 2 shards');
+    eq(B(50), 3, 'floor 50 -> 3 shards');
+    eq(B(74), 3, 'floor 74 -> 3 shards');
+    eq(B(75), 4, 'floor 75 -> 4 shards');
+    ok(FF.ALL_SELLABLE.barrier_shard && FF.ALL_SELLABLE.barrier_shard.name === 'Barrier Shard', 'the Barrier Shard item is registered');
+    // grantTowerReward now grants shards (not familiars) for both All Classes and class entrances.
+    var s = FF._state, sv = { inv:s.inventory, fam:s.familiars };
+    try {
+      s.inventory = {}; s.familiars = {};
+      FF.grantTowerReward('all', 30);   // floor 30 -> 2 shards
+      eq(s.inventory.barrier_shard, 2, 'All Classes floor 30 grants 2 Barrier Shards');
+      eq(Object.keys(s.familiars).length, 0, 'no familiar is granted by a Tower clear anymore');
+      var classEntrance = (FF.TOWER_ENTRANCES[1] || {}).id || 'all';
+      FF.grantTowerReward(classEntrance, 5); // class entrance, floor 5 -> 1 shard, still no familiar
+      eq(s.inventory.barrier_shard, 3, 'a class entrance also grants shards (1 at floor 5)');
+      eq(Object.keys(s.familiars).length, 0, 'a class-entrance clear grants no familiar either');
+    } finally { s.inventory = sv.inv; s.familiars = sv.fam; }
   });
 
   // ---- Improvement: an equipped base is improvable even if a stale mainhand uid lingers ----------

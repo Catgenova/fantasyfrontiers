@@ -8793,6 +8793,11 @@
   ALL_SELLABLE.critter_cache = CRITTER_CACHE_ITEM;
   var TREASURE_CHEST_ITEM = { id:'treasure_chest', name:'Treasure Chest', icon:svgIcon('chest','#c9a227'), sell:25 };
   ALL_SELLABLE.treasure_chest = TREASURE_CHEST_ITEM;
+  // Barrier Shard: an Enhance safety net. With the Enhance "Barrier" toggle on, a FAILED Enhance shatters a
+  // Barrier Shard instead of destroying the item; when you're out of Shards the item is at risk again.
+  // Earned only in the Tower (per-floor, scaling with depth -- see grantTowerReward). sell:0 = no vendor gold.
+  var BARRIER_SHARD_ITEM = { id:'barrier_shard', name:'Barrier Shard', icon:svgIcon('shield','#6fd3e0'), sell:0 };
+  ALL_SELLABLE.barrier_shard = BARRIER_SHARD_ITEM;
   var FISHING_TREASURE_CHANCE = 0.05;       // base chance a *failed* cast snags a Treasure Chest instead
   var FISHING_TREASURE_PER_TIER = 0.02;     // +2% per action tier -- deeper waters hide better loot
   // Treasure-on-miss chance for a given fish, scaling with the fished item's tier (fishing_t<n>).
@@ -11829,7 +11834,7 @@
       potionCharges: 0,
       popupQueue: [],
       popupBatchTotal: 0,
-      settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true, chatFilter:true, showEstateFabs:true, compactMobile:true, autoOpenCaches:false, autoOpenChests:false, autoHarvest:false, autoFertilize:false, autoPlant:false, advancedCombatLog:false, plantFiber:true, plantGrain:true, plantHerb:true, plantCustom:false, plantSeedDisabled:{} },
+      settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true, chatFilter:true, showEstateFabs:true, compactMobile:true, autoOpenCaches:false, autoOpenChests:false, autoHarvest:false, autoFertilize:false, autoPlant:false, advancedCombatLog:false, plantFiber:true, plantGrain:true, plantHerb:true, plantCustom:false, plantSeedDisabled:{}, enhanceUseBarrier:true },
       trackedSkills: ['logic'], // new players start tracking Logic so the top-bar tracker isn't empty
 
       peons: [],
@@ -12923,6 +12928,13 @@
       addLog(uniqueBaseName(u)+' was Enhanced to +'+u.enhance+'!','important');
       enhancePopupData = { ok:true, name:uniqueBaseName(u), icon:uniqueIcon(u), enhance:u.enhance };
       announceEnhance(u);
+    } else if(state.settings.enhanceUseBarrier && (state.inventory.barrier_shard||0) > 0){
+      // Barrier Shard absorbs the failure: the Shard shatters, the item survives (its +level is unchanged).
+      // When the Shards run out this branch is skipped and the item is at risk again.
+      consumeInputs({ barrier_shard:1 });
+      var _shardsLeft = state.inventory.barrier_shard||0;
+      addLog('A Barrier Shard shattered, shielding '+uniqueBaseName(u)+' from destruction! ('+_shardsLeft+' Barrier Shard'+(_shardsLeft===1?'':'s')+' left)','important');
+      enhancePopupData = { ok:false, barrier:true, name:uniqueBaseName(u), icon:uniqueIcon(u), enhance:u.enhance, shardsLeft:_shardsLeft };
     } else {
       addLog(uniqueBaseName(u)+' shattered during Enhancement and was destroyed!','danger');
       enhancePopupData = { ok:false, name:uniqueBaseName(u), icon:uniqueIcon(u) }; // capture before removeUnique drops it
@@ -13012,6 +13024,7 @@
   }
   function improveToggleWarn(){ state.enchantWarnHiTier = !state.enchantWarnHiTier; improveWarnArmed = false; saveGame(); render(); }
   function improveToggleEnhanceWarn(){ state.enhanceWarnHiTier = !state.enhanceWarnHiTier; enhanceWarnArmed = false; saveGame(); render(); }
+  function improveToggleEnhanceBarrier(){ state.settings.enhanceUseBarrier = !state.settings.enhanceUseBarrier; saveGame(); render(); }
   function improveEnchant(){
     if(improvePending) return;
     var sel = improveSel; if(!sel) return;
@@ -13523,11 +13536,18 @@
       html += '<div class="inputs-line">Current <b>+'+eLvl+'</b> / +'+ENHANCE_MAX+' — base &amp; enchant stats at <b style="color:var(--gold);">+'+Math.round((enhanceStatMult(eLvl)-1)*100)+'%</b>.</div>';
       if(eLvl>=ENHANCE_MAX){ html += '<div class="lock-note">Maxed at +'+ENHANCE_MAX+'.</div>'; }
       else {
-        html += '<div class="inputs-line">Next: <b>'+ecost+'</b> Inscription Scroll'+(ecost===1?'':'s')+' (tier '+(tier+1)+'+) · <b>you have '+improveMaterialSpan('scroll_t', tier, ecost)+'</b> · <b style="color:var(--gold);">'+chance+'%</b> success · <b style="color:var(--danger);">a failure destroys the item.</b></div>';
+        var _shards = state.inventory.barrier_shard||0, _barrierOn = !!state.settings.enhanceUseBarrier, _barrierActive = _barrierOn && _shards>0;
+        var _riskHtml = _barrierActive
+          ? '<b style="color:var(--gold);">a failure shatters a Barrier Shard, not the item.</b>'
+          : '<b style="color:var(--danger);">a failure destroys the item.</b>';
+        html += '<div class="inputs-line">Next: <b>'+ecost+'</b> Inscription Scroll'+(ecost===1?'':'s')+' (tier '+(tier+1)+'+) · <b>you have '+improveMaterialSpan('scroll_t', tier, ecost)+'</b> · <b style="color:var(--gold);">'+chance+'%</b> success · '+_riskHtml+'</div>';
         if(enhanceLockArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ Enhancing <b>permanently</b> locks this item out of enchanting — you\'ll no longer be able to add or change enchants. Click Enhance again to confirm.</div>';
         if(enhanceWarnArmed) html += '<div class="empty-note" style="color:var(--danger);">⚠ No tier-'+(tier+1)+' Scrolls — this spends higher-tier ones. Click Enhance again to confirm.</div>';
         html += '<div style="display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap;"><button class="action-btn stop" data-action="improveEnhance" data-uid="'+enhTarget+'" style="width:auto;flex:0 0 auto;">Enhance ('+ecost+')</button>';
         html += '<label style="font-size:11px;color:var(--text-dim);cursor:pointer;"><input type="checkbox" data-action="improveToggleEnhanceWarn"'+(state.enhanceWarnHiTier?' checked':'')+'> warn on higher-tier Scrolls</label></div>';
+        // Barrier Shard toggle: on a failed Enhance, shatter a Barrier Shard instead of the item.
+        html += '<label style="display:inline-flex;gap:6px;align-items:center;font-size:11px;color:var(--text-dim);cursor:pointer;margin-top:6px;"><input type="checkbox" data-action="improveToggleEnhanceBarrier"'+(_barrierOn?' checked':'')+'> '+BARRIER_SHARD_ITEM.icon+' Use a <b style="color:var(--gold);">Barrier Shard</b> on failure — you have <b'+(_shards>0?' style="color:var(--gold);"':'')+'>'+_shards+'</b></label>';
+        if(_barrierOn && _shards===0) html += '<div class="empty-note" style="font-size:11px;">No Barrier Shards left — the item is at risk. Climb the Tower to earn more.</div>';
       }
     }
     if(isU2){
@@ -16420,6 +16440,7 @@
           ['autoOpenCaches','autoOpenChests','autoHarvest','autoFertilize','autoPlant'].forEach(function(k){ if(typeof state.settings[k] !== 'boolean') state.settings[k] = false; }); // opt-in automation, off by default
           ['plantFiber','plantGrain','plantHerb'].forEach(function(k){ if(typeof state.settings[k] !== 'boolean') state.settings[k] = true; }); // auto-plant crop-type filters: all sown by default
           if(typeof state.settings.plantCustom !== 'boolean') state.settings.plantCustom = false; // per-seed override, off by default
+          if(typeof state.settings.enhanceUseBarrier !== 'boolean') state.settings.enhanceUseBarrier = true; // spend a Barrier Shard to save a failed Enhance; on by default
           if(!state.settings.plantSeedDisabled || typeof state.settings.plantSeedDisabled !== 'object' || Array.isArray(state.settings.plantSeedDisabled)) state.settings.plantSeedDisabled = {}; // exclusion set: empty = every seed enabled
           if(state.dungeonProgress) delete state.dungeonProgress; // dungeons feature removed; shed legacy field
           if(!state.lockedItems || typeof state.lockedItems !== 'object') state.lockedItems = {};
@@ -21120,11 +21141,11 @@
   Object.keys(MONSTERS_BY_ELEMENT).forEach(function(el){ MONSTERS_BY_ELEMENT[el].sort(function(a, b){ return a.tierIndex - b.tierIndex; }); });
   // The 25 entrances: All Classes first, then one per class (labelled/iconned by its class familiar).
   var TOWER_ENTRANCES = [{ id:'all', label:'All Classes', icon:svgIcon('starburst','var(--gold)'),
-      desc:'A random familiar every floor you clear — forever.' }]
+      desc:'Barrier Shards every floor you clear — more per floor the deeper you climb.' }]
     .concat(CLASS_DEFS.map(function(c){
       var fam = FAMILIAR_DATA[c.id];
       return { id:c.id, label:c.name, icon:(fam && fam.icon) || svgIcon('starburst','#7a5aa8'),
-        desc:'Summons ' + ((fam && fam.name) || 'this class’s familiar') + ' — its class familiar — on the climb through Floor ' + TOWER_CLASS_FAMILIAR_FLOOR_CAP + '.' };
+        desc:'Climb with your equipped ' + c.name + ' — every cleared floor drops Barrier Shards, scaling with depth.' };
     }));
   var TOWER_ENTRANCE_BY_ID = {}; TOWER_ENTRANCES.forEach(function(en){ TOWER_ENTRANCE_BY_ID[en.id] = en; });
   function isTowerEntrance(id){ return !!TOWER_ENTRANCE_BY_ID[id]; }
@@ -21148,7 +21169,7 @@
     floor = Math.max(1, floor|0);
     var i = towerFloorTier(floor), base = towerBaseMonster(floor);
     function pw(b, r){ var v = Math.round(b * Math.pow(r, i)); return Math.min(TOWER_STAT_CAP, Math.max(1, isFinite(v) ? v : TOWER_STAT_CAP)); }
-    // The Tower gives NO gold (its reward is the familiar) -- only HP + attack scale. Gentler curves than
+    // The Tower gives NO gold (its reward is Barrier Shards) -- only HP + attack scale. Gentler curves than
     // the bestiary: HP x1.2^tier, attack x1.1^tier, so the climb lasts far longer before stats blow up.
     return {
       tier: i, baseName: base.name, baseId: base.id, icon: base.icon, attackSpeed: base.attackSpeed || 3,
@@ -21225,9 +21246,13 @@
     var src = unowned.length ? unowned : pool.filter(function(id){ return !state.familiars[id] || state.familiars[id].level < FAMILIAR_MAX_LEVEL; });
     return src.length ? src[Math.floor(Math.random() * src.length)] : null;
   }
+  // Barrier Shards per cleared floor: 1 on floors 1-24, 2 on 25-49, 3 on 50-74, +1 every 25 floors. This is
+  // the Tower's reward now -- it no longer drops familiars.
+  function barrierShardsForFloor(floor){ return Math.floor(Math.max(1, floor) / 25) + 1; }
   function grantTowerReward(entrance, floor){
-    if(entrance === 'all'){ towerGrantFamiliar(randomTowerFamiliarId()); return; }
-    if(floor <= TOWER_CLASS_FAMILIAR_FLOOR_CAP && Math.random() < TOWER_CLASS_FAMILIAR_CHANCE) towerGrantFamiliar(entrance);
+    var n = barrierShardsForFloor(floor);
+    addItem('barrier_shard', n);
+    if(!offlineCapture){ spawnFloatingText('+' + n + ' Barrier Shard' + (n===1?'':'s'), 'ft-rare'); }
   }
   // Build the combat activity for a given tower floor. `carriedFamiliars` threads an in-flight auto-advance
   // batch through to the next floor; `auto` marks the run as auto-advancing so towerOnKill keeps climbing.
@@ -21291,7 +21316,7 @@
   }
   function renderTowerTab(){
     var act = state.activity, busy = !!(act && act.type === 'combat');
-    var html = '<div class="section-intro"><b>The Tower</b> — an endless climb. Floor 1 fields tier-' + TOWER_START_TIER + ' foes; every floor is ~' + TOWER_TIERS_PER_FLOOR + ' tiers harder than the last, rotating enemy type and element (every 3rd floor Slashing, every 5th Dark), with no ceiling. <b>All Classes</b> grants a random familiar every floor; a class entrance summons that class’s familiar on the climb through Floor ' + TOWER_CLASS_FAMILIAR_FLOOR_CAP + '.</div>';
+    var html = '<div class="section-intro"><b>The Tower</b> — an endless climb. Floor 1 fields tier-' + TOWER_START_TIER + ' foes; every floor is ~' + TOWER_TIERS_PER_FLOOR + ' tiers harder than the last, rotating enemy type and element (every 3rd floor Slashing, every 5th Dark), with no ceiling. Every cleared floor drops <b style="color:var(--gold);">Barrier Shards</b> — <b>1</b> on Floors 1–24, <b>2</b> on 25–49, and one more for every 25 floors deeper. Spend them in <b>Improvement → Enhance</b> to shield an item from a failed Enhance.</div>';
     if(busy && act.tower) html += '<div class="idle-note">Tower fight underway — watch it on the <b>Combat</b> tab. <button class="mini-btn" data-action="navToActivity" data-nav-cat="combat">Go to Combat</button></div>';
     else if(busy) html += '<div class="idle-note">Finish your current fight before entering the Tower.</div>';
     // You may only take the class entrance matching your EQUIPPED class (plus All Classes); the rest lock.
@@ -21375,7 +21400,8 @@
     var ien = incomingElementNote(m); if(ien) html += row('Armor warning', ien);
     // Reward.
     html += head('Reward');
-    html += '<div style="font-size:12px;padding:5px 0;">' + (en === 'all' ? 'A <b>random familiar</b> on every floor cleared.' : 'A chance at the <b>' + escapeHtml(label) + '</b> familiar (through Floor ' + TOWER_CLASS_FAMILIAR_FLOOR_CAP + ').') + '</div>';
+    var _cardShards = barrierShardsForFloor(floor);
+    html += '<div style="font-size:12px;padding:5px 0;"><b style="color:var(--gold);">' + _cardShards + ' Barrier Shard' + (_cardShards===1?'':'s') + '</b> for clearing this floor — spend them in Improvement to shield an item from a failed Enhance.</div>';
     // Auto-advance toggle: keep entering the next floor after each clear until you fall or Stop. Familiars
     // banked across the climb are shown together in one summary (like the offline catch-up) at the end.
     html += '<div style="display:flex;flex-direction:column;gap:3px;margin-top:12px;padding:9px 12px;border-radius:8px;background:var(--bg-panel);border:1px solid var(--border);">'
@@ -22441,6 +22467,11 @@
       html += '<div style="margin:8px 0 3px;font-size:15px;"><b>'+escapeHtml(d.name)+'</b> is now <b style="color:var(--gold);">+'+d.enhance+'</b>.</div>';
       html += '<div style="font-size:12px;color:var(--text-dim);">Base &amp; enchant stats scaled to <b style="color:var(--gold);">+'+Math.round((enhanceStatMult(d.enhance)-1)*100)+'%</b>.</div>';
       html += '<button class="action-btn" data-action="closeEnhancePopup" style="margin-top:14px">Nice!</button>';
+    } else if(d.barrier){
+      html += '<div class="familiar-popup-title" style="color:var(--gold);">Barrier Held!</div>';
+      html += '<div style="margin:8px 0 3px;font-size:15px;">The Enhance failed, but a <b style="color:var(--gold);">Barrier Shard</b> shattered in its place — your <b>'+escapeHtml(d.name)+'</b> is safe at <b>+'+d.enhance+'</b>.</div>';
+      html += '<div style="font-size:12px;color:var(--text-dim);">'+d.shardsLeft+' Barrier Shard'+(d.shardsLeft===1?'':'s')+' remaining. When they run out, the item is at risk again.</div>';
+      html += '<button class="action-btn" data-action="closeEnhancePopup" style="margin-top:14px">Phew!</button>';
     } else {
       html += '<div class="familiar-popup-title" style="color:var(--danger);">Enhancement Failed!</div>';
       html += '<div style="margin:8px 0 3px;font-size:15px;">Your <b>'+escapeHtml(d.name)+'</b> shattered and was <b style="color:var(--danger);">destroyed</b>.</div>';
@@ -32297,6 +32328,7 @@
     improveUnequip: function(btn, e){ unequipUnique(btn.getAttribute('data-uid')); },
     improveEnhance: function(btn, e){ enhanceItem(btn.getAttribute('data-uid')); },
     improveToggleEnhanceWarn: function(btn, e){ improveToggleEnhanceWarn(); },
+    improveToggleEnhanceBarrier: function(btn, e){ improveToggleEnhanceBarrier(); },
     improveSellUnique: function(btn, e){ improveSellUnique(btn.getAttribute('data-uid')); },
     improveSacrificeUnique: function(btn, e){ improveSacrificeUnique(btn.getAttribute('data-uid')); },
     tierStep: function(btn, e){
@@ -33527,7 +33559,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.46.11';
+  var GAME_VERSION = '0.0.47.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -33650,7 +33682,7 @@
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
-      TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, flushTowerFamiliarBatch:flushTowerFamiliarBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
+      TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, flushTowerFamiliarBatch:flushTowerFamiliarBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
