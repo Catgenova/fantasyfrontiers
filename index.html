@@ -9056,15 +9056,30 @@
     return n;
   }
 
+  // Choose which Fertilizer tier to spend on a crop of `cropTier`. `owned(t)` reports how many
+  // fertilizer_t<t> are available (real inventory, or a batch's running ledger). DEFAULT: exact tier only,
+  // so a scarce high-tier Fertilizer is never blown on a low-tier crop. With the "equal-or-higher" QoL
+  // toggle on, fall back to the LOWEST higher tier owned when the exact tier is out. Returns the tier, or -1.
+  function pickFertilizerTier(cropTier, owned){
+    if((owned(cropTier)||0) > 0) return cropTier;
+    if(!(state.settings && state.settings.fertilizeEqualPlus)) return -1;
+    for(var t = cropTier + 1; t < TIER_COUNT; t++){ if((owned(t)||0) > 0) return t; }
+    return -1;
+  }
   // ---- Fertilizer: applied to a growing (unharvested) crop, it doubles that plot's harvest. The
-  // Fertilizer must match the crop's tier (fertilizer_t<n> for a tier-n crop). batch=true suppresses
-  // the per-plot log/toast/save so Fertilize All writes one summary and saves once.
-  function fertilizePlot(scope, key, batch){
+  // Fertilizer must match the crop's tier (fertilizer_t<n>) -- or, with the equal-or-higher toggle on, the
+  // lowest higher tier owned. `forceTier` lets Fertilize All spend the exact tier it allocated so its
+  // planning ledger stays in sync. batch=true suppresses the per-plot log/toast/save so Fertilize All
+  // writes one summary and saves once.
+  function fertilizePlot(scope, key, batch, forceTier){
     var map = farmPlotMap(scope);
     var plot = map[key];
     if(isPlotEmpty(plot)) return false;        // nothing growing to fertilize
     if(plot.fertilized) return false;          // already doubled
-    var fid = 'fertilizer_t' + plot.tierIndex; // must be the same tier as the crop
+    var ft = (typeof forceTier === 'number' && forceTier >= 0) ? forceTier
+           : pickFertilizerTier(plot.tierIndex, function(t){ return state.inventory['fertilizer_t'+t]||0; });
+    if(ft < 0) return false;
+    var fid = 'fertilizer_t' + ft;
     if((state.inventory[fid]||0) <= 0) return false;
     state.inventory[fid] -= 1;
     if(composterRefund()) state.inventory[fid] += 1; // Composter: a chance the Fertilizer isn't used up
@@ -9074,17 +9089,18 @@
     needsRender = true;
     return true;
   }
-  // Fertilize every growing, unfertilized crop for which a matching-tier Fertilizer is owned. Scarce
-  // fertilizer favors higher-tier crops first. dryRun returns the count that WOULD be fertilized.
+  // Fertilize every growing, unfertilized crop for which a usable Fertilizer is owned. Scarce fertilizer
+  // favors higher-tier crops first (they're processed first, so they claim their exact tier before a lower
+  // crop can reach up for it under the equal-or-higher toggle). dryRun returns the count that WOULD fertilize.
   function farmingFertilizeAll(dryRun){
     var plots = allFieldPlots().filter(function(p){ return p.plot && p.plot.cropType && !p.plot.fertilized; });
     if(!plots.length) return 0;
     plots.sort(function(a,b){ return (b.plot.tierIndex||0) - (a.plot.tierIndex||0); });
-    var avail = {}, n = 0; // avail: crop-tier -> owned matching fertilizer, decremented as allocated
+    var avail = {}, n = 0; // avail: fertilizer-tier -> owned, decremented as allocated (planning ledger)
+    function owned(t){ if(avail[t] === undefined) avail[t] = state.inventory['fertilizer_t'+t] || 0; return avail[t]; }
     plots.forEach(function(p){
-      var t = p.plot.tierIndex;
-      if(avail[t] === undefined) avail[t] = state.inventory['fertilizer_t'+t] || 0;
-      if(avail[t] > 0){ avail[t] -= 1; if(!dryRun) fertilizePlot(p.scope, p.key, true); n++; }
+      var ft = pickFertilizerTier(p.plot.tierIndex, owned);
+      if(ft >= 0){ avail[ft] -= 1; if(!dryRun) fertilizePlot(p.scope, p.key, true, ft); n++; }
     });
     if(!dryRun && n > 0){ addLog('Fertilized ' + n + ' crop' + (n===1?'':'s') + ' — each will yield double.', 'important'); spawnFloatingText('Fertilized ' + n + ' crops', 'ft-success'); saveGame(); needsRender = true; }
     return n;
@@ -11868,7 +11884,7 @@
       potionCharges: 0,
       popupQueue: [],
       popupBatchTotal: 0,
-      settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true, chatFilter:true, showEstateFabs:true, compactMobile:true, autoOpenCaches:false, autoOpenChests:false, autoHarvest:false, autoFertilize:false, autoPlant:false, advancedCombatLog:false, plantFiber:true, plantGrain:true, plantHerb:true, plantCustom:false, plantSeedDisabled:{}, enhanceUseBarrier:true },
+      settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true, chatFilter:true, showEstateFabs:true, compactMobile:true, autoOpenCaches:false, autoOpenChests:false, autoHarvest:false, autoFertilize:false, autoPlant:false, advancedCombatLog:false, plantFiber:true, plantGrain:true, plantHerb:true, plantCustom:false, plantSeedDisabled:{}, enhanceUseBarrier:true, fertilizeEqualPlus:false },
       trackedSkills: ['logic'], // new players start tracking Logic so the top-bar tracker isn't empty
 
       peons: [],
@@ -16525,6 +16541,7 @@
           ['plantFiber','plantGrain','plantHerb'].forEach(function(k){ if(typeof state.settings[k] !== 'boolean') state.settings[k] = true; }); // auto-plant crop-type filters: all sown by default
           if(typeof state.settings.plantCustom !== 'boolean') state.settings.plantCustom = false; // per-seed override, off by default
           if(typeof state.settings.enhanceUseBarrier !== 'boolean') state.settings.enhanceUseBarrier = true; // spend a Barrier Shard to save a failed Enhance; on by default
+          if(typeof state.settings.fertilizeEqualPlus !== 'boolean') state.settings.fertilizeEqualPlus = false; // fertilize with equal-or-higher tier; off by default (exact tier only)
           if(!state.settings.plantSeedDisabled || typeof state.settings.plantSeedDisabled !== 'object' || Array.isArray(state.settings.plantSeedDisabled)) state.settings.plantSeedDisabled = {}; // exclusion set: empty = every seed enabled
           if(state.dungeonProgress) delete state.dungeonProgress; // dungeons feature removed; shed legacy field
           if(!state.lockedItems || typeof state.lockedItems !== 'object') state.lockedItems = {};
@@ -22465,6 +22482,7 @@
     {key:'autoOpenChests', cat:'qol', label:'Auto-open Treasure Chests', desc:'Automatically open Treasure Chests as they drop (no popup).'},
     {key:'autoHarvest', cat:'qol', label:'Auto-harvest crops', desc:'Automatically harvest crops from your fields the moment they are ready.'},
     {key:'autoFertilize', cat:'qol', label:'Auto-fertilize crops', desc:'Automatically fertilize growing crops when you hold a matching-tier Fertilizer (doubles the yield).'},
+    {key:'fertilizeEqualPlus', cat:'qol', label:'Fertilize with equal-or-higher tier', desc:'When the exact-tier Fertilizer runs out, let crops be fertilized with the lowest higher-tier Fertilizer you hold. Off = exact tier only, so a scarce high-tier Fertilizer is never spent on a low-tier crop.'},
     {key:'autoPlant', cat:'qol', label:'Auto-plant crops', desc:'Automatically replant empty fields, giving your best seeds to your best fields first.'},
     {key:'advancedCombatLog', cat:'qol', label:'Advanced combat log', desc:'Expand the Combat chat tab so every hit also shows the full damage + mitigation pipeline (rolls, multipliers, armour, shield, tenacity).'},
     // Rarity-roll toggles: switch OFF Rare/Supreme/Fantastic rolls per tier band so crafting at those tiers
@@ -33735,7 +33753,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.48.5';
+  var GAME_VERSION = '0.0.48.6';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -33890,7 +33908,7 @@
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
       guildLogPush:guildLogPush, renderGuildActivityLog:renderGuildActivityLog, GUILD_LOG_MAX:GUILD_LOG_MAX, guildIsOfficerPlus:guildIsOfficerPlus,
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
-      fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE, openCritterCaches:openCritterCaches, critterCacheChance:critterCacheChance, pickWeightedFarmingTier:pickWeightedFarmingTier, CACHE_SEED_TIER_DECAY:CACHE_SEED_TIER_DECAY, GRAIN_TIER_COUNT:GRAIN_TIER_COUNT, BASE_NEST_CHANCE:BASE_NEST_CHANCE, CRITTER_CACHE_SKILLS:CRITTER_CACHE_SKILLS, SEED_DROP_SKILLS:SEED_DROP_SKILLS,
+      fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, pickFertilizerTier:pickFertilizerTier, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE, openCritterCaches:openCritterCaches, critterCacheChance:critterCacheChance, pickWeightedFarmingTier:pickWeightedFarmingTier, CACHE_SEED_TIER_DECAY:CACHE_SEED_TIER_DECAY, GRAIN_TIER_COUNT:GRAIN_TIER_COUNT, BASE_NEST_CHANCE:BASE_NEST_CHANCE, CRITTER_CACHE_SKILLS:CRITTER_CACHE_SKILLS, SEED_DROP_SKILLS:SEED_DROP_SKILLS,
       TOOL_ITEMS:TOOL_ITEMS, equipTool:equipTool, equipBestTool:equipBestTool, bestOwnedToolForSkill:bestOwnedToolForSkill, equippedToolAtLeast:equippedToolAtLeast, equippedToolScore:equippedToolScore, toolAggregateScore:toolAggregateScore, findToolType:findToolType,
       butcherOutputChance:butcherOutputChance, butcherOutputQty:butcherOutputQty, BUTCHER_OUTPUT_ROLLS:BUTCHER_OUTPUT_ROLLS, getEquippedGatherTool:getEquippedGatherTool, getGatherToolTierData:getGatherToolTierData, getEquippedCraftTool:getEquippedCraftTool,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,

@@ -681,6 +681,29 @@
     s.inventory['farming_t0'] = saved.crop0;
   });
 
+  // ---- Farming: equal-or-higher fertilizer toggle (ticket-0070) --------------------------------------
+  suite('farming: equal-or-higher fertilizer toggle', function(){
+    var s = FF._state;
+    var sv = { eq:s.settings.fertilizeEqualPlus };
+    try {
+      var stock = { 3:0, 4:0, 5:2 };                 // no t3/t4 Fertilizer, two t5
+      function owned(t){ return stock[t]||0; }
+      // Default (equal-only): a crop can only use its EXACT tier.
+      s.settings.fertilizeEqualPlus = false;
+      eq(FF.pickFertilizerTier(3, owned), -1, 'equal-only: no exact-tier Fertilizer -> none used');
+      eq(FF.pickFertilizerTier(5, owned), 5, 'equal-only: the exact tier is used when owned');
+      // Toggle on (equal-or-higher): reach up to the LOWEST higher tier owned.
+      s.settings.fertilizeEqualPlus = true;
+      eq(FF.pickFertilizerTier(3, owned), 5, 'equal+: falls back to the lowest higher tier owned (t5)');
+      eq(FF.pickFertilizerTier(5, owned), 5, 'equal+: still prefers the exact tier');
+      stock[4] = 1;
+      eq(FF.pickFertilizerTier(3, owned), 4, 'equal+: picks the LOWEST higher tier (t4 over t5)');
+      stock[3] = 1;
+      eq(FF.pickFertilizerTier(3, owned), 3, 'equal+: the exact tier still wins over any higher one');
+      eq(FF.pickFertilizerTier(6, owned), -1, 'equal+: nothing at/above the crop tier -> none used');
+    } finally { s.settings.fertilizeEqualPlus = sv.eq; }
+  });
+
   // ---- Farming: harvest yield -- base 5, doubled to 10 with fertilizer ----
   suite('farming: base yield 5, fertilized 10', function(){
     var s = FF._state;
