@@ -7995,6 +7995,30 @@
     s.equippedOffhandTier = savedOffTQ; s.bodyArmor = savedBAQ; s.xp = savedXpQ; s.uniqueItems = savedUniqQ; s.jewelrySlots = savedJSQ;
   });
 
+  // ---- Quests: a CLAIMED quest's bar never depletes when a momentary condition reverses ----
+  suite('quests: a claimed quest keeps a full bar', function(){
+    var s = FF._state;
+    var q = FF.questById('take_up_arms'); // progress = (scimitar equipped ? 1 : 0), target 1
+    ok(!!q, 'the scimitar-equip quest exists');
+    var saved = { mh:s.equippedMainhand, quests:s.quests };
+    try {
+      // Before claiming, progress deliberately tracks the live condition (you must satisfy it to claim).
+      s.quests = { claimed:{} };
+      s.equippedMainhand = 'scimitar';
+      eq(FF.questProgress(q), 1, 'meeting the condition completes the quest');
+      s.equippedMainhand = null;
+      eq(FF.questProgress(q), 0, 'an UNCLAIMED quest reflects the live (reversed) condition');
+      // Once CLAIMED, the bar freezes at target even if the condition is later unmet (the reported bug:
+      // a Claimed quest showing 0/1).
+      s.quests = { claimed:{ take_up_arms:true } };
+      s.equippedMainhand = null;
+      eq(FF.questProgress(q), 1, 'a CLAIMED quest shows a full bar even with the condition unmet');
+      ok(FF.questComplete(q) && !FF.questClaimable(q), 'still complete, and not re-claimable');
+    } finally {
+      s.equippedMainhand = saved.mh; s.quests = saved.quests;
+    }
+  });
+
   // ---- Auth identity guard: cross-account write prevention (shared per-origin auth session) ----
   suite('auth: identity-mismatch guard', function(){
     var saved = FF._authBoundUserId();
