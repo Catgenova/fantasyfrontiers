@@ -10667,27 +10667,35 @@
   suite('wallet: reconcile never loses legit earnings', function(){
     var R = FF.walletReconcileGold;
     ok(typeof R === 'function', 'walletReconcileGold exported');
+    // Signature: R(localGold, sentGold, localEarned, sentEarned, serverGold, serverEarned). When nothing
+    // changed mid-request, localGold==sentGold and localEarned==sentEarned.
     // Normal case: server credited the full earn -> local matches server.
-    eq(R(1500000, 1500000, 1500000, 1500000, 1500000), 1500000, 'fully-credited earn: gold preserved');
+    eq(R(1500000, 1500000, 1500000, 1500000, 1500000, 1500000), 1500000, 'fully-credited earn: gold preserved');
     // The BUG this fixes: server throttled/clamped the balance low, but the earn is legit (earned_total
     // reflects it). The un-credited remainder (pending) is kept, NOT thrown away.
-    eq(R(1500000, 1500000, 1500000, /*serverGold*/0, /*serverEarned*/0), 1500000, 'throttled earn is NOT lost (pending restores it)');
-    eq(R(1500000, 1500000, 1500000, 666666, 666666), 1500000, 'partially-credited earn keeps the remainder');
+    eq(R(1500000, 1500000, 1500000, 1500000, /*serverGold*/0, /*serverEarned*/0), 1500000, 'throttled earn is NOT lost (pending restores it)');
+    eq(R(1500000, 1500000, 1500000, 1500000, 666666, 666666), 1500000, 'partially-credited earn keeps the remainder');
     // Recovery: a previously wiped balance (local 0) comes back once the server can credit the gap.
-    eq(R(0, 0, 1500000, 0, 0), 1500000, 'recovers gold the old bug wiped to 0');
+    eq(R(0, 0, 1500000, 1500000, 0, 0), 1500000, 'recovers gold the old bug wiped to 0');
     // Anti-cheat: a tampered-HIGH local gold with NO matching earnings collapses to the server value.
-    eq(R(1000000000, 1000000000, 0, 500, 0), 500, 'spoofed local gold (no earnings) collapses to server');
-    // Legit spend propagates: local dropped below what was sent, server adopted it, no pending.
-    eq(R(400, 400, 1000, 400, 1000), 400, 'a spend sticks (server adopted the lower balance)');
-    // Round-trip drift: gold earned locally during the request is preserved on top.
-    eq(R(1200, 1000, 1000, 1000, 1000), 1200, 'drift earned mid-request is not clobbered');
+    eq(R(1000000000, 1000000000, 0, 0, 500, 0), 500, 'spoofed local gold (no earnings) collapses to server');
+    // Legit spend propagates: local dropped below what was sent (a purchase), no matching earnings change.
+    eq(R(400, 400, 1000, 1000, 400, 1000), 400, 'a spend sticks (server adopted the lower balance)');
+    // Mid-request SPEND: gold fell from 1000 (sent) to 700 during the round trip, earnings unchanged.
+    // The spend must propagate on top of the server value.
+    eq(R(700, 1000, 1000, 1000, 1000, 1000), 700, 'a spend that lands mid-request is preserved');
+    // Mid-request EARN: earnGold() bumped BOTH gold (1000->1200) and earned (1000->1200) during the round
+    // trip; the server credited the pre-send state (serverGold 1000, serverEarned 1000). The earn must be
+    // counted ONCE (via pending), landing at 1200 -- not double-counted to 1400. This is the regression
+    // guard for the phantom-gold loop (gold bouncing up ~20M/hr, dragging save + wallet with it).
+    eq(R(1200, 1000, 1200, 1000, 1000, 1000), 1200, 'mid-request earn is counted once, not doubled');
     // Treasure-chest gold is banked exempt via wallet.earn_chest (server-verified by an item_debit),
     // credited in full to the server balance outside the token bucket -- so it reconciles like any
     // already-credited gold and is never throttled/clamped. Its credit does NOT flow through
     // goldEarnedTotal, so the normal earn/sync path can't double-count it.
     ok(typeof FF.walletEarnChest === 'function', 'walletEarnChest exported (exempt chest-gold credit)');
     // Once earn_chest has banked the chest gold into serverGold, the reconcile keeps it (no pending needed).
-    eq(R(50000, 50000, 0, 50000, 0), 50000, 'chest gold banked into server balance survives reconcile');
+    eq(R(50000, 50000, 0, 0, 50000, 0), 50000, 'chest gold banked into server balance survives reconcile');
   });
 
   // ---- Bows: slower draw hits harder (Short 1x / Medium 1.25x / Long 1.5x base damage) -----
