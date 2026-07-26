@@ -701,6 +701,8 @@
       stock[3] = 1;
       eq(FF.pickFertilizerTier(3, owned), 3, 'equal+: the exact tier still wins over any higher one');
       eq(FF.pickFertilizerTier(6, owned), -1, 'equal+: nothing at/above the crop tier -> none used');
+      // The toggle lives in the Farming plant-controls (a checkmark chip), not in Settings.
+      ok(/data-action="togglePlantFilter" data-key="fertilizeEqualPlus"/.test(FF.renderFarmPlantControls()), 'the equal-or-higher toggle renders as a chip in the Farming section');
     } finally { s.settings.fertilizeEqualPlus = sv.eq; }
   });
 

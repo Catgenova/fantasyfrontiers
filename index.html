@@ -22482,7 +22482,6 @@
     {key:'autoOpenChests', cat:'qol', label:'Auto-open Treasure Chests', desc:'Automatically open Treasure Chests as they drop (no popup).'},
     {key:'autoHarvest', cat:'qol', label:'Auto-harvest crops', desc:'Automatically harvest crops from your fields the moment they are ready.'},
     {key:'autoFertilize', cat:'qol', label:'Auto-fertilize crops', desc:'Automatically fertilize growing crops when you hold a matching-tier Fertilizer (doubles the yield).'},
-    {key:'fertilizeEqualPlus', cat:'qol', label:'Fertilize with equal-or-higher tier', desc:'When the exact-tier Fertilizer runs out, let crops be fertilized with the lowest higher-tier Fertilizer you hold. Off = exact tier only, so a scarce high-tier Fertilizer is never spent on a low-tier crop.'},
     {key:'autoPlant', cat:'qol', label:'Auto-plant crops', desc:'Automatically replant empty fields, giving your best seeds to your best fields first.'},
     {key:'advancedCombatLog', cat:'qol', label:'Advanced combat log', desc:'Expand the Combat chat tab so every hit also shows the full damage + mitigation pipeline (rolls, multipliers, armour, shield, tenacity).'},
     // Rarity-roll toggles: switch OFF Rare/Supreme/Fantastic rolls per tier band so crafting at those tiers
@@ -26457,6 +26456,10 @@
       + typeChip(s.plantHerb!==false,  'Herb',  'plantHerb')
       + '<span style="width:1px;height:16px;background:var(--border);"></span>'
       + '<span class="gab-tea-auto" data-action="togglePlantFilter" data-key="plantCustom" style="cursor:pointer;'+(custom?'color:var(--gold);font-weight:700;':'')+'" title="Pick individual seeds instead of whole crop types">'+chk(custom)+' Custom</span>'
+      + '</div>';
+    // Fertilizer tier policy (applies to manual Fertilize, Fertilize All, and Auto-fertilize).
+    html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px dashed var(--border-light);padding-top:8px;">'
+      + '<span class="gab-tea-auto" data-action="togglePlantFilter" data-key="fertilizeEqualPlus" style="cursor:pointer;'+(s.fertilizeEqualPlus?'color:var(--gold);font-weight:700;':'')+'" title="When the exact-tier Fertilizer runs out, use the lowest higher-tier Fertilizer you hold. Off = exact tier only, so a scarce high-tier Fertilizer is never spent on a low-tier crop.">'+chk(!!s.fertilizeEqualPlus)+' Fertilize with equal-or-higher tier</span>'
       + '</div>';
     if(custom){
       html += '<div style="border-top:1px dashed var(--border-light);padding-top:8px;display:flex;flex-direction:column;gap:10px;">';
@@ -33753,7 +33756,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.48.6';
+  var GAME_VERSION = '0.0.48.7';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
