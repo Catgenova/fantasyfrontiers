@@ -81,6 +81,17 @@ function dailyAllowanceFor(createdAtIso: string | undefined, totalLevel: number)
 const HARD_CLAMP_MAX_AGE_DAYS = 7;
 const HARD_CLAMP_EARNED = 500_000_000; // 500M lifetime earned on a <7-day account == injection
 
+// Blast-radius ceiling on the lifetime-earned receipt we will CREDIT against. A sub-7-day account cannot
+// legitimately have earned HARD_CLAMP_EARNED (500M) -- the same ~1000x-margin line the injection clamp
+// uses -- so the reported goldEarnedTotal is capped there before it becomes a credit delta. Belt to the
+// token bucket's suspenders: even if a stuck/spoofed/bug-inflated receipt slips through, the amount it can
+// bank is bounded, so gold can't be refilled toward an absurd number (the runaway loop). Detection still
+// runs on the RAW report (an injector's real 5B is still flagged). Established accounts (>=7 days) are
+// unbounded (HARD_CAP), and a legit young player never reaches 500M, so this only ever trims cheat/bug values.
+function earnedCeiling(createdAtIso: string | undefined): number {
+  return accountAgeDays(createdAtIso) < HARD_CLAMP_MAX_AGE_DAYS ? HARD_CLAMP_EARNED : HARD_CAP;
+}
+
 // Proper token bucket keyed off `updated_at`: allowance = time since updated_at at the (age-scaled)
 // daily rate, capped at a full day's allowance and CARRIED between claims (unused allowance persists).
 // `bucketState` reports the available allowance and the effective start; `bucketAdvance` moves the
@@ -275,7 +286,8 @@ Deno.serve(async (req) => {
     }
     const w = await ensureWallet();
     await flagEarnInjection(Math.floor(reported)); // young account reporting an impossible lifetime -> clamp
-    const delta = Math.max(0, Math.floor(reported) - w.earned_total);
+    const reportedForCredit = Math.min(Math.floor(reported), earnedCeiling(user.created_at)); // cap the receipt we bank against
+    const delta = Math.max(0, reportedForCredit - w.earned_total);
     const { available, from } = bucketState(w.updated_at, perDay);
     let credited = Math.max(0, Math.min(delta, available));
     if (delta > AUDIT_HUGE_DELTA) await audit("earn_delta_huge", { action, reported_earned: Math.floor(reported), credited, server_gold: w.gold });
@@ -337,7 +349,8 @@ Deno.serve(async (req) => {
     }
     const w = await ensureWallet();
     await flagEarnInjection(Math.floor(reported)); // young account reporting an impossible lifetime -> clamp
-    const delta = Math.max(0, Math.floor(reported) - w.earned_total);
+    const reportedForCredit = Math.min(Math.floor(reported), earnedCeiling(user.created_at)); // cap the receipt we bank against
+    const delta = Math.max(0, reportedForCredit - w.earned_total);
     const { available, from } = bucketState(w.updated_at, perDay);
     const credited = Math.max(0, Math.min(delta, available));
     const goldAfterCredit = Math.min(HARD_CAP, w.gold + credited);

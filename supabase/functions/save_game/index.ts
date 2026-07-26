@@ -56,6 +56,22 @@ const HARD_CLAMP_GOLD = 500_000_000;
 function accountAgeDays(createdAtIso: string | undefined): number {
   return createdAtIso ? Math.max(0, (Date.now() - new Date(createdAtIso).getTime()) / 86_400_000) : 0;
 }
+// Blast-radius ceiling on what a save may STORE for gold AND the lifetime-earned receipt (goldEarnedTotal).
+// A sub-7-day account cannot legitimately hold or have earned HARD_CLAMP_GOLD (500M) -- the same
+// ~1000x-margin line the injection clamp already uses -- so both are pinned there; established accounts
+// (>=7 days) carry legit large balances, bounded only by the absolute GOLD_CAP. This is what makes a
+// bug/injection SELF-HEAL: goldEarnedTotal was previously stored RAW, so a stuck receipt survived a reset
+// and kept re-authorizing the wallet + re-tripping the clamp. Capped on every write, it can never persist
+// beyond the ceiling and decays to it on the next save. NB: never bites a legit young player -- by the
+// clamp's own definition none reach 500M in under a week.
+function storeCeiling(ageDays: number): number {
+  return ageDays < HARD_CLAMP_MAX_AGE_DAYS ? HARD_CLAMP_GOLD : GOLD_CAP;
+}
+function normNonNeg(v: unknown, cap: number): number {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(Math.floor(n), cap);
+}
 
 // Derive the progress score from the SUBMITTED SAVE instead of trusting a client-sent number.
 // Previously `progress` was read straight off the body with only a `>= 0` floor, so a request could
@@ -128,12 +144,18 @@ Deno.serve(async (req) => {
 
   const data = body.data;
   if (typeof data !== "object" || data === null) return json({ ok: false, error: "Invalid save." }, 400);
-  // Clamp the stored gold so a tampered save blob can't persist an absurd balance or seed the wallet high.
+  // Normalize the stored gold AND the lifetime-earned receipt (goldEarnedTotal) so a tampered or
+  // bug-inflated save blob can neither persist an absurd balance nor seed/authorize the wallet high. Both
+  // are bounded by storeCeiling(age): a sub-7-day account is pinned to the 500M injection line, older
+  // accounts to the absolute GOLD_CAP. goldEarnedTotal was previously stored RAW -- that let a stuck
+  // receipt survive a reset and keep re-authorizing the wallet + re-tripping the clamp, which is the loop
+  // this closes. The detection below reads these normalized values (an injector's raw 5B still lands at
+  // the 500M ceiling and trips the clamp), and goldEarnedTotal is only touched when the save carries it.
   {
-    const g = (data as Record<string, unknown>).gold;
-    const gn = Number(g);
-    if (!Number.isFinite(gn) || gn < 0) (data as Record<string, unknown>).gold = 0;
-    else if (gn > GOLD_CAP) (data as Record<string, unknown>).gold = GOLD_CAP;
+    const ceiling = storeCeiling(accountAgeDays(user.created_at));
+    const d = data as Record<string, unknown>;
+    d.gold = normNonNeg(d.gold, ceiling);
+    if ("goldEarnedTotal" in d) d.goldEarnedTotal = normNonNeg(d.goldEarnedTotal, ceiling);
   }
   const savedAt = typeof body.client_saved_at === "number" && Number.isFinite(body.client_saved_at)
     ? Math.floor(body.client_saved_at) : 0;
@@ -225,8 +247,10 @@ Deno.serve(async (req) => {
 
   // Gold-injection detector (mirrors the wallet earn-path hard clamp). The injection lands here first, so
   // catching it here clamps an ACTIVE injector on their next push rather than waiting for a wallet sync.
-  // data.gold was already clamped to GOLD_CAP above (values <=1e15 pass unchanged, so 1e9 is intact);
-  // goldEarnedTotal is read raw. Age-gated so an established account is never touched. Best-effort.
+  // Both gold and goldEarnedTotal were normalized to storeCeiling(age) above -- for a sub-7-day account
+  // that pins each at the 500M line, so a raw 5B still reads >= HARD_CLAMP_GOLD here and trips the clamp,
+  // while a legit young value (< 500M) passes untouched. Age-gated so an established account is never
+  // touched. Best-effort.
   try {
     const ageDays = accountAgeDays(user.created_at);
     const gNum = Number((data as Record<string, unknown>).gold);
