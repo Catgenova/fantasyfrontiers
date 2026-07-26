@@ -1648,6 +1648,40 @@
     s.physique.handStrength = saved.hs; s.physique.huntsman = saved.hunt;
   });
 
+  // ---- Butchering: the bonus-output mechanics (Workshop double / Brew / Mastery) multiply the yield ----
+  // Reported bug: a Butchering Workshop's double-output never fired -- the butcher branch produced Meat/Hide/
+  // Fat but skipped the workshop/brew/mastery rolls the generic craft branch runs. They share one _bMult; we
+  // exercise it here via a Brew (deterministic to force), which proves the multiplier now reaches butchering.
+  suite('butchering: a bonus-output roll doubles the whole carcass yield', function(){
+    var s = FF._state;
+    var saved = { inv:s.inventory, act:s.activity, brew:s.activeBrew, tier:s.gatherTools.butchering,
+      rar:s.gatherToolRarities.butchering, hs:s.physique.handStrength, fm:s.physique.fineMotor, hunt:s.physique.huntsman };
+    var origRandom = Math.random;
+    try {
+      s.activity = { type:null };
+      s.gatherTools.butchering = 0; s.gatherToolRarities.butchering = 'normal';
+      s.physique.handStrength = 0; s.physique.fineMotor = 0; s.physique.huntsman = 0; // base 40% -> Math.random 0 always succeeds
+      // Baseline: no bonus active -> 3 of each (all three rolls succeed at Math.random 0).
+      s.activeBrew = { itemId:null, name:null, icon:null, yield:0, durationMs:0, expiresAt:0 };
+      s.inventory = { corpse_t5: 1 };
+      Math.random = function(){ return 0; };
+      FF.processCraftActivity({ type:'craft', skill:'butchering', itemId:'butcher_process_t5', progress:0 }, 3600*1000);
+      eq(s.inventory['meat_t5']||0, 3, 'no bonus -> 3 Meat from one carcass');
+      eq(s.inventory['butchering_t5']||0, 3, 'no bonus -> 3 Hide');
+      // With an active Brew (yield 1) the same bonus path fires -> the whole yield doubles.
+      s.inventory = { corpse_t5: 1 };
+      s.activeBrew = { itemId:'brew_test', name:'Test Brew', icon:'', yield:1, durationMs:1e7, expiresAt:Date.now()+1e7 };
+      FF.processCraftActivity({ type:'craft', skill:'butchering', itemId:'butcher_process_t5', progress:0 }, 3600*1000);
+      eq(s.inventory['meat_t5']||0, 6, 'a bonus-output roll doubles the Meat (3 -> 6) -- the path the Workshop double uses');
+      eq(s.inventory['butchering_t5']||0, 6, 'and doubles the Hide (3 -> 6)');
+    } finally {
+      Math.random = origRandom;
+      s.inventory = saved.inv; s.activity = saved.act; s.activeBrew = saved.brew;
+      s.gatherTools.butchering = saved.tier; s.gatherToolRarities.butchering = saved.rar;
+      s.physique.handStrength = saved.hs; s.physique.fineMotor = saved.fm; s.physique.huntsman = saved.hunt;
+    }
+  });
+
   // ---- Butchering tool: success bonus that scales with tier AND rarity, like other crafting tools ----
   suite('butchering tool raises success chance (tier + rarity, like craft tools)', function(){
     var s = FF._state;

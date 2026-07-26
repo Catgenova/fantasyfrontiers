@@ -11097,17 +11097,30 @@
           // (which carries Logic, the Refining physique), so a butcher grants Logic at the crafting rate.
           addPhysiqueXp(physTierPairs(GATHER_PHYSIQUE[act.skill] || CRAFT_PHYSIQUE[act.skill], _butcherTier));
           // A carcass can yield Meat, Hide, and rendered Fat/Tallow/Grease -- each 0-3 (three independent rolls).
+          // The bonus-output mechanics (Butchering Workshop double / active Brew / over-100 Mastery) apply the
+          // same way they do to every other producing action -- they were MISSING from this branch, so a placed
+          // Butchering Workshop's double-output never fired (the reported bug). One roll per carcass multiplies
+          // the whole yield, mirroring the generic craft branch below.
           var got = [];
-          var meatQty = butcherOutputQty(state, recipe.meatPhysique);
+          var _wsD = Math.random() < workshopDoubleChance(state, act.skill);   // Butchering Workshop: double output
+          var _brewD = brewYieldRoll();                                        // active Brew: bonus output
+          var _mastD = overLevelDoubles(act.skill);                            // over-100 Butchering Mastery: +1%/lvl
+          var _bMult = 1 + (_wsD?1:0) + (_brewD?1:0) + _mastD;                 // extra full copies of the carcass yield
+          var meatQty = butcherOutputQty(state, recipe.meatPhysique) * _bMult;
           if(meatQty > 0){ addItem(recipe.meatId, meatQty); got.push(meatQty + ' Meat'); }
-          var hideQty = butcherOutputQty(state, recipe.hidePhysique);
+          var hideQty = butcherOutputQty(state, recipe.hidePhysique) * _bMult;
           if(hideQty > 0){ addItem(recipe.hideId, hideQty); got.push(hideQty + ' Hide'); }
           if(recipe.fatId){
-            var fatQty = butcherOutputQty(state, recipe.fatPhysique);
+            var fatQty = butcherOutputQty(state, recipe.fatPhysique) * _bMult;
             if(fatQty > 0){ addItem(recipe.fatId, fatQty); got.push(fatQty + ' ' + ((FAT_ITEM_MAP[recipe.fatId]||{}).name || 'Fat')); }
           }
-          if(got.length){ addLog('You butchered the carcass and recovered ' + got.join(', ') + '.', 'important'); spawnFloatingText('+' + got.join(', +'), 'ft-success'); }
-          else { spawnFloatingText('Nothing usable', 'ft-fail'); }
+          if(got.length){
+            addLog('You butchered the carcass and recovered ' + got.join(', ') + '.', 'important');
+            spawnFloatingText('+' + got.join(', +'), 'ft-success');
+            if(_wsD) spawnFloatingText('Workshop: double output!', 'ft-rare');
+            if(_brewD) spawnFloatingText('Brew: bonus output!', 'ft-rare');
+            if(_mastD > 0) spawnFloatingText('Mastery: double output!', 'ft-rare');
+          } else { spawnFloatingText('Nothing usable', 'ft-fail'); }
         } else if(recipe.relicCraft){
           addXp('archaeology', recipe.xp*1.5);
           bumpStat('excavate_' + recipe.tierIndex); // per-tier artifacts excavated, powers "Excavate 10 Sand Artifacts"
@@ -33342,7 +33355,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.46.1';
+  var GAME_VERSION = '0.0.46.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
