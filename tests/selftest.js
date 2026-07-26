@@ -7288,7 +7288,7 @@
     eq(q3.reward.familiarId, 'treasureHunter', 'the familiar granted is the Treasure Hunter');
     ok(/Midas/.test(FF.questRewardLabel(q3)), 'the reward line names the Treasure Hunter familiar (Midas, its companion)');
     // Progress counts each of the 5 equipped pieces (4 armor slots by material + the small shield offhand).
-    s.quests = { claimed:{} };
+    s.quests = { claimed:{}, completed:{} };
     s.bodyArmor = {}; s.equippedOffhand = null; s.equippedOffhandTier = 0;
     eq(FF.questProgress(q3), 0, 'nothing equipped -> 0 progress');
     s.bodyArmor.chest = { material:'plate', tier:1 };
@@ -7298,12 +7298,19 @@
     s.bodyArmor.gauntlets = { material:'tailoring', tier:1 };
     eq(FF.questProgress(q3), 4, 'chain boots + chain helm + cotton gloves all count');
     eq(FF.questComplete(q3), false, 'without the shield the quest is not complete');
+    // A wrong material in a slot must not count -- checked BEFORE completion, so the latch isn't in play.
+    s.bodyArmor.chest = { material:'chain', tier:1 };
+    eq(FF.questProgress(q3), 3, 'a chain chest does not satisfy the plate-chest requirement');
+    s.bodyArmor.chest = { material:'plate', tier:1 };
+    eq(FF.questProgress(q3), 4, 'restoring the plate chest counts again');
     s.equippedOffhand = 'shieldSmall'; s.equippedOffhandTier = 1;
     eq(FF.questProgress(q3), 5, 'the copper small shield is the 5th piece');
     ok(FF.questComplete(q3) && FF.questClaimable(q3), 'all 5 pieces equipped completes + arms the quest');
-    // A wrong material in a slot must not count (plate chest only, not chain chest, etc.).
+    // COMPLETION LATCHES: now that it hit 5, swapping a piece away must NOT drain the bar -- it stays
+    // ready-to-claim until claimed (reported: complete a gear quest, unequip the piece, lose the claim).
     s.bodyArmor.chest = { material:'chain', tier:1 };
-    eq(FF.questProgress(q3), 4, 'a chain chest does not satisfy the plate-chest requirement');
+    eq(FF.questProgress(q3), 5, 'once completed, a later gear swap does not un-complete the quest');
+    ok(FF.questClaimable(q3), 'and it is still claimable after the swap');
     s.bodyArmor.chest = { material:'plate', tier:1 };
     // Claim summons the Treasure Hunter as if found normally: familiar becomes owned + a summon popup queues.
     s.familiars = {}; s.popupQueue = []; s.popupBatchTotal = 0; s.settings.popupFamiliar = true;
@@ -7323,7 +7330,7 @@
     ok(q4.reward.kind==='item' && q4.reward.itemId==='roasting_t0' && q4.reward.qty===20, 'reward is 20x first-tier Roasted fish (roasting_t0)');
     ok(/Roasted/.test(FF.questRewardLabel(q4)), 'the reward line reads as the real roasted fish');
     eq(q4.nav.cat, 'menagerie', 'its Go destination is the Menagerie');
-    s.quests = { claimed:{} };
+    s.quests = { claimed:{}, completed:{} };
     s.familiars = { treasureHunter:{ owned:true, level:1 } };
     s.activeCompanions = [];
     eq(FF.questComplete(q4), false, 'Midas summoned but not yet an active companion -> not complete');
@@ -7331,12 +7338,17 @@
     eq(FF.questComplete(q4), false, 'a different active companion does not satisfy the quest');
     s.familiars.digging = { owned:true, level:1 };
     eq(FF.questComplete(q4), false, 'still not complete while only a non-Midas companion is active');
-    s.activeCompanions = ['treasureHunter'];
-    ok(FF.questComplete(q4) && FF.questClaimable(q4), 'making Midas an active companion completes + arms the quest');
-    // An unowned Midas in the slot must not count (activeCompanionList filters to owned).
+    // An unowned Midas in the slot must not count (activeCompanionList filters to owned) -- checked BEFORE
+    // completion, so the completion latch isn't yet in play.
     s.familiars.treasureHunter = { owned:false, level:0 };
+    s.activeCompanions = ['treasureHunter'];
     eq(FF.questComplete(q4), false, 'an un-summoned Midas in the slot does not count');
     s.familiars.treasureHunter = { owned:true, level:1 };
+    ok(FF.questComplete(q4) && FF.questClaimable(q4), 'making Midas an active companion completes + arms the quest');
+    // Latches: dropping Midas from the active slot after completing does not un-arm the claim.
+    s.activeCompanions = [];
+    ok(FF.questComplete(q4) && FF.questClaimable(q4), 'once completed it stays claimable even after Midas leaves the slot');
+    s.activeCompanions = ['treasureHunter'];
     var rBefore = s.inventory['roasting_t0'] || 0;
     ok(FF.claimQuest('midas_at_your_side'), 'claim succeeds');
     eq((s.inventory['roasting_t0']||0) - rBefore, 20, 'claim grants 20 Roasted Bluegill');
@@ -7996,25 +8008,42 @@
     s.equippedOffhandTier = savedOffTQ; s.bodyArmor = savedBAQ; s.xp = savedXpQ; s.uniqueItems = savedUniqQ; s.jewelrySlots = savedJSQ;
   });
 
-  // ---- Quests: a CLAIMED quest's bar never depletes when a momentary condition reverses ----
-  suite('quests: a claimed quest keeps a full bar', function(){
+  // ---- Quests: completion LATCHES -- once a quest hits its target it stays ready-to-claim (and a claimed
+  //      quest stays full) even if a momentary condition later reverses ----
+  suite('quests: completion latches until claimed', function(){
     var s = FF._state;
     var q = FF.questById('take_up_arms'); // progress = (scimitar equipped ? 1 : 0), target 1
     ok(!!q, 'the scimitar-equip quest exists');
     var saved = { mh:s.equippedMainhand, quests:s.quests };
     try {
-      // Before claiming, progress deliberately tracks the live condition (you must satisfy it to claim).
-      s.quests = { claimed:{} };
+      // Below target, progress tracks the live condition both up AND down.
+      s.quests = { claimed:{}, completed:{} };
+      s.equippedMainhand = null;
+      eq(FF.questProgress(q), 0, 'condition unmet -> 0 while still incomplete');
       s.equippedMainhand = 'scimitar';
       eq(FF.questProgress(q), 1, 'meeting the condition completes the quest');
+      ok(FF.questClaimable(q), 'and arms it for claiming');
+      // LATCH: unequipping after completion does NOT drain the bar -- it stays ready-to-claim until claimed
+      // (the reported bug: complete a gear quest, swap the piece away, then the claim is gone).
       s.equippedMainhand = null;
-      eq(FF.questProgress(q), 0, 'an UNCLAIMED quest reflects the live (reversed) condition');
-      // Once CLAIMED, the bar freezes at target even if the condition is later unmet (the reported bug:
-      // a Claimed quest showing 0/1).
-      s.quests = { claimed:{ take_up_arms:true } };
+      eq(FF.questProgress(q), 1, 'once completed, reversing the condition keeps a full, claimable bar');
+      ok(FF.questComplete(q) && FF.questClaimable(q), 'still complete and still claimable');
+      ok(s.quests.completed && s.quests.completed.take_up_arms === true, 'completion is recorded in state.quests.completed (persists across a reload)');
+      // Once CLAIMED, the bar also stays full and is no longer claimable.
+      s.quests.claimed.take_up_arms = true;
       s.equippedMainhand = null;
       eq(FF.questProgress(q), 1, 'a CLAIMED quest shows a full bar even with the condition unmet');
       ok(FF.questComplete(q) && !FF.questClaimable(q), 'still complete, and not re-claimable');
+
+      // questScanCompletions latches a satisfied quest even if its bar is never READ while satisfied --
+      // so equipping the piece banks the completion off-screen, before the player can swap it away.
+      s.quests = { claimed:{}, completed:{} };
+      s.equippedMainhand = 'scimitar';       // condition holds, but we never call questProgress here
+      ok(FF.questScanCompletions(), 'the scan reports it latched a newly-completed quest');
+      ok(s.quests.completed.take_up_arms === true, 'the scan recorded the completion');
+      s.equippedMainhand = null;             // condition reverses BEFORE any read
+      eq(FF.questProgress(q), 1, 'the scan latched it, so it survives the reversal');
+      ok(FF.questClaimable(q), 'still claimable after the off-screen latch');
     } finally {
       s.equippedMainhand = saved.mh; s.quests = saved.quests;
     }

@@ -11839,7 +11839,7 @@
       stats: { kills:0, deaths:0, gathered:0, crafted:0, craftedRare:0, craftedSupreme:0, craftedFantastic:0 },
       monsterKills: {},          // per-monster-id kill tally (Quest progress source)
       estateClears: 0,           // count of estate obstacles cleared (Quest progress source)
-      quests: { claimed: {} },   // quest progression: { claimed: { questId: true } }
+      quests: { claimed: {}, completed: {} },   // quest progression: { claimed:{questId:true}, completed:{questId:true} } (completed latches a reached target so a momentary condition reversing can't un-arm the claim)
       trackedQuests: [],         // quest ids pinned to the persistent tracker card (above the action bar)
       titles: {},                // unlocked quest/achievement titles (cosmetic), by id
       equippedTitle: null,       // the currently-worn title id (shown on Profile), or null
@@ -11878,6 +11878,7 @@
   var craftOnlyAffordable = false; // Crafting: hide recipe cards the player lacks materials for
   var craftFilterLowest = false;   // when the filter's on, a tiered card auto-shows the LOWEST affordable tier (for stockpiling) instead of the highest
   var saveAccum = 0;
+  var _questScanAccum = 0;   // throttles questScanCompletions() (latch quests whose condition holds off-screen)
   var needsRender = false;
   // A full render() rebuilds all of #content. On a big inventory that's hundreds of rows (the
   // Sacrifice list alone can be 700+), and with many tasks running SOMETHING sets needsRender almost
@@ -16363,8 +16364,9 @@
           if(!Array.isArray(state.trackedQuests)) state.trackedQuests = [];
           if(!state.tower || typeof state.tower !== 'object') state.tower = {};
           if(typeof state.towerAutoAdvance !== 'boolean') state.towerAutoAdvance = false;
-          if(!state.quests || typeof state.quests !== 'object') state.quests = { claimed:{} };
+          if(!state.quests || typeof state.quests !== 'object') state.quests = { claimed:{}, completed:{} };
           if(!state.quests.claimed || typeof state.quests.claimed !== 'object') state.quests.claimed = {};
+          if(!state.quests.completed || typeof state.quests.completed !== 'object') state.quests.completed = {}; // latched-completion set (see questProgress)
           if(!state.titles || typeof state.titles !== 'object') state.titles = {};
           if(typeof state.equippedTitle === 'undefined') state.equippedTitle = null;
           if(state.equippedTitle && !(state.titles && state.titles[state.equippedTitle])) state.equippedTitle = null; // drop a stale/unowned equipped title
@@ -21816,17 +21818,41 @@
   var questExpanded = {}; // which quest accordions are open, by id -- persists across re-renders
   function questById(id){ return QUEST_BY_ID[id] || null; }
   function questClaimed(q){ return !!(state.quests && state.quests.claimed && state.quests.claimed[q.id]); }
+  function questCompletedLatched(q){ return !!(state.quests && state.quests.completed && state.quests.completed[q.id]); }
+  function markQuestCompleted(q){
+    if(!state.quests) state.quests = { claimed:{}, completed:{} };
+    if(!state.quests.completed) state.quests.completed = {};
+    state.quests.completed[q.id] = true;
+  }
   function questProgress(q){
-    // A CLAIMED quest is permanently DONE, so freeze its bar at target. Many quests read a MOMENTARY
-    // condition ("have this weapon/armor equipped", "own N of an item"); without this freeze the bar would
-    // DEPLETE when that condition later reverses -- even after the reward was claimed (reported bug: a
-    // Claimed quest showing 0/1). Before claiming, progress deliberately still tracks the live condition,
-    // so you must actually satisfy it to claim.
-    if(questClaimed(q)) return q.target;
-    return Math.max(0, Math.min(q.target, q.progress(state)|0));
+    // A CLAIMED or already-COMPLETED quest is DONE, so freeze its bar at target. Many quests read a
+    // MOMENTARY condition ("have this weapon/armor equipped", "an active companion"); without this freeze
+    // the bar would DEPLETE when that condition later reverses -- e.g. equip a rare belt to complete a
+    // quest, unequip it, and the claim is gone. Completion LATCHES the instant progress first reaches the
+    // target (recorded in state.quests.completed), so the quest stays ready-to-claim until claimed even if
+    // the condition is later unmet. Below target, progress still tracks the live condition (you must
+    // actually satisfy it to complete it in the first place).
+    if(questClaimed(q) || questCompletedLatched(q)) return q.target;
+    var live = Math.max(0, Math.min(q.target, q.progress(state)|0));
+    if(live >= q.target){ markQuestCompleted(q); return q.target; } // first touch of the target -> latch it
+    return live;
   }
   function questComplete(q){ return questProgress(q) >= q.target; }
   function questClaimable(q){ return questComplete(q) && !questClaimed(q); }
+  // Latch completion for any quest whose condition is satisfied RIGHT NOW, even if its bar is never
+  // rendered/tracked while satisfied -- so equipping the piece completes it for good the instant the
+  // condition holds, not only when the quest happens to be on screen at claim time. Cheap: skips claimed +
+  // already-latched quests, and calling questProgress on the rest records the latch. Throttled in the main
+  // loop. Returns true if it newly latched anything (so the caller can refresh the UI).
+  function questScanCompletions(){
+    if(!state.quests) return false;
+    var any = false;
+    for(var i=0;i<QUESTS.length;i++){ var q = QUESTS[i];
+      if(questClaimed(q) || questCompletedLatched(q)) continue;
+      if((q.progress(state)|0) >= q.target){ markQuestCompleted(q); any = true; }
+    }
+    return any;
+  }
   // Stable partition: not-yet-claimed quests keep their guided order at the top; already-claimed ones fall
   // to the bottom (also in their original order), so finished goals get out of the way. filter() preserves
   // order, so each group stays as authored.
@@ -33070,6 +33096,14 @@
     autoActionsCheck(); // opt-in auto open-caches/chests + harvest/plant/fertilize crops (all off by default)
     dungeonNetTick(); // networked dungeon: drip shared-enemy damage while a party run is active (self-rate-limited)
 
+    // Latch any quest whose (possibly momentary) condition is satisfied right now, even off-screen, so a
+    // completion is banked before the player can swap the gear away. ~1.5s cadence keeps it off the hot path.
+    _questScanAccum += dt;
+    if(_questScanAccum >= 1500){
+      _questScanAccum = 0;
+      if(questScanCompletions()) needsRender = true; // a newly-armed quest should light up the tracker/tab
+    }
+
     saveAccum += dt;
     if(saveAccum >= 4000){
       saveAccum = 0;
@@ -33476,7 +33510,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.46.9';
+  var GAME_VERSION = '0.0.46.10';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -33597,7 +33631,7 @@
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
-      QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash,
+      QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, flushTowerFamiliarBatch:flushTowerFamiliarBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile,
