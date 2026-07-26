@@ -7141,6 +7141,53 @@
     if(sv.shards===undefined) delete s.inventory.barrier_shard; else s.inventory.barrier_shard = sv.shards;
   });
 
+  // ---- Familiar Transcendence: reset to Lv1 for a star (+10% dmg/star, Barrier Shards) --------------
+  suite('familiar: transcendence', function(){
+    var s = FF._state;
+    var id = 'pyromancer';
+    ok(FF.FAMILIAR_DATA[id], 'sample familiar exists');
+    var sv = { fam:s.familiars[id], shards:s.inventory.barrier_shard, exp:s.menagerieExpanded };
+    try {
+      s.inventory.barrier_shard = 0;
+      // Unowned / below-max familiars cannot Transcend.
+      s.familiars[id] = { owned:false, level:1 };
+      eq(FF.familiarCanTranscend(id), false, 'an unowned familiar cannot Transcend');
+      s.familiars[id] = { owned:true, level:50 };
+      eq(FF.familiarCanTranscend(id), false, 'a familiar below max level cannot Transcend');
+      eq(FF.transcendFamiliar(id), false, 'transcendFamiliar is a no-op below max level');
+      eq(s.familiars[id].level, 50, '...the level is untouched');
+      eq(s.inventory.barrier_shard||0, 0, '...and no Barrier Shard is granted');
+      // First Transcend on a maxed familiar: reset to Lv1, 0->1 star, +1 Shard, +10% damage.
+      s.familiars[id] = { owned:true, level:100 };
+      eq(FF.familiarStars(id), 0, 'starts at 0 stars');
+      near(FF.familiarTranscendDamageMult(id), 1.0, 'no damage bonus at 0 stars');
+      eq(FF.familiarCanTranscend(id), true, 'a maxed familiar can Transcend');
+      ok(FF.transcendFamiliar(id), 'first Transcend succeeds');
+      eq(s.familiars[id].level, 1, 'resets to Level 1 (loses all levels, so its skill-XP bonus resets too)');
+      eq(FF.familiarStars(id), 1, 'gains its first star');
+      eq(s.inventory.barrier_shard, 1, 'first Transcend grants exactly 1 Barrier Shard');
+      near(FF.familiarTranscendDamageMult(id), 1.10, 'damage spells at +10% at 1 star');
+      // Re-max and Transcend again: 1->2 stars, +2 more Shards (3 total), +20% damage.
+      s.familiars[id].level = 100;
+      ok(FF.transcendFamiliar(id), 'second Transcend succeeds after re-maxing');
+      eq(FF.familiarStars(id), 2, 'gains a second star');
+      eq(s.inventory.barrier_shard, 3, 'the second Transcend grants 2 more Shards (1 star -> 2 star = 2 shards; 3 total)');
+      near(FF.familiarTranscendDamageMult(id), 1.20, 'damage spells at +20% at 2 stars');
+      eq(s.familiars[id].level, 1, 'reset to Level 1 again');
+      // Menagerie card: a maxed familiar offers Transcend and shows the star badge; below max it does not.
+      FF._setMenagerieExpanded(id, true);
+      s.familiars[id].level = 100;
+      var card = FF.renderFamiliarCard(id);
+      ok(/data-action="transcendRequest" data-skill="pyromancer"/.test(card), 'a maxed familiar card shows a Transcend button');
+      ok(/2★/.test(card), 'the card shows the current star badge');
+      s.familiars[id].level = 40;
+      ok(!/data-action="transcendRequest"/.test(FF.renderFamiliarCard(id)), 'below max, no Transcend button is offered');
+    } finally {
+      if(sv.fam===undefined) delete s.familiars[id]; else s.familiars[id] = sv.fam;
+      if(sv.shards===undefined) delete s.inventory.barrier_shard; else s.inventory.barrier_shard = sv.shards;
+    }
+  });
+
   // ---- Menagerie: one-tap Replace Companion + familiar search --------------------------------------
   suite('menagerie: replace companion + search', function(){
     var S = FF._state;
