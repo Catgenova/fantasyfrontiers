@@ -496,6 +496,49 @@
     FF.estRecomputeWorkshops(); // rebuild the workshop cache from the restored grid
   });
 
+  // ---- Estate: upgrade Farmland in place (ticket-0072), like Workshops/Cottages ----
+  suite('estate: upgrade farmland in place', function(){
+    var s = FF._state;
+    FF.estUse(false);
+    ok(typeof FF.estateUpgradeField === 'function', 'estateUpgradeField exported');
+    var cell = s.estate.grid[0][0];
+    var saved = { type:cell.type, field:cell.fieldTier, obst:cell.obstacle, owned:cell.owned };
+    var savedJob = s.estate.job, savedQueue = s.estate.queue;
+    var savedDig = { d2:s.inventory['digging_t2'], d5:s.inventory['digging_t5'] };
+    var plotMap = s.farmingPlots, savedPlot = plotMap['0,0'];
+    try {
+      s.estate.job = null; s.estate.queue = [];
+      cell.type = 'dirt'; cell.obstacle = null; cell.owned = true; cell.fieldTier = 2;
+      plotMap['0,0'] = { cropType:'fiber', tierIndex:2, plantedAt:1, readyAt:9e15 }; // a crop growing on the field
+      s.inventory['digging_t5'] = 100;
+      // Upgrade the t2 Field straight to t5 in place -> a timed 'field' upgrade job, target-tier soil at start.
+      FF.estateUpgradeField(0, 0, 5);
+      var fjob = s.estate.job;
+      ok(fjob && fjob.kind === 'field' && fjob.upgrade === true && fjob.fieldTier === 5, 'the field upgrade starts a timed job to the chosen tier');
+      eq(cell.fieldTier, 2, 'the field keeps growing at its old tier until the job completes');
+      eq(s.inventory['digging_t5'], 0, 'the upgrade consumed 100 target-tier Digging at start');
+      // Materials come from the target tier (via the shared field material line).
+      var mats = FF.estateJobMaterials(fjob);
+      eq(mats[0][0], 'digging_t5', 'the upgrade pays the TARGET tier soil'); eq(mats[0][1], 100, '100 of it');
+      FF.applyEstateJobCompletion(s.estate, fjob, false, false);
+      s.estate.job = null;
+      eq(cell.fieldTier, 5, 'completion raises the field to the chosen tier');
+      ok(plotMap['0,0'] && plotMap['0,0'].cropType === 'fiber', 'the growing crop is preserved through the upgrade (not removed like remove+replace)');
+      // A fresh field build is still blocked on an occupied field tile; only the upgrade path works.
+      ok(!FF.estateQueuedJobValid({ kind:'field', fieldTier:6 }, cell).ok, 'a fresh Field build is rejected on a tile that already has a Field');
+      ok(FF.estateQueuedJobValid({ kind:'field', upgrade:true, fieldTier:6 }, cell).ok, 'but an upgrade to a higher tier is allowed');
+      ok(!FF.estateQueuedJobValid({ kind:'field', upgrade:true, fieldTier:5 }, cell).ok, 'upgrading to an equal-or-lower tier is rejected');
+      // And the action itself no-ops for a non-higher target.
+      FF.estateUpgradeField(0, 0, 5);
+      ok(!s.estate.job, 'no job when the target tier is not higher than the current field');
+    } finally {
+      cell.type = saved.type; cell.fieldTier = saved.field; cell.obstacle = saved.obst; cell.owned = saved.owned;
+      s.estate.job = savedJob; s.estate.queue = savedQueue;
+      s.inventory['digging_t2'] = savedDig.d2; s.inventory['digging_t5'] = savedDig.d5;
+      if(savedPlot === undefined) delete plotMap['0,0']; else plotMap['0,0'] = savedPlot;
+    }
+  });
+
   // ---- Estate: multi-tier upgrades (jump straight to any tier, not just the next) ----
   suite('estate: multi-tier upgrades', function(){
     var s = FF._state;

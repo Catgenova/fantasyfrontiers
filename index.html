@@ -23387,7 +23387,12 @@
                        if(c.obstacle) return { ok:false, msg:'that tile has an obstacle to clear first' };
                        if((c.height|0) <= 0) return { ok:false, msg:'that tile is underwater' };
                        return { ok:true };
-      case 'field':    if(c.type!=='dirt' || c.obstacle || c.fieldTier!=null) return { ok:false, msg:'that tile can no longer take a Field' };
+      case 'field':    if(job.upgrade){
+                         if(c.type!=='dirt' || c.fieldTier==null) return { ok:false, msg:'that tile no longer has a Field' };
+                         if((c.fieldTier|0) >= (job.fieldTier|0)) return { ok:false, msg:'that Field is already at or above the target tier' };
+                         return { ok:true };
+                       }
+                       if(c.type!=='dirt' || c.obstacle || c.fieldTier!=null) return { ok:false, msg:'that tile can no longer take a Field' };
                        return { ok:true };
       case 'workshop': if(job.upgrade){
                          var _uw = WORKSHOP_ITEMS[c.workshopId], _uwT = itemTierFromId(job.workshopId);
@@ -23538,7 +23543,7 @@
       case 'pave':     var pr = getPavingRecipe(job.paveTileId); return job.upgrade ? ('Upgrade pavement' + (pr ? ' to ' + pr.name : '')) : ('Pave' + (pr ? ' with ' + pr.name : ''));
       case 'workshop': return (job.upgrade ? 'Upgrade to ' : 'Build ') + ((WORKSHOP_ITEMS[job.workshopId]||{}).name || 'Workshop');
       case 'cottage':  return (job.upgrade ? 'Upgrade to ' : 'Build ') + ((COTTAGE_ITEMS[job.cottageId]||{}).name || 'Cottage');
-      case 'field':    return 'Till ' + ((FARM_FIELD_TIERS['field_t'+job.fieldTier]||{}).name || 'Field');
+      case 'field':    return (job.upgrade ? 'Upgrade to ' : 'Till ') + ((FARM_FIELD_TIERS['field_t'+job.fieldTier]||{}).name || 'Field');
     }
     return job.kind;
   }
@@ -23790,13 +23795,13 @@
       return true;
     }
     if(job.kind === 'field'){
-      cell.fieldTier = job.fieldTier;
+      cell.fieldTier = job.fieldTier;   // upgrade keeps the tile's crop untouched -- only the tier cap rises
       if(giveRewards){
         bumpStat('field_placed_' + job.fieldTier); // fields tilled on the estate (by tier), powers "Place 1 Sand Field"
         var fldXp = estateBuildXp(job.fieldTier);
         addXp('digging', fldXp);
-        addLog('Finished the ' + (DIGGING_NAMES[job.fieldTier]||'') + ' Field at (' + job.x + ', ' + job.y + '). +' + fldXp + ' Digging XP. Plant crops up to that tier in the Farming tab.', 'important');
-        spawnFloatingText('Field ready! +' + fldXp + ' Digging XP', 'ft-bonus');
+        addLog('Finished ' + (job.upgrade ? 'upgrading to' : 'the') + ' ' + (DIGGING_NAMES[job.fieldTier]||'') + ' Field at (' + job.x + ', ' + job.y + '). +' + fldXp + ' Digging XP. Plant crops up to that tier in the Farming tab.', 'important');
+        spawnFloatingText((job.upgrade ? 'Field upgraded!' : 'Field ready!') + ' +' + fldXp + ' Digging XP', 'ft-bonus');
       }
       return true;
     }
@@ -24214,6 +24219,29 @@
     addLog('Removed the ' + (DIGGING_NAMES[tier]||'') + ' Field (recovered 100 ' + diggingResName(tier) + ').', '');
     estPersist();
     needsRender = true;
+  }
+  // Upgrade an existing Field to a higher tier IN PLACE (keeps the tile and its growing crop) instead of
+  // removing + re-tilling. Mirrors the Workshop/Cottage upgrade: pay the TARGET tier's material (100 of the
+  // matching Digging resource). No pavement/level gate -- fields sit on dirt; affordability is the only gate.
+  function estateUpgradeField(x, y, targetTier){
+    var cell = estActive && estActive.grid[x] && estActive.grid[x][y];
+    if(!cell) return;
+    var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);
+    if(pc.fieldTier == null){ addLog('That tile no longer has a Field.', 'danger'); return; }
+    if(estIsGuild && estJobOnTile(x, y)){ addLog('Another member is already working on that tile.', 'danger'); return; }
+    var cur = pc.fieldTier|0;
+    var tgt = (targetTier == null) ? cur + 1 : parseInt(targetTier, 10);
+    if(!(tgt > cur)){ addLog('Choose a higher Field tier to upgrade to.', 'danger'); return; }
+    if(tgt >= TIER_COUNT){ addLog('This Field is already the top tier.', 'danger'); return; }
+    var def = FARM_FIELD_TIERS['field_t'+tgt]; if(!def) return;
+    if(!hasInputs(def.inputs)){ addLog('Upgrading to a ' + def.name + ' needs 100 ' + diggingResName(tgt) + '.', 'danger'); return; }
+    estateEnqueueOrStart('field', x, y, { fieldTier:tgt, upgrade:true }, fieldBuildMs(tgt), {
+      jobFields: { fieldTier:tgt, upgrade:true },
+      closeMenu: function(){ estateBuildUpgradeMenuOpen = false; },
+      startedMsg: 'You began upgrading the Field at (' + x + ', ' + y + ') to a ' + def.name + ' — finishes in ' + ((tgt+1)*5) + ' minutes.',
+      startedFt: 'Upgrading…',
+      queuedMsg: 'Queued the Field upgrade at (' + x + ', ' + y + ') to a ' + def.name + '.'
+    });
   }
 
   // ======== Peons: idle workers housed in Cottages beside Workshops ========
@@ -25972,6 +26000,25 @@
         html += '<div class="estate-action-info"><b>Field:</b> '+(fdef?fdef.icon+' '+escapeHtml(fdef.name):'Field')+'<br>Grows crops up to '+TIER_NAMES[cell.fieldTier]+' tier &mdash; plant in the <b>Farming</b> tab.</div>';
         html += '<button class="action-btn stop" data-action="estateRemoveField" data-x="'+x+'" data-y="'+y+'" '+((jobHere||otherHere)?'disabled':'')+'>'+(otherHere?'In use':'Remove')+'</button>';
         html += '</div>';
+        // Upgrade the Field in place (keeps the growing crop) to any higher tier you own 100 Digging for.
+        var fCur = cell.fieldTier|0;
+        if(fCur < TIER_COUNT-1){
+          var fUpOpts = []; Object.keys(FARM_FIELD_TIERS).forEach(function(id){ var d = FARM_FIELD_TIERS[id]; if(d.tierIndex > fCur && (state.inventory['digging_t'+d.tierIndex]||0) >= 100) fUpOpts.push(d); });
+          fUpOpts.sort(function(a,b){ return a.tierIndex - b.tierIndex; });
+          var fCanUp = fUpOpts.length > 0 && !(jobHere||otherHere);
+          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade Field</b><br>Jump to a higher tier in place &mdash; keeps the growing crop &bull; 100 of that tier’s Digging resource'+(fUpOpts.length?'':' &bull; <span style="color:var(--hp-bad)">gather more first</span>')+'</div>';
+          html += '<button class="action-btn" data-action="estateToggleBuildUpgradeMenu" '+(fCanUp?'':'disabled')+'>'+((jobHere||otherHere)?'In use':(fUpOpts.length?(estateBuildUpgradeMenuOpen?'Close List':'Choose Tier'):'Need Digging'))+'</button></div>';
+          if(estateBuildUpgradeMenuOpen && fCanUp){
+            html += '<div class="estate-paving-library">';
+            fUpOpts.forEach(function(d){
+              var own = state.inventory['digging_t'+d.tierIndex]||0;
+              html += '<button class="estate-paving-option" data-action="estateUpgradeField" data-x="'+x+'" data-y="'+y+'" data-tier="'+d.tierIndex+'">';
+              html += '<span>'+tierChipHtml(d.tierIndex)+' '+d.icon+' '+escapeHtml(d.name)+'</span><span class="style-lvl">x'+fmt(own)+'/100</span>';
+              html += '</button>';
+            });
+            html += '</div>';
+          }
+        }
       } else {
       var canRaise = cell.height < ESTATE_MAX_HEIGHT-1;
       var raiseLevelOk = digLvl >= ESTATE_RAISE_LEVEL;
@@ -32747,6 +32794,7 @@
       estatePlaceField(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), parseInt(btn.getAttribute('data-tier'),10));
     },
     estateRemoveField: function(btn, e){ estateRemoveField(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
+    estateUpgradeField: function(btn, e){ estateUpgradeField(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-tier')); estateBuildUpgradeMenuOpen = false; },
     estateToggleBorderMenu: function(btn, e){
       var borderTypeKey = btn.getAttribute('data-type');
       estateBorderMenuOpen = estateBorderMenuOpen===borderTypeKey ? null : borderTypeKey;
@@ -33756,7 +33804,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.48.7';
+  var GAME_VERSION = '0.0.48.8';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -33870,7 +33918,7 @@
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
       addXpAppliedMult:addXpAppliedMult, cardRealXp:cardRealXp, cardTierIndex:cardTierIndex, xpStat:xpStat, curiosityGatherXpBonus:curiosityGatherXpBonus,
       estateUpgradePavement:estateUpgradePavement, pavementTierOf:pavementTierOf, ESTATE_PAVE_TILE_COST:ESTATE_PAVE_TILE_COST, estUse:estUse,
-      estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, ESTATE_BUILDING_UPGRADE_PLANKS:ESTATE_BUILDING_UPGRADE_PLANKS, estRecomputeWorkshops:estRecomputeWorkshops,
+      estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, estateUpgradeField:estateUpgradeField, ESTATE_BUILDING_UPGRADE_PLANKS:ESTATE_BUILDING_UPGRADE_PLANKS, estRecomputeWorkshops:estRecomputeWorkshops,
       computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
