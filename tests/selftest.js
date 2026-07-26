@@ -3656,6 +3656,27 @@
   // Regression: 'ward' (Runesmithing) was missing from matchesSpecialCraft, so a running ward craft
   // could never be found by its card -- the Inscribe button never became Stop and the progress bar
   // never filled. A kind that can be STARTED but not MATCHED is always this bug, so pin all of them.
+  // ---- Jewelrycrafting: rings/amulets get the Gross Motor "all crafts" success passive (like Twine) ----
+  suite('jewelrycrafting: rings/amulets get the craft-success passive', function(){
+    var g = FF._state;
+    var sv = { gm:g.physique.grossMotor, ct:g.craftTools && g.craftTools.jewelrycrafting };
+    try {
+      if(!g.craftTools) g.craftTools = {};
+      g.craftTools.jewelrycrafting = 0; // no craft tool -> isolate the physique passive from the tool bonus / the 100% clamp
+      // Level Gross Motor high so the "all crafts" passive is substantial (and well below the 100% clamp).
+      g.physique.grossMotor = FF.xpFloorForLevel(50);
+      var passive = FF.grossMotorCraftSuccessBonus(g);
+      ok(passive > 0.1, 'Gross Motor gives a substantial craft-success passive at high level');
+      var jrHigh = FF.jewelrySuccessRate(g);
+      var twHigh = FF.craftSuccessRate(g, 'jewelrycrafting'); // Twine path (regular jewelrycrafting craft)
+      // The bug: rings/amulets ignored the passive. Now ring/amulet success = jewelry base (0.5) + the
+      // passive, and Twine = craft base (0.7) + the SAME passive -- they differ only by their base.
+      near(jrHigh, 0.5 + passive, 'ring/amulet success = jewelry base (0.5) + the Gross Motor passive');
+      near(twHigh, 0.7 + passive, 'Twine = craft base (0.7) + the SAME passive');
+      near(twHigh - jrHigh, 0.2, 'the two differ only by their base (0.7 vs 0.5), not the passive');
+    } finally { g.physique.grossMotor = sv.gm; if(sv.ct===undefined) delete g.craftTools.jewelrycrafting; else g.craftTools.jewelrycrafting = sv.ct; }
+  });
+
   suite('crafting: special craft kinds are all matchable', function(){
     ok(typeof FF.matchesSpecialCraft === 'function', 'matchesSpecialCraft is exported');
     // One representative activity per kind, shaped exactly as its craft* function creates it.

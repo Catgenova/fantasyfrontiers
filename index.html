@@ -8606,7 +8606,11 @@
   // Jewelry (Rings/Amulets): 50% base success, lower than Twine's standard 70% -- setting
   // fine gems into Twine is a fussier job than braiding the Twine itself.
   var BASE_JEWELRY_SUCCESS = 0.5;
-  function jewelrySuccessRate(state){ return Math.min(1, BASE_JEWELRY_SUCCESS + craftToolSuccessBonus(state, 'jewelrycrafting')); }
+  // Rings & amulets keep their lower base (0.5 vs 0.7) but MUST still get the Gross Motor "all crafts"
+  // success passive -- like Twine and every other craft (craftSuccessRate). Without it, leveling Gross
+  // Motor boosted Twine but left rings/amulets stuck at 50% (reported bug). Jewelrycrafting isn't in the
+  // Alchemy group, so Critical Thinking doesn't apply here (Twine doesn't get it either).
+  function jewelrySuccessRate(state){ return Math.min(1, BASE_JEWELRY_SUCCESS + craftToolSuccessBonus(state, 'jewelrycrafting') + grossMotorCraftSuccessBonus(state)); }
   // Shafts: 70% base success (not the usual 50%), using any one Log regardless of tier.
   // Output scales with the chosen log's tier: 15 Shafts per tier step.
   var BASE_SHAFT_SUCCESS = 0.70;
@@ -33731,7 +33735,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.48.4';
+  var GAME_VERSION = '0.0.48.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -33834,7 +33838,7 @@
   if(typeof location !== 'undefined' && /[?&]selftest\b/.test(location.search)){
     DISCORD_FEED_WEBHOOK = ''; // never let a test craft roll (e.g. a fantastic relic) post to the real Discord channel
     window.__FF = {
-      getLevel:getLevel, xpFloorForLevel:xpFloorForLevel, xpForNextLevel:xpForNextLevel, levelProgress:levelProgress, MAX_SKILL_LEVEL:MAX_SKILL_LEVEL, SKILL_CURVE_KNEE:SKILL_CURVE_KNEE, getLevelExt:getLevelExt, skillLevel:skillLevel, skillLevelProgress:skillLevelProgress, skillLevelXpSpan:skillLevelXpSpan, skillBarRightLabel:skillBarRightLabel, skillCanOverlevel:skillCanOverlevel, overLevelDoublePct:overLevelDoublePct, overLevelDoubles:overLevelDoubles, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, SKILL_MAX_LEVEL_EXT:SKILL_MAX_LEVEL_EXT, OVERLEVEL_DOUBLE_PER_LEVEL:OVERLEVEL_DOUBLE_PER_LEVEL, SKILL_OVERLEVEL_GROWTH:SKILL_OVERLEVEL_GROWTH, renderSkillProgressBar:renderSkillProgressBar, skillWorkshopBuffLabel:skillWorkshopBuffLabel, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
+      getLevel:getLevel, xpFloorForLevel:xpFloorForLevel, xpForNextLevel:xpForNextLevel, levelProgress:levelProgress, jewelrySuccessRate:jewelrySuccessRate, craftSuccessRate:craftSuccessRate, grossMotorCraftSuccessBonus:grossMotorCraftSuccessBonus, MAX_SKILL_LEVEL:MAX_SKILL_LEVEL, SKILL_CURVE_KNEE:SKILL_CURVE_KNEE, getLevelExt:getLevelExt, skillLevel:skillLevel, skillLevelProgress:skillLevelProgress, skillLevelXpSpan:skillLevelXpSpan, skillBarRightLabel:skillBarRightLabel, skillCanOverlevel:skillCanOverlevel, overLevelDoublePct:overLevelDoublePct, overLevelDoubles:overLevelDoubles, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, SKILL_MAX_LEVEL_EXT:SKILL_MAX_LEVEL_EXT, OVERLEVEL_DOUBLE_PER_LEVEL:OVERLEVEL_DOUBLE_PER_LEVEL, SKILL_OVERLEVEL_GROWTH:SKILL_OVERLEVEL_GROWTH, renderSkillProgressBar:renderSkillProgressBar, skillWorkshopBuffLabel:skillWorkshopBuffLabel, tierXp:tierXp, tierSell:tierSell, tierTime:tierTime,
       isMortal:isMortal, MORTAL_XP_MULT:MORTAL_XP_MULT, addXp:addXp, choosePath:choosePath, mortalDeath:mortalDeath, pathSelectNeeded:pathSelectNeeded, PATH_CHOICES:PATH_CHOICES, renderPathSelect:renderPathSelect, removePathSelect:removePathSelect, lbRow:lbRow,
       bankSlotCost:bankSlotCost, getEstateExpansionCost:getEstateExpansionCost,
       candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, barrelProvisionMs:barrelProvisionMs, barrelTierOf:barrelTierOf, peonProvisioned:peonProvisioned, peonHasProvisionStock:peonHasProvisionStock, peonBarrelBurn:peonBarrelBurn, peonProvisionCoverageMs:peonProvisionCoverageMs, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
