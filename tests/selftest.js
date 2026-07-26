@@ -7234,22 +7234,24 @@
     ok(!/No familiars match/.test(FF.renderMenagerieList()), 'a matching search renders results');
     FF._setMenagerieSearch('');
 
-    // Sort: Level-100 familiars float to the top of a section; everyone else keeps the authored order.
+    // "Ready to Transcend": maxed (Level-100) familiars are pulled into a section pinned ABOVE all
+    // categories, and rendered only there (not duplicated in their category section). Use class familiars,
+    // which live in the Classes menagerie section.
     S.familiars = {};
-    var secIds = ['sk_lo', 'sk_max', 'sk_mid', 'sk_unowned'];
-    S.familiars['sk_lo']  = { owned:true, level:5 };
-    S.familiars['sk_max'] = { owned:true, level:100 };
-    S.familiars['sk_mid'] = { owned:true, level:80 };
-    // sk_unowned: not owned
-    var sorted = FF.menagerieSortIds(secIds);
-    eq(sorted[0], 'sk_max', 'the Level-100 familiar is pinned to the top');
-    eq(sorted.join(','), 'sk_max,sk_lo,sk_mid,sk_unowned', 'everyone else keeps the section\'s authored order');
-    // A second maxed familiar keeps both at the top in their original relative order.
-    S.familiars['sk_unowned'] = { owned:true, level:100 };
-    eq(FF.menagerieSortIds(secIds).join(','), 'sk_max,sk_unowned,sk_lo,sk_mid', 'multiple maxed familiars stay top, stably ordered');
-    // A transcended familiar (reset to Lv 1) is no longer maxed, so it drops out of the top.
-    S.familiars['sk_max'] = { owned:true, level:1, stars:1 };
-    eq(FF.menagerieSortIds(secIds)[0], 'sk_unowned', 'a just-transcended (Lv 1) familiar is no longer pinned to the top');
+    var mid = 'pyromancer', other = 'berserker';
+    S.familiars[mid] = { owned:true, level:100 };
+    S.familiars[other] = { owned:true, level:40 };
+    FF._setMenagerieExpanded(mid, true); // the Transcend button only renders on an expanded card
+    ok(FF.familiarIsMaxed(mid), 'familiarIsMaxed detects a Level-100 owned familiar');
+    ok(!FF.familiarIsMaxed(other), 'a below-max familiar is not "maxed"');
+    var listHtml = FF.renderMenagerieList();
+    ok(/<h3>Ready to Transcend/.test(listHtml), 'a Ready to Transcend section renders when a maxed familiar exists');
+    eq(listHtml.indexOf('<h3>Ready to Transcend'), listHtml.indexOf('<h3>'), 'it is the FIRST section (pinned above every category)');
+    // The maxed familiar's card renders exactly once (in the pinned section, not duplicated in its category).
+    eq((listHtml.match(new RegExp('data-action="transcendRequest" data-skill="'+mid+'"','g'))||[]).length, 1, 'the maxed familiar renders once, only in the pinned section');
+    // A just-transcended familiar (reset to Lv 1) is no longer maxed, so the pinned section disappears.
+    S.familiars[mid] = { owned:true, level:1, stars:1 };
+    ok(!/Ready to Transcend/.test(FF.renderMenagerieList()), 'with no maxed familiars, the pinned section is gone');
 
     S.familiars = sv.fams; S.activeCompanions = sv.comps; S.companionCast = sv.cast; S.activity = sv.act;
   });
