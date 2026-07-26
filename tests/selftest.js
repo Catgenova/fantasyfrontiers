@@ -11371,10 +11371,13 @@
   // ---- Improvement system: enhance (Stage 2) --------------------------------------------
   suite('improvement: enhance', function(){
     ok(typeof FF.enhanceItem === 'function' && typeof FF.enhanceSuccessChance === 'function', 'enhance exported');
-    near(FF.enhanceSuccessChance(0), 0.95, 'first enhance is 95%');
-    near(FF.enhanceSuccessChance(1), 0.90, 'second is 90%');
-    near(FF.enhanceSuccessChance(5), 0.70, '+5 -> 70%');
-    eq(FF.enhanceSuccessChance(20) >= 0.05, true, 'success chance floors at 5%');
+    // Linear ramp: 95% for the first enhance (+0->+1) down to 5% for the last (+14->+15).
+    near(FF.enhanceSuccessChance(0), 0.95, 'first enhance (->+1) is 95%');
+    near(FF.enhanceSuccessChance(FF.ENHANCE_MAX-1), 0.05, 'last enhance (->+15) is 5%');
+    near(FF.enhanceSuccessChance(7), 0.50, 'the midpoint (->+8) is ~50%');
+    near(FF.enhanceSuccessChance(1), 0.95 - 0.90/(FF.ENHANCE_MAX-1), 'each level drops by an even step');
+    eq(FF.enhanceSuccessChance(20) >= 0.05, true, 'success chance floors at 5% past the max');
+    eq(FF.enhanceSuccessChance(0) <= 0.95, true, 'success chance never exceeds 95%');
     // Enhance consumes Inscription Scrolls (scroll_t<n>, e.g. Warding Scrap) -- the items the
     // Inscription skill scribes -- NOT a non-existent inscription_t id. (throwaway selftest inventory)
     var s = FF._state, savedInv = s.inventory;

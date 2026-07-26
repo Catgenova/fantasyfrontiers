@@ -12930,10 +12930,11 @@
   function renameLoadoutPreset(i, name){ ensureLoadouts(); var lo = state.loadouts[i]; if(!lo) return; name = (name||'').trim().slice(0, 24); lo.name = name || ('Loadout ' + (i+1)); saveGame(); }
 
   // ---- Enhance (Stage 2) ----
-  // Success starts at 95% and drops 5% per level already reached (floor 5%). A failure DESTROYS the
-  // item. Cost = (current +level + 1) Inscription Scrolls (scroll_t<n>, e.g. Warding Scrap) of tier
-  // >= the item's tier -- the Scrolls that the Inscription skill scribes.
-  function enhanceSuccessChance(enhance){ return Math.max(0.05, 0.95 - 0.05*(enhance||0)); }
+  // Success ramps LINEARLY from 95% for the first enhance (+0 -> +1) down to 5% for the last (+14 -> +15),
+  // i.e. -(0.90/(ENHANCE_MAX-1)) per level already reached, clamped to [5%, 95%]. A failure DESTROYS the
+  // item (unless a Barrier Shard absorbs it). Cost = (current +level + 1) Inscription Scrolls (scroll_t<n>,
+  // e.g. Warding Scrap) of tier >= the item's tier -- the Scrolls that the Inscription skill scribes.
+  function enhanceSuccessChance(enhance){ return Math.max(0.05, Math.min(0.95, 0.95 - (0.90/(ENHANCE_MAX-1))*(enhance||0))); }
   // Total materials of `prefix`+tier owned across tiers >= fromTier (for the "you have N" readouts).
   function countTierMaterials(prefix, fromTier){ var n=0; for(var t=Math.max(0,fromTier); t<TIER_COUNT; t++){ n += state.inventory[prefix+t]||0; } return n; }
   function planInscriptions(itemTier, count){
@@ -33804,7 +33805,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.48.8';
+  var GAME_VERSION = '0.0.48.9';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
