@@ -919,6 +919,20 @@
     near(FF.workshopBonusPct(FF.TIER_COUNT - 1), 0.15, 'workshop top tier = 15%');
     ok(FF.workshopBonusPct(10) > FF.workshopBonusPct(0), 'workshop bonus increases with tier');
   });
+  // ---- Gather-speed rebalance (Option C): the full speed stack now bottoms out ~0.47x, so the fastest
+  // possible gather is ~2.4s at t0 (base 5s) and ~5.2s at t20 (base 11s) -- up from ~1.25s / ~2.75s. ----
+  suite('gather-speed max stack', function(){
+    var toolMax = FF.getEquippedGatherTool('mining', FF.TIER_COUNT, 'fantastic').speedBonus; // top tool, Fantastic
+    near(toolMax, 0.126, 'top gather tool (Fantastic) speed = 12.6%', 1e-6);
+    near(FF.workshopSpeedPct(FF.TIER_COUNT - 1), 0.09, 'top workshop SPEED = 9% (decoupled to 0.6x)', 1e-9);
+    near(FF.workshopBonusPct(FF.TIER_COUNT - 1), 0.15, 'top workshop DOUBLE-output stays 15% (untouched)', 1e-9);
+    // Theoretical fastest = physique 12% + tome 15% + tool 12.6% + workshop 18% (personal+guild) + endurance 9%.
+    var wsMax = FF.workshopSpeedPct(FF.TIER_COUNT - 1) * 2;
+    var product = (1 - 0.12) * (1 - 0.15) * (1 - toolMax - wsMax) * (1 - 0.09);
+    ok(product > 0.45 && product < 0.49, 'max gather speed multiplier ~0.47 (was 0.25)');
+    ok(5.0 * product > 2.25 && 5.0 * product < 2.55, 't0 gather (base 5s) bottoms out ~2.4s');
+    ok(11.0 * product > 5.0 && 11.0 * product < 5.4, 't20 gather (base 11s) bottoms out ~5.2s');
+  });
   suite('workshop upgrade chain', function(){
     var skill = FF.WORKSHOP_ITEMS[Object.keys(FF.WORKSHOP_ITEMS)[0]].skillId;
     var d0 = FF.getWorkshopTierData(skill, 0);
@@ -3277,7 +3291,7 @@
     // Tome grants a timed work-speed buff -- its own channel.
     ok(tome5.tomeSpeedBonus > 0 && tome5.tomeDurationMs > 0, 'tomes carry a timed work-speed buff');
     var t0 = FF.ALL_CRAFT_RECIPES['tome_t0'], t20 = FF.ALL_CRAFT_RECIPES['tome_t20'];
-    ok(t20.tomeSpeedBonus > t0.tomeSpeedBonus && t20.tomeSpeedBonus <= 0.25 + 1e-9, 'tome speed bonus scales with tier (cap 25%)');
+    ok(t20.tomeSpeedBonus > t0.tomeSpeedBonus && t20.tomeSpeedBonus <= 0.15 + 1e-9, 'tome speed bonus scales with tier (cap 15%)');
     // Auto-study / the action-bar Tome widget pick the strongest owned tome (highest speed bonus,
     // tie-broken by longest duration).
     ok(typeof FF.bestAvailableTome === 'function', 'bestAvailableTome exported');
