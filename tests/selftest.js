@@ -7119,6 +7119,24 @@
   // ---- Quests: own area, Getting Started category, accordion + complete/claim/flash flow ----
   // ---- The Tower: floors, rotation, scaling, rewards, progress ----
   // ---- Tower quests + Titles system (equip, browser, how-to) ----
+  // ---- Perf: the per-recipe live-update loop is gated to craft tabs, not Inventory/Sacrifice ----
+  // Root cause of the Inventory/Sacrifice stutter: updateDynamic ran a querySelector PER recipe (an
+  // O(DOM-size) scan) on EVERY tab, so the huge Inventory/Sacrifice DOMs were scanned hundreds of times a
+  // frame for craft cards that aren't there (~900ms "inplace"). It now runs only on the recipe tabs.
+  suite('perf: recipe live-update gated to craft tabs', function(){
+    var craft = FF.CRAFT_RECIPE_LIVE_CATEGORIES;
+    ok(craft && craft.length, 'CRAFT_RECIPE_LIVE_CATEGORIES is defined');
+    ['crafting','building','outfitting','refining','cooking'].forEach(function(c){
+      ok(craft.indexOf(c) !== -1, 'recipe live-update runs on the ' + c + ' tab');
+    });
+    // The pages that stuttered must NOT trigger the heavy per-recipe scan.
+    ['inventory','sacrifice','faith','combat','guild','character'].forEach(function(c){
+      ok(craft.indexOf(c) === -1, 'recipe live-update does NOT run on the ' + c + ' tab');
+    });
+    // The forge half stays gated too (its prior fix), and neither list includes Inventory.
+    ok(FF.FORGE_LIVE_CATEGORIES.indexOf('inventory') === -1, 'forge live-update never runs on Inventory');
+  });
+
   // ---- Guild Bosses: 5 tower-style bosses, rising difficulty & reward ----
   // Reworked from an async damage pool to 5 solo-entry bosses at Tower-floor difficulty 1/10/20/30/40,
   // each rewarding index+1 Barrier Shards (1..5) to every guild member on a clear.

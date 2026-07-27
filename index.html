@@ -5427,6 +5427,11 @@
   // DOM the forge half of updateDynamic() can actually reach. Used as a per-frame guard; if a new tab
   // starts emitting ownedSpan()/improveMaterialSpan()/inp- ids, add it here or its counts will go stale.
   var FORGE_LIVE_CATEGORIES = ['crafting','building','outfitting','refining','cooking','improvement'];
+  // Tabs that render recipe cards (craftOwned-/inp-/[data-action="craft"] buttons). The per-recipe live
+  // update below does a DOM querySelector PER recipe -- an O(DOM-size) scan -- so running it off these
+  // tabs scanned the whole (huge) Inventory/Sacrifice DOM hundreds of times a frame for cards that aren't
+  // there (~900ms/frame of "inplace"). Gate it like FORGE_LIVE_CATEGORIES gates the forge half.
+  var CRAFT_RECIPE_LIVE_CATEGORIES = ['crafting','building','outfitting','refining','cooking'];
   var ALL_MAIN_SKILL_IDS = GATHER_SKILL_IDS.concat(CRAFT_SKILL_IDS).concat(['fiberharvesting','grainharvesting','herbharvesting']).concat(WEAPON_STYLE_IDS).concat([WANDS_SKILL_ID, STAVES_SKILL_ID, SCEPTERS_SKILL_ID]).concat(OFFHAND_STYLE_IDS).concat([WARDING_SKILL_ID]).concat(ARMOR_PROFICIENCY_IDS).concat(['prayer','sacrifice','devotion','blessing','miracle']);
   var FAITH_SKILL_IDS = ['prayer','sacrifice','devotion','blessing','miracle'];
 
@@ -32391,21 +32396,30 @@
       if(cx) cx.innerHTML = skillBarRightLabel(p.id, pxp);
     });
 
-    Object.keys(ALL_SELLABLE).forEach(function(id){
-      var qty = state.inventory[id]||0;
-      if(qty>0){
-        var el = document.getElementById('invCnt-'+id);
-        if(el) el.textContent = 'x' + fmt(qty);
-      }
-    });
+    // Inventory count badges (invCnt-*) exist ONLY on the Inventory tab -- iterating the whole ALL_SELLABLE
+    // catalog elsewhere was pure waste (every getElementById missed). Gate it to the tab that has them.
+    if(currentCategory==='inventory'){
+      Object.keys(ALL_SELLABLE).forEach(function(id){
+        var qty = state.inventory[id]||0;
+        if(qty>0){
+          var el = document.getElementById('invCnt-'+id);
+          if(el) el.textContent = 'x' + fmt(qty);
+        }
+      });
+    }
 
-    // Gathering: owned counts on each resource card
-    Object.keys(ALL_GATHER_ITEMS).forEach(function(id){
-      var el = document.getElementById('owned-'+id);
-      if(el) el.textContent = fmt(state.inventory[id]||0);
-    });
+    // Gathering: owned counts on each resource card (owned-* ids live only on the Gathering tab).
+    if(currentCategory==='gathering'){
+      Object.keys(ALL_GATHER_ITEMS).forEach(function(id){
+        var el = document.getElementById('owned-'+id);
+        if(el) el.textContent = fmt(state.inventory[id]||0);
+      });
+    }
 
-    // Crafting: owned counts + ok/bad state + Start button availability on every recipe
+    // Crafting: owned counts + ok/bad state + Start button availability on every recipe. Recipe cards live
+    // only on the craft tabs; the per-recipe querySelector below is an O(DOM) scan, so running it off those
+    // tabs (e.g. on the huge Inventory/Sacrifice DOMs) was the main "inplace" stutter. Gate it.
+    if(CRAFT_RECIPE_LIVE_CATEGORIES.indexOf(currentCategory) !== -1)
     Object.keys(ALL_CRAFT_RECIPES).forEach(function(rid){
       var recipe = ALL_CRAFT_RECIPES[rid];
       var oEl = document.getElementById('craftOwned-'+rid);
@@ -33946,7 +33960,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.49.0';
+  var GAME_VERSION = '0.0.49.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -34065,7 +34079,7 @@
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
-      GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
+      GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, FORGE_LIVE_CATEGORIES:FORGE_LIVE_CATEGORIES, CRAFT_RECIPE_LIVE_CATEGORIES:CRAFT_RECIPE_LIVE_CATEGORIES, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash, syncGuildPlotsForGuild:syncGuildPlotsForGuild, pruneOrphanFarmingPlots:pruneOrphanFarmingPlots,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
