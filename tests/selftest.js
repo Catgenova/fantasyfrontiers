@@ -799,6 +799,33 @@
     }
   });
 
+  // ---- Guild plots: switching guilds drops crops left in the OLD guild's fields ----
+  // Reported: after leaving guild A (with a ready crop) and joining guild B, the Farming tab still flashed
+  // -- the guild-plot crops were keyed to guild A's estate grid but never cleared, so they were unreachable
+  // on guild B yet kept demanding attention. Any change of guild identity now drops them.
+  suite('guild plots: switching guilds clears the old fields', function(){
+    var s = FF._state;
+    var saved = { gfp:s.guildFarmingPlots };
+    try {
+      // Prime the session tracker to guild A (side effects of this priming call don't matter).
+      FF.syncGuildPlotsForGuild('guildA');
+      s.guildFarmingPlots = { '0,0': { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000 } };
+      // Reloading while STILL in guild A leaves the standing crop untouched.
+      var clearedSame = FF.syncGuildPlotsForGuild('guildA');
+      ok(!clearedSame && Object.keys(s.guildFarmingPlots).length === 1, 'staying in the same guild keeps your standing crops');
+      // Switching to a DIFFERENT guild drops the now-unreachable old-field crops.
+      var clearedSwitch = FF.syncGuildPlotsForGuild('guildB');
+      ok(clearedSwitch && Object.keys(s.guildFarmingPlots).length === 0, 'switching guilds clears crops left in the old guild fields');
+      // Leaving entirely (no guild) also clears.
+      s.guildFarmingPlots = { '1,1': { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000 } };
+      FF.syncGuildPlotsForGuild('guildB');   // re-prime to B
+      var clearedLeave = FF.syncGuildPlotsForGuild(null);
+      ok(clearedLeave && Object.keys(s.guildFarmingPlots).length === 0, 'leaving a guild clears its standing crops');
+    } finally {
+      s.guildFarmingPlots = saved.gfp;
+    }
+  });
+
   // ---- Farming: the Auto-plant seed filter (crop-type toggles + a Custom per-seed override) ----
   suite('farming: auto-plant seed filter', function(){
     var s = FF._state;
