@@ -4243,7 +4243,7 @@
   var FAITH_BASE_FANTASTIC = 0.0001;
   var DEVOTION_TIERS = makeFaithActivityTiers(1, 0.4, 2, 0, FAITH_BASE_RARE*4/20, FAITH_BASE_RARE*4);
   var BLESSING_TIERS = makeFaithActivityTiers(3, 0.8, 3, 0, FAITH_BASE_SUPREME*4/20, FAITH_BASE_SUPREME*4);
-  var MIRACLE_TIERS  = makeFaithActivityTiers(8, 1.5, 4, 0, FAITH_BASE_FANTASTIC*4/20, FAITH_BASE_FANTASTIC*4);
+  var MIRACLE_TIERS  = makeFaithActivityTiers(8, 1.5, 4, 0, FAITH_BASE_FANTASTIC*5/20, FAITH_BASE_FANTASTIC*5); // Miracle caps its Fantastic bonus at +0.05% (5x the 0.01% base)
   var FAITH_ACTIVITY_TIERS = { devotion:DEVOTION_TIERS, blessing:BLESSING_TIERS, miracle:MIRACLE_TIERS };
   var FAITH_RARITY_RESULT = { devotion:'rare', blessing:'supreme', miracle:'fantastic' };
   // Offline: applyOfflineProgress sets offlineFaithCtx {type,tier,fraction} while it replays a running
@@ -4275,9 +4275,16 @@
     for(var i=0;i<RARITY_ROLL_BANDS.length;i++){ if(tier <= RARITY_ROLL_BANDS[i].max) return !!(st.settings && st.settings[RARITY_ROLL_BANDS[i].key]); }
     return false; // T20 (and anything above the bands) always rolls
   }
+  // The SINGLE Fantastic-chance formula shared by EVERY craft (ordinary forge, Relic, and Masterwork
+  // Blueprint forge), so a Fantastic is equally (im)probable however it's made: 0.01% base, lifted up to
+  // +0.05% by a max-tier Miracle, +0.05% by the Masterwork physique (Lv100), and +0.05% by the server-wide
+  // Rarity Bonus. Max ~0.16%.
+  function fantasticCraftChance(){
+    return FAITH_BASE_FANTASTIC + faithRarityBonus('miracle') + serverBuffRarityBonus('fantastic') + masterworkRarityBonus('fantastic');
+  }
   function rollCraftRarity(state, tierIndex){
     if(rarityRollDisabledForTier(tierIndex, state)) return 'normal'; // player disabled rarity rolls for this tier band
-    var fantasticChance = FAITH_BASE_FANTASTIC + faithRarityBonus('miracle') + serverBuffRarityBonus('fantastic') + masterworkRarityBonus('fantastic');
+    var fantasticChance = fantasticCraftChance();
     var supremeChance = FAITH_BASE_SUPREME + faithRarityBonus('blessing') + serverBuffRarityBonus('supreme') + masterworkRarityBonus('supreme');
     var rareChance = FAITH_BASE_RARE + faithRarityBonus('devotion') + masterworkRarityBonus('rare') + serverBuffRarityBonus('rare'); // Masterwork physique (per rarity) + server-wide Rarity Bonus
     var roll = Math.random();
@@ -10484,10 +10491,11 @@
   // ---- Mastercraft: legendary ring effects, crafting, and equip (they share the 5 ring slots) ----
   function countRareT20Rings(){ var n = 0; (typeof RING_TYPES !== 'undefined' ? RING_TYPES : []).forEach(function(rt){ n += state.inventory['ring_' + rt.id + '_t20_rare'] || 0; }); return n; }
   function consumeRareT20Rings(count){ RING_TYPES.forEach(function(rt){ if(count <= 0) return; var id = 'ring_' + rt.id + '_t20_rare'; var have = state.inventory[id] || 0; var take = Math.min(have, count); if(take > 0){ state.inventory[id] = have - take; count -= take; } }); }
-  // Masterwork Blueprint forge: base 5% fantastic / 10% supreme / 25% rare (else normal), each lifted by
-  // the Masterwork physique's PER-rarity bonus (chance-based, matching rollCraftRarity's structure).
+  // Masterwork Blueprint forge. FANTASTIC uses the SAME unified chance as every other craft (0.01% base +
+  // Miracle/Mastery/Server-buff), so a Fantastic is never easier to force here. Supreme (10%) and Rare
+  // (25%) keep their higher masterwork bases (each still lifted by the Masterwork physique).
   function rollMastercraftRarity(){
-    var fantasticChance = 0.05 + masterworkRarityBonus('fantastic');
+    var fantasticChance = fantasticCraftChance();
     var supremeChance = 0.10 + masterworkRarityBonus('supreme');
     var rareChance = 0.25 + masterworkRarityBonus('rare');
     var roll = Math.random();
@@ -11563,7 +11571,7 @@
     return {
       rare: FAITH_BASE_RARE + faithRarityBonus('devotion'),
       supreme: FAITH_BASE_SUPREME + faithRarityBonus('blessing'),
-      fantastic: FAITH_BASE_FANTASTIC + faithRarityBonus('miracle')
+      fantastic: fantasticCraftChance() // unified with every other craft: 0.01% base + Miracle/Mastery/Server-buff
     };
   }
   function rollRelicRarity(state){
@@ -27043,7 +27051,8 @@
     // Fantastic (Miracle) odds sit around 0.04%, so 2 decimals round adjacent tiers to the same value -- show
     // a thousandths place there so each tier's step (and its increase) is visible. Rare/Supreme are larger.
     var chanceDp = kind==='miracle' ? 3 : 2;
-    var html = '<div class="section-intro">Level '+lvl+' '+meta.label+' &mdash; while active, adds to the baseline '+(baseChance*100).toFixed(2)+'% chance any equipment you forge comes out '+rarityLabel+' (baseline applies at all times, Faith or not; running '+meta.label+' at its highest tier brings the total to 5x baseline). Only one Faith activity can run at a time.</div>';
+    var _maxMult = baseChance > 0 ? Math.round((baseChance + tiers[tiers.length-1].chance) / baseChance) : 1; // highest-tier total vs base (Miracle 6x, Devotion/Blessing 5x)
+    var html = '<div class="section-intro">Level '+lvl+' '+meta.label+' &mdash; while active, adds to the baseline '+(baseChance*100).toFixed(2)+'% chance any equipment you forge comes out '+rarityLabel+' (baseline applies at all times, Faith or not; running '+meta.label+' at its highest tier brings the total to '+_maxMult+'x baseline). Only one Faith activity can run at a time.</div>';
     html += renderSkillProgressBar(kind);
     html += renderFaithBar();
     html += '<div class="card-grid">';
@@ -34061,7 +34070,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.50.3';
+  var GAME_VERSION = '0.0.50.4';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -34210,7 +34219,7 @@
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS, estatePeonSources:estatePeonSources, peonGridFor:peonGridFor, estateScopeHasJob:estateScopeHasJob, estateJobActive:estateJobActive, estActiveIsGuild:function(){ return estIsGuild; }, guildEstateReachable:guildEstateReachable,
       GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, FARMING_PHYSIQUE:FARMING_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
-      physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, MASTERWORK_RARITY_CAP:MASTERWORK_RARITY_CAP, rollMastercraftRarity:rollMastercraftRarity, awardMasterworkXp:awardMasterworkXp, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
+      physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, MASTERWORK_RARITY_CAP:MASTERWORK_RARITY_CAP, rollMastercraftRarity:rollMastercraftRarity, fantasticCraftChance:fantasticCraftChance, relicRarityChances:relicRarityChances, FAITH_BASE_FANTASTIC:FAITH_BASE_FANTASTIC, awardMasterworkXp:awardMasterworkXp, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
       SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, PATCH_NOTES:PATCH_NOTES, renderPatchNotes:renderPatchNotes, TICKER_TIPS:TICKER_TIPS, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate, guildJobFromServer:guildJobFromServer,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,

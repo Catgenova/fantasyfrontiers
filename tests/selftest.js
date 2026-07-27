@@ -2134,21 +2134,48 @@
     S.faith = savedFaith;
   });
 
-  // ---- Masterwork forge rarity: base odds preserved, per-rarity bonus lifts them (rebalanced) ----
-  // Was a flat +15% to rare-or-better; now +5% rare / +1% supreme / +0.05% fantastic at Lv100, applied
-  // per rarity. rollMastercraftRarity keeps its 5%/10%/25% base (Lv1) and adds each rarity's bonus.
-  suite('masterwork forge rarity odds', function(){
-    var S = FF._state, saved = S.physique.masterwork, savedRandom = Math.random;
+  // ---- Fantastic chance: ONE unified formula across every craft (ordinary / relic / masterwork) ----
+  // Base 0.01%, lifted up to +0.05% each by a max-tier Miracle, the Lv100 Masterwork physique, and the
+  // server-wide Rarity Bonus. Supreme/Rare keep their own per-roll bases.
+  suite('fantastic chance: unified base + caps', function(){
+    var S = FF._state;
+    var sv = { rar:FF._serverBuff.rarityUntil, fa:S.faithActivity, mw:S.physique.masterwork, faith:S.faith };
     try {
-      S.physique.masterwork = 0; // Lv1 -> no bonus, pure base thresholds
-      Math.random = function(){ return 0.04; }; eq(FF.rollMastercraftRarity(), 'fantastic', 'roll 0.04 -> Fantastic (base 5%)');
-      Math.random = function(){ return 0.12; }; eq(FF.rollMastercraftRarity(), 'supreme',   'roll 0.12 -> Supreme (base to 15%)');
-      Math.random = function(){ return 0.30; }; eq(FF.rollMastercraftRarity(), 'rare',      'roll 0.30 -> Rare (base to 40%)');
-      Math.random = function(){ return 0.50; }; eq(FF.rollMastercraftRarity(), 'normal',    'roll 0.50 -> Normal');
-      S.physique.masterwork = FF.xpFloorForLevel(100); // Lv100 -> +0.0005 fantastic band
-      Math.random = function(){ return 0.0503; }; eq(FF.rollMastercraftRarity(), 'fantastic', 'Lv100 widens the Fantastic band to ~5.05%');
-      Math.random = function(){ return 0.0510; }; eq(FF.rollMastercraftRarity(), 'supreme',   'just past the widened Fantastic band -> Supreme');
-    } finally { Math.random = savedRandom; S.physique.masterwork = saved; }
+      S.faithActivity = { type:null, tier:0 }; FF._serverBuff.rarityUntil = 0; S.physique.masterwork = 0; S.faith = 0;
+      near(FF.fantasticCraftChance(), 0.0001, 'base Fantastic is 0.01% with no modifiers', 1e-9);
+      near(FF.FAITH_BASE_FANTASTIC, 0.0001, 'the base constant is 0.01%', 1e-12);
+      // Mastery (Lv100) adds +0.05%.
+      S.physique.masterwork = FF.xpFloorForLevel(100);
+      near(FF.fantasticCraftChance(), 0.0001 + 0.0005, 'Lv100 Mastery adds +0.05%', 1e-9);
+      S.physique.masterwork = 0;
+      // Server Rarity Bonus adds +0.05%.
+      FF._serverBuff.rarityUntil = Date.now() + 60000;
+      near(FF.fantasticCraftChance(), 0.0001 + 0.0005, 'the server Rarity Bonus adds +0.05%', 1e-9);
+      FF._serverBuff.rarityUntil = 0;
+      // Max-tier Miracle adds +0.05% (bumped from +0.04%).
+      S.faithActivity = { type:'miracle', tier:20 }; S.faith = 1e9;
+      near(FF.faithRarityBonus('miracle'), 0.0005, 'a max-tier Miracle caps its Fantastic bonus at +0.05%', 1e-9);
+      near(FF.fantasticCraftChance(), 0.0001 + 0.0005, 'Miracle lifts Fantastic to 0.06%', 1e-9);
+      // Relics read the SAME unified Fantastic chance (were previously base + Miracle only).
+      near(FF.relicRarityChances(S).fantastic, FF.fantasticCraftChance(), 'relics share the unified Fantastic chance', 1e-12);
+    } finally { FF._serverBuff.rarityUntil = sv.rar; S.faithActivity = sv.fa; S.physique.masterwork = sv.mw; S.faith = sv.faith; }
+  });
+
+  // ---- Masterwork forge rarity: Fantastic unified to 0.01%; Supreme 10% / Rare 25% bases kept ----
+  suite('masterwork forge rarity odds', function(){
+    var S = FF._state;
+    var sv = { mw:S.physique.masterwork, rand:Math.random, rar:FF._serverBuff.rarityUntil, fa:S.faithActivity, faith:S.faith };
+    try {
+      FF._serverBuff.rarityUntil = 0; S.faithActivity = { type:null, tier:0 }; S.faith = 0; // isolate: no server buff / Miracle
+      S.physique.masterwork = 0; // Lv1 -> Fantastic 0.01% base; Supreme 10% band; Rare 25% band
+      Math.random = function(){ return 0.00005; }; eq(FF.rollMastercraftRarity(), 'fantastic', 'roll < 0.0001 -> Fantastic (unified 0.01% base)');
+      Math.random = function(){ return 0.05; };    eq(FF.rollMastercraftRarity(), 'supreme',   'roll 0.05 -> Supreme (10% band)');
+      Math.random = function(){ return 0.20; };    eq(FF.rollMastercraftRarity(), 'rare',      'roll 0.20 -> Rare (25% band)');
+      Math.random = function(){ return 0.50; };    eq(FF.rollMastercraftRarity(), 'normal',    'roll 0.50 -> Normal');
+      S.physique.masterwork = FF.xpFloorForLevel(100); // Lv100 mastery lifts Fantastic to 0.06%
+      Math.random = function(){ return 0.0005; }; eq(FF.rollMastercraftRarity(), 'fantastic', 'Lv100 mastery lifts Fantastic to 0.06%');
+      Math.random = function(){ return 0.0007; }; eq(FF.rollMastercraftRarity(), 'supreme',   'just past the Fantastic band -> Supreme');
+    } finally { Math.random = sv.rand; S.physique.masterwork = sv.mw; FF._serverBuff.rarityUntil = sv.rar; S.faithActivity = sv.fa; S.faith = sv.faith; }
   });
 
   // ---- Resources reorg: Gathering / Refining / Cooking / Construction split + 70% gather success -----
