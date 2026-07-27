@@ -781,21 +781,34 @@
   // The flash now ignores guild plots when you belong to no guild (and mortalDeath drops them outright).
   suite('farming nav flash: guild plots gated on guild membership', function(){
     var s = FF._state;
-    var saved = { fp:s.farmingPlots, gfp:s.guildFarmingPlots, guild:FF.guildState.guild };
+    var saved = { fp:s.farmingPlots, gfp:s.guildFarmingPlots, guild:FF.guildState.guild, grid:s.estate.grid };
+    var readyCrop = function(){ return { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000 }; };
     try {
+      // A one-tile personal estate with a real Field at 0,0 (a crop there is genuinely harvestable).
+      s.estate.grid = [[{ type:'dirt', fieldTier:0, owned:true }]];
       s.farmingPlots = {};
-      s.guildFarmingPlots = { '0,0': { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000 } };
-      // In a guild: a ready guild crop flashes the Farming tab.
+      s.guildFarmingPlots = { '0,0': readyCrop() };
+      // In a guild: a ready guild crop flashes the Farming tab (guild grid not loaded in-test -> fallback path).
       FF.guildState.guild = { id:'g1', tag:'TST', name:'Testers' };
       eq(FF.railSubFlash('farming'), true, 'a ready guild crop flashes Farming while you are in a guild');
       // Out of a guild (a Mortal cast out on death, or a normal leave): the unreachable crop must NOT flash.
       FF.guildState.guild = null;
       eq(FF.railSubFlash('farming'), false, 'a ready guild crop no longer flashes once you have no guild');
-      // A personal-estate crop still flashes regardless of guild membership.
-      s.farmingPlots = { '0,0': { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000 } };
-      eq(FF.railSubFlash('farming'), true, 'a ready personal crop flashes Farming with no guild');
+      // A personal crop on a REAL Field tile flashes regardless of guild membership.
+      s.farmingPlots = { '0,0': readyCrop() };
+      eq(FF.railSubFlash('farming'), true, 'a ready personal crop on a real Field flashes Farming');
+      // ...but an ORPHANED plot (a ready crop whose tile is NOT a Field -- e.g. the "21/20" over-cap/desynced
+      // grid, or a removed Field) must NOT flash, since no harvestable card exists to clear it.
+      s.farmingPlots = { '9,9': readyCrop() };
+      eq(FF.railSubFlash('farming'), false, 'a ready crop with no backing Field does not flash (self-heals a stuck flash)');
+      // pruneOrphanFarmingPlots drops that orphan outright.
+      var removed = FF.pruneOrphanFarmingPlots(s.farmingPlots, s.estate.grid);
+      ok(removed && !s.farmingPlots['9,9'], 'pruneOrphanFarmingPlots removes a plot with no backing Field');
+      // A plot on a real Field is kept.
+      s.farmingPlots = { '0,0': readyCrop() };
+      ok(!FF.pruneOrphanFarmingPlots(s.farmingPlots, s.estate.grid) && s.farmingPlots['0,0'], 'pruneOrphanFarmingPlots keeps a plot on a real Field');
     } finally {
-      s.farmingPlots = saved.fp; s.guildFarmingPlots = saved.gfp; FF.guildState.guild = saved.guild;
+      s.farmingPlots = saved.fp; s.guildFarmingPlots = saved.gfp; FF.guildState.guild = saved.guild; s.estate.grid = saved.grid;
     }
   });
 

@@ -16679,6 +16679,7 @@
       addLog('Welcome to Fantasy Frontiers! Gather, craft, fight and grow to become a legend.');
     }
     recomputePlacedWorkshops(); // build the workshop-bonus cache from the loaded estate
+    pruneOrphanFarmingPlots(state.farmingPlots, state.estate && state.estate.grid); // clear personal plots with no backing Field (self-heal a stuck Farming flash)
     render();
     // Persist immediately after boot/offline-catch-up so the freshly credited items + updated
     // lastSaved reach Supabase right away -- a quick second refresh can't lose or re-run them.
@@ -16688,13 +16689,35 @@
   }
 
   // ================= RENDER: NAV =================
+  // Set of "x,y" keys that are actual Field tiles on an estate grid.
+  function gridFieldKeySet(grid){
+    var set = {}; if(!grid) return set;
+    for(var x=0;x<grid.length;x++){ var col=grid[x]; if(!col) continue; for(var y=0;y<col.length;y++){ var c=col[y]; if(c && c.fieldTier!=null) set[x+','+y]=true; } }
+    return set;
+  }
+  // Drop plot entries that no longer sit on a Field tile (its Field was removed, or a desynced/over-cap grid
+  // left the plot behind). Such an orphan can't render a harvestable card, so it would otherwise flash the
+  // Farming tab forever. Returns true if it removed anything.
+  function pruneOrphanFarmingPlots(map, grid){
+    if(!map) return false;
+    var fields = gridFieldKeySet(grid), removed = false;
+    Object.keys(map).forEach(function(k){ if(!fields[k]){ delete map[k]; removed = true; } });
+    return removed;
+  }
   function hasReadyFarmingPlot(){
     var now = Date.now();
     function anyReady(map){ if(!map) return false; return Object.keys(map).some(function(k){ var p = map[k]; return p && p.cropType && now >= p.readyAt; }); }
-    // Guild plots live on the guild estate -- once you're no longer in a guild (e.g. a Mortal cast out on
-    // death, or anyone who left) they're unreachable, so a lingering ready crop there must NOT keep the
-    // Farming tab flashing with no way to clear it. Only count guild plots while you belong to a guild.
-    return anyReady(state.farmingPlots) || (!!(guildState && guildState.guild) && anyReady(state.guildFarmingPlots));
+    // A ready crop only warrants a flash if its plot still sits on a REAL Field tile of a reachable estate.
+    // Otherwise an orphaned plot (its Field removed, or left behind by an over-cap/desynced grid) or a crop
+    // in a former guild's fields would flash the Farming tab forever with no harvestable card to clear it.
+    function anyReadyOnGrid(map, grid){ if(!map) return false; var fields = gridFieldKeySet(grid); return Object.keys(map).some(function(k){ var p = map[k]; return p && p.cropType && now >= p.readyAt && fields[k]; }); }
+    var personalReady = anyReadyOnGrid(state.farmingPlots, state.estate && state.estate.grid);
+    // Guild plots: check against the loaded guild grid when we have it; until it loads, fall back to the
+    // plain ready check (stale plots were already dropped on any guild change -- see syncGuildPlotsForGuild).
+    var inGuild = !!(guildState && guildState.guild);
+    var guildGridReady = inGuild && typeof guildEstate !== 'undefined' && guildEstate.status === 'ready' && guildEstate.grid;
+    var guildReady = inGuild && (guildGridReady ? anyReadyOnGrid(state.guildFarmingPlots, guildEstate.grid) : anyReady(state.guildFarmingPlots));
+    return personalReady || guildReady;
   }
   function railSubFlash(cat){ return (cat==='farming' && hasReadyFarmingPlot()) || (isQuestCategory(cat) && questClaimableInCat(cat)); } // draw attention when a plot is ready / a quest reward is claimable in that category
   // An area button flashes when ANY of its sub-views wants attention (so a claimable quest is visible from
@@ -29933,6 +29956,7 @@
     guildEstate.log = Array.isArray(data.log) ? data.log : [];
     guildEstate.version = version;
     guildEstate.status = 'ready';
+    pruneOrphanFarmingPlots(state.guildFarmingPlots, guildEstate.grid); // drop guild crops with no backing Field on the loaded grid (self-heal a stuck flash)
   }
   function guildEstateEnsure(){
     if(!chatClient || !guildState.guild || !authUser) return;
@@ -33860,7 +33884,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.48.15';
+  var GAME_VERSION = '0.0.48.16';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -33981,7 +34005,7 @@
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
-      QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash, syncGuildPlotsForGuild:syncGuildPlotsForGuild,
+      QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash, syncGuildPlotsForGuild:syncGuildPlotsForGuild, pruneOrphanFarmingPlots:pruneOrphanFarmingPlots,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile,
