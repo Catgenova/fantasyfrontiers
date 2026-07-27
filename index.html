@@ -3230,7 +3230,7 @@
     herbalism:'Sickle', botany:'Shears', foraging:'Basket', butchering:'Cleaver', beekeeping:'Bee Smoker', prospecting:'Pan', ranching:'Milking Pail', mycology:'Mushroom Knife', salvaging:'Magnet', essence:'Ley Rod', diving:'Diving Knife', tapping:'Tapping Spile', spelunking:'Climbing Pick'
   };
   var GATHER_TOOL_SPEED = [];
-  for(var _gi=0; _gi<TIER_COUNT; _gi++){ GATHER_TOOL_SPEED.push(tierCappedBonus(0.02, 0.013, 0.30, _gi)); }
+  for(var _gi=0; _gi<TIER_COUNT; _gi++){ GATHER_TOOL_SPEED.push(tierCappedBonus(0.01, 0.0065, 0.15, _gi)); } // halved (was 0.02/0.013/0.30)
   // Tools and stackable Equipment require the previous tier of that SAME item as an
   // extra crafting material (e.g. a Tin Pickaxe also needs a Copper Pickaxe) -- but only
   // a Normal-rarity previous tier counts; Rare/Supreme/Fantastic ones are never eligible.
@@ -3287,8 +3287,8 @@
   var CRAFT_TOOL_SPEED = [];
   var CRAFT_TOOL_SUCCESS = [];
   for(var _si=0; _si<TIER_COUNT; _si++){
-    CRAFT_TOOL_SPEED.push(tierCappedBonus(0.02, 0.017, 0.35, _si));
-    CRAFT_TOOL_SUCCESS.push(tierCappedBonus(0.03, 0.0135, 0.30, _si));
+    CRAFT_TOOL_SPEED.push(tierCappedBonus(0.01, 0.0085, 0.175, _si));   // halved (was 0.02/0.017/0.35)
+    CRAFT_TOOL_SUCCESS.push(tierCappedBonus(0.015, 0.00675, 0.15, _si)); // halved (was 0.03/0.0135/0.30)
   }
   function getCraftToolTierData(skillId, tier){
     var t = tier - 1;
@@ -8650,12 +8650,12 @@
     }
   }
   // Gathering tools raise the main-output SUCCESS rate purely by their tier -- rarity boosts a tool's
-  // SPEED only, never its success. A top-tier tool adds +25%, so a 70%-base gather reaches its 95% cap
-  // exactly at Tier 20 (the top tool tier), rather than maxing out several tiers early on a rare tool.
-  var GATHER_TOOL_SUCCESS_MAX = 0.25;
+  // SPEED only, never its success. A top-tier tool adds +12.5% (halved), scaling in linearly by tool tier
+  // up to Tier 20 (the top tool tier), rather than maxing out several tiers early on a rare tool.
+  var GATHER_TOOL_SUCCESS_MAX = 0.125; // halved (was 0.25)
   function gatherToolSuccessBonus(toolTier){
     if(!(toolTier > 0)) return 0;
-    return GATHER_TOOL_SUCCESS_MAX * Math.min(1, (toolTier - 1) / (TIER_COUNT - 1)); // +25% at the top tier
+    return GATHER_TOOL_SUCCESS_MAX * Math.min(1, (toolTier - 1) / (TIER_COUNT - 1)); // +12.5% at the top tier
   }
   var BASE_BUTCHER_CHANCE = 0.40;
   function butcherOutputChance(state, physiqueId){
@@ -11579,7 +11579,7 @@
     return 'normal';
   }
   // Archaeology's own success formula: base 10%, +10% max each from Focus and Critical
-  // Thinking, plus its own tool's success bonus (same 0.30 cap as every other crafting tool).
+  // Thinking, plus its own tool's success bonus (same 0.15 cap as every other crafting tool).
   var ARCHAEOLOGY_BASE_SUCCESS = 0.10;
   var ARCHAEOLOGY_PHYSIQUE_1 = 'focus';
   var ARCHAEOLOGY_PHYSIQUE_2 = 'criticalThinking';
@@ -34067,7 +34067,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.50.6';
+  var GAME_VERSION = '0.0.50.7';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
