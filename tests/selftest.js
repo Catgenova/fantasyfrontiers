@@ -915,8 +915,8 @@
 
   // ---- Workshop bonus % + upgrade chain (tier N consumes tier N-1) ----------------------
   suite('workshopBonusPct', function(){
-    near(FF.workshopBonusPct(0), 0.05, 'workshop tier 0 = 5%');
-    near(FF.workshopBonusPct(FF.TIER_COUNT - 1), 0.30, 'workshop top tier = 30%');
+    near(FF.workshopBonusPct(0), 0.025, 'workshop tier 0 = 2.5%');
+    near(FF.workshopBonusPct(FF.TIER_COUNT - 1), 0.15, 'workshop top tier = 15%');
     ok(FF.workshopBonusPct(10) > FF.workshopBonusPct(0), 'workshop bonus increases with tier');
   });
   suite('workshop upgrade chain', function(){
@@ -1593,8 +1593,8 @@
     var d = FF.getWorkshopTierData('fishing', 3);
     ok(d.inputs['carpentry_t3'] > 0, 'gathering workshop needs planks');
     eq(d.inputs['workshop_fishing_t2'], 1, 'gathering workshop consumes the previous tier');
-    near(FF.workshopBonusPct(0), 0.05, 'gathering workshop t0 = 5%');
-    near(FF.workshopBonusPct(FF.TIER_COUNT - 1), 0.30, 'gathering workshop top tier = 30%');
+    near(FF.workshopBonusPct(0), 0.025, 'gathering workshop t0 = 2.5%');
+    near(FF.workshopBonusPct(FF.TIER_COUNT - 1), 0.15, 'gathering workshop top tier = 15%');
   });
 
   // ---- Workshop buff shows on the action page's skill bar (bug ticket-0038) --------------
@@ -1602,10 +1602,10 @@
     ok(typeof FF.skillWorkshopBuffLabel === 'function', 'skillWorkshopBuffLabel exported');
     // Pure label: hidden with no bonus; shows both speed and double-output when a Workshop is placed.
     eq(FF.skillWorkshopBuffLabel(0, 0), '', 'no Workshop -> no buff label');
-    var lbl = FF.skillWorkshopBuffLabel(0.37, 0.37); // e.g. a 22% personal + 15% guild mining Workshop
-    ok(/Workshop \+37% speed/.test(lbl), 'label shows the stacked speed bonus');
-    ok(/\+37% double output/.test(lbl), 'label shows the stacked double-output chance');
-    ok(/Workshop \+30% speed, \+30% double output/.test(FF.skillWorkshopBuffLabel(0.30, 0.30)), 'top-tier single Workshop reads +30%/+30%');
+    var lbl = FF.skillWorkshopBuffLabel(0.30, 0.30); // top-tier personal (15%) + guild (15%) mining Workshop
+    ok(/Workshop \+30% speed/.test(lbl), 'label shows the stacked speed bonus');
+    ok(/\+30% double output/.test(lbl), 'label shows the stacked double-output chance');
+    ok(/Workshop \+15% speed, \+15% double output/.test(FF.skillWorkshopBuffLabel(0.15, 0.15)), 'top-tier single Workshop reads +15%/+15%');
     // End to end: placing a Workshop makes the buff appear on renderSkillProgressBar for that skill,
     // and skills without one stay clean.
     var s = FF._state, svEstate = s.estate;
