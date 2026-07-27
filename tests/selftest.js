@@ -2118,7 +2118,10 @@
     ok(Math.abs(FF.wardersFocusReflectBonus() - 0.15) < 1e-6, 'Warder\'s Focus +15% reflect at Lv100');
     ok(Math.abs(FF.greenThumbGrowthMult() - 0.85) < 1e-6, 'Green Thumb -15% growth time at Lv100');
     ok(Math.abs(FF.huntsmanOutputBonus() - 0.12) < 1e-6, 'Huntsman +12% butcher output at Lv100');
-    ok(Math.abs(FF.masterworkRarityBonus() - 0.15) < 1e-6, 'Masterwork +15% rare odds at Lv100');
+    ok(Math.abs(FF.masterworkRarityBonus('rare') - 0.05) < 1e-6, 'Masterwork +5% rare odds at Lv100');
+    ok(Math.abs(FF.masterworkRarityBonus('supreme') - 0.01) < 1e-6, 'Masterwork +1% supreme odds at Lv100');
+    ok(Math.abs(FF.masterworkRarityBonus('fantastic') - 0.0005) < 1e-6, 'Masterwork +0.05% fantastic odds at Lv100');
+    ok(FF.masterworkRarityBonus('rare') > 0 && FF.masterworkRarityBonus('normal') === 0, 'Masterwork bonus is per-rarity (nothing for normal)');
     ok(Math.abs(FF.sylvanBondCacheBonus() - 0.05) < 1e-6, 'Sylvan Bond +5% cache at Lv100');
     ok(Math.abs(FF.physBonus('anglersEye', 0.3) - 0.3) < 1e-6, 'physBonus reaches its cap at Lv100');
     // Zealotry scales with current Faith fraction.
@@ -2129,6 +2132,23 @@
     // restore
     NEW.forEach(function(id){ S.physique[id] = saved[id]; });
     S.faith = savedFaith;
+  });
+
+  // ---- Masterwork forge rarity: base odds preserved, per-rarity bonus lifts them (rebalanced) ----
+  // Was a flat +15% to rare-or-better; now +5% rare / +1% supreme / +0.05% fantastic at Lv100, applied
+  // per rarity. rollMastercraftRarity keeps its 5%/10%/25% base (Lv1) and adds each rarity's bonus.
+  suite('masterwork forge rarity odds', function(){
+    var S = FF._state, saved = S.physique.masterwork, savedRandom = Math.random;
+    try {
+      S.physique.masterwork = 0; // Lv1 -> no bonus, pure base thresholds
+      Math.random = function(){ return 0.04; }; eq(FF.rollMastercraftRarity(), 'fantastic', 'roll 0.04 -> Fantastic (base 5%)');
+      Math.random = function(){ return 0.12; }; eq(FF.rollMastercraftRarity(), 'supreme',   'roll 0.12 -> Supreme (base to 15%)');
+      Math.random = function(){ return 0.30; }; eq(FF.rollMastercraftRarity(), 'rare',      'roll 0.30 -> Rare (base to 40%)');
+      Math.random = function(){ return 0.50; }; eq(FF.rollMastercraftRarity(), 'normal',    'roll 0.50 -> Normal');
+      S.physique.masterwork = FF.xpFloorForLevel(100); // Lv100 -> +0.0005 fantastic band
+      Math.random = function(){ return 0.0503; }; eq(FF.rollMastercraftRarity(), 'fantastic', 'Lv100 widens the Fantastic band to ~5.05%');
+      Math.random = function(){ return 0.0510; }; eq(FF.rollMastercraftRarity(), 'supreme',   'just past the widened Fantastic band -> Supreme');
+    } finally { Math.random = savedRandom; S.physique.masterwork = saved; }
   });
 
   // ---- Resources reorg: Gathering / Refining / Cooking / Construction split + 70% gather success -----

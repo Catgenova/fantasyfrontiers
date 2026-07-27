@@ -4277,9 +4277,9 @@
   }
   function rollCraftRarity(state, tierIndex){
     if(rarityRollDisabledForTier(tierIndex, state)) return 'normal'; // player disabled rarity rolls for this tier band
-    var fantasticChance = FAITH_BASE_FANTASTIC + faithRarityBonus('miracle') + serverBuffRarityBonus('fantastic');
-    var supremeChance = FAITH_BASE_SUPREME + faithRarityBonus('blessing') + serverBuffRarityBonus('supreme');
-    var rareChance = FAITH_BASE_RARE + faithRarityBonus('devotion') + masterworkRarityBonus() + serverBuffRarityBonus('rare'); // Masterwork physique + server-wide Rarity Bonus lift rare-or-better odds
+    var fantasticChance = FAITH_BASE_FANTASTIC + faithRarityBonus('miracle') + serverBuffRarityBonus('fantastic') + masterworkRarityBonus('fantastic');
+    var supremeChance = FAITH_BASE_SUPREME + faithRarityBonus('blessing') + serverBuffRarityBonus('supreme') + masterworkRarityBonus('supreme');
+    var rareChance = FAITH_BASE_RARE + faithRarityBonus('devotion') + masterworkRarityBonus('rare') + serverBuffRarityBonus('rare'); // Masterwork physique (per rarity) + server-wide Rarity Bonus
     var roll = Math.random();
     if(roll < fantasticChance) return 'fantastic';
     if(roll < fantasticChance + supremeChance) return 'supreme';
@@ -10477,7 +10477,18 @@
   // ---- Mastercraft: legendary ring effects, crafting, and equip (they share the 5 ring slots) ----
   function countRareT20Rings(){ var n = 0; (typeof RING_TYPES !== 'undefined' ? RING_TYPES : []).forEach(function(rt){ n += state.inventory['ring_' + rt.id + '_t20_rare'] || 0; }); return n; }
   function consumeRareT20Rings(count){ RING_TYPES.forEach(function(rt){ if(count <= 0) return; var id = 'ring_' + rt.id + '_t20_rare'; var have = state.inventory[id] || 0; var take = Math.min(have, count); if(take > 0){ state.inventory[id] = have - take; count -= take; } }); }
-  function rollMastercraftRarity(){ var r = Math.random() + masterworkRarityBonus(); if(r >= 0.95) return 'fantastic'; if(r >= 0.85) return 'supreme'; if(r >= 0.60) return 'rare'; return 'normal'; }
+  // Masterwork Blueprint forge: base 5% fantastic / 10% supreme / 25% rare (else normal), each lifted by
+  // the Masterwork physique's PER-rarity bonus (chance-based, matching rollCraftRarity's structure).
+  function rollMastercraftRarity(){
+    var fantasticChance = 0.05 + masterworkRarityBonus('fantastic');
+    var supremeChance = 0.10 + masterworkRarityBonus('supreme');
+    var rareChance = 0.25 + masterworkRarityBonus('rare');
+    var roll = Math.random();
+    if(roll < fantasticChance) return 'fantastic';
+    if(roll < fantasticChance + supremeChance) return 'supreme';
+    if(roll < fantasticChance + supremeChance + rareChance) return 'rare';
+    return 'normal';
+  }
   // Sum of a legendary ring effect across equipped ring slots (one-of-each keeps this to one, but it's additive-safe).
   function legendaryRingBonus(effectKey, st){ st = st || state; var sum = 0, def = D1_LEG_RING_MAP[effectKey]; if(!def || !st.jewelrySlots) return 0; RING_SLOT_IDS.forEach(function(sid){ var s = st.jewelrySlots[sid]; if(s && s.leg === effectKey) sum += def.base * (LEGENDARY_RARITY_MULT[s.rarity] || 1); }); return sum; }
   function legRingEquipped(effectKey, st){ st = st || state; if(!st.jewelrySlots) return false; return RING_SLOT_IDS.some(function(sid){ var s = st.jewelrySlots[sid]; return s && s.leg === effectKey; }); }
@@ -11641,7 +11652,10 @@
   function huntsmanOutputBonus(){ return physBonus('huntsman', 0.12); }                // +butcher recovery chance
   function quartermasterRefund(){ return Math.random() < physBonus('quartermaster', 0.15); } // refund one input
   function diligenceCraftXpMult(){ return 1 + physBonus('diligence', 0.15); }          // +craft XP
-  function masterworkRarityBonus(){ return physBonus('masterwork', 0.15); }            // +rare-or-better odds
+  // Masterwork physique lifts item-rarity odds PER rarity, scaling 0 at Lv1 -> these caps at Lv100:
+  // +5% rare, +1% supreme, +0.05% fantastic. (Was a flat +15% to rare-or-better -- far too strong.)
+  var MASTERWORK_RARITY_CAP = { rare: 0.05, supreme: 0.01, fantastic: 0.0005 };
+  function masterworkRarityBonus(rarityId){ return physBonus('masterwork', MASTERWORK_RARITY_CAP[rarityId] || 0); }
   function anglersEyeTreasureBonus(){ return physBonus('anglersEye', 0.15); }          // +fishing treasure chance
   function sylvanBondCacheBonus(){ return physBonus('sylvanBond', 0.05); }             // +critter cache chance
   // Crafting
@@ -34040,7 +34054,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.50.1';
+  var GAME_VERSION = '0.0.50.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -34189,7 +34203,7 @@
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS, estatePeonSources:estatePeonSources, peonGridFor:peonGridFor, estateScopeHasJob:estateScopeHasJob, estateJobActive:estateJobActive, estActiveIsGuild:function(){ return estIsGuild; }, guildEstateReachable:guildEstateReachable,
       GATHER_PHYSIQUE:GATHER_PHYSIQUE, CRAFT_PHYSIQUE:CRAFT_PHYSIQUE, FARMING_PHYSIQUE:FARMING_PHYSIQUE, physiqueTrainedBySkill:physiqueTrainedBySkill, physiqueBenefitsForSkill:physiqueBenefitsForSkill,
-      physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, awardMasterworkXp:awardMasterworkXp, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
+      physBonus:physBonus, merchantSellMult:merchantSellMult, merchantTaxMult:merchantTaxMult, weaponsmithEdgeMult:weaponsmithEdgeMult, armorerTemperMult:armorerTemperMult, runicAttunementMult:runicAttunementMult, zealotryDmgMult:zealotryDmgMult, menageristPotencyMult:menageristPotencyMult, fieldRationsDurationMult:fieldRationsDurationMult, apothecaryExtraCharges:apothecaryExtraCharges, demolitionistMult:demolitionistMult, wardersFocusReflectBonus:wardersFocusReflectBonus, greenThumbGrowthMult:greenThumbGrowthMult, huntsmanOutputBonus:huntsmanOutputBonus, diligenceCraftXpMult:diligenceCraftXpMult, masterworkRarityBonus:masterworkRarityBonus, MASTERWORK_RARITY_CAP:MASTERWORK_RARITY_CAP, rollMastercraftRarity:rollMastercraftRarity, awardMasterworkXp:awardMasterworkXp, anglersEyeTreasureBonus:anglersEyeTreasureBonus, sylvanBondCacheBonus:sylvanBondCacheBonus,
       SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, PATCH_NOTES:PATCH_NOTES, renderPatchNotes:renderPatchNotes, TICKER_TIPS:TICKER_TIPS, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate, guildJobFromServer:guildJobFromServer,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
