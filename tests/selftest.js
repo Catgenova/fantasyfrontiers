@@ -6042,8 +6042,8 @@
       near(FF.d3SetDmgMult({}, s), 1.15, 'Quickdraw Grave Toxin: +15% vs a Decayed foe');
       s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Grave Toxin inert on a clean foe');
       wearFull('assassin'); s.activity = { type:'combat', monsterHp:500, decayStacks:3, decayUntil:now+4000 };
-      near(FF.d3SetCritDmgBonus(s), 0.30, 'Assassin Death Mark: +30% crit damage vs a Decayed foe');
-      s.activity.decayUntil = now-1; near(FF.d3SetCritDmgBonus(s), 0, 'Death Mark inert on a clean foe');
+      near(FF.d3SetDmgMult({}, s), 1.30, 'Assassin Death Mark: +30% damage vs a Decayed foe');
+      s.activity.decayUntil = now-1; near(FF.d3SetDmgMult({}, s), 1.0, 'Death Mark inert on a clean foe');
       wearFull('sentinel'); s.activity = { type:'combat', monsterHp:500, decayStacks:3, decayUntil:now+4000 };
       near(FF.d3SetIncomingMult(s), 0.80, 'Sentinel Crypt Wall: Decayed foes deal 20% less');
       s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetIncomingMult(s), 1.0, 'Crypt Wall inert on a clean foe');
@@ -6539,7 +6539,7 @@
       s.playerHp = FF.maxHp(s); s.activity = { type:'combat', monsterHp:500 };
       // DoT-tick multipliers.
       wearD2('plaguebearer', 2); near(FF.d2PoisonTickMult(s), 1.40, 'Plaguebearer Virulence: +40% poison ticks');
-      wearD2('assassin', 2);     near(FF.d2BleedTickMult(s), 1.50, 'Assassin Exsanguinate: +50% bleed ticks');
+      wearD2('assassin', 2);     near(FF.d2BleedTickMult(s), 1.0, 'Assassin D2 2pc no longer boosts bleed (now Armor Debuff)'); eq(FF.assassinArmorMaxStacks(s), 8, 'Assassin D2 2pc (Shredder): +3 max Armor Debuff stacks -> 8');
       wearD2('pyromancer', 2);   near(FF.d2BurnTickMult(s), 1.40, 'Pyromancer Conflagration: +40% burn ticks');
       wearD2('ranger', 2);       near(FF.rangerAilmentDmgMult(s), 1.25, 'Ranger Barbed Ailments: +25% ailment ticks');
       // Barbed Ailments compounds with a class DoT bonus (e.g. poison) when both sets are... single-set only,
@@ -6552,10 +6552,10 @@
       wearD2('ranger', 4); ok(FF.enemyHasAilment(s), 'a poisoned foe counts as ailing');
       near(FF.d2SetDmgMult({hp:1000}, s), 1.15, "Ranger Hunter's Mark: +15% vs an ailing foe");
       s.activity = { type:'combat', monsterHp:500 }; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, "Hunter's Mark inert on a clean foe");
-      // First Blood (Assassin full): +40% on a full-HP foe only.
+      // Deep Wounds (Assassin D2 full): Armor Debuff lasts 2x (8s); 2pc Shredder still adds +3 max stacks.
       wearD2('assassin', 4); s.activity = { type:'combat', monsterHp:1000 };
-      near(FF.d2SetDmgMult({hp:1000}, s), 1.40, 'Assassin First Blood: +40% on a full-HP foe');
-      s.activity.monsterHp = 500; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, 'First Blood inert once the foe is hurt');
+      eq(FF.assassinArmorMaxStacks(s), 8, 'Assassin D2 full still carries the +3 max stacks');
+      near(FF.assassinArmorDurationMs(s), 8000, 'Assassin D2 full (Deep Wounds): Armor Debuff lasts 2x (8s)');
       // Iaijutsu Mastery (Samurai 2pc): +50% on the opening strike (samuraiFirstStrike flag).
       wearD2('samurai', 2); s.activity = { type:'combat', monsterHp:500, samuraiFirstStrike:true };
       near(FF.d2SetDmgMult({hp:1000}, s), 1.50, 'Samurai Iaijutsu Mastery: +50% opening strike');
@@ -10750,24 +10750,28 @@
     var lv20 = base(); lv20.xp.assassin = FF.xpFloorForLevel(21);
     near(FF.offhandClawAttackIntervalMs(lv20), Math.max(200, FF.playerAttackIntervalMs(lv20)), 'Lv20 Ambidexterity: off-hand swings at main-hand speed', 1);
 
-    // Lv 40 Lacerate: each claw hit stacks a Bleed (cap 5) on the shared Bleed channel.
-    var lact = { type:'combat', bleedUntil:0 };
+    // Lv 40 Lacerate: each claw hit builds an Armor Debuff stack (cap 5).
+    var lact = { type:'combat', armorDebuffUntil:0 };
     FF.assassinApplyLacerate(lact); FF.assassinApplyLacerate(lact);
-    eq(lact.bleedStacks, 2, 'Lacerate: two hits -> 2 Bleed stacks');
+    eq(lact.armorDebuffStacks, 2, 'Lacerate: two hits -> 2 Armor Debuff stacks');
     for(var _li=0; _li<10; _li++) FF.assassinApplyLacerate(lact);
-    eq(lact.bleedStacks, FF.ASSASSIN_BLEED_MAX, 'Lacerate caps at 5 stacks');
-    ok(lact.bleedUntil > Date.now(), 'Lacerate refreshes the Bleed duration');
-    var vact = { type:'combat', bleedUntil:0, bleedStacks:0 };
+    eq(lact.armorDebuffStacks, FF.ASSASSIN_ARMOR_MAX, 'Lacerate caps at 5 stacks (no set)');
+    ok(lact.armorDebuffUntil > Date.now(), 'Lacerate refreshes the debuff duration');
+    var vact = { type:'combat', armorDebuffUntil:0, armorDebuffStacks:0 };
     FF.assassinLacerateMaxStacks(vact);
-    eq(vact.bleedStacks, FF.ASSASSIN_BLEED_MAX, 'Vanish slams full Lacerate stacks at once');
+    eq(vact.armorDebuffStacks, FF.ASSASSIN_ARMOR_MAX, 'Vanish slams MAX Armor Debuff stacks at once');
 
-    // Lv 60 Hemorrhage: a crit vs a Bleeding foe deals +50%.
-    var hBleed = leveled(); hBleed.activity = { type:'combat', bleedUntil:Date.now()+3000, bleedStacks:3 };
-    near(FF.assassinHemorrhageCritMult(hBleed), 1.5, 'Hemorrhage: +50% vs a Bleeding foe (Lv60+)');
-    var hClean = leveled(); hClean.activity = { type:'combat', bleedUntil:0, bleedStacks:0 };
-    eq(FF.assassinHemorrhageCritMult(hClean), 1, 'Hemorrhage neutral vs an unbled foe');
-    var h40 = base(); h40.xp.assassin = FF.xpFloorForLevel(41); h40.activity = { type:'combat', bleedUntil:Date.now()+3000, bleedStacks:3 };
+    // Lv 60 Hemorrhage: crits deal +25% damage per Armor Debuff stack.
+    var hStk = leveled(); hStk.activity = { type:'combat', armorDebuffUntil:Date.now()+3000, armorDebuffStacks:4 };
+    near(FF.assassinHemorrhageCritMult(hStk), 1 + 0.25*4, 'Hemorrhage: +25% crit dmg per stack (4 -> x2.0)');
+    var hClean = leveled(); hClean.activity = { type:'combat', armorDebuffUntil:0, armorDebuffStacks:0 };
+    eq(FF.assassinHemorrhageCritMult(hClean), 1, 'Hemorrhage neutral with no Armor Debuff');
+    var h40 = base(); h40.xp.assassin = FF.xpFloorForLevel(41); h40.activity = { type:'combat', armorDebuffUntil:Date.now()+3000, armorDebuffStacks:3 };
     eq(FF.assassinHemorrhageCritMult(h40), 1, 'Hemorrhage inactive below Lv60');
+    // Lacerate armour shred: each stack ignores 6% of the foe's armour (30% at 5 stacks).
+    var shr = leveled(); shr.activity = { type:'combat', armorDebuffUntil:Date.now()+3000, armorDebuffStacks:5 };
+    near(FF.assassinArmorShred(shr), 0.30, 'Lacerate: 5 stacks ignore 30% of the foe armour', 1e-9);
+    shr.activity.armorDebuffStacks = 1; near(FF.assassinArmorShred(shr), 0.06, 'Lacerate: one stack ignores 6%', 1e-9);
 
     // Lv 80 Vanish: 4s untouched empowers the next strike (+100%).
     eq(FF.ASSASSIN_VANISH_MULT, 2, 'Vanish empowers the next strike x2');
