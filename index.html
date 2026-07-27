@@ -28582,6 +28582,37 @@
     if(!snap) return;
     for(var k in snap){ var d = document.getElementById(k); if(d) d.open = true; }
   }
+  // A full #content rebuild recreates every <input>/<textarea> from the HTML string, so a value the player
+  // had TYPED but not yet committed (a market sell qty/price, a guild-bank deposit amount, a search box)
+  // was silently wiped by any render that fired after they clicked away -- the reported "my fields clear if
+  // I click anywhere but a field or Confirm". Carry text entry (+ focus/caret) across the swap by id, the
+  // same way detailsSnapshot carries <details>. Checkbox/radio/button/file reflect state, not typed text,
+  // so they're skipped. NON_ENTRY types are display-only.
+  function inputSnapshot(root){
+    var out = null, els = (root || document).querySelectorAll('input[id], textarea[id]');
+    var active = document.activeElement;
+    for(var i = 0; i < els.length; i++){
+      var el = els[i], t = (el.type || '').toLowerCase();
+      if(el.tagName === 'INPUT' && (t === 'checkbox' || t === 'radio' || t === 'button' || t === 'submit' || t === 'file' || t === 'range')) continue;
+      var rec = { v: el.value, focused: el === active };
+      if(rec.focused){ try { rec.s0 = el.selectionStart; rec.s1 = el.selectionEnd; } catch(e){} }
+      (out = out || {})[el.id] = rec;
+    }
+    return out;
+  }
+  function inputRestore(snap){
+    if(!snap) return;
+    for(var k in snap){
+      var el = document.getElementById(k); if(!el) continue;
+      var rec = snap[k];
+      // Only restore a user's in-progress entry the rebuild WIPED (field came back empty but had text), or a
+      // field they were actively editing. Never clobber a value the render deliberately baked in.
+      if((el.value === '' && rec.v !== '') || rec.focused){
+        if(el.value !== rec.v) el.value = rec.v;
+        if(rec.focused){ try { el.focus(); if(rec.s0 != null && el.setSelectionRange){ el.setSelectionRange(rec.s0, rec.s1); } } catch(e){} }
+      }
+    }
+  }
   // For feeds destroyed by a full #content rebuild: snapshot BEFORE the swap, restore after.
   function feedSnapshot(id){ var el = document.getElementById(id); return el ? { stick: feedAtBottom(el), top: el.scrollTop } : null; }
   function feedRestore(id, snap){
@@ -30797,9 +30828,11 @@
       // Only when we really are replacing: carry the reader's place across the swap.
       var _chatSnap = feedSnapshot('chatMessages'), _chronSnap = feedSnapshot('chronicleFeed');
       var _detSnap = detailsSnapshot(_contentEl);
+      var _inpSnap = inputSnapshot(_contentEl);   // preserve in-progress text entry (+ focus/caret) across the rebuild
       _contentEl.innerHTML = html;
       _lastContentHtml = html;
       detailsRestore(_detSnap);   // re-open any collapsible the player had expanded
+      inputRestore(_inpSnap);     // restore a typed-but-uncommitted field the rebuild would otherwise wipe
       if(currentCategory==='chat'){ feedRestore('chatMessages', _chatSnap); feedRestore('chronicleFeed', _chronSnap); }
     }
     // Canvas-backed views redraw REGARDLESS: their pixels aren't part of the HTML string, so identical
@@ -33960,7 +33993,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.49.1';
+  var GAME_VERSION = '0.0.49.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -34081,7 +34114,7 @@
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, FORGE_LIVE_CATEGORIES:FORGE_LIVE_CATEGORIES, CRAFT_RECIPE_LIVE_CATEGORIES:CRAFT_RECIPE_LIVE_CATEGORIES, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
-      QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash, syncGuildPlotsForGuild:syncGuildPlotsForGuild, pruneOrphanFarmingPlots:pruneOrphanFarmingPlots,
+      QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash, syncGuildPlotsForGuild:syncGuildPlotsForGuild, pruneOrphanFarmingPlots:pruneOrphanFarmingPlots, inputSnapshot:inputSnapshot, inputRestore:inputRestore,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile,

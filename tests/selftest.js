@@ -7119,6 +7119,29 @@
   // ---- Quests: own area, Getting Started category, accordion + complete/claim/flash flow ----
   // ---- The Tower: floors, rotation, scaling, rewards, progress ----
   // ---- Tower quests + Titles system (equip, browser, how-to) ----
+  // ---- UI: a typed-but-uncommitted input survives a #content rebuild ----
+  // Reported: "my fields clear if I click anywhere but a field or Confirm." A full render() rebuilds
+  // #content from an HTML string, recreating every input empty and wiping a value the player had typed
+  // (a market sell qty, a guild-bank deposit amount). render() now snapshots/restores in-progress entry.
+  suite('ui: typed input survives a content rebuild', function(){
+    var host = document.createElement('div');
+    host.id = '__inpTestHost';
+    host.innerHTML = '<input id="__t_qty" type="number" value=""><input id="__t_bound" type="number" value="42">';
+    document.body.appendChild(host);
+    try {
+      var qty = document.getElementById('__t_qty');
+      qty.value = '203';                        // the player typed a quantity
+      var snap = FF.inputSnapshot(host);
+      // The rebuild recreates the same markup: the entry field comes back EMPTY; a state-bound field is re-baked to a NEW value.
+      host.innerHTML = '<input id="__t_qty" type="number" value=""><input id="__t_bound" type="number" value="99">';
+      FF.inputRestore(snap);
+      eq(document.getElementById('__t_qty').value, '203', 'a typed entry field is restored after the rebuild');
+      eq(document.getElementById('__t_bound').value, '99', 'a render-populated field keeps its NEW value, not the stale snapshot');
+    } finally {
+      document.body.removeChild(host);
+    }
+  });
+
   // ---- Perf: the per-recipe live-update loop is gated to craft tabs, not Inventory/Sacrifice ----
   // Root cause of the Inventory/Sacrifice stutter: updateDynamic ran a querySelector PER recipe (an
   // O(DOM-size) scan) on EVERY tab, so the huge Inventory/Sacrifice DOMs were scanned hundreds of times a
