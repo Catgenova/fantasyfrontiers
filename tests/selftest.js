@@ -10875,6 +10875,22 @@
     }
   });
 
+  // ---- Familiar Haste is capped so it can never push attack speed past 200% (2x = interval halved) ----
+  suite('familiar haste caps attack speed at 200%', function(){
+    var S = FF._state, saved = S.familiarBuffs;
+    try {
+      S.familiarBuffs = { hasteVal: 0, hasteUntil: 0 };
+      var base = FF.playerAttackIntervalMs(S);
+      S.familiarBuffs = { hasteVal: 0.5, hasteUntil: Date.now() + 60000 };
+      var at2x = FF.playerAttackIntervalMs(S);
+      S.familiarBuffs = { hasteVal: 5.0, hasteUntil: Date.now() + 60000 }; // way over the cap
+      var over = FF.playerAttackIntervalMs(S);
+      ok(at2x < base, 'familiar Haste still speeds up the attack timer');
+      near(over, at2x, 'Haste beyond the cap is clamped -> never faster than 200%', 1e-6);
+      if(base * 0.5 > 200) near(at2x, base * 0.5, 'a 0.5 Haste value halves the interval (exactly 200% attack speed)', 1);
+    } finally { S.familiarBuffs = saved; }
+  });
+
   // ---- Warding proficiency (extra reflection from reflected-damage XP) ------------------
   suite('warding proficiency', function(){
     eq(FF.WARDING_SKILL_ID, 'warding', 'warding skill id');
