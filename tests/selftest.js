@@ -775,6 +775,30 @@
     s.physique.composter = saved.comp; s.inventory['farming_t0'] = saved.crop0;
   });
 
+  // ---- Farming nav flash: guild-plot readiness only draws attention while you're IN a guild ----
+  // Reported: a Mortal cast out of their guild on death (or anyone who left) kept a ready crop standing in
+  // the guild fields, so the Farming tab flashed forever with no reachable way to harvest and clear it.
+  // The flash now ignores guild plots when you belong to no guild (and mortalDeath drops them outright).
+  suite('farming nav flash: guild plots gated on guild membership', function(){
+    var s = FF._state;
+    var saved = { fp:s.farmingPlots, gfp:s.guildFarmingPlots, guild:FF.guildState.guild };
+    try {
+      s.farmingPlots = {};
+      s.guildFarmingPlots = { '0,0': { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000 } };
+      // In a guild: a ready guild crop flashes the Farming tab.
+      FF.guildState.guild = { id:'g1', tag:'TST', name:'Testers' };
+      eq(FF.railSubFlash('farming'), true, 'a ready guild crop flashes Farming while you are in a guild');
+      // Out of a guild (a Mortal cast out on death, or a normal leave): the unreachable crop must NOT flash.
+      FF.guildState.guild = null;
+      eq(FF.railSubFlash('farming'), false, 'a ready guild crop no longer flashes once you have no guild');
+      // A personal-estate crop still flashes regardless of guild membership.
+      s.farmingPlots = { '0,0': { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-600000, readyAt:Date.now()-1000 } };
+      eq(FF.railSubFlash('farming'), true, 'a ready personal crop flashes Farming with no guild');
+    } finally {
+      s.farmingPlots = saved.fp; s.guildFarmingPlots = saved.gfp; FF.guildState.guild = saved.guild;
+    }
+  });
+
   // ---- Farming: the Auto-plant seed filter (crop-type toggles + a Custom per-seed override) ----
   suite('farming: auto-plant seed filter', function(){
     var s = FF._state;

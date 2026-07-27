@@ -15750,6 +15750,9 @@
         }
       }
     }catch(e){}
+    // Abandon any crops standing in the (now former) guild's fields -- cast out of the guild, the player can
+    // never reach them again, so clearing them stops the Farming tab flashing forever with nothing to claim.
+    state.guildFarmingPlots = {};
     saveGame();
     profileSync(true); // republish the profile as Immortal so the leaderboard drops the mortal styling
   }
@@ -16688,7 +16691,10 @@
   function hasReadyFarmingPlot(){
     var now = Date.now();
     function anyReady(map){ if(!map) return false; return Object.keys(map).some(function(k){ var p = map[k]; return p && p.cropType && now >= p.readyAt; }); }
-    return anyReady(state.farmingPlots) || anyReady(state.guildFarmingPlots);
+    // Guild plots live on the guild estate -- once you're no longer in a guild (e.g. a Mortal cast out on
+    // death, or anyone who left) they're unreachable, so a lingering ready crop there must NOT keep the
+    // Farming tab flashing with no way to clear it. Only count guild plots while you belong to a guild.
+    return anyReady(state.farmingPlots) || (!!(guildState && guildState.guild) && anyReady(state.guildFarmingPlots));
   }
   function railSubFlash(cat){ return (cat==='farming' && hasReadyFarmingPlot()) || (isQuestCategory(cat) && questClaimableInCat(cat)); } // draw attention when a plot is ready / a quest reward is claimable in that category
   // An area button flashes when ANY of its sub-views wants attention (so a claimable quest is visible from
@@ -33842,7 +33848,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.48.13';
+  var GAME_VERSION = '0.0.48.14';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
