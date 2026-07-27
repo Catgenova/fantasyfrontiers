@@ -7249,6 +7249,23 @@
     eq(FF.craftBodyRarity(fan), 'fantastic', 'other clients classify the Fantastic masterwork blast as fantastic');
   });
 
+  // ---- Chat blasts: normal crafts no longer announce Supreme; masterwork still does ----
+  suite('chat blasts: normal Supreme crafts are no longer announced', function(){
+    // Normal crafts: only Fantastic blasts to global chat; Rare/Fantastic reach the chronicle feed; Supreme
+    // is excluded from BOTH (it's the common-roll spam we're removing).
+    eq(FF.normalCraftBlasts('fantastic'), true, 'Fantastic normal craft blasts to chat');
+    eq(FF.normalCraftBlasts('supreme'), false, 'Supreme normal craft does NOT blast to chat');
+    eq(FF.normalCraftBlasts('rare'), false, 'Rare normal craft does not blast');
+    eq(FF.normalCraftFeedRarity('supreme'), false, 'Supreme normal craft is not broadcast at all (no feed/blast source)');
+    eq(FF.normalCraftFeedRarity('fantastic'), true, 'Fantastic normal craft is broadcast');
+    eq(FF.normalCraftFeedRarity('rare'), true, 'Rare normal craft still reaches the chronicle feed');
+    // Masterwork Supreme/Fantastic STILL blast: announceMasterwork emits a rarity-labelled chronicle body,
+    // which the receiver + reload still classify as a blast (unchanged) -- so a Supreme blast now originates
+    // only from a Masterwork.
+    eq(FF.craftBodyRarity(FF.masterworkBlastRarityName('supreme', 'Aegis of Dawn')), 'supreme', 'a masterwork Supreme still classifies as a blast');
+    ok(FF.chronicleCraftToSystemMsg({ id:1, username:'A', body:'Supreme Aegis of Dawn', created_at:'x' }) !== null, 'a Supreme craft chronicle row still blasts (sourced only from masterwork now)');
+  });
+
   // ---- Getting Started: gathering quests name the specific lowest-tier material they require ----
   // Reported: "Fell the Timber" / "Green of Thumb" read generically ("chop 100 logs", "gather 100 herbs")
   // but only count the FIRST tier (Willow logs / Chamomile), so higher-tier gathering never advanced them.
