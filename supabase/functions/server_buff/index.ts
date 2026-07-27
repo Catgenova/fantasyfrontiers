@@ -32,6 +32,22 @@ const BUFF_SECONDS: Record<string, number> = { exp: 3600, test: 1 };
 // SERVER_BUFF_EXP_COST). The `test` kind is free so the integration script doesn't need a funded wallet.
 const BUFF_COST: Record<string, number> = { exp: 100000, test: 0 };
 
+// ---- Rarity Bonus: an EVENT-triggered, free server-wide buff (not bought) --------------------------
+// Sacrificing a rare-or-better item extends a shared "Rarity Bonus" (+1% rare / +0.1% supreme / +0.05%
+// fantastic on the client's craft rarity roll) for EVERY player. Unlike the paid `exp` buff there is no
+// gold price to undercut, so this ONE kind is grantable via the client-triggered `grant` action -- but
+// the DURATION is re-derived HERE from the reported (rarity, tier), never taken from the client, and the
+// action is rate-limited (rl_hit) so it can't be spammed to pin the buff. Duration scales linearly with
+// tier (t0..t20): rare 10s->300s, supreme 30s->600s, fantastic 30s->900s. Mirrors the client's
+// rarityBuffSeconds() exactly.
+const RARITY_BUFF_MIN_S: Record<string, number> = { rare: 10, supreme: 30, fantastic: 30 };
+const RARITY_BUFF_MAX_S: Record<string, number> = { rare: 300, supreme: 600, fantastic: 900 };
+function raritySeconds(rarity: string, tier: number): number {
+  if (!(rarity in RARITY_BUFF_MIN_S)) return 0;
+  const t = Math.max(0, Math.min(20, Math.floor(tier))) / 20;
+  return Math.round(RARITY_BUFF_MIN_S[rarity] + (RARITY_BUFF_MAX_S[rarity] - RARITY_BUFF_MIN_S[rarity]) * t);
+}
+
 // NOTE: there is intentionally NO free client-callable "grant" action. It used to auto-extend the shared
 // exp buff on a client-sent `reason` ("register" 1h / "familiar" 5min) with no gold and no verification
 // -- any logged-in player could pin the server-wide +50% XP on for free, defeating the 100k/hr `buy`
@@ -61,7 +77,7 @@ Deno.serve(async (req) => {
 
   async function snapshot() {
     const { data } = await admin.from("server_buffs").select("kind, active_until");
-    const buffs: Record<string, string | null> = { exp: null };
+    const buffs: Record<string, string | null> = { exp: null, rarity: null };
     for (const r of data || []) buffs[r.kind as string] = r.active_until as string;
     return buffs;
   }
@@ -89,9 +105,20 @@ Deno.serve(async (req) => {
     return json({ ok: true, kind, active_until: until, buffs: await snapshot() });
   }
 
-  // "grant" is deliberately gone -- it was a free, unverified server-wide buff extender (see the note by
-  // BUFF_SECONDS). Reject it explicitly so an old client calling it fails loudly instead of silently.
-  if (action === "grant") return json({ ok: false, error: "Grants are no longer client-callable." }, 403);
+  // Event-triggered grant -- ONLY the free 'rarity' buff (the paid 'exp' buff is never grantable this way,
+  // or a client could pin the +50% XP on for free). The duration is re-derived here from (rarity, tier);
+  // the client never sends a length. Rate-limited above via rl_hit.
+  if (action === "grant") {
+    const kind = String(body.kind || "");
+    if (kind !== "rarity") return json({ ok: false, error: "That buff can't be granted." }, 403);
+    const rarity = String(body.rarity || "");
+    const tier = Number(body.tier);
+    const secs = raritySeconds(rarity, Number.isFinite(tier) ? tier : 0);
+    if (!secs) return json({ ok: false, error: "Not a rare-or-better offering." }, 400);
+    const { data: until, error } = await admin.rpc("server_buff_extend", { p_kind: "rarity", p_seconds: secs });
+    if (error || !until) return json({ ok: false, error: "Grant failed." }, 500);
+    return json({ ok: true, kind: "rarity", active_until: until, seconds: secs, buffs: await snapshot() });
+  }
 
   return json({ ok: false, error: "Unknown action." }, 400);
 });

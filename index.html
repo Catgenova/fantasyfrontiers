@@ -4277,9 +4277,9 @@
   }
   function rollCraftRarity(state, tierIndex){
     if(rarityRollDisabledForTier(tierIndex, state)) return 'normal'; // player disabled rarity rolls for this tier band
-    var fantasticChance = FAITH_BASE_FANTASTIC + faithRarityBonus('miracle');
-    var supremeChance = FAITH_BASE_SUPREME + faithRarityBonus('blessing');
-    var rareChance = FAITH_BASE_RARE + faithRarityBonus('devotion') + masterworkRarityBonus(); // Masterwork physique lifts rare-or-better odds
+    var fantasticChance = FAITH_BASE_FANTASTIC + faithRarityBonus('miracle') + serverBuffRarityBonus('fantastic');
+    var supremeChance = FAITH_BASE_SUPREME + faithRarityBonus('blessing') + serverBuffRarityBonus('supreme');
+    var rareChance = FAITH_BASE_RARE + faithRarityBonus('devotion') + masterworkRarityBonus() + serverBuffRarityBonus('rare'); // Masterwork physique + server-wide Rarity Bonus lift rare-or-better odds
     var roll = Math.random();
     if(roll < fantasticChance) return 'fantastic';
     if(roll < fantasticChance + supremeChance) return 'supreme';
@@ -12313,17 +12313,45 @@
   var SERVER_BUFF_EXP_COST = 100000;    // gold per 1-hour purchase
   var SERVER_BUFF_EXP_MULT = 1.5;       // +50% XP to all players
   var SERVER_BUFF_EXP_MS = 3600*1000;   // one purchase = 1 hour (also the progress-bar reference)
-  var serverBuff = { expUntil: 0 };     // ms epoch; 0 = inactive
+  var serverBuff = { expUntil: 0, rarityUntil: 0 };     // ms epoch; 0 = inactive
   var _serverBuffBusy = false, _lastBuffPoll = 0;
   function expBuffMultFor(nowMs, until){ return (until && nowMs < until) ? SERVER_BUFF_EXP_MULT : 1; } // pure (unit-tested)
   function serverBuffXpMult(){ return expBuffMultFor(Date.now(), serverBuff.expUntil); }
   function serverBuffActive(){ return Date.now() < serverBuff.expUntil; }
+  // ---- Rarity Bonus (server-wide buff, event-triggered) ----------------------------------------------
+  // Sacrificing a rare-or-better item extends a server-wide "Rarity Bonus" for EVERY player: +1% rare,
+  // +0.1% supreme, +0.05% fantastic on the craft rarity roll. The duration scales with the offered item's
+  // rarity + tier and STACKS (each sacrifice prolongs the shared timer). The server (server_buff fn) owns
+  // the timer and re-computes the duration from the reported rarity/tier, so the client can't grant an
+  // arbitrary length; this mirror is for the optimistic UI + tests.
+  var SERVER_RARITY_BONUS = { rare: 0.01, supreme: 0.001, fantastic: 0.0005 };
+  var RARITY_BUFF_MIN_S = { rare: 10, supreme: 30, fantastic: 30 };   // t0 duration (seconds)
+  var RARITY_BUFF_MAX_S = { rare: 300, supreme: 600, fantastic: 900 }; // t20 duration (seconds)
+  function rarityBuffSeconds(rarity, tierIndex){
+    if(!(rarity in RARITY_BUFF_MIN_S)) return 0;
+    var t = Math.max(0, Math.min(20, tierIndex|0)) / 20; // linear t0 -> t20
+    return Math.round(RARITY_BUFF_MIN_S[rarity] + (RARITY_BUFF_MAX_S[rarity] - RARITY_BUFF_MIN_S[rarity]) * t);
+  }
+  function serverRarityBuffActive(){ return Date.now() < serverBuff.rarityUntil; }
+  function serverBuffRarityBonus(rarityId){ return serverRarityBuffActive() ? (SERVER_RARITY_BONUS[rarityId] || 0) : 0; }
   function serverBuffApply(buffs){
-    var iso = buffs && buffs.exp, until = iso ? Date.parse(iso) : 0;
-    if(isNaN(until)) until = 0;
-    var was = serverBuffActive();
-    serverBuff.expUntil = until;
-    if(serverBuffActive() !== was) needsRender = true; // buff flipped on/off -> refresh
+    if(!buffs) return;
+    var was = serverBuffActive(), wasR = serverRarityBuffActive();
+    var ei = buffs.exp ? Date.parse(buffs.exp) : 0; serverBuff.expUntil = isNaN(ei) ? 0 : ei;
+    var ri = buffs.rarity ? Date.parse(buffs.rarity) : 0; serverBuff.rarityUntil = isNaN(ri) ? 0 : ri;
+    if(serverBuffActive() !== was || serverRarityBuffActive() !== wasR) needsRender = true; // a buff flipped -> refresh
+  }
+  // Trigger: report a rare+ sacrifice so the server extends the shared Rarity Bonus. Fire-and-forget; the
+  // returned snapshot updates the local timer. Server RE-DERIVES the duration from (rarity, tier) -- the
+  // client-sent length is never trusted -- and the call is rate-limited server-side.
+  function serverBuffGrantRarity(rarity, tierIndex){
+    if(offlineCapture) return;                                  // never fire network during the offline sim
+    if(!chatClient || !authUser || !SERVER_RARITY_BONUS[rarity]) return;
+    var ti = Math.max(0, Math.min(20, tierIndex|0));
+    chatClient.functions.invoke('server_buff', { body:{ action:'grant', kind:'rarity', rarity:rarity, tier:ti } }).then(function(r){
+      var res = r && r.data;
+      if(res && res.ok){ serverBuffApply(res.buffs); if(currentCategory==='faith') render(); }
+    }, function(){});
   }
   function serverBuffFetch(){
     if(!chatClient || !authUser) return;
@@ -12372,6 +12400,9 @@
     html += '<div class="settings-row-desc" style="margin-bottom:6px;">Spend gold on a boost that helps <b>every</b> player on the server.</div>';
     html += '<div class="settings-row"><div><div class="settings-row-label">+50% EXP · 1 hour</div><div class="settings-row-desc">' + serverBuffRemainLabel() + ' &bull; ' + fmt(SERVER_BUFF_EXP_COST) + 'g</div></div>';
     html += '<button class="action-btn" data-action="buyExpBuff" style="width:auto;flex:0 0 auto;"' + ((state.gold < SERVER_BUFF_EXP_COST || _serverBuffBusy) ? ' disabled' : '') + '>' + (_serverBuffBusy ? 'Buying…' : 'Buy') + '</button></div>';
+    // Rarity Bonus: event-triggered (not bought). Every rare+ item sacrificed by ANY player extends it.
+    var _rarMs = serverBuff.rarityUntil - Date.now();
+    html += '<div class="settings-row"><div><div class="settings-row-label">Rarity Bonus</div><div class="settings-row-desc">+1% rare · +0.1% supreme · +0.05% fantastic &bull; ' + (_rarMs > 0 ? 'Active — ' + formatDuration(_rarMs) + ' left' : 'Inactive') + '<br>Extended whenever any player sacrifices a rare-or-better item (longer for higher rarity/tier).</div></div></div>';
     return html + '</div>';
   }
   // Mortal path: death is permanent (converts the profile to Immortal). true only while the
@@ -13308,6 +13339,7 @@
     addXp('sacrifice', 30);
     addPhysiqueXp(physTierPairs([['focus',1],['zealotry',1],['oblation',1]], tier-1));
     maybeSummonFamiliar('sacrifice');
+    serverBuffGrantRarity(u.rarity, u.tier); // a rare+ offering extends the server-wide Rarity Bonus for everyone
     addLog('You sacrificed '+uniqueDisplayName(u)+' and restored '+Math.round(state.faith-before)+' Faith.','important');
     saveGame(); render();
   }
@@ -13889,6 +13921,7 @@
     addXp('sacrifice', 30);
     addPhysiqueXp(physTierPairs([['focus',1],['zealotry',1],['oblation',1]], tier-1));
     maybeSummonFamiliar('sacrifice');
+    serverBuffGrantRarity(rarity, tier-1); // a rare+ offering extends the server-wide Rarity Bonus for everyone
     if(!silent) addLog('You sacrificed your ' + label + ' and restored ' + Math.round(state.faith-before) + ' Faith.', 'important');
     needsRender = true;
     return Math.round(state.faith - before);
@@ -16944,7 +16977,7 @@
   }
   function topbarSignature(){
     var tk = state.trackedSkills && state.trackedSkills[0];
-    return [authUser?1:0, serverBuffActive()?1:0, isTeaActive()?1:0, isFeastActive()?1:0, isScrollActive()?1:0, tk||'', (tk&&trackedExists(tk))?1:0].join('|');
+    return [authUser?1:0, serverBuffActive()?1:0, serverRarityBuffActive()?1:0, isTeaActive()?1:0, isFeastActive()?1:0, isScrollActive()?1:0, tk||'', (tk&&trackedExists(tk))?1:0].join('|');
   }
   var _topbarSig = null;
   function renderTopbar(){
@@ -16956,6 +16989,11 @@
       var buffPct = clamp((serverBuff.expUntil-Date.now())/SERVER_BUFF_EXP_MS*100, 0, 100);
       html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:var(--coin)"></span>+50% EXP <span class="t" id="ffSrvBuffT">'+formatDuration(serverBuff.expUntil-Date.now())+'</span></span>'
         + '<span class="ff-buffbar"><span class="ff-buffbar-fill" id="ffSrvBuffBar" style="width:'+buffPct+'%;background:var(--coin)"></span></span></div>';
+    }
+    if(serverRarityBuffActive()){
+      var rarPct = clamp((serverBuff.rarityUntil-Date.now())/(RARITY_BUFF_MAX_S.fantastic*1000)*100, 0, 100);
+      html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:var(--rarity-fantastic)"></span>Rarity Bonus <span class="t" id="ffRarBuffT">'+formatDuration(serverBuff.rarityUntil-Date.now())+'</span></span>'
+        + '<span class="ff-buffbar"><span class="ff-buffbar-fill" id="ffRarBuffBar" style="width:'+rarPct+'%;background:var(--rarity-fantastic)"></span></span></div>';
     }
     if(isScrollActive()){
       var scrollBuffPct = clamp((state.activeScroll.expiresAt-Date.now())/state.activeScroll.durationMs*100, 0, 100);
@@ -16995,6 +17033,10 @@
     if(serverBuffActive()){
       var st = document.getElementById('ffSrvBuffT'); if(st) st.textContent = formatDuration(serverBuff.expUntil-Date.now());
       var sbar = document.getElementById('ffSrvBuffBar'); if(sbar) sbar.style.width = clamp((serverBuff.expUntil-Date.now())/SERVER_BUFF_EXP_MS*100,0,100)+'%';
+    }
+    if(serverRarityBuffActive()){
+      var rt = document.getElementById('ffRarBuffT'); if(rt) rt.textContent = formatDuration(serverBuff.rarityUntil-Date.now());
+      var rbar = document.getElementById('ffRarBuffBar'); if(rbar) rbar.style.width = clamp((serverBuff.rarityUntil-Date.now())/(RARITY_BUFF_MAX_S.fantastic*1000)*100,0,100)+'%';
     }
     if(isFeastActive()){
       var ft = document.getElementById('ffFeastBuffT'); if(ft) ft.textContent = formatDuration(state.activeFeast.expiresAt-Date.now());
@@ -33993,7 +34035,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.49.2';
+  var GAME_VERSION = '0.0.50.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -34153,7 +34195,7 @@
       butcherOutputChance:butcherOutputChance, butcherOutputQty:butcherOutputQty, BUTCHER_OUTPUT_ROLLS:BUTCHER_OUTPUT_ROLLS, getEquippedGatherTool:getEquippedGatherTool, getGatherToolTierData:getGatherToolTierData, getEquippedCraftTool:getEquippedCraftTool,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER, ESTATE_PAVE_MS_PER_TIER:ESTATE_PAVE_MS_PER_TIER, ESTATE_WORKSHOP_MS_PER_TIER:ESTATE_WORKSHOP_MS_PER_TIER,
-      expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
+      expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, rarityBuffSeconds:rarityBuffSeconds, serverBuffRarityBonus:serverBuffRarityBonus, serverRarityBuffActive:serverRarityBuffActive, SERVER_RARITY_BONUS:SERVER_RARITY_BONUS, _serverBuff:serverBuff, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey, invGroupFor:invGroupFor, INV_GROUPS:INV_GROUPS,
       sortEquipCandidates:sortEquipCandidates, candBetter:candBetter, renderEquipCandidatePicker:renderEquipCandidatePicker, renderEquipBodyArmorSection:renderEquipBodyArmorSection, renderMainhandEquipSection:renderMainhandEquipSection, equipPickerHtml:equipPickerHtml,
       getNextAutoEatFood:getNextAutoEatFood, getTotalAutoEatFoodQty:getTotalAutoEatFoodQty, getAutoEatFoodTypes:getAutoEatFoodTypes,

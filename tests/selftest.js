@@ -2397,7 +2397,35 @@
     // The buy/registration buff is a full hour; the server extends greatest(now, active_until) by that and
     // the client just reflects whatever active_until comes back.
     eq(FF.SERVER_BUFF_EXP_MS, 3600*1000, 'a full (purchase/registration) buff is 1 hour');
-    ok(typeof FF.serverBuffGrant === 'undefined', 'the free client-callable server-buff grant is gone');
+    ok(typeof FF.serverBuffGrant === 'undefined', 'the free client-callable +50% EXP grant is gone (only the paid buy extends it)');
+  });
+
+  // ---- Rarity Bonus: an event-triggered, stacking server-wide buff (sacrifice a rare+ item) ----
+  suite('server buff: Rarity Bonus', function(){
+    // Duration scales linearly t0..t20, per rarity (mirrors the server's raritySeconds).
+    eq(FF.rarityBuffSeconds('rare', 0), 10, 'rare t0 -> 10s');
+    eq(FF.rarityBuffSeconds('rare', 20), 300, 'rare t20 -> 5 min');
+    eq(FF.rarityBuffSeconds('rare', 10), 155, 'rare t10 is the 10..300 midpoint');
+    eq(FF.rarityBuffSeconds('supreme', 0), 30, 'supreme t0 -> 30s');
+    eq(FF.rarityBuffSeconds('supreme', 20), 600, 'supreme t20 -> 10 min');
+    eq(FF.rarityBuffSeconds('fantastic', 0), 30, 'fantastic t0 -> 30s');
+    eq(FF.rarityBuffSeconds('fantastic', 20), 900, 'fantastic t20 -> 15 min');
+    eq(FF.rarityBuffSeconds('normal', 20), 0, 'a normal (non-rare) item grants nothing');
+    eq(FF.rarityBuffSeconds('rare', 99), 300, 'tier is clamped to t20');
+    // Effect: the per-rarity chance bonus applies ONLY while the shared timer is live.
+    eq(FF.SERVER_RARITY_BONUS.rare, 0.01, 'rare bonus is +1%');
+    eq(FF.SERVER_RARITY_BONUS.supreme, 0.001, 'supreme bonus is +0.1%');
+    eq(FF.SERVER_RARITY_BONUS.fantastic, 0.0005, 'fantastic bonus is +0.05%');
+    var sv = FF._serverBuff.rarityUntil;
+    try {
+      FF._serverBuff.rarityUntil = 0;
+      ok(!FF.serverRarityBuffActive() && FF.serverBuffRarityBonus('rare') === 0, 'no bonus while inactive');
+      FF._serverBuff.rarityUntil = Date.now() + 60000;
+      ok(FF.serverRarityBuffActive(), 'active with a future timer');
+      near(FF.serverBuffRarityBonus('rare'), 0.01, 'rare +1% while active', 1e-9);
+      near(FF.serverBuffRarityBonus('supreme'), 0.001, 'supreme +0.1% while active', 1e-9);
+      near(FF.serverBuffRarityBonus('fantastic'), 0.0005, 'fantastic +0.05% while active', 1e-9);
+    } finally { FF._serverBuff.rarityUntil = sv; }
   });
 
   // ---- Physique XP scales with task tier: each associated physique gains tier+1 (1..21) --------
