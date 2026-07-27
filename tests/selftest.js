@@ -7119,6 +7119,30 @@
   // ---- Quests: own area, Getting Started category, accordion + complete/claim/flash flow ----
   // ---- The Tower: floors, rotation, scaling, rewards, progress ----
   // ---- Tower quests + Titles system (equip, browser, how-to) ----
+  // ---- Guild Bosses: 5 tower-style bosses, rising difficulty & reward ----
+  // Reworked from an async damage pool to 5 solo-entry bosses at Tower-floor difficulty 1/10/20/30/40,
+  // each rewarding index+1 Barrier Shards (1..5) to every guild member on a clear.
+  suite('guild bosses: roster, difficulty & reward', function(){
+    eq(FF.GUILD_BOSSES.length, 5, 'five guild bosses');
+    eq(FF.GUILD_BOSSES.map(function(b){ return b.floor; }).join(','), '1,10,20,30,40', 'difficulty floors are 1/10/20/30/40');
+    FF.GUILD_BOSSES.forEach(function(b, i){
+      eq(b.idx, i, 'boss ' + i + ' carries idx ' + i);
+      eq(FF.guildBossReward(i), i + 1, 'boss ' + i + ' rewards ' + (i + 1) + ' Barrier Shard(s)');
+      var mon = FF.buildGuildBossMonster(i), st = FF.towerFloorStats(b.floor);
+      ok(mon && mon.id === 'gboss_' + i, 'boss ' + i + ' builds monster gboss_' + i);
+      eq(mon.hp, st.hp, 'boss ' + i + ' HP matches Tower Floor ' + b.floor);
+      var rb = FF.monsterById('gboss_' + i);   // reload path
+      ok(rb && rb.hp === st.hp, 'gboss_' + i + ' resolves via monsterById after a reload');
+    });
+    for(var i = 1; i < FF.GUILD_BOSSES.length; i++){
+      ok(FF.buildGuildBossMonster(i).hp > FF.buildGuildBossMonster(i - 1).hp, 'boss ' + i + ' is tougher than boss ' + (i - 1));
+    }
+    // The combat activity carries the guildBoss marker so the kill dispatch reports the clear (not a re-engage).
+    var act = FF.makeGuildBossActivity(2);
+    ok(act && act.type === 'combat' && act.guildBoss && act.guildBoss.idx === 2 && act.guildBoss.floor === 20, 'makeGuildBossActivity marks a guildBoss combat at Floor 20');
+    eq(act.monsterId, 'gboss_2', 'the activity targets the boss monster');
+  });
+
   // ---- Masterwork Supreme/Fantastic blast to the global feed + Discord ----
   // Reported: mastercrafting a Supreme/Fantastic didn't blast (only Fantastic hit Discord, and neither hit
   // the global chronicle/chat). The blast now fires for Supreme AND Fantastic, and the chronicle row leads
