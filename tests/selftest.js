@@ -1257,6 +1257,46 @@
     }
   });
 
+  // ---- Catch-up combat: a DoT is out-healed by auto-eat over a big frame, not one-shotting the fed ----
+  // Reported: wildlife Bleed (and other damage-over-time effects) killing players on catch-up who survive
+  // the same fight in real time. Cause: a <=60s alt-tab / reload resumes as ONE clamped 60s frame, so
+  // playerDotTick landed the whole capped DoT window as a single instantaneous lump -- lethal if it
+  // exceeded current HP -- before the once-per-frame auto-eat could react. Live play (~16ms frames)
+  // auto-eats continuously across the same window, so food out-heals it. Fix: a big frame slices the
+  // (already capped) DoT total across its active window and runs auto-eat between slices.
+  suite('catch-up combat: DoT out-healed by auto-eat', function(){
+    var s = FF._state;
+    var FOOD = 'roasting_t0';   // a real auto-eat food (Roasted fish, heal 5); any owned auto-eat food would serve
+    var sv = { act:s.activity, hp:s.playerHp, thr:s.autoEatThreshold, food:s.inventory[FOOD]||0, locked:(s.lockedItems&&s.lockedItems[FOOD]) };
+    s.lockedItems = s.lockedItems || {};
+    function armBleed(dps){
+      var wolf = FF.monsterById('wildlife_wolf');
+      s.activity = { type:'combat', monsterId:'wildlife_wolf', monsterHp:wolf.hp };
+      FF.clearEnemySpecialState(s.activity);
+      s.activity.pBleedDps = dps; s.activity.pBleedDurMs = 6000; s.activity.pBleedUntil = Date.now() + 999999; // 6s window
+    }
+    try {
+      // A) The capped total is preserved: a 6s / 4-dps Bleed still deals exactly 24 across a 60s frame
+      //    (auto-eat off + huge HP isolates the raw DoT). Guards against the slice logic diluting damage.
+      s.autoEatThreshold = 0; s.playerHp = 100000;
+      armBleed(4);
+      var _h0 = s.playerHp; FF.playerDotTick(60000);
+      ok(Math.abs((_h0 - s.playerHp) - 24) < 1e-6, 'a 6s Bleed still totals one window of damage over a catch-up frame (got ' + (_h0 - s.playerHp) + ')');
+
+      // B) The SAME catch-up frame is survived once the player is fed: 24 > 20 starting HP, so an un-sliced
+      //    lump would kill outright -- but auto-eat between slices keeps the fed player alive, mirroring the
+      //    ~360 live frames the 6s window really spans. Without the fix combat ends here and HP resets to 1.
+      s.inventory[FOOD] = 100; s.lockedItems[FOOD] = false; s.autoEatThreshold = 0.9; s.playerHp = 20;
+      armBleed(4);
+      FF.playerDotTick(60000);
+      ok(s.activity.type === 'combat' && s.playerHp > 1, 'a fed player survives the catch-up DoT frame (auto-eat keeps pace)');
+      ok(FF.getTotalAutoEatFoodQty ? FF.getTotalAutoEatFoodQty() < 100 : s.inventory[FOOD] < 100, 'auto-eat consumed food across the sliced catch-up frame');
+    } finally {
+      s.activity = sv.act; s.playerHp = sv.hp; s.autoEatThreshold = sv.thr;
+      s.inventory[FOOD] = sv.food; if(s.lockedItems) s.lockedItems[FOOD] = sv.locked;
+    }
+  });
+
   // ---- Offline combat: passive HP Regen ticks per-step, matching the live loop (dies-on-logoff fix) ----
   // Reported: a build whose only healing is HP Regen survives live fights but dies every time it logs off
   // mid-combat. Cause: the offline sim front-loaded passive regen as a one-time lump, then took the whole

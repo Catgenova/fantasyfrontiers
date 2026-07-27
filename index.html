@@ -15201,13 +15201,38 @@
     // Each active DoT deals damage for AT MOST its own window this frame. The loop clamps dt to 60s, so a
     // brief alt-tab (<=60s) resumes as a single giant frame -- without this cap a 6s Bleed would apply a
     // full minute of DPS in one lump (reading as the debuff "spamming" and often one-shotting the player
-    // on return). Live play (dt~16ms) and the offline sim (small steps) keep min(dt,dur)=dt, unchanged.
+    // on return). Live play (dt~16ms) keeps min(dt,dur)=dt, unchanged; a large catch-up frame is spread
+    // into auto-eat-interleaved slices below so food out-heals it exactly as it does in real time.
     var bleedMs  = playerBleedActive(act)  ? Math.min(dtMs, act.pBleedDurMs  || dtMs) : 0;
     var poisonMs = playerPoisonActive(act) ? Math.min(dtMs, act.pPoisonDurMs || dtMs) : 0;
     var burnMs   = playerBurnActive(act)   ? Math.min(dtMs, act.pBurnDurMs   || dtMs) : 0;
     var amount = (act.pBleedDps||0)*bleedMs/1000 + (act.pPoisonDps||0)*poisonMs/1000 + (act.pBurnDps||0)*burnMs/1000;
     if(amount <= 0) return;
     var monster = monsterById(act.monsterId);
+    // A large catch-up frame (a <=60s alt-tab, or a reload, resumes as one clamped 60s frame) would
+    // otherwise land this whole capped DoT window as a SINGLE instantaneous lump -- and if that lump
+    // exceeds current HP the player dies before the once-per-frame auto-eat can react, even though the
+    // same DoT is comfortably out-healed by food in real time (auto-eat runs every ~16ms frame).
+    // Reported: wildlife Bleed (and other damage-over-time effects) killing players on catch-up who
+    // survive the fight live. Fix: spread the (already capped) total across ~1s slices that span the
+    // DoT's active window and run auto-eat between them, so food offsets the DoT at the same intensity
+    // and cadence as live play -- a fed player survives catch-up exactly as they would in real time.
+    if(dtMs > 1000){
+      var windowMs = Math.max(bleedMs, poisonMs, burnMs);   // the damage is concentrated in the DoT window, not smeared over the whole frame
+      var slices = Math.min(60, Math.max(1, Math.ceil(windowMs/1000)));
+      var perSlice = amount/slices;
+      for(var _si=0; _si<slices; _si++){
+        state.playerHp -= perSlice;
+        if(state.playerHp <= 0 && isFamiliarBuffActive('bubble')){ state.playerHp = 1; state.familiarBuffs.bubbleUntil = 0; if(!offlineCapture) spawnCombatFloat('Bubble saved you!', 'ft-rare', false); return; }
+        if(state.playerHp <= 0){ if(monster) playerCombatDeath(monster, 'You succumbed to the ' + monster.name + '’s ' + (playerPoisonActive(act) && !playerBleedActive(act) ? 'venom' : 'wounds') + '.'); return; }
+        autoEatCheck();   // food heals between slices, matching the live per-frame cadence -- this is the fix
+      }
+      if(!offlineCapture){
+        var _big = Math.round(amount), _bw = playerDotWord(act);
+        if(_big >= 1){ spawnCombatFloat('-'+fmt(_big)+' '+_bw, 'ft-taken', false); combatLogPush({ dir:'dot', dmg:_big, word:_bw, target:monster ? monster.name : '', detail: advCombat() ? 'status tick — ignores armour & shields' : '' }); }
+      }
+      return;
+    }
     state.playerHp -= amount;
     // Floating text for the ongoing debuff damage: accumulate the sub-frame chips and pop one red number
     // roughly once a second so the DoT reads as real damage without flooding the screen every tick.
@@ -33817,7 +33842,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.48.12';
+  var GAME_VERSION = '0.0.48.13';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
