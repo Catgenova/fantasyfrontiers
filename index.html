@@ -10481,6 +10481,25 @@
   function consumeRareT20Amulets(count){ AMULET_TYPES.forEach(function(at){ if(count <= 0) return; var id = amuletBaseId(at.id, TIER_COUNT-1, 'rare'); var have = state.inventory[id] || 0; var take = Math.min(have, count); if(take > 0){ state.inventory[id] = have - take; count -= take; } }); }
   // Treasure Find (Pendant of Fortune + Treasure Hunter Wider Appraisal set): +gold and +loot from kills.
   function legTreasureMult(st){ st = st || state; return (1 + legendaryAmuletBonus('treasure', st)) * setTreasureMult(st) * (setFullD2('treasureHunter', st) ? 1.40 : 1) * (setFullD3('treasureHunter', st) ? 1.50 : 1); } // + Plunder (TH D2 full): +40%; Cursed Hoard (TH D3 full): +50% Treasure Find
+  // The rarity-labelled headline name for a Masterwork blast (null for rare/normal, which don't blast). The
+  // label prefix ("Supreme "/"Fantastic ") is what craftBodyRarity() reads to classify the chronicle row on
+  // other clients, so it MUST lead the string.
+  function masterworkBlastRarityName(rarity, name){
+    if(rarity !== 'supreme' && rarity !== 'fantastic') return null;
+    return getRarity(rarity).label + name;
+  }
+  // A Masterwork Supreme/Fantastic creation broadcasts like a rare craft: a global chronicle row other
+  // clients turn into a chat announcement, the crafter's own local copy, AND the community Discord feed.
+  // Unlike the normal-craft feed (Fantastic-only), a Masterwork's rarity is far scarcer, so Supreme rides
+  // along with Fantastic here. `name` is the item name WITHOUT its rarity label; `discordDetail` is an
+  // optional " (…)" tail for the Discord post.
+  function announceMasterwork(rarity, name, discordDetail){
+    var labeled = masterworkBlastRarityName(rarity, name);
+    if(!labeled) return;
+    chronicleBroadcast('craft', labeled);   // -> other clients' global chat (self-guards offline/auth)
+    if(!offlineCapture && authUser) pushChatSystemMessage(chatName() + ' forged a ' + labeled + '!', rarity); // crafter's own copy
+    discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the **' + labeled + '**!' + (discordDetail || '') + discordFeedOfflineTag());
+  }
   function craftMastercraft(blueprintId){
     var bp = BLUEPRINT_ITEMS[blueprintId]; if(!bp) return;
     if(((state.blueprints && state.blueprints[blueprintId]) || 0) <= 0){ addLog('You don’t hold that Blueprint.', 'danger'); return; }
@@ -10504,7 +10523,7 @@
       mastercraftResult = setUid ? { uid: setUid } : null;
       var pname = getRarity(rarity).label + setPieceName(key.cls, key.slot, recipe.layer);
       addLog('Mastercraft! You forged the ' + pname + ' — part of the ' + ((CLASS_DEFS_BY_ID[key.cls]||{}).name || key.cls) + ' set. It\'s a unique piece — find it in Equipment &amp; Stats and the Improvement tab, not your Inventory bag.', 'important');
-      if(rarity==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the **' + pname + '**! (part of the ' + ((CLASS_DEFS_BY_ID[key.cls]||{}).name || key.cls) + ' set)');
+      announceMasterwork(rarity, setPieceName(key.cls, key.slot, recipe.layer), ' (part of the ' + ((CLASS_DEFS_BY_ID[key.cls]||{}).name || key.cls) + ' set)');
       spawnFloatingText('+1 ' + pname, ftClass);
       needsRender = true;
       return;
@@ -10524,7 +10543,7 @@
       mastercraftResult = { uid: uid };
       var git = recipe.itemMap[itemId];
       addLog('Mastercraft! You forged the Legendary ' + git.name + ' — ' + gdef.desc + ' It\'s a unique piece — find it in Equipment &amp; Stats and the Improvement tab (not your Inventory bag). A Tier-20 legendary needs that weapon\'s proficiency at Lv 95 to equip.', 'important');
-      if(rarity==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the Legendary **' + git.name + '**! (' + gdef.desc + ')');
+      announceMasterwork(rarity, 'Legendary ' + git.name, ' (' + gdef.desc + ')');
       spawnFloatingText('+1 ' + git.name, ftClass);
       needsRender = true;
       return;
@@ -10535,7 +10554,7 @@
     // display name + icon on the result rather than making the modal look them up.
     mastercraftResult = { itemId: itemId, name: it.name, icon: it.icon, statLine: '+' + Math.round(it.value * 100) + '% ' + escapeHtml(it.statLabel || '') };
     addLog('Mastercraft! You forged the ' + it.name + ' — +' + Math.round(it.value * 100) + '% ' + it.statLabel + '.', 'important');
-    if(rarity==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the **' + it.name + '**! (+' + Math.round(it.value * 100) + '% ' + it.statLabel + ')');
+    announceMasterwork(rarity, it.name, ' (+' + Math.round(it.value * 100) + '% ' + it.statLabel + ')');
     spawnFloatingText('+1 ' + it.name, ftClass);
     needsRender = true;
   }
@@ -33884,7 +33903,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.48.17';
+  var GAME_VERSION = '0.0.48.18';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -34049,7 +34068,7 @@
       sortEquipCandidates:sortEquipCandidates, candBetter:candBetter, renderEquipCandidatePicker:renderEquipCandidatePicker, renderEquipBodyArmorSection:renderEquipBodyArmorSection, renderMainhandEquipSection:renderMainhandEquipSection, equipPickerHtml:equipPickerHtml,
       getNextAutoEatFood:getNextAutoEatFood, getTotalAutoEatFoodQty:getTotalAutoEatFoodQty, getAutoEatFoodTypes:getAutoEatFoodTypes,
       setEquipHideLocked:function(v){ equipHideLocked = !!v; }, getEquipHideLocked:function(){ return equipHideLocked; },
-      craftBodyRarity:craftBodyRarity, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, enhanceBodyRarity:enhanceBodyRarity, chronicleEnhanceToSystemMsg:chronicleEnhanceToSystemMsg, chronicleRowToSystemMsg:chronicleRowToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
+      craftBodyRarity:craftBodyRarity, masterworkBlastRarityName:masterworkBlastRarityName, chronicleCraftToSystemMsg:chronicleCraftToSystemMsg, enhanceBodyRarity:enhanceBodyRarity, chronicleEnhanceToSystemMsg:chronicleEnhanceToSystemMsg, chronicleRowToSystemMsg:chronicleRowToSystemMsg, familiarAvatar:familiarAvatar, FAM_SKIN:FAM_SKIN, FAMILIAR_DATA:FAMILIAR_DATA, famMix:famMix, castFamiliarSpell:castFamiliarSpell, STATUS_DEBUFF_CAP:STATUS_DEBUFF_CAP,
       potionEffect:potionEffect, potionEffectDesc:potionEffectDesc, POTION_TYPE_IDS:POTION_TYPE_IDS, CRAFTING_SKILLS_ALCHEMY:CRAFTING_SKILLS.alchemy, describeSpell:describeSpell,
       familiarHitLevelDamage:familiarHitLevelDamage, familiarHitDamageResting:familiarHitDamageResting, familiarPotencyMult:familiarPotencyMult, FAM_HIT_REF_AMOUNT:FAM_HIT_REF_AMOUNT, FAM_HIT_DMG_L1:FAM_HIT_DMG_L1, FAM_HIT_DMG_L100:FAM_HIT_DMG_L100,
       CRAFTING_SKILLS:CRAFTING_SKILLS, WORKSHOP_ITEMS:WORKSHOP_ITEMS, MONSTERS:MONSTERS,

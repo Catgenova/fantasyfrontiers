@@ -7119,6 +7119,23 @@
   // ---- Quests: own area, Getting Started category, accordion + complete/claim/flash flow ----
   // ---- The Tower: floors, rotation, scaling, rewards, progress ----
   // ---- Tower quests + Titles system (equip, browser, how-to) ----
+  // ---- Masterwork Supreme/Fantastic blast to the global feed + Discord ----
+  // Reported: mastercrafting a Supreme/Fantastic didn't blast (only Fantastic hit Discord, and neither hit
+  // the global chronicle/chat). The blast now fires for Supreme AND Fantastic, and the chronicle row leads
+  // with the rarity label so craftBodyRarity() -- the same parser other clients use -- classifies it.
+  suite('masterwork: Supreme & Fantastic blast', function(){
+    // Rare/normal masterworks don't blast.
+    eq(FF.masterworkBlastRarityName('normal', 'Widget'), null, 'a normal masterwork does not blast');
+    eq(FF.masterworkBlastRarityName('rare', 'Widget'), null, 'a rare masterwork does not blast');
+    // Supreme AND Fantastic blast, labelled so the chronicle row classifies correctly on other clients.
+    var sup = FF.masterworkBlastRarityName('supreme', 'Aegis of Dawn');
+    ok(sup && sup.indexOf('Supreme ') === 0, 'a Supreme masterwork blasts with a Supreme-labelled name');
+    eq(FF.craftBodyRarity(sup), 'supreme', 'other clients classify the Supreme masterwork blast as supreme');
+    var fan = FF.masterworkBlastRarityName('fantastic', 'Aegis of Dawn');
+    ok(fan && fan.indexOf('Fantastic ') === 0, 'a Fantastic masterwork blasts with a Fantastic-labelled name');
+    eq(FF.craftBodyRarity(fan), 'fantastic', 'other clients classify the Fantastic masterwork blast as fantastic');
+  });
+
   // ---- Getting Started: gathering quests name the specific lowest-tier material they require ----
   // Reported: "Fell the Timber" / "Green of Thumb" read generically ("chop 100 logs", "gather 100 herbs")
   // but only count the FIRST tier (Willow logs / Chamomile), so higher-tier gathering never advanced them.
