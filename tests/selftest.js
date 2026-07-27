@@ -7119,6 +7119,23 @@
   // ---- Quests: own area, Getting Started category, accordion + complete/claim/flash flow ----
   // ---- The Tower: floors, rotation, scaling, rewards, progress ----
   // ---- Tower quests + Titles system (equip, browser, how-to) ----
+  // ---- Getting Started: gathering quests name the specific lowest-tier material they require ----
+  // Reported: "Fell the Timber" / "Green of Thumb" read generically ("chop 100 logs", "gather 100 herbs")
+  // but only count the FIRST tier (Willow logs / Chamomile), so higher-tier gathering never advanced them.
+  // The text now names that exact material, matching the t0 stat each quest tracks.
+  suite('quests: gathering quests name their lowest-tier material', function(){
+    var willowQ = FF.questById('fell_the_timber');
+    var chamQ = FF.questById('green_of_thumb');
+    ok(willowQ && chamQ, 'both gathering quests exist');
+    // The instruction names the exact material to gather.
+    ok(/Willow/.test(willowQ.how) && /Willow/.test(willowQ.desc), 'Fell the Timber names Willow in its text');
+    ok(/Chamomile/.test(chamQ.how) && /Chamomile/.test(chamQ.desc), 'Green of Thumb names Chamomile in its text');
+    ok(!/gather 100 herbs\b/.test(chamQ.how) && !/chop 100 logs\b/.test(willowQ.how), 'the old generic wording is gone');
+    // ...and the progress counter reads ONLY that lowest tier (t0), so the named material is what actually counts.
+    eq(willowQ.progress({ stats:{ gathered_forestry_t0:40, gathered_forestry_t5:100 } }), 40, 'Fell the Timber counts Willow (t0) only, not higher-tier logs');
+    eq(chamQ.progress({ stats:{ gathered_herbalism_t0:30, gathered_herbalism_t3:100 } }), 30, 'Green of Thumb counts Chamomile (t0) only, not higher-tier herbs');
+  });
+
   suite('quests: tower milestones + titles', function(){
     var s = FF._state;
     var savedTower = s.tower, savedQ = s.quests, savedTitles = s.titles, savedEq = s.equippedTitle;
