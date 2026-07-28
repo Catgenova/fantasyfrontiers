@@ -687,6 +687,44 @@
     ok(typeof FF.estateDrawTotem === 'function' && typeof FF.drawEstateTotemModel === 'function' && typeof FF.estateDrawTdTotem === 'function', 'totem models exist for iso and top-down rendering');
   });
 
+  // ---- Tool forges: any-rarity previous tool counts + unique tool names (ticket-0093) ---------------
+  suite('tools: previous-tier tool of any rarity satisfies the forge', function(){
+    var s = FF._state, savedInv = s.inventory;
+    s.inventory = {};
+    // No copy owned -> the bill lists the Normal id (UI shows "0 owned" against the base variant).
+    eq(FF.ownedPrevToolId('jewelrycrafting', 13), 'tool_jewelrycrafting_t13_normal', 'with none owned the bill asks for the Normal variant');
+    // Only a Rare copy owned -> the bill targets it (this was the "0 owned with a full bag" bug).
+    s.inventory.tool_jewelrycrafting_t13_rare = 80;
+    eq(FF.ownedPrevToolId('jewelrycrafting', 13), 'tool_jewelrycrafting_t13_rare', 'a Rare-only stock satisfies the previous-tier requirement');
+    ok(FF.getCraftToolTierData('jewelrycrafting', 15).inputs.tool_jewelrycrafting_t13_rare === 1, 'the next-tier bill consumes the owned Rare copy');
+    // A Normal copy alongside better ones -> the LOWEST rarity is consumed, never the Fantastic.
+    s.inventory.tool_jewelrycrafting_t13_normal = 1;
+    s.inventory.tool_jewelrycrafting_t13_fantastic = 1;
+    eq(FF.ownedPrevToolId('jewelrycrafting', 13), 'tool_jewelrycrafting_t13_normal', 'the lowest-rarity copy is preferred (a Fantastic tool is never silently eaten)');
+    // Full forge run: bars + ONLY a Rare previous loupe -> the craft completes and consumes the Rare.
+    var savedAct = s.activity, savedExtra = s.extraCraftSlots, savedRand = Math.random;
+    try {
+      s.activity = { type:null }; s.extraCraftSlots = [];
+      s.inventory = { tool_jewelrycrafting_t13_rare: 1 };
+      var bill = FF.getCraftToolTierData('jewelrycrafting', 15).inputs; // tier arg is 1-based: t14 data
+      Object.keys(bill).forEach(function(k){ if(k.indexOf('tool_')!==0) s.inventory[k] = bill[k]; });
+      Math.random = function(){ return 0.5; };  // 0.5 < the 0.7 base success (craft succeeds); far above the rarity/double/brew chances (all stay off)
+      var tact = { type:'craft', craftKind:'tool', skillId:'jewelrycrafting', tierIndex:14, progress:0, targetQty:1, producedQty:0 };
+      FF.processCraftActivity(tact, 24*3600*1000);
+      Math.random = savedRand;
+      eq(s.inventory.tool_jewelrycrafting_t13_rare||0, 0, 'the forge consumed the Rare previous tool');
+      eq(s.inventory.tool_jewelrycrafting_t14_normal||0, 1, 'the next-tier tool was forged');
+    } finally { Math.random = savedRand; s.activity = savedAct; s.extraCraftSlots = savedExtra; s.inventory = savedInv; }
+    // Every tool line has a UNIQUE display name: goldsmithing's loupe used to share jewelrycrafting's
+    // name exactly, so the two lines were indistinguishable in the bag and forge bills.
+    var seen = {}, dupes = [];
+    [FF.CRAFT_TOOL_NAMES, FF.GATHER_TOOL_NAMES].forEach(function(map){
+      Object.keys(map).forEach(function(k){ var n = map[k]; if(seen[n]) dupes.push(n); seen[n] = true; });
+    });
+    eq(dupes.join(','), '', 'no two tool lines share a display name');
+    eq(FF.CRAFT_TOOL_NAMES.goldsmithing, "Goldsmith's Loupe", "goldsmithing's tool is now the Goldsmith's Loupe");
+  });
+
   // ---- Architecture split: Carpentry keeps Planks; buildings + Woodcarving move to Construction -----
   suite('architecture: the Carpentry split + stonework building bills', function(){
     // The new skill exists in Construction; Carpentry stays (planks only); Woodcarving moved over.
