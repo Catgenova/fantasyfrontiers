@@ -30672,12 +30672,17 @@
   // Marketplace category filter for quick navigation. Each tradeable id maps to one bucket by which item
   // collection it belongs to (checked at render time, when all the collections are defined).
   var MARKET_CATEGORIES = [
-    { id:'all', label:'All' }, { id:'materials', label:'Materials' }, { id:'refined', label:'Refined' }, { id:'armor', label:'Armor' }, { id:'accessories', label:'Accessories' },
-    { id:'weapons', label:'Weapons' }, { id:'tools', label:'Tools' }, { id:'relics', label:'Relics' }, { id:'other', label:'Other' }
+    { id:'all', label:'All' }, { id:'materials', label:'Materials' }, { id:'refined', label:'Refined' }, { id:'consumables', label:'Consumables' },
+    { id:'armor', label:'Armor' }, { id:'accessories', label:'Accessories' }, { id:'weapons', label:'Weapons' }, { id:'tools', label:'Tools' }, { id:'relics', label:'Relics' }, { id:'other', label:'Other' }
   ];
-  // Refined materials = outputs of the material-processing (Refining) crafts (metallurgy bars, tanning
-  // leather, weaving cloth, glassblowing glass, ...) whose ids are keyed <refiningSkill>_t<tier>.
-  var MARKET_REFINED_SKILLS = {}; REFINING_SKILL_IDS.forEach(function(sid){ MARKET_REFINED_SKILLS[sid] = true; });
+  // Item ids are keyed <prefix>_t<tier>, but the prefix isn't always the skill id (weaving->twine,
+  // papermaking->paper, gemcutting->gemcut, enchanting->enchant; baking->dough/pie; alchemy->coating,
+  // pyrotechnics->bomb/flash, inscription->scroll, bookbinding->tome). So we start from the skill-id sets
+  // and add the alias prefixes.
+  var MARKET_CONSUMABLE_SKILLS = {}; COOKING_SKILL_IDS.forEach(function(s){ MARKET_CONSUMABLE_SKILLS[s] = true; }); // food + drink (incl. teas via mixology)
+  ['dough','pie','coating','bomb','flash','scroll','tome'].forEach(function(p){ MARKET_CONSUMABLE_SKILLS[p] = true; }); // baking food, toxins, fire/flash bombs, scrolls, tomes (books)
+  var MARKET_REFINED_SKILLS = {}; REFINING_SKILL_IDS.forEach(function(s){ MARKET_REFINED_SKILLS[s] = true; });        // metallurgy bars, tanning leather, glassblowing glass, ...
+  ['twine','paper','gemcut','enchant'].forEach(function(p){ MARKET_REFINED_SKILLS[p] = true; });                     // weaving/papermaking/gemcutting/enchanting outputs
   function marketItemCategory(id){
     if(STACKABLE_WEAPON_ITEMS[id]) return 'weapons';
     if(TOOL_ITEMS[id]) return 'tools';
@@ -30686,8 +30691,11 @@
     if(BODY_ARMOR_ITEMS[id] || STACKABLE_SHIELD_ITEMS[id] || STACKABLE_QUIVER_ITEMS[id] || WARD_ITEMS[id]) return 'armor'; // worn/offhand defensive gear
     if(WORKSHOP_ITEMS[id] || COTTAGE_ITEMS[id]) return 'other';
     var m = /^([a-z]+)_t\d+$/.exec(id);
-    if(m && MARKET_REFINED_SKILLS[m[1]]) return 'refined';        // a Refining-craft output
-    return 'materials'; // raw gathered resources, food, seeds, gems, powders, glyphs, etc.
+    if(m){
+      if(MARKET_CONSUMABLE_SKILLS[m[1]]) return 'consumables';   // food / drink / tomes / potions / scrolls
+      if(MARKET_REFINED_SKILLS[m[1]]) return 'refined';          // a Refining-craft output
+    }
+    return 'materials'; // raw gathered resources, seeds, gems, powders, meat/fat/hide, etc.
   }
   function marketMatchesCategory(id){ var c = marketState.category || 'all'; return c === 'all' || marketItemCategory(id) === c; }
   function marketInvoke(action, payload){
@@ -34195,7 +34203,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.50.22';
+  var GAME_VERSION = '0.0.50.23';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

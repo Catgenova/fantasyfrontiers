@@ -9247,7 +9247,13 @@
     eq(FF.marketItemCategory('powder_t0'), 'materials', 'a gathered material -> Materials');
     eq(FF.marketItemCategory('metallurgy_t0'), 'refined', 'a refined bar (metallurgy) -> Refined');
     eq(FF.marketItemCategory('tanning_t0'), 'refined', 'refined leather (tanning) -> Refined');
+    eq(FF.marketItemCategory('twine_t0'), 'refined', 'weaving twine (alias prefix) -> Refined');
     eq(FF.marketItemCategory('mining_t0'), 'materials', 'a raw gathered ore -> Materials');
+    eq(FF.marketItemCategory('cooking_t0'), 'consumables', 'cooked food -> Consumables');
+    eq(FF.marketItemCategory('mixology_t0'), 'consumables', 'a tea (mixology) -> Consumables');
+    eq(FF.marketItemCategory('tome_t0'), 'consumables', 'a tome/book (bookbinding) -> Consumables');
+    eq(FF.marketItemCategory('scroll_t0'), 'consumables', 'a scroll (inscription) -> Consumables');
+    eq(FF.marketItemCategory('coating_t0'), 'consumables', 'a toxin coating (alchemy) -> Consumables');
     // Every tradeable id resolves to one of the defined buckets (no item is uncategorized).
     var cats = {}; FF.MARKET_CATEGORIES.forEach(function(c){ cats[c.id] = true; });
     ok(Object.keys(FF.ALL_SELLABLE).slice(0, 400).every(function(id){ return id==='gold' || cats[FF.marketItemCategory(id)]; }), 'every sellable item maps to a known category');
