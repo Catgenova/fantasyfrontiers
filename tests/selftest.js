@@ -4395,30 +4395,76 @@
     eq(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d2','defense')].name, 'Tunnel Shield Blueprint', 'D2 shield is "Tunnel Shield Blueprint"');
     eq(FF.BLUEPRINT_ITEMS[FF.masterworkBlueprintId('d4','cape')].name, 'Nest of the Depths Cape Blueprint', 'D4 cape name');
     ok(Object.keys(FF.BLUEPRINT_ITEMS).every(function(id){ var b = FF.BLUEPRINT_ITEMS[id]; return b.blueprint === true && b.sell === 0 && /<svg/.test(b.icon); }), 'every Blueprint is flagged, non-vendorable, and has an icon');
-    // Blueprints are their OWN inventory, not in the sellable/item economy.
-    ok(Object.keys(FF.BLUEPRINT_ITEMS).every(function(id){ return !FF.ALL_SELLABLE[id]; }), 'Blueprints are not part of ALL_SELLABLE (separate inventory)');
-    // addBlueprint stores into state.blueprints (not state.inventory).
-    var s = FF._state; var svB = s.blueprints, svI = s.inventory;
-    s.blueprints = {}; s.inventory = {};
+    // v0.0.53: Blueprints are ordinary stackable inventory items and MARKET-TRADEABLE.
+    ok(Object.keys(FF.BLUEPRINT_ITEMS).every(function(id){ return FF.ALL_SELLABLE[id] === FF.BLUEPRINT_ITEMS[id]; }), 'every Blueprint is registered in ALL_SELLABLE (market-tradeable)');
+    var cat = FF.buildItemCatalog();
+    ok(Object.keys(FF.BLUEPRINT_ITEMS).every(function(id){ return cat[id] === 1; }), 'the server item catalog marks every Blueprint tradeable');
+    ok(Object.keys(FF.BLUEPRINT_ITEMS).every(function(id){ return FF.marketItemCategory(id) === 'blueprints'; }), 'Blueprints get their own Marketplace category');
+    ok(FF.MARKET_CATEGORIES.some(function(c){ return c.id === 'blueprints' && c.label === 'Blueprints'; }), 'the Marketplace nav has a Blueprints chip');
+    // addBlueprint credits state.inventory AND the per-item earned anchor (so the server item ledger
+    // credits legit boss drops and the market can cover a sell).
+    var s = FF._state; var svI = s.inventory, svE = s.itemEarnedTotal;
+    s.inventory = {}; s.itemEarnedTotal = {};
     var bid = FF.masterworkBlueprintId('d2','plate');
     FF.addBlueprint(bid, 2);
-    eq(s.blueprints[bid], 2, 'addBlueprint credits the Blueprint inventory');
-    eq(s.inventory[bid] || 0, 0, 'addBlueprint does NOT touch the item inventory');
-    FF.addBlueprint('not_a_blueprint', 1); eq(s.blueprints['not_a_blueprint'], undefined, 'addBlueprint rejects unknown ids');
+    eq(s.inventory[bid], 2, 'addBlueprint credits the ordinary inventory');
+    eq(s.itemEarnedTotal[bid], 2, 'addBlueprint bumps the earned anchor (ledger reconcile keeps the drop)');
+    FF.addBlueprint('not_a_blueprint', 1); eq(s.inventory['not_a_blueprint'], undefined, 'addBlueprint rejects unknown ids');
+    ok(FF.marketOwnedIds().indexOf(bid) !== -1, 'an owned Blueprint shows up in the Marketplace Sell picker');
+    // The vendor never buys a sell-0 stack -- the Marketplace is the only way to part with a Blueprint.
+    var svG = s.gold;
+    FF.sellItem(bid); FF.sellOne(bid);
+    eq(s.inventory[bid], 2, 'sellItem/sellOne refuse a Blueprint (sell 0)');
+    FF.sellAll();
+    eq(s.inventory[bid], 2, 'Sell All never sweeps a Blueprint');
+    eq(s.gold, svG, 'no gold was minted by refused vendor sales');
+    // One-time legacy migration: a pre-v0.0.53 state.blueprints map folds into inventory once.
+    s.inventory = {}; s.itemEarnedTotal = {};
+    var legacy = {}; legacy[bid] = 3; legacy.not_a_blueprint = 5;
+    FF.mergeLegacyBlueprints(legacy);
+    eq(s.inventory[bid], 3, 'legacy state.blueprints stock migrates into inventory');
+    eq(s.itemEarnedTotal[bid], 3, 'migrated stock bumps the earned anchor too');
+    eq(s.inventory.not_a_blueprint, undefined, 'unknown legacy keys are dropped, not migrated');
+    eq(Object.keys(legacy).length, 0, 'the legacy map is emptied (migration is one-time)');
     // rollMasterworkDrops only ever grants THIS layer's Blueprints, and stays within the slot set.
-    s.blueprints = {};
+    s.inventory = {};
     var granted = [];
     for(var r = 0; r < 300; r++) granted = granted.concat(FF.rollMasterworkDrops('d1'));
     ok(granted.length > 0, 'over many clears, some Blueprints drop');
     ok(granted.every(function(b){ return b.dungeon === 'd1'; }), 'a d1 clear only drops d1 Blueprints');
-    ok(Object.keys(s.blueprints).every(function(id){ return FF.BLUEPRINT_ITEMS[id] && FF.BLUEPRINT_ITEMS[id].dungeon === 'd1'; }), 'the Blueprint inventory only holds d1 Blueprints after d1 clears');
+    ok(Object.keys(s.inventory).every(function(id){ return FF.BLUEPRINT_ITEMS[id] && FF.BLUEPRINT_ITEMS[id].dungeon === 'd1'; }), 'the inventory only gained d1 Blueprints after d1 clears');
     // grantMasterworkDrops returns the granted Blueprints so a clear can show a result popup.
-    s.blueprints = {};
+    s.inventory = {};
     var guaranteed = FF.grantMasterworkDrops('d1', 1, true); // guarantee => a group clear never comes up empty
     ok(Array.isArray(guaranteed) && guaranteed.length >= 1, 'a guaranteed clear returns at least one Blueprint');
     ok(guaranteed.every(function(b){ return b && b.dungeon === 'd1' && b.blueprint === true; }), 'returned items are this layer\'s Blueprints');
     eq(FF.grantMasterworkDrops('nope_layer', 1, true).length, 0, 'an unknown layer returns an empty drop list');
-    s.blueprints = svB; s.inventory = svI;
+    s.inventory = svI; s.itemEarnedTotal = svE;
+  });
+
+  // ---- Legendary accessories (Signets/Shrouds/Pendants) are market-tradeable; legendary GEAR is not ----
+  suite('marketplace: legendary accessories tradeable', function(){
+    var ringId = FF.legRingItemId('block','rare'), cloakId = FF.legCloakItemId('accuracy','supreme'), amuId = FF.legAmuletItemId('maxhealth','fantastic');
+    ok(FF.ALL_SELLABLE[ringId] === FF.LEGENDARY_RING_ITEMS[ringId], 'legendary Signets are registered in ALL_SELLABLE');
+    ok(FF.ALL_SELLABLE[cloakId] === FF.LEGENDARY_CLOAK_ITEMS[cloakId], 'legendary Shrouds are registered in ALL_SELLABLE');
+    ok(FF.ALL_SELLABLE[amuId] === FF.LEGENDARY_AMULET_ITEMS[amuId], 'legendary Pendants are registered in ALL_SELLABLE');
+    ok([ringId, cloakId, amuId].every(function(id){ return FF.ALL_SELLABLE[id].sell === 0; }), 'legendary accessories stay non-vendorable (Marketplace-only)');
+    var cat = FF.buildItemCatalog();
+    ok(Object.keys(FF.LEGENDARY_RING_ITEMS).every(function(id){ return cat[id] === 1; }), 'the server catalog marks every legendary ring tradeable');
+    ok(Object.keys(FF.LEGENDARY_CLOAK_ITEMS).every(function(id){ return cat[id] === 1; }), '...and every legendary cloak');
+    ok(Object.keys(FF.LEGENDARY_AMULET_ITEMS).every(function(id){ return cat[id] === 1; }), '...and every legendary amulet');
+    // Legendary WEAPONS/gear stay ledger-only (0): they mint as uniques, so the stackable key is untradeable.
+    ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS).every(function(id){ return cat[id] === 0; }), 'legendary D1 gear keys stay untradeable (ledger-only)');
+    ok(Object.keys(FF.LEGENDARY_GEAR_ITEMS_D4).every(function(id){ return cat[id] === 0; }), 'legendary D4 gear keys stay untradeable (ledger-only)');
+    ok([ringId, cloakId, amuId].every(function(id){ return FF.marketItemCategory(id) === 'accessories'; }), 'legendary accessories browse under the Accessories category');
+    // The vendor never buys one, and Sell All never sweeps one.
+    var s = FF._state, svI = s.inventory, svG = s.gold;
+    s.inventory = {}; s.inventory[ringId] = 1;
+    FF.sellItem(ringId); FF.sellOne(ringId); FF.sellAll();
+    eq(s.inventory[ringId], 1, 'vendor sale paths all refuse a legendary accessory');
+    eq(s.gold, svG, 'no gold changed hands');
+    ok(FF.marketOwnedIds().indexOf(ringId) !== -1, 'an owned Signet appears in the Marketplace Sell picker');
+    s.inventory = svI;
   });
 
   // ---- Dungeon-clear result popup: shows the Blueprint(s) dropped, or that nothing was found ---------
@@ -4505,9 +4551,9 @@
     var ringId = 'ring_' + FF.RING_TYPES[0].id + '_t20_rare';
     s.inventory = { metallurgy_t20:1000, gem_voidcrystal:100, twine_t20:100, goldsmithing_t20:100 };
     s.inventory[ringId] = 10;
-    s.blueprints = {}; s.blueprints[FF.masterworkBlueprintId('d1','ring')] = 1;
+    s.blueprints = {}; s.inventory[FF.masterworkBlueprintId('d1','ring')] = 1;
     FF.craftMastercraft(FF.masterworkBlueprintId('d1','ring'));
-    eq(s.blueprints[FF.masterworkBlueprintId('d1','ring')], 0, 'craft consumes the Blueprint');
+    eq(s.inventory[FF.masterworkBlueprintId('d1','ring')], 0, 'craft consumes the Blueprint');
     eq(s.inventory.metallurgy_t20, 0, 'craft consumes the ingots');
     eq(s.inventory[ringId], 0, 'craft consumes the 10 rare Rings');
     var made = Object.keys(FF.LEGENDARY_RING_ITEMS).reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
@@ -4539,9 +4585,9 @@
     // Full craft: 1000 cloths + 10 rare Tier-20 cloaks + a Blueprint -> one Shroud, all inputs consumed.
     var svInv = s.inventory, svBp = s.blueprints, svBack = s.bodyArmor.back;
     s.inventory = { weaving_t20:1000, bodyarmor_tailoring_back_t20_rare:10 };
-    s.blueprints = {}; s.blueprints[FF.masterworkBlueprintId('d1','cape')] = 1;
+    s.blueprints = {}; s.inventory[FF.masterworkBlueprintId('d1','cape')] = 1;
     FF.craftMastercraft(FF.masterworkBlueprintId('d1','cape'));
-    eq(s.blueprints[FF.masterworkBlueprintId('d1','cape')], 0, 'craft consumes the Blueprint');
+    eq(s.inventory[FF.masterworkBlueprintId('d1','cape')], 0, 'craft consumes the Blueprint');
     eq(s.inventory.weaving_t20, 0, 'craft consumes the 1000 cloths');
     eq(s.inventory.bodyarmor_tailoring_back_t20_rare, 0, 'craft consumes the 10 rare cloaks');
     var made = Object.keys(FF.LEGENDARY_CLOAK_ITEMS).reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
@@ -4618,14 +4664,14 @@
     var s = FF._state, svInv = s.inventory, svBp = s.blueprints, svUniq = s.uniqueItems;
     s.inventory = { metallurgy_t20: 1000 }; s.blueprints = {}; s.uniqueItems = {};
     FF.legGearRareIds('slash').forEach(function(id){ s.inventory[id] = 2; }); // plenty of rare slash weapons
-    var bpId = FF.masterworkBlueprintId('d1','slash'); s.blueprints[bpId] = 1;
+    var bpId = FF.masterworkBlueprintId('d1','slash'); s.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
     eq(minted.length, 1, 'the forge mints exactly one legendary unique');
     var u = minted[0];
     ok(u && u.leg && FF.LEG_GEAR_GROUP_KEYS.slash.indexOf(u.leg) !== -1, 'the unique carries a slash-group legendary effect');
     ok(/^stweapon_.+_t19_(normal|rare|supreme|fantastic)$/.test(u.base), 'the unique is a top-tier slashing weapon base');
-    eq(s.blueprints[bpId], 0, 'the forge consumes the Blueprint');
+    eq(s.inventory[bpId], 0, 'the forge consumes the Blueprint');
     eq(s.inventory.metallurgy_t20, 0, 'the forge consumes the 1000 ingots');
     var rareLeft = FF.legGearRareIds('slash').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
     eq(rareLeft, FF.legGearRareIds('slash').length * 2 - 10, 'the forge consumes exactly 10 rare weapons');
@@ -4642,14 +4688,14 @@
       s.uidSeq = 0; // desynced: sits at/below an existing uid
       s.inventory = { metallurgy_t20: 1000 };
       FF.legGearRareIds('blunt').forEach(function(id){ s.inventory[id] = 4; });
-      var bpId = FF.masterworkBlueprintId('d1','blunt'); s.blueprints = {}; s.blueprints[bpId] = 1;
+      var bpId = FF.masterworkBlueprintId('d1','blunt'); s.blueprints = {}; s.inventory[bpId] = 1;
       FF.craftMastercraft(bpId);
       var uids = Object.keys(s.uniqueItems);
       eq(uids.length, 2, 'the craft ADDS a new unique instead of overwriting the existing one');
       ok(s.uniqueItems.u1 && s.uniqueItems.u1.leg === 'runegrave', 'the pre-existing legendary (u1) is left untouched');
       var neu = uids.filter(function(k){ return k!=='u1'; }).map(function(k){ return s.uniqueItems[k]; })[0];
       ok(neu && FF.LEG_GEAR_GROUP_KEYS.blunt.indexOf(neu.leg) !== -1, 'the added unique is the freshly forged blunt legendary');
-      ok(s.blueprints[bpId] === 0, 'the Blueprint was still consumed (materials + item both accounted for)');
+      ok(s.inventory[bpId] === 0, 'the Blueprint was still consumed (materials + item both accounted for)');
     } finally { s.inventory = svInv; s.blueprints = svBp; s.uniqueItems = svUniq; s.uidSeq = svSeq; }
   });
 
@@ -5113,7 +5159,7 @@
     s.inventory = { forestry_t20: 2000, glyph_fire:400, glyph_water:400, glyph_earth:400, glyph_light:400, glyph_dark:400 };
     s.blueprints = {}; s.uniqueItems = {};
     FF.legGearRareIds('arcane').forEach(function(id){ s.inventory[id] = 3; });
-    var bpId = FF.masterworkBlueprintId('d2','arcane'); s.blueprints[bpId] = 1;
+    var bpId = FF.masterworkBlueprintId('d2','arcane'); s.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
     eq(minted.length, 1, 'the D2 forge mints exactly one legendary unique');
@@ -5121,7 +5167,7 @@
     ok(u && u.leg && FF.D2_LEG_GEAR_MAP[u.leg], 'the unique carries a D2 arcane-group legendary effect');
     ok(/^st(weapon|ward)_.+_t20_(rare|supreme|fantastic)$/.test(u.base), 'the unique is a top-tier wand/scepter/staff/ward base, floored at Rare');
     ok(FF.uniqueDisplayName(u).indexOf(FF.D2_LEG_GEAR_MAP[u.leg].name) !== -1, 'the forged D2 legendary displays its effect name, not the base wand/ward');
-    eq(s.blueprints[bpId], 0, 'the forge consumes the Blueprint');
+    eq(s.inventory[bpId], 0, 'the forge consumes the Blueprint');
     eq(s.inventory.forestry_t20, 0, 'the forge consumes the 2000 wood');
     var rareLeft = FF.legGearRareIds('arcane').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
     eq(rareLeft, FF.legGearRareIds('arcane').length * 3 - 20, 'the forge consumes exactly 20 rare arcane items');
@@ -5190,7 +5236,7 @@
     var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
     s.inventory = { metallurgy_t20: 2000 }; s.blueprints = {}; s.uniqueItems = {};
     FF.legGearRareIds('defense').forEach(function(id){ s.inventory[id] = 8; }); // 3 shield types x 8 = 24 >= 20
-    var bpId = FF.masterworkBlueprintId('d2','defense'); s.blueprints[bpId] = 1;
+    var bpId = FF.masterworkBlueprintId('d2','defense'); s.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
     eq(minted.length, 1, 'the D2 defense forge mints exactly one legendary unique');
@@ -5253,7 +5299,7 @@
     var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
     s.inventory = { metallurgy_t20: 2000 }; s.blueprints = {}; s.uniqueItems = {};
     FF.legGearRareIds('slash').forEach(function(id){ s.inventory[id] = 4; });
-    var bpId = FF.masterworkBlueprintId('d2','slash'); s.blueprints[bpId] = 1;
+    var bpId = FF.masterworkBlueprintId('d2','slash'); s.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
     eq(minted.length, 1, 'the D2 slash forge mints exactly one legendary unique');
@@ -5304,7 +5350,7 @@
     var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
     s.inventory = { forestry_t20: 2000 }; s.blueprints = {}; s.uniqueItems = {};
     FF.legGearRareIds('ranged').forEach(function(id){ s.inventory[id] = 8; }); // 3 bow types x 8 = 24 >= 20
-    var bpId = FF.masterworkBlueprintId('d2','ranged'); s.blueprints[bpId] = 1;
+    var bpId = FF.masterworkBlueprintId('d2','ranged'); s.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
     eq(minted.length, 1, 'the D2 ranged forge mints exactly one legendary unique');
@@ -5349,7 +5395,7 @@
     var catId = 'ring_' + FF.RING_TYPES[0].id + '_t20_rare';
     s.inventory = { metallurgy_t20:2000, gem_voidcrystal:200, twine_t20:200, goldsmithing_t20:200 }; s.inventory[catId] = 20;
     s.blueprints = {};
-    var bpId = FF.masterworkBlueprintId('d2','ring'); s.blueprints[bpId] = 1;
+    var bpId = FF.masterworkBlueprintId('d2','ring'); s.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var mintedId = Object.keys(s.inventory).filter(function(id){ return /^legring_d2_/.test(id) && s.inventory[id] > 0; })[0];
     ok(mintedId, 'the D2 ring forge adds a d2 Signet to inventory');
@@ -5396,7 +5442,7 @@
     var catId = 'ring_' + FF.RING_TYPES[0].id + '_t20_rare';
     s.inventory = { metallurgy_t20:3000, gem_voidcrystal:300, twine_t20:300, goldsmithing_t20:300 }; s.inventory[catId] = 30;
     s.blueprints = {};
-    var bpId = FF.masterworkBlueprintId('d3','ring'); s.blueprints[bpId] = 1;
+    var bpId = FF.masterworkBlueprintId('d3','ring'); s.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var mintedId = Object.keys(s.inventory).filter(function(id){ return /^legring_d3_/.test(id) && s.inventory[id] > 0; })[0];
     ok(mintedId, 'the D3 ring forge adds a d3 Signet to inventory');
@@ -5455,7 +5501,7 @@
     var catId = 'ring_' + FF.RING_TYPES[0].id + '_t20_rare';
     s.inventory = { metallurgy_t20:4000, gem_voidcrystal:400, twine_t20:400, goldsmithing_t20:400 }; s.inventory[catId] = 40;
     s.blueprints = {};
-    var bpId = FF.masterworkBlueprintId('d4','ring'); s.blueprints[bpId] = 1;
+    var bpId = FF.masterworkBlueprintId('d4','ring'); s.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var mintedId = Object.keys(s.inventory).filter(function(id){ return /^legring_d4_/.test(id) && s.inventory[id] > 0; })[0];
     ok(mintedId, 'the D4 ring forge adds a d4 Signet to inventory');
@@ -5587,7 +5633,7 @@
     s.inventory = { forestry_t20: 3000, glyph_fire:600, glyph_water:600, glyph_earth:600, glyph_light:600, glyph_dark:600 };
     s.blueprints = {}; s.uniqueItems = {};
     FF.legGearRareIds('arcane').forEach(function(id){ s.inventory[id] = 3; });
-    var bpId = FF.masterworkBlueprintId('d3','arcane'); s.blueprints[bpId] = 1;
+    var bpId = FF.masterworkBlueprintId('d3','arcane'); s.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
     eq(minted.length, 1, 'the D3 forge mints exactly one legendary unique');
@@ -5663,7 +5709,7 @@
     s.inventory = { forestry_t20: 4000, glyph_fire:800, glyph_water:800, glyph_earth:800, glyph_light:800, glyph_dark:800 };
     s.blueprints = {}; s.uniqueItems = {};
     FF.legGearRareIds('arcane').forEach(function(id){ s.inventory[id] = 4; });
-    var bpId = FF.masterworkBlueprintId('d4','arcane'); s.blueprints[bpId] = 1;
+    var bpId = FF.masterworkBlueprintId('d4','arcane'); s.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
     eq(minted.length, 1, 'the D4 forge mints exactly one legendary unique');
@@ -5707,7 +5753,7 @@
     var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
     s.inventory = { metallurgy_t20: 4000 }; s.blueprints = {}; s.uniqueItems = {};
     FF.legGearRareIds('defense').forEach(function(id){ s.inventory[id] = 16; }); // 3 shield types x 16 = 48 >= 40
-    var bpId = FF.masterworkBlueprintId('d4','defense'); s.blueprints[bpId] = 1;
+    var bpId = FF.masterworkBlueprintId('d4','defense'); s.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
     eq(minted.length, 1, 'the D4 defense forge mints exactly one legendary unique');
@@ -5784,7 +5830,7 @@
     var s2 = FF._state, svInv=s2.inventory, svBp=s2.blueprints, svUniq=s2.uniqueItems;
     s2.inventory = { metallurgy_t20: 4000 }; s2.blueprints = {}; s2.uniqueItems = {};
     FF.legGearRareIds('slash').forEach(function(id){ s2.inventory[id] = 8; });
-    var bpId = FF.masterworkBlueprintId('d4','slash'); s2.blueprints[bpId] = 1;
+    var bpId = FF.masterworkBlueprintId('d4','slash'); s2.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var minted = Object.keys(s2.uniqueItems).map(function(k){ return s2.uniqueItems[k]; });
     eq(minted.length, 1, 'the D4 slash forge mints one legendary unique');
@@ -5837,7 +5883,7 @@
     var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
     s.inventory = { forestry_t20: 4000 }; s.blueprints = {}; s.uniqueItems = {};
     FF.legGearRareIds('ranged').forEach(function(id){ s.inventory[id] = 15; }); // 3 bow types x 15 = 45 >= 40
-    var bpId = FF.masterworkBlueprintId('d4','ranged'); s.blueprints[bpId] = 1;
+    var bpId = FF.masterworkBlueprintId('d4','ranged'); s.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
     eq(minted.length, 1, 'the D4 ranged forge mints one legendary unique');
@@ -5870,7 +5916,7 @@
     var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
     s.inventory = { metallurgy_t20: 3000 }; s.blueprints = {}; s.uniqueItems = {};
     FF.legGearRareIds('defense').forEach(function(id){ s.inventory[id] = 12; }); // 3 shield types x 12 = 36 >= 30
-    var bpId = FF.masterworkBlueprintId('d3','defense'); s.blueprints[bpId] = 1;
+    var bpId = FF.masterworkBlueprintId('d3','defense'); s.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
     eq(minted.length, 1, 'the D3 defense forge mints exactly one legendary unique');
@@ -5904,7 +5950,7 @@
     var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
     s.inventory = { metallurgy_t20: 3000 }; s.blueprints = {}; s.uniqueItems = {};
     FF.legGearRareIds('slash').forEach(function(id){ s.inventory[id] = 6; });
-    var bpId = FF.masterworkBlueprintId('d3','slash'); s.blueprints[bpId] = 1;
+    var bpId = FF.masterworkBlueprintId('d3','slash'); s.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
     eq(minted.length, 1, 'the D3 slash forge mints exactly one legendary unique');
@@ -5943,7 +5989,7 @@
     var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
     s.inventory = { metallurgy_t20: 3000 }; s.blueprints = {}; s.uniqueItems = {};
     FF.legGearRareIds('blunt').forEach(function(id){ s.inventory[id] = 8; });
-    var bpId = FF.masterworkBlueprintId('d3','blunt'); s.blueprints[bpId] = 1;
+    var bpId = FF.masterworkBlueprintId('d3','blunt'); s.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
     eq(minted.length, 1, 'the D3 blunt forge mints exactly one legendary unique');
@@ -6804,7 +6850,7 @@
     s.uniqueItems = {}; s.blueprints = {};
     s.inventory = { metallurgy_t20: 1000 };
     FF.setArmorRareIds('chain').forEach(function(id){ s.inventory[id] = 3; });
-    var bp = FF.masterworkBlueprintId('d1','chain'); s.blueprints[bp] = 1;
+    var bp = FF.masterworkBlueprintId('d1','chain'); s.inventory[bp] = 1;
     FF.craftMastercraft(bp);
     var mintedUid = Object.keys(s.uniqueItems)[0];
     var u = s.uniqueItems[mintedUid];
@@ -6813,7 +6859,7 @@
     eq(u.tier, FF.SET_TIER_INDEX, 'the set piece is t21 (one above the t20 cap)');
     ok(/^bodyarmor_chain_(helmet|chest|gauntlets|boots)_t21_(rare|supreme|fantastic)$/.test(u.base), 'the base is a t21 chain armor item, floored at Rare');
     eq(s.inventory.metallurgy_t20, 0, 'the forge consumes the 1000 ingots');
-    eq(s.blueprints[bp], 0, 'the forge consumes the Blueprint');
+    eq(s.inventory[bp], 0, 'the forge consumes the Blueprint');
     var rareLeft = FF.setArmorRareIds('chain').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
     eq(rareLeft, 4*3 - 10, 'the forge consumes exactly 10 rare chain armor pieces');
 
@@ -6854,7 +6900,7 @@
     s.uniqueItems = {}; s.blueprints = {};
     s.inventory = { metallurgy_t20: 2000 };
     FF.setArmorRareIds('chain').forEach(function(id){ s.inventory[id] = 6; }); // 4 slots x 6 = 24 rare t20 chain
-    var bp = FF.masterworkBlueprintId('d2','chain'); s.blueprints[bp] = 1;
+    var bp = FF.masterworkBlueprintId('d2','chain'); s.inventory[bp] = 1;
     FF.craftMastercraft(bp);
     var mintedUid = Object.keys(s.uniqueItems)[0];
     var u = s.uniqueItems[mintedUid];
@@ -6894,7 +6940,7 @@
     s.uniqueItems = {}; s.blueprints = {};
     s.inventory = { metallurgy_t20: 3000 };
     FF.setArmorRareIds('chain').forEach(function(id){ s.inventory[id] = 10; }); // 4 slots x 10 = 40 rare t20 chain
-    var bp = FF.masterworkBlueprintId('d3','chain'); s.blueprints[bp] = 1;
+    var bp = FF.masterworkBlueprintId('d3','chain'); s.inventory[bp] = 1;
     FF.craftMastercraft(bp);
     var mintedUid = Object.keys(s.uniqueItems)[0];
     var u = s.uniqueItems[mintedUid];
@@ -6935,7 +6981,7 @@
     s.uniqueItems = {}; s.blueprints = {};
     s.inventory = { metallurgy_t20: 4000 };
     FF.setArmorRareIds('plate').forEach(function(id){ s.inventory[id] = 12; }); // 4 slots x 12 = 48 rare t20 plate
-    var bp = FF.masterworkBlueprintId('d4','plate'); s.blueprints[bp] = 1;
+    var bp = FF.masterworkBlueprintId('d4','plate'); s.inventory[bp] = 1;
     FF.craftMastercraft(bp);
     var mintedUid = Object.keys(s.uniqueItems)[0];
     var u = s.uniqueItems[mintedUid];
@@ -7311,13 +7357,13 @@
 
     // Full forge mints a legendary Pendant inventory item.
     s.inventory = { metallurgy_t20:1000, twine_t20:100, diving_t20:100, amulet_t20_rare:10 };
-    s.blueprints = {}; var bpId = FF.masterworkBlueprintId('d1','amulet'); s.blueprints[bpId] = 1;
+    s.blueprints = {}; var bpId = FF.masterworkBlueprintId('d1','amulet'); s.inventory[bpId] = 1;
     FF.craftMastercraft(bpId);
     var minted = Object.keys(s.inventory).filter(function(id){ return id.indexOf('legamulet_d1_')===0 && s.inventory[id]>0; });
     eq(minted.length, 1, 'the forge mints exactly one legendary Pendant');
     eq(s.inventory.metallurgy_t20, 0, 'the forge consumes the 1000 ingots');
     eq(s.inventory.amulet_t20_rare, 0, 'the forge consumes the 10 rare amulets');
-    eq(s.blueprints[bpId], 0, 'the forge consumes the Blueprint');
+    eq(s.inventory[bpId], 0, 'the forge consumes the Blueprint');
 
     // Equip / unequip round-trips through the single Amulet slot.
     s.jewelrySlots = { amulet:{ tier:0, rarity:'normal' } };
@@ -12744,45 +12790,46 @@
     });
 
     // Runtime drop path: force every slot to roll and confirm rollMasterworkDrops actually GRANTS d2/d3/d4
-    // blueprints of the right layer (not just that the table is shaped right).
-    var s = FF._state, savedBp = s.blueprints, savedRand = Math.random;
+    // blueprints of the right layer (not just that the table is shaped right). Blueprints are ordinary
+    // inventory items since v0.0.53, so drops land in state.inventory.
+    var s = FF._state, savedInv = s.inventory, savedRand = Math.random;
     try {
       ['d2','d3','d4'].forEach(function(layer){
-        s.blueprints = {};
+        s.inventory = {};
         Math.random = function(){ return 0; };   // every slot.chance*mult > 0 -> all drop
         var got = FF.rollMasterworkDrops(layer, 1);
         Math.random = savedRand;
         eq(got.length, FF.MASTERWORK_SLOTS.length, layer+': a full-luck clear drops one of every slot');
         ok(got.every(function(bp){ return bp.dungeon === layer; }), layer+': every dropped blueprint belongs to '+layer);
-        eq((s.blueprints[FF.masterworkBlueprintId(layer,'plate')]||0), 1, layer+': the granted blueprint landed in inventory');
+        eq((s.inventory[FF.masterworkBlueprintId(layer,'plate')]||0), 1, layer+': the granted blueprint landed in inventory');
       });
     } finally {
       Math.random = savedRand;
-      s.blueprints = savedBp;
+      s.inventory = savedInv;
     }
   });
 
   // ---- Group boss clear guarantees at least one blueprint ----------------------------------------
   suite('dungeon: group clear guarantees a blueprint', function(){
     ok(typeof FF.grantMasterworkDrops === 'function', 'grantMasterworkDrops exported');
-    var s = FF._state, savedBp = s.blueprints, savedRand = Math.random;
+    var s = FF._state, savedInv = s.inventory, savedRand = Math.random;
     try {
       // Force every independent drop roll to MISS (Math.random always 1 -> 1 < chance is false), then a
       // GROUP clear (guarantee flag) must still grant exactly one d2 blueprint.
-      s.blueprints = {}; Math.random = function(){ return 1; };
+      s.inventory = {}; Math.random = function(){ return 1; };
       FF.grantMasterworkDrops('d2', 1, true);
       Math.random = savedRand;
-      var total = Object.keys(s.blueprints).reduce(function(n, k){ return n + (s.blueprints[k] || 0); }, 0);
+      var total = Object.keys(s.inventory).reduce(function(n, k){ return n + (s.inventory[k] || 0); }, 0);
       eq(total, 1, 'a dry GROUP clear still yields exactly one blueprint (guarantee floor)');
-      ok(Object.keys(s.blueprints).every(function(k){ return FF.BLUEPRINT_ITEMS[k] && FF.BLUEPRINT_ITEMS[k].dungeon === 'd2'; }), 'the guaranteed blueprint belongs to d2');
+      ok(Object.keys(s.inventory).every(function(k){ return FF.BLUEPRINT_ITEMS[k] && FF.BLUEPRINT_ITEMS[k].dungeon === 'd2'; }), 'the guaranteed blueprint belongs to d2');
 
       // A SOLO clear passes no guarantee -> a dry clear grants nothing (honest odds preserved).
-      s.blueprints = {}; Math.random = function(){ return 1; };
+      s.inventory = {}; Math.random = function(){ return 1; };
       FF.grantMasterworkDrops('d2', FF.DUNGEON_SOLO_DROP_MULT);
       Math.random = savedRand;
-      eq(Object.keys(s.blueprints).length, 0, 'a dry SOLO clear (no guarantee) still grants nothing');
+      eq(Object.keys(s.inventory).length, 0, 'a dry SOLO clear (no guarantee) still grants nothing');
     } finally {
-      Math.random = savedRand; s.blueprints = savedBp;
+      Math.random = savedRand; s.inventory = savedInv;
     }
   });
 

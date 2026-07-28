@@ -4839,8 +4839,8 @@
   // wards/staffs); defense forges a shield; armor splits by material into four Set-Item formulas
   // (cloth/leather/chain/plate); ring/amulet/cape forge accessories. 4 dungeons x 13 = 52 Blueprints,
   // named "<Category> <Label> Blueprint" (e.g. "Cave Slash Weapon Blueprint"). Drop rates run highest for
-  // armor, equal across all weapons (+ shield), and lowest for jewelry/accessories. They live in their OWN
-  // inventory (state.blueprints) and forge into endgame gear via the Masterwork craft system.
+  // armor, equal across all weapons (+ shield), and lowest for jewelry/accessories. They're stackable
+  // inventory items (market-tradeable) and forge into endgame gear via the Masterwork craft system.
   var MASTERWORK_SLOTS = [
     // Armor Set-Item formulas (highest drop rate)
     { id:'cloth',   label:'Cloth Armor',   chance:0.12, icon:'chestarmor' },
@@ -5424,7 +5424,14 @@
       outcomes: D4_LEG_CLOAK_DEFS.map(function(d){ return d.key; }) }
   };
   function mastercraftRecipeFor(bpItem){ return bpItem ? (MASTERCRAFT_RECIPES[bpItem.dungeon + '_' + bpItem.slot] || null) : null; }
-  var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS);
+  // Masterwork Blueprints and Mastercrafted legendary accessories (rings/amulets/cloaks) are market-
+  // TRADEABLE: they live in state.inventory like everything else and joining ALL_SELLABLE puts them in
+  // the marketplace universe (buildItemCatalog flips them to tradeable on the server allowlist). They
+  // all carry sell:0 -- the vendor won't buy them (sellItem/sellAll skip sell-0 stacks), so the ONLY
+  // way to part with one is a player-priced Auction House listing. Legendary weapons/armor stay
+  // untradeable (they're minted as uniques with per-item enchants/enhances, not stackable keys).
+  var ALL_SELLABLE = Object.assign({}, ALL_GATHER_ITEMS, ALL_CRAFT_RECIPES, ALL_DROP_ITEMS, FORMULA_ITEMS,
+    BLUEPRINT_ITEMS, LEGENDARY_RING_ITEMS, LEGENDARY_CLOAK_ITEMS, LEGENDARY_AMULET_ITEMS);
 
   var GATHER_SKILL_IDS = Object.keys(GATHERING_SKILLS);
   var CRAFT_SKILL_IDS = Object.keys(CRAFTING_SKILLS);
@@ -10583,7 +10590,7 @@
   }
   function craftMastercraft(blueprintId){
     var bp = BLUEPRINT_ITEMS[blueprintId]; if(!bp) return;
-    if(((state.blueprints && state.blueprints[blueprintId]) || 0) <= 0){ addLog('You don’t hold that Blueprint.', 'danger'); return; }
+    if((state.inventory[blueprintId] || 0) <= 0){ addLog('You don’t hold that Blueprint.', 'danger'); return; }
     var recipe = mastercraftRecipeFor(bp);
     if(!recipe){ addLog('That Mastercraft isn’t available yet.', 'danger'); return; }
     if(!hasInputs(recipe.inputs)){ addLog('You lack the materials to mastercraft the ' + bp.name + '.', 'danger'); return; }
@@ -10591,7 +10598,7 @@
     if(haveRare < recipe.rareCount){ addLog('You need ' + recipe.rareCount + ' ' + recipe.rareLabel + ' (you have ' + haveRare + ').', 'danger'); return; }
     consumeInputs(recipe.inputs);
     recipe.consumeRare(recipe.rareCount);
-    state.blueprints[blueprintId] -= 1;
+    state.inventory[blueprintId] -= 1;
     var key = recipe.outcomes[Math.floor(Math.random() * recipe.outcomes.length)];
     var rarity = rollMastercraftRarity();
     var ftClass = rarity === 'fantastic' ? 'ft-fantastic' : rarity === 'supreme' ? 'ft-supreme' : rarity === 'rare' ? 'ft-rare' : 'ft-success';
@@ -11917,7 +11924,7 @@
       physique: physique,
       inventory: {},
       itemEarnedTotal: {},   // per-item monotonic lifetime received (item-ledger reconcile anchor; the item analog of goldEarnedTotal)
-      blueprints: {},        // Masterwork Blueprints -- their own separate inventory (dungeon boss drops)
+      blueprints: {},        // LEGACY (pre-v0.0.53): Blueprints now live in `inventory`; kept empty for old-save shape (loadGame folds any leftovers in)
       dungeonsCleared: {},   // layer id -> true once its boss has been beaten (gates the next dungeon)
       gatherTools: gatherTools,
       gatherToolRarities: gatherToolRarities,
@@ -12557,13 +12564,28 @@
     if(!(opts && opts.noEarn)){ if(!state.itemEarnedTotal) state.itemEarnedTotal = {}; state.itemEarnedTotal[id] = (state.itemEarnedTotal[id]||0) + qty; } // monotonic lifetime-received anchor
     if(wasZero) needsRender = true;
   }
-  // Masterwork Blueprints live in their own inventory (state.blueprints), separate from items.
+  // Masterwork Blueprints are ordinary stackable inventory items (state.inventory) so they can be
+  // traded on the Marketplace; addItem also bumps the per-item earned anchor so the server ledger
+  // credits legit boss drops. (They lived in a separate state.blueprints map before v0.0.53 -- see
+  // the one-time merge in loadGame.)
   function addBlueprint(id, qty){
     qty = Math.floor(qty || 1);
     if(!(qty > 0) || !isFinite(qty) || !BLUEPRINT_ITEMS[id]) return;
-    if(!state.blueprints || typeof state.blueprints !== 'object') state.blueprints = {};
-    state.blueprints[id] = (state.blueprints[id] || 0) + qty;
+    addItem(id, qty);
     needsRender = true;
+  }
+  // One-time legacy migration: fold a pre-v0.0.53 state.blueprints map into state.inventory (with the
+  // earned-anchor bump, so the item-ledger reconcile keeps them until the server credits the keys).
+  // Returns how many stacks moved. Idempotent -- the source map is emptied as it's merged.
+  function mergeLegacyBlueprints(map){
+    if(!map || typeof map !== 'object' || Array.isArray(map)) return 0;
+    var moved = 0;
+    Object.keys(map).forEach(function(id){
+      var q = Math.floor(map[id]);
+      if(q > 0 && BLUEPRINT_ITEMS[id]){ addItem(id, q); moved++; }
+      delete map[id];
+    });
+    return moved;
   }
   // A dungeon boss clear rolls each Masterwork slot independently at its drop chance; each hit grants
   // that dungeon's Blueprint for the slot. Returns the list of Blueprint items granted (for logging/UI).
@@ -16178,6 +16200,9 @@
     var item = ALL_SELLABLE[id];
     var qty = state.inventory[id]||0;
     if(qty <= 0 || !item) return;
+    // Non-vendorable stock (sell 0: Blueprints, legendary accessories) can never be vendored --
+    // destroying it for 0g would be pure loss. The Marketplace is the only way to part with it.
+    if(!(item.sell > 0)){ addLog('The vendor won’t buy that — list it on the Marketplace instead.', 'danger'); return; }
     if(state.lockedItems[id]){
       addLog('That item is locked. Unlock it first to sell.', 'danger');
       return;
@@ -16196,7 +16221,7 @@
     Object.keys(state.inventory).forEach(function(id){
       var item = ALL_SELLABLE[id];
       var qty = state.inventory[id]||0;
-      if(item && qty>0 && !state.lockedItems[id]){ total += qty*item.sell; state.inventory[id]=0; }
+      if(item && qty>0 && item.sell>0 && !state.lockedItems[id]){ total += qty*item.sell; state.inventory[id]=0; } // sell-0 stacks (Blueprints, legendary accessories) are never swept
     });
     if(total>0){ total = Math.round(total*merchantSellMult()); earnGold(total); addPhysiqueXp([['merchantsSavvy',2]]); addLog('Sold your goods for ' + total + ' gold.'); needsRender = true; }
   }
@@ -16777,6 +16802,10 @@
             if(state.lockedItems.grainseed_t20) delete state.lockedItems.grainseed_t20;
           }
           if(!state.itemEarnedTotal || typeof state.itemEarnedTotal !== 'object' || Array.isArray(state.itemEarnedTotal)) state.itemEarnedTotal = {}; // item-ledger reconcile anchor
+          // v0.0.53: Masterwork Blueprints moved from their own state.blueprints map into the ordinary
+          // inventory so they can be listed on the Marketplace. Fold a legacy save's map in once (after
+          // the earned-anchor normalization above, so the merge's anchor bumps survive the load).
+          mergeLegacyBlueprints(state.blueprints);
           if(!Array.isArray(state.trackedSkills)) state.trackedSkills = [];
           state.trackedSkills = state.trackedSkills.filter(function(id){ return typeof id === 'string'; }).slice(0, TRACK_MAX); // single-select: keep only the first
           if(state.accuracyPhysiques) delete state.accuracyPhysiques; // accuracy physiques are now a fixed set, no longer player-chosen
@@ -17244,11 +17273,12 @@
   function renderInventoryTab(){
     return '<div class="section-intro">Everything you’ve gathered, crafted, and looted — search, sell, equip, or open.</div><div id="inventoryPanel"></div>';
   }
-  // Masterwork Blueprints -- their own inventory (Resources > Blueprints). Grouped by dungeon; each
-  // dungeon shows all nine gear-slot Blueprints with owned counts (0 = not yet dropped, dimmed).
+  // Masterwork Blueprints (Resources > Blueprints). Grouped by dungeon; each dungeon shows all its
+  // gear-slot Blueprints with owned counts (0 = not yet dropped, dimmed). Counts read the ordinary
+  // inventory -- Blueprints are stackable items there (and market-tradeable) since v0.0.53.
   var mastercraftSel = null; // selected Blueprint id in the Mastercraft tab (null = empty craft card)
   function renderMasterworkTab(){
-    var bp = state.blueprints || {};
+    var bp = state.inventory || {};
     var owned = Object.keys(BLUEPRINT_ITEMS).filter(function(id){ return (bp[id] || 0) > 0; })
       .sort(function(a,b){ var A=BLUEPRINT_ITEMS[a], B=BLUEPRINT_ITEMS[b]; return DUNGEON_ORDER.indexOf(A.dungeon)-DUNGEON_ORDER.indexOf(B.dungeon) || 0; });
     var total = 0; owned.forEach(function(id){ total += bp[id]; });
@@ -21330,7 +21360,7 @@
     html += '<div class="card-grid">';
     MASTERWORK_SLOTS.forEach(function(slot){
       var bp = BLUEPRINT_ITEMS[masterworkBlueprintId(def.id, slot.id)]; if(!bp) return;
-      var owned = (state.blueprints && state.blueprints[bp.id]) || 0;
+      var owned = state.inventory[bp.id] || 0;
       html += '<div class="item-card" style="padding:8px">';
       html += '<div class="item-top"><div class="item-icon">' + bp.icon + '</div><div><div class="item-name" style="font-size:0.9em">' + escapeHtml(bp.name) + '</div>';
       html += '<div class="item-meta">Drop ' + (slot.chance * 100) + '%' + (owned ? ' &bull; <b>Owned ' + fmt(owned) + '</b>' : '') + '</div></div></div>';
@@ -22981,6 +23011,11 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.53', date:'Jul 28', heading:'Blueprints and legendary accessories hit the Auction House', items:[
+      'Masterwork Blueprints are now tradeable: every dungeon Blueprint can be listed and bid on in the Marketplace, under a new Blueprints category chip. They also live in your ordinary Inventory bag now (your existing stock moves over automatically) — the Blueprints tab works exactly as before.',
+      'Legendary accessories are tradeable too: Mastercrafted Signets, Shrouds and Pendants (all rarities) can be bought and sold under the Accessories category. Legendary weapons, shields, wards and armor-set pieces stay untradeable — they are unique items.',
+      'The vendor won\'t touch any of it: Blueprints and legendary accessories can\'t be vendor-sold (and "Sell all" never sweeps them) — a player-priced Auction House listing is the only way to part with one.'
+    ]},
     { v:'0.0.52', date:'Jul 27–28', heading:'Assassin and Berserker reworks, one rarity formula, marketplace categories and a big balance pass', items:[
       'ASSASSIN reworked — "Twin Fangs": your main-hand Razor opens Open Wounds (cap 5, 6s) and your off-hand Fang — now 25% slower but +30% harder — detonates them all at max for +40% of its hit per wound. Flow of Blood refunds both attack timers per wound consumed, and Vanish (7s untouched, 4s with the D4 set) empowers a strike +100% and refills wounds. All four sets are new paths — Deepcut (bigger detonations), Bloodrite (Vigor buff stacking + lifesteal), Quickfang (2 wounds per hit + post-detonation haste), Nightstalker (Vanish ambushes) — and all four legendary claws were rebuilt to match.',
       'BERSERKER reworked — "The Blood Ledger": every point of Health you lose in a fight (Blood Pact costs, enemy hits, DoTs) is inked into a Ledger that grants +1% damage per 3% of max Health inked (up to +100%) — healing refills you but never erases the books. Titan\'s Heft now adds 100% of your max Health to every hit, Transfusion (Lv60) heals 8% of damage dealt, and Glass Titan (now Lv80) grants +200% max Health. New set paths: Colossus (+100% HP / 350% Heft), Bloodprice (bigger Pact, free at a capped Ledger), Ledgerbound (faster books that carry between foes), Bloodfont (25% lifesteal, overheal inks the Ledger). All four warhammers rebuilt; the Berserk Toll heal ceiling and every "camp at low HP" bonus are gone.',
@@ -30726,7 +30761,7 @@
   // collection it belongs to (checked at render time, when all the collections are defined).
   var MARKET_CATEGORIES = [
     { id:'all', label:'All' }, { id:'materials', label:'Materials' }, { id:'refined', label:'Refined' }, { id:'consumables', label:'Consumables' },
-    { id:'armor', label:'Armor' }, { id:'accessories', label:'Accessories' }, { id:'weapons', label:'Weapons' }, { id:'tools', label:'Tools' }, { id:'relics', label:'Relics' }, { id:'other', label:'Other' }
+    { id:'armor', label:'Armor' }, { id:'accessories', label:'Accessories' }, { id:'weapons', label:'Weapons' }, { id:'tools', label:'Tools' }, { id:'relics', label:'Relics' }, { id:'blueprints', label:'Blueprints' }, { id:'other', label:'Other' }
   ];
   // Item ids are keyed <prefix>_t<tier>, but the prefix isn't always the skill id (weaving->twine,
   // papermaking->paper, gemcutting->gemcut, enchanting->enchant; baking->dough/pie; alchemy->coating,
@@ -30737,10 +30772,12 @@
   var MARKET_REFINED_SKILLS = {}; REFINING_SKILL_IDS.forEach(function(s){ MARKET_REFINED_SKILLS[s] = true; });        // metallurgy bars, tanning leather, glassblowing glass, ...
   ['twine','paper','gemcut','enchant'].forEach(function(p){ MARKET_REFINED_SKILLS[p] = true; });                     // weaving/papermaking/gemcutting/enchanting outputs
   function marketItemCategory(id){
+    if(BLUEPRINT_ITEMS[id]) return 'blueprints';                                              // Masterwork dungeon Blueprints
     if(STACKABLE_WEAPON_ITEMS[id]) return 'weapons';
     if(TOOL_ITEMS[id]) return 'tools';
     if(RELIC_ITEMS[id]) return 'relics';
     if(RING_ITEMS[id] || AMULET_ITEMS[id] || BELT_ITEMS[id]) return 'accessories';            // jewelry + belt
+    if(LEGENDARY_RING_ITEMS[id] || LEGENDARY_AMULET_ITEMS[id] || LEGENDARY_CLOAK_ITEMS[id]) return 'accessories'; // Mastercrafted legendary jewelry/capes
     if(BODY_ARMOR_ITEMS[id] || STACKABLE_SHIELD_ITEMS[id] || STACKABLE_QUIVER_ITEMS[id] || WARD_ITEMS[id]) return 'armor'; // worn/offhand defensive gear
     if(WORKSHOP_ITEMS[id] || COTTAGE_ITEMS[id]) return 'other';
     var m = /^([a-z]+)_t\d+$/.exec(id);
@@ -31669,6 +31706,7 @@
     { id:'belts',     label:'Belts',         icon:svgIcon('belt','var(--gold)') },
     { id:'cloaks',    label:'Cloaks',        icon:svgIcon('cloak','var(--gold)') },
     { id:'tools',     label:'Tools',         icon:svgIcon('gear','var(--gold)') },
+    { id:'blueprints',label:'Blueprints',    icon:svgIcon('starburst','#c9a227') },
     { id:'unique',    label:'Unique',        icon:svgIcon('starburst','var(--rarity-fantastic)') }
   ];
   var INV_GROUP_BY_ID = {}; INV_GROUPS.forEach(function(g){ INV_GROUP_BY_ID[g.id] = g; });
@@ -31697,6 +31735,7 @@
     if(id.indexOf('relic_t')===0) return 'relics';
     if(id.indexOf('belt_t')===0) return 'belts';
     if(id.indexOf('tool_')===0) return 'tools';
+    if(id.indexOf('blueprint_')===0) return 'blueprints';
     return getInventoryCategory(id); // non-equipment: gathering / crafting / estate
   }
   // Rarity embedded in equipment ids as a trailing _rare/_supreme/_fantastic suffix.
@@ -31720,6 +31759,7 @@
   function sellOne(id){
     var item = ALL_SELLABLE[id]; var qty = state.inventory[id]||0;
     if(qty <= 0 || !item) return;
+    if(!(item.sell > 0)){ addLog('The vendor won’t buy that — list it on the Marketplace instead.', 'danger'); return; }
     if(state.lockedItems[id]){ addLog('That item is locked. Unlock it first to sell.', 'danger'); return; }
     earnGold(Math.round(item.sell*merchantSellMult())); state.inventory[id] = qty - 1; addPhysiqueXp([['merchantsSavvy',1]]); needsRender = true;
   }
@@ -31854,7 +31894,7 @@
 
     var body = '<div class="inv-detail-icon">'+item.icon+'</div>';
     body += '<div class="skill-info-title">'+escapeHtml(item.name)+(rarLabel?'<span class="inv-rarity-tag rar-'+rar+'">'+rarLabel+'</span>':'')+'</div>';
-    body += '<div class="inv-detail-meta">'+(cat?cat.label:'Item')+' &bull; Owned <b>'+fmt(qty)+'</b> &bull; '+item.sell+'g each</div>';
+    body += '<div class="inv-detail-meta">'+(cat?cat.label:'Item')+' &bull; Owned <b>'+fmt(qty)+'</b> &bull; '+(item.sell>0 ? item.sell+'g each' : 'Marketplace-only')+'</div>';
 
     var acts = '';
     if(id==='critter_cache'){ acts += '<button class="action-btn" data-action="openCritterCache">Open</button>'; if(qty>1) acts += '<button class="action-btn" data-action="openAllCritterCaches">Open All ('+fmt(qty)+')</button>'; }
@@ -31864,8 +31904,13 @@
     // Claws can also be dual-wielded: offer an off-hand equip, but only while a Claw is in the main hand.
     if(id.indexOf('stweapon_claw_')===0 && hasClawMainhand(state)) acts += '<button class="action-btn" data-action="equipOffhandClaw" data-item="'+id+'">Equip Off-hand</button>';
     acts += '<button class="action-btn'+(isLocked?' stop':'')+'" data-action="toggleItemLock" data-item="'+id+'">'+(isLocked?'Unlock':'Lock')+'</button>';
-    acts += '<button class="action-btn" data-action="sellOne" data-item="'+id+'"'+(isLocked?' disabled title="Locked"':'')+'>Sell 1 (+'+item.sell+'g)</button>';
-    acts += '<button class="action-btn" data-action="sell" data-item="'+id+'"'+(isLocked?' disabled title="Locked"':'')+'>Sell all (+'+fmt(qty*item.sell)+'g)</button>';
+    if(item.sell > 0){
+      acts += '<button class="action-btn" data-action="sellOne" data-item="'+id+'"'+(isLocked?' disabled title="Locked"':'')+'>Sell 1 (+'+item.sell+'g)</button>';
+      acts += '<button class="action-btn" data-action="sell" data-item="'+id+'"'+(isLocked?' disabled title="Locked"':'')+'>Sell all (+'+fmt(qty*item.sell)+'g)</button>';
+    } else {
+      // Non-vendorable (Blueprints, legendary accessories): the Marketplace is the only way to sell.
+      acts += '<div class="item-meta" style="flex-basis:100%">The vendor won&rsquo;t buy this &mdash; sell it on the <b>Marketplace</b> (Social &rarr; Marketplace &rarr; Sell).</div>';
+    }
 
     overlay.style.display = 'flex';
     overlay.innerHTML = '<div class="skill-info-card">'+body+
@@ -34281,7 +34326,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.52.6';
+  var GAME_VERSION = '0.0.53.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -34406,6 +34451,7 @@
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
       earnGold:earnGold, walletSync:walletSync, walletReconcileGold:walletReconcileGold, walletEarnChest:walletEarnChest, itemSync:itemSync, buildRecipeManifest:buildRecipeManifest, buildItemCatalog:buildItemCatalog, itemReconcile:itemReconcile,
+      sellItem:sellItem, sellOne:sellOne, sellAll:sellAll, mergeLegacyBlueprints:mergeLegacyBlueprints, marketOwnedIds:marketOwnedIds,
       authBindIdentity:authBindIdentity, authIdentityMismatch:authIdentityMismatch, _authBoundUserId:function(){ return authBoundUserId; },
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
       ELEM_RAW_STATS:ELEM_RAW_STATS, rawEnchantRange:rawEnchantRange, enchantModRange:enchantModRange, baseIsMagicWeapon:baseIsMagicWeapon, enchantPoolForItem:enchantPoolForItem, enchantCtxForUnique:enchantCtxForUnique, elementalRawHitDamage:elementalRawHitDamage,
