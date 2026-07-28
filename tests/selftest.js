@@ -687,32 +687,33 @@
     ok(typeof FF.estateDrawTotem === 'function' && typeof FF.drawEstateTotemModel === 'function' && typeof FF.estateDrawTdTotem === 'function', 'totem models exist for iso and top-down rendering');
   });
 
-  // ---- Tool forges: any-rarity previous tool counts + unique tool names (ticket-0093) ---------------
-  suite('tools: previous-tier tool of any rarity satisfies the forge', function(){
+  // ---- Tool forges: only the NORMAL previous tool is craft fodder + unique tool names (ticket-0093) --
+  suite('tools: forges consume only the Normal previous tool', function(){
     var s = FF._state, savedInv = s.inventory;
     s.inventory = {};
-    // No copy owned -> the bill lists the Normal id (UI shows "0 owned" against the base variant).
-    eq(FF.ownedPrevToolId('jewelrycrafting', 13), 'tool_jewelrycrafting_t13_normal', 'with none owned the bill asks for the Normal variant');
-    // Only a Rare copy owned -> the bill targets it (this was the "0 owned with a full bag" bug).
+    // The bill always names the Normal variant -- rare+ copies are never auto-consumed, so the card's
+    // "x owned" counts exactly the consumable Normal stock (rare+ loupes are excluded, not eaten).
+    var bill = FF.getCraftToolTierData('jewelrycrafting', 15).inputs; // tier arg is 1-based: t14 data, prev tool t13
+    eq(bill.tool_jewelrycrafting_t13_normal, 1, 'the next-tier bill demands the Normal previous tool');
     s.inventory.tool_jewelrycrafting_t13_rare = 80;
-    eq(FF.ownedPrevToolId('jewelrycrafting', 13), 'tool_jewelrycrafting_t13_rare', 'a Rare-only stock satisfies the previous-tier requirement');
-    ok(FF.getCraftToolTierData('jewelrycrafting', 15).inputs.tool_jewelrycrafting_t13_rare === 1, 'the next-tier bill consumes the owned Rare copy');
-    // A Normal copy alongside better ones -> the LOWEST rarity is consumed, never the Fantastic.
-    s.inventory.tool_jewelrycrafting_t13_normal = 1;
-    s.inventory.tool_jewelrycrafting_t13_fantastic = 1;
-    eq(FF.ownedPrevToolId('jewelrycrafting', 13), 'tool_jewelrycrafting_t13_normal', 'the lowest-rarity copy is preferred (a Fantastic tool is never silently eaten)');
-    // Full forge run: bars + ONLY a Rare previous loupe -> the craft completes and consumes the Rare.
+    s.inventory.tool_jewelrycrafting_t13_fantastic = 2;
+    var bill2 = FF.getCraftToolTierData('jewelrycrafting', 15).inputs;
+    eq(bill2.tool_jewelrycrafting_t13_normal, 1, 'a bag full of Rare/Fantastic copies never changes the bill');
+    ok(bill2.tool_jewelrycrafting_t13_rare === undefined, 'rare+ copies are not craft fodder');
+    ok(!FF.hasInputs(bill2) || (s.inventory.tool_jewelrycrafting_t13_normal||0) > 0, '80 Rare loupes do not satisfy the Normal requirement');
+    // Full forge run: bars + a NORMAL previous loupe (Rare stock untouched beside it).
     var savedAct = s.activity, savedExtra = s.extraCraftSlots, savedRand = Math.random;
     try {
       s.activity = { type:null }; s.extraCraftSlots = [];
-      s.inventory = { tool_jewelrycrafting_t13_rare: 1 };
-      var bill = FF.getCraftToolTierData('jewelrycrafting', 15).inputs; // tier arg is 1-based: t14 data
-      Object.keys(bill).forEach(function(k){ if(k.indexOf('tool_')!==0) s.inventory[k] = bill[k]; });
+      s.inventory = { tool_jewelrycrafting_t13_normal: 1, tool_jewelrycrafting_t13_rare: 80 };
+      var bill3 = FF.getCraftToolTierData('jewelrycrafting', 15).inputs;
+      Object.keys(bill3).forEach(function(k){ if(k.indexOf('tool_')!==0) s.inventory[k] = bill3[k]; });
       Math.random = function(){ return 0.5; };  // 0.5 < the 0.7 base success (craft succeeds); far above the rarity/double/brew chances (all stay off)
       var tact = { type:'craft', craftKind:'tool', skillId:'jewelrycrafting', tierIndex:14, progress:0, targetQty:1, producedQty:0 };
       FF.processCraftActivity(tact, 24*3600*1000);
       Math.random = savedRand;
-      eq(s.inventory.tool_jewelrycrafting_t13_rare||0, 0, 'the forge consumed the Rare previous tool');
+      eq(s.inventory.tool_jewelrycrafting_t13_normal||0, 0, 'the forge consumed the Normal previous tool');
+      eq(s.inventory.tool_jewelrycrafting_t13_rare, 80, '...and left every Rare copy untouched');
       eq(s.inventory.tool_jewelrycrafting_t14_normal||0, 1, 'the next-tier tool was forged');
     } finally { Math.random = savedRand; s.activity = savedAct; s.extraCraftSlots = savedExtra; s.inventory = savedInv; }
     // Every tool line has a UNIQUE display name: goldsmithing's loupe used to share jewelrycrafting's
