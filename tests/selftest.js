@@ -10094,7 +10094,7 @@
 
     // bowArrowToConsume: the highest-tier Fletching Arrow you own that isn't fancier than the bow.
     eq(FF.bowArrowToConsume({ equippedMainhandTier:6, inventory:{ fletching_arrow_t0:10, fletching_arrow_t3:5 } }), 'fletching_arrow_t3', 'consumes the highest owned arrow within the bow tier');
-    eq(FF.bowArrowToConsume({ equippedMainhandTier:6, inventory:{} }), null, 'no arrows -> null (shoot unfletched)');
+    eq(FF.bowArrowToConsume({ equippedMainhandTier:6, inventory:{} }), null, 'no arrows -> null (the shot retreats from the fight)');
     eq(FF.bowArrowToConsume({ equippedMainhandTier:2, inventory:{ fletching_arrow_t10:5 } }), null, 'arrows fancier than the bow are not usable');
     eq(FF.UNFLETCHED_DMG_MULT, 0.25, 'an unfletched bow deals 25% damage');
 
@@ -10114,13 +10114,13 @@
     eq(FF.bowArrowsAvailable({ equippedMainhandTier:3, inventory:{ fletching_arrow_t0:4, fletching_arrow_t10:99 } }), 4, 'arrows fancier than the bow are excluded from the count');
     eq(FF.bowArrowsAvailable({ equippedMainhandTier:6, inventory:{} }), 0, 'no arrows -> 0');
 
-    // Equipping a specific arrow (state.equippedArrow) fires ONLY that arrow -- higher owned arrows are
-    // ignored, and running out shoots unfletched rather than falling back to a different arrow.
+    // A chosen arrow (state.equippedArrow) is PREFERRED while stocked, then the shot falls back to the next
+    // usable unlocked arrow; the ammo counter reflects every shot before you run dry.
     var invMix = { fletching_arrow_t0:10, fletching_arrow_t3:5 };
     eq(FF.bowArrowToConsume({ equippedMainhandTier:6, equippedArrow:'fletching_arrow_t0', inventory:invMix }), 'fletching_arrow_t0', 'a chosen arrow is used even when a higher one is owned');
-    eq(FF.bowArrowsAvailable({ equippedMainhandTier:6, equippedArrow:'fletching_arrow_t0', inventory:invMix }), 10, 'ammo count reflects only the chosen arrow');
-    eq(FF.bowArrowToConsume({ equippedMainhandTier:6, equippedArrow:'fletching_arrow_t5', inventory:invMix }), null, 'chosen arrow you own none of -> unfletched (no fallback)');
-    eq(FF.bowArrowsAvailable({ equippedMainhandTier:6, equippedArrow:'fletching_arrow_t5', inventory:invMix }), 0, 'ammo count is 0 for a chosen arrow you have none of');
+    eq(FF.bowArrowsAvailable({ equippedMainhandTier:6, equippedArrow:'fletching_arrow_t0', inventory:invMix }), 15, 'ammo count is every usable arrow (shots fall back)');
+    eq(FF.bowArrowToConsume({ equippedMainhandTier:6, equippedArrow:'fletching_arrow_t5', inventory:invMix }), 'fletching_arrow_t3', 'chosen arrow you own none of -> falls back to the next usable arrow');
+    eq(FF.bowArrowToConsume({ equippedMainhandTier:6, equippedArrow:'fletching_arrow_t0', inventory:{} }), null, 'chosen arrow with no arrows at all -> null (retreat)');
     // A chosen arrow fancier than the bow can't be nocked.
     eq(FF.bowArrowToConsume({ equippedMainhandTier:2, equippedArrow:'fletching_arrow_t9', inventory:{ fletching_arrow_t9:5 } }), null, 'a chosen arrow above the bow tier is unusable');
     ok(!FF.arrowUsableWithBow({ equippedMainhandTier:2 }, 'fletching_arrow_t9'), 'arrowUsableWithBow rejects an over-tier arrow');
@@ -10128,7 +10128,8 @@
     eq(FF.bowArrowTierCap({ equippedMainhandTier:6 }), 5, 'bow tier cap is bow tier - 1');
     // Locked ammunition is protected -- never auto-nocked/fired and not counted as available, until unlocked.
     eq(FF.bowArrowToConsume({ equippedMainhandTier:6, inventory:{ fletching_arrow_t0:10, fletching_arrow_t3:5 }, lockedItems:{ fletching_arrow_t3:true } }), 'fletching_arrow_t0', 'Auto skips a locked arrow and falls to the next unlocked one');
-    eq(FF.bowArrowToConsume({ equippedMainhandTier:6, inventory:{ fletching_arrow_t3:5 }, lockedItems:{ fletching_arrow_t3:true } }), null, 'Auto with only locked arrows -> null (shoot unfletched, never consume the lock)');
+    eq(FF.bowArrowToConsume({ equippedMainhandTier:6, inventory:{ fletching_arrow_t3:5 }, lockedItems:{ fletching_arrow_t3:true } }), null, 'Auto with only locked arrows -> null (retreat, never consume the lock)');
+    eq(FF.bowArrowToConsume({ equippedMainhandTier:6, equippedArrow:'fletching_arrow_t5', inventory:{ fletching_arrow_t3:5 }, lockedItems:{ fletching_arrow_t3:true } }), null, 'chosen out + only a locked fallback -> null (retreat)');
     eq(FF.bowArrowsAvailable({ equippedMainhandTier:6, inventory:{ fletching_arrow_t0:10, fletching_arrow_t3:5 }, lockedItems:{ fletching_arrow_t3:true } }), 10, 'locked arrows are excluded from the available count');
     eq(FF.bowArrowToConsume({ equippedMainhandTier:6, equippedArrow:'fletching_arrow_t3', inventory:{ fletching_arrow_t3:5 }, lockedItems:{ fletching_arrow_t3:true } }), null, 'a locked chosen arrow is not fired');
     eq(FF.bowArrowsAvailable({ equippedMainhandTier:6, equippedArrow:'fletching_arrow_t3', inventory:{ fletching_arrow_t3:5 }, lockedItems:{ fletching_arrow_t3:true } }), 0, 'a locked chosen arrow counts as 0 available');

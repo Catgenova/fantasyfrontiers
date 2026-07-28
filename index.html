@@ -4421,16 +4421,16 @@
     var m = /^fletching_arrow_t(\d+)$/.exec(arrowId || '');
     return !!m && +m[1] <= bowArrowTierCap(st);
   }
-  // The arrow a bow shot spends. If the player has EQUIPPED a specific arrow (state.equippedArrow), only
-  // that arrow is ever nocked -- when they run out of it the shot goes unfletched. Otherwise ("Auto") the
-  // highest-tier Arrow they own that isn't fancier than the bow is used. Returns the arrow id or null.
+  // The arrow a bow shot spends. An EQUIPPED arrow (state.equippedArrow) is PREFERRED while stocked; when it
+  // runs out the shot falls back to the next usable unlocked arrow (highest tier <= the bow). "Auto" (no
+  // selection) picks that highest-tier owned arrow directly. Returns the arrow id, or null if none remain.
   function bowArrowToConsume(st){
     st = st || state;
     var cap = bowArrowTierCap(st);
     var sel = st.equippedArrow;
     var locked = st.lockedItems || {};   // locked arrows are protected -- never nocked/fired until unlocked
-    if(sel){ return (arrowUsableWithBow(st, sel) && ((st.inventory && st.inventory[sel]) || 0) > 0 && !locked[sel]) ? sel : null; }
-    for(var i = cap; i >= 0; i--){ var aid = 'fletching_arrow_t'+i; if(((st.inventory && st.inventory[aid]) || 0) > 0 && !locked[aid]) return aid; }
+    if(sel && arrowUsableWithBow(st, sel) && ((st.inventory && st.inventory[sel]) || 0) > 0 && !locked[sel]) return sel; // the chosen arrow, while stocked
+    for(var i = cap; i >= 0; i--){ var aid = 'fletching_arrow_t'+i; if(((st.inventory && st.inventory[aid]) || 0) > 0 && !locked[aid]) return aid; } // else the next usable unlocked arrow
     return null;
   }
   // Arrows the equipped bow can actually fire right now -- powers the live combat-screen ammo counter. With
@@ -4438,9 +4438,7 @@
   function bowArrowsAvailable(st){
     st = st || state;
     var cap = bowArrowTierCap(st);
-    var sel = st.equippedArrow;
-    var locked = st.lockedItems || {};   // the live counter reflects only arrows that can actually fire (unlocked)
-    if(sel){ return (arrowUsableWithBow(st, sel) && !locked[sel]) ? ((st.inventory && st.inventory[sel]) || 0) : 0; }
+    var locked = st.lockedItems || {};   // shots fall back through every unlocked usable arrow, so the counter = total shots before you retreat
     var n = 0;
     for(var i = cap; i >= 0; i--){ var aid = 'fletching_arrow_t'+i; if(!locked[aid]) n += (st.inventory && st.inventory[aid]) || 0; }
     return n;
@@ -14438,9 +14436,15 @@
     var unfletched = false;
     var _arrowDmg = null; // base damage the nocked arrow adds to this bow shot (same-tier bow damage)
     if(!isOffhand && weaponStyle.hand === 'bow'){
-      var _arrowId = bowArrowToConsume(state);
-      if(_arrowId){ _arrowDmg = arrowBaseDamage(_arrowId); if(Math.random() >= quiverAmmoPreserve(state)) state.inventory[_arrowId] = Math.max(0, (state.inventory[_arrowId] || 0) - 1); }
-      else { unfletched = true; if(Math.random() < 0.25) spawnCombatFloat('No arrows!', 'ft-miss', true); }
+      var _arrowId = bowArrowToConsume(state);          // chosen arrow, or the next usable one it falls back to
+      if(!_arrowId){                                     // out of every usable arrow -> retreat from the fight
+        if(!offlineCapture) spawnCombatFloat('Out of arrows!', 'ft-miss', true);
+        addLog('Out of arrows! You retreat from the fight.', 'important');
+        stopActivity(); needsRender = true;
+        return;
+      }
+      _arrowDmg = arrowBaseDamage(_arrowId);
+      if(Math.random() >= quiverAmmoPreserve(state)) state.inventory[_arrowId] = Math.max(0, (state.inventory[_arrowId] || 0) - 1);
     }
 
     // Accuracy vs Dodge: roll to land the hit. A miss deals no damage and fires no on-hit effects
@@ -17877,7 +17881,7 @@
     html += '</div></div>';
 
     html += '<h3>Fletch Arrows</h3>';
-    html += '<div class="section-intro" style="margin:0 0 6px">Each Arrow now carries <b>base damage equal to a bow of the same tier</b> — a nocked Arrow adds its damage on top of the bow, so keeping high-tier ammo stocked hits far harder than firing unfletched.</div>';
+    html += '<div class="section-intro" style="margin:0 0 6px">Each Arrow now carries <b>base damage equal to a bow of the same tier</b> — a nocked Arrow adds its damage on top of the bow, so keeping high-tier ammo stocked hits far harder. Run a bow dry and you retreat from the fight, so keep arrows stocked.</div>';
     html += '<div class="inputs-line" style="margin:0 0 6px">Shafts owned: <b>'+fmt(state.inventory.shaft||0)+'</b></div>';
     html += renderRecipeGrid('fletching', CRAFTING_SKILLS.fletching.recipes);
     return html;
@@ -18693,9 +18697,9 @@
     for(var i=0;i<=cap;i++){ var id='fletching_arrow_t'+i; if((state.inventory[id]||0)>0) owned.push(id); }
     var curLabel = sel ? ((ALL_SELLABLE[sel]||{}).name||sel) : 'Auto (highest usable)';
     var curDmg = activeId ? arrowBaseDamage(activeId) : null;
-    html += '<div class="section-intro">Choose which arrow your bow fires. Only that arrow is spent and counted for damage; when you run out the shot goes unfletched (&times;'+UNFLETCHED_DMG_MULT+' damage). Arrows fancier than your bow can\'t be nocked. <b>Locked</b> arrows are never fired &mdash; unlock them in your Inventory to use them.</div>';
+    html += '<div class="section-intro">Choose which arrow your bow fires. That arrow is spent first; when you run out it falls back to the next usable arrow you own, and once <b>every</b> arrow is gone you retreat from the fight. Arrows fancier than your bow can\'t be nocked. <b>Locked</b> arrows are never fired &mdash; unlock them in your Inventory to use them.</div>';
     html += '<div class="card-grid"><div class="item-card">';
-    html += '<div class="item-top"><div class="item-icon">'+svgIcon('arrow','#a8895c')+'</div><div><div class="item-name">Arrow</div><div class="item-meta">'+escapeHtml(curLabel)+(curDmg ? ' &bull; +'+curDmg.dmgMin+'-'+curDmg.dmgMax+' dmg' : (sel ? ' &bull; <span style="color:var(--hp-bad)">none owned — unfletched</span>' : ''))+'</div></div></div>';
+    html += '<div class="item-top"><div class="item-icon">'+svgIcon('arrow','#a8895c')+'</div><div><div class="item-name">Arrow</div><div class="item-meta">'+escapeHtml(curLabel)+(curDmg ? ' &bull; +'+curDmg.dmgMin+'-'+curDmg.dmgMax+' dmg' + ((sel && activeId && activeId!==sel) ? ' &bull; <span style="color:var(--gold)">out — firing '+escapeHtml((ALL_SELLABLE[activeId]||{}).name||activeId)+'</span>' : '') : ' &bull; <span style="color:var(--hp-bad)">no arrows — you retreat from the fight</span>')+'</div></div></div>';
     html += '<div class="style-row">';
     // Auto option.
     html += '<button class="style-btn'+(sel===null?' active':'')+'" data-action="equipArrow" data-item="">'+svgIcon('arrow','currentColor')+' Auto <span class="style-type">highest usable arrow</span></button>';
@@ -19128,7 +19132,7 @@
       var _nockId = bowArrowToConsume(state);
       var _nockLabel = state.equippedArrow ? ((ALL_SELLABLE[state.equippedArrow]||{}).name||state.equippedArrow) : ('Auto'+(_nockId ? ' &bull; '+((ALL_SELLABLE[_nockId]||{}).name||_nockId) : ''));
       html += '<div class="stat-row"><span class="stat-label">Nocked Arrow</span><span class="stat-value">'+_nockLabel+'</span></div>';
-      html += '<div class="stat-row"><span class="stat-label">Arrows</span><span class="stat-value" id="statArrowsVal">'+(_arrows>0 ? fmt(_arrows)+(_keepPct?' <span style="color:var(--gold)">('+_keepPct+'% keep)</span>':'') : '<span style="color:var(--hp-bad)">none — unfletched &times;'+UNFLETCHED_DMG_MULT+'</span>')+'</span></div>';
+      html += '<div class="stat-row"><span class="stat-label">Arrows</span><span class="stat-value" id="statArrowsVal">'+(_arrows>0 ? fmt(_arrows)+(_keepPct?' <span style="color:var(--gold)">('+_keepPct+'% keep)</span>':'') : '<span style="color:var(--hp-bad)">none — you retreat</span>')+'</span></div>';
     }
     var effAtkTime = Math.round(weaponStyle.attackSpeed * classAttackSpeedMult(state) * 100) / 100;
     html += '<div class="stat-row"><span class="stat-label">Attack Time</span><span class="stat-value">'+effAtkTime+'s'+(effAtkTime<weaponStyle.attackSpeed?' <span style="color:var(--gold)">(class)</span>':'')+'</span></div>';
@@ -32419,7 +32423,7 @@
       if(sar && sar._arrowN !== _arN){
         sar._arrowN = _arN;
         var _keepPct = Math.round(quiverAmmoPreserve(state)*100);
-        sar.innerHTML = _arN>0 ? (fmt(_arN)+(_keepPct?' <span style="color:var(--gold)">('+_keepPct+'% keep)</span>':'')) : ('<span style="color:var(--hp-bad)">none — unfletched &times;'+UNFLETCHED_DMG_MULT+'</span>');
+        sar.innerHTML = _arN>0 ? (fmt(_arN)+(_keepPct?' <span style="color:var(--gold)">('+_keepPct+'% keep)</span>':'')) : ('<span style="color:var(--hp-bad)">none — you retreat</span>');
       }
       var pcl = document.getElementById('potionChargeLabel');
       if(pcl) pcl.textContent = (state.potionCharges||0);
@@ -34074,7 +34078,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.50.12';
+  var GAME_VERSION = '0.0.50.13';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
