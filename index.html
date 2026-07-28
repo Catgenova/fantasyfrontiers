@@ -8322,7 +8322,7 @@
         if(frostwardenBonus(80)) frostwardenApplyChill(cact); // Rime Resonance: familiar frost spells also Chill
         // Familiar damage floats over the enemy on the combat card, tagged with the familiar's name.
         spawnCombatFloat(escapeHtml(famName) + ' <b>-' + dmg + '</b>' + (famCrit ? ' CRIT' : ''), famCrit ? 'ft-crit' : 'ft-rare', true);
-        if(dmg > 0){ addXp(STAVES_SKILL_ID, dmg); awardClassXp(dmg); awardElementXp(spell.element, dmg); } // Staves proficiency + active Class + Elemental Attunement train on familiar damage
+        if(dmg > 0){ if(isStaff(state.equippedMainhand)) addXp(STAVES_SKILL_ID, dmg); awardClassXp(dmg); awardElementXp(spell.element, dmg); } // Staves proficiency trains on familiar damage ONLY while a Staff is equipped; active Class + Elemental Attunement always train
         if(spell.type==='siphon'){
           var stolen = Math.min(dmg, healRoom(state));
           if(stolen>0){ state.playerHp += stolen; spawnCombatFloat('+'+stolen+' HP', 'ft-success', false); }
@@ -34278,7 +34278,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.52.3';
+  var GAME_VERSION = '0.0.52.4';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

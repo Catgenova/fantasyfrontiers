@@ -9781,6 +9781,18 @@
     near(seff(1), 0.01, 'Lv1 staves = +1%');
     near(seff(100), 1.00, 'Lv100 staves = +100%');
     ok(seff(50) > seff(10), 'staves efficiency rises with level');
+    // Staves proficiency trains on familiar damage ONLY while a Staff is equipped.
+    var S2 = FF._state, svX = { act:S2.activity, mh:S2.equippedMainhand, mhT:S2.equippedMainhandTier, xp:S2.xp.staves };
+    try {
+      S2.activity = { type:'combat', monsterId:'wildlife_wolf', monsterHp: 1e9 };
+      S2.xp.staves = 0;
+      S2.equippedMainhand = 'claymore'; S2.equippedMainhandTier = 5;
+      FF.castFamiliarSpell({ type:'hit', name:'Test Bolt', dmgType:'blunt', element:null, amount:10 }, 50, 'mining');
+      eq(S2.xp.staves, 0, 'familiar damage with a CLAYMORE equipped grants no Staves XP');
+      S2.equippedMainhand = 'staff'; S2.equippedMainhandTier = 5;
+      FF.castFamiliarSpell({ type:'hit', name:'Test Bolt', dmgType:'blunt', element:null, amount:10 }, 50, 'mining');
+      ok(S2.xp.staves > 0, 'the same familiar damage with a STAFF equipped trains Staves');
+    } finally { S2.activity = svX.act; S2.equippedMainhand = svX.mh; S2.equippedMainhandTier = svX.mhT; S2.xp.staves = svX.xp; }
   });
 
   // ---- Scepter (1h hybrid: half blunt / half light, runesmithing) ----------------------
