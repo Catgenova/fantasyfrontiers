@@ -19169,12 +19169,17 @@
     // Fold the Weapon/All Damage (%) and Flat Damage enchants into the displayed Attack Damage so the
     // number reflects them (they were previously only listed in a separate block).
     var _dmgEnchMult = 1 + (enchTot.pctDamage||0)/100, _flatEnch = Math.round(enchTot.flatDamage||0);
-    effMin = Math.max(1, Math.round(_dmgBaseMin * physDmgMult * weaponProficiency * _mhEnh * _dmgEnchMult * (1 + _relicBonusStat))) + _flatEnch;
-    effMax = Math.max(effMin+1, Math.round(_dmgBaseMax * physDmgMult * weaponProficiency * _mhEnh * _dmgEnchMult * (1 + _relicBonusStat))) + _flatEnch;
+    // Physical (Blunt/Slash/Pierce) Rings multiply the hit in combat (getRingDamageMultiplier, weighted by how
+    // much of the weapon's damage is that type). Fold it into the displayed Attack Damage with a "(+X% ring)"
+    // tag so the panel reflects the ring, exactly like the relic/enchant tags. Wands use elemental rings instead.
+    var _ringDmgMult = isWandMain ? 1 : getRingDamageMultiplier(state, weaponMix);
+    var _ringTag = _ringDmgMult > 1 ? ' <span style="color:var(--gold);font-size:11px">(+'+Math.round((_ringDmgMult-1)*100)+'% ring)</span>' : '';
+    effMin = Math.max(1, Math.round(_dmgBaseMin * physDmgMult * weaponProficiency * _mhEnh * _dmgEnchMult * (1 + _relicBonusStat) * _ringDmgMult)) + _flatEnch;
+    effMax = Math.max(effMin+1, Math.round(_dmgBaseMax * physDmgMult * weaponProficiency * _mhEnh * _dmgEnchMult * (1 + _relicBonusStat) * _ringDmgMult)) + _flatEnch;
     var html = '<div class="stats-panel">';
     html += '<div class="stats-group" style="grid-column:1/-1"><div class="stat-row"><span class="stat-label">Combat Score</span><span class="stat-value">'+combatLevelEquivalent(state)+'</span></div></div>';
     html += '<div class="stats-group"><h4>'+svgIcon('sword','currentColor')+' Offense</h4>';
-    html += '<div class="stat-row"><span class="stat-label">Attack Damage</span><span class="stat-value">'+effMin+'-'+effMax+_et('pctDamage',true)+_et('flatDamage',false)+_relicTag+'</span></div>';
+    html += '<div class="stat-row"><span class="stat-label">Attack Damage</span><span class="stat-value">'+effMin+'-'+effMax+_et('pctDamage',true)+_et('flatDamage',false)+_relicTag+_ringTag+'</span></div>';
     // Elemental raw-damage enchants: one gold row per element carried (added flat per hit, element-advantage scaled).
     for(var _erEl in ELEM_RAW_STATS){ if(enchTot[ELEM_RAW_STATS[_erEl]]){ html += '<div class="stat-row"><span class="stat-label">'+elementIcon(_erEl)+' '+elementLabel(_erEl)+' Damage</span><span class="stat-value" style="color:var(--gold)">+'+Math.round(enchTot[ELEM_RAW_STATS[_erEl]])+'</span></div>'; } }
     if(weaponStyle.hand==='bow'){
@@ -34158,7 +34163,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.50.16';
+  var GAME_VERSION = '0.0.50.17';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

@@ -1459,6 +1459,31 @@
     }
   });
 
+  // ---- Equipment & Stats: a physical (Blunt/Slash/Pierce) Ring's damage shows on Attack Damage --------
+  // The ring multiplier is applied in combat (getRingDamageMultiplier) but the panel used to omit it, so a
+  // "+346% slashing" ring looked like it did nothing. The panel now folds it in and tags "(+X% ring)".
+  suite('stats panel: physical ring damage shown on Attack Damage', function(){
+    var s = FF._state;
+    var sv = { mh:s.equippedMainhand, mhTier:s.equippedMainhandTier, mhRar:s.equippedMainhandRarity, mhUid:s.equippedMainhandUid, jew:s.jewelrySlots };
+    function dmgMaxOf(h){ var m = /Attack Damage<\/span><span class="stat-value">(\d+)-(\d+)/.exec(h); return m ? parseInt(m[2],10) : null; }
+    try {
+      s.equippedMainhand = 'scimitar'; s.equippedMainhandTier = 10; s.equippedMainhandRarity = 'normal'; s.equippedMainhandUid = null;
+      s.jewelrySlots = {};
+      var htmlNo = FF.renderCombatStatsPanel();
+      ok(!/% ring\)/.test(htmlNo), 'no ring -> the panel carries no "% ring" tag');
+      var dmgNo = dmgMaxOf(htmlNo);
+      ok(dmgNo !== null && dmgNo > 0, 'panel reports a positive Attack Damage');
+      // Equip a Fantastic T20 Ring of Slash (+50% base x8 = +400%, weighted by the weapon's slashing share).
+      s.jewelrySlots = { ring1: { typeId:'slash', tier:20, rarity:'fantastic' } };
+      ok(FF.getRingDamageMultiplier(s, FF.getWeaponStyle('scimitar').attackTypes) > 1, 'the ring yields a positive physical damage multiplier');
+      var htmlYes = FF.renderCombatStatsPanel();
+      ok(/\(\+\d+% ring\)/.test(htmlYes), 'the panel now tags the ring bonus "(+X% ring)"');
+      ok(dmgMaxOf(htmlYes) > dmgNo, 'displayed Attack Damage rises once a physical ring is equipped');
+    } finally {
+      s.equippedMainhand = sv.mh; s.equippedMainhandTier = sv.mhTier; s.equippedMainhandRarity = sv.mhRar; s.equippedMainhandUid = sv.mhUid; s.jewelrySlots = sv.jew;
+    }
+  });
+
   // ---- Enemy specials: Elemental primal attacks (Chill / Blind / Purge / Veil + engine reuse) ----
   suite('enemy specials: elemental primal attacks', function(){
     var expect = { elemental_fire_elemental:'burn', elemental_magma_golem:'cinder', elemental_ice_elemental:'chill', elemental_frost_giant:'icycarapace', elemental_stone_golem:'petrify', elemental_air_elemental:'blind', elemental_astral_elemental:'purge', elemental_primal_elemental:'burn', elemental_void_elemental:'drain', elemental_elemental_titan:'veil' };
