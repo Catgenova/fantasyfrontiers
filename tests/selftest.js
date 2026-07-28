@@ -9699,6 +9699,32 @@
     }
   });
 
+  // ---- Guild bank: legendary / set uniques keep their real name + effect through the vault ----
+  suite('guild bank: legendary uniques survive the vault round-trip', function(){
+    var def = FF.D1_LEG_GEAR_DEFS.filter(function(d){ return d.slot==='mainhand'; })[0];
+    ok(def, 'a D1 mainhand legendary exists to test with');
+    var top = FF.legGearBaseTopTier(def.base);
+    var base = 'stweapon_'+def.base+'_t'+top+'_rare';
+    var legName = FF.LEGENDARY_GEAR_ITEMS[FF.legGearItemId(def.key,'rare')].name;
+    var u = { base:base, kind:'weapon', tier:top, rarity:'rare', enhance:0, enchants:[{mod:'critDamage',roll:20}], leg:def.key };
+    // The bug: without carrying leg, the item names by its plain base, not its legendary.
+    ok(FF.uniqueBaseName(u) === legName && legName !== (FF.ALL_SELLABLE[base]||{}).name, 'a legendary unique names by its legendary, not its base');
+    var blob = FF.bankUniqueBlob(u);
+    eq(blob.leg, def.key, 'the deposit blob carries the legendary key');
+    eq(blob.enchants.length, 1, '...and its enchants');
+    var revived = FF.bankUniqueRevive({ base:blob.base, kind:blob.kind, tier:blob.tier, rarity:blob.rarity, enhance:blob.enhance, enchants:blob.enchants, leg:blob.leg });
+    eq(revived.leg, def.key, 'a withdrawn legendary re-mints with its leg (effect restored, not just the name)');
+    eq(FF.uniqueBaseName(revived), legName, '...and reads back as its legendary name');
+    eq(revived.enchants[0].roll, 20, 'enchants survive the round-trip');
+    // A plain unique carries a null leg -> unaffected.
+    eq(FF.bankUniqueBlob({ base:base, kind:'weapon', tier:top, rarity:'rare', enhance:0, enchants:[] }).leg, null, 'a plain unique carries a null leg');
+    // Armor-set piece: set/setLayer round-trip too.
+    var sblob = FF.bankUniqueBlob({ base:'bodyarmor_plate_chest_t9_rare', kind:'bodyarmor', tier:9, rarity:'rare', enhance:0, enchants:[], set:'knight', setLayer:'d2' });
+    ok(sblob.set==='knight' && sblob.setLayer==='d2', 'a set piece carries its set key + layer');
+    var sr = FF.bankUniqueRevive({ base:sblob.base, kind:sblob.kind, tier:sblob.tier, rarity:sblob.rarity, enhance:0, enchants:[], set:sblob.set, setLayer:sblob.setLayer });
+    ok(sr.set==='knight' && sr.setLayer==='d2', 'a withdrawn set piece keeps its set + layer');
+  });
+
   suite('equip picker: best-first, grouped, filterable candidate list', function(){
     ok(typeof FF.sortEquipCandidates==='function' && typeof FF.renderEquipCandidatePicker==='function', 'equip picker helpers exported');
     // Sort: equipped pinned to the top, usable by score desc, locked sunk to the bottom.

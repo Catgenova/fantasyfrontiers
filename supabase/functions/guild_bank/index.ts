@@ -86,10 +86,12 @@ Deno.serve(async (req) => {
     const { data: items } = await admin.from("guild_bank")
       .select("item_key, qty").eq("guild_id", guildId).order("updated_at", { ascending: false });
     const { data: uniq } = await admin.from("guild_bank_unique")
-      .select("id, base, kind, tier, rarity, enhance, enchants").eq("guild_id", guildId).order("updated_at", { ascending: false });
+      .select("id, base, kind, tier, rarity, enhance, enchants, leg, set_key, set_layer").eq("guild_id", guildId).order("updated_at", { ascending: false });
     const list = items || [];
     const uniques = (uniq || []).map((u) => ({
       bank_uid: u.id, base: u.base, kind: u.kind, tier: u.tier, rarity: u.rarity, enhance: u.enhance, enchants: u.enchants,
+      // Legendary key + armor-set identity so the client shows the real name (Bloodwaltz), not the base.
+      leg: u.leg ?? null, set: u.set_key ?? null, setLayer: u.set_layer ?? null,
     }));
     return {
       slots: g?.bank_slots ?? 5,
@@ -213,9 +215,14 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "You’ve banked a lot of high-end items recently — try again later.", code: "rate" });
       }
     }
+    // Legendary key + armor-set identity: short opaque strings, carried so the item keeps its name + effect.
+    const leg = (typeof u.leg === "string" && u.leg) ? String(u.leg).slice(0, 48) : null;
+    const setKey = (typeof u.set === "string" && u.set) ? String(u.set).slice(0, 48) : null;
+    const setLayer = (typeof u.setLayer === "string" && u.setLayer) ? String(u.setLayer).slice(0, 8) : null;
     const { data: id, error } = await admin.rpc("guild_bank_deposit_unique", {
       p_guild: guildId, p_base: base, p_kind: kind.slice(0, 24), p_tier: tier, p_rarity: rarity,
       p_enhance: Math.max(0, Math.min(15, Math.floor(enhance))), p_enchants: enchants,
+      p_leg: leg, p_set: setKey, p_set_layer: setLayer,
     });
     if (error) return json({ ok: false, error: "Deposit failed." }, 500);
     if (id === -2) return json({ ok: false, error: "The bank is full — buy more slots.", code: "full" }, 409);
