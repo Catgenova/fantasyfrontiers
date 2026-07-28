@@ -9675,6 +9675,30 @@
     } finally { S.inventory = savedInv; if(savedCat) FF.navPickCat(savedCat); }
   });
 
+  // ---- Offhand picker: shields grouped by size, wards grouped by element ----
+  suite('offhand: shields by size, wards by element', function(){
+    var s = FF._state;
+    var saved = { mh:s.equippedMainhand, mt:s.equippedMainhandTier, oh:s.equippedOffhand, ot:s.equippedOffhandTier, inv:s.inventory,
+      xs:s.xp.shieldSmall, xm:s.xp.shieldMedium, xl:s.xp.shieldLarge, xr:s.xp.runesmithing };
+    try {
+      s.equippedMainhand='sword'; s.equippedMainhandTier=5; s.equippedOffhand=null; s.equippedOffhandTier=0;
+      s.xp.shieldSmall = s.xp.shieldMedium = s.xp.shieldLarge = s.xp.runesmithing = 200000;
+      s.inventory = { 'stshield_shieldSmall_t1_normal':1, 'stshield_shieldLarge_t2_normal':1,
+                      'stward_wardFire_t1_normal':1, 'stward_wardDark_t2_normal':1 };
+      var sh = FF.renderEquipShieldSection();
+      var iS = sh.indexOf('Small Shields'), iL = sh.indexOf('Large Shields');
+      ok(iS > -1 && iL > -1 && iS < iL, 'shield groups render Small before Large (size order)');
+      ok(sh.indexOf('Medium Shields') === -1, 'a size with no owned shields gets no group');
+      var wd = FF.renderEquipWardSection();
+      var iF = wd.indexOf('Fire Wards'), iD = wd.indexOf('Dark Wards');
+      ok(iF > -1 && iD > -1 && iF < iD, 'ward groups render Fire before Dark (element order)');
+      ok(!/Water Wards|Earth Wards|Light Wards/.test(wd), 'elements with no owned wards get no group');
+    } finally {
+      s.equippedMainhand=saved.mh; s.equippedMainhandTier=saved.mt; s.equippedOffhand=saved.oh; s.equippedOffhandTier=saved.ot;
+      s.inventory=saved.inv; s.xp.shieldSmall=saved.xs; s.xp.shieldMedium=saved.xm; s.xp.shieldLarge=saved.xl; s.xp.runesmithing=saved.xr;
+    }
+  });
+
   suite('equip picker: best-first, grouped, filterable candidate list', function(){
     ok(typeof FF.sortEquipCandidates==='function' && typeof FF.renderEquipCandidatePicker==='function', 'equip picker helpers exported');
     // Sort: equipped pinned to the top, usable by score desc, locked sunk to the bottom.
