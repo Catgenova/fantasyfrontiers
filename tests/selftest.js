@@ -11523,14 +11523,17 @@
       eq(FF.uniqueIsEquipped('uc'), true, 'the unique reads as equipped');
       // Damage pipeline: the unique's enchants flow through the equipped totals via the off-hand uid.
       eq(FF.equippedEnchantTotals(s).flatDamage, 17, 'the off-hand unique Claw\'s enchant is in the equipped totals');
-      // Inventory/Improvement "Equip off-hand" button appears only for an unworn unique Claw with a Claw main hand.
+      // Inventory/Improvement "Equip off hand" button: shown for any unworn unique Claw, DISABLED until a
+      // Claw main hand makes dual-wield valid, and absent while the Claw itself is worn.
       ok(typeof FF.uniqueOffhandClawBtn === 'function', 'uniqueOffhandClawBtn exported');
       // (it's equipped off-hand right now -> no button)
       eq(FF.uniqueOffhandClawBtn(s.uniqueItems.uc), '', 'no off-hand button while the Claw is already worn');
       FF.unequipUnique('uc');
-      ok(/equipUniqueOffhandClaw/.test(FF.uniqueOffhandClawBtn(s.uniqueItems.uc)), 'an unworn unique Claw offers the off-hand button with a Claw main hand');
+      var withMain = FF.uniqueOffhandClawBtn(s.uniqueItems.uc);
+      ok(/equipUniqueOffhandClaw/.test(withMain) && !/disabled/.test(withMain), 'an unworn unique Claw offers the off-hand button (enabled) with a Claw main hand');
       s.equippedMainhand='rapier';
-      eq(FF.uniqueOffhandClawBtn(s.uniqueItems.uc), '', 'no off-hand button without a Claw main hand');
+      var noMain = FF.uniqueOffhandClawBtn(s.uniqueItems.uc);
+      ok(/equipUniqueOffhandClaw/.test(noMain) && /disabled/.test(noMain), 'without a Claw main hand the off-hand button is shown but disabled');
       s.equippedMainhand='claw';
       // Guard: the same unique can't be off-handed while it's in the main hand.
       s.equippedMainhandUid='uc';
@@ -11539,6 +11542,19 @@
       // Guard: no unique off-hand Claw without a Claw main hand.
       s.equippedMainhand='rapier';
       eq(FF.equipUniqueOffhandClaw('uc'), false, 'cannot off-hand a unique Claw without a Claw main hand');
+      // Stackable-claw picker row carries an explicit button per hand; the off-hand is gated on a Claw main hand.
+      var clawCand = { icon:'', name:'Iron Claws', qty:2, statHtml:'5-9 dmg', canEquip:true, equipped:false, clawId:'stweapon_claw_t0_normal', action:'equipStackableWeapon', data:'data-item="stweapon_claw_t0_normal"' };
+      s.equippedMainhand='rapier';
+      var rowNoMain = FF.equipCandidateRowHtml(clawCand);
+      ok(/equipStackableWeapon/.test(rowNoMain) && /Equip main hand/.test(rowNoMain), 'a claw row shows an Equip main hand button');
+      ok(/equipOffhandClaw/.test(rowNoMain) && /Equip off hand/.test(rowNoMain) && /disabled/.test(rowNoMain), 'and an Equip off hand button, disabled without a claw main hand');
+      s.equippedMainhand='claw';
+      var rowMain = FF.equipCandidateRowHtml(clawCand);
+      ok(/equipOffhandClaw/.test(rowMain) && !/disabled/.test(rowMain), 'the off-hand button is enabled with a claw main hand');
+      // A non-claw weapon keeps the single whole-row equip button.
+      var swordCand = { icon:'', name:'Sword', qty:1, statHtml:'', canEquip:true, equipped:false, clawId:null, action:'equipStackableWeapon', data:'data-item="stweapon_sword_t0_normal"' };
+      var swordRow = FF.equipCandidateRowHtml(swordCand);
+      ok(!/claw-hand-btns/.test(swordRow) && /data-action="equipStackableWeapon"/.test(swordRow), 'a non-claw weapon keeps the single-button equip row');
     } finally {
       s.equippedMainhand=sv2.mh; s.equippedMainhandTier=sv2.mt; s.equippedMainhandRarity=sv2.mr; s.equippedOffhand=sv2.oh; s.equippedOffhandTier=sv2.ot; s.equippedOffhandRarity=sv2.or; s.equippedMainhandUid=sv2.muid; s.equippedOffhandUid=sv2.ouid; s.uniqueItems=sv2.ui; s.xp.claw=sv2.cx;
     }

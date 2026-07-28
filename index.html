@@ -877,6 +877,12 @@
      appears on touch). */
   .style-btn .style-req{display:inline-flex;align-items:center;gap:3px;font-family:var(--font-mono);font-size:10px;color:var(--hp-bad);}
   .style-btn .style-req svg{width:11px;height:11px;}
+  /* Claws are dual-wieldable, so their equip row carries an explicit button per hand instead of being one
+     whole-row equip target. */
+  .style-btn.claw-row{cursor:default;}
+  .style-btn.claw-row:hover{border-color:var(--border);color:var(--text-dim);}
+  .claw-hand-btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;width:100%;}
+  .claw-hand-btns .mini-btn{flex:1 1 auto;}
 
   .matchup-badge{font-family:var(--font-mono);font-size:10px;padding:2px 6px;border-radius:10px;text-transform:uppercase;letter-spacing:0.5px;}
   .matchup-strong{background:rgba(92,138,60,0.2);color:var(--hp-good);}
@@ -13724,14 +13730,15 @@
   function renderLinkedItemCard(b64){ var d = decodeItemLink(b64); if(!d) return ''; return uniqueCardBody(d); }
   // One card in the Inventory "Unique" section: the full stat card for a unique you own; tapping it
   // opens the manage popup (equip / enchant / sell / link).
-  // "Equip off-hand" button for a unique Claw -- shown only when a Claw main hand makes dual-wield valid
-  // and this exact unique isn't already worn. Shared by the Inventory detail popup and the Improvement card
-  // (a unique Claw is kind 'weapon', so the plain Equip button always routes it to the main hand).
+  // "Equip off hand" button for an unequipped unique Claw -- always offered (a claw is kind 'weapon', so the
+  // paired Equip button routes it to the main hand), and DISABLED with a hint until a Claw main hand makes
+  // dual-wield valid. Returning a button for every claw also flips its paired label to "Equip main hand".
+  // Shared by the Improvement card and the Inventory detail popup. Returns '' for non-claws / worn claws.
   function uniqueOffhandClawBtn(u){
     if(!u || uniqueIsEquipped(u.uid)) return '';
     if(!(u.kind==='weapon' && /^stweapon_claw_t\d+_\w+$/.test(u.base))) return '';
-    if(!hasClawMainhand(state)) return '';
-    return '<button class="mini-btn" data-action="equipUniqueOffhandClaw" data-uid="'+u.uid+'">Equip off-hand</button>';
+    var ok = hasClawMainhand(state);
+    return '<button class="mini-btn" data-action="equipUniqueOffhandClaw" data-uid="'+u.uid+'"'+(ok?'':' disabled title="Equip a Claw in your main hand first"')+'>Equip off hand</button>';
   }
   function renderUniqueInvCard(u){
     var eq = uniqueIsEquipped(u.uid);
@@ -13772,8 +13779,17 @@
     var eq = uniqueIsEquipped(u.uid);
     var lock = eq ? null : uniqueEquipLock(u);
     var btn;
+    var isClawU = u.kind==='weapon' && /^stweapon_claw_t\d+_\w+$/.test(u.base);
     if(eq) btn = '<button class="mini-btn stop" data-action="improveUnequip" data-uid="'+u.uid+'" style="margin-top:9px;width:100%;">Unequip</button>';
     else if(lock) btn = '<button class="mini-btn" disabled style="margin-top:9px;width:100%;opacity:.5;">'+svgIcon('lock','currentColor')+' '+lock+'</button>';
+    else if(isClawU){
+      // A claw dual-wields: explicit button per hand (off-hand needs a Claw in the main hand).
+      var ohOk = hasClawMainhand(state);
+      btn = '<div class="claw-hand-btns" style="margin-top:9px;">'
+        + '<button class="mini-btn" data-action="improveEquip" data-uid="'+u.uid+'">Equip main hand</button>'
+        + '<button class="mini-btn" data-action="equipUniqueOffhandClaw" data-uid="'+u.uid+'"'+(ohOk?'':' disabled title="Equip a Claw in your main hand first"')+'>Equip off hand</button>'
+        + '</div>';
+    }
     else btn = '<button class="mini-btn" data-action="improveEquip" data-uid="'+u.uid+'" style="margin-top:9px;width:100%;">Equip</button>';
     return '<div class="unique-inv-card rar-'+u.rarity+'" style="cursor:default;">'
       + (eq ? '<div class="unique-inv-eq">'+svgIcon('sword','var(--gold)')+' Equipped</div>' : '')
@@ -13808,7 +13824,7 @@
     if(inOff) btn = '<button class="mini-btn stop" data-action="improveUnequip" data-uid="'+u.uid+'" style="margin-top:9px;width:100%;">Unequip</button>';
     else if(inMain) btn = '<button class="mini-btn" disabled style="margin-top:9px;width:100%;opacity:.5;">In main hand</button>';
     else if(lock) btn = '<button class="mini-btn" disabled style="margin-top:9px;width:100%;opacity:.5;">'+svgIcon('lock','currentColor')+' '+lock+'</button>';
-    else btn = '<button class="mini-btn" data-action="equipUniqueOffhandClaw" data-uid="'+u.uid+'" style="margin-top:9px;width:100%;">Equip off-hand</button>';
+    else btn = '<button class="mini-btn" data-action="equipUniqueOffhandClaw" data-uid="'+u.uid+'" style="margin-top:9px;width:100%;">Equip off hand</button>';
     return '<div class="unique-inv-card rar-'+u.rarity+'" style="cursor:default;">'
       + (inOff ? '<div class="unique-inv-eq">'+svgIcon('claw','var(--gold)')+' Off-hand</div>' : '')
       + uniqueCardBody(u) + btn + '</div>';
@@ -13912,7 +13928,7 @@
     var name = isU2 ? uniqueDisplayName(u) : (ALL_SELLABLE[isEq ? eqBaseId : improveSel]||{name:'Equipment'}).name;
     var html = '<div class="guild-section-title" style="margin-top:4px;">'+escapeHtml(name)+'</div>';
     html += '<div class="item-card" style="max-width:540px;"><div class="item-meta" style="margin-bottom:6px;">'+escapeHtml(getRarity(rarity).label)+' · Tier '+(tier+1)+' · '+count+'/'+slots+' enchant slots'+(enhance>0?' · <b>+'+enhance+'</b>':'')+'</div>';
-    if(isU2){ var _eq = uniqueIsEquipped(u.uid); var _ohBtn = uniqueOffhandClawBtn(u); html += '<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><button class="mini-btn" data-action="'+(_eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(_eq?'Unequip':(_ohBtn?'Equip main':'Equip'))+'</button>'+_ohBtn+'<button class="mini-btn" data-action="improveLinkChat" data-uid="'+u.uid+'" title="Share this item\'s stats in chat">🔗 Link in chat</button>'+(_eq?'<span class="item-meta" style="color:var(--gold);">equipped</span>':'')+'</div>'; }
+    if(isU2){ var _eq = uniqueIsEquipped(u.uid); var _ohBtn = uniqueOffhandClawBtn(u); html += '<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><button class="mini-btn" data-action="'+(_eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(_eq?'Unequip':(_ohBtn?'Equip main hand':'Equip'))+'</button>'+_ohBtn+'<button class="mini-btn" data-action="improveLinkChat" data-uid="'+u.uid+'" title="Share this item\'s stats in chat">🔗 Link in chat</button>'+(_eq?'<span class="item-meta" style="color:var(--gold);">equipped</span>':'')+'</div>'; }
     else if(isEq){ html += '<div style="margin-bottom:8px;"><span class="item-meta" style="color:var(--gold);">equipped</span> <span class="item-meta">· becomes a unique when you Enchant or Enhance it</span></div>'; }
     if(isU2 && u.enchants.length){ u.enchants.forEach(function(e,i){ html += '<div class="inputs-line"><span style="color:var(--gold);">'+enchantLabel(u.kind,e)+'</span>'+((improvePending&&improvePending.uid===u.uid)?' <button class="mini-btn" data-action="improvePlace" data-idx="'+i+'">Replace</button>':'')+'</div>'; }); }
     else if(isU2 || isEq){ html += '<div class="empty-note" style="margin-bottom:6px;">No enchants yet.</div>'; }
@@ -18746,13 +18762,22 @@
   }
   function equipCandidateRowHtml(c){
     var cls = 'style-btn'+(c.canEquip?'':' locked')+(c.equipped?' active':'');
-    var attrs = c.equipped ? '' : ('data-action="'+c.action+'" '+(c.data||''));  // equipped row is inert
-    return '<button class="'+cls+'" '+attrs+(c.canEquip?'':' disabled')+'>'
-      + c.icon+' '+escapeHtml(c.name)+' <span class="style-lvl">x'+fmt(c.qty||0)+'</span>'
+    var info = c.icon+' '+escapeHtml(c.name)+' <span class="style-lvl">x'+fmt(c.qty||0)+'</span>'
       + '<span class="style-type" style="text-transform:none">'+(c.statHtml||'')+' '
       + (c.equipped ? '<span class="equip-cmp eq">equipped</span>' : (c.deltaHtml||''))+'</span>'
-      + (c.canEquip ? '' : (c.lockHtml||''))
-      + '</button>';
+      + (c.canEquip ? '' : (c.lockHtml||''));
+    // Claws dual-wield, so an unequipped claw row is NOT a single equip target -- it carries an explicit
+    // button per hand. (Equipped/locked claws fall through to the normal inert row.)
+    if(c.clawId && c.canEquip && !c.equipped){
+      var ohOk = hasClawMainhand(state);
+      return '<div class="'+cls+' claw-row">'+info
+        + '<div class="claw-hand-btns">'
+        + '<button class="mini-btn" data-action="equipStackableWeapon" data-item="'+c.clawId+'">Equip main hand</button>'
+        + '<button class="mini-btn" data-action="equipOffhandClaw" data-item="'+c.clawId+'"'+(ohOk?'':' disabled title="Equip a Claw in your main hand first"')+'>Equip off hand</button>'
+        + '</div></div>';
+    }
+    var attrs = c.equipped ? '' : ('data-action="'+c.action+'" '+(c.data||''));  // equipped row is inert
+    return '<button class="'+cls+'" '+attrs+(c.canEquip?'':' disabled')+'>'+info+'</button>';
   }
   // Visit every candidate in a group, descending into its type sub-groups (a group carries EITHER a flat
   // `candidates` list OR a `subgroups` array of { key, title, icon, candidates, defaultOpen }).
@@ -18862,7 +18887,8 @@
       deltaHtml: noDmg ? '' : ('vs equipped '+equipDeltaChip(avg, curAvg)+' avg dmg'),
       equipped: !!(current && current.id===id), canEquip: gate.ok,
       lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(gate.label)+' Lv '+gate.lvl+'</span>',
-      action:'equipStackableWeapon', data:'data-item="'+id+'"'
+      action:'equipStackableWeapon', data:'data-item="'+id+'"',
+      clawId: isClaw(item.typeId) ? id : null   // claws render two hand-buttons (see equipCandidateRowHtml)
     };
   }
   // Build one accordion group of owned weapons of a family (melee/bow/wand/staff/scepter) for the mainhand
@@ -32335,9 +32361,14 @@
     if(id==='critter_cache'){ acts += '<button class="action-btn" data-action="openCritterCache">Open</button>'; if(qty>1) acts += '<button class="action-btn" data-action="openAllCritterCaches">Open All ('+fmt(qty)+')</button>'; }
     if(id==='treasure_chest'){ acts += '<button class="action-btn" data-action="openTreasureChest">Open</button>'; if(qty>1) acts += '<button class="action-btn" data-action="openAllTreasureChests">Open All ('+fmt(qty)+')</button>'; }
     var equipAction = getEquipActionForItem(id);
-    if(equipAction) acts += '<button class="action-btn" data-action="'+equipAction+'" data-item="'+id+'">Equip</button>';
-    // Claws can also be dual-wielded: offer an off-hand equip, but only while a Claw is in the main hand.
-    if(id.indexOf('stweapon_claw_')===0 && hasClawMainhand(state)) acts += '<button class="action-btn" data-action="equipOffhandClaw" data-item="'+id+'">Equip Off-hand</button>';
+    if(id.indexOf('stweapon_claw_')===0){
+      // Claws are dual-wieldable -> an explicit button for each hand (off-hand needs a Claw main hand).
+      var clawOhOk = hasClawMainhand(state);
+      acts += '<button class="action-btn" data-action="equipStackableWeapon" data-item="'+id+'">Equip main hand</button>';
+      acts += '<button class="action-btn" data-action="equipOffhandClaw" data-item="'+id+'"'+(clawOhOk?'':' disabled title="Equip a Claw in your main hand first"')+'>Equip off hand</button>';
+    } else if(equipAction){
+      acts += '<button class="action-btn" data-action="'+equipAction+'" data-item="'+id+'">Equip</button>';
+    }
     acts += '<button class="action-btn'+(isLocked?' stop':'')+'" data-action="toggleItemLock" data-item="'+id+'">'+(isLocked?'Unlock':'Lock')+'</button>';
     if(item.sell > 0){
       acts += '<button class="action-btn" data-action="sellOne" data-item="'+id+'"'+(isLocked?' disabled title="Locked"':'')+'>Sell 1 (+'+item.sell+'g)</button>';
@@ -32375,7 +32406,7 @@
     overlay.style.display = 'flex';
     overlay.innerHTML = '<div class="skill-info-card">'+card
       + '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px;">'
-      + '<button class="mini-btn" data-action="'+(eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(eq?'Unequip':(uniqueOffhandClawBtn(u)?'Equip main':'Equip'))+'</button>'
+      + '<button class="mini-btn" data-action="'+(eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(eq?'Unequip':(uniqueOffhandClawBtn(u)?'Equip main hand':'Equip'))+'</button>'
       + uniqueOffhandClawBtn(u)
       + '<button class="mini-btn" data-action="uniqueManage" data-uid="'+u.uid+'">Manage</button>'
       + '<button class="mini-btn" data-action="improveLinkChat" data-uid="'+u.uid+'">🔗 Link in chat</button>'
@@ -34910,7 +34941,7 @@
       ENCHANT_MODS:ENCHANT_MODS, enchantSlotsFor:enchantSlotsFor, enchantCategoryForKind:enchantCategoryForKind, enchantModById:enchantModById, rollEnchant:rollEnchant, enchantCrystalCost:enchantCrystalCost, enchantLabel:enchantLabel, enchantLabelText:enchantLabelText, enchantPoolListHtml:enchantPoolListHtml, ENHANCE_MAX:ENHANCE_MAX, improveSelect:improveSelect, renderImproveDetail:renderImproveDetail,
       ELEM_RAW_STATS:ELEM_RAW_STATS, rawEnchantRange:rawEnchantRange, enchantModRange:enchantModRange, baseIsMagicWeapon:baseIsMagicWeapon, enchantPoolForItem:enchantPoolForItem, enchantCtxForUnique:enchantCtxForUnique, elementalRawHitDamage:elementalRawHitDamage,
       parseImprovable:parseImprovable, isImprovableRarity:isImprovableRarity, makeUniqueFromBase:makeUniqueFromBase, planEnchantCrystals:planEnchantCrystals, removeUnique:removeUnique, equippedImprovableBases:equippedImprovableBases, improveFromEquipped:improveFromEquipped, convertEquippedToUnique:convertEquippedToUnique, isEquipToken:isEquipToken, improveEnchant:improveEnchant, improveAutoRoll:improveAutoRoll, enchantModById:enchantModById, ENCHANT_MODS:ENCHANT_MODS, rollEnchant:rollEnchant, renderAutoRollControls:renderAutoRollControls,
-      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, itemLinkChipHtml:itemLinkChipHtml, uniqueEnchantLines:uniqueEnchantLines, uniqueBaseStatLines:uniqueBaseStatLines, discordItemStatsText:discordItemStatsText, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
+      equippedEnchantTotals:equippedEnchantTotals, enhanceStatMult:enhanceStatMult, equipUnique:equipUnique, unequipUnique:unequipUnique, equipUniqueWeapon:equipUniqueWeapon, equipUniqueOffhand:equipUniqueOffhand, equipUniqueOffhandClaw:equipUniqueOffhandClaw, uniqueOffhandClawBtn:uniqueOffhandClawBtn, equipCandidateRowHtml:equipCandidateRowHtml, uniqueDisplayName:uniqueDisplayName, getEquippedWeaponItem:getEquippedWeaponItem, uniqueIsEquipped:uniqueIsEquipped, uniqueSellValue:uniqueSellValue, encodeItemLink:encodeItemLink, decodeItemLink:decodeItemLink, itemLinkChipHtml:itemLinkChipHtml, uniqueEnchantLines:uniqueEnchantLines, uniqueBaseStatLines:uniqueBaseStatLines, discordItemStatsText:discordItemStatsText, equipDeltaChip:equipDeltaChip, renderUniqueEquipCard:renderUniqueEquipCard, uniqueEquipLock:uniqueEquipLock,
       enhanceSuccessChance:enhanceSuccessChance, planInscriptions:planInscriptions, enhanceItem:enhanceItem, autoInscribe:autoInscribe, mainhandEnhanceMult:mainhandEnhanceMult,
       startGather:startGather, startCraft:startCraft, startPray:startPray, startCombat:startCombat, relocatePrimaryTaskToFreeSlot:relocatePrimaryTaskToFreeSlot,
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
