@@ -1477,6 +1477,20 @@
       // The XP award iterates worn materials -> only chain + cloth proficiencies would gain.
       eq(FF.MATERIAL_TO_PROFICIENCY.plate, 'platearmor', 'plate maps to the Plate Armor proficiency');
       ok(Object.keys(worn).map(function(m){ return FF.MATERIAL_TO_PROFICIENCY[m]; }).indexOf('platearmor') === -1, 'Plate Armor proficiency is not among the trained (worn) set');
+      // Proportional split: a knight in 2 plate + 2 chain + 1 cloth cloak trains each by its piece share.
+      s.bodyArmor = {
+        chest:     { material:'plate', tier:5, rarity:'normal' },
+        boots:     { material:'plate', tier:5, rarity:'normal' },
+        helmet:    { material:'chain', tier:5, rarity:'normal' },
+        gauntlets: { material:'chain', tier:5, rarity:'normal' },
+        back:      { material:'tailoring', tier:5, rarity:'normal' }
+      };
+      var counts = FF.wornArmorMaterialCounts(s);
+      eq(counts.plate, 2, 'two plate pieces counted'); eq(counts.chain, 2, 'two chain pieces counted'); eq(counts.tailoring, 1, 'the cloak counts as one cloth piece');
+      // The award math: defProfXp x (count / total). With 100 XP mitigated: plate 40, chain 40, cloth 20.
+      var total = 5;
+      eq(Math.round(100 * counts.plate / total), 40, 'plate earns 2/5 of the defensive XP');
+      eq(Math.round(100 * counts.tailoring / total), 20, 'the lone cloak earns only 1/5 — not the full amount');
     } finally { s.bodyArmor = sv; }
   });
 
