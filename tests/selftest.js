@@ -9154,6 +9154,27 @@
     eq(patch.durationMs, 18000, 'familiar regen buff duration tripled (6s -> 18s)');
   });
 
+  // ---- Content rebuilds keep inner scrollers in place (Marketplace Sell picker snapped to top) -------
+  suite('render: inner scrollers survive a content rebuild', function(){
+    ok(typeof FF.scrollSnapshot === 'function' && typeof FF.scrollRestore === 'function', 'scroll snapshot helpers exported');
+    var host = document.createElement('div');
+    var panel = '<div id="ssTestPanel" style="height:60px;overflow:auto"><div style="height:600px"></div></div>';
+    host.innerHTML = panel;
+    document.body.appendChild(host);
+    try {
+      document.getElementById('ssTestPanel').scrollTop = 150;
+      var snap = FF.scrollSnapshot(host);
+      ok(snap && snap.ssTestPanel && snap.ssTestPanel[0] === 150, 'scrollSnapshot records a scrolled panel by id');
+      host.innerHTML = panel;                       // simulate the full innerHTML rebuild render() does
+      eq(document.getElementById('ssTestPanel').scrollTop, 0, 'a rebuild really does reset the scroller (the bug)');
+      FF.scrollRestore(snap);
+      eq(document.getElementById('ssTestPanel').scrollTop, 150, 'scrollRestore puts the rebuilt panel back where the player was');
+      ok(FF.scrollSnapshot(document.createElement('div')) === null, 'an unscrolled tree snapshots to null (no work on restore)');
+      FF.scrollRestore(null);                       // must be a safe no-op
+      ok(true, 'scrollRestore(null) is a safe no-op');
+    } finally { document.body.removeChild(host); }
+  });
+
   suite('familiars: direct-damage spells scale from a T2 weapon (Lv1) to a Rare top weapon (Lv100)', function(){
     var wl = FF.STACKABLE_WEAPON_ITEMS;
     var t2 = wl['stweapon_rapier_t2_normal'], topRare = wl['stweapon_rapier_t19_rare']; // rapier: clean 1h, no dmgMult
