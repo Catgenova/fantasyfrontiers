@@ -3419,34 +3419,45 @@
     eq(FF.activeClassId(stFor('frostwarden',80)), 'frostwarden', 'frostwarden gear activates Frostwarden');
     eq(FF.activeClassId(stFor('sentinel',80)), 'sentinel', 'sentinel gear activates Sentinel');
     eq(FF.activeClassId(stFor('spellblade',80)), 'spellblade', 'spellblade gear activates Spellblade');
-    // Berserker rework: Titan's Heft (Lv1) / Blood Pact (Lv20) / Glass Titan (Lv40) / Rage (Lv60) / Berserk Toll (Lv80).
+    // Berserker BLOOD LEDGER: Titan's Heft / Blood Pact / The Blood Ledger / Transfusion / Glass Titan.
     var bNames = FF.CLASS_DEFS_BY_ID.berserker.passives.map(function(p){ return p.name; });
-    eq(JSON.stringify(bNames), JSON.stringify(["Titan's Heft",'Blood Pact','Glass Titan','Rage','Berserk Toll']), 'Berserker ladder is the reworked five');
-    // Titan's Heft (Lv1): flat bonus damage = 2% of max HP.
+    eq(JSON.stringify(bNames), JSON.stringify(["Titan's Heft",'Blood Pact','The Blood Ledger','Transfusion','Glass Titan']), 'Berserker ladder is the Blood Ledger five');
+    // Titan's Heft (Lv1): flat bonus damage = 100% of max HP.
     var bHeft = stFor('berserker',1);
-    eq(FF.berserkerTitansHeftDmg(bHeft), Math.round(0.02 * FF.maxHp(bHeft)), "Titan's Heft = 2% of max HP as flat damage");
+    eq(FF.berserkerTitansHeftDmg(bHeft), Math.round(1.00 * FF.maxHp(bHeft)), "Titan's Heft = 100% of max HP as flat damage");
     ok(FF.berserkerTitansHeftDmg(bHeft) > 0, "Titan's Heft grants a positive flat bonus");
-    // Blood Pact (Lv20): +50% damage.
+    // Blood Pact (Lv20): +50% damage at 2% current-HP cost.
     eq(FF.berserkerBloodPactMult(stFor('berserker',20)), 1.5, 'Blood Pact +50% damage');
     eq(FF.berserkerBloodPactMult(stFor('berserker',1)), 1, 'Blood Pact inactive below Lv20');
-    // Glass Titan (Lv40): +100% max HP (doubles the pool), -40% Armor & Dodge.
-    eq(FF.berserkerGlassTitanHpMult(stFor('berserker',40)), 2, 'Glass Titan doubles max HP');
-    eq(FF.berserkerGlassTitanHpMult(stFor('berserker',20)), 1, 'Glass Titan HP boost inactive below Lv40');
-    eq(FF.maxHp(stFor('berserker',40)), 2 * FF.maxHp(stFor('berserker',20)), 'Glass Titan: max HP at Lv40 is double the pre-Lv40 pool');
-    eq(FF.berserkerGlassMult(stFor('berserker',40)), 0.60, 'Glass Titan -40% Armor & Dodge (x0.60)');
-    eq(FF.berserkerGlassMult(stFor('berserker',20)), 1, 'Glass Titan Armor/Dodge penalty inactive below Lv40');
-    // Rage (Lv60, moved from Lv1): +1% dmg per 2% HP missing (up to +50%).
-    eq(FF.berserkerRageMult(stFor('berserker',60,{playerHp: FF.maxHp(stFor('berserker',60))})), 1, 'Rage = x1 at full HP');
-    ok(Math.abs(FF.berserkerRageMult(stFor('berserker',60,{playerHp:0})) - 1.5) < 1e-9, 'Rage = x1.5 near death');
-    eq(FF.berserkerRageMult(stFor('berserker',40)), 1, 'Rage inactive below Lv60 (even while hurt)');
-    // Berserk Toll (Lv80): +80% damage, and a hard 50%-max-HP heal ceiling.
-    eq(FF.berserkerTollMult(stFor('berserker',80)), 1.8, 'Berserk Toll +80% damage');
-    eq(FF.berserkerTollMult(stFor('berserker',60)), 1, 'Berserk Toll inactive below Lv80');
-    var bToll = stFor('berserker',80); var bCeil = Math.round(0.5 * FF.maxHp(bToll));
-    eq(FF.hpHealCeil(bToll), bCeil, 'Berserk Toll caps the heal ceiling at 50% of max HP');
-    eq(FF.hpHealCeil(stFor('berserker',60)), FF.maxHp(stFor('berserker',60)), 'without Berserk Toll the heal ceiling is full max HP');
-    eq(FF.healRoom(stFor('berserker',80,{playerHp: bCeil - 10})), 10, 'Berserk Toll: heal room stops at the 50% ceiling');
-    eq(FF.healRoom(stFor('berserker',80,{playerHp: bCeil + 20})), 0, 'Berserk Toll: no heal room while above the 50% ceiling');
+    near(FF.berserkerPactCost(stFor('berserker',20)), 0.02, 'Blood Pact costs 2% of current HP (no set)', 1e-9);
+    eq(FF.berserkerPactCost(stFor('berserker',1)), 0, 'no pact cost below Lv20');
+    // The Blood Ledger (Lv40): +1% damage per 3% of max HP inked, cap +100%; heals never erase it.
+    var bLed = stFor('berserker',40); var bMh = FF.maxHp(bLed);
+    bLed.activity = { type:'combat', monsterHp: 100 };
+    eq(FF.berserkerLedgerMult(bLed), 1, 'an empty Ledger adds nothing');
+    bLed.activity.bloodLedger = Math.round(bMh * 0.30); // 30% of the bar inked -> +10%
+    near(FF.berserkerLedgerMult(bLed), 1.10, 'Ledger: 30% of max HP inked = +10% damage', 1e-2);
+    bLed.activity.bloodLedger = bMh * 10;               // absurdly full -> capped
+    near(FF.berserkerLedgerMult(bLed), 2.0, 'the Ledger caps at +100% damage', 1e-9);
+    ok(FF.berserkerLedgerCapped(bLed), 'a capped Ledger reads as capped');
+    var bLow = stFor('berserker',20); bLow.activity = { type:'combat', monsterHp:100, bloodLedger: bMh * 10 };
+    eq(FF.berserkerLedgerMult(bLow), 1, 'the Ledger bonus is inactive below Lv40');
+    // Ink helper: only accrues for an active Berserker in combat.
+    var bInk = stFor('berserker',40); bInk.activity = { type:'combat', monsterHp:100 };
+    FF.berserkerInkLedger(500, bInk); eq(bInk.activity.bloodLedger, 500, 'inking adds to the Ledger');
+    var bNot = stFor('frostwarden',40); bNot.activity = { type:'combat', monsterHp:100 };
+    FF.berserkerInkLedger(500, bNot); ok(!bNot.activity.bloodLedger, 'no ink without the Berserker class active');
+    // Transfusion (Lv60): 8% lifesteal.
+    near(FF.berserkerTransfusionLifesteal(stFor('berserker',60)), 0.08, 'Transfusion heals 8% of damage dealt', 1e-9);
+    eq(FF.berserkerTransfusionLifesteal(stFor('berserker',40)), 0, 'Transfusion inactive below Lv60');
+    // Glass Titan (Lv80, moved from Lv40): +200% max HP (triples the pool), -40% Armor & Dodge.
+    eq(FF.berserkerGlassTitanHpMult(stFor('berserker',80)), 3, 'Glass Titan triples max HP (+200%)');
+    eq(FF.berserkerGlassTitanHpMult(stFor('berserker',60)), 1, 'Glass Titan HP boost inactive below Lv80');
+    eq(FF.maxHp(stFor('berserker',80)), 3 * FF.maxHp(stFor('berserker',60)), 'Glass Titan: max HP at Lv80 is triple the pre-Lv80 pool');
+    eq(FF.berserkerGlassMult(stFor('berserker',80)), 0.60, 'Glass Titan -40% Armor & Dodge (x0.60)');
+    eq(FF.berserkerGlassMult(stFor('berserker',60)), 1, 'Glass Titan Armor/Dodge penalty inactive below Lv80');
+    // The Berserk Toll heal ceiling is retired: everyone heals to full.
+    eq(FF.hpHealCeil(stFor('berserker',80)), FF.maxHp(stFor('berserker',80)), 'no heal ceiling — Berserk Toll retired');
     // Frostwarden rework: Permafrost stacks Chill (10% enemy slow each, cap 5/50%); Time Dilation quickens
     // you by half the slow (cap 30%); Rime Resonance grants +25% damage vs a Chilled foe.
     var fw = stFor('frostwarden',80);
@@ -3522,7 +3533,9 @@
     eq(FF.spellbladeEchoChance(stFor('spellblade',20)), 0, 'no echo below Lv40');
     // No class active -> every perk multiplier is neutral.
     var none = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat'}, playerHp:1 };
-    eq(FF.berserkerRageMult(none), 1, 'no class -> Rage neutral');
+    eq(FF.berserkerLedgerMult(none), 1, 'no class -> Blood Ledger neutral');
+    // Quick Quill (D3 2pc) rate vs base: +5% per 2% inked vs +1% per 3%.
+    ok(Math.abs(FF.BERSERK_LEDGER_RATE - 0.01/0.03) < 1e-9 && Math.abs(FF.BERSERK_LEDGER_RATE_D3 - 0.05/0.02) < 1e-9, 'Ledger rates: base +1%/3%, Quick Quill +5%/2%');
     eq(FF.frostwardenDmgMult(none), 1, 'no class -> Frostwarden damage neutral');
     eq(FF.sentinelArmorMult(none), 1, 'no class -> Sentinel armor neutral');
     eq(FF.enemyChillSlowMult(none), 0, 'no chill -> no enemy slow');
@@ -4623,7 +4636,7 @@
     var card = FF.uniqueCardBody(u);
     ok(/Gravewrath/.test(card), 'the unique card shows the Legendary name (not the raw base weapon name)');
     ok(!/Warhammer/.test(FF.uniqueDisplayName(u)), 'uniqueDisplayName returns the Legendary name, not the base');
-    ok(/Legendary Effect/.test(card) && /Decay/.test(card), 'the card surfaces the legendary effect blurb');
+    ok(/Legendary Effect/.test(card) && /Ledger/.test(card), 'the card surfaces the legendary effect blurb');
     // It shows up in the Inventory "Unique" group under its Legendary name.
     var S = FF._state, sInv=S.inventory, sUniq=S.uniqueItems, sCat=FF.currentCategoryId();
     try {
@@ -4834,16 +4847,16 @@
     near(FF.legReflectCritMult(legSt('crushingreprisal')), FF.CRIT_DAMAGE_MULT + 1.0, 'Crushing Reprisal: reflect crit = base crit mult +100%');
     near(FF.legReflectCritMult(legSt('shieldbash')), FF.CRIT_DAMAGE_MULT, 'the reflect crit mult is the base without the legendary');
 
-    // Titanic Crits (berserker/warhammer): +10% crit damage per 1000 max Health, capped at +100%.
+    // Deepquake (berserker/warhammer): +25% crit damage per 1000 max Health, capped at +250%.
     var tcSmall = legSt('titaniccrits'); // empty physique -> low max HP
-    near(FF.legendaryCritDmg(tcSmall), Math.min(1.0, 0.0001 * FF.maxHp(tcSmall)), 'Titanic Crits scales +10% crit dmg per 1000 max HP');
+    near(FF.legendaryCritDmg(tcSmall), Math.min(2.5, 0.00025 * FF.maxHp(tcSmall)), 'Deepquake scales +25% crit dmg per 1000 max HP');
     // Reach 10k+ max HP via a big Max-HP armor enchant (fortitude alone caps at Lv100 -> ~550 HP).
     var tcBig = legSt('titaniccrits');
     tcBig.bodyArmor = { chest:{ uid:'A' } };
     tcBig.uniqueItems.A = { uid:'A', kind:'armor', base:'bodyarmor_plate_chest_t19_rare', tier:19, rarity:'rare', enchants:[{mod:'maxHp', roll:20000}], enhance:0 };
     ok(FF.maxHp(tcBig) >= 10000, 'the boosted profile clears 10k max HP');
-    near(FF.legendaryCritDmg(tcBig), 1.0, 'Titanic Crits caps at +100% crit damage');
-    near(FF.legendaryCritDmg(legSt('shieldbash')), 0, 'Titanic Crits is inert without its legendary');
+    near(FF.legendaryCritDmg(tcBig), 2.5, 'Deepquake caps at +250% crit damage');
+    near(FF.legendaryCritDmg(legSt('shieldbash')), 0, 'Deepquake is inert without its legendary');
 
     // Earthshaker (juggernaut/sledge): crits build a 5-stack Tremor; at full, the next swing hits x4 and empties it.
     var esSt = legSt('earthshaker');
@@ -5774,10 +5787,11 @@
       uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'mace')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' };
       if(extra) for(var k in extra) st[k]=extra[k]; return st; }
 
-    // Wrathscale Hammer: up to +40% as Health falls below 50%.
+    // Wrathscale Hammer (reworked): +10% damage per 10% of max Health you currently HAVE (up to +100%).
     var wsSt = legSt('wrathscale','warhammer'); var mh = FF.maxHp(wsSt);
-    wsSt.playerHp = Math.round(mh * 0.25); near(FF.d4LegDmgMult({}, wsSt), 1 + 0.40 * (1 - (Math.round(mh*0.25)/(mh*0.5))), 'Wrathscale: scales up as Health falls (below 50%)', 0.03);
-    wsSt.playerHp = mh; near(FF.d4LegDmgMult({}, wsSt), 1.0, 'Wrathscale inert at full Health');
+    wsSt.playerHp = mh; near(FF.d4LegDmgMult({}, wsSt), 2.0, 'Wrathscale: +100% at a full bar', 1e-6);
+    wsSt.playerHp = Math.round(mh * 0.30); near(FF.d4LegDmgMult({}, wsSt), 1.30, 'Wrathscale: +30% at 30% Health', 0.02);
+    wsSt.playerHp = 0; near(FF.d4LegDmgMult({}, wsSt), 1.0, 'Wrathscale grants nothing at empty');
     // Wyrmthorn Maul: reflect +50%.
     near(FF.d4SentinelThornsMult({ element:'fire' }, legSt('wyrmthornmaul','maul')), 1.50, 'Wyrmthorn Maul: +50% reflect');
     near(FF.d4SentinelThornsMult({ element:null }, legSt('wyrmthornmaul','maul')), 1.50, 'Wyrmthorn Maul reflects regardless of the foe element');
@@ -6190,7 +6204,7 @@
       // shield-absorb, tick loop). Confirm each set is defined with its named bonuses.
       ['berserker','templar','knight','lumen','treasureHunter'].forEach(function(c){
         ok(FF.D3_SET_DEFS[c] && FF.D3_SET_DEFS[c].b2.name && FF.D3_SET_DEFS[c].bf.name, c+' has a full D3 set'); });
-      eq(FF.D3_SET_DEFS.berserker.bf.name, 'Second Death', 'Berserker D3 full is Second Death');
+      eq(FF.D3_SET_DEFS.berserker.bf.name, 'Carried Debt', 'Berserker D3 full is Carried Debt (Blood Ledger rework)');
       eq(FF.D3_SET_DEFS.templar.bf.name, 'Resurrection', 'Templar D3 full is Resurrection');
       eq(FF.D3_SET_DEFS.knight.bf.name, 'Undying March', 'Knight D3 full is Undying March');
       eq(FF.D3_SET_DEFS.lumen.bf.name, 'Soulguard', 'Lumen D3 full is Soulguard');
@@ -6363,15 +6377,20 @@
       near(FF.d4SetElementResist(s, 'dark'), 0.12, 'Warscale covers every element');
       s.knightStacks = 0; near(FF.d4SetElementResist(s, 'fire'), 0, 'Warscale inert below max Momentum');
 
-      // Berserker Burning Blood (2pc) / Dragonrage (full): low-HP outgoing scaling.
-      wearD4('berserker', 2); s.playerHp = Math.round(mhp * 0.40);
-      near(FF.d4SetDmgMult({}, s), 1.20, 'Burning Blood: +20% below 50% Health');
-      s.playerHp = mhp; near(FF.d4SetDmgMult({}, s), 1.0, 'Burning Blood inert at full Health');
-      wearFull('berserker'); s.playerHp = Math.round(mhp * 0.40); var f = s.playerHp / mhp;
-      near(FF.d4SetDmgMult({}, s), 1.20 * (1 + 0.30 * (1 - f)), 'Dragonrage stacks with Burning Blood below 50% Health', 0.02);
-      s.playerHp = 1; f = s.playerHp / mhp;
-      near(FF.d4SetDmgMult({}, s), 1.20 * (1 + 0.30 * (1 - f)), 'Dragonrage: near-max +30% near death, with Burning Blood', 0.02);
-      s.playerHp = mhp; near(FF.d4SetDmgMult({}, s), 1.0, 'Wrathscale outgoing is inert at full Health');
+      // Berserker Deep Veins (2pc): Transfusion lifesteal 8% -> 25%. Needs the class ACTIVE at Lv60+:
+      // warhammer + bare head + leather chest + cloth gloves/shoes (materials layered onto the set pieces).
+      wearD4('berserker', 2);
+      var svBz = { xp:s.xp.berserker, mh:s.equippedMainhand, mt:s.equippedMainhandTier };
+      s.xp.berserker = FF.xpFloorForLevel(61); s.equippedMainhand = 'warhammer'; s.equippedMainhandTier = 5;
+      delete s.bodyArmor.helmet;
+      s.bodyArmor.chest = Object.assign(s.bodyArmor.chest||{}, { material:'leather', tier:5 });
+      s.bodyArmor.gauntlets = Object.assign(s.bodyArmor.gauntlets||{}, { material:'tailoring', tier:5 });
+      s.bodyArmor.boots = Object.assign(s.bodyArmor.boots||{}, { material:'tailoring', tier:5 });
+      eq(FF.activeClassId(s), 'berserker', 'the Deep Veins fixture activates the Berserker class');
+      near(FF.berserkerTransfusionLifesteal(s), 0.25, 'Deep Veins (2pc): Transfusion heals 25% of damage dealt', 1e-9);
+      s.uniqueItems = {}; s.bodyArmor.chest.uid = undefined; s.bodyArmor.gauntlets.uid = undefined; // drop the set pieces, keep the class
+      near(FF.berserkerTransfusionLifesteal(s), 0.08, 'no D4 set -> base 8% Transfusion', 1e-9);
+      s.xp.berserker = svBz.xp; s.equippedMainhand = svBz.mh; s.equippedMainhandTier = svBz.mt;
 
       // Juggernaut Emberhide (2pc): -20% Fire + heal 25% of the avoided.
       wearD4('juggernaut', 2);
@@ -6532,13 +6551,28 @@
     try {
       var mh = FF.maxHp(s);
       s.playerHp = mh; s.activity = { type:'combat', monsterHp:800 };
-      // Berserker Reckless (2pc): +18% out, +8% in.
+      // Berserker Steep Price (2pc): Blood Pact costs 10% and grants +100% (needs the class active for cost/mult).
       wearD2('berserker', 2);
-      near(FF.d2SetDmgMult(foe, s), 1.18, 'Berserker Reckless: +18% damage');
-      near(FF.d2IncomingDmgMult(s), 1.08, 'Berserker Reckless: +8% damage taken');
-      // Berserker Last Stand (full, bare-head 3pc): +50% below 25% HP, stacking with Reckless.
-      wearD2('berserker', 3); s.playerHp = Math.round(mh*0.2);
-      near(FF.d2SetDmgMult(foe, s), 1.18*1.5, 'Berserker Last Stand stacks with Reckless below 25% HP');
+      var svBerXp = s.xp.berserker, svMain = s.equippedMainhand, svMainT = s.equippedMainhandTier, svHelm = s.bodyArmor.helmet;
+      s.xp.berserker = FF.xpFloorForLevel(21); s.equippedMainhand = 'warhammer'; s.equippedMainhandTier = 5; delete s.bodyArmor.helmet;
+      s.bodyArmor.chest = s.bodyArmor.chest || {}; s.bodyArmor.chest.material = 'leather'; s.bodyArmor.chest.tier = 5;
+      s.bodyArmor.gauntlets = s.bodyArmor.gauntlets || {}; s.bodyArmor.gauntlets.material = 'tailoring'; s.bodyArmor.gauntlets.tier = 5;
+      s.bodyArmor.boots = s.bodyArmor.boots || {}; s.bodyArmor.boots.material = 'tailoring'; s.bodyArmor.boots.tier = 5;
+      if(FF.activeClassId(s) === 'berserker'){
+        near(FF.berserkerPactCost(s), 0.10, 'Steep Price (2pc): Blood Pact costs 10%', 1e-9);
+        eq(FF.berserkerBloodPactMult(s), 2.0, 'Steep Price (2pc): Blood Pact grants +100%');
+        // Debt Paid (full, bare-head 3pc): a capped Ledger makes the Pact free.
+        wearD2('berserker', 3);
+        s.bodyArmor.chest.material='leather'; s.bodyArmor.chest.tier=5;
+        s.bodyArmor.gauntlets.material='tailoring'; s.bodyArmor.gauntlets.tier=5;
+        s.bodyArmor.boots.material='tailoring'; s.bodyArmor.boots.tier=5;
+        s.xp.berserker = FF.xpFloorForLevel(41);
+        s.activity = { type:'combat', monsterHp:800, bloodLedger: FF.maxHp(s) * 10 };
+        ok(FF.berserkerLedgerCapped(s), 'the test Ledger is capped');
+        eq(FF.berserkerPactCost(s), 0, 'Debt Paid (full): Blood Pact costs nothing at a capped Ledger');
+        s.activity = { type:'combat', monsterHp:800 };
+      }
+      s.xp.berserker = svBerXp; s.equippedMainhand = svMain; s.equippedMainhandTier = svMainT; if(svHelm !== undefined) s.bodyArmor.helmet = svHelm;
       s.playerHp = mh;
       // Templar Zealous Wrath (2pc): +15% above 75% HP only.
       wearD2('templar', 2);
@@ -7039,15 +7073,14 @@
     var rPlain = FF.sentinelReflectDamage(100, 0, 200, sentSt(false));
     near(rSet - rPlain, 100, 'Barbed Plating (2pc): thorns return an extra half of Armor (200 x 0.5)');
 
-    // Berserker Undying Rage (2pc): -25% incoming damage below 30% HP.
-    near(FF.undyingRageIncomingMult(setSt('berserker',2, { playerHp:1 })), 0.75, 'Undying Rage (2pc): -25% incoming below 30% HP');
-    near(FF.undyingRageIncomingMult(setSt('berserker',2, { playerHp:9999 })), 1, 'no Undying Rage while healthy');
-    near(FF.undyingRageIncomingMult(setSt('berserker',1, { playerHp:1 })), 1, '1 piece -> no Undying Rage');
-    // Berserker Frenzied Blows (full): attack timer shrinks up to -30% as HP falls.
-    var bFull = setSt('berserker',3, { playerHp:1 });
-    ok(FF.berserkerFrenziedBlowsMult(bFull) < FF.berserkerFrenziedBlowsMult(setSt('berserker',3, { playerHp:9999 })), 'Frenzied Blows: faster while hurt than while full');
-    near(FF.berserkerFrenziedBlowsMult(setSt('berserker',3, { playerHp:9999 })), 1, 'Frenzied Blows: no haste at full HP');
-    near(FF.berserkerFrenziedBlowsMult(setSt('berserker',2, { playerHp:1 })), 1, 'no Frenzied Blows below the full set');
+    // Berserker Giant's Frame (2pc): +100% max HP; Titan's Fist (full): Heft 350% of max HP.
+    eq(FF.berserkerGiantsFrameMult(setSt('berserker',2)), 2, "Giant's Frame (2pc): doubles max HP");
+    eq(FF.berserkerGiantsFrameMult(setSt('berserker',1)), 1, "1 piece -> no Giant's Frame");
+    eq(FF.maxHp(setSt('berserker',2)), 2 * FF.maxHp(setSt('berserker',1)), "Giant's Frame doubles the computed pool");
+    var bFist = setSt('berserker',3, { equippedMainhand:'warhammer', equippedMainhandTier:5, equippedMainhandRarity:'normal' });
+    bFist.xp.berserker = FF.xpFloorForLevel(2); // class active (warhammer + bare head + the set's leather/cloth pieces)
+    eq(FF.activeClassId(bFist), 'berserker', 'the full D1 set plus a warhammer activates the class');
+    eq(FF.berserkerTitansHeftDmg(bFist), Math.round(3.50 * FF.maxHp(bFist)), "Titan's Fist (full): Heft = 350% of max HP");
 
     // Templar Mercy (2pc): Lay on Hands mends 40% (up from 20%).
     near(FF.templarLayOnHandsPct(setSt('templar',2)), 0.40, 'Mercy (2pc): Lay on Hands heals 40%');
