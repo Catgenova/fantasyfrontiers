@@ -687,6 +687,53 @@
     ok(typeof FF.estateDrawTotem === 'function' && typeof FF.drawEstateTotemModel === 'function' && typeof FF.estateDrawTdTotem === 'function', 'totem models exist for iso and top-down rendering');
   });
 
+  // ---- Architecture split: Carpentry keeps Planks; buildings + Woodcarving move to Construction -----
+  suite('architecture: the Carpentry split + stonework building bills', function(){
+    // The new skill exists in Construction; Carpentry stays (planks only); Woodcarving moved over.
+    var sk = FF.CRAFTING_SKILLS.architecture;
+    ok(sk && sk.label === 'Architecture' && sk.recipes.length === 0, 'Architecture exists (its crafts are the workshop/cottage forges, not a recipe ladder)');
+    ok(FF.BUILDING_SKILL_IDS.indexOf('architecture') !== -1, 'Architecture is a Construction skill');
+    ok(FF.BUILDING_SKILL_IDS.indexOf('woodcarving') !== -1, 'Woodcarving moved to Construction');
+    ok(FF.REFINING_SKILL_IDS.indexOf('woodcarving') === -1, 'Woodcarving left Refining');
+    ok(FF.CRAFTING_TAB_SKILL_IDS.indexOf('woodcarving') === -1, '...and the old Crafting tab');
+    ok(FF.CRAFTING_SKILLS.carpentry.recipes.every(function(r){ return / Plank$/.test(r.name); }), 'Carpentry is Planks only');
+    ok(FF._state.xp.architecture != null, 'architecture is seeded in the xp table');
+    ok(FF.CRAFT_PHYSIQUE.architecture, 'physique table includes architecture');
+    // Buildings now also cost stonework: 10 Bricks + 4 Pillars of the covering stone band.
+    var s0 = FF.buildingStoneInputs(0);
+    eq(s0.stonecutting_t0, 10, 'tier 0 buildings take 10 Bricks of the first stone');
+    eq(s0.stonecutting_t2, 4, '...and 4 of its Pillars');
+    var s10 = FF.buildingStoneInputs(10);
+    eq(s10.stonecutting_t9, 10, 'tier 10 maps to the 4th stone band (Brick at t9)');
+    eq(s10.stonecutting_t11, 4, '...Pillar at t11');
+    var s20 = FF.buildingStoneInputs(20);
+    eq(s20.stonecutting_t18, 10, 'tier 20 uses the last stone band (Brick at t18)');
+    eq(s20.stonecutting_t20, 4, '...Pillar at t20');
+    var w3 = FF.getWorkshopTierData('mining', 3).inputs;
+    ok(w3.carpentry_t3 > 0 && w3.stonecutting_t3 === 10 && w3.stonecutting_t5 === 4, 'a t3 workshop bill = planks + 10 Bricks + 4 Pillars');
+    var c0 = FF.getCottageTierData(0).inputs;
+    ok(c0.carpentry_t0 === 100 && c0.stonecutting_t0 === 10 && c0.stonecutting_t2 === 4, 'a t0 cottage bill = 100 planks + 10 Bricks + 4 Pillars');
+    // Stonecutting names confirm the Brick/Pillar positions the bills point at.
+    ok(/ Brick$/.test(FF.ALL_CRAFT_RECIPES.stonecutting_t0.name) && / Pillar$/.test(FF.ALL_CRAFT_RECIPES.stonecutting_t2.name), 'the billed stonecutting tiers really are Bricks and Pillars');
+    // Estate builds now train Architecture, not Carpentry.
+    var s = FF._state;
+    FF.estUse(false);
+    var cell00 = s.estate.grid[0][0];
+    var savedCell = Object.assign({}, cell00), savedAXp = s.xp.architecture, savedCXp = s.xp.carpentry;
+    cell00.type = 'paved'; cell00.paveTileId = 'paving_t5'; cell00.workshopId = null; cell00.cottageId = null; cell00.totemId = null;
+    s.xp.architecture = 0; s.xp.carpentry = 0;
+    FF.applyEstateJobCompletion(s.estate, { kind:'workshop', x:0, y:0, workshopId:'workshop_mining_t2' }, true, false);
+    ok(s.xp.architecture > 0, 'finishing a workshop build grants Architecture XP');
+    eq(s.xp.carpentry, 0, '...and no longer Carpentry XP');
+    Object.assign(cell00, savedCell); if(!('totemId' in savedCell)) cell00.totemId = null;
+    s.xp.architecture = savedAXp; s.xp.carpentry = savedCXp;
+    FF.recomputePlacedWorkshops();  // the completion recomputed the workshop cache off the fixture; restore it
+    // The new skill ships fully wired: catalog rows for its Workshop line + Blacksmithing tool.
+    var cat = FF.buildItemCatalog();
+    eq(cat.workshop_architecture_t0, 1, 'the Architecture Workshop line is in the item catalog');
+    eq(cat.tool_architecture_t0_normal, 1, 'the Architect\'s Square tool line is in the item catalog');
+  });
+
   // ---- Terraforming: a Field's altitude sets its crops' growth time (z10 base, z19 +50%, z1 -50%) ----
   suite('terraforming: field altitude shapes crop growth time', function(){
     var s = FF._state;
@@ -1152,8 +1199,8 @@
       eq(S.inventory.muddyartifact_t0, 17, 'relic run consumed only the 3 cycles it needed');
 
       // A special forge: a craftKind act with NO itemId (its outputs are rarity-suffixed ids).
-      // Two workshops requested with planks for 50 -- the run must stop once 2 are built.
-      S.inventory = { carpentry_t0: 500 };
+      // Two workshops requested with materials for far more -- the run must stop once 2 are built.
+      S.inventory = { carpentry_t0: 500, stonecutting_t0: 100, stonecutting_t2: 100 }; // planks + the tier's Bricks/Pillars
       var wact = { type:'craft', craftKind:'workshop', skillId:'mining', tierIndex:0, progress:0, targetQty:2, producedQty:0 };
       FF.processCraftActivity(wact, 24*3600*1000);
       eq(wact.producedQty, 2, 'special-forge run credits rarity-suffixed outputs and stops at 2');
@@ -1308,7 +1355,7 @@
   // ---- Building / Outfitting are cosmetic sub-nav groups carved out of Crafting -----------
   suite('building and outfitting split the crafting skills without gaps or overlap', function(){
     var building = FF.BUILDING_SKILL_IDS, outfitting = FF.OUTFITTING_SKILL_IDS, craftTab = FF.CRAFTING_TAB_SKILL_IDS;
-    eq(building.join(','), 'carpentry,stonecutting,paving,masonry,totems', 'building holds the estate-build skills');
+    eq(building.join(','), 'carpentry,architecture,stonecutting,paving,masonry,woodcarving,totems', 'building holds the estate-build skills');
     eq(outfitting.join(','), 'weaponsmithing,armorsmithing,tailoring,shieldsmithing,runesmithing,arcanism,fletching,bowyer,leatherworking,jewelrycrafting', 'outfitting holds the gear skills');
     // Every crafting skill lands in exactly one of the three sub-tab groups.
     var union = building.concat(outfitting).concat(craftTab).slice().sort();
