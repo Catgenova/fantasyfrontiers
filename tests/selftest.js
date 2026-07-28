@@ -9647,6 +9647,16 @@
     eq(FF.invGroupFor('tool_mining_t5_normal'),'tools',  'tool -> Tools');
     eq(FF.invGroupFor('digging_t5'),          'gathering','raw material -> Gathering');
     eq(FF.invGroupFor('metallurgy_t5'),       'crafting', 'refined bar -> Crafting');
+    // Unique items get their own per-type container, keyed off the unique's kind (not the old single bucket).
+    eq(FF.uniqueInvGroupId({kind:'weapon'}),    'u_weapon',    'unique weapon -> Unique Weapons');
+    eq(FF.uniqueInvGroupId({kind:'bodyarmor'}), 'u_bodyarmor', 'unique armour -> Unique Armor');
+    eq(FF.uniqueInvGroupId({kind:'offhand'}),   'u_offhand',   'unique shield -> Unique Shields');
+    eq(FF.uniqueInvGroupId({kind:'ring'}),      'u_ring',      'unique ring -> Unique Rings');
+    eq(FF.uniqueInvGroupId({kind:'amulet'}),    'u_amulet',    'unique amulet -> Unique Amulets');
+    eq(FF.uniqueInvGroupId({kind:'belt'}),      'u_belt',      'unique belt -> Unique Belts');
+    eq(FF.uniqueInvGroupId({kind:'relic'}),     'u_relic',     'unique relic -> Unique Relics');
+    eq(FF.uniqueInvGroupId({kind:'??'}),        'u_weapon',    'an unmapped kind falls back to Unique Weapons');
+    ok(FF.INV_GROUPS.filter(function(g){ return g.unique; }).length === 7 && !FF.INV_GROUPS.filter(function(g){ return g.id==='unique'; }).length, 'seven unique containers replace the single Unique bucket');
     // Render: the panel emits collapsible accordions + keeps the search box; the old chips are gone.
     var S = FF._state, savedInv = S.inventory, savedCat = FF.currentCategoryId();
     try {

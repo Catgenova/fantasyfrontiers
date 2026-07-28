@@ -13812,8 +13812,12 @@
       if(ea!==eb) return eb-ea;
       return (state.uniqueItems[b].tier-state.uniqueItems[a].tier) || ((state.uniqueItems[b].enhance||0)-(state.uniqueItems[a].enhance||0));
     });
-    var head = label ? '<div class="section-intro" style="margin-top:10px"><b style="color:var(--gold)">&#10022; Unique '+escapeHtml(label)+'</b> you own &mdash; Equip directly; every enchantment is shown.</div>' : '';
-    return head + '<div class="unique-inv-grid">'+uids.map(function(uid){ return renderUniqueEquipCard(state.uniqueItems[uid]); }).join('')+'</div>';
+    // Collapsible container so a big unique collection folds away per equipment type (state in equipAccOpen).
+    var title = 'Unique ' + (label || (slot ? (BODY_ARMOR_LABELS[slot] || slot) : kind));
+    var key = 'uniqeq_' + kind + (slot ? '_' + slot : '');
+    var open = (equipAccOpen[key] !== undefined) ? equipAccOpen[key] : true;
+    var body = '<div class="unique-inv-grid">'+uids.map(function(uid){ return renderUniqueEquipCard(state.uniqueItems[uid]); }).join('')+'</div>';
+    return equipAccHtml(key, title, svgIcon('starburst','var(--rarity-fantastic)'), uids.length, open, body, false);
   }
   // Unique Claws offered for the OFF-HAND slot (a unique Claw is a 'weapon' kind, so it never shows up in
   // renderUniqueEquipOptions('offhand', ...) -- surface it here so a dual-wielder can off-hand it).
@@ -13840,8 +13844,10 @@
       if(ea!==eb) return eb-ea;
       return (state.uniqueItems[b].tier-state.uniqueItems[a].tier) || ((state.uniqueItems[b].enhance||0)-(state.uniqueItems[a].enhance||0));
     });
-    return '<div class="section-intro" style="margin-top:10px"><b style="color:var(--gold)">&#10022; Unique Claws</b> you own &mdash; dual-wield a second Claw in your off-hand (&minus;30% dmg, +30% timer).</div>'
+    var body = '<div class="section-intro" style="margin-top:2px;margin-bottom:8px"><b style="color:var(--gold)">&#10022; Dual-wield</b> a second Claw in your off-hand (&minus;30% dmg, +30% timer).</div>'
       + '<div class="unique-inv-grid">'+uids.map(function(uid){ return renderUniqueOffhandClawCard(state.uniqueItems[uid]); }).join('')+'</div>';
+    var open = (equipAccOpen.uniqeq_offhandclaw !== undefined) ? equipAccOpen.uniqeq_offhandclaw : true;
+    return equipAccHtml('uniqeq_offhandclaw', 'Unique Off-hand Claws', svgIcon('claw','var(--rarity-fantastic)'), uids.length, open, body, false);
   }
   // Split a raw chat body into escaped text + rendered item chips (censor only the text segments so a
   // base64 payload is never mangled by the profanity filter).
@@ -32168,9 +32174,20 @@
     { id:'cloaks',    label:'Cloaks',        icon:svgIcon('cloak','var(--gold)') },
     { id:'tools',     label:'Tools',         icon:svgIcon('gear','var(--gold)') },
     { id:'blueprints',label:'Blueprints',    icon:svgIcon('starburst','#c9a227') },
-    { id:'unique',    label:'Unique',        icon:svgIcon('starburst','var(--rarity-fantastic)') }
+    // Unique (enchanted/enhanced) items get their OWN collapsible container per equipment type, so a
+    // deep collection stays sorted instead of piling into one "Unique" bucket. `unique:true` routes the
+    // group to the unique card grid; uniqueInvGroupId() maps a unique's kind to one of these ids.
+    { id:'u_weapon',    label:'Unique Weapons', icon:svgIcon('sword','var(--rarity-fantastic)'),      unique:true },
+    { id:'u_bodyarmor', label:'Unique Armor',   icon:svgIcon('chestarmor','var(--rarity-fantastic)'), unique:true },
+    { id:'u_offhand',   label:'Unique Shields', icon:svgIcon('shield','var(--rarity-fantastic)'),     unique:true },
+    { id:'u_ring',      label:'Unique Rings',   icon:svgIcon('ring','var(--rarity-fantastic)'),       unique:true },
+    { id:'u_amulet',    label:'Unique Amulets', icon:svgIcon('amulet','var(--rarity-fantastic)'),     unique:true },
+    { id:'u_belt',      label:'Unique Belts',   icon:svgIcon('belt','var(--rarity-fantastic)'),       unique:true },
+    { id:'u_relic',     label:'Unique Relics',  icon:svgIcon('urn','var(--rarity-fantastic)'),        unique:true }
   ];
   var INV_GROUP_BY_ID = {}; INV_GROUPS.forEach(function(g){ INV_GROUP_BY_ID[g.id] = g; });
+  // A unique item's kind -> its inventory container id (falls back to Weapons for any unmapped kind).
+  function uniqueInvGroupId(u){ var k = 'u_' + (u && u.kind); return INV_GROUP_BY_ID[k] ? k : 'u_weapon'; }
   function invWeaponFamily(typeId){
     var w = STACKABLE_WEAPON_TYPE_MAP[typeId], cls = (w && w.weaponClass) || '';
     if(w && w.wand) return 'w_wands';
@@ -32296,13 +32313,13 @@
       html += '<div class="inv-count-note">'+shown.length+' item'+(shown.length===1?'':'s')+(query?' shown':'')+'</div>';
       // Bucket every shown item into its fine-grained accordion group.
       var byGroup = {};
-      shown.forEach(function(r){ var g = r.unique ? 'unique' : invGroupFor(r.id); (byGroup[g] = byGroup[g] || []).push(r); });
+      shown.forEach(function(r){ var g = r.unique ? uniqueInvGroupId(r.u) : invGroupFor(r.id); (byGroup[g] = byGroup[g] || []).push(r); });
       var searching = !!query; // while searching, force groups open so a match is never hidden behind a collapsed header
       INV_GROUPS.forEach(function(g){
         var grp = byGroup[g.id]; if(!grp || !grp.length) return;
         var open = searching || (inventoryAccOpen[g.id] !== false); // default open; a collapsed group is stored as false
         // Unique items keep their full-card sort (best first); everything else uses the chosen sort.
-        var sortedRows = (g.id==='unique')
+        var sortedRows = g.unique
           ? grp.slice().sort(function(a,b){ return (b.u.enhance-a.u.enhance) || (b.u.enchants.length-a.u.enchants.length) || a.item.name.localeCompare(b.item.name); })
           : sortInvRows(grp);
         html += '<div class="inv-acc'+(open?' open':'')+'">';
@@ -32313,7 +32330,7 @@
         html += '<span class="inv-acc-n">'+grp.length+'</span>';
         html += '</div>';
         if(open){
-          if(g.id==='unique'){
+          if(g.unique){
             html += '<div class="unique-inv-grid inv-acc-body">';
             sortedRows.forEach(function(r){ html += renderUniqueInvCard(r.u); });
             html += '</div>';
@@ -34973,7 +34990,7 @@
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX, marketItemCategory:marketItemCategory, MARKET_CATEGORIES:MARKET_CATEGORIES, marketItemSubcategory:marketItemSubcategory, marketItemTierHtml:marketItemTierHtml, marketSubLabel:marketSubLabel,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER, ESTATE_PAVE_MS_PER_TIER:ESTATE_PAVE_MS_PER_TIER, ESTATE_WORKSHOP_MS_PER_TIER:ESTATE_WORKSHOP_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, rarityBuffSeconds:rarityBuffSeconds, serverBuffRarityBonus:serverBuffRarityBonus, rarityBonusShortLabel:rarityBonusShortLabel, serverRarityBuffActive:serverRarityBuffActive, SERVER_RARITY_BONUS:SERVER_RARITY_BONUS, _serverBuff:serverBuff, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
-      physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey, invGroupFor:invGroupFor, INV_GROUPS:INV_GROUPS,
+      physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey, invGroupFor:invGroupFor, INV_GROUPS:INV_GROUPS, uniqueInvGroupId:uniqueInvGroupId,
       sortEquipCandidates:sortEquipCandidates, candBetter:candBetter, renderEquipCandidatePicker:renderEquipCandidatePicker, renderEquipBodyArmorSection:renderEquipBodyArmorSection, renderMainhandEquipSection:renderMainhandEquipSection, equipPickerHtml:equipPickerHtml,
       getNextAutoEatFood:getNextAutoEatFood, getTotalAutoEatFoodQty:getTotalAutoEatFoodQty, getAutoEatFoodTypes:getAutoEatFoodTypes,
       setEquipHideLocked:function(v){ equipHideLocked = !!v; }, getEquipHideLocked:function(){ return equipHideLocked; },
