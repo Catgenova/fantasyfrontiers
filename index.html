@@ -1239,6 +1239,12 @@
   .loadout-nest-empty{font-size:12px;color:var(--text-dim);font-style:italic;}
   .loadout-quick-btn{height:24px;padding:0 10px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-body);font-size:12px;line-height:1;border-radius:6px;border:1px solid #5a4c33;background:linear-gradient(180deg,#b6a480,#8f7f5e);color:#2a2114;cursor:pointer;}
   .loadout-quick-btn:hover{background:linear-gradient(180deg,#c6b48f,#a08e6b);}
+  .loadout-manage{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border-light);}
+  .loadout-manage-title{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin-bottom:7px;text-transform:uppercase;letter-spacing:0.5px;}
+  .loadout-manage-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;}
+  .loadout-manage-row:first-of-type{margin-top:0;}
+  .loadout-manage-row select.loadout-name{flex:0 1 190px;}
+  .loadout-manage-row .action-btn{width:auto;flex:0 0 auto;margin-top:0;padding:5px 14px;}
   /* Set-bonus chips: same phantom-token problem as the loadouts panel (--muted / --line don't exist), so
      inactive chips were grey-purple on a near-invisible white wash over the tan card. */
   .setbonus-head{color:var(--gold);font-weight:600;margin-bottom:4px;}
@@ -19939,6 +19945,24 @@
       html += '<button class="action-btn" data-action="unlockLoadoutSlot" '+(afford?'':'disabled')+'>Unlock</button>';
       html += '</div>';
     }
+    // Bottom-of-panel: overwrite or rename an existing save from one place, so both actions are explicit
+    // (the per-row Overwrite button and inline name field still work). Only shown once something is saved.
+    var savedIdx = [];
+    for(var si=0; si<LOADOUT_SLOT_COUNT; si++){ if(state.loadouts[si]) savedIdx.push(si); }
+    if(savedIdx.length){
+      var opts = savedIdx.map(function(si){ return '<option value="'+si+'">#'+(si+1)+' — '+escapeHtml(state.loadouts[si].name || ('Loadout '+(si+1)))+'</option>'; }).join('');
+      html += '<div class="loadout-manage">';
+      html += '<div class="loadout-manage-title">Manage a saved loadout</div>';
+      html += '<div class="loadout-manage-row">';
+      html += '<select id="loadoutManageSel" class="loadout-name" aria-label="Saved loadout to manage">'+opts+'</select>';
+      html += '<button class="action-btn btn-quiet" data-action="loadoutManageOverwrite" title="Replace the chosen save with your current gear">Overwrite with current gear</button>';
+      html += '</div>';
+      html += '<div class="loadout-manage-row">';
+      html += '<input id="loadoutManageName" class="loadout-name" maxlength="24" placeholder="New name…" aria-label="New loadout name" />';
+      html += '<button class="action-btn" data-action="loadoutManageRename">Rename selected</button>';
+      html += '</div>';
+      html += '</div>';
+    }
     html += '</div>';
     return html;
   }
@@ -33998,7 +34022,16 @@
     equipLoadout: function(btn){ equipLoadoutPreset(parseInt(btn.getAttribute('data-index'),10)); },
     clearLoadout: function(btn){ clearLoadoutPreset(parseInt(btn.getAttribute('data-index'),10)); },
     unlockLoadoutSlot: function(btn){ unlockLoadoutSlot(); },
-    toggleLoadoutNest: function(btn){ loadoutNestOpen = !loadoutNestOpen; }
+    toggleLoadoutNest: function(btn){ loadoutNestOpen = !loadoutNestOpen; },
+    // Bottom-of-panel manager: overwrite/rename the loadout chosen in the footer dropdown.
+    loadoutManageOverwrite: function(btn){ var sel=document.getElementById('loadoutManageSel'); if(sel && sel.value!=='') saveLoadoutPreset(parseInt(sel.value,10)); },
+    loadoutManageRename: function(btn){
+      var sel=document.getElementById('loadoutManageSel'), nm=document.getElementById('loadoutManageName');
+      if(!sel || sel.value==='') return;
+      var v = nm ? (nm.value||'').trim() : '';
+      if(!v){ addLog('Type a new name first.', 'danger'); needsRender = true; return; }
+      renameLoadoutPreset(parseInt(sel.value,10), v);
+    }
   };
 
   // Equip / unequip / loadout-swap / familiar-toggle actions are barred while a fight is live.

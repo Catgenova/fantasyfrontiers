@@ -7528,6 +7528,17 @@
       ok(!!S.uniqueItems.UZ, 'the unique is never consumed — it stays in uniqueItems');
       // summary text
       ok(/pieces/.test(FF.loadoutSummary(gearA)), 'loadoutSummary reports the piece count');
+      // Bottom-of-panel manager relies on: overwrite keeps the name; rename changes it (trimmed, with a
+      // default fallback when blank).
+      S.loadouts[0] = { name:'My Kit', gear:{} };
+      S.equippedMainhand='sword'; S.equippedMainhandTier=1; S.equippedMainhandRarity='normal'; S.equippedMainhandUid=null;
+      FF.saveLoadoutPreset(0);
+      eq(S.loadouts[0].name, 'My Kit', 'overwrite keeps the existing preset name');
+      ok(S.loadouts[0].gear && S.loadouts[0].gear.mainhand && S.loadouts[0].gear.mainhand.id==='sword', 'overwrite replaces the gear with the current kit');
+      FF.renameLoadoutPreset(0, '  Raid Set  ');
+      eq(S.loadouts[0].name, 'Raid Set', 'rename trims and applies the new name');
+      FF.renameLoadoutPreset(0, '');
+      eq(S.loadouts[0].name, 'Loadout 1', 'a blank rename falls back to the default preset name');
     } finally {
       S.inventory=saved.inv; S.uniqueItems=saved.uq; S.loadouts=saved.lo;
       S.equippedMainhand=saved.mh; S.equippedMainhandTier=saved.mht; S.equippedMainhandRarity=saved.mhr; S.equippedMainhandUid=saved.mhu;
