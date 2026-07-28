@@ -9052,6 +9052,22 @@
     }
     return bonus;
   }
+  // ---- Water adjacency: a Field with water directly beside it (N/S/E/W -- diagonals don't count,
+  // unlike the totem aura) yields a flat +5 crops per harvest. One flat bonus however many banks the
+  // tile touches. Works on both estates -- water is derived purely from tile height.
+  var WATER_YIELD_BONUS = 5;
+  function waterYieldBonusAt(scope, key){
+    var grid = fieldGridFor(scope);
+    if(!grid || typeof key !== 'string') return 0;
+    var parts = key.split(','), px = parseInt(parts[0],10), py = parseInt(parts[1],10);
+    if(!isFinite(px) || !isFinite(py)) return 0;
+    var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    for(var i=0;i<dirs.length;i++){
+      var c = grid[px+dirs[i][0]] && grid[px+dirs[i][0]][py+dirs[i][1]];
+      if(c && estateIsWater(c)) return WATER_YIELD_BONUS;
+    }
+    return 0;
+  }
   function harvestPlot(scope, key, batch){
     var map = farmPlotMap(scope);
     var plot = map[key];
@@ -9060,11 +9076,13 @@
     var cropData = getCropDataForPlot(plot);
     if(!cropData){ delete map[key]; needsRender = true; return null; } // self-heal a bad cropType
     // Base 5 per harvest; fertilizer doubles it to 10 (Composter can push a fertilized plot to 3x = 15);
-    // Green Thumb may add one more; nearby Totems add their flat +tier on top.
+    // Green Thumb may add one more; nearby Totems and a waterside bank add their flat bonuses on top.
     var yieldQty = FARM_BASE_YIELD * (plot.fertilized ? (composterTripleYield() ? 3 : 2) : 1);
     yieldQty += greenThumbExtraYield();
     var totemBonus = totemYieldBonusAt(scope, key);
     yieldQty += totemBonus;
+    var waterBonus = waterYieldBonusAt(scope, key);
+    yieldQty += waterBonus;
     addItem(cropData.id, yieldQty);
     bumpStat('harvested_' + cropData.id); // crops harvested (by crop item), powers "Harvest 1 Cotton"
     // 75% chance to recover a seed of the crop just harvested (keeps fields self-sustaining).
@@ -9076,7 +9094,7 @@
     maybeSummonFamiliar('farming');
     if(!batch){
       var seedName = (gotSeed && ALL_SELLABLE[seedId]) ? ALL_SELLABLE[seedId].name : '';
-      addLog('You harvested ' + yieldQty + '&times; ' + cropData.name + (plot.fertilized ? ' (fertilized)' : '') + (totemBonus > 0 ? ' (+' + totemBonus + ' totem)' : '') + (gotSeed ? ' and recovered a ' + seedName : '') + '.', 'important');
+      addLog('You harvested ' + yieldQty + '&times; ' + cropData.name + (plot.fertilized ? ' (fertilized)' : '') + (totemBonus > 0 ? ' (+' + totemBonus + ' totem)' : '') + (waterBonus > 0 ? ' (+' + waterBonus + ' waterside)' : '') + (gotSeed ? ' and recovered a ' + seedName : '') + '.', 'important');
       spawnFloatingText('+' + yieldQty + ' ' + cropData.name + (gotSeed ? ' +1 Seed' : ''), 'ft-success');
     }
     delete map[key];
@@ -9284,6 +9302,7 @@
     var yieldQty = FARM_BASE_YIELD * (plot.fertilized ? (composterTripleYield() ? 3 : 2) : 1);
     yieldQty += greenThumbExtraYield();
     yieldQty += totemYieldBonusAt(scope, key); // nearby Totems boost offline harvests too
+    yieldQty += waterYieldBonusAt(scope, key); // ...and so does a waterside bank
     addItem(cropData.id, yieldQty);
     bumpStat('harvested_' + cropData.id); // offline catch-up harvest counts too, powers "Harvest 1 Cotton"
     var seedId = cropSeedId(plot.cropType, plot.tierIndex);
@@ -23074,7 +23093,8 @@
       'New Construction skill — Totems: mount 5 equal-tier Woodcarvings on 10 Carpentry Planks to carve a Totem (20 tiers, Birch up to Sequoia). Comes with its own familiar, Blacksmithing tool (Totem Mallet), and a Totems Workshop.',
       'Raise Totems on your Estate: place one on any paved tile of your personal estate (tier ≤ the pavement, 2 min per tier to raise, remove any time to get it back). Each Totem is a hand-carved pole that towers taller and grander with tier.',
       'Totems bless your Fields: every Field within 1 tile of a Totem (diagonals count) yields a flat +1 crop per harvest per Totem tier — +5 from a Poplar Totem up to +20 from a Sequoia Totem, stacking across multiple Totems, on top of Fertilizer and Green Thumb, offline harvests included. The Farming tab shows each Field\'s totem bonus.',
-      'Terraforming shapes your farms: a Field\'s altitude now sets its crops\' growth time. z10 is the baseline — every level below grows crops faster (down to −50% at z1, just above the waterline) and every level above grows them slower (up to +50% at z19). Applies to live and offline growing on both estates; the Farming tab shows each Field\'s altitude modifier and the seed picker quotes real grow times.'
+      'Terraforming shapes your farms: a Field\'s altitude now sets its crops\' growth time. z10 is the baseline — every level below grows crops faster (down to −50% at z1, just above the waterline) and every level above grows them slower (up to +50% at z19). Applies to live and offline growing on both estates; the Farming tab shows each Field\'s altitude modifier and the seed picker quotes real grow times.',
+      'Waterside farms: a Field with water directly beside it (north, south, east or west — diagonals don\'t count) yields a flat +5 crops per harvest, stacking with Fertilizer, Green Thumb and Totems, offline included. Dig a channel through your farmland and every bank pays.'
     ]},
     { v:'0.0.53', date:'Jul 28', heading:'Blueprints and legendary accessories hit the Auction House', items:[
       'Masterwork Blueprints are now tradeable: every dungeon Blueprint can be listed and bid on in the Marketplace, under a new Blueprints category chip. They also live in your ordinary Inventory bag now (your existing stock moves over automatically) — the Blueprints tab works exactly as before.',
@@ -27111,12 +27131,12 @@
       cells.forEach(function(fc){
         var key = fc.x+','+fc.y, domId = scope+'-'+fc.x+'_'+fc.y, plot = map[key];
         var fdef = FARM_FIELD_TIERS['field_t'+fc.tier];
-        var totemB = totemYieldBonusAt(scope, key);
+        var totemB = totemYieldBonusAt(scope, key), waterB = waterYieldBonusAt(scope, key);
         // Altitude: growth-time modifier from the tile's height (z10 = baseline, z19 +50%, z1 -50%).
         var growM = fieldGrowthMult(scope, key), growPct = Math.round((growM - 1) * 100);
         var growTag = growPct === 0 ? '' : ' &bull; <span style="color:'+(growPct<0?'#7fbf5a':'#d08a3f')+';font-weight:700">'+(growPct>0?'+':'')+growPct+'% grow time (z'+(fieldGridFor(scope)[fc.x][fc.y].height|0)+')</span>';
         out += '<div class="item-card">';
-        out += '<div class="item-top"><div class="item-icon">'+(fdef?fdef.icon:'')+'</div><div><div class="item-name">'+DIGGING_NAMES[fc.tier]+' Field</div><div class="item-meta">Grows up to '+TIER_NAMES[fc.tier]+' &bull; ('+fc.x+','+fc.y+')'+growTag+(totemB>0?' &bull; <span style="color:#c9a227;font-weight:700">+'+totemB+' totem yield</span>':'')+'</div></div></div>';
+        out += '<div class="item-top"><div class="item-icon">'+(fdef?fdef.icon:'')+'</div><div><div class="item-name">'+DIGGING_NAMES[fc.tier]+' Field</div><div class="item-meta">Grows up to '+TIER_NAMES[fc.tier]+' &bull; ('+fc.x+','+fc.y+')'+growTag+(totemB>0?' &bull; <span style="color:#c9a227;font-weight:700">+'+totemB+' totem yield</span>':'')+(waterB>0?' &bull; <span style="color:#5aa0d0;font-weight:700">+'+waterB+' waterside</span>':'')+'</div></div></div>';
         // Per-plot state used to enable/disable the four action buttons below (Sow / Fertilize / Harvest / Cancel).
         var empty = isPlotEmpty(plot);
         var cd = null, remaining = 0, ready = false, canFert = false, hasCrop = false;
@@ -34566,7 +34586,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.54.1';
+  var GAME_VERSION = '0.0.54.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -34676,7 +34696,7 @@
       peonTaskTier:peonTaskTier, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
       generatePersonalEstateGrid:generatePersonalEstateGrid, generateEstateGrid:generateEstateGrid, estatePlaceStarterKit:estatePlaceStarterKit, estateIsStarterTile:estateIsStarterTile, ESTATE_STARTER_WORKSHOP:ESTATE_STARTER_WORKSHOP, ESTATE_STARTER_COTTAGE:ESTATE_STARTER_COTTAGE, ESTATE_STARTER_PAVING:ESTATE_STARTER_PAVING, estatePeonSources:estatePeonSources,
       ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline, simulateOfflineFarming:simulateOfflineFarming, bestOwnedSeedForField:bestOwnedSeedForField, seedAllowedForPlanting:seedAllowedForPlanting, ownedSeedTypesDesc:ownedSeedTypesDesc, renderFarmPlantControls:renderFarmPlantControls,
-      totemItem:totemItem, placeableTotemsFor:placeableTotemsFor, totemYieldBonusAt:totemYieldBonusAt, ESTATE_TOTEM_MS_PER_TIER:ESTATE_TOTEM_MS_PER_TIER, estatePlaceTotem:estatePlaceTotem, estateRemoveTotem:estateRemoveTotem, estateDrawTotem:estateDrawTotem, drawEstateTotemModel:drawEstateTotemModel, estateDrawTdTotem:estateDrawTdTotem, fieldGrowthMult:fieldGrowthMult,
+      totemItem:totemItem, placeableTotemsFor:placeableTotemsFor, totemYieldBonusAt:totemYieldBonusAt, ESTATE_TOTEM_MS_PER_TIER:ESTATE_TOTEM_MS_PER_TIER, estatePlaceTotem:estatePlaceTotem, estateRemoveTotem:estateRemoveTotem, estateDrawTotem:estateDrawTotem, drawEstateTotemModel:drawEstateTotemModel, estateDrawTdTotem:estateDrawTdTotem, fieldGrowthMult:fieldGrowthMult, waterYieldBonusAt:waterYieldBonusAt, WATER_YIELD_BONUS:WATER_YIELD_BONUS,
       workshopBonusPct:workshopBonusPct, workshopSpeedPct:workshopSpeedPct, getWorkshopTierData:getWorkshopTierData, workshopSpeedBonus:workshopSpeedBonus, workshopDoubleChance:workshopDoubleChance, recomputePlacedWorkshops:recomputePlacedWorkshops,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
       addXpAppliedMult:addXpAppliedMult, cardRealXp:cardRealXp, cardTierIndex:cardTierIndex, xpStat:xpStat, curiosityGatherXpBonus:curiosityGatherXpBonus,

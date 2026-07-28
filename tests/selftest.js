@@ -716,6 +716,39 @@
     s.estate.grid = savedGrid; s.farmingPlots = savedPlots; s.inventory = savedInv; s.itemEarnedTotal = savedEarned;
   });
 
+  // ---- Waterside farms: a Field orthogonally beside water yields a flat +5 crops per harvest --------
+  suite('farming: waterside fields yield +5 crops', function(){
+    eq(FF.WATER_YIELD_BONUS, 5, 'the waterside bonus is +5 crops');
+    var s = FF._state;
+    var savedGrid = s.estate.grid;
+    function mkCell(h){ return { type:'dirt', height:h, owned:true, workshopId:null, cottageId:null, totemId:null, fieldTier:5 }; }
+    var g = []; for(var gx=0; gx<4; gx++){ var col=[]; for(var gy=0; gy<4; gy++){ col.push(mkCell(10)); } g.push(col); }
+    s.estate.grid = g;
+    g[1][0].height = 0;                                     // water directly north of (1,1)
+    g[3][3].height = 0;                                     // water diagonal to (2,2) -> must NOT count
+    eq(FF.waterYieldBonusAt('personal','1,1'), 5, 'a field with water to one side gets +5');
+    eq(FF.waterYieldBonusAt('personal','2,2'), 0, 'diagonal water does not count (N/S/E/W only)');
+    eq(FF.waterYieldBonusAt('personal','0,3'), 0, 'a dry-land field gets nothing');
+    g[0][1].height = 0;                                     // (0,0) now touches TWO banks -> still one flat +5
+    eq(FF.waterYieldBonusAt('personal','0,0'), 5, 'multiple adjacent banks still give one flat +5');
+    g[2][3].height = 0; g[2][3].type = 'paved';             // a paved height-0 tile is NOT water
+    eq(FF.waterYieldBonusAt('personal','2,2'), 0, 'a paved height-0 tile is not water (no bonus)');
+    // A real harvest lands the +5 on top of the base yield (deterministic: no Green Thumb/seed rolls).
+    var savedPlots = s.farmingPlots, savedInv = s.inventory, savedEarned = s.itemEarnedTotal;
+    s.inventory = {}; s.itemEarnedTotal = {};
+    var mkPlot = function(){ return { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-1000, readyAt:Date.now()-500 }; };
+    s.farmingPlots = { '1,1': mkPlot(), '0,3': mkPlot() };  // waterside vs dry
+    var savedRand = Math.random;
+    Math.random = function(){ return 1; };
+    FF.harvestPlot('personal','0,3', true);
+    var dry = s.inventory.farming_t0 || 0;
+    FF.harvestPlot('personal','1,1', true);
+    var wet = (s.inventory.farming_t0 || 0) - dry;
+    Math.random = savedRand;
+    eq(wet - dry, 5, 'the waterside harvest yields exactly +5 more crops');
+    s.estate.grid = savedGrid; s.farmingPlots = savedPlots; s.inventory = savedInv; s.itemEarnedTotal = savedEarned;
+  });
+
   suite('estate: offline queue drain', function(){
     var s = FF._state;
     FF.estUse(false);                                  // personal estate is the drain target
