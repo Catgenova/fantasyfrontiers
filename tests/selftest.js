@@ -5233,9 +5233,10 @@
     near(FF.classAttackSpeedMult(tfSt(7, false)), 0.30, 'base Chain Lightning caps at 7 stacks (-70%)', 1e-9);
     near(FF.classAttackSpeedMult(tfSt(9, true)), 0.10, 'Tempest lets Chain Lightning reach 9 stacks (-90%)', 1e-9);
 
-    // Rapid Conjuring (summoner/staff): familiars cast 20% faster.
-    near(FF.legFamiliarHasteMult(legSt('rapidconjuring', 'staff')), 0.80, 'Rapid Conjuring: familiars cast 20% faster');
-    near(FF.legFamiliarHasteMult(legSt('tempest', 'wandEarth')), 1, 'no familiar haste without Rapid Conjuring');
+    // Baton of the First Chair (summoner/staff): the Downbeat swings every 4s instead of 5.
+    var batonSt = legSt('rapidconjuring'); batonSt.equippedMainhand = 'staff';
+    var noBatonSt = legSt('tempest'); noBatonSt.equippedMainhand = 'staff'; noBatonSt.equippedMainhandUid = null;
+    near(FF.playerAttackIntervalMs(batonSt) / FF.playerAttackIntervalMs(noBatonSt), 0.8, 'Baton of the First Chair: the staff swings 20% faster (4s vs 5s)', 1e-9);
 
     // Retribution (templar/scepter): a Holy shield absorb arms a +50% next strike, consumed once.
     var rSt = legSt('retribution', 'scepter');
@@ -5927,9 +5928,15 @@
     near(FF.d4WandElementMult(legSt('duskwyrm','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, voidVulnStacks:4, voidVulnUntil:now+4000} }), 'fire', waterDragon), 1 - (0.15 - 0.06), 'Duskwyrm: 4 Vulnerability -> resistance 15% -> 9%');
     near(FF.d4WandElementMult(legSt('duskwyrm','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, voidVulnStacks:10, voidVulnUntil:now+4000} }), 'fire', waterDragon), 1.0, 'Duskwyrm: 10 Vulnerability fully strips the resistance');
 
-    // Broodwyrm's Chorus: familiars always fight with advantage.
-    near(FF.d4FamiliarElementMult(legSt('broodwyrm','staff'), 'fire', { element:'water' }), FF.ELEMENT_ADVANTAGE_MULT, "Broodwyrm's Chorus: familiars gain the advantage bite when they lack it");
-    near(FF.d4FamiliarElementMult(legSt('broodwyrm','staff'), 'fire', { element:'earth' }), 1.0, 'Broodwyrm does not double an advantage the familiar already has (Fire already beats Earth)');
+    // Broodwyrm's Chorus: doubles the base effect of Earth ("nature") damage enchants on the staff.
+    var bwSt = legSt('broodwyrm');
+    bwSt.equippedMainhand = 'staff';
+    bwSt.uniqueItems.L.kind = 'weapon';
+    bwSt.uniqueItems.L.enchants = [{ mod:'earthDamage', roll:20 }, { mod:'fireDamage', roll:20 }];
+    bwSt.uniqueItems.L.enhance = 0;
+    var bwTot = FF.equippedEnchantTotals(bwSt);
+    eq(bwTot.flatElemEarth, 40, "Broodwyrm's Chorus doubles the staff's Earth enchant");
+    eq(bwTot.flatElemFire, 20, '...but leaves other elements at their base roll');
 
     // Detection for the behaviour-driven weapons + all 5 wards.
     ['cinderwyrm','stormwyrm'].forEach(function(k){ var b = FF.D4_LEG_GEAR_MAP[k].base; eq(FF.legActive(k, legSt(k, b)), true, 'legActive detects '+k); });
@@ -6246,7 +6253,7 @@
       ok(d.b2 && d.b2.name && d.b2.desc && d.b2.key, id + ' has a named 2-piece bonus');
       ok(d.bf && d.bf.name && d.bf.desc && d.bf.key, id + ' has a named full-set bonus'); });
     // Spot-check a couple of the chosen bonuses landed.
-    eq(FF.D1_SET_DEFS.summoner.b2.name, 'Pack Tactics', 'Summoner 2pc is Pack Tactics');
+    eq(FF.D1_SET_DEFS.summoner.b2.name, "Maestro's Poise", "Summoner 2pc is Maestro's Poise (Crescendo cap +2)");
     eq(FF.D1_SET_DEFS.reaver.bf.name, 'Feeding Frenzy', 'Reaver capstone is Feeding Frenzy');
     eq(FF.D1_SET_DEFS.nightblade.b2.name, 'Resistance Rot', 'Voidshadow (nightblade) 2pc is Resistance Rot');
     // Themed set names: every class has one, and pieces read "<Slot> of <SetName>".
@@ -6306,7 +6313,7 @@
       eq(FF.set2D2('summoner', s), true, 'two D2 pieces trigger the D2 2-piece bonus');
       // Names are orc-themed and distinct from D1.
       ok(FF.setPieceName('summoner','chest','d2') !== FF.setPieceName('summoner','chest','d1'), 'D2 piece names differ from D1');
-      ok(/Warbeast/.test(FF.setPieceName('summoner','chest','d2')), 'the D2 Summoner set is the Warbeast Harness');
+      ok(/Chorus/.test(FF.setPieceName('summoner','chest','d2')), 'the D2 Summoner set is the Chorus of Fangs');
     } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; }
   });
 
@@ -6631,12 +6638,26 @@
       wearD4('spellblade', 2); near(FF.d4EchoMult(s), 1.30, 'Rune Heart (2pc): echoes +30% elemental');
       wearFull('spellblade'); near(FF.d4EchoMult(s), 1.30 * FF.ELEMENT_ADVANTAGE_MULT, 'Prismatic Edge (full): echoes also strike the weakness (advantage)');
 
-      // --- Summoner familiars (Brood Heart / Wyrmling Swarm) ---
+      // --- Summoner familiars (Brood Heart / Wyrd Resonance) ---
       s.bodyArmor = {}; s.uniqueItems = {};
       wearD4('summoner', 2); near(FF.d4FamiliarElementMult(s, 'fire', { element:'earth' }), 1.30, 'Brood Heart (2pc): +30% familiar elemental');
       wearFull('summoner');
-      near(FF.d4FamiliarElementMult(s, 'fire', { element:'water' }), 1.30 * FF.ELEMENT_ADVANTAGE_MULT, 'Wyrmling Swarm: grants the advantage bite when the familiar lacks it');
-      near(FF.d4FamiliarElementMult(s, 'fire', { element:'earth' }), 1.30, 'Wyrmling Swarm does not double an advantage the familiar already has');
+      near(FF.d4FamiliarElementMult(s, 'fire', { element:'water' }), 1.30, 'Wyrd Resonance is inert without an Empowered spell (no recent Downbeat)');
+      // Empowered branch needs a live Summoner (Lv40+, staff + full cloth) inside the Syncopation window.
+      (function(){
+        function wcloth(uid){ return { tier:1, rarity:'normal', material:'tailoring', uid:uid }; }
+        var wy = { equippedMainhand:'staff', xp:{ summoner: FF.xpFloorForLevel(40) },
+          staffLastDownbeatAt: Date.now(),
+          bodyArmor:{ helmet:wcloth('w0'), chest:wcloth('w1'), gauntlets:wcloth('w2'), boots:wcloth('w3') },
+          uniqueItems:{ w0:{set:'summoner',setLayer:'d4'}, w1:{set:'summoner',setLayer:'d4'},
+                        w2:{set:'summoner',setLayer:'d4'}, w3:{set:'summoner',setLayer:'d4'} } };
+        ok(FF.summonerSpellEmpowered(wy), 'Summoner Lv40+ within 1.5s of a Downbeat => the spell is Empowered');
+        near(FF.d4FamiliarElementMult(wy, 'fire', { element:'water' }), 1.30 * FF.ELEMENT_ADVANTAGE_MULT, 'Wyrd Resonance: an Empowered spell strikes with the advantage bite');
+        near(FF.d4FamiliarElementMult(wy, 'fire', { element:'earth' }), 1.30, 'Wyrd Resonance does not double an advantage the spell already has');
+        wy.staffLastDownbeatAt = Date.now() - 5000;
+        ok(!FF.summonerSpellEmpowered(wy), 'the Empowered window lapses 1.5s after the Downbeat');
+        near(FF.d4FamiliarElementMult(wy, 'fire', { element:'water' }), 1.30, 'the Resonance fades once the Syncopation window lapses');
+      })();
 
       // --- Templar Aegis of Light (full): Holy shield scales with Light Attunement ---
       s.bodyArmor = {}; s.uniqueItems = {};
@@ -6995,7 +7016,7 @@
   suite('D2 sets: Batch E combat effects', function(){
     var s = FF._state;
     var sv = { ba:s.bodyArmor, ui:s.uniqueItems, hp:s.playerHp, act:s.activity,
-               fs:s.d2FeralStacks, fu:s.d2FeralUntil, bs:s.d2BloodthirstStacks, bu:s.d2BloodthirstUntil,
+               fs:s.d2FeralStacks, fu:s.d2FeralUntil, bs:s.d2BloodthirstStacks, bu:s.d2BloodthirstUntil, ac:s.activeCompanions,
                mh:s.equippedMainhandUid, oh:s.equippedOffhandUid, be:s.equippedBeltUid, rl:s.equippedRelicUid, js:s.jewelrySlots };
     function wearD2(cls, n){
       var order = FF.D2_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
@@ -7007,17 +7028,14 @@
       // Isolate the enchant counter: null every other equipped slot so equippedEnchantCount only sees worn D2 pieces.
       s.equippedMainhandUid = s.equippedOffhandUid = s.equippedBeltUid = s.equippedRelicUid = null; s.jewelrySlots = {};
       var mh = FF.maxHp(s); s.playerHp = mh; s.activity = { type:'combat', monsterHp:800 };
-      // Summoner Feral Surge (2pc): +5% per stack while the window is live.
-      wearD2('summoner', 2); s.d2FeralStacks = 3; s.d2FeralUntil = Date.now()+9999;
-      near(FF.d2SetDmgMult(foe, s), 1 + 0.05*3, 'Summoner Feral Surge: +5% per recent familiar cast');
-      s.d2FeralUntil = Date.now()-1; near(FF.d2SetDmgMult(foe, s), 1.0, 'Feral Surge lapses after its window');
-      s.d2FeralStacks = 0; s.d2FeralUntil = 0; FF.d2FeralOnCast(s);
-      eq(s.d2FeralStacks, 1, 'a familiar cast adds a Feral Surge stack (cap = active-familiar count, min 1)');
-      ok(s.d2FeralUntil > Date.now(), 'a familiar cast opens the Feral Surge window');
-      // Summoner Bloodmoon Pack (full): familiars cast 25% faster.
-      s.bodyArmor = {}; s.uniqueItems = {}; var baseMs = FF.familiarCastIntervalMs();
-      wearD2('summoner', 4); var setMs = FF.familiarCastIntervalMs();
-      near(setMs/baseMs, 0.75, 'Summoner Bloodmoon Pack: familiars cast 25% faster');
+      // Chorus of Fangs (Summoner D2 2pc): Pack Tactics moved here -- +8% familiar damage per active familiar.
+      wearD2('summoner', 2); s.activeCompanions = ['forestry']; s.familiars = s.familiars || {}; s.familiars.forestry = { owned:true };
+      near(FF.summonerPackTacticsMult(s), 1.08, 'Chorus of Fangs (2pc): +8% familiar damage per active familiar');
+      s.activeCompanions = [];
+      near(FF.summonerPackTacticsMult(s), 1, 'no familiars -> no pack bonus');
+      // Kindred Fury is now the D2 FULL bonus (crit borrowing is exercised in the cast pipeline).
+      ok(/Kindred Fury/.test(FF.D2_SET_DEFS.summoner.bf.name), 'the Summoner D2 capstone is Kindred Fury');
+      s.bodyArmor = {}; s.uniqueItems = {};
       // Spellblade Arcane Overflow (2pc): +2% per equipped enchant.
       wearD2('spellblade', 2); s.uniqueItems.w0.enchants = [{},{},{}];
       eq(FF.equippedEnchantCount(s), 3, 'the worn Spellblade piece carries 3 enchants');
@@ -7041,7 +7059,7 @@
       near(FF.quickdrawParalyticSlow(s), 0.30, 'Quickdraw Paralytic Venom: -30% enemy attack speed vs a venomed foe');
       ok(FF.enemyExtraSlowPct(s) >= 0.30 - 1e-9, 'Paralytic Venom folds into the enemy slow total');
       s.activity.potionPoisonUntil = Date.now()-1; near(FF.quickdrawParalyticSlow(s), 0.0, 'Paralytic Venom inert without venom');
-    } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; s.d2FeralStacks=sv.fs; s.d2FeralUntil=sv.fu; s.d2BloodthirstStacks=sv.bs; s.d2BloodthirstUntil=sv.bu; s.equippedMainhandUid=sv.mh; s.equippedOffhandUid=sv.oh; s.equippedBeltUid=sv.be; s.equippedRelicUid=sv.rl; s.jewelrySlots=sv.js; }
+    } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; s.d2FeralStacks=sv.fs; s.d2FeralUntil=sv.fu; s.d2BloodthirstStacks=sv.bs; s.d2BloodthirstUntil=sv.bu; s.activeCompanions=sv.ac; s.equippedMainhandUid=sv.mh; s.equippedOffhandUid=sv.oh; s.equippedBeltUid=sv.be; s.equippedRelicUid=sv.rl; s.jewelrySlots=sv.js; }
   });
 
   // ---- D2 sets: Quickdraw Rapid Reload integrates through classAttackSpeedMult on a live Quickdraw -----
@@ -7409,11 +7427,12 @@
     }
     var now = Date.now();
 
-    // Summoner Pack Tactics (2pc): +8% familiar damage per active familiar.
+    // Pack Tactics moved to the D2 set: D1 pieces alone no longer grant it (D1 is Maestro's Poise now).
     var packSt = setSt('summoner', 2, { activeCompanions:['woodcutting'], familiars:{ woodcutting:{owned:true} } });
-    near(FF.summonerPackTacticsMult(packSt), 1.08, 'Pack Tactics (2pc): +8% per active familiar');
-    near(FF.summonerPackTacticsMult(setSt('summoner', 2, { activeCompanions:[], familiars:{} })), 1, 'Pack Tactics: no bonus with no familiars');
-    near(FF.summonerPackTacticsMult(setSt('summoner', 1, { activeCompanions:['woodcutting'], familiars:{ woodcutting:{owned:true} } })), 1, '1 piece -> no Pack Tactics');
+    near(FF.summonerPackTacticsMult(packSt), 1, 'D1 pieces no longer grant Pack Tactics (it lives on the D2 Chorus of Fangs)');
+    // Maestro's Poise (D1 2pc): the Crescendo cap climbs from 5 to 7.
+    eq(FF.summonerCrescendoCap(packSt), 7, "Maestro's Poise: Crescendo cap 7 with the 2-piece");
+    eq(FF.summonerCrescendoCap(setSt('summoner', 1, {})), 5, 'base Crescendo cap is 5');
 
     // Spellblade Resonant Crit (full): echoes can Critically Hit.
     ok(FF.spellbladeResonantCrit(setSt('spellblade', 4)), 'Resonant Crit (full): echoes can crit');
@@ -10295,7 +10314,9 @@
     ok(FF.isStaff('staff'), 'the staff is a staff');
     ok(!FF.isStaff('wandFire'), 'a wand is not a staff');
     eq(FF.STAFF_TYPE.hand, '2h', 'staff is two-handed');
-    ok(FF.STAFF_TYPE.noAttack, 'staff has no attack');
+    ok(!FF.STAFF_TYPE.noAttack, 'the staff swings again (Conductor rework)');
+    eq(FF.STAFF_TYPE.attackSpeed, 5, 'staff swings on a 5s Downbeat');
+    ok(FF.STAFF_TYPE.staff, 'staff style carries the staff flag');
     eq(FF.STAFF_TYPE.skillId, 'arcanism', 'staff is crafted by arcanism');
 
     // Recipe: 4 logs + 8 dark glyphs + a Normal previous tier.
@@ -10303,13 +10324,16 @@
     eq(d.inputs['forestry_t7'], 4, 'staff needs 4 logs');
     eq(d.inputs['glyph_dark'], 8, 'staff needs 8 dark glyphs');
     eq(d.inputs['stweapon_staff_t6_normal'], 1, 'staff now also consumes its Normal previous tier');
-    eq(d.dmgMax, 0, 'staff deals no damage');
+    // Damage in line with a two-handed weapon: same tierStat x 1.3 hand bonus as a claymore.
+    var d2h = FF.getStackableWeaponTierData('claymore', 7);
+    eq(d.dmgMin, d2h.dmgMin, 'staff min damage matches a two-handed weapon of the same tier');
+    eq(d.dmgMax, d2h.dmgMax, 'staff max damage matches a two-handed weapon of the same tier');
 
     // Block scales 5% (t0) -> 30% (top tier).
     eq(FF.staffBlockPct(0), 0.05, 't0 block = 5%');
     eq(FF.staffBlockPct(FF.TIER_COUNT-1), 0.30, 'top block = 30%');
     var it = FF.STACKABLE_WEAPON_ITEMS['stweapon_staff_t'+(FF.TIER_COUNT-1)+'_normal'];
-    ok(it && it.block === 0.30 && it.dmgMax === 0, 'top staff item: 30% block, no damage');
+    ok(it && it.block === 0.30 && it.dmgMax > 0, 'top staff item: 30% block AND real swing damage');
 
     // Rarity grants familiar slots: normal 2, rare 3, supreme 4, fantastic 5.
     eq(FF.STAFF_RARITY_FAMILIAR_SLOTS.normal, 2, 'normal staff = +2 slots');
@@ -10397,7 +10421,7 @@
     ok(cd, 'summoner class defined');
     eq(cd.passives.length, 5, 'five tiered passives');
     eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'passive tiers are 1/20/40/60/80');
-    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Third Eye,Guardian Bond,Desperate Summons,Overload,Kindred Fury', 'reworked Summoner perk names');
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Downbeat,Crescendo,Syncopation,Accelerando,Grand Finale', 'Conductor perk names');
     eq(cd.reqParts.length, 5, 'requires 5 gear pieces (4 cloth + staff)');
 
     function cloth(){ return {tier:1, rarity:'normal', material:'tailoring'}; }
@@ -10422,33 +10446,81 @@
     var leveled = { xp:{summoner:FF.xpFloorForLevel(60)}, equippedMainhand:'staff', bodyArmor:full.bodyArmor };
     ok(FF.classLevel(leveled,'summoner') >= 60, 'xp yields class level >= 60 ('+FF.classLevel(leveled,'summoner')+')');
 
-    // Lv 1 Third Eye: +1 Companion slot on top of the Staff's slots (isolate by comparing to the same
-    // staff with the class inactive, so only Third Eye differs).
+    // Third Eye is retired: the Conductor kit grants no bonus Companion slot (the staff alone sizes the roster).
     var sameStaffNoClass = { xp:{summoner:0}, equippedMainhand:'staff', bodyArmor:{ helmet:{tier:1,rarity:'normal',material:'leather'}, chest:cloth(), gauntlets:cloth(), boots:cloth(), back:bare() } };
-    eq(FF.activeClassId(sameStaffNoClass), null, 'leather helm breaks the class (Third Eye control)');
-    eq(FF.activeCompanionSlots(full), FF.activeCompanionSlots(sameStaffNoClass) + 1, 'Lv 1 Third Eye grants +1 Companion slot');
+    eq(FF.activeClassId(sameStaffNoClass), null, 'leather helm breaks the class (control)');
+    eq(FF.activeCompanionSlots(full), FF.activeCompanionSlots(sameStaffNoClass), 'no class-granted Companion slot: the staff alone sets the roster size');
 
-    // Behavioral: Overload quickens the cast timer with fight time (floor 5s); Desperate Summons halves
-    // it while below 25% HP. Uses the live state (real maxHp) and the live combat activity clock.
+    // Downbeat power: one stack lends every familiar attack the staff's average roll (+ flat enchant lines).
+    var pit = FF.STACKABLE_WEAPON_ITEMS['stweapon_staff_t9_normal'];
+    var pw = { equippedMainhand:'staff', equippedMainhandTier:10, equippedMainhandRarity:'normal', xp:{} };
+    eq(FF.staffDownbeatPower(pw), Math.round((pit.dmgMin + pit.dmgMax) / 2), 'Downbeat power = the staff average roll');
+    eq(FF.staffDownbeatPower({ equippedMainhand:'claymore', equippedMainhandTier:10, equippedMainhandRarity:'normal', xp:{} }), 0, 'no staff => no Downbeat power');
+
+    // Behavioral (live state): the rhythm engine -- Downbeat stacks, Crescendo, Syncopation window,
+    // Accelerando cast haste, Grand Finale consumption, Skeletal Wraiths.
     (function(){
       var s = FF._state;
-      var snap = { mh:s.equippedMainhand, mhr:s.equippedMainhandRarity, ba:s.bodyArmor, xp:s.xp.summoner, hp:s.playerHp, act:s.activity };
+      var snap = { mh:s.equippedMainhand, mhr:s.equippedMainhandRarity, ba:s.bodyArmor, xp:s.xp.summoner, hp:s.playerHp, act:s.activity,
+                   db:s.staffDownbeats, dba:s.staffLastDownbeatAt, cre:s.summonerCrescendo, wr:s.summonerWraiths,
+                   ac:s.activeCompanions, cc:s.companionCast, fam:s.familiars.forestry };
       try {
         s.equippedMainhand='staff'; s.equippedMainhandRarity='normal';
         s.bodyArmor={ helmet:cloth(), chest:cloth(), gauntlets:cloth(), boots:cloth(), back:bare() };
         s.xp.summoner = FF.xpFloorForLevel(80);
         eq(FF.activeClassId(s), 'summoner', 'behavioral setup activates the Summoner');
-        var mh = FF.maxHp(s);
-        s.activity = null; s.playerHp = mh;
-        eq(FF.familiarCastIntervalMs(), 10000, 'no fight: familiars cast on the 10s base');
-        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:100, duelStartedAt: Date.now() - 20000 };
-        eq(FF.familiarCastIntervalMs(), 8000, 'Overload: 20s in => -2000ms (8s)');
-        s.activity.duelStartedAt = Date.now() - 100000;
-        eq(FF.familiarCastIntervalMs(), 5000, 'Overload: floors at 5s');
-        s.activity.duelStartedAt = Date.now(); s.playerHp = Math.round(mh*0.10);
-        eq(FF.familiarCastIntervalMs(), 5000, 'Desperate Summons: <25% HP halves the 10s base to 5s');
+        s.staffDownbeats = []; s.staffLastDownbeatAt = 0; s.summonerCrescendo = 0; s.summonerWraiths = [];
+        s.activeCompanions = ['forestry']; s.familiars.forestry = { owned:true };
+        s.companionCast = { forestry: { accum: 0, index: 0 } };
+        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9 };
+
+        // Downbeat (Lv1): every connecting swing stacks; each stack rides its own 5s timer.
+        FF.staffDownbeatHit(); FF.staffDownbeatHit(); FF.staffDownbeatHit();
+        eq(FF.staffDownbeatStacks(s), 3, 'Downbeat: three hits => three live stacks');
+        // Crescendo (Lv20): one stack per connecting Downbeat, capped at 5 without the D1 set.
+        eq(FF.summonerCrescendo(s), 3, 'Crescendo: one stack per connecting Downbeat');
+        // Syncopation (Lv40): spells within 1.5s of the beat are Empowered.
+        ok(FF.summonerSpellEmpowered(s), 'a spell right on the beat is Empowered');
+        s.staffLastDownbeatAt = Date.now() - 2000;
+        ok(!FF.summonerSpellEmpowered(s), 'the Empowered window closes 1.5s after the beat');
+        // Accelerando (Lv60): each beat advances every familiar cast timer 0.4s...
+        eq(s.companionCast.forestry.accum, 3 * FF.SUMMONER_ACCEL_ADVANCE_MS, 'Accelerando: each Downbeat advances the cast timer 0.4s');
+        // ...and at max Crescendo the whole host casts 15% faster.
+        eq(FF.familiarCastIntervalMs(), 10000, 'below max Crescendo: familiars cast on the 10s base');
+        s.summonerCrescendo = FF.summonerCrescendoCap(s);
+        eq(FF.familiarCastIntervalMs(), 8500, 'Accelerando at max Crescendo: casts 15% faster');
+        // Grand Finale (Lv80): the next Downbeat at max Crescendo consumes the stacks.
+        FF.staffDownbeatHit();
+        eq(FF.summonerCrescendo(s), 0, 'Grand Finale consumes the Crescendo stacks');
+        // Below Lv80 the max-Crescendo beat holds the stacks instead.
+        s.xp.summoner = FF.xpFloorForLevel(60);
+        s.summonerCrescendo = FF.summonerCrescendoCap(s);
+        FF.staffDownbeatHit();
+        eq(FF.summonerCrescendo(s), FF.summonerCrescendoCap(s), 'below Lv80 the stacks are never consumed');
+        // Stacks expire on their own 5s clocks.
+        s.staffDownbeats = [Date.now() - 1];
+        eq(FF.staffDownbeatStacks(s), 0, 'a lapsed Downbeat stack no longer counts');
+        // Baseline (no class): anyone with a staff sustains exactly ONE refreshed Downbeat.
+        s.bodyArmor.helmet = { tier:1, rarity:'normal', material:'leather' };
+        eq(FF.activeClassId(s), null, 'leather helm drops the class (baseline staff)');
+        FF.staffDownbeatHit(); FF.staffDownbeatHit(); FF.staffDownbeatHit();
+        eq(FF.staffDownbeatStacks(s), 1, 'a classless staff holds a single Downbeat stack');
+        // Skeletal Wraiths: raised by a Finale, striking every 2.5s for 10s, dispersing out of combat.
+        s.summonerWraiths = [];
+        FF.summonerRaiseWraith(2);
+        eq(s.summonerWraiths.length, 2, 'summonerRaiseWraith fields two Wraiths');
+        s.summonerWraiths.forEach(function(w){ w.nextAt = Date.now() - 1; });
+        var hpBefore = s.activity.monsterHp;
+        FF.summonerWraithsTick();
+        ok(s.activity.monsterHp < hpBefore, 'due Wraiths strike the foe necrotically');
+        s.activity = null;
+        FF.summonerWraithsTick();
+        eq(s.summonerWraiths.length, 0, 'Wraiths disperse outside combat');
       } finally {
         s.equippedMainhand=snap.mh; s.equippedMainhandRarity=snap.mhr; s.bodyArmor=snap.ba; s.xp.summoner=snap.xp; s.playerHp=snap.hp; s.activity=snap.act;
+        s.staffDownbeats=snap.db; s.staffLastDownbeatAt=snap.dba; s.summonerCrescendo=snap.cre; s.summonerWraiths=snap.wr;
+        s.activeCompanions=snap.ac; s.companionCast=snap.cc;
+        if(snap.fam === undefined) delete s.familiars.forestry; else s.familiars.forestry = snap.fam;
       }
     })();
 
@@ -12175,9 +12247,10 @@
     var r0 = FF.rawEnchantRange(0), r10 = FF.rawEnchantRange(10), r20 = FF.rawEnchantRange(20);
     ok(r0.min <= r0.max && r10.min > r0.max && r20.min > r10.max, 'raw-damage range scales up with tier');
     ok(FF.enchantModRange(FF.enchantModById('weapon','critChance'), 20).max === 12, 'a percent mod ignores tier (fixed range)');
-    // Magic weapons (wand/staff/scepter) can't roll raw lines; melee/ranged can.
+    // Magic weapons (wand/scepter) can't roll raw lines; melee/ranged can. Staves swing physically
+    // now (Downbeat rework), so they roll raw lines like any other physical weapon.
     ok(FF.baseIsMagicWeapon('stweapon_wandFire_t5_rare'), 'a wand base is a magic weapon');
-    ok(FF.baseIsMagicWeapon('stweapon_staff_t5_rare'), 'a staff base is a magic weapon');
+    ok(!FF.baseIsMagicWeapon('stweapon_staff_t5_rare'), 'a staff swings physically now -- it rolls raw enchant lines');
     ok(!FF.baseIsMagicWeapon('stweapon_rapier_t5_rare'), 'a rapier is not a magic weapon');
     var magicPool = FF.enchantPoolForItem('weapon', true), meleePool = FF.enchantPoolForItem('weapon', false);
     ok(!magicPool.some(function(m){ return m.raw; }), 'magic-weapon pool drops every raw line');
