@@ -1459,6 +1459,27 @@
     }
   });
 
+  // ---- Only EQUIPPED armor trains: an emptied slot keeps its material string but must not gain XP -------
+  suite('armor proficiency: only worn materials train', function(){
+    var s = FF._state, sv = s.bodyArmor;
+    try {
+      // A filled chain chest, plus a boots slot that was emptied (tier 0) but still remembers 'plate'.
+      s.bodyArmor = {
+        chest:     { material:'chain', tier:5, rarity:'normal' },  // worn -> trains
+        boots:     { material:'plate', tier:0, rarity:'normal' },  // EMPTY (unequipped) -> must NOT train
+        helmet:    { material:'tailoring', tier:3, rarity:'normal' }, // worn -> trains
+        gauntlets: { tier:0 },
+        back:      null
+      };
+      var worn = FF.wornArmorMaterials(s);
+      ok(worn.chain && worn.tailoring, 'filled slots (chain chest, cloth helm) count as worn');
+      ok(!worn.plate, 'an emptied slot (tier 0) does NOT count, even though it kept its material');
+      // The XP award iterates worn materials -> only chain + cloth proficiencies would gain.
+      eq(FF.MATERIAL_TO_PROFICIENCY.plate, 'platearmor', 'plate maps to the Plate Armor proficiency');
+      ok(Object.keys(worn).map(function(m){ return FF.MATERIAL_TO_PROFICIENCY[m]; }).indexOf('platearmor') === -1, 'Plate Armor proficiency is not among the trained (worn) set');
+    } finally { s.bodyArmor = sv; }
+  });
+
   // ---- Equipment & Stats: a physical (Blunt/Slash/Pierce) Ring's damage shows on Attack Damage --------
   // The ring multiplier is applied in combat (getRingDamageMultiplier) but the panel used to omit it, so a
   // "+346% slashing" ring looked like it did nothing. The panel now folds it in and tags "(+X% ring)".
