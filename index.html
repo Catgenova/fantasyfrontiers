@@ -8370,23 +8370,44 @@
   // to the new star count (1st Transcend -> 1★ -> 1 Shard, 2nd -> 2★ -> 2 Shards, ...). It must then be
   // re-leveled through normal discovery. Gated on reaching FAMILIAR_MAX_LEVEL so it can't be farmed.
   var transcendConfirmId = null;   // familiar id awaiting the Transcend confirmation modal
+  var transcendAllPending = false; // true while the bulk "Transcend all" confirmation modal is open
   function familiarCanTranscend(id){ var f = state.familiars && state.familiars[id]; return !!(f && f.owned && (f.level||1) >= FAMILIAR_MAX_LEVEL); }
   function transcendRequest(id){ if(familiarCanTranscend(id)){ transcendConfirmId = id; render(); } }
   function transcendCancel(){ if(transcendConfirmId){ transcendConfirmId = null; render(); } }
-  function transcendFamiliar(id){
+  // Transcend one familiar. In `bulk` mode it skips the per-item log/float and save/render (the caller
+  // aggregates one summary), and returns the new star count instead of true.
+  function transcendFamiliar(id, bulk){
     var f = state.familiars && state.familiars[id];
     if(!f || !f.owned){ return false; }
-    if((f.level||1) < FAMILIAR_MAX_LEVEL){ addLog('A familiar must reach Level ' + FAMILIAR_MAX_LEVEL + ' before it can Transcend.', 'danger'); transcendConfirmId = null; return false; }
+    if((f.level||1) < FAMILIAR_MAX_LEVEL){ if(!bulk){ addLog('A familiar must reach Level ' + FAMILIAR_MAX_LEVEL + ' before it can Transcend.', 'danger'); transcendConfirmId = null; } return false; }
     var newStars = (f.stars||0) + 1;
     f.stars = newStars;
     f.level = 1;                          // loses all levels -> re-earn through normal play (its XP bonus resets with the level)
     addItem('barrier_shard', newStars);   // Shards granted = the new star count
+    if(bulk) return newStars;             // caller logs/saves/renders once for the whole batch
     var fam = FAMILIAR_DATA[id] || {};
     addLog((fam.icon||'') + ' ' + (fam.name||id) + ' Transcended to ' + starStr(newStars) + '! It resets to Level 1, its damage spells gain +' + Math.round(FAMILIAR_TRANSCEND_DMG_PER_STAR*100) + '% per star, and you receive ' + newStars + ' Barrier Shard' + (newStars===1?'':'s') + '.', 'important');
     spawnFloatingText((fam.name||id) + ' Transcended! ' + starStr(newStars), 'ft-rare');
     transcendConfirmId = null;
     saveGame(); render();
     return true;
+  }
+  // ---- Transcend all: every currently-maxed familiar in one action (with a bulk confirmation) ----
+  function transcendAllCandidates(){ // respects the Menagerie search so "Transcend all" matches the pinned list
+    var q = (menagerieSearch||'').trim().toLowerCase();
+    return Object.keys(state.familiars || {}).filter(function(id){ return familiarCanTranscend(id) && (!q || familiarMatchesSearch(id, q)); });
+  }
+  function transcendAllRequest(){ if(transcendAllCandidates().length){ transcendAllPending = true; render(); } }
+  function transcendAllCancel(){ if(transcendAllPending){ transcendAllPending = false; render(); } }
+  function transcendAllConfirm(){
+    var ids = transcendAllCandidates();
+    transcendAllPending = false;
+    if(!ids.length){ render(); return; }
+    var count = 0, shards = 0;
+    ids.forEach(function(id){ var s = transcendFamiliar(id, true); if(s){ count++; shards += s; } });
+    addLog('Transcended ' + count + ' familiar' + (count===1?'':'s') + ' to their next star &mdash; +' + shards + ' Barrier Shard' + (shards===1?'':'s') + ' earned, each reset to Level 1.', 'important');
+    spawnFloatingText('Transcended ' + count + ' familiar' + (count===1?'':'s') + '!', 'ft-rare');
+    saveGame(); render();
   }
 
   // ================= HELPERS =================
@@ -22795,10 +22816,35 @@
     html += '</div>';
     ov.innerHTML = html;
   }
+  // Bulk confirmation for "Transcend all": one modal covering every maxed familiar at once.
+  function renderTranscendAllModal(existing){
+    var ids = transcendAllCandidates();
+    if(!ids.length){ transcendAllPending = false; if(existing && existing.parentNode) existing.parentNode.removeChild(existing); return; }
+    var count = ids.length, shards = 0;
+    ids.forEach(function(id){ shards += (state.familiars[id].stars||0) + 1; });
+    var perStar = Math.round(FAMILIAR_TRANSCEND_DMG_PER_STAR*100);
+    var ov = existing;
+    if(!ov){ ov = document.createElement('div'); ov.id='transcendOverlay'; ov.className='familiar-popup-overlay'; ov.style.zIndex='10006'; ov.setAttribute('data-action','transcendAllCancel'); document.getElementById('app').appendChild(ov); }
+    else { ov.setAttribute('data-action','transcendAllCancel'); }
+    var html = '<div class="familiar-popup-card" data-action="noop" style="max-width:400px;">';
+    html += '<div class="familiar-popup-title" style="color:var(--gold);text-align:center;">Transcend all '+count+' familiar'+(count===1?'':'s')+'?</div>';
+    html += '<div style="margin:10px 0;font-size:13px;">';
+    html += '<div style="color:var(--danger);margin-bottom:8px;">Every one of these <b>'+count+'</b> maxed familiars resets to <b>Level 1</b> &mdash; each loses all its levels (and its associated-skill bonus experience) and must be re-leveled through normal play.</div>';
+    html += '<div style="margin-bottom:4px;">In return, each gains its next star:</div>';
+    html += '<div style="margin-left:10px;color:var(--text-dim);">&bull; +'+perStar+'% damage per star on every familiar transcended</div>';
+    html += '<div style="margin-left:10px;color:var(--text-dim);">&bull; <b style="color:var(--gold);">'+shards+' Barrier Shard'+(shards===1?'':'s')+'</b> granted now</div>';
+    html += '</div>';
+    html += '<div style="display:flex;gap:10px;justify-content:center;margin-top:12px;">';
+    html += '<button class="action-btn" data-action="transcendAllConfirm" style="width:auto;flex:0 0 auto;">Transcend all</button>';
+    html += '<button class="action-btn stop" data-action="transcendAllCancel" style="width:auto;flex:0 0 auto;">Cancel</button>';
+    html += '</div></div>';
+    ov.innerHTML = html;
+  }
   // Confirmation modal for Transcending a familiar. Spells out the cost (loses all levels + its
   // associated-skill XP bonus resets) and the reward (a star, +10% damage/star, Barrier Shards).
   function renderTranscendModal(){
     var existing = document.getElementById('transcendOverlay');
+    if(transcendAllPending){ renderTranscendAllModal(existing); return; }
     var id = transcendConfirmId, f = id && state.familiars && state.familiars[id];
     if(!id || !f || !f.owned){ if(existing && existing.parentNode) existing.parentNode.removeChild(existing); return; }
     var fam = FAMILIAR_DATA[id] || {};
@@ -23148,7 +23194,8 @@
     });
     if(maxedIds.length){
       any = true;
-      html += '<h3>Ready to Transcend <span style="color:var(--text-dim);font-weight:normal;font-size:12px;">('+maxedIds.length+')</span></h3><div class="card-grid">';
+      html += '<h3 style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">Ready to Transcend <span style="color:var(--text-dim);font-weight:normal;font-size:12px;">('+maxedIds.length+')</span>'
+        + '<button class="action-btn" data-action="transcendAllRequest" style="width:auto;flex:0 0 auto;margin:0;padding:4px 12px;font-size:12px;background:var(--bg-panel);color:var(--gold);border:1px solid var(--gold);" title="Transcend every maxed familiar at once">Transcend all</button></h3><div class="card-grid">';
       maxedIds.forEach(function(skillId){ html += renderFamiliarCard(skillId); });
       html += '</div>';
     }
@@ -33181,6 +33228,9 @@
     transcendRequest: function(btn, e){ transcendRequest(btn.getAttribute('data-skill')); },
     transcendConfirm: function(btn, e){ transcendFamiliar(btn.getAttribute('data-skill')); },
     transcendCancel: function(btn, e){ transcendCancel(); },
+    transcendAllRequest: function(btn, e){ transcendAllRequest(); },
+    transcendAllConfirm: function(btn, e){ transcendAllConfirm(); },
+    transcendAllCancel: function(btn, e){ transcendAllCancel(); },
     dismissPopup: function(btn, e){
       state.popupQueue.shift();
       if(state.popupQueue.length === 0) state.popupBatchTotal = 0;
@@ -34078,7 +34128,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.50.13';
+  var GAME_VERSION = '0.0.50.14';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -34271,7 +34321,7 @@
       GLYPH_ITEMS:GLYPH_ITEMS, glyphIdFor:glyphIdFor, glyphDropMax:glyphDropMax, GLYPH_DROP_CHANCE:GLYPH_DROP_CHANCE, ELEMENTAL_ELEMENT_OVERRIDES:ELEMENTAL_ELEMENT_OVERRIDES, getMonsterLootChance:getMonsterLootChance, getMonsterLootLabel:getMonsterLootLabel, MONSTER_CATEGORIES:MONSTER_CATEGORIES, applyMonsterCategoryLoot:applyMonsterCategoryLoot,
       WAND_TYPES:WAND_TYPES, WAND_TYPE_MAP:WAND_TYPE_MAP, isWandWeapon:isWandWeapon, WAND_RARITY_DMG_MULT:WAND_RARITY_DMG_MULT, WAND_ELEMENTS:WAND_ELEMENTS, WANDS_SKILL_ID:WANDS_SKILL_ID, STACKABLE_WEAPON_ITEMS:STACKABLE_WEAPON_ITEMS, getStackableWeaponTierData:getStackableWeaponTierData, weaponEquipProfId:weaponEquipProfId, meetsProficiencyRequirement:meetsProficiencyRequirement, stackableEquipGate:stackableEquipGate, isScepter:isScepter, WEAPON_STYLE_IDS:WEAPON_STYLE_IDS,
       bowArrowToConsume:bowArrowToConsume, bowArrowsAvailable:bowArrowsAvailable, bowArrowTierCap:bowArrowTierCap, arrowUsableWithBow:arrowUsableWithBow, equipArrow:equipArrow, arrowBaseDamage:arrowBaseDamage, quiverAmmoPreserve:quiverAmmoPreserve, ARROW_MAX_INDEX:ARROW_MAX_INDEX, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT,
-      STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, activateCompanion:activateCompanion, replaceCompanion:replaceCompanion, transcendFamiliar:transcendFamiliar, familiarCanTranscend:familiarCanTranscend, familiarStars:familiarStars, familiarTranscendDamageMult:familiarTranscendDamageMult, transcendRequest:transcendRequest, transcendCancel:transcendCancel, renderFamiliarCard:renderFamiliarCard, renderMenagerieTab:renderMenagerieTab, renderMenagerieList:renderMenagerieList, familiarIsMaxed:familiarIsMaxed, familiarMatchesSearch:familiarMatchesSearch, _setMenagerieSearch:function(v){ menagerieSearch = v||''; }, _setMenagerieExpanded:function(id,v){ menagerieExpanded[id] = !!v; }, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
+      STAFF_TYPE:STAFF_TYPE, isStaff:isStaff, staffBlockPct:staffBlockPct, STAFF_RARITY_FAMILIAR_SLOTS:STAFF_RARITY_FAMILIAR_SLOTS, STAFF_BASE_FAMILIAR_SLOTS:STAFF_BASE_FAMILIAR_SLOTS, STAVES_SKILL_ID:STAVES_SKILL_ID, stavesEfficiencyBonus:stavesEfficiencyBonus, activeCompanionSlots:activeCompanionSlots, activeCompanionList:activeCompanionList, activateCompanion:activateCompanion, replaceCompanion:replaceCompanion, transcendFamiliar:transcendFamiliar, familiarCanTranscend:familiarCanTranscend, transcendAllCandidates:transcendAllCandidates, transcendAllConfirm:transcendAllConfirm, familiarStars:familiarStars, familiarTranscendDamageMult:familiarTranscendDamageMult, transcendRequest:transcendRequest, transcendCancel:transcendCancel, renderFamiliarCard:renderFamiliarCard, renderMenagerieTab:renderMenagerieTab, renderMenagerieList:renderMenagerieList, familiarIsMaxed:familiarIsMaxed, familiarMatchesSearch:familiarMatchesSearch, _setMenagerieSearch:function(v){ menagerieSearch = v||''; }, _setMenagerieExpanded:function(id,v){ menagerieExpanded[id] = !!v; }, staffFamiliarSlots:staffFamiliarSlots, getStaffBlockChance:getStaffBlockChance,
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, D2_SET_DEFS:D2_SET_DEFS, D2_SET_CLASS_IDS:D2_SET_CLASS_IDS, D3_SET_DEFS:D3_SET_DEFS, D3_SET_CLASS_IDS:D3_SET_CLASS_IDS, set2D3:set2D3, setFullD3:setFullD3, SET_TIER_INDEX_D3:SET_TIER_INDEX_D3, D4_SET_BONUSES:D4_SET_BONUSES, D4_SET_DEFS:D4_SET_DEFS, D4_SET_CLASS_IDS:D4_SET_CLASS_IDS, set2D4:set2D4, setFullD4:setFullD4, SET_TIER_INDEX_D4:SET_TIER_INDEX_D4, D4_BREATH_MAX:D4_BREATH_MAX, d4BreathCharge:d4BreathCharge, d4BreathPct:d4BreathPct, d4BreathReady:d4BreathReady, d4BreathAdd:d4BreathAdd, d4BreathReset:d4BreathReset, D4_WRATH_CAP:D4_WRATH_CAP, d4WrathStacks:d4WrathStacks, d4WrathAdd:d4WrathAdd, d4WrathReset:d4WrathReset, d4SetElementDmg:d4SetElementDmg, d4SetElementResist:d4SetElementResist, d4WandElementMult:d4WandElementMult, d4FoeResistsElement:d4FoeResistsElement, d4EchoMult:d4EchoMult, d4FamiliarElementMult:d4FamiliarElementMult, d4TemplarAegisMult:d4TemplarAegisMult, d4SetDmgMult:d4SetDmgMult, d4DragonscaleIncoming:d4DragonscaleIncoming, d4SentinelThornsMult:d4SentinelThornsMult, d4HeraldBastionReflect:d4HeraldBastionReflect, d4BreathChargeOnHit:d4BreathChargeOnHit, d4BreathFullSet:d4BreathFullSet, d4BreathFire:d4BreathFire, d4VenombreathApply:d4VenombreathApply, D4_BREATH_BURST_MULT:D4_BREATH_BURST_MULT, d4WrathOnHit:d4WrathOnHit, d4FirestormDodge:d4FirestormDodge, enemyPoisonedFoe:enemyPoisonedFoe, d4SupremeItemCount:d4SupremeItemCount, D3_SOUL_CAP:D3_SOUL_CAP, d3SoulCount:d3SoulCount, d3SoulsAdd:d3SoulsAdd, enemyDecaying:enemyDecaying, decayApply:decayApply, applyDecayTick:applyDecayTick, decayCap:decayCap, d3DecayTickMult:d3DecayTickMult, enemyCursed:enemyCursed, curseApply:curseApply, d3SetDmgMult:d3SetDmgMult, d3SetCritDmgBonus:d3SetCritDmgBonus, d3SetIncomingMult:d3SetIncomingMult, onPlayerDodged:onPlayerDodged, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, set2D2:set2D2, setFullD2:setFullD2, d2SetDmgMult:d2SetDmgMult, d2SentinelReflectMult:d2SentinelReflectMult, d2IncomingDmgMult:d2IncomingDmgMult, d2SetCritDmgBonus:d2SetCritDmgBonus, d2SetCritChance:d2SetCritChance, d2SetDodgeBonus:d2SetDodgeBonus, knightBulwarkMarchMult:knightBulwarkMarchMult, lumenReflectD2Mult:lumenReflectD2Mult, enemyHasAilment:enemyHasAilment, rangerAilmentDmgMult:rangerAilmentDmgMult, d2PoisonTickMult:d2PoisonTickMult, d2BleedTickMult:d2BleedTickMult, d2BurnTickMult:d2BurnTickMult, d2FrostbiteTickMult:d2FrostbiteTickMult, voidVulnCap:voidVulnCap, templarAegisCapMult:templarAegisCapMult, reaverBloodfrenzyMult:reaverBloodfrenzyMult, d2FeralOnCast:d2FeralOnCast, d2BloodthirstOnKill:d2BloodthirstOnKill, d2BloodthirstSpeedMult:d2BloodthirstSpeedMult, quickdrawParalyticSlow:quickdrawParalyticSlow, enemyExtraSlowPct:enemyExtraSlowPct, SET_TIER_INDEX:SET_TIER_INDEX, SET_TIER_INDEX_D2:SET_TIER_INDEX_D2, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, SET_NAMES:SET_NAMES, setName:setName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, combatPlayerBuffs:combatPlayerBuffs, combatEnemyDebuffs:combatEnemyDebuffs, renderFxBars:renderFxBars, captureCombatLoadout:captureCombatLoadout, applyCombatLoadout:applyCombatLoadout, saveLoadoutPreset:saveLoadoutPreset, equipLoadoutPreset:equipLoadoutPreset, clearLoadoutPreset:clearLoadoutPreset, renameLoadoutPreset:renameLoadoutPreset, ensureLoadouts:ensureLoadouts, loadoutSummary:loadoutSummary, LOADOUT_SLOT_COUNT:LOADOUT_SLOT_COUNT, combatLocksGear:combatLocksGear, COMBAT_LOCKED_ACTIONS:COMBAT_LOCKED_ACTIONS, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, knightUnstoppableMult:knightUnstoppableMult, thunderStaticPerHit:thunderStaticPerHit, thunderStaticThreshold:thunderStaticThreshold, thunderDischargeMult:thunderDischargeMult, deadeyeAccuracyBonus:deadeyeAccuracyBonus, duelistFlourishStabs:duelistFlourishStabs, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, heraldRipostePct:heraldRipostePct, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, undyingRageIncomingMult:undyingRageIncomingMult, berserkerFrenziedBlowsMult:berserkerFrenziedBlowsMult, templarLayOnHandsPct:templarLayOnHandsPct, templarBlessingOfHasteMult:templarBlessingOfHasteMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, spellbladeResonantCrit:spellbladeResonantCrit, playerCritChance:playerCritChance, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, voidVulnPerStack:voidVulnPerStack, voidMarkPerHit:voidMarkPerHit, quickdrawVenomPct:quickdrawVenomPct, quickdrawTwinFangChance:quickdrawTwinFangChance, treasureProspectorPer:treasureProspectorPer, setTreasureMult:setTreasureMult, EXEC_SET_EXECUTE_FRAC:EXEC_SET_EXECUTE_FRAC, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, sharpshooterAccOverDodge:sharpshooterAccOverDodge, sharpshooterEagleEyeCrit:sharpshooterEagleEyeCrit, sharpshooterPinpointMult:sharpshooterPinpointMult, sharpshooterFocusCritDmg:sharpshooterFocusCritDmg, sharpshooterArmorPierce:sharpshooterArmorPierce, sharpshooterPatienceMult:sharpshooterPatienceMult, SHARP_EAGLE_CAP:SHARP_EAGLE_CAP, SHARP_PINPOINT_CAP:SHARP_PINPOINT_CAP, SHARP_FOCUS_CAP:SHARP_FOCUS_CAP, SHARP_PATIENCE_CAP:SHARP_PATIENCE_CAP, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautSmashReady:juggernautSmashReady, juggernautFuryStacks:juggernautFuryStacks, juggernautArmorPierce:juggernautArmorPierce, JUG_WINDUP_DMG:JUG_WINDUP_DMG, JUG_WINDUP_SLOW:JUG_WINDUP_SLOW, JUG_SMASH_EVERY:JUG_SMASH_EVERY, JUG_CONCUSS_MS:JUG_CONCUSS_MS, JUG_FURY_PER:JUG_FURY_PER, JUG_FURY_MAX:JUG_FURY_MAX, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_SHIELD_MAX_PCT:LUMEN_SHIELD_MAX_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, HERALD_RIPOSTE_PCT:HERALD_RIPOSTE_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, applyPotionPoisonTick:applyPotionPoisonTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,

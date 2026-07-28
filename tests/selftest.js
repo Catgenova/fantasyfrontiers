@@ -7607,6 +7607,28 @@
     }
   });
 
+  suite('familiar: transcend all', function(){
+    var s = FF._state;
+    var sv = { fams:s.familiars, shards:s.inventory.barrier_shard };
+    try {
+      FF._setMenagerieSearch(''); // no filter -> "all" means every maxed familiar
+      s.familiars = {
+        mining:  { owned:true,  level:100, stars:0 },  // maxed -> 0->1 star (+1 shard)
+        fishing: { owned:true,  level:100, stars:2 },  // maxed -> 2->3 stars (+3 shards)
+        cooking: { owned:true,  level:50,  stars:0 },  // below max -> skipped
+        farming: { owned:false, level:100, stars:0 }   // unowned -> skipped
+      };
+      s.inventory.barrier_shard = 0;
+      eq(FF.transcendAllCandidates().sort().join(','), 'fishing,mining', 'candidates = owned, maxed familiars only');
+      FF.transcendAllConfirm();
+      eq(s.familiars.mining.stars, 1, 'mining gained its first star'); eq(s.familiars.mining.level, 1, 'mining reset to Level 1');
+      eq(s.familiars.fishing.stars, 3, 'fishing gained a star (2 -> 3)'); eq(s.familiars.fishing.level, 1, 'fishing reset to Level 1');
+      eq(s.familiars.cooking.level, 50, 'the below-max familiar is left alone');
+      eq(s.inventory.barrier_shard, 4, 'shards granted = sum of new star counts (1 + 3)');
+      eq(FF.transcendAllCandidates().length, 0, 'nothing left to transcend afterward (all reset to Lv1)');
+    } finally { s.familiars = sv.fams; if(sv.shards===undefined) delete s.inventory.barrier_shard; else s.inventory.barrier_shard = sv.shards; }
+  });
+
   // ---- Menagerie: one-tap Replace Companion + familiar search --------------------------------------
   suite('menagerie: replace companion + search', function(){
     var S = FF._state;
@@ -7664,8 +7686,10 @@
     ok(FF.familiarIsMaxed(mid), 'familiarIsMaxed detects a Level-100 owned familiar');
     ok(!FF.familiarIsMaxed(other), 'a below-max familiar is not "maxed"');
     var listHtml = FF.renderMenagerieList();
-    ok(/<h3>Ready to Transcend/.test(listHtml), 'a Ready to Transcend section renders when a maxed familiar exists');
-    eq(listHtml.indexOf('<h3>Ready to Transcend'), listHtml.indexOf('<h3>'), 'it is the FIRST section (pinned above every category)');
+    ok(/<h3[^>]*>Ready to Transcend/.test(listHtml), 'a Ready to Transcend section renders when a maxed familiar exists');
+    var _firstH3 = listHtml.indexOf('<h3');
+    ok(_firstH3 > -1 && listHtml.indexOf('Ready to Transcend') > _firstH3 && listHtml.indexOf('Ready to Transcend') < listHtml.indexOf('</h3>'), 'it is the FIRST section (pinned above every category)');
+    ok(/data-action="transcendAllRequest"/.test(listHtml), 'the pinned section carries a Transcend all button');
     // The maxed familiar's card renders exactly once (in the pinned section, not duplicated in its category).
     eq((listHtml.match(new RegExp('data-action="transcendRequest" data-skill="'+mid+'"','g'))||[]).length, 1, 'the maxed familiar renders once, only in the pinned section');
     // A just-transcended familiar (reset to Lv 1) is no longer maxed, so the pinned section disappears.
