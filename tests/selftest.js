@@ -7498,7 +7498,8 @@
       mh:S.equippedMainhand, mht:S.equippedMainhandTier, mhr:S.equippedMainhandRarity, mhu:S.equippedMainhandUid,
       ba:S.bodyArmor, js:S.jewelrySlots };
     try {
-      FF.ensureLoadouts(); eq(S.loadouts.length, FF.LOADOUT_SLOT_COUNT, 'ensureLoadouts pads to 5 presets');
+      FF.ensureLoadouts(); eq(S.loadouts.length, FF.LOADOUT_SLOT_COUNT, 'ensureLoadouts pads to the full preset count');
+      eq(FF.LOADOUT_SLOT_COUNT, 25, '25 potential loadout slots');
       // Gear/familiar changes are locked mid-fight.
       var _sa = S.activity; S.activity = { type:null }; ok(!FF.combatLocksGear(), 'no gear lock outside combat');
       S.activity = { type:'combat', monsterHp:100 }; ok(FF.combatLocksGear(), 'gear is locked during combat'); S.activity = _sa;
@@ -7531,6 +7532,50 @@
       S.inventory=saved.inv; S.uniqueItems=saved.uq; S.loadouts=saved.lo;
       S.equippedMainhand=saved.mh; S.equippedMainhandTier=saved.mht; S.equippedMainhandRarity=saved.mhr; S.equippedMainhandUid=saved.mhu;
       S.bodyArmor=saved.ba; S.jewelrySlots=saved.js;
+    }
+  });
+
+  // ---- Loadout slot unlocks (ticket-0096): 3 free, the rest bought with gold at 100k x10 per --------
+  suite('loadouts: slot unlocks + quick-swap bar', function(){
+    var S = FF._state;
+    var saved = { lo:S.loadouts, un:S.loadoutSlotsUnlocked, gold:S.gold };
+    try {
+      // Cost ladder: 4th slot 100k, 5th 1M, 6th 10M, ...
+      eq(FF.LOADOUT_FREE_SLOTS, 3, '3 loadout slots are free');
+      eq(FF.loadoutUnlockCost(3), 100000, 'the 4th slot costs 100k gold');
+      eq(FF.loadoutUnlockCost(4), 1000000, 'the 5th costs 1M');
+      eq(FF.loadoutUnlockCost(5), 10000000, 'the 6th costs 10M');
+      // Fresh state: 3 unlocked. Grandfather: a preset saved beyond the window keeps its slot usable.
+      S.loadouts = []; S.loadoutSlotsUnlocked = undefined; FF.ensureLoadouts();
+      eq(FF.loadoutSlotsUnlocked(), 3, 'a fresh player has 3 unlocked slots');
+      S.loadouts[4] = { name:'Old Five', gear:{} };
+      eq(FF.loadoutSlotsUnlocked(), 5, 'a preset saved in slot 5 keeps slots 1-5 usable (pre-unlock saves are grandfathered)');
+      S.loadouts[4] = null;
+      // Saving into a locked slot is refused; unlocking with too little gold is refused.
+      S.gold = 99999;
+      FF.saveLoadoutPreset(10);
+      ok(!S.loadouts[10], 'saving into a locked slot is refused');
+      FF.unlockLoadoutSlot();
+      eq(FF.loadoutSlotsUnlocked(), 3, '99,999 gold cannot buy the 100k slot');
+      eq(S.gold, 99999, '...and no gold was taken');
+      // A funded unlock takes exactly the cost and opens exactly one slot.
+      S.gold = 1200000;
+      FF.unlockLoadoutSlot();
+      eq(FF.loadoutSlotsUnlocked(), 4, 'the 4th slot unlocked');
+      eq(S.gold, 1100000, '100k gold was spent');
+      FF.unlockLoadoutSlot();
+      eq(FF.loadoutSlotsUnlocked(), 5, 'the 5th slot unlocked');
+      eq(S.gold, 100000, '1M gold was spent');
+      FF.saveLoadoutPreset(3);
+      ok(!!S.loadouts[3], 'saving into a freshly unlocked slot works');
+      // The quick-swap bar: 25 numbered buttons; saved+unlocked live, empty/locked greyed out.
+      var bar = FF.renderLoadoutQuickBar();
+      eq((bar.match(/loadout-quick-btn/g)||[]).length, 25, 'the quick bar renders all 25 slot buttons');
+      eq((bar.match(/data-action="equipLoadout"/g)||[]).length, 1, 'only the one saved preset is tappable');
+      eq((bar.match(/loadout-quick-btn off/g)||[]).length, 24, 'empty and locked buttons are greyed out');
+      ok(/Locked — unlock in the Loadouts panel below/.test(bar), 'locked buttons say how to unlock');
+    } finally {
+      S.loadouts = saved.lo; S.loadoutSlotsUnlocked = saved.un; S.gold = saved.gold;
     }
   });
 
