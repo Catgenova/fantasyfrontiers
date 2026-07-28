@@ -2485,6 +2485,7 @@
     eq(FF.SERVER_RARITY_BONUS.rare, 0.05, 'rare bonus is +5% (5x base)');
     eq(FF.SERVER_RARITY_BONUS.supreme, 0.005, 'supreme bonus is +0.5% (5x base)');
     eq(FF.SERVER_RARITY_BONUS.fantastic, 0.0005, 'fantastic bonus is +0.05% (5x base)');
+    eq(FF.rarityBonusShortLabel(), '5%R · 0.5%S · 0.05%F', 'the top-bar chip shows the compact per-rarity summary');
     var sv = FF._serverBuff.rarityUntil;
     try {
       FF._serverBuff.rarityUntil = 0;

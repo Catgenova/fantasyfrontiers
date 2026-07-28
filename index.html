@@ -137,6 +137,7 @@
   .ff-buffchip-top{display:flex;align-items:center;gap:6px;}
   .ff-buffchip .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
   .ff-buffchip .t{font-family:var(--font-mono);color:#8a7850;margin-left:auto;}
+  .ff-buffchip-sub{color:#9a8a63;font-size:10px;}
   .ff-buffbar{height:3px;border-radius:2px;background:#000;border:1px solid #48432f;overflow:hidden;}
   .ff-buffbar-fill{display:block;height:100%;border-radius:2px;}
   .ff-tb-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
@@ -12388,6 +12389,12 @@
   }
   function serverRarityBuffActive(){ return Date.now() < serverBuff.rarityUntil; }
   function serverBuffRarityBonus(rarityId){ return serverRarityBuffActive() ? (SERVER_RARITY_BONUS[rarityId] || 0) : 0; }
+  // Compact per-rarity summary of the Rarity Bonus for the top-bar chip (built from SERVER_RARITY_BONUS so it
+  // stays in sync): e.g. "5%R · 0.5%S · 0.05%F". _rbPct trims to at most 2dp with no trailing zeros.
+  function rarityBonusShortLabel(){
+    function _rbPct(v){ return (Math.round(v * 100 * 100) / 100) + '%'; }
+    return _rbPct(SERVER_RARITY_BONUS.rare) + 'R · ' + _rbPct(SERVER_RARITY_BONUS.supreme) + 'S · ' + _rbPct(SERVER_RARITY_BONUS.fantastic) + 'F';
+  }
   function serverBuffApply(buffs){
     if(!buffs) return;
     var was = serverBuffActive(), wasR = serverRarityBuffActive();
@@ -17071,7 +17078,8 @@
     }
     if(serverRarityBuffActive()){
       var rarPct = clamp((serverBuff.rarityUntil-Date.now())/(RARITY_BUFF_MAX_S.fantastic*1000)*100, 0, 100);
-      html += '<div class="ff-buffchip"><span class="ff-buffchip-top"><span class="dot" style="background:var(--rarity-fantastic)"></span>Rarity Bonus <span class="t" id="ffRarBuffT">'+formatDuration(serverBuff.rarityUntil-Date.now())+'</span></span>'
+      html += '<div class="ff-buffchip" title="Rarity Bonus — '+rarityBonusShortLabel().replace(/"/g,'&quot;')+' added to your craft rarity roll. Extended whenever any player sacrifices a rare-or-better item (longer for higher rarity/tier).">'
+        + '<span class="ff-buffchip-top"><span class="dot" style="background:var(--rarity-fantastic)"></span>Rarity Bonus <span class="ff-buffchip-sub">'+rarityBonusShortLabel()+'</span> <span class="t" id="ffRarBuffT">'+formatDuration(serverBuff.rarityUntil-Date.now())+'</span></span>'
         + '<span class="ff-buffbar"><span class="ff-buffbar-fill" id="ffRarBuffBar" style="width:'+rarPct+'%;background:var(--rarity-fantastic)"></span></span></div>';
     }
     if(isScrollActive()){
@@ -34150,7 +34158,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.50.15';
+  var GAME_VERSION = '0.0.50.16';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -34310,7 +34318,7 @@
       butcherOutputChance:butcherOutputChance, butcherOutputQty:butcherOutputQty, BUTCHER_OUTPUT_ROLLS:BUTCHER_OUTPUT_ROLLS, getEquippedGatherTool:getEquippedGatherTool, getGatherToolTierData:getGatherToolTierData, getEquippedCraftTool:getEquippedCraftTool,
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER, ESTATE_PAVE_MS_PER_TIER:ESTATE_PAVE_MS_PER_TIER, ESTATE_WORKSHOP_MS_PER_TIER:ESTATE_WORKSHOP_MS_PER_TIER,
-      expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, rarityBuffSeconds:rarityBuffSeconds, serverBuffRarityBonus:serverBuffRarityBonus, serverRarityBuffActive:serverRarityBuffActive, SERVER_RARITY_BONUS:SERVER_RARITY_BONUS, _serverBuff:serverBuff, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
+      expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, rarityBuffSeconds:rarityBuffSeconds, serverBuffRarityBonus:serverBuffRarityBonus, rarityBonusShortLabel:rarityBonusShortLabel, serverRarityBuffActive:serverRarityBuffActive, SERVER_RARITY_BONUS:SERVER_RARITY_BONUS, _serverBuff:serverBuff, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey, invGroupFor:invGroupFor, INV_GROUPS:INV_GROUPS,
       sortEquipCandidates:sortEquipCandidates, candBetter:candBetter, renderEquipCandidatePicker:renderEquipCandidatePicker, renderEquipBodyArmorSection:renderEquipBodyArmorSection, renderMainhandEquipSection:renderMainhandEquipSection, equipPickerHtml:equipPickerHtml,
       getNextAutoEatFood:getNextAutoEatFood, getTotalAutoEatFoodQty:getTotalAutoEatFoodQty, getAutoEatFoodTypes:getAutoEatFoodTypes,
