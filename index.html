@@ -13849,6 +13849,30 @@
     var open = (equipAccOpen.uniqeq_offhandclaw !== undefined) ? equipAccOpen.uniqeq_offhandclaw : true;
     return equipAccHtml('uniqeq_offhandclaw', 'Unique Off-hand Claws', svgIcon('claw','var(--rarity-fantastic)'), uids.length, open, body, false);
   }
+  // Every owned FORGED (stackable) Claw offered for the off-hand slot -- shown only while a Claw is in the
+  // main hand. The stackable counterpart to renderUniqueOffhandClawOptions, in a matching collapsible box so
+  // the off-hand picker lists ALL your claws, unique and forged alike.
+  function renderOffhandClawEquipSection(){
+    if(!hasClawMainhand(state)) return '';
+    var owned = Object.keys(STACKABLE_WEAPON_ITEMS).filter(function(id){ return id.indexOf('stweapon_claw_')===0 && (state.inventory[id]||0)>0; })
+      .sort(function(a,b){ return STACKABLE_WEAPON_ITEMS[a].tierIndex - STACKABLE_WEAPON_ITEMS[b].tierIndex; });
+    if(!owned.length) return '';
+    var curOff = hasOffhandClaw(state) ? getEquippedOffhandClawItem(state) : null;
+    var cands = owned.map(function(id){
+      var item = STACKABLE_WEAPON_ITEMS[id];
+      var avg = ((item.dmgMin||0)+(item.dmgMax||0))/2;
+      return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:avg,
+        statHtml:item.dmgMin+'-'+item.dmgMax+' dmg &bull; off-hand &minus;30% dmg, +30% timer',
+        equipped:!!(curOff && curOff.id===id), canEquip:meetsProficiencyRequirement(state.xp.claw, item.tierIndex),
+        lockHtml:'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+escapeHtml(SKILL_LABELS.claw||'Claws')+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>',
+        action:'equipOffhandClaw', data:'data-item="'+id+'"' }; // whole-row equips to the OFF hand (no clawId -> single button)
+    });
+    var body = renderEquipCandidatePicker([{ key:'ohclaws', candidates:cands }], {flat:true, bestLabel:'Equip best off-hand Claw'});
+    if(!body) return '';
+    var key = 'offhandclaw_stack';
+    var open = (equipAccOpen[key] !== undefined) ? equipAccOpen[key] : true;
+    return equipAccHtml(key, 'Off-hand Claws', svgIcon('claw','var(--gold)'), owned.length, open, body, false);
+  }
   // Split a raw chat body into escaped text + rendered item chips (censor only the text segments so a
   // base64 payload is never mangled by the profanity filter).
   function chatBodyHtml(raw){
@@ -19647,7 +19671,7 @@
     }
     html += renderGearSelector('offhand');
     if(weaponStyle.hand!=='2h') html += renderUniqueEquipOptions('offhand', null, 'Offhands');
-    if(hasClawMainhand(state)) html += renderUniqueOffhandClawOptions();
+    if(hasClawMainhand(state)){ html += renderOffhandClawEquipSection(); html += renderUniqueOffhandClawOptions(); }
     html += '<div class="section-intro" style="margin-top:10px">One-handed weapons free up your offhand for a shield or ward; bows pair with a quiver instead; two-handed weapons need both hands. Forge new gear via Outfitting &rarr; Weaponsmithing / Shieldsmithing / Runesmithing. Damage types cycle slashing &gt; piercing &gt; blunt &gt; slashing.</div>';
     if(weaponStyle.hand==='bow'){
       html += renderEquipQuiverSection();
@@ -34990,7 +35014,7 @@
       marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX, marketItemCategory:marketItemCategory, MARKET_CATEGORIES:MARKET_CATEGORIES, marketItemSubcategory:marketItemSubcategory, marketItemTierHtml:marketItemTierHtml, marketSubLabel:marketSubLabel,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER, ESTATE_PAVE_MS_PER_TIER:ESTATE_PAVE_MS_PER_TIER, ESTATE_WORKSHOP_MS_PER_TIER:ESTATE_WORKSHOP_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, rarityBuffSeconds:rarityBuffSeconds, serverBuffRarityBonus:serverBuffRarityBonus, rarityBonusShortLabel:rarityBonusShortLabel, serverRarityBuffActive:serverRarityBuffActive, SERVER_RARITY_BONUS:SERVER_RARITY_BONUS, _serverBuff:serverBuff, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
-      physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey, invGroupFor:invGroupFor, INV_GROUPS:INV_GROUPS, uniqueInvGroupId:uniqueInvGroupId,
+      physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey, invGroupFor:invGroupFor, INV_GROUPS:INV_GROUPS, uniqueInvGroupId:uniqueInvGroupId, renderOffhandClawEquipSection:renderOffhandClawEquipSection,
       sortEquipCandidates:sortEquipCandidates, candBetter:candBetter, renderEquipCandidatePicker:renderEquipCandidatePicker, renderEquipBodyArmorSection:renderEquipBodyArmorSection, renderMainhandEquipSection:renderMainhandEquipSection, equipPickerHtml:equipPickerHtml,
       getNextAutoEatFood:getNextAutoEatFood, getTotalAutoEatFoodQty:getTotalAutoEatFoodQty, getAutoEatFoodTypes:getAutoEatFoodTypes,
       setEquipHideLocked:function(v){ equipHideLocked = !!v; }, getEquipHideLocked:function(){ return equipHideLocked; },

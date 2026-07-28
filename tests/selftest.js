@@ -11552,6 +11552,18 @@
       // Guard: no unique off-hand Claw without a Claw main hand.
       s.equippedMainhand='rapier';
       eq(FF.equipUniqueOffhandClaw('uc'), false, 'cannot off-hand a unique Claw without a Claw main hand');
+      // The off-hand picker lists FORGED claws too (a collapsible container), but only with a Claw main hand.
+      var savedInv2 = s.inventory, savedClawXp = s.xp.claw;
+      s.inventory = { 'stweapon_claw_t2_normal':2 }; s.xp.claw = 200000;
+      s.equippedMainhand='rapier';
+      eq(FF.renderOffhandClawEquipSection(), '', 'no forged-claw off-hand section without a Claw main hand');
+      s.equippedMainhand='claw';
+      var ohSec = FF.renderOffhandClawEquipSection();
+      ok(/Off-hand Claws/i.test(ohSec), 'a collapsible Off-hand Claws container appears with a Claw main hand');
+      ok(/data-action="equipOffhandClaw"/.test(ohSec) && /stweapon_claw_t2_normal/.test(ohSec), 'owned forged claws equip to the off hand');
+      s.inventory = {};
+      eq(FF.renderOffhandClawEquipSection(), '', 'no section when no forged claws are owned');
+      s.inventory = savedInv2; s.xp.claw = savedClawXp;
       // Stackable-claw picker row carries an explicit button per hand; the off-hand is gated on a Claw main hand.
       var clawCand = { icon:'', name:'Iron Claws', qty:2, statHtml:'5-9 dmg', canEquip:true, equipped:false, clawId:'stweapon_claw_t0_normal', action:'equipStackableWeapon', data:'data-item="stweapon_claw_t0_normal"' };
       s.equippedMainhand='rapier';
