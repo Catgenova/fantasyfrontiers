@@ -9175,6 +9175,38 @@
     } finally { document.body.removeChild(host); }
   });
 
+  // ---- A rebuilt <select> keeps the player's choice (guild-bank deposit picker reset to top) ----------
+  suite('render: select pickers survive a content rebuild', function(){
+    var host = document.createElement('div');
+    // A read-on-submit picker (no baked `selected`, like guildBankDepositItem) and a stateful one (baked).
+    var markup = '<select id="ssSel"><option value="a">A</option><option value="b">B</option><option value="c">C</option></select>'
+               + '<select id="ssBaked"><option value="x">X</option><option value="y" selected>Y</option></select>';
+    host.innerHTML = markup;
+    document.body.appendChild(host);
+    try {
+      document.getElementById('ssSel').value = 'c';           // the player picked the 3rd item
+      var snap = FF.inputSnapshot(host);
+      ok(snap && snap.ssSel && snap.ssSel.v === 'c', 'inputSnapshot records the select choice by id');
+      host.innerHTML = markup;                                // the rebuild resets it to the first option
+      eq(document.getElementById('ssSel').value, 'a', 'a rebuild really does snap the select to the top (the bug)');
+      FF.inputRestore(snap);
+      eq(document.getElementById('ssSel').value, 'c', 'inputRestore puts the choice back');
+      // A select whose markup bakes its own `selected` state is the render's to control -- left alone.
+      document.getElementById('ssBaked').value = 'x';
+      var snap2 = FF.inputSnapshot(host);
+      host.innerHTML = markup;
+      FF.inputRestore(snap2);
+      eq(document.getElementById('ssBaked').value, 'y', 'a select with a baked selected attribute is never clobbered');
+      // A choice whose option vanished in the rebuild (e.g. the stack was fully deposited) stays on a valid option.
+      host.innerHTML = markup;
+      document.getElementById('ssSel').value = 'c';
+      var snap3 = FF.inputSnapshot(host);
+      host.innerHTML = '<select id="ssSel"><option value="a">A</option><option value="b">B</option></select>'; // "c" is gone
+      FF.inputRestore(snap3);
+      eq(document.getElementById('ssSel').value, 'a', 'a vanished choice falls back to the first option instead of an invalid value');
+    } finally { document.body.removeChild(host); }
+  });
+
   suite('familiars: direct-damage spells scale from a T2 weapon (Lv1) to a Rare top weapon (Lv100)', function(){
     var wl = FF.STACKABLE_WEAPON_ITEMS;
     var t2 = wl['stweapon_rapier_t2_normal'], topRare = wl['stweapon_rapier_t19_rare']; // rapier: clean 1h, no dmgMult

@@ -28843,20 +28843,21 @@
     if(!snap) return;
     for(var k in snap){ var d = document.getElementById(k); if(d) d.open = true; }
   }
-  // A full #content rebuild recreates every <input>/<textarea> from the HTML string, so a value the player
-  // had TYPED but not yet committed (a market sell qty/price, a guild-bank deposit amount, a search box)
-  // was silently wiped by any render that fired after they clicked away -- the reported "my fields clear if
-  // I click anywhere but a field or Confirm". Carry text entry (+ focus/caret) across the swap by id, the
-  // same way detailsSnapshot carries <details>. Checkbox/radio/button/file reflect state, not typed text,
-  // so they're skipped. NON_ENTRY types are display-only.
+  // A full #content rebuild recreates every <input>/<textarea>/<select> from the HTML string, so a value
+  // the player had TYPED but not yet committed (a market sell qty/price, a guild-bank deposit amount, a
+  // search box) was silently wiped by any render that fired after they clicked away -- the reported "my
+  // fields clear if I click anywhere but a field or Confirm". Carry text entry (+ focus/caret) across the
+  // swap by id, the same way detailsSnapshot carries <details>. Checkbox/radio/button/file reflect state,
+  // not typed text, so they're skipped. NON_ENTRY types are display-only.
   function inputSnapshot(root){
-    var out = null, els = (root || document).querySelectorAll('input[id], textarea[id]');
+    var out = null, els = (root || document).querySelectorAll('input[id], textarea[id], select[id]');
     var active = document.activeElement;
     for(var i = 0; i < els.length; i++){
       var el = els[i], t = (el.type || '').toLowerCase();
       if(el.tagName === 'INPUT' && (t === 'checkbox' || t === 'radio' || t === 'button' || t === 'submit' || t === 'file' || t === 'range')) continue;
       var rec = { v: el.value, focused: el === active };
-      if(rec.focused){ try { rec.s0 = el.selectionStart; rec.s1 = el.selectionEnd; } catch(e){} }
+      if(el.tagName === 'SELECT') rec.sel = true;
+      else if(rec.focused){ try { rec.s0 = el.selectionStart; rec.s1 = el.selectionEnd; } catch(e){} }
       (out = out || {})[el.id] = rec;
     }
     return out;
@@ -28866,6 +28867,17 @@
     for(var k in snap){
       var el = document.getElementById(k); if(!el) continue;
       var rec = snap[k];
+      if(rec.sel){
+        // A rebuilt <select> silently snaps back to its FIRST option unless the render baked a `selected`
+        // attribute in. Stateful pickers (sort orders, filters) bake their choice, so leave those alone;
+        // a read-on-submit picker (guild-bank deposit item) doesn't, and losing the choice meant the
+        // player could deposit the wrong item. Restore the old choice when it still exists as an option.
+        if(el.tagName === 'SELECT' && !el.querySelector('option[selected]')){
+          for(var oi = 0; oi < el.options.length; oi++){ if(el.options[oi].value === rec.v){ el.value = rec.v; break; } }
+          if(rec.focused){ try { el.focus(); } catch(e){} }
+        }
+        continue;
+      }
       // Only restore a user's in-progress entry the rebuild WIPED (field came back empty but had text), or a
       // field they were actively editing. Never clobber a value the render deliberately baked in.
       if((el.value === '' && rec.v !== '') || rec.focused){
@@ -34346,7 +34358,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.53.1';
+  var GAME_VERSION = '0.0.53.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
