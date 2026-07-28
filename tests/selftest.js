@@ -7535,6 +7535,32 @@
     }
   });
 
+  // ---- Combat: swings reset on every foe change; familiar spell cycle resets on combat re-entry ------
+  suite('combat: fresh swings per foe + fresh familiar cycle per session', function(){
+    var S = FF._state;
+    // Familiar cast cursor: cleared only when combat is entered from OUTSIDE combat.
+    var savedCC = S.companionCast;
+    S.companionCast = { forestry: { accum:1234, index:2 } };
+    FF.companionCastsOnCombatEntry('combat');
+    ok(S.companionCast.forestry && S.companionCast.forestry.index === 2, 'a foe-to-foe transition keeps the spell-cycle position');
+    FF.companionCastsOnCombatEntry('gather');
+    ok(!S.companionCast.forestry, 'entering combat from outside resets every companion to the top of its spell list');
+    S.companionCast = savedCC;
+    // Killing a foe in a grind chain zeroes all three attack accumulators (yours, off-hand, the foe's).
+    var savedAct = S.activity, savedInv = S.inventory, savedEarned = S.itemEarnedTotal, savedRand = Math.random;
+    try {
+      S.inventory = {}; S.itemEarnedTotal = {};
+      var mon = FF.monsterById('wildlife_rabbit');
+      S.activity = { type:'combat', monsterId:mon.id, monsterHp:0, tickAccum:777, offhandTickAccum:555, monsterTickAccum:333 };
+      Math.random = function(){ return 1; };   // no drop/proc rolls
+      FF.defeatMonster(mon);
+      Math.random = savedRand;
+      eq(S.activity.tickAccum, 0, 'the player swing timer winds up fresh against the next foe');
+      eq(S.activity.offhandTickAccum, 0, 'the off-hand swing timer resets too');
+      eq(S.activity.monsterTickAccum, 0, 'the enemy swing timer resets too');
+    } finally { Math.random = savedRand; S.activity = savedAct; S.inventory = savedInv; S.itemEarnedTotal = savedEarned; }
+  });
+
   // ---- Loadout slot unlocks (ticket-0096): 3 free, the rest bought with gold at 100k x10 per --------
   suite('loadouts: slot unlocks + quick-swap bar', function(){
     var S = FF._state;
