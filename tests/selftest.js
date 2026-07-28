@@ -9209,7 +9209,8 @@
     eq(FF.marketItemCategory('stweapon_scimitar_t0_normal'), 'weapons', 'a stackable weapon -> Weapons');
     eq(FF.marketItemCategory('tool_mining_t0_normal'), 'tools', 'a gather tool -> Tools');
     eq(FF.marketItemCategory('relic_t0_normal'), 'relics', 'a relic -> Relics');
-    eq(FF.marketItemCategory('ring_slash_t0_normal'), 'equipment', 'a ring -> Equipment');
+    eq(FF.marketItemCategory('ring_slash_t0_normal'), 'accessories', 'a ring -> Accessories');
+    eq(FF.marketItemCategory('bodyarmor_leather_chest_t0_normal'), 'armor', 'a body-armor piece -> Armor');
     eq(FF.marketItemCategory('workshop_mining_t0'), 'other', 'a workshop building -> Other');
     eq(FF.marketItemCategory('powder_t0'), 'materials', 'a gathered material -> Materials');
     // Every tradeable id resolves to one of the defined buckets (no item is uncategorized).
