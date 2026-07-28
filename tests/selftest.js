@@ -7613,12 +7613,30 @@
       eq(S.gold, 100000, '1M gold was spent');
       FF.saveLoadoutPreset(3);
       ok(!!S.loadouts[3], 'saving into a freshly unlocked slot works');
-      // The quick-swap bar: 25 numbered buttons; saved+unlocked live, empty/locked greyed out.
+      // The loadout nest: collapsed = just the toggle; expanded = only SAVED presets, by name.
+      FF._setLoadoutNestOpen(false);
       var bar = FF.renderLoadoutQuickBar();
-      eq((bar.match(/loadout-quick-btn/g)||[]).length, 25, 'the quick bar renders all 25 slot buttons');
-      eq((bar.match(/data-action="equipLoadout"/g)||[]).length, 1, 'only the one saved preset is tappable');
-      eq((bar.match(/loadout-quick-btn off/g)||[]).length, 24, 'empty and locked buttons are greyed out');
-      ok(/Locked — unlock in the Loadouts panel below/.test(bar), 'locked buttons say how to unlock');
+      ok(/toggleLoadoutNest/.test(bar), 'the nest renders its toggle');
+      eq((bar.match(/data-action="equipLoadout"/g)||[]).length, 0, 'collapsed, the nest shows no preset buttons');
+      FF._setLoadoutNestOpen(true);
+      bar = FF.renderLoadoutQuickBar();
+      eq((bar.match(/data-action="equipLoadout"/g)||[]).length, 1, 'expanded, only the one SAVED preset shows');
+      ok(bar.indexOf('Loadout 4') !== -1, 'the preset button carries the loadout name');
+      ok(!/loadout-quick-btn off/.test(bar), 'no greyed-out filler buttons — empty and locked slots are simply absent');
+      S.loadouts[3] = null;
+      bar = FF.renderLoadoutQuickBar();
+      ok(/No loadouts saved yet/.test(bar), 'expanding with nothing saved says so plainly');
+      FF._setLoadoutNestOpen(false);
+      // Naming on save: a typed name in the empty row's input is used; blank falls back to the default.
+      var nameInput = document.createElement('input');
+      nameInput.id = 'loadoutNewName-0'; nameInput.value = 'Boss Killer';
+      document.body.appendChild(nameInput);
+      try {
+        FF.saveLoadoutPreset(0);
+        eq(S.loadouts[0] && S.loadouts[0].name, 'Boss Killer', 'a name typed at save time names the preset');
+      } finally { document.body.removeChild(nameInput); }
+      FF.saveLoadoutPreset(1);
+      eq(S.loadouts[1] && S.loadouts[1].name, 'Loadout 2', 'saving without a name keeps the default');
     } finally {
       S.loadouts = saved.lo; S.loadoutSlotsUnlocked = saved.un; S.gold = saved.gold;
     }
