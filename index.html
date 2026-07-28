@@ -485,6 +485,8 @@
   .market-cats{display:flex; gap:6px; margin-bottom:8px; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:2px;}
   .market-cat{flex:0 0 auto; font-family:inherit; font-size:12px; padding:5px 11px; border:1px solid var(--border); border-radius:999px; background:var(--bg-card); color:var(--text-dim); cursor:pointer; white-space:nowrap;}
   .market-cat.on{border-color:var(--cat-market); color:var(--cat-market); font-weight:600;}
+  .market-subcats{margin-top:-2px;} .market-subcats .market-cat{font-size:11px; padding:4px 9px;}
+  .market-item-tier{flex:0 0 auto; font-family:var(--font-mono); font-size:10px; color:var(--text-dim); background:var(--bg-panel); border:1px solid var(--border); border-radius:4px; padding:1px 5px; white-space:nowrap;}
   .market-search{margin-bottom:8px;}
   .market-search-input, .market-num{font-family:inherit; font-size:13px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text); width:100%; box-sizing:border-box;}
   .market-results{display:flex; flex-direction:column; gap:4px; max-height:60dvh; overflow:auto;}
@@ -30668,7 +30670,7 @@
   function marketTax(gold){ return Math.floor(gold * MARKET_TAX * merchantTaxMult()); }
   function marketSellNet(price, qty){ var g = price * qty; return g - marketTax(g); }
   function marketBuyCost(price, qty){ return price * qty; }
-  var marketState = { mode:'forsale', status:'idle', selectedItem:null, book:null, bookItem:null, orders:[], proceeds:{gold:0,items:[]}, listings:[], search:'', category:'all', busy:false, sellMsg:'' };
+  var marketState = { mode:'forsale', status:'idle', selectedItem:null, book:null, bookItem:null, orders:[], proceeds:{gold:0,items:[]}, listings:[], search:'', category:'all', sub:'all', busy:false, sellMsg:'' };
   // Marketplace category filter for quick navigation. Each tradeable id maps to one bucket by which item
   // collection it belongs to (checked at render time, when all the collections are defined).
   var MARKET_CATEGORIES = [
@@ -30696,6 +30698,22 @@
       if(MARKET_REFINED_SKILLS[m[1]]) return 'refined';          // a Refining-craft output
     }
     return 'materials'; // raw gathered resources, seeds, gems, powders, meat/fat/hide, etc.
+  }
+  // Tier chip (1-based; tier-less items show nothing).
+  function marketItemTierHtml(id){ var t = /_t(\d+)/.exec(id||''); return t ? '<span class="market-item-tier">T'+(parseInt(t[1],10)+1)+'</span>' : ''; }
+  // Subcategory = the producing skill, for a second-level filter within Materials & Refined. Item prefixes
+  // that differ from their skill id are mapped here; otherwise the prefix IS the skill id.
+  var MARKET_PREFIX_SKILL = { twine:'weaving', paper:'papermaking', gemcut:'gemcutting', enchant:'enchanting', meat:'butchering', fat:'butchering' };
+  var MARKET_SUBCATEGORIZED = { materials:true, refined:true };
+  function marketItemSubcategory(id){ var m = /^([a-z]+)_t\d+$/.exec(id); if(!m) return ''; var p = m[1]; return MARKET_PREFIX_SKILL[p] || p; }
+  function marketSubLabel(skillKey){ return ((GATHERING_SKILLS[skillKey] || CRAFTING_SKILLS[skillKey] || {}).label) || (SKILL_LABELS && SKILL_LABELS[skillKey]) || (skillKey.charAt(0).toUpperCase()+skillKey.slice(1)); }
+  function marketMatchesSub(id){ var s = marketState.sub || 'all'; return s === 'all' || marketItemSubcategory(id) === s; }
+  // The distinct producing-skill subcategories present among tradeable items of the active category.
+  function marketSubcategoriesFor(cat){
+    var seen = {}, out = [];
+    marketTradeableIds().forEach(function(id){ if(marketItemCategory(id) === cat){ var s = marketItemSubcategory(id); if(s && !seen[s]){ seen[s] = true; out.push(s); } } });
+    out.sort(function(a,b){ return marketSubLabel(a).localeCompare(marketSubLabel(b)); });
+    return out;
   }
   function marketMatchesCategory(id){ var c = marketState.category || 'all'; return c === 'all' || marketItemCategory(id) === c; }
   function marketInvoke(action, payload){
@@ -30744,7 +30762,7 @@
   // The list body for the current mode (For Sale listings / Buy item-picker / Sell inventory-picker).
   function marketListHtml(){
     if(marketState.mode==='forsale'){
-      var rows = (marketState.listings||[]).filter(function(r){ return marketMatchesSearch(r.item_key) && marketMatchesCategory(r.item_key); });
+      var rows = (marketState.listings||[]).filter(function(r){ return marketMatchesSearch(r.item_key) && marketMatchesCategory(r.item_key) && marketMatchesSub(r.item_key); });
       rows.sort(function(a,b){ return marketItemName(a.item_key).localeCompare(marketItemName(b.item_key)); });
       if(!rows.length){
         var msg = (marketState.search||'').trim() ? 'No items for sale match “'+escapeHtml(marketState.search)+'”.'
@@ -30754,16 +30772,16 @@
       var html = '';
       rows.slice(0,80).forEach(function(r){ var m = marketItemMeta(r.item_key);
         var afford = state.gold >= r.min_ask;
-        html += '<div class="market-listing-row"><button class="market-item-row" style="flex:1;min-width:0;" data-action="marketPickItem" data-item="'+escapeHtml(r.item_key)+'"><span class="market-item-ico">'+m.icon+'</span><span class="market-item-name">'+escapeHtml(m.name)+'</span><span class="market-listing-info">from '+fmt(r.min_ask)+'g • '+fmt(r.qty)+' available</span></button>';
+        html += '<div class="market-listing-row"><button class="market-item-row" style="flex:1;min-width:0;" data-action="marketPickItem" data-item="'+escapeHtml(r.item_key)+'"><span class="market-item-ico">'+m.icon+'</span><span class="market-item-name">'+escapeHtml(m.name)+'</span>'+marketItemTierHtml(r.item_key)+'<span class="market-listing-info">from '+fmt(r.min_ask)+'g • '+fmt(r.qty)+' available</span></button>';
         html += '<button class="market-buynow" data-action="marketQuickBuy" data-item="'+escapeHtml(r.item_key)+'" data-price="'+r.min_ask+'"'+(afford?'':' disabled')+' title="Buy 1 at '+fmt(r.min_ask)+'g">Buy 1</button></div>';
       });
       return html;
     }
     var ids;
-    if(marketState.mode==='sell'){ ids = marketOwnedIds().filter(marketMatchesSearch).filter(marketMatchesCategory); }
+    if(marketState.mode==='sell'){ ids = marketOwnedIds().filter(marketMatchesSearch).filter(marketMatchesCategory).filter(marketMatchesSub); }
     else { // buy: search any tradeable item to bid on, or browse a category
       if(!(marketState.search||'').trim() && (marketState.category||'all')==='all') return '<div class="empty-note">Search any item to place a buy order (bid) — even ones nobody is selling yet — or pick a category above to browse.</div>';
-      ids = marketTradeableIds().filter(marketMatchesSearch).filter(marketMatchesCategory).sort(function(a,b){ return marketItemName(a).localeCompare(marketItemName(b)); });
+      ids = marketTradeableIds().filter(marketMatchesSearch).filter(marketMatchesCategory).filter(marketMatchesSub).sort(function(a,b){ return marketItemName(a).localeCompare(marketItemName(b)); });
     }
     if(!ids.length){
       var m2 = marketState.mode==='sell' ? ((marketState.search||'').trim() ? 'None of your items match.' : 'You have nothing to sell right now.') : 'No items match “'+escapeHtml(marketState.search)+'”.';
@@ -30771,7 +30789,7 @@
     }
     var h = '';
     ids.slice(0,80).forEach(function(id){ var m = marketItemMeta(id), owned = state.inventory[id]||0;
-      h += '<button class="market-item-row" data-action="marketPickItem" data-item="'+id+'"><span class="market-item-ico">'+m.icon+'</span><span class="market-item-name">'+escapeHtml(m.name)+'</span><span class="market-item-owned">'+(owned>0? fmt(owned)+' owned':'')+'</span></button>';
+      h += '<button class="market-item-row" data-action="marketPickItem" data-item="'+id+'"><span class="market-item-ico">'+m.icon+'</span><span class="market-item-name">'+escapeHtml(m.name)+'</span>'+marketItemTierHtml(id)+'<span class="market-item-owned">'+(owned>0? fmt(owned)+' owned':'')+'</span></button>';
     });
     return h;
   }
@@ -30781,6 +30799,14 @@
     var html = '<div class="market-cats">' + MARKET_CATEGORIES.map(function(c){
       return '<button class="market-cat'+((marketState.category||'all')===c.id?' on':'')+'" data-action="marketSetCategory" data-cat="'+c.id+'">'+c.label+'</button>';
     }).join('') + '</div>';
+    // Second-level filter (by producing skill) for Materials & Refined -- e.g. Herbalism, Forestry, Mining.
+    if(MARKET_SUBCATEGORIZED[marketState.category]){
+      var subs = marketSubcategoriesFor(marketState.category);
+      if(subs.length > 1){
+        html += '<div class="market-cats market-subcats"><button class="market-cat'+((marketState.sub||'all')==='all'?' on':'')+'" data-action="marketSetSub" data-sub="all">All</button>'
+          + subs.map(function(sk){ return '<button class="market-cat'+((marketState.sub||'all')===sk?' on':'')+'" data-action="marketSetSub" data-sub="'+escapeHtml(sk)+'">'+escapeHtml(marketSubLabel(sk))+'</button>'; }).join('') + '</div>';
+      }
+    }
     html += '<div class="market-search"><input id="marketSearch" class="market-search-input" type="text" placeholder="'+ph+'" value="'+escapeHtml(marketState.search)+'" autocomplete="off"></div>';
     html += '<div id="marketResults" class="market-results">'+marketListHtml()+'</div>';
     return html;
@@ -33343,7 +33369,8 @@
     marketMode: function(btn, e){
       marketState.mode = btn.getAttribute('data-mode'); marketState.selectedItem = null; marketState.search = ''; render();
     },
-    marketSetCategory: function(btn, e){ marketState.category = btn.getAttribute('data-cat') || 'all'; render(); },
+    marketSetCategory: function(btn, e){ marketState.category = btn.getAttribute('data-cat') || 'all'; marketState.sub = 'all'; render(); },
+    marketSetSub: function(btn, e){ marketState.sub = btn.getAttribute('data-sub') || 'all'; render(); },
     marketRefresh: function(btn, e){ marketReload(); },
     marketPickItem: function(btn, e){ marketPickItem(btn.getAttribute('data-item')); },
     marketClearItem: function(btn, e){ marketState.selectedItem = null; render(); },
@@ -34203,7 +34230,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.50.23';
+  var GAME_VERSION = '0.0.50.24';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -34361,7 +34388,7 @@
       fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, pickFertilizerTier:pickFertilizerTier, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE, openTreasureChests:openTreasureChests, CHEST_MAX_GOLD:CHEST_MAX_GOLD, openCritterCaches:openCritterCaches, critterCacheChance:critterCacheChance, pickWeightedFarmingTier:pickWeightedFarmingTier, CACHE_SEED_TIER_DECAY:CACHE_SEED_TIER_DECAY, GRAIN_TIER_COUNT:GRAIN_TIER_COUNT, BASE_NEST_CHANCE:BASE_NEST_CHANCE, CRITTER_CACHE_SKILLS:CRITTER_CACHE_SKILLS, SEED_DROP_SKILLS:SEED_DROP_SKILLS,
       TOOL_ITEMS:TOOL_ITEMS, equipTool:equipTool, equipBestTool:equipBestTool, bestOwnedToolForSkill:bestOwnedToolForSkill, equippedToolAtLeast:equippedToolAtLeast, equippedToolScore:equippedToolScore, toolAggregateScore:toolAggregateScore, findToolType:findToolType,
       butcherOutputChance:butcherOutputChance, butcherOutputQty:butcherOutputQty, BUTCHER_OUTPUT_ROLLS:BUTCHER_OUTPUT_ROLLS, getEquippedGatherTool:getEquippedGatherTool, getGatherToolTierData:getGatherToolTierData, getEquippedCraftTool:getEquippedCraftTool,
-      marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX, marketItemCategory:marketItemCategory, MARKET_CATEGORIES:MARKET_CATEGORIES,
+      marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX, marketItemCategory:marketItemCategory, MARKET_CATEGORIES:MARKET_CATEGORIES, marketItemSubcategory:marketItemSubcategory, marketItemTierHtml:marketItemTierHtml, marketSubLabel:marketSubLabel,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER, ESTATE_PAVE_MS_PER_TIER:ESTATE_PAVE_MS_PER_TIER, ESTATE_WORKSHOP_MS_PER_TIER:ESTATE_WORKSHOP_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, rarityBuffSeconds:rarityBuffSeconds, serverBuffRarityBonus:serverBuffRarityBonus, rarityBonusShortLabel:rarityBonusShortLabel, serverRarityBuffActive:serverRarityBuffActive, SERVER_RARITY_BONUS:SERVER_RARITY_BONUS, _serverBuff:serverBuff, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey, invGroupFor:invGroupFor, INV_GROUPS:INV_GROUPS,

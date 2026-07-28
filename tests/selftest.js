@@ -9254,6 +9254,14 @@
     eq(FF.marketItemCategory('tome_t0'), 'consumables', 'a tome/book (bookbinding) -> Consumables');
     eq(FF.marketItemCategory('scroll_t0'), 'consumables', 'a scroll (inscription) -> Consumables');
     eq(FF.marketItemCategory('coating_t0'), 'consumables', 'a toxin coating (alchemy) -> Consumables');
+    // Tier chip: 1-based, tier-less items show nothing.
+    ok(/T6/.test(FF.marketItemTierHtml('metallurgy_t5')), 'the tier chip is 1-based (t5 -> T6)');
+    eq(FF.marketItemTierHtml('meat'), '', 'a tier-less item shows no tier chip');
+    // Subcategory = producing skill (alias prefixes resolve to their skill).
+    eq(FF.marketItemSubcategory('herbalism_t0'), 'herbalism', 'raw material subcategory is its gather skill');
+    eq(FF.marketItemSubcategory('twine_t0'), 'weaving', 'an alias prefix (twine) resolves to its skill (weaving)');
+    eq(FF.marketItemSubcategory('metallurgy_t3'), 'metallurgy', 'a refined subcategory is its refining skill');
+    ok(FF.marketSubLabel('forestry').toLowerCase().indexOf('forest') !== -1, 'subcategory labels are human-readable skill names');
     // Every tradeable id resolves to one of the defined buckets (no item is uncategorized).
     var cats = {}; FF.MARKET_CATEGORIES.forEach(function(c){ cats[c.id] = true; });
     ok(Object.keys(FF.ALL_SELLABLE).slice(0, 400).every(function(id){ return id==='gold' || cats[FF.marketItemCategory(id)]; }), 'every sellable item maps to a known category');
