@@ -7591,6 +7591,46 @@
     } finally { Math.random = savedRand; S.activity = savedAct; S.inventory = savedInv; S.itemEarnedTotal = savedEarned; }
   });
 
+  // ---- Death report modal (ticket-0099): a structured "what killed me?" snapshot on every death -----
+  suite('death report: captured on death, shown online or on return', function(){
+    var S = FF._state;
+    var saved = { act:S.activity, hp:S.playerHp, dr:S.deathReport, mortal:S.mortal, stats:Object.assign({}, S.stats) };
+    try {
+      S.mortal = false; S.deathReport = null;
+      var mon = FF.monsterById('wildlife_rabbit');
+      S.activity = { type:'combat', monsterId:mon.id, monsterHp:50 };
+      S.playerHp = 0;
+      FF.playerCombatDeath(mon, 'test death', { kind:'attack', dmg:120, raw:200, mitigated:80, blocked:true, preHitHp:90 });
+      var r = S.deathReport;
+      ok(r && r.monsterName === mon.name, 'the report names the killer');
+      eq(r.where, 'Roaming combat', 'the report says where the fight was');
+      ok(r.blow && r.blow.kind === 'attack' && r.blow.dmg === 120 && r.blow.preHitHp === 90, 'the report carries the killing blow\'s numbers');
+      ok(r.at > 0 && r.offline === false, 'timestamped, live death');
+      ok(r.maxHp > 0, 'the report snapshots your max Health');
+      eq(S.playerHp, 1, 'death still lands you at 1 HP, recovering');
+      eq(S.activity.type, null, 'death still ends the fight');
+      // The modal renders from the report and the dismiss path clears it.
+      FF.renderDeathReportModal();
+      var ovEl = document.getElementById('deathReportOverlay');
+      ok(ovEl && ovEl.style.display !== 'none' && /You fell in battle/.test(ovEl.innerHTML), 'the modal shows for a pending report');
+      ok(ovEl.innerHTML.indexOf(mon.name) !== -1, 'the modal names the killer');
+      ok(/120/.test(ovEl.innerHTML) && /you fell from/.test(ovEl.innerHTML), 'the modal shows the killing blow and the HP you fell from');
+      S.deathReport = null;
+      FF.renderDeathReportModal();
+      ok(ovEl.style.display === 'none', 'dismissing hides the modal');
+      // A DoT death reports which status finished you.
+      S.activity = { type:'combat', monsterId:mon.id, monsterHp:50 };
+      FF.playerCombatDeath(mon, 'test dot death', { kind:'dot', word:'Bleeding' });
+      ok(S.deathReport && S.deathReport.blow.kind === 'dot' && S.deathReport.blow.word === 'Bleeding', 'a DoT death names the status that killed you');
+      FF.renderDeathReportModal();
+      ok(/succumbed to/.test(document.getElementById('deathReportOverlay').innerHTML), 'the modal words a DoT death as succumbing');
+      S.deathReport = null; FF.renderDeathReportModal();
+    } finally {
+      S.activity = saved.act; S.playerHp = saved.hp; S.deathReport = saved.dr; S.mortal = saved.mortal; S.stats = saved.stats;
+      FF.renderDeathReportModal();
+    }
+  });
+
   // ---- Loadout slot unlocks (ticket-0096): 3 free, the rest bought with gold at 100k x10 per --------
   suite('loadouts: slot unlocks + quick-swap bar', function(){
     var S = FF._state;
