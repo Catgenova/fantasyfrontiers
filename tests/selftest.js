@@ -8307,6 +8307,35 @@
     var cardAopen = FF.renderFamiliarCard(A);
     ok(/Activate as Companion/.test(cardAopen) && !/replaceCompanion/.test(cardAopen), 'with a free slot the card offers Activate, not Replace');
 
+    // Ticket-0102: a staff roster viewed from a 1-slot class. Replace must seat the newcomer in ONE tap
+    // and keep the benched companions for the switch back (the old splice-then-push burned one benched
+    // companion per tap and only seated the newcomer once the whole roster was drained).
+    var svW = { mh:S.equippedMainhand, mhT:S.equippedMainhandTier, mhR:S.equippedMainhandRarity };
+    var C = ids[2], D = ids[3];
+    S.familiars[C] = { owned:true, level:5 };
+    S.familiars[D] = { owned:true, level:5 };
+    S.equippedMainhand = null;                       // no staff: 1 companion slot
+    S.activeCompanions = [A, B, C];                  // a roster saved while wielding a staff
+    S.companionCast = {}; S.companionCast[A] = { accum:0, index:0 };
+    eq(FF.activeCompanionList(S).join(','), A, 'without a staff only the first roster seat is active');
+    var cardBenched = FF.renderFamiliarCard(B);
+    ok(/Benched/.test(cardBenched), 'a rostered-but-capped familiar reads as Benched, not gone');
+    FF.replaceCompanion(D, A);
+    eq(FF.activeCompanionList(S).join(','), D, 'ONE tap seats the newcomer in the lone visible slot');
+    eq(S.activeCompanions.join(','), [D,B,C].join(','), 'the benched companions keep their roster seats');
+    ok(!S.companionCast[A] && !!S.companionCast[D], 'cast bookkeeping follows the in-place swap');
+    // Back on the staff: the whole roster returns.
+    S.equippedMainhand = 'staff'; S.equippedMainhandTier = 1; S.equippedMainhandRarity = 'fantastic';
+    eq(FF.activeCompanionList(S).join(','), [D,B,C].join(','), 'switching back to the staff restores the full roster');
+    // Promoting a BENCHED familiar into the visible seat must not duplicate it.
+    S.equippedMainhand = null;
+    FF.replaceCompanion(B, D);                       // B is benched at seat 2; it takes seat 1
+    eq(FF.activeCompanionList(S).join(','), B, 'a benched familiar can take the visible seat in one tap');
+    eq(S.activeCompanions.join(','), [B,C].join(','), 'the promoted familiar left the bench (no duplicate seat)');
+    S.equippedMainhand = svW.mh; S.equippedMainhandTier = svW.mhT; S.equippedMainhandRarity = svW.mhR;
+    S.activeCompanions = []; S.companionCast = {};
+    delete S.familiars[C]; delete S.familiars[D];
+
     // Search: owned matches by name + spell + skill; unsummoned matches by skill only (no ??? spoiler).
     var famA = FF.FAMILIAR_DATA[A];
     ok(FF.familiarMatchesSearch(A, A.toLowerCase().slice(0,3)), 'matches by skill-id fragment');

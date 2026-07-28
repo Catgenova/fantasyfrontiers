@@ -8532,15 +8532,26 @@
     if(activeCompanionList(state).indexOf(newId) !== -1) return;   // already fighting alongside you
     var comps = activeCompanionList(state);
     var removeId = oldId || (comps.length ? comps[comps.length-1] : null); // default: bump the last-added companion
-    if(removeId && comps.indexOf(removeId) !== -1){
-      var i = state.activeCompanions.indexOf(removeId);
-      if(i !== -1){ state.activeCompanions.splice(i, 1); delete state.companionCast[removeId]; }
-    }
-    if(activeCompanionList(state).length < activeCompanionSlots(state)){
+    // If the newcomer is BENCHED (on the roster beyond the current slot cap -- e.g. a Summoner's staff
+    // roster viewed from a 1-slot class), pull it off the bench first so the swap can't seat it twice.
+    var dup = state.activeCompanions.indexOf(newId);
+    if(dup !== -1) state.activeCompanions.splice(dup, 1);
+    var at = removeId ? state.activeCompanions.indexOf(removeId) : -1;
+    if(at !== -1 && comps.indexOf(removeId) !== -1){
+      // Swap IN PLACE: the newcomer inherits the outgoing companion's roster seat. Companions benched by
+      // a smaller slot count keep their seats for the switch back to a staff class (ticket-0102: the old
+      // splice-then-push burned one benched companion per tap -- the bench refilled the freed slot -- and
+      // only seated the newcomer once the entire Summoner roster had been drained).
+      state.activeCompanions[at] = newId;
+      delete state.companionCast[removeId];
+      state.companionCast[newId] = { accum:0, index:0 };
+      var fam = FAMILIAR_DATA[newId] || {}, oldFam = FAMILIAR_DATA[removeId] || {};
+      addLog((fam.name||newId) + ' takes the field in place of ' + (oldFam.name||removeId) + '.', 'important');
+    } else if(activeCompanionList(state).length < activeCompanionSlots(state)){
       state.activeCompanions.push(newId);
       state.companionCast[newId] = { accum:0, index:0 };
-      var fam = FAMILIAR_DATA[newId] || {}, oldFam = removeId ? (FAMILIAR_DATA[removeId] || {}) : null;
-      addLog((fam.name||newId) + (oldFam ? ' takes the field in place of ' + (oldFam.name||removeId) + '.' : ' joins you as a Companion.'), 'important');
+      var fam2 = FAMILIAR_DATA[newId] || {};
+      addLog((fam2.name||newId) + ' joins you as a Companion.', 'important');
     }
     needsRender = true;
   }
@@ -23114,11 +23125,13 @@
     var label = SKILL_LABELS[skillId] || (physiqueMeta ? physiqueMeta.name : skillId);
     var expanded = !!menagerieExpanded[skillId];
     var isCompanion = activeCompanionList(state).indexOf(skillId) !== -1;
+    // On the roster but beyond the current slot cap (fewer slots without a Staff): benched, not gone.
+    var isBenched = !isCompanion && Array.isArray(state.activeCompanions) && state.activeCompanions.indexOf(skillId) !== -1;
     var famLevel = getFamiliarLevel(skillId);
     var famStars = familiarStars(skillId);
     var html = '<div class="item-card'+(owned?'':' locked')+(isCompanion?' active-item':'')+'">';
     if(owned){
-      html += '<div class="item-top" data-action="toggleFamiliar" data-skill="'+skillId+'" style="cursor:pointer"><div class="item-icon">'+fam.icon+'</div><div><div class="item-name">'+fam.name+(famStars>0?' <span style="color:var(--gold);">'+starStr(famStars)+'</span>':'')+'</div><div class="item-meta">'+label+' &bull; Lv '+famLevel+(famLevel>=FAMILIAR_MAX_LEVEL?' (Max)':'')+(famStars>0?' &bull; +'+Math.round(FAMILIAR_TRANSCEND_DMG_PER_STAR*100*famStars)+'% dmg':'')+(isCompanion?' &bull; Companion':'')+'</div></div></div>';
+      html += '<div class="item-top" data-action="toggleFamiliar" data-skill="'+skillId+'" style="cursor:pointer"><div class="item-icon">'+fam.icon+'</div><div><div class="item-name">'+fam.name+(famStars>0?' <span style="color:var(--gold);">'+starStr(famStars)+'</span>':'')+'</div><div class="item-meta">'+label+' &bull; Lv '+famLevel+(famLevel>=FAMILIAR_MAX_LEVEL?' (Max)':'')+(famStars>0?' &bull; +'+Math.round(FAMILIAR_TRANSCEND_DMG_PER_STAR*100*famStars)+'% dmg':'')+(isCompanion?' &bull; Companion':(isBenched?' &bull; <span style="color:var(--text-dim)">Benched</span>':''))+'</div></div></div>';
       if(expanded){
         // Spell Potency readout: the numbers below already bake in your familiar-efficiency bonuses
         // (cloth armour, Staves, Communion rings, Menagerist) on top of the familiar's own level, so
@@ -23139,6 +23152,7 @@
         if(isCompanion){
           html += '<button class="action-btn stop" data-action="activateCompanion" data-skill="'+skillId+'">Deactivate Companion</button>';
         } else {
+          if(isBenched) html += '<div class="inputs-line" style="margin-top:6px;color:var(--text-dim)">Benched &mdash; still on your roster, but this loadout has fewer Companion slots. It takes the field again when your slots grow (a Staff adds more).</div>';
           var _comps = activeCompanionList(state), _slots = activeCompanionSlots(state);
           if(_comps.length < _slots){
             // A slot is free -> just equip. Multi-slot loadouts (Staff / Summoner) call it "Open Slot".
@@ -23497,7 +23511,8 @@
       'Summoner legendaries retuned: Baton of the First Chair (staff swings every 4s), Packbrand (+10% Downbeat power per active familiar), Necrocaller (every Grand Finale raises a Skeletal Wraith — 10s, striking every 2.5s and Decaying the foe) and Broodwyrm\'s Chorus (doubles the base effect of Earth damage enchants on your staff).',
       'Housekeeping: Third Eye\'s bonus companion slot, Guardian Bond, Desperate Summons, Overload and the old Twin Cast/Pack Tactics/Undead Legion set bonuses are retired; leaving combat clears Downbeats, Crescendo and Wraiths like every other class buff.',
       'Also fixed: the slowed enemy attack-speed readout was tinted a pale teal that vanished into the parchment panel — slowed (and hastened) speeds now show in bold, high-contrast tones you can actually read.',
-      'Also fixed: familiar spells now appear in the Combat log — damage spells log their hit (with the full pipeline breakdown when Advanced Combat Log is on, Downbeat bonus included), siphons show the HP they drain back, heals and utility buffs log their cast, and Skeletal Wraith strikes are called out too.'
+      'Also fixed: familiar spells now appear in the Combat log — damage spells log their hit (with the full pipeline breakdown when Advanced Combat Log is on, Downbeat bonus included), siphons show the HP they drain back, heals and utility buffs log their cast, and Skeletal Wraith strikes are called out too.',
+      'Also fixed: swapping your companion while in a low-slot class no longer eats your Summoner roster. Companions beyond your current slot count now show as "Benched" in the Menagerie, Replace seats the newcomer in one tap (instead of one tap per benched pet), and your full roster returns the moment you wield a Staff again.'
     ]},
     { v:'0.0.56', date:'Jul 28', heading:'Loadouts: one-tap swapping and 25 slots', items:[
       'A numbered quick-swap bar (1–25) now sits above your character on Equipment & Stats: tap a saved preset to swap your whole kit instantly. Empty and locked slots show greyed out; hover one for why. The full Loadouts panel stays at the bottom for saving, renaming and managing presets.',
@@ -35077,7 +35092,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.57.2';
+  var GAME_VERSION = '0.0.57.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
