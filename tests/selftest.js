@@ -687,6 +687,35 @@
     ok(typeof FF.estateDrawTotem === 'function' && typeof FF.drawEstateTotemModel === 'function' && typeof FF.estateDrawTdTotem === 'function', 'totem models exist for iso and top-down rendering');
   });
 
+  // ---- Terraforming: a Field's altitude sets its crops' growth time (z10 base, z19 +50%, z1 -50%) ----
+  suite('terraforming: field altitude shapes crop growth time', function(){
+    var s = FF._state;
+    var savedGrid = s.estate.grid;
+    function mkCell(h){ return { type:'dirt', height:h, owned:true, workshopId:null, cottageId:null, totemId:null, fieldTier:5 }; }
+    var g = []; for(var gx=0; gx<3; gx++){ var col=[]; for(var gy=0; gy<3; gy++){ col.push(mkCell(10)); } g.push(col); }
+    s.estate.grid = g;
+    g[0][1].height = 19; g[0][2].height = 1; g[1][0].height = 14;
+    near(FF.fieldGrowthMult('personal','0,0'), 1.0, 'a z10 field is the baseline (1x grow time)', 1e-9);
+    near(FF.fieldGrowthMult('personal','0,1'), 1.5, 'a z19 plateau grows +50% slower', 1e-9);
+    near(FF.fieldGrowthMult('personal','0,2'), 0.5, 'a z1 lowland grows -50% faster', 1e-9);
+    near(FF.fieldGrowthMult('personal','1,0'), 1 + 4/18, 'altitudes in between scale linearly (z14 = +4/18)', 1e-9);
+    g[2][2].fieldTier = null;
+    near(FF.fieldGrowthMult('personal','2,2'), 1, 'a tile without a Field is 1x (no surprise modifiers)', 1e-9);
+    // Live planting: the same seed on the z19 vs the z1 field -> exactly 3x the growth window
+    // (1.5x vs 0.5x; Green Thumb applies to both equally so the ratio is clean).
+    var savedPlots = s.farmingPlots, savedInv = s.inventory, savedEarned = s.itemEarnedTotal;
+    var seedId = FF.cropSeedId('fiber', 0);
+    ok(!!seedId, 'a t0 fiber seed id resolves');
+    s.inventory = {}; s.inventory[seedId] = 2; s.itemEarnedTotal = {};
+    s.farmingPlots = {};
+    ok(FF.plantSeed('personal','0,1',seedId,true), 'planted on the z19 plateau');
+    ok(FF.plantSeed('personal','0,2',seedId,true), 'planted in the z1 lowland');
+    var hi = s.farmingPlots['0,1'], lo = s.farmingPlots['0,2'];
+    var hiMs = hi.readyAt - hi.plantedAt, loMs = lo.readyAt - lo.plantedAt;
+    near(hiMs / loMs, 3, 'the z19 crop takes exactly 3x as long as the z1 crop', 0.01);
+    s.estate.grid = savedGrid; s.farmingPlots = savedPlots; s.inventory = savedInv; s.itemEarnedTotal = savedEarned;
+  });
+
   suite('estate: offline queue drain', function(){
     var s = FF._state;
     FF.estUse(false);                                  // personal estate is the drain target
@@ -752,7 +781,8 @@
       gt:s.physique.greenThumb, s0:s.inventory['seed_t0'], g0:s.inventory['grainseed_t0'],
       h0:s.inventory['herbseed_t0'], s5:s.inventory['seed_t5'], crop0:s.inventory['farming_t0'] };
     // Controlled single-field estate; only tier-0 fiber seed fits, so every harvest is a farming_t0.
-    s.estate.grid = [[{ type:'dirt', fieldTier:0, owned:true }]];
+    // height 10 = the altitude BASELINE, so the 5-min growth stays exactly 5 min (see fieldGrowthMult).
+    s.estate.grid = [[{ type:'dirt', fieldTier:0, height:10, owned:true }]];
     s.farmingPlots = {};
     s.physique.greenThumb = 0;                        // exact 5-min growth, no bonus-yield roll
     s.inventory['seed_t0'] = 1000;
