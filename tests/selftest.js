@@ -2869,6 +2869,17 @@
     FF.combatLogPush({ dir:'out', dmg:10, target:'Orc' });
     ok(!/via /.test(FF.combatLogHtml()), 'no perk tag when nothing boosted the hit');
 
+    // Spell Echo: an echo hit reads distinctly from a normal swing, and carries its own Advanced breakdown.
+    FF._clReset(); s.settings.advancedCombatLog = true;
+    FF.combatLogPush({ dir:'out', dmg:50, crit:false, target:'Bear', echo:'Spell Echo', detail:'spell echo — 50% × 100 hit = 50' });
+    var echoHtml = FF.combatLogHtml();
+    ok(/cl-echo/.test(echoHtml) && /Spell Echo<\/span> hits Bear/.test(echoHtml), 'a Spell Echo entry reads as an echo, not a normal "You hit"');
+    ok(!/You hit Bear/.test(echoHtml), 'an echo is not rendered as a normal hit line');
+    ok(/spell echo — 50%/.test(echoHtml), 'the echo carries its Advanced pipeline detail');
+    FF._clReset();
+    FF.combatLogPush({ dir:'out', dmg:80, target:'Bear', echo:'Twin Echo' });
+    ok(/Twin Echo<\/span> hits Bear/.test(FF.combatLogHtml()), 'a Twin Echo is named too');
+
     // Ring buffer cap: never grows unbounded.
     FF._clReset();
     for(var i=0;i<260;i++) FF.combatLogPush({ dir:'out', dmg:1, target:'x' });
