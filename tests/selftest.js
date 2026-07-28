@@ -2809,6 +2809,19 @@
     var adv = FF.combatLogHtml();
     ok(/cl-detail/.test(adv) && /physique 1.2/.test(adv), 'the pipeline detail renders when present');
 
+    // Perk/class descriptions: the normal log tags the effects behind a hit; the Advanced detail itemizes them.
+    ok(FF.PLAYER_DMG_MODS.every(function(m){ return typeof m.label === 'string' && m.label.length > 0; }), 'every damage mod carries a display label');
+    var _bd = FF.playerDamageModBreakdown({ monster:{}, weaponStyle:{attackTypes:{blunt:1}}, enchTot:{}, isCrit:false, isOffhand:false });
+    ok(Array.isArray(_bd) && _bd.every(function(p){ return p.label && Math.abs(p.mult-1) > 0.005; }), 'the breakdown lists only labeled, non-1x effects');
+    FF._clReset(); s.settings.advancedCombatLog = false;
+    FF.combatLogPush({ dir:'out', dmg:1234, crit:true, target:'Orc', perks:['Vanish','Rage'] });
+    var perkLine = FF.combatLogHtml();
+    ok(/via Vanish, Rage/.test(perkLine), 'the out-hit line names the perks/class effects that boosted it');
+    ok(/cl-perks/.test(perkLine), 'the perk tag uses its own style');
+    FF._clReset();
+    FF.combatLogPush({ dir:'out', dmg:10, target:'Orc' });
+    ok(!/via /.test(FF.combatLogHtml()), 'no perk tag when nothing boosted the hit');
+
     // Ring buffer cap: never grows unbounded.
     FF._clReset();
     for(var i=0;i<260;i++) FF.combatLogPush({ dir:'out', dmg:1, target:'x' });
