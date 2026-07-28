@@ -9245,6 +9245,9 @@
     eq(FF.marketItemCategory('bodyarmor_leather_chest_t0_normal'), 'armor', 'a body-armor piece -> Armor');
     eq(FF.marketItemCategory('workshop_mining_t0'), 'other', 'a workshop building -> Other');
     eq(FF.marketItemCategory('powder_t0'), 'materials', 'a gathered material -> Materials');
+    eq(FF.marketItemCategory('metallurgy_t0'), 'refined', 'a refined bar (metallurgy) -> Refined');
+    eq(FF.marketItemCategory('tanning_t0'), 'refined', 'refined leather (tanning) -> Refined');
+    eq(FF.marketItemCategory('mining_t0'), 'materials', 'a raw gathered ore -> Materials');
     // Every tradeable id resolves to one of the defined buckets (no item is uncategorized).
     var cats = {}; FF.MARKET_CATEGORIES.forEach(function(c){ cats[c.id] = true; });
     ok(Object.keys(FF.ALL_SELLABLE).slice(0, 400).every(function(id){ return id==='gold' || cats[FF.marketItemCategory(id)]; }), 'every sellable item maps to a known category');

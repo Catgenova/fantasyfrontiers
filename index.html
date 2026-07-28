@@ -30672,9 +30672,12 @@
   // Marketplace category filter for quick navigation. Each tradeable id maps to one bucket by which item
   // collection it belongs to (checked at render time, when all the collections are defined).
   var MARKET_CATEGORIES = [
-    { id:'all', label:'All' }, { id:'materials', label:'Materials' }, { id:'armor', label:'Armor' }, { id:'accessories', label:'Accessories' },
+    { id:'all', label:'All' }, { id:'materials', label:'Materials' }, { id:'refined', label:'Refined' }, { id:'armor', label:'Armor' }, { id:'accessories', label:'Accessories' },
     { id:'weapons', label:'Weapons' }, { id:'tools', label:'Tools' }, { id:'relics', label:'Relics' }, { id:'other', label:'Other' }
   ];
+  // Refined materials = outputs of the material-processing (Refining) crafts (metallurgy bars, tanning
+  // leather, weaving cloth, glassblowing glass, ...) whose ids are keyed <refiningSkill>_t<tier>.
+  var MARKET_REFINED_SKILLS = {}; REFINING_SKILL_IDS.forEach(function(sid){ MARKET_REFINED_SKILLS[sid] = true; });
   function marketItemCategory(id){
     if(STACKABLE_WEAPON_ITEMS[id]) return 'weapons';
     if(TOOL_ITEMS[id]) return 'tools';
@@ -30682,7 +30685,9 @@
     if(RING_ITEMS[id] || AMULET_ITEMS[id] || BELT_ITEMS[id]) return 'accessories';            // jewelry + belt
     if(BODY_ARMOR_ITEMS[id] || STACKABLE_SHIELD_ITEMS[id] || STACKABLE_QUIVER_ITEMS[id] || WARD_ITEMS[id]) return 'armor'; // worn/offhand defensive gear
     if(WORKSHOP_ITEMS[id] || COTTAGE_ITEMS[id]) return 'other';
-    return 'materials'; // gathered/refined resources, food, seeds, gems, powders, glyphs, etc.
+    var m = /^([a-z]+)_t\d+$/.exec(id);
+    if(m && MARKET_REFINED_SKILLS[m[1]]) return 'refined';        // a Refining-craft output
+    return 'materials'; // raw gathered resources, food, seeds, gems, powders, glyphs, etc.
   }
   function marketMatchesCategory(id){ var c = marketState.category || 'all'; return c === 'all' || marketItemCategory(id) === c; }
   function marketInvoke(action, payload){
@@ -34190,7 +34195,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.50.21';
+  var GAME_VERSION = '0.0.50.22';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
