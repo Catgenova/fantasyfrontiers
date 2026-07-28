@@ -4688,15 +4688,11 @@
     near(FF.legendaryDmgMult(MON, cullExec), 2.0, 'Cull caps at +100% below 50% HP');
     near(FF.legendaryDmgMult(MON, legSt('crimsonharvest', { activity:{type:'combat', monsterHp:1} })), 1, 'Cull is inert without the Cull legendary');
 
-    // Phantom Assault (assassin/claw): while the 4s-untouched Vanish window is ready, +25% damage and +20% Dodge.
-    var paReady = legSt('phantomassault', { activity:{type:'combat', monsterHp:100, lastDamagedAt: Date.now() - 5000} });
-    ok(FF.legVanishWindowReady(paReady), 'the Vanish window is ready after 4s untouched');
-    near(FF.legendaryDmgMult(MON, paReady), 1.25, 'Phantom Assault: +25% damage while Vanish ready');
-    near(FF.legendaryDodgeBonus(paReady), 0.20, 'Phantom Assault: +20% Dodge while Vanish ready');
-    var paHit = legSt('phantomassault', { activity:{type:'combat', monsterHp:100, lastDamagedAt: Date.now()} });
-    ok(!FF.legVanishWindowReady(paHit), 'the Vanish window closes when freshly hit');
-    near(FF.legendaryDmgMult(MON, paHit), 1, 'Phantom Assault gives no damage while recently hit');
-    near(FF.legendaryDodgeBonus(paHit), 0, 'Phantom Assault gives no Dodge while recently hit');
+    // Gloomstalker (assassin/claw, key phantomassault): Open Wounds never expire — an expired timer still counts.
+    var gsSt = legSt('phantomassault', { activity:{type:'combat', monsterHp:100, woundStacks:3, woundUntil: Date.now() - 5000} });
+    eq(FF.assassinWoundStacks(gsSt), 3, 'Gloomstalker: wounds persist past their 6s timer');
+    var gsNo = legSt('cull', { activity:{type:'combat', monsterHp:100, woundStacks:3, woundUntil: Date.now() - 5000} });
+    eq(FF.assassinWoundStacks(gsNo), 0, 'without Gloomstalker, an expired fill reads as 0');
 
     // Crimson Harvest (reaver/halfmoonaxe): +2% lifesteal per Bleed stack on the foe.
     var chBleed = legSt('crimsonharvest', { activity:{type:'combat', monsterHp:100, bleedStacks:3, bleedUntil: Date.now()+4000} });
@@ -5212,6 +5208,9 @@
     eq(FF.legActive('goldgorge', legSt('goldgorge','scimitar')), true, 'legActive detects Goldgorge');
     eq(FF.legActive('blightfang', legSt('blightfang','hatchet')), true, 'legActive detects Blightfang');
     eq(FF.legActive('throatripper', legSt('throatripper','claw')), true, 'legActive detects Throatripper');
+    // Throatripper (reworked): +4% damage per Open Wound held on the foe.
+    near(FF.d2LegDmgMult({}, legSt('throatripper','claw',{ activity:{type:'combat', monsterHp:100, woundStacks:5, woundUntil:Date.now()+4000} })), 1.20, 'Throatripper: 5 open wounds = +20% damage');
+    near(FF.d2LegDmgMult({}, legSt('throatripper','claw',{ activity:{type:'combat', monsterHp:100} })), 1.0, 'Throatripper is inert with no wounds open');
     eq(FF.legActive('soulflay', legSt('soulflay','scythe')), true, 'legActive detects Soulflay');
     eq(FF.legActive('ironwind', legSt('ironwind','falchion')), true, 'legActive detects Ironwind');
     eq(FF.legActive('breachblade', legSt('breachblade','claymore')), true, 'legActive detects Breachblade');
@@ -5719,10 +5718,9 @@
     near(FF.d4EchoMult(legSt('runewyrm','greatsword')), FF.ELEMENT_ADVANTAGE_MULT, 'Runewyrm Blade: echoes strike the weakness');
 
     // --- Bursts / execute helpers ---
-    var swMon = { hp:1000 };
-    var swSt = legSt('shadowwyrm','claw',{ activity:{type:'combat', monsterHp:250} }); // 25% HP -> 75% missing
-    near(FF.d4ShadowwyrmBurst(1000, swMon, swSt), Math.round(1000 * (0.50 + 1.50*0.75) * FF.elementDmgMult(swSt,'fire')), 'Shadowwyrm Immolation scales with the foe\'s missing Health');
-    eq(FF.d4ShadowwyrmBurst(1000, swMon, legSt('gorewyrm','halfmoonaxe')), 0, 'no Shadowwyrm burst without the claw');
+    // Shadowwyrm's Fang is now a Twin Fangs payoff: a Vanish-loaded Fang Strike crits and detonates at +60%/wound.
+    ok(FF.legActive('shadowwyrm', legSt('shadowwyrm','claw')), 'legActive detects the reworked Shadowwyrm claw');
+    eq(FF.ASSASSIN_FANG_PCT_SHADOWWYRM, 0.60, "Shadowwyrm's Fang consumes wounds at +60% each");
     var sfSt = legSt('soulflame','scythe');
     near(FF.d4SoulflameBurst(1000, sfSt), Math.round(1000 * 0.12 * FF.elementDmgMult(sfSt,'fire')), 'Soulflame exhales a ~12% Fire burst');
     var ewMon = { hp:1000, isBoss:false };
@@ -6112,9 +6110,15 @@
       wearFull('quickdraw'); s.activity = { type:'combat', monsterHp:500, decayStacks:3, decayUntil:now+4000 };
       near(FF.d3SetDmgMult({}, s), 1.15, 'Quickdraw Grave Toxin: +15% vs a Decayed foe');
       s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Grave Toxin inert on a clean foe');
-      wearFull('assassin'); s.activity = { type:'combat', monsterHp:500, decayStacks:3, decayUntil:now+4000 };
-      near(FF.d3SetDmgMult({}, s), 1.30, 'Assassin Death Mark: +30% damage vs a Decayed foe');
-      s.activity.decayUntil = now-1; near(FF.d3SetDmgMult({}, s), 1.0, 'Death Mark inert on a clean foe');
+      // Assassin's D3 set is now Quickfang Raiment (Twin Fangs tempo): Twin Razors (2 wounds/hit) + Bloodrush.
+      wearD3('assassin', 2); s.activity = { type:'combat', monsterHp:500 };
+      eq(FF.assassinWoundsPerHit(s), 2, 'Twin Razors (Assassin D3 2pc): main-hand hits open 2 wounds');
+      wearFull('assassin');
+      s.assassinBloodrushUntil = now + 4000;
+      ok(FF.assassinBloodrushActive(s), 'Bloodrush reads active while its 4s window runs');
+      eq(FF.ASSASSIN_BLOODRUSH_MULT, 0.75, 'Bloodrush is -25% attack time');
+      s.assassinBloodrushUntil = 0;
+      ok(!FF.assassinBloodrushActive(s), 'Bloodrush lapses with its timer');
       wearFull('sentinel'); s.activity = { type:'combat', monsterHp:500, decayStacks:3, decayUntil:now+4000 };
       near(FF.d3SetIncomingMult(s), 0.80, 'Sentinel Crypt Wall: Decayed foes deal 20% less');
       s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetIncomingMult(s), 1.0, 'Crypt Wall inert on a clean foe');
@@ -6246,6 +6250,10 @@
       wearD4('pyromancer', 1); near(FF.d4SetElementDmg(s, 'fire'), 0, 'one Cinderwyrm piece is not the 2pc');
 
       // --- Dragonscale defense aggregator (Scaleward +15% all-element resist) ---
+      // Coiled Shadow (Assassin D4 2pc, Nightstalker Silks): the Vanish window drops 7s -> 4s.
+      wearD4('assassin', 2); eq(FF.assassinVanishMs(s), 4000, 'Coiled Shadow: Vanish arms in 4s');
+      s.bodyArmor = {}; s.uniqueItems = {}; eq(FF.assassinVanishMs(s), FF.ASSASSIN_VANISH_MS, 'no D4 set -> the base 7s window');
+
       wearD4('herald', 2); near(FF.d4SetElementResist(s, 'fire'), 0.15, 'Scaleward: +15% resist, all elements');
       near(FF.d4SetElementResist(s, 'dark'), 0.15, 'Scaleward applies to every element');
       near(FF.elementResistMult(s, 'fire'), (1 - FF.elementResistBonus(s,'fire')) * 0.85, 'Scaleward folds x0.85 into elementResistMult');
@@ -6610,7 +6618,14 @@
       s.playerHp = FF.maxHp(s); s.activity = { type:'combat', monsterHp:500 };
       // DoT-tick multipliers.
       wearD2('plaguebearer', 2); near(FF.d2PoisonTickMult(s), 1.40, 'Plaguebearer Virulence: +40% poison ticks');
-      wearD2('assassin', 2);     near(FF.d2BleedTickMult(s), 1.0, 'Assassin D2 2pc no longer boosts bleed (now Armor Debuff)'); eq(FF.assassinArmorMaxStacks(s), 8, 'Assassin D2 2pc (Shredder): +3 max Armor Debuff stacks -> 8');
+      // Rite of Blood (Assassin D2 2pc): wounds consumed grant Vigor (+3% dmg each, cap 10).
+      wearD2('assassin', 2); s.assassinVigor = null;
+      eq(FF.assassinVigorAdd(5, s), 5, 'a 5-wound detonation grants 5 Vigor stacks');
+      near(FF.assassinVigorDmgMult(s), 1.15, 'Vigor at 5 stacks = +15% damage', 1e-9);
+      eq(FF.assassinVigorAdd(7, s), FF.ASSASSIN_VIGOR_MAX, 'Vigor caps at 10');
+      near(FF.assassinVigorDmgMult(s), 1 + 0.03*FF.ASSASSIN_VIGOR_MAX, 'max Vigor = +30% damage', 1e-9);
+      eq(FF.assassinCommunionLifesteal(s), 0, 'Communion lifesteal needs the FULL set, not 2pc');
+      s.assassinVigor = null;
       wearD2('pyromancer', 2);   near(FF.d2BurnTickMult(s), 1.40, 'Pyromancer Conflagration: +40% burn ticks');
       wearD2('ranger', 2);       near(FF.rangerAilmentDmgMult(s), 1.25, 'Ranger Barbed Ailments: +25% ailment ticks');
       // Barbed Ailments compounds with a class DoT bonus (e.g. poison) when both sets are... single-set only,
@@ -6623,10 +6638,13 @@
       wearD2('ranger', 4); ok(FF.enemyHasAilment(s), 'a poisoned foe counts as ailing');
       near(FF.d2SetDmgMult({hp:1000}, s), 1.15, "Ranger Hunter's Mark: +15% vs an ailing foe");
       s.activity = { type:'combat', monsterHp:500 }; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, "Hunter's Mark inert on a clean foe");
-      // Deep Wounds (Assassin D2 full): Armor Debuff lasts 2x (8s); 2pc Shredder still adds +3 max stacks.
-      wearD2('assassin', 4); s.activity = { type:'combat', monsterHp:1000 };
-      eq(FF.assassinArmorMaxStacks(s), 8, 'Assassin D2 full still carries the +3 max stacks');
-      near(FF.assassinArmorDurationMs(s), 8000, 'Assassin D2 full (Deep Wounds): Armor Debuff lasts 2x (8s)');
+      // Crimson Communion (Assassin D2 full): at max Vigor, hits heal 8% of damage dealt.
+      wearD2('assassin', 4); s.activity = { type:'combat', monsterHp:1000 }; s.assassinVigor = null;
+      FF.assassinVigorAdd(FF.ASSASSIN_VIGOR_MAX, s);
+      near(FF.assassinCommunionLifesteal(s), 0.08, 'Crimson Communion: 8% lifesteal at max Vigor', 1e-9);
+      FF.assassinVigorAdd(0, s); s.assassinVigor.stacks = 4;
+      eq(FF.assassinCommunionLifesteal(s), 0, 'Communion is inert below max Vigor');
+      s.assassinVigor = null;
       // Iaijutsu Mastery (Samurai 2pc): +50% on the opening strike (samuraiFirstStrike flag).
       wearD2('samurai', 2); s.activity = { type:'combat', monsterHp:500, samuraiFirstStrike:true };
       near(FF.d2SetDmgMult({hp:1000}, s), 1.50, 'Samurai Iaijutsu Mastery: +50% opening strike');
@@ -6967,9 +6985,13 @@
     // Duelist Redoublement (full).
     eq(FF.duelistFlourishStabs(setSt('duelist',4)), 5, 'Redoublement: Flourish = 5 stabs');
     eq(FF.duelistFlourishStabs(setSt('duelist',2)), 3, '2 of 4 -> 3 stabs');
-    // Assassin Shadowstep (full): 3s Vanish window.
-    eq(FF.assassinVanishMs(setSt('assassin',4)), 3000, 'Shadowstep: Vanish window arms in 3s');
-    eq(FF.assassinVanishMs(setSt('assassin',3)), 4000, '3 of 4 -> base 4s window');
+    // Assassin Deepcut Garb (D1): Wide Wounds (2pc) +2 cap; To the Bone (full) +55%/wound. The Vanish
+    // window is D4's business now — the D1 set never touches it.
+    eq(FF.assassinWoundCap(setSt('assassin',2)), FF.ASSASSIN_WOUND_MAX + 2, 'Wide Wounds: wound cap 5 -> 7');
+    eq(FF.assassinWoundCap(setSt('assassin',1)), FF.ASSASSIN_WOUND_MAX, '1 piece -> base 5-wound cap');
+    near(FF.assassinFangPerWound(setSt('assassin',4)), FF.ASSASSIN_FANG_PCT_D1, 'To the Bone: +55% per wound', 1e-9);
+    near(FF.assassinFangPerWound(setSt('assassin',2)), FF.ASSASSIN_FANG_PCT, '2 of 4 -> base +40% per wound', 1e-9);
+    eq(FF.assassinVanishMs(setSt('assassin',4)), FF.ASSASSIN_VANISH_MS, 'the D1 set leaves the 7s Vanish window alone');
     // Time-ramp capstones: Momentum Swing (Juggernaut) + Long Shot (Sharpshooter).
     near(FF.jugMomentumSwingMult(setSt('juggernaut',4, { activity:{type:'combat', lastSwingAt: now-3000} })), 1.30, 'Momentum Swing: +30% after a 3s gap', 1e-2);
     near(FF.jugMomentumSwingMult(setSt('juggernaut',4, { activity:{type:'combat', lastSwingAt: now-20000} })), 1.50, 'Momentum Swing caps at +50%', 1e-2);
@@ -10856,58 +10878,51 @@
     function leveled(){ var s = base(); s.xp.assassin = lvHi; return s; }
     var off = base(); off.equippedOffhand=null; off.equippedOffhandTier=0;
 
-    // Reworked ladder: Rhythm / Ambidexterity / Lacerate / Hemorrhage / Vanish.
-    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Rhythm,Ambidexterity,Lacerate,Hemorrhage,Vanish', 'reworked Assassin ladder');
+    // Twin Fangs ladder: Razor & Fang / Heavy Fang / Fang Strike / Flow of Blood / Vanish.
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Razor &amp; Fang,Heavy Fang,Fang Strike,Flow of Blood,Vanish', 'Twin Fangs Assassin ladder');
 
-    // Lv 1 Rhythm: 6 alternating hits fill the meter, priming a 2-strike flurry, then it resets.
-    var ract = {};
-    var built = ['main','off','main','off','main','off'].map(function(h){ return FF.assassinRhythmRegister(ract, h); });
-    eq(built.filter(Boolean).length, 0, 'building the Rhythm meter fires no echoes');
-    eq(ract.rhythmStacks, FF.ASSASSIN_RHYTHM_MAX, 'six alternating hits fill the meter');
-    eq(ract.rhythmFlurry, 2, 'a full meter primes a 2-strike flurry');
-    eq(FF.assassinRhythmRegister(ract, 'main'), true, 'flurry strike 1 echoes');
-    eq(FF.assassinRhythmRegister(ract, 'off'), true, 'flurry strike 2 echoes');
-    eq(ract.rhythmStacks, 0, 'the flurry resets the meter');
-    eq(FF.assassinRhythmRegister(ract, 'main'), false, 'the meter rebuilds after a flurry');
-    var ract2 = {}; FF.assassinRhythmRegister(ract2,'main'); FF.assassinRhythmRegister(ract2,'off');
-    FF.assassinRhythmRegister(ract2,'off'); // a repeated hand breaks the alternation
-    eq(ract2.rhythmStacks, 1, 'a repeated hand reseeds the meter to 1');
-
-    // Lv 20 Ambidexterity: off-hand claw swings at main-hand speed (no 30% penalty).
-    near(FF.offhandClawAttackIntervalMs(full), Math.max(200, FF.playerAttackIntervalMs(full)*FF.OFFHAND_CLAW_ATTACK_SPEED_MULT), 'Lv1: off-hand claw is 30% slower', 1);
+    // Lv 20 Heavy Fang: the off-hand swings 25% slower (on top of its natural 30% penalty) but hits +30% harder.
+    near(FF.offhandClawAttackIntervalMs(full), Math.max(200, FF.playerAttackIntervalMs(full)*FF.OFFHAND_CLAW_ATTACK_SPEED_MULT), 'Lv1: off-hand claw keeps its natural 30% slower pace', 1);
     var lv20 = base(); lv20.xp.assassin = FF.xpFloorForLevel(21);
-    near(FF.offhandClawAttackIntervalMs(lv20), Math.max(200, FF.playerAttackIntervalMs(lv20)), 'Lv20 Ambidexterity: off-hand swings at main-hand speed', 1);
+    near(FF.offhandClawAttackIntervalMs(lv20), Math.max(200, FF.playerAttackIntervalMs(lv20)*FF.OFFHAND_CLAW_ATTACK_SPEED_MULT*FF.ASSASSIN_HEAVYFANG_INTERVAL), 'Lv20 Heavy Fang: off-hand swings another 25% slower', 1);
+    eq(FF.ASSASSIN_HEAVYFANG_DMG, 1.30, 'Heavy Fang strikes +30% harder');
 
-    // Lv 40 Lacerate: each claw hit builds an Armor Debuff stack (cap 5).
-    var lact = { type:'combat', armorDebuffUntil:0 };
-    FF.assassinApplyLacerate(lact); FF.assassinApplyLacerate(lact);
-    eq(lact.armorDebuffStacks, 2, 'Lacerate: two hits -> 2 Armor Debuff stacks');
-    for(var _li=0; _li<10; _li++) FF.assassinApplyLacerate(lact);
-    eq(lact.armorDebuffStacks, FF.ASSASSIN_ARMOR_MAX, 'Lacerate caps at 5 stacks (no set)');
-    ok(lact.armorDebuffUntil > Date.now(), 'Lacerate refreshes the debuff duration');
-    var vact = { type:'combat', armorDebuffUntil:0, armorDebuffStacks:0 };
-    FF.assassinLacerateMaxStacks(vact);
-    eq(vact.armorDebuffStacks, FF.ASSASSIN_ARMOR_MAX, 'Vanish slams MAX Armor Debuff stacks at once');
+    // Lv 1 Razor & Fang: wounds open per main-hand hit (cap 5 base), refreshed on each application.
+    var S = FF._state, svAct = S.activity, svXp = S.xp.assassin, svVig = S.assassinVigor;
+    try {
+      S.xp.assassin = lvHi;
+      S.activity = { type:'combat', monsterHp:500, woundUntil:0 };
+      eq(FF.assassinWoundCap(S), FF.ASSASSIN_WOUND_MAX, 'base wound cap is 5 (no set)');
+      eq(FF.assassinWoundsPerHit(S), 1, 'one wound per main-hand hit (no set/legendary)');
+      FF.assassinOpenWounds(S.activity, 1); FF.assassinOpenWounds(S.activity, 1);
+      eq(FF.assassinWoundStacks(S), 2, 'two Razor hits -> 2 Open Wounds');
+      for(var _wi=0; _wi<10; _wi++) FF.assassinOpenWounds(S.activity, 1);
+      eq(FF.assassinWoundStacks(S), FF.ASSASSIN_WOUND_MAX, 'wounds cap at 5');
+      ok(FF.assassinWoundsFull(S), 'the fill reads as FULL at cap');
+      ok(S.activity.woundUntil > Date.now(), 'each application refreshes the shared 6s timer');
+      // A lapsed fill starts fresh.
+      S.activity.woundUntil = Date.now() - 1;
+      eq(FF.assassinWoundStacks(S), 0, 'lapsed wounds read as 0');
+      FF.assassinOpenWounds(S.activity, 1);
+      eq(FF.assassinWoundStacks(S), 1, 'a lapsed fill restarts from 1');
+      // Lv 40 Fang Strike math: +40%/wound base; D1 full raises to +55% (checked in the set suite).
+      near(FF.assassinFangPerWound(S), 0.40, 'Fang Strike detonates at +40% per wound (no set)', 1e-9);
+      eq(FF.ASSASSIN_FANG_PCT_SHADOWWYRM, 0.60, "Shadowwyrm's Fang detonates at +60% per wound");
+      // Lv 60 Flow of Blood: 8%/wound refund (10% with Wraithclaw).
+      eq(FF.ASSASSIN_FLOW_REFUND, 0.08, 'Flow of Blood refunds 8% of both attack timers per wound');
+      // Vigor is set-gated: without the D2 2pc, no stacks accrue.
+      S.assassinVigor = null;
+      eq(FF.assassinVigorAdd(5, S), 0, 'Vigor is inert without the D2 set');
+      eq(FF.assassinVigorDmgMult(S), 1, 'no Vigor -> no damage bonus');
+    } finally { S.activity = svAct; S.xp.assassin = svXp; S.assassinVigor = svVig; }
 
-    // Lv 60 Hemorrhage: crits deal +25% damage per Armor Debuff stack.
-    var hStk = leveled(); hStk.activity = { type:'combat', armorDebuffUntil:Date.now()+3000, armorDebuffStacks:4 };
-    near(FF.assassinHemorrhageCritMult(hStk), 1 + 0.25*4, 'Hemorrhage: +25% crit dmg per stack (4 -> x2.0)');
-    var hClean = leveled(); hClean.activity = { type:'combat', armorDebuffUntil:0, armorDebuffStacks:0 };
-    eq(FF.assassinHemorrhageCritMult(hClean), 1, 'Hemorrhage neutral with no Armor Debuff');
-    var h40 = base(); h40.xp.assassin = FF.xpFloorForLevel(41); h40.activity = { type:'combat', armorDebuffUntil:Date.now()+3000, armorDebuffStacks:3 };
-    eq(FF.assassinHemorrhageCritMult(h40), 1, 'Hemorrhage inactive below Lv60');
-    // Lacerate armour shred: each stack ignores 6% of the foe's armour (30% at 5 stacks).
-    var shr = leveled(); shr.activity = { type:'combat', armorDebuffUntil:Date.now()+3000, armorDebuffStacks:5 };
-    near(FF.assassinArmorShred(shr), 0.30, 'Lacerate: 5 stacks ignore 30% of the foe armour', 1e-9);
-    shr.activity.armorDebuffStacks = 1; near(FF.assassinArmorShred(shr), 0.06, 'Lacerate: one stack ignores 6%', 1e-9);
-
-    // Lv 80 Vanish: 4s untouched empowers the next strike (+100%).
+    // Lv 80 Vanish: 7s untouched empowers the next strike (+100%); 5s is no longer enough.
     eq(FF.ASSASSIN_VANISH_MULT, 2, 'Vanish empowers the next strike x2');
-    var vReady = leveled(); vReady.activity = { type:'combat', lastDamagedAt:Date.now()-5000 };
-    ok(FF.assassinVanishReady(vReady), 'Vanish ready after 4s untouched (Lv80)');
-    var vHot = leveled(); vHot.activity = { type:'combat', lastDamagedAt:Date.now()-1000 };
-    ok(!FF.assassinVanishReady(vHot), 'Vanish not ready within 4s of taking a hit');
-    var v60 = base(); v60.xp.assassin = FF.xpFloorForLevel(61); v60.activity = { type:'combat', lastDamagedAt:Date.now()-5000 };
+    var vReady = leveled(); vReady.activity = { type:'combat', lastDamagedAt:Date.now()-8000 };
+    ok(FF.assassinVanishReady(vReady), 'Vanish ready after 7s untouched (Lv80)');
+    var vFive = leveled(); vFive.activity = { type:'combat', lastDamagedAt:Date.now()-5000 };
+    ok(!FF.assassinVanishReady(vFive), '5s untouched is not enough (base window is now 7s)');
+    var v60 = base(); v60.xp.assassin = FF.xpFloorForLevel(61); v60.activity = { type:'combat', lastDamagedAt:Date.now()-8000 };
     ok(!FF.assassinVanishReady(v60), 'Vanish inactive below Lv80');
 
     // Class familiar (dark dual-claw killer with lifesteal).
