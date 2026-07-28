@@ -619,6 +619,74 @@
   });
 
   // ---- Estate: offline queue drain finishes every action the away-gap covers, not just the head ----
+  // ---- Totems: the Construction craft, estate placement plumbing, and the +tier crop-yield aura ------
+  suite('totems: Construction craft + estate crop-yield aura', function(){
+    // The skill: a Building (Construction) craft with 20 tiers, t1..t20 -- the bonus IS the tier
+    // index (+1 at t1 up to +20 at t20), so a +0 t0 totem deliberately doesn't exist.
+    ok(FF.BUILDING_SKILL_IDS.indexOf('totems') !== -1, 'Totems is a Construction (Building) skill');
+    var sk = FF.CRAFTING_SKILLS.totems;
+    ok(sk && sk.label === 'Totems', 'the Totems craft skill exists');
+    eq(sk.recipes.length, 20, '20 Totem tiers (t1..t20; no +0 t0 totem)');
+    ok(!FF.ALL_SELLABLE.totem_t0 && !!FF.ALL_SELLABLE.totem_t1 && !!FF.ALL_SELLABLE.totem_t20, 'totem items register t1..t20 only');
+    var r5 = sk.recipes.filter(function(r){ return r.id==='totem_t5'; })[0];
+    ok(r5 && r5.inputs.woodcarving_t5 === 5 && r5.inputs.carpentry_t5 === 10, 'a Totem consumes 5 equal-tier Woodcarvings + 10 Planks');
+    ok(/ Totem$/.test(r5.name), 'totems are named after their wood ("' + r5.name + '")');
+    var cat = FF.buildItemCatalog();
+    ok(cat.totem_t1 === 1 && cat.totem_t20 === 1, 'totems are tradeable in the server item catalog');
+    eq(FF.marketItemCategory('totem_t3'), 'other', 'totems browse under Other (estate placeables) on the market');
+    // Placement plumbing: job kind 'totem' behaves like the other buildings.
+    eq(FF.estateJobMaterials({ kind:'totem', totemId:'totem_t5' })[0][0], 'totem_t5', 'a totem job reserves the totem item');
+    ok(/Raise .*Totem/.test(FF.estateJobLabel({ kind:'totem', totemId:'totem_t5' })), 'the queue labels a totem job "Raise <name>"');
+    var proj = { type:'paved', workshopId:null, cottageId:null, totemId:null };
+    FF.estateApplyProjection(proj, { kind:'totem', totemId:'totem_t5' });
+    eq(proj.totemId, 'totem_t5', 'projection carries the queued totem onto the tile');
+    ok(FF.estateQueuedJobValid({ kind:'totem' }, { type:'paved' }).ok, 'a queued totem is valid on an empty paved tile');
+    ok(!FF.estateQueuedJobValid({ kind:'totem' }, { type:'paved', cottageId:'cottage_t1' }).ok, 'a queued totem is void once a building stands there');
+    ok(!FF.estateQueuedJobValid({ kind:'workshop' }, { type:'paved', totemId:'totem_t5' }).ok, 'a totem occupies the tile\'s single building slot');
+    // Completion sets the cell and grants Totems XP.
+    var s = FF._state;
+    FF.estUse(false);
+    var cell00 = s.estate.grid[0][0];
+    var savedCell = Object.assign({}, cell00), savedXp = s.xp.totems;
+    cell00.type = 'paved'; cell00.paveTileId = 'paving_t5'; cell00.workshopId = null; cell00.cottageId = null; cell00.totemId = null;
+    s.xp.totems = 0;
+    FF.applyEstateJobCompletion(s.estate, { kind:'totem', x:0, y:0, totemId:'totem_t5' }, true, false);
+    eq(cell00.totemId, 'totem_t5', 'completion raises the totem on the tile');
+    ok(s.xp.totems > 0, 'raising a totem grants Totems XP');
+    Object.assign(cell00, savedCell); s.xp.totems = savedXp;
+    if(!('totemId' in savedCell)) cell00.totemId = null; // Object.assign can't remove a key the snapshot never had
+    // The yield aura: +tier to every Field within 1 tile (diagonals count), stacking, personal only.
+    var savedGrid = s.estate.grid;
+    function mkCell(){ return { type:'dirt', height:1, owned:true, workshopId:null, cottageId:null, totemId:null, fieldTier:null }; }
+    var g = []; for(var gx=0; gx<5; gx++){ var col=[]; for(var gy=0; gy<5; gy++){ col.push(mkCell()); } g.push(col); }
+    s.estate.grid = g;
+    g[2][2].fieldTier = 5;
+    g[1][1].totemId = 'totem_t20';   // diagonal neighbour -> counts
+    g[3][2].totemId = 'totem_t5';    // orthogonal neighbour -> counts
+    g[4][4].totemId = 'totem_t20';   // 2 tiles away -> out of range
+    eq(FF.totemYieldBonusAt('personal','2,2'), 25, 'adjacent totems stack: +20 (t20) +5 (t5), the out-of-range one ignored');
+    eq(FF.totemYieldBonusAt('personal','0,4'), 0, 'a plot with no totem in range gets nothing');
+    eq(FF.totemYieldBonusAt('guild','2,2'), 0, 'guild plots get no totem bonus (personal-estate only)');
+    // A real harvest applies the flat bonus: same crop, with vs without totems in range -> diff = +25.
+    var savedPlots = s.farmingPlots, savedInv = s.inventory, savedEarned = s.itemEarnedTotal;
+    s.inventory = {}; s.itemEarnedTotal = {};
+    g[0][4].fieldTier = 5;
+    var mkPlot = function(){ return { cropType:'fiber', tierIndex:0, plantedAt:Date.now()-1000, readyAt:Date.now()-500 }; };
+    s.farmingPlots = { '2,2': mkPlot(), '0,4': mkPlot() };
+    var savedRand = Math.random;
+    Math.random = function(){ return 1; };   // no Green Thumb / seed-drop / familiar rolls -> deterministic yields
+    FF.harvestPlot('personal','0,4', true);
+    var plain = s.inventory.farming_t0 || 0;
+    FF.harvestPlot('personal','2,2', true);
+    var boosted = (s.inventory.farming_t0 || 0) - plain;
+    Math.random = savedRand;
+    ok(plain > 0, 'the control harvest yields crops');
+    eq(boosted - plain, 25, 'a harvest beside the totems yields exactly +25 more crops');
+    s.estate.grid = savedGrid; s.farmingPlots = savedPlots; s.inventory = savedInv; s.itemEarnedTotal = savedEarned;
+    // The 3D models exist for both estate render modes.
+    ok(typeof FF.estateDrawTotem === 'function' && typeof FF.drawEstateTotemModel === 'function' && typeof FF.estateDrawTdTotem === 'function', 'totem models exist for iso and top-down rendering');
+  });
+
   suite('estate: offline queue drain', function(){
     var s = FF._state;
     FF.estUse(false);                                  // personal estate is the drain target
@@ -1177,7 +1245,7 @@
   // ---- Building / Outfitting are cosmetic sub-nav groups carved out of Crafting -----------
   suite('building and outfitting split the crafting skills without gaps or overlap', function(){
     var building = FF.BUILDING_SKILL_IDS, outfitting = FF.OUTFITTING_SKILL_IDS, craftTab = FF.CRAFTING_TAB_SKILL_IDS;
-    eq(building.join(','), 'carpentry,stonecutting,paving,masonry', 'building holds the estate-build skills');
+    eq(building.join(','), 'carpentry,stonecutting,paving,masonry,totems', 'building holds the estate-build skills');
     eq(outfitting.join(','), 'weaponsmithing,armorsmithing,tailoring,shieldsmithing,runesmithing,arcanism,fletching,bowyer,leatherworking,jewelrycrafting', 'outfitting holds the gear skills');
     // Every crafting skill lands in exactly one of the three sub-tab groups.
     var union = building.concat(outfitting).concat(craftTab).slice().sort();

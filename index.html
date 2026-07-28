@@ -3136,6 +3136,28 @@
           });
         }
         return list;
+      })() },
+    totems: { label:'Totems', icon:svgIcon('dowel','#a07a44'), color:'#a07a44',
+      // Construction skill: mount 5 equal-tier Woodcarvings on 10 Planks into a Totem -- an Estate
+      // decoration placed on a paved tile that grants +<tier> crop yield to every Field within 1 tile
+      // (see totemYieldBonusAt). Tiers run t1..t20 (+1 yield at t1 up to +20 at t20): the bonus IS the
+      // tier index, so a t0 totem would grant nothing and deliberately doesn't exist. Named after the
+      // Plank's wood, like Cottages.
+      recipes: (function(){
+        var list = [];
+        for(var i=1;i<TIER_COUNT;i++){
+          list.push({
+            id:'totem_t'+i,
+            name: FORESTRY_NAMES[i]+' Totem',
+            levelReq: TIER_LEVELS[i],
+            xp: tierXp(30,i),
+            time: tierTime(20,0.5,i),
+            sell: tierSell(15,i),
+            icon: svgIcon('dowel',WOODCARVING_COLORS[i]),
+            inputs: tierInput2('woodcarving',5,'carpentry',10)(i)
+          });
+        }
+        return list;
       })() }
   };
 
@@ -3290,7 +3312,7 @@
     tinkering:'Tinkerer\'s Wrench', pyrotechnics:'Fuse Crimper', inscription:'Inscribing Stylus',
     pottery:'Potter\'s Wheel', goldsmithing:'Jeweler\'s Loupe',
     chandlery:'Wick Dipper', woodcarving:'Carving Chisel', glassblowing:'Blowpipe', cooperage:'Cooper\'s Adze',
-    fertilizer:'Muck Fork'
+    fertilizer:'Muck Fork', totems:'Totem Mallet'
   };
   var CRAFT_TOOL_SPEED = [];
   var CRAFT_TOOL_SUCCESS = [];
@@ -4759,7 +4781,8 @@
     woodcarving:    [['fineMotor',2],['sleightOfHand',1],['logic',1]],
     glassblowing:   [['fineMotor',2],['sleightOfHand',1],['logic',1]],
     cooperage:      [['grossMotor',2],['sleightOfHand',1],['logic',1]],
-    fertilizer:     [['grossMotor',2],['stamina',1],['handStrength',1]]
+    fertilizer:     [['grossMotor',2],['stamina',1],['handStrength',1]],
+    totems:         [['fineMotor',2],['handStrength',1],['logic',1]]
   };;
   // Physique XP from a gather/craft task scales with the item's tier: each associated physique
   // gains (tier+1) XP -- 1 at t0 up to 21 at t20 (replaces the old fixed per-physique weights).
@@ -5439,7 +5462,7 @@
   // category in the Resources nav. These skills remain crafting skills functionally --
   // CRAFT_SKILL_IDS (tools, workshops, XP, familiars, saves, etc.) is deliberately left whole;
   // the split just reorganizes which sub-tab bar each skill appears under.
-  var BUILDING_SKILL_IDS = ['carpentry','stonecutting','paving','masonry'];
+  var BUILDING_SKILL_IDS = ['carpentry','stonecutting','paving','masonry','totems'];
   var OUTFITTING_SKILL_IDS = ['weaponsmithing','armorsmithing','tailoring','shieldsmithing','runesmithing','arcanism','fletching','bowyer','leatherworking','jewelrycrafting'];
   var CRAFTING_TAB_SKILL_IDS = CRAFT_SKILL_IDS.filter(function(id){
     return BUILDING_SKILL_IDS.indexOf(id)===-1 && OUTFITTING_SKILL_IDS.indexOf(id)===-1;
@@ -7712,6 +7735,7 @@
     glassblowing:   { name:'Bulb',   icon:svgIcon('potion','#8ac8e0'), spells:[hitSpell('Glass Shard','slashing',14), buffSpell('Glass Cannon','critDmg',0.34,8), weakenSpell('Blinding Glare',0.3,8), buffSpell('Prism Focus','critChance',0.12,8)] },
     cooperage:      { name:'Stave',  icon:svgIcon('chest','#a0783c'), spells:[hitSpell('Barrel Bash','blunt',14), armorSpell('Ironbound',1.7,6), buffSpell('Braced Staves','block',0.16,8), siphonSpell('Tap the Cask',12)] },
     fertilizer:     { name:'Sprout', icon:svgIcon('spice','#6b8f4e'), spells:[hitSpell('Mulch Toss','blunt',14), regenSpell('Bloom',5,7), buffSpell('Fertile Ground','dmgSlash',0.3,8), healSpell('Compost Heal',16)] },
+    totems:         { name:'Effigy', icon:svgIcon('dowel','#a07a44'), spells:[hitSpell('Totem Slam','blunt',14), armorSpell('Warding Pole',1.7,6), buffSpell('Ancestral Might','dmgBlunt',0.3,8), regenSpell('Rooted Vigor',5,7)] },
     tanning:        { name:'Suede',  icon:svgIcon('hide','#8a6a42'), spells:[hitSpell('Rawhide Lash','slashing',13), armorSpell('Cured Hide',1.6,6), buffSpell('Supple Step','dodge',0.14,8), regenSpell("Tanner's Rest",4,6)] },
     weaving:        { name:'Loom',   icon:svgIcon('spool','#c8b088'), spells:[slowSpell('Snare Weave',0.4,10), armorSpell('Woven Ward',1.7,6), buffSpell('Tight Weave','block',0.15,8), buffSpell('Spun Speed','haste',0.16,8)] },
     papermaking:    { name:'Sheet',  icon:svgIcon('tabard','#e8dcc0'), spells:[hitSpell('Paper Cut','slashing',12), buffSpell('Crisp Edge','critChance',0.11,8), armorSpell('Pulp Ward',1.5,6), regenSpell('Fresh Sheet',4,6)] },
@@ -7834,6 +7858,7 @@
     glassblowing:   [ hitSpell('Glass Shard','slashing',14), buffSpell('Glass Cannon','critDmg',0.34,8), weakenSpell('Blinding Glare',0.3,8), buffSpell('Prism Focus','critChance',0.12,8) ],
     cooperage:      [ hitSpell('Barrel Bash','blunt',14), armorSpell('Ironbound',1.7,6), buffSpell('Braced Staves','block',0.16,8), siphonSpell('Tap the Cask',12) ],
     fertilizer:     [ hitSpell('Mulch Toss','blunt',14), regenSpell('Bloom',5,7), buffSpell('Fertile Ground','dmgSlash',0.3,8), healSpell('Compost Heal',16) ],
+    totems:         [ hitSpell('Totem Slam','blunt',14), armorSpell('Warding Pole',1.7,6), buffSpell('Ancestral Might','dmgBlunt',0.3,8), regenSpell('Rooted Vigor',5,7) ],
     tanning:        [ hitSpell('Rawhide Lash','slashing',13), armorSpell('Cured Hide',1.6,6), buffSpell('Supple Step','dodge',0.14,8), regenSpell("Tanner's Rest",4,6) ],
     weaving:        [ slowSpell('Snare Weave',0.4,10), armorSpell('Woven Ward',1.7,6), buffSpell('Tight Weave','block',0.15,8), buffSpell('Spun Speed','haste',0.16,8) ],
     papermaking:    [ hitSpell('Paper Cut','slashing',12), buffSpell('Crisp Edge','critChance',0.11,8), armorSpell('Pulp Ward',1.5,6), regenSpell('Fresh Sheet',4,6) ],
@@ -7906,7 +7931,7 @@
     digging:'earth', forestry:'earth', mining:'earth', fishing:'water', herbalism:'earth', botany:'earth', foraging:'earth', butchering:'dark', beekeeping:'light', prospecting:'earth', ranching:'earth', mycology:'dark', salvaging:'earth', essence:'light', diving:'water', tapping:'earth', spelunking:'dark',
     // Crafting
     carpentry:'earth', metallurgy:'fire', roasting:'fire', cooking:'water', alchemy:'water', bowyer:'earth', fletching:'earth', baking:'fire',
-    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark', tanning:'earth', weaving:'light', papermaking:'earth', bookbinding:'light', tinkering:'earth', pyrotechnics:'fire', inscription:'light', pottery:'fire', goldsmithing:'light', chandlery:'fire', woodcarving:'earth', glassblowing:'fire', cooperage:'earth', fertilizer:'water',
+    tailoring:'light', stonecutting:'earth', leatherworking:'earth', jewelrycrafting:'light', masonry:'earth', paving:'earth', mixology:'water', brewing:'water', confectionery:'light', gemcutting:'light', enchanting:'dark', dairy:'water', gastronomy:'fire', apothecary:'dark', tanning:'earth', weaving:'light', papermaking:'earth', bookbinding:'light', tinkering:'earth', pyrotechnics:'fire', inscription:'light', pottery:'fire', goldsmithing:'light', chandlery:'fire', woodcarving:'earth', glassblowing:'fire', cooperage:'earth', fertilizer:'water', totems:'earth',
     archaeology:'dark', blacksmithing:'fire', weaponsmithing:'fire', armorsmithing:'earth', shieldsmithing:'earth', runesmithing:'light', arcanism:'light',
     // Farming
     farming:'earth',
@@ -7960,7 +7985,7 @@
     essence:{s:'starburst',c:'#7a8ac8',ear:'antenna'}, inscription:{s:'corespiral',c:'#7a5aa8',ear:'horn'},
     diving:{s:'droplet',c:'#4a7ac8',ear:'fin'},
     tapping:{s:'droplet',c:'#c89a3a',ear:'leaf'}, spelunking:{s:'gem',c:'#7a8a9a',ear:'horn'},
-    pottery:{s:'urn',c:'#c4885a',ear:'round'}, goldsmithing:{s:'ring',c:'#d8b048',ear:'horn'}, fertilizer:{s:'spice',c:'#6b8f4e',ear:'round'},
+    pottery:{s:'urn',c:'#c4885a',ear:'round'}, goldsmithing:{s:'ring',c:'#d8b048',ear:'horn'}, fertilizer:{s:'spice',c:'#6b8f4e',ear:'round'}, totems:{s:'dowel',c:'#a07a44',ear:'horn'},
     chandlery:{s:'candle',c:'#e8c84a',ear:'halo'}, woodcarving:{s:'log',c:'#a07a44',ear:'leaf'}, glassblowing:{s:'potion',c:'#8ac8e0',ear:'antenna'}, cooperage:{s:'chest',c:'#a0783c',ear:'round'},
     tanning:{s:'hide',c:'#8a6a42',ear:'round'}, weaving:{s:'spool',c:'#c8b088',ear:'cat'},
     papermaking:{s:'tabard',c:'#e8dcc0',ear:'round'}, bookbinding:{s:'brain',c:'#7a5aa8',ear:'horn'},
@@ -8997,6 +9022,24 @@
 
   // batch=true suppresses the per-plot log/toast/save (used by Harvest All). Returns the harvested
   // crop data (for a batch summary), or null if nothing was harvested.
+  // ---- Totem yield bonus: each Totem raised on the PERSONAL estate grants a flat +<tier> crops per
+  // harvest to every Field within 1 tile (Chebyshev distance <= 1, so diagonals count). Multiple totems
+  // in range stack. Guild plots get nothing -- totems are personal-estate only.
+  function totemYieldBonusAt(scope, key){
+    if(scope !== 'personal') return 0;
+    var grid = state.estate && state.estate.grid;
+    if(!grid || typeof key !== 'string') return 0;
+    var parts = key.split(','), px = parseInt(parts[0],10), py = parseInt(parts[1],10);
+    if(!isFinite(px) || !isFinite(py)) return 0;
+    var bonus = 0;
+    for(var dx=-1; dx<=1; dx++){
+      for(var dy=-1; dy<=1; dy++){
+        var c = grid[px+dx] && grid[px+dx][py+dy];
+        if(c && c.totemId) bonus += itemTierFromId(c.totemId);
+      }
+    }
+    return bonus;
+  }
   function harvestPlot(scope, key, batch){
     var map = farmPlotMap(scope);
     var plot = map[key];
@@ -9005,9 +9048,11 @@
     var cropData = getCropDataForPlot(plot);
     if(!cropData){ delete map[key]; needsRender = true; return null; } // self-heal a bad cropType
     // Base 5 per harvest; fertilizer doubles it to 10 (Composter can push a fertilized plot to 3x = 15);
-    // Green Thumb may add one more.
+    // Green Thumb may add one more; nearby Totems add their flat +tier on top.
     var yieldQty = FARM_BASE_YIELD * (plot.fertilized ? (composterTripleYield() ? 3 : 2) : 1);
     yieldQty += greenThumbExtraYield();
+    var totemBonus = totemYieldBonusAt(scope, key);
+    yieldQty += totemBonus;
     addItem(cropData.id, yieldQty);
     bumpStat('harvested_' + cropData.id); // crops harvested (by crop item), powers "Harvest 1 Cotton"
     // 75% chance to recover a seed of the crop just harvested (keeps fields self-sustaining).
@@ -9019,7 +9064,7 @@
     maybeSummonFamiliar('farming');
     if(!batch){
       var seedName = (gotSeed && ALL_SELLABLE[seedId]) ? ALL_SELLABLE[seedId].name : '';
-      addLog('You harvested ' + yieldQty + '&times; ' + cropData.name + (plot.fertilized ? ' (fertilized)' : '') + (gotSeed ? ' and recovered a ' + seedName : '') + '.', 'important');
+      addLog('You harvested ' + yieldQty + '&times; ' + cropData.name + (plot.fertilized ? ' (fertilized)' : '') + (totemBonus > 0 ? ' (+' + totemBonus + ' totem)' : '') + (gotSeed ? ' and recovered a ' + seedName : '') + '.', 'important');
       spawnFloatingText('+' + yieldQty + ' ' + cropData.name + (gotSeed ? ' +1 Seed' : ''), 'ft-success');
     }
     delete map[key];
@@ -9226,6 +9271,7 @@
     if(!cropData){ delete map[key]; return; }
     var yieldQty = FARM_BASE_YIELD * (plot.fertilized ? (composterTripleYield() ? 3 : 2) : 1);
     yieldQty += greenThumbExtraYield();
+    yieldQty += totemYieldBonusAt(scope, key); // nearby Totems boost offline harvests too
     addItem(cropData.id, yieldQty);
     bumpStat('harvested_' + cropData.id); // offline catch-up harvest counts too, powers "Harvest 1 Cotton"
     var seedId = cropSeedId(plot.cropType, plot.tierIndex);
@@ -11902,7 +11948,7 @@
     OFFHAND_STYLE_IDS.forEach(function(id){ offhandRarities[id] = 'normal'; });
     var xpObj = {
       digging:0, forestry:0, mining:0, fishing:0, herbalism:0, botany:0, foraging:0, butchering:0, beekeeping:0, prospecting:0, ranching:0, mycology:0, salvaging:0, essence:0, diving:0, tapping:0, spelunking:0,
-      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0, tanning:0, weaving:0, papermaking:0, bookbinding:0, tinkering:0, pyrotechnics:0, inscription:0, pottery:0, goldsmithing:0, chandlery:0, woodcarving:0, glassblowing:0, cooperage:0, fertilizer:0,
+      carpentry:0, metallurgy:0, roasting:0, cooking:0, alchemy:0, bowyer:0, fletching:0, baking:0, tailoring:0, brewing:0, confectionery:0, gemcutting:0, enchanting:0, dairy:0, gastronomy:0, apothecary:0, tanning:0, weaving:0, papermaking:0, bookbinding:0, tinkering:0, pyrotechnics:0, inscription:0, pottery:0, goldsmithing:0, chandlery:0, woodcarving:0, glassblowing:0, cooperage:0, fertilizer:0, totems:0,
       stonecutting:0, weaponsmithing:0, armorsmithing:0, shieldsmithing:0, runesmithing:0, arcanism:0, blacksmithing:0, leatherworking:0, paving:0,
       masonry:0, mixology:0, archaeology:0, fiberharvesting:0, grainharvesting:0, herbharvesting:0,
       shieldSmall:0, shieldMedium:0, shieldLarge:0, quiver:0, warding:0, wands:0, staves:0, scepters:0,
@@ -16837,6 +16883,7 @@
                   if(cell.paveTileId === undefined) cell.paveTileId = null;
                   if(cell.workshopId === undefined) cell.workshopId = null;
                   if(cell.cottageId === undefined) cell.cottageId = null;
+                  if(cell.totemId === undefined) cell.totemId = null;
                   if(cell.fieldTier === undefined) cell.fieldTier = null;
                   if(typeof cell.owned !== 'boolean') cell.owned = estateIsCoreTile(gx, gy);
                   if(cell.obstacle === undefined) cell.obstacle = cell.owned ? null : generateEstateObstacle();
@@ -23011,6 +23058,11 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.54', date:'Jul 28', heading:'Totems: Woodcarving finds its purpose', items:[
+      'New Construction skill — Totems: mount 5 equal-tier Woodcarvings on 10 Carpentry Planks to carve a Totem (20 tiers, Birch up to Sequoia). Comes with its own familiar, Blacksmithing tool (Totem Mallet), and a Totems Workshop.',
+      'Raise Totems on your Estate: place one on any paved tile of your personal estate (tier ≤ the pavement, 2 min per tier to raise, remove any time to get it back). Each Totem is a hand-carved pole that towers taller and grander with tier.',
+      'Totems bless your Fields: every Field within 1 tile of a Totem (diagonals count) yields a flat +1 crop per harvest per Totem tier — +5 from a Poplar Totem up to +20 from a Sequoia Totem, stacking across multiple Totems, on top of Fertilizer and Green Thumb, offline harvests included. The Farming tab shows each Field\'s totem bonus.'
+    ]},
     { v:'0.0.53', date:'Jul 28', heading:'Blueprints and legendary accessories hit the Auction House', items:[
       'Masterwork Blueprints are now tradeable: every dungeon Blueprint can be listed and bid on in the Marketplace, under a new Blueprints category chip. They also live in your ordinary Inventory bag now (your existing stock moves over automatically) — the Blueprints tab works exactly as before.',
       'Legendary accessories are tradeable too: Mastercrafted Signets, Shrouds and Pendants (all rarities) can be bought and sold under the Accessories category. Legendary weapons, shields, wards and armor-set pieces stay untradeable — they are unique items.',
@@ -23695,6 +23747,7 @@
       case 'pave':     return [[job.paveTileId, ESTATE_PAVE_TILE_COST]]; // upgrades cost the same 20 TARGET tiles as a fresh pave
       case 'workshop': return job.upgrade ? [['carpentry_t'+itemTierFromId(job.workshopId), ESTATE_BUILDING_UPGRADE_PLANKS]] : [[job.workshopId, 1]];
       case 'cottage':  return job.upgrade ? [['carpentry_t'+itemTierFromId(job.cottageId), ESTATE_BUILDING_UPGRADE_PLANKS]] : [[job.cottageId, 1]];
+      case 'totem':    return [[job.totemId, 1]];
       case 'field':    return [['digging_t'+job.fieldTier, 100]];
       case 'raise':    return [[ESTATE_DIRT_ITEM_ID, ESTATE_RAISE_DIRT_COST]];
       default:         return []; // lower, clear
@@ -23712,6 +23765,7 @@
     else if(job.kind === 'pave'){ p.type = 'paved'; p.paveTileId = job.paveTileId; }
     else if(job.kind === 'workshop') p.workshopId = job.workshopId;
     else if(job.kind === 'cottage') p.cottageId = job.cottageId;
+    else if(job.kind === 'totem') p.totemId = job.totemId;
     else if(job.kind === 'field') p.fieldTier = job.fieldTier;
     else if(job.kind === 'raise') p.height = Math.min(ESTATE_MAX_HEIGHT-1, p.height + 1);
     else if(job.kind === 'lower') p.height = Math.max(0, p.height - 1);
@@ -23720,7 +23774,7 @@
     var cell = state.estate && state.estate.grid[x] && state.estate.grid[x][y];
     if(!cell) return null;
     var p = { height:cell.height, type:cell.type, obstacle:cell.obstacle, paveTileId:cell.paveTileId,
-              workshopId:cell.workshopId, cottageId:cell.cottageId, fieldTier:cell.fieldTier, owned:cell.owned };
+              workshopId:cell.workshopId, cottageId:cell.cottageId, totemId:cell.totemId, fieldTier:cell.fieldTier, owned:cell.owned };
     if(state.estate.job && state.estate.job.x === x && state.estate.job.y === y) estateApplyProjection(p, state.estate.job);
     estateQueue().forEach(function(q){ if(q.x === x && q.y === y) estateApplyProjection(p, q); });
     return p;
@@ -23761,7 +23815,7 @@
                          return { ok:true };
                        }
                        if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
-                       if(c.workshopId) return { ok:false, msg:'that tile already has a workshop' };
+                       if(c.workshopId || c.totemId) return { ok:false, msg:'that tile already has a building' };
                        return { ok:true };
       case 'cottage':  if(job.upgrade){
                          var _uc = COTTAGE_ITEMS[c.cottageId], _ucT = itemTierFromId(job.cottageId);
@@ -23771,7 +23825,10 @@
                          return { ok:true };
                        }
                        if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
-                       if(c.workshopId || c.cottageId) return { ok:false, msg:'that tile already has a building' };
+                       if(c.workshopId || c.cottageId || c.totemId) return { ok:false, msg:'that tile already has a building' };
+                       return { ok:true };
+      case 'totem':    if(c.type!=='paved') return { ok:false, msg:'that tile is no longer paved' };
+                       if(c.workshopId || c.cottageId || c.totemId) return { ok:false, msg:'that tile already has a building' };
                        return { ok:true };
     }
     return { ok:true };
@@ -23901,6 +23958,7 @@
       case 'pave':     var pr = getPavingRecipe(job.paveTileId); return job.upgrade ? ('Upgrade pavement' + (pr ? ' to ' + pr.name : '')) : ('Pave' + (pr ? ' with ' + pr.name : ''));
       case 'workshop': return (job.upgrade ? 'Upgrade to ' : 'Build ') + ((WORKSHOP_ITEMS[job.workshopId]||{}).name || 'Workshop');
       case 'cottage':  return (job.upgrade ? 'Upgrade to ' : 'Build ') + ((COTTAGE_ITEMS[job.cottageId]||{}).name || 'Cottage');
+      case 'totem':    return 'Raise ' + ((totemItem(job.totemId)||{}).name || 'Totem');
       case 'field':    return (job.upgrade ? 'Upgrade to ' : 'Till ') + ((FARM_FIELD_TIERS['field_t'+job.fieldTier]||{}).name || 'Field');
     }
     return job.kind;
@@ -24030,6 +24088,9 @@
     } else if(job.kind === 'cottage'){
       addItem(job.cottageId, 1); // refund the cottage
       addLog('You cancelled building the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + ' (returned to inventory).', 'important');
+    } else if(job.kind === 'totem'){
+      addItem(job.totemId, 1); // refund the totem
+      addLog('You cancelled raising the ' + ((totemItem(job.totemId)||{}).name||'totem') + ' (returned to inventory).', 'important');
     } else if(job.kind === 'field'){
       addItem('digging_t'+job.fieldTier, 100); // refund the soil
       addLog('You cancelled tilling the ' + (DIGGING_NAMES[job.fieldTier]||'') + ' Field (recovered 100 ' + diggingResName(job.fieldTier) + ').', 'important');
@@ -24149,6 +24210,18 @@
         addLog('Finished ' + (job.upgrade?'upgrading to':'building') + ' the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + '. +' + cotXp + ' Carpentry XP.' + (cadj ? ' Linked to the adjacent ' + workshopSkillLabel(WORKSHOP_ITEMS[cadj.workshopId].skillId) + ' Workshop.' : ' Place it beside a single Workshop to house a Peon.'), 'important');
         spawnFloatingText((job.upgrade?'Cottage upgraded!':'Cottage built!') + ' +' + cotXp + ' Carpentry XP', 'ft-bonus');
         if(isGuild) guildLogPush('estate', (job.upgrade?'upgraded to':'built') + ' the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'Cottage') + ' at (' + job.x + ', ' + job.y + ')');
+      }
+      return true;
+    }
+    if(job.kind === 'totem'){
+      cell.totemId = job.totemId;
+      if(giveRewards){
+        bumpStat('totem_raised'); // totems raised on the estate
+        var ttT = itemTierFromId(job.totemId);
+        var ttXp = estateBuildXp(ttT);
+        addXp('totems', ttXp);
+        addLog('Finished raising the ' + ((totemItem(job.totemId)||{}).name||'totem') + '. Fields within 1 tile now yield +' + ttT + ' crops per harvest. +' + ttXp + ' Totems XP.', 'important');
+        spawnFloatingText('Totem raised! +' + ttXp + ' Totems XP', 'ft-bonus');
       }
       return true;
     }
@@ -24449,7 +24522,7 @@
     if(!cell) return;
     var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);   // lets pave-then-build chain on one tile
     if(pc.type!=='paved'){ addLog('Workshops can only be placed on paved tiles.', 'danger'); return; }
-    if(pc.workshopId){ addLog('That tile already has a workshop.', 'danger'); return; }
+    if(pc.workshopId || pc.totemId){ addLog('That tile already has a building.', 'danger'); return; }
     var it = WORKSHOP_ITEMS[workshopId];
     if(!it || (state.inventory[workshopId]||0) <= 0){ addLog('You don\'t own that workshop.', 'danger'); return; }
     if(it.tierIndex > pavementTierOf(pc)){ addLog('That workshop needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
@@ -24514,7 +24587,7 @@
     if(!cell) return;
     var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);
     if(pc.type!=='paved'){ addLog('Cottages can only be placed on paved tiles.', 'danger'); return; }
-    if(pc.workshopId || pc.cottageId){ addLog('That tile already has a building.', 'danger'); return; }
+    if(pc.workshopId || pc.cottageId || pc.totemId){ addLog('That tile already has a building.', 'danger'); return; }
     var it = COTTAGE_ITEMS[cottageId];
     if(!it || (state.inventory[cottageId]||0) <= 0){ addLog('You don\'t own that cottage.', 'danger'); return; }
     if(it.tierIndex > pavementTierOf(pc)){ addLog('That cottage needs pavement of tier ' + (it.tierIndex+1) + ' or higher.', 'danger'); return; }
@@ -24536,6 +24609,49 @@
     addItem(cid, 1);
     cell.cottageId = null;
     addLog('Removed the ' + ((COTTAGE_ITEMS[cid]||{}).name||'cottage') + ' (returned to inventory).', '');
+    estPersist();
+    needsRender = true;
+  }
+  // ---- Totems: carved poles from the Totems craft (Construction), raised on a paved tile of the
+  // PERSONAL estate (the guild estate's server-synced grid doesn't carry them). A Totem occupies the
+  // tile's single building slot (like a Workshop or Cottage) and grants +<tier> crop yield to every
+  // Field within 1 tile -- see totemYieldBonusAt, applied at harvest.
+  var ESTATE_TOTEM_MS_PER_TIER = 2*60*1000;  // raising a totem takes 2 min per tier
+  var estateTotemMenuOpen = false;
+  function totemItem(id){ return (typeof id === 'string' && /^totem_t\d+$/.test(id)) ? ALL_CRAFT_RECIPES[id] : null; }
+  function placeableTotemsFor(cell){
+    var pave = pavementTierOf(cell), out = [];
+    (CRAFTING_SKILLS.totems.recipes || []).forEach(function(r){ if((state.inventory[r.id]||0) > 0 && itemTierFromId(r.id) <= pave) out.push(r); });
+    out.sort(function(a,b){ return itemTierFromId(a.id) - itemTierFromId(b.id); });
+    return out;
+  }
+  function estatePlaceTotem(x, y, totemId){
+    if(estIsGuild){ addLog('Totems can only be raised on your own estate.', 'danger'); return; }
+    var cell = estActive.grid[x] && estActive.grid[x][y];
+    if(!cell) return;
+    var pc = estateProjectedCell(x, y) || cell;
+    if(pc.type!=='paved'){ addLog('Totems can only be raised on paved tiles.', 'danger'); return; }
+    if(pc.workshopId || pc.cottageId || pc.totemId){ addLog('That tile already has a building.', 'danger'); return; }
+    var it = totemItem(totemId);
+    if(!it || (state.inventory[totemId]||0) <= 0){ addLog('You don\'t own that totem.', 'danger'); return; }
+    var tTier = itemTierFromId(totemId);
+    if(tTier > pavementTierOf(pc)){ addLog('That totem needs pavement of tier ' + (tTier+1) + ' or higher.', 'danger'); return; }
+    estateEnqueueOrStart('totem', x, y, { totemId:totemId }, (tTier+1)*ESTATE_TOTEM_MS_PER_TIER, {
+      jobFields: { totemId:totemId },
+      closeMenu: function(){ estateTotemMenuOpen = false; },
+      startedMsg: 'You began raising a ' + it.name + ' at (' + x + ', ' + y + ') — finishes in ' + ((tTier+1)*2) + ' minutes.',
+      startedFt: 'Raising…',
+      queuedMsg: 'Queued raising a ' + it.name + ' at (' + x + ', ' + y + ').'
+    });
+  }
+  function estateRemoveTotem(x, y){
+    if(guildDestroyBlocked()) return;
+    var cell = estActive.grid[x] && estActive.grid[x][y];
+    if(!cell || !cell.totemId) return;
+    var tid = cell.totemId;
+    addItem(tid, 1);
+    cell.totemId = null;
+    addLog('Removed the ' + ((totemItem(tid)||{}).name||'totem') + ' (returned to inventory).', '');
     estPersist();
     needsRender = true;
   }
@@ -25512,6 +25628,7 @@
     glassblowing:{roof:'dome', chimney:true, accent:'bottle'},
     cooperage:{roof:'hip', accent:'pot'},
     fertilizer:{roof:'gable', accent:'block'},
+    totems:{roof:'peak', accent:'log'},
     tanning:{roof:'peak', accent:'hide'},
     weaving:{roof:'gable', accent:'spool'},
     papermaking:{roof:'flat', accent:'block'},
@@ -25626,6 +25743,44 @@
     ctx.strokeStyle = estateShadeColor(base,0.5); ctx.lineWidth = 1.2; ctx.strokeRect(cx-h, cy-h, s, s);
     ctx.strokeStyle = estateShadeColor(base,0.66); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx-h*0.85, cy); ctx.lineTo(cx+h*0.85, cy); ctx.stroke(); // ridge
     ctx.fillStyle = estateShadeColor('#6a6a6a',0.7); ctx.fillRect(cx-h*0.72, cy-h*0.72, s*0.16, s*0.16); // chimney
+  }
+  // Totem: a carved pole from the Totems craft -- a plinth, stacked alternately-shaded segments
+  // tinted by the carving wood (dark low tiers -> light heartwood high), out-swept wings from tier
+  // 10, a pyramid cap, and a single gold "watchful eye". Height and segment count climb with tier
+  // so a Sequoia Totem visibly towers over a Birch one.
+  function estateDrawTotem(ctx, cx, cy, tier, rot){
+    var base = WOODCARVING_COLORS[Math.min(TIER_COUNT-1, tier)] || '#a07a44';
+    var segs = 3 + Math.min(3, Math.floor(tier/7));           // 3..6 carved segments as tiers climb
+    var segH = 0.32, z = 0.06;
+    var plinth = estateRectFp(0.3, 0.3);
+    estateDrawPrism(ctx, cx, cy, plinth, plinth, 0, z, rot, estateShadeColor(base,0.55), estateShadeColor(base,0.7)); // stone-set base
+    for(var i=0;i<segs;i++){
+      var w = 0.2 - i*0.014;                                  // gentle taper toward the crown
+      var f = estateRectFp(w, w);
+      estateDrawPrism(ctx, cx, cy, f, f, z, z+segH, rot, estateShadeColor(base, 0.6+((i%2)*0.16)), estateShadeColor(base, 0.84+((i%2)*0.18)));
+      z += segH;
+    }
+    if(tier >= 10){                                           // out-swept wings near the crown
+      var wy = z - segH*0.6;
+      [[-1],[1]].forEach(function(d){
+        var wf = estateRectFp(0.3, 0.07).map(function(p){ return [p[0]+d[0]*0.32, p[1]]; });
+        estateDrawPrism(ctx, cx, cy, wf, wf, wy, wy+0.08, rot, estateShadeColor(base,0.5), estateShadeColor(base,0.78));
+      });
+    }
+    estateDrawPyramid(ctx, cx, cy, estateRectFp(0.2,0.2), [0,0], z, z+0.3, rot, estateShadeColor(base,1.12)); // cap
+    var eye = estateModelProject(cx, cy, 0, 0, z - segH*0.5, rot);
+    ctx.fillStyle = '#e8c15a'; ctx.beginPath(); ctx.arc(eye.x, eye.y, 1.6, 0, Math.PI*2); ctx.fill();
+  }
+  function drawEstateTotemModel(ctx, cx, cy, tier, rot){
+    estateModelScale = 1.7; // same footprint family as the other buildings
+    estateDrawTotem(ctx, cx, cy, tier, rot);
+    estateModelScale = 1;
+  }
+  function estateDrawTdTotem(ctx, cx, cy, tier, ts){
+    var base = WOODCARVING_COLORS[Math.min(TIER_COUNT-1, tier)] || '#a07a44', r = ts*0.2;
+    ctx.fillStyle = estateShadeColor(base,0.9); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = estateShadeColor(base,0.5); ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.fillStyle = '#e8c15a'; ctx.beginPath(); ctx.arc(cx, cy, r*0.3, 0, Math.PI*2); ctx.fill(); // the eye
   }
   // Farming Field: a low tilled-soil bed (tinted by the field's Digging tier) with furrow ridges and
   // a few green sprouts. One parametric model; tier only changes the soil hue.
@@ -25970,6 +26125,7 @@
       if(cell.obstacle){ var _tdClear = estateCanClearObstacle(cell.obstacle); if(!_tdClear) ctx.globalAlpha = 0.5; estateDrawTdObstacle(ctx, p.x, p.y, cell.obstacle, ts); if(!_tdClear) ctx.globalAlpha = 1; }
       if(cell.workshopId) estateDrawTdWorkshop(ctx, p.x, p.y, WORKSHOP_ITEMS[cell.workshopId], ts);
       if(cell.cottageId) estateDrawTdCottage(ctx, p.x, p.y, COTTAGE_ITEMS[cell.cottageId], ts);
+      if(cell.totemId) estateDrawTdTotem(ctx, p.x, p.y, itemTierFromId(cell.totemId), ts);
       if(cell.fieldTier != null) estateDrawTdField(ctx, p.x, p.y, cell.fieldTier, ts);
       var isSel = estateSelectedTile && estateSelectedTile.x===x && estateSelectedTile.y===y;
       var isHov = estateHoveredTile && estateHoveredTile.x===x && estateHoveredTile.y===y;
@@ -26068,6 +26224,9 @@
           ctx.beginPath(); ctx.arc(pos.x, glowY, ESTATE_TILE_W*0.55, 0, Math.PI*2); ctx.fill();
         }
         drawEstateCottageModel(ctx, pos.x, pos.y + ESTATE_TILE_H/2, COTTAGE_ITEMS[cell.cottageId], estateRotation);
+      }
+      if(cell.totemId){
+        drawEstateTotemModel(ctx, pos.x, pos.y + ESTATE_TILE_H/2, itemTierFromId(cell.totemId), estateRotation);
       }
       if(cell.fieldTier != null){
         drawEstateFieldModel(ctx, pos.x, pos.y + ESTATE_TILE_H/2, cell.fieldTier, estateRotation);
@@ -26484,6 +26643,12 @@
             html += '</div>';
           }
         }
+      } else if(cell.totemId){
+        var tIt = totemItem(cell.totemId), tTierHere = itemTierFromId(cell.totemId);
+        html += '<div class="estate-action-row">';
+        html += '<div class="estate-action-info"><b>Totem:</b> '+(tIt?tIt.icon+' '+escapeHtml(tIt.name):'Unknown')+'<br>+'+tTierHere+' crop yield per harvest for every Field within 1 tile.</div>';
+        html += '<button class="action-btn stop" data-action="estateRemoveTotem" data-x="'+x+'" data-y="'+y+'">Remove</button>';
+        html += '</div>';
       } else {
         var placeable = placeableWorkshopsFor(cell);
         html += '<div class="estate-action-row">';
@@ -26512,6 +26677,23 @@
             html += '</button>';
           });
           html += '</div>';
+        }
+        if(!estIsGuild){ // Totems are personal-estate only (the guild grid is server-synced without them)
+          var placeableT = placeableTotemsFor(cell);
+          html += '<div class="estate-action-row">';
+          html += '<div class="estate-action-info"><b>Raise Totem</b><br>A carved Totem (Construction &rarr; Totems) grants +1 crop yield per tier to every Field within 1 tile. Totem tier must be ≤ this pavement.</div>';
+          html += '<button class="action-btn" data-action="estateToggleTotemMenu" '+((placeableT.length&&!estToggleBlockedByOther())?'':'disabled')+'>'+(estToggleBlockedByOther()?'In use':(placeableT.length?(estateTotemMenuOpen?'Close List':'Choose'):'None ready'))+'</button>';
+          html += '</div>';
+          if(estateTotemMenuOpen && placeableT.length){
+            html += '<div class="estate-paving-library">';
+            placeableT.forEach(function(it){
+              var itT = itemTierFromId(it.id);
+              html += '<button class="estate-paving-option" data-action="estatePlaceTotem" data-x="'+x+'" data-y="'+y+'" data-totem="'+it.id+'">';
+              html += '<span>'+tierChipHtml(itT)+' '+it.icon+' '+escapeHtml(it.name)+'</span><span class="style-lvl">+'+itT+' yield &bull; x'+(state.inventory[it.id]||0)+'</span>';
+              html += '</button>';
+            });
+            html += '</div>';
+          }
         }
       }
       // Upgrade the pavement to ANY higher tier -- works even with a building on it. Pick the target from
@@ -26916,8 +27098,9 @@
       cells.forEach(function(fc){
         var key = fc.x+','+fc.y, domId = scope+'-'+fc.x+'_'+fc.y, plot = map[key];
         var fdef = FARM_FIELD_TIERS['field_t'+fc.tier];
+        var totemB = totemYieldBonusAt(scope, key);
         out += '<div class="item-card">';
-        out += '<div class="item-top"><div class="item-icon">'+(fdef?fdef.icon:'')+'</div><div><div class="item-name">'+DIGGING_NAMES[fc.tier]+' Field</div><div class="item-meta">Grows up to '+TIER_NAMES[fc.tier]+' &bull; ('+fc.x+','+fc.y+')</div></div></div>';
+        out += '<div class="item-top"><div class="item-icon">'+(fdef?fdef.icon:'')+'</div><div><div class="item-name">'+DIGGING_NAMES[fc.tier]+' Field</div><div class="item-meta">Grows up to '+TIER_NAMES[fc.tier]+' &bull; ('+fc.x+','+fc.y+')'+(totemB>0?' &bull; <span style="color:#c9a227;font-weight:700">+'+totemB+' totem yield</span>':'')+'</div></div></div>';
         // Per-plot state used to enable/disable the four action buttons below (Sow / Fertilize / Harvest / Cancel).
         var empty = isPlotEmpty(plot);
         var cd = null, remaining = 0, ready = false, canFert = false, hasCrop = false;
@@ -30809,7 +30992,7 @@
     if(RING_ITEMS[id] || AMULET_ITEMS[id] || BELT_ITEMS[id]) return 'accessories';            // jewelry + belt
     if(LEGENDARY_RING_ITEMS[id] || LEGENDARY_AMULET_ITEMS[id] || LEGENDARY_CLOAK_ITEMS[id]) return 'accessories'; // Mastercrafted legendary jewelry/capes
     if(BODY_ARMOR_ITEMS[id] || STACKABLE_SHIELD_ITEMS[id] || STACKABLE_QUIVER_ITEMS[id] || WARD_ITEMS[id]) return 'armor'; // worn/offhand defensive gear
-    if(WORKSHOP_ITEMS[id] || COTTAGE_ITEMS[id]) return 'other';
+    if(WORKSHOP_ITEMS[id] || COTTAGE_ITEMS[id] || /^totem_t\d+$/.test(id)) return 'other'; // estate placeables
     var m = /^([a-z]+)_t\d+$/.exec(id);
     if(m){
       if(MARKET_CONSUMABLE_SKILLS[m[1]]) return 'consumables';   // food / drink / tomes / potions / scrolls
@@ -31248,6 +31431,7 @@
     glassblowing: 'Melt Spelunking Minerals over Coal (found Digging or Mining) and blow them into Glass goods, from Glass Bead up to Eternal Crystal -- the tier-matched vessels Alchemy bottles its potions in.',
     cooperage: 'Bind Carpentry Planks with a Metallurgy ingot band into Barrels and Casks, from Small Pail up to Eternal Cask. These vessels will help keep your Estate\'s Peons supplied and at their tasks while their master is away.',
     fertilizer: 'Refine a Fishing catch with equal-tier Digging soil into Fertilizer. Apply it to a growing crop of the same tier to double that plot\'s harvest.',
+    totems: 'Mount five Woodcarvings on Carpentry Planks into a carved Totem. Placed on a paved Estate tile, a Totem grants +1 crop yield per tier (up to +20) to every Field within 1 tile.',
     tanning: 'Cure Butchering\'s raw Hide into Leather -- the subject of the Leatherworking skill as well as a component in Bookbinding and Twine for Jewelrycrafting.',
     weaving: 'Weave your various Farmed Fiber into Cloth for Tailoring lightweight Cloth Armor.',
     papermaking: 'Pulp Forestry logs into Paper -- the base for Bookbinding and Inscription.',
@@ -31698,7 +31882,7 @@
     'muddyartifact_t','brokenrelic_t','powder_t','seed_t','grainseed_t','herbseed_t','farming_t','grain_t','herb_t','corpse_t','gem_','glyph_'];
   function getInventoryCategory(itemId){
     if(getEquipActionForItem(itemId)) return 'equipment';
-    if(itemId.indexOf('paving_t')===0 || itemId.indexOf('masonry_t')===0 || itemId.indexOf('workshop_')===0) return 'estate';
+    if(itemId.indexOf('paving_t')===0 || itemId.indexOf('masonry_t')===0 || itemId.indexOf('workshop_')===0 || itemId.indexOf('totem_t')===0) return 'estate';
     if(itemId==='coal' || itemId==='critter_cache' || itemId==='treasure_chest') return 'gathering';
     for(var i=0;i<GATHER_BUCKET_PREFIXES.length;i++){
       if(itemId.indexOf(GATHER_BUCKET_PREFIXES[i])===0) return 'gathering';
@@ -33340,6 +33524,11 @@
       estatePlaceCottage(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-cottage'));
     },
     estateRemoveCottage: function(btn, e){ estateRemoveCottage(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
+    estateToggleTotemMenu: function(btn, e){ estateTotemMenuOpen = !estateTotemMenuOpen; },
+    estatePlaceTotem: function(btn, e){
+      estatePlaceTotem(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), btn.getAttribute('data-totem'));
+    },
+    estateRemoveTotem: function(btn, e){ estateRemoveTotem(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10)); },
     estateToggleFieldMenu: function(btn, e){ estateFieldMenuOpen = !estateFieldMenuOpen; },
     estatePlaceField: function(btn, e){
       estatePlaceField(parseInt(btn.getAttribute('data-x'),10), parseInt(btn.getAttribute('data-y'),10), parseInt(btn.getAttribute('data-tier'),10));
@@ -34358,7 +34547,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.53.2';
+  var GAME_VERSION = '0.0.54.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -34468,6 +34657,7 @@
       peonTaskTier:peonTaskTier, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
       generatePersonalEstateGrid:generatePersonalEstateGrid, generateEstateGrid:generateEstateGrid, estatePlaceStarterKit:estatePlaceStarterKit, estateIsStarterTile:estateIsStarterTile, ESTATE_STARTER_WORKSHOP:ESTATE_STARTER_WORKSHOP, ESTATE_STARTER_COTTAGE:ESTATE_STARTER_COTTAGE, ESTATE_STARTER_PAVING:ESTATE_STARTER_PAVING, estatePeonSources:estatePeonSources,
       ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline, simulateOfflineFarming:simulateOfflineFarming, bestOwnedSeedForField:bestOwnedSeedForField, seedAllowedForPlanting:seedAllowedForPlanting, ownedSeedTypesDesc:ownedSeedTypesDesc, renderFarmPlantControls:renderFarmPlantControls,
+      totemItem:totemItem, placeableTotemsFor:placeableTotemsFor, totemYieldBonusAt:totemYieldBonusAt, ESTATE_TOTEM_MS_PER_TIER:ESTATE_TOTEM_MS_PER_TIER, estatePlaceTotem:estatePlaceTotem, estateRemoveTotem:estateRemoveTotem, estateDrawTotem:estateDrawTotem, drawEstateTotemModel:drawEstateTotemModel, estateDrawTdTotem:estateDrawTdTotem,
       workshopBonusPct:workshopBonusPct, workshopSpeedPct:workshopSpeedPct, getWorkshopTierData:getWorkshopTierData, workshopSpeedBonus:workshopSpeedBonus, workshopDoubleChance:workshopDoubleChance, recomputePlacedWorkshops:recomputePlacedWorkshops,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
       addXpAppliedMult:addXpAppliedMult, cardRealXp:cardRealXp, cardTierIndex:cardTierIndex, xpStat:xpStat, curiosityGatherXpBonus:curiosityGatherXpBonus,
