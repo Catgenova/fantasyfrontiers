@@ -22555,12 +22555,15 @@
     if(spell.type==='timedBuff'){
       var v = spell.val*potency, s = (spell.durationMs/1000);
       var pct = Math.round(v*100);
+      // Familiar Haste is capped in combat at -50% attack time (200% attack speed) -- show the value that
+      // actually applies, tagged "(capped)" when potency pushes the raw number past it.
+      var hasteTxt = '-'+Math.min(50, pct)+'% attack time'+(pct > 50 ? ' (capped)' : '');
       var K = {
         critChance:'+'+pct+'% crit chance', critDmg:'+'+pct+'% crit damage',
         block:'+'+pct+'% block chance', dodge:'+'+pct+'% dodge chance',
         resistBlunt:'-'+pct+'% blunt damage taken', resistSlash:'-'+pct+'% slash damage taken', resistPierce:'-'+pct+'% pierce damage taken',
         dmgBlunt:'+'+pct+'% blunt damage', dmgSlash:'+'+pct+'% slash damage', dmgPierce:'+'+pct+'% pierce damage',
-        firebomb:'+'+pct+'% Firebomb damage', potionPoison:'+'+pct+'% Toxin poison', haste:'-'+pct+'% attack time'
+        firebomb:'+'+pct+'% Firebomb damage', potionPoison:'+'+pct+'% Toxin poison', haste:hasteTxt
       };
       return (K[spell.kind]||('+'+pct+'%'))+' for '+s+'s';
     }
@@ -34278,7 +34281,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.52.5';
+  var GAME_VERSION = '0.0.52.6';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

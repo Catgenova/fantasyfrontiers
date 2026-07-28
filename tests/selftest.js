@@ -9094,6 +9094,12 @@
     // spot-check a couple of new spell types describe sensibly
     ok(/damage/.test(FF.describeSpell({type:'hit',dmgType:'piercing',amount:14}, 1)), 'hit spell describes damage');
     ok(/HP \/ 5s/.test(FF.describeSpell({type:'regen',hps:4,durationMs:6000}, 1)), 'regen spell describes HP per 5s');
+    // Familiar Haste text is capped at -50% attack time (matching the 200% attack-speed combat cap).
+    var hasteHi = FF.describeSpell({type:'timedBuff',kind:'haste',val:0.18,durationMs:8000}, 100); // Lv100 potency inflates the raw value far past 50%
+    ok(/-50% attack time \(capped\)/.test(hasteHi), 'an over-cap Haste spell shows -50% (capped), not the raw value');
+    var hasteLo = FF.describeSpell({type:'timedBuff',kind:'haste',val:0.10,durationMs:8000}, 1);
+    var _hlm = /-(\d+)% attack time/.exec(hasteLo);
+    ok(_hlm && parseInt(_hlm[1],10) <= 50, 'the displayed Haste never exceeds -50% attack time');
     ok(/killing blow/.test(FF.describeSpell({type:'bubble',durSec:3}, 1)), 'bubble spell describes killing blow');
     // Familiar regen rework: base value doubled, buff duration tripled (regenSpell('Patch Job',4,6)).
     var patch = FF.FAMILIAR_SPELLS.salvaging.filter(function(s){ return s.type==='regen'; })[0];
