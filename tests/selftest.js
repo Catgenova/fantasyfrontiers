@@ -7546,6 +7546,25 @@
     FF.companionCastsOnCombatEntry('gather');
     ok(!S.companionCast.forestry, 'entering combat from outside resets every companion to the top of its spell list');
     S.companionCast = savedCC;
+    // Persistent class buffs (shields, stacks, kill tallies) survive foe changes but NOT a fresh entry --
+    // so swapping classes between fights can never carry the old class's buffs into the new kit.
+    var savedBuffs = { rs:S.reaperShield, ts:S.templarShield, ls:S.lumenShield, hg:S.heraldGuardStacks, av:S.assassinVigor, bt:S.d2BloodthirstStacks, btu:S.d2BloodthirstUntil };
+    S.reaperShield = 500; S.templarShield = 400; S.lumenShield = 300;
+    S.heraldGuardStacks = 3; S.assassinVigor = { stacks:5, until:Date.now()+9999 };
+    S.d2BloodthirstStacks = 4; S.d2BloodthirstUntil = Date.now()+9999;
+    FF.headsmanTallyReset(); FF.headsmanTallyKill(); FF.headsmanTallyKill();
+    FF.companionCastsOnCombatEntry('combat');
+    eq(S.reaperShield, 500, 'a foe-to-foe transition keeps the Reaper shield');
+    FF.companionCastsOnCombatEntry(null);
+    eq(S.reaperShield, 0, 'a fresh combat entry clears the Reaper shield');
+    eq(S.templarShield, 0, '...and the Templar shield');
+    eq(S.lumenShield, 0, '...and the Lumen shield');
+    eq(S.heraldGuardStacks, 0, '...and Herald guard stacks');
+    ok(!S.assassinVigor, '...and Assassin Vigor');
+    eq(S.d2BloodthirstStacks, 0, '...and Bloodthirst stacks');
+    S.reaperShield = savedBuffs.rs; S.templarShield = savedBuffs.ts; S.lumenShield = savedBuffs.ls;
+    S.heraldGuardStacks = savedBuffs.hg; S.assassinVigor = savedBuffs.av;
+    S.d2BloodthirstStacks = savedBuffs.bt; S.d2BloodthirstUntil = savedBuffs.btu;
     // Killing a foe in a grind chain zeroes all three attack accumulators (yours, off-hand, the foe's).
     var savedAct = S.activity, savedInv = S.inventory, savedEarned = S.itemEarnedTotal, savedRand = Math.random;
     try {

@@ -14265,11 +14265,33 @@
     if(!hasInputs(next.inputs)){ addLog('Not enough materials to forge ' + next.name + '.', 'danger'); return; }
     placeNewCraftActivity('leatherworking', null, 'offhand', { type:'craft', craftKind:'offhand', typeId:typeId, progress:0 });
   }
-  // Exiting combat and re-entering starts every companion back at the TOP of its spell list. Called at
+  // Persistent (state-level) combat buffs -- shields, stacks and timed class buffs that outlive the
+  // combat activity object. Cleared whenever a combat session truly ends (death) or a new one begins
+  // from outside combat, so swapping classes between fights can never carry the old class's Reaper /
+  // Templar / Lumen shields, Vigor, Wrath, Souls or kill-streak stacks into the new kit's fight.
+  function resetPersistentCombatBuffs(){
+    state.reaperShield = 0; state.lumenShield = 0; state.templarShield = 0;
+    state.d3Souls = 0; state.d3ExecStacks = 0;
+    d4WrathReset(state);
+    state.heraldGuardStacks = 0;
+    state.duelistFootworkStacks = 0; state.duelistPoise = 0; state.duelistGuaranteedCrits = 0;
+    state.assassinVigor = null; state.assassinBloodrushUntil = 0;
+    state.d2BloodwaltzStacks = 0;
+    state.d2BloodthirstStacks = 0; state.d2BloodthirstUntil = 0;
+    state.d2HeadtakerStacks = 0; state.d2HeadtakerUntil = 0;
+    execVigorReset();       // Reaping Vigor stacks live in a module array, not on state
+    headsmanTallyReset();   // Headsman's Tally is per combat SESSION (it previously never reset)
+  }
+  // Exiting combat and re-entering starts the whole cycle fresh: every companion back at the TOP of its
+  // spell list AND every persistent class buff cleared (see resetPersistentCombatBuffs). Called at
   // every combat entry with the activity type that was live just before the new fight: a foe-to-foe
   // transition inside one session (dungeon floors, tower floors, grind chains) was already 'combat', so
-  // the cast cycle keeps its place; anything else means the player left and came back -> fresh cycle.
-  function companionCastsOnCombatEntry(prevType){ if(prevType !== 'combat') state.companionCast = {}; }
+  // buffs and the cast cycle keep their place; anything else means the player left and came back.
+  function companionCastsOnCombatEntry(prevType){
+    if(prevType === 'combat') return;
+    state.companionCast = {};
+    resetPersistentCombatBuffs();
+  }
   function startCombat(monsterId){
     if(dungeonLocksActions()){ dungeonActionBlockedNotice(); return; }
     var m = monsterById(monsterId);
@@ -15622,8 +15644,7 @@
     flushTowerFamiliarBatch(state.activity); // a fatal fall ends an auto-advance streak -> show every familiar it banked
     flushTowerShardBatch(state.activity);    // ...and the Barrier Shard haul from the floors it cleared
     state.playerHp = 1; // land in a distinct "alive, recovering" state (see the note that used to live inline)
-    state.reaperShield = 0; state.lumenShield = 0; state.templarShield = 0; state.d3Souls = 0;
-    d4WrathReset(state); state.d3ExecStacks = 0;
+    resetPersistentCombatBuffs(); // death ends the session: shields, stacks and kill tallies all clear
     state.activity = { type:null };
     if(diedInDungeon) dungeonEndRun('death');
     if(isMortal()) mortalDeath(monster);
@@ -34711,7 +34732,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.56.1';
+  var GAME_VERSION = '0.0.56.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
