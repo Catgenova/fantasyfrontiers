@@ -7510,6 +7510,18 @@
     } finally { S.activity = savedAct; }
   });
 
+  // ---- Monster attack-speed readout: readable on the parchment panel (ticket-0100) ------
+  suite('combat: slowed attack-speed tint is readable on parchment', function(){
+    // WCAG relative-luminance contrast vs the --paper tan the arena panel sits on.
+    function lum(hex){ var c=[1,3,5].map(function(i){ var v=parseInt(hex.substr(i,2),16)/255; return v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4); }); return 0.2126*c[0]+0.7152*c[1]+0.0722*c[2]; }
+    function contrast(a,b){ var l1=lum(a), l2=lum(b); return (Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05); }
+    var PAPER = '#e7d7b0';
+    ok(contrast(FF.ATK_SPEED_SLOW_COLOR, PAPER) >= 4.5, 'the Slowed tint meets 4.5:1 on the tan panel ('+contrast(FF.ATK_SPEED_SLOW_COLOR, PAPER).toFixed(2)+':1)');
+    ok(contrast(FF.ATK_SPEED_HASTE_COLOR, PAPER) >= 4.5, 'the Hasted tint meets 4.5:1 on the tan panel ('+contrast(FF.ATK_SPEED_HASTE_COLOR, PAPER).toFixed(2)+':1)');
+    // The old Chill teal is what the ticket reported unreadable -- keep it out of the readout.
+    ok(contrast('#7fd9d4', PAPER) < 2, 'sanity: the old teal really was invisible on parchment');
+  });
+
   // ---- Loadouts: save & swap the full combat kit, inventory-safe ------------------------
   suite('loadouts: capture / apply / conserve', function(){
     var S = FF._state;
