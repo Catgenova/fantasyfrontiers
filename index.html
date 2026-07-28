@@ -9840,11 +9840,15 @@
   var BODY_ARMOR_SLOTS = ['gauntlets','boots','chest','helmet','back'];
   // The armor materials ACTUALLY worn, with piece counts (filled slots only). An emptied slot keeps its old
   // material string, so every worn-material check must gate on tier>0 -- otherwise unequipped armor keeps
-  // training/counting. Counts drive the PROPORTIONAL defensive-XP split: one cloth cloak on a plate knight
-  // trains Cloth Armor at 1/5 the rate, not at full speed.
-  function wornArmorMaterialCounts(st){
+  // training/counting. Counts drive the PROPORTIONAL defensive-XP split across worn pieces.
+  // forTraining=true additionally EXCLUDES the back (cloak) slot: a cloak never trains Cloth Armor
+  // proficiency -- only the four true armor slots earn XP. (Display/defense reads keep the cloak.)
+  function wornArmorMaterialCounts(st, forTraining){
     st = st || state; var out = {};
-    BODY_ARMOR_SLOTS.forEach(function(slot){ var s = st.bodyArmor && st.bodyArmor[slot]; if(s && s.tier > 0 && s.material) out[s.material] = (out[s.material]||0) + 1; });
+    BODY_ARMOR_SLOTS.forEach(function(slot){
+      if(forTraining && slot === 'back') return;
+      var s = st.bodyArmor && st.bodyArmor[slot]; if(s && s.tier > 0 && s.material) out[s.material] = (out[s.material]||0) + 1;
+    });
     return out;
   }
   function wornArmorMaterials(st){ return wornArmorMaterialCounts(st); } // truthy-per-material view (counts >= 1)
@@ -15881,9 +15885,9 @@
     var mitigated = Math.max(0, incomingBeforeDefense - dmgToPlayer);
     var defProfXp = Math.max(1, Math.round(mitigated * DEF_PROF_XP_PER_DMG));
     if(state.equippedOffhand && offhandStyle && offhandStyle.type==='shield') addXp(state.equippedOffhand, defProfXp);
-    // Each material trains in PROPORTION to the pieces worn (a lone cloth cloak on a plate wearer earns
-    // 1/5 of the XP, not the full amount) -- the total defensive XP is split across the worn pieces.
-    var _wornCounts = wornArmorMaterialCounts(state), _wornTotal = 0;
+    // Each material trains in PROPORTION to the pieces worn on the four TRUE armor slots -- the back
+    // (cloak) slot never trains: a cloth cloak grants no Cloth Armor proficiency XP.
+    var _wornCounts = wornArmorMaterialCounts(state, true), _wornTotal = 0;
     Object.keys(_wornCounts).forEach(function(m){ _wornTotal += _wornCounts[m]; });
     Object.keys(_wornCounts).forEach(function(material){
       var profId = MATERIAL_TO_PROFICIENCY[material];
@@ -34274,7 +34278,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.52.2';
+  var GAME_VERSION = '0.0.52.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

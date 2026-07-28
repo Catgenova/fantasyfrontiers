@@ -1486,11 +1486,19 @@
         back:      { material:'tailoring', tier:5, rarity:'normal' }
       };
       var counts = FF.wornArmorMaterialCounts(s);
-      eq(counts.plate, 2, 'two plate pieces counted'); eq(counts.chain, 2, 'two chain pieces counted'); eq(counts.tailoring, 1, 'the cloak counts as one cloth piece');
-      // The award math: defProfXp x (count / total). With 100 XP mitigated: plate 40, chain 40, cloth 20.
-      var total = 5;
-      eq(Math.round(100 * counts.plate / total), 40, 'plate earns 2/5 of the defensive XP');
-      eq(Math.round(100 * counts.tailoring / total), 20, 'the lone cloak earns only 1/5 — not the full amount');
+      eq(counts.plate, 2, 'two plate pieces counted'); eq(counts.chain, 2, 'two chain pieces counted'); eq(counts.tailoring, 1, 'the cloak still shows as a worn cloth piece (display view)');
+      // TRAINING counts exclude the back slot entirely: a cloak never trains Cloth Armor.
+      var train = FF.wornArmorMaterialCounts(s, true);
+      eq(train.plate, 2, 'training: two plate pieces'); eq(train.chain, 2, 'training: two chain pieces');
+      ok(!train.tailoring, 'training: the cloak contributes NOTHING — no Cloth Armor XP from the back slot');
+      // The award math: defProfXp x (count / total worn training pieces). With 100 XP mitigated: plate 50, chain 50.
+      var total = 4;
+      eq(Math.round(100 * train.plate / total), 50, 'plate earns 2/4 of the defensive XP');
+      eq(Math.round(100 * train.chain / total), 50, 'chain earns 2/4 of the defensive XP');
+      // A cloth HELMET (a true armor slot) still trains cloth normally.
+      s.bodyArmor.helmet = { material:'tailoring', tier:5, rarity:'normal' };
+      var train2 = FF.wornArmorMaterialCounts(s, true);
+      eq(train2.tailoring, 1, 'cloth on a true armor slot (helmet) still trains');
     } finally { s.bodyArmor = sv; }
   });
 
