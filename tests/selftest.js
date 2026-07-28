@@ -761,6 +761,20 @@
     var hiMs = hi.readyAt - hi.plantedAt, loMs = lo.readyAt - lo.plantedAt;
     near(hiMs / loMs, 3, 'the z19 crop takes exactly 3x as long as the z1 crop', 0.01);
     s.estate.grid = savedGrid; s.farmingPlots = savedPlots; s.inventory = savedInv; s.itemEarnedTotal = savedEarned;
+    // Terraforming UNDER a Field is allowed -- but never into the water (z1 is a Field's floor).
+    ok(FF.estateQueuedJobValid({ kind:'raise' }, { type:'dirt', height:5, fieldTier:3 }).ok, 'a Field tile can still be raised');
+    ok(FF.estateQueuedJobValid({ kind:'lower' }, { type:'dirt', height:5, fieldTier:3 }).ok, 'a Field tile can still be lowered');
+    ok(!FF.estateQueuedJobValid({ kind:'lower' }, { type:'dirt', height:1, fieldTier:3 }).ok, 'a z1 Field tile cannot be lowered into the water');
+    ok(FF.estateQueuedJobValid({ kind:'lower' }, { type:'dirt', height:1, fieldTier:null }).ok, 'a bare z1 dirt tile still lowers to the waterline');
+    // The live starter refuses the flooding dig too (no job/queue entry is created).
+    FF.estUse(false);
+    var savedJob = s.estate.job, savedQueue = s.estate.queue, savedCell11 = Object.assign({}, s.estate.grid[1][1]);
+    s.estate.job = null; s.estate.queue = [];
+    Object.assign(s.estate.grid[1][1], { type:'dirt', height:1, obstacle:null, fieldTier:3, owned:true });
+    FF.estateLowerLayer(1, 1);
+    ok(!s.estate.job && s.estate.queue.length === 0, 'estateLowerLayer refuses to dig a z1 Field into the water');
+    Object.assign(s.estate.grid[1][1], savedCell11); if(!('fieldTier' in savedCell11)) s.estate.grid[1][1].fieldTier = null;
+    s.estate.job = savedJob; s.estate.queue = savedQueue;
   });
 
   // ---- Waterside farms: a Field orthogonally beside water yields a flat +5 crops per harvest --------

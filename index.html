@@ -23846,6 +23846,7 @@
       case 'raise':    if(c.type!=='dirt' || c.obstacle) return { ok:false, msg:'that tile can no longer be raised' };
                        return (c.height < ESTATE_MAX_HEIGHT-1) ? { ok:true } : { ok:false, msg:'that tile is already at max height' };
       case 'lower':    if(c.type!=='dirt' || c.obstacle) return { ok:false, msg:'that tile can no longer be dug down' };
+                       if(c.fieldTier != null && c.height <= 1) return { ok:false, msg:'lowering further would flood the Field' };
                        return (c.height > 0) ? { ok:true } : { ok:false, msg:'that tile is already at the waterline' };
       case 'pave':     if(job.upgrade){
                          if(c.type!=='paved' || !c.paveTileId) return { ok:false, msg:'that tile is no longer paved' };
@@ -24074,6 +24075,9 @@
     // Digging level, so a stack of lowers is gated by the deepest step it will reach, not the current top.
     var pc = estIsGuild ? cell : (estateProjectedCell(x, y) || cell);
     if(pc.height <= 0){ addLog('That tile is already at (or queued to) the waterline.', 'danger'); return; }
+    // A Field tile can be terraformed (altitude re-tunes its grow time), but never INTO the water --
+    // crops don't grow submerged. z1 is a Field's floor.
+    if(cell.fieldTier != null && pc.height <= 1){ addLog('Lowering this tile further would flood the Field. Remove the Field first.', 'danger'); return; }
     var reqLevel = estateLowerRequiredLevel(pc.height);
     if(getLevel(state.xp.digging) < reqLevel){
       addLog('Lowering this tile requires Digging level ' + reqLevel + '.', 'danger');
@@ -26569,6 +26573,33 @@
       var tileBusy = estJobOnTile(x, y);            // any member's job on this tile
       var otherHere = tileBusy && !jobHere;          // a different member is working here
       var _tileIsWater = estateIsWater(cell);        // height 0 -> flooded; raise it before paving
+      // Raise/Lower rows, shared by bare dirt AND Field tiles (terraforming under a Field re-tunes its
+      // crops' grow time -- see fieldGrowthMult). A Field's floor is z1: lowering into the water is
+      // blocked, since crops don't grow submerged.
+      var _isField = cell.fieldTier != null;
+      function terraformRows(){
+        var t = '';
+        var canRaise = cell.height < ESTATE_MAX_HEIGHT-1;
+        var raiseLevelOk = digLvl >= ESTATE_RAISE_LEVEL;
+        var raiseDirtOk = dirtOwned >= ESTATE_RAISE_DIRT_COST;
+        var raisePrecondLabel = !canRaise?'Max Height':(!raiseLevelOk?'Lv '+ESTATE_RAISE_LEVEL+' Req.':'Need Dirt');
+        var rs = estQBtn(canRaise&&raiseLevelOk&&raiseDirtOk, raisePrecondLabel, 'Raise');
+        var altNote = '<br><span style="color:var(--text-faint)">This tile is z'+(cell.height|0)+' — altitude sets crop grow time (fastest at z1, slowest at z19).</span>';
+        t += '<div class="estate-action-row">';
+        t += '<div class="estate-action-info"><b>Raise Layer</b><br>Requires Digging '+ESTATE_RAISE_LEVEL+' &bull; Costs '+ESTATE_RAISE_DIRT_COST+' Dirt (have '+dirtOwned+')<br>Takes 10 min &bull; +'+ESTATE_TERRAFORM_XP+' Digging XP on completion'+(_isField?altNote:'')+'</div>';
+        t += '<button class="action-btn" data-action="estateRaiseLayer" data-x="'+x+'" data-y="'+y+'" '+(rs.off?'disabled':'')+'>'+rs.label+'</button>';
+        t += '</div>';
+        var lowerFloor = _isField ? 1 : 0;             // a Field can't be dug into the water
+        var canLower = cell.height > lowerFloor;
+        var lowerReq = estateLowerRequiredLevel(cell.height);
+        var lowerLevelOk = digLvl >= lowerReq;
+        var ls = estQBtn(canLower&&lowerLevelOk, !canLower?(_isField?'Would flood':'Bedrock'):'Lv '+lowerReq+' Req.', 'Lower');
+        t += '<div class="estate-action-row">';
+        t += '<div class="estate-action-info"><b>Lower Layer</b><br>Requires Digging '+lowerReq+' &bull; Recovers '+ESTATE_LOWER_DIRT_REWARD+' Dirt<br>Takes 10 min &bull; +'+ESTATE_TERRAFORM_XP+' Digging XP on completion'+(_isField?'<br><span style="color:var(--text-faint)">The Field (and any growing crop) stays put; z1 is a Field’s floor.</span>':'')+'</div>';
+        t += '<button class="action-btn" data-action="estateLowerLayer" data-x="'+x+'" data-y="'+y+'" '+(ls.off?'disabled':'')+'>'+ls.label+'</button>';
+        t += '</div>';
+        return t;
+      }
       if(cell.fieldTier != null){
         var fdef = FARM_FIELD_TIERS['field_t'+cell.fieldTier];
         html += '<div class="estate-action-row">';
@@ -26594,24 +26625,9 @@
             html += '</div>';
           }
         }
+        html += terraformRows();   // a Field tile can still be raised/lowered (its floor is z1)
       } else {
-      var canRaise = cell.height < ESTATE_MAX_HEIGHT-1;
-      var raiseLevelOk = digLvl >= ESTATE_RAISE_LEVEL;
-      var raiseDirtOk = dirtOwned >= ESTATE_RAISE_DIRT_COST;
-      var raisePrecondLabel = !canRaise?'Max Height':(!raiseLevelOk?'Lv '+ESTATE_RAISE_LEVEL+' Req.':'Need Dirt');
-      var rs = estQBtn(canRaise&&raiseLevelOk&&raiseDirtOk, raisePrecondLabel, 'Raise');
-      html += '<div class="estate-action-row">';
-      html += '<div class="estate-action-info"><b>Raise Layer</b><br>Requires Digging '+ESTATE_RAISE_LEVEL+' &bull; Costs '+ESTATE_RAISE_DIRT_COST+' Dirt (have '+dirtOwned+')<br>Takes 10 min &bull; +'+ESTATE_TERRAFORM_XP+' Digging XP on completion</div>';
-      html += '<button class="action-btn" data-action="estateRaiseLayer" data-x="'+x+'" data-y="'+y+'" '+(rs.off?'disabled':'')+'>'+rs.label+'</button>';
-      html += '</div>';
-      var canLower = cell.height > 0;
-      var lowerReq = estateLowerRequiredLevel(cell.height);
-      var lowerLevelOk = digLvl >= lowerReq;
-      var ls = estQBtn(canLower&&lowerLevelOk, !canLower?'Bedrock':'Lv '+lowerReq+' Req.', 'Lower');
-      html += '<div class="estate-action-row">';
-      html += '<div class="estate-action-info"><b>Lower Layer</b><br>Requires Digging '+lowerReq+' &bull; Recovers '+ESTATE_LOWER_DIRT_REWARD+' Dirt<br>Takes 10 min &bull; +'+ESTATE_TERRAFORM_XP+' Digging XP on completion</div>';
-      html += '<button class="action-btn" data-action="estateLowerLayer" data-x="'+x+'" data-y="'+y+'" '+(ls.off?'disabled':'')+'>'+ls.label+'</button>';
-      html += '</div>';
+      html += terraformRows();
       html += '<div class="estate-action-row">';
       html += '<div class="estate-action-info"><b>Pave Tile</b><br>'+(_tileIsWater ? 'This tile is underwater. Raise it above the waterline before paving.' : 'Change this tile to a stone paving finish -- requires 20 of the matching Paving Tile and its Paving level.')+'</div>';
       html += '<button class="action-btn" data-action="estateTogglePavingMenu" '+((estToggleBlockedByOther()||_tileIsWater)?'disabled':'')+'>'+(estToggleBlockedByOther()?'In use':(_tileIsWater?'Underwater':(estatePavingMenuOpen?'Close List':'Choose Finish')))+'</button>';
@@ -34612,7 +34628,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.55.0';
+  var GAME_VERSION = '0.0.55.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -34722,7 +34738,7 @@
       peonTaskTier:peonTaskTier, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
       generatePersonalEstateGrid:generatePersonalEstateGrid, generateEstateGrid:generateEstateGrid, estatePlaceStarterKit:estatePlaceStarterKit, estateIsStarterTile:estateIsStarterTile, ESTATE_STARTER_WORKSHOP:ESTATE_STARTER_WORKSHOP, ESTATE_STARTER_COTTAGE:ESTATE_STARTER_COTTAGE, ESTATE_STARTER_PAVING:ESTATE_STARTER_PAVING, estatePeonSources:estatePeonSources,
       ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline, simulateOfflineFarming:simulateOfflineFarming, bestOwnedSeedForField:bestOwnedSeedForField, seedAllowedForPlanting:seedAllowedForPlanting, ownedSeedTypesDesc:ownedSeedTypesDesc, renderFarmPlantControls:renderFarmPlantControls,
-      totemItem:totemItem, placeableTotemsFor:placeableTotemsFor, totemYieldBonusAt:totemYieldBonusAt, ESTATE_TOTEM_MS_PER_TIER:ESTATE_TOTEM_MS_PER_TIER, estatePlaceTotem:estatePlaceTotem, estateRemoveTotem:estateRemoveTotem, estateDrawTotem:estateDrawTotem, drawEstateTotemModel:drawEstateTotemModel, estateDrawTdTotem:estateDrawTdTotem, fieldGrowthMult:fieldGrowthMult, waterYieldBonusAt:waterYieldBonusAt, WATER_YIELD_BONUS:WATER_YIELD_BONUS, buildingStoneInputs:buildingStoneInputs,
+      totemItem:totemItem, placeableTotemsFor:placeableTotemsFor, totemYieldBonusAt:totemYieldBonusAt, ESTATE_TOTEM_MS_PER_TIER:ESTATE_TOTEM_MS_PER_TIER, estatePlaceTotem:estatePlaceTotem, estateRemoveTotem:estateRemoveTotem, estateDrawTotem:estateDrawTotem, drawEstateTotemModel:drawEstateTotemModel, estateDrawTdTotem:estateDrawTdTotem, fieldGrowthMult:fieldGrowthMult, waterYieldBonusAt:waterYieldBonusAt, WATER_YIELD_BONUS:WATER_YIELD_BONUS, buildingStoneInputs:buildingStoneInputs, estateRaiseLayer:estateRaiseLayer, estateLowerLayer:estateLowerLayer,
       workshopBonusPct:workshopBonusPct, workshopSpeedPct:workshopSpeedPct, getWorkshopTierData:getWorkshopTierData, workshopSpeedBonus:workshopSpeedBonus, workshopDoubleChance:workshopDoubleChance, recomputePlacedWorkshops:recomputePlacedWorkshops,
       getPavingRecipe:getPavingRecipe, craftXpBonus:craftXpBonus, gatherXp:gatherXp, craftXp:craftXp, estateBuildXp:estateBuildXp, fishingTreasureChance:fishingTreasureChance, weightedAdvantage:weightedAdvantage,
       addXpAppliedMult:addXpAppliedMult, cardRealXp:cardRealXp, cardTierIndex:cardTierIndex, xpStat:xpStat, curiosityGatherXpBonus:curiosityGatherXpBonus,
