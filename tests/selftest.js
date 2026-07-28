@@ -3133,6 +3133,39 @@
     FF.combatLogPush({ dir:'out', dmg:80, target:'Bear', echo:'Twin Echo' });
     ok(/Twin Echo<\/span> hits Bear/.test(FF.combatLogHtml()), 'a Twin Echo is named too');
 
+    // Familiar spells land in the feed too (ticket-0101): damage hits, siphon drains and utility casts.
+    FF._clReset(); s.settings.advancedCombatLog = true;
+    var svAct2 = s.activity, svHp2 = s.playerHp, svAm = s.familiarBuffs.armorMult, svAu = s.familiarBuffs.armorUntil;
+    try {
+      s.activity = { type:'combat', monsterId:'wildlife_wolf', monsterHp:1e9 };
+      FF.castFamiliarSpell({ type:'hit', name:'Test Bolt', dmgType:'blunt', element:null, amount:10 }, 50, 'mining');
+      var famEntries = FF._clGet().filter(function(e){ return e.dir==='fam'; });
+      eq(famEntries.length, 1, 'a familiar hit pushes one combat-log entry');
+      ok(famEntries[0].dmg > 0 && famEntries[0].spName==='Test Bolt', 'the entry carries the spell name and damage');
+      eq(famEntries[0].fam, FF.FAMILIAR_DATA.mining.name, 'the entry is tagged with the casting familiar');
+      ok(/base /.test(famEntries[0].detail||'') && / = /.test(famEntries[0].detail||''), 'Advanced on: the familiar hit carries a pipeline breakdown');
+      var famHtml = FF.combatLogHtml();
+      ok(/cl-fam/.test(famHtml) && /Test Bolt/.test(famHtml) && /hits /.test(famHtml), 'the familiar hit renders in its own style');
+      // A siphon drain tags the HP it stole.
+      FF._clReset(); s.playerHp = 1;
+      FF.castFamiliarSpell({ type:'siphon', name:'Test Drain', dmgType:'void', element:null, amount:10 }, 50, 'mining');
+      var sip = FF._clGet().filter(function(e){ return e.dir==='fam'; })[0];
+      ok(sip && sip.heal > 0, 'a siphon logs the HP it drained back');
+      ok(/\+.*HP/.test(FF.combatLogHtml()), 'the drain renders its +HP tag');
+      // Utility & heal casts get a cast line while fighting.
+      FF._clReset(); s.playerHp = 1;
+      FF.castFamiliarSpell({ type:'heal', name:'Test Mend', amount:10 }, 50, 'mining');
+      FF.castFamiliarSpell({ type:'armorBuff', name:'Test Ward', mult:1.5, durationMs:6000 }, 50, 'mining');
+      var casts = FF._clGet().filter(function(e){ return e.dir==='fam'; });
+      eq(casts.length, 2, 'heal + buff casts each log a line');
+      ok(casts[0].heal > 0, 'the heal cast carries the HP restored');
+      ok(/casts <b>Test Ward<\/b>/.test(FF.combatLogHtml()), 'a utility cast reads as a cast, not a hit');
+      // Out of combat the feed stays quiet (buffs can fire between fights).
+      FF._clReset(); s.activity = null;
+      FF.castFamiliarSpell({ type:'armorBuff', name:'Test Ward', mult:1.5, durationMs:6000 }, 50, 'mining');
+      eq(FF._clGet().length, 0, 'no combat-log entry for a cast outside combat');
+    } finally { s.activity = svAct2; s.playerHp = svHp2; s.familiarBuffs.armorMult = svAm; s.familiarBuffs.armorUntil = svAu; }
+
     // Ring buffer cap: never grows unbounded.
     FF._clReset();
     for(var i=0;i<260;i++) FF.combatLogPush({ dir:'out', dmg:1, target:'x' });
