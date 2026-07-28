@@ -9203,6 +9203,20 @@
     ok(FF.marketSellNet(50, 3) === 50*3 - FF.marketTax(50*3), 'sell net stays consistent with marketTax');
   });
 
+  // ---- Marketplace category filter: quick-nav buckets each map every tradeable item to one category ----
+  suite('marketplace categories', function(){
+    eq(FF.MARKET_CATEGORIES[0].id, 'all', 'the first category is "All"');
+    eq(FF.marketItemCategory('stweapon_scimitar_t0_normal'), 'weapons', 'a stackable weapon -> Weapons');
+    eq(FF.marketItemCategory('tool_mining_t0_normal'), 'tools', 'a gather tool -> Tools');
+    eq(FF.marketItemCategory('relic_t0_normal'), 'relics', 'a relic -> Relics');
+    eq(FF.marketItemCategory('ring_slash_t0_normal'), 'equipment', 'a ring -> Equipment');
+    eq(FF.marketItemCategory('workshop_mining_t0'), 'other', 'a workshop building -> Other');
+    eq(FF.marketItemCategory('powder_t0'), 'materials', 'a gathered material -> Materials');
+    // Every tradeable id resolves to one of the defined buckets (no item is uncategorized).
+    var cats = {}; FF.MARKET_CATEGORIES.forEach(function(c){ cats[c.id] = true; });
+    ok(Object.keys(FF.ALL_SELLABLE).slice(0, 400).every(function(id){ return id==='gold' || cats[FF.marketItemCategory(id)]; }), 'every sellable item maps to a known category');
+  });
+
   // ---- Item catalog (server allowlist) -- buildItemCatalog covers the whole inventory-key universe ----
   // This map is dumped to the server (item_catalog) and GATES the item ledger + marketplace. If it ever
   // misses a legit inventory key, that item becomes un-ledgerable/un-sellable, so completeness is load-

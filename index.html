@@ -482,6 +482,9 @@
   .forge-group-chev{flex:0 0 auto; color:var(--fg-accent,var(--cat-crafting)); font-size:12px; width:12px;}
   .forge-group-name{font-family:var(--font-display); font-weight:600; font-size:15px; color:var(--fg-accent,var(--cat-crafting));}
   .forge-group-meta{margin-left:auto; font-family:var(--font-mono); font-size:11px; color:var(--text-dim);}
+  .market-cats{display:flex; gap:6px; margin-bottom:8px; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:2px;}
+  .market-cat{flex:0 0 auto; font-family:inherit; font-size:12px; padding:5px 11px; border:1px solid var(--border); border-radius:999px; background:var(--bg-card); color:var(--text-dim); cursor:pointer; white-space:nowrap;}
+  .market-cat.on{border-color:var(--cat-market); color:var(--cat-market); font-weight:600;}
   .market-search{margin-bottom:8px;}
   .market-search-input, .market-num{font-family:inherit; font-size:13px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text); width:100%; box-sizing:border-box;}
   .market-results{display:flex; flex-direction:column; gap:4px; max-height:60dvh; overflow:auto;}
@@ -30661,7 +30664,22 @@
   function marketTax(gold){ return Math.floor(gold * MARKET_TAX * merchantTaxMult()); }
   function marketSellNet(price, qty){ var g = price * qty; return g - marketTax(g); }
   function marketBuyCost(price, qty){ return price * qty; }
-  var marketState = { mode:'forsale', status:'idle', selectedItem:null, book:null, bookItem:null, orders:[], proceeds:{gold:0,items:[]}, listings:[], search:'', busy:false, sellMsg:'' };
+  var marketState = { mode:'forsale', status:'idle', selectedItem:null, book:null, bookItem:null, orders:[], proceeds:{gold:0,items:[]}, listings:[], search:'', category:'all', busy:false, sellMsg:'' };
+  // Marketplace category filter for quick navigation. Each tradeable id maps to one bucket by which item
+  // collection it belongs to (checked at render time, when all the collections are defined).
+  var MARKET_CATEGORIES = [
+    { id:'all', label:'All' }, { id:'materials', label:'Materials' }, { id:'equipment', label:'Equipment' },
+    { id:'weapons', label:'Weapons' }, { id:'tools', label:'Tools' }, { id:'relics', label:'Relics' }, { id:'other', label:'Other' }
+  ];
+  function marketItemCategory(id){
+    if(STACKABLE_WEAPON_ITEMS[id]) return 'weapons';
+    if(TOOL_ITEMS[id]) return 'tools';
+    if(RELIC_ITEMS[id]) return 'relics';
+    if(BODY_ARMOR_ITEMS[id] || BELT_ITEMS[id] || RING_ITEMS[id] || AMULET_ITEMS[id] || STACKABLE_SHIELD_ITEMS[id] || STACKABLE_QUIVER_ITEMS[id] || WARD_ITEMS[id]) return 'equipment';
+    if(WORKSHOP_ITEMS[id] || COTTAGE_ITEMS[id]) return 'other';
+    return 'materials'; // gathered/refined resources, food, seeds, gems, powders, glyphs, etc.
+  }
+  function marketMatchesCategory(id){ var c = marketState.category || 'all'; return c === 'all' || marketItemCategory(id) === c; }
   function marketInvoke(action, payload){
     if(!chatClient || !authUser) return Promise.resolve({ ok:false, error:'Sign in first.' });
     var body = { action:action };
@@ -30708,7 +30726,7 @@
   // The list body for the current mode (For Sale listings / Buy item-picker / Sell inventory-picker).
   function marketListHtml(){
     if(marketState.mode==='forsale'){
-      var rows = (marketState.listings||[]).filter(function(r){ return marketMatchesSearch(r.item_key); });
+      var rows = (marketState.listings||[]).filter(function(r){ return marketMatchesSearch(r.item_key) && marketMatchesCategory(r.item_key); });
       rows.sort(function(a,b){ return marketItemName(a.item_key).localeCompare(marketItemName(b.item_key)); });
       if(!rows.length){
         var msg = (marketState.search||'').trim() ? 'No items for sale match “'+escapeHtml(marketState.search)+'”.'
@@ -30724,10 +30742,10 @@
       return html;
     }
     var ids;
-    if(marketState.mode==='sell'){ ids = marketOwnedIds().filter(marketMatchesSearch); }
-    else { // buy: search any tradeable item to bid on
-      if(!(marketState.search||'').trim()) return '<div class="empty-note">Search any item to place a buy order (bid) — even ones nobody is selling yet.</div>';
-      ids = marketTradeableIds().filter(marketMatchesSearch).sort(function(a,b){ return marketItemName(a).localeCompare(marketItemName(b)); });
+    if(marketState.mode==='sell'){ ids = marketOwnedIds().filter(marketMatchesSearch).filter(marketMatchesCategory); }
+    else { // buy: search any tradeable item to bid on, or browse a category
+      if(!(marketState.search||'').trim() && (marketState.category||'all')==='all') return '<div class="empty-note">Search any item to place a buy order (bid) — even ones nobody is selling yet — or pick a category above to browse.</div>';
+      ids = marketTradeableIds().filter(marketMatchesSearch).filter(marketMatchesCategory).sort(function(a,b){ return marketItemName(a).localeCompare(marketItemName(b)); });
     }
     if(!ids.length){
       var m2 = marketState.mode==='sell' ? ((marketState.search||'').trim() ? 'None of your items match.' : 'You have nothing to sell right now.') : 'No items match “'+escapeHtml(marketState.search)+'”.';
@@ -30742,7 +30760,10 @@
   function renderMarketResults(){ var el = document.getElementById('marketResults'); if(el){ invalidateContentCache(); el.innerHTML = marketListHtml(); } }
   function renderMarketList(){
     var ph = marketState.mode==='sell' ? 'Search your items to sell…' : (marketState.mode==='buy' ? 'Search any item to bid on…' : 'Search items for sale…');
-    var html = '<div class="market-search"><input id="marketSearch" class="market-search-input" type="text" placeholder="'+ph+'" value="'+escapeHtml(marketState.search)+'" autocomplete="off"></div>';
+    var html = '<div class="market-cats">' + MARKET_CATEGORIES.map(function(c){
+      return '<button class="market-cat'+((marketState.category||'all')===c.id?' on':'')+'" data-action="marketSetCategory" data-cat="'+c.id+'">'+c.label+'</button>';
+    }).join('') + '</div>';
+    html += '<div class="market-search"><input id="marketSearch" class="market-search-input" type="text" placeholder="'+ph+'" value="'+escapeHtml(marketState.search)+'" autocomplete="off"></div>';
     html += '<div id="marketResults" class="market-results">'+marketListHtml()+'</div>';
     return html;
   }
@@ -33304,6 +33325,7 @@
     marketMode: function(btn, e){
       marketState.mode = btn.getAttribute('data-mode'); marketState.selectedItem = null; marketState.search = ''; render();
     },
+    marketSetCategory: function(btn, e){ marketState.category = btn.getAttribute('data-cat') || 'all'; render(); },
     marketRefresh: function(btn, e){ marketReload(); },
     marketPickItem: function(btn, e){ marketPickItem(btn.getAttribute('data-item')); },
     marketClearItem: function(btn, e){ marketState.selectedItem = null; render(); },
@@ -34163,7 +34185,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.50.17';
+  var GAME_VERSION = '0.0.50.18';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -34321,7 +34343,7 @@
       fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, pickFertilizerTier:pickFertilizerTier, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE, openTreasureChests:openTreasureChests, CHEST_MAX_GOLD:CHEST_MAX_GOLD, openCritterCaches:openCritterCaches, critterCacheChance:critterCacheChance, pickWeightedFarmingTier:pickWeightedFarmingTier, CACHE_SEED_TIER_DECAY:CACHE_SEED_TIER_DECAY, GRAIN_TIER_COUNT:GRAIN_TIER_COUNT, BASE_NEST_CHANCE:BASE_NEST_CHANCE, CRITTER_CACHE_SKILLS:CRITTER_CACHE_SKILLS, SEED_DROP_SKILLS:SEED_DROP_SKILLS,
       TOOL_ITEMS:TOOL_ITEMS, equipTool:equipTool, equipBestTool:equipBestTool, bestOwnedToolForSkill:bestOwnedToolForSkill, equippedToolAtLeast:equippedToolAtLeast, equippedToolScore:equippedToolScore, toolAggregateScore:toolAggregateScore, findToolType:findToolType,
       butcherOutputChance:butcherOutputChance, butcherOutputQty:butcherOutputQty, BUTCHER_OUTPUT_ROLLS:BUTCHER_OUTPUT_ROLLS, getEquippedGatherTool:getEquippedGatherTool, getGatherToolTierData:getGatherToolTierData, getEquippedCraftTool:getEquippedCraftTool,
-      marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX,
+      marketTax:marketTax, marketSellNet:marketSellNet, marketBuyCost:marketBuyCost, MARKET_TAX:MARKET_TAX, marketItemCategory:marketItemCategory, MARKET_CATEGORIES:MARKET_CATEGORIES,
       ESTATE_COTTAGE_MS_PER_TIER:ESTATE_COTTAGE_MS_PER_TIER, ESTATE_PAVE_MS_PER_TIER:ESTATE_PAVE_MS_PER_TIER, ESTATE_WORKSHOP_MS_PER_TIER:ESTATE_WORKSHOP_MS_PER_TIER,
       expBuffMultFor:expBuffMultFor, SERVER_BUFF_EXP_COST:SERVER_BUFF_EXP_COST, SERVER_BUFF_EXP_MULT:SERVER_BUFF_EXP_MULT, SERVER_BUFF_EXP_MS:SERVER_BUFF_EXP_MS, rarityBuffSeconds:rarityBuffSeconds, serverBuffRarityBonus:serverBuffRarityBonus, rarityBonusShortLabel:rarityBonusShortLabel, serverRarityBuffActive:serverRarityBuffActive, SERVER_RARITY_BONUS:SERVER_RARITY_BONUS, _serverBuff:serverBuff, maybeSummonFamiliar:maybeSummonFamiliar, LB_STAT_METRICS:LB_STAT_METRICS,
       physTierPairs:physTierPairs, itemTierFromId:itemTierFromId, recipeTier:recipeTier, itemRarityId:itemRarityId, invFamilyKey:invFamilyKey, invGroupFor:invGroupFor, INV_GROUPS:INV_GROUPS,
