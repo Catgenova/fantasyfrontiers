@@ -6609,7 +6609,7 @@
     m *= scorchDmgMult(st);                                                                                    // Scorch: +2% per stack
     if(legActive('rimewyrm', st) && enemyScorched(st)) m *= 1.20;                                              // Rimewyrm's Fang: +20% vs a Scorched foe
     if(legActive('dawnwyrm', st) && (st.lumenShield||0) > 0) m *= (1 + elementDamageBonus(st, 'light'));       // Dawnwyrm's Radiance: Barrier lends your Light Attunement
-    if(legActive('sunwyrm', st) && monster && monster.element==='dark') m *= 1.40;                             // Sunwyrm's Verdict: +40% vs a Dark foe (progresses past D3 Lichbane x1.30)
+    if(legActive('sunwyrm', st) && monster && monster.element==='dark') m *= 1.25;                             // Sunwyrm's Verdict: +25% vs a Dark foe
     if(legActive('wyrmstalker', st) && enemyScorched(st)) m *= 1.25;                                           // Wyrmstalker Bow: +25% vs a Scorched foe (progresses past D2 Trapmaster x1.20)
     // --- Batch EE (slash + pierce weapon amplifiers) ---
     if(legActive('greedwyrm', st)){ var _g = st.activity && st.activity.type==='combat' ? (st.activity.goldEarned||0) : 0; m *= (1 + Math.min(0.50, 0.02 * Math.floor(_g / 1000))); } // Greedwyrm's Claw: +2% per 1k gold this fight
@@ -7193,11 +7193,11 @@
   //   Lv 80 Amen            -- a completed Litany erupts in Gloria and Empowers the next verse +50%
   var TPL_VERSES = ['might', 'haste', 'aegis', 'zeal'];
   var TPL_VERSE_MS = 6000, TPL_VERSE_MS_D1 = 5000;   // Quick Verse (D1 2pc): a faster liturgy
-  var TPL_MIGHT_PCT = 0.15, TPL_HASTE_PCT = 0.15, TPL_ZEAL_CRITDMG = 0.15;
+  var TPL_MIGHT_PCT = 0.12, TPL_HASTE_PCT = 0.12, TPL_ZEAL_CRITDMG = 0.12;
   var TPL_AEGIS_PCT_PER_SEC = 0.03, TPL_AEGIS_CAP_PCT = 0.15; // the Aegis verse's bank rate + shield cap (D2 full doubles both)
   var TPL_FERVOR_EXT_MS = 1000, TPL_FERVOR_EXT_CAP = 4000;
-  var TPL_DOXOLOGY_PER = 0.04, TPL_DOXOLOGY_CAP = 5, TPL_DOXOLOGY_CAP_SUNSCALE = 8;
-  var TPL_GLORIA_PCT = 0.75;                         // Gloria: x recent average hit, PER Doxology stack
+  var TPL_DOXOLOGY_PER = 0.03, TPL_DOXOLOGY_CAP = 5, TPL_DOXOLOGY_CAP_SUNSCALE = 8;
+  var TPL_GLORIA_PCT = 0.4;                          // Gloria: x recent average hit, PER Doxology stack
   var TPL_EMPOWERED_MULT = 1.5;                      // Amen: the next verse is Empowered
   var TPL_VERSE_POWER_D2 = 1.5;                      // Zealous Verse (D2 2pc): verse effects 50% stronger
   var LEG_SUNBRAND_END_PCT = 0.5;                    // Sunbrand: half the banked shield detonates when the Aegis verse ends
@@ -15204,7 +15204,7 @@
       state.tplHitAvg = state.tplHitAvg ? Math.round(state.tplHitAvg * 0.75 + dmgToMonster * 0.25) : dmgToMonster;
       if(isCrit && templarBonus(20)) state.tplVerseExt = Math.min(TPL_FERVOR_EXT_CAP, (state.tplVerseExt||0) + TPL_FERVOR_EXT_MS);
       if(isCrit && setFullD4('templar') && templarVerse(state)==='zeal' && act.monsterHp > 0){
-        var _sz = Math.round(dmgToMonster * 0.40 * elementDmgMult(state, 'light'));
+        var _sz = Math.round(dmgToMonster * 0.30 * elementDmgMult(state, 'light'));
         if(_sz > 0){ act.monsterHp -= _sz; awardElementXp('light', _sz); if(!offlineCapture) spawnCombatFloat('Sunburst -'+fmt(_sz), 'ft-crit', true); }
       }
     }
