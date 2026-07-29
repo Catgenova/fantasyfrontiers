@@ -49,6 +49,15 @@ const BUILDS = {
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
     offhandClaw: true,
   },
+  duelist: {
+    // Rapier + EMPTY offhand. The Sidestep clock self-drives the whole dodge kit, so the sim measures
+    // it honestly with no priming; the zero-offense dummy means no REAL dodges (En Garde's clock
+    // advance and Untouchable's hit-halving never trigger -- both strictly favor the player anyway).
+    weapon: { typeId: "rapier", base: "stweapon_rapier_t19_fantastic", tier: 19, styleXp: ["rapier"] },
+    legs: ["engarde", "bloodwaltz", "phantomthrust", "wyrmdancer"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "pierce",
+  },
   berserker: {
     // Max Health IS the weapon (Titan's Heft/Deepquake/Wrathscale scale off it), so jewelry lines trade
     // lifesteal for Max HP. primeLedger holds the Blood Ledger inked at cap (owner rule: simulate the

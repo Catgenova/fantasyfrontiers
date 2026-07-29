@@ -60,8 +60,10 @@ rules): **Summoner** (45s) Baton ~53B / Broodwyrm ~43B / Packbrand ~43B / Necroc
 **Assassin** (45s) Shadowwyrm ~125B ≈ Throatripper ~123B / Wraithclaw ~113B / Gloomstalker
 ~111B (set D3 Bloodrush); **Berserker** (90s — 9s swings need the longer window; Blood
 Ledger held at cap via `primeLedger`, owner rule) Wrathscale ~82B / Deepquake ~53B /
-Skullcleaver ~44B / Gravewrath ~40B (set D2 Steep Price/Debt Paid). Cloak: Ruin for all
-three. Caveats: runs are noisy (±20%); the zero-offense dummy keeps Vanish permanently
+Skullcleaver ~44B / Gravewrath ~40B (set D2 Steep Price/Debt Paid); **Duelist** (45s,
+v0.0.58.0 Phantom Dancer as shipped — flagged HOT, ~3-4x Assassin, tuning pending)
+Wyrmdancer ~479B / Gossamer ~397B / Phantomthrust ~351B / Bloodwaltz ~292B (set D4
+Flame Waltz/Firestorm). Cloak: Ruin for every class so far. Caveats: runs are noisy (±20%); the zero-offense dummy keeps Vanish permanently
 armed (flatters Assassin), keeps Berserker's HP bar full (flatters Wrathscale), and
 ramp-speed legendaries (Gravewrath) measure at their floor when the ledger is primed.
 Slow-swing classes: use SIM_MS=90000. The dummy HP pool is 1e15 with refill at 1e14 —
