@@ -64,7 +64,12 @@ Skullcleaver ~44B / Gravewrath ~40B (set D2 Steep Price/Debt Paid); **Duelist** 
 v0.0.58.2 final tune — owner target "60B band": Sidestep 6s, Riposte +10%, Afterimage 10%,
 Untouchable 1%/s cap 15%, Danse every 6th, Wyrmdancer 2.5%/stack, Flame Waltz 1.5%/stack)
 Wyrmdancer ~88B / Bloodwaltz ~78B / Phantomthrust ~74B / Gossamer ~71B (set D4 Flame
-Waltz/Firestorm). Duelist runs are the noisiest (~±25% — Danse/crit streak timing), and the
+Waltz/Firestorm); **Reaper** (45s, v0.0.59.1 final tune — Rot 5%/stack/s, tick crits flat x2,
+Soulflame +10% ch / +10% Fire rider, Soulflay eruption 50%) Deathshepherd ~89B / Wraithguard
+~73B / Soulflay ~72B / Soulflame ~72B (set D4 Carrion Festering/Gangrene). Reaper caveats:
+the zero-offense dummy keeps the Siphon Shield permanently full (flatters Wraithguard's
+faster ticks and Spectral Edge), and the refilled pool means no kills, so Contagion (D1
+full) measures dead. Duelist runs are the noisiest (~±25% — Danse/crit streak timing), and the
 harness setup() now hard-resets session state between configs (companionCastsOnCombatEntry(null)
 + d4WrathReset) — continuously-refreshed buffs like Wrath otherwise leak into the next config.
 Cloak: Ruin for every class so far. Caveats: runs are noisy (±20%); the zero-offense dummy keeps Vanish permanently

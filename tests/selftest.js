@@ -10914,7 +10914,8 @@
     // The Rotlord perk ladder: names in order.
     eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Blight,Rot Siphon,Siphon Shield,Gravebloom,The Reaping', 'Rotlord perk names');
     eq(FF.REAPER_ROT_MAX, 10, 'Rot caps at 10 stacks');
-    eq(FF.REAPER_ROT_PCT, 0.08, 'each Rot stack ticks 8% of the recent average hit per second');
+    eq(FF.REAPER_ROT_PCT, 0.05, 'each Rot stack ticks 5% of the recent average hit per second');
+    eq(FF.REAPER_ROT_CRIT_MULT, 2.0, 'a critical Rot tick strikes for a flat double (no crit-damage stat ride)');
     eq(FF.REAPER_ROT_SIPHON, 0.5, 'Rot Siphon heals 50% of tick damage');
     eq(FF.REAPER_GRAVEBLOOM_PER, 0.02, 'Gravebloom: +2% direct damage per Rot stack');
 
@@ -10956,14 +10957,14 @@
         Math.random = function(){ return 0.999; }; // never crit (no D4 set anyway)
         var hp0 = s.activity.monsterHp;
         var tick = FF.reaperRotFireTick(s);
-        eq(tick, 800, 'a full-stack tick deals 10 x 8% x 1000 = 800');
-        eq(hp0 - s.activity.monsterHp, 800, 'the tick actually chipped the foe');
-        eq(s.reaperShield, Math.min(FF.reaperShieldCap(s), 400), 'at full Health the 50% heal overflows into the Siphon Shield (clamped to its cap)');
+        eq(tick, 500, 'a full-stack tick deals 10 x 5% x 1000 = 500');
+        eq(hp0 - s.activity.monsterHp, 500, 'the tick actually chipped the foe');
+        eq(s.reaperShield, Math.min(FF.reaperShieldCap(s), 250), 'at full Health the 50% heal overflows into the Siphon Shield (clamped to its cap)');
         ok(s.reaperShield > 0, 'the overflow actually banked');
         // The rot clock: applyReaperRotTick fires once per accumulated second.
         s.activity.reaperRotAccum = 0; var hp1 = s.activity.monsterHp;
         FF.applyReaperRotTick(500);  eq(s.activity.monsterHp, hp1, 'no tick before a full second accumulates');
-        FF.applyReaperRotTick(500);  eq(hp1 - s.activity.monsterHp, 800, 'the rot clock fires one tick per second');
+        FF.applyReaperRotTick(500);  eq(hp1 - s.activity.monsterHp, 500, 'the rot clock fires one tick per second');
         // Expiry: stale rot reads as 0 stacks and the next hit restarts the meter.
         s.activity.reaperRotUntil = Date.now() - 1;
         eq(FF.reaperRotStacks(s), 0, 'expired Rot reads as 0 stacks');
@@ -10981,7 +10982,7 @@
         s.playerHp = mh; s.reaperShield = 0;
         var hp2 = s.activity.monsterHp;
         FF.playerAttackTick(false, 1, false);
-        ok(hp2 - s.activity.monsterHp > 500000, 'a max-Rot swing triggers The Reaping (an instant ~600k+ rot tick rode a tiny swing)');
+        ok(hp2 - s.activity.monsterHp > 300000, 'a max-Rot swing triggers The Reaping (an instant ~375k+ rot tick rode a tiny swing)');
         ok(s.reaperShield > 0, 'the Reaping tick siphoned into the shield');
         // Soul Glut (D2 2pc): Rot Siphon deepens to 75%.
         var d2a = FF.mintSetPiece('reaper','chest','rare','d2'), d2b = FF.mintSetPiece('reaper','gauntlets','rare','d2');
@@ -10996,7 +10997,7 @@
         s.activity.reaperRot = 5; s.activity.reaperRotUntil = Date.now() + 9999; s.activity.reaperRotHitAvg = 1000;
         Math.random = function(){ return 0; }; // force the tick crit
         var critTick = FF.reaperRotFireTick(s);
-        ok(critTick > 400, 'Festering Strike: the tick critted (5 x 8% x 1000 = 400 base, crit-multiplied)');
+        eq(critTick, 500, 'Festering Strike: the tick critted for a flat double (5 x 5% x 1000 = 250 base -> 500)');
         eq(FF.reaperRotStacks(s), 6, 'Gangrene: the critical tick spread +1 Rot stack');
         s.bodyArmor.chest = cloth(); s.bodyArmor.gauntlets = cloth(); s.bodyArmor.boots = cloth();
         // Wraithguard: the rot clock runs at 800ms while the shield holds.
