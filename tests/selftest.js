@@ -217,10 +217,10 @@
     // xpStat markup: a tier chip always; the "(+N real)" only when a modifier is changing it.
     clear();
     var plain = FF.xpStat('cooking', 100, 'craft', 2);
-    ok(/t3/.test(plain) && /\+100 XP/.test(plain) && !/real/.test(plain), 'neutral: tier chip t3, base only, no real span');
+    ok(/>t2</.test(plain) && /\+100 XP/.test(plain) && !/real/.test(plain), 'neutral: zero-based tier chip t2, base only, no real span');
     s.mortal = true;
     var mod = FF.xpStat('cooking', 100, 'craft', 4);
-    ok(/t5/.test(mod) && /\(\+50 real\)/.test(mod), 'with a modifier: tier chip t5 and a (+50 real) span');
+    ok(/>t4</.test(mod) && /\(\+50 real\)/.test(mod), 'with a modifier: zero-based tier chip t4 and a (+50 real) span');
 
     // cardTierIndex resolves a number, an id string, or an object.
     eq(FF.cardTierIndex(3), 3, 'tier from number');
@@ -5125,19 +5125,22 @@
 
   // ---- Settings: per-tier-band rarity-roll toggles (QoL) ----
   suite('settings: per-tier rarity-roll toggles', function(){
-    // Band boundaries are in DISPLAY tiers (the 1-based chip on every craft card: chip t20 = index 19).
-    // Ticket-0107: the old index-based bands let the "T16-19" toggle swallow display-t20 items (the top
-    // melee weapon tier), so 300+ Tool Steel Claymores could legitimately roll zero rares.
+    // Tier numbers are ZERO-BASED game-wide (ticket-0107): the craft-card chips, the settings bands and
+    // the item ids all count Copper = t0 ... Tool Steel = t19, Tungsten (Lv-100 refining) = t20.
     var st5 = { settings:{ noRarityT0_5:true } };
-    ok(FF.rarityRollDisabledForTier(0, st5) && FF.rarityRollDisabledForTier(4, st5), 'the t1-t5 toggle covers indexes 0 and 4 (chips t1/t5)');
-    eq(FF.rarityRollDisabledForTier(5, st5), false, 'the t1-t5 toggle does not reach chip t6 (index 5)');
+    ok(FF.rarityRollDisabledForTier(0, st5) && FF.rarityRollDisabledForTier(5, st5), 'the t0-t5 toggle covers tiers 0 and 5');
+    eq(FF.rarityRollDisabledForTier(6, st5), false, 'the t0-t5 toggle does not reach tier 6');
     var st610 = { settings:{ noRarityT6_10:true } };
-    eq(FF.rarityRollDisabledForTier(4, st610), false, 'the t6-t10 toggle does not reach chip t5 (index 4)');
-    ok(FF.rarityRollDisabledForTier(5, st610) && FF.rarityRollDisabledForTier(9, st610), 'the t6-t10 toggle covers indexes 5 and 9 (chips t6/t10)');
+    eq(FF.rarityRollDisabledForTier(5, st610), false, 'the t6-t10 toggle does not reach tier 5');
+    ok(FF.rarityRollDisabledForTier(6, st610) && FF.rarityRollDisabledForTier(10, st610), 'the t6-t10 toggle covers tiers 6 and 10');
     var st1619 = { settings:{ noRarityT16_19:true } };
-    ok(FF.rarityRollDisabledForTier(15, st1619) && FF.rarityRollDisabledForTier(18, st1619), 'the t16-t19 toggle covers indexes 15 and 18 (chips t16/t19)');
-    eq(FF.rarityRollDisabledForTier(19, st1619), false, 'chip t20 (index 19, e.g. a Tool Steel Claymore) ALWAYS rolls');
-    eq(FF.rarityRollDisabledForTier(20, st1619), false, 'chip t21 (index 20) always rolls too');
+    ok(FF.rarityRollDisabledForTier(16, st1619) && FF.rarityRollDisabledForTier(19, st1619), 'the t16-t19 toggle covers tiers 16 and 19 (t19 = top weapon tier, as its desc warns)');
+    eq(FF.rarityRollDisabledForTier(20, st1619), false, 'tier 20 always rolls (no band covers it)');
+    // The chips players see use the SAME zero-based numbers as the bands and the item ids.
+    ok(/>t19</.test(FF.tierChipHtml(19)), 'the tier chip for index 19 reads t19 (Tool Steel)');
+    ok(/>t0</.test(FF.tierChipHtml(0)), 'the tier chip for index 0 reads t0 (Copper)');
+    ok(/>t20</.test(FF.tierChipHtml(20)), 'the tier chip for index 20 reads t20 (Tungsten)');
+    eq(FF.tierChipHtml(-1), '', 'a negative tier renders no chip');
     eq(FF.rarityRollDisabledForTier(3, { settings:{} }), false, 'no toggle set -> rarity rolls stay enabled');
     // rollCraftRarity forces Normal when its tier band is disabled (deterministic -- no RNG in that path).
     eq(FF.rollCraftRarity({ settings:{ noRarityT0_5:true } }, 2), 'normal', 'a disabled band makes rollCraftRarity return normal');
