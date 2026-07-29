@@ -8376,6 +8376,70 @@
     S.familiars = sv.fams; S.activeCompanions = sv.comps; S.companionCast = sv.cast; S.activity = sv.act;
   });
 
+  // ---- Equip picker: claw dual-wield rows stay live for the free hand (ticket-0095) ---------------
+  suite('equip picker: claw rows + dual-wield conservation', function(){
+    var S = FF._state;
+    var F = 'stweapon_claw_t19_fantastic', SUP = 'stweapon_claw_t19_supreme';
+    var sv = { mh:S.equippedMainhand, mhT:S.equippedMainhandTier, mhR:S.equippedMainhandRarity, mhU:S.equippedMainhandUid,
+               oh:S.equippedOffhand, ohT:S.equippedOffhandTier, ohR:S.equippedOffhandRarity, ohU:S.equippedOffhandUid,
+               invF:S.inventory[F], invS:S.inventory[SUP], xp:S.xp.claw, act:S.activity };
+    try {
+      S.activity = { type:null };
+      S.xp.claw = FF.xpFloorForLevel(100);
+      S.equippedMainhand = null; S.equippedMainhandTier = 0; S.equippedMainhandRarity = 'normal'; S.equippedMainhandUid = null;
+      S.equippedOffhand = null; S.equippedOffhandTier = 0; S.equippedOffhandRarity = 'normal'; S.equippedOffhandUid = null;
+      S.inventory[F] = 2; S.inventory[SUP] = 4;
+
+      // Conservation through the full ticket flow: equip main, dual-wield the SPARE of the same id,
+      // swap main to another claw, unequip -- no claw is ever lost.
+      FF.equipStackableWeapon(F);
+      eq(S.equippedMainhand, 'claw', 'fantastic claw equipped to the main hand');
+      eq(S.inventory[F], 1, 'one copy left in the bag');
+      FF.equipOffhandClaw(F);
+      ok(S.equippedOffhand==='claw' && S.equippedOffhandRarity==='fantastic', 'the SPARE copy of the same claw dual-wields into the off-hand');
+      eq(S.inventory[F], 0, 'both copies now in hand');
+      FF.equipStackableWeapon(SUP);
+      eq(S.equippedMainhandRarity, 'supreme', 'main hand swapped to the supreme claw');
+      eq(S.inventory[F], 1, 'the swapped-out fantastic claw returned to the bag');
+      eq(S.inventory[SUP], 3, 'one supreme copy in hand');
+      ok(S.equippedOffhand==='claw' && S.equippedOffhandRarity==='fantastic', 'the off-hand claw survives a main-hand claw swap');
+      FF.unequipStackableWeapon();
+      eq(S.inventory[F], 2, 'unequip returns the off-hand claw too (it needs a claw main hand)');
+      eq(S.inventory[SUP], 4, 'unequip returns the main-hand claw -- nothing lost end to end');
+
+      // Row rendering: the row matching the EQUIPPED main-hand claw keeps a live off-hand button.
+      FF.equipStackableWeapon(F); // main = fantastic, 1 spare in the bag
+      var cur = FF.STACKABLE_WEAPON_ITEMS[F];
+      var rowMain = FF.equipCandidateRowHtml(FF.weaponCandidate(F, cur, 0));
+      ok(/main hand<\/span>/.test(rowMain) && /\+ in hand/.test(rowMain), 'the wielded claw row reads "main hand ... + in hand"');
+      ok(rowMain.indexOf('equipOffhandClaw') !== -1, 'ticket-0095: the wielded claw row still offers Equip off hand for the spare copy');
+      ok(rowMain.indexOf('data-action="equipStackableWeapon"') === -1, 'no redundant main-hand button on the already-wielded row');
+      var rowOther = FF.equipCandidateRowHtml(FF.weaponCandidate(SUP, cur, 0));
+      ok(rowOther.indexOf('data-action="equipStackableWeapon"') !== -1 && rowOther.indexOf('equipOffhandClaw') !== -1, 'other claw rows offer both hands');
+      // The row matching the OFF-hand claw offers only the main hand.
+      FF.equipOffhandClaw(SUP);
+      var rowOff = FF.equipCandidateRowHtml(FF.weaponCandidate(SUP, cur, 0));
+      ok(/off-hand<\/span>/.test(rowOff), 'the off-hand claw row is chipped "off-hand"');
+      ok(rowOff.indexOf('data-action="equipStackableWeapon"') !== -1 && rowOff.indexOf('equipOffhandClaw') === -1, 'it offers only the main hand');
+      // Non-claw equipped rows keep their inert behavior.
+      FF.unequipStackableWeapon();
+      var CLY = 'stweapon_claymore_t19_fantastic', svCly = S.inventory[CLY]; S.inventory[CLY] = 1;
+      var svClyXp = S.xp.claymore; S.xp.claymore = FF.xpFloorForLevel(100);
+      FF.equipStackableWeapon(CLY);
+      var rowCly = FF.equipCandidateRowHtml(FF.weaponCandidate(CLY, FF.STACKABLE_WEAPON_ITEMS[CLY], 0));
+      ok(rowCly.indexOf('data-action') === -1 && rowCly.indexOf('>equipped<') !== -1, 'a non-claw equipped row stays inert');
+      FF.unequipStackableWeapon();
+      if(svCly===undefined) delete S.inventory[CLY]; else S.inventory[CLY] = svCly;
+      S.xp.claymore = svClyXp;
+    } finally {
+      S.equippedMainhand=sv.mh; S.equippedMainhandTier=sv.mhT; S.equippedMainhandRarity=sv.mhR; S.equippedMainhandUid=sv.mhU;
+      S.equippedOffhand=sv.oh; S.equippedOffhandTier=sv.ohT; S.equippedOffhandRarity=sv.ohR; S.equippedOffhandUid=sv.ohU;
+      if(sv.invF===undefined) delete S.inventory[F]; else S.inventory[F]=sv.invF;
+      if(sv.invS===undefined) delete S.inventory[SUP]; else S.inventory[SUP]=sv.invS;
+      S.xp.claw=sv.xp; S.activity=sv.act;
+    }
+  });
+
   suite('quests: area, category, accordion + claim flow', function(){
     var s = FF._state;
     var savedMK = s.monsterKills, savedQ = s.quests, savedInv = s.inventory['corpse_t0'], savedTitles = s.titles, savedFal = s.inventory['stweapon_scimitar_t0_normal'];
