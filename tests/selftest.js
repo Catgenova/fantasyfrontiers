@@ -627,6 +627,11 @@
     var sk = FF.CRAFTING_SKILLS.totems;
     ok(sk && sk.label === 'Totems', 'the Totems craft skill exists');
     eq(sk.recipes.length, 20, '20 Totem tiers (t1..t20; no +0 t0 totem)');
+    // The ladder starts at t1, so the Nth recipe takes the Nth level gate -- a fresh Totems skill (Lv 1)
+    // must have its first recipe craftable or there is no way to earn any Totems XP at all.
+    eq(sk.recipes[0].levelReq, 1, 'the first Totem (t1) is craftable at Totems Lv 1');
+    eq(sk.recipes[1].levelReq, 5, 'the second Totem (t2) gates at Lv 5');
+    eq(sk.recipes[19].levelReq, 95, 'the top Totem (t20) gates at Lv 95');
     ok(!FF.ALL_SELLABLE.totem_t0 && !!FF.ALL_SELLABLE.totem_t1 && !!FF.ALL_SELLABLE.totem_t20, 'totem items register t1..t20 only');
     var r5 = sk.recipes.filter(function(r){ return r.id==='totem_t5'; })[0];
     ok(r5 && r5.inputs.woodcarving_t5 === 5 && r5.inputs.carpentry_t5 === 10, 'a Totem consumes 5 equal-tier Woodcarvings + 10 Planks');

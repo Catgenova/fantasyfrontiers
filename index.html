@@ -3175,7 +3175,10 @@
           list.push({
             id:'totem_t'+i,
             name: FORESTRY_NAMES[i]+' Totem',
-            levelReq: TIER_LEVELS[i],
+            // Nth recipe -> Nth level gate (TIER_LEVELS[i-1], i.e. t1 at Lv 1, t2 at Lv 5, ...). Because
+            // the ladder starts at t1 (no +0 t0 totem), gating t1 at TIER_LEVELS[1]=5 left a fresh Totems
+            // skill (Lv 1) with NO craftable recipe and no way to earn its first XP.
+            levelReq: TIER_LEVELS[i-1],
             xp: tierXp(30,i),
             time: tierTime(20,0.5,i),
             sell: tierSell(15,i),
@@ -23539,7 +23542,8 @@
       'Also fixed: familiar spells now appear in the Combat log — damage spells log their hit (with the full pipeline breakdown when Advanced Combat Log is on, Downbeat bonus included), siphons show the HP they drain back, heals and utility buffs log their cast, and Skeletal Wraith strikes are called out too.',
       'Also fixed: swapping your companion while in a low-slot class no longer eats your Summoner roster. Companions beyond your current slot count now show as "Benched" in the Menagerie, Replace seats the newcomer in one tap (instead of one tap per benched pet), and your full roster returns the moment you wield a Staff again.',
       'Also fixed: dual-wielding two copies of the same Claw now works from the weapon picker. The row for a wielded Claw used to go dead (no buttons), so a spare copy could never reach your off-hand and the wielded copy read as a missing item. The row now stays live for the free hand, is chipped "main hand"/"off-hand", and its count shows "+ in hand" so nothing looks lost.',
-      'Loadouts now save your familiars too: saving a preset captures your full companion roster (benched seats included) and equipping it restores them — so a Summoner preset brings back the whole brood and your farming preset brings back the gathering pet. Presets saved before this update leave your roster untouched; re-save them to attach your pets. The loadout summary shows the pet count.'
+      'Loadouts now save your familiars too: saving a preset captures your full companion roster (benched seats included) and equipping it restores them — so a Summoner preset brings back the whole brood and your farming preset brings back the gathering pet. Presets saved before this update leave your roster untouched; re-save them to attach your pets. The loadout summary shows the pet count.',
+      'Also fixed: the Totems skill was uncraftable at Level 1 — its ladder starts at tier 1 (no +0 totem exists) but the first recipe still gated at Lv 5, leaving a fresh skill with no way to earn XP. The Birch Totem now crafts at Lv 1 and each later tier steps down one gate (t2 at Lv 5 … t20 at Lv 95).'
     ]},
     { v:'0.0.56', date:'Jul 28', heading:'Loadouts: one-tap swapping and 25 slots', items:[
       'A numbered quick-swap bar (1–25) now sits above your character on Equipment & Stats: tap a saved preset to swap your whole kit instantly. Empty and locked slots show greyed out; hover one for why. The full Loadouts panel stays at the bottom for saving, renaming and managing presets.',
@@ -35119,7 +35123,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.57.5';
+  var GAME_VERSION = '0.0.57.6';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
