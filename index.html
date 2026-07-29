@@ -13309,7 +13309,14 @@
   var LOADOUT_SLOT_MAP = {}; LOADOUT_SLOTS.forEach(function(s){ LOADOUT_SLOT_MAP[s.key] = s; });
   function ensureLoadouts(){ if(!Array.isArray(state.loadouts)) state.loadouts = []; while(state.loadouts.length < LOADOUT_SLOT_COUNT) state.loadouts.push(null); if(state.loadouts.length > LOADOUT_SLOT_COUNT) state.loadouts.length = LOADOUT_SLOT_COUNT; }
   // Snapshot every combat slot's pointer as a plain object (a preset the swap can restore later).
-  function captureCombatLoadout(){ var g = {}; LOADOUT_SLOTS.forEach(function(s){ g[s.key] = s.get(); }); return g; }
+  function captureCombatLoadout(){
+    var g = {};
+    LOADOUT_SLOTS.forEach(function(s){ g[s.key] = s.get(); });
+    // The familiar roster travels with the kit (ticket-0102 follow-up) -- every seat, benched included,
+    // so a Summoner preset restores the full staff roster and a 1-slot preset restores its lone pet.
+    g.companions = (state.activeCompanions || []).slice();
+    return g;
+  }
   // Count filled slots in a saved kit (for the readout).
   function loadoutFilledCount(gear){ var n = 0; if(!gear) return 0; LOADOUT_SLOTS.forEach(function(s){ var v = gear[s.key]; if(v && (s.uid(v) || s.invId(v))) n++; }); return n; }
   // Short human summary: the weapon name + how many pieces the kit carries.
@@ -13317,7 +13324,8 @@
     if(!gear) return 'empty';
     var w = gear.mainhand, wn = 'Unarmed';
     if(w){ if(w.uid && state.uniqueItems && state.uniqueItems[w.uid]) wn = uniqueDisplayName(state.uniqueItems[w.uid]); else if(w.id){ var ws = getWeaponStyle(w.id); wn = (ws && ws.name) || w.id; } }
-    return wn + ' · ' + loadoutFilledCount(gear) + ' pieces';
+    var pets = Array.isArray(gear.companions) ? gear.companions.length : 0;
+    return wn + ' · ' + loadoutFilledCount(gear) + ' pieces' + (pets ? ' · ' + pets + ' pet' + (pets>1?'s':'') : '');
   }
   // Apply a saved kit: strip the current kit back to inventory, then re-equip the saved kit, consuming from
   // inventory for stackables/legendaries and keeping only uniques that still exist. Returns how many slots
@@ -13334,6 +13342,14 @@
       if((state.inventory[id]||0) > 0){ state.inventory[id] -= 1; s.set(v); restored++; }
       else dropped++;
     });
+    // Familiar roster: presets saved since ticket-0102's follow-up carry the companion seats. Restore
+    // them (dropping familiars no longer owned); a pre-companions preset leaves the roster untouched.
+    if(gear && Array.isArray(gear.companions)){
+      state.companionCast = state.companionCast || {};
+      var roster = gear.companions.filter(function(cid){ return FAMILIAR_DATA[cid] && state.familiars[cid] && state.familiars[cid].owned; });
+      state.activeCompanions = roster.slice();
+      roster.forEach(function(cid){ if(!state.companionCast[cid]) state.companionCast[cid] = { accum:0, index:0 }; });
+    }
     return { restored: restored, dropped: dropped };
   }
   function saveLoadoutPreset(i){
@@ -23522,7 +23538,8 @@
       'Also fixed: the slowed enemy attack-speed readout was tinted a pale teal that vanished into the parchment panel — slowed (and hastened) speeds now show in bold, high-contrast tones you can actually read.',
       'Also fixed: familiar spells now appear in the Combat log — damage spells log their hit (with the full pipeline breakdown when Advanced Combat Log is on, Downbeat bonus included), siphons show the HP they drain back, heals and utility buffs log their cast, and Skeletal Wraith strikes are called out too.',
       'Also fixed: swapping your companion while in a low-slot class no longer eats your Summoner roster. Companions beyond your current slot count now show as "Benched" in the Menagerie, Replace seats the newcomer in one tap (instead of one tap per benched pet), and your full roster returns the moment you wield a Staff again.',
-      'Also fixed: dual-wielding two copies of the same Claw now works from the weapon picker. The row for a wielded Claw used to go dead (no buttons), so a spare copy could never reach your off-hand and the wielded copy read as a missing item. The row now stays live for the free hand, is chipped "main hand"/"off-hand", and its count shows "+ in hand" so nothing looks lost.'
+      'Also fixed: dual-wielding two copies of the same Claw now works from the weapon picker. The row for a wielded Claw used to go dead (no buttons), so a spare copy could never reach your off-hand and the wielded copy read as a missing item. The row now stays live for the free hand, is chipped "main hand"/"off-hand", and its count shows "+ in hand" so nothing looks lost.',
+      'Loadouts now save your familiars too: saving a preset captures your full companion roster (benched seats included) and equipping it restores them — so a Summoner preset brings back the whole brood and your farming preset brings back the gathering pet. Presets saved before this update leave your roster untouched; re-save them to attach your pets. The loadout summary shows the pet count.'
     ]},
     { v:'0.0.56', date:'Jul 28', heading:'Loadouts: one-tap swapping and 25 slots', items:[
       'A numbered quick-swap bar (1–25) now sits above your character on Equipment & Stats: tap a saved preset to swap your whole kit instantly. Empty and locked slots show greyed out; hover one for why. The full Loadouts panel stays at the bottom for saving, renaming and managing presets.',
@@ -35102,7 +35119,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.57.4';
+  var GAME_VERSION = '0.0.57.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

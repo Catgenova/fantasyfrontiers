@@ -7603,6 +7603,27 @@
       eq(S.loadouts[0].name, 'Raid Set', 'rename trims and applies the new name');
       FF.renameLoadoutPreset(0, '');
       eq(S.loadouts[0].name, 'Loadout 1', 'a blank rename falls back to the default preset name');
+
+      // Familiars travel with the kit (ticket-0102 follow-up): capture the roster, apply restores it.
+      var svFams = S.familiars, svComps = S.activeCompanions, svCast = S.companionCast;
+      try {
+        S.familiars = { mining:{owned:true}, fishing:{owned:true}, cooking:{owned:true} };
+        S.activeCompanions = ['mining','fishing']; S.companionCast = { mining:{accum:0,index:0} };
+        var kit = FF.captureCombatLoadout();
+        eq((kit.companions||[]).join(','), 'mining,fishing', 'capture snapshots the companion roster (benched seats included)');
+        S.activeCompanions = ['cooking'];
+        FF.applyCombatLoadout(kit);
+        eq(S.activeCompanions.join(','), 'mining,fishing', 'apply restores the saved roster');
+        ok(!!S.companionCast.fishing, 'restored companions get cast bookkeeping');
+        // A familiar no longer owned is dropped on apply; a pre-companions preset leaves the roster alone.
+        delete S.familiars.fishing;
+        FF.applyCombatLoadout(kit);
+        eq(S.activeCompanions.join(','), 'mining', 'an unowned familiar is dropped from the restored roster');
+        S.activeCompanions = ['cooking'];
+        FF.applyCombatLoadout({ mainhand:null });
+        eq(S.activeCompanions.join(','), 'cooking', 'a legacy preset (no companions key) leaves the roster untouched');
+        ok(/1 pet/.test(FF.loadoutSummary({ companions:['mining'] })), 'loadoutSummary counts the saved pets');
+      } finally { S.familiars = svFams; S.activeCompanions = svComps; S.companionCast = svCast; }
     } finally {
       S.inventory=saved.inv; S.uniqueItems=saved.uq; S.loadouts=saved.lo;
       S.equippedMainhand=saved.mh; S.equippedMainhandTier=saved.mht; S.equippedMainhandRarity=saved.mhr; S.equippedMainhandUid=saved.mhu;
