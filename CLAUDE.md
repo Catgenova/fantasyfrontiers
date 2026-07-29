@@ -79,7 +79,21 @@ Breathfang eruption 1.5x fire-scaled) Breathfang ~92B / Websnare ~71B / Serpentc
 Cryptvenom ~64B (set D2 Rapid Reload/Dead Aim — the only class so far NOT won by its D4).
 Sharpshooter and Ranger inherit the bow-chassis changes; re-measure them at their reworks.
 Quickdraw sim notes: BUILDS needs offhandQuiver (equips the quiver + stocks 1e9 t19 arrows +
-equippedArrow); the deterministic cycle makes runs cleaner than melee classes'. Reaper caveats:
+equippedArrow); the deterministic cycle makes runs cleaner than melee classes'; **Templar**
+(90s — the 24s Litany macro-cycle; v0.0.61.2 final tune, the FIRST elemental-half weapon
+simmed, which exposed the scepter chassis: the swing's Light half carried the full
+Attunement/element-gear multiplier inside its advantage term — rings AND attunement, a
+double-dip physical weapons don't get — and Gloria at 150%/stack x lightMult reached ~30
+average hits per Amen; start 839B-1248B. Chassis rebalance: the light half keeps only the
+elemental matchup, scepter dmgMult 0.58. Kit tune: verses 12%, Doxology 3%/verse, Gloria
+0.35 x avgHit/stack flat, Sunwyrm +15% vs Dark, Sunburst +30%) Sunwyrm ~92B / Retribution
+~85B at 90s, Lichbane/Sunbrand between — the tightest legendary spread of any rework (set
+D4 Solar Heart/Sunburst Zeal, ward slot fixed to Sunscale: Hallowlight/Sanctveil key off
+ward reflects, which the zero-offense dummy never triggers, and Aegisveil is defensive).
+Templar sim notes: BUILDS needs offhandWard; **measurement window matters** — mastery/
+proficiency train during the run, so 90s runs read ~35% above 60s runs on identical code;
+always compare a class against ceilings recorded at the SAME window (Berserker 82B @90s is
+the Templar comparator; the 45s classes compare among themselves). Reaper caveats:
 the zero-offense dummy keeps the Siphon Shield permanently full (flatters Wraithguard's
 faster ticks and Spectral Edge), and the refilled pool means no kills, so Contagion (D1
 full) measures dead. Duelist runs are the noisiest (~±25% — Danse/crit streak timing), and the
