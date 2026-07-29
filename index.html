@@ -7197,7 +7197,7 @@
   var TPL_AEGIS_PCT_PER_SEC = 0.03, TPL_AEGIS_CAP_PCT = 0.15; // the Aegis verse's bank rate + shield cap (D2 full doubles both)
   var TPL_FERVOR_EXT_MS = 1000, TPL_FERVOR_EXT_CAP = 4000;
   var TPL_DOXOLOGY_PER = 0.04, TPL_DOXOLOGY_CAP = 5, TPL_DOXOLOGY_CAP_SUNSCALE = 8;
-  var TPL_GLORIA_PCT = 1.5;                          // Gloria: x recent average hit, PER Doxology stack
+  var TPL_GLORIA_PCT = 0.75;                         // Gloria: x recent average hit, PER Doxology stack
   var TPL_EMPOWERED_MULT = 1.5;                      // Amen: the next verse is Empowered
   var TPL_VERSE_POWER_D2 = 1.5;                      // Zealous Verse (D2 2pc): verse effects 50% stronger
   var LEG_SUNBRAND_END_PCT = 0.5;                    // Sunbrand: half the banked shield detonates when the Aegis verse ends
@@ -7216,7 +7216,7 @@
   function templarGloria(st){ st = st || state; var a = st.activity;
     if(!a || a.type!=='combat' || (a.monsterHp||0) <= 0) return 0;
     var dox = Math.min(templarDoxologyCap(st), st.tplDoxology||0);
-    var burst = Math.round(TPL_GLORIA_PCT * (st.tplHitAvg||0) * dox * (legActive('retribution', st) ? LEG_GLORIA_MULT : 1) * elementDmgMult(st, 'light'));
+    var burst = Math.round(TPL_GLORIA_PCT * (st.tplHitAvg||0) * dox * (legActive('retribution', st) ? LEG_GLORIA_MULT : 1)); // flat: the never-resisted Light already skips armour AND resistance (attunement rides the swing's Light half + Sunburst, not this)
     if(burst <= 0) return 0;
     var _times = setFull('templar', st) ? 2 : 1;
     for(var i=0; i<_times && st.activity === a && (a.monsterHp||0) > 0; i++){
@@ -15053,9 +15053,12 @@
     if(isWandAttack){
       advantage = 1;
     } else if(isScepterAttack){
-      // (Dawnbreaker retired with the Warpriest -- Gloria carries the never-resisted Light now.)
+      // (Dawnbreaker retired with the Warpriest -- Gloria carries the never-resisted Light now.) The light
+      // half keeps the elemental matchup only: stacking the full Attunement/element-gear multiplier INSIDE
+      // the swing double-dipped (physical weapons get rings; the scepter got rings AND this) -- the
+      // max-ceiling sim measured the chassis at ~12x the band before the Warpriest kit even fired.
       advantage = 0.5 * weightedAdvantage({blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3})
-                + 0.5 * elementAdvantage('light', monster.element) * elementDmgMult(state, 'light'); // Light Attunement boosts the light half
+                + 0.5 * elementAdvantage('light', monster.element);
     } else {
       advantage = weightedAdvantage(weaponStyle.attackTypes || {blunt:1}, monster.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
     }

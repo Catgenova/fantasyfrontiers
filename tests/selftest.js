@@ -11284,7 +11284,7 @@
         var hp0 = s.activity.monsterHp;
         FF.templarVerseAdvance(s); // zeal -> might: AMEN
         eq(FF.templarVerse(s), 'might', 'the Litany wraps back to Might');
-        ok(hp0 - s.activity.monsterHp >= 1.5 * 1000 * 4, 'Amen: Gloria erupted (>= 150% of the average hit per Doxology stack)');
+        ok(hp0 - s.activity.monsterHp >= FF.TPL_GLORIA_PCT * 1000 * 4, 'Amen: Gloria erupted (its share of the average hit per Doxology stack)');
         eq(s.tplEmpowered, true, 'the verse after the Amen is Empowered');
         near(FF.templarVersePower(s), 1.5, 'Empowered verse power is x1.5');
         FF.templarVerseAdvance(s);
