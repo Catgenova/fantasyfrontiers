@@ -66,7 +66,20 @@ Untouchable 1%/s cap 15%, Danse every 6th, Wyrmdancer 2.5%/stack, Flame Waltz 1.
 Wyrmdancer ~88B / Bloodwaltz ~78B / Phantomthrust ~74B / Gossamer ~71B (set D4 Flame
 Waltz/Firestorm); **Reaper** (45s, v0.0.59.1 final tune — Rot 5%/stack/s, tick crits flat x2,
 Soulflame +10% ch / +10% Fire rider, Soulflay eruption 50%) Deathshepherd ~89B / Wraithguard
-~73B / Soulflay ~72B / Soulflame ~72B (set D4 Carrion Festering/Gangrene). Reaper caveats:
+~73B / Soulflay ~72B / Soulflame ~72B (set D4 Festerweave Festering/Gangrene — renamed from
+"Carrion Shroud" in v0.0.60.0, it collided with the Plaguebearer D3 set name); **Quickdraw**
+(45s, v0.0.60.0 — the FIRST bow class simmed, which exposed the bow chassis: an uncapped
+fantastic quiver granted +253% ALL damage, and the quiver's offhand proficiency carried
+weapon mastery — a second unbounded mastery channel the sim measured growing +8% per shot.
+Chassis rebalance shipped with the rework: quiver dmgBonus capped at +25%, quivers excluded
+from offhand weapon mastery, leather bow bonus 3%/slot (was 5%), all three bows' base damage
+x0.85, arrows track the bow multiplier. Kit tune: tricks +20% each from Broadheads/Heavy
+Heads, riders 25% stronger / 30-35% magnitudes, Piercer payback capped at 1x the hit,
+Breathfang eruption 1.5x fire-scaled) Breathfang ~92B / Websnare ~71B / Serpentcoil ~68B /
+Cryptvenom ~64B (set D2 Rapid Reload/Dead Aim — the only class so far NOT won by its D4).
+Sharpshooter and Ranger inherit the bow-chassis changes; re-measure them at their reworks.
+Quickdraw sim notes: BUILDS needs offhandQuiver (equips the quiver + stocks 1e9 t19 arrows +
+equippedArrow); the deterministic cycle makes runs cleaner than melee classes'. Reaper caveats:
 the zero-offense dummy keeps the Siphon Shield permanently full (flatters Wraithguard's
 faster ticks and Spectral Edge), and the refilled pool means no kills, so Contagion (D1
 full) measures dead. Duelist runs are the noisiest (~±25% — Danse/crit streak timing), and the
