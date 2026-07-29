@@ -5836,13 +5836,13 @@
       s.bodyArmor = {}; s.uniqueItems = {}; s.knightStacks = 0; s.jewelrySlots = {};
       ok(FF.elementResistMult(s, 'fire') <= 1.0 && FF.elementResistMult(s, 'fire') > 0.7, 'with no resist gear, elementResistMult is ~1 (minus base attunement)');
 
-      // C2: Reap (reaper D2 full) — foes below 25% HP take +30%.
+      // C2: Reap (reaper D2 full) is rot-only in the Rotlord rework — the generic D2 damage mult stays flat
+      // (its +30% below a third of Health is applied inside reaperRotFireTick, tested in the class suite).
       s.jewelrySlots = {}; s.knightStacks = 0;
       wearD2('reaper', FF.D2_SET_DEFS.reaper.full); s.activity = { type:'combat', monsterHp:100 };
-      near(FF.d2SetDmgMult({ hp:1000 }, s), 1.30, 'Reap (reaper D2 full): +30% vs a foe below 25% Health');
-      s.activity = { type:'combat', monsterHp:800 }; near(FF.d2SetDmgMult({ hp:1000 }, s), 1.0, 'Reap inert on a healthy foe');
-      // C2: Soul Glut (reaper D2 2pc) is now a live lifesteal source (wired into the lifesteal sum).
-      wearD2('reaper', 2); ok(FF.set2D2('reaper', s), 'the reaper D2 2-piece is detectable (Soul Glut lifesteal live)');
+      near(FF.d2SetDmgMult({ hp:1000 }, s), 1.0, 'Reap (reaper D2 full) no longer boosts direct hits (rot-only)');
+      // C2: Soul Glut (reaper D2 2pc) deepens Rot Siphon to 75% (gated on the class; tested in the class suite).
+      wearD2('reaper', 2); ok(FF.set2D2('reaper', s), 'the reaper D2 2-piece is detectable (Soul Glut)');
 
       // C2: Spiked Retort / Retribution (sentinel D2) — reflect amplifier.
       s.playerHp = FF.maxHp(s);
@@ -6116,7 +6116,8 @@
     ok(FF.legActive('shadowwyrm', legSt('shadowwyrm','claw')), 'legActive detects the reworked Shadowwyrm claw');
     eq(FF.ASSASSIN_FANG_PCT_SHADOWWYRM, 0.60, "Shadowwyrm's Fang consumes wounds at +60% each");
     var sfSt = legSt('soulflame','scythe');
-    near(FF.d4SoulflameBurst(1000, sfSt), Math.round(1000 * 0.12 * FF.elementDmgMult(sfSt,'fire')), 'Soulflame exhales a ~12% Fire burst');
+    ok(FF.legActive('soulflame', sfSt), 'legActive detects the reworked Soulflame Scythe');
+    eq(FF.d4SoulflameBurst(1000, sfSt), 0, 'Soulflame no longer bursts on the swing (its Fire rides critical Rot ticks)');
     var ewMon = { hp:1000, isBoss:false };
     ok(FF.d4EmberwyrmExecutes(ewMon, legSt('emberwyrm','fullmoonaxe',{ activity:{type:'combat', monsterHp:200, burnUntil:now+5000, burnStacks:2} })), 'Emberwyrm executes a Burning foe below 25% Health');
     ok(!FF.d4EmberwyrmExecutes(ewMon, legSt('emberwyrm','fullmoonaxe',{ activity:{type:'combat', monsterHp:200} })), 'Emberwyrm needs the foe Burning or Scorched');
@@ -6254,8 +6255,10 @@
 
     function legSt(key, base){ return { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
       uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'scimitar')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' }; }
-    // Deathshepherd (D3 scythe): Siphon Shield cap +50% (observable via reaperShieldCap).
-    near(FF.reaperShieldCap(legSt('deathshepherd','scythe')) / FF.reaperShieldCap(legSt('wraithclaw','claw')), 1.5, 'Deathshepherd: Siphon Shield cap +50%', 0.06);
+    // Deathshepherd (D3 scythe): the Rot stack cap rises to 15 (the shield cap is Wraithguard's business now).
+    eq(FF.reaperRotCap(legSt('deathshepherd','scythe')), 15, 'Deathshepherd: Rot stacks to 15');
+    eq(FF.reaperRotCap(legSt('wraithclaw','claw')), 10, 'the base Rot cap is 10');
+    near(FF.reaperShieldCap(legSt('deathshepherd','scythe')) / FF.reaperShieldCap(legSt('wraithclaw','claw')), 1.0, 'Deathshepherd no longer moves the Siphon Shield cap', 0.06);
     // Detection for the behaviour-driven slash + pierce weapons.
     ['gravepilfer','rotmaw','bonereaver','wraithclaw','soulharvester','deathshepherd'].forEach(function(k){ var b = FF.D3_LEG_GEAR_MAP[k].base; eq(FF.legActive(k, legSt(k, b)), true, 'legActive detects '+k); });
     ['phantomthrust','ghostblade','runegrave','gravewarden'].forEach(function(k){ var b = FF.D3_LEG_GEAR_MAP[k].base; eq(FF.legActive(k, legSt(k, b)), true, 'legActive detects '+k); });
@@ -6462,14 +6465,12 @@
     }
     try {
       s.activity = { type:'combat', monsterHp:500 };
-      // Reaper Soul Harvest (full): +5% damage per Soul Charge (cap 10).
-      wearD3('reaper', 3); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.25, 'Reaper Soul Harvest: +5% per Soul (5 -> +25%)');
-      s.d3Souls = 0; near(FF.d3SetDmgMult({}, s), 1.0, 'Soul Harvest inert at 0 Souls');
-      s.d3Souls = 99; near(FF.d3SetDmgMult({}, s), 1.50, 'Soul count caps at 10 (Soul Harvest maxes at +50%)');
-      // 2-piece alone (builder) grants no spender.
-      wearD3('reaper', 2); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.0, '2-piece Reaper has no Soul Harvest (full only)');
+      // The Reaper left the Souls pillar in the Rotlord rework — Souls no longer move his damage.
+      wearD3('reaper', 3); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.0, 'Reaper full D3 no longer spends Souls (Lich\'s Vestments is the offensive-shield set now)');
       // Executioner Death Toll (full): +4% per Soul.
       wearD3('executioner', 3); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.20, 'Executioner Death Toll: +4% per Soul');
+      s.d3Souls = 0; near(FF.d3SetDmgMult({}, s), 1.0, 'Death Toll inert at 0 Souls');
+      s.d3Souls = 99; near(FF.d3SetDmgMult({}, s), 1.40, 'Soul count caps at 10 (Death Toll maxes at +40%)');
       // Spellblade Necroblade (full, 4pc): +4% per Soul.
       wearD3('spellblade', 4); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.20, 'Spellblade Necroblade: +4% per Soul');
       wearD3('spellblade', 2); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.0, 'Necroblade needs the full set');
@@ -6841,14 +6842,14 @@
       wearD4('sharpshooter', 2); s.activity.breathCharge = 0;
       eq(FF.d4BreathChargeOnHit(s, false), 4, 'Focused Breath: +4 on a normal hit');
       s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, true), 14, 'Focused Breath: crits charge faster (+14)');
-      wearD4('reaper', 2); s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, false), 8, 'Soulfire Siphon: +8 per lifesteal hit');
+      wearD4('reaper', 2); s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, false), 0, 'the Reaper left the Breath pillar (Carrion Shroud crits Rot instead)');
       wearD4('ranger', 2); s.activity = { type:'combat', monsterHp:1000000, breathCharge:0 }; // clean, no ailment
       eq(FF.d4BreathChargeOnHit(s, false), 0, 'Elemental Traps: no charge without an ailment on the foe');
       s.activity.bleedUntil = Date.now() + 5000; eq(FF.d4BreathChargeOnHit(s, false), 10, 'Elemental Traps: +10 when the foe is afflicted');
 
       // --- Full-set selection ---
       wearFull('quickdraw'); eq(FF.d4BreathFullSet(s), 'quickdraw', 'the full Breathfang set fires Dragon\'s Breath');
-      wearFull('reaper'); eq(FF.d4BreathFullSet(s), 'reaper', 'the full Wyrmsoul set fires Spirit Breath');
+      wearFull('reaper'); eq(FF.d4BreathFullSet(s), null, 'the full Carrion Shroud fires no breath weapon (Gangrene spreads Rot instead)');
       wearD4('quickdraw', 2); eq(FF.d4BreathFullSet(s), null, 'a 2-piece set does not fire a breath weapon');
 
       // --- Firing (full) ---
@@ -6864,9 +6865,7 @@
       wearFull('sharpshooter'); s.activity = { type:'combat', monsterHp:1000000, breathCharge:100 };
       var baseSharp = Math.round(1000 * FF.D4_BREATH_BURST_MULT * FF.elementDmgMult(s, 'fire'));
       eq(FF.d4BreathFire(s, { element:'water' }, 1000), Math.round(baseSharp * FF.ELEMENT_ADVANTAGE_MULT), 'Piercing Breath strikes the weakness (+20%)');
-      // Reaper Spirit Breath: burst + heal.
-      wearFull('reaper'); s.activity = { type:'combat', monsterHp:1000000, breathCharge:100 }; s.playerHp = Math.round(mhp * 0.5); var hpBefore = s.playerHp;
-      var rb = FF.d4BreathFire(s, { element:'water' }, 1000); ok(rb > 0 && s.playerHp > hpBefore, 'Spirit Breath heals you for a share of its damage');
+      // (Spirit Breath retired: the Reaper's D4 is the Carrion Shroud rot-crit set now.)
       // Executioner Immolation Breath: executes a foe below 25% Health.
       wearFull('executioner'); s.activity = { type:'combat', monsterHp:200, breathCharge:100 }; var exMon = { isBoss:false, hp:1000 };
       var slain = FF.d4BreathFire(s, exMon, 10); eq(s.activity.monsterHp, 0, 'Immolation Breath executes a foe below 25% Health');
@@ -10885,7 +10884,7 @@
     ok(invariantsOk, 'Riposte (bool), Danse count (0..cadence-1), Untouchable (>=0) and HP stay valid throughout');
   });
 
-  // ---- Classes: Reaper (scythe soul-harvester: crits + lifesteal) -----------------------
+  // ---- Classes: Reaper (the Rotlord: Rot stacks are his damage, lifesteal and shield) ----
   suite('classes: Reaper', function(){
     ok(FF.CLASS_SKILL_IDS.indexOf('reaper') !== -1, 'reaper is a class skill id');
     var cd = FF.CLASS_DEFS_BY_ID.reaper;
@@ -10912,54 +10911,115 @@
     var lvHi = FF.xpFloorForLevel(85); // ~Lv 85 -> all passives
     function leveled(){ var s = base(); s.xp.reaper = lvHi; return s; }
 
-    // Lv 1 Death's Harvest: steal 10% of the damage you deal as Health (only while active).
-    eq(FF.reaperLifestealPct(full), 0.10, 'Lv 1 reaper (active): 10% lifesteal');
+    // The Rotlord perk ladder: names in order.
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Blight,Rot Siphon,Siphon Shield,Gravebloom,The Reaping', 'Rotlord perk names');
+    eq(FF.REAPER_ROT_MAX, 10, 'Rot caps at 10 stacks');
+    eq(FF.REAPER_ROT_PCT, 0.08, 'each Rot stack ticks 8% of the recent average hit per second');
+    eq(FF.REAPER_ROT_SIPHON, 0.5, 'Rot Siphon heals 50% of tick damage');
+    eq(FF.REAPER_GRAVEBLOOM_PER, 0.02, 'Gravebloom: +2% direct damage per Rot stack');
+
+    // Rot Siphon / Gravebloom gating on class level (pure-state fixtures).
+    eq(FF.reaperRotSiphonPct(full), 0, 'Lv 1 reaper: Rot Siphon not yet unlocked');
+    eq(FF.reaperRotSiphonPct(leveled()), 0.5, 'Lv 85 reaper: Rot Siphon heals 50%');
     var lowNoGear = { xp:{reaper:lvHi}, equippedMainhand:'greatsword', bodyArmor:{helmet:bare(),chest:bare(),gauntlets:bare(),boots:bare(),back:bare()} };
-    eq(FF.reaperLifestealPct(lowNoGear), 0, 'reaper lifesteal gated on the class being active');
+    eq(FF.reaperRotSiphonPct(lowNoGear), 0, 'Rot Siphon gated on the class being active');
+    eq(FF.reaperGravebloomMult(lowNoGear), 1, 'Gravebloom gated on the class being active');
 
-    // Lv 60 Grim Resolve: crit-chance bonus is gated on the class being Lv 60+ (scaling tested below).
-    eq(FF.reaperGrimResolveCrit(full), 0, 'Lv 1 reaper: no Grim Resolve yet (returns before touching HP)');
-
-    // Behavioral: Grim Resolve scales with missing HP; Siphon Shield caps at 20% max HP; Withering
-    // Harvest only rots while a shield holds. Uses the live state (real physique/maxHp).
+    // Behavioral: Rot stacks/EMA/ticks/heal/shield/Reaping through the live state (real physique/maxHp).
     (function(){
       var s = FF._state;
-      var snap = { mh:s.equippedMainhand, mhr:s.equippedMainhandRarity, ba:s.bodyArmor, xp:s.xp.reaper, hp:s.playerHp, act:s.activity, sh:s.reaperShield };
+      var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid,
+                   oh:s.equippedOffhand, ba:s.bodyArmor, ui:s.uniqueItems, xp:s.xp.reaper, hp:s.playerHp, act:s.activity, sh:s.reaperShield };
+      var svRnd = Math.random;
       try {
-        s.equippedMainhand='scythe'; s.equippedMainhandRarity='normal';
+        s.equippedMainhand='scythe'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null; s.equippedOffhand=null;
         s.bodyArmor={ helmet:bare(), chest:cloth(), gauntlets:cloth(), boots:cloth(), back:bare() };
+        s.uniqueItems = {};
         s.xp.reaper = lvHi; s.reaperShield = 0;
         eq(FF.activeClassId(s), 'reaper', 'behavioral setup activates the Reaper');
         var mh = FF.maxHp(s);
-        s.playerHp = mh;               ok(FF.reaperGrimResolveCrit(s) === 0, 'Grim Resolve = 0 at full Health');
-        s.playerHp = 1;                ok(FF.reaperGrimResolveCrit(s) > 0.28, 'Grim Resolve near +30% at ~0 Health');
-        s.playerHp = Math.round(mh*0.5); ok(Math.abs(FF.reaperGrimResolveCrit(s) - 0.15) < 0.02, 'Grim Resolve ~+15% at half Health');
         eq(FF.reaperShieldCap(s), Math.round(mh*0.20), 'Siphon Shield cap is 20% of max Health');
         var mon = FF.MONSTERS[0];
-        s.activity = { type:'combat', monsterId:mon.id, monsterHp: mon.hp, tickAccum:0, monsterTickAccum:0 };
-        s.reaperShield = 10; var before = s.activity.monsterHp;
-        FF.applyReaperWitherTick(1000);
-        ok(s.activity.monsterHp < before, 'Withering Harvest rots the foe while a Siphon Shield holds');
-        // The 1 HP floor is gone, and this fixture has a REAL monster -- so unlike the Decay/Bleed cases
-        // the kill actually RESOLVES rather than leaving HP negative. Assert the resolution, not the HP:
-        // defeatMonster banks a kill and retargets the activity to a fresh foe at full health.
-        var _killsBefore = (s.stats && s.stats.kills) || 0;
-        s.activity.monsterHp = 1;
-        // Wither ticks 1.5% of MAX HP per second, so against a low-HP foe one second removes a fraction
-        // of a point -- a 1s tick left this at 0.85 and the kill never fired. Use a long dt so the tick is
-        // lethal regardless of which monster the roster puts first (0.015 * 200s = 3x its max health).
-        FF.applyReaperWitherTick(200000);
-        eq(((s.stats && s.stats.kills) || 0), _killsBefore + 1, 'a DoT tick CAN land the kill (Wither finishes a 1 HP foe)');
-        ok(s.activity.monsterHp > 1, 'the resolved kill retargets to a fresh foe rather than sitting at 0 HP');
-        s.reaperShield = 0; s.activity.monsterHp = mon.hp; var b2 = s.activity.monsterHp;
-        FF.applyReaperWitherTick(1000);
-        eq(s.activity.monsterHp, b2, 'Withering Harvest is inert with no Siphon Shield');
+        s.activity = { type:'combat', monsterId:mon.id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.playerHp = mh;
+        // Blight: stacks build per hit, refresh, and cap; the tick base is a smoothed average of the hits.
+        FF.reaperRotAdd(1, 1000);
+        eq(FF.reaperRotStacks(s), 1, 'a landed hit banks a Rot stack');
+        eq(s.activity.reaperRotHitAvg, 1000, 'the first hit sets the tick base');
+        FF.reaperRotAdd(1, 2000);
+        eq(s.activity.reaperRotHitAvg, 1250, 'the tick base is a smoothed average (0.75 old + 0.25 new)');
+        for(var i=0;i<20;i++) FF.reaperRotAdd(1, 1000);
+        eq(FF.reaperRotStacks(s), 10, 'Rot caps at 10 stacks');
+        // One tick: damage = stacks x 8% x tick base; the heal is 50% of it; overheal banks the shield.
+        s.activity.reaperRot = 10; s.activity.reaperRotUntil = Date.now() + 9999; s.activity.reaperRotHitAvg = 1000;
+        s.playerHp = mh; s.reaperShield = 0;
+        Math.random = function(){ return 0.999; }; // never crit (no D4 set anyway)
+        var hp0 = s.activity.monsterHp;
+        var tick = FF.reaperRotFireTick(s);
+        eq(tick, 800, 'a full-stack tick deals 10 x 8% x 1000 = 800');
+        eq(hp0 - s.activity.monsterHp, 800, 'the tick actually chipped the foe');
+        eq(s.reaperShield, Math.min(FF.reaperShieldCap(s), 400), 'at full Health the 50% heal overflows into the Siphon Shield (clamped to its cap)');
+        ok(s.reaperShield > 0, 'the overflow actually banked');
+        // The rot clock: applyReaperRotTick fires once per accumulated second.
+        s.activity.reaperRotAccum = 0; var hp1 = s.activity.monsterHp;
+        FF.applyReaperRotTick(500);  eq(s.activity.monsterHp, hp1, 'no tick before a full second accumulates');
+        FF.applyReaperRotTick(500);  eq(hp1 - s.activity.monsterHp, 800, 'the rot clock fires one tick per second');
+        // Expiry: stale rot reads as 0 stacks and the next hit restarts the meter.
+        s.activity.reaperRotUntil = Date.now() - 1;
+        eq(FF.reaperRotStacks(s), 0, 'expired Rot reads as 0 stacks');
+        eq(FF.reaperRotFireTick(s), 0, 'expired Rot does not tick');
+        FF.reaperRotAdd(1, 500); eq(FF.reaperRotStacks(s), 1, 'a fresh hit restarts an expired meter at 1 stack');
+        eq(s.activity.reaperRotHitAvg, 875, 'the tick base survives expiry as a smoothed average');
+        // Gravebloom rides the live stack count.
+        s.activity.reaperRot = 10; s.activity.reaperRotUntil = Date.now() + 9999;
+        near(FF.reaperGravebloomMult(s), 1.20, 'Gravebloom: +2% x 10 stacks = +20%');
+        // The Reaping (Lv80): a max-Rot swing triggers a full second of ticks instantly. Drive the REAL
+        // playerAttackTick: Math.random=0 lands the swing; the pre-seeded huge tick base makes the reap
+        // tick dwarf the swing itself, so the total drop proves the instant tick fired.
+        Math.random = function(){ return 0; };
+        s.activity.reaperRot = 10; s.activity.reaperRotUntil = Date.now() + 9999; s.activity.reaperRotHitAvg = 1000000;
+        s.playerHp = mh; s.reaperShield = 0;
+        var hp2 = s.activity.monsterHp;
+        FF.playerAttackTick(false, 1, false);
+        ok(hp2 - s.activity.monsterHp > 500000, 'a max-Rot swing triggers The Reaping (an instant ~600k+ rot tick rode a tiny swing)');
+        ok(s.reaperShield > 0, 'the Reaping tick siphoned into the shield');
+        // Soul Glut (D2 2pc): Rot Siphon deepens to 75%.
+        var d2a = FF.mintSetPiece('reaper','chest','rare','d2'), d2b = FF.mintSetPiece('reaper','gauntlets','rare','d2');
+        s.bodyArmor.chest = { uid:d2a, material:'tailoring', tier:23, rarity:'rare' }; s.bodyArmor.gauntlets = { uid:d2b, material:'tailoring', tier:23, rarity:'rare' };
+        eq(FF.activeClassId(s), 'reaper', 'D2 set pieces keep the class active (cloth layout)');
+        eq(FF.reaperRotSiphonPct(s), 0.75, 'Soul Glut deepens Rot Siphon to 75%');
+        s.bodyArmor.chest = cloth(); s.bodyArmor.gauntlets = cloth();
+        // Festering Strike + Gangrene (D4): a critical tick spreads an extra stack.
+        var d4a = FF.mintSetPiece('reaper','chest','rare','d4'), d4b = FF.mintSetPiece('reaper','gauntlets','rare','d4'), d4c = FF.mintSetPiece('reaper','boots','rare','d4');
+        s.bodyArmor.chest = { uid:d4a, material:'tailoring', tier:24, rarity:'rare' }; s.bodyArmor.gauntlets = { uid:d4b, material:'tailoring', tier:24, rarity:'rare' }; s.bodyArmor.boots = { uid:d4c, material:'tailoring', tier:24, rarity:'rare' };
+        eq(FF.setFullD4('reaper', s), true, 'three D4 pieces (bare-head) trigger the full Carrion Shroud');
+        s.activity.reaperRot = 5; s.activity.reaperRotUntil = Date.now() + 9999; s.activity.reaperRotHitAvg = 1000;
+        Math.random = function(){ return 0; }; // force the tick crit
+        var critTick = FF.reaperRotFireTick(s);
+        ok(critTick > 400, 'Festering Strike: the tick critted (5 x 8% x 1000 = 400 base, crit-multiplied)');
+        eq(FF.reaperRotStacks(s), 6, 'Gangrene: the critical tick spread +1 Rot stack');
+        s.bodyArmor.chest = cloth(); s.bodyArmor.gauntlets = cloth(); s.bodyArmor.boots = cloth();
+        // Wraithguard: the rot clock runs at 800ms while the shield holds.
+        s.uniqueItems.WG = { uid:'WG', leg:'spectralaegis', kind:'weapon', base:'stweapon_scythe_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 };
+        s.equippedMainhandUid = 'WG';
+        Math.random = function(){ return 0.999; };
+        s.activity.reaperRot = 10; s.activity.reaperRotUntil = Date.now() + 9999; s.activity.reaperRotHitAvg = 1000;
+        s.reaperShield = 100; s.activity.reaperRotAccum = 0;
+        var hp3 = s.activity.monsterHp;
+        FF.applyReaperRotTick(800);
+        ok(s.activity.monsterHp < hp3, 'Wraithguard: the rot clock fires at 800ms while the shield holds');
+        s.reaperShield = 0; s.activity.reaperRotAccum = 0; var hp4 = s.activity.monsterHp;
+        FF.applyReaperRotTick(800);
+        eq(s.activity.monsterHp, hp4, '...and falls back to 1s with the shield down');
+        s.equippedMainhandUid = null; delete s.uniqueItems.WG;
       } finally {
-        s.equippedMainhand=snap.mh; s.equippedMainhandRarity=snap.mhr; s.bodyArmor=snap.ba; s.xp.reaper=snap.xp; s.playerHp=snap.hp; s.activity=snap.act; s.reaperShield=snap.sh;
+        Math.random = svRnd;
+        s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu;
+        s.equippedOffhand=snap.oh; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.reaper=snap.xp; s.playerHp=snap.hp; s.activity=snap.act; s.reaperShield=snap.sh;
       }
     })();
 
-    // Class familiar leans on life-drain (siphon) spells for the Lv 20 triple-damage passive.
+    // Class familiar (unchanged by the rework -- the Lv 20 triple-siphon multiplier is retired, the kit remains).
     var fam = FF.FAMILIAR_DATA.reaper;
     ok(fam && fam.spells && fam.spells.length === 4, 'reaper familiar has 4 spells');
     ok(fam.spells.filter(function(s){ return s.type==='siphon'; }).length >= 2, 'reaper familiar has multiple siphon (life-drain) spells');

@@ -58,6 +58,16 @@ const BUILDS = {
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "pierce",
   },
+  reaper: {
+    // Scythe + BARE head + cloth. Rot ticks are the damage engine (weapon-scaled, so they ride the same
+    // BiS multipliers as the swings). Sim caveats: the zero-offense dummy keeps the Siphon Shield
+    // permanently full once banked (flatters Wraithguard's faster ticks and Spectral Edge's full-shield
+    // lash), and the refilled HP pool means no kills — Contagion (D1 full) measures dead here.
+    weapon: { typeId: "scythe", base: "stweapon_scythe_t19_fantastic", tier: 19, styleXp: ["scythe"] },
+    legs: ["spectralaegis", "soulflay", "deathshepherd", "soulflame"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
+  },
   berserker: {
     // Max Health IS the weapon (Titan's Heft/Deepquake/Wrathscale scale off it), so jewelry lines trade
     // lifesteal for Max HP. primeLedger holds the Blood Ledger inked at cap (owner rule: simulate the
@@ -99,9 +109,9 @@ async function setup(cfg) {
 
     // Armor: full class set of the configured layer, each piece enchanted then +15.
     st.bodyArmor = {}; st.uniqueItems = st.uniqueItems || {};
-    const layerDefs = { d1: FF.D1_SET_DEFS, d2: FF.D2_SET_DEFS, d3: FF.D3_SET_DEFS, d4: FF.D4_SET_DEFS }[cfg.setLayer];
-    const def = layerDefs && layerDefs[cls];
-    const slots = def && def.bareHead ? ["chest", "gauntlets", "boots"] : ["helmet", "chest", "gauntlets", "boots"];
+    // Piece layout (incl. bareHead) is shared across D-layers and lives on the D1 def.
+    const d1def = FF.D1_SET_DEFS[cls];
+    const slots = d1def && d1def.bareHead ? ["chest", "gauntlets", "boots"] : ["helmet", "chest", "gauntlets", "boots"];
     slots.forEach(slot => {
       const uid = FF.mintSetPiece(cls, slot, "fantastic", cfg.setLayer);
       const u = st.uniqueItems[uid];
