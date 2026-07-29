@@ -5982,7 +5982,7 @@
     near(FF.d4LegDmgMult({}, legSt('rimewyrm','wandWater','weapon',{ activity:{type:'combat', monsterHp:100, scorchStacks:1, scorchUntil:now+4000} })), (1+0.02) * 1.20, 'Rimewyrm: +20% vs a Scorched foe (atop the Scorch stack)');
     near(FF.d4LegDmgMult({}, legSt('rimewyrm','wandWater')), 1.0, 'Rimewyrm inert on an unscorched foe');
     // Sunwyrm's Verdict: +40% vs a Dark foe (progresses past D3 Lichbane x1.30).
-    near(FF.d4LegDmgMult({ element:'dark' }, legSt('sunwyrm','scepter')), 1.40, "Sunwyrm's Verdict: +40% vs a Dark foe");
+    near(FF.d4LegDmgMult({ element:'dark' }, legSt('sunwyrm','scepter')), 1.15, "Sunwyrm's Verdict: +15% vs a Dark foe");
     near(FF.d4LegDmgMult({ element:'fire' }, legSt('sunwyrm','scepter')), 1.0, 'Sunwyrm inert vs a non-Dark foe');
     // Dawnwyrm's Radiance: while a Radiant Barrier holds, +Light Attunement to all damage.
     var dw = legSt('dawnwyrm','wandLight','weapon',{ lumenShield:500 });
@@ -11222,7 +11222,7 @@
     eq(cd.passives.map(function(p){ return p.name; }).join(','), 'The Litany,Fervor,Doxology,Shared Liturgy,Amen', 'Warpriest perk names');
     eq(FF.TPL_VERSES.join(','), 'might,haste,aegis,zeal', 'the four verses rotate in order');
     eq(FF.TPL_VERSE_MS, 6000, 'a verse holds for 6s');
-    eq(FF.TPL_ZEAL_CRITDMG, 0.15, 'Zeal grants +15% Critical DAMAGE');
+    eq(FF.TPL_ZEAL_CRITDMG, 0.12, 'Zeal grants +12% Critical DAMAGE');
 
     // Verse reads are pure-state: null out of combat / class off; power scales with the D2 set + Empowered.
     var vq = leveled(); vq.activity = { type:'combat', monsterHp:100 };
@@ -11234,12 +11234,12 @@
     vq.tplEmpowered = true; near(FF.templarVersePower(vq), 1.5, 'an Empowered verse is +50%');
     vq.tplEmpowered = false;
     // Doxology: +4% per completed verse, capped (Sunscale raises the cap -- unit-tested via templarDoxologyCap).
-    vq.xp.templar = lvHi; vq.tplDoxology = 3; near(FF.templarDoxologyMult(vq), 1.12, 'Doxology: 3 completed verses = +12%');
-    vq.tplDoxology = 99; near(FF.templarDoxologyMult(vq), 1.20, 'Doxology caps at 5 stacks (+20%)');
+    vq.xp.templar = lvHi; vq.tplDoxology = 3; near(FF.templarDoxologyMult(vq), 1.09, 'Doxology: 3 completed verses = +9%');
+    vq.tplDoxology = 99; near(FF.templarDoxologyMult(vq), 1.15, 'Doxology caps at 5 stacks (+15%)');
     eq(FF.templarDoxologyCap(vq), 5, 'base Doxology cap is 5');
     // Shared Liturgy: familiars receive the Might verse at full power.
     vq.tplDoxology = 0; vq.tplVerseIdx = 0;
-    near(FF.templarBeaconPotencyMult(vq), 1.15, 'Shared Liturgy: familiars share the Might verse in full');
+    near(FF.templarBeaconPotencyMult(vq), 1.12, 'Shared Liturgy: familiars share the Might verse in full');
     vq.tplVerseIdx = 1; near(FF.templarBeaconPotencyMult(vq), 1, 'familiars only share the LIVE blessing');
 
     // Behavioral: the Litany through the live loop tick + the REAL playerAttackTick (live state).
@@ -11263,7 +11263,7 @@
         eq(FF.templarVerse(s), 'might', 'the service opens on the Might verse');
         FF.applyTemplarLitanyTick(6000);
         eq(FF.templarVerse(s), 'haste', 'after 6s the Litany turns to Haste');
-        near(FF.classAttackSpeedMult(s), 0.85, 'the Haste verse quickens the attack timer 15%');
+        near(FF.classAttackSpeedMult(s), 0.88, 'the Haste verse quickens the attack timer 12%');
         FF.applyTemplarLitanyTick(6000);
         eq(FF.templarVerse(s), 'aegis', 'the third verse is Aegis');
         eq(s.tplDoxology, 2, 'two completed verses banked two Doxology stacks');
@@ -11280,7 +11280,7 @@
         FF.templarVerseAdvance(s); // aegis -> zeal
         eq(FF.templarVerse(s), 'zeal', 'the fourth verse is Zeal');
         var _cd0 = FF.newClassCritDmg(s);
-        ok(Math.abs(_cd0 - 0.15) < 1e-9, 'the Zeal verse grants +15% Critical damage');
+        ok(Math.abs(_cd0 - 0.12) < 1e-9, 'the Zeal verse grants +12% Critical damage');
         var hp0 = s.activity.monsterHp;
         FF.templarVerseAdvance(s); // zeal -> might: AMEN
         eq(FF.templarVerse(s), 'might', 'the Litany wraps back to Might');
