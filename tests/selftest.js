@@ -1611,6 +1611,33 @@
     }
   });
 
+  // ---- Monster DoTs: capped vs the player's max Health (Chaos Bolt one-shot fix) ------------------
+  // Reported: an Archdemon's Chaos Hellfire (20%/s of its raw atkMax, armour-ignoring) one-shot a
+  // 995-max-HP player through 20k armour. Every player-facing DoT rate now clamps at application to
+  // 5% of max Health per second, so a full window can never take much over a quarter of a health bar.
+  suite('monster DoTs: rate capped vs player max Health', function(){
+    var s = FF._state, sv = { act: s.activity };
+    try {
+      var cap = Math.ceil(FF.maxHp(s) * FF.MONSTER_DOT_MAX_PCT_PER_SEC);
+      var demon = { name:'Archdemon', atkMax:1e9, hp:1e9 };
+      s.activity = { type:'combat', monsterId:'wildlife_wolf', monsterHp:1000 };
+      FF.monsterSpecialFire(demon, { kind:'burn', durMs:6000, pctPerSec:0.20, word:'Hellfire' });
+      eq(s.activity.pBurnDps, cap, 'a Chaos Hellfire from an outsized foe is capped at 5% max Health/s');
+      ok(cap * 6 < FF.maxHp(s), 'a full 6s Hellfire can no longer kill from full Health');
+      FF.monsterSpecialFire(demon, { kind:'drain', durMs:5000, pctPerSec:0.15, healPct:0.000001, word:'Draining' });
+      eq(s.activity.pBurnDps, cap, 'the Chaos Drain DoT is capped too');
+      FF.monsterSpecialFire(demon, { kind:'poison', durMs:6000, pctPerSec:0.10 });
+      eq(s.activity.pPoisonDps, cap, 'poison DoTs are capped');
+      s.activity.pBleedUntil = 0;
+      FF.monsterSpecialFire(demon, { kind:'bleed', durMs:6000, pctPerSec:0.05, maxStacks:3 });
+      eq(s.activity.pBleedDps, cap, 'bleed (stacks included) is capped');
+      // A tier-appropriate foe's DoT sits under the cap and keeps its natural rate.
+      s.activity = { type:'combat', monsterId:'wildlife_wolf', monsterHp:1000 };
+      FF.monsterSpecialFire({ name:'Wolf', atkMax:10, hp:100 }, { kind:'burn', durMs:6000, pctPerSec:0.20, word:'Burning' });
+      eq(s.activity.pBurnDps, 2, "a small foe's burn keeps its natural rate (10 x 0.20 = 2)");
+    } finally { s.activity = sv.act; }
+  });
+
   // ---- Offline combat: passive HP Regen ticks per-step, matching the live loop (dies-on-logoff fix) ----
   // Reported: a build whose only healing is HP Regen survives live fights but dies every time it logs off
   // mid-combat. Cause: the offline sim front-loaded passive regen as a one-time lump, then took the whole
