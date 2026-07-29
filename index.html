@@ -5097,7 +5097,7 @@
     { key:'cull',           name:'Huskmaker',       group:'slash', slot:'mainhand', base:'fullmoonaxe',  cls:'executioner',    desc:'+2% damage for every 1% of the foe’s missing Health (up to +100%).' },
     { key:'spectralaegis',  name:'Wraithguard',     group:'slash', slot:'mainhand', base:'scythe',       cls:'reaper',         desc:'Your Siphon Shield cap doubles to 40% of max Health.' },
     // --- Pierce weapons (mainhand) ---
-    { key:'engarde',        name:'Gossamer',        group:'pierce', slot:'mainhand', base:'rapier',      cls:'duelist',        desc:'Your Sidestep clock runs every 2s instead of 3.' },
+    { key:'engarde',        name:'Gossamer',        group:'pierce', slot:'mainhand', base:'rapier',      cls:'duelist',        desc:'Your Sidestep clock runs every 3s instead of 4.' },
     { key:'flowingblade',   name:'Silkweaver',      group:'pierce', slot:'mainhand', base:'falchion',    cls:'samurai',        desc:'Focus no longer resets on a miss (drops one stack) and its cap rises to 15.' },
     { key:'resonantecho',   name:'Cavern Echo',     group:'pierce', slot:'mainhand', base:'greatsword',  cls:'spellblade',     desc:'Each Spell Echo hits +10% harder per distinct enchant you carry.' },
     { key:'relentlessassault', name:'Rockslide',    group:'pierce', slot:'mainhand', base:'claymore', cls:'knight',      desc:'Momentum cap rises to 10 stacks and each stack’s speed bonus rises to 12%.' },
@@ -5256,7 +5256,7 @@
     { key:'soulharvester',name:'Soulharvester',group:'slash', slot:'mainhand', base:'fullmoonaxe', cls:'executioner',    desc:'Each kill raises your Execute threshold by 2% for the rest of the fight (base 10%, cap 30%).' },
     { key:'deathshepherd',name:'Deathshepherd',group:'slash', slot:'mainhand', base:'scythe',      cls:'reaper',         desc:'While a Siphon Shield holds, the foe rots (Decay); your Siphon can overfill the shield +50%.' },
     // Pierce weapons (mainhand)
-    { key:'phantomthrust',name:'Phantomthrust',group:'pierce', slot:'mainhand', base:'rapier',     cls:'duelist',        desc:'Your Afterimages strike at 100% weapon damage instead of 50%.' },
+    { key:'phantomthrust',name:'Phantomthrust',group:'pierce', slot:'mainhand', base:'rapier',     cls:'duelist',        desc:'Your Afterimages strike at 70% weapon damage instead of 35%.' },
     { key:'ghostblade',   name:'Ghostblade',   group:'pierce', slot:'mainhand', base:'falchion',   cls:'samurai',        desc:'At max Focus, your strikes apply Decay and cannot be Dodged.' },
     { key:'runegrave',    name:'Runegrave',    group:'pierce', slot:'mainhand', base:'greatsword', cls:'spellblade',     desc:'Each Spell Echo applies Decay; your echoes deal +15% to Decayed foes.' },
     { key:'gravewarden',  name:'Gravewarden',  group:'pierce', slot:'mainhand', base:'claymore',   cls:'knight',         desc:'At max Momentum, a lethal blow is survived at 1 HP (once/fight) and Curses the attacker.' },
@@ -5607,9 +5607,9 @@
         { icon:svgIcon('boots',CLASS_CLOTH_COLOR),       label:'Cloth Shoes',   met:function(st){ return clothPieceEquipped(st,'boots'); } }
       ],
       passives:[
-        { level:1,  name:'Sidestep',      desc:'Every 3 seconds of combat you Sidestep &mdash; it counts as a Dodge for every effect in the game. Real Dodges count on top.' },
-        { level:20, name:'Riposte',       desc:'Every Dodge primes a Riposte: your next strike deals <b>+80%</b>. (Refreshes; doesn\'t stack.)' },
-        { level:40, name:'Afterimage',    desc:'Every Dodge leaves an afterimage that instantly stabs for <b>50% weapon damage</b> &mdash; a free extra hit riding your full multipliers.' },
+        { level:1,  name:'Sidestep',      desc:'Every 4 seconds of combat you Sidestep &mdash; it counts as a Dodge for every effect in the game. Real Dodges count on top.' },
+        { level:20, name:'Riposte',       desc:'Every Dodge primes a Riposte: your next strike deals <b>+50%</b>. (Refreshes; doesn\'t stack.)' },
+        { level:40, name:'Afterimage',    desc:'Every Dodge leaves an afterimage that instantly stabs for <b>35% weapon damage</b> &mdash; a free extra hit riding your full multipliers.' },
         { level:60, name:'Untouchable',   desc:'+2% damage per consecutive second without being struck (cap +60%). Taking a hit halves the count &mdash; never zeroes it.' },
         { level:80, name:'Danse Macabre', desc:'Every 5th Riposte you consume erupts into a <b>5-stab flurry</b>, each stab rolling its own Critical Hit.' }
       ]
@@ -7056,17 +7056,17 @@
   function duelistBonus(reqLevel){ return classBonusActive('duelist', reqLevel); }
   function quickdrawBonus(reqLevel, st){ return classBonusActive('quickdraw', reqLevel, st); }
   // ================= DUELIST: "THE PHANTOM DANCER" =================
-  // The class runs on Dodges and GENERATES her own: every 3s in combat she Sidesteps, and a Sidestep
+  // The class runs on Dodges and GENERATES her own: every 4s in combat she Sidesteps, and a Sidestep
   // counts as a Dodge for every effect in the game (class, legendaries, sets, D4 Firestorm). Real
   // dodge-roll Dodges count on top, so fast attackers accelerate the dance instead of just missing.
-  //   Lv 1  Sidestep     -- the self-driven dodge clock (every 3s of combat)
-  //   Lv 20 Riposte      -- every Dodge primes the next strike: +80%
-  //   Lv 40 Afterimage   -- every Dodge leaves an afterimage stabbing for 50% weapon damage
+  //   Lv 1  Sidestep     -- the self-driven dodge clock (every 4s of combat)
+  //   Lv 20 Riposte      -- every Dodge primes the next strike: +50%
+  //   Lv 40 Afterimage   -- every Dodge leaves an afterimage stabbing for 35% weapon damage
   //   Lv 60 Untouchable  -- +2%/s unhit (cap +60%); a hit HALVES the count, never zeroes it
   //   Lv 80 DanseMacabre -- every 5th Riposte consumed erupts into a 5-stab flurry
-  var DUELIST_SIDESTEP_MS = 3000, DUELIST_SIDESTEP_MS_GOSSAMER = 2000;   // Gossamer: the clock runs every 2s
-  var DUELIST_RIPOSTE_MULT = 1.80;
-  var DUELIST_AFTERIMAGE_PCT = 0.50, DUELIST_AFTERIMAGE_PCT_PHANTOM = 1.00; // Phantomthrust: full-power afterimages
+  var DUELIST_SIDESTEP_MS = 4000, DUELIST_SIDESTEP_MS_GOSSAMER = 3000;   // Gossamer: the clock runs every 3s
+  var DUELIST_RIPOSTE_MULT = 1.50;
+  var DUELIST_AFTERIMAGE_PCT = 0.35, DUELIST_AFTERIMAGE_PCT_PHANTOM = 0.70; // Phantomthrust: double-power afterimages
   var DUELIST_UNTOUCH_PER_SEC = 0.02, DUELIST_UNTOUCH_CAP = 0.60, DUELIST_UNTOUCH_CAP_BW = 1.00; // Bloodwaltz: cap +100%
   var DUELIST_DANSE_EVERY = 5, DUELIST_DANSE_EVERY_D1 = 4, DUELIST_DANSE_STABS = 5; // Redoublement (D1 full): every 4th
   function duelistSidestepMs(st){ return legActive('engarde', st) ? DUELIST_SIDESTEP_MS_GOSSAMER : DUELIST_SIDESTEP_MS; }
@@ -7075,7 +7075,7 @@
     return 1 + Math.min(duelistUntouchCap(st), DUELIST_UNTOUCH_PER_SEC * (st.duelistUntouch||0)); }
   function duelistDanseEvery(st){ return setFull('duelist', st) ? DUELIST_DANSE_EVERY_D1 : DUELIST_DANSE_EVERY; }
   // Afterimage (Lv40): a bonus swing through the real attack pipeline (isBonus: it can't build or consume
-  // class procs, so afterimages never recurse). The transient flag scales it to 50% (100% w/ Phantomthrust).
+  // class procs, so afterimages never recurse). The transient flag scales it to 35% (70% w/ Phantomthrust).
   function duelistAfterimageStrike(){
     if(!duelistBonus(40)) return;
     var act = state.activity; if(!act || act.type!=='combat' || !(act.monsterHp > 0)) return;
@@ -7162,8 +7162,8 @@
   // Dancer's self-driven Sidestep (fromSidestep=true). Every dodge-triggered effect in the game hangs
   // off this one function, which is exactly what makes Sidestep "count as a Dodge for everything".
   function onPlayerDodged(fromSidestep){
-    if(duelistBonus(20)) state.duelistRiposte = true;                      // Riposte (Lv20): prime the next strike (+80%)
-    duelistAfterimageStrike();                                             // Afterimage (Lv40): a free 50% stab
+    if(duelistBonus(20)) state.duelistRiposte = true;                      // Riposte (Lv20): prime the next strike (+50%)
+    duelistAfterimageStrike();                                             // Afterimage (Lv40): a free 35% stab
     if(set2D2('duelist')) state.d2CounterstanceUntil = Date.now() + 2000;  // Counterstance (D2 2pc): -35% damage for 2s after a Dodge
     if(set2D3('duelist')) curseApply(state.activity);                      // Ghost Step (Duelist D3 2pc): a Dodge Curses the foe
     if(legActive('wyrmdancer')) d4WrathAdd(1);                             // Wyrmdancer's Fang: Dodges also build Wrath
@@ -23552,9 +23552,9 @@
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
     { v:'0.0.58', date:'Jul 29', heading:'Duelist rework: The Phantom Dancer', items:[
-      'The Duelist generates her own Dodges: every 3 seconds of combat she Sidesteps, and a Sidestep counts as a Dodge for every effect in the game — class passives, legendaries, sets, Firestorm, all of it. Real Dodges count on top, so fast attackers accelerate the dance instead of only feeding it.',
-      'Five new passives: Sidestep (Lv1) · Riposte (Lv20, every Dodge primes your next strike for +80%) · Afterimage (Lv40, every Dodge leaves an afterimage that stabs for 50% weapon damage) · Untouchable (Lv60, +2% damage per second unhit, cap +60% — a hit halves the count, never zeroes it) · Danse Macabre (Lv80, every 5th Riposte consumed erupts into a 5-stab flurry, each stab rolling its own crit).',
-      'Rapier legendaries retuned: Gossamer (the Sidestep clock runs every 2s), Bloodwaltz (Untouchable ramps to +100% and hits only knock a quarter off), Phantomthrust (Afterimages strike at full weapon damage), Wyrmdancer\'s Fang (Dodges build Wrath, +6% per stack — closing the loop into the D4 Firestorm).',
+      'The Duelist generates her own Dodges: every 4 seconds of combat she Sidesteps, and a Sidestep counts as a Dodge for every effect in the game — class passives, legendaries, sets, Firestorm, all of it. Real Dodges count on top, so fast attackers accelerate the dance instead of only feeding it.',
+      'Five new passives: Sidestep (Lv1) · Riposte (Lv20, every Dodge primes your next strike for +50%) · Afterimage (Lv40, every Dodge leaves an afterimage that stabs for 35% weapon damage) · Untouchable (Lv60, +2% damage per second unhit, cap +60% — a hit halves the count, never zeroes it) · Danse Macabre (Lv80, every 5th Riposte consumed erupts into a 5-stab flurry, each stab rolling its own crit).',
+      'Rapier legendaries retuned: Gossamer (the Sidestep clock runs every 3s), Bloodwaltz (Untouchable ramps to +100% and hits only knock a quarter off), Phantomthrust (Afterimages strike at double power), Wyrmdancer\'s Fang (Dodges build Wrath, +6% per stack — closing the loop into the D4 Firestorm).',
       'Sets tuned to the new engine: the Widow\'s Waltz (D1) makes primed Ripostes guaranteed crits and Danse erupt every 4th; Bladedancer\'s Wrap (D2) keeps Counterstance and En Garde now also lets real Dodges advance the Sidestep clock; Wraithdancer\'s Wrap (D3) and Wyrmdancer\'s Wrap (D4) work unchanged — and far more often, since Sidestep feeds them.',
       'Retired: Reactive Casting (familiars leave the fencer\'s kit), Fleet Footwork\'s attack-timer stacks, Flourish/Poise, Prolonged Duel and Disengage\'s once-per-fight cheat-death (near-permanent Counterstance uptime covers the defense). Riposte, Untouchable and the Danse count clear on combat entry like every persistent class buff.'
     ]},
@@ -35163,7 +35163,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.58.0';
+  var GAME_VERSION = '0.0.58.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

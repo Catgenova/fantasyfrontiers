@@ -5164,8 +5164,8 @@
     }
 
     // Gossamer (duelist/rapier): the Sidestep clock runs every 2s instead of 3.
-    eq(FF.duelistSidestepMs(legSt('engarde')), 2000, 'Gossamer: the Sidestep clock runs every 2s');
-    eq(FF.duelistSidestepMs(legSt('bloodwaltz')), 3000, 'without Gossamer the clock is the base 3s');
+    eq(FF.duelistSidestepMs(legSt('engarde')), 3000, 'Gossamer: the Sidestep clock runs every 3s');
+    eq(FF.duelistSidestepMs(legSt('bloodwaltz')), 4000, 'without Gossamer the clock is the base 4s');
     near(FF.legendaryDodgeBonus(legSt('flowingblade')), 0, 'a non-En-Garde legendary gives no flat Dodge');
 
     // Flowing Blade (samurai/falchion): the Bushido Focus cap rises to 15 (from 10).
@@ -10783,16 +10783,16 @@
     eq(FF.classAccuracyMult(leveled('normal')), 1, 'Duelist grants no flat accuracy multiplier');
 
     // Sidestep clock: 3s base (Gossamer's 2s is covered in the legendary suite).
-    eq(FF.DUELIST_SIDESTEP_MS, 3000, 'the Sidestep clock is 3s');
-    eq(FF.duelistSidestepMs(leveled('normal')), 3000, 'base clock without Gossamer');
+    eq(FF.DUELIST_SIDESTEP_MS, 4000, 'the Sidestep clock is 4s');
+    eq(FF.duelistSidestepMs(leveled('normal')), 4000, 'base clock without Gossamer');
     // Untouchable (Lv60): +2%/s unhit, cap +60%, gated on the class level.
     var un = leveled('normal'); un.duelistUntouch = 10; near(FF.duelistUntouchMult(un), 1.20, 'Untouchable: 10s unhit = +20%');
     un.duelistUntouch = 999; near(FF.duelistUntouchMult(un), 1.60, 'Untouchable caps at +60%');
     var unLow = base(); unLow.duelistUntouch = 10; unLow.uniqueItems = {}; eq(FF.duelistUntouchMult(unLow), 1, 'Untouchable is gated on Lv 60');
     // Danse Macabre cadence: every 5th Riposte without the D1 set.
     eq(FF.duelistDanseEvery(leveled('normal')), 5, 'Danse Macabre erupts every 5th Riposte (no set)');
-    eq(FF.DUELIST_RIPOSTE_MULT, 1.8, 'a primed Riposte strikes +80%');
-    eq(FF.DUELIST_AFTERIMAGE_PCT, 0.5, 'an Afterimage stabs for 50% weapon damage');
+    eq(FF.DUELIST_RIPOSTE_MULT, 1.5, 'a primed Riposte strikes +50%');
+    eq(FF.DUELIST_AFTERIMAGE_PCT, 0.35, 'an Afterimage stabs for 35% weapon damage');
 
     // Behavioral (live state): dodge -> Riposte prime + Afterimage stab; a landed strike consumes the
     // prime and feeds Danse Macabre; Wyrmdancer's Fang banks Wrath per dodge.
