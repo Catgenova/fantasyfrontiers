@@ -53,9 +53,14 @@ Rules:
 (`?selftest` seam + the selftest-only `__FF._startLoop`), seeding a fully maxed state, and
 fighting a zero-offense Archdemon (real dodge/armor) while sampling `act.monsterHp`.
 Run: `SIM_MS=45000 PW_CHROMIUM=/opt/pw-browsers/chromium node scripts/dpssim.mjs`.
-After each class rework, adapt `CONFIGS` + `setup()` to that class and run the matrix —
-compare against the Summoner v0.0.57.11 baseline (Baton ~53B / Broodwyrm ~43B / Packbrand
-~35B / Necrocaller ~35B DPS) so reworked classes land on a comparable ceiling.
+The harness is class-parametric: add the class to `BUILDS` (weapon base + per-style xp keys,
+legendary keys, signets, unique-ring type) and run with `SIM_CLASS=<id>`. It A/Bs set layers
+and cloaks automatically before the final legendary matrix. Recorded ceilings (45s runs,
+v0.0.57.11 rules): **Summoner** Baton ~53B / Broodwyrm ~43B / Packbrand ~43B / Necrocaller
+~37B; **Assassin** Shadowwyrm ~125B ≈ Throatripper ~123B / Wraithclaw ~113B / Gloomstalker
+~111B (best set D3 Bloodrush, cloak Ruin for both classes). Note: runs are noisy (±20%,
+Grand Finale / detonation timing), and the zero-offense dummy keeps Vanish permanently
+armed, which flatters Assassin vs real fights.
 
 The owner-approved best-in-slot rules (v0.0.57.11):
 

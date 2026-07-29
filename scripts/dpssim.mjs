@@ -1,15 +1,22 @@
 // Max-ceiling DPS simulation: boots the REAL game headless (?selftest seam + __FF._startLoop), seeds a
-// fully maxed state, fights a zero-offense Archdemon, and measures live damage over a fixed window.
-// Usage: node scripts/dpssim.mjs            (60s per config; SIM_MS=20000 for a quick pass)
-//        PW_CHROMIUM=/path/to/chromium node scripts/dpssim.mjs   (custom browser binary)
-// Currently configured for the Summoner (Conductor) across its four staff legendaries; adapt CONFIGS
-// and setup() for other classes. This harness caught the assassin-gated Downbeat hook (v0.0.57.10).
+// fully maxed best-in-slot state, and measures live damage vs a zero-offense Archdemon (real defenses).
+//
+// Usage: SIM_CLASS=assassin SIM_MS=45000 node scripts/dpssim.mjs
+//        PW_CHROMIUM=/path/to/chromium for a custom browser binary.
+//
+// Owner-approved ceiling rules (see CLAUDE.md "Max-ceiling DPS simulation"):
+//  - every slot filled fantastic; each unique gets its 4 max enchant lines FIRST, then +15
+//    (enchant-then-enhance is the intended min-max order: +15 scales base AND enchant stats x6)
+//  - NO consumables / Faith actives / server buffs
+//  - all st.xp keys Lv100 + the per-style weapon key (accuracy!) + every physique
+// Phases per class: set-layer A/B -> cloak A/B -> final matrix over the class's weapon legendaries.
+// This harness caught the assassin-gated Downbeat bug (v0.0.57.10): trust a 0-stat anomaly.
 import { chromium } from "playwright";
 import http from "http";
 import { readFile } from "fs/promises";
 import path from "path";
-
 import { fileURLToPath } from "url";
+
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const MIME = { ".html": "text/html", ".js": "text/javascript" };
 const server = http.createServer(async (req, res) => {
@@ -20,13 +27,31 @@ const server = http.createServer(async (req, res) => {
 await new Promise(r => server.listen(0, r));
 const port = server.address().port;
 
-const DURATION_MS = Number(process.env.SIM_MS || 60000);
-const CONFIGS = [
-  { name: "Packbrand (pack-scaled Downbeat)", leg: "packbrand" },
-  { name: "Baton of the First Chair (4s swing)", leg: "rapidconjuring" },
-  { name: "Necrocaller (Finale wraiths)", leg: "necrocaller" },
-  { name: "Broodwyrm (double Earth enchants)", leg: "broodwyrm" },
-];
+const DURATION_MS = Number(process.env.SIM_MS || 45000);
+const SIM_CLASS = process.env.SIM_CLASS || "assassin";
+
+// Per-class build definitions. weapon: base/tier + the per-style xp keys accuracy reads; legs: mainhand
+// legendary keys for the final matrix; setLayers: D-set layers to A/B; signets: 3 legendary ring keys;
+// uniqueRingType: the crafted ring for the last two slots (the class's scaling stat).
+const BUILDS = {
+  summoner: {
+    weapon: { typeId: "staff", base: "stweapon_staff_t20_fantastic", tier: 20, styleXp: ["staff", "staves", "arcanism"] },
+    legs: ["packbrand", "rapidconjuring", "necrocaller", "broodwyrm"],
+    weaponLines: leg => leg === "broodwyrm"
+      ? ["weaponDamage", "critDamage", "critChance", "earthDamage"]
+      : ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["famhaste", "d2_fury", "d4_wyrm"], uniqueRingType: "communion",
+  },
+  assassin: {
+    weapon: { typeId: "claw", base: "stweapon_claw_t19_fantastic", tier: 19, styleXp: ["claw"] },
+    legs: ["phantomassault", "throatripper", "wraithclaw", "shadowwyrm"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
+    offhandClaw: true,
+  },
+};
+const BUILD = BUILDS[SIM_CLASS];
+if (!BUILD) { console.error("unknown SIM_CLASS", SIM_CLASS, "— known:", Object.keys(BUILDS).join(", ")); process.exit(1); }
 
 const browser = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
 const page = await browser.newPage();
@@ -34,99 +59,86 @@ page.on("pageerror", e => console.log("pageerror:", e.message));
 await page.goto(`http://127.0.0.1:${port}/index.html?selftest`, { waitUntil: "domcontentloaded" });
 await page.waitForFunction(() => window.__FF_SELFTEST && (window.__FF_SELFTEST.passed > 0 || window.__FF_SELFTEST.error), null, { timeout: 60000 });
 
-async function setup(leg, cloakLeg) {
-  return await page.evaluate(([leg, cloakLeg]) => {
+async function setup(cfg) {
+  return await page.evaluate(([cls, cfg]) => {
     const FF = window.__FF, st = FF._state;
-    const diag = { leg, cloakLeg };
-    // 1) Max every skill the sim touches: class, proficiencies, crafting gates, attunement, physiques.
+    const diag = { cls };
     const lv100 = FF.xpFloorForLevel(100);
     Object.keys(st.xp).forEach(k => { st.xp[k] = lv100; });
-    ["summoner", "staves", "arcanism", "staff"].forEach(k => { st.xp[k] = lv100; }); // 'staff' = the per-style accuracy key
-    // Physiques are their own xp map (accuracy, damage, crit all read them).
+    [cls].concat(cfg.styleXp).forEach(k => { st.xp[k] = lv100; }); // class + per-style accuracy keys
     st.physique = st.physique || {};
     (FF.PHYSIQUE_SKILLS || []).forEach(ph => { st.physique[ph.id] = lv100; });
-    // 2) Full D2 Chorus of Fangs set (Pack Tactics + Kindred Fury crits), fantastic pieces.
+
+    const maxLine = (pool, id) => { const m = FF.ENCHANT_MODS[pool].filter(x => x.id === id)[0]; const r = FF.enchantModRange(m, 20); return { mod: id, roll: r && r.max != null ? r.max : m.max }; };
+    const aLines = () => ["defense", "maxHp", "dmgReduction", "blockChance"].map(id => maxLine("armor", id));
+    const jLines = () => ["allDamage", "critDamage", "critChance", "lifesteal"].map(id => maxLine("jewelry", id));
+
+    // Armor: full class set of the configured layer, each piece enchanted then +15.
     st.bodyArmor = {}; st.uniqueItems = st.uniqueItems || {};
-    const d2 = FF.D2_SET_DEFS && FF.D2_SET_DEFS.summoner;
-    const slots = d2 && d2.bareHead ? ["chest", "gauntlets", "boots"] : ["helmet", "chest", "gauntlets", "boots"];
-    const apool = FF.ENCHANT_MODS.armor;
-    const aMax = id => { const m = apool.filter(x => x.id === id)[0]; const r = FF.enchantModRange(m, 20); return { mod: id, roll: r && r.max != null ? r.max : m.max }; };
+    const layerDefs = { d1: FF.D1_SET_DEFS, d2: FF.D2_SET_DEFS, d3: FF.D3_SET_DEFS, d4: FF.D4_SET_DEFS }[cfg.setLayer];
+    const def = layerDefs && layerDefs[cls];
+    const slots = def && def.bareHead ? ["chest", "gauntlets", "boots"] : ["helmet", "chest", "gauntlets", "boots"];
     slots.forEach(slot => {
-      const uid = FF.mintSetPiece("summoner", slot, "fantastic", "d2");
+      const uid = FF.mintSetPiece(cls, slot, "fantastic", cfg.setLayer);
       const u = st.uniqueItems[uid];
-      u.enchants = [aMax("defense"), aMax("maxHp"), aMax("dmgReduction"), aMax("blockChance")];
-      u.enhance = 15; // armor pool is defensive; enchant-then-+15 is still the per-item ceiling
+      u.enchants = aLines(); u.enhance = 15;
       st.bodyArmor[slot] = { uid: uid, material: u.material, tier: (u.tier || 21) + 1, rarity: "fantastic" };
     });
-    // Back slot: legendary Shroud (bodyArmor.back.leg is the real storage; A/B'd -- Ruin all-dmg /
-    // Warpack elemental / Widow crit-dmg).
-    st.bodyArmor.back = { leg: cloakLeg, rarity: "fantastic" };
-    // 3b) Jewelry: 3 legendary Signets (Brood famhaste / Fury attack speed / Wyrm elemental) +
-    // 2 unique t20 fantastic Communion rings and 1 amulet, each 4 jewelry lines then +15. Relic & belt:
-    // unique fantastic t20, enchanted then +15 (relic = +dmg%/armor%, scaled x6 by its enhance).
-    const jpool = FF.ENCHANT_MODS.jewelry;
-    const jMax = id => { const m = jpool.filter(x => x.id === id)[0]; const r = FF.enchantModRange(m, 20); return { mod: id, roll: r && r.max != null ? r.max : m.max }; };
-    const jLines = () => [jMax("allDamage"), jMax("critDamage"), jMax("critChance"), jMax("lifesteal")];
+    st.bodyArmor.back = { leg: cfg.cloakLeg, rarity: "fantastic" }; // legendary Shroud
+
+    // Weapon: legendary fantastic top-tier, 4 max lines then +15.
+    st.uniqueItems.SIMW = { uid: "SIMW", leg: cfg.leg, kind: "weapon", base: cfg.weapon.base,
+      tier: cfg.weapon.tier, rarity: "fantastic", enchants: cfg.weaponLines.map(id => maxLine("weapon", id)), enhance: 15 };
+    st.equippedMainhand = cfg.weapon.typeId; st.equippedMainhandTier = cfg.weapon.tier + 1; st.equippedMainhandRarity = "fantastic";
+    st.equippedMainhandUid = "SIMW";
+    if (cfg.offhandClaw) {
+      st.uniqueItems.SIMO = { uid: "SIMO", kind: "weapon", base: "stweapon_claw_t19_fantastic",
+        tier: 19, rarity: "fantastic", enchants: cfg.weaponLines.map(id => maxLine("weapon", id)), enhance: 15 };
+      st.equippedOffhand = "claw"; st.equippedOffhandTier = 20; st.equippedOffhandRarity = "fantastic"; st.equippedOffhandUid = "SIMO";
+    } else {
+      st.equippedOffhand = null; st.equippedOffhandTier = 0; st.equippedOffhandUid = null;
+    }
+
+    // Jewelry: 3 legendary Signets + 2 unique rings + amulet; relic & belt — every unique enchanted then +15.
     st.jewelrySlots = {};
-    st.jewelrySlots.ring1 = { leg: "famhaste", rarity: "fantastic" };
-    st.jewelrySlots.ring2 = { leg: "d2_fury", rarity: "fantastic" };
-    st.jewelrySlots.ring3 = { leg: "d4_wyrm", rarity: "fantastic" };
+    cfg.signets.forEach((key, i) => { st.jewelrySlots["ring" + (i + 1)] = { leg: key, rarity: "fantastic" }; });
     ["ring4", "ring5"].forEach((sid, i) => {
       const uid = "SIMR" + i;
-      st.uniqueItems[uid] = { uid, kind: "ring", base: "ring_communion_t19_fantastic", tier: 19, rarity: "fantastic", enchants: jLines(), enhance: 15 };
-      st.jewelrySlots[sid] = { typeId: "communion", tier: 20, rarity: "fantastic", uid };
+      st.uniqueItems[uid] = { uid, kind: "ring", base: "ring_" + cfg.uniqueRingType + "_t19_fantastic", tier: 19, rarity: "fantastic", enchants: jLines(), enhance: 15 };
+      st.jewelrySlots[sid] = { typeId: cfg.uniqueRingType, tier: 20, rarity: "fantastic", uid };
     });
     st.uniqueItems.SIMA = { uid: "SIMA", kind: "amulet", base: "amulet_t19_fantastic", tier: 19, rarity: "fantastic", enchants: jLines(), enhance: 15 };
     st.jewelrySlots.amulet = { typeId: "warding", tier: 20, rarity: "fantastic", uid: "SIMA" };
     st.uniqueItems.SIMREL = { uid: "SIMREL", kind: "relic", base: "relic_t19_fantastic", tier: 19, rarity: "fantastic", enchants: jLines(), enhance: 15 };
     st.equippedRelicTier = 20; st.equippedRelicRarity = "fantastic"; st.equippedRelicUid = "SIMREL";
-    const bpool = FF.ENCHANT_MODS.armor;
-    st.uniqueItems.SIMB = { uid: "SIMB", kind: "belt", base: "belt_t19_fantastic", tier: 19, rarity: "fantastic",
-      enchants: [aMax("defense"), aMax("maxHp"), aMax("dmgReduction"), aMax("blockChance")], enhance: 15 };
+    st.uniqueItems.SIMB = { uid: "SIMB", kind: "belt", base: "belt_t19_fantastic", tier: 19, rarity: "fantastic", enchants: aLines(), enhance: 15 };
     st.equippedBeltTier = 20; st.equippedBeltRarity = "fantastic"; st.equippedBeltUid = "SIMB";
-    // 3) Legendary fantastic t20 staff: 4 max enchant lines FIRST, then +15 (legal order in-game; the
-    // enhance multiplier scales base AND enchant stats x6). Broodwyrm swaps a line to Earth for its double.
-    const wpool = FF.ENCHANT_MODS.weapon;
-    const maxRoll = id => { const m = wpool.filter(x => x.id === id)[0]; const r = FF.enchantModRange(m, 20); return { mod: id, roll: r && r.max != null ? r.max : m.max }; };
-    const enchants = leg === "broodwyrm"
-      ? [maxRoll("weaponDamage"), maxRoll("critDamage"), maxRoll("critChance"), maxRoll("earthDamage")]
-      : [maxRoll("weaponDamage"), maxRoll("critDamage"), maxRoll("critChance"), maxRoll("flatDamage")];
-    st.uniqueItems.SIMW = { uid: "SIMW", leg: leg, kind: "weapon", base: "stweapon_staff_t20_fantastic",
-      tier: 20, rarity: "fantastic", enchants: enchants, enhance: 15 };
-    st.equippedMainhand = "staff"; st.equippedMainhandTier = 21; st.equippedMainhandRarity = "fantastic";
-    st.equippedMainhandUid = "SIMW";
-    st.equippedOffhand = null; st.equippedOffhandTier = 0; st.equippedOffhandUid = null;
-    diag.enchants = enchants;
-    // 4) Six best damage familiars, Lv100 + 3 stars each.
-    const famScore = id => {
-      const f = FF.FAMILIAR_DATA[id]; if (!f || !f.spells) return 0;
-      return f.spells.reduce((n, s) => n + ((s.type === "hit" || s.type === "siphon") ? (s.amount || 0) : 0), 0);
-    };
+
+    // Companions: best damage familiars, Lv100 + 3 stars, up to the build's slot count.
+    const famScore = id => { const f = FF.FAMILIAR_DATA[id]; if (!f || !f.spells) return 0;
+      return f.spells.reduce((n, s) => n + ((s.type === "hit" || s.type === "siphon") ? (s.amount || 0) : 0), 0); };
     const famIds = Object.keys(FF.FAMILIAR_DATA).sort((a, b) => famScore(b) - famScore(a));
     st.familiars = {};
-    const nSlots = FF.activeCompanionSlots(st);
-    const roster = famIds.slice(0, nSlots);
+    const roster = famIds.slice(0, FF.activeCompanionSlots(st));
     roster.forEach(id => { st.familiars[id] = { owned: true, level: 100, stars: 3 }; });
-    st.activeCompanions = roster.slice();
-    st.companionCast = {};
+    st.activeCompanions = roster.slice(); st.companionCast = {};
     roster.forEach(id => { st.companionCast[id] = { accum: 0, index: 0 }; });
-    diag.roster = roster; diag.slots = nSlots;
-    // 5) Fresh rhythm state.
+    diag.roster = roster;
+
+    // Fresh combat buffs, then the fight: zero-offense Archdemon with real dodge/armor, huge HP pool.
     st.staffDownbeats = []; st.staffLastDownbeatAt = 0; st.summonerCrescendo = 0; st.summonerWraiths = [];
     st.familiarBuffs = st.familiarBuffs || {};
-    // 6) Target: highest-tier monster, offense zeroed (pure training dummy with real defenses).
+    st.assassinVigor = null; st.assassinBloodrushUntil = 0;
     let top = FF.MONSTERS.filter(m => /archdemon/i.test(m.id) || /Archdemon/.test(m.name))[0];
     if (!top) { FF.MONSTERS.forEach(m => { if (!top || (m.tierIndex || 0) > (top.tierIndex || 0)) top = m; }); }
     top.atkMin = 0; top.atkMax = 0; top.attackSpeed = 99999; top.special = null;
     st.activity = { type: "combat", monsterId: top.id, monsterHp: 1e12, tickAccum: 0, monsterTickAccum: 0,
-      duelStartedAt: Date.now(), samuraiFirstStrike: true };
+      offhandTickAccum: 0, duelStartedAt: Date.now(), samuraiFirstStrike: true, lastDamagedAt: 0 };
     st.playerHp = FF.maxHp(st);
-    diag.target = { id: top.id, name: top.name, tierIndex: top.tierIndex, dodge: top.dodge, element: top.element };
-    diag.activeClass = FF.activeClassId(st);
-    diag.maxHp = FF.maxHp(st);
-    window.__SIM = { lastHp: 1e12, total: 0, t0: performance.now(), refills: 0 };
+    diag.target = top.name; diag.activeClass = FF.activeClassId(st);
+    window.__SIM = { lastHp: 1e12, total: 0, t0: performance.now() };
     return diag;
-  }, [leg, cloakLeg]);
+  }, [SIM_CLASS, cfg]);
 }
 
 async function sample() {
@@ -135,45 +147,49 @@ async function sample() {
     const a = st.activity;
     if (!a || a.type !== "combat") return { dead: true, total: s.total, elapsed: performance.now() - s.t0 };
     s.total += Math.max(0, s.lastHp - a.monsterHp);
-    if (a.monsterHp < 1e11) { a.monsterHp = 1e12; s.refills++; }
+    if (a.monsterHp < 1e11) { a.monsterHp = 1e12; }
     s.lastHp = a.monsterHp;
-    return { total: s.total, elapsed: performance.now() - s.t0,
-      stacks: FF.staffDownbeatStacks(st), cres: FF.summonerCrescendo(st),
-      wraiths: (st.summonerWraiths || []).length, dbPower: FF.staffDownbeatPower(st),
-      hitPct: Math.round(FF.playerHitChance(FF.MONSTERS.filter(m => m.id === a.monsterId)[0]) * 100) };
+    return { total: s.total, elapsed: performance.now() - s.t0 };
   });
 }
 
-async function runOne(name, leg, cloakLeg, ms) {
-  const diag = await setup(leg, cloakLeg);
+async function runOne(name, cfg, ms) {
+  const full = { ...cfg, weapon: BUILD.weapon, styleXp: BUILD.weapon.styleXp, offhandClaw: !!BUILD.offhandClaw,
+    signets: BUILD.signets, uniqueRingType: BUILD.uniqueRingType, weaponLines: BUILD.weaponLines(cfg.leg) };
+  const diag = await setup(full);
   await page.evaluate(() => window.__FF._startLoop());
-  if (diag.activeClass !== "summoner") { console.log(name, "SETUP FAILED:", JSON.stringify(diag)); return null; }
-  let last = null, peak = { stacks: 0, cres: 0, wraiths: 0 };
+  if (diag.activeClass !== SIM_CLASS) { console.log(name, "SETUP FAILED — active class:", diag.activeClass); return null; }
+  let last = null;
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
     await new Promise(r => setTimeout(r, 500));
     last = await sample();
     if (last.dead) break;
-    peak.stacks = Math.max(peak.stacks, last.stacks || 0);
-    peak.cres = Math.max(peak.cres, last.cres || 0);
-    peak.wraiths = Math.max(peak.wraiths, last.wraiths || 0);
   }
-  const out = { config: name, leg, cloak: cloakLeg, seconds: Math.round(last.elapsed / 1000),
-    dps: Math.round(last.total / (last.elapsed / 1000)), totalDamage: Math.round(last.total),
-    peakDownbeatStacks: peak.stacks, peakCrescendo: peak.cres, peakWraiths: peak.wraiths,
-    downbeatPowerPerStack: last.dbPower, hitPct: last.hitPct, target: diag.target.name };
+  const out = { config: name, leg: cfg.leg, set: cfg.setLayer, cloak: cfg.cloakLeg,
+    seconds: Math.round(last.elapsed / 1000), dps: Math.round(last.total / (last.elapsed / 1000)),
+    totalDamage: Math.round(last.total), target: diag.target };
   console.log(JSON.stringify(out));
   return out;
 }
 
-// Phase 1: cloak A/B on the Baton build (short windows).
-const CLOAKS = ["d2_ruin", "d2_warpack", "critdmg"];
-let bestCloak = CLOAKS[0], bestDps = -1;
-for (const c of CLOAKS) {
-  const r = await runOne("cloak A/B: " + c, "rapidconjuring", c, Math.min(DURATION_MS, 45000));
+// Phase 1: set-layer A/B on the last-listed legendary (usually the capstone-synergy one).
+const probeLeg = BUILD.legs[BUILD.legs.length - 1];
+let bestSet = BUILD.setLayers[0], bestDps = -1;
+if (BUILD.setLayers.length > 1) {
+  for (const layer of BUILD.setLayers) {
+    const r = await runOne("set A/B: " + layer, { leg: probeLeg, setLayer: layer, cloakLeg: "d2_ruin" }, Math.min(DURATION_MS, 45000));
+    if (r && r.dps > bestDps) { bestDps = r.dps; bestSet = layer; }
+  }
+  console.log("WINNING SET LAYER:", bestSet);
+}
+// Phase 2: cloak A/B (Ruin all-dmg / Warpack elemental / Widow crit-dmg).
+let bestCloak = "d2_ruin"; bestDps = -1;
+for (const c of ["d2_ruin", "d2_warpack", "critdmg"]) {
+  const r = await runOne("cloak A/B: " + c, { leg: probeLeg, setLayer: bestSet, cloakLeg: c }, Math.min(DURATION_MS, 45000));
   if (r && r.dps > bestDps) { bestDps = r.dps; bestCloak = c; }
 }
 console.log("WINNING CLOAK:", bestCloak);
-// Phase 2: full matrix with the winning cloak.
-for (const cfg of CONFIGS) await runOne(cfg.name, cfg.leg, bestCloak, DURATION_MS);
+// Phase 3: final matrix over the class's weapon legendaries.
+for (const leg of BUILD.legs) await runOne(SIM_CLASS + ": " + leg, { leg, setLayer: bestSet, cloakLeg: bestCloak }, DURATION_MS);
 await browser.close(); server.close();
