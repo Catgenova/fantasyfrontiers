@@ -5311,16 +5311,9 @@
     var noBatonSt = legSt('tempest'); noBatonSt.equippedMainhand = 'staff'; noBatonSt.equippedMainhandUid = null;
     near(FF.playerAttackIntervalMs(batonSt) / FF.playerAttackIntervalMs(noBatonSt), 0.8, 'Baton of the First Chair: the staff swings 20% faster (4s vs 5s)', 1e-9);
 
-    // Retribution (templar/scepter): a Holy shield absorb arms a +50% next strike, consumed once.
-    var rSt = legSt('retribution', 'scepter');
-    eq(FF.legRetributionArmed(rSt), false, 'Retribution is unarmed until a Holy shield absorbs');
-    rSt.retributionCharged = true;
-    eq(FF.legRetributionArmed(rSt), true, 'a Holy shield absorb arms Retribution');
-    near(FF.legRetributionConsume(rSt), 1.5, 'the armed strike deals +50%');
-    eq(rSt.retributionCharged, false, 'consuming Retribution disarms it');
-    near(FF.legRetributionConsume(rSt), 1, 'Retribution only empowers one strike');
-    var rOff = legSt('emberstorm'); rOff.retributionCharged = true;
-    near(FF.legRetributionConsume(rOff), 1, 'Retribution is inert without its legendary');
+    // Vengeful Dawn (templar/scepter): Gloria erupts +50% harder (behaviour lives in templarGloria; detect + constant here).
+    eq(FF.legActive('retribution', legSt('retribution', 'scepter')), true, 'legActive detects Vengeful Dawn');
+    eq(FF.LEG_GLORIA_MULT, 1.5, 'Vengeful Dawn: Gloria +50%');
 
     // Cursebringer / Deep Freeze / Ember Storm / Aegis Break: detection + tuning constants (behaviour driven live).
     eq(FF.legActive('cursebringer', legSt('cursebringer', 'wandDark')), true, 'legActive detects Cursebringer');
@@ -5924,9 +5917,9 @@
     // Soulrend: +25% vs a Cursed + Vulnerable foe (both required).
     near(FF.d3LegDmgMult({}, legSt('soulrend','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, curseUntil:now+4000, voidVulnStacks:3, voidVulnUntil:now+4000} })), 1.25, 'Soulrend: +25% vs a Cursed + Vulnerable foe');
     near(FF.d3LegDmgMult({}, legSt('soulrend','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, curseUntil:now+4000} })), 1.0, 'Soulrend needs Vulnerability too');
-    // Lichbane: +30% above 75% HP.
-    near(FF.d3LegDmgMult({}, legSt('lichbane','scepter')), 1.30, 'Lichbane: +30% above 75% Health');
-    near(FF.d3LegDmgMult({}, legSt('lichbane','scepter','weapon',{ playerHp:1 })), 1.0, 'Lichbane inert below 75% HP');
+    // Lichbane: +30% while a Holy shield holds (the 75%-Health camp retired with the Warpriest).
+    near(FF.d3LegDmgMult({}, legSt('lichbane','scepter','weapon',{ templarShield:50 })), 1.30, 'Lichbane: +30% while a Holy shield holds');
+    near(FF.d3LegDmgMult({}, legSt('lichbane','scepter')), 1.0, 'Lichbane inert with no shield banked');
     // Gravefrost: Chilled foes take +20% Decay (via the Decay tick multiplier).
     near(FF.d3DecayTickMult(legSt('gravefrost','wandWater','weapon',{ activity:{type:'combat', monsterHp:100, enemyChillUntil:now+4000} })), 1.20, 'Gravefrost: Chilled foes take +20% Decay');
     // Detection for the behaviour-driven arcane weapons + all 5 wards.
@@ -6733,11 +6726,9 @@
         near(FF.d4FamiliarElementMult(wy, 'fire', { element:'water' }), 1.30, 'the Resonance fades once the Syncopation window lapses');
       })();
 
-      // --- Templar Aegis of Light (full): Holy shield scales with Light Attunement ---
-      s.bodyArmor = {}; s.uniqueItems = {};
-      wearFull('templar'); near(FF.d4TemplarAegisMult(s), 1 + FF.elementDamageBonus(s, 'light'), 'Aegis of Light scales the shield by Light Attunement');
-      ok(FF.d4TemplarAegisMult(s) > 1, 'Aegis of Light always grows the shield at least a little');
-      s.bodyArmor = {}; s.uniqueItems = {}; near(FF.d4TemplarAegisMult(s), 1, 'no Aegis of Light without the full Sunwyrm set');
+      // --- Templar Sunburst Zeal (full): Zeal-verse crits erupt as Light (behavioural, in the class suite) ---
+      wearFull('templar'); near(FF.d4TemplarAegisMult(s), 1, 'Aegis of Light retired: the shield no longer scales with Attunement');
+      ok(FF.setFullD4('templar', s), 'the full Sunwyrm set (Sunburst Zeal) is detectable');
 
       // --- Nightblade Eclipse (full): a Vulnerable foe's elemental advantage against you is stripped ---
       // Seat leather weakness (fire) AND the nightblade set on the same slots (slot carries material+tier for
@@ -6967,12 +6958,12 @@
       }
       s.xp.berserker = svBerXp; s.equippedMainhand = svMain; s.equippedMainhandTier = svMainT; if(svHelm !== undefined) s.bodyArmor.helmet = svHelm;
       s.playerHp = mh;
-      // Templar Zealous Wrath (2pc): +15% above 75% HP only.
+      // Templar Zealous Verse (2pc) amplifies verse effects (tested via templarVersePower in the class suite);
+      // the generic D2 damage multiplier stays flat for the Warpriest.
       wearD2('templar', 2);
-      near(FF.d2SetDmgMult(foe, s), 1.15, 'Templar Zealous Wrath: +15% above 75% HP');
-      s.playerHp = Math.round(mh*0.5); near(FF.d2SetDmgMult(foe, s), 1.0, 'Zealous Wrath inert below 75% HP'); s.playerHp = mh;
-      // Templar Radiant Aegis (full): +50% Holy shield cap.
-      wearD2('templar', 4); near(FF.templarAegisCapMult(s), 1.5, 'Templar Radiant Aegis: +50% shield cap');
+      near(FF.d2SetDmgMult(foe, s), 1.0, 'Zealous Verse does not touch the generic D2 damage multiplier');
+      // Templar Radiant Aegis (full): double bank rate and shield cap.
+      wearD2('templar', 4); near(FF.templarAegisCapMult(s), 2, 'Templar Radiant Aegis: double shield bank + cap');
       // Juggernaut Crushing Blows (2pc): +15% vs foe above 50% HP (reads pre-hit HP).
       wearD2('juggernaut', 2); s.activity.monsterHp = 800; near(FF.d2SetDmgMult({hp:1000}, s), 1.15, 'Juggernaut Crushing Blows: +15% vs a healthy foe');
       s.activity.monsterHp = 300; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, 'Crushing Blows inert on a wounded foe');
@@ -7474,12 +7465,9 @@
     eq(FF.activeClassId(bFist), 'berserker', 'the full D1 set plus a warhammer activates the class');
     eq(FF.berserkerTitansHeftDmg(bFist), Math.round(3.50 * FF.maxHp(bFist)), "Titan's Fist (full): Heft = 350% of max HP");
 
-    // Templar Mercy (2pc): Lay on Hands mends 40% (up from 20%).
-    near(FF.templarLayOnHandsPct(setSt('templar',2)), 0.40, 'Mercy (2pc): Lay on Hands heals 40%');
-    near(FF.templarLayOnHandsPct(setSt('templar',1)), 0.20, '1 piece -> base 20% Lay on Hands');
-    // Templar Blessing of Haste (full): -15% attack timer.
-    near(FF.templarBlessingOfHasteMult(setSt('templar',4)), 0.85, 'Blessing of Haste (full): -15% attack timer');
-    near(FF.templarBlessingOfHasteMult(setSt('templar',2)), 1, 'no Blessing of Haste below the full set');
+    // Templar Quick Verse (2pc): 5s verses; Refrain (full): Gloria strikes twice (behavioural in the class suite).
+    eq(FF.templarVerseMs(setSt('templar',2)), 5000, 'Quick Verse (2pc): 5s verses');
+    eq(FF.templarVerseMs(setSt('templar',1)), 6000, '1 piece -> the base 6s verse');
 
     // Lumen Radiant Surge (2pc): Reflected Light heals 25% (up from 15%).
     near(FF.lumenReflectPct(setSt('lumen',2)), 0.25, 'Radiant Surge (2pc): Reflected Light 25%');
@@ -11230,24 +11218,85 @@
     var lvHi = FF.xpFloorForLevel(85); // ~Lv 85
     function leveled(){ var s = base(); s.xp.templar = lvHi; s.physique = {}; return s; }
 
-    // Lv 20 Beacon of Faith: +20% familiar spell potency (gated on the class being active).
-    eq(FF.templarBeaconPotencyMult(full), 1, 'Lv 1 templar: no Beacon potency yet');
-    ok(Math.abs(FF.templarBeaconPotencyMult(leveled()) - 1.20) < 1e-9, 'Lv 20+: familiar spells +20%');
-    var off = base(); off.equippedOffhand=null; off.xp.templar = lvHi;
-    eq(FF.templarBeaconPotencyMult(off), 1, 'Beacon gated on the class being active');
+    // The Warpriest perk ladder: names in order; the low-HP camp and the 10s shield timer are gone.
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'The Litany,Fervor,Doxology,Shared Liturgy,Amen', 'Warpriest perk names');
+    eq(FF.TPL_VERSES.join(','), 'might,haste,aegis,zeal', 'the four verses rotate in order');
+    eq(FF.TPL_VERSE_MS, 6000, 'a verse holds for 6s');
+    eq(FF.TPL_ZEAL_CRITDMG, 0.15, 'Zeal grants +15% Critical DAMAGE');
 
-    // Lv 40 Dawnbreaker: +30% Light (the scepter's light half) vs Dark-element foes only.
-    eq(FF.templarDawnbreakerMult({element:'dark'}, leveled()), 1.30, 'Dawnbreaker: +30% Light vs a Dark foe');
-    eq(FF.templarDawnbreakerMult({element:'fire'}, leveled()), 1, 'Dawnbreaker: no bonus vs a non-Dark foe');
-    eq(FF.templarDawnbreakerMult({element:'dark'}, full), 1, 'Dawnbreaker gated on Class Lv 40 (nothing at Lv 1)');
+    // Verse reads are pure-state: null out of combat / class off; power scales with the D2 set + Empowered.
+    var vq = leveled(); vq.activity = { type:'combat', monsterHp:100 };
+    eq(FF.templarVerse(base()), null, 'the Litany is silent at Lv 0 (class fixture reads null)');
+    eq(FF.templarVerse(leveled()), null, 'the Litany is silent out of combat');
+    vq.tplVerseIdx = 0; eq(FF.templarVerse(vq), 'might', 'the service opens on Might');
+    vq.tplVerseIdx = 3; eq(FF.templarVerse(vq), 'zeal', 'the rotation reaches Zeal');
+    near(FF.templarVersePower(vq), 1, 'base verse power');
+    vq.tplEmpowered = true; near(FF.templarVersePower(vq), 1.5, 'an Empowered verse is +50%');
+    vq.tplEmpowered = false;
+    // Doxology: +4% per completed verse, capped (Sunscale raises the cap -- unit-tested via templarDoxologyCap).
+    vq.xp.templar = lvHi; vq.tplDoxology = 3; near(FF.templarDoxologyMult(vq), 1.12, 'Doxology: 3 completed verses = +12%');
+    vq.tplDoxology = 99; near(FF.templarDoxologyMult(vq), 1.20, 'Doxology caps at 5 stacks (+20%)');
+    eq(FF.templarDoxologyCap(vq), 5, 'base Doxology cap is 5');
+    // Shared Liturgy: familiars receive the Might verse at full power.
+    vq.tplDoxology = 0; vq.tplVerseIdx = 0;
+    near(FF.templarBeaconPotencyMult(vq), 1.15, 'Shared Liturgy: familiars share the Might verse in full');
+    vq.tplVerseIdx = 1; near(FF.templarBeaconPotencyMult(vq), 1, 'familiars only share the LIVE blessing');
 
-    // Lv 60 Holy Light: a heal-over-time only below 40% HP at Lv 60+.
-    var hlLow = leveled(); hlLow.playerHp = 10;    // maxHp(physique {}) ~50 -> 40% ~20; 10 < 20 => healing
-    var hlFull = leveled(); hlFull.playerHp = 45;  // 45 >= 20 => none
-    ok(FF.templarHolyLightHps(hlLow) > 0, 'Holy Light heals below 40% HP at Lv 60+');
-    eq(FF.templarHolyLightHps(hlFull), 0, 'Holy Light does nothing at healthy HP');
-    var hlLv1 = base(); hlLv1.physique = {}; hlLv1.playerHp = 1;
-    eq(FF.templarHolyLightHps(hlLv1), 0, 'Holy Light gated on Class Lv 60 (nothing at Lv 1)');
+    // Behavioral: the Litany through the live loop tick + the REAL playerAttackTick (live state).
+    (function(){
+      var s = FF._state;
+      var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid,
+                   oh:s.equippedOffhand, oht:s.equippedOffhandTier, ba:s.bodyArmor, ui:s.uniqueItems, xp:s.xp.templar,
+                   act:s.activity, hp:s.playerHp, ts:s.templarShield,
+                   vi:s.tplVerseIdx, va:s.tplVerseAccum, ve:s.tplVerseExt, dx:s.tplDoxology, em:s.tplEmpowered, ha:s.tplHitAvg };
+      var svRnd = Math.random;
+      try {
+        s.equippedMainhand='scepter'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null;
+        s.equippedOffhand='wardLight'; s.equippedOffhandTier=6;
+        s.bodyArmor={ helmet:{material:'plate',tier:5,rarity:'normal'}, chest:{material:'plate',tier:5,rarity:'normal'}, gauntlets:{material:'chain',tier:5,rarity:'normal'}, boots:{material:'chain',tier:5,rarity:'normal'}, back:{tier:0,rarity:'normal',material:null} };
+        s.uniqueItems = {};
+        s.xp.templar = FF.xpFloorForLevel(85);
+        eq(FF.activeClassId(s), 'templar', 'behavioral setup activates the Templar');
+        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.playerHp = FF.maxHp(s); s.templarShield = 0;
+        s.tplVerseIdx = 0; s.tplVerseAccum = 0; s.tplVerseExt = 0; s.tplDoxology = 0; s.tplEmpowered = false; s.tplHitAvg = 0;
+        eq(FF.templarVerse(s), 'might', 'the service opens on the Might verse');
+        FF.applyTemplarLitanyTick(6000);
+        eq(FF.templarVerse(s), 'haste', 'after 6s the Litany turns to Haste');
+        near(FF.classAttackSpeedMult(s), 0.85, 'the Haste verse quickens the attack timer 15%');
+        FF.applyTemplarLitanyTick(6000);
+        eq(FF.templarVerse(s), 'aegis', 'the third verse is Aegis');
+        eq(s.tplDoxology, 2, 'two completed verses banked two Doxology stacks');
+        FF.applyTemplarLitanyTick(1000);
+        ok((s.templarShield||0) > 0, 'the Aegis verse banks a Holy shield');
+        // Fervor: a landed crit extends the live verse (Math.random=0 lands + crits), and banks the hit average.
+        Math.random = function(){ return 0; };
+        FF.playerAttackTick(false, 1, false);
+        eq(s.tplVerseExt, 1000, 'Fervor: a Critical Hit extends the live verse 1s');
+        ok((s.tplHitAvg||0) > 0, "the swing banked into Gloria's recent-average hit");
+        eq(FF.templarVerseMs(s), 7000, 'the extended verse holds 7s');
+        // Amen: drive the rotation through Zeal and back to Might -- Gloria erupts and Empowers.
+        s.tplHitAvg = 1000; s.templarShield = 0;
+        FF.templarVerseAdvance(s); // aegis -> zeal
+        eq(FF.templarVerse(s), 'zeal', 'the fourth verse is Zeal');
+        var _cd0 = FF.newClassCritDmg(s);
+        ok(Math.abs(_cd0 - 0.15) < 1e-9, 'the Zeal verse grants +15% Critical damage');
+        var hp0 = s.activity.monsterHp;
+        FF.templarVerseAdvance(s); // zeal -> might: AMEN
+        eq(FF.templarVerse(s), 'might', 'the Litany wraps back to Might');
+        ok(hp0 - s.activity.monsterHp >= 1.5 * 1000 * 4, 'Amen: Gloria erupted (>= 150% of the average hit per Doxology stack)');
+        eq(s.tplEmpowered, true, 'the verse after the Amen is Empowered');
+        near(FF.templarVersePower(s), 1.5, 'Empowered verse power is x1.5');
+        FF.templarVerseAdvance(s);
+        eq(s.tplEmpowered, false, 'Empowerment lasts one verse');
+      } finally {
+        Math.random = svRnd;
+        s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu;
+        s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.templar=snap.xp;
+        s.activity=snap.act; s.playerHp=snap.hp; s.templarShield=snap.ts;
+        s.tplVerseIdx=snap.vi; s.tplVerseAccum=snap.va; s.tplVerseExt=snap.ve; s.tplDoxology=snap.dx; s.tplEmpowered=snap.em; s.tplHitAvg=snap.ha;
+      }
+    })();
 
     // The enemy-damage debuff window (now driven by Lumen's Blind) still applies 25% off via templarIncomingDmgMult.
     var s = FF._state, saved = s.classDebuffs;
