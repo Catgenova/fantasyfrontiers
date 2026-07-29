@@ -5163,8 +5163,9 @@
       return st;
     }
 
-    // En Garde (duelist/rapier): flat +15% Dodge.
-    near(FF.legendaryDodgeBonus(legSt('engarde')), 0.15, 'En Garde: flat +15% Dodge');
+    // Gossamer (duelist/rapier): the Sidestep clock runs every 2s instead of 3.
+    eq(FF.duelistSidestepMs(legSt('engarde')), 2000, 'Gossamer: the Sidestep clock runs every 2s');
+    eq(FF.duelistSidestepMs(legSt('bloodwaltz')), 3000, 'without Gossamer the clock is the base 3s');
     near(FF.legendaryDodgeBonus(legSt('flowingblade')), 0, 'a non-En-Garde legendary gives no flat Dodge');
 
     // Flowing Blade (samurai/falchion): the Bushido Focus cap rises to 15 (from 10).
@@ -5582,9 +5583,9 @@
     ht.d2HeadtakerStacks = 3; ht.d2HeadtakerUntil = now + 9999;
     near(FF.d2LegDmgMult({}, ht), 1.30, 'Headtaker: +10% per kill stack (3 -> +30%)');
     ht.d2HeadtakerUntil = now - 1; near(FF.d2LegDmgMult({}, ht), 1.0, 'Headtaker lapses after its window');
-    // Bloodwaltz (duelist/rapier): +5% per untouched hit, cap +50%.
-    near(FF.d2LegDmgMult({}, legSt('bloodwaltz','rapier',{ d2BloodwaltzStacks:4 })), 1.20, 'Bloodwaltz: +5% per untouched hit (4 -> +20%)');
-    near(FF.d2LegDmgMult({}, legSt('bloodwaltz','rapier',{ d2BloodwaltzStacks:99 })), 1.50, 'Bloodwaltz caps at +50%');
+    // Bloodwaltz (duelist/rapier): Untouchable ramps to +100% and a hit taken drops only a quarter.
+    near(FF.duelistUntouchCap(legSt('bloodwaltz','rapier')), 1.00, 'Bloodwaltz: Untouchable caps at +100%');
+    near(FF.duelistUntouchCap(legSt('engarde','rapier')), 0.60, 'without Bloodwaltz the cap is the base +60%');
     // Runegorge (spellblade/greatsword): +3% crit damage per equipped enchant.
     var rg = legSt('runegorge','greatsword'); rg.uniqueItems.L.enchants = [{},{}]; // 2 enchants on the equipped weapon
     near(FF.legRunegorgeCritDmg(rg), 0.06, 'Runegorge: +3% crit damage per equipped enchant');
@@ -6098,7 +6099,9 @@
     near(FF.d4LegDmgMult({}, legSt('greedwyrm','scimitar')), 1.0, 'Greedwyrm inert with no gold this fight');
     // Wyrmdancer's Fang: +6% per Wrath stack; builds Wrath twice as fast.
     near(FF.d4LegDmgMult({}, legSt('wyrmdancer','rapier',{ d4Wrath:5, d4WrathUntil:now+9999 })), 1.30, "Wyrmdancer: +6% per Wrath (5 -> +30%)");
-    var wd = legSt('wyrmdancer','rapier'); wd.d4Wrath = 0; wd.d4WrathUntil = 0; FF.d4WrathOnHit(wd); eq(FF.d4WrathStacks(wd), 2, "Wyrmdancer's Fang builds 2 Wrath per hit");
+    // Phantom Dancer rework: Wyrmdancer's Fang builds Wrath on DODGES (via onPlayerDodged, live-state
+    // tested in the class suite) -- hits alone no longer double-build it.
+    var wd = legSt('wyrmdancer','rapier'); wd.d4Wrath = 0; wd.d4WrathUntil = 0; FF.d4WrathOnHit(wd); eq(FF.d4WrathStacks(wd), 0, "Wyrmdancer's Fang no longer builds Wrath on hits (no D4 set worn)");
     // Emberdraw: opener +50%.
     near(FF.d4LegDmgMult({}, legSt('emberdraw','falchion',{ activity:{type:'combat', monsterHp:100, samuraiFirstStrike:true} })), 1.50, 'Emberdraw: opening strike +50%');
     near(FF.d4LegDmgMult({}, legSt('emberdraw','falchion')), 1.0, 'Emberdraw only rides the opener');
@@ -7406,8 +7409,8 @@
     near(FF.deadeyeAccuracyBonus(setSt('sharpshooter',2)), 0.20, 'Deadeye: +20% Accuracy');
     near(FF.deadeyeAccuracyBonus(setSt('sharpshooter',1)), 0, '1 piece -> no Deadeye');
     // Duelist Redoublement (full).
-    eq(FF.duelistFlourishStabs(setSt('duelist',4)), 5, 'Redoublement: Flourish = 5 stabs');
-    eq(FF.duelistFlourishStabs(setSt('duelist',2)), 3, '2 of 4 -> 3 stabs');
+    eq(FF.duelistDanseEvery(setSt('duelist',4)), 4, 'Redoublement: Danse Macabre erupts every 4th Riposte');
+    eq(FF.duelistDanseEvery(setSt('duelist',2)), 5, '2 of 4 -> the base every-5th cadence');
     // Assassin Deepcut Garb (D1): Wide Wounds (2pc) +2 cap; To the Bone (full) +55%/wound. The Vanish
     // window is D4's business now — the D1 set never touches it.
     eq(FF.assassinWoundCap(setSt('assassin',2)), FF.ASSASSIN_WOUND_MAX + 2, 'Wide Wounds: wound cap 5 -> 7');
@@ -10742,7 +10745,7 @@
     ok(fam.spells.some(function(s){ return s.element==='light'; }), 'summoner familiar spells carry the light element');
   });
 
-  // ---- Classes: Duelist (rapier fencer: dodge-tempo footwork, flourish, prolonged duel, disengage) --
+  // ---- Classes: Duelist (the Phantom Dancer: Sidestep clock, Riposte, Afterimage, Untouchable, Danse) --
   suite('classes: Duelist', function(){
     ok(FF.CLASS_SKILL_IDS.indexOf('duelist') !== -1, 'duelist is a class skill id');
     var cd = FF.CLASS_DEFS_BY_ID.duelist;
@@ -10769,31 +10772,69 @@
     var chainGloves = base(); chainGloves.bodyArmor.gauntlets=chain();
     eq(FF.activeClassId(chainGloves), null, 'chain (not cloth) gloves => no Duelist');
 
-    // Reworked perk ladder: names in order.
-    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Reactive Casting,Fleet Footwork,Flourish,Prolonged Duel,Disengage', 'reworked Duelist perk names');
+    // The Phantom Dancer perk ladder: names in order.
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Sidestep,Riposte,Afterimage,Untouchable,Danse Macabre', 'Phantom Dancer perk names');
 
     var lvHi = FF.xpFloorForLevel(60); // ~Lv 60
-    function leveled(rarity){ var s = base(rarity); s.xp.duelist = lvHi; return s; }
-    // Lv 20 Fleet Footwork: -15% attack time per dodge stack (up to -45%), gated on the class.
-    eq(FF.classAttackSpeedMult(full), 1, 'Lv 1 duelist: no attack-speed bonus yet');
-    var fw0 = leveled('normal'); eq(FF.classAttackSpeedMult(fw0), 1, 'no footwork stacks: no reduction');
-    var fw2 = leveled('normal'); fw2.duelistFootworkStacks = 2; near(FF.classAttackSpeedMult(fw2), 0.7, '2 dodge stacks: -30%');
-    var fw9 = leveled('normal'); fw9.duelistFootworkStacks = 9; near(FF.classAttackSpeedMult(fw9), 0.55, 'footwork caps at 3 stacks (-45%)');
-    var fwOff = leveled('normal'); fwOff.duelistFootworkStacks = 3; fwOff.equippedOffhand='shieldSmall';
-    eq(FF.classAttackSpeedMult(fwOff), 1, 'footwork bonus is gated on the class being active');
-    // Perfect Form is gone -- the Duelist no longer grants a flat accuracy multiplier.
-    eq(FF.classAccuracyMult(leveled('normal')), 1, 'Duelist no longer grants +30% accuracy (Perfect Form removed)');
+    function leveled(rarity){ var s = base(rarity); s.xp.duelist = lvHi; s.uniqueItems = {}; return s; }
+    // Fleet Footwork is retired: the Duelist no longer bends the attack timer.
+    eq(FF.classAttackSpeedMult(full), 1, 'Fleet Footwork retired: no attack-speed multiplier');
+    var fwHi = leveled('normal'); eq(FF.classAttackSpeedMult(fwHi), 1, 'no attack-speed multiplier at any level');
+    eq(FF.classAccuracyMult(leveled('normal')), 1, 'Duelist grants no flat accuracy multiplier');
 
-    // Lv 60 Prolonged Duel: damage vs the current foe ramps +2%/sec up to +40%.
-    function duel(secsAgo){ var s = leveled('normal'); s.activity = { type:'combat', duelStartedAt: Date.now() - secsAgo*1000 }; return s; }
-    eq(FF.duelistDuelMult(leveled('normal')), 1, 'no active duel clock: neutral');
-    // Tolerance covers sub-second wall-clock drift between duelStartedAt and the Date.now() read inside
-    // duelistDuelMult (the ramp is +0.00002/ms, so even ~100ms of test lag stays well under 0.02).
-    near(FF.duelistDuelMult(duel(5)), 1.10, '5s into the duel: +10%', 0.02);
-    near(FF.duelistDuelMult(duel(15)), 1.30, '15s into the duel: +30%', 0.02);
-    near(FF.duelistDuelMult(duel(60)), 1.40, 'ramp caps at +40%', 0.02);
-    var duelLow = duel(60); duelLow.xp.duelist = 0; eq(FF.duelistDuelMult(duelLow), 1, 'Prolonged Duel is gated on Lv 60');
-    eq(FF.DUELIST_POISE_MAX, 6, 'Flourish builds 6 Poise before its burst');
+    // Sidestep clock: 3s base (Gossamer's 2s is covered in the legendary suite).
+    eq(FF.DUELIST_SIDESTEP_MS, 3000, 'the Sidestep clock is 3s');
+    eq(FF.duelistSidestepMs(leveled('normal')), 3000, 'base clock without Gossamer');
+    // Untouchable (Lv60): +2%/s unhit, cap +60%, gated on the class level.
+    var un = leveled('normal'); un.duelistUntouch = 10; near(FF.duelistUntouchMult(un), 1.20, 'Untouchable: 10s unhit = +20%');
+    un.duelistUntouch = 999; near(FF.duelistUntouchMult(un), 1.60, 'Untouchable caps at +60%');
+    var unLow = base(); unLow.duelistUntouch = 10; unLow.uniqueItems = {}; eq(FF.duelistUntouchMult(unLow), 1, 'Untouchable is gated on Lv 60');
+    // Danse Macabre cadence: every 5th Riposte without the D1 set.
+    eq(FF.duelistDanseEvery(leveled('normal')), 5, 'Danse Macabre erupts every 5th Riposte (no set)');
+    eq(FF.DUELIST_RIPOSTE_MULT, 1.8, 'a primed Riposte strikes +80%');
+    eq(FF.DUELIST_AFTERIMAGE_PCT, 0.5, 'an Afterimage stabs for 50% weapon damage');
+
+    // Behavioral (live state): dodge -> Riposte prime + Afterimage stab; a landed strike consumes the
+    // prime and feeds Danse Macabre; Wyrmdancer's Fang banks Wrath per dodge.
+    (function(){
+      var s = FF._state;
+      var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid,
+                   oh:s.equippedOffhand, ba:s.bodyArmor, ui:s.uniqueItems, xp:s.xp.duelist, act:s.activity, hp:s.playerHp,
+                   rp:s.duelistRiposte, dc:s.duelistDanseCount, ut:s.duelistUntouch, w:s.d4Wrath, wu:s.d4WrathUntil };
+      var svRnd = Math.random;
+      try {
+        s.equippedMainhand='rapier'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null; s.equippedOffhand=null;
+        s.bodyArmor={helmet:{material:'chain',tier:5,rarity:'normal'},chest:{material:'chain',tier:5,rarity:'normal'},gauntlets:{material:'tailoring',tier:5,rarity:'normal'},boots:{material:'tailoring',tier:5,rarity:'normal'},back:{tier:0,rarity:'normal',material:null}};
+        s.uniqueItems = {};
+        s.xp.duelist = FF.xpFloorForLevel(80);
+        eq(FF.activeClassId(s), 'duelist', 'behavioral setup activates the Duelist');
+        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.playerHp = FF.maxHp(s);
+        s.duelistRiposte = false; s.duelistDanseCount = 0; s.duelistUntouch = 0; FF.d4WrathReset(s);
+        Math.random = function(){ return 0; }; // every swing lands (and crits) deterministically
+        var hp0 = s.activity.monsterHp;
+        FF.duelistSidestep();
+        ok(s.duelistRiposte === true, 'a Sidestep primes the Riposte');
+        ok(s.activity.monsterHp < hp0, 'the Afterimage stab landed real damage');
+        FF.playerAttackTick(false, 1, false);
+        ok(s.duelistRiposte === false, 'a landed strike consumes the primed Riposte');
+        eq(s.duelistDanseCount, 1, '...and banks a Danse Macabre count');
+        // Ride the cycle to the 5th consumed Riposte: the flurry erupts and the counter resets.
+        for(var i=0;i<4;i++){ FF.duelistSidestep(); FF.playerAttackTick(false, 1, false); }
+        eq(s.duelistDanseCount, 0, 'the 5th consumed Riposte erupts Danse Macabre and resets the count');
+        // Wyrmdancer's Fang: a Dodge banks Wrath (needs the legendary equipped).
+        s.uniqueItems.WD = { uid:'WD', leg:'wyrmdancer', kind:'weapon', base:'stweapon_rapier_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 };
+        s.equippedMainhandUid = 'WD';
+        FF.d4WrathReset(s);
+        FF.duelistSidestep();
+        eq(FF.d4WrathStacks(s), 1, "Wyrmdancer's Fang: a Dodge banks a Wrath stack");
+      } finally {
+        Math.random = svRnd;
+        s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu;
+        s.equippedOffhand=snap.oh; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.duelist=snap.xp; s.activity=snap.act; s.playerHp=snap.hp;
+        s.duelistRiposte=snap.rp; s.duelistDanseCount=snap.dc; s.duelistUntouch=snap.ut; s.d4Wrath=snap.w; s.d4WrathUntil=snap.wu;
+      }
+    })();
 
     // Class familiar.
     var fam = FF.FAMILIAR_DATA.duelist;
@@ -10802,13 +10843,13 @@
   });
 
   // ---- Duelist reworked combat flow: crash-safety + state invariants over many live ticks --------
-  // The new perks (Fleet Footwork stacks, Flourish's 3-hit bonus burst, Disengage's dodge+return) run
-  // inside playerAttackTick/monsterAttackTick, which are random. Rather than assert exact outcomes, we
-  // drive hundreds of real ticks with the Duelist active and confirm nothing throws, no runaway loop,
-  // and the class state never leaves its valid range (Flourish never recurses out of bounds, etc.).
+  // The Phantom Dancer's engine (Sidestep -> Riposte prime + Afterimage bonus swing, Danse Macabre's
+  // 5-stab flurry) runs inside playerAttackTick/monsterAttackTick, which are random. Rather than assert
+  // exact outcomes, we drive hundreds of real ticks (with Sidesteps interleaved, as the live loop would)
+  // and confirm nothing throws, no runaway recursion, and the class state stays in its valid range.
   suite('classes: Duelist reworked combat flow (smoke)', function(){
     var s = FF._state;
-    var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid, oh:s.equippedOffhand, ba:s.bodyArmor, xp:s.xp.duelist, act:s.activity, hp:s.playerHp, fw:s.duelistFootworkStacks, po:s.duelistPoise, gc:s.duelistGuaranteedCrits };
+    var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid, oh:s.equippedOffhand, ba:s.bodyArmor, xp:s.xp.duelist, act:s.activity, hp:s.playerHp, rp:s.duelistRiposte, dc:s.duelistDanseCount, ut:s.duelistUntouch };
     var threw = null, invariantsOk = true;
     try {
       s.equippedMainhand='rapier'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null; s.equippedOffhand=null;
@@ -10817,33 +10858,31 @@
       eq(FF.activeClassId(s), 'duelist', 'smoke setup activates the Duelist');
       var mon = FF.MONSTERS[0];
       for(var round=0; round<3 && !threw; round++){
-        s.activity = { type:'combat', monsterId:mon.id, monsterHp: mon.hp*40, tickAccum:0, monsterTickAccum:0, duelStartedAt: Date.now()-3000, disengageUsed:false };
-        s.duelistFootworkStacks = 0; s.duelistPoise = FF.DUELIST_POISE_MAX - 1; s.duelistGuaranteedCrits = 0; // primed so Flourish fires quickly
-        s.playerHp = 12; // low, so Disengage's threshold can trigger
+        s.activity = { type:'combat', monsterId:mon.id, monsterHp: mon.hp*40, tickAccum:0, monsterTickAccum:0, duelStartedAt: Date.now()-3000 };
+        s.duelistRiposte = false; s.duelistDanseCount = 0; s.duelistUntouch = round * 10;
+        s.playerHp = 12; // low, so real deaths get exercised too
         for(var i=0; i<200 && !threw; i++){
           try {
+            if(i % 3 === 0 && s.activity && s.activity.type==='combat') FF.duelistSidestep(); // the loop's clock, compressed
             FF.playerAttackTick();
             if(s.activity && s.activity.type==='combat'){ if(s.activity.monsterHp <= 0) s.activity.monsterHp = mon.hp*40; FF.monsterAttackTick(); }
-            if(!(s.duelistFootworkStacks >= 0 && s.duelistFootworkStacks <= FF.DUELIST_FOOTWORK_MAX)) invariantsOk = false;
-            if(!(s.duelistPoise >= 0 && s.duelistPoise <= FF.DUELIST_POISE_MAX)) invariantsOk = false;
-            if(!((s.duelistGuaranteedCrits||0) >= 0)) invariantsOk = false;
-            // The Disengage threshold means low-HP hits sometimes kill the player, and real death handling
-            // clears the activity to { type:null }. Only the combat monsterHp needs to stay finite; a dead
-            // player just re-enters the fight below (mirrors the game loop respawning into a new duel).
+            if(typeof (s.duelistRiposte||false) !== 'boolean') invariantsOk = false;
+            if(!((s.duelistDanseCount||0) >= 0 && (s.duelistDanseCount||0) < FF.duelistDanseEvery(s))) invariantsOk = false;
+            if(!((s.duelistUntouch||0) >= 0)) invariantsOk = false;
             if(s.activity && s.activity.type==='combat' && !isFinite(s.activity.monsterHp)) invariantsOk = false;
             if(!isFinite(s.playerHp)) invariantsOk = false;
             if(s.playerHp <= 0 || !s.activity || s.activity.type!=='combat'){
               s.playerHp = 12;
-              s.activity = { type:'combat', monsterId:mon.id, monsterHp: mon.hp*40, tickAccum:0, monsterTickAccum:0, duelStartedAt: Date.now()-3000, disengageUsed:false };
+              s.activity = { type:'combat', monsterId:mon.id, monsterHp: mon.hp*40, tickAccum:0, monsterTickAccum:0, duelStartedAt: Date.now()-3000 };
             }
           } catch(e){ threw = (e && e.message) || String(e); }
         }
       }
     } finally {
-      s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu; s.equippedOffhand=snap.oh; s.bodyArmor=snap.ba; s.xp.duelist=snap.xp; s.activity=snap.act; s.playerHp=snap.hp; s.duelistFootworkStacks=snap.fw; s.duelistPoise=snap.po; s.duelistGuaranteedCrits=snap.gc;
+      s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu; s.equippedOffhand=snap.oh; s.bodyArmor=snap.ba; s.xp.duelist=snap.xp; s.activity=snap.act; s.playerHp=snap.hp; s.duelistRiposte=snap.rp; s.duelistDanseCount=snap.dc; s.duelistUntouch=snap.ut;
     }
     ok(!threw, 'no crash / runaway across ~600 attack+monster ticks with the Duelist active' + (threw ? ' ('+threw+')' : ''));
-    ok(invariantsOk, 'footwork (0-3), poise (0-6), guaranteed-crits (>=0) and HP stay valid throughout');
+    ok(invariantsOk, 'Riposte (bool), Danse count (0..cadence-1), Untouchable (>=0) and HP stay valid throughout');
   });
 
   // ---- Classes: Reaper (scythe soul-harvester: crits + lifesteal) -----------------------
