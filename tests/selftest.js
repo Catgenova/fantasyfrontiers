@@ -5125,15 +5125,19 @@
 
   // ---- Settings: per-tier-band rarity-roll toggles (QoL) ----
   suite('settings: per-tier rarity-roll toggles', function(){
+    // Band boundaries are in DISPLAY tiers (the 1-based chip on every craft card: chip t20 = index 19).
+    // Ticket-0107: the old index-based bands let the "T16-19" toggle swallow display-t20 items (the top
+    // melee weapon tier), so 300+ Tool Steel Claymores could legitimately roll zero rares.
     var st5 = { settings:{ noRarityT0_5:true } };
-    ok(FF.rarityRollDisabledForTier(0, st5) && FF.rarityRollDisabledForTier(5, st5), 'the T0-5 toggle covers tiers 0 and 5');
-    eq(FF.rarityRollDisabledForTier(6, st5), false, 'the T0-5 toggle does not reach tier 6');
+    ok(FF.rarityRollDisabledForTier(0, st5) && FF.rarityRollDisabledForTier(4, st5), 'the t1-t5 toggle covers indexes 0 and 4 (chips t1/t5)');
+    eq(FF.rarityRollDisabledForTier(5, st5), false, 'the t1-t5 toggle does not reach chip t6 (index 5)');
     var st610 = { settings:{ noRarityT6_10:true } };
-    eq(FF.rarityRollDisabledForTier(5, st610), false, 'the T6-10 toggle does not reach tier 5');
-    ok(FF.rarityRollDisabledForTier(6, st610) && FF.rarityRollDisabledForTier(10, st610), 'the T6-10 toggle covers tiers 6 and 10');
+    eq(FF.rarityRollDisabledForTier(4, st610), false, 'the t6-t10 toggle does not reach chip t5 (index 4)');
+    ok(FF.rarityRollDisabledForTier(5, st610) && FF.rarityRollDisabledForTier(9, st610), 'the t6-t10 toggle covers indexes 5 and 9 (chips t6/t10)');
     var st1619 = { settings:{ noRarityT16_19:true } };
-    ok(FF.rarityRollDisabledForTier(16, st1619) && FF.rarityRollDisabledForTier(19, st1619), 'the T16-19 toggle covers tiers 16 and 19');
-    eq(FF.rarityRollDisabledForTier(20, st1619), false, 'tier 20 always rolls (no band covers it)');
+    ok(FF.rarityRollDisabledForTier(15, st1619) && FF.rarityRollDisabledForTier(18, st1619), 'the t16-t19 toggle covers indexes 15 and 18 (chips t16/t19)');
+    eq(FF.rarityRollDisabledForTier(19, st1619), false, 'chip t20 (index 19, e.g. a Tool Steel Claymore) ALWAYS rolls');
+    eq(FF.rarityRollDisabledForTier(20, st1619), false, 'chip t21 (index 20) always rolls too');
     eq(FF.rarityRollDisabledForTier(3, { settings:{} }), false, 'no toggle set -> rarity rolls stay enabled');
     // rollCraftRarity forces Normal when its tier band is disabled (deterministic -- no RNG in that path).
     eq(FF.rollCraftRarity({ settings:{ noRarityT0_5:true } }, 2), 'normal', 'a disabled band makes rollCraftRarity return normal');
