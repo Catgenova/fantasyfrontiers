@@ -10659,7 +10659,7 @@
     // Accelerando cast haste, Grand Finale consumption, Skeletal Wraiths.
     (function(){
       var s = FF._state;
-      var snap = { mh:s.equippedMainhand, mhr:s.equippedMainhandRarity, ba:s.bodyArmor, xp:s.xp.summoner, hp:s.playerHp, act:s.activity,
+      var snap = { mh:s.equippedMainhand, mhr:s.equippedMainhandRarity, mhT:s.equippedMainhandTier, ba:s.bodyArmor, xp:s.xp.summoner, hp:s.playerHp, act:s.activity,
                    db:s.staffDownbeats, dba:s.staffLastDownbeatAt, cre:s.summonerCrescendo, wr:s.summonerWraiths,
                    ac:s.activeCompanions, cc:s.companionCast, fam:s.familiars.forestry };
       try {
@@ -10672,6 +10672,14 @@
         s.companionCast = { forestry: { accum: 0, index: 0 } };
         s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9 };
 
+        // THE REAL SWING PATH: a landed staff swing from playerAttackTick itself must beat the Downbeat.
+        // (Regression: the hook originally sat inside playerAttackTick's assassin-only block, so the whole
+        // Conductor never fired in live combat for an actual Summoner -- caught by scripts/dpssim.mjs.)
+        s.equippedMainhandTier = 1; // a real staff item so the swing rolls damage
+        var _svRnd = Math.random; Math.random = function(){ return 0; }; // guaranteed hit
+        try { FF.playerAttackTick(false, 1, false); } finally { Math.random = _svRnd; }
+        eq(FF.staffDownbeatStacks(s), 1, 'a landed swing through playerAttackTick beats a Downbeat (not assassin-gated)');
+        s.staffDownbeats = []; s.staffLastDownbeatAt = 0; s.summonerCrescendo = 0; s.companionCast.forestry.accum = 0;
         // Downbeat (Lv1): every connecting swing stacks; each stack rides its own 5s timer.
         FF.staffDownbeatHit(); FF.staffDownbeatHit(); FF.staffDownbeatHit();
         eq(FF.staffDownbeatStacks(s), 3, 'Downbeat: three hits => three live stacks');
@@ -10715,7 +10723,7 @@
         FF.summonerWraithsTick();
         eq(s.summonerWraiths.length, 0, 'Wraiths disperse outside combat');
       } finally {
-        s.equippedMainhand=snap.mh; s.equippedMainhandRarity=snap.mhr; s.bodyArmor=snap.ba; s.xp.summoner=snap.xp; s.playerHp=snap.hp; s.activity=snap.act;
+        s.equippedMainhand=snap.mh; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandTier=snap.mhT; s.bodyArmor=snap.ba; s.xp.summoner=snap.xp; s.playerHp=snap.hp; s.activity=snap.act;
         s.staffDownbeats=snap.db; s.staffLastDownbeatAt=snap.dba; s.summonerCrescendo=snap.cre; s.summonerWraiths=snap.wr;
         s.activeCompanions=snap.ac; s.companionCast=snap.cc;
         if(snap.fam === undefined) delete s.familiars.forestry; else s.familiars.forestry = snap.fam;
