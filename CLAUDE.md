@@ -60,11 +60,14 @@ rules): **Summoner** (45s) Baton ~53B / Broodwyrm ~43B / Packbrand ~43B / Necroc
 **Assassin** (45s) Shadowwyrm ~125B ≈ Throatripper ~123B / Wraithclaw ~113B / Gloomstalker
 ~111B (set D3 Bloodrush); **Berserker** (90s — 9s swings need the longer window; Blood
 Ledger held at cap via `primeLedger`, owner rule) Wrathscale ~82B / Deepquake ~53B /
-Skullcleaver ~44B / Gravewrath ~40B (set D2 Steep Price/Debt Paid); **Duelist** (45s, v0.0.58.1
-after the first tuning pass: Riposte +50%, Sidestep 4s, Afterimage 35% — still ~1.5-2x
-Assassin, owner aware) Bloodwaltz ~260B / Wyrmdancer ~238B / Gossamer ~208B /
-Phantomthrust ~190B (set D3 in the final matrix; D3 vs D4 within noise). Duelist runs
-are the noisiest yet (~±25% between phases — Danse/crit streak timing). Cloak: Ruin for every class so far. Caveats: runs are noisy (±20%); the zero-offense dummy keeps Vanish permanently
+Skullcleaver ~44B / Gravewrath ~40B (set D2 Steep Price/Debt Paid); **Duelist** (45s,
+v0.0.58.2 final tune — owner target "60B band": Sidestep 6s, Riposte +10%, Afterimage 10%,
+Untouchable 1%/s cap 15%, Danse every 6th, Wyrmdancer 2.5%/stack, Flame Waltz 1.5%/stack)
+Wyrmdancer ~88B / Bloodwaltz ~78B / Phantomthrust ~74B / Gossamer ~71B (set D4 Flame
+Waltz/Firestorm). Duelist runs are the noisiest (~±25% — Danse/crit streak timing), and the
+harness setup() now hard-resets session state between configs (companionCastsOnCombatEntry(null)
++ d4WrathReset) — continuously-refreshed buffs like Wrath otherwise leak into the next config.
+Cloak: Ruin for every class so far. Caveats: runs are noisy (±20%); the zero-offense dummy keeps Vanish permanently
 armed (flatters Assassin), keeps Berserker's HP bar full (flatters Wrathscale), and
 ramp-speed legendaries (Gravewrath) measure at their floor when the ledger is primed.
 Slow-swing classes: use SIM_MS=90000. The dummy HP pool is 1e15 with refill at 1e14 —

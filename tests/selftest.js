@@ -5164,8 +5164,8 @@
     }
 
     // Gossamer (duelist/rapier): the Sidestep clock runs every 2s instead of 3.
-    eq(FF.duelistSidestepMs(legSt('engarde')), 3000, 'Gossamer: the Sidestep clock runs every 3s');
-    eq(FF.duelistSidestepMs(legSt('bloodwaltz')), 4000, 'without Gossamer the clock is the base 4s');
+    eq(FF.duelistSidestepMs(legSt('engarde')), 4500, 'Gossamer: the Sidestep clock runs every 4.5s');
+    eq(FF.duelistSidestepMs(legSt('bloodwaltz')), 6000, 'without Gossamer the clock is the base 6s');
     near(FF.legendaryDodgeBonus(legSt('flowingblade')), 0, 'a non-En-Garde legendary gives no flat Dodge');
 
     // Flowing Blade (samurai/falchion): the Bushido Focus cap rises to 15 (from 10).
@@ -5584,8 +5584,8 @@
     near(FF.d2LegDmgMult({}, ht), 1.30, 'Headtaker: +10% per kill stack (3 -> +30%)');
     ht.d2HeadtakerUntil = now - 1; near(FF.d2LegDmgMult({}, ht), 1.0, 'Headtaker lapses after its window');
     // Bloodwaltz (duelist/rapier): Untouchable ramps to +100% and a hit taken drops only a quarter.
-    near(FF.duelistUntouchCap(legSt('bloodwaltz','rapier')), 1.00, 'Bloodwaltz: Untouchable caps at +100%');
-    near(FF.duelistUntouchCap(legSt('engarde','rapier')), 0.60, 'without Bloodwaltz the cap is the base +60%');
+    near(FF.duelistUntouchCap(legSt('bloodwaltz','rapier')), 0.20, 'Bloodwaltz: Untouchable caps at +20%');
+    near(FF.duelistUntouchCap(legSt('engarde','rapier')), 0.15, 'without Bloodwaltz the cap is the base +15%');
     // Runegorge (spellblade/greatsword): +3% crit damage per equipped enchant.
     var rg = legSt('runegorge','greatsword'); rg.uniqueItems.L.enchants = [{},{}]; // 2 enchants on the equipped weapon
     near(FF.legRunegorgeCritDmg(rg), 0.06, 'Runegorge: +3% crit damage per equipped enchant');
@@ -6097,8 +6097,8 @@
     near(FF.d4LegDmgMult({}, legSt('greedwyrm','scimitar',{ activity:{type:'combat', monsterHp:100, goldEarned:3000} })), 1.06, 'Greedwyrm: +2% per 1k gold (3k -> +6%)');
     near(FF.d4LegDmgMult({}, legSt('greedwyrm','scimitar',{ activity:{type:'combat', monsterHp:100, goldEarned:99000} })), 1.50, 'Greedwyrm caps at +50%');
     near(FF.d4LegDmgMult({}, legSt('greedwyrm','scimitar')), 1.0, 'Greedwyrm inert with no gold this fight');
-    // Wyrmdancer's Fang: +6% per Wrath stack; builds Wrath twice as fast.
-    near(FF.d4LegDmgMult({}, legSt('wyrmdancer','rapier',{ d4Wrath:5, d4WrathUntil:now+9999 })), 1.30, "Wyrmdancer: +6% per Wrath (5 -> +30%)");
+    // Wyrmdancer's Fang: +2.5% per Wrath stack; builds Wrath on dodges.
+    near(FF.d4LegDmgMult({}, legSt('wyrmdancer','rapier',{ d4Wrath:5, d4WrathUntil:now+9999 })), 1.125, "Wyrmdancer: +2.5% per Wrath (5 -> +12.5%)");
     // Phantom Dancer rework: Wyrmdancer's Fang builds Wrath on DODGES (via onPlayerDodged, live-state
     // tested in the class suite) -- hits alone no longer double-build it.
     var wd = legSt('wyrmdancer','rapier'); wd.d4Wrath = 0; wd.d4WrathUntil = 0; FF.d4WrathOnHit(wd); eq(FF.d4WrathStacks(wd), 0, "Wyrmdancer's Fang no longer builds Wrath on hits (no D4 set worn)");
@@ -6894,8 +6894,8 @@
       s.bodyArmor = {}; s.uniqueItems = {}; FF.d4WrathReset(s); FF.d4WrathOnHit(s); eq(FF.d4WrathStacks(s), 0, 'no Wrath set -> no Wrath builds');
       wearD4('duelist', 2); FF.d4WrathReset(s); FF.d4WrathOnHit(s); FF.d4WrathOnHit(s); eq(FF.d4WrathStacks(s), 2, 'a Wrath set banks a stack per hit');
 
-      // --- Flame Waltz (Duelist 2pc): +3% damage per Wrath stack ---
-      wearD4('duelist', 2); setWrath(5); near(FF.d4SetDmgMult({}, s), 1.15, 'Flame Waltz: +3% per Wrath (5 -> +15%)');
+      // --- Flame Waltz (Duelist 2pc): +1.5% damage per Wrath stack ---
+      wearD4('duelist', 2); setWrath(5); near(FF.d4SetDmgMult({}, s), 1.075, 'Flame Waltz: +1.5% per Wrath (5 -> +7.5%)');
       setWrath(0); near(FF.d4SetDmgMult({}, s), 1.0, 'Flame Waltz is flat with no Wrath');
 
       // --- Kindled Focus (Samurai 2pc): +2% damage per Focus stack ---
@@ -7409,8 +7409,8 @@
     near(FF.deadeyeAccuracyBonus(setSt('sharpshooter',2)), 0.20, 'Deadeye: +20% Accuracy');
     near(FF.deadeyeAccuracyBonus(setSt('sharpshooter',1)), 0, '1 piece -> no Deadeye');
     // Duelist Redoublement (full).
-    eq(FF.duelistDanseEvery(setSt('duelist',4)), 4, 'Redoublement: Danse Macabre erupts every 4th Riposte');
-    eq(FF.duelistDanseEvery(setSt('duelist',2)), 5, '2 of 4 -> the base every-5th cadence');
+    eq(FF.duelistDanseEvery(setSt('duelist',4)), 5, 'Redoublement: Danse Macabre erupts every 5th Riposte');
+    eq(FF.duelistDanseEvery(setSt('duelist',2)), 6, '2 of 4 -> the base every-6th cadence');
     // Assassin Deepcut Garb (D1): Wide Wounds (2pc) +2 cap; To the Bone (full) +55%/wound. The Vanish
     // window is D4's business now — the D1 set never touches it.
     eq(FF.assassinWoundCap(setSt('assassin',2)), FF.ASSASSIN_WOUND_MAX + 2, 'Wide Wounds: wound cap 5 -> 7');
@@ -10783,16 +10783,16 @@
     eq(FF.classAccuracyMult(leveled('normal')), 1, 'Duelist grants no flat accuracy multiplier');
 
     // Sidestep clock: 3s base (Gossamer's 2s is covered in the legendary suite).
-    eq(FF.DUELIST_SIDESTEP_MS, 4000, 'the Sidestep clock is 4s');
-    eq(FF.duelistSidestepMs(leveled('normal')), 4000, 'base clock without Gossamer');
+    eq(FF.DUELIST_SIDESTEP_MS, 6000, 'the Sidestep clock is 6s');
+    eq(FF.duelistSidestepMs(leveled('normal')), 6000, 'base clock without Gossamer');
     // Untouchable (Lv60): +2%/s unhit, cap +60%, gated on the class level.
-    var un = leveled('normal'); un.duelistUntouch = 10; near(FF.duelistUntouchMult(un), 1.20, 'Untouchable: 10s unhit = +20%');
-    un.duelistUntouch = 999; near(FF.duelistUntouchMult(un), 1.60, 'Untouchable caps at +60%');
+    var un = leveled('normal'); un.duelistUntouch = 10; near(FF.duelistUntouchMult(un), 1.10, 'Untouchable: 10s unhit = +10%');
+    un.duelistUntouch = 999; near(FF.duelistUntouchMult(un), 1.15, 'Untouchable caps at +15%');
     var unLow = base(); unLow.duelistUntouch = 10; unLow.uniqueItems = {}; eq(FF.duelistUntouchMult(unLow), 1, 'Untouchable is gated on Lv 60');
     // Danse Macabre cadence: every 5th Riposte without the D1 set.
-    eq(FF.duelistDanseEvery(leveled('normal')), 5, 'Danse Macabre erupts every 5th Riposte (no set)');
-    eq(FF.DUELIST_RIPOSTE_MULT, 1.5, 'a primed Riposte strikes +50%');
-    eq(FF.DUELIST_AFTERIMAGE_PCT, 0.35, 'an Afterimage stabs for 35% weapon damage');
+    eq(FF.duelistDanseEvery(leveled('normal')), 6, 'Danse Macabre erupts every 6th Riposte (no set)');
+    eq(FF.DUELIST_RIPOSTE_MULT, 1.1, 'a primed Riposte strikes +10%');
+    eq(FF.DUELIST_AFTERIMAGE_PCT, 0.1, 'an Afterimage stabs for 10% weapon damage');
 
     // Behavioral (live state): dodge -> Riposte prime + Afterimage stab; a landed strike consumes the
     // prime and feeds Danse Macabre; Wyrmdancer's Fang banks Wrath per dodge.
@@ -10819,9 +10819,9 @@
         FF.playerAttackTick(false, 1, false);
         ok(s.duelistRiposte === false, 'a landed strike consumes the primed Riposte');
         eq(s.duelistDanseCount, 1, '...and banks a Danse Macabre count');
-        // Ride the cycle to the 5th consumed Riposte: the flurry erupts and the counter resets.
-        for(var i=0;i<4;i++){ FF.duelistSidestep(); FF.playerAttackTick(false, 1, false); }
-        eq(s.duelistDanseCount, 0, 'the 5th consumed Riposte erupts Danse Macabre and resets the count');
+        // Ride the cycle to the 6th consumed Riposte: the flurry erupts and the counter resets.
+        for(var i=0;i<5;i++){ FF.duelistSidestep(); FF.playerAttackTick(false, 1, false); }
+        eq(s.duelistDanseCount, 0, 'the 6th consumed Riposte erupts Danse Macabre and resets the count');
         // Wyrmdancer's Fang: a Dodge banks Wrath (needs the legendary equipped).
         s.uniqueItems.WD = { uid:'WD', leg:'wyrmdancer', kind:'weapon', base:'stweapon_rapier_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 };
         s.equippedMainhandUid = 'WD';

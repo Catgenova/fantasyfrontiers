@@ -83,6 +83,10 @@ async function setup(cfg) {
   return await page.evaluate(([cls, cfg]) => {
     const FF = window.__FF, st = FF._state;
     const diag = { cls };
+    // Hard-reset the combat session FIRST: persistent class buffs (Wrath!) refresh continuously and
+    // otherwise leak from the previous config, inflating later phases in the same browser session.
+    FF.companionCastsOnCombatEntry(null);
+    FF.d4WrathReset(st);
     const lv100 = FF.xpFloorForLevel(100);
     Object.keys(st.xp).forEach(k => { st.xp[k] = lv100; });
     [cls].concat(cfg.styleXp).forEach(k => { st.xp[k] = lv100; }); // class + per-style accuracy keys
