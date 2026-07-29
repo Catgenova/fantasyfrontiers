@@ -10018,7 +10018,11 @@
           typeId: s.id,
           tierIndex: i,
           rarity: rarityId,
-          dmgBonus: Math.round(data.dmgBonus * r.mult * 1000)/1000,
+          // The whole-shot damage bonus is capped AFTER rarity: an uncapped fantastic t19 quiver reached
+          // +253% ALL damage (0.316 x8) -- the max-ceiling sim's first bow run measured the class at ~30x
+          // the melee ceilings almost entirely on chassis multipliers like this one. ammoPreserve has
+          // always been capped at the consumer (95%); the damage stat now has the same discipline.
+          dmgBonus: Math.min(0.60, Math.round(data.dmgBonus * r.mult * 1000)/1000),
           ammoPreserve: Math.round(data.ammoPreserve * r.mult * 1000)/1000
         };
       }
