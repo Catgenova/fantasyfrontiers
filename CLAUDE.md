@@ -55,12 +55,17 @@ fighting a zero-offense Archdemon (real dodge/armor) while sampling `act.monster
 Run: `SIM_MS=45000 PW_CHROMIUM=/opt/pw-browsers/chromium node scripts/dpssim.mjs`.
 The harness is class-parametric: add the class to `BUILDS` (weapon base + per-style xp keys,
 legendary keys, signets, unique-ring type) and run with `SIM_CLASS=<id>`. It A/Bs set layers
-and cloaks automatically before the final legendary matrix. Recorded ceilings (45s runs,
-v0.0.57.11 rules): **Summoner** Baton ~53B / Broodwyrm ~43B / Packbrand ~43B / Necrocaller
-~37B; **Assassin** Shadowwyrm ~125B ≈ Throatripper ~123B / Wraithclaw ~113B / Gloomstalker
-~111B (best set D3 Bloodrush, cloak Ruin for both classes). Note: runs are noisy (±20%,
-Grand Finale / detonation timing), and the zero-offense dummy keeps Vanish permanently
-armed, which flatters Assassin vs real fights.
+and cloaks automatically before the final legendary matrix. Recorded ceilings (v0.0.57.11
+rules): **Summoner** (45s) Baton ~53B / Broodwyrm ~43B / Packbrand ~43B / Necrocaller ~37B;
+**Assassin** (45s) Shadowwyrm ~125B ≈ Throatripper ~123B / Wraithclaw ~113B / Gloomstalker
+~111B (set D3 Bloodrush); **Berserker** (90s — 9s swings need the longer window; Blood
+Ledger held at cap via `primeLedger`, owner rule) Wrathscale ~82B / Deepquake ~53B /
+Skullcleaver ~44B / Gravewrath ~40B (set D2 Steep Price/Debt Paid). Cloak: Ruin for all
+three. Caveats: runs are noisy (±20%); the zero-offense dummy keeps Vanish permanently
+armed (flatters Assassin), keeps Berserker's HP bar full (flatters Wrathscale), and
+ramp-speed legendaries (Gravewrath) measure at their floor when the ledger is primed.
+Slow-swing classes: use SIM_MS=90000. The dummy HP pool is 1e15 with refill at 1e14 —
+single ceiling hits exceed 1e12, which saturated the first Berserker run with kill resets.
 
 The owner-approved best-in-slot rules (v0.0.57.11):
 

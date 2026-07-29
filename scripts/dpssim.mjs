@@ -49,6 +49,17 @@ const BUILDS = {
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
     offhandClaw: true,
   },
+  berserker: {
+    // Max Health IS the weapon (Titan's Heft/Deepquake/Wrathscale scale off it), so jewelry lines trade
+    // lifesteal for Max HP. primeLedger holds the Blood Ledger inked at cap (owner rule: simulate the
+    // ledger filling as the kit would in a real fight -- a zero-offense dummy never inks damage taken).
+    weapon: { typeId: "warhammer", base: "stweapon_warhammer_t19_fantastic", tier: 19, styleXp: ["warhammer"] },
+    legs: ["titaniccrits", "skullcleaver", "gravewrath", "wrathscale"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "blunt",
+    jewelLines: ["allDamage", "critDamage", "critChance", "maxHp"],
+    primeLedger: true,
+  },
 };
 const BUILD = BUILDS[SIM_CLASS];
 if (!BUILD) { console.error("unknown SIM_CLASS", SIM_CLASS, "— known:", Object.keys(BUILDS).join(", ")); process.exit(1); }
@@ -71,7 +82,7 @@ async function setup(cfg) {
 
     const maxLine = (pool, id) => { const m = FF.ENCHANT_MODS[pool].filter(x => x.id === id)[0]; const r = FF.enchantModRange(m, 20); return { mod: id, roll: r && r.max != null ? r.max : m.max }; };
     const aLines = () => ["defense", "maxHp", "dmgReduction", "blockChance"].map(id => maxLine("armor", id));
-    const jLines = () => ["allDamage", "critDamage", "critChance", "lifesteal"].map(id => maxLine("jewelry", id));
+    const jLines = () => (cfg.jewelLines || ["allDamage", "critDamage", "critChance", "lifesteal"]).map(id => maxLine("jewelry", id));
 
     // Armor: full class set of the configured layer, each piece enchanted then +15.
     st.bodyArmor = {}; st.uniqueItems = st.uniqueItems || {};
@@ -132,11 +143,12 @@ async function setup(cfg) {
     let top = FF.MONSTERS.filter(m => /archdemon/i.test(m.id) || /Archdemon/.test(m.name))[0];
     if (!top) { FF.MONSTERS.forEach(m => { if (!top || (m.tierIndex || 0) > (top.tierIndex || 0)) top = m; }); }
     top.atkMin = 0; top.atkMax = 0; top.attackSpeed = 99999; top.special = null;
-    st.activity = { type: "combat", monsterId: top.id, monsterHp: 1e12, tickAccum: 0, monsterTickAccum: 0,
+    st.activity = { type: "combat", monsterId: top.id, monsterHp: 1e15, tickAccum: 0, monsterTickAccum: 0,
       offhandTickAccum: 0, duelStartedAt: Date.now(), samuraiFirstStrike: true, lastDamagedAt: 0 };
     st.playerHp = FF.maxHp(st);
+    if (cfg.primeLedger) st.activity.bloodLedger = FF.maxHp(st) * 4; // hold the Blood Ledger at cap
     diag.target = top.name; diag.activeClass = FF.activeClassId(st);
-    window.__SIM = { lastHp: 1e12, total: 0, t0: performance.now() };
+    window.__SIM = { lastHp: 1e15, total: 0, t0: performance.now(), primeLedger: !!cfg.primeLedger };
     return diag;
   }, [SIM_CLASS, cfg]);
 }
@@ -147,15 +159,17 @@ async function sample() {
     const a = st.activity;
     if (!a || a.type !== "combat") return { dead: true, total: s.total, elapsed: performance.now() - s.t0 };
     s.total += Math.max(0, s.lastHp - a.monsterHp);
-    if (a.monsterHp < 1e11) { a.monsterHp = 1e12; }
+    if (a.monsterHp < 1e14) { a.monsterHp = 1e15; }
     s.lastHp = a.monsterHp;
+    if (s.primeLedger) a.bloodLedger = FF.maxHp(st) * 4; // keep the Ledger inked at cap through the run
     return { total: s.total, elapsed: performance.now() - s.t0 };
   });
 }
 
 async function runOne(name, cfg, ms) {
   const full = { ...cfg, weapon: BUILD.weapon, styleXp: BUILD.weapon.styleXp, offhandClaw: !!BUILD.offhandClaw,
-    signets: BUILD.signets, uniqueRingType: BUILD.uniqueRingType, weaponLines: BUILD.weaponLines(cfg.leg) };
+    signets: BUILD.signets, uniqueRingType: BUILD.uniqueRingType, weaponLines: BUILD.weaponLines(cfg.leg),
+    jewelLines: BUILD.jewelLines || null, primeLedger: !!BUILD.primeLedger };
   const diag = await setup(full);
   await page.evaluate(() => window.__FF._startLoop());
   if (diag.activeClass !== SIM_CLASS) { console.log(name, "SETUP FAILED — active class:", diag.activeClass); return null; }
