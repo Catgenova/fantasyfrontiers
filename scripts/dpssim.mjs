@@ -58,6 +58,16 @@ const BUILDS = {
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "pierce",
   },
+  quickdraw: {
+    // Short bow + quiver + plate boots + leather. First ranged build: the quiver offhand and a mountain
+    // of top-tier arrows (Fletcher's Economy doubles their base damage, so arrow tier is a real stat).
+    // The cycle is deterministic, so these are the cleanest runs of any class so far.
+    weapon: { typeId: "bowShort", base: "stweapon_bowShort_t19_fantastic", tier: 19, styleXp: ["bowShort"] },
+    legs: ["chainshot", "serpentcoil", "cryptvenom", "breathfang"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "pierce",
+    offhandQuiver: true,
+  },
   reaper: {
     // Scythe + BARE head + cloth. Rot ticks are the damage engine (weapon-scaled, so they ride the same
     // BiS multipliers as the swings). Sim caveats: the zero-offense dummy keeps the Siphon Shield
@@ -129,6 +139,12 @@ async function setup(cfg) {
       st.uniqueItems.SIMO = { uid: "SIMO", kind: "weapon", base: "stweapon_claw_t19_fantastic",
         tier: 19, rarity: "fantastic", enchants: cfg.weaponLines.map(id => maxLine("weapon", id)), enhance: 15 };
       st.equippedOffhand = "claw"; st.equippedOffhandTier = 20; st.equippedOffhandRarity = "fantastic"; st.equippedOffhandUid = "SIMO";
+    } else if (cfg.offhandQuiver) {
+      st.equippedOffhand = "quiver"; st.equippedOffhandTier = 20; st.equippedOffhandRarity = "fantastic"; st.equippedOffhandUid = null;
+      st.inventory = st.inventory || {};
+      st.inventory.fletching_arrow_t19 = 1e9; // top-tier ammo, never runs dry
+      st.equippedArrow = "fletching_arrow_t19";
+      st.lockedItems = {};
     } else {
       st.equippedOffhand = null; st.equippedOffhandTier = 0; st.equippedOffhandUid = null;
     }
@@ -191,8 +207,8 @@ async function sample() {
 
 async function runOne(name, cfg, ms) {
   const full = { ...cfg, weapon: BUILD.weapon, styleXp: BUILD.weapon.styleXp, offhandClaw: !!BUILD.offhandClaw,
-    signets: BUILD.signets, uniqueRingType: BUILD.uniqueRingType, weaponLines: BUILD.weaponLines(cfg.leg),
-    jewelLines: BUILD.jewelLines || null, primeLedger: !!BUILD.primeLedger };
+    offhandQuiver: !!BUILD.offhandQuiver, signets: BUILD.signets, uniqueRingType: BUILD.uniqueRingType,
+    weaponLines: BUILD.weaponLines(cfg.leg), jewelLines: BUILD.jewelLines || null, primeLedger: !!BUILD.primeLedger };
   const diag = await setup(full);
   await page.evaluate(() => window.__FF._startLoop());
   if (diag.activeClass !== SIM_CLASS) { console.log(name, "SETUP FAILED — active class:", diag.activeClass); return null; }

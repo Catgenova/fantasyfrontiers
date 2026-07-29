@@ -5272,10 +5272,10 @@
     eq(FF.legRangerAilmentRolls(legSt('compoundarrows', 'bowMedium')), 2, 'Compound Arrows rolls the ailment volley twice');
     eq(FF.legRangerAilmentRolls(legSt('steadyaim')), 1, 'a single ailment roll without Compound Arrows');
 
-    // Chain Shot (quickdraw/bowShort): the free arrow can chain, bounded by LEG_CHAINSHOT_MAX.
-    eq(FF.LEG_CHAINSHOT_MAX, 5, 'the Chain Shot follow-up chain is bounded at 5');
-    eq(FF.legActive('chainshot', legSt('chainshot', 'bowShort')), true, 'legActive detects an equipped Chain Shot bow');
-    eq(FF.legActive('chainshot', legSt('steadyaim')), false, 'Chain Shot inert without its legendary');
+    // Websnare (quickdraw/bowShort): now the Fusillade's Snare + power bow (behaviour in the class suite).
+    eq(FF.LEG_WEBSNARE_FUSILLADE, 1.5, 'Websnare: the Fusillade strikes +50%');
+    eq(FF.legActive('chainshot', legSt('chainshot', 'bowShort')), true, 'legActive detects an equipped Websnare bow');
+    eq(FF.legActive('chainshot', legSt('steadyaim')), false, 'Websnare inert without its legendary');
   });
 
   // ---- D1 legendary gear COMBAT effects, Batch 7: the seven Arcane weapons ----------------------------
@@ -5643,9 +5643,9 @@
     near(FF.legSpineshatterMult(legSt('spineshatter','maul',{ activity:{type:'combat', monsterHp:100, spineshatterStacks:5, spineshatterUntil:now+4000} })), 0.80, 'Spineshatter: -4% enemy damage per reflect (5 -> -20%)');
     near(FF.legSpineshatterMult(legSt('spineshatter','maul',{ activity:{type:'combat', monsterHp:100, spineshatterStacks:99, spineshatterUntil:now+4000} })), 0.60, 'Spineshatter caps at -40%');
     near(FF.legSpineshatterMult(legSt('wallbreaker','mace')), 1.0, 'no Spineshatter debuff without the maul');
-    // Serpentcoil (quickdraw/bowShort): +30% poison ticks.
-    near(FF.legPoisonTickMult(legSt('serpentcoil','bowShort')), 1.30, 'Serpentcoil: +30% poison ticks');
-    near(FF.legPoisonTickMult(legSt('trapmaster','bowMedium')), 1.0, 'no Serpentcoil poison boost without the short bow');
+    // Serpentcoil (quickdraw/bowShort): now amplifies the Quiverlord's riders at application, not the shared tick.
+    near(FF.legPoisonTickMult(legSt('serpentcoil','bowShort')), 1.0, 'Serpentcoil no longer boosts the shared poison tick (riders amplified at application)');
+    eq(FF.legActive('serpentcoil', legSt('serpentcoil','bowShort')), true, 'legActive detects Serpentcoil');
     // Farstrike (sharpshooter/bowLong): +40% crit damage.
     near(FF.legFarstrikeCritDmg(legSt('farstrike','bowLong')), 0.40, 'Farstrike: +40% crit damage');
     near(FF.legFarstrikeCritDmg(legSt('trapmaster','bowMedium')), 0, 'no Farstrike crit dmg without the long bow');
@@ -6178,14 +6178,11 @@
     near(FF.d4SentinelThornsMult({ element:'fire' }, legSt('wyrmthornmaul','maul')), 1.50, 'Wyrmthorn Maul: +50% reflect');
     near(FF.d4SentinelThornsMult({ element:null }, legSt('wyrmthornmaul','maul')), 1.50, 'Wyrmthorn Maul reflects regardless of the foe element');
 
-    // Breathfang Bow: charges the meter (on its own), fires the burst, and the burst hits twice.
+    // Breathfang Bow: left the Breath pillar with the Quiverlord — it doubles the Blasthead as Fire now.
     var bf = legSt('breathfang','bowShort');
-    eq(FF.d4BreathFullSet(bf), 'quickdraw', 'Breathfang Bow fires the Dragon\'s Breath burst');
+    eq(FF.d4BreathFullSet(bf), null, 'Breathfang Bow no longer fires the Dragon\'s Breath');
     bf.activity = { type:'combat', monsterHp:1000000, breathCharge:0 };
-    eq(FF.d4BreathChargeOnHit(bf, false), 8, 'Breathfang charges Dragon\'s Breath on every shot');
-    bf.activity = { type:'combat', monsterHp:1000000, breathCharge:100 };
-    var expBurst = Math.round(1000 * FF.D4_BREATH_BURST_MULT * FF.elementDmgMult(bf, 'fire')) * 2;
-    eq(FF.d4BreathFire(bf, { element:'water' }, 1000), expBurst, 'Breathfang: the breath burst hits twice');
+    eq(FF.d4BreathChargeOnHit(bf, false), 0, 'Breathfang no longer charges the Breath meter');
 
     // Detection for all 7 (block/on-hit/Magmacore effects are behavioural).
     ['bastionbreaker','wyrmthornmaul','wrathscale','magmacore'].forEach(function(k){ eq(FF.legActive(k, legSt(k, FF.D4_LEG_GEAR_MAP[k].base)), true, 'legActive detects '+k); });
@@ -6293,12 +6290,13 @@
     near(FF.d3LegDmgMult({}, legSt('bonecrusher','maul', { activity:{type:'combat', monsterHp:100, decayStacks:2, decayUntil:now+4000} })), 1.50, 'Bonecrusher: +50% vs a Decayed foe');
     near(FF.d3LegDmgMult({}, legSt('bonecrusher','maul')), 1.0, 'Bonecrusher inert on a clean foe');
     near(FF.d3LegDmgMult({}, legSt('bonevolley','bowMedium', { activity:{type:'combat', monsterHp:100, decayStacks:2, decayUntil:now+4000} })), 1.15, 'Bonevolley: +15% vs a Decayed foe');
-    // Cryptvenom slow: a venomed + Decayed foe is slowed +30% (measured as a delta so global familiar-slow cancels).
-    var cvOn = legSt('cryptvenom','bowShort', { activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+4000, potionPoisonDps:5, decayStacks:1, decayUntil:now+4000} });
-    var cvOff = legSt('cryptvenom','bowShort', { activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+4000, potionPoisonDps:5, decayStacks:1, decayUntil:now-1} });
-    near(FF.enemyExtraSlowPct(cvOn) - FF.enemyExtraSlowPct(cvOff), 0.30, 'Cryptvenom: a venomed + Decayed foe is slowed +30%');
-    var cvNoVenom = legSt('cryptvenom','bowShort', { activity:{type:'combat', monsterHp:100, decayStacks:1, decayUntil:now+4000} });
-    near(FF.enemyExtraSlowPct(cvOn) - FF.enemyExtraSlowPct(cvNoVenom), 0.30, 'Cryptvenom slow needs venom too (no venom -> no slow)');
+    // Cryptvenom: +25% from everything while the foe bears ALL THREE Quiverlord marks (Bleed + Venom + Shred).
+    var cvAll = legSt('cryptvenom','bowShort', { classDebuffs:{ enemyArmorUntil: now+4000 },
+      activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+4000, potionPoisonDps:5, bleedUntil:now+4000, bleedDps:5, bleedStacks:1} });
+    near(FF.d3LegDmgMult({}, cvAll), 1.25, 'Cryptvenom: +25% while the foe bears Bleed + Venom + Shred');
+    var cvTwo = legSt('cryptvenom','bowShort', { classDebuffs:{ enemyArmorUntil: now+4000 },
+      activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+4000, potionPoisonDps:5} });
+    near(FF.d3LegDmgMult({}, cvTwo), 1.0, 'Cryptvenom needs all three marks (two is not enough)');
     // Detection.
     ['tombshatter','bonecrusher','gravewrath','monolith','cryptvenom','bonevolley','gravesight'].forEach(function(k){ var b = FF.D3_LEG_GEAR_MAP[k].base; eq(FF.legActive(k, legSt(k, b)), true, 'legActive detects '+k); });
     // Full forge (blunt).
@@ -6502,10 +6500,10 @@
       s.activity = { type:'combat', monsterHp:500 }; near(FF.d3DecayTickMult(s), 1.0, 'Cremation inert on an unburnt foe');
       wearFull('frostwarden'); s.activity = { type:'combat', monsterHp:500, enemyChillUntil:now+4000 };
       near(FF.d3DecayTickMult(s), 1.20, 'Frostwarden Deathfrost: +20% Decay on a Chilled foe');
-      // Damage / crit / incoming amplifiers vs a Decayed foe.
-      wearFull('quickdraw'); s.activity = { type:'combat', monsterHp:500, decayStacks:3, decayUntil:now+4000 };
-      near(FF.d3SetDmgMult({}, s), 1.15, 'Quickdraw Grave Toxin: +15% vs a Decayed foe');
-      s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Grave Toxin inert on a clean foe');
+      // Opened Veins (Quickdraw D3 full): +15% while the foe bears any Quiverlord rider.
+      wearFull('quickdraw'); s.activity = { type:'combat', monsterHp:500, bleedUntil:now+4000, bleedDps:5, bleedStacks:1 };
+      near(FF.d3SetDmgMult({}, s), 1.15, 'Quickdraw Opened Veins: +15% while the foe bears a rider');
+      s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Opened Veins inert on a clean foe');
       // Assassin's D3 set is now Quickfang Raiment (Twin Fangs tempo): Twin Razors (2 wounds/hit) + Bloodrush.
       wearD3('assassin', 2); s.activity = { type:'combat', monsterHp:500 };
       eq(FF.assassinWoundsPerHit(s), 2, 'Twin Razors (Assassin D3 2pc): main-hand hits open 2 wounds');
@@ -6837,26 +6835,27 @@
     try {
       // --- Charging (2pc) ---
       s.activity = { type:'combat', monsterHp:1000000, breathCharge:0 };
-      wearD4('quickdraw', 2); s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, false), 8, 'Elemental Arrows: +8 charge per shot');
-      eq(FF.d4BreathCharge(s), 8, 'the charge is banked onto the meter');
+      wearD4('quickdraw', 2); s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, false), 0, 'the Quickdraw left the Breath pillar (Heavy Heads instead)');
       wearD4('sharpshooter', 2); s.activity.breathCharge = 0;
+      eq(FF.d4BreathChargeOnHit(s, false), 4, 'the charge banks onto the meter');
+      eq(FF.d4BreathCharge(s), 4, 'the meter holds the banked charge');
+      s.activity.breathCharge = 0;
       eq(FF.d4BreathChargeOnHit(s, false), 4, 'Focused Breath: +4 on a normal hit');
       s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, true), 14, 'Focused Breath: crits charge faster (+14)');
-      wearD4('reaper', 2); s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, false), 0, 'the Reaper left the Breath pillar (Carrion Shroud crits Rot instead)');
+      wearD4('reaper', 2); s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, false), 0, 'the Reaper left the Breath pillar (the Festerweave Shroud crits Rot instead)');
       wearD4('ranger', 2); s.activity = { type:'combat', monsterHp:1000000, breathCharge:0 }; // clean, no ailment
       eq(FF.d4BreathChargeOnHit(s, false), 0, 'Elemental Traps: no charge without an ailment on the foe');
       s.activity.bleedUntil = Date.now() + 5000; eq(FF.d4BreathChargeOnHit(s, false), 10, 'Elemental Traps: +10 when the foe is afflicted');
 
       // --- Full-set selection ---
-      wearFull('quickdraw'); eq(FF.d4BreathFullSet(s), 'quickdraw', 'the full Breathfang set fires Dragon\'s Breath');
-      wearFull('reaper'); eq(FF.d4BreathFullSet(s), null, 'the full Carrion Shroud fires no breath weapon (Gangrene spreads Rot instead)');
-      wearD4('quickdraw', 2); eq(FF.d4BreathFullSet(s), null, 'a 2-piece set does not fire a breath weapon');
+      wearFull('quickdraw'); eq(FF.d4BreathFullSet(s), null, 'the full Fusilier\'s Leathers fires no breath weapon (Runaway Quiver instead)');
+      wearFull('reaper'); eq(FF.d4BreathFullSet(s), null, 'the full Festerweave Shroud fires no breath weapon (Gangrene spreads Rot instead)');
+      wearD4('sharpshooter', 2); eq(FF.d4BreathFullSet(s), null, 'a 2-piece set does not fire a breath weapon');
 
       // --- Firing (full) ---
-      // Not ready -> no fire.
-      wearFull('quickdraw'); s.activity = { type:'combat', monsterHp:1000000, breathCharge:50 };
+      // Not ready -> no fire. (The Ranger carries the pillar's generic burst test now.)
+      wearFull('ranger'); s.activity = { type:'combat', monsterHp:1000000, breathCharge:50 };
       eq(FF.d4BreathFire(s, { element:'water' }, 1000), 0, 'the breath does not fire below full charge');
-      // Quickdraw Dragon's Breath: a devastating elemental burst; resets the meter.
       s.activity = { type:'combat', monsterHp:1000000, breathCharge:100 };
       var expBurst = Math.round(1000 * FF.D4_BREATH_BURST_MULT * FF.elementDmgMult(s, 'fire'));
       eq(FF.d4BreathFire(s, { element:'water' }, 1000), expBurst, 'Dragon\'s Breath bursts for 5x the strike (x Fire Attunement)');
@@ -6865,7 +6864,7 @@
       wearFull('sharpshooter'); s.activity = { type:'combat', monsterHp:1000000, breathCharge:100 };
       var baseSharp = Math.round(1000 * FF.D4_BREATH_BURST_MULT * FF.elementDmgMult(s, 'fire'));
       eq(FF.d4BreathFire(s, { element:'water' }, 1000), Math.round(baseSharp * FF.ELEMENT_ADVANTAGE_MULT), 'Piercing Breath strikes the weakness (+20%)');
-      // (Spirit Breath retired: the Reaper's D4 is the Carrion Shroud rot-crit set now.)
+      // (Spirit Breath retired: the Reaper's D4 is the Festerweave Shroud rot-crit set now.)
       // Executioner Immolation Breath: executes a foe below 25% Health.
       wearFull('executioner'); s.activity = { type:'combat', monsterHp:200, breathCharge:100 }; var exMon = { isBoss:false, hp:1000 };
       var slain = FF.d4BreathFire(s, exMon, 10); eq(s.activity.monsterHp, 0, 'Immolation Breath executes a foe below 25% Health');
@@ -7128,11 +7127,13 @@
       s.d2BloodthirstUntil = Date.now()-1; near(FF.d2BloodthirstSpeedMult(s), 1.0, 'Bloodthirst lapses after its window');
       s.d2BloodthirstStacks = 0; s.d2BloodthirstUntil = 0; FF.d2BloodthirstOnKill(s);
       eq(s.d2BloodthirstStacks, 1, 'a kill adds a Bloodthirst stack');
-      // Quickdraw Paralytic Venom (full): a venomed foe's attacks are slowed 30%.
-      wearD2('quickdraw', 4); s.activity = { type:'combat', monsterHp:800, potionPoisonUntil:Date.now()+9999, potionPoisonDps:10 };
-      near(FF.quickdrawParalyticSlow(s), 0.30, 'Quickdraw Paralytic Venom: -30% enemy attack speed vs a venomed foe');
-      ok(FF.enemyExtraSlowPct(s) >= 0.30 - 1e-9, 'Paralytic Venom folds into the enemy slow total');
-      s.activity.potionPoisonUntil = Date.now()-1; near(FF.quickdrawParalyticSlow(s), 0.0, 'Paralytic Venom inert without venom');
+      // Quickdraw Dead Aim (D2 full): detectable; the guaranteed-crit Trick Arrows are exercised in the class suite.
+      wearD2('quickdraw', 4); ok(FF.setFullD2('quickdraw', s), 'the Quickdraw D2 full set (Dead Aim) is detectable');
+      // Websnare's Snare (the Fusillade's fifth head) folds into the enemy slow total.
+      s.activity = { type:'combat', monsterHp:800, qdSnareUntil:Date.now()+4000 };
+      near(FF.quickdrawSnareSlow(s), 0.30, 'a Snared foe attacks 30% slower');
+      ok(FF.enemyExtraSlowPct(s) >= 0.30 - 1e-9, 'the Snare folds into the enemy slow total');
+      s.activity.qdSnareUntil = Date.now()-1; near(FF.quickdrawSnareSlow(s), 0.0, 'the Snare lapses');
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; s.d2FeralStacks=sv.fs; s.d2FeralUntil=sv.fu; s.d2BloodthirstStacks=sv.bs; s.d2BloodthirstUntil=sv.bu; s.activeCompanions=sv.ac; s.equippedMainhandUid=sv.mh; s.equippedOffhandUid=sv.oh; s.equippedBeltUid=sv.be; s.equippedRelicUid=sv.rl; s.jewelrySlots=sv.js; }
   });
 
@@ -7537,11 +7538,9 @@
     eq(FF.voidMarkPerHit(setSt('nightblade', 4)), 2, 'Malediction (full): 2 Vulnerability stacks per hit');
     eq(FF.voidMarkPerHit(setSt('nightblade', 2)), 1, 'no Malediction below the full set');
 
-    // Quickdraw Venom Glut (2pc) + Trick Volley (full).
-    near(FF.quickdrawVenomPct(setSt('quickdraw', 2)), 0.50, "Venom Glut (2pc): Serpent's Sting injects 50%");
-    near(FF.quickdrawVenomPct(setSt('quickdraw', 1)), 0.30, '1 piece -> base 30%');
-    near(FF.quickdrawTwinFangChance(setSt('quickdraw', 4)), 0.30, 'Trick Volley (full): Twin Fang 30%');
-    near(FF.quickdrawTwinFangChance(setSt('quickdraw', 2)), 0.15, 'no Trick Volley below the full set');
+    // Quickdraw Deft Hands (2pc) + Echo Volley (full): the D1 set drives the Quiver Cycle cadence.
+    eq(FF.quickdrawCycleEvery(setSt('quickdraw', 2)), 3, 'Deft Hands (2pc): the cycle runs every 3rd shot');
+    eq(FF.quickdrawCycleEvery(setSt('quickdraw', 1)), 4, '1 piece -> the base 4-shot cycle');
 
     // Treasure Hunter Blessed Arsenal (2pc) + Wider Appraisal (full).
     near(FF.treasureProspectorPer(setSt('treasureHunter', 2)), 0.15, 'Blessed Arsenal (2pc): +15%/Rare+ item');
@@ -10993,7 +10992,7 @@
         // Festering Strike + Gangrene (D4): a critical tick spreads an extra stack.
         var d4a = FF.mintSetPiece('reaper','chest','rare','d4'), d4b = FF.mintSetPiece('reaper','gauntlets','rare','d4'), d4c = FF.mintSetPiece('reaper','boots','rare','d4');
         s.bodyArmor.chest = { uid:d4a, material:'tailoring', tier:24, rarity:'rare' }; s.bodyArmor.gauntlets = { uid:d4b, material:'tailoring', tier:24, rarity:'rare' }; s.bodyArmor.boots = { uid:d4c, material:'tailoring', tier:24, rarity:'rare' };
-        eq(FF.setFullD4('reaper', s), true, 'three D4 pieces (bare-head) trigger the full Carrion Shroud');
+        eq(FF.setFullD4('reaper', s), true, 'three D4 pieces (bare-head) trigger the full Festerweave Shroud');
         s.activity.reaperRot = 5; s.activity.reaperRotUntil = Date.now() + 9999; s.activity.reaperRotHitAvg = 1000;
         Math.random = function(){ return 0; }; // force the tick crit
         var critTick = FF.reaperRotFireTick(s);
@@ -11089,7 +11088,7 @@
     ok(fam.spells.some(function(s){ return s.type==='armorBuff' || s.type==='timedBuff' || s.type==='damageBuff'; }), 'herald familiar grants buffs');
   });
 
-  // ---- Classes: Quickdraw (short-bow archer: Trick Shot / Second Wind / Twin Fang / Eagle Eye / Serpent's Sting) ----
+  // ---- Classes: Quickdraw (the Quiverlord: the quiver is a rotation of Trick Arrows) ----
   suite('classes: Quickdraw', function(){
     ok(FF.CLASS_SKILL_IDS.indexOf('quickdraw') !== -1, 'quickdraw is a class skill id');
     var cd = FF.CLASS_DEFS_BY_ID.quickdraw;
@@ -11117,29 +11116,82 @@
     eq(FF.activeClassId(plateHelm), null, 'helm must be leather (plate does not qualify)');
 
     var lvHi = FF.xpFloorForLevel(85); // ~Lv 85
-    var lv100 = FF.xpFloorForLevel(100);
     function leveled(){ var s = base(); s.xp.quickdraw = lvHi; s.physique = {}; return s; }
 
-    // Lv 1 Trick Shot is a crit -> bonus-shot proc; Quickdraw no longer has any passive attack-speed.
-    eq(FF.classAttackSpeedMult(full), 1, 'Quickdraw has no passive attack-speed at Lv 1 (Trick Shot is a crit proc)');
+    // The Quiverlord perk ladder: names in order; the low-HP camp and crit-proc soup are gone.
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), "Quiver Cycle,Fletcher's Economy,Quick Hands,Broadheads,Fusillade", 'Quiverlord perk names');
+    eq(FF.QD_CYCLE_EVERY, 4, 'the cycle fires every 4th shot');
+    eq(FF.QD_HEADS.join(','), 'barbed,blast,piercer,serpent', 'the four heads rotate in order');
+    eq(FF.classAttackSpeedMult(full), 1, 'no passive attack-speed (Second Wind retired)');
 
-    // Lv 20 Second Wind: below 40% HP -> -20% attack timer + +20% Dodge; gated on Lv 20 AND the HP threshold.
-    var swLow = leveled(); swLow.playerHp = 10;    // maxHp(physique {}) = 50 -> 40% = 20; 10 < 20 => active
-    var swFull = leveled(); swFull.playerHp = 45;  // 45 >= 20 => inactive
-    eq(FF.quickdrawSecondWind(swLow), true, 'Second Wind active below 40% HP at Lv 20+');
-    eq(FF.quickdrawSecondWind(swFull), false, 'Second Wind inactive at healthy HP');
-    eq(FF.quickdrawSecondWindDodge(swLow), 0.20, 'Second Wind grants +20% Dodge');
-    eq(FF.classAttackSpeedMult(swLow), 0.80, 'Second Wind: -20% attack timer while active');
-    var swLv1 = base(); swLv1.physique = {}; swLv1.playerHp = 1;
-    eq(FF.quickdrawSecondWind(swLv1), false, 'Second Wind is gated on Class Lv 20 (not at Lv 1)');
+    // Cycle peek: pure-state read of what the next landed shot will be.
+    var qc = leveled();
+    eq(FF.quickdrawTrickPeek(base()), null, 'the cycle is gated on the class being active at Lv 1+ (Lv 0 fixture reads null)');
+    qc.qdCycleCount = 0; eq(FF.quickdrawTrickPeek(qc), null, 'shot 1 of 4 is plain');
+    qc.qdCycleCount = 3; eq(FF.quickdrawTrickPeek(qc), 'barbed', 'the 4th shot is the next head (Barbed first)');
+    qc.qdCycleIndex = 2; eq(FF.quickdrawTrickPeek(qc), 'piercer', 'the rotation advances through the heads');
+    qc.qdFusillade = true; eq(FF.quickdrawTrickPeek(qc), 'fusillade', 'an armed Fusillade outranks the cycle');
+    qc.qdFusillade = false; qc.qdRunaway = 2; qc.qdCycleCount = 0; eq(FF.quickdrawTrickPeek(qc), 'piercer', 'Runaway Quiver makes every shot a Trick Arrow');
 
-    // Lv 60 Eagle Eye: accuracy over a foe's Dodge -> crit chance (cap +25%); nothing when accuracy <= dodge.
-    var ee = leveled(); ee.xp.bowShort = lv100;    // high bow proficiency -> accuracy well over a t0 foe's dodge
-    ok(FF.quickdrawEagleEyeCrit({tierIndex:0}, ee) > 0, 'Eagle Eye converts overflow accuracy into crit chance');
-    eq(FF.quickdrawEagleEyeCrit({tierIndex:20}, ee), 0, 'no Eagle Eye crit when accuracy does not exceed a tough foe\'s dodge');
-    eq(FF.quickdrawEagleEyeCrit({tierIndex:0}, full), 0, 'Eagle Eye is gated on Class Lv 60 (nothing at Lv 1)');
-    var eeMax = leveled(); eeMax.physique = { agility:lv100, bodyControl:lv100, grossMotor:lv100, fineMotor:lv100, sleightOfHand:lv100 };
-    eq(FF.quickdrawEagleEyeCrit({tierIndex:0}, eeMax), 0.25, 'Eagle Eye crit is capped at +25%');
+    // Behavioral: the full rotation through the REAL playerAttackTick (live state). Math.random=0 makes
+    // every shot land AND crit, so with Quick Hands each plain shot banks 2 cycle counts.
+    (function(){
+      var s = FF._state;
+      var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid,
+                   oh:s.equippedOffhand, oht:s.equippedOffhandTier, ohu:s.equippedOffhandUid, ba:s.bodyArmor, ui:s.uniqueItems,
+                   xp:s.xp.quickdraw, act:s.activity, hp:s.playerHp, inv:s.inventory, cd:s.classDebuffs,
+                   cc:s.qdCycleCount, ci:s.qdCycleIndex, fu:s.qdFusillade, ra:s.qdRunaway };
+      var svRnd = Math.random;
+      try {
+        s.equippedMainhand='bowShort'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null;
+        s.equippedOffhand='quiver'; s.equippedOffhandTier=6; s.equippedOffhandUid=null;
+        s.bodyArmor={ helmet:{material:'leather',tier:5,rarity:'normal'}, chest:{material:'leather',tier:5,rarity:'normal'}, gauntlets:{material:'leather',tier:5,rarity:'normal'}, boots:{material:'plate',tier:5,rarity:'normal'}, back:{tier:0,rarity:'normal',material:null} };
+        s.uniqueItems = {}; s.classDebuffs = {};
+        s.xp.quickdraw = FF.xpFloorForLevel(85);
+        s.inventory = Object.assign({}, s.inventory); // private copy: the bow spends arrows
+        s.inventory.fletching_arrow_t0 = 500; // a stack of low-tier arrows for the bow to nock (always usable)
+        eq(FF.activeClassId(s), 'quickdraw', 'behavioral setup activates the Quickdraw');
+        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.playerHp = FF.maxHp(s);
+        s.qdCycleCount = 0; s.qdCycleIndex = 0; s.qdFusillade = false; s.qdRunaway = 0;
+        Math.random = function(){ return 0; }; // every shot lands and crits
+        // Shot 1: plain, crit -> +2 counts (shot + Quick Hands). Shot 2: count 2+1>=4? no -> +2 = capped
+        // progression; the exact cadence: c0 -> shot(+1) crit(+1) = 2 -> shot: 2+1<4 plain, +2 = 4 -> clamped 3
+        // -> next shot peeks 3+1>=4 = TRICK (Barbed).
+        FF.playerAttackTick(false, 1, false);
+        eq(s.qdCycleCount, 2, 'a landed crit banks 2 cycle counts (the shot + Quick Hands)');
+        FF.playerAttackTick(false, 1, false);
+        eq(s.qdCycleCount, 3, 'the bank clamps at every-1 so a trick is never skipped');
+        var _bleedBefore = (s.activity.bleedDps||0);
+        FF.playerAttackTick(false, 1, false);
+        ok((s.activity.bleedDps||0) > _bleedBefore && (s.activity.bleedUntil||0) > Date.now(), 'the trick shot fired Barbed Head: a weapon-scaled Bleed rider');
+        eq(s.qdCycleIndex, 1, 'the rotation advanced to the next head (Blast)');
+        // Ride the rotation to the Fusillade: three more tricks (blast, piercer, serpent) arm it at Lv80.
+        for(var i=0; i<12 && !s.qdFusillade; i++) FF.playerAttackTick(false, 1, false);
+        eq(s.qdFusillade, true, 'completing the rotation arms the Fusillade');
+        ok((s.classDebuffs.enemyArmorUntil||0) > Date.now(), 'the Piercer left the foe Shredded (shared Sunder channel)');
+        ok((s.activity.potionPoisonUntil||0) > Date.now() && (s.activity.potionPoisonDps||0) > 0, 'the Serpent Fang left venom on the foe');
+        ok(FF.quickdrawAnyRider(s), 'quickdrawAnyRider sees the marks');
+        ok(FF.quickdrawAllRiders(s), 'quickdrawAllRiders sees Bleed + Venom + Shred together');
+        // The Fusillade shot fires all four heads and (Lv80, no D4 set) leaves no Runaway.
+        var _hpBefore = s.activity.monsterHp;
+        FF.playerAttackTick(false, 1, false);
+        eq(s.qdFusillade, false, 'the Fusillade consumed its arming');
+        eq(s.qdRunaway||0, 0, 'no Runaway Quiver without the D4 full set');
+        ok(_hpBefore - s.activity.monsterHp > 0, 'the Fusillade landed (shot + Blasthead + Piercer payback)');
+        // Fletcher's Economy: a Trick Arrow spends no ammo. Arm a trick, count arrows across the shot.
+        s.qdCycleCount = FF.quickdrawCycleEvery(s) - 1;
+        var _arrows = s.inventory.fletching_arrow_t0;
+        FF.playerAttackTick(false, 1, false);
+        eq(s.inventory.fletching_arrow_t0, _arrows, 'a Trick Arrow consumes no ammo (Fletcher\'s Economy)');
+      } finally {
+        Math.random = svRnd;
+        s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu;
+        s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.equippedOffhandUid=snap.ohu; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui;
+        s.xp.quickdraw=snap.xp; s.activity=snap.act; s.playerHp=snap.hp; s.inventory=snap.inv; s.classDebuffs=snap.cd;
+        s.qdCycleCount=snap.cc; s.qdCycleIndex=snap.ci; s.qdFusillade=snap.fu; s.qdRunaway=snap.ra;
+      }
+    })();
 
     // Class familiar is a piercing archer to match the fantasy.
     var fam = FF.FAMILIAR_DATA.quickdraw;
