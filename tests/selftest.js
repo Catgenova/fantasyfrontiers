@@ -10654,6 +10654,10 @@
     var pw = { equippedMainhand:'staff', equippedMainhandTier:10, equippedMainhandRarity:'normal', xp:{} };
     eq(FF.staffDownbeatPower(pw), Math.round((pit.dmgMin + pit.dmgMax) / 2), 'Downbeat power = the staff average roll');
     eq(FF.staffDownbeatPower({ equippedMainhand:'claymore', equippedMainhandTier:10, equippedMainhandRarity:'normal', xp:{} }), 0, 'no staff => no Downbeat power');
+    // A +15 staff lends x6 Downbeat, matching mainhandEnhanceMult ("enhance scales base + enchant stats").
+    var pwEnh = { equippedMainhand:'staff', equippedMainhandTier:10, equippedMainhandRarity:'normal', xp:{},
+      equippedMainhandUid:'E', uniqueItems:{ E:{ uid:'E', kind:'weapon', base:'stweapon_staff_t9_normal', tier:9, rarity:'normal', enchants:[], enhance:15 } } };
+    eq(FF.staffDownbeatPower(pwEnh), Math.round(((pit.dmgMin + pit.dmgMax) / 2) * 6), 'a +15 staff lends x6 Downbeat power');
 
     // Behavioral (live state): the rhythm engine -- Downbeat stacks, Crescendo, Syncopation window,
     // Accelerando cast haste, Grand Finale consumption, Skeletal Wraiths.

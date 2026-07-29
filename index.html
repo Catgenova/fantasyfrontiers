@@ -6811,7 +6811,10 @@
     if(!w || !(w.dmgMax > 0)) return 0;
     var ench = equippedEnchantTotals(st);
     var flat = (ench.flatDamage||0) + (ench.flatElemFire||0) + (ench.flatElemWater||0) + (ench.flatElemEarth||0) + (ench.flatElemLight||0) + (ench.flatElemDark||0);
-    return Math.max(0, Math.round(((w.dmgMin + w.dmgMax) / 2 + flat) * (1 + (ench.pctDamage||0)/100)));
+    // A +enhanced staff scales its Downbeat like its swings (enhance = "base + enchant stats"): the
+    // Downbeat IS the staff's damage, so a +15 staff lends x6 to the host, matching mainhandEnhanceMult.
+    var enh = (st === state) ? mainhandEnhanceMult() : (function(){ var uid = st.equippedMainhandUid, u = uid && st.uniqueItems && st.uniqueItems[uid]; return u ? enhanceStatMult(u.enhance) : 1; })();
+    return Math.max(0, Math.round(((w.dmgMin + w.dmgMax) / 2 + flat) * (1 + (ench.pctDamage||0)/100) * enh));
   }
   function summonerCrescendoCap(st){ st = st || state; return SUMMONER_CRESCENDO_BASE_CAP + (set2('summoner', st) ? 2 : 0); } // Maestro's Raiment (D1 2pc): cap +2
   function summonerCrescendo(st){ st = st || state; return Math.min(summonerCrescendoCap(st), st.summonerCrescendo||0); }
@@ -23563,7 +23566,8 @@
       'Also fixed: the Totems skill was uncraftable at Level 1 — its ladder starts at tier 1 (no +0 totem exists) but the first recipe still gated at Lv 5, leaving a fresh skill with no way to earn XP. The Birch Totem now crafts at Lv 1 and each later tier steps down one gate (t2 at Lv 5 … t20 at Lv 95).',
       'Balance: enemy damage-over-time effects can no longer one-shot you. Burns, poisons, bleeds and drains ignore armour by design, but their rate scaled with the beast\'s raw attack — an Archdemon\'s Chaos Bolt Hellfire could burn a full health bar in one proc through any amount of armour. Every enemy DoT is now capped at 5% of your max Health per second, so a full burn window costs at most about a quarter to a third of your Health.',
       'Also fixed: tier numbers are now zero-based everywhere. The craft-card chips counted from 1 (showing "t20" on a Tool Steel Claymore) while the settings, item data and rarity-roll bands counted from 0 — so the "no rarity rolls t16–t19" toggle silently covered gear whose card said t20. Chips, tooltips and monster cards now all read Copper = t0 … Tool Steel = t19, Tungsten = t20, matching the toggles exactly. Heads-up: t19 is the top weapon/armor tier, so switch the t16–t19 toggle off if you want rarity rolls on your endgame forges — t20 refining always rolls.',
-      'Critical Summoner fix: the Downbeat never actually triggered from staff swings in live combat (the swing hook was trapped inside an Assassin-only code branch), so Crescendo, Syncopation, Accelerando and Grand Finale were all unreachable in real fights. Caught by a new max-ceiling DPS simulation harness that drives the live game headless; the whole Conductor rhythm now beats as designed.'
+      'Critical Summoner fix: the Downbeat never actually triggered from staff swings in live combat (the swing hook was trapped inside an Assassin-only code branch), so Crescendo, Syncopation, Accelerando and Grand Finale were all unreachable in real fights. Caught by a new max-ceiling DPS simulation harness that drives the live game headless; the whole Conductor rhythm now beats as designed.',
+      'Also: an Enhanced staff now scales its Downbeat like its swings — a +15 staff lends ×6 staff damage to your familiars, matching how enhance boosts every other stat.'
     ]},
     { v:'0.0.56', date:'Jul 28', heading:'Loadouts: one-tap swapping and 25 slots', items:[
       'A numbered quick-swap bar (1–25) now sits above your character on Equipment & Stats: tap a saved preset to swap your whole kit instantly. Empty and locked slots show greyed out; hover one for why. The full Loadouts panel stays at the bottom for saving, renaming and managing presets.',
@@ -35143,7 +35147,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.57.10';
+  var GAME_VERSION = '0.0.57.11';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

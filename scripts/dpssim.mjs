@@ -34,10 +34,10 @@ page.on("pageerror", e => console.log("pageerror:", e.message));
 await page.goto(`http://127.0.0.1:${port}/index.html?selftest`, { waitUntil: "domcontentloaded" });
 await page.waitForFunction(() => window.__FF_SELFTEST && (window.__FF_SELFTEST.passed > 0 || window.__FF_SELFTEST.error), null, { timeout: 60000 });
 
-async function setup(leg) {
-  return await page.evaluate((leg) => {
+async function setup(leg, cloakLeg) {
+  return await page.evaluate(([leg, cloakLeg]) => {
     const FF = window.__FF, st = FF._state;
-    const diag = { leg };
+    const diag = { leg, cloakLeg };
     // 1) Max every skill the sim touches: class, proficiencies, crafting gates, attunement, physiques.
     const lv100 = FF.xpFloorForLevel(100);
     Object.keys(st.xp).forEach(k => { st.xp[k] = lv100; });
@@ -49,24 +49,50 @@ async function setup(leg) {
     st.bodyArmor = {}; st.uniqueItems = st.uniqueItems || {};
     const d2 = FF.D2_SET_DEFS && FF.D2_SET_DEFS.summoner;
     const slots = d2 && d2.bareHead ? ["chest", "gauntlets", "boots"] : ["helmet", "chest", "gauntlets", "boots"];
+    const apool = FF.ENCHANT_MODS.armor;
+    const aMax = id => { const m = apool.filter(x => x.id === id)[0]; const r = FF.enchantModRange(m, 20); return { mod: id, roll: r && r.max != null ? r.max : m.max }; };
     slots.forEach(slot => {
       const uid = FF.mintSetPiece("summoner", slot, "fantastic", "d2");
       const u = st.uniqueItems[uid];
+      u.enchants = [aMax("defense"), aMax("maxHp"), aMax("dmgReduction"), aMax("blockChance")];
+      u.enhance = 15; // armor pool is defensive; enchant-then-+15 is still the per-item ceiling
       st.bodyArmor[slot] = { uid: uid, material: u.material, tier: (u.tier || 21) + 1, rarity: "fantastic" };
     });
-    st.bodyArmor.back = { tier: 21, rarity: "fantastic", material: "tailoring" };
-    // 3) Legendary fantastic t20 staff with max damage enchant lines.
-    const pool = FF.ENCHANT_MODS.weapon;
-    const pick = [];
-    pool.forEach(m => {
-      if (/damage/i.test(m.id) || m.raw) {
-        const r = FF.enchantModRange(m, 20);
-        pick.push({ mod: m.id, roll: r && r.max != null ? r.max : (m.max || 10) });
-      }
+    // Back slot: legendary Shroud (bodyArmor.back.leg is the real storage; A/B'd -- Ruin all-dmg /
+    // Warpack elemental / Widow crit-dmg).
+    st.bodyArmor.back = { leg: cloakLeg, rarity: "fantastic" };
+    // 3b) Jewelry: 3 legendary Signets (Brood famhaste / Fury attack speed / Wyrm elemental) +
+    // 2 unique t20 fantastic Communion rings and 1 amulet, each 4 jewelry lines then +15. Relic & belt:
+    // unique fantastic t20, enchanted then +15 (relic = +dmg%/armor%, scaled x6 by its enhance).
+    const jpool = FF.ENCHANT_MODS.jewelry;
+    const jMax = id => { const m = jpool.filter(x => x.id === id)[0]; const r = FF.enchantModRange(m, 20); return { mod: id, roll: r && r.max != null ? r.max : m.max }; };
+    const jLines = () => [jMax("allDamage"), jMax("critDamage"), jMax("critChance"), jMax("lifesteal")];
+    st.jewelrySlots = {};
+    st.jewelrySlots.ring1 = { leg: "famhaste", rarity: "fantastic" };
+    st.jewelrySlots.ring2 = { leg: "d2_fury", rarity: "fantastic" };
+    st.jewelrySlots.ring3 = { leg: "d4_wyrm", rarity: "fantastic" };
+    ["ring4", "ring5"].forEach((sid, i) => {
+      const uid = "SIMR" + i;
+      st.uniqueItems[uid] = { uid, kind: "ring", base: "ring_communion_t19_fantastic", tier: 19, rarity: "fantastic", enchants: jLines(), enhance: 15 };
+      st.jewelrySlots[sid] = { typeId: "communion", tier: 20, rarity: "fantastic", uid };
     });
-    const enchants = pick.slice(0, 5);
+    st.uniqueItems.SIMA = { uid: "SIMA", kind: "amulet", base: "amulet_t19_fantastic", tier: 19, rarity: "fantastic", enchants: jLines(), enhance: 15 };
+    st.jewelrySlots.amulet = { typeId: "warding", tier: 20, rarity: "fantastic", uid: "SIMA" };
+    st.uniqueItems.SIMREL = { uid: "SIMREL", kind: "relic", base: "relic_t19_fantastic", tier: 19, rarity: "fantastic", enchants: jLines(), enhance: 15 };
+    st.equippedRelicTier = 20; st.equippedRelicRarity = "fantastic"; st.equippedRelicUid = "SIMREL";
+    const bpool = FF.ENCHANT_MODS.armor;
+    st.uniqueItems.SIMB = { uid: "SIMB", kind: "belt", base: "belt_t19_fantastic", tier: 19, rarity: "fantastic",
+      enchants: [aMax("defense"), aMax("maxHp"), aMax("dmgReduction"), aMax("blockChance")], enhance: 15 };
+    st.equippedBeltTier = 20; st.equippedBeltRarity = "fantastic"; st.equippedBeltUid = "SIMB";
+    // 3) Legendary fantastic t20 staff: 4 max enchant lines FIRST, then +15 (legal order in-game; the
+    // enhance multiplier scales base AND enchant stats x6). Broodwyrm swaps a line to Earth for its double.
+    const wpool = FF.ENCHANT_MODS.weapon;
+    const maxRoll = id => { const m = wpool.filter(x => x.id === id)[0]; const r = FF.enchantModRange(m, 20); return { mod: id, roll: r && r.max != null ? r.max : m.max }; };
+    const enchants = leg === "broodwyrm"
+      ? [maxRoll("weaponDamage"), maxRoll("critDamage"), maxRoll("critChance"), maxRoll("earthDamage")]
+      : [maxRoll("weaponDamage"), maxRoll("critDamage"), maxRoll("critChance"), maxRoll("flatDamage")];
     st.uniqueItems.SIMW = { uid: "SIMW", leg: leg, kind: "weapon", base: "stweapon_staff_t20_fantastic",
-      tier: 20, rarity: "fantastic", enchants: enchants, enhance: 0 };
+      tier: 20, rarity: "fantastic", enchants: enchants, enhance: 15 };
     st.equippedMainhand = "staff"; st.equippedMainhandTier = 21; st.equippedMainhandRarity = "fantastic";
     st.equippedMainhandUid = "SIMW";
     st.equippedOffhand = null; st.equippedOffhandTier = 0; st.equippedOffhandUid = null;
@@ -100,7 +126,7 @@ async function setup(leg) {
     diag.maxHp = FF.maxHp(st);
     window.__SIM = { lastHp: 1e12, total: 0, t0: performance.now(), refills: 0 };
     return diag;
-  }, leg);
+  }, [leg, cloakLeg]);
 }
 
 async function sample() {
@@ -118,13 +144,13 @@ async function sample() {
   });
 }
 
-for (const cfg of CONFIGS) {
-  const diag = await setup(cfg.leg);
+async function runOne(name, leg, cloakLeg, ms) {
+  const diag = await setup(leg, cloakLeg);
   await page.evaluate(() => window.__FF._startLoop());
-  if (diag.activeClass !== "summoner") { console.log(cfg.name, "SETUP FAILED — active class:", diag.activeClass, JSON.stringify(diag)); continue; }
+  if (diag.activeClass !== "summoner") { console.log(name, "SETUP FAILED:", JSON.stringify(diag)); return null; }
   let last = null, peak = { stacks: 0, cres: 0, wraiths: 0 };
   const t0 = Date.now();
-  while (Date.now() - t0 < DURATION_MS) {
+  while (Date.now() - t0 < ms) {
     await new Promise(r => setTimeout(r, 500));
     last = await sample();
     if (last.dead) break;
@@ -132,10 +158,22 @@ for (const cfg of CONFIGS) {
     peak.cres = Math.max(peak.cres, last.cres || 0);
     peak.wraiths = Math.max(peak.wraiths, last.wraiths || 0);
   }
-  const dps = last.total / (last.elapsed / 1000);
-  console.log(JSON.stringify({ config: cfg.name, leg: cfg.leg, seconds: Math.round(last.elapsed / 1000),
-    totalDamage: Math.round(last.total), dps: Math.round(dps),
+  const out = { config: name, leg, cloak: cloakLeg, seconds: Math.round(last.elapsed / 1000),
+    dps: Math.round(last.total / (last.elapsed / 1000)), totalDamage: Math.round(last.total),
     peakDownbeatStacks: peak.stacks, peakCrescendo: peak.cres, peakWraiths: peak.wraiths,
-    downbeatPowerPerStack: last.dbPower, hitPct: last.hitPct, target: diag.target.name, roster: diag.roster.join(",") }));
+    downbeatPowerPerStack: last.dbPower, hitPct: last.hitPct, target: diag.target.name };
+  console.log(JSON.stringify(out));
+  return out;
 }
+
+// Phase 1: cloak A/B on the Baton build (short windows).
+const CLOAKS = ["d2_ruin", "d2_warpack", "critdmg"];
+let bestCloak = CLOAKS[0], bestDps = -1;
+for (const c of CLOAKS) {
+  const r = await runOne("cloak A/B: " + c, "rapidconjuring", c, Math.min(DURATION_MS, 45000));
+  if (r && r.dps > bestDps) { bestDps = r.dps; bestCloak = c; }
+}
+console.log("WINNING CLOAK:", bestCloak);
+// Phase 2: full matrix with the winning cloak.
+for (const cfg of CONFIGS) await runOne(cfg.name, cfg.leg, bestCloak, DURATION_MS);
 await browser.close(); server.close();
