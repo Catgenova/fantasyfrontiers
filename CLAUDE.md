@@ -72,11 +72,13 @@ Soulflame +10% ch / +10% Fire rider, Soulflay eruption 50%) Deathshepherd ~89B /
 fantastic quiver granted +253% ALL damage, and the quiver's offhand proficiency carried
 weapon mastery — a second unbounded mastery channel the sim measured growing +8% per shot.
 Chassis rebalance shipped with the rework: quiver dmgBonus capped at +25%, quivers excluded
-from offhand weapon mastery, leather bow bonus 3%/slot (was 5%), all three bows' base damage
-x0.85, arrows track the bow multiplier. Kit tune: tricks +20% each from Broadheads/Heavy
-Heads, riders 25% stronger / 30-35% magnitudes, Piercer payback capped at 1x the hit,
-Breathfang eruption 1.5x fire-scaled) Breathfang ~92B / Websnare ~71B / Serpentcoil ~68B /
-Cryptvenom ~64B (set D2 Rapid Reload/Dead Aim — the only class so far NOT won by its D4).
+from offhand weapon mastery, leather bow bonus 3%/slot (was 5%).
+OWNER RULE (set after this rework): weapon RAW damage stats are never balance levers — the
+bows' brief x0.85 (and arrow tracking) and the scepter's 0.58 dmgMult were reversed;
+equivalent scaling must live in class perk variables. Kit tune: tricks +20% each from
+Broadheads/Heavy Heads, riders 25% stronger, Piercer payback capped at 1x the hit,
+Breathfang eruption 1.0x fire-scaled) Breathfang ~94B / Websnare ~85B post-revert
+(Serpentcoil/Cryptvenom between; set D2 Rapid Reload/Dead Aim — the only class NOT won by its D4).
 Sharpshooter and Ranger inherit the bow-chassis changes; re-measure them at their reworks.
 Quickdraw sim notes: BUILDS needs offhandQuiver (equips the quiver + stocks 1e9 t19 arrows +
 equippedArrow); the deterministic cycle makes runs cleaner than melee classes'; **Templar**
@@ -85,9 +87,11 @@ simmed, which exposed the scepter chassis: the swing's Light half carried the fu
 Attunement/element-gear multiplier inside its advantage term — rings AND attunement, a
 double-dip physical weapons don't get — and Gloria at 150%/stack x lightMult reached ~30
 average hits per Amen; start 839B-1248B. Chassis rebalance: the light half keeps only the
-elemental matchup, scepter dmgMult 0.58. Kit tune: verses 12%, Doxology 3%/verse, Gloria
-0.35 x avgHit/stack flat, Sunwyrm +15% vs Dark, Sunburst +30%) Sunwyrm ~92B / Retribution
-~85B at 90s, Lichbane/Sunbrand between — the tightest legendary spread of any rework (set
+elemental matchup, TPL_LITANY_SWING_MULT 0.58 — a Lv1 Litany mechanic, raw swings channel
+42% less while chanting (replaced the briefly-shipped scepter dmgMult per the owner rule).
+Kit tune: verses 12%, Doxology 3%/verse, Gloria 0.35 x avgHit/stack flat, Sunwyrm +15% vs
+Dark, Sunburst +30%) Sunwyrm ~89B / Retribution ~77B at 90s,
+Lichbane/Sunbrand between — the tightest legendary spread of any rework (set
 D4 Solar Heart/Sunburst Zeal, ward slot fixed to Sunscale: Hallowlight/Sanctveil key off
 ward reflects, which the zero-offense dummy never triggers, and Aegisveil is defensive).
 Templar sim notes: BUILDS needs offhandWard; **measurement window matters** — mastery/
