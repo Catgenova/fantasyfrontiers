@@ -46,3 +46,32 @@ Rules:
 - Discord community feed: `discordFeedPost()` in index.html mirrors Fantastic-rarity
   creations and +12-or-better enhances (with item stats) to the channel webhook; posts fire
   only from the acting player's client, including offline catch-up rolls.
+
+## Max-ceiling DPS simulation (run after EVERY class rework)
+
+`scripts/dpssim.mjs` measures real sustained DPS by booting the live game headless
+(`?selftest` seam + the selftest-only `__FF._startLoop`), seeding a fully maxed state, and
+fighting a zero-offense Archdemon (real dodge/armor) while sampling `act.monsterHp`.
+Run: `SIM_MS=45000 PW_CHROMIUM=/opt/pw-browsers/chromium node scripts/dpssim.mjs`.
+After each class rework, adapt `CONFIGS` + `setup()` to that class and run the matrix —
+compare against the Summoner v0.0.57.11 baseline (Baton ~53B / Broodwyrm ~43B / Packbrand
+~35B / Necrocaller ~35B DPS) so reworked classes land on a comparable ceiling.
+
+The owner-approved best-in-slot rules (v0.0.57.11):
+
+- **Every slot filled, all fantastic**: class weapon (legendary effect per config), full
+  class D-set armor, legendary Shroud back (A/B Ruin / Warpack / Widow per class), 5 rings
+  (legendary Signets for the class + unique rings for its scaling stat, e.g. Communion for
+  familiar classes), amulet, unique t20 relic (+dmg%!), unique t20 belt.
+- **Enchant THEN enhance is the intended min-max order** (owner-confirmed): give each
+  unique its 4 max fantastic enchant lines FIRST, then `enhance: 15` — the +15 multiplies
+  base AND enchant stats ×6. The enchant lock is one-directional (no NEW enchants after
+  enhancing); never "fix" this stacking, it is by design.
+- Max everything else: all `st.xp` keys Lv100 **plus the per-style weapon key** (e.g.
+  `st.xp.staff` — accuracy reads the typeId, not the shared proficiency) and every
+  `st.physique[id]` (separate map; accuracy/crit read it — misses read as 0 DPS otherwise).
+- **NO consumables** (owner rule): no Catalyst/elixirs/potions, no Faith actives, no
+  server-wide buffs.
+- Familiars (when the class uses them): fill every slot, Lv100 + 3 stars.
+- The harness caught the assassin-gated Downbeat bug — trust a 0-stat anomaly over the
+  test suite; unit tests call effect functions directly and can miss dead wiring.
