@@ -4060,9 +4060,9 @@
   // Bows trade fire rate for hit: the slower the draw, the harder each arrow lands. Short is the damage
   // baseline (dmgMult 1); Medium x1.25 (attackSpeed 5); Long x1.5 (attackSpeed 6, slowest -> hardest).
   var BOW_WEAPON_TYPES = [
-    {id:'bowShort',  name:'Short Bow',  icon:svgIcon('bow','#a8895c'), damageType:'piercing', attackTypes:{piercing:0.8, slashing:0.1, blunt:0.1}, hand:'bow', weaponClass:'Bow', skillId:'bowyer', matPrefix:'forestry', tierCount:TIER_COUNT, attackSpeed:4, dmgMult:1.0},
-    {id:'bowMedium', name:'Medium Bow', icon:svgIcon('bow','#8a6a42'), damageType:'piercing', attackTypes:{piercing:0.8, slashing:0.1, blunt:0.1}, hand:'bow', weaponClass:'Bow', skillId:'bowyer', matPrefix:'forestry', tierCount:TIER_COUNT, attackSpeed:5, dmgMult:1.25},
-    {id:'bowLong',   name:'Long Bow',   icon:svgIcon('bow','#6a4a2a'), damageType:'piercing', attackTypes:{piercing:0.8, slashing:0.1, blunt:0.1}, hand:'bow', weaponClass:'Bow', skillId:'bowyer', matPrefix:'forestry', tierCount:TIER_COUNT, attackSpeed:6, dmgMult:1.5}
+    {id:'bowShort',  name:'Short Bow',  icon:svgIcon('bow','#a8895c'), damageType:'piercing', attackTypes:{piercing:0.8, slashing:0.1, blunt:0.1}, hand:'bow', weaponClass:'Bow', skillId:'bowyer', matPrefix:'forestry', tierCount:TIER_COUNT, attackSpeed:4, dmgMult:0.85},
+    {id:'bowMedium', name:'Medium Bow', icon:svgIcon('bow','#8a6a42'), damageType:'piercing', attackTypes:{piercing:0.8, slashing:0.1, blunt:0.1}, hand:'bow', weaponClass:'Bow', skillId:'bowyer', matPrefix:'forestry', tierCount:TIER_COUNT, attackSpeed:5, dmgMult:1.06},
+    {id:'bowLong',   name:'Long Bow',   icon:svgIcon('bow','#6a4a2a'), damageType:'piercing', attackTypes:{piercing:0.8, slashing:0.1, blunt:0.1}, hand:'bow', weaponClass:'Bow', skillId:'bowyer', matPrefix:'forestry', tierCount:TIER_COUNT, attackSpeed:6, dmgMult:1.27}
   ];
   // ===== Wands (Arcanism one-handed weapons) =====
   // A Wand is a 1h mainhand crafted by Arcanism that deals ELEMENTAL damage of its element (gaining the
@@ -7106,9 +7106,9 @@
   //   Lv 80 Fusillade          -- a completed rotation loads all four heads onto the next shot
   var QD_HEADS = ['barbed', 'blast', 'piercer', 'serpent'];
   var QD_CYCLE_EVERY = 4, QD_CYCLE_EVERY_D1 = 3;        // Deft Hands (D1 2pc): a faster rotation
-  var QD_TRICK_MULT = 1.4;                              // Broadheads (Lv60) trick-shot damage; Heavy Heads (D4 2pc) stacks another
-  var QD_RIDER_MULT = 1.5;                              // Broadheads (Lv60) rider power
-  var QD_BARBED_PCT = 0.40, QD_BLAST_PCT = 0.50, QD_SERPENT_PCT = 0.40; // rider magnitudes (share of the carrying hit)
+  var QD_TRICK_MULT = 1.2;                              // Broadheads (Lv60) trick-shot damage; Heavy Heads (D4 2pc) stacks another
+  var QD_RIDER_MULT = 1.25;                             // Broadheads (Lv60) rider power
+  var QD_BARBED_PCT = 0.30, QD_BLAST_PCT = 0.35, QD_SERPENT_PCT = 0.30; // rider magnitudes (share of the carrying hit)
   var QD_RIDER_MS = 4000;                               // rider duration (Lingering Toxins D3 2pc doubles it)
   var QD_RUNAWAY_SHOTS = 3;                             // Runaway Quiver (D4 full)
   var QD_SNARE_MS = 4000, QD_SNARE_SLOW = 0.30;         // Websnare's fifth Fusillade head
@@ -7141,14 +7141,14 @@
       act.bleedUntil = Math.max(act.bleedUntil||0, now + dur);
       if(!offlineCapture) spawnCombatFloat('Barbed Head!', 'ft-rare', true);
     } else if(head === 'blast'){ // an instant eruption; Breathfang doubles it and lights it as Fire
-      var _burst = Math.round(hit * QD_BLAST_PCT * pow * (legActive('breathfang', st) ? 2 * elementDmgMult(st, 'fire') : 1));
+      var _burst = Math.round(hit * QD_BLAST_PCT * pow * (legActive('breathfang', st) ? 1.5 * elementDmgMult(st, 'fire') : 1));
       if(_burst > 0 && (act.monsterHp||0) > 0){
         act.monsterHp -= _burst;
         if(legActive('breathfang', st)) awardElementXp('fire', _burst);
         if(!offlineCapture) spawnCombatFloat('Blasthead -'+fmt(_burst), 'ft-crit', true);
       }
     } else if(head === 'piercer'){ // pays back the carrying hit's armour shortfall, then Shreds (shared Sunder channel)
-      var _pierce = (advantage && advantage < 1) ? Math.round(hit * (1 - advantage) / Math.max(0.05, advantage) * pow) : 0;
+      var _pierce = (advantage && advantage < 1) ? Math.round(hit * Math.min(1, (1 - advantage) / Math.max(0.05, advantage)) * pow) : 0; // capped at 1x the hit
       if(_pierce > 0 && (act.monsterHp||0) > 0){ act.monsterHp -= _pierce; if(!offlineCapture) spawnCombatFloat('Piercer -'+fmt(_pierce), 'ft-rare', true); }
       st.classDebuffs = st.classDebuffs || {};
       st.classDebuffs.enemyArmorUntil = Math.max(st.classDebuffs.enemyArmorUntil||0, now + dur);
