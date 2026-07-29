@@ -4509,13 +4509,13 @@
     for(var i = cap; i >= 0; i--){ var aid = 'fletching_arrow_t'+i; if(!locked[aid]) n += (st.inventory && st.inventory[aid]) || 0; }
     return n;
   }
-  // A nocked arrow adds base damage equal to a same-tier bow (handBonus 1.0), so higher-tier arrows hit
-  // meaningfully harder. Returns {dmgMin,dmgMax} for the arrow id, or null.
+  // A nocked arrow adds base damage equal to a same-tier SHORT BOW (its 0.85 damage multiplier included,
+  // so the arrow tracks the bow-chassis rebalance), so higher-tier arrows hit meaningfully harder.
   function arrowBaseDamage(arrowId){
     var m = /^fletching_arrow_t(\d+)$/.exec(arrowId || '');
     if(!m) return null;
     var i = +m[1];
-    return { dmgMin: Math.max(1, Math.round(tierStat(2, i))), dmgMax: Math.max(2, Math.round(tierStat(5, i))) };
+    return { dmgMin: Math.max(1, Math.round(tierStat(2, i) * 0.85)), dmgMax: Math.max(2, Math.round(tierStat(5, i) * 0.85)) };
   }
   // Off-hand Claw: a second weapon sharing the off-hand slot (equippedOffhand='claw'). Only valid while
   // a Claw is the main hand. getEquippedOffhandItem returns null for it (it's a weapon, not defensive gear).
@@ -5329,7 +5329,7 @@
     { key:'wrathscale',     name:'Wrathscale Hammer', group:'blunt', slot:'mainhand', base:'warhammer', cls:'berserker', desc:'+10% damage for every 10% of max Health you currently have (up to +100% at a full bar).' },
     { key:'magmacore',      name:'Magmacore Sledge', group:'blunt', slot:'mainhand', base:'sledge',   cls:'juggernaut', desc:'Your Wind-Up swings erupt with a Fire nova (+25%).' },
     // Ranged weapons (mainhand)
-    { key:'breathfang',  name:'Breathfang Bow',  group:'ranged', slot:'mainhand', base:'bowShort',  cls:'quickdraw',    desc:'Your Blasthead erupts twice, and its eruptions strike as Fire scaling with your Fire Attunement.' },
+    { key:'breathfang',  name:'Breathfang Bow',  group:'ranged', slot:'mainhand', base:'bowShort',  cls:'quickdraw',    desc:'Your Blasthead erupts 50% harder and burns as Fire, scaling with your Fire Attunement.' },
     { key:'wyrmstalker', name:'Wyrmstalker Bow', group:'ranged', slot:'mainhand', base:'bowMedium', cls:'ranger',       desc:'Your hits Scorch a foe that already carries an ailment.' },
     { key:'dragoneye',   name:'Dragoneye Bow',   group:'ranged', slot:'mainhand', base:'bowLong',   cls:'sharpshooter', desc:"Your Critical Hits also strike the foe's elemental weakness (+20%)." }
   ];
@@ -5669,7 +5669,7 @@
         { level:1,  name:'Quiver Cycle',       desc:'Every <b>4th shot</b> is a <b>Trick Arrow</b>, cycling Barbed Head (Bleed) &rarr; Blasthead (burst) &rarr; Piercer (armor-breaker) &rarr; Serpent Fang (venom).' },
         { level:20, name:"Fletcher's Economy", desc:'Trick Arrows <b>consume no ammo</b> &mdash; the fanciest heads in the quiver fire for free.' },
         { level:40, name:'Quick Hands',        desc:'A Critical Hit advances the cycle <b>+1</b> on top of the shot.' },
-        { level:60, name:'Broadheads',         desc:'Trick Arrows strike <b>+40% harder</b> and their riders (Bleed, Blast, Shred, Venom) are <b>50% stronger</b>.' },
+        { level:60, name:'Broadheads',         desc:'Trick Arrows strike <b>+20% harder</b> and their riders (Bleed, Blast, Shred, Venom) are <b>25% stronger</b>.' },
         { level:80, name:'Fusillade',          desc:'Completing a full rotation loads the next shot with <b>all four heads at once</b>.' }
       ]
     },
@@ -6290,7 +6290,7 @@
     reaver:        { name:'Bloodscale Hide',       b2:{ key:'d4_searingwounds', name:'Searing Wounds',desc:'Your Bleeds also deal Fire damage.' },
                                                    bf:{ key:'d4_cauterize',     name:'Cauterize',     desc:'You heal for 15% of the Fire damage your Bleeds deal.' } },
     // --- Dragon's Breath: charge a burst meter, then unleash a breath weapon ---
-    quickdraw:     { name:"Fusilier's Leathers",   b2:{ key:'d4_heavyheads',    name:'Heavy Heads',   desc:'Your Trick Arrows strike +40% harder.' },
+    quickdraw:     { name:"Fusilier's Leathers",   b2:{ key:'d4_heavyheads',    name:'Heavy Heads',   desc:'Your Trick Arrows strike +20% harder.' },
                                                    bf:{ key:'d4_runaway',       name:'Runaway Quiver',desc:'After a Fusillade, your next 3 shots are all Trick Arrows.' } },
     ranger:        { name:'Wyrmstalker Garb',      b2:{ key:'d4_elementaltraps',name:'Elemental Traps',desc:"Your ailment procs charge Dragon's Breath." },
                                                    bf:{ key:'d4_venombreath',   name:'Venombreath',   desc:'Your Breath applies all your ailments to the foe.' } },
@@ -7102,7 +7102,7 @@
   //   Lv 1  Quiver Cycle       -- every 4th shot is a Trick Arrow (Deft Hands D1 2pc: every 3rd)
   //   Lv 20 Fletcher's Economy -- Trick Arrows consume no ammo
   //   Lv 40 Quick Hands        -- a Critical Hit advances the cycle +1 (toward the NEXT trick)
-  //   Lv 60 Broadheads         -- Trick Arrows +40% damage; riders 50% stronger
+  //   Lv 60 Broadheads         -- Trick Arrows +20% damage; riders 25% stronger
   //   Lv 80 Fusillade          -- a completed rotation loads all four heads onto the next shot
   var QD_HEADS = ['barbed', 'blast', 'piercer', 'serpent'];
   var QD_CYCLE_EVERY = 4, QD_CYCLE_EVERY_D1 = 3;        // Deft Hands (D1 2pc): a faster rotation
@@ -23711,10 +23711,10 @@
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
     { v:'0.0.60', date:'Jul 29', heading:'Quickdraw rework: The Quiverlord', items:[
-      'The quiver is now a rotation: every 4th shot is a Trick Arrow, cycling Barbed Head (a weapon-scaled Bleed) → Blasthead (an instant eruption) → Piercer (pays back the shot\'s armour loss and Shreds the foe) → Serpent Fang (venom, 40% of the hit over 4s). Every rider scales off the very hit that carried it.',
-      'Five new passives: Quiver Cycle (Lv1) · Fletcher\'s Economy (Lv20, Trick Arrows consume no ammo — the specialty heads fire for free) · Quick Hands (Lv40, a Critical Hit advances the cycle +1) · Broadheads (Lv60, Trick Arrows +40% and riders 50% stronger) · Fusillade (Lv80, a completed rotation loads the next shot with all four heads at once).',
-      'Sets rebuilt around the rotation: Fangflight (D1) runs the cycle every 3rd shot and its Echo Volley fires the Fusillade twice; Snakebite Leathers (D2) keeps Rapid Reload and Dead Aim makes Trick Arrows guaranteed Critical Hits; Venomcrypt Leathers (D3): Lingering Toxins doubles rider duration and Opened Veins adds +15% while the foe bears a rider; the new Fusilier\'s Leathers (D4): Heavy Heads (+40% Trick Arrows) and Runaway Quiver (after a Fusillade, the next 3 shots are all Trick Arrows).',
-      'All four short bows rebuilt: Websnare (a fifth Snare head on the Fusillade — 30% slow — and the Fusillade strikes +50%), Serpentcoil (Bleed/Venom riders tick +30%), Cryptvenom (+25% from everything while the foe bears all three marks), Breathfang Bow (the Blasthead erupts twice, as Fire scaling with Fire Attunement).',
+      'The quiver is now a rotation: every 4th shot is a Trick Arrow, cycling Barbed Head (a weapon-scaled Bleed) → Blasthead (an instant eruption) → Piercer (pays back the shot\'s armour loss and Shreds the foe) → Serpent Fang (venom). Every rider scales off the very hit that carried it.',
+      'Five new passives: Quiver Cycle (Lv1) · Fletcher\'s Economy (Lv20, Trick Arrows consume no ammo — the specialty heads fire for free) · Quick Hands (Lv40, a Critical Hit advances the cycle +1) · Broadheads (Lv60, Trick Arrows +20% and riders 25% stronger) · Fusillade (Lv80, a completed rotation loads the next shot with all four heads at once).',
+      'Sets rebuilt around the rotation: Fangflight (D1) runs the cycle every 3rd shot and its Echo Volley fires the Fusillade twice; Snakebite Leathers (D2) keeps Rapid Reload and Dead Aim makes Trick Arrows guaranteed Critical Hits; Venomcrypt Leathers (D3): Lingering Toxins doubles rider duration and Opened Veins adds +15% while the foe bears a rider; the new Fusilier\'s Leathers (D4): Heavy Heads (+20% Trick Arrows) and Runaway Quiver (after a Fusillade, the next 3 shots are all Trick Arrows).',
+      'All four short bows rebuilt: Websnare (a fifth Snare head on the Fusillade — 30% slow — and the Fusillade strikes +50%), Serpentcoil (Bleed/Venom riders tick +30%), Cryptvenom (+25% from everything while the foe bears all three marks), Breathfang Bow (the Blasthead erupts 50% harder and burns as Fire, scaling with Fire Attunement).',
       'Retired: Trick Shot\'s free arrows (crits accelerate the rotation instead), Second Wind\'s below-40%-HP camp (same cleanup as the Berserker rework), Twin Fang\'s coin-flip second arrow, Eagle Eye, and Serpent\'s Sting (promoted into the Serpent Fang head). The Quickdraw also leaves the Dragon\'s Breath pillar — Executioner, Sharpshooter and Ranger keep it.',
       'Also fixed: the Reaper\'s new D4 set shared its "Carrion Shroud" name with the Plaguebearer\'s D3 set — the Reaper\'s is now the Festerweave Shroud.'
     ]},

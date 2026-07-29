@@ -11736,7 +11736,7 @@
     eq(FF.armorMaterialBonusLines('tailoring','chest','normal').join('|'), '+5% Familiar spell potency', 'cloth card: +5% familiar potency at Normal');
     eq(FF.armorMaterialBonusLines('tailoring','chest','fantastic').join('|'), '+40% Familiar spell potency', 'cloth card: +40% at Fantastic');
     eq(FF.armorMaterialBonusLines('chain','helmet','rare').join('|'), '+10% Melee damage', 'chain card: +10% melee at Rare');
-    eq(FF.armorMaterialBonusLines('leather','boots','supreme').join('|'), '+20% Ranged damage|+4% Dodge chance', 'leather card: ranged + dodge at Supreme');
+    eq(FF.armorMaterialBonusLines('leather','boots','supreme').join('|'), '+12% Ranged damage|+4% Dodge chance', 'leather card: ranged + dodge at Supreme (3%/slot since the bow-chassis rebalance)');
     eq(FF.armorMaterialBonusLines('plate','helmet','normal').join('|'), '+5% Block chance', 'plate helmet card: +5% block');
     eq(FF.armorMaterialBonusLines('plate','chest','fantastic').join('|'), '', 'plate CHEST card: no block bonus (chest is excluded)');
   });
