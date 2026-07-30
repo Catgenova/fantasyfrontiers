@@ -10289,6 +10289,55 @@
     } finally { S.inventory = saveInv; }
   });
 
+  // ---- ticket-0111: a saved loadout must follow an equipped piece through its upgrade --------------
+  suite('loadouts: upgrading an equipped piece keeps it in saved kits', function(){
+    var S = FF._state;
+    var snap = { ba:S.bodyArmor, ui:S.uniqueItems, inv:S.inventory, lo:S.loadouts };
+    try {
+      var BASE = 'bodyarmor_tailoring_gauntlets_t' + (FF.TIER_COUNT - 2) + '_rare'; // one below top, a normal craft
+      var TIER = FF.TIER_COUNT - 1; // slot tiers are 1-based against the base id's 0-based index
+
+      // --- The reported case: no spare copy in the bag ---
+      S.uniqueItems = {}; S.inventory = {};
+      S.bodyArmor = { gauntlets:{ material:'tailoring', tier:TIER, rarity:'rare' } };
+      FF.ensureLoadouts();
+      FF.saveLoadoutPreset(0);
+      eq(!!S.loadouts[0].gear.gauntlets.uid, false, 'the preset saved a plain stackable (no uid)');
+      var uid = FF.convertEquippedToUnique('armor:gauntlets');
+      ok(!!uid, 'enhancing the equipped piece mints a unique');
+      eq(S.loadouts[0].gear.gauntlets.uid, uid, 'the saved preset now tracks that unique (ticket-0111)');
+      // Swap away and back: the piece must come back, and it must be the UPGRADED one.
+      FF.applyCombatLoadout({});
+      var res = FF.applyCombatLoadout(S.loadouts[0].gear);
+      eq(res.dropped, 0, 'nothing is dropped on the way back');
+      eq(res.restored, 1, '...the slot is restored');
+      eq(S.bodyArmor.gauntlets.uid, uid, '...and it is the upgraded unique, not a fresh stackable');
+
+      // --- The guard: a spare stackable of the same base is still owned ---
+      S.uniqueItems = {}; S.inventory = {}; S.inventory[BASE] = 1;
+      S.bodyArmor = { gauntlets:{ material:'tailoring', tier:TIER, rarity:'rare' } };
+      FF.saveLoadoutPreset(0);
+      var uid2 = FF.convertEquippedToUnique('armor:gauntlets');
+      ok(!!uid2, 'the spare-copy scenario still mints a unique');
+      eq(!!S.loadouts[0].gear.gauntlets.uid, false, 'the preset is left alone while a spare stackable exists');
+      FF.applyCombatLoadout({});
+      var res2 = FF.applyCombatLoadout(S.loadouts[0].gear);
+      eq(res2.restored, 1, 'the preset still resolves, using the spare');
+      eq(!!S.bodyArmor.gauntlets.uid, false, '...and it did NOT hijack the upgraded copy');
+
+      // --- Only the matching slot/item is rewritten ---
+      S.uniqueItems = {}; S.inventory = {};
+      S.bodyArmor = { gauntlets:{ material:'tailoring', tier:TIER, rarity:'rare' }, boots:{ material:'tailoring', tier:TIER, rarity:'rare' } };
+      FF.saveLoadoutPreset(0);
+      var uid3 = FF.convertEquippedToUnique('armor:gauntlets');
+      eq(S.loadouts[0].gear.gauntlets.uid, uid3, 'the upgraded slot is re-pointed');
+      eq(!!S.loadouts[0].gear.boots.uid, false, '...and an identical piece in ANOTHER slot is untouched');
+      // A no-op for junk input.
+      eq(FF.loadoutsFollowUpgrade('armor:gauntlets', null, BASE), 0, 'no uid -> no rewrite');
+      eq(FF.loadoutsFollowUpgrade('nonsense:slot', 'u1', BASE), 0, 'an unknown slot key is a safe no-op');
+    } finally { S.bodyArmor=snap.ba; S.uniqueItems=snap.ui; S.inventory=snap.inv; S.loadouts=snap.lo; }
+  });
+
   // ---- ticket-0109 sweep: every refused gesture toasts, combat narration does not -----------------
   suite('ui: refused gestures surface a toast', function(){
     function toastEl(){ return document.getElementById('gameToast'); }
