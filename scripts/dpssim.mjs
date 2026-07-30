@@ -100,6 +100,19 @@ const BUILDS = {
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
   },
+  herald: {
+    // Mace + large shield, full plate. The FIRST tank simmed, and the first shield offhand. His whole kit
+    // used to key off being hit; the Bastion's self-driven Brace clock (every 5s, counting as a Block for
+    // every effect) is what makes him measurable against a zero-offense dummy at all. Ironclad converts the
+    // LIVE Armor rating into damage, so the BiS plate + Fortress ramp are offense here -- expect the armour
+    // number itself to be the balance surface. Owner target: ~60B (a tank band, below the 70-90B dps classes).
+    // Sim-dead: Bastion's hit cap, Unbreakable's mitigation, real Blocks (the dummy never swings).
+    weapon: { typeId: "mace", base: "stweapon_mace_t19_fantastic", tier: 19, styleXp: ["mace"] },
+    legs: ["shieldbash", "wallbreaker", "tombshatter", "bastionbreaker"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "blunt",
+    offhandShield: { type: "shieldLarge", leg: "bulwarkbreach" }, // the biggest wall = the biggest Breach
+  },
   knight: {
     // Claymore (6s two-hander) -- 90s window: compare vs Berserker 82B / Warpriest 89B @90s, never the
     // 45s classes. The zero-offense dummy never triggers Rally, and Shieldwall/Under One Banner are
@@ -175,6 +188,14 @@ async function setup(cfg) {
       st.uniqueItems.SIMWD = { uid: "SIMWD", leg: cfg.offhandWard, kind: "offhand", base: "stward_wardLight_t20_fantastic",
         tier: 20, rarity: "fantastic", enchants: [], enhance: 15 };
       st.equippedOffhand = "wardLight"; st.equippedOffhandTier = 20; st.equippedOffhandRarity = "fantastic"; st.equippedOffhandUid = "SIMWD";
+    } else if (cfg.offhandShield) {
+      // A large/small shield offhand (Herald, Sentinel, Treasure Hunter). Its legendary sits on the shield,
+      // and its Block chance matters only against a foe that swings -- the dummy doesn't, so the Bastion is
+      // measured on its self-driven Braces, exactly as designed.
+      st.uniqueItems.SIMSH = { uid: "SIMSH", leg: cfg.offhandShield.leg, kind: "offhand",
+        base: `stshield_${cfg.offhandShield.type}_t19_fantastic`, tier: 19, rarity: "fantastic", enchants: [], enhance: 15 };
+      st.equippedOffhand = cfg.offhandShield.type; st.equippedOffhandTier = 20; st.equippedOffhandRarity = "fantastic";
+      st.equippedOffhandUid = "SIMSH";
     } else if (cfg.offhandQuiver) {
       st.equippedOffhand = "quiver"; st.equippedOffhandTier = 20; st.equippedOffhandRarity = "fantastic"; st.equippedOffhandUid = null;
       st.inventory = st.inventory || {};
@@ -243,7 +264,7 @@ async function sample() {
 
 async function runOne(name, cfg, ms) {
   const full = { ...cfg, weapon: BUILD.weapon, styleXp: BUILD.weapon.styleXp, offhandClaw: !!BUILD.offhandClaw,
-    offhandQuiver: !!BUILD.offhandQuiver, offhandWard: BUILD.offhandWard || null, signets: BUILD.signets,
+    offhandQuiver: !!BUILD.offhandQuiver, offhandWard: BUILD.offhandWard || null, offhandShield: BUILD.offhandShield || null, signets: BUILD.signets,
     uniqueRingType: BUILD.uniqueRingType, weaponLines: BUILD.weaponLines(cfg.leg), jewelLines: BUILD.jewelLines || null, primeLedger: !!BUILD.primeLedger };
   const diag = await setup(full);
   await page.evaluate(() => window.__FF._startLoop());
