@@ -5204,10 +5204,10 @@
       return st;
     }
 
-    // Shield Bash (herald/mace): a Block smashes the attacker for half your Armor rating.
-    eq(FF.legShieldBashDamage(200, legSt('shieldbash')), 100, 'Shield Bash deals 50% of Armor on a Block');
-    eq(FF.legShieldBashDamage(200, legSt('titaniccrits')), 0, 'Shield Bash is inert without its legendary');
-    eq(FF.legShieldBashDamage(0, legSt('shieldbash')), 1, 'Shield Bash floors at 1 even with no Armor');
+    // Cave-In (herald/mace, key shieldbash): the Bastion's Retorts strike twice.
+    eq(FF.heraldRetortStrikes(legSt('shieldbash')), 2, 'Cave-In: Retorts strike twice');
+    eq(FF.heraldRetortStrikes(legSt('titaniccrits')), 1, 'one Retort strike without Cave-In');
+    ok(/strike twice/.test(FF.LEGENDARY_GEAR_ITEMS[FF.legGearItemId('shieldbash','normal')].desc), 'Cave-In desc: Retorts strike twice');
 
     // Crushing Reprisal (sentinel/maul): thorns can crit, and the crit deals +100% extra crit damage.
     eq(FF.legReflectCanCrit(legSt('crushingreprisal')), true, 'Crushing Reprisal lets a reflect crit');
@@ -5352,9 +5352,9 @@
     near(FF.legAttackSpeedMult(legSt('frenziedguard', 'shieldSmall', { frenziedGuardUntil: Date.now()-1 })), 1, 'the Frenzied Guard window expires');
     near(FF.legAttackSpeedMult(legSt('immunize', 'shieldSmall', { frenziedGuardUntil: Date.now()+2000 })), 1, 'no haste without Frenzied Guard');
 
-    // Perfect Bulwark (herald/shieldLarge): the Perfect Guard stack cap rises to 8 (-40%); a miss drops one stack.
-    eq(FF.heraldGuardMaxStacks(legSt('perfectbulwark', 'shieldLarge')), 8, 'Perfect Bulwark raises the Perfect Guard cap to 8');
-    eq(FF.heraldGuardMaxStacks(legSt('immunize')), FF.HERALD_GUARD_MAX_STACKS, 'the base Perfect Guard cap is 5');
+    // Deepwall (herald/shieldLarge, key perfectbulwark): the Barrier banks 50% faster.
+    near(FF.HERALD_DEEPWALL_MULT, 1.50, 'Deepwall: the Barrier banks 50% faster');
+    ok(FF.legActive('perfectbulwark', legSt('perfectbulwark', 'shieldLarge')), 'legActive detects Deepwall');
     function hgear(stacks, bulwark){
       var st = { xp:{ herald: FF.xpFloorForLevel(85) }, physique:{}, equippedMainhand:'mace', equippedOffhand:'shieldLarge',
         bodyArmor:{ helmet:armor('plate'), chest:armor('plate'), gauntlets:armor('plate'), boots:armor('plate') },
@@ -5363,8 +5363,9 @@
       return st;
     }
     eq(FF.activeClassId(hgear(0, false)), 'herald', 'mace + large shield + full plate => Herald');
-    near(FF.heraldGuardMult(hgear(5, false)), 0.75, 'base Perfect Guard caps at -25% (5 stacks)', 1e-9);
-    near(FF.heraldGuardMult(hgear(8, true)), 0.60, 'Perfect Bulwark deepens Perfect Guard to -40% (8 stacks)', 1e-9);
+    // (Perfect Guard's streak reduction retired with the Bastion -- the Barrier absorbs instead.)
+    ok(typeof FF.heraldGuardMult === 'undefined', 'the Perfect Guard streak helper is gone');
+    ok(hgear(0, true).uniqueItems.L.leg === 'perfectbulwark', 'the Deepwall fixture equips the shield');
 
     // Thornmail Shield (sentinel/shieldMedium): while at full Health, the thorns reflect is doubled.
     function sgear(hp, thornmail){
@@ -5611,8 +5612,9 @@
       return st;
     }
     var now = Date.now();
-    // Wallbreaker (herald/mace): +4% damage per Perfect Guard stack.
-    near(FF.d2LegDmgMult({}, legSt('wallbreaker','mace',{ heraldGuardStacks:3 })), 1.12, 'Wallbreaker: +4% per Perfect Guard stack (3 -> +12%)');
+    // Wallbreaker (herald/mace): +6% damage per 10% of the Barrier banked -- it rides heraldBarrierDmgMult now.
+    near(FF.LEG_WALLBREAKER_PER_10, 0.06, 'Wallbreaker: +6% per 10% Barrier banked');
+    near(FF.d2LegDmgMult({}, legSt('wallbreaker','mace',{ heraldBarrier:0 })), 1.0, 'Wallbreaker no longer rides the D2 legendary damage row');
     near(FF.d2LegDmgMult({}, legSt('wallbreaker','mace')), 1.0, 'Wallbreaker inert with no Guard stacks');
     // Trapmaster (ranger/bowMedium): +20% vs an ailing foe.
     near(FF.d2LegDmgMult({}, legSt('trapmaster','bowMedium',{ activity:{type:'combat', monsterHp:100, bleedUntil:now+4000} })), 1.20, 'Trapmaster: +20% vs an ailing (bleeding) foe');
@@ -6977,7 +6979,7 @@
   // ---- D2 sets: Batch C effects (tank / defense / utility) -------------------------------------------
   suite('D2 sets: Batch C combat effects', function(){
     var s = FF._state;
-    var sv = { ba:s.bodyArmor, ui:s.uniqueItems, hp:s.playerHp, act:s.activity, hg:s.heraldGuardStacks, ks:s.knightStacks, cs:s.d2CounterstanceUntil };
+    var sv = { ba:s.bodyArmor, ui:s.uniqueItems, hp:s.playerHp, act:s.activity, hg:s.heraldBarrier, ks:s.knightStacks, cs:s.d2CounterstanceUntil };
     function wearD2(cls, n){
       var order = FF.D2_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
       s.bodyArmor = {}; s.uniqueItems = {};
@@ -6986,12 +6988,13 @@
     var foe = { hp:1000 };
     try {
       s.playerHp = FF.maxHp(s); s.activity = { type:'combat', monsterHp:800 };
-      // Herald Momentum Guard (2pc): +2% damage per Perfect Guard stack.
-      wearD2('herald', 2); var gmax = FF.heraldGuardMaxStacks(s); s.heraldGuardStacks = Math.min(gmax, 3);
-      near(FF.d2SetDmgMult(foe, s), 1 + 0.02*Math.min(gmax,3), 'Herald Momentum Guard: +2% per Perfect Guard stack');
-      // Herald Immovable (full): -15% damage taken at max Perfect Guard.
-      wearD2('herald', 4); s.heraldGuardStacks = gmax; near(FF.d2IncomingDmgMult(s), 0.85, 'Herald Immovable: -15% damage at max Guard');
-      s.heraldGuardStacks = 0; near(FF.d2IncomingDmgMult(s), 1.0, 'Immovable inert below max Guard');
+      // Herald Momentum Guard (2pc): +4% damage per 10% Barrier banked -- it rides heraldBarrierDmgMult now,
+      // so the generic D2 damage row stays flat; Siegework (full) shortens the Brace cadence.
+      wearD2('herald', 2); near(FF.d2SetDmgMult(foe, s), 1.0, 'Momentum Guard rides the Barrier row, not the D2 set row');
+      near(FF.HERALD_MOMENTUM_PER_10, 0.04, 'Momentum Guard: +4% per 10% Barrier');
+      wearD2('herald', 4); near(FF.d2IncomingDmgMult(s), 1.0, 'no D2 incoming reduction for the Bastion (Immovable retired)');
+      eq(FF.D2_SET_DEFS.herald.bf.name, 'Siegework', 'Herald D2 full is Siegework');
+      eq(FF.heraldBraceMs(s), FF.HERALD_BRACE_MS_D2, 'Siegework: the Brace clock runs every 3.5s');
       // Duelist En Garde (full): +12% Dodge; Counterstance (2pc): -35% for 2s after a Dodge.
       wearD2('duelist', 4); near(FF.d2SetDodgeBonus(s), 0.12, 'Duelist En Garde: +12% Dodge');
       wearD2('duelist', 2); s.d2CounterstanceUntil = Date.now()+2000; near(FF.d2IncomingDmgMult(s), 0.65, 'Duelist Counterstance: -35% just after a Dodge');
@@ -7010,7 +7013,7 @@
       s.knightStacks = 0;
       // Lumen Radiance (2pc): Reflected Light heals +50%.
       wearD2('lumen', 2); near(FF.lumenReflectD2Mult(s), 1.5, 'Lumen Radiance: +50% Reflected Light heal');
-    } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; s.heraldGuardStacks=sv.hg; s.knightStacks=sv.ks; s.d2CounterstanceUntil=sv.cs; }
+    } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; s.heraldBarrier=sv.hg; s.knightStacks=sv.ks; s.d2CounterstanceUntil=sv.cs; }
   });
 
   // ---- D2 sets: Batch D effects (DoT / ailment) ------------------------------------------------------
@@ -7417,9 +7420,9 @@
       return st;
     }
 
-    // Herald Full Retort (2pc): a Block reflects 100% of what it prevented (up from 50%).
-    near(FF.heraldRipostePct(setSt('herald',2)), 1.0, 'Full Retort (2pc): reflect 100% of a Block');
-    near(FF.heraldRipostePct(setSt('herald',1)), FF.HERALD_RIPOSTE_PCT, '1 piece -> base 50% Riposte');
+    // Herald Full Retort (2pc): Retorts strike double.
+    eq(FF.heraldRetortStrikes(setSt('herald',2)), 2, 'Full Retort (2pc): Retorts strike double');
+    eq(FF.heraldRetortStrikes(setSt('herald',1)), 1, '1 piece -> a single Retort strike');
     // Herald Bastion (full): no single blow exceeds 25% of max HP.
     var hFull = setSt('herald',4); var hCap = Math.max(1, Math.round(FF.maxHp(hFull) * 0.25));
     eq(FF.bastionCapHit(999999, hFull), hCap, 'Bastion (full): a huge hit is capped at 25% max HP');
@@ -7661,9 +7664,9 @@
     S.companionCast = savedCC;
     // Persistent class buffs (shields, stacks, kill tallies) survive foe changes but NOT a fresh entry --
     // so swapping classes between fights can never carry the old class's buffs into the new kit.
-    var savedBuffs = { rs:S.reaperShield, ts:S.templarShield, ls:S.lumenShield, hg:S.heraldGuardStacks, av:S.assassinVigor, bt:S.d2BloodthirstStacks, btu:S.d2BloodthirstUntil };
+    var savedBuffs = { rs:S.reaperShield, ts:S.templarShield, ls:S.lumenShield, hg:S.heraldBarrier, av:S.assassinVigor, bt:S.d2BloodthirstStacks, btu:S.d2BloodthirstUntil };
     S.reaperShield = 500; S.templarShield = 400; S.lumenShield = 300;
-    S.heraldGuardStacks = 3; S.assassinVigor = { stacks:5, until:Date.now()+9999 };
+    S.heraldBarrier = 3; S.assassinVigor = { stacks:5, until:Date.now()+9999 };
     S.d2BloodthirstStacks = 4; S.d2BloodthirstUntil = Date.now()+9999;
     FF.headsmanTallyReset(); FF.headsmanTallyKill(); FF.headsmanTallyKill();
     FF.companionCastsOnCombatEntry('combat');
@@ -7672,11 +7675,11 @@
     eq(S.reaperShield, 0, 'a fresh combat entry clears the Reaper shield');
     eq(S.templarShield, 0, '...and the Templar shield');
     eq(S.lumenShield, 0, '...and the Lumen shield');
-    eq(S.heraldGuardStacks, 0, '...and Herald guard stacks');
+    eq(S.heraldBarrier, 0, "...and the Bastion's Barrier");
     ok(!S.assassinVigor, '...and Assassin Vigor');
     eq(S.d2BloodthirstStacks, 0, '...and Bloodthirst stacks');
     S.reaperShield = savedBuffs.rs; S.templarShield = savedBuffs.ts; S.lumenShield = savedBuffs.ls;
-    S.heraldGuardStacks = savedBuffs.hg; S.assassinVigor = savedBuffs.av;
+    S.heraldBarrier = savedBuffs.hg; S.assassinVigor = savedBuffs.av;
     S.d2BloodthirstStacks = savedBuffs.bt; S.d2BloodthirstUntil = savedBuffs.btu;
     // Killing a foe in a grind chain zeroes all three attack accumulators (yours, off-hand, the foe's).
     var savedAct = S.activity, savedInv = S.inventory, savedEarned = S.itemEarnedTotal, savedRand = Math.random;
@@ -11037,27 +11040,94 @@
     var off = base(); off.equippedOffhand=null;
     eq(FF.classBlockBonus(full), 0, 'Herald no longer adds a flat Block bonus (Bulwark retired)');
 
-    // Lv 1 Perfect Guard: incoming-damage reduction that stacks with consecutive Blocks (up to -25%).
-    var pg = leveled(); pg.heraldGuardStacks = 3;
-    near(FF.heraldGuardMult(pg), 0.85, 'Perfect Guard: 3 Blocks -> -15% incoming');
-    pg.heraldGuardStacks = 99;
-    near(FF.heraldGuardMult(pg), 0.75, 'Perfect Guard caps at -25%');
-    eq(FF.heraldGuardMult(off), 1, 'no Herald -> no guard reduction');
+    // The Bastion perk ladder: names in order; the reset-on-hit streak and the familiar-duration capstone are gone.
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Ironclad,Retort,Fortress,Unbreakable,Breach', 'Bastion perk names');
+    near(FF.HERALD_IRONCLAD_PER_1K, 0.03, 'Ironclad: +3% damage per 1,000 Armor');
+    near(FF.HERALD_IRONCLAD_CAP, 1.50, 'Ironclad caps at +150%');
+    eq(FF.HERALD_BRACE_MS, 5000, 'the Brace clock runs every 5s');
+    near(FF.HERALD_BARRIER_CAP_PCT, 0.25, 'the Barrier caps at 25% of max Health');
+    near(FF.HERALD_BREACH_PCT, 0.20, 'the Breach deals 20% of the recent average hit per 10% max HP banked');
+
+    // Lv 1 Ironclad: the armour-to-damage conversion, gated on the class and capped.
+    eq(FF.heraldIroncladMult(off), 1, 'no Herald -> no Ironclad conversion');
+    ok(FF.heraldIroncladMult(leveled()) >= 1, 'Ironclad never reduces damage');
+    ok(FF.heraldIroncladMult(leveled()) <= 1 + FF.HERALD_IRONCLAD_CAP + 1e-9, 'Ironclad respects its +150% cap');
 
     // Lv 60 Unbreakable: a blocked hit keeps 25% (-75%) instead of the usual 50%.
     eq(FF.heraldBlockMult(leveled()), 0.25, 'Unbreakable: blocked hit kept at 25%');
     eq(FF.heraldBlockMult(full), 0.5, 'below Lv60: standard 50% block');
 
-    // Lv 40 Fortress: Armor ramps +4%/s held in a fight (cap +40%), reset per foe.
+    // Lv 40 Fortress: Armor ramps +4%/s held in a fight (cap +40%), reset per foe -- and Ironclad reads it.
     var ft = leveled(); ft.activity = { type:'combat', duelStartedAt: Date.now() - 5000 };
     ok(Math.abs(FF.heraldFortressArmorMult(ft) - 1.20) < 0.02, 'Fortress: +4%/s -> ~+20% at 5s');
     ft.activity.duelStartedAt = Date.now() - 60000;
     ok(Math.abs(FF.heraldFortressArmorMult(ft) - 1.40) < 1e-9, 'Fortress caps at +40%');
     eq(FF.heraldFortressArmorMult(full), 1, 'Fortress inactive below Lv40');
 
-    // Lv 80 Lasting Grace: familiar-granted buffs last twice as long.
+    // Lasting Grace retired: familiar buff duration is flat for everyone now.
     eq(FF.familiarBuffDurationMult(full), 1, 'Lv 1 herald: buff duration unchanged');
-    eq(FF.familiarBuffDurationMult(leveled()), 2, 'Lv 80 herald: familiar buffs last 2x');
+    eq(FF.familiarBuffDurationMult(leveled()), 1, 'Lasting Grace retired: no 2x familiar buff duration');
+
+    // Behavioral: the Brace clock, the Barrier bank, and the Breach eruption (live state).
+    (function(){
+      var s = FF._state;
+      var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid,
+                   oh:s.equippedOffhand, oht:s.equippedOffhandTier, ohr:s.equippedOffhandRarity, ba:s.bodyArmor, ui:s.uniqueItems, xp:s.xp.herald,
+                   act:s.activity, hp:s.playerHp,
+                   bar:s.heraldBarrier, ha:s.heraldHitAvg, br:s.heraldBraceAccum };
+      var svRnd = Math.random;
+      try {
+        s.equippedMainhand='mace'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null;
+        s.equippedOffhand='shieldLarge'; s.equippedOffhandTier=6; s.equippedOffhandRarity='normal';
+        s.bodyArmor={ helmet:{material:'plate',tier:5,rarity:'normal'}, chest:{material:'plate',tier:5,rarity:'normal'}, gauntlets:{material:'plate',tier:5,rarity:'normal'}, boots:{material:'plate',tier:5,rarity:'normal'}, back:{tier:0,rarity:'normal',material:null} };
+        s.uniqueItems = {};
+        s.xp.herald = FF.xpFloorForLevel(85);
+        eq(FF.activeClassId(s), 'herald', 'behavioral setup activates the Herald');
+        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.playerHp = FF.maxHp(s);
+        s.heraldBarrier = 0; s.heraldHitAvg = 0; s.heraldBraceAccum = 0;
+        // A landed swing banks into the Breach base.
+        Math.random = function(){ return 0; };
+        FF.playerAttackTick(false, 1, false);
+        ok((s.heraldHitAvg||0) > 0, 'the swing banked into the Breach base');
+        // Ironclad reads the LIVE armour number, so it is above 1 on a real plated Bastion.
+        ok(FF.heraldIroncladMult(s) > 1, 'Ironclad converts the live Armor rating into damage');
+        // A Brace fires the full Guard path: the Retort chips the foe and the Barrier banks.
+        s.heraldBarrier = 0;
+        var hp0 = s.activity.monsterHp;
+        FF.heraldBrace();
+        ok(s.activity.monsterHp < hp0, 'the Brace threw an Armor-scaled Retort at the foe');
+        ok((s.heraldBarrier||0) > 0, 'the Brace banked Barrier');
+        // The Brace clock: heraldBraceMs of combat drives one Brace.
+        s.heraldBarrier = 0; s.heraldBraceAccum = 0;
+        var hp1 = s.activity.monsterHp;
+        FF.applyHeraldBraceTick(FF.HERALD_BRACE_MS);
+        ok(s.activity.monsterHp < hp1, 'the Brace clock fired on its cadence');
+        FF.applyHeraldBraceTick(FF.HERALD_BRACE_MS - 1);
+        // The Breach: a full Barrier erupts off the banked hit average and spends the wall.
+        s.heraldHitAvg = 1000; s.heraldBarrier = FF.heraldBarrierCap(s);
+        var hp2 = s.activity.monsterHp;
+        Math.random = function(){ return 0.999; }; // no crit
+        var dealt = FF.heraldBreachFire(s);
+        ok(dealt > 0 && s.activity.monsterHp < hp2, 'the full Barrier Breached');
+        eq(s.heraldBarrier, 0, 'the Breach spends the wall');
+        // Four Guards fill the wall: the bank is a fraction of the CAP, so it behaves the same at every level
+        // (an Armor-derived bank would fill instantly, since Armor is thousands-scale and the cap is %maxHp).
+        near(FF.HERALD_BARRIER_PER_GUARD, 0.25, 'each Guard lays a quarter of the wall');
+        s.heraldHitAvg = 1000; s.heraldBarrier = 0;
+        for(var _g = 0; _g < 3; _g++) FF.heraldBarrierAdd(FF.heraldBarrierCap(s) * FF.HERALD_BARRIER_PER_GUARD, s);
+        ok(s.heraldBarrier > 0, 'three Guards leave the wall standing (not yet full)');
+        FF.heraldBarrierAdd(FF.heraldBarrierCap(s) * FF.HERALD_BARRIER_PER_GUARD, s);
+        eq(s.heraldBarrier, 0, 'the fourth Guard fills the wall, which Breaches and rebuilds from empty');
+      } finally {
+        Math.random = svRnd;
+        s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu;
+        s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.equippedOffhandRarity=snap.ohr;
+        s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.herald=snap.xp;
+        s.activity=snap.act; s.playerHp=snap.hp;
+        s.heraldBarrier=snap.bar; s.heraldHitAvg=snap.ha; s.heraldBraceAccum=snap.br;
+      }
+    })();
 
     // Class familiar is buff-focused (to synergize with the Lv 80 duration passive).
     var fam = FF.FAMILIAR_DATA.herald;
