@@ -58,6 +58,18 @@ const BUILDS = {
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "pierce",
   },
+  thunderfury: {
+    // Earth Wand + Earth Ward, full cloth. The wand is a FULL-elemental swing (the scepter double-dip at
+    // double strength) — expect the chassis fight; per the owner rule any correction lands in class perk
+    // variables, never wand raw damage stats. Ward fixed to Stormscale (Galvanize cap 15) — Stormcoil/
+    // Voltveil key off reflects the zero-offense dummy never throws, Stormveil needs hits taken.
+    // 45s window (1s bolts, no macro-cycle); unique rings are Rings of Earth (wands skip physical rings).
+    weapon: { typeId: "wandEarth", base: "stweapon_wandEarth_t20_fantastic", tier: 20, styleXp: ["wandEarth", "wands", "earth"] },
+    legs: ["tempest", "stormbrand", "stormtomb", "stormwyrm"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "earth",
+    offhandWard: "stormscale",
+  },
   templar: {
     // Scepter + Ward. 90s runs: the 24s Litany needs several Amens per window. The ward slot is fixed to
     // Sunscale (Doxology cap 8) — the only ward whose effect fires against the zero-offense dummy

@@ -5289,22 +5289,21 @@
       return st;
     }
 
-    // Tempest (thunderfury/wandEarth): +15% crit chance and a deeper Chain Lightning attack-speed ramp (cap 9 = -90%).
-    near(FF.legendaryCritChance(legSt('tempest', 'wandEarth')), 0.15, 'Tempest: +15% Critical Hit chance');
+    // Gloomstorm (thunderfury/wandEarth): +15% crit chance and a taller Storm (intensity cap 15).
+    near(FF.legendaryCritChance(legSt('tempest', 'wandEarth')), 0.15, 'Gloomstorm: +15% Critical Hit chance');
     near(FF.legendaryCritChance(legSt('emberstorm')), 0, 'no crit-chance bonus without Tempest');
-    eq(FF.legThunderMaxStacks(legSt('tempest', 'wandEarth')), 9, 'Tempest raises the Chain Lightning stack cap to 9');
-    eq(FF.legThunderMaxStacks(legSt('emberstorm')), FF.THUNDER_MAX_STACKS, 'the base Chain Lightning stack cap is 7');
-    // On a live Thunderfury, the deeper ramp reaches -90% attack timer at 9 stacks.
-    function tfSt(stacks, tempest){
+    eq(FF.tfStormCap(legSt('tempest', 'wandEarth')), 15, 'Gloomstorm: Storm intensity caps at 15');
+    eq(FF.tfStormCap(legSt('emberstorm')), FF.TF_STORM_MAX, 'the base Storm cap is 10');
+    // On a live Thunderfury, Conductor's Tempo is a threshold: 5+ intensity = -12% attack timer, no reset.
+    function tfSt(inten){
       var st = { xp:{ thunderfury: FF.xpFloorForLevel(85) }, physique:{}, equippedMainhand:'wandEarth', equippedOffhand:'wardEarth',
-        bodyArmor:{ helmet:armor('tailoring'), chest:armor('tailoring'), gauntlets:armor('tailoring'), boots:armor('tailoring') },
-        activity:{type:'combat'}, playerHp:100, thunderStacks:stacks, uniqueItems:{}, equippedMainhandUid:null };
-      if(tempest){ st.uniqueItems.L = { uid:'L', leg:'tempest', kind:'weapon', base:'stweapon_wandEarth_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 }; st.equippedMainhandUid = 'L'; }
+        bodyArmor:{ helmet:{tier:1,rarity:'normal',material:'tailoring'}, chest:{tier:1,rarity:'normal',material:'tailoring'}, gauntlets:{tier:1,rarity:'normal',material:'tailoring'}, boots:{tier:1,rarity:'normal',material:'tailoring'}, back:{tier:0,rarity:'normal',material:null} },
+        activity:{type:'combat', monsterHp:100}, playerHp:100, tfStorm:inten, uniqueItems:{}, equippedMainhandUid:null };
       return st;
     }
-    eq(FF.activeClassId(tfSt(0, false)), 'thunderfury', 'earth wand + ward + full cloth => Thunderfury');
-    near(FF.classAttackSpeedMult(tfSt(7, false)), 0.30, 'base Chain Lightning caps at 7 stacks (-70%)', 1e-9);
-    near(FF.classAttackSpeedMult(tfSt(9, true)), 0.10, 'Tempest lets Chain Lightning reach 9 stacks (-90%)', 1e-9);
+    eq(FF.activeClassId(tfSt(0)), 'thunderfury', 'earth wand + ward + full cloth => Thunderfury');
+    near(FF.classAttackSpeedMult(tfSt(5)), 0.88, "Conductor's Tempo: -12% attack timer at 5+ intensity", 1e-9);
+    near(FF.classAttackSpeedMult(tfSt(4)), 1, 'below the threshold the timer is untouched', 1e-9);
 
     // Baton of the First Chair (summoner/staff): the Downbeat swings every 4s instead of 5.
     var batonSt = legSt('rapidconjuring'); batonSt.equippedMainhand = 'staff';
@@ -5412,16 +5411,8 @@
     eq(FF.legBurnNeverExpires(legSt('everburning', 'wardFire')), true, 'legBurnNeverExpires true with Everburning');
     eq(FF.legBurnNeverExpires(legSt('holyward', 'wardLight')), false, 'legBurnNeverExpires false otherwise');
 
-    // Charged Riposte (thunderfury/wardEarth): a ward reflect arms a guaranteed crit on the next hit.
-    var cr = legSt('chargedriposte', 'wardEarth');
-    eq(FF.legChargedRiposteArmed(cr), false, 'Charged Riposte is unarmed until a reflect');
-    cr.chargedRiposteReady = true;
-    eq(FF.legChargedRiposteArmed(cr), true, 'a reflect arms Charged Riposte');
-    eq(FF.legChargedRiposteConsume(cr), true, 'the armed strike is a guaranteed crit');
-    eq(cr.chargedRiposteReady, false, 'consuming disarms it');
-    eq(FF.legChargedRiposteConsume(cr), false, 'it only empowers one strike');
-    var crOff = legSt('everburning', 'wardFire'); crOff.chargedRiposteReady = true;
-    eq(FF.legChargedRiposteConsume(crOff), false, 'Charged Riposte is inert without its legendary');
+    // Stormcoil (thunderfury/wardEarth): a ward reflect seeds the Storm +3 (behaviour in the class suite).
+    eq(FF.legActive('chargedriposte', legSt('chargedriposte', 'wardEarth', 'offhand')), true, 'legActive detects Stormcoil');
 
     // Nightshroud (nightblade/wardDark): a foe that damaged you is Enfeebled -10%, and it counts as a debuff.
     var nsOn = legSt('nightshroud', 'wardDark', { activity:{type:'combat', monsterHp:100, nightshroudUntil: now+4000} });
@@ -5491,7 +5482,7 @@
     near(FF.d2LegDmgMult({}, legSt('rimefang','wandWater','weapon',{ activity:{type:'combat', monsterHp:100, enemyChillUntil: now+4000} })), 1.15, 'Rimefang: +15% vs a Chilled foe');
     near(FF.d2LegDmgMult({}, legSt('rimefang','wandWater')), 1.0, 'Rimefang inert on an un-chilled foe');
     // Stormbrand (earth wand): +8% crit chance per Galvanize stack.
-    near(FF.legStormbrandCrit(legSt('stormbrand','wandEarth','weapon',{ activity:{type:'combat', monsterHp:100, galvanizeStacks:3} })), 0.24, 'Stormbrand: +8% crit chance per Galvanize stack');
+    near(FF.legStormbrandCrit(legSt('stormbrand','wandEarth','weapon',{ tfGalvanize:3 })), 0.09, 'Stormbrand: +3% crit chance per Galvanize stack');
     near(FF.legStormbrandCrit(legSt('cindermaw','wandFire')), 0, 'no Stormbrand crit without the wand');
     // Voidfang (dark wand): each Vulnerability stack shreds 3% armour (cap 60%).
     near(FF.legVoidfangShred(legSt('voidfang','wandDark','weapon',{ activity:{type:'combat', monsterHp:100, voidVulnStacks:5, voidVulnUntil: now+4000} })), 0.15, 'Voidfang: 5 Vuln stacks shred 15% armour');
@@ -6537,8 +6528,9 @@
       s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Doomcurse inert on an uncursed foe');
       wearFull('duelist'); s.activity = { type:'combat', monsterHp:500, curseUntil:now+4000 };
       near(FF.d3SetDmgMult({}, s), 1.15, 'Duelist Spectral Grace: +15% vs a Cursed foe');
-      wearFull('thunderfury'); s.activity = { type:'combat', monsterHp:500, curseUntil:now+4000 };
-      near(FF.d3SetDmgMult({}, s), 1.12, 'Thunderfury Death Static: +12% vs a Cursed foe');
+      wearFull('thunderfury'); s.activity = { type:'combat', monsterHp:500, enemyStunUntil:now+4000 };
+      near(FF.d3SetDmgMult({}, s), 1.20, 'Thunderfury Broken Sky: +20% vs a stunned foe');
+      s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Broken Sky needs the stun');
       // Herald Mausoleum (incoming): Cursed foes deal 15% less.
       wearFull('herald'); s.activity = { type:'combat', monsterHp:500, curseUntil:now+4000 };
       near(FF.d3SetIncomingMult(s), 0.85, 'Herald Mausoleum: Cursed foes deal 15% less');
@@ -6547,7 +6539,7 @@
       wearD3('duelist', 2); s.activity = { type:'combat', monsterHp:500 };
       ok(!FF.enemyCursed(s), 'no Curse before a Dodge');
       FF.onPlayerDodged(); ok(FF.enemyCursed(s), 'Ghost Step (Duelist D3 2pc): a Dodge Curses the foe');
-      // The other appliers (Cursemark / Gravestone / Grave Guard / Grave Spark) fire at their combat hooks — set is defined.
+      // The other appliers (Cursemark / Gravestone / Grave Guard) fire at their combat hooks — set is defined.
       ['nightblade','juggernaut','herald','thunderfury'].forEach(function(c){ ok(FF.D3_SET_DEFS[c], c+' has a D3 Curse set'); });
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.activity=sv.act; }
   });
@@ -6677,10 +6669,10 @@
       s.activity = { type:'combat', monsterHp:1000, chillStacks:3, enemyChillUntil:Date.now()+5000 };
       wearFull('frostwarden'); near(FF.d4SetElementDmg(s, 'water'), 0.55, 'Absolute Zero: +25% Water on a Chilled foe (on top of +30% Frostheart)');
       s.activity = { type:'combat', monsterHp:1000 }; near(FF.d4SetElementDmg(s, 'water'), 0.30, 'Absolute Zero inert on a non-Chilled foe');
-      // Thunderfury Overload (full): +5% Earth per Static Charge.
+      // Thunderfury Stormwyrm's Eye (full): Bolts strike as Earth (applied in tfBoltFire; detection below).
       s.activity = { type:'combat', monsterHp:1000, staticCharge:4 };
-      wearFull('thunderfury'); near(FF.d4SetElementDmg(s, 'earth'), 0.30 + 0.20, 'Overload: +5% Earth per Static (4 -> +20%, on top of +30%)');
-      s.activity = { type:'combat', monsterHp:1000, staticCharge:0 }; near(FF.d4SetElementDmg(s, 'earth'), 0.30, 'Overload adds nothing at 0 Static');
+      wearFull('thunderfury'); near(FF.d4SetElementDmg(s, 'earth'), 0.30, "Stormwyrm's Eye: the flat +30% Earth stays (2pc term)");
+      ok(FF.setFullD4('thunderfury', s), "the full Stormwyrm set (Stormwyrm's Eye) is detectable");
 
       // --- Foe elemental resistance + Attunement "never resisted" fulls (wand path) ---
       var waterDragon = { dungeon:'d4', element:'water', armorTypes:{} };  // water beats fire -> resists Fire
@@ -7071,8 +7063,8 @@
       wearD2('samurai', 4); s.activity = { type:'combat', monsterHp:500, samuraiFocus:FF.samuraiFocusCap(s) };
       near(FF.d2SetCritChance(s), 0.15, 'Samurai Zanshin: +15% crit at max Focus');
       s.activity.samuraiFocus = 0; near(FF.d2SetCritChance(s), 0.0, 'Zanshin inert below max Focus');
-      // Grounding Rod (Thunderfury 2pc): needs Galvanize (Lv80) to show; check the per-stack scaling is applied.
-      wearD2('thunderfury', 2); ok(typeof FF.thunderGalvanizeCritDmg === 'function', 'thunderGalvanizeCritDmg exported (Grounding Rod scales it)');
+      // Charged Air (Thunderfury D2 2pc): crits seed +3 (behaviour in the class suite).
+      wearD2('thunderfury', 2); ok(FF.set2D2('thunderfury', s), 'the Thunderfury D2 2-piece (Charged Air) is detectable');
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; }
   });
 
@@ -7391,11 +7383,10 @@
     near(FF.knightUnstoppableMult(setSt('knight',2, { knightStacks:5 })), 1.25, 'Unstoppable Force: +25% at max Momentum');
     near(FF.knightUnstoppableMult(setSt('knight',2, { knightStacks:2 })), 1, 'no Unstoppable Force below max Momentum');
     near(FF.knightUnstoppableMult(setSt('knight',1, { knightStacks:5 })), 1, '1 piece -> no Unstoppable Force');
-    // Thunderfury Supercell (2pc) + Overcharge (full).
-    eq(FF.thunderStaticPerHit(setSt('thunderfury',2)), 2, 'Supercell: Static builds 2/hit');
-    eq(FF.thunderStaticThreshold(setSt('thunderfury',4)), 4, 'Overcharge: discharge at 4 stacks');
-    eq(FF.thunderStaticThreshold(setSt('thunderfury',2)), FF.THUNDER_STATIC_MAX, '2 of 4 -> base discharge threshold');
-    ok(FF.thunderDischargeMult(setSt('thunderfury',4)) > FF.thunderDischargeMult(setSt('thunderfury',2)), 'Overcharge: bigger discharge burst');
+    // Thunderfury Supercell (2pc) + Overcharge (full): the Storm's cap and the Tempest cadence.
+    eq(FF.tfStormCap(setSt('thunderfury',2)), 12, 'Supercell: Storm intensity caps at 12');
+    eq(FF.tfStormCap(setSt('thunderfury',1)), 10, '1 piece -> the base cap of 10');
+    eq(FF.TF_BOLT_MS_TEMPEST, 750, 'Overcharge: a maxed Storm strikes every 0.75s');
     // Sharpshooter Deadeye (2pc).
     near(FF.deadeyeAccuracyBonus(setSt('sharpshooter',2)), 0.20, 'Deadeye: +20% Accuracy');
     near(FF.deadeyeAccuracyBonus(setSt('sharpshooter',1)), 0, '1 piece -> no Deadeye');
@@ -11915,38 +11906,88 @@
     var chainHelm = base(); chainHelm.bodyArmor.helmet={tier:1,rarity:'normal',material:'chain'};
     eq(FF.activeClassId(chainHelm), null, 'all four armor pieces must be cloth');
 
-    // Lv 1 Chain Lightning: crit stacks cut attack timer -10%/stack (cap 7 = -70%).
-    eq(FF.THUNDER_MAX_STACKS, 7, 'crit stacks cap at 7');
-    var s0 = base(); s0.thunderStacks=0; eq(FF.classAttackSpeedMult(s0), 1, '0 stacks => no reduction');
-    var s3 = base(); s3.thunderStacks=3; near(FF.classAttackSpeedMult(s3), 0.70, '3 stacks => -30%');
-    var s7 = base(); s7.thunderStacks=7; near(FF.classAttackSpeedMult(s7), 0.30, '7 stacks => -70%');
-    var s10 = base(); s10.thunderStacks=10; near(FF.classAttackSpeedMult(s10), 0.30, 'stacks cap at 7');
-    var off = base(); off.equippedOffhand=null; off.thunderStacks=7;
-    eq(FF.classAttackSpeedMult(off), 1, 'stacks do nothing while the class is inactive');
-    eq(FF.thunderStacks(s10), 7, 'thunderStacks caps at 7 while active');
-    eq(FF.thunderStacks(off), 0, 'no stacks while class inactive');
+    // The Stormlord perk ladder: names in order; the crit-cap and coin-flip resets are gone.
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), "Stormseed,Conductor's Tempo,Grounding Rod,Concussive Bolt,Galvanize", 'Stormlord perk names');
+    eq(FF.TF_STORM_MAX, 10, 'the Storm caps at 10 intensity');
+    eq(FF.TF_BOLT_PCT, 0.06, 'a Bolt deals 6% of the recent average hit per intensity');
+    eq(FF.TF_CLAP_EVERY, 6, 'every 6th Bolt is a Thunderclap');
 
-    // Lv 20 Static Charge: the Static meter (act.staticCharge) reads capped at 5; empty outside combat.
-    eq(FF.THUNDER_STATIC_MAX, 5, 'static meter caps at 5');
-    var sc3 = base(); sc3.xp.thunderfury = FF.xpFloorForLevel(21); sc3.activity = { type:'combat', staticCharge:3 };
-    eq(FF.thunderStaticCharge(sc3), 3, 'reads the current Static meter');
-    var scCap = base(); scCap.activity = { type:'combat', staticCharge:9 };
-    eq(FF.thunderStaticCharge(scCap), 5, 'Static meter reads capped at 5');
-    eq(FF.thunderStaticCharge(base()), 0, 'no Static outside combat');
+    // Storm reads are pure-state; seeding gates on the class.
+    var sv = base(); sv.xp.thunderfury = FF.xpFloorForLevel(85); sv.activity = { type:'combat', monsterHp:100 };
+    eq(FF.tfStormIntensity(sv), 0, 'a fresh sky is calm');
+    FF.tfStormSeed(3, sv); eq(FF.tfStormIntensity(sv), 3, 'seeding raises the intensity');
+    FF.tfStormSeed(99, sv); eq(FF.tfStormIntensity(sv), 10, 'intensity clamps at the cap');
+    var svOff = base(); svOff.equippedOffhand = null; svOff.activity = { type:'combat', monsterHp:100 };
+    eq(FF.tfStormSeed(3, svOff), 0, 'no class, no weather');
 
     // Lv 60 Concussive Bolt: stun window helper.
     eq(FF.enemyStunned({ activity:{ enemyStunUntil: Date.now()+2000 } }), true, 'active stun window => stunned');
     eq(FF.enemyStunned({ activity:{ enemyStunUntil: Date.now()-1 } }), false, 'expired stun window => not stunned');
-    eq(FF.enemyStunned({ activity:{} }), false, 'no stun => not stunned');
 
-    // Lv 80 Galvanize: each crit adds +10% crit damage this fight (act.galvanizeStacks), capped at +100%.
-    eq(FF.THUNDER_GALVANIZE_MAX, 10, 'galvanize stacks cap at 10 (+100%)');
-    var g4 = base(); g4.xp.thunderfury = FF.xpFloorForLevel(85); g4.activity = { type:'combat', galvanizeStacks:4 };
-    near(FF.thunderGalvanizeCritDmg(g4), 0.40, 'Lv 80, 4 crit stacks => +40% crit damage');
-    var gCap = base(); gCap.xp.thunderfury = FF.xpFloorForLevel(85); gCap.activity = { type:'combat', galvanizeStacks:20 };
-    near(FF.thunderGalvanizeCritDmg(gCap), 1.0, 'Galvanize crit damage caps at +100%');
-    var gLow = base(); gLow.xp.thunderfury = FF.xpFloorForLevel(65); gLow.activity = { type:'combat', galvanizeStacks:4 };
+    // Lv 80 Galvanize: session-scoped, banked by critical Bolts, capped.
+    var g4 = base(); g4.xp.thunderfury = FF.xpFloorForLevel(85); g4.tfGalvanize = 4;
+    near(FF.thunderGalvanizeCritDmg(g4), 0.32, 'Lv 80, 4 critical Bolts => +32% crit damage');
+    var gCap = base(); gCap.xp.thunderfury = FF.xpFloorForLevel(85); gCap.tfGalvanize = 99;
+    near(FF.thunderGalvanizeCritDmg(gCap), 0.80, 'Galvanize caps at 10 stacks (+80%)');
+    var gLow = base(); gLow.xp.thunderfury = FF.xpFloorForLevel(65); gLow.tfGalvanize = 4;
     eq(FF.thunderGalvanizeCritDmg(gLow), 0, 'no Galvanize below Class Lv 80');
+
+    // Behavioral: the Storm through the live loop tick + the REAL playerAttackTick (live state).
+    (function(){
+      var s = FF._state;
+      var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid,
+                   oh:s.equippedOffhand, oht:s.equippedOffhandTier, ba:s.bodyArmor, ui:s.uniqueItems, xp:s.xp.thunderfury,
+                   act:s.activity, hp:s.playerHp,
+                   st:s.tfStorm, sa:s.tfStormAccum, sf:s.tfStormFade, sh:s.tfStormHitAvg, bc:s.tfBoltCount, gv:s.tfGalvanize };
+      var svRnd = Math.random;
+      try {
+        s.equippedMainhand='wandEarth'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null;
+        s.equippedOffhand='wardEarth'; s.equippedOffhandTier=6;
+        s.bodyArmor={ helmet:{material:'tailoring',tier:5,rarity:'normal'}, chest:{material:'tailoring',tier:5,rarity:'normal'}, gauntlets:{material:'tailoring',tier:5,rarity:'normal'}, boots:{material:'tailoring',tier:5,rarity:'normal'}, back:{tier:0,rarity:'normal',material:null} };
+        s.uniqueItems = {};
+        s.xp.thunderfury = FF.xpFloorForLevel(85);
+        eq(FF.activeClassId(s), 'thunderfury', 'behavioral setup activates the Thunderfury');
+        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.playerHp = FF.maxHp(s);
+        s.tfStorm = 0; s.tfStormAccum = 0; s.tfStormFade = 0; s.tfStormHitAvg = 0; s.tfBoltCount = 0; s.tfGalvanize = 0;
+        // A landed crit seeds +2 and banks the hit average.
+        Math.random = function(){ return 0; }; // lands + crits
+        FF.playerAttackTick(false, 1, false);
+        eq(FF.tfStormIntensity(s), 2, 'a landed Critical Hit seeds the Storm +2');
+        ok((s.tfStormHitAvg||0) > 0, 'the swing banked into the Bolt base');
+        // The storm clock: one Bolt per second, weapon-scaled.
+        s.tfStorm = 10; s.tfStormHitAvg = 1000; s.tfBoltCount = 0; s.tfGalvanize = 0;
+        Math.random = function(){ return 0.999; }; // bolts do not crit
+        var hp0 = s.activity.monsterHp;
+        FF.applyTfStormTick(1000);
+        eq(hp0 - s.activity.monsterHp, 600, 'one Bolt: 10 intensity x 6% x 1000 = 600');
+        // The 6th Bolt is a Thunderclap: double damage + a stun.
+        s.tfBoltCount = 5; var hp1 = s.activity.monsterHp;
+        FF.applyTfStormTick(1000);
+        eq(hp1 - s.activity.monsterHp, 1200, 'the Thunderclap strikes double');
+        ok((s.activity.enemyStunUntil||0) > Date.now(), 'the Thunderclap stunned the foe');
+        eq(s.tfBoltCount, 0, 'the clap resets the count');
+        // Fade: without fresh hits the sky clears, 1 intensity per 3s.
+        s.tfStorm = 10; s.tfStormFade = 0; s.tfStormAccum = 0;
+        FF.applyTfStormTick(3000);
+        eq(s.tfStorm, 9, 'the Storm fades 1 intensity per 3s without fresh hits');
+        // A critical Bolt banks Galvanize.
+        s.tfStorm = 10; s.tfStormAccum = 0; s.tfGalvanize = 0; s.tfBoltCount = 0;
+        Math.random = function(){ return 0; }; // bolts crit
+        FF.applyTfStormTick(1000);
+        eq(s.tfGalvanize, 1, 'a critical Bolt banks a Galvanize stack');
+        // The Storm PERSISTS across foes: defeatMonster must not clear it.
+        s.tfStorm = 7; var _mon = FF.MONSTERS.filter(function(m){ return m.id === s.activity.monsterId; })[0];
+        s.activity.monsterHp = 0; FF.defeatMonster(_mon);
+        eq(FF.tfStormIntensity(s), 7, 'the Storm outlives the foe (persists through defeatMonster)');
+      } finally {
+        Math.random = svRnd;
+        s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu;
+        s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.thunderfury=snap.xp;
+        s.activity=snap.act; s.playerHp=snap.hp;
+        s.tfStorm=snap.st; s.tfStormAccum=snap.sa; s.tfStormFade=snap.sf; s.tfStormHitAvg=snap.sh; s.tfBoltCount=snap.bc; s.tfGalvanize=snap.gv;
+      }
+    })();
 
     // Class familiar (lightning caster).
     var fam = FF.FAMILIAR_DATA.thunderfury;
