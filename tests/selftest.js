@@ -9797,10 +9797,55 @@
     eq(FF.craftBodyRarity(''), null, 'empty body -> null');
   });
 
+  // ---- The shared damage-over-time base (dotBase) -------------------------------------
+  // Every DoT in the game used to tick for a fraction of combatLevelEquivalent() -- a SUM OF PROFICIENCY
+  // LEVELS, ~600 at max -- so at best-in-slot, where hits are ~1e11, a fully stacked Burn dealt about 150
+  // damage a second: eight to nine orders of magnitude too small to matter. Weapon coatings fed a mechanic
+  // that did nothing at all. Everything now ticks off the recent-hit EMA instead.
+  suite('dots: every ailment scales off the recent hit, not proficiency levels', function(){
+    var S = FF._state;
+    var sv = { act:S.activity, mh:S.equippedMainhand, oh:S.equippedOffhand };
+    try {
+      // With a banked hit average, dotBase reads it -- and it is enormous next to a level sum.
+      S.activity = { type:'combat', monsterHp:1e12, dotHitAvg: 1e9 };
+      eq(FF.dotBase(S), 1e9, 'dotBase reads the fight\'s banked hit average');
+      // Fallback: a DoT applied before your first landed hit (a reflect, a Block, an opening ailment) still
+      // does something rather than nothing.
+      S.activity = { type:'combat', monsterHp:1e12, dotHitAvg: 0 };
+      ok(FF.dotBase(S) >= 1, 'with no hit banked yet it falls back to the old level-based figure');
+      ok(FF.dotBase(S) < 1e6, 'and that fallback is the small, level-scaled number');
+
+      // Decay: applied by ~20 sources and lands on already-banded classes, so its coefficient is deliberately
+      // small -- at the 10-stack cap it is worth ~6% of a hit per second.
+      near(FF.DECAY_PCT, 0.006, 'Decay pays 0.6% of a hit per stack per second');
+      eq(FF.DECAY_MAX_STACKS, 10, 'Decay caps at 10 stacks');
+      near(FF.DECAY_PCT * FF.DECAY_MAX_STACKS, 0.06, 'so a fully stacked Decay is ~6% of a hit per second');
+      // Rotshell's block-poison is incidental too, and scaled to match.
+      near(FF.LEG_ROTSHELL_PCT, 0.03, 'Rotshell poisons for 3% of a hit per second');
+
+      // Behavioral: a real Decay application now scales with the banked hit, and a bigger hit means a bigger
+      // Decay -- the property that was completely absent before.
+      S.equippedMainhand = null; S.equippedOffhand = null;
+      S.activity = { type:'combat', monsterHp:1e12, dotHitAvg: 1e6 };
+      FF.decayApply(S.activity, FF.DECAY_MAX_STACKS);
+      var small = S.activity.decayDps;
+      S.activity = { type:'combat', monsterHp:1e12, dotHitAvg: 1e9 };
+      FF.decayApply(S.activity, FF.DECAY_MAX_STACKS);
+      ok(S.activity.decayDps > small * 900, 'a thousand-fold bigger hit means a ~thousand-fold bigger Decay');
+      near(S.activity.decayDps, FF.DECAY_MAX_STACKS * 1e9 * FF.DECAY_PCT, 'Decay = stacks x hit average x 0.6%');
+    } finally {
+      S.activity = sv.act; S.equippedMainhand = sv.mh; S.equippedOffhand = sv.oh;
+    }
+  });
+
   // ---- Alchemy combat potions: 4 types, linear t0->t20 effect scaling ----
   suite('alchemy potions', function(){
-    eq(Math.round(FF.potionEffect('toxin_t0').pct*100), 1, 'toxin t0 = 1% combat score/s');
-    eq(Math.round(FF.potionEffect('toxin_t20').pct*100), 10, 'toxin t20 = 10% combat score/s');
+    // Poison is now a share of the RECENT AVERAGE HIT per second, not of summed proficiency levels (see the
+    // dotBase suite below) -- so the coefficients came down hard while the actual damage went up enormously.
+    near(FF.potionEffect('toxin_t0').pct, 0.003, 'toxin t0 = 0.3% of a hit/s');
+    near(FF.potionEffect('toxin_t20').pct, 0.03, 'toxin t20 = 3% of a hit/s');
+    near(FF.potionEffect('coating_t20').pct, 0.045, 'a top-tier coating = 4.5% of a hit/s');
+    ok(FF.potionEffect('coating_t20').pct > FF.potionEffect('toxin_t20').pct, 'a coating still out-poisons a toxin');
     eq(FF.potionEffect('firebomb_t0').dmg, 5, 'firebomb t0 = 5 dmg');
     eq(FF.potionEffect('firebomb_t20').dmg, 210, 'firebomb t20 = 210 dmg');
     eq(Math.round(FF.potionEffect('elixir_t0').crit*100), 5, 'elixir t0 = +5% crit dmg');

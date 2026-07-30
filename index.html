@@ -6359,14 +6359,29 @@
   function d3SoulsAdd(n, st){ st = st || state; var cap = set2D3('summoner', st) ? 20 : D3_SOUL_CAP; st.d3Souls = Math.min(cap, (st.d3Souls || 0) + (n || 1)); } // Gravechoir Vestments (Summoner D3 2pc) banks up to 20
   // DECAY: a new stacking necrotic DoT on the foe (act.decayStacks/decayUntil/decayDps). Armour-ignoring,
   // on its own tick beside poison/bleed/burn. Applied by Decay 2-piece bonuses; boosted by their fulls.
-  var DECAY_MS = 5000, DECAY_MAX_STACKS = 10, DECAY_PCT = 0.03; // per-stack DoT as a fraction of combat power/sec
+  // ===== The shared damage-over-time base =====
+  // Every DoT in the game (Decay, poison, Burn, Frostbite, the per-class Bleeds) used to tick for a fraction
+  // of combatLevelEquivalent() -- a SUM OF PROFICIENCY LEVELS, so about 600 at max. Against best-in-slot hits
+  // of ~1e11 that made every damage-over-time in the game eight to nine orders of magnitude too small to see:
+  // a fully-stacked Burn dealt roughly 150 damage a second. Weapon coatings, an entire crafting sink, fed a
+  // mechanic that did nothing. The Reaper's Rot (and later the Reaver's Bleed) were re-based onto the
+  // recent-hit EMA during their reworks; this is the same fix applied to everything else.
+  // The fallback to combatLevelEquivalent keeps a DoT applied BEFORE your first landed hit (a reflect, a
+  // Block, an opening ailment) doing something rather than nothing.
+  function dotBase(st){ st = st || state; var a = st.activity;
+    return (a && a.type==='combat' && a.dotHitAvg) ? a.dotHitAvg : combatLevelEquivalent(st); }
+  // Decay is applied by roughly twenty different sources (Juggernaut D3, Nightblade, Sharpshooter D3, Lumen
+  // D3, Sentinel D3, Frostwarden D3, and a dozen legendaries), and it lands on classes that are ALREADY
+  // banded. So its coefficient is deliberately small: at the 10-stack cap it is worth ~6% of a hit per second,
+  // a real debuff that cannot dominate anyone's kit. (It was 0.03 of the old, dead base.)
+  var DECAY_MS = 5000, DECAY_MAX_STACKS = 10, DECAY_PCT = 0.006; // per-stack DoT as a fraction of the recent average hit
   function decayCap(st){ return DECAY_MAX_STACKS; }
   function enemyDecaying(st){ st = st || state; var a = st.activity; return !!(a && a.type==='combat' && (a.decayUntil||0) > Date.now() && (a.decayStacks||0) > 0); }
   function decayApply(act, n){ if(!act || act.type!=='combat') return 0;
     if((act.decayUntil||0) <= Date.now()) act.decayStacks = 0;
     act.decayStacks = Math.min(decayCap(state), (act.decayStacks||0) + (n||1));
     act.decayUntil = Date.now() + DECAY_MS;
-    act.decayDps = act.decayStacks * combatLevelEquivalent(state) * DECAY_PCT;
+    act.decayDps = act.decayStacks * dotBase(state) * DECAY_PCT;
     return act.decayStacks; }
   // Decay tick multiplier from Decay-set full bonuses (Plague Hunter +40%, Cremation +50% burning, Deathfrost +20% chilled).
   function d3DecayTickMult(st){ st = st || state; var m = 1;
@@ -7390,7 +7405,7 @@
       // Cofferguard (D2): a Block scatters bonus gold, scaling with the foe's tier via its gold reward.
       if(legActive('cofferguard') && monster){ var _cg = Math.max(1, Math.round(randInt(monster.goldMin, monster.goldMax) * LEG_COFFER_FRAC * thGoldFindMult(state))); earnGold(_cg); spawnCombatFloat('+'+fmt(_cg)+'g', 'ft-success', false); }
       // Rotshell (D2): a Block poisons the attacker (mirrors the venom channel so DoT multipliers apply).
-      if(legActive('rotshell')){ legNotePoisonStart(act); var _rp = combatLevelEquivalent(state) * LEG_ROTSHELL_PCT; if(_rp > (act.potionPoisonDps||0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = Math.max(act.potionPoisonDps||0, _rp); act.potionPoisonUntil = Math.max(act.potionPoisonUntil||0, Date.now() + LEG_ROTSHELL_MS); spawnCombatFloat('Rotshell!', 'ft-bonus', true); }
+      if(legActive('rotshell')){ legNotePoisonStart(act); var _rp = dotBase(state) * LEG_ROTSHELL_PCT; if(_rp > (act.potionPoisonDps||0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = Math.max(act.potionPoisonDps||0, _rp); act.potionPoisonUntil = Math.max(act.potionPoisonUntil||0, Date.now() + LEG_ROTSHELL_MS); spawnCombatFloat('Rotshell!', 'ft-bonus', true); }
       // Goreshell (D2): a Block heals you for 6% of max Health.
       if(legActive('goreshell')){ var _gh = Math.min(Math.round(maxHp(state) * LEG_GORESHELL_PCT), healRoom(state)); if(_gh > 0){ state.playerHp += _gh; spawnCombatFloat('+'+_gh+' HP', 'ft-success', false); } }
       // Rimeshell (D2): a Block adds 2 Chill stacks to the attacker.
@@ -8231,7 +8246,7 @@
   var LEG_STORMBRAND_CRIT = 0.03;  // Stormbrand: +this crit chance per Galvanize stack
   var LEG_AEGISVEIL_PCT = 0.10;    // Aegisveil: a ward reflect grants a Holy shield worth this fraction of max Health
   var LEG_COFFER_FRAC = 0.5;       // Cofferguard: a Block scatters this share of the foe's gold reward
-  var LEG_ROTSHELL_PCT = 0.15;     // Rotshell: a Block poisons the attacker for this fraction of combat power per second
+  var LEG_ROTSHELL_PCT = 0.03;     // Rotshell: a Block poisons the attacker for this fraction of the recent average hit per second
   var LEG_ROTSHELL_MS = 4000;      // ... poison duration
   var LEG_GORESHELL_PCT = 0.06;    // Goreshell: a Block heals this fraction of max Health
   var LEG_THORNWALL_MULT = 1.20;   // Thornwall: a Block reflects this multiple of the damage it prevented
@@ -15396,11 +15411,11 @@
   function parsePotionId(id){ var m = /^(toxin|firebomb|elixir|catalyst|coating|bomb|flash)_t(\d+)$/.exec(id||''); return m ? { type:m[1], tier:+m[2] } : null; }
   function potionEffect(id){
     var p = parsePotionId(id); if(!p) return null;
-    if(p.type==='toxin')    return { type:'toxin',    tier:p.tier, pct: potionLerp(0.01, 0.10, p.tier) };     // % combat score / sec for 3s
+    if(p.type==='toxin')    return { type:'toxin',    tier:p.tier, pct: potionLerp(0.003, 0.03, p.tier) };    // share of the recent average hit / sec for 3s
     if(p.type==='firebomb') return { type:'firebomb', tier:p.tier, dmg: Math.round(potionLerp(5, 210, p.tier)) };
     if(p.type==='elixir')   return { type:'elixir',   tier:p.tier, crit: potionLerp(0.05, 1.10, p.tier) };    // + crit-damage multiplier
     if(p.type==='catalyst') return { type:'catalyst', tier:p.tier, fam: potionLerp(0.05, 1.10, p.tier) };     // + familiar spell potency
-    if(p.type==='coating')  return { type:'coating',  tier:p.tier, pct: potionLerp(0.015, 0.14, p.tier), durationMs: 6000 }; // longer, stronger poison than Toxin
+    if(p.type==='coating')  return { type:'coating',  tier:p.tier, pct: potionLerp(0.004, 0.045, p.tier), durationMs: 6000 }; // longer, stronger poison than Toxin
     if(p.type==='bomb')     return { type:'bomb',     tier:p.tier, dmg: Math.round(potionLerp(10, 350, p.tier)) };        // heavy raw burst per hit (bigger than a Firebomb)
     if(p.type==='flash')    return { type:'flash',    tier:p.tier, stun: potionLerp(0.08, 0.20, p.tier) };                // chance per hit to stun the enemy
     return null;
@@ -15430,7 +15445,7 @@
       spawnCombatFloat('🔥 '+fb, 'ft-rare', true);
     } else if(e.type==='toxin'){
       legNotePoisonStart(act); // Wasting Curse: stamp the start of a fresh poison
-      act.potionPoisonDps = combatLevelEquivalent(state) * e.pct * (1 + getFamBuff('potionPoison')); // % of combat score per second, + familiar poison buff
+      act.potionPoisonDps = dotBase(state) * e.pct * (1 + getFamBuff('potionPoison')); // share of the recent average hit per second, + familiar poison buff
       act.potionPoisonUntil = Date.now() + POTION_POISON_DURATION_MS;
     } else if(e.type==='coating'){
       // Weapon Coating: same poison DoT channel as Toxin, but a longer-lasting venom (its own duration).
@@ -15438,7 +15453,7 @@
       var _cpct = e.pct, _cdur = (e.durationMs || POTION_POISON_DURATION_MS);
       if(plaguebearerBonus(1)){ _cpct *= 1.5; _cdur = Math.round(_cdur * 1.5); }
       legNotePoisonStart(act); // Wasting Curse: stamp the start of a fresh poison
-      act.potionPoisonDps = combatLevelEquivalent(state) * _cpct * (1 + getFamBuff('potionPoison'));
+      act.potionPoisonDps = dotBase(state) * _cpct * (1 + getFamBuff('potionPoison'));
       act.potionPoisonUntil = Date.now() + _cdur;
     } else if(e.type==='bomb'){
       // Tinkering Bomb: a heavy raw burst on each hit.
@@ -15543,7 +15558,7 @@
         act.burnSpreadAccum -= 1000;
         if(!offlineCapture && enemyBurnStacks() < PYRO_BURN_MAX_STACKS && Math.random() < LEG_EMBERSTORM_CHANCE){
           var _es = pyromancerApplyBurn(act);
-          act.burnDps = act.burnStacks * combatLevelEquivalent(state) * PYRO_BURN_PCT;
+          act.burnDps = act.burnStacks * dotBase(state) * PYRO_BURN_PCT;
           spawnCombatFloat('Ember Storm x'+_es, 'ft-rare', true);
         }
       }
@@ -15950,7 +15965,7 @@
         act.samuraiFirstStrike = false;
         if(samuraiBonus(20)){
           act.bleedStacks = SAMURAI_FIRSTBLOOD_STACKS;
-          act.bleedDps = act.bleedStacks * combatLevelEquivalent(state) * SAMURAI_BLEED_PCT;
+          act.bleedDps = act.bleedStacks * dotBase(state) * SAMURAI_BLEED_PCT;
           act.bleedUntil = Date.now() + SAMURAI_BLEED_MS;
           spawnCombatFloat('First Blood!', 'ft-rare', true);
         }
@@ -16027,6 +16042,9 @@
       if(juggernautBonus(20)){ act.juggernautSwings = (act.juggernautSwings||0) + 1; if(juggernautSmash && !offlineCapture) spawnCombatFloat('Overhead Smash!', 'ft-rare', true); }
       if(juggernautBonus(40) && isCrit){ act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + JUG_CONCUSS_MS); if(!offlineCapture) spawnCombatFloat('Concussed!', 'ft-bonus', true); }
       if(juggernautBonus(60) && isCrit){ act.juggernautFuryStacks = Math.min(JUG_FURY_MAX, (act.juggernautFuryStacks||0) + 1); if(!offlineCapture) spawnCombatFloat('Fury x'+act.juggernautFuryStacks, 'ft-bonus', false); }
+      // Every landed main-hand hit feeds the SHARED damage-over-time base (see dotBase). Ungated by class:
+      // Decay, poison and every ailment in the game read it, not just the class that happens to be worn.
+      if(!isOffhand && dmgToMonster > 0) act.dotHitAvg = act.dotHitAvg ? Math.round(act.dotHitAvg * 0.75 + dmgToMonster * 0.25) : dmgToMonster;
       // Reaver Flensing (Lv 1): each hit stacks a Bleed and refreshes it; a 25% chance adds an extra stack.
       // The hit is banked into the Bleed's base first -- every wound is worth a share of what you actually
       // hit for, which is what makes the Bleed (and so the Cuts, the Count and the Harvest) real at BiS.
@@ -16072,7 +16090,7 @@
       if(frostwardenBonus(60)){
         if((act.frostbiteUntil||0) <= Date.now()) act.frostbiteStacks = 0;
         act.frostbiteStacks = Math.min(FROST_FROSTBITE_MAX, (act.frostbiteStacks||0) + 1);
-        act.frostbiteDps = act.frostbiteStacks * combatLevelEquivalent(state) * FROST_FROSTBITE_PCT;
+        act.frostbiteDps = act.frostbiteStacks * dotBase(state) * FROST_FROSTBITE_PCT;
         act.frostbiteUntil = Date.now() + FROST_FROSTBITE_MS;
         spawnCombatFloat('Frostbite x'+act.frostbiteStacks, 'ft-bonus', true);
       }
@@ -16088,7 +16106,7 @@
       // Pyromancer Ignite (Lv1): every hit stacks a fire damage-over-time scaling with your combat power.
       if(pyromancerBonus(1)){
         var _bs = pyromancerApplyBurn(act);
-        act.burnDps = act.burnStacks * combatLevelEquivalent(state) * PYRO_BURN_PCT;
+        act.burnDps = act.burnStacks * dotBase(state) * PYRO_BURN_PCT;
         spawnCombatFloat('Ignite x'+_bs, 'ft-bonus', true);
       }
       // Pyromancer Combust (Lv20): a Critical Hit detonates all Burn stacks for burst fire damage.
@@ -16103,7 +16121,7 @@
       // Pyromancer Kindling Crits (Lv40): a Critical Hit stokes the fire, adding Burn stacks (re-seeding after a Combust).
       if(pyromancerBonus(40) && isCrit){
         for(var _ki=0; _ki<PYRO_KINDLING_CRIT_STACKS; _ki++) pyromancerApplyBurn(act);
-        act.burnDps = act.burnStacks * combatLevelEquivalent(state) * PYRO_BURN_PCT;
+        act.burnDps = act.burnStacks * dotBase(state) * PYRO_BURN_PCT;
       }
       // Ranger imbued arrows: each unlocked tier has a 25% chance on hit to inflict its ailment. They
       // reuse the shared Poison / Bleed / Chill / Burn systems, so their DoT ticks + Chill slow already
@@ -16121,7 +16139,7 @@
       if(rangerBonus(20) && Math.random() < rangerProcChance(state)){ // Barbed Arrows (Lv20): bleed
         if((act.bleedUntil||0) <= Date.now()) act.bleedStacks = 0;
         act.bleedStacks = Math.min(RANGER_BLEED_MAX, (act.bleedStacks||0) + 1);
-        act.bleedDps = act.bleedStacks * combatLevelEquivalent(state) * RANGER_BLEED_PCT;
+        act.bleedDps = act.bleedStacks * dotBase(state) * RANGER_BLEED_PCT;
         act.bleedUntil = Date.now() + RANGER_BLEED_MS * rangerAilmentDurMult(state);
         spawnCombatFloat('Bleed x'+act.bleedStacks, 'ft-bonus', true);
       }
@@ -16131,7 +16149,7 @@
       }
       if(rangerBonus(60) && Math.random() < rangerProcChance(state)){ // Fire Arrows (Lv60): burn
         var _rbs = pyromancerApplyBurn(act);
-        act.burnDps = act.burnStacks * combatLevelEquivalent(state) * PYRO_BURN_PCT;
+        act.burnDps = act.burnStacks * dotBase(state) * PYRO_BURN_PCT;
         if(set2('ranger')) act.burnUntil = Date.now() + PYRO_BURN_MS * rangerAilmentDurMult(state); // Persistent Ailments
         spawnCombatFloat('Burn x'+_rbs, 'ft-bonus', true);
       }
@@ -16340,6 +16358,7 @@
     // The Butcher's ledger is per FOE: a fresh foe is a fresh count, which is what makes this the long-fight
     // class rather than a farming-chain class. Bonereaver is the one thing that carries it.
     act.rvCuts = 0; act.rvBank = 0; act.rvCutAccum = 0; act.rvBleedHitAvg = 0;
+    act.dotHitAvg = 0;  // the shared DoT base is per-foe, like every other hit average
     if(_rvCarry){ act.rvCuts = _rvCarry.cuts; act.rvBank = _rvCarry.bank; act.rvBleedHitAvg = _rvCarry.hitAvg; }
     if(_arterialCarry > 0){ // Bonereaver: the next foe inherits the slain foe's Bleed
       act.bleedStacks = _arterialCarry;
@@ -16354,7 +16373,7 @@
     act.burnStacks = 0; act.burnUntil = 0; act.burnDps = 0; // Pyromancer Burn doesn't carry between foes
     if(_emberCarry > 0){ // Ember Burst (Pyromancer full): the next foe inherits the slain foe's Burn
       act.burnStacks = _emberCarry; act.burnUntil = Date.now() + PYRO_BURN_MS;
-      act.burnDps = act.burnStacks * combatLevelEquivalent(state) * PYRO_BURN_PCT;
+      act.burnDps = act.burnStacks * dotBase(state) * PYRO_BURN_PCT;
       spawnCombatFloat('Ember Burst x'+_emberCarry, 'ft-bonus', true);
     }
     act.voidVulnStacks = 0; act.voidVulnUntil = 0; // Voidshadow Mark of the Void / Doom don't carry between foes
@@ -24459,6 +24478,13 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.68', date:'Jul 30', heading:'Every damage-over-time actually works now', items:[
+      'A long-standing bug, and a big one: <b>almost every damage-over-time in the game was doing nothing at endgame.</b> Poison, Burn, Frostbite, Decay and the Bleeds all ticked for a fraction of your summed <i>proficiency levels</i> — a number around 600 — while your actual hits land in the hundreds of billions. A fully-stacked Burn dealt roughly <b>150 damage per second</b>. Weapon Coatings, an entire crafting line, fed a mechanic that was mathematically invisible.',
+      'All of them now tick for a share of your <b>recent average hit</b>, so they scale with your gear the way they always should have. The Reaper’s Rot and the Reaver’s Bleed already worked this way after their reworks — this brings everything else onto the same footing.',
+      'Because the base changed by orders of magnitude, the coefficients came down to match. <b>Decay</b> is applied by around twenty different sources and lands on classes that are already balanced, so it is deliberately modest: a fully-stacked Decay is worth about <b>6% of one of your hits per second</b>. <b>Toxins and Weapon Coatings</b> are likewise tuned to be a real, worthwhile buff rather than mandatory — a top-tier Coating is about <b>4.5% of a hit per second</b>, and the Plaguebearer’s Venomous still makes it half again stronger.',
+      'The classes whose whole identity is a damage-over-time — <b>Pyromancer</b> (Burn), <b>Plaguebearer</b> (poison), <b>Ranger</b> (four ailments), <b>Frostwarden</b> (Frostbite) and <b>Samurai</b> (First Blood) — get a large, genuine power increase out of this, because their signature mechanic went from doing nothing to doing something. They have NOT been re-balanced yet; that happens when each one gets its rework, and they may well be strong in the meantime.',
+      'A DoT applied before you have landed a hit — from a reflect, a Block, or an opening ailment — falls back to the old figure rather than dealing zero, so nothing regressed.'
+    ]},
     { v:'0.0.67', date:'Jul 30', heading:'Reaver rework: The Butcher’s Count', items:[
       'First, a confession: <b>the Reaver’s Bleed did almost nothing at endgame.</b> It ticked for a share of your summed proficiency LEVELS — a few hundred damage a second — against best-in-slot hits in the hundreds of billions. The class’s entire identity was too small to see, which is why the old Reaver played like a fast axe with a flat damage bonus. That is fixed: <b>Bleed now ticks for a share of your recent average hit</b>, so it scales with your gear the way it always should have.',
       'On top of that fix, the class is rebuilt around a ledger. Every <b>stack-second</b> of bleeding carves a <b>Cut</b> into this fight’s tally, and <b>The Count</b> (Lv 20) turns the tally into <b>+0.4% damage per Cut, up to +120%</b>, which never decays while the foe lives. The Reaver no longer opens strong — he <i>becomes</i> unsurvivable.',
@@ -36191,7 +36217,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.67.1';
+  var GAME_VERSION = '0.0.68.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -36407,6 +36433,7 @@
       treasureHunterBonus:treasureHunterBonus, treasureHunterCount:treasureHunterCount,
       thChargeNeed:thChargeNeed, thRelicCount:thRelicCount, thBestRelicTier:thBestRelicTier, thTierPct:thTierPct, thGraveStrikeDamage:thGraveStrikeDamage,
       thGoldFindMult:thGoldFindMult, thMarkStacks:thMarkStacks, thMarkAdd:thMarkAdd, thMarkMult:thMarkMult, thCofferMult:thCofferMult,
+      dotBase:dotBase, DECAY_PCT:DECAY_PCT, DECAY_MAX_STACKS:DECAY_MAX_STACKS, LEG_ROTSHELL_PCT:LEG_ROTSHELL_PCT,
       reaverBonus:reaverBonus, rvCuts:rvCuts, rvBank:rvBank, rvCountCap:rvCountCap, rvCountMult:rvCountMult, rvHarvestAt:rvHarvestAt,
       rvHarvestArmed:rvHarvestArmed, rvHarvestDamage:rvHarvestDamage, rvCarveCuts:rvCarveCuts, rvHarvestFire:rvHarvestFire,
       rvHarvestHasteMult:rvHarvestHasteMult, applyReaverBleedTick:applyReaverBleedTick, reaverBleedCap:reaverBleedCap,
