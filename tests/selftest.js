@@ -10289,6 +10289,58 @@
     } finally { S.inventory = saveInv; }
   });
 
+  // ---- ticket-0110: Auto Requeue re-descends a cleared dungeon (solo) -----------------------------
+  suite('dungeons: Auto Requeue re-descends after a clear', function(){
+    var S = FF._state;
+    var snap = { xp:S.xp, hp:S.playerHp, act:S.activity, rq:S.dungeonAutoRequeue, cl:S.dungeonsCleared };
+    try {
+      var d1 = FF.DUNGEON_ORDER[0], def = FF.DUNGEON_DEFS[d1];
+      // Meet the entry gate (Total Level; d1 has no previous layer to clear).
+      S.xp = JSON.parse(JSON.stringify(S.xp));
+      var floor = FF.xpFloorForLevel(60);
+      Object.keys(S.xp).forEach(function(k){ S.xp[k] = Math.max(S.xp[k]||0, floor); });
+      eq(FF.dungeonEntryBlock(def), null, 'the test fixture can enter the first dungeon');
+      S.playerHp = FF.maxHp(S);
+
+      // OFF: clearing must leave you out of combat, on the result screen.
+      S.dungeonAutoRequeue = false;
+      FF.dungeonBegin(d1);
+      eq(S.activity.dungeon, d1, 'Begin Descent starts the run');
+      FF.dungeonComplete();
+      eq(S.activity.type, null, 'with Auto Requeue off, a clear ends the run');
+
+      // ON: clearing rolls straight into a fresh descent of the same layer, from the first foe.
+      S.dungeonAutoRequeue = true;
+      FF.dungeonBegin(d1);
+      FF.dungeonComplete();
+      eq(S.activity.type, 'combat', 'with Auto Requeue on, a clear starts another run');
+      eq(S.activity.dungeon, d1, '...of the same layer');
+      eq(S.activity.dungeonIndex, 0, '...starting from the first foe');
+
+      // A dead player must NEVER be re-descended (death goes through dungeonEndRun, but guard anyway).
+      S.playerHp = 0;
+      eq(FF.dungeonAutoRequeue(def), false, 'a dead player is never re-descended');
+      S.playerHp = FF.maxHp(S);
+      // A layer you cannot enter stops the loop and says why, instead of silently spinning.
+      var locked = FF.DUNGEON_ORDER[FF.DUNGEON_ORDER.length - 1];
+      var lockedDef = FF.DUNGEON_DEFS[locked];
+      ok(!!FF.dungeonEntryBlock(lockedDef), 'the last layer is gated for this fixture');
+      var toast = document.getElementById('gameToast'); if(toast && toast.parentNode) toast.parentNode.removeChild(toast);
+      eq(FF.dungeonAutoRequeue(lockedDef), false, 'a gated layer is not re-entered');
+      var t2 = document.getElementById('gameToast');
+      ok(t2 && /Auto Requeue stopped/.test(t2.textContent), '...and the player is told why');
+      if(t2 && t2.parentNode) t2.parentNode.removeChild(t2);
+      // The toggle is off by default for existing saves.
+      S.dungeonAutoRequeue = false;
+      eq(FF.dungeonAutoRequeue(def), false, 'the toggle gates the whole behaviour');
+    } finally {
+      // dungeonRun is MODULE-scoped, so restoring `state` alone would leave an active run behind --
+      // dungeonLocksActions() would then short-circuit every later suite's Tower/Guild-Boss entry.
+      FF.dungeonEndRun('retreat');
+      S.xp=snap.xp; S.playerHp=snap.hp; S.activity=snap.act; S.dungeonAutoRequeue=snap.rq; S.dungeonsCleared=snap.cl;
+    }
+  });
+
   // ---- ticket-0111: a saved loadout must follow an equipped piece through its upgrade --------------
   suite('loadouts: upgrading an equipped piece keeps it in saved kits', function(){
     var S = FF._state;

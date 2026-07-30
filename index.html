@@ -12736,6 +12736,7 @@
       equippedTitle: null,       // the currently-worn title id (shown on Profile), or null
       tower: {},                 // The Tower: per-entrance progress { <entranceId>: { floor, best } }
       towerAutoAdvance: false,   // Tower: auto-enter the next floor after each clear (toggled in the Enter modal)
+      dungeonAutoRequeue: false, // Dungeons (ticket-0110): re-descend the same layer after a solo clear
 
       familiarCastIndex: 0,
       familiarCastAccum: 0,
@@ -17636,6 +17637,7 @@
           if(!Array.isArray(state.trackedQuests)) state.trackedQuests = [];
           if(!state.tower || typeof state.tower !== 'object') state.tower = {};
           if(typeof state.towerAutoAdvance !== 'boolean') state.towerAutoAdvance = false;
+          if(typeof state.dungeonAutoRequeue !== 'boolean') state.dungeonAutoRequeue = false;
           if(!state.quests || typeof state.quests !== 'object') state.quests = { claimed:{}, completed:{} };
           if(!state.quests.claimed || typeof state.quests.claimed !== 'object') state.quests.claimed = {};
           if(!state.quests.completed || typeof state.quests.completed !== 'object') state.quests.completed = {}; // latched-completion set (see questProgress)
@@ -21806,6 +21808,24 @@
     stopActivity();
     dungeonView = 'result';
     needsRender = true;
+    // Auto Requeue (ticket-0110): a solo clear rolls straight into another descent of the SAME layer, so a
+    // farming session doesn't need a click per run. Only ever fires on a CLEAR -- death and retreat go
+    // through dungeonEndRun, which never comes here, so the toggle can't loop you into repeated deaths.
+    // The result popup still shows what dropped; the next run starts underneath it.
+    if(state.dungeonAutoRequeue && !offlineCapture) dungeonAutoRequeue(def);
+  }
+  // Re-enter the layer just cleared, if it's still enterable. Kept separate from dungeonComplete so the
+  // guards are readable and testable: the toggle must be on, the layer must still pass its entry check,
+  // and the player must be alive with no other activity holding the slot.
+  function dungeonAutoRequeue(def){
+    if(!state.dungeonAutoRequeue || !def) return false;
+    if(!(state.playerHp > 0)) return false;                       // never re-descend on a corpse
+    var block = dungeonEntryBlock(def);
+    if(block){ blockedNotice('Auto Requeue stopped — ' + block + '.'); return false; }
+    if(dungeonLocksActions()) return false;                       // a party session owns the run instead
+    addLog('Auto Requeue: descending into the ' + def.category + ' again.', 'important');
+    dungeonBegin(def.id);
+    return true;
   }
   // End a run on death or retreat. Progress is NOT preserved: drop the whole run (its advanced enemy
   // index + party) and clear the linked combat, so the next descent restarts from the first foe rather
@@ -22429,6 +22449,8 @@
     for(var s = 2; s <= 4; s++) html += '<span class="style-btn locked" style="cursor:default"><span class="style-type" style="text-transform:none">Slot ' + s + ' — open (multiplayer coming soon)</span></span>';
     html += '</div>';
     html += '<div class="chance-line" style="margin-top:8px">' + svgIcon('shield', '#8a97a6') + ' <b>Threat</b> decides how often a foe targets you: heavier armour draws more attacks (Plate &gt; Chain &gt; Leather &gt; Cloth). Plate-clad delvers tank; cloth casters stay out of reach.</div>';
+    html += '<div class="chance-line" style="margin-top:8px;display:flex;align-items:center;gap:6px">'
+      + '<span data-action="toggleDungeonAutoRequeue" style="cursor:pointer;font-size:13px;">' + (state.dungeonAutoRequeue ? '\u2611' : '\u2610') + ' Auto Requeue &mdash; re-descend automatically after each clear</span></div>';
     html += '<div style="display:flex;gap:8px;margin-top:10px">';
     html += '<button class="action-btn" data-action="dungeonBegin" data-id="' + def.id + '" style="width:auto" ' + (canEnter ? '' : 'disabled') + '>' + (canEnter ? 'Begin Descent' : escapeHtml(block)) + '</button>';
     html += '<button class="action-btn stop" data-action="dungeonBack" style="width:auto">Back</button>';
@@ -23950,7 +23972,7 @@
       html += '<button class="action-btn" data-action="closeDungeonResult" style="margin-top:14px">Nice!</button>';
     } else {
       html += '<div style="margin:10px 0 3px;font-size:14px;">No Masterwork Blueprint dropped this run.</div>';
-      html += '<div style="font-size:12px;color:var(--text-dim);">Descend again for another chance.</div>';
+      html += '<div style="font-size:12px;color:var(--text-dim);">' + (state.dungeonAutoRequeue ? 'Auto Requeue is on &mdash; the next descent has already begun.' : 'Descend again for another chance.') + '</div>';
       html += '<button class="action-btn" data-action="closeDungeonResult" style="margin-top:14px">Onward</button>';
     }
     return html + '</div>';
@@ -24084,6 +24106,11 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.65', date:'Jul 30', heading:'Dungeons: Auto Requeue', items:[
+      'New (ticket-0110): an <b>Auto Requeue</b> toggle in the solo dungeon lobby. With it on, clearing a layer immediately begins another descent of the same layer, so farming Masterwork Blueprints no longer needs a click between every run. The clear popup still shows what dropped \u2014 the next run starts underneath it.',
+      'It only ever fires on a CLEAR. Dying or retreating ends the run as before, so the toggle can never loop you into repeated deaths, and it stops with a notice if the layer somehow becomes unavailable. Off by default.',
+      'Party runs are not covered yet \u2014 re-forming a group needs server support so every member lands in the same new session.'
+    ]},
     { v:'0.0.64', date:'Jul 30', heading:'Loadouts keep gear you upgrade', items:[
       'Fixed (ticket-0111, thanks Valuren): enhancing or enchanting a piece while it was EQUIPPED made it disappear from your saved loadouts. Upgrading turns a plain crafted piece into a unique item with its own id, but presets saved beforehand still described the plain version \u2014 which no longer exists, because it left your bag the moment you first equipped it. Swapping kits and coming back therefore found nothing to equip and left the slot empty.',
       'Saved loadouts now follow the upgrade: the preset re-points at the upgraded item, so it comes back \u2014 upgrade and all. If you still own a spare un-upgraded copy of the same piece, presets are left as they were and use the spare, so an upgrade is never hijacked out of the kit you are wearing. Nothing was ever lost to this \u2014 affected items were sitting in your unique-item list, and simply re-equipping and re-saving fixed it by hand.'
@@ -34550,6 +34577,7 @@
     },
     towerPreviewClose: function(btn, e){ towerPreviewEntrance = null; towerEntryError = ''; renderTowerPreview(); },
     toggleTowerAutoAdvance: function(btn, e){ state.towerAutoAdvance = !state.towerAutoAdvance; saveGame(); renderTowerPreview(); },
+    toggleDungeonAutoRequeue: function(btn, e){ state.dungeonAutoRequeue = !state.dungeonAutoRequeue; saveGame(); },
     navToActivity: function(btn, e){
       var navCat = btn.getAttribute('data-nav-cat');
       var navSub = btn.getAttribute('data-nav-sub');
@@ -35781,7 +35809,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.64.10';
+  var GAME_VERSION = '0.0.65.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -35967,7 +35995,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem, applyChipDamage:applyChipDamage,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, grantMasterworkDrops:grantMasterworkDrops, dungeonResultPopupHtml:dungeonResultPopupHtml, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, D2_LEG_GEAR_DEFS:D2_LEG_GEAR_DEFS, D2_LEG_GEAR_MAP:D2_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D2:LEGENDARY_GEAR_ITEMS_D2, legGearItemIdD2:legGearItemIdD2, LEG_GEAR_GROUP_KEYS_D2:LEG_GEAR_GROUP_KEYS_D2, D3_LEG_GEAR_DEFS:D3_LEG_GEAR_DEFS, D3_LEG_GEAR_MAP:D3_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D3:LEGENDARY_GEAR_ITEMS_D3, legGearItemIdD3:legGearItemIdD3, LEG_GEAR_GROUP_KEYS_D3:LEG_GEAR_GROUP_KEYS_D3, d3LegDmgMult:d3LegDmgMult, D4_LEG_GEAR_DEFS:D4_LEG_GEAR_DEFS, D4_LEG_GEAR_MAP:D4_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D4:LEGENDARY_GEAR_ITEMS_D4, legGearItemIdD4:legGearItemIdD4, LEG_GEAR_GROUP_KEYS_D4:LEG_GEAR_GROUP_KEYS_D4, d4LegDmgMult:d4LegDmgMult, d4LegIncomingMult:d4LegIncomingMult, d4SoulflameBurst:d4SoulflameBurst, d4EmberwyrmExecutes:d4EmberwyrmExecutes, enemyScorched:enemyScorched, scorchApply:scorchApply, scorchStacks:scorchStacks, scorchDmgMult:scorchDmgMult, SCORCH_MAX_STACKS:SCORCH_MAX_STACKS, D3_LEG_RING_DEFS:D3_LEG_RING_DEFS, D3_LEG_CLOAK_DEFS:D3_LEG_CLOAK_DEFS, D3_LEG_AMULET_DEFS:D3_LEG_AMULET_DEFS, legRingItemIdD3:legRingItemIdD3, legCloakItemIdD3:legCloakItemIdD3, legAmuletItemIdD3:legAmuletItemIdD3, D4_LEG_RING_DEFS:D4_LEG_RING_DEFS, D4_LEG_CLOAK_DEFS:D4_LEG_CLOAK_DEFS, D4_LEG_AMULET_DEFS:D4_LEG_AMULET_DEFS, legRingItemIdD4:legRingItemIdD4, legCloakItemIdD4:legCloakItemIdD4, legAmuletItemIdD4:legAmuletItemIdD4, d3AccessoryDmgMult:d3AccessoryDmgMult, enemyAfflicted:enemyAfflicted, legNecromancyDoTMult:legNecromancyDoTMult, d2LegDmgMult:d2LegDmgMult, legStormbrandCrit:legStormbrandCrit, legVoidfangShred:legVoidfangShred, legBarrierAdd:legBarrierAdd, legBarrierCap:legBarrierCap, d2HeadtakerOnKill:d2HeadtakerOnKill, legRunegorgeCritDmg:legRunegorgeCritDmg, legSpineshatterMult:legSpineshatterMult, legPoisonTickMult:legPoisonTickMult, legFarstrikeCritDmg:legFarstrikeCritDmg, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D2_LEG_RING_DEFS:D2_LEG_RING_DEFS, D2_LEG_CLOAK_DEFS:D2_LEG_CLOAK_DEFS, D2_LEG_AMULET_DEFS:D2_LEG_AMULET_DEFS, legRingItemIdD2:legRingItemIdD2, legCloakItemIdD2:legCloakItemIdD2, legAmuletItemIdD2:legAmuletItemIdD2, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, grantMasterworkDrops:grantMasterworkDrops, dungeonResultPopupHtml:dungeonResultPopupHtml, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, D2_LEG_GEAR_DEFS:D2_LEG_GEAR_DEFS, D2_LEG_GEAR_MAP:D2_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D2:LEGENDARY_GEAR_ITEMS_D2, legGearItemIdD2:legGearItemIdD2, LEG_GEAR_GROUP_KEYS_D2:LEG_GEAR_GROUP_KEYS_D2, D3_LEG_GEAR_DEFS:D3_LEG_GEAR_DEFS, D3_LEG_GEAR_MAP:D3_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D3:LEGENDARY_GEAR_ITEMS_D3, legGearItemIdD3:legGearItemIdD3, LEG_GEAR_GROUP_KEYS_D3:LEG_GEAR_GROUP_KEYS_D3, d3LegDmgMult:d3LegDmgMult, D4_LEG_GEAR_DEFS:D4_LEG_GEAR_DEFS, D4_LEG_GEAR_MAP:D4_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D4:LEGENDARY_GEAR_ITEMS_D4, legGearItemIdD4:legGearItemIdD4, LEG_GEAR_GROUP_KEYS_D4:LEG_GEAR_GROUP_KEYS_D4, d4LegDmgMult:d4LegDmgMult, d4LegIncomingMult:d4LegIncomingMult, d4SoulflameBurst:d4SoulflameBurst, d4EmberwyrmExecutes:d4EmberwyrmExecutes, enemyScorched:enemyScorched, scorchApply:scorchApply, scorchStacks:scorchStacks, scorchDmgMult:scorchDmgMult, SCORCH_MAX_STACKS:SCORCH_MAX_STACKS, D3_LEG_RING_DEFS:D3_LEG_RING_DEFS, D3_LEG_CLOAK_DEFS:D3_LEG_CLOAK_DEFS, D3_LEG_AMULET_DEFS:D3_LEG_AMULET_DEFS, legRingItemIdD3:legRingItemIdD3, legCloakItemIdD3:legCloakItemIdD3, legAmuletItemIdD3:legAmuletItemIdD3, D4_LEG_RING_DEFS:D4_LEG_RING_DEFS, D4_LEG_CLOAK_DEFS:D4_LEG_CLOAK_DEFS, D4_LEG_AMULET_DEFS:D4_LEG_AMULET_DEFS, legRingItemIdD4:legRingItemIdD4, legCloakItemIdD4:legCloakItemIdD4, legAmuletItemIdD4:legAmuletItemIdD4, d3AccessoryDmgMult:d3AccessoryDmgMult, enemyAfflicted:enemyAfflicted, legNecromancyDoTMult:legNecromancyDoTMult, d2LegDmgMult:d2LegDmgMult, legStormbrandCrit:legStormbrandCrit, legVoidfangShred:legVoidfangShred, legBarrierAdd:legBarrierAdd, legBarrierCap:legBarrierCap, d2HeadtakerOnKill:d2HeadtakerOnKill, legRunegorgeCritDmg:legRunegorgeCritDmg, legSpineshatterMult:legSpineshatterMult, legPoisonTickMult:legPoisonTickMult, legFarstrikeCritDmg:legFarstrikeCritDmg, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D2_LEG_RING_DEFS:D2_LEG_RING_DEFS, D2_LEG_CLOAK_DEFS:D2_LEG_CLOAK_DEFS, D2_LEG_AMULET_DEFS:D2_LEG_AMULET_DEFS, legRingItemIdD2:legRingItemIdD2, legCloakItemIdD2:legCloakItemIdD2, legAmuletItemIdD2:legAmuletItemIdD2, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonAutoRequeue:dungeonAutoRequeue, dungeonBegin:dungeonBegin, dungeonComplete:dungeonComplete, dungeonEndRun:dungeonEndRun, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerDefenseProfile:playerDefenseProfile, enemyDamageRangeVsPlayer:enemyDamageRangeVsPlayer, deathBlowChronicle:deathBlowChronicle,
       matchesSpecialCraft:matchesSpecialCraft,
