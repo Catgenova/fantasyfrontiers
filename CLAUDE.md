@@ -158,6 +158,15 @@ ramp-speed legendaries (Gravewrath) measure at their floor when the ledger is pr
 Slow-swing classes: use SIM_MS=90000. The dummy HP pool is 1e15 with refill at 1e14 —
 single ceiling hits exceed 1e12, which saturated the first Berserker run with kill resets.
 
+**TIER WARNING (v0.0.64.9): every recorded ceiling above was measured with a ONE-BELOW-BiS weapon.**
+Melee weapons + shields shipped with `tierCount:20` (top `t19`) while bows/wands/wards/scepter/staff had
+21 (top `t20`) — the ticket-0116 off-kilter. Melee/shields are now 21 tiers too (top `t20`, Tungsten), and
+the harness DERIVES the top tier via `legGearBaseTopTier()` instead of hardcoding it, so it can never drift
+again. Two consequences: (1) every melee ceiling was measured on a t19 weapon and will now read HIGHER;
+(2) the bow builds were ALWAYS one tier low (bows were 21 tiers while BUILDS said t19), so Quickdraw's
+~94B/~85B is understated more than the melee classes'. Re-measure before comparing any new class against
+these numbers, and never hardcode a tier in BUILDS.
+
 The owner-approved best-in-slot rules (v0.0.57.11):
 
 - **Every slot filled, all fantastic**: class weapon (legendary effect per config), full

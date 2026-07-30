@@ -35,7 +35,7 @@ const SIM_CLASS = process.env.SIM_CLASS || "assassin";
 // uniqueRingType: the crafted ring for the last two slots (the class's scaling stat).
 const BUILDS = {
   summoner: {
-    weapon: { typeId: "staff", base: "stweapon_staff_t20_fantastic", tier: 20, styleXp: ["staff", "staves", "arcanism"] },
+    weapon: { typeId: "staff", styleXp: ["staff", "staves", "arcanism"] },
     legs: ["packbrand", "rapidconjuring", "necrocaller", "broodwyrm"],
     weaponLines: leg => leg === "broodwyrm"
       ? ["weaponDamage", "critDamage", "critChance", "earthDamage"]
@@ -43,7 +43,7 @@ const BUILDS = {
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["famhaste", "d2_fury", "d4_wyrm"], uniqueRingType: "communion",
   },
   assassin: {
-    weapon: { typeId: "claw", base: "stweapon_claw_t19_fantastic", tier: 19, styleXp: ["claw"] },
+    weapon: { typeId: "claw", styleXp: ["claw"] },
     legs: ["phantomassault", "throatripper", "wraithclaw", "shadowwyrm"],
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
@@ -53,7 +53,7 @@ const BUILDS = {
     // Rapier + EMPTY offhand. The Sidestep clock self-drives the whole dodge kit, so the sim measures
     // it honestly with no priming; the zero-offense dummy means no REAL dodges (En Garde's clock
     // advance and Untouchable's hit-halving never trigger -- both strictly favor the player anyway).
-    weapon: { typeId: "rapier", base: "stweapon_rapier_t19_fantastic", tier: 19, styleXp: ["rapier"] },
+    weapon: { typeId: "rapier", styleXp: ["rapier"] },
     legs: ["engarde", "bloodwaltz", "phantomthrust", "wyrmdancer"],
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "pierce",
@@ -64,7 +64,7 @@ const BUILDS = {
     // variables, never wand raw damage stats. Ward fixed to Stormscale (Galvanize cap 15) — Stormcoil/
     // Voltveil key off reflects the zero-offense dummy never throws, Stormveil needs hits taken.
     // 45s window (1s bolts, no macro-cycle); unique rings are Rings of Earth (wands skip physical rings).
-    weapon: { typeId: "wandEarth", base: "stweapon_wandEarth_t20_fantastic", tier: 20, styleXp: ["wandEarth", "wands", "earth"] },
+    weapon: { typeId: "wandEarth", styleXp: ["wandEarth", "wands", "earth"] },
     legs: ["tempest", "stormbrand", "stormtomb", "stormwyrm"],
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "earth",
@@ -74,7 +74,7 @@ const BUILDS = {
     // Scepter + Ward. 90s runs: the 24s Litany needs several Amens per window. The ward slot is fixed to
     // Sunscale (Doxology cap 8) — the only ward whose effect fires against the zero-offense dummy
     // (Hallowlight/Sanctveil key off ward reflects, which never happen; Aegisveil deepens a defensive bank).
-    weapon: { typeId: "scepter", base: "stweapon_scepter_t20_fantastic", tier: 20, styleXp: ["scepter", "scepters", "runesmithing", "light"] },
+    weapon: { typeId: "scepter", styleXp: ["scepter", "scepters", "runesmithing", "light"] },
     legs: ["retribution", "sunbrand", "lichbane", "sunwyrm"],
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "blunt",
@@ -84,7 +84,7 @@ const BUILDS = {
     // Short bow + quiver + plate boots + leather. First ranged build: the quiver offhand and a mountain
     // of top-tier arrows (Fletcher's Economy doubles their base damage, so arrow tier is a real stat).
     // The cycle is deterministic, so these are the cleanest runs of any class so far.
-    weapon: { typeId: "bowShort", base: "stweapon_bowShort_t19_fantastic", tier: 19, styleXp: ["bowShort"] },
+    weapon: { typeId: "bowShort", styleXp: ["bowShort"] },
     legs: ["chainshot", "serpentcoil", "cryptvenom", "breathfang"],
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "pierce",
@@ -95,7 +95,7 @@ const BUILDS = {
     // BiS multipliers as the swings). Sim caveats: the zero-offense dummy keeps the Siphon Shield
     // permanently full once banked (flatters Wraithguard's faster ticks and Spectral Edge's full-shield
     // lash), and the refilled HP pool means no kills — Contagion (D1 full) measures dead here.
-    weapon: { typeId: "scythe", base: "stweapon_scythe_t19_fantastic", tier: 19, styleXp: ["scythe"] },
+    weapon: { typeId: "scythe", styleXp: ["scythe"] },
     legs: ["spectralaegis", "soulflay", "deathshepherd", "soulflame"],
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
@@ -107,7 +107,7 @@ const BUILDS = {
     // LIVE Armor rating into damage, so the BiS plate + Fortress ramp are offense here -- expect the armour
     // number itself to be the balance surface. Owner target: ~60B (a tank band, below the 70-90B dps classes).
     // Sim-dead: Bastion's hit cap, Unbreakable's mitigation, real Blocks (the dummy never swings).
-    weapon: { typeId: "mace", base: "stweapon_mace_t19_fantastic", tier: 19, styleXp: ["mace"] },
+    weapon: { typeId: "mace", styleXp: ["mace"] },
     legs: ["shieldbash", "wallbreaker", "tombshatter", "bastionbreaker"],
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "blunt",
@@ -118,7 +118,7 @@ const BUILDS = {
     // 45s classes. The zero-offense dummy never triggers Rally, and Shieldwall/Under One Banner are
     // defense/party-side, so the sim measures the Steel/Pace/Decree core -- which is where the knob
     // (KN_DECREE_PCT) lives. The Banner never lowers, so runs ramp once and hold.
-    weapon: { typeId: "claymore", base: "stweapon_claymore_t19_fantastic", tier: 19, styleXp: ["claymore"] },
+    weapon: { typeId: "claymore", styleXp: ["claymore"] },
     legs: ["relentlessassault", "breachblade", "gravewarden", "drakelance"],
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "pierce",
@@ -127,7 +127,7 @@ const BUILDS = {
     // Max Health IS the weapon (Titan's Heft/Deepquake/Wrathscale scale off it), so jewelry lines trade
     // lifesteal for Max HP. primeLedger holds the Blood Ledger inked at cap (owner rule: simulate the
     // ledger filling as the kit would in a real fight -- a zero-offense dummy never inks damage taken).
-    weapon: { typeId: "warhammer", base: "stweapon_warhammer_t19_fantastic", tier: 19, styleXp: ["warhammer"] },
+    weapon: { typeId: "warhammer", styleXp: ["warhammer"] },
     legs: ["titaniccrits", "skullcleaver", "gravewrath", "wrathscale"],
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "blunt",
@@ -176,25 +176,31 @@ async function setup(cfg) {
     st.bodyArmor.back = { leg: cfg.cloakLeg, rarity: "fantastic" }; // legendary Shroud
 
     // Weapon: legendary fantastic top-tier, 4 max lines then +15.
-    st.uniqueItems.SIMW = { uid: "SIMW", leg: cfg.leg, kind: "weapon", base: cfg.weapon.base,
-      tier: cfg.weapon.tier, rarity: "fantastic", enchants: cfg.weaponLines.map(id => maxLine("weapon", id)), enhance: 15 };
-    st.equippedMainhand = cfg.weapon.typeId; st.equippedMainhandTier = cfg.weapon.tier + 1; st.equippedMainhandRarity = "fantastic";
+    // TOP TIER, derived: never hardcode it -- gear families have differed (melee 20 tiers vs arcane 21),
+    // and a stale literal silently sims a one-below-BiS weapon.
+    const _wTop = FF.legGearBaseTopTier(cfg.weapon.typeId);
+    st.uniqueItems.SIMW = { uid: "SIMW", leg: cfg.leg, kind: "weapon", base: `stweapon_${cfg.weapon.typeId}_t${_wTop}_fantastic`,
+      tier: _wTop, rarity: "fantastic", enchants: cfg.weaponLines.map(id => maxLine("weapon", id)), enhance: 15 };
+    st.equippedMainhand = cfg.weapon.typeId; st.equippedMainhandTier = _wTop + 1; st.equippedMainhandRarity = "fantastic";
     st.equippedMainhandUid = "SIMW";
     if (cfg.offhandClaw) {
-      st.uniqueItems.SIMO = { uid: "SIMO", kind: "weapon", base: "stweapon_claw_t19_fantastic",
-        tier: 19, rarity: "fantastic", enchants: cfg.weaponLines.map(id => maxLine("weapon", id)), enhance: 15 };
-      st.equippedOffhand = "claw"; st.equippedOffhandTier = 20; st.equippedOffhandRarity = "fantastic"; st.equippedOffhandUid = "SIMO";
+      const _cTop = FF.legGearBaseTopTier("claw");
+      st.uniqueItems.SIMO = { uid: "SIMO", kind: "weapon", base: `stweapon_claw_t${_cTop}_fantastic`,
+        tier: _cTop, rarity: "fantastic", enchants: cfg.weaponLines.map(id => maxLine("weapon", id)), enhance: 15 };
+      st.equippedOffhand = "claw"; st.equippedOffhandTier = _cTop + 1; st.equippedOffhandRarity = "fantastic"; st.equippedOffhandUid = "SIMO";
     } else if (cfg.offhandWard) {
-      st.uniqueItems.SIMWD = { uid: "SIMWD", leg: cfg.offhandWard, kind: "offhand", base: "stward_wardLight_t20_fantastic",
-        tier: 20, rarity: "fantastic", enchants: [], enhance: 15 };
-      st.equippedOffhand = "wardLight"; st.equippedOffhandTier = 20; st.equippedOffhandRarity = "fantastic"; st.equippedOffhandUid = "SIMWD";
+      const _dTop = FF.legGearBaseTopTier("wardLight");
+      st.uniqueItems.SIMWD = { uid: "SIMWD", leg: cfg.offhandWard, kind: "offhand", base: `stward_wardLight_t${_dTop}_fantastic`,
+        tier: _dTop, rarity: "fantastic", enchants: [], enhance: 15 };
+      st.equippedOffhand = "wardLight"; st.equippedOffhandTier = _dTop + 1; st.equippedOffhandRarity = "fantastic"; st.equippedOffhandUid = "SIMWD";
     } else if (cfg.offhandShield) {
       // A large/small shield offhand (Herald, Sentinel, Treasure Hunter). Its legendary sits on the shield,
       // and its Block chance matters only against a foe that swings -- the dummy doesn't, so the Bastion is
       // measured on its self-driven Braces, exactly as designed.
+      const _sTop = FF.legGearBaseTopTier(cfg.offhandShield.type);
       st.uniqueItems.SIMSH = { uid: "SIMSH", leg: cfg.offhandShield.leg, kind: "offhand",
-        base: `stshield_${cfg.offhandShield.type}_t19_fantastic`, tier: 19, rarity: "fantastic", enchants: [], enhance: 15 };
-      st.equippedOffhand = cfg.offhandShield.type; st.equippedOffhandTier = 20; st.equippedOffhandRarity = "fantastic";
+        base: `stshield_${cfg.offhandShield.type}_t${_sTop}_fantastic`, tier: _sTop, rarity: "fantastic", enchants: [], enhance: 15 };
+      st.equippedOffhand = cfg.offhandShield.type; st.equippedOffhandTier = _sTop + 1; st.equippedOffhandRarity = "fantastic";
       st.equippedOffhandUid = "SIMSH";
     } else if (cfg.offhandQuiver) {
       st.equippedOffhand = "quiver"; st.equippedOffhandTier = 20; st.equippedOffhandRarity = "fantastic"; st.equippedOffhandUid = null;

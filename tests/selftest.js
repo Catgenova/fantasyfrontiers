@@ -4911,7 +4911,9 @@
     ok(defs.every(function(d){ return typeof d.desc === 'string' && d.desc.length > 10; }), 'every legendary has a description');
     // Every def's base is a real weapon / shield / ward type, and top-tier resolves.
     ok(defs.every(function(d){ return FF.getWeaponStyle(d.base) || FF.isWard(d.base) || /^shield/.test(d.base); }), 'every base is a real gear type');
-    eq(FF.legGearBaseTopTier('scimitar'), 19, 'melee top tier is index 19 (20 tiers)');
+    eq(FF.legGearBaseTopTier('scimitar'), FF.TIER_COUNT - 1, 'melee tops out at the same tier as every other family (21 tiers)');
+    eq(FF.legGearBaseTopTier('scimitar'), FF.legGearBaseTopTier('wandFire'), 'melee and arcane tops agree (ticket-0116: melee was one tier short)');
+    eq(FF.legGearBaseTopTier('shieldLarge'), FF.TIER_COUNT - 1, 'shields top out there too');
     eq(FF.legGearBaseTopTier('bowLong'), 20, 'bows top out at index 20');
     eq(FF.legGearBaseTopTier('wandFire'), 20, 'wands top out at index 20');
     // 35 effects x 4 rarities = 140 generated items, all flagged + non-vendorable + iconned.
@@ -4952,10 +4954,17 @@
     eq(arc.forestry_t20, 1000, 'arcane formula costs 1000 t20 wood');
     ['fire','water','earth','light','dark'].forEach(function(el){ eq(arc['glyph_'+el], 200, 'arcane formula costs 200 '+el+' glyphs'); });
     // Rare-t20 id lists point at real inventory item ids of the right family + top tier.
-    ok(FF.legGearRareIds('slash').indexOf('stweapon_scimitar_t19_rare') !== -1, 'slash counts rare t20 (index 19) slashing melee');
+    var _TT = FF.TIER_COUNT - 1; // top tier index, shared by every gear family
+    ok(FF.legGearRareIds('slash').indexOf('stweapon_scimitar_t'+_TT+'_rare') !== -1, 'slash counts ONLY top-tier rare slashing melee');
+    ok(FF.legGearRareIds('slash').indexOf('stweapon_scimitar_t'+(_TT-1)+'_rare') === -1, '...and never the tier below (ticket-0116)');
     ok(FF.legGearRareIds('ranged').indexOf('stweapon_bowLong_t20_rare') !== -1, 'ranged counts rare t20 (index 20) bows');
     ok(FF.legGearRareIds('arcane').indexOf('stward_wardFire_t20_rare') !== -1, 'arcane counts rare t20 wards');
-    ok(FF.legGearRareIds('defense').indexOf('stshield_shieldSmall_t19_rare') !== -1, 'defense counts rare t20 shields');
+    ok(FF.legGearRareIds('defense').indexOf('stshield_shieldSmall_t'+_TT+'_rare') !== -1, 'defense counts ONLY top-tier rare shields');
+    ok(FF.legGearRareIds('defense').indexOf('stshield_shieldSmall_t'+(_TT-1)+'_rare') === -1, '...and never the tier below');
+    // Every bucket must key off the SAME tier, or one weapon family is cheaper to mastercraft than another.
+    ['slash','pierce','blunt','ranged','arcane','defense'].forEach(function(g){
+      FF.legGearRareIds(g).forEach(function(id){ ok(new RegExp('_t'+_TT+'_rare$').test(id), g+' bucket accepts only top-tier ids ('+id+')'); });
+    });
     // Full forge: give the inputs + a blueprint, craft, and confirm a legendary UNIQUE is minted (with its leg).
     var s = FF._state, svInv = s.inventory, svBp = s.blueprints, svUniq = s.uniqueItems;
     s.inventory = { metallurgy_t20: 1000 }; s.blueprints = {}; s.uniqueItems = {};
@@ -4966,7 +4975,7 @@
     eq(minted.length, 1, 'the forge mints exactly one legendary unique');
     var u = minted[0];
     ok(u && u.leg && FF.LEG_GEAR_GROUP_KEYS.slash.indexOf(u.leg) !== -1, 'the unique carries a slash-group legendary effect');
-    ok(/^stweapon_.+_t19_(normal|rare|supreme|fantastic)$/.test(u.base), 'the unique is a top-tier slashing weapon base');
+    ok(new RegExp('^stweapon_.+_t'+(FF.TIER_COUNT-1)+'_(normal|rare|supreme|fantastic)$').test(u.base), 'the unique is a top-tier slashing weapon base');
     eq(s.inventory[bpId], 0, 'the forge consumes the Blueprint');
     eq(s.inventory.metallurgy_t20, 0, 'the forge consumes the 1000 ingots');
     var rareLeft = FF.legGearRareIds('slash').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
@@ -5528,7 +5537,7 @@
     eq(minted.length, 1, 'the D2 defense forge mints exactly one legendary unique');
     var u = minted[0];
     ok(u && u.leg && FF.LEG_GEAR_GROUP_KEYS_D2.defense.indexOf(u.leg) !== -1, 'the unique carries a D2 defense-group effect');
-    ok(/^stshield_.+_t19_(rare|supreme|fantastic)$/.test(u.base), 'the unique is a top-tier shield base, floored at Rare');
+    ok(new RegExp('^stshield_.+_t'+(FF.TIER_COUNT-1)+'_(rare|supreme|fantastic)$').test(u.base), 'the unique is a top-tier shield base, floored at Rare');
     ok(FF.uniqueDisplayName(u).indexOf(FF.D2_LEG_GEAR_MAP[u.leg].name) !== -1, 'the forged D2 shield displays its effect name');
     eq(s.inventory.metallurgy_t20, 0, 'the forge consumes the 2000 ingots');
     var rareLeft = FF.legGearRareIds('defense').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
@@ -5590,7 +5599,7 @@
     var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
     eq(minted.length, 1, 'the D2 slash forge mints exactly one legendary unique');
     ok(minted[0].leg && FF.LEG_GEAR_GROUP_KEYS_D2.slash.indexOf(minted[0].leg) !== -1, 'the unique carries a D2 slash-group effect');
-    ok(/^stweapon_.+_t19_(rare|supreme|fantastic)$/.test(minted[0].base), 'the unique is a top-tier slashing weapon base');
+    ok(new RegExp('^stweapon_.+_t'+(FF.TIER_COUNT-1)+'_(rare|supreme|fantastic)$').test(minted[0].base), 'the unique is a top-tier slashing weapon base');
     s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
   });
 
@@ -6051,7 +6060,7 @@
     var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
     eq(minted.length, 1, 'the D4 defense forge mints exactly one legendary unique');
     ok(minted[0].leg && FF.LEG_GEAR_GROUP_KEYS_D4.defense.indexOf(minted[0].leg) !== -1, 'the unique carries a D4 defense-group effect');
-    ok(/^stshield_.+_t19_(rare|supreme|fantastic)$/.test(minted[0].base), 'the unique is a top-tier shield base');
+    ok(new RegExp('^stshield_.+_t'+(FF.TIER_COUNT-1)+'_(rare|supreme|fantastic)$').test(minted[0].base), 'the unique is a top-tier shield base');
     var rareLeft = FF.legGearRareIds('defense').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
     eq(rareLeft, FF.legGearRareIds('defense').length * 16 - 40, 'the forge consumes exactly 40 rare shields');
     s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
@@ -6131,7 +6140,7 @@
     var minted = Object.keys(s2.uniqueItems).map(function(k){ return s2.uniqueItems[k]; });
     eq(minted.length, 1, 'the D4 slash forge mints one legendary unique');
     ok(minted[0].leg && FF.LEG_GEAR_GROUP_KEYS_D4.slash.indexOf(minted[0].leg) !== -1, 'the unique carries a D4 slash-group effect');
-    ok(/^stweapon_.+_t19_(rare|supreme|fantastic)$/.test(minted[0].base), 'the unique is a top-tier slash-weapon base');
+    ok(new RegExp('^stweapon_.+_t'+(FF.TIER_COUNT-1)+'_(rare|supreme|fantastic)$').test(minted[0].base), 'the unique is a top-tier slash-weapon base');
     s2.inventory=svInv; s2.blueprints=svBp; s2.uniqueItems=svUniq;
   });
 
@@ -6214,7 +6223,7 @@
     var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
     eq(minted.length, 1, 'the D3 defense forge mints exactly one legendary unique');
     ok(minted[0].leg && FF.LEG_GEAR_GROUP_KEYS_D3.defense.indexOf(minted[0].leg) !== -1, 'the unique carries a D3 defense-group effect');
-    ok(/^stshield_.+_t19_(rare|supreme|fantastic)$/.test(minted[0].base), 'the unique is a top-tier shield base');
+    ok(new RegExp('^stshield_.+_t'+(FF.TIER_COUNT-1)+'_(rare|supreme|fantastic)$').test(minted[0].base), 'the unique is a top-tier shield base');
     var rareLeft = FF.legGearRareIds('defense').reduce(function(n,id){ return n + (s.inventory[id]||0); }, 0);
     eq(rareLeft, FF.legGearRareIds('defense').length * 12 - 30, 'the forge consumes exactly 30 rare shields');
     s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
@@ -6250,7 +6259,7 @@
     var minted = Object.keys(s.uniqueItems).map(function(k){ return s.uniqueItems[k]; });
     eq(minted.length, 1, 'the D3 slash forge mints exactly one legendary unique');
     ok(minted[0].leg && FF.LEG_GEAR_GROUP_KEYS_D3.slash.indexOf(minted[0].leg) !== -1, 'the unique carries a D3 slash-group effect');
-    ok(/^stweapon_.+_t19_(rare|supreme|fantastic)$/.test(minted[0].base), 'the unique is a top-tier slashing weapon base');
+    ok(new RegExp('^stweapon_.+_t'+(FF.TIER_COUNT-1)+'_(rare|supreme|fantastic)$').test(minted[0].base), 'the unique is a top-tier slashing weapon base');
     s.inventory=svInv; s.blueprints=svBp; s.uniqueItems=svUniq;
   });
 
