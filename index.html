@@ -6278,7 +6278,7 @@
                                                    bf:{ key:'d4_prismaticedge', name:'Prismatic Edge',desc:"Your Spell Echoes strike the foe's elemental weakness." } },
     // --- Dragonscale: elemental defense (resist / reflect / low-HP scaling) ---
     herald:        { name:'Bulwark of Scales',     b2:{ key:'d4_scaleward',     name:'Scaleward',     desc:'+15% resistance to all elements.' },
-                                                   bf:{ key:'d4_elementalbastion',name:'Elemental Bastion',desc:"A Perfect Guard reflects the attacker's element back at them." } },
+                                                   bf:{ key:'d4_elementalbastion',name:'Elemental Bastion',desc:"Every Guard reflects the attacker's element back, and your Breach strikes 30% harder." } },
     sentinel:      { name:'Wyrmthorn Plate',       b2:{ key:'d4_moltenthorns',  name:'Molten Thorns', desc:"Your reflected thorns also deal the attacker's element." },
                                                    bf:{ key:'d4_dragonsretort', name:"Dragon's Retort",desc:'Your reflect deals +50% of the element you reflect.' } },
     knight:        { name:'Drakescale Plate',      b2:{ key:'d4_dragonsteel',   name:'Dragonsteel',   desc:"Your hits deal +20% bonus damage as the foe's weakness element." },
@@ -6532,7 +6532,7 @@
     if(legActive('wyrmthornwall', st) && monster && monster.element) m *= 1.50;              // Wyrmthorn Wall (D4 shield): reflect carries the element, +50%
     if(legActive('wyrmthornmaul', st)) m *= 1.50;                                            // Wyrmthorn Maul (D4 maul): reflect +50%
     return m; }
-  // Herald Elemental Bastion (full): a Perfect Guard reflects an elemental burst worth half the damage it
+  // Herald Elemental Bastion (full): a Guard reflects an elemental burst worth half the damage it
   // prevented, scaled by your Attunement to the attacker's element.
   function d4HeraldBastionReflect(prevented, monster, st){ st = st || state;
     if(!setFullD4('herald', st) || !(prevented > 0) || !monster || !monster.element) return 0;
@@ -7223,7 +7223,7 @@
       if(legActive('bloodscale') && monster && monster.element==='fire'){ var _bs = Math.min(Math.round(prevented * 0.30), healRoom(state)); if(_bs > 0){ state.playerHp += _bs; spawnCombatFloat('+'+_bs+' HP', 'ft-success', false); } }
       // Rimescale Shield (D4): a Block Chills and Scorches the attacker.
       if(legActive('rimescale')){ frostwardenApplyChill(act); scorchApply(act, 2); }
-      // Dragonscale Bulwark (D4): a Perfect Guard reflects an elemental burst of the prevented damage.
+      // Dragonscale Bulwark (D4): a Guard reflects an elemental burst of the prevented damage.
       if(legActive('dragonbulwark') && monster && monster.element){ var _db = Math.max(1, Math.round(prevented * 0.50 * elementDmgMult(state, monster.element))); applyChipDamage(_db); spawnCombatFloat('⟲ Dragonscale -'+fmt(_db), 'ft-reflect', true); }
   }
   // Unbreakable (Lv60): the fraction of a blocked hit that still lands (0.25 = -75%), else the usual half.
@@ -23989,7 +23989,7 @@
       'The Herald no longer waits to be hit. His ARMOUR is the weapon: every hit deals +3% damage per 1,000 Armor rating (up to +72%), reading the live number \u2014 plate tiers, the Fortress ramp, Ironhide, proficiency and set bonuses all now scale your offense. And every 5 seconds in combat he BRACES, which counts as a Block for every effect in the game (class, sets, legendaries alike), so the whole kit fires whether or not the foe is swinging. Real Blocks stack on top.',
       'Five new passives: Ironclad (Lv1) \u00b7 Retort (Lv20, every Block or Brace answers with a counterblow worth 35% of your recent average hit) \u00b7 Fortress (Lv40, unchanged +4% Armor/s up to +40% \u2014 but Ironclad reads it, so it is an OFFENSE ramp now) \u00b7 Unbreakable (Lv60, blocked hits reduced 75%, and your Barrier no longer breaks \u2014 what it absorbs is spent on the Breach instead of lost) \u00b7 Breach (Lv80, a full Barrier erupts for 20% of your recent average hit per tenth of the wall, rolling its own Critical Hit, then rebuilds).',
       'Each Block or Brace lays a quarter of the Barrier (cap 25% of max Health, so four Guards fill it), and it soaks incoming hits before your own HP \u2014 the wall is both your mitigation and your burst.',
-      'Sets rebuilt around the wall: Chitinwall (D1): Full Retort makes Retorts strike double and Bastion is kept (no single blow exceeds 25% of max Health); Wallbreaker Plate (D2): Momentum Guard (+4% damage per 10% Barrier banked) and Siegework (you Brace every 3.5s instead of 5); Tombguard Plate (D3): Grave Guard (your Breach Curses the foe) and Mausoleum (Cursed foes deal 15% less, and your Breach hits them +30% harder); Bulwark of Scales (D4): Scaleward kept (+15% all-element resistance, which now feeds Ironclad) and Elemental Bastion (your Breach strikes as the foe\u2019s weakness element, +30% harder).',
+      'Sets rebuilt around the wall: Chitinwall (D1): Full Retort makes Retorts strike double and Bastion is kept (no single blow exceeds 25% of max Health); Wallbreaker Plate (D2): Momentum Guard (+4% damage per 10% Barrier banked) and Siegework (you Brace every 3.5s instead of 5); Tombguard Plate (D3): Grave Guard (your Breach Curses the foe) and Mausoleum (Cursed foes deal 15% less, and your Breach hits them +30% harder); Bulwark of Scales (D4): Scaleward kept (+15% all-element resistance, which now feeds Ironclad) and Elemental Bastion (every Guard reflects the attacker\u2019s element, and your Breach strikes 30% harder).',
       'All eight legendaries rebuilt: Cave-In (Retorts strike twice), Wallbreaker (+6% damage per 10% Barrier banked), Tombshatter (your Breach Curses and applies Decay), Bastionbreaker (your Breach strikes twice), Deepwall (the Barrier banks 50% faster), Bulwark of the Breach (Barrier caps at 40% of max Health), Mausoleum Wall (your Breach stuns 2s), Dragonscale Bulwark (+12% all-element resistance; every Guard reflects the attacker\u2019s element).',
       'Retired: Perfect Guard\u2019s reset-on-an-unblocked-hit streak (the Barrier replaces it and never collapses), Riposte Guard\u2019s reflect-half-the-prevented (Retort scales with Armor and fires on Braces), Immovable\u2019s max-Guard camp, and Lasting Grace \u2014 a familiar-buff-duration capstone did nothing for the fight.'
     ]},
@@ -35649,7 +35649,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.64.1';
+  var GAME_VERSION = '0.0.64.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

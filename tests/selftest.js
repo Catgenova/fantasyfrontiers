@@ -6788,7 +6788,7 @@
       wearFull('sentinel');
       near(FF.d4SentinelThornsMult({ element:'fire' }, s), FF.elementDmgMult(s, 'fire') * 1.50, "Dragon's Retort: +50% on top of Molten Thorns");
 
-      // Herald Elemental Bastion (full): a Perfect Guard reflects an elemental burst of the prevented damage.
+      // Herald Elemental Bastion (full): a Guard reflects an elemental burst of the prevented damage.
       wearFull('herald');
       near(FF.d4HeraldBastionReflect(1000, { element:'fire' }, s), Math.round(1000 * 0.50 * FF.elementDmgMult(s, 'fire')), 'Elemental Bastion reflects half the prevented, scaled by Attunement');
       eq(FF.d4HeraldBastionReflect(0, { element:'fire' }, s), 0, 'no Bastion reflect when nothing was prevented');
