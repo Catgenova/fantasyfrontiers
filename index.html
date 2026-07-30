@@ -559,6 +559,12 @@
   .mc-result-banner{display:flex; align-items:center; justify-content:center; gap:8px; font-family:var(--font-display); font-weight:700; letter-spacing:.5px; text-transform:uppercase; font-size:15px; color:#e6c24a; margin-bottom:12px; padding-bottom:10px; border-bottom:1px dashed var(--border-light);}
   .mc-result-banner .game-icon{width:20px; height:20px;}
   .mc-result-where{margin-top:12px; font-size:12px; line-height:1.5; color:var(--text-dim);}
+  /* A recovered Masterwork Blueprint is a jackpot, so it gets the Mastercraft celebration treatment
+     rather than a plain loot row (ticket-0117 follow-up). */
+  .bp-prize{display:flex; align-items:center; gap:10px; justify-content:center; margin:10px 0 2px;}
+  .bp-prize .game-icon{width:34px; height:34px;}
+  .bp-prize-name{font-family:var(--font-display); font-size:15px; color:var(--rarity-fantastic,#c9a227); line-height:1.25;}
+  .profile-skill.bp-gain{border-color:var(--rarity-fantastic,#c9a227); color:var(--rarity-fantastic,#c9a227); font-weight:700;}
   .skill-info-title{font-family:var(--font-display); color:var(--gold); font-size:18px; margin-bottom:10px;}
   .skill-info-desc{color:var(--text-dim); font-size:13px; line-height:1.6; margin-bottom:16px;}
   .familiar-popup-card{background:linear-gradient(165deg,var(--bg-panel-raised),var(--bg-card)); border:2px solid var(--gold); border-radius:var(--radius); max-width:420px; width:100%; max-height:88dvh; overflow-y:auto; padding:22px; text-align:center; box-shadow:0 0 34px rgba(15,125,116,0.22), 0 10px 28px rgba(52,38,18,0.28);}
@@ -23937,7 +23943,9 @@
     Object.keys(s.physique).forEach(function(pid){ if(s.physique[pid]>=1){ var pm=PHYSIQUE_SKILLS.filter(function(p){return p.id===pid;})[0]; xpRows += '<span class="profile-skill">'+escapeHtml((pm&&pm.name)||pid)+' <b>+'+fmt(Math.floor(s.physique[pid]))+' xp</b></span>'; } });
     if(xpRows){ html += '<div class="profile-group"><div class="profile-group-head">Experience</div><div class="profile-group-body">'+xpRows+'</div></div>'; }
     var itemRows = '';
-    Object.keys(s.items).forEach(function(id){ if(s.items[id]>=1) itemRows += '<span class="profile-skill">'+escapeHtml(offlineItemName(id))+' <b>x'+fmt(s.items[id])+'</b></span>'; });
+    // A Blueprint recovered while away is highlighted in rarity gold -- it buried itself in the loot list otherwise.
+    Object.keys(s.items).forEach(function(id){ if(s.items[id]>=1){ var _bp = !!(typeof BLUEPRINT_ITEMS !== 'undefined' && BLUEPRINT_ITEMS[id]);
+      itemRows += '<span class="profile-skill'+(_bp?' bp-gain':'')+'">'+(_bp?svgIcon('trophy','#e6c24a')+' ':'')+escapeHtml(offlineItemName(id))+' <b>x'+fmt(s.items[id])+'</b></span>'; } });
     if(s.gold>0) itemRows += '<span class="profile-skill">Gold <b>+'+fmt(s.gold)+'</b></span>';
     if(itemRows){ html += '<div class="profile-group"><div class="profile-group-head">Gains</div><div class="profile-group-body">'+itemRows+'</div></div>'; }
     if(!xpRows && !itemRows){ html += '<div style="font-size:12px;color:var(--text-faint);">Nothing was produced &mdash; you likely ran out of materials or food.</div>'; }
@@ -23971,17 +23979,18 @@
   var dungeonResultPopup = null; // { category:'Cave'|..., drops:[blueprintItem,...] }
   function dungeonResultPopupHtml(category, drops){
     drops = drops || [];
-    var html = '<div class="familiar-popup-card" data-action="noop" style="max-width:420px;text-align:center;max-height:80dvh;overflow:auto;">';
-    html += '<div class="familiar-popup-icon">'+svgIcon('starburst', drops.length ? '#c9a227' : '#8a8577')+'</div>';
-    html += '<div class="familiar-popup-title">'+escapeHtml(category||'Dungeon')+' Cleared!</div>';
+    var html = '<div class="familiar-popup-card' + (drops.length ? ' mc-result-card' : '') + '" data-action="noop" style="max-width:420px;text-align:center;max-height:80dvh;overflow:auto;">';
     if(drops.length){
-      var rows = '';
-      drops.forEach(function(bp){ rows += '<span class="profile-skill">'+(bp.icon||'')+' '+escapeHtml(bp.name)+' <b>+1</b></span>'; });
-      html += '<div style="margin:8px 0 4px;font-size:13px;">Masterwork Blueprint'+(drops.length>1?'s':'')+' recovered:</div>';
-      html += '<div class="profile-group"><div class="profile-group-body" style="text-align:left">'+rows+'</div></div>';
-      html += '<div style="font-size:12px;color:var(--text-dim);margin-top:6px;">Forge them in <b>Resources &rarr; Blueprints</b>.</div>';
+      // Same celebration as a Mastercraft: a banner, then the prize itself, large and in rarity gold.
+      html += '<div class="mc-result-banner">'+svgIcon('trophy','#e6c24a')+' Blueprint'+(drops.length>1?'s':'')+' Recovered!</div>';
+      drops.forEach(function(bp){
+        html += '<div class="bp-prize">'+(bp.icon||svgIcon('starburst','#c9a227'))+'<span class="bp-prize-name">'+escapeHtml(bp.name)+'</span></div>';
+      });
+      html += '<div class="mc-result-where">Cleared the <b>'+escapeHtml(category||'Dungeon')+'</b> &mdash; '+fmt(drops.length)+' Blueprint'+(drops.length>1?'s':'')+' recovered. Forge '+(drops.length>1?'them':'it')+' in <b>Resources &rarr; Blueprints</b>.</div>';
       html += '<button class="action-btn" data-action="closeDungeonResult" style="margin-top:14px">Nice!</button>';
     } else {
+      html += '<div class="familiar-popup-icon">'+svgIcon('starburst','#8a8577')+'</div>';
+      html += '<div class="familiar-popup-title">'+escapeHtml(category||'Dungeon')+' Cleared!</div>';
       html += '<div style="margin:10px 0 3px;font-size:14px;">No Masterwork Blueprint dropped this run.</div>';
       html += '<div style="font-size:12px;color:var(--text-dim);">' + (state.dungeonAutoRequeue ? 'Auto Requeue is on &mdash; the next descent has already begun.' : 'Descend again for another chance.') + '</div>';
       html += '<button class="action-btn" data-action="closeDungeonResult" style="margin-top:14px">Onward</button>';
@@ -24122,6 +24131,7 @@
       'It only ever fires on a CLEAR. Dying or retreating ends the run as before, so the toggle can never loop you into repeated deaths, and it stops with a notice if the layer somehow becomes unavailable. Off by default.',
       'Fixed (ticket-0117, thanks Mr Cookie): Auto Requeue now keeps running while the tab is in the background. Solo descents used to FREEZE the moment you tabbed away \u2014 which defeated the point, since unattended farming is the whole reason for the toggle. Solo runs now fast-forward like any other fight, chaining clears and crediting their Blueprints into the \u201cWhile You Were Away\u201d summary (still capped by the usual 12-hour offline limit). This also settles an inconsistency: reloading after an absence already fast-forwarded the dungeon, so the same time away used to pay out differently depending on whether you had reloaded.',
       'PARTY descents still freeze while you are away \u2014 those are server-coordinated and genuinely attended, so they wait for you.',
+      'Masterwork Blueprints now land with the same celebration a Mastercraft gets: a trophy banner and the Blueprint shown large in rarity gold, instead of a plain loot row. Blueprints recovered while you were away are highlighted in the \u201cWhile You Were Away\u201d summary too, so they no longer hide among the ore.',
       'Party runs are not covered yet \u2014 re-forming a group needs server support so every member lands in the same new session.'
     ]},
     { v:'0.0.64', date:'Jul 30', heading:'Loadouts keep gear you upgrade', items:[
@@ -35822,7 +35832,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.65.1';
+  var GAME_VERSION = '0.0.65.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

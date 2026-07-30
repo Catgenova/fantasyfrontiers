@@ -10289,6 +10289,24 @@
     } finally { S.inventory = saveInv; }
   });
 
+  // ---- ticket-0117 follow-up: a recovered Blueprint gets the Mastercraft celebration ---------------
+  suite('dungeons: Blueprint drops are celebrated, not listed', function(){
+    var bpId = Object.keys(FF.BLUEPRINT_ITEMS)[0], bp = FF.BLUEPRINT_ITEMS[bpId];
+    ok(!!bp, 'there is a Blueprint to test with');
+    // A clear WITH a Blueprint reuses the Mastercraft result card (banner + the prize itself).
+    var withBp = FF.dungeonResultPopupHtml('Nest of the Depths', [bp]);
+    ok(/mc-result-card/.test(withBp), 'a Blueprint clear uses the Mastercraft celebration card');
+    ok(/Blueprints? Recovered!/.test(withBp), '...with its own banner');
+    ok(/bp-prize-name/.test(withBp), '...showing the prize large');
+    ok(withBp.indexOf(bp.name) !== -1, '...naming the Blueprint');
+    ok(/Resources &rarr; Blueprints/.test(withBp), '...and pointing at where to forge it');
+    // A clear with NOTHING must stay modest -- the celebration has to mean something.
+    var noBp = FF.dungeonResultPopupHtml('Nest of the Depths', []);
+    ok(!/mc-result-card/.test(noBp), 'an empty clear does NOT use the celebration card');
+    ok(!/Blueprint Recovered!/.test(noBp), '...and does not claim a Blueprint');
+    ok(/Cleared!/.test(noBp), '...but still reports the clear');
+  });
+
   // ---- ticket-0110: Auto Requeue re-descends a cleared dungeon (solo) -----------------------------
   suite('dungeons: Auto Requeue re-descends after a clear', function(){
     var S = FF._state;
