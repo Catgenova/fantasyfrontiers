@@ -9591,7 +9591,7 @@
     // The Bleed used to tick off summed proficiency LEVELS (a few hundred damage against ~1e11 hits), so the
     // class's identity was invisible at best-in-slot. It now ticks off the recent-hit EMA.
     near(FF.RV_BLEED_PCT, 0.06, 'a Bleed stack ticks for 6% of the recent average hit per second');
-    near(FF.RV_SWING_MULT, 0.45, 'the axe channels its raw swings to 45% -- the wounds do the killing (THE band knob)');
+    near(FF.RV_SWING_MULT, 0.184, 'the axe channels its raw swings to 18.4% -- the wounds do the killing (THE band knob)');
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'reaverFlensing'; }), 'the Flensing channel is a named PLAYER_DMG_MODS row');
 
     // Lv 20 The Count: +0.4% damage per Cut, capped, and it reads the FIGHT's tally off the activity.
