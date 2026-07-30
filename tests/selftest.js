@@ -12320,7 +12320,7 @@
     near(FF.TH_STRIKE_TIER_PCT, 0.15, 'the Strike gains +15% per relic tier (a Lime relic is x2.4)');
     // The swing channel: the t20 scimitar's raw swings alone measured ~78B, over the 50B band this class is
     // tuned to, and raw weapon stats are never a balance lever -- so the class channels its own swings down.
-    near(FF.TH_SWING_MULT, 0.48, 'the Reliquary channels its raw swings to 48% (THE band knob)');
+    near(FF.TH_SWING_MULT, 0.42, 'the Reliquary channels its raw swings to 42% (THE band knob)');
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'treasureHunterDig'; }), 'the Dig channel is a named PLAYER_DMG_MODS row');
     near(FF.TH_DOWSE_CHANCE, 0.35, 'Grave Dowsing unearths a relic 35% of the time');
     near(FF.TH_DOWSE_CHANCE_D2, 0.70, 'Plunder (D2 full) doubles Grave Dowsing');

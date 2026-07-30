@@ -143,6 +143,39 @@ Guard/Siegework, cloak Ruin, shield Bulwark of the Breach). Runs are noisy: ±12
 (43.7-54.2B on one setting) — Brace/Breach phase against the swing timer; average 2 runs.
 Sim-dead on the dummy: Bastion's hit cap, Unbreakable's mitigation, real Blocks, and Tombshatter's
 Curse/Decay (hence its low read — it is the utility mace).
+**Treasure Hunter** (45s — the 1h scimitar; v0.0.66.2 "the Reliquary", the FIRST class tuned to the **~50B**
+band, deliberately below the dps classes because it is the farming class; also the first class whose engine
+consumes an INVENTORY ITEM — Broken Relics as ammunition). Three findings. (1) The **scimitar chassis
+overshoots the target unaided**: a Strike-disabled probe measured raw swing DPS at **~78B**, above the whole
+band before the kit contributes anything, so per the owner rule the correction is a class perk variable —
+`TH_SWING_MULT` **0.42** channels the class's own raw swings down and the Grave Strike scales off the
+channelled hit average, so one knob drives everything (this is the third chassis to need the
+TPL_LITANY_SWING_MULT / TF_STORM_SWING_MULT treatment). (2) The Strike **double-dipped crit**: it rolled the
+full crit multiplier on top of `state.thHitAvg`, which is itself an average of post-crit hits — the single
+biggest cause of the first reading (375B-995B). It is now a flat x2, as the Reaper's Rot ticks are. (3)
+**Goldgorge was a runaway, not merely strong**: its gold-buys-charges line fed on a dragon's gold reward
+(thousands per crit-pilfer) in a loop with the Strike's own gold scatter, reading 995B against a 449B field;
+capped at ONE bought charge per swing it sits 1.24x the field. Also: the charge need went 8 -> **12** hits
+because a BiS crit rate counts every crit as two, which made the Strike fire every ~2.5 swings (a per-swing
+rider, not an event). Ceilings (D4 set, Ruin cloak, Luckshell offhand): Goldgorge ~54B (2-run 54.6/53.4) /
+Cryptreaver ~52B / Gravepilfer ~47B / Greedwyrm's Claw ~47B — pack mean ~50B, i.e. dead on the target with
+its best scimitar 8% above. The FIRST class won by its **D4** layer for a non-elemental reason: Wyrm's Greed
+upgrades every relic you unearth one tier, and relic tier IS the Strike's damage, so the quality layer scales
+the whole engine (D1 47B / D2 38B / D3 45B / D4 51B in the A/B). Noise is config-dependent and wide:
+two greedwyrm runs on one setting read 51.0B and 60.4B (±18%) while two goldgorge runs read 54.6/53.4
+(±2%) — the loaded relic tier wanders as Endless Vigil degrades relics a step and Wyrm's Greed re-upgrades
+finds a step, so always average 2-3 runs. The crit-damage cloak reads unusually LOW (37.9B vs Ruin 60.4B)
+precisely because the Strike's crit is a flat x2.
+Treasure Hunter sim notes: BUILDS needs `offhandShield: {type:'shieldSmall', leg:'fortunesriposte'}` and the
+harness MUST zero every `BROKEN_RELIC_ITEMS` id in `st.inventory` between configs — the ammunition lives in
+the inventory, so a later A/B otherwise opens with a stocked pack of top-tier relics and reads far too high.
+The pack is seeded EMPTY (relics are consumables, owner rule) and the class bootstraps itself because a full
+charge with no ammo DIGS a relic instead of firing — without that fallback the class would measure at zero
+here, since the harness refills the dummy instead of killing it. Consequence: every KILL-gated line reads
+dead — Cryptreaver's guaranteed drop, Gravepilfer's second relic and doubled Gravecoin, the Lv80 kill-refund
+— so Cryptreaver and Gravepilfer UNDER-read their real value, and Hoardwall (needs a 100-relic hoard) is
+unreachable in 45s from empty, which is why the shield slot is fixed to Luckshell. Gravecoin is a farming
+number, not a DPS number; report it from a kill-cadence probe, never from this matrix.
 Templar sim notes: BUILDS needs offhandWard; **measurement window matters** — mastery/
 proficiency train during the run, so 90s runs read ~35% above 60s runs on identical code;
 always compare a class against ceilings recorded at the SAME window (Berserker 82B @90s is
