@@ -6792,6 +6792,7 @@
   var SUMMONER_CRESCENDO_BASE_CAP = 5, SUMMONER_CRESCENDO_PER = 0.06;
   var SUMMONER_ACCEL_ADVANCE_MS = 400, SUMMONER_ACCEL_MAX_CAST_MULT = 0.85;
   var SUMMONER_WRAITH_MS = 10000, SUMMONER_WRAITH_STRIKE_MS = 2500, GRAVECHOIR_SOULS_PER_WRAITH = 5;
+  var SUMMONER_WRAITH_HIT_PCT = 0.12;  // each Wraith strike = this share of the recent average hit
   function staffDownbeatStacks(st){
     st = st || state; var arr = st.staffDownbeats;
     if(!Array.isArray(arr) || !arr.length) return 0;
@@ -6837,7 +6838,7 @@
       if(w.until <= now){ arr.splice(i,1); continue; }
       if(w.nextAt <= now){
         w.nextAt = now + SUMMONER_WRAITH_STRIKE_MS;
-        var dmg = Math.max(1, Math.round(combatLevelEquivalent(state) * 0.5));
+        var dmg = Math.max(1, Math.round(dotBase(state) * SUMMONER_WRAITH_HIT_PCT));
         applyChipDamage(dmg); decayApply(act, 1);
         if(!offlineCapture) spawnCombatFloat('Skeletal Wraith -'+fmt(dmg), 'ft-rare', true);
         var _wm = monsterById(act.monsterId);
@@ -8091,7 +8092,8 @@
   // triples a hit against a foe suffering ALL FOUR at once.
   function rangerBonus(reqLevel, st){ return classBonusActive('ranger', reqLevel, st); }
   var RANGER_PROC_CHANCE = 0.25;      // per-hit chance for each imbued arrow to land its ailment
-  var RANGER_POISON_PCT = 0.06;       // Venom dps = combat power * this
+  var RANGER_POISON_PCT = 0.06;       // Venom dps = the recent average hit * this
+  var PLAGUE_VIRULENCE_PCT = 0.06;    // Virulence (Plaguebearer Lv60): coating-free poison, same share
   var RANGER_POISON_MS = 4000;
   var RANGER_BLEED_PCT = 0.05;        // Barbed per-stack dps = stacks * combat power * this
   var RANGER_BLEED_MAX = 5;
@@ -16130,7 +16132,7 @@
       var _rangerRolls = legRangerAilmentRolls(state);
       for(var _rr=0; _rr<_rangerRolls; _rr++){
       if(rangerBonus(1) && Math.random() < rangerProcChance(state)){ // Venom Arrows (Lv1): poison
-        var _rvd = combatLevelEquivalent(state) * RANGER_POISON_PCT;
+        var _rvd = dotBase(state) * RANGER_POISON_PCT;
         if(_rvd > (act.potionPoisonDps||0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = Math.max(act.potionPoisonDps||0, _rvd);
         legNotePoisonStart(act); // Wasting Curse ramp
         act.potionPoisonUntil = Math.max(act.potionPoisonUntil||0, Date.now() + RANGER_POISON_MS * rangerAilmentDurMult(state)); // Persistent Ailments extends it
@@ -16158,7 +16160,7 @@
       if((set2D3('ranger') || legActive('bonevolley')) && enemyHasAilment(state)) decayApply(act, 1);
       // Plaguebearer (Virulence): 20% chance a hit poisons even with no Coating charges (never weakens an active one).
       if(plaguebearerBonus(60) && Math.random() < 0.20){
-        var vDps = combatLevelEquivalent(state) * 0.06 * (1 + getFamBuff('potionPoison'));
+        var vDps = dotBase(state) * PLAGUE_VIRULENCE_PCT * (1 + getFamBuff('potionPoison'));
         if(vDps > (act.potionPoisonDps || 0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = Math.max(act.potionPoisonDps || 0, vDps);
         legNotePoisonStart(act); // Wasting Curse ramp
         act.potionPoisonUntil = Math.max(act.potionPoisonUntil || 0, Date.now() + 4000);
@@ -24483,6 +24485,7 @@
       'All of them now tick for a share of your <b>recent average hit</b>, so they scale with your gear the way they always should have. The Reaper’s Rot and the Reaver’s Bleed already worked this way after their reworks — this brings everything else onto the same footing.',
       'Because the base changed by orders of magnitude, the coefficients came down to match. <b>Decay</b> is applied by around twenty different sources and lands on classes that are already balanced, so it is deliberately modest: a fully-stacked Decay is worth about <b>6% of one of your hits per second</b>. <b>Toxins and Weapon Coatings</b> are likewise tuned to be a real, worthwhile buff rather than mandatory — a top-tier Coating is about <b>4.5% of a hit per second</b>, and the Plaguebearer’s Venomous still makes it half again stronger.',
       'The classes whose whole identity is a damage-over-time — <b>Pyromancer</b> (Burn), <b>Plaguebearer</b> (poison), <b>Ranger</b> (four ailments), <b>Frostwarden</b> (Frostbite) and <b>Samurai</b> (First Blood) — get a large, genuine power increase out of this, because their signature mechanic went from doing nothing to doing something. They have NOT been re-balanced yet; that happens when each one gets its rework, and they may well be strong in the meantime.',
+      'Follow-up: three more sites were found in the same family after the first pass — the <b>Ranger’s Venom Arrows</b>, the <b>Plaguebearer’s Virulence</b>, and the Summoner’s <b>Skeletal Wraiths</b>. The Wraiths were not a damage-over-time at all but had the identical bug: each strike was a fraction of that same level sum, so a summoned Wraith hit for a few hundred damage. All three now read the same shared base.',
       'A DoT applied before you have landed a hit — from a reflect, a Block, or an opening ailment — falls back to the old figure rather than dealing zero, so nothing regressed.'
     ]},
     { v:'0.0.67', date:'Jul 30', heading:'Reaver rework: The Butcher’s Count', items:[
@@ -36217,7 +36220,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.68.0';
+  var GAME_VERSION = '0.0.68.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -36433,7 +36436,8 @@
       treasureHunterBonus:treasureHunterBonus, treasureHunterCount:treasureHunterCount,
       thChargeNeed:thChargeNeed, thRelicCount:thRelicCount, thBestRelicTier:thBestRelicTier, thTierPct:thTierPct, thGraveStrikeDamage:thGraveStrikeDamage,
       thGoldFindMult:thGoldFindMult, thMarkStacks:thMarkStacks, thMarkAdd:thMarkAdd, thMarkMult:thMarkMult, thCofferMult:thCofferMult,
-      dotBase:dotBase, DECAY_PCT:DECAY_PCT, DECAY_MAX_STACKS:DECAY_MAX_STACKS, LEG_ROTSHELL_PCT:LEG_ROTSHELL_PCT,
+      dotBase:dotBase, RANGER_POISON_PCT:RANGER_POISON_PCT, PLAGUE_VIRULENCE_PCT:PLAGUE_VIRULENCE_PCT,
+      SUMMONER_WRAITH_HIT_PCT:SUMMONER_WRAITH_HIT_PCT, DECAY_PCT:DECAY_PCT, DECAY_MAX_STACKS:DECAY_MAX_STACKS, LEG_ROTSHELL_PCT:LEG_ROTSHELL_PCT,
       reaverBonus:reaverBonus, rvCuts:rvCuts, rvBank:rvBank, rvCountCap:rvCountCap, rvCountMult:rvCountMult, rvHarvestAt:rvHarvestAt,
       rvHarvestArmed:rvHarvestArmed, rvHarvestDamage:rvHarvestDamage, rvCarveCuts:rvCarveCuts, rvHarvestFire:rvHarvestFire,
       rvHarvestHasteMult:rvHarvestHasteMult, applyReaverBleedTick:applyReaverBleedTick, reaverBleedCap:reaverBleedCap,
