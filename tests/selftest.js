@@ -10280,6 +10280,36 @@
     } finally { S.inventory = saveInv; }
   });
 
+  // ---- ticket-0108: scrollable popups must survive the loop's re-renders --------------------------
+  suite('ui: overlay writes never rebuild an unchanged popup', function(){
+    // The game loop renders several times a second. Any overlay that blindly re-assigned innerHTML
+    // destroyed its own DOM, so a scrolled card snapped back to the top -- the skill tracker and the
+    // offline loot/familiar summaries. setOverlayHtml() is the guard: identical markup is a no-op.
+    var host = document.createElement('div');
+    document.body.appendChild(host);
+    try {
+      var wrote1 = FF.setOverlayHtml(host, '<div class="card">alpha</div>', 'ov');
+      eq(wrote1, true, 'the first write lands');
+      eq(host.className, 'ov', '...and sets the class');
+      var node1 = host.firstElementChild;
+      var wrote2 = FF.setOverlayHtml(host, '<div class="card">alpha</div>', 'ov');
+      eq(wrote2, false, 'an identical re-write is skipped entirely');
+      ok(host.firstElementChild === node1, '...and the DOM node is untouched (so its scroll survives)');
+      // A real content change still lands, and carries the scrolled offset across the rebuild.
+      node1.style.height = '40px'; node1.style.overflow = 'auto';
+      node1.innerHTML = '<div style="height:400px"></div>';
+      node1.scrollTop = 90;
+      var kept = node1.scrollTop; // the browser may clamp; compare against what it actually took
+      var wrote3 = FF.setOverlayHtml(host, '<div class="card" style="height:40px;overflow:auto"><div style="height:400px"></div>beta</div>', 'ov');
+      eq(wrote3, true, 'changed markup does write');
+      if(kept > 0) eq(host.firstElementChild.scrollTop, kept, '...and the scroll offset is carried across the rebuild');
+      // Clearing works through the same path.
+      FF.setOverlayHtml(host, '', '');
+      eq(host.innerHTML, '', 'clearing an overlay goes through the same guard');
+      eq(FF.setOverlayHtml(null, 'x'), false, 'a missing element is a safe no-op');
+    } finally { if(host.parentNode) host.parentNode.removeChild(host); }
+  });
+
   // ---- Enemy swap fade: a kill must visibly change the portrait, even for an identical next foe ----
   suite('combat: enemy defeat fades the portrait', function(){
     eq(FF.ENEMY_SWAP_MS, 550, 'the swap window matches the enemySwapFade animation duration');
