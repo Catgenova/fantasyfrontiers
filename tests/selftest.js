@@ -5172,21 +5172,17 @@
     eq(FF.samuraiFocusCap(legSt('flowingblade')), 15, 'Flowing Blade raises the Focus cap to 15');
     eq(FF.samuraiFocusCap(legSt('engarde')), 10, 'the Focus cap is 10 without Flowing Blade');
 
-    // Relentless Assault (knight/claymore): Momentum cap -> 10 stacks, per-stack speed bonus -> 12%.
-    eq(FF.knightStackCap(legSt('relentlessassault')), 10, 'Relentless Assault raises the Momentum cap to 10');
-    near(FF.knightMomentumPerStack(legSt('relentlessassault')), 0.12, 'Relentless Assault: 12% per Momentum stack');
-    near(FF.knightMomentumPerStack(legSt('engarde')), 0.10, 'Momentum is 10% per stack without Relentless Assault');
-    eq(FF.knightStackCap(legSt('engarde')), 5, 'the base Momentum cap is 5 without the legendary or Lv80');
-    // On a live Knight, the legendary deepens the attack-speed ramp but the timer is floored at -90% (x0.10).
+    // Highbanner (knight/claymore, key relentlessassault): the Banner plants at 15 (base cap 10).
+    eq(FF.knightStackCap(legSt('relentlessassault')), 15, 'Highbanner raises the Banner cap to 15');
+    eq(FF.knightStackCap(legSt('engarde')), 10, 'the base Banner cap is 10 without Highbanner');
+    // On a live Knight, the Order of Pace (Banner 6+) quickens the attack timer 12% -- a threshold, not a ramp.
     function kgear(lvl, ex){ var st = { xp:{ knight: FF.xpFloorForLevel(lvl||85) }, physique:{}, equippedMainhand:'claymore', equippedOffhand:null,
       bodyArmor:{ helmet:armor('chain'), chest:armor('plate'), gauntlets:armor('chain'), boots:armor('plate') }, activity:{type:'combat'}, playerHp:100 };
       if(ex) for(var k in ex) st[k]=ex[k]; return st; }
     eq(FF.activeClassId(kgear()), 'knight', 'claymore + plate/chain set => Knight');
-    var kBase = kgear(85, { knightStacks: 5 });
-    near(FF.classAttackSpeedMult(kBase), 0.50, 'base Knight: 5 Momentum stacks -> -50% timer (10% each)', 1e-9);
-    // Same Knight, now wielding Relentless Assault: 10 stacks * 12% = -120%, floored to -90% (x0.10).
-    var kLeg = kgear(85, { knightStacks: 10, uniqueItems:{ L:{ uid:'L', leg:'relentlessassault', kind:'weapon', base:'stweapon_claymore_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' });
-    near(FF.classAttackSpeedMult(kLeg), 0.10, 'Relentless Assault: the attack timer floors at -90% (x0.10)', 1e-9);
+    near(FF.classAttackSpeedMult(kgear(85, { knightStacks: 5 })), 1, 'Banner 5: the Order of Pace has not yet stood', 1e-9);
+    near(FF.classAttackSpeedMult(kgear(85, { knightStacks: 6 })), 0.88, 'Banner 6: Order of Pace => -12% attack timer', 1e-9);
+    near(FF.classAttackSpeedMult(kgear(85, { knightStacks: 10 })), 0.88, 'the Order of Pace is a threshold, never a per-stack ramp', 1e-9);
 
     // Resonant Echo (spellblade/greatsword): each Spell Echo hits +10% harder per DISTINCT enchant carried.
     var reSt = legSt('resonantecho');
@@ -5807,14 +5803,14 @@
       var order = FF.D2_SET_DEFS[cls].bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
       for(var i=0;i<n;i++){ var uid='w'+i; s.uniqueItems[uid] = { set:cls, setLayer:'d2' }; s.bodyArmor[order[i]] = { uid:uid }; } }
     try {
-      // C1: stack Scaleward (herald 2pc, +0.15) + Warscale (knight 2pc @max Momentum, +0.12) + a fantastic
-      // Signet of Scales (+0.40) = 0.67 raw -> must clamp to 0.60, and elementResistMult must never go negative.
-      s.bodyArmor = { helmet:{uid:'h1'}, chest:{uid:'h2'}, gauntlets:{uid:'k1'}, boots:{uid:'k2'} };
-      s.uniqueItems = { h1:{set:'herald',setLayer:'d4'}, h2:{set:'herald',setLayer:'d4'}, k1:{set:'knight',setLayer:'d4'}, k2:{set:'knight',setLayer:'d4'} };
-      s.knightStacks = 999;
-      s.jewelrySlots = {}; s.jewelrySlots[R] = { leg:'d4_scales', rarity:'fantastic' };
+      // C1: stack Scaleward (herald 2pc, +0.15) + two fantastic Signets of Scales (+0.40 each) = 0.95 raw
+      // -> must clamp to 0.60, and elementResistMult must never go negative. (Warscale retired with the Warlord.)
+      s.bodyArmor = { helmet:{uid:'h1'}, chest:{uid:'h2'} };
+      s.uniqueItems = { h1:{set:'herald',setLayer:'d4'}, h2:{set:'herald',setLayer:'d4'} };
+      var R2 = FF.RING_SLOT_IDS[1];
+      s.jewelrySlots = {}; s.jewelrySlots[R] = { leg:'d4_scales', rarity:'fantastic' }; s.jewelrySlots[R2] = { leg:'d4_scales', rarity:'fantastic' };
       ok(FF.d4SetElementResist(s, 'fire') <= 0.60 + 1e-9, 'd4SetElementResist is hard-capped at 0.60');
-      near(FF.d4SetElementResist(s, 'fire'), 0.60, 'an over-cap aggregate (0.67 raw) is clamped to 0.60');
+      near(FF.d4SetElementResist(s, 'fire'), 0.60, 'an over-cap aggregate (0.95 raw) is clamped to 0.60');
       ok(FF.elementResistMult(s, 'fire') > 0, 'elementResistMult stays positive — an elemental hit can never heal you');
       ok(FF.elementResistMult(s, 'fire') >= 0.05, 'elementResistMult respects the 5% floor');
       s.bodyArmor = {}; s.uniqueItems = {}; s.knightStacks = 0; s.jewelrySlots = {};
@@ -6089,9 +6085,9 @@
     // Emberdraw: opener +50%.
     near(FF.d4LegDmgMult({}, legSt('emberdraw','falchion',{ activity:{type:'combat', monsterHp:100, samuraiFirstStrike:true} })), 1.50, 'Emberdraw: opening strike +50%');
     near(FF.d4LegDmgMult({}, legSt('emberdraw','falchion')), 1.0, 'Emberdraw only rides the opener');
-    // Drakelance: +20% at max Momentum.
-    near(FF.d4LegDmgMult({}, legSt('drakelance','claymore',{ knightStacks:999 })), 1.20, 'Drakelance: +20% at max Momentum');
-    near(FF.d4LegDmgMult({}, legSt('drakelance','claymore',{ knightStacks:0 })), 1.0, 'Drakelance inert below max Momentum');
+    // Drakelance (reworked): Decrees strike twice — fired at the Decree hook, no flat amplifier row.
+    near(FF.d4LegDmgMult({}, legSt('drakelance','claymore',{ knightStacks:999 })), 1.0, 'Drakelance is no longer a flat amplifier (Decrees strike twice at the hook)');
+    ok(/strike twice/.test(FF.LEGENDARY_GEAR_ITEMS_D4[FF.legGearItemIdD4('drakelance','normal')].desc), 'Drakelance desc: Decrees strike twice');
     // Runewyrm Blade: echoes strike the weakness (advantage bite).
     near(FF.d4EchoMult(legSt('runewyrm','greatsword')), FF.ELEMENT_ADVANTAGE_MULT, 'Runewyrm Blade: echoes strike the weakness');
 
@@ -6555,10 +6551,11 @@
     function wearFull(cls){ wearD3(cls, FF.D3_SET_DEFS[cls].full); }
     try {
       s.activity = { type:'combat', monsterHp:500 };
-      // Knight Grave Momentum (2pc): -10% incoming at max Momentum.
+      // Knight Heavy Standard (2pc) stuns at the Decree hook; the incoming table carries no knight row now.
       wearD3('knight', 2); s.knightStacks = FF.knightStackCap(s);
-      near(FF.d3SetIncomingMult(s), 0.90, 'Knight Grave Momentum: -10% damage at max Momentum');
-      s.knightStacks = 0; near(FF.d3SetIncomingMult(s), 1.0, 'Grave Momentum inert below max Momentum');
+      near(FF.d3SetIncomingMult(s), 1.0, 'no D3 incoming reduction for the Warlord (Grave Momentum retired)');
+      eq(FF.D3_SET_DEFS.knight.b2.name, 'Heavy Standard', 'Knight D3 2pc is Heavy Standard');
+      s.knightStacks = 0;
       // Treasure Hunter Cursed Hoard (full): +50% Treasure Find (ratio cancels amulet/D1 factors).
       wearFull('treasureHunter'); var withF = FF.legTreasureMult(s);
       s.bodyArmor = {}; s.uniqueItems = {}; var without = FF.legTreasureMult(s);
@@ -6571,7 +6568,7 @@
         ok(FF.D3_SET_DEFS[c] && FF.D3_SET_DEFS[c].b2.name && FF.D3_SET_DEFS[c].bf.name, c+' has a full D3 set'); });
       eq(FF.D3_SET_DEFS.berserker.bf.name, 'Carried Debt', 'Berserker D3 full is Carried Debt (Blood Ledger rework)');
       eq(FF.D3_SET_DEFS.templar.bf.name, 'Resurrection', 'Templar D3 full is Resurrection');
-      eq(FF.D3_SET_DEFS.knight.bf.name, 'Undying March', 'Knight D3 full is Undying March');
+      eq(FF.D3_SET_DEFS.knight.bf.name, 'Trample', 'Knight D3 full is Trample (Undying March retired)');
       eq(FF.D3_SET_DEFS.lumen.bf.name, 'Soulguard', 'Lumen D3 full is Soulguard');
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.activity=sv.act; s.knightStacks=sv.ks; }
   });
@@ -6748,11 +6745,11 @@
     function wearFull(cls){ wearD4(cls, FF.D4_SET_DEFS[cls].full); }
     var mhp = FF.maxHp(s);
     try {
-      // Knight Warscale (2pc): +12% all-element resist at max Momentum.
+      // Knight Dragonsteel (2pc): an outgoing weakness-element rider now, not a resist (Warscale retired).
       wearD4('knight', 2); s.knightStacks = FF.knightStackCap(s);
-      near(FF.d4SetElementResist(s, 'fire'), 0.12, 'Warscale: +12% resist at max Momentum');
-      near(FF.d4SetElementResist(s, 'dark'), 0.12, 'Warscale covers every element');
-      s.knightStacks = 0; near(FF.d4SetElementResist(s, 'fire'), 0, 'Warscale inert below max Momentum');
+      near(FF.d4SetElementResist(s, 'fire'), 0, 'Dragonsteel grants no elemental resist (Warscale retired)');
+      near(FF.d4SetDmgMult({hp:1000}, s), 1.20, "Dragonsteel: +20% as the foe's weakness element");
+      s.knightStacks = 0; near(FF.d4SetDmgMult({hp:1000}, s), 1.20, 'Dragonsteel is unconditional (no Momentum gate to inherit)');
 
       // Berserker Deep Veins (2pc): Transfusion lifesteal 8% -> 25%. Needs the class ACTIVE at Lv60+:
       // warhammer + bare head + leather chest + cloth gloves/shoes (materials layered onto the set pieces).
@@ -6776,11 +6773,11 @@
       eq(mit.heal, 50, 'Emberhide heals 25% of the 200 avoided');
       var mitW = FF.d4DragonscaleIncoming(s, { element:'water' }, 1000);
       near(mitW.mult, 1.0, 'Emberhide only mitigates Fire');
-      // Knight Unbreakable Scales (full): a big elemental hit is halved.
+      // Knight Dragon Standard (full) rides the Decree hook (KN_DECREE_D4_MULT); Unbreakable Scales retired.
       wearFull('knight');
-      near(FF.d4DragonscaleIncoming(s, { element:'earth' }, mhp).mult, 0.50, 'Unbreakable Scales halves an elemental hit above 12% max Health');
-      near(FF.d4DragonscaleIncoming(s, { element:'earth' }, 1).mult, 1.0, 'a tiny elemental hit is under the Unbreakable Scales threshold');
-      near(FF.d4DragonscaleIncoming(s, { element:'earth' }, mhp*10, mhp).heal, 0, 'Unbreakable Scales heals nothing (it is a cap, not a leech)');
+      near(FF.d4DragonscaleIncoming(s, { element:'earth' }, mhp).mult, 1.0, 'no elemental-hit halving for the Warlord (Unbreakable Scales retired)');
+      eq(FF.D4_SET_DEFS.knight.bf.name, 'Dragon Standard', 'Knight D4 full is Dragon Standard');
+      near(FF.KN_DECREE_D4_MULT, 1.30, 'Dragon Standard: Decrees strike +30% harder');
 
       // Sentinel Molten Thorns (2pc) / Dragon's Retort (full): reflect amplifier.
       wearD4('sentinel', 2);
@@ -7006,9 +7003,11 @@
       // Treasure Hunter Sharp Eye (2pc): +8% crit chance; Plunder (full): +40% Treasure Find.
       wearD2('treasureHunter', 2); near(FF.d2SetCritChance(s), 0.08, 'TH Sharp Eye: +8% crit chance');
       wearD2('treasureHunter', 4); ok(FF.legTreasureMult(s) >= 1.40 - 1e-9, 'TH Plunder: +40% Treasure Find folded into the treasure multiplier');
-      // Knight Bulwark March (2pc): +12% Armor at max Momentum.
-      wearD2('knight', 2); s.knightStacks = FF.knightStackCap(s); near(FF.knightBulwarkMarchMult(s), 1.12, 'Knight Bulwark March: +12% Armor at max Momentum');
-      s.knightStacks = 0; near(FF.knightBulwarkMarchMult(s), 1.0, 'Bulwark March inert below max Momentum');
+      // Knight Bannerguard (2pc) seeds at the crit hook; War Council (full) scales the standing Orders.
+      wearD2('knight', 2); eq(FF.D2_SET_DEFS.knight.b2.name, 'Bannerguard', 'Knight D2 2pc is Bannerguard');
+      near(FF.knOrderMult(s), 1.0, '2 pieces -> Orders at base power');
+      wearD2('knight', FF.D2_SET_DEFS.knight.full); near(FF.knOrderMult(s), 1.5, 'War Council: standing Orders 50% stronger');
+      s.knightStacks = 0;
       // Lumen Radiance (2pc): Reflected Light heals +50%.
       wearD2('lumen', 2); near(FF.lumenReflectD2Mult(s), 1.5, 'Lumen Radiance: +50% Reflected Light heal');
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; s.heraldGuardStacks=sv.hg; s.knightStacks=sv.ks; s.d2CounterstanceUntil=sv.cs; }
@@ -7379,10 +7378,9 @@
     // Juggernaut Heavy Hitter (2pc): Wind-Up 45% -> 60%.
     near(FF.jugWindupDmg(setSt('juggernaut',2)), 1.60, 'Heavy Hitter: Wind-Up +60%');
     near(FF.jugWindupDmg(setSt('juggernaut',1)), FF.JUG_WINDUP_DMG, '1 piece -> base Wind-Up');
-    // Knight Unstoppable Force (2pc): +25% only at max Momentum.
-    near(FF.knightUnstoppableMult(setSt('knight',2, { knightStacks:5 })), 1.25, 'Unstoppable Force: +25% at max Momentum');
-    near(FF.knightUnstoppableMult(setSt('knight',2, { knightStacks:2 })), 1, 'no Unstoppable Force below max Momentum');
-    near(FF.knightUnstoppableMult(setSt('knight',1, { knightStacks:5 })), 1, '1 piece -> no Unstoppable Force');
+    // Knight Longstandard (2pc): the Banner cap rises to 12 (Unstoppable Force retired with the Warlord).
+    eq(FF.knightStackCap(setSt('knight',2)), 12, 'Longstandard: the Banner caps at 12');
+    eq(FF.knightStackCap(setSt('knight',1)), 10, '1 piece -> the base Banner cap of 10');
     // Thunderfury Supercell (2pc) + Overcharge (full): the Storm's cap and the Tempest cadence.
     eq(FF.tfStormCap(setSt('thunderfury',2)), 12, 'Supercell: Storm intensity caps at 12');
     eq(FF.tfStormCap(setSt('thunderfury',1)), 10, '1 piece -> the base cap of 10');
@@ -11428,60 +11426,134 @@
     var chainChest = base(); chainChest.bodyArmor.chest=chain();
     eq(FF.activeClassId(chainChest), null, 'chest must be plate');
 
-    // Lv 1 Momentum: each stack -10% attack timer, capped at 5 (-50%); reads st.knightStacks.
-    var s0 = base(); s0.knightStacks = 0; eq(FF.classAttackSpeedMult(s0), 1, '0 stacks => no reduction');
-    var s3 = base(); s3.knightStacks = 3; near(FF.classAttackSpeedMult(s3), 0.70, '3 stacks => -30%');
-    var s5 = base(); s5.knightStacks = 5; near(FF.classAttackSpeedMult(s5), 0.50, '5 stacks => -50%');
-    var s8 = base(); s8.knightStacks = 8; near(FF.classAttackSpeedMult(s8), 0.50, 'stacks cap at 5 (-50%)');
-    var offStacks = base(); offStacks.equippedMainhand='greatsword'; offStacks.knightStacks=5;
-    eq(FF.classAttackSpeedMult(offStacks), 1, 'momentum gated on the class being active');
-    eq(FF.knightStacks(s8), 5, 'knightStacks caps at 5 while active');
-    eq(FF.knightStacks(offStacks), 0, 'no momentum stacks while class inactive');
+    // The Warlord perk ladder: names in order; the reset-on-miss streak and HP camps are gone.
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Raise the Banner,Rally,Shieldwall,Under One Banner,Decree', 'Warlord perk names');
+    eq(FF.KN_BANNER_MAX, 10, 'the Banner caps at 10');
+    eq(FF.KN_ORDER_STEEL + ',' + FF.KN_ORDER_PACE + ',' + FF.KN_ORDER_BLOOD, '3,6,9', 'the Orders stand at Banner 3/6/9');
+    near(FF.KN_STEEL_PCT, 0.12, 'Order of Steel: +12% damage');
+    near(FF.KN_PACE_PCT, 0.12, 'Order of Pace: +12% attack speed');
+    near(FF.KN_BLOOD_PCT, 0.05, 'Order of Blood: 5% lifesteal');
+    eq(FF.KN_DECREE_EVERY, 6, 'a Decree every 6th swing');
+    near(FF.KN_DECREE_PCT, 0.35, 'a Decree deals 35% of the recent average hit per Banner');
 
-    // Lv 80 Relentless: Momentum cap rises from 5 to 8 (up to -80% attack timer).
-    eq(FF.knightStackCap(base()), 5, 'below Lv80 the Momentum cap stays at 5');
-    var r8 = base(); r8.xp.knight = FF.xpFloorForLevel(85); r8.knightStacks = 8;
-    eq(FF.knightStackCap(r8), 8, 'Relentless (Lv80) raises the Momentum cap to 8');
-    near(FF.classAttackSpeedMult(r8), 0.20, 'Lv80: 8 stacks => -80% attack timer');
-    eq(FF.knightStacks(r8), 8, 'knightStacks caps at 8 with Relentless');
+    // Raise the Banner (Lv1): pure-state reads; the Order of Pace is a threshold at 6, never a ramp.
+    var s0 = base(); s0.xp.knight = FF.xpFloorForLevel(85); s0.knightStacks = 0;
+    eq(FF.classAttackSpeedMult(s0), 1, 'Banner 0 => no speed bonus');
+    var s5 = base(); s5.xp.knight = FF.xpFloorForLevel(85); s5.knightStacks = 5;
+    near(FF.classAttackSpeedMult(s5), 1, 'Banner 5 => the Order of Pace has not yet stood');
+    var s6 = base(); s6.xp.knight = FF.xpFloorForLevel(85); s6.knightStacks = 6;
+    near(FF.classAttackSpeedMult(s6), 0.88, 'Banner 6 => Order of Pace, -12% attack timer');
+    var s10 = base(); s10.xp.knight = FF.xpFloorForLevel(85); s10.knightStacks = 99;
+    near(FF.classAttackSpeedMult(s10), 0.88, 'the Order of Pace never deepens per stack');
+    eq(FF.knightStacks(s10), 10, 'knightStacks clamps to the Banner cap');
+    var offStacks = base(); offStacks.equippedMainhand='greatsword'; offStacks.knightStacks=8;
+    eq(FF.classAttackSpeedMult(offStacks), 1, 'the Orders are gated on the class being active');
+    eq(FF.knightStacks(offStacks), 0, 'no Banner while the class is inactive');
+    var raiser = base(); raiser.xp.knight = FF.xpFloorForLevel(45); raiser.knightStacks = 0;
+    eq(FF.knBannerRaise(2, raiser), 2, 'knBannerRaise lifts the Banner (a crit lifts +2)');
+    eq(FF.knBannerRaise(99, raiser), 10, 'a raise clamps to the cap — the Banner never overflows');
+    eq(FF.knBannerRaise(1, offStacks), 0, 'no class, no Banner');
 
-    // Lv 40 Bulwark: -4% damage taken per stack, capped at -20% (5 stacks) even past the Relentless cap.
-    var b20 = base(); b20.xp.knight = FF.xpFloorForLevel(25); b20.knightStacks = 5;
-    eq(FF.knightBulwarkDR(b20), 0, 'no Bulwark before Lv40');
+    // Orders standing + the Steel/Blood reads.
+    var o = base(); o.xp.knight = FF.xpFloorForLevel(85);
+    o.knightStacks = 2; eq(FF.knOrdersStanding(o), 0, 'Banner 2 => no Orders standing');
+    o.knightStacks = 3; eq(FF.knOrdersStanding(o), 1, 'Banner 3 => the Order of Steel stands');
+    near(FF.knightSteelMult(o), 1.12, 'Order of Steel: +12% damage');
+    near(FF.knightBloodLifestealPct(o), 0, 'no Order of Blood at Banner 3');
+    ok(!FF.knOrdersAll(o), 'not the full muster at Banner 3');
+    o.knightStacks = 9; eq(FF.knOrdersStanding(o), 3, 'Banner 9 => all three Orders stand');
+    ok(FF.knOrdersAll(o), 'the full muster at Banner 9');
+    near(FF.knightBloodLifestealPct(o), 0.05, 'Order of Blood: 5% lifesteal');
+
+    // Shieldwall (Lv40): 6% damage reduction per standing Order.
+    var b20 = base(); b20.xp.knight = FF.xpFloorForLevel(25); b20.knightStacks = 9;
+    eq(FF.knightDamageTakenMult(b20), 1, 'no Shieldwall before Lv40');
     var b40 = base(); b40.xp.knight = FF.xpFloorForLevel(45);
-    b40.knightStacks = 0; eq(FF.knightBulwarkDR(b40), 0, '0 stacks => no mitigation');
-    b40.knightStacks = 3; near(FF.knightBulwarkDR(b40), 0.12, '3 stacks => -12% damage taken');
-    b40.knightStacks = 5; near(FF.knightBulwarkDR(b40), 0.20, '5 stacks => -20% (cap)');
-    var b85 = base(); b85.xp.knight = FF.xpFloorForLevel(85); b85.knightStacks = 8;
-    near(FF.knightBulwarkDR(b85), 0.20, 'Bulwark still caps at -20% past the Relentless stack cap');
+    b40.knightStacks = 0; near(FF.knightDamageTakenMult(b40), 1, 'no standing Orders => no mitigation');
+    b40.knightStacks = 6; near(FF.knightDamageTakenMult(b40), 0.88, 'two Orders => -12% damage taken');
+    b40.knightStacks = 9; near(FF.knightDamageTakenMult(b40), 0.82, 'all three Orders => -18% damage taken');
 
-    // Lv 60 Warlord's Presence + the combined mitigation need a full state (maxHp reads physique/enchants),
-    // so exercise them on _state with a controlled Knight loadout, then restore for the other suites.
-    var s = FF._state;
-    var snap = { xpK:s.xp.knight, main:s.equippedMainhand, rar:s.equippedMainhandRarity, hp:s.playerHp, stk:s.knightStacks,
-      helm:s.bodyArmor.helmet, chest:s.bodyArmor.chest, gaunt:s.bodyArmor.gauntlets, boots:s.bodyArmor.boots };
-    s.equippedMainhand='claymore'; s.equippedMainhandRarity='normal';
-    s.bodyArmor.helmet=chain(); s.bodyArmor.chest=plate(); s.bodyArmor.gauntlets=chain(); s.bodyArmor.boots=plate();
-    var hp = FF.maxHp(s); // fortitude-driven, independent of Knight level/stacks
-    s.xp.knight = FF.xpFloorForLevel(25); s.playerHp = 1;
-    eq(FF.knightWarlordDmgMult(s), 1, 'no Warlord before Lv60');
-    s.xp.knight = FF.xpFloorForLevel(65);
-    s.playerHp = hp; // full HP -> offense stance
-    near(FF.knightWarlordDmgMult(s), 1.20, 'above half HP => +20% damage');
-    eq(FF.knightWarlordDR(s), 0, '...and no defensive bonus while healthy');
-    eq(FF.knightWarlordLifestealPct(s), 0, '...and no lifesteal while healthy');
-    ok(!FF.knightHurt(s), 'not "hurt" at full HP');
-    s.playerHp = Math.floor(hp*0.4); // below half -> defense stance
-    eq(FF.knightWarlordDmgMult(s), 1, 'below half HP => no damage bonus');
-    near(FF.knightWarlordDR(s), 0.25, '...but -25% damage taken');
-    near(FF.knightWarlordLifestealPct(s), 0.10, '...and +10% lifesteal');
-    ok(FF.knightHurt(s), '"hurt" below half HP');
-    // Combined incoming-damage multiplier: Bulwark (5 stacks, Lv85) + Warlord below-half.
-    s.xp.knight = FF.xpFloorForLevel(85); s.knightStacks = 5;
-    near(FF.knightDamageTakenMult(s), 0.55, 'Bulwark -20% + Warlord -25% => -45% damage taken');
-    // restore _state
-    s.xp.knight = snap.xpK; s.equippedMainhand = snap.main; s.equippedMainhandRarity = snap.rar; s.playerHp = snap.hp; s.knightStacks = snap.stk;
-    s.bodyArmor.helmet = snap.helm; s.bodyArmor.chest = snap.chest; s.bodyArmor.gauntlets = snap.gaunt; s.bodyArmor.boots = snap.boots;
+    // Under One Banner (Lv60): familiars share Steel (potency) — the Pace share rides familiarCastIntervalMs.
+    var u = base(); u.xp.knight = FF.xpFloorForLevel(65); u.knightStacks = 9;
+    near(FF.knightBeaconPotencyMult(u), 1.12, 'Under One Banner: familiars fight at the Order of Steel');
+    u.xp.knight = FF.xpFloorForLevel(45);
+    near(FF.knightBeaconPotencyMult(u), 1, 'no familiar share before Lv60');
+
+    // Behavioral: the Banner climbs on real swings and the Decree fires on the cadence (live state).
+    (function(){
+      var s = FF._state;
+      var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid,
+                   oh:s.equippedOffhand, ba:s.bodyArmor, ui:s.uniqueItems, xp:s.xp.knight,
+                   act:s.activity, hp:s.playerHp,
+                   stk:s.knightStacks, sw:s.knSwing, ha:s.knHitAvg, tr:s.knTrample, wb:s.knWarbringerCrit };
+      var svRnd = Math.random;
+      try {
+        s.equippedMainhand='claymore'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null;
+        s.equippedOffhand=null;
+        s.bodyArmor={ helmet:{material:'chain',tier:5,rarity:'normal'}, chest:{material:'plate',tier:5,rarity:'normal'}, gauntlets:{material:'chain',tier:5,rarity:'normal'}, boots:{material:'plate',tier:5,rarity:'normal'}, back:{tier:0,rarity:'normal',material:null} };
+        s.uniqueItems = {};
+        s.xp.knight = FF.xpFloorForLevel(85);
+        eq(FF.activeClassId(s), 'knight', 'behavioral setup activates the Knight');
+        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.playerHp = FF.maxHp(s);
+        s.knightStacks = 0; s.knSwing = 0; s.knHitAvg = 0; s.knTrample = 0; s.knWarbringerCrit = false;
+        // A landed crit raises the Banner +2 and banks the hit average.
+        Math.random = function(){ return 0; }; // lands + crits
+        FF.playerAttackTick(false, 1, false);
+        eq(s.knightStacks, 2, 'a landed Critical Hit raises the Banner +2');
+        ok((s.knHitAvg||0) > 0, 'the swing banked into the Decree base');
+        eq(s.knSwing||0, 0, 'no Decree count below the full muster');
+        // With all Orders standing, swings count toward the Decree.
+        s.knightStacks = 9;
+        FF.playerAttackTick(false, 1, false);
+        eq(s.knSwing, 1, 'a swing under the full muster counts toward the Decree');
+        eq(s.knightStacks, 10, 'the crit raise clamps at the cap');
+        // The Decree itself: 35% of the banked average per Banner, weapon-agnostic chip damage.
+        s.knightStacks = 10; s.knHitAvg = 1000; s.knSwing = FF.KN_DECREE_EVERY - 1;
+        Math.random = function(){ return 0.999; }; // the Decree does not crit
+        var hp0 = s.activity.monsterHp;
+        FF.knDecreeOnSwing(s.activity);
+        eq(hp0 - s.activity.monsterHp, 3500, 'the Decree: 10 Banner x 35% x 1000 = 3500');
+        eq(s.knSwing, 0, 'the Decree resets the swing count');
+        // Heavy Standard (D3 2pc) stuns + Trample (D3 full) surges — via real D3 set pieces.
+        s.uniqueItems = { w1:{set:'knight',setLayer:'d3'}, w2:{set:'knight',setLayer:'d3'}, w3:{set:'knight',setLayer:'d3'}, w4:{set:'knight',setLayer:'d3'} };
+        s.bodyArmor.helmet.uid='w1'; s.bodyArmor.chest.uid='w2'; s.bodyArmor.gauntlets.uid='w3'; s.bodyArmor.boots.uid='w4';
+        s.knSwing = FF.KN_DECREE_EVERY - 1;
+        FF.knDecreeOnSwing(s.activity);
+        ok((s.activity.enemyStunUntil||0) > Date.now(), 'Heavy Standard: the Decree stunned the foe');
+        eq(s.knTrample, FF.KN_TRAMPLE_SWINGS, 'Trample: the next 3 swings surge behind the command');
+        s.uniqueItems = {};
+        delete s.bodyArmor.helmet.uid; delete s.bodyArmor.chest.uid; delete s.bodyArmor.gauntlets.uid; delete s.bodyArmor.boots.uid;
+        s.knTrample = 0;
+        // Warbringer (key gravewarden): a Decree primes a guaranteed crit; the next landed swing spends it.
+        s.uniqueItems = { L:{ uid:'L', leg:'gravewarden', kind:'weapon', base:'stweapon_claymore_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } };
+        s.equippedMainhandUid = 'L';
+        s.knSwing = FF.KN_DECREE_EVERY - 1;
+        FF.knDecreeOnSwing(s.activity);
+        ok(s.knWarbringerCrit === true, 'Warbringer: the Decree primes the next swing to crit');
+        Math.random = function(){ return 0; };
+        FF.playerAttackTick(false, 1, false);
+        ok(!s.knWarbringerCrit, 'the primed crit is spent by the next landed swing');
+        // Drakelance: Decrees strike twice.
+        s.uniqueItems = { L:{ uid:'L', leg:'drakelance', kind:'weapon', base:'stweapon_claymore_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } };
+        s.knightStacks = 10; s.knHitAvg = 1000; s.knSwing = FF.KN_DECREE_EVERY - 1;
+        Math.random = function(){ return 0.999; };
+        var hp1 = s.activity.monsterHp;
+        FF.knDecreeOnSwing(s.activity);
+        eq(hp1 - s.activity.monsterHp, 7000, 'Drakelance: the Decree strikes twice (2 x 3500)');
+        s.uniqueItems = {}; s.equippedMainhandUid = null;
+        // The Banner PERSISTS across foes: defeatMonster must not clear it.
+        s.knightStacks = 7; var _mon = FF.MONSTERS.filter(function(m){ return m.id === s.activity.monsterId; })[0];
+        s.activity.monsterHp = 0; FF.defeatMonster(_mon);
+        eq(FF.knightStacks(s), 7, 'the Banner outlives the foe (persists through defeatMonster)');
+      } finally {
+        Math.random = svRnd;
+        s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu;
+        s.equippedOffhand=snap.oh; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.knight=snap.xp;
+        s.activity=snap.act; s.playerHp=snap.hp;
+        s.knightStacks=snap.stk; s.knSwing=snap.sw; s.knHitAvg=snap.ha; s.knTrample=snap.tr; s.knWarbringerCrit=snap.wb;
+      }
+    })();
 
     // Class familiar (steel swordsman).
     var fam = FF.FAMILIAR_DATA.knight;
