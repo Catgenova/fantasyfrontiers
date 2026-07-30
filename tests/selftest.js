@@ -3906,24 +3906,51 @@
     eq(FF.activeClassId(stFor('nightblade',80,{bodyArmor:{helmet:armor('leather'),chest:armor('leather'),gauntlets:armor('leather')}})), null, 'Voidshadow needs Leather Boots');
 
     var monFull = {hp:100}, monLow = {hp:100};
-    // Pyromancer rework: Ignite stacks Burn (cap 5); Combust burst = 25% of the hit per stack; Kindling
-    // +8% crit dmg/stack; Heat Haze dodge & Fever Pitch haste scale with Burn. The old flat stats are gone.
+    // The Conflagration: Burn is ONE Blaze with fuel, not five stacks. Fuel drives its tick, its damage
+    // multiplier, Heat Haze, and the Flashover threshold.
     eq(FF.newClassDmgMult(monFull, stFor('pyromancer',80)), 1, 'Pyromancer no longer grants flat damage');
     eq(FF.newClassCritChance(stFor('pyromancer',80)), 0, 'Pyromancer no longer grants flat crit chance');
     eq(FF.newClassCritDmg(stFor('pyromancer',80)), 0, 'Pyromancer no longer grants flat crit damage');
     eq(FF.classBlockBonus(stFor('pyromancer',80)), 0, 'Pyromancer no longer grants Block');
     var pyro = stFor('pyromancer',80);
-    FF.pyromancerApplyBurn(pyro.activity); FF.pyromancerApplyBurn(pyro.activity); FF.pyromancerApplyBurn(pyro.activity);
-    eq(FF.enemyBurnStacks(pyro), 3, 'Ignite: 3 hits -> 3 Burn stacks');
-    FF.pyromancerApplyBurn(pyro.activity); FF.pyromancerApplyBurn(pyro.activity); FF.pyromancerApplyBurn(pyro.activity);
-    eq(FF.enemyBurnStacks(pyro), 5, 'Burn stacks cap at 5');
-    ok(Math.abs(FF.pyromancerKindlingCritDmg(pyro) - 0.40) < 1e-9, 'Kindling Crits: +8%/stack -> +40% crit dmg at 5 stacks');
-    ok(Math.abs(FF.pyromancerHeatHazeDodge(pyro) - 0.20) < 1e-9, 'Heat Haze: +4%/stack dodge, capped +20% at 5 stacks');
-    ok(Math.abs(FF.pyromancerFeverHaste(pyro) - 0.25) < 1e-9, 'Fever Pitch: +5%/stack -> +25% haste at 5 stacks');
-    eq(FF.pyromancerCombustDmg(1000, pyro), 1250, 'Combust: 25% of the hit per stack (5 stacks -> +1250 on a 1000 hit)');
-    eq(FF.pyromancerKindlingCritDmg(stFor('pyromancer',20)), 0, 'Kindling inactive below Lv40');
+    eq(FF.pyBlazeCap(pyro), FF.PY_FUEL_MAX, 'a bare Blaze holds 100 fuel');
+    eq(FF.pyBlazeFuel(pyro), 0, 'and starts cold');
+    // Hits feed fuel. The pool is the mechanic; burnStacks is DERIVED from it purely so the ~15 external
+    // readers (Rimewyrm vs Scorched, Cremation, the Ranger's Fire Arrows, d2BurnTickMult...) keep working.
+    FF.pyBlazeFeed(pyro.activity, 50, pyro);
+    eq(FF.pyBlazeFuel(pyro), 50, 'the Blaze took the fuel');
+    near(FF.pyBlazeFrac(pyro), 0.5, 'half a tank');
+    ok(FF.enemyBurning(pyro), 'a living Blaze still reads as "burning" to every external effect');
+    ok(FF.enemyBurnStacks(pyro) > 0, 'and still exposes a derived stack count');
+    ok(pyro.activity.burnDps > 0, 'and a live burn dps for the shared tick body');
+    // The Blaze is a damage multiplier in its own right, scaling with size.
+    near(FF.pyBlazeDmgMult(pyro), 1 + FF.PY_BLAZE_DMG_PCT * 50, 'the Blaze is +0.6% damage per fuel');
+    ok(FF.pyBlazeDmgMult(stFor('pyromancer',80)) === 1, 'a cold Blaze adds nothing');
+    // Fuel feed rates: Bellows (Lv40) doubles a crit's fuel.
+    eq(FF.pyFuelPerHit(false, stFor('pyromancer',80)), FF.PY_FUEL_PER_HIT, 'a normal hit feeds the base fuel');
+    eq(FF.pyFuelPerHit(true, stFor('pyromancer',80)), FF.PY_FUEL_PER_HIT * FF.PY_FUEL_CRIT_MULT, 'Bellows: a crit feeds double');
+    eq(FF.pyFuelPerHit(true, stFor('pyromancer',20)), FF.PY_FUEL_PER_HIT, 'no crit bonus before Lv40');
+    // It burns itself down -- uptime is the skill. Bellows slows that; Everburning stops it entirely.
+    ok(FF.pyBurnRate(stFor('pyromancer',1)) > 0, 'an unfed Blaze dies down');
+    near(FF.pyBurnRate(stFor('pyromancer',80)), FF.PY_BURN_RATE * FF.PY_BURN_RATE_L40, 'Bellows: 30% slower burn-down');
+    var down = stFor('pyromancer',80); FF.pyBlazeFeed(down.activity, 60, down);
+    FF.pyBlazeBurnDown(down.activity, 1000, down);
+    ok(FF.pyBlazeFuel(down) < 60, 'a second of neglect costs fuel');
+    // Heat Haze re-keyed off the Blaze's SIZE; Kindling Crits and Fever-Pitch-as-capstone retired.
+    // At Lv60 a full tank just sits there, so the Haze reaches its cap.
+    var haze = stFor('pyromancer',60); FF.pyBlazeFeed(haze.activity, FF.pyBlazeCap(haze), haze);
+    near(FF.pyromancerHeatHazeDodge(haze), FF.PY_HAZE_CAP, 'Heat Haze caps at +20% Dodge on a full Blaze');
+    // At Lv80 you can never SIT at full: filling the tank erupts and falls back to a quarter, by design.
+    var over = stFor('pyromancer',80); FF.pyBlazeFeed(over.activity, FF.pyBlazeCap(over), over);
+    near(FF.pyBlazeFrac(over), FF.PY_FLASHOVER_FLOOR, 'a full Blaze Flashovers and resets to a quarter tank');
+    // (The eruption's damage lands via applyChipDamage, which writes to the LIVE state, so a detached
+    // fixture cannot observe it -- the fuel reset is the observable half here.)
     eq(FF.pyromancerHeatHazeDodge(stFor('pyromancer',40)), 0, 'Heat Haze inactive below Lv60');
-    eq(FF.pyromancerFeverHaste(stFor('pyromancer',60)), 0, 'Fever Pitch inactive below Lv80');
+    eq(FF.pyromancerKindlingCritDmg(pyro), 0, 'Kindling Crits retired');
+    // The wand chassis knob: the SECOND class on the x49 element-gear stack.
+    near(FF.PY_SWING_MULT, 0.11, 'the wand channels its raw swings (THE band knob)');
+    ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'pyromancerIgnite'; }), 'the Ignite channel is a named PLAYER_DMG_MODS row');
+    ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'pyromancerBlaze'; }), 'and the Blaze multiplier is its own row');
     // Sharpshooter rework: Eagle Eye (Lv1) / Pinpoint (Lv20) / Marksman's Focus (Lv40) / Armor-Splitter (Lv60) / Sniper's Patience (Lv80).
     var ssNames = FF.CLASS_DEFS_BY_ID.sharpshooter.passives.map(function(p){ return p.name; });
     eq(JSON.stringify(ssNames), JSON.stringify(['Eagle Eye','Pinpoint',"Marksman's Focus",'Armor-Splitter',"Sniper's Patience"]), 'Sharpshooter ladder is the reworked five');

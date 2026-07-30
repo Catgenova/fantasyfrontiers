@@ -129,6 +129,20 @@ const BUILDS = {
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
     offhandShield: { type: "shieldSmall", leg: "fortunesriposte" },
   },
+  pyromancer: {
+    // Fire Wand + Fire Ward, full cloth. The SECOND class on the x49 wand chassis (two Fantastic +15 Rings of
+    // Fire alone are +4,800% elemental damage) -- the Stormlord opened at 4.4-6.5T before TF_STORM_SWING_MULT
+    // 0.32, so expect a pre-correction read in the TRILLIONS here and correct it in PY_SWING_MULT, never in the
+    // wand's damage stats. Ward fixed to Everburning: it is the only Fire ward that is purely offensive uptime
+    // (the Blaze never burns down), whereas Emberveil/Ashveil bank Barriers that a zero-offense dummy gives
+    // nothing to absorb. Sim-dead: Heat Haze's Dodge, and both Barrier wards' defensive value.
+    // The Blaze is a deterministic fuel bar, so runs should be quiet (Reaver-like) rather than Stormlord-noisy.
+    weapon: { typeId: "wandFire", styleXp: ["wandFire", "wands", "fire"] },
+    legs: ["emberstorm", "cindermaw", "pyresoul", "cinderwyrm"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "fire",
+    offhandWard: "everburning",
+  },
   reaver: {
     // Half-moon axe (fast 1h) + small shield, chain helm/chest + leather gloves/boots. The Butcher's Count is
     // a RAMP: every stack-second of bleeding carves a Cut and the Cut tally is a fight-long damage multiplier,
