@@ -100,6 +100,16 @@ const BUILDS = {
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
   },
+  knight: {
+    // Claymore (6s two-hander) -- 90s window: compare vs Berserker 82B / Warpriest 89B @90s, never the
+    // 45s classes. The zero-offense dummy never triggers Rally, and Shieldwall/Under One Banner are
+    // defense/party-side, so the sim measures the Steel/Pace/Decree core -- which is where the knob
+    // (KN_DECREE_PCT) lives. The Banner never lowers, so runs ramp once and hold.
+    weapon: { typeId: "claymore", base: "stweapon_claymore_t19_fantastic", tier: 19, styleXp: ["claymore"] },
+    legs: ["relentlessassault", "breachblade", "gravewarden", "drakelance"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "pierce",
+  },
   berserker: {
     // Max Health IS the weapon (Titan's Heft/Deepquake/Wrathscale scale off it), so jewelry lines trade
     // lifesteal for Max HP. primeLedger holds the Blood Ledger inked at cap (owner rule: simulate the
