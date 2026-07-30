@@ -129,6 +129,22 @@ const BUILDS = {
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
     offhandShield: { type: "shieldSmall", leg: "fortunesriposte" },
   },
+  reaver: {
+    // Half-moon axe (fast 1h) + small shield, chain helm/chest + leather gloves/boots. The Butcher's Count is
+    // a RAMP: every stack-second of bleeding carves a Cut and the Cut tally is a fight-long damage multiplier,
+    // so this class is more measurement-window sensitive than any other -- always report 45s AND 90s, and never
+    // compare a 90s Reaver read against a 45s class. The ledger is per FOE, and the harness refills the dummy
+    // rather than killing it, so the ramp runs uninterrupted (which is the honest read for a boss fight, the
+    // niche this class is built for). Sim-dead: Bloodfrenzy (D2 full) scales with MISSING health and the dummy
+    // never swings, so that half of the layer reads zero and the D2 A/B understates it -- its "two Cuts per
+    // stack-second" half is what the sim actually sees. Bonereaver's tally carry is kill-gated (under-reads),
+    // and every heal (Bloodsupper, Goreshell, Cauterize) is inert on a full HP bar.
+    weapon: { typeId: "halfmoonaxe", styleXp: ["halfmoonaxe"] },
+    legs: ["crimsonharvest", "marrowsplitter", "bonereaver", "gorewyrm"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
+    offhandShield: { type: "shieldSmall", leg: "frenziedguard" },
+  },
   knight: {
     // Claymore (6s two-hander) -- 90s window: compare vs Berserker 82B / Warpriest 89B @90s, never the
     // 45s classes. The zero-offense dummy never triggers Rally, and Shieldwall/Under One Banner are

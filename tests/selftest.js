@@ -5569,9 +5569,13 @@
       return st;
     }
     var now = Date.now();
-    // Marrowsplitter (reaver/halfmoonaxe): +3% per Bleed stack.
-    near(FF.d2LegDmgMult({}, legSt('marrowsplitter','halfmoonaxe',{ activity:{type:'combat', monsterHp:100, bleedStacks:5, bleedUntil:now+4000} })), 1.15, 'Marrowsplitter: +3% per Bleed stack (5 -> +15%)');
-    near(FF.d2LegDmgMult({}, legSt('marrowsplitter','halfmoonaxe')), 1.0, 'Marrowsplitter inert on an unbled foe');
+    // Marrowsplitter (reaver/halfmoonaxe): every Cut counts DOUBLE toward the Count -- the ramp axe.
+    eq(FF.LEG_MARROWSPLITTER_CUTS, 2, 'Marrowsplitter values each Cut at two');
+    var msSt = legSt('marrowsplitter','halfmoonaxe',{ xp:{ reaver: FF.xpFloorForLevel(41) }, equippedMainhand:'halfmoonaxe', equippedOffhand:'shieldSmall',
+      bodyArmor:{helmet:{material:'chain',tier:5},chest:{material:'chain',tier:5},gauntlets:{material:'leather',tier:5},boots:{material:'leather',tier:5}},
+      activity:{type:'combat', monsterHp:100, rvCuts:100} });
+    near(FF.rvCountMult(msSt), 1 + 2 * FF.RV_COUNT_PCT * 100, 'Marrowsplitter: 100 Cuts count as 200');
+    near(FF.d2LegDmgMult({}, legSt('marrowsplitter','halfmoonaxe')), 1.0, 'Marrowsplitter adds no flat damage row');
     // Headtaker (executioner/fullmoonaxe): stacking +10% per kill; d2HeadtakerOnKill builds a stack.
     var ht = legSt('headtaker','fullmoonaxe'); FF.d2HeadtakerOnKill(ht);
     eq(ht.d2HeadtakerStacks, 1, 'a kill adds a Headtaker stack'); ok(ht.d2HeadtakerUntil > now, 'and opens the window');
@@ -7368,7 +7372,7 @@
     var now = Date.now();
 
     // 2-piece cap raises: Bleed / Burn / Chill 5 -> 8; Samurai Focus 1 -> 2/hit.
-    eq(FF.reaverBleedCap(setSt('reaver',2)), 8, 'Rabid (2pc): Reaver Bleed cap -> 8');
+    eq(FF.reaverBleedCap(setSt('reaver',2)), 7, 'Rabid (2pc): Reaver Bleed cap +2 (Deep Cuts owns the jump to 8 now)');
     eq(FF.reaverBleedCap(setSt('reaver',1)), 5, '1 piece -> base Bleed cap 5');
     eq(FF.pyroBurnCap(setSt('pyromancer',2)), 8, 'Wildfire (2pc): Burn cap -> 8');
     eq(FF.pyroBurnCap(setSt('pyromancer',1)), FF.PYRO_BURN_MAX_STACKS, '1 piece -> base Burn cap');
@@ -9555,7 +9559,7 @@
   });
 
   // ---- Reaver (Half-Moon Axe): the fast 1h axe gets a Bleed-DoT class -----------------------------
-  suite('classes: reaver (half-moon axe, bleed)', function(){
+  suite("classes: reaver (the Butcher's Count -- bleed as a ledger)", function(){
     function armor(mat){ return {material:mat,tier:5}; }
     function stFor(level, extra){
       var st = { xp:{}, physique:{}, equippedMainhand:'halfmoonaxe', equippedOffhand:'shieldSmall',
@@ -9574,18 +9578,60 @@
     eq(FF.activeClassId(stFor(80)), 'reaver', 'half-moon axe + small shield + chain/leather => Reaver');
     eq(FF.activeClassId(stFor(80,{equippedOffhand:null})), null, 'Reaver needs the Small Shield');
     eq(FF.activeClassId(stFor(80,{bodyArmor:{helmet:armor('chain'),chest:armor('chain'),gauntlets:armor('chain'),boots:armor('leather')}})), null, 'Reaver needs Leather Gloves, not chain');
-    // Reworked ladder: Savagery / Bloodletting / Frenzied Rending / Arterial Spray / Hemorrhagic Burst.
-    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Savagery,Bloodletting,Frenzied Rending,Arterial Spray,Hemorrhagic Burst', 'reworked Reaver ladder');
-    // Savagery +25% damage (Lv1); the class no longer grants any flat crit damage (Hemorrhage retired).
-    ok(Math.abs(FF.newClassDmgMult({hp:100}, stFor(1)) - 1.25) < 1e-9, 'Savagery +25% damage');
-    eq(FF.newClassCritDmg(stFor(80)), 0, 'Reaver no longer grants flat crit damage');
-    // Frenzied Rending (Lv40): +15% attack speed (x0.85) at max Bleed stacks; neutral below max or before Lv40.
-    var frMax = stFor(40); frMax.activity = { type:'combat', monsterHp:100, bleedStacks:5, bleedUntil:Date.now()+5000 };
-    near(FF.classAttackSpeedMult(frMax), 0.85, 'Frenzied Rending: +15% attack speed at max Bleed stacks', 1e-9);
+    // The Butcher's Count ladder. Savagery (a bare +25% damage) and Bloodletting retired; Frenzied Rending was
+    // PROMOTED to Lv1 as Flensing, because Bleed cannot be a level-forty unlock on the bleed class; Arterial
+    // Spray moved onto Bonereaver (as a perk it needed a kill, so it did nothing against a boss); Hemorrhagic
+    // Burst was superseded by Harvest, which is the same idea with a resource behind it.
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Flensing,The Count,Deep Cuts,Harvest,The Butcher\u2019s Tally', 'Butcher\'s Count ladder');
+    eq(FF.newClassCritDmg(stFor(80)), 0, 'Reaver grants no flat crit damage');
+    // Savagery is gone: with no Cuts tallied the class adds no damage row at all.
+    ok(Math.abs(FF.newClassDmgMult({hp:100}, stFor(1)) - 1) < 1e-9, 'Savagery retired: no flat +25%');
+    ok(Math.abs(FF.newClassDmgMult({hp:100}, stFor(80)) - 1) < 1e-9, 'and none at Lv80 with an empty ledger');
+
+    // The Bleed used to tick off summed proficiency LEVELS (a few hundred damage against ~1e11 hits), so the
+    // class's identity was invisible at best-in-slot. It now ticks off the recent-hit EMA.
+    near(FF.RV_BLEED_PCT, 0.06, 'a Bleed stack ticks for 6% of the recent average hit per second');
+    near(FF.RV_SWING_MULT, 0.45, 'the axe channels its raw swings to 45% -- the wounds do the killing (THE band knob)');
+    ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'reaverFlensing'; }), 'the Flensing channel is a named PLAYER_DMG_MODS row');
+
+    // Lv 20 The Count: +0.4% damage per Cut, capped, and it reads the FIGHT's tally off the activity.
+    near(FF.RV_COUNT_PCT, 0.004, 'The Count pays +0.4% per Cut');
+    near(FF.RV_COUNT_CAP, 1.20, '... capped at +120%');
+    var ct = stFor(80); ct.activity = { type:'combat', monsterHp:100, rvCuts:100 };
+    near(FF.rvCountMult(ct), 1.40, '100 Cuts -> +40% damage');
+    ct.activity.rvCuts = 9999; near(FF.rvCountMult(ct), 1 + FF.RV_COUNT_CAP, 'the Count respects its cap');
+    var ct1 = stFor(1); ct1.activity = { type:'combat', monsterHp:100, rvCuts:100 };
+    near(FF.rvCountMult(ct1), 1, 'the Count needs Lv20');
+
+    // Lv 40 Deep Cuts: the cap rises to 8, and because every STACK-second carves a Cut, the cap is ramp SPEED.
+    eq(FF.reaverBleedCap(stFor(1)), FF.REAVER_BLEED_MAX, 'Lv1: base Bleed cap of 5');
+    eq(FF.reaverBleedCap(stFor(40)), 8, 'Deep Cuts (Lv40): the cap rises to 8');
+
+    // Flensing's max-stack haste now lands at Lv1 (it moved down with the Bleed).
+    var frMax = stFor(1); frMax.activity = { type:'combat', monsterHp:100, bleedStacks:5, bleedUntil:Date.now()+5000 };
+    near(FF.classAttackSpeedMult(frMax), 0.85, 'Flensing: +15% attack speed at max Bleed stacks', 1e-9);
     var frLow = stFor(40); frLow.activity = { type:'combat', monsterHp:100, bleedStacks:2, bleedUntil:Date.now()+5000 };
     eq(FF.classAttackSpeedMult(frLow), 1, 'no frenzy haste below max stacks');
-    var fr20 = stFor(20); fr20.activity = { type:'combat', monsterHp:100, bleedStacks:5, bleedUntil:Date.now()+5000 };
-    eq(FF.classAttackSpeedMult(fr20), 1, 'no frenzy haste before Lv40');
+
+    // Carving Cuts: fractional stack-seconds accumulate, so the tally is tick-rate independent -- a per-tick
+    // count would pay out differently at different frame rates.
+    var cv = stFor(80); cv.activity = { type:'combat', monsterHp:100 };
+    eq(FF.rvCarveCuts(0.4, cv), 0, 'a fraction of a stack-second carves nothing yet');
+    eq(FF.rvCarveCuts(0.7, cv), 1, 'but it accumulates and carves on the way past 1');
+    eq(cv.activity.rvCuts, 1, 'the tally took the Cut');
+    eq(cv.activity.rvBank, 1, 'and so did the harvestable bank');
+    FF.rvCarveCuts(9999, cv);
+    eq(cv.activity.rvCuts, FF.RV_CUT_MAX, 'the tally has a ceiling');
+
+    // Lv 60 Harvest: it cashes the BANK. Two numbers on purpose -- with one, a capstone tally that never
+    // drops would sit permanently above the threshold and Harvest on every crit.
+    eq(FF.RV_HARVEST_AT, 60, 'a Harvest arms at 60 banked Cuts');
+    var hv = stFor(60); hv.activity = { type:'combat', monsterHp:1e9, rvCuts:100, rvBank:100, rvBleedHitAvg:1000 };
+    eq(FF.rvHarvestArmed(hv), true, '100 banked Cuts arms the Harvest');
+    near(FF.rvHarvestDamage(hv), 100 * FF.RV_HARVEST_PCT * 1000, 'Harvest = banked Cuts x 5% x the recent average hit');
+    hv.activity.rvBank = 10; eq(FF.rvHarvestArmed(hv), false, 'and disarms below the threshold');
+    var hv20 = stFor(20); hv20.activity = { type:'combat', monsterHp:1e9, rvBank:100, rvBleedHitAvg:1000 };
+    eq(FF.rvHarvestArmed(hv20), false, 'Harvest needs Lv60');
     // Bleed tick: it reads the global _state.activity. Snapshot the fields we touch, then restore.
     // With no Reaver kit equipped on _state, reaverBonus(60/80) are off, so we exercise the base tick:
     // it chips the enemy (no floor -- a Bleed can finish a foe), and an expired Bleed does nothing.
@@ -9605,19 +9651,54 @@
     } finally {
       S.activity=save.act; S.playerHp=save.hp; S.equippedMainhand=save.mh; S.equippedOffhand=save.oh;
     }
-    // Bloodletting (Lv20): with the Reaver kit worn, the Bleed tick heals 8% of the damage it deals.
-    var bl = { mh:S.equippedMainhand, oh:S.equippedOffhand, ba:S.bodyArmor, xp:S.xp.reaver, act:S.activity, hp:S.playerHp };
+    // Behavioral (live state): the Bleed is re-based on the recent hit, every stack-second carves a Cut, and a
+    // Harvest cashes the bank. Bloodletting retired -- Bloodsupper carries the heal now, so a bare kit no
+    // longer lifesteals from its own Bleed.
+    var bl = { mh:S.equippedMainhand, mht:S.equippedMainhandTier, oh:S.equippedOffhand, oht:S.equippedOffhandTier,
+               ba:S.bodyArmor, ui:S.uniqueItems, xp:S.xp.reaver, act:S.activity, hp:S.playerHp, hh:S.reaverHarvestHasteUntil };
+    var svRnd = Math.random;
     try {
-      S.equippedMainhand='halfmoonaxe'; S.equippedOffhand='shieldSmall';
-      S.bodyArmor={helmet:armor('chain'),chest:armor('chain'),gauntlets:armor('leather'),boots:armor('leather')};
-      S.xp.reaver = FF.xpFloorForLevel(25);
-      ok(FF.reaverBonus(20), 'Reaver Lv20 is active with the kit worn');
-      S.activity = { type:'combat', monsterId:null, monsterHp:100000, bleedDps:100, bleedUntil:Date.now()+5000 };
-      S.playerHp = 10;
-      FF.applyReaverBleedTick(1000); // 100 Bleed damage over 1s -> heal 8% = +8 HP
-      ok(S.playerHp >= 18 - 1e-6, 'Bloodletting heals 8% of Bleed damage (100 dmg -> +8 HP), got '+S.playerHp);
+      S.equippedMainhand='halfmoonaxe'; S.equippedMainhandTier=6; S.equippedMainhandRarity='normal'; S.equippedMainhandUid=null;
+      S.equippedOffhand='shieldSmall'; S.equippedOffhandTier=6;
+      S.bodyArmor={helmet:armor('chain'),chest:armor('chain'),gauntlets:armor('leather'),boots:armor('leather'),back:{tier:0,rarity:'normal',material:null}};
+      S.uniqueItems={}; S.xp.reaver = FF.xpFloorForLevel(85);
+      eq(FF.activeClassId(S), 'reaver', 'behavioral setup activates the Reaver');
+      // A landed swing banks the hit and opens the wound off it -- not off a level-scaled trickle.
+      S.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e12, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+      S.playerHp = FF.maxHp(S);
+      Math.random = function(){ return 0; };
+      FF.playerAttackTick(false, 1, false);
+      ok((S.activity.rvBleedHitAvg||0) > 0, 'the swing banked into the Bleed base');
+      ok((S.activity.bleedStacks||0) > 0, 'and opened a Bleed');
+      near(S.activity.bleedDps, S.activity.bleedStacks * FF.RV_BLEED_PCT * S.activity.rvBleedHitAvg, 'the Bleed ticks off the recent hit, not off proficiency levels');
+      // A second of that Bleed carves Cuts equal to the stack count, and chips the foe for real damage.
+      S.activity.rvCuts = 0; S.activity.rvBank = 0; S.activity.rvCutAccum = 0;
+      var stacks = S.activity.bleedStacks, hpBefore = S.activity.monsterHp;
+      FF.applyReaverBleedTick(1000);
+      eq(S.activity.rvCuts, stacks, 'one second of bleeding carves one Cut per stack');
+      ok(S.activity.monsterHp < hpBefore, 'and the tick chipped the foe');
+      // A bare kit no longer heals from its own Bleed (that is Bloodsupper's job now).
+      S.playerHp = 10; FF.applyReaverBleedTick(1000);
+      eq(S.playerHp, 10, 'Bloodletting retired: no lifesteal without Bloodsupper');
+      // Harvest: it spends the BANK, and pre-capstone it also pays the Count back down.
+      S.xp.reaver = FF.xpFloorForLevel(61); // Lv 61: Harvest, but not the Butcher's Tally
+      S.activity.rvCuts = 100; S.activity.rvBank = 100; S.activity.rvBleedHitAvg = 1000;
+      var hHp = S.activity.monsterHp;
+      var dealt = FF.rvHarvestFire(S.activity, FF.MONSTERS[0], S);
+      eq(dealt, Math.round(100 * FF.RV_HARVEST_PCT * 1000), 'the Harvest cashed the bank');
+      ok(S.activity.monsterHp < hHp, 'and struck the foe');
+      eq(S.activity.rvBank, 0, 'the bank is spent');
+      eq(S.activity.rvCuts, 0, 'pre-capstone the ramp pays for the burst');
+      // Lv 80 The Butcher's Tally: the Harvest stops spending the Count, so the ramp never reverses.
+      S.xp.reaver = FF.xpFloorForLevel(85);
+      S.activity.rvCuts = 100; S.activity.rvBank = 100;
+      FF.rvHarvestFire(S.activity, FF.MONSTERS[0], S);
+      eq(S.activity.rvBank, 0, 'the capstone still spends the bank');
+      eq(S.activity.rvCuts, 100, "the Butcher's Tally leaves the Count standing");
     } finally {
-      S.equippedMainhand=bl.mh; S.equippedOffhand=bl.oh; S.bodyArmor=bl.ba; S.xp.reaver=bl.xp; S.activity=bl.act; S.playerHp=bl.hp;
+      Math.random = svRnd;
+      S.equippedMainhand=bl.mh; S.equippedMainhandTier=bl.mht; S.equippedOffhand=bl.oh; S.equippedOffhandTier=bl.oht;
+      S.bodyArmor=bl.ba; S.uniqueItems=bl.ui; S.xp.reaver=bl.xp; S.activity=bl.act; S.playerHp=bl.hp; S.reaverHarvestHasteUntil=bl.hh;
     }
   });
 
