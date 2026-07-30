@@ -94,6 +94,20 @@ Dark, Sunburst +30%) Sunwyrm ~89B / Retribution ~77B at 90s,
 Lichbane/Sunbrand between — the tightest legendary spread of any rework (set
 D4 Solar Heart/Sunburst Zeal, ward slot fixed to Sunscale: Hallowlight/Sanctveil key off
 ward reflects, which the zero-offense dummy never triggers, and Aegisveil is defensive).
+**Thunderfury** (45s,
+v0.0.62.1 — the FIRST full-elemental weapon simmed, completing the chassis trilogy: the wand
+swing's Wand Attunement mods row carried the whole element-gear stack, x49 at BiS — two
+fantastic +15 Rings of Earth alone are +4,800% elemental damage (0.50 base x8 rarity x6
+enhance each). Start: 4.4-6.5T. Fix per the owner rule, all in class perk variables:
+TF_STORM_SWING_MULT 0.32 (Stormseed channels raw swings 68% down; bolts scale off the
+channeled hitAvg so one knob drives the whole kit) and Stormwyrm's Eye scales Bolts by
+CLAMPED attunement only, never the gear stack. Pyromancer/Frostwarden/Nightblade/Lumen
+wield wands and will hit the same x49 chassis at their reworks — budget for it. Kit:
+bolts 6%/intensity/s, claps every 6th x2, Galvanize 8%/crit-bolt) Stormtomb ~93B /
+Gloomstorm ~90B / Stormwyrm ~85B / Stormbrand ~71B (set D4 Galvanic/Stormwyrm's Eye,
+ward fixed to Stormscale — Stormcoil/Voltveil/Stormveil are reflect/hit-taken keyed, dead
+on the dummy). Stormlord runs are the NOISIEST recorded (±25% same-config: 91-128B at one
+setting — crit-bolt and Galvanize ramp timing); always average 2-3 runs before tuning.
 Templar sim notes: BUILDS needs offhandWard; **measurement window matters** — mastery/
 proficiency train during the run, so 90s runs read ~35% above 60s runs on identical code;
 always compare a class against ceilings recorded at the SAME window (Berserker 82B @90s is

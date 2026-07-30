@@ -5745,7 +5745,7 @@
         { icon:svgIcon('boots',CLASS_CLOTH_COLOR),     label:'Cloth Shoes',  met:function(st){ return clothPieceEquipped(st,'boots'); } }
       ],
       passives:[
-        { level:1,  name:'Stormseed',         desc:'Every landed hit seeds the <b>Storm</b> +1 (Critical Hits +2; cap 10, fading 1 per 3s without fresh hits). Each second the Storm strikes a <b>Bolt</b> for <b>6% of your recent average hit per intensity</b>, rolling its own Critical Hit &mdash; and the Storm <b>outlives the foe</b> in a chain.' },
+        { level:1,  name:'Stormseed',         desc:'Every landed hit seeds the <b>Storm</b> +1 (Critical Hits +2; cap 10, fading 1 per 3s without fresh hits). Each second the Storm strikes a <b>Bolt</b> for <b>6% of your recent average hit per intensity</b>, rolling its own Critical Hit &mdash; and the Storm <b>outlives the foe</b> in a chain. While the sky is yours, your own swings channel <b>68% less</b> &mdash; the Storm carries the surplus.' },
         { level:20, name:"Conductor's Tempo", desc:'While the Storm is at <b>5+ intensity</b>, you attack <b>12% faster</b>.' },
         { level:40, name:'Grounding Rod',      desc:'When the enemy damages you, the blow is earthed: the Storm seeds <b>+1</b>.' },
         { level:60, name:'Concussive Bolt',    desc:'Every <b>6th Bolt</b> is a <b>Thunderclap</b>: it strikes double and stuns for 1.5s.' },
@@ -6970,6 +6970,7 @@
   var TF_CLAP_EVERY = 6, TF_CLAP_MULT = 2, TF_CLAP_STUN_MS = 1500, TF_CLAP_STUN_MS_D3 = 2500; // Static Web (D3 2pc)
   var TF_GALV_PER = 0.08, TF_GALV_MAX = 10, TF_GALV_MAX_SCALE = 15;    // Stormscale Ward
   var LEG_STORMWYRM_CRIT_BOLT = 1.5;         // Stormwyrm's Horn: critical Bolts +50%
+  var TF_STORM_SWING_MULT = 0.32;            // Stormseed (Lv1): while the Storm is raised, raw swings channel 68% less -- the sky carries the surplus (the wand chassis correction lives HERE per the owner rule: full-elemental swings ride a ~x49 element-gear stack at BiS)
   function tfStormCap(st){ st = st || state; return legActive('tempest', st) ? TF_STORM_MAX_GLOOM : (set2('thunderfury', st) ? TF_STORM_MAX_D1 : TF_STORM_MAX); }
   function tfStormIntensity(st){ st = st || state; return thunderfuryBonus(1, st) ? Math.min(tfStormCap(st), st.tfStorm||0) : 0; }
   function tfStormSeed(n, st){ st = st || state; if(!thunderfuryBonus(1, st)) return 0;
@@ -6996,7 +6997,7 @@
       if(legActive('stormwyrm', st)) dmg *= LEG_STORMWYRM_CRIT_BOLT;
       if(thunderfuryBonus(80, st)) st.tfGalvanize = Math.min(tfGalvanizeCap(st), (st.tfGalvanize||0) + 1);
     }
-    if(setFullD4('thunderfury', st)) dmg *= elementDmgMult(st, 'earth');        // Stormwyrm's Eye: Bolts strike as Earth
+    if(setFullD4('thunderfury', st)) dmg *= 1 + elementDamageBonus(st, 'earth'); // Stormwyrm's Eye: Bolts strike as Earth, scaled by ATTUNEMENT only (clamped) -- the full element-gear stack (x49 at BiS: enhanced elemental rings) tripled the sim
     if(setFullD3('thunderfury', st) && enemyStunned(st)) dmg *= 1.20;           // Broken Sky: a stunned foe takes +20%
     dmg = Math.round(dmg);
     if(dmg <= 0) return 0;
@@ -15015,6 +15016,7 @@
     { name:'duelistAfterimage',     label:'Afterimage',         fn:function(c){ return state._duelistAfterimage ? (legActive('phantomthrust') ? DUELIST_AFTERIMAGE_PCT_PHANTOM : DUELIST_AFTERIMAGE_PCT) : 1; } },
     { name:'reaperGravebloom',      label:'Gravebloom',         fn:function(c){ return c.isOffhand ? 1 : reaperGravebloomMult(state); } },
     { name:'templarLitany',         label:'Litany',             fn:function(c){ var _v = templarVerse(state); if(!_v) return 1; return TPL_LITANY_SWING_MULT * (_v==='might' ? 1 + TPL_MIGHT_PCT * templarVersePower(state) : 1) * templarDoxologyMult(state); } },
+    { name:'thunderfuryStorm',      label:'Stormseed',          fn:function(c){ return (state.activity && state.activity.type==='combat' && thunderfuryBonus(1)) ? TF_STORM_SWING_MULT : 1; } },
     { name:'quickdrawTrick',        label:'Trick Arrow',        fn:function(c){ if(c.isOffhand || c.isBonus || !state._qdTrickShot) return 1;
       var m = (quickdrawBonus(60) ? QD_TRICK_MULT : 1) * (set2D4('quickdraw') ? QD_TRICK_MULT : 1); // Broadheads (Lv60) x Heavy Heads (D4 2pc)
       if(state._qdTrickShot === 'fusillade' && legActive('chainshot')) m *= LEG_WEBSNARE_FUSILLADE;  // Websnare: the Fusillade strikes +50%
@@ -23816,7 +23818,7 @@
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
     { v:'0.0.62', date:'Jul 30', heading:'Thunderfury rework: The Stormlord', items:[
-      'The Thunderfury no longer casts the lightning — he raises the weather. Every landed hit seeds the Storm (+1, Critical Hits +2; cap 10, fading 1 per 3s without fresh hits), and each second the Storm strikes a Bolt on its own: 6% of your recent average hit per intensity, rolling its own Critical Hit with your full crit stats. The Storm PERSISTS across foes in a grind chain — the weather does not care who is standing under it.',
+      'The Thunderfury no longer casts the lightning — he raises the weather. Every landed hit seeds the Storm (+1, Critical Hits +2; cap 10, fading 1 per 3s without fresh hits), and each second the Storm strikes a Bolt on its own: 6% of your recent average hit per intensity, rolling its own Critical Hit with your full crit stats. While the sky is yours, your own swings channel 68% less — the Storm carries the surplus. The Storm PERSISTS across foes in a grind chain — the weather does not care who is standing under it.',
       'Five new passives: Stormseed (Lv1) · Conductor\'s Tempo (Lv20, +12% attack speed while the Storm is at 5+ — a threshold, never a streak that resets) · Grounding Rod (Lv40, a blow you take seeds the Storm +1) · Concussive Bolt (Lv60, every 6th Bolt is a Thunderclap: double damage and a 1.5s stun) · Galvanize (Lv80, each critical Bolt banks +8% Critical damage for the session, cap 10).',
       'Sets rebuilt around the weather: the D1 set\'s Supercell raises the intensity cap to 12 and Overcharge turns a maxed Storm into a Tempest (Bolts every 0.75s); Stormcaller Weave (D2): Charged Air (crits seed +3) and Eye of the Storm (the Storm never fades); Stormcrypt Weave (D3): Static Web (2.5s Thunderclap stuns) and Broken Sky (a stunned foe takes +20% from everything); Stormwyrm Scales (D4): Galvanic Heart kept and Stormwyrm\'s Eye makes Bolts strike as Earth, scaling with Earth Attunement.',
       'All eight legendaries rebuilt: Gloomstorm (intensity cap 15), Stormcoil (a reflect seeds +3), Stormbrand (Galvanize stacks also grant +3% Critical Chance each), Stormveil (a hit taken at max Storm answers with a free Thunderclap), Stormtomb (Thunderclaps strike twice), Voltveil (a reflect stuns 1s), Stormwyrm\'s Horn (critical Bolts +50%), Stormscale Ward (Galvanize banks to 15).',
@@ -35445,7 +35447,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.62.0';
+  var GAME_VERSION = '0.0.62.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
