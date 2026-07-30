@@ -10280,6 +10280,49 @@
     } finally { S.inventory = saveInv; }
   });
 
+  // ---- ticket-0109: blocked entry must show ON the UI, not only in the Chronicle ------------------
+  suite('combat: blocked Tower / Guild Boss entry is visible', function(){
+    var S = FF._state;
+    var snap = { act:S.activity };
+    var gs = FF._guildBossState(), gst = FF._guildState();
+    var gsnap = { err:gs.error, guild:gst.guild };
+    try {
+      var EN = 'all'; // the All-Classes Tower entrance (no class requirement to trip first)
+      // --- Tower: entering while in an ordinary fight ---
+      S.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:100, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+      FF._setTowerPreview(EN);
+      eq(FF._towerEntryError(), '', 'the preview opens with no error');
+      FF.towerEnter(EN);
+      ok(/Finish your current fight/.test(FF._towerEntryError()), 'a blocked Tower entry sets a visible notice');
+      ok(!(S.activity && S.activity.tower), '...and does NOT start the climb');
+      // The notice has to appear in the card the player is actually looking at, styled as an error.
+      var card = FF.towerPreviewCardHtml(EN);
+      ok(card.indexOf(FF._towerEntryError()) !== -1, 'the notice renders inside the Tower preview card');
+      ok(/border-color:var\(--hp-bad\)/.test(card), '...styled as an error');
+      // --- Tower: already climbing gets its own wording ---
+      S.activity = { type:'combat', tower:{ entrance:EN, floor:3 }, monsterId:FF.MONSTERS[0].id, monsterHp:100 };
+      FF._setTowerPreview(EN); FF.towerEnter(EN);
+      ok(/already climbing/.test(FF._towerEntryError()), 'already climbing reports a distinct message');
+      // Reopening the preview starts clean again.
+      FF._setTowerPreview(EN);
+      eq(FF._towerEntryError(), '', 'reopening the preview clears the stale notice');
+      // --- Guild Boss: the reported case ---
+      gst.guild = { id:'g1', name:'Test Guild' };
+      gs.error = '';
+      S.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:100, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+      FF.guildBossEnter(0);
+      ok(/Finish your current fight/.test(gs.error), 'a blocked Guild Boss entry sets the panel error (ticket-0109)');
+      ok(!(S.activity && S.activity.guildBoss), '...and does NOT pull the boss');
+      // Already on a boss reads differently.
+      gs.error = '';
+      S.activity = { type:'combat', guildBoss:{ idx:1 }, monsterId:FF.MONSTERS[0].id, monsterHp:100 };
+      FF.guildBossEnter(0);
+      ok(/already fighting a Guild Boss/.test(gs.error), 'already on a boss reports a distinct message');
+    } finally {
+      S.activity = snap.act; gs.error = gsnap.err; gst.guild = gsnap.guild;
+    }
+  });
+
   // ---- ticket-0108: scrollable popups must survive the loop's re-renders --------------------------
   suite('ui: overlay writes never rebuild an unchanged popup', function(){
     // The game loop renders several times a second. Any overlay that blindly re-assigned innerHTML
