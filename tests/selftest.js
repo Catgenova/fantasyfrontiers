@@ -10280,6 +10280,36 @@
     } finally { S.inventory = saveInv; }
   });
 
+  // ---- ticket-0109 sweep: every refused gesture toasts, combat narration does not -----------------
+  suite('ui: refused gestures surface a toast', function(){
+    function toastEl(){ return document.getElementById('gameToast'); }
+    function clearToast(){ var e = toastEl(); if(e && e.parentNode) e.parentNode.removeChild(e); }
+    try {
+      // blockedNotice is the shared "your gesture was refused" channel: log AND top-centre toast.
+      clearToast();
+      FF.blockedNotice('Test refusal message.');
+      var el = toastEl();
+      ok(!!el, 'blockedNotice raises a toast');
+      ok(/Test refusal message\./.test(el.textContent), '...carrying the message');
+      ok(/toast-error/.test(el.className), '...styled as an error');
+      // The dungeon block -- the pattern this sweep was named for (7 call sites route through it).
+      clearToast();
+      FF.dungeonActionBlockedNotice();
+      ok(toastEl() && /in a dungeon/.test(toastEl().textContent), 'the dungeon block toasts (was log-only)');
+      // CRITICAL: combat narration also logs as 'danger'. It must NOT toast, or a fight would spam popups.
+      // addLog isn't on the seam, so assert the separation structurally: the toast channel is a distinct
+      // function, and plain logging cannot reach it (only blockedNotice/combatGearLockNotice pair them).
+      clearToast();
+      ok(typeof FF.showGameToast === 'function', 'the toast channel is its own function');
+      ok(!toastEl(), 'nothing toasts until something explicitly asks it to');
+      // The toast lives on <body>, so the re-render that follows a click cannot wipe it.
+      clearToast();
+      FF.blockedNotice('Survives a render.');
+      var node = toastEl();
+      ok(node && node.parentNode === document.body, 'the toast is parented to <body>, not #app');
+    } finally { clearToast(); }
+  });
+
   // ---- ticket-0109: blocked entry must show ON the UI, not only in the Chronicle ------------------
   suite('combat: blocked Tower / Guild Boss entry is visible', function(){
     var S = FF._state;

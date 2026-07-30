@@ -10432,7 +10432,7 @@
   function equipOffhandClaw(itemId){
     var item = STACKABLE_WEAPON_ITEMS[itemId];
     if(!item || !isClaw(item.typeId) || (state.inventory[itemId]||0) <= 0) return;
-    if(!hasClawMainhand(state)){ addLog('You can only wield an off-hand Claw while a Claw is in your main hand.', 'danger'); return; }
+    if(!hasClawMainhand(state)){ blockedNotice('You can only wield an off-hand Claw while a Claw is in your main hand.'); return; }
     if(!meetsProficiencyRequirement(state.xp.claw, item.tierIndex)){
       addLog('Your Claws proficiency isn\'t high enough to equip ' + item.name + ' yet.', 'danger'); return;
     }
@@ -10494,7 +10494,7 @@
     var item = STACKABLE_QUIVER_ITEMS[itemId];
     if(!item || (state.inventory[itemId]||0) <= 0) return;
     var mh = getWeaponStyle(state.equippedMainhand);
-    if(mh.hand !== 'bow'){ addLog('A Quiver can only be equipped alongside a bow.', 'danger'); return; }
+    if(mh.hand !== 'bow'){ blockedNotice('A Quiver can only be equipped alongside a bow.'); return; }
     if(!meetsProficiencyRequirement(state.xp[item.typeId], item.tierIndex)){
       addLog('Your ' + (SKILL_LABELS[item.typeId]||item.typeId) + ' proficiency isn\'t high enough to equip ' + item.name + ' yet.', 'danger');
       return;
@@ -10534,7 +10534,7 @@
     var item = WARD_ITEMS[itemId];
     if(!item || (state.inventory[itemId]||0) <= 0) return;
     var mh = getWeaponStyle(state.equippedMainhand);
-    if(mh.hand !== '1h'){ addLog('Wards need a one-handed mainhand equipped (the offhand must be free).', 'danger'); return; }
+    if(mh.hand !== '1h'){ blockedNotice('Wards need a one-handed mainhand equipped (the offhand must be free).'); return; }
     if(getLevel(state.xp.runesmithing) < TIER_LEVELS[item.tierIndex]){
       addLog('Your Runesmithing isn\'t high enough to wield ' + item.name + ' yet.', 'danger'); return;
     }
@@ -11234,7 +11234,7 @@
     if(!item || (state.inventory[itemId]||0) <= 0) return;
     if(!slotId){
       slotId = findEmptyRingSlot();
-      if(!slotId){ addLog('All 5 Ring slots are full. Unequip one first.', 'danger'); return; }
+      if(!slotId){ blockedNotice('All 5 Ring slots are full. Unequip one first.'); return; }
     }
     if(RING_SLOT_IDS.indexOf(slotId)===-1) return;
     var cur = state.jewelrySlots[slotId];
@@ -11303,9 +11303,9 @@
   }
   function craftMastercraft(blueprintId){
     var bp = BLUEPRINT_ITEMS[blueprintId]; if(!bp) return;
-    if((state.inventory[blueprintId] || 0) <= 0){ addLog('You don’t hold that Blueprint.', 'danger'); return; }
+    if((state.inventory[blueprintId] || 0) <= 0){ blockedNotice('You don’t hold that Blueprint.'); return; }
     var recipe = mastercraftRecipeFor(bp);
-    if(!recipe){ addLog('That Mastercraft isn’t available yet.', 'danger'); return; }
+    if(!recipe){ blockedNotice('That Mastercraft isn’t available yet.'); return; }
     if(!hasInputs(recipe.inputs)){ addLog('You lack the materials to mastercraft the ' + bp.name + '.', 'danger'); return; }
     var haveRare = recipe.countRare();
     if(haveRare < recipe.rareCount){ addLog('You need ' + recipe.rareCount + ' ' + recipe.rareLabel + ' (you have ' + haveRare + ').', 'danger'); return; }
@@ -11363,7 +11363,7 @@
     var item = LEGENDARY_RING_ITEMS[itemId];
     if(!item || (state.inventory[itemId] || 0) <= 0) return;
     if(legRingEquipped(item.legKey)){ addLog('You can only wear one ' + (D1_LEG_RING_MAP[item.legKey] || {}).name + ' at a time.', 'danger'); return; }
-    if(!slotId){ slotId = findEmptyRingSlot(); if(!slotId){ addLog('All 5 Ring slots are full. Unequip one first.', 'danger'); return; } }
+    if(!slotId){ slotId = findEmptyRingSlot(); if(!slotId){ blockedNotice('All 5 Ring slots are full. Unequip one first.'); return; } }
     if(RING_SLOT_IDS.indexOf(slotId) === -1) return;
     var cur = state.jewelrySlots[slotId];
     if(cur){ if(cur.leg){ addItem(legRingItemId(cur.leg, cur.rarity), 1); } else if(cur.typeId){ addItem('ring_' + cur.typeId + '_t' + (cur.tier - 1) + '_' + cur.rarity, 1); } } // displaced ring returns (uniques stay in their table)
@@ -11669,6 +11669,11 @@
     if(_gameToastTimer) clearTimeout(_gameToastTimer);
     _gameToastTimer = setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 2800);
   }
+  // A refused player gesture: log it AND toast it, so the message is visible no matter which panel the
+  // player is looking at (the Chronicle is a collapsed drawer on mobile). Use this for "you can't do that
+  // right now" refusals, never for combat narration -- deaths/hits also log as 'danger' and would toast
+  // constantly mid-fight.
+  function blockedNotice(msg){ addLog(msg, 'danger'); showGameToast(msg, 'error'); }
   function combatGearLockNotice(){
     var msg = 'You can’t change gear or familiars mid-fight — retreat from the battle first.';
     addLog(msg, 'danger');
@@ -11680,7 +11685,7 @@
     stopActivity();
     if(state.extraCraftSlots){ for(var _si = 0; _si < state.extraCraftSlots.length; _si++) state.extraCraftSlots[_si] = { type:null }; }
   }
-  function dungeonActionBlockedNotice(){ addLog('You’re in a dungeon — finish or leave the run before starting other tasks.', 'danger'); }
+  function dungeonActionBlockedNotice(){ blockedNotice('You’re in a dungeon — finish or leave the run before starting other tasks.'); }
   // Places a newly-started task (craft/gather/pray) into a free Belt-granted slot if one is
   // available; otherwise it always wins, stopping whatever the primary slot was doing.
   // ---- Queued runs ("make 100 copper swords") ----------------------------------------------------
@@ -13175,7 +13180,7 @@
     return ms > 0 ? ('Active — ' + formatDuration(ms) + ' left') : 'Inactive';
   }
   async function buyServerExpBuff(){
-    if(!authUser){ addLog('Sign in to buy a server buff.', 'danger'); return; }
+    if(!authUser){ blockedNotice('Sign in to buy a server buff.'); return; }
     if(_serverBuffBusy) return;
     _serverBuffBusy = true;                 // lock before the async sync so a double-click can't double-spend
     await walletSync(true);                 // reconcile the wallet so gold earned since the last sync counts
@@ -13593,7 +13598,7 @@
   }
   function equipUniqueWeapon(uid){
     var u = state.uniqueItems[uid];
-    var m = /^stweapon_(.+)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
+    var m = /^stweapon_(.+)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ blockedNotice('Cannot equip that item.'); return false; }
     var typeId = m[1];
     if(!isStaff(typeId) && !meetsProficiencyRequirement(state.xp[weaponEquipProfId(typeId)], u.tier)){ // wands/scepters now gate on their proficiency; staves stay ungated here
       addLog('Your proficiency isn’t high enough to equip '+uniqueDisplayName(u)+' yet.','danger'); return false;
@@ -13611,9 +13616,9 @@
   }
   function equipUniqueOffhand(uid){
     var u = state.uniqueItems[uid];
-    var m = /^st(?:shield|ward)_(.+)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
+    var m = /^st(?:shield|ward)_(.+)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ blockedNotice('Cannot equip that item.'); return false; }
     var typeId = m[1], mh = getWeaponStyle(state.equippedMainhand);
-    if(mh.hand !== '1h'){ addLog('Off-hand gear requires a one-handed weapon in your main hand.','danger'); return false; }
+    if(mh.hand !== '1h'){ blockedNotice('Off-hand gear requires a one-handed weapon in your main hand.'); return false; }
     if(!isWard(typeId) && !meetsProficiencyRequirement(state.xp[typeId], u.tier)){ addLog('Your proficiency isn’t high enough to equip '+uniqueDisplayName(u)+' yet.','danger'); return false; } // wards use Warding, not a per-type weapon proficiency
     unequipOffhandAny();
     state.equippedOffhand = typeId; state.equippedOffhandTier = u.tier+1; state.equippedOffhandRarity = u.rarity; state.equippedOffhandUid = uid;
@@ -13624,9 +13629,9 @@
   // enchants/enhance flow through equippedEnchantTotals. Requires a Claw already in the main hand.
   function equipUniqueOffhandClaw(uid){
     var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return false;
-    if(!/^stweapon_claw_t\d+_\w+$/.test(u.base)){ addLog('Only a Claw can be worn in the off-hand.','danger'); return false; }
-    if(!hasClawMainhand(state)){ addLog('You can only wield an off-hand Claw while a Claw is in your main hand.','danger'); return false; }
-    if(state.equippedMainhandUid===uid){ addLog('That Claw is already in your main hand.','danger'); return false; }
+    if(!/^stweapon_claw_t\d+_\w+$/.test(u.base)){ blockedNotice('Only a Claw can be worn in the off-hand.'); return false; }
+    if(!hasClawMainhand(state)){ blockedNotice('You can only wield an off-hand Claw while a Claw is in your main hand.'); return false; }
+    if(state.equippedMainhandUid===uid){ blockedNotice('That Claw is already in your main hand.'); return false; }
     if(!meetsProficiencyRequirement(state.xp.claw, u.tier)){ addLog('Your Claws proficiency isn’t high enough to equip '+uniqueDisplayName(u)+' yet.','danger'); return false; }
     unequipOffhandAny();
     state.equippedOffhand = 'claw'; state.equippedOffhandTier = u.tier+1; state.equippedOffhandRarity = u.rarity; state.equippedOffhandUid = uid;
@@ -13634,7 +13639,7 @@
   }
   function equipUniqueBodyArmor(uid){
     var u = state.uniqueItems[uid];
-    var m = /^bodyarmor_(.+)_(gauntlets|boots|chest|helmet|back)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
+    var m = /^bodyarmor_(.+)_(gauntlets|boots|chest|helmet|back)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ blockedNotice('Cannot equip that item.'); return false; }
     var material = m[1], slot = m[2], profId = MATERIAL_TO_PROFICIENCY[material];
     // t21 Set pieces gate on the top craftable proficiency (t20 / level 100), not a non-existent t21 requirement.
     if(!meetsProficiencyRequirement(profId ? state.xp[profId] : 0, Math.min(u.tier, TIER_COUNT-1))){ addLog('Your proficiency isn’t high enough to equip '+uniqueDisplayName(u)+' yet.','danger'); return false; }
@@ -13646,9 +13651,9 @@
   }
   function equipUniqueRing(uid){
     var u = state.uniqueItems[uid];
-    var m = /^ring_(.+)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
+    var m = /^ring_(.+)_t(\d+)_(\w+)$/.exec(u.base); if(!m){ blockedNotice('Cannot equip that item.'); return false; }
     var slotId = findEmptyRingSlot();
-    if(!slotId){ addLog('All 5 Ring slots are full. Unequip one first.','danger'); spawnFloatingText('All 5 Ring slots full — unequip one', 'ft-fail'); return false; }
+    if(!slotId){ blockedNotice('All 5 Ring slots are full. Unequip one first.'); return false; }
     state.jewelrySlots[slotId] = { typeId: m[1], tier: u.tier+1, rarity: u.rarity, uid: uid };
     addLog('You equipped '+uniqueDisplayName(u)+'.','important'); return true;
   }
@@ -13661,14 +13666,14 @@
   }
   function equipUniqueBelt(uid){
     var u = state.uniqueItems[uid];
-    var m = /^belt_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
+    var m = /^belt_t(\d+)_(\w+)$/.exec(u.base); if(!m){ blockedNotice('Cannot equip that item.'); return false; }
     if(!state.equippedBeltUid && state.equippedBeltTier>0){ addItem('belt_t'+(state.equippedBeltTier-1)+'_'+state.equippedBeltRarity, 1); } // return a stackable belt; a unique just stays in the table
     state.equippedBeltTier = u.tier+1; state.equippedBeltRarity = u.rarity; state.equippedBeltUid = uid;
     addLog('You equipped '+uniqueDisplayName(u)+'.','important'); return true;
   }
   function equipUniqueRelic(uid){
     var u = state.uniqueItems[uid];
-    var m = /^relic_t(\d+)_(\w+)$/.exec(u.base); if(!m){ addLog('Cannot equip that item.','danger'); return false; }
+    var m = /^relic_t(\d+)_(\w+)$/.exec(u.base); if(!m){ blockedNotice('Cannot equip that item.'); return false; }
     if(!state.equippedRelicUid && state.equippedRelicTier>0){ addItem('relic_t'+(state.equippedRelicTier-1)+'_'+state.equippedRelicRarity, 1); }
     state.equippedRelicTier = u.tier+1; state.equippedRelicRarity = u.rarity; state.equippedRelicUid = uid;
     addLog('You equipped '+uniqueDisplayName(u)+'.','important'); return true;
@@ -13843,7 +13848,7 @@
   }
   function saveLoadoutPreset(i){
     ensureLoadouts(); if(i < 0 || i >= LOADOUT_SLOT_COUNT) return;
-    if(i >= loadoutSlotsUnlocked()){ addLog('That loadout slot is locked — unlock it with gold first.', 'danger'); return; }
+    if(i >= loadoutSlotsUnlocked()){ blockedNotice('That loadout slot is locked — unlock it with gold first.'); return; }
     var existing = state.loadouts[i];
     // A fresh save can be named right on the empty row (the input beside the Save button); a blank
     // name (or an Overwrite of an existing preset) keeps the old/default name.
@@ -13854,7 +13859,7 @@
     armorPanelExpanded = true; saveGame();
   }
   function equipLoadoutPreset(i){
-    ensureLoadouts(); var lo = state.loadouts[i]; if(!lo || !lo.gear){ addLog('That loadout is empty. Save your gear to it first.', 'danger'); return; }
+    ensureLoadouts(); var lo = state.loadouts[i]; if(!lo || !lo.gear){ blockedNotice('That loadout is empty. Save your gear to it first.'); return; }
     var r = applyCombatLoadout(lo.gear);
     addLog('Equipped ' + lo.name + (r.dropped ? (' (' + r.dropped + ' slot' + (r.dropped>1?'s':'') + ' left empty — those items are no longer in your bag)') : '') + '.', 'important');
     armorPanelExpanded = true; saveGame();
@@ -13890,9 +13895,9 @@
   }
   function enhanceItem(uid){
     // An equipped base is converted to a unique in place only now, as the enhance is attempted.
-    if(isEquipToken(uid)){ var nu = convertEquippedToUnique(equipTokenSlot(uid)); if(!nu){ addLog('That item is no longer equipped.','danger'); return; } improveSel = nu; uid = nu; }
+    if(isEquipToken(uid)){ var nu = convertEquippedToUnique(equipTokenSlot(uid)); if(!nu){ blockedNotice('That item is no longer equipped.'); return; } improveSel = nu; uid = nu; }
     var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
-    if(!isImprovableRarity(u.rarity)){ addLog('Only Rare-or-better gear can be enhanced.','danger'); return; }
+    if(!isImprovableRarity(u.rarity)){ blockedNotice('Only Rare-or-better gear can be enhanced.'); return; }
     if(u.enhance >= ENHANCE_MAX){ addLog('Already at the maximum +'+ENHANCE_MAX+'.','danger'); return; }
     // First-ever enhance: warn that it permanently locks the item out of enchanting, then require a
     // second confirming click. Acknowledged once, game-wide (players know the trade-off after that).
@@ -13935,11 +13940,11 @@
   // Shard is on hand to absorb a failure, so the item can NEVER be destroyed by this action -- the whole
   // point is a safe, hands-off push for one more +level. Ignores the Barrier toggle (it always protects).
   function autoInscribe(uid){
-    if(isEquipToken(uid)){ var nu = convertEquippedToUnique(equipTokenSlot(uid)); if(!nu){ addLog('That item is no longer equipped.','danger'); return; } improveSel = nu; uid = nu; }
+    if(isEquipToken(uid)){ var nu = convertEquippedToUnique(equipTokenSlot(uid)); if(!nu){ blockedNotice('That item is no longer equipped.'); return; } improveSel = nu; uid = nu; }
     var u = state.uniqueItems && state.uniqueItems[uid]; if(!u) return;
-    if(!isImprovableRarity(u.rarity)){ addLog('Only Rare-or-better gear can be enhanced.','danger'); return; }
+    if(!isImprovableRarity(u.rarity)){ blockedNotice('Only Rare-or-better gear can be enhanced.'); return; }
     if(u.enhance >= ENHANCE_MAX){ addLog('Already at the maximum +'+ENHANCE_MAX+'.','danger'); return; }
-    if((state.inventory.barrier_shard||0) < 1){ addLog('Auto-inscribe needs Barrier Shards to absorb failures — climb the Tower to earn some.','danger'); return; }
+    if((state.inventory.barrier_shard||0) < 1){ blockedNotice('Auto-inscribe needs Barrier Shards to absorb failures — climb the Tower to earn some.'); return; }
     // Same one-time, game-wide first-enhance lock acknowledgment as a manual Enhance.
     if(u.enhance===0 && !state.enhanceLockWarnAck){
       if(!enhanceLockArmed){ enhanceLockArmed = true; render(); return; }
@@ -14060,10 +14065,10 @@
     var isEq = isEquipToken(sel), eqm = null;
     var tier, enhance, count, kind;
     var rarity;
-    if(isU){ var u0 = state.uniqueItems[sel]; if(!u0){ addLog('That item is gone.','danger'); return; } tier=u0.tier; enhance=u0.enhance; count=u0.enchants.length; kind=u0.kind; rarity=u0.rarity; }
-    else if(isEq){ eqm = equippedImprovableBases().filter(function(e){ return e.slot===equipTokenSlot(sel); })[0]; if(!eqm){ addLog('That item is no longer equipped.','danger'); return; } var ep = parseImprovable(eqm.baseId); tier=ep.tier; enhance=0; count=0; kind=ep.kind; rarity=ep.rarity; }
-    else { var p = parseImprovable(sel); if(!p || (state.inventory[sel]||0)<=0){ addLog('That item is no longer available.','danger'); return; } tier=p.tier; enhance=0; count=0; kind=p.kind; rarity=p.rarity; }
-    if(!isImprovableRarity(rarity)){ addLog('Only Rare-or-better gear can be enchanted.','danger'); return; }
+    if(isU){ var u0 = state.uniqueItems[sel]; if(!u0){ blockedNotice('That item is gone.'); return; } tier=u0.tier; enhance=u0.enhance; count=u0.enchants.length; kind=u0.kind; rarity=u0.rarity; }
+    else if(isEq){ eqm = equippedImprovableBases().filter(function(e){ return e.slot===equipTokenSlot(sel); })[0]; if(!eqm){ blockedNotice('That item is no longer equipped.'); return; } var ep = parseImprovable(eqm.baseId); tier=ep.tier; enhance=0; count=0; kind=ep.kind; rarity=ep.rarity; }
+    else { var p = parseImprovable(sel); if(!p || (state.inventory[sel]||0)<=0){ blockedNotice('That item is no longer available.'); return; } tier=p.tier; enhance=0; count=0; kind=p.kind; rarity=p.rarity; }
+    if(!isImprovableRarity(rarity)){ blockedNotice('Only Rare-or-better gear can be enchanted.'); return; }
     if(enhance>0){ addLog('Enhanced items (+'+enhance+') can no longer be enchanted.','danger'); return; }
     var cost = count + 1;
     var planned = planEnchantCrystals(tier, cost);
@@ -14128,14 +14133,14 @@
     // Resolve the selection to kind/tier/rarity/enhance/current-enchants (mirrors improveEnchant).
     var isU = isUniqueId(sel), isEq = isEquipToken(sel);
     var tier, enhance, kind, rarity, curEnchants, baseId;
-    if(isU){ var u0 = state.uniqueItems[sel]; if(!u0){ addLog('That item is gone.','danger'); return null; } tier=u0.tier; enhance=u0.enhance; kind=u0.kind; rarity=u0.rarity; curEnchants=u0.enchants; baseId=u0.base; }
-    else if(isEq){ var eqm = equippedImprovableBases().filter(function(e){ return e.slot===equipTokenSlot(sel); })[0]; if(!eqm){ addLog('That item is no longer equipped.','danger'); return null; } var ep = parseImprovable(eqm.baseId); tier=ep.tier; enhance=0; kind=ep.kind; rarity=ep.rarity; curEnchants=[]; baseId=eqm.baseId; }
-    else { var p = parseImprovable(sel); if(!p || (state.inventory[sel]||0)<=0){ addLog('That item is no longer available.','danger'); return null; } tier=p.tier; enhance=0; kind=p.kind; rarity=p.rarity; curEnchants=[]; baseId=sel; }
-    if(!isImprovableRarity(rarity)){ addLog('Only Rare-or-better gear can be enchanted.','danger'); return null; }
+    if(isU){ var u0 = state.uniqueItems[sel]; if(!u0){ blockedNotice('That item is gone.'); return null; } tier=u0.tier; enhance=u0.enhance; kind=u0.kind; rarity=u0.rarity; curEnchants=u0.enchants; baseId=u0.base; }
+    else if(isEq){ var eqm = equippedImprovableBases().filter(function(e){ return e.slot===equipTokenSlot(sel); })[0]; if(!eqm){ blockedNotice('That item is no longer equipped.'); return null; } var ep = parseImprovable(eqm.baseId); tier=ep.tier; enhance=0; kind=ep.kind; rarity=ep.rarity; curEnchants=[]; baseId=eqm.baseId; }
+    else { var p = parseImprovable(sel); if(!p || (state.inventory[sel]||0)<=0){ blockedNotice('That item is no longer available.'); return null; } tier=p.tier; enhance=0; kind=p.kind; rarity=p.rarity; curEnchants=[]; baseId=sel; }
+    if(!isImprovableRarity(rarity)){ blockedNotice('Only Rare-or-better gear can be enchanted.'); return null; }
     if(enhance>0){ addLog('Enhanced items (+'+enhance+') can no longer be enchanted.','danger'); return null; }
     var magicWeapon = baseIsMagicWeapon(baseId);
     var m = enchantModById(kind, modId);
-    if(!m){ addLog('Choose a target enchant for Auto-roll first.','danger'); return null; }
+    if(!m){ blockedNotice('Choose a target enchant for Auto-roll first.'); return null; }
     if(m.raw && magicWeapon){ addLog('Wands, staffs and scepters can’t roll raw-damage enchants.','danger'); return null; }
     var mRange = enchantModRange(m, tier);
     var target = Math.max(mRange.min, improveAutoMin);   // any roll of that mod already clears its floor
@@ -14149,11 +14154,11 @@
       // Need somewhere to land a hit: an empty slot, or an existing copy of the SAME mod to upgrade.
       var full = curEnchants.length >= slots, hasSameMod = false;
       for(i=0;i<curEnchants.length;i++){ if(curEnchants[i].mod===modId){ hasSameMod = true; break; } }
-      if(full && !hasSameMod){ addLog('No free enchant slot — pick a specific slot to replace in the Auto-roll slot picker, or replace one manually first.','danger'); return null; }
+      if(full && !hasSameMod){ blockedNotice('No free enchant slot — pick a specific slot to replace in the Auto-roll slot picker, or replace one manually first.'); return null; }
     } else if(slotChoice === 'new'){
       if(curEnchants.length >= slots){ addLog('No unused enchant slot — all '+slots+' are filled. Pick a slot to replace instead.','danger'); return null; }
     } else {
-      if(slotChoice >= curEnchants.length){ addLog('That enchant slot no longer exists — pick a slot again.','danger'); improveAutoSlot = 'auto'; render(); return null; }
+      if(slotChoice >= curEnchants.length){ blockedNotice('That enchant slot no longer exists — pick a slot again.'); improveAutoSlot = 'auto'; render(); return null; }
       if(curEnchants[slotChoice].mod===modId && curEnchants[slotChoice].roll>=target){ addLog('Slot '+(slotChoice+1)+' already carries +'+curEnchants[slotChoice].roll+(m.pct?'%':'')+' '+m.label+' (≥ your +'+target+(m.pct?'%':'')+' target).','important'); render(); return null; }
     }
     // Convert the source into a unique now (like improveEnchant) so hits have a home.
@@ -22725,13 +22730,13 @@
     // appeared to do nothing. They now also render inside the card the player is looking at.
     if(towerEntranceClassLocked(entrance, state)){
       towerEntryError = 'You must have the ' + towerEntranceLabel(entrance) + ' class equipped to enter its Tower.';
-      addLog(towerEntryError, 'danger'); renderTowerPreview(); return;
+      blockedNotice(towerEntryError); renderTowerPreview(); return;
     }
     if(state.activity && state.activity.type === 'combat'){
       towerEntryError = (state.activity.tower)
         ? 'You are already climbing the Tower — finish or leave that run first.'
         : 'Finish your current fight before entering the Tower.';
-      addLog(towerEntryError, 'danger'); renderTowerPreview(); return;
+      blockedNotice(towerEntryError); renderTowerPreview(); return;
     }
     towerEntryError = '';
     var e = towerEntry(entrance), floor = e.floor;
@@ -24048,6 +24053,7 @@
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
     { v:'0.0.64', date:'Jul 30', heading:'QoL: clearer kills, and scrollable popups that stay put', items:[
+      'Refused actions now say so, everywhere. Around 40 \u201cyou can\u2019t do that right now\u201d messages only ever wrote to the Chronicle \u2014 dungeon-locked tasks, gear that needs a different weapon, full Ring slots, locked or empty loadouts, Rare-or-better enchant and enhance requirements, Auto-roll and Auto-inscribe prerequisites, missing Blueprints \u2014 and were invisible if the log was off-screen. They now also raise the top-centre warning toast. Combat narration deliberately stays out of it, so fights are not interrupted by popups.',
       'Fixed (ticket-0109, thanks Anferny): trying to enter a Guild Boss while already in a fight looked like it did nothing. The block was always there, but it only wrote to the Chronicle \u2014 invisible from the Guild \u203a Bosses tab. It now shows as a red notice on the panel itself, with separate wording if you are already on a boss. The Tower got the same treatment: blocked entries (in combat, already climbing, or missing the required class) now show inside the Enter card instead of failing silently.',
       'Every popup in the game now keeps its scroll position across the loop\u2019s re-renders \u2014 the inventory panel, item and unique detail cards, the Mastercraft result, Transcend, Enhance, dungeon results, the death report, player profiles, the Peon pickers, chat moderation and the Terms panel, on top of the four in the report.',
       'Fixed (ticket-0108, thanks Valuren): the Track a Skill menu and the offline \u201cWhile You Were Away\u201d / loot / familiar summaries kicked you back to the top the moment you scrolled, on desktop and mobile alike. The game loop re-renders several times a second and each pass was rebuilding those popups from scratch; now an unchanged popup is left completely alone, and a popup that genuinely changes keeps your scroll position across the update.',
@@ -31899,7 +31905,7 @@
       guildBossState.error = state.activity.guildBoss
         ? 'You are already fighting a Guild Boss — finish that fight first.'
         : 'Finish your current fight before entering a Guild Boss.';
-      addLog(guildBossState.error, 'danger');
+      blockedNotice(guildBossState.error);
       needsRender = true; render();
       return;
     }
@@ -34977,7 +34983,7 @@
       var sel=document.getElementById('loadoutManageSel'), nm=document.getElementById('loadoutManageName');
       if(!sel || sel.value==='') return;
       var v = nm ? (nm.value||'').trim() : '';
-      if(!v){ addLog('Type a new name first.', 'danger'); needsRender = true; return; }
+      if(!v){ blockedNotice('Type a new name first.'); needsRender = true; return; }
       renameLoadoutPreset(parseInt(sel.value,10), v);
     },
     closeDeathReport: function(btn){ state.deathReport = null; saveGame(); renderDeathReportModal(); }
@@ -35734,7 +35740,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.64.7';
+  var GAME_VERSION = '0.0.64.8';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -35938,7 +35944,7 @@
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, D2_SET_DEFS:D2_SET_DEFS, D2_SET_CLASS_IDS:D2_SET_CLASS_IDS, D3_SET_DEFS:D3_SET_DEFS, D3_SET_CLASS_IDS:D3_SET_CLASS_IDS, set2D3:set2D3, setFullD3:setFullD3, SET_TIER_INDEX_D3:SET_TIER_INDEX_D3, D4_SET_BONUSES:D4_SET_BONUSES, D4_SET_DEFS:D4_SET_DEFS, D4_SET_CLASS_IDS:D4_SET_CLASS_IDS, set2D4:set2D4, setFullD4:setFullD4, SET_TIER_INDEX_D4:SET_TIER_INDEX_D4, D4_BREATH_MAX:D4_BREATH_MAX, d4BreathCharge:d4BreathCharge, d4BreathPct:d4BreathPct, d4BreathReady:d4BreathReady, d4BreathAdd:d4BreathAdd, d4BreathReset:d4BreathReset, D4_WRATH_CAP:D4_WRATH_CAP, d4WrathStacks:d4WrathStacks, d4WrathAdd:d4WrathAdd, d4WrathReset:d4WrathReset, d4SetElementDmg:d4SetElementDmg, d4SetElementResist:d4SetElementResist, d4WandElementMult:d4WandElementMult, d4FoeResistsElement:d4FoeResistsElement, d4EchoMult:d4EchoMult, d4FamiliarElementMult:d4FamiliarElementMult, d4TemplarAegisMult:d4TemplarAegisMult, d4SetDmgMult:d4SetDmgMult, d4DragonscaleIncoming:d4DragonscaleIncoming, d4SentinelThornsMult:d4SentinelThornsMult, d4HeraldBastionReflect:d4HeraldBastionReflect, d4BreathChargeOnHit:d4BreathChargeOnHit, d4BreathFullSet:d4BreathFullSet, d4BreathFire:d4BreathFire, d4VenombreathApply:d4VenombreathApply, D4_BREATH_BURST_MULT:D4_BREATH_BURST_MULT, d4WrathOnHit:d4WrathOnHit, d4FirestormDodge:d4FirestormDodge, enemyPoisonedFoe:enemyPoisonedFoe, d4SupremeItemCount:d4SupremeItemCount, D3_SOUL_CAP:D3_SOUL_CAP, d3SoulCount:d3SoulCount, d3SoulsAdd:d3SoulsAdd, enemyDecaying:enemyDecaying, decayApply:decayApply, applyDecayTick:applyDecayTick, decayCap:decayCap, d3DecayTickMult:d3DecayTickMult, enemyCursed:enemyCursed, curseApply:curseApply, d3SetDmgMult:d3SetDmgMult, d3SetCritDmgBonus:d3SetCritDmgBonus, d3SetIncomingMult:d3SetIncomingMult, onPlayerDodged:onPlayerDodged, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, set2D2:set2D2, setFullD2:setFullD2, d2SetDmgMult:d2SetDmgMult, d2SentinelReflectMult:d2SentinelReflectMult, d2IncomingDmgMult:d2IncomingDmgMult, d2SetCritDmgBonus:d2SetCritDmgBonus, d2SetCritChance:d2SetCritChance, d2SetDodgeBonus:d2SetDodgeBonus, lumenReflectD2Mult:lumenReflectD2Mult, enemyHasAilment:enemyHasAilment, rangerAilmentDmgMult:rangerAilmentDmgMult, d2PoisonTickMult:d2PoisonTickMult, d2BleedTickMult:d2BleedTickMult, d2BurnTickMult:d2BurnTickMult, d2FrostbiteTickMult:d2FrostbiteTickMult, voidVulnCap:voidVulnCap, templarAegisCapMult:templarAegisCapMult, reaverBloodfrenzyMult:reaverBloodfrenzyMult, d2FeralOnCast:d2FeralOnCast, d2BloodthirstOnKill:d2BloodthirstOnKill, d2BloodthirstSpeedMult:d2BloodthirstSpeedMult, quickdrawSnareSlow:quickdrawSnareSlow, enemyExtraSlowPct:enemyExtraSlowPct, quickdrawBonus:quickdrawBonus, quickdrawTrickPeek:quickdrawTrickPeek, quickdrawShotLanded:quickdrawShotLanded, quickdrawApplyHead:quickdrawApplyHead, quickdrawCycleEvery:quickdrawCycleEvery, quickdrawNextHead:quickdrawNextHead, quickdrawRiderMs:quickdrawRiderMs, quickdrawAnyRider:quickdrawAnyRider, quickdrawAllRiders:quickdrawAllRiders, QD_HEADS:QD_HEADS, QD_CYCLE_EVERY:QD_CYCLE_EVERY, QD_CYCLE_EVERY_D1:QD_CYCLE_EVERY_D1, QD_TRICK_MULT:QD_TRICK_MULT, QD_RIDER_MULT:QD_RIDER_MULT, QD_BARBED_PCT:QD_BARBED_PCT, QD_BLAST_PCT:QD_BLAST_PCT, QD_SERPENT_PCT:QD_SERPENT_PCT, QD_RIDER_MS:QD_RIDER_MS, QD_RUNAWAY_SHOTS:QD_RUNAWAY_SHOTS, QD_SNARE_MS:QD_SNARE_MS, QD_SNARE_SLOW:QD_SNARE_SLOW, LEG_WEBSNARE_FUSILLADE:LEG_WEBSNARE_FUSILLADE, SET_TIER_INDEX:SET_TIER_INDEX, SET_TIER_INDEX_D2:SET_TIER_INDEX_D2, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, SET_NAMES:SET_NAMES, setName:setName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, combatPlayerBuffs:combatPlayerBuffs, combatEnemyDebuffs:combatEnemyDebuffs, renderFxBars:renderFxBars, captureCombatLoadout:captureCombatLoadout, applyCombatLoadout:applyCombatLoadout, saveLoadoutPreset:saveLoadoutPreset, equipLoadoutPreset:equipLoadoutPreset, clearLoadoutPreset:clearLoadoutPreset, renameLoadoutPreset:renameLoadoutPreset, ensureLoadouts:ensureLoadouts, loadoutSummary:loadoutSummary, LOADOUT_SLOT_COUNT:LOADOUT_SLOT_COUNT, LOADOUT_FREE_SLOTS:LOADOUT_FREE_SLOTS, loadoutUnlockCost:loadoutUnlockCost, loadoutSlotsUnlocked:loadoutSlotsUnlocked, unlockLoadoutSlot:unlockLoadoutSlot, renderLoadoutQuickBar:renderLoadoutQuickBar, _setLoadoutNestOpen:function(v){ loadoutNestOpen = !!v; }, companionCastsOnCombatEntry:companionCastsOnCombatEntry,
       staffDownbeatHit:staffDownbeatHit, staffDownbeatStacks:staffDownbeatStacks, staffDownbeatPower:staffDownbeatPower, summonerCrescendo:summonerCrescendo, summonerCrescendoCap:summonerCrescendoCap, summonerSpellEmpowered:summonerSpellEmpowered, summonerRaiseWraith:summonerRaiseWraith, summonerWraithsTick:summonerWraithsTick, STAFF_DOWNBEAT_MS:STAFF_DOWNBEAT_MS, SUMMONER_SYNCOPATION_MS:SUMMONER_SYNCOPATION_MS, SUMMONER_SYNCOPATION_MULT:SUMMONER_SYNCOPATION_MULT, SUMMONER_CRESCENDO_PER:SUMMONER_CRESCENDO_PER, playerAttackTick:playerAttackTick, SUMMONER_ACCEL_ADVANCE_MS:SUMMONER_ACCEL_ADVANCE_MS, SUMMONER_ACCEL_MAX_CAST_MULT:SUMMONER_ACCEL_MAX_CAST_MULT, ATK_SPEED_SLOW_COLOR:ATK_SPEED_SLOW_COLOR, ATK_SPEED_HASTE_COLOR:ATK_SPEED_HASTE_COLOR, MONSTER_DOT_MAX_PCT_PER_SEC:MONSTER_DOT_MAX_PCT_PER_SEC, tierChipHtml:tierChipHtml, weaponCandidate:weaponCandidate, equipCandidateRowHtml:equipCandidateRowHtml, equipStackableWeapon:equipStackableWeapon, equipOffhandClaw:equipOffhandClaw, unequipStackableWeapon:unequipStackableWeapon, unequipOffhandClaw:unequipOffhandClaw, GRAVECHOIR_SOULS_PER_WRAITH:GRAVECHOIR_SOULS_PER_WRAITH,
-      playerCombatDeath:playerCombatDeath, recordDeathReport:recordDeathReport, renderDeathReportModal:renderDeathReportModal, combatLogLineHtml:combatLogLineHtml, combatLocksGear:combatLocksGear, COMBAT_LOCKED_ACTIONS:COMBAT_LOCKED_ACTIONS, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, deadeyeAccuracyBonus:deadeyeAccuracyBonus, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, spellbladeResonantCrit:spellbladeResonantCrit, playerCritChance:playerCritChance, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, voidVulnPerStack:voidVulnPerStack, voidMarkPerHit:voidMarkPerHit, treasureProspectorPer:treasureProspectorPer, setTreasureMult:setTreasureMult, EXEC_SET_EXECUTE_FRAC:EXEC_SET_EXECUTE_FRAC, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, ENEMY_SWAP_MS:ENEMY_SWAP_MS, guildBossEnter:guildBossEnter, _guildBossState:function(){ return guildBossState; }, _guildState:function(){ return guildState; }, _towerEntryError:function(){ return towerEntryError; }, _setTowerPreview:function(en){ towerPreviewEntrance = en; towerEntryError = ''; }, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
+      playerCombatDeath:playerCombatDeath, recordDeathReport:recordDeathReport, renderDeathReportModal:renderDeathReportModal, combatLogLineHtml:combatLogLineHtml, combatLocksGear:combatLocksGear, blockedNotice:blockedNotice, dungeonActionBlockedNotice:dungeonActionBlockedNotice, showGameToast:showGameToast, COMBAT_LOCKED_ACTIONS:COMBAT_LOCKED_ACTIONS, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, jugWindupDmg:jugWindupDmg, deadeyeAccuracyBonus:deadeyeAccuracyBonus, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, longShotMult:longShotMult, setDmgMult:setDmgMult, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, spellbladeResonantCrit:spellbladeResonantCrit, playerCritChance:playerCritChance, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, voidVulnPerStack:voidVulnPerStack, voidMarkPerHit:voidMarkPerHit, treasureProspectorPer:treasureProspectorPer, setTreasureMult:setTreasureMult, EXEC_SET_EXECUTE_FRAC:EXEC_SET_EXECUTE_FRAC, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, ENEMY_SWAP_MS:ENEMY_SWAP_MS, guildBossEnter:guildBossEnter, _guildBossState:function(){ return guildBossState; }, _guildState:function(){ return guildState; }, _towerEntryError:function(){ return towerEntryError; }, _setTowerPreview:function(en){ towerPreviewEntrance = en; towerEntryError = ''; }, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, sharpshooterAccOverDodge:sharpshooterAccOverDodge, sharpshooterEagleEyeCrit:sharpshooterEagleEyeCrit, sharpshooterPinpointMult:sharpshooterPinpointMult, sharpshooterFocusCritDmg:sharpshooterFocusCritDmg, sharpshooterArmorPierce:sharpshooterArmorPierce, sharpshooterPatienceMult:sharpshooterPatienceMult, SHARP_EAGLE_CAP:SHARP_EAGLE_CAP, SHARP_PINPOINT_CAP:SHARP_PINPOINT_CAP, SHARP_FOCUS_CAP:SHARP_FOCUS_CAP, SHARP_PATIENCE_CAP:SHARP_PATIENCE_CAP, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyromancerCombustDmg:pyromancerCombustDmg, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_DOOM_MULT:VOID_DOOM_MULT, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, juggernautSmashReady:juggernautSmashReady, juggernautFuryStacks:juggernautFuryStacks, juggernautArmorPierce:juggernautArmorPierce, JUG_WINDUP_DMG:JUG_WINDUP_DMG, JUG_WINDUP_SLOW:JUG_WINDUP_SLOW, JUG_SMASH_EVERY:JUG_SMASH_EVERY, JUG_CONCUSS_MS:JUG_CONCUSS_MS, JUG_FURY_PER:JUG_FURY_PER, JUG_FURY_MAX:JUG_FURY_MAX, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_SHIELD_MAX_PCT:LUMEN_SHIELD_MAX_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, applyPotionPoisonTick:applyPotionPoisonTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       frostwardenDmgMult:frostwardenDmgMult, frostwardenApplyChill:frostwardenApplyChill, frostwardenTimeDilation:frostwardenTimeDilation, enemyChilled:enemyChilled, enemyChillStacks:enemyChillStacks, enemyChillSlowMult:enemyChillSlowMult, plaguebearerContagionMult:plaguebearerContagionMult, plaguebearerBonus:plaguebearerBonus, berserkerTitansHeftDmg:berserkerTitansHeftDmg, berserkerBloodPactMult:berserkerBloodPactMult, berserkerPactCost:berserkerPactCost, berserkerGlassMult:berserkerGlassMult, berserkerGlassTitanHpMult:berserkerGlassTitanHpMult, berserkerGiantsFrameMult:berserkerGiantsFrameMult, berserkerInkLedger:berserkerInkLedger, berserkerLedgerFrac:berserkerLedgerFrac, berserkerLedgerBonus:berserkerLedgerBonus, berserkerLedgerCapped:berserkerLedgerCapped, berserkerLedgerMult:berserkerLedgerMult, berserkerTransfusionLifesteal:berserkerTransfusionLifesteal, hpHealCeil:hpHealCeil, healRoom:healRoom, BERSERK_HEFT_PCT:BERSERK_HEFT_PCT, BERSERK_HEFT_PCT_D1:BERSERK_HEFT_PCT_D1, BERSERK_BLOODPACT_COST:BERSERK_BLOODPACT_COST, BERSERK_BLOODPACT_COST_D2:BERSERK_BLOODPACT_COST_D2, BERSERK_LEDGER_RATE:BERSERK_LEDGER_RATE, BERSERK_LEDGER_RATE_D3:BERSERK_LEDGER_RATE_D3, BERSERK_LEDGER_CAP:BERSERK_LEDGER_CAP, BERSERK_TRANSFUSION:BERSERK_TRANSFUSION, BERSERK_TRANSFUSION_D4:BERSERK_TRANSFUSION_D4, sentinelArmorMult:sentinelArmorMult, sentinelReflectDamage:sentinelReflectDamage, sentinelReflectSourceName:sentinelReflectSourceName, SENTINEL_SPIKE_PCT:SENTINEL_SPIKE_PCT, SENTINEL_IRONMAIDEN_PCT:SENTINEL_IRONMAIDEN_PCT, SENTINEL_BRITTLE_MS:SENTINEL_BRITTLE_MS, SENTINEL_SHRED_FRAC:SENTINEL_SHRED_FRAC, spellbladeRuneHungerMult:spellbladeRuneHungerMult, spellbladeCriticalRunesCrit:spellbladeCriticalRunesCrit, spellbladeEchoChance:spellbladeEchoChance, equippedEnchantCount:equippedEnchantCount, spellbladeEnchantBoost:spellbladeEnchantBoost, SPELLBLADE_RUNEHUNGER_PER:SPELLBLADE_RUNEHUNGER_PER, SPELLBLADE_CRITRUNE_PER:SPELLBLADE_CRITRUNE_PER, SPELLBLADE_ECHO_PCT:SPELLBLADE_ECHO_PCT, hasEquippedEnchants:hasEquippedEnchants, familiarCastIntervalMs:familiarCastIntervalMs, clothPieceEquipped:clothPieceEquipped, chainPieceEquipped:chainPieceEquipped, wornArmorMaterials:wornArmorMaterials, wornArmorMaterialCounts:wornArmorMaterialCounts, MATERIAL_TO_PROFICIENCY:MATERIAL_TO_PROFICIENCY, classAttackSpeedMult:classAttackSpeedMult, classAccuracyMult:classAccuracyMult, duelistSidestep:duelistSidestep, duelistSidestepMs:duelistSidestepMs, duelistUntouchMult:duelistUntouchMult, duelistUntouchCap:duelistUntouchCap, duelistDanseEvery:duelistDanseEvery, DUELIST_SIDESTEP_MS:DUELIST_SIDESTEP_MS, DUELIST_SIDESTEP_MS_GOSSAMER:DUELIST_SIDESTEP_MS_GOSSAMER, DUELIST_RIPOSTE_MULT:DUELIST_RIPOSTE_MULT, DUELIST_AFTERIMAGE_PCT:DUELIST_AFTERIMAGE_PCT, DUELIST_AFTERIMAGE_PCT_PHANTOM:DUELIST_AFTERIMAGE_PCT_PHANTOM, DUELIST_UNTOUCH_PER_SEC:DUELIST_UNTOUCH_PER_SEC, DUELIST_UNTOUCH_CAP:DUELIST_UNTOUCH_CAP, DUELIST_UNTOUCH_CAP_BW:DUELIST_UNTOUCH_CAP_BW, DUELIST_DANSE_EVERY:DUELIST_DANSE_EVERY, DUELIST_DANSE_EVERY_D1:DUELIST_DANSE_EVERY_D1, DUELIST_DANSE_STABS:DUELIST_DANSE_STABS, playerAttackTick:playerAttackTick, monsterAttackTick:monsterAttackTick, incomingDamageMult:incomingDamageMult, incomingMitigationFloor:incomingMitigationFloor, INCOMING_FLOOR_FRAC:INCOMING_FLOOR_FRAC, startCombat:startCombat, reaperBonus:reaperBonus, reaperShieldCap:reaperShieldCap, combatShieldTotal:combatShieldTotal, reaperRotStacks:reaperRotStacks, reaperRotAdd:reaperRotAdd, reaperRotCap:reaperRotCap, reaperRotFireTick:reaperRotFireTick, applyReaperRotTick:applyReaperRotTick, reaperRotSiphonPct:reaperRotSiphonPct, reaperGravebloomMult:reaperGravebloomMult, REAPER_ROT_MS:REAPER_ROT_MS, REAPER_ROT_MAX:REAPER_ROT_MAX, REAPER_ROT_MAX_DS:REAPER_ROT_MAX_DS, REAPER_ROT_PCT:REAPER_ROT_PCT, REAPER_ROT_SIPHON:REAPER_ROT_SIPHON, REAPER_ROT_SIPHON_D2:REAPER_ROT_SIPHON_D2, REAPER_GRAVEBLOOM_PER:REAPER_GRAVEBLOOM_PER, REAPER_SPECTRAL_EDGE_PCT:REAPER_SPECTRAL_EDGE_PCT, REAPER_SHIELD_MAX_PCT:REAPER_SHIELD_MAX_PCT, REAPER_ROT_CRIT_MULT:REAPER_ROT_CRIT_MULT, REAPER_SOULFLAY_ERUPT:REAPER_SOULFLAY_ERUPT, rollCraftRarity:rollCraftRarity, rarityRollDisabledForTier:rarityRollDisabledForTier, SETTINGS_TOGGLES:SETTINGS_TOGGLES, clampPlayerHpToMax:clampPlayerHpToMax, legendaryDmgMult:legendaryDmgMult, legendaryDodgeBonus:legendaryDodgeBonus, legendaryLifestealPct:legendaryLifestealPct, legWastingCurseIncomingMult:legWastingCurseIncomingMult, legNotePoisonStart:legNotePoisonStart, samuraiFocusCap:samuraiFocusCap, legDistinctEnchantCount:legDistinctEnchantCount, legEchoDmgMult:legEchoDmgMult, legShieldBashDamage:legShieldBashDamage, legReflectCanCrit:legReflectCanCrit, legReflectCritMult:legReflectCritMult, legendaryCritDmg:legendaryCritDmg, legEarthshakerBuild:legEarthshakerBuild, legEarthshakerConsume:legEarthshakerConsume, LEG_TREMOR_CAP:LEG_TREMOR_CAP, LEG_TREMOR_MULT:LEG_TREMOR_MULT, CRIT_DAMAGE_MULT:CRIT_DAMAGE_MULT, legendaryAccuracyBonus:legendaryAccuracyBonus, legRangerAilmentRolls:legRangerAilmentRolls, legendaryCritChance:legendaryCritChance, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, floatKillLoot:floatKillLoot, setOverlayHtml:setOverlayHtml, _setOfflineSummary:function(v){ offlineSummaryData = v; }, _combatLog:function(){ return combatLog; },
       MONSTER_SPECIALS:MONSTER_SPECIALS, monsterSpecialFire:monsterSpecialFire, monsterSpecialDesc:monsterSpecialDesc, clearEnemySpecialState:clearEnemySpecialState, playerDotDps:playerDotDps, playerDotTick:playerDotTick, playerDotWord:playerDotWord, playerBleedActive:playerBleedActive, playerPoisonActive:playerPoisonActive, playerFeared:playerFeared, enemyWeakenMult:enemyWeakenMult, playerShredMult:playerShredMult, enemyHardenMult:enemyHardenMult,
