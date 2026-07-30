@@ -5098,13 +5098,11 @@
     var actFresh = { potionPoisonUntil: 0 }; FF.legNotePoisonStart(actFresh); ok(actFresh.poisonSince > 0, 'legNotePoisonStart stamps a fresh poison start');
     var actLive = { potionPoisonUntil: Date.now()+4000, poisonSince: 111 }; FF.legNotePoisonStart(actLive); eq(actLive.poisonSince, 111, 'legNotePoisonStart does not reset an ongoing poison');
 
-    // Relic Reaver (treasureHunter/scimitar): +25% damage while Faith is above half.
-    var rrHi = legSt('relicreaver', { xp:{ prayer:0 }, faith:9999 });
-    rrHi.faith = FF.faithMax(rrHi) * 0.75;
-    near(FF.legendaryDmgMult(MON, rrHi), 1.25, 'Relic Reaver: +25% while Faith above half');
-    var rrLo = legSt('relicreaver', { xp:{ prayer:0 } });
-    rrLo.faith = FF.faithMax(rrLo) * 0.25;
-    near(FF.legendaryDmgMult(MON, rrLo), 1, 'Relic Reaver: no bonus while Faith at or below half');
+    // Cryptreaver (treasureHunter/scimitar): deepens the Grave Strike's per-tier scaling. Its old "+25% while
+    // Faith is above half" rider retired with the Reliquary -- the relic tier IS the scaling now.
+    near(FF.thTierPct(legSt('relicreaver')), FF.TH_STRIKE_TIER_PCT + FF.LEG_CRYPTREAVER_TIER_PCT, 'Cryptreaver: +10% more Grave Strike per relic tier');
+    near(FF.thTierPct(legSt('goldgorge')), FF.TH_STRIKE_TIER_PCT, 'another scimitar leaves the tier scaling at the base knob');
+    near(FF.legendaryDmgMult(MON, legSt('relicreaver')), 1, 'Cryptreaver adds no flat damage row');
 
     // Spectral Aegis (reaper/scythe): the Siphon Shield cap doubles to 40% of max Health.
     var saOff = legSt('cull', { xp:{ vitality: FF.xpFloorForLevel(30) } });
@@ -5338,16 +5336,16 @@
       return st;
     }
 
-    // Fortune's Riposte (treasureHunter/shieldSmall): a Block arms a +40% next strike, consumed once.
+    // Luckshell (treasureHunter/shieldSmall): a Grave Strike -- or a Block -- arms a +150% next hit, once.
     var frp = legSt('fortunesriposte');
-    eq(FF.legRiposteArmed(frp), false, "Fortune's Riposte is unarmed until a Block");
+    eq(FF.legRiposteArmed(frp), false, 'Luckshell is unarmed until a Grave Strike or a Block');
     frp.riposteCharged = true;
-    eq(FF.legRiposteArmed(frp), true, 'a Block arms the Riposte');
-    near(FF.legRiposteConsume(frp), 1.4, 'the armed strike deals +40%');
+    eq(FF.legRiposteArmed(frp), true, 'a Grave Strike arms the Luckshell');
+    near(FF.legRiposteConsume(frp), 2.5, 'the armed strike deals +150%');
     eq(frp.riposteCharged, false, 'consuming disarms it');
     near(FF.legRiposteConsume(frp), 1, 'it only empowers one strike');
     var frpOff = legSt('immunize'); frpOff.riposteCharged = true;
-    near(FF.legRiposteConsume(frpOff), 1, "Fortune's Riposte is inert without its legendary");
+    near(FF.legRiposteConsume(frpOff), 1, 'Luckshell is inert without its legendary');
 
     // Immunize (plaguebearer/shieldSmall): take 25% less damage from a poisoned foe.
     var imP = legSt('immunize', 'shieldSmall', { activity:{type:'combat', monsterHp:100, potionPoisonUntil: Date.now()+4000} });
@@ -5526,6 +5524,13 @@
     function legSt(key, base){ return { xp:{}, physique:{}, bodyArmor:{}, activity:{type:'combat', monsterHp:100}, playerHp:100,
       uniqueItems:{ L:{ uid:'L', leg:key, kind:'offhand', base:'stshield_'+(base||'shieldSmall')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedOffhandUid:'L' }; }
     ['cofferguard','rotshell','goreshell','rimeshell','thornwall','bulwarkbreach'].forEach(function(k){ eq(FF.legActive(k, legSt(k)), true, 'legActive detects '+k); });
+    // Cofferguard (D2 small shield): each Grave Strike banks a damage stack that holds for the fight.
+    var cgSt = legSt('cofferguard'); cgSt.activity.thCoffer = 5;
+    near(FF.thCofferMult(cgSt), 1.15, 'Cofferguard: +3% per Grave Strike (5 Strikes -> +15%)');
+    cgSt.activity.thCoffer = 100;
+    near(FF.thCofferMult(cgSt), 1.45, 'Cofferguard caps at +45%');
+    var cgOff = legSt('thornwall'); cgOff.activity.thCoffer = 5;
+    near(FF.thCofferMult(cgOff), 1, 'the ramp is inert without Cofferguard');
     ok(/Bulwark of the Breach/.test(FF.LEGENDARY_GEAR_ITEMS_D2[FF.legGearItemIdD2('bulwarkbreach','normal')].name), 'the herald D2 shield is Bulwark of the Breach');
     // Full forge: give the bill, craft, confirm a d2 defense-group unique on a top-tier shield base.
     var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
@@ -5679,6 +5684,10 @@
     near(FF.legendaryRingBonus('d2_fury', ringSt('d2_fury','fantastic')), 0.40, 'Signet of Fury (Fantastic): +40% Attack Speed');
     near(FF.legendaryRingBonus('d2_bramble', ringSt('d2_bramble')), 0.30, 'Signet of the Bramble (Rare): +30% Reflect');
     near(FF.legendaryRingBonus('d2_goldfind', ringSt('d2_goldfind')), 0.50, 'Signet of Plunder (Rare): +50% Gold Find');
+    // Regression: the Signet's Gold Find stat was defined and tested but READ nowhere in the gold path -- the
+    // ring did nothing until the Reliquary rework built a real Gold Find multiplier for it to feed.
+    near(FF.thGoldFindMult(ringSt('d2_goldfind')), 1.50, 'Signet of Plunder actually multiplies combat gold now');
+    near(FF.thGoldFindMult(ringSt('d2_leech')), 1, 'a different Signet leaves Gold Find alone');
     ok(FF.legRingEquipped('d2_feast', ringSt('d2_feast')), 'legRingEquipped detects an equipped D2 Signet');
     near(FF.legendaryCloakBonus('d2_ruin', cloakSt('d2_ruin')), 0.16, 'Shroud of Ruin (Rare): +16% All Damage');
     near(FF.legendaryCloakBonus('d2_tunnelborn', cloakSt('d2_tunnelborn')), 0.16, 'Shroud of the Tunnelborn (Rare): +16% Damage Reduction');
@@ -6038,6 +6047,16 @@
       uniqueItems:{ L:{ uid:'L', leg:key, kind:'offhand', base:'stshield_shieldSmall_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedOffhandUid:'L' };
       if(extra) for(var k in extra) st[k]=extra[k]; return st; }
     ['hoardwall','venomscale','bloodscale','rimescale','wyrmthornwall','dragonbulwark'].forEach(function(k){ eq(FF.legActive(k, legSt(k)), true, 'legActive detects '+k); });
+    // Hoardwall (D4 small shield): a hoard of 100+ Broken Relics is armour, and sharpens the Grave Strike.
+    eq(FF.LEG_HOARDWALL_RELICS, 100, 'Hoardwall wants a 100-relic hoard');
+    var hwFull = {}; hwFull[FF.BROKEN_RELIC_ITEMS[0].id] = FF.LEG_HOARDWALL_RELICS;
+    var hwOn = legSt('hoardwall', { inventory:hwFull });
+    eq(FF.thHoardwallActive(hwOn), true, 'Hoardwall arms at a full hoard');
+    near(FF.thHoardwallIncomingMult(hwOn), 0.75, 'Hoardwall: -25% damage taken');
+    var hwLow = {}; hwLow[FF.BROKEN_RELIC_ITEMS[0].id] = FF.LEG_HOARDWALL_RELICS - 1;
+    eq(FF.thHoardwallActive(legSt('hoardwall', { inventory:hwLow })), false, 'one relic short is not a hoard');
+    near(FF.thHoardwallIncomingMult(legSt('hoardwall', { inventory:hwLow })), 1, 'and grants no mitigation');
+    eq(FF.thHoardwallActive(legSt('rimescale', { inventory:hwFull })), false, 'a hoard alone does nothing without Hoardwall');
     ok(/Dragonscale Bulwark/.test(FF.LEGENDARY_GEAR_ITEMS_D4[FF.legGearItemIdD4('dragonbulwark','normal')].name), 'the herald D4 shield is Dragonscale Bulwark');
     var now = Date.now();
     // Dragonscale Bulwark: +12% resistance to all elements.
@@ -6088,6 +6107,12 @@
     near(FF.d4LegDmgMult({}, legSt('greedwyrm','scimitar',{ activity:{type:'combat', monsterHp:100, goldEarned:3000} })), 1.06, 'Greedwyrm: +2% per 1k gold (3k -> +6%)');
     near(FF.d4LegDmgMult({}, legSt('greedwyrm','scimitar',{ activity:{type:'combat', monsterHp:100, goldEarned:99000} })), 1.50, 'Greedwyrm caps at +50%');
     near(FF.d4LegDmgMult({}, legSt('greedwyrm','scimitar')), 1.0, 'Greedwyrm inert with no gold this fight');
+    // Greedwyrm also pays for the hoard you are NOT spending: +1% per Broken Relic held (cap +60%).
+    var gwInv = {}; gwInv[FF.BROKEN_RELIC_ITEMS[0].id] = 20;
+    near(FF.thGreedwyrmMult(legSt('greedwyrm','scimitar',{ inventory:gwInv })), 1.20, 'Greedwyrm: +1% per relic held (20 -> +20%)');
+    var gwBig = {}; gwBig[FF.BROKEN_RELIC_ITEMS[0].id] = 500;
+    near(FF.thGreedwyrmMult(legSt('greedwyrm','scimitar',{ inventory:gwBig })), 1.60, 'Greedwyrm relic bonus caps at +60%');
+    near(FF.thGreedwyrmMult(legSt('gorewyrm','scimitar',{ inventory:gwInv })), 1, 'the hoard bonus is inert without Greedwyrm');
     // Wyrmdancer's Fang: +2.5% per Wrath stack; builds Wrath on dodges.
     near(FF.d4LegDmgMult({}, legSt('wyrmdancer','rapier',{ d4Wrath:5, d4WrathUntil:now+9999 })), 1.125, "Wyrmdancer: +2.5% per Wrath (5 -> +12.5%)");
     // Phantom Dancer rework: Wyrmdancer's Fang builds Wrath on DODGES (via onPlayerDodged, live-state
@@ -6567,11 +6592,14 @@
       near(FF.d3SetIncomingMult(s), 1.0, 'no D3 incoming reduction for the Warlord (Grave Momentum retired)');
       eq(FF.D3_SET_DEFS.knight.b2.name, 'Heavy Standard', 'Knight D3 2pc is Heavy Standard');
       s.knightStacks = 0;
-      // Treasure Hunter Cursed Hoard (full): +50% Treasure Find (ratio cancels amulet/D1 factors).
-      wearFull('treasureHunter'); var withF = FF.legTreasureMult(s);
-      s.bodyArmor = {}; s.uniqueItems = {}; var without = FF.legTreasureMult(s);
-      near(withF / without, 1.50, 'Treasure Hunter Cursed Hoard: +50% Treasure Find');
-      // Grave Robber (2pc) gold bonus rides on enemyCursed at kill time; and its crit-Curse applier is a combat hook.
+      // Treasure Hunter Cursed Hoard (full): +50% GOLD Find -- the Reliquary moved every Treasure Hunter set
+      // line off Treasure Find, so the class trades loot quantity for a gold specialisation.
+      wearFull('treasureHunter'); var withF = FF.thGoldFindMult(s);
+      s.bodyArmor = {}; s.uniqueItems = {}; var without = FF.thGoldFindMult(s);
+      near(withF / without, 1.50, 'Treasure Hunter Cursed Hoard: +50% Gold Find');
+      wearFull('treasureHunter'); near(FF.legTreasureMult(s), 1, 'and it no longer adds Treasure Find');
+      s.bodyArmor = {}; s.uniqueItems = {};
+      // Grave Robber (2pc) crit-Curse applier is a combat hook.
       ok(FF.D3_SET_DEFS.treasureHunter.b2.name === 'Grave Robber', 'TH D3 2pc is Grave Robber');
       // The Undeath revives / Grave Ward / Consecrate / Soulguard fire at combat hooks (lethal-blow guard,
       // shield-absorb, tick loop). Confirm each set is defined with its named bonuses.
@@ -7012,9 +7040,11 @@
       wearD2('frostwarden', 2); s.activity = { type:'combat', monsterHp:800, enemyChillUntil:Date.now()+9999 };
       near(FF.d2SetDmgMult({hp:1000}, s), 1.12, 'Frostwarden Brittle: +12% vs a Chilled foe');
       s.activity.enemyChillUntil = Date.now()-1; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, 'Brittle inert on an un-chilled foe');
-      // Treasure Hunter Sharp Eye (2pc): +8% crit chance; Plunder (full): +40% Treasure Find.
+      // Treasure Hunter Sharp Eye (2pc): +8% crit chance -- which is also a charge-rate bonus, since a crit
+      // counts as two Grave Charges. Plunder (full): +40% GOLD Find (was Treasure Find).
       wearD2('treasureHunter', 2); near(FF.d2SetCritChance(s), 0.08, 'TH Sharp Eye: +8% crit chance');
-      wearD2('treasureHunter', 4); ok(FF.legTreasureMult(s) >= 1.40 - 1e-9, 'TH Plunder: +40% Treasure Find folded into the treasure multiplier');
+      wearD2('treasureHunter', 4); near(FF.thGoldFindMult(s), 1.40, 'TH Plunder: +40% Gold Find');
+      near(FF.legTreasureMult(s), 1, 'TH Plunder no longer adds Treasure Find');
       // Knight Bannerguard (2pc) seeds at the crit hook; War Council (full) scales the standing Orders.
       wearD2('knight', 2); eq(FF.D2_SET_DEFS.knight.b2.name, 'Bannerguard', 'Knight D2 2pc is Bannerguard');
       near(FF.knOrderMult(s), 1.0, '2 pieces -> Orders at base power');
@@ -7531,12 +7561,12 @@
     eq(FF.quickdrawCycleEvery(setSt('quickdraw', 2)), 3, 'Deft Hands (2pc): the cycle runs every 3rd shot');
     eq(FF.quickdrawCycleEvery(setSt('quickdraw', 1)), 4, '1 piece -> the base 4-shot cycle');
 
-    // Treasure Hunter Blessed Arsenal (2pc) + Wider Appraisal (full).
-    near(FF.treasureProspectorPer(setSt('treasureHunter', 2)), 0.15, 'Blessed Arsenal (2pc): +15%/Rare+ item');
-    near(FF.treasureProspectorPer(setSt('treasureHunter', 1)), 0.10, '1 piece -> base +10%');
-    near(FF.setTreasureMult(setSt('treasureHunter', 4)), 1.25, 'Wider Appraisal (full): +25% Treasure Find');
-    near(FF.setTreasureMult(setSt('treasureHunter', 2)), 1, 'no Wider Appraisal below the full set');
-    near(FF.legTreasureMult(setSt('treasureHunter', 4)), 1.25, 'Wider Appraisal folds into the Treasure Find multiplier');
+    // Treasure Hunter Blessed Arsenal (2pc) + Wider Appraisal (full): the D1 layer is the charge-rate layer.
+    eq(FF.thChargeNeed(setSt('treasureHunter', 2)), FF.TH_CHARGE_NEED - FF.TH_CHARGE_NEED_D1, 'Blessed Arsenal (2pc): the Grave Charge needs 2 fewer hits');
+    eq(FF.thChargeNeed(setSt('treasureHunter', 1)), FF.TH_CHARGE_NEED, '1 piece -> the base 8-hit charge');
+    near(FF.thGoldFindMult(setSt('treasureHunter', 4)), 1.25, 'Wider Appraisal (full): +25% Gold Find');
+    near(FF.thGoldFindMult(setSt('treasureHunter', 2)), 1, 'no Wider Appraisal below the full set');
+    near(FF.legTreasureMult(setSt('treasureHunter', 4)), 1, 'the Treasure Hunter D1 set no longer adds Treasure Find');
 
     // Executioner Execute (2pc): a non-boss foe below 15% Health is slain instantly (threshold constant;
     // the kill itself is exercised in the drive harness).
@@ -12233,7 +12263,7 @@
     eq(FF.armorMaterialBonusLines('plate','chest','fantastic').join('|'), '', 'plate CHEST card: no block bonus (chest is excluded)');
   });
 
-  // ---- Classes: Treasure Hunter (rarity-scaling fortune seeker) -------------------------
+  // ---- Classes: Treasure Hunter (the Reliquary: Broken Relics fired as ammunition) ------
   suite('classes: Treasure Hunter', function(){
     ok(FF.CLASS_SKILL_IDS.indexOf('treasureHunter') !== -1, 'treasureHunter is a class skill id');
     var cd = FF.CLASS_DEFS_BY_ID.treasureHunter;
@@ -12281,53 +12311,153 @@
     withJewels.equippedBeltTier = 1; withJewels.equippedBeltRarity = 'rare';
     eq(FF.treasureHunterCount(withJewels, 1), 9, 'rings, amulet, belt all count toward rarity totals');
 
-    // Lv 1 Prospector: +10% damage per rare+ item.
-    eq(FF.treasureHunterDmgMult(base('normal')), 1, 'all-normal gear => no damage bonus');
-    near(FF.treasureHunterDmgMult(allRare), 1.60, 'six Rare items => +60% damage');
-    near(FF.treasureHunterDmgMult(base('fantastic')), 1.60, 'Fantastic items also count as rare+ (+60%)');
+    // The Reliquary perk ladder. The three rarity-scaling passives (Prospector / Appraiser / Connoisseur)
+    // retired: at best-in-slot every equipped item is Fantastic, so all three were flat always-on multipliers
+    // with no gameplay. Tithe and Golden Devotion retired too -- Faith economy where the combat kit belongs.
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Grave Charge,Grave Dowsing,Gravecoin,Keeper\u2019s Rites,Endless Vigil', 'Reliquary perk names');
+    eq(FF.TH_CHARGE_NEED, 8, 'the Grave Charge fills in 8 landed hits');
+    near(FF.TH_STRIKE_MULT, 2.0, 'a Grave Strike is 2x the recent average hit at relic tier 0');
+    near(FF.TH_STRIKE_TIER_PCT, 0.25, 'the Strike gains +25% per relic tier (THE tuning knob)');
+    near(FF.TH_DOWSE_CHANCE, 0.35, 'Grave Dowsing unearths a relic 35% of the time');
+    near(FF.TH_DOWSE_CHANCE_D2, 0.70, 'Plunder (D2 full) doubles Grave Dowsing');
+    eq(FF.TH_COIN_PER_TIER, 5, 'Gravecoin ceiling is 5 gold per foe tier');
+    eq(FF.TH_MARK_MAX, 5, "Keeper's Mark caps at 5 stacks");
+    eq(FF.BROKEN_RELIC_ITEMS.length, FF.TIER_COUNT, 'there is one Broken Relic tier per game tier (the quality ladder)');
 
-    // Inactive class => no bonuses at all.
-    var off = base('fantastic'); off.equippedMainhand='rapier';
-    eq(FF.treasureHunterDmgMult(off), 1, 'damage bonus off while class inactive');
-    eq(FF.treasureHunterCritDmgBonus(off), 0, 'crit bonus off while class inactive');
-    eq(FF.classAccuracyMult(off), 1, 'accuracy bonus off while class inactive');
+    // The retired passives are gone from the damage/accuracy/Faith paths entirely.
+    var offCls = base('fantastic'); offCls.equippedMainhand='rapier';
+    eq(FF.classAccuracyMult(base('supreme')), 1, 'Appraiser retired: no rarity-scaled accuracy');
+    var apprL20 = base('supreme'); apprL20.xp.treasureHunter = FF.xpFloorForLevel(21);
+    eq(FF.classAccuracyMult(apprL20), 1, 'and not at Lv20 either');
+    eq(FF.classAccuracyMult(offCls), 1, 'nothing while the class is inactive');
 
-    // Lv 20 Appraiser: +10% accuracy per Supreme+ item (folds into classAccuracyMult).
-    var thL1 = base('supreme');
-    eq(FF.classAccuracyMult(thL1), 1, 'Lv1: accuracy passive not active yet');
-    var thL20 = base('supreme'); thL20.xp.treasureHunter = FF.xpFloorForLevel(21);
-    near(FF.classAccuracyMult(thL20), 1.60, 'Lv20, six Supreme => +60% accuracy');
-    var thL20rare = base('rare'); thL20rare.xp.treasureHunter = FF.xpFloorForLevel(21);
-    eq(FF.classAccuracyMult(thL20rare), 1, 'Rare items do not count for the Supreme+ accuracy bonus');
+    // Lv 1 Grave Charge: eight hits per Strike, seven with Grave Dowsing (Lv20).
+    function leveled(lv){ var st = base(); st.xp.treasureHunter = FF.xpFloorForLevel(lv + 1); st.uniqueItems = {}; return st; }
+    eq(FF.thChargeNeed(base()), FF.TH_CHARGE_NEED, 'Lv1: eight hits per Grave Strike');
+    eq(FF.thChargeNeed(leveled(20)), FF.TH_CHARGE_NEED_L20, 'Grave Dowsing (Lv20): one fewer hit');
 
-    // Lv 40 Connoisseur: +25% crit damage per Fantastic item.
-    var thL20f = base('fantastic'); thL20f.xp.treasureHunter = FF.xpFloorForLevel(21);
-    eq(FF.treasureHunterCritDmgBonus(thL20f), 0, 'crit passive needs Lv40');
-    var thL40 = base('fantastic'); thL40.xp.treasureHunter = FF.xpFloorForLevel(41);
-    near(FF.treasureHunterCritDmgBonus(thL40), 1.50, 'Lv40, six Fantastic => +150% crit damage');
-    var thL40sup = base('supreme'); thL40sup.xp.treasureHunter = FF.xpFloorForLevel(41);
-    eq(FF.treasureHunterCritDmgBonus(thL40sup), 0, 'Supreme items do not count for the Fantastic crit bonus');
+    // The relic pack: the engine loads the highest tier you hold, and NEVER a locked one -- locks are the
+    // player's control valve for banking relics as Faith, exactly as the auto-sacrifice top-up treats them.
+    var pack = base(); pack.inventory = {}; pack.lockedItems = {};
+    eq(FF.thBestRelicTier(pack), -1, 'an empty pack has no ammunition');
+    eq(FF.thRelicCount(pack), 0, 'and no hoard');
+    pack.inventory[FF.BROKEN_RELIC_ITEMS[3].id] = 2;
+    pack.inventory[FF.BROKEN_RELIC_ITEMS[9].id] = 1;
+    eq(FF.thBestRelicTier(pack), 9, 'the engine loads the highest tier held');
+    eq(FF.thRelicCount(pack), 3, 'the hoard counts every relic');
+    pack.lockedItems[FF.BROKEN_RELIC_ITEMS[9].id] = true;
+    eq(FF.thBestRelicTier(pack), 3, 'a LOCKED relic is never spent -- the Strike falls to the next tier down');
+    eq(FF.thRelicCount(pack), 3, 'but a lock does not shrink the hoard (Hoardwall/Greedwyrm read its size)');
 
-    // Lv 80 Golden Devotion: doubles the Devotion/Blessing/Miracle rarity bonus (reads global state).
-    var s = FF._state;
-    var snap = { xpT:s.xp.treasureHunter, main:s.equippedMainhand, mrar:s.equippedMainhandRarity, off:s.equippedOffhand, offT:s.equippedOffhandTier,
-      helm:s.bodyArmor.helmet, chest:s.bodyArmor.chest, gaunt:s.bodyArmor.gauntlets, boots:s.bodyArmor.boots,
-      fa:s.faithActivity, faith:s.faith };
-    s.equippedMainhand='scimitar'; s.equippedMainhandRarity='normal';
-    s.equippedOffhand='shieldSmall'; s.equippedOffhandTier=1;
-    s.bodyArmor.helmet=arm('chain'); s.bodyArmor.boots=arm('chain'); s.bodyArmor.chest=arm('plate'); s.bodyArmor.gauntlets=arm('tailoring');
-    s.faith = 100; s.faithActivity = { type:'devotion', tier:20 };
-    s.xp.treasureHunter = 0; // Lv 1: not doubled yet
-    var single = FF.faithRarityBonus('devotion');
-    ok(single > 0, 'running Devotion grants a rarity bonus');
-    s.xp.treasureHunter = FF.xpFloorForLevel(81); // Lv 81
-    near(FF.faithRarityBonus('devotion'), single*2, 'Treasure Hunter Lv80 doubles the Devotion rarity bonus');
-    s.equippedMainhand='rapier'; // deactivate class
-    near(FF.faithRarityBonus('devotion'), single, 'bonus returns to normal when the class is inactive');
-    // restore
-    s.xp.treasureHunter=snap.xpT; s.equippedMainhand=snap.main; s.equippedMainhandRarity=snap.mrar; s.equippedOffhand=snap.off; s.equippedOffhandTier=snap.offT;
-    s.bodyArmor.helmet=snap.helm; s.bodyArmor.chest=snap.chest; s.bodyArmor.gauntlets=snap.gaunt; s.bodyArmor.boots=snap.boots;
-    s.faithActivity=snap.fa; s.faith=snap.faith;
+    // The Strike scales off the recent-hit EMA and the relic's tier, and nothing else -- no raw weapon stat.
+    var gs = base(); gs.thHitAvg = 1000;
+    near(FF.thGraveStrikeDamage(0, gs), 2000, 'a Sand relic (t0) Strike = 2x the recent average hit');
+    near(FF.thGraveStrikeDamage(20, gs), 1000 * FF.TH_STRIKE_MULT * (1 + FF.TH_STRIKE_TIER_PCT * 20), 'a Lime relic (t20) Strike = 12x');
+    eq(FF.thGraveStrikeDamage(20, base()), 0, 'with no banked hits there is nothing to scale');
+
+    // Lv 40 Gravecoin: an RNG-HEAVY roll (the random is cubed) with a ceiling of 5g per foe tier.
+    var svRnd = Math.random;
+    try {
+      Math.random = function(){ return 0.999; };  // effectively the top of the range
+      eq(FF.thGravecoinRoll(0, base()), 5, 'Gravecoin ceiling at Tier 1 is 5 gold');
+      eq(FF.thGravecoinRoll(19, base()), 100, 'Gravecoin ceiling at Tier 20 is 100 gold');
+      Math.random = function(){ return 0.5; };
+      ok(FF.thGravecoinRoll(19, base()) <= 13, 'the cubed roll means a middling roll pays a small fraction of the ceiling');
+      Math.random = function(){ return 0; };
+      eq(FF.thGravecoinRoll(19, base()), 0, 'and most kills turn up nothing at all');
+    } finally { Math.random = svRnd; }
+
+    // Gold Find replaced Treasure Find on the set layers; with no sources it is inert.
+    near(FF.thGoldFindMult(base()), 1, 'no Gold Find sources -> x1');
+    near(FF.legTreasureMult(base()), 1, 'and the class no longer carries Treasure Find');
+
+    // Lv 60 Keeper's Rites: each Strike stacks a Mark worth +4% damage, capped at 5, decaying on its clock.
+    var mk = leveled(60);
+    near(FF.thMarkMult(mk), 1, 'no Marks -> no bonus');
+    FF.thMarkAdd(mk); FF.thMarkAdd(mk);
+    eq(FF.thMarkStacks(mk), 2, 'each Grave Strike stacks a Mark');
+    near(FF.thMarkMult(mk), 1.08, 'two Marks: +8% damage');
+    for(var _mi = 0; _mi < 9; _mi++) FF.thMarkAdd(mk);
+    eq(FF.thMarkStacks(mk), FF.TH_MARK_MAX, 'Marks cap at 5');
+    mk.thMarksUntil = Date.now() - 1;
+    eq(FF.thMarkStacks(mk), 0, 'Marks decay out of combat');
+    var mkLow = base(); mkLow.thMarks = 5; mkLow.thMarksUntil = Date.now() + 9999;
+    near(FF.thMarkMult(mkLow), 1, "Keeper's Rites needs Lv60");
+
+    // The two legendary damage terms are inert without their legendaries.
+    near(FF.thGreedwyrmMult(base()), 1, 'no Greedwyrm -> no hoard damage');
+    eq(FF.thHoardwallActive(base()), false, 'no Hoardwall -> no hoard armour');
+    near(FF.thDmgMult(base()), 1, 'a bare Reliquary adds no damage row');
+
+    // Behavioral: the dig charges, the Strike loads and spends a relic, Endless Vigil degrades it instead of
+    // destroying it, Keeper's Rites lands, and Gravecoin pays on a kill (live state).
+    (function(){
+      var s = FF._state;
+      var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid,
+                   oh:s.equippedOffhand, oht:s.equippedOffhandTier, ohr:s.equippedOffhandRarity,
+                   ba:s.bodyArmor, ui:s.uniqueItems, xp:s.xp.treasureHunter, act:s.activity, hp:s.playerHp,
+                   inv:s.inventory, lk:s.lockedItems, gold:s.gold,
+                   ch:s.thCharge, ha:s.thHitAvg, mks:s.thMarks, mku:s.thMarksUntil };
+      var svR = Math.random;
+      try {
+        s.equippedMainhand='scimitar'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null;
+        s.equippedOffhand='shieldSmall'; s.equippedOffhandTier=6; s.equippedOffhandRarity='normal';
+        s.bodyArmor={ helmet:{material:'chain',tier:5,rarity:'normal'}, chest:{material:'plate',tier:5,rarity:'normal'},
+                      gauntlets:{material:'tailoring',tier:5,rarity:'normal'}, boots:{material:'chain',tier:5,rarity:'normal'},
+                      back:{tier:0,rarity:'normal',material:null} };
+        s.uniqueItems = {};
+        s.xp.treasureHunter = FF.xpFloorForLevel(85);
+        eq(FF.activeClassId(s), 'treasureHunter', 'behavioral setup activates the Treasure Hunter');
+        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e12, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.playerHp = FF.maxHp(s);
+        s.inventory = {}; s.lockedItems = {};
+        s.thCharge = 0; s.thHitAvg = 0; s.thMarks = 0; s.thMarksUntil = 0;
+        // A landed swing charges the dig and banks into the Strike base.
+        Math.random = function(){ return 0; };
+        FF.playerAttackTick(false, 1, false);
+        ok((s.thHitAvg||0) > 0, 'a landed swing banked into the Grave Strike base');
+        ok((s.thCharge||0) > 0, 'a landed swing charged the dig');
+        // Out of ammo: the dig turns up a relic INSTEAD of firing, so the class can never soft-lock itself.
+        s.thCharge = FF.thChargeNeed(s);
+        var heldHp = s.activity.monsterHp;
+        eq(FF.thGraveStrikeFire(s.activity, FF.MONSTERS[0], s), 0, 'an empty relic pack deals no damage');
+        eq(s.activity.monsterHp, heldHp, 'the foe takes nothing from a dry pack');
+        eq(FF.thRelicCount(s), 1, 'the empty dig unearthed a relic to load next time');
+        eq(s.thCharge, 0, 'and it cost the charge -- tempo paid for the find');
+        s.inventory = {};
+        // Load a t10 relic: the Strike spends it and chips the foe for tier-scaled damage.
+        s.thHitAvg = 1000; s.thCharge = FF.thChargeNeed(s); s.thMarks = 0; s.thMarksUntil = 0;
+        var relicId = FF.BROKEN_RELIC_ITEMS[10].id;
+        s.inventory[relicId] = 1;
+        Math.random = function(){ return 0.999; };   // no crit, no dowse
+        var before = s.activity.monsterHp;
+        var dealt = FF.thGraveStrikeFire(s.activity, FF.MONSTERS[0], s);
+        ok(dealt > 0 && s.activity.monsterHp < before, 'the Grave Strike chipped the foe');
+        eq(dealt, Math.round(1000 * FF.TH_STRIKE_MULT * (1 + FF.TH_STRIKE_TIER_PCT * 10)), 'the Strike scales off the relic TIER and the recent average hit');
+        ok(s.thCharge < FF.thChargeNeed(s), 'the charge was spent');
+        // Endless Vigil (Lv80): the loaded relic degraded a tier instead of being destroyed.
+        eq(s.inventory[relicId]||0, 0, 'the loaded relic left the pack');
+        eq(s.inventory[FF.BROKEN_RELIC_ITEMS[9].id]||0, 1, 'Endless Vigil returned it one tier lower');
+        // Keeper's Rites (Lv60): the Strike Cursed the foe and stacked a Mark.
+        ok(FF.thMarkStacks(s) > 0, "the Strike stacked a Keeper's Mark");
+        ok(FF.thMarkMult(s) > 1, 'and the Mark is live damage');
+        ok((s.activity.curseUntil||0) > Date.now(), 'the Strike Cursed the foe');
+        // Auto-sacrifice must leave the ammunition alone while this is the active class.
+        eq(FF.thRelicReserve(s), FF.TH_RESERVE, 'auto-sacrifice holds an ammo reserve back for the Reliquary');
+        // Gravecoin pays out on a kill.
+        var goldBefore = s.gold;
+        Math.random = function(){ return 0.999; };
+        var paid = FF.thGravecoinOnKill(FF.MONSTERS[0], s);
+        ok(paid > 0 && s.gold > goldBefore, 'Gravecoin paid out on the kill');
+      } finally {
+        Math.random = svR;
+        s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu;
+        s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.equippedOffhandRarity=snap.ohr;
+        s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.treasureHunter=snap.xp;
+        s.activity=snap.act; s.playerHp=snap.hp; s.inventory=snap.inv; s.lockedItems=snap.lk; s.gold=snap.gold;
+        s.thCharge=snap.ch; s.thHitAvg=snap.ha; s.thMarks=snap.mks; s.thMarksUntil=snap.mku;
+      }
+    })();
 
     // Familiar registered, excluded from the passive-summon roster (class familiars roll on kills).
     var fam = FF.FAMILIAR_DATA.treasureHunter;

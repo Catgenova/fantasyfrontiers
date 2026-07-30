@@ -113,6 +113,22 @@ const BUILDS = {
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "blunt",
     offhandShield: { type: "shieldLarge", leg: "bulwarkbreach" }, // the biggest wall = the biggest Breach
   },
+  treasureHunter: {
+    // Scimitar + SMALL shield, chain helm/boots + plate chest + cloth gloves. The Reliquary fires BROKEN
+    // RELICS as ammunition, so the pack is seeded EMPTY (relics are consumables -- owner rule) and the class
+    // bootstraps itself: a full Grave Charge with no ammo DIGS a relic instead of striking, then Grave Dowsing
+    // (35%, 70% with the D2 full) keeps it fed. That bootstrap is the only reason this is measurable at all.
+    // KILL-gated lines all read DEAD here, because the harness refills the dummy instead of killing it:
+    // Cryptreaver's guaranteed drop, Gravepilfer's second relic + double Gravecoin, and the Lv80 kill-refund.
+    // So expect Cryptreaver/Gravepilfer to UNDER-read and Greedwyrm (hold-based) to read true. Hoardwall
+    // needs a 100-relic hoard, unreachable in 45s from empty, so the shield slot is fixed to Luckshell --
+    // the only TH shield whose trigger (a Grave Strike) fires on a zero-offense dummy.
+    weapon: { typeId: "scimitar", styleXp: ["scimitar"] },
+    legs: ["relicreaver", "goldgorge", "gravepilfer", "greedwyrm"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
+    offhandShield: { type: "shieldSmall", leg: "fortunesriposte" },
+  },
   knight: {
     // Claymore (6s two-hander) -- 90s window: compare vs Berserker 82B / Warpriest 89B @90s, never the
     // 45s classes. The zero-offense dummy never triggers Rally, and Shieldwall/Under One Banner are
@@ -242,6 +258,12 @@ async function setup(cfg) {
     st.staffDownbeats = []; st.staffLastDownbeatAt = 0; st.summonerCrescendo = 0; st.summonerWraiths = [];
     st.familiarBuffs = st.familiarBuffs || {};
     st.assassinVigor = null; st.assassinBloodrushUntil = 0;
+    // The Reliquary's ammunition lives in the INVENTORY, so it survives a config change unless cleared --
+    // a later A/B would otherwise open with a stocked pack (and top-tier relics) and read far too high.
+    st.inventory = st.inventory || {};
+    (FF.BROKEN_RELIC_ITEMS || []).forEach(r => { st.inventory[r.id] = 0; });
+    st.lockedItems = st.lockedItems || {};
+    st.thCharge = 0; st.thHitAvg = 0; st.thMarks = 0; st.thMarksUntil = 0;
     let top = FF.MONSTERS.filter(m => /archdemon/i.test(m.id) || /Archdemon/.test(m.name))[0];
     if (!top) { FF.MONSTERS.forEach(m => { if (!top || (m.tierIndex || 0) > (top.tierIndex || 0)) top = m; }); }
     top.atkMin = 0; top.atkMax = 0; top.attackSpeed = 99999; top.special = null;
@@ -250,6 +272,7 @@ async function setup(cfg) {
     st.playerHp = FF.maxHp(st);
     if (cfg.primeLedger) st.activity.bloodLedger = FF.maxHp(st) * 4; // hold the Blood Ledger at cap
     diag.target = top.name; diag.activeClass = FF.activeClassId(st);
+    diag.foeTier = top.tierIndex; diag.relicTiers = (FF.BROKEN_RELIC_ITEMS || []).length;
     window.__SIM = { lastHp: 1e15, total: 0, t0: performance.now(), primeLedger: !!cfg.primeLedger };
     return diag;
   }, [SIM_CLASS, cfg]);
