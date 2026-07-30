@@ -10280,6 +10280,28 @@
     } finally { S.inventory = saveInv; }
   });
 
+  // ---- Enemy swap fade: a kill must visibly change the portrait, even for an identical next foe ----
+  suite('combat: enemy defeat fades the portrait', function(){
+    eq(FF.ENEMY_SWAP_MS, 550, 'the swap window matches the enemySwapFade animation duration');
+    var S = FF._state;
+    var snap = { act:S.activity, swap:S._enemySwapAt, inv:S.inventory };
+    try {
+      var mon = FF.MONSTERS[0];
+      S.inventory = {};
+      S._enemySwapAt = 0;
+      S.activity = { type:'combat', monsterId:mon.id, monsterHp:0, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+      FF.defeatMonster(mon);
+      ok(S._enemySwapAt > 0, 'defeatMonster stamps the swap so the arena can play the fade');
+      eq(S.activity.monsterHp, mon.hp, '...and the next foe of the same type arrives at full HP');
+      // The chain re-engages the SAME monster, which is exactly why the fade matters: without it the
+      // portrait never changes and a kill is invisible.
+      eq(S.activity.monsterId, mon.id, 'a grind chain re-engages the same monster id');
+      // The portrait carries the id the live-patch loop drives the animation through.
+      var markup = FF.renderCombatTab();
+      ok(/id="arenaMonsterPortrait"/.test(markup), 'the arena renders the monster portrait with its animation hook id');
+    } finally { S.activity = snap.act; S._enemySwapAt = snap.swap; S.inventory = snap.inv; }
+  });
+
   // ---- Kin-sworn loot: drop Inscription Scrolls at 5% (no more equipment) ------------------------
   suite('loot: kinsworn drop inscription scrolls', function(){
     var fake = { category:'kinsworn', tierIndex:5, element:'water', name:'Test Kinsman' };
