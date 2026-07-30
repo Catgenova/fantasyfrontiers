@@ -166,6 +166,36 @@ two greedwyrm runs on one setting read 51.0B and 60.4B (±18%) while two goldgor
 (±2%) — the loaded relic tier wanders as Endless Vigil degrades relics a step and Wyrm's Greed re-upgrades
 finds a step, so always average 2-3 runs. The crit-damage cloak reads unusually LOW (37.9B vs Ruin 60.4B)
 precisely because the Strike's crit is a flat x2.
+**Reaver** (45s AND 90s — the fast 1h half-moon axe; v0.0.67.1 "the Butcher's Count", owner target **80B**).
+Opened by fixing a DEAD MECHANIC: the Bleed ticked for `stacks * combatLevelEquivalent * 0.04`, and
+combatLevelEquivalent sums proficiency LEVELS — roughly **120 damage/sec** against BiS hits of ~1e11. The
+class's whole identity was nine orders of magnitude too small to see, which is why the old Reaver was really
+"a fast axe with a flat +25%". Re-based on the recent-hit EMA (`act.rvBleedHitAvg`), the Reaper's Rot channel.
+Findings: (1) **the Count is RATE-limited, not ceiling-limited** — it never reaches its +120% cap inside 45s,
+so **D4 came LAST** in the set A/B (119.3B vs D2's 227.3B) because its only contribution is raising that cap
+to +180%, while everything that raises the carve RATE dominated (D2's two Cuts per stack-second, and
+Marrowsplitter's double-value Cuts). D4 is close to a dead layer at 45s and only earns its keep in the long
+fights this class is built for — expect the layer ordering to invert at 90s+. (2) The ledger is deliberately
+**two numbers** — `rvCuts` (lifetime tally, drives the Count) and `rvBank` (harvestable pool). With ONE
+number the Lv80 capstone is a runaway: a tally that never drops sits permanently above the Harvest threshold
+and fires on every crit, and crits are ~100% at BiS. (3) Cuts accrue as **fractional stack-seconds**, not per
+tick — the Bleed is a continuous DoT, so a per-tick count pays out differently at different frame rates.
+(4) Marrowsplitter x D2 stack multiplicatively to a **4x** effective carve rate, which is why it sits 24%
+above the pack mean; left alone as a BiS pairing (the Herald's best was 21% over its own mean).
+`RV_SWING_MULT` **0.184** is the band knob (the axe opens wounds, the wounds kill; the Bleed, Count and
+Harvest all scale off the channelled hit, so one number drives everything) — the FOURTH chassis to need the
+TPL_LITANY_SWING_MULT / TF_STORM_SWING_MULT / TH_SWING_MULT treatment. Ceilings (D2 set, Ruin cloak,
+Frenzyshell offhand): **45s** Marrowsplitter ~89B (2-run 85.9/91.2) / Gorewyrm's Edge ~84B / Bonereaver ~72B /
+Bloodsupper ~69B — pack mean **~78B**, on target. **90s** Marrowsplitter **129B**, i.e. **+46% over its own
+45s read** — the LARGEST window sensitivity of any class recorded (the usual mastery-training effect is ~35%),
+because a fight-long ramp keeps climbing. Never compare a Reaver number against another class's without
+matching windows. Runs are the QUIETEST recorded: **±3%** same-config (220.4B vs 227.3B), since the tally
+climbs deterministically off bleed uptime rather than wandering like the Reliquary's relic tier (±18%).
+Reaver sim notes: BUILDS needs `offhandShield: {type:'shieldSmall', leg:'frenziedguard'}`. Sim-dead:
+**Bloodfrenzy** (D2 full) scales with MISSING health and the dummy never swings, so that half reads zero and
+the D2 A/B UNDERSTATES the winning layer — its "two Cuts per stack-second" half is all the sim sees;
+**Bonereaver**'s tally carry is kill-gated (the harness refills rather than killing), so it under-reads; and
+every heal (Bloodsupper, Goreshell, Cauterize) is inert on a full HP bar.
 Treasure Hunter sim notes: BUILDS needs `offhandShield: {type:'shieldSmall', leg:'fortunesriposte'}` and the
 harness MUST zero every `BROKEN_RELIC_ITEMS` id in `st.inventory` between configs — the ammunition lives in
 the inventory, so a later A/B otherwise opens with a stocked pack of top-tier relics and reads far too high.
