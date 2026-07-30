@@ -221,6 +221,36 @@ ramp-speed legendaries (Gravewrath) measure at their floor when the ledger is pr
 Slow-swing classes: use SIM_MS=90000. The dummy HP pool is 1e15 with refill at 1e14 —
 single ceiling hits exceed 1e12, which saturated the first Berserker run with kill resets.
 
+**Pyromancer** (45s — the Fire wand; v0.0.69.2 "the Conflagration", owner target **90B**). Burn became one
+**Blaze with fuel**: hits feed it, it ticks off the recent-hit EMA scaled by its SIZE, and it burns itself
+down, so uptime is the skill. The crux was a **COMPATIBILITY SHIM** — ~15 effects outside the class read
+`enemyBurning()`/`enemyBurnStacks()` (Rimewyrm vs Scorched, the Ranger's Fire Arrows, Cremation,
+`d2BurnTickMult`, several wards, Ember Burst), so the pool NEVER replaces `act.burnStacks`; `pyBlazeSync`
+DERIVES burnStacks/burnUntil/burnDps from the fuel after every change and the whole existing tick body works
+untouched. **Any future engine that replaces a shared field must do this** or it silently kills a dozen
+effects. Chassis: this is the SECOND class on the x49 wand stack; uncorrected it read **820B**, NOT the
+trillions the Stormlord's 4.4-6.5T implied — that figure came from Bolts compounding THROUGH the element
+stack, whereas the Blaze scales off a plain channelled hit average. So the x49 stack only explodes when a
+kit's own damage feeds back through it; **Frostwarden / Nightblade / Lumen should be budgeted per-kit, not
+assumed catastrophic.** `PY_SWING_MULT` **0.081** is the band knob. Ceilings (D2 set, Ruin cloak, Everburning
+ward): Emberstorm ~105B / Cinderwyrm ~96B / Cindermaw ~85B / Pyresoul ~83B — pack mean **92B**, on target.
+The legendary ORDERING is noise, not signal: it flipped almost completely between the 0.11 and 0.081 matrices
+(Emberstorm last then first; Pyresoul second then last), because the four wands sit within ~±12% of each
+other while same-session variance is ±8-15%. Do not claim a "best wand" for this class.
+**FEED RATE BEATS CAPACITY (confirmed across two engines).** Pyromancer set A/B: **D2 140.0B** (Firestarter,
++50% fuel per hit) vs D4 86.8B / D3 86.2B / **D1 79.2B** (+30 capacity, LAST). Identical shape on the Reaver,
+where doubling the Cut RATE dominated and raising the CAP was inert (D4 came last at 119B vs D2's 227B). The
+cause is structural: a Lv80 engine CYCLES through its capstone eruption rather than sitting near its ceiling,
+so capacity is largely dead weight. Design any future fuel/ramp bonus as a rate, not a cap — and note the
+Pyromancer's D1 "+30 capacity" is close to a non-bonus at max level and wants revisiting.
+**SIM VARIANCE RULE (learned the hard way, v0.0.69).** Consecutive runs of one config agree tightly (0.4%
+apart), but the SAME config measured at different points in one browser session does NOT: D2+Ruin+Cinderwyrm
+read 140.0B / 131.5B / 154.7B (±8%) across the set A/B, cloak A/B and legendary matrix of a single run. So a
+single matrix CELL is never a sound basis for a band knob. Two misses came from ignoring this — deriving a
+knob from a lone D1 probe (D1 being the weakest layer: overshot 51%), then scaling from the 154.7B cell (the
+high end of the spread). **Always measure the full pack at each candidate knob**; it is slower and it is the
+only method that has held up.
+
 **DOT CHASSIS (fixed game-wide in v0.0.68.0).** Every damage-over-time in the game used to tick for a
 fraction of `combatLevelEquivalent()` — a SUM OF PROFICIENCY LEVELS, ~600 at max — while BiS hits land at
 ~1e11. A fully-stacked Burn dealt roughly **150 damage/sec**: eight to nine orders of magnitude too small to
