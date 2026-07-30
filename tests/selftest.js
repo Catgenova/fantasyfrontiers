@@ -10252,6 +10252,34 @@
     ok(sawGlyph, 'Glyphs still drop (~50% of kills)');
   });
 
+  // ---- Kill-loot floating text: what dropped, over the PLAYER, at 1.5x size ---------------------
+  suite('loot: kill-loot floats report the drops', function(){
+    var S = FF._state, saveInv = S.inventory;
+    try {
+      // applyMonsterCategoryLoot REPORTS its drops so defeatMonster can float them.
+      S.inventory = {};
+      var wild = { category:'wildlife', tierIndex:3, element:'earth', name:'Test Rabbit' };
+      var drops = FF.applyMonsterCategoryLoot(wild);
+      ok(Array.isArray(drops), 'applyMonsterCategoryLoot returns a drop list');
+      eq(drops.length, 1, 'wildlife always yields exactly one drop entry (the corpse)');
+      ok(drops[0].qty >= 1 && typeof drops[0].name === 'string' && drops[0].name.length > 0, 'the entry carries a quantity and an item name');
+      // A category that rolls a chance can legitimately report NOTHING -- that is the "No Loot Dropped" case.
+      S.inventory = {};
+      var sawEmpty = false, sawFilled = false;
+      for(var n = 0; n < 200 && !(sawEmpty && sawFilled); n++){
+        S.inventory = {};
+        var d = FF.applyMonsterCategoryLoot({ category:'kinsworn', tierIndex:5, element:'water', name:'Test Kinsman' });
+        if(d.length === 0) sawEmpty = true; else sawFilled = true;
+      }
+      ok(sawEmpty, 'a 5% category reports an empty drop list on most kills (the No-Loot case)');
+      ok(sawFilled, '...and a populated one when it does drop');
+      // floatKillLoot must never throw on either shape (it no-ops without a live arena/float layer).
+      FF.floatKillLoot([]);
+      FF.floatKillLoot([{ qty:2, name:'Test Item' }]);
+      ok(true, 'floatKillLoot handles both the empty and populated cases');
+    } finally { S.inventory = saveInv; }
+  });
+
   // ---- Kin-sworn loot: drop Inscription Scrolls at 5% (no more equipment) ------------------------
   suite('loot: kinsworn drop inscription scrolls', function(){
     var fake = { category:'kinsworn', tierIndex:5, element:'water', name:'Test Kinsman' };
