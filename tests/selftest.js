@@ -11434,7 +11434,7 @@
     near(FF.KN_PACE_PCT, 0.12, 'Order of Pace: +12% attack speed');
     near(FF.KN_BLOOD_PCT, 0.05, 'Order of Blood: 5% lifesteal');
     eq(FF.KN_DECREE_EVERY, 6, 'a Decree every 6th swing');
-    near(FF.KN_DECREE_PCT, 0.35, 'a Decree deals 35% of the recent average hit per Banner');
+    near(FF.KN_DECREE_PCT, 0.25, 'a Decree deals 25% of the recent average hit per Banner');
 
     // Raise the Banner (Lv1): pure-state reads; the Order of Pace is a threshold at 6, never a ramp.
     var s0 = base(); s0.xp.knight = FF.xpFloorForLevel(85); s0.knightStacks = 0;
@@ -11513,7 +11513,8 @@
         Math.random = function(){ return 0.999; }; // the Decree does not crit
         var hp0 = s.activity.monsterHp;
         FF.knDecreeOnSwing(s.activity);
-        eq(hp0 - s.activity.monsterHp, 3500, 'the Decree: 10 Banner x 35% x 1000 = 3500');
+        var _expDecree = Math.round(10 * FF.KN_DECREE_PCT * 1000);
+        eq(hp0 - s.activity.monsterHp, _expDecree, 'the Decree: 10 Banner x KN_DECREE_PCT x 1000 banked');
         eq(s.knSwing, 0, 'the Decree resets the swing count');
         // Heavy Standard (D3 2pc) stuns + Trample (D3 full) surges — via real D3 set pieces.
         s.uniqueItems = { w1:{set:'knight',setLayer:'d3'}, w2:{set:'knight',setLayer:'d3'}, w3:{set:'knight',setLayer:'d3'}, w4:{set:'knight',setLayer:'d3'} };
@@ -11540,7 +11541,7 @@
         Math.random = function(){ return 0.999; };
         var hp1 = s.activity.monsterHp;
         FF.knDecreeOnSwing(s.activity);
-        eq(hp1 - s.activity.monsterHp, 7000, 'Drakelance: the Decree strikes twice (2 x 3500)');
+        eq(hp1 - s.activity.monsterHp, 2 * _expDecree, 'Drakelance: the Decree strikes twice');
         s.uniqueItems = {}; s.equippedMainhandUid = null;
         // The Banner PERSISTS across foes: defeatMonster must not clear it.
         s.knightStacks = 7; var _mon = FF.MONSTERS.filter(function(m){ return m.id === s.activity.monsterId; })[0];

@@ -108,6 +108,17 @@ Gloomstorm ~90B / Stormwyrm ~85B / Stormbrand ~71B (set D4 Galvanic/Stormwyrm's 
 ward fixed to Stormscale — Stormcoil/Voltveil/Stormveil are reflect/hit-taken keyed, dead
 on the dummy). Stormlord runs are the NOISIEST recorded (±25% same-config: 91-128B at one
 setting — crit-bolt and Galvanize ramp timing); always average 2-3 runs before tuning.
+**Knight** (90s — the 6s claymore two-hander; v0.0.63.1, the FIRST class won by its **D2**
+set layer: War Council's "standing Orders 50% stronger" beat every other layer by ~35% in
+the A/B, because the Warlord's whole kit routes through the three Orders — a set that scales
+the Orders scales everything. KN_DECREE_PCT is the single knob (Decree = Banner x pct x
+recent-hit EMA); start 35% read 70-116B, 22% read 62-76B, final **25%**) Drakelance ~88B
+(2-run mean 86.5/90.0) / Highbanner ~89B / Warbringer ~83B / Breachblade ~72B (set D2 War
+Council, cloak Ruin). No new chassis risk — plain physical two-hander, like the Berserker's
+warhammer. Sim-dead on the dummy: Rally (needs hits taken), Shieldwall (defense), Under One
+Banner (party/familiars) — the sim measures the Steel/Pace/Decree core, which is where the
+knob lives anyway. The Banner never lowers, so runs ramp once and hold (quieter than the
+Stormlord's ±25%).
 Templar sim notes: BUILDS needs offhandWard; **measurement window matters** — mastery/
 proficiency train during the run, so 90s runs read ~35% above 60s runs on identical code;
 always compare a class against ceilings recorded at the SAME window (Berserker 82B @90s is
