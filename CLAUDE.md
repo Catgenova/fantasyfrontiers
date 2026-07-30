@@ -221,6 +221,27 @@ ramp-speed legendaries (Gravewrath) measure at their floor when the ledger is pr
 Slow-swing classes: use SIM_MS=90000. The dummy HP pool is 1e15 with refill at 1e14 —
 single ceiling hits exceed 1e12, which saturated the first Berserker run with kill resets.
 
+**DOT CHASSIS (fixed game-wide in v0.0.68.0).** Every damage-over-time in the game used to tick for a
+fraction of `combatLevelEquivalent()` — a SUM OF PROFICIENCY LEVELS, ~600 at max — while BiS hits land at
+~1e11. A fully-stacked Burn dealt roughly **150 damage/sec**: eight to nine orders of magnitude too small to
+matter. Weapon Coatings, a whole crafting line, fed a mechanic that was mathematically invisible. Found while
+reworking the Reaver (whose Bleed had it); an audit showed it hit EIGHT sites — Decay, toxin, coating,
+Rotshell, Pyromancer Burn, Frostwarden Frostbite, Samurai and Ranger Bleeds. Only the Reaper's Rot and the
+Reaver's Bleed were correct, both because their reworks re-based them. Everything now reads `dotBase(st)` =
+the fight's recent-hit EMA (`act.dotHitAvg`, banked on every landed main-hand hit, UNGATED by class because
+Decay/poison are consumed by far more classes than the one worn), with a fallback to the old level figure so
+a DoT applied before your first hit still does something. Coefficients were recalibrated BY ROLE, not 1:1:
+incidental/universal channels scaled down hard (Decay 0.03 -> **0.006**, i.e. ~6% of a hit/sec at its 10-stack
+cap, because ~20 sources apply it onto already-banded classes; toxin t20 0.10 -> 0.03; coating t20 0.14 ->
+0.045; Rotshell 0.15 -> 0.03), while identity channels kept their pct on the corrected base (Burn, Frostbite,
+Samurai/Ranger Bleeds) since their owning classes are un-reworked and get banded at their reworks.
+**Consequence to remember: Pyromancer, Plaguebearer, Ranger, Frostwarden and Samurai are now materially
+stronger and NOT banded** — band them at their reworks. Verified no blowout on an already-banded class:
+Herald + Tombshatter (its Curse+Decay were dead, which is exactly why CLAUDE.md called it "the utility mace"
+and why it read lowest) went ~49B -> **61.2B**, lifting the Herald's runt mace to the middle of its ~60B tank
+band rather than out of it. When adding any NEW DoT, scale it off `dotBase` and size it by role — never off
+`combatLevelEquivalent`, and never 1:1 from an old coefficient.
+
 **TIER WARNING (v0.0.64.9): every recorded ceiling above was measured with a ONE-BELOW-BiS weapon.**
 Melee weapons + shields shipped with `tierCount:20` (top `t19`) while bows/wands/wards/scepter/staff had
 21 (top `t20`) — the ticket-0116 off-kilter. Melee/shields are now 21 tiers too (top `t20`, Tungsten), and
