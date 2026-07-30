@@ -3948,7 +3948,7 @@
     eq(FF.pyromancerHeatHazeDodge(stFor('pyromancer',40)), 0, 'Heat Haze inactive below Lv60');
     eq(FF.pyromancerKindlingCritDmg(pyro), 0, 'Kindling Crits retired');
     // The wand chassis knob: the SECOND class on the x49 element-gear stack.
-    near(FF.PY_SWING_MULT, 0.11, 'the wand channels its raw swings (THE band knob)');
+    near(FF.PY_SWING_MULT, 0.073, 'the wand channels its raw swings (THE band knob)');
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'pyromancerIgnite'; }), 'the Ignite channel is a named PLAYER_DMG_MODS row');
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'pyromancerBlaze'; }), 'and the Blaze multiplier is its own row');
     // Sharpshooter rework: Eagle Eye (Lv1) / Pinpoint (Lv20) / Marksman's Focus (Lv40) / Armor-Splitter (Lv60) / Sniper's Patience (Lv80).
