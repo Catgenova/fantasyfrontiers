@@ -10307,6 +10307,14 @@
       FF.setOverlayHtml(host, '', '');
       eq(host.innerHTML, '', 'clearing an overlay goes through the same guard');
       eq(FF.setOverlayHtml(null, 'x'), false, 'a missing element is a safe no-op');
+      // HARDENING: if a close path clears the DOM directly (bypassing the guard), the memo would be stale
+      // and an identical re-open would be skipped -- leaving an empty modal. The child-count sanity check
+      // must force the write instead. This is a real pattern in the codebase (the death report did it).
+      FF.setOverlayHtml(host, '<div class="card">gamma</div>', 'ov');
+      host.innerHTML = '';                                    // simulate a bypassing close
+      var reopened = FF.setOverlayHtml(host, '<div class="card">gamma</div>', 'ov');
+      eq(reopened, true, 'an identical re-open after a direct clear still writes');
+      ok(/gamma/.test(host.innerHTML), '...so the popup is actually populated, not blank');
     } finally { if(host.parentNode) host.parentNode.removeChild(host); }
   });
 

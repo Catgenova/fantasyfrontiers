@@ -16404,7 +16404,7 @@
   function renderDeathReportModal(){
     var existing = document.getElementById('deathReportOverlay');
     var r = state.deathReport;
-    if(!r){ if(existing){ existing.style.display='none'; existing.innerHTML=''; } return; }
+    if(!r){ if(existing){ existing.style.display='none'; setOverlayHtml(existing, ''); } return; }
     var ov = existing;
     if(!ov){ ov = document.createElement('div'); ov.id='deathReportOverlay'; ov.className='familiar-popup-overlay'; ov.style.zIndex='10007'; document.getElementById('app').appendChild(ov); }
     var html = '<div class="skill-info-card" style="max-width:500px;text-align:left">';
@@ -16436,7 +16436,7 @@
     html += '<button class="action-btn" data-action="closeDeathReport" style="margin-top:14px">Close</button>';
     html += '</div>';
     ov.style.display = 'flex';
-    ov.innerHTML = html;
+    setOverlayHtml(ov, html);
   }
   // ---- "What does this foe actually hit ME for?" ------------------------------------------------
   // The enemy cards used to print the foe's RAW atkMin-atkMax, which is not what a player experiences:
@@ -22765,9 +22765,8 @@
   function renderTowerPreview(){
     var ov = document.getElementById('towerPreviewOverlay'); if(!ov) return;
     var en = towerPreviewEntrance;
-    if(!en || !isTowerEntrance(en)){ ov.className = ''; ov.innerHTML = ''; return; }
-    ov.className = 'familiar-popup-overlay';
-    ov.innerHTML = towerPreviewCardHtml(en);
+    if(!en || !isTowerEntrance(en)){ setOverlayHtml(ov, '', ''); return; }
+    setOverlayHtml(ov, towerPreviewCardHtml(en), 'familiar-popup-overlay');
   }
   // Pure builder for the foe-preview modal card (offense/defense/vs-you + "Damage to You"), so it can be
   // unit-tested without the DOM. Mirrors the Enemies-tab card, plus a detailed breakdown and Enter/Cancel.
@@ -23820,12 +23819,17 @@
   function setOverlayHtml(el, html, cls){
     if(!el) return false;
     if(cls !== undefined && el.className !== cls) el.className = cls;
-    if(el._ffHtml === html) return false;
-    var _prevCard = el.firstElementChild;
-    var _cardTop = _prevCard ? _prevCard.scrollTop : 0, _ovTop = el.scrollTop;
+    var _sane = html ? el.childElementCount > 0 : el.childElementCount === 0; // did someone bypass us?
+    if(el._ffHtml === html && _sane) return false;
+    // Markup really changed (or the DOM was clobbered elsewhere): carry the scroll offsets across the rebuild. Positions are keyed by index
+    // in the flat descendant list, which is stable for the usual case (a counter or label changed inside
+    // an otherwise identical tree) and simply finds nothing to restore when the shape really differs.
+    var _prev = el.querySelectorAll('*'), _tops = null;
+    for(var _i = 0; _i < _prev.length; _i++){ if(_prev[_i].scrollTop > 0){ (_tops = _tops || {})[_i] = _prev[_i].scrollTop; } }
+    var _ovTop = el.scrollTop;
     el._ffHtml = html;
     el.innerHTML = html;
-    if(_cardTop){ var _nextCard = el.firstElementChild; if(_nextCard) _nextCard.scrollTop = _cardTop; }
+    if(_tops){ var _next = el.querySelectorAll('*'); for(var _k in _tops){ if(_next[_k]) _next[_k].scrollTop = _tops[_k]; } }
     if(_ovTop) el.scrollTop = _ovTop;
     return true;
   }
@@ -23907,7 +23911,7 @@
     var d = dungeonResultPopup;
     var ov = existing;
     if(!ov){ ov = document.createElement('div'); ov.id = 'dungeonResultOverlay'; ov.className = 'familiar-popup-overlay'; ov.style.zIndex = '10006'; ov.setAttribute('data-action','closeDungeonResult'); document.getElementById('app').appendChild(ov); }
-    ov.innerHTML = dungeonResultPopupHtml(d.category, d.drops);
+    setOverlayHtml(ov, dungeonResultPopupHtml(d.category, d.drops));
   }
   // Enhancement result popup: celebrates a successful +N or mourns a shattered item. Dismissed by tap.
   var enhancePopupData = null; // { ok:bool, name, icon, enhance }
@@ -23944,7 +23948,7 @@
       html += '<button class="action-btn stop" data-action="closeEnhancePopup" style="margin-top:14px">Ouch</button>';
     }
     html += '</div>';
-    ov.innerHTML = html;
+    setOverlayHtml(ov, html);
   }
   // Bulk confirmation for "Transcend all": one modal covering every maxed familiar at once.
   function renderTranscendAllModal(existing){
@@ -23997,7 +24001,7 @@
     html += '<button class="action-btn" data-action="transcendConfirm" data-skill="'+id+'" style="width:auto;flex:0 0 auto;">Transcend</button>';
     html += '<button class="action-btn stop" data-action="transcendCancel" style="width:auto;flex:0 0 auto;">Cancel</button>';
     html += '</div></div>';
-    ov.innerHTML = html;
+    setOverlayHtml(ov, html);
   }
   // XP of any trackable skill -- physiques live in state.physique, everything else in state.xp.
   function anySkillXpVal(id){ return PHYSIQUE_SKILL_MAP[id] ? ((state.physique && state.physique[id]) || 0) : ((state.xp && state.xp[id]) || 0); }
@@ -24031,6 +24035,7 @@
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
     { v:'0.0.64', date:'Jul 30', heading:'QoL: clearer kills, and scrollable popups that stay put', items:[
+      'Every popup in the game now keeps its scroll position across the loop\u2019s re-renders \u2014 the inventory panel, item and unique detail cards, the Mastercraft result, Transcend, Enhance, dungeon results, the death report, player profiles, the Peon pickers, chat moderation and the Terms panel, on top of the four in the report.',
       'Fixed (ticket-0108, thanks Valuren): the Track a Skill menu and the offline \u201cWhile You Were Away\u201d / loot / familiar summaries kicked you back to the top the moment you scrolled, on desktop and mobile alike. The game loop re-renders several times a second and each pass was rebuilding those popups from scratch; now an unchanged popup is left completely alone, and a popup that genuinely changes keeps your scroll position across the update.',
       'Defeating an enemy now fades the enemy portrait out and the next foe in, even when the next one is the same monster. A grind chain used to be a completely static picture \u2014 now every kill reads as \u201cthat one died, here comes another\u201d.',
       'Defeating an enemy now floats what it dropped over your own character \u2014 "+1 Rabbit Corpse", "+2 Glyph of Fire" and so on \u2014 at 1.5x the normal floating-text size, so you can read a grind chain at a glance without watching the log.',
@@ -26306,8 +26311,7 @@
       if(task.candleId) html += '<button class="mini-btn" data-action="peonPickCandle" data-item="" style="margin-top:8px;">Put it out</button>';
     }
     html += '<div style="margin-top:12px;"><button class="action-btn" data-action="peonClosePicker">Close</button></div>';
-    ov.className = 'familiar-popup-overlay';
-    ov.innerHTML = html;
+    setOverlayHtml(ov, html, 'familiar-popup-overlay');
   }
   function renderPeonBarrelPicker(ov){
     var scope = peonPicker.scope, task = peonTaskAt(scope, peonPicker.x, peonPicker.y);
@@ -26327,12 +26331,11 @@
       if(task.barrelId) html += '<button class="mini-btn" data-action="peonPickBarrel" data-item="" style="margin-top:8px;">Remove barrel</button>';
     }
     html += '<div style="margin-top:12px;"><button class="action-btn" data-action="peonClosePicker">Close</button></div>';
-    ov.className = 'familiar-popup-overlay';
-    ov.innerHTML = html;
+    setOverlayHtml(ov, html, 'familiar-popup-overlay');
   }
   function renderPeonPicker(){
     var ov = document.getElementById('peonPickerOverlay'); if(!ov) return;
-    if(!peonPicker.open){ ov.className=''; ov.innerHTML=''; return; }
+    if(!peonPicker.open){ setOverlayHtml(ov, '', ''); return; }
     if(peonPicker.candle){ renderPeonCandlePicker(ov); return; }
     if(peonPicker.barrel){ renderPeonBarrelPicker(ov); return; }
     var scope = peonPicker.scope, grid = peonGridFor(scope) || [];
@@ -26379,8 +26382,7 @@
       }
     }
     html += '<div style="margin-top:12px;"><button class="action-btn" data-action="peonClosePicker">Close</button></div>';
-    ov.className = 'familiar-popup-overlay';
-    ov.innerHTML = html;
+    setOverlayHtml(ov, html, 'familiar-popup-overlay');
   }
   var ESTATE_PAVING_MATERIAL_COLORS = {
     'Limestone': [206,201,182],
@@ -28764,7 +28766,7 @@
   function renderChatModModal(){
     var ov = document.getElementById('chatModOverlay'); if(!ov) return;
     var t = chatModTarget;
-    if(!t || !t.uid){ ov.className = ''; ov.innerHTML = ''; return; }
+    if(!t || !t.uid){ setOverlayHtml(ov, '', ''); return; }
     var uid = t.uid, name = t.name || 'this player';
     var targetRole = chatRoleOf(uid), _title = titleName(chatTitles[uid]);
     var html = '<div class="familiar-popup-card" style="max-width:340px;text-align:left;">';
@@ -28804,8 +28806,7 @@
     }
     html += '<button class="action-btn" data-action="chatModClose" style="margin-top:14px">Close</button>';
     html += '</div>';
-    ov.className = 'familiar-popup-overlay';
-    ov.innerHTML = html;
+    setOverlayHtml(ov, html, 'familiar-popup-overlay');
   }
   // ---- Public profile modal (opened from the chat player menu). Fetches fresh leaderboard data by uid so
   // it reflects the player's latest published stats, and reuses the leaderboard profile card body.
@@ -28834,7 +28835,7 @@
   function renderPlayerProfileModal(){
     var ov = document.getElementById('playerProfileOverlay'); if(!ov) return;
     var t = playerProfileTarget;
-    if(!t){ ov.className = ''; ov.innerHTML = ''; return; }
+    if(!t){ setOverlayHtml(ov, '', ''); return; }
     var html = '<div class="familiar-popup-card" style="max-width:440px;text-align:left;max-height:88dvh;overflow:auto;">';
     if(t.loading){
       html += '<div class="familiar-popup-title" style="text-align:center;">' + escapeHtml(t.name||'Profile') + '</div><div class="empty-note" style="text-align:center;">Loading profile…</div>';
@@ -28847,8 +28848,7 @@
     }
     html += '<button class="action-btn" data-action="closePlayerProfile" style="margin-top:14px">Close</button>';
     html += '</div>';
-    ov.className = 'familiar-popup-overlay';
-    ov.innerHTML = html;
+    setOverlayHtml(ov, html, 'familiar-popup-overlay');
   }
   var chatUnreadCount = 0;   // count of messages that arrived while chat wasn't on-screen -> flashes the mobile FAB + shows a count
   // Chat is on-screen when the full-screen overlay is up, the Chat category page is open, or (on desktop)
@@ -29429,17 +29429,17 @@
   function authDocMeta(which){ return which==='privacy' ? { title:'Privacy Policy', html:PRIVACY_HTML } : { title:'Game Rules', html:GAME_RULES_HTML }; }
   function renderTermsModal(){
     var ov = document.getElementById('termsOverlay');
-    if(!authDocOpen){ if(ov){ ov.className = ''; ov.innerHTML = ''; } return; }
+    if(!authDocOpen){ if(ov){ setOverlayHtml(ov, '', ''); } return; }
     if(!ov){ ov = document.createElement('div'); ov.id = 'termsOverlay'; document.getElementById('app').appendChild(ov); }
     var m = authDocMeta(authDocOpen);
-    ov.className = 'familiar-popup-overlay';
-    ov.innerHTML = '<div class="familiar-popup-card" style="max-width:640px;text-align:left;max-height:84vh;display:flex;flex-direction:column;">'
+    var _termsHtml = '<div class="familiar-popup-card" style="max-width:640px;text-align:left;max-height:84vh;display:flex;flex-direction:column;">'
       + '<div class="familiar-popup-title">' + m.title + '</div>'
       + '<div style="overflow:auto;font-size:12.5px;line-height:1.55;color:var(--text-dim);padding-right:6px;">' + m.html + '</div>'
       + '<div style="display:flex;gap:8px;margin-top:12px;flex-shrink:0;">'
         + '<button class="action-btn" data-action="acceptDoc" data-doc="' + authDocOpen + '" style="flex:1;">I Have Read &amp; Accept</button>'
         + '<button class="action-btn stop" data-action="closeDoc" style="width:auto;flex:0 0 auto;">Close</button>'
       + '</div></div>';
+    setOverlayHtml(ov, _termsHtml, 'familiar-popup-overlay');
   }
   function renderAuthPanel(){
     var isReg = authMode==='register';
@@ -32801,7 +32801,7 @@
     var isPhysique = !!physMeta && !SKILL_INFO[openId];
     if(!openId || (!SKILL_INFO[openId] && !isPhysique)){
       overlay.style.display = 'none';
-      overlay.innerHTML = '';
+      setOverlayHtml(overlay, '');
       return;
     }
     overlay.style.display = 'flex';
@@ -32825,9 +32825,9 @@
       body += '<div class="skill-info-section"><div class="skill-info-section-label">Physique trained by these actions</div><div class="skill-info-chips">'+renderPhysiqueChipList(physiqueTrainedBySkill(openId))+'</div></div>';
       body += '<div class="skill-info-section"><div class="skill-info-section-label">Physique that benefits these actions</div><div class="skill-info-chips">'+renderPhysiqueChipList(physiqueBenefitsForSkill(openId))+'</div></div>';
     }
-    overlay.innerHTML = '<div class="skill-info-card">'+body+
+    setOverlayHtml(overlay, '<div class="skill-info-card">'+body+
       '<button class="action-btn" data-action="closeSkillInfo">Close</button>'+
-      '</div>';
+      '</div>');
   }
   GATHER_SKILL_IDS.forEach(function(id){ SKILL_LABELS[id] = GATHERING_SKILLS[id].label; });
   CRAFT_SKILL_IDS.forEach(function(id){ SKILL_LABELS[id] = CRAFTING_SKILLS[id].label; });
@@ -33209,7 +33209,7 @@
       });
     }
     var _invEl = document.getElementById('inventoryPanel'); if(!_invEl) return; // only present on the Inventory view
-    _invEl.innerHTML = html;
+    setOverlayHtml(_invEl, html);
 
     if(hadFocus){
       var newInput = document.getElementById('invSearchInput');
@@ -33226,7 +33226,7 @@
     // Close automatically if we left the Inventory view or the stack is gone (e.g. sold out).
     if(!id || currentCategory!=='inventory' || (state.inventory[id]||0) <= 0 || !ALL_SELLABLE[id]){
       if(inventoryDetailItem && (!id || (state.inventory[id]||0) <= 0)) inventoryDetailItem = null;
-      overlay.style.display = 'none'; overlay.innerHTML = ''; return;
+      overlay.style.display = 'none'; setOverlayHtml(overlay, ''); return;
     }
     var item = ALL_SELLABLE[id];
     var qty = state.inventory[id]||0;
@@ -33261,20 +33261,20 @@
     }
 
     overlay.style.display = 'flex';
-    overlay.innerHTML = '<div class="skill-info-card">'+body+
+    setOverlayHtml(overlay, '<div class="skill-info-card">'+body+
       '<div class="inv-detail-actions">'+acts+'</div>'+
       '<button class="action-btn" data-action="closeInvDetail" style="margin-top:14px">Close</button>'+
-      '</div>';
+      '</div>');
   }
   // Popup for a chat item link (shows the shared unique's stats). Reuses the skill-info overlay chrome.
   var chatItemLinkView = null; // base64 payload of the item currently being viewed, or null
   function renderItemLinkPopup(){
     var overlay = document.getElementById('itemLinkOverlay'); if(!overlay) return;
-    if(!chatItemLinkView){ overlay.style.display = 'none'; overlay.innerHTML = ''; return; }
+    if(!chatItemLinkView){ overlay.style.display = 'none'; setOverlayHtml(overlay, ''); return; }
     var card = renderLinkedItemCard(chatItemLinkView);
-    if(!card){ overlay.style.display = 'none'; overlay.innerHTML = ''; chatItemLinkView = null; return; }
+    if(!card){ overlay.style.display = 'none'; setOverlayHtml(overlay, ''); chatItemLinkView = null; return; }
     overlay.style.display = 'flex';
-    overlay.innerHTML = '<div class="skill-info-card">'+card+'<button class="action-btn" data-action="closeItemLink" style="margin-top:14px">Close</button></div>';
+    setOverlayHtml(overlay, '<div class="skill-info-card">'+card+'<button class="action-btn" data-action="closeItemLink" style="margin-top:14px">Close</button></div>');
   }
   // Detail popup for one of YOUR unique items (opened from the Inventory "Unique" bucket): shows the
   // stat card plus quick actions -- equip/unequip, jump to the Improvement tab, or link it in chat.
@@ -33282,18 +33282,18 @@
   function renderUniqueDetailOverlay(){
     var overlay = document.getElementById('uniqueDetailOverlay'); if(!overlay) return;
     var u = uniqueDetailUid && state.uniqueItems && state.uniqueItems[uniqueDetailUid];
-    if(!u){ overlay.style.display = 'none'; overlay.innerHTML = ''; uniqueDetailUid = null; return; }
+    if(!u){ overlay.style.display = 'none'; setOverlayHtml(overlay, ''); uniqueDetailUid = null; return; }
     var card = renderLinkedItemCard(encodeItemLink(u));
     var eq = uniqueIsEquipped(u.uid);
     overlay.style.display = 'flex';
-    overlay.innerHTML = '<div class="skill-info-card">'+card
+    setOverlayHtml(overlay, '<div class="skill-info-card">'+card
       + '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px;">'
       + '<button class="mini-btn" data-action="'+(eq?'improveUnequip':'improveEquip')+'" data-uid="'+u.uid+'">'+(eq?'Unequip':(uniqueOffhandClawBtn(u)?'Equip main hand':'Equip'))+'</button>'
       + uniqueOffhandClawBtn(u)
       + '<button class="mini-btn" data-action="uniqueManage" data-uid="'+u.uid+'">Manage</button>'
       + '<button class="mini-btn" data-action="improveLinkChat" data-uid="'+u.uid+'">🔗 Link in chat</button>'
       + '</div>'
-      + '<button class="action-btn" data-action="closeUniqueDetail" style="margin-top:12px">Close</button></div>';
+      + '<button class="action-btn" data-action="closeUniqueDetail" style="margin-top:12px">Close</button></div>');
   }
 
   // Result modal shown right after a Mastercraft: what you forged + its full stats. Set by craftMastercraft
@@ -33303,11 +33303,11 @@
   function renderMastercraftResultOverlay(){
     var overlay = document.getElementById('mastercraftResultOverlay'); if(!overlay) return;
     var r = mastercraftResult;
-    if(!r){ overlay.style.display = 'none'; overlay.innerHTML = ''; return; }
+    if(!r){ overlay.style.display = 'none'; setOverlayHtml(overlay, ''); return; }
     var body = '', actions = '', where = '';
     if(r.uid){
       var u = state.uniqueItems && state.uniqueItems[r.uid];
-      if(!u){ overlay.style.display = 'none'; overlay.innerHTML = ''; mastercraftResult = null; return; }
+      if(!u){ overlay.style.display = 'none'; setOverlayHtml(overlay, ''); mastercraftResult = null; return; }
       body = uniqueCardBody(u);
       var eq = uniqueIsEquipped(u.uid), lock = eq ? null : uniqueEquipLock(u);
       if(eq) actions += '<button class="mini-btn stop" data-action="improveUnequip" data-uid="'+u.uid+'">Unequip</button>';
@@ -33321,14 +33321,14 @@
         + '<div class="skill-info-title">'+escapeHtml(r.name||it.name||r.itemId)+'</div>'
         + (r.statLine ? '<div class="inv-detail-meta">'+r.statLine+'</div>' : '');
       where = 'Added to your <b>Inventory</b> bag.';
-    } else { overlay.style.display = 'none'; overlay.innerHTML = ''; mastercraftResult = null; return; }
+    } else { overlay.style.display = 'none'; setOverlayHtml(overlay, ''); mastercraftResult = null; return; }
     overlay.style.display = 'flex';
-    overlay.innerHTML = '<div class="skill-info-card mc-result-card">'
+    setOverlayHtml(overlay, '<div class="skill-info-card mc-result-card">'
       + '<div class="mc-result-banner">'+svgIcon('trophy','#e6c24a')+' Mastercraft!</div>'
       + body
       + '<div class="mc-result-where">'+where+'</div>'
       + '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:10px;">'+actions+'</div>'
-      + '<button class="action-btn" data-action="closeMastercraftResult" style="margin-top:12px">Close</button></div>';
+      + '<button class="action-btn" data-action="closeMastercraftResult" style="margin-top:12px">Close</button></div>');
   }
 
   var lastRenderedLogVersion = -1;
@@ -35711,7 +35711,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.64.5';
+  var GAME_VERSION = '0.0.64.6';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
