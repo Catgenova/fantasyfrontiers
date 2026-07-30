@@ -7563,7 +7563,7 @@
 
     // Treasure Hunter Blessed Arsenal (2pc) + Wider Appraisal (full): the D1 layer is the charge-rate layer.
     eq(FF.thChargeNeed(setSt('treasureHunter', 2)), FF.TH_CHARGE_NEED - FF.TH_CHARGE_NEED_D1, 'Blessed Arsenal (2pc): the Grave Charge needs 2 fewer hits');
-    eq(FF.thChargeNeed(setSt('treasureHunter', 1)), FF.TH_CHARGE_NEED, '1 piece -> the base 8-hit charge');
+    eq(FF.thChargeNeed(setSt('treasureHunter', 1)), FF.TH_CHARGE_NEED, '1 piece -> the base 12-hit charge');
     near(FF.thGoldFindMult(setSt('treasureHunter', 4)), 1.25, 'Wider Appraisal (full): +25% Gold Find');
     near(FF.thGoldFindMult(setSt('treasureHunter', 2)), 1, 'no Wider Appraisal below the full set');
     near(FF.legTreasureMult(setSt('treasureHunter', 4)), 1, 'the Treasure Hunter D1 set no longer adds Treasure Find');
@@ -12315,9 +12315,13 @@
     // retired: at best-in-slot every equipped item is Fantastic, so all three were flat always-on multipliers
     // with no gameplay. Tithe and Golden Devotion retired too -- Faith economy where the combat kit belongs.
     eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Grave Charge,Grave Dowsing,Gravecoin,Keeper\u2019s Rites,Endless Vigil', 'Reliquary perk names');
-    eq(FF.TH_CHARGE_NEED, 8, 'the Grave Charge fills in 8 landed hits');
-    near(FF.TH_STRIKE_MULT, 2.0, 'a Grave Strike is 2x the recent average hit at relic tier 0');
-    near(FF.TH_STRIKE_TIER_PCT, 0.25, 'the Strike gains +25% per relic tier (THE tuning knob)');
+    eq(FF.TH_CHARGE_NEED, 12, 'the Grave Charge fills in 12 landed hits (a crit counts as two)');
+    near(FF.TH_STRIKE_MULT, 0.60, 'a Grave Strike is 0.6x the channelled average hit at relic tier 0');
+    near(FF.TH_STRIKE_TIER_PCT, 0.15, 'the Strike gains +15% per relic tier (a Lime relic is x2.4)');
+    // The swing channel: the t20 scimitar's raw swings alone measured ~78B, over the 50B band this class is
+    // tuned to, and raw weapon stats are never a balance lever -- so the class channels its own swings down.
+    near(FF.TH_SWING_MULT, 0.48, 'the Reliquary channels its raw swings to 48% (THE band knob)');
+    ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'treasureHunterDig'; }), 'the Dig channel is a named PLAYER_DMG_MODS row');
     near(FF.TH_DOWSE_CHANCE, 0.35, 'Grave Dowsing unearths a relic 35% of the time');
     near(FF.TH_DOWSE_CHANCE_D2, 0.70, 'Plunder (D2 full) doubles Grave Dowsing');
     eq(FF.TH_COIN_PER_TIER, 5, 'Gravecoin ceiling is 5 gold per foe tier');
@@ -12333,8 +12337,8 @@
 
     // Lv 1 Grave Charge: eight hits per Strike, seven with Grave Dowsing (Lv20).
     function leveled(lv){ var st = base(); st.xp.treasureHunter = FF.xpFloorForLevel(lv + 1); st.uniqueItems = {}; return st; }
-    eq(FF.thChargeNeed(base()), FF.TH_CHARGE_NEED, 'Lv1: eight hits per Grave Strike');
-    eq(FF.thChargeNeed(leveled(20)), FF.TH_CHARGE_NEED_L20, 'Grave Dowsing (Lv20): one fewer hit');
+    eq(FF.thChargeNeed(base()), FF.TH_CHARGE_NEED, 'Lv1: twelve hits per Grave Strike');
+    eq(FF.thChargeNeed(leveled(20)), FF.TH_CHARGE_NEED_L20, 'Grave Dowsing (Lv20): two fewer hits');
 
     // The relic pack: the engine loads the highest tier you hold, and NEVER a locked one -- locks are the
     // player's control valve for banking relics as Faith, exactly as the auto-sacrifice top-up treats them.
@@ -12351,8 +12355,9 @@
 
     // The Strike scales off the recent-hit EMA and the relic's tier, and nothing else -- no raw weapon stat.
     var gs = base(); gs.thHitAvg = 1000;
-    near(FF.thGraveStrikeDamage(0, gs), 2000, 'a Sand relic (t0) Strike = 2x the recent average hit');
-    near(FF.thGraveStrikeDamage(20, gs), 1000 * FF.TH_STRIKE_MULT * (1 + FF.TH_STRIKE_TIER_PCT * 20), 'a Lime relic (t20) Strike = 12x');
+    near(FF.thGraveStrikeDamage(0, gs), 1000 * FF.TH_STRIKE_MULT, 'a Sand relic (t0) Strike = 0.6x the channelled average hit');
+    near(FF.thGraveStrikeDamage(20, gs), 1000 * FF.TH_STRIKE_MULT * (1 + FF.TH_STRIKE_TIER_PCT * 20), 'a Lime relic (t20) Strike = 4x a Sand one');
+    ok(FF.thGraveStrikeDamage(20, gs) / FF.thGraveStrikeDamage(0, gs) > 3.9, 'the relic tier ladder is a real 4x spread');
     eq(FF.thGraveStrikeDamage(20, base()), 0, 'with no banked hits there is nothing to scale');
 
     // Lv 40 Gravecoin: an RNG-HEAVY roll (the random is cubed) with a ceiling of 5g per foe tier.

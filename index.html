@@ -5775,8 +5775,8 @@
         { icon:svgIcon('gauntlet',CLASS_CLOTH_COLOR),   label:'Cloth Gloves', met:function(st){ return clothPieceEquipped(st,'gauntlets'); } }
       ],
       passives:[
-        { level:1,  name:'Grave Charge',    desc:'Landed hits charge the dig (a Critical Hit counts as two). A full charge spends your highest <b>unlocked</b> Broken Relic to fire a <b>Grave Strike</b> scaling with that relic’s tier. Kills unearth relics — while you are away, too.' },
-        { level:20, name:'Grave Dowsing',   desc:'A Grave Strike digs as it lands: a <b>35%</b> chance to unearth a Broken Relic of the foe’s tier, and the charge needs one fewer hit.' },
+        { level:1,  name:'Grave Charge',    desc:'Landed hits charge the dig (a Critical Hit counts as two). A full charge spends your highest <b>unlocked</b> Broken Relic to fire a <b>Grave Strike</b> scaling with that relic’s tier — a Lime relic hits four times as hard as a Sand one. With an empty pack the charge digs a relic up instead. You are digging rather than duelling, so your raw swings land for less while this is active. Kills unearth relics — while you are away, too.' },
+        { level:20, name:'Grave Dowsing',   desc:'A Grave Strike digs as it lands: a <b>35%</b> chance to unearth a Broken Relic of the foe’s tier, and the charge needs two fewer hits.' },
         { level:40, name:'Gravecoin',       desc:'Every kill turns up loose coin — a heavily random roll with a ceiling of <b>5 gold per foe tier</b> (a Tier 20 foe can pay 100g), multiplied by your Gold Find. Pays while you are away.' },
         { level:60, name:'Keeper’s Rites', desc:'Every Grave Strike <b>Curses</b> the foe and stacks a <b>Keeper’s Mark</b>: <b>+4% damage</b> each, up to 5.' },
         { level:80, name:'Endless Vigil',   desc:'A spent relic is no longer destroyed — it <b>degrades one tier</b> and returns to your pack. A Grave Strike that lands the killing blow returns it at its <b>original tier</b>.' }
@@ -7061,7 +7061,7 @@
   //                           best UNLOCKED Broken Relic to fire a Grave Strike scaling with that relic's
   //                           TIER. Kills unearth relics (offline too), so the pack refills as you farm --
   //                           and a full charge with an EMPTY pack digs a relic up instead of firing.
-  //   Lv 20 Grave Dowsing  -- a Grave Strike digs up a relic of the foe's tier; the charge needs one less hit
+  //   Lv 20 Grave Dowsing  -- a Grave Strike digs up a relic of the foe's tier; the charge needs 2 fewer hits
   //   Lv 40 Gravecoin      -- kills turn up loose coin: an RNG-heavy roll, ceiling 5g per foe tier
   //   Lv 60 Keeper's Rites -- a Grave Strike Curses the foe and stacks a Keeper's Mark (+4% damage, cap 5)
   //   Lv 80 Endless Vigil  -- a spent relic DEGRADES one tier and returns instead of being destroyed; a
@@ -7070,11 +7070,18 @@
   // Warlord's Decree, the Bastion's Breach and the Stormlord's Bolts use. Relic TIER is the only thing that
   // scales it, so TH_STRIKE_TIER_PCT is the single tuning knob for the whole kit and no raw weapon stat is
   // ever a balance lever. There are 21 relic tiers (Sand -> Lime), which is the quality ladder players climb.
-  var TH_CHARGE_NEED = 8;              // hits per Grave Strike (a Critical Hit counts as two)
-  var TH_CHARGE_NEED_L20 = 7;          // Grave Dowsing (Lv20): one fewer hit
+  var TH_CHARGE_NEED = 12;             // hits per Grave Strike (a Critical Hit counts as two, so a BiS crit
+                                       // rate makes this ~6 swings -- a real event, not a per-swing rider)
+  var TH_CHARGE_NEED_L20 = 10;         // Grave Dowsing (Lv20): two fewer hits
   var TH_CHARGE_NEED_D1 = 2;           // Blessed Arsenal (D1 2pc): two fewer hits
-  var TH_STRIKE_MULT = 2.0;            // Grave Strike = this share of the recent average hit ...
-  var TH_STRIKE_TIER_PCT = 0.25;       // ... x (1 + this per relic tier). THE tuning knob (a t20 relic = x12)
+  // The Reliquary is DIGGING, not duelling: raw swings channel 70% less while the class is active, and the
+  // Grave Strike scales off the channelled recent-hit average -- so this one number drives the whole kit.
+  // Same chassis-correction pattern as TPL_LITANY_SWING_MULT (0.58) and TF_STORM_SWING_MULT (0.32): the t20
+  // scimitar's RAW swing DPS alone measured ~78B, above the owner's 50B target for this class, and per the
+  // owner rule a weapon's raw damage stats are never a balance lever -- so the correction lives here.
+  var TH_SWING_MULT = 0.48;            // THE band knob (whole-kit DPS is linear in it)
+  var TH_STRIKE_MULT = 0.60;           // Grave Strike = this share of the channelled average hit ...
+  var TH_STRIKE_TIER_PCT = 0.15;       // ... x (1 + this per relic tier): a Sand relic x0.6, a Lime relic x2.4
   var TH_DOWSE_CHANCE = 0.35;          // Grave Dowsing: odds a Strike unearths a relic of the foe's tier
   var TH_DOWSE_CHANCE_D2 = 0.70;       // Plunder (D2 full): doubled -- the sustain layer
   var TH_COIN_PER_TIER = 5;            // Gravecoin ceiling: 5g per foe tier (Tier 1 = 5g, Tier 20 = 100g)
@@ -7196,7 +7203,9 @@
     if(thHoardwallActive(st)) dmg *= LEG_HOARDWALL_STRIKE_MULT;                    // Hoardwall: a deep hoard
     var critCh = criticalEyeCritChance(st) + newClassCritChance(st);
     var isCrit = !offlineCapture && Math.random() < critCh;
-    if(isCrit) dmg *= (CRIT_DAMAGE_MULT + exploitationCritDamageBonus(st));
+    // A flat x2 on a crit, NOT the full crit multiplier: thHitAvg is already an average of post-crit hits, so
+    // rolling the whole multiplier again double-dipped crit (the Reaper's Rot ticks use the same flat x2).
+    if(isCrit) dmg *= 2;
     dmg = Math.round(dmg);
     var killed = false;
     if(dmg > 0 && st.activity === act){
@@ -15484,6 +15493,7 @@
     { name:'wandAttunement',        label:'Wand Attunement',    fn:function(c){ return c.isWandAttack ? elementDmgMult(state, c.weaponStyle.element) : 1; } }, // Elemental Attunement boosts a wand's element damage
     { name:'assassinVigor',         label:'Vigor',              fn:function(c){ return assassinVigorDmgMult(state); } },
     { name:'assassinVanish',        label:'Vanish',             fn:function(c){ return c.assassinVanish ? ASSASSIN_VANISH_MULT : 1; } },
+    { name:'treasureHunterDig',     label:'Dig',                fn:function(c){ return (!c.isBonus && treasureHunterBonus(1)) ? TH_SWING_MULT : 1; } },
     { name:'treasureHunter',        label:"Keeper's Mark",      fn:function(c){ return thDmgMult(state); } },
     { name:'frostwarden',           label:'Frostwarden',        fn:function(c){ return frostwardenDmgMult(); } },
     { name:'plaguebearerContagion', label:'Contagion',          fn:function(c){ return plaguebearerContagionMult(); } },
@@ -15883,8 +15893,10 @@
         thGraveChargeAdd(isCrit ? 2 : 1);
         // Goldgorge: gold earned this fight buys charges, so Gold Find becomes attack THROUGHPUT.
         if(legActive('goldgorge') && act){
+          // At most ONE charge per swing. Uncapped this was a runaway: a dragon's gold reward is thousands per
+          // crit-pilfer, which bought several charges a second and read 995B against a 449B field.
           var _ggSteps = Math.floor((act.goldEarned||0) / LEG_GOLDGORGE_PER_GOLD);
-          if(_ggSteps > (act.thGoldCharges||0)){ thGraveChargeAdd(_ggSteps - (act.thGoldCharges||0)); act.thGoldCharges = _ggSteps; }
+          if(_ggSteps > (act.thGoldCharges||0)){ thGraveChargeAdd(1); act.thGoldCharges = (act.thGoldCharges||0) + 1; }
         }
         thGraveStrikeFire(act, monster);
       }
@@ -24354,7 +24366,8 @@
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
     { v:'0.0.66', date:'Jul 30', heading:'Treasure Hunter rework: The Reliquary', items:[
-      'The Treasure Hunter is rebuilt around the item family the game never used. <b>Broken Relics are ammunition.</b> Landed hits charge a <b>Grave Charge</b> (a Critical Hit counts as two); when it fills, your highest <b>unlocked</b> Broken Relic is loaded and fired as a <b>Grave Strike</b> whose size is set by that relic’s TIER — a Sand relic hits modestly, a Lime relic hits like a cooldown. With an empty pack the charge holds at full and waits, so a dry spell never wastes progress.',
+      'The Treasure Hunter is rebuilt around the item family the game never used. <b>Broken Relics are ammunition.</b> Landed hits charge a <b>Grave Charge</b> (a Critical Hit counts as two); when it fills, your highest <b>unlocked</b> Broken Relic is loaded and fired as a <b>Grave Strike</b> whose size is set by that relic’s TIER — a Lime relic hits four times as hard as a Sand one. With an empty pack a full charge <b>digs a relic up instead of firing</b>, so the class can never dead-end: sell or lock every relic you own and it simply re-arms itself, paying a charge of tempo for the find.',
+      'Because the Reliquary is digging rather than duelling, its raw swings land for <b>less</b> while the class is active, and the Grave Strike scales off those channelled hits. That is deliberate: this class is tuned to sit <b>below</b> the pure damage classes and out-earn them instead.',
       'Relics come from two places. <b>Kills</b> unearth them on a curve that climbs with the foe’s tier — and unlike the old Relic Reaver drop, this now pays <b>while you are away</b>, because a farming class should farm offline. <b>Grave Dowsing</b> (Lv 20) has the Strike itself dig one up, so long single-target fights (bosses, tower floors, guild bosses) feed themselves instead of starving.',
       '<b>Locked relics are never spent.</b> Lock your best relics to bank them for Faith and the Strike simply loads the next tier down — the same lock the auto-sacrifice top-up already respects. While Treasure Hunter is your active class, auto-sacrifice also holds a small reserve back so a Faith top-up can no longer quietly strip your ammunition.',
       'New Lv 40 <b>Gravecoin</b>: every kill turns up loose coin from the dirt — a heavily random roll with a ceiling of <b>5 gold per foe tier</b> (a Tier 20 foe can pay 100g), multiplied by your Gold Find. Most kills are pocket change; a full-ceiling find is rare enough to notice.',
@@ -24364,6 +24377,7 @@
       '<b>Treasure Find on the Treasure Hunter set bonuses is now Gold Find.</b> The class trades general loot-quantity for a gold specialisation — Wider Appraisal +25%, Plunder +40%, Cursed Hoard +50% — and Gold Find now multiplies every combat gold source (Gravecoin, the Strike and Block scatters, Wyrm’s Greed). It deliberately does NOT touch vendor sales, market income or quest pay. Loot quantity still comes from the Pendant of the Hoard.',
       'Fixed: the <b>Signet of Plunder</b>’s Gold Find stat was never actually read anywhere in the gold path — the ring did nothing. It now feeds the new Gold Find multiplier. <b>Gravepilfer</b> was likewise never implemented at all; it now pays double Gravecoin and unearths a second relic off a Cursed or Decayed kill.',
       'All eight legendaries were rebuilt on the engine. <b>Cryptreaver</b> guarantees a relic on every kill and deepens the tier scaling; <b>Goldgorge</b> buys Grave Charges with gold earned; <b>Greedwyrm’s Claw</b> pays +1% damage per relic HELD (cap +60%), the counterweight to spending; <b>Luckshell</b> arms your next hit for +150% off a Strike; <b>Cofferguard</b> banks a per-Strike damage ramp; <b>Cryptguard</b> stuns and can refund a charge; <b>Hoardwall</b> rewards a hoard of <b>100+</b> relics with -25% damage taken and +25% Strikes. The four shields used to trigger only on Blocks — they now key off the Grave Strike, which you drive yourself.',
+      'Balance: the class is tuned to the <b>~50B</b> band — deliberately below the pure damage classes, since it earns instead. Getting there needed the Grave Charge slowed to 12 hits (a crit still counts as two), the Strike’s Critical Hits made a flat double rather than the full crit multiplier (its base is an average of hits that were already crit-boosted, so the full multiplier was counting crit twice), and <b>Goldgorge</b> capped at one bought charge per swing — uncapped, a dragon’s gold reward bought several charges a second and ran away from every other scimitar.',
       'Retired: <b>Prospector</b>, <b>Appraiser</b> and <b>Connoisseur</b> (at best-in-slot every item is Fantastic, so all three were flat always-on multipliers with no gameplay), plus <b>Tithe</b> and <b>Golden Devotion</b> — Faith economy in the two slots where the combat kit belongs. Tithe’s purpose survives better than before: Broken Relics ARE Faith when sacrificed, so a class that floods you with relics floods you with Faith by construction.'
     ]},
     { v:'0.0.65', date:'Jul 30', heading:'Dungeons: Auto Requeue', items:[
@@ -36073,7 +36087,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.66.0';
+  var GAME_VERSION = '0.0.66.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -36296,7 +36310,7 @@
       TH_STRIKE_TIER_PCT:TH_STRIKE_TIER_PCT, TH_DOWSE_CHANCE:TH_DOWSE_CHANCE, TH_DOWSE_CHANCE_D2:TH_DOWSE_CHANCE_D2, TH_COIN_PER_TIER:TH_COIN_PER_TIER,
       TH_MARK_PCT:TH_MARK_PCT, TH_MARK_MAX:TH_MARK_MAX, TH_MARK_MS:TH_MARK_MS, TH_CURSED_STRIKE_MULT:TH_CURSED_STRIKE_MULT,
       TH_GOLDFIND_D1:TH_GOLDFIND_D1, TH_GOLDFIND_D2:TH_GOLDFIND_D2, TH_GOLDFIND_D3:TH_GOLDFIND_D3, TH_RELIC_BASE_CHANCE:TH_RELIC_BASE_CHANCE,
-      TH_RELIC_PER_TIER:TH_RELIC_PER_TIER, TH_RESERVE:TH_RESERVE, TH_STRIKE_STUN_MS:TH_STRIKE_STUN_MS,
+      TH_RELIC_PER_TIER:TH_RELIC_PER_TIER, TH_SWING_MULT:TH_SWING_MULT, TH_RESERVE:TH_RESERVE, TH_STRIKE_STUN_MS:TH_STRIKE_STUN_MS,
       LEG_CRYPTREAVER_TIER_PCT:LEG_CRYPTREAVER_TIER_PCT, LEG_COFFERGUARD_PER:LEG_COFFERGUARD_PER, LEG_COFFERGUARD_CAP:LEG_COFFERGUARD_CAP,
       LEG_GREEDWYRM_PER_RELIC:LEG_GREEDWYRM_PER_RELIC, LEG_GREEDWYRM_RELIC_CAP:LEG_GREEDWYRM_RELIC_CAP, LEG_HOARDWALL_RELICS:LEG_HOARDWALL_RELICS,
       LEG_HOARDWALL_STRIKE_MULT:LEG_HOARDWALL_STRIKE_MULT, LEG_HOARDWALL_DR:LEG_HOARDWALL_DR, LEG_GOLDGORGE_PER_GOLD:LEG_GOLDGORGE_PER_GOLD,
