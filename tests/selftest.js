@@ -10333,6 +10333,20 @@
       // The toggle is off by default for existing saves.
       S.dungeonAutoRequeue = false;
       eq(FF.dungeonAutoRequeue(def), false, 'the toggle gates the whole behaviour');
+
+      // ---- ticket-0117: tabbing off must not freeze a SOLO run (that made the toggle pointless) ----
+      // A solo descent still locks player ACTIONS (no crafting mid-fight)...
+      S.dungeonAutoRequeue = true;
+      FF.dungeonBegin(d1);
+      eq(FF.dungeonLocksActions(), true, 'a solo descent still locks other actions');
+      // ...but it must NOT be treated as attended for the away fast-forward.
+      eq(FF.dungeonPartyLocksAway(), false, 'a solo descent does NOT freeze the away catch-up (ticket-0117)');
+      // An away window fast-forwards the fight AND chains the next descent.
+      var idxBefore = S.activity.dungeonIndex;
+      FF.applyOfflineProgress(30 * 60 * 1000);
+      eq(S.activity.type, 'combat', 'the run is still going after an away window');
+      eq(S.activity.dungeon, d1, '...in the same layer');
+      ok(S.activity.dungeonIndex !== idxBefore || FF.dungeonBossCleared(d1), '...and it actually progressed while hidden');
     } finally {
       // dungeonRun is MODULE-scoped, so restoring `state` alone would leave an active run behind --
       // dungeonLocksActions() would then short-circuit every later suite's Tower/Guild-Boss entry.
