@@ -22372,8 +22372,34 @@
     html += '<div class="item-card">';
     if(survived) html += '<div class="chance-line">You rolled this run\'s <b>Masterwork Blueprint</b> drops — check <b>Resources &rarr; Blueprints</b> for what the ' + escapeHtml(def.category) + ' yielded.</div>';
     else html += '<div class="chance-line" style="color:var(--text-faint)">You fell before the final blow — only survivors roll the Masterwork drops. Your party pulled through without you.</div>';
-    html += '<button class="action-btn" data-action="dungeonNetLeave" style="margin-top:8px;width:auto">Return to Dungeons</button></div>';
+    // Requeue (ticket-0117): the HOST can send the whole party back to its lobby, same members, ready to
+    // descend again -- no re-forming, no codes to re-share. Everyone else just watches the lobby reappear,
+    // because the server resets the session they are already subscribed to.
+    var _iAmHost = !!(authUser && s.host_id === authUser.id);
+    html += '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">';
+    if(_iAmHost) html += '<button class="action-btn" data-action="dungeonNetRequeue" style="width:auto" ' + (dungeonNet.busy ? 'disabled' : '') + '>Descend Again (same party)</button>';
+    else html += '<div class="chance-line" style="margin:0">Waiting on the host &mdash; they can send the party straight back to the lobby for another descent.</div>';
+    html += '<button class="action-btn stop" data-action="dungeonNetLeave" style="width:auto">Return to Dungeons</button>';
+    html += '</div></div>';
     return html;
+  }
+  // Reset the finished session back to a lobby with the same roster. Server-side (dungeon_requeue) so every
+  // member's client sees it on its next snapshot -- members cannot discover a brand-new session id.
+  function dungeonNetRequeue(){
+    if(!dungeonNet.session || dungeonNet.busy) return;
+    var sid = dungeonNet.session.id;
+    dungeonNet.busy = true; dungeonNet.error = '';
+    dungeonNetInvoke('requeue', { session_id:sid }).then(function(res){
+      dungeonNet.busy = false;
+      if(!res.ok){ dungeonNet.error = res.error || 'Could not requeue the party.'; }
+      else {
+        dungeonNet.clearedHandled = false; dungeonNet.deathHandled = false; dungeonNet.rewardedIndex = null;
+        dungeonNetEndLocalFight();               // the cleared run's mirror is finished with
+        dungeonNetApply(res);
+        addLog('The party regroups in the lobby — ready to descend again.', 'important');
+      }
+      if(currentCategory === 'dungeons') render();
+    });
   }
   function renderDungeonBrowse(){
     var html = '<div class="section-intro">Descend into <b>Dungeons</b> — gauntlets of foes fought one at a time. Bring a party of up to 4 (synchronous co-op is coming; for now you enter solo). Clear the final boss and every surviving delver claims a <b>Formula</b>, a blueprint for endgame gear.</div>';
@@ -24132,7 +24158,7 @@
       'Fixed (ticket-0117, thanks Mr Cookie): Auto Requeue now keeps running while the tab is in the background. Solo descents used to FREEZE the moment you tabbed away \u2014 which defeated the point, since unattended farming is the whole reason for the toggle. Solo runs now fast-forward like any other fight, chaining clears and crediting their Blueprints into the \u201cWhile You Were Away\u201d summary (still capped by the usual 12-hour offline limit). This also settles an inconsistency: reloading after an absence already fast-forwarded the dungeon, so the same time away used to pay out differently depending on whether you had reloaded.',
       'PARTY descents still freeze while you are away \u2014 those are server-coordinated and genuinely attended, so they wait for you.',
       'Masterwork Blueprints now land with the same celebration a Mastercraft gets: a trophy banner and the Blueprint shown large in rarity gold, instead of a plain loot row. Blueprints recovered while you were away are highlighted in the \u201cWhile You Were Away\u201d summary too, so they no longer hide among the ore.',
-      'Party runs are not covered yet \u2014 re-forming a group needs server support so every member lands in the same new session.'
+      'Party runs now get <b>Descend Again (same party)</b> on the clear screen (ticket-0117): the host sends everyone straight back to the party lobby, same members, ready for another descent \u2014 no re-forming and no re-sharing codes. Party descents are still one run at a time rather than fully automatic, since the group should choose when to go back in.'
     ]},
     { v:'0.0.64', date:'Jul 30', heading:'Loadouts keep gear you upgrade', items:[
       'Fixed (ticket-0111, thanks Valuren): enhancing or enchanting a piece while it was EQUIPPED made it disappear from your saved loadouts. Upgrading turns a plain crafted piece into a unique item with its own id, but presets saved beforehand still described the plain version \u2014 which no longer exists, because it left your bag the moment you first equipped it. Swapping kits and coming back therefore found nothing to equip and left the slot empty.',
@@ -34619,6 +34645,7 @@
     dungeonBegin: function(btn, e){ dungeonBegin(btn.getAttribute('data-id')); },
     dungeonBack: function(btn, e){ dungeonBackToBrowse(); },
     dungeonNetCreate: function(btn, e){ dungeonNetCreate(btn.getAttribute('data-id')); },
+    dungeonNetRequeue: function(btn, e){ dungeonNetRequeue(); },
     dungeonNetJoin: function(btn, e){ dungeonNetJoin(btn.getAttribute('data-id')); },
     dungeonNetJoinByCode: function(btn, e){ dungeonNetJoinByCode(); },
     dungeonNetPostCode: function(btn, e){ dungeonNetPostCode(); },
@@ -35832,7 +35859,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.65.2';
+  var GAME_VERSION = '0.0.65.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

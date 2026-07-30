@@ -328,5 +328,25 @@ Deno.serve(async (req) => {
     return json({ ok: true, claim: r, ...(await snapshotOf(sid)) });
   }
 
+  // Requeue: after a finished run, reset THIS session back to a lobby with the same roster, so the party
+  // can descend again without re-forming (ticket-0117). Host-only; the RPC refuses anything not
+  // cleared/wiped, so an active run can never be rewound.
+  if (action === "requeue") {
+    const sid = String(body.session_id || "");
+    const { data: s } = await admin.from("dungeon_sessions").select("layer").eq("id", sid).maybeSingle();
+    const def = s ? DUNGEONS[s.layer as string] : null;
+    if (!def) return json({ ok: false, error: "Party not found." }, 404);
+    const { data: r, error } = await admin.rpc("dungeon_requeue", {
+      p_session: sid, p_user: user.id, p_count: def.count, p_hours: def.hours,
+    });
+    if (error) return json({ ok: false, error: "Could not requeue the party." }, 500);
+    const st = (r as { status?: string }).status;
+    if (st === "gone") return json({ ok: false, error: "That party no longer exists." }, 404);
+    if (st === "nothost") return json({ ok: false, error: "Only the host can requeue the party." }, 403);
+    if (st === "notdone") return json({ ok: false, error: "Finish the run before requeueing." }, 409);
+    if (st !== "ok") return json({ ok: false, error: "Could not requeue (" + st + ")." }, 409);
+    return json({ ok: true, ...(await snapshotOf(sid)) });
+  }
+
   return json({ ok: false, error: "Unknown action." }, 400);
 });
