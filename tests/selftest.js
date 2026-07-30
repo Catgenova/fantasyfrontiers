@@ -11043,7 +11043,7 @@
     // The Bastion perk ladder: names in order; the reset-on-hit streak and the familiar-duration capstone are gone.
     eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Ironclad,Retort,Fortress,Unbreakable,Breach', 'Bastion perk names');
     near(FF.HERALD_IRONCLAD_PER_1K, 0.03, 'Ironclad: +3% damage per 1,000 Armor');
-    near(FF.HERALD_IRONCLAD_CAP, 1.50, 'Ironclad caps at +150%');
+    near(FF.HERALD_IRONCLAD_CAP, 0.72, 'Ironclad caps at +72% (BiS Armor pins it there, so the cap IS the knob)');
     eq(FF.HERALD_BRACE_MS, 5000, 'the Brace clock runs every 5s');
     near(FF.HERALD_BARRIER_CAP_PCT, 0.25, 'the Barrier caps at 25% of max Health');
     near(FF.HERALD_BREACH_PCT, 0.20, 'the Breach deals 20% of the recent average hit per 10% max HP banked');
@@ -11092,6 +11092,11 @@
         ok((s.heraldHitAvg||0) > 0, 'the swing banked into the Breach base');
         // Ironclad reads the LIVE armour number, so it is above 1 on a real plated Bastion.
         ok(FF.heraldIroncladMult(s) > 1, 'Ironclad converts the live Armor rating into damage');
+        // Retort scales off the recent-average-hit EMA (an Armor-scaled counterblow was a rounding error at
+        // BiS: ~42M Armor against ~1e11 hits). It inherits the armour scaling via the Ironclad-boosted hits.
+        s.heraldHitAvg = 1000;
+        near(FF.heraldRetortDamage(s), Math.round(1000 * FF.HERALD_RETORT_PCT), 'Retort = 35% of the recent average hit');
+        near(FF.HERALD_RETORT_PCT, 0.35, 'Retort: 35% of the recent average hit');
         // A Brace fires the full Guard path: the Retort chips the foe and the Barrier banks.
         s.heraldBarrier = 0;
         var hp0 = s.activity.monsterHp;
@@ -11110,6 +11115,7 @@
         Math.random = function(){ return 0.999; }; // no crit
         var dealt = FF.heraldBreachFire(s);
         ok(dealt > 0 && s.activity.monsterHp < hp2, 'the full Barrier Breached');
+        eq(dealt, Math.round(10 * FF.HERALD_BREACH_PCT * 1000), 'a FULL wall is ten units: 10 x 20% x 1000 banked hit');
         eq(s.heraldBarrier, 0, 'the Breach spends the wall');
         // Four Guards fill the wall: the bank is a fraction of the CAP, so it behaves the same at every level
         // (an Armor-derived bank would fill instantly, since Armor is thousands-scale and the cap is %maxHp).

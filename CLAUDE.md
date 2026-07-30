@@ -119,6 +119,30 @@ warhammer. Sim-dead on the dummy: Rally (needs hits taken), Shieldwall (defense)
 Banner (party/familiars) — the sim measures the Steel/Pace/Decree core, which is where the
 knob lives anyway. The Banner never lowers, so runs ramp once and hold (quieter than the
 Stormlord's ±25%).
+**Herald** (45s — the 1h mace; v0.0.64.1, the FIRST **tank** simmed and the first shield offhand
+(`offhandShield` in BUILDS), owner target **~60B** — tanks band BELOW the 70-90B dps classes.
+Two structural findings. (1) His whole kit keyed off BEING HIT, so it measured near-zero on the
+zero-offense dummy; the fix is a self-driven **Brace** clock (every 5s, running the full Guard
+path via `heraldGuardFire`, so a Brace counts as a Block for EVERY set/legendary/class effect) —
+the Duelist Sidestep pattern, and the only reason the class is measurable at all. (2) The
+**armour chassis**: BiS live Armor is ~**42.4 MILLION** (enchant-then-enhance compounds it), so
+Ironclad's per-1,000 conversion computes to **x1,273** and is pinned at its cap — `PER_1K` NEVER
+binds at BiS and `HERALD_IRONCLAD_CAP` is the only real lever (whole-kit DPS is linear in it:
+cap 1.00 read ~70B, final **0.72**). Worse, Armor-scaled Retorts (25M) and a maxHp-scaled Breach
+(0.8x one hit / 20s) were rounding errors against ~1e11 hits — the class's whole identity measured
+as noise on "swings x2.5". Both now scale off the recent-hit EMA (the Bolt/Gloria/Decree channel)
+and inherit armour scaling free, since the hits they average are Ironclad-boosted; the Breach reads
+the WALL's fill (10 units full), not a share of max Health. Cave-In jumped 49.8B -> 70.3B once the
+double Retort became real — proof the mechanics were dead before. Also: the Barrier banks a FRACTION
+OF THE CAP per Guard (4 Guards fill it), never an Armor amount, which filled and Breached instantly
+at every level. Sentinel and Treasure Hunter wear armour and carry shields — they hit this same
+chassis at their reworks. Ceilings: Wallbreaker ~70B (2-run mean 65.9/73.4) /
+Bastionbreaker ~59B / Cave-In ~54B / Tombshatter ~49B (2-run mean 43.7/54.2) — pack mean ~58B, i.e.
+the class centers on the ~60B tank target with its best mace ~17% above it (set **D2** Momentum
+Guard/Siegework, cloak Ruin, shield Bulwark of the Breach). Runs are noisy: ±12-24% same-config
+(43.7-54.2B on one setting) — Brace/Breach phase against the swing timer; average 2 runs.
+Sim-dead on the dummy: Bastion's hit cap, Unbreakable's mitigation, real Blocks, and Tombshatter's
+Curse/Decay (hence its low read — it is the utility mace).
 Templar sim notes: BUILDS needs offhandWard; **measurement window matters** — mastery/
 proficiency train during the run, so 90s runs read ~35% above 60s runs on identical code;
 always compare a class against ceilings recorded at the SAME window (Berserker 82B @90s is
