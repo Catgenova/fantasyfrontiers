@@ -27,6 +27,8 @@ jobs:
           node-version: "20"
       - run: npm install
       - run: npx playwright install --with-deps chromium
+      - run: npm run typecheck:functions   # edge functions are not in the build; a ReferenceError in one
+                                           # shipped once and only failed at runtime, so gate on it here
       - run: npm run build
       - run: npm run smoke          # gates the deploy: a broken obfuscation fails here
       - uses: actions/configure-pages@v5
