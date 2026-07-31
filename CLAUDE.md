@@ -221,6 +221,36 @@ ramp-speed legendaries (Gravewrath) measure at their floor when the ledger is pr
 Slow-swing classes: use SIM_MS=90000. The dummy HP pool is 1e15 with refill at 1e14 —
 single ceiling hits exceed 1e12, which saturated the first Berserker run with kill resets.
 
+**Frostwarden** (45s — the Water wand; v0.0.72.2 "the Deep Freeze", owner target **80B**). Chill became
+**Rime**, a meter driving the foe's slow, its brittleness, Time Dilation's haste and Frostbite's tick at once;
+a full meter freezes the foe and Shatters entirely. Third derive-don't-replace shim (rime derives
+`chillStacks`, so the slow, Time Dilation, Brittle, Flash Freeze and Hoarfrost keep working untouched).
+**Retired a capstone that did nothing:** Rime Resonance boosted the Rime FAMILIAR, and familiar hit damage
+follows a raw weapon-tier curve ~7 orders of magnitude too small at BiS (owner rule: do NOT re-base
+familiars), so only its "+25% vs Chilled" clause worked — folded into Permafrost's brittleness. Per owner,
+D3/D4 dropped their dungeon themes: Fracture/Deathfrost are the Shatter layer, Frostheart/Absolute Zero the
+brittleness layer. Knock-ons: **this class is no longer a Decay source** and **Rimewyrm's Fang no longer
+applies Scorch**. `FW_SWING_MULT` **0.744**. Ceilings (D1 set, Ruin cloak, Rimeshell offhand): Gravefrost ~90B
+/ Rimewyrm ~87B / Rimefang ~77B / Deepfreeze ~76B — pack mean **82B**, on target.
+**WAND CHASSIS, THIRD DATA POINT — budget per-kit, confirmed.** Read **112.9B** uncorrected, not the trillions
+the Stormlord's 4.4-6.5T implied, because Frostbite and the Shatter scale off a plain channelled hit rather
+than feeding back THROUGH the element stack. Nightblade and Lumen should be budgeted the same way.
+**AVERAGE ACROSS PACKS, NOT JUST WITHIN ONE (method fix).** The v0.0.69 variance rule said to measure the full
+pack at each candidate knob. That is NOT enough on a noisy class: two full packs of this identical build
+disagreed by **10%** (112.9B vs a 102.1B-equivalent). Single-pack scaling cost an extra tuning pass three
+separate times this session (overshot 51% on the Pyromancer, undershot 9.5% here). Deriving the knob from the
+MEAN OF BOTH packs predicted 80B and landed **82.4B — 3% off**. Use mean-of-packs for any class whose runs
+move more than a few percent.
+**DESIGN WEAKNESS LEFT ON THE TABLE (not fixed):** the four set layers read within **8%** of each other — the
+noise band — and across runs the "winning" layer flipped D1 -> D3 -> D1 while the legendary ordering shuffled
+almost completely (Rimewyrm 133.2 -> 70.5 -> 86.6). The armour and wand a Frostwarden picks barely change
+their output; the core (brittleness + Frostbite + Shatter) does nearly everything. Fixing it means widening
+each layer's effect. **Consequence: do not rank this class's layers or wands — there is no signal there.**
+**A PREDICTION THAT DID NOT PAN OUT, recorded so it is not mistaken for evidence:** I predicted D1 (the
+build-rate layer) would win the set A/B because this engine cycles. It won by 5% inside an 8% noise band, then
+lost the next run. The rate/cap law's support comes from the Reaver, Pyromancer and Plaguebearer; this class
+did not discriminate either way.
+
 **Plaguebearer** (45s — the hatchet; v0.0.71.2 "the Plague", owner target **85B**). Poison became a process:
 severity climbs per hit AND per second uncured, ticks off the recent-hit EMA scaled by it, and is LOST if the
 Plague lapses. **Derive-don't-replace, the largest such shim yet** — a dozen-plus effects read this channel
