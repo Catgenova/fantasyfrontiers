@@ -44,7 +44,51 @@ const CLAMP_AUTOENFORCE = true;
 // skills -- 1000x under this line. The window excludes offline returns, whose elapsed is the whole away-time.
 const SIGNAL_MIN_ELAPSED_MS = 2_000;
 const SIGNAL_MAX_ELAPSED_MS = 120_000;
-const SIGNAL_PROGRESS_JUMP = 10_000_000_000; // 1e10
+const SIGNAL_PROGRESS_JUMP = 10_000_000_000; // 1e10 -- an absolute FLOOR only; see the relative test below
+// ---- THE ABSOLUTE THRESHOLD ABOVE WAS MISCALIBRATED, and it clamped the game's strongest account twice in
+// one day (Valuren, 31 Jul). The reasoning in the comment block above is sound for GATHERING and CRAFTING and
+// omits the channel that actually dominates: deriveProgress sums every xp value, and CLASS XP IS AWARDED 1:1
+// WITH COMBAT DAMAGE DEALT (index.html awardClassXp -> addXp(id, effDmg)). So "progress per second" is, to a
+// first approximation, the player's DPS -- which is unbounded by design and, after this month's class reworks,
+// sits at 1e9-1e11 for an endgame account. Valuren's two clamps were 2.09e9 and 1.70e9 progress/sec: they
+// crossed a 1e10 line in under five seconds of ordinary combat, and only the one-signal-per-hour audit
+// rate-limit stopped it firing on every 8-second save.
+//
+// THE SHAPE OF THE FIX IS THE ONE THE ITEM LEDGER ALREADY TAUGHT US: judge a delta against the ACCOUNT'S OWN
+// SCALE, never against an absolute number. Absolute thresholds always catch the strongest player first, because
+// their legitimate absolute numbers are the largest -- the identical error as "an absolute count of top-rarity
+// items" and "fantastic share of lifetime earned_total" (see 20260731200000).
+//
+// A jump must now exceed BOTH tests to signal:
+//   1. the absolute floor (so small accounts and rounding noise never generate signals), AND
+//   2. a share of prior progress proportional to elapsed time -- SIGNAL_JUMP_RATE_PER_SEC.
+// Because progress is roughly proportional to power, the FRACTIONAL rate is roughly scale-invariant, so one
+// number fits every account. Valuren's real play measures 0.21%/s and 0.17%/s; 5%/s leaves a ~25x margin at
+// any window length, while an edited save (the reported profile lands 1e12-1e15) is hundreds to millions of
+// times over. It still catches a save that merely DOUBLES progress inside one window.
+//
+// WHAT THIS DOES NOT CLOSE, stated plainly: a patient editor who keeps each jump under the line. That was
+// ALREADY true of the absolute test -- staying under 1e10 per save was always enough -- so the relative test
+// opens no new hole; it removes a false-positive class. The real bound on the economy is the per-action XP cap
+// in submit_profile, not this detector.
+// WHY A SINGLE RATE FITS EVERY ACCOUNT, and where it is thin. Progress accumulates AT the combat rate, so after
+// t seconds of cumulative combat at damage D, progress is ~D*t and the fractional rate is D/(D*t) = 1/t. The
+// allowance is therefore only ever tight for accounts with very little playtime -- and those are excluded by the
+// absolute floor anyway. The one genuinely thin case is a player whose POWER jumps suddenly (a best-in-slot
+// upgrade): their current damage briefly outruns their accumulated XP. At 5%/s an account pushing ten times
+// Valuren's measured rate still has 2.5x of headroom, which is why this is worth watching during the shadow
+// week rather than asserting is safe. Verified arithmetic, all nine cases as intended: Valuren's two real
+// clamps clear by 23x and 30x, a 120s window at his rate clears by 24x, and a save that merely DOUBLES progress
+// is still caught 2.5x over.
+const SIGNAL_JUMP_RATE_PER_SEC = 0.05;          // allowed growth: 5% of prior progress per second of elapsed
+const SIGNAL_RELATIVE_MIN_PROGRESS = 1_000_000_000; // below 1e9 prior progress there is no scale to measure
+                                                    // against, so the absolute floor stands alone there
+// Progress-jump enforcement is SEPARATE from CLAMP_AUTOENFORCE and starts OFF. This detector has now produced
+// two confirmed false positives against a real, active player, so it goes back to shadow (record-only) until a
+// week of signals under the relative test comes back clean. The gold-injection clamp below keeps enforcing --
+// its threshold is age-gated and has never misfired. Precedent: the unexplained-rarity sweep shipped
+// shadow-only for exactly this reason.
+const PROGRESS_JUMP_AUTOENFORCE = false;
 const CLAMP_INDEFINITE_MS = 5_256_000 * 60_000; // ~10 years, matches the clamp RPC's cap
 // Gold-injection HARD CLAMP at the entry point. The exploit lands data.gold / data.goldEarnedTotal HERE;
 // a young account (< HARD_CLAMP_MAX_AGE_DAYS) whose save carries >= HARD_CLAMP_GOLD gold OR lifetime
@@ -225,15 +269,32 @@ Deno.serve(async (req) => {
     if (prev?.updated_at) {
       const elapsed = Date.now() - Date.parse(prev.updated_at as string);
       const jump = progress - prevProgress;
-      if (elapsed >= SIGNAL_MIN_ELAPSED_MS && elapsed <= SIGNAL_MAX_ELAPSED_MS && jump >= SIGNAL_PROGRESS_JUMP) {
+      // The relative allowance: what this account's OWN scale says it could plausibly have gained in this
+      // window. Accounts under SIGNAL_RELATIVE_MIN_PROGRESS have no meaningful scale yet, so they are judged by
+      // the absolute floor alone (allowance 0 => the relative test always passes for them).
+      const relAllowance = prevProgress >= SIGNAL_RELATIVE_MIN_PROGRESS
+        ? prevProgress * SIGNAL_JUMP_RATE_PER_SEC * (elapsed / 1000)
+        : 0;
+      const overAbsolute = jump >= SIGNAL_PROGRESS_JUMP;
+      const overRelative = jump >= relAllowance;
+      if (elapsed >= SIGNAL_MIN_ELAPSED_MS && elapsed <= SIGNAL_MAX_ELAPSED_MS && overAbsolute && overRelative) {
         // Rate-limit the audit log to ~1 row/hour/user so a cheater re-saving every 8s can't flood it.
         const { data: recent } = await admin.from("clamp_signals").select("id")
           .eq("user_id", userId).gte("created_at", new Date(Date.now() - 3_600_000).toISOString()).limit(1);
         if (!recent || !recent.length) {
-          const detail = { jump, elapsed_ms: elapsed, prev_progress: prevProgress, progress };
-          console.warn(`clamp signal progress_jump: user=${userId} jump=${jump} elapsedMs=${elapsed}`);
-          await admin.from("clamp_signals").insert({ user_id: userId, kind: "progress_jump", detail, would_clamp: true });
-          if (CLAMP_AUTOENFORCE) {
+          // Carry the relative figures into the signal so a review can judge it without recomputing: how far
+          // over the account's own allowance this was, and the implied growth rate per second.
+          const detail = {
+            jump, elapsed_ms: elapsed, prev_progress: prevProgress, progress,
+            rel_allowance: Math.round(relAllowance),
+            over_allowance_x: relAllowance > 0 ? Number((jump / relAllowance).toFixed(2)) : null,
+            rate_per_sec_pct: prevProgress > 0
+              ? Number(((jump / prevProgress) / (elapsed / 1000) * 100).toFixed(4)) : null,
+            enforced: PROGRESS_JUMP_AUTOENFORCE,
+          };
+          console.warn(`clamp signal progress_jump: user=${userId} jump=${jump} elapsedMs=${elapsed} overAllowance=${detail.over_allowance_x}x`);
+          await admin.from("clamp_signals").insert({ user_id: userId, kind: "progress_jump", detail, would_clamp: PROGRESS_JUMP_AUTOENFORCE });
+          if (PROGRESS_JUMP_AUTOENFORCE) {
             await admin.from("account_clamps").upsert({
               user_id: userId, surfaces: ["marketplace", "leaderboard", "guild", "chat"],
               clamped_until: new Date(Date.now() + CLAMP_INDEFINITE_MS).toISOString(),
