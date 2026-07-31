@@ -170,6 +170,32 @@ Deno.serve(async (req) => {
     return { session, members: members || [] };
   }
 
+  // ---- Progression gates, SERVER SIDE (pentest, 2026-07-31) ---------------------------------------
+  // These lived only in the browser (dungeonEntryBlock/dungeonJoinBlock), so `create` accepted any known
+  // layer and `join` accepted any session id -- a caller could open or join a D4 party at Total Level 1
+  // with nothing cleared. The check now happens here, against profiles.total_level (server-held, rate-
+  // limited by submit_profile) and public.dungeon_clears (see migration 20260731160000).
+  async function gateBlock(layer: string): Promise<string | null> {
+    try {
+      const { data } = await admin.rpc("dungeon_gate_check", { p_user: user.id, p_layer: layer });
+      const g = data as { ok?: boolean; error?: string } | null;
+      if (g && g.ok === false) return g.error || "You cannot enter that dungeon yet.";
+      return null;
+    } catch {
+      // FAIL CLOSED. Unlike the volume limiter, a gate that cannot be evaluated must not wave the caller
+      // through -- that would restore the exact bypass this closes. The migration is a prerequisite.
+      return "Could not verify your dungeon progress. Try again shortly.";
+    }
+  }
+  // A clear is recorded from the SERVER's own view of the session: the caller is a member (they got this
+  // snapshot) and the server owns `status`. That makes a party clear hard evidence, unlike a solo claim.
+  async function recordPartyClear(snap: { session?: { status?: unknown; layer?: unknown } | null }) {
+    const sess = snap && snap.session;
+    if (!sess || sess.status !== "cleared" || typeof sess.layer !== "string") return;
+    try { await admin.rpc("dungeon_clear_record", { p_user: user.id, p_layer: sess.layer, p_source: "party" }); }
+    catch { /* the unlock is not the point of this request -- never fail a snapshot over it */ }
+  }
+
   // My current lobby/active session (a user holds at most one).
   async function mySession() {
     const { data: mine } = await admin.from("dungeon_members").select("session_id").eq("user_id", user.id);
@@ -181,7 +207,31 @@ Deno.serve(async (req) => {
     return { session: null, members: [] };
   }
 
-  if (action === "get") return json({ ok: true, ...(await mySession()) });
+  if (action === "get") {
+    const snap = await mySession();
+    await recordPartyClear(snap);   // the run finished while I was away -> bank the unlock
+    return json({ ok: true, ...snap });
+  }
+
+  // Report a SOLO clear. Solo runs are simulated in the browser and leave no session row, so the server
+  // cannot verify one happened -- this is a client assertion, and the migration header says so plainly.
+  // What it CANNOT do is skip ahead: dungeon_clear_record refuses any layer whose predecessor is not
+  // already on the ledger, so the only route to d4 is d1 -> d2 -> d3 -> d4. Also volume-limited, and the
+  // Total Level gate still applies at create/join and cannot be asserted.
+  // This doubles as the grandfather path: existing players' clears live only in their save blob, so their
+  // client replays them in order on boot.
+  if (action === "solo_clear") {
+    const layer = String(body.layer || "");
+    if (!DUNGEONS[layer]) return json({ ok: false, error: "Unknown dungeon." }, 400);
+    try {
+      const { data: over } = await admin.rpc("rl_hit", { p_subject: user.id, p_bucket: "dungeon_clear", p_limit: 30, p_window_secs: 3600 });
+      if (over === true) return json({ ok: false, error: "Too many requests." }, 429);
+    } catch { /* limiter unavailable -> allow */ }
+    try {
+      const { data } = await admin.rpc("dungeon_clear_record", { p_user: user.id, p_layer: layer, p_source: "solo" });
+      return json({ ok: true, recorded: data === true });
+    } catch { return json({ ok: false, error: "Could not record that clear." }, 500); }
+  }
 
   if (action === "list") {
     const layer = String(body.layer || "");
@@ -199,6 +249,8 @@ Deno.serve(async (req) => {
     const layer = String(body.layer || "");
     const def = DUNGEONS[layer];
     if (!def) return json({ ok: false, error: "Unknown dungeon." }, 400);
+    const blocked = await gateBlock(layer);
+    if (blocked) return json({ ok: false, error: blocked }, 403);
     const { data: r, error } = await admin.rpc("dungeon_create", {
       p_user: user.id, p_username: username, p_layer: layer, ...combatStats(), p_count: def.count, p_hours: def.hours,
     });
@@ -210,6 +262,12 @@ Deno.serve(async (req) => {
 
   if (action === "join") {
     const sid = String(body.session_id || "");
+    // Gate on the TARGET session's layer, read from the server -- not from anything the caller sent. This
+    // is the half of the report about joining a higher dungeon using someone else's party id.
+    const { data: tgt } = await admin.from("dungeon_sessions").select("layer").eq("id", sid).maybeSingle();
+    if (!tgt) return json({ ok: false, error: "That party no longer exists." }, 404);
+    const joinBlocked = await gateBlock(String(tgt.layer));
+    if (joinBlocked) return json({ ok: false, error: joinBlocked }, 403);
     const { data: r, error } = await admin.rpc("dungeon_join", {
       p_session: sid, p_user: user.id, p_username: username, ...combatStats(),
     });

@@ -22635,7 +22635,45 @@
   }
   function dungeonPrevId(layerId){ var i = DUNGEON_ORDER.indexOf(layerId); return i > 0 ? DUNGEON_ORDER[i - 1] : null; }
   function dungeonBossCleared(layerId){ return !!(state.dungeonsCleared && state.dungeonsCleared[layerId]); }
-  function dungeonMarkCleared(layerId){ if(!state.dungeonsCleared || typeof state.dungeonsCleared !== 'object') state.dungeonsCleared = {}; if(layerId) state.dungeonsCleared[layerId] = true; }
+  function dungeonMarkCleared(layerId){
+    if(!state.dungeonsCleared || typeof state.dungeonsCleared !== 'object') state.dungeonsCleared = {};
+    if(layerId){ state.dungeonsCleared[layerId] = true; dungeonReportClear(layerId); }
+  }
+  // The progression gate is enforced SERVER side as of v0.0.73.4 (pentest: it was browser-only, so calling
+  // the dungeon function directly opened any layer). The server keeps its own clear ledger, so a clear has
+  // to be reported or the next layer stays locked. A PARTY clear is recorded by the server itself from the
+  // session status; only solo clears need telling, since they leave no session row.
+  function dungeonReportClear(layerId){
+    if(!chatClient || !authUser || !layerId) return;
+    dungeonNetInvoke('solo_clear', { layer: layerId });   // fire-and-forget; the sync below is the safety net
+  }
+  // GRANDFATHER + SELF-HEAL. Existing players' clears live only in their save blob, so the server ledger
+  // starts empty and every one of them would be locked out of D2+. Replay what the save knows, IN ORDER,
+  // because the server refuses a layer whose predecessor is not already recorded. Runs once per session and
+  // only if there is something to report; also repairs an account whose earlier report never landed.
+  // Which clears this save should report, IN CHAIN ORDER. Pure, so the ordering can be tested -- and the
+  // ordering is the whole correctness requirement: the server refuses d3 unless d2 is already on the
+  // ledger, so reporting out of order silently loses the later layers.
+  function dungeonOwedClears(st){
+    var cl = (st || state).dungeonsCleared;
+    if(!cl || typeof cl !== 'object') return [];
+    return DUNGEON_ORDER.filter(function(id){ return !!cl[id]; });
+  }
+  var _dungeonClearsSynced = false;
+  function dungeonSyncClears(){
+    if(_dungeonClearsSynced || !chatClient || !authUser) return;
+    var owed = dungeonOwedClears(state);
+    if(!owed.length) return;
+    _dungeonClearsSynced = true;
+    // Sequential, not parallel: d2 is only accepted once d1 is on the ledger, so a Promise.all would
+    // race and silently drop the later layers.
+    var i = 0;
+    (function next(){
+      if(i >= owed.length) return;
+      var layer = owed[i++];
+      dungeonNetInvoke('solo_clear', { layer: layer }).then(next, next);
+    })();
+  }
   // Reason the player can't enter yet, or null if they can.
   function dungeonEntryBlock(def){
     if(!def) return 'Unavailable';
@@ -24919,6 +24957,12 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.73', date:'Jul 31', heading:'Dungeon requirements are now enforced by the server', items:[
+      'Security fix. The dungeon entry requirements &mdash; Total Level 5,000, and clearing each layer before the next &mdash; were checked only by the game in your browser. The server accepted any request, so somebody bypassing the interface could open or join a <b>D4 party at Total Level 1 with nothing cleared</b>, including by using another player&rsquo;s party code.',
+      'Both requirements are now checked on the server, for creating a party <i>and</i> for joining one. Joining is validated against the layer the server says that party is in, not anything the request claims.',
+      'The server now keeps its own record of which layers you have cleared. Party clears are recorded by the server itself, since it runs the fight. <b>Your existing progress is carried over automatically</b> the next time you log in &mdash; you do not need to re-clear anything. If a dungeon you have already beaten ever shows as locked, log out and back in once, and tell us if it persists.',
+      'Being straight about the limit: a solo run is simulated in your browser, so the server cannot witness it and has to take your client&rsquo;s word that it happened. What it will not do is let anything skip ahead &mdash; a layer is only recorded once the one before it is, so there is no route to D4 that does not pass through D1, D2 and D3, and the Total Level requirement cannot be faked at all.'
+    ]},
     { v:'0.0.73', date:'Jul 31', heading:'Party codes in chat are now a Join button', items:[
       'A party code posted in chat now renders as a <b>Join &lt;dungeon&gt; party</b> button &mdash; one tap and you are in the lobby, instead of selecting a UUID by hand and pasting it into a box. A great deal better on a phone. Thanks for the suggestion.',
       'It works on any code in any message, not just the one the game posts for you, and it takes you to the <b>Dungeons</b> tab so you can see the lobby &mdash; or the reason you cannot join it, if you have not cleared the layer before it.',
@@ -36993,7 +37037,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.73.3';
+  var GAME_VERSION = '0.0.73.4';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -37067,6 +37111,7 @@
     }
     chatInit();                       // chat + chronicle subscriptions
     profileSync(true); leaderboardFetch(true); walletSync(true); itemSync(true);
+    dungeonSyncClears();              // seed the server's clear ledger from this save (see dungeonSyncClears)
     scheduleUpdateChecks();           // hard-refresh tabs the moment a new build ships to main
     if(pathSelectNeeded()) renderPathSelect();   // brand-new account: pick Immortal vs Mortal before playing
   }
@@ -37146,6 +37191,7 @@
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg, estateJobShapeOk:estateJobShapeOk,
+      dungeonOwedClears:dungeonOwedClears, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL,
       chatPartyCodeHtml:chatPartyCodeHtml, chatBodyHtml:chatBodyHtml,
       applyEstateJobCompletion:applyEstateJobCompletion, estateJobMaterials:estateJobMaterials,
       captchaOn:captchaOn, captchaAuthOpts:captchaAuthOpts, captchaConsume:captchaConsume, CHAT_CONFIG:CHAT_CONFIG,

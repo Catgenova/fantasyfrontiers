@@ -13452,6 +13452,28 @@
     ok(tail.charAt(0) !== ' ', 'the stats tail has no leading space');
   });
 
+  // ---- Dungeon clears: the grandfather report must go out IN CHAIN ORDER --------------------------
+  // The progression gate is server-side now (pentest: it was browser-only). The server refuses to record a
+  // layer whose predecessor is not already on its ledger, so reporting out of order silently loses the
+  // later layers -- and existing players, whose clears live only in their save, would stay locked out.
+  suite('dungeon clear sync ordering', function(){
+    ok(typeof FF.dungeonOwedClears === 'function', 'dungeonOwedClears exported');
+    eq(FF.dungeonOwedClears({}).length, 0, 'no clears -> nothing to report');
+    eq(FF.dungeonOwedClears({dungeonsCleared:null}).length, 0, 'a null map is handled');
+    eq(FF.dungeonOwedClears({dungeonsCleared:{}}).length, 0, 'an empty map reports nothing');
+    // Insertion order of the save object must NOT leak through -- the chain order is what matters.
+    eq(FF.dungeonOwedClears({dungeonsCleared:{d3:true, d1:true, d2:true}}).join(','), 'd1,d2,d3',
+       'clears are reported in DUNGEON_ORDER, whatever order the save lists them');
+    eq(FF.dungeonOwedClears({dungeonsCleared:{d1:true}}).join(','), 'd1', 'a single clear reports itself');
+    eq(FF.dungeonOwedClears({dungeonsCleared:{d1:true,d2:true,d3:true,d4:true}}).join(','), 'd1,d2,d3,d4',
+       'a fully cleared account reports every layer in order');
+    // Falsy / junk values must not be reported as clears.
+    eq(FF.dungeonOwedClears({dungeonsCleared:{d1:false, d2:true}}).join(','), 'd2', 'a false entry is not a clear');
+    eq(FF.dungeonOwedClears({dungeonsCleared:{d9:true, nonsense:true}}).length, 0, 'unknown layers are never reported');
+    // The gate constant the server mirrors (dungeon_gate_check hardcodes 5000).
+    eq(FF.DUNGEON_MIN_TOTAL_LEVEL, 5000, 'the Total Level gate matches what the server enforces');
+  });
+
   // ---- Chat: a party code renders as a "Click to Join" button ------------------------------------
   // Ticket: copying a uuid out of a chat line is miserable, worse on mobile. The button is injected into
   // ALREADY-ESCAPED text, so the security property under test is that a chat body cannot smuggle markup
