@@ -42,10 +42,69 @@ Rules:
   `function`, no build-time modules). Match that style.
 - Unit tests live in `tests/selftest.js`, run in-browser via `index.html?selftest` against
   the `window.__FF` test seam (exports at the bottom of index.html). Add regression tests
-  with new fixes; the seam blanks `DISCORD_FEED_WEBHOOK` so tests never post to Discord.
-- Discord community feed: `discordFeedPost()` in index.html mirrors Fantastic-rarity
-  creations and +12-or-better enhances (with item stats) to the channel webhook; posts fire
-  only from the acting player's client, including offline catch-up rolls.
+  with new fixes; the seam sets `DISCORD_FEED_ENABLED = false` so tests never post to Discord.
+  **`suite()` is SYNCHRONOUS and discards the return value** — assertions inside a `.then()`
+  run after the report is written, so a failure there is silently invisible. Test async logic
+  by its synchronous mechanics (e.g. a waiter-queue length), never by awaiting.
+- Discord community feed: `discordFeedPost()` in index.html sends a STRUCTURED EVENT
+  (`{kind, name, item_key, rarity, enhance, stats}`) to the `discord_feed` edge function,
+  which owns the webhook and composes the message. Fantastic creations + `+12`-or-better
+  enhances, fired from the acting player's client including offline catch-up rolls.
+
+## Auth, secrets, and the deploy guards (v0.0.72.4–.11, security tickets)
+
+**NO CREDENTIAL EVER GOES IN `index.html`.** It is served to every player in clear text and
+obfuscation does not hide a string. A pentest found the feed webhook as a literal there.
+`scripts/build.mjs` now FAILS THE DEPLOY on Discord webhook URLs, `sk-` keys, `service_role`,
+JWTs, and Turnstile SECRET keys (caught by LENGTH — site keys are ~24 chars, secrets ~34, and
+both start `0x4A`). CI runs `npm run build`, so the guard gates publishing.
+
+Where secrets actually live: **edge-function secrets** (`DISCORD_FEED_WEBHOOK`,
+`TURNSTILE_SECRET`) or **`public.app_config`** (key `clamp_webhook`, read by
+`discord_notify()`/`notify_clamp_discord()`, RLS-locked, service-role only). Never hand the
+owner SQL or code with a real secret baked in — write a placeholder they fill in themselves.
+The community feed and the moderation/clamp webhook are SEPARATE; point the clamp one at a
+private channel (it posts usernames beside cheat signals).
+
+**Password spraying: CAPTCHA is the answer, and the four attempts it took are worth knowing.**
+1. Watching `auth.audit_log_entries` — impossible, GoTrue emits **no failed-login action**.
+2. The **Password Verification Attempt hook** — implemented and correct, but **gated to the
+   Supabase Team/Enterprise plan**, so it is INERT here. Migrations `20260731120000` +
+   `20260731140000` are kept UNAPPLIED with that stated at the top. Do not propose it again
+   without an upgrade. (Its schema grant was also missing: GoTrue calls hooks as
+   `supabase_auth_admin`, which needs `grant usage on schema public` — a permission failure
+   happens BEFORE the fail-open handler runs, so enabling it without that grant breaks LOGIN.)
+3. An edge-function login proxy — **pointless**: login goes straight to GoTrue's token
+   endpoint, so anything in front of it is skipped by calling that endpoint directly. The same
+   reason `public.rl_hit()` (which guards every custom function) cannot see login at all.
+4. **Cloudflare Turnstile** — shipped and live. Enforced INSIDE GoTrue, so it cannot be routed
+   around. `CHAT_CONFIG.turnstileSiteKey` gates the client (empty = fully inert).
+
+Turnstile rules learned the hard way, both of which caused live outages:
+- **Tokens are SINGLE USE.** Registration needs **two**: `register` spends one at siteverify,
+  then GoTrue spends another on the `signInWithPassword` that follows. Reusing one created the
+  account and then refused the sign-in ("username already taken" on retry). Hence
+  `captchaAwaitToken()` + a widget reset between the two.
+- **NEVER call `authRender()` from a Turnstile callback.** `renderLoginGate()` rebuilds the
+  gate's innerHTML, which destroys the widget, which `turnstileMount()` re-creates, which
+  challenges again — an infinite loop showing as a box stuck on "Verifying...". Nothing in the
+  gate reads the token (the submit button holds-and-resumes), so no render is ever needed.
+  `build.mjs` gates on this too.
+- `register` must verify the token ITSELF: it mints users via the **admin API**, which bypasses
+  GoTrue's signup CAPTCHA entirely. It **fails closed** (unlike the rate limiter, which fails
+  open) — otherwise breaking the verifier switches the check off.
+- Discord OAuth login is unaffected by CAPTCHA (not a password grant), so it is the fallback
+  when a password path is broken.
+
+**`npm run typecheck:functions`** (`scripts/typecheck-functions.mjs`) typechecks every
+`supabase/functions/*/index.ts` — added because they had NO checking, which let a `body`
+reference to a nonexistent variable ship and break every registration at runtime. In CI ahead
+of the build. `scripts/typecheck.mjs` covers `index.html` ONLY.
+
+**A GUARD MUST BE PROVEN TO FAIL BEFORE IT IS TRUSTED TO PASS.** Twice this session a new check
+reported clean because it was not really checking, and once a guard matched ITS OWN COMMENT
+(the one naming `authRender`) and failed the build on correct code. Always reintroduce the bug,
+confirm exit 1, then restore.
 
 ## Max-ceiling DPS simulation (run after EVERY class rework)
 
