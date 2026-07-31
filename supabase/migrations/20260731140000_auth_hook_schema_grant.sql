@@ -1,4 +1,9 @@
 -- ============================================================================
+-- !! NOT DEPLOYED. Companion to 20260731120000_auth_password_lockout, which is gated to the Supabase Team
+-- !! and Enterprise plans and is therefore inert on the current plan. Applying this alone grants schema
+-- !! usage and skips the rest (see the guarded block below); it defends nothing on its own.
+-- ============================================================================
+--
 -- AUTH HOOK: the missing schema grant (follow-up to 20260731120000_auth_password_lockout).
 --
 -- GoTrue invokes a Postgres auth hook as the `supabase_auth_admin` role. That migration granted EXECUTE on

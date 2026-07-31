@@ -1,4 +1,20 @@
 -- ============================================================================
+-- !! NOT DEPLOYED, AND NOT DEPLOYABLE ON THE CURRENT SUPABASE PLAN. DO NOT TREAT AS A LIVE DEFENCE. !!
+--
+-- The "Password Verification Attempt" hook this file implements is gated to the Team and Enterprise plans
+-- (Dashboard > Authentication > Hooks lists it under "Team or Enterprise Plan required" and greys it out).
+-- Everything below is therefore INERT: nothing calls the hook, so nothing ever writes to
+-- auth_login_failures and no account is ever locked. Applying this migration changes no behaviour.
+--
+-- It is kept, unapplied, because it is correct and ready if the project is ever upgraded. If you are
+-- reading this while looking for the actual spraying defence, it is NOT here -- see the CAPTCHA / auth
+-- rate-limit / MFA measures, which are enforced by GoTrue itself on every plan and, unlike a proxy in
+-- front of login, cannot be bypassed by calling the token endpoint directly.
+--
+-- To activate on a Team plan: apply this, then 20260731140000_auth_hook_schema_grant.sql (the schema grant
+-- GoTrue needs), verify with the queries in that file, THEN enable the hook in the Dashboard.
+-- ============================================================================
+--
 -- PASSWORD SPRAYING DEFENCE — per-account lockout with exponential backoff, at the auth layer.
 --
 -- Ticket (ITxToxic, 28-29 Jul): password spraying against the token endpoint. Rapid-fire is throttled by
