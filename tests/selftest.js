@@ -13452,6 +13452,42 @@
     ok(tail.charAt(0) !== ' ', 'the stats tail has no leading space');
   });
 
+  // ---- Combat log: class/effect damage must be visible --------------------------------------------
+  // Ticket (Valuren): "The damage of the skill Gloria of the Templar is missing". Every rework routed its
+  // damage through applyChipDamage, which logs nothing, so Gloria/Bolts/Decrees/Rot/Harvest/Shatter and
+  // every DoT were invisible. applyEffectDamage/applyEffectDot are the replacements.
+  suite('combat log: class effect damage', function(){
+    ok(typeof FF.applyEffectDamage === 'function' && typeof FF.applyEffectDot === 'function', 'the effect-damage helpers are exported');
+    var S = FF._state, savedAct = S.activity;
+    try {
+      // A discrete effect hit logs one row naming the effect.
+      FF.combatLogDotReset();
+      S.activity = { type:'combat', monsterId:null, monsterHp: 1e12 };
+      // Assert on the TAIL, never on length: the log is a 200-row ring buffer and is already full by the
+      // time this suite runs, so a row can be added without the length changing at all.
+      var tail = function(){ var L = FF._combatLog(); return L[L.length - 1]; };
+      FF.applyEffectDamage(5000, 'Gloria');
+      var e = tail();
+      eq(e.dir, 'skill', 'it is a skill row');
+      eq(e.spName, 'Gloria', 'the row names the effect');
+      eq(e.dmg, 5000, 'the row carries the damage');
+      ok(!e.over, 'a discrete hit has no "over Ns" window');
+      ok(/Gloria/.test(FF.combatLogLineHtml(e)) && /5,000|5000/.test(FF.combatLogLineHtml(e)), 'it renders with the name and number');
+      // Zero/negative damage must not produce a row -- a resisted proc should stay silent.
+      var lastBefore = tail();
+      FF.applyEffectDamage(0, 'Gloria');
+      ok(tail() === lastBefore, 'a zero-damage effect logs nothing (tail unchanged)');
+
+      // A per-frame DoT must NOT log per call, or one second would bury the 200-row buffer.
+      FF.combatLogDotReset();
+      lastBefore = tail();
+      for(var i = 0; i < 50; i++) FF.applyEffectDot(10, 'Blaze');
+      ok(tail() === lastBefore, '50 DoT slices inside one window add no rows (tail unchanged)');
+      // The damage still landed even though nothing was logged.
+      ok(S.activity.monsterHp < 1e12, 'the DoT damage was applied regardless of logging');
+    } finally { S.activity = savedAct; FF.combatLogDotReset(); }
+  });
+
   // ---- Estate: a Field can never end up at the waterline -----------------------------------------
   // Ticket: queue a raise, queue a Field (validated against the PROJECTED tile, so the raise counted),
   // then cancel the raise. The Field kept its queue slot and planted at z0 -- where the unclamped growth

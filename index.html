@@ -725,6 +725,7 @@
   .cl-in{color:#c98a6a;} .cl-in b{color:#e0a07a;}
   .cl-special{color:#d9a441;font-weight:600;} .cl-special b{color:#f0c25a;}
   .cl-dot{color:#b07fc9;} .cl-dot b{color:#c9a0e0;}
+  .cl-skill{color:#d8a02a;} .cl-skill b{color:#f0c05a;}   /* class/effect damage YOU dealt */
   .cl-fam{color:#5a8ab8;} .cl-fam b{color:#7fa8cc;}
   .cl-faint{color:var(--text-faint);font-size:11.5px;}
   .cl-crit{color:var(--gold-bright);font-weight:800;font-size:10px;letter-spacing:.5px;}
@@ -6403,7 +6404,7 @@
     // Death's Aim (Sharpshooter D3 full) / Gravesight (D3 long bow): Decay ticks can Critically Hit, borrowing your crit chance/damage.
     if((setFullD3('sharpshooter') || legActive('gravesight')) && !offlineCapture && Math.random() < (criticalEyeCritChance(state) + newClassCritChance())) dmg *= (CRIT_DAMAGE_MULT + exploitationCritDamageBonus(state));
     dmg = Math.round(dmg);
-    if(dmg > 0) applyChipDamage(dmg); // necrotic: ignores armour
+    if(dmg > 0) applyEffectDot(dmg, 'Decay'); // necrotic: ignores armour
     // Rotmaw (D3 hatchet) / Gravewrath (D3 warhammer, below 30% HP): your Decay ticks heal you 20% of their damage.
     if(dmg > 0 && legActive('rotmaw')){ var _dh = Math.min(Math.round(dmg * 0.20), healRoom(state)); if(_dh > 0) state.playerHp += _dh; }
   }
@@ -7031,7 +7032,7 @@
     dmg = Math.round(dmg);
     if(dmg <= 0) return 0;
     for(var _s = 0; _s < strikes && st.activity === a && a.type==='combat' && (a.monsterHp||0) > 0; _s++){
-      applyChipDamage(dmg);
+      applyEffectDamage(dmg, isClap ? 'Thunderclap' : 'Storm Bolt', { crit: isCrit });
       if(setFullD4('thunderfury', st)) awardElementXp('earth', dmg);
       if(!offlineCapture) spawnCombatFloat((isClap ? 'Thunderclap -' : (isCrit ? 'Bolt crit -' : 'Bolt -'))+fmt(dmg), isClap||isCrit ? 'ft-crit' : 'ft-rare', true);
     }
@@ -7239,7 +7240,7 @@
     dmg = Math.round(dmg);
     var killed = false;
     if(dmg > 0 && st.activity === act){
-      killed = applyChipDamage(dmg);
+      killed = applyEffectDamage(dmg, 'Grave Strike');
       if(!offlineCapture) spawnCombatFloat((isCrit ? 'Grave Strike crit -' : 'Grave Strike -') + fmt(dmg), isCrit ? 'ft-crit' : 'ft-rare', true);
     }
     // Endless Vigil (Lv80): the relic is not destroyed. It degrades a tier -- or comes back whole off a kill.
@@ -7347,7 +7348,7 @@
     dmg = Math.round(dmg);
     if(dmg <= 0) return 0;
     for(var _s = 0; _s < strikes && st.activity === a && a.type==='combat' && (a.monsterHp||0) > 0; _s++){
-      applyChipDamage(dmg);
+      applyEffectDamage(dmg, 'Breach');
       if(!offlineCapture) spawnCombatFloat((isCrit ? '\u2727 Breach -' : 'Breach -')+fmt(dmg), 'ft-crit', true);
     }
     if(st.activity === a && a.type==='combat'){
@@ -7393,7 +7394,7 @@
     if(_rt > 0){
       var _rtN = heraldRetortStrikes(state_); // Cave-In / Full Retort (D1 2pc): double strikes each
       for(var _r = 0; _r < _rtN && state_.activity === act && act.type==='combat' && (act.monsterHp||0) > 0; _r++){
-        applyChipDamage(_rt);
+        applyEffectDamage(_rt, 'Retort');
         if(!offlineCapture) spawnCombatFloat('⟲ Retort -'+fmt(_rt), 'ft-reflect', true);
       }
     }
@@ -7401,7 +7402,7 @@
     heraldBarrierAdd(heraldBarrierCap(state_) * HERALD_BARRIER_PER_GUARD, state_);
     // Elemental Bastion (Herald D4 full): a Guard reflects an elemental burst of the prevented damage.
     var _eb = d4HeraldBastionReflect(prevented, monster, state_);
-    if(_eb > 0){ applyChipDamage(_eb); if(!offlineCapture) spawnCombatFloat('⟲ Elemental Bastion -'+fmt(_eb), 'ft-reflect', true); }
+    if(_eb > 0){ applyEffectDamage(_eb, 'Elemental Bastion'); if(!offlineCapture) spawnCombatFloat('⟲ Elemental Bastion -'+fmt(_eb), 'ft-reflect', true); }
     // Sentinel Brittle Guard (Lv60): a Guard Sunders the foe's armour (consumed in playerAttackTick).
     if(sentinelBonus(60)){ state_.classDebuffs.enemyArmorUntil = Date.now() + SENTINEL_BRITTLE_MS; if(!offlineCapture) spawnCombatFloat('Sundered!', 'ft-bonus', true); }
       // Fortune's Riposte (legendary shield): a Block empowers your next strike (+40%).
@@ -7420,7 +7421,7 @@
       // Rimeshell (D2): a Block adds 2 Chill stacks to the attacker.
       if(legActive('rimeshell')){ frostwardenApplyChill(act); frostwardenApplyChill(act); }
       // Thornwall (D2): a Block reflects 120% of the damage it prevented.
-      if(legActive('thornwall')){ var _tw = Math.max(1, Math.round(prevented * LEG_THORNWALL_MULT)); applyChipDamage(_tw); spawnCombatFloat('⟲ Thornwall -'+fmt(_tw), 'ft-reflect', true); }
+      if(legActive('thornwall')){ var _tw = Math.max(1, Math.round(prevented * LEG_THORNWALL_MULT)); applyEffectDamage(_tw, 'Thornwall'); spawnCombatFloat('⟲ Thornwall -'+fmt(_tw), 'ft-reflect', true); }
       // Bulwark of the Breach (D2): every Block banks a Barrier worth 2% of max Health.
       if(legActive('bulwarkbreach')) legBarrierAdd(maxHp(state) * LEG_BULWARKBREACH_PCT);
       // ---- D3 (Underground) legendary shields (Batch S): all Block-triggered ----
@@ -7442,7 +7443,7 @@
       // Rimescale Shield (D4): a Block Chills and Scorches the attacker.
       if(legActive('rimescale')){ frostwardenApplyChill(act); scorchApply(act, 2); }
       // Dragonscale Bulwark (D4): a Guard reflects an elemental burst of the prevented damage.
-      if(legActive('dragonbulwark') && monster && monster.element){ var _db = Math.max(1, Math.round(prevented * 0.50 * elementDmgMult(state, monster.element))); applyChipDamage(_db); spawnCombatFloat('⟲ Dragonscale -'+fmt(_db), 'ft-reflect', true); }
+      if(legActive('dragonbulwark') && monster && monster.element){ var _db = Math.max(1, Math.round(prevented * 0.50 * elementDmgMult(state, monster.element))); applyEffectDamage(_db, 'Dragonscale Bulwark'); spawnCombatFloat('⟲ Dragonscale -'+fmt(_db), 'ft-reflect', true); }
   }
   // Unbreakable (Lv60): the fraction of a blocked hit that still lands (0.25 = -75%), else the usual half.
   function heraldBlockMult(st){ st = st || state; return heraldBonus(60, st) ? HERALD_UNBREAKABLE_MULT : 0.5; }
@@ -7651,7 +7652,7 @@
     if(burst <= 0) return 0;
     var _times = setFull('templar', st) ? 2 : 1;
     for(var i=0; i<_times && st.activity === a && (a.monsterHp||0) > 0; i++){
-      applyChipDamage(burst);
+      applyEffectDamage(burst, 'Gloria');
       awardElementXp('light', burst);
       if(legActive('sunwyrm', st)){ var _gh = Math.min(Math.round(burst * 0.10), healRoom(st)); if(_gh > 0) st.playerHp += _gh; }
       if(!offlineCapture) spawnCombatFloat('GLORIA -'+fmt(burst), 'ft-fantastic', true);
@@ -7665,7 +7666,7 @@
     if(ending === 'aegis'){
       if(legActive('sunbrand', st) && (st.templarShield||0) > 0 && st.activity && st.activity.type==='combat' && (st.activity.monsterHp||0) > 0){
         var _det = Math.round(st.templarShield * LEG_SUNBRAND_END_PCT);
-        if(_det > 0){ applyChipDamage(_det); awardElementXp('light', _det); if(!offlineCapture) spawnCombatFloat('Sunbrand -'+fmt(_det), 'ft-crit', true); }
+        if(_det > 0){ applyEffectDamage(_det, 'Sunbrand'); awardElementXp('light', _det); if(!offlineCapture) spawnCombatFloat('Sunbrand -'+fmt(_det), 'ft-crit', true); }
       }
       if(!setFullD2('templar', st)) st.templarShield = 0; // Radiant Aegis (D2 full): the shield persists between verses
     }
@@ -7761,7 +7762,7 @@
     dmg = Math.round(dmg);
     if(dmg <= 0) return 0;
     for(var _s = 0; _s < strikes && st.activity === act && act.type==='combat' && (act.monsterHp||0) > 0; _s++){
-      applyChipDamage(dmg);
+      applyEffectDamage(dmg, 'Decree');
       if(!offlineCapture) spawnCombatFloat((isCrit ? 'Decree crit -' : 'Decree -')+fmt(dmg), isCrit ? 'ft-crit' : 'ft-rare', true);
     }
     if(st.activity === act && act.type==='combat'){
@@ -7860,7 +7861,7 @@
     }
     dmg = Math.round(dmg);
     if(dmg <= 0) return 0;
-    var killed = applyChipDamage(dmg); // necrotic: ignores armour, same channel as Decay
+    var killed = applyEffectDamage(dmg, 'Rot'); // necrotic: ignores armour, same channel as Decay
     if(isCrit && !offlineCapture) spawnCombatFloat('Rot crit -'+fmt(dmg), 'ft-crit', true);
     var wouldHeal = Math.round(dmg * reaperRotSiphonPct(st));
     if(wouldHeal > 0 && st.playerHp > 0){
@@ -7876,7 +7877,7 @@
       if(over > 0 && legActive('soulflay', st) && !killed && st.activity === a && (a.monsterHp||0) > 0){
         var _erupt = Math.round(over * REAPER_SOULFLAY_ERUPT);
         if(_erupt > 0){
-          applyChipDamage(_erupt);
+          applyEffectDamage(_erupt, 'Soulflay');
           if(!offlineCapture) spawnCombatFloat('Soulflay -'+fmt(_erupt), 'ft-rare', true);
         }
       }
@@ -7975,7 +7976,7 @@
     if(pbSeverity(st) < pbSevCap(st)) return 0;
     var dmg = Math.round(PB_ERUPT_PCT * pbSeverity(st) * dotBase(st) * (legActive('venomscale', st) ? PB_ERUPT_VENOMSCALE : 1));
     if(dmg <= 0) return 0;
-    applyChipDamage(dmg);
+    applyEffectDamage(dmg, 'Pandemic');
     if(!offlineCapture) spawnCombatFloat('\u2620 Pandemic -' + fmt(dmg), 'ft-crit', true);
     return dmg; }
   // Time-driven half of the engine: severity climbs while uncured, the Plague lapses if you stop, and a
@@ -8111,11 +8112,11 @@
     fwRimeSync(act, st);
     if(dmg <= 0) return 0;
     var strikes = setFullD3('frostwarden', st) ? 2 : 1;                            // Deathfrost: a second strike for half
-    applyChipDamage(dmg);
+    applyEffectDamage(dmg, 'Shatter');
     if(!offlineCapture) spawnCombatFloat('\u2744 Shatter -' + fmt(dmg), 'ft-crit', true);
     if(strikes > 1 && st.activity === act && act.type === 'combat' && (act.monsterHp || 0) > 0){
       var half = Math.round(dmg / 2);
-      if(half > 0){ applyChipDamage(half); if(!offlineCapture) spawnCombatFloat('\u2744 Deathfrost -' + fmt(half), 'ft-crit', true); }
+      if(half > 0){ applyEffectDamage(half, 'Deathfrost'); if(!offlineCapture) spawnCombatFloat('\u2744 Deathfrost -' + fmt(half), 'ft-crit', true); }
     }
     if(legActive('coldsnap', st)) act.enemyStunUntil = Math.max(act.enemyStunUntil || 0, Date.now() + 1500); // Cold Snap
     return dmg; }
@@ -8399,7 +8400,7 @@
     dmg = Math.round(dmg);
     var strikes = setFull('ranger', st) ? RG_STRIKES_D1_FULL : 1;  // Pack Leader
     if(dmg > 0) for(var _i = 0; _i < strikes && st.activity === act && act.type === 'combat' && (act.monsterHp || 0) > 0; _i++){
-      applyChipDamage(dmg);
+      applyEffectDamage(dmg, 'Companion Strike');
       if(!offlineCapture) spawnCombatFloat((isCrit ? 'Savage crit -' : 'Savage -') + fmt(dmg), isCrit ? 'ft-crit' : 'ft-rare', true);
     }
     rgQuarryAdd(set2D2('ranger', st) ? RG_QUARRY_PER_STRIKE_D2 : RG_QUARRY_PER_STRIKE, st);
@@ -8704,7 +8705,7 @@
     act.pyFuel = Math.max(0, fuel - spent);
     pyBlazeSync(act, st);
     if(dmg <= 0) return 0;
-    applyChipDamage(dmg);
+    applyEffectDamage(dmg, 'Combust');
     awardElementXp('fire', dmg);
     if(!offlineCapture) spawnCombatFloat('\ud83d\udd25 Combust -' + fmt(dmg), 'ft-crit', true);
     return dmg; }
@@ -8717,7 +8718,7 @@
     act.pyFuel = pyBlazeCap(st) * PY_FLASHOVER_FLOOR;
     pyBlazeSync(act, st);
     if(dmg <= 0) return 0;
-    applyChipDamage(dmg);
+    applyEffectDamage(dmg, 'Flashover');
     awardElementXp('fire', dmg);
     if(!offlineCapture) spawnCombatFloat('\u2727 FLASHOVER -' + fmt(dmg), 'ft-crit', true);
     return dmg; }
@@ -8906,7 +8907,7 @@
     if(!reaverBonus(80, st)) act.rvCuts = Math.max(0, (act.rvCuts || 0) - spent); // pre-capstone the ramp pays for the burst
     if(dmg <= 0) return 0;
     if(setFullD4('reaver', st) || legActive('gorewyrm', st)) dmg = Math.round(dmg * 1.25); // Searing/Gorewyrm: the Harvest ignites
-    applyChipDamage(dmg);
+    applyEffectDamage(dmg, 'Harvest');
     if(!offlineCapture) spawnCombatFloat('Harvest -' + fmt(dmg), 'ft-crit', true);
     if(legActive('frenziedguard', st)) st.reaverHarvestHasteUntil = Date.now() + LEG_FRENZYSHELL_HARVEST_MS; // Frenzyshell
     if(legActive('goreshell', st)){ var _h = Math.min(Math.round(dmg * LEG_GORESHELL_HARVEST_HEAL), healRoom(st)); if(_h > 0) st.playerHp += _h; } // Goreshell
@@ -15930,7 +15931,7 @@
     // Toxic Flames (Plaguebearer D4 2pc): your poison also deals Fire — an added component scaled by Fire Attunement.
     var _toxFire = set2D4('plaguebearer', state) ? dmg * 0.25 * elementDmgMult(state, 'fire') : 0;
     dmg += _toxFire;
-    applyChipDamage(dmg);
+    applyEffectDot(dmg, 'Plague');
     if(_toxFire > 0) awardElementXp('fire', _toxFire);
     if(plaguebearerBonus(40)){ // Toxic Blood: heal a share of the Plague's damage
       var heal = Math.min(Math.round(dmg * PB_HEAL_PCT), healRoom(state));
@@ -15961,7 +15962,7 @@
     // by your Fire Attunement. Cauterize (full set) and Gorewyrm both lifesteal from that Fire.
     var _searFire = (set2D4('reaver', state) || legActive('gorewyrm', state)) ? dmg * 0.25 * elementDmgMult(state, 'fire') * (legActive('bloodscale', state) ? 2 : 1) : 0; // Bloodscale Shield: double the Fire component
     dmg += _searFire;
-    applyChipDamage(dmg);
+    applyEffectDot(dmg, 'Bleed');
     if(_searFire > 0) awardElementXp('fire', _searFire);
     if(legActive('crimsonharvest')){ var heal = Math.min(Math.round(dmg * 0.08), healRoom(state)); if(heal > 0) state.playerHp += heal; } // Bloodsupper: the wounds feed you (Bloodletting retired into it)
     if(_searFire > 0 && (setFullD4('reaver', state) || legActive('gorewyrm', state))){ var _cau = Math.min(Math.round(_searFire * 0.15), healRoom(state)); if(_cau > 0) state.playerHp += _cau; } // Cauterize / Gorewyrm: heal 15% of the Fire damage
@@ -15972,7 +15973,7 @@
     var act = state.activity;
     if(!act || act.type!=='combat' || (act.frostbiteUntil||0) <= Date.now()) return;
     var dps = (act.frostbiteDps || 0) * d2FrostbiteTickMult(state) * legNecromancyDoTMult(state); if(dps <= 0) return; // Barbed Ailments (Ranger D2 2pc) + Lich (D3)
-    applyChipDamage(dps * dtMs / 1000);
+    applyEffectDot(dps * dtMs / 1000, 'Frostbite');
   }
   // Pyromancer Ignite (Lv1): a stacking fire DoT on its own channel.
   function applyPyromancerBurnTick(dtMs){
@@ -15982,7 +15983,7 @@
     if(!act || act.type!=='combat' || !enemyBurning(state)) return;
     var dps = (act.burnDps || 0) * d2BurnTickMult(state) * legNecromancyDoTMult(state); if(dps <= 0) return; // Conflagration/Barbed (D2) + Lich (D3): burn ticks harder
     var _burnDmg = dps * dtMs / 1000;
-    applyChipDamage(_burnDmg);
+    applyEffectDot(_burnDmg, 'Blaze');
     if(legActive('emberveil')) legBarrierAdd(_burnDmg * LEG_EMBERVEIL_FRAC); // Emberveil (D2 fire ward): a share of Burn damage banks a Barrier
     if(legActive('ashveil')) legBarrierAdd(_burnDmg * LEG_EMBERVEIL_FRAC);   // Ashveil (D3 fire ward): a share of Burn damage banks a Barrier
     // Funeral Pyre (Pyromancer D3 2pc) / Pyresoul (D3 fire wand) / Ashveil (D3 fire ward): your Burn also applies Decay, once per discrete second.
@@ -16863,6 +16864,55 @@
     }
     return false;
   }
+  // ---- CLASS / EFFECT DAMAGE IN THE COMBAT LOG ----------------------------------------------------
+  // applyChipDamage applies damage and logs NOTHING, and every class rework routes its damage through it.
+  // So Gloria, Storm Bolts, Decrees, the Grave Strike, Rot, Harvest, Shatter, Combust, Flashover, every
+  // commanded strike and every DoT tick were all invisible in the Combat log -- the player saw only their
+  // weapon swings and could not tell where the rest of their damage came from. Ticket, Valuren: "The damage
+  // of the skill Gloria of the Templar is missing".
+  //
+  // USE THESE, NOT applyChipDamage, for anything a player should be able to see:
+  //   applyEffectDamage(dmg, name, opts)  -- a DISCRETE hit: a proc, an eruption, a strike, a reflect.
+  //   applyEffectDot(dmg, name)           -- a per-FRAME DoT slice; aggregated, see below.
+  // opts: {crit:bool, detail:'pipeline text for the Advanced log', target:'name'}
+  function clTargetName(){
+    var a = state.activity;
+    if(!a || a.type !== 'combat') return 'the foe';
+    var m = monsterById(a.monsterId);
+    return (m && m.name) || 'the foe';
+  }
+  function applyEffectDamage(dmg, name, opts){
+    opts = opts || {};
+    // Pass the RAW value through: DoT slices are fractional and rounding here would change the damage.
+    var killed = applyChipDamage(dmg);
+    var shown = Math.round(dmg);
+    if(!offlineCapture && name && shown > 0){
+      combatLogPush({ dir:'skill', spName:name, dmg:shown, crit:!!opts.crit,
+        target: opts.target || clTargetName(), detail: (advCombat() && opts.detail) ? opts.detail : null });
+    }
+    return killed;
+  }
+  // DoTs tick EVERY FRAME (dps * dtMs / 1000), so one log row per call would bury the 200-row buffer in a
+  // fraction of a second and tell the player nothing. Accumulate per effect and emit one row per second:
+  // "Frostbite ticks the foe for 4.1B over 1s", which is also the number a player actually wants.
+  var _clDotAccum = {}, CL_DOT_WINDOW_MS = 1000;
+  function applyEffectDot(dmg, name){
+    var killed = applyChipDamage(dmg);
+    if(offlineCapture || !name || !(dmg > 0)) return killed;
+    var e = _clDotAccum[name];
+    if(!e){ e = _clDotAccum[name] = { sum:0, since:Date.now() }; }
+    e.sum += dmg;
+    var now = Date.now(), span = now - e.since;
+    if(span >= CL_DOT_WINDOW_MS){
+      combatLogPush({ dir:'skill', spName:name, dmg:Math.round(e.sum), over:Math.max(1, Math.round(span/1000)), target:clTargetName() });
+      delete _clDotAccum[name];
+    }
+    return killed;
+  }
+  // Drop partial windows when a fight ends or the foe changes, so a half-second of Burn from the last fight
+  // never lands on top of the next one's log.
+  function combatLogDotReset(){ _clDotAccum = {}; }
+
   // ================= ENEMY SPECIAL ATTACKS (Wildlife extra action bars) =================
   // Player-debuff reads. All effects live on state.activity, so they clear when the fight ends or the foe
   // changes (clearEnemySpecialState) -- there is no lingering out-of-combat debuff.
@@ -16907,6 +16957,7 @@
   // fresh foe engages so nothing carries between fights.
   function clearEnemySpecialState(act){
     if(!act) return;
+    combatLogDotReset();   // a part-filled DoT window must not spill onto the next foe's log
     act.specialAccum = 0;
     act.pBleedUntil = 0; act.pBleedDps = 0; act.pBleedStacks = 0; act.pBleedDurMs = 0;
     act.pPoisonUntil = 0; act.pPoisonDps = 0; act.pPoisonDurMs = 0;
@@ -17367,7 +17418,7 @@
         // legendaries and set bonuses were silently excluded and Reckoning crit far less than advertised.
         if((sentinelBonus(40) || legReflectCanCrit(state)) && Math.random() < playerCritChance(monster)){ _refl *= legReflectCritMult(state); _rcrit = true; }
         var _rdmg = Math.max(1, Math.round(_refl));
-        applyChipDamage(_rdmg);
+        applyEffectDamage(_rdmg, 'Reflect');
         // Name the source so a Sentinel can tell WHY it fired: it reads "Iron Maiden" only when that
         // blocked share actually contributed (Lv20 unlocked AND the Block prevented damage); otherwise
         // it's pure Spiked Barrier -- including every reflect from a sub-Lv20 Sentinel. Thausale reported
@@ -17383,12 +17434,12 @@
     // available to any class (Spellblade Empowered Runes amplifies it like every other enchant).
     var _thornsEnch = Math.round((equippedEnchantTotals(state).thorns || 0) * spellbladeEnchantBoost(state));
     if(_thornsEnch > 0){
-      applyChipDamage(_thornsEnch);
+      applyEffectDamage(_thornsEnch, 'Thorns');
       spawnCombatFloat('⟲ Thorns (ench) -'+fmt(_thornsEnch), 'ft-reflect', true);
     }
     // Signet of the Bramble (D2): reflect a share of every incoming hit back at the attacker.
     var _bramble = legendaryRingBonus('d2_bramble', state);
-    if(_bramble > 0){ var _brd = Math.max(1, Math.round(incomingBeforeDefense * _bramble)); applyChipDamage(_brd); spawnCombatFloat('⟲ Bramble -'+fmt(_brd), 'ft-reflect', true); }
+    if(_bramble > 0){ var _brd = Math.max(1, Math.round(incomingBeforeDefense * _bramble)); applyEffectDamage(_brd, 'Bramble'); spawnCombatFloat('⟲ Bramble -'+fmt(_brd), 'ft-reflect', true); }
     var shieldCounter = weightedShieldCounter(offhandStyle, monster.attackTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
     var effectiveShieldDefense = (offhandStyle && offhandStyle.type==='shield' && offhandItem) ? offhandItem.defense * shieldCounter * offhandProficiency * (1 + shieldProfMult(state)) : 0;
     var dmgToPlayer = Math.max(1, Math.round((rawDmg - armorDefense - effectiveShieldDefense) / tenacityLowHpMult(state)));
@@ -17428,7 +17479,7 @@
       state.reaperShield -= _absorbed; dmgToPlayer -= _absorbed;
       if(_absorbed > 0) spawnCombatFloat('Absorbed '+Math.round(_absorbed)+'!', 'ft-success', false);
       // Phylactery Lash (Reaper D3 full): the shield lashes the attacker for all of the damage it absorbed.
-      if(_absorbed > 0 && setFullD3('reaper')){ var _lash = Math.round(_absorbed); if(_lash > 0){ applyChipDamage(_lash); spawnCombatFloat('Phylactery Lash -'+fmt(_lash), 'ft-crit', true); } }
+      if(_absorbed > 0 && setFullD3('reaper')){ var _lash = Math.round(_absorbed); if(_lash > 0){ applyEffectDamage(_lash, 'Phylactery Lash'); spawnCombatFloat('Phylactery Lash -'+fmt(_lash), 'ft-crit', true); } }
     }
     if((state.lumenShield||0) > 0 && dmgToPlayer > 0){
       var _lBefore = state.lumenShield;
@@ -17439,7 +17490,7 @@
       // Aegis Break (legendary light wand): when the Barrier is spent by this hit, it bursts for Light damage.
       if(legActive('aegisbreak') && _lBefore > 0 && state.lumenShield <= 0){
         var _burst = Math.max(1, Math.round(_lBefore * LEG_AEGISBREAK_MULT * (monster ? elementAdvantage('light', monster.element) : 1)));
-        applyChipDamage(_burst); spawnCombatFloat('Aegis Break -'+fmt(_burst), 'ft-crit', true);
+        applyEffectDamage(_burst, 'Aegis Break'); spawnCombatFloat('Aegis Break -'+fmt(_burst), 'ft-crit', true);
       }
     }
     // Cheat Death (Pendant of Undying): once per fight, a blow that would kill you instead leaves you at X%
@@ -17485,7 +17536,7 @@
     // Shroud of Cinders (D4 cloak): a hit you take exhales a Fire retort at the attacker.
     if(dmgToPlayer > 0 && legendaryCloakBonus('d4_cinders', state) > 0 && act && act.type==='combat' && act.monsterHp > 0){
       var _cin = Math.max(1, Math.round(dmgToPlayer * legendaryCloakBonus('d4_cinders', state) * elementDmgMult(state, 'fire')));
-      applyChipDamage(_cin); if(!offlineCapture) spawnCombatFloat('🔥 Cinders -'+fmt(_cin), 'ft-crit', true);
+      applyEffectDamage(_cin, 'Cinders'); if(!offlineCapture) spawnCombatFloat('🔥 Cinders -'+fmt(_cin), 'ft-crit', true);
     }
     // Knight Rally (Lv 20): a blow you take rallies the line to its lord -- the Banner rises +1.
     if(dmgToPlayer > 0 && knightBonus(20)) knBannerRaise(1);
@@ -17505,7 +17556,7 @@
     if(dmgToPlayer > 0) spawnCombatFloat('-'+fmt(dmgToPlayer)+' '+(monster.element?elementIcon(monster.element):''), 'ft-taken', false); // damage taken + its element
     if(monster.element) awardElementXp(monster.element, dmgToPlayer); // Elemental Attunement also trains by taking that element's damage
     if(wardReflected > 0){
-      applyChipDamage(wardReflected);
+      applyEffectDamage(wardReflected, 'Ward Reflect');
       // Was a player-side spawnFloatingText, which put damage dealt to the ENEMY over your own health bar
       // and styled it as a generic 'rare' proc. It's retaliation like the rest -- same anchor, same colour.
       spawnCombatFloat('⟲ Ward -'+fmt(wardReflected)+(monster.element?' '+elementIcon(monster.element):''), 'ft-reflect', true);
@@ -24963,6 +25014,13 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.74', date:'Jul 31', heading:'Every class ability now shows its damage in the Combat log', items:[
+      'Reported: the Templar&rsquo;s <b>Gloria</b> dealt damage that never appeared in the Combat log. Investigating it turned up the same gap in <b>every reworked class</b> &mdash; the log only ever recorded your weapon swings, so most of your damage was simply missing. If you play a reworked class, a large part of your output has been invisible this whole time.',
+      'Now logged, each under its own name: <b>Gloria</b>, <b>Sunbrand</b>, <b>Storm Bolts</b> and <b>Thunderclaps</b>, <b>Decrees</b>, <b>Retorts</b>, <b>Breaches</b>, the <b>Grave Strike</b>, <b>Rot</b> and <b>Soulflay</b>, <b>Pandemic</b>, <b>Shatter</b> and <b>Deathfrost</b>, <b>Companion Strikes</b>, <b>Combust</b> and <b>Flashover</b>, and the <b>Harvest</b>.',
+      'Damage-over-time is in too &mdash; <b>Blaze</b>, <b>Bleed</b>, <b>Plague</b>, <b>Frostbite</b> and <b>Decay</b> &mdash; summarised as one line per second rather than a row per frame, which would have buried everything else in the log. So a Plaguebearer can finally see what the Plague is actually doing.',
+      'Reflected and defensive damage is named as well: <b>Thornwall</b>, <b>Bramble</b>, <b>Thorns</b>, <b>Elemental Bastion</b>, <b>Dragonscale Bulwark</b>, <b>Phylactery Lash</b>, <b>Aegis Break</b>, <b>Cinders</b> and ward reflects.',
+      'Turn on <b>Advanced Combat Log</b> in Settings for the full multiplier breakdown on hits that have one.'
+    ]},
     { v:'0.0.73', date:'Jul 31', heading:'Fields can no longer be planted underwater', items:[
       'Fixed an exploit (thanks for the report): you could queue a <b>raise</b>, queue a <b>Field</b> on top of it &mdash; which validated against the raised tile &mdash; then <b>cancel the raise</b>. The Field kept its place in the queue and planted at <b>z0</b>, on the waterline.',
       'Cancelling a queued action now invalidates anything queued that depended on it: the Field is skipped and its materials returned, exactly as it would be if the tile had changed for any other reason. Placing a Field on a waterline tile is also blocked outright &mdash; that was never checked either, so a z0 plot was reachable directly as well.',
@@ -31513,6 +31571,8 @@
     else if(e.dir==='in') line = '<span class="cl-in">'+escapeHtml(e.target||'The foe')+' hit you for <b>'+fmt(e.dmg)+'</b>'+(e.blocked?' <span class="cl-tag">blocked</span>':'')+'</span>';
     else if(e.dir==='special') line = '<span class="cl-special">⚡ '+escapeHtml(e.target||'The foe')+' uses <b>'+escapeHtml(e.spName||'a special')+'</b></span>';
     else if(e.dir==='dot') line = '<span class="cl-dot">✦ '+escapeHtml(e.word||'Status')+' ticks you for <b>'+fmt(e.dmg)+'</b></span>';
+    // Class/effect damage you dealt: a proc, an eruption, a commanded strike, or one second of a DoT.
+    else if(e.dir==='skill') line = '<span class="cl-skill">✦ <b>'+escapeHtml(e.spName||'Effect')+'</b> '+(e.over?'ticks':'hits')+' '+escapeHtml(e.target||'the foe')+' for <b>'+fmt(e.dmg)+'</b>'+(e.crit?' <span class="cl-crit">CRIT</span>':'')+(e.over?' <span class="cl-tag">over '+e.over+'s</span>':'')+'</span>';
     else if(e.dir==='fam' && e.dmg != null) line = '<span class="cl-fam">✶ '+escapeHtml(e.fam||'Familiar')+'&#8217;s '+escapeHtml(e.spName||'spell')+' hits '+escapeHtml(e.target||'the foe')+' for <b>'+fmt(e.dmg)+'</b>'+(e.crit?' <span class="cl-crit">CRIT</span>':'')+(e.heal?' <span class="cl-tag">+'+fmt(e.heal)+' HP</span>':'')+'</span>';
     else if(e.dir==='fam') line = '<span class="cl-fam">✶ '+escapeHtml(e.fam||'Familiar')+' casts <b>'+escapeHtml(e.spName||'a spell')+'</b>'+(e.heal?' <span class="cl-tag">+'+fmt(e.heal)+' HP</span>':'')+'</span>';
     else if(e.dir==='miss') line = '<span class="cl-faint">You missed '+escapeHtml(e.target||'the foe')+'</span>';
@@ -36563,7 +36623,7 @@
         // Poison from an active companion chips the monster.
         var poisonDps = getFamiliarPoisonDps();
         if(poisonDps > 0 && state.activity.type==='combat'){
-          applyChipDamage(poisonDps*dt/1000);
+          applyEffectDot(poisonDps*dt/1000, 'Familiar Poison');
         }
         // Toxin/Coating poison: ticks the enemy for its remaining duration.
         applyPotionPoisonTick(dt);
@@ -37065,7 +37125,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.73.5';
+  var GAME_VERSION = '0.0.74.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -37220,6 +37280,8 @@
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg, estateJobShapeOk:estateJobShapeOk,
       dungeonOwedClears:dungeonOwedClears, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL,
+      applyEffectDamage:applyEffectDamage, applyEffectDot:applyEffectDot, combatLogDotReset:combatLogDotReset,
+      combatLogPush:combatLogPush, combatLogLineHtml:combatLogLineHtml, _combatLog:function(){ return combatLog; },
       estateQueuedJobValid:estateQueuedJobValid, estateIsWater:estateIsWater, fieldGrowthMult:fieldGrowthMult,
       chatPartyCodeHtml:chatPartyCodeHtml, chatBodyHtml:chatBodyHtml,
       applyEstateJobCompletion:applyEstateJobCompletion, estateJobMaterials:estateJobMaterials,

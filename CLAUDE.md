@@ -46,6 +46,19 @@ Rules:
   **`suite()` is SYNCHRONOUS and discards the return value** — assertions inside a `.then()`
   run after the report is written, so a failure there is silently invisible. Test async logic
   by its synchronous mechanics (e.g. a waiter-queue length), never by awaiting.
+- **EVERY new damage source MUST show in the Combat log (MANDATORY on every class rework).**
+  `applyChipDamage()` applies damage and logs NOTHING, so for years every rework's signature
+  mechanic was invisible in the log — a player saw only weapon swings (ticket: "the damage of
+  the skill Gloria is missing"). Use these instead, never the raw helper:
+  - `applyEffectDamage(dmg, 'Name', {crit, detail, target})` — a DISCRETE hit: a proc, an
+    eruption, a commanded strike, a reflect. One log row per call.
+  - `applyEffectDot(dmg, 'Name')` — a per-FRAME DoT slice. DoTs tick every frame
+    (`dps * dtMs / 1000`), so these AGGREGATE and emit one row per second ("Blaze ticks the foe
+    for 4.1B over 1s"); logging per call would bury the 200-row buffer instantly.
+  `detail` is only shown when the player has Advanced Combat Log on — pass the pipeline string
+  for anything with a non-obvious multiplier chain. The names are player-facing: use the
+  ability's own name ('Gloria', 'Storm Bolt', 'Grave Strike'), not the internal one.
+  A rework is NOT done until each of its damage sources appears in the log.
 - Discord community feed: `discordFeedPost()` in index.html sends a STRUCTURED EVENT
   (`{kind, name, item_key, rarity, enhance, stats}`) to the `discord_feed` edge function,
   which owns the webhook and composes the message. Fantastic creations + `+12`-or-better
