@@ -5260,7 +5260,7 @@
     { key:'mausoleumwall', name:'Mausoleum Wall',  group:'defense', slot:'offhand', base:'shieldLarge',  cls:'herald',         desc:'Your Breach stuns the foe for 2 seconds.' },
     // Slash weapons (mainhand)
     { key:'gravepilfer',  name:'Gravepilfer',  group:'slash', slot:'mainhand', base:'scimitar',    cls:'treasureHunter', desc:'Kills on a Cursed or Decayed foe pay double Gravecoin and unearth a second Broken Relic.' },
-    { key:'rotmaw',       name:'Rotmaw',       group:'slash', slot:'mainhand', base:'hatchet',     cls:'plaguebearer',   desc:'Decay ticks on the foe feed the Plague, raising its severity.' },
+    { key:'rotmaw',       name:'Rotmaw',       group:'slash', slot:'mainhand', base:'hatchet',     cls:'plaguebearer',   desc:'The Plague also applies Decay — and Decay ticks feed it back, raising its severity.' },
     { key:'bonereaver',   name:'Bonereaver',   group:'slash', slot:'mainhand', base:'halfmoonaxe', cls:'reaver',         desc:'A foe that dies Bleeding erupts — healing you 10% max Health, and its Bleed AND your Cut tally carry to the next foe.' },
     { key:'wraithclaw',   name:'Wraithclaw',   group:'slash', slot:'mainhand', base:'claw',        cls:'assassin',       desc:'Main-hand hits open +1 wound, and Flow of Blood refunds 10% per wound.' },
     { key:'soulharvester',name:'Soulharvester',group:'slash', slot:'mainhand', base:'fullmoonaxe', cls:'executioner',    desc:'Each kill raises your Execute threshold by 2% for the rest of the fight (base 10%, cap 30%).' },
@@ -7928,7 +7928,9 @@
   var PB_ERUPT_VENOMSCALE = 1.5;        // Venomscale: eruptions hit +50%
   var PB_DECAY_SEV = 1;                 // Rotmaw: a Decay tick raises severity by this
   // The Plague does the killing, so the hatchet's own swings channel down.
-  var PB_SWING_MULT = 1.0;              // THE band knob (whole-kit DPS is linear in it)
+  // Measured 187B uncorrected at 45s, so the hatchet's swings channel well down: the Plague is most of this
+  // class's output by design, and severity sits at its cap rather than cycling.
+  var PB_SWING_MULT = 0.454;            // THE band knob (whole-kit DPS is linear in it)
   function pbSevCap(st){ st = st || state;
     return Math.round(PB_SEV_MAX * (legActive('blightfang', st) ? PB_SEV_CAP_BLIGHTFANG : 1)); }
   function pbSeverity(st){ st = st || state; var a = st.activity;
@@ -15792,8 +15794,11 @@
     }
     if(legActive('blightfang')){ var _bf = Math.min(Math.round(dmg * LEG_BLIGHTFANG_FRAC), healRoom(state)); if(_bf > 0) state.playerHp += _bf; } // Blightfang (D2 hatchet): poison ticks heal you 25%
     // Necrosis (Plaguebearer D3 2pc) / Necrotic Venom (Quickdraw D3 2pc) / Rotmaw (D3 hatchet): your poison also applies Decay, once per discrete second.
-    if(legActive('rotmaw') && enemyDecaying(state)) pbPlagueAdd(PB_DECAY_SEV * dtMs / 1000, state); // Rotmaw: Decay feeds the Plague (its old "poison applies Decay" duplicated Necrosis)
-    if(set2D3('plaguebearer')){ act.d3PoisonDecayAccum = (act.d3PoisonDecayAccum||0) + dtMs; while(act.d3PoisonDecayAccum >= 1000){ act.d3PoisonDecayAccum -= 1000; decayApply(act, 1); } }
+    // Rotmaw: applies Decay AND feeds on it. It measured LAST at 152.7B when it only fed, because the winning
+    // D4 layer provides no Decay of its own -- a legendary that needs a specific second piece to do anything
+    // is a dead legendary on three of four layers. Still distinct from Necrosis, which only applies.
+    if(legActive('rotmaw') && enemyDecaying(state)) pbPlagueAdd(PB_DECAY_SEV * dtMs / 1000, state);
+    if(set2D3('plaguebearer') || legActive('rotmaw')){ act.d3PoisonDecayAccum = (act.d3PoisonDecayAccum||0) + dtMs; while(act.d3PoisonDecayAccum >= 1000){ act.d3PoisonDecayAccum -= 1000; decayApply(act, 1); } }
     // (Pandemic's 10%-per-tick Dark explosion retired: it now erupts DETERMINISTICALLY on a cadence once
     // the Plague is terminal -- see pbEruptFire. A coin flip per tick made the class needlessly swingy.)
   }
@@ -24757,7 +24762,7 @@
       'The class is also <b>no longer dependent on crafted coatings</b>. <b>Venomous</b> (which amplified a coating) and <b>Virulence</b> (which existed purely to cover <i>not having</i> one) are both retired. Coatings remain useful, but the Plaguebearer now brings its own disease.',
       '<b>Contagion</b> (Lv 20) scales with severity instead of being a flat +15%. <b>Incubation</b> (Lv 60) stops the Plague lapsing while you keep attacking. <b>Pandemic</b> (Lv 80) is now deterministic: once severity is at its cap the Plague is <b>terminal</b> and erupts on a steady cadence, rather than rolling a 10% chance on every tick.',
       'Because the Plague does the killing, the hatchet’s own swings land for less while the class is active — that is where the class is balanced.',
-      'The eight legendaries had a lot of redundancy, and it is gone. <b>Blightfang</b> used to heal you from poison ticks, which is simply a bigger version of Toxic Blood; it now raises the severity <b>cap</b> by half. <b>Rotmaw</b> used to apply Decay, which duplicated the D3 set bonus <b>Necrosis</b>; now Decay ticks <b>feed</b> the Plague instead. <b>Wasting Curse</b> doubles how fast severity climbs, and <b>Venomscale</b> — previously a second defensive ward — makes Pandemic’s eruptions hit 50% harder. The three shields keep their Block effects as secondary triggers.'
+      'The eight legendaries had a lot of redundancy, and it is gone. <b>Blightfang</b> used to heal you from poison ticks, which is simply a bigger version of Toxic Blood; it now raises the severity <b>cap</b> by half. <b>Rotmaw</b> used to just apply Decay, which duplicated the D3 set bonus <b>Necrosis</b>; it now applies Decay <i>and</i> feeds on it, with Decay ticks raising the Plague’s severity. <b>Wasting Curse</b> doubles how fast severity climbs, and <b>Venomscale</b> — previously a second defensive ward — makes Pandemic’s eruptions hit 50% harder. The three shields keep their Block effects as secondary triggers.'
     ]},
     { v:'0.0.70', date:'Jul 31', heading:'Ranger rework: The Beastmaster', items:[
       'The old Ranger was the same perk four times: Venom, Barbed, Frost and Fire Arrows were each “a 25% chance to apply an ailment”, and the Lv 80 capstone multiplied your damage by three only when all four of those independent rolls happened to line up at once. It was repetitive to play and wildly swingy to balance.',
@@ -36517,7 +36522,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.71.0';
+  var GAME_VERSION = '0.0.71.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
