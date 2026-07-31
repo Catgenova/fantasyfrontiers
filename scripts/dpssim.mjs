@@ -129,6 +129,21 @@ const BUILDS = {
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
     offhandShield: { type: "shieldSmall", leg: "fortunesriposte" },
   },
+  plaguebearer: {
+    // Hatchet (fast 1h) + small shield, leather helm/chest/boots + cloth gloves. The Plague is a SUSTAINED
+    // engine: severity climbs to its cap and STAYS there (Pandemic erupts without spending it), which is why
+    // a cap raise (Blightfang) is strong here where caps were dead weight on the Reaver and Pyromancer -- both
+    // of those CYCLE through their capstone. Ward/shield fixed to Venomscale, the only shield whose effect is
+    // purely offensive on a zero-offense dummy. Sim-dead: Immunize's mitigation, Toxic Blood's and the old
+    // heal legendaries' healing (full HP bar), and Pestilence/Rot Spread (kill-gated; the harness refills).
+    // No per-event coin flips in the core loop, so runs should be quiet -- severity, ticks and the eruption
+    // cadence are all deterministic.
+    weapon: { typeId: "hatchet", styleXp: ["hatchet"] },
+    legs: ["wastingcurse", "blightfang", "rotmaw", "blightwyrm"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
+    offhandShield: { type: "shieldSmall", leg: "venomscale" },
+  },
   ranger: {
     // Medium bow + quiver, leather helm/chest/gloves + cloth boots. The Beastmaster's engine is a CLASS
     // attack, not a familiar cast: a crit commands a companion strike scaling off dotBase. The general

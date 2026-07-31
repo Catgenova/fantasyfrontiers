@@ -3715,10 +3715,11 @@
     // Plaguebearer change #1: Hatchet (not Falchion).
     var pb = FF.CLASS_DEFS_BY_ID.plaguebearer;
     ok(/Hatchet/.test(pb.reqText) && !/Falchion/.test(pb.reqText), 'plaguebearer wields a Hatchet, not a Falchion');
-    // Plaguebearer change #2: Lv80 is a per-tick explosion chance, not an on-death detonation.
+    // Plaguebearer Lv80 is Pandemic, and it is DETERMINISTIC now: at max severity the Plague is terminal and
+    // erupts on a cadence. The old 10%-per-tick coin flip retired -- it made the class needlessly swingy.
     var pandemic = pb.passives.filter(function(p){ return p.level===80; })[0];
     eq(pandemic.name, 'Pandemic', 'plaguebearer Lv80 is Pandemic');
-    ok(/10%/.test(pandemic.desc) && /Dark/.test(pandemic.desc) && !/dies|death/i.test(pandemic.desc), 'Pandemic = each poison tick has a 10% Dark-explosion chance (not on-death)');
+    ok(/terminal/i.test(pandemic.desc) && !/10%/.test(pandemic.desc) && !/dies|death/i.test(pandemic.desc), 'Pandemic erupts on a cadence at max severity, not on a per-tick roll-explosion chance (not on-death)');
 
     // ---- Functional: build mock states that activate each class, verify gating + perk math ----
     function armor(mat,tier){ return {material:mat,tier:tier||5}; }
@@ -9841,6 +9842,72 @@
     eq(FF.craftBodyRarity('Rare Bronze Dagger'), null, 'rare craft body -> null (chronicle only)');
     eq(FF.craftBodyRarity('Oak Plank'), null, 'normal craft body -> null');
     eq(FF.craftBodyRarity(''), null, 'empty body -> null');
+  });
+
+  // ---- Classes: Plaguebearer (the Plague -- poison with a severity) --------------------
+  suite('classes: plaguebearer (the Plague)', function(){
+    function arm(mat){ return {material:mat,tier:5}; }
+    function pbSt(level, extra){
+      var st = { xp:{}, physique:{}, equippedMainhand:'hatchet', equippedOffhand:'shieldSmall',
+                 bodyArmor:{helmet:arm('leather'),chest:arm('leather'),gauntlets:arm('tailoring'),boots:arm('leather')},
+                 activity:{type:'combat',monsterHp:1e9,dotHitAvg:1000}, playerHp:100, uniqueItems:{} };
+      st.xp.plaguebearer = FF.xpFloorForLevel(level);
+      if(extra) for(var k in extra) st[k]=extra[k];
+      return st;
+    }
+    eq(FF.activeClassId(pbSt(85)), 'plaguebearer', 'hatchet + small shield + leather/cloth => Plaguebearer');
+    var cd = FF.CLASS_DEFS_BY_ID.plaguebearer;
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Septic,Contagion,Toxic Blood,Incubation,Pandemic', 'the Plague ladder');
+
+    // Severity: raised by hits, capped, and LOST if the Plague lapses.
+    var p = pbSt(85);
+    eq(FF.pbSeverity(p), 0, 'a fresh foe is uninfected');
+    FF.pbPlagueAdd(3, p);
+    ok(FF.pbSeverity(p) > 0, 'hits raise severity');
+    FF.pbPlagueAdd(999, p);
+    eq(FF.pbSeverity(p), FF.pbSevCap(p), 'severity has a cap');
+    p.activity.pbUntil = Date.now() - 1;
+    FF.pbPlagueAdd(1, p);
+    ok(FF.pbSeverity(p) < FF.pbSevCap(p), 'a LAPSED Plague starts over -- the cost of dropping uptime');
+
+    // The tick derives from severity x the recent hit, and is never REPLACED into the shared channel.
+    var d = pbSt(85); FF.pbPlagueAdd(10, d);
+    near(FF.pbPlagueDps(d), FF.PB_TICK_PCT * FF.pbSeverity(d) * 1000, 'the Plague ticks off severity x the recent average hit');
+    ok((d.activity.potionPoisonDps||0) > 0, 'and it DERIVES the shared poison channel so every reader still works');
+    ok((d.activity.potionPoisonUntil||0) > Date.now(), 'including the duration every reader checks');
+    // A stronger foreign poison is not weakened by the sync (max wins).
+    var f = pbSt(85); f.activity.potionPoisonDps = 1e9; f.activity.potionPoisonUntil = Date.now()+9999;
+    FF.pbPlagueAdd(1, f);
+    eq(f.activity.potionPoisonDps, 1e9, 'a stronger foreign poison survives the sync');
+
+    // Contagion scales with severity (was a flat +15%).
+    var c = pbSt(85); FF.pbPlagueAdd(10, c);
+    near(FF.pbContagionMult(c), 1 + FF.PB_CONTAGION_PCT * FF.pbSeverity(c), 'Contagion scales with severity');
+    var c1 = pbSt(1); FF.pbPlagueAdd(10, c1);
+    near(FF.pbContagionMult(c1), 1, 'Contagion needs Lv20');
+
+    // Blightfang raises the CAP -- strong here because this engine SUSTAINS at the cap rather than cycling.
+    var bf = pbSt(85, { uniqueItems:{ L:{ uid:'L', leg:'blightfang', kind:'weapon', base:'stweapon_hatchet_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' });
+    eq(FF.pbSevCap(bf), Math.round(FF.PB_SEV_MAX * FF.PB_SEV_CAP_BLIGHTFANG), 'Blightfang: the severity cap rises by half');
+    // Wasting Curse raises the RATE.
+    var wc = pbSt(85, { uniqueItems:{ L:{ uid:'L', leg:'wastingcurse', kind:'weapon', base:'stweapon_hatchet_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' });
+    ok(FF.pbSevRate(wc) > FF.pbSevRate(pbSt(85)), 'Wasting Curse: severity climbs faster');
+
+    // Pandemic only erupts at MAX severity, and it does not spend it (the engine sustains).
+    var e = pbSt(85); FF.pbPlagueAdd(999, e);
+    eq(FF.pbSeverity(e), FF.pbSevCap(e), 'terminal at the cap');
+    var svR = Math.random;
+    try { Math.random = function(){ return 0.999; };
+      var before = FF.pbSeverity(e);
+      FF.pbEruptFire(e.activity, e);
+      eq(FF.pbSeverity(e), before, 'an eruption does NOT spend severity');
+    } finally { Math.random = svR; }
+    var ne = pbSt(85); FF.pbPlagueAdd(1, ne);
+    eq(FF.pbEruptFire(ne.activity, ne), 0, 'and nothing erupts below the cap');
+
+    // The band knob + its damage row.
+    near(FF.PB_SWING_MULT, FF.PB_SWING_MULT, 'the Septic channel is the band knob');
+    ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'plaguebearerSeptic'; }), 'the Septic channel is a named PLAYER_DMG_MODS row');
   });
 
   // ---- The shared damage-over-time base (dotBase) -------------------------------------
