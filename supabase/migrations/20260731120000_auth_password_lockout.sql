@@ -30,6 +30,63 @@
 -- is inert.
 -- ============================================================================
 
+-- ============================================================================
+-- SHARED DISCORD NOTIFIER — extracted from notify_clamp_discord (20260724240000) so the clamp ping and the
+-- lockout ping are the SAME path: one webhook read, one pg_net call site, one swallow-and-continue policy.
+-- Rotating or disabling the webhook is a one-row change that moves both alerts together.
+-- ============================================================================
+create or replace function public.discord_notify(p_body jsonb)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_url text;
+begin
+  select value into v_url from public.app_config where key = 'clamp_webhook';
+  if v_url is null or v_url = '' then return; end if;   -- not configured -> no-op
+  perform net.http_post(
+    url     := v_url,
+    body    := p_body,
+    headers := jsonb_build_object('Content-Type', 'application/json')
+  );
+exception when others then
+  null;   -- a webhook problem must never affect the caller
+end $$;
+revoke execute on function public.discord_notify(jsonb) from anon, authenticated, public;
+grant execute on function public.discord_notify(jsonb) to supabase_auth_admin;
+
+-- Re-point the existing clamp trigger at the shared notifier. The embed it produces is byte-for-byte what
+-- it produced before -- this only moves the webhook lookup and the HTTP call into discord_notify().
+create or replace function public.notify_clamp_discord()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_name     text;
+  v_kind     text;
+  v_surfaces text;
+  v_reason   text;
+begin
+  v_name     := coalesce((select username from public.profiles where id = new.user_id), new.user_id::text);
+  v_kind     := case when new.auto then 'Auto-detected' else 'Manual' end;
+  v_surfaces := coalesce(nullif(array_to_string(new.surfaces, ', '), ''), '—');
+  v_reason   := left(coalesce(new.reason, new.signal::text, '—'), 1000);
+
+  perform public.discord_notify(jsonb_build_object(
+    'username', 'Fantasy Frontiers Moderation',
+    'embeds', jsonb_build_array(jsonb_build_object(
+      'title', '⛔ Account clamped',
+      'color', 15158332,   -- red (0xE74C3C)
+      'fields', jsonb_build_array(
+        jsonb_build_object('name', 'Player',   'value', v_name,     'inline', true),
+        jsonb_build_object('name', 'Type',     'value', v_kind,     'inline', true),
+        jsonb_build_object('name', 'Surfaces', 'value', v_surfaces, 'inline', false),
+        jsonb_build_object('name', 'Reason',   'value', v_reason,   'inline', false)
+      ),
+      'timestamp', to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+    ))
+  ));
+  return new;
+exception when others then
+  return new;   -- never let a webhook problem block a clamp
+end $$;
+-- (the account_clamp_notify trigger from 20260724240000 still points at this function -- unchanged)
+
 -- Per-user failure ledger. One row per user who has ever failed, so it is bounded by users, not attempts.
 create table if not exists public.auth_login_failures (
   user_id       uuid        primary key,
@@ -74,7 +131,6 @@ declare
   v_row    public.auth_login_failures;
   v_cfg    record;
   v_lock   int;
-  v_url    text;
   v_name   text;
 begin
   v_uid   := nullif(event->>'user_id', '')::uuid;
@@ -135,34 +191,28 @@ begin
            first_fail_at= now()
      where user_id = v_uid returning * into v_row;
 
-    -- Alert the moderation channel, reusing the clamp notifier's pattern (pg_net + the private app_config
-    -- row, so the webhook URL never lives in git). Throttled to one ping per account per hour: an attack
-    -- is a sustained thing and we want a signal, not a flood. Best-effort -- see the exception block.
+    -- Alert through the SAME notifier the clamp ping uses (public.discord_notify), so both land in the
+    -- moderation channel and the webhook is configured/rotated in exactly one place. Throttled to one ping
+    -- per account per hour: an attack is sustained, and we want a signal rather than a flood.
     begin
-      select value into v_url from public.app_config where key = 'clamp_webhook';
-      if v_url is not null and v_url <> ''
-         and (v_row.notified_at is null or v_row.notified_at < now() - interval '1 hour') then
+      if v_row.notified_at is null or v_row.notified_at < now() - interval '1 hour' then
         v_name := coalesce((select username from public.profiles where id = v_uid), v_uid::text);
-        perform net.http_post(
-          url     := v_url,
-          body    := jsonb_build_object(
-            'username', 'Fantasy Frontiers Security',
-            'embeds', jsonb_build_array(jsonb_build_object(
-              'title', '🔒 Account locked — failed sign-in attempts',
-              'color', 15105570,   -- amber (0xE67E22)
-              'fields', jsonb_build_array(
-                jsonb_build_object('name', 'Player',      'value', v_name, 'inline', true),
-                jsonb_build_object('name', 'Locked for',  'value', (v_lock / 60)::text || ' min', 'inline', true),
-                jsonb_build_object('name', 'Lock #',      'value', v_row.lock_count::text, 'inline', true),
-                jsonb_build_object('name', 'Note',        'value',
-                  'Repeated failures against one account. A rising lock number on many accounts at once suggests credential stuffing.',
-                  'inline', false)
-              ),
-              'timestamp', to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
-            ))
-          ),
-          headers := jsonb_build_object('Content-Type', 'application/json')
-        );
+        perform public.discord_notify(jsonb_build_object(
+          'username', 'Fantasy Frontiers Moderation',
+          'embeds', jsonb_build_array(jsonb_build_object(
+            'title', '🔒 Account locked — failed sign-in attempts',
+            'color', 15105570,   -- amber (0xE67E22)
+            'fields', jsonb_build_array(
+              jsonb_build_object('name', 'Player',     'value', v_name, 'inline', true),
+              jsonb_build_object('name', 'Locked for', 'value', (v_lock / 60)::text || ' min', 'inline', true),
+              jsonb_build_object('name', 'Lock #',     'value', v_row.lock_count::text, 'inline', true),
+              jsonb_build_object('name', 'Note',       'value',
+                'Repeated failed sign-ins against one account. A rising lock number across MANY accounts at once is credential stuffing, not a forgetful player.',
+                'inline', false)
+            ),
+            'timestamp', to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+          ))
+        ));
         update public.auth_login_failures set notified_at = now() where user_id = v_uid;
       end if;
     exception when others then
@@ -216,7 +266,9 @@ revoke execute on function public.auth_unlock_account from anon, authenticated, 
 --   3. Wait it out, log in successfully, and confirm the row is gone:
 --        select * from public.auth_login_failures where user_id = '<uuid>';
 --   4. Repeat to see the backoff double (1 min -> 2 -> 4 ...), ceiling 24h.
---   5. Confirm the Discord alert lands once, and not again within the hour.
+--   5. Confirm the Discord alert lands in the moderation channel once, and not again within the hour.
+--      It uses the SAME webhook as the clamp ping (app_config.clamp_webhook via public.discord_notify),
+--      so if clamp pings work this works, and if the row is unset BOTH are silent.
 --
 -- ROLLBACK, if it ever misbehaves: disable the hook in the Dashboard. The function is fail-open, so even
 -- leaving it registered while broken degrades to today's behaviour rather than blocking sign-in.
