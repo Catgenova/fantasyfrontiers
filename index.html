@@ -5340,7 +5340,7 @@
     { key:'magmacore',      name:'Magmacore Sledge', group:'blunt', slot:'mainhand', base:'sledge',   cls:'juggernaut', desc:'Your Wind-Up swings erupt with a Fire nova (+25%).' },
     // Ranged weapons (mainhand)
     { key:'breathfang',  name:'Breathfang Bow',  group:'ranged', slot:'mainhand', base:'bowShort',  cls:'quickdraw',    desc:'Your Blasthead burns as Fire, scaling with your Fire Attunement.' },
-    { key:'wyrmstalker', name:'Wyrmstalker Bow', group:'ranged', slot:'mainhand', base:'bowMedium', cls:'ranger',       desc:'Your companion’s strikes hit +40% while Quarry is at its cap.' },
+    { key:'wyrmstalker', name:'Wyrmstalker Bow', group:'ranged', slot:'mainhand', base:'bowMedium', cls:'ranger',       desc:'Your companion’s strikes hit +20% while Quarry is at its cap.' },
     { key:'dragoneye',   name:'Dragoneye Bow',   group:'ranged', slot:'mainhand', base:'bowLong',   cls:'sharpshooter', desc:"Your Critical Hits also strike the foe's elemental weakness (+20%)." }
   ];
   var D4_LEG_GEAR_MAP = {}; D4_LEG_GEAR_DEFS.forEach(function(d){ D4_LEG_GEAR_MAP[d.key] = d; });
@@ -8128,10 +8128,14 @@
   var RG_HUNTERSMARK_PCT = 0.15;      // Hunter's Mark (D2 full): a Quarried foe takes more
   var RG_CRIT_MULT = 2.0;             // Two as One: the beast's crit is a FLAT x2 (dotBase is already post-crit)
   var RG_THROATSEEKER_MULT = 2.0;     // Throatseeker (D3 2pc): crits double vs a Quarried foe
-  var RG_WYRMSTALKER_PCT = 0.40;      // Wyrmstalker Bow: strikes hit harder at max Quarry
+  // Wyrmstalker stacks MULTIPLICATIVELY with the D3 layer (its own max-Quarry bonus, D3's guaranteed chains
+  // at max Quarry, and Throatseeker's doubled crits), which read 39% above the pack mean at 0.40. Trimmed to
+  // keep the four bows inside a sane spread -- the Reaver's best BiS pairing sits 24% over its own mean.
+  var RG_WYRMSTALKER_PCT = 0.20;      // Wyrmstalker Bow: strikes hit harder at max Quarry
   var RG_BONEVOLLEY_CHANCE = 0.25;    // Bonevolley: a strike can command again immediately
-  var RG_SWING_MULT = 1.0;            // band knob, if the bow chassis needs channelling (it may not --
-                                      // the bow chassis was already corrected in the Quiverlord rework)
+  // The pack does the killing, so the bow's own swings channel down. Measured 319B uncorrected: the commanded
+  // strike fires on nearly every swing at BiS crit rates, so the pack is most of this class's output by design.
+  var RG_SWING_MULT = 0.264;          // THE band knob (whole-kit DPS is linear in it)
   function rgQuarryCap(st){ st = st || state; return set2D4('ranger', st) ? RG_QUARRY_MAX_D4 : RG_QUARRY_MAX; }
   function rgQuarry(st){ st = st || state; var a = st.activity;
     if(!a || a.type !== 'combat' || (a.rgQuarryUntil || 0) <= Date.now()) return 0;
