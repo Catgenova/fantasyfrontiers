@@ -94,9 +94,12 @@ Deno.serve(async (req) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const webhook = Deno.env.get("DISCORD_FEED_WEBHOOK");
   if (!supabaseUrl || !serviceKey) return json({ ok: false, error: "Server not configured." }, 500);
-  // No webhook configured -> the feed is simply off. Report ok so a client never treats a disabled feed
-  // as an error worth retrying; the feed is cosmetic and must never surface as a gameplay failure.
-  if (!webhook) return json({ ok: true, posted: false, reason: "feed_disabled" });
+  // NOTE: the missing-webhook check deliberately does NOT happen here. It used to, and that made every
+  // call -- unauthenticated, malformed, rate-limited, whatever -- return the same feed_disabled reply, which
+  // (a) let an anonymous caller probe whether the feed is configured, and (b) made the whole request path
+  // untestable until the secret was live: a validation test could not tell "correctly refused" from "feed
+  // off". Auth, rate limit, validation and sanitising all run first now; only the final HTTP post is
+  // skipped. See the relay at the bottom.
 
   const admin = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
 
@@ -192,6 +195,12 @@ Deno.serve(async (req) => {
   // ---- Relay ------------------------------------------------------------------------------------
   // allowed_mentions is pinned here where the caller cannot reach it, and username/avatar_url are never
   // forwarded, so a post can neither ping nor wear someone else's identity.
+  // Everything above has passed: the caller is authenticated, under their rate limit, and the message has
+  // been validated and composed. Only the delivery is optional. Reporting ok:true here is deliberate -- the
+  // feed is cosmetic and a missing webhook must never surface to a player as a gameplay failure -- and
+  // `reason` names the cause so a smoke test can tell it apart from a refusal.
+  if (!webhook) return json({ ok: true, posted: false, reason: "feed_disabled" });
+
   try {
     const res = await fetch(webhook, {
       method: "POST",
