@@ -232,8 +232,10 @@ effects. Chassis: this is the SECOND class on the x49 wand stack; uncorrected it
 trillions the Stormlord's 4.4-6.5T implied — that figure came from Bolts compounding THROUGH the element
 stack, whereas the Blaze scales off a plain channelled hit average. So the x49 stack only explodes when a
 kit's own damage feeds back through it; **Frostwarden / Nightblade / Lumen should be budgeted per-kit, not
-assumed catastrophic.** `PY_SWING_MULT` **0.081** is the band knob. Ceilings (D2 set, Ruin cloak, Everburning
-ward): Emberstorm ~105B / Cinderwyrm ~96B / Cindermaw ~85B / Pyresoul ~83B — pack mean **92B**, on target.
+assumed catastrophic.** `PY_SWING_MULT` **0.079** is the band knob. Ceilings (D2 set, Ruin cloak, Everburning
+ward), measured at 0.081 and scaled by the final knob: Emberstorm ~102B / Cinderwyrm ~94B / Cindermaw ~83B /
+Pyresoul ~81B — pack mean **90B**, dead on target. (0.081 measured 92B; the final 2.3% nudge centres the point
+estimate and is well inside the ±8% variance below, so it is not separately measurable — do not re-sim for it.)
 The legendary ORDERING is noise, not signal: it flipped almost completely between the 0.11 and 0.081 matrices
 (Emberstorm last then first; Pyresoul second then last), because the four wands sit within ~±12% of each
 other while same-session variance is ±8-15%. Do not claim a "best wand" for this class.
