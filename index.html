@@ -25014,6 +25014,11 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.74', date:'Jul 31', heading:'Two windows on one account are caught faster', items:[
+      'Reported: with the game open in two browsers, both appeared to start an estate task, and the window that should have stopped kept running for up to a minute.',
+      'To be clear about what was never possible: the server only ever runs <b>one</b> estate task per account, so a second one could not actually be started &mdash; the other window was showing a task it had not been granted, and (since the earlier fix) now adopts the real one and charges you nothing.',
+      'What was real is how long the displaced window took to notice. It only found out when its next save attempt was refused, up to 8 seconds later, and could keep acting in the meantime. Now, the moment the server tells a window that a task it did not start is already running, that window checks in immediately &mdash; so it stops within one round trip instead of one save cycle. A stopped window also refuses to spend materials on anything, rather than spending them on work it can never save.'
+    ]},
     { v:'0.0.74', date:'Jul 31', heading:'Every class ability now shows its damage in the Combat log', items:[
       'Reported: the Templar&rsquo;s <b>Gloria</b> dealt damage that never appeared in the Combat log. Investigating it turned up the same gap in <b>every reworked class</b> &mdash; the log only ever recorded your weapon swings, so most of your damage was simply missing. If you play a reworked class, a large part of your output has been invisible this whole time.',
       'Now logged, each under its own name: <b>Gloria</b>, <b>Sunbrand</b>, <b>Storm Bolts</b> and <b>Thunderclaps</b>, <b>Decrees</b>, <b>Retorts</b>, <b>Breaches</b>, the <b>Grave Strike</b>, <b>Rot</b> and <b>Soulflay</b>, <b>Pandemic</b>, <b>Shatter</b> and <b>Deathfrost</b>, <b>Companion Strikes</b>, <b>Combust</b> and <b>Flashover</b>, and the <b>Harvest</b>.',
@@ -25881,6 +25886,7 @@
         var d = res && res.data;
         if(estateJobBusy(d)){                      // refused: already have a running job -- resync, charge nothing
           addLog(estateJobBusyMsg(d, 'a guild estate task'), 'danger');
+          cloudSave(false, true);                  // same two-browser probe as the personal path above
           guildEstateJobsRefresh(); needsRender = true; return;
         }
         if(!d || !d.ok){
@@ -25896,6 +25902,7 @@
     }
     if(!estateJobServerOwned()){ var n = Date.now(); commit(target, n, n + localMs); return; }
     if(!estJobRpcLock()) return;
+    var _hadLocalJob = !!(state.estate && state.estate.job);   // for the two-browser check in the handler
     var _p;
     // A synchronous throw here (no client, transport blown up) used to escape the handler and strand the
     // lock, killing every later estate click.
@@ -25905,8 +25912,16 @@
       estJobRpcRelease();
       var d = res && res.data;
       if(estateJobBusy(d)){                        // refused: a job is already running -- adopt it, charge nothing
+        var _wasIdle = !_hadLocalJob;              // we thought the estate was free
         state.estate.job = estateJobFromServer(d.job);
         addLog(estateJobBusyMsg(d, 'an estate task'), 'danger');
+        // TWO-BROWSER DETECTION (ticket, ITxToxic). A job we did not start, on an estate we believed was
+        // idle, is direct evidence that ANOTHER SESSION is driving this account. The session fence only
+        // notices on the next save push (up to CLOUD_PUSH_INTERVAL, ~8s), and that window is what let a
+        // displaced tab keep acting. Force the push NOW: it either succeeds (our local state was merely
+        // stale -- e.g. after a reload) or comes back fenced, which raises the overlay and stops the loop.
+        // Using the real save round-trip means the SERVER decides, so this cannot false-positive.
+        if(_wasIdle) cloudSave(false, true);
         needsRender = true; return;
       }
       if(!d || !d.ok){
@@ -26067,6 +26082,9 @@
   // Immediate start (nothing running, nothing queued) is byte-for-byte the old path: server claim first,
   // materials consumed only once the claim is ours. Otherwise it queues.
   function estateEnqueueOrStart(kind, x, y, payload, localMs, spec){
+    // Fenced out by another window: this tab's writes are refused and its loop has stopped, so starting
+    // anything would spend materials it can never persist.
+    if(cloudFenced){ addLog('This tab is no longer the active session — reload to play here.', 'danger'); needsRender = true; return; }
     var jobFields = spec.jobFields || {};
     var jobBase = Object.assign({ kind:kind, x:x, y:y }, jobFields);
     // Start the action right now via the classic server/local claim. estateJobClaim captures estActive as
@@ -37125,7 +37143,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.74.0';
+  var GAME_VERSION = '0.0.74.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -37281,6 +37299,7 @@
       estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg, estateJobShapeOk:estateJobShapeOk,
       dungeonOwedClears:dungeonOwedClears, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL,
       applyEffectDamage:applyEffectDamage, applyEffectDot:applyEffectDot, combatLogDotReset:combatLogDotReset,
+      estateEnqueueOrStart:estateEnqueueOrStart, _setCloudFenced:function(v){ cloudFenced = !!v; }, _cloudFenced:function(){ return cloudFenced; },
       combatLogPush:combatLogPush, combatLogLineHtml:combatLogLineHtml, _combatLog:function(){ return combatLog; },
       estateQueuedJobValid:estateQueuedJobValid, estateIsWater:estateIsWater, fieldGrowthMult:fieldGrowthMult,
       chatPartyCodeHtml:chatPartyCodeHtml, chatBodyHtml:chatBodyHtml,

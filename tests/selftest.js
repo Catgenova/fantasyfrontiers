@@ -13452,6 +13452,30 @@
     ok(tail.charAt(0) !== ' ', 'the stats tail has no leading space');
   });
 
+  // ---- Two browsers on one account: a fenced tab must not act ------------------------------------
+  // Ticket (ITxToxic): two browsers each rendered an estate job start, and the displaced tab kept running.
+  // The server only ever runs one job per account (estate_jobs is keyed on user_id), but a fenced tab could
+  // still fire actions during the window before it noticed -- and spend materials it can never persist.
+  suite('fenced tab cannot start estate work', function(){
+    ok(typeof FF.estateEnqueueOrStart === 'function' && typeof FF._setCloudFenced === 'function', 'estate start + fence flag exported');
+    var S = FF._state, savedInv = S.inventory, savedEstate = S.estate;
+    try {
+      var g = [];
+      for(var x=0; x<3; x++){ g[x]=[]; for(var y=0; y<3; y++) g[x][y] = { type:'dirt', height:5, obstacle:null, fieldTier:null, owned:true }; }
+      S.estate = { grid:g, job:null, queue:[] };
+      S.inventory = { digging_t3: 500 };
+      FF._setCloudFenced(true);
+      FF.estateEnqueueOrStart('field', 1, 1, {fieldTier:3}, 1000, { jobFields:{fieldTier:3}, startedMsg:'x', queuedMsg:'x' });
+      eq(S.inventory.digging_t3, 500, 'a fenced tab spends no materials');
+      eq(S.estate.job, null, 'a fenced tab starts no job');
+      eq(S.estate.queue.length, 0, 'a fenced tab queues nothing');
+    } finally {
+      FF._setCloudFenced(false);
+      S.inventory = savedInv; S.estate = savedEstate;
+    }
+    ok(!FF._cloudFenced(), 'the fence flag is restored so later suites are unaffected');
+  });
+
   // ---- Combat log: class/effect damage must be visible --------------------------------------------
   // Ticket (Valuren): "The damage of the skill Gloria of the Templar is missing". Every rework routed its
   // damage through applyChipDamage, which logs nothing, so Gloria/Bolts/Decrees/Rot/Harvest/Shatter and
