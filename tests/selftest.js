@@ -10177,7 +10177,20 @@
     eq(FF.invGroupFor('bodyarmor_leather_boots_t5_normal'), 'a_leather',   'leather -> Leather Armor');
     // Jewelry / offhands / tools each their own group; raw materials fall to the broad buckets.
     eq(FF.invGroupFor('stshield_medium_t5_normal'), 'shields', 'shield -> Shields');
-    eq(FF.invGroupFor('ring_fire_t5_rare'),   'rings',   'ring -> Rings');
+    // Rings bucket PER TYPE now (ticket, Valuren) -- the single 'rings' bucket is gone.
+    eq(FF.invGroupFor('ring_fire_t5_rare'),      'r_fire',      'fire ring -> Fire Rings');
+    eq(FF.invGroupFor('ring_blunt_t0_normal'),   'r_blunt',     'blunt ring -> Blunt Rings');
+    eq(FF.invGroupFor('ring_communion_t20_fantastic'), 'r_communion', 'communion ring -> Communion Rings');
+    eq(FF.invGroupFor('legring_plunder_rare'),   'r_signet',    'legendary signet -> Signets');
+    eq(FF.invGroupFor('ring_notatype_t5_rare'),  'r_signet',    'an unknown ring type falls back to Signets, never dropped');
+    ok(!FF.INV_GROUPS.some(function(g){ return g.id === 'rings'; }), 'the single Rings bucket is gone');
+    // One container per ring type, each with its own label + icon, and all reachable from invGroupFor.
+    FF.RING_TYPES.forEach(function(rt){
+      var g = FF.INV_GROUPS.filter(function(x){ return x.id === 'r_' + rt.id; })[0];
+      ok(!!g, 'a container exists for ring type ' + rt.id);
+      ok(g && /Rings$/.test(g.label) && g.label.indexOf('Ring of ') === -1, 'ring group label reads "X Rings": ' + (g && g.label));
+      eq(FF.invGroupFor('ring_' + rt.id + '_t3_normal'), 'r_' + rt.id, rt.id + ' ring routes to its own container');
+    });
     eq(FF.invGroupFor('amulet_t5_rare'),      'amulets', 'amulet -> Amulets');
     eq(FF.invGroupFor('relic_t5_rare'),       'relics',  'relic -> Relics');
     eq(FF.invGroupFor('tool_mining_t5_normal'),'tools',  'tool -> Tools');

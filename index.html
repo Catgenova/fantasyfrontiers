@@ -21157,20 +21157,39 @@
         html += '<div class="empty-note">No Rings in inventory. Forge one in Outfitting &rarr; Jewelrycrafting, or Mastercraft a Signet.</div>';
       } else {
         var slotIsPlain = !(ss && (ss.leg || ss.uid));
-        var ringCands = ownedRings.map(function(id){
-          var item = RING_ITEMS[id];
-          return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:ringItemBonus(item),
-            statHtml:'+'+Math.round(ringItemBonus(item)*100)+'% '+ringBonusLabel(item), deltaHtml:'',
-            equipped:!!(slotIsPlain && slotRing && slotRing.id===id), canEquip:true, lockHtml:'',
-            action:'equipRing', data:'data-item="'+id+'" data-slot="'+slotId+'"' };
-        }).concat(ownedLeg.map(function(id){
-          var item = LEGENDARY_RING_ITEMS[id]; var worn = legRingEquipped(item.legKey);
-          return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:(item.value||0), noBest:true,
-            statHtml:'+'+Math.round(item.value*100)+'% '+escapeHtml(item.statLabel)+(worn?' &bull; worn':''), deltaHtml:'',
-            equipped:false, canEquip:!worn, lockHtml:'',
-            action:'equipLegRing', data:'data-item="'+id+'" data-slot="'+slotId+'"' };
-        }));
-        html += renderEquipCandidatePicker([{ key:'ring_'+slotId, title:'Rings', candidates:ringCands }], {flat:true});
+        // ONE COLLAPSIBLE GROUP PER RING TYPE (ticket, Valuren), the same treatment shields get by size and
+        // wards by element. This list was previously FLAT: 11 types x 21 tiers x 4 rarities in one run, on
+        // each of five slots, which is what made rings the least navigable menu in the game. The group
+        // holding whatever is already in THIS slot opens by default, so the common case -- swapping a ring
+        // for a better one of the same type -- is one click deep.
+        var ringGroups = RING_TYPES.map(function(rt){
+          var ids = ownedRings.filter(function(id){ return RING_ITEMS[id].typeId === rt.id; });
+          if(!ids.length) return null;
+          return { key:'ring_'+slotId+'_'+rt.id, title:rt.name.replace(/^Ring of /, '') + ' Rings', icon:rt.icon,
+            defaultOpen:!!(slotIsPlain && slotRing && slotRing.typeId === rt.id),
+            candidates: ids.map(function(id){
+              var item = RING_ITEMS[id];
+              return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:ringItemBonus(item),
+                statHtml:'+'+Math.round(ringItemBonus(item)*100)+'% '+ringBonusLabel(item), deltaHtml:'',
+                equipped:!!(slotIsPlain && slotRing && slotRing.id===id), canEquip:true, lockHtml:'',
+                action:'equipRing', data:'data-item="'+id+'" data-slot="'+slotId+'"' };
+            }) };
+        }).filter(Boolean);
+        // Signets last: they are legendaries, scarce, and only one of each may be worn.
+        if(ownedLeg.length){
+          ringGroups.push({ key:'ring_'+slotId+'_signet', title:'Signets', icon:svgIcon('ring','var(--rarity-fantastic)'),
+            defaultOpen:!!(ss && ss.leg),
+            candidates: ownedLeg.map(function(id){
+              var item = LEGENDARY_RING_ITEMS[id]; var worn = legRingEquipped(item.legKey);
+              return { icon:item.icon, name:item.name, qty:(state.inventory[id]||0), score:(item.value||0), noBest:true,
+                statHtml:'+'+Math.round(item.value*100)+'% '+escapeHtml(item.statLabel)+(worn?' &bull; worn':''), deltaHtml:'',
+                equipped:false, canEquip:!worn, lockHtml:'',
+                action:'equipLegRing', data:'data-item="'+id+'" data-slot="'+slotId+'"' };
+            }) });
+        }
+        // An empty slot has nothing to key off, so open the first group rather than presenting all-collapsed.
+        if(ringGroups.length && !ringGroups.some(function(g){ return g.defaultOpen; })) ringGroups[0].defaultOpen = true;
+        html += renderEquipCandidatePicker(ringGroups, {bestLabel:'Equip best ring'});
       }
       if(legItem) html += '<button class="action-btn stop" data-action="unequipLegRing" data-slot="'+slotId+'">Unequip</button>';
       else if(slotRing) html += '<button class="action-btn stop" data-action="unequipRing" data-slot="'+slotId+'">Unequip</button>';
@@ -24886,6 +24905,11 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.73', date:'Jul 31', heading:'Rings sort themselves out', items:[
+      'Rings were the worst menu in the game and it was not close. Eleven types, twenty-one tiers and four rarities all ran together in <b>one flat list</b> &mdash; repeated on each of the five ring slots.',
+      'They now sort into <b>collapsible groups by type</b> &mdash; Blunt Rings, Slash Rings, Fire Rings, Communion Rings and so on, with <b>Signets</b> in their own group at the end &mdash; in the equip picker on <b>Equipment &amp; Stats</b> and as their own containers in your <b>Inventory</b>. Each keeps its own coloured icon, so Fire, Water and Earth are told apart at a glance, and you only ever see groups for types you actually own.',
+      'In the equip picker the group holding the ring already in <b>that</b> slot opens by default, so swapping a ring for a better one of the same type is a single click. This is the same treatment Shields already had by size and Wards by element. Thanks Valuren for the suggestion.'
+    ]},
     { v:'0.0.72', date:'Jul 31', heading:'A human check on the login screen', items:[
       'Someone has been running a <b>password-spraying</b> attack against the login endpoint &mdash; software guessing passwords against accounts in bulk. The account lockout announced earlier turned out to need a Supabase plan we are not on, so it is <b>not active</b>; this is the replacement, and it is the stronger measure anyway because it stops the guessing from happening at all rather than punishing it afterwards.',
       'Logging in and registering now include a <b>bot check</b> (Cloudflare Turnstile). For nearly everyone it resolves by itself in about a second with nothing to click &mdash; if you type your password at human speed you will not notice it. It is only visible when something looks automated.',
@@ -34164,7 +34188,12 @@
     { id:'shields',   label:'Shields',       icon:svgIcon('shield','var(--gold)') },
     { id:'wards',     label:'Wards',         icon:svgIcon('yinyang','var(--gold)') },
     { id:'quivers',   label:'Quivers',       icon:svgIcon('arrow','var(--gold)') },
-    { id:'rings',     label:'Rings',         icon:svgIcon('ring','var(--gold)') },
+    // Rings get one container PER TYPE (ticket, Valuren): five ring slots x 11 types x 21 tiers x 4
+    // rarities made a single 'Rings' bucket the least navigable list in the game. Built from RING_TYPES so
+    // a new ring type appears here automatically, and each keeps its own coloured icon so Fire/Water/Earth
+    // are told apart at a glance. Empty groups are skipped by the renderer, so a player only ever sees the
+    // types they actually own.
+    { id:'r_signet',  label:'Signets',       icon:svgIcon('ring','var(--rarity-fantastic)') },
     { id:'amulets',   label:'Amulets',       icon:svgIcon('amulet','var(--gold)') },
     { id:'relics',    label:'Relics',        icon:svgIcon('urn','var(--gold)') },
     { id:'belts',     label:'Belts',         icon:svgIcon('belt','var(--gold)') },
@@ -34182,6 +34211,17 @@
     { id:'u_belt',      label:'Unique Belts',   icon:svgIcon('belt','var(--rarity-fantastic)'),       unique:true },
     { id:'u_relic',     label:'Unique Relics',  icon:svgIcon('urn','var(--rarity-fantastic)'),        unique:true }
   ];
+  // Splice the per-type ring containers in where the old single 'Rings' bucket sat -- immediately before
+  // Signets -- so the inventory keeps its weapons -> armour -> offhand -> jewelry reading order.
+  (function(){
+    var at = INV_GROUPS.map(function(g){ return g.id; }).indexOf('r_signet');
+    var rows = RING_TYPES.map(function(rt){
+      // "Ring of Fires" reads badly, and a bare "Fire" is ambiguous next to Shields/Amulets -- so
+      // "Fire Rings", which is also the shape the ticket asked for ([Blunt] [Slash] [Pierce] [Fire]).
+      return { id:'r_'+rt.id, label:rt.name.replace(/^Ring of /, '') + ' Rings', icon:rt.icon };
+    });
+    INV_GROUPS.splice.apply(INV_GROUPS, [at, 0].concat(rows));
+  })();
   var INV_GROUP_BY_ID = {}; INV_GROUPS.forEach(function(g){ INV_GROUP_BY_ID[g.id] = g; });
   // A unique item's kind -> its inventory container id (falls back to Weapons for any unmapped kind).
   function uniqueInvGroupId(u){ var k = 'u_' + (u && u.kind); return INV_GROUP_BY_ID[k] ? k : 'u_weapon'; }
@@ -34205,7 +34245,12 @@
     if(id.indexOf('stward_')===0) return 'wards';
     if(id.indexOf('stquiver_')===0) return 'quivers';
     if(id.indexOf('legcloak_')===0) return 'cloaks';
-    if(id.indexOf('ring_')===0 || id.indexOf('legring_')===0) return 'rings';
+    // Legendary Signets share the ring slots but are their own container; plain rings go to their type's.
+    if(id.indexOf('legring_')===0) return 'r_signet';
+    if(id.indexOf('ring_')===0){
+      var rm = /^ring_([^_]+)_t\d+_\w+$/.exec(id);
+      return (rm && INV_GROUP_BY_ID['r_'+rm[1]]) ? 'r_'+rm[1] : 'r_signet';   // unknown type -> Signets, never dropped
+    }
     if(id.indexOf('amulet_')===0 || id.indexOf('legamulet_')===0) return 'amulets';
     if(id.indexOf('relic_t')===0) return 'relics';
     if(id.indexOf('belt_t')===0) return 'belts';
@@ -36846,7 +36891,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.72.11';
+  var GAME_VERSION = '0.0.73.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
