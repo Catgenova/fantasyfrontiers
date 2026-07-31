@@ -221,6 +221,36 @@ ramp-speed legendaries (Gravewrath) measure at their floor when the ledger is pr
 Slow-swing classes: use SIM_MS=90000. The dummy HP pool is 1e15 with refill at 1e14 —
 single ceiling hits exceed 1e12, which saturated the first Berserker run with kill resets.
 
+**Ranger** (45s — the medium bow; v0.0.70.1 "the Beastmaster", owner target **80B**). Crits are COMMANDS: a
+Critical Hit sics a companion on the foe for a share of the recent-hit average, strikes stack a **Quarry**
+damage ramp, chains send the beast back in, and **Feral Bond** adds a share of "your weapon damage" per strike.
+Owner instruction: **do NOT re-base familiars** — so the commanded strike is this class's OWN attack, not a
+familiar spell cast, and the general familiar system is untouched (nothing here touches the Summoner).
+**"Your weapon damage" is implemented against the average LANDED hit, not the raw weapon stat**: a Fantastic
++15 t20 bow with flat enchants and the x6 enhance lands in the tens of thousands against BiS hits of ~1e11, so
+the literal reading would have made the capstone a rounding error. Findings: (1) **FLAT CRIT ON DERIVED
+ATTACKS — now the THIRD instance.** Two as One initially rolled the full crit multiplier on top of `dotBase`,
+which is already an average of post-crit hits; the first matrix read 410B largely on that double-dip. Fixed to
+a flat x2, matching the Reliquary's Grave Strike and the Reaper's Rot ticks. **RULE: any effect scaling off a
+post-crit average must never re-roll the crit multiplier.** (2) **SET LINES WHOSE CONDITION NEVER FAILS.**
+Throatseeker ("crits deal double against a Quarried foe") reads as a conditional but is a flat x2 at BiS,
+where crit is ~100% and Quarry is permanent once the pack works — the same smell as the Pyromancer's D1
+"+30 capacity" being a non-bonus. Audit new set lines for conditions that cannot fail at best-in-slot.
+(3) **RATE BEATS EVERYTHING, third consecutive class.** The standout bow is the one granting an extra STRIKE
+and the standout layers are the ones adding strikes/chains — matching the Reaver (Cut rate over cap) and the
+Pyromancer (fuel rate over capacity). (4) Wyrmstalker at +40% max-Quarry read **39% clear of the pack** because
+it triple-stacks with D3 (its own bonus x D3's guaranteed chains x Throatseeker's doubled crits, all keyed on
+the same condition); trimmed to +20% and it fell mid-pack. `RG_SWING_MULT` **0.307** is the band knob.
+Ceilings (D1 set, Ruin cloak, plain quiver): Compound Arrows ~89B / Wyrmstalker ~78B / Trapmaster ~77B /
+Bonevolley ~65B — pack mean **77B**, on target.
+**I PREDICTED THIS CLASS WOULD BE QUIET AND IT IS NOT — ±18%**, the noisiest measured since the Stormlord:
+D1+Ruin+Wyrmstalker read 111.4B / 95.5B / 77.7B in ONE session. The reasoning error is worth remembering: I
+assumed ~100% crit made the engine deterministic, but the real dice are the CHAIN rolls (35%, doubled by
+Compound Arrows) and Bonevolley's re-strike, each of which can double a strike's contribution. **Judge run
+variance by the per-event coin flips inside the kit, not by whether its trigger is reliable.** Consequence:
+the D1-vs-D3 "winner" flipped between runs (341B vs 357B on the previous knob — 5% apart) and those two layers
+should be treated as indistinguishable, not ranked.
+
 **Pyromancer** (45s — the Fire wand; v0.0.69.2 "the Conflagration", owner target **90B**). Burn became one
 **Blaze with fuel**: hits feed it, it ticks off the recent-hit EMA scaled by its SIZE, and it burns itself
 down, so uptime is the skill. The crux was a **COMPATIBILITY SHIM** — ~15 effects outside the class read

@@ -7428,6 +7428,9 @@
     near(FF.rgStrikePct(rgD1), FF.RG_STRIKE_PCT * FF.RG_STRIKE_D1_MULT, 'Kennelborn (2pc): strikes hit 25% harder');
     near(FF.rgStrikePct(setSt('ranger',1)), FF.RG_STRIKE_PCT, '1 piece -> base strike');
     eq(FF.RG_STRIKES_D1_FULL, 2, 'Pack Leader (full): every command sends the beast in twice');
+    near(FF.RG_SWING_MULT, 0.307, 'the bow channels its raw swings -- the pack does the killing (THE band knob)');
+    near(FF.RG_CRIT_MULT, 2.0, "the beast's critical bite is a FLAT x2 (dotBase is already post-crit)");
+    ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'rangerPack'; }), 'the Pack channel is a named PLAYER_DMG_MODS row');
     eq(FF.rangerProcChance(setSt('ranger',4)), 0, 'the arrow procs retired entirely');
     eq(FF.rangerAilmentDurMult(setSt('ranger',2)), 1, 'and so did their duration bonus');
 
