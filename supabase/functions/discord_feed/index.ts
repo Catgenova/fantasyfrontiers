@@ -47,16 +47,40 @@ function json(body: unknown, status = 200): Response {
 // The item NAME and the STATS tail are the only free-ish text in a post, because both are derived from
 // client-side game tables (enchant lines, material bonuses, tool tier data) that do not exist server-side.
 // Everything structural about the message -- the verb, the emphasis, the offline tag, the author -- is
-// built here, so these two fields are the whole injection surface and they are allowlisted, not escaped:
-// anything outside the permitted set is DROPPED rather than encoded. That kills mentions (@, <@…>), links,
-// newlines, and code fences in one pass, regardless of what Discord decides to render next.
+// built here, so these two fields are the whole injection surface. See the allowlist below.
+// Permitted characters, as CODE POINTS rather than a regex class. Two reasons: an allowlist of code points
+// cannot be corrupted by a copy-paste that strips invisible characters (a lost range endpoint in
+// /[\x00-\x1f...]/ would silently change what the filter matches), and it is auditable by reading.
+// Everything not listed becomes a space -- dropped, never escaped -- which removes mentions, links,
+// newlines, code fences, and every zero-width / bidi trick in one pass, whatever Discord renders next.
+const ALLOW_EXTRA = new Set<number>([
+  0x20,           // space
+  0x2b,           // +
+  0x2d,           // - (hyphen)
+  0x25,           // %
+  0x2e, 0x2c,     // . ,
+  0x27,           // ' (apostrophe)
+  0x28, 0x29,     // ( ) -- inner stat parentheses, e.g. "Damage 100-200 (+12)"
+  0x2f,           // /
+  0x00b7,         // middle dot: the stat separator
+  0x2013, 0x2014, // en dash / em dash: damage ranges
+  0x2019,         // right single quote: names like "Gorewyrm's Edge"
+]);
+// Deliberately ABSENT, and each for a reason: @ and < > (mentions and mention syntax), ` (code fences),
+// * _ ~ | (markdown that could restyle the server's own template), : (custom :emoji: and URL schemes),
+// # (channel links), and every letter outside A-Za-z0-9 (so a homoglyph cannot impersonate a name).
+function allowedCp(cp: number): boolean {
+  return (cp >= 0x30 && cp <= 0x39)      // 0-9
+      || (cp >= 0x41 && cp <= 0x5a)      // A-Z
+      || (cp >= 0x61 && cp <= 0x7a)      // a-z
+      || ALLOW_EXTRA.has(cp);
+}
 function clean(raw: unknown, max: number): string {
-  let s = String(raw ?? "");
-  s = s.normalize("NFKC");
-  s = s.replace(/[\x00-\x1f\x7f​-‏‪-‮  ⁠﻿]/g, " "); // controls, zero-width, bidi, line/para seps
-  s = s.replace(/[^A-Za-z0-9 +\-–—%·.,'’()\/]/gu, "");                        // ALLOWLIST (note: no @ < > ` * _ ~ : #)
-  s = s.replace(/\s+/g, " ").trim();
-  return s.slice(0, max);
+  const src = String(raw ?? "").normalize("NFKC");
+  let s = "";
+  // Iterate by code point (not char) so astral characters are rejected whole rather than by surrogate.
+  for (const ch of src) s += allowedCp(ch.codePointAt(0) as number) ? ch : " ";
+  return s.replace(/ +/g, " ").trim().slice(0, max);
 }
 // Wrap a sanitised value for bold display. `clean` has already removed '*', so no escaping is needed --
 // the value cannot break out of the emphasis it is placed in.
