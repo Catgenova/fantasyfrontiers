@@ -3788,7 +3788,13 @@
     ok(Math.abs(FF.enemyChillSlowMult(fw) - 0.50) < 1e-9, 'Chill slow caps at 50%');
     ok(Math.abs(FF.frostwardenTimeDilation(fw) - 0.25) < 1e-9, 'Time Dilation: 25% haste at 50% Chill');
     eq(FF.frostwardenTimeDilation(stFor('frostwarden',1)), 0, 'Time Dilation inactive below Lv20');
-    ok(Math.abs(FF.frostwardenDmgMult(fw) - 1.25) < 1e-9, 'Rime Resonance: +25% damage vs a Chilled foe at Lv80');
+    // Rime Resonance retired: it was a FAMILIAR perk, and familiar damage follows a raw weapon-tier curve
+    // that is ~7 orders of magnitude too small at BiS -- so the capstone did nothing but its "+25% vs Chilled"
+    // clause, which is folded into Permafrost's rime brittleness (frostwardenDmgMult -> fwBrittleMult).
+    var fwB = stFor('frostwarden', 85); fwB.activity = { type:'combat', monsterHp:1e9, fwRime: FF.FW_RIME_MAX, dotHitAvg:1000 };
+    near(FF.fwBrittleMult(fwB), 1 + FF.FW_BRITTLE_PER_RIME * FF.FW_RIME_MAX, 'Permafrost: brittleness scales with rime');
+    near(FF.frostwardenDmgMult(fwB), FF.fwBrittleMult(fwB), 'and it IS the class damage row now');
+    eq(FF.fwBrittleMult(stFor('frostwarden', 85)), 1, 'a foe with no rime is not brittle');
     eq(FF.frostwardenDmgMult(stFor('frostwarden',80)), 1, 'Rime Resonance neutral vs an unchilled foe');
     eq(FF.frostwardenDmgMult(stFor('frostwarden',40)), 1, 'no +25% below Lv80');
     // Sentinel rework: Spiked Barrier (Lv1) / Iron Maiden (Lv20) / Reckoning (Lv40) / Brittle Guard (Lv60) / Bulwark's Wrath (Lv80).
@@ -6022,8 +6028,9 @@
     near(FF.d4LegDmgMult({}, { activity:{type:'combat', monsterHp:100, scorchStacks:5, scorchUntil:now+4000} }), 1 + 0.02*5, 'd4LegDmgMult folds in Scorch (+10% at 5 stacks)');
 
     // --- Read-only weapon amplifiers ---
-    // Rimewyrm's Fang: +20% vs a Scorched foe.
-    near(FF.d4LegDmgMult({}, legSt('rimewyrm','wandWater','weapon',{ activity:{type:'combat', monsterHp:100, scorchStacks:1, scorchUntil:now+4000} })), (1+0.02) * 1.20, 'Rimewyrm: +20% vs a Scorched foe (atop the Scorch stack)');
+    // Rimewyrm's Fang dropped its Scorch theme with the Frostwarden's D4 rework: it ramps the foe's rime
+    // brittleness with every Shatter instead, so it no longer reads the Scorch stack at all.
+    near(FF.d4LegDmgMult({}, legSt('rimewyrm','wandWater','weapon',{ activity:{type:'combat', monsterHp:100, scorchStacks:1, scorchUntil:now+4000} })), 1.02, 'Rimewyrm no longer amplifies vs Scorched (only the shared +2%/stack Scorch amp remains)');
     near(FF.d4LegDmgMult({}, legSt('rimewyrm','wandWater')), 1.0, 'Rimewyrm inert on an unscorched foe');
     // Sunwyrm's Verdict: +40% vs a Dark foe (progresses past D3 Lichbane x1.30).
     near(FF.d4LegDmgMult({ element:'dark' }, legSt('sunwyrm','scepter')), 1.15, "Sunwyrm's Verdict: +15% vs a Dark foe");
@@ -6569,10 +6576,12 @@
       wearFull('sentinel'); s.activity = { type:'combat', monsterHp:500, decayStacks:3, decayUntil:now+4000 };
       near(FF.d3SetIncomingMult(s), 0.80, 'Sentinel Crypt Wall: Decayed foes deal 20% less');
       s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetIncomingMult(s), 1.0, 'Crypt Wall inert on a clean foe');
-      // Grave Chill applier (2pc): a chilling hit also applies Decay (tested through the shared chill helper).
+      // Grave Chill retired: the Frostwarden's D3 dropped the Decay theme (it is the Shatter layer now), so
+      // this class is no longer a Decay source at all.
       wearD3('frostwarden', 2); s.activity = { type:'combat', monsterHp:500 };
       FF.frostwardenApplyChill(s.activity);
-      ok((s.activity.decayStacks||0) >= 1 && FF.enemyDecaying(s), 'Grave Chill: a chilling hit also applies Decay');
+      eq((s.activity.decayStacks||0), 0, 'the Frostwarden no longer applies Decay');
+      eq(FF.D3_SET_DEFS.frostwarden.b2.name, 'Fracture', 'its D3 2pc is Fracture, the Shatter layer');
       // The remaining 2pc appliers (Soul Rend / Marrow Shot / Bone Thorns / Necrosis / Funeral Pyre / Decaying
       // Traps) fire at their own combat hooks; confirm every Decay set is defined.
       ['plaguebearer','pyromancer','frostwarden','quickdraw','ranger','assassin','sharpshooter','sentinel'].forEach(function(c){

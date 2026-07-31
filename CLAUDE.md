@@ -221,6 +221,31 @@ ramp-speed legendaries (Gravewrath) measure at their floor when the ledger is pr
 Slow-swing classes: use SIM_MS=90000. The dummy HP pool is 1e15 with refill at 1e14 —
 single ceiling hits exceed 1e12, which saturated the first Berserker run with kill resets.
 
+**Plaguebearer** (45s — the hatchet; v0.0.71.2 "the Plague", owner target **85B**). Poison became a process:
+severity climbs per hit AND per second uncured, ticks off the recent-hit EMA scaled by it, and is LOST if the
+Plague lapses. **Derive-don't-replace, the largest such shim yet** — a dozen-plus effects read this channel
+(Immunize, Wasting Curse's poisonSince ramp, Miasma, Plaguebreath, Necrosis, Toxic Flames, Pestilence, three
+tick multipliers, enemyAfflicted, the Quiverlord's Serpent rider), so `pbPlagueSync` derives
+potionPoisonDps/Until from severity and takes the MAX against foreign poison. **Fixed a live bug in passing:**
+Toxins and coatings ASSIGNED potionPoisonDps unconditionally while every other writer guarded with "only if
+stronger or expired", so a weak Toxin OVERWROTE a Plaguebearer's stronger poison. All writers now guard.
+`PB_SWING_MULT` **0.454** is the band knob. Ceilings (D4 set, Ruin cloak, Venomscale offhand): Blightwyrm
+~99B / Wasting Curse ~90B / Blightfang ~74B / Rotmaw ~69B — pack mean **83B**, on target.
+
+**THE RATE/CAP LAW — BOTH HALVES (this is the reusable finding of the session).**
+  *Cycling* engines (Pyromancer Blaze, Reaver Cut bank, Frostwarden rime): **rate bonuses STRONG, cap DEAD.**
+  *Sustained* engines (Plaguebearer severity): **cap bonuses STRONG, rate WEAK.**
+The mechanism: a cycling engine spends its meter through a capstone and refills, so capacity is dead weight and
+throughput compounds; a sustained engine sits AT its ceiling, so filling faster does nothing and raising the
+ceiling is permanent damage. Evidence: Reaver D4 (cap) came LAST at 119B vs D2's 227B; Pyromancer D1 (+30
+capacity) came LAST at 79B vs D2's 140B; Plaguebearer inverted it — Blightfang (cap +half) placed 2nd while
+Wasting Curse (severity rate x2) placed **LAST at 61.4B against a 79.6B mean**. Re-axing Wasting Curse onto
+eruption FREQUENCY (an axis that lives AT the cap) took it to **90.4B, second of four** — the law confirmed
+prospectively, not in hindsight. **Diagnose the engine type BEFORE assigning set/legendary axes.** Two misses
+came from not doing so: the Rotmaw "fix" that gained ~1% (I corrected the rate axis when the cap was the
+binding one), and the Frostwarden's inherited D1 "cap rises to 8", which was moved to a build RATE before any
+measurement because its rime meter cycles.
+
 **Ranger** (45s — the medium bow; v0.0.70.1 "the Beastmaster", owner target **80B**). Crits are COMMANDS: a
 Critical Hit sics a companion on the foe for a share of the recent-hit average, strikes stack a **Quarry**
 damage ramp, chains send the beast back in, and **Feral Bond** adds a share of "your weapon damage" per strike.

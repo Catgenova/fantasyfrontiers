@@ -129,6 +129,21 @@ const BUILDS = {
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
     offhandShield: { type: "shieldSmall", leg: "fortunesriposte" },
   },
+  frostwarden: {
+    // Water Wand + MEDIUM shield, chain helm/chest + cloth gloves/shoes. Third wand class, so the x49 element
+    // stack applies -- but budgeted PER-KIT after the Pyromancer read 820B uncorrected rather than trillions:
+    // the stack only explodes when a kit's own damage feeds back THROUGH the element multiplier, and Frostbite
+    // and the Shatter both scale off a plain channelled hit. This engine CYCLES (a full meter freezes and
+    // shatters), so per the law the Plaguebearer established, RATE bonuses should win and CAP bonuses be inert
+    // -- D1's 2pc was moved onto build rate for exactly that reason. That is a falsifiable prediction: check it.
+    // Sim-dead: the Deep Freeze's LOCKOUT (a zero-offense dummy has no turns to deny, which is why the payoff
+    // lives in the Shatter), Hoarfrost (reduces the foe's outgoing damage), and Cold Snap's stun.
+    weapon: { typeId: "wandWater", styleXp: ["wandWater", "wands", "water"] },
+    legs: ["deepfreeze", "rimefang", "gravefrost", "rimewyrm"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "water",
+    offhandShield: { type: "shieldMedium", leg: "rimeshell" },
+  },
   plaguebearer: {
     // Hatchet (fast 1h) + small shield, leather helm/chest/boots + cloth gloves. The Plague is a SUSTAINED
     // engine: severity climbs to its cap and STAYS there (Pandemic erupts without spending it), which is why
