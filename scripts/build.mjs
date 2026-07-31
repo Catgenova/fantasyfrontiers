@@ -55,6 +55,10 @@ const SECRET_PATTERNS = [
   [/\bsk-[A-Za-z0-9]{20,}/,                             "an API secret key"],
   [/\bservice_role\b\s*[:=]\s*['\"][^'\"]+['\"]/i,      "a service-role key"],
   [/\beyJ[\w-]+\.[\w-]+\.[\w-]{20,}/,                   "a JWT (use the publishable key only)"],
+  // Turnstile SITE and SECRET keys share the 0x4A... prefix and are easy to mix up in a dashboard, but they
+  // differ in length: a site key is ~24 characters total, a secret ~34. Anything long enough to be a secret
+  // has no business in client code, so length is the discriminator. The real site key is well under this.
+  [/0x4A[A-Za-z0-9_-]{28,}/,                            "a Turnstile SECRET key (the client takes the SITE key)"],
 ];
 for (const [re, what] of SECRET_PATTERNS) {
   const m = html.match(re);
