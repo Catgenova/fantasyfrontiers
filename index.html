@@ -23702,11 +23702,15 @@
     } else {
       html += '<div class="idle-note">No active fight. Choose a foe on the <b>Enemies</b> tab &mdash; the battle will appear here. <button class="mini-btn" data-action="navToActivity" data-nav-cat="enemies" style="margin-left:6px;">Go to Enemies</button></div>';
     }
+    // Out-of-combat prep lives here, not on Enemies: mid-fight the arena card carries the same controls
+    // (renderCombatConsumables + renderAutoEatPanel), so Combat owns them in BOTH states.
+    html += renderAutoEatPanel();
+    html += renderCombatPotionsPanel();
     html += renderCombatStatsPanel();
     return html;
   }
-  // The Enemies tab: pick a foe to fight (starting a fight jumps you to the Combat tab). Also hosts the
-  // out-of-combat prep (Auto-Eat + combat consumables) since that's where you gear up before a fight.
+  // The Enemies tab: pick a foe to fight (starting a fight jumps you to the Combat tab). Consumable prep
+  // (Auto-Eat + potions + feasts) is NOT duplicated here -- it lives on the Combat tab.
   // ================= QUESTS =================
   // Quests is its OWN top-level area (a major tab), split into quest-category tabs (QUEST_CATEGORIES) --
   // "First Frontier" is the first. Each quest completes the INSTANT its requirement is met (no accept
@@ -24362,8 +24366,6 @@
     if(act.type==='combat'){
       html += '<div class="idle-note">A fight is underway &mdash; watch it on the <b>Combat</b> tab. <button class="mini-btn" data-action="navToActivity" data-nav-cat="combat" style="margin-left:6px;">Go to Combat</button></div>';
     }
-    html += renderAutoEatPanel();
-    html += renderCombatPotionsPanel();
     html += '<div class="section-intro">Combat Score '+lvl+' &mdash; choose a foe below. Manage your equipped weapon, offhand, relic, armor, and tools from the Equipment &amp; Stats tab.</div>';
 
     var categoryMeta = MONSTER_CATEGORIES.filter(function(c){ return c.id===currentSub; })[0] || MONSTER_CATEGORIES[0];
@@ -24884,6 +24886,9 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.72', date:'Jul 31', heading:'Consumable prep moved off the Enemies tab', items:[
+      'The <b>Auto-Eat</b>, <b>Combat Potions</b> and <b>Feasts &amp; Snacks</b> panels were rendering on the <b>Enemies</b> tab as well as in the fight itself, pushing the actual foe list a screen down. They are now on the <b>Combat</b> tab only &mdash; which shows them whether or not a fight is running, so you still arm a potion and set your Auto-Eat threshold before you pick a target. Enemies is just the foe list now.'
+    ]},
     { v:'0.0.72', date:'Jul 31', heading:'Estate tasks say so when one is already running', items:[
       'Starting an estate or guild estate task while one was already running <b>silently did nothing</b>. The server refused it correctly — your existing task was never restarted, cancelled or shortened — but it answered with a success-shaped reply, so the client showed a generic error (or nothing at all) instead of telling you why.',
       'The server now refuses explicitly, and hands back <b>the task that is actually running along with its remaining time</b>. You will see “You already have an estate task running — ready in 6m 27s.” instead of a dead click, and the panel resyncs to the real state on the spot. Guild estate tasks and guild assists behave the same way.'
@@ -36678,7 +36683,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.72.4';
+  var GAME_VERSION = '0.0.72.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

@@ -4543,6 +4543,13 @@
       var combatHtml = FF.renderCombatTab();
       ok(!/data-action="fight"/.test(combatHtml), 'the Combat tab has NO enemy Fight buttons (moved to Enemies)');
       ok(/Enemies/.test(combatHtml), 'the idle Combat tab points players to the Enemies tab');
+      // Consumable prep (Auto-Eat + potions + feasts) belongs to Combat only -- it used to render on BOTH
+      // tabs. Combat must carry it out of combat too, or a potion could only be armed mid-fight.
+      ok(!/Auto-Eat/.test(enemiesHtml), 'the Enemies tab no longer duplicates the Auto-Eat panel');
+      ok(!/Combat Potions/.test(enemiesHtml), 'the Enemies tab no longer duplicates the Combat Potions panel');
+      ok(/Auto-Eat/.test(combatHtml), 'the idle Combat tab carries Auto-Eat');
+      ok(/Combat Potions/.test(combatHtml), 'the idle Combat tab carries Combat Potions (pre-fight prep)');
+      ok(/data-action="activatePotion"|No combat consumables/.test(combatHtml), 'potions are armable out of combat');
     } finally { s.activity = savedAct; }
   });
 
