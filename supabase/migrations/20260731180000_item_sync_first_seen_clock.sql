@@ -150,9 +150,18 @@ begin
   return result;
 end $$;
 
--- ---- VERIFICATION -------------------------------------------------------------------------------
--- I cannot execute these here (no database in the build environment), so run them after applying. Each
--- states the number it must produce; a guard nobody has watched fail is not a guard.
+-- ---- VERIFICATION -- RUN AND PASSED ON PRODUCTION, 31 Jul ---------------------------------------
+--     0 test account                any seeded account          Test
+--     1 returning player, 12h clock  expect 25000               25000   PASS
+--     2 re-fired sync, 1min clock    expect 833                 833     PASS
+--     3 fan-out of 60 new keys       expect 50 cred / 10 def    50 credited / 10 deferred  PASS
+--
+-- Check 1 is the regression this fix was rejected once for causing (the 15-slot endgame case); check 2 is
+-- the exploit being refused, i.e. the guard watched to FAIL before being trusted to pass. Reproduce with
+-- the block at the bottom of this file -- it picks a Test/emptiest account itself and wraps everything in
+-- begin/rollback, so it writes nothing. The individual statements each check ran are spelled out below.
+--
+-- I could not execute these at authoring time (no database in the build environment).
 --
 -- 1. A RETURNING PLAYER IS NOT THROTTLED. Backdate the account's sync clock 12 hours, present a
 --    never-held key, and confirm the full burst is still granted. THIS IS THE REGRESSION THAT MATTERS --
@@ -181,3 +190,55 @@ end $$;
 --    -- the cap bite; there are only 21 arrow tiers, so build the set from another family for that test.
 --
 -- 4. Existing accounts are untouched by applying this -- it replaces a function, writes no rows.
+--
+-- ---- ALL THREE AS ONE PASTE (what was actually run) ---------------------------------------------
+-- Safe on any project: it picks the account itself and the whole thing rolls back. Re-run this after ANY
+-- future change to item_sync, the boot order, or ITEM_PER_HOUR / ITEM_BURST.
+--
+-- begin;
+-- do $$
+-- declare
+--   uid uuid; uname text; k1 text; k2 text; many jsonb; r jsonb;
+--   n_credited int; n_deferred int;
+-- begin
+--   create temp table if not exists _vres(step text, expected text, got text);
+--   delete from _vres;
+--   -- prefer a Test* account, else the one holding the fewest items
+--   select pim.user_id, coalesce(pr.username,'(no profile)') into uid, uname
+--     from public.player_item_meta pim
+--     left join public.profiles pr on pr.id = pim.user_id
+--    where pim.seeded = true          -- unseeded routes through the grandfather branch, not the clock
+--    order by (case when coalesce(pr.username,'') ilike 'test%' then 0 else 1 end),
+--             (select count(*) from public.player_items p where p.user_id = pim.user_id and p.qty > 0)
+--    limit 1;
+--   if uid is null then raise exception 'no seeded account found to test against'; end if;
+--   insert into _vres values ('0 test account', 'any seeded account', uname);
+--   select c.item_key into k1 from public.item_catalog c
+--    where not exists (select 1 from public.player_items p where p.user_id = uid and p.item_key = c.item_key)
+--    order by c.item_key limit 1;
+--   select c.item_key into k2 from public.item_catalog c
+--    where c.item_key <> k1
+--      and not exists (select 1 from public.player_items p where p.user_id = uid and p.item_key = c.item_key)
+--    order by c.item_key limit 1;
+--   if k1 is null or k2 is null then raise exception 'catalog has no unheld keys for this account'; end if;
+--   update public.player_item_meta set synced_at = now() - interval '12 hours' where user_id = uid;
+--   r := public.item_sync(uid, jsonb_build_object(k1, 999999), 50000, 25000, now() - interval '30 days');
+--   insert into _vres values ('1 returning player, 12h clock', '25000', coalesce(r->>k1,'(key dropped)'));
+--   update public.player_item_meta set synced_at = now() - interval '1 minute' where user_id = uid;
+--   delete from public.player_items where user_id = uid and item_key = k2;
+--   r := public.item_sync(uid, jsonb_build_object(k2, 25000), 50000, 25000, now() - interval '30 days');
+--   insert into _vres values ('2 re-fired sync, 1min clock', '833', coalesce(r->>k2,'(key dropped)'));
+--   update public.player_item_meta set synced_at = now() - interval '12 hours' where user_id = uid;
+--   select jsonb_object_agg(q.item_key, 10) into many from (
+--     select c.item_key from public.item_catalog c
+--      where not exists (select 1 from public.player_items p where p.user_id = uid and p.item_key = c.item_key)
+--      order by c.item_key limit 60) q;
+--   r := public.item_sync(uid, many, 50000, 25000, now() - interval '30 days');
+--   select count(*) filter (where (value::text)::bigint > 0),
+--          count(*) filter (where (value::text)::bigint = 0)
+--     into n_credited, n_deferred from jsonb_each(r);
+--   insert into _vres values ('3 fan-out of 60 new keys', '50 credited / 10 deferred',
+--                             n_credited || ' credited / ' || n_deferred || ' deferred');
+-- end $$;
+-- select * from _vres order by step;
+-- rollback;

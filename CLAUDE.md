@@ -119,6 +119,42 @@ reported clean because it was not really checking, and once a guard matched ITS 
 (the one naming `authRender`) and failed the build on correct code. Always reintroduce the bug,
 confirm exit 1, then restore.
 
+## The item ledger (v0.0.74.x, AndJustice4All ticket)
+
+`public.player_items` is the authoritative stock and it GATES the marketplace and the guild bank
+(`item_debit` in `marketplace/index.ts` and `guild_bank/index.ts`). Exactly two functions raise `qty`:
+**`item_sync`** (client-reported inventory) and **`item_credit`** (server-witnessed: market buy, bank
+withdraw, refunds). Client-side, `itemReconcile` = `max(0, min(local, server + pending + drift))` with
+`pending = max(0, localEarned − serverEarned)`, so adoption can only ever REMOVE items, never create them.
+
+**The reported exploit** was one line: `if prev = 0 then allowed := p_burst` gave a never-held key the whole
+25,000 burst with no elapsed-time requirement, x 2,000 keys per call = 50 million items per request, and it
+was invisible to the injection detector (which fires on the DENIED amount, and 25,000 against an allowance of
+25,000 denies zero). Fixed in `20260731180000` by putting the first-seen grant on the account's own
+`synced_at` clock plus a 50-new-keys-per-sync cap. **Verified on production**: 12h clock → 25000, 1min clock
+→ 833, 60 keys → 50 credited / 10 deferred. The one-paste reproduction lives at the bottom of that migration;
+re-run it after any change to `item_sync`, `ITEM_PER_HOUR`/`ITEM_BURST`, **or the boot order** — the clock
+reads `synced_at`, so a sync that fires before `applyOfflineProgress` would throttle returning players.
+
+**PER-CLASS CAPS ARE THE WRONG SHAPE — the owner caught this, and the arithmetic is why.** An endgame account
+runs `MAX_TASK_SLOTS = 15`; weapons/tools are `tierTime(7,0.3,i)` (7s at t0); at 50% action time with the
+workshop double-craft that is legitimately ~370,000 of ONE key per 12h offline window (~2M at the
+`toolSpeedMultiplier` floor of 0.1), of which ~590 are fantastic at the 0.0016 cap. Any equipment cap low
+enough to catch injection stops a legitimate mass-crafter from selling their own output. The RATE was never
+the problem: 50,000/key/hour already sits above the legitimate 16–30k.
+
+**`earned_total` means ACQUIRED BY ANY ROUTE, not crafted.** `item_credit` accrues it too, so a player who
+BUYS fantastic gear is indistinguishable from one who mints it — and it is LIFETIME and monotonic, so it
+mixes rarity-rate eras and pre-nerf holdings trip any current-rate threshold forever. A fantastic-share
+signal run live flagged the real injection AND two rows belonging to Valuren, an active bug reporter.
+Hence `20260731200000`: judge a DELTA against a snapshot table (`item_earn_watch`), subtract what the server
+witnessed (`item_credit_log`), and ship it **shadow-only**. `item_credit`'s signature must NOT change —
+adding a `p_source` default arg creates an OVERLOAD and makes the existing 3-arg calls from market
+settlement and bank withdrawal ambiguous.
+
+Still open by design: earning is client-reported because the server does not simulate crafting. Batch-validated
+server-side crafting is the real fix and is a separate project.
+
 ## Max-ceiling DPS simulation (run after EVERY class rework)
 
 `scripts/dpssim.mjs` measures real sustained DPS by booting the live game headless
