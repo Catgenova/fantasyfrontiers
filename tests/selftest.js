@@ -9890,8 +9890,10 @@
     var bf = pbSt(85, { uniqueItems:{ L:{ uid:'L', leg:'blightfang', kind:'weapon', base:'stweapon_hatchet_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' });
     eq(FF.pbSevCap(bf), Math.round(FF.PB_SEV_MAX * FF.PB_SEV_CAP_BLIGHTFANG), 'Blightfang: the severity cap rises by half');
     // Wasting Curse raises the RATE.
-    var wc = pbSt(85, { uniqueItems:{ L:{ uid:'L', leg:'wastingcurse', kind:'weapon', base:'stweapon_hatchet_t20_rare', tier:20, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' });
-    ok(FF.pbSevRate(wc) > FF.pbSevRate(pbSt(85)), 'Wasting Curse: severity climbs faster');
+    // Wasting Curse acts on eruption FREQUENCY, not severity rate: a rate bonus is near-worthless in a
+    // SUSTAINED engine, where severity already sits at its cap so filling it faster does nothing. It measured
+    // LAST of the four hatchets on the rate axis (61.4B against a 79.6B pack mean).
+    near(FF.PB_ERUPT_MS_WASTING, 0.5, 'Wasting Curse halves the eruption cadence');
 
     // Pandemic only erupts at MAX severity, and it does not spend it (the engine sustains).
     var e = pbSt(85); FF.pbPlagueAdd(999, e);

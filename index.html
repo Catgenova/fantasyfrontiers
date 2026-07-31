@@ -5101,7 +5101,7 @@
   var D1_LEG_GEAR_DEFS = [
     // --- Slash weapons (mainhand) ---
     { key:'relicreaver',    name:'Cryptreaver',     group:'slash', slot:'mainhand', base:'scimitar',    cls:'treasureHunter', desc:'Kills ALWAYS unearth a Broken Relic, and your Grave Strike gains +10% more per relic tier.' },
-    { key:'wastingcurse',   name:'Witherbite',      group:'slash', slot:'mainhand', base:'hatchet',     cls:'plaguebearer',   desc:'The Plague’s severity climbs twice as fast.' },
+    { key:'wastingcurse',   name:'Witherbite',      group:'slash', slot:'mainhand', base:'hatchet',     cls:'plaguebearer',   desc:'Pandemic’s eruptions fire twice as often.' },
     { key:'crimsonharvest', name:'Bloodsupper',     group:'slash', slot:'mainhand', base:'halfmoonaxe',  cls:'reaver',         desc:'Each Bleed stack grants +2% lifesteal on direct hits, and your Bleeds heal you for 8% of their damage.' },
     { key:'phantomassault', name:'Gloomstalker',    group:'slash', slot:'mainhand', base:'claw',         cls:'assassin',       desc:'Your Open Wounds never expire — the fill can never lapse.' },
     { key:'cull',           name:'Huskmaker',       group:'slash', slot:'mainhand', base:'fullmoonaxe',  cls:'executioner',    desc:'+2% damage for every 1% of the foe’s missing Health (up to +100%).' },
@@ -7923,7 +7923,8 @@
   var PB_PLAGUE_MS = 6000;              // lapses this long after the last hit (Incubation stops the lapse)
   var PB_CONTAGION_PCT = 0.01;          // Contagion (Lv20): +1% damage per severity
   var PB_HEAL_PCT = 0.05;               // Toxic Blood (Lv40)
-  var PB_ERUPT_MS = 4000;               // Pandemic (Lv80): eruption cadence at max severity
+  var PB_ERUPT_MS = 4000;               // Pandemic (Lv80): eruption cadence at max severity ...
+  var PB_ERUPT_MS_WASTING = 0.5;        // ... Wasting Curse halves it (frequency, an axis that lives AT the cap)
   var PB_ERUPT_PCT = 0.15;              // ... for this x severity x the recent average hit
   var PB_ERUPT_VENOMSCALE = 1.5;        // Venomscale: eruptions hit +50%
   var PB_DECAY_SEV = 1;                 // Rotmaw: a Decay tick raises severity by this
@@ -7939,7 +7940,7 @@
   function pbSevRate(st){ st = st || state;
     var r = 1;
     if(set2('plaguebearer', st)) r *= PB_SEV_RATE_D1;          // Plague Bloom
-    if(legActive('wastingcurse', st)) r *= PB_SEV_RATE_WASTING; // Wasting Curse
+
     if(plaguebearerBonus(60, st)) r *= PB_SEV_RATE_L60;         // Incubation
     return r; }
   function pbPlagueDps(st){ st = st || state; return PB_TICK_PCT * pbSeverity(st) * dotBase(st); }
@@ -7985,8 +7986,9 @@
     if(plaguebearerBonus(60, st)) act.pbUntil = Date.now() + PB_PLAGUE_MS;
     pbPlagueSync(act, st);
     if(plaguebearerBonus(80, st) && pbSeverity(st) >= pbSevCap(st)){
+      var _every = PB_ERUPT_MS * (legActive('wastingcurse', st) ? PB_ERUPT_MS_WASTING : 1);
       act.pbErupt = (act.pbErupt || 0) + dtMs;
-      while(act.pbErupt >= PB_ERUPT_MS){ act.pbErupt -= PB_ERUPT_MS; if(!pbEruptFire(act, st)) break; }
+      while(act.pbErupt >= _every){ act.pbErupt -= _every; if(!pbEruptFire(act, st)) break; }
     } }
   function berserkerBonus(reqLevel, st){ return classBonusActive('berserker', reqLevel, st); }
   function sentinelBonus(reqLevel, st){ return classBonusActive('sentinel', reqLevel, st); }
@@ -24762,7 +24764,7 @@
       'The class is also <b>no longer dependent on crafted coatings</b>. <b>Venomous</b> (which amplified a coating) and <b>Virulence</b> (which existed purely to cover <i>not having</i> one) are both retired. Coatings remain useful, but the Plaguebearer now brings its own disease.',
       '<b>Contagion</b> (Lv 20) scales with severity instead of being a flat +15%. <b>Incubation</b> (Lv 60) stops the Plague lapsing while you keep attacking. <b>Pandemic</b> (Lv 80) is now deterministic: once severity is at its cap the Plague is <b>terminal</b> and erupts on a steady cadence, rather than rolling a 10% chance on every tick.',
       'Because the Plague does the killing, the hatchet’s own swings land for less while the class is active — that is where the class is balanced.',
-      'The eight legendaries had a lot of redundancy, and it is gone. <b>Blightfang</b> used to heal you from poison ticks, which is simply a bigger version of Toxic Blood; it now raises the severity <b>cap</b> by half. <b>Rotmaw</b> used to just apply Decay, which duplicated the D3 set bonus <b>Necrosis</b>; it now applies Decay <i>and</i> feeds on it, with Decay ticks raising the Plague’s severity. <b>Wasting Curse</b> doubles how fast severity climbs, and <b>Venomscale</b> — previously a second defensive ward — makes Pandemic’s eruptions hit 50% harder. The three shields keep their Block effects as secondary triggers.'
+      'The eight legendaries had a lot of redundancy, and it is gone. <b>Blightfang</b> used to heal you from poison ticks, which is simply a bigger version of Toxic Blood; it now raises the severity <b>cap</b> by half. <b>Rotmaw</b> used to just apply Decay, which duplicated the D3 set bonus <b>Necrosis</b>; it now applies Decay <i>and</i> feeds on it, with Decay ticks raising the Plague’s severity. <b>Wasting Curse</b> makes Pandemic erupt twice as often, and <b>Venomscale</b> — previously a second defensive ward — makes Pandemic’s eruptions hit 50% harder. The three shields keep their Block effects as secondary triggers.'
     ]},
     { v:'0.0.70', date:'Jul 31', heading:'Ranger rework: The Beastmaster', items:[
       'The old Ranger was the same perk four times: Venom, Barbed, Frost and Fire Arrows were each “a 25% chance to apply an ailment”, and the Lv 80 capstone multiplied your damage by three only when all four of those independent rolls happened to line up at once. It was repetitive to play and wildly swingy to balance.',
@@ -36522,7 +36524,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.71.1';
+  var GAME_VERSION = '0.0.71.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -36759,7 +36761,7 @@
       PB_SEV_MAX:PB_SEV_MAX, PB_SEV_CAP_BLIGHTFANG:PB_SEV_CAP_BLIGHTFANG, PB_SEV_PER_HIT:PB_SEV_PER_HIT, PB_SEV_ROTSHELL:PB_SEV_ROTSHELL,
       PB_SEV_PER_SEC:PB_SEV_PER_SEC, PB_SEV_RATE_D1:PB_SEV_RATE_D1, PB_SEV_RATE_WASTING:PB_SEV_RATE_WASTING, PB_SEV_RATE_L60:PB_SEV_RATE_L60,
       PB_TICK_PCT:PB_TICK_PCT, PB_PLAGUE_MS:PB_PLAGUE_MS, PB_CONTAGION_PCT:PB_CONTAGION_PCT, PB_HEAL_PCT:PB_HEAL_PCT,
-      PB_ERUPT_MS:PB_ERUPT_MS, PB_ERUPT_PCT:PB_ERUPT_PCT, PB_ERUPT_VENOMSCALE:PB_ERUPT_VENOMSCALE, PB_SWING_MULT:PB_SWING_MULT,
+      PB_ERUPT_MS:PB_ERUPT_MS, PB_ERUPT_MS_WASTING:PB_ERUPT_MS_WASTING, PB_ERUPT_PCT:PB_ERUPT_PCT, PB_ERUPT_VENOMSCALE:PB_ERUPT_VENOMSCALE, PB_SWING_MULT:PB_SWING_MULT,
       dotBase:dotBase, RANGER_POISON_PCT:RANGER_POISON_PCT, PLAGUE_VIRULENCE_PCT:PLAGUE_VIRULENCE_PCT,
       SUMMONER_WRAITH_HIT_PCT:SUMMONER_WRAITH_HIT_PCT, DECAY_PCT:DECAY_PCT, DECAY_MAX_STACKS:DECAY_MAX_STACKS, LEG_ROTSHELL_PCT:LEG_ROTSHELL_PCT,
       reaverBonus:reaverBonus, rvCuts:rvCuts, rvBank:rvBank, rvCountCap:rvCountCap, rvCountMult:rvCountMult, rvHarvestAt:rvHarvestAt,
