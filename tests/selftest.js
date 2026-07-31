@@ -13452,6 +13452,48 @@
     ok(tail.charAt(0) !== ' ', 'the stats tail has no leading space');
   });
 
+  // ---- Estate jobs: a completed build must never be consumed without being placed ----------------
+  // Ticket (Mr Cookie): a Willow Jewelry Workshop finished, the tile stayed empty, the workshop was gone.
+  // Materials are spent at ENQUEUE, so every path that drops a job has to either apply it or refund it.
+  suite('estate job completion never eats materials', function(){
+    ok(typeof FF.estateJobShapeOk === 'function', 'the shared job-shape validator is exported');
+    // Every kind that carries materials must survive a reload. 'totem' was missing from BOTH copies of
+    // this check, so a totem job was dropped on load and its totem destroyed.
+    ok(FF.estateJobShapeOk({kind:'totem', totemId:'totem_t3'}), 'a totem job is valid (was dropped on load)');
+    ok(FF.estateJobShapeOk({kind:'workshop', workshopId:'workshop_jewelrycrafting_t1'}), 'a workshop job is valid');
+    ok(FF.estateJobShapeOk({kind:'cottage', cottageId:'cottage_t2'}), 'a cottage job is valid');
+    ok(FF.estateJobShapeOk({kind:'pave', paveTileId:'paving_t4'}), 'a pave job is valid');
+    ok(FF.estateJobShapeOk({kind:'field', fieldTier:3}), 'a field job is valid');
+    ok(FF.estateJobShapeOk({kind:'raise'}) && FF.estateJobShapeOk({kind:'lower'}) && FF.estateJobShapeOk({kind:'clear'}), 'payload-free kinds are valid');
+    ok(FF.estateJobShapeOk({kind:'assist'}), 'an assist job is valid');
+    // A kind missing its payload must be rejected -- applying it would write undefined onto the tile.
+    ok(!FF.estateJobShapeOk({kind:'totem'}), 'a totem job with no totemId is rejected');
+    ok(!FF.estateJobShapeOk({kind:'workshop'}), 'a workshop job with no workshopId is rejected');
+    ok(!FF.estateJobShapeOk({kind:'field', fieldTier:'3'}), 'fieldTier must be a number, not a string');
+    ok(!FF.estateJobShapeOk({kind:'nonsense'}) && !FF.estateJobShapeOk(null), 'unknown kinds and null are rejected');
+    // Every material-bearing kind the validator accepts must also be one estateJobMaterials knows, or a
+    // refund would return nothing.
+    ['workshop','cottage','totem','pave','field'].forEach(function(k){
+      var job = {kind:k, workshopId:'workshop_jewelrycrafting_t1', cottageId:'cottage_t2', totemId:'totem_t3',
+                 paveTileId:'paving_t4', fieldTier:3};
+      var mats = FF.estateJobMaterials(job);
+      ok(mats.length > 0 && mats.every(function(m){ return m[0] && m[1] > 0; }), k + ' declares refundable materials');
+    });
+    // An out-of-range tile refunds for the OWNER and stays silent for a mirroring client. The grid write is
+    // idempotent and runs on every client, so an unguarded refund would mint materials once per window.
+    var s = FF._state;
+    var savedInv = s.inventory;
+    try {
+      var job = { kind:'totem', totemId:'totem_t3', x:999, y:999 };
+      s.inventory = {};
+      eq(FF.applyEstateJobCompletion({grid:[]}, job, false, false), false, 'a missing tile applies nothing');
+      eq(s.inventory.totem_t3 || 0, 0, 'a NON-owner client does not refund (no per-window duplication)');
+      s.inventory = {};
+      FF.applyEstateJobCompletion({grid:[]}, job, true, false);
+      eq(s.inventory.totem_t3 || 0, 1, 'the owner gets the totem back instead of losing it');
+    } finally { s.inventory = savedInv; }
+  });
+
   suite('estate job busy refusal', function(){
     var job = { kind:'plow', readyAt: 1 };
     ok(FF.estateJobBusy({ ok:false, error:'inprogress', job:job, remainingMs:65000 }), 'new explicit refusal shape');

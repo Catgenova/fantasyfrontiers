@@ -18471,11 +18471,7 @@
                 typeof ej.x==='number' && ej.x>=0 && ej.x<ESTATE_GRID_SIZE &&
                 typeof ej.y==='number' && ej.y>=0 && ej.y<ESTATE_GRID_SIZE &&
                 typeof ej.startAt==='number' && typeof ej.readyAt==='number' &&
-                (ej.kind==='raise' || ej.kind==='lower' || ej.kind==='clear' ||
-                 (ej.kind==='pave'     && typeof ej.paveTileId==='string') ||
-                 (ej.kind==='workshop' && typeof ej.workshopId==='string') ||
-                 (ej.kind==='cottage'  && typeof ej.cottageId==='string') ||
-                 (ej.kind==='field'    && typeof ej.fieldTier==='number'));
+                estateJobShapeOk(ej);
               if(!ejOk) state.estate.job = null;
               // Action queue: a saved queue must be an array of well-formed entries, or drop it whole
               // (a malformed queue would spend materials advancing garbage). Cap to ESTATE_QUEUE_MAX.
@@ -18483,12 +18479,7 @@
                 state.estate.queue = [];
               } else {
                 state.estate.queue = state.estate.queue.filter(function(q){
-                  return q && typeof q.kind==='string' && typeof q.x==='number' && typeof q.y==='number' &&
-                    (q.kind==='raise' || q.kind==='lower' || q.kind==='clear' ||
-                     (q.kind==='pave'     && typeof q.paveTileId==='string') ||
-                     (q.kind==='workshop' && typeof q.workshopId==='string') ||
-                     (q.kind==='cottage'  && typeof q.cottageId==='string') ||
-                     (q.kind==='field'    && typeof q.fieldTier==='number'));
+                  return q && typeof q.x==='number' && typeof q.y==='number' && estateJobShapeOk(q);
                 }).slice(0, ESTATE_QUEUE_MAX);
               }
               var edgesYOk = state.estate.edgesY && state.estate.edgesY.length === ESTATE_GRID_SIZE &&
@@ -24905,6 +24896,12 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.73', date:'Jul 31', heading:'Estate builds can no longer vanish', items:[
+      'Fixed (thanks Mr Cookie): a Workshop could finish building and leave the tile <b>empty with the Workshop consumed</b>. Materials are spent when you <i>start</i> a build, so a completion that never got applied destroyed them.',
+      'The cause was a safety check doing too much. If the server had no record of the finished job &mdash; normally because another browser window collected it &mdash; your client dropped the job <b>without placing the building</b>, to avoid handing out the rewards twice. But the record can also be gone with <i>no</i> window having placed anything, and then the build was simply lost. Placing a building is now separated from granting its rewards: the placement always happens (it is safe to repeat), while XP and logs stay suppressed, so nothing is granted twice and nothing is lost.',
+      'Two related holes closed. A <b>Totem</b> build was silently discarded whenever you reloaded mid-build, destroying the totem &mdash; it was missing from the save-load check, in both places that check was written. And a build aimed at a tile that no longer exists now <b>returns your materials</b> instead of swallowing them.',
+      'If you lost a building to this, let us know what and where and it will be replaced.'
+    ]},
     { v:'0.0.73', date:'Jul 31', heading:'Shields and Wards get inventory containers too', items:[
       'Following the ring change below: your <b>Inventory</b> now sorts Shields into <b>Small / Medium / Large</b> containers and Wards into one container <b>per element</b>, each with that element&rsquo;s own icon. Their equip pickers already grouped this way &mdash; the inventory just did not match.'
     ]},
@@ -25807,6 +25804,23 @@
   function estatePersonalQueueReady(){ return !!chatClient && !!authUser && !!authUser.id; }
   // Materials a job holds while it's pending/running: [[itemId, qty], ...]. Single source for both the
   // reserve at enqueue and the refund on cancel/skip. Mirrors what each starter used to consume inline.
+  // Does this job carry the payload its kind needs? ONE definition, used by BOTH save-load validators (the
+  // active job and every queue entry). They used to be separate copy-pasted lists, which is exactly how
+  // 'totem' came to be missing from both: a totem job was silently dropped on reload and its totem -- spent
+  // at enqueue -- was destroyed. Anything not listed here is discarded on load, so a NEW job kind must be
+  // added here or it will not survive a reload.
+  function estateJobShapeOk(j){
+    if(!j || typeof j.kind !== 'string') return false;
+    switch(j.kind){
+      case 'raise': case 'lower': case 'clear': case 'assist': return true;
+      case 'pave':     return typeof j.paveTileId === 'string';
+      case 'workshop': return typeof j.workshopId === 'string';
+      case 'cottage':  return typeof j.cottageId === 'string';
+      case 'totem':    return typeof j.totemId === 'string';
+      case 'field':    return typeof j.fieldTier === 'number';
+      default:         return false;
+    }
+  }
   function estateJobMaterials(job){
     switch(job.kind){
       case 'pave':     return [[job.paveTileId, ESTATE_PAVE_TILE_COST]]; // upgrades cost the same 20 TARGET tiles as a fresh pave
@@ -26219,7 +26233,17 @@
   // refresh when a Workshop finishes. Returns true if it touched the grid.
   function applyEstateJobCompletion(estate, job, giveRewards, isGuild){
     var cell = estate.grid[job.x] && estate.grid[job.x][job.y];
-    if(!cell) return false;
+    if(!cell){
+      // The tile does not exist (out-of-range coordinates, or a grid that failed to load). Materials are
+      // spent at ENQUEUE, so returning silently destroyed them. Refund instead -- but ONLY for the owner
+      // (giveRewards), because the grid write is deliberately idempotent and runs on every client, and an
+      // unguarded refund here would mint materials once per window.
+      if(giveRewards){
+        estateJobRefund(job);
+        addLog('An estate task could not be applied — tile (' + job.x + ', ' + job.y + ') is not on your estate. Materials returned.', 'danger');
+      }
+      return false;
+    }
     if(job.kind === 'clear'){
       var oinfo = estateObstacleInfo(cell.obstacle);
       if(giveRewards && oinfo){
@@ -26398,10 +26422,25 @@
         cur.readyAt = Number(d.job.readyAt) || cur.readyAt;
         needsRender = true;
       } else if(d && d.error === 'none'){
-        // Another window already collected this job and took the rewards. Drop our mirror WITHOUT
-        // applying the completion -- this is the branch that stops a two-browser double-grant.
+        // The server has no row for this job. The ASSUMED cause is "another window already collected it",
+        // and this branch used to drop our mirror without applying anything, to stop a double-grant.
+        //
+        // That lost buildings (ticket, Mr Cookie: a Willow Jewelry Workshop finished, the tile stayed
+        // empty, the workshop was consumed). The assumption does not always hold -- the row can be gone
+        // while NO client ever wrote the grid: the other window's save can lose the forward-only progress
+        // race in save_game (higher-XP blob wins wholesale, see its header), or its push can simply not
+        // land. Materials are spent at ENQUEUE, so a completion that is never applied destroys them.
+        //
+        // The fix separates the two halves. The GRID WRITE is idempotent by design -- that is what makes a
+        // shared guild estate converge, and the guild path already applies it this way -- so applying it
+        // here is safe even if another window did it first. Only the REWARDS (XP, items, logs) are
+        // double-grantable, and those stay suppressed via giveRewards:false. Anti-double-grant intact,
+        // no lost building.
+        applyEstateJobCompletion(state.estate, cur, false, false);
         state.estate.job = null;
         needsRender = true;
+        estPersist();
+        cloudSave(false, true);                   // push the placed building before another window's save wins
         estateQueueAdvance(true);                 // the other window finished it -> our queue can proceed
       }
     }, function(){ _estJobCompleteBusy = false; });   // network blip: retry on a later tick
@@ -36916,7 +36955,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.73.1';
+  var GAME_VERSION = '0.0.73.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -37068,7 +37107,8 @@
       TOOL_TYPES:TOOL_TYPES, toolBenefitLabel:toolBenefitLabel, BLACKSMITH_TOOL_GROUPS:BLACKSMITH_TOOL_GROUPS, blacksmithToolGroupKey:blacksmithToolGroupKey, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupsOpen:blacksmithGroupsOpen,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
-      estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg,
+      estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg, estateJobShapeOk:estateJobShapeOk,
+      applyEstateJobCompletion:applyEstateJobCompletion, estateJobMaterials:estateJobMaterials,
       captchaOn:captchaOn, captchaAuthOpts:captchaAuthOpts, captchaConsume:captchaConsume, CHAT_CONFIG:CHAT_CONFIG,
       _turnstileSetToken:function(t){ turnstileToken = t; }, _turnstileToken:function(){ return turnstileToken; },
       captchaAwaitToken:captchaAwaitToken, _turnstileWaiterCount:function(){ return turnstileWaiters.length; }, _turnstileFlushWaiters:turnstileFlushWaiters,
