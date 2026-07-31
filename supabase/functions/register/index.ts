@@ -55,11 +55,12 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ ok: false, error: "Method not allowed." }, 405);
 
-  let username = "", password = "";
+  let username = "", password = "", captchaToken = "";
   try {
     const b = await req.json();
     username = String(b?.username ?? "").trim();
     password = String(b?.password ?? "");
+    captchaToken = String(b?.captcha_token ?? "");
   } catch {
     return json({ ok: false, error: "Invalid request." }, 400);
   }
@@ -103,7 +104,9 @@ Deno.serve(async (req) => {
   // the two can be rolled out in either order without a window where registration is broken.
   const turnstileSecret = Deno.env.get("TURNSTILE_SECRET");
   if (turnstileSecret) {
-    const captchaToken = String(body.captcha_token || "");
+    // captchaToken is read up top alongside username/password. It must be, because the parsed body is
+    // block-scoped to that try -- reaching for a `body` variable here throws a ReferenceError, which would
+    // have broken EVERY registration the moment TURNSTILE_SECRET was set (and only then).
     if (!captchaToken) return json({ ok: false, error: "Human verification required. Please reload and try again." }, 400);
     // FAIL CLOSED, unlike the rate limiter. A limiter that is down should let players through; a CAPTCHA
     // that cannot be checked must not, or an attacker just breaks the verifier to switch the check off.
