@@ -467,6 +467,70 @@ and why it read lowest) went ~49B -> **61.2B**, lifting the Herald's runt mace t
 band rather than out of it. When adding any NEW DoT, scale it off `dotBase` and size it by role — never off
 `combatLevelEquivalent`, and never 1:1 from an old coefficient.
 
+**Samurai** (90s — the 5s katana; v0.0.75.0 "the Draw-Cut", owner target **85B**). The class was **one strike**:
+`act.samuraiFirstStrike` was consumed by the first landed hit of a duel and re-armed only on a new foe, and FIVE
+effects keyed off it (Iaijutsu, First Blood, Iaijutsu Mastery D2 2pc, Blazing Iaijutsu D4 full, Emberdraw) — so
+four of the five multiplied by exactly 1.0 for the rest of every fight. First Blood's Bleed ran 8s and was never
+re-applied, which made **Crimson Edge — the Lv40 passive — dark for almost the whole fight** (two swings of
+uptime on a 5s weapon). Focus was a static +50% dmg / +15% crit that filled in a few hits and never moved again.
+Now Focus is a **stance** that builds per hit AND **per second** (the Plaguebearer's climbs-per-hit-and-per-second
+pattern), and a full stance makes the next strike a **Draw-Cut**: guaranteed crit, spends the meter, re-sinks the
+Bleed. `SM_SWING_MULT` is the band knob. Findings:
+- **A CLOCK IS MANDATORY ON A SLOW WEAPON, and this is now the third class to need one** (Herald's Brace,
+  Duelist's Sidestep). Hits-only, a ten-stack stance on a 5s katana takes **50 seconds** to fill — one Cut per
+  fight. The per-second build is the only reason the engine cycles at all, and it makes the class weapon-speed
+  agnostic.
+- **BUT THE CLOCK RATE IS ITSELF A DESIGN KNOB, and setting it too high produces a DEGENERATE engine.** At
+  `SM_FOCUS_PER_SEC = 1.0` the first sim pack measured a stance that refilled in ~3s against a 5s swing, so it
+  was always full when the next swing arrived and **every swing was a Draw-Cut** — the meter became decoration
+  and the Cut a per-swing rider. **The tell was in the legendary matrix, not the DPS total:** Silkweaver, whose
+  entire power is a bigger refund (i.e. a faster cycle), read 194.5B against Ghostblade's 185.5B, which has no
+  rate effect whatsoever. When a pure-rate item measures level with a non-rate item, the cycle is not
+  rate-limited and the engine is saturated. Dropped to 0.35. **Check any new cycling engine against its own
+  rate item this way before trusting the ceiling.**
+- **THE SET-LAYER ORDERING INVERTED WHEN THE CLOCK WAS FIXED, which is why a saturated engine must never be
+  used to rank anything.** Degenerate pack: D1 176.9B vs D2 122.6B — D1 ahead by 44%, and I was ready to record
+  "rate wins again, fourth class running". Corrected pack: **D2 73.0B vs D1 69.9B**, i.e. reversed and now only
+  4.5% apart, well inside the ±8–15% noise band. **Do not rank D1 against D2 for this class — there is no
+  signal there** (the Frostwarden lesson). What survives is that D3 is genuinely last (58.6B, 20% under D2),
+  and the mechanism is legible: with the cycle no longer firing every swing, per-Cut VALUE competes with rate
+  instead of being buried by it.
+- **DEFER A SPREAD FIX UNTIL THE ENGINE IS SOUND — this session is the evidence.** Ironwind ("the Cut strikes
+  twice") read **+31% over pack mean** on the degenerate run and I nearly trimmed it. After the clock fix it
+  read **+15.5%**, below the Herald's best mace (+17%) and Marrowsplitter (+24%), both left alone as legitimate
+  BiS pairings. The katana never needed touching; the clock did. A ratio measured on a broken engine is not
+  evidence about the item.
+- **CAP AXES WERE THE OLD DESIGN'S BLIND SPOT, and there were THREE.** Silkweaver raised the Focus cap 10 → 15,
+  which on a cycling meter is not merely dead but a **downgrade** (a bigger stance takes longer to fill and the
+  Cut still pays per stack spent). Ironwind's "every strike crits at max Focus" and Zanshin's "+15% crit at max
+  Focus" both assumed the meter SITS full — it is spent by the very strike that fills it. `samuraiFocusCap` is
+  now a constant and all three were re-axed onto rate/value. Fourth confirmation of the rate/cap law.
+- **FLAT CRIT ON DERIVED ATTACKS — fourth instance.** The Cut scales off `dotBase` (already an average of
+  post-crit hits), so it crits **flat x2**, like the Reliquary's Grave Strike, the Reaper's Rot ticks and the
+  Ranger's Two as One. Written that way from the start this time rather than caught by a wild first reading.
+- **Final Cut (D3 full) was a per-swing rider disguised as an event**: it fired off ANY Critical Hit, and BiS
+  crit is ~100%, so it spent the Soul bank every swing. It now spends into the Draw-Cut, so the D3 layer scales
+  with the cycle like the others.
+- Derive-don't-replace: the Bleed still writes the SHARED `act.bleedStacks/bleedDps/bleedUntil`, so Marrowsplitter,
+  Crimson Harvest, Exsanguinate, `d2BleedTickMult`, Feeding Frenzy, `enemyAfflicted`, Bonereaver's carry and the
+  debuff readout are untouched; `samuraiFocus` stays an INTEGER (the UI and every existing reader expect one) with
+  the sub-second remainder in `act.smFocusAccum`.
+`SM_SWING_MULT` **0.316**, derived from the MEAN OF TWO PACKS per the v0.0.72 method fix (pack 1 at 0.45 read
+124.2B; pack 2 at 0.308 read 80.8B = 118.0B rescaled; mean 121.1B → 0.316). Ceilings (D2 set, Ruin cloak, no
+offhand): Ironwind ~100B / Silkweaver ~92B / Emberdraw ~80B / Ghostblade ~69B — pack mean **85B**, on target.
+Ironwind is +17% over mean (the Herald's-best level, left alone) and Ghostblade the runt at −19%, which is the
+utility katana — undodgeable and Decay are worth little against a dummy that never dodges meaningfully.
+**Per-legendary variance across the two packs: Silkweaver ±12%, Ghostblade ±6%, Ironwind ±2%, Emberdraw ±1%.**
+The rate katana is the noisy one, because its cadence phases against the swing timer — the same reason the
+Herald's Brace/Breach runs were noisy. Average 2 runs on Silkweaver specifically.
+**On D1 vs D2, an honest statement of a weak signal:** both packs put D2 ahead by the same small margin (4.5%
+and 4.8%), so the DIRECTION is reproducible but the margin is under the noise floor. Treat them as
+indistinguishable; do not tell a player one is better. D3 was last in both packs (−20%, −31%) and that IS
+signal. Ruin won the cloak A/B decisively in both, like every class so far.
+Sim notes: BUILDS needs no offhand (2H). Unusually clean to measure — the kit needs neither kills nor incoming
+damage, so almost nothing is sim-dead. The exception is **Kindled Focus (D4 2pc)**, which scales with stance
+HELD, and a cycling stance spends itself, so it under-reads what a real fight sees.
+
 **TIER WARNING (v0.0.64.9): every recorded ceiling above was measured with a ONE-BELOW-BiS weapon.**
 Melee weapons + shields shipped with `tierCount:20` (top `t19`) while bows/wands/wards/scepter/staff had
 21 (top `t20`) — the ticket-0116 off-kilter. Melee/shields are now 21 tiers too (top `t20`, Tungsten), and

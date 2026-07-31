@@ -4162,12 +4162,39 @@
     var focus = sgear(); focus.activity = { type:'combat', monsterHp:60, bleedUntil:0, bleedStacks:0, samuraiFocus:4 };
     eq(FF.samuraiFocusStacks(focus), 4, 'samuraiFocusStacks reads the activity');
     ok(Math.abs(FF.newClassDmgMult(mon, focus) - 1.20) < 1e-9, 'Bushido: 4 Focus stacks => x1.20 damage');
-    // Zanshin (Lv80): +1.5% crit chance per Focus stack.
-    ok(Math.abs(FF.newClassCritChance(focus) - 4*0.015) < 1e-9, 'Zanshin: 4 Focus stacks => +6% crit chance');
-    // Below Lv60/80 the Focus perks are inert even with stacks present.
+    // Bushido also carries the crit (it absorbed the old Lv80 Zanshin line): +1.5% per Focus stack.
+    ok(Math.abs(FF.newClassCritChance(focus) - 4*0.015) < 1e-9, 'Bushido: 4 Focus stacks => +6% crit chance');
+    // Below Lv60 the Focus perks are inert even with stacks present.
     var lowLvl = sgear(45); lowLvl.activity = { type:'combat', monsterHp:60, bleedUntil:0, bleedStacks:0, samuraiFocus:4 };
     eq(FF.newClassDmgMult(mon, lowLvl), 1, 'no Bushido damage below Class Lv60');
-    eq(FF.newClassCritChance(lowLvl), 0, 'no Zanshin crit below Class Lv80');
+    eq(FF.newClassCritChance(lowLvl), 0, 'no Bushido crit below Class Lv60');
+
+    // ---- The Draw-Cut cycle (the rework) --------------------------------------------------------
+    // The stance is a FIXED ten: capacity is a dead axis on a cycling engine, so nothing raises it.
+    eq(FF.samuraiFocusCap(sgear()), FF.SAMURAI_FOCUS_MAX, 'the stance caps at SAMURAI_FOCUS_MAX');
+    var empty = sgear(); empty.activity = { type:'combat', monsterHp:60, samuraiFocus:0, dotHitAvg:1000 };
+    var full  = sgear(); full.activity  = { type:'combat', monsterHp:60, samuraiFocus:FF.SAMURAI_FOCUS_MAX, dotHitAvg:1000 };
+    ok(!FF.smSheathed(empty), 'an empty stance is not sheathed');
+    ok(FF.smSheathed(full), 'a full stance is sheathed -- the next strike draws');
+    // The Cut scales off the recent-hit EMA (dotBase), per stack spent. This is what makes SM_SWING_MULT
+    // the single band knob: the swings feed the EMA, and the EMA is the Cut.
+    near(FF.smCutDamage(full), FF.SAMURAI_FOCUS_MAX * FF.SM_CUT_PCT * 1000, 'a full-stance Cut = 10 Focus x SM_CUT_PCT x the recent average hit');
+    eq(FF.smCutDamage(empty), 0, 'no stance, no Cut');
+    var half = sgear(); half.activity = { type:'combat', monsterHp:60, samuraiFocus:5, dotHitAvg:1000 };
+    near(FF.smCutDamage(half), 5 * FF.SM_CUT_PCT * 1000, 'a half stance cuts for half -- the Cut pays for what it spent');
+    // Zanshin (Lv80) is a RATE capstone: it leaves residual stance so the next cycle is shorter.
+    eq(FF.smCutRefund(sgear(45)), 0, 'below Lv80 a Cut empties the stance');
+    eq(FF.smCutRefund(sgear(85)), FF.SM_ZANSHIN_REFUND, 'Zanshin leaves SM_ZANSHIN_REFUND Focus behind');
+    ok(FF.smCutRefund(sgear(85)) < FF.samuraiFocusCap(sgear()), 'the refund can never leave a FULL stance, which would re-fire the Cut forever');
+    // The stance clock accrues fractionally so it is tick-rate independent, but samuraiFocus stays an INTEGER
+    // (the UI readout and every pre-existing reader expect one).
+    var acc = sgear(); acc.activity = { type:'combat', monsterHp:60, samuraiFocus:0 };
+    eq(FF.smFocusAdd(0.4, acc), 0, 'four tenths of a stack builds nothing yet');
+    eq(acc.activity.samuraiFocus, 0, 'and the stack count is still an integer 0');
+    eq(FF.smFocusAdd(0.7, acc), 1, 'but the remainder is banked and carries past 1');
+    eq(acc.activity.samuraiFocus, 1, 'one whole stack now held');
+    FF.smFocusAdd(9999, acc);
+    eq(acc.activity.samuraiFocus, FF.samuraiFocusCap(acc), 'the stance fills to the cap and no further');
   });
 
   // ---- Classes: gear-requirement UI renders in a standardized slot order ------------------
@@ -5220,9 +5247,14 @@
     eq(FF.duelistSidestepMs(legSt('bloodwaltz')), 6000, 'without Gossamer the clock is the base 6s');
     near(FF.legendaryDodgeBonus(legSt('flowingblade')), 0, 'a non-En-Garde legendary gives no flat Dodge');
 
-    // Flowing Blade (samurai/falchion): the Bushido Focus cap rises to 15 (from 10).
-    eq(FF.samuraiFocusCap(legSt('flowingblade')), 15, 'Flowing Blade raises the Focus cap to 15');
-    eq(FF.samuraiFocusCap(legSt('engarde')), 10, 'the Focus cap is 10 without Flowing Blade');
+    // Silkweaver (samurai/falchion): the old "Focus cap rises to 15" was a dead axis on a cycling stance --
+    // capacity buys nothing when the meter is spent the instant it fills, and a bigger cap SLOWS the cycle.
+    // Its power is now the Cut refund, which shortens it.
+    eq(FF.samuraiFocusCap(legSt('flowingblade')), 10, 'nothing raises the stance cap any more');
+    eq(FF.samuraiFocusCap(legSt('engarde')), 10, 'the stance cap is a flat 10');
+    var _swSt = legSt('flowingblade'); _swSt.xp = _swSt.xp || {}; _swSt.xp.samurai = FF.xpFloorForLevel(85);
+    var _plainSt = legSt('engarde'); _plainSt.xp = _plainSt.xp || {}; _plainSt.xp.samurai = FF.xpFloorForLevel(85);
+    ok(FF.smCutRefund(_swSt) > FF.smCutRefund(_plainSt), 'Silkweaver leaves extra Focus behind after a Draw-Cut');
 
     // Highbanner (knight/claymore, key relentlessassault): the Banner plants at 15 (base cap 10).
     eq(FF.knightStackCap(legSt('relentlessassault')), 15, 'Highbanner raises the Banner cap to 15');
@@ -6172,8 +6204,10 @@
     // tested in the class suite) -- hits alone no longer double-build it.
     var wd = legSt('wyrmdancer','rapier'); wd.d4Wrath = 0; wd.d4WrathUntil = 0; FF.d4WrathOnHit(wd); eq(FF.d4WrathStacks(wd), 0, "Wyrmdancer's Fang no longer builds Wrath on hits (no D4 set worn)");
     // Emberdraw: opener +50%.
-    near(FF.d4LegDmgMult({}, legSt('emberdraw','falchion',{ activity:{type:'combat', monsterHp:100, samuraiFirstStrike:true} })), 1.50, 'Emberdraw: opening strike +50%');
-    near(FF.d4LegDmgMult({}, legSt('emberdraw','falchion')), 1.0, 'Emberdraw only rides the opener');
+    // Emberdraw moved onto the Draw-Cut (inside smDrawCutFire) -- as an opener rider it did nothing after the
+    // first landed hit of a duel, which is the defect the whole rework is about.
+    near(FF.d4LegDmgMult({}, legSt('emberdraw','falchion')), 1.0, 'Emberdraw is no longer a flat swing multiplier');
+    eq(FF.LEG_EMBERDRAW_WEAKNESS > 1, true, 'its weakness multiplier is applied to the Cut instead');
     // Drakelance (reworked): Decrees strike twice — fired at the Decree hook, no flat amplifier row.
     near(FF.d4LegDmgMult({}, legSt('drakelance','claymore',{ knightStacks:999 })), 1.0, 'Drakelance is no longer a flat amplifier (Decrees strike twice at the hook)');
     ok(/strike twice/.test(FF.LEGENDARY_GEAR_ITEMS_D4[FF.legGearItemIdD4('drakelance','normal')].desc), 'Drakelance desc: Decrees strike twice');
@@ -6976,10 +7010,10 @@
       // --- Kindled Focus (Samurai 2pc): +2% damage per Focus stack ---
       wearD4('samurai', 2); FF.d4WrathReset(s); s.activity = { type:'combat', monsterHp:1000, samuraiFocus:10 };
       near(FF.d4SetDmgMult({}, s), 1.20, 'Kindled Focus: +2% per Focus (10 -> +20%)');
-      // --- Blazing Iaijutsu (Samurai full): opener +20% ---
-      wearFull('samurai'); s.activity = { type:'combat', monsterHp:1000, samuraiFocus:0, samuraiFirstStrike:true };
-      near(FF.d4SetDmgMult({}, s), 1.20, 'Blazing Iaijutsu: the opening strike hits +20%');
-      s.activity.samuraiFirstStrike = false; near(FF.d4SetDmgMult({}, s), 1.0, 'Blazing Iaijutsu only rides the opener');
+      // --- Blazing Iaijutsu (Samurai full) rides the Draw-Cut now, not the once-per-foe opener ---
+      wearFull('samurai'); s.activity = { type:'combat', monsterHp:1000, samuraiFocus:0 };
+      near(FF.d4SetDmgMult({}, s), 1.0, 'Blazing Iaijutsu is no longer a flat swing multiplier');
+      ok(/Draw-Cut/.test(FF.D4_SET_DEFS.samurai.bf.desc), 'and its text says so -- it hits the weakness on the Draw-Cut'); 
 
       // --- Dragon Hoard (Treasure Hunter 2pc): +8% per Supreme item, cap +40% ---
       FF.d4WrathReset(s); s.activity = { type:'combat', monsterHp:1000 };
@@ -7158,14 +7192,29 @@
       FF.assassinVigorAdd(0, s); s.assassinVigor.stacks = 4;
       eq(FF.assassinCommunionLifesteal(s), 0, 'Communion is inert below max Vigor');
       s.assassinVigor = null;
-      // Iaijutsu Mastery (Samurai 2pc): +50% on the opening strike (samuraiFirstStrike flag).
-      wearD2('samurai', 2); s.activity = { type:'combat', monsterHp:500, samuraiFirstStrike:true };
-      near(FF.d2SetDmgMult({hp:1000}, s), 1.50, 'Samurai Iaijutsu Mastery: +50% opening strike');
-      s.activity.samuraiFirstStrike = false; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, 'Iaijutsu inert after the opener');
-      // Zanshin (Samurai full): +15% crit at max Focus.
+      // Iaijutsu Mastery (Samurai 2pc) no longer scales the once-per-foe opener (which made it inert for the
+      // whole rest of a fight) -- it scales every Draw-Cut, inside smCutDamage.
+      wearD2('samurai', 2); s.activity = { type:'combat', monsterHp:500, samuraiFocus:10, dotHitAvg:1000 };
+      near(FF.d2SetDmgMult({hp:1000}, s), 1.0, 'Iaijutsu Mastery is no longer a flat swing multiplier');
+      s.xp = s.xp || {}; s.xp.samurai = FF.xpFloorForLevel(85);
+      near(FF.smCutDamage(s), 10 * FF.SM_CUT_PCT * 1000 * FF.SM_CUT_MULT_D2, 'Iaijutsu Mastery: Draw-Cuts land +50%');
+      // Zanshin (Samurai full) no longer grants "crit at max Focus": a cycling stance is never AT max for more
+      // than one strike, and that strike is a guaranteed crit anyway. It is the Bleed/Crimson layer now.
       wearD2('samurai', 4); s.activity = { type:'combat', monsterHp:500, samuraiFocus:FF.samuraiFocusCap(s) };
-      near(FF.d2SetCritChance(s), 0.15, 'Samurai Zanshin: +15% crit at max Focus');
-      s.activity.samuraiFocus = 0; near(FF.d2SetCritChance(s), 0.0, 'Zanshin inert below max Focus');
+      near(FF.d2SetCritChance(s), 0.0, 'the dead "crit at max Focus" line is gone');
+      // Crimson Edge is a Lv40 CLASS passive, so this half needs the Samurai actually live -- the bare D2
+      // fixture seats uid-only pieces with no material, which does not confer the class. Give the pieces both.
+      var _zOrder = FF.D2_SET_DEFS.samurai.bareHead ? ['chest','gauntlets','boots'] : ['helmet','chest','gauntlets','boots'];
+      var _zs = { xp:{ samurai: FF.xpFloorForLevel(85) }, physique:{}, equippedMainhand:'falchion',
+                  equippedOffhand:null, uniqueItems:{}, bodyArmor:{} };
+      _zOrder.forEach(function(sl, i){ var uid = 'z'+i;
+        _zs.uniqueItems[uid] = { set:'samurai', setLayer:'d2' };
+        _zs.bodyArmor[sl] = { material:'leather', tier:5, uid:uid }; });
+      eq(FF.activeClassId(_zs), 'samurai', 'the Zanshin fixture carries a live Samurai');
+      _zs.activity = { type:'combat', monsterHp:500, samuraiFocus:0, bleedStacks:2, bleedDps:5, bleedUntil:Date.now()+4000 };
+      near(FF.newClassDmgMult({hp:1000}, _zs), FF.SM_CRIMSON_MULT_D2, 'Zanshin (full): Crimson Edge rises to +60%');
+      _zs.uniqueItems.z0.setLayer = 'd1';   // break the full set: back to the base Crimson Edge
+      near(FF.newClassDmgMult({hp:1000}, _zs), FF.SAMURAI_CRIMSON_MULT, 'and without the full set it is the base +30%');
       // Charged Air (Thunderfury D2 2pc): crits seed +3 (behaviour in the class suite).
       wearD2('thunderfury', 2); ok(FF.set2D2('thunderfury', s), 'the Thunderfury D2 2-piece (Charged Air) is detectable');
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; }
@@ -7436,8 +7485,8 @@
     eq(FF.pyroBurnCap(setSt('pyromancer',1)), FF.PYRO_BURN_MAX_STACKS, '1 piece -> base Burn cap');
     eq(FF.frostChillCap(setSt('frostwarden',2)), 8, 'Deep Chill (2pc): Chill cap -> 8');
     eq(FF.frostChillCap(setSt('frostwarden',1)), FF.FROST_CHILL_MAX_STACKS, '1 piece -> base Chill cap');
-    eq(FF.samuraiFocusPerHit(setSt('samurai',2)), 2, 'Unbroken Focus (2pc): +2 Focus per hit');
-    eq(FF.samuraiFocusPerHit(setSt('samurai',1)), 1, '1 piece -> +1 Focus per hit');
+    eq(FF.samuraiFocusPerHit(setSt('samurai',2)), 2, 'Unbroken Focus (2pc): the stance fills twice as fast');
+    eq(FF.samuraiFocusPerHit(setSt('samurai',1)), 1, '1 piece -> the stance fills at the base rate');
 
     // Poison / ailment multipliers.
     near(FF.plagueBloomMult(setSt('plaguebearer',2)), 1.5, 'Plague Bloom (2pc): poison ticks x1.5');
@@ -7464,11 +7513,14 @@
     // Flowing Strikes integrates through classAttackSpeedMult on a live Samurai (leather set = the class armor).
     function armor(mat){ return { material:mat, tier:5 }; }
     var samu = setSt('samurai',4, { equippedMainhand:'falchion', xp:{ samurai: FF.xpFloorForLevel(85) } });
-    samu.activity = { type:'combat', samuraiFocus:10 }; // at Focus cap
+    samu.activity = { type:'combat', samuraiFocus:10 };
     eq(FF.activeClassId(samu), 'samurai', 'a full leather set + katana activates Samurai');
-    near(FF.classAttackSpeedMult(samu), 0.80, 'Flowing Strikes: +20% attack speed at max Focus', 1e-9);
-    samu.activity.samuraiFocus = 3; // below cap
-    near(FF.classAttackSpeedMult(samu), 1, 'no Flowing Strikes below max Focus');
+    // The window is post-Draw-Cut now. "At max Focus" was unreachable in practice once the stance started
+    // cycling -- it is spent by the very strike that fills it.
+    samu.samuraiFlowUntil = Date.now() + 2000;
+    near(FF.classAttackSpeedMult(samu), 1 - FF.SM_FLOW_PCT, 'Flowing Strikes: faster swings just after a Draw-Cut', 1e-9);
+    samu.samuraiFlowUntil = Date.now() - 1;
+    near(FF.classAttackSpeedMult(samu), 1, 'and the window closes');
   });
 
   // ---- D1 set bonuses, Batch 2: crit / tempo / momentum ----------------------------------------------
@@ -9764,6 +9816,75 @@
       Math.random = svRnd;
       S.equippedMainhand=bl.mh; S.equippedMainhandTier=bl.mht; S.equippedOffhand=bl.oh; S.equippedOffhandTier=bl.oht;
       S.bodyArmor=bl.ba; S.uniqueItems=bl.ui; S.xp.reaver=bl.xp; S.activity=bl.act; S.playerHp=bl.hp; S.reaverHarvestHasteUntil=bl.hh;
+    }
+  });
+
+  // ---- The Ronin: the Draw-Cut cycle, end to end on live state ---------------------------------------
+  // The rework's whole point is that the draw REPEATS. Before it, five effects keyed off a once-per-foe flag
+  // and First Blood's 8s Bleed was never re-applied, so Crimson Edge -- the Lv40 passive -- was dark for the
+  // rest of every fight. These assertions are about the cycle, not the numbers.
+  suite('samurai: the Draw-Cut cycle (behavioral)', function(){
+    var S = FF._state;
+    function armor(mat){ return { material:mat, tier:5 }; }
+    var bl = { mh:S.equippedMainhand, mht:S.equippedMainhandTier, mr:S.equippedMainhandRarity, mu:S.equippedMainhandUid,
+               oh:S.equippedOffhand, oht:S.equippedOffhandTier, ba:S.bodyArmor, ui:S.uniqueItems,
+               xp:S.xp.samurai, act:S.activity, hp:S.playerHp, fl:S.samuraiFlowUntil };
+    var svRnd = Math.random;
+    try {
+      S.equippedMainhand='falchion'; S.equippedMainhandTier=6; S.equippedMainhandRarity='normal'; S.equippedMainhandUid=null;
+      S.equippedOffhand=null;
+      S.bodyArmor={helmet:armor('leather'),chest:armor('leather'),gauntlets:armor('leather'),boots:armor('leather'),back:{tier:0,rarity:'normal',material:null}};
+      S.uniqueItems={}; S.xp.samurai = FF.xpFloorForLevel(85);
+      eq(FF.activeClassId(S), 'samurai', 'behavioral setup activates the Samurai');
+      S.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e12, tickAccum:0, monsterTickAccum:0,
+                     duelStartedAt:Date.now(), samuraiFocus:0, smFocusAccum:0 };
+      S.playerHp = FF.maxHp(S);
+      Math.random = function(){ return 0; };   // land every swing, crit every swing
+
+      // Half of the build is the swing.
+      FF.playerAttackTick(false, 1, false);
+      ok((S.activity.dotHitAvg||0) > 0, 'the swing banked into the shared recent-hit base');
+      eq(S.activity.samuraiFocus, FF.SM_FOCUS_PER_HIT, 'and built a stack of stance');
+
+      // The other half is the CLOCK, and it is the reason this class functions at all: the katana swings every
+      // 5s, so a hits-only stance of ten would have taken fifty seconds to fill -- one Cut per fight.
+      S.activity.samuraiFocus = 0; S.activity.smFocusAccum = 0;
+      FF.applySamuraiFocusTick(1000);
+      eq(S.activity.samuraiFocus, Math.floor(FF.SM_FOCUS_PER_SEC), 'one second of the duel builds stance with no swing at all');
+      FF.applySamuraiFocusTick(30000);
+      eq(S.activity.samuraiFocus, FF.samuraiFocusCap(S), 'and it fills to a full stance');
+      ok(FF.smSheathed(S), 'a full stance is sheathed -- the next strike draws');
+
+      // The draw. It strikes, it re-sinks the Bleed, and it spends the stance down to the Zanshin refund.
+      var hp0 = S.activity.monsterHp;
+      var expect = Math.round(FF.smCutDamage(S) * FF.SM_CUT_CRIT_MULT);
+      var dealt = FF.smDrawCutFire(S.activity, FF.MONSTERS[0], S);
+      eq(dealt, expect, 'the Cut lands stance x SM_CUT_PCT x recent hit, with a FLAT x2 crit');
+      ok(S.activity.monsterHp < hp0, 'and it struck the foe for real');
+      eq(S.activity.samuraiFocus, FF.smCutRefund(S), 'the stance is spent down to the refund');
+      ok(!FF.smSheathed(S), 'so the next strike is not another Cut -- the cycle has to be rebuilt');
+      ok((S.activity.bleedStacks||0) > 0 && (S.activity.bleedUntil||0) > Date.now(), 'First Blood: every Cut re-sinks the Bleed');
+      near(S.activity.bleedDps, S.activity.bleedStacks * S.activity.dotHitAvg * FF.SAMURAI_BLEED_PCT,
+           'and the Bleed ticks off the recent hit, not off a sum of proficiency levels');
+      ok(FF.enemyBleeding(S), 'which is what keeps Crimson Edge live for the whole fight');
+
+      // A Cut with an empty stance is a no-op, not a free strike.
+      S.activity.samuraiFocus = 0; S.activity.smFocusAccum = 0;
+      eq(FF.smDrawCutFire(S.activity, FF.MONSTERS[0], S), 0, 'no stance, no Cut');
+
+      // MANDATORY (CLAUDE.md): every damage source must be NAMED in the Combat log. The buffer is a 200-row
+      // ring and is already full by the time the suite runs, so assert on the TAIL -- never on the length.
+      var log = FF._combatLog();
+      var found = false;
+      for(var i = Math.max(0, log.length - 16); i < log.length; i++){
+        if(log[i] && log[i].dir === 'skill' && /Draw-Cut/.test(log[i].spName || '')) found = true;
+      }
+      ok(found, 'the Draw-Cut appears in the Combat log under its own name');
+    } finally {
+      Math.random = svRnd;
+      S.equippedMainhand=bl.mh; S.equippedMainhandTier=bl.mht; S.equippedMainhandRarity=bl.mr; S.equippedMainhandUid=bl.mu;
+      S.equippedOffhand=bl.oh; S.equippedOffhandTier=bl.oht;
+      S.bodyArmor=bl.ba; S.uniqueItems=bl.ui; S.xp.samurai=bl.xp; S.activity=bl.act; S.playerHp=bl.hp; S.samuraiFlowUntil=bl.fl;
     }
   });
 

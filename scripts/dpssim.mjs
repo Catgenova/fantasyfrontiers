@@ -212,6 +212,21 @@ const BUILDS = {
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "pierce",
   },
+  samurai: {
+    // Katana (falchion, 5s two-hander) -- 90s window, like the Knight and Berserker: 45s is only nine swings,
+    // which badly misreads a cycling engine. "The Ronin" builds a Focus stance on every landed hit AND on a
+    // per-second clock, then spends the stance as a Draw-Cut; the Cut, its Bleed and Crimson Edge all scale
+    // off the recent-hit EMA, so SM_SWING_MULT drives the whole kit from one number. Cycling engine, so by
+    // the rate/cap law expect the RATE layer (D1 Unbroken Focus / Flowing Strikes) to lead and per-Cut VALUE
+    // to follow -- and note nothing raises the stance CAP any more, because that axis is dead here.
+    // Unusually clean to measure: the kit needs neither kills nor incoming damage, so almost nothing is
+    // sim-dead. The exception is Kindled Focus (D4 2pc), which scales with stance HELD -- and a cycling
+    // stance spends itself, so it reads on the low side of what a real fight sees.
+    weapon: { typeId: "falchion", styleXp: ["falchion"] },
+    legs: ["flowingblade", "ironwind", "ghostblade", "emberdraw"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "pierce",
+  },
   berserker: {
     // Max Health IS the weapon (Titan's Heft/Deepquake/Wrathscale scale off it), so jewelry lines trade
     // lifesteal for Max HP. primeLedger holds the Blood Ledger inked at cap (owner rule: simulate the
