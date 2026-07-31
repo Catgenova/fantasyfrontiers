@@ -13452,6 +13452,41 @@
     ok(tail.charAt(0) !== ' ', 'the stats tail has no leading space');
   });
 
+  // ---- Estate: a Field can never end up at the waterline -----------------------------------------
+  // Ticket: queue a raise, queue a Field (validated against the PROJECTED tile, so the raise counted),
+  // then cancel the raise. The Field kept its queue slot and planted at z0 -- where the unclamped growth
+  // formula paid 0.444x, better than the -50% floor the design states for z1.
+  suite('estate field waterline', function(){
+    ok(typeof FF.estateQueuedJobValid === 'function', 'the queued-job validator is exported');
+    var dirt = function(h){ return { type:'dirt', height:h, obstacle:null, fieldTier:null }; };
+    // The re-check is what makes cancelling the raise invalidate the Field that depended on it.
+    ok(!FF.estateQueuedJobValid({kind:'field', fieldTier:3}, dirt(0)).ok, 'a queued Field at z0 is refused');
+    ok(FF.estateQueuedJobValid({kind:'field', fieldTier:3}, dirt(1)).ok, 'z1 is still allowed (the intended floor)');
+    ok(FF.estateQueuedJobValid({kind:'field', fieldTier:3}, dirt(10)).ok, 'a normal altitude is allowed');
+    // Same rule paving already had, quoted for parity.
+    ok(!FF.estateQueuedJobValid({kind:'pave', paveTileId:'paving_t4'}, dirt(0)).ok, 'paving at z0 was already refused');
+    // Water is derived purely from height, and only for unpaved tiles.
+    ok(FF.estateIsWater({height:0, type:'dirt'}), 'z0 dirt is water');
+    ok(!FF.estateIsWater({height:1, type:'dirt'}), 'z1 dirt is not water');
+    ok(!FF.estateIsWater({height:0, type:'paved'}), 'a paved z0 tile is not water');
+    // The growth band is clamped, so a Field already planted at z0 gets no better than z1 -- this is what
+    // neutralises legacy exploited plots without deleting them.
+    var S = FF._state, savedEstate = S.estate;
+    try {
+      var g = [];
+      for(var gx=0; gx<3; gx++){ g[gx]=[]; for(var gy=0; gy<3; gy++) g[gx][gy] = dirt(10); }
+      S.estate = { grid:g };
+      g[1][1].fieldTier = 3; g[1][1].height = 0;
+      eq(FF.fieldGrowthMult('personal','1,1'), 0.5, 'a z0 Field is clamped to the z1 rate, not 0.444');
+      g[1][1].height = 1;
+      eq(FF.fieldGrowthMult('personal','1,1'), 0.5, 'z1 is the documented -50% floor');
+      g[1][1].height = 10;
+      eq(FF.fieldGrowthMult('personal','1,1'), 1, 'z10 is the baseline');
+      g[1][1].height = 19;
+      eq(FF.fieldGrowthMult('personal','1,1'), 1.5, 'z19 is the +50% ceiling');
+    } finally { S.estate = savedEstate; }
+  });
+
   // ---- Dungeon clears: the grandfather report must go out IN CHAIN ORDER --------------------------
   // The progression gate is server-side now (pentest: it was browser-only). The server refuses to record a
   // layer whose predecessor is not already on its ledger, so reporting out of order silently loses the

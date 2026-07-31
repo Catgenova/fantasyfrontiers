@@ -10334,7 +10334,13 @@
     var parts = key.split(','), px = parseInt(parts[0],10), py = parseInt(parts[1],10);
     var c = isFinite(px) && grid[px] && grid[px][py];
     if(!c || c.fieldTier == null) return 1;
-    return 1 + ((c.height|0) - 10) / 18;
+    // CLAMPED to the documented band. The formula alone is unbounded below: a z0 Field computes 0.444x
+    // (-55.6%), better than the -50% floor the design states for z1 -- which was the actual payoff of the
+    // waterline exploit (queue a raise, queue a Field, cancel the raise). Placing a Field at z0 is blocked
+    // now, but clamping is what neutralises the ones already planted, WITHOUT deleting anyone's farm: such
+    // a Field simply grows at the z1 rate. The upper end is naturally bounded by ESTATE_MAX_HEIGHT, but
+    // pin it too so the band is stated in one place.
+    return clamp(1 + ((c.height|0) - 10) / 18, 0.5, 1.5);
   }
   function plantSeed(scope, key, seedId, batch){
     var fieldTier = fieldTierAt(scope, key);
@@ -24957,6 +24963,13 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.73', date:'Jul 31', heading:'Fields can no longer be planted underwater', items:[
+      'Fixed an exploit (thanks for the report): you could queue a <b>raise</b>, queue a <b>Field</b> on top of it &mdash; which validated against the raised tile &mdash; then <b>cancel the raise</b>. The Field kept its place in the queue and planted at <b>z0</b>, on the waterline.',
+      'Cancelling a queued action now invalidates anything queued that depended on it: the Field is skipped and its materials returned, exactly as it would be if the tile had changed for any other reason. Placing a Field on a waterline tile is also blocked outright &mdash; that was never checked either, so a z0 plot was reachable directly as well.',
+      'The rest of the estate had always assumed this: digging a Field&rsquo;s tile down refuses with &ldquo;lowering further would flood the Field&rdquo;, and paving refuses z0. Only Fields themselves never looked.',
+      '<b>Existing waterline Fields are not being removed.</b> The altitude growth bonus is now clamped to its documented band (&minus;50% at z1 through +50% at z19), so a z0 plot &mdash; which had been quietly paying about &minus;56%, better than any legitimate Field &mdash; now grows at the z1 rate. Keep the plot; the advantage is gone.',
+      'Also: in <b>2D top-down</b> view, waterline tiles are now drawn <b>blue</b> instead of brown. The 3D view always showed them as water; the flat view ran the plain height colours, so the waterline looked like ordinary dirt with no hint that nothing can be built there.'
+    ]},
     { v:'0.0.73', date:'Jul 31', heading:'Dungeon requirements are now enforced by the server', items:[
       'Security fix. The dungeon entry requirements &mdash; Total Level 5,000, and clearing each layer before the next &mdash; were checked only by the game in your browser. The server accepted any request, so somebody bypassing the interface could open or join a <b>D4 party at Total Level 1 with nothing cleared</b>, including by using another player&rsquo;s party code.',
       'Both requirements are now checked on the server, for creating a party <i>and</i> for joining one. Joining is validated against the layer the server says that party is in, not anything the request claims.',
@@ -25957,6 +25970,12 @@
                          return { ok:true };
                        }
                        if(c.type!=='dirt' || c.obstacle || c.fieldTier!=null) return { ok:false, msg:'that tile can no longer take a Field' };
+                       // THE WATERLINE CHECK. Reported exploit: queue a raise, queue a Field (validated
+                       // against the PROJECTED tile, so the raise counted), then cancel the raise -- the
+                       // Field kept its place in the queue and planted at z0. Re-checking here is what
+                       // makes cancelling an earlier entry invalidate the ones that depended on it; the
+                       // queue drain refunds and skips on a false. `pave` above already did this.
+                       if((c.height|0) <= 0) return { ok:false, msg:'that tile is underwater' };
                        return { ok:true };
       case 'workshop': if(job.upgrade){
                          var _uw = WORKSHOP_ITEMS[c.workshopId], _uwT = itemTierFromId(job.workshopId);
@@ -26847,6 +26866,11 @@
     if(!cell.owned){ addLog('You can only place a Field on an owned tile.', 'danger'); return; }
     if(pc.obstacle){ addLog('Clear the obstacle on this tile before placing a Field.', 'danger'); return; }
     if(pc.fieldTier != null){ addLog('That tile already has a Field.', 'danger'); return; }
+    // Fields cannot sit at the waterline (ticket). The rest of the estate already assumed this -- `lower`
+    // refuses to dig a Field's tile below z1 with "lowering further would flood the Field", and paving
+    // refuses z0 outright -- but placing one there was never blocked, so a z0 farm plot was reachable
+    // directly as well as through the queue exploit.
+    if((pc.height|0) <= 0){ addLog('That tile is underwater — raise it above the waterline before tilling a Field.', 'danger'); return; }
     var def = FARM_FIELD_TIERS['field_t'+tier]; if(!def) return;
     // Cap counts fields ALREADY QUEUED as well, so you can't queue past the ESTATE_MAX_FIELDS ceiling.
     var queuedFields = estIsGuild ? 0 : estateQueue().filter(function(q){ return q.kind==='field'; }).length;
@@ -28296,7 +28320,11 @@
     estateTilesByDepth(false).forEach(function(t){
       var x=t.x, y=t.y, cell=grid[x][y];
       var p = estateTdTilePos(x, y, ox, oy);
-      ctx.fillStyle = cell.type==='paved' ? estatePavedTileColor(cell.paveTileId) : estateHeightColor(cell.height/(ESTATE_MAX_HEIGHT-1));
+      // z0 reads as WATER, matching the 3D view (which has always used ESTATE_WATER_COLOR here). The
+      // top-down view only ran the height ramp, whose t=0 stop is brown -- so the waterline looked like
+      // ordinary dirt and there was no visual cue that the tile was unusable.
+      ctx.fillStyle = cell.type==='paved' ? estatePavedTileColor(cell.paveTileId)
+        : (estateIsWater(cell) ? ESTATE_WATER_COLOR : estateHeightColor(cell.height/(ESTATE_MAX_HEIGHT-1)));
       ctx.fillRect(p.x-ts/2, p.y-ts/2, ts, ts);
       ctx.strokeStyle='rgba(0,0,0,0.22)'; ctx.lineWidth=1; ctx.strokeRect(p.x-ts/2, p.y-ts/2, ts, ts);
       if(jobTiles[x+'_'+y]){ ctx.fillStyle='rgba(206,52,52,0.38)'; ctx.fillRect(p.x-ts/2, p.y-ts/2, ts, ts); ctx.strokeStyle='#d23a3a'; ctx.lineWidth=2; ctx.strokeRect(p.x-ts/2+1, p.y-ts/2+1, ts-2, ts-2); }
@@ -37037,7 +37065,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.73.4';
+  var GAME_VERSION = '0.0.73.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -37192,6 +37220,7 @@
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg, estateJobShapeOk:estateJobShapeOk,
       dungeonOwedClears:dungeonOwedClears, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL,
+      estateQueuedJobValid:estateQueuedJobValid, estateIsWater:estateIsWater, fieldGrowthMult:fieldGrowthMult,
       chatPartyCodeHtml:chatPartyCodeHtml, chatBodyHtml:chatBodyHtml,
       applyEstateJobCompletion:applyEstateJobCompletion, estateJobMaterials:estateJobMaterials,
       captchaOn:captchaOn, captchaAuthOpts:captchaAuthOpts, captchaConsume:captchaConsume, CHAT_CONFIG:CHAT_CONFIG,
