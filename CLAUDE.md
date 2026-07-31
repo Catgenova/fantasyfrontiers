@@ -155,6 +155,37 @@ settlement and bank withdrawal ambiguous.
 Still open by design: earning is client-reported because the server does not simulate crafting. Batch-validated
 server-side crafting is the real fix and is a separate project.
 
+## "Progress" IS damage, so every class rework tightens the anti-cheat thresholds (v0.0.75, Valuren)
+
+`save_game`'s `deriveProgress()` sums every `xp` and `physique` value, and **class XP is awarded 1:1 with combat
+damage dealt** (`awardClassXp(effDmg)` → `addXp(id, effDmg)`). So the stored "progress" score is a POWER metric
+and **progress-per-second is approximately the player's DPS**. Consequences to keep in mind permanently:
+
+- **Every DPS increase raises every player's progress rate.** The reworks moved ceilings to 80–90B and the
+  v0.0.68.0 DoT fix lifted several unbanded classes, so anything calibrated in absolute progress units silently
+  goes stale each time we ship a class. Re-check absolute thresholds after any balance work.
+- **An absolute threshold always clamps your STRONGEST player first**, because their legitimate absolute numbers
+  are the largest. That is exactly what happened: the 1e10-per-window progress-jump detector auto-clamped
+  Valuren, the highest-level account, twice in one day out of marketplace/leaderboard/guild/chat. His real rate
+  was 2.09e9 and 1.70e9 progress/sec — he crossed a 1e10 line in **under five seconds of ordinary combat**, and
+  only the one-signal-per-hour audit rate-limit stopped it firing on every 8-second save.
+- **The threshold's calibration comment was true in every clause and wrong in its conclusion.** It reasoned from
+  `submit_profile`'s per-action caps (gather ≤8k, craft ≤200k) to "a legit 120s window accrues ~1e6-1e7, 1000x
+  under this line" — and never mentioned combat, which is uncapped by design. The superseded text is kept in the
+  function with that noted, because the failure mode is *enumerating the channels you thought of*.
+- **The fix is the item ledger's shape: judge a delta against the account's OWN scale.** A jump must clear the
+  absolute floor AND `prev_progress × 5%/s × elapsed`. Because progress accumulates at the combat rate, the
+  fractional rate is ~`1/t` for t seconds of cumulative combat, so one number is scale-invariant. Valuren's real
+  jumps clear by 23x/30x; a save that merely DOUBLES progress is still caught 2.5x over. Thin case, deliberately
+  left documented rather than papered over: a sudden BiS power jump briefly outruns accumulated XP (~2.5x
+  headroom at 10x Valuren's rate).
+- `PROGRESS_JUMP_AUTOENFORCE` is now **separate from `CLAMP_AUTOENFORCE` and starts FALSE** — two confirmed false
+  positives against an active player earns shadow mode until a week of signals reads clean. Old signal rows are
+  identifiable by `not (detail ? 'rate_per_sec_pct')`; keep them, they are the evidence.
+- **The durable version of this signal is server-witnessed, not threshold-based** (same conclusion as the item
+  sweep): compare a save's progress delta against what the server actually saw happen. Until that exists, any
+  number here needs re-checking after every balance change.
+
 ## Max-ceiling DPS simulation (run after EVERY class rework)
 
 `scripts/dpssim.mjs` measures real sustained DPS by booting the live game headless
