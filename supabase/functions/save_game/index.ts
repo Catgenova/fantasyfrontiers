@@ -38,10 +38,13 @@ const STALE_CLAIM_MS = 45_000;
 // ENFORCING: a tripped signal is recorded AND clamps the account (a review of the shadow signals confirmed
 // the threshold has a ~1000x margin over legit play). Set back to false to return to shadow (record-only).
 const CLAMP_AUTOENFORCE = true;
-// A progress jump this large (1e10 XP) inside a live save window (2s-2min elapsed) is impossible for real
-// play but far below an edited save (which lands 1e12-1e15). Per-action XP is capped in the economy
-// (submit_profile: gather <=8k, craft <=200k), so a legit ~120s window accrues at most ~1e6-1e7 across all
-// skills -- 1000x under this line. The window excludes offline returns, whose elapsed is the whole away-time.
+// SUPERSEDED REASONING, kept because the mistake is instructive -- do not restore it. The original claim was:
+// "a progress jump of 1e10 XP inside a live save window (2s-2min elapsed) is impossible for real play but far
+// below an edited save (which lands 1e12-1e15). Per-action XP is capped in the economy (submit_profile: gather
+// <=8k, craft <=200k), so a legit ~120s window accrues at most ~1e6-1e7 across all skills -- 1000x under this
+// line." Every clause of that is true and the conclusion is still wrong, because it enumerates gathering and
+// crafting and silently omits combat. See the block below.
+// The window still excludes offline returns, whose elapsed is the whole away-time.
 const SIGNAL_MIN_ELAPSED_MS = 2_000;
 const SIGNAL_MAX_ELAPSED_MS = 120_000;
 const SIGNAL_PROGRESS_JUMP = 10_000_000_000; // 1e10 -- an absolute FLOOR only; see the relative test below
@@ -261,10 +264,12 @@ Deno.serve(async (req) => {
   }
 
   // Auto-detection (see migrations 20260724210000 / 220000). A live client pushes progress every ~8s, so a
-  // huge Δprogress in a SUB-2-MINUTE window is not a fast player -- it's an edited save. Offline returns don't
-  // trip this: their elapsed is the whole away-window (>120s), so the same gain is spread over real time.
-  // Records a signal always; also clamps when CLAMP_AUTOENFORCE is on (currently true). Best-effort: never
-  // fail a save on it.
+  // Δprogress that is large RELATIVE TO THIS ACCOUNT'S OWN SCALE in a sub-2-minute window is not a fast player
+  // -- it's an edited save. A large ABSOLUTE jump, by contrast, is just an endgame player in combat, which is
+  // what this used to clamp. Offline returns don't trip it either: their elapsed is the whole away-window
+  // (>120s), so the same gain is spread over real time.
+  // Records a signal when both tests trip; clamps only when PROGRESS_JUMP_AUTOENFORCE is on (currently FALSE --
+  // shadow mode after two false positives on a live player). Best-effort: never fail a save on it.
   try {
     if (prev?.updated_at) {
       const elapsed = Date.now() - Date.parse(prev.updated_at as string);
