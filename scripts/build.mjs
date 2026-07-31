@@ -43,6 +43,29 @@ const OPTIONS = {
 const BUILD_ID = (process.env.GITHUB_SHA || ("local-" + Date.now().toString(36))).slice(0, 40);
 
 let html = readFileSync(SRC, "utf8");
+
+// ---- Secret guard: nothing credential-shaped may reach a build we serve publicly -------------------
+// A pentest (2026-07-31) found the community-feed Discord webhook as a plain literal in index.html. It had
+// therefore been readable by every player for as long as it existed -- obfuscation is no defence, since the
+// URL survives as a string. Webhooks now live as edge-function secrets, and this check FAILS THE DEPLOY if
+// one is ever pasted back into the client, because CI runs `npm run build` before publishing. Cheap, and it
+// catches the whole class rather than the one instance.
+const SECRET_PATTERNS = [
+  [/discord(?:app)?\.com\/api\/webhooks\/\d+\/[\w-]+/i, "a Discord webhook URL"],
+  [/\bsk-[A-Za-z0-9]{20,}/,                             "an API secret key"],
+  [/\bservice_role\b\s*[:=]\s*['\"][^'\"]+['\"]/i,      "a service-role key"],
+  [/\beyJ[\w-]+\.[\w-]+\.[\w-]{20,}/,                   "a JWT (use the publishable key only)"],
+];
+for (const [re, what] of SECRET_PATTERNS) {
+  const m = html.match(re);
+  if (m) {
+    console.error(`build: refusing to build -- ${SRC} contains ${what}.`);
+    console.error(`  found: ${m[0].slice(0, 48)}...`);
+    console.error(`  Client code is served to every player in clear text. Move it to an edge-function secret.`);
+    process.exit(1);
+  }
+}
+
 // Bake the build id into the client (replaces the readable copy's 'dev' sentinel, which disables the
 // update check). Must run BEFORE obfuscation so the value ends up inside the obfuscated script.
 if (!html.includes("var FF_BUILD_ID = 'dev';")) {

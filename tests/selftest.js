@@ -1273,7 +1273,9 @@
   suite('discord feed: item stats tail', function(){
     // A fantastic relic reads its computed %dmg/armour bonus.
     var relic = FF.discordItemStatsText('relic_t0_fantastic');
-    ok(/^ \(.*\)$/.test(relic), 'stats tail is wrapped in " (...)"');
+    // The tail is UNWRAPPED as of v0.0.72.7: the relay adds the " ( ... )" so the message shape stays
+    // server-owned. (Inner parentheses are still fine -- a base stat line reads "Damage 100-200 (+12)".)
+    ok(!/^ \(/.test(relic) && !/\)$/.test(relic), 'stats tail is NOT wrapped -- the relay wraps it: ' + JSON.stringify(relic));
     ok(relic.indexOf('% Damage & Armour') !== -1, 'relic tail carries the dmg/armour bonus');
 
     // A fantastic tool reads its tier speed bonus scaled by the rarity multiplier.
@@ -13342,6 +13344,32 @@
   // The server used to answer a refused start with {ok:true, claimed:false}, which the client
   // read as a generic failure. It now answers {ok:false, error:'inprogress', job, remainingMs}.
   // The client must recognise BOTH shapes so a new client is correct against either server.
+  // ---- Discord feed: no webhook in the client, structured events only -------------------------
+  // The webhook URL used to be a literal in index.html, so it shipped to every player in clear text.
+  // These tests pin the two properties that keep it that way: nothing in the client resembles a webhook
+  // URL, and discordFeedPost queues a STRUCTURED event (never prose) for the server to render.
+  suite('discord feed relay', function(){
+    ok(typeof FF.discordFeedPost === 'function', 'discordFeedPost exported');
+    // The seam sets DISCORD_FEED_ENABLED=false, so posting must be inert -- this is also the guard that
+    // stops a test's fantastic craft roll from reaching the real channel.
+    var q = FF._discordFeedQueue();
+    var before = q.length;
+    FF.discordFeedPost({ kind:'forge', name:'Fantastic Tungsten Claymore', item_key:'claymore_t20_fantastic', rarity:'fantastic', stats:'Damage 671-1677' });
+    eq(FF._discordFeedQueue().length, before, 'the test seam disables the feed, so nothing is queued');
+    // Malformed events are refused on shape alone, before any network concern.
+    FF.discordFeedPost(null);
+    FF.discordFeedPost({ kind:'forge' });          // no name
+    FF.discordFeedPost({ name:'Thing' });          // no kind
+    eq(FF._discordFeedQueue().length, before, 'events without a kind or a name are never queued');
+    // The stats tail is BARE now: the relay owns the " ( ... )" wrapper, so the client must not add it.
+    var tail = FF.discordItemStatsText('amulet_t10_fantastic');
+    eq(typeof tail, 'string', 'discordItemStatsText returns a string');
+    // Not "contains no parentheses" -- inner ones are legitimate ("Damage 100-200 (+12)"). The contract is
+    // that the tail is not WRAPPED, so the server can own the parentheses and the message shape.
+    ok(!/^ \(/.test(tail) && !/\)$/.test(tail), 'the stats tail is unwrapped: ' + JSON.stringify(tail));
+    ok(tail.charAt(0) !== ' ', 'the stats tail has no leading space');
+  });
+
   suite('estate job busy refusal', function(){
     var job = { kind:'plow', readyAt: 1 };
     ok(FF.estateJobBusy({ ok:false, error:'inprogress', job:job, remainingMs:65000 }), 'new explicit refusal shape');

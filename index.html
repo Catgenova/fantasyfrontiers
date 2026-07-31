@@ -4389,7 +4389,7 @@
   // scarcer, so a Supreme chronicle body now only ever originates from a Masterwork.
   function normalCraftFeedRarity(rarityId){ return rarityId === 'rare' || rarityId === 'fantastic'; } // -> chronicle broadcast (feed + cross-client blast source)
   function normalCraftBlasts(rarityId){ return rarityId === 'fantastic'; }                             // -> the crafter's own global-chat blast
-  function logForgeResult(rarityId, baseName, statsText){
+  function logForgeResult(rarityId, baseName, statsText, itemId){
     bumpStat('crafted');
     if(rarityId && rarityId!=='normal'){
       bumpStat('crafted' + rarityId.charAt(0).toUpperCase() + rarityId.slice(1)); // craftedRare/Supreme/Fantastic
@@ -4401,7 +4401,7 @@
       // Fantastic forges also hit the community Discord feed -- including ones rolled offline
       // (chronicleBroadcast skips those, the Discord feed deliberately doesn't). statsText is the
       // caller-supplied " (stat · stat)" tail (see discordItemStatsText).
-      if(rarityId==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** forged a **' + r.label + baseName + '**!' + (statsText||'') + discordFeedOfflineTag());
+      if(rarityId==='fantastic') discordFeedPost({ kind:'forge', name:r.label + baseName, item_key:itemId || '', rarity:'fantastic', stats:statsText||'' });
       // Fantastic crafts announce in global chat (crafter's own copy; others synthesize theirs from the
       // chronicle broadcast). Supreme normal crafts are deliberately NOT blasted -- only Masterwork Supreme
       // still announces (via announceMasterwork).
@@ -11981,12 +11981,12 @@
   // Unlike the normal-craft feed (Fantastic-only), a Masterwork's rarity is far scarcer, so Supreme rides
   // along with Fantastic here. `name` is the item name WITHOUT its rarity label; `discordDetail` is an
   // optional " (…)" tail for the Discord post.
-  function announceMasterwork(rarity, name, discordDetail){
+  function announceMasterwork(rarity, name, discordDetail, itemKey){
     var labeled = masterworkBlastRarityName(rarity, name);
     if(!labeled) return;
     chronicleBroadcast('craft', labeled);   // -> other clients' global chat (self-guards offline/auth)
     if(!offlineCapture && authUser) pushChatSystemMessage(chatName() + ' forged a ' + labeled + '!', rarity); // crafter's own copy
-    discordFeedPost('🌟 **' + discordFeedName() + '** mastercrafted the **' + labeled + '**!' + (discordDetail || '') + discordFeedOfflineTag());
+    discordFeedPost({ kind:'mastercraft', name:labeled, item_key:itemKey || '', stats:discordDetail || '' });
   }
   function craftMastercraft(blueprintId){
     var bp = BLUEPRINT_ITEMS[blueprintId]; if(!bp) return;
@@ -12011,7 +12011,7 @@
       mastercraftResult = setUid ? { uid: setUid } : null;
       var pname = getRarity(rarity).label + setPieceName(key.cls, key.slot, recipe.layer);
       addLog('Mastercraft! You forged the ' + pname + ' — part of the ' + ((CLASS_DEFS_BY_ID[key.cls]||{}).name || key.cls) + ' set. It\'s a unique piece — find it in Equipment &amp; Stats and the Improvement tab, not your Inventory bag.', 'important');
-      announceMasterwork(rarity, setPieceName(key.cls, key.slot, recipe.layer), ' (part of the ' + ((CLASS_DEFS_BY_ID[key.cls]||{}).name || key.cls) + ' set)');
+      announceMasterwork(rarity, setPieceName(key.cls, key.slot, recipe.layer), 'part of the ' + ((CLASS_DEFS_BY_ID[key.cls]||{}).name || key.cls) + ' set', null);   // a minted set piece has no catalog key
       spawnFloatingText('+1 ' + pname, ftClass);
       needsRender = true;
       return;
@@ -12031,7 +12031,7 @@
       mastercraftResult = { uid: uid };
       var git = recipe.itemMap[itemId];
       addLog('Mastercraft! You forged the Legendary ' + git.name + ' — ' + gdef.desc + ' It\'s a unique piece — find it in Equipment &amp; Stats and the Improvement tab (not your Inventory bag). A Tier-20 legendary needs that weapon\'s proficiency at Lv 95 to equip.', 'important');
-      announceMasterwork(rarity, 'Legendary ' + git.name, ' (' + gdef.desc + ')');
+      announceMasterwork(rarity, 'Legendary ' + git.name, gdef.desc, itemId);
       spawnFloatingText('+1 ' + git.name, ftClass);
       needsRender = true;
       return;
@@ -12042,7 +12042,7 @@
     // display name + icon on the result rather than making the modal look them up.
     mastercraftResult = { itemId: itemId, name: it.name, icon: it.icon, statLine: '+' + Math.round(it.value * 100) + '% ' + escapeHtml(it.statLabel || '') };
     addLog('Mastercraft! You forged the ' + it.name + ' — +' + Math.round(it.value * 100) + '% ' + it.statLabel + '.', 'important');
-    announceMasterwork(rarity, it.name, ' (+' + Math.round(it.value * 100) + '% ' + it.statLabel + ')');
+    announceMasterwork(rarity, it.name, '+' + Math.round(it.value * 100) + '% ' + it.statLabel, itemId);
     spawnFloatingText('+1 ' + it.name, ftClass);
     needsRender = true;
   }
@@ -12602,7 +12602,7 @@
         var made = produceSpecialOutput(act, rarity);
         rarity = made.rarity;
         awardMasterworkXp(rarity, act.tierIndex); // Masterwork trains only on a rare+ output
-        logForgeResult(rarity, tierData.name, rarity==='fantastic' ? discordItemStatsText(made.itemId) : '');
+        logForgeResult(rarity, tierData.name, rarity==='fantastic' ? discordItemStatsText(made.itemId) : '', made.itemId);
       }
       // Per-craft special-forge tallies (once per successful craft, rarity-agnostic), powering Quest progress.
       if(act.craftKind==='belt') bumpStat('belt_made_' + act.tierIndex);                             // "Make 10 Rabbit Belts"
@@ -12721,7 +12721,7 @@
             addLog('You recovered a ' + RELIC_ITEMS[relicId].name + '!', 'important');
             spawnFloatingText('+1 ' + RELIC_ITEMS[relicId].name + '!', rarityId==='normal' ? 'ft-success' : 'ft-rare');
             maybeShowRarityPopup(rarityId, RELIC_ITEMS[relicId].name, RELIC_ITEMS[relicId].icon);
-            if(rarityId==='fantastic') discordFeedPost('🌟 **' + discordFeedName() + '** recovered a **' + RELIC_ITEMS[relicId].name + '**!' + discordItemStatsText(relicId) + discordFeedOfflineTag());
+            if(rarityId==='fantastic') discordFeedPost({ kind:'relic', name:RELIC_ITEMS[relicId].name, item_key:relicId, rarity:'fantastic', stats:discordItemStatsText(relicId) });
           } else {
             var brokenId = 'brokenrelic_t'+recipe.tierIndex;
             addItem(brokenId, 1);
@@ -14579,7 +14579,7 @@
   var DISCORD_ENHANCE_MIN = 12;   // +12 and above also reach the community Discord feed
   function announceEnhance(u){
     // Enhancing is click-only (never runs in offline catch-up), so no offline tag needed here.
-    if(u.enhance >= DISCORD_ENHANCE_MIN) discordFeedPost('⚒️ **' + discordFeedName() + '** enhanced their **' + uniqueBaseName(u) + '** to **+' + u.enhance + '**!' + discordItemStatsText(null, u));
+    if(u.enhance >= DISCORD_ENHANCE_MIN) discordFeedPost({ kind:'enhance', name:uniqueBaseName(u), item_key:u.base || '', enhance:u.enhance, stats:discordItemStatsText(null, u) });
     if(u.enhance < ENHANCE_ANNOUNCE_MIN || !chatName()) return;
     var body = uniqueBaseName(u) + ' to +' + u.enhance;         // e.g. "Willow Fire Wand to +12"
     var rar = u.enhance >= 15 ? 'fantastic' : 'supreme';
@@ -15666,7 +15666,7 @@
       awardMasterworkXp(rarity, tier); // Masterwork trains only on a rare+ forge
       if(!state.equippedMainhand) equipMainhand(typeId);
       // Typed weapons never become inventory items -- build the damage tail from the recipe + rarity mult.
-      logForgeResult(rarity, next.name, rarity==='fantastic' ? ' (Damage '+Math.round(next.dmgMin*getRarity(rarity).mult)+'–'+Math.round(next.dmgMax*getRarity(rarity).mult)+')' : '');
+      logForgeResult(rarity, next.name, rarity==='fantastic' ? 'Damage '+Math.round(next.dmgMin*getRarity(rarity).mult)+'–'+Math.round(next.dmgMax*getRarity(rarity).mult) : '', null);
     } else {
       logForgeFailure(next.name);
     }
@@ -24886,6 +24886,11 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.72', date:'Jul 31', heading:'The Discord feed now posts through the server', items:[
+      'The community feed&rsquo;s Discord webhook was written directly into the game&rsquo;s code, which meant it was readable by anyone who viewed the page source. A webhook address is <b>permission to post in that channel</b>, so anybody who found it could have spammed the feed, pinged everyone, posted under another player&rsquo;s name, or faked &ldquo;so-and-so forged a Fantastic&hellip;&rdquo; announcements. Nothing else was exposed &mdash; a webhook can only write to that one channel, and cannot read it or touch your account.',
+      'Feed posts now go through the <b>server</b> instead. Your client reports what happened (the item, its rarity, the enhance level) and the server writes the message, so the wording, the author name and the ability to mention anyone are no longer in the client&rsquo;s hands at all. Posting requires being signed in and is rate-limited per account, and the old address has been retired.',
+      'One visible consequence: the feed now needs a signed-in session, so creations rolled while you are playing offline or signed out will not be announced. Everything rolled during a normal <b>offline catch-up</b> still posts as it did before.'
+    ]},
     { v:'0.0.72', date:'Jul 31', heading:'Accounts now lock after repeated failed sign-ins', items:[
       'Someone was running a <b>password-spraying</b> attack against the login endpoint &mdash; guessing passwords against accounts in bulk. Nothing was breached, and no account data was touched, but until now there was nothing stopping the guessing itself.',
       'Sign-ins are now <b>rate-limited per account</b>. Five wrong passwords within 15 minutes locks that account briefly, and each further lock lasts <b>twice as long as the last</b> &mdash; so a forgetful player waits about a minute, while somebody grinding one account for hours is quickly locked out for the rest of the day. The lock clears the moment you sign in successfully.',
@@ -30756,12 +30761,19 @@
   // catch-up ARE posted (tagged "offline catch-up"): fetch is async, so posts queued
   // mid-catch-up simply go out once the synchronous pass finishes -- authUser is already
   // restored by then (onlineBoot awaits auth before initGame), so the name resolves.
-  var DISCORD_FEED_WEBHOOK = 'https://discord.com/api/webhooks/1529166753811402793/g9qTJxiEmKTp9z3wZGk3Z7VnW0x0-hm4bYxpiz1ckblpApDBjMZtygz4HGijoPF-O3Wp';
+  // SECURITY (pentest, 2026-07-31): the webhook URL used to be a literal RIGHT HERE, which shipped it to
+  // every player in clear text -- i.e. it was write access to the channel for anyone who viewed source
+  // (arbitrary posts, @everyone pings, username/avatar overrides, forged events, even deleting the
+  // webhook). It now lives ONLY as a secret in the `discord_feed` edge function, and this client posts a
+  // STRUCTURED EVENT which the server turns into a message. Deliberate consequences:
+  //   * this client no longer chooses the wording -- the template is server-side
+  //   * the author is derived from the caller's auth token, so it cannot be spoofed here
+  //   * a post needs a signed-in session; offline/guest play simply doesn't broadcast
+  var DISCORD_FEED_ENABLED = true;   // blanked by the test seam so tests never reach the real channel
   var discordFeedQueue = [];
   var discordFeedTimer = null;
-  function discordFeedName(){ return chatName() || 'An adventurer'; }
-  function discordFeedOfflineTag(){ return offlineCapture ? ' *(offline catch-up)*' : ''; }
-  // Compact " (stat · stat · ...)" tail for a feed blast: base stats, body-armor material bonus, and
+  // Compact "stat · stat · ..." tail for a feed blast (unwrapped -- the relay adds the parentheses so the
+  // message shape stays server-owned): base stats, body-armor material bonus, and
   // any enchants (enhance-scaled). Takes a produced item id (fresh forges) or a unique record
   // (enhance announcements). Tool items carry no stat fields -- their benefit lives in the tier
   // tables -- so tools read their speed/success bonus from there, scaled by the rarity multiplier.
@@ -30774,7 +30786,7 @@
         var tm = TOOL_RARITY_MULT[t.rarity] || 1;
         if(td && td.speedBonus) lines.push('+'+Math.round(td.speedBonus*tm*100)+'% '+toolBenefitLabel(t)+' speed');
         if(td && td.successBonus) lines.push('+'+Math.round(td.successBonus*tm*100)+'% success');
-        return lines.length ? ' ('+lines.join(' · ')+')' : '';
+        return lines.join(' · ');   // bare; the relay wraps it in " ( ... )"
       }
       var p = parseImprovable(itemId); // kind:null still yields the generic lines (damage/defense/reflect/...)
       d = { base:itemId, kind:(p&&p.kind)||null, tier:(p&&p.tier)||0, rarity:(p&&p.rarity)||itemRarityId(itemId)||'normal', enhance:0, enchants:[] };
@@ -30784,26 +30796,30 @@
     var b = ALL_SELLABLE[d.base];
     if(b && b.material && b.slot) lines = lines.concat(armorMaterialBonusLines(b.material, b.slot, d.rarity));
     lines = lines.concat(uniqueEnchantLines(d) || []);
-    return lines.length ? ' ('+lines.join(' · ')+')' : '';
+    return lines.join(' · ');   // bare; the relay wraps it in " ( ... )"
   }
-  function discordFeedPost(text){
-    if(!DISCORD_FEED_WEBHOOK || !text) return;
-    discordFeedQueue.push(String(text).slice(0, 1900));   // Discord caps message content at 2000 chars
+  // ev = { kind:'forge'|'relic'|'mastercraft'|'enhance', name, item_key?, rarity?, enhance?, stats? }.
+  // `offline` is stamped HERE rather than at flush time: the flush is async, so by the time it runs the
+  // catch-up pass is over and offlineCapture has already been cleared.
+  function discordFeedPost(ev){
+    if(!DISCORD_FEED_ENABLED || !ev || !ev.kind || !ev.name) return;
+    ev.offline = !!offlineCapture;
+    discordFeedQueue.push(ev);
     if(!discordFeedTimer) discordFeedFlush();
   }
   function discordFeedFlush(){
-    var msg = discordFeedQueue.shift();
-    if(!msg){ discordFeedTimer = null; return; }
+    var ev = discordFeedQueue.shift();
+    if(!ev){ discordFeedTimer = null; return; }
     // Space posts ~1.5s apart so a burst (e.g. several Fantastic crafts in one offline pass)
-    // stays well inside Discord's webhook rate limit.
+    // stays well inside the relay's rate limit.
     discordFeedTimer = setTimeout(discordFeedFlush, 1500);
+    // Auth is checked at FLUSH, not at push: events rolled during offline catch-up are queued while the
+    // synchronous pass runs, and authUser is only restored once it finishes (onlineBoot awaits auth
+    // before initGame). Checking at push time would silently drop every offline creation.
+    if(!chatClient || !authUser) return;
     try{
-      fetch(DISCORD_FEED_WEBHOOK, {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({ content: msg, allowed_mentions:{ parse:[] } })   // never ping anyone
-      }).then(function(){}, function(){});   // fire-and-forget: a feed hiccup must never break gameplay
-    }catch(e){}
+      chatClient.functions.invoke('discord_feed', { body: ev }).then(function(){}, function(){});
+    }catch(e){}   // fire-and-forget: a feed hiccup must never break gameplay
   }
 
   // ---- Global Chronicle feed: broadcasts notable cross-player events into everyone's
@@ -36689,7 +36705,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.72.6';
+  var GAME_VERSION = '0.0.72.7';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -36790,7 +36806,7 @@
   // ---- Test seam: expose pure logic to the browser test suite (tests/selftest.js), only when
   // the page is opened with ?selftest. Production loads never touch this. ----
   if(typeof location !== 'undefined' && /[?&]selftest\b/.test(location.search)){
-    DISCORD_FEED_WEBHOOK = ''; // never let a test craft roll (e.g. a fantastic relic) post to the real Discord channel
+    DISCORD_FEED_ENABLED = false; // never let a test craft roll (e.g. a fantastic relic) reach the real Discord channel
     window.__FF = {
       // Sim harness (scripts/dpssim.mjs): start the REAL game loop on the selftest page, where the
       // online boot never runs (no backend). Selftest-only, like every seam export.
@@ -36842,6 +36858,7 @@
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg,
+      discordFeedPost:discordFeedPost, discordItemStatsText:discordItemStatsText, _discordFeedQueue:function(){ return discordFeedQueue; },
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS, estateBuildingList:estateBuildingList, estateAdjacentWorkshop:estateAdjacentWorkshop, workshopBonusPct:workshopBonusPct, renderEstateBuildingsPanel:renderEstateBuildingsPanel,
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS, estatePeonSources:estatePeonSources, peonGridFor:peonGridFor, estateScopeHasJob:estateScopeHasJob, estateJobActive:estateJobActive, estActiveIsGuild:function(){ return estIsGuild; }, guildEstateReachable:guildEstateReachable,
