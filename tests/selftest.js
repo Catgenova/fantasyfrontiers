@@ -13452,6 +13452,55 @@
     ok(tail.charAt(0) !== ' ', 'the stats tail has no leading space');
   });
 
+  // ---- Blacksmithing groups: a forging group must still be closable ------------------------------
+  // Ticket: "some tabs won't close in Blacksmithing while there are craft actions running". Not a render
+  // bug -- the open state was `anyActive || flag`, so a group with a craft running was FORCED open and the
+  // player's click could never win. Now a tristate: undefined follows the auto-open, an explicit value wins.
+  suite('blacksmithing group collapse', function(){
+    ok(typeof FF.renderBlacksmithingTab === 'function' && typeof FF._blacksmithGroupsOpen === 'function', 'blacksmithing tab + group state exported');
+    ok(typeof FF.blacksmithGroupOpen === 'function', 'the open-state resolver is exported');
+    // THE REPORTED BUG, tested directly: with a craft running (anyActive true), an explicit close must win.
+    // The old formula was `anyActive || flag`, which returns true here no matter what the player clicked.
+    var gOpen = FF._blacksmithGroupsOpen(), K = '__test_group__';
+    try {
+      delete gOpen[K];
+      eq(FF.blacksmithGroupOpen(K, true), true, 'no opinion + forging -> auto-opens');
+      eq(FF.blacksmithGroupOpen(K, false), false, 'no opinion + idle -> stays collapsed');
+      gOpen[K] = false;
+      eq(FF.blacksmithGroupOpen(K, true), false, 'an explicit CLOSE beats the forging auto-open (the reported bug)');
+      gOpen[K] = true;
+      eq(FF.blacksmithGroupOpen(K, false), true, 'an explicit OPEN survives an idle group');
+    } finally { delete gOpen[K]; }
+    var open = FF._blacksmithGroupsOpen();
+    var saved = {};
+    Object.keys(open).forEach(function(k){ saved[k] = open[k]; });
+    try {
+      // Fresh state: nothing recorded, so every group follows the auto-open default.
+      Object.keys(open).forEach(function(k){ delete open[k]; });
+      var html = FF.renderBlacksmithingTab();
+      ok(/data-action="blacksmithToggleGroup"/.test(html), 'the tab renders group toggles');
+      // Every toggle must publish the state it is showing, or the handler cannot flip the DISPLAYED value
+      // (and !undefined === true would leave an auto-opened group open forever -- the reported bug).
+      var heads = html.match(/data-action="blacksmithToggleGroup"[^>]*/g) || [];
+      ok(heads.length > 0, 'at least one group head rendered');
+      ok(heads.every(function(h){ return /data-open="[01]"/.test(h); }), 'every group head carries data-open="0|1"');
+      // An explicit false must survive the render even for a group the auto-open would have opened.
+      var key = (heads[0].match(/data-group="([^"]+)"/) || [])[1];
+      ok(!!key, 'a group key was found: ' + key);
+      open[key] = false;
+      var closed = FF.renderBlacksmithingTab();
+      var head = (closed.match(new RegExp('data-action="blacksmithToggleGroup" data-group="' + key + '"[^>]*')) || [''])[0];
+      ok(/data-open="0"/.test(head), 'an explicitly closed group renders closed: ' + head);
+      open[key] = true;
+      var reopened = FF.renderBlacksmithingTab();
+      var head2 = (reopened.match(new RegExp('data-action="blacksmithToggleGroup" data-group="' + key + '"[^>]*')) || [''])[0];
+      ok(/data-open="1"/.test(head2), 'an explicitly opened group renders open');
+    } finally {
+      Object.keys(open).forEach(function(k){ delete open[k]; });
+      Object.keys(saved).forEach(function(k){ open[k] = saved[k]; });
+    }
+  });
+
   // ---- Two browsers on one account: a fenced tab must not act ------------------------------------
   // Ticket (ITxToxic): two browsers each rendered an estate job start, and the displaced tab kept running.
   // The server only ever runs one job per account (estate_jobs is keyed on user_id), but a fenced tab could

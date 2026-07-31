@@ -19731,7 +19731,17 @@
     if(skillId === 'butchering' || REFINING_SKILL_IDS.indexOf(skillId) !== -1) return 'refining';
     return 'gathering';
   }
-  var blacksmithGroupsOpen = {};   // family key -> expanded?  (collapsed by default; forging groups auto-open)
+  // family key -> expanded? TRISTATE: undefined = follow the auto-open (a group with a craft running
+  // opens itself), true/false = the player said so explicitly and that always wins.
+  var blacksmithGroupsOpen = {};
+  // Auto-open a forging group as a DEFAULT, never an override. This was `anyActive || flag`, which meant a
+  // group with a craft running could NOT BE CLOSED: the click flipped the flag and the render ignored it,
+  // which players reported as "the tab won't close in Blacksmithing while crafts are running". Tristate,
+  // the same shape equipAccOpen uses: undefined = no opinion yet, follow anyActive; true/false = the player
+  // said so, and the player always wins.
+  function blacksmithGroupOpen(key, anyActive){
+    return (blacksmithGroupsOpen[key] !== undefined) ? !!blacksmithGroupsOpen[key] : !!anyActive;
+  }
   // One Forge Tool card. Extracted so the nested-by-family layout and any other view can render it.
   function renderForgeToolCard(tt, maxUnlocked, lvl){
     if(selectedToolTier[tt.skillId] === undefined) selectedToolTier[tt.skillId] = maxUnlocked;
@@ -19793,8 +19803,8 @@
       var cards = tools.map(function(tt){ return renderForgeToolCard(tt, maxUnlocked, lvl); });
       var anyActive = cards.some(function(c){ return c.isActive; });
       var equippedN = tools.filter(function(tt){ return ((tt.isGather ? state.gatherTools : state.craftTools)[tt.skillId]||0) > 0; }).length;
-      var open = anyActive || !!blacksmithGroupsOpen[g.key];
-      html += '<button class="forge-group-head'+(open?' open':'')+'" data-action="blacksmithToggleGroup" data-group="'+g.key+'" style="--fg-accent:'+g.color+'">'
+      var open = blacksmithGroupOpen(g.key, anyActive);
+      html += '<button class="forge-group-head'+(open?' open':'')+'" data-action="blacksmithToggleGroup" data-group="'+g.key+'" data-open="'+(open?'1':'0')+'" style="--fg-accent:'+g.color+'">'
         + '<span class="forge-group-chev">'+(open?'▾':'▸')+'</span>'
         + '<span class="forge-group-name">'+escapeHtml(g.label)+'</span>'
         + '<span class="forge-group-meta">'+tools.length+' tool'+(tools.length===1?'':'s')+' &bull; '+equippedN+' equipped'+(anyActive?' &bull; <b style="color:var(--gold)">forging</b>':'')+'</span></button>';
@@ -25014,6 +25024,10 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.74', date:'Jul 31', heading:'Blacksmithing groups close again while forging', items:[
+      'Fixed: a tool group in <b>Blacksmithing</b> could not be collapsed while anything in it was being forged. Not a display glitch &mdash; a group with an active craft was being forced open, so your click was recorded and then overruled on the next redraw.',
+      'A group with a craft running still opens itself, but that is now only the <b>starting</b> state: once you collapse or expand a group by hand, your choice sticks until you change it.'
+    ]},
     { v:'0.0.74', date:'Jul 31', heading:'Two windows on one account are caught faster', items:[
       'Reported: with the game open in two browsers, both appeared to start an estate task, and the window that should have stopped kept running for up to a minute.',
       'To be clear about what was never possible: the server only ever runs <b>one</b> estate task per account, so a second one could not actually be started &mdash; the other window was showing a task it had not been granted, and (since the earlier fix) now adopts the real one and charges you nothing.',
@@ -36139,7 +36153,13 @@
     closeEnhancePopup: function(btn, e){ enhancePopupData = null; },
     closeDungeonResult: function(btn, e){ dungeonResultPopup = null; },
     startShaftCraft: function(btn, e){ startShaftCraft(parseInt(btn.getAttribute('data-tier'),10)); },
-    blacksmithToggleGroup: function(btn, e){ var _bg = btn.getAttribute('data-group'); blacksmithGroupsOpen[_bg] = !blacksmithGroupsOpen[_bg]; render(); },
+    blacksmithToggleGroup: function(btn, e){
+      var _bg = btn.getAttribute('data-group'); if(!_bg) return;
+      // Flip the STATE SHOWN, not the stored flag: on an auto-opened group the flag is undefined, and
+      // !undefined is true -- so flipping it would leave an open group open and the tab would never close.
+      blacksmithGroupsOpen[_bg] = !(btn.getAttribute('data-open') === '1');
+      render();
+    },
     forgeTool: function(btn, e){ craftTool(btn.getAttribute('data-skill'), parseInt(btn.getAttribute('data-tier'),10)); },
     buildWorkshop: function(btn, e){ craftWorkshop(btn.getAttribute('data-skill'), parseInt(btn.getAttribute('data-tier'),10)); },
     buildCottage: function(btn, e){ craftCottage(parseInt(btn.getAttribute('data-tier'),10)); },
@@ -37143,7 +37163,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.74.1';
+  var GAME_VERSION = '0.0.74.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -37299,6 +37319,7 @@
       estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg, estateJobShapeOk:estateJobShapeOk,
       dungeonOwedClears:dungeonOwedClears, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL,
       applyEffectDamage:applyEffectDamage, applyEffectDot:applyEffectDot, combatLogDotReset:combatLogDotReset,
+      _blacksmithGroupsOpen:function(){ return blacksmithGroupsOpen; }, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupOpen:blacksmithGroupOpen,
       estateEnqueueOrStart:estateEnqueueOrStart, _setCloudFenced:function(v){ cloudFenced = !!v; }, _cloudFenced:function(){ return cloudFenced; },
       combatLogPush:combatLogPush, combatLogLineHtml:combatLogLineHtml, _combatLog:function(){ return combatLog; },
       estateQueuedJobValid:estateQueuedJobValid, estateIsWater:estateIsWater, fieldGrowthMult:fieldGrowthMult,

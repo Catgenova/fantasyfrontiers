@@ -70,6 +70,23 @@ const host = {
 };
 
 const program = ts.createProgram([GAME, GLOBALS], options, host);
+
+// ---- SYNTAX FIRST, and always fatal ---------------------------------------------------------------
+// This gate once passed an index.html that DID NOT PARSE (a comma dropped from the exports object). The
+// curated HIGH_SIGNAL list is semantic-only, and a broken parse produces FEWER diagnostics rather than
+// more -- the total silently fell from 288 to 245 and the run reported "clean". A file that cannot parse
+// is never clean, whatever else is or isn't reported, so syntactic errors are checked separately and are
+// never filtered.
+const syntactic = program.getSyntacticDiagnostics(program.getSourceFile(GAME));
+if (syntactic.length) {
+  console.error(`typecheck: ${syntactic.length} SYNTAX error(s) in index.html -- the script does not parse:\n`);
+  for (const d of syntactic.slice(0, 10)) {
+    const { line, character } = d.file.getLineAndCharacterOfPosition(d.start);
+    console.error(`  index.html:${line + 1 + lineOffset}:${character + 1}  TS${d.code}  ${ts.flattenDiagnosticMessageText(d.messageText, "\n")}`);
+  }
+  process.exit(1);
+}
+
 const all = ts.getPreEmitDiagnostics(program);
 const hits = all.filter((d) => d.file && d.file.fileName === GAME && HIGH_SIGNAL.has(d.code));
 
