@@ -9888,6 +9888,46 @@
     }
   });
 
+  // ---- A failed forge must SAY SO: it already spent the materials ------------------------------------
+  // Reported as "crafted rings aren't showing as material for the next tier". They were: the Chronicle logged
+  // "You forged Cobalt Ring of Blunt" (that line only fires for a NORMAL roll, so the ring was the right
+  // rarity), and seconds later the next tier read "1x Cobalt Ring of Blunt (0 owned)". The ring was genuinely
+  // gone -- processCraftActivity consumes inputs BEFORE the success roll, and a ~24% failure destroyed it while
+  // writing nothing anywhere but a toast that fades. The economy is unchanged by design (owner's call); the
+  // silence is the bug.
+  suite('crafting: a failed forge is never silent', function(){
+    // The ladder input is the one worth naming -- it is itself the product of a whole chain of forges.
+    var ringKey = 'ring_blunt_t4_normal';
+    var ringName = (FF.RING_ITEMS[ringKey] || {}).name;
+    ok(ringName, 'the t4 Normal Ring of Blunt exists to be named');
+    var withLadder = {}; withLadder['twine_t4'] = 3; withLadder[ringKey] = 1;
+    eq(FF.craftLadderInputName(withLadder), ringName, 'the previous-tier ring is picked out of the input list');
+    eq(FF.craftLadderInputName({ twine_t4:3, ruby:1 }), '', 'a recipe with no ladder input names nothing');
+    eq(FF.craftLadderInputName(null), '', 'and a missing input map is handled');
+    // Body armour, belts and weapons ladder the same way, so the helper must cover them too.
+    ok(FF.craftLadderInputName({ stweapon_falchion_t3_normal:1 }) !== '', 'weapons ladder too');
+    ok(FF.craftLadderInputName({ belt_t3_normal:1 }) !== '', 'belts ladder too');
+
+    // The behavioural half: the failure reaches the LOG, not just a floating toast.
+    var S = FF._state;
+    var save = S.log;
+    try {
+      S.log = [];
+      FF.logForgeFailure('Cupronickel Ring of Blunt', withLadder);
+      eq(S.log.length, 1, 'a failed forge writes exactly one log line');
+      var row = S.log[0];
+      eq(row.cls, 'danger', 'and it is flagged as bad news');
+      ok(/Forge failed/.test(row.msg), 'it says the forge failed');
+      ok(/Cupronickel Ring of Blunt/.test(row.msg), 'it names what was being forged');
+      ok(new RegExp(ringName).test(row.msg), 'and it names the ladder piece that was consumed');
+      // No ladder input -> still logged, just without the "including" clause.
+      S.log = [];
+      FF.logForgeFailure('Elephant Twine', { hide_t4:2 });
+      eq(S.log.length, 1, 'a non-ladder craft still logs its failure');
+      ok(!/including/.test(S.log[0].msg), 'without claiming a ladder piece was lost');
+    } finally { S.log = save; }
+  });
+
   // ---- Tooltip coverage: every skill that renders a (?) info button must carry a SKILL_INFO blurb ---
   // (The info button only shows when SKILL_INFO[id] exists, so a missing entry silently drops the tooltip.)
   suite('skill info: every skill has a tooltip', function(){

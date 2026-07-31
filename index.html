@@ -4419,8 +4419,35 @@
       spawnFloatingText('Forged ' + baseName, 'ft-success');
     }
   }
-  function logForgeFailure(baseName){
+  // The tier-ladder input (a Normal previous-tier piece) is the expensive part of any equipment forge -- it is
+  // itself the product of a whole chain of forges below it. Losing 3 twine is noise; losing the ring you just
+  // built by hand is the entire story, so a failure names it.
+  var CRAFT_LADDER_PREFIXES = ['stweapon_','stshield_','stquiver_','stward_','bodyarmor_','belt_t','ring_','amulet_'];
+  function craftLadderInputName(inputs){
+    if(!inputs) return '';
+    for(var k in inputs){
+      for(var i=0;i<CRAFT_LADDER_PREFIXES.length;i++){
+        if(k.indexOf(CRAFT_LADDER_PREFIXES[i]) === 0){
+          var it = ALL_SELLABLE[k];
+          return (inputs[k] > 1 ? inputs[k] + 'x ' : '') + ((it && it.name) || k);
+        }
+      }
+    }
+    return '';
+  }
+  // A FAILED FORGE USED TO BE INVISIBLE. This was spawnFloatingText only -- a toast that fades in a second and
+  // never reaches the Chronicle. But inputs are consumed BEFORE the success roll (see processCraftActivity), so
+  // a failure silently destroys them, and on a tier-ladder craft that includes the previous-tier piece the
+  // player built by hand. Reported as "crafted rings aren't showing as material for the next tier": the ring
+  // really was gone, eaten by a ~24% failure with no record anywhere, so the only visible evidence was the
+  // requirement reading "0 owned" seconds after the Chronicle said you forged one.
+  // Same defect class as the combat log's silent applyChipDamage: an event that changes the player's world and
+  // writes nothing down. Every other forge outcome logs; this one now does too.
+  function logForgeFailure(baseName, inputs){
     spawnFloatingText('Forge failed', 'ft-fail');
+    var lost = craftLadderInputName(inputs);
+    addLog('Forge failed: ' + baseName + '. The materials were consumed'
+           + (lost ? ', including your ' + lost : '') + '.', 'danger');
   }
 
 
@@ -12768,7 +12795,7 @@
       if(_wsDouble) spawnFloatingText('Workshop: double output!', 'ft-rare');
       if(_brewBonus) spawnFloatingText('Brew: bonus output!', 'ft-rare');
     } else {
-      logForgeFailure(tierData.name);
+      logForgeFailure(tierData.name, tierData.inputs);
     }
   }
   function processCraftActivity(act, dt){
@@ -12898,7 +12925,11 @@
           addPhysiqueXp(physTierPairs(CRAFT_PHYSIQUE[act.skill], recipeTier(recipe, act.itemId)));
           spawnFloatingText('+' + _wq + ' ' + recipe.name, 'ft-success');
         } else {
+          // Same silent-failure defect as the special forges: the inputs are already consumed above, so a
+          // failed craft must say so rather than only flashing a toast.
           spawnFloatingText('Craft failed', 'ft-fail');
+          addLog('Craft failed: ' + recipe.name + '. The materials were consumed'
+                 + (function(){ var l = craftLadderInputName(actualInputs); return l ? ', including your ' + l : ''; })() + '.', 'danger');
         }
         maybeSummonFamiliar(recipe.shaftCraft ? 'fletching' : recipe.relicCraft ? 'archaeology' : act.skill);
         // Success = the craft produced any output (a plain craft fail yields nothing -> red X).
@@ -25171,6 +25202,12 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.75', date:'Jul 31', heading:'A failed forge now tells you what it cost', items:[
+      'Reported: a freshly forged ring was not counting toward the next tier &mdash; the Chronicle said &ldquo;You forged Cobalt Ring of Blunt&rdquo;, and moments later the next tier up read &ldquo;Cobalt Ring of Blunt (0 owned)&rdquo;.',
+      'The count was right and the ring really was gone. A forge spends its materials <b>before</b> rolling for success, so a failed forge destroys them &mdash; and a failure was writing nothing to the Chronicle at all, just a small toast that fades in a second. With a tier ladder, the material destroyed is the previous-tier piece you built by hand, which is why it looked like the game had stopped counting.',
+      'A failed forge now logs it plainly, and names the ladder piece: <i>&ldquo;Forge failed: Cupronickel Ring of Blunt. The materials were consumed, including your Cobalt Ring of Blunt.&rdquo;</i> Failed ordinary crafts log the same way.',
+      'Nothing about the odds or the costs changed &mdash; this was a reporting gap, not a balance one. Forge success is shown on every craft card, and Faith and better tools raise it.'
+    ]},
     { v:'0.0.75', date:'Jul 31', heading:'The Samurai reworked: the Draw-Cut', items:[
       'The <b>Samurai</b> was a class built around a single strike. <b>Iaijutsu</b>, <b>First Blood</b>, <b>Iaijutsu Mastery</b> (Bushido Wrap), <b>Blazing Iaijutsu</b> (Emberblade Wrap) and <b>Emberdraw</b> all fired on the first landed hit against a foe and then did nothing at all for the rest of the fight. Worse, First Blood&rsquo;s Bleed ran eight seconds and was never renewed &mdash; so <b>Crimson Edge</b>, the bonus you unlock at Class Lv&nbsp;40, was dark for almost every fight you have ever fought. On a five-second katana that is two swings of value.',
       'The draw now <b>repeats</b>. Focus builds on every landed hit <b>and on a clock, every second of the duel</b>, and at a full stance your next strike is a <b>Draw-Cut</b>: a guaranteed Critical Hit that spends the stance and cuts for a share of your recent damage per stack spent. Every Cut sinks the Bleed afresh, which means Crimson Edge is live for the whole fight instead of the first eight seconds.',
@@ -37322,7 +37359,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.75.0';
+  var GAME_VERSION = '0.0.75.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -37481,6 +37518,7 @@
       _blacksmithGroupsOpen:function(){ return blacksmithGroupsOpen; }, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupOpen:blacksmithGroupOpen,
       estateEnqueueOrStart:estateEnqueueOrStart, _setCloudFenced:function(v){ cloudFenced = !!v; }, _cloudFenced:function(){ return cloudFenced; },
       combatLogPush:combatLogPush, combatLogLineHtml:combatLogLineHtml, _combatLog:function(){ return combatLog; },
+      craftLadderInputName:craftLadderInputName, logForgeFailure:logForgeFailure,
       estateQueuedJobValid:estateQueuedJobValid, estateIsWater:estateIsWater, fieldGrowthMult:fieldGrowthMult,
       chatPartyCodeHtml:chatPartyCodeHtml, chatBodyHtml:chatBodyHtml,
       applyEstateJobCompletion:applyEstateJobCompletion, estateJobMaterials:estateJobMaterials,
