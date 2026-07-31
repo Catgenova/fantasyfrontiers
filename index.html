@@ -24886,6 +24886,11 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.72', date:'Jul 31', heading:'A human check on the login screen', items:[
+      'Someone has been running a <b>password-spraying</b> attack against the login endpoint &mdash; software guessing passwords against accounts in bulk. The account lockout announced earlier turned out to need a Supabase plan we are not on, so it is <b>not active</b>; this is the replacement, and it is the stronger measure anyway because it stops the guessing from happening at all rather than punishing it afterwards.',
+      'Logging in and registering now include a <b>bot check</b> (Cloudflare Turnstile). For nearly everyone it resolves by itself in about a second with nothing to click &mdash; if you type your password at human speed you will not notice it. It is only visible when something looks automated.',
+      'Two notes. Sign-ins are also <b>rate-limited more tightly</b> now, and passwords have a <b>minimum length and complexity</b>. And if you use a script blocker, you may need to allow <i>challenges.cloudflare.com</i> for this site &mdash; the login button will tell you if the check could not load, rather than failing with something cryptic.'
+    ]},
     { v:'0.0.72', date:'Jul 31', heading:'The Discord feed now posts through the server', items:[
       'The community feed&rsquo;s Discord webhook was written directly into the game&rsquo;s code, which meant it was readable by anyone who viewed the page source. A webhook address is <b>permission to post in that channel</b>, so anybody who found it could have spammed the feed, pinged everyone, posted under another player&rsquo;s name, or faked &ldquo;so-and-so forged a Fantastic&hellip;&rdquo; announcements. Nothing else was exposed &mdash; a webhook can only write to that one channel, and cannot read it or touch your account.',
       'Feed posts now go through the <b>server</b> instead. Your client reports what happened (the item, its rarity, the enhance level) and the server writes the message, so the wording, the author name and the ability to mention anyone are no longer in the client&rsquo;s hands at all. Posting requires being signed in and is rate-limited per account, and the old address has been retired.',
@@ -29530,7 +29535,12 @@
     maxLen: 240,
     historyLimit: 60,
     authEmailDomain: 'players.fantasyfrontiers.app', // synthetic email domain for username-only accounts
-    minPasswordLen: 8
+    minPasswordLen: 8,
+    // Cloudflare Turnstile SITE key (public by design -- the paired SECRET lives in Supabase, never here).
+    // Empty string = CAPTCHA off and every auth path behaves exactly as it did before, which is what makes
+    // the rollout order safe. See the Turnstile block near renderAuthPanel for that order; getting it
+    // backwards locks the whole playerbase out of logging in.
+    turnstileSiteKey: ''
   };
   var CHAT_ENABLED = !!(CHAT_CONFIG.supabaseUrl && CHAT_CONFIG.supabaseAnonKey);
   var chatMessages = [];
@@ -30042,6 +30052,13 @@
     if(pErr){ authError = pErr; authRender(); return; }
     if(authMode==='register' && cEl && cEl.value !== password){ authError = 'Passwords do not match.'; authRender(); return; }
     if(authMode==='register' && !(authPrivacyAccepted && authRulesAccepted)){ authError = 'Please accept both the Privacy Policy and the Game Rules to create an account.'; authRender(); return; }
+    // CAPTCHA gate: hold this submit until Turnstile hands us a token, then resume automatically (its
+    // callback re-enters authSubmit). Managed mode normally answers in about a second, so a player who
+    // typed their password at human speed never sees this at all.
+    if(captchaOn() && !turnstileToken){
+      if(turnstileScriptState === 'failed'){ authError = 'Human verification could not load. Disable any script blocker and reload.'; authRender(); return; }
+      turnstilePendingSubmit = true; authError = ''; authBusy = true; authRender(); turnstileMount(); return;
+    }
     authError = '';
     authBusy = true; authRender();
     authBindIdentity(null);   // deliberate login: clear the binding so the imminent SIGNED_IN event isn't misread as a foreign swap
@@ -30050,11 +30067,15 @@
     try{
       var email = authEmailFor(username), res;
       if(authMode==='register'){
-        var reg = await chatClient.functions.invoke('register', { body: { username: username, password: password } });
+        // register mints the user through the ADMIN API, which bypasses GoTrue's signup CAPTCHA entirely --
+        // so the token has to be verified inside that function instead. Sent even when empty; the function
+        // is likewise inert until its TURNSTILE_SECRET is set.
+        var reg = await chatClient.functions.invoke('register', { body: { username: username, password: password, captcha_token: turnstileToken } });
         if(reg.error) throw reg.error;
         if(!reg.data || !reg.data.ok){ authError = (reg.data && reg.data.error) || 'Registration failed.'; authBusy = false; authRender(); return; }
       }
-      res = await chatClient.auth.signInWithPassword({ email: email, password: password });
+      res = await chatClient.auth.signInWithPassword({ email: email, password: password, options: captchaAuthOpts() });
+      captchaConsume();   // spent by the attempt, pass or fail -- reuse would fail a correct password
       if(res.error) throw res.error;
       var u = res.data && res.data.user;
       if(!u || !res.data.session) throw new Error('invalid credentials');
@@ -30070,7 +30091,7 @@
       authError = ''; authUsernameDraft = ''; authPasswordDraft = ''; authBusy = false; // clear the drafts on success (about to leave the gate)
       await startGameOnline();     // ONLINE-ONLY: load state from the backend and begin play
       return;
-    }catch(err){ authError = authFriendlyError(err, authMode); }
+    }catch(err){ authError = authFriendlyError(err, authMode); captchaConsume(); }
     authBusy = false; authRender();
   }
   async function authLogout(){
@@ -30413,6 +30434,69 @@
       + '</div></div>';
     setOverlayHtml(ov, _termsHtml, 'familiar-popup-overlay');
   }
+  // ---- Cloudflare Turnstile: the bot check on the auth gate ---------------------------------------
+  // WHY THIS AND NOT OUR OWN LIMITER: password spraying (ticket, ITxToxic) is invisible to public.rl_hit,
+  // because login goes straight to GoTrue's token endpoint and never through an Edge Function we own. So
+  // nothing of ours can count a failed attempt or refuse the next one. Supabase's CAPTCHA protection is
+  // enforced INSIDE GoTrue, which makes it the one control an attacker cannot route around by calling the
+  // API directly. (A per-account lockout hook would be better still, but it is gated to the Team plan --
+  // see the headers on 20260731120000_auth_password_lockout.sql.)
+  //
+  // ROLLOUT ORDER MATTERS, IN ONE DIRECTION ONLY. Everything here is inert while turnstileSiteKey is empty,
+  // so: (1) deploy this client with the site key set, (2) THEN switch CAPTCHA on in the Supabase Dashboard.
+  // Reversing that order means GoTrue starts demanding a token from clients that are not sending one yet --
+  // i.e. nobody can log in until the new client propagates.
+  var TURNSTILE_API = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+  var turnstileToken = '';              // SINGLE USE -- Cloudflare invalidates a token once redeemed
+  var turnstileWidget = null;
+  var turnstileScriptState = '';        // '' | 'loading' | 'ready' | 'failed'
+  var turnstilePendingSubmit = false;   // a submit that landed before the token did
+  function captchaOn(){ return !!(CHAT_CONFIG.turnstileSiteKey && CHAT_ENABLED); }
+  // Spread onto signInWithPassword. Empty when CAPTCHA is off, so the call is byte-for-byte what it was.
+  function captchaAuthOpts(){ return (captchaOn() && turnstileToken) ? { captchaToken: turnstileToken } : {}; }
+  // A token is spent by the attempt that used it, pass or fail. Every redeem must be followed by this, or
+  // the next attempt reuses a dead token and GoTrue rejects a perfectly good password.
+  function captchaConsume(){
+    turnstileToken = '';
+    try{ if(turnstileWidget !== null && window.turnstile) window.turnstile.reset(turnstileWidget); }catch(e){}
+  }
+  function turnstileLoadScript(){
+    if(turnstileScriptState) return;
+    turnstileScriptState = 'loading';
+    var sc = document.createElement('script');
+    sc.src = TURNSTILE_API; sc.async = true; sc.defer = true;
+    sc.onload = function(){ turnstileScriptState = 'ready'; turnstileMount(); };
+    // Fail CLOSED, but SAY SO. With CAPTCHA enabled server-side a tokenless sign-in is refused anyway, so
+    // letting the button through would only produce a baffling "captcha protection" error from GoTrue.
+    sc.onerror = function(){ turnstileScriptState = 'failed'; authRender(); };
+    document.head.appendChild(sc);
+  }
+  // The gate is rebuilt from innerHTML on every render, which destroys the widget -- so re-mount whenever
+  // the container is present and unmounted. The data-mounted flag keeps this idempotent; the solved token
+  // lives in a var, so it survives the rebuild that wipes the widget.
+  function turnstileMount(){
+    if(!captchaOn()) return;
+    var box = document.getElementById('authCaptcha');
+    if(!box) return;
+    if(turnstileScriptState !== 'ready'){ turnstileLoadScript(); return; }
+    if(box.getAttribute('data-mounted') === '1') return;
+    box.setAttribute('data-mounted', '1');
+    try{
+      turnstileWidget = window.turnstile.render(box, {
+        sitekey: CHAT_CONFIG.turnstileSiteKey,
+        theme: 'dark',
+        callback: function(tok){
+          turnstileToken = tok || '';
+          // If the player already pressed Log In while verification was still running, finish the job for
+          // them instead of making them click a second time.
+          if(turnstilePendingSubmit){ turnstilePendingSubmit = false; authSubmit(); }
+          else authRender();
+        },
+        'expired-callback': function(){ turnstileToken = ''; authRender(); },
+        'error-callback': function(){ turnstileToken = ''; authRender(); }
+      });
+    }catch(e){ turnstileScriptState = 'failed'; }
+  }
   function renderAuthPanel(){
     var isReg = authMode==='register';
     var html = '<div class="auth-card">';
@@ -30430,8 +30514,14 @@
       html += '<label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--text-dim);cursor:pointer;margin:2px 2px 1px;"><input type="checkbox" data-action="authToggleDoc" data-doc="rules"'+(authRulesAccepted?' checked':'')+' style="margin-top:2px;flex:0 0 auto;"> <span>I have read and agree to the Game Rules.</span></label>';
       html += '<div style="font-size:11px;margin:2px 2px 5px;"><a href="#" data-action="viewDoc" data-doc="privacy" style="color:var(--gold);">Read the Privacy Policy</a> &nbsp;&bull;&nbsp; <a href="#" data-action="viewDoc" data-doc="rules" style="color:var(--gold);">Read the Game Rules</a></div>';
     }
+    if(captchaOn()){
+      html += '<div id="authCaptcha" style="margin:8px 0 2px;display:flex;justify-content:center;min-height:65px;"></div>';
+      if(turnstileScriptState === 'failed') html += '<div class="auth-error">Could not load the human-verification check. Disable any script blocker for this site, then reload.</div>';
+    }
     if(authError) html += '<div class="auth-error">'+escapeHtml(authError)+'</div>';
-    var submitDisabled = authBusy || (isReg && !(authPrivacyAccepted && authRulesAccepted));
+    // Not disabled merely for lacking a token -- the submit HOLDS and resumes itself once Turnstile answers.
+    var submitDisabled = authBusy || (isReg && !(authPrivacyAccepted && authRulesAccepted))
+                       || (captchaOn() && turnstileScriptState === 'failed');
     html += '<button class="action-btn" data-action="authSubmit" '+(submitDisabled?'disabled':'')+'>'+(authBusy?'Please wait\u2026':(isReg?'Create Account':'Log In'))+'</button>';
     if(!isReg){
       html += '<div style="display:flex;align-items:center;gap:8px;margin:9px 2px 5px;"><div style="flex:1;height:1px;background:var(--border);"></div><span style="font-size:11px;color:var(--text-dim);">or</span><div style="flex:1;height:1px;background:var(--border);"></div></div>';
@@ -30645,7 +30735,11 @@
     accountRecoveryInvoke('recover', { username:recoverUsername, answers:answers, new_password:pw }).then(function(res){
       if(res && res.ok){
         // Password reset -- sign in with it and start playing.
-        chatClient.auth.signInWithPassword({ email:authEmailFor(recoverUsername), password:pw }).then(function(r){
+        // Same GoTrue endpoint, so CAPTCHA applies here as well. If no token is to hand this simply falls
+        // through to the "log in with your new password" path below, which is a correct outcome -- the reset
+        // itself already succeeded, and the main gate will do the verification.
+        chatClient.auth.signInWithPassword({ email:authEmailFor(recoverUsername), password:pw, options: captchaAuthOpts() }).then(function(r){
+          captchaConsume();
           recoverBusy = false;
           if(r.error || !r.data || !r.data.session){ recoverMsg = 'Password reset. Please log in with your new password.'; recoverOpen = false; recoverStep = 'username'; renderLoginGate(); return; }
           var u = r.data.user; authUser = { username:(u && u.user_metadata && u.user_metadata.username) || recoverUsername, id:u && u.id };
@@ -36635,6 +36729,7 @@
       + '<div class="ff-land-foot">Free to play &bull; your progress saves to your account and follows you across every device. &bull; v'+GAME_VERSION+'</div>'
       + '</div>';
     landingEstateActivate(); // point estActive at the preview estate + bind pan/zoom/rotate + draw
+    turnstileMount();        // the innerHTML rebuild above destroyed any live widget -- re-mount it
   }
   function removeLoginGate(){
     var gate = document.getElementById('loginGate');
@@ -36705,7 +36800,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.72.7';
+  var GAME_VERSION = '0.0.72.8';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -36858,6 +36953,8 @@
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg,
+      captchaOn:captchaOn, captchaAuthOpts:captchaAuthOpts, captchaConsume:captchaConsume, CHAT_CONFIG:CHAT_CONFIG,
+      _turnstileSetToken:function(t){ turnstileToken = t; }, _turnstileToken:function(){ return turnstileToken; },
       discordFeedPost:discordFeedPost, discordItemStatsText:discordItemStatsText, _discordFeedQueue:function(){ return discordFeedQueue; },
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS, estateBuildingList:estateBuildingList, estateAdjacentWorkshop:estateAdjacentWorkshop, workshopBonusPct:workshopBonusPct, renderEstateBuildingsPanel:renderEstateBuildingsPanel,
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,

@@ -13348,6 +13348,40 @@
   // The webhook URL used to be a literal in index.html, so it shipped to every player in clear text.
   // These tests pin the two properties that keep it that way: nothing in the client resembles a webhook
   // URL, and discordFeedPost queues a STRUCTURED event (never prose) for the server to render.
+  // ---- Auth CAPTCHA (Cloudflare Turnstile) ----------------------------------------------------------
+  // The rollout is only safe in ONE order: client-with-site-key first, Supabase CAPTCHA switch second.
+  // These pin the property that makes that safe -- with no site key configured, every auth path is byte-for
+  // -byte what it was, so this build can ship before the Dashboard switch is flipped.
+  suite('auth captcha', function(){
+    ok(typeof FF.captchaOn === 'function' && typeof FF.captchaAuthOpts === 'function', 'captcha helpers exported');
+    var saved = FF.CHAT_CONFIG.turnstileSiteKey;
+    try {
+      // ---- OFF (shipped default): nothing added to the sign-in call at all.
+      FF.CHAT_CONFIG.turnstileSiteKey = '';
+      ok(!FF.captchaOn(), 'captcha is off when no site key is configured');
+      eq(JSON.stringify(FF.captchaAuthOpts()), '{}', 'with no site key the sign-in options are empty');
+      FF._turnstileSetToken('tok_abc');
+      eq(JSON.stringify(FF.captchaAuthOpts()), '{}', 'even holding a token, an unconfigured captcha sends nothing');
+
+      // ---- ON: the token rides along, and only when we actually have one.
+      FF.CHAT_CONFIG.turnstileSiteKey = '0x_test_site_key';
+      ok(FF.captchaOn(), 'captcha is on once a site key is set');
+      eq(JSON.stringify(FF.captchaAuthOpts()), '{"captchaToken":"tok_abc"}', 'the token is passed to signInWithPassword');
+      FF._turnstileSetToken('');
+      eq(JSON.stringify(FF.captchaAuthOpts()), '{}', 'no token yet -> no captchaToken key (never send an empty one)');
+
+      // ---- Single use: a redeemed token must be cleared, or the NEXT attempt reuses a dead token and a
+      // correct password gets rejected. This is the bug most likely to reach players, so it is pinned.
+      FF._turnstileSetToken('tok_xyz');
+      FF.captchaConsume();
+      eq(FF._turnstileToken(), '', 'captchaConsume clears the spent token');
+      eq(JSON.stringify(FF.captchaAuthOpts()), '{}', 'a consumed token is not sent again');
+    } finally {
+      FF.CHAT_CONFIG.turnstileSiteKey = saved;
+      FF._turnstileSetToken('');
+    }
+  });
+
   suite('discord feed relay', function(){
     ok(typeof FF.discordFeedPost === 'function', 'discordFeedPost exported');
     // The seam sets DISCORD_FEED_ENABLED=false, so posting must be inert -- this is also the guard that

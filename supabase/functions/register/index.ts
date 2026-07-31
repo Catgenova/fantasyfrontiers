@@ -92,6 +92,34 @@ Deno.serve(async (req) => {
     } catch { /* limiter unavailable -> allow, same fail-open stance as every other function */ }
   }
 
+  // ---- CAPTCHA (Cloudflare Turnstile) ---------------------------------------------------------------
+  // Supabase's own CAPTCHA protection covers GoTrue's /signup and /token endpoints. It does NOT cover this
+  // function, because registration mints the user through the ADMIN API (admin.auth.admin.createUser),
+  // which is server-to-server and bypasses that check entirely. Left unguarded, this endpoint would be the
+  // hole in the CAPTCHA: sign-in protected, account creation wide open, and the IP limiter above is
+  // explicitly "anti-spam and nothing more".
+  //
+  // Inert until TURNSTILE_SECRET is set, matching the client (which is inert until its site key is set), so
+  // the two can be rolled out in either order without a window where registration is broken.
+  const turnstileSecret = Deno.env.get("TURNSTILE_SECRET");
+  if (turnstileSecret) {
+    const captchaToken = String(body.captcha_token || "");
+    if (!captchaToken) return json({ ok: false, error: "Human verification required. Please reload and try again." }, 400);
+    // FAIL CLOSED, unlike the rate limiter. A limiter that is down should let players through; a CAPTCHA
+    // that cannot be checked must not, or an attacker just breaks the verifier to switch the check off.
+    let human = false;
+    try {
+      const form = new FormData();
+      form.append("secret", turnstileSecret);
+      form.append("response", captchaToken);
+      if (ip !== "unknown") form.append("remoteip", ip);
+      const vr = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form });
+      const vj = await vr.json();
+      human = vj?.success === true;
+    } catch { human = false; }
+    if (!human) return json({ ok: false, error: "Human verification failed. Please reload and try again." }, 400);
+  }
+
   const email = username.toLowerCase() + "@" + AUTH_EMAIL_DOMAIN;
 
   // email_confirm:true auto-confirms the synthetic address so the user can sign in
