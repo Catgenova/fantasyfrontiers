@@ -24884,6 +24884,10 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.72', date:'Jul 31', heading:'Estate tasks say so when one is already running', items:[
+      'Starting an estate or guild estate task while one was already running <b>silently did nothing</b>. The server refused it correctly — your existing task was never restarted, cancelled or shortened — but it answered with a success-shaped reply, so the client showed a generic error (or nothing at all) instead of telling you why.',
+      'The server now refuses explicitly, and hands back <b>the task that is actually running along with its remaining time</b>. You will see “You already have an estate task running — ready in 6m 27s.” instead of a dead click, and the panel resyncs to the real state on the spot. Guild estate tasks and guild assists behave the same way.'
+    ]},
     { v:'0.0.72', date:'Jul 31', heading:'Frostwarden rework: The Deep Freeze', items:[
       'Chill was five stacks with a refresh timer. It is now <b>Rime</b> — a meter that builds on the foe and drives four things at once: its <b>slow</b>, its <b>brittleness</b> (it takes more from you as the cold deepens), your own <b>Time Dilation</b> haste, and <b>Frostbite’s</b> bite. At a <b>full</b> meter the foe <b>freezes solid</b> and the whole thing <b>Shatters</b> at once.',
       '<b>Time Dilation is kept exactly as it was</b>, because it is the best thing this class owns and nothing else in the game does it: as the foe slows, you speed up. It now scales off how deep the rime runs.',
@@ -25687,14 +25691,14 @@
       _gp.then(function(res){
         estJobRpcRelease();
         var d = res && res.data;
+        if(estateJobBusy(d)){                      // refused: already have a running job -- resync, charge nothing
+          addLog(estateJobBusyMsg(d, 'a guild estate task'), 'danger');
+          guildEstateJobsRefresh(); needsRender = true; return;
+        }
         if(!d || !d.ok){
           addLog(d && d.error === 'clamped' ? 'This account is restricted from guild features.'
             : d && d.error === 'pending' ? 'Your last guild task just finished — collect it, then try again.'
             : 'Could not start that guild estate task. Try again.', 'danger');
-          guildEstateJobsRefresh(); needsRender = true; return;
-        }
-        if(!d.claimed){                            // already have a running job -- adopt the server's list, charge nothing
-          addLog('You already have a guild estate task running.', 'danger');
           guildEstateJobsRefresh(); needsRender = true; return;
         }
         commit(target, Number(d.job.startAt), Number(d.job.readyAt));   // consumes materials + optimistic local job
@@ -25712,6 +25716,11 @@
     _p.then(function(res){
       estJobRpcRelease();
       var d = res && res.data;
+      if(estateJobBusy(d)){                        // refused: a job is already running -- adopt it, charge nothing
+        state.estate.job = estateJobFromServer(d.job);
+        addLog(estateJobBusyMsg(d, 'an estate task'), 'danger');
+        needsRender = true; return;
+      }
       if(!d || !d.ok){
         if(d && d.error === 'pending' && d.job){
           state.estate.job = estateJobFromServer(d.job);
@@ -25719,11 +25728,6 @@
         } else {
           addLog('Could not start that estate task. Try again in a moment.', 'danger');
         }
-        needsRender = true; return;
-      }
-      if(!d.claimed){                              // another window holds the job -- adopt it, charge nothing
-        state.estate.job = estateJobFromServer(d.job);
-        addLog('You already have an estate task running (started in another window).', 'danger');
         needsRender = true; return;
       }
       commit(target, Number(d.job.startAt), Number(d.job.readyAt));
@@ -26155,7 +26159,7 @@
       estJobRpcRelease();
       var d = res && res.data;
       if(!d || !d.ok){ addLog(d && d.error === 'clamped' ? 'This account is restricted from guild features.' : d && d.error === 'pending' ? 'Collect your finished task first.' : 'Could not assist that task right now.', 'danger'); guildEstateJobsRefresh(); needsRender = true; return; }
-      if(!d.claimed){ addLog('You already have a guild estate task running.', 'danger'); guildEstateJobsRefresh(); needsRender = true; return; }
+      if(estateJobBusy(d)){ addLog(estateJobBusyMsg(d, 'a guild estate task'), 'danger'); guildEstateJobsRefresh(); needsRender = true; return; }
       addLog('You\'re assisting ' + escapeHtml(target.ownerName||'a teammate') + '\'s task — its remaining time is halved.', 'important');
       guildEstateJobsRefresh(); needsRender = true;
     }, function(){ estJobRpcRelease(); addLog('Could not reach the server — could not assist.', 'danger'); needsRender = true; });
@@ -29040,6 +29044,21 @@
   }
 
   // ================= RENDER: FARMING =================
+  // An estate/guild-estate job RPC refused because one is already running. The server now says so
+  // explicitly ({ok:false, error:'inprogress', job, remainingMs}); it used to signal the same thing as
+  // {ok:true, claimed:false}, which was indistinguishable from success and is what made a pentester read
+  // the endpoint as unpatched. Accept BOTH so this client is correct against either server version.
+  function estateJobBusy(d){
+    if(!d) return false;
+    if(d.error === 'inprogress') return true;
+    return !!(d.ok && d.claimed === false && d.job);
+  }
+  // "already running (ready in 3m 33s)" when the server told us how long is left.
+  function estateJobBusyMsg(d, what){
+    var ms = d && Number(d.remainingMs);
+    return 'You already have ' + what + (isFinite(ms) && ms > 0 ? ' running — ready in ' + formatDuration(ms) + '.'
+                                                               : ' running.');
+  }
   function formatDuration(ms){
     var totalSec = Math.max(0, Math.ceil(ms/1000));
     var h = Math.floor(totalSec/3600);
@@ -36659,7 +36678,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.72.3';
+  var GAME_VERSION = '0.0.72.4';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -36811,6 +36830,7 @@
       TOOL_TYPES:TOOL_TYPES, toolBenefitLabel:toolBenefitLabel, BLACKSMITH_TOOL_GROUPS:BLACKSMITH_TOOL_GROUPS, blacksmithToolGroupKey:blacksmithToolGroupKey, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupsOpen:blacksmithGroupsOpen,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
+      estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg,
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS, estateBuildingList:estateBuildingList, estateAdjacentWorkshop:estateAdjacentWorkshop, workshopBonusPct:workshopBonusPct, renderEstateBuildingsPanel:renderEstateBuildingsPanel,
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,
       TRACKABLE_SKILL_IDS:TRACKABLE_SKILL_IDS, PHYSIQUE_SKILLS:PHYSIQUE_SKILLS, PEON_MAX_SLOTS:PEON_MAX_SLOTS, estatePeonSources:estatePeonSources, peonGridFor:peonGridFor, estateScopeHasJob:estateScopeHasJob, estateJobActive:estateJobActive, estActiveIsGuild:function(){ return estIsGuild; }, guildEstateReachable:guildEstateReachable,

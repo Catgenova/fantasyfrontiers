@@ -13331,6 +13331,26 @@
     eq(FF.formatDuration(3661000), '1:01:01', 'h:mm:ss for long jobs');
   });
 
+  // ---- Estate job "already running" refusal ---------------------------------------------
+  // The server used to answer a refused start with {ok:true, claimed:false}, which the client
+  // read as a generic failure. It now answers {ok:false, error:'inprogress', job, remainingMs}.
+  // The client must recognise BOTH shapes so a new client is correct against either server.
+  suite('estate job busy refusal', function(){
+    var job = { kind:'plow', readyAt: 1 };
+    ok(FF.estateJobBusy({ ok:false, error:'inprogress', job:job, remainingMs:65000 }), 'new explicit refusal shape');
+    ok(FF.estateJobBusy({ ok:true, claimed:false, job:job }), 'legacy success-shaped refusal');
+    ok(!FF.estateJobBusy({ ok:true, claimed:true, job:job }), 'a real claim is not busy');
+    ok(!FF.estateJobBusy({ ok:false, error:'notile' }), 'an unrelated error is not busy');
+    ok(!FF.estateJobBusy({ ok:true, claimed:false }), 'no job payload means it is not the busy case');
+    ok(!FF.estateJobBusy(null), 'null response is not busy');
+    eq(FF.estateJobBusyMsg({ ok:false, error:'inprogress', remainingMs:65000 }, 'an estate task'),
+       'You already have an estate task running — ready in 1:05.', 'message carries the remaining time');
+    eq(FF.estateJobBusyMsg({ ok:true, claimed:false, job:job }, 'a guild estate task'),
+       'You already have a guild estate task running.', 'legacy shape has no remainingMs, so no ETA');
+    eq(FF.estateJobBusyMsg({ ok:false, error:'inprogress', remainingMs:0 }, 'an estate task'),
+       'You already have an estate task running.', 'a finished job does not advertise 0:00');
+  });
+
   // ---- monster.xp is sunset (no monster carries an inherent-XP field) -------------------
   suite('monster.xp sunset', function(){
     ok(FF.MONSTERS.length > 0, 'monsters exist');
