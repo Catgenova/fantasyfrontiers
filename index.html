@@ -30073,6 +30073,18 @@
         var reg = await chatClient.functions.invoke('register', { body: { username: username, password: password, captcha_token: turnstileToken } });
         if(reg.error) throw reg.error;
         if(!reg.data || !reg.data.ok){ authError = (reg.data && reg.data.error) || 'Registration failed.'; authBusy = false; authRender(); return; }
+        // The account now EXISTS, and register spent our token. Get a fresh one for the sign-in below, or
+        // GoTrue refuses it and the player is left with an account they appear not to have created.
+        if(captchaOn()){
+          captchaConsume();                  // resets the widget, which re-challenges immediately
+          await captchaAwaitToken(10000);
+          if(!turnstileToken){
+            // Account created but we cannot complete the sign-in. Say so precisely -- the one thing the
+            // player must not do is try to register again.
+            authError = 'Account created, but the human check timed out. Switch to Log In and sign in with your new password.';
+            authMode = 'login'; authBusy = false; authRender(); return;
+          }
+        }
       }
       res = await chatClient.auth.signInWithPassword({ email: email, password: password, options: captchaAuthOpts() });
       captchaConsume();   // spent by the attempt, pass or fail -- reuse would fail a correct password
@@ -30451,6 +30463,7 @@
   var turnstileWidget = null;
   var turnstileScriptState = '';        // '' | 'loading' | 'ready' | 'failed'
   var turnstilePendingSubmit = false;   // a submit that landed before the token did
+  var turnstileWaiters = [];            // resolvers awaiting the NEXT token (see captchaAwaitToken)
   function captchaOn(){ return !!(CHAT_CONFIG.turnstileSiteKey && CHAT_ENABLED); }
   // Spread onto signInWithPassword. Empty when CAPTCHA is off, so the call is byte-for-byte what it was.
   function captchaAuthOpts(){ return (captchaOn() && turnstileToken) ? { captchaToken: turnstileToken } : {}; }
@@ -30459,6 +30472,28 @@
   function captchaConsume(){
     turnstileToken = '';
     try{ if(turnstileWidget !== null && window.turnstile) window.turnstile.reset(turnstileWidget); }catch(e){}
+  }
+  // A Turnstile token is redeemed ONCE, by whoever validates it first. Registration therefore needs TWO:
+  // the `register` function spends the first at siteverify, and GoTrue spends a second on the sign-in that
+  // follows. Reusing one meant the account was created and then the auto-sign-in was refused -- which read
+  // to the player as "registration failed", and on retry as "username already taken". So after register
+  // succeeds we reset the widget and WAIT for a fresh token before signing in.
+  function captchaAwaitToken(ms){
+    if(!captchaOn()) return Promise.resolve('');
+    if(turnstileToken) return Promise.resolve(turnstileToken);
+    return new Promise(function(resolve){
+      var settled = false;
+      function finish(tok){ if(settled) return; settled = true; resolve(tok || ''); }
+      var timer = setTimeout(function(){
+        turnstileWaiters = turnstileWaiters.filter(function(w){ return w !== finish; });
+        finish('');   // give up rather than hang the button; the caller decides what an empty token means
+      }, ms || 10000);
+      turnstileWaiters.push(function(tok){ clearTimeout(timer); finish(tok); });
+    });
+  }
+  function turnstileFlushWaiters(tok){
+    var ws = turnstileWaiters; turnstileWaiters = [];
+    ws.forEach(function(w){ try{ w(tok); }catch(e){} });
   }
   function turnstileLoadScript(){
     if(turnstileScriptState) return;
@@ -30487,13 +30522,16 @@
         theme: 'dark',
         callback: function(tok){
           turnstileToken = tok || '';
+          turnstileFlushWaiters(turnstileToken);
           // If the player already pressed Log In while verification was still running, finish the job for
           // them instead of making them click a second time.
           if(turnstilePendingSubmit){ turnstilePendingSubmit = false; authSubmit(); }
           else authRender();
         },
+        // Expiry is NOT flushed: a reset re-challenges and a real token may still arrive, so an awaiting
+        // caller should keep waiting (its own timeout is the backstop). A hard error never will, so flush.
         'expired-callback': function(){ turnstileToken = ''; authRender(); },
-        'error-callback': function(){ turnstileToken = ''; authRender(); }
+        'error-callback': function(){ turnstileToken = ''; turnstileFlushWaiters(''); authRender(); }
       });
     }catch(e){ turnstileScriptState = 'failed'; }
   }
@@ -36800,7 +36838,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.72.9';
+  var GAME_VERSION = '0.0.72.10';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -36955,6 +36993,7 @@
       estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg,
       captchaOn:captchaOn, captchaAuthOpts:captchaAuthOpts, captchaConsume:captchaConsume, CHAT_CONFIG:CHAT_CONFIG,
       _turnstileSetToken:function(t){ turnstileToken = t; }, _turnstileToken:function(){ return turnstileToken; },
+      captchaAwaitToken:captchaAwaitToken, _turnstileWaiterCount:function(){ return turnstileWaiters.length; }, _turnstileFlushWaiters:turnstileFlushWaiters,
       discordFeedPost:discordFeedPost, discordItemStatsText:discordItemStatsText, _discordFeedQueue:function(){ return discordFeedQueue; },
       getCottageTierData:getCottageTierData, peonSpeedFactor:peonSpeedFactor, COTTAGE_ITEMS:COTTAGE_ITEMS, estateBuildingList:estateBuildingList, estateAdjacentWorkshop:estateAdjacentWorkshop, workshopBonusPct:workshopBonusPct, renderEstateBuildingsPanel:renderEstateBuildingsPanel,
       peonSpecialProducers:peonSpecialProducers, getSpecialTierData:getSpecialTierData, produceSpecialOutput:produceSpecialOutput,

@@ -13376,6 +13376,27 @@
       FF.captchaConsume();
       eq(FF._turnstileToken(), '', 'captchaConsume clears the spent token');
       eq(JSON.stringify(FF.captchaAuthOpts()), '{}', 'a consumed token is not sent again');
+
+      // Registration needs TWO tokens: `register` spends one at siteverify, then GoTrue spends another on
+      // the sign-in that follows. Reusing one created the account and then refused the sign-in. The waiter
+      // queue is what lets the register flow wait for a second token, so its mechanics are pinned here --
+      // synchronously, because suite() discards a returned promise and would report nothing.
+      ok(typeof FF.captchaAwaitToken === 'function', 'captchaAwaitToken exported');
+      eq(FF._turnstileWaiterCount(), 0, 'no waiters at rest');
+      FF._turnstileSetToken('');
+      FF.captchaAwaitToken(50);                     // captcha ON + no token -> must queue a waiter
+      eq(FF._turnstileWaiterCount(), 1, 'awaiting a token with none in hand queues a waiter');
+      FF._turnstileFlushWaiters('tok_fresh');
+      eq(FF._turnstileWaiterCount(), 0, 'flushing on a new token drains the queue');
+      // The fast path must NOT queue: a token already in hand means the register flow proceeds at once.
+      FF._turnstileSetToken('tok_held');
+      FF.captchaAwaitToken(50);
+      eq(FF._turnstileWaiterCount(), 0, 'a token already in hand resolves without queueing');
+      // Captcha off must also not queue, or a build with no site key would hang on registration.
+      FF.CHAT_CONFIG.turnstileSiteKey = '';
+      FF._turnstileSetToken('');
+      FF.captchaAwaitToken(50);
+      eq(FF._turnstileWaiterCount(), 0, 'with captcha off, awaiting never queues');
     } finally {
       FF.CHAT_CONFIG.turnstileSiteKey = saved;
       FF._turnstileSetToken('');
