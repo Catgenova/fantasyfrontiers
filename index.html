@@ -30516,22 +30516,30 @@
     if(turnstileScriptState !== 'ready'){ turnstileLoadScript(); return; }
     if(box.getAttribute('data-mounted') === '1') return;
     box.setAttribute('data-mounted', '1');
+    // The old widget's node died with the last innerHTML rebuild, but Turnstile still tracks it -- remove it
+    // explicitly so ids do not accumulate one per gate render.
+    try{ if(turnstileWidget !== null && window.turnstile && window.turnstile.remove) window.turnstile.remove(turnstileWidget); }catch(e){}
+    turnstileWidget = null;
     try{
       turnstileWidget = window.turnstile.render(box, {
         sitekey: CHAT_CONFIG.turnstileSiteKey,
         theme: 'dark',
+        // NEVER call authRender() from these callbacks. renderLoginGate rebuilds the gate's innerHTML,
+        // which destroys this widget; turnstileMount then mounts a fresh one, which challenges, which fires
+        // this callback again -- an infinite loop that shows as a box stuck on "Verifying..." and visibly
+        // flashing. Nothing in the rendered output reads turnstileToken anyway (the submit button is not
+        // disabled for a missing token -- it holds and resumes), so there is nothing to re-render.
         callback: function(tok){
           turnstileToken = tok || '';
           turnstileFlushWaiters(turnstileToken);
           // If the player already pressed Log In while verification was still running, finish the job for
-          // them instead of making them click a second time.
+          // them instead of making them click a second time. authSubmit re-renders on its own.
           if(turnstilePendingSubmit){ turnstilePendingSubmit = false; authSubmit(); }
-          else authRender();
         },
-        // Expiry is NOT flushed: a reset re-challenges and a real token may still arrive, so an awaiting
-        // caller should keep waiting (its own timeout is the backstop). A hard error never will, so flush.
-        'expired-callback': function(){ turnstileToken = ''; authRender(); },
-        'error-callback': function(){ turnstileToken = ''; turnstileFlushWaiters(''); authRender(); }
+        // Expiry is NOT flushed: the widget re-challenges itself, so a real token may still arrive and an
+        // awaiting caller should keep waiting (its own timeout is the backstop). A hard error never will.
+        'expired-callback': function(){ turnstileToken = ''; },
+        'error-callback': function(){ turnstileToken = ''; turnstileFlushWaiters(''); }
       });
     }catch(e){ turnstileScriptState = 'failed'; }
   }
@@ -36838,7 +36846,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.72.10';
+  var GAME_VERSION = '0.0.72.11';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

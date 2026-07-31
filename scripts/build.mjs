@@ -70,6 +70,37 @@ for (const [re, what] of SECRET_PATTERNS) {
   }
 }
 
+// ---- Fatal-pattern guard: the Turnstile render-loop -------------------------------------------------
+// SHIPPED ONCE, and it made the login screen unusable: the Turnstile success callback called authRender(),
+// which rebuilds the gate's innerHTML, which destroys the widget, which turnstileMount() then re-creates,
+// which challenges, which fires the callback again. The box sat on "Verifying..." and flashed forever.
+// Nothing in the gate's markup reads turnstileToken (the submit button holds-and-resumes rather than being
+// disabled), so a render from inside these callbacks is never needed and always loops. Gate the deploy on it.
+{
+  const at = html.indexOf("window.turnstile.render(");
+  if (at !== -1) {
+    // Strip line comments FIRST -- the guard's own explanatory comment says "authRender()" and matched
+    // itself, which failed the build on correct code. Then brace-match to the end of the options object so
+    // the scan cannot overrun into unrelated code that legitimately renders.
+    const raw = html.slice(at, at + 2500).replace(/\/\/[^\n]*/g, "");
+    const open = raw.indexOf("{");
+    let region = raw;
+    if (open !== -1) {
+      let depth = 0;
+      for (let i = open; i < raw.length; i++) {
+        if (raw[i] === "{") depth++;
+        else if (raw[i] === "}" && --depth === 0) { region = raw.slice(open, i + 1); break; }
+      }
+    }
+    if (/authRender\s*\(/.test(region)) {
+      console.error("build: refusing to build -- authRender() is called from inside a Turnstile callback.");
+      console.error("  That rebuilds the gate, destroys the widget, and re-mounts it -> infinite re-challenge loop.");
+      console.error("  The login screen sticks on 'Verifying...'. Remove the render; nothing there depends on the token.");
+      process.exit(1);
+    }
+  }
+}
+
 // Bake the build id into the client (replaces the readable copy's 'dev' sentinel, which disables the
 // update check). Must run BEFORE obfuscation so the value ends up inside the obfuscated script.
 if (!html.includes("var FF_BUILD_ID = 'dev';")) {
