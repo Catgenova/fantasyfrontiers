@@ -4113,23 +4113,25 @@
     eq(FF.activeClassId(rgear()), 'ranger', 'medium bow + quiver + leather + cloth boots => Ranger');
     var wrongBow = rgear(); wrongBow.equippedMainhand = 'bowLong';
     eq(FF.activeClassId(wrongBow), null, 'the Medium Bow is required (a long bow does not qualify)');
-    // Apex Predator (Lv80): a hit against a foe with ALL FOUR ailments deals x3 damage; missing any -> x1.
+    // The Beastmaster: Apex Predator's x3-on-four-random-ailments retired. Damage now comes from the Quarry
+    // ramp the pack builds itself (x Hunter's Mark on the D2 full set), which is deterministic and bandable.
     var mon = { hp:100 };
-    var allFour = rgear();
-    allFour.activity = { type:'combat', monsterHp:50,
-      potionPoisonUntil: Date.now()+4000, potionPoisonDps: 5,
-      bleedUntil: Date.now()+4000, bleedStacks: 1, bleedDps: 3,
-      enemyChillUntil: Date.now()+4000, chillStacks: 1,
-      burnUntil: Date.now()+4000, burnStacks: 1, burnDps: 3 };
-    ok(Math.abs(FF.newClassDmgMult(mon, allFour) - 3) < 1e-9, 'Apex Predator: x3 vs a foe with Poison+Bleed+Chill+Burn');
-    var missingBurn = rgear();
-    missingBurn.activity = Object.assign({}, allFour.activity, { burnUntil:0, burnStacks:0, burnDps:0 });
-    eq(FF.newClassDmgMult(mon, missingBurn), 1, 'no x3 unless all four ailments are up at once');
-  });
-
-  // ---- Classes: Samurai (Katana, 2H; Iaijutsu opener -> First Blood Bleed -> Crimson Edge/Bushido/Zanshin) --
-  suite('classes: Samurai', function(){
-    ok(FF.CLASS_SKILL_IDS.indexOf('samurai') !== -1, 'samurai is a class skill id');
+    var rgQ = rgear(); rgQ.activity = { type:'combat', monsterHp:50 };
+    ok(Math.abs(FF.newClassDmgMult(mon, rgQ) - 1) < 1e-9, 'no Quarry -> no Ranger damage row');
+    FF.rgQuarryAdd(4, rgQ);
+    eq(FF.rgQuarry(rgQ), 4, 'commanded strikes stack Quarry');
+    near(FF.rgQuarryMult(rgQ), 1 + 4 * FF.RG_QUARRY_PCT, 'Pack Tactics: +3% per Quarry stack');
+    near(FF.newClassDmgMult(mon, rgQ), 1 + 4 * FF.RG_QUARRY_PCT, 'and it is the class damage row');
+    FF.rgQuarryAdd(99, rgQ);
+    eq(FF.rgQuarry(rgQ), FF.RG_QUARRY_MAX, 'Quarry caps at 10');
+    rgQ.activity.rgQuarryUntil = Date.now() - 1;
+    eq(FF.rgQuarry(rgQ), 0, 'Quarry decays if the pack stops working');
+    // A commanded strike is a share of your landed hit, plus Feral Bond's share of your weapon damage.
+    var rgS = rgear(); rgS.activity = { type:'combat', monsterHp:1e9, dotHitAvg: 1000 };
+    near(FF.rgStrikeDamage(rgS), FF.RG_STRIKE_PCT * 1000, "Sic 'Em: a strike is 35% of the recent average hit");
+    near(FF.rgBondBonus(rgS), FF.RG_BOND_PCT * 1000, 'Feral Bond adds a share of your weapon damage on top');
+    var rgLow = rgear(); rgLow.xp.ranger = FF.xpFloorForLevel(41); rgLow.activity = { type:'combat', monsterHp:1e9, dotHitAvg: 1000 };
+    eq(FF.rgBondBonus(rgLow), 0, 'Feral Bond needs Lv80');
     var cd = FF.CLASS_DEFS_BY_ID.samurai; ok(cd, 'samurai class defined');
     eq(cd.passives.map(function(p){ return p.level; }).join(','), '1,20,40,60,80', 'passives at 1/20/40/60/80');
     ok(cd.reqParts.length >= 5, 'samurai has a full gear set');
@@ -5299,8 +5301,8 @@
     near(FF.playerAccuracy(aimOn) / FF.playerAccuracy(aimOff), 1.30, 'Steady Aim raises live Accuracy by ~30%', 0.02);
 
     // Compound Arrows (ranger/bowMedium): each hit rolls its ailment volley twice.
-    eq(FF.legRangerAilmentRolls(legSt('compoundarrows', 'bowMedium')), 2, 'Compound Arrows rolls the ailment volley twice');
-    eq(FF.legRangerAilmentRolls(legSt('steadyaim')), 1, 'a single ailment roll without Compound Arrows');
+    eq(FF.legRangerChainMult(legSt('compoundarrows', 'bowMedium')), 2, 'Compound Arrows chains commanded strikes twice as often');
+    eq(FF.legRangerChainMult(legSt('steadyaim')), 1, 'a base chain rate without Compound Arrows');
 
     // Websnare (quickdraw/bowShort): now the Fusillade's Snare + power bow (behaviour in the class suite).
     eq(FF.LEG_WEBSNARE_FUSILLADE, 1.5, 'Websnare: the Fusillade strikes +50%');
@@ -5662,7 +5664,10 @@
     near(FF.d2LegDmgMult({}, legSt('wallbreaker','mace',{ heraldBarrier:0 })), 1.0, 'Wallbreaker no longer rides the D2 legendary damage row');
     near(FF.d2LegDmgMult({}, legSt('wallbreaker','mace')), 1.0, 'Wallbreaker inert with no Guard stacks');
     // Trapmaster (ranger/bowMedium): +20% vs an ailing foe.
-    near(FF.d2LegDmgMult({}, legSt('trapmaster','bowMedium',{ activity:{type:'combat', monsterHp:100, bleedUntil:now+4000} })), 1.20, 'Trapmaster: +20% vs an ailing (bleeding) foe');
+    // Trapmaster's ailment amplifier retired: it doubles the Quarry STACKING RATE now (see rgQuarryAdd).
+    near(FF.d2LegDmgMult({}, legSt('trapmaster','bowMedium',{ activity:{type:'combat', monsterHp:100} })), 1, 'Trapmaster adds no flat damage row');
+    var tmSt = legSt('trapmaster','bowMedium',{ xp:{ ranger: FF.xpFloorForLevel(85) }, activity:{type:'combat', monsterHp:100} });
+    FF.rgQuarryAdd(1, tmSt); eq(FF.rgQuarry(tmSt), 2, 'Trapmaster: one strike stacks two Quarry');
     near(FF.d2LegDmgMult({}, legSt('trapmaster','bowMedium')), 1.0, 'Trapmaster inert on a clean foe');
     // Earthrender (juggernaut/sledge): +30% and never miss (the +30% is the readable part).
     near(FF.d2LegDmgMult({}, legSt('earthrender','sledge')), 1.30, 'Earthrender: Wind-Up swings hit +30%');
@@ -6893,9 +6898,12 @@
       eq(FF.d4BreathChargeOnHit(s, false), 4, 'Focused Breath: +4 on a normal hit');
       s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, true), 14, 'Focused Breath: crits charge faster (+14)');
       wearD4('reaper', 2); s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, false), 0, 'the Reaper left the Breath pillar (the Festerweave Shroud crits Rot instead)');
-      wearD4('ranger', 2); s.activity = { type:'combat', monsterHp:1000000, breathCharge:0 }; // clean, no ailment
-      eq(FF.d4BreathChargeOnHit(s, false), 0, 'Elemental Traps: no charge without an ailment on the foe');
-      s.activity.bleedUntil = Date.now() + 5000; eq(FF.d4BreathChargeOnHit(s, false), 10, 'Elemental Traps: +10 when the foe is afflicted');
+      // Elemental Traps retired: the Ranger's D4 2pc is Alpha now -- it raises Quarry's cap and no longer
+      // charges Dragon's Breath at all.
+      wearD4('ranger', 2); s.activity = { type:'combat', monsterHp:1000000, breathCharge:0 };
+      eq(FF.d4BreathChargeOnHit(s, false), 0, 'Alpha does not charge the Breath');
+      s.activity.bleedUntil = Date.now() + 5000; eq(FF.d4BreathChargeOnHit(s, false), 0, 'not even against an ailing foe');
+      eq(FF.rgQuarryCap(s), FF.RG_QUARRY_MAX_D4, 'Alpha (D4 2pc): Quarry caps 50% higher');
 
       // --- Full-set selection ---
       wearFull('quickdraw'); eq(FF.d4BreathFullSet(s), null, 'the full Fusilier\'s Leathers fires no breath weapon (Runaway Quiver instead)');
@@ -7109,7 +7117,10 @@
       eq(FF.assassinCommunionLifesteal(s), 0, 'Communion lifesteal needs the FULL set, not 2pc');
       s.assassinVigor = null;
       wearD2('pyromancer', 2);   near(FF.d2BurnTickMult(s), 1.40, 'Pyromancer Conflagration: +40% burn ticks');
-      wearD2('ranger', 2);       near(FF.rangerAilmentDmgMult(s), 1.25, 'Ranger Barbed Ailments: +25% ailment ticks');
+      // Barbed Ailments retired: the Ranger's D2 2pc is Bloodied Fangs (faster Quarry), so the shared
+      // damage-over-time multipliers no longer carry a Ranger term at all.
+      wearD2('ranger', 2);       near(FF.d2BleedTickMult(s), 1, 'no Ranger term left in the shared bleed multiplier');
+      near(FF.d2FrostbiteTickMult(s), 1, 'nor in the frostbite one');
       // Barbed Ailments compounds with a class DoT bonus (e.g. poison) when both sets are... single-set only,
       // so a bare state gives 1x.
       s.bodyArmor = {}; s.uniqueItems = {}; near(FF.d2PoisonTickMult(s), 1.0, 'no set -> poison ticks unchanged');
@@ -7118,7 +7129,8 @@
       near(FF.d2SetDmgMult({hp:1000}, s), 1.15, 'Plaguebearer Miasma: +15% vs a poisoned foe');
       // Hunter's Mark (Ranger full): ailing foes take +15% (uses enemyHasAilment).
       wearD2('ranger', 4); ok(FF.enemyHasAilment(s), 'a poisoned foe counts as ailing');
-      near(FF.d2SetDmgMult({hp:1000}, s), 1.15, "Ranger Hunter's Mark: +15% vs an ailing foe");
+      // Hunter's Mark is keyed on QUARRY now, not on ailments, and lives in newClassDmgMult.
+      near(FF.rgHuntersMarkMult(s), 1, 'no Quarry -> no Hunter\'s Mark');
       s.activity = { type:'combat', monsterHp:500 }; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, "Hunter's Mark inert on a clean foe");
       // Crimson Communion (Assassin D2 full): at max Vigor, hits heal 8% of damage dealt.
       wearD2('assassin', 4); s.activity = { type:'combat', monsterHp:1000 }; s.assassinVigor = null;
@@ -7411,9 +7423,13 @@
     // Poison / ailment multipliers.
     near(FF.plagueBloomMult(setSt('plaguebearer',2)), 1.5, 'Plague Bloom (2pc): poison ticks x1.5');
     near(FF.plagueBloomMult(setSt('plaguebearer',1)), 1, '1 piece -> poison unmodified');
-    near(FF.rangerAilmentDurMult(setSt('ranger',2)), 1.5, 'Persistent Ailments (2pc): ailments last x1.5');
-    near(FF.rangerProcChance(setSt('ranger',4)), 0.40, 'Toxic Fletching (full): ailment proc chance 40%');
-    near(FF.rangerProcChance(setSt('ranger',2)), 0.25, '2 of 4 -> base 25% proc (full-set not met)');
+    // Kennelborn (2pc) / Pack Leader (full): the D1 layer is the pack's RATE layer now.
+    var rgD1 = setSt('ranger',2); rgD1.activity = { type:'combat', monsterHp:1e9, dotHitAvg:1000 };
+    near(FF.rgStrikePct(rgD1), FF.RG_STRIKE_PCT * FF.RG_STRIKE_D1_MULT, 'Kennelborn (2pc): strikes hit 25% harder');
+    near(FF.rgStrikePct(setSt('ranger',1)), FF.RG_STRIKE_PCT, '1 piece -> base strike');
+    eq(FF.RG_STRIKES_D1_FULL, 2, 'Pack Leader (full): every command sends the beast in twice');
+    eq(FF.rangerProcChance(setSt('ranger',4)), 0, 'the arrow procs retired entirely');
+    eq(FF.rangerAilmentDurMult(setSt('ranger',2)), 1, 'and so did their duration bonus');
 
     // Full-set capstones.
     var frFull = setSt('frostwarden',4, { activity:{type:'combat', chillStacks:5, enemyChillUntil: now+4000} });

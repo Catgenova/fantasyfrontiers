@@ -129,6 +129,19 @@ const BUILDS = {
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
     offhandShield: { type: "shieldSmall", leg: "fortunesriposte" },
   },
+  ranger: {
+    // Medium bow + quiver, leather helm/chest/gloves + cloth boots. The Beastmaster's engine is a CLASS
+    // attack, not a familiar cast: a crit commands a companion strike scaling off dotBase. The general
+    // familiar system is untouched, so this measures nothing the Summoner shares. At BiS crit is ~100%, so
+    // the pack fires nearly every swing -- deliberately deterministic, which is why runs should be quiet
+    // (the old Apex Predator x3 fired on four random rolls aligning and would have been unbandable).
+    // Bow chassis already corrected in the Quiverlord rework, so no new chassis ground here.
+    weapon: { typeId: "bowMedium", styleXp: ["bowMedium"] },
+    legs: ["compoundarrows", "trapmaster", "bonevolley", "wyrmstalker"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "pierce",
+    offhandQuiver: true,
+  },
   pyromancer: {
     // Fire Wand + Fire Ward, full cloth. The SECOND class on the x49 wand chassis (two Fantastic +15 Rings of
     // Fire alone are +4,800% elemental damage) -- the Stormlord opened at 4.4-6.5T before TF_STORM_SWING_MULT
