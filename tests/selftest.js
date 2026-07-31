@@ -13452,6 +13452,39 @@
     ok(tail.charAt(0) !== ' ', 'the stats tail has no leading space');
   });
 
+  // ---- Chat: a party code renders as a "Click to Join" button ------------------------------------
+  // Ticket: copying a uuid out of a chat line is miserable, worse on mobile. The button is injected into
+  // ALREADY-ESCAPED text, so the security property under test is that a chat body cannot smuggle markup
+  // through the pattern.
+  suite('chat party code join button', function(){
+    ok(typeof FF.chatPartyCodeHtml === 'function', 'chatPartyCodeHtml exported');
+    var uuid = '3f9a1b2c-4d5e-6f70-8a9b-0c1d2e3f4a5b';
+    var out = FF.chatPartyCodeHtml('Forming a party! Join: d2:' + uuid);
+    ok(/data-action="chatJoinParty"/.test(out), 'a party code becomes a join button');
+    ok(out.indexOf('data-session="' + uuid + '"') !== -1, 'the button carries the session id');
+    ok(out.indexOf('data-layer="d2"') !== -1, 'the button carries the layer');
+    ok(out.indexOf('Forming a party! Join:') === 0, 'surrounding text is preserved');
+    // The layer LABEL comes from DUNGEON_DEFS, never from the message.
+    ok(out.indexOf(FF.DUNGEON_DEFS.d2.category) !== -1, 'the button names the dungeon from DUNGEON_DEFS');
+    // A layer this build does not know stays plain text -- still copyable, never a broken button.
+    var unknown = FF.chatPartyCodeHtml('join d97:' + uuid);
+    ok(unknown.indexOf('chatJoinParty') === -1 && unknown.indexOf('d97:' + uuid) !== -1,
+       'an unknown layer stays plain text: ' + unknown);
+    // Near-misses must not match, or a button would carry a session id the server will reject.
+    ok(FF.chatPartyCodeHtml('d2:not-a-uuid').indexOf('chatJoinParty') === -1, 'a malformed id is not linkified');
+    ok(FF.chatPartyCodeHtml('d2:' + uuid.slice(0, 20)).indexOf('chatJoinParty') === -1, 'a truncated uuid is not linkified');
+    ok(FF.chatPartyCodeHtml('x2:' + uuid).indexOf('chatJoinParty') === -1, 'a non-dungeon prefix is not linkified');
+    ok(FF.chatPartyCodeHtml('d0:' + uuid).indexOf('chatJoinParty') === -1, 'layer 0 is not a dungeon');
+    // INJECTION: a chat body is escaped before this runs, so tags arrive inert and must stay inert.
+    var evil = FF.chatBodyHtml('<img src=x onerror=alert(1)> d1:' + uuid);
+    ok(evil.indexOf('<img') === -1, 'an escaped tag in a chat body is never revived: ' + evil.slice(0, 60));
+    ok(/data-action="chatJoinParty"/.test(evil), 'a real code in the same message still becomes a button');
+    // A code with markup-ish characters glued on must not break out of the attribute.
+    var quoted = FF.chatPartyCodeHtml('d1:' + uuid + '" onclick="evil()');
+    ok(quoted.indexOf('onclick="evil()') === -1 || quoted.indexOf('data-session="' + uuid + '"') !== -1,
+       'the button attribute is closed by the pattern, not by message content');
+  });
+
   // ---- Estate jobs: a completed build must never be consumed without being placed ----------------
   // Ticket (Mr Cookie): a Willow Jewelry Workshop finished, the tile stayed empty, the workshop was gone.
   // Materials are spent at ENQUEUE, so every path that drops a job has to either apply it or refund it.

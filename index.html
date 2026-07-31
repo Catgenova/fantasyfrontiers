@@ -707,6 +707,11 @@
   .chat-time{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);margin-right:6px;}
   .log-entry .chat-time{margin-right:5px;}
   .chat-body{color:var(--text);word-break:break-word;}
+  .chat-join-btn{display:inline-flex;align-items:center;gap:4px;vertical-align:-2px;margin:0 2px;padding:1px 8px;
+    font-family:var(--font-body);font-size:12px;font-weight:700;cursor:pointer;color:#fff;
+    background:var(--rarity-superior);border:1px solid rgba(0,0,0,.25);border-radius:999px;}
+  .chat-join-btn:hover{filter:brightness(1.12);}
+  .chat-join-btn svg{width:12px;height:12px;}
   /* Chat moderation: role badges, a muted marker, and the per-message moderator button. */
   .chat-mod-badge{font-size:10px;font-weight:700;margin-right:4px;vertical-align:1px;}
   .chat-mod-owner{color:var(--gold);}
@@ -15225,18 +15230,36 @@
     var open = (equipAccOpen[key] !== undefined) ? equipAccOpen[key] : true;
     return equipAccHtml(key, 'Off-hand Claws', svgIcon('claw','var(--gold)'), owned.length, open, body, false);
   }
+  // A party code posted in chat becomes a "Click to Join" button (ticket): copying a uuid out of a chat
+  // line by hand is miserable, and worse on mobile.
+  //
+  // SAFETY: this runs on ALREADY-ESCAPED text, and the pattern admits nothing but the code's own charset
+  // (d<layer>: + a canonical uuid). A chat body therefore cannot smuggle markup through here -- the only
+  // thing interpolated into the button is a substring that matched that pattern, plus a layer name looked
+  // up from DUNGEON_DEFS rather than taken from the message.
+  var CHAT_PARTY_CODE_RE = /\bd([1-9]\d?):([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\b/g;
+  function chatPartyCodeHtml(escaped){
+    return String(escaped).replace(CHAT_PARTY_CODE_RE, function(full, layerNum, sessionId){
+      var layer = 'd' + layerNum;
+      var def = DUNGEON_DEFS[layer];
+      if(!def) return full;   // a code for a layer this build doesn't know stays plain text, still copyable
+      return '<button class="chat-join-btn" data-action="chatJoinParty" data-session="' + sessionId + '" data-layer="' + layer + '"'
+        + ' title="Join this ' + escapeHtml(def.category) + ' party">' + svgIcon('crossedswords','currentColor')
+        + ' Join ' + escapeHtml(def.category) + ' party</button>';
+    });
+  }
   // Split a raw chat body into escaped text + rendered item chips (censor only the text segments so a
   // base64 payload is never mangled by the profanity filter).
   function chatBodyHtml(raw){
     raw = String(raw||'');
     var re = /\{\{i:([A-Za-z0-9+\/=]+)\}\}/g, out='', last=0, m;
     while((m = re.exec(raw))){
-      out += escapeHtml(chatDisplayCensor(raw.slice(last, m.index)));
+      out += chatPartyCodeHtml(escapeHtml(chatDisplayCensor(raw.slice(last, m.index))));
       var chip = itemLinkChipHtml(m[1]);
       out += chip || escapeHtml(m[0]);
       last = m.index + m[0].length;
     }
-    out += escapeHtml(chatDisplayCensor(raw.slice(last)));
+    out += chatPartyCodeHtml(escapeHtml(chatDisplayCensor(raw.slice(last))));
     return out;
   }
   // "Link in chat" from the Improvement tab: drop the item token into the active chat draft so the
@@ -22808,7 +22831,7 @@
   function dungeonNetPostCode(){
     var s = dungeonNet.session; if(!s) return;
     var def = DUNGEON_DEFS[s.layer] || DUNGEON_DEFS.d1;
-    chatPostMessage('⚔️ Forming a party for the ' + def.category + ' (' + s.layer.toUpperCase() + ')! Join in Dungeons → Join by ID: ' + dungeonPartyCode());
+    chatPostMessage('⚔️ Forming a party for the ' + def.category + ' (' + s.layer.toUpperCase() + ')! Join: ' + dungeonPartyCode());
   }
   function dungeonNetCopyCode(){
     var code = dungeonPartyCode(); if(!code) return;
@@ -24896,6 +24919,11 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.73', date:'Jul 31', heading:'Party codes in chat are now a Join button', items:[
+      'A party code posted in chat now renders as a <b>Join &lt;dungeon&gt; party</b> button &mdash; one tap and you are in the lobby, instead of selecting a UUID by hand and pasting it into a box. A great deal better on a phone. Thanks for the suggestion.',
+      'It works on any code in any message, not just the one the game posts for you, and it takes you to the <b>Dungeons</b> tab so you can see the lobby &mdash; or the reason you cannot join it, if you have not cleared the layer before it.',
+      'The code is still written out as text alongside the button, so anyone on an older build can copy it the old way.'
+    ]},
     { v:'0.0.73', date:'Jul 31', heading:'Estate builds can no longer vanish', items:[
       'Fixed (thanks Mr Cookie): a Workshop could finish building and leave the tile <b>empty with the Workshop consumed</b>. Materials are spent when you <i>start</i> a build, so a completion that never got applied destroyed them.',
       'The cause was a safety check doing too much. If the server had no record of the finished job &mdash; normally because another browser window collected it &mdash; your client dropped the job <b>without placing the building</b>, to avoid handing out the rewards twice. But the record can also be gone with <i>no</i> window having placed anything, and then the build was simply lost. Placing a building is now separated from granting its rewards: the placement always happens (it is safe to repeat), while XP and logs stay suppressed, so nothing is granted twice and nothing is lost.',
@@ -35722,6 +35750,16 @@
     towerPreviewClose: function(btn, e){ towerPreviewEntrance = null; towerEntryError = ''; renderTowerPreview(); },
     toggleTowerAutoAdvance: function(btn, e){ state.towerAutoAdvance = !state.towerAutoAdvance; saveGame(); renderTowerPreview(); },
     toggleDungeonAutoRequeue: function(btn, e){ state.dungeonAutoRequeue = !state.dungeonAutoRequeue; saveGame(); },
+    // Join a party straight from a code posted in chat. Navigates to Dungeons FIRST: dungeonNetJoin
+    // surfaces refusals ("Locked -- Clear the Cave first") into dungeonNet.error, which only renders on
+    // that tab -- clicking from anywhere else would otherwise look like nothing happened.
+    chatJoinParty: function(btn, e){
+      var sid = btn.getAttribute('data-session'), layer = btn.getAttribute('data-layer');
+      if(!sid) return;
+      currentCategory = 'dungeons';
+      if(DEFAULT_SUB.dungeons) currentSub = DEFAULT_SUB.dungeons;
+      dungeonNetJoin(sid, DUNGEON_DEFS[layer] ? layer : null);
+    },
     navToActivity: function(btn, e){
       var navCat = btn.getAttribute('data-nav-cat');
       var navSub = btn.getAttribute('data-nav-sub');
@@ -36955,7 +36993,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.73.2';
+  var GAME_VERSION = '0.0.73.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -37108,6 +37146,7 @@
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
       estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg, estateJobShapeOk:estateJobShapeOk,
+      chatPartyCodeHtml:chatPartyCodeHtml, chatBodyHtml:chatBodyHtml,
       applyEstateJobCompletion:applyEstateJobCompletion, estateJobMaterials:estateJobMaterials,
       captchaOn:captchaOn, captchaAuthOpts:captchaAuthOpts, captchaConsume:captchaConsume, CHAT_CONFIG:CHAT_CONFIG,
       _turnstileSetToken:function(t){ turnstileToken = t; }, _turnstileToken:function(){ return turnstileToken; },
