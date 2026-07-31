@@ -561,6 +561,12 @@ signal. Ruin won the cloak A/B decisively in both, like every class so far.
 Sim notes: BUILDS needs no offhand (2H). Unusually clean to measure — the kit needs neither kills nor incoming
 damage, so almost nothing is sim-dead. The exception is **Kindled Focus (D4 2pc)**, which scales with stance
 HELD, and a cycling stance spends itself, so it under-reads what a real fight sees.
+**WATCH ITEM (post-ship code review): D1 + Silkweaver + Zanshin saturates the cycle.** Rate stacked on rate on
+rate: Unbroken Focus doubles both builders (2/hit + 0.7/s), and the refunds leave 6, so a cycle needs 4 stacks
+while one 5s swing provides ~5.5 — a Draw-Cut EVERY swing for that one combo. Estimated ~8.75x avgHit/swing vs
+the measured BiS (D2+Ironwind) at ~9.5x, so it does not beat the ceiling and needs no change now — but any buff
+to SM_FOCUS_PER_SEC, SM_FOCUS_PER_HIT, the refunds, or Silkweaver re-tests this combo FIRST, and the sim never
+measured it (set A/B ran on Emberdraw, the legendary matrix on D2).
 
 **TIER WARNING (v0.0.64.9): every recorded ceiling above was measured with a ONE-BELOW-BiS weapon.**
 Melee weapons + shields shipped with `tierCount:20` (top `t19`) while bows/wands/wards/scepter/staff had
