@@ -24905,6 +24905,9 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.73', date:'Jul 31', heading:'Shields and Wards get inventory containers too', items:[
+      'Following the ring change below: your <b>Inventory</b> now sorts Shields into <b>Small / Medium / Large</b> containers and Wards into one container <b>per element</b>, each with that element&rsquo;s own icon. Their equip pickers already grouped this way &mdash; the inventory just did not match.'
+    ]},
     { v:'0.0.73', date:'Jul 31', heading:'Rings sort themselves out', items:[
       'Rings were the worst menu in the game and it was not close. Eleven types, twenty-one tiers and four rarities all ran together in <b>one flat list</b> &mdash; repeated on each of the five ring slots.',
       'They now sort into <b>collapsible groups by type</b> &mdash; Blunt Rings, Slash Rings, Fire Rings, Communion Rings and so on, with <b>Signets</b> in their own group at the end &mdash; in the equip picker on <b>Equipment &amp; Stats</b> and as their own containers in your <b>Inventory</b>. Each keeps its own coloured icon, so Fire, Water and Earth are told apart at a glance, and you only ever see groups for types you actually own.',
@@ -34185,8 +34188,11 @@
     { id:'a_leather', label:'Leather Armor', icon:(BODY_ARMOR_MATERIALS.leather||{}).icon || svgIcon('chestarmor','var(--gold)') },
     { id:'a_chain',   label:'Chain Mail',    icon:(BODY_ARMOR_MATERIALS.chain||{}).icon || svgIcon('chestarmor','var(--gold)') },
     { id:'a_plate',   label:'Plate Armor',   icon:(BODY_ARMOR_MATERIALS.plate||{}).icon || svgIcon('chestarmor','var(--gold)') },
-    { id:'shields',   label:'Shields',       icon:svgIcon('shield','var(--gold)') },
-    { id:'wards',     label:'Wards',         icon:svgIcon('yinyang','var(--gold)') },
+    // Shields split by SIZE and wards by ELEMENT, the same way rings split by type -- their equip pickers
+    // already grouped this way, so the inventory now matches. Both keep a catch-all for an unrecognised
+    // typeId, because a dropped group silently HIDES items rather than merely misplacing them.
+    { id:'shields',   label:'Other Shields', icon:svgIcon('shield','var(--gold)') },
+    { id:'wards',     label:'Other Wards',   icon:svgIcon('yinyang','var(--gold)') },
     { id:'quivers',   label:'Quivers',       icon:svgIcon('arrow','var(--gold)') },
     // Rings get one container PER TYPE (ticket, Valuren): five ring slots x 11 types x 21 tiers x 4
     // rarities made a single 'Rings' bucket the least navigable list in the game. Built from RING_TYPES so
@@ -34211,16 +34217,29 @@
     { id:'u_belt',      label:'Unique Belts',   icon:svgIcon('belt','var(--rarity-fantastic)'),       unique:true },
     { id:'u_relic',     label:'Unique Relics',  icon:svgIcon('urn','var(--rarity-fantastic)'),        unique:true }
   ];
-  // Splice the per-type ring containers in where the old single 'Rings' bucket sat -- immediately before
-  // Signets -- so the inventory keeps its weapons -> armour -> offhand -> jewelry reading order.
+  // Splice the per-subtype containers in AT the position each old single bucket occupied, so the inventory
+  // keeps its weapons -> armour -> offhand -> jewelry reading order. Each family is generated from the same
+  // type table its equip picker uses, so a new shield size / ward element / ring type appears here with no
+  // second place to update.
   (function(){
-    var at = INV_GROUPS.map(function(g){ return g.id; }).indexOf('r_signet');
-    var rows = RING_TYPES.map(function(rt){
-      // "Ring of Fires" reads badly, and a bare "Fire" is ambiguous next to Shields/Amulets -- so
-      // "Fire Rings", which is also the shape the ticket asked for ([Blunt] [Slash] [Pierce] [Fire]).
+    function spliceBefore(anchorId, rows){
+      var at = INV_GROUPS.map(function(g){ return g.id; }).indexOf(anchorId);
+      if(at === -1 || !rows.length) return;
+      INV_GROUPS.splice.apply(INV_GROUPS, [at, 0].concat(rows));
+    }
+    // Shields: Small / Medium / Large, in the order STACKABLE_SHIELD_TYPES declares them.
+    spliceBefore('shields', STACKABLE_SHIELD_TYPES.map(function(t){
+      return { id:'sh_'+t.id, label:t.name+'s', icon:t.icon };
+    }));
+    // Wards: one per element, each with that element's own icon -- the whole point of the split.
+    spliceBefore('wards', WARD_TYPES.map(function(t){
+      return { id:'wd_'+t.id, label:t.name+'s', icon:t.icon };
+    }));
+    // "Ring of Fires" reads badly, and a bare "Fire" is ambiguous next to Shields/Amulets -- so
+    // "Fire Rings", which is also the shape the ticket asked for ([Blunt] [Slash] [Pierce] [Fire]).
+    spliceBefore('r_signet', RING_TYPES.map(function(rt){
       return { id:'r_'+rt.id, label:rt.name.replace(/^Ring of /, '') + ' Rings', icon:rt.icon };
-    });
-    INV_GROUPS.splice.apply(INV_GROUPS, [at, 0].concat(rows));
+    }));
   })();
   var INV_GROUP_BY_ID = {}; INV_GROUPS.forEach(function(g){ INV_GROUP_BY_ID[g.id] = g; });
   // A unique item's kind -> its inventory container id (falls back to Weapons for any unmapped kind).
@@ -34241,8 +34260,14 @@
   function invGroupFor(id){
     if(id.indexOf('stweapon_')===0){ var m = /^stweapon_(.+)_t\d+_\w+$/.exec(id); return invWeaponFamily(m ? m[1] : ''); }
     if(id.indexOf('bodyarmor_')===0){ var am = /^bodyarmor_([^_]+)_/.exec(id); var mat = am ? am[1] : ''; return INV_GROUP_BY_ID['a_'+mat] ? 'a_'+mat : 'a_chain'; }
-    if(id.indexOf('stshield_')===0) return 'shields';
-    if(id.indexOf('stward_')===0) return 'wards';
+    if(id.indexOf('stshield_')===0){
+      var shm = /^stshield_([^_]+)_t\d+_\w+$/.exec(id);
+      return (shm && INV_GROUP_BY_ID['sh_'+shm[1]]) ? 'sh_'+shm[1] : 'shields';
+    }
+    if(id.indexOf('stward_')===0){
+      var wdm = /^stward_([^_]+)_t\d+_\w+$/.exec(id);
+      return (wdm && INV_GROUP_BY_ID['wd_'+wdm[1]]) ? 'wd_'+wdm[1] : 'wards';
+    }
     if(id.indexOf('stquiver_')===0) return 'quivers';
     if(id.indexOf('legcloak_')===0) return 'cloaks';
     // Legendary Signets share the ring slots but are their own container; plain rings go to their type's.
@@ -36891,7 +36916,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.73.0';
+  var GAME_VERSION = '0.0.73.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -37162,7 +37187,7 @@
       LEG_GREEDWYRM_PER_RELIC:LEG_GREEDWYRM_PER_RELIC, LEG_GREEDWYRM_RELIC_CAP:LEG_GREEDWYRM_RELIC_CAP, LEG_HOARDWALL_RELICS:LEG_HOARDWALL_RELICS,
       LEG_HOARDWALL_STRIKE_MULT:LEG_HOARDWALL_STRIKE_MULT, LEG_HOARDWALL_DR:LEG_HOARDWALL_DR, LEG_GOLDGORGE_PER_GOLD:LEG_GOLDGORGE_PER_GOLD,
       LEG_CRYPTGUARD_REFUND:LEG_CRYPTGUARD_REFUND, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, RELIC_ITEMS:RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, autoSacrificeItemsCheck:autoSacrificeItemsCheck, collectSacrificeRows:collectSacrificeRows, sacRowRestore:sacRowRestore, sacRowKey:sacRowKey, toggleAutoSacItem:toggleAutoSacItem, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,
-      RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
+      RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, STACKABLE_SHIELD_TYPES:STACKABLE_SHIELD_TYPES, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
       BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, OFFHAND_TYPE_RECIPES:OFFHAND_TYPE_RECIPES, getStackableQuiverTierData:getStackableQuiverTierData, STACKABLE_QUIVER_ITEMS:STACKABLE_QUIVER_ITEMS, isStackableQuiver:isStackableQuiver, getEquippedOffhandItem:getEquippedOffhandItem, getSpecialSkillId:getSpecialSkillId, WILDLIFE_NAMES:WILDLIFE_NAMES, quiverAmmoPreserve:quiverAmmoPreserve, bowArrowToConsume:bowArrowToConsume, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT, applyRarity:applyRarity, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, renderCombatStatsPanel:renderCombatStatsPanel, openAmountModal:openAmountModal, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
       DAMAGE_TYPES:DAMAGE_TYPES
     };

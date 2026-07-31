@@ -10176,7 +10176,21 @@
     eq(FF.invGroupFor('bodyarmor_tailoring_chest_t5_normal'),'a_tailoring','cloth -> Cloth Armor');
     eq(FF.invGroupFor('bodyarmor_leather_boots_t5_normal'), 'a_leather',   'leather -> Leather Armor');
     // Jewelry / offhands / tools each their own group; raw materials fall to the broad buckets.
-    eq(FF.invGroupFor('stshield_medium_t5_normal'), 'shields', 'shield -> Shields');
+    // Shields split by size and wards by element, matching their equip pickers.
+    eq(FF.invGroupFor('stshield_shieldMedium_t5_normal'), 'sh_shieldMedium', 'medium shield -> Medium Shields');
+    eq(FF.invGroupFor('stshield_shieldSmall_t0_normal'),  'sh_shieldSmall',  'small shield -> Small Shields');
+    eq(FF.invGroupFor('stward_wardFire_t5_rare'),         'wd_wardFire',     'fire ward -> Fire Wards');
+    // Unrecognised subtypes keep their catch-all rather than vanishing from the inventory entirely.
+    eq(FF.invGroupFor('stshield_medium_t5_normal'), 'shields', 'an unknown shield typeId falls back to Other Shields');
+    eq(FF.invGroupFor('stward_nosuch_t5_normal'),   'wards',   'an unknown ward typeId falls back to Other Wards');
+    FF.STACKABLE_SHIELD_TYPES.forEach(function(t){
+      ok(FF.INV_GROUPS.some(function(g){ return g.id === 'sh_' + t.id; }), 'a container exists for shield size ' + t.id);
+      eq(FF.invGroupFor('stshield_' + t.id + '_t3_normal'), 'sh_' + t.id, t.id + ' routes to its own container');
+    });
+    FF.WARD_TYPES.forEach(function(t){
+      ok(FF.INV_GROUPS.some(function(g){ return g.id === 'wd_' + t.id; }), 'a container exists for ward element ' + t.id);
+      eq(FF.invGroupFor('stward_' + t.id + '_t3_normal'), 'wd_' + t.id, t.id + ' routes to its own container');
+    });
     // Rings bucket PER TYPE now (ticket, Valuren) -- the single 'rings' bucket is gone.
     eq(FF.invGroupFor('ring_fire_t5_rare'),      'r_fire',      'fire ring -> Fire Rings');
     eq(FF.invGroupFor('ring_blunt_t0_normal'),   'r_blunt',     'blunt ring -> Blunt Rings');
