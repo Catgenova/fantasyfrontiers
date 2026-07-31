@@ -24886,6 +24886,12 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.72', date:'Jul 31', heading:'Accounts now lock after repeated failed sign-ins', items:[
+      'Someone was running a <b>password-spraying</b> attack against the login endpoint &mdash; guessing passwords against accounts in bulk. Nothing was breached, and no account data was touched, but until now there was nothing stopping the guessing itself.',
+      'Sign-ins are now <b>rate-limited per account</b>. Five wrong passwords within 15 minutes locks that account briefly, and each further lock lasts <b>twice as long as the last</b> &mdash; so a forgetful player waits about a minute, while somebody grinding one account for hours is quickly locked out for the rest of the day. The lock clears the moment you sign in successfully.',
+      'Two things worth knowing. While an account is locked, <b>even the correct password is refused</b> &mdash; that is deliberate, because otherwise an attacker who guesses right mid-lock still wins. And a single typo behaves exactly as it always has; you have to be well past a normal mistake before anything changes. If you ever do lock yourself out and cannot wait, ask an admin and we can clear it by hand.',
+      'The lock also pings the moderation channel, so we can see an attack on <i>many</i> accounts at once for what it is rather than mistaking it for one forgetful player.'
+    ]},
     { v:'0.0.72', date:'Jul 31', heading:'Consumable prep moved off the Enemies tab', items:[
       'The <b>Auto-Eat</b>, <b>Combat Potions</b> and <b>Feasts &amp; Snacks</b> panels were rendering on the <b>Enemies</b> tab as well as in the fight itself, pushing the actual foe list a screen down. They are now on the <b>Combat</b> tab only &mdash; which shows them whether or not a fight is running, so you still arm a potion and set your Auto-Eat threshold before you pick a target. Enemies is just the foe list now.'
     ]},
@@ -36683,7 +36689,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.72.5';
+  var GAME_VERSION = '0.0.72.6';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
