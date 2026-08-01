@@ -36,6 +36,56 @@ Rules:
 - Supabase edge functions / migrations under `supabase/` are deployed separately by the
   owner — flag it in your summary whenever a change touches them.
 
+## The combat stage (v0.0.77.0) — the one screen NOT on the tan chrome
+
+The fight is built on the painted UI set (`art/UI_orb_holder_*`, `Square_merged`, `Skill_set`,
+`Icon_circleframe_gold`, `Square_icons`, `UI - Skill Level Up - Border`) as a **dark stage** (`.ar2`) inset
+into the light Ivy Castle page. That is deliberate: the frames are gold-on-black and read as borrowed
+furniture on tan. Precedent is the top bar / rail, already dark via `--stone-dk`.
+
+- **Every content well was MEASURED from the art, not eyeballed** — transparent windows by flood-filling
+  alpha inward from the border, opaque wells by scanning centre lines for the longest dark run. The numbers
+  are in the CSS header comment. **Three frames are fully OPAQUE** (`Square_merged`, `Skill_set`,
+  `Square_icons`): no transparent window, so content layers ON TOP inset to the well. Put the fill behind
+  and the bar reads empty forever.
+- **HP orbs: the physics state lives OUTSIDE the DOM** (`_orbs`, keyed by side). The game rebuilds
+  `#content` up to 10x/sec and throws away every canvas, so an orb holding its own level restarts from full
+  each rebuild and sloshes forever. `orbTick()` is called from the main loop OUTSIDE the render/update
+  branch, because a full-render frame skips `updateDynamic()` entirely — that's how the fluid stays at 60fps
+  while the UI rebuilds at 10.
+- **Spring: k=20, damping=10 → zeta 1.118, OVERDAMPED.** For a health bar that is a requirement, not a
+  preference: underdamped overshoots and briefly shows HP the player does not have. A test asserts zeta > 1.
+- **A fresh foe must REFILL, never spring up.** Springing 0→1 reads as the enemy being healed, and in a
+  farming chain that's the animation seen most. Handled twice on purpose: `orbResetFoe()` in `defeatMonster`
+  (instant, at kill time) and a fight-signature check in `renderArena` (`monsterId + duelStartedAt`, stamped
+  by all five combat entry points) for paths that skip `defeatMonster` — retreat, then re-engage.
+- **Swing bars are HEIGHT-driven, not aspect-driven** (`--ar2-barh`, default 34px). At the art's native
+  2.85:1 one bar is ~150px tall, so a foe's swing clock + special charge would outgrow the plinth. Squashing
+  works because the frame is mostly horizontal rails — verified by rendering 151/72/56/46/38/30/24px; below
+  ~26px the label crowds the rails. **The same squash would wreck the ornate log border** (used as a
+  `border-image`, slice 150, so its corners keep native proportion at any panel height).
+- **Companions cap at SIX** (1 base + 5 from a fantastic staff, `STAFF_RARITY_FAMILIAR_SLOTS.fantastic`),
+  each with a cast clock and a pip row for its spell queue. A test seeds a DIFFERENT queue index per
+  companion, so a shared counter lights the same pip in all six and fails.
+- **The mini feed is a TAIL of the one `combatLog` ring buffer**, never a second log — one source of truth
+  means a line cannot appear in the Chat tab's Combat channel and not here.
+- **Tan-chrome panels go on a TRAY (`.ar2-tray`), not a re-skin.** The consumables strip and Auto-Eat panel
+  carry dozens of tan classes; restating each colour for the dark stage rots the next time either gains a row.
+- **`artcheck` covers the stage frames**, derived by scanning `index.html` for `art/` literals and fetched
+  over the dist server. It must read the **SOURCE**: scanning `dist/` finds only ONE, because the obfuscator
+  rewrites JS string literals and only the stylesheet's `url()` survives. **Consequence: keep every art path
+  in index.html a COMPLETE literal** — `'art/UI_orb_holder_' + side + '.png'` is invisible to the scan and
+  had left the two heaviest assets unchecked.
+- **`renderPatchNotes()` escapes `heading`** — headings are PLAIN TEXT, only `items` take HTML. An `&rsquo;`
+  in a heading ships as literal `&rsquo;` and fails "the notes lead with the newest release heading".
+
+**Known pre-existing bug found while doing this, NOT fixed (it is a balance decision):** `noAttack` is never
+set to `true` anywhere in the file. `STAFF_TYPE` has `staff:true` but no `noAttack`, so
+`getWeaponStyle('staff').noAttack === false` and the guard at the attack tick ("A Staff has no attack speed
+-- it never auto-attacks") never fires. Staves DO auto-attack every 5s (a fantastic top-tier staff rolls
+5,368–13,416 base), while the Arcanism tab text says a staff "deals no damage and never attacks". Setting the
+flag would change Summoner damage, so it needs the owner's call.
+
 ## Conventions
 
 - The whole game is one file: `index.html` (~28k-line inline script, ES5-style `var` +
