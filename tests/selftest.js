@@ -9928,6 +9928,46 @@
     } finally { S.log = save; }
   });
 
+  // ---- Painted class art: additive, per class, and never leaves a hole ------------------------------
+  suite('class art: the painted icons are additive only', function(){
+    var ids = Object.keys(FF.CLASS_ART);
+    ok(ids.length > 0, 'at least one class carries painted art');
+    // A typo in a key would silently do nothing forever, so every key must be a real class id and every
+    // path must live under art/ with the id in its filename.
+    ids.forEach(function(cid){
+      ok(!!FF.CLASS_DEFS_BY_ID[cid], 'CLASS_ART key "'+cid+'" is a real class id');
+      ok(/^art\/[a-zA-Z]+\.(png|webp)$/.test(FF.CLASS_ART[cid]), cid+' art path is a relative art/ file');
+      ok(FF.CLASS_ART[cid].indexOf(cid) !== -1, cid+' art filename matches its class id');
+    });
+    var ready = FF._classArtReady();
+    var cid0 = ids[0];
+    var svSt = ready[cid0];
+    try {
+      // NOT loaded (the suite runs headless, so nothing has decoded): every surface keeps its SVG.
+      delete ready[cid0];
+      eq(FF.classArtHtml(cid0), '', 'unloaded art contributes nothing');
+      var svg = FF.classPortraitFor(cid0);
+      ok(/^<svg/.test(svg), 'the leaderboard falls back to the authored SVG portrait');
+      var cd = FF.CLASS_DEFS_BY_ID[cid0];
+      eq(FF.classCardIcon(cd), cd.icon, 'the Classes card falls back to its small crest');
+      // LOADED: the same three surfaces swap to the painted icon.
+      ready[cid0] = true;
+      var art = FF.classArtHtml(cid0);
+      ok(/^<img /.test(art), 'loaded art renders an img');
+      ok(/class="game-icon cls-art"/.test(art), 'it carries .game-icon so every container sizes it already');
+      ok(art.indexOf(FF.CLASS_ART[cid0]) !== -1, 'and points at the declared file');
+      eq(FF.classPortraitFor(cid0), art, 'the leaderboard now shows the painted icon');
+      eq(FF.classCardIcon(cd), art, 'and so does the Classes card');
+      // A class with no art is untouched either way -- this is the "never leaves a hole" guarantee.
+      var other = FF.CLASS_DEFS.filter(function(c){ return !FF.CLASS_ART[c.id]; })[0];
+      if(other){
+        eq(FF.classArtHtml(other.id), '', 'a class without art contributes nothing');
+        ok(/^<svg/.test(FF.classPortraitFor(other.id)), 'and keeps its authored portrait');
+        eq(FF.classCardIcon(other), other.icon, 'and its card keeps its crest');
+      }
+    } finally { if(svSt === undefined) delete ready[cid0]; else ready[cid0] = svSt; }
+  });
+
   // ---- Tooltip coverage: every skill that renders a (?) info button must carry a SKILL_INFO blurb ---
   // (The info button only shows when SKILL_INFO[id] exists, so a missing entry silently drops the tooltip.)
   suite('skill info: every skill has a tooltip', function(){

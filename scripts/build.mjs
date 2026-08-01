@@ -128,6 +128,7 @@ writeFileSync(`${OUT_DIR}/.nojekyll`, "");                                  // s
 if (existsSync("tests")) cpSync("tests", `${OUT_DIR}/tests`, { recursive: true }); // keep ?selftest working
 if (existsSync("CNAME")) cpSync("CNAME", `${OUT_DIR}/CNAME`);               // preserve a custom domain if set
 if (existsSync("favicon.svg")) cpSync("favicon.svg", `${OUT_DIR}/favicon.svg`); // browser-tab icon (the crest logo)
+if (existsSync("art")) cpSync("art", `${OUT_DIR}/art`, { recursive: true });     // painted class icons (see art/README.md)
 
 // Note: supabase/ (backend source) is intentionally NOT copied, so the edge-function source stops
 // being served from the Pages site.

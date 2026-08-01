@@ -663,6 +663,9 @@
   .item-top{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
   .item-icon{font-size:26px;line-height:1;}
   .game-icon{width:1em;height:1em;vertical-align:-0.15em;flex-shrink:0;display:inline-block;}
+  /* Painted class art (art/*.png). Sized by whichever container it lands in -- every one of them already
+     declares `svg,.game-icon` together -- so this only has to shape and crop it. */
+  .cls-art{border-radius:50%;object-fit:cover;}
   /* Familiar companion avatars: sized per context, flat skill icons elsewhere are unaffected.
      The base size doubles as a safety net so an avatar embedded in flowing text (chronicle log,
      chat) can never balloon to fill its container. Bigger contexts below override it. */
@@ -21863,14 +21866,46 @@
   // Hand-crafted hero portraits, one per Class (keyed by class id) plus a 'none' adventurer for when no
   // class is active. Same circular-framed style as the enemy portraits. Authored below.
   var CLASS_PORTRAITS = {};
-  // Player avatar for the combat arena: the active Class's hero portrait, else the no-class adventurer.
+  // ===== PAINTED CLASS ART (commissioned raster icons) =====
+  // A class listed here shows its painted icon wherever its portrait or card crest would appear; every other
+  // class keeps its authored SVG, so the rollout is per-class and never leaves a hole in the UI.
+  //
+  // Files live in art/ and are copied into the Pages build by scripts/build.mjs. Paths are RELATIVE so the
+  // game works from the custom domain root, a Pages subpath, and ?selftest alike.
+  //
+  // WHY A PRELOAD PROBE instead of an <img onerror> fallback: this file has no inline event handlers anywhere
+  // (every interaction is delegated off data-action), and an onerror attribute would be the first. More
+  // importantly the failure mode is better -- a missing or misnamed file simply never flips its flag, so the
+  // class keeps its existing SVG portrait forever with no broken-image glyph in three separate screens. The
+  // art only ever ADDS; it cannot subtract.
+  var CLASS_ART = {
+    assassin: 'art/assassin.png'
+  };
+  var classArtReady = {};   // class id -> true once the file has actually decoded
+  function classArtPreload(){
+    Object.keys(CLASS_ART).forEach(function(cid){
+      var im = new Image();
+      im.onload = function(){ classArtReady[cid] = true; needsRender = true; }; // repaint so it swaps in live
+      im.src = CLASS_ART[cid];
+    });
+  }
+  // The painted icon for a class, or '' if there isn't one (or it hasn't loaded). Carries .game-icon so it
+  // inherits the sizing every container already declares for `svg,.game-icon` -- 104px in the arena, 24px on
+  // a leaderboard row, 1em on a class card -- which is why this needs no per-site CSS.
+  function classArtHtml(cid){
+    return (cid && classArtReady[cid]) ? '<img class="game-icon cls-art" src="'+CLASS_ART[cid]+'" alt="">' : '';
+  }
+  // Player avatar for the combat arena: the active Class's painted icon, else its hero portrait, else the
+  // no-class adventurer.
   function playerPortrait(){
     var cid = activeClassId(state);
-    return (cid && CLASS_PORTRAITS[cid]) || CLASS_PORTRAITS.none || svgIcon('person','#5a6a8a');
+    return classArtHtml(cid) || (cid && CLASS_PORTRAITS[cid]) || CLASS_PORTRAITS.none || svgIcon('person','#5a6a8a');
   }
   // Hero portrait for a given Class id (used by the leaderboard for every player); the no-class
-  // adventurer when the id is null/unknown. Same hand-crafted art as the combat arena.
-  function classPortraitFor(cid){ return (cid && CLASS_PORTRAITS[cid]) || CLASS_PORTRAITS.none || svgIcon('person','var(--text-faint)'); }
+  // adventurer when the id is null/unknown. Same art as the combat arena.
+  function classPortraitFor(cid){ return classArtHtml(cid) || (cid && CLASS_PORTRAITS[cid]) || CLASS_PORTRAITS.none || svgIcon('person','var(--text-faint)'); }
+  // The crest on a Classes-tab card: the painted icon when the class has one, else its small authored crest.
+  function classCardIcon(cd){ return (cd && classArtHtml(cd.id)) || (cd && cd.icon) || ''; }
   // Hand-crafted enemy portraits, keyed by monster name (authored per category). Any enemy without a
   // bespoke portrait yet falls back to its category icon, so the screen never breaks mid-rollout.
   // Each is a self-contained 100x100 SVG (no <defs>/ids, so many can render at once on the selection
@@ -25202,6 +25237,10 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.76', date:'Aug 1', heading:'The Assassin has a face', items:[
+      'The first commissioned <b>character icon</b> is in: the <b>Assassin</b>. It replaces the placeholder portrait in three places &mdash; the <b>Classes</b> tab card, the <b>Combat</b> arena while you are an Assassin, and every <b>Leaderboard</b> row belonging to one.',
+      'The other 23 classes keep their current portraits for now. Each one is swapped in as its art is finished, so expect faces to appear a class at a time.'
+    ]},
     { v:'0.0.75', date:'Jul 31', heading:'A failed forge now tells you what it cost', items:[
       'Reported: a freshly forged ring was not counting toward the next tier &mdash; the Chronicle said &ldquo;You forged Cobalt Ring of Blunt&rdquo;, and moments later the next tier up read &ldquo;Cobalt Ring of Blunt (0 owned)&rdquo;.',
       'The count was right and the ring really was gone. A forge spends its materials <b>before</b> rolling for success, so a failed forge destroys them &mdash; and a failure was writing nothing to the Chronicle at all, just a small toast that fades in a second. With a tier ladder, the material destroyed is the previous-tier piece you built by hand, which is why it looked like the game had stopped counting.',
@@ -25722,7 +25761,7 @@
       var fam = FAMILIAR_DATA[cd.id];
       var famOwned = state.familiars[cd.id] && state.familiars[cd.id].owned;
       html += '<div class="item-card'+(active?' active-item':'')+'" style="margin-top:12px">';
-      html += '<div class="item-top"><div class="item-icon">'+cd.icon+'</div><div><div class="item-name">'+cd.name+(active?' &bull; <span style="color:var(--gold)">ACTIVE</span>':'')+'</div><div class="item-meta">Class Level '+lvl+' &bull; '+(active?'Earning XP from combat':'Dormant &mdash; gear not equipped')+'</div></div></div>';
+      html += '<div class="item-top"><div class="item-icon">'+classCardIcon(cd)+'</div><div><div class="item-name">'+cd.name+(active?' &bull; <span style="color:var(--gold)">ACTIVE</span>':'')+'</div><div class="item-meta">Class Level '+lvl+' &bull; '+(active?'Earning XP from combat':'Dormant &mdash; gear not equipped')+'</div></div></div>';
       html += '<div class="chance-line">'+cd.blurb+'</div>';
       html += '<div class="progress-track"><div class="progress-fill" style="width:'+pct+'%"></div></div>';
       // Gear requirement -- each piece shows met (gold) or missing (dim).
@@ -37359,7 +37398,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.75.1';
+  var GAME_VERSION = '0.0.76.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -37435,6 +37474,7 @@
     profileSync(true); leaderboardFetch(true); walletSync(true); itemSync(true);
     dungeonSyncClears();              // seed the server's clear ledger from this save (see dungeonSyncClears)
     scheduleUpdateChecks();           // hard-refresh tabs the moment a new build ships to main
+    classArtPreload();                // painted class icons swap in as they decode (see CLASS_ART)
     if(pathSelectNeeded()) renderPathSelect();   // brand-new account: pick Immortal vs Mortal before playing
   }
   (async function onlineBoot(){
@@ -37519,6 +37559,8 @@
       estateEnqueueOrStart:estateEnqueueOrStart, _setCloudFenced:function(v){ cloudFenced = !!v; }, _cloudFenced:function(){ return cloudFenced; },
       combatLogPush:combatLogPush, combatLogLineHtml:combatLogLineHtml, _combatLog:function(){ return combatLog; },
       craftLadderInputName:craftLadderInputName, logForgeFailure:logForgeFailure,
+      CLASS_ART:CLASS_ART, classArtHtml:classArtHtml, classCardIcon:classCardIcon, classPortraitFor:classPortraitFor,
+      _classArtReady:function(){ return classArtReady; },
       estateQueuedJobValid:estateQueuedJobValid, estateIsWater:estateIsWater, fieldGrowthMult:fieldGrowthMult,
       chatPartyCodeHtml:chatPartyCodeHtml, chatBodyHtml:chatBodyHtml,
       applyEstateJobCompletion:applyEstateJobCompletion, estateJobMaterials:estateJobMaterials,
