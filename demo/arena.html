@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Combat arena — mock</title>
+<!--
+  MOCK ONLY. Not wired into index.html, not copied into dist/ by scripts/build.mjs, nothing here reaches
+  players. Serve the repo root (`python3 -m http.server`) and open /demo/arena.html, or use the generated
+  self-contained copy: npm run demo:arena  ->  demo/arena_standalone.html
+
+  EVERY FRAME'S CONTENT WELL WAS MEASURED FROM THE ART, not eyeballed. Transparent windows were found by
+  flood-filling alpha inward from the border; opaque wells by scanning centre lines for the longest
+  contiguous dark run. Numbers are CSS percentages of each asset's own box:
+
+    UI_orb_holder_LEFT/RIGHT  ring at left 57.71% / 6.35%, top 55.57%, ~36% square   HP orbs
+    Icon_circleframe_gold     left 10.00%  top 10.00%  80.30% x 80.30%   (circle)     portraits
+    Square_merged             left  8.37%  top 21.48%  82.30% x 49.61%                swing bars
+    Skill_set                 left  4.39%  top 35.35%  91.22% x 26.95%                name plates
+    Square_icons              left  1.37%  top  8.01%  97.27% x 83.98%                familiar slots
+    Skill Level Up Border     border-image, slice 150                                 mini log
+
+  THE TWO ORB HOLDERS ARE A MIRRORED PAIR, not two copies. Each is a 1024 square whose art occupies only
+  y 46.88%..100% (content aspect 1.882): a figure on the OUTER side, the gold ring on the INNER side. So they
+  are cropped to that aspect and butted together with no gap -- the pair then reads as one plinth with the two
+  orbs facing each other across the centre line, which is how the art is drawn. Sized apart, as the first
+  pass had them, the figures drift to the screen edges and the composition falls apart.
+
+  THREE OF THESE FRAMES ARE FULLY OPAQUE (Square_merged, Skill_set, Square_icons) -- there is no transparent
+  window to show content through, so their content layers ON TOP, inset to the measured well. Learned by
+  rendering: with the swing fill behind the frame, the bar always read empty.
+
+  The HP orbs use the slosh verbatim from demo/orb.html: damped spring on the level, velocity driving a
+  surface tilt and a decaying slosh amplitude, both scaled by the size of the HP change. Stiffness 20 /
+  damping 10 per the owner's call -- overdamped (zeta 1.12), so the level glides without dipping past target.
+  Fluid colour is SAMPLED from UI_orb_red.png rather than drawing it; that PNG is a colour reference, and
+  blitting the sphere dragged its baked speculars down with the level. Gloss lives on the glass layer.
+-->
+<style>
+  :root{
+    /* Palette sampled from the art: dark metal, the gold bevel, the teal edge on the buttons. */
+    --bg:#0e0c0a; --ink:#e8dcc0; --dim:#9a8f78;
+    --gold:#ddbb66; --gold-deep:#bb9944;
+    --teal:#3fc9c4; --hp:#f8700a;
+    --side:430px;                       /* one combatant's column: plinth, name plate and swing bar all match */
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:
+      radial-gradient(1200px 520px at 50% -8%, #241d16 0%, transparent 70%),
+      var(--bg);
+    color:var(--ink); font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap{ max-width:1000px; margin:0 auto; padding:14px 14px 40px; }
+  h1{ font-size:15px; margin:0 0 2px; color:var(--gold); letter-spacing:.04em; text-transform:uppercase; }
+  .sub{ font-size:12px; opacity:.55; margin-bottom:16px; }
+
+  /* ============================== the arena ============================== */
+  /* --- top row: portrait + name plate + swing bar, mirrored per side --- */
+  .combatants{ display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start; }
+  /* Each side is capped at the plinth's width and pushed toward the CENTRE, so the header cluster sits
+     directly over its own orb instead of drifting out to the viewport edges. */
+  .side{ width:100%; max-width:var(--side); display:grid; grid-template-columns:auto 1fr; gap:10px;
+         align-items:start; margin-left:auto; }
+  .side.enemy{ grid-template-columns:1fr auto; margin-left:0; margin-right:auto; }
+  .side.enemy .meta{ order:-1; text-align:right; }
+
+  /* Portrait: the gold ring frame with the art inside its measured circular window. */
+  .portrait{ position:relative; width:88px; height:88px; }
+  .portrait .pf{ position:absolute; inset:0; width:100%; height:100%; z-index:2; pointer-events:none; }
+  .portrait .pinner{ position:absolute; left:10%; top:10%; width:80.3%; height:80.3%;
+                     border-radius:50%; overflow:hidden; background:#120e0b; z-index:1; }
+  .portrait .pinner img, .portrait .pinner svg{ display:block; width:100%; height:100%; }
+  /* A hit flashes the frame rather than the whole card -- reads at a glance without being noisy. */
+  .portrait.hit .pf{ filter:drop-shadow(0 0 7px #ff5a3c) brightness(1.25); }
+
+  .meta{ min-width:0; }
+
+  /* Name plate: Skill_set is a 1024x512 canvas whose plate occupies only y 33.40%..66.60%, so the wrapper
+     takes the PLATE's aspect (6.02:1) and the image is pulled up by the plate's own offset. The shift is a
+     percentage MARGIN, which resolves against the wrapper's WIDTH -- `top` would resolve against its height
+     and land nowhere near. Offset = 33.40% of the image height, and the image is half as tall as it is
+     wide, hence 16.70%. */
+  .plate{ position:relative; width:100%; aspect-ratio:1024/170; overflow:hidden; }
+  .plate > img{ position:absolute; left:0; top:0; width:100%; height:auto; margin-top:-16.70%;
+                z-index:1; pointer-events:none; }
+  .plate .pin{ position:absolute; left:4.39%; top:5.87%; width:91.22%; height:81.20%; z-index:2;
+               display:flex; align-items:center; gap:8px; padding:0 10px; min-width:0; }
+  .side.enemy .plate .pin{ justify-content:flex-end; }
+  .nm{ font-family:Georgia,serif; font-size:16px; color:var(--gold); white-space:nowrap;
+       overflow:hidden; text-overflow:ellipsis; }
+  .sub2{ font-size:11px; color:var(--dim); white-space:nowrap; flex:0 0 auto; }
+
+  /* Swing bar: the Square_merged frame with a fill inside its measured well. */
+  .swing{ position:relative; width:100%; aspect-ratio:729/256; margin-top:4px; }
+  .swing > img{ position:absolute; inset:0; width:100%; height:100%; z-index:1; pointer-events:none; }
+  .swing .track{ position:absolute; left:8.37%; top:21.48%; width:82.30%; height:49.61%;
+                 z-index:2; overflow:hidden; border-radius:3px; }
+  .swing .fill{ position:absolute; inset:0; width:0%;
+                background:linear-gradient(180deg,#ffd88a 0%,var(--gold) 34%,var(--gold-deep) 72%,#8a6a22 100%);
+                box-shadow:0 0 10px rgba(255,200,90,.45) inset; }
+  .swing.enemy .fill{ background:linear-gradient(180deg,#ff9a7a 0%,#e2503a 36%,#a8281c 76%,#6a1410 100%);
+                      box-shadow:0 0 10px rgba(255,110,80,.4) inset; }
+  /* A sheen sweeping the filled part -- the "charging" read, cheap on the compositor. */
+  .swing .sheen{ position:absolute; top:0; bottom:0; width:38%; opacity:.5;
+                 background:linear-gradient(90deg,transparent,rgba(255,255,255,.65),transparent);
+                 animation:sweep 1.5s linear infinite; }
+  @keyframes sweep{ from{ transform:translateX(-120%); } to{ transform:translateX(360%); } }
+  .swing .lbl{ position:absolute; left:8.37%; top:21.48%; width:82.30%; height:49.61%; z-index:3;
+               display:flex; align-items:center; justify-content:center; gap:7px;
+               font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+               color:#fff; text-shadow:0 1px 2px #000,0 0 6px #000; pointer-events:none; }
+
+  /* --- the plinth pair + HP orbs --- */
+  /* No gap and no justify space: the two crops butt together at the centre line so the mirrored art joins. */
+  .orbs{ display:flex; justify-content:center; align-items:flex-end; margin-top:-2px; }
+  .orb-crop{ position:relative; width:50%; max-width:var(--side); aspect-ratio:1024/544; overflow:hidden; }
+  /* The holder is a 1024 SQUARE with art only in its bottom 53.1%, so the square is anchored to the crop's
+     foot and the empty top is what gets clipped. */
+  .orb{ position:absolute; bottom:0; left:0; width:100%; aspect-ratio:1; }
+  .orb-holder{ position:absolute; inset:0; width:100%; height:100%; z-index:4; pointer-events:none; }
+  .orb-glass{ position:absolute; z-index:3; pointer-events:none; }
+  .orb-liquid{ position:absolute; z-index:1; clip-path:circle(50% at 50% 50%); border-radius:50%; }
+  .orb.left  .orb-liquid, .orb.left  .orb-glass{ left:57.71%; top:55.57%; width:36.13%; height:35.84%; }
+  .orb.right .orb-liquid, .orb.right .orb-glass{ left:6.35%;  top:55.57%; width:35.84%; height:36.04%; }
+  .orb-liquid canvas, .orb-glass{ display:block; width:100%; height:100%; }
+  .hp-num{ position:absolute; z-index:5; top:55.57%; height:35.84%; display:flex; flex-direction:column;
+           align-items:center; justify-content:center; pointer-events:none; }
+  .orb.left  .hp-num{ left:57.71%; width:36.13%; }
+  .orb.right .hp-num{ left:6.35%;  width:35.84%; }
+  .hp-num b{ font-size:15px; color:#fff; text-shadow:0 1px 3px #000,0 0 9px #000,0 0 3px #000; }
+  .hp-num span{ font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:#ffd9a0;
+                text-shadow:0 1px 3px #000,0 0 6px #000; }
+
+  /* Square_bottombar is a thin decorative lip (632x54). Full-bleed it renders 90px tall and swamps the
+     panel, so it is used at a fixed narrow width as the rule between the arena and the lower row. */
+  .divider{ width:100%; max-width:460px; margin:14px auto 16px; }
+  .divider img{ display:block; width:100%; height:auto; }
+
+  /* --- bottom: familiars, mini log, actions --- */
+  /* Named areas rather than source order: on desktop the left column stacks companions over the action
+     buttons (which is what fills the space beside the log), while on narrow screens the log has to come
+     BEFORE the buttons. Source order can only satisfy one of those. */
+  .lower{ display:grid; gap:16px 16px; align-items:start;
+          grid-template-columns:auto 1fr; grid-template-rows:auto 1fr;
+          grid-template-areas:"fams log" "acts log"; }
+  .col-fams{ grid-area:fams; } .col-log{ grid-area:log; } .actions{ grid-area:acts; }
+  .colhead{ font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--dim); margin-bottom:7px; }
+
+  .fams{ display:flex; gap:8px; }
+  .fam{ position:relative; width:62px; height:62px; margin-bottom:16px; }
+  .fam > img{ position:absolute; inset:0; width:100%; height:100%; z-index:2; pointer-events:none; }
+  .fam .fslot{ position:absolute; left:1.37%; top:8.01%; width:97.27%; height:83.98%; z-index:1;
+               display:flex; align-items:center; justify-content:center; overflow:hidden; border-radius:8px;
+               background:radial-gradient(circle at 50% 35%, #2a2118 0%, #14100c 100%); }
+  .fam .fslot svg{ width:74%; height:74%; }
+  /* Cast clock: a thin bar across the slot's foot, so a familiar's 10s cadence is visible at a glance. */
+  .fam .cast{ position:absolute; left:12%; bottom:9%; width:76%; height:4px; z-index:3;
+              background:#0c0a08; border:1px solid #3a2f20; border-radius:2px; overflow:hidden; }
+  .fam .cast i{ display:block; height:100%; width:0%; background:linear-gradient(90deg,#3fc9c4,#8fe6e2); }
+  .fam.fired .fslot{ box-shadow:0 0 12px 2px rgba(63,201,196,.6) inset; }
+  .fam .fname{ position:absolute; left:0; right:0; bottom:-15px; text-align:center; font-size:9px;
+               color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* Mini log -- where the floating combat text now lands. The border art is 2606x1816 (1.43:1); stretching
+     that into a wide short box mangles its corner ornaments, so it is used as a BORDER-IMAGE: the slice
+     keeps corners at native proportion, only the straight edges scale, and the panel is free to be any
+     height. That is why the log is the one frame here NOT driven by a measured well. */
+  .logframe{ position:relative; width:100%; height:200px;
+             border:28px solid transparent; border-radius:14px;
+             border-image:url('../art/UI - Skill Level Up - Border.png') 150 fill stretch; }
+  .loginner{ position:absolute; inset:0; overflow:hidden; border-radius:6px;
+             background:linear-gradient(180deg,#141009 0%,#0d0a07 100%);
+             padding:6px 10px; display:flex; flex-direction:column; justify-content:flex-end; }
+  .lrow{ font-size:12px; line-height:1.5; animation:rise .28s ease-out;
+         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  @keyframes rise{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
+  .lrow .t{ color:#6b6154; font-variant-numeric:tabular-nums; margin-right:6px; font-size:10.5px; }
+  /* PREFIXED deliberately: an unprefixed `.fam` row modifier collided with the familiar-slot rule
+     `.fam{width:62px;height:62px}` and crushed every companion line into a 62px box. */
+  .lrow.l-out{ color:#e8c98a; } .lrow.l-crit{ color:#ffcf5a; font-weight:700; }
+  .lrow.l-in{ color:#e07a6a; } .lrow.l-dot{ color:#c98ad8; } .lrow.l-fam{ color:#7fd9d4; }
+  .lrow.l-miss{ color:#7a7266; font-style:italic; } .lrow.l-sys{ color:#b8e08a; }
+
+  .actions{ display:flex; flex-wrap:wrap; gap:8px; align-content:flex-start; }
+  /* The button plate is 512x108 sitting in the vertical middle of a 512-square canvas (y 39.26%..60.35%).
+     Same crop trick as the name plate, and the same reason for a margin rather than a `top`. */
+  .btn{ position:relative; width:148px; aspect-ratio:512/108; border:0; background:none; padding:0;
+        cursor:pointer; font:inherit; color:var(--ink); overflow:hidden;
+        display:flex; align-items:center; justify-content:center; }
+  .btn img{ position:absolute; left:0; top:0; width:100%; height:auto; margin-top:-39.26%; }
+  .btn span{ position:relative; z-index:2; font-size:12px; font-weight:700; letter-spacing:.05em;
+             text-transform:uppercase; text-shadow:0 1px 2px #000; }
+  .btn:hover span{ color:#fff; } .btn:hover img{ filter:brightness(1.25); }
+
+  /* ===================== mock controls (not part of the design) ===================== */
+  .ctl{ margin-top:26px; padding:12px 14px; background:#1a1610; border:1px dashed #3a3226; border-radius:8px; }
+  .ctl h2{ font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim); margin:0 0 8px; }
+  .ctl button{ background:#332b20; color:var(--ink); border:1px solid #4d422f; border-radius:5px;
+               padding:6px 10px; cursor:pointer; font:inherit; font-size:12.5px; margin:0 6px 6px 0; }
+  .ctl button:hover{ border-color:var(--gold); }
+  .ctl label{ font-size:12px; opacity:.85; margin-right:14px; }
+
+  @media (max-width:860px){
+    /* Stacked, the mirrored pair no longer joins, so each plinth simply centres on its own row. */
+    .combatants{ grid-template-columns:1fr; gap:10px; }
+    .side, .side.enemy{ max-width:none; margin:0; }
+    .orbs{ flex-direction:column; align-items:center; }
+    .orb-crop{ width:100%; max-width:var(--side); }
+    .lower{ grid-template-columns:1fr; grid-template-rows:auto auto auto;
+            grid-template-areas:"fams" "log" "acts"; }
+    .fams{ flex-wrap:wrap; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Combat arena — mock</h1>
+  <div class="sub">Left orb is player HP, right orb is the foe. Every frame is the delivered art with its
+  content placed in a measured well. Nothing here is wired into the game.</div>
+
+  <div class="arena">
+    <!-- ---------- portraits, name plates, swing bars ---------- -->
+    <div class="combatants">
+      <div class="side player">
+        <div class="portrait" id="pPortrait">
+          <div class="pinner"><img src="../art/assassin.png" alt=""></div>
+          <img class="pf" src="../art/Icon_circleframe_gold (1).png" alt="">
+        </div>
+        <div class="meta">
+          <div class="plate">
+            <img src="../art/Skill_set.png" alt="">
+            <div class="pin"><span class="nm">Catgenova</span><span class="sub2">Assassin &middot; Lv 87</span></div>
+          </div>
+          <div class="swing" id="pSwing">
+            <div class="track"><div class="fill"><div class="sheen"></div></div></div>
+            <img src="../art/Square_merged (2).png" alt="">
+            <div class="lbl">Twin Fangs <span id="pSwingT">1.8s</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="side enemy">
+        <div class="meta">
+          <div class="plate">
+            <img src="../art/Skill_set.png" alt="">
+            <div class="pin"><span class="sub2">Tier 1 &middot; Beast</span><span class="nm">Rabbit</span></div>
+          </div>
+          <div class="swing enemy" id="eSwing">
+            <div class="track"><div class="fill"><div class="sheen"></div></div></div>
+            <img src="../art/Square_merged (2).png" alt="">
+            <div class="lbl">Nibble <span id="eSwingT">2.4s</span></div>
+          </div>
+        </div>
+        <div class="portrait" id="ePortrait">
+          <div class="pinner" id="eArt"></div>
+          <img class="pf" src="../art/Icon_circleframe_gold (1).png" alt="">
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- the plinth pair: player HP left, foe HP right ---------- -->
+    <div class="orbs">
+      <div class="orb-crop"><div class="orb left" id="orbP">
+        <div class="orb-liquid"><canvas></canvas></div>
+        <img class="orb-glass" src="../art/UI_orb_transparent.png" alt="">
+        <img class="orb-holder" src="../art/UI_orb_holder_LEFT.png" alt="">
+        <div class="hp-num"><b></b><span>health</span></div>
+      </div></div>
+      <div class="orb-crop"><div class="orb right" id="orbE">
+        <div class="orb-liquid"><canvas></canvas></div>
+        <img class="orb-glass" src="../art/UI_orb_transparent.png" alt="">
+        <img class="orb-holder" src="../art/UI_orb_holder_RIGHT.png" alt="">
+        <div class="hp-num"><b></b><span>foe</span></div>
+      </div></div>
+    </div>
+
+    <div class="divider"><img src="../art/Square_bottombar (1).png" alt=""></div>
+
+    <!-- ---------- familiars + mini log ---------- -->
+    <div class="lower">
+      <div class="col-fams">
+        <div class="colhead">Companions</div>
+        <div class="fams" id="fams"></div>
+      </div>
+      <div class="col-log">
+        <div class="colhead">Combat feed</div>
+        <div class="logframe"><div class="loginner" id="log"></div></div>
+      </div>
+      <div class="actions">
+        <button class="btn"><img src="../art/Black_button.png" alt=""><span>Flee</span></button>
+        <button class="btn"><img src="../art/Black_button2.png" alt=""><span>Auto-eat</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="ctl">
+    <h2>Mock controls — not part of the design</h2>
+    <button data-act="fight">toggle auto-fight</button>
+    <button data-act="hit">player takes a hit</button>
+    <button data-act="crit">player crits the foe</button>
+    <button data-act="big">foe crits YOU (−35%)</button>
+    <button data-act="kill">kill the foe (next spawns)</button>
+    <button data-act="heal">full heal</button>
+    <label><input type="checkbox" id="darken" checked> darken orbs at low HP</label>
+  </div>
+</div>
+
+<script>
+(function(){
+  /* ===================== HP orb: the slosh, verbatim from demo/orb.html =====================
+     Colours SAMPLED from art/UI_orb_red.png (speculars excluded). That PNG is a colour reference, not a
+     texture: drawing the sphere dragged its baked highlights down with the level, and the gloss belongs to
+     the glass layer that sits still on top. */
+  var DPR = Math.min(2, window.devicePixelRatio || 1);
+  var K = 20, DAMP = 10, SLOSH = 14;               // owner's call; zeta 1.12, overdamped
+  var LIQ_DEEP = [200,13,14], LIQ_MID = [252,107,7], LIQ_TOP = [255,172,56];
+  var LOW_HP_DARKEN = true;
+  function mixRGB(c,f){ return 'rgb('+Math.round(c[0]*f)+','+Math.round(c[1]*f)+','+Math.round(c[2]*f)+')'; }
+
+  function Orb(el){
+    this.el = el; this.cv = el.querySelector('canvas'); this.ctx = this.cv.getContext('2d');
+    this.num = el.querySelector('.hp-num b');
+    this.lvl = 1; this.target = 1; this.vel = 0; this.slosh = 0; this.tilt = 0; this.bubbles = []; this.t = 0;
+    this.resize();
+  }
+  Orb.prototype.resize = function(){
+    var r = this.cv.getBoundingClientRect();
+    this.w = Math.max(1, Math.round(r.width)); this.h = Math.max(1, Math.round(r.height));
+    this.cv.width = this.w*DPR; this.cv.height = this.h*DPR;
+    this.ctx.setTransform(DPR,0,0,DPR,0,0);
+  };
+  Orb.prototype.impulse = function(d){
+    var mag = Math.abs(d);
+    this.vel += (d<0?-1:1)*mag*2.2;
+    this.slosh = Math.min(1, this.slosh + mag*2.6);
+    for(var i=0;i<Math.round(mag*26);i++) this.spawnBubble(true);
+  };
+  Orb.prototype.spawnBubble = function(fast){
+    this.bubbles.push({ x:Math.random(), y:0, r:0.012+Math.random()*0.030,
+                        v:(fast?0.55:0.20)+Math.random()*0.30, wob:Math.random()*6.28 });
+  };
+  Orb.prototype.step = function(dt){
+    this.t += dt;
+    this.vel += ((this.target-this.lvl)*K - this.vel*DAMP)*dt;
+    this.lvl += this.vel*dt;
+    if(this.lvl<0){ this.lvl=0; this.vel*=-0.35; }
+    if(this.lvl>1){ this.lvl=1; this.vel*=-0.35; }
+    this.tilt += (this.vel*0.55 - this.tilt)*Math.min(1, dt*9);
+    this.slosh *= Math.exp(-dt*2.3);
+    if(Math.random() < dt*7) this.spawnBubble(false);
+    for(var i=this.bubbles.length-1;i>=0;i--){ var b=this.bubbles[i]; b.y+=b.v*dt; if(b.y>1) this.bubbles.splice(i,1); }
+    this.draw();
+  };
+  Orb.prototype.surfaceY = function(px, level){
+    var w=this.w,h=this.h,x=px/w;
+    var amp = h*(0.010 + this.slosh*(SLOSH/1000));
+    var y = (1-level)*h;
+    y += Math.sin(this.t*2.4 + x*7.0)*amp;
+    y += Math.sin(this.t*3.9 - x*11.0 + 1.3)*amp*0.55;
+    y += (x-0.5)*this.tilt*h*0.42;
+    return y;
+  };
+  Orb.prototype.draw = function(){
+    var c=this.ctx,w=this.w,h=this.h;
+    c.clearRect(0,0,w,h);
+    var back=c.createLinearGradient(0,0,0,h); back.addColorStop(0,'#1d0d0c'); back.addColorStop(1,'#0e0707');
+    c.fillStyle=back; c.fillRect(0,0,w,h);
+    if(this.lvl > 0.002){
+      c.save();
+      c.beginPath(); c.moveTo(0,h);
+      for(var x=0;x<=w;x+=3) c.lineTo(x, this.surfaceY(x,this.lvl));
+      c.lineTo(w,h); c.closePath(); c.clip();
+      var top=(1-this.lvl)*h;
+      var f = LOW_HP_DARKEN ? (0.46 + 0.54*Math.min(1,this.lvl/0.55)) : 1;
+      var lg=c.createLinearGradient(0,top,0,h);
+      lg.addColorStop(0,   mixRGB(LIQ_TOP, f));
+      lg.addColorStop(0.16,mixRGB(LIQ_MID, f));
+      lg.addColorStop(0.55,mixRGB(LIQ_MID, f*0.82));
+      lg.addColorStop(1,   mixRGB(LIQ_DEEP,f*0.88));
+      c.fillStyle=lg; c.fillRect(0,0,w,h);
+      for(var i=0;i<this.bubbles.length;i++){
+        var b=this.bubbles[i];
+        var by=h-b.y*(this.lvl*h), bx=b.x*w+Math.sin(this.t*3+b.wob)*w*0.03;
+        var fade=Math.min(1,(1-b.y)*3);
+        c.beginPath(); c.arc(bx,by,b.r*w*(0.6+b.y*0.5),0,6.2832);
+        c.fillStyle='rgba(255,225,200,'+(0.26*fade)+')'; c.fill();
+      }
+      c.restore();
+      c.beginPath();
+      for(var x2=0;x2<=w;x2+=3){ var sy=this.surfaceY(x2,this.lvl); if(x2===0) c.moveTo(x2,sy); else c.lineTo(x2,sy); }
+      c.strokeStyle='rgba(255,220,190,0.80)'; c.lineWidth=Math.max(1,h*0.013); c.stroke();
+    }
+  };
+
+  /* ===================== the mock fight ===================== */
+  var K_ = '#141210';
+  function eye(cx,cy,r,ir,c){ return '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="#fff"/><circle cx="'+cx+'" cy="'+cy+'" r="'+ir+'" fill="'+(c||K_)+'"/>'; }
+  // The Rabbit, lifted from MONSTER_PORTRAITS in index.html so the mock uses the game's own enemy art.
+  var RABBIT = '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">'
+    + '<circle cx="50" cy="50" r="47" fill="#c8d2dc" stroke="'+K_+'" stroke-width="2.5"/>'
+    + '<ellipse cx="34" cy="26" rx="7" ry="20" fill="#d8dee6" stroke="'+K_+'" stroke-width="2"/><ellipse cx="34" cy="27" rx="3" ry="14" fill="#e9b9c4"/>'
+    + '<ellipse cx="60" cy="24" rx="7" ry="20" fill="#d8dee6" stroke="'+K_+'" stroke-width="2"/><ellipse cx="60" cy="25" rx="3" ry="14" fill="#e9b9c4"/>'
+    + '<ellipse cx="48" cy="58" rx="26" ry="24" fill="#e4e9ef" stroke="'+K_+'" stroke-width="2.5"/>'
+    + eye(39,54,5,2.6) + eye(58,54,5,2.6)
+    + '<ellipse cx="48.5" cy="64" rx="4" ry="3" fill="#e9899a"/>'
+    + '<path d="M48.5 67 v6 M44 71 h9" stroke="'+K_+'" stroke-width="1.6" fill="none" stroke-linecap="round"/>'
+    + '<rect x="45" y="72" width="3" height="6" rx="1" fill="#fff" stroke="'+K_+'" stroke-width="1"/>'
+    + '<rect x="49" y="72" width="3" height="6" rx="1" fill="#fff" stroke="'+K_+'" stroke-width="1"/>'
+    + '<path d="M20 60 h14 M20 65 h14 M66 60 h14 M66 65 h14" stroke="#b9c2cc" stroke-width="1.2" fill="none"/></svg>';
+  document.getElementById('eArt').innerHTML = RABBIT;
+
+  var FAMS = [
+    { n:'Shade',  c:'#7a5a8a', g:'<circle cx="50" cy="46" r="24"/><path d="M26 46 q24 34 48 0" />', ms:10000 },
+    { n:'Glint',  c:'#3fc9c4', g:'<path d="M50 20 L66 50 L50 80 L34 50 Z"/>', ms:8000 },
+    { n:'Kitsune',c:'#c98a4a', g:'<circle cx="50" cy="52" r="20"/><path d="M32 36 L28 18 L44 30 Z M68 36 L72 18 L56 30 Z"/>', ms:12000 },
+  ];
+  var famEls = [];
+  var famWrap = document.getElementById('fams');
+  FAMS.forEach(function(f,i){
+    var d = document.createElement('div'); d.className = 'fam';
+    d.innerHTML = '<div class="fslot"><svg viewBox="0 0 100 100" fill="'+f.c+'" opacity=".9">'+f.g+'</svg></div>'
+                + '<img src="../art/Square_icons (1).png" alt="">'
+                + '<div class="cast"><i></i></div><div class="fname">'+f.n+'</div>';
+    famWrap.appendChild(d);
+    famEls.push({ el:d, bar:d.querySelector('.cast i'), t:Math.random()*f.ms, def:f });
+  });
+
+  var log = document.getElementById('log');
+  var MAXROWS = 8;
+  function push(cls, txt){
+    var d = new Date();
+    var row = document.createElement('div');
+    row.className = 'lrow l-' + cls;
+    row.innerHTML = '<span class="t">' + String(d.getMinutes()).padStart(2,'0') + ':' + String(d.getSeconds()).padStart(2,'0') + '</span>' + txt;
+    log.appendChild(row);
+    while(log.children.length > MAXROWS) log.removeChild(log.firstChild);
+  }
+  function fmt(n){
+    if(n >= 1e9) return (n/1e9).toFixed(2)+'B';
+    if(n >= 1e6) return (n/1e6).toFixed(2)+'M';
+    if(n >= 1e3) return (n/1e3).toFixed(1)+'K';
+    return String(Math.round(n));
+  }
+
+  var orbP = new Orb(document.getElementById('orbP'));
+  var orbE = new Orb(document.getElementById('orbE'));
+  var P_MAX = 4820, E_MAX = 1.85e9;
+  var php = P_MAX, ehp = E_MAX, foeN = 1;
+  function setP(v, silent){
+    v = Math.max(0, Math.min(P_MAX, v));
+    var d = (v - php) / P_MAX; php = v;
+    orbP.target = php / P_MAX; if(!silent) orbP.impulse(d);
+    orbP.num.textContent = fmt(php) + ' / ' + fmt(P_MAX);
+  }
+  function setE(v, silent){
+    v = Math.max(0, Math.min(E_MAX, v));
+    var d = (v - ehp) / E_MAX; ehp = v;
+    orbE.target = ehp / E_MAX; if(!silent) orbE.impulse(d);
+    orbE.num.textContent = fmt(ehp) + ' / ' + fmt(E_MAX);
+  }
+  function flash(id){
+    var el = document.getElementById(id);
+    el.classList.add('hit');
+    setTimeout(function(){ el.classList.remove('hit'); }, 190);
+  }
+
+  var pSwing = { t:0, ms:1800, fill:document.querySelector('#pSwing .fill'), lbl:document.getElementById('pSwingT') };
+  var eSwing = { t:0, ms:2400, fill:document.querySelector('#eSwing .fill'), lbl:document.getElementById('eSwingT') };
+
+  function playerSwing(){
+    var crit = Math.random() < 0.55;
+    var dmg = (crit ? 1.9 : 1) * (0.7 + Math.random()*0.6) * 1.1e8;
+    setE(ehp - dmg);
+    flash('ePortrait');
+    push(crit ? 'crit' : 'out', (crit ? '&#10022; <b>Critical</b> &mdash; ' : '') + 'You hit the Rabbit for <b>' + fmt(dmg) + '</b>');
+    if(Math.random() < 0.35) push('dot', 'Bleed ticks the Rabbit for <b>' + fmt(dmg*0.18) + '</b> over 1s');
+    if(ehp <= 0) killFoe();
+  }
+  function foeSwing(){
+    if(Math.random() < 0.22){ push('miss', 'The Rabbit misses.'); return; }
+    var dmg = (12 + Math.random()*26) / 100 * P_MAX * 0.28;
+    setP(php - dmg);
+    flash('pPortrait');
+    push('in', 'The Rabbit hits you for <b>' + fmt(dmg) + '</b>');
+  }
+  function killFoe(){
+    push('sys', 'The Rabbit is slain. <b>+1,240</b> gold, <b>+8.4M</b> XP');
+    foeN++;
+    setE(E_MAX, true);
+    orbE.lvl = 1; orbE.vel = 0; orbE.slosh = 0;
+  }
+
+  var auto = false, last = performance.now();
+  function frame(now){
+    var dt = Math.min(0.05, (now - last)/1000); last = now;
+    if(auto){
+      pSwing.t += dt*1000;
+      if(pSwing.t >= pSwing.ms){ pSwing.t = 0; playerSwing(); }
+      eSwing.t += dt*1000;
+      if(eSwing.t >= eSwing.ms){ eSwing.t = 0; foeSwing(); }
+      famEls.forEach(function(f){
+        f.t += dt*1000;
+        if(f.t >= f.def.ms){
+          f.t = 0;
+          var d = (0.4 + Math.random()*0.8) * 6e7;
+          setE(ehp - d);
+          push('fam', f.def.n + ' casts for <b>' + fmt(d) + '</b>');
+          f.el.classList.add('fired');
+          setTimeout(function(){ f.el.classList.remove('fired'); }, 260);
+          if(ehp <= 0) killFoe();
+        }
+      });
+    }
+    pSwing.fill.style.width = (pSwing.t/pSwing.ms*100).toFixed(1) + '%';
+    eSwing.fill.style.width = (eSwing.t/eSwing.ms*100).toFixed(1) + '%';
+    pSwing.lbl.textContent = ((pSwing.ms - pSwing.t)/1000).toFixed(1) + 's';
+    eSwing.lbl.textContent = ((eSwing.ms - eSwing.t)/1000).toFixed(1) + 's';
+    famEls.forEach(function(f){ f.bar.style.width = (f.t/f.def.ms*100).toFixed(1) + '%'; });
+    orbP.step(dt); orbE.step(dt);
+    requestAnimationFrame(frame);
+  }
+
+  document.querySelector('.ctl').addEventListener('click', function(e){
+    var b = e.target.closest('[data-act]'); if(!b) return;
+    var a = b.dataset.act;
+    if(a === 'fight'){ auto = !auto; push('sys', auto ? 'Engaged the Rabbit.' : 'Combat paused.'); }
+    if(a === 'hit') foeSwing();
+    if(a === 'crit') playerSwing();
+    if(a === 'big'){ setP(php - P_MAX*0.35); flash('pPortrait'); push('in', 'The Rabbit <b>crits</b> you for <b>' + fmt(P_MAX*0.35) + '</b>'); }
+    if(a === 'kill'){ setE(0); killFoe(); }
+    if(a === 'heal'){ setP(P_MAX); push('sys', 'Fully healed.'); }
+  });
+  document.getElementById('darken').addEventListener('change', function(){ LOW_HP_DARKEN = this.checked; });
+  window.addEventListener('resize', function(){ orbP.resize(); orbE.resize(); });
+
+  setP(P_MAX, true); setE(E_MAX, true);
+  push('sys', 'Entered the arena.');
+  requestAnimationFrame(frame);
+
+  window.__arena = {
+    setP:setP, setE:setE, playerSwing:playerSwing, foeSwing:foeSwing, killFoe:killFoe,
+    auto:function(v){ auto = v; }, push:push,
+    swing:function(pFrac,eFrac){ pSwing.t = pSwing.ms*pFrac; eSwing.t = eSwing.ms*eFrac; },
+    orbs:[orbP,orbE]
+  };
+})();
+</script>
+</body>
+</html>
