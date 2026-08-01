@@ -10,8 +10,9 @@
 
   LAYER STACK, bottom to top:
     1. dark vessel        canvas background, so an empty orb reads as glass rather than a hole
-    2. liquid             art/UI_orb_red.png clipped to a WAVY surface path -- the delivered colour, not a
-                          CSS gradient, so the shading is the artist's
+    2. liquid             painted from colours SAMPLED out of art/UI_orb_red.png, clipped to a WAVY surface.
+                          That PNG is a colour REFERENCE, not a texture -- drawing the sphere itself dragged
+                          its baked speculars down with the level, and gloss belongs to the glass layer
     3. bubbles + meniscus canvas, clipped to the liquid
     4. glass              art/UI_orb_transparent.png, full circle, ALWAYS -- glass does not drain
     5. holder             art/UI_orb_holder_*.png, the bezel, on top so its inner edge laps the glass rim
@@ -66,8 +67,8 @@
 <body>
 <header>
   <h1>HP orb — placeholder liquid, glass on top</h1>
-  <div class="sub">Liquid is the delivered <code>UI_orb_red.png</code> clipped to a moving surface; the glass
-  cover sits over it always, and the bezel laps its rim. Defaults are your <b class="k">stiffness 20 /
+  <div class="sub">Fluid is painted from colours sampled out of <code>UI_orb_red.png</code> and clipped to a moving
+  surface; the glass cover with its highlights sits still on top, and the bezel laps its rim. Defaults are your <b class="k">stiffness 20 /
   damping 10</b> — which is <i>overdamped</i>, so the level glides without dipping past target. Drop damping
   under ~8.9 to get the overshoot back; the readout tells you which side of critical you are on.</div>
 </header>
@@ -103,24 +104,21 @@
     <label>damping <input type="range" id="d" min="1" max="20" step="0.5" value="10"><span id="dv"></span></label>
     <label>slosh <input type="range" id="s" min="0" max="30" value="14"><span id="sv"></span></label>
     <span class="zeta" id="zeta"></span>
-    <label>gradient
-      <select id="mode">
-        <option value="surface">anchored to surface (darkens as it drains)</option>
-        <option value="vessel">clipped in place (brightens as it drains)</option>
-      </select>
-    </label>
+    <label><input type="checkbox" id="darken" checked> darken at low HP</label>
   </div>
   <div class="note">
     <b>How it moves.</b> Fill level is a damped spring toward the target. Its velocity drives a <i>tilt</i> that
     tips the surface like liquid in a glass being carried, plus a <i>slosh amplitude</i> stacked on the idle
     ripple and decaying back to baseline. Both scale with the size of the HP change, so a chip ripples and a
     crit heaves.<br>
-    <b>Why the gradient is anchored to the surface.</b> The red art runs deep red at the top to amber at the
-    bottom. Clipping it in place is the physically honest reading — the shading belongs to the vessel and its
-    light — but it makes a draining orb get <i>brighter</i>: at 15% you see only the sunny bottom, which is
-    backwards for health. Anchoring the image's top to the liquid surface uses the same art with no distortion
-    and keeps the deep red just under the surface, so the orb darkens as it empties. Switch the dropdown to
-    compare.<br>
+    <b>The colour comes from your reference, the gloss does not.</b> <code>UI_orb_red.png</code> is sampled for
+    its palette — crimson <code>rgb(200,13,14)</code>, orange <code>rgb(252,107,7)</code>, amber
+    <code>rgb(255,172,56)</code> — and the fluid is painted from those. Drawing the sphere PNG itself is what
+    dragged its highlights down with the level: those speculars and the rim light belong to the glass, which
+    sits still on top. Now only the surface moves.<br>
+    <b>Low-HP darkening</b> folds the ramp toward crimson as HP falls. Turn it off to see why it is there: a
+    thin sliver is mostly its own bright surface band, so an almost-dead orb otherwise reads sunnier than a
+    full one.<br>
     <b>Not simulated:</b> the real spritesheet texture, and the low-HP treatment — the existing bar tints under
     50% and 20%, so the orb probably wants to darken and pulse down there.
   </div>
@@ -130,12 +128,15 @@
 (function(){
   var DPR = Math.min(2, window.devicePixelRatio || 1);
   var K = 20, DAMP = 10, SLOSH = 14;
-  var MODE = 'surface';   // 'surface' | 'vessel' -- see the drawImage note below
 
-  var liquidImg = new Image();
-  var liquidReady = false;
-  liquidImg.onload = function(){ liquidReady = true; };
-  liquidImg.src = '../art/UI_orb_red.png';
+  // Colours SAMPLED from art/UI_orb_red.png (speculars excluded), which was a colour reference -- not a
+  // texture. Earlier the whole sphere PNG was drawn and translated with the level, which dragged its baked
+  // highlights and rim light down with the liquid: the gloss belongs to the glass layer, not to the fluid.
+  // Now the fluid is painted from these stops and only its SURFACE moves, so there is nothing to push.
+  //   deep crimson rgb(200,13,14) -> orange rgb(252,107,7) -> amber rgb(255,172,56)
+  var LIQ_DEEP = [200,13,14], LIQ_MID = [252,107,7], LIQ_TOP = [255,172,56];
+  var LOW_HP_DARKEN = true;   // fold the whole ramp toward crimson as HP falls
+  function mixRGB(c, f){ return 'rgb(' + Math.round(c[0]*f) + ',' + Math.round(c[1]*f) + ',' + Math.round(c[2]*f) + ')'; }
 
   function Orb(el){
     this.el = el;
@@ -209,16 +210,18 @@
       c.clip();
       // THE DELIVERED COLOUR. Drawn at full-circle size and clipped in place, so the artist's gradient stays
       // anchored to the vessel. When the spritesheet lands, this one drawImage becomes the frame blit.
-      if(liquidReady){
-        // HOW THE BAKED GRADIENT IS ANCHORED -- this is a real aesthetic fork, not a detail.
-        // 'vessel': draw at full-circle size and clip in place. Physically right (the shading belongs to the
-        //   vessel and its light) but the delivered gradient is deep red at top -> amber at BOTTOM, so a low
-        //   orb shows only the sunny bottom and low HP reads WARMER and brighter. Backwards for a health bar.
-        // 'surface': translate the image down so its TOP sits at the liquid surface. Same art, no distortion,
-        //   and the deep red always sits just under the surface -- so a draining orb darkens.
-        var oy = (MODE === 'surface') ? (1 - this.lvl) * h : 0;
-        c.drawImage(liquidImg, 0, oy, w, h);
-      } else { c.fillStyle = '#c8302a'; c.fillRect(0,0,w,h); }
+      // The fluid: amber where light enters at the surface, deepening to crimson below. Hung off the CURRENT
+      // surface height, so the colour relationship holds at any fill level and nothing slides.
+      var top = (1 - this.lvl) * h;
+      // Low HP darkens the whole ramp. Without this a thin sliver is mostly its own bright surface band and
+      // reads sunnier than a full orb -- the same inversion the image-translation approach had.
+      var f = LOW_HP_DARKEN ? (0.46 + 0.54 * Math.min(1, this.lvl / 0.55)) : 1;
+      var lg = c.createLinearGradient(0, top, 0, h);
+      lg.addColorStop(0,    mixRGB(LIQ_TOP,  f));
+      lg.addColorStop(0.16, mixRGB(LIQ_MID,  f));
+      lg.addColorStop(0.55, mixRGB(LIQ_MID,  f * 0.82));
+      lg.addColorStop(1,    mixRGB(LIQ_DEEP, f * 0.88));
+      c.fillStyle = lg; c.fillRect(0,0,w,h);
       // Bubbles ride inside the same clip, so they can never float above the surface.
       for(var i=0;i<this.bubbles.length;i++){
         var b = this.bubbles[i];
@@ -269,7 +272,7 @@
     el.addEventListener('input', upd); upd();
   }
   bind('k', function(v){ K = v; }); bind('d', function(v){ DAMP = v; }); bind('s', function(v){ SLOSH = v; });
-  document.getElementById('mode').addEventListener('change', function(){ MODE = this.value; });
+  document.getElementById('darken').addEventListener('change', function(){ LOW_HP_DARKEN = this.checked; });
 
   var autoT = 0, last = performance.now();
   function frame(now){
@@ -288,7 +291,7 @@
   window.__orb = { hit:function(d){ setHp(hp - d); }, setHp:setHp, orbs:orbs,
                    hp:function(){ return hp; },
                    tune:function(k,d){ K=k; DAMP=d; document.getElementById('k').value=k; document.getElementById('d').value=d; showZeta(); },
-                   mode:function(m){ MODE=m; document.getElementById('mode').value=m; } };
+                   darken:function(v){ LOW_HP_DARKEN=v; document.getElementById('darken').checked=v; } };
 })();
 </script>
 </body>

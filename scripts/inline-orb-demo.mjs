@@ -24,7 +24,8 @@ const ASSETS = [
   ["art/UI_orb_holder_LEFT.png",  '../art/UI_orb_holder_LEFT.png',  1, 512],
   ["art/UI_orb_holder_RIGHT.png", '../art/UI_orb_holder_RIGHT.png', 1, 512],
   ["art/UI_orb_transparent.png",  '../art/UI_orb_transparent.png',  2, 384],  // one glass per orb
-  ["art/UI_orb_red.png",          '../art/UI_orb_red.png',          1, 384],
+  // UI_orb_red.png is deliberately NOT here: it is a colour REFERENCE, and the demo samples its palette into
+  // constants rather than drawing it. Nothing loads it at runtime, so there is nothing to inline.
 ];
 
 let html = readFileSync(SRC, "utf8");
