@@ -74,8 +74,50 @@ for (const [cid, path] of Object.entries(art)) {
   console.log(`artcheck: ok   ${label.padEnd(30)} ${path.padEnd(24)} ${r.w}x${r.h} ${String(kb).padStart(4)}KB ${r.type}`);
 }
 
+// ---- The combat stage's UI frames (v0.0.77.0) --------------------------------------------------------
+// The stage is BUILT from eight art files. A missing one does not throw -- it renders a broken-image glyph
+// inside a frame nobody notices until a player is mid-fight, and the CSS ones (the mini log's border-image)
+// fail even more quietly: the panel simply loses its frame. So every path the stage references is fetched
+// and decoded here, the same way the class icons are.
+//
+// The list is DERIVED from the source rather than hand-maintained, so a frame added to the stage is covered
+// the moment it is referenced, and a frame renamed in art/ fails the build instead of the fight.
+//
+// READ FROM THE READABLE SOURCE, FETCH FROM THE BUILD. Extracting from dist/index.html finds only ONE path:
+// the obfuscator rewrites JS string literals, so every `'art/Square_merged (2).png'` in the script is
+// unrecognisable there and only the stylesheet's url() survives. Scanning the source and fetching over the
+// dist server keeps the useful property -- a path the source asks for but the build does not ship is exactly
+// the failure this catches.
+const source = readFileSync("index.html", "utf8");
+const stagePaths = [...new Set([
+  ...[...source.matchAll(/['"](art\/[^'"]+\.png)['"]/g)].map((m) => m[1]),
+  ...[...source.matchAll(/url\(\s*['"]?(art\/[^'")]+\.png)['"]?\s*\)/g)].map((m) => m[1]),
+])].filter((p) => !Object.values(art).includes(p));   // class icons are already covered above
+
+if (!stagePaths.length) {
+  console.error("artcheck: FAIL found no art/ references in the shipped index.html -- the combat stage is "
+              + "built from eight of them, so zero means the extraction broke, not that the art is gone.");
+  failed++;
+}
+for (const path of stagePaths) {
+  const r = await page.evaluate(async (u) => {
+    const resp = await fetch(u);
+    if (!resp.ok) return { ok: false, status: resp.status };
+    const blob = await resp.blob();
+    let w = 0, h = 0;
+    try { const bmp = await createImageBitmap(blob); w = bmp.width; h = bmp.height; } catch { /* undecodable */ }
+    return { ok: true, bytes: blob.size, type: blob.type, w, h };
+  }, `${base}/${path}`);
+  const kb = r.bytes ? Math.round(r.bytes / 1024) : 0;
+  if (!r.ok) { console.error(`artcheck: FAIL stage frame ${path} returned ${r.status}`); failed++; continue; }
+  if (!r.w)  { console.error(`artcheck: FAIL stage frame ${path} did not decode as an image`); failed++; continue; }
+  if (kb > MAX_KB) { console.error(`artcheck: FAIL stage frame ${path} is ${kb}KB, over the ${MAX_KB}KB backstop`); failed++; continue; }
+  console.log(`artcheck: ok   ${("stage " + path).padEnd(45)} ${r.w}x${r.h} ${String(kb).padStart(4)}KB ${r.type}`);
+}
+
 await browser.close();
 srv.close();
 const n = Object.keys(art).length;
-console.log(`artcheck: ${n - failed}/${n} class icon(s) serve and decode${warned ? `, ${warned} oversized` : ""}.`);
+console.log(`artcheck: ${n - failed}/${n} class icon(s) + ${stagePaths.length} stage frame(s) serve and decode`
+          + `${warned ? `, ${warned} oversized` : ""}.`);
 process.exit(failed ? 1 : 0);

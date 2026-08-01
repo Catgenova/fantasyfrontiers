@@ -4582,6 +4582,135 @@
     } finally { s.activity = savedAct; }
   });
 
+  // ---- The combat stage (v0.0.77.0): HP orbs, thin stacked bars, six companion queues, mini feed -------
+  suite('combat stage: HP orbs are a damped spring whose state outlives a re-render', function(){
+    // zeta = c / (2*sqrt(k)). Over 1 means overdamped, which for a HEALTH bar is the requirement, not a
+    // preference: an underdamped spring overshoots and briefly shows HP the player does not have.
+    var zeta = FF.ORB_DAMP / (2 * Math.sqrt(FF.ORB_K));
+    ok(zeta > 1, 'the orb spring is overdamped (zeta ' + zeta.toFixed(3) + '), so the level never overshoots');
+
+    FF._orbsReset();
+    FF.orbReset('me', 1);
+    var o = FF.orbState('me');
+    eq(o.lvl, 1, 'a reset orb sits exactly at the level given');
+    eq(o.vel, 0, 'a reset orb has no velocity');
+    eq(o.slosh, 0, 'a reset orb has no slosh');
+
+    // A hit sets a target and kicks the fluid; it does NOT teleport the level.
+    FF.orbSetTarget('me', 0.4);
+    eq(o.target, 0.4, 'the target takes the new fraction immediately');
+    eq(o.lvl, 1, 'the LEVEL still lags -- the spring has not been stepped yet');
+    ok(o.vel < 0, 'losing health kicks the fluid downward');
+    ok(o.slosh > 0, 'a hit raises the slosh amplitude');
+    ok(o.bubbles.length > 0, 'a hit throws bubbles');
+
+    // Magnitude scales the impulse: that is what makes a crit look different from a chip tick.
+    FF._orbsReset(); FF.orbReset('me', 1); FF.orbSetTarget('me', 0.95);
+    var small = Math.abs(FF.orbState('me').vel);
+    FF._orbsReset(); FF.orbReset('me', 1); FF.orbSetTarget('me', 0.05);
+    ok(Math.abs(FF.orbState('me').vel) > small * 5, 'a big hit kicks far harder than a chip tick');
+
+    // The bubble spawn is capped. Uncapped, a full-health-to-zero hit would spawn one per percent and a
+    // farming chain would accumulate froth forever.
+    FF._orbsReset(); FF.orbReset('me', 1);
+    for(var i=0;i<50;i++){ FF.orbSetTarget('me', i%2 ? 1 : 0); }
+    ok(FF.orbState('me').bubbles.length <= 80, 'bubbles are capped (' + FF.orbState('me').bubbles.length + ')');
+
+    // A fresh foe REFILLS instantly. Springing 0 -> 1 reads as the new enemy being healed, and in a farming
+    // chain that is the animation a player would see most often.
+    FF.orbReset('foe', 0.02); FF.orbResetFoe();
+    eq(FF.orbState('foe').lvl, 1, 'a fresh foe orb is full at once');
+    eq(FF.orbState('foe').vel, 0, 'a fresh foe orb does not spring up');
+    FF._orbsReset();
+  });
+
+  suite('combat stage: bars, orbs and the mini feed render for a live fight', function(){
+    var s = FF._state, savedAct = s.activity, savedHp = s.playerHp, savedMain = s.equippedMainhand;
+    var savedTier = s.equippedMainhandTier, savedRar = s.equippedMainhandRarity;
+    var savedComps = s.activeCompanions, savedFams = s.familiars, savedCast = s.companionCast;
+    try {
+      var mon = null;
+      for(var i=0;i<FF.MONSTERS.length;i++){ if(FF.MONSTERS[i].special){ mon = FF.MONSTERS[i]; break; } }
+      ok(mon, 'found a foe with a special attack to exercise the extra bar');
+      s.playerHp = Math.max(1, Math.round(FF.maxHp(s) * 0.5));
+      s.activity = { type:'combat', monsterId:mon.id, monsterHp:Math.max(1, Math.round(mon.hp*0.5)),
+                     tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+      FF._orbsReset();
+      var h = FF.renderArena();
+      ok(/class="ar2"/.test(h), 'the stage renders');
+      // Both plinths, and they are the MIRRORED pair rather than the same art twice.
+      ok(/UI_orb_holder_LEFT\.png/.test(h) && /UI_orb_holder_RIGHT\.png/.test(h), 'both mirrored orb holders are used');
+      ok(/id="ar2Orb-me"/.test(h) && /id="ar2Orb-foe"/.test(h), 'both orb canvases are present');
+      // The numbers are SEEDED in the markup. Left to the live tick they would be blank on any render path
+      // that is not followed by one -- the dungeon card, or a test.
+      ok(/id="ar2Num-me">[^<]+</.test(h), 'the player orb ships its readout in the markup');
+      ok(/id="ar2Num-foe">[^<]+</.test(h), 'the foe orb ships its readout in the markup');
+      // A foe with a special has TWO bars; that stack is the reason the bar art is squashed.
+      ok(/id="ar2AtkFoe"/.test(h), 'the foe attack bar renders');
+      ok(/id="ar2AtkSpec"/.test(h), 'the foe special-charge bar renders beneath it');
+      ok(/id="ar2AtkMe"/.test(h), 'the player swing bar renders');
+      // The foe's name must survive in full: the element and matchup badges used to sit in the name plate
+      // and, being fixed-width, truncated every foe past about nine characters.
+      ok(h.indexOf('<span class="ar2-nm">' + mon.name + '</span>') !== -1, 'the foe name plate holds the whole name');
+      ok(/class="ar2-foeline"/.test(h), 'the element/matchup badges moved below the bars');
+      // The tan-chrome panels sit on a tray rather than being individually re-coloured for the dark stage.
+      ok(/class="ar2-tray"/.test(h), 'the consumables + Auto-Eat panels sit on the tan tray');
+      ok(/data-action="stop"/.test(h), 'Retreat still renders');
+
+      // ---- six companions, each with a cast clock and a spell queue ----
+      // Six is the ceiling: one base slot plus five from a fantastic staff.
+      s.equippedMainhand = 'staff'; s.equippedMainhandTier = FF.TIER_COUNT; s.equippedMainhandRarity = 'fantastic';
+      eq(FF.activeCompanionSlots(s), 1 + FF.STAFF_RARITY_FAMILIAR_SLOTS.fantastic, 'a fantastic staff opens all six slots');
+      eq(FF.activeCompanionSlots(s), 6, 'that ceiling is six');
+      var ids = Object.keys(FF.FAMILIAR_DATA).slice(0, 6);
+      s.familiars = {}; s.companionCast = {};
+      ids.forEach(function(id, i){ s.familiars[id] = { owned:true, level:50, stars:0 };
+                                   s.companionCast[id] = { accum:0, index:i }; });
+      s.activeCompanions = ids.slice();
+      eq(FF.activeCompanionList(s).length, 6, 'all six companions are active');
+      var h6 = FF.renderArena();
+      ids.forEach(function(id){
+        ok(h6.indexOf('id="ar2Fam-' + id + '"') !== -1, id + ' has a slot');
+        ok(h6.indexOf('id="arenaCast-' + id + '"') !== -1, id + ' has a cast clock');
+        ok(h6.indexOf('id="arenaRota-' + id + '"') !== -1, id + ' has a spell queue');
+      });
+      // The lit pip must follow that companion's OWN queue index, not a shared one -- each seeded a
+      // different index above, so a shared counter would light the same position in every slot.
+      ids.forEach(function(id, i){
+        var spells = FF.FAMILIAR_DATA[id].spells || [];
+        if(!spells.length) return;
+        var want = i % spells.length;
+        var re = new RegExp('class="ar2-pip next" id="arenaRota-' + id + '-' + want + '"');
+        ok(re.test(h6), id + ': the lit pip is its own queue position ' + want);
+      });
+    } finally {
+      s.activity = savedAct; s.playerHp = savedHp; s.equippedMainhand = savedMain;
+      s.equippedMainhandTier = savedTier; s.equippedMainhandRarity = savedRar;
+      s.activeCompanions = savedComps; s.familiars = savedFams; s.companionCast = savedCast;
+      FF._orbsReset();
+    }
+  });
+
+  suite('combat stage: the mini feed is a tail of the ONE combat log', function(){
+    var saved = FF._clGet().slice();
+    try {
+      FF._clReset();
+      ok(/The fight begins/.test(FF.arenaMiniLogHtml()), 'an empty log shows the opening line, not an error');
+      // Push more than fits, then check the mini feed carries the TAIL -- the newest lines, not the oldest.
+      for(var i=0;i<FF.ARENA_MINI_LOG_ROWS + 6; i++) FF.combatLogPush({ dir:'out', target:'Foe', dmg:i+1 });
+      var mini = FF.arenaMiniLogHtml();
+      // Count 'log-entry', NOT 'cl-row': each row carries both cl-row and cl-row-<dir>, so counting the
+      // latter double-counts every line.
+      var rows = mini.split('log-entry').length - 1;
+      eq(rows, FF.ARENA_MINI_LOG_ROWS, 'the mini feed renders exactly its row budget');
+      ok(mini.indexOf('>' + (FF.ARENA_MINI_LOG_ROWS + 6) + '<') !== -1, 'the NEWEST line is in the mini feed');
+      ok(mini.indexOf('>1<') === -1, 'the oldest line has scrolled out of the mini feed');
+      // Same buffer, not a second one: the full feed still holds everything.
+      ok(FF.combatLogHtml().indexOf('>1<') !== -1, 'the full Combat feed still has the oldest line');
+      eq(FF._clGet().length, FF.ARENA_MINI_LOG_ROWS + 6, 'one ring buffer feeds both');
+    } finally { FF._clReset(); FF._clGet().push.apply(FF._clGet(), saved); }
+  });
+
   suite('dungeons: D1 Cave', function(){
     var def = FF.DUNGEON_DEFS.d1;
     ok(def, 'D1 dungeon defined');

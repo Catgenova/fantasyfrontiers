@@ -870,6 +870,189 @@
   .arena-item-chip.on{background:linear-gradient(180deg,#5c7f34,#3c5a24);color:#f2f8e6;border-color:#24380f;}
   .arena-item-chip .qty{color:var(--text-faint);}
   .arena-item-chip.on .qty{color:#d8e8c0;}
+
+  /* ============================ THE COMBAT STAGE (v0.0.77.0) ============================
+     The fight is the one screen built on the painted UI set rather than the tan Ivy Castle chrome, so it
+     is a DARK STAGE inset into the light page -- the same move the top bar and rail already make with
+     --stone-dk. Mixing the gold-bevel art onto tan read as a foreign element in every trial; giving it
+     its own lit stage is what makes the art work.
+
+     EVERY CONTENT WELL BELOW WAS MEASURED FROM THE ART, not eyeballed: transparent windows by
+     flood-filling alpha inward from the border and keeping the largest enclosed region, opaque wells by
+     scanning centre lines for the longest contiguous dark run. Percentages are of each asset's own box:
+
+       UI_orb_holder_LEFT      ring at left 57.71%  top 55.57%  36.13% x 35.84%   player HP
+       UI_orb_holder_RIGHT     ring at left  6.35%  top 55.57%  35.84% x 36.04%   foe HP
+       Icon_circleframe_gold   left 10.00%  top 10.00%  80.30% x 80.30%           portraits
+       Square_merged           left  8.37%  top 21.48%  82.30% x 49.61%           swing bars
+       Skill_set               left  4.39%  top 35.35%  91.22% x 26.95%           name plates
+       Square_icons            left  1.37%  top  8.01%  97.27% x 83.98%           familiar slots
+       Skill Level Up Border   border-image, slice 150                            mini log
+
+     THREE OF THESE FRAMES ARE FULLY OPAQUE (Square_merged, Skill_set, Square_icons): there is no
+     transparent window to show content through, so their content layers ON TOP inset to the well. With
+     the fill behind the frame the swing bar always reads empty. */
+  .ar2{position:relative;background:radial-gradient(1100px 420px at 50% -12%,#241d16 0%,transparent 70%),#0e0c0a;
+       border-radius:6px;border:1px solid #000;padding:12px 12px 14px;margin-bottom:14px;
+       box-shadow:0 6px 18px rgba(20,18,16,.45),0 0 0 1px #4a3a22 inset;color:#e8dcc0;
+       --ar2-side:430px;                /* one combatant's column: plinth, name plate and bars all match */
+       --ar2-barh:34px;}                /* swing-bar height -- a foe stacks up to three, so this is the knob */
+  /* --- header: portrait, name plate, swing bars, mirrored per side --- */
+  .ar2-tops{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}
+  /* Each side is capped at the plinth width and pushed toward the CENTRE, so the header cluster sits over
+     its own orb instead of drifting to the card edges. */
+  .ar2-side{width:100%;max-width:var(--ar2-side);display:grid;grid-template-columns:auto 1fr;gap:9px;
+            align-items:start;margin-left:auto;min-width:0;}
+  .ar2-side.foe{grid-template-columns:1fr auto;margin-left:0;margin-right:auto;}
+  .ar2-side.foe .ar2-meta{order:-1;text-align:right;}
+  .ar2-meta{min-width:0;}
+  .ar2-port{position:relative;width:80px;height:80px;flex:0 0 auto;}
+  .ar2-port .pf{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;}
+  .ar2-port .pin{position:absolute;left:10%;top:10%;width:80.3%;height:80.3%;border-radius:50%;
+                 overflow:hidden;background:#120e0b;z-index:1;display:flex;align-items:center;justify-content:center;}
+  .ar2-port .pin svg,.ar2-port .pin img,.ar2-port .pin .game-icon{display:block;width:100%;height:100%;}
+  /* A hit flashes the FRAME rather than the whole card -- reads at a glance without being noisy. */
+  .ar2-port.hit .pf{filter:drop-shadow(0 0 7px #ff5a3c) brightness(1.25);}
+  /* Skill_set is a 1024x512 canvas whose plate occupies only y 33.40%..66.60%, so the wrapper takes the
+     PLATE's aspect and the image is pulled up by the plate's own offset. That shift is a percentage MARGIN,
+     which resolves against the wrapper's WIDTH; a `top` would resolve against its height and land nowhere
+     near. Offset = 33.40% of the image height, and the image is half as tall as wide, hence 16.70%. */
+  .ar2-plate{position:relative;width:100%;aspect-ratio:1024/170;overflow:hidden;}
+  .ar2-plate > img{position:absolute;left:0;top:0;width:100%;height:auto;margin-top:-16.70%;z-index:1;pointer-events:none;}
+  .ar2-plate .pin{position:absolute;left:4.39%;top:5.87%;width:91.22%;height:81.20%;z-index:2;
+                  display:flex;align-items:center;gap:7px;padding:0 10px;min-width:0;}
+  .ar2-side.foe .ar2-plate .pin{justify-content:flex-end;}
+  .ar2-nm{font-family:var(--font-display);font-size:15px;color:#ddbb66;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ar2-sub{font-family:var(--font-mono);font-size:10.5px;color:#9a8f78;white-space:nowrap;flex:0 0 auto;}
+  /* --- swing bars: HEIGHT-driven, not aspect-driven ---
+     At the art's native 2.85:1 one bar is ~150px tall at this width, so a foe with an attack plus a special
+     would need more vertical space than the plinth. --ar2-barh drives the frame and the well follows, since
+     the well is in percentages of the box. Rendered from 151px down to 24px the bevel language survives the
+     whole way -- the frame is mostly horizontal rails, which is why squashing works here where it would
+     wreck an ornate frame like the log border. Below ~26px the label crowds the rails. */
+  .ar2-bars{display:flex;flex-direction:column;gap:4px;margin-top:5px;}
+  .ar2-bar{position:relative;width:100%;height:var(--ar2-barh);}
+  .ar2-bar > img{position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;}
+  .ar2-bar .trk{position:absolute;left:8.37%;top:21.48%;width:82.30%;height:49.61%;z-index:2;overflow:hidden;border-radius:3px;}
+  .ar2-bar .fil{position:absolute;inset:0;width:0;transition:none;
+                background:linear-gradient(180deg,#ffd88a 0%,#ddbb66 34%,#bb9944 72%,#8a6a22 100%);}
+  .ar2-bar.foe  .fil{background:linear-gradient(180deg,#ff9a7a 0%,#e2503a 36%,#a8281c 76%,#6a1410 100%);}
+  .ar2-bar.off  .fil{background:linear-gradient(180deg,#e3aeb2 0%,#b0757a 40%,#7d4a4f 100%);}
+  .ar2-bar.spec .fil{background:linear-gradient(180deg,#ff8a84 0%,#c8302a 40%,#7a1512 100%);}
+  .ar2-bar.stun .fil{background:linear-gradient(180deg,#fff3a0 0%,#e8d84a 45%,#a08a12 100%);}
+  .ar2-bar .lbl{position:absolute;left:8.37%;top:21.48%;width:82.30%;height:49.61%;z-index:3;
+                display:flex;align-items:center;justify-content:center;gap:6px;
+                font-family:var(--font-mono);font-size:min(11px,calc(var(--ar2-barh) * 0.30));
+                font-weight:700;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;overflow:hidden;
+                color:#fff;text-shadow:0 1px 2px #000,0 0 6px #000;pointer-events:none;}
+  .ar2-bar .lbl .game-icon{width:calc(var(--ar2-barh) * 0.36);height:calc(var(--ar2-barh) * 0.36);flex:0 0 auto;}
+  /* --- the plinth pair ---
+     The two holders are a MIRRORED PAIR, not two copies: each is a 1024 square whose art occupies only
+     y 46.88%..100% (content aspect 1.882), with a figure on the OUTER side and the gold ring on the INNER
+     side. So they are cropped to that aspect and butted together with no gap, and the pair reads as one
+     plinth with the orbs facing each other across the centre line. Sized apart the figures drift to the
+     card edges and the composition falls apart. */
+  .ar2-orbs{display:flex;justify-content:center;align-items:flex-end;margin-top:-2px;}
+  .ar2-crop{position:relative;width:50%;max-width:var(--ar2-side);aspect-ratio:1024/544;overflow:hidden;}
+  .ar2-orb{position:absolute;bottom:0;left:0;width:100%;aspect-ratio:1;}
+  .ar2-orb .holder{position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none;}
+  .ar2-orb .glass{position:absolute;z-index:3;pointer-events:none;display:block;width:100%;height:100%;}
+  .ar2-orb .liq{position:absolute;z-index:1;clip-path:circle(50% at 50% 50%);border-radius:50%;}
+  .ar2-orb .liq canvas{display:block;width:100%;height:100%;}
+  .ar2-orb.me  .liq,.ar2-orb.me  .glass,.ar2-orb.me  .num{left:57.71%;width:36.13%;}
+  .ar2-orb.foe .liq,.ar2-orb.foe .glass,.ar2-orb.foe .num{left:6.35%;width:35.84%;}
+  .ar2-orb.me  .liq,.ar2-orb.me  .glass{top:55.57%;height:35.84%;}
+  .ar2-orb.foe .liq,.ar2-orb.foe .glass{top:55.57%;height:36.04%;}
+  .ar2-orb .num{position:absolute;z-index:5;top:55.57%;height:35.84%;display:flex;flex-direction:column;
+                align-items:center;justify-content:center;pointer-events:none;text-align:center;padding:0 4px;}
+  .ar2-orb .num b{font-family:var(--font-mono);font-size:13px;color:#fff;text-shadow:0 1px 3px #000,0 0 9px #000,0 0 3px #000;}
+  .ar2-orb .num i{font-family:var(--font-mono);font-style:normal;font-size:8.5px;letter-spacing:.13em;
+                  text-transform:uppercase;color:#ffd9a0;text-shadow:0 1px 3px #000,0 0 6px #000;}
+  /* The blue absorb pool reads as a ring around the orb rather than a second liquid -- two stacked fluids
+     in one glass is unreadable at this size. */
+  .ar2-orb .shield{position:absolute;z-index:2;border-radius:50%;pointer-events:none;display:none;
+                   box-shadow:0 0 0 3px rgba(95,208,224,.85),0 0 12px 3px rgba(95,208,224,.45);}
+  .ar2-orb.me  .shield{left:57.71%;top:55.57%;width:36.13%;height:35.84%;}
+  .ar2-orb.foe .shield{left:6.35%;top:55.57%;width:35.84%;height:36.04%;}
+  /* --- lower row: companions under the player plinth, the feed under the foe's ---
+     Built to the SAME rule as the plinths (two halves capped at the plinth width, centred) rather than a
+     content-driven split, so the feed's left edge lands exactly on the foe plinth's and the companions
+     column starts exactly on the player plinth's, at every width. */
+  .ar2-low{display:flex;justify-content:center;align-items:flex-start;margin-top:14px;}
+  .ar2-low > *{width:50%;max-width:var(--ar2-side);min-width:0;}
+  .ar2-low > *:first-child{padding-right:12px;}   /* keeps the effect bars' seconds off the log's frame */
+  .ar2-head{font-family:var(--font-mono);font-size:10px;letter-spacing:.15em;text-transform:uppercase;
+            color:#9a8f78;margin-bottom:6px;}
+  /* Up to SIX companions (1 base + 5 from a fantastic staff), each with a cast clock and its spell queue,
+     so the column wraps rather than assuming a single row. */
+  .ar2-fams{display:flex;flex-wrap:wrap;gap:7px;}
+  .ar2-fam{position:relative;width:58px;}
+  .ar2-fam-box{position:relative;width:58px;height:58px;}
+  .ar2-fam-box > img{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;}
+  .ar2-fam-slot{position:absolute;left:1.37%;top:8.01%;width:97.27%;height:83.98%;z-index:1;
+                display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:7px;
+                background:radial-gradient(circle at 50% 35%,#2a2118 0%,#14100c 100%);}
+  .ar2-fam-slot .game-icon,.ar2-fam-slot svg{width:64%;height:64%;}
+  /* Cast clock across the slot's foot, so a companion's cadence is visible without reading a number. */
+  .ar2-fam-cast{position:absolute;left:11%;bottom:8%;width:78%;height:4px;z-index:3;background:#0c0a08;
+                border:1px solid #3a2f20;border-radius:2px;overflow:hidden;}
+  .ar2-fam-cast i{display:block;height:100%;width:0;background:linear-gradient(90deg,#3fc9c4,#8fe6e2);transition:none;}
+  .ar2-fam.fired .ar2-fam-slot{box-shadow:0 0 12px 2px rgba(63,201,196,.6) inset;}
+  .ar2-fam-nm{font-family:var(--font-mono);font-size:8.5px;color:#9a8f78;text-align:center;margin-top:2px;
+              white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* The spell QUEUE: one pip per spell in the rotation, the next one lit. Pips rather than named chips
+     because six companions x several spells each has to fit a 430px column. The name of the next spell is
+     in the tooltip and in the feed when it lands. */
+  .ar2-queue{display:flex;gap:2px;justify-content:center;margin-top:2px;}
+  .ar2-pip{width:6px;height:6px;border-radius:50%;background:#33291c;border:1px solid #4a3a22;}
+  .ar2-pip.next{background:#3fc9c4;border-color:#8fe6e2;box-shadow:0 0 5px rgba(63,201,196,.8);}
+  /* Mini log -- where the blow-by-blow lands beside the fight. The border art is 2606x1816 (1.43:1);
+     stretching that into a wide short box mangles its corner ornaments, so it is a BORDER-IMAGE: the slice
+     keeps corners at native proportion, only the straight edges scale, and the panel is free to be any
+     height. That is why the log is the one frame here NOT driven by a measured well. */
+  .ar2-logframe{position:relative;width:100%;height:196px;border:26px solid transparent;border-radius:12px;
+                border-image:url('art/UI - Skill Level Up - Border.png') 150 fill stretch;}
+  .ar2-log{position:absolute;inset:0;overflow:hidden;border-radius:5px;padding:5px 8px;
+           background:linear-gradient(180deg,#141009 0%,#0d0a07 100%);
+           display:flex;flex-direction:column;justify-content:flex-end;}
+  .ar2-log .cl-row{font-family:var(--font-mono);font-size:11px;line-height:1.45;white-space:nowrap;
+                   overflow:hidden;text-overflow:ellipsis;min-width:0;border:0;padding:0;background:none;}
+  .ar2-log .chat-time{color:#6b6154;font-size:9.5px;}
+  .ar2-log .cl-detail{display:none;}   /* the Advanced Combat Log pipeline belongs in the full feed, not here */
+  /* No clock in the mini feed. combatLogLineHtml stamps a full "2:33:15 AM", which at this width ate a third
+     of every row and pushed the damage number into an ellipsis. The full Combat channel keeps its times. */
+  .ar2-log .chat-time{display:none;}
+  .ar2-log .chat-empty{color:#6b6154;font-family:var(--font-mono);font-size:11px;}
+  /* The tan feed colours are tuned for a light panel and vanish on the stage, so the stage restates them. */
+  .ar2-log .cl-out{color:#e8c98a;} .ar2-log .cl-skill{color:#ffcf5a;} .ar2-log .cl-in{color:#e07a6a;}
+  .ar2-log .cl-dot{color:#c98ad8;} .ar2-log .cl-fam{color:#7fd9d4;} .ar2-log .cl-special{color:#ff9a54;}
+  .ar2-log .cl-faint{color:#7a7266;} .ar2-log .cl-crit{color:#ffcf5a;font-weight:800;}
+  .ar2-log .cl-tag,.ar2-log .cl-perks,.ar2-log .cl-echo{color:#9a8f78;}
+  .ar2-log b{color:inherit;}
+  /* The foe's element/matchup badges and the dodge readout, below its bars rather than in its name plate. */
+  .ar2-foeline{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:6px;margin-top:5px;}
+  .ar2-foeline .ar2-sub{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;}
+  /* The stage's own effect bars: the tan versions are invisible on black. */
+  .ar2 .arena-fx{border-top-color:#3a3226;}
+  .ar2 .arena-fx-title,.ar2 .arena-fx-name{color:#9a8f78;}
+  .ar2 .arena-fx-t,.ar2 .arena-fx-n{color:#c0b394;}
+  .ar2 .arena-fx-bar{background:#0c0a08;border-color:#3a2f20;}
+  /* THE TRAY. The consumables strip and the Auto-Eat panel are shared with the tan chrome and carry dozens
+     of tan classes between them; restating each colour for the dark stage would rot the next time either
+     panel gains a row. So the tray restores the tan surface and lets them render exactly as they do
+     everywhere else in the game -- an inset panel on the stage rather than a re-skin. */
+  .ar2-tray{margin-top:12px;background:var(--bg-card);color:var(--text);border:1px solid #4a3a22;
+            border-radius:6px;padding:2px 10px 10px;}
+  .ar2-tray .arena-items{border-top:0;}
+  @media (max-width:820px){
+    /* Stacked, the mirrored pair no longer joins, so each plinth centres on its own row. */
+    .ar2-tops{grid-template-columns:1fr;gap:10px;}
+    .ar2-side,.ar2-side.foe{max-width:none;margin:0;}
+    .ar2-orbs{flex-direction:column;align-items:center;}
+    .ar2-crop{width:100%;max-width:var(--ar2-side);}
+    .ar2-low{flex-direction:column;align-items:stretch;gap:14px;}
+    .ar2-low > *{width:100%;max-width:none;}
+  }
   /* Richer combat floating text: damage numbers, crits, misses, damage taken. */
   .floating-text.ft-dmg{color:#c8532a;}
   .floating-text.ft-crit{color:#d89a1e;font-size:16px;}
@@ -16969,6 +17152,9 @@
     act.monsterHp = monster.hp;
     act.monsterTickAccum = 0;
     state._enemySwapAt = Date.now(); // arena: fade the slain foe out and the next one in (see the live-patch loop)
+    // Refill the foe's HP orb INSTANTLY rather than letting the spring climb 0 -> 1: a slosh upward reads as
+    // the fresh enemy being healed, and in a farming chain that is the animation you would see most.
+    orbResetFoe();
     clearEnemySpecialState(act); // a fresh foe resets its special charge + any harden, and clears the debuffs it put on you
     act.bleedStacks = 0; act.bleedDps = 0; act.bleedUntil = 0; // a fresh foe starts unbled (Reaver Rend / Assassin Lacerate don't carry over)
     // The Butcher's ledger is per FOE: a fresh foe is a fresh count, which is what makes this the long-fight
@@ -22599,7 +22785,10 @@
     // per-task result popups. (They were wrongly gated on that flag, so combat floats never showed.)
     if(!FLOATING_TEXT_ENABLED || offlineCapture) return;
     var layer = document.getElementById('floatLayer');
-    var anchor = document.getElementById(enemySide ? 'arenaMonsterFill' : 'arenaPlayerFill');
+    // Anchored to the HP ORB of whichever side took the hit (v0.0.77.0 -- these used to hang off the old
+    // arena's flat HP-fill divs, which no longer exist). Numbers rising off the orb that just sloshed reads
+    // as cause and effect; the mini feed carries the same hit as a durable row.
+    var anchor = document.getElementById(enemySide ? 'ar2Orb-foe' : 'ar2Orb-me');
     if(!layer || !anchor) return;
     var rect = anchor.getBoundingClientRect();
     if(!rect.width) return;
@@ -23628,6 +23817,157 @@
     html += '<button class="action-btn" data-action="dungeonBack" style="margin-top:8px;width:auto">Return to Dungeons</button></div>';
     return html;
   }
+  // ============================ HP ORBS: THE SLOSH ============================
+  // Each combatant's health is a glass orb of liquid whose level is a DAMPED SPRING toward the true
+  // fraction, with the spring's velocity driving a surface tilt and a decaying slosh amplitude. So a big
+  // hit visibly throws the fluid, and a heal-over-time glides.
+  //
+  //   Stiffness 20 / damping 10 (the owner's call). zeta = c / (2*sqrt(k)) = 10 / (2*sqrt(20)) = 1.118,
+  //   i.e. OVERDAMPED, so the level never dips past its target and then climbs back. That matters for a
+  //   health bar: an underdamped spring would show HP it does not have.
+  //
+  // THE PHYSICS STATE LIVES HERE, NOT ON THE DOM NODE. The game does a full render() up to ten times a
+  // second, which rebuilds #content and throws away every canvas in it. An orb object holding its own
+  // level would restart from full on each rebuild and slosh forever. So the state is keyed by side in
+  // this module-level map, and each step re-looks-up the canvas and re-measures if it changed identity.
+  //
+  // The fluid is PAINTED from sampled colour stops, not blitted from art/UI_orb_red.png. That PNG is a
+  // colour REFERENCE: translating the rendered sphere down with the level dragged its baked speculars
+  // along with the fluid, which looked like a bug. Gloss belongs to the glass layer that sits still on top.
+  var ORB_K = 20, ORB_DAMP = 10, ORB_SLOSH = 14;
+  var ORB_LIQ_DEEP = [200,13,14], ORB_LIQ_MID = [252,107,7], ORB_LIQ_TOP = [255,172,56];
+  var ORB_LOW_DARKEN = true;              // below ~55% the fluid darkens, so "nearly dead" reads at a glance
+  var _orbs = {};                         // side -> {lvl,vel,slosh,tilt,t,bubbles,cv,w,h}
+  function orbMix(c, f){ return 'rgb('+Math.round(c[0]*f)+','+Math.round(c[1]*f)+','+Math.round(c[2]*f)+')'; }
+  function orbState(side){
+    if(!_orbs[side]) _orbs[side] = { lvl:1, target:1, vel:0, slosh:0, tilt:0, t:0, bubbles:[], cv:null, w:0, h:0 };
+    return _orbs[side];
+  }
+  function orbReset(side, frac){
+    var o = orbState(side);
+    o.lvl = o.target = clamp(frac, 0, 1); o.vel = 0; o.slosh = 0; o.tilt = 0; o.bubbles = [];
+  }
+  // A NEW FOE gets a full orb with no slosh: springing 0 -> 1 would read as the fresh enemy being healed.
+  function orbResetFoe(){ orbReset('foe', 1); }
+  function orbSetTarget(side, frac){
+    var o = orbState(side); frac = clamp(frac, 0, 1);
+    var d = frac - o.target;
+    o.target = frac;
+    if(Math.abs(d) < 1e-6) return;
+    // Impulse scaled by the SIZE of the change, so a chip tick ripples and a crit throws the fluid.
+    var mag = Math.abs(d);
+    o.vel += (d < 0 ? -1 : 1) * mag * 2.2;
+    o.slosh = Math.min(1, o.slosh + mag * 2.6);
+    var n = Math.min(30, Math.round(mag * 26));   // capped: a 100% swing must not spawn hundreds
+    for(var i=0;i<n;i++) orbBubble(o, true);
+  }
+  function orbBubble(o, fast){
+    if(o.bubbles.length > 70) return;              // hard ceiling; six orbs of froth is not worth the frames
+    o.bubbles.push({ x:Math.random(), y:0, r:0.012+Math.random()*0.030,
+                     v:(fast?0.55:0.20)+Math.random()*0.30, wob:Math.random()*6.28 });
+  }
+  function orbSurfaceY(o, px, level){
+    var x = px / o.w;
+    var amp = o.h * (0.010 + o.slosh * (ORB_SLOSH/1000));
+    var y = (1 - level) * o.h;
+    y += Math.sin(o.t*2.4 + x*7.0) * amp;
+    y += Math.sin(o.t*3.9 - x*11.0 + 1.3) * amp * 0.55;
+    y += (x - 0.5) * o.tilt * o.h * 0.42;
+    return y;
+  }
+  function orbDraw(o){
+    var c = o.ctx, w = o.w, h = o.h;
+    c.clearRect(0,0,w,h);
+    var back = c.createLinearGradient(0,0,0,h);
+    back.addColorStop(0,'#1d0d0c'); back.addColorStop(1,'#0e0707');
+    c.fillStyle = back; c.fillRect(0,0,w,h);
+    if(o.lvl <= 0.002) return;
+    c.save();
+    c.beginPath(); c.moveTo(0,h);
+    for(var x=0;x<=w;x+=3) c.lineTo(x, orbSurfaceY(o,x,o.lvl));
+    c.lineTo(w,h); c.closePath(); c.clip();
+    var top = (1-o.lvl)*h;
+    var f = ORB_LOW_DARKEN ? (0.46 + 0.54*Math.min(1, o.lvl/0.55)) : 1;
+    var lg = c.createLinearGradient(0,top,0,h);
+    lg.addColorStop(0,    orbMix(ORB_LIQ_TOP,  f));
+    lg.addColorStop(0.16, orbMix(ORB_LIQ_MID,  f));
+    lg.addColorStop(0.55, orbMix(ORB_LIQ_MID,  f*0.82));
+    lg.addColorStop(1,    orbMix(ORB_LIQ_DEEP, f*0.88));
+    c.fillStyle = lg; c.fillRect(0,0,w,h);
+    for(var i=0;i<o.bubbles.length;i++){
+      var b = o.bubbles[i];
+      var by = h - b.y*(o.lvl*h), bx = b.x*w + Math.sin(o.t*3+b.wob)*w*0.03;
+      var fade = Math.min(1, (1-b.y)*3);
+      c.beginPath(); c.arc(bx, by, b.r*w*(0.6+b.y*0.5), 0, 6.2832);
+      c.fillStyle = 'rgba(255,225,200,'+(0.26*fade)+')'; c.fill();
+    }
+    c.restore();
+    c.beginPath();
+    for(var x2=0;x2<=w;x2+=3){ var sy = orbSurfaceY(o,x2,o.lvl); if(x2===0) c.moveTo(x2,sy); else c.lineTo(x2,sy); }
+    c.strokeStyle = 'rgba(255,220,190,0.80)'; c.lineWidth = Math.max(1, o.h*0.013); c.stroke();
+  }
+  // One frame for one orb. Returns false when its canvas is not on screen, which is how the caller knows
+  // the stage is gone (tab switched, fight ended) and it can stop paying for the physics.
+  function orbStep(side, dt){
+    var o = orbState(side);
+    var cv = document.getElementById('ar2Orb-'+side);
+    if(!cv) { o.cv = null; return false; }
+    if(o.cv !== cv || !o.w){
+      // Fresh node after a render(), or a resize: re-measure and re-scale for the device pixel ratio.
+      var r = cv.getBoundingClientRect();
+      if(!r.width) return false;
+      o.cv = cv; o.ctx = cv.getContext('2d');
+      o.w = Math.max(1, Math.round(r.width)); o.h = Math.max(1, Math.round(r.height));
+      var dpr = Math.min(2, window.devicePixelRatio || 1);
+      cv.width = o.w*dpr; cv.height = o.h*dpr;
+      o.ctx.setTransform(dpr,0,0,dpr,0,0);
+    }
+    o.t += dt;
+    o.vel += ((o.target - o.lvl)*ORB_K - o.vel*ORB_DAMP) * dt;
+    o.lvl += o.vel * dt;
+    if(o.lvl < 0){ o.lvl = 0; o.vel *= -0.35; }
+    if(o.lvl > 1){ o.lvl = 1; o.vel *= -0.35; }
+    o.tilt += (o.vel*0.55 - o.tilt) * Math.min(1, dt*9);
+    o.slosh *= Math.exp(-dt*2.3);
+    if(Math.random() < dt*7) orbBubble(o, false);
+    for(var i=o.bubbles.length-1;i>=0;i--){ var b=o.bubbles[i]; b.y += b.v*dt; if(b.y>1) o.bubbles.splice(i,1); }
+    orbDraw(o);
+    return true;
+  }
+  var _orbLast = 0, _ar2FightSig = '';
+  // Driven from the main loop rather than its own requestAnimationFrame, so the orbs cannot keep painting
+  // after the loop stops (backgrounded tab) and there is only ever one animation clock in the game.
+  function orbTick(){
+    var now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    var dt = _orbLast ? Math.min(0.05, (now - _orbLast)/1000) : 0.016;
+    _orbLast = now;
+    orbStep('me', dt); orbStep('foe', dt);
+  }
+  // One orb's markup. `side` is 'me' or 'foe' and picks the mirrored holder art as well as the well offsets.
+  // `num` SEEDS the readout in the markup rather than waiting for the first updateDynamic() pass. Left empty
+  // it renders a numberless orb for a frame, and on any render path that is not followed by a live tick
+  // (the dungeon card, a test harness) it would stay blank permanently.
+  function orbHtml(side, label, num){
+    return '<div class="ar2-crop"><div class="ar2-orb '+side+'">'
+      + '<div class="liq"><canvas id="ar2Orb-'+side+'"></canvas></div>'
+      + '<div class="shield" id="ar2Shield-'+side+'"></div>'
+      + '<img class="glass" src="art/UI_orb_transparent.png" alt="">'
+      // Written as two WHOLE paths rather than 'art/UI_orb_holder_' + side + '.png'. scripts/artcheck.mjs
+      // derives the list of frames to verify by scanning this file for art/ literals, and a concatenated
+      // path is invisible to it -- which left the two heaviest, most load-bearing assets in the stage
+      // unchecked. Keep every art path in this file a complete literal.
+      + '<img class="holder" src="'+(side==='me' ? 'art/UI_orb_holder_LEFT.png' : 'art/UI_orb_holder_RIGHT.png')+'" alt="">'
+      + '<div class="num"><b id="ar2Num-'+side+'">'+(num||'')+'</b><i>'+label+'</i></div>'
+      + '</div></div>';
+  }
+  // One thin swing bar. `pct` seeds the fill so a fresh render lands mid-cycle instead of snapping to zero.
+  function ar2Bar(id, cls, label, pct, right){
+    return '<div class="ar2-bar'+(cls?' '+cls:'')+'">'
+      + '<div class="trk"><div class="fil" id="'+id+'" style="width:'+clamp(pct,0,100)+'%"></div></div>'
+      + '<img src="art/Square_merged (2).png" alt="">'
+      + '<div class="lbl"><span id="'+id+'-n">'+label+'</span>'+(right?'<span id="'+id+'-t">'+right+'</span>':'')+'</div>'
+      + '</div>';
+  }
   // The combat "arena" card (player + familiars vs the current foe). Extracted so both the Combat tab
   // and the Dungeons tab render the exact same fight UI. Self-contained: reads state.activity.
   function renderArena(){
@@ -23637,8 +23977,9 @@
     if(!m) return '';
     var weaponStyle = getWeaponStyle(state.equippedMainhand);
     var html = '';
+    var maxHpVal = maxHp(state);
     var hpPct = clamp(act.monsterHp/m.hp*100,0,100);
-    var pPct = clamp(state.playerHp/maxHp(state)*100,0,100);
+    var pPct = clamp(state.playerHp/maxHpVal*100,0,100);
     var monsterAtkIntervalMs = m.attackSpeed*1000*(1+enemyExtraSlowPct());
     var monsterAtkPct = clamp((act.monsterTickAccum||0)/monsterAtkIntervalMs*100,0,100);
     var playerAtkIntervalMs = playerAttackIntervalMs();
@@ -23646,80 +23987,144 @@
     var matchup = weightedMatchupLabel(weaponStyle.attackTypes || {blunt:1}, m.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
     var _stunned = enemyStunned(state);
     var _comps = activeCompanionList(state);
-    html += '<div class="arena">';
-    html += '<div class="arena-cols">';
-    // ---- LEFT: player + familiars ----
-    html += '<div class="arena-side arena-player">';
-    html += '<div class="arena-side-head">'+svgIcon('person','var(--gold)')+' You</div>';
-    html += '<div class="arena-portrait">'+playerPortrait()+'</div>';
+    var _cid = activeClassId(state);
+    var _cdef = _cid ? CLASS_DEFS_BY_ID[_cid] : null;
+    var _shieldNow = combatShieldTotal(state);
+    // ---- seeding the orbs ----
+    // NOT on every render. The game rebuilds #content up to ten times a second, and the spring is usually
+    // mid-flight: snapping the fluid to the true level on each rebuild would mean the slosh is never seen.
+    //
+    // The PLAYER's orb is seeded once and then only ever re-targeted, because their health is continuous
+    // across fights -- carrying the level from the last fight into the next one is correct.
+    //
+    // The FOE's is reset whenever the FIGHT changes, keyed on monsterId + duelStartedAt. All five combat
+    // entry points stamp duelStartedAt (normal, dungeon, tower, guild boss, save restore) and defeatMonster
+    // re-stamps it per foe, so the signature moves exactly when a different body is in front of you. Without
+    // it, engaging a foe you previously retreated from would spring the orb up from wherever you left it,
+    // which reads as the enemy healing.
+    if(!_orbs.me) orbReset('me', pPct/100);
+    var _fightSig = act.monsterId + '|' + (act.duelStartedAt || 0);
+    if(_ar2FightSig !== _fightSig){ _ar2FightSig = _fightSig; orbReset('foe', hpPct/100); }
+    orbSetTarget('me', pPct/100); orbSetTarget('foe', hpPct/100);
+
+    html += '<div class="ar2">';
+    // ---------- header: portrait, name plate, swing bars ----------
+    html += '<div class="ar2-tops">';
+    // -- player --
+    html += '<div class="ar2-side">';
+    html += '<div class="ar2-port" id="ar2PortMe"><div class="pin">'+playerPortrait()+'</div>'
+          + '<img class="pf" src="art/Icon_circleframe_gold (1).png" alt=""></div>';
+    html += '<div class="ar2-meta">';
+    html += '<div class="ar2-plate"><img src="art/Skill_set.png" alt=""><div class="pin">'
+          + '<span class="ar2-nm">You</span>'
+          + '<span class="ar2-sub">'+(_cdef ? escapeHtml(_cdef.name)+' &middot; Lv '+classLevel(state,_cid) : 'No class')+'</span>'
+          + '</div></div>';
+    html += '<div class="ar2-bars">';
     if(weaponStyle.noAttack){
-      html += '<div class="hp-label"><span style="color:var(--text-faint)">No attack &mdash; familiars fight for you</span></div>';
+      // A staff never swings, so there is no timer to show -- say so rather than render a bar that never moves.
+      html += '<div class="ar2-bar"><div class="trk"></div><img src="art/Square_merged (2).png" alt="">'
+            + '<div class="lbl"><span>Familiars fight for you</span></div></div>';
     } else {
-      html += '<div class="hp-track" style="height:8px"><div class="hp-fill" id="arenaPlayerAtkFill" style="width:'+playerAtkPct+'%;background:var(--gold);transition:none"></div></div>';
-      html += '<div class="hp-label"><span>Attack</span><span>'+(Math.round(playerAtkIntervalMs/100)/10)+'s</span></div>';
+      html += ar2Bar('ar2AtkMe', '', escapeHtml(weaponStyle.name || 'Attack'),
+                     playerAtkPct, (Math.round(playerAtkIntervalMs/100)/10)+'s');
       if(hasOffhandClaw(state)){
         var offAtkIntervalMs = offhandClawAttackIntervalMs();
-        var offAtkPct = clamp((act.offhandTickAccum||0)/offAtkIntervalMs*100,0,100);
-        html += '<div class="hp-track" style="height:8px;margin-top:6px"><div class="hp-fill" id="arenaOffhandAtkFill" style="width:'+offAtkPct+'%;background:#b0757a;transition:none"></div></div>';
-        html += '<div class="hp-label"><span>'+svgIcon('claw','#b0757a')+' Off-hand</span><span>'+(Math.round(offAtkIntervalMs/100)/10)+'s</span></div>';
-      }
-      if(weaponStyle.hand === 'bow'){
-        // Live ammo counter -- updated in place each tick as shots spend arrows (no refresh needed).
-        var _arenaArrows = bowArrowsAvailable(state);
-        html += '<div class="hp-label" style="margin-top:6px"><span>'+svgIcon('arrow', _arenaArrows>0?'#a8895c':'var(--hp-bad)')+' Arrows</span><span id="arenaPlayerArrows"'+(_arenaArrows>0?'':' style="color:var(--hp-bad)"')+'>'+(_arenaArrows>0 ? fmt(_arenaArrows) : 'none &mdash; &times;'+UNFLETCHED_DMG_MULT)+'</span></div>';
+        html += ar2Bar('ar2AtkOff', 'off', svgIcon('claw','#e3aeb2')+' Off-hand',
+                       clamp((act.offhandTickAccum||0)/offAtkIntervalMs*100,0,100),
+                       (Math.round(offAtkIntervalMs/100)/10)+'s');
       }
     }
-    var _shieldNow = combatShieldTotal(state), _shPct = _shieldNow > 0 ? clamp(_shieldNow/Math.max(1,maxHp(state))*100,0,100) : 0;
-    html += '<div class="hp-track" style="margin-top:6px;position:relative"><div class="hp-fill" id="arenaPlayerFill" style="width:'+pPct+'%;background:var(--hp-bad)"></div><div class="hp-shield" id="arenaPlayerShield" style="width:'+_shPct+'%;display:'+(_shieldNow>0?'block':'none')+'"></div></div>';
-    html += '<div class="hp-label"><span>HP</span><span id="arenaPlayerLabel">'+fmt(state.playerHp)+' / '+maxHp(state)+(_shieldNow>0?' <span class="hp-shield-txt">+'+fmt(_shieldNow)+' shield</span>':'')+'</span></div>';
+    html += '</div>'; // ar2-bars
+    // Bow ammo is a live counter, not a bar: it only matters when it runs out.
+    if(!weaponStyle.noAttack && weaponStyle.hand === 'bow'){
+      var _arrows = bowArrowsAvailable(state);
+      html += '<div class="ar2-sub" style="margin-top:5px;text-align:inherit">'+svgIcon('arrow', _arrows>0?'#a8895c':'#e07a6a')
+            + ' Arrows <b id="arenaPlayerArrows"'+(_arrows>0?'':' style="color:#e07a6a"')+'>'
+            + (_arrows>0 ? fmt(_arrows) : 'none &mdash; &times;'+UNFLETCHED_DMG_MULT)+'</b></div>';
+    }
+    html += '</div></div>'; // ar2-meta, ar2-side
+    // -- foe --
+    html += '<div class="ar2-side foe">';
+    html += '<div class="ar2-meta">';
+    // The element and matchup badges live BELOW the bars, not in the plate: in the plate they took priority
+    // over the name (they are fixed-width, the name is the flexible one) and truncated every foe past about
+    // nine characters -- "Crocodile" read as "Croc...".
+    html += '<div class="ar2-plate"><img src="art/Skill_set.png" alt=""><div class="pin">'
+          + '<span class="ar2-nm">'+escapeHtml(m.name)+'</span>'
+          + '</div></div>';
+    html += '<div class="ar2-bars">';
+    // The foe's attack clock, then its special charge -- the case the thin bar exists for.
+    html += ar2Bar('ar2AtkFoe', 'foe'+(_stunned?' stun':''),
+                   _stunned ? (svgIcon('lightning','#fff3a0')+' Stunned!') : 'Attack',
+                   monsterAtkPct, (+(m.attackSpeed*(1+enemyExtraSlowPct())*enemyFrenzySpeedMult(act, m)).toFixed(1))+'s');
+    if(m.special){
+      html += ar2Bar('ar2AtkSpec', 'spec', svgIcon('claw','#ff8a84')+' '+escapeHtml(m.special.name),
+                     clamp((act.specialAccum||0)/m.special.chargeMs*100, 0, 100), 'special');
+    }
+    html += '</div>'; // ar2-bars
+    html += '<div class="ar2-foeline">'+elementBadge(m)
+          + ' <span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span>'
+          + ' <span class="ar2-sub">Dodge '+monsterDodge(m)+' &middot; your hit '+Math.round(playerHitChance(m)*100)+'%</span>'
+          + incomingElementNote(m)+'</div>';
+    html += '</div>'; // ar2-meta
+    html += '<div class="ar2-port" id="ar2PortFoe"><div class="pin" id="arenaMonsterPortrait">'+monsterPortrait(m)+'</div>'
+          + '<img class="pf" src="art/Icon_circleframe_gold (1).png" alt=""></div>';
+    html += '</div>'; // ar2-side foe
+    html += '</div>'; // ar2-tops
+    // ---------- the plinth pair ----------
+    html += '<div class="ar2-orbs">'
+          + orbHtml('me',  'health',          fmt(state.playerHp) + ' / ' + fmt(maxHpVal))
+          + orbHtml('foe', escapeHtml(m.name), fmt(act.monsterHp) + ' / ' + fmt(m.hp))
+          + '</div>';
+    // ---------- companions (player side) + the mini log (foe side) ----------
+    html += '<div class="ar2-low">';
+    html += '<div>';
+    html += '<div class="ar2-head">Companions '+_comps.length+' / '+activeCompanionSlots(state)
+          + ' &middot; every '+(familiarCastIntervalMs()/1000)+'s</div>';
     if(_comps.length){
-      html += '<div class="arena-fams">';
-      html += '<div class="arena-fams-title">Companions ('+_comps.length+'/'+activeCompanionSlots(state)+') &bull; cast every '+(familiarCastIntervalMs()/1000)+'s</div>';
+      // Up to SIX slots (1 base + 5 from a fantastic staff), each with its own cast clock and spell queue.
+      html += '<div class="ar2-fams">';
       _comps.forEach(function(cid){
-        var _comp = FAMILIAR_DATA[cid]; if(!_comp) return;
+        var comp = FAMILIAR_DATA[cid]; if(!comp) return;
         var cc = (state.companionCast && state.companionCast[cid]) || {accum:0,index:0};
-        var _castPct = clamp((cc.accum||0)/familiarCastIntervalMs()*100,0,100);
-        var _spells = _comp.spells;
-        var _ni = (cc.index||0) % _spells.length;
-        html += '<div class="arena-fam">';
-        html += '<div class="arena-fam-ico">'+_comp.icon+'</div>';
-        html += '<div class="arena-fam-body">';
-        html += '<div class="arena-fam-name"><span>'+escapeHtml(_comp.name)+'</span></div>';
-        html += '<div class="hp-track" style="height:6px;margin-top:3px"><div class="hp-fill" id="arenaCast-'+cid+'" style="width:'+_castPct+'%;background:var(--cat-menagerie);transition:none"></div></div>';
-        html += '<div class="arena-fam-rota" id="arenaRota-'+cid+'">';
-        _spells.forEach(function(sp, i){ html += '<span class="rota-chip'+(i===_ni?' next':'')+'" id="arenaRota-'+cid+'-'+i+'">'+(i===_ni?'&#9656; ':'')+spellElementIcon(sp)+escapeHtml(sp.name)+'</span>'; });
-        html += '</div></div></div>';
+        var castPct = clamp((cc.accum||0)/familiarCastIntervalMs()*100,0,100);
+        var spells = comp.spells || [];
+        var ni = spells.length ? ((cc.index||0) % spells.length) : 0;
+        var nextName = spells.length ? spells[ni].name : '';
+        html += '<div class="ar2-fam" id="ar2Fam-'+cid+'" title="'+escapeHtml(comp.name)
+              + (nextName ? ' — next: '+escapeHtml(nextName) : '')+'">';
+        html += '<div class="ar2-fam-box"><div class="ar2-fam-slot">'+comp.icon+'</div>'
+              + '<img src="art/Square_icons (1).png" alt="">'
+              + '<div class="ar2-fam-cast"><i id="arenaCast-'+cid+'" style="width:'+castPct+'%"></i></div></div>';
+        html += '<div class="ar2-fam-nm">'+escapeHtml(comp.name)+'</div>';
+        html += '<div class="ar2-queue" id="arenaRota-'+cid+'">';
+        spells.forEach(function(sp, i){
+          html += '<span class="ar2-pip'+(i===ni?' next':'')+'" id="arenaRota-'+cid+'-'+i+'" title="'+escapeHtml(sp.name)+'"></span>';
+        });
+        html += '</div></div>';
       });
       html += '</div>';
+    } else {
+      html += '<div class="ar2-sub">No companions active &mdash; summon and equip them in the Menagerie.</div>';
     }
     html += renderFxBars(combatPlayerBuffs(), 'Your Effects');
-    html += '</div>'; // arena-player
-    // ---- RIGHT: enemy ----
-    html += '<div class="arena-side arena-enemy">';
-    html += '<div class="arena-side-head">'+escapeHtml(m.name)+' <span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span></div>';
-    html += '<div class="arena-portrait" id="arenaMonsterPortrait">'+monsterPortrait(m)+'</div>';
-    html += '<div class="elem-line" style="margin:2px 0 5px">'+elementBadge(m)+incomingElementNote(m)+'</div>';
-    html += '<div class="hp-label" style="margin-bottom:4px"><span>Dodge '+monsterDodge(m)+'</span><span>Hit '+Math.round(playerHitChance(m)*100)+'%</span></div>';
-    html += '<div class="hp-track"><div class="hp-fill" id="arenaMonsterFill" style="width:'+hpPct+'%;background:var(--hp-bad)"></div></div>';
-    html += '<div class="hp-label"><span>Monster HP</span><span id="arenaMonsterLabel">'+fmt(act.monsterHp)+' / '+m.hp+'</span></div>';
-    html += '<div class="hp-track" style="height:8px;margin-top:6px"><div class="hp-fill" id="arenaMonsterAtkFill" style="width:'+monsterAtkPct+'%;background:'+(_stunned?'#e8d84a':'var(--gold)')+';transition:none"></div></div>';
-    var _mAtkSpd = m.attackSpeed*(1+enemyExtraSlowPct())*enemyFrenzySpeedMult(act, m); // actual cadence incl. Slow + Demonic Frenzy haste
-    var _mSlowed = _mAtkSpd > m.attackSpeed + 1e-9;
-    html += '<div class="hp-label"><span id="arenaMonsterAtkLabel">'+(_stunned ? svgIcon('lightning','#e8d84a')+' Stunned!' : 'Monster Attack')+'</span><span id="arenaMonsterAtkSpeed"'+(_mSlowed?' style="color:'+ATK_SPEED_SLOW_COLOR+';font-weight:700"':'')+'>'+(+_mAtkSpd.toFixed(1))+'s'+(_mSlowed?' &#9660;':'')+'</span></div>';
-    // Enemy SPECIAL charge bar (the extra action bar): fills toward the beast's primal attack, pausing
-    // with the normal attack while stunned. A distinct red so it reads as the "watch out" telegraph.
-    if(m.special){
-      var _spPct = clamp((act.specialAccum||0)/m.special.chargeMs*100, 0, 100);
-      html += '<div class="hp-track" style="height:8px;margin-top:6px"><div class="hp-fill" id="arenaSpecialFill" style="width:'+_spPct+'%;background:#c8302a;transition:none"></div></div>';
-      html += '<div class="hp-label"><span id="arenaSpecialLabel">'+svgIcon('claw','#c8302a')+' '+escapeHtml(m.special.name)+'</span><span style="color:#c8302a">special</span></div>';
-    }
     html += renderFxBars(combatEnemyDebuffs(), 'Enemy Effects');
-    html += '</div>'; // arena-enemy
-    html += '</div>'; // arena-cols
+    html += '</div>'; // companions column
+    html += '<div>';
+    html += '<div class="ar2-head">Combat feed</div>';
+    html += '<div class="ar2-logframe"><div class="ar2-log" id="arenaMiniLog">'+arenaMiniLogHtml()+'</div></div>';
+    html += '</div>'; // log column
+    html += '</div>'; // ar2-low
+    // The consumables strip and the Auto-Eat panel are shared with the tan chrome and carry dozens of tan
+    // classes between them. Rather than restate every one of those colours for the dark stage -- which would
+    // silently rot the next time either panel gains a row -- they sit on a TRAY that restores the tan surface
+    // and text colour, so they render exactly as they do everywhere else in the game.
+    html += '<div class="ar2-tray">';
     html += renderCombatConsumables();
     html += renderAutoEatPanel(); // Auto-Eat controls live inside the combat card during a fight
-    html += '<button class="action-btn stop" data-action="stop" style="margin-top:10px">Retreat</button>';
     html += '</div>';
+    html += '<button class="action-btn stop" data-action="stop" style="margin-top:10px">Retreat</button>';
+    html += '</div>'; // ar2
     _arenaFxSig = combatFxSignature();
     return html;
   }
@@ -25260,6 +25665,14 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 1', heading:'The combat arena rebuilt: HP orbs, a foe’s whole kit, and a feed beside the fight', items:[
+      'Combat has been rebuilt on the new painted UI set. Health is no longer a flat bar &mdash; you and your foe each get a <b>glass orb of liquid</b> mounted on a carved plinth, and the fluid <b>sloshes</b> when the level moves. It is a real damped spring, so a Critical Hit visibly throws the liquid while a regen tick just glides it; below about half health the fluid darkens, so &ldquo;nearly dead&rdquo; reads at a glance without looking at the number.',
+      'The fight is now the one screen in the game with its own <b>dark stage</b> rather than the tan stonework. That is deliberate: the new frames are gold on black, and on a tan panel they read as borrowed furniture.',
+      'Attack timers became <b>thin stacked bars</b>, which is what lets a foe show you its <b>whole kit at once</b> &mdash; its swing clock and its special-attack charge, side by side, instead of the special being buried. Your own swing and your off-hand Claw stack the same way.',
+      'Your <b>companions</b> get proper slots &mdash; all <b>six</b> of them if you carry a fantastic Staff &mdash; each with its own cast clock and a row of pips showing its <b>spell queue</b>, with the next spell lit. Hovering a companion names the spell that lands next.',
+      'The blow-by-blow now runs in a <b>mini feed beside the fight</b>, so you can watch what is actually happening to you without opening the Chat tab. It is the same log the Combat channel shows &mdash; the same lines, just the last few of them &mdash; and floating damage numbers now rise off whichever orb took the hit.',
+      'Nothing about combat maths, damage, drops or balance changed in this release. This is the arena you fight in, not the fight itself.'
+    ]},
     { v:'0.0.76', date:'Aug 1', heading:'The first character icons: Assassin and Voidshadow', items:[
       'The first commissioned <b>character icons</b> are in &mdash; the <b>Assassin</b> and the <b>Voidshadow</b>. Each replaces its placeholder portrait in three places at once: the <b>Classes</b> tab card, the <b>Combat</b> arena while you are that class, and every <b>Leaderboard</b> row belonging to one.',
       'The other 22 classes keep their current portraits for now. Each is swapped in as its art is finished, so expect faces to appear a class at a time.',
@@ -31848,6 +32261,7 @@
     combatLog.push(entry);
     if(combatLog.length > COMBAT_LOG_MAX) combatLog = combatLog.slice(-COMBAT_LOG_MAX);
     if(chatChannel === 'combat') combatLogRenderOnly();
+    arenaMiniLogRenderOnly();   // the combat stage's mini feed, when the stage is on screen
   }
   // One combat-log entry -> its display row. Shared by the Combat feed and the death-report modal
   // (which embeds the final moments of a fatal fight).
@@ -31877,6 +32291,21 @@
     var el = document.getElementById('combatFeed'); if(!el) return;
     invalidateContentCache();   // wrote into #content outside render()
     feedRenderStick(el, combatLogHtml());
+  }
+  // The combat stage's mini feed is a TAIL of the same ring buffer the Chat tab's Combat channel renders --
+  // never a second log. One source of truth means a line can never appear in one and not the other, and the
+  // 200-row cap is already paid for. ARENA_MINI_LOG_ROWS is what fits the frame's inner height (196px box,
+  // 26px border-image on each side, ~16px rows); the extra rows overflow off the TOP because .ar2-log
+  // justifies to flex-end, so the newest line is always the one you see.
+  var ARENA_MINI_LOG_ROWS = 9;
+  function arenaMiniLogHtml(){
+    if(!combatLog.length) return '<div class="chat-empty">The fight begins&hellip;</div>';
+    return combatLog.slice(-ARENA_MINI_LOG_ROWS).map(combatLogLineHtml).join('');
+  }
+  function arenaMiniLogRenderOnly(){
+    var el = document.getElementById('arenaMiniLog'); if(!el) return;
+    invalidateContentCache();   // wrote into #content outside render()
+    el.innerHTML = arenaMiniLogHtml();
   }
   function renderChatTab(){
     guildEnsureLoaded();
@@ -35652,26 +36081,51 @@
 
     if(state.activity.type==='combat'){
       var m = monsterById(state.activity.monsterId);
-      var mf = document.getElementById('arenaMonsterFill');
-      var ml = document.getElementById('arenaMonsterLabel');
-      if(mf && m){
-        var hpPct = clamp(state.activity.monsterHp/m.hp*100,0,100);
-        mf.style.width = hpPct+'%';
+      var maxHpVal = maxHp(state);
+      var _shieldLive = combatShieldTotal(state);
+      // ---- HP ORBS ----
+      // Only the TARGET is set here; the spring integrates in orbTick(), which runs on every frame of the
+      // main loop (including the ones where a full render() happens, which this pass is skipped on). Setting
+      // the level directly would kill the slosh -- the whole point is that the fluid lags the true value.
+      if(m) orbSetTarget('foe', clamp(state.activity.monsterHp/m.hp, 0, 1));
+      orbSetTarget('me', clamp(state.playerHp/maxHpVal, 0, 1));
+      var _nFoe = document.getElementById('ar2Num-foe');
+      if(_nFoe && m) _nFoe.textContent = fmt(state.activity.monsterHp) + ' / ' + fmt(m.hp);
+      var _nMe = document.getElementById('ar2Num-me');
+      if(_nMe) _nMe.textContent = fmt(state.playerHp) + ' / ' + fmt(maxHpVal);
+      // The absorb pool rings the player's orb. A second liquid in the same glass is unreadable at this size.
+      var _shl = document.getElementById('ar2Shield-me');
+      if(_shl) _shl.style.display = _shieldLive > 0 ? 'block' : 'none';
+      // ---- SWING BARS ----
+      var _stun = enemyStunned(state);
+      var _fFoe = document.getElementById('ar2AtkFoe');
+      if(_fFoe && m){
+        _fFoe.style.width = clamp((state.activity.monsterTickAccum||0)/(m.attackSpeed*1000*(1+enemyExtraSlowPct()))*100,0,100)+'%';
+        // The stun tint lives on the BAR, not the fill, because the frame art is what reads at 34px.
+        var _bar = _fFoe.parentNode && _fFoe.parentNode.parentNode;
+        if(_bar && _bar.classList){
+          if(_bar.classList.contains('stun') !== _stun){
+            _bar.classList.toggle('stun', _stun);
+            var _lbl = document.getElementById('ar2AtkFoe-n');
+            if(_lbl) _lbl.innerHTML = _stun ? (svgIcon('lightning','#fff3a0')+' Stunned!') : 'Attack';
+          }
+        }
+        // The countdown reflects the live cadence (Slow/Chill lengthen it, Demonic Frenzy shortens it).
+        var _t = document.getElementById('ar2AtkFoe-t');
+        if(_t){
+          var _spd = m.attackSpeed*(1+enemyExtraSlowPct())*enemyFrenzySpeedMult(state.activity, m);
+          var _slw = _spd > m.attackSpeed + 1e-9, _hst = _spd < m.attackSpeed - 1e-9;
+          var _txt = (+_spd.toFixed(1))+'s'+(_slw?' ▼':(_hst?' ▲':''));
+          if(_t.textContent !== _txt) _t.textContent = _txt;
+          _t.style.color = _slw ? ATK_SPEED_SLOW_COLOR : (_hst ? ATK_SPEED_HASTE_COLOR : '');
+        }
       }
-      if(ml && m) ml.textContent = fmt(state.activity.monsterHp) + ' / ' + m.hp;
-      var maf = document.getElementById('arenaMonsterAtkFill');
-      if(maf && m){
-        var monsterAtkPct = clamp((state.activity.monsterTickAccum||0)/(m.attackSpeed*1000*(1+enemyExtraSlowPct()))*100,0,100);
-        maf.style.width = monsterAtkPct+'%';
-        var _stun = enemyStunned(state);
-        maf.style.background = _stun ? '#e8d84a' : 'var(--gold)';
-        var mal = document.getElementById('arenaMonsterAtkLabel');
-        if(mal){ var _want = _stun ? '⚡ Stunned!' : 'Monster Attack'; if(mal.textContent.replace(/\s+/g,' ').trim() !== _want) mal.innerHTML = _stun ? (svgIcon('lightning','#e8d84a')+' Stunned!') : 'Monster Attack'; }
-        // Attack-speed readout reflects the live slowed cadence (Slow + Chill), tinted when reduced.
-        var mas = document.getElementById('arenaMonsterAtkSpeed');
-        if(mas){ var _spd = m.attackSpeed*(1+enemyExtraSlowPct())*enemyFrenzySpeedMult(state.activity, m); var _slw = _spd > m.attackSpeed + 1e-9; var _hst = _spd < m.attackSpeed - 1e-9;
-          var _txt = (+_spd.toFixed(1))+'s'+(_slw?' ▼':(_hst?' ▲':'')); if(mas.textContent.replace(/\s+/g,' ').trim() !== _txt) mas.innerHTML = _txt; mas.style.color = _slw ? ATK_SPEED_SLOW_COLOR : (_hst ? ATK_SPEED_HASTE_COLOR : ''); mas.style.fontWeight = (_slw || _hst) ? '700' : ''; }
-      }
+      var spf = document.getElementById('ar2AtkSpec');
+      if(spf && m && m.special){ spf.style.width = clamp((state.activity.specialAccum||0)/m.special.chargeMs*100,0,100)+'%'; }
+      var paf = document.getElementById('ar2AtkMe');
+      if(paf) paf.style.width = clamp((state.activity.tickAccum||0)/playerAttackIntervalMs()*100,0,100)+'%';
+      var oaf = document.getElementById('ar2AtkOff');
+      if(oaf) oaf.style.width = clamp((state.activity.offhandTickAccum||0)/offhandClawAttackIntervalMs()*100,0,100)+'%';
       // Enemy defeated: replay the fade-out/fade-in on the portrait. Driven from here rather than straight
       // from defeatMonster because a full render() rebuilds the element and would drop a class set earlier --
       // the new element arrives with no _swapAt, so this re-arms the animation on it. Bounded to the swap's
@@ -35684,23 +36138,6 @@
         _mp.classList.add('enemy-swap');
         _mp.innerHTML = monsterPortrait(m);   // land the NEXT foe's art mid-fade (a chain can change monster)
       }
-      var spf = document.getElementById('arenaSpecialFill');
-      if(spf && m && m.special){ spf.style.width = clamp((state.activity.specialAccum||0)/m.special.chargeMs*100,0,100)+'%'; }
-      var pf = document.getElementById('arenaPlayerFill');
-      var pl = document.getElementById('arenaPlayerLabel');
-      var maxHpVal = maxHp(state);
-      if(pf){
-        var pPct = clamp(state.playerHp/maxHpVal*100,0,100);
-        pf.style.width = pPct+'%';
-      }
-      // Live blue shield overlay: width tracks the total absorb pool, hidden when there's none.
-      var _shieldLive = combatShieldTotal(state);
-      var psh = document.getElementById('arenaPlayerShield');
-      if(psh){
-        if(_shieldLive > 0){ psh.style.display = 'block'; psh.style.width = clamp(_shieldLive/Math.max(1,maxHpVal)*100,0,100)+'%'; }
-        else psh.style.display = 'none';
-      }
-      if(pl) pl.innerHTML = fmt(state.playerHp) + ' / ' + maxHpVal + (_shieldLive>0?' <span class="hp-shield-txt">+'+fmt(_shieldLive)+' shield</span>':'');
       var shp = document.getElementById('statPlayerHpVal'); // Health row in the combat stats panel
       if(shp) shp.textContent = fmt(state.playerHp) + ' / ' + fmt(maxHpVal);
       // Live bow-ammo counters (arena card + combat stats panel), updated only when the count changes.
@@ -35709,7 +36146,7 @@
       if(par && par._arrowN !== _arN){
         par._arrowN = _arN;
         par.innerHTML = _arN>0 ? fmt(_arN) : ('none &mdash; &times;'+UNFLETCHED_DMG_MULT);
-        par.style.color = _arN>0 ? '' : 'var(--hp-bad)';
+        par.style.color = _arN>0 ? '' : '#e07a6a';
       }
       var sar = document.getElementById('statArrowsVal');
       if(sar && sar._arrowN !== _arN){
@@ -35719,28 +36156,25 @@
       }
       var pcl = document.getElementById('potionChargeLabel');
       if(pcl) pcl.textContent = (state.potionCharges||0);
-      var paf = document.getElementById('arenaPlayerAtkFill');
-      if(paf){
-        var playerAtkPct = clamp((state.activity.tickAccum||0)/playerAttackIntervalMs()*100,0,100);
-        paf.style.width = playerAtkPct+'%';
-      }
-      var oaf = document.getElementById('arenaOffhandAtkFill');
-      if(oaf){ oaf.style.width = clamp((state.activity.offhandTickAccum||0)/offhandClawAttackIntervalMs()*100,0,100)+'%'; }
+      // ---- COMPANIONS: up to six cast clocks and spell queues ----
       activeCompanionList(state).forEach(function(cid){
         var cc = (state.companionCast && state.companionCast[cid]) || {accum:0, index:0};
         var faf = document.getElementById('arenaCast-'+cid);
         if(faf){ faf.style.width = clamp((cc.accum||0)/familiarCastIntervalMs()*100,0,100)+'%'; }
-        // Move the "next to cast" highlight along the rotation as the companion cycles its spells.
+        // Move the "next to cast" pip along the queue as the companion cycles its spells.
         var comp = FAMILIAR_DATA[cid];
         var rota = document.getElementById('arenaRota-'+cid);
-        if(comp && comp.spells && rota){
+        if(comp && comp.spells && comp.spells.length && rota){
           var ni = (cc.index||0) % comp.spells.length;
           if(rota._ni !== ni){
             rota._ni = ni;
             for(var _ri=0; _ri<comp.spells.length; _ri++){
               var ch = document.getElementById('arenaRota-'+cid+'-'+_ri);
-              if(ch){ var isN = _ri===ni; ch.classList.toggle('next', isN); ch.innerHTML = (isN?'▸ ':'')+spellElementIcon(comp.spells[_ri])+escapeHtml(comp.spells[_ri].name); }
+              if(ch) ch.classList.toggle('next', _ri===ni);
             }
+            // Keep the hover text honest about which spell lands next.
+            var _fam = document.getElementById('ar2Fam-'+cid);
+            if(_fam) _fam.title = comp.name + ' — next: ' + comp.spells[ni].name;
           }
         }
       });
@@ -37034,6 +37468,11 @@
     // is what actually animates the bars. This is the difference between "rebuild 700 rows 60x/sec" and
     // "rebuild them 10x/sec while the bars still move at 60fps".
     var _pSim = PERF_ON ? performance.now() : 0;   // everything above is simulation; below is UI
+    // The HP orbs step OUTSIDE the render/update branch, so the fluid animates on every frame -- including
+    // the ones a full render() lands on, which skip updateDynamic() entirely. Sloshing at 60fps while the
+    // rest of the UI rebuilds at 10fps is the whole reason the physics state lives outside the DOM. It
+    // no-ops in a few microseconds when the stage is not on screen (the canvas lookup misses).
+    orbTick();
     if(needsRender && !isEditingField() && (Date.now() - _lastRenderAt) >= RENDER_MIN_MS){
       needsRender = false;
       var _pr = PERF_ON ? performance.now() : 0;
@@ -37422,7 +37861,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.76.3';
+  var GAME_VERSION = '0.0.77.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -37568,6 +38007,10 @@
       GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, renderFaithActivityTab:renderFaithActivityTab, planOfflineFaithActivity:planOfflineFaithActivity, physiqueLevelLabel:physiqueLevelLabel, anySkillLevel:anySkillLevel, anySkillProgress:anySkillProgress, anySkillXpVal:anySkillXpVal, skillTabsByLabel:skillTabsByLabel,
       renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
       combatLogPush:combatLogPush, combatLogHtml:combatLogHtml, advCombat:advCombat, _clReset:function(){ combatLog = []; }, _clGet:function(){ return combatLog; },
+      arenaMiniLogHtml:arenaMiniLogHtml, ARENA_MINI_LOG_ROWS:ARENA_MINI_LOG_ROWS, renderArena:renderArena,
+      orbState:orbState, orbReset:orbReset, orbResetFoe:orbResetFoe, orbSetTarget:orbSetTarget, orbStep:orbStep,
+      orbHtml:orbHtml, ar2Bar:ar2Bar, ORB_K:ORB_K, ORB_DAMP:ORB_DAMP, _orbsGet:function(){ return _orbs; },
+      _orbsReset:function(){ _orbs = {}; _ar2FightSig = ''; },
       chatMessagesHtml:chatMessagesHtml, chatRoleOf:chatRoleOf, chatIsMod:chatIsMod, chatIsOwner:chatIsOwner, chatMuteUntil:chatMuteUntil, chatAmIMuted:chatAmIMuted, chatMuteLabel:chatMuteLabel, renderChatModModal:renderChatModModal, renderChatModerationPanel:renderChatModerationPanel, chatNameFor:chatNameFor, titleName:titleName, profileCardBodyHtml:profileCardBodyHtml, renderPlayerProfileModal:renderPlayerProfileModal,
       _setChatMod:function(o){ o=o||{}; if(o.roles) chatRoles=o.roles; if(o.mutes) chatMutes=o.mutes; if(o.names) chatUserNames=o.names; if(o.titles) chatTitles=o.titles; if(o.clamps) accountClamps=o.clamps; if(o.signals) clampSignals=o.signals; if('myRole' in o) myChatRole=o.myRole; if('messages' in o) chatMessages=o.messages; if('authUser' in o) authUser=o.authUser; if('target' in o) chatModTarget=o.target; if('profileTarget' in o) playerProfileTarget=o.profileTarget; },
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
