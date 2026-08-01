@@ -59,6 +59,16 @@ furniture on tan. Precedent is the top bar / rail, already dark via `--stone-dk`
   farming chain that's the animation seen most. Handled twice on purpose: `orbResetFoe()` in `defeatMonster`
   (instant, at kill time) and a fight-signature check in `renderArena` (`monsterId + duelStartedAt`, stamped
   by all five combat entry points) for paths that skip `defeatMonster` — retreat, then re-engage.
+- **NARROW SCREENS DO NOT RESTACK THE COMBATANTS (v0.0.77.1).** The stage first shipped collapsing to one
+  column under 820px, which is where a phone at 100% zoom lands — and stacked, the mirrored plinths stop
+  joining and the two fighters stop facing each other, which is the whole layout. The owner's tell was that
+  zooming out 10% (past the breakpoint) looked RIGHT: the side-by-side geometry is fine at phone widths, it
+  only needed smaller metrics. So `@media (max-width:820px)` / `480px` shrink parts and reflow NOTHING in the
+  header or the plinth pair. Only `.ar2-low` goes full width, because half of a 360px screen gives the feed
+  ~115px of inner width, where a line like "You hit the Rabbit for 134,000,000 CRIT" cannot be shown at all —
+  truncating hid the damage number and `white-space:normal` made wrapped rows paint over each other. The
+  foe's element/matchup line is emitted as a sibling of `.ar2-tops` (full stage width, right-aligned) for the
+  same reason: inside a 150px half-column its four badges each took their own line.
 - **Swing bars are HEIGHT-driven, not aspect-driven** (`--ar2-barh`, default 34px). At the art's native
   2.85:1 one bar is ~150px tall, so a foe's swing clock + special charge would outgrow the plinth. Squashing
   works because the frame is mostly horizontal rails — verified by rendering 151/72/56/46/38/30/24px; below
