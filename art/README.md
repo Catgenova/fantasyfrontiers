@@ -25,15 +25,44 @@ follows the name. The selftest accepts either form, so a genuine typo still fail
 **Lowercase matters.** GitHub Pages is case-sensitive: `Assassin.png` will 404 where `assassin.png` works,
 and the failure is silent (the class just keeps its old portrait).
 
+## Workflow
+
+1. Drop the delivered file in **`art/src/`** — full resolution, exactly as the artist sent it. This is the
+   source of truth and is **never served**; the build excludes it.
+2. Run **`npm run art:optimize`**. It writes `art/<name>.png` at **384×384**, palette-quantised — about
+   **40KB**, down from ~300KB, an 86% saving.
+3. Add the line to `CLASS_ART` in `index.html`, keyed by class **id**.
+4. Run **`npm run build && npm run artcheck`** to confirm it serves and decodes from `dist/`.
+
 ## Format
 
-- **PNG with transparency**, square, **512×512** or larger. The art is drawn at 104px in the arena and
-  24px on a leaderboard row, so it needs enough resolution for the big one and enough contrast to still
-  read at the small one.
+- **PNG with transparency.** Deliver at **512×512 or larger**; anything under 384 gets upscaled and
+  `art:optimize` warns.
 - Design it **circular**, with its own frame/ring, and transparent corners. The CSS applies
-  `border-radius:50%` and `object-fit:cover`, so a square canvas is cropped to a circle — anything in the
-  corners is lost.
-- Keep files lean. These are fetched on every boot; a few hundred KB each is fine, several MB is not.
+  `border-radius:50%` and `object-fit:cover`, and the optimizer crops square with `fit:cover`, so anything
+  in the corners is lost.
+- Don't hand-optimize. `art:optimize` handles it, and it is re-runnable — the served copy is a build
+  artifact of the source, not something to edit.
+
+### Why 384px palette PNG, and not WebP
+
+Measured on the first two icons, weighting error by **alpha** so fully transparent pixels (whose RGB is
+undefined and differs wildly) don't pollute the average:
+
+| Encoding | Size | Visible MAE | Peak error |
+|---|---|---|---|
+| **palette PNG** | 39KB | **1.71**/255 | **49** |
+| webp q90 | 34KB | 3.96/255 | 130 |
+
+Palette wins on fidelity at the same size — the opposite of the usual answer, and a property of *this*
+content: flat vector-style illustration with a limited palette quantises almost losslessly, while lossy DCT
+rings around hard edges (blade highlights, mask outline). It also keeps one format with no browser-support
+question.
+
+An **un-weighted** MAE said the reverse (15.84 vs 7.58) and would have picked WebP. Averaging over invisible
+pixels is the trap. **If a future icon is painterly rather than vector, re-measure — don't assume.**
+
+384px covers the largest render (104px in the arena) at 3× device pixel ratio with margin.
 
 ## Rollout is per class, and safe
 

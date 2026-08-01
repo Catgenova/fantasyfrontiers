@@ -128,7 +128,13 @@ writeFileSync(`${OUT_DIR}/.nojekyll`, "");                                  // s
 if (existsSync("tests")) cpSync("tests", `${OUT_DIR}/tests`, { recursive: true }); // keep ?selftest working
 if (existsSync("CNAME")) cpSync("CNAME", `${OUT_DIR}/CNAME`);               // preserve a custom domain if set
 if (existsSync("favicon.svg")) cpSync("favicon.svg", `${OUT_DIR}/favicon.svg`); // browser-tab icon (the crest logo)
-if (existsSync("art")) cpSync("art", `${OUT_DIR}/art`, { recursive: true });     // painted class icons (see art/README.md)
+// Painted class icons (see art/README.md). art/src/ holds the full-resolution originals and must NOT ship --
+// it is ~7x the size of what the client actually fetches, and no player ever requests it. The README stays
+// out too; it documents the pipeline for us, not for anyone loading the game.
+if (existsSync("art")) cpSync("art", `${OUT_DIR}/art`, {
+  recursive: true,
+  filter: (src) => !/(^|[\\/])(src|README\.md)$/.test(src) && !/[\\/]src[\\/]/.test(src),
+});
 
 // Note: supabase/ (backend source) is intentionally NOT copied, so the edge-function source stops
 // being served from the Pages site.
