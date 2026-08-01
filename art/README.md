@@ -9,8 +9,21 @@ Commissioned raster icons for the Hero Classes. Drop a file here, add one line t
 
 ## Naming
 
-`art/<classId>.png` — the class id, exactly as it appears in `CLASS_DEFS` (camelCase where it is
-camelCase: `treasureHunter`, `plaguebearer`, `thunderfury`).
+`art/<classname>.png` — the class's **player-facing name**, lowercased, letters only. That is what an
+artist naturally delivers, so it is the convention:
+
+| Class id | Display name | File |
+|---|---|---|
+| `assassin` | Assassin | `art/assassin.png` |
+| `nightblade` | **Voidshadow** | `art/voidshadow.png` |
+| `treasureHunter` | Treasure Hunter | `art/treasurehunter.png` |
+
+The id and the name coincide for most classes but not all — the Nightblade is the Voidshadow in game, the
+Reaper is the Rotlord's chassis, and so on. `CLASS_ART` is keyed by the **id** regardless; only the filename
+follows the name. The selftest accepts either form, so a genuine typo still fails the build.
+
+**Lowercase matters.** GitHub Pages is case-sensitive: `Assassin.png` will 404 where `assassin.png` works,
+and the failure is silent (the class just keeps its old portrait).
 
 ## Format
 

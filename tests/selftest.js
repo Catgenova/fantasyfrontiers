@@ -9937,7 +9937,12 @@
     ids.forEach(function(cid){
       ok(!!FF.CLASS_DEFS_BY_ID[cid], 'CLASS_ART key "'+cid+'" is a real class id');
       ok(/^art\/[a-zA-Z]+\.(png|webp)$/.test(FF.CLASS_ART[cid]), cid+' art path is a relative art/ file');
-      ok(FF.CLASS_ART[cid].indexOf(cid) !== -1, cid+' art filename matches its class id');
+      // The file is named after the class's player-facing NAME (lowercased), which is what an artist
+      // delivers -- the Nightblade's art is voidshadow.png. Accept either that or the raw id, so a real
+      // typo still fails but a legitimate name/id mismatch does not.
+      var base = FF.CLASS_ART[cid].replace(/^art\//, '').replace(/\.(png|webp)$/, '').toLowerCase();
+      var want = [cid.toLowerCase(), String(FF.CLASS_DEFS_BY_ID[cid].name || '').toLowerCase().replace(/[^a-z]/g, '')];
+      ok(want.indexOf(base) !== -1, cid+' art filename ("'+base+'") matches its id or its class name');
     });
     var ready = FF._classArtReady();
     var cid0 = ids[0];
