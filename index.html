@@ -16265,6 +16265,200 @@
     }
     return out;
   }
+  // The main-hand class on-hit procs, lifted out of playerAttackTick (which was 576 lines with 68
+  // class-specific references across 23 of 24 classes -- the single place every class rework has to touch,
+  // and the place where six more will land). Nothing about the behaviour changed: this is the same block in
+  // the same position, and the parameters are deliberately named EXACTLY as the locals they replace so the
+  // 175-line body needed no edits at all. Verified before moving: the block reads only these six values,
+  // writes none of them back, and contains no return/break/continue -- so a return here could not have been
+  // a return from the caller.
+  //
+  // isOffhand is passed even though the caller already guards on it: the body carries its own redundant
+  // `!isOffhand` checks, and keeping the parameter means the 175 lines did not have to be touched. The
+  // typechecker caught this the moment it was left out, which is the whole reason that gate exists.
+  //
+  // ORDERING CONTRACT, which the comments inside rely on: this runs BEFORE the swing is banked into
+  // act.dotHitAvg further down playerAttackTick. Effects that scale off the recent-hit EMA (the Draw-Cut,
+  // the Herald's Breach base, the Knight's Decree base) therefore see the average of the PRECEDING swings,
+  // not this one. Do not move the call past that banking.
+  function classOnHit(act, monster, dmgToMonster, isCrit, isOffhand, juggernautSmash, samuraiDrawCut){
+      // Samurai "The Ronin" (Iaijutsu, Lv1): the Draw-Cut. This strike found the stance full (samuraiDrawCut
+      // forced the crit at roll time), so the draw lands now -- and it applies the Bleed, banks the Souls and
+      // opens the Flowing Strikes window, all inside smDrawCutFire. Fired BEFORE the per-hit build so a Cut
+      // cannot immediately re-arm itself. It scales off dotBase, which at this point holds the EMA of the
+      // PRECEDING swings -- this swing is banked into it further down, which is the correct order: the draw
+      // is paid for by the hits that filled the stance.
+      if(samuraiDrawCut){
+        if(legActive('ghostblade')) decayApply(act, 1);            // Ghostblade: the draw rots what it opens
+        smDrawCutFire(act, monster, state);
+      }
+      // The stance fills on every landed hit as well as on the clock (applySamuraiFocusTick).
+      if(samuraiBonus(1)) smFocusAdd(SM_FOCUS_PER_HIT, state);
+      // Herald "The Bastion": bank the swing into the Breach base (the wall erupts off your recent hits).
+      if(heraldBonus(1)) state.heraldHitAvg = state.heraldHitAvg ? Math.round(state.heraldHitAvg * 0.75 + dmgToMonster * 0.25) : dmgToMonster;
+      // Knight "The Warlord" (Raise the Banner): every landed hit lifts the Banner (crits +2; Bannerguard
+      // D2 2pc: +3) and banks the hit into the Decree base. The Decree itself fires from knDecreeOnSwing.
+      if(knightBonus(1)){
+        if(state.knWarbringerCrit) state.knWarbringerCrit = false;      // Warbringer: the primed crit is spent by this swing
+        if((state.knTrample||0) > 0) state.knTrample -= 1;              // Trample (D3 full): the surged swing is spent
+        state.knHitAvg = state.knHitAvg ? Math.round(state.knHitAvg * 0.75 + dmgToMonster * 0.25) : dmgToMonster;
+        knBannerRaise(isCrit ? (set2D2('knight') ? KN_SEED_CRIT_D2 : KN_SEED_CRIT) : KN_SEED_HIT);
+        knDecreeOnSwing(act);
+      }
+      // Treasure Hunter "The Reliquary" (Grave Charge): every landed hit charges the dig -- a Critical Hit
+      // counts as two -- and banks the hit into the Grave Strike base. The Strike fires from thGraveStrikeFire
+      // as soon as the charge is full and there is a relic to load.
+      if(!isOffhand && treasureHunterBonus(1)){
+        state.thHitAvg = state.thHitAvg ? Math.round(state.thHitAvg * 0.75 + dmgToMonster * 0.25) : dmgToMonster;
+        thGraveChargeAdd(isCrit ? 2 : 1);
+        // Goldgorge: gold earned this fight buys charges, so Gold Find becomes attack THROUGHPUT.
+        if(legActive('goldgorge') && act){
+          // At most ONE charge per swing. Uncapped this was a runaway: a dragon's gold reward is thousands per
+          // crit-pilfer, which bought several charges a second and read 995B against a 449B field.
+          var _ggSteps = Math.floor((act.goldEarned||0) / LEG_GOLDGORGE_PER_GOLD);
+          if(_ggSteps > (act.thGoldCharges||0)){ thGraveChargeAdd(1); act.thGoldCharges = (act.thGoldCharges||0) + 1; }
+        }
+        thGraveStrikeFire(act, monster);
+      }
+      // Bloodwaltz (D2 rapier): each untouched landed hit builds a damage stack (reset when you're struck).
+      // Goldgorge (D2 scimitar): a Critical Hit pilfers bonus gold, scaling with the foe's gold reward.
+      if(!isOffhand && isCrit && legActive('goldgorge') && monster){ var _gg = Math.max(1, Math.round(randInt(monster.goldMin, monster.goldMax) * LEG_GOLDGORGE_CRIT_FRAC * thGoldFindMult(state))); earnGold(_gg); spawnCombatFloat('+'+fmt(_gg)+'g', 'ft-success', false); }
+      // D3 Decay appliers (2pc): Sharpshooter Marrow Shot lays Decay on a Critical Hit.
+      if(!isOffhand && isCrit && set2D3('sharpshooter')) decayApply(act, 2); // Marrow Shot (2 stacks)
+      // Gravestone (Juggernaut D3 2pc): your hits Curse the foe.
+      if(!isOffhand && set2D3('juggernaut')) curseApply(act);
+      // Monolith (D3 sledge): your hits Curse the foe.
+      if(!isOffhand && legActive('monolith')) curseApply(act);
+      // Gravesight (D3 long bow): your Critical Hits apply 3 Decay stacks.
+      if(!isOffhand && isCrit && legActive('gravesight')) decayApply(act, 3);
+      // Grave Robber (Treasure Hunter D3 2pc): your Critical Hits Curse the foe (Cursed foes drop more gold).
+      if(!isOffhand && isCrit && set2D3('treasureHunter')) curseApply(act);
+      // Berserker Blood Pact (Lv20): each landed hit spends current HP (never self-lethal) to fuel its bonus,
+      // and every drop is inked into the Blood Ledger — at DOUBLE value with the Gravewrath warhammer.
+      if(berserkerBonus(20) && state.playerHp > 1){
+        var _pactPaid = Math.min(state.playerHp - 1, Math.round(berserkerPactCost(state) * state.playerHp));
+        if(_pactPaid > 0){ state.playerHp -= _pactPaid; berserkerInkLedger(_pactPaid * (legActive('gravewrath') ? 2 : 1)); }
+      }
+      // Lumen Oracle on-hit: Lv1 Flashbang (8% stun); Lv40 Reflected Light (a share of the hit heals the lowest ally / you).
+      if(lumenBonus(1) && !offlineCapture && Math.random() < 0.08){ act.enemyStunUntil = Date.now() + 2000; spawnCombatFloat('Flashed!', 'ft-rare', true); }
+      if(lumenBonus(40)){ var _lr = lumenApplyHeal(dmgToMonster * lumenReflectPct(state) * lumenReflectD2Mult(state) * (set2D3('lumen') ? 1.5 : 1) * (legActive('gravelight') ? (1 + 0.05 * (act.decayStacks||0)) : 1)); if(_lr > 0 && !offlineCapture) spawnCombatFloat('+'+_lr+' HP', 'ft-success', false); } // Radiance (Lumen D2 2pc) + Grave Light (Lumen D3 2pc): +50% reflect heal each; Gravelight (D3 light wand): +5%/Decay stack
+      // Voidshadow on-hit: Lv1 Mark of the Void stacks Vulnerability (cap 10, refreshed each hit); at max,
+      // Lv80 Doom deepens it. Lv20 Enfeeble saps enemy damage 25% for 5s via the shared enemy-damage window.
+      if(nightbladeBonus(1)){
+        if((act.voidVulnUntil||0) <= Date.now()) act.voidVulnStacks = 0;   // a lapsed Mark starts fresh
+        var _prevVuln = act.voidVulnStacks || 0;
+        act.voidVulnStacks = Math.min(voidVulnCap(state), _prevVuln + voidMarkPerHit(state)); // Malediction (full): 2 stacks/hit; Creeping Doom (D2 2pc) raises the cap
+        act.voidVulnUntil = Date.now() + VOID_VULN_MS;
+        if(!offlineCapture){
+          if(nightbladeBonus(80) && act.voidVulnStacks >= voidVulnCap(state) && _prevVuln < voidVulnCap(state)) spawnCombatFloat('Doomed!', 'ft-rare', true);
+          else spawnCombatFloat('Vuln x'+act.voidVulnStacks, 'ft-bonus', true);
+        }
+        if(set2D3('nightblade') || legActive('soulrend')) curseApply(act); // Cursemark (Nightblade D3 2pc) / Soulrend (D3 dark wand): your Vulnerability stacks also Curse the foe
+      }
+      if(nightbladeBonus(20)){ state.classDebuffs.enemyDmgUntil = Date.now() + 5000; if(!offlineCapture) spawnCombatFloat('Enfeebled!', 'ft-bonus', true); }
+      // Juggernaut on-hit: Lv20 Overhead Smash advances the landed-hit tally (every 4th is the forced crit,
+      // already applied above); Lv40 Concussive Crits stun on a crit; Lv60 Building Fury banks crit damage.
+      if(juggernautBonus(20)){ act.juggernautSwings = (act.juggernautSwings||0) + 1; if(juggernautSmash && !offlineCapture) spawnCombatFloat('Overhead Smash!', 'ft-rare', true); }
+      if(juggernautBonus(40) && isCrit){ act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + JUG_CONCUSS_MS); if(!offlineCapture) spawnCombatFloat('Concussed!', 'ft-bonus', true); }
+      if(juggernautBonus(60) && isCrit){ act.juggernautFuryStacks = Math.min(JUG_FURY_MAX, (act.juggernautFuryStacks||0) + 1); if(!offlineCapture) spawnCombatFloat('Fury x'+act.juggernautFuryStacks, 'ft-bonus', false); }
+      // Every landed main-hand hit feeds the SHARED damage-over-time base (see dotBase). Ungated by class:
+      // Decay, poison and every ailment in the game read it, not just the class that happens to be worn.
+      if(!isOffhand && dmgToMonster > 0) act.dotHitAvg = act.dotHitAvg ? Math.round(act.dotHitAvg * 0.75 + dmgToMonster * 0.25) : dmgToMonster;
+      // Reaver Flensing (Lv 1): each hit stacks a Bleed and refreshes it; a 25% chance adds an extra stack.
+      // The hit is banked into the Bleed's base first -- every wound is worth a share of what you actually
+      // hit for, which is what makes the Bleed (and so the Cuts, the Count and the Harvest) real at BiS.
+      if(!isOffhand && reaverBonus(1)){
+        act.rvBleedHitAvg = act.rvBleedHitAvg ? Math.round(act.rvBleedHitAvg * 0.75 + dmgToMonster * 0.25) : dmgToMonster;
+        if((act.bleedUntil||0) <= Date.now()) act.bleedStacks = 0;        // a lapsed Bleed starts fresh
+        act.bleedStacks = Math.min(reaverBleedCap(state), (act.bleedStacks||0) + (Math.random() < 0.25 ? 2 : 1)); // Deep Cuts (Lv40) / Rabid raise the cap
+        act.bleedDps = act.bleedStacks * RV_BLEED_PCT * (act.rvBleedHitAvg||0);
+        act.bleedUntil = Date.now() + REAVER_BLEED_MS;
+        spawnCombatFloat('Rend x'+act.bleedStacks, 'ft-bonus', true);
+        if(set2D3('reaver')) d3SoulsAdd(1); // Blood Harvest (Reaver D3 2pc): each Bleed application banks a Soul Charge
+        // Harvest (Lv 60): a Critical Hit cashes the banked Cuts. (Hemorrhagic Burst retired into this --
+        // same idea, but with a resource behind it instead of paying out the Bleed's remaining duration.)
+        if(isCrit) rvHarvestFire(act, monster, state);
+      }
+      // Executioner Reaping Vigor (Lv1): a landed Critical Hit banks a stacking +25% max-HP buff (30s).
+      if(executionerBonus(1) && isCrit){ execVigorAddStack(); spawnCombatFloat('Reaping Vigor!', 'ft-rare', false); }
+      // Thunderfury (Chain Lightning, Lv1): a Critical Hit builds a crit-stack (attack speed); a non-crit resets.
+      // Thunderfury "The Stormlord" on-hit: seed the Storm (crits seed double; Charged Air D2 2pc: triple)
+      // and bank the hit into the Bolt base. The Storm itself strikes from applyTfStormTick.
+      if(thunderfuryBonus(1)){
+        state.tfStormHitAvg = state.tfStormHitAvg ? Math.round(state.tfStormHitAvg * 0.75 + dmgToMonster * 0.25) : dmgToMonster;
+        tfStormSeed(isCrit ? (set2D2('thunderfury') ? TF_SEED_CRIT_D2 : TF_SEED_CRIT) : TF_SEED_HIT);
+      }
+      // Frostwarden Permafrost (Lv1): every landed hit stacks Chill, slowing the enemy's action bar.
+      if(frostwardenBonus(1)){
+        var _cs = frostwardenApplyChill(act);
+        spawnCombatFloat('Chill x'+_cs, 'ft-bonus', true);
+      }
+      // Rimefang (D2 water wand): every hit deepens the Chill by 2 (works even without the Frostwarden class).
+      if(!isOffhand && legActive('rimefang')){ frostwardenApplyChill(act); frostwardenApplyChill(act); }
+      // Deep Freeze (legendary water wand): at max Chill, a hit can Freeze the foe (action-bar stun).
+      if(legActive('deepfreeze') && enemyChillStacks() >= FROST_CHILL_MAX_STACKS && !offlineCapture && Math.random() < LEG_DEEPFREEZE_CHANCE){
+        act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + LEG_DEEPFREEZE_MS);
+        spawnCombatFloat('Frozen!', 'ft-rare', true);
+      }
+      // Cursebringer (legendary dark wand): every hit Sunders the foe -- a second debuff feeding Void Resonance / Soul Tax.
+      if(legActive('cursebringer')){
+        if(!state.classDebuffs || typeof state.classDebuffs !== 'object') state.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
+        state.classDebuffs.enemyArmorUntil = Date.now() + LEG_SUNDER_MS;
+      }
+      // Frostwarden "The Deep Freeze" (Permafrost, Lv1): every landed hit builds RIME, and a deeply-rimed
+      // foe can Shatter. A full meter freezes it solid and shatters the whole thing (inside fwRimeAdd).
+      if(!isOffhand && frostwardenBonus(1)){
+        fwRimeAdd(fwRimePerHit(state), state);
+        if(fwShatterArmed(state)) fwShatterFire(act, state, false);
+        if(!offlineCapture) spawnCombatFloat('Rime ' + Math.round(fwRimeFrac(state) * 100) + '%', 'ft-bonus', true);
+      }
+      // (the old per-hit Frostbite stacking retired: Frostbite is derived from rime in fwRimeSync now)
+      if(false){
+        if((act.frostbiteUntil||0) <= Date.now()) act.frostbiteStacks = 0;
+        act.frostbiteStacks = Math.min(FROST_FROSTBITE_MAX, (act.frostbiteStacks||0) + 1);
+        act.frostbiteDps = act.frostbiteStacks * dotBase(state) * FROST_FROSTBITE_PCT;
+        act.frostbiteUntil = Date.now() + FROST_FROSTBITE_MS;
+        spawnCombatFloat('Frostbite x'+act.frostbiteStacks, 'ft-bonus', true);
+      }
+      // Frostwarden Shatter (Lv40): striking a Chilled foe can detonate the Chill for burst Water damage.
+      if(frostwardenBonus(40) && enemyChilled(state) && Math.random() < FROST_SHATTER_CHANCE){
+        var _shDmg = Math.round(dmgToMonster * FROST_SHATTER_PER_STACK * (act.chillStacks||0));
+        if(_shDmg > 0){
+          act.monsterHp -= _shDmg;
+          act.chillStacks = 0; act.enemyChillUntil = 0; // the Chill is consumed by the blast
+          spawnCombatFloat('❄ Shatter -'+fmt(_shDmg), 'ft-crit', true);
+        }
+      }
+      // Pyromancer Ignite (Lv1): every hit feeds FUEL into the Blaze. Bellows (Lv40) doubles a crit's fuel;
+      // Firestarter (D2 2pc) adds half again. Reaching the cap is what triggers a Flashover, inside the feed.
+      if(!isOffhand && pyromancerBonus(1)){
+        pyBlazeFeed(act, pyFuelPerHit(isCrit, state), state);
+        if(!offlineCapture) spawnCombatFloat('Blaze ' + Math.round(pyBlazeFrac(state) * 100) + '%', 'ft-bonus', true);
+        // Combust (Lv20): a Critical Hit cashes half the fire immediately.
+        if(isCrit) pyCombustFire(act, state);
+      }
+      // Ranger "The Beastmaster" (Sic 'Em, Lv1): a Critical Hit COMMANDS the companion. The four
+      // 25%-proc arrow perks (Venom/Barbed/Frost/Fire) retired -- they were the same perk four times, and
+      // Apex Predator's x3 fired only when four independent rolls happened to align.
+      if(!isOffhand && isCrit && rangerBonus(1)) rgStrikeFire(act, monster, state);
+      // Plaguebearer "The Plague" (Septic, Lv1): every landed hit raises the infection's SEVERITY. Rotshell
+      // adds more. (Virulence retired -- its only job was covering the case of having no coating, and the
+      // class no longer needs one.)
+      if(!isOffhand && plaguebearerBonus(1)){
+        pbPlagueAdd(PB_SEV_PER_HIT + (legActive('rotshell') ? PB_SEV_ROTSHELL : 0), state);
+        if(!offlineCapture) spawnCombatFloat('Plague ' + Math.round(pbSeverity(state)), 'ft-bonus', true);
+      }
+      if(false){
+        var vDps = dotBase(state) * PLAGUE_VIRULENCE_PCT * (1 + getFamBuff('potionPoison'));
+        if(vDps > (act.potionPoisonDps || 0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = Math.max(act.potionPoisonDps || 0, vDps);
+        legNotePoisonStart(act); // Wasting Curse ramp
+        act.potionPoisonUntil = Math.max(act.potionPoisonUntil || 0, Date.now() + 4000);
+        spawnCombatFloat('Envenomed!', 'ft-rare', true);
+      }
+      // (Serpent's Sting retired: the Quiverlord's Serpent Fang head carries the venom now.)
+      // (Lay on Hands retired: the Warpriest's party care is Shared Liturgy now.)
+  }
+
   function playerAttackTick(isBonus, attempt, isOffhand){
     attempt = attempt || 1; // legacy re-entry counter (kept for signature stability; no longer used)
     var act = state.activity;
@@ -16587,183 +16781,7 @@
     if(isWandAttack) awardElementXp(weaponStyle.element, effDmg);
     else if(isScepterAttack) awardElementXp('light', Math.round(effDmg * 0.5));
     // Class on-hit procs are main-hand only (they don't double up from the off-hand Claw's swings).
-    if(!isOffhand){
-      // Samurai "The Ronin" (Iaijutsu, Lv1): the Draw-Cut. This strike found the stance full (samuraiDrawCut
-      // forced the crit at roll time), so the draw lands now -- and it applies the Bleed, banks the Souls and
-      // opens the Flowing Strikes window, all inside smDrawCutFire. Fired BEFORE the per-hit build so a Cut
-      // cannot immediately re-arm itself. It scales off dotBase, which at this point holds the EMA of the
-      // PRECEDING swings -- this swing is banked into it further down, which is the correct order: the draw
-      // is paid for by the hits that filled the stance.
-      if(samuraiDrawCut){
-        if(legActive('ghostblade')) decayApply(act, 1);            // Ghostblade: the draw rots what it opens
-        smDrawCutFire(act, monster, state);
-      }
-      // The stance fills on every landed hit as well as on the clock (applySamuraiFocusTick).
-      if(samuraiBonus(1)) smFocusAdd(SM_FOCUS_PER_HIT, state);
-      // Herald "The Bastion": bank the swing into the Breach base (the wall erupts off your recent hits).
-      if(heraldBonus(1)) state.heraldHitAvg = state.heraldHitAvg ? Math.round(state.heraldHitAvg * 0.75 + dmgToMonster * 0.25) : dmgToMonster;
-      // Knight "The Warlord" (Raise the Banner): every landed hit lifts the Banner (crits +2; Bannerguard
-      // D2 2pc: +3) and banks the hit into the Decree base. The Decree itself fires from knDecreeOnSwing.
-      if(knightBonus(1)){
-        if(state.knWarbringerCrit) state.knWarbringerCrit = false;      // Warbringer: the primed crit is spent by this swing
-        if((state.knTrample||0) > 0) state.knTrample -= 1;              // Trample (D3 full): the surged swing is spent
-        state.knHitAvg = state.knHitAvg ? Math.round(state.knHitAvg * 0.75 + dmgToMonster * 0.25) : dmgToMonster;
-        knBannerRaise(isCrit ? (set2D2('knight') ? KN_SEED_CRIT_D2 : KN_SEED_CRIT) : KN_SEED_HIT);
-        knDecreeOnSwing(act);
-      }
-      // Treasure Hunter "The Reliquary" (Grave Charge): every landed hit charges the dig -- a Critical Hit
-      // counts as two -- and banks the hit into the Grave Strike base. The Strike fires from thGraveStrikeFire
-      // as soon as the charge is full and there is a relic to load.
-      if(!isOffhand && treasureHunterBonus(1)){
-        state.thHitAvg = state.thHitAvg ? Math.round(state.thHitAvg * 0.75 + dmgToMonster * 0.25) : dmgToMonster;
-        thGraveChargeAdd(isCrit ? 2 : 1);
-        // Goldgorge: gold earned this fight buys charges, so Gold Find becomes attack THROUGHPUT.
-        if(legActive('goldgorge') && act){
-          // At most ONE charge per swing. Uncapped this was a runaway: a dragon's gold reward is thousands per
-          // crit-pilfer, which bought several charges a second and read 995B against a 449B field.
-          var _ggSteps = Math.floor((act.goldEarned||0) / LEG_GOLDGORGE_PER_GOLD);
-          if(_ggSteps > (act.thGoldCharges||0)){ thGraveChargeAdd(1); act.thGoldCharges = (act.thGoldCharges||0) + 1; }
-        }
-        thGraveStrikeFire(act, monster);
-      }
-      // Bloodwaltz (D2 rapier): each untouched landed hit builds a damage stack (reset when you're struck).
-      // Goldgorge (D2 scimitar): a Critical Hit pilfers bonus gold, scaling with the foe's gold reward.
-      if(!isOffhand && isCrit && legActive('goldgorge') && monster){ var _gg = Math.max(1, Math.round(randInt(monster.goldMin, monster.goldMax) * LEG_GOLDGORGE_CRIT_FRAC * thGoldFindMult(state))); earnGold(_gg); spawnCombatFloat('+'+fmt(_gg)+'g', 'ft-success', false); }
-      // D3 Decay appliers (2pc): Sharpshooter Marrow Shot lays Decay on a Critical Hit.
-      if(!isOffhand && isCrit && set2D3('sharpshooter')) decayApply(act, 2); // Marrow Shot (2 stacks)
-      // Gravestone (Juggernaut D3 2pc): your hits Curse the foe.
-      if(!isOffhand && set2D3('juggernaut')) curseApply(act);
-      // Monolith (D3 sledge): your hits Curse the foe.
-      if(!isOffhand && legActive('monolith')) curseApply(act);
-      // Gravesight (D3 long bow): your Critical Hits apply 3 Decay stacks.
-      if(!isOffhand && isCrit && legActive('gravesight')) decayApply(act, 3);
-      // Grave Robber (Treasure Hunter D3 2pc): your Critical Hits Curse the foe (Cursed foes drop more gold).
-      if(!isOffhand && isCrit && set2D3('treasureHunter')) curseApply(act);
-      // Berserker Blood Pact (Lv20): each landed hit spends current HP (never self-lethal) to fuel its bonus,
-      // and every drop is inked into the Blood Ledger — at DOUBLE value with the Gravewrath warhammer.
-      if(berserkerBonus(20) && state.playerHp > 1){
-        var _pactPaid = Math.min(state.playerHp - 1, Math.round(berserkerPactCost(state) * state.playerHp));
-        if(_pactPaid > 0){ state.playerHp -= _pactPaid; berserkerInkLedger(_pactPaid * (legActive('gravewrath') ? 2 : 1)); }
-      }
-      // Lumen Oracle on-hit: Lv1 Flashbang (8% stun); Lv40 Reflected Light (a share of the hit heals the lowest ally / you).
-      if(lumenBonus(1) && !offlineCapture && Math.random() < 0.08){ act.enemyStunUntil = Date.now() + 2000; spawnCombatFloat('Flashed!', 'ft-rare', true); }
-      if(lumenBonus(40)){ var _lr = lumenApplyHeal(dmgToMonster * lumenReflectPct(state) * lumenReflectD2Mult(state) * (set2D3('lumen') ? 1.5 : 1) * (legActive('gravelight') ? (1 + 0.05 * (act.decayStacks||0)) : 1)); if(_lr > 0 && !offlineCapture) spawnCombatFloat('+'+_lr+' HP', 'ft-success', false); } // Radiance (Lumen D2 2pc) + Grave Light (Lumen D3 2pc): +50% reflect heal each; Gravelight (D3 light wand): +5%/Decay stack
-      // Voidshadow on-hit: Lv1 Mark of the Void stacks Vulnerability (cap 10, refreshed each hit); at max,
-      // Lv80 Doom deepens it. Lv20 Enfeeble saps enemy damage 25% for 5s via the shared enemy-damage window.
-      if(nightbladeBonus(1)){
-        if((act.voidVulnUntil||0) <= Date.now()) act.voidVulnStacks = 0;   // a lapsed Mark starts fresh
-        var _prevVuln = act.voidVulnStacks || 0;
-        act.voidVulnStacks = Math.min(voidVulnCap(state), _prevVuln + voidMarkPerHit(state)); // Malediction (full): 2 stacks/hit; Creeping Doom (D2 2pc) raises the cap
-        act.voidVulnUntil = Date.now() + VOID_VULN_MS;
-        if(!offlineCapture){
-          if(nightbladeBonus(80) && act.voidVulnStacks >= voidVulnCap(state) && _prevVuln < voidVulnCap(state)) spawnCombatFloat('Doomed!', 'ft-rare', true);
-          else spawnCombatFloat('Vuln x'+act.voidVulnStacks, 'ft-bonus', true);
-        }
-        if(set2D3('nightblade') || legActive('soulrend')) curseApply(act); // Cursemark (Nightblade D3 2pc) / Soulrend (D3 dark wand): your Vulnerability stacks also Curse the foe
-      }
-      if(nightbladeBonus(20)){ state.classDebuffs.enemyDmgUntil = Date.now() + 5000; if(!offlineCapture) spawnCombatFloat('Enfeebled!', 'ft-bonus', true); }
-      // Juggernaut on-hit: Lv20 Overhead Smash advances the landed-hit tally (every 4th is the forced crit,
-      // already applied above); Lv40 Concussive Crits stun on a crit; Lv60 Building Fury banks crit damage.
-      if(juggernautBonus(20)){ act.juggernautSwings = (act.juggernautSwings||0) + 1; if(juggernautSmash && !offlineCapture) spawnCombatFloat('Overhead Smash!', 'ft-rare', true); }
-      if(juggernautBonus(40) && isCrit){ act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + JUG_CONCUSS_MS); if(!offlineCapture) spawnCombatFloat('Concussed!', 'ft-bonus', true); }
-      if(juggernautBonus(60) && isCrit){ act.juggernautFuryStacks = Math.min(JUG_FURY_MAX, (act.juggernautFuryStacks||0) + 1); if(!offlineCapture) spawnCombatFloat('Fury x'+act.juggernautFuryStacks, 'ft-bonus', false); }
-      // Every landed main-hand hit feeds the SHARED damage-over-time base (see dotBase). Ungated by class:
-      // Decay, poison and every ailment in the game read it, not just the class that happens to be worn.
-      if(!isOffhand && dmgToMonster > 0) act.dotHitAvg = act.dotHitAvg ? Math.round(act.dotHitAvg * 0.75 + dmgToMonster * 0.25) : dmgToMonster;
-      // Reaver Flensing (Lv 1): each hit stacks a Bleed and refreshes it; a 25% chance adds an extra stack.
-      // The hit is banked into the Bleed's base first -- every wound is worth a share of what you actually
-      // hit for, which is what makes the Bleed (and so the Cuts, the Count and the Harvest) real at BiS.
-      if(!isOffhand && reaverBonus(1)){
-        act.rvBleedHitAvg = act.rvBleedHitAvg ? Math.round(act.rvBleedHitAvg * 0.75 + dmgToMonster * 0.25) : dmgToMonster;
-        if((act.bleedUntil||0) <= Date.now()) act.bleedStacks = 0;        // a lapsed Bleed starts fresh
-        act.bleedStacks = Math.min(reaverBleedCap(state), (act.bleedStacks||0) + (Math.random() < 0.25 ? 2 : 1)); // Deep Cuts (Lv40) / Rabid raise the cap
-        act.bleedDps = act.bleedStacks * RV_BLEED_PCT * (act.rvBleedHitAvg||0);
-        act.bleedUntil = Date.now() + REAVER_BLEED_MS;
-        spawnCombatFloat('Rend x'+act.bleedStacks, 'ft-bonus', true);
-        if(set2D3('reaver')) d3SoulsAdd(1); // Blood Harvest (Reaver D3 2pc): each Bleed application banks a Soul Charge
-        // Harvest (Lv 60): a Critical Hit cashes the banked Cuts. (Hemorrhagic Burst retired into this --
-        // same idea, but with a resource behind it instead of paying out the Bleed's remaining duration.)
-        if(isCrit) rvHarvestFire(act, monster, state);
-      }
-      // Executioner Reaping Vigor (Lv1): a landed Critical Hit banks a stacking +25% max-HP buff (30s).
-      if(executionerBonus(1) && isCrit){ execVigorAddStack(); spawnCombatFloat('Reaping Vigor!', 'ft-rare', false); }
-      // Thunderfury (Chain Lightning, Lv1): a Critical Hit builds a crit-stack (attack speed); a non-crit resets.
-      // Thunderfury "The Stormlord" on-hit: seed the Storm (crits seed double; Charged Air D2 2pc: triple)
-      // and bank the hit into the Bolt base. The Storm itself strikes from applyTfStormTick.
-      if(thunderfuryBonus(1)){
-        state.tfStormHitAvg = state.tfStormHitAvg ? Math.round(state.tfStormHitAvg * 0.75 + dmgToMonster * 0.25) : dmgToMonster;
-        tfStormSeed(isCrit ? (set2D2('thunderfury') ? TF_SEED_CRIT_D2 : TF_SEED_CRIT) : TF_SEED_HIT);
-      }
-      // Frostwarden Permafrost (Lv1): every landed hit stacks Chill, slowing the enemy's action bar.
-      if(frostwardenBonus(1)){
-        var _cs = frostwardenApplyChill(act);
-        spawnCombatFloat('Chill x'+_cs, 'ft-bonus', true);
-      }
-      // Rimefang (D2 water wand): every hit deepens the Chill by 2 (works even without the Frostwarden class).
-      if(!isOffhand && legActive('rimefang')){ frostwardenApplyChill(act); frostwardenApplyChill(act); }
-      // Deep Freeze (legendary water wand): at max Chill, a hit can Freeze the foe (action-bar stun).
-      if(legActive('deepfreeze') && enemyChillStacks() >= FROST_CHILL_MAX_STACKS && !offlineCapture && Math.random() < LEG_DEEPFREEZE_CHANCE){
-        act.enemyStunUntil = Math.max(act.enemyStunUntil||0, Date.now() + LEG_DEEPFREEZE_MS);
-        spawnCombatFloat('Frozen!', 'ft-rare', true);
-      }
-      // Cursebringer (legendary dark wand): every hit Sunders the foe -- a second debuff feeding Void Resonance / Soul Tax.
-      if(legActive('cursebringer')){
-        if(!state.classDebuffs || typeof state.classDebuffs !== 'object') state.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
-        state.classDebuffs.enemyArmorUntil = Date.now() + LEG_SUNDER_MS;
-      }
-      // Frostwarden "The Deep Freeze" (Permafrost, Lv1): every landed hit builds RIME, and a deeply-rimed
-      // foe can Shatter. A full meter freezes it solid and shatters the whole thing (inside fwRimeAdd).
-      if(!isOffhand && frostwardenBonus(1)){
-        fwRimeAdd(fwRimePerHit(state), state);
-        if(fwShatterArmed(state)) fwShatterFire(act, state, false);
-        if(!offlineCapture) spawnCombatFloat('Rime ' + Math.round(fwRimeFrac(state) * 100) + '%', 'ft-bonus', true);
-      }
-      // (the old per-hit Frostbite stacking retired: Frostbite is derived from rime in fwRimeSync now)
-      if(false){
-        if((act.frostbiteUntil||0) <= Date.now()) act.frostbiteStacks = 0;
-        act.frostbiteStacks = Math.min(FROST_FROSTBITE_MAX, (act.frostbiteStacks||0) + 1);
-        act.frostbiteDps = act.frostbiteStacks * dotBase(state) * FROST_FROSTBITE_PCT;
-        act.frostbiteUntil = Date.now() + FROST_FROSTBITE_MS;
-        spawnCombatFloat('Frostbite x'+act.frostbiteStacks, 'ft-bonus', true);
-      }
-      // Frostwarden Shatter (Lv40): striking a Chilled foe can detonate the Chill for burst Water damage.
-      if(frostwardenBonus(40) && enemyChilled(state) && Math.random() < FROST_SHATTER_CHANCE){
-        var _shDmg = Math.round(dmgToMonster * FROST_SHATTER_PER_STACK * (act.chillStacks||0));
-        if(_shDmg > 0){
-          act.monsterHp -= _shDmg;
-          act.chillStacks = 0; act.enemyChillUntil = 0; // the Chill is consumed by the blast
-          spawnCombatFloat('❄ Shatter -'+fmt(_shDmg), 'ft-crit', true);
-        }
-      }
-      // Pyromancer Ignite (Lv1): every hit feeds FUEL into the Blaze. Bellows (Lv40) doubles a crit's fuel;
-      // Firestarter (D2 2pc) adds half again. Reaching the cap is what triggers a Flashover, inside the feed.
-      if(!isOffhand && pyromancerBonus(1)){
-        pyBlazeFeed(act, pyFuelPerHit(isCrit, state), state);
-        if(!offlineCapture) spawnCombatFloat('Blaze ' + Math.round(pyBlazeFrac(state) * 100) + '%', 'ft-bonus', true);
-        // Combust (Lv20): a Critical Hit cashes half the fire immediately.
-        if(isCrit) pyCombustFire(act, state);
-      }
-      // Ranger "The Beastmaster" (Sic 'Em, Lv1): a Critical Hit COMMANDS the companion. The four
-      // 25%-proc arrow perks (Venom/Barbed/Frost/Fire) retired -- they were the same perk four times, and
-      // Apex Predator's x3 fired only when four independent rolls happened to align.
-      if(!isOffhand && isCrit && rangerBonus(1)) rgStrikeFire(act, monster, state);
-      // Plaguebearer "The Plague" (Septic, Lv1): every landed hit raises the infection's SEVERITY. Rotshell
-      // adds more. (Virulence retired -- its only job was covering the case of having no coating, and the
-      // class no longer needs one.)
-      if(!isOffhand && plaguebearerBonus(1)){
-        pbPlagueAdd(PB_SEV_PER_HIT + (legActive('rotshell') ? PB_SEV_ROTSHELL : 0), state);
-        if(!offlineCapture) spawnCombatFloat('Plague ' + Math.round(pbSeverity(state)), 'ft-bonus', true);
-      }
-      if(false){
-        var vDps = dotBase(state) * PLAGUE_VIRULENCE_PCT * (1 + getFamBuff('potionPoison'));
-        if(vDps > (act.potionPoisonDps || 0) || (act.potionPoisonUntil||0) <= Date.now()) act.potionPoisonDps = Math.max(act.potionPoisonDps || 0, vDps);
-        legNotePoisonStart(act); // Wasting Curse ramp
-        act.potionPoisonUntil = Math.max(act.potionPoisonUntil || 0, Date.now() + 4000);
-        spawnCombatFloat('Envenomed!', 'ft-rare', true);
-      }
-      // (Serpent's Sting retired: the Quiverlord's Serpent Fang head carries the venom now.)
-      // (Lay on Hands retired: the Warpriest's party care is Shared Liturgy now.)
-    }
+    if(!isOffhand) classOnHit(act, monster, dmgToMonster, isCrit, isOffhand, juggernautSmash, samuraiDrawCut);
     // Voidshadow (Soul Tax) + Knight (Order of Blood, Banner 9+) + gear lifesteal:
     // heal a share of the damage actually inflicted. (The Rotlord's lifesteal lives in his Rot ticks.)
     var lifestealPct = nightbladeLifestealPct() + knightBloodLifestealPct() + legendaryLifestealPct(state) + legendaryRingBonus('d2_leech', state) + (enemyAfflicted(state) ? legendaryRingBonus('d3_vampire', state) : 0) + assassinCommunionLifesteal(state) + berserkerTransfusionLifesteal(state) + ((enchTot.lifesteal||0)/100); // + Crimson Harvest; + Signet of the Leech (D2); + Necrotic Leech (D3, vs afflicted); + Crimson Communion (Assassin D2 full); + Transfusion (Berserker Lv60); + Lifesteal enchant
@@ -37404,7 +37422,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.76.2';
+  var GAME_VERSION = '0.0.76.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -37566,6 +37584,7 @@
       combatLogPush:combatLogPush, combatLogLineHtml:combatLogLineHtml, _combatLog:function(){ return combatLog; },
       craftLadderInputName:craftLadderInputName, logForgeFailure:logForgeFailure,
       CLASS_ART:CLASS_ART, classArtHtml:classArtHtml, classCardIcon:classCardIcon, classPortraitFor:classPortraitFor,
+      ESTATE_MAX_HEIGHT:ESTATE_MAX_HEIGHT,
       _classArtReady:function(){ return classArtReady; },
       estateQueuedJobValid:estateQueuedJobValid, estateIsWater:estateIsWater, fieldGrowthMult:fieldGrowthMult,
       chatPartyCodeHtml:chatPartyCodeHtml, chatBodyHtml:chatBodyHtml,
