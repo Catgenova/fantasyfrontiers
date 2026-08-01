@@ -34,9 +34,12 @@
   .sub{ opacity:.65; font-size:12.5px; max-width:76ch; }
   .stage{ display:flex; gap:6px; align-items:flex-end; justify-content:center; padding:6px 12px 0; flex-wrap:wrap; }
 
-  /* The holder art is 1024 square with the ring in the bottom 45%; the rest is empty. Cropping the dead
-     space with a negative margin keeps the layout tight without touching the asset. */
-  .orb{ position:relative; width:300px; aspect-ratio:1; flex:0 0 auto; margin-bottom:-8px; margin-top:-46%; }
+  /* The holder art is 1024 square with the ring in the bottom 45%; the rest is empty. Crop it with an
+     overflow frame rather than a negative margin -- a negative margin removes the dead space but also drags
+     the orb up over whatever sits above it, which it promptly did to the header. The inner box stays a full
+     square so every percentage inset below is still measured against the original art. */
+  .orb-crop{ position:relative; width:300px; height:143px; overflow:hidden; flex:0 0 auto; }
+  .orb{ position:absolute; bottom:0; left:0; width:300px; height:300px; }
   .orb-holder{ position:absolute; inset:0; width:100%; height:100%; z-index:4; pointer-events:none; }
   .orb-glass{ position:absolute; z-index:3; pointer-events:none; }
   .orb-liquid{ position:absolute; z-index:1; clip-path:circle(50% at 50% 50%); border-radius:50%; }
@@ -70,18 +73,18 @@
 </header>
 
 <div class="stage">
-  <div class="orb left" id="orbL">
+  <div class="orb-crop"><div class="orb left" id="orbL">
     <div class="orb-liquid"><canvas></canvas></div>
     <img class="orb-glass" src="../art/UI_orb_transparent.png" alt="">
     <img class="orb-holder" src="../art/UI_orb_holder_LEFT.png" alt="">
     <div class="hp-num"></div>
-  </div>
-  <div class="orb right" id="orbR">
+  </div></div>
+  <div class="orb-crop"><div class="orb right" id="orbR">
     <div class="orb-liquid"><canvas></canvas></div>
     <img class="orb-glass" src="../art/UI_orb_transparent.png" alt="">
     <img class="orb-holder" src="../art/UI_orb_holder_RIGHT.png" alt="">
     <div class="hp-num"></div>
-  </div>
+  </div></div>
 </div>
 
 <div class="panel">
@@ -112,11 +115,12 @@
     tips the surface like liquid in a glass being carried, plus a <i>slosh amplitude</i> stacked on the idle
     ripple and decaying back to baseline. Both scale with the size of the HP change, so a chip ripples and a
     crit heaves.<br>
-    <b>A consequence of baked shading worth a decision:</b> the red art has its own top-to-bottom gradient, and
-    the liquid is clipped in place — so a nearly empty orb shows the <i>amber bottom</i> of that gradient rather
-    than a small amount of the top red. That is physically right (the shading belongs to the vessel and its
-    light, not to the liquid volume) but it does mean low HP reads warmer, not darker. The alternative is to
-    squash the whole gradient into the fill, which keeps the colour constant but looks wrong as it moves.<br>
+    <b>Why the gradient is anchored to the surface.</b> The red art runs deep red at the top to amber at the
+    bottom. Clipping it in place is the physically honest reading — the shading belongs to the vessel and its
+    light — but it makes a draining orb get <i>brighter</i>: at 15% you see only the sunny bottom, which is
+    backwards for health. Anchoring the image's top to the liquid surface uses the same art with no distortion
+    and keeps the deep red just under the surface, so the orb darkens as it empties. Switch the dropdown to
+    compare.<br>
     <b>Not simulated:</b> the real spritesheet texture, and the low-HP treatment — the existing bar tints under
     50% and 20%, so the orb probably wants to darken and pulse down there.
   </div>
