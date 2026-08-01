@@ -20,6 +20,9 @@
     Square_icons              left  1.37%  top  8.01%  97.27% x 83.98%                familiar slots
     Skill Level Up Border     border-image, slice 150                                 mini log
 
+  Square_bottombar is deliberately UNUSED. It was a rule between the arena and the lower row, which is
+  decoration doing no work, so it came out.
+
   THE TWO ORB HOLDERS ARE A MIRRORED PAIR, not two copies. Each is a 1024 square whose art occupies only
   y 46.88%..100% (content aspect 1.882): a figure on the OUTER side, the gold ring on the INNER side. So they
   are cropped to that aspect and butted together with no gap -- the pair then reads as one plinth with the two
@@ -43,6 +46,7 @@
     --gold:#ddbb66; --gold-deep:#bb9944;
     --teal:#3fc9c4; --hp:#f8700a;
     --side:430px;                       /* one combatant's column: plinth, name plate and swing bar all match */
+    --barh:38px;                        /* swing-bar height; a foe stacks several, so this is the tuning knob */
   }
   *{ box-sizing:border-box; }
   body{ margin:0; background:
@@ -89,8 +93,15 @@
        overflow:hidden; text-overflow:ellipsis; }
   .sub2{ font-size:11px; color:var(--dim); white-space:nowrap; flex:0 0 auto; }
 
-  /* Swing bar: the Square_merged frame with a fill inside its measured well. */
-  .swing{ position:relative; width:100%; aspect-ratio:729/256; margin-top:4px; }
+  /* Swing bars: the Square_merged frame with a fill inside its measured well.
+     HEIGHT-DRIVEN, NOT ASPECT-DRIVEN. At its native 2.85:1 one bar is ~151px tall at this width, and a foe
+     with two or three attacks would need more vertical space than the plinth itself. So the frame is squashed
+     to --barh and the well follows, because the well is expressed in percentages of the box. Rendered at
+     151 / 72 / 56 / 46 / 38 / 30 / 24px the bevel language survives the whole way down -- the frame is mostly
+     horizontal rails, which is why this works where it would wreck an ornate frame like the log border. Below
+     ~26px the label starts crowding the rails, so that is the practical floor. */
+  .bars{ display:flex; flex-direction:column; gap:4px; margin-top:5px; }
+  .swing{ position:relative; width:100%; height:var(--barh); }
   .swing > img{ position:absolute; inset:0; width:100%; height:100%; z-index:1; pointer-events:none; }
   .swing .track{ position:absolute; left:8.37%; top:21.48%; width:82.30%; height:49.61%;
                  z-index:2; overflow:hidden; border-radius:3px; }
@@ -105,9 +116,10 @@
                  animation:sweep 1.5s linear infinite; }
   @keyframes sweep{ from{ transform:translateX(-120%); } to{ transform:translateX(360%); } }
   .swing .lbl{ position:absolute; left:8.37%; top:21.48%; width:82.30%; height:49.61%; z-index:3;
-               display:flex; align-items:center; justify-content:center; gap:7px;
-               font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
-               color:#fff; text-shadow:0 1px 2px #000,0 0 6px #000; pointer-events:none; }
+               display:flex; align-items:center; justify-content:center; gap:6px;
+               font-size:min(11px, calc(var(--barh) * 0.30));   /* rides the bar height, capped at legible */
+               font-weight:700; letter-spacing:.05em; text-transform:uppercase; white-space:nowrap;
+               overflow:hidden; color:#fff; text-shadow:0 1px 2px #000,0 0 6px #000; pointer-events:none; }
 
   /* --- the plinth pair + HP orbs --- */
   /* No gap and no justify space: the two crops butt together at the centre line so the mirrored art joins. */
@@ -130,19 +142,13 @@
   .hp-num span{ font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:#ffd9a0;
                 text-shadow:0 1px 3px #000,0 0 6px #000; }
 
-  /* Square_bottombar is a thin decorative lip (632x54). Full-bleed it renders 90px tall and swamps the
-     panel, so it is used at a fixed narrow width as the rule between the arena and the lower row. */
-  .divider{ width:100%; max-width:460px; margin:14px auto 16px; }
-  .divider img{ display:block; width:100%; height:auto; }
-
-  /* --- bottom: familiars, mini log, actions --- */
-  /* Named areas rather than source order: on desktop the left column stacks companions over the action
-     buttons (which is what fills the space beside the log), while on narrow screens the log has to come
-     BEFORE the buttons. Source order can only satisfy one of those. */
-  .lower{ display:grid; gap:16px 16px; align-items:start;
-          grid-template-columns:auto 1fr; grid-template-rows:auto 1fr;
-          grid-template-areas:"fams log" "acts log"; }
-  .col-fams{ grid-area:fams; } .col-log{ grid-area:log; } .actions{ grid-area:acts; }
+  /* --- bottom: familiars under the player plinth, mini log under the foe's --- */
+  /* Built to the SAME rule as .orbs -- two halves capped at the plinth width, centred -- rather than an
+     `auto 1fr` content-driven split. That is what makes the feed's left edge land exactly on the foe
+     plinth's left edge and the companions column start exactly on the player plinth's, at every width.
+     An auto-sized companions column would drift as the familiar count changes. */
+  .lower{ display:flex; justify-content:center; align-items:flex-start; margin-top:16px; }
+  .lower > *{ width:50%; max-width:var(--side); min-width:0; }
   .colhead{ font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--dim); margin-bottom:7px; }
 
   .fams{ display:flex; gap:8px; }
@@ -180,7 +186,7 @@
   .lrow.l-in{ color:#e07a6a; } .lrow.l-dot{ color:#c98ad8; } .lrow.l-fam{ color:#7fd9d4; }
   .lrow.l-miss{ color:#7a7266; font-style:italic; } .lrow.l-sys{ color:#b8e08a; }
 
-  .actions{ display:flex; flex-wrap:wrap; gap:8px; align-content:flex-start; }
+  .actions{ display:flex; flex-wrap:wrap; gap:8px; align-content:flex-start; margin-top:14px; }
   /* The button plate is 512x108 sitting in the vertical middle of a 512-square canvas (y 39.26%..60.35%).
      Same crop trick as the name plate, and the same reason for a margin rather than a `top`. */
   .btn{ position:relative; width:148px; aspect-ratio:512/108; border:0; background:none; padding:0;
@@ -198,6 +204,8 @@
                padding:6px 10px; cursor:pointer; font:inherit; font-size:12.5px; margin:0 6px 6px 0; }
   .ctl button:hover{ border-color:var(--gold); }
   .ctl label{ font-size:12px; opacity:.85; margin-right:14px; }
+  .ctl .lab{ font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--dim); margin-right:7px; }
+  .ctl button.on{ border-color:var(--gold); background:#463a28; }
 
   @media (max-width:860px){
     /* Stacked, the mirrored pair no longer joins, so each plinth simply centres on its own row. */
@@ -205,8 +213,8 @@
     .side, .side.enemy{ max-width:none; margin:0; }
     .orbs{ flex-direction:column; align-items:center; }
     .orb-crop{ width:100%; max-width:var(--side); }
-    .lower{ grid-template-columns:1fr; grid-template-rows:auto auto auto;
-            grid-template-areas:"fams" "log" "acts"; }
+    .lower{ flex-direction:column; align-items:center; gap:16px; }
+    .lower > *{ width:100%; }
     .fams{ flex-wrap:wrap; }
   }
 </style>
@@ -230,11 +238,7 @@
             <img src="../art/Skill_set.png" alt="">
             <div class="pin"><span class="nm">Catgenova</span><span class="sub2">Assassin &middot; Lv 87</span></div>
           </div>
-          <div class="swing" id="pSwing">
-            <div class="track"><div class="fill"><div class="sheen"></div></div></div>
-            <img src="../art/Square_merged (2).png" alt="">
-            <div class="lbl">Twin Fangs <span id="pSwingT">1.8s</span></div>
-          </div>
+          <div class="bars" id="pBars"></div>
         </div>
       </div>
 
@@ -244,11 +248,7 @@
             <img src="../art/Skill_set.png" alt="">
             <div class="pin"><span class="sub2">Tier 1 &middot; Beast</span><span class="nm">Rabbit</span></div>
           </div>
-          <div class="swing enemy" id="eSwing">
-            <div class="track"><div class="fill"><div class="sheen"></div></div></div>
-            <img src="../art/Square_merged (2).png" alt="">
-            <div class="lbl">Nibble <span id="eSwingT">2.4s</span></div>
-          </div>
+          <div class="bars" id="eBars"></div>
         </div>
         <div class="portrait" id="ePortrait">
           <div class="pinner" id="eArt"></div>
@@ -273,21 +273,20 @@
       </div></div>
     </div>
 
-    <div class="divider"><img src="../art/Square_bottombar (1).png" alt=""></div>
-
-    <!-- ---------- familiars + mini log ---------- -->
+    <!-- Companions sit under the PLAYER plinth, the feed under the FOE's -- each half capped at the plinth
+         width, so the two columns line up with the art above them. -->
     <div class="lower">
-      <div class="col-fams">
+      <div>
         <div class="colhead">Companions</div>
         <div class="fams" id="fams"></div>
+        <div class="actions">
+          <button class="btn"><img src="../art/Black_button.png" alt=""><span>Flee</span></button>
+          <button class="btn"><img src="../art/Black_button2.png" alt=""><span>Auto-eat</span></button>
+        </div>
       </div>
-      <div class="col-log">
+      <div>
         <div class="colhead">Combat feed</div>
         <div class="logframe"><div class="loginner" id="log"></div></div>
-      </div>
-      <div class="actions">
-        <button class="btn"><img src="../art/Black_button.png" alt=""><span>Flee</span></button>
-        <button class="btn"><img src="../art/Black_button2.png" alt=""><span>Auto-eat</span></button>
       </div>
     </div>
   </div>
@@ -301,6 +300,13 @@
     <button data-act="kill">kill the foe (next spawns)</button>
     <button data-act="heal">full heal</button>
     <label><input type="checkbox" id="darken" checked> darken orbs at low HP</label>
+    <div style="margin-top:10px">
+      <span class="lab">bar height</span>
+      <button data-h="46">46</button><button data-h="42">42</button><button data-h="38">38</button>
+      <button data-h="34">34</button><button data-h="30">30</button><button data-h="26">26</button>
+      <span class="lab" style="margin-left:14px">foe attacks</span>
+      <button data-n="1">1</button><button data-n="2">2</button><button data-n="3">3</button>
+    </div>
   </div>
 </div>
 
@@ -463,8 +469,26 @@
     setTimeout(function(){ el.classList.remove('hit'); }, 190);
   }
 
-  var pSwing = { t:0, ms:1800, fill:document.querySelector('#pSwing .fill'), lbl:document.getElementById('pSwingT') };
-  var eSwing = { t:0, ms:2400, fill:document.querySelector('#eSwing .fill'), lbl:document.getElementById('eSwingT') };
+  /* ---- swing bars, built from data ----
+     A foe carries SEVERAL attacks on their own clocks, so a bar is created per attack rather than one bar
+     per side being hard-coded in the markup. `fire` is what that attack does when its clock fills. */
+  function makeBar(host, def){
+    var d = document.createElement('div');
+    d.className = 'swing' + (def.foe ? ' enemy' : '');
+    d.innerHTML = '<div class="track"><div class="fill"><div class="sheen"></div></div></div>'
+                + '<img src="../art/Square_merged (2).png" alt="">'
+                + '<div class="lbl"><span>' + def.n + '</span> <span class="ct">' + (def.ms/1000).toFixed(1) + 's</span></div>';
+    host.appendChild(d);
+    return { t:def.ms*Math.random(), ms:def.ms, fire:def.fire, el:d,
+             fill:d.querySelector('.fill'), ct:d.querySelector('.ct') };
+  }
+  var pBars = [], eBars = [];
+  function buildBars(){
+    var ph = document.getElementById('pBars'), eh = document.getElementById('eBars');
+    ph.innerHTML = ''; eh.innerHTML = '';
+    pBars = PLAYER_ATTACKS.map(function(a){ return makeBar(ph, a); });
+    eBars = FOE_ATTACKS.slice(0, foeAttackCount).map(function(a){ return makeBar(eh, a); });
+  }
 
   function playerSwing(){
     var crit = Math.random() < 0.55;
@@ -475,13 +499,28 @@
     if(Math.random() < 0.35) push('dot', 'Bleed ticks the Rabbit for <b>' + fmt(dmg*0.18) + '</b> over 1s');
     if(ehp <= 0) killFoe();
   }
-  function foeSwing(){
-    if(Math.random() < 0.22){ push('miss', 'The Rabbit misses.'); return; }
-    var dmg = (12 + Math.random()*26) / 100 * P_MAX * 0.28;
+  // One foe attack landing. `name` is null for the plain weapon swing, which reads "hits you" rather than
+  // naming an ability -- the same distinction the real combat log makes.
+  function foeSwing(name, mult){
+    var who = name ? 'The Rabbit’s <b>' + name + '</b>' : 'The Rabbit';
+    if(Math.random() < 0.22){ push('miss', who + ' misses.'); return; }
+    var dmg = (12 + Math.random()*26) / 100 * P_MAX * 0.28 * (mult || 1);
     setP(php - dmg);
     flash('pPortrait');
-    push('in', 'The Rabbit hits you for <b>' + fmt(dmg) + '</b>');
+    push('in', (name ? who + ' hits for <b>' : 'The Rabbit hits you for <b>') + fmt(dmg) + '</b>');
   }
+
+  var PLAYER_ATTACKS = [
+    { n:'Twin Fangs', ms:1800, fire:playerSwing },
+  ];
+  // Deliberately more than two: the point of the thin bar is that a foe's kit stacks without eating the
+  // plinth's vertical space, and three is what makes that visible.
+  var FOE_ATTACKS = [
+    { n:'Nibble',      ms:2400, foe:true, fire:function(){ foeSwing(null); } },
+    { n:'Kick',        ms:4300, foe:true, fire:function(){ foeSwing('Kick', 1.7); } },
+    { n:'Thumper Rush',ms:7100, foe:true, fire:function(){ foeSwing('Thumper Rush', 2.6); } },
+  ];
+  var foeAttackCount = 2;
   function killFoe(){
     push('sys', 'The Rabbit is slain. <b>+1,240</b> gold, <b>+8.4M</b> XP');
     foeN++;
@@ -493,10 +532,10 @@
   function frame(now){
     var dt = Math.min(0.05, (now - last)/1000); last = now;
     if(auto){
-      pSwing.t += dt*1000;
-      if(pSwing.t >= pSwing.ms){ pSwing.t = 0; playerSwing(); }
-      eSwing.t += dt*1000;
-      if(eSwing.t >= eSwing.ms){ eSwing.t = 0; foeSwing(); }
+      pBars.concat(eBars).forEach(function(b){
+        b.t += dt*1000;
+        if(b.t >= b.ms){ b.t = 0; b.fire(); }
+      });
       famEls.forEach(function(f){
         f.t += dt*1000;
         if(f.t >= f.def.ms){
@@ -510,20 +549,33 @@
         }
       });
     }
-    pSwing.fill.style.width = (pSwing.t/pSwing.ms*100).toFixed(1) + '%';
-    eSwing.fill.style.width = (eSwing.t/eSwing.ms*100).toFixed(1) + '%';
-    pSwing.lbl.textContent = ((pSwing.ms - pSwing.t)/1000).toFixed(1) + 's';
-    eSwing.lbl.textContent = ((eSwing.ms - eSwing.t)/1000).toFixed(1) + 's';
+    pBars.concat(eBars).forEach(function(b){
+      b.fill.style.width = (b.t/b.ms*100).toFixed(1) + '%';
+      b.ct.textContent = ((b.ms - b.t)/1000).toFixed(1) + 's';
+    });
     famEls.forEach(function(f){ f.bar.style.width = (f.t/f.def.ms*100).toFixed(1) + '%'; });
     orbP.step(dt); orbE.step(dt);
     requestAnimationFrame(frame);
   }
 
+  function markOn(sel, attr, val){
+    document.querySelectorAll(sel).forEach(function(b){ b.classList.toggle('on', b.dataset[attr] === String(val)); });
+  }
+  function setBarHeight(px){
+    document.documentElement.style.setProperty('--barh', px + 'px');
+    markOn('.ctl [data-h]', 'h', px);
+  }
+  function setFoeAttacks(n){
+    foeAttackCount = n; buildBars(); markOn('.ctl [data-n]', 'n', n);
+  }
+
   document.querySelector('.ctl').addEventListener('click', function(e){
+    var h = e.target.closest('[data-h]'); if(h){ setBarHeight(Number(h.dataset.h)); return; }
+    var n = e.target.closest('[data-n]'); if(n){ setFoeAttacks(Number(n.dataset.n)); return; }
     var b = e.target.closest('[data-act]'); if(!b) return;
     var a = b.dataset.act;
     if(a === 'fight'){ auto = !auto; push('sys', auto ? 'Engaged the Rabbit.' : 'Combat paused.'); }
-    if(a === 'hit') foeSwing();
+    if(a === 'hit') foeSwing(null);
     if(a === 'crit') playerSwing();
     if(a === 'big'){ setP(php - P_MAX*0.35); flash('pPortrait'); push('in', 'The Rabbit <b>crits</b> you for <b>' + fmt(P_MAX*0.35) + '</b>'); }
     if(a === 'kill'){ setE(0); killFoe(); }
@@ -532,6 +584,8 @@
   document.getElementById('darken').addEventListener('change', function(){ LOW_HP_DARKEN = this.checked; });
   window.addEventListener('resize', function(){ orbP.resize(); orbE.resize(); });
 
+  buildBars();
+  setBarHeight(38); setFoeAttacks(2);
   setP(P_MAX, true); setE(E_MAX, true);
   push('sys', 'Entered the arena.');
   requestAnimationFrame(frame);
@@ -539,7 +593,12 @@
   window.__arena = {
     setP:setP, setE:setE, playerSwing:playerSwing, foeSwing:foeSwing, killFoe:killFoe,
     auto:function(v){ auto = v; }, push:push,
-    swing:function(pFrac,eFrac){ pSwing.t = pSwing.ms*pFrac; eSwing.t = eSwing.ms*eFrac; },
+    barHeight:setBarHeight, foeAttacks:setFoeAttacks,
+    // Park every clock at a fraction of its own cycle, so a screenshot catches the bars mid-fill.
+    swing:function(pFrac,eFrac){
+      pBars.forEach(function(b){ b.t = b.ms*pFrac; });
+      eBars.forEach(function(b,i){ b.t = b.ms*Math.max(0, Math.min(1, eFrac + i*0.22)); });
+    },
     orbs:[orbP,orbE]
   };
 })();

@@ -36,7 +36,6 @@ const WIDTH = {
   "Square_merged (2).png": 729,     // swing bar ~330px; native is already 729
   "Skill_set.png": 768,             // name plate ~330px wide on a 1024 canvas
   "Square_icons (1).png": 160,      // familiar slot, 62px
-  "Square_bottombar (1).png": 632,  // divider ~460px; native
   "UI - Skill Level Up - Border.png": 1024,  // border-image; see the slice rescale below
   "assassin.png": 256,              // inside the portrait ring, ~70px
 };
