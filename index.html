@@ -4987,7 +4987,6 @@
       bumpStat('crafted' + rarityId.charAt(0).toUpperCase() + rarityId.slice(1)); // craftedRare/Supreme/Fantastic
       var r = getRarity(rarityId);
       addLog('The gods smiled upon you! Forged a ' + r.label + baseName + '!', 'important');
-      spawnFloatingText('Forged ' + r.label + baseName + '!', 'ft-rare');
       maybeShowRarityPopup(rarityId, r.label + baseName);
       if(normalCraftFeedRarity(rarityId)) chronicleBroadcast('craft', r.label + baseName);   // Rare/Fantastic -> chronicle feed (Supreme excluded)
       // Fantastic forges also hit the community Discord feed -- including ones rolled offline
@@ -5002,7 +5001,6 @@
       }
     } else {
       addLog('You forged ' + baseName + '.', 'important');
-      spawnFloatingText('Forged ' + baseName, 'ft-success');
     }
   }
   // The tier-ladder input (a Normal previous-tier piece) is the expensive part of any equipment forge -- it is
@@ -5030,7 +5028,6 @@
   // Same defect class as the combat log's silent applyChipDamage: an event that changes the player's world and
   // writes nothing down. Every other forge outcome logs; this one now does too.
   function logForgeFailure(baseName, inputs){
-    spawnFloatingText('Forge failed', 'ft-fail');
     var lost = craftLadderInputName(inputs);
     addLog('Forge failed: ' + baseName + '. The materials were consumed'
            + (lost ? ', including your ' + lost : '') + '.', 'danger');
@@ -10282,14 +10279,12 @@
       if(current && current.owned){
         current.level = Math.min(FAMILIAR_MAX_LEVEL, current.level + 1);
         addLog(fam.icon + ' ' + fam.name + ' grows stronger! Now level ' + current.level + '.', 'important');
-        spawnFloatingText(fam.name + ' leveled up!', 'ft-rare');
         // Offline: collect into one consolidated notification instead of a popup per familiar.
         if(offlineCapture){ if(offlineCapture.familiars) offlineCapture.familiars.push({ skillId:skillId, leveledUp:true, level:current.level }); }
         else if(state.settings.popupFamiliar){ state.popupQueue.push({ type:'familiar', skillId:skillId, leveledUp:true }); state.popupBatchTotal = (state.popupBatchTotal||0) + 1; }
       } else {
         state.familiars[skillId] = { owned:true, level:1 };
         addLog(fam.icon + ' A familiar has joined you! ' + fam.name + ' (' + (SKILL_LABELS[skillId]||skillId) + ') answered your call.', 'important');
-        spawnFloatingText('Familiar summoned: ' + fam.name + '!', 'ft-rare');
         chronicleBroadcast('familiar', fam.name);   // new summon -> global feed
         // (Finding a familiar no longer gifts a server-wide buff: that ran through the free, unverifiable
         //  server_buff `grant` action, which was removed. The familiar itself is the reward.)
@@ -10513,7 +10508,6 @@
     if(bulk) return newStars;             // caller logs/saves/renders once for the whole batch
     var fam = FAMILIAR_DATA[id] || {};
     addLog((fam.icon||'') + ' ' + (fam.name||id) + ' Transcended to ' + starStr(newStars) + '! It resets to Level 1, its damage spells gain +' + Math.round(FAMILIAR_TRANSCEND_DMG_PER_STAR*100) + '% per star, and you receive ' + newStars + ' Barrier Shard' + (newStars===1?'':'s') + '.', 'important');
-    spawnFloatingText((fam.name||id) + ' Transcended! ' + starStr(newStars), 'ft-rare');
     transcendConfirmId = null;
     saveGame(); render();
     return true;
@@ -10532,7 +10526,6 @@
     var count = 0, shards = 0;
     ids.forEach(function(id){ var s = transcendFamiliar(id, true); if(s){ count++; shards += s; } });
     addLog('Transcended ' + count + ' familiar' + (count===1?'':'s') + ' to their next star &mdash; +' + shards + ' Barrier Shard' + (shards===1?'':'s') + ' earned, each reset to Level 1.', 'important');
-    spawnFloatingText('Transcended ' + count + ' familiar' + (count===1?'':'s') + '!', 'ft-rare');
     saveGame(); render();
   }
 
@@ -10855,37 +10848,29 @@
   function gatherDoubleRoll(itemId, skillId){
     if(Math.random() < workshopDoubleChance(state, skillId)){
       addItem(itemId, 1);
-      spawnFloatingText('Workshop: double output!', 'ft-rare');
     }
     if(prospectorBonusRoll(skillId)){ // Prospector's Nose: a bonus ore/soil from Mining/Prospecting/Digging
       addItem(itemId, 1);
-      spawnFloatingText('Prospector: bonus find!', 'ft-rare');
     }
     if(brewYieldRoll()){ // active Brewing Brew: a chance at one more of the gathered resource
       addItem(itemId, 1);
-      spawnFloatingText('Brew: bonus output!', 'ft-rare');
     }
     var _mastery = overLevelDoubles(skillId); // Over-100 Mastery: +1% double-output per level past 100
-    if(_mastery > 0){ addItem(itemId, _mastery); spawnFloatingText('Mastery: double output!', 'ft-rare'); }
+    if(_mastery > 0){ addItem(itemId, _mastery); }
   }
   function processDiggingRoll(mainItemId){
     var tierIndex = parseInt(mainItemId.split('_t')[1], 10);
     if(Math.random() < diggingMainChance(state)){
       addItem(mainItemId, 1);
       bumpStat('gathered_' + mainItemId); // per-item gather tally (successful primary pulls), powers "Dig 100 Sand"
-      spawnFloatingText('+1 ' + (ALL_SELLABLE[mainItemId]||{}).name, 'ft-success');
       gatherDoubleRoll(mainItemId, 'digging');
-    } else {
-      spawnFloatingText('Nothing found', 'ft-fail');
     }
     if(Math.random() < diggingCoalChance(state)){
       var coalQty = randInt(1,5);
       addItem('coal', coalQty);
-      spawnFloatingText('+' + coalQty + ' Coal', 'ft-bonus');
     }
     if(Math.random() < diggingArtifactChance(state)){
       addItem('muddyartifact_t'+tierIndex, 1);
-      spawnFloatingText('+1 Artifact!', 'ft-rare');
     }
   }
 
@@ -10934,21 +10919,16 @@
     if(Math.random() < miningMainChance(state)){
       addItem(mainItemId, 1);
       bumpStat('gathered_' + mainItemId); // per-item gather tally (successful primary pulls), powers "Mine 100 Copper"
-      spawnFloatingText('+1 ' + (ALL_SELLABLE[mainItemId]||{}).name, 'ft-success');
       gatherDoubleRoll(mainItemId, 'mining');
-    } else {
-      spawnFloatingText('Nothing found', 'ft-fail');
     }
     if(Math.random() < miningCoalChance(state)){
       var mCoalQty = randInt(1,5);
       addItem('coal', mCoalQty);
-      spawnFloatingText('+' + mCoalQty + ' Coal', 'ft-bonus');
     }
     if(Math.random() < miningGemChance(state)){
       var gemId = getGemForTier(tierIndex);
       addItem(gemId, 1);
       var gemObj = GEM_ITEMS.filter(function(g){ return g.id===gemId; })[0];
-      spawnFloatingText('+1 ' + gemObj.name + '!', 'ft-rare');
     }
   }
 
@@ -10962,14 +10942,10 @@
     if(Math.random() < fishingCatchChance(state)){
       addItem(mainItemId, 1);
       bumpStat('gathered_' + mainItemId); // per-fish gather tally, powers "Catch 50 Fish"
-      spawnFloatingText('+1 ' + (ALL_SELLABLE[mainItemId]||{}).name, 'ft-success');
       gatherDoubleRoll(mainItemId, 'fishing');
     } else if(Math.random() < fishingTreasureChance(mainItemId)){
       // The catch got away, but the hook snagged something better (better odds in higher-tier waters).
       addItem('treasure_chest', 1);
-      spawnFloatingText('+1 Treasure Chest!', 'ft-rare');
-    } else {
-      spawnFloatingText('It got away!', 'ft-fail');
     }
   }
 
@@ -11051,7 +11027,6 @@
     if(Math.random() < grainSeedChance(state)){
       var seedId = 'grainseed_t'+tierIndex;
       addItem(seedId, 1);
-      spawnFloatingText('+1 ' + GRAIN_SEED_ITEMS[seedId].name + '!', 'ft-rare');
     }
   }
 
@@ -11182,7 +11157,6 @@
     if(!batch){
       var seedName = (gotSeed && ALL_SELLABLE[seedId]) ? ALL_SELLABLE[seedId].name : '';
       addLog('You harvested ' + yieldQty + '&times; ' + cropData.name + (plot.fertilized ? ' (fertilized)' : '') + (totemBonus > 0 ? ' (+' + totemBonus + ' totem)' : '') + (waterBonus > 0 ? ' (+' + waterBonus + ' waterside)' : '') + (gotSeed ? ' and recovered a ' + seedName : '') + '.', 'important');
-      spawnFloatingText('+' + yieldQty + ' ' + cropData.name + (gotSeed ? ' +1 Seed' : ''), 'ft-success');
     }
     delete map[key];
     if(!batch) saveGame();
@@ -11252,7 +11226,7 @@
   function farmingHarvestAll(){
     var now = Date.now(), total = 0;
     allFieldPlots().forEach(function(p){ if(p.plot && p.plot.cropType && now >= p.plot.readyAt){ if(harvestPlot(p.scope, p.key, true)) total++; } });
-    if(total > 0){ addLog('Harvested ' + total + ' crop' + (total===1?'':'s') + ' from your fields.', 'important'); spawnFloatingText('+' + total + ' crops', 'ft-success'); saveGame(); needsRender = true; }
+    if(total > 0){ addLog('Harvested ' + total + ' crop' + (total===1?'':'s') + ' from your fields.', 'important');  saveGame(); needsRender = true; }
     return total;
   }
   // Plant every empty plot, giving the highest-tier seeds to the highest-tier fields first. dryRun
@@ -11276,7 +11250,7 @@
         }
       }
     });
-    if(!dryRun && n > 0){ addLog('Planted ' + n + ' seed' + (n===1?'':'s') + ' across your fields.', 'important'); spawnFloatingText('Planted ' + n + ' seeds', 'ft-success'); saveGame(); needsRender = true; }
+    if(!dryRun && n > 0){ addLog('Planted ' + n + ' seed' + (n===1?'':'s') + ' across your fields.', 'important');  saveGame(); needsRender = true; }
     return n;
   }
 
@@ -11309,7 +11283,7 @@
     if(composterRefund()) state.inventory[fid] += 1; // Composter: a chance the Fertilizer isn't used up
     plot.fertilized = true;
     var _fcd = getCropDataForPlot(plot); if(_fcd) bumpStat('fertilized_' + _fcd.id); // crops fertilized (by crop item), powers "Fertilize 1 Cotton plant"
-    if(!batch){ addLog('You spread ' + (ALL_CRAFT_RECIPES[fid] ? ALL_CRAFT_RECIPES[fid].name : 'Fertilizer') + ' on your crop — it will yield double.', 'important'); spawnFloatingText('Fertilized (2×)', 'ft-success'); saveGame(); }
+    if(!batch){ addLog('You spread ' + (ALL_CRAFT_RECIPES[fid] ? ALL_CRAFT_RECIPES[fid].name : 'Fertilizer') + ' on your crop — it will yield double.', 'important');  saveGame(); }
     needsRender = true;
     return true;
   }
@@ -11326,7 +11300,7 @@
       var ft = pickFertilizerTier(p.plot.tierIndex, owned);
       if(ft >= 0){ avail[ft] -= 1; if(!dryRun) fertilizePlot(p.scope, p.key, true, ft); n++; }
     });
-    if(!dryRun && n > 0){ addLog('Fertilized ' + n + ' crop' + (n===1?'':'s') + ' — each will yield double.', 'important'); spawnFloatingText('Fertilized ' + n + ' crops', 'ft-success'); saveGame(); needsRender = true; }
+    if(!dryRun && n > 0){ addLog('Fertilized ' + n + ' crop' + (n===1?'':'s') + ' — each will yield double.', 'important');  saveGame(); needsRender = true; }
     return n;
   }
   function farmingFertilizableCount(){ return farmingFertilizeAll(true); }
@@ -11477,7 +11451,6 @@
     state.gold += gold;
     walletEarnChest(n, gold);
     addLog('You pried open ' + n + ' Treasure Chest' + (n===1?'':'s') + ' and found ' + fmt(gold) + ' gold!', 'important');
-    spawnFloatingText('+' + fmt(gold) + ' gold', 'ft-bonus');
     if(!silent) lootPopupData = { title:'Treasure Chest'+(n===1?'':'s'), icon:(ALL_SELLABLE.treasure_chest||{}).icon, opened:n, gold:gold, items:{} };
     saveGame(); needsRender = true;
   }
@@ -11494,7 +11467,6 @@
     }
     bumpStat('caches_opened', n); // total Critter Caches opened, powers "Open a Critter Cache"
     addLog('You opened ' + n + ' Critter Cache' + (n===1?'':'s') + ' and found ' + (n*3) + ' seeds.', 'important');
-    spawnFloatingText('+' + (n*3) + ' Seeds', 'ft-bonus');
     if(!silent) lootPopupData = { title:'Critter Cache'+(n===1?'':'s'), icon:(ALL_SELLABLE.critter_cache||{}).icon, opened:n, gold:0, items:items };
     saveGame(); needsRender = true;
   }
@@ -11529,7 +11501,6 @@
   function maybeDropCritterCache(){
     if(Math.random() < critterCacheChance(state)){
       addItem('critter_cache', 1);
-      spawnFloatingText('+1 Critter Cache!', 'ft-rare');
     }
   }
 
@@ -11546,7 +11517,6 @@
     if(Math.random() < chance){
       var seedId = 'seed_t'+tierIndex;
       addItem(seedId, 1);
-      spawnFloatingText('+1 ' + SEED_ITEMS[seedId].name + '!', 'ft-rare');
     }
   }
   // Herbalism gets its own dedicated Herb Seed line, kept fully separate from the
@@ -11572,7 +11542,6 @@
     if(Math.random() < seedDropChance(state)){
       var herbSeedId = 'herbseed_t'+tierIndex;
       addItem(herbSeedId, 1);
-      spawnFloatingText('+1 ' + HERB_SEED_ITEMS[herbSeedId].name + '!', 'ft-rare');
     }
   }
 
@@ -11598,7 +11567,6 @@
       var powderId = 'powder_t'+tierIndex;
       addItem(powderId, 1);
       addLog('You found some ' + POWDER_ITEM_MAP[powderId].name + ' while foraging!', 'important');
-      spawnFloatingText('+1 ' + POWDER_ITEM_MAP[powderId].name + '!', 'ft-rare');
     }
   }
   // Foraging can also turn up a Muddy Artifact -- the same item Digging finds, at the
@@ -11608,7 +11576,6 @@
   function maybeDropForagingArtifact(tierIndex){
     if(Math.random() < foragingArtifactChance(state)){
       addItem('muddyartifact_t'+tierIndex, 1);
-      spawnFloatingText('+1 Artifact!', 'ft-rare');
     }
   }
 
@@ -12783,7 +12750,6 @@
       var pname = getRarity(rarity).label + setPieceName(key.cls, key.slot, recipe.layer);
       addLog('Mastercraft! You forged the ' + pname + ' — part of the ' + ((CLASS_DEFS_BY_ID[key.cls]||{}).name || key.cls) + ' set. It\'s a unique piece — find it in Equipment &amp; Stats and the Improvement tab, not your Inventory bag.', 'important');
       announceMasterwork(rarity, setPieceName(key.cls, key.slot, recipe.layer), 'part of the ' + ((CLASS_DEFS_BY_ID[key.cls]||{}).name || key.cls) + ' set', null);   // a minted set piece has no catalog key
-      spawnFloatingText('+1 ' + pname, ftClass);
       needsRender = true;
       return;
     }
@@ -12803,7 +12769,6 @@
       var git = recipe.itemMap[itemId];
       addLog('Mastercraft! You forged the Legendary ' + git.name + ' — ' + gdef.desc + ' It\'s a unique piece — find it in Equipment &amp; Stats and the Improvement tab (not your Inventory bag). A Tier-20 legendary needs that weapon\'s proficiency at Lv 95 to equip.', 'important');
       announceMasterwork(rarity, 'Legendary ' + git.name, gdef.desc, itemId);
-      spawnFloatingText('+1 ' + git.name, ftClass);
       needsRender = true;
       return;
     }
@@ -12814,7 +12779,6 @@
     mastercraftResult = { itemId: itemId, name: it.name, icon: it.icon, statLine: '+' + Math.round(it.value * 100) + '% ' + escapeHtml(it.statLabel || '') };
     addLog('Mastercraft! You forged the ' + it.name + ' — +' + Math.round(it.value * 100) + '% ' + it.statLabel + '.', 'important');
     announceMasterwork(rarity, it.name, '+' + Math.round(it.value * 100) + '% ' + it.statLabel, itemId);
-    spawnFloatingText('+1 ' + it.name, ftClass);
     needsRender = true;
   }
   function equipLegRing(itemId, slotId){
@@ -13378,8 +13342,6 @@
       // Per-craft special-forge tallies (once per successful craft, rarity-agnostic), powering Quest progress.
       if(act.craftKind==='belt') bumpStat('belt_made_' + act.tierIndex);                             // "Make 10 Rabbit Belts"
       else if(act.craftKind==='tool') bumpStat('tool_made_' + act.skillId + '_' + act.tierIndex);    // "Forge a Copper <skill> tool"
-      if(_wsDouble) spawnFloatingText('Workshop: double output!', 'ft-rare');
-      if(_brewBonus) spawnFloatingText('Brew: bonus output!', 'ft-rare');
     } else {
       logForgeFailure(tierData.name, tierData.inputs);
     }
@@ -13444,9 +13406,6 @@
             addXp('fletching', shaftsCreated*2*1.5);
             addItem('shaft', shaftsCreated);
             addPhysiqueXp(physTierPairs(CRAFT_PHYSIQUE.fletching, act.logTierIndex));
-            spawnFloatingText('+' + shaftsCreated + ' Shafts', 'ft-success');
-          } else {
-            spawnFloatingText('Shaft craft failed', 'ft-fail');
           }
         } else if(recipe.meatId && recipe.hideId){
           addXp(act.skill, recipe.xp*1.5);
@@ -13476,11 +13435,7 @@
           }
           if(got.length){
             addLog('You butchered the carcass and recovered ' + got.join(', ') + '.', 'important');
-            spawnFloatingText('+' + got.join(', +'), 'ft-success');
-            if(_wsD) spawnFloatingText('Workshop: double output!', 'ft-rare');
-            if(_brewD) spawnFloatingText('Brew: bonus output!', 'ft-rare');
-            if(_mastD > 0) spawnFloatingText('Mastery: double output!', 'ft-rare');
-          } else { spawnFloatingText('Nothing usable', 'ft-fail'); }
+          }
         } else if(recipe.relicCraft){
           addXp('archaeology', recipe.xp*1.5);
           bumpStat('excavate_' + recipe.tierIndex); // per-tier artifacts excavated, powers "Excavate 10 Sand Artifacts"
@@ -13490,13 +13445,11 @@
             var relicId = 'relic_t'+recipe.tierIndex+'_'+rarityId;
             addItem(relicId, 1);
             addLog('You recovered a ' + RELIC_ITEMS[relicId].name + '!', 'important');
-            spawnFloatingText('+1 ' + RELIC_ITEMS[relicId].name + '!', rarityId==='normal' ? 'ft-success' : 'ft-rare');
             maybeShowRarityPopup(rarityId, RELIC_ITEMS[relicId].name, RELIC_ITEMS[relicId].icon);
             if(rarityId==='fantastic') discordFeedPost({ kind:'relic', name:RELIC_ITEMS[relicId].name, item_key:relicId, rarity:'fantastic', stats:discordItemStatsText(relicId) });
           } else {
             var brokenId = 'brokenrelic_t'+recipe.tierIndex;
             addItem(brokenId, 1);
-            spawnFloatingText('Relic crumbled', 'ft-fail');
           }
         } else if(Math.random() < craftSuccessRate(state, act.skill)){
           addXp(act.skill, recipe.xp*1.5*craftXpBonus(act.skill));
@@ -13504,16 +13457,14 @@
           bumpStat('made_' + act.itemId); // per-recipe successful-craft tally (once per craft, doubles excluded), powers Quest progress ("Tan 10 Rabbit Leather")
           bumpStat('crafted_' + act.skill); // per-SKILL successful-craft tally (any tier/recipe), powers "Cook 10 Meals", "Bake 10", etc.
           addItem(act.itemId, _wq);
-          if(Math.random() < workshopDoubleChance(state, act.skill)){ addItem(act.itemId, _wq); spawnFloatingText('Workshop: double output!', 'ft-rare'); }
-          if(brewYieldRoll()){ addItem(act.itemId, _wq); spawnFloatingText('Brew: bonus output!', 'ft-rare'); } // active Brewing Brew: a chance at a bonus craft output
+          if(Math.random() < workshopDoubleChance(state, act.skill)){ addItem(act.itemId, _wq); }
+          if(brewYieldRoll()){ addItem(act.itemId, _wq); } // active Brewing Brew: a chance at a bonus craft output
           var _cmastery = overLevelDoubles(act.skill); // Over-100 Mastery: +1% double-output per level past 100
-          if(_cmastery > 0){ addItem(act.itemId, _wq * _cmastery); spawnFloatingText('Mastery: double output!', 'ft-rare'); }
+          if(_cmastery > 0){ addItem(act.itemId, _wq * _cmastery); }
           addPhysiqueXp(physTierPairs(CRAFT_PHYSIQUE[act.skill], recipeTier(recipe, act.itemId)));
-          spawnFloatingText('+' + _wq + ' ' + recipe.name, 'ft-success');
         } else {
           // Same silent-failure defect as the special forges: the inputs are already consumed above, so a
           // failed craft must say so rather than only flashing a toast.
-          spawnFloatingText('Craft failed', 'ft-fail');
           addLog('Craft failed: ' + recipe.name + '. The materials were consumed'
                  + (function(){ var l = craftLadderInputName(actualInputs); return l ? ', including your ' + l : ''; })() + '.', 'danger');
         }
@@ -13561,13 +13512,11 @@
       } else if(act.skill === 'butchering'){
         // Butchering's Hide gather-line is a Refining activity, not a 70% gather -- it always yields.
         addItem(act.itemId, 1);
-        spawnFloatingText('+1 ' + item.name, 'ft-success');
         gatherDoubleRoll(act.itemId, act.skill);
       } else if(Math.random() < genericGatherMainChance(state, act.skill)){
         // Every other gather has a 70% base success (+ gather-tool bonus); a whiff yields nothing this tick.
         addItem(act.itemId, 1);
         bumpStat('gathered_' + act.itemId); // per-item gather tally (forestry/herbalism/etc.), powers "Chop 100 Logs", "Gather 100 Herbs"
-        spawnFloatingText('+1 ' + item.name, 'ft-success');
         gatherDoubleRoll(act.itemId, act.skill);
         // Forestry, Botany, Herbalism & Foraging turn up Critter Caches (5% base). Herbalism & Foraging
         // no longer drop raw seeds -- their seeds now come from opening those caches instead.
@@ -13581,8 +13530,6 @@
           maybeDropPowder(parseInt(act.itemId.split('_t')[1], 10));
           maybeDropForagingArtifact(parseInt(act.itemId.split('_t')[1], 10));
         }
-      } else {
-        spawnFloatingText('Nothing gathered', 'ft-fail');
       }
       addPhysiqueXp(physTierPairs(GATHER_PHYSIQUE[act.skill], itemTierFromId(act.itemId)));
       maybeSummonFamiliar(act.skill);
@@ -14417,12 +14364,12 @@
   }
 
   var floatingTextCount = 0;
-  // Global floating text (the tracked-skill sidebar + top-tracker "+N XP" ticks) is on.
-  // The per-task result popups that jitter over the action-bar card are off, though: the card
-  // is now a dense multi-task list, so "+1 Item" / "failed" text over it just clutters. Flip
-  // ACTION_BAR_RESULT_TEXT back to true to restore those.
+  // Global floating text (XP ticks, task-row reward floats, combat numbers over the orbs) is on.
+  // The old per-task result popups that jittered over the action-bar card (spawnFloatingText, gated on an
+  // ACTION_BAR_RESULT_TEXT flag) were DELETED in v0.0.77.14: the flag had been false since the card became
+  // a dense multi-task list, so the function and its 83 call sites were dead weight. The task-row reward
+  // floats (flushGabRewardQueue) are what replaced them and are the thing players actually see.
   var FLOATING_TEXT_ENABLED = true;
-  var ACTION_BAR_RESULT_TEXT = false;
   // Convert a VISUAL viewport coordinate (what getBoundingClientRect returns) into #floatLayer's own
   // coordinate space. The layer lives INSIDE #app's Compact-desktop zoom (v0.0.77.5), so styles written on
   // its children are interpreted in ZOOMED pixels: a float aimed at visual x=878 painted at x=658, and every
@@ -14433,24 +14380,6 @@
   function floatCoord(v){
     var s = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale'));
     return (s > 0 && isFinite(s)) ? v / s : v;
-  }
-  function spawnFloatingText(text, cls){
-    if(!ACTION_BAR_RESULT_TEXT) return;
-    if(offlineCapture) return;
-    var layer = document.getElementById('floatLayer');
-    var gab = document.getElementById('globalActionBar');
-    if(!layer || !gab) return;
-    var rect = gab.getBoundingClientRect();
-    var el = document.createElement('div');
-    el.className = 'floating-text ' + (cls||'ft-success');
-    el.textContent = text;
-    var jitterX = Math.round(Math.random()*60 - 30);
-    var jitterY = -(floatingTextCount % 6) * 18;
-    floatingTextCount++;
-    el.style.left = floatCoord(rect.left + rect.width/2 + jitterX) + 'px';
-    el.style.top = floatCoord(rect.top - 12 + jitterY) + 'px';
-    layer.appendChild(el);
-    setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 1350);
   }
   // Floating text anchored to a specific on-screen bar (e.g. the global action bar's
   // skill/physique tracks) rather than jittered around the center of the whole screen.
@@ -15694,10 +15623,8 @@
     }
     if(placed){
       addLog('Auto-roll landed '+enchantLabel(u.kind,placed)+' on '+uniqueBaseName(u)+' after '+spent+' Enchant Crystal'+(spent===1?'':'s')+'.','important');
-      spawnFloatingText('Auto-roll: '+enchantLabelText(u.kind,placed), 'ft-success');
     } else {
       addLog('Auto-roll spent '+spent+' Enchant Crystal'+(spent===1?'':'s')+' without rolling +'+target+(m.pct?'%':'')+' '+m.label+' — crystals depleted.','danger');
-      if(spent>0) spawnFloatingText('Auto-roll: out of crystals', 'ft-fail');
     }
     saveGame(); render();
     return { placed:placed, spent:spent };
@@ -16366,7 +16293,7 @@
       ? Math.round(30 * Math.pow(1.3, relicTierIndex))
       : sacrificeGearFaith(tier, jewelryBoost, rarity);
     restore = Math.round(restore * (1 + physBonus('oblation', 0.25)));           // Oblation: more Faith per offering
-    if(Math.random() < physBonus('oblation', 0.25)){ addItem(id, 1); spawnFloatingText('The offering is returned!', 'ft-rare'); } // Oblation: a chance the item comes back
+    if(Math.random() < physBonus('oblation', 0.25)){ addItem(id, 1); } // Oblation: a chance the item comes back
     var before = state.faith;
     state.faith = Math.min(faithMax(state), state.faith + restore);
     addXp('sacrifice', 30);
@@ -17415,8 +17342,8 @@
         var _echoResonant = legEchoDmgMult(state), _echoD4 = d4EchoMult(state), _echoRunegrave = (legActive('runegrave') && enemyDecaying(state)) ? 1.15 : 1; // Resonant Echo: +10% per distinct enchant; Runegrave (D3): +15% vs Decayed; D4 Rune Heart/Prismatic Edge
         var echo = Math.max(1, Math.round(dmgToMonster * SPELLBLADE_ECHO_PCT * _echoResonant * _echoCritMult * _echoD4 * _echoRunegrave));
         var _echoName = _echoChain ? 'Twin Echo' : 'Spell Echo';
-        // A real ARENA float (like every other combat number): spawnFloatingText anchors to the
-        // action bar and is gated on ACTION_BAR_RESULT_TEXT (false), so echo damage never showed.
+        // A real ARENA float (like every other combat number): this was once the action-bar toast
+        // helper, whose kill-switched flag meant echo damage never showed. (That helper is deleted.)
         act.monsterHp -= echo; spawnCombatFloat((_echoCrit?'✦ ':'')+_echoName+' -'+fmt(echo), _echoCrit?'ft-crit':'ft-rare', true);
         if(!offlineCapture){
           var _echoDetail = advCombat() ? ('spell echo — '+Math.round(SPELLBLADE_ECHO_PCT*100)+'% × '+fmt(dmgToMonster)+' hit'
@@ -23224,9 +23151,9 @@
     return best ? (TYPE_ICON[best]||'') : '';
   }
   function spawnCombatFloat(html, cls, enemySide){
-    // Combat-card damage/crit numbers float over the arena, NOT the action-bar card, so they ride the
-    // global floating-text switch -- not ACTION_BAR_RESULT_TEXT, which only silences the action-bar's
-    // per-task result popups. (They were wrongly gated on that flag, so combat floats never showed.)
+    // Combat-card damage/crit numbers float over the arena and ride the GLOBAL floating-text switch.
+    // (They were once wrongly gated on the action-bar toast flag -- deleted in v0.0.77.14 -- so combat
+    // floats never showed at all.)
     if(!FLOATING_TEXT_ENABLED || offlineCapture) return;
     var layer = document.getElementById('floatLayer');
     // Anchored to the HP ORB of whichever side took the hit (v0.0.77.0 -- these used to hang off the old
@@ -24704,12 +24631,10 @@
     if(cur && cur.owned){
       cur.level = Math.min(FAMILIAR_MAX_LEVEL, cur.level + 1);
       addLog(fam.icon + ' ' + fam.name + ' grows stronger in the Tower! Now level ' + cur.level + '.', 'important');
-      spawnFloatingText(fam.name + ' leveled up!', 'ft-rare');
       queueTowerFamiliarPopup(id, true, cur.level);
     } else {
       state.familiars[id] = { owned:true, level:1 };
       addLog(fam.icon + ' A familiar answered your call in the Tower! ' + fam.name + ' has joined you.', 'important');
-      spawnFloatingText('Familiar summoned: ' + fam.name + '!', 'ft-rare');
       if(!offlineCapture) chronicleBroadcast('familiar', fam.name);
       queueTowerFamiliarPopup(id, false, 1);
     }
@@ -24728,7 +24653,6 @@
   function grantTowerReward(entrance, floor){
     var n = barrierShardsForFloor(floor);
     addItem('barrier_shard', n);
-    if(!offlineCapture){ spawnFloatingText('+' + n + ' Barrier Shard' + (n===1?'':'s'), 'ft-rare'); }
     return n;
   }
   // End-of-run Barrier Shard summary: a single-floor clear shows that floor's haul; an auto-advance streak
@@ -24778,7 +24702,6 @@
     }
     carriedShards += (gained || 0);
     addLog('The Tower (' + towerEntranceLabel(t.entrance) + '): cleared Floor ' + cleared + '! Floor ' + (cleared + 1) + ' awaits.', 'important');
-    spawnFloatingText('Tower Floor ' + cleared + ' cleared!', 'ft-rare');
     if(auto){
       // Keep climbing on the same Combat view the player is already watching; carry the batch + Shard tally forward.
       state.activity = makeTowerActivity(t.entrance, e.floor, true, carried, carriedShards, carriedFloors);
@@ -25470,7 +25393,6 @@
     if(r.familiarId) towerGrantFamiliar(r.familiarId); // grants (or levels) the familiar + queues the same summon popup a normal find shows
     if(r.titleId){ if(!state.titles) state.titles = {}; state.titles[r.titleId] = true; }
     addLog('Quest complete: ' + q.title + ' — received ' + questRewardLabel(q) + '.', 'important');
-    spawnFloatingText('Quest: ' + q.title + ' ✓', 'ft-rare');
     saveGame(); render();
     return true;
   }
@@ -26848,7 +26770,6 @@
     estActive.grid[next.x][next.y].owned = true;
     estActive.expansionsPurchased = purchased + 1;
     addLog('You expanded ' + (estIsGuild?'the guild':'your') + ' estate for ' + cost + ' gold.', 'important');
-    spawnFloatingText('+1 Tile', 'ft-success');
     if(estIsGuild) guildLogPush('estate', 'expanded the estate (+1 tile) for '+fmt(cost)+'g of their own gold');
     estPersist();
     needsRender = true;
@@ -26868,7 +26789,6 @@
       guildEstate.grid[next.x][next.y].owned = true;
       guildEstate.expansionsPurchased = purchased + 1;
       addLog('Expanded the guild estate for ' + fmt(cost) + ' gold from the treasury.', 'important');
-      spawnFloatingText('+1 Tile', 'ft-success');
       guildLogPush('estate', 'expanded the estate (+1 tile) for '+fmt(cost)+'g');
       guildLogPush('bank', '−'+fmt(cost)+'g (estate expansion)');
       guildEstatePersist();
@@ -27308,7 +27228,6 @@
         target.job = Object.assign({ kind:kind, x:x, y:y, startAt:startAt, readyAt:readyAt }, jobFields);
         if(spec.closeMenu) spec.closeMenu();
         addLog(spec.startedMsg, 'important');
-        spawnFloatingText(spec.startedFt || 'Working…', 'ft-success');
         estPersist();
         needsRender = true;
       });
@@ -27338,7 +27257,6 @@
     state.estate.queue.push(entry);
     if(spec.closeMenu) spec.closeMenu();
     addLog(spec.queuedMsg + ' Queued as #' + estateQueue().length + '.', 'important');
-    spawnFloatingText('Queued', 'ft-bonus');
     estPersist();
     needsRender = true;
   }
@@ -27636,7 +27554,6 @@
           // Personal estate, or a MORTAL guild (no shared bank): the resources go to the clearer's own inventory.
           addItem(oinfo.itemId, oinfo.resourceAmount);
           addLog('Cleared the ' + oinfo.def.label + (isGuild ? ' on the guild estate' : ' at (' + job.x + ', ' + job.y + ')') + '. +' + oinfo.resourceAmount + ' ' + oinfo.itemName + ', +' + oinfo.xp + ' ' + SKILL_LABELS[oinfo.def.skill] + ' XP.', 'important');
-          spawnFloatingText('+' + oinfo.resourceAmount + ' ' + oinfo.itemName, 'ft-success');
         }
         if(isGuild){
           guildLogPush('estate', 'cleared the ' + oinfo.def.label + ' at (' + job.x + ', ' + job.y + ')');
@@ -27655,7 +27572,6 @@
         var pavXp = estateBuildXp(itemTierFromId(job.paveTileId));
         addXp('paving', pavXp);
         addLog('Finished ' + (job.upgrade?'upgrading the pavement at (':'paving (') + job.x + ', ' + job.y + ')' + (pr?(job.upgrade?' to ':' with ')+pr.name:'') + '. +' + pavXp + ' Paving XP.', 'important');
-        spawnFloatingText((job.upgrade?'Pavement upgraded!':'Tile Paved!') + ' +' + pavXp + ' Paving XP', 'ft-success');
         if(isGuild) guildLogPush('estate', (job.upgrade?'upgraded pavement at (':'paved (') + job.x + ', ' + job.y + ')' + (pr ? (job.upgrade?' to ':' with ') + pr.name : ''));
       }
       return true;
@@ -27668,7 +27584,6 @@
         var wsXp = estateBuildXp((WORKSHOP_ITEMS[job.workshopId]||{}).tierIndex);
         addXp('architecture', wsXp);
         addLog('Finished ' + (job.upgrade?'upgrading to':'building') + ' the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'workshop') + '. +' + wsXp + ' Architecture XP.', 'important');
-        spawnFloatingText((job.upgrade?'Workshop upgraded!':'Workshop built!') + ' +' + wsXp + ' Architecture XP', 'ft-bonus');
         if(isGuild) guildLogPush('estate', (job.upgrade?'upgraded to':'built') + ' the ' + ((WORKSHOP_ITEMS[job.workshopId]||{}).name||'Workshop') + ' at (' + job.x + ', ' + job.y + ')');
       }
       return true;
@@ -27681,7 +27596,6 @@
         var cotXp = estateBuildXp((COTTAGE_ITEMS[job.cottageId]||{}).tierIndex);
         addXp('architecture', cotXp);
         addLog('Finished ' + (job.upgrade?'upgrading to':'building') + ' the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'cottage') + '. +' + cotXp + ' Architecture XP.' + (cadj ? ' Linked to the adjacent ' + workshopSkillLabel(WORKSHOP_ITEMS[cadj.workshopId].skillId) + ' Workshop.' : ' Place it beside a single Workshop to house a Peon.'), 'important');
-        spawnFloatingText((job.upgrade?'Cottage upgraded!':'Cottage built!') + ' +' + cotXp + ' Architecture XP', 'ft-bonus');
         if(isGuild) guildLogPush('estate', (job.upgrade?'upgraded to':'built') + ' the ' + ((COTTAGE_ITEMS[job.cottageId]||{}).name||'Cottage') + ' at (' + job.x + ', ' + job.y + ')');
       }
       return true;
@@ -27694,7 +27608,6 @@
         var ttXp = estateBuildXp(ttT);
         addXp('totems', ttXp);
         addLog('Finished raising the ' + ((totemItem(job.totemId)||{}).name||'totem') + '. Fields within 1 tile now yield +' + ttT + ' crops per harvest. +' + ttXp + ' Totems XP.', 'important');
-        spawnFloatingText('Totem raised! +' + ttXp + ' Totems XP', 'ft-bonus');
       }
       return true;
     }
@@ -27705,7 +27618,6 @@
         var fldXp = estateBuildXp(job.fieldTier);
         addXp('digging', fldXp);
         addLog('Finished ' + (job.upgrade ? 'upgrading to' : 'the') + ' ' + (DIGGING_NAMES[job.fieldTier]||'') + ' Field at (' + job.x + ', ' + job.y + '). +' + fldXp + ' Digging XP. Plant crops up to that tier in the Farming tab.', 'important');
-        spawnFloatingText((job.upgrade ? 'Field upgraded!' : 'Field ready!') + ' +' + fldXp + ' Digging XP', 'ft-bonus');
       }
       return true;
     }
@@ -27714,7 +27626,6 @@
       if(giveRewards){
         addXp('digging', ESTATE_TERRAFORM_XP);
         addLog('Finished raising (' + job.x + ', ' + job.y + ') to height ' + cell.height + '. +' + ESTATE_TERRAFORM_XP + ' Digging XP.', 'important');
-        spawnFloatingText('+1 Layer', 'ft-success');
       }
       return true;
     }
@@ -27724,7 +27635,6 @@
       addItem(ESTATE_DIRT_ITEM_ID, ESTATE_LOWER_DIRT_REWARD);
       addXp('digging', ESTATE_TERRAFORM_XP);
       addLog('Finished digging down (' + job.x + ', ' + job.y + ') to height ' + cell.height + ', recovering ' + ESTATE_LOWER_DIRT_REWARD + ' Dirt. +' + ESTATE_TERRAFORM_XP + ' Digging XP.', 'important');
-      spawnFloatingText('+' + ESTATE_LOWER_DIRT_REWARD + ' Dirt', 'ft-success');
     }
     return true;
   }
@@ -27882,7 +27792,6 @@
     if(cell.cottageId){ addItem(cell.cottageId, 1); cell.cottageId = null; } // eject any placed cottage
     cell.paveTileId = null;
     addLog('You broke the pavement at (' + x + ', ' + y + '), returning it to Dirt.', 'important');
-    spawnFloatingText('Pavement Broken', 'ft-success');
     estPersist();
     needsRender = true;
   }
@@ -28854,7 +28763,6 @@
     var masXp = estateBuildXp(v);
     addXp('masonry', masXp);
     addLog('You built a ' + recipe.name + ' at this border. +' + masXp + ' Masonry XP.', 'important');
-    spawnFloatingText(ESTATE_BORDER_TYPE_LABEL[borderType] + ' Built! +' + masXp + ' Masonry XP', 'ft-success');
     estPersist();
     needsRender = true;
   }
@@ -28871,7 +28779,6 @@
     addLog('You destroyed the ' + label + ' at this border.', 'important');
     cell.type = null;
     cell.masonryTileId = null;
-    spawnFloatingText(label + ' Destroyed', 'ft-success');
     estPersist();
     needsRender = true;
   }
@@ -33872,7 +33779,6 @@
   // (they belong to the guild, not the clearer). If the vault is full or the call fails, fall
   // back to the clearer's inventory so nothing is lost.
   function guildBankDepositCleared(itemId, amount, itemName, label, job){
-    spawnFloatingText('+' + amount + ' ' + itemName + ' → Bank', 'ft-success');
     guildBankInvoke('deposit', { item_key: itemId, qty: amount }).then(function(res){
       if(res && res.ok){
         guildBankApply(res);
@@ -34493,7 +34399,6 @@
       if(n > 0){
         addItem('barrier_shard', n);
         addLog('Your guild cleared a Guild Boss — you receive ' + n + ' Barrier Shard' + (n===1?'':'s') + '.', 'important');
-        spawnFloatingText('+' + n + ' Barrier Shard' + (n===1?'':'s'), 'ft-rare');
         saveGame();
         if(currentCategory==='guild') render();
       }
@@ -34557,7 +34462,6 @@
     bumpStat('kills');
     var d = GUILD_BOSSES[gb.idx], reward = guildBossReward(gb.idx);
     addLog('You defeated ' + ((d&&d.name)||'the Guild Boss') + '!', 'important');
-    if(!offlineCapture) spawnFloatingText('Guild Boss defeated!', 'ft-rare');
     if(!offlineCapture && currentCategory === 'combat'){ currentCategory='guild'; currentArea=areaOf('guild'); guildSub='bosses'; }
     guildBossInvoke('clear', { boss_idx: gb.idx }).then(function(res){
       if(res.ok){
@@ -38475,7 +38379,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.13';
+  var GAME_VERSION = '0.0.77.14';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38731,7 +38635,7 @@
       RG_QUARRY_PER_STRIKE:RG_QUARRY_PER_STRIKE, RG_QUARRY_PER_STRIKE_D2:RG_QUARRY_PER_STRIKE_D2, RG_QUARRY_MS:RG_QUARRY_MS,
       RG_CHAIN_CHANCE:RG_CHAIN_CHANCE, RG_BOND_PCT:RG_BOND_PCT, RG_BOND_D4_MULT:RG_BOND_D4_MULT,
       RG_HUNTERSMARK_PCT:RG_HUNTERSMARK_PCT, RG_THROATSEEKER_MULT:RG_THROATSEEKER_MULT, RG_WYRMSTALKER_PCT:RG_WYRMSTALKER_PCT,
-      RG_BONEVOLLEY_CHANCE:RG_BONEVOLLEY_CHANCE, RG_CRIT_MULT:RG_CRIT_MULT, RG_SWING_MULT:RG_SWING_MULT, legendaryCritChance:legendaryCritChance, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, floatKillLoot:floatKillLoot, floatCoord:floatCoord, spawnFloatingText:spawnFloatingText, spawnBarXpText:spawnBarXpText, setOverlayHtml:setOverlayHtml, _setOfflineSummary:function(v){ offlineSummaryData = v; }, _combatLog:function(){ return combatLog; },
+      RG_BONEVOLLEY_CHANCE:RG_BONEVOLLEY_CHANCE, RG_CRIT_MULT:RG_CRIT_MULT, RG_SWING_MULT:RG_SWING_MULT, legendaryCritChance:legendaryCritChance, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, floatKillLoot:floatKillLoot, floatCoord:floatCoord, spawnBarXpText:spawnBarXpText, setOverlayHtml:setOverlayHtml, _setOfflineSummary:function(v){ offlineSummaryData = v; }, _combatLog:function(){ return combatLog; },
       MONSTER_SPECIALS:MONSTER_SPECIALS, monsterSpecialFire:monsterSpecialFire, monsterSpecialDesc:monsterSpecialDesc, clearEnemySpecialState:clearEnemySpecialState, playerDotDps:playerDotDps, playerDotTick:playerDotTick, playerDotWord:playerDotWord, playerBleedActive:playerBleedActive, playerPoisonActive:playerPoisonActive, playerFeared:playerFeared, enemyWeakenMult:enemyWeakenMult, playerShredMult:playerShredMult, enemyHardenMult:enemyHardenMult,
       playerBurnActive:playerBurnActive, playerChillSlowMult:playerChillSlowMult, playerBlindMult:playerBlindMult, enemyVeilHitMult:enemyVeilHitMult, purgePlayerBuff:purgePlayerBuff,
       enemyFrenzyFactor:enemyFrenzyFactor, enemyFrenzySpeedMult:enemyFrenzySpeedMult, enemyFrenzyDmgMult:enemyFrenzyDmgMult, enemySiphonActive:enemySiphonActive, enemyRallyDmgMult:enemyRallyDmgMult, enemyMightDmgMult:enemyMightDmgMult, maxHp:maxHp, getLevel:getLevel, getLevelExt:getLevelExt, skillLevel:skillLevel, masteryLevel:masteryLevel, classMasteryLevel:classMasteryLevel, weaponMasteryLevel:weaponMasteryLevel, physiqueMasteryTotal:physiqueMasteryTotal, armorMasteryTotal:armorMasteryTotal, armorMasteryIncomingMult:armorMasteryIncomingMult, CLASS_MASTERY_HP:CLASS_MASTERY_HP, CLASS_MASTERY_DMG:CLASS_MASTERY_DMG, WEAPON_MASTERY_DMG:WEAPON_MASTERY_DMG, ARMOR_MASTERY_DR:ARMOR_MASTERY_DR, ARMOR_MASTERY_DR_CAP:ARMOR_MASTERY_DR_CAP, PHYSIQUE_MASTERY_HP:PHYSIQUE_MASTERY_HP, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, PHYSIQUE_XP_FLOOR_EXT:PHYSIQUE_XP_FLOOR_EXT, applyOfflineProgress:applyOfflineProgress, applyMobileLayoutPref:applyMobileLayoutPref, applyUiScalePref:applyUiScalePref, uiScaleFor:uiScaleFor, UI_SCALE_DENSE:UI_SCALE_DENSE, UI_SCALE_MIN_W:UI_SCALE_MIN_W, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, templarBeaconPotencyMult:templarBeaconPotencyMult, templarIncomingDmgMult:templarIncomingDmgMult, templarVerse:templarVerse, templarVerseMs:templarVerseMs, templarVersePower:templarVersePower, templarVerseAdvance:templarVerseAdvance, templarGloria:templarGloria, applyTemplarLitanyTick:applyTemplarLitanyTick, templarDoxologyMult:templarDoxologyMult, templarDoxologyCap:templarDoxologyCap, templarBonus:templarBonus, TPL_VERSES:TPL_VERSES, TPL_VERSE_MS:TPL_VERSE_MS, TPL_VERSE_MS_D1:TPL_VERSE_MS_D1, TPL_MIGHT_PCT:TPL_MIGHT_PCT, TPL_HASTE_PCT:TPL_HASTE_PCT, TPL_ZEAL_CRITDMG:TPL_ZEAL_CRITDMG, TPL_AEGIS_PCT_PER_SEC:TPL_AEGIS_PCT_PER_SEC, TPL_AEGIS_CAP_PCT:TPL_AEGIS_CAP_PCT, TPL_FERVOR_EXT_MS:TPL_FERVOR_EXT_MS, TPL_FERVOR_EXT_CAP:TPL_FERVOR_EXT_CAP, TPL_DOXOLOGY_PER:TPL_DOXOLOGY_PER, TPL_DOXOLOGY_CAP:TPL_DOXOLOGY_CAP, TPL_DOXOLOGY_CAP_SUNSCALE:TPL_DOXOLOGY_CAP_SUNSCALE, TPL_GLORIA_PCT:TPL_GLORIA_PCT, TPL_EMPOWERED_MULT:TPL_EMPOWERED_MULT, TPL_VERSE_POWER_D2:TPL_VERSE_POWER_D2, LEG_SUNBRAND_END_PCT:LEG_SUNBRAND_END_PCT, LEG_GLORIA_MULT:LEG_GLORIA_MULT, heraldBonus:heraldBonus, heraldIroncladMult:heraldIroncladMult, heraldLiveArmor:heraldLiveArmor, heraldBarrier:heraldBarrier, heraldBarrierCap:heraldBarrierCap, heraldBarrierFrac:heraldBarrierFrac, heraldBarrierAdd:heraldBarrierAdd, heraldBarrierDmgMult:heraldBarrierDmgMult, heraldBreachFire:heraldBreachFire, heraldRetortDamage:heraldRetortDamage, heraldRetortStrikes:heraldRetortStrikes, heraldBrace:heraldBrace, heraldBraceMs:heraldBraceMs, heraldGuardFire:heraldGuardFire, applyHeraldBraceTick:applyHeraldBraceTick, HERALD_IRONCLAD_PER_1K:HERALD_IRONCLAD_PER_1K, HERALD_IRONCLAD_CAP:HERALD_IRONCLAD_CAP, HERALD_BRACE_MS:HERALD_BRACE_MS, HERALD_BRACE_MS_D2:HERALD_BRACE_MS_D2, HERALD_BARRIER_PER_GUARD:HERALD_BARRIER_PER_GUARD, HERALD_BARRIER_CAP_PCT:HERALD_BARRIER_CAP_PCT, HERALD_BARRIER_CAP_PCT_BB:HERALD_BARRIER_CAP_PCT_BB, HERALD_DEEPWALL_MULT:HERALD_DEEPWALL_MULT, HERALD_RETORT_PCT:HERALD_RETORT_PCT, HERALD_BREACH_PCT:HERALD_BREACH_PCT, HERALD_BREACH_STUN_MS:HERALD_BREACH_STUN_MS, HERALD_BREACH_D4_MULT:HERALD_BREACH_D4_MULT, HERALD_MOMENTUM_PER_10:HERALD_MOMENTUM_PER_10, LEG_WALLBREAKER_PER_10:LEG_WALLBREAKER_PER_10, HERALD_UNBREAKABLE_MULT:HERALD_UNBREAKABLE_MULT, HERALD_FORTRESS_PER_SEC:HERALD_FORTRESS_PER_SEC, HERALD_FORTRESS_CAP:HERALD_FORTRESS_CAP,
