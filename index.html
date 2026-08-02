@@ -1321,13 +1321,42 @@
   .ar2.ivy .arena-fx-t,.ar2.ivy .arena-fx-n{ color:#c0b394; }
   .ar2.ivy .arena-fx-bar{ background:#0c0a08; border-color:#3a2f20; }
 
-  /* ---- the shared tan panels ----
-   The consumables strip and Auto-Eat panel carry dozens of tan classes between them, so they keep the TRAY
-   rather than having each colour restated for a black well -- restating them rots the next time either panel
-   gains a row. On marble the tray needs its own frame so it does not float. */
-  .ar2.ivy .ar2-tray{ background:var(--bg-card); color:var(--text);
-                    border:14px solid transparent;
-                    border-image:url('art/ivy_stretch.png') 37 32 39 32 fill round; }
+  /* ---- the consumables + Auto-Eat tray, in the feed's own style ----
+     This used to restore the tan surface, on the argument that restating a shared panel's colours rots the
+     next time it gains a row. The owner wants it matching the feed instead, so the colours ARE restated --
+     and that cost is real: renderCombatConsumables() and renderAutoEatPanel() are shared with the tan
+     chrome, so any NEW row in either arrives unstyled here and has to be added below. */
+  .ar2.ivy .ar2-tray{ background-color:var(--ivy-well); background-clip:padding-box; color:var(--ink);
+                      border:14px solid transparent;
+                      border-image:url('art/ivy_stretch.png') 37 32 39 32 fill round; }
+  .ar2.ivy .ar2-tray h3{ color:var(--gold); font-family:var(--font-display); }
+  .ar2.ivy .ar2-tray .section-intro,
+  .ar2.ivy .ar2-tray .physique-bonus{ color:#c0b394; background:none; border:0; }
+  .ar2.ivy .ar2-tray .physique-bonus b{ color:var(--ink); }
+  .ar2.ivy .ar2-tray .arena-items{ border-top-color:#6b5a38; }
+  .ar2.ivy .ar2-tray .arena-items-active{ color:var(--ink); }
+  /* PLINTHS FOR BUTTONS. The consumable chips and the Auto-Eat thresholds sit on the delivered bar frame --
+     the same treatment Retreat has -- so every pressable thing on the stage is mounted stonework.
+     background-clip:padding-box on each, or the well paints under the border area and shows through the
+     frame's transparent parts. */
+  .ar2.ivy .ar2-tray .arena-item-chip,
+  .ar2.ivy .ar2-tray .style-btn{
+    background-color:var(--ivy-well); background-image:none; background-clip:padding-box;
+    border-radius:0; box-shadow:none; color:var(--ink);
+    border-style:solid; border-color:transparent; border-width:10px 24px 13px 24px;
+    border-image:url('art/ivy_bar.png') 33 115 52 112 fill stretch; }
+  .ar2.ivy .ar2-tray .arena-item-chip .qty{ color:#9a8f78; }
+  /* The armed chip and the chosen threshold light their WELL green rather than swapping frame, so the
+     stonework stays constant and only the slot behind it reads as active. */
+  .ar2.ivy .ar2-tray .arena-item-chip.on,
+  .ar2.ivy .ar2-tray .style-btn.active{ background-color:#2f4a1c; color:#eaf5dc; }
+  .ar2.ivy .ar2-tray .arena-item-chip.on .qty{ color:#c4dfa8; }
+  .ar2.ivy .ar2-tray .style-btn .style-lvl,
+  .ar2.ivy .ar2-tray .style-btn .style-type{ color:#9a8f78; }
+  /* Stow sits inside the strip; same black well, no red. */
+  .ar2.ivy .ar2-tray button[data-action="deactivatePotion"]{
+    background:var(--ivy-well); background-clip:padding-box; color:var(--ink);
+    border:1px solid #6b5a38; border-radius:3px; box-shadow:none; }
 
   /* ---- the feed spans the whole arena; the companions move up under Retreat ----
    .ar2-low stops being a two-column split, so the feed gets the full stage width instead of half. The
@@ -25976,6 +26005,7 @@
       'The <b>combat feed spans the whole arena</b> now instead of half of it, so a line like &ldquo;You hit the Crocodile for 134,000,000 CRIT&rdquo; fits without truncating the number that matters.',
       'Your <b>companions sit in one row</b> beneath your own bars, up to all six of them, each with its cast clock and spell queue. <b>Retreat</b> moved into your own column directly under your swing timer, so it always sits with you rather than below whichever fighter happens to be taller.',
       'Your name plate now shows <b>your actual name</b> instead of &ldquo;You&rdquo;.',
+      'The <b>consumables strip and Auto-Eat panel</b> match the feed now instead of staying tan, and every pressable thing on the stage is mounted stonework: your potion chips and the Auto-Eat thresholds sit on the same carved bar as Retreat, with the armed one lighting green behind the frame.',
       'Nothing about combat maths, damage, drops or balance changed. This is the room you fight in.'
     ]},
     { v:'0.0.77', date:'Aug 1', heading:'The arena on a phone: the two of you stay face to face', items:[
@@ -38180,7 +38210,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.2';
+  var GAME_VERSION = '0.0.77.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
