@@ -1256,12 +1256,16 @@
   .ar2.ivy .ar2-fam-box > img{ display:none; }
 
   /* ---- every text box: stone frame, black well ---- */
-  /* `fill` paints the frame's own middle slice, and the well colour goes UNDER it via background-color, so the
-   art's inner shadow still reads while the interior is black. */
+  /* NO `fill`, ANYWHERE (owner report, v0.0.77.17): with `fill round` the frame's MIDDLE slice tiles across
+   the interior, and on any box bigger than one tile every seam paints the art's inner ornament fragments --
+   diamond shapes marching through the content and over the text (worst on the big consumables tray, which
+   tiles the middle several times each way and grew a giant X dead-centre). The black interior comes from each
+   box's own background-color instead, which was already there underneath; the border edges still `round`.
+   This is exactly how the stage's own border uses the same art. */
   .ar2.ivy .ar2-plate{ aspect-ratio:auto; overflow:visible;
                      background-color:var(--ivy-well);
                      border:14px solid transparent;
-                     border-image:url('art/ivy_stretch.png') 37 32 39 32 fill round; }
+                     border-image:url('art/ivy_stretch.png') 37 32 39 32 round; }
   .ar2.ivy .ar2-plate .pin{ position:static; left:auto; top:auto; width:auto; height:auto; padding:0 6px; }
   /* THE TWO NAMES MEET IN THE MIDDLE. The player's plate packs right and the foe's packs left, and the player's
    name is ordered INNERMOST so the qualifier takes the outer end -- which is also the end the ring's scroll
@@ -1305,7 +1309,7 @@
   .ar2.ivy .ar2-foeline{ background-color:var(--ivy-well);
                        background-clip:padding-box;
                        border:12px solid transparent;
-                       border-image:url('art/ivy_stretch.png') 37 32 39 32 fill round;
+                       border-image:url('art/ivy_stretch.png') 37 32 39 32 round;
                        padding:2px 6px;
                        width:fit-content; margin:-12px 0 0 auto; }
   .ar2.ivy .ar2-foeline .ar2-sub{ color:#c0b394; }
@@ -1387,7 +1391,7 @@
 
   /* ---- companions ---- */
   .ar2.ivy .ar2-fam-box{ background-color:var(--ivy-well); border:11px solid transparent;
-                       border-image:url('art/ivy_stretch.png') 37 32 39 32 fill round; }
+                       border-image:url('art/ivy_stretch.png') 37 32 39 32 round; }
   .ar2.ivy .ar2-fam-slot{ position:static; width:auto; height:auto; border-radius:2px;
                         background:radial-gradient(circle at 50% 35%, #2a2418 0%, #100e08 100%); }
   .ar2.ivy .ar2-fam-cast{ background:#0c0a08; border-color:#6b5a38; }
@@ -1402,14 +1406,14 @@
 
   /* ---- the mini feed: stone frame, black well, and the dark-stage row palette comes back with it ---- */
   .ar2.ivy .ar2-logframe{ border:18px solid transparent;
-                        border-image:url('art/ivy_stretch.png') 37 32 39 32 fill round;
+                        border-image:url('art/ivy_stretch.png') 37 32 39 32 round;
                         background-color:var(--ivy-well); }
   .ar2.ivy .ar2-log{ background:linear-gradient(180deg,#181409 0%,#100d07 100%); border-radius:2px; }
 
   /* ---- the effect bars: their own framed panel rather than loose rows on marble ---- */
   .ar2.ivy .arena-fx{ background-color:var(--ivy-well);
                     border:12px solid transparent;
-                    border-image:url('art/ivy_stretch.png') 37 32 39 32 fill round;
+                    border-image:url('art/ivy_stretch.png') 37 32 39 32 round;
                     border-top-color:transparent; padding:2px 6px; margin-top:8px; }
   .ar2.ivy .arena-fx-title,.ar2.ivy .arena-fx-name{ color:#9a8f78; }
   .ar2.ivy .arena-fx-t,.ar2.ivy .arena-fx-n{ color:#c0b394; }
@@ -1422,7 +1426,7 @@
      chrome, so any NEW row in either arrives unstyled here and has to be added below. */
   .ar2.ivy .ar2-tray{ background-color:var(--ivy-well); background-clip:padding-box; color:var(--ink);
                       border:14px solid transparent;
-                      border-image:url('art/ivy_stretch.png') 37 32 39 32 fill round; }
+                      border-image:url('art/ivy_stretch.png') 37 32 39 32 round; }
   .ar2.ivy .ar2-tray h3{ color:var(--gold); font-family:var(--font-display); }
   .ar2.ivy .ar2-tray .section-intro,
   .ar2.ivy .ar2-tray .physique-bonus{ color:#c0b394; background:none; border:0; }
@@ -26063,6 +26067,9 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 2', heading:'The stone boxes stop growing diamonds through their text', items:[
+      'Reported: strange diamond shapes appearing inside the consumables tray and other framed boxes, worst dead-centre of the big ones, sitting over the text. The stone frame&rsquo;s artwork was being asked to paint its own middle as the box interior, and on any box bigger than one tile of the art that middle <b>repeats</b> &mdash; every seam left a fragment of the frame&rsquo;s inner ornament marching across the panel. The interiors were already solid black underneath, so the frames now paint only their edges: same stonework outside, clean black inside, on every framed box on the combat screen.'
+    ]},
     { v:'0.0.77', date:'Aug 2', heading:'Mobile: the frame around the game goes black', items:[
       'On phones the thin border around the game &mdash; and the colour that peeked through when you overscrolled &mdash; was parchment tan, which against a dark browser looked like a mis-sized page. It is now the same slate black as the top bar and dock, so the game reads as one piece of chrome. Desktop keeps the tan surround.'
     ]},
@@ -38390,7 +38397,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.16';
+  var GAME_VERSION = '0.0.77.17';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
