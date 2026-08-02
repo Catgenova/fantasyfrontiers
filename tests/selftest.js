@@ -1370,8 +1370,17 @@
       var gb = FF.describeTask({ type:'gather', skill:'butchering', itemId:FF.GATHERING_SKILLS.forestry.items[0].id, progress:0 });
       eq(gb.successPct, 100, 'butchering is the one always-hit gather line (a Refining activity)');
       // The (?) popup admits the main find chance too -- it used to list only the side-drop chances.
-      ok(/Main Find Chance/.test((FF.skillLiveStats('forestry')||[]).join(' ')),
-         'the forestry (?) popup states the main find chance');
+      // And its RANGES must be derived from the constants that drive the roll: the first version hardcoded
+      // "caps at 95%" off a min(0.95,...) clamp that never binds (the tool bonus maxes at +9.375%, so the
+      // real ceiling is 79%) -- the ticket-0128 reporter caught the wrong text within the hour.
+      var _fLines = (FF.skillLiveStats('forestry')||[]).join(' ');
+      ok(/Main Find Chance/.test(_fLines), 'the forestry (?) popup states the main find chance');
+      var _wantMax = '+'+(FF.GATHER_TOOL_SUCCESS_MAX*100).toFixed(1).replace(/\.0$/,'')+'%';
+      var _wantBest = 'best '+Math.round((FF.BASE_GATHER_MAIN_CHANCE+FF.GATHER_TOOL_SUCCESS_MAX)*100)+'%';
+      ok(_fLines.indexOf(_wantMax) !== -1 && _fLines.indexOf(_wantBest) !== -1,
+         'the popup ranges are derived from the roll constants ('+_wantMax+', '+_wantBest+') -- never a clamp that does not bind');
+      ok(!/caps at 95|adds up to \+25%/.test((FF.skillLiveStats('digging')||[]).join(' ')),
+         'the digging popup dropped its fictional "+25% / caps at 95%" claims');
       var pr = FF.describeTask({ type:'pray', itemId:FF.PRAYER_TIERS[0].id, progress:0 });
       eq(pr.remaining, Infinity, 'prayer runs are infinite');
       eq(pr.successPct, 100, 'prayer always succeeds');

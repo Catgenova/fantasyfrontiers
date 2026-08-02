@@ -10801,7 +10801,7 @@
   var GATHER_TOOL_SUCCESS_MAX = 0.09375; // 0.375x original: max +9.375% (halved then -25%)
   function gatherToolSuccessBonus(toolTier){
     if(!(toolTier > 0)) return 0;
-    return GATHER_TOOL_SUCCESS_MAX * Math.min(1, (toolTier - 1) / (TIER_COUNT - 1)); // +12.5% at the top tier
+    return GATHER_TOOL_SUCCESS_MAX * Math.min(1, (toolTier - 1) / (TIER_COUNT - 1)); // scales to the full +9.375% at the top tier
   }
   var BASE_BUTCHER_CHANCE = 0.40;
   function butcherOutputChance(state, physiqueId){
@@ -26122,6 +26122,10 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 2', heading:'The gathering descriptions now tell the same truth as the roll', items:[
+      'Follow-up to the last patch, caught by the same reporter within the hour: the new chance text itself was wrong. It said your tool &ldquo;adds the rest, caps at 95%&rdquo; &mdash; and Digging&rsquo;s said &ldquo;your Shovel adds up to +25%&rdquo; &mdash; but a gather tool actually adds <b>up to +9.4% at top tier</b>, so the realistic best is <b>79%</b> (59% for Fishing from its 50% base). The 95% figure was a safety clamp in the code that can never actually be reached.',
+      'Every chance description is now computed from the same constants the roll uses, so the text cannot drift from the mechanics again. Nothing about the odds themselves changed &mdash; only the fiction in the parentheses.'
+    ]},
     { v:'0.0.77', date:'Aug 2', heading:'The gathering bar stops promising 100% it never had', items:[
       'Reported (ticket-0128): gathering actions showing <b>100%</b> on the task bar were sometimes failing. The roll was always honest &mdash; Forestry, Herbalism, Foraging, Botany and their kin succeed at <b>70% base, plus your tool&rsquo;s bonus, capped at 95%</b>, and a whiff floats &ldquo;Nothing gathered&rdquo; &mdash; but the task bar hardcoded 100% for exactly those skills, and nothing else in the game admitted the real number either. Nothing about your odds changed: the bar now shows the chance the game actually rolls, and each skill&rsquo;s <b>(?)</b> popup spells out the base, the tool bonus and the cap. Better tools raise it, as they always quietly did.',
       'Digging, Mining and Fishing already showed their true chances; Butchering really is a guaranteed line and still says so.'
@@ -35344,20 +35348,27 @@
       lines.push('Tool: <b>'+gt.name+'</b> &bull; Speed Bonus: <b>+'+gp+'%</b> <span style="color:var(--text-faint)">(forge one in Blacksmithing)</span>');
       // Every generic gather rolls genericGatherMainChance per cycle (ticket-0128) -- the popup used to show
       // only the side-drop chances here, so nothing anywhere admitted the main find can whiff.
+      // The ranges are DERIVED from the constants, never hardcoded: the first version of this line said
+      // "caps at 95%" because the code carries a min(0.95, ...) clamp -- but the tool bonus maxes at
+      // GATHER_TOOL_SUCCESS_MAX (+9.375%), so the clamp never binds and the real ceiling is ~79%. The same
+      // player who filed ticket-0128 caught the wrong description within the hour. A claim in player-facing
+      // text must come from the numbers that produce the roll, not from a clamp that happens to sit nearby.
+      var _toolMax = '+'+(GATHER_TOOL_SUCCESS_MAX*100).toFixed(1).replace(/\.0$/,'')+'%';
       if(skillId!=='digging' && skillId!=='mining' && skillId!=='fishing'){
         lines.push('Main Find Chance: <b>'+Math.round(genericGatherMainChance(state, skillId)*100)+'%</b> (base '
-          +Math.round(BASE_GATHER_MAIN_CHANCE*100)+'%, your tool adds the rest, caps at 95%)');
+          +Math.round(BASE_GATHER_MAIN_CHANCE*100)+'%, your tool adds up to '+_toolMax+' at top tier &mdash; best '
+          +Math.round((BASE_GATHER_MAIN_CHANCE+GATHER_TOOL_SUCCESS_MAX)*100)+'%)');
       }
       if(skillId==='digging'){
-        lines.push('Main Find Chance: <b>'+Math.round(diggingMainChance(state)*100)+'%</b> (base 70%, your Shovel adds up to +25%, caps at 95%)');
+        lines.push('Main Find Chance: <b>'+Math.round(diggingMainChance(state)*100)+'%</b> (base '+Math.round(BASE_DIG_MAIN_CHANCE*100)+'%, your Shovel adds up to '+_toolMax+' at top tier &mdash; best '+Math.round((BASE_DIG_MAIN_CHANCE+GATHER_TOOL_SUCCESS_MAX)*100)+'%)');
         lines.push('Coal Chance: <b>'+Math.round(diggingCoalChance(state)*100)+'%</b> (Focus adds more)');
         lines.push('Muddy Artifact Chance: <b>'+Math.round(diggingArtifactChance(state)*100)+'%</b> (Critical Thinking adds more)');
       } else if(skillId==='mining'){
-        lines.push('Main Find Chance: <b>'+Math.round(miningMainChance(state)*100)+'%</b> (base 70%, your Pickaxe adds the rest)');
+        lines.push('Main Find Chance: <b>'+Math.round(miningMainChance(state)*100)+'%</b> (base '+Math.round(BASE_MINE_MAIN_CHANCE*100)+'%, your Pickaxe adds up to '+_toolMax+' at top tier &mdash; best '+Math.round((BASE_MINE_MAIN_CHANCE+GATHER_TOOL_SUCCESS_MAX)*100)+'%)');
         lines.push('Coal Chance: <b>'+Math.round(miningCoalChance(state)*100)+'%</b> (Endurance adds more)');
         lines.push('Gem Chance: <b>'+Math.round(miningGemChance(state)*100)+'%</b> (Solving adds more)');
       } else if(skillId==='fishing'){
-        lines.push('Catch Chance: <b>'+Math.round(fishingCatchChance(state)*100)+'%</b> (base 50%, your Fishing Rod adds the rest)');
+        lines.push('Catch Chance: <b>'+Math.round(fishingCatchChance(state)*100)+'%</b> (base '+Math.round(BASE_FISH_CHANCE*100)+'%, your Fishing Rod adds up to '+_toolMax+' at top tier &mdash; best '+Math.round((BASE_FISH_CHANCE+GATHER_TOOL_SUCCESS_MAX)*100)+'%)');
       } else if(skillId==='forestry'){
         lines.push('Critter Cache Chance: <b>'+Math.round(critterCacheChance(state)*100)+'%</b> (base 1%, Balance adds more, caps at 11%) &mdash; open one from your Inventory for 3 Seeds');
       } else if(skillId==='botany'){
@@ -38388,7 +38399,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.10';
+  var GAME_VERSION = '0.0.77.11';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
