@@ -4696,6 +4696,13 @@
       // and, being fixed-width, truncated every foe past about nine characters.
       ok(h.indexOf('<span class="ar2-nm">' + mon.name + '</span>') !== -1, 'the foe name plate holds the whole name');
       ok(/class="ar2-foeline"/.test(h), 'the element/matchup badges moved below the bars');
+      // LOCKED to the foe's own column (v0.0.77.6): the line is the foe meta's last row, after the foe's
+      // bars and before its portrait ring -- the mirror of Retreat under the player's bars. As a stage-level
+      // row it sat under the combat feed, a long way from the foe it describes, and a fixed offset could not
+      // lock it under a stack whose bar count varies (one bar, or two when the foe has a special).
+      ok(h.indexOf('class="ar2-foeline"') > h.indexOf('id="ar2AtkFoe"')
+         && h.indexOf('class="ar2-foeline"') < h.indexOf('id="ar2PortFoe"'),
+         'the weakness line is emitted inside the foe column: after its bars, before its portrait');
       // The tan-chrome panels sit on a tray rather than being individually re-coloured for the dark stage.
       ok(/class="ar2-tray"/.test(h), 'the consumables + Auto-Eat panels sit on the tan tray');
       ok(/data-action="stop"/.test(h), 'Retreat still renders');
