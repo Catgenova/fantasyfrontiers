@@ -3921,7 +3921,8 @@
     };
     // Butchering is a Refining activity: its Cleaver raises butcher output chance like a CRAFT tool raises
     // craft success -- same per-tier curve (CRAFT_TOOL_SUCCESS) AND rarity scaling (applyToolRarity lifts
-    // successBonus). Other gather tools carry no success field (their success is the tier-only main-chance).
+    // successBonus). No other gather tool carries a success field: gather tools lend speed only, and the
+    // main-find chances are flat constants (owner ruling, v0.0.77.15).
     if(skillId === 'butchering') d.successBonus = CRAFT_TOOL_SUCCESS[t];
     return d;
   }
@@ -10788,14 +10789,9 @@
       state.activity = { type:'craft', skill:'fletching', itemId:'fletching_shaft', progress:0, logTierIndex: logTierIndex };
     }
   }
-  // Gathering tools raise the main-output SUCCESS rate purely by their tier -- rarity boosts a tool's
-  // SPEED only, never its success. A top-tier tool adds +9.375%, scaling in linearly by tool tier up to
-  // Tier 20 (the top tool tier), rather than maxing out several tiers early on a rare tool.
-  var GATHER_TOOL_SUCCESS_MAX = 0.09375; // 0.375x original: max +9.375% (halved then -25%)
-  function gatherToolSuccessBonus(toolTier){
-    if(!(toolTier > 0)) return 0;
-    return GATHER_TOOL_SUCCESS_MAX * Math.min(1, (toolTier - 1) / (TIER_COUNT - 1)); // scales to the full +9.375% at the top tier
-  }
+  // Gathering tools lend SPEED ONLY -- no gather tool raises main-output success (owner ruling,
+  // v0.0.77.15; see genericGatherMainChance). Butchering's Cleaver below is the one exception BY DESIGN,
+  // and it raises OUTPUT QUANTITY chance, mirroring a craft tool's success curve.
   var BASE_BUTCHER_CHANCE = 0.40;
   function butcherOutputChance(state, physiqueId){
     var toolTier = state.gatherTools.butchering||0;
@@ -10817,12 +10813,20 @@
 
   // ---- Digging: main output chance (Shovel-boosted) + two independent rare side-drops (physique-boosted) ----
   // Uniform Gathering success: every gathering skill's main resource drops 70% of the time at base,
-  // climbing toward a 95% hard cap as its gather tool improves. Digging/Mining/Fishing keep their own rolls
-  // (all already anchored at this 70% base); every other gather is gated through this helper.
+  // Digging/Mining/Fishing keep their own rolls (Digging/Mining at this same 70% base, Fishing at 50%);
+  // every other gather is gated through this helper.
+  //
+  // FLAT, BY OWNER RULING (v0.0.77.15): gather tools lend SPEED ONLY, no success. The tool DATA always said
+  // so -- getGatherToolTierData carries no success field for any gather tool except Butchering's Cleaver --
+  // but a vestigial tier-only curve (gatherToolSuccessBonus, max +9.375%) was still added here and in the
+  // three skill-specific rolls below, an invisible bonus no item card ever claimed. It is deleted, not
+  // described: the functions keep their signatures because the roll, the task bar, the (?) popup, offline
+  // catch-up and the tests all call them, and every display derives from what they return.
+  // (Butchering is untouched: its Cleaver deliberately mirrors a CRAFT tool's success curve, its item card
+  // says so, and that bonus feeds butcherOutputChance -- output quantity, not this gate.)
   var BASE_GATHER_MAIN_CHANCE = 0.70;
   function genericGatherMainChance(state, skillId){
-    var tier = (state.gatherTools && state.gatherTools[skillId]) || 0;
-    return Math.min(0.95, BASE_GATHER_MAIN_CHANCE + gatherToolSuccessBonus(tier));
+    return BASE_GATHER_MAIN_CHANCE;
   }
   var BASE_DIG_MAIN_CHANCE = 0.70;
   var BASE_COAL_CHANCE = 0.10;
@@ -10832,8 +10836,7 @@
   var ARTIFACT_PHYSIQUE = 'armStrength';
   var ARTIFACT_PHYSIQUE_CAP = 0.10;
   function diggingMainChance(state){
-    var tier = state.gatherTools.digging||0;
-    return Math.min(0.95, BASE_DIG_MAIN_CHANCE + gatherToolSuccessBonus(tier));
+    return BASE_DIG_MAIN_CHANCE;   // flat: gather tools lend speed only (see genericGatherMainChance)
   }
   function diggingSideChance(baseChance, physiqueId, physiqueCap, physiqueScale){
     var physLevel = getLevel(state.physique[physiqueId]||0);
@@ -10904,8 +10907,7 @@
     return group ? group.gem : GEM_TIER_GROUPS[0].gem;
   }
   function miningMainChance(state){
-    var tier = state.gatherTools.mining||0;
-    return Math.min(0.95, BASE_MINE_MAIN_CHANCE + gatherToolSuccessBonus(tier));
+    return BASE_MINE_MAIN_CHANCE;  // flat: gather tools lend speed only (see genericGatherMainChance)
   }
   function miningSideChance(baseChance, physiqueId, physiqueCap, physiqueScale){
     var physLevel = getLevel(state.physique[physiqueId]||0);
@@ -10935,8 +10937,7 @@
   // ---- Fishing: 60% base catch chance, boosted by the Fishing Rod ----
   var BASE_FISH_CHANCE = 0.50;
   function fishingCatchChance(state){
-    var tier = state.gatherTools.fishing||0;
-    return Math.min(0.95, BASE_FISH_CHANCE + gatherToolSuccessBonus(tier));
+    return BASE_FISH_CHANCE;       // flat: gather tools lend speed only (see genericGatherMainChance)
   }
   function processFishingRoll(mainItemId){
     if(Math.random() < fishingCatchChance(state)){
@@ -13514,7 +13515,7 @@
         addItem(act.itemId, 1);
         gatherDoubleRoll(act.itemId, act.skill);
       } else if(Math.random() < genericGatherMainChance(state, act.skill)){
-        // Every other gather has a 70% base success (+ gather-tool bonus); a whiff yields nothing this tick.
+        // Every other gather has a flat 70% success (tools speed the work, never the odds); a whiff yields nothing this tick.
         addItem(act.itemId, 1);
         bumpStat('gathered_' + act.itemId); // per-item gather tally (forestry/herbalism/etc.), powers "Chop 100 Logs", "Gather 100 Herbs"
         gatherDoubleRoll(act.itemId, act.skill);
@@ -19408,7 +19409,7 @@
     "Every skill has a <b>familiar</b> waiting to be found, a small chance on each completed action. Set one as your Companion and it casts spells for you in combat.",
     "<b>Cloth armor</b> makes your familiar's spells hit harder, and Catalyst potions from Alchemy stack on top. A well-dressed summoner is a dangerous one.",
     "<b>Physiques</b> train themselves from what you already do: heavy labor builds Body Strength (melee damage), fighting builds Agility (dodge). The Skills tab shows what trains each.",
-    "<b>Gathering</b> has a 70% base success — forge that skill's gather Tool via Blacksmithing to push it toward a 95% cap.",
+    "<b>Gathering</b> succeeds 70% of the time (Fishing 50%) — forge that skill's gather Tool via Blacksmithing to work faster; the odds are fixed.",
     "<b>Wands</b> deal elemental damage and <b>Wards</b> reflect it. Rarity multiplies a wand's damage 2x/4x/8x and gives a ward a chance to reflect a full hit.",
     "Place a <b>Workshop</b> on your Estate to speed a skill and add double-output. Put a Cottage beside it and idle Peons will work that skill for you.",
     "<b>Elemental Attunements</b> grow as you deal or take that element's damage, raising both the damage you deal and your resistance to it.",
@@ -26056,6 +26057,11 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 2', heading:'Gathering tools speed the work; the odds are fixed', items:[
+      'Ruling made official: <b>gather tools no longer affect success chance</b> &mdash; they speed the work, and that is their whole job. A hidden holdover was quietly adding up to +9.4% success by raw tool tier, a bonus no tool&rsquo;s card ever claimed; it is removed, so every gather now rolls its flat base &mdash; <b>70%</b> for everything, <b>50%</b> for Fishing.',
+      'Every description follows suit: the task bar, each gathering skill&rsquo;s <b>(?)</b> popup and the loading-screen tip now state the flat chance and say plainly that your tool does not change it. For most players the difference is a point or two; a top-tier tool loses at most 9.',
+      'Butchering is the deliberate exception and unchanged: the Cleaver raises how much Meat, Hide and Fat a carcass yields, exactly as its card says.'
+    ]},
     { v:'0.0.77', date:'Aug 2', heading:'Floating rewards land where they belong again', items:[
       'Reported (ticket-0133): since the Compact-desktop update, the floating +XP and item-reward ticks were drifting away from their task rows &mdash; the further from the top-left of the screen, the worse. The float layer lives inside the new 75% scale, but positions were measured in on-screen pixels, so every tick painted at three-quarters of its intended distance from the corner. All floating text &mdash; task rewards, XP ticks, the tracker&rsquo;s +XP, combat damage and loot over the orbs &mdash; now converts coordinates into the scaled space and lands on its anchor at every zoom.'
     ]},
@@ -35318,28 +35324,24 @@
       }
       lines.push('Tool: <b>'+gt.name+'</b> &bull; Speed Bonus: <b>+'+gp+'%</b> <span style="color:var(--text-faint)">(forge one in Blacksmithing)</span>');
       // Every generic gather rolls genericGatherMainChance per cycle (ticket-0128) -- the popup used to show
-      // only the side-drop chances here, so nothing anywhere admitted the main find can whiff.
-      // The ranges are DERIVED from the constants, never hardcoded: the first version of this line said
-      // "caps at 95%" because the code carries a min(0.95, ...) clamp -- but the tool bonus maxes at
-      // GATHER_TOOL_SUCCESS_MAX (+9.375%), so the clamp never binds and the real ceiling is ~79%. The same
-      // player who filed ticket-0128 caught the wrong description within the hour. A claim in player-facing
-      // text must come from the numbers that produce the roll, not from a clamp that happens to sit nearby.
-      var _toolMax = '+'+(GATHER_TOOL_SUCCESS_MAX*100).toFixed(1).replace(/\.0$/,'')+'%';
+      // only the side-drop chances here, so nothing anywhere admitted the main find can whiff. The chances
+      // are FLAT by owner ruling (v0.0.77.15): gather tools lend speed only, so the line says so explicitly
+      // -- a bare number invites the assumption that something must raise it. Values still derive from the
+      // same functions the roll uses, never from literals; that rule has already caught two wrong texts.
+      var _flat = ' <span style="color:var(--text-faint)">(flat &mdash; your tool speeds the work, it does not change the odds)</span>';
       if(skillId!=='digging' && skillId!=='mining' && skillId!=='fishing'){
-        lines.push('Main Find Chance: <b>'+Math.round(genericGatherMainChance(state, skillId)*100)+'%</b> (base '
-          +Math.round(BASE_GATHER_MAIN_CHANCE*100)+'%, your tool adds up to '+_toolMax+' at top tier &mdash; best '
-          +Math.round((BASE_GATHER_MAIN_CHANCE+GATHER_TOOL_SUCCESS_MAX)*100)+'%)');
+        lines.push('Main Find Chance: <b>'+Math.round(genericGatherMainChance(state, skillId)*100)+'%</b>'+_flat);
       }
       if(skillId==='digging'){
-        lines.push('Main Find Chance: <b>'+Math.round(diggingMainChance(state)*100)+'%</b> (base '+Math.round(BASE_DIG_MAIN_CHANCE*100)+'%, your Shovel adds up to '+_toolMax+' at top tier &mdash; best '+Math.round((BASE_DIG_MAIN_CHANCE+GATHER_TOOL_SUCCESS_MAX)*100)+'%)');
+        lines.push('Main Find Chance: <b>'+Math.round(diggingMainChance(state)*100)+'%</b>'+_flat);
         lines.push('Coal Chance: <b>'+Math.round(diggingCoalChance(state)*100)+'%</b> (Focus adds more)');
         lines.push('Muddy Artifact Chance: <b>'+Math.round(diggingArtifactChance(state)*100)+'%</b> (Critical Thinking adds more)');
       } else if(skillId==='mining'){
-        lines.push('Main Find Chance: <b>'+Math.round(miningMainChance(state)*100)+'%</b> (base '+Math.round(BASE_MINE_MAIN_CHANCE*100)+'%, your Pickaxe adds up to '+_toolMax+' at top tier &mdash; best '+Math.round((BASE_MINE_MAIN_CHANCE+GATHER_TOOL_SUCCESS_MAX)*100)+'%)');
+        lines.push('Main Find Chance: <b>'+Math.round(miningMainChance(state)*100)+'%</b>'+_flat);
         lines.push('Coal Chance: <b>'+Math.round(miningCoalChance(state)*100)+'%</b> (Endurance adds more)');
         lines.push('Gem Chance: <b>'+Math.round(miningGemChance(state)*100)+'%</b> (Solving adds more)');
       } else if(skillId==='fishing'){
-        lines.push('Catch Chance: <b>'+Math.round(fishingCatchChance(state)*100)+'%</b> (base '+Math.round(BASE_FISH_CHANCE*100)+'%, your Fishing Rod adds up to '+_toolMax+' at top tier &mdash; best '+Math.round((BASE_FISH_CHANCE+GATHER_TOOL_SUCCESS_MAX)*100)+'%)');
+        lines.push('Catch Chance: <b>'+Math.round(fishingCatchChance(state)*100)+'%</b>'+_flat);
       } else if(skillId==='forestry'){
         lines.push('Critter Cache Chance: <b>'+Math.round(critterCacheChance(state)*100)+'%</b> (base 1%, Balance adds more, caps at 11%) &mdash; open one from your Inventory for 3 Seeds');
       } else if(skillId==='botany'){
@@ -38379,7 +38381,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.14';
+  var GAME_VERSION = '0.0.77.15';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38506,7 +38508,7 @@
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
-      GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, FORGE_LIVE_CATEGORIES:FORGE_LIVE_CATEGORIES, CRAFT_RECIPE_LIVE_CATEGORIES:CRAFT_RECIPE_LIVE_CATEGORIES, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, gatherToolSuccessBonus:gatherToolSuccessBonus, GATHER_TOOL_SUCCESS_MAX:GATHER_TOOL_SUCCESS_MAX, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
+      GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, FORGE_LIVE_CATEGORIES:FORGE_LIVE_CATEGORIES, CRAFT_RECIPE_LIVE_CATEGORIES:CRAFT_RECIPE_LIVE_CATEGORIES, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
       QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash, syncGuildPlotsForGuild:syncGuildPlotsForGuild, pruneOrphanFarmingPlots:pruneOrphanFarmingPlots, inputSnapshot:inputSnapshot, inputRestore:inputRestore,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,

@@ -1366,21 +1366,20 @@
       var gf = FF.describeTask({ type:'gather', skill:'forestry', itemId:FF.GATHERING_SKILLS.forestry.items[0].id, progress:0 });
       eq(gf.successPct, Math.round(FF.genericGatherMainChance(S, 'forestry')*100),
          'the forestry task bar shows the SAME chance the gather tick rolls');
-      ok(gf.successPct < 100, 'and it is never 100 -- the roll caps at 95%');
+      eq(gf.successPct, 70, 'and that chance is the flat 70% base -- tools lend speed, never odds (v0.0.77.15)');
       var gb = FF.describeTask({ type:'gather', skill:'butchering', itemId:FF.GATHERING_SKILLS.forestry.items[0].id, progress:0 });
       eq(gb.successPct, 100, 'butchering is the one always-hit gather line (a Refining activity)');
       // The (?) popup admits the main find chance too -- it used to list only the side-drop chances.
-      // And its RANGES must be derived from the constants that drive the roll: the first version hardcoded
-      // "caps at 95%" off a min(0.95,...) clamp that never binds (the tool bonus maxes at +9.375%, so the
-      // real ceiling is 79%) -- the ticket-0128 reporter caught the wrong text within the hour.
+      // Since v0.0.77.15 the chance is FLAT (gather tools lend speed only, owner ruling) and the popup must
+      // say so explicitly rather than leave a bare number implying something raises it. No popup may claim
+      // a tool bonus, a cap, or a "best" -- both prior versions of that text were caught wrong within hours.
       var _fLines = (FF.skillLiveStats('forestry')||[]).join(' ');
       ok(/Main Find Chance/.test(_fLines), 'the forestry (?) popup states the main find chance');
-      var _wantMax = '+'+(FF.GATHER_TOOL_SUCCESS_MAX*100).toFixed(1).replace(/\.0$/,'')+'%';
-      var _wantBest = 'best '+Math.round((FF.BASE_GATHER_MAIN_CHANCE+FF.GATHER_TOOL_SUCCESS_MAX)*100)+'%';
-      ok(_fLines.indexOf(_wantMax) !== -1 && _fLines.indexOf(_wantBest) !== -1,
-         'the popup ranges are derived from the roll constants ('+_wantMax+', '+_wantBest+') -- never a clamp that does not bind');
-      ok(!/caps at 95|adds up to \+25%/.test((FF.skillLiveStats('digging')||[]).join(' ')),
-         'the digging popup dropped its fictional "+25% / caps at 95%" claims');
+      ok(/flat/.test(_fLines) && /does not change the odds/.test(_fLines),
+         'the popup says the chance is flat and that tools do not change it');
+      var _dLines = (FF.skillLiveStats('digging')||[]).join(' ');
+      ok(!/(tool|Shovel|Pickaxe|Rod|Axe) adds|adds up to \+|best \d+%|adds the rest/i.test(_fLines + ' ' + _dLines),
+         'no gather popup claims a tool success bonus or best-case any more (physique caps on side-drops are real and stay)');
       var pr = FF.describeTask({ type:'pray', itemId:FF.PRAYER_TIERS[0].id, progress:0 });
       eq(pr.remaining, Infinity, 'prayer runs are infinite');
       eq(pr.successPct, 100, 'prayer always succeeds');
@@ -2582,39 +2581,33 @@
     ok(typeof p === 'number' && p >= 0 && p <= 100, 'anySkillProgress is a 0-100 percentage');
   });
 
-  // ---- Gathering tools: success scales by TIER only, reaching +25% at the top tier -------
-  suite('gather tool success is tier-scaled and rarity-independent', function(){
-    eq(FF.GATHER_TOOL_SUCCESS_MAX, 0.09375, 'a top-tier gather tool adds +9.375% success');
-    eq(FF.gatherToolSuccessBonus(0), 0, 'no tool -> no success bonus');
-    eq(FF.gatherToolSuccessBonus(1), 0, 'the first tool tier adds nothing yet');
-    near(FF.gatherToolSuccessBonus(21), 0.09375, 'the top tool tier (stored 21 = index 20) adds +9.375%');
-    // Strictly monotonic across the ladder.
-    var prev = -1, mono = true;
-    for(var t = 0; t <= 21; t++){ var b = FF.gatherToolSuccessBonus(t); if(b < prev) mono = false; prev = b; }
-    ok(mono, 'the success bonus never decreases as tier climbs');
-
+  // ---- Gathering tools lend NO success rate (owner ruling, v0.0.77.15) ------------------------------
+  // The tier-only bonus curve (gatherToolSuccessBonus, max +9.375%) is DELETED, not merely undisplayed: it
+  // was an invisible mechanic no gather tool's item card ever claimed (their data carries speedBonus only),
+  // and the owner ruled that tools speed the work without changing the odds. These pin the flatness --
+  // any tool, any tier, any rarity, the chance is the base constant.
+  suite('gather success is flat: tools and rarity change nothing', function(){
+    ok(!('gatherToolSuccessBonus' in FF) && !('GATHER_TOOL_SUCCESS_MAX' in FF),
+       'the vestigial success curve is gone from the seam entirely');
     var S = FF._state, savedT = S.gatherTools, savedR = S.gatherToolRarities;
     try {
       S.gatherTools = {}; S.gatherToolRarities = {};
-      // Top tool = stored tier 21 -> +9.375%. A 70%-base gather tops out at 79.375%, below the 95% cap.
-      S.gatherTools.mining = 21;
-      near(FF.miningMainChance(S), 0.79375, 'a top-tier Pickaxe adds +9.375%, reaching 79.375%');
-      S.gatherTools.mining = 20; // one tier short of the top
-      ok(FF.miningMainChance(S) < 0.79375, 'one tier below the top is under the max');
-      near(FF.miningMainChance(S), 0.70 + 0.09375*(19/20), 'mining success is a clean linear ramp', 1e-6);
-      // Rarity no longer inflates success: a Fantastic mid-tier tool matches a Normal one.
-      S.gatherTools.mining = 14; // ~cobalt tier
-      S.gatherToolRarities.mining = 'fantastic';
-      var fant = FF.miningMainChance(S);
-      S.gatherToolRarities.mining = 'normal';
-      var norm = FF.miningMainChance(S);
-      near(fant, norm, 'tool rarity does not change gathering success (speed only)');
-      ok(fant < 0.79375, 'a cobalt-tier tool is below the top-tier max');
-      // Fishing/digging share the same tier-scaled bonus (lower/equal bases).
-      S.gatherTools.fishing = 21;
-      near(FF.fishingCatchChance(S), 0.59375, 'fishing tops out at base 50% + 9.375% tool = 59.375%');
+      eq(FF.miningMainChance(S), 0.70, 'mining with NO tool is the flat 70% base');
+      S.gatherTools.mining = 21; S.gatherToolRarities.mining = 'fantastic';
+      eq(FF.miningMainChance(S), 0.70, 'a top-tier Fantastic Pickaxe changes nothing');
       S.gatherTools.digging = 21;
-      near(FF.diggingMainChance(S), 0.79375, 'digging tops out at base 70% + 9.375% tool = 79.375%');
+      eq(FF.diggingMainChance(S), 0.70, 'digging is the flat 70% base at any tool');
+      S.gatherTools.fishing = 21;
+      eq(FF.fishingCatchChance(S), 0.50, 'fishing is the flat 50% base at any tool');
+      S.gatherTools.forestry = 21;
+      eq(FF.genericGatherMainChance(S, 'forestry'), 0.70, 'forestry (generic gathers) is the flat 70% base at any tool');
+      // Butchering's Cleaver is the deliberate exception: it raises OUTPUT chance like a craft tool, and a
+      // better/rarer Cleaver must keep doing so -- deleting the gather curve must not have caught it.
+      S.gatherTools.butchering = 21; S.gatherToolRarities.butchering = 'fantastic';
+      var withCleaver = FF.butcherOutputChance(S, 'handStrength');
+      S.gatherTools.butchering = 0;
+      ok(withCleaver > FF.butcherOutputChance(S, 'handStrength'),
+         'the Cleaver still raises butcher output chance (the by-design exception)');
     } finally {
       S.gatherTools = savedT; S.gatherToolRarities = savedR;
     }
