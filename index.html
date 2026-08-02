@@ -24920,12 +24920,16 @@
     if(act.type==='combat' && act.dungeon){
       // A dungeon fight lives on the Dungeons tab -- keep the Combat tab clean while it's running.
       html += '<div class="idle-note">You are in the '+((DUNGEON_DEFS[act.dungeon]||{}).category||'dungeon')+'. Manage the fight on the <b>Dungeons</b> tab.</div>';
-      html += renderCombatStatsPanel();
       return html;
     }
     if(act.type==='combat'){
+      // JUST THE ARENA. The full stats panel (Offense/Defense/Mastery/Damage Triangle) used to follow it
+      // here and on the idle screen; it duplicated the Equipment & Stats tab wholesale, and on a phone it
+      // pushed a screen and a half of static numbers under every fight (owner request, v0.0.77.9). The live
+      // per-fight numbers a player actually watches -- HP, arrows, the foe's weakness line -- are already on
+      // the arena card itself; updateDynamic()'s writes to the panel's ids are all null-guarded, so they
+      // no-op cleanly with the panel gone.
       html += renderArena();
-      html += renderCombatStatsPanel();
       return html;
     }
     // No active fight.
@@ -24938,7 +24942,6 @@
     // (renderCombatConsumables + renderAutoEatPanel), so Combat owns them in BOTH states.
     html += renderAutoEatPanel();
     html += renderCombatPotionsPanel();
-    html += renderCombatStatsPanel();
     return html;
   }
   // The Enemies tab: pick a foe to fight (starting a fight jumps you to the Combat tab). Consumable prep
@@ -26119,6 +26122,9 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 2', heading:'The Combat screen is the fight, nothing else', items:[
+      'The full stats block &mdash; Combat Score, Offense, Defense, Mastery, Familiar, the Damage Triangle &mdash; no longer renders under the arena. It was a wholesale copy of the <b>Equipment &amp; Stats</b> page, and on a phone it added a screen and a half of static numbers below every fight. It still lives where it belongs, and the numbers you actually watch mid-fight &mdash; health, arrows, the foe&rsquo;s weakness line &mdash; are on the arena itself.'
+    ]},
     { v:'0.0.77', date:'Aug 2', heading:'The orbs stop strobing, and the last white slivers go', items:[
       'Reported: thin white slivers still visible around the HP orbs, and the orbs flashing in and out. Two causes, and the flash was the old one: the fight UI rebuilds itself up to ten times a second, each rebuild replaced the liquid with a blank canvas, and the repaint only landed on the <b>next</b> frame &mdash; a one-frame gap that had always been there, invisible against the old black stage and a white strobe against marble. The screen now repaints the orbs <b>before the frame is shown</b>, and the stonework is pinned to decode in the same frame too.',
       'The slivers: the glass orb&rsquo;s art carries a bright white rim at its very edge, and the carved stone lip is hand-painted &mdash; it wobbles a few pixels around a perfect circle. The glass now tucks far enough under the stone that the wobble can never expose the rim.',
@@ -38367,7 +38373,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.8';
+  var GAME_VERSION = '0.0.77.9';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

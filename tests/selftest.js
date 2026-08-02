@@ -4579,6 +4579,21 @@
       ok(/Auto-Eat/.test(combatHtml), 'the idle Combat tab carries Auto-Eat');
       ok(/Combat Potions/.test(combatHtml), 'the idle Combat tab carries Combat Potions (pre-fight prep)');
       ok(/data-action="activatePotion"|No combat consumables/.test(combatHtml), 'potions are armable out of combat');
+
+      // The full stats panel (Offense/Defense/Mastery/Damage Triangle) belongs to Equipment & Stats ONLY
+      // (v0.0.77.9, owner request). The Combat tab duplicated it wholesale under every fight -- a screen and
+      // a half of static numbers on a phone. It must be absent idle, in a live fight, and mid-dungeon, while
+      // the panel itself still renders for the Equipment page.
+      ok(!/Damage Triangle/.test(combatHtml) && !/>Combat Score</.test(combatHtml),
+         'the idle Combat tab no longer carries the Equipment & Stats panel');
+      s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:FF.MONSTERS[0].hp,
+                     tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+      var liveHtml = FF.renderCombatTab();
+      ok(/class="ar2 ivy"/.test(liveHtml), 'the live Combat tab renders the arena');
+      ok(!/Damage Triangle/.test(liveHtml) && !/>Combat Score</.test(liveHtml),
+         'the live Combat tab is the arena alone -- the stats live on Equipment & Stats');
+      ok(/Damage Triangle/.test(FF.renderCombatStatsPanel()),
+         'the panel itself still renders (Equipment & Stats consumes it)');
     } finally { s.activity = savedAct; }
   });
 
