@@ -4637,9 +4637,20 @@
                      tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
       FF._orbsReset();
       var h = FF.renderArena();
-      ok(/class="ar2"/.test(h), 'the stage renders');
+      ok(/class="ar2 ivy"/.test(h), 'the stage renders and carries the ivy theme class');
       // Both plinths, and they are the MIRRORED pair rather than the same art twice.
-      ok(/UI_orb_holder_LEFT\.png/.test(h) && /UI_orb_holder_RIGHT\.png/.test(h), 'both mirrored orb holders are used');
+      ok(/ivy_plinth_LEFT\.png/.test(h) && /ivy_plinth_RIGHT\.png/.test(h), 'both mirrored orb plinths are used');
+      // The round anchor rings are the PORTRAIT frames, one mirrored piece per side -- they were briefly
+      // wired up as orb holders, which is the mistake this pins down.
+      ok(/ivy_ring_LEFT\.png/.test(h) && /ivy_ring_RIGHT\.png/.test(h), 'both mirrored portrait rings are used');
+      // Retreat lives inside the player's own column, not as a stage-level sibling: as a sibling it sat below
+      // the whole header row, whose height the FOE's taller stack sets.
+      ok(h.indexOf('data-action="stop"') < h.indexOf('class="ar2-side foe"'),
+         'Retreat is emitted inside the player side, before the foe side');
+      // And it carries NO inline margin: an inline style beats every selector and silently defeated the
+      // theme's frame overlap.
+      ok(!/data-action="stop" style=/.test(h), 'Retreat carries no inline style');
+
       ok(/id="ar2Orb-me"/.test(h) && /id="ar2Orb-foe"/.test(h), 'both orb canvases are present');
       // The numbers are SEEDED in the markup. Left to the live tick they would be blank on any render path
       // that is not followed by one -- the dungeon card, or a test.
@@ -4669,6 +4680,12 @@
       s.activeCompanions = ids.slice();
       eq(FF.activeCompanionList(s).length, 6, 'all six companions are active');
       var h6 = FF.renderArena();
+      // The companion row is a STAGE-level row between the header and the plinths: six slots need ~348px and
+      // the player's column is narrower than that once the ring inset shrinks it. Asserted here rather than
+      // on the earlier render, where no companions are active and the row is absent -- a guarded version of
+      // this check silently never ran.
+      ok(h6.indexOf('class="ar2-fams"') > 0 && h6.indexOf('class="ar2-fams"') < h6.indexOf('class="ar2-orbs"'),
+         'the companion row is emitted above the plinths');
       ids.forEach(function(id){
         ok(h6.indexOf('id="ar2Fam-' + id + '"') !== -1, id + ' has a slot');
         ok(h6.indexOf('id="arenaCast-' + id + '"') !== -1, id + ' has a cast clock');

@@ -96,17 +96,20 @@
   #app{
     position:relative;height:100%;display:flex;flex-direction:column;
     border-radius:14px;border:2px solid var(--ink);overflow:hidden;
-    /* Textured parchment tan: deeper than the panels (--bg-panel #e7d7b0) so cards still read as
-       raised. Soft light/dark mottling for uneven aging + a tiling grayscale paper grain (inline
-       SVG feTurbulence). */
-    background-color:#d7c59c;
+    /* MARBLE, on every screen (v0.0.77.2). Was a textured parchment tan; the shell surface is now the same
+       veined marble the combat stage stands on, so the arena stopped being a different room from the rest of
+       the game. The tile is veiled 55% toward white in scripts/art-prep-ivy.mjs -- at full strength its
+       crackle put visible pattern under every label. The panels, rail and top bar are unchanged: only the
+       surface behind them moved, so cards still read as raised against it.
+       The mottling radials stay on top of the marble for uneven aging; the paper grain stays under it. */
+    background-color:#efece6;
     background-image:
-      radial-gradient(circle at 22% 14%, rgba(255,250,236,.40), transparent 46%),
-      radial-gradient(circle at 82% 78%, rgba(120,95,55,.12), transparent 52%),
-      radial-gradient(circle at 60% 40%, rgba(150,120,70,.08), transparent 60%),
+      radial-gradient(circle at 22% 14%, rgba(255,255,255,.34), transparent 46%),
+      radial-gradient(circle at 82% 78%, rgba(120,112,96,.10), transparent 52%),
+      url('art/ivy_field.png'),
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='0.055'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23p)'/%3E%3C/svg%3E");
-    background-repeat:no-repeat,no-repeat,no-repeat,repeat;
-    background-size:auto,auto,auto,200px 200px;
+    background-repeat:no-repeat,no-repeat,repeat,repeat;
+    background-size:auto,auto,700px 249px,200px 200px;
     box-shadow:inset 0 0 0 2px rgba(0,0,0,.3), 0 14px 34px rgba(20,18,16,.45);
   }
   .ff-topbar{
@@ -1102,6 +1105,252 @@
     .ar2-logframe{height:152px;border-width:16px;}
     .ar2-log .cl-row{font-size:9.5px;}
   }
+  /* ======================= THE COMBAT STAGE: IVY + MARBLE (v0.0.77.2) =======================
+     Replaces the dark stage. Marble is the PAGE (see #app) and every piece of text on the stage lives in a
+     black-lined box inside a stone frame -- the delivered marble is a strong crackle, and bare labels on it
+     sat on visible pattern, the same edge-density failure the slate study measured. Text never touches it.
+
+     Assets are conditioned by scripts/art-prep-ivy.mjs (5.4MB -> 1.5MB). TRIMMING IS WHAT MAKES THEM WORK:
+     every frame arrived inside a large transparent margin, and border-image measures slices from the image
+     EDGE -- the bar frame's art occupied only y 29%..69% of its canvas, so a 33px CSS border would have
+     compressed a 279px slice tenfold and turned the ivy to mush.
+
+     MEASURED WELLS (percentages of each trimmed asset; interior holes found by flood-filling the outside):
+       ivy_stretch      900x520   rect   left 3.56%  top  7.12%  92.89% x 85.38%   slice 37 32 39 32
+       ivy_bar          760x129   rect   left 14.74% top 25.58%  70.13% x 34.11%   slice 33 115 52 112
+       ivy_ring_LEFT    420x401   circle left 10.24% top  8.98%  52.14% x 54.61%
+       ivy_ring_RIGHT   420x408   circle left 36.67% top  8.82%  53.10% x 54.66%
+       ivy_portrait     320x314   circle left 14.06% top 11.46%  67.50% x 70.06%
+       ivy_field        700x249   seamless marble tile, veiled 55% toward white
+
+     The bar and panel frames are BORDER-IMAGES (their ornate end-caps are the slice corners, so only the
+     straight middle stretches). The plinths and rings are IMAGES with content in the measured circle,
+     because a carved silhouette cannot be sliced.
+
+     A SOLID FILL INSIDE ANY OF THESE FRAMES NEEDS background-clip:padding-box. A background paints to the
+     BORDER box by default, so it goes under the border area and shows through every transparent part of the
+     frame art -- worst along a bar's bottom rail, where the piece is mostly open. The black wells get away
+     without it only because the bleed is black on dark.
+
+     DEBT, stated rather than hidden: the dark-stage rules above are now a base layer this block overrides.
+     They want collapsing into these in a follow-up; keeping both is the rot CLAUDE.md warns about. */
+
+
+  .ar2.ivy{
+  --ivy-well:#141109;            /* the black every text box is lined with */
+  /* One knob for the pinned rings. --ivy-inset is DERIVED from it: the ring hangs 24px outside the stage, so
+     the header has to clear (ring - 24 + a little). Hard-coding both drifted the moment the ring resized. */
+  --ivy-ring:196px;
+  /* Clears the ring's CIRCLE only, not its scroll tail -- the ornament is meant to lap over the plates.
+     The circle ends at 62.4% of the piece, and the ring hangs 24px outside the stage, so ~0.56 of the ring
+     width puts the plate's edge just past the glass with the ivy scroll lying across its outer end. */
+  --ivy-inset:calc(var(--ivy-ring) * 0.56);
+  --ink:#e8dcc0; --dim:#9a8f78; --gold:#ddbb66; --gold-deep:#bb9944;
+  color:var(--ink);
+  /* No surface of its own: the marble page shows through, and the frames carry the structure. */
+  background:none;
+  border:22px solid transparent;
+  border-image:url('art/ivy_stretch.png') 37 32 39 32 round;   /* no `fill` -- the middle stays transparent */
+  box-shadow:none;
+  /* Snap the header to the frame: the stage's own top padding was holding the name plates off it. */
+  padding-top:0;
+  /* A FLEX COLUMN, so the stage's own rows can be re-ordered without touching renderArena's markup. DOM
+     order is tops / foeline / orbs / low / tray / Retreat; the orders below move the foe's weakness line
+     under the feed and lift Retreat up beneath the player's bars. Default cross-axis stretch means every
+     row still spans the full width exactly as it did while .ar2 was a block. */
+  display:flex; flex-direction:column;
+  }
+  .ar2.ivy .ar2-tops{ margin-top:0; order:1; }
+  .ar2.ivy .ar2-orbs{ order:3; }
+  .ar2.ivy .ar2-low{ order:4; }
+  .ar2.ivy .ar2-tray{ order:6; }
+  /* Retreat lives INSIDE the player's meta column, directly after its swing bars -- so it tracks the player's
+   own stack no matter how many bars the FOE has. As a stage-level child pulled up by a fixed offset it would
+   have depended on the foe carrying exactly two bars. On a plinth: the delivered bar frame with a dark red
+   slot, so it still reads as the danger action. The base .action-btn.stop brings its own red fill, border and
+   radius, all of which have to be cleared before the border-image will show. */
+  .ar2.ivy .ar2-meta > button[data-action="stop"]{ min-width:0;
+  /* Black well, and CLIPPED TO THE PADDING BOX. That clip is the fix for the bleed: a background defaults to
+     border-box, so the fill was painting UNDER the border area and showing through every transparent part of
+     the frame art -- worst along the bottom rail, where the bar piece is mostly open. */
+  background:var(--ivy-well); background-image:none; background-clip:padding-box;
+  border-radius:0; box-shadow:none;
+  border-style:solid; border-color:transparent; border-width:11px 28px 15px 28px;
+  border-image:url('art/ivy_bar.png') 33 115 52 112 fill stretch;
+  color:#e8dcc0; font-family:var(--font-display); font-size:14px; letter-spacing:.04em;
+  text-shadow:0 1px 2px #000,0 0 6px #000; padding:5px 4px;
+                                     width:100%; max-width:none;
+  /* Shares its top edge with the bar above it. NOTE: renderArena emits this button with an INLINE
+     style="margin-top:10px", and an inline style beats every selector -- so shipping this needs that inline
+     margin dropped, or the rule below is silently ignored. That is exactly what happened on the first pass. */
+  margin:-12px 0 0 0; }
+  /* JOIN IN THE MIDDLE: no gap, and each side fills its own half so the two name plates and their swing bars
+   meet at the centre line instead of floating apart with the column cap between them. */
+  .ar2.ivy .ar2-tops{ gap:0; }
+  .ar2.ivy .ar2-side,
+  .ar2.ivy .ar2-side.foe{ max-width:none; margin-left:0; margin-right:0; }
+  /* The swing timers sit DIRECTLY under their name plate -- one unit per combatant, not two stacked panels. */
+  /* NOT a margin problem -- measured, the boxes were already flush at 0. What read as a gap was DOUBLED
+   FRAMING: the plate's 14px of bottom stone stacked on the bar's 10px of top stone, 24px of masonry between
+   the name and the track. So the frames OVERLAP into one shared edge instead. Same between stacked bars,
+   which were showing 15px + 4px gap + 10px = 29px of stone between two tracks. */
+  .ar2.ivy .ar2-bars{ margin-top:-13px; gap:0; }
+  .ar2.ivy .ar2-bar + .ar2-bar{ margin-top:-12px; }
+  .ar2.ivy .ar2-plate{ margin-bottom:0; }
+
+  /* The gold-bevel PNGs step aside; the stone frames replace them. */
+  .ar2.ivy .ar2-plate > img,
+  .ar2.ivy .ar2-bar > img,
+  .ar2.ivy .ar2-fam-box > img{ display:none; }
+
+  /* ---- every text box: stone frame, black well ---- */
+  /* `fill` paints the frame's own middle slice, and the well colour goes UNDER it via background-color, so the
+   art's inner shadow still reads while the interior is black. */
+  .ar2.ivy .ar2-plate{ aspect-ratio:auto; overflow:visible;
+                     background-color:var(--ivy-well);
+                     border:14px solid transparent;
+                     border-image:url('art/ivy_stretch.png') 37 32 39 32 fill round; }
+  .ar2.ivy .ar2-plate .pin{ position:static; left:auto; top:auto; width:auto; height:auto; padding:0 6px; }
+  /* THE TWO NAMES MEET IN THE MIDDLE. The player's plate packs right and the foe's packs left, and the player's
+   name is ordered INNERMOST so the qualifier takes the outer end -- which is also the end the ring's scroll
+   now laps over, so the ornament never lands on a name. */
+  .ar2.ivy .ar2-side:not(.foe) .ar2-plate .pin{ justify-content:flex-end; }
+  .ar2.ivy .ar2-side:not(.foe) .ar2-plate .ar2-nm{ order:2; }
+  .ar2.ivy .ar2-side:not(.foe) .ar2-plate .ar2-sub{ order:1; }
+  .ar2.ivy .ar2-side.foe .ar2-plate .pin{ justify-content:flex-start; }
+
+  /* Swing bars. The slot is black; the fill is the only colour in it. */
+  .ar2.ivy .ar2-bar{ height:auto; background:none;
+                   border-style:solid; border-color:transparent;
+                   border-width:calc(var(--ar2-barh) * 0.30) 26px calc(var(--ar2-barh) * 0.45) 26px;
+                   border-image:url('art/ivy_bar.png') 33 115 52 112 fill stretch; }
+  .ar2.ivy .ar2-bar .trk{ position:relative; left:auto; top:auto; width:100%; height:var(--ar2-barh);
+                        border-radius:2px; overflow:hidden; background:var(--ivy-well);
+                        box-shadow:inset 0 1px 3px rgba(0,0,0,.6); }
+  .ar2.ivy .ar2-bar .lbl{ inset:0; left:0; top:0; width:100%; height:100%;
+                        color:#fff; text-shadow:0 1px 2px #000,0 0 6px #000; }
+  .ar2.ivy .ar2-bar .fil{ background:linear-gradient(180deg,#9ccc6a 0%,#5f8a34 55%,#3c5a20 100%); }
+  .ar2.ivy .ar2-bar.foe  .fil{ background:linear-gradient(180deg,#e2806a 0%,#b0402f 55%,#7c261e 100%); }
+  .ar2.ivy .ar2-bar.spec .fil{ background:linear-gradient(180deg,#f0b06a 0%,#c8532a 60%,#8c2f14 100%); }
+  .ar2.ivy .ar2-bar.stun .fil{ background:linear-gradient(180deg,#fff3a0 0%,#d8aa2a 60%,#8a6a12 100%); }
+  .ar2.ivy .ar2-bar .sheen{ opacity:.4; }
+
+  /* The foe's element / matchup / dodge line was bare text on the marble. It gets its own box. */
+  .ar2.ivy .ar2-foeline{ background-color:var(--ivy-well);
+                       border:12px solid transparent;
+                       border-image:url('art/ivy_stretch.png') 37 32 39 32 fill round;
+                       padding:2px 6px; margin-top:7px;
+                       /* hug the content: as a full-width flex row this read as a big empty black banner */
+                       width:fit-content;
+                       /* BELOW THE COMBAT LOG (order 5, after .ar2-low). Kept right-aligned so it lands under
+                          the feed's own column rather than drifting under the companions. */
+                       order:5; margin-left:auto; }
+  .ar2.ivy .ar2-foeline .ar2-sub{ color:#c0b394; }
+
+  /* The section heads are gone -- a row of companion portraits and a scrolling feed of hits label themselves,
+   and as black chips on the marble they were two more boxes competing with the frames.
+   WHAT GOES WITH THEM: the companions head also carried the slot count (6 / 6) and the cast cadence
+   (every 10s). Neither is stated anywhere else on the stage now; the pips show a queue position but not the
+   interval. Say the word and either can come back inside a framed panel instead of as a floating label. */
+  .ar2.ivy .ar2-head{ display:none; }
+
+  /* ---- PORTRAITS: the delivered anchor rings ----
+   This is what the round sockets are for. Each ring is a CORNER ornament whose ivy scroll tails inward, so
+   the player's sits top-left and the foe's top-right, and the wells differ per side because the two pieces
+   are mirrored -- the circle is at 10.24% on the left piece and 36.67% on the right. */
+  /* SNAPPED OVER THE FRAME'S OWN CORNERS. The rings leave the header grid entirely and are pinned to the
+   stage with negative offsets, so each one sits ON the outer frame's corner block -- which is where these
+   pieces came from in the first place (they were baked into the corners of the delivered arena frame).
+   `position:absolute` resolves against .ar2 because neither .ar2-tops nor .ar2-side is positioned. */
+  .ar2.ivy .ar2-side,
+  .ar2.ivy .ar2-side.foe{ grid-template-columns:1fr; }   /* the portrait column collapses; the meta takes it */
+  .ar2.ivy .ar2-port{ position:absolute; z-index:6; top:-20px;
+                    width:var(--ivy-ring); height:auto; aspect-ratio:420/401; }
+  .ar2.ivy .ar2-side:not(.foe) .ar2-port{ left:-20px; }
+  .ar2.ivy .ar2-side.foe      .ar2-port{ right:-20px; }
+  /* The header rows inset to clear the pinned rings, or the name plates would run under them. */
+  .ar2.ivy .ar2-tops{ padding:0 var(--ivy-inset); }
+  .ar2.ivy .ar2-port .pf{ filter:none; }
+  .ar2.ivy .ar2-side:not(.foe) .ar2-port .pin{ left:10.24%; top:8.98%; width:52.14%; height:54.61%;
+                                             background:var(--ivy-well); }
+  .ar2.ivy .ar2-side.foe .ar2-port .pin{ left:36.67%; top:8.82%; width:53.10%; height:54.66%;
+                                       background:var(--ivy-well); }
+
+  /* ---- THE ORBS: the carved plinths, centred ----
+   The plinth pair butts together at the centre line so the two carvings read as one bench and the fighters
+   face each other. Each plinth is trimmed to its own art, so they carry different aspects AND different ring
+   positions -- the wells below are per side, not shared. */
+  .ar2.ivy .ar2-crop{ aspect-ratio:auto; overflow:visible; }
+  .ar2.ivy .ar2-orb{ position:relative; bottom:auto; left:auto; width:100%; aspect-ratio:auto; }
+  .ar2.ivy .ar2-orb .holder{ position:relative; inset:auto; width:100%; height:auto; filter:none; }
+  .ar2.ivy .ar2-orb.me  .liq,.ar2.ivy .ar2-orb.me  .glass,
+  .ar2.ivy .ar2-orb.me  .num,.ar2.ivy .ar2-orb.me  .shield{
+  left:59.56%; top:19.17%; width:31.78%; height:58.70%; }
+  .ar2.ivy .ar2-orb.foe .liq,.ar2.ivy .ar2-orb.foe .glass,
+  .ar2.ivy .ar2-orb.foe .num,.ar2.ivy .ar2-orb.foe .shield{
+  left:7.22%; top:18.00%; width:33.67%; height:60.11%; }
+  .ar2.ivy .ar2-orb .glass{ opacity:.92; }
+
+  /* ---- companions ---- */
+  .ar2.ivy .ar2-fam-box{ background-color:var(--ivy-well); border:11px solid transparent;
+                       border-image:url('art/ivy_stretch.png') 37 32 39 32 fill round; }
+  .ar2.ivy .ar2-fam-slot{ position:static; width:auto; height:auto; border-radius:2px;
+                        background:radial-gradient(circle at 50% 35%, #2a2418 0%, #100e08 100%); }
+  .ar2.ivy .ar2-fam-cast{ background:#0c0a08; border-color:#6b5a38; }
+  .ar2.ivy .ar2-fam-cast i{ background:linear-gradient(90deg,#5f8a34,#9ccc6a); }
+  /* The companion NAME was loose on the marble too. */
+  .ar2.ivy .ar2-fam-nm{ background:var(--ivy-well); color:#c0b394; border-radius:2px; padding:0 4px;
+                       width:fit-content; max-width:100%; margin:2px auto 0; }
+  .ar2.ivy .ar2-pip{ background:#2a2418; border-color:#6b5a38; }
+  .ar2.ivy .ar2-pip.next{ background:#9ccc6a; border-color:#d8f0b0; box-shadow:0 0 5px rgba(156,204,106,.8); }
+  .ar2.ivy .ar2-nm{ color:var(--gold); }
+  .ar2.ivy .ar2-sub{ color:var(--dim); }
+
+  /* ---- the mini feed: stone frame, black well, and the dark-stage row palette comes back with it ---- */
+  .ar2.ivy .ar2-logframe{ border:18px solid transparent;
+                        border-image:url('art/ivy_stretch.png') 37 32 39 32 fill round;
+                        background-color:var(--ivy-well); }
+  .ar2.ivy .ar2-log{ background:linear-gradient(180deg,#181409 0%,#100d07 100%); border-radius:2px; }
+
+  /* ---- the effect bars: their own framed panel rather than loose rows on marble ---- */
+  .ar2.ivy .arena-fx{ background-color:var(--ivy-well);
+                    border:12px solid transparent;
+                    border-image:url('art/ivy_stretch.png') 37 32 39 32 fill round;
+                    border-top-color:transparent; padding:2px 6px; margin-top:8px; }
+  .ar2.ivy .arena-fx-title,.ar2.ivy .arena-fx-name{ color:#9a8f78; }
+  .ar2.ivy .arena-fx-t,.ar2.ivy .arena-fx-n{ color:#c0b394; }
+  .ar2.ivy .arena-fx-bar{ background:#0c0a08; border-color:#3a2f20; }
+
+  /* ---- the shared tan panels ----
+   The consumables strip and Auto-Eat panel carry dozens of tan classes between them, so they keep the TRAY
+   rather than having each colour restated for a black well -- restating them rots the next time either panel
+   gains a row. On marble the tray needs its own frame so it does not float. */
+  .ar2.ivy .ar2-tray{ background:var(--bg-card); color:var(--text);
+                    border:14px solid transparent;
+                    border-image:url('art/ivy_stretch.png') 37 32 39 32 fill round; }
+
+  /* ---- the feed spans the whole arena; the companions move up under Retreat ----
+   .ar2-low stops being a two-column split, so the feed gets the full stage width instead of half. The
+   familiar row moves into the PLAYER's meta column directly under Retreat (a markup move, like Retreat
+   itself), which is why only .ar2-fams travels -- the effect panels stay in the lower row and stack
+   full-width above the feed. */
+  .ar2.ivy .ar2-low{ flex-direction:column; align-items:stretch; gap:0; }
+  .ar2.ivy .ar2-low > *{ width:100%; max-width:none; padding-right:0; }
+  /* ONE ROW, FLUSH. Six slots cannot fit the player's column -- it is only 268px wide because the ring inset
+   narrows it, so even at zero gap 6 x 58px needs 348px. So the row becomes a STAGE-level child (order 2,
+   between the header and the plinths) and gets the full inner width, hard against the left edge with the
+   slots touching. */
+  .ar2.ivy .ar2-fams{ order:2; width:100%; flex-wrap:nowrap; justify-content:flex-start; gap:0;
+                    margin:2px 0 0 0; }
+
+  /* THE PLINTHS SIT ON THE FEED. The feed is moved to the head of the lower row so it is the thing directly
+   beneath the orbs, and the two overlap into a shared edge like every other stacked frame here. The effect
+   panels follow it instead of sitting between. */
+  .ar2.ivy .ar2-low{ margin-top:-8px; }
+  .ar2.ivy .ar2-low > *:first-child{ order:2; }    /* the effects column drops below */
+  .ar2.ivy .ar2-low > *:nth-child(2){ order:1; }   /* the feed comes first */
+  .ar2.ivy .ar2-orbs{ margin-bottom:0; }
+
   /* Richer combat floating text: damage numbers, crits, misses, damage taken. */
   .floating-text.ft-dmg{color:#c8532a;}
   .floating-text.ft-crit{color:#d89a1e;font-size:16px;}
@@ -24005,7 +24254,7 @@
       // derives the list of frames to verify by scanning this file for art/ literals, and a concatenated
       // path is invisible to it -- which left the two heaviest, most load-bearing assets in the stage
       // unchecked. Keep every art path in this file a complete literal.
-      + '<img class="holder" src="'+(side==='me' ? 'art/UI_orb_holder_LEFT.png' : 'art/UI_orb_holder_RIGHT.png')+'" alt="">'
+      + '<img class="holder" src="'+(side==='me' ? 'art/ivy_plinth_LEFT.png' : 'art/ivy_plinth_RIGHT.png')+'" alt="">'
       + '<div class="num"><b id="ar2Num-'+side+'">'+(num||'')+'</b><i>'+label+'</i></div>'
       + '</div></div>';
   }
@@ -24056,16 +24305,16 @@
     if(_ar2FightSig !== _fightSig){ _ar2FightSig = _fightSig; orbReset('foe', hpPct/100); }
     orbSetTarget('me', pPct/100); orbSetTarget('foe', hpPct/100);
 
-    html += '<div class="ar2">';
+    html += '<div class="ar2 ivy">';
     // ---------- header: portrait, name plate, swing bars ----------
     html += '<div class="ar2-tops">';
     // -- player --
     html += '<div class="ar2-side">';
     html += '<div class="ar2-port" id="ar2PortMe"><div class="pin">'+playerPortrait()+'</div>'
-          + '<img class="pf" src="art/Icon_circleframe_gold (1).png" alt=""></div>';
+          + '<img class="pf" src="art/ivy_ring_LEFT.png" alt=""></div>';
     html += '<div class="ar2-meta">';
     html += '<div class="ar2-plate"><img src="art/Skill_set.png" alt=""><div class="pin">'
-          + '<span class="ar2-nm">You</span>'
+          + '<span class="ar2-nm">'+escapeHtml(chatName() || 'You')+'</span>'
           + '<span class="ar2-sub">'+(_cdef ? escapeHtml(_cdef.name)+' &middot; Lv '+classLevel(state,_cid) : 'No class')+'</span>'
           + '</div></div>';
     html += '<div class="ar2-bars">';
@@ -24091,6 +24340,11 @@
             + ' Arrows <b id="arenaPlayerArrows"'+(_arrows>0?'':' style="color:#e07a6a"')+'>'
             + (_arrows>0 ? fmt(_arrows) : 'none &mdash; &times;'+UNFLETCHED_DMG_MULT)+'</b></div>';
     }
+    // RETREAT LIVES HERE, inside the player's own column, directly after its swing bars -- so it tracks the
+    // PLAYER's stack. As a stage-level sibling it sat below the whole header row, whose height is set by the
+    // FOE's taller stack, so it could only be lifted by an offset that assumed a two-bar foe.
+    // No inline margin: an inline style beats every selector, and it silently defeated the theme's overlap.
+    html += '<button class="action-btn stop" data-action="stop">Retreat</button>';
     html += '</div></div>'; // ar2-meta, ar2-side
     // -- foe --
     html += '<div class="ar2-side foe">';
@@ -24113,7 +24367,7 @@
     html += '</div>'; // ar2-bars
     html += '</div>'; // ar2-meta
     html += '<div class="ar2-port" id="ar2PortFoe"><div class="pin" id="arenaMonsterPortrait">'+monsterPortrait(m)+'</div>'
-          + '<img class="pf" src="art/Icon_circleframe_gold (1).png" alt=""></div>';
+          + '<img class="pf" src="art/ivy_ring_RIGHT.png" alt=""></div>';
     html += '</div>'; // ar2-side foe
     html += '</div>'; // ar2-tops
     // The foe's element / matchup / dodge line spans the WHOLE stage rather than living in the foe's half.
@@ -24124,18 +24378,11 @@
           + ' <span class="matchup-badge matchup-'+matchup+'">'+matchup+'</span>'
           + ' <span class="ar2-sub">Dodge '+monsterDodge(m)+' &middot; your hit '+Math.round(playerHitChance(m)*100)+'%</span>'
           + incomingElementNote(m)+'</div>';
-    // ---------- the plinth pair ----------
-    html += '<div class="ar2-orbs">'
-          + orbHtml('me',  'health',          fmt(state.playerHp) + ' / ' + fmt(maxHpVal))
-          + orbHtml('foe', escapeHtml(m.name), fmt(act.monsterHp) + ' / ' + fmt(m.hp))
-          + '</div>';
-    // ---------- companions (player side) + the mini log (foe side) ----------
-    html += '<div class="ar2-low">';
-    html += '<div>';
-    html += '<div class="ar2-head">Companions '+_comps.length+' / '+activeCompanionSlots(state)
-          + ' &middot; every '+(familiarCastIntervalMs()/1000)+'s</div>';
+    // ---------- the companion row: a STAGE-level row, not a column ----------
+    // Six slots need ~348px even touching, and the player's column is narrower than that because the ring
+    // inset shrinks it -- so the row spans the stage, flush left, and sits between the header and the
+    // plinths. Up to SIX slots (1 base + 5 from a fantastic staff), each with a cast clock and spell queue.
     if(_comps.length){
-      // Up to SIX slots (1 base + 5 from a fantastic staff), each with its own cast clock and spell queue.
       html += '<div class="ar2-fams">';
       _comps.forEach(function(cid){
         var comp = FAMILIAR_DATA[cid]; if(!comp) return;
@@ -24145,7 +24392,7 @@
         var ni = spells.length ? ((cc.index||0) % spells.length) : 0;
         var nextName = spells.length ? spells[ni].name : '';
         html += '<div class="ar2-fam" id="ar2Fam-'+cid+'" title="'+escapeHtml(comp.name)
-              + (nextName ? ' — next: '+escapeHtml(nextName) : '')+'">';
+              + (nextName ? ' \u2014 next: '+escapeHtml(nextName) : '')+'">';
         html += '<div class="ar2-fam-box"><div class="ar2-fam-slot">'+comp.icon+'</div>'
               + '<img src="art/Square_icons (1).png" alt="">'
               + '<div class="ar2-fam-cast"><i id="arenaCast-'+cid+'" style="width:'+castPct+'%"></i></div></div>';
@@ -24157,9 +24404,15 @@
         html += '</div></div>';
       });
       html += '</div>';
-    } else {
-      html += '<div class="ar2-sub">No companions active &mdash; summon and equip them in the Menagerie.</div>';
     }
+    // ---------- the plinth pair ----------
+    html += '<div class="ar2-orbs">'
+          + orbHtml('me',  'health',          fmt(state.playerHp) + ' / ' + fmt(maxHpVal))
+          + orbHtml('foe', escapeHtml(m.name), fmt(act.monsterHp) + ' / ' + fmt(m.hp))
+          + '</div>';
+    // ---------- the feed spans the stage; the effect panels follow it ----------
+    html += '<div class="ar2-low">';
+    html += '<div>';
     html += renderFxBars(combatPlayerBuffs(), 'Your Effects');
     html += renderFxBars(combatEnemyDebuffs(), 'Enemy Effects');
     html += '</div>'; // companions column
@@ -24176,7 +24429,6 @@
     html += renderCombatConsumables();
     html += renderAutoEatPanel(); // Auto-Eat controls live inside the combat card during a fight
     html += '</div>';
-    html += '<button class="action-btn stop" data-action="stop" style="margin-top:10px">Retreat</button>';
     html += '</div>'; // ar2
     _arenaFxSig = combatFxSignature();
     return html;
@@ -25718,6 +25970,14 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 1', heading:'Marble and ivy: the whole game gets a new floor, and the arena is built on it', items:[
+      'The <b>page itself is now marble</b> on every screen &mdash; the veined stone the combat plinths stand on, in place of the parchment tan. Panels, the rail and the top bar are unchanged; only the surface behind them moved, so cards still read as raised.',
+      'The <b>combat arena is rebuilt on commissioned stonework</b>. Carved plinths hold the HP orbs, your portrait and your foe&rsquo;s sit in ivy-wreathed rings pinned to the frame&rsquo;s top corners, and every name plate, swing timer, companion slot and the feed itself is a stone frame with a black-lined interior. Consecutive frames share a single edge rather than stacking two borders, so a combatant reads as one piece of jointed masonry.',
+      'The <b>combat feed spans the whole arena</b> now instead of half of it, so a line like &ldquo;You hit the Crocodile for 134,000,000 CRIT&rdquo; fits without truncating the number that matters.',
+      'Your <b>companions sit in one row</b> beneath your own bars, up to all six of them, each with its cast clock and spell queue. <b>Retreat</b> moved into your own column directly under your swing timer, so it always sits with you rather than below whichever fighter happens to be taller.',
+      'Your name plate now shows <b>your actual name</b> instead of &ldquo;You&rdquo;.',
+      'Nothing about combat maths, damage, drops or balance changed. This is the room you fight in.'
+    ]},
     { v:'0.0.77', date:'Aug 1', heading:'The arena on a phone: the two of you stay face to face', items:[
       'Reported: on a phone at 100% zoom the new arena stacked into one long column &mdash; you, then the foe, then one plinth, then the other &mdash; and zooming out ten percent snapped it back to looking right.',
       'That was the tell. The stage collapsed to a single column below a width that a phone at 100% zoom lands just under, and stacked, the two carved plinths stop joining and the combatants stop facing each other, which is the whole idea of the layout. The side-by-side geometry was fine at phone widths all along; it just needed smaller parts.',
@@ -37920,7 +38180,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.1';
+  var GAME_VERSION = '0.0.77.2';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
