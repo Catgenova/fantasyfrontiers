@@ -4739,6 +4739,25 @@
         var re = new RegExp('class="ar2-pip next" id="arenaRota-' + id + '-' + want + '"');
         ok(re.test(h6), id + ': the lit pip is its own queue position ' + want);
       });
+
+      // ---- NO ONE-FRAME STROBE: a full render() must leave the liquid canvas PAINTED (v0.0.77.8) ----
+      // The loop calls orbTick() BEFORE render(), and render rebuilds the stage's DOM -- so a rebuild frame
+      // used to composite a fresh, blank canvas and the liquid only came back on the NEXT frame. Black on
+      // the old dark stage, a white strobe on marble, up to 10x/sec in combat. render() now repaints the
+      // orbs itself before returning; this reads the actual pixels back so the fix cannot silently rot.
+      // The stage's <img>s carry decoding="sync" for the same frame-accuracy reason.
+      ok(/class="glass" decoding="sync"/.test(h6) && /class="holder" decoding="sync"/.test(h6),
+         'the stage images decode synchronously so a rebuilt frame never paints without its art');
+      FF.navPickCat('combat');
+      FF._orbsReset();
+      FF.orbReset('me', 0.6);
+      FF.render(true);
+      var _cv = document.getElementById('ar2Orb-me'), _painted = false;
+      if(_cv && _cv.width){
+        var _px = _cv.getContext('2d').getImageData(0, Math.max(0, _cv.height - 4), _cv.width, 3).data;
+        for(var _pi = 3; _pi < _px.length; _pi += 4) if(_px[_pi] > 0){ _painted = true; break; }
+      }
+      ok(_painted, 'render() leaves the orb liquid painted in the same frame -- no blank-canvas strobe');
     } finally {
       s.activity = savedAct; s.playerHp = savedHp; s.equippedMainhand = savedMain;
       s.equippedMainhandTier = savedTier; s.equippedMainhandRarity = savedRar;

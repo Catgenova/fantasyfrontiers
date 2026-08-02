@@ -1144,8 +1144,8 @@
      MEASURED WELLS (percentages of each trimmed asset; interior holes found by flood-filling the outside):
        ivy_stretch      900x520   rect   left 3.56%  top  7.12%  92.89% x 85.38%   slice 37 32 39 32
        ivy_bar          760x129   rect   left 14.74% top 25.58%  70.13% x 34.11%   slice 33 115 52 112
-       ivy_plinth_LEFT  900x506   circle centre(679.0,245.3) r=146.5  (fitted; CSS rect oversized to r+4)
-       ivy_plinth_RIGHT 900x506   circle centre(197.7,244.9) r=146.5  (fitted; CSS rect oversized to r+4)
+       ivy_plinth_LEFT  900x506   circle centre(679.0,245.3) r=146.5  (fitted; CSS rect oversized to r+9)
+       ivy_plinth_RIGHT 900x506   circle centre(197.7,244.9) r=146.5  (fitted; CSS rect oversized to r+9)
        ivy_ring_LEFT    420x400   circle left 10.44% top  8.81%  51.72% x 54.32%
        ivy_ring_RIGHT   420x400   circle left 37.84% top  8.81%  51.72% x 54.32%
        ivy_portrait     320x314   circle left 14.06% top 11.46%  67.50% x 70.06%
@@ -1359,22 +1359,24 @@
   .ar2.ivy .ar2-orb{ position:relative; bottom:auto; left:auto; width:100%; aspect-ratio:auto; }
   .ar2.ivy .ar2-orb .holder{ position:relative; inset:auto; display:block; width:100%; height:auto;
                            filter:none; }
-  /* The rect is the FITTED STONE CIRCLE, OVERSIZED BY 4px (source scale, r 146.5 -> 150.5), and both facts
+  /* The rect is the FITTED STONE CIRCLE, OVERSIZED BY 9px (source scale, r 146.5 -> 155.5), and both facts
    matter. Fitted: the flood-filled hole is bitten by every ivy leaf overhanging the ring's lip, so its bbox
    under-measured the right well by 15px and the pair was normalised on the wrong feature -- the white
    crescent the owner reported IS that error. The prep script now ray-casts the hole's outer envelope and
    fits the true circle, so the two wells agree exactly. Oversized: UI_orb_transparent.png bakes an OPAQUE
    near-white ring at its very edge (rgba(253,253,253,255) at r=100%), so a box that exactly matches the
-   stone leaves that rim flickering white on the lip at every sub-pixel rounding. Four source px push glass
-   and liquid under the stone annulus (~30px thick), which paints above them (.holder z4) and owns the edge.
+   stone leaves that rim flickering white on the lip at every sub-pixel rounding. Nine source px push glass
+   and liquid under the stone annulus (~40px thick), which paints above them (.holder z4) and owns the edge.
+   Nine and not four: the fitted circle is the lip's MEAN, and the hand-painted lip wobbles a few px either
+   side of it -- at four the owner still saw white slivers where the lip swings outward past the fit.
    Because the well is a true circle the box is SQUARE at any render size, so .liq's clip circle inscribes
    it exactly. */
   .ar2.ivy .ar2-orb .liq,.ar2.ivy .ar2-orb .glass,
-  .ar2.ivy .ar2-orb .num,.ar2.ivy .ar2-orb .shield{ top:18.70%; width:33.44%; height:59.49%; }
+  .ar2.ivy .ar2-orb .num,.ar2.ivy .ar2-orb .shield{ top:17.71%; width:34.56%; height:61.46%; }
   .ar2.ivy .ar2-orb.me  .liq,.ar2.ivy .ar2-orb.me  .glass,
-  .ar2.ivy .ar2-orb.me  .num,.ar2.ivy .ar2-orb.me  .shield{ left:58.72%; }
+  .ar2.ivy .ar2-orb.me  .num,.ar2.ivy .ar2-orb.me  .shield{ left:58.17%; }
   .ar2.ivy .ar2-orb.foe .liq,.ar2.ivy .ar2-orb.foe .glass,
-  .ar2.ivy .ar2-orb.foe .num,.ar2.ivy .ar2-orb.foe .shield{ left:5.24%; }
+  .ar2.ivy .ar2-orb.foe .num,.ar2.ivy .ar2-orb.foe .shield{ left:4.69%; }
   .ar2.ivy .ar2-orb .glass{ opacity:.92; }
 
   /* ---- companions ---- */
@@ -24273,13 +24275,19 @@
     if(!_orbs[side]) _orbs[side] = { lvl:1, target:1, vel:0, slosh:0, tilt:0, t:0, bubbles:[], cv:null, w:0, h:0 };
     return _orbs[side];
   }
+  // BOTH WRITERS REJECT NON-FINITE INPUT (v0.0.77.8). A degenerate state (a foe with hp 0, a synthetic test
+  // fixture) makes hp/maxHp NaN, clamp(NaN) is NaN, and a NaN level reaches createLinearGradient inside
+  // orbDraw -- which THROWS. That was survivable while orbTick only ran from the loop; now render() calls it
+  // too, so one bad target would abort the whole UI rebuild. Ignore garbage and keep the last honest level.
   function orbReset(side, frac){
     var o = orbState(side);
+    if(!isFinite(frac)) frac = 1;
     o.lvl = o.target = clamp(frac, 0, 1); o.vel = 0; o.slosh = 0; o.tilt = 0; o.bubbles = [];
   }
   // A NEW FOE gets a full orb with no slosh: springing 0 -> 1 would read as the fresh enemy being healed.
   function orbResetFoe(){ orbReset('foe', 1); }
   function orbSetTarget(side, frac){
+    if(!isFinite(frac)) return;
     var o = orbState(side); frac = clamp(frac, 0, 1);
     var d = frac - o.target;
     o.target = frac;
@@ -24381,12 +24389,16 @@
     return '<div class="ar2-crop"><div class="ar2-orb '+side+'">'
       + '<div class="liq"><canvas id="ar2Orb-'+side+'"></canvas></div>'
       + '<div class="shield" id="ar2Shield-'+side+'"></div>'
-      + '<img class="glass" src="art/UI_orb_transparent.png" alt="">'
+      // decoding="sync" on both stage images: the arena rebuilds this markup up to 10x/sec, and a re-inserted
+      // <img> may decode ASYNCHRONOUSLY -- one frame of nothing where the stone should be. Black-on-black on
+      // the old dark stage; a white strobe on marble. Sync decode is effectively free here (the bitmap is in
+      // the browser's image cache after the first paint) and pins the art to the frame it renders on.
+      + '<img class="glass" decoding="sync" src="art/UI_orb_transparent.png" alt="">'
       // Written as two WHOLE paths rather than 'art/UI_orb_holder_' + side + '.png'. scripts/artcheck.mjs
       // derives the list of frames to verify by scanning this file for art/ literals, and a concatenated
       // path is invisible to it -- which left the two heaviest, most load-bearing assets in the stage
       // unchecked. Keep every art path in this file a complete literal.
-      + '<img class="holder" src="'+(side==='me' ? 'art/ivy_plinth_LEFT.png' : 'art/ivy_plinth_RIGHT.png')+'" alt="">'
+      + '<img class="holder" decoding="sync" src="'+(side==='me' ? 'art/ivy_plinth_LEFT.png' : 'art/ivy_plinth_RIGHT.png')+'" alt="">'
       + '<div class="num"><b id="ar2Num-'+side+'">'+(num||'')+'</b><i>'+label+'</i></div>'
       + '</div></div>';
   }
@@ -24443,7 +24455,7 @@
     // -- player --
     html += '<div class="ar2-side">';
     html += '<div class="ar2-port" id="ar2PortMe"><div class="pin">'+playerPortrait()+'</div>'
-          + '<img class="pf" src="art/ivy_ring_LEFT.png" alt=""></div>';
+          + '<img class="pf" decoding="sync" src="art/ivy_ring_LEFT.png" alt=""></div>';
     html += '<div class="ar2-meta">';
     html += '<div class="ar2-plate"><img src="art/Skill_set.png" alt=""><div class="pin">'
           + '<span class="ar2-nm">'+escapeHtml(chatName() || 'You')+'</span>'
@@ -24511,7 +24523,7 @@
           + incomingElementNote(m)+'</div>';
     html += '</div>'; // ar2-meta
     html += '<div class="ar2-port" id="ar2PortFoe"><div class="pin" id="arenaMonsterPortrait">'+monsterPortrait(m)+'</div>'
-          + '<img class="pf" src="art/ivy_ring_RIGHT.png" alt=""></div>';
+          + '<img class="pf" decoding="sync" src="art/ivy_ring_RIGHT.png" alt=""></div>';
     html += '</div>'; // ar2-side foe
     html += '</div>'; // ar2-tops
     // ---------- the companion row: a STAGE-level row, not a column ----------
@@ -26107,6 +26119,11 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 2', heading:'The orbs stop strobing, and the last white slivers go', items:[
+      'Reported: thin white slivers still visible around the HP orbs, and the orbs flashing in and out. Two causes, and the flash was the old one: the fight UI rebuilds itself up to ten times a second, each rebuild replaced the liquid with a blank canvas, and the repaint only landed on the <b>next</b> frame &mdash; a one-frame gap that had always been there, invisible against the old black stage and a white strobe against marble. The screen now repaints the orbs <b>before the frame is shown</b>, and the stonework is pinned to decode in the same frame too.',
+      'The slivers: the glass orb&rsquo;s art carries a bright white rim at its very edge, and the carved stone lip is hand-painted &mdash; it wobbles a few pixels around a perfect circle. The glass now tucks far enough under the stone that the wobble can never expose the rim.',
+      'Also hardened while in there: a corrupted fight state can no longer crash the whole screen through the orb renderer &mdash; garbage health values are ignored instead of drawn.'
+    ]},
     { v:'0.0.77', date:'Aug 2', heading:'The orbs fit their rings, and the ivy climbs a real column', items:[
       'Reported: white bleeding at the edge of the HP orbs, and the foe&rsquo;s orb sitting visibly wrong in its ring. The cause was subtle: the ivy carved over each ring&rsquo;s lip <b>bites into the opening</b>, and the code that measured the openings was measuring the bitten shape &mdash; the foe&rsquo;s ring carries more ivy, so its orb came out 15px narrower than the real stone circle. The build now fits the <b>true circle</b> of each ring and both orbs land dead-centre, matched to the pixel.',
       'The glass itself also gets a hair larger, on purpose: its outermost edge is a baked-in white rim, and at exactly ring size that rim flickered white against the stone lip. It now tucks <b>under</b> the stone, so the stone owns the edge at every zoom.',
@@ -36409,6 +36426,15 @@
       // fight the mobile keyboard/IME, so skip it in that case.
       if(_ci2 && document.activeElement !== _ci2){ _ci2.focus(); if(_chatSel != null){ try{ _ci2.setSelectionRange(_chatSel, _chatSel); }catch(e){} } }
     }
+    // REPAINT THE HP ORBS BEFORE THIS FRAME COMPOSITES (v0.0.77.8, "the orbs keep flashing in and out").
+    // renderContent() just replaced the liquid canvases with fresh BLANK ones, and the loop's own orbTick
+    // ran BEFORE render() this frame -- so without this, every rebuild frame composites an empty canvas and
+    // the liquid only comes back on the NEXT frame. That is a one-frame white flash up to 10x/sec in combat.
+    // It was always there: on the v0.0.77.0 dark stage a blank canvas showed the black well, invisible; on
+    // marble it strobes. Repainting HERE rather than reordering the loop also covers every render() called
+    // outside the loop (tab clicks, chat events, popup queues). orbTick reads its own clock, so the extra
+    // call integrates ~0ms of physics and just draws the current state; it no-ops without a live stage.
+    orbTick();
   }
 
   // Lightweight per-tick refresh: only touches text/width of existing
@@ -38341,7 +38367,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.7';
+  var GAME_VERSION = '0.0.77.8';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
