@@ -13986,6 +13986,37 @@
     ok(!FF._cloudFenced(), 'the fence flag is restored so later suites are unaffected');
   });
 
+  // ---- Arrow picker: arrows the bow cannot nock are VISIBLE and explained (borch8585's question) ----
+  // The picker used to list only usable arrows, so a Zinc Arrow on a Birch bow simply vanished from the UI
+  // -- "i cant seem to get my guy to use my zinc arrows". Unusable arrows now show as disabled rows naming
+  // the bow that unlocks them (derived from FORESTRY_NAMES, never hardcoded), and a locked usable arrow
+  // says it will never be fired.
+  suite('arrow picker explains unusable and locked arrows', function(){
+    var S = FF._state;
+    var saved = { mh:S.equippedMainhand, tier:S.equippedMainhandTier, rar:S.equippedMainhandRarity,
+                  inv:S.inventory, sel:S.equippedArrow, locks:S.lockedItems };
+    try {
+      S.equippedMainhand = 'bowMedium'; S.equippedMainhandTier = 2; S.equippedMainhandRarity = 'normal'; // Birch bow (tier index 1)
+      S.equippedArrow = null; S.lockedItems = {};
+      S.inventory = { fletching_arrow_t0: 5, fletching_arrow_t2: 40 };   // Tin (usable) + Zinc (too fine)
+      var h = FF.renderEquipArrowSection();
+      ok(h.indexOf('too fine for this bow') !== -1, 'the picker admits there are arrows the bow cannot nock');
+      ok(h.indexOf('needs a ' + FF.FORESTRY_NAMES[2] + ' bow or better') !== -1,
+         'the Zinc row names the exact bow that unlocks it (' + FF.FORESTRY_NAMES[2] + ', derived not hardcoded)');
+      ok(!/data-action="equipArrow" data-item="fletching_arrow_t2"/.test(h), 'the unusable arrow is not clickable');
+      // A locked usable arrow is listed but marked: selecting it would silently never fire otherwise.
+      S.lockedItems = { fletching_arrow_t0: true };
+      ok(/locked &mdash; never fired/.test(FF.renderEquipArrowSection()), 'a locked usable arrow says it will never be fired');
+      // With a bow big enough, the same Zinc arrows become ordinary clickable options.
+      S.equippedMainhandTier = 21;
+      ok(/data-action="equipArrow" data-item="fletching_arrow_t2"/.test(FF.renderEquipArrowSection()),
+         'the same arrows are clickable once the bow can nock them');
+    } finally {
+      S.equippedMainhand = saved.mh; S.equippedMainhandTier = saved.tier; S.equippedMainhandRarity = saved.rar;
+      S.inventory = saved.inv; S.equippedArrow = saved.sel; S.lockedItems = saved.locks;
+    }
+  });
+
   // ---- Wake staleness (ticket-0132): a stale tab must not clobber a newer cloud save ---------------
   // Valuren forged two Fantastic bows and lost both to his other device waking up: the wake path credited
   // hours of offline XP onto its stale snapshot and pushed, and BOTH server guards waved it through -- the

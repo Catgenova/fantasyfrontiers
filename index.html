@@ -21340,12 +21340,34 @@
     if(owned.length===0){
       html += '</div><div class="empty-note">No usable arrows in inventory. Craft some via Outfitting &rarr; Fletching (arrows fancier than your bow can\'t be fired).</div>';
     } else {
+      var _locked = state.lockedItems || {};
       owned.forEach(function(id){
         var item = ALL_SELLABLE[id]||{};
         var qty = state.inventory[id]||0;
         var d = arrowBaseDamage(id);
         var active = sel===id;
-        html += '<button class="style-btn'+(active?' active':'')+'" data-action="equipArrow" data-item="'+id+'">'+(item.icon||svgIcon('arrow','#a8895c'))+' '+escapeHtml(item.name||id)+' <span class="style-lvl">x'+fmt(qty)+'</span><span class="style-type">+'+d.dmgMin+'-'+d.dmgMax+' dmg</span></button>';
+        // A locked arrow can be SELECTED but is never fired (bowArrowToConsume skips it), so the row says so
+        // -- otherwise picking it looks accepted and then silently does nothing.
+        var lockNote = _locked[id] ? ' <span class="style-type" style="color:var(--hp-bad)">locked &mdash; never fired</span>' : '';
+        html += '<button class="style-btn'+(active?' active':'')+'" data-action="equipArrow" data-item="'+id+'">'+(item.icon||svgIcon('arrow','#a8895c'))+' '+escapeHtml(item.name||id)+' <span class="style-lvl">x'+fmt(qty)+'</span><span class="style-type">+'+d.dmgMin+'-'+d.dmgMax+' dmg</span>'+lockNote+'</button>';
+      });
+      html += '</div>';
+    }
+    // Arrows you OWN but this bow cannot nock, shown DISABLED with the bow that unlocks each. They used to be
+    // omitted entirely, and invisible was worse than greyed: a player with Zinc Arrows and a Birch bow asked
+    // "i cant seem to get my guy to use my zinc arrows" -- the picker silently hid them and nothing anywhere
+    // said an arrow's tier is capped by the bow's. The needed bow is DERIVED: arrow index i nocks on a bow of
+    // tier index >= i, and bows are named by wood (FORESTRY_NAMES[i]).
+    var tooFancy = [];
+    for(var j=cap+1;j<=ARROW_MAX_INDEX;j++){ var fid='fletching_arrow_t'+j; if((state.inventory[fid]||0)>0) tooFancy.push(j); }
+    if(tooFancy.length){
+      html += '<div class="inputs-line" style="margin-top:8px">In your bags, but too fine for this bow:</div><div class="style-row">';
+      tooFancy.forEach(function(j2){
+        var fid2 = 'fletching_arrow_t'+j2;
+        var it2 = ALL_SELLABLE[fid2]||{};
+        html += '<span class="style-btn locked" style="cursor:default">'+(it2.icon||svgIcon('arrow','#a8895c'))+' '+escapeHtml(it2.name||fid2)
+              + ' <span class="style-lvl">x'+fmt(state.inventory[fid2]||0)+'</span>'
+              + '<span class="style-type">needs a '+escapeHtml(FORESTRY_NAMES[j2]||('tier '+j2))+' bow or better</span></span>';
       });
       html += '</div>';
     }
@@ -26075,6 +26097,9 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 2', heading:'The arrow picker explains itself', items:[
+      'Asked in Discord: &ldquo;I can&rsquo;t seem to get my guy to use my Zinc arrows.&rdquo; The rule was fine &mdash; an arrow can&rsquo;t be fancier than the bow that fires it &mdash; but the Nock Arrows picker simply <b>hid</b> arrows your bow couldn&rsquo;t take, so nothing anywhere told you why your best arrows sat unused. Arrows that are too fine for your bow now appear greyed out with exactly what unlocks them (&ldquo;needs a Pine bow or better&rdquo;), and a <b>locked</b> arrow now says plainly that it will never be fired until you unlock it.'
+    ]},
     { v:'0.0.77', date:'Aug 2', heading:'The quick-action buttons become carved medallions', items:[
       'The floating quick actions on the right &mdash; <b>Sow</b>, <b>Harvest</b>, <b>Fertilize</b>, <b>your Estate</b> and the <b>Guild Estate</b> &mdash; trade their flat coloured circles for commissioned ivy-wreathed stone medallions from the same set as the arena: a seed sack for sowing, a wheat sheaf for the harvest, fish-meal for fertilizer, and the keep &mdash; bannered for your guild&rsquo;s estate, plain for your own. Count badges and behaviour are unchanged.'
     ]},
@@ -38408,7 +38433,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.18';
+  var GAME_VERSION = '0.0.77.19';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38553,7 +38578,7 @@
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
       GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, renderFaithActivityTab:renderFaithActivityTab, planOfflineFaithActivity:planOfflineFaithActivity, physiqueLevelLabel:physiqueLevelLabel, anySkillLevel:anySkillLevel, anySkillProgress:anySkillProgress, anySkillXpVal:anySkillXpVal, skillTabsByLabel:skillTabsByLabel,
-      renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, skillLiveStats:skillLiveStats, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
+      renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, skillLiveStats:skillLiveStats, renderEquipArrowSection:renderEquipArrowSection, FORESTRY_NAMES:FORESTRY_NAMES, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
       combatLogPush:combatLogPush, combatLogHtml:combatLogHtml, advCombat:advCombat, _clReset:function(){ combatLog = []; }, _clGet:function(){ return combatLog; },
       arenaMiniLogHtml:arenaMiniLogHtml, ARENA_MINI_LOG_ROWS:ARENA_MINI_LOG_ROWS, renderArena:renderArena,
       orbState:orbState, orbReset:orbReset, orbResetFoe:orbResetFoe, orbSetTarget:orbSetTarget, orbStep:orbStep,
