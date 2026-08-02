@@ -458,7 +458,12 @@
     var saved = { type:cell.type, pave:cell.paveTileId, work:cell.workshopId, cot:cell.cottageId };
     var savedJob = s.estate.job, savedQueue = s.estate.queue;
     var savedInv = { c2:s.inventory['carpentry_t2'], c3:s.inventory['carpentry_t3'], c4:s.inventory['carpentry_t4'] };
+    var savedArch = s.xp.architecture;
     s.estate.job = null; s.estate.queue = [];
+    // An upgrade now needs the tier's ARCHITECTURE level, same as building it fresh (ticket-0134). This
+    // suite predates that gate and passed only because the gate did not exist -- grant the skill so it keeps
+    // testing what it means to test (the job/time/plank mechanics), and the gate gets its own checks below.
+    s.xp.architecture = FF.SKILL_XP_FLOOR[100];
     // Workshop t2 on t5 pavement -> upgrade to t3 for 100x the t3 plank, taking the fresh t3 build time.
     cell.type = 'paved'; cell.paveTileId = 'paving_t5'; cell.cottageId = null; cell.workshopId = 'workshop_mining_t2';
     s.inventory['carpentry_t3'] = 100;
@@ -489,9 +494,18 @@
     s.estate.job = null;
     eq(cell.cottageId, 'cottage_t2', 'completion raises the cottage one tier');
     eq(s.inventory['carpentry_t2'], 0, 'the cottage upgrade spent 100 next-tier planks');
+    // ARCHITECTURE GATES THE UPGRADE (ticket-0134): drop the skill to nothing and the same call, on the same
+    // fully-paved tile with the planks in hand, must refuse and spend nothing.
+    s.xp.architecture = 0;
+    cell.cottageId = null; cell.workshopId = 'workshop_mining_t2'; cell.paveTileId = 'paving_t5';
+    s.inventory['carpentry_t3'] = 100;
+    FF.estateUpgradeWorkshop(0, 0);
+    ok(!s.estate.job, 'no job when Architecture is too low for the target tier');
+    eq(cell.workshopId, 'workshop_mining_t2', 'the workshop stays put when Architecture is too low');
+    eq(s.inventory['carpentry_t3'], 100, '...and no planks are spent');
     // restore
     cell.type = saved.type; cell.paveTileId = saved.pave; cell.workshopId = saved.work; cell.cottageId = saved.cot;
-    s.estate.job = savedJob; s.estate.queue = savedQueue;
+    s.estate.job = savedJob; s.estate.queue = savedQueue; s.xp.architecture = savedArch;
     s.inventory['carpentry_t2'] = savedInv.c2; s.inventory['carpentry_t3'] = savedInv.c3; s.inventory['carpentry_t4'] = savedInv.c4;
     FF.estRecomputeWorkshops(); // rebuild the workshop cache from the restored grid
   });
@@ -547,7 +561,11 @@
     var saved = { type:cell.type, pave:cell.paveTileId, work:cell.workshopId, cot:cell.cottageId };
     var savedJob = s.estate.job, savedQueue = s.estate.queue;
     var savedInv = { p5:s.inventory['paving_t5'], p7:s.inventory['paving_t7'], c5:s.inventory['carpentry_t5'], c6:s.inventory['carpentry_t6'] };
+    var savedArch2 = s.xp.architecture;
     s.estate.job = null; s.estate.queue = [];
+    // BUILDING upgrades need the tier's Architecture level (ticket-0134); this suite is about the multi-tier
+    // JUMP mechanic, so grant the skill and let the dedicated gate suite test the requirement itself.
+    s.xp.architecture = FF.SKILL_XP_FLOOR[100];
     function finishJob(){ var j = s.estate.job; if(j){ FF.applyEstateJobCompletion(s.estate, j, false, false); s.estate.job = null; } }
 
     // A) Pavement jumps straight from t2 to t7 in one step, costing 20 of the TARGET tile only, and
@@ -593,6 +611,7 @@
     s.estate.job = savedJob; s.estate.queue = savedQueue;
     s.inventory['paving_t5']=savedInv.p5; s.inventory['paving_t7']=savedInv.p7;
     s.inventory['carpentry_t5']=savedInv.c5; s.inventory['carpentry_t6']=savedInv.c6;
+    s.xp.architecture = savedArch2;
     FF.estRecomputeWorkshops();
   });
 
@@ -13984,6 +14003,39 @@
       S.inventory = savedInv; S.estate = savedEstate;
     }
     ok(!FF._cloudFenced(), 'the fence flag is restored so later suites are unaffected');
+  });
+
+  // ---- Architecture gates estate UPGRADES, not just fresh builds (ticket-0134, SteakHouse) ----------
+  // "You can place a T1 building on a paved tile and upgrade it to any tier you want just by paying 100
+  // planks of that tier. This makes architecture skill meaningless." Building fresh always checked
+  // Architecture against TIER_LEVELS; the two upgrade paths checked pavement + planks only, so the whole
+  // skill ladder could be skipped. Both now share estateBuildTierLevelOk with the build path.
+  suite('estate upgrades require the tier\'s Architecture level', function(){
+    var S = FF._state;
+    var saved = { xp:S.xp.architecture, inv:S.inventory, estate:S.estate };
+    try {
+      // The cap tracks TIER_LEVELS exactly -- same constant the fresh-build check uses.
+      S.xp.architecture = 0;
+      eq(FF.estateArchitectureTierCap(), 0, 'a level-1 architect can only reach tier 0');
+      ok(FF.estateBuildTierLevelOk(0) && !FF.estateBuildTierLevelOk(1), 'tier 1 is gated at level 1');
+      // Enough XP for a mid tier: the cap must be exactly the highest tier whose TIER_LEVELS is met.
+      var wantTier = 5;
+      S.xp.architecture = FF.SKILL_XP_FLOOR[FF.TIER_LEVELS[wantTier]];
+      ok(FF.estateBuildTierLevelOk(wantTier), 'at exactly the required level that tier unlocks');
+      ok(!FF.estateBuildTierLevelOk(wantTier+1), 'the tier above it stays locked');
+      eq(FF.estateArchitectureTierCap(), wantTier, 'the cap equals the highest met tier');
+      // The ACTION must refuse: a fully paved tile with a mountain of planks and no skill upgrades nothing.
+      S.xp.architecture = 0;
+      var g = []; for(var x=0;x<3;x++){ g[x]=[]; for(var y=0;y<3;y++) g[x][y] = { type:'stone', height:5, obstacle:null, fieldTier:null, owned:true, pavementTier:20 }; }
+      g[1][1].workshopId = 'workshop_carpentry_t0';
+      S.estate = { grid:g, job:null, queue:[] };
+      S.inventory = {}; S.inventory['carpentry_t10'] = 100000;
+      FF.estateUpgradeWorkshop(1, 1, 10);
+      eq(S.estate.job, null, 'a level-1 architect cannot jump a Workshop to tier 10 even with the planks');
+      eq(S.inventory['carpentry_t10'], 100000, '...and spends nothing trying');
+    } finally {
+      S.xp.architecture = saved.xp; S.inventory = saved.inv; S.estate = saved.estate;
+    }
   });
 
   // ---- Arrow picker: arrows the bow cannot nock are VISIBLE and explained (borch8585's question) ----

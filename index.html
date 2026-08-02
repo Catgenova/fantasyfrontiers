@@ -26097,6 +26097,11 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 2', heading:'Architecture now gates estate upgrades, not just new buildings', items:[
+      'Reported (ticket-0134): you could place a Tier 1 Workshop or Cottage on high pavement and jump it to <b>any</b> tier for 100 planks of that tier &mdash; no Architecture required. Building one fresh always checked the skill, so upgrading was a way to skip the whole ladder, which as the report put it made <b>Architecture meaningless</b>.',
+      'An upgrade now requires the <b>same Architecture level as building that tier from scratch</b>. The tier list on a building only offers what your pavement <i>and</i> your Architecture both support, and when the skill is what&rsquo;s holding you back the panel says so &mdash; and names the level you need &mdash; instead of telling you to pave higher.',
+      'Nothing already built is affected, and plank costs and build times are unchanged.'
+    ]},
     { v:'0.0.77', date:'Aug 2', heading:'The arrow picker explains itself', items:[
       'Asked in Discord: &ldquo;I can&rsquo;t seem to get my guy to use my Zinc arrows.&rdquo; The rule was fine &mdash; an arrow can&rsquo;t be fancier than the bow that fires it &mdash; but the Nock Arrows picker simply <b>hid</b> arrows your bow couldn&rsquo;t take, so nothing anywhere told you why your best arrows sat unused. Arrows that are too fine for your bow now appear greyed out with exactly what unlocks them (&ldquo;needs a Pine bow or better&rdquo;), and a <b>locked</b> arrow now says plainly that it will never be fired until you unlock it.'
     ]},
@@ -27894,6 +27899,21 @@
   // tier is capped at the tile's pavement tier -- pave higher to go higher. targetTier defaults to the
   // next tier (old callers/tests).
   var ESTATE_BUILDING_UPGRADE_PLANKS = 100;
+  // ARCHITECTURE GATES AN UPGRADE, not just a fresh build (ticket-0134, SteakHouse: "you can place a T1
+  // building on a paved tile and upgrade it to any tier you want just by paying 100 planks of that tier.
+  // This makes architecture skill meaningless"). Building fresh has always checked
+  // getLevel(state.xp.architecture) >= TIER_LEVELS[tier] (see buildWorkshop/buildCottage); the two upgrade
+  // paths checked only pavement tier and planks, so the whole skill ladder could be skipped by placing the
+  // cheapest building and jumping it to t20. Same constant, same comparison, one helper both paths share so
+  // they can never drift apart again.
+  function estateBuildTierLevelOk(tier){ return getLevel(state.xp.architecture) >= TIER_LEVELS[tier]; }
+  // The highest tier the player's Architecture allows. Used by the menus to cap the offered list, so an
+  // unreachable tier is never presented as a button in the first place.
+  function estateArchitectureTierCap(){
+    var lvl = getLevel(state.xp.architecture), cap = -1;
+    for(var t=0; t<TIER_COUNT; t++){ if(TIER_LEVELS[t] <= lvl) cap = t; }
+    return cap;
+  }
   function estateUpgradeWorkshop(x, y, targetTier){
     var cell = estActive && estActive.grid[x] && estActive.grid[x][y];
     if(!cell) return;
@@ -27906,6 +27926,7 @@
     if(!(tgt > cur)){ addLog('Choose a higher Workshop tier to upgrade to.', 'danger'); return; }
     if(tgt >= TIER_COUNT){ addLog('This Workshop is already the top tier.', 'danger'); return; }
     if(paveT < tgt){ addLog('The pavement under this Workshop only supports ' + (paveT>=0?FORESTRY_NAMES[paveT]:'no') + ' tier — upgrade the pavement first.', 'danger'); return; }
+    if(!estateBuildTierLevelOk(tgt)){ addLog('Architecture level ' + TIER_LEVELS[tgt] + ' is needed to raise a Workshop to ' + FORESTRY_NAMES[tgt] + ' (yours is ' + getLevel(state.xp.architecture) + ').', 'danger'); return; }
     var plankId = 'carpentry_t' + tgt, owned = state.inventory[plankId] || 0;
     if(owned < ESTATE_BUILDING_UPGRADE_PLANKS){ addLog('Upgrading this Workshop to ' + FORESTRY_NAMES[tgt] + ' costs ' + ESTATE_BUILDING_UPGRADE_PLANKS + ' ' + FORESTRY_NAMES[tgt] + ' Planks (you have ' + owned + ').', 'danger'); return; }
     var newId = 'workshop_' + wIt.skillId + '_t' + tgt;
@@ -27929,6 +27950,7 @@
     if(!(tgt > cur)){ addLog('Choose a higher Cottage tier to upgrade to.', 'danger'); return; }
     if(tgt >= TIER_COUNT){ addLog('This Cottage is already the top tier.', 'danger'); return; }
     if(paveT < tgt){ addLog('The pavement under this Cottage only supports ' + (paveT>=0?FORESTRY_NAMES[paveT]:'no') + ' tier — upgrade the pavement first.', 'danger'); return; }
+    if(!estateBuildTierLevelOk(tgt)){ addLog('Architecture level ' + TIER_LEVELS[tgt] + ' is needed to raise a Cottage to ' + FORESTRY_NAMES[tgt] + ' (yours is ' + getLevel(state.xp.architecture) + ').', 'danger'); return; }
     var plankId = 'carpentry_t' + tgt, owned = state.inventory[plankId] || 0;
     if(owned < ESTATE_BUILDING_UPGRADE_PLANKS){ addLog('Upgrading this Cottage to ' + FORESTRY_NAMES[tgt] + ' costs ' + ESTATE_BUILDING_UPGRADE_PLANKS + ' ' + FORESTRY_NAMES[tgt] + ' Planks (you have ' + owned + ').', 'danger'); return; }
     var newId = 'cottage_t' + tgt;
@@ -30076,11 +30098,19 @@
         html += '<div class="estate-action-info"><b>Workshop:</b> '+(wIt?wIt.icon+' '+escapeHtml(wIt.name):'Unknown')+'<br>+'+wSpd+'% '+escapeHtml(workshopSkillLabel(wIt?wIt.skillId:''))+(isGatherWorkshop(wIt?wIt.skillId:'')?' gathering':' crafting')+' speed &bull; '+wPct+'% double output</div>';
         html += '<button class="action-btn stop" data-action="estateRemoveWorkshop" data-x="'+x+'" data-y="'+y+'">Remove</button>';
         html += '</div>';
-        var wCur = wIt?wIt.tierIndex:0, wPaveT = pavementTierOf(cell), wMax = Math.min(wPaveT, TIER_COUNT-1);
+        // The list is capped by BOTH the pavement and Architecture (ticket-0134) -- an upgrade needs the same
+        // skill level as building that tier fresh, so an unreachable tier is never offered as a button. The
+        // blocker text names whichever limit actually binds, since "pave higher" is useless advice when the
+        // real problem is the skill.
+        var wCur = wIt?wIt.tierIndex:0, wPaveT = pavementTierOf(cell), wArchCap = estateArchitectureTierCap();
+        var wMax = Math.min(wPaveT, wArchCap, TIER_COUNT-1);
         if(wCur < TIER_COUNT-1){
-          var wCanAny = wMax > wCur; // the pavement supports at least the next tier up
-          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade Workshop</b><br>Jump to any tier the pavement supports (up to '+(wPaveT>=0?escapeHtml(FORESTRY_NAMES[wMax]):'—')+') &bull; '+ESTATE_BUILDING_UPGRADE_PLANKS+'&times; that tier’s Plank'+(wCanAny?'':' &bull; <span style="color:var(--hp-bad)">pave higher first</span>')+'</div>';
-          html += '<button class="action-btn" data-action="estateToggleBuildUpgradeMenu" '+(wCanAny?'':'disabled')+'>'+(wCanAny?(estateBuildUpgradeMenuOpen?'Close List':'Choose Tier'):'Pave higher')+'</button></div>';
+          var wCanAny = wMax > wCur;
+          var wBlock = wCanAny ? '' : (wArchCap <= wCur && wArchCap < wPaveT
+                ? ' &bull; <span style="color:var(--hp-bad)">Architecture '+TIER_LEVELS[Math.min(wCur+1,TIER_COUNT-1)]+' needed for the next tier</span>'
+                : ' &bull; <span style="color:var(--hp-bad)">pave higher first</span>');
+          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade Workshop</b><br>Jump to any tier your pavement <i>and</i> Architecture support (up to '+(wMax>=0?escapeHtml(FORESTRY_NAMES[wMax]):'—')+') &bull; '+ESTATE_BUILDING_UPGRADE_PLANKS+'&times; that tier’s Plank'+wBlock+'</div>';
+          html += '<button class="action-btn" data-action="estateToggleBuildUpgradeMenu" '+(wCanAny?'':'disabled')+'>'+(wCanAny?(estateBuildUpgradeMenuOpen?'Close List':'Choose Tier'):(wArchCap <= wCur && wArchCap < wPaveT ? 'Train Architecture' : 'Pave higher'))+'</button></div>';
           if(estateBuildUpgradeMenuOpen && wCanAny){
             html += '<div class="estate-paving-library">';
             for(var wt=wCur+1; wt<=wMax; wt++){
@@ -30099,11 +30129,15 @@
         html += '<div class="estate-action-info"><b>Cottage:</b> '+(cIt?cIt.icon+' '+escapeHtml(cIt.name):'Unknown')+'<br>'+(cAdj ? ('Linked to the '+escapeHtml(workshopSkillLabel(WORKSHOP_ITEMS[cAdj.workshopId].skillId))+' Workshop &mdash; assign a Peon in the <b>Peons</b> tab.') : 'Not linked &mdash; place beside exactly one Workshop.')+'</div>';
         html += '<button class="action-btn stop" data-action="estateRemoveCottage" data-x="'+x+'" data-y="'+y+'">Remove</button>';
         html += '</div>';
-        var cCur = cIt?cIt.tierIndex:0, cPaveT = pavementTierOf(cell), cMax = Math.min(cPaveT, TIER_COUNT-1);
+        var cCur = cIt?cIt.tierIndex:0, cPaveT = pavementTierOf(cell), cArchCap = estateArchitectureTierCap();
+        var cMax = Math.min(cPaveT, cArchCap, TIER_COUNT-1);
         if(cCur < TIER_COUNT-1){
           var cCanAny = cMax > cCur;
-          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade Cottage</b><br>Jump to any tier the pavement supports (up to '+(cPaveT>=0?escapeHtml(FORESTRY_NAMES[cMax]):'—')+') &bull; '+ESTATE_BUILDING_UPGRADE_PLANKS+'&times; that tier’s Plank'+(cCanAny?'':' &bull; <span style="color:var(--hp-bad)">pave higher first</span>')+'</div>';
-          html += '<button class="action-btn" data-action="estateToggleBuildUpgradeMenu" '+(cCanAny?'':'disabled')+'>'+(cCanAny?(estateBuildUpgradeMenuOpen?'Close List':'Choose Tier'):'Pave higher')+'</button></div>';
+          var cBlock = cCanAny ? '' : (cArchCap <= cCur && cArchCap < cPaveT
+                ? ' &bull; <span style="color:var(--hp-bad)">Architecture '+TIER_LEVELS[Math.min(cCur+1,TIER_COUNT-1)]+' needed for the next tier</span>'
+                : ' &bull; <span style="color:var(--hp-bad)">pave higher first</span>');
+          html += '<div class="estate-action-row"><div class="estate-action-info"><b>Upgrade Cottage</b><br>Jump to any tier your pavement <i>and</i> Architecture support (up to '+(cMax>=0?escapeHtml(FORESTRY_NAMES[cMax]):'—')+') &bull; '+ESTATE_BUILDING_UPGRADE_PLANKS+'&times; that tier’s Plank'+cBlock+'</div>';
+          html += '<button class="action-btn" data-action="estateToggleBuildUpgradeMenu" '+(cCanAny?'':'disabled')+'>'+(cCanAny?(estateBuildUpgradeMenuOpen?'Close List':'Choose Tier'):(cArchCap <= cCur && cArchCap < cPaveT ? 'Train Architecture' : 'Pave higher'))+'</button></div>';
           if(estateBuildUpgradeMenuOpen && cCanAny){
             html += '<div class="estate-paving-library">';
             for(var ct=cCur+1; ct<=cMax; ct++){
@@ -38433,7 +38467,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.19';
+  var GAME_VERSION = '0.0.77.20';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38596,7 +38630,7 @@
       dungeonOwedClears:dungeonOwedClears, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL,
       applyEffectDamage:applyEffectDamage, applyEffectDot:applyEffectDot, combatLogDotReset:combatLogDotReset,
       _blacksmithGroupsOpen:function(){ return blacksmithGroupsOpen; }, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupOpen:blacksmithGroupOpen,
-      estateEnqueueOrStart:estateEnqueueOrStart, _setCloudFenced:function(v){ cloudFenced = !!v; }, _cloudFenced:function(){ return cloudFenced; }, wakeCloudIsNewer:wakeCloudIsNewer, WAKE_STALE_TOLERANCE_MS:WAKE_STALE_TOLERANCE_MS, wakeStalenessCheck:wakeStalenessCheck,
+      estateEnqueueOrStart:estateEnqueueOrStart, estateBuildTierLevelOk:estateBuildTierLevelOk, SKILL_XP_FLOOR:SKILL_XP_FLOOR, estateArchitectureTierCap:estateArchitectureTierCap, estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, _setCloudFenced:function(v){ cloudFenced = !!v; }, _cloudFenced:function(){ return cloudFenced; }, wakeCloudIsNewer:wakeCloudIsNewer, WAKE_STALE_TOLERANCE_MS:WAKE_STALE_TOLERANCE_MS, wakeStalenessCheck:wakeStalenessCheck,
       combatLogPush:combatLogPush, combatLogLineHtml:combatLogLineHtml, _combatLog:function(){ return combatLog; },
       craftLadderInputName:craftLadderInputName, logForgeFailure:logForgeFailure,
       CLASS_ART:CLASS_ART, classArtHtml:classArtHtml, classCardIcon:classCardIcon, classPortraitFor:classPortraitFor,
