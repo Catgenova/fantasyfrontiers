@@ -1359,8 +1359,19 @@
       eq(g.remaining, Infinity, 'gathering runs are infinite');
       eq(g.navCat, 'gathering', 'gather task navigates to gathering');
       ok(g.name.indexOf('Gathering:') === 0, 'gather task name is prefixed');
+      // ticket-0128: this assertion used to read `eq(gf.successPct, 100, 'forestry gathering is a
+      // guaranteed 100%')` -- the TEST enshrined the display bug. The tick rolls genericGatherMainChance
+      // (70% base + tool, capped 95%) for every gather that is not digging/mining/fishing/butchering, so
+      // the task bar must show that same number, and it can never be 100.
       var gf = FF.describeTask({ type:'gather', skill:'forestry', itemId:FF.GATHERING_SKILLS.forestry.items[0].id, progress:0 });
-      eq(gf.successPct, 100, 'forestry gathering is a guaranteed 100%');
+      eq(gf.successPct, Math.round(FF.genericGatherMainChance(S, 'forestry')*100),
+         'the forestry task bar shows the SAME chance the gather tick rolls');
+      ok(gf.successPct < 100, 'and it is never 100 -- the roll caps at 95%');
+      var gb = FF.describeTask({ type:'gather', skill:'butchering', itemId:FF.GATHERING_SKILLS.forestry.items[0].id, progress:0 });
+      eq(gb.successPct, 100, 'butchering is the one always-hit gather line (a Refining activity)');
+      // The (?) popup admits the main find chance too -- it used to list only the side-drop chances.
+      ok(/Main Find Chance/.test((FF.skillLiveStats('forestry')||[]).join(' ')),
+         'the forestry (?) popup states the main find chance');
       var pr = FF.describeTask({ type:'pray', itemId:FF.PRAYER_TIERS[0].id, progress:0 });
       eq(pr.remaining, Infinity, 'prayer runs are infinite');
       eq(pr.successPct, 100, 'prayer always succeeds');

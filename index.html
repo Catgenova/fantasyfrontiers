@@ -26122,6 +26122,10 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 2', heading:'The gathering bar stops promising 100% it never had', items:[
+      'Reported (ticket-0128): gathering actions showing <b>100%</b> on the task bar were sometimes failing. The roll was always honest &mdash; Forestry, Herbalism, Foraging, Botany and their kin succeed at <b>70% base, plus your tool&rsquo;s bonus, capped at 95%</b>, and a whiff floats &ldquo;Nothing gathered&rdquo; &mdash; but the task bar hardcoded 100% for exactly those skills, and nothing else in the game admitted the real number either. Nothing about your odds changed: the bar now shows the chance the game actually rolls, and each skill&rsquo;s <b>(?)</b> popup spells out the base, the tool bonus and the cap. Better tools raise it, as they always quietly did.',
+      'Digging, Mining and Fishing already showed their true chances; Butchering really is a guaranteed line and still says so.'
+    ]},
     { v:'0.0.77', date:'Aug 2', heading:'The Combat screen is the fight, nothing else', items:[
       'The full stats block &mdash; Combat Score, Offense, Defense, Mastery, Familiar, the Damage Triangle &mdash; no longer renders under the arena. It was a wholesale copy of the <b>Equipment &amp; Stats</b> page, and on a phone it added a screen and a half of static numbers below every fight. It still lives where it belongs, and the numbers you actually watch mid-fight &mdash; health, arrows, the foe&rsquo;s weakness line &mdash; are on the arena itself.'
     ]},
@@ -35338,6 +35342,12 @@
         return lines;
       }
       lines.push('Tool: <b>'+gt.name+'</b> &bull; Speed Bonus: <b>+'+gp+'%</b> <span style="color:var(--text-faint)">(forge one in Blacksmithing)</span>');
+      // Every generic gather rolls genericGatherMainChance per cycle (ticket-0128) -- the popup used to show
+      // only the side-drop chances here, so nothing anywhere admitted the main find can whiff.
+      if(skillId!=='digging' && skillId!=='mining' && skillId!=='fishing'){
+        lines.push('Main Find Chance: <b>'+Math.round(genericGatherMainChance(state, skillId)*100)+'%</b> (base '
+          +Math.round(BASE_GATHER_MAIN_CHANCE*100)+'%, your tool adds the rest, caps at 95%)');
+      }
       if(skillId==='digging'){
         lines.push('Main Find Chance: <b>'+Math.round(diggingMainChance(state)*100)+'%</b> (base 70%, your Shovel adds up to +25%, caps at 95%)');
         lines.push('Coal Chance: <b>'+Math.round(diggingCoalChance(state)*100)+'%</b> (Focus adds more)');
@@ -36048,12 +36058,17 @@
     keys.forEach(function(k){ min = Math.min(min, Math.floor((state.inventory[k]||0)/inputs[k])); });
     return min;
   }
-  // Per-gather-skill success chance shown on the task bar (most gathers are a guaranteed 100%).
+  // Per-gather-skill success chance shown on the task bar. This MUST mirror processGatherActivity's roll
+  // branches exactly (ticket-0128): it used to return a flat 100 for everything but digging/mining/fishing,
+  // while the tick rolls genericGatherMainChance (70% base + tool, capped 95%) for forestry, herbalism,
+  // foraging, botany and the rest -- so the bar promised 100% and the player watched "Nothing gathered"
+  // float by. Butchering is the one true always-hit (its gather line is a Refining activity).
   function gatherSuccessPct(skill){
     if(skill==='digging') return Math.round(diggingMainChance(state)*100);
     if(skill==='mining') return Math.round(miningMainChance(state)*100);
     if(skill==='fishing') return Math.round(fishingCatchChance(state)*100);
-    return 100;
+    if(skill==='butchering') return 100;
+    return Math.round(genericGatherMainChance(state, skill)*100);
   }
   // Full display data for one task bar: name/icon, cycle timing/progress, runs remaining
   // (Infinity => infinite), per-cycle success %, and where tapping it navigates.
@@ -38373,7 +38388,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.9';
+  var GAME_VERSION = '0.0.77.10';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38518,7 +38533,7 @@
       processGatherActivity:processGatherActivity, processPrayActivity:processPrayActivity, processCraftActivity:processCraftActivity,
       findActiveGatherSlot:findActiveGatherSlot, findActivePraySlot:findActivePraySlot,
       GATHERING_SKILLS:GATHERING_SKILLS, PRAYER_TIERS:PRAYER_TIERS, FAITH_ACTIVITY_TIERS:FAITH_ACTIVITY_TIERS, renderFaithActivityTab:renderFaithActivityTab, planOfflineFaithActivity:planOfflineFaithActivity, physiqueLevelLabel:physiqueLevelLabel, anySkillLevel:anySkillLevel, anySkillProgress:anySkillProgress, anySkillXpVal:anySkillXpVal, skillTabsByLabel:skillTabsByLabel,
-      renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
+      renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, skillLiveStats:skillLiveStats, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
       combatLogPush:combatLogPush, combatLogHtml:combatLogHtml, advCombat:advCombat, _clReset:function(){ combatLog = []; }, _clGet:function(){ return combatLog; },
       arenaMiniLogHtml:arenaMiniLogHtml, ARENA_MINI_LOG_ROWS:ARENA_MINI_LOG_ROWS, renderArena:renderArena,
       orbState:orbState, orbReset:orbReset, orbResetFoe:orbResetFoe, orbSetTarget:orbSetTarget, orbStep:orbStep,
