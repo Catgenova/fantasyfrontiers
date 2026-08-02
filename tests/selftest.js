@@ -14001,6 +14001,27 @@
   // one. The wake path now peeks at the cloud's client_saved_at before crediting anything; these pin the
   // decision function it peeks with. (The async handler itself cannot be asserted here -- suite() is
   // synchronous and a .then() assertion is invisible -- so the test targets the synchronous mechanics.)
+  // ---- Floating text under Compact desktop (ticket-0133) -------------------------------------------
+  // #floatLayer lives inside #app's zoom, so a coordinate measured with getBoundingClientRect (VISUAL px)
+  // painted at 0.75x when written to a child's style -- every float drifted up-left by 25%. All five float
+  // writers now route through floatCoord, which divides by the live --ui-scale. Measured through the real
+  // spawner in Chromium: -219px of drift at 1528px wide before, 0 after, and a no-op at scale 1.
+  suite('floating text: visual coords convert into the zoomed layer', function(){
+    ok(typeof FF.floatCoord === 'function', 'the converter is exported');
+    var de = document.documentElement, saved = de.style.getPropertyValue('--ui-scale');
+    try {
+      de.style.setProperty('--ui-scale', '0.75');
+      eq(FF.floatCoord(300), 400, 'at 0.75 a visual coordinate divides up so the zoom lands it back where measured');
+      eq(FF.floatCoord(0), 0, 'the origin is a fixed point');
+      de.style.setProperty('--ui-scale', '1');
+      eq(FF.floatCoord(300), 300, 'at scale 1 the conversion is a no-op');
+      de.style.setProperty('--ui-scale', '');
+      eq(FF.floatCoord(300), 300, 'an unset scale (phones, old sessions) is a no-op, not NaN');
+    } finally {
+      if(saved) de.style.setProperty('--ui-scale', saved); else de.style.removeProperty('--ui-scale');
+    }
+  });
+
   suite('wake staleness: the cloud-newer decision', function(){
     ok(typeof FF.wakeStalenessCheck === 'function', 'the wake peek is exported');
     var TOL = FF.WAKE_STALE_TOLERANCE_MS;

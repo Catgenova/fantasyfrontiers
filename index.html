@@ -14423,6 +14423,17 @@
   // ACTION_BAR_RESULT_TEXT back to true to restore those.
   var FLOATING_TEXT_ENABLED = true;
   var ACTION_BAR_RESULT_TEXT = false;
+  // Convert a VISUAL viewport coordinate (what getBoundingClientRect returns) into #floatLayer's own
+  // coordinate space. The layer lives INSIDE #app's Compact-desktop zoom (v0.0.77.5), so styles written on
+  // its children are interpreted in ZOOMED pixels: a float aimed at visual x=878 painted at x=658, and every
+  // float drifted toward the top-left by 25%, worse the further from the corner (ticket-0133, "floating text
+  // isn't shown correct after ui change"). Measured in Chromium: raw coords land 219px off at 1528px wide;
+  // divided by the live scale they land exactly. At scale 1 (setting off, narrow windows, phones -- where
+  // --ui-scale is unset or "1") this is a no-op, so pre-zoom behaviour is untouched.
+  function floatCoord(v){
+    var s = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale'));
+    return (s > 0 && isFinite(s)) ? v / s : v;
+  }
   function spawnFloatingText(text, cls){
     if(!ACTION_BAR_RESULT_TEXT) return;
     if(offlineCapture) return;
@@ -14436,8 +14447,8 @@
     var jitterX = Math.round(Math.random()*60 - 30);
     var jitterY = -(floatingTextCount % 6) * 18;
     floatingTextCount++;
-    el.style.left = (rect.left + rect.width/2 + jitterX) + 'px';
-    el.style.top = (rect.top - 12 + jitterY) + 'px';
+    el.style.left = floatCoord(rect.left + rect.width/2 + jitterX) + 'px';
+    el.style.top = floatCoord(rect.top - 12 + jitterY) + 'px';
     layer.appendChild(el);
     setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 1350);
   }
@@ -14454,8 +14465,8 @@
     var el = document.createElement('div');
     el.className = 'floating-text ft-xp';
     el.textContent = '+' + (Math.round(amount*10)/10) + ' XP';
-    el.style.left = (rect.left + rect.width/2) + 'px';
-    el.style.top = (rect.top + rect.height/2) + 'px';
+    el.style.left = floatCoord(rect.left + rect.width/2) + 'px';
+    el.style.top = floatCoord(rect.top + rect.height/2) + 'px';
     layer.appendChild(el);
     setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 2000);
   }
@@ -14472,13 +14483,14 @@
     var el = document.createElement('div');
     el.className = 'floating-text ft-xp';
     el.textContent = '+' + (Math.round(amount*10)/10) + ' XP';
-    el.style.top = (rect.top + rect.height/2) + 'px';
-    el.style.left = rect.left + 'px';
+    el.style.top = floatCoord(rect.top + rect.height/2) + 'px';
+    el.style.left = floatCoord(rect.left) + 'px';
     layer.appendChild(el);
     // .floating-text centers on its `left` via translate(-50%); offset so the whole tick sits to
-    // the left of the button with an 8px gap regardless of the number's width.
+    // the left of the button with an 8px gap regardless of the number's width. The re-measured width
+    // is VISUAL px like everything else here, so the arithmetic stays visual and converts at the write.
     var w = el.getBoundingClientRect().width;
-    el.style.left = (rect.left - 8 - w/2) + 'px';
+    el.style.left = floatCoord(rect.left - 8 - w/2) + 'px';
     setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 2000);
   }
 
@@ -14503,7 +14515,7 @@
     var el = document.createElement('div');
     el.className = 'floating-text ' + (cls||'');
     el.innerHTML = html;
-    el.style.top = topY + 'px';
+    el.style.top = floatCoord(topY) + 'px';
     layer.appendChild(el);
     setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 2000);
     return el;
@@ -14530,7 +14542,7 @@
         var rr = row.getBoundingClientRect();
         if(rr.width || rr.height){
           var xel = gabAnchorFloat('+'+(Math.round(ev.xp*10)/10)+' XP', 'ft-xp', rr.top + rr.height/2);
-          if(xel){ xel.style.left = rr.left + 'px'; var w = xel.getBoundingClientRect().width; xel.style.left = (rr.left - 8 - w/2) + 'px'; }
+          if(xel){ xel.style.left = floatCoord(rr.left) + 'px'; var w = xel.getBoundingClientRect().width; xel.style.left = floatCoord(rr.left - 8 - w/2) + 'px'; }
         }
       }
       if(track){
@@ -14538,10 +14550,10 @@
         if(tr.width || tr.height){
           if(ev.success){
             var ih = gabItemsHtml(ev.items, ev.mainId);
-            if(ih){ var iel = gabAnchorFloat(ih, 'gab-ft-reward', tr.top + tr.height/2); if(iel){ iel.style.left = tr.right + 'px'; var iw = iel.getBoundingClientRect().width; iel.style.left = (tr.right + 8 + iw/2) + 'px'; } }
+            if(ih){ var iel = gabAnchorFloat(ih, 'gab-ft-reward', tr.top + tr.height/2); if(iel){ iel.style.left = floatCoord(tr.right) + 'px'; var iw = iel.getBoundingClientRect().width; iel.style.left = floatCoord(tr.right + 8 + iw/2) + 'px'; } }
           } else {
             var fel = gabAnchorFloat('✕', 'ft-fail gab-ft-x', tr.top + tr.height/2);
-            if(fel){ fel.style.left = tr.right + 'px'; var fw = fel.getBoundingClientRect().width; fel.style.left = (tr.right + 10 + fw/2) + 'px'; }
+            if(fel){ fel.style.left = floatCoord(tr.right) + 'px'; var fw = fel.getBoundingClientRect().width; fel.style.left = floatCoord(tr.right + 10 + fw/2) + 'px'; }
           }
         }
       }
@@ -23230,8 +23242,8 @@
     var jitterX = Math.round(Math.random()*44 - 22);
     var jitterY = -(floatingTextCount % 5) * 16;
     floatingTextCount++;
-    el.style.left = (rect.left + rect.width/2 + jitterX) + 'px';
-    el.style.top = (rect.top - 16 + jitterY) + 'px';
+    el.style.left = floatCoord(rect.left + rect.width/2 + jitterX) + 'px';
+    el.style.top = floatCoord(rect.top - 16 + jitterY) + 'px';
     layer.appendChild(el);
     setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 1300);
   }
@@ -26122,6 +26134,9 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 2', heading:'Floating rewards land where they belong again', items:[
+      'Reported (ticket-0133): since the Compact-desktop update, the floating +XP and item-reward ticks were drifting away from their task rows &mdash; the further from the top-left of the screen, the worse. The float layer lives inside the new 75% scale, but positions were measured in on-screen pixels, so every tick painted at three-quarters of its intended distance from the corner. All floating text &mdash; task rewards, XP ticks, the tracker&rsquo;s +XP, combat damage and loot over the orbs &mdash; now converts coordinates into the scaled space and lands on its anchor at every zoom.'
+    ]},
     { v:'0.0.77', date:'Aug 2', heading:'A sleeping device can no longer overwrite what you just crafted', items:[
       'Reported (ticket-0132): items &mdash; in this case two freshly forged Fantastic bows &mdash; vanishing shortly after crafting. The cause was a second signed-in device: when a backgrounded tab woke up, it credited its offline catch-up onto the <b>old snapshot it remembered</b> and saved immediately &mdash; and because hours of idle XP made that stale snapshot&rsquo;s progress score read <i>higher</i> than the live device&rsquo;s, the server&rsquo;s forward-only guard let it through. Newer items lost to older saves.',
       'Now a tab that wakes from sleep first asks the server whether anything newer was saved while it slept. If so, it <b>adopts the newer save</b> (a quick automatic reload) instead of pushing its stale memory, and your offline time is credited on top of the real, current state. If nothing newer exists &mdash; or the network hiccups &mdash; everything behaves exactly as before.',
@@ -38460,7 +38475,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.12';
+  var GAME_VERSION = '0.0.77.13';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38716,7 +38731,7 @@
       RG_QUARRY_PER_STRIKE:RG_QUARRY_PER_STRIKE, RG_QUARRY_PER_STRIKE_D2:RG_QUARRY_PER_STRIKE_D2, RG_QUARRY_MS:RG_QUARRY_MS,
       RG_CHAIN_CHANCE:RG_CHAIN_CHANCE, RG_BOND_PCT:RG_BOND_PCT, RG_BOND_D4_MULT:RG_BOND_D4_MULT,
       RG_HUNTERSMARK_PCT:RG_HUNTERSMARK_PCT, RG_THROATSEEKER_MULT:RG_THROATSEEKER_MULT, RG_WYRMSTALKER_PCT:RG_WYRMSTALKER_PCT,
-      RG_BONEVOLLEY_CHANCE:RG_BONEVOLLEY_CHANCE, RG_CRIT_MULT:RG_CRIT_MULT, RG_SWING_MULT:RG_SWING_MULT, legendaryCritChance:legendaryCritChance, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, floatKillLoot:floatKillLoot, setOverlayHtml:setOverlayHtml, _setOfflineSummary:function(v){ offlineSummaryData = v; }, _combatLog:function(){ return combatLog; },
+      RG_BONEVOLLEY_CHANCE:RG_BONEVOLLEY_CHANCE, RG_CRIT_MULT:RG_CRIT_MULT, RG_SWING_MULT:RG_SWING_MULT, legendaryCritChance:legendaryCritChance, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, floatKillLoot:floatKillLoot, floatCoord:floatCoord, spawnFloatingText:spawnFloatingText, spawnBarXpText:spawnBarXpText, setOverlayHtml:setOverlayHtml, _setOfflineSummary:function(v){ offlineSummaryData = v; }, _combatLog:function(){ return combatLog; },
       MONSTER_SPECIALS:MONSTER_SPECIALS, monsterSpecialFire:monsterSpecialFire, monsterSpecialDesc:monsterSpecialDesc, clearEnemySpecialState:clearEnemySpecialState, playerDotDps:playerDotDps, playerDotTick:playerDotTick, playerDotWord:playerDotWord, playerBleedActive:playerBleedActive, playerPoisonActive:playerPoisonActive, playerFeared:playerFeared, enemyWeakenMult:enemyWeakenMult, playerShredMult:playerShredMult, enemyHardenMult:enemyHardenMult,
       playerBurnActive:playerBurnActive, playerChillSlowMult:playerChillSlowMult, playerBlindMult:playerBlindMult, enemyVeilHitMult:enemyVeilHitMult, purgePlayerBuff:purgePlayerBuff,
       enemyFrenzyFactor:enemyFrenzyFactor, enemyFrenzySpeedMult:enemyFrenzySpeedMult, enemyFrenzyDmgMult:enemyFrenzyDmgMult, enemySiphonActive:enemySiphonActive, enemyRallyDmgMult:enemyRallyDmgMult, enemyMightDmgMult:enemyMightDmgMult, maxHp:maxHp, getLevel:getLevel, getLevelExt:getLevelExt, skillLevel:skillLevel, masteryLevel:masteryLevel, classMasteryLevel:classMasteryLevel, weaponMasteryLevel:weaponMasteryLevel, physiqueMasteryTotal:physiqueMasteryTotal, armorMasteryTotal:armorMasteryTotal, armorMasteryIncomingMult:armorMasteryIncomingMult, CLASS_MASTERY_HP:CLASS_MASTERY_HP, CLASS_MASTERY_DMG:CLASS_MASTERY_DMG, WEAPON_MASTERY_DMG:WEAPON_MASTERY_DMG, ARMOR_MASTERY_DR:ARMOR_MASTERY_DR, ARMOR_MASTERY_DR_CAP:ARMOR_MASTERY_DR_CAP, PHYSIQUE_MASTERY_HP:PHYSIQUE_MASTERY_HP, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, PHYSIQUE_XP_FLOOR_EXT:PHYSIQUE_XP_FLOOR_EXT, applyOfflineProgress:applyOfflineProgress, applyMobileLayoutPref:applyMobileLayoutPref, applyUiScalePref:applyUiScalePref, uiScaleFor:uiScaleFor, UI_SCALE_DENSE:UI_SCALE_DENSE, UI_SCALE_MIN_W:UI_SCALE_MIN_W, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, templarBeaconPotencyMult:templarBeaconPotencyMult, templarIncomingDmgMult:templarIncomingDmgMult, templarVerse:templarVerse, templarVerseMs:templarVerseMs, templarVersePower:templarVersePower, templarVerseAdvance:templarVerseAdvance, templarGloria:templarGloria, applyTemplarLitanyTick:applyTemplarLitanyTick, templarDoxologyMult:templarDoxologyMult, templarDoxologyCap:templarDoxologyCap, templarBonus:templarBonus, TPL_VERSES:TPL_VERSES, TPL_VERSE_MS:TPL_VERSE_MS, TPL_VERSE_MS_D1:TPL_VERSE_MS_D1, TPL_MIGHT_PCT:TPL_MIGHT_PCT, TPL_HASTE_PCT:TPL_HASTE_PCT, TPL_ZEAL_CRITDMG:TPL_ZEAL_CRITDMG, TPL_AEGIS_PCT_PER_SEC:TPL_AEGIS_PCT_PER_SEC, TPL_AEGIS_CAP_PCT:TPL_AEGIS_CAP_PCT, TPL_FERVOR_EXT_MS:TPL_FERVOR_EXT_MS, TPL_FERVOR_EXT_CAP:TPL_FERVOR_EXT_CAP, TPL_DOXOLOGY_PER:TPL_DOXOLOGY_PER, TPL_DOXOLOGY_CAP:TPL_DOXOLOGY_CAP, TPL_DOXOLOGY_CAP_SUNSCALE:TPL_DOXOLOGY_CAP_SUNSCALE, TPL_GLORIA_PCT:TPL_GLORIA_PCT, TPL_EMPOWERED_MULT:TPL_EMPOWERED_MULT, TPL_VERSE_POWER_D2:TPL_VERSE_POWER_D2, LEG_SUNBRAND_END_PCT:LEG_SUNBRAND_END_PCT, LEG_GLORIA_MULT:LEG_GLORIA_MULT, heraldBonus:heraldBonus, heraldIroncladMult:heraldIroncladMult, heraldLiveArmor:heraldLiveArmor, heraldBarrier:heraldBarrier, heraldBarrierCap:heraldBarrierCap, heraldBarrierFrac:heraldBarrierFrac, heraldBarrierAdd:heraldBarrierAdd, heraldBarrierDmgMult:heraldBarrierDmgMult, heraldBreachFire:heraldBreachFire, heraldRetortDamage:heraldRetortDamage, heraldRetortStrikes:heraldRetortStrikes, heraldBrace:heraldBrace, heraldBraceMs:heraldBraceMs, heraldGuardFire:heraldGuardFire, applyHeraldBraceTick:applyHeraldBraceTick, HERALD_IRONCLAD_PER_1K:HERALD_IRONCLAD_PER_1K, HERALD_IRONCLAD_CAP:HERALD_IRONCLAD_CAP, HERALD_BRACE_MS:HERALD_BRACE_MS, HERALD_BRACE_MS_D2:HERALD_BRACE_MS_D2, HERALD_BARRIER_PER_GUARD:HERALD_BARRIER_PER_GUARD, HERALD_BARRIER_CAP_PCT:HERALD_BARRIER_CAP_PCT, HERALD_BARRIER_CAP_PCT_BB:HERALD_BARRIER_CAP_PCT_BB, HERALD_DEEPWALL_MULT:HERALD_DEEPWALL_MULT, HERALD_RETORT_PCT:HERALD_RETORT_PCT, HERALD_BREACH_PCT:HERALD_BREACH_PCT, HERALD_BREACH_STUN_MS:HERALD_BREACH_STUN_MS, HERALD_BREACH_D4_MULT:HERALD_BREACH_D4_MULT, HERALD_MOMENTUM_PER_10:HERALD_MOMENTUM_PER_10, LEG_WALLBREAKER_PER_10:LEG_WALLBREAKER_PER_10, HERALD_UNBREAKABLE_MULT:HERALD_UNBREAKABLE_MULT, HERALD_FORTRESS_PER_SEC:HERALD_FORTRESS_PER_SEC, HERALD_FORTRESS_CAP:HERALD_FORTRESS_CAP,
