@@ -94,6 +94,77 @@ async function contentBox(buf) {
   return { x0, y0, x1, y1, w: x1 - x0 + 1, h: y1 - y0 + 1 };
 }
 
+// ---- THE TRUE CIRCLE OF A RING WELL --------------------------------------------------------------------
+// The flood-filled hole is NOT the stone circle: ivy overhangs the ring's inner lip, and every leaf BITES the
+// transparent hole. Bites only ever SHRINK the hole -- so the true circle is the hole boundary's outer
+// envelope. Normalising the v0.0.77.4 pair on the hole bbox is what the owner saw as "white bleed at the edge
+// / the right orb looks worse than ever": the right ring carries more overhang, its bbox was bitten harder,
+// and the fitted circles of the two shipped halves came out 147px vs 151px with the right well rect 15px
+// narrower than the real stone circle. Ray-cast from the centroid, keep the far envelope, Kasa-fit, iterate.
+async function fitCircle(buf) {
+  const { data, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const W = info.width, H = info.height, C = info.channels, OP = 40;
+  const A = (x, y) => data[(y * W + x) * C + 3];
+  const out = new Uint8Array(W * H), st = [];
+  for (let x = 0; x < W; x++) st.push(x, 0, x, H - 1);
+  for (let y = 0; y < H; y++) st.push(0, y, W - 1, y);
+  while (st.length) {
+    const y = st.pop(), x = st.pop();
+    if (x < 0 || y < 0 || x >= W || y >= H) continue;
+    const i = y * W + x;
+    if (out[i] || A(x, y) >= OP) continue;
+    out[i] = 1; st.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
+  }
+  const isHole = (x, y) => x >= 0 && y >= 0 && x < W && y < H && !out[y * W + x] && A(x, y) < OP;
+  // centroid of the LARGEST hole
+  const seen = new Uint8Array(W * H); let best = null;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    if (seen[i] || !isHole(x, y)) continue;
+    let sx = 0, sy = 0, n = 0; const s2 = [x, y];
+    while (s2.length) {
+      const cy = s2.pop(), cx = s2.pop();
+      if (!isHole(cx, cy)) continue; const j = cy * W + cx;
+      if (seen[j]) continue; seen[j] = 1; sx += cx; sy += cy; n++;
+      s2.push(cx + 1, cy, cx - 1, cy, cx, cy + 1, cx, cy - 1);
+    }
+    if (!best || n > best.n) best = { n, cx: sx / n, cy: sy / n };
+  }
+  if (!best) return null;
+  const rays = [];
+  for (let k = 0; k < 720; k++) {
+    const th = k / 720 * 2 * Math.PI, dx = Math.cos(th), dy = Math.sin(th);
+    let r = 0;
+    while (isHole(Math.round(best.cx + dx * (r + 1)), Math.round(best.cy + dy * (r + 1)))) r++;
+    rays.push({ th, r });
+  }
+  const kasa = (pts) => {          // least-squares circle through a point set
+    let sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, sxz = 0, syz = 0, sz = 0; const n = pts.length / 2;
+    for (let i = 0; i < pts.length; i += 2) {
+      const x = pts[i], y = pts[i + 1], z = x * x + y * y;
+      sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; sxz += x * z; syz += y * z; sz += z;
+    }
+    const mx = sx / n, my = sy / n;
+    const Mxx = sxx / n - mx * mx, Myy = syy / n - my * my, Mxy = sxy / n - mx * my;
+    const Mxz = sxz / n - mx * sz / n, Myz = syz / n - my * sz / n;
+    const det = Mxx * Myy - Mxy * Mxy;
+    const a = (Mxz * Myy - Myz * Mxy) / (2 * det), b = (Myz * Mxx - Mxz * Mxy) / (2 * det);
+    let r = 0; for (let i = 0; i < pts.length; i += 2) r += Math.hypot(pts[i] - a, pts[i + 1] - b);
+    return { a, b, r: r / n };
+  };
+  let fit = kasa(rays.slice().sort((p, q) => q.r - p.r).slice(0, Math.floor(rays.length * 0.45))
+                     .flatMap(s => [best.cx + Math.cos(s.th) * s.r, best.cy + Math.sin(s.th) * s.r]));
+  for (let it = 0; it < 3; it++) {
+    const pts = [];
+    for (const s of rays) {
+      const x = best.cx + Math.cos(s.th) * s.r, y = best.cy + Math.sin(s.th) * s.r;
+      if (Math.hypot(x - fit.a, y - fit.b) >= fit.r * 0.985) pts.push(x, y);   // envelope only, bites dropped
+    }
+    fit = kasa(pts);
+  }
+  return fit;
+}
+
 // ---- MATCHED MIRROR PAIRS ------------------------------------------------------------------------------
 // A LEFT/RIGHT pair MUST leave here at the same pixel size with its well in mirrored positions. Trimming the
 // two halves independently -- which is what the plain emit() above does -- is what broke the combat stage:
@@ -132,24 +203,27 @@ async function emitPair(nameA, nameB, srcA, srcB, outWidth, opts = {}) {
     if (opts[name] && opts[name].extract) src = await sharp(srcPath).extract(opts[name].extract).png().toBuffer();
     const bb = await contentBox(src);
     const cropped = await sharp(src).extract({ left: bb.x0, top: bb.y0, width: bb.w, height: bb.h }).png().toBuffer();
-    const hole = (await wells(cropped))[0];
-    if (!hole) { console.error(`art-prep-ivy: FAIL ${name} has no interior well to align the pair on`); process.exit(1); }
-    halves.push({ name, srcPath, cropped, bb,
-                  hole: { w: hole.x1 - hole.x0 + 1, h: hole.y1 - hole.y0 + 1,
-                          cx: (hole.x0 + hole.x1) / 2, cy: (hole.y0 + hole.y1) / 2 } });
+    const circ = await fitCircle(cropped);
+    if (!circ) { console.error(`art-prep-ivy: FAIL ${name} has no interior well to align the pair on`); process.exit(1); }
+    halves.push({ name, srcPath, cropped, bb, circ });
   }
-  // 1. one well width for both. Everything after this is INTEGER pixels, measured off the resized buffer that
-  //    is actually composited -- deriving the canvas from float predictions overflowed it by a pixel, which
-  //    sharp rejects outright ("Image to composite must have same dimensions or smaller").
-  const ringWant = (halves[0].hole.w + halves[1].hole.w) / 2;
+  // 1. one well CIRCLE for both -- the fitted stone circle, not the ivy-bitten hole bbox (see fitCircle).
+  //    A circle stays a circle under uniform scale, so normalising the diameter makes the two wells agree in
+  //    BOTH axes at once and the shared CSS rule becomes exact rather than a mean of two mismatches.
+  //    Everything after this is INTEGER pixels, measured off the resized buffer that is actually composited --
+  //    deriving the canvas from float predictions overflowed it by a pixel, which sharp rejects outright
+  //    ("Image to composite must have same dimensions or smaller").
+  const ringWant = halves[0].circ.r + halves[1].circ.r;   // = mean diameter
   for (const h of halves) {
-    h.scaled = await sharp(h.cropped).resize({ width: Math.round(h.bb.w * (ringWant / h.hole.w)) }).png().toBuffer();
+    const f = ringWant / (2 * h.circ.r);
+    h.scaled = await sharp(h.cropped).resize({ width: Math.round(h.bb.w * f) }).png().toBuffer();
     const m = await sharp(h.scaled).metadata();
     h.sw = m.width; h.sh = m.height;
-    h.rx = Math.round(h.hole.cx * h.sw / h.bb.w);   // well centre in the resized buffer
-    h.ry = Math.round(h.hole.cy * h.sh / h.bb.h);
-    h.rw = h.hole.w * h.sw / h.bb.w;
-    h.rh = h.hole.h * h.sh / h.bb.h;
+    const fx = h.sw / h.bb.w, fy = h.sh / h.bb.h;   // the realised factors, post-rounding
+    h.rx = Math.round(h.circ.a * fx);               // fitted centre in the resized buffer
+    h.ry = Math.round(h.circ.b * fy);
+    h.rw = 2 * h.circ.r * fx;
+    h.rh = 2 * h.circ.r * fy;
   }
   // 2. the union canvas. Vertically it is measured outward from the well centre, so both wells land on one
   //    line: taking the max reach above and below across both halves fits either of them by construction.
@@ -262,6 +336,24 @@ if (existsSync(SHEET)) {
     ivy_ring_RIGHT: { extract: { left: 789, top: 39, width: 429, height: 417 } },
   });
   await emit("ivy_stretch",    SHEET, { extract: { left: 33,  top: 530, width: 1186, height: 685 }, width: 900 });
+}
+
+// ---- the ivy COLUMN: the painted rail/content seam (v0.0.77.8) ----------------------------------------
+// Replaces the hand-drawn SVG vine down the rail seam. The art is a stone post wrapped in ivy with a square
+// finial at each end (content 260x2035 in a 760x2069 canvas). It renders at 64 CSS px wide but must fit ANY
+// rail height, so it ships sized for 2x DPI (128px wide) and the CSS uses it as a border-image: the finials
+// are the top/bottom slices (170 source px each, ~84px emitted) and the ivy shaft is the middle, repeated
+// with `round` so a whole number of shaft segments always lands between the two finials with no seam cut
+// mid-leaf. Slices are printed below so the CSS numbers are traceable to a measurement, not a guess.
+{
+  const COLSRC = "art/src/1785691240905.png";
+  if (existsSync(COLSRC)) {
+    await emit("ivy_column", COLSRC, { width: 128, noWells: true });
+    const m = await sharp("art/ivy_column.png").metadata();
+    const capSrc = 170;                       // finial + its first leaves, measured off the row profile
+    const cap = Math.round(capSrc * m.width / 260);
+    console.log(`   column caps: slice ${cap} 0 ${cap} 0   (finials; middle rounds vertically)`);
+  }
 }
 
 // The marble field is a TILE, so it must not be trimmed (nothing transparent) and wants to stay modest --

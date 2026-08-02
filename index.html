@@ -180,9 +180,18 @@
   .ff-area-btn .ico svg{width:16px;height:16px;}
   .ff-rail-settings svg{width:15px;height:15px;}
   .ff-mid{flex:1;display:flex;min-height:0;position:relative;}
-  /* Hand-drawn ivy draped down the rail/content seam. Inline SVG <pattern> so it stays crisp at any
-     zoom/DPI and tiles seamlessly to any rail height. Sits above both columns; never eats clicks. */
-  .ff-railvine{position:absolute;top:0;left:226px;width:64px;height:100%;z-index:6;pointer-events:none;overflow:visible;filter:drop-shadow(0 3px 5px rgba(12,20,8,.28));}
+  /* The painted ivy column down the rail/content seam (v0.0.77.8, replacing the hand-drawn SVG vine).
+     A BORDER-IMAGE, because the piece must fit ANY rail height: the two square finials are the top/bottom
+     slices (84px in the 2x file -> 42px rendered at this 64px width) and the ivy shaft is the middle,
+     repeated with `round` so a whole number of shaft segments lands between the finials -- never a leaf cut
+     mid-tile. Slice numbers come from scripts/art-prep-ivy.mjs, which prints them beside the emit.
+     Sits above both columns; never eats clicks. */
+  .ff-railvine{position:absolute;top:0;left:226px;width:64px;height:100%;z-index:6;pointer-events:none;
+    border-style:solid;border-color:transparent;border-width:42px 0;
+    /* `fill` is load-bearing: the ivy shaft IS the middle region, and without the keyword the middle does
+       not paint at all -- the first render showed two orphaned finials and nothing between them. */
+    border-image:url('art/ivy_column.png') 84 0 84 0 fill stretch round;
+    filter:drop-shadow(0 3px 5px rgba(12,20,8,.28));}
   .ff-rail{
     position:relative;width:260px;flex-shrink:0;padding:12px 12px;display:flex;flex-direction:column;overflow-y:auto;
     /* Subtle black-slate brick wall (running bond), drawn as an inline SVG tile: dark slate
@@ -1135,10 +1144,10 @@
      MEASURED WELLS (percentages of each trimmed asset; interior holes found by flood-filling the outside):
        ivy_stretch      900x520   rect   left 3.56%  top  7.12%  92.89% x 85.38%   slice 37 32 39 32
        ivy_bar          760x129   rect   left 14.74% top 25.58%  70.13% x 34.11%   slice 33 115 52 112
-       ivy_plinth_LEFT  900x509   circle left 59.53% top 18.61%  31.74% x 59.14%
-       ivy_plinth_RIGHT 900x509   circle left  6.74% top 18.61%  31.74% x 59.14%
-       ivy_ring_LEFT    420x402   circle left 10.30% top  8.91%  52.17% x 54.43%
-       ivy_ring_RIGHT   420x402   circle left 37.53% top  8.91%  52.17% x 54.43%
+       ivy_plinth_LEFT  900x506   circle centre(679.0,245.3) r=146.5  (fitted; CSS rect oversized to r+4)
+       ivy_plinth_RIGHT 900x506   circle centre(197.7,244.9) r=146.5  (fitted; CSS rect oversized to r+4)
+       ivy_ring_LEFT    420x400   circle left 10.44% top  8.81%  51.72% x 54.32%
+       ivy_ring_RIGHT   420x400   circle left 37.84% top  8.81%  51.72% x 54.32%
        ivy_portrait     320x314   circle left 14.06% top 11.46%  67.50% x 70.06%
        ivy_field        700x249   seamless marble tile, veiled 55% toward white
 
@@ -1320,9 +1329,9 @@
   .ar2.ivy .ar2-tops{ padding:0 var(--ivy-inset); }
   .ar2.ivy .ar2-port .pf{ filter:none; }
   /* Shared well, mirrored left -- the rings are an emitPair() pair too (they were 420x401 / 420x408 apart). */
-  .ar2.ivy .ar2-port .pin{ top:8.91%; width:52.17%; height:54.43%; background:var(--ivy-well); }
-  .ar2.ivy .ar2-side:not(.foe) .ar2-port .pin{ left:10.30%; }
-  .ar2.ivy .ar2-side.foe      .ar2-port .pin{ left:37.53%; }
+  .ar2.ivy .ar2-port .pin{ top:8.81%; width:51.72%; height:54.32%; background:var(--ivy-well); }
+  .ar2.ivy .ar2-side:not(.foe) .ar2-port .pin{ left:10.44%; }
+  .ar2.ivy .ar2-side.foe      .ar2-port .pin{ left:37.84%; }
 
   /* ---- THE ORBS: the carved plinths, centred ----
    The plinth pair butts together at the centre line so the two carvings read as one bench and the fighters
@@ -1350,12 +1359,22 @@
   .ar2.ivy .ar2-orb{ position:relative; bottom:auto; left:auto; width:100%; aspect-ratio:auto; }
   .ar2.ivy .ar2-orb .holder{ position:relative; inset:auto; display:block; width:100%; height:auto;
                            filter:none; }
+  /* The rect is the FITTED STONE CIRCLE, OVERSIZED BY 4px (source scale, r 146.5 -> 150.5), and both facts
+   matter. Fitted: the flood-filled hole is bitten by every ivy leaf overhanging the ring's lip, so its bbox
+   under-measured the right well by 15px and the pair was normalised on the wrong feature -- the white
+   crescent the owner reported IS that error. The prep script now ray-casts the hole's outer envelope and
+   fits the true circle, so the two wells agree exactly. Oversized: UI_orb_transparent.png bakes an OPAQUE
+   near-white ring at its very edge (rgba(253,253,253,255) at r=100%), so a box that exactly matches the
+   stone leaves that rim flickering white on the lip at every sub-pixel rounding. Four source px push glass
+   and liquid under the stone annulus (~30px thick), which paints above them (.holder z4) and owns the edge.
+   Because the well is a true circle the box is SQUARE at any render size, so .liq's clip circle inscribes
+   it exactly. */
   .ar2.ivy .ar2-orb .liq,.ar2.ivy .ar2-orb .glass,
-  .ar2.ivy .ar2-orb .num,.ar2.ivy .ar2-orb .shield{ top:18.61%; width:31.74%; height:59.14%; }
+  .ar2.ivy .ar2-orb .num,.ar2.ivy .ar2-orb .shield{ top:18.70%; width:33.44%; height:59.49%; }
   .ar2.ivy .ar2-orb.me  .liq,.ar2.ivy .ar2-orb.me  .glass,
-  .ar2.ivy .ar2-orb.me  .num,.ar2.ivy .ar2-orb.me  .shield{ left:59.53%; }
+  .ar2.ivy .ar2-orb.me  .num,.ar2.ivy .ar2-orb.me  .shield{ left:58.72%; }
   .ar2.ivy .ar2-orb.foe .liq,.ar2.ivy .ar2-orb.foe .glass,
-  .ar2.ivy .ar2-orb.foe .num,.ar2.ivy .ar2-orb.foe .shield{ left:6.74%; }
+  .ar2.ivy .ar2-orb.foe .num,.ar2.ivy .ar2-orb.foe .shield{ left:5.24%; }
   .ar2.ivy .ar2-orb .glass{ opacity:.92; }
 
   /* ---- companions ---- */
@@ -2427,61 +2446,7 @@
   <div class="ff-ticker" id="ffTicker"><span class="ff-ticker-ico" aria-hidden="true">💡</span><div class="ff-ticker-view"><span class="ff-ticker-text" id="ffTickerText"></span></div></div>
   <div class="ff-mid">
     <nav class="ff-rail" id="ffRail"></nav>
-    <svg class="ff-railvine" id="ffRailVine" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <defs>
-        <linearGradient id="ivLeaf" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#8ec155"/>
-          <stop offset=".5" stop-color="#4d7a28"/>
-          <stop offset="1" stop-color="#254318"/>
-        </linearGradient>
-        <radialGradient id="ivHi" cx=".4" cy=".28" r=".72">
-          <stop offset="0" stop-color="#cbe793" stop-opacity=".9"/>
-          <stop offset="1" stop-color="#cbe793" stop-opacity="0"/>
-        </radialGradient>
-        <linearGradient id="ivStem" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stop-color="#6f5329"/>
-          <stop offset=".5" stop-color="#4a3a1e"/>
-          <stop offset="1" stop-color="#31230f"/>
-        </linearGradient>
-        <filter id="ivDs" x="-40%" y="-40%" width="180%" height="180%">
-          <feDropShadow dx="1.3" dy="2.2" stdDeviation="1.2" flood-color="#0d1a07" flood-opacity=".5"/>
-        </filter>
-        <!-- One classic 5-lobed ivy leaf: petiole, shaded body, glossy highlight, light veins.
-             Fixed top-left light source (gradient + highlight) so every placed copy reads consistently. -->
-        <g id="ivLf">
-          <path d="M-1.5,-28 C-1,-35 -.6,-40 0,-44 C.6,-40 1,-35 1.5,-28 Z" fill="#493620"/>
-          <path d="M0,-30 C4,-18 8,-15 16,-16 C26,-17 30,-9 25,-1 C33,-3 36,4 30,11 C24,18 14,16 9,22 C5,27 2,31 0,38 C-2,31 -5,27 -9,22 C-14,16 -24,18 -30,11 C-36,4 -33,-3 -25,-1 C-30,-9 -26,-17 -16,-16 C-8,-15 -4,-18 0,-30 Z" fill="url(#ivLeaf)"/>
-          <ellipse cx="-2.5" cy="-7" rx="10.5" ry="13.5" fill="url(#ivHi)"/>
-          <path d="M0,-27 Q2,6 0,35 M0,-4 Q9,-11 18,-14 M0,-4 Q-9,-11 -18,-14 M1,9 Q14,7 27,10 M-1,9 Q-14,7 -27,10" fill="none" stroke="#c9e692" stroke-width="1.1" stroke-opacity=".38" stroke-linecap="round"/>
-        </g>
-        <!-- One repeating vine segment (64 x 240): woody stem crossing top&bottom at the same x with a
-             matching tangent, so the pattern tiles with no visible seam; leaves + tendrils hang off it. -->
-        <g id="ivUnit">
-          <path d="M30,-8 C39,26 20,44 30,74 C40,104 20,124 30,156 C40,190 21,208 30,248" fill="none" stroke="#2a1e0e" stroke-width="6.5" stroke-linecap="round"/>
-          <path d="M30,-8 C39,26 20,44 30,74 C40,104 20,124 30,156 C40,190 21,208 30,248" fill="none" stroke="url(#ivStem)" stroke-width="3.6" stroke-linecap="round"/>
-          <path d="M30,-8 C39,26 20,44 30,74 C40,104 20,124 30,156 C40,190 21,208 30,248" fill="none" stroke="#9c774a" stroke-width="1" stroke-opacity=".55" stroke-linecap="round"/>
-          <path d="M35,58 q11,3 9,12 q-2,7 -9,4.5" fill="none" stroke="#6a5028" stroke-width="1.4" stroke-linecap="round"/>
-          <path d="M24,140 q-11,3 -9,12 q2,7 9,4.5" fill="none" stroke="#6a5028" stroke-width="1.4" stroke-linecap="round"/>
-          <g filter="url(#ivDs)">
-            <use href="#ivLf" transform="translate(34,20) rotate(46) scale(.82)"/>
-            <use href="#ivLf" transform="translate(26,52) rotate(-128) scale(.66)"/>
-            <use href="#ivLf" transform="translate(35,88) rotate(112) scale(.95)"/>
-            <use href="#ivLf" transform="translate(25,120) rotate(-56) scale(.78)"/>
-            <use href="#ivLf" transform="translate(36,152) rotate(150) scale(.72)"/>
-            <use href="#ivLf" transform="translate(24,186) rotate(-118) scale(.9)"/>
-            <use href="#ivLf" transform="translate(34,214) rotate(58) scale(.8)"/>
-            <use href="#ivLf" transform="translate(40,40) rotate(18) scale(.4)"/>
-            <use href="#ivLf" transform="translate(19,104) rotate(202) scale(.42)"/>
-            <use href="#ivLf" transform="translate(41,170) rotate(28) scale(.38)"/>
-            <use href="#ivLf" transform="translate(20,232) rotate(-150) scale(.5)"/>
-          </g>
-        </g>
-        <pattern id="ivPat" x="0" y="0" width="64" height="240" patternUnits="userSpaceOnUse" overflow="visible">
-          <use href="#ivUnit"/>
-        </pattern>
-      </defs>
-      <rect width="64" height="100%" fill="url(#ivPat)"/>
-    </svg>
+    <div class="ff-railvine" id="ffRailVine" aria-hidden="true"></div>
     <div class="ff-main" id="ffMain">
     <div class="topbar" style="position:absolute;left:-9999px;width:0;height:0;overflow:hidden;">
       <div class="brand"><span class="brand-word">Fantasy Frontiers<small>An Idle Frontier to Gather, Craft, Build &amp; Battle</small></span></div>
@@ -26142,6 +26107,11 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 2', heading:'The orbs fit their rings, and the ivy climbs a real column', items:[
+      'Reported: white bleeding at the edge of the HP orbs, and the foe&rsquo;s orb sitting visibly wrong in its ring. The cause was subtle: the ivy carved over each ring&rsquo;s lip <b>bites into the opening</b>, and the code that measured the openings was measuring the bitten shape &mdash; the foe&rsquo;s ring carries more ivy, so its orb came out 15px narrower than the real stone circle. The build now fits the <b>true circle</b> of each ring and both orbs land dead-centre, matched to the pixel.',
+      'The glass itself also gets a hair larger, on purpose: its outermost edge is a baked-in white rim, and at exactly ring size that rim flickered white against the stone lip. It now tucks <b>under</b> the stone, so the stone owns the edge at every zoom.',
+      'The ivy down the left rail is no longer a drawing &mdash; it is the <b>painted ivy column</b> from the same commissioned set as the arena, stone finials top and bottom, and it fits any window height without ever cutting a leaf in half.'
+    ]},
     { v:'0.0.77', date:'Aug 2', heading:'The foe\u2019s weaknesses sit with the foe', items:[
       'The enemy&rsquo;s element, matchup, dodge and threat line moved from below the combat feed to <b>directly under the enemy&rsquo;s own swing bars</b> &mdash; flush against the bottom bar, aligned to its right edge, and locked to that stack whether the foe has one bar or two. Reading what a foe is weak to no longer means looking away from the foe.',
       'On a narrow screen the line still stretches across the full arena rather than wrapping into a tall stack of badges inside the foe&rsquo;s half &mdash; and it now decides that by measuring its own column rather than the window, so it also behaves in a squeezed desktop window where the sidebar eats the width.',
@@ -38371,7 +38341,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.6';
+  var GAME_VERSION = '0.0.77.7';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
