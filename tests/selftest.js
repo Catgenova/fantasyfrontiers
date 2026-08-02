@@ -5406,6 +5406,29 @@
     eq(rk.length, 4, 'there are four per-band rarity toggles');
     ok(rk.every(function(t){ return t.cat==='qol'; }), 'the rarity toggles are in the Quality of Life section');
     ok(FF.SETTINGS_TOGGLES.some(function(t){ return t.cat==='interface'; }) && FF.SETTINGS_TOGGLES.some(function(t){ return t.cat==='qol'; }), 'toggles are split into Interface and QoL categories');
+
+    // ---- COMPACT DESKTOP: the shell's 0.75 scale, and the two gates that hold it off ----
+    // uiScaleFor is pure so the gating is testable without a window. The gates are not decoration: element
+    // `zoom` does not re-evaluate media queries, so scaling a window narrower than the layout breakpoints
+    // would lay the game out ~1.33x wider than the CSS and isMobileView() believe it is.
+    ok(FF.SETTINGS_TOGGLES.some(function(t){ return t.key==='compactDesktop' && t.cat==='interface'; }),
+       'Compact layout (desktop) is an Interface toggle');
+    eq(FF.UI_SCALE_DENSE, 0.75, 'the dense desktop scale is 0.75 -- the zoom the game is played at');
+    eq(FF.uiScaleFor(1080, 1528, true), 0.75, 'a desktop window scales to 0.75');
+    eq(FF.uiScaleFor(1080, 1528, false), 1, 'the setting off leaves the shell at full size');
+    eq(FF.uiScaleFor(390, 844, true), 1, 'a phone never double-scales -- its viewport meta owns density');
+    eq(FF.uiScaleFor(540, 1200, true), 1, 'the phone gate is on the DEVICE dimension, not the window');
+    eq(FF.uiScaleFor(1080, FF.UI_SCALE_MIN_W - 1, true), 1, 'one pixel under the floor stays at full size');
+    eq(FF.uiScaleFor(1080, FF.UI_SCALE_MIN_W, true), 0.75, 'exactly at the floor it scales');
+    ok(FF.UI_SCALE_MIN_W > 860 && FF.UI_SCALE_MIN_W > 820,
+       'the floor clears both the rail/dock (860px) and arena (820px) breakpoints');
+    // A save with no compactDesktop key must read as ON, not off -- this is the exact expression
+    // applyUiScalePref uses, so an accidental `=== true` there would fail here.
+    var _blank = {};
+    eq(FF.uiScaleFor(1080, 1528, _blank.compactDesktop !== false), 0.75,
+       'a save predating the setting is treated as on, not off');
+    eq(FF.uiScaleFor(1080, 1528, ({ compactDesktop:false }).compactDesktop !== false), 1,
+       'an explicit false is honoured');
   });
 
   // ---- D1 legendary gear COMBAT effects, Batch 4: the four Pierce weapons -----------------------------

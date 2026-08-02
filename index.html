@@ -14,6 +14,13 @@
       var dev = Math.min(screen.width || 0, screen.height || 0) || window.innerWidth || 0;
       if(dev > 0 && dev <= 540){
         document.getElementById('ffViewport').setAttribute('content', 'width=780');
+      } else if(window.innerWidth >= 1000){
+        /* The desktop counterpart of the line above: render the shell at 75% so a whole screen of the game
+           fits without the player reaching for the browser's own zoom. Desktop browsers ignore the viewport
+           meta entirely, so this side has to be a CSS scale (see #app{zoom}). Set here, pre-load, for the same
+           reason the phone default is: applyUiScalePref() cannot run until the save is parsed, and doing it
+           later means a visible jump. A player who has turned the setting off gets one frame at 0.75. */
+        document.documentElement.style.setProperty('--ui-scale', '0.75');
       }
     } catch(e){}
   })();
@@ -94,6 +101,16 @@
   }
   /* ===== Ivy Castle shell: grass frame -> top bar / rail / content / dock ===== */
   #app{
+    /* COMPACT DESKTOP: the whole shell renders at --ui-scale (0.75 by default on a desktop-width window).
+       `zoom` and not `transform:scale` on purpose -- zoom is a LAYOUT scale, so the subtree simply gets more
+       CSS pixels to lay out in and text, borders and art re-rasterise crisply at the smaller size. A transform
+       would rasterise the app at full size and then resample it, softening every canvas on the page.
+       No width/height compensation is needed: measured in Chromium, #app's painted rect is identical with and
+       without the zoom ([8,8,1512,796] either way) because `width:auto` and `height:100%` resolve in the
+       zoomed pixel space. Do NOT "fix" this by adding calc(100%/scale) -- that overflows the window.
+       Note the one difference from real browser zoom: media queries still evaluate at the TRUE viewport width,
+       so uiScaleFor() keeps the scale off below 1000px, where the layout breakpoints live. */
+    zoom:var(--ui-scale, 1);
     position:relative;height:100%;display:flex;flex-direction:column;
     border-radius:14px;border:2px solid var(--ink);overflow:hidden;
     /* MARBLE, on every screen (v0.0.77.2). Was a textured parchment tan; the shell surface is now the same
@@ -14155,7 +14172,7 @@
       potionCharges: 0,
       popupQueue: [],
       popupBatchTotal: 0,
-      settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true, chatFilter:true, showEstateFabs:true, compactMobile:true, autoOpenCaches:false, autoOpenChests:false, autoHarvest:false, autoFertilize:false, autoPlant:false, advancedCombatLog:false, plantFiber:true, plantGrain:true, plantHerb:true, plantCustom:false, plantSeedDisabled:{}, enhanceUseBarrier:true, fertilizeEqualPlus:false },
+      settings: { popupRare:true, popupSupreme:true, popupFantastic:true, popupFamiliar:true, chatFlash:true, chatFilter:true, showEstateFabs:true, compactMobile:true, compactDesktop:true, autoOpenCaches:false, autoOpenChests:false, autoHarvest:false, autoFertilize:false, autoPlant:false, advancedCombatLog:false, plantFiber:true, plantGrain:true, plantHerb:true, plantCustom:false, plantSeedDisabled:{}, enhanceUseBarrier:true, fertilizeEqualPlus:false },
       trackedSkills: ['logic'], // new players start tracking Logic so the top-bar tracker isn't empty
 
       peons: [],
@@ -19240,6 +19257,7 @@
           if(typeof state.settings.chatFilter !== 'boolean') state.settings.chatFilter = true; // profanity masking on by default; players may opt out
           if(typeof state.settings.showEstateFabs !== 'boolean') state.settings.showEstateFabs = true; // Estate/Guild-Estate quick-jump FABs on by default
           if(typeof state.settings.compactMobile !== 'boolean') state.settings.compactMobile = true; // existing players keep the new compact default
+          if(typeof state.settings.compactDesktop !== 'boolean') state.settings.compactDesktop = true; // ditto for the desktop scale
           ['autoOpenCaches','autoOpenChests','autoHarvest','autoFertilize','autoPlant'].forEach(function(k){ if(typeof state.settings[k] !== 'boolean') state.settings[k] = false; }); // opt-in automation, off by default
           ['plantFiber','plantGrain','plantHerb'].forEach(function(k){ if(typeof state.settings[k] !== 'boolean') state.settings[k] = true; }); // auto-plant crop-type filters: all sown by default
           if(typeof state.settings.plantCustom !== 'boolean') state.settings.plantCustom = false; // per-seed override, off by default
@@ -19566,6 +19584,37 @@
       meta.setAttribute('content', (dev > 0 && dev <= 540 && compact) ? 'width=780' : 'width=device-width, initial-scale=1.0');
     } catch(e){}
   }
+  // ---- COMPACT DESKTOP: the same idea as Compact layout (mobile), for the other end of the range ----
+  // Phones get their density from the viewport meta above; desktop browsers ignore that outright, so the
+  // desktop side is a CSS scale on #app. 0.75 is the default because it is the zoom the game is actually
+  // played at -- a whole screen of it fits without the player reaching for the browser's own control.
+  //
+  // Kept a PURE function so the gating is testable without a browser window. Two gates, both deliberate:
+  //   * phones (device min-dimension <= 540) are excluded -- they already scale via the viewport meta, and
+  //     stacking a zoom on top of that would shrink the game twice.
+  //   * windows under UI_SCALE_MIN_W stay at 1. Element `zoom` does NOT re-evaluate media queries (unlike
+  //     real browser zoom), so a scaled narrow window would lay out ~1.33x wider than the breakpoints think
+  //     it is -- the rail/dock switch at 860px and the arena's at 820px. Holding the scale off below 1000
+  //     keeps the CSS breakpoints, isMobileView() and the real layout width in agreement at every size.
+  var UI_SCALE_DENSE = 0.75;
+  var UI_SCALE_MIN_W = 1000;
+  function uiScaleFor(deviceMinPx, windowWidthPx, on){
+    if(!on) return 1;
+    if(deviceMinPx > 0 && deviceMinPx <= 540) return 1;     // phone: the viewport meta owns density
+    if(!(windowWidthPx >= UI_SCALE_MIN_W)) return 1;         // too narrow to scale without desyncing the breakpoints
+    return UI_SCALE_DENSE;
+  }
+  function applyUiScalePref(){
+    try {
+      var dev = Math.min(screen.width || 0, screen.height || 0) || window.innerWidth || 0;
+      var on = !state || !state.settings || state.settings.compactDesktop !== false;  // default on
+      var s = uiScaleFor(dev, window.innerWidth || 0, on);
+      document.documentElement.style.setProperty('--ui-scale', String(s));
+    } catch(e){}
+  }
+  // Re-evaluate on resize: dragging a window under UI_SCALE_MIN_W has to drop back to 1 or the layout and the
+  // breakpoints disagree. Cheap enough to run unthrottled -- it writes one custom property.
+  try { window.addEventListener('resize', applyUiScalePref); } catch(e){}
   // Pre-alpha disclaimer: shown in red on the ticker with a much higher chance than any single tip.
   var TICKER_DISCLAIMER = '<span style="color:#ff6b6b;font-weight:700">The current state of the game is Active Development Pre-Alpha. Please expect bugs, frequent changes, and future progress wipes. Thank you and excited for your feedback!</span>';
   var TICKER_DISCLAIMER_CHANCE = 0.30; // ~30% of marquee cycles land on the disclaimer
@@ -25781,6 +25830,7 @@
     {key:'chatFilter', cat:'interface', label:'Chat profanity filter', desc:'Mask profanity in chat messages. Turn off to read chat unfiltered (links are always removed).'},
     {key:'showEstateFabs', cat:'interface', label:'Estate quick-jump buttons', desc:'Show floating buttons that jump to your Estate or Guild Estate whenever you are not already there or busy building on it.'},
     {key:'compactMobile', cat:'interface', label:'Compact layout (mobile)', desc:'Zoom out to the denser multi-column layout on phones (off = large single-column). No effect on tablets or desktop.'},
+    {key:'compactDesktop', cat:'interface', label:'Compact layout (desktop)', desc:'Render the game at 75% on a desktop-width window, so a whole screen of it fits without using your browser\u2019s zoom. Off = full size. No effect on phones or on windows narrower than 1000px.'},
     {key:'autoOpenCaches', cat:'qol', label:'Auto-open Critter Caches', desc:'Automatically open Critter Caches as they drop (no popup).'},
     {key:'autoOpenChests', cat:'qol', label:'Auto-open Treasure Chests', desc:'Automatically open Treasure Chests as they drop (no popup).'},
     {key:'autoHarvest', cat:'qol', label:'Auto-harvest crops', desc:'Automatically harvest crops from your fields the moment they are ready.'},
@@ -26040,6 +26090,11 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 2', heading:'Compact desktop: the game now opens at the size it is played at', items:[
+      'The game <b>renders at 75% on desktop by default</b>, so a whole screen of it fits without reaching for your browser&rsquo;s zoom. The rail, the top bar and the arena all come down together and roughly twice as much of a page is visible before you scroll.',
+      'This is the desktop half of a control phones have had for a while. <b>Settings &rarr; Interface &rarr; Compact layout (desktop)</b> turns it off for full size, exactly like <b>Compact layout (mobile)</b> does on a phone.',
+      'It stays off on phones, which already scale their own way, and on desktop windows narrower than 1000px, where the layout is already switching to its compact breakpoints.'
+    ]},
     { v:'0.0.77', date:'Aug 2', heading:'The plinths: one bench again, sitting still', items:[
       'Reported: the orb holders were the wrong size, they did not sit flush on the combat feed, and they wobbled up and down the screen while scrolling. Three separate causes, all measured.',
       'The <b>two halves of the bench are now the same size</b>, so <b>both HP orbs match</b>. They did not: the two carvings were conditioned separately, and because they are hand-drawn rather than exact mirrors your foe&rsquo;s ring came out nearly a tenth larger than yours. At the same width that made the foe&rsquo;s half taller, its orb bigger, and its orb centre sit higher than your own. The pair is now normalised on the ring itself and laid on one canvas, and the build refuses to publish a mismatched pair again.',
@@ -37411,6 +37466,7 @@
       var setKey = btn.getAttribute('data-key');
       state.settings[setKey] = !state.settings[setKey];
       if(setKey==='compactMobile') applyMobileLayoutPref(); // re-scale the viewport immediately
+      if(setKey==='compactDesktop') applyUiScalePref();   // re-scale the shell immediately
       if(setKey==='chatFilter'){ _chatDockSig = _chatDrawerSig = _chatExpandSig = null; } // force the chat panels to re-censor visible messages now
     },
     // Auto-plant seed filter (Farming screen). These persist immediately so the choice survives a reload.
@@ -38258,7 +38314,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.4';
+  var GAME_VERSION = '0.0.77.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38325,6 +38381,7 @@
     removeLoginGate();
     await initGame();                 // readSave() now fetches this account's save from the backend
     applyMobileLayoutPref();          // reconcile the mobile viewport with the loaded Compact-layout preference
+    applyUiScalePref();               // and the desktop shell scale with its own
     if(!gameStarted){
       gameStarted = true;
       lastTick = Date.now();
@@ -38516,7 +38573,7 @@
       RG_BONEVOLLEY_CHANCE:RG_BONEVOLLEY_CHANCE, RG_CRIT_MULT:RG_CRIT_MULT, RG_SWING_MULT:RG_SWING_MULT, legendaryCritChance:legendaryCritChance, legFamiliarHasteMult:legFamiliarHasteMult, criticalEyeCritChance:criticalEyeCritChance, applyPyromancerBurnTick:applyPyromancerBurnTick, MAX_CRIT_CHANCE:MAX_CRIT_CHANCE, FROST_CHILL_MAX_STACKS:FROST_CHILL_MAX_STACKS, PYRO_BURN_MAX_STACKS:PYRO_BURN_MAX_STACKS, LEG_SUNDER_MS:LEG_SUNDER_MS, legRiposteArmed:legRiposteArmed, legRiposteConsume:legRiposteConsume, legImmunizeIncomingMult:legImmunizeIncomingMult, legAttackSpeedMult:legAttackSpeedMult, LEG_RIPOSTE_MULT:LEG_RIPOSTE_MULT, LEG_FRENZIED_MS:LEG_FRENZIED_MS, legBurnNeverExpires:legBurnNeverExpires, legNightshroudIncomingMult:legNightshroudIncomingMult, legNightshroudActive:legNightshroudActive, LEG_NIGHTSHROUD_MS:LEG_NIGHTSHROUD_MS, defeatMonster:defeatMonster, floatKillLoot:floatKillLoot, setOverlayHtml:setOverlayHtml, _setOfflineSummary:function(v){ offlineSummaryData = v; }, _combatLog:function(){ return combatLog; },
       MONSTER_SPECIALS:MONSTER_SPECIALS, monsterSpecialFire:monsterSpecialFire, monsterSpecialDesc:monsterSpecialDesc, clearEnemySpecialState:clearEnemySpecialState, playerDotDps:playerDotDps, playerDotTick:playerDotTick, playerDotWord:playerDotWord, playerBleedActive:playerBleedActive, playerPoisonActive:playerPoisonActive, playerFeared:playerFeared, enemyWeakenMult:enemyWeakenMult, playerShredMult:playerShredMult, enemyHardenMult:enemyHardenMult,
       playerBurnActive:playerBurnActive, playerChillSlowMult:playerChillSlowMult, playerBlindMult:playerBlindMult, enemyVeilHitMult:enemyVeilHitMult, purgePlayerBuff:purgePlayerBuff,
-      enemyFrenzyFactor:enemyFrenzyFactor, enemyFrenzySpeedMult:enemyFrenzySpeedMult, enemyFrenzyDmgMult:enemyFrenzyDmgMult, enemySiphonActive:enemySiphonActive, enemyRallyDmgMult:enemyRallyDmgMult, enemyMightDmgMult:enemyMightDmgMult, maxHp:maxHp, getLevel:getLevel, getLevelExt:getLevelExt, skillLevel:skillLevel, masteryLevel:masteryLevel, classMasteryLevel:classMasteryLevel, weaponMasteryLevel:weaponMasteryLevel, physiqueMasteryTotal:physiqueMasteryTotal, armorMasteryTotal:armorMasteryTotal, armorMasteryIncomingMult:armorMasteryIncomingMult, CLASS_MASTERY_HP:CLASS_MASTERY_HP, CLASS_MASTERY_DMG:CLASS_MASTERY_DMG, WEAPON_MASTERY_DMG:WEAPON_MASTERY_DMG, ARMOR_MASTERY_DR:ARMOR_MASTERY_DR, ARMOR_MASTERY_DR_CAP:ARMOR_MASTERY_DR_CAP, PHYSIQUE_MASTERY_HP:PHYSIQUE_MASTERY_HP, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, PHYSIQUE_XP_FLOOR_EXT:PHYSIQUE_XP_FLOOR_EXT, applyOfflineProgress:applyOfflineProgress, applyMobileLayoutPref:applyMobileLayoutPref, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, templarBeaconPotencyMult:templarBeaconPotencyMult, templarIncomingDmgMult:templarIncomingDmgMult, templarVerse:templarVerse, templarVerseMs:templarVerseMs, templarVersePower:templarVersePower, templarVerseAdvance:templarVerseAdvance, templarGloria:templarGloria, applyTemplarLitanyTick:applyTemplarLitanyTick, templarDoxologyMult:templarDoxologyMult, templarDoxologyCap:templarDoxologyCap, templarBonus:templarBonus, TPL_VERSES:TPL_VERSES, TPL_VERSE_MS:TPL_VERSE_MS, TPL_VERSE_MS_D1:TPL_VERSE_MS_D1, TPL_MIGHT_PCT:TPL_MIGHT_PCT, TPL_HASTE_PCT:TPL_HASTE_PCT, TPL_ZEAL_CRITDMG:TPL_ZEAL_CRITDMG, TPL_AEGIS_PCT_PER_SEC:TPL_AEGIS_PCT_PER_SEC, TPL_AEGIS_CAP_PCT:TPL_AEGIS_CAP_PCT, TPL_FERVOR_EXT_MS:TPL_FERVOR_EXT_MS, TPL_FERVOR_EXT_CAP:TPL_FERVOR_EXT_CAP, TPL_DOXOLOGY_PER:TPL_DOXOLOGY_PER, TPL_DOXOLOGY_CAP:TPL_DOXOLOGY_CAP, TPL_DOXOLOGY_CAP_SUNSCALE:TPL_DOXOLOGY_CAP_SUNSCALE, TPL_GLORIA_PCT:TPL_GLORIA_PCT, TPL_EMPOWERED_MULT:TPL_EMPOWERED_MULT, TPL_VERSE_POWER_D2:TPL_VERSE_POWER_D2, LEG_SUNBRAND_END_PCT:LEG_SUNBRAND_END_PCT, LEG_GLORIA_MULT:LEG_GLORIA_MULT, heraldBonus:heraldBonus, heraldIroncladMult:heraldIroncladMult, heraldLiveArmor:heraldLiveArmor, heraldBarrier:heraldBarrier, heraldBarrierCap:heraldBarrierCap, heraldBarrierFrac:heraldBarrierFrac, heraldBarrierAdd:heraldBarrierAdd, heraldBarrierDmgMult:heraldBarrierDmgMult, heraldBreachFire:heraldBreachFire, heraldRetortDamage:heraldRetortDamage, heraldRetortStrikes:heraldRetortStrikes, heraldBrace:heraldBrace, heraldBraceMs:heraldBraceMs, heraldGuardFire:heraldGuardFire, applyHeraldBraceTick:applyHeraldBraceTick, HERALD_IRONCLAD_PER_1K:HERALD_IRONCLAD_PER_1K, HERALD_IRONCLAD_CAP:HERALD_IRONCLAD_CAP, HERALD_BRACE_MS:HERALD_BRACE_MS, HERALD_BRACE_MS_D2:HERALD_BRACE_MS_D2, HERALD_BARRIER_PER_GUARD:HERALD_BARRIER_PER_GUARD, HERALD_BARRIER_CAP_PCT:HERALD_BARRIER_CAP_PCT, HERALD_BARRIER_CAP_PCT_BB:HERALD_BARRIER_CAP_PCT_BB, HERALD_DEEPWALL_MULT:HERALD_DEEPWALL_MULT, HERALD_RETORT_PCT:HERALD_RETORT_PCT, HERALD_BREACH_PCT:HERALD_BREACH_PCT, HERALD_BREACH_STUN_MS:HERALD_BREACH_STUN_MS, HERALD_BREACH_D4_MULT:HERALD_BREACH_D4_MULT, HERALD_MOMENTUM_PER_10:HERALD_MOMENTUM_PER_10, LEG_WALLBREAKER_PER_10:LEG_WALLBREAKER_PER_10, HERALD_UNBREAKABLE_MULT:HERALD_UNBREAKABLE_MULT, HERALD_FORTRESS_PER_SEC:HERALD_FORTRESS_PER_SEC, HERALD_FORTRESS_CAP:HERALD_FORTRESS_CAP,
+      enemyFrenzyFactor:enemyFrenzyFactor, enemyFrenzySpeedMult:enemyFrenzySpeedMult, enemyFrenzyDmgMult:enemyFrenzyDmgMult, enemySiphonActive:enemySiphonActive, enemyRallyDmgMult:enemyRallyDmgMult, enemyMightDmgMult:enemyMightDmgMult, maxHp:maxHp, getLevel:getLevel, getLevelExt:getLevelExt, skillLevel:skillLevel, masteryLevel:masteryLevel, classMasteryLevel:classMasteryLevel, weaponMasteryLevel:weaponMasteryLevel, physiqueMasteryTotal:physiqueMasteryTotal, armorMasteryTotal:armorMasteryTotal, armorMasteryIncomingMult:armorMasteryIncomingMult, CLASS_MASTERY_HP:CLASS_MASTERY_HP, CLASS_MASTERY_DMG:CLASS_MASTERY_DMG, WEAPON_MASTERY_DMG:WEAPON_MASTERY_DMG, ARMOR_MASTERY_DR:ARMOR_MASTERY_DR, ARMOR_MASTERY_DR_CAP:ARMOR_MASTERY_DR_CAP, PHYSIQUE_MASTERY_HP:PHYSIQUE_MASTERY_HP, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, PHYSIQUE_XP_FLOOR_EXT:PHYSIQUE_XP_FLOOR_EXT, applyOfflineProgress:applyOfflineProgress, applyMobileLayoutPref:applyMobileLayoutPref, applyUiScalePref:applyUiScalePref, uiScaleFor:uiScaleFor, UI_SCALE_DENSE:UI_SCALE_DENSE, UI_SCALE_MIN_W:UI_SCALE_MIN_W, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, templarBeaconPotencyMult:templarBeaconPotencyMult, templarIncomingDmgMult:templarIncomingDmgMult, templarVerse:templarVerse, templarVerseMs:templarVerseMs, templarVersePower:templarVersePower, templarVerseAdvance:templarVerseAdvance, templarGloria:templarGloria, applyTemplarLitanyTick:applyTemplarLitanyTick, templarDoxologyMult:templarDoxologyMult, templarDoxologyCap:templarDoxologyCap, templarBonus:templarBonus, TPL_VERSES:TPL_VERSES, TPL_VERSE_MS:TPL_VERSE_MS, TPL_VERSE_MS_D1:TPL_VERSE_MS_D1, TPL_MIGHT_PCT:TPL_MIGHT_PCT, TPL_HASTE_PCT:TPL_HASTE_PCT, TPL_ZEAL_CRITDMG:TPL_ZEAL_CRITDMG, TPL_AEGIS_PCT_PER_SEC:TPL_AEGIS_PCT_PER_SEC, TPL_AEGIS_CAP_PCT:TPL_AEGIS_CAP_PCT, TPL_FERVOR_EXT_MS:TPL_FERVOR_EXT_MS, TPL_FERVOR_EXT_CAP:TPL_FERVOR_EXT_CAP, TPL_DOXOLOGY_PER:TPL_DOXOLOGY_PER, TPL_DOXOLOGY_CAP:TPL_DOXOLOGY_CAP, TPL_DOXOLOGY_CAP_SUNSCALE:TPL_DOXOLOGY_CAP_SUNSCALE, TPL_GLORIA_PCT:TPL_GLORIA_PCT, TPL_EMPOWERED_MULT:TPL_EMPOWERED_MULT, TPL_VERSE_POWER_D2:TPL_VERSE_POWER_D2, LEG_SUNBRAND_END_PCT:LEG_SUNBRAND_END_PCT, LEG_GLORIA_MULT:LEG_GLORIA_MULT, heraldBonus:heraldBonus, heraldIroncladMult:heraldIroncladMult, heraldLiveArmor:heraldLiveArmor, heraldBarrier:heraldBarrier, heraldBarrierCap:heraldBarrierCap, heraldBarrierFrac:heraldBarrierFrac, heraldBarrierAdd:heraldBarrierAdd, heraldBarrierDmgMult:heraldBarrierDmgMult, heraldBreachFire:heraldBreachFire, heraldRetortDamage:heraldRetortDamage, heraldRetortStrikes:heraldRetortStrikes, heraldBrace:heraldBrace, heraldBraceMs:heraldBraceMs, heraldGuardFire:heraldGuardFire, applyHeraldBraceTick:applyHeraldBraceTick, HERALD_IRONCLAD_PER_1K:HERALD_IRONCLAD_PER_1K, HERALD_IRONCLAD_CAP:HERALD_IRONCLAD_CAP, HERALD_BRACE_MS:HERALD_BRACE_MS, HERALD_BRACE_MS_D2:HERALD_BRACE_MS_D2, HERALD_BARRIER_PER_GUARD:HERALD_BARRIER_PER_GUARD, HERALD_BARRIER_CAP_PCT:HERALD_BARRIER_CAP_PCT, HERALD_BARRIER_CAP_PCT_BB:HERALD_BARRIER_CAP_PCT_BB, HERALD_DEEPWALL_MULT:HERALD_DEEPWALL_MULT, HERALD_RETORT_PCT:HERALD_RETORT_PCT, HERALD_BREACH_PCT:HERALD_BREACH_PCT, HERALD_BREACH_STUN_MS:HERALD_BREACH_STUN_MS, HERALD_BREACH_D4_MULT:HERALD_BREACH_D4_MULT, HERALD_MOMENTUM_PER_10:HERALD_MOMENTUM_PER_10, LEG_WALLBREAKER_PER_10:LEG_WALLBREAKER_PER_10, HERALD_UNBREAKABLE_MULT:HERALD_UNBREAKABLE_MULT, HERALD_FORTRESS_PER_SEC:HERALD_FORTRESS_PER_SEC, HERALD_FORTRESS_CAP:HERALD_FORTRESS_CAP,
       knightStacks:knightStacks, knightStackCap:knightStackCap, knightBonus:knightBonus, knBannerRaise:knBannerRaise, knOrderMult:knOrderMult, knOrdersStanding:knOrdersStanding, knOrdersAll:knOrdersAll, knightSteelMult:knightSteelMult, knightBloodLifestealPct:knightBloodLifestealPct, knightBeaconPotencyMult:knightBeaconPotencyMult, knDecreeOnSwing:knDecreeOnSwing, knightDamageTakenMult:knightDamageTakenMult, KN_BANNER_MAX:KN_BANNER_MAX, KN_BANNER_MAX_D1:KN_BANNER_MAX_D1, KN_BANNER_MAX_HIGH:KN_BANNER_MAX_HIGH, KN_SEED_HIT:KN_SEED_HIT, KN_SEED_CRIT:KN_SEED_CRIT, KN_SEED_CRIT_D2:KN_SEED_CRIT_D2, KN_ORDER_STEEL:KN_ORDER_STEEL, KN_ORDER_PACE:KN_ORDER_PACE, KN_ORDER_BLOOD:KN_ORDER_BLOOD, KN_STEEL_PCT:KN_STEEL_PCT, KN_PACE_PCT:KN_PACE_PCT, KN_BLOOD_PCT:KN_BLOOD_PCT, KN_ORDER_D2_MULT:KN_ORDER_D2_MULT, KN_SHIELDWALL_PER:KN_SHIELDWALL_PER, KN_DECREE_EVERY:KN_DECREE_EVERY, KN_DECREE_EVERY_D1:KN_DECREE_EVERY_D1, KN_DECREE_PCT:KN_DECREE_PCT, KN_DECREE_STUN_MS:KN_DECREE_STUN_MS, KN_TRAMPLE_SWINGS:KN_TRAMPLE_SWINGS, KN_TRAMPLE_MULT:KN_TRAMPLE_MULT, KN_DECREE_D4_MULT:KN_DECREE_D4_MULT, LEG_BREACHBLADE_PIERCE:LEG_BREACHBLADE_PIERCE, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, playerDamageModBreakdown:playerDamageModBreakdown, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
       isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, ASSASSIN_WOUND_MAX:ASSASSIN_WOUND_MAX, ASSASSIN_WOUND_MS:ASSASSIN_WOUND_MS, ASSASSIN_VANISH_MS:ASSASSIN_VANISH_MS, ASSASSIN_FANG_PCT:ASSASSIN_FANG_PCT, ASSASSIN_FANG_PCT_D1:ASSASSIN_FANG_PCT_D1, ASSASSIN_FANG_PCT_SHADOWWYRM:ASSASSIN_FANG_PCT_SHADOWWYRM, ASSASSIN_HEAVYFANG_INTERVAL:ASSASSIN_HEAVYFANG_INTERVAL, ASSASSIN_HEAVYFANG_DMG:ASSASSIN_HEAVYFANG_DMG, ASSASSIN_FLOW_REFUND:ASSASSIN_FLOW_REFUND, ASSASSIN_VIGOR_MAX:ASSASSIN_VIGOR_MAX, ASSASSIN_VIGOR_PER:ASSASSIN_VIGOR_PER, ASSASSIN_BLOODRUSH_MULT:ASSASSIN_BLOODRUSH_MULT, assassinWoundCap:assassinWoundCap, assassinWoundStacks:assassinWoundStacks, assassinWoundsFull:assassinWoundsFull, assassinWoundsPerHit:assassinWoundsPerHit, assassinOpenWounds:assassinOpenWounds, assassinFangPerWound:assassinFangPerWound, assassinVigorStacks:assassinVigorStacks, assassinVigorAdd:assassinVigorAdd, assassinVigorDmgMult:assassinVigorDmgMult, assassinCommunionLifesteal:assassinCommunionLifesteal, assassinBloodrushActive:assassinBloodrushActive, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, thunderfuryBonus:thunderfuryBonus, tfStormCap:tfStormCap, tfStormIntensity:tfStormIntensity, tfStormSeed:tfStormSeed, tfGalvanizeCap:tfGalvanizeCap, tfBoltFire:tfBoltFire, applyTfStormTick:applyTfStormTick, enemyStunned:enemyStunned, TF_STORM_MAX:TF_STORM_MAX, TF_STORM_MAX_D1:TF_STORM_MAX_D1, TF_STORM_MAX_GLOOM:TF_STORM_MAX_GLOOM, TF_BOLT_PCT:TF_BOLT_PCT, TF_BOLT_MS:TF_BOLT_MS, TF_BOLT_MS_TEMPEST:TF_BOLT_MS_TEMPEST, TF_SEED_HIT:TF_SEED_HIT, TF_SEED_CRIT:TF_SEED_CRIT, TF_SEED_CRIT_D2:TF_SEED_CRIT_D2, TF_FADE_MS:TF_FADE_MS, TF_TEMPO_THRESHOLD:TF_TEMPO_THRESHOLD, TF_TEMPO_PCT:TF_TEMPO_PCT, TF_CLAP_EVERY:TF_CLAP_EVERY, TF_CLAP_MULT:TF_CLAP_MULT, TF_CLAP_STUN_MS:TF_CLAP_STUN_MS, TF_CLAP_STUN_MS_D3:TF_CLAP_STUN_MS_D3, TF_GALV_PER:TF_GALV_PER, TF_GALV_MAX:TF_GALV_MAX, TF_GALV_MAX_SCALE:TF_GALV_MAX_SCALE, LEG_STORMWYRM_CRIT_BOLT:LEG_STORMWYRM_CRIT_BOLT, enemyStunned:enemyStunned,
