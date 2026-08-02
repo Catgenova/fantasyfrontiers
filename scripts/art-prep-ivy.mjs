@@ -82,6 +82,120 @@ const fmtWell = (h) => {
 const fmtSlice = (h) => `border-image slice: ${h.y0} ${h.W - 1 - h.x1} ${h.H - 1 - h.y1} ${h.x0}`
                       + `   (top right bottom left)`;
 
+// A tight alpha bounding box, in source pixels. `trim()` does this internally but does not tell us where it
+// cut, and the pair alignment below needs the offsets.
+async function contentBox(buf) {
+  const { data, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const W = info.width, H = info.height, C = info.channels;
+  let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (data[(y * W + x) * C + 3] >= 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  }
+  return { x0, y0, x1, y1, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+
+// ---- MATCHED MIRROR PAIRS ------------------------------------------------------------------------------
+// A LEFT/RIGHT pair MUST leave here at the same pixel size with its well in mirrored positions. Trimming the
+// two halves independently -- which is what the plain emit() above does -- is what broke the combat stage:
+// the pieces are hand-drawn, not exact mirrors, so the right plinth's ring came out 434x464 in source against
+// the left's 397x413. Each was then trimmed tight and scaled to width 900, so they landed at 900x506 and
+// 900x539: at the same rendered width the foe's half was 14px taller, its HP orb 9% larger, and its orb centre
+// 8px higher than the player's. Two different-sized orbs is the bug the player sees; the mismatched canvas is
+// the cause, and no CSS can fix it because the boxes genuinely differ.
+//
+// So the pair is normalised HERE, on the one feature that has to agree -- the well:
+//   1. Scale each half so its well is the same WIDTH (uniform scale; distorting carved stone is worse than a
+//      1% oval), keyed on the mean of the two so neither is upscaled far.
+//   2. Lay both onto ONE canvas, VERTICALLY aligned on the well centre so the two wells end up the same size
+//      at the same height -- which is the whole point.
+// Two images of identical size, one shared well width/height/top, one `left` per side.
+//
+// HORIZONTALLY there is a trade-off the art forces, and `joinAt:"centre"` is the answer for a pair that has to
+// LOOK like one bench. Once the two rings are the same size the right-hand bench is genuinely ~75px shorter
+// than the left one, so the pair cannot both butt at the centre AND reach both outer edges. Aligning on the
+// well centre (the obvious choice) spends that slack on the INNER edge, which opened a 7px seam right where
+// the two carvings are supposed to meet -- the most visible place to put it. So each half is flushed to its
+// INNER edge instead and the slack falls on the outer edge, where the stage's own ivy border is already busy.
+// The cost is that the two wells are then ~2% off exact mirror symmetry; nobody compares a well's distance to
+// the centre line across two different carvings, and everybody sees a gap in a join.
+//
+// Without joinAt the halves align on the well centre, which is right for pieces that do not touch each other
+// (the portrait rings hang off opposite corners, and their residual pads are under 3px rendered).
+//
+// The bench bases can then sit a couple of source pixels apart (the halves differ in height above the well).
+// Anchoring vertically on the well rather than the bottom is deliberate: at the rendered size that residual is
+// ~1px of transparent padding, while a mismatched orb is the thing that reads as broken.
+async function emitPair(nameA, nameB, srcA, srcB, outWidth, opts = {}) {
+  const halves = [];
+  for (const [name, srcPath] of [[nameA, srcA], [nameB, srcB]]) {
+    let src = srcPath;
+    if (opts[name] && opts[name].extract) src = await sharp(srcPath).extract(opts[name].extract).png().toBuffer();
+    const bb = await contentBox(src);
+    const cropped = await sharp(src).extract({ left: bb.x0, top: bb.y0, width: bb.w, height: bb.h }).png().toBuffer();
+    const hole = (await wells(cropped))[0];
+    if (!hole) { console.error(`art-prep-ivy: FAIL ${name} has no interior well to align the pair on`); process.exit(1); }
+    halves.push({ name, srcPath, cropped, bb,
+                  hole: { w: hole.x1 - hole.x0 + 1, h: hole.y1 - hole.y0 + 1,
+                          cx: (hole.x0 + hole.x1) / 2, cy: (hole.y0 + hole.y1) / 2 } });
+  }
+  // 1. one well width for both. Everything after this is INTEGER pixels, measured off the resized buffer that
+  //    is actually composited -- deriving the canvas from float predictions overflowed it by a pixel, which
+  //    sharp rejects outright ("Image to composite must have same dimensions or smaller").
+  const ringWant = (halves[0].hole.w + halves[1].hole.w) / 2;
+  for (const h of halves) {
+    h.scaled = await sharp(h.cropped).resize({ width: Math.round(h.bb.w * (ringWant / h.hole.w)) }).png().toBuffer();
+    const m = await sharp(h.scaled).metadata();
+    h.sw = m.width; h.sh = m.height;
+    h.rx = Math.round(h.hole.cx * h.sw / h.bb.w);   // well centre in the resized buffer
+    h.ry = Math.round(h.hole.cy * h.sh / h.bb.h);
+    h.rw = h.hole.w * h.sw / h.bb.w;
+    h.rh = h.hole.h * h.sh / h.bb.h;
+  }
+  // 2. the union canvas. Vertically it is measured outward from the well centre, so both wells land on one
+  //    line: taking the max reach above and below across both halves fits either of them by construction.
+  //    Horizontally it is either the same treatment (default) or the inner-edge join (joinAt:'centre').
+  const A = Math.max(halves[0].rx, halves[1].sw - halves[1].rx);
+  const B = Math.max(halves[0].sw - halves[0].rx, halves[1].rx);
+  const T = Math.max(halves[0].ry, halves[1].ry);
+  const D = Math.max(halves[0].sh - halves[0].ry, halves[1].sh - halves[1].ry);
+  const join = opts.joinAt === "centre";
+  const CW = join ? Math.max(halves[0].sw, halves[1].sw) : A + B;
+  const CH = T + D;
+  const ringW = (halves[0].rw + halves[1].rw) / 2;
+  const ringH = (halves[0].rh + halves[1].rh) / 2;
+  const scale = outWidth / CW;
+
+  for (let i = 0; i < halves.length; i++) {
+    const h = halves[i];
+    // joinAt:'centre' -- half 0 is the stage's LEFT piece, so its inner edge is its RIGHT one: flush it right.
+    // Half 1 is the RIGHT piece: flush it left. Either way the two inner edges meet with no seam.
+    const offX = join ? (i === 0 ? CW - h.sw : 0) : ((i === 0 ? A : B) - h.rx);
+    const targetX = offX + h.rx;
+    // COMPOSITE IN ITS OWN PASS, for the same reason extract gets one above: sharp does not honour chain
+    // order, so `.composite().resize()` shrinks the base canvas to outWidth FIRST and then rejects the
+    // full-size half as "must have same dimensions or smaller".
+    const laid = await sharp({ create: { width: CW, height: CH, channels: 4,
+                                         background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+      .composite([{ input: h.scaled, left: offX, top: T - h.ry }]).png().toBuffer();
+    const buf = await png(sharp(laid).resize({ width: outWidth })).toBuffer();
+    const dest = `art/${h.name}.png`;
+    await sharp(buf).toFile(dest);
+    const m = await sharp(buf).metadata();
+    const before = statSync(h.srcPath).size;
+    console.log(`\n${dest}   ${m.width}x${m.height}   ${kb(before)}KB -> ${kb(buf.length)}KB`
+              + `  (${Math.round((1 - buf.length / before) * 100)}% smaller)`);
+    h.wellLeftPct = (targetX - ringW / 2) / CW * 100;
+    OUT.push({ dest, w: m.width, h: m.height, kb: kb(buf.length), wells: [] });
+  }
+  console.log(`\n   PAIR ${nameA} / ${nameB}: both ${Math.round(CW * scale)}x${Math.round(CH * scale)}`
+            + `   well ${Math.round(ringW * scale)}x${Math.round(ringH * scale)}`);
+  console.log(`   SHARED well rule -- width:${(ringW / CW * 100).toFixed(2)}% height:${(ringH / CH * 100).toFixed(2)}%`
+            + ` top:${((T - ringH / 2) / CH * 100).toFixed(2)}%`);
+  console.log(`     ${nameA} left:${halves[0].wellLeftPct.toFixed(2)}%    ${nameB} left:${halves[1].wellLeftPct.toFixed(2)}%`
+            + (join ? `   (inner edges joined; these are MEASURED, not mirrored)`
+                    : `   (mirrored: they sum with the width to 100%)`));
+}
+
 const OUT = [];
 async function emit(name, srcPath, opts = {}) {
   // EXTRACT IN ITS OWN PASS. sharp does not honour chain order -- it runs trim BEFORE a chained extract, so
@@ -115,8 +229,7 @@ console.log("art-prep-ivy: trimming, cropping and requantising the delivered ivy
 
 await emit("ivy_panel",   SRC.panel,   { width: 900 });
 await emit("ivy_bar",     SRC.bar,     { width: 760 });
-await emit("ivy_plinth_LEFT",  SRC.plinthL, { width: 900 });
-await emit("ivy_plinth_RIGHT", SRC.plinthR, { width: 900 });
+await emitPair("ivy_plinth_LEFT", "ivy_plinth_RIGHT", SRC.plinthL, SRC.plinthR, 900, { joinAt: "centre" });
 await emit("ivy_arena",   SRC.arena,   { width: 1100 });
 
 // The portrait ring: crop the arena frame's LEFT socket with a margin, so the stone ring and its ivy come
@@ -142,8 +255,12 @@ await emit("ivy_arena",   SRC.arena,   { width: 1100 });
 // (28/29/35/28) because its art is not symmetric, which shows as uneven borders once a box is small.
 const SHEET = "art/src/1785594425096.png";
 if (existsSync(SHEET)) {
-  await emit("ivy_ring_LEFT",  SHEET, { extract: { left: 34,  top: 39,  width: 437,  height: 417 }, width: 420 });
-  await emit("ivy_ring_RIGHT", SHEET, { extract: { left: 789, top: 39,  width: 429,  height: 417 }, width: 420 });
+  // Paired for the same reason as the plinths: trimmed apart they came out 420x401 and 420x408, so the foe's
+  // portrait socket rendered 1.7% taller than the player's and each side needed its own well rule.
+  await emitPair("ivy_ring_LEFT", "ivy_ring_RIGHT", SHEET, SHEET, 420, {
+    ivy_ring_LEFT:  { extract: { left: 34,  top: 39, width: 437, height: 417 } },
+    ivy_ring_RIGHT: { extract: { left: 789, top: 39, width: 429, height: 417 } },
+  });
   await emit("ivy_stretch",    SHEET, { extract: { left: 33,  top: 530, width: 1186, height: 685 }, width: 900 });
 }
 

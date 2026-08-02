@@ -89,6 +89,7 @@ for (const [cid, path] of Object.entries(art)) {
 // dist server keeps the useful property -- a path the source asks for but the build does not ship is exactly
 // the failure this catches.
 const source = readFileSync("index.html", "utf8");
+const stageDims = {};                 // path -> "WxH", filled below and pair-checked after the loop
 const stagePaths = [...new Set([
   ...[...source.matchAll(/['"](art\/[^'"]+\.png)['"]/g)].map((m) => m[1]),
   ...[...source.matchAll(/url\(\s*['"]?(art\/[^'")]+\.png)['"]?\s*\)/g)].map((m) => m[1]),
@@ -112,7 +113,34 @@ for (const path of stagePaths) {
   if (!r.ok) { console.error(`artcheck: FAIL stage frame ${path} returned ${r.status}`); failed++; continue; }
   if (!r.w)  { console.error(`artcheck: FAIL stage frame ${path} did not decode as an image`); failed++; continue; }
   if (kb > MAX_KB) { console.error(`artcheck: FAIL stage frame ${path} is ${kb}KB, over the ${MAX_KB}KB backstop`); failed++; continue; }
+  stageDims[path] = `${r.w}x${r.h}`;
   console.log(`artcheck: ok   ${("stage " + path).padEnd(45)} ${r.w}x${r.h} ${String(kb).padStart(4)}KB ${r.type}`);
+}
+
+// ---- MIRRORED PAIRS MUST BE THE SAME SIZE (v0.0.77.4) --------------------------------------------------
+// A _LEFT/_RIGHT pair is one piece of furniture cut in two: the stage lays them side by side at the same
+// rendered width and positions the content inside each by PERCENTAGE. Different pixel sizes therefore mean
+// different rendered heights and a well at a different place in each half -- which is exactly how the HP orbs
+// shipped 9% apart in diameter and 8px apart in height. The art halves are hand-drawn and not exact mirrors,
+// so this cannot be left to the eye: scripts/art-prep-ivy.mjs normalises each pair in emitPair(), and this is
+// the gate that says so. A pair that diverges again fails the build instead of the fight.
+for (const path of Object.keys(stageDims)) {
+  if (!/_LEFT\.png$/.test(path)) continue;
+  const other = path.replace(/_LEFT\.png$/, "_RIGHT.png");
+  if (!stageDims[other]) {
+    console.error(`artcheck: FAIL ${path} has no ${other} -- a _LEFT with no _RIGHT means one half of a pair `
+                + `is unreferenced by the stage, so nothing renders the other side.`);
+    failed++; continue;
+  }
+  if (stageDims[path] !== stageDims[other]) {
+    console.error(`artcheck: FAIL mirrored pair size mismatch: ${path} is ${stageDims[path]} but ${other} is `
+                + `${stageDims[other]}. They render at one width with percentage wells, so the halves would sit `
+                + `at different heights with differently-sized content. Re-run scripts/art-prep-ivy.mjs -- `
+                + `emitPair() normalises a pair onto one canvas.`);
+    failed++; continue;
+  }
+  console.log(`artcheck: ok   pair ${path.replace(/^art\//, "").replace(/_LEFT\.png$/, "")} `
+            + `both halves ${stageDims[path]}`);
 }
 
 await browser.close();

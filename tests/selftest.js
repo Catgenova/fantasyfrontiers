@@ -4651,6 +4651,38 @@
       // theme's frame overlap.
       ok(!/data-action="stop" style=/.test(h), 'Retreat carries no inline style');
 
+      // ---- THE TWO ORBS MUST BE THE SAME SIZE AT THE SAME HEIGHT (v0.0.77.4) ----
+      // They shipped 9% apart in diameter and 8px apart in height because the two plinth halves were trimmed
+      // independently (900x506 vs 900x539), which forced a well rule PER SIDE -- each carrying its own top,
+      // width and height. The art is paired now, so the only thing a side may still say is WHERE the well sits
+      // horizontally. Read from the live stylesheet rather than eyeballed: this is the invariant, and it fails
+      // loudly the next time someone re-measures one side and not the other.
+      (function(){
+        var offenders = [], seen = 0;
+        function scan(rules){
+          for(var i=0;i<rules.length;i++){
+            var r = rules[i];
+            // RECURSE ON LENGTH, NEVER ON THE PROPERTY'S EXISTENCE. Since CSS Nesting shipped, a plain
+            // CSSStyleRule ALSO carries a (usually empty) cssRules list -- so `if(r.cssRules) { recurse;
+            // continue; }` treats every rule in the sheet as a group, skips its own declarations, and the
+            // scan silently finds nothing. This test reported zero rules found until that was fixed, which
+            // is exactly the "a guard must be proven to fail before it is trusted to pass" failure.
+            if(r.cssRules && r.cssRules.length) scan(r.cssRules);
+            if(!r.selectorText || !/\.ar2\.ivy\s+\.ar2-orb\.(me|foe)\b/.test(r.selectorText)) continue;
+            seen++;
+            ['width','height','top','bottom'].forEach(function(p){
+              if(r.style && r.style.getPropertyValue(p)) offenders.push(r.selectorText.slice(0,60) + ' sets ' + p);
+            });
+          }
+        }
+        for(var s2=0; s2<document.styleSheets.length; s2++){
+          try { scan(document.styleSheets[s2].cssRules || []); } catch(e){ /* cross-origin sheet: skip */ }
+        }
+        ok(seen > 0, 'found the per-side orb rules in the stylesheet');
+        ok(offenders.length === 0,
+           'a per-side orb rule may only set `left` -- size and height are shared (offenders: ' + offenders.join('; ') + ')');
+      })();
+
       ok(/id="ar2Orb-me"/.test(h) && /id="ar2Orb-foe"/.test(h), 'both orb canvases are present');
       // The numbers are SEEDED in the markup. Left to the live tick they would be blank on any render path
       // that is not followed by one -- the dungeon card, or a test.

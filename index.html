@@ -1118,10 +1118,17 @@
      MEASURED WELLS (percentages of each trimmed asset; interior holes found by flood-filling the outside):
        ivy_stretch      900x520   rect   left 3.56%  top  7.12%  92.89% x 85.38%   slice 37 32 39 32
        ivy_bar          760x129   rect   left 14.74% top 25.58%  70.13% x 34.11%   slice 33 115 52 112
-       ivy_ring_LEFT    420x401   circle left 10.24% top  8.98%  52.14% x 54.61%
-       ivy_ring_RIGHT   420x408   circle left 36.67% top  8.82%  53.10% x 54.66%
+       ivy_plinth_LEFT  900x509   circle left 59.53% top 18.61%  31.74% x 59.14%
+       ivy_plinth_RIGHT 900x509   circle left  6.74% top 18.61%  31.74% x 59.14%
+       ivy_ring_LEFT    420x402   circle left 10.30% top  8.91%  52.17% x 54.43%
+       ivy_ring_RIGHT   420x402   circle left 37.53% top  8.91%  52.17% x 54.43%
        ivy_portrait     320x314   circle left 14.06% top 11.46%  67.50% x 70.06%
        ivy_field        700x249   seamless marble tile, veiled 55% toward white
+
+     THE TWO PAIRS ARE MATCHED, and that is a property of the ART, enforced by emitPair() in the prep script
+     and gated by scripts/artcheck.mjs -- a _LEFT and its _RIGHT must be the same pixel size. Trimmed apart
+     they were not, and each side then needed its own well rule, which put two differently-sized HP orbs at
+     two different heights on the stage. Hence one shared rule per pair with only `left` mirrored.
 
      The bar and panel frames are BORDER-IMAGES (their ornate end-caps are the slice corners, so only the
      straight middle stretches). The plinths and rings are IMAGES with content in the measured circle,
@@ -1147,8 +1154,21 @@
   --ivy-inset:calc(var(--ivy-ring) * 0.56);
   --ink:#e8dcc0; --dim:#9a8f78; --gold:#ddbb66; --gold-deep:#bb9944;
   color:var(--ink);
-  /* No surface of its own: the marble page shows through, and the frames carry the structure. */
-  background:none;
+  /* THE STAGE CARRIES ITS OWN MARBLE, and that is what stops the plinths swimming (v0.0.77.4).
+     It first shipped with `background:none`, letting #app's marble show through -- and #app is OUTSIDE the
+     scrolling element (#ffMain), because html/body/#app are all overflow:hidden and only #ffMain scrolls.
+     Measured: #app's top stays at viewport y=8 through every scroll offset while the arena travels 591 -> 111.
+     So the veining is nailed to the window and everything on top of it slides. Nowhere else in the game shows
+     this, because every other panel is an opaque tan card; the arena is the one screen built from CUT-OUT
+     stone standing directly on the page surface, so its plinths and rings appeared to wobble against their
+     own texture on every scroll. The same tile painted HERE scrolls with the stage, so the stone sits still.
+     padding-box: a background paints to the border box by default and would bleed through the frame's
+     transparent parts. The tiling seam against the page marble is hidden under the 22px stone border. */
+  background-color:#efece6;
+  background-image:url('art/ivy_field.png');
+  background-repeat:repeat;
+  background-size:700px 249px;
+  background-clip:padding-box;
   border:22px solid transparent;
   border-image:url('art/ivy_stretch.png') 37 32 39 32 round;   /* no `fill` -- the middle stays transparent */
   box-shadow:none;
@@ -1271,24 +1291,43 @@
   /* The header rows inset to clear the pinned rings, or the name plates would run under them. */
   .ar2.ivy .ar2-tops{ padding:0 var(--ivy-inset); }
   .ar2.ivy .ar2-port .pf{ filter:none; }
-  .ar2.ivy .ar2-side:not(.foe) .ar2-port .pin{ left:10.24%; top:8.98%; width:52.14%; height:54.61%;
-                                             background:var(--ivy-well); }
-  .ar2.ivy .ar2-side.foe .ar2-port .pin{ left:36.67%; top:8.82%; width:53.10%; height:54.66%;
-                                       background:var(--ivy-well); }
+  /* Shared well, mirrored left -- the rings are an emitPair() pair too (they were 420x401 / 420x408 apart). */
+  .ar2.ivy .ar2-port .pin{ top:8.91%; width:52.17%; height:54.43%; background:var(--ivy-well); }
+  .ar2.ivy .ar2-side:not(.foe) .ar2-port .pin{ left:10.30%; }
+  .ar2.ivy .ar2-side.foe      .ar2-port .pin{ left:37.53%; }
 
   /* ---- THE ORBS: the carved plinths, centred ----
    The plinth pair butts together at the centre line so the two carvings read as one bench and the fighters
-   face each other. Each plinth is trimmed to its own art, so they carry different aspects AND different ring
-   positions -- the wells below are per side, not shared. */
+   face each other.
+
+   THE WELL RULE IS SHARED, AND THAT IS THE WHOLE FIX (v0.0.77.4). It first shipped as two per-side rules,
+   because the two halves were trimmed independently in scripts/art-prep-ivy.mjs and came out 900x506 and
+   900x539 with rings of different sizes -- the pieces are hand-drawn, not exact mirrors. Rendered at one
+   width that made the foe's half 14px taller, its HP orb 9% larger and its centre 8px higher than the
+   player's, which is what "the orb holder dimensions are wrong" was. No CSS could fix it: the boxes really
+   did differ. emitPair() now normalises the two on their ring and lays them on one canvas, so both are
+   900x509 and the well is one rule -- shared width/height/top, one measured `left` per side. If the sizes ever
+   diverge again the art regressed: fix the art, not this. (artcheck gates it.)
+
+   `left` is NOT the mirror of the other side, and that is the art's doing. Once the two rings are the same size
+   the right bench is genuinely ~75px shorter than the left, so the pair cannot both join at the centre AND
+   reach both outer edges. emitPair(joinAt:'centre') spends that slack on the OUTER edge: the halves butt
+   exactly, the foe's plinth sits ~21px short of the stage's right frame, and the two wells land ~2% off
+   mirrored. Spending it on the inner edge instead put a 7px seam through the join -- the one place it shows.
+
+   The holder is display:BLOCK on purpose. An <img> is inline by default, so it sat on a text baseline and
+   left 4-5px of descender space under it inside .ar2-crop -- the plinth's base floated that far above its own
+   box, which is why the pair would not go flush to the log frame no matter what margin the row was given. */
   .ar2.ivy .ar2-crop{ aspect-ratio:auto; overflow:visible; }
   .ar2.ivy .ar2-orb{ position:relative; bottom:auto; left:auto; width:100%; aspect-ratio:auto; }
-  .ar2.ivy .ar2-orb .holder{ position:relative; inset:auto; width:100%; height:auto; filter:none; }
+  .ar2.ivy .ar2-orb .holder{ position:relative; inset:auto; display:block; width:100%; height:auto;
+                           filter:none; }
+  .ar2.ivy .ar2-orb .liq,.ar2.ivy .ar2-orb .glass,
+  .ar2.ivy .ar2-orb .num,.ar2.ivy .ar2-orb .shield{ top:18.61%; width:31.74%; height:59.14%; }
   .ar2.ivy .ar2-orb.me  .liq,.ar2.ivy .ar2-orb.me  .glass,
-  .ar2.ivy .ar2-orb.me  .num,.ar2.ivy .ar2-orb.me  .shield{
-  left:59.56%; top:19.17%; width:31.78%; height:58.70%; }
+  .ar2.ivy .ar2-orb.me  .num,.ar2.ivy .ar2-orb.me  .shield{ left:59.53%; }
   .ar2.ivy .ar2-orb.foe .liq,.ar2.ivy .ar2-orb.foe .glass,
-  .ar2.ivy .ar2-orb.foe .num,.ar2.ivy .ar2-orb.foe .shield{
-  left:7.22%; top:18.00%; width:33.67%; height:60.11%; }
+  .ar2.ivy .ar2-orb.foe .num,.ar2.ivy .ar2-orb.foe .shield{ left:6.74%; }
   .ar2.ivy .ar2-orb .glass{ opacity:.92; }
 
   /* ---- companions ---- */
@@ -1373,9 +1412,11 @@
                     margin:2px 0 0 0; }
 
   /* THE PLINTHS SIT ON THE FEED. The feed is moved to the head of the lower row so it is the thing directly
-   beneath the orbs, and the two overlap into a shared edge like every other stacked frame here. The effect
-   panels follow it instead of sitting between. */
-  .ar2.ivy .ar2-low{ margin-top:-8px; }
+   beneath the orbs, and the effect panels follow it instead of sitting between.
+   ZERO, not the -8px it shipped with: that offset was compensating for the holder <img>'s inline baseline
+   descender (see the plinth block above). With display:block the plinth's base IS the row's bottom edge, so
+   touching boxes put the carved base exactly on the feed frame's top rail. */
+  .ar2.ivy .ar2-low{ margin-top:0; }
   .ar2.ivy .ar2-low > *:first-child{ order:2; }    /* the effects column drops below */
   .ar2.ivy .ar2-low > *:nth-child(2){ order:1; }   /* the feed comes first */
   .ar2.ivy .ar2-orbs{ margin-bottom:0; }
@@ -25999,6 +26040,13 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 2', heading:'The plinths: one bench again, sitting still', items:[
+      'Reported: the orb holders were the wrong size, they did not sit flush on the combat feed, and they wobbled up and down the screen while scrolling. Three separate causes, all measured.',
+      'The <b>two halves of the bench are now the same size</b>, so <b>both HP orbs match</b>. They did not: the two carvings were conditioned separately, and because they are hand-drawn rather than exact mirrors your foe&rsquo;s ring came out nearly a tenth larger than yours. At the same width that made the foe&rsquo;s half taller, its orb bigger, and its orb centre sit higher than your own. The pair is now normalised on the ring itself and laid on one canvas, and the build refuses to publish a mismatched pair again.',
+      'The <b>plinths sit flush on the feed</b>. The stone was floating a few pixels above the bottom of its own box &mdash; the plinth is an image, and an image sits on a text baseline by default, which leaves room underneath for the tail of a letter like &ldquo;y&rdquo;. No amount of nudging the row could close a gap that was inside it.',
+      'The <b>stonework no longer swims while you scroll</b>. The arena is the one screen built from cut-out stone standing directly on the page, and the page&rsquo;s marble was pinned to the window rather than to the page &mdash; so on every scroll the veining slid underneath the carvings, which read as the plinths wobbling. The arena now carries its own marble and the stone stays put.',
+      'Your portrait ring and your foe&rsquo;s were mismatched by the same conditioning bug and are now identical too.'
+    ]},
     { v:'0.0.77', date:'Aug 1', heading:'Marble and ivy: the whole game gets a new floor, and the arena is built on it', items:[
       'The <b>page itself is now marble</b> on every screen &mdash; the veined stone the combat plinths stand on, in place of the parchment tan. Panels, the rail and the top bar are unchanged; only the surface behind them moved, so cards still read as raised.',
       'The <b>combat arena is rebuilt on commissioned stonework</b>. Carved plinths hold the HP orbs, your portrait and your foe&rsquo;s sit in ivy-wreathed rings pinned to the frame&rsquo;s top corners, and every name plate, swing timer, companion slot and the feed itself is a stone frame with a black-lined interior. Consecutive frames share a single edge rather than stacking two borders, so a combatant reads as one piece of jointed masonry.',
@@ -38210,7 +38258,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.3';
+  var GAME_VERSION = '0.0.77.4';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
