@@ -26122,6 +26122,11 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 2', heading:'A sleeping device can no longer overwrite what you just crafted', items:[
+      'Reported (ticket-0132): items &mdash; in this case two freshly forged Fantastic bows &mdash; vanishing shortly after crafting. The cause was a second signed-in device: when a backgrounded tab woke up, it credited its offline catch-up onto the <b>old snapshot it remembered</b> and saved immediately &mdash; and because hours of idle XP made that stale snapshot&rsquo;s progress score read <i>higher</i> than the live device&rsquo;s, the server&rsquo;s forward-only guard let it through. Newer items lost to older saves.',
+      'Now a tab that wakes from sleep first asks the server whether anything newer was saved while it slept. If so, it <b>adopts the newer save</b> (a quick automatic reload) instead of pushing its stale memory, and your offline time is credited on top of the real, current state. If nothing newer exists &mdash; or the network hiccups &mdash; everything behaves exactly as before.',
+      'If you play across two devices, the one you pick up now always continues from wherever you actually left off.'
+    ]},
     { v:'0.0.77', date:'Aug 2', heading:'The gathering descriptions now tell the same truth as the roll', items:[
       'Follow-up to the last patch, caught by the same reporter within the hour: the new chance text itself was wrong. It said your tool &ldquo;adds the rest, caps at 95%&rdquo; &mdash; and Digging&rsquo;s said &ldquo;your Shovel adds up to +25%&rdquo; &mdash; but a gather tool actually adds <b>up to +9.4% at top tier</b>, so the realistic best is <b>79%</b> (59% for Fishing from its 50% base). The 95% figure was a safety clamp in the code that can never actually be reached.',
       'Every chance description is now computed from the same constants the roll uses, so the text cannot drift from the mechanics again. Nothing about the odds themselves changed &mdash; only the fiction in the parentheses.'
@@ -31704,6 +31709,53 @@
     if(s.xp){ for(k in s.xp){ if(typeof s.xp[k] === 'number') total += s.xp[k]; } }
     if(s.physique){ for(k in s.physique){ if(typeof s.physique[k] === 'number') total += s.physique[k]; } }
     return Math.floor(total) || 0;
+  }
+
+  // ---- WAKE STALENESS CHECK (v0.0.77.12, ticket-0132: "bows disappear when crafting") ----------------
+  // The hole this closes: a backgrounded tab that wakes used to credit offline catch-up onto ITS OWN
+  // remembered state and push immediately. Both server guards wave that through -- the session fence only
+  // rejects while the other device wrote within 45s, and the forward-only guard compares deriveProgress,
+  // which sums xp+physique and is BLIND TO ITEMS. The wake just credited hours of offline XP, so the stale
+  // snapshot's progress is higher than the live device's even though its inventory is older. Valuren forged
+  // two Fantastic bows on one device and lost both to his other device waking up.
+  //
+  // So a long-gap wake now PEEKS at the cloud save's client_saved_at first. If the cloud is materially newer
+  // than this tab's own last push, someone else wrote while we slept: this tab's memory is stale, and the
+  // only correct source of truth is the server -- fence (all writes stop, pagehide beacon included) and
+  // reload, which re-runs the boot path: fetch the newer save, migrate, and run offline catch-up from THAT
+  // save's clock. Nothing of ours is lost, because the hide branch pushed our state when we went dark.
+  //
+  // The tolerance absorbs cross-device clock skew (client_saved_at is each device's own Date.now). A real
+  // foreign write is newer by the whole away window -- minutes to hours -- so 15s cannot mask one; without
+  // it, two devices with drifty clocks could ping-pong reloads.
+  // FAILS OPEN on network trouble (timeout/throw -> credit locally, as before): availability first, and the
+  // pre-existing guards still apply. The peek is one indexed single-column select on the player's own row.
+  var WAKE_STALE_TOLERANCE_MS = 15000;
+  var WAKE_PEEK_TIMEOUT_MS = 4000;
+  function wakeCloudIsNewer(localSavedAt, cloudSavedAt){
+    if(!(cloudSavedAt > 0)) return false;              // no cloud row / unreadable -> not evidence of a writer
+    return cloudSavedAt > (localSavedAt || 0) + WAKE_STALE_TOLERANCE_MS;
+  }
+  // Resolves true if this tab found a newer cloud save and is reloading into it (caller must NOT credit
+  // local catch-up in that case); false on "we are current", no session, timeout, or any error.
+  async function wakeStalenessCheck(){
+    try{
+      if(!CLOUD_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id || !chatClient) return false;
+      var res = await Promise.race([
+        chatClient.from('saves').select('client_saved_at').eq('user_id', authUser.id).maybeSingle(),
+        new Promise(function(r){ setTimeout(function(){ r(null); }, WAKE_PEEK_TIMEOUT_MS); })
+      ]);
+      var cloudAt = res && res.data && res.data.client_saved_at;
+      if(wakeCloudIsNewer(state.lastSaved, Number(cloudAt))){
+        // cloudEnterFenced, not a bare flag: it blocks every write path (cloudSave, the pagehide beacon)
+        // and its overlay tells the truth ("running in a different tab or on another device") for the
+        // sub-second until the reload lands -- or permanently, with a Reload button, if reload is blocked.
+        cloudEnterFenced();
+        location.reload();
+        return true;
+      }
+    }catch(e){}
+    return false;
   }
 
   // force = intentional overwrite (reset only): bypasses the empty guard and tells the server
@@ -38050,11 +38102,20 @@
       if(awayMs > 60000){                                            // <=60s: the loop's own clamped catch-up covers it silently
         if(dungeonPartyLocksAway()){ lastTick = Date.now(); }        // a PARTY descent is attended -- freeze it (a solo run fast-forwards, ticket-0117)
         else {
-          applyOfflineProgress(awayMs);                              // credit tasks + peons (capped 12h) + build the summary
-          lastTick = Date.now();                                     // stop the loop re-crediting the clamped 60s...
-          state.lastSaved = Date.now();                              // ...and a quick reload re-crediting via offline-on-load
-          cloudSave(false, true);
-          render();                                                  // surface the "While you were away" summary
+          // BEFORE crediting anything, ask the cloud whether another device wrote while this tab slept
+          // (ticket-0132 -- see wakeStalenessCheck; crediting first is how Valuren's bows were clobbered:
+          // the offline XP inflated this stale tab's progress past the live device's and its save won).
+          // lastTick advances NOW so the resumed loop can't re-credit the window while the peek is in
+          // flight; the awayMs captured above still credits the full span if the peek says we're current.
+          lastTick = Date.now();
+          wakeStalenessCheck().then(function(tookOver){
+            if(tookOver) return;                                     // fenced + reloading into the newer save
+            applyOfflineProgress(awayMs);                            // credit tasks + peons (capped 12h) + build the summary
+            lastTick = Date.now();                                   // stop the loop re-crediting the clamped 60s...
+            state.lastSaved = Date.now();                            // ...and a quick reload re-crediting via offline-on-load
+            cloudSave(false, true);
+            render();                                                // surface the "While you were away" summary
+          });
         }
       }
     }
@@ -38399,7 +38460,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.11';
+  var GAME_VERSION = '0.0.77.12';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38562,7 +38623,7 @@
       dungeonOwedClears:dungeonOwedClears, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL,
       applyEffectDamage:applyEffectDamage, applyEffectDot:applyEffectDot, combatLogDotReset:combatLogDotReset,
       _blacksmithGroupsOpen:function(){ return blacksmithGroupsOpen; }, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupOpen:blacksmithGroupOpen,
-      estateEnqueueOrStart:estateEnqueueOrStart, _setCloudFenced:function(v){ cloudFenced = !!v; }, _cloudFenced:function(){ return cloudFenced; },
+      estateEnqueueOrStart:estateEnqueueOrStart, _setCloudFenced:function(v){ cloudFenced = !!v; }, _cloudFenced:function(){ return cloudFenced; }, wakeCloudIsNewer:wakeCloudIsNewer, WAKE_STALE_TOLERANCE_MS:WAKE_STALE_TOLERANCE_MS, wakeStalenessCheck:wakeStalenessCheck,
       combatLogPush:combatLogPush, combatLogLineHtml:combatLogLineHtml, _combatLog:function(){ return combatLog; },
       craftLadderInputName:craftLadderInputName, logForgeFailure:logForgeFailure,
       CLASS_ART:CLASS_ART, classArtHtml:classArtHtml, classCardIcon:classCardIcon, classPortraitFor:classPortraitFor,

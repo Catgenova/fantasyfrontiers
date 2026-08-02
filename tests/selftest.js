@@ -13993,6 +13993,30 @@
     ok(!FF._cloudFenced(), 'the fence flag is restored so later suites are unaffected');
   });
 
+  // ---- Wake staleness (ticket-0132): a stale tab must not clobber a newer cloud save ---------------
+  // Valuren forged two Fantastic bows and lost both to his other device waking up: the wake path credited
+  // hours of offline XP onto its stale snapshot and pushed, and BOTH server guards waved it through -- the
+  // session fence only rejects while the other device wrote within 45s, and the forward-only progress guard
+  // sums xp+physique and is blind to items, so the freshly-inflated stale save scored HIGHER than the live
+  // one. The wake path now peeks at the cloud's client_saved_at before crediting anything; these pin the
+  // decision function it peeks with. (The async handler itself cannot be asserted here -- suite() is
+  // synchronous and a .then() assertion is invisible -- so the test targets the synchronous mechanics.)
+  suite('wake staleness: the cloud-newer decision', function(){
+    ok(typeof FF.wakeStalenessCheck === 'function', 'the wake peek is exported');
+    var TOL = FF.WAKE_STALE_TOLERANCE_MS;
+    ok(TOL > 0 && TOL < 60000, 'the skew tolerance is positive and well under a real away window');
+    var t = 1700000000000;
+    ok(FF.wakeCloudIsNewer(t, t + TOL + 1), 'a cloud save newer than tolerance means another writer -> adopt');
+    ok(FF.wakeCloudIsNewer(t, t + 3600000), 'an hour-newer cloud save (the Valuren case) -> adopt');
+    ok(!FF.wakeCloudIsNewer(t, t + TOL - 1), 'inside the tolerance is clock skew, not a writer -> credit locally');
+    ok(!FF.wakeCloudIsNewer(t, t), 'an identical timestamp is our own last push -> credit locally');
+    ok(!FF.wakeCloudIsNewer(t, t - 5000), 'an older cloud save (our hide-push never landed) -> credit locally');
+    ok(!FF.wakeCloudIsNewer(t, 0), 'no cloud row is not evidence of a writer -> credit locally');
+    ok(!FF.wakeCloudIsNewer(t, NaN) && !FF.wakeCloudIsNewer(t, undefined), 'garbage from the peek fails open');
+    ok(!FF.wakeCloudIsNewer(0, 0), 'a fresh local state with no cloud row stays put');
+    ok(FF.wakeCloudIsNewer(0, TOL + 1), 'a fresh local state with a real cloud save adopts it');
+  });
+
   // ---- Combat log: class/effect damage must be visible --------------------------------------------
   // Ticket (Valuren): "The damage of the skill Gloria of the Templar is missing". Every rework routed its
   // damage through applyChipDamage, which logs nothing, so Gloria/Bolts/Decrees/Rot/Harvest/Shatter and
