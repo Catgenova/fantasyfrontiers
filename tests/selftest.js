@@ -14480,9 +14480,14 @@
     document.body.appendChild(probe);
     try {
       var card = probe.querySelector('.global-action-bar'), cs = getComputedStyle(card);
-      eq(cs.backgroundColor, 'rgb(20, 17, 9)', 'the card interior is the arena black well (#141109)');
+      eq(cs.backgroundColor, 'rgb(20, 17, 9)', 'the card interior underlays the arena black well (#141109)');
+      ok(cs.backgroundImage.indexOf('marble_dark') !== -1, 'the well is the commissioned dark marble (owner request, v0.0.78.3)');
+      ok(cs.backgroundImage.indexOf('linear-gradient') !== -1, 'under a dark wash, so the veining stays texture and labels keep contrast');
       ok(cs.borderImageSource.indexOf('ivy_stretch') !== -1, 'framed by the arena stone (ivy_stretch.png border-image)');
-      eq(cs.backgroundClip, 'padding-box', 'the well is clipped to the padding box -- unclipped it bleeds through the open stonework');
+      // Computed background-clip is PER LAYER (comma list) now that the well carries wash + marble:
+      // every layer must clip, or that layer bleeds through the open stonework of the frame.
+      ok(cs.backgroundClip.split(',').every(function(v){ return v.trim() === 'padding-box'; }),
+        'every background layer clips to the padding box -- unclipped they bleed through the open stonework (got "' + cs.backgroundClip + '")');
       var track = probe.querySelector('.gab-task-track'), ts = getComputedStyle(track);
       eq(ts.height, '6px', 'the task bar is the effect panels\' thin 6px track');
       eq(ts.backgroundColor, 'rgb(12, 10, 8)', 'in the fx wells\' near-black (#0c0a08)');
