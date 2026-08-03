@@ -14269,6 +14269,32 @@
     ok(FF.wakeCloudIsNewer(0, TOL + 1), 'a fresh local state with a real cloud save adopts it');
   });
 
+  // ---- Offline credit bound + wake write-hold (v0.0.77.32 offline-catchup audit) -------------------
+  // A brand-new player was granted the full 12h catch-up off one tab flick: the wall clock (the only
+  // clock the credit used) jumped while the tab was hidden. The bound takes min(wall, server-witnessed
+  // absence + slack) -- witnessed absence is always >= the true absence, so the bound can only strip
+  // inflation, never legitimate credit.
+  suite('offline catch-up: the server-witnessed credit bound', function(){
+    var B = FF.offlineCreditBound, SLACK = FF.OFFLINE_BOUND_SLACK_MS, H = 3600*1000;
+    ok(SLACK >= 15000 && SLACK <= 5*60*1000, 'the slack absorbs push latency without re-opening the hole');
+    eq(B(12*H, 20*60*1000), 20*60*1000 + SLACK, 'a 12h wall claim against 20 witnessed minutes credits ~20 minutes (the ticket)');
+    eq(B(30*60*1000, 12*H), 30*60*1000, 'a witnessed absence LARGER than the wall claim never inflates it');
+    eq(B(5*H, 5*H - 30000), 5*H, 'agreement within the slack credits the full wall figure');
+    eq(B(8*H, null), 8*H, 'no server data (offline wake, pre-migration backend) -> the wall figure stands');
+    eq(B(8*H, NaN), 8*H, 'garbage server data fails open');
+    eq(B(8*H, -5), 8*H, 'a negative witness fails open');
+    eq(B(0, 999), 0, 'zero away is zero credit');
+    eq(B(-100, 999), 0, 'a negative wall claim (backward clock step) credits nothing');
+    // The write hold: while a wake reconcile is in flight, cloud pushes must wait -- otherwise the
+    // resumed loop's 4s cadence can push this tab's stale memory before the peek resolves.
+    ok(FF.CLOUD_WAKE_HOLD_MAX_MS >= 10000 && FF.CLOUD_WAKE_HOLD_MAX_MS <= 60000, 'the hold backstop releases well before the watchdog banner would fire');
+    FF.cloudWakeHoldSet(true);
+    ok(FF._cloudWakeHold() === true, 'the hold engages');
+    FF.cloudWakeHoldSet(false);
+    ok(FF._cloudWakeHold() === false, 'the hold releases');
+    ok(Array.isArray(FF.WAKE_PEEK_TRIES) && FF.WAKE_PEEK_TRIES.length >= 2, 'the wake peek retries through the no-network window instead of failing open on one shot');
+  });
+
   // ---- Save watchdog (v0.0.77.22: "lost 25 minutes on a refresh") ---------------------------------
   // cloudSave used to read exactly one field of the push response (data.fenced); a 409 stale, expired
   // token, 413, 429 or network throw was silently swallowed while the player kept playing an

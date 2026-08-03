@@ -19381,6 +19381,22 @@
           if(typeof state.potionCharges !== 'number') state.potionCharges = 0;
           if(state.activePotion && !parsePotionId(state.activePotion)) { state.activePotion = null; state.potionCharges = 0; }
           var elapsed = Date.now() - (loaded.lastSaved || Date.now());
+          // Bound the boot credit by the SERVER-witnessed absence too (offline-catchup audit,
+          // v0.0.77.32): loaded.lastSaved is a client stamp, so the same wall-clock jump that inflated
+          // wake credits inflates reload credits. wake_peek can only remove inflation, never legitimate
+          // time (see offlineCreditBound); on timeout/pre-migration it returns null and nothing changes.
+          try{
+            if(chatClient && authUser && authUser.id){
+              var _bootPeek = await Promise.race([
+                _wakePeekOnce(),
+                new Promise(function(r){ setTimeout(function(){ r(null); }, WAKE_PEEK_TIMEOUT_MS); })
+              ]);
+              if(_bootPeek) elapsed = offlineCreditBound(elapsed, _bootPeek.serverAwayMs);
+            }
+          }catch(e2){}
+          // Breadcrumb for the "lost time on a refresh" reports: say plainly how old the adopted save
+          // is, so the next report carries its own diagnosis instead of a guess.
+          if(elapsed > 120000) addLog('Restored your cloud save from ' + formatDuration(elapsed) + ' ago.');
           applyOfflineProgress(elapsed);
         } else {
           addLog('Welcome to Fantasy Frontiers! Gather, craft, fight and grow to become a legend. Your progress saves automatically.');
@@ -31471,6 +31487,7 @@
     try{
       if(!CLOUD_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id || !cloudAccessToken) return;
       if(cloudFenced) return;   // another window owns the save -- this tab's state is stale, never push it
+      if(cloudWakeHold) return; // a wake reconcile is deciding whose save is truth -- hold every write
       var score = saveProgressScore(state); if(score <= 0) return;
       state.lastSaved = Date.now();
       // Same rule as cloudSave: only claim-confirmed tabs identify themselves, so an unclaimed tab's
@@ -31521,30 +31538,92 @@
   // pre-existing guards still apply. The peek is one indexed single-column select on the player's own row.
   var WAKE_STALE_TOLERANCE_MS = 15000;
   var WAKE_PEEK_TIMEOUT_MS = 4000;
+  // A laptop waking from sleep routinely has NO network for the first seconds -- which used to make the
+  // single 4s peek fail open at exactly the moment it mattered, letting a stale device credit hours of
+  // offline catch-up onto old memory and push it (the recurring "lost an hour on a refresh"). Retry.
+  var WAKE_PEEK_TRIES = [0, 3000, 8000];
   function wakeCloudIsNewer(localSavedAt, cloudSavedAt){
     if(!(cloudSavedAt > 0)) return false;              // no cloud row / unreadable -> not evidence of a writer
     return cloudSavedAt > (localSavedAt || 0) + WAKE_STALE_TOLERANCE_MS;
   }
-  // Resolves true if this tab found a newer cloud save and is reloading into it (caller must NOT credit
-  // local catch-up in that case); false on "we are current", no session, timeout, or any error.
+  // Server-witnessed bound on any offline credit (offline-catchup audit, v0.0.77.32). The saves row's
+  // updated_at was stamped by the SERVER at our own last accepted push -- at or before this tab went
+  // dark -- so (server_now - updated_at) >= the true absence, always. min() can therefore only strip
+  // INFLATION (a client wall clock that jumped while the tab slept: a brand-new player was handed the
+  // full 12h catch-up cap off one tab flick, most likely NTP correcting a fresh device's slow clock),
+  // never legitimate credit. Null serverAway = no server data (offline wake, pre-migration backend) ->
+  // the wall figure stands, exactly as before.
+  var OFFLINE_BOUND_SLACK_MS = 60000;
+  function offlineCreditBound(wallMs, serverAwayMs){
+    if(!(wallMs > 0)) return 0;
+    if(serverAwayMs == null || !isFinite(serverAwayMs) || serverAwayMs < 0) return wallMs;
+    return Math.min(wallMs, serverAwayMs + OFFLINE_BOUND_SLACK_MS);
+  }
+  // While a wake reconcile is deciding whose save is the truth, EVERY cloud write holds -- otherwise the
+  // resumed loop's 4s cadence can push this tab's stale memory before the peek resolves. The backstop
+  // release means a hung reconcile can never wedge saving for good (and the watchdog banner would name
+  // it if something did).
+  var cloudWakeHold = false;
+  var _wakeHoldTimer = null;
+  var CLOUD_WAKE_HOLD_MAX_MS = 30000;
+  function cloudWakeHoldSet(on){
+    cloudWakeHold = !!on;
+    if(_wakeHoldTimer){ clearTimeout(_wakeHoldTimer); _wakeHoldTimer = null; }
+    if(on) _wakeHoldTimer = setTimeout(function(){ cloudWakeHold = false; }, CLOUD_WAKE_HOLD_MAX_MS);
+  }
+  // One peek: the wake_peek RPC hands back the row's client_saved_at PLUS the server clock pair that
+  // yields the witnessed absence; until that migration lands (or if it errors) fall back to the plain
+  // row read, which still answers the staleness question, just without a bound (serverAwayMs null).
+  function _wakePeekOnce(){
+    return chatClient.rpc('wake_peek').then(function(res){
+      var d = res && res.data;
+      if(!(d && d.ok)) throw new Error('wake_peek unavailable');
+      return {
+        cloudAt: Number(d.client_saved_at) || 0,
+        serverAwayMs: (d.server_now_ms != null && d.updated_at_ms != null)
+          ? Math.max(0, Number(d.server_now_ms) - Number(d.updated_at_ms)) : null
+      };
+    }).catch(function(){
+      return chatClient.from('saves').select('client_saved_at').eq('user_id', authUser.id).maybeSingle().then(function(res){
+        if(res && res.error) throw res.error;
+        return { cloudAt: Number(res && res.data && res.data.client_saved_at) || 0, serverAwayMs: null };
+      });
+    });
+  }
+  // Resolves { tookOver, serverAwayMs }. tookOver=true means a newer cloud save exists and this tab is
+  // fencing + reloading into it (caller must NOT credit local catch-up). serverAwayMs is the witnessed
+  // absence for offlineCreditBound, or null when it could not be learned. FAILS OPEN after the retries
+  // (availability first; the pre-existing guards still apply) -- but only after honestly trying through
+  // the no-network window a waking machine starts in.
   async function wakeStalenessCheck(){
+    var out = { tookOver: false, serverAwayMs: null };
+    if(!CLOUD_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id || !chatClient) return out;
+    cloudWakeHoldSet(true);
     try{
-      if(!CLOUD_SYNC_ENABLED || !CHAT_ENABLED || !authUser || !authUser.id || !chatClient) return false;
-      var res = await Promise.race([
-        chatClient.from('saves').select('client_saved_at').eq('user_id', authUser.id).maybeSingle(),
-        new Promise(function(r){ setTimeout(function(){ r(null); }, WAKE_PEEK_TIMEOUT_MS); })
-      ]);
-      var cloudAt = res && res.data && res.data.client_saved_at;
-      if(wakeCloudIsNewer(state.lastSaved, Number(cloudAt))){
-        // cloudEnterFenced, not a bare flag: it blocks every write path (cloudSave, the pagehide beacon)
-        // and its overlay tells the truth ("running in a different tab or on another device") for the
-        // sub-second until the reload lands -- or permanently, with a Reload button, if reload is blocked.
-        cloudEnterFenced();
-        location.reload();
-        return true;
+      var peek = null;
+      for(var i = 0; i < WAKE_PEEK_TRIES.length && !peek; i++){
+        if(WAKE_PEEK_TRIES[i]) await new Promise(function(r){ setTimeout(r, WAKE_PEEK_TRIES[i]); });
+        try{
+          peek = await Promise.race([
+            _wakePeekOnce(),
+            new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('peek timeout')); }, WAKE_PEEK_TIMEOUT_MS); })
+          ]);
+        }catch(e){ peek = null; }
+      }
+      if(peek){
+        out.serverAwayMs = peek.serverAwayMs;
+        if(wakeCloudIsNewer(state.lastSaved, peek.cloudAt)){
+          // cloudEnterFenced, not a bare flag: it blocks every write path (cloudSave, the pagehide beacon)
+          // and its overlay tells the truth ("running in a different tab or on another device") for the
+          // sub-second until the reload lands -- or permanently, with a Reload button, if reload is blocked.
+          cloudEnterFenced();
+          location.reload();
+          out.tookOver = true;
+        }
       }
     }catch(e){}
-    return false;
+    finally{ if(!out.tookOver) cloudWakeHoldSet(false); }   // fenced tabs never write again anyway
+    return out;
   }
 
   // ---- SAVE WATCHDOG (v0.0.77.22: "lost 25 minutes of progress on a refresh") -----------------------
@@ -31627,6 +31706,7 @@
     if(!CLOUD_SYNC_ENABLED) return;
     if(!CHAT_ENABLED || !authUser || !authUser.id) return;
     if(cloudFenced) return;   // fenced out by another window -- writing would clobber the live session
+    if(cloudWakeHold) return; // a wake reconcile is deciding whose save is truth -- hold every write
     cloudRefreshToken(); // keep the cached token fresh for the unload beacon
     var score = saveProgressScore(state);
     // Never push an empty/zero-progress state (unless a deliberate, forced reset) -- this is
@@ -37678,16 +37758,27 @@
 
   // ================= MAIN LOOP =================
   var lastTick = Date.now();
+  var _loopErrorNoted = false;
   function loop(){
     // Fenced out by another window: stop the simulation dead and do NOT reschedule. Continuing would
     // accrue progress this tab can never persist (cloudSave is closed), which reads to the player as
     // lost hours. The overlay from cloudEnterFenced() is already up asking them to reload.
     if(cloudFenced) return;
+    // One bad frame must NEVER kill the simulation (offline-catchup audit, v0.0.77.32): an uncaught
+    // throw here used to end the rAF chain silently -- the game froze, lastTick froze with it, and the
+    // next tab-hide/show read the whole frozen span as "time away", up to the 12h catch-up cap. Log the
+    // first failure, skip the frame, keep running.
+    try{ loopFrame(); }
+    catch(e){ if(!_loopErrorNoted){ _loopErrorNoted = true; try{ console.error('FF frame error (simulation continues):', e); }catch(e2){} } }
+    requestAnimationFrame(loop);
+  }
+  function loopFrame(){
     _frameId++;                                  // invalidates the per-frame multiplier memo
     var _pf = PERF_ON ? performance.now() : 0;   // frame start (perf build only)
     var now = Date.now();
     var dt = now - lastTick;
     if(dt > 60000) dt = 60000;
+    if(dt < 0) dt = 0;   // a backward clock step (NTP correction) must not run the simulation in reverse
     lastTick = now;
 
     ensureCraftSlotCapacity();
@@ -37948,7 +38039,6 @@
       _perf.frames++;
       perfReport();
     }
-    requestAnimationFrame(loop);
   }
   // ---- Tab hide/show lifecycle (the ONLY visibilitychange listener) ----
   // HIDDEN: flush the save immediately (async push + keepalive beacon) so nothing recent is lost if
@@ -37960,14 +38050,20 @@
   // quick reload re-credits the same time. An ACTIVE dungeon fight is attended/real-time, so freeze it
   // instead -- resume exactly where the player left off. Progress is credited and saved BEFORE the
   // update check, which may hard-reload the page when a new build landed while the tab was away.
+  // The wake ANCHOR is stamped by the hide event itself, not read off lastTick: lastTick freezes if the
+  // loop ever died (now guarded, but belt-and-braces) and is subject to whatever the loop last saw, while
+  // this stamp provably marks the moment the tab went dark (offline-catchup audit, v0.0.77.32).
+  var _hiddenAtWall = 0;
   document.addEventListener('visibilitychange', function(){
     if(cloudFenced) return;   // dead tab: don't credit catch-up progress it can never save, or show a stale away-summary
     if(document.hidden){
+      _hiddenAtWall = Date.now();
       if(gameStarted){ saveGame(); cloudSave(false, true); cloudSaveBeacon(); }
       return;
     }
     if(gameStarted){
-      var awayMs = Date.now() - lastTick;                            // the loop paused while hidden -> time away
+      var awayMs = Date.now() - (_hiddenAtWall || lastTick);         // the loop paused while hidden -> time away
+      _hiddenAtWall = 0;
       if(awayMs > 60000){                                            // <=60s: the loop's own clamped catch-up covers it silently
         if(dungeonPartyLocksAway()){ lastTick = Date.now(); }        // a PARTY descent is attended -- freeze it (a solo run fast-forwards, ticket-0117)
         else {
@@ -37976,10 +38072,14 @@
           // the offline XP inflated this stale tab's progress past the live device's and its save won).
           // lastTick advances NOW so the resumed loop can't re-credit the window while the peek is in
           // flight; the awayMs captured above still credits the full span if the peek says we're current.
+          // The same round trip brings back the SERVER-witnessed absence, which bounds the credit -- the
+          // fix for a wall clock that jumped while the tab was dark granting phantom hours (a brand-new
+          // player was handed the full 12h cap off one tab flick; new devices commonly boot with the
+          // clock behind and NTP corrects it forward mid-session).
           lastTick = Date.now();
-          wakeStalenessCheck().then(function(tookOver){
-            if(tookOver) return;                                     // fenced + reloading into the newer save
-            applyOfflineProgress(awayMs);                            // credit tasks + peons (capped 12h) + build the summary
+          wakeStalenessCheck().then(function(res){
+            if(res && res.tookOver) return;                          // fenced + reloading into the newer save
+            applyOfflineProgress(offlineCreditBound(awayMs, res ? res.serverAwayMs : null));
             lastTick = Date.now();                                   // stop the loop re-crediting the clamped 60s...
             state.lastSaved = Date.now();                            // ...and a quick reload re-crediting via offline-on-load
             cloudSave(false, true);
@@ -38329,7 +38429,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.31';
+  var GAME_VERSION = '0.0.77.32';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38494,6 +38594,7 @@
       applyEffectDamage:applyEffectDamage, applyEffectDot:applyEffectDot, combatLogDotReset:combatLogDotReset,
       _blacksmithGroupsOpen:function(){ return blacksmithGroupsOpen; }, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupOpen:blacksmithGroupOpen,
       estateEnqueueOrStart:estateEnqueueOrStart, estateBuildTierLevelOk:estateBuildTierLevelOk, SKILL_XP_FLOOR:SKILL_XP_FLOOR, estateArchitectureTierCap:estateArchitectureTierCap, estateUpgradeWorkshop:estateUpgradeWorkshop, estateUpgradeCottage:estateUpgradeCottage, _setCloudFenced:function(v){ cloudFenced = !!v; }, _cloudFenced:function(){ return cloudFenced; }, wakeCloudIsNewer:wakeCloudIsNewer, WAKE_STALE_TOLERANCE_MS:WAKE_STALE_TOLERANCE_MS, wakeStalenessCheck:wakeStalenessCheck,
+      offlineCreditBound:offlineCreditBound, OFFLINE_BOUND_SLACK_MS:OFFLINE_BOUND_SLACK_MS, cloudWakeHoldSet:cloudWakeHoldSet, _cloudWakeHold:function(){ return cloudWakeHold; }, CLOUD_WAKE_HOLD_MAX_MS:CLOUD_WAKE_HOLD_MAX_MS, WAKE_PEEK_TRIES:WAKE_PEEK_TRIES,
       cloudClassifyResult:cloudClassifyResult, cloudSaveWarnDue:cloudSaveWarnDue, cloudStaleShouldAdopt:cloudStaleShouldAdopt, cloudNoteSaveResult:cloudNoteSaveResult, ffSaveWarnUpdate:ffSaveWarnUpdate, cloudWatchdogTick:cloudWatchdogTick, CLOUD_WARN_AFTER_MS:CLOUD_WARN_AFTER_MS, CLOUD_STALE_ADOPT_AFTER:CLOUD_STALE_ADOPT_AFTER, _cloudWatch:function(){ return { lastConfirmed: cloudLastConfirmed, reason: cloudLastFailReason, stale409s: _cloudStale409s, lastPush: cloudLastPush }; }, _cloudWatchSet:function(o){ if(o && typeof o.lastConfirmed === 'number') cloudLastConfirmed = o.lastConfirmed; if(o && typeof o.stale409s === 'number') _cloudStale409s = o.stale409s; if(o && typeof o.reason === 'string') cloudLastFailReason = o.reason; },
       combatLogPush:combatLogPush, combatLogLineHtml:combatLogLineHtml, _combatLog:function(){ return combatLog; },
       craftLadderInputName:craftLadderInputName, logForgeFailure:logForgeFailure,
