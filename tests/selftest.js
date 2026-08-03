@@ -340,17 +340,37 @@
       eq(FF.sacKeyDisplay('stackweapon|' + wid2).name, FF.STACKABLE_WEAPON_ITEMS[wid2].name, 'a stackable-weapon key resolves too');
       var junk = FF.sacKeyDisplay('nonsense|ghost_item_xyz');
       ok(junk && junk.name === 'ghost_item_xyz', 'an unknown/legacy key still resolves to something clearable');
-      // The Sacrifice tab lists a flagged-but-unowned item (the exact reported situation)...
+      // A flagged-but-unowned item stays DISCOVERABLE but collapsed (owner order, v0.0.77.43: hundreds
+      // of "Owned: 0" chips walled the tab): the default view counts it and offers Show / Clear all.
       var key = 'tool|' + tid;
       S.autoSacrifice[key] = true;
+      FF._setSacAutoShowZero(false);
       var html = FF.renderSacrificeTab();
       ok(html.indexOf('Auto-sacrifice list') !== -1, 'the flag list renders even though the item is gone');
-      ok(html.indexOf(FF.TOOL_ITEMS[tid].name) !== -1, 'the ghost flag is listed by item name');
-      ok(html.indexOf('data-action="toggleAutoSacItem"') !== -1, 'each listed flag is a click-to-clear control');
-      // ...and clearing it through the same action the chip fires actually removes the flag.
+      ok(html.indexOf(FF.TOOL_ITEMS[tid].name) === -1, 'a zero-owned flag does NOT render a chip by default');
+      ok(/items you own none of/.test(html) && html.indexOf('data-action="sacAutoToggleZero"') !== -1,
+         'the hidden flags are counted with a Show control — never invisible (the Scum guarantee)');
+      ok(html.indexOf('data-action="sacAutoClearZero"') !== -1, 'and a one-click Clear all');
+      // Show expands them into the same click-to-clear chips as before...
+      FF._setSacAutoShowZero(true);
+      html = FF.renderSacrificeTab();
+      ok(html.indexOf(FF.TOOL_ITEMS[tid].name) !== -1, 'Show expands the zero-owned flags into chips');
+      ok(html.indexOf('data-action="toggleAutoSacItem"') !== -1, 'each expanded flag is a click-to-clear control');
+      FF._setSacAutoShowZero(false);
+      // ...clearing one through the same action still works...
       FF.toggleAutoSacItem(key);
       ok(!S.autoSacrifice[key], 'clicking the chip clears the flag without needing full Faith or the item');
       ok(FF.renderSacrificeTab().indexOf('Auto-sacrifice list') === -1, 'the list disappears once no flags remain');
+      // ...and Clear-all sweeps ONLY the zero-owned flags, leaving owned ones alone.
+      var rid2 = Object.keys(FF.RING_ITEMS)[0];
+      S.autoSacrifice['tool|' + tid] = true;             // owned: 0
+      S.autoSacrifice['ring|' + rid2] = true;            // owned: 3
+      var savedRing = S.inventory[rid2]; S.inventory[rid2] = 3;
+      FF.sacAutoClearZero();
+      ok(!S.autoSacrifice['tool|' + tid], 'Clear all removes the zero-owned flag');
+      ok(S.autoSacrifice['ring|' + rid2] === true, 'Clear all leaves flags on items still owned');
+      delete S.autoSacrifice['ring|' + rid2];
+      if(savedRing === undefined) delete S.inventory[rid2]; else S.inventory[rid2] = savedRing;
     } finally {
       S.inventory = sv.inv; S.autoSacrifice = sv.auto;
     }

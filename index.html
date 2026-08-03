@@ -30715,6 +30715,16 @@
       needsRender = true;
     }
   }
+  var sacAutoShowZero = false;   // transient UI: expand the zero-owned flags in the auto-sacrifice list
+  // Clear every flag whose item the player owns none of (the collapsed group in the list).
+  function sacAutoClearZero(){
+    if(!state.autoSacrifice) return;
+    Object.keys(state.autoSacrifice).forEach(function(k){
+      if(state.autoSacrifice[k] && !(sacKeyDisplay(k).owned > 0)) delete state.autoSacrifice[k];
+    });
+    sacAutoShowZero = false;
+    saveGame(); render();
+  }
   function toggleAutoSacItem(key){
     if(!state.autoSacrifice || typeof state.autoSacrifice !== 'object') state.autoSacrifice = {};
     if(state.autoSacrifice[key]) delete state.autoSacrifice[key];
@@ -30769,13 +30779,30 @@
       .map(function(k){ var d = sacKeyDisplay(k); d.key = k; return d; })
       .sort(function(a,b){ return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
     if(autoRows.length){
+      // OWNED flags render as chips; ZERO-OWNED flags collapse into one summary line (owner order,
+      // v0.0.77.43: a heavy auto-sacrificer's list was hundreds of "Owned: 0" chips deep). They must
+      // stay DISCOVERABLE though -- an invisible flag silently eating each future craft is the exact
+      // bug this list was built to fix (Scum's ticket) -- so the line counts them and offers Show and
+      // Clear-all, rather than pretending they don't exist.
+      var autoOwned = autoRows.filter(function(d){ return (d.owned||0) > 0; });
+      var autoZero = autoRows.filter(function(d){ return !(d.owned > 0); });
+      var autoShown = sacAutoShowZero ? autoRows : autoOwned;
       html += '<div class="physique-bonus" style="margin-top:6px;">'
         + '<div style="font-size:12px;margin-bottom:5px;">Auto-sacrifice list <span style="color:var(--text-dim);">&mdash; these items refill Faith automatically, including every copy you craft later. Click one to stop.</span></div>'
         + '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
-      autoRows.forEach(function(d){
+      autoShown.forEach(function(d){
         html += '<button class="inv-chip on" data-action="toggleAutoSacItem" data-key="'+escapeHtml(d.key)+'" title="Stop auto-sacrificing this item">☑ '+escapeHtml(d.name)+(d.tier?' · T'+d.tier:'')+' · Owned: '+(d.owned||0)+' &times;</button>';
       });
-      html += '</div></div>';
+      if(!autoShown.length) html += '<span style="font-size:11px;color:var(--text-dim);">None of your flagged items are in your inventory right now.</span>';
+      html += '</div>';
+      if(autoZero.length){
+        html += '<div style="font-size:11px;color:var(--text-dim);margin-top:6px;">'
+          + fmt(autoZero.length) + ' more on items you own none of — they still catch future copies. '
+          + '<button class="mini-btn" data-action="sacAutoToggleZero">' + (sacAutoShowZero ? 'Hide' : 'Show') + '</button> '
+          + '<button class="mini-btn" data-action="sacAutoClearZero">Clear all ' + fmt(autoZero.length) + '</button>'
+          + '</div>';
+      }
+      html += '</div>';
     }
     var rows = collectSacrificeRows();
     if(rows.length===0){
@@ -37569,6 +37596,8 @@
     toggleAutoTea: function(btn, e){ toggleAutoTea(); },
     toggleAutoSacrificeRelics: function(btn, e){ toggleAutoSacrificeRelics(); },
     toggleAutoSacItem: function(btn, e){ toggleAutoSacItem(btn.getAttribute('data-key')); },
+    sacAutoToggleZero: function(btn, e){ sacAutoShowZero = !sacAutoShowZero; render(); },
+    sacAutoClearZero: function(btn, e){ sacAutoClearZero(); },
     studyBestTome: function(btn, e){ studyBestTome(); },
     toggleAutoTome: function(btn, e){ toggleAutoTome(); },
     drinkBestBrew: function(btn, e){ drinkBestBrew(); },
@@ -38554,7 +38583,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.42';
+  var GAME_VERSION = '0.0.77.43';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38857,7 +38886,7 @@
       LEG_CRYPTREAVER_TIER_PCT:LEG_CRYPTREAVER_TIER_PCT, LEG_COFFERGUARD_PER:LEG_COFFERGUARD_PER, LEG_COFFERGUARD_CAP:LEG_COFFERGUARD_CAP,
       LEG_GREEDWYRM_PER_RELIC:LEG_GREEDWYRM_PER_RELIC, LEG_GREEDWYRM_RELIC_CAP:LEG_GREEDWYRM_RELIC_CAP, LEG_HOARDWALL_RELICS:LEG_HOARDWALL_RELICS,
       LEG_HOARDWALL_STRIKE_MULT:LEG_HOARDWALL_STRIKE_MULT, LEG_HOARDWALL_DR:LEG_HOARDWALL_DR, LEG_GOLDGORGE_PER_GOLD:LEG_GOLDGORGE_PER_GOLD,
-      LEG_CRYPTGUARD_REFUND:LEG_CRYPTGUARD_REFUND, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, RELIC_ITEMS:RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, autoSacrificeItemsCheck:autoSacrificeItemsCheck, collectSacrificeRows:collectSacrificeRows, sacRowRestore:sacRowRestore, sacRowKey:sacRowKey, sacKeyDisplay:sacKeyDisplay, toggleAutoSacItem:toggleAutoSacItem, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,
+      LEG_CRYPTGUARD_REFUND:LEG_CRYPTGUARD_REFUND, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, RELIC_ITEMS:RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, autoSacrificeItemsCheck:autoSacrificeItemsCheck, collectSacrificeRows:collectSacrificeRows, sacRowRestore:sacRowRestore, sacRowKey:sacRowKey, sacKeyDisplay:sacKeyDisplay, toggleAutoSacItem:toggleAutoSacItem, sacAutoClearZero:sacAutoClearZero, _setSacAutoShowZero:function(v){ sacAutoShowZero = !!v; }, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, STACKABLE_SHIELD_TYPES:STACKABLE_SHIELD_TYPES, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
       BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, OFFHAND_TYPE_RECIPES:OFFHAND_TYPE_RECIPES, getStackableQuiverTierData:getStackableQuiverTierData, STACKABLE_QUIVER_ITEMS:STACKABLE_QUIVER_ITEMS, isStackableQuiver:isStackableQuiver, getEquippedOffhandItem:getEquippedOffhandItem, getSpecialSkillId:getSpecialSkillId, WILDLIFE_NAMES:WILDLIFE_NAMES, quiverAmmoPreserve:quiverAmmoPreserve, bowArrowToConsume:bowArrowToConsume, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT, applyRarity:applyRarity, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, renderCombatStatsPanel:renderCombatStatsPanel, openAmountModal:openAmountModal, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
       DAMAGE_TYPES:DAMAGE_TYPES
