@@ -759,6 +759,12 @@
   .chat-msg{font-family:var(--font-body);font-size:13px;line-height:1.45;}
   .chat-user{font-weight:700;color:var(--cat-chat);margin-right:5px;}
   .chat-user::after{content:':';color:var(--text-faint);}
+  /* Mortal-path posters wear the same red the leaderboard gives them (.lb-name.mortal palette). */
+  .chat-user.mortal{color:#8a1f2c;font-weight:800;}
+  @media (prefers-color-scheme: dark){ .chat-user.mortal{color:#e06576;} }
+  :root[data-theme="dark"] .chat-user.mortal{color:#e06576;}
+  :root[data-theme="light"] .chat-user.mortal{color:#8a1f2c;}
+  .chat-guild-tag{font-weight:700;font-size:11px;color:var(--gold);margin-right:3px;letter-spacing:.3px;}
   .chat-time{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);margin-right:6px;}
   .log-entry .chat-time{margin-right:5px;}
   .chat-body{color:var(--text);word-break:break-word;}
@@ -30739,24 +30745,43 @@
   var chatMutes = {};        // uid -> muted_until (epoch ms), active mutes only
   var chatUserNames = {};    // uid -> username, for the owner's Moderation panel lists
   var chatTitles = {};       // uid -> equipped title id ('' once fetched with none), for the tag next to chat names
+  var chatMortals = {};      // uid -> true for Mortal-path players (their name renders red, like the leaderboard)
+  var chatGuildTags = {};    // uid -> guild tag ('' once fetched with none), shown as [TAG] before the name
   var myChatRole = null;     // this player's chat role, or null
   var chatModTarget = null;  // { mid, uid, name } while the moderate-player modal is open
   var accountClamps = {};    // uid -> clamp row { surfaces[], reason, auto, signal, clamped_until, username }, OWNER-only (private list)
   var clampSignals = [];     // recent auto-detection signals (shadow mode) for owner review, newest first
   function chatRoleOf(uid){ return uid ? (chatRoles[uid] || null) : null; }
   function chatNameFor(uid){ return chatUserNames[uid] || (uid ? (String(uid).slice(0,8)+'…') : '?'); }
-  // Fetch equipped titles for chat posters (once per uid) so a title tag can sit next to their name.
-  // Reads the public leaderboard view; errors (e.g. pre-migration) just leave the tag off.
+  // Fetch per-poster chat metadata (once per uid): equipped title + Mortal path from the public
+  // leaderboard view, and the guild tag from the world-readable guild_members -> guilds FK embed.
+  // Two independent requests with independent "fetched" maps, so a failure in either just leaves
+  // that tag off without blocking or re-querying the other. Errors mark the uid fetched-empty.
   function chatFetchTitles(uids){
     if(!CHAT_ENABLED || !chatClient || !uids || !uids.length) return;
     var need = uids.filter(function(u){ return u && !(u in chatTitles); });
-    if(!need.length) return;
-    chatClient.from('leaderboard').select('id,title').in('id', need).then(function(res){
-      var byId = {};
-      if(res && !res.error && res.data){ res.data.forEach(function(row){ byId[row.id] = row.title || ''; }); }
-      need.forEach(function(u){ chatTitles[u] = byId[u] || ''; });  // mark fetched (empty if none/errored) so we don't re-query
-      if(chatChannel==='global') chatRenderMessagesOnly();
-    }, function(){ need.forEach(function(u){ chatTitles[u] = ''; }); });
+    if(need.length){
+      chatClient.from('leaderboard').select('id,title,mortal').in('id', need).then(function(res){
+        var byId = {};
+        if(res && !res.error && res.data){ res.data.forEach(function(row){ byId[row.id] = row; }); }
+        need.forEach(function(u){ var r = byId[u]; chatTitles[u] = (r && r.title) || ''; chatMortals[u] = !!(r && r.mortal === true); });
+        chatMetaRefresh();
+      }, function(){ need.forEach(function(u){ chatTitles[u] = ''; chatMortals[u] = false; }); });
+    }
+    var needTag = uids.filter(function(u){ return u && !(u in chatGuildTags); });
+    if(needTag.length){
+      chatClient.from('guild_members').select('user_id,guilds(tag)').in('user_id', needTag).then(function(res){
+        var byU = {};
+        if(res && !res.error && res.data){ res.data.forEach(function(row){ byU[row.user_id] = (row.guilds && row.guilds.tag) || ''; }); }
+        needTag.forEach(function(u){ chatGuildTags[u] = byU[u] || ''; });
+        chatMetaRefresh();
+      }, function(){ needTag.forEach(function(u){ chatGuildTags[u] = ''; }); });
+    }
+  }
+  // A meta fetch landing repaints whichever chat channel is on screen (mortal red applies in guild chat too).
+  function chatMetaRefresh(){
+    if(chatChannel==='global') chatRenderMessagesOnly();
+    else if(chatChannel==='guild') guildChatRenderOnly();
   }
   function chatIsMod(){ return myChatRole === 'owner' || myChatRole === 'moderator'; }
   function chatIsOwner(){ return myChatRole === 'owner'; }
@@ -32486,7 +32511,11 @@
       var modBtn = (uid && !(authUser && uid===authUser.id))
         ? '<button class="chat-mod-btn" data-action="chatModOpen" data-mid="'+escapeHtml(String(m.id))+'" data-uid="'+escapeHtml(uid)+'" data-name="'+escapeHtml(m.username||'')+'" title="Player options">⋯</button>'
         : '';
-      return '<div class="chat-msg">'+badge+'<span class="chat-user">'+escapeHtml(m.username||'anon')+'</span>'+titleTag+mutedTag+'<span class="chat-time">'+msgTime(m.created_at)+'</span>'+modBtn+'<span class="chat-body">'+chatBodyHtml(m.body||'')+'</span></div>';
+      // Guild tag before the name, and Mortal-path posters wear the leaderboard's red name.
+      var _gtag = uid ? chatGuildTags[uid] : '';
+      var guildTag = _gtag ? '<span class="chat-guild-tag" title="Guild">['+escapeHtml(_gtag)+']</span>' : '';
+      var _mortal = uid ? chatMortals[uid] === true : false;
+      return '<div class="chat-msg">'+badge+guildTag+'<span class="chat-user'+(_mortal?' mortal':'')+'"'+(_mortal?' title="Mortal path"':'')+'>'+escapeHtml(m.username||'anon')+'</span>'+titleTag+mutedTag+'<span class="chat-time">'+msgTime(m.created_at)+'</span>'+modBtn+'<span class="chat-body">'+chatBodyHtml(m.body||'')+'</span></div>';
     }).join('');
   }
   // Map a broadcast craft body ("Supreme Iron Sword") to its rarity, or null for rare/normal. Only the
@@ -34439,13 +34468,19 @@
   var guildLivePollTimer = null;
   function guildChatMessagesHtml(){
     if(!guildChatMessages.length) return '<div class="chat-empty">No guild messages yet &mdash; say hello to your guildmates!</div>';
-    return guildChatMessages.map(function(m){ return '<div class="chat-msg"><span class="chat-user">'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+chatBodyHtml(m.body||'')+'</span></div>'; }).join('');
+    // Mortal red applies here too (a guild can mix paths); the guild tag would name everyone's own
+    // guild, so it deliberately stays off in this channel.
+    return guildChatMessages.map(function(m){
+      var _mortal = m.user_id ? chatMortals[m.user_id] === true : false;
+      return '<div class="chat-msg"><span class="chat-user'+(_mortal?' mortal':'')+'"'+(_mortal?' title="Mortal path"':'')+'>'+escapeHtml(m.username||'anon')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span><span class="chat-body">'+chatBodyHtml(m.body||'')+'</span></div>';
+    }).join('');
   }
   function guildChatRenderOnly(){ invalidateContentCache(); feedRenderStick(document.getElementById('chatMessages'), guildChatMessagesHtml()); }
   function guildChatOnIncoming(m){
     if(!m || guildChatMessages.some(function(x){ return x.id===m.id; })) return;
     guildChatMessages.push(m);
     if(guildChatMessages.length>120) guildChatMessages=guildChatMessages.slice(-120);
+    if(m.user_id && !(m.user_id in chatTitles)) chatFetchTitles([m.user_id]); // mortal red for a first-seen poster
     if(chatChannel==='guild') guildChatRenderOnly();
     noteChatActivity();
   }
@@ -34455,8 +34490,9 @@
     if(guildChatSubGuildId===gid && guildChatChannelObj) return; // already subscribed to this guild
     guildTeardownChat();
     guildChatSubGuildId = gid;
-    chatClient.from('guild_messages').select('id,created_at,username,body').eq('guild_id',gid).order('created_at',{ascending:false}).limit(80).then(function(res){
+    chatClient.from('guild_messages').select('id,created_at,user_id,username,body').eq('guild_id',gid).order('created_at',{ascending:false}).limit(80).then(function(res){
       guildChatMessages = ((res&&res.data)||[]).slice().reverse();
+      chatFetchTitles(guildChatMessages.map(function(m){ return m.user_id; }).filter(Boolean)); // mortal red needs the meta
       if(chatChannel==='guild') guildChatRenderOnly();
     });
     guildChatChannelObj = chatClient.channel('guild-chat-'+gid)
@@ -38280,7 +38316,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.27';
+  var GAME_VERSION = '0.0.77.28';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38432,7 +38468,8 @@
       orbHtml:orbHtml, ar2Bar:ar2Bar, ORB_K:ORB_K, ORB_DAMP:ORB_DAMP, _orbsGet:function(){ return _orbs; },
       _orbsReset:function(){ _orbs = {}; _ar2FightSig = ''; },
       chatMessagesHtml:chatMessagesHtml, chatRoleOf:chatRoleOf, chatIsMod:chatIsMod, chatIsOwner:chatIsOwner, chatMuteUntil:chatMuteUntil, chatAmIMuted:chatAmIMuted, chatMuteLabel:chatMuteLabel, renderChatModModal:renderChatModModal, renderChatModerationPanel:renderChatModerationPanel, chatNameFor:chatNameFor, titleName:titleName, profileCardBodyHtml:profileCardBodyHtml, renderPlayerProfileModal:renderPlayerProfileModal,
-      _setChatMod:function(o){ o=o||{}; if(o.roles) chatRoles=o.roles; if(o.mutes) chatMutes=o.mutes; if(o.names) chatUserNames=o.names; if(o.titles) chatTitles=o.titles; if(o.clamps) accountClamps=o.clamps; if(o.signals) clampSignals=o.signals; if('myRole' in o) myChatRole=o.myRole; if('messages' in o) chatMessages=o.messages; if('authUser' in o) authUser=o.authUser; if('target' in o) chatModTarget=o.target; if('profileTarget' in o) playerProfileTarget=o.profileTarget; },
+      _setChatMod:function(o){ o=o||{}; if(o.roles) chatRoles=o.roles; if(o.mutes) chatMutes=o.mutes; if(o.names) chatUserNames=o.names; if(o.titles) chatTitles=o.titles; if(o.mortals) chatMortals=o.mortals; if(o.gtags) chatGuildTags=o.gtags; if(o.clamps) accountClamps=o.clamps; if(o.signals) clampSignals=o.signals; if('myRole' in o) myChatRole=o.myRole; if('messages' in o) chatMessages=o.messages; if('authUser' in o) authUser=o.authUser; if('target' in o) chatModTarget=o.target; if('profileTarget' in o) playerProfileTarget=o.profileTarget; if('guildMessages' in o) guildChatMessages=o.guildMessages; },
+      guildChatMessagesHtml:guildChatMessagesHtml,
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; },

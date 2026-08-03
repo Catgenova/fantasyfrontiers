@@ -3071,6 +3071,54 @@
     s.settings.chatFilter = prev;
   });
 
+  // ---- Chat: guild tags before names, Mortal-path names in red -------------------------------------
+  // Owner request: chat names carry the poster's [GUILD] tag, and Mortal-path players wear the same red
+  // the leaderboard gives them. Both ride the per-poster meta fetch (leaderboard view for mortal, the
+  // world-readable guild_members -> guilds embed for the tag); an unfetched poster renders plain.
+  suite('chat: guild tags + mortal red names', function(){
+    var now = Date.now(), iso = new Date(now).toISOString();
+    try {
+      FF._setChatMod({
+        roles:{}, mutes:{}, myRole:null,
+        authUser:{ username:'Me', id:'u-me2' },
+        titles:{ 'u-mort':'', 'u-tagged':'', 'u-plain':'' },
+        mortals:{ 'u-mort':true, 'u-tagged':false, 'u-plain':false },
+        gtags:{ 'u-mort':'', 'u-tagged':'IVY', 'u-plain':'' },
+        messages:[
+          { id:11, user_id:'u-mort',    username:'Doomed',  body:'hi',  created_at:iso },
+          { id:12, user_id:'u-tagged',  username:'Clanner', body:'yo',  created_at:iso },
+          { id:13, user_id:'u-plain',   username:'Nobody',  body:'sup', created_at:iso },
+          { id:14, user_id:'u-unknown', username:'Ghost',   body:'??',  created_at:iso }
+        ]
+      });
+      var html = FF.chatMessagesHtml();
+      ok(/class="chat-user mortal"[^>]*>Doomed/.test(html), 'a Mortal-path poster wears the red name class');
+      ok(html.indexOf('title="Mortal path"') !== -1, 'the red name explains itself on hover');
+      ok(/chat-guild-tag/.test(html) && html.indexOf('[IVY]') !== -1, 'a guilded poster shows a [TAG] chip');
+      ok(html.indexOf('[IVY]') < html.indexOf('Clanner'), 'the tag sits BEFORE the name');
+      ok(/class="chat-user"[^m]*>Clanner/.test(html) || /class="chat-user">Clanner/.test(html), 'a non-mortal name stays the normal colour');
+      ok(/class="chat-user">Ghost/.test(html), 'an unfetched poster renders plain — no undefined leakage');
+      ok(!/undefined/.test(html), 'no undefined anywhere in the rendered chat');
+      // The tag is escaped like every other user-influenced string.
+      FF._setChatMod({ gtags:{ 'u-tagged':'<b>' } });
+      ok(FF.chatMessagesHtml().indexOf('[&lt;b&gt;]') !== -1, 'a hostile tag renders escaped, never as markup');
+      // Guild channel: mortal red applies, the (redundant, same-guild) tag does not.
+      FF._setChatMod({ guildMessages:[ { id:1, user_id:'u-mort', username:'Doomed', body:'x', created_at:iso } ] });
+      var gh = FF.guildChatMessagesHtml();
+      ok(/class="chat-user mortal"/.test(gh), 'guild chat colours Mortal-path posters too');
+      ok(!/chat-guild-tag/.test(gh), 'guild chat shows no tag — everyone in it shares one');
+      // The palette is real CSS, not just a class name: the mortal name computes a different colour.
+      var probe = document.createElement('div');
+      probe.innerHTML = '<span class="chat-user">a</span><span class="chat-user mortal">b</span>';
+      document.body.appendChild(probe);
+      var cPlain = getComputedStyle(probe.children[0]).color, cMort = getComputedStyle(probe.children[1]).color;
+      probe.remove();
+      ok(cPlain !== cMort, 'the .mortal class actually changes the name colour (' + cMort + ')');
+    } finally {
+      FF._setChatMod({ messages:[], guildMessages:[], titles:{}, mortals:{}, gtags:{}, authUser:null, myRole:null });
+    }
+  });
+
   // ---- Chat moderation: role badges, muted state, mod-button gating, modal protection --------------
   suite('chat: moderation roles + mute + mod controls', function(){
     var savedAuth = FF.chatAmIMuted; // just to reference the module; real restore below via _setChatMod
