@@ -8465,6 +8465,15 @@
     var batonMult = (ws.staff && legActive('rapidconjuring', st)) ? 0.8 : 1; // Baton of the First Chair: the Downbeat swings every 4s instead of 5
     return Math.max(200, ws.attackSpeed*1000 * batonMult * (1 - Math.min(0.5, getFamBuff('haste'))) * classAttackSpeedMult(st) * legAttackSpeedMult(st) * (1 - Math.min(0.9, legendaryRingBonus('d2_fury', st))) * playerChillSlowMult(st)); // Familiar Haste caps at -50% interval = 200% attack speed; + Signet of Fury (D2) Attack Speed; Chill (elemental special) slows you
   }
+  // Preserve a swing's FRACTION of progress when its interval changes mid-swing (owner report,
+  // v0.0.77.42: "the bar stops at 50% and resets"). The interval is LIVE -- Conductor's Tempo crossing
+  // its threshold, a familiar Haste cast or expiry, Chill -- and the old absolute-ms accumulator fired
+  // the swing INSTANTLY whenever the interval shrank below the time already banked, cutting the bar
+  // off mid-track. Rescaling keeps the fraction, so the sweep changes SPEED but always runs 0 -> 100%.
+  function swingRescaleAccum(accumMs, prevIvMs, nextIvMs){
+    if(!(accumMs > 0) || !(prevIvMs > 0) || !(nextIvMs > 0) || prevIvMs === nextIvMs) return accumMs > 0 ? accumMs : 0;
+    return accumMs * (nextIvMs / prevIvMs);
+  }
   // Duelist Lv 40: +30% Accuracy while the class is active.
   function classAccuracyMult(st){
     st = st || state; var id = activeClassId(st);
@@ -17597,7 +17606,7 @@
     }
     act.voidVulnStacks = 0; act.voidVulnUntil = 0; // Voidshadow Mark of the Void / Doom don't carry between foes
     act.woundStacks = 0; act.woundUntil = 0; act.vanishLoadedDet = false; // Assassin Open Wounds die with the foe they were carved into
-    act.tickAccum = 0; act.offhandTickAccum = 0; act.monsterTickAccum = 0; // every swing (yours, off-hand, the foe's) winds up fresh against a new enemy -- no carried mid-swing progress
+    act.tickAccum = 0; act.offhandTickAccum = 0; act.monsterTickAccum = 0; act._swingIvMs = 0; act._swingOffIvMs = 0; // every swing (yours, off-hand, the foe's) winds up fresh against a new enemy -- no carried mid-swing progress (interval memos too)
     act.bloodLedger = setFullD3('berserker') ? Math.round((act.bloodLedger||0)/2) : 0; // Carried Debt (Berserker D3 full): the Ledger carries to the next foe at half value
     act.spineshatterStacks = 0; act.spineshatterUntil = 0; // Spineshatter (D2 maul): the enemy-damage debuff doesn't carry between foes
     act.qdSnareUntil = 0; // Websnare's Snare dies with its foe (the Quiver Cycle itself is state-scoped and keeps rolling)
@@ -36751,8 +36760,24 @@
       if(spf && m && m.special){ spf.style.width = clamp((state.activity.specialAccum||0)/m.special.chargeMs*100,0,100)+'%'; }
       var paf = document.getElementById('ar2AtkMe');
       if(paf) paf.style.width = clamp((state.activity.tickAccum||0)/playerAttackIntervalMs()*100,0,100)+'%';
+      // The player's swing time is as live as the foe's (owner order, v0.0.77.42): Tempo, Haste and
+      // Chill move it mid-fight, and a static render-time label read as the bar "not filling".
+      var pat = document.getElementById('ar2AtkMe-t');
+      if(pat){
+        var _pIv = playerAttackIntervalMs();
+        var _pRaw = getWeaponStyle(state.equippedMainhand).attackSpeed*1000;
+        var _pSlw = _pIv > _pRaw + 1, _pHst = _pIv < _pRaw - 1;
+        var _pTxt = (Math.round(_pIv/100)/10)+'s'+(_pSlw?' ▼':(_pHst?' ▲':''));
+        if(pat.textContent !== _pTxt) pat.textContent = _pTxt;
+        pat.style.color = _pSlw ? ATK_SPEED_SLOW_COLOR : (_pHst ? ATK_SPEED_HASTE_COLOR : '');
+      }
       var oaf = document.getElementById('ar2AtkOff');
       if(oaf) oaf.style.width = clamp((state.activity.offhandTickAccum||0)/offhandClawAttackIntervalMs()*100,0,100)+'%';
+      var oat = document.getElementById('ar2AtkOff-t');
+      if(oat){
+        var _oTxt = (Math.round(offhandClawAttackIntervalMs()/100)/10)+'s';
+        if(oat.textContent !== _oTxt) oat.textContent = _oTxt;
+      }
       // Enemy defeated: replay the fade-out/fade-in on the portrait. Driven from here rather than straight
       // from defeatMonster because a full render() rebuilds the element and would drop a class set earlier --
       // the new element arrives with no _swapAt, so this re-arms the animation on it. Bounded to the swap's
@@ -37938,22 +37963,32 @@
       } else {
       // A Staff has no attack speed -- it never auto-attacks (combat runs on your familiars).
       if(!getWeaponStyle(state.equippedMainhand).noAttack){
-        state.activity.tickAccum += dt;
         var attackIntervalMs = playerAttackIntervalMs();
+        if(state.activity._swingIvMs && state.activity._swingIvMs !== attackIntervalMs){
+          state.activity.tickAccum = swingRescaleAccum(state.activity.tickAccum||0, state.activity._swingIvMs, attackIntervalMs);
+        }
+        state.activity._swingIvMs = attackIntervalMs;
+        state.activity.tickAccum += dt;
         while(state.activity.tickAccum >= attackIntervalMs && state.activity.type==='combat'){
           state.activity.tickAccum -= attackIntervalMs;
           playerAttackTick();
           attackIntervalMs = playerAttackIntervalMs();
+          state.activity._swingIvMs = attackIntervalMs;   // the swing itself can move the interval (Tempo, Flowing Strikes)
         }
       }
       // Off-hand Claw: a second, independent attack timer (only while a Claw is dual-wielded).
       if(state.activity.type==='combat' && hasOffhandClaw(state)){
-        state.activity.offhandTickAccum = (state.activity.offhandTickAccum||0) + dt;
         var offAttackIntervalMs = offhandClawAttackIntervalMs();
+        if(state.activity._swingOffIvMs && state.activity._swingOffIvMs !== offAttackIntervalMs){
+          state.activity.offhandTickAccum = swingRescaleAccum(state.activity.offhandTickAccum||0, state.activity._swingOffIvMs, offAttackIntervalMs);
+        }
+        state.activity._swingOffIvMs = offAttackIntervalMs;
+        state.activity.offhandTickAccum = (state.activity.offhandTickAccum||0) + dt;
         while(state.activity.offhandTickAccum >= offAttackIntervalMs && state.activity.type==='combat'){
           state.activity.offhandTickAccum -= offAttackIntervalMs;
           playerAttackTick(false, 1, true);
           offAttackIntervalMs = offhandClawAttackIntervalMs();
+          state.activity._swingOffIvMs = offAttackIntervalMs;
         }
       }
       if(state.activity.type==='combat'){
@@ -38519,7 +38554,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.41';
+  var GAME_VERSION = '0.0.77.42';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38785,7 +38820,7 @@
       enemyFrenzyFactor:enemyFrenzyFactor, enemyFrenzySpeedMult:enemyFrenzySpeedMult, enemyFrenzyDmgMult:enemyFrenzyDmgMult, enemySiphonActive:enemySiphonActive, enemyRallyDmgMult:enemyRallyDmgMult, enemyMightDmgMult:enemyMightDmgMult, maxHp:maxHp, getLevel:getLevel, getLevelExt:getLevelExt, skillLevel:skillLevel, masteryLevel:masteryLevel, classMasteryLevel:classMasteryLevel, weaponMasteryLevel:weaponMasteryLevel, physiqueMasteryTotal:physiqueMasteryTotal, armorMasteryTotal:armorMasteryTotal, armorMasteryIncomingMult:armorMasteryIncomingMult, CLASS_MASTERY_HP:CLASS_MASTERY_HP, CLASS_MASTERY_DMG:CLASS_MASTERY_DMG, WEAPON_MASTERY_DMG:WEAPON_MASTERY_DMG, ARMOR_MASTERY_DR:ARMOR_MASTERY_DR, ARMOR_MASTERY_DR_CAP:ARMOR_MASTERY_DR_CAP, PHYSIQUE_MASTERY_HP:PHYSIQUE_MASTERY_HP, SKILL_XP_FLOOR_EXT:SKILL_XP_FLOOR_EXT, PHYSIQUE_XP_FLOOR_EXT:PHYSIQUE_XP_FLOOR_EXT, applyOfflineProgress:applyOfflineProgress, applyMobileLayoutPref:applyMobileLayoutPref, applyUiScalePref:applyUiScalePref, uiScaleFor:uiScaleFor, UI_SCALE_DENSE:UI_SCALE_DENSE, UI_SCALE_MIN_W:UI_SCALE_MIN_W, platePieceEquipped:platePieceEquipped, playerBlockChance:playerBlockChance, enchantBlockChance:enchantBlockChance, enchantDamageReductionMult:enchantDamageReductionMult, enchantResistanceMult:enchantResistanceMult, enchantAccuracyBonus:enchantAccuracyBonus, enchantHpRegen:enchantHpRegen, enchantDefenseMult:enchantDefenseMult, heraldBlockMult:heraldBlockMult, heraldFortressArmorMult:heraldFortressArmorMult, familiarBuffDurationMult:familiarBuffDurationMult, leatherPieceEquipped:leatherPieceEquipped, templarBeaconPotencyMult:templarBeaconPotencyMult, templarIncomingDmgMult:templarIncomingDmgMult, templarVerse:templarVerse, templarVerseMs:templarVerseMs, templarVersePower:templarVersePower, templarVerseAdvance:templarVerseAdvance, templarGloria:templarGloria, applyTemplarLitanyTick:applyTemplarLitanyTick, templarDoxologyMult:templarDoxologyMult, templarDoxologyCap:templarDoxologyCap, templarBonus:templarBonus, TPL_VERSES:TPL_VERSES, TPL_VERSE_MS:TPL_VERSE_MS, TPL_VERSE_MS_D1:TPL_VERSE_MS_D1, TPL_MIGHT_PCT:TPL_MIGHT_PCT, TPL_HASTE_PCT:TPL_HASTE_PCT, TPL_ZEAL_CRITDMG:TPL_ZEAL_CRITDMG, TPL_AEGIS_PCT_PER_SEC:TPL_AEGIS_PCT_PER_SEC, TPL_AEGIS_CAP_PCT:TPL_AEGIS_CAP_PCT, TPL_FERVOR_EXT_MS:TPL_FERVOR_EXT_MS, TPL_FERVOR_EXT_CAP:TPL_FERVOR_EXT_CAP, TPL_DOXOLOGY_PER:TPL_DOXOLOGY_PER, TPL_DOXOLOGY_CAP:TPL_DOXOLOGY_CAP, TPL_DOXOLOGY_CAP_SUNSCALE:TPL_DOXOLOGY_CAP_SUNSCALE, TPL_GLORIA_PCT:TPL_GLORIA_PCT, TPL_EMPOWERED_MULT:TPL_EMPOWERED_MULT, TPL_VERSE_POWER_D2:TPL_VERSE_POWER_D2, LEG_SUNBRAND_END_PCT:LEG_SUNBRAND_END_PCT, LEG_GLORIA_MULT:LEG_GLORIA_MULT, heraldBonus:heraldBonus, heraldIroncladMult:heraldIroncladMult, heraldLiveArmor:heraldLiveArmor, heraldBarrier:heraldBarrier, heraldBarrierCap:heraldBarrierCap, heraldBarrierFrac:heraldBarrierFrac, heraldBarrierAdd:heraldBarrierAdd, heraldBarrierDmgMult:heraldBarrierDmgMult, heraldBreachFire:heraldBreachFire, heraldRetortDamage:heraldRetortDamage, heraldRetortStrikes:heraldRetortStrikes, heraldBrace:heraldBrace, heraldBraceMs:heraldBraceMs, heraldGuardFire:heraldGuardFire, applyHeraldBraceTick:applyHeraldBraceTick, HERALD_IRONCLAD_PER_1K:HERALD_IRONCLAD_PER_1K, HERALD_IRONCLAD_CAP:HERALD_IRONCLAD_CAP, HERALD_BRACE_MS:HERALD_BRACE_MS, HERALD_BRACE_MS_D2:HERALD_BRACE_MS_D2, HERALD_BARRIER_PER_GUARD:HERALD_BARRIER_PER_GUARD, HERALD_BARRIER_CAP_PCT:HERALD_BARRIER_CAP_PCT, HERALD_BARRIER_CAP_PCT_BB:HERALD_BARRIER_CAP_PCT_BB, HERALD_DEEPWALL_MULT:HERALD_DEEPWALL_MULT, HERALD_RETORT_PCT:HERALD_RETORT_PCT, HERALD_BREACH_PCT:HERALD_BREACH_PCT, HERALD_BREACH_STUN_MS:HERALD_BREACH_STUN_MS, HERALD_BREACH_D4_MULT:HERALD_BREACH_D4_MULT, HERALD_MOMENTUM_PER_10:HERALD_MOMENTUM_PER_10, LEG_WALLBREAKER_PER_10:LEG_WALLBREAKER_PER_10, HERALD_UNBREAKABLE_MULT:HERALD_UNBREAKABLE_MULT, HERALD_FORTRESS_PER_SEC:HERALD_FORTRESS_PER_SEC, HERALD_FORTRESS_CAP:HERALD_FORTRESS_CAP,
       knightStacks:knightStacks, knightStackCap:knightStackCap, knightBonus:knightBonus, knBannerRaise:knBannerRaise, knOrderMult:knOrderMult, knOrdersStanding:knOrdersStanding, knOrdersAll:knOrdersAll, knightSteelMult:knightSteelMult, knightBloodLifestealPct:knightBloodLifestealPct, knightBeaconPotencyMult:knightBeaconPotencyMult, knDecreeOnSwing:knDecreeOnSwing, knightDamageTakenMult:knightDamageTakenMult, KN_BANNER_MAX:KN_BANNER_MAX, KN_BANNER_MAX_D1:KN_BANNER_MAX_D1, KN_BANNER_MAX_HIGH:KN_BANNER_MAX_HIGH, KN_SEED_HIT:KN_SEED_HIT, KN_SEED_CRIT:KN_SEED_CRIT, KN_SEED_CRIT_D2:KN_SEED_CRIT_D2, KN_ORDER_STEEL:KN_ORDER_STEEL, KN_ORDER_PACE:KN_ORDER_PACE, KN_ORDER_BLOOD:KN_ORDER_BLOOD, KN_STEEL_PCT:KN_STEEL_PCT, KN_PACE_PCT:KN_PACE_PCT, KN_BLOOD_PCT:KN_BLOOD_PCT, KN_ORDER_D2_MULT:KN_ORDER_D2_MULT, KN_SHIELDWALL_PER:KN_SHIELDWALL_PER, KN_DECREE_EVERY:KN_DECREE_EVERY, KN_DECREE_EVERY_D1:KN_DECREE_EVERY_D1, KN_DECREE_PCT:KN_DECREE_PCT, KN_DECREE_STUN_MS:KN_DECREE_STUN_MS, KN_TRAMPLE_SWINGS:KN_TRAMPLE_SWINGS, KN_TRAMPLE_MULT:KN_TRAMPLE_MULT, KN_DECREE_D4_MULT:KN_DECREE_D4_MULT, LEG_BREACHBLADE_PIERCE:LEG_BREACHBLADE_PIERCE, PLAYER_DMG_MODS:PLAYER_DMG_MODS, playerDamageMultiplier:playerDamageMultiplier, playerDamageModBreakdown:playerDamageModBreakdown, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, FAMILIAR_SPELLS:FAMILIAR_SPELLS,
       ELEMENT_ATTUNEMENT:ELEMENT_ATTUNEMENT, isElementAttunement:isElementAttunement, elementDamageBonus:elementDamageBonus, elementResistBonus:elementResistBonus, elementDmgMult:elementDmgMult, elementResistMult:elementResistMult, FAMILIAR_SKILL_IDS:FAMILIAR_SKILL_IDS,
-      isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, ASSASSIN_WOUND_MAX:ASSASSIN_WOUND_MAX, ASSASSIN_WOUND_MS:ASSASSIN_WOUND_MS, ASSASSIN_VANISH_MS:ASSASSIN_VANISH_MS, ASSASSIN_FANG_PCT:ASSASSIN_FANG_PCT, ASSASSIN_FANG_PCT_D1:ASSASSIN_FANG_PCT_D1, ASSASSIN_FANG_PCT_SHADOWWYRM:ASSASSIN_FANG_PCT_SHADOWWYRM, ASSASSIN_HEAVYFANG_INTERVAL:ASSASSIN_HEAVYFANG_INTERVAL, ASSASSIN_HEAVYFANG_DMG:ASSASSIN_HEAVYFANG_DMG, ASSASSIN_FLOW_REFUND:ASSASSIN_FLOW_REFUND, ASSASSIN_VIGOR_MAX:ASSASSIN_VIGOR_MAX, ASSASSIN_VIGOR_PER:ASSASSIN_VIGOR_PER, ASSASSIN_BLOODRUSH_MULT:ASSASSIN_BLOODRUSH_MULT, assassinWoundCap:assassinWoundCap, assassinWoundStacks:assassinWoundStacks, assassinWoundsFull:assassinWoundsFull, assassinWoundsPerHit:assassinWoundsPerHit, assassinOpenWounds:assassinOpenWounds, assassinFangPerWound:assassinFangPerWound, assassinVigorStacks:assassinVigorStacks, assassinVigorAdd:assassinVigorAdd, assassinVigorDmgMult:assassinVigorDmgMult, assassinCommunionLifesteal:assassinCommunionLifesteal, assassinBloodrushActive:assassinBloodrushActive, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, thunderfuryBonus:thunderfuryBonus, tfStormCap:tfStormCap, tfStormIntensity:tfStormIntensity, tfStormSeed:tfStormSeed, tfGalvanizeCap:tfGalvanizeCap, tfBoltFire:tfBoltFire, applyTfStormTick:applyTfStormTick, enemyStunned:enemyStunned, TF_STORM_MAX:TF_STORM_MAX, TF_STORM_MAX_D1:TF_STORM_MAX_D1, TF_STORM_MAX_GLOOM:TF_STORM_MAX_GLOOM, TF_BOLT_PCT:TF_BOLT_PCT, TF_BOLT_MS:TF_BOLT_MS, TF_BOLT_MS_TEMPEST:TF_BOLT_MS_TEMPEST, TF_SEED_HIT:TF_SEED_HIT, TF_SEED_CRIT:TF_SEED_CRIT, TF_SEED_CRIT_D2:TF_SEED_CRIT_D2, TF_FADE_MS:TF_FADE_MS, TF_TEMPO_THRESHOLD:TF_TEMPO_THRESHOLD, TF_TEMPO_PCT:TF_TEMPO_PCT, TF_CLAP_EVERY:TF_CLAP_EVERY, TF_CLAP_MULT:TF_CLAP_MULT, TF_CLAP_STUN_MS:TF_CLAP_STUN_MS, TF_CLAP_STUN_MS_D3:TF_CLAP_STUN_MS_D3, TF_GALV_PER:TF_GALV_PER, TF_GALV_MAX:TF_GALV_MAX, TF_GALV_MAX_SCALE:TF_GALV_MAX_SCALE, LEG_STORMWYRM_CRIT_BOLT:LEG_STORMWYRM_CRIT_BOLT, enemyStunned:enemyStunned,
+      isClaw:isClaw, getWeaponStyle:getWeaponStyle, OFFHAND_CLAW_ATTACK_SPEED_MULT:OFFHAND_CLAW_ATTACK_SPEED_MULT, OFFHAND_CLAW_DMG_MULT:OFFHAND_CLAW_DMG_MULT, hasClawMainhand:hasClawMainhand, hasOffhandClaw:hasOffhandClaw, getEquippedOffhandClawItem:getEquippedOffhandClawItem, offhandClawAttackIntervalMs:offhandClawAttackIntervalMs, playerAttackIntervalMs:playerAttackIntervalMs, swingRescaleAccum:swingRescaleAccum, playerDodgeChance:playerDodgeChance, assassinBonus:assassinBonus, ASSASSIN_WOUND_MAX:ASSASSIN_WOUND_MAX, ASSASSIN_WOUND_MS:ASSASSIN_WOUND_MS, ASSASSIN_VANISH_MS:ASSASSIN_VANISH_MS, ASSASSIN_FANG_PCT:ASSASSIN_FANG_PCT, ASSASSIN_FANG_PCT_D1:ASSASSIN_FANG_PCT_D1, ASSASSIN_FANG_PCT_SHADOWWYRM:ASSASSIN_FANG_PCT_SHADOWWYRM, ASSASSIN_HEAVYFANG_INTERVAL:ASSASSIN_HEAVYFANG_INTERVAL, ASSASSIN_HEAVYFANG_DMG:ASSASSIN_HEAVYFANG_DMG, ASSASSIN_FLOW_REFUND:ASSASSIN_FLOW_REFUND, ASSASSIN_VIGOR_MAX:ASSASSIN_VIGOR_MAX, ASSASSIN_VIGOR_PER:ASSASSIN_VIGOR_PER, ASSASSIN_BLOODRUSH_MULT:ASSASSIN_BLOODRUSH_MULT, assassinWoundCap:assassinWoundCap, assassinWoundStacks:assassinWoundStacks, assassinWoundsFull:assassinWoundsFull, assassinWoundsPerHit:assassinWoundsPerHit, assassinOpenWounds:assassinOpenWounds, assassinFangPerWound:assassinFangPerWound, assassinVigorStacks:assassinVigorStacks, assassinVigorAdd:assassinVigorAdd, assassinVigorDmgMult:assassinVigorDmgMult, assassinCommunionLifesteal:assassinCommunionLifesteal, assassinBloodrushActive:assassinBloodrushActive, assassinVanishReady:assassinVanishReady, ASSASSIN_VANISH_MULT:ASSASSIN_VANISH_MULT, thunderGalvanizeCritDmg:thunderGalvanizeCritDmg, thunderfuryBonus:thunderfuryBonus, tfStormCap:tfStormCap, tfStormIntensity:tfStormIntensity, tfStormSeed:tfStormSeed, tfGalvanizeCap:tfGalvanizeCap, tfBoltFire:tfBoltFire, applyTfStormTick:applyTfStormTick, enemyStunned:enemyStunned, TF_STORM_MAX:TF_STORM_MAX, TF_STORM_MAX_D1:TF_STORM_MAX_D1, TF_STORM_MAX_GLOOM:TF_STORM_MAX_GLOOM, TF_BOLT_PCT:TF_BOLT_PCT, TF_BOLT_MS:TF_BOLT_MS, TF_BOLT_MS_TEMPEST:TF_BOLT_MS_TEMPEST, TF_SEED_HIT:TF_SEED_HIT, TF_SEED_CRIT:TF_SEED_CRIT, TF_SEED_CRIT_D2:TF_SEED_CRIT_D2, TF_FADE_MS:TF_FADE_MS, TF_TEMPO_THRESHOLD:TF_TEMPO_THRESHOLD, TF_TEMPO_PCT:TF_TEMPO_PCT, TF_CLAP_EVERY:TF_CLAP_EVERY, TF_CLAP_MULT:TF_CLAP_MULT, TF_CLAP_STUN_MS:TF_CLAP_STUN_MS, TF_CLAP_STUN_MS_D3:TF_CLAP_STUN_MS_D3, TF_GALV_PER:TF_GALV_PER, TF_GALV_MAX:TF_GALV_MAX, TF_GALV_MAX_SCALE:TF_GALV_MAX_SCALE, LEG_STORMWYRM_CRIT_BOLT:LEG_STORMWYRM_CRIT_BOLT, enemyStunned:enemyStunned,
       treasureHunterBonus:treasureHunterBonus, treasureHunterCount:treasureHunterCount,
       thChargeNeed:thChargeNeed, thRelicCount:thRelicCount, thBestRelicTier:thBestRelicTier, thTierPct:thTierPct, thGraveStrikeDamage:thGraveStrikeDamage,
       thGoldFindMult:thGoldFindMult, thMarkStacks:thMarkStacks, thMarkAdd:thMarkAdd, thMarkMult:thMarkMult, thCofferMult:thCofferMult,

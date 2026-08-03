@@ -14359,6 +14359,22 @@
     ok(FF.tierChipHtml(20).indexOf(FF.improveTierLabel(20)) !== -1, 'chip and improvement label are the SAME string for the same tier');
   });
 
+  // ---- Swing bar: a mid-swing interval change keeps the swing's FRACTION (v0.0.77.42) --------------
+  // The interval is live (Conductor's Tempo, familiar Haste casts/expiries, Chill). The old absolute-ms
+  // accumulator fired the swing INSTANTLY whenever the interval shrank below the banked time -- the bar
+  // "stopped at 50% and reset". Rescaling preserves the fraction: the sweep changes speed, never skips.
+  suite('combat: swing progress survives a live interval change', function(){
+    var R = FF.swingRescaleAccum;
+    eq(R(1500, 3000, 1500), 750, 'a halved interval keeps 50% progress at 50% -- never an instant fire');
+    eq(R(2000, 3000, 1500), 1000, 'two-thirds progress stays two-thirds (was: fired on the spot at 66%)');
+    eq(R(750, 1500, 3000), 1500, 'a slow-down maps the fraction, not the wall time');
+    eq(R(1000, 2000, 2000), 1000, 'an unchanged interval is a no-op');
+    eq(R(0, 3000, 1500), 0, 'zero progress stays zero');
+    eq(R(-5, 3000, 1500), 0, 'garbage clamps to zero');
+    eq(R(1000, 0, 1500), 1000, 'a missing previous interval leaves the accumulator alone');
+    ok(R(2900, 3000, 1500) < 1500, 'progress just shy of firing stays just shy after the change');
+  });
+
   // ---- Popup queue is hard-capped (v0.0.77.40: "save too large") -----------------------------------
   // The queue is SAVED STATE, drains one click at a time, and each item entry stores an inline SVG
   // icon -- an offline mass-craft batch with rarity popups on queued thousands of entries and pushed
