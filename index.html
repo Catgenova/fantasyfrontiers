@@ -36202,7 +36202,10 @@
     if(act.type==='combat'){
       var m = monsterById(act.monsterId);
       return { name:'Fighting: '+(m?m.name:act.monsterId), icon: m?m.icon:svgIcon('crossedswords','var(--cat-combat)'),
-        effTime: getWeaponStyle(state.equippedMainhand).attackSpeed*1000, progress: act.tickAccum||0, remaining: null, successPct: null,
+        // The EFFECTIVE swing interval, never the weapon's raw attackSpeed: the attack fires at
+        // playerAttackIntervalMs() (haste, class and ring speed, Chill), so a raw denominator made the
+        // task bar reset mid-track -- at 2x attack speed it "stopped at 50%" (owner report, v0.0.77.39).
+        effTime: playerAttackIntervalMs(), progress: act.tickAccum||0, remaining: null, successPct: null,
         navCat: act.dungeon ? 'dungeons' : 'combat', navSub: act.dungeon ? null : (m?m.category:null) }; // a dungeon fight's card jumps back to the Dungeons run
     }
     if(act.craftKind){
@@ -38533,7 +38536,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.38';
+  var GAME_VERSION = '0.0.77.39';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

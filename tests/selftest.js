@@ -1544,6 +1544,19 @@
       var _dLines = (FF.skillLiveStats('digging')||[]).join(' ');
       ok(!/(tool|Shovel|Pickaxe|Rod|Axe) adds|adds up to \+|best \d+%|adds the rest/i.test(_fLines + ' ' + _dLines),
          'no gather popup claims a tool success bonus or best-case any more (physique caps on side-drops are real and stay)');
+      // COMBAT: the task bar's denominator is the EFFECTIVE swing interval, never the weapon's raw
+      // attackSpeed (owner report, v0.0.77.39: at 2x attack speed the bar "stopped at 50% and reset" --
+      // the swing fires at playerAttackIntervalMs(), so a raw denominator desyncs under any haste).
+      var savedBuffs = S.familiarBuffs, savedAct = S.activity;
+      try {
+        var mon = FF.MONSTERS[0];
+        S.activity = { type:'combat', monsterId:mon.id, monsterHp:mon.hp, tickAccum:0 };
+        S.familiarBuffs = Object.assign({}, S.familiarBuffs, { hasteUntil: Date.now()+60000, hasteVal: 0.4 }); // 40% haste
+        var fc = FF.describeTask(S.activity);
+        eq(fc.effTime, FF.playerAttackIntervalMs(), 'the combat task bar denominator IS the firing interval');
+        ok(fc.effTime < FF.getWeaponStyle(S.equippedMainhand).attackSpeed*1000,
+           'under haste the effective interval is shorter than the raw weapon speed (the 50% reset case)');
+      } finally { S.familiarBuffs = savedBuffs; S.activity = savedAct; }
       var pr = FF.describeTask({ type:'pray', itemId:FF.PRAYER_TIERS[0].id, progress:0 });
       eq(pr.remaining, Infinity, 'prayer runs are infinite');
       eq(pr.successPct, 100, 'prayer always succeeds');
