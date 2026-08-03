@@ -3571,6 +3571,32 @@
     } finally { G.guild=saved.guild; G.members=saved.members; G.myRank=saved.myRank; G.applications=saved.applications; }
   });
 
+  // ---- Item-card gold text goes parchment (option B, colorblind ticket, v0.0.79.11) ----------------
+  // Dozens of card texts carry INLINE style="color:var(--gold)" -- the tan-page green, ~2.5:1 on the
+  // marble and mud under deuteranopia. A stylesheet cannot beat an inline style, but the inline style
+  // resolves its VARIABLE at the element: .item-card redefines --gold to the parchment ink, re-inking
+  // every such text (current and future) in one rule. Non-text uses inside cards are pinned.
+  suite('item cards: inline gold text resolves to parchment (option B)', function(){
+    var probe = document.createElement('div');
+    probe.innerHTML = '<div class="item-card">'
+      + '<span id="pbGold" style="color:var(--gold);">Equipped</span>'
+      + '<span class="unique-ench-chip">+96 Max HP</span>'
+      + '<div class="progress-track"><div class="progress-fill" style="width:40%"></div></div>'
+      + '</div><span id="pbGoldOut" style="color:var(--gold);">outside</span>';
+    document.body.appendChild(probe);
+    try {
+      eq(getComputedStyle(probe.querySelector('#pbGold')).color, 'rgb(232, 220, 192)',
+        'inline var(--gold) text INSIDE a card re-inks as parchment (the variable override)');
+      eq(getComputedStyle(probe.querySelector('#pbGoldOut')).color, 'rgb(74, 107, 44)',
+        'outside a card the same inline style keeps the tan-page green');
+      var chip = getComputedStyle(probe.querySelector('.unique-ench-chip'));
+      eq(chip.color, 'rgb(232, 220, 192)', 'enchant chips read in parchment ink');
+      eq(chip.borderTopColor, 'rgb(107, 90, 56)', 'on the quiet dark-table border');
+      ok(getComputedStyle(probe.querySelector('.progress-fill')).backgroundImage.indexOf('rgb(74, 107, 44)') !== -1,
+        'the progress fill is PINNED green -- the override must never turn fills parchment');
+    } finally { probe.remove(); }
+  });
+
   // ---- Skill XP bars wear the stone frame + marble well (owner request, v0.0.79.10) ----------------
   suite('skill XP bars: stone frame, marble well, dark ink', function(){
     var probe = document.createElement('div');

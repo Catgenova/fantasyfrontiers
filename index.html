@@ -603,7 +603,9 @@
   .chat-item-link:hover{background:rgba(201,162,39,0.26);}
   .chat-item-link .chat-item-ico, .chat-item-link .chat-item-ico svg{width:12px; height:12px; display:inline-block; flex:0 0 auto;}
   .unique-ench-chips{display:flex; flex-wrap:wrap; gap:4px; margin-top:6px;}
-  .unique-ench-chip{font-family:var(--font-mono); font-size:10.5px; line-height:1.5; padding:0 6px; border-radius:5px; background:rgba(201,162,39,0.14); border:1px solid rgba(201,162,39,0.45); color:var(--gold); white-space:nowrap;}
+  /* Enchant chips, option B (owner pick): parchment ink on a faint parchment tint -- the old
+     color:var(--gold) was the tan-page green, lost on the marble and worst for colorblind players. */
+  .unique-ench-chip{font-family:var(--font-mono); font-size:10.5px; line-height:1.5; padding:0 6px; border-radius:5px; background:rgba(232,220,192,0.07); border:1px solid #6b5a38; color:#e8dcc0; white-space:nowrap;}
   .unique-inv-grid{grid-column:1/-1; display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; margin-top:6px;}
   .unique-inv-card{border:1px solid var(--border); border-radius:10px; padding:12px 12px 10px; cursor:pointer; text-align:center; background:rgba(201,162,39,0.05); transition:border-color .12s, background .12s;}
   .unique-inv-card:hover{border-color:var(--gold); background:rgba(201,162,39,0.10);}
@@ -747,6 +749,14 @@
   .item-card .card-queue::placeholder{color:#9a8f78;}
   .item-card .card-queue:focus{outline-color:#ddbb66;border-color:#ddbb66;}
   .item-card .progress-track{background:#0c0a08;border-color:#3a2f20;}
+  /* OPTION B (owner pick, v0.0.79.11, colorblind ticket): --gold is REDEFINED inside the card. Dozens of
+     card texts carry inline style="color:var(--gold)" -- the tan-page green #4a6b2c, ~2.5:1 on the marble
+     and mud under deuteranopia/protanopia. A stylesheet cannot beat an inline style, but the inline style
+     resolves its VARIABLE at the element, so overriding the variable re-inks every one of them (and every
+     future one) as parchment -- hue-free, ~13:1, lightness-coded, the most colorblind-robust choice.
+     Anything inside a card that used var(--gold) for a NON-text job is pinned to its literal below. */
+  .item-card{--gold:#e8dcc0;}
+  .item-card .progress-fill{background:linear-gradient(90deg,#4a6b2c,#6f9538);} /* pin: the fill stays green, not parchment */
   .item-card.active-item{box-shadow:0 0 0 2px rgba(111,149,56,.6), 0 0 16px rgba(111,149,56,0.30), 0 4px 12px rgba(20,18,16,.26);}
   .item-top{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
   .item-icon{font-size:26px;line-height:1;}
@@ -16272,7 +16282,7 @@
         // Auto-inscribe: keep enhancing (Barrier Shards absorbing every failure) until it hits +1 or the
         // Shards run out. Always Shard-protected, so the item is never at risk here.
         if(_shards > 0){
-          html += '<div style="margin-top:8px;"><button class="action-btn" data-action="improveAutoInscribe" data-uid="'+enhTarget+'" style="width:auto;flex:0 0 auto;background:var(--bg-panel);color:var(--gold);border:1px solid var(--gold);" title="Retry the Enhance, spending a Barrier Shard per failure, until it improves +1 or your Barrier Shards run out">Auto-inscribe until +1 or Shards gone</button></div>';
+          html += '<div style="margin-top:8px;"><button class="action-btn" data-action="improveAutoInscribe" data-uid="'+enhTarget+'" style="width:auto;flex:0 0 auto;background:var(--bg-panel);color:#4a6b2c;border:1px solid #4a6b2c;" title="Retry the Enhance, spending a Barrier Shard per failure, until it improves +1 or your Barrier Shards run out">Auto-inscribe until +1 or Shards gone</button></div>';
         }
       }
     }
@@ -20793,7 +20803,7 @@
     // One-tap upgrade: shows only when a better tool than the equipped one is sitting in your bag.
     var bestOwned = bestOwnedToolForSkill(tt.skillId);
     if(bestOwned && !equippedToolAtLeast(tt.skillId, bestOwned)){
-      html += '<button class="action-btn" data-action="equipBestTool" data-skill="'+tt.skillId+'" style="margin-top:6px;background:var(--bg-panel);color:var(--gold);border:1px solid var(--gold);">Equip Best ('+escapeHtml(bestOwned.name)+')</button>';
+      html += '<button class="action-btn" data-action="equipBestTool" data-skill="'+tt.skillId+'" style="margin-top:6px;background:var(--bg-panel);color:#4a6b2c;border:1px solid #4a6b2c;">Equip Best ('+escapeHtml(bestOwned.name)+')</button>';
     }
     html += '</div>';
     return { html:html, isActive:isActive };
@@ -38844,7 +38854,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.79.10';
+  var GAME_VERSION = '0.0.79.11';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
