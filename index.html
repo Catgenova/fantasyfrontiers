@@ -26970,7 +26970,7 @@
         if(!d || !d.ok){
           addLog(d && d.error === 'clamped' ? 'This account is restricted from guild features.'
             : d && d.error === 'pending' ? 'Your last guild task just finished — collect it, then try again.'
-            : 'Could not start that guild estate task. Try again.', 'danger');
+            : 'Could not start that guild estate task' + (d && d.error ? ' — the server refused it (' + d.error + ')' : '') + '. Try again.', 'danger');
           guildEstateJobsRefresh(); needsRender = true; return;
         }
         commit(target, Number(d.job.startAt), Number(d.job.readyAt));   // consumes materials + optimistic local job
@@ -27007,7 +27007,9 @@
           state.estate.job = estateJobFromServer(d.job);
           addLog('An estate task has already finished — collect it before starting another.', 'danger');
         } else {
-          addLog('Could not start that estate task. Try again in a moment.', 'danger');
+          // Name the server's reason. "Could not start" with no cause is how a hard refusal (the totem
+          // kind the table did not accept) read as "clicking does nothing" through two whole tickets.
+          addLog('Could not start that estate task' + (d && d.error ? ' — the server refused it (' + d.error + ')' : '') + '. Try again in a moment.', 'danger');
         }
         needsRender = true; return;
       }
@@ -27205,6 +27207,28 @@
     estPersist();
     needsRender = true;
   }
+  // The ONE list of payload fields a job carries from a queue entry / descriptor onto the live job.
+  // This logic existed as copy-pasted inline lists, and 'totem' was missing from one THREE releases in a
+  // row (estateJobShapeOk's two validators in v0.0.77.34, then the queue dispatch in v0.0.79.1) -- each
+  // omission silently produced a job that forgot what it was building. Any NEW job field goes here.
+  function estateJobFieldsFrom(src){
+    var f = {};
+    if(src.paveTileId != null) f.paveTileId = src.paveTileId;
+    if(src.workshopId != null) f.workshopId = src.workshopId;
+    if(src.cottageId != null) f.cottageId = src.cottageId;
+    if(src.totemId != null) f.totemId = src.totemId;
+    if(src.fieldTier != null) f.fieldTier = src.fieldTier;
+    if(src.upgrade) f.upgrade = true;
+    return f;
+  }
+  // Pure decision for a failed queue claim (tested). 'adopt': the server reported a live job (busy) --
+  // mirror it. 'drop': a hard refusal (kind/coords/level) that will refuse identically forever --
+  // retrying it every 4s WAS the reported frozen queue. 'retry': transport blip; the network may return.
+  function estateQueueClaimOutcome(d){
+    if(d && d.job) return 'adopt';
+    if(d && d.error && d.error !== 'inprogress' && d.error !== 'pending') return 'drop';
+    return 'retry';
+  }
   // Kick off the next queued action once the active job clears. Called from processEstateJob after a
   // completion, and after a cancel. Re-validates against the REAL grid (a queued build is void if you
   // broke the pavement under it in the meantime) -- an invalid head is refunded, logged and skipped.
@@ -27242,18 +27266,22 @@
       estJobRpcRelease(); _estQueueAdvancing = false;
       var d = res && res.data;
       if(!d || !d.ok || !d.claimed){
-        // Couldn't claim (another window is mid-job, or a transient error). Leave the item queued and
-        // retry on a later tick; adopt any server job the response reports so we don't double up.
-        if(d && d.job) state.estate.job = estateJobFromServer(d.job);
+        var outcome = estateQueueClaimOutcome(d);
+        if(outcome === 'adopt'){ state.estate.job = estateJobFromServer(d.job); }
+        else if(outcome === 'drop'){
+          // A HARD refusal (kind/coords/level -- anything the server will refuse identically next time):
+          // retrying is the reported "queued totem freezes forever" (the server refused a kind its table
+          // did not yet accept, and this loop redispatched into the same error every 4 seconds). Refund,
+          // drop the head, and say WHY, exactly like the invalid-head path above.
+          estateJobRefund(next);
+          state.estate.queue.shift();
+          addLog('Skipped a queued estate action — the server refused it (' + d.error + '). Materials returned.', 'danger');
+          estPersist();
+        } // 'retry': transport blip or an adoptable-but-jobless busy -- leave it queued for the next tick
         needsRender = true; return;
       }
       state.estate.queue.shift();
-      var jobFields = {};
-      if(next.paveTileId != null) jobFields.paveTileId = next.paveTileId;
-      if(next.workshopId != null) jobFields.workshopId = next.workshopId;
-      if(next.cottageId != null) jobFields.cottageId = next.cottageId;
-      if(next.fieldTier != null) jobFields.fieldTier = next.fieldTier;
-      if(next.upgrade) jobFields.upgrade = true;
+      var jobFields = estateJobFieldsFrom(next);
       state.estate.job = Object.assign({ kind:next.kind, x:next.x, y:next.y, startAt:Number(d.job.startAt), readyAt:Number(d.job.readyAt) }, jobFields);
       addLog('Next estate action started: ' + estateJobLabel(next) + ' at (' + next.x + ', ' + next.y + ').', 'important');
       estPersist();
@@ -38709,7 +38737,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.79.0';
+  var GAME_VERSION = '0.0.79.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38870,7 +38898,7 @@
       TOOL_TYPES:TOOL_TYPES, toolBenefitLabel:toolBenefitLabel, BLACKSMITH_TOOL_GROUPS:BLACKSMITH_TOOL_GROUPS, blacksmithToolGroupKey:blacksmithToolGroupKey, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupsOpen:blacksmithGroupsOpen,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,
-      estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg, estateJobShapeOk:estateJobShapeOk,
+      estateJobBusy:estateJobBusy, estateJobBusyMsg:estateJobBusyMsg, estateJobShapeOk:estateJobShapeOk, estateJobFieldsFrom:estateJobFieldsFrom, estateQueueClaimOutcome:estateQueueClaimOutcome,
       dungeonOwedClears:dungeonOwedClears, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL,
       applyEffectDamage:applyEffectDamage, applyEffectDot:applyEffectDot, combatLogDotReset:combatLogDotReset,
       _blacksmithGroupsOpen:function(){ return blacksmithGroupsOpen; }, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupOpen:blacksmithGroupOpen,

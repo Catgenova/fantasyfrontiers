@@ -14851,6 +14851,22 @@
     // Every kind that carries materials must survive a reload. 'totem' was missing from BOTH copies of
     // this check, so a totem job was dropped on load and its totem destroyed.
     ok(FF.estateJobShapeOk({kind:'totem', totemId:'totem_t3'}), 'a totem job is valid (was dropped on load)');
+    // The queue-dispatch field copy was a THIRD copy of the same list, and totemId was missing from it
+    // too (v0.0.79.1, SteakHouse retest): a queued totem that claimed successfully produced a job with
+    // no totem to raise. One shared helper now owns the list; every payload field must round-trip it.
+    var _ff = FF.estateJobFieldsFrom({ kind:'totem', totemId:'totem_t3', localMs:1, payload:{}, x:1, y:2 });
+    eq(_ff.totemId, 'totem_t3', 'the shared field copy carries totemId (the third-copy omission)');
+    ok(!('localMs' in _ff) && !('payload' in _ff) && !('x' in _ff), 'and copies ONLY payload fields, never queue bookkeeping');
+    var _f2 = FF.estateJobFieldsFrom({ paveTileId:'paving_t3', workshopId:'w', cottageId:'c', fieldTier:4, upgrade:true });
+    ok(_f2.paveTileId==='paving_t3' && _f2.workshopId==='w' && _f2.cottageId==='c' && _f2.fieldTier===4 && _f2.upgrade===true,
+      'every other payload field rides the same helper');
+    // A failed queue claim: adopt a reported job, DROP a hard refusal (retrying one every 4s was the
+    // reported "queued totem freezes forever"), retry only transport blips / jobless-busy responses.
+    eq(FF.estateQueueClaimOutcome({ ok:false, error:'kind' }), 'drop', "a hard 'kind' refusal drops the head (the frozen queue)");
+    eq(FF.estateQueueClaimOutcome({ ok:false, error:'coords' }), 'drop', 'any hard refusal drops');
+    eq(FF.estateQueueClaimOutcome({ ok:false, error:'inprogress', job:{ kind:'pave', x:0, y:0, startAt:1, readyAt:2, payload:{} } }), 'adopt', 'a busy response with a job is adopted');
+    eq(FF.estateQueueClaimOutcome(null), 'retry', 'a transport error keeps the head queued');
+    eq(FF.estateQueueClaimOutcome({ ok:false, error:'pending' }), 'retry', 'a jobless pending stays queued for the next tick');
     ok(FF.estateJobShapeOk({kind:'workshop', workshopId:'workshop_jewelrycrafting_t1'}), 'a workshop job is valid');
     ok(FF.estateJobShapeOk({kind:'cottage', cottageId:'cottage_t2'}), 'a cottage job is valid');
     ok(FF.estateJobShapeOk({kind:'pave', paveTileId:'paving_t4'}), 'a pave job is valid');
