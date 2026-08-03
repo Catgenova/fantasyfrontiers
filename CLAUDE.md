@@ -223,7 +223,14 @@ witnessed (`item_credit_log`), and ship it **shadow-only**. `20260803230000` add
 order: flag ANY client-reported fantastic growth (even 1) whose family shows ZERO normal growth — the one
 honest way to trip it is a player whose only craft of the family in the window rolled fantastic (0.16%),
 accepted as review noise. It reads strictly fantastic-vs-normal, so a lone injected SUPREME is still only
-caught by the ratio rule at volume. `item_credit`'s signature must NOT change —
+caught by the ratio rule at volume. `20260803270000` closed a coverage hole the SAME DAY an authorized
+probe walked through it (AndJustice4All injected one fantastic Signet unseen): the sweep's "every leg*
+prefix is OUT" exclusion was justified for legendary gear/set pieces — but those are UNIQUES that never
+enter `player_items` at all, so it really only excluded the stackable legendary ACCESSORIES
+(`legring_/legamulet_/legcloak_`), which Blueprint forges add to ordinary inventory with the standard
+mostly-normal rarity roll. Now covered, aggregated per LAYER family (`legring_d4`) because a forge yields
+a random item from the layer's set — same-item siblings are structurally absent for honest forges.
+Newly-covered keys BASELINE on their first sweep, so pre-existing injections are out of scope by design. `item_credit`'s signature must NOT change —
 adding a `p_source` default arg creates an OVERLOAD and makes the existing 3-arg calls from market
 settlement and bank withdrawal ambiguous.
 
