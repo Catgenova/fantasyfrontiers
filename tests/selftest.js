@@ -5595,13 +5595,15 @@
     eq(FF.uiScaleFor(1080, FF.UI_SCALE_MIN_W, true), 0.75, 'exactly at the floor it scales');
     ok(FF.UI_SCALE_MIN_W > 860 && FF.UI_SCALE_MIN_W > 820,
        'the floor clears both the rail/dock (860px) and arena (820px) breakpoints');
-    // A save with no compactDesktop key must read as ON, not off -- this is the exact expression
-    // applyUiScalePref uses, so an accidental `=== true` there would fail here.
+    // OPT-IN since v0.0.77.27 (owner order: desktops open at 100%). A save with no compactDesktop key
+    // must read as OFF -- this is the exact expression applyUiScalePref uses, so a regression back to
+    // the default-on `!== false` form would fail here.
     var _blank = {};
-    eq(FF.uiScaleFor(1080, 1528, _blank.compactDesktop !== false), 0.75,
-       'a save predating the setting is treated as on, not off');
-    eq(FF.uiScaleFor(1080, 1528, ({ compactDesktop:false }).compactDesktop !== false), 1,
-       'an explicit false is honoured');
+    eq(FF.uiScaleFor(1080, 1528, _blank.compactDesktop === true), 1,
+       'a save without the setting stays at full size (compact is opt-in)');
+    eq(FF.uiScaleFor(1080, 1528, ({ compactDesktop:true }).compactDesktop === true), 0.75,
+       'an explicit opt-in scales to 0.75');
+    eq(FF._state.settings.compactDesktop, false, 'a fresh game defaults Compact desktop OFF');
   });
 
   // ---- D1 legendary gear COMBAT effects, Batch 4: the four Pierce weapons -----------------------------
