@@ -4861,6 +4861,31 @@
     FF.orbReset('foe', 0.02); FF.orbResetFoe();
     eq(FF.orbState('foe').lvl, 1, 'a fresh foe orb is full at once');
     eq(FF.orbState('foe').vel, 0, 'a fresh foe orb does not spring up');
+
+    // ---- The SHIELD fluid (ticket: "missing shield bar in fight") -- a second, blue body of liquid in
+    // the same glass, hanging from the top, on its own copy of the same overdamped spring.
+    FF._orbsReset(); FF.orbReset('me', 1);
+    var so = FF.orbState('me');
+    eq(so.sLvl, 0, 'a reset orb carries no shield fluid');
+    FF.orbSetShield('me', 0.3);
+    eq(so.sTarget, 0.3, 'the shield target takes the new fraction immediately');
+    eq(so.sLvl, 0, 'the shield LEVEL lags -- its spring has not been stepped');
+    ok(so.sVel > 0, 'a filling shield kicks its fluid');
+    ok(so.sSlosh > 0 && so.sBub.length > 0, 'a shield change sloshes and froths the band');
+    FF.orbSetShield('me', NaN);
+    eq(so.sTarget, 0.3, 'a non-finite shield target is rejected (the NaN-into-gradient pin applies here too)');
+    FF.orbSetShield('me', 7);
+    eq(so.sTarget, 1, 'the shield target clamps to the glass');
+    FF.orbReset('me', 1);
+    eq(FF.orbState('me').sTarget, 0, 'a reset clears the shield fluid with everything else');
+    // Only classes with an absorb pool ever feed it: the driver is combatShieldTotal, which is zero
+    // without any of the four pools.
+    var S = FF._state, savedPools = { t:S.templarShield, r:S.reaperShield, l:S.lumenShield, h:S.heraldBarrier };
+    S.templarShield = 0; S.reaperShield = 0; S.lumenShield = 0; S.heraldBarrier = 0;
+    eq(FF.combatShieldTotal(S), 0, 'no pool, no shield fluid (most classes)');
+    S.reaperShield = 500; S.heraldBarrier = 250;
+    eq(FF.combatShieldTotal(S), 750, 'the pools stack into one blue band');
+    S.templarShield = savedPools.t; S.reaperShield = savedPools.r; S.lumenShield = savedPools.l; S.heraldBarrier = savedPools.h;
     FF._orbsReset();
   });
 

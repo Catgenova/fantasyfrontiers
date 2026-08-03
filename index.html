@@ -1036,10 +1036,8 @@
                   text-transform:uppercase;color:#ffd9a0;text-shadow:0 1px 3px #000,0 0 6px #000;}
   /* The blue absorb pool reads as a ring around the orb rather than a second liquid -- two stacked fluids
      in one glass is unreadable at this size. */
-  .ar2-orb .shield{position:absolute;z-index:2;border-radius:50%;pointer-events:none;display:none;
-                   box-shadow:0 0 0 3px rgba(95,208,224,.85),0 0 12px 3px rgba(95,208,224,.45);}
-  .ar2-orb.me  .shield{left:57.71%;top:55.57%;width:36.13%;height:35.84%;}
-  .ar2-orb.foe .shield{left:6.35%;top:55.57%;width:35.84%;height:36.04%;}
+  /* (The old absorb-pool glow ring retired in v0.0.77.36: the pool is now the blue shield fluid drawn
+     inside the orb canvas itself -- see orbDrawShield.) */
   /* --- lower row: companions under the player plinth, the feed under the foe's ---
      Built to the SAME rule as the plinths (two halves capped at the plinth width, centred) rather than a
      content-driven split, so the feed's left edge lands exactly on the foe plinth's and the companions
@@ -1416,7 +1414,7 @@
    Because the well is a true circle the box is SQUARE at any render size, so .liq's clip circle inscribes
    it exactly. */
   .ar2.ivy .ar2-orb .liq,.ar2.ivy .ar2-orb .glass,
-  .ar2.ivy .ar2-orb .num,.ar2.ivy .ar2-orb .shield{ top:17.71%; width:34.56%; height:61.46%; }
+  .ar2.ivy .ar2-orb .num{ top:17.71%; width:34.56%; height:61.46%; }
   .ar2.ivy .ar2-orb.me  .liq,.ar2.ivy .ar2-orb.me  .glass,
   .ar2.ivy .ar2-orb.me  .num,.ar2.ivy .ar2-orb.me  .shield{ left:58.17%; }
   .ar2.ivy .ar2-orb.foe .liq,.ar2.ivy .ar2-orb.foe .glass,
@@ -24326,11 +24324,19 @@
   // along with the fluid, which looked like a bug. Gloss belongs to the glass layer that sits still on top.
   var ORB_K = 20, ORB_DAMP = 10, ORB_SLOSH = 14;
   var ORB_LIQ_DEEP = [200,13,14], ORB_LIQ_MID = [252,107,7], ORB_LIQ_TOP = [255,172,56];
+  // The SHIELD liquid (ticket: "missing shield bar in fight" -- owner: a second bubble over the first,
+  // blue). It is a second body of fluid in the SAME glass, hanging from the TOP of the orb and growing
+  // downward -- anchored up there so it stays visible at full health, where a float-on-the-surface layer
+  // would be squeezed out of the glass entirely. It runs its own spring/slosh/bubbles, so a Barrier
+  // filling or a Breach spending it throws the blue exactly as damage throws the red. Only classes with
+  // an absorb pool (combatShieldTotal: Templar Aegis, Reaper Siphon, Lumen ward, Herald Barrier) ever
+  // feed it a target, so everyone else never sees it.
+  var ORB_SHIELD_DEEP = [17,58,110], ORB_SHIELD_MID = [38,112,196], ORB_SHIELD_TOP = [140,204,255];
   var ORB_LOW_DARKEN = true;              // below ~55% the fluid darkens, so "nearly dead" reads at a glance
-  var _orbs = {};                         // side -> {lvl,vel,slosh,tilt,t,bubbles,cv,w,h}
+  var _orbs = {};                         // side -> {lvl,vel,slosh,tilt,t,bubbles,(shield: sLvl,sVel,sSlosh,sBub),cv,w,h}
   function orbMix(c, f){ return 'rgb('+Math.round(c[0]*f)+','+Math.round(c[1]*f)+','+Math.round(c[2]*f)+')'; }
   function orbState(side){
-    if(!_orbs[side]) _orbs[side] = { lvl:1, target:1, vel:0, slosh:0, tilt:0, t:0, bubbles:[], cv:null, w:0, h:0 };
+    if(!_orbs[side]) _orbs[side] = { lvl:1, target:1, vel:0, slosh:0, tilt:0, t:0, bubbles:[], sLvl:0, sTarget:0, sVel:0, sSlosh:0, sBub:[], cv:null, w:0, h:0 };
     return _orbs[side];
   }
   // BOTH WRITERS REJECT NON-FINITE INPUT (v0.0.77.8). A degenerate state (a foe with hp 0, a synthetic test
@@ -24341,6 +24347,7 @@
     var o = orbState(side);
     if(!isFinite(frac)) frac = 1;
     o.lvl = o.target = clamp(frac, 0, 1); o.vel = 0; o.slosh = 0; o.tilt = 0; o.bubbles = [];
+    o.sLvl = o.sTarget = 0; o.sVel = 0; o.sSlosh = 0; o.sBub = [];
   }
   // A NEW FOE gets a full orb with no slosh: springing 0 -> 1 would read as the fresh enemy being healed.
   function orbResetFoe(){ orbReset('foe', 1); }
@@ -24357,10 +24364,29 @@
     var n = Math.min(30, Math.round(mag * 26));   // capped: a 100% swing must not spawn hundreds
     for(var i=0;i<n;i++) orbBubble(o, true);
   }
+  // Shield writer: same contract as orbSetTarget -- reject garbage (the v0.0.77.8 NaN pin applies here
+  // too: a NaN level reaching createLinearGradient throws mid-render), clamp, impulse scaled by the change.
+  function orbSetShield(side, frac){
+    if(!isFinite(frac)) return;
+    var o = orbState(side); frac = clamp(frac, 0, 1);
+    var d = frac - o.sTarget;
+    o.sTarget = frac;
+    if(Math.abs(d) < 1e-6) return;
+    var mag = Math.abs(d);
+    o.sVel += (d < 0 ? -1 : 1) * mag * 2.2;
+    o.sSlosh = Math.min(1, o.sSlosh + mag * 2.6);
+    var n = Math.min(14, Math.round(mag * 18));
+    for(var i=0;i<n;i++) orbShieldBubble(o);
+  }
   function orbBubble(o, fast){
     if(o.bubbles.length > 70) return;              // hard ceiling; six orbs of froth is not worth the frames
     o.bubbles.push({ x:Math.random(), y:0, r:0.012+Math.random()*0.030,
                      v:(fast?0.55:0.20)+Math.random()*0.30, wob:Math.random()*6.28 });
+  }
+  function orbShieldBubble(o){
+    if(o.sBub.length > 30) return;                 // the band is small; keep its froth smaller
+    o.sBub.push({ x:Math.random(), y:Math.random(), r:0.010+Math.random()*0.020,
+                  v:0.25+Math.random()*0.30, wob:Math.random()*6.28 });
   }
   function orbSurfaceY(o, px, level){
     var x = px / o.w;
@@ -24401,6 +24427,46 @@
     c.beginPath();
     for(var x2=0;x2<=w;x2+=3){ var sy = orbSurfaceY(o,x2,o.lvl); if(x2===0) c.moveTo(x2,sy); else c.lineTo(x2,sy); }
     c.strokeStyle = 'rgba(255,220,190,0.80)'; c.lineWidth = Math.max(1, o.h*0.013); c.stroke();
+    orbDrawShield(o);
+  }
+  // The blue shield fluid: hangs from the TOP of the glass, its meniscus is the LOWER edge, waving on the
+  // same water math as the health surface (own phase, so the two liquids never move in lockstep). Drawn
+  // after the red so where the pool is deep it visibly covers the health -- shield over health is the
+  // reading. Mostly opaque: a translucent film disappeared against the darkened low-health fluid.
+  function orbShieldEdgeY(o, px){
+    var x = px / o.w;
+    var amp = o.h * (0.010 + o.sSlosh * (ORB_SLOSH/1000));
+    var y = o.sLvl * o.h;
+    y += Math.sin(o.t*2.7 + x*8.0 + 2.1) * amp;
+    y += Math.sin(o.t*4.3 - x*10.0 + 4.0) * amp * 0.55;
+    y -= (x - 0.5) * o.tilt * o.h * 0.30;          // counter-tilts slightly against the health fluid
+    return y;
+  }
+  function orbDrawShield(o){
+    if(o.sLvl <= 0.004) return;
+    var c = o.ctx, w = o.w, h = o.h;
+    c.save();
+    c.beginPath(); c.moveTo(0,0);
+    for(var x=0;x<=w;x+=3) c.lineTo(x, orbShieldEdgeY(o,x));
+    c.lineTo(w,0); c.closePath(); c.clip();
+    var depth = Math.max(1, o.sLvl * h);
+    var lg = c.createLinearGradient(0,0,0,depth);
+    lg.addColorStop(0,    orbMix(ORB_SHIELD_TOP, 1));
+    lg.addColorStop(0.35, orbMix(ORB_SHIELD_MID, 1));
+    lg.addColorStop(1,    orbMix(ORB_SHIELD_DEEP, 0.95));
+    c.globalAlpha = 0.92;
+    c.fillStyle = lg; c.fillRect(0,0,w,h);
+    c.globalAlpha = 1;
+    for(var i=0;i<o.sBub.length;i++){
+      var b = o.sBub[i];
+      var by = (1-b.y) * depth, bx = b.x*w + Math.sin(o.t*3+b.wob)*w*0.02;
+      c.beginPath(); c.arc(bx, by, b.r*w, 0, 6.2832);
+      c.fillStyle = 'rgba(210,235,255,'+(0.30*Math.min(1,b.y*3))+')'; c.fill();
+    }
+    c.restore();
+    c.beginPath();
+    for(var x2=0;x2<=w;x2+=3){ var ey = orbShieldEdgeY(o,x2); if(x2===0) c.moveTo(x2,ey); else c.lineTo(x2,ey); }
+    c.strokeStyle = 'rgba(180,222,255,0.85)'; c.lineWidth = Math.max(1, o.h*0.012); c.stroke();
   }
   // One frame for one orb. Returns false when its canvas is not on screen, which is how the caller knows
   // the stage is gone (tab switched, fight ended) and it can stop paying for the physics.
@@ -24427,6 +24493,14 @@
     o.slosh *= Math.exp(-dt*2.3);
     if(Math.random() < dt*7) orbBubble(o, false);
     for(var i=o.bubbles.length-1;i>=0;i--){ var b=o.bubbles[i]; b.y += b.v*dt; if(b.y>1) o.bubbles.splice(i,1); }
+    // The shield fluid runs the identical overdamped spring, so it can never overshoot either.
+    o.sVel += ((o.sTarget - o.sLvl)*ORB_K - o.sVel*ORB_DAMP) * dt;
+    o.sLvl += o.sVel * dt;
+    if(o.sLvl < 0){ o.sLvl = 0; o.sVel *= -0.35; }
+    if(o.sLvl > 1){ o.sLvl = 1; o.sVel *= -0.35; }
+    o.sSlosh *= Math.exp(-dt*2.3);
+    if(o.sLvl > 0.01 && Math.random() < dt*4) orbShieldBubble(o);
+    for(var j=o.sBub.length-1;j>=0;j--){ var sb=o.sBub[j]; sb.y += sb.v*dt; if(sb.y>1) o.sBub.splice(j,1); }
     orbDraw(o);
     return true;
   }
@@ -24446,7 +24520,6 @@
   function orbHtml(side, label, num){
     return '<div class="ar2-crop"><div class="ar2-orb '+side+'">'
       + '<div class="liq"><canvas id="ar2Orb-'+side+'"></canvas></div>'
-      + '<div class="shield" id="ar2Shield-'+side+'"></div>'
       // decoding="sync" on both stage images: the arena rebuilds this markup up to 10x/sec, and a re-inserted
       // <img> may decode ASYNCHRONOUSLY -- one frame of nothing where the stone should be. Black-on-black on
       // the old dark stage; a white strobe on marble. Sync decode is effectively free here (the bitmap is in
@@ -24506,6 +24579,10 @@
     var _fightSig = act.monsterId + '|' + (act.duelStartedAt || 0);
     if(_ar2FightSig !== _fightSig){ _ar2FightSig = _fightSig; orbReset('foe', hpPct/100); }
     orbSetTarget('me', pPct/100); orbSetTarget('foe', hpPct/100);
+    // The absorb pool rides the player's orb as the blue shield fluid; foes have no pools, so their
+    // shield target is pinned at zero rather than left to stale state from a previous life of the map.
+    orbSetShield('me', maxHpVal > 0 ? clamp(_shieldNow/maxHpVal, 0, 1) : 0);
+    orbSetShield('foe', 0);
 
     html += '<div class="ar2 ivy">';
     // ---------- header: portrait, name plate, swing bars ----------
@@ -36655,9 +36732,9 @@
       if(_nFoe && m) _nFoe.textContent = fmt(state.activity.monsterHp) + ' / ' + fmt(m.hp);
       var _nMe = document.getElementById('ar2Num-me');
       if(_nMe) _nMe.textContent = fmt(state.playerHp) + ' / ' + fmt(maxHpVal);
-      // The absorb pool rings the player's orb. A second liquid in the same glass is unreadable at this size.
-      var _shl = document.getElementById('ar2Shield-me');
-      if(_shl) _shl.style.display = _shieldLive > 0 ? 'block' : 'none';
+      // The absorb pool is the BLUE shield fluid in the same glass (owner order; it replaced the glow
+      // ring). Only the target is set -- the spring in orbTick makes it slosh like the health does.
+      orbSetShield('me', maxHpVal > 0 ? clamp(_shieldLive/maxHpVal, 0, 1) : 0);
       // ---- SWING BARS ----
       var _stun = enemyStunned(state);
       var _fFoe = document.getElementById('ar2AtkFoe');
@@ -38454,7 +38531,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.35';
+  var GAME_VERSION = '0.0.77.36';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38602,7 +38679,7 @@
       renderGlobalActionBar:renderGlobalActionBar, renderSacrificeTab:renderSacrificeTab, sacSetFilters:function(cat,rarity,tier){ if(cat!=null) sacFilterCat=cat; if(rarity!=null) sacFilterRarity=rarity; if(tier!=null) sacFilterTier=tier; }, equipSlotState:equipSlotState, renderImprovementTab:renderImprovementTab, renderCombatTab:renderCombatTab, renderEnemiesTab:renderEnemiesTab, describeTask:describeTask, skillLiveStats:skillLiveStats, renderEquipArrowSection:renderEquipArrowSection, FORESTRY_NAMES:FORESTRY_NAMES, censorChat:censorChat, censorLinks:censorLinks, maskProfanity:maskProfanity, chatDisplayCensor:chatDisplayCensor,
       combatLogPush:combatLogPush, combatLogHtml:combatLogHtml, advCombat:advCombat, _clReset:function(){ combatLog = []; }, _clGet:function(){ return combatLog; },
       arenaMiniLogHtml:arenaMiniLogHtml, ARENA_MINI_LOG_ROWS:ARENA_MINI_LOG_ROWS, renderArena:renderArena,
-      orbState:orbState, orbReset:orbReset, orbResetFoe:orbResetFoe, orbSetTarget:orbSetTarget, orbStep:orbStep,
+      orbState:orbState, orbReset:orbReset, orbResetFoe:orbResetFoe, orbSetTarget:orbSetTarget, orbSetShield:orbSetShield, orbStep:orbStep,
       orbHtml:orbHtml, ar2Bar:ar2Bar, ORB_K:ORB_K, ORB_DAMP:ORB_DAMP, _orbsGet:function(){ return _orbs; },
       _orbsReset:function(){ _orbs = {}; _ar2FightSig = ''; },
       chatMessagesHtml:chatMessagesHtml, chatRoleOf:chatRoleOf, chatIsMod:chatIsMod, chatIsOwner:chatIsOwner, chatMuteUntil:chatMuteUntil, chatAmIMuted:chatAmIMuted, chatMuteLabel:chatMuteLabel, renderChatModModal:renderChatModModal, renderChatModerationPanel:renderChatModerationPanel, chatNameFor:chatNameFor, titleName:titleName, profileCardBodyHtml:profileCardBodyHtml, renderPlayerProfileModal:renderPlayerProfileModal,
