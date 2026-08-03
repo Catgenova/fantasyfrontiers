@@ -14379,6 +14379,23 @@
     ok(FF.tierChipHtml(20).indexOf(FF.improveTierLabel(20)) !== -1, 'chip and improvement label are the SAME string for the same tier');
   });
 
+  // ---- Arena effects: the buff/debuff fills actually paint (v0.0.77.45) ----------------------------
+  // The fill is a <span>, and inline elements ignore width/height -- every effect bar rendered its
+  // fill at 0x0 while the inline width:NN% did nothing. Pinned by real geometry, not class names.
+  suite('arena effects: buff bars have real painted fills', function(){
+    var probe = document.createElement('div');
+    probe.innerHTML = '<div class="arena-fx"><div class="arena-fx-row"><span class="arena-fx-name">x</span>'
+      + '<span class="arena-fx-bar"><span class="arena-fx-fill" style="width:50%;background:#5c8a3c"></span></span></div></div>';
+    document.body.appendChild(probe);
+    try {
+      var f = probe.querySelector('.arena-fx-fill').getBoundingClientRect();
+      var bar = probe.querySelector('.arena-fx-bar').getBoundingClientRect();
+      ok(f.width > 0 && f.height > 0, 'a 50% fill has real size (an inline span computed 0x0 — the reported empty bars)');
+      ok(Math.abs(f.width - bar.width/2) < 3, 'and it spans half its track');
+      ok(f.height >= bar.height - 3, 'and the full track height');
+    } finally { probe.remove(); }
+  });
+
   // ---- Combat bars: beveled-glass fills + energy flow on the special (owner picks B + C) -----------
   suite('combat bars: glass fill everywhere, flow on the special only', function(){
     var probe = document.createElement('div');

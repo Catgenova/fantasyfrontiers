@@ -925,7 +925,10 @@
   .arena-fx-row .game-icon{width:13px;height:13px;flex:0 0 auto;}
   .arena-fx-name{flex:0 0 auto;min-width:56px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .arena-fx-bar{flex:1 1 auto;height:6px;border-radius:3px;background:var(--bg-deep);border:1px solid var(--border-light);overflow:hidden;}
-  .arena-fx-fill{height:100%;transition:none;}
+  /* display:block is LOAD-BEARING: the fill is a <span>, and an inline element ignores width/height --
+     every buff/debuff bar rendered its fill at 0x0 (reported: "still and empty") while the inline
+     width:NN% sat there doing nothing. The track only survives because the flex row blockifies it. */
+  .arena-fx-fill{display:block;height:100%;transition:none;}
   .arena-fx-t{flex:0 0 auto;color:var(--text-faint);min-width:26px;text-align:right;}
   .arena-fx-n{flex:0 0 auto;font-family:var(--font-mono);font-size:10px;font-weight:700;min-width:18px;text-align:right;}
   /* In-card combat consumables strip. */
@@ -38599,7 +38602,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.44';
+  var GAME_VERSION = '0.0.77.45';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
