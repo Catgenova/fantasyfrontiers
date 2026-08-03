@@ -242,6 +242,11 @@
     // vendorSellValue below; spot-check a real craft recipe at t0 that is NOT a gathered material).
     ok(S['metallurgy_t0'] && !FF.ALL_GATHER_ITEMS['metallurgy_t0'], 'metallurgy_t0 is a crafted (non-gathered) good');
     eq(S['metallurgy_t0'].sell, 10, 'crafted good t0 sells for 10');
+    // Player report: alloy smelts showed as bare 'Bronze'/'Pewter' while ore smelts read '<metal> Bar'.
+    // EVERY smelt is named a Bar now -- alloy tiers included.
+    ok(FF.CRAFTING_SKILLS.metallurgy.recipes.every(function(r){ return / Bar$/.test(r.name); }),
+       "every Metallurgy smelt is named '<metal> Bar', alloys included (ticket: bare 'Bronze')");
+    eq(FF.CRAFTING_SKILLS.metallurgy.recipes[1].name, 'Bronze Bar', 'the t1 alloy is the Bronze Bar');
     eq(FF.vendorSellValue('anything_t20', { rarity:'normal' }, false), 210, 'other t20 = 10+200 = 210');
     // Rarity multipliers x2 / x4 / x8.
     eq(FF.SELL_RARITY_MULT.normal, 1, 'normal x1');

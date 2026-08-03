@@ -132,12 +132,13 @@
   .ff-topbar{
     display:flex;align-items:center;gap:12px;padding:9px 14px;flex-wrap:wrap;z-index:8;flex-shrink:0;
     cursor:default; /* non-interactive text (brand, coin, buff chip) shouldn't show the I-beam; buttons re-set pointer */
-    background-color:var(--stone-dk);
-    background-image:radial-gradient(circle at 20% 30%, rgba(120,140,90,.08), transparent 30%),repeating-linear-gradient(90deg, rgba(0,0,0,.28) 0 2px, transparent 2px 28px);
+    /* Black marble chrome (v0.0.77.31): the commissioned dark marble replaces the slate stripes. cover,
+       no tiling -- the source isn't seamless, and one crop per element reads as cut stone. */
+    background:var(--stone-dk) url('art/marble_dark.png') center/cover;
     border-bottom:2px solid #000;box-shadow:inset 0 -2px 4px rgba(0,0,0,.35);
   }
   /* Tips & tricks ticker: a slim scrolling strip under the top bar, visible on every in-game screen. */
-  .ff-ticker{display:flex;align-items:center;gap:9px;padding:4px 14px;flex-shrink:0;overflow:hidden;z-index:7;background-color:var(--stone-dk);background-image:repeating-linear-gradient(90deg, rgba(0,0,0,.22) 0 2px, transparent 2px 28px);border-bottom:2px solid #000;box-shadow:inset 0 -2px 4px rgba(0,0,0,.3);}
+  .ff-ticker{display:flex;align-items:center;gap:9px;padding:4px 14px;flex-shrink:0;overflow:hidden;z-index:7;background:var(--stone-dk) url('art/marble_dark.png') center bottom/cover;border-bottom:2px solid #000;box-shadow:inset 0 -2px 4px rgba(0,0,0,.3);}
   .ff-ticker-ico{flex-shrink:0;font-size:13px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.5));}
   /* Fade the text in/out at both edges so the marquee glides rather than hard-clipping mid-character
      against the strip edge (looked "cut off" on narrow mobile widths). */
@@ -194,14 +195,12 @@
     filter:drop-shadow(0 3px 5px rgba(12,20,8,.28));}
   .ff-rail{
     position:relative;width:260px;flex-shrink:0;padding:12px 12px;display:flex;flex-direction:column;overflow-y:auto;
-    /* Subtle black-slate brick wall (running bond), drawn as an inline SVG tile: dark slate
-       brick faces with a soft top bevel + bottom shadow, near-black mortar. */
-    background-color:#0a0b0d;
-    background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'><rect width='64' height='64' fill='%230a0b0d'/><defs><linearGradient id='g' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='%23262b31'/><stop offset='.5' stop-color='%231b2024'/><stop offset='1' stop-color='%2313161a'/></linearGradient></defs><rect x='1' y='1' width='62' height='29' fill='url(%23g)'/><rect x='0' y='33' width='31' height='29' fill='url(%23g)'/><rect x='33' y='33' width='31' height='29' fill='url(%23g)'/><rect x='0' y='33' width='31' height='29' fill='%23000000' opacity='.05'/><rect x='33' y='33' width='31' height='29' fill='%23ffffff' opacity='.02'/><rect x='1' y='1' width='62' height='1' fill='%232f353c' opacity='.45'/><rect x='0' y='33' width='31' height='1' fill='%232f353c' opacity='.4'/><rect x='33' y='33' width='31' height='1' fill='%232f353c' opacity='.4'/><rect x='1' y='29' width='62' height='1' fill='%23000000' opacity='.3'/><rect x='0' y='61' width='31' height='1' fill='%23000000' opacity='.3'/><rect x='33' y='61' width='31' height='1' fill='%23000000' opacity='.3'/></svg>");
-    background-size:64px 64px;
+    /* Black marble wall (v0.0.77.31, replacing the slate-brick SVG tile): same commissioned marble as
+       the top bar, one cover crop for the whole column. */
+    background:#0a0b0d url('art/marble_dark.png') center/cover;
     box-shadow:inset -2px 0 0 rgba(0,0,0,.45);
   }
-  /* Main nav tabs: raised stone buttons so they read clearly against the slate wall. */
+  /* Main nav tabs: raised stone buttons so they read clearly against the marble wall. */
   .ff-area-btn{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:10px 11px;margin-bottom:6px;border-radius:7px;cursor:pointer;font-family:var(--font-display);font-size:13px;font-weight:600;background:linear-gradient(180deg,#2b3037,#1e2329);border:1px solid #454c56;color:#e4dcc4;box-shadow:0 1px 3px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.06);}
   .ff-area-btn:hover{border-color:#69737f;color:#f4eeda;background:linear-gradient(180deg,#333a43,#262c32);}
   .ff-area-btn .ico{width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;}
@@ -1254,17 +1253,23 @@
   /* Black well, and CLIPPED TO THE PADDING BOX. That clip is the fix for the bleed: a background defaults to
      border-box, so the fill was painting UNDER the border area and showing through every transparent part of
      the frame art -- worst along the bottom rail, where the bar piece is mostly open. */
-  background:var(--ivy-well); background-image:none; background-clip:padding-box;
+  /* RED well (player report: the black well blended into the stage and "almost doesnt look like a
+     button" -- a first death came from hunting for it). Same stone frame, danger-red fill + a slow
+     glow pulse so it reads as THE emergency control at a glance. */
+  background-color:#6e1d12; background-image:linear-gradient(180deg,#a03a28,#5e150c); background-clip:padding-box;
   border-radius:0; box-shadow:none;
+  animation:ffRetreatGlow 1.9s ease-in-out infinite;
   border-style:solid; border-color:transparent; border-width:11px 28px 15px 28px;
   border-image:url('art/ivy_bar.png') 33 115 52 112 fill stretch;
-  color:#e8dcc0; font-family:var(--font-display); font-size:14px; letter-spacing:.04em;
+  color:#ffe3d6; font-family:var(--font-display); font-size:14px; letter-spacing:.04em;
   text-shadow:0 1px 2px #000,0 0 6px #000; padding:5px 4px;
                                      width:100%; max-width:none;
   /* Shares its top edge with the bar above it. NOTE: renderArena emits this button with an INLINE
      style="margin-top:10px", and an inline style beats every selector -- so shipping this needs that inline
      margin dropped, or the rule below is silently ignored. That is exactly what happened on the first pass. */
   margin:-12px 0 0 0; }
+  .ar2.ivy .ar2-meta > button[data-action="stop"]:hover{ filter:brightness(1.18) drop-shadow(0 0 8px rgba(230,92,60,.8)); animation:none; }
+  @keyframes ffRetreatGlow{ 0%,100%{filter:drop-shadow(0 0 2px rgba(230,92,60,.3));} 50%{filter:drop-shadow(0 0 9px rgba(230,92,60,.7));} }
   /* JOIN IN THE MIDDLE: no gap, and each side fills its own half so the two name plates and their swing bars
    meet at the centre line instead of floating apart with the column cap between them. */
   .ar2.ivy .ar2-tops{ gap:0; }
@@ -3131,7 +3136,9 @@
           if(alloy){
             inputs['mining_t'+alloy.ore1] = 1;
             inputs['mining_t'+alloy.ore2] = 1;
-            name = alloy.name;
+            // ' Bar' like every other smelt (player report: "Bronze bars just show up as 'Bronze' while
+            // other bars show up as '<metal> Bars'") -- the item ids are untouched, only the label.
+            name = alloy.name + ' Bar';
           } else {
             inputs['mining_t'+i] = 1;
             name = MINING_NAMES[i] + ' Bar';
@@ -38322,7 +38329,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.30';
+  var GAME_VERSION = '0.0.77.31';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

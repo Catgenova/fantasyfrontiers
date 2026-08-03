@@ -421,6 +421,24 @@ if (existsSync(SHEET)) {
   await emit("ivy_field", veiled, { trim: false, width: 700, noWells: true, srcSizeFrom: SRC.field });
 }
 
+// Black marble for the app CHROME (v0.0.77.31): the top bar, ticker and left rail trade their slate
+// stripes/bricks for the delivered dark marble. Unlike the stage field it is NOT veiled -- it is already
+// near-black with faint white veining, i.e. exactly the low-edge-density surface the slate study wanted --
+// and it is used with background-size:cover per element (no tiling), so no seam treatment is needed.
+{
+  const DARK = "art/src/marble_dark_original.png";
+  if (existsSync(DARK)) {
+    const before = statSync(DARK).size;
+    // A touch of blur before the palette quantise: photographic grain costs ~2x the bytes and reads as
+    // noise at chrome scale anyway (the rail stretches this to ~1000px tall), while the veining survives.
+    await sharp(DARK).resize({ width: 1100 }).blur(0.6)
+      .png({ compressionLevel: 9, palette: true, quality: 72, effort: 10 })
+      .toFile("art/marble_dark.png");
+    const after = statSync("art/marble_dark.png").size;
+    console.log(`   marble_dark: 1100w chrome surface (${Math.round(before/1024)}KB -> ${Math.round(after/1024)}KB)`);
+  }
+}
+
 console.log("\n" + "=".repeat(78));
 console.log("art-prep-ivy: done. Originals stay in art/src/, which build.mjs excludes from dist -- reproducible");
 console.log("              here, and not 5.4MB of dead weight on every player's first load.");
