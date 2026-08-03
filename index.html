@@ -26701,14 +26701,27 @@
         var d = res && res.data; if(!d || !d.ok) return;
         var srv = estateJobFromServer(d.job);
         var cur = state.estate && state.estate.job;
-        // Server says nothing is running but we think something is -> the other window already
-        // collected it. Drop ours WITHOUT applying rewards; the window that won the delete granted them.
-        if(!srv){ if(cur){ state.estate.job = null; needsRender = true; } return; }
+        // Server says nothing is running but we think something is. WHICH mirror we drop matters
+        // (ticket, Mr Cookie: "I paved a tile and it completed, but didn't register"): a mirror
+        // already PAST its finish time with no row behind it is a completion seen from the outside --
+        // usually our OWN estate_job_complete's DELETE with its response still in flight, since this
+        // poll fires on opening My Estate. Nulling it here made that response land on a null mirror
+        // and discard the server-certified completion outright: no grid write, no XP, no refund.
+        // A finished mirror is left alone -- processEstateJob's own RPC resolves it ('ok' if we win
+        // the delete, 'none' if another window did, and both branches write the grid). Only a mirror
+        // still RUNNING with no row behind it was cancelled elsewhere -> drop it, the canceller holds
+        // the refund.
+        if(!srv){ if(estateSyncDropsMirror(cur, srv, Date.now())){ state.estate.job = null; needsRender = true; } return; }
         if(!cur || cur.kind!==srv.kind || cur.x!==srv.x || cur.y!==srv.y || cur.readyAt!==srv.readyAt){
           state.estate.job = srv; needsRender = true;
         }
       }, function(){});
     }catch(e){}
+  }
+  // Pure decision for the sync's no-row branch (tested): drop the mirror ONLY while it is still
+  // running -- a finished mirror belongs to the completion path, never to a silent drop.
+  function estateSyncDropsMirror(cur, srv, now){
+    return !srv && !!cur && Number(cur.readyAt) > now;
   }
   // Claim the job server-side BEFORE spending anything. `commit(target, startAt, readyAt)` runs only on
   // a granted claim -- every starter does its resource consumption in there, so a refused claim (another
@@ -27400,48 +27413,68 @@
     _estJobCompleteBusy = true;
     chatClient.rpc('estate_job_complete').then(function(res){
       _estJobCompleteBusy = false;
-      var d = res && res.data;
-      var cur = state.estate && state.estate.job;
-      if(!cur) return;
-      if(d && d.ok && d.job){
-        applyEstateJobCompletion(state.estate, cur, true, false);
-        // Overhang = time elapsed past this job's finish. Live, this is ~0 (we complete right at readyAt),
-        // so the drain finishes nothing and behaviour is unchanged; after a long absence it can cover many
-        // queued actions, which is the fix for the queue stalling one-at-a-time on return.
-        var overhang = Date.now() - (Number(cur.readyAt) || Date.now());
-        state.estate.job = null;
-        estateDrainQueueOffline(overhang);         // finish everything the offline gap fully covers
-        needsRender = true;
-        estPersist();
-        cloudSave(false, true);                   // flush the finished grid before another window pushes
-        estateQueueAdvance(true);                 // auto-start the first action the gap didn't cover, if any
-      } else if(d && d.error === 'early' && d.job){
-        // Our clock ran ahead of the server's -- adopt the real remaining time instead of completing.
-        cur.readyAt = Number(d.job.readyAt) || cur.readyAt;
-        needsRender = true;
-      } else if(d && d.error === 'none'){
-        // The server has no row for this job. The ASSUMED cause is "another window already collected it",
-        // and this branch used to drop our mirror without applying anything, to stop a double-grant.
-        //
-        // That lost buildings (ticket, Mr Cookie: a Willow Jewelry Workshop finished, the tile stayed
-        // empty, the workshop was consumed). The assumption does not always hold -- the row can be gone
-        // while NO client ever wrote the grid: the other window's save can lose the forward-only progress
-        // race in save_game (higher-XP blob wins wholesale, see its header), or its push can simply not
-        // land. Materials are spent at ENQUEUE, so a completion that is never applied destroys them.
-        //
-        // The fix separates the two halves. The GRID WRITE is idempotent by design -- that is what makes a
-        // shared guild estate converge, and the guild path already applies it this way -- so applying it
-        // here is safe even if another window did it first. Only the REWARDS (XP, items, logs) are
-        // double-grantable, and those stay suppressed via giveRewards:false. Anti-double-grant intact,
-        // no lost building.
-        applyEstateJobCompletion(state.estate, cur, false, false);
-        state.estate.job = null;
-        needsRender = true;
-        estPersist();
-        cloudSave(false, true);                   // push the placed building before another window's save wins
-        estateQueueAdvance(true);                 // the other window finished it -> our queue can proceed
-      }
+      estateJobCompleteHandle(res && res.data, job);
     }, function(){ _estJobCompleteBusy = false; });   // network blip: retry on a later tick
+  }
+  // The estate_job_complete response, applied against the job CAPTURED when the RPC was fired -- never
+  // against whatever the mirror holds when the response lands. The mirror can be nulled mid-flight (the
+  // estateJobSync poll fires on opening My Estate and sees the row our own DELETE just removed; a cancel
+  // races the same way), and the old `if(!cur) return` in front of every branch then discarded the ONLY
+  // copy of a server-certified completion: no grid write, no XP, no refund (ticket, Mr Cookie: "I paved
+  // a tile and it completed, but didn't register" -- the second report on this ticket; v0.0.73 fixed the
+  // 'none' branch and left this discard standing in front of it). Split out and exported so the race is
+  // testable without a server.
+  function estateJobCompleteHandle(d, job){
+    if(!job) return;
+    var cur = state.estate && state.estate.job;
+    // Field-match rather than identity: the sync rebuilds the mirror object from the server row, so the
+    // same job can be represented by a different object.
+    var same = !!(cur && cur.kind === job.kind && cur.x === job.x && cur.y === job.y && Number(cur.readyAt) === Number(job.readyAt));
+    if(d && d.ok && d.job){
+      // WE won the server's DELETE, so the rewards are ours to grant exactly once -- regardless of what
+      // the mirror looks like now. A concurrent cancel that lost the race got 'none' and refunded nothing.
+      applyEstateJobCompletion(state.estate, job, true, false);
+      // Overhang = time elapsed past this job's finish. Live, this is ~0 (we complete right at readyAt),
+      // so the drain finishes nothing and behaviour is unchanged; after a long absence it can cover many
+      // queued actions, which is the fix for the queue stalling one-at-a-time on return.
+      var overhang = Date.now() - (Number(job.readyAt) || Date.now());
+      if(same || !cur) state.estate.job = null;    // never wipe a DIFFERENT job the sync already adopted
+      estateDrainQueueOffline(overhang);           // finish everything the offline gap fully covers
+      needsRender = true;
+      estPersist();
+      cloudSave(false, true);                     // flush the finished grid before another window pushes
+      estateQueueAdvance(true);                   // auto-start the first action the gap didn't cover, if any
+    } else if(d && d.error === 'early' && d.job){
+      // Our clock ran ahead of the server's -- adopt the real remaining time instead of completing.
+      if(same){ cur.readyAt = Number(d.job.readyAt) || cur.readyAt; needsRender = true; }
+    } else if(d && d.error === 'none'){
+      // The server has no row for this job. The ASSUMED cause is "another window already collected it",
+      // and this branch used to drop our mirror without applying anything, to stop a double-grant.
+      //
+      // That lost buildings (ticket, Mr Cookie: a Willow Jewelry Workshop finished, the tile stayed
+      // empty, the workshop was consumed). The assumption does not always hold -- the row can be gone
+      // while NO client ever wrote the grid: the other window's save can lose the forward-only progress
+      // race in save_game (higher-XP blob wins wholesale, see its header), or its push can simply not
+      // land. Materials are spent at ENQUEUE, so a completion that is never applied destroys them.
+      //
+      // The fix separates the two halves. The GRID WRITE is idempotent by design -- that is what makes a
+      // shared guild estate converge, and the guild path already applies it this way -- so applying it
+      // here is safe even if another window did it first. Only the REWARDS (XP, items, logs) are
+      // double-grantable, and those stay suppressed via giveRewards:false. Anti-double-grant intact,
+      // no lost building.
+      //
+      // The one 'none' we must NOT apply: our own cancel won the delete and already refunded the
+      // materials -- applying the build on top would mint it. A cancel nulls the mirror first
+      // (estateCancelJobLocal), so "mirror no longer holds this job" is that case exactly; the
+      // collected-elsewhere case keeps its mirror, because the sync no longer drops finished mirrors.
+      if(!same) return;
+      applyEstateJobCompletion(state.estate, job, false, false);
+      state.estate.job = null;
+      needsRender = true;
+      estPersist();
+      cloudSave(false, true);                     // push the placed building before another window's save wins
+      estateQueueAdvance(true);                   // the other window finished it -> our queue can proceed
+    }
   }
   // Paving: turns a Dirt tile into a stone-paved tile, its appearance drawn from the
   // full 21-item library the Paving crafting skill already produces (7 stones x 3
@@ -38234,7 +38267,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.25';
+  var GAME_VERSION = '0.0.77.26';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38349,7 +38382,7 @@
       candleBurnMs:candleBurnMs, candleTierOf:candleTierOf, peonIsLit:peonIsLit, peonCandleLight:peonCandleLight, peonCandleBurn:peonCandleBurn, barrelProvisionMs:barrelProvisionMs, barrelTierOf:barrelTierOf, peonProvisioned:peonProvisioned, peonHasProvisionStock:peonHasProvisionStock, peonBarrelBurn:peonBarrelBurn, peonProvisionCoverageMs:peonProvisionCoverageMs, peonActionTime:peonActionTime, peonSpeedFactor:peonSpeedFactor, CANDLE_LIT_SPEED_BONUS:CANDLE_LIT_SPEED_BONUS, CANDLE_BURN_BASE_MS:CANDLE_BURN_BASE_MS,
       peonTaskTier:peonTaskTier, peonBurnRate:peonBurnRate, peonCandlesPerHour:peonCandlesPerHour, candleStoreSummary:candleStoreSummary, formatHoursCompact:formatHoursCompact, CANDLE_TASK_BURN_PER_TIER:CANDLE_TASK_BURN_PER_TIER, peonYieldPerHour:peonYieldPerHour, peonEffTime:peonEffTime,
       generatePersonalEstateGrid:generatePersonalEstateGrid, generateEstateGrid:generateEstateGrid, estatePlaceStarterKit:estatePlaceStarterKit, estateIsStarterTile:estateIsStarterTile, ESTATE_STARTER_WORKSHOP:ESTATE_STARTER_WORKSHOP, ESTATE_STARTER_COTTAGE:ESTATE_STARTER_COTTAGE, ESTATE_STARTER_PAVING:ESTATE_STARTER_PAVING, estatePeonSources:estatePeonSources,
-      ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline, simulateOfflineFarming:simulateOfflineFarming, bestOwnedSeedForField:bestOwnedSeedForField, seedAllowedForPlanting:seedAllowedForPlanting, ownedSeedTypesDesc:ownedSeedTypesDesc, renderFarmPlantControls:renderFarmPlantControls,
+      ESTATE_QUEUE_MAX:ESTATE_QUEUE_MAX, estateQueue:estateQueue, estateJobMaterials:estateJobMaterials, estateJobConsume:estateJobConsume, estateJobRefund:estateJobRefund, estateProjectedCell:estateProjectedCell, estateApplyProjection:estateApplyProjection, estateQueuedJobValid:estateQueuedJobValid, estateCancelQueued:estateCancelQueued, estateJobLabel:estateJobLabel, applyEstateJobCompletion:applyEstateJobCompletion, estateDrainQueueOffline:estateDrainQueueOffline, estateJobCompleteHandle:estateJobCompleteHandle, estateSyncDropsMirror:estateSyncDropsMirror, simulateOfflineFarming:simulateOfflineFarming, bestOwnedSeedForField:bestOwnedSeedForField, seedAllowedForPlanting:seedAllowedForPlanting, ownedSeedTypesDesc:ownedSeedTypesDesc, renderFarmPlantControls:renderFarmPlantControls,
       totemItem:totemItem, placeableTotemsFor:placeableTotemsFor, totemYieldBonusAt:totemYieldBonusAt, ESTATE_TOTEM_MS_PER_TIER:ESTATE_TOTEM_MS_PER_TIER, estatePlaceTotem:estatePlaceTotem, estateRemoveTotem:estateRemoveTotem, estateDrawTotem:estateDrawTotem, drawEstateTotemModel:drawEstateTotemModel, estateDrawTdTotem:estateDrawTdTotem, fieldGrowthMult:fieldGrowthMult, waterYieldBonusAt:waterYieldBonusAt, WATER_YIELD_BONUS:WATER_YIELD_BONUS, buildingStoneInputs:buildingStoneInputs, estateRaiseLayer:estateRaiseLayer, estateLowerLayer:estateLowerLayer,
       getCraftToolTierData:getCraftToolTierData, CRAFT_TOOL_NAMES:CRAFT_TOOL_NAMES, GATHER_TOOL_NAMES:GATHER_TOOL_NAMES,
       workshopBonusPct:workshopBonusPct, workshopSpeedPct:workshopSpeedPct, getWorkshopTierData:getWorkshopTierData, workshopSpeedBonus:workshopSpeedBonus, workshopDoubleChance:workshopDoubleChance, recomputePlacedWorkshops:recomputePlacedWorkshops,

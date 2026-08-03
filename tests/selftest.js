@@ -460,6 +460,63 @@
     s.inventory['paving_t4'] = savedInv.t4; s.inventory['paving_t5'] = savedInv.t5;
   });
 
+  // ---- Estate: a certified completion survives its mirror being nulled mid-flight -----------------
+  // Ticket (Mr Cookie, round 2: "I paved a tile and it completed, but didn't register"). The
+  // estate_job_complete DELETE removes the server row while the response is in flight; estateJobSync
+  // (fired by opening My Estate) then reads "no row" and nulled the local mirror, and the response
+  // handler's `if(!cur) return` discarded the ONLY copy of the completion -- no grid write, no XP, no
+  // refund. v0.0.73 fixed the 'none' branch; this discard sat in front of every branch.
+  suite('estate: completion survives the sync race', function(){
+    var s = FF._state;
+    FF.estUse(false);
+    var cell = s.estate.grid[1][1];
+    var saved = { type:cell.type, pave:cell.paveTileId };
+    var savedJob = s.estate.job, savedQueue = s.estate.queue;
+    var savedXp = s.xp.paving, savedStat = s.stats && s.stats.paved_estate;
+    try {
+      s.estate.queue = [];
+      var past = Date.now() - 5000;
+      var job = { kind:'pave', x:1, y:1, paveTileId:'paving_t2', startAt: past - 60000, readyAt: past };
+      // The sync predicate: only a still-RUNNING mirror may be silently dropped.
+      ok(FF.estateSyncDropsMirror({ readyAt: Date.now() + 60000 }, null, Date.now()), 'a running mirror with no server row was cancelled elsewhere -> drop');
+      ok(!FF.estateSyncDropsMirror(job, null, Date.now()), 'a FINISHED mirror with no row is a completion in flight -> keep (the ticket)');
+      ok(!FF.estateSyncDropsMirror(null, null, Date.now()), 'no mirror -> nothing to drop');
+      ok(!FF.estateSyncDropsMirror(job, { kind:'pave' }, Date.now()), 'a server row present never reaches the drop branch');
+      // 1. THE TICKET: mirror already nulled by the race, server certifies ok -> the CAPTURED job must
+      //    still be applied, with rewards (we won the delete, so they are ours exactly once).
+      cell.type = 'dirt'; cell.paveTileId = null;
+      s.estate.job = null;
+      var xpBefore = s.xp.paving || 0;
+      FF.estateJobCompleteHandle({ ok:true, job:{} }, job);
+      eq(cell.type, 'paved', 'ok + nulled mirror: the tile is still paved');
+      eq(cell.paveTileId, 'paving_t2', 'ok + nulled mirror: with the right tile');
+      ok((s.xp.paving || 0) > xpBefore, 'ok + nulled mirror: the paving XP is granted');
+      // 2. 'none' with the mirror intact (another window collected): idempotent grid write, no rewards.
+      cell.type = 'dirt'; cell.paveTileId = null;
+      s.estate.job = job;
+      xpBefore = s.xp.paving || 0;
+      FF.estateJobCompleteHandle({ ok:false, error:'none' }, job);
+      eq(cell.type, 'paved', "'none' + intact mirror: the grid write still lands");
+      eq(s.xp.paving || 0, xpBefore, "'none' + intact mirror: rewards stay suppressed (the winner granted them)");
+      ok(!s.estate.job, "'none': the mirror is released");
+      // 3. 'none' with the mirror nulled = OUR OWN cancel won the delete and already refunded the
+      //    materials -> placing the build on top would mint it.
+      cell.type = 'dirt'; cell.paveTileId = null;
+      s.estate.job = null;
+      FF.estateJobCompleteHandle({ ok:false, error:'none' }, job);
+      eq(cell.type, 'dirt', "'none' + nulled mirror (a cancel won): nothing is placed on top of the refund");
+      // 4. 'early' adopts the server clock onto the matching mirror only.
+      s.estate.job = job;
+      FF.estateJobCompleteHandle({ ok:false, error:'early', job:{ readyAt: past + 99000 } }, job);
+      eq(Number(s.estate.job.readyAt), past + 99000, "'early': the mirror adopts the server's remaining time");
+    } finally {
+      cell.type = saved.type; cell.paveTileId = saved.pave;
+      s.estate.job = savedJob; s.estate.queue = savedQueue;
+      if(savedXp !== undefined) s.xp.paving = savedXp;
+      if(s.stats && savedStat !== undefined) s.stats.paved_estate = savedStat;
+    }
+  });
+
   // ---- The SAME upgrade works on the guild estate (shared estActive engine, not a copy) ----
   suite('estate: upgrade guild pavement', function(){
     var s = FF._state, ge = FF.guildEstate;
