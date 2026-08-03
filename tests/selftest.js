@@ -652,8 +652,15 @@
     eq(sk.recipes[1].levelReq, 5, 'the second Totem (t2) gates at Lv 5');
     eq(sk.recipes[19].levelReq, 95, 'the top Totem (t20) gates at Lv 95');
     ok(!FF.ALL_SELLABLE.totem_t0 && !!FF.ALL_SELLABLE.totem_t1 && !!FF.ALL_SELLABLE.totem_t20, 'totem items register t1..t20 only');
+    // Ticket-0124: the totem ladder starts one rank ABOVE the material ladder, so recipe N consumes and
+    // is named after wood N-1 -- the half-shifted version (Lv 1 gate but t1 Birch inputs) left a fresh
+    // Woodcarver unable to craft the recipe their level said they could.
+    var r1 = sk.recipes[0];
+    ok(r1.inputs.woodcarving_t0 === 5 && r1.inputs.carpentry_t0 === 10, 'the first Totem consumes t0 (' + FF.FORESTRY_NAMES[0] + ') materials a fresh Woodcarver can make (ticket-0124)');
+    eq(r1.name, FF.FORESTRY_NAMES[0] + ' Totem', 'the first Totem is named after the t0 wood (derived, not hardcoded)');
     var r5 = sk.recipes.filter(function(r){ return r.id==='totem_t5'; })[0];
-    ok(r5 && r5.inputs.woodcarving_t5 === 5 && r5.inputs.carpentry_t5 === 10, 'a Totem consumes 5 equal-tier Woodcarvings + 10 Planks');
+    ok(r5 && r5.inputs.woodcarving_t4 === 5 && r5.inputs.carpentry_t4 === 10, 'a Totem consumes 5 Woodcarvings + 10 Planks of the wood one rank below its bonus tier');
+    eq(r5.name, FF.FORESTRY_NAMES[4] + ' Totem', 'every totem name follows its material wood, not its bonus tier');
     ok(/ Totem$/.test(r5.name), 'totems are named after their wood ("' + r5.name + '")');
     var cat = FF.buildItemCatalog();
     ok(cat.totem_t1 === 1 && cat.totem_t20 === 1, 'totems are tradeable in the server item catalog');

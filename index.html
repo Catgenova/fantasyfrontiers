@@ -3801,26 +3801,33 @@
         return list;
       })() },
     totems: { label:'Totems', icon:svgIcon('dowel','#a07a44'), color:'#a07a44',
-      // Construction skill: mount 5 equal-tier Woodcarvings on 10 Planks into a Totem -- an Estate
-      // decoration placed on a paved tile that grants +<tier> crop yield to every Field within 1 tile
-      // (see totemYieldBonusAt). Tiers run t1..t20 (+1 yield at t1 up to +20 at t20): the bonus IS the
-      // tier index, so a t0 totem would grant nothing and deliberately doesn't exist. Named after the
-      // Plank's wood, like Cottages.
+      // Construction skill: mount 5 Woodcarvings on 10 Planks into a Totem -- an Estate decoration
+      // placed on a paved tile that grants +<tier> crop yield to every Field within 1 tile (see
+      // totemYieldBonusAt). Tiers run t1..t20 (+1 yield at t1 up to +20 at t20): the bonus IS the
+      // tier index, so a t0 totem would grant nothing and deliberately doesn't exist.
+      //
+      // BECAUSE the totem ladder starts one rank above the material ladder, EVERYTHING here is keyed
+      // to the recipe's position (i-1), not the totem's own tier (i): the Nth recipe gates at the Nth
+      // level (t1 at Lv 1 -- a fresh Lv 1 skill must have a craftable recipe or it can never earn XP)
+      // and consumes/names the Nth WOOD (totem_t1 is the Willow Totem, built from t0 Willow
+      // woodcarvings + planks). Ticket-0124 was the half-shifted version of this: levelReq said Lv 1
+      // but the inputs said t1 Birch, which a fresh Woodcarver cannot make. Only xp/time/sell key off
+      // the totem's own tier, because they price the RESULT, not the bill. Consequence, accepted by
+      // the owner: the top wood (Sequoia) has no totem, and t20 woodcarvings are never a totem input.
+      // Recipe inputs are mirrored server-side (craft_debit) -- rerun scripts/dump-recipes.mjs after
+      // touching these bills; CI --check gates a stale seed.
       recipes: (function(){
         var list = [];
         for(var i=1;i<TIER_COUNT;i++){
           list.push({
             id:'totem_t'+i,
-            name: FORESTRY_NAMES[i]+' Totem',
-            // Nth recipe -> Nth level gate (TIER_LEVELS[i-1], i.e. t1 at Lv 1, t2 at Lv 5, ...). Because
-            // the ladder starts at t1 (no +0 t0 totem), gating t1 at TIER_LEVELS[1]=5 left a fresh Totems
-            // skill (Lv 1) with NO craftable recipe and no way to earn its first XP.
+            name: FORESTRY_NAMES[i-1]+' Totem',
             levelReq: TIER_LEVELS[i-1],
             xp: tierXp(30,i),
             time: tierTime(20,0.5,i),
             sell: tierSell(15,i),
-            icon: svgIcon('dowel',WOODCARVING_COLORS[i]),
-            inputs: tierInput2('woodcarving',5,'carpentry',10)(i)
+            icon: svgIcon('dowel',WOODCARVING_COLORS[i-1]),
+            inputs: tierInput2('woodcarving',5,'carpentry',10)(i-1)
           });
         }
         return list;
@@ -26114,6 +26121,11 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 3', heading:'Totems now ask for wood a fresh carver can actually cut', items:[
+      'Reported (ticket-0124): the first Totem unlocked at Totems Lv 1 but demanded <b>Birch</b> Woodcarvings and Planks &mdash; tier-1 materials a fresh Woodcarver cannot make, when the natural first step is <b>Willow</b>.',
+      'The whole ladder has shifted down one wood: each Totem is now carved from (and named after) the wood one rank below its bonus tier &mdash; the <b>Willow Totem</b> (+1 crops) is first and craftable from your very first carvings, up to the <b>Redwood Totem</b> (+20). Level gates, crafting XP, times, sell prices and every totem you already own are unchanged; only the bills and names moved.',
+      'Consequence of the shift: Sequoia woodcarvings are no longer a totem ingredient &mdash; the top totem is Redwood.'
+    ]},
     { v:'0.0.77', date:'Aug 3', heading:'The game now tells you when it cannot save', items:[
       'Reported: a player lost ~25 minutes of progress to a simple refresh. The game pushes your save to the server every few seconds &mdash; but when those pushes fail (connection trouble, an expired session, or the server holding a newer save), it used to fail <b>silently</b> and let you keep playing time that could never be kept.',
       'Now every save attempt is checked. If your progress has not reached the server for over a minute, a banner appears saying so &mdash; and <b>why</b> &mdash; so you can act before losing more than a minute, and failures fix themselves where possible (your session is refreshed and the save retried immediately).',
@@ -38572,7 +38584,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.22';
+  var GAME_VERSION = '0.0.77.23';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
