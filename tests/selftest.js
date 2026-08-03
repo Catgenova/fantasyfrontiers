@@ -3571,6 +3571,22 @@
     } finally { G.guild=saved.guild; G.members=saved.members; G.myRank=saved.myRank; G.applications=saved.applications; }
   });
 
+  // ---- Rail nav tabs wear the stone frame (owner request, v0.0.79.9) --------------------------------
+  suite('rail tabs: stone frames at button scale', function(){
+    var probe = document.createElement('div');
+    probe.innerHTML = '<button class="ff-area-btn">A</button><button class="ff-sub-btn">S</button>';
+    document.body.appendChild(probe);
+    try {
+      var area = getComputedStyle(probe.children[0]), sub = getComputedStyle(probe.children[1]);
+      ok(area.borderImageSource.indexOf('ivy_stretch') !== -1, 'area tabs are framed in the arena stone');
+      ok(sub.borderImageSource.indexOf('ivy_stretch') !== -1, 'sub tabs too, at a finer cut');
+      eq(area.borderTopWidth, '8px', 'area tabs cut the stone at 8px');
+      eq(sub.borderTopWidth, '6px', 'sub tabs at 6px');
+      ok(area.backgroundClip.split(',').every(function(v){ return v.trim() === 'padding-box'; }),
+        'the slate fill clips to the padding box -- unclipped it bleeds through the open stonework');
+    } finally { probe.remove(); }
+  });
+
   // ---- Buff widgets: the time line includes the STOCKED runway (SteakHouse suggestion) -------------
   // "add the total time left for each buff (for the total amount of that tea/brew/book in inventory)".
   // Runway = the active buff's remaining time + every copy of the SAME item in the pack x its duration;
