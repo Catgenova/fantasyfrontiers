@@ -522,6 +522,25 @@
     }
   });
 
+  // ---- Estate: a server-mirrored totem job keeps its payload (SteakHouse ticket) --------------------
+  // estateJobFromServer mapped every payload field EXCEPT totemId, so a totem job re-read from the
+  // server (estate_job_get on opening My Estate, or the start response) lost its totem -- and the
+  // save-load shape check then dropped it as malformed. Paired with migration 20260803200000, which
+  // teaches estate_job_start the 'totem' kind at all (totems shipped 8 days after the server took
+  // ownership of estate jobs, and the whitelist was never extended -- every start was refused 'kind',
+  // which is why direct clicks did nothing and a queued totem froze on dispatch).
+  suite('estate: totem jobs round-trip the server mirror', function(){
+    var sj = { kind:'totem', x:8, y:11, startAt:1000, readyAt:2000, payload:{ totemId:'totem_t1' } };
+    var job = FF.estateJobFromServer(sj);
+    eq(job.kind, 'totem', 'the kind survives');
+    eq(job.totemId, 'totem_t1', 'the totem payload survives the mirror (it used to be dropped)');
+    ok(FF.estateJobShapeOk(job), 'the mirrored job passes the save-load shape check');
+    // Every other buildable payload still maps (regression sweep over the same function).
+    eq(FF.estateJobFromServer({ kind:'pave', x:0, y:0, startAt:1, readyAt:2, payload:{ paveTileId:'paving_t3' } }).paveTileId, 'paving_t3', 'pave payload still maps');
+    eq(FF.estateJobFromServer({ kind:'workshop', x:0, y:0, startAt:1, readyAt:2, payload:{ workshopId:'workshop_mining_t0' } }).workshopId, 'workshop_mining_t0', 'workshop payload still maps');
+    eq(FF.estateJobFromServer({ kind:'field', x:0, y:0, startAt:1, readyAt:2, payload:{ fieldTier:4 } }).fieldTier, 4, 'field payload still maps');
+  });
+
   // ---- The SAME upgrade works on the guild estate (shared estActive engine, not a copy) ----
   suite('estate: upgrade guild pavement', function(){
     var s = FF._state, ge = FF.guildEstate;
