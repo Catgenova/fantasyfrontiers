@@ -14269,6 +14269,18 @@
     ok(FF.wakeCloudIsNewer(0, TOL + 1), 'a fresh local state with a real cloud save adopts it');
   });
 
+  // ---- Improvement tier labels match the card chips (ticket: "t20 crystals demanded as tier 21+") --
+  // The craft cards badge tiers 0-based (tierChipHtml: t0..t20); the Improvement tab printed tier+1, so
+  // the same top-tier crystal was badged t20 on one screen and demanded as "tier 21+" on the other. The
+  // spend logic was always right -- every improvement-tab tier mention now routes through
+  // improveTierLabel, which must agree with the chip.
+  suite('improvement: tier labels agree with the tier chips', function(){
+    eq(FF.improveTierLabel(20), 't20', 'the top tier reads t20, exactly like its craft-card chip');
+    eq(FF.improveTierLabel(0), 't0', 'the bottom tier reads t0');
+    ok(FF.tierChipHtml(20).indexOf('>t20<') !== -1, 'the card chip for tierIndex 20 renders t20');
+    ok(FF.tierChipHtml(20).indexOf(FF.improveTierLabel(20)) !== -1, 'chip and improvement label are the SAME string for the same tier');
+  });
+
   // ---- Offline credit bound + wake write-hold (v0.0.77.32 offline-catchup audit) -------------------
   // A brand-new player was granted the full 12h catch-up off one tab flick: the wall clock (the only
   // clock the credit used) jumped while the tab was hidden. The bound takes min(wall, server-witnessed
