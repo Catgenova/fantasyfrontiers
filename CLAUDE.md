@@ -219,7 +219,11 @@ BUYS fantastic gear is indistinguishable from one who mints it — and it is LIF
 mixes rarity-rate eras and pre-nerf holdings trip any current-rate threshold forever. A fantastic-share
 signal run live flagged the real injection AND two rows belonging to Valuren, an active bug reporter.
 Hence `20260731200000`: judge a DELTA against a snapshot table (`item_earn_watch`), subtract what the server
-witnessed (`item_credit_log`), and ship it **shadow-only**. `item_credit`'s signature must NOT change —
+witnessed (`item_credit_log`), and ship it **shadow-only**. `20260803230000` added a second arm by owner
+order: flag ANY client-reported fantastic growth (even 1) whose family shows ZERO normal growth — the one
+honest way to trip it is a player whose only craft of the family in the window rolled fantastic (0.16%),
+accepted as review noise. It reads strictly fantastic-vs-normal, so a lone injected SUPREME is still only
+caught by the ratio rule at volume. `item_credit`'s signature must NOT change —
 adding a `p_source` default arg creates an OVERLOAD and makes the existing 3-arg calls from market
 settlement and bank withdrawal ambiguous.
 
