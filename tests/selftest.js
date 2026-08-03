@@ -3571,6 +3571,24 @@
     } finally { G.guild=saved.guild; G.members=saved.members; G.myRank=saved.myRank; G.applications=saved.applications; }
   });
 
+  // ---- Skill XP bars wear the stone frame + marble well (owner request, v0.0.79.10) ----------------
+  suite('skill XP bars: stone frame, marble well, dark ink', function(){
+    var probe = document.createElement('div');
+    probe.innerHTML = '<div class="top-skill-bar"><div class="top-skill-track"><div class="top-skill-fill" style="width:40%"></div></div>'
+      + '<div class="top-skill-label"><span>Digging &bull; Level <b>103</b> <span class="tsb-gold">&bull; +3% double output</span></span><span>10%</span></div></div>';
+    document.body.appendChild(probe);
+    try {
+      var bar = getComputedStyle(probe.querySelector('.top-skill-bar'));
+      ok(bar.borderImageSource.indexOf('ivy_stretch') !== -1, 'the bar is framed in the arena stone');
+      ok(bar.backgroundImage.indexOf('marble_dark') !== -1, 'over the dark-marble well');
+      ok(bar.backgroundClip.split(',').every(function(v){ return v.trim() === 'padding-box'; }),
+        'every background layer clips to the padding box');
+      eq(getComputedStyle(probe.querySelector('.top-skill-track')).backgroundColor, 'rgb(12, 10, 8)', 'the track is the fx near-black well');
+      eq(getComputedStyle(probe.querySelector('.top-skill-label b')).color, 'rgb(232, 220, 192)', 'the level figure reads in light ink');
+      eq(getComputedStyle(probe.querySelector('.tsb-gold')).color, 'rgb(221, 187, 102)', 'mastery/workshop notes read in stage gold (was inline green-on-tan)');
+    } finally { probe.remove(); }
+  });
+
   // ---- Rail nav tabs wear the stone frame (owner request, v0.0.79.9) --------------------------------
   suite('rail tabs: stone frames at button scale', function(){
     var probe = document.createElement('div');

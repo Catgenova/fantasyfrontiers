@@ -1691,11 +1691,19 @@
   .skill-row-top .slvl{font-family:var(--font-mono);color:var(--gold);}
   .mini-track{height:5px;border-radius:2px;background:var(--bg-deep);border:1px solid var(--border);overflow:hidden;}
   .mini-fill{height:100%;background:var(--gold);}
-  .top-skill-bar{margin-bottom:12px;}
-  .top-skill-track{height:16px;border-radius:3px;background:var(--bg-deep);border:1px solid var(--border);overflow:hidden;}
+  /* Skill XP bar (owner request, v0.0.79.10): the arena stone frame around a dark-marble well, same
+     treatment as the action HUD/cards. background-clip:padding-box or the well bleeds through the
+     frame's open stonework; label palette restated for the dark ground (inline var(--gold) spans in
+     the label became .tsb-gold, since green-on-tan is unreadable on marble). */
+  .top-skill-bar{margin-bottom:12px;padding:5px 8px;background-color:#141109;
+    background-image:linear-gradient(rgba(10,8,6,.52),rgba(10,8,6,.52)),url('art/marble_dark.png');
+    background-size:cover;background-position:center;background-clip:padding-box;
+    border:10px solid transparent;border-image:url('art/ivy_stretch.png') 37 32 39 32 round;}
+  .top-skill-track{height:16px;border-radius:3px;background:#0c0a08;border:1px solid #3a2f20;overflow:hidden;}
   .top-skill-fill{height:100%;transition:width .25s;}
-  .top-skill-label{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);margin-top:3px;display:flex;justify-content:space-between;}
-  .top-skill-label b{color:var(--text);}
+  .top-skill-label{font-family:var(--font-mono);font-size:11px;color:#c0b394;margin-top:4px;display:flex;justify-content:space-between;}
+  .top-skill-label b{color:#e8dcc0;}
+  .top-skill-label .tsb-gold{color:#ddbb66;}
   .stats-panel{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:14px;}
   .stats-group{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;}
   .stats-group h4{margin:0 0 8px;font-family:var(--font-display);font-size:13px;letter-spacing:0.5px;color:var(--gold);}
@@ -35790,7 +35798,7 @@
   // report ticket-0038). Pure (takes the already-resolved bonuses) so it's trivial to test.
   function skillWorkshopBuffLabel(speedBonus, doubleChance){
     if(!(speedBonus > 0) && !(doubleChance > 0)) return '';
-    return ' <span style="color:var(--gold)">&bull; Workshop +'+Math.round(speedBonus*100)+'% speed, +'+Math.round(doubleChance*100)+'% double output</span>';
+    return ' <span class="tsb-gold">&bull; Workshop +'+Math.round(speedBonus*100)+'% speed, +'+Math.round(doubleChance*100)+'% double output</span>';
   }
   function renderSkillProgressBar(skillId){
     var xp = state.xp[skillId]||0;
@@ -35798,7 +35806,7 @@
     var pct = skillLevelProgress(skillId, xp);
     var label = SKILL_LABELS[skillId] || (skillId.charAt(0).toUpperCase()+skillId.slice(1));
     // Over-100 Mastery: show the current output-double bonus once a gathering/crafting skill passes 100.
-    var mastery = (lvl > MAX_SKILL_LEVEL) ? ' <span style="color:var(--gold)">&bull; +'+Math.round(overLevelDoublePct(skillId, xp)*100)+'% double output</span>' : '';
+    var mastery = (lvl > MAX_SKILL_LEVEL) ? ' <span class="tsb-gold">&bull; +'+Math.round(overLevelDoublePct(skillId, xp)*100)+'% double output</span>' : '';
     var workshop = skillWorkshopBuffLabel(workshopSpeedBonus(state, skillId), workshopDoubleChance(state, skillId));
     return '<div class="top-skill-bar">'+
       '<div class="top-skill-track"><div class="top-skill-fill" id="topbar-'+skillId+'" style="width:'+pct+'%;background:'+skillBarColor(skillId)+'"></div></div>'+
@@ -38836,7 +38844,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.79.9';
+  var GAME_VERSION = '0.0.79.10';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
