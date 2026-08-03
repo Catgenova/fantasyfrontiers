@@ -3515,6 +3515,39 @@
     ok(!FF.guildIsFull(undefined), 'undefined count treated as not full');
   });
 
+  // ---- Guild roster: presence dot + last-seen lines (ticket: "online status like the leaderboard",
+  // v0.0.78.0). The dot reuses the leaderboard's .lb-online[data-uid] markup verbatim, so
+  // updateLeaderboardPresence() repaints roster dots for free; the "last seen" line reads the
+  // server-witnessed save clock (guild_action get_state ships members[].last_active as epoch ms) --
+  // the same clock the server's leadership-succession check judges by.
+  suite('guild roster: online dots and last-seen lines', function(){
+    var A = FF.rosterAgoText, now = Date.now();
+    eq(A(30*1000), 'moments ago', 'under a minute reads as moments');
+    eq(A(5*60*1000), '5m ago', 'minutes band');
+    eq(A(3*3600*1000), '3h ago', 'hours band');
+    eq(A(47*3600*1000), '47h ago', 'stays in hours through 48h -- the succession ELIGIBILITY window reads in hours');
+    eq(A(72*3600*1000), '3d ago', 'the 72h dethrone threshold reads as days');
+    eq(A(90*24*3600*1000), '3mo ago', 'long absences read in months');
+    eq(FF.rosterLastSeenText(now - 5*60*1000, true), 'Online now', 'presence wins over the save clock');
+    eq(FF.rosterLastSeenText(now - 5*60*1000, false), 'Last seen 5m ago', 'offline members show the save-clock absence');
+    eq(FF.rosterLastSeenText(null, false), '', 'no server clock -> no line, never a NaN');
+    var G = FF.guildState, saved = { guild:G.guild, members:G.members, myRank:G.myRank, applications:G.applications };
+    try {
+      G.guild = { id:'g-test', tag:'TST', name:'Testers', open:true };
+      G.myRank = 'member'; G.applications = [];
+      G.members = [
+        { user_id:'u-lead', username:'AbsentLeader', rank:'leader',  last_active: now - 4*24*3600*1000 },
+        { user_id:'u-off',  username:'ActiveBob',   rank:'officer', last_active: now - 60*1000 }
+      ];
+      var html = FF.renderGuildRoster();
+      ok(html.indexOf('lb-online') !== -1, 'roster rows carry the leaderboard presence dot');
+      ok(html.indexOf('data-uid="u-lead"') !== -1 && html.indexOf('data-uid="u-off"') !== -1,
+        'dots carry data-uid, so updateLeaderboardPresence() live-repaints them with the leaderboard');
+      ok(html.indexOf('Last seen 4d ago') !== -1, 'the absent leader shows a days-scale absence');
+      ok(html.indexOf('Last seen 1m ago') !== -1, 'the active officer shows a minutes-scale one');
+    } finally { G.guild=saved.guild; G.members=saved.members; G.myRank=saved.myRank; G.applications=saved.applications; }
+  });
+
   // ---- Beekeeping / Brewing / Confectionery vertical slice ------------------------------------
   suite('skills: beekeeping / brewing / confectionery', function(){
     // Registered as real skills in the right groups.

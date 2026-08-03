@@ -6,6 +6,8 @@
 //
 // Actions (POST { action, ... }):
 //   get_state                         -> { guild, members, myRank, applications } | { guild:null }
+//                                        members carry last_active (epoch ms from saves.updated_at);
+//                                        also runs the lazy leadership-succession check (see below)
 //   create   { name, tag, description }-> creates a guild, caller becomes leader
 //   apply    { guild_id, message }    -> submit an application to an open guild
 //   cancel_application                -> withdraw the caller's pending application
@@ -36,6 +38,11 @@ function json(body: unknown, status = 200): Response {
 const NAME_RE = /^[A-Za-z0-9 '\-]{3,24}$/;
 const TAG_RE = /^[A-Za-z0-9]{2,5}$/;
 const GUILD_CREATE_COST = 50000; // gold to found a guild, charged server-side (must match the client)
+// Leadership succession (ticket: "leadership change to the next in line when the leader goes dark").
+// Both clocks read saves.updated_at -- bumped by every cloud save, so it cannot be pushed forward
+// without actually playing. Lenient on dethroning, strict on eligibility.
+const LEADER_IDLE_MS = 72 * 3600 * 1000; // the leader must be silent this long before succession
+const HEIR_ACTIVE_MS = 48 * 3600 * 1000; // an heir must have played within this window to inherit
 
 // deno-lint-ignore no-explicit-any
 type Admin = any;
@@ -87,9 +94,81 @@ Deno.serve(async (req) => {
     if (!me) return json({ ok: true, guild: null });
     const { data: guild } = await admin.from("guilds").select("*").eq("id", me.guild_id).maybeSingle();
     if (!guild) return json({ ok: true, guild: null }); // membership row orphaned; treat as guildless
-    const { data: members } = await admin.from("guild_members")
+    const { data: memberRows } = await admin.from("guild_members")
       .select("user_id, username, rank, contribution, joined_at")
       .eq("guild_id", me.guild_id).order("joined_at", { ascending: true });
+    type MemberRow = { user_id: string; username: string; rank: string; contribution: number; joined_at: string; last_active?: number | null };
+    const members = (memberRows || []) as MemberRow[];
+
+    // Last-active per member, from saves.updated_at -- the server-witnessed clock the offline-catchup
+    // audit already trusts. Feeds the roster's "last seen" line AND the succession check below.
+    // Epoch ms (not ISO) so the client never parses timestamps.
+    const lastActive: Record<string, number> = {};
+    if (members.length) {
+      const { data: seen } = await admin.from("saves").select("user_id, updated_at")
+        .in("user_id", members.map((m) => m.user_id));
+      for (const r of (seen || []) as { user_id: string; updated_at: string }[]) {
+        lastActive[r.user_id] = Date.parse(r.updated_at) || 0;
+      }
+    }
+    for (const m of members) m.last_active = lastActive[m.user_id] ?? null;
+
+    // ---- Leadership succession -- lazy, riding every get_state ----
+    // Runs whenever any member looks at their guild, which is exactly when new leadership matters;
+    // a guild nobody opens never changes hands. Rules: the leader silent > 72h AND an heir active
+    // within 48h. Officers inherit before members ("next deeper" only when no officer qualifies);
+    // members[] is already joined_at-ascending, so seniority breaks ties -- deterministic, never
+    // "whoever clicks first". Clamped accounts are skipped. The compare-and-swap on guilds.leader_id
+    // is the race lock: concurrent loads both compute an heir, but only the one that flips leader_id
+    // from the value it read performs the handoff; if a crash lands between the CAS and the rank
+    // writes, the next get_state re-reads the fresh leader_id and repairs the ranks. A missing leader
+    // row (historic data damage) counts as an idle leader, so a leaderless guild self-heals too.
+    // The demoted leader keeps OFFICER rank -- succession is caretaking, not punishment.
+    try {
+      const now = Date.now();
+      const leaderRow = members.find((m) => m.rank === "leader");
+      const leaderIdle = !leaderRow || (now - (lastActive[leaderRow.user_id] || 0)) > LEADER_IDLE_MS;
+      if (leaderIdle && members.length > 1) {
+        const fresh = (m: MemberRow) => m !== leaderRow && (now - (lastActive[m.user_id] || 0)) <= HEIR_ACTIVE_MS;
+        const heirs = members.filter((m) => m.rank === "officer" && fresh(m))
+          .concat(members.filter((m) => m.rank === "member" && fresh(m)));
+        let heir: MemberRow | null = null;
+        for (const h of heirs) {
+          try {
+            const { data: cl } = await admin.rpc("is_clamped", { p_user: h.user_id, p_surface: "guild" });
+            if (cl === true) continue; // a guild-clamped account never inherits
+          } catch { /* clamp check down -> fail-open, same policy as the gate above */ }
+          heir = h; break;
+        }
+        if (heir) {
+          const { data: lock } = await admin.from("guilds").update({ leader_id: heir.user_id })
+            .eq("id", me.guild_id).eq("leader_id", guild.leader_id).select("id");
+          if (lock && lock.length) {
+            if (leaderRow) {
+              await admin.from("guild_members").update({ rank: "officer" })
+                .eq("user_id", leaderRow.user_id).eq("guild_id", me.guild_id).eq("rank", "leader");
+            }
+            await admin.from("guild_members").update({ rank: "leader" })
+              .eq("user_id", heir.user_id).eq("guild_id", me.guild_id);
+            // Announce in guild chat so the handoff is never silent. user_id must reference a real
+            // account (NOT NULL fk), so the line is filed under the heir with a system username.
+            const days = leaderRow ? Math.max(3, Math.floor((now - (lastActive[leaderRow.user_id] || 0)) / 86400000)) : 0;
+            await admin.from("guild_messages").insert({
+              guild_id: me.guild_id, user_id: heir.user_id, username: "Guild",
+              body: "\u{1F451} " + heir.username + " is now guild leader" +
+                (leaderRow ? " — " + leaderRow.username + " has been away " + days + "+ days." : "."),
+            });
+            // Reflect the handoff in THIS response so the viewer never sees the stale roster.
+            if (leaderRow) leaderRow.rank = "officer";
+            heir.rank = "leader";
+            guild.leader_id = heir.user_id;
+            if (heir.user_id === userId) me.rank = "leader";
+            else if (leaderRow && leaderRow.user_id === userId) me.rank = "officer";
+          }
+        }
+      }
+    } catch { /* succession must never break state loading */ }
+
     let applications: unknown[] = [];
     if (me.rank === "leader" || me.rank === "officer") {
       const { data: apps } = await admin.from("guild_applications")
@@ -97,7 +176,7 @@ Deno.serve(async (req) => {
         .eq("guild_id", me.guild_id).order("created_at", { ascending: true });
       applications = apps || [];
     }
-    return json({ ok: true, guild, members: members || [], myRank: me.rank, applications });
+    return json({ ok: true, guild, members, myRank: me.rank, applications });
   }
 
   // ---- Create ----

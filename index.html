@@ -33732,11 +33732,18 @@
     guildInvoke('get_state', {}).then(function(res){
       if(!res || !res.ok){ guildState.status='error'; guildState.error=(res&&res.error)||'Could not load guild.'; if(currentCategory==='guild'||currentCategory==='chat'||currentCategory==='peons') render(); return; }
       var wasWaiting = !guildState.guild && !!guildBrowseState.appliedTo; // applied, not yet in a guild
+      var prevRank = guildState.myRank, prevGuildId = guildState.guild && guildState.guild.id;
       guildState.status='ready';
       guildState.guild = res.guild || null;
       syncGuildPlotsForGuild(guildState.guild ? guildState.guild.id : null);
       guildState.members = res.members || [];
       guildState.myRank = res.myRank || null;
+      // The crown moved to ME since the last look -- either a manual transfer or the server's
+      // inactive-leader succession. Same-guild check so joining a guild as its founder stays quiet.
+      if(prevRank && prevRank !== 'leader' && guildState.myRank === 'leader'
+         && guildState.guild && prevGuildId === guildState.guild.id){
+        addLog('👑 Leadership of [' + escapeHtml(guildState.guild.tag) + '] ' + escapeHtml(guildState.guild.name) + ' has passed to you.', 'important');
+      }
       guildState.applications = res.applications || [];
       var justAccepted = wasWaiting && !!guildState.guild;
       if(justAccepted){ // an application we were waiting on just went through
@@ -33926,6 +33933,23 @@
     });
     return html;
   }
+  // Coarse "how long ago" for roster rows -- one unit at roster scale. formatDuration() is clock-style
+  // (h:mm:ss), which reads as a stopwatch, not an absence.
+  function rosterAgoText(ms){
+    if(ms < 60000) return 'moments ago';
+    var m = Math.floor(ms/60000); if(m < 60) return m+'m ago';
+    var h = Math.floor(m/60); if(h < 48) return h+'h ago';
+    var d = Math.floor(h/24); if(d < 60) return d+'d ago';
+    return Math.floor(d/30)+'mo ago';
+  }
+  // The line under each roster name. Presence (the dot) answers "online RIGHT NOW"; this answers
+  // "when did they last play", from the server-witnessed save clock (saves.updated_at, shipped by
+  // guild_action get_state as epoch ms) -- the same clock the leadership-succession check reads.
+  function rosterLastSeenText(lastActiveMs, onlineNow){
+    if(onlineNow) return 'Online now';
+    if(!lastActiveMs) return '';
+    return 'Last seen ' + rosterAgoText(Math.max(0, Date.now() - lastActiveMs));
+  }
   function renderGuildRoster(){
     var html='', canManage=(guildState.myRank==='leader'||guildState.myRank==='officer'), isLeader=guildState.myRank==='leader';
     var full=guildIsFull(guildState.members.length);
@@ -33950,7 +33974,16 @@
       } else if(guildState.myRank==='officer' && !isMe && m.rank==='member'){
         ctl += '<button class="mini-btn danger" data-action="guildKick" data-id="'+m.user_id+'">Kick</button>';
       }
-      html += '<div class="guild-member-row"><div><b>'+escapeHtml(m.username)+'</b>'+(isMe?' <span class="item-meta">(you)</span>':'')+guildRankBadge(m.rank)+'</div>'+(ctl?'<div class="guild-row-actions">'+ctl+'</div>':'')+'</div>';
+      // The leaderboard's presence dot, verbatim: .lb-online[data-uid] is what
+      // updateLeaderboardPresence() repaints on every presence change, so the roster dots go live
+      // for free. The "last seen" line is the server clock and only refreshes with the roster.
+      var on = isPlayerOnline(m.user_id);
+      var seen = rosterLastSeenText(m.last_active, on);
+      html += '<div class="guild-member-row"><div style="display:flex;align-items:center;gap:8px;min-width:0;">'
+        + '<span class="lb-online'+(on?' on':'')+'" data-uid="'+m.user_id+'" title="'+(on?'Online':'Offline')+'"></span>'
+        + '<div style="min-width:0;"><b>'+escapeHtml(m.username)+'</b>'+(isMe?' <span class="item-meta">(you)</span>':'')+guildRankBadge(m.rank)
+        + (seen?'<div class="item-meta">'+seen+'</div>':'')
+        + '</div></div>'+(ctl?'<div class="guild-row-actions">'+ctl+'</div>':'')+'</div>';
     });
     html += '<div class="guild-section-title">Guild settings</div>';
     if(canManage) html += '<button class="action-btn" data-action="guildToggleOpen" style="width:auto;flex:0 0 auto;margin-bottom:8px;">'+(guildState.guild.open?'✓ Accepting applications':'✕ Closed — tap to open')+'</button>';
@@ -38616,7 +38649,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.46';
+  var GAME_VERSION = '0.0.78.0';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38804,6 +38837,7 @@
       SKILL_GROUPS:SKILL_GROUPS, SKILL_LABELS:SKILL_LABELS, SKILL_INFO:SKILL_INFO, PATCH_NOTES:PATCH_NOTES, renderPatchNotes:renderPatchNotes, TICKER_TIPS:TICKER_TIPS, TICKER_DISCLAIMER:TICKER_DISCLAIMER, TICKER_DISCLAIMER_CHANCE:TICKER_DISCLAIMER_CHANCE, computeProfileStats:computeProfileStats, ALL_MAIN_SKILL_IDS:ALL_MAIN_SKILL_IDS, ARMOR_PROFICIENCY_IDS:ARMOR_PROFICIENCY_IDS, FAITH_SKILL_IDS:FAITH_SKILL_IDS, lbMetricValue:lbMetricValue,
       guildEstate:guildEstate, estateAssistJob:estateAssistJob, processGuildEstateJobs:processGuildEstateJobs, guildJobByOwner:guildJobByOwner, guildEstateHydrate:guildEstateHydrate, guildJobFromServer:guildJobFromServer,
       guildState:guildState, GUILD_RANK_ORDER:GUILD_RANK_ORDER, guildDestroyMinRole:guildDestroyMinRole, canDestroyGuildEstate:canDestroyGuildEstate,
+      renderGuildRoster:renderGuildRoster, rosterLastSeenText:rosterLastSeenText, rosterAgoText:rosterAgoText,
       guildLogPush:guildLogPush, renderGuildActivityLog:renderGuildActivityLog, GUILD_LOG_MAX:GUILD_LOG_MAX, guildIsOfficerPlus:guildIsOfficerPlus,
       farmingHarvestAll:farmingHarvestAll, farmingPlantAll:farmingPlantAll, farmingReadyCount:farmingReadyCount, allFieldPlots:allFieldPlots, farmPlotMap:farmPlotMap,
       fertilizePlot:fertilizePlot, farmingFertilizeAll:farmingFertilizeAll, pickFertilizerTier:pickFertilizerTier, farmingFertilizableCount:farmingFertilizableCount, harvestPlot:harvestPlot, plantSeed:plantSeed, cancelCropAt:cancelCropAt, seedInfo:seedInfo, cropSeedId:cropSeedId, HARVEST_SEED_DROP_CHANCE:HARVEST_SEED_DROP_CHANCE, openTreasureChests:openTreasureChests, CHEST_MAX_GOLD:CHEST_MAX_GOLD, openCritterCaches:openCritterCaches, critterCacheChance:critterCacheChance, pickWeightedFarmingTier:pickWeightedFarmingTier, CACHE_SEED_TIER_DECAY:CACHE_SEED_TIER_DECAY, GRAIN_TIER_COUNT:GRAIN_TIER_COUNT, BASE_NEST_CHANCE:BASE_NEST_CHANCE, CRITTER_CACHE_SKILLS:CRITTER_CACHE_SKILLS, SEED_DROP_SKILLS:SEED_DROP_SKILLS,
