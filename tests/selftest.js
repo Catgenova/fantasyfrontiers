@@ -3571,6 +3571,21 @@
     } finally { G.guild=saved.guild; G.members=saved.members; G.myRank=saved.myRank; G.applications=saved.applications; }
   });
 
+  // ---- Buff widgets: the time line includes the STOCKED runway (SteakHouse suggestion) -------------
+  // "add the total time left for each buff (for the total amount of that tea/brew/book in inventory)".
+  // Runway = the active buff's remaining time + every copy of the SAME item in the pack x its duration;
+  // with Auto-drink/study the stock chains seamlessly, so that figure is the buff's real horizon.
+  suite('buff widgets: total runway includes stocked copies', function(){
+    var now = Date.now();
+    var t = { itemId:'x', durationMs:600000, expiresAt: now + 60000 };
+    ok(Math.abs(FF.buffTotalRunwayMs(t, 3) - (60000 + 3*600000)) < 1500, 'runway = remaining + count x duration');
+    ok(Math.abs(FF.buffTotalRunwayMs(t, 0) - 60000) < 1500, 'no stock -> just the remaining time');
+    eq(FF.buffTotalRunwayMs(null, 5), 0, 'no active buff, no runway');
+    eq(FF.buffTotalRunwayMs({ itemId:'x', durationMs:600000, expiresAt: now - 5 }, 9), 0, 'an expired buff contributes nothing');
+    ok(/ left • .+ total \(x3 stocked\)$/.test(FF.gabBuffTimeText(t, 3)), 'the line reads "<rem> left • <total> total (x3 stocked)"');
+    ok(!/stocked/.test(FF.gabBuffTimeText(t, 0)), 'with nothing stocked the line stays a plain "<rem> left"');
+  });
+
   // ---- Unique cards name their class (ticket: "Rare Dragonscale Bulwark" never said Herald) --------
   // Set pieces carry set:cls from mintSetPiece; legendary gear resolves through its effect def (every
   // D1..D4 gear-map entry names its cls). uniqueCardBody prints the line, so the Inventory detail

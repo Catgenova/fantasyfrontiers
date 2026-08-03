@@ -36456,6 +36456,19 @@
   }
   function gabTaskRemainText(rem){ return rem===Infinity ? '∞' : (rem!=null ? rem+' left' : ''); }
   function gabTaskChanceText(pct){ return pct!=null ? pct+'%' : ''; }
+  // Total buff runway: the active buff's remaining time plus every copy of the SAME item still in the
+  // pack (SteakHouse suggestion). With Auto-drink/study on, the stock chains seamlessly, so this is the
+  // buff's real horizon; without it, it's what the player could keep running by hand.
+  function buffTotalRunwayMs(active, invCount){
+    if(!active || !(active.expiresAt > Date.now())) return 0;
+    return Math.max(0, active.expiresAt - Date.now()) + Math.max(0, invCount|0) * (active.durationMs||0);
+  }
+  // The widget's time line: "12:34 left", plus " • 1:52:34 total (x9 stocked)" while copies remain.
+  function gabBuffTimeText(active, invCount){
+    var txt = formatDuration(Math.max(0, active.expiresAt - Date.now())) + ' left';
+    if((invCount|0) > 0) txt += ' • ' + formatDuration(buffTotalRunwayMs(active, invCount)) + ' total (x' + (invCount|0) + ' stocked)';
+    return txt;
+  }
   // Tome buff widget: study an available Tome (or the active one's countdown) for a work-speed buff,
   // plus an Auto-study toggle. Mirrors the Tea widget below; the two stack as separate sections.
   function gabTomeHtml(){
@@ -36469,7 +36482,7 @@
       var pct = clamp((t.expiresAt-Date.now())/t.durationMs*100, 0, 100);
       html += '<div class="gab-tea-row"><span class="gab-tea-name">'+t.icon+' '+escapeHtml(t.name)+' <b>+'+Math.round(t.speedBonus*100)+'% SPD</b></span>'+auto+'</div>';
       html += '<div class="gab-tea-track"><div class="gab-tea-fill" id="gabTomeFill" style="width:'+pct.toFixed(1)+'%;background:#5a8ac8"></div></div>';
-      html += '<div class="gab-tea-time" id="gabTomeTime">'+formatDuration(t.expiresAt-Date.now())+' left</div>';
+      html += '<div class="gab-tea-time" id="gabTomeTime">'+gabBuffTimeText(t, state.inventory[t.itemId]||0)+'</div>';
     } else {
       html += '<div class="gab-tea-row"><button class="gab-tea-btn" data-action="studyBestTome">'+best.icon+' Study '+escapeHtml(best.name)+' &bull; +'+Math.round(best.tomeSpeedBonus*100)+'% SPD</button>'+auto+'</div>';
     }
@@ -36491,7 +36504,7 @@
       var pct = clamp((t.expiresAt-Date.now())/t.durationMs*100, 0, 100);
       html += '<div class="gab-tea-row"><span class="gab-tea-name">'+t.icon+' '+escapeHtml(t.name)+' <b>'+Math.round(t.yield*100)+'% BONUS</b></span>'+auto+'</div>';
       html += '<div class="gab-tea-track"><div class="gab-tea-fill" id="gabBrewFill" style="width:'+pct.toFixed(1)+'%;background:#c88a2a"></div></div>';
-      html += '<div class="gab-tea-time" id="gabBrewTime">'+formatDuration(t.expiresAt-Date.now())+' left</div>';
+      html += '<div class="gab-tea-time" id="gabBrewTime">'+gabBuffTimeText(t, state.inventory[t.itemId]||0)+'</div>';
     } else {
       html += '<div class="gab-tea-row"><button class="gab-tea-btn" data-action="drinkBestBrew">'+best.icon+' Drink '+escapeHtml(best.name)+' &bull; '+Math.round(best.brewYield*100)+'% BONUS</button>'+auto+'</div>';
     }
@@ -36510,7 +36523,7 @@
       var pct = clamp((t.expiresAt-Date.now())/t.durationMs*100, 0, 100);
       html += '<div class="gab-tea-row"><span class="gab-tea-name">'+t.icon+' '+escapeHtml(t.name)+' <b>+'+Math.round(t.xpBoost*100)+'% XP</b></span>'+auto+'</div>';
       html += '<div class="gab-tea-track"><div class="gab-tea-fill" id="gabTeaFill" style="width:'+pct.toFixed(1)+'%"></div></div>';
-      html += '<div class="gab-tea-time" id="gabTeaTime">'+formatDuration(t.expiresAt-Date.now())+' left</div>';
+      html += '<div class="gab-tea-time" id="gabTeaTime">'+gabBuffTimeText(t, state.inventory[t.itemId]||0)+'</div>';
     } else {
       html += '<div class="gab-tea-row"><button class="gab-tea-btn" data-action="drinkBestTea">'+best.icon+' Drink '+escapeHtml(best.name)+' &bull; +'+Math.round(best.xpBoost*100)+'% XP</button>'+auto+'</div>';
     }
@@ -36657,7 +36670,7 @@
       var _tf = document.getElementById('gabTeaFill');
       if(_tf) _tf.style.width = clamp((state.activeTea.expiresAt-Date.now())/state.activeTea.durationMs*100, 0, 100) + '%';
       var _tt = document.getElementById('gabTeaTime');
-      if(_tt) _tt.textContent = formatDuration(state.activeTea.expiresAt-Date.now()) + ' left';
+      if(_tt) _tt.textContent = gabBuffTimeText(state.activeTea, state.inventory[state.activeTea.itemId]||0);
     }
     // Tome buff: live countdown, same treatment as tea (re-render on activate/expire so the section swaps).
     var tomeNow = isTomeActive();
@@ -36666,7 +36679,7 @@
       var _mf = document.getElementById('gabTomeFill');
       if(_mf) _mf.style.width = clamp((state.activeTome.expiresAt-Date.now())/state.activeTome.durationMs*100, 0, 100) + '%';
       var _mt = document.getElementById('gabTomeTime');
-      if(_mt) _mt.textContent = formatDuration(state.activeTome.expiresAt-Date.now()) + ' left';
+      if(_mt) _mt.textContent = gabBuffTimeText(state.activeTome, state.inventory[state.activeTome.itemId]||0);
     }
     // Brew buff: live countdown, same treatment (re-render on activate/expire so the section swaps).
     var brewNow = isBrewActive();
@@ -36675,7 +36688,7 @@
       var _bf = document.getElementById('gabBrewFill');
       if(_bf) _bf.style.width = clamp((state.activeBrew.expiresAt-Date.now())/state.activeBrew.durationMs*100, 0, 100) + '%';
       var _bt = document.getElementById('gabBrewTime');
-      if(_bt) _bt.textContent = formatDuration(state.activeBrew.expiresAt-Date.now()) + ' left';
+      if(_bt) _bt.textContent = gabBuffTimeText(state.activeBrew, state.inventory[state.activeBrew.itemId]||0);
     }
   }
 
@@ -38819,7 +38832,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.79.7';
+  var GAME_VERSION = '0.0.79.8';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38947,6 +38960,7 @@
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,
+      buffTotalRunwayMs:buffTotalRunwayMs, gabBuffTimeText:gabBuffTimeText,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, FORGE_LIVE_CATEGORIES:FORGE_LIVE_CATEGORIES, CRAFT_RECIPE_LIVE_CATEGORIES:CRAFT_RECIPE_LIVE_CATEGORIES, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
