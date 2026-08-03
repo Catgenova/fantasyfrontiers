@@ -3571,6 +3571,27 @@
     } finally { G.guild=saved.guild; G.members=saved.members; G.myRank=saved.myRank; G.applications=saved.applications; }
   });
 
+  // ---- Estate active-job panel: every kind has its own head line (v0.0.79.6) ------------------------
+  // 'totem' had no arm and fell into the terraforming default: a totem raising displayed as
+  // "Terraforming - Digging down" promising +500 Digging XP it would never pay (live ticket, guild
+  // estate). The chain is now one tested helper, so the next new kind fails here instead of on a phone.
+  suite('estate: the active-job panel names every job kind', function(){
+    var H = function(job){ return FF.estateActiveJobHead(job, null); };
+    ok(/Raising .*Totem \(3, 4\)/.test(H({ kind:'totem', totemId:'totem_t5', x:3, y:4 }).head.replace(/&bull;/g,'')),
+      'a totem job reads as Raising <name>, not as terraforming');
+    ok(H({ kind:'totem', totemId:'totem_t5', x:3, y:4 }).note.indexOf('Totems XP') !== -1,
+      'and promises Totems XP, not the +500 Digging XP the default arm advertised');
+    ok(/Digging down/.test(H({ kind:'lower', x:1, y:1 }).head), 'lower still reads as digging down');
+    ok(/Raising \(/.test(H({ kind:'raise', x:1, y:1 }).head.replace(/&bull; /,'')), 'raise still reads as raising');
+    ok(/Tilling/.test(H({ kind:'field', fieldTier:3, x:1, y:1 }).head), 'field reads as tilling');
+    ok(/Paving/.test(H({ kind:'pave', paveTileId:'paving_t3', x:1, y:1 }).head), 'pave reads as paving');
+    // The kinds both estates accept all have a named arm or a named guild-activity label.
+    ['clear','raise','lower','pave','workshop','cottage','field','totem'].forEach(function(k){
+      ok(!!FF.GUILD_JOB_KIND_LABEL[k], "the guild activity list names '" + k + "' (unnamed kinds read as just \"working\")");
+    });
+    eq(FF.GUILD_JOB_KIND_LABEL.totem, 'raising a totem', 'guildmates see "raising a totem", not "working"');
+  });
+
   // ---- Craft filter: "Highest tier" respects chained ladders (belt ticket, v0.0.79.4) ---------------
   // Belts (and every equipment ladder) consume their OWN previous tier at Normal. With the affordability
   // filter's "Highest tier" mode on, the card used to (a) auto-climb ABOVE the player's selection the

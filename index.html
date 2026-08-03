@@ -30444,33 +30444,8 @@
     var pct = clamp((now - job.startAt) / total * 100, 0, 100);
     var remaining = Math.max(0, job.readyAt - now);
     var jobCell = estActive.grid[job.x] && estActive.grid[job.x][job.y];
-    var headLabel, rewardNote;
-    if(job.kind === 'clear'){
-      var ci = jobCell && estateObstacleInfo(jobCell.obstacle);
-      headLabel = 'Clearing &bull; '+(ci ? ci.def.emoji+' '+ci.def.label : 'Obstacle')+' ('+job.x+', '+job.y+')';
-      rewardNote = ci ? ('Runs in the background &bull; +'+ci.resourceAmount+' '+ci.itemName+' &amp; +'+ci.xp+' XP when it finishes') : 'Runs in the background';
-    } else if(job.kind === 'pave'){
-      var pvr = getPavingRecipe(job.paveTileId);
-      headLabel = 'Paving &bull; '+(pvr ? pvr.name : 'Tile')+' ('+job.x+', '+job.y+')';
-      rewardNote = 'Runs in the background &bull; the tile becomes paved when it finishes';
-    } else if(job.kind === 'workshop'){
-      var wsi = WORKSHOP_ITEMS[job.workshopId];
-      headLabel = 'Building &bull; '+(wsi ? wsi.name : 'Workshop')+' ('+job.x+', '+job.y+')';
-      rewardNote = 'Runs in the background &bull; the Workshop is placed when it finishes';
-    } else if(job.kind === 'cottage'){
-      var cti = COTTAGE_ITEMS[job.cottageId];
-      headLabel = 'Building &bull; '+(cti ? cti.name : 'Cottage')+' ('+job.x+', '+job.y+')';
-      rewardNote = 'Runs in the background &bull; the Cottage is placed when it finishes';
-    } else if(job.kind === 'field'){
-      headLabel = 'Tilling &bull; '+(DIGGING_NAMES[job.fieldTier]||'')+' Field ('+job.x+', '+job.y+')';
-      rewardNote = 'Runs in the background &bull; +'+estateBuildXp(job.fieldTier)+' Digging XP when it finishes';
-    } else if(job.kind === 'assist'){
-      headLabel = 'Assisting &bull; '+escapeHtml(job.assistOfName||'a teammate')+'’s task ('+job.x+', '+job.y+')';
-      rewardNote = 'You’re both busy until it finishes &bull; you earn no rewards, but their remaining time was halved';
-    } else {
-      headLabel = 'Terraforming &bull; '+(job.kind === 'raise' ? 'Raising' : 'Digging down')+' ('+job.x+', '+job.y+')';
-      rewardNote = 'Runs in the background &bull; +'+ESTATE_TERRAFORM_XP+' Digging XP when it finishes';
-    }
+    var jobHead = estateActiveJobHead(job, jobCell);
+    var headLabel = jobHead.head, rewardNote = jobHead.note;
     var html = '<div class="estate-action-row" style="align-items:stretch;flex-direction:column;gap:8px;border-top:1px dashed var(--border-light);padding-top:12px;">';
     html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">';
     html += '<div class="estate-action-info"><b>'+headLabel+'</b><br>'+rewardNote+'</div>';
@@ -30481,7 +30456,48 @@
     html += '</div>';
     return html + (estIsGuild ? renderGuildOtherJobs() : renderEstateQueue());
   }
-  var GUILD_JOB_KIND_LABEL = { clear:'clearing', pave:'paving', workshop:'building', raise:'raising', lower:'digging down', field:'tilling', cottage:'building', assist:'assisting' };
+  // Head line + reward note for the active-job panel, one arm per kind. Extracted (v0.0.79.6) so a NEW
+  // job kind with no arm is caught by a test instead of silently falling into the terraforming default --
+  // 'totem' did exactly that (ticket: "placing a totem shows as digging", complete with a promise of
+  // +500 Digging XP the job would never pay).
+  function estateActiveJobHead(job, jobCell){
+    if(job.kind === 'clear'){
+      var ci = jobCell && estateObstacleInfo(jobCell.obstacle);
+      return { head:'Clearing &bull; '+(ci ? ci.def.emoji+' '+ci.def.label : 'Obstacle')+' ('+job.x+', '+job.y+')',
+               note: ci ? ('Runs in the background &bull; +'+ci.resourceAmount+' '+ci.itemName+' &amp; +'+ci.xp+' XP when it finishes') : 'Runs in the background' };
+    }
+    if(job.kind === 'pave'){
+      var pvr = getPavingRecipe(job.paveTileId);
+      return { head:'Paving &bull; '+(pvr ? pvr.name : 'Tile')+' ('+job.x+', '+job.y+')',
+               note:'Runs in the background &bull; the tile becomes paved when it finishes' };
+    }
+    if(job.kind === 'workshop'){
+      var wsi = WORKSHOP_ITEMS[job.workshopId];
+      return { head:'Building &bull; '+(wsi ? wsi.name : 'Workshop')+' ('+job.x+', '+job.y+')',
+               note:'Runs in the background &bull; the Workshop is placed when it finishes' };
+    }
+    if(job.kind === 'cottage'){
+      var cti = COTTAGE_ITEMS[job.cottageId];
+      return { head:'Building &bull; '+(cti ? cti.name : 'Cottage')+' ('+job.x+', '+job.y+')',
+               note:'Runs in the background &bull; the Cottage is placed when it finishes' };
+    }
+    if(job.kind === 'totem'){
+      var tti = totemItem(job.totemId), ttT = itemTierFromId(job.totemId);
+      return { head:'Raising &bull; '+(tti ? tti.name : 'Totem')+' ('+job.x+', '+job.y+')',
+               note:'Runs in the background &bull; +'+estateBuildXp(ttT)+' Totems XP when it finishes, and Fields within 1 tile yield +'+ttT+' crops' };
+    }
+    if(job.kind === 'field'){
+      return { head:'Tilling &bull; '+(DIGGING_NAMES[job.fieldTier]||'')+' Field ('+job.x+', '+job.y+')',
+               note:'Runs in the background &bull; +'+estateBuildXp(job.fieldTier)+' Digging XP when it finishes' };
+    }
+    if(job.kind === 'assist'){
+      return { head:'Assisting &bull; '+escapeHtml(job.assistOfName||'a teammate')+'’s task ('+job.x+', '+job.y+')',
+               note:'You’re both busy until it finishes &bull; you earn no rewards, but their remaining time was halved' };
+    }
+    return { head:'Terraforming &bull; '+(job.kind === 'raise' ? 'Raising' : 'Digging down')+' ('+job.x+', '+job.y+')',
+             note:'Runs in the background &bull; +'+ESTATE_TERRAFORM_XP+' Digging XP when it finishes' };
+  }
+  var GUILD_JOB_KIND_LABEL = { clear:'clearing', pave:'paving', workshop:'building', raise:'raising', lower:'digging down', field:'tilling', cottage:'building', totem:'raising a totem', assist:'assisting' };
   function guildJobTimerId(owner){ return 'gjobtimer_' + String(owner).replace(/[^a-zA-Z0-9]/g,''); }
   // On the shared guild estate, show who else is doing what: each working member's action,
   // tile coords and (live) timer -- matching the red tiles on the canvas -- plus a compact
@@ -38787,7 +38803,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.79.5';
+  var GAME_VERSION = '0.0.79.6';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38914,6 +38930,7 @@
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
+      estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, FORGE_LIVE_CATEGORIES:FORGE_LIVE_CATEGORIES, CRAFT_RECIPE_LIVE_CATEGORIES:CRAFT_RECIPE_LIVE_CATEGORIES, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
