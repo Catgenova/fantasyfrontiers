@@ -315,6 +315,42 @@
     S.inventory = sv.inv; S.faith = sv.faith; S.autoSacrifice = sv.auto; S.lockedItems = sv.locked; S.xp = sv.xp; S.physique = sv.phys;
   });
 
+  // ---- Auto-sacrifice list: flags are visible and clearable WITHOUT owning the item --------------
+  // Ticket (Scum): switching a card's flag on at a Faith deficit usually consumes every copy on the
+  // spot; the card vanished with the items (only owned gear renders cards) and the flag lived on
+  // invisibly -- eating each future craft -- with no way to see or uncheck it until the bar happened
+  // to be full while a copy survived. The Sacrifice tab now lists every flag, owned or not.
+  suite('sacrifice: the auto-sacrifice list survives losing the item', function(){
+    var S = FF._state;
+    var sv = { inv:S.inventory, auto:S.autoSacrifice };
+    try {
+      // sacKeyDisplay resolves catalog names with ZERO owned copies -- the ghost-flag case.
+      var tid = Object.keys(FF.TOOL_ITEMS)[0];
+      S.inventory = {}; S.autoSacrifice = {};
+      var d = FF.sacKeyDisplay('tool|' + tid);
+      eq(d.name, FF.TOOL_ITEMS[tid].name, 'a tool key resolves its catalog name while unowned');
+      eq(d.owned, 0, 'and reports zero owned');
+      ok(d.tier > 0, 'and carries the tier');
+      var wid2 = Object.keys(FF.STACKABLE_WEAPON_ITEMS)[0];
+      eq(FF.sacKeyDisplay('stackweapon|' + wid2).name, FF.STACKABLE_WEAPON_ITEMS[wid2].name, 'a stackable-weapon key resolves too');
+      var junk = FF.sacKeyDisplay('nonsense|ghost_item_xyz');
+      ok(junk && junk.name === 'ghost_item_xyz', 'an unknown/legacy key still resolves to something clearable');
+      // The Sacrifice tab lists a flagged-but-unowned item (the exact reported situation)...
+      var key = 'tool|' + tid;
+      S.autoSacrifice[key] = true;
+      var html = FF.renderSacrificeTab();
+      ok(html.indexOf('Auto-sacrifice list') !== -1, 'the flag list renders even though the item is gone');
+      ok(html.indexOf(FF.TOOL_ITEMS[tid].name) !== -1, 'the ghost flag is listed by item name');
+      ok(html.indexOf('data-action="toggleAutoSacItem"') !== -1, 'each listed flag is a click-to-clear control');
+      // ...and clearing it through the same action the chip fires actually removes the flag.
+      FF.toggleAutoSacItem(key);
+      ok(!S.autoSacrifice[key], 'clicking the chip clears the flag without needing full Faith or the item');
+      ok(FF.renderSacrificeTab().indexOf('Auto-sacrifice list') === -1, 'the list disappears once no flags remain');
+    } finally {
+      S.inventory = sv.inv; S.autoSacrifice = sv.auto;
+    }
+  });
+
   // ---- Craft filter: tier stepper's affordable-tier `inputs` reconstruction ----------------------
   // The stepper offers only affordable tiers when the filter is on; TIER_STEP_TARGETS[x].inputs(sub,t)
   // must rebuild the SAME inputs the render's craftFilterTier closure uses, or the +/- would cycle the

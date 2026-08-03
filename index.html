@@ -26121,6 +26121,11 @@
   // In-game patch notes, shown in a Settings tab. Newest first. Keep this list curated (a themed batch
   // per release, not one line per commit) so it reads like release notes rather than a git log.
   var PATCH_NOTES = [
+    { v:'0.0.77', date:'Aug 3', heading:'Auto-sacrifice flags are now visible and removable', items:[
+      'Reported: ticking <i>Auto when Faith drops</i> on an item while your Faith bar had room would often sacrifice <b>every copy at once</b> &mdash; and since the Sacrifice tab only shows items you own, the card vanished with them. The checkbox was still on, invisibly eating each new copy you crafted, and there was no way to see it or turn it off until your bar happened to be full while a copy survived.',
+      'The Sacrifice tab now shows an <b>Auto-sacrifice list</b> of everything you have flagged &mdash; owned or not, full bar or not &mdash; with the item&rsquo;s name, tier and how many you hold. <b>Click an entry to stop auto-sacrificing it</b>, any time.',
+      'Nothing changed about how the flags behave: they still refill your Faith only when an item&rsquo;s full value fits (no waste). They are just no longer secret.'
+    ]},
     { v:'0.0.77', date:'Aug 3', heading:'Totems now ask for wood a fresh carver can actually cut', items:[
       'Reported (ticket-0124): the first Totem unlocked at Totems Lv 1 but demanded <b>Birch</b> Woodcarvings and Planks &mdash; tier-1 materials a fresh Woodcarver cannot make, when the natural first step is <b>Willow</b>.',
       'The whole ladder has shifted down one wood: each Totem is now carved from (and named after) the wood one rank below its bonus tier &mdash; the <b>Willow Totem</b> (+1 crops) is first and craftable from your very first carvings, up to the <b>Redwood Totem</b> (+20). Level gates, crafting XP, times, sell prices and every totem you already own are unchanged; only the bills and names moved.',
@@ -30902,6 +30907,33 @@
     else { state.autoSacrifice[key] = true; autoSacrificeItemsCheck(); } // top up immediately when switched on
     saveGame(); render();
   }
+  // Resolve an autoSacrifice flag key ("<category>|<id>") to a display row WITHOUT requiring the item to
+  // be owned. That requirement is the whole ticket (Scum): switching a flag ON at a Faith deficit usually
+  // consumes every copy on the spot, the card vanishes with the items (collectSacrificeRows only lists
+  // owned gear), and the flag lived on invisibly -- silently eating each future craft, with no way to see
+  // or clear it until the bar happened to be full while a copy survived. The catalogs here are the same
+  // ones collectSacrificeRows reads; an unknown/legacy key still resolves (raw id) so it can be cleared.
+  function sacKeyDisplay(key){
+    var cut = String(key).indexOf('|');
+    if(cut < 0) return { name:String(key), tier:0, owned:0 };
+    var cat = key.slice(0, cut), id = key.slice(cut+1), item = null;
+    if(cat==='stackweapon') item = STACKABLE_WEAPON_ITEMS[id];
+    else if(cat==='stackshield') item = STACKABLE_SHIELD_ITEMS[id];
+    else if(cat==='stackquiver') item = STACKABLE_QUIVER_ITEMS[id];
+    else if(cat==='ring') item = RING_ITEMS[id];
+    else if(cat==='amulet') item = AMULET_ITEMS[id];
+    else if(cat==='relicgear') item = RELIC_ITEMS[id];
+    else if(cat==='tool') item = TOOL_ITEMS[id];
+    else if(cat==='belt') item = BELT_ITEMS[id];
+    else if(cat==='offhand'){
+      var off = null;
+      OFFHAND_STYLES.forEach(function(s){ if(s.id===id) off = s; });
+      var offTier = state.offhandTiers[id]||0;
+      if(off) return { name:(off.label || off.name || id), tier:offTier, owned:(offTier > 0 ? 1 : 0) };
+    }
+    if(!item) return { name:id, tier:0, owned:(state.inventory[id]||0) };
+    return { name:item.name, tier:((item.tierIndex|0)+1), owned:(state.inventory[id]||0) };
+  }
   function renderSacrificeTab(){
     var lvl = getLevel(state.xp.sacrifice);
     var html = '<div class="section-intro">Level '+lvl+' Sacrifice &mdash; destroy owned weapons, shields, tools, belts, rings, amulets, and relics to restore Faith and gain a flat 30 XP. Higher-tier items restore more Faith, and Rare/Supreme/Fantastic offerings restore 2x/4x/8x, but the item is consumed entirely. Equipped Tools and Armor can\'t be sacrificed.</div>';
@@ -30915,6 +30947,22 @@
       + '<span class="gab-tea-auto" data-action="toggleAutoSacrificeRelics" style="cursor:pointer;">'+(state.autoSacrificeRelics?'☑':'☐')+' Auto-sacrifice Broken Relics</span>'
       + '<span style="font-size:12px;color:var(--text-dim);">Offers Broken Relics to refill Faith only when the full value fits (no waste). Held: <b>'+relicCount+'</b> (~'+Math.round(relicFaith)+' Faith)</span>'
       + '</div>';
+    // Auto-sacrifice list (Scum's ticket): every per-card flag, OWNED OR NOT. Cards below only render
+    // for owned items, and switching a flag on at a Faith deficit usually consumes every copy at once --
+    // so the checked card vanished with the items and the flag became invisible and unclearable (it kept
+    // eating every future craft) until the bar happened to be full. Click a chip here to clear its flag.
+    var autoRows = Object.keys(state.autoSacrifice||{}).filter(function(k){ return state.autoSacrifice[k]; })
+      .map(function(k){ var d = sacKeyDisplay(k); d.key = k; return d; })
+      .sort(function(a,b){ return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
+    if(autoRows.length){
+      html += '<div class="physique-bonus" style="margin-top:6px;">'
+        + '<div style="font-size:12px;margin-bottom:5px;">Auto-sacrifice list <span style="color:var(--text-dim);">&mdash; these items refill Faith automatically, including every copy you craft later. Click one to stop.</span></div>'
+        + '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+      autoRows.forEach(function(d){
+        html += '<button class="inv-chip on" data-action="toggleAutoSacItem" data-key="'+escapeHtml(d.key)+'" title="Stop auto-sacrificing this item">☑ '+escapeHtml(d.name)+(d.tier?' · T'+d.tier:'')+' · Owned: '+(d.owned||0)+' &times;</button>';
+      });
+      html += '</div></div>';
+    }
     var rows = collectSacrificeRows();
     if(rows.length===0){
       html += '<div class="empty-note">You have no crafted equipment to sacrifice yet. Forge something first.</div>';
@@ -38584,7 +38632,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.23';
+  var GAME_VERSION = '0.0.77.24';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38884,7 +38932,7 @@
       LEG_CRYPTREAVER_TIER_PCT:LEG_CRYPTREAVER_TIER_PCT, LEG_COFFERGUARD_PER:LEG_COFFERGUARD_PER, LEG_COFFERGUARD_CAP:LEG_COFFERGUARD_CAP,
       LEG_GREEDWYRM_PER_RELIC:LEG_GREEDWYRM_PER_RELIC, LEG_GREEDWYRM_RELIC_CAP:LEG_GREEDWYRM_RELIC_CAP, LEG_HOARDWALL_RELICS:LEG_HOARDWALL_RELICS,
       LEG_HOARDWALL_STRIKE_MULT:LEG_HOARDWALL_STRIKE_MULT, LEG_HOARDWALL_DR:LEG_HOARDWALL_DR, LEG_GOLDGORGE_PER_GOLD:LEG_GOLDGORGE_PER_GOLD,
-      LEG_CRYPTGUARD_REFUND:LEG_CRYPTGUARD_REFUND, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, RELIC_ITEMS:RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, autoSacrificeItemsCheck:autoSacrificeItemsCheck, collectSacrificeRows:collectSacrificeRows, sacRowRestore:sacRowRestore, sacRowKey:sacRowKey, toggleAutoSacItem:toggleAutoSacItem, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,
+      LEG_CRYPTGUARD_REFUND:LEG_CRYPTGUARD_REFUND, equippedGearRarities:equippedGearRarities, rarityRank:rarityRank, faithRarityBonus:faithRarityBonus, faithMax:faithMax, BROKEN_RELIC_ITEMS:BROKEN_RELIC_ITEMS, RELIC_ITEMS:RELIC_ITEMS, brokenRelicFaithRestore:brokenRelicFaithRestore, autoSacrificeRelicsCheck:autoSacrificeRelicsCheck, autoSacrificeItemsCheck:autoSacrificeItemsCheck, collectSacrificeRows:collectSacrificeRows, sacRowRestore:sacRowRestore, sacRowKey:sacRowKey, sacKeyDisplay:sacKeyDisplay, toggleAutoSacItem:toggleAutoSacItem, sacrificeItem:sacrificeItem, sacrificeGearFaith:sacrificeGearFaith,
       RING_TYPES:RING_TYPES, RING_ITEMS:RING_ITEMS, STACKABLE_SHIELD_TYPES:STACKABLE_SHIELD_TYPES, getRingTierData:getRingTierData, getAmuletTierData:getAmuletTierData, getRingItemInSlot:getRingItemInSlot, getRingDamageMultiplier:getRingDamageMultiplier, getRingElementDamageBonus:getRingElementDamageBonus, getRingAccuracyBonus:getRingAccuracyBonus, getRingResistanceBonus:getRingResistanceBonus, getRingFamiliarBonus:getRingFamiliarBonus, ringItemBonus:ringItemBonus, RING_SLOT_IDS:RING_SLOT_IDS, AMULET_TYPES:AMULET_TYPES, AMULET_ITEMS:AMULET_ITEMS, amuletBaseId:amuletBaseId, parseAmuletId:parseAmuletId, getAmuletResistanceBonus:getAmuletResistanceBonus, getWardResistanceBonus:getWardResistanceBonus, getAmuletDefenseBonus:getAmuletDefenseBonus,
       BODY_ARMOR_ITEMS:BODY_ARMOR_ITEMS, getBodyArmorTierData:getBodyArmorTierData, getBeltTierData:getBeltTierData, OFFHAND_TYPE_RECIPES:OFFHAND_TYPE_RECIPES, getStackableQuiverTierData:getStackableQuiverTierData, STACKABLE_QUIVER_ITEMS:STACKABLE_QUIVER_ITEMS, isStackableQuiver:isStackableQuiver, getEquippedOffhandItem:getEquippedOffhandItem, getSpecialSkillId:getSpecialSkillId, WILDLIFE_NAMES:WILDLIFE_NAMES, quiverAmmoPreserve:quiverAmmoPreserve, bowArrowToConsume:bowArrowToConsume, UNFLETCHED_DMG_MULT:UNFLETCHED_DMG_MULT, applyRarity:applyRarity, getEquippedBeltDefense:getEquippedBeltDefense, getEquippedRelicBonus:getEquippedRelicBonus, renderCombatStatsPanel:renderCombatStatsPanel, openAmountModal:openAmountModal, getClothArmorSpellBonus:getClothArmorSpellBonus, CLOTH_SLOT_SPELL_BONUS:CLOTH_SLOT_SPELL_BONUS, TAILORING_SLOTS:TAILORING_SLOTS, armorMaterialBonusLines:armorMaterialBonusLines, uniqueCardBody:uniqueCardBody,
       DAMAGE_TYPES:DAMAGE_TYPES
