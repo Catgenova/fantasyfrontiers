@@ -124,18 +124,18 @@ Deno.serve(async (req) => {
       const { data: paid } = await admin.rpc("wallet_debit", { p_user: user.id, p_amount: buyEscrow });
       if (paid !== true) return json({ ok: false, error: "Not enough gold.", code: "poor" }, 402);
     }
-    // A SELL escrows the ITEMS being listed -- take them from the server item ledger up front so
-    // minted/spoofed items can't be sold to other players. Returned on failure / collect / cancel.
-    if (side === "sell") {
-      const { data: held } = await admin.rpc("item_debit", { p_user: user.id, p_key: key, p_qty: qty });
-      if (held !== true) {
-        if (buyEscrow > 0) await admin.rpc("wallet_credit", { p_user: user.id, p_amount: buyEscrow });
-        return json({ ok: false, error: "You don't have those items to sell.", code: "poor" }, 402);
-      }
-    }
+    // SELLS NO LONGER ESCROW AGAINST THE ITEM LEDGER (owner order, v0.0.77.38). The ledger's stock is
+    // fed by item_sync, which is DELIBERATELY rate-limited (per-key hourly allowance, 50-new-keys-per-
+    // sync cap -- the anti-injection shape from the 20260731180000 sweep), so an honest mass-crafter's
+    // witnessed stock lags their real inventory by hours; the old item_debit gate here refused their
+    // sell orders outright ("You don't have those items to sell"), which throttled legitimate players
+    // far more than it inconvenienced injectors. Enforcement now leans on the detection/clamp system:
+    // injection signals (item_earn_watch deltas, gold_inject, progress_jump) end in an account clamp,
+    // and the is_clamped('marketplace') check at the top of this function shuts a clamped account out
+    // of the market entirely. Buyer-side credits (market_collect_tx) are unchanged -- those are server-
+    // witnessed acquisitions and keep the ledger honest where it still gates (the guild bank).
     const refundEscrow = async () => {
       if (buyEscrow > 0) await admin.rpc("wallet_credit", { p_user: user.id, p_amount: buyEscrow });
-      if (side === "sell") await admin.rpc("item_credit", { p_user: user.id, p_key: key, p_qty: qty });
     };
     const { data: r, error } = await admin.rpc("market_place", {
       p_user: user.id, p_username: username, p_side: side, p_item: key, p_price: price, p_qty: qty,
@@ -158,14 +158,13 @@ Deno.serve(async (req) => {
     const res = r as { status?: string; side?: string; item_key?: string; qty?: number; unit_price?: number };
     if (res?.status === "notfound") return json({ ok: false, error: "That order no longer exists.", code: "notfound" }, 404);
     if (res?.status !== "ok") return json({ ok: false, error: "Cancel rejected." }, 400);
-    // A cancelled BUY returns its remaining gold escrow (qty_remaining * bid price) to the wallet;
-    // a cancelled SELL returns the remaining escrowed ITEMS to the item ledger.
+    // A cancelled BUY returns its remaining gold escrow (qty_remaining * bid price) to the wallet.
+    // A cancelled SELL returns nothing here: sells no longer debit the item ledger at placement
+    // (owner order, v0.0.77.38 -- see `place`), so crediting the remainder back would MINT ledger
+    // stock on every list-cancel cycle. The client returns the items to its local inventory as before.
     if (res.side === "buy") {
       const back = Number(res.qty) * Number(res.unit_price);
       if (back > 0) await admin.rpc("wallet_credit", { p_user: user.id, p_amount: back });
-    } else if (res.side === "sell") {
-      const back = Number(res.qty);
-      if (back > 0) await admin.rpc("item_credit", { p_user: user.id, p_key: String(res.item_key), p_qty: back });
     }
     return json({ ok: true, side: res.side, item_key: res.item_key, qty: Number(res.qty), unit_price: Number(res.unit_price) });
   }

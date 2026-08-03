@@ -186,8 +186,14 @@ confirm exit 1, then restore.
 
 ## The item ledger (v0.0.74.x, AndJustice4All ticket)
 
-`public.player_items` is the authoritative stock and it GATES the marketplace and the guild bank
-(`item_debit` in `marketplace/index.ts` and `guild_bank/index.ts`). Exactly two functions raise `qty`:
+`public.player_items` is the authoritative stock and it GATES the guild bank (`item_debit` in
+`guild_bank/index.ts`). **The MARKETPLACE gate was REMOVED by owner order (2026-08-03, v0.0.77.38):**
+the ledger's stock is fed by the deliberately rate-limited `item_sync`, so honest mass-crafters'
+witnessed stock lagged their real inventory by hours and their sell orders were refused outright.
+Marketplace sells no longer debit the ledger (and cancels no longer credit it back — that would mint
+ledger stock per list-cancel cycle); enforcement leans on the detection→clamp pipeline plus the
+`is_clamped('marketplace')` shutout at the top of the function. Buyer-side credits
+(`market_collect_tx`) are unchanged and keep the ledger honest where it still gates. Exactly two functions raise `qty`:
 **`item_sync`** (client-reported inventory) and **`item_credit`** (server-witnessed: market buy, bank
 withdraw, refunds). Client-side, `itemReconcile` = `max(0, min(local, server + pending + drift))` with
 `pending = max(0, localEarned − serverEarned)`, so adoption can only ever REMOVE items, never create them.
