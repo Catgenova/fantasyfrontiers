@@ -1002,12 +1002,28 @@
   .ar2-bar{position:relative;width:100%;height:var(--ar2-barh);}
   .ar2-bar > img{position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;}
   .ar2-bar .trk{position:absolute;left:8.37%;top:21.48%;width:82.30%;height:49.61%;z-index:2;overflow:hidden;border-radius:3px;}
+  /* "Beveled glass" fills (owner pick B, v0.0.77.44): an inner top light and bottom shade give every
+     fill body, and the ::after strip is a bright LEADING EDGE marking the moving front. The edge is
+     anchored at left:100% with a negative margin so an EMPTY bar clips it outside the track (the
+     obvious right:0 version shows a 3px sliver on a zero-width fill). Static CSS only -- the width
+     writes at 60fps are untouched. */
   .ar2-bar .fil{position:absolute;inset:0;width:0;transition:none;
+                box-shadow:inset 0 1px 0 rgba(255,255,255,.45), inset 0 6px 8px -4px rgba(255,255,255,.35), inset 0 -5px 7px -4px rgba(0,0,0,.55);
                 background:linear-gradient(180deg,#ffd88a 0%,#ddbb66 34%,#bb9944 72%,#8a6a22 100%);}
+  .ar2-bar .fil::after{content:'';position:absolute;top:0;bottom:0;left:100%;width:3px;margin-left:-3px;
+                background:rgba(255,255,255,.85);box-shadow:-2px 0 6px 1px rgba(255,255,255,.45);}
   .ar2-bar.foe  .fil{background:linear-gradient(180deg,#ff9a7a 0%,#e2503a 36%,#a8281c 76%,#6a1410 100%);}
   .ar2-bar.off  .fil{background:linear-gradient(180deg,#e3aeb2 0%,#b0757a 40%,#7d4a4f 100%);}
   .ar2-bar.spec .fil{background:linear-gradient(180deg,#ff8a84 0%,#c8302a 40%,#7a1512 100%);}
   .ar2-bar.stun .fil{background:linear-gradient(180deg,#fff3a0 0%,#e8d84a 45%,#a08a12 100%);}
+  /* "Energy flow" on the foe's SPECIAL bar only (owner pick C): the one bar that wants eyes on it gets
+     the only motion on the stage -- faint ripples drifting toward its leading edge, plus a warmer tip.
+     background-position animation only, GPU-cheap, and it inherits the glass bevel above. */
+  .ar2-bar.spec .fil::before{content:'';position:absolute;inset:0;
+                background:repeating-linear-gradient(115deg,rgba(255,255,255,0) 0 10px,rgba(255,255,255,.16) 10px 16px,rgba(255,255,255,0) 16px 28px);
+                background-size:28px 100%;animation:ar2Flow 1.1s linear infinite;}
+  .ar2-bar.spec .fil::after{background:rgba(255,244,220,.95);box-shadow:-3px 0 8px 1px rgba(255,220,160,.6);}
+  @keyframes ar2Flow{from{background-position:0 0}to{background-position:28px 0}}
   .ar2-bar .lbl{position:absolute;left:8.37%;top:21.48%;width:82.30%;height:49.61%;z-index:3;
                 display:flex;align-items:center;justify-content:center;gap:6px;
                 font-family:var(--font-mono);font-size:min(11px,calc(var(--ar2-barh) * 0.30));
@@ -38583,7 +38599,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.43';
+  var GAME_VERSION = '0.0.77.44';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

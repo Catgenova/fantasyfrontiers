@@ -14379,6 +14379,22 @@
     ok(FF.tierChipHtml(20).indexOf(FF.improveTierLabel(20)) !== -1, 'chip and improvement label are the SAME string for the same tier');
   });
 
+  // ---- Combat bars: beveled-glass fills + energy flow on the special (owner picks B + C) -----------
+  suite('combat bars: glass fill everywhere, flow on the special only', function(){
+    var probe = document.createElement('div');
+    probe.innerHTML = '<div class="ar2-bar"><div class="trk"><div class="fil" style="width:50%"></div></div></div>'
+                    + '<div class="ar2-bar spec"><div class="trk"><div class="fil" style="width:50%"></div></div></div>';
+    document.body.appendChild(probe);
+    try {
+      var fil = probe.querySelectorAll('.fil')[0], spec = probe.querySelectorAll('.fil')[1];
+      ok(getComputedStyle(fil).boxShadow !== 'none', 'every fill carries the glass bevel (inner light + shade)');
+      ok(getComputedStyle(fil, '::after').content !== 'none', 'every fill carries the bright leading edge');
+      eq(getComputedStyle(fil, '::before').content, 'none', 'ordinary bars have NO flow layer — motion is reserved');
+      ok(getComputedStyle(spec, '::before').content !== 'none', "the foe's special bar carries the flow layer");
+      eq(getComputedStyle(spec, '::before').animationName, 'ar2Flow', 'and it animates with the ar2Flow ripples');
+    } finally { probe.remove(); }
+  });
+
   // ---- Swing bar: a mid-swing interval change keeps the swing's FRACTION (v0.0.77.42) --------------
   // The interval is live (Conductor's Tempo, familiar Haste casts/expiries, Chill). The old absolute-ms
   // accumulator fired the swing INSTANTLY whenever the interval shrank below the banked time -- the bar
