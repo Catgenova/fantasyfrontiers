@@ -3631,6 +3631,23 @@
     } finally { probe.remove(); }
   });
 
+  // ---- Skill chips (gathering/crafting sub-tabs) in stone (owner request, v0.0.79.13) --------------
+  suite('skill chips: stone frames, skill colour kept on the active fill', function(){
+    var probe = document.createElement('div');
+    probe.innerHTML = '<button class="sub-btn" style="--sub-color:#7a4a8a">A</button>'
+      + '<button class="sub-btn active" style="--sub-color:#7a4a8a">B</button>';
+    document.body.appendChild(probe);
+    try {
+      var idle = getComputedStyle(probe.children[0]), on = getComputedStyle(probe.children[1]);
+      ok(idle.borderImageSource.indexOf('ivy_stretch') !== -1, 'chips are framed in the arena stone');
+      eq(idle.borderTopWidth, '6px', 'at the fine 6px cut');
+      ok(idle.backgroundClip.split(',').every(function(v){ return v.trim() === 'padding-box'; }),
+        'the fill clips to the padding box -- unclipped it bleeds through the open stonework');
+      eq(on.backgroundColor, 'rgb(122, 74, 138)', "the ACTIVE chip keeps its skill's own colour as the fill (per-skill identity survives)");
+      ok(on.borderImageSource.indexOf('ivy_stretch') !== -1, 'inside the same stone frame');
+    } finally { probe.remove(); }
+  });
+
   // ---- Rail nav tabs wear the stone frame (owner request, v0.0.79.9) --------------------------------
   suite('rail tabs: stone frames at button scale', function(){
     var probe = document.createElement('div');
