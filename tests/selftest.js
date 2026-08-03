@@ -3631,6 +3631,21 @@
     } finally { probe.remove(); }
   });
 
+  // ---- Architecture forge: the Butchering workshop files under Crafting (owner request, v0.0.79.16) --
+  // Butchering is a refining activity, not a gather -- the nav tabs already lead Refining with it and
+  // strip it from Gathering (REFINING_TAB_SKILL_IDS / GATHERING_TAB_SKILL_IDS); the workshop groups on
+  // the Architecture page now follow the same split.
+  suite('architecture forge: Butchering workshop sits in the Crafting group', function(){
+    var html = FF.renderWorkshopForge();
+    var ci = html.indexOf('Crafting Workshops'), gi = html.indexOf('Gathering Workshops');
+    ok(ci !== -1 && gi !== -1 && ci < gi, 'both workshop groups render, Crafting first');
+    var craftHalf = html.slice(0, gi), gatherHalf = html.slice(gi);
+    ok(craftHalf.indexOf('data-skill="butchering"') !== -1, 'the Butchering workshop card is in the Crafting group');
+    eq(gatherHalf.indexOf('data-skill="butchering"'), -1, 'and it is GONE from the Gathering group');
+    ok(gatherHalf.indexOf('data-skill="mining"') !== -1, 'other gathering workshops stay put');
+    ok(craftHalf.indexOf('data-skill="metallurgy"') !== -1, 'crafting workshops untouched');
+  });
+
   // ---- Modal cards: white marble on stone frames with stone buttons (owner request, v0.0.79.15) -----
   // Every dialog in the game is one of TWO cards (.familiar-popup-card / .skill-info-card), so this
   // covers settings, offline summary, loot/enhance/dungeon results, death report, transcend, estate
