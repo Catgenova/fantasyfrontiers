@@ -24,6 +24,11 @@ Rules:
   count as the 4th digit, not a new 3rd-digit feature.
 - Baseline: `0.0.33.4` was set on 2026-07-22 after a full-history audit (709 commits,
   33 big features since 2026-07-05; see the version-stamp commit for the feature list).
+- **`PATCH_NOTES` is NOT updated per merge (owner rule, 2026-08-03).** The in-game notes are
+  SHORT DAILY SNIPPETS — one entry per day, one blast-style line per change — and they are only
+  touched when the owner asks for a "daily blast", which condenses that day's releases into one
+  entry (newest first; headings stay plain text, `renderPatchNotes()` escapes them). The
+  GAME_VERSION bump stays mandatory on every merge; the notes do not ride along with it.
 
 ## Deploy pipeline
 
