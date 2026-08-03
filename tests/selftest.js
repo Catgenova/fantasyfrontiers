@@ -14114,6 +14114,78 @@
     ok(FF.wakeCloudIsNewer(0, TOL + 1), 'a fresh local state with a real cloud save adopts it');
   });
 
+  // ---- Save watchdog (v0.0.77.22: "lost 25 minutes on a refresh") ---------------------------------
+  // cloudSave used to read exactly one field of the push response (data.fenced); a 409 stale, expired
+  // token, 413, 429 or network throw was silently swallowed while the player kept playing an
+  // unsaveable session. The watchdog classifies every outcome, surfaces a banner once no save has
+  // confirmed for CLOUD_WARN_AFTER_MS, and adopts the cloud save after consecutive 409s.
+  suite('save watchdog: push results are classified, not swallowed', function(){
+    var C = FF.cloudClassifyResult;
+    // supabase-js invoke() resolves {data, error:FunctionsHttpError{context:Response}} on non-2xx.
+    var httpErr = function(status){ return { data:null, error:{ context:{ status:status } } }; };
+    eq(C({ data:{ ok:true, version:9 } }).kind, 'ok', 'a 200 ok body confirms the save');
+    eq(C({ data:{ ok:false, fenced:true } }).kind, 'fenced', 'fenced rides a 200 body and outranks everything');
+    eq(C(httpErr(409)).kind, 'stale', 'a 409 is the forward-only guard rejecting us');
+    eq(C(httpErr(401)).kind, 'auth', 'a 401 is a dead token');
+    eq(C(httpErr(403)).kind, 'auth', 'a 403 counts as auth too');
+    eq(C(httpErr(413)).kind, 'toobig', 'a 413 is the saves_size_chk constraint');
+    eq(C(httpErr(429)).kind, 'ratelimit', 'a 429 is rl_hit');
+    eq(C(httpErr(500)).kind, 'error', 'a 500 is a server fault');
+    eq(C({ data:null, error:{} }).kind, 'error', 'an error with no readable status still classifies');
+    eq(C(null).kind, 'error', 'a null result never throws the hot path');
+  });
+
+  suite('save watchdog: the warn predicate and the stale-adopt threshold', function(){
+    var WARN = FF.CLOUD_WARN_AFTER_MS, t = 1700000000000;
+    ok(WARN >= 30000 && WARN <= 300000, 'the warning window is between 30s and 5min');
+    ok(FF.cloudSaveWarnDue(t, t - WARN, 5, false), 'no confirmed save for the whole window -> warn');
+    ok(FF.cloudSaveWarnDue(t, t - 3600000, 5, false), 'an hour unsaved (the ticket) -> warn');
+    ok(!FF.cloudSaveWarnDue(t, t - WARN + 1, 5, false), 'inside the window -> quiet');
+    ok(!FF.cloudSaveWarnDue(t, t - 3600000, 0, false), 'a zero-progress account has nothing to lose -> quiet');
+    ok(!FF.cloudSaveWarnDue(t, 0, 5, false), 'no boot stamp yet -> quiet (never warn before a save was possible)');
+    ok(!FF.cloudSaveWarnDue(t, t - 3600000, 5, true), 'blocked (fenced / signed out / sync off) -> quiet, other UX owns it');
+    // Adoption: one 409 could be a glitch; the threshold is small enough that an unsaveable session
+    // ends within seconds, not minutes (pushes run every ~8s).
+    ok(!FF.cloudStaleShouldAdopt(FF.CLOUD_STALE_ADOPT_AFTER - 1), 'one shy of the threshold keeps playing');
+    ok(FF.cloudStaleShouldAdopt(FF.CLOUD_STALE_ADOPT_AFTER), 'at the threshold we fence + reload into the cloud save');
+    ok(FF.CLOUD_STALE_ADOPT_AFTER >= 2, 'a single 409 is never enough to reload the game');
+  });
+
+  suite('save watchdog: result bookkeeping and the banner element', function(){
+    var saved = FF._cloudWatch();
+    try {
+      // A failure records the reason without touching the confirmed clock...
+      FF._cloudWatchSet({ lastConfirmed: 1234, stale409s: 0, reason: '' });
+      FF.cloudNoteSaveResult({ kind:'network' });
+      var w = FF._cloudWatch();
+      ok(w.reason.length > 0, 'a network failure records a player-facing reason');
+      eq(w.lastConfirmed, 1234, 'a failure never advances the confirmed clock');
+      eq(w.lastPush, 0, 'a transient failure resets the debounce so the next 4s tick retries');
+      // ...one stale strike counts but does not adopt (adopting here would reload the test page)...
+      FF.cloudNoteSaveResult({ kind:'stale' });
+      eq(FF._cloudWatch().stale409s, 1, 'a 409 counts one strike');
+      // ...and a confirmed save clears everything.
+      FF.cloudNoteSaveResult({ kind:'ok' });
+      w = FF._cloudWatch();
+      ok(w.lastConfirmed > 1234, 'an ok advances the confirmed clock');
+      eq(w.stale409s, 0, 'an ok clears the stale strikes');
+      eq(w.reason, '', 'an ok clears the reason');
+      // The banner is a body-level element (render() rebuilds #content 10x/sec and would strobe it there).
+      FF.ffSaveWarnUpdate(true, 'watchdog test banner');
+      var el = document.getElementById('ffSaveWarn');
+      ok(!!el, 'the banner mounts');
+      eq(el.textContent, 'watchdog test banner', 'the banner carries the message');
+      ok(el.parentElement === document.body, 'the banner lives on document.body, outside #content');
+      FF.ffSaveWarnUpdate(true, 'updated');
+      eq(document.getElementById('ffSaveWarn').textContent, 'updated', 'a second call updates in place');
+      FF.ffSaveWarnUpdate(false);
+      ok(!document.getElementById('ffSaveWarn'), 'hiding removes the element');
+    } finally {
+      FF._cloudWatchSet(saved);
+      FF.ffSaveWarnUpdate(false);
+    }
+  });
+
   // ---- Combat log: class/effect damage must be visible --------------------------------------------
   // Ticket (Valuren): "The damage of the skill Gloria of the Templar is missing". Every rework routed its
   // damage through applyChipDamage, which logs nothing, so Gloria/Bolts/Decrees/Rot/Harvest/Shatter and
