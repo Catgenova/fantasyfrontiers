@@ -4955,6 +4955,41 @@
     FF._orbsReset();
   });
 
+  // ---- Shield readout: the orb prints a smaller blue "current / cap" under the HP value (v0.0.78.2) --
+  suite('shield readout: current / cap under the HP value', function(){
+    var S = FF._state, saved = { t:S.templarShield, r:S.reaperShield, l:S.lumenShield, h:S.heraldBarrier };
+    try {
+      // Markup: the span is ALWAYS emitted (live updates fill it in place) and hides via :empty.
+      var html = FF.orbHtml('me', 'health', '10 / 20', '3 / 4');
+      ok(html.indexOf('id="ar2Shield-me"') !== -1, 'the player orb carries the shield readout span');
+      ok(html.indexOf('>3 / 4<') !== -1, 'seeded in the markup (render paths without a live tick stay blank otherwise)');
+      ok(FF.orbHtml('foe', 'x', '1 / 2').indexOf('id="ar2Shield-foe"') !== -1, 'emitted empty on shieldless orbs, so a pool appearing mid-fight needs no rebuild');
+      // The ceiling: only channels that currently HOLD shield contribute their cap.
+      S.templarShield = 0; S.reaperShield = 0; S.lumenShield = 0; S.heraldBarrier = 0;
+      eq(FF.combatShieldCap(S), 0, 'no pool, no ceiling');
+      S.heraldBarrier = 1;
+      var hOnly = FF.combatShieldCap(S);
+      ok(hOnly >= 1, "one held channel contributes that channel's cap");
+      S.reaperShield = 1;
+      ok(FF.combatShieldCap(S) > hOnly, 'a second held channel ADDS its cap');
+      S.reaperShield = 0; S.heraldBarrier = 0;
+      S.templarShield = FF.maxHp(S) * 9; // Sanctveil tops the Aegis past its accrual cap by design
+      ok(FF.combatShieldCap(S) >= S.templarShield, 'the ceiling never reads below what is held (no "12k / 9k")');
+      // Style: blue, smaller than the HP figure, hidden while empty.
+      var probe = document.createElement('div');
+      probe.innerHTML = '<div class="ar2-orb me"><div class="num"><b>1</b><span class="shield"></span><i>health</i></div></div>';
+      document.body.appendChild(probe);
+      try {
+        var sp = probe.querySelector('.shield'), bb = probe.querySelector('b');
+        eq(getComputedStyle(sp).display, 'none', 'an EMPTY readout is hidden -- foes and shieldless classes show nothing extra');
+        sp.textContent = '3 / 4';
+        ok(getComputedStyle(sp).display !== 'none', 'and it appears the moment it holds text');
+        ok(parseFloat(getComputedStyle(sp).fontSize) < parseFloat(getComputedStyle(bb).fontSize), 'smaller than the HP value');
+        eq(getComputedStyle(sp).color, 'rgb(140, 204, 255)', "in the shield fluid's blue (#8cccff)");
+      } finally { probe.remove(); }
+    } finally { S.templarShield=saved.t; S.reaperShield=saved.r; S.lumenShield=saved.l; S.heraldBarrier=saved.h; }
+  });
+
   suite('combat stage: bars, orbs and the mini feed render for a live fight', function(){
     var s = FF._state, savedAct = s.activity, savedHp = s.playerHp, savedMain = s.equippedMainhand;
     var savedTier = s.equippedMainhandTier, savedRar = s.equippedMainhandRarity;
