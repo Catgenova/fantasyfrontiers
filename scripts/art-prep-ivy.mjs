@@ -357,13 +357,14 @@ if (existsSync(SHEET)) {
 }
 
 // ---- the FAB medallions (v0.0.77.18): carved wreath buttons for the right-side quick actions --------
-// Five of the six uploads in the 1785692x batch are round ivy-wreathed medallions replacing the flat
-// coloured FAB circles: fish-meal = Fertilize, seed sack = Sow (Plant All), wheat sheaf = Harvest, the
-// bannered keep = Guild Estate, the plain keep = your Estate. They render at 52 CSS px, so 128px covers a
-// 2x display. The sixth upload (1785693096046, a rectangular stone frame) is NOT a fab and stays in
-// art/src/ unprocessed until it has a home.
+// The round ivy-wreathed medallions replacing the flat
+// coloured FAB circles: speech bubble = Chat (uploaded separately, v0.0.77.21), fish-meal = Fertilize,
+// seed sack = Sow (Plant All), wheat sheaf = Harvest, the bannered keep = Guild Estate, the plain keep =
+// your Estate. They render at 52 CSS px, so 128px covers a 2x display. (1785693096046, a rectangular stone
+// frame, is NOT a fab and stays in art/src/ unprocessed until it has a home.)
 {
   const FABS = [
+    ["fab_chat",        "art/src/1785691892310.png"],
     ["fab_fertilize",   "art/src/1785692928800.png"],
     ["fab_sow",         "art/src/1785692931842.png"],
     ["fab_harvest",     "art/src/1785692934678.png"],
