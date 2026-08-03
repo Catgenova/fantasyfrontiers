@@ -3571,6 +3571,43 @@
     } finally { G.guild=saved.guild; G.members=saved.members; G.myRank=saved.myRank; G.applications=saved.applications; }
   });
 
+  // ---- Craft filter: "Highest tier" respects chained ladders (belt ticket, v0.0.79.4) ---------------
+  // Belts (and every equipment ladder) consume their OWN previous tier at Normal. With the affordability
+  // filter's "Highest tier" mode on, the card used to (a) auto-climb ABOVE the player's selection the
+  // moment a craft rolled Normal -- the next click then consumed the freshly-farmed link -- and (b)
+  // teleport to t0's material-only recipe when a roll came out rare+ (the jackpot!) or the craft failed,
+  // because both break the chain. Chained cards now cap the reseat at the selection and land on the next
+  // buildable link at-or-below it; pure-material cards keep the designed jump-to-highest.
+  suite('craft filter: chained ladders never reseat above the selection', function(){
+    var S = FF._state, savedInv = S.inventory;
+    try {
+      FF._setCraftOnlyAffordable(true); FF._setCraftFilterLowest(false);
+      var beltInputs = function(t){ return FF.getBeltTierData(t).inputs; };
+      // Chain detection: the belt recipe is chained, a material-only recipe is not.
+      ok(FF.craftTierChainInput(beltInputs(8), 8), 'the belt ladder is detected as chained (consumes belt_t7_normal)');
+      ok(!FF.craftTierChainInput({ tanning_t8: 2 }, 8), 'a material-only recipe is not');
+      ok(FF.craftTierChainInput({ cottage_t6: 1 }, 7) && FF.craftTierChainInput({ workshop_smithing_t6: 1 }, 7),
+        'the suffix-less cottage/workshop chains are detected too');
+      // (a) Farming t8: a Normal success mints belt_t8_normal, making t9 affordable. The card must NOT climb.
+      S.inventory = { belt_t8_normal: 1, tanning_t9: 2 };
+      eq(FF.craftFilterTier(8, 20, beltInputs), 8, 'sel stays put even though t9 is affordable (auto-climb ate the farmed link)');
+      // ...and with a buildable link lower down, it lands there instead of t0.
+      S.inventory = { belt_t4_normal: 1, tanning_t5: 2, tanning_t0: 2 };
+      eq(FF.craftFilterTier(8, 20, beltInputs), 5, 'an unaffordable selection falls to the next buildable link BELOW it');
+      // (b) The rare-roll / failed-craft case: chain fully broken, only t0 affordable -> t0 (not above sel).
+      S.inventory = { tanning_t0: 2 };
+      eq(FF.craftFilterTier(8, 20, beltInputs), 0, 'a fully broken chain falls to t0, never above the selection');
+      // Pure-material cards keep the designed jump-to-highest.
+      var matInputs = function(t){ var o = {}; o['tanning_t'+t] = 1; return o; };
+      S.inventory = { tanning_t9: 1 };
+      eq(FF.craftFilterTier(3, 20, matInputs), 9, 'material-only cards still jump UP to the highest affordable tier');
+      // The Lowest toggle is untouched.
+      FF._setCraftFilterLowest(true);
+      S.inventory = { belt_t4_normal: 1, tanning_t5: 2, tanning_t0: 2 };
+      eq(FF.craftFilterTier(8, 20, beltInputs), 0, 'the Lowest-tier mode still lands on the lowest affordable');
+    } finally { S.inventory = savedInv; FF._setCraftOnlyAffordable(false); FF._setCraftFilterLowest(false); }
+  });
+
   // ---- Beekeeping / Brewing / Confectionery vertical slice ------------------------------------
   suite('skills: beekeeping / brewing / confectionery', function(){
     // Registered as real skills in the right groups.

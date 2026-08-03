@@ -20341,15 +20341,41 @@
   // the DISPLAYED tier to the highest one whose inputs we can currently afford, so those lower-tier
   // craftables stay on screen (shown at the tier you can actually make). Returns sel unchanged when the
   // filter is off, when the shown tier is already affordable, or when nothing is affordable (still hidden).
+  //
+  // CHAINED ladders get one extra rule (belt ticket, v0.0.79.4). Most equipment consumes its OWN previous
+  // tier at Normal (belt_t7_normal -> belt t8; same shape for weapons/shields/quivers/wards/rings/amulets/
+  // armor/tools, and cottages/workshops without the rarity suffix). On those cards "highest affordable"
+  // must never look ABOVE the player's selection: the moment a craft succeeds at Normal, the freshly-made
+  // link makes sel+1 affordable, and auto-climbing there consumes the link the player just farmed -- while
+  // a rare+ roll or a failed craft breaks the chain and used to teleport the card to t0's leather-only
+  // recipe. Capped at the selection, the card instead lands on the next BUILDABLE LINK at-or-below it.
+  // Detected from the recipe itself (an input that is the ladder's own t-1), so every chained card --
+  // current and future -- is covered without opting in, and pure-material cards keep the designed jump.
+  function craftTierChainInput(inputs, t){
+    if(t <= 0 || !inputs) return false;
+    for(var k in inputs){
+      if(!inputs.hasOwnProperty(k)) continue;
+      var m = k.match(/_t(\d+)_normal$/);            // rarity ladders (incl. tools, whose card tier is offset by 1)
+      if(m && (+m[1] === t-1 || +m[1] === t)) return true;
+      if(k === 'cottage_t'+(t-1)) return true;        // the two suffix-less chains
+      if(k.indexOf('workshop_') === 0 && k.slice(-('_t'+(t-1)).length) === '_t'+(t-1)) return true;
+    }
+    return false;
+  }
   function craftFilterTier(sel, maxTier, getInputs, isActiveAt){
     if(!craftOnlyAffordable) return sel;
     if(isActiveAt && isActiveAt(sel)) return sel;   // never move an in-progress craft off its own card
     if(hasInputs(getInputs(sel))) return sel;        // the tier you've navigated to is affordable -> keep it
     // Otherwise land on an affordable tier: the LOWEST one (for stockpiling low-tier stock) when the
-    // craftFilterLowest toggle is on, else the HIGHEST (the default).
+    // craftFilterLowest toggle is on, else the HIGHEST (the default) -- capped at the selection for
+    // chained ladders, per the block comment above.
     var t;
     if(craftFilterLowest){ for(t=0; t<=maxTier; t++){ if(hasInputs(getInputs(t))) return t; } }
-    else { for(t=maxTier; t>=0; t--){ if(hasInputs(getInputs(t))) return t; } }
+    else {
+      var capSel = Math.max(0, Math.min(sel, maxTier));
+      var top = craftTierChainInput(getInputs(Math.max(1, capSel)), Math.max(1, capSel)) ? capSel : maxTier;
+      for(t=top; t>=0; t--){ if(hasInputs(getInputs(t))) return t; }
+    }
     return sel;
   }
   function renderCottageForge(maxUnlocked, lvl){
@@ -38737,7 +38763,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.79.3';
+  var GAME_VERSION = '0.0.79.4';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38863,6 +38889,7 @@
       computeEstateSnapshot:computeEstateSnapshot,
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
+      craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, FORGE_LIVE_CATEGORIES:FORGE_LIVE_CATEGORIES, CRAFT_RECIPE_LIVE_CATEGORIES:CRAFT_RECIPE_LIVE_CATEGORIES, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,
