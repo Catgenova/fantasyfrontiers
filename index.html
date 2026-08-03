@@ -36453,19 +36453,40 @@
   var gabTeaWasActive = false;
   var gabTomeWasActive = false;
   var gabBrewWasActive = false;
+  // The card's STRUCTURAL signature: everything the in-place updater below cannot change. Values the
+  // live updates DO own (fill widths, remaining/chance text, n/N counters, buff countdown fills/times)
+  // must stay OUT of this string, or the card rebuilds every tick again -- which is exactly the stutter
+  // this memoization removes (v0.0.78.1: render() used to rebuild the card's whole DOM on every pass,
+  // 10x/sec under farming's needsRender pressure; the most-watched element in the game juddered while
+  // its frame and rows re-rasterized). Covered here: the task set (a queued/limited flag changes the
+  // count column's existence), the slot cap (idle message + idle-note), each buff widget's 3-state AND
+  // best-item identity (the Study/Drink button label), and the auto-toggle checkboxes (baked glyphs).
+  function gabStructSig(tasks){
+    var bt = isTeaActive() ? null : bestAvailableTea();
+    var bm = isTomeActive() ? null : bestAvailableTome();
+    var bb = isBrewActive() ? null : bestAvailableBrew();
+    return tasks.map(function(t){ var a=t.act; return t.key+':'+a.type+':'+(a.craftKind||a.itemId||a.monsterId||'')+(a.targetQty?':q':'')+(a.fightTarget?':f':''); }).join('|')
+      + '|cap:' + getMaxCraftSlots(state)
+      + '|tea:' + (isTeaActive() ? 'a' : (bt ? 'b'+bt.id : '0'))
+      + '|tome:' + (isTomeActive() ? 'a' : (bm ? 'b'+bm.id : '0'))
+      + '|brew:' + (isBrewActive() ? 'a' : (bb ? 'b'+bb.id : '0'))
+      + '|auto:' + (state.autoTea?1:0) + (state.autoTome?1:0) + (state.autoBrew?1:0);
+  }
   function updateGlobalActionBarLive(){
     flushGabRewardQueue(); // anchor any pending reward floats to the current task rows
     renderQuestTracker(); // keep tracked-quest progress live between full renders (sig-guarded, cheap)
     var tasks = collectTasks();
-    // Rebuild the whole card only when the SET of running tasks (or tea availability) changes,
-    // so bars appear/disappear and the row-height rescales. Otherwise just live-update widths and
-    // the remaining/chance text. Never triggers a full render() (that would slam shut open <select>s).
-    var sig = tasks.map(function(t){ var a=t.act; return t.key+':'+a.type+':'+(a.craftKind||a.itemId||a.monsterId||''); }).join('|')
-      + '|tea:' + (isTeaActive() ? '1' : (bestAvailableTea() ? 'b' : '0'));
-    if(sig !== gabSig){
+    // Rebuild the whole card only when its STRUCTURE changes, so bars appear/disappear and the
+    // row-height rescales. Otherwise just live-update widths and the remaining/chance text in place.
+    // Never triggers a full render() (that would slam shut open <select>s).
+    var gabEl = document.getElementById('globalActionBar');
+    if(!gabEl) return;
+    var sig = gabStructSig(tasks);
+    // !firstChild: rebuild an emptied container even on a matching sig. gabSig is only committed
+    // alongside a successful write, so the two can never disagree for long, but belt and braces.
+    if(sig !== gabSig || !gabEl.firstChild){
       gabSig = sig;
-      var gabEl = document.getElementById('globalActionBar');
-      if(gabEl) gabEl.innerHTML = renderGlobalActionBar();
+      gabEl.innerHTML = renderGlobalActionBar();
       return; // freshly rendered -- widths/text already current
     }
     tasks.forEach(function(t){
@@ -36609,13 +36630,13 @@
     if(_ci){ if(chatChannel==='guild') guildChatDraft = _ci.value; else chatDraft = _ci.value; } // #chatInput is the guild input whenever the guild channel is active (dock/drawer/tab)
     currentArea = areaOf(currentCategory); // keep the rail's active area in sync with the content
     updateHeader();
-    // NOTE: not memoized like #content. renderGlobalActionBar() bakes each slot's live progress % into
-    // the markup, so the string differs every tick and a compare would never hit. Making it skippable
-    // means emitting a stable bar and letting updateGlobalActionBarLive() own the width -- worth doing,
-    // but it changes the most-watched element in the game, so it wants visual verification first.
-    document.getElementById('globalActionBar').innerHTML = renderGlobalActionBar();
-    renderQuestTracker(); // persistent tracked-quest cards, pinned just above the action bar
-    flushGabRewardQueue(); // reward floats on render frames too (loop uses render OR updateDynamic)
+    // Memoized via updateGlobalActionBarLive (v0.0.78.1): the card's DOM is rebuilt only when its
+    // STRUCTURE changes (gabStructSig); values move via in-place width/text writes. This line used to
+    // be `innerHTML = renderGlobalActionBar()` on EVERY render pass -- under farming's needsRender
+    // pressure that is 10 full teardowns/sec of the most-watched element in the game, and the card
+    // visibly juddered while its stone frame and rows re-rasterized (owner report, "stuttering
+    // heavily"). The live call also covers the quest tracker and reward floats.
+    updateGlobalActionBarLive();
     renderCatTabs();
     renderSubTabs();
     renderContent();
@@ -38649,7 +38670,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.78.0';
+  var GAME_VERSION = '0.0.78.1';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38806,6 +38827,7 @@
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; },
+      updateGlobalActionBarLive:updateGlobalActionBarLive, gabStructSig:gabStructSig, collectTasks:collectTasks,
       TOOL_TYPES:TOOL_TYPES, toolBenefitLabel:toolBenefitLabel, BLACKSMITH_TOOL_GROUPS:BLACKSMITH_TOOL_GROUPS, blacksmithToolGroupKey:blacksmithToolGroupKey, renderBlacksmithingTab:renderBlacksmithingTab, blacksmithGroupsOpen:blacksmithGroupsOpen,
       weaponAdvantageMultiplier:weaponAdvantageMultiplier, estateObstacleInfo:estateObstacleInfo,
       pavementTierOf:pavementTierOf, formatDuration:formatDuration, getRarity:getRarity,

@@ -14467,6 +14467,46 @@
     } finally { probe.remove(); }
   });
 
+  // ---- Action HUD: the card's DOM is memoized -- values move, structure stays (v0.0.78.1) ----------
+  // Owner report: "the action-bar card action bars are stuttering heavily". render() rebuilt the
+  // card's whole DOM (baked progress %) on EVERY pass -- 10 teardowns/sec under farming's
+  // needsRender pressure, measured as 30 node replacements in a 3s probe. Now render() routes
+  // through updateGlobalActionBarLive, which rebuilds only when gabStructSig changes and otherwise
+  // writes widths/text in place. Pinned by NODE IDENTITY: the same fill element must survive both
+  // the live updater and a full render(); a structural change must replace it.
+  suite('action HUD: bars keep their DOM across ticks and renders', function(){
+    var S = FF._state;
+    var saved = { act:S.activity, extra:S.extraCraftSlots, tea:S.activeTea, tome:S.activeTome, brew:S.activeBrew,
+                  autoTea:S.autoTea, autoTome:S.autoTome, autoBrew:S.autoBrew };
+    try {
+      var gid = Object.keys(FF.ALL_GATHER_ITEMS)[0];
+      S.activity = { type:'gather', itemId:gid, skill:FF.ALL_GATHER_ITEMS[gid].skill, progress:100 };
+      S.extraCraftSlots = []; S.activeTea = null; S.activeTome = null; S.activeBrew = null;
+      FF.updateGlobalActionBarLive();                       // build the card for this task set
+      var fill = document.getElementById('gabFill-p');
+      ok(!!fill, 'the primary task renders its bar');
+      S.activity.progress = 500;
+      FF.updateGlobalActionBarLive();                       // a value tick...
+      eq(document.getElementById('gabFill-p') === fill, true, '...updates the SAME fill node in place (no rebuild)');
+      ok(fill.style.width.length > 0, 'and the width was written');
+      FF.render(true);                                      // a FULL render pass...
+      eq(document.getElementById('gabFill-p') === fill, true, '...also keeps the node: render() no longer tears the card down (the reported stutter)');
+      var sigBefore = FF.gabStructSig(FF.collectTasks());
+      S.activity.targetQty = 50; S.activity.producedQty = 3; // same task gains a queue target
+      ok(FF.gabStructSig(FF.collectTasks()) !== sigBefore, 'a queued-run flag changes the structural sig (the n/N column must appear)');
+      FF.updateGlobalActionBarLive();
+      ok(document.getElementById('gabFill-p') !== fill, 'a structural change DOES rebuild');
+      ok(!!document.getElementById('gabCount-p'), 'and the count column exists after it');
+      var sigAuto = FF.gabStructSig(FF.collectTasks());
+      S.autoTea = !S.autoTea;
+      ok(FF.gabStructSig(FF.collectTasks()) !== sigAuto, 'the auto-toggle checkboxes are structural (baked glyphs must repaint)');
+    } finally {
+      S.activity = saved.act; S.extraCraftSlots = saved.extra; S.activeTea = saved.tea; S.activeTome = saved.tome;
+      S.activeBrew = saved.brew; S.autoTea = saved.autoTea; S.autoTome = saved.autoTome; S.autoBrew = saved.autoBrew;
+      FF.updateGlobalActionBarLive(); // rebuild against the restored state so later suites see honest DOM
+    }
+  });
+
   // ---- Combat bars: beveled-glass fills + energy flow on the special (owner picks B + C) -----------
   suite('combat bars: glass fill everywhere, flow on the special only', function(){
     var probe = document.createElement('div');
