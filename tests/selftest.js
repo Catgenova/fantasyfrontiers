@@ -3631,6 +3631,31 @@
     } finally { probe.remove(); }
   });
 
+  // ---- Secondary controls in stone (owner sweep, v0.0.79.14) ----------------------------------------
+  // The craft filter, market subtabs, inventory chips, mini buttons, tracker chips and mobile subchips
+  // all wear the 6px stone cut over slate, with each control's ACCENT kept as its active fill.
+  suite('control sweep: stone chips with accent-filled active states', function(){
+    var probe = document.createElement('div');
+    probe.innerHTML = '<button class="craft-filter-btn">f</button><button class="craft-filter-btn on">f</button>'
+      + '<button class="market-subtab on">m</button><button class="inv-chip on">i</button>'
+      + '<button class="mini-btn">b</button><button class="mini-btn danger">d</button>'
+      + '<button class="tracker-chip on">t</button>';
+    document.body.appendChild(probe);
+    try {
+      ['craft-filter-btn','market-subtab','inv-chip','mini-btn','tracker-chip'].forEach(function(cls){
+        var el = probe.querySelector('.'+cls), cs = getComputedStyle(el);
+        ok(cs.borderImageSource.indexOf('ivy_stretch') !== -1, '.'+cls+' is framed in the arena stone');
+        eq(cs.borderTopWidth, '6px', '.'+cls+' at the fine 6px cut');
+        ok(cs.backgroundClip.split(',').every(function(v){ return v.trim() === 'padding-box'; }),
+          '.'+cls+' clips its fill inside the frame');
+      });
+      eq(getComputedStyle(probe.querySelector('.craft-filter-btn.on')).backgroundColor, 'rgb(168, 91, 31)',
+        "the filter's active fill is the crafting accent");
+      eq(getComputedStyle(probe.querySelector('.mini-btn.danger')).color, 'rgb(212, 87, 74)',
+        'danger buttons brighten their red for the slate ground');
+    } finally { probe.remove(); }
+  });
+
   // ---- Skill chips (gathering/crafting sub-tabs) in stone (owner request, v0.0.79.13) --------------
   suite('skill chips: stone frames, skill colour kept on the active fill', function(){
     var probe = document.createElement('div');
