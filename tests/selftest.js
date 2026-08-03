@@ -855,7 +855,30 @@
     g[4][4].totemId = 'totem_t20';   // 2 tiles away -> out of range
     eq(FF.totemYieldBonusAt('personal','2,2'), 25, 'adjacent totems stack: +20 (t20) +5 (t5), the out-of-range one ignored');
     eq(FF.totemYieldBonusAt('personal','0,4'), 0, 'a plot with no totem in range gets nothing');
-    eq(FF.totemYieldBonusAt('guild','2,2'), 0, 'guild plots get no totem bonus (personal-estate only)');
+    // Guild estates take totems too since v0.0.79.0 (SteakHouse ticket, owner order -- reverses the
+    // personal-only design). Each estate's aura reads ITS OWN grid, so the two never leak.
+    var savedGE = { grid: FF.guildEstate.grid, status: FF.guildEstate.status, log: FF.guildEstate.log };
+    var savedGuild = FF.guildState.guild;
+    try {
+      var gg = []; for(var hx=0; hx<5; hx++){ var hcol=[]; for(var hy=0; hy<5; hy++){ hcol.push(mkCell()); } gg.push(hcol); }
+      gg[1][1].totemId = 'totem_t7';
+      FF.guildEstate.grid = gg; FF.guildEstate.status = 'ready'; FF.guildEstate.log = [];
+      FF.guildState.guild = FF.guildState.guild || { id:'g-totem-test', tag:'TT', name:'Totem Testers' };
+      eq(FF.totemYieldBonusAt('guild','2,2'), 7, 'a guild field beside a guild totem gets its bonus (was hard 0)');
+      eq(FF.totemYieldBonusAt('guild','2,2') === 25, false, "and it reads the GUILD grid, not the personal one's t20+t5");
+      eq(FF.totemYieldBonusAt('guild','0,4'), 0, 'range still applies on the guild grid');
+      eq(FF.totemYieldBonusAt('personal','2,2'), 25, "the guild totem never leaks onto personal plots");
+      // Completion raises the totem on the GUILD grid and records it in the guild activity log.
+      var savedXpG = s.xp.totems;
+      gg[0][0].type = 'paved'; gg[0][0].paveTileId = 'paving_t9';
+      FF.applyEstateJobCompletion(FF.guildEstate, { kind:'totem', x:0, y:0, totemId:'totem_t5' }, true, true);
+      eq(gg[0][0].totemId, 'totem_t5', 'completion raises a totem on the guild grid');
+      ok(JSON.stringify(FF.guildEstate.log).indexOf('raised the') !== -1, 'and the guild activity log records the raising');
+      s.xp.totems = savedXpG;
+    } finally {
+      FF.guildEstate.grid = savedGE.grid; FF.guildEstate.status = savedGE.status; FF.guildEstate.log = savedGE.log;
+      FF.guildState.guild = savedGuild;
+    }
     // A real harvest applies the flat bonus: same crop, with vs without totems in range -> diff = +25.
     var savedPlots = s.farmingPlots, savedInv = s.inventory, savedEarned = s.itemEarnedTotal;
     s.inventory = {}; s.itemEarnedTotal = {};
