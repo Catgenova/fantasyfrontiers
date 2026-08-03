@@ -3571,6 +3571,22 @@
     } finally { G.guild=saved.guild; G.members=saved.members; G.myRank=saved.myRank; G.applications=saved.applications; }
   });
 
+  // ---- Outfitting craft pages carry no equipping UI (owner order, v0.0.79.12) ----------------------
+  // Equipping lives in the Inventory (getEquipActionForItem) and Battle -> Equipment & Stats; the
+  // wand/staff/scepter/ward craft pages used to duplicate it and now point there instead.
+  suite('outfitting pages: equipping moved off the craft pages', function(){
+    var wards = FF.renderWardSmithTab();
+    var wands = FF.renderArcanismTab();
+    ok(wards.indexOf('Equip Ward') === -1 && wards.indexOf('Equip Scepter') === -1, 'the Runesmithing page has no equip sections');
+    ok(wands.indexOf('Equip Wand') === -1 && wands.indexOf('Equip Staff') === -1, 'the Arcanism page has no equip sections');
+    ok(wands.indexOf('equipStackableWeapon') === -1, 'no equip buttons hide in the wand/staff markup either');
+    ok(/equipped from your <b>Inventory<\/b>/.test(wards) && /equipped from your <b>Inventory<\/b>/.test(wands),
+      'each page points to the Inventory / Equipment & Stats instead');
+    // The Inventory path the pointer promises must actually exist for every mainhand family.
+    eq(FF.getEquipActionForItem('stweapon_wandEarth_t5_normal'), 'equipStackableWeapon', 'wands equip from the Inventory');
+    eq(FF.getEquipActionForItem('stward_wardLight_t5_normal'), 'equipWard', 'wards too');
+  });
+
   // ---- Item-card gold text goes parchment (option B, colorblind ticket, v0.0.79.11) ----------------
   // Dozens of card texts carry INLINE style="color:var(--gold)" -- the tan-page green, ~2.5:1 on the
   // marble and mud under deuteranopia. A stylesheet cannot beat an inline style, but the inline style

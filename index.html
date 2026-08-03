@@ -21746,7 +21746,7 @@
     });
     html += '</div>';
     html += renderScepterCraftSection();
-    html += renderEquipWardSection();
+    html += '<div class="section-intro" style="margin-top:10px">Forged wards and scepters are equipped from your <b>Inventory</b> (Resources &rarr; Inventory) or in <b>Battle &rarr; Equipment &amp; Stats</b>.</div>';
     return html;
   }
 
@@ -21784,52 +21784,9 @@
       html += queueInputHtml('forgeStackableWeapon:'+w.id+':t'+sel)+'<button class="action-btn" data-action="forgeStackableWeapon" data-type="'+w.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Forge</button>';
     }
     html += '</div></div>';
-    // Equip scepter
-    var owned = Object.keys(STACKABLE_WEAPON_ITEMS).filter(function(id){ return isScepter(STACKABLE_WEAPON_ITEMS[id].typeId) && (state.inventory[id]||0)>0; })
-      .sort(function(a,b){ return STACKABLE_WEAPON_ITEMS[a].tierIndex - STACKABLE_WEAPON_ITEMS[b].tierIndex; });
-    html += '<h3>Equip Scepter</h3>';
-    html += '<div class="card-grid"><div class="item-card">';
-    html += '<div class="item-top"><div class="item-icon">'+(current?current.icon:w.icon)+'</div><div><div class="item-name">Mainhand</div><div class="item-meta">'+(current ? current.name+' &bull; '+current.dmgMin+'-'+current.dmgMax+' blunt+'+elementLabel('light')+' dmg' : 'No scepter equipped')+'</div></div></div>';
-    if(owned.length===0){ html += '<div class="empty-note">No scepters in inventory. Forge one above.</div>'; }
-    else {
-      html += '<div class="style-row">';
-      owned.forEach(function(id){
-        var item = STACKABLE_WEAPON_ITEMS[id]; var qty = state.inventory[id]||0;
-        var canEquip = meetsProficiencyRequirement(state.xp[SCEPTERS_SKILL_ID], item.tierIndex); // gate on Scepters proficiency, not the crafting skill
-        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipStackableWeapon" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type" style="text-transform:none">'+item.dmgMin+'-'+item.dmgMax+' blunt+'+elementLabel('light')+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+(SKILL_LABELS[SCEPTERS_SKILL_ID]||'Scepters')+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
-      });
-      html += '</div>';
-    }
-    if(current) html += '<button class="action-btn stop" data-action="unequipStackableWeapon">Unequip</button>';
-    html += '</div></div>';
     return html;
   }
 
-  function renderEquipWandSection(){
-    var current = (state.equippedMainhand && isWandWeapon(state.equippedMainhand) && state.equippedMainhandTier>0)
-      ? STACKABLE_WEAPON_ITEMS['stweapon_'+state.equippedMainhand+'_t'+(state.equippedMainhandTier-1)+'_'+state.equippedMainhandRarity] : null;
-    var owned = Object.keys(STACKABLE_WEAPON_ITEMS).filter(function(id){ return isWandWeapon(STACKABLE_WEAPON_ITEMS[id].typeId) && (state.inventory[id]||0)>0; })
-      .sort(function(a,b){ return STACKABLE_WEAPON_ITEMS[a].tierIndex - STACKABLE_WEAPON_ITEMS[b].tierIndex; });
-    var html = '<h3>Equip Wand</h3>';
-    html += '<div class="section-intro">A Wand is a one-handed Mainhand that deals elemental damage of its element (+20% vs enemies weak to it). Pick which owned Wand to wield.</div>';
-    html += '<div class="card-grid"><div class="item-card">';
-    html += '<div class="item-top"><div class="item-icon">'+(current?current.icon:svgIcon('starburst','#5a8ac8'))+'</div><div><div class="item-name">Mainhand</div><div class="item-meta">'+(current ? current.name+' &bull; '+current.dmgMin+'-'+current.dmgMax+' '+elementLabel(current.element)+' dmg' : 'No wand equipped')+'</div></div></div>';
-    if(owned.length===0){
-      html += '<div class="empty-note">No wands in inventory. Craft one above.</div>';
-    } else {
-      html += '<div class="style-row">';
-      owned.forEach(function(id){
-        var item = STACKABLE_WEAPON_ITEMS[id];
-        var qty = state.inventory[id]||0;
-        var canEquip = meetsProficiencyRequirement(state.xp[WANDS_SKILL_ID], item.tierIndex); // gate on Wands proficiency, not the crafting skill
-        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipStackableWeapon" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type" style="text-transform:none">'+item.dmgMin+'-'+item.dmgMax+' '+elementLabel(item.element)+'</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires '+(SKILL_LABELS[WANDS_SKILL_ID]||'Wands')+' Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
-      });
-      html += '</div>';
-    }
-    if(current) html += '<button class="action-btn stop" data-action="unequipStackableWeapon">Unequip</button>';
-    html += '</div></div>';
-    return html;
-  }
   function renderArcanismTab(){
     var lvl = getLevel(state.xp.arcanism);
     var html = renderSkillProgressBar('arcanism');
@@ -21869,7 +21826,7 @@
     });
     html += '</div>';
     html += renderStaffCraftSection();
-    html += renderEquipWandSection();
+    html += '<div class="section-intro" style="margin-top:10px">Forged wands and staves are equipped from your <b>Inventory</b> (Resources &rarr; Inventory) or in <b>Battle &rarr; Equipment &amp; Stats</b>.</div>';
     return html;
   }
   function renderStaffCraftSection(){
@@ -21905,24 +21862,6 @@
     } else {
       html += queueInputHtml('forgeStackableWeapon:'+w.id+':t'+sel)+'<button class="action-btn" data-action="forgeStackableWeapon" data-type="'+w.id+'" data-tier="'+sel+'" '+(ready?'':'disabled')+'>Carve</button>';
     }
-    html += '</div></div>';
-    // Equip staff
-    var owned = Object.keys(STACKABLE_WEAPON_ITEMS).filter(function(id){ return isStaff(STACKABLE_WEAPON_ITEMS[id].typeId) && (state.inventory[id]||0)>0; })
-      .sort(function(a,b){ return STACKABLE_WEAPON_ITEMS[a].tierIndex - STACKABLE_WEAPON_ITEMS[b].tierIndex; });
-    html += '<h3>Equip Staff</h3>';
-    html += '<div class="card-grid"><div class="item-card">';
-    html += '<div class="item-top"><div class="item-icon">'+w.icon+'</div><div><div class="item-name">Mainhand</div><div class="item-meta">'+(current ? current.name+' &bull; block '+Math.round((current.block||0)*100)+'% &bull; +'+(current.familiarSlots||0)+' familiar slots' : 'No staff equipped')+'</div></div></div>';
-    if(owned.length===0){ html += '<div class="empty-note">No staves in inventory. Carve one above.</div>'; }
-    else {
-      html += '<div class="style-row">';
-      owned.forEach(function(id){
-        var item = STACKABLE_WEAPON_ITEMS[id]; var qty = state.inventory[id]||0;
-        var canEquip = getLevel(state.xp.arcanism||0) >= TIER_LEVELS[item.tierIndex];
-        html += '<button class="style-btn'+(canEquip?'':' locked')+'" data-action="equipStackableWeapon" data-item="'+id+'" '+(canEquip?'':'disabled')+'>'+item.icon+' '+item.name+' <span class="style-lvl">x'+qty+'</span><span class="style-type" style="text-transform:none">block '+Math.round((item.block||0)*100)+'% &bull; +'+(item.familiarSlots||0)+' slots</span>'+(canEquip?'':'<span class="style-req">'+svgIcon('lock','currentColor')+' Requires Arcanism Lv '+TIER_LEVELS[item.tierIndex]+'</span>')+'</button>';
-      });
-      html += '</div>';
-    }
-    if(current) html += '<button class="action-btn stop" data-action="unequipStackableWeapon">Unequip</button>';
     html += '</div></div>';
     return html;
   }
@@ -38854,7 +38793,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.79.11';
+  var GAME_VERSION = '0.0.79.12';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38982,6 +38921,7 @@
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
       estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,
+      renderWardSmithTab:renderWardSmithTab, renderArcanismTab:renderArcanismTab, renderScepterCraftSection:renderScepterCraftSection, renderStaffCraftSection:renderStaffCraftSection, getEquipActionForItem:getEquipActionForItem,
       buffTotalRunwayMs:buffTotalRunwayMs, gabBuffTimeText:gabBuffTimeText,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, FORGE_LIVE_CATEGORIES:FORGE_LIVE_CATEGORIES, CRAFT_RECIPE_LIVE_CATEGORIES:CRAFT_RECIPE_LIVE_CATEGORIES, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
