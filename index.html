@@ -15934,6 +15934,19 @@
     for(var i=0;i<maps.length;i++){ if(maps[i] && maps[i][d.leg] && maps[i][d.leg].desc) return maps[i][d.leg].desc; }
     return '';
   }
+  // Which class a unique belongs to, when it belongs to one (ticket: the card never said). A set piece
+  // carries it directly (set:cls from mintSetPiece); a legendary weapon/shield/ward resolves through its
+  // effect's def (every entry in the D1..D4 gear maps names its cls). '' for everything class-agnostic --
+  // plain uniques, relics, belts, jewelry, legendary accessories.
+  function uniqueClassId(d){
+    if(!d) return '';
+    if(d.set) return d.set;
+    if(d.leg){
+      var maps = [D1_LEG_GEAR_MAP, D2_LEG_GEAR_MAP, D3_LEG_GEAR_MAP, D4_LEG_GEAR_MAP];
+      for(var i=0;i<maps.length;i++){ if(maps[i] && maps[i][d.leg] && maps[i][d.leg].cls) return maps[i][d.leg].cls; }
+    }
+    return '';
+  }
   function uniqueCardBody(d){
     var b = ALL_SELLABLE[d.base];
     // Use the item's real display name (a Legendary's name like "Gravewrath", a set piece's name, else the
@@ -15942,6 +15955,9 @@
     var html = '<div class="inv-detail-icon">'+uniqueIcon(d)+'</div>';
     html += '<div class="skill-info-title">'+escapeHtml(nm)+'</div>';
     html += '<div class="inv-detail-meta">'+escapeHtml(getRarity(d.rarity).label||'')+' &bull; Tier '+d.tier+(d.enhance>0?' &bull; <b>+'+d.enhance+'</b>':'')+'</div>';
+    // Set pieces and legendary gear name their CLASS (ticket: the card never said who it was for).
+    var _clsId = uniqueClassId(d), _clsDef = _clsId ? CLASS_DEFS_BY_ID[_clsId] : null;
+    if(_clsId) html += '<div class="inv-detail-meta" style="color:var(--gold);">'+(_clsDef && _clsDef.icon ? _clsDef.icon+' ' : '')+escapeHtml((_clsDef && _clsDef.name) || _clsId)+' class item</div>';
     var legDesc = uniqueLegDesc(d);
     if(legDesc) html += '<div class="skill-info-section"><div class="skill-info-section-label">Legendary Effect</div><div class="skill-info-section-body" style="color:var(--gold)">'+escapeHtml(legDesc)+'</div></div>';
     var baseLines = uniqueBaseStatLines(d);
@@ -38803,7 +38819,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.79.6';
+  var GAME_VERSION = '0.0.79.7';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -38930,7 +38946,7 @@
       FARM_FIELD_TIERS:FARM_FIELD_TIERS, fieldBuildMs:fieldBuildMs, canPlantInField:canPlantInField, ESTATE_MAX_FIELDS:ESTATE_MAX_FIELDS,
       tierStepper:tierStepper, tierRange:tierRange, _setCraftOnlyAffordable:function(v){ craftOnlyAffordable = !!v; }, hasInputs:hasInputs,
       craftFilterTier:craftFilterTier, craftTierChainInput:craftTierChainInput, _setCraftFilterLowest:function(v){ craftFilterLowest = !!v; },
-      estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL,
+      estateActiveJobHead:estateActiveJobHead, GUILD_JOB_KIND_LABEL:GUILD_JOB_KIND_LABEL, uniqueClassId:uniqueClassId,
       CRAFT_SKILL_IDS:CRAFT_SKILL_IDS, BUILDING_SKILL_IDS:BUILDING_SKILL_IDS, OUTFITTING_SKILL_IDS:OUTFITTING_SKILL_IDS, CRAFTING_TAB_SKILL_IDS:CRAFTING_TAB_SKILL_IDS,
       GATHER_SKILL_IDS:GATHER_SKILL_IDS, COOKING_SKILL_IDS:COOKING_SKILL_IDS, REFINING_SKILL_IDS:REFINING_SKILL_IDS, REFINING_TAB_SKILL_IDS:REFINING_TAB_SKILL_IDS, craftCatForSkill:craftCatForSkill, FORGE_LIVE_CATEGORIES:FORGE_LIVE_CATEGORIES, CRAFT_RECIPE_LIVE_CATEGORIES:CRAFT_RECIPE_LIVE_CATEGORIES, GATHERING_TAB_SKILL_IDS:GATHERING_TAB_SKILL_IDS, genericGatherMainChance:genericGatherMainChance, BASE_GATHER_MAIN_CHANCE:BASE_GATHER_MAIN_CHANCE, miningMainChance:miningMainChance, fishingCatchChance:fishingCatchChance, diggingMainChance:diggingMainChance, anySkillProgress:anySkillProgress,
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot,

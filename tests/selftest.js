@@ -3571,6 +3571,29 @@
     } finally { G.guild=saved.guild; G.members=saved.members; G.myRank=saved.myRank; G.applications=saved.applications; }
   });
 
+  // ---- Unique cards name their class (ticket: "Rare Dragonscale Bulwark" never said Herald) --------
+  // Set pieces carry set:cls from mintSetPiece; legendary gear resolves through its effect def (every
+  // D1..D4 gear-map entry names its cls). uniqueCardBody prints the line, so the Inventory detail
+  // modal, the Improvement card, the mastercraft result and chat item links all say who it's for.
+  suite('unique cards: set items and legendaries name their class', function(){
+    eq(FF.uniqueClassId({ leg:'dragonbulwark' }), 'herald', 'a legendary resolves its class through the gear maps (the ticket shield)');
+    eq(FF.uniqueClassId({ set:'assassin', setLayer:'d2' }), 'assassin', 'a set piece carries its class directly');
+    eq(FF.uniqueClassId({ base:'stweapon_rapier_t20_rare', kind:'weapon' }), '', 'a plain unique belongs to no class');
+    eq(FF.uniqueClassId({ kind:'relic' }), '', 'relics/belts/jewelry stay class-agnostic');
+    var body = FF.uniqueCardBody({ uid:'x', base:'stshield_shieldLarge_t20_rare', kind:'offhand', tier:20, rarity:'rare', enchants:[], enhance:0, leg:'dragonbulwark' });
+    ok(body.indexOf('Herald class item') !== -1, "the ticket's Dragonscale Bulwark card now reads 'Herald class item'");
+    var plain = FF.uniqueCardBody({ uid:'y', base:'stweapon_rapier_t20_rare', kind:'weapon', tier:20, rarity:'rare', enchants:[], enhance:0 });
+    ok(plain.indexOf('class item') === -1, 'class-agnostic uniques gain no class line');
+    // Every legendary gear effect must resolve to a REAL class id, or the card prints the raw id.
+    [FF.D1_LEG_GEAR_MAP, FF.D2_LEG_GEAR_MAP, FF.D3_LEG_GEAR_MAP, FF.D4_LEG_GEAR_MAP].forEach(function(map, mi){
+      ok(!!map, 'gear map D' + (mi+1) + ' is on the seam (a missing map would silently skip its checks)');
+      if(!map) return;
+      Object.keys(map).forEach(function(k){
+        ok(!!FF.CLASS_DEFS_BY_ID[map[k].cls], 'gear def "' + k + '" names a real class (' + map[k].cls + ')');
+      });
+    });
+  });
+
   // ---- Estate active-job panel: every kind has its own head line (v0.0.79.6) ------------------------
   // 'totem' had no arm and fell into the terraforming default: a totem raising displayed as
   // "Terraforming - Digging down" promising +500 Digging XP it would never pay (live ticket, guild
