@@ -14359,6 +14359,23 @@
     ok(FF.tierChipHtml(20).indexOf(FF.improveTierLabel(20)) !== -1, 'chip and improvement label are the SAME string for the same tier');
   });
 
+  // ---- Popup queue is hard-capped (v0.0.77.40: "save too large") -----------------------------------
+  // The queue is SAVED STATE, drains one click at a time, and each item entry stores an inline SVG
+  // icon -- an offline mass-craft batch with rarity popups on queued thousands of entries and pushed
+  // the save past the database's size guard. Every popup source routes through popupEnqueue.
+  suite('popups: the queue can never grow past its cap', function(){
+    var S = FF._state, savedQ = S.popupQueue, savedB = S.popupBatchTotal;
+    try {
+      S.popupQueue = []; S.popupBatchTotal = 0;
+      ok(FF.POPUP_QUEUE_MAX >= 20 && FF.POPUP_QUEUE_MAX <= 200, 'the cap is a click-through-able number');
+      for(var i = 0; i < FF.POPUP_QUEUE_MAX + 40; i++) FF.popupEnqueue({ type:'item', rarityId:'rare', itemName:'Thing '+i, icon:'<svg/>' });
+      eq(S.popupQueue.length, FF.POPUP_QUEUE_MAX, 'the queue holds exactly the cap after an overflow');
+      eq(S.popupQueue[S.popupQueue.length-1].itemName, 'Thing '+(FF.POPUP_QUEUE_MAX+39), 'the NEWEST entries are kept');
+      eq(S.popupQueue[0].itemName, 'Thing 40', 'the oldest entries were dropped');
+      ok(S.popupBatchTotal <= FF.POPUP_QUEUE_MAX, 'the batch counter follows the trimmed queue');
+    } finally { S.popupQueue = savedQ; S.popupBatchTotal = savedB; }
+  });
+
   // ---- Offline credit bound + wake write-hold (v0.0.77.32 offline-catchup audit) -------------------
   // A brand-new player was granted the full 12h catch-up off one tab flick: the wall clock (the only
   // clock the credit used) jumped while the tab was hidden. The bound takes min(wall, server-witnessed
