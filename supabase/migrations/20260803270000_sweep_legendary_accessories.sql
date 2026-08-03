@@ -197,17 +197,28 @@ end $$;
 revoke execute on function public.item_unexplained_sweep(boolean) from anon, authenticated, public;
 
 -- ---- HOW TO VERIFY (run after applying; rolls back, writes nothing durable) ------------------------
--- Re-run the exact probe that exposed the gap. FIRST let one scheduled sweep pass (or run
--- select * from public.item_unexplained_sweep(false) once) so the new accessory keys are baselined --
--- during that same run AndJustice4All's already-injected Signet gets absorbed into the baseline, which
--- is expected (see the caveat above). THEN:
+-- Re-run the exact probe that exposed the gap. The probe UPSERTS the watermark row rather than updating
+-- it: before the first committed sweep the new accessory keys have NO item_earn_watch rows, so a plain
+-- UPDATE matches nothing, fakes no growth, and the sweep correctly returns zero rows -- which reads as a
+-- failed verification when it is really an unarmed probe (this happened live; the first version of these
+-- instructions had exactly that flaw). The upsert arms it in both the fresh-apply and already-baselined
+-- states.
 --
 --   begin;
---   update public.item_earn_watch set earned_seen = greatest(0, earned_seen - 1)
---     where (user_id, item_key) = (
---       select user_id, item_key from public.player_items
---        where item_key ~ '^legring_.*_fantastic$' and earned_total >= 1 limit 1);
+--   insert into public.item_earn_watch(user_id, item_key, earned_seen, checked_at)
+--   select user_id, item_key, greatest(0, earned_total - 1), now() - interval '1 hour'
+--     from public.player_items
+--    where item_key ~ '^legring_.*_fantastic$' and earned_total >= 1
+--    limit 1
+--   on conflict (user_id, item_key) do update
+--     set earned_seen = greatest(0, public.item_earn_watch.earned_seen - 1);
 --   select * from public.item_unexplained_sweep(false);
 --   -- EXPECT: one zero_base row whose family reads like 'legring_d4', plus one amber Discord embed.
 --   -- BEFORE this migration the same probe returns nothing: leg* keys were not scanned at all.
 --   rollback;
+--
+-- If it STILL returns nothing, check the preconditions in order:
+--   select prosrc like '%legring%' as migration_applied from pg_proc where proname = 'item_unexplained_sweep';
+--   select count(*) as candidate_rows from public.player_items
+--    where item_key ~ '^legring_.*_fantastic$' and earned_total >= 1;
+--   -- migration_applied must be true and candidate_rows >= 1 (the injected probe Signet qualifies).
