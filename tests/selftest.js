@@ -14607,6 +14607,40 @@
     }
   });
 
+  // ---- Crafting cards wear the arena stone + dark marble (owner request, v0.0.79.5) ----------------
+  // .item-card is the universal card, so the whole grid re-themes with the action HUD: ivy_stretch
+  // stone frame, marble well under a dark wash, and the dark-palette ink table. Pinned by computed
+  // style; a lost background-clip layer bleeds the well through the frame's open stonework.
+  suite('crafting cards: stone frame, marble well, dark ink', function(){
+    var probe = document.createElement('div');
+    probe.innerHTML = '<div class="item-card"><div class="item-name">n</div><div class="item-meta">m</div>'
+      + '<span class="tier-chip">t7</span><span class="xp-real">+1 XP</span>'
+      + '<div class="inputs-line"><span class="ok">1x A</span> <span class="bad">2x B</span></div>'
+      + '<div class="progress-track"><div class="progress-fill"></div></div>'
+      + '<input class="card-queue"><button class="tier-step-btn">-</button></div>';
+    document.body.appendChild(probe);
+    try {
+      var card = probe.querySelector('.item-card'), cs = getComputedStyle(card);
+      eq(cs.backgroundColor, 'rgb(20, 17, 9)', 'the card underlays the arena black well (#141109)');
+      ok(cs.backgroundImage.indexOf('marble_dark') !== -1 && cs.backgroundImage.indexOf('linear-gradient') !== -1,
+        'the well is the commissioned dark marble under the wash');
+      ok(cs.backgroundClip.split(',').every(function(v){ return v.trim() === 'padding-box'; }),
+        'every background layer clips to the padding box (unclipped they bleed through the stonework)');
+      ok(cs.borderImageSource.indexOf('ivy_stretch') !== -1, 'framed by the arena stone');
+      eq(getComputedStyle(probe.querySelector('.item-name')).color, 'rgb(232, 220, 192)', 'names wear the stage ink (#e8dcc0)');
+      eq(getComputedStyle(probe.querySelector('.item-meta')).color, 'rgb(154, 143, 120)', 'metas go dim (#9a8f78)');
+      eq(getComputedStyle(probe.querySelector('.xp-real')).color, 'rgb(221, 187, 102)', 'XP reads in the stage gold (#ddbb66)');
+      var chip = getComputedStyle(probe.querySelector('.tier-chip'));
+      eq(chip.backgroundColor, 'rgb(42, 36, 24)', 'tier chips sit on dark plinths');
+      var okC = getComputedStyle(probe.querySelector('.inputs-line .ok')).color;
+      var badC = getComputedStyle(probe.querySelector('.inputs-line .bad')).color;
+      ok(okC === 'rgb(124, 179, 80)' && badC === 'rgb(212, 87, 74)', 'input ok/bad brighten for the dark ground');
+      var trk = getComputedStyle(probe.querySelector('.progress-track'));
+      eq(trk.backgroundColor, 'rgb(12, 10, 8)', 'the progress well is the fx near-black');
+      eq(getComputedStyle(probe.querySelector('.card-queue')).color, 'rgb(232, 220, 192)', 'the queue input types in light ink');
+    } finally { probe.remove(); }
+  });
+
   // ---- Combat bars: beveled-glass fills + energy flow on the special (owner picks B + C) -----------
   suite('combat bars: glass fill everywhere, flow on the special only', function(){
     var probe = document.createElement('div');

@@ -37,8 +37,8 @@
     --bg-panel:#e7d7b0;
     --bg-panel-raised:#eeddb6;
     --bg-card:#dcc79c;        /* tan card inset */
-    /* Shared 9-slice ivy-vine + stone-corner card frame (used by .item-card; the action HUD wore it
-       until v0.0.77.46, when it moved to the arena's ivy_stretch stone). */
+    /* Shared 9-slice ivy-vine + stone-corner card frame (login gate cards + the old .arena panel;
+       .item-card and the action HUD moved to the arena's ivy_stretch stone in v0.0.77.46-.79.5). */
     --ivy-frame:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%237cab46'/><stop offset='1' stop-color='%232f5018'/></linearGradient><path id='l' d='M0,-6 C1.6,-3.4 2.6,-3 4.2,-3.2 C6,-3.4 6.6,-1.4 5,0 C6.6,0.6 6.4,2.6 4.4,3 C3,3.3 1.6,4.6 0,7 C-1.6,4.6 -3,3.3 -4.4,3 C-6.4,2.6 -6.6,0.6 -5,0 C-6.6,-1.4 -6,-3.4 -4.2,-3.2 C-2.6,-3 -1.6,-3.4 0,-6 Z' fill='url(%23g)'/><g id='b'><rect x='2' y='2' width='26' height='26' rx='4' fill='%237c7368' stroke='%23241f18' stroke-width='2'/><rect x='5' y='4.5' width='20' height='8' rx='3' fill='%23988d7d'/><rect x='6' y='18' width='18' height='7' rx='3' fill='%235c5348'/></g></defs><g fill='none' stroke='%235a4327' stroke-width='2' stroke-linecap='round'><path d='M30,14 Q50,8 70,14'/><path d='M30,86 Q50,92 70,86'/><path d='M14,30 Q8,50 14,70'/><path d='M86,30 Q92,50 86,70'/></g><use href='%23l' transform='translate(41,12) rotate(15)'/><use href='%23l' transform='translate(59,15) rotate(-155) scale(.85)'/><use href='%23l' transform='translate(41,88) rotate(165)'/><use href='%23l' transform='translate(59,85) rotate(-25) scale(.85)'/><use href='%23l' transform='translate(12,41) rotate(-75)'/><use href='%23l' transform='translate(15,59) rotate(105) scale(.85)'/><use href='%23l' transform='translate(88,41) rotate(75)'/><use href='%23l' transform='translate(85,59) rotate(255) scale(.85)'/><use href='%23b' transform='translate(0,0)'/><use href='%23b' transform='translate(70,0)'/><use href='%23b' transform='translate(0,70)'/><use href='%23b' transform='translate(70,70)'/></svg>");
     --border:#141210;         /* ink — borders are dark on nearly everything */
     --border-light:#a98f5e;   /* muted tan / dashed borders */
@@ -705,20 +705,44 @@
   .section-intro{font-size:13px;color:var(--text-dim);margin-bottom:14px;line-height:1.5;}
   .card-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(230px, 1fr));gap:22px;}
   @media (max-width:600px){.card-grid{grid-template-columns:1fr;}}
-  /* Card frame: a thin ivy vine along the edges with small stone blocks at the four corners, drawn as
-     a 9-slice border-image (corners = stone, edges = seamlessly tiling ivy). Replaces the old heavy
-     stone-frame + bolted-wood-brace treatment, which was too dark/busy and made dimmed (locked) cards
-     hard to read. The tan panel fills the whole border box, so the ivy sits on the card's own edge. */
+  /* Card frame (owner request, v0.0.79.5): the arena's stone treatment, matching the action HUD --
+     ivy_stretch stone border around a dark-marble well (one cover crop per card, never tiled; the
+     source isn't seamless) under a dark wash so the veining stays texture beneath the text.
+     background-clip:padding-box is MANDATORY -- the frame art is transparent outside its rails, so an
+     unclipped well bleeds through the open stonework. The card sets its own light ink (#e8dcc0) so
+     plain text inside inherits it; everything with an explicit tan-page colour is restated below. */
   .item-card{
     position:relative;overflow:visible;
-    background:var(--bg-card);border-radius:4px;
+    color:#e8dcc0;
+    background-color:#141109;
+    background-image:linear-gradient(rgba(10,8,6,.52),rgba(10,8,6,.52)),url('art/marble_dark.png');
+    background-size:cover;background-position:center;background-clip:padding-box;
+    border-radius:2px;
     border:12px solid transparent;
-    border-image:var(--ivy-frame) 30 round;
+    border-image:url('art/ivy_stretch.png') 37 32 39 32 round;
     padding:5px 9px 9px;box-shadow:0 4px 12px rgba(20,18,16,.24);
   }
-  /* Locked cards: readable now -- a light dim + desaturation instead of the old 0.5 opacity that,
-     combined with the heavy dark frame, washed the text out entirely. */
-  .item-card.locked{opacity:0.82;filter:saturate(.55) brightness(.98);}
+  /* Locked cards: dim by colour-independent filter; the dark well needs a touch more brightness drop
+     than the tan card did for "locked" to read. */
+  .item-card.locked{opacity:0.82;filter:saturate(.45) brightness(.85);}
+  /* The dark-well palette for the card's interior -- the same table the action HUD and arena use:
+     #e8dcc0 ink, #ddbb66 gold, #c0b394 values, #9a8f78 dim, #2a2418/#6b5a38 plinths, #0c0a08 wells. */
+  .item-card .item-name{color:#e8dcc0;}
+  .item-card .item-meta{color:#9a8f78;}
+  .item-card .item-stats{color:#c0b394;}
+  .item-card .tier-chip{background:#2a2418;border-color:#6b5a38;color:#c0b394;}
+  .item-card .xp-real{color:#ddbb66;}
+  .item-card .chance-line{color:#9a8f78;}
+  .item-card .chance-line b{color:#e8dcc0;}
+  .item-card .inputs-line .ok{color:#7cb350;}
+  .item-card .inputs-line .bad{color:#d4574a;}
+  .item-card .tier-step-btn{background:linear-gradient(180deg,#2a2418,#181409);color:#e8dcc0;border-color:#6b5a38;}
+  .item-card .tier-step-btn:hover:not(:disabled){border-color:#ddbb66;color:#ddbb66;}
+  .item-card .tier-step-label{color:#e8dcc0;}
+  .item-card .card-queue{background:#181409;border-color:#6b5a38;color:#e8dcc0;}
+  .item-card .card-queue::placeholder{color:#9a8f78;}
+  .item-card .card-queue:focus{outline-color:#ddbb66;border-color:#ddbb66;}
+  .item-card .progress-track{background:#0c0a08;border-color:#3a2f20;}
   .item-card.active-item{box-shadow:0 0 0 2px rgba(111,149,56,.6), 0 0 16px rgba(111,149,56,0.30), 0 4px 12px rgba(20,18,16,.26);}
   .item-top{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
   .item-icon{font-size:26px;line-height:1;}
@@ -38763,7 +38787,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.79.4';
+  var GAME_VERSION = '0.0.79.5';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
