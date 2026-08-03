@@ -14396,6 +14396,44 @@
     } finally { probe.remove(); }
   });
 
+  // ---- Action HUD card wears the arena's stone-and-well dress (v0.0.77.46) -------------------------
+  // Owner request: the effect panels' look -- ivy_stretch stone frame, black well, thin bars -- on the
+  // task card, values untouched. Pinned by computed style so a palette regression (or a lost
+  // background-clip, which lets the well bleed through the frame's transparent rails) fails here.
+  suite('action HUD: stone frame, black well, thin bars', function(){
+    var probe = document.createElement('div');
+    probe.innerHTML = '<div class="global-action-bar"><div class="gab-tasks">'
+      + '<div class="gab-task"><div class="gab-task-body">'
+      + '<div class="gab-task-top"><span class="gab-task-name">x</span></div>'
+      + '<div class="gab-task-track"><div class="gab-task-fill" style="width:50%"></div></div>'
+      + '</div></div></div>'
+      + '<div class="gab-tea"><span class="gab-tea-auto">a</span></div></div>'
+      + '<span class="gab-tea-auto" id="stfTanAuto">b</span>';
+    document.body.appendChild(probe);
+    try {
+      var card = probe.querySelector('.global-action-bar'), cs = getComputedStyle(card);
+      eq(cs.backgroundColor, 'rgb(20, 17, 9)', 'the card interior is the arena black well (#141109)');
+      ok(cs.borderImageSource.indexOf('ivy_stretch') !== -1, 'framed by the arena stone (ivy_stretch.png border-image)');
+      eq(cs.backgroundClip, 'padding-box', 'the well is clipped to the padding box -- unclipped it bleeds through the open stonework');
+      var track = probe.querySelector('.gab-task-track'), ts = getComputedStyle(track);
+      eq(ts.height, '6px', 'the task bar is the effect panels\' thin 6px track');
+      eq(ts.backgroundColor, 'rgb(12, 10, 8)', 'in the fx wells\' near-black (#0c0a08)');
+      eq(ts.borderTopColor, 'rgb(58, 47, 32)', 'with the fx wells\' #3a2f20 rim');
+      var f = probe.querySelector('.gab-task-fill').getBoundingClientRect(), tb = track.getBoundingClientRect();
+      ok(f.width > 0 && Math.abs(f.width - tb.width/2) < 4, 'a 50% fill paints half the track (real geometry, the fx-fill lesson)');
+      eq(getComputedStyle(probe.querySelector('.gab-task-name')).color, 'rgb(221, 187, 102)', 'task names wear the stage gold (#ddbb66), not the tan-page green');
+      // .gab-tea-auto is borrowed by tan panels (plant filters, auto-sacrifice): dark colour must be
+      // SCOPED to the card, or every borrower goes grey-on-tan.
+      var inCard = getComputedStyle(probe.querySelector('.global-action-bar .gab-tea-auto')).color;
+      var onTan = getComputedStyle(probe.querySelector('#stfTanAuto')).color;
+      eq(inCard, 'rgb(154, 143, 120)', 'the auto-toggle reads dim-on-black inside the card');
+      ok(onTan !== inCard, 'but keeps its tan-panel colour everywhere the class is reused');
+      // Idle dims by colour, never alpha: 0.7 card opacity over the tan page turned the well muddy brown.
+      card.className = 'global-action-bar idle';
+      eq(getComputedStyle(card).opacity, '1', 'the idle card never alpha-fades (black over tan goes muddy)');
+    } finally { probe.remove(); }
+  });
+
   // ---- Combat bars: beveled-glass fills + energy flow on the special (owner picks B + C) -----------
   suite('combat bars: glass fill everywhere, flow on the special only', function(){
     var probe = document.createElement('div');

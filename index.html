@@ -37,7 +37,8 @@
     --bg-panel:#e7d7b0;
     --bg-panel-raised:#eeddb6;
     --bg-card:#dcc79c;        /* tan card inset */
-    /* Shared 9-slice ivy-vine + stone-corner card frame (used by .item-card and .global-action-bar). */
+    /* Shared 9-slice ivy-vine + stone-corner card frame (used by .item-card; the action HUD wore it
+       until v0.0.77.46, when it moved to the arena's ivy_stretch stone). */
     --ivy-frame:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%237cab46'/><stop offset='1' stop-color='%232f5018'/></linearGradient><path id='l' d='M0,-6 C1.6,-3.4 2.6,-3 4.2,-3.2 C6,-3.4 6.6,-1.4 5,0 C6.6,0.6 6.4,2.6 4.4,3 C3,3.3 1.6,4.6 0,7 C-1.6,4.6 -3,3.3 -4.4,3 C-6.4,2.6 -6.6,0.6 -5,0 C-6.6,-1.4 -6,-3.4 -4.2,-3.2 C-2.6,-3 -1.6,-3.4 0,-6 Z' fill='url(%23g)'/><g id='b'><rect x='2' y='2' width='26' height='26' rx='4' fill='%237c7368' stroke='%23241f18' stroke-width='2'/><rect x='5' y='4.5' width='20' height='8' rx='3' fill='%23988d7d'/><rect x='6' y='18' width='18' height='7' rx='3' fill='%235c5348'/></g></defs><g fill='none' stroke='%235a4327' stroke-width='2' stroke-linecap='round'><path d='M30,14 Q50,8 70,14'/><path d='M30,86 Q50,92 70,86'/><path d='M14,30 Q8,50 14,70'/><path d='M86,30 Q92,50 86,70'/></g><use href='%23l' transform='translate(41,12) rotate(15)'/><use href='%23l' transform='translate(59,15) rotate(-155) scale(.85)'/><use href='%23l' transform='translate(41,88) rotate(165)'/><use href='%23l' transform='translate(59,85) rotate(-25) scale(.85)'/><use href='%23l' transform='translate(12,41) rotate(-75)'/><use href='%23l' transform='translate(15,59) rotate(105) scale(.85)'/><use href='%23l' transform='translate(88,41) rotate(75)'/><use href='%23l' transform='translate(85,59) rotate(255) scale(.85)'/><use href='%23b' transform='translate(0,0)'/><use href='%23b' transform='translate(70,0)'/><use href='%23b' transform='translate(0,70)'/><use href='%23b' transform='translate(70,70)'/></svg>");
     --border:#141210;         /* ink — borders are dark on nearly everything */
     --border-light:#a98f5e;   /* muted tan / dashed borders */
@@ -1702,9 +1703,15 @@
   .equip-picker{margin-top:18px;border-top:1px solid var(--border);padding-top:12px;}
   @media(max-width:560px){ .equip-slot{width:50px;height:50px;} .equip-slot-ico svg,.equip-slot-ico .game-icon{width:30px;height:30px;} .equip-col{gap:14px;} }
   /* Persistent action HUD: a single card that lists every running task as its own bar. It
-     grows with the number of tasks (rows shrink to share the space) and scrolls past ~13. */
-  .global-action-bar{margin:0 0 12px;padding:8px 14px;background:var(--bg-card);border-radius:4px;border:12px solid transparent;border-image:var(--ivy-frame) 30 round;box-shadow:0 4px 12px rgba(20,18,16,.24);}
-  .global-action-bar.idle{opacity:0.7;}
+     grows with the number of tasks (rows shrink to share the space) and scrolls past ~13.
+     Dressed like the arena's effect panels (owner request, v0.0.77.46): the ivy_stretch stone frame
+     around a black well with thin bars. Same values, new clothes -- the markup is untouched.
+     background-clip:padding-box is MANDATORY: the frame art is transparent outside its rails, so an
+     unclipped well paints under the border area and bleeds through every open part of the stonework.
+     #141109 is the arena's --ivy-well, restated because that variable lives on .ar2.ivy, not :root. */
+  .global-action-bar{margin:0 0 12px;padding:8px 14px;background:#141109;background-clip:padding-box;border-radius:2px;border:12px solid transparent;border-image:url('art/ivy_stretch.png') 37 32 39 32 round;box-shadow:0 4px 12px rgba(20,18,16,.24);}
+  /* Idle dims by COLOUR, not opacity: alpha over the tan page turns the black well muddy brown. */
+  .global-action-bar.idle .gab-idle{color:#9a8f78;}
   /* Quest tracker: thin pinned cards, above the action bar. One row per tracked (unclaimed) quest. */
   .quest-tracker{display:flex;flex-direction:column;gap:6px;margin:0 0 10px;}
   .qtrack{display:flex;align-items:center;gap:9px;padding:5px 11px;background:var(--bg-card);border-radius:4px;border:1px solid var(--border);border-left:3px solid var(--gold);box-shadow:0 2px 7px rgba(20,18,16,.2);}
@@ -1721,24 +1728,28 @@
   .qtrack-claim{flex:0 0 auto;width:auto!important;padding:4px 12px;font-size:12px;}
   .quest-track-toggle{display:inline-flex;align-items:center;gap:7px;margin-top:9px;font-family:var(--font-mono);font-size:12px;color:var(--text-dim);cursor:pointer;}
   .quest-track-toggle input{cursor:pointer;}
-  .gab-idle{display:flex;align-items:center;gap:8px;font-family:var(--font-display);font-size:16px;letter-spacing:0.5px;color:var(--gold);padding:6px 0;}
+  /* Dark-well palette below: the card's interior is the arena's black stone (#141109), so every colour
+     that read on tan is restated for it -- #ddbb66/#bb9944 gold, #c0b394 values, #9a8f78 dim labels,
+     #0c0a08 wells with #3a2f20 rims, #6b5a38 dividers (all lifted from the .ar2.ivy stage). */
+  .gab-idle{display:flex;align-items:center;gap:8px;font-family:var(--font-display);font-size:16px;letter-spacing:0.5px;color:#ddbb66;padding:6px 0;}
   .gab-idle .game-icon{width:16px;height:16px;}
   /* Notice when some action slots aren't in use (shown under the running-task rows). */
-  .gab-idle-note{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:6px;border-top:1px dashed var(--border-light);font-family:var(--font-body);font-size:11.5px;color:#8a6a2a;}
+  .gab-idle-note{display:flex;align-items:center;gap:7px;margin-top:7px;padding-top:6px;border-top:1px dashed #6b5a38;font-family:var(--font-body);font-size:11.5px;color:#c8a35a;}
   .gab-idle-note .dot{width:7px;height:7px;border-radius:50%;background:#c8902a;box-shadow:0 0 5px rgba(200,144,42,.6);flex-shrink:0;}
   .gab-tasks{display:flex;flex-direction:column;gap:5px;}
   .gab-task{display:flex;align-items:center;gap:11px;min-height:26px;}
   .gab-task.gab-clickable{cursor:pointer;border-radius:6px;}
-  .gab-task.gab-clickable:hover{background:rgba(120,92,44,0.06);}
-  .gab-task-x{flex:0 0 auto;width:20px;height:20px;padding:0;border-radius:50%;border:1px solid var(--border);background:rgba(0,0,0,0.05);color:var(--text-faint);font-size:11px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
-  .gab-task-x:hover{border-color:var(--hp-bad);color:var(--hp-bad);background:rgba(176,60,45,0.08);}
+  .gab-task.gab-clickable:hover{background:rgba(221,187,102,0.08);}
+  .gab-task-x{flex:0 0 auto;width:20px;height:20px;padding:0;border-radius:50%;border:1px solid #6b5a38;background:rgba(255,255,255,0.05);color:#9a8f78;font-size:11px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
+  .gab-task-x:hover{border-color:var(--hp-bad);color:#d4574a;background:rgba(176,60,45,0.15);}
   .gab-task-body{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:3px;}
   .gab-task-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-family:var(--font-mono);font-size:11px;line-height:1.1;}
-  .gab-task-name{color:var(--gold);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-flex;align-items:center;gap:5px;min-width:0;}
+  .gab-task-name{color:#ddbb66;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-flex;align-items:center;gap:5px;min-width:0;}
   .gab-task-name .game-icon{width:13px;height:13px;flex-shrink:0;}
-  .gab-task-remain{flex:0 0 auto;color:var(--text-faint);}
-  .gab-task-track{height:8px;border-radius:3px;background:var(--bg-deep);border:1px solid var(--border);overflow:hidden;}
-  .gab-task-fill{height:100%;background:var(--gold);}
+  .gab-task-remain{flex:0 0 auto;color:#9a8f78;}
+  /* Thin bar in a black well, the arena-fx track (6px, #0c0a08 on a #3a2f20 rim). */
+  .gab-task-track{height:6px;border-radius:3px;background:#0c0a08;border:1px solid #3a2f20;overflow:hidden;}
+  .gab-task-fill{display:block;height:100%;background:var(--gold-bright);}
   /* Action-bar bar colours by task kind, so a glance at the card says what's running:
      green = ordinary open-ended work, orange = a queued run with a target, red = combat. */
   .gab-task-fill.queued{background:#c8791f;}
@@ -1750,20 +1761,23 @@
   .card-queue::placeholder{color:var(--text-faint);}
   .card-queue:focus{outline:2px solid var(--gold);outline-offset:1px;border-color:var(--gold);}
   .gab-task-count{flex:0 0 auto;font-family:var(--font-mono);font-size:11px;color:#c8791f;font-variant-numeric:tabular-nums;}
-  .gab-task-chance{flex:0 0 auto;width:42px;text-align:right;font-family:var(--font-mono);font-size:12px;color:var(--text-dim);}
+  .gab-task-chance{flex:0 0 auto;width:42px;text-align:right;font-family:var(--font-mono);font-size:12px;color:#c0b394;}
   /* Tea buff widget in the global action header */
-  .gab-tea{margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);}
+  .gab-tea{margin-top:10px;padding-top:8px;border-top:1px dashed #6b5a38;}
   .gab-tea-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
-  .gab-tea-name{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);display:inline-flex;align-items:center;gap:5px;}
+  .gab-tea-name{font-family:var(--font-mono);font-size:12px;color:#c0b394;display:inline-flex;align-items:center;gap:5px;}
   .gab-tea-name .game-icon{width:15px;height:15px;}
-  .gab-tea-name b{color:var(--rarity-rare);}
-  .gab-tea-btn{font-family:var(--font-body);font-size:12px;font-weight:600;background:linear-gradient(180deg,#ffffff,rgba(47,127,176,0.10));border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;}
-  .gab-tea-btn:hover{border-color:var(--rarity-rare);}
+  .gab-tea-name b{color:#5aa9d6;}
+  .gab-tea-btn{font-family:var(--font-body);font-size:12px;font-weight:600;background:linear-gradient(180deg,#2a2418,#181409);border:1px solid #6b5a38;color:#e8dcc0;border-radius:6px;padding:5px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;}
+  .gab-tea-btn:hover{border-color:#5aa9d6;}
   .gab-tea-btn .game-icon{width:15px;height:15px;}
   .gab-tea-auto{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);cursor:pointer;user-select:none;white-space:nowrap;}
-  .gab-tea-track{height:8px;border-radius:5px;background:var(--bg-deep);border:1px solid var(--border);overflow:hidden;margin:6px 0 3px;}
-  .gab-tea-fill{height:100%;background:var(--rarity-rare);transition:none;}
-  .gab-tea-time{font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint);text-align:right;}
+  /* .gab-tea-auto is BORROWED by tan panels (plant filters, auto-sacrifice), so its dark colour is
+     scoped to the card -- recolouring the base class would grey it out everywhere it is reused. */
+  .global-action-bar .gab-tea-auto{color:#9a8f78;}
+  .gab-tea-track{height:6px;border-radius:3px;background:#0c0a08;border:1px solid #3a2f20;overflow:hidden;margin:6px 0 3px;}
+  .gab-tea-fill{display:block;height:100%;background:var(--rarity-rare);transition:none;}
+  .gab-tea-time{font-family:var(--font-mono);font-size:10.5px;color:#9a8f78;text-align:right;}
   /* Character-tab lifetime stats */
   .lifetime-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin-bottom:14px;}
   .lifetime-stat{background:rgba(255,255,255,0.42);border:1px solid var(--border);border-radius:8px;padding:9px 12px;display:flex;flex-direction:column;gap:1px;}
@@ -38602,7 +38616,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.77.45';
+  var GAME_VERSION = '0.0.77.46';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
