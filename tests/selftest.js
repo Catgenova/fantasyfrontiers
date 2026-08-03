@@ -3631,6 +3631,41 @@
     } finally { probe.remove(); }
   });
 
+  // ---- Modal cards: white marble on stone frames with stone buttons (owner request, v0.0.79.15) -----
+  // Every dialog in the game is one of TWO cards (.familiar-popup-card / .skill-info-card), so this
+  // covers settings, offline summary, loot/enhance/dungeon results, death report, transcend, estate
+  // pickers, tracker, tower preview, profile, terms, amount modal, inv/unique/item-link details.
+  suite('modal cards: white marble wells in stone frames, stone-framed buttons', function(){
+    var probe = document.createElement('div');
+    probe.innerHTML = '<div class="familiar-popup-card"><button class="action-btn">Ok</button>'
+      + '<button class="action-btn stop">X</button><button class="action-btn" disabled>D</button></div>'
+      + '<div class="skill-info-card"><button class="action-btn">Ok</button></div>';
+    document.body.appendChild(probe);
+    try {
+      ['familiar-popup-card','skill-info-card'].forEach(function(cls){
+        var cs = getComputedStyle(probe.querySelector('.'+cls));
+        ok(cs.borderImageSource.indexOf('ivy_stretch') !== -1, '.'+cls+' is framed in the arena stone');
+        eq(cs.borderTopWidth, '12px', '.'+cls+' at the panel-scale 12px cut');
+        ok(cs.backgroundImage.indexOf('ivy_field') !== -1, '.'+cls+' well is the WHITE marble (ivy_field)');
+        ok(cs.backgroundClip.split(',').every(function(v){ return v.trim() === 'padding-box'; }),
+          '.'+cls+' clips the marble to the padding box -- unclipped it bleeds through the open stonework');
+        eq(cs.borderTopLeftRadius, '0px', '.'+cls+' drops its radius (border-image ignores it)');
+        var b = getComputedStyle(probe.querySelector('.'+cls+' .action-btn'));
+        ok(b.borderImageSource.indexOf('ivy_stretch') !== -1, '.'+cls+' buttons wear the stone chip frame');
+        eq(b.borderTopWidth, '6px', 'at the fine 6px cut');
+        ok(b.backgroundImage.indexOf('rgb(92, 127, 52)') !== -1, 'the primary keeps its GREEN as the fill');
+        ok(b.backgroundClip.split(',').every(function(v){ return v.trim() === 'padding-box'; }),
+          'the fill clips inside the frame');
+      });
+      var stop = getComputedStyle(probe.querySelector('.action-btn.stop'));
+      ok(stop.backgroundImage.indexOf('rgb(176, 80, 63)') !== -1, '.stop keeps its RED as the fill');
+      ok(stop.borderImageSource.indexOf('ivy_stretch') !== -1, 'in the same stone');
+      var dis = getComputedStyle(probe.querySelector('.action-btn[disabled]'));
+      ok(dis.backgroundImage.indexOf('rgb(36, 42, 48)') !== -1, 'disabled goes slate');
+      eq(dis.color, 'rgb(154, 143, 120)', 'with the dim stone-table ink');
+    } finally { probe.remove(); }
+  });
+
   // ---- Secondary controls in stone (owner sweep, v0.0.79.14) ----------------------------------------
   // The craft filter, market subtabs, inventory chips, mini buttons, tracker chips and mobile subchips
   // all wear the 6px stone cut over slate, with each control's ACCENT kept as its active fill.

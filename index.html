@@ -628,9 +628,17 @@
   .equip-cmp.up{color:#3fa45b; background:rgba(63,164,91,0.14);}
   .equip-cmp.down{color:var(--hp-bad); background:rgba(180,60,60,0.14);}
   .equip-cmp.eq{color:var(--text-faint);}
+  /* Modal cards in stone (owner request, v0.0.79.15): every dialog is the arena stage in miniature --
+     the WHITE marble field (ivy_field, the same 700x249 tile as .ar2) inside the ivy_stretch stone frame,
+     with the buttons framed in the same stone below. background-clip is mandatory (the frame art is
+     transparent outside its rails, so an unclipped fill bleeds through it); border-radius must go
+     (border-image ignores it). Text keeps the tan-page dark ink: the marble base #efece6 is LIGHTER than
+     the old tan gradient, so every existing color only gains contrast. */
   .skill-info-card{
-    background:linear-gradient(165deg,var(--bg-panel-raised),var(--bg-card)); border:2px solid var(--gold); border-radius:var(--radius);
-    max-width:380px; width:100%; max-height:85dvh; overflow-y:auto; padding:20px; text-align:center; box-shadow:0 0 34px rgba(15,125,116,0.22), 0 10px 28px rgba(52,38,18,0.28);
+    background-color:#efece6; background-image:url('art/ivy_field.png'); background-repeat:repeat;
+    background-size:700px 249px; background-clip:padding-box;
+    border:12px solid transparent; border-image:url('art/ivy_stretch.png') 37 32 39 32 round;
+    max-width:380px; width:100%; max-height:85dvh; overflow-y:auto; padding:14px; text-align:center; box-shadow:0 12px 34px rgba(20,14,4,0.5);
   }
   .mc-result-banner{display:flex; align-items:center; justify-content:center; gap:8px; font-family:var(--font-display); font-weight:700; letter-spacing:.5px; text-transform:uppercase; font-size:15px; color:#e6c24a; margin-bottom:12px; padding-bottom:10px; border-bottom:1px dashed var(--border-light);}
   .mc-result-banner .game-icon{width:20px; height:20px;}
@@ -643,7 +651,20 @@
   .profile-skill.bp-gain{border-color:var(--rarity-fantastic,#c9a227); color:var(--rarity-fantastic,#c9a227); font-weight:700;}
   .skill-info-title{font-family:var(--font-display); color:var(--gold); font-size:18px; margin-bottom:10px;}
   .skill-info-desc{color:var(--text-dim); font-size:13px; line-height:1.6; margin-bottom:16px;}
-  .familiar-popup-card{background:linear-gradient(165deg,var(--bg-panel-raised),var(--bg-card)); border:2px solid var(--gold); border-radius:var(--radius); max-width:420px; width:100%; max-height:88dvh; overflow-y:auto; padding:22px; text-align:center; box-shadow:0 0 34px rgba(15,125,116,0.22), 0 10px 28px rgba(52,38,18,0.28);}
+  .familiar-popup-card{
+    background-color:#efece6; background-image:url('art/ivy_field.png'); background-repeat:repeat;
+    background-size:700px 249px; background-clip:padding-box;
+    border:12px solid transparent; border-image:url('art/ivy_stretch.png') 37 32 39 32 round;
+    max-width:420px; width:100%; max-height:88dvh; overflow-y:auto; padding:14px; text-align:center; box-shadow:0 12px 34px rgba(20,14,4,0.5);}
+  /* Modal buttons in stone: the rail's 6px chip cut. The primary keeps its GREEN as the fill and .stop its
+     red -- the accent-as-fill rule every .on chip follows (v0.0.79.14 sweep) -- and disabled goes slate+dim. */
+  .familiar-popup-card .action-btn, .skill-info-card .action-btn{
+    background:linear-gradient(180deg,#5c7f34,#3c5a24); background-clip:padding-box;
+    border:6px solid transparent; border-image:url('art/ivy_stretch.png') 37 32 39 32 round;
+    border-radius:0; box-shadow:0 1px 2px rgba(0,0,0,.35);}
+  .familiar-popup-card .action-btn:hover, .skill-info-card .action-btn:hover{background:linear-gradient(180deg,#6f9538,#4a6b2c); background-clip:padding-box;}
+  .familiar-popup-card .action-btn.stop, .skill-info-card .action-btn.stop{background:linear-gradient(180deg,#b0503f,#7f2f24); background-clip:padding-box;}
+  .familiar-popup-card .action-btn:disabled, .skill-info-card .action-btn:disabled{background:linear-gradient(180deg,#242a30,#191e23); background-clip:padding-box; color:#9a8f78; cursor:not-allowed;}
   /* Settings modal: wide multi-column layout, capped to the viewport. The card is a flex column that
      CLIPS; only the inner .settings-scroll body scrolls, so the title/tab-bar stay put and the Close
      footer is pinned in normal flow (a `position:sticky` Close used to float across the screen when the
@@ -38806,7 +38827,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.79.14';
+  var GAME_VERSION = '0.0.79.15';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
