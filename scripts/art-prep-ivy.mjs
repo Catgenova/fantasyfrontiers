@@ -356,23 +356,52 @@ if (existsSync(SHEET)) {
   }
 }
 
-// ---- the FAB medallions (v0.0.77.18): carved wreath buttons for the right-side quick actions --------
-// The round ivy-wreathed medallions replacing the flat
-// coloured FAB circles: speech bubble = Chat (uploaded separately, v0.0.77.21), fish-meal = Fertilize,
-// seed sack = Sow (Plant All), wheat sheaf = Harvest, the bannered keep = Guild Estate, the plain keep =
-// your Estate. They render at 52 CSS px, so 128px covers a 2x display. (1785693096046, a rectangular stone
-// frame, is NOT a fab and stays in art/src/ unprocessed until it has a home.)
+// ---- the FAB medallions (v0.0.77.18, normalised v0.0.77.29): carved wreath buttons ------------------
+// The round ivy-wreathed medallions replacing the flat coloured FAB circles: speech bubble = Chat,
+// fish-meal = Fertilize, seed sack = Sow (Plant All), wheat sheaf = Harvest, the bannered keep = Guild
+// Estate, the plain keep = your Estate. (1785693096046, a rectangular stone frame, is NOT a fab and
+// stays in art/src/ unprocessed until it has a home.)
+//
+// NORMALISED ON THE INTERIOR CIRCLE (owner order): a plain trim-to-width emit sized each by its overall
+// footprint, and the pieces carry very different trim -- sprigs on the chat wreath, flanking banners on
+// the guild keep -- so the disc a player reads as "the button" varied by up to 40% between fabs (the
+// guild keep's interior/footprint ratio is 2.27 vs ~1.6 for the rest). Every fab now lands on ONE
+// FAB_CANVAS-square canvas with its interior disc exactly FAB_INNER px, dead centre; the CSS renders
+// the img at 200% of the button box, so the interior disc displays at the SAME size on every button and
+// the varying borders overhang decoratively. The per-fab circle {cx, cy, ri} was MEASURED from the art
+// (v0.0.77.29): centre + interior-disc radius via the radial luminance-gradient fit, hand-verified with
+// overlay renders. FAB_CANVAS is sized by the widest piece: the guild banners reach 632 src px from the
+// centre, 632 * (FAB_INNER / 2*278) = 145.5 <= 146.
 {
+  const FAB_CANVAS = 292, FAB_INNER = 128;
   const FABS = [
-    ["fab_chat",        "art/src/1785691892310.png"],
-    ["fab_fertilize",   "art/src/1785692928800.png"],
-    ["fab_sow",         "art/src/1785692931842.png"],
-    ["fab_harvest",     "art/src/1785692934678.png"],
-    ["fab_guildestate", "art/src/1785692937685.png"],
-    ["fab_estate",      "art/src/1785692941497.png"],
+    // name, source, interior-circle centre x/y, interior radius (all in source px)
+    ["fab_chat",        "art/src/1785691892310.png", 633, 604, 373],
+    ["fab_fertilize",   "art/src/1785692928800.png", 625, 592, 325],
+    ["fab_sow",         "art/src/1785692931842.png", 624, 589, 322],
+    ["fab_harvest",     "art/src/1785692934678.png", 627, 595, 280],
+    ["fab_guildestate", "art/src/1785692937685.png", 706, 580, 278],
+    ["fab_estate",      "art/src/1785692941497.png", 623, 603, 343],
   ];
-  for (const [name, src] of FABS) {
-    if (existsSync(src)) await emit(name, src, { width: 128, noWells: true });
+  for (const [name, src, cx, cy, ri] of FABS) {
+    if (!existsSync(src)) continue;
+    const meta = await sharp(src).metadata();
+    const f = FAB_INNER / (2 * ri);
+    const w = Math.round(meta.width * f), h = Math.round(meta.height * f);
+    const px = Math.round(FAB_CANVAS / 2 - cx * f), py = Math.round(FAB_CANVAS / 2 - cy * f);
+    // The scaled source can overhang the canvas on the banner side (negative offset) -- that overhang is
+    // scaled-down transparent margin, so crop it rather than asking composite for a negative position.
+    const cropL = Math.max(0, -px), cropT = Math.max(0, -py);
+    const cropW = Math.min(w - cropL, FAB_CANVAS - Math.max(0, px));
+    const cropH = Math.min(h - cropT, FAB_CANVAS - Math.max(0, py));
+    const piece = await sharp(src).resize({ width: w, height: h })
+      .extract({ left: cropL, top: cropT, width: cropW, height: cropH }).png().toBuffer();
+    const before = statSync(src).size;
+    await png(sharp({ create: { width: FAB_CANVAS, height: FAB_CANVAS, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+      .composite([{ input: piece, left: Math.max(0, px), top: Math.max(0, py) }]))
+      .toFile(`art/${name}.png`);
+    const after = statSync(`art/${name}.png`).size;
+    console.log(`   ${name}: interior d=${FAB_INNER} centred on ${FAB_CANVAS}x${FAB_CANVAS} (${Math.round(before/1024)}KB -> ${Math.round(after/1024)}KB)`);
   }
 }
 
