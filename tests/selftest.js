@@ -439,11 +439,21 @@
     FF.estUse(false);                                  // point estActive at the personal estate
     var cell = s.estate.grid[0][0];
     var saved = { type:cell.type, pave:cell.paveTileId, work:cell.workshopId };
-    var savedJob = s.estate.job, savedQueue = s.estate.queue;
+    var savedJob = s.estate.job, savedQueue = s.estate.queue, savedPaveXp = s.xp.paving;
     var savedInv = { t4:s.inventory['paving_t4'], t5:s.inventory['paving_t5'] };
     s.estate.job = null; s.estate.queue = [];
     cell.type = 'paved'; cell.paveTileId = 'paving_t3'; cell.workshopId = 'workshop_mining_t0'; // a building is present
     s.inventory['paving_t4'] = 25;
+    // PAVING LEVEL GATES THE UPGRADE (SteakHouse, the sibling of the Architecture gate): with the tiles
+    // in hand but the skill too low, the upgrade must refuse -- gifted high-tier tiles were skipping the
+    // whole Paving ladder on already-paved tiles.
+    s.xp.paving = 0;
+    ok(!FF.estatePaveTierLevelOk(4), 'a fresh Paving skill does not clear the t4 gate (test precondition)');
+    FF.estateUpgradePavement(0, 0);
+    ok(!s.estate.job, 'no upgrade job starts below the target tier’s Paving level');
+    eq(s.inventory['paving_t4'], 25, 'the refused upgrade spends nothing');
+    s.xp.paving = FF.SKILL_XP_FLOOR[100];               // now properly levelled
+    ok(FF.estatePaveTierLevelOk(20), 'Paving 100 clears every tier');
     FF.estateUpgradePavement(0, 0);
     // The upgrade is now a TIMED JOB, taking as long as paving that tier fresh (10 min/tier).
     var job = s.estate.job;
@@ -461,7 +471,7 @@
     eq(cell.paveTileId, 'paving_t4', 'no upgrade without 20 of the next-tier tile');
     // restore
     cell.type = saved.type; cell.paveTileId = saved.pave; cell.workshopId = saved.work;
-    s.estate.job = savedJob; s.estate.queue = savedQueue;
+    s.estate.job = savedJob; s.estate.queue = savedQueue; s.xp.paving = savedPaveXp;
     s.inventory['paving_t4'] = savedInv.t4; s.inventory['paving_t5'] = savedInv.t5;
   });
 
@@ -545,8 +555,9 @@
   suite('estate: upgrade guild pavement', function(){
     var s = FF._state, ge = FF.guildEstate;
     var savedGrid = ge.grid, savedStatus = ge.status, savedJob = ge.job, savedInv = s.inventory['paving_t2'];
-    var savedPJob = s.estate.job, savedPQueue = s.estate.queue;
+    var savedPJob = s.estate.job, savedPQueue = s.estate.queue, savedPaveXp = s.xp.paving;
     s.estate.job = null; s.estate.queue = [];
+    s.xp.paving = FF.SKILL_XP_FLOOR[100];              // the paving gate applies on the guild estate too
     ge.grid = [[{ type:'paved', paveTileId:'paving_t1', workshopId:'workshop_mining_t0' }]]; // a paved guild tile with a building
     ge.status = 'ready'; ge.job = null;
     FF.estUse(true);                                   // point the shared engine at the guild estate
@@ -561,9 +572,17 @@
     ge.job = null;
     eq(ge.grid[0][0].paveTileId, 'paving_t2', 'completion upgrades the guild pavement');
     eq(ge.grid[0][0].workshopId, 'workshop_mining_t0', 'the guild building on the tile is kept');
+    // The gate holds on the guild estate too -- the reported repro was a guildmate with gifted tiles.
+    s.xp.paving = 0; s.inventory['paving_t3'] = 20;
+    var savedT3 = s.inventory['paving_t3'];
+    FF.estUse(true);
+    FF.estateUpgradePavement(0, 0);
+    eq(ge.grid[0][0].paveTileId, 'paving_t2', 'a low-Paving guildmate cannot upgrade a guild tile');
+    eq(s.inventory['paving_t3'], savedT3, 'the refused guild upgrade spends nothing');
+    delete s.inventory['paving_t3'];
     // restore
     FF.estUse(false); ge.grid = savedGrid; ge.status = savedStatus; ge.job = savedJob;
-    s.estate.job = savedPJob; s.estate.queue = savedPQueue; s.inventory['paving_t2'] = savedInv;
+    s.estate.job = savedPJob; s.estate.queue = savedPQueue; s.inventory['paving_t2'] = savedInv; s.xp.paving = savedPaveXp;
   });
 
   // ---- Estate: upgrade a Workshop / Cottage (100x next-tier planks, gated by pavement) ----
@@ -678,11 +697,13 @@
     var saved = { type:cell.type, pave:cell.paveTileId, work:cell.workshopId, cot:cell.cottageId };
     var savedJob = s.estate.job, savedQueue = s.estate.queue;
     var savedInv = { p5:s.inventory['paving_t5'], p7:s.inventory['paving_t7'], c5:s.inventory['carpentry_t5'], c6:s.inventory['carpentry_t6'] };
-    var savedArch2 = s.xp.architecture;
+    var savedArch2 = s.xp.architecture, savedPave2 = s.xp.paving;
     s.estate.job = null; s.estate.queue = [];
-    // BUILDING upgrades need the tier's Architecture level (ticket-0134); this suite is about the multi-tier
-    // JUMP mechanic, so grant the skill and let the dedicated gate suite test the requirement itself.
+    // BUILDING upgrades need the tier's Architecture level (ticket-0134), and PAVEMENT upgrades need the
+    // tier's Paving level (its sibling fix); this suite is about the multi-tier JUMP mechanic, so grant
+    // both skills and let the dedicated gate suites test the requirements themselves.
     s.xp.architecture = FF.SKILL_XP_FLOOR[100];
+    s.xp.paving = FF.SKILL_XP_FLOOR[100];
     function finishJob(){ var j = s.estate.job; if(j){ FF.applyEstateJobCompletion(s.estate, j, false, false); s.estate.job = null; } }
 
     // A) Pavement jumps straight from t2 to t7 in one step, costing 20 of the TARGET tile only, and
@@ -728,7 +749,7 @@
     s.estate.job = savedJob; s.estate.queue = savedQueue;
     s.inventory['paving_t5']=savedInv.p5; s.inventory['paving_t7']=savedInv.p7;
     s.inventory['carpentry_t5']=savedInv.c5; s.inventory['carpentry_t6']=savedInv.c6;
-    s.xp.architecture = savedArch2;
+    s.xp.architecture = savedArch2; s.xp.paving = savedPave2;
     FF.estRecomputeWorkshops();
   });
 
