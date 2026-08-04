@@ -650,6 +650,32 @@ the measured BiS (D2+Ironwind) at ~9.5x, so it does not beat the ceiling and nee
 to SM_FOCUS_PER_SEC, SM_FOCUS_PER_HIT, the refunds, or Silkweaver re-tests this combo FIRST, and the sim never
 measured it (set A/B ran on Emberdraw, the legendary matrix on D2).
 
+**Voidshadow** (45s — the Dark wand; v0.0.80.0 "the Doomsayer", owner target **85B**). The old kit was the
+"condition that cannot fail at BiS" disease end to end: Vulnerability filled in a few fast wand swings and
+SAT at max, so Doom/Resonance/Eclipse were flat multipliers for the whole rest of every fight. Now a CYCLING
+engine: the first hit stamps a 12s **Doom** on the foe, every landed hit seals 35% of itself into the bank
+(`NB_DOOM_BANK_PCT`) and winds the clock 0.3s (crits 0.6s), and at zero the Doom strikes for the whole bank,
+amplified +10% per distinct woe on the foe at that moment (Litany of Woes; Curse and Decay JOINED
+`enemyDebuffCount` with this rework). An unstruck Doom carries foe to foe ("death does not void the
+contract" — state-scoped like the Stormlord's sky); Lv80 Doomsday is a Galvanize-pattern session ramp.
+Findings: (1) **FOURTH wand data point, per-kit budget confirmed again** — uncorrected read ~101B (like the
+Frostwarden's 113B, nothing like the Stormlord's trillions) because the bank accrues LANDED post-multiplier
+damage and the strike is applied raw, so the x49 element stack cannot compound through the engine. (2) **The
+set ordering reproduced across both packs** (D2 Creeping Doom bank-share > D3 Doomcurse re-stamp > D1
+Malediction wind-rate > D4 Duskwyrm's Maw value, gaps 10-12%) — rare signal, and the value layer trailing at
+45s is the law again. Interesting nuance: BANK SHARE beat WIND RATE — not all rate axes are equal; the one
+that scales the payload beats the one that hastens the payout. (3) **Soulrend shipped at 1.5x bank feed on a
+"4+ woes" condition that is PERMANENT at BiS** (the Throatseeker smell) and read +30% over pack mean; trimmed
+to 1.25 (`NB_SOULREND_BANK_MULT`), lands +19% — the BiS pairing, left alone per the Marrowsplitter precedent.
+(4) Saturation check clean: at BiS the cycle strikes every ~6-8s against the 12s clock, and D1 (pure rate)
+sits mid-pack — the meter is real, not decoration. `NB_SWING_MULT` **0.897** (mean of two packs: 94.8B implied
+at 1.0 → 85B). Ceilings (D2 set, Ruin cloak, Voidveil ward): Soulrend ~101B / Umbral Hex ~87B / Voidfang ~78B /
+Duskwyrm's Whisper ~71B — pack mean **~85B**, on target. Same-config variance across packs ±2-11% (Duskwyrm
+the noisiest) — average 2 runs before tuning anything here. Sim-dead: Voidveil's -10% incoming + its
+vuln-on-hit-taken, Enfeeble's sap, Soul Tax lifesteal (full HP bar). Knock-ons: the old D3 full "+25% vs
+Cursed" and D4 full elemental-advantage strip are GONE (both were flat at BiS); `voidVulnCap` is flat 10
+again; `voidMarkPerHit` retired. The Doom clock renders as a countdown bar in the foe's debuff readout.
+
 **TIER WARNING (v0.0.64.9): every recorded ceiling above was measured with a ONE-BELOW-BiS weapon.**
 Melee weapons + shields shipped with `tierCount:20` (top `t19`) while bows/wands/wards/scepter/staff had
 21 (top `t20`) — the ticket-0116 off-kilter. Melee/shields are now 21 tiers too (top `t20`, Tungsten), and
