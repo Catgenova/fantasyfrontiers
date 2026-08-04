@@ -4538,40 +4538,40 @@
     near(FF.PY_SWING_MULT, 0.079, 'the wand channels its raw swings (THE band knob)');
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'pyromancerIgnite'; }), 'the Ignite channel is a named PLAYER_DMG_MODS row');
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'pyromancerBlaze'; }), 'and the Blaze multiplier is its own row');
-    // Sharpshooter rework: Eagle Eye (Lv1) / Pinpoint (Lv20) / Marksman's Focus (Lv40) / Armor-Splitter (Lv60) / Sniper's Patience (Lv80).
+    // Sharpshooter rework v2, "the Exposure Ladder": Expose (Lv1) / Patient Eye (Lv20) / Threadbare
+    // (Lv40) / Unraveling (Lv60) / Bare (Lv80). RULE: never scale a line by raw Accuracy -- every old
+    // converter was pinned at its cap at BiS. The deep engine tests live in their own suite below.
     var ssNames = FF.CLASS_DEFS_BY_ID.sharpshooter.passives.map(function(p){ return p.name; });
-    eq(JSON.stringify(ssNames), JSON.stringify(['Eagle Eye','Pinpoint',"Marksman's Focus",'Armor-Splitter',"Sniper's Patience"]), 'Sharpshooter ladder is the reworked five');
-    var ssMon = FF.MONSTERS[0]; // a weak, low-Dodge foe so the marksman's Accuracy clears its Dodge
+    eq(JSON.stringify(ssNames), JSON.stringify(['Expose','Patient Eye','Threadbare','Unraveling','Bare']), 'Sharpshooter ladder is the Exposure Ladder five');
+    var ssMon = FF.MONSTERS[0];
     function ssFor(level, extra){
       var st = stFor('sharpshooter', level, extra);
-      st.xp.bowLong = FF.xpFloorForLevel(100); // strong bow proficiency -> high Accuracy
       st.activity = st.activity || {}; st.activity.type='combat';
       if(st.activity.monsterId == null) st.activity.monsterId = ssMon.id;
       if(st.activity.monsterHp == null) st.activity.monsterHp = ssMon.hp;
       return st;
     }
-    var _ssAcc = FF.playerAccuracy(ssFor(80)), _ssOver = Math.max(0, _ssAcc - FF.monsterDodge(ssMon));
-    ok(_ssOver > 0, 'Sharpshooter Accuracy clears the weak foe\'s Dodge (surplus fuels the kit)');
-    // Eagle Eye (Lv1): Accuracy over Dodge -> crit chance (/1000, cap 25%). Steady Aim's flat accuracy is gone.
-    ok(Math.abs(FF.sharpshooterEagleEyeCrit(ssFor(1)) - Math.min(0.25, _ssOver/1000)) < 1e-9, 'Eagle Eye: accuracy-over-dodge becomes crit chance');
-    eq(FF.sharpshooterEagleEyeCrit(stFor('pyromancer',80)), 0, 'Eagle Eye inactive without the class');
-    eq(FF.classAccuracyMult(stFor('sharpshooter',80)), 1, 'Steady Aim removed: no flat class accuracy bonus');
-    ok(Math.abs(FF.newClassCritChance(ssFor(1)) - FF.sharpshooterEagleEyeCrit(ssFor(1))) < 1e-9, 'Sharpshooter crit chance is driven by Eagle Eye');
-    // Pinpoint (Lv20): +1% damage per 5 Accuracy over Dodge (0.002/pt), cap +100%.
-    ok(Math.abs(FF.sharpshooterPinpointMult(ssFor(20)) - (1 + Math.min(1.0, _ssOver*0.002))) < 1e-9, 'Pinpoint: accuracy-over-dodge -> damage');
-    eq(FF.sharpshooterPinpointMult(ssFor(1)), 1, 'Pinpoint inactive below Lv20');
-    // Marksman's Focus (Lv40): +5% crit damage per 100 Accuracy (0.0005/pt), cap +100%.
-    ok(Math.abs(FF.sharpshooterFocusCritDmg(ssFor(40)) - Math.min(1.0, _ssAcc*0.0005)) < 1e-9, "Marksman's Focus: accuracy -> crit damage");
-    eq(FF.sharpshooterFocusCritDmg(ssFor(20)), 0, "Marksman's Focus inactive below Lv40");
-    ok(Math.abs(FF.newClassCritDmg(ssFor(40)) - FF.sharpshooterFocusCritDmg(ssFor(40))) < 1e-9, "Sharpshooter crit damage is driven by Marksman's Focus (flat Aimed/Kill removed)");
-    // Armor-Splitter (Lv60): a Critical Hit ignores 100% of enemy armour; a non-crit (or below Lv60) ignores none.
-    eq(FF.sharpshooterArmorPierce(true, ssFor(60)), 1, 'Armor-Splitter: a crit ignores all armour at Lv60');
-    eq(FF.sharpshooterArmorPierce(false, ssFor(60)), 0, 'Armor-Splitter only applies on a crit');
-    eq(FF.sharpshooterArmorPierce(true, ssFor(40)), 0, 'Armor-Splitter inactive below Lv60');
-    // Sniper's Patience (Lv80): +4% damage/sec on one foe (cap +80%); resets on a new target (fresh duelStartedAt).
-    near(FF.sharpshooterPatienceMult(ssFor(80,{activity:{type:'combat',monsterId:ssMon.id,monsterHp:ssMon.hp,duelStartedAt:Date.now()-10000}})), 1.40, "Sniper's Patience: +4%/sec -> +40% at 10s", 2e-2);
-    near(FF.sharpshooterPatienceMult(ssFor(80,{activity:{type:'combat',monsterId:ssMon.id,monsterHp:ssMon.hp,duelStartedAt:Date.now()-30000}})), 1.80, "Sniper's Patience caps at +80%", 1e-6);
-    eq(FF.sharpshooterPatienceMult(ssFor(60,{activity:{type:'combat',monsterId:ssMon.id,monsterHp:ssMon.hp,duelStartedAt:Date.now()-10000}})), 1, "Sniper's Patience inactive below Lv80");
+    // Every Accuracy converter is retired.
+    ok(typeof FF.sharpshooterEagleEyeCrit === 'undefined', 'Eagle Eye retired (crit is ~100% at BiS)');
+    ok(typeof FF.sharpshooterPinpointMult === 'undefined', 'Pinpoint retired (pinned at its cap)');
+    ok(typeof FF.sharpshooterFocusCritDmg === 'undefined', "Marksman's Focus retired (pinned at its cap)");
+    ok(typeof FF.sharpshooterArmorPierce === 'undefined', 'Armor-Splitter retired (the ladder strips armour now)');
+    ok(typeof FF.sharpshooterPatienceMult === 'undefined', "Sniper's Patience retired (the ladder IS the patience)");
+    eq(FF.classAccuracyMult(stFor('sharpshooter',80)), 1, 'no flat class accuracy bonus');
+    // The ladder reads: exposure, armour strip, dodge strip, tears, Bare.
+    var ssL = ssFor(80); ssL.activity.ssPeel = 6; ssL.activity.ssSeeded = true;
+    near(FF.ssExposureMult(ssL), 1.30, 'Expose: 6 layers -> +30% damage taken');
+    near(FF.ssArmorStrip(ssL), 0.36, 'Expose: 6 layers -> 36% armour stripped');
+    near(FF.ssDodgeStrip(ssL), 0.24, 'Threadbare: 6 layers -> 24% Dodge stripped');
+    near(FF.ssTearMult(ssL), 1.60, 'Threadbare: tears +10% per layer (6 -> x1.6)');
+    eq(FF.ssBare(ssL), false, 'six layers is not Bare');
+    ssL.activity.ssPeel = 10;
+    eq(FF.ssBare(ssL), true, 'ten layers is Bare at Lv80');
+    eq(FF.ssArmorStrip(ssL), 1, 'Bare: armour fully ignored');
+    var ssLow = ssFor(60); ssLow.activity.ssPeel = 10; ssLow.activity.ssSeeded = true;
+    eq(FF.ssBare(ssLow), false, 'no Bare below Lv80');
+    near(FF.ssDodgeStrip(ssFor(20,{activity:{type:'combat',monsterId:ssMon.id,monsterHp:ssMon.hp,ssPeel:6,ssSeeded:true}})), 0, 'no dodge strip below Lv40');
+    eq(FF.ssPeel(stFor('pyromancer',80,{activity:{type:'combat',monsterHp:100,ssPeel:6}})), 0, 'the ladder reads zero without the class');
     // Juggernaut rework v2, "the Aftershock": Seismic Impact (Lv1) / Resonance (Lv20) / Faultline (Lv40)
     // / Mounting Fury (Lv60) / The Big One (Lv80). The deep engine tests live in their own suite below;
     // this block covers the always-on multiplier ladder and the retirements.
@@ -6212,12 +6212,10 @@
       return st;
     }
 
-    // Steady Aim (sharpshooter/bowLong): flat +30% Accuracy.
-    near(FF.legendaryAccuracyBonus(legSt('steadyaim')), 0.30, 'Steady Aim: +30% Accuracy bonus');
-    near(FF.legendaryAccuracyBonus(legSt('chainshot')), 0, 'no accuracy bonus without Steady Aim');
-    var aimOn = legSt('steadyaim'), aimOff = legSt('chainshot');
-    ok(FF.playerAccuracy(aimOff) > 0, 'the base profile has positive Accuracy');
-    near(FF.playerAccuracy(aimOn) / FF.playerAccuracy(aimOff), 1.30, 'Steady Aim raises live Accuracy by ~30%', 0.02);
+    // Eyeshine (sharpshooter/bowLong): the +30% Accuracy retired with the Exposure Ladder -- the
+    // Patient Eye reads seams twice as fast instead (consumed inside applySsEyeTick).
+    eq(FF.legendaryAccuracyBonus(legSt('steadyaim')), 0, 'Eyeshine grants no flat Accuracy any more');
+    ok(FF.SS_EYE_MS_EYESHINE === FF.SS_EYE_MS / 2, 'Eyeshine: a seam every 2 seconds (twice the base rate)');
 
     // Compound Arrows (ranger/bowMedium): each hit rolls its ailment volley twice.
     eq(FF.legRangerChainMult(legSt('compoundarrows', 'bowMedium')), 2, 'Compound Arrows chains commanded strikes twice as often');
@@ -6599,9 +6597,9 @@
     // Serpentcoil (quickdraw/bowShort): now amplifies the Quiverlord's riders at application, not the shared tick.
     near(FF.legPoisonTickMult(legSt('serpentcoil','bowShort')), 1.0, 'Serpentcoil no longer boosts the shared poison tick (riders amplified at application)');
     eq(FF.legActive('serpentcoil', legSt('serpentcoil','bowShort')), true, 'legActive detects Serpentcoil');
-    // Farstrike (sharpshooter/bowLong): +40% crit damage.
-    near(FF.legFarstrikeCritDmg(legSt('farstrike','bowLong')), 0.40, 'Farstrike: +40% crit damage');
-    near(FF.legFarstrikeCritDmg(legSt('trapmaster','bowMedium')), 0, 'no Farstrike crit dmg without the long bow');
+    // Farstrike (sharpshooter/bowLong): the crit-damage flat retired -- tears strike +40% harder now.
+    ok(typeof FF.legFarstrikeCritDmg === 'undefined', 'the Farstrike crit-damage helper is gone');
+    near(FF.ssTearMult(legSt('farstrike','bowLong')), FF.LEG_FARSTRIKE_TEAR, 'Farstrike: tears strike +40% harder (no class levels seeded, so the ladder term is idle)');
     // Detection for the behaviour-driven crit effects (Skullcleaver / Ironwind handled in the crit roll).
     eq(FF.legActive('skullcleaver', legSt('skullcleaver','warhammer')), true, 'legActive detects Skullcleaver');
     // Full forge (ranged): give the bill, craft, confirm a d2 ranged-group unique.
@@ -7818,11 +7816,9 @@
       s.activity = { type:'combat', monsterHp:1000000, breathCharge:0 };
       wearD4('quickdraw', 2); s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, false), 0, 'the Quickdraw left the Breath pillar (Heavy Heads instead)');
       wearD4('sharpshooter', 2); s.activity.breathCharge = 0;
-      eq(FF.d4BreathChargeOnHit(s, false), 4, 'the charge banks onto the meter');
-      eq(FF.d4BreathCharge(s), 4, 'the meter holds the banked charge');
-      s.activity.breathCharge = 0;
-      eq(FF.d4BreathChargeOnHit(s, false), 4, 'Focused Breath: +4 on a normal hit');
-      s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, true), 14, 'Focused Breath: crits charge faster (+14)');
+      eq(FF.d4BreathChargeOnHit(s, false), 0, 'the Sharpshooter left the Breath pillar (Old Prey instead -- D4 de-themed, v0.0.82.0)');
+      eq(FF.D4_SET_DEFS.sharpshooter.b2.name, 'Old Prey', 'Sharpshooter D4 2pc is Old Prey now');
+      eq(FF.D4_SET_DEFS.sharpshooter.bf.name, 'Nothing Left', 'Sharpshooter D4 full is Nothing Left');
       wearD4('reaper', 2); s.activity.breathCharge = 0; eq(FF.d4BreathChargeOnHit(s, false), 0, 'the Reaper left the Breath pillar (the Festerweave Shroud crits Rot instead)');
       // Elemental Traps retired: the Ranger's D4 2pc is Alpha now -- it raises Quarry's cap and no longer
       // charges Dragon's Breath at all.
@@ -7844,10 +7840,11 @@
       var expBurst = Math.round(1000 * FF.D4_BREATH_BURST_MULT * FF.elementDmgMult(s, 'fire'));
       eq(FF.d4BreathFire(s, { element:'water' }, 1000), expBurst, 'Dragon\'s Breath bursts for 5x the strike (x Fire Attunement)');
       eq(FF.d4BreathCharge(s), 0, 'firing resets the Breath meter');
-      // Sharpshooter Piercing Breath: strikes the weakness (+20%). (Recompute the base — earlier breaths trained Fire Attunement.)
+      // Piercing Breath retired (D4 de-themed, v0.0.82.0): a full Sharpshooter D4 set no longer owns a
+      // Breath variant at all -- Nothing Left doubles tears against a Bare foe instead.
       wearFull('sharpshooter'); s.activity = { type:'combat', monsterHp:1000000, breathCharge:100 };
       var baseSharp = Math.round(1000 * FF.D4_BREATH_BURST_MULT * FF.elementDmgMult(s, 'fire'));
-      eq(FF.d4BreathFire(s, { element:'water' }, 1000), Math.round(baseSharp * FF.ELEMENT_ADVANTAGE_MULT), 'Piercing Breath strikes the weakness (+20%)');
+      eq(FF.d4BreathFire(s, { element:'water' }, 1000), 0, 'the Sharpshooter left the Breath pillar entirely (no variant, no fire)');
       // (Spirit Breath retired: the Reaper's D4 is the Festerweave Shroud rot-crit set now.)
       // Executioner Immolation Breath: executes a foe below 25% Health.
       wearFull('executioner'); s.activity = { type:'combat', monsterHp:200, breathCharge:100 }; var exMon = { isBoss:false, hp:1000 };
@@ -8424,9 +8421,10 @@
     eq(FF.tfStormCap(setSt('thunderfury',2)), 12, 'Supercell: Storm intensity caps at 12');
     eq(FF.tfStormCap(setSt('thunderfury',1)), 10, '1 piece -> the base cap of 10');
     eq(FF.TF_BOLT_MS_TEMPEST, 750, 'Overcharge: a maxed Storm strikes every 0.75s');
-    // Sharpshooter Deadeye (2pc).
-    near(FF.deadeyeAccuracyBonus(setSt('sharpshooter',2)), 0.20, 'Deadeye: +20% Accuracy');
-    near(FF.deadeyeAccuracyBonus(setSt('sharpshooter',1)), 0, '1 piece -> no Deadeye');
+    // Sharpshooter Deadeye (2pc): the +20% Accuracy retired -- tears strike +25% harder now.
+    ok(typeof FF.deadeyeAccuracyBonus === 'undefined', 'the Deadeye accuracy helper is gone');
+    near(FF.ssTearMult(setSt('sharpshooter',2)), 1.25, 'Deadeye: tears strike +25% harder');
+    near(FF.ssTearMult(setSt('sharpshooter',1)), 1, '1 piece -> base tears');
     // Duelist Redoublement (full).
     eq(FF.duelistDanseEvery(setSt('duelist',4)), 5, 'Redoublement: Danse Macabre erupts every 5th Riposte');
     eq(FF.duelistDanseEvery(setSt('duelist',2)), 6, '2 of 4 -> the base every-6th cadence');
@@ -8441,8 +8439,11 @@
     near(FF.jugMomentumSwingMult(setSt('juggernaut',4, { activity:{type:'combat', lastSwingAt: now-3000} })), 1.30, 'Momentum Swing: +30% after a 3s gap', 1e-2);
     near(FF.jugMomentumSwingMult(setSt('juggernaut',4, { activity:{type:'combat', lastSwingAt: now-20000} })), 1.50, 'Momentum Swing caps at +50%', 1e-2);
     near(FF.jugMomentumSwingMult(setSt('juggernaut',2, { activity:{type:'combat', lastSwingAt: now-3000} })), 1, 'no Momentum Swing below the full set');
-    near(FF.longShotMult(setSt('sharpshooter',4, { activity:{type:'combat', lastDamagedAt: now-4000} })), 1.20, 'Long Shot: +20% after 4s untouched', 1e-2);
-    near(FF.longShotMult(setSt('sharpshooter',2, { activity:{type:'combat', lastDamagedAt: now-4000} })), 1, 'no Long Shot below the full set');
+    // Long Shot re-axed (the Exposure Ladder): the untouched-time ramp is gone -- the full set raises
+    // the Exposure CAP to 13 instead (the cap axis, strong on a sustained engine per the law).
+    ok(typeof FF.longShotMult === 'undefined', 'the Long Shot time-ramp helper is gone');
+    eq(FF.ssPeelCap(setSt('sharpshooter',4)), 13, 'Long Shot: the Exposure cap rises to 13');
+    eq(FF.ssPeelCap(setSt('sharpshooter',2)), 10, 'below the full set the cap stays 10');
   });
 
   // ---- D1 set bonuses, Batch 3: tank / block / shield / heal -----------------------------------------
@@ -14080,6 +14081,82 @@
         s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.equippedOffhandUid=snap.ohu; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.nightblade=snap.xp;
         s.activity=snap.act; s.playerHp=snap.hp; s.classDebuffs=snap.cd;
         s.nbDoomLeftMs=snap.dl; s.nbDoomBank=snap.db; s.nbDoomStrikes=snap.ds;
+      }
+    })();
+  });
+
+  // ---- Classes: Sharpshooter "the Exposure Ladder" (v0.0.82.0) -- the peel engine -------
+  // Expose (Lv1): crits peel + tear; Patient Eye (Lv20) peels on a 4s clock; Unraveling (Lv60) leaks
+  // per layer; Bare (Lv80) at 10 layers; a Bare kill teaches the SPECIES (state.ssSeams, per monster id).
+  suite('classes: Sharpshooter Exposure Ladder engine', function(){
+    function L(){ return {material:'leather', tier:5, rarity:'normal'}; }
+    function C(){ return {material:'tailoring', tier:5, rarity:'normal'}; }
+    function bare(){ return {tier:0, rarity:'normal', material:null}; }
+    (function(){
+      var s = FF._state;
+      var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid,
+                   oh:s.equippedOffhand, oht:s.equippedOffhandTier, ba:s.bodyArmor, ui:s.uniqueItems, xp:s.xp.sharpshooter,
+                   act:s.activity, hp:s.playerHp, inv:s.inventory, arrow:s.equippedArrow, seams:s.ssSeams };
+      var svRnd = Math.random;
+      try {
+        s.equippedMainhand='bowLong'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null;
+        s.equippedOffhand='quiver'; s.equippedOffhandTier=6;
+        s.bodyArmor={ helmet:L(), chest:L(), gauntlets:C(), boots:L(), back:bare() };
+        s.uniqueItems = {}; s.ssSeams = {};
+        s.xp.sharpshooter = FF.xpFloorForLevel(85);
+        s.inventory = Object.assign({}, s.inventory); s.inventory.fletching_arrow_t3 = 100000; s.equippedArrow = 'fletching_arrow_t3';
+        eq(FF.activeClassId(s), 'sharpshooter', 'long bow + quiver + leathers + cloth gloves => Sharpshooter');
+        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.playerHp = FF.maxHp(s);
+        // A landed crit peels a layer and TEARS.
+        Math.random = function(){ return 0; }; // lands + crits
+        var hp0 = s.activity.monsterHp;
+        FF.playerAttackTick(false, 1, false);
+        ok(hp0 - s.activity.monsterHp > 0, 'the shot landed');
+        eq(s.activity.ssPeel, 1, 'the crit peeled one layer');
+        var logRows = FF._combatLog(); var last = logRows[logRows.length-1];
+        eq(last && last.spName, 'Tear', 'the peel tore -- a named Combat log row');
+        // The Patient Eye peels on the clock, no crit needed.
+        FF.applySsEyeTick(FF.SS_EYE_MS);
+        eq(s.activity.ssPeel, 2, 'the Patient Eye found a seam on the 4s clock');
+        // The Unraveling: seeded LARGE dotHitAvg so a broken multiplier cannot hide in a tolerance
+        // floor (the Aftershock guard-proof lesson).
+        s.activity.dotHitAvg = 1000000; s.activity.ssPeel = 6;
+        var hp1 = s.activity.monsterHp;
+        FF.applySsEyeTick(1000);
+        var leaked = hp1 - s.activity.monsterHp;
+        var expectTear = Math.round(1000000 * FF.SS_TEAR_PCT * (1 + FF.SS_TEAR_LADDER_PER * 7)); // the eye also peeled 6->7 this tick (4s clock had 1s banked... no: fresh accum 1000ms < 4000)
+        // (one second of eye-clock does NOT reach a peel: 1000ms banked of 4000. So the drop is pure Unraveling.)
+        near(leaked, 1000000 * 6 * FF.SS_UNRAVEL_PCT, 'one second of Unraveling = recent hit x layers x 2.5%', 1000000*6*FF.SS_UNRAVEL_PCT*0.02);
+        // Bare at 10 layers (Lv80): armour gone, dodge gone, and a Bare kill teaches the species.
+        s.activity.ssPeel = 10;
+        eq(FF.ssBare(s), true, 'ten layers is Bare');
+        eq(FF.ssArmorStrip(s), 1, 'Bare ignores armour entirely');
+        var _mon = FF.MONSTERS.filter(function(m){ return m.id === s.activity.monsterId; })[0];
+        s.activity.monsterHp = 0; FF.defeatMonster(_mon);
+        eq((s.ssSeams||{})[_mon.id], FF.SS_SEAMS_LEARN, 'a Bare kill taught the species 3 seams');
+        eq(s.activity.ssPeel||0, 0, 'the fresh foe starts undressed...');
+        FF.ssPeelSeed(s.activity, s);
+        eq(s.activity.ssPeel, FF.SS_SEAMS_LEARN, '...until the seams re-seed it: same species, 3 layers pre-peeled');
+        // Gravesight adds its head start on top.
+        s.uniqueItems = { gs:{ uid:'gs', leg:'gravesight' } }; s.equippedMainhandUid = 'gs';
+        s.activity.ssSeeded = false; s.activity.ssPeel = 0;
+        FF.ssPeelSeed(s.activity, s);
+        eq(s.activity.ssPeel, FF.SS_SEAMS_LEARN + FF.LEG_GRAVESIGHT_HEADSTART, 'Gravesight: +2 more layers before the first shot');
+        // Dragoneye: Bare arrives at 8.
+        s.uniqueItems = { de:{ uid:'de', leg:'dragoneye' } }; s.equippedMainhandUid = 'de';
+        s.activity.ssPeel = 8;
+        eq(FF.ssBare(s), true, 'Dragoneye: Bare at 8 layers');
+        s.uniqueItems = {}; s.equippedMainhandUid = null;
+        eq(FF.ssBare(s), false, 'without it, 8 layers is not Bare');
+        // The session reset forgets the seams.
+        FF.resetPersistentCombatBuffs();
+        ok(!Object.keys(s.ssSeams||{}).length, 'resetPersistentCombatBuffs forgets every species');
+      } finally {
+        Math.random = svRnd;
+        s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu;
+        s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.sharpshooter=snap.xp;
+        s.activity=snap.act; s.playerHp=snap.hp; s.inventory=snap.inv; s.equippedArrow=snap.arrow; s.ssSeams=snap.seams;
       }
     })();
   });
