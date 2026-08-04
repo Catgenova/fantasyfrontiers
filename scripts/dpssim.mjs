@@ -330,6 +330,29 @@ const BUILDS = {
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
   },
+  lumen: {
+    // Light Wand + Ward, full leather -- 45s window (wand swings). "The Overflow" (v0.0.86.0): Radiance
+    // gathers +4/hit +2/s toward its 100 cap; each second the pour mends the most wounded ally, banks
+    // overheal into the Everfull Barrier, and SPILLS the surplus as Searing Light (dotBase x 0.8% x
+    // radiance x lmSpillFrac). ON THIS DUMMY THE ORACLE IS THE CEILING CASE BY DESIGN: full HP + a
+    // capped Barrier -> lmSpillFrac 1.0, so the sim measures exactly the 100%-spill BiS band -- in real
+    // play the party drinks first and the damage is whatever mercy doesn't claim. Brimover (a burst
+    // every 5s while the Barrier stands full -- it fills from overheal in the first ~15-20s) and The
+    // Second Sun (the pour doubles at full Radiance) are the payoff tiers. FIFTH wand chassis: budget
+    // per-kit (Pyromancer 820B / Frostwarden 113B / Voidshadow 101B, never the Stormlord's trillions) --
+    // nothing here routes through the element stack (Dawnwyrm's old Attunement line was the trap, excised).
+    // SUSTAINED engine -> pre-registered: D3 (The Vessel Overflows Twice, the at-cap event layer) or D4
+    // (Blinding Radiance cap 130) wins the A/B, D1 rate trails once Radiance caps ~30s in; Dawnbrand
+    // (pure gather rate) is the legendary floor probe. Ward fixed to Gleamveil (Brimover +50% -- the one
+    // unambiguous measurable ward). Sim-dead recorded: every heal's VALUE (full HP), Glimmerward, the
+    // Guardian Beacon wash, Blinding Light's -25% (the dummy never attacks). Mind Brimover quantization:
+    // ~6-9 bursts per 45s run once the Barrier fills.
+    weapon: { typeId: "wandLight", styleXp: ["wandLight", "wands", "light"] },
+    legs: ["aegisbreak", "dawnbrand", "gravelight", "dawnwyrm"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "light",
+    offhandWard: "gleamveil",
+  },
   sentinel: {
     // Maul + medium shield + full chain -- 90s window (the Herald's tank comparator, ~58-60B band).
     // "The Bramble" (v0.0.85.0): a SUSTAINED thorn field -- growth +4/hit +2/s toward its 100 cap, a

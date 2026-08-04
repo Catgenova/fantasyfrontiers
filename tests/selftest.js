@@ -6936,10 +6936,10 @@
     // Sunwyrm's Verdict: +40% vs a Dark foe (progresses past D3 Lichbane x1.30).
     near(FF.d4LegDmgMult({ element:'dark' }, legSt('sunwyrm','scepter')), 1.15, "Sunwyrm's Verdict: +15% vs a Dark foe");
     near(FF.d4LegDmgMult({ element:'fire' }, legSt('sunwyrm','scepter')), 1.0, 'Sunwyrm inert vs a non-Dark foe');
-    // Dawnwyrm's Radiance: while a Radiant Barrier holds, +Light Attunement to all damage.
-    var dw = legSt('dawnwyrm','wandLight','weapon',{ lumenShield:500 });
-    near(FF.d4LegDmgMult({}, dw), 1 + FF.elementDamageBonus(dw, 'light'), 'Dawnwyrm: Barrier lends your Light Attunement');
-    near(FF.d4LegDmgMult({}, legSt('dawnwyrm','wandLight')), 1.0, 'Dawnwyrm inert with no Barrier up');
+    // Dawnwyrm's Radiance (Overflow rework): the Attunement-to-damage line -- the x49 gear-stack trap,
+    // live -- is excised. It is the at-cap swing wand now: +25% while the Second Sun burns.
+    near(FF.d4LegDmgMult({}, legSt('dawnwyrm','wandLight','weapon',{ lumenShield:500 })), 1.0, 'Dawnwyrm no longer keys off the Barrier or the element stack');
+    eq(FF.LEG_DAWNWYRM_SWING, 1.25, "Dawnwyrm's Radiance: swings +25% while the Second Sun burns (gated on lmSunBurning, exercised in the class suite)");
 
     // Duskwyrm's Whisper: each Vulnerability stack strips 1.5% of a dragon's resistance to your wand.
     var waterDragon = { dungeon:'d4', element:'water' };
@@ -7576,7 +7576,7 @@
       eq(FF.D3_SET_DEFS.berserker.bf.name, 'Carried Debt', 'Berserker D3 full is Carried Debt (Blood Ledger rework)');
       eq(FF.D3_SET_DEFS.templar.bf.name, 'Resurrection', 'Templar D3 full is Resurrection');
       eq(FF.D3_SET_DEFS.knight.bf.name, 'Trample', 'Knight D3 full is Trample (Undying March retired)');
-      eq(FF.D3_SET_DEFS.lumen.bf.name, 'Soulguard', 'Lumen D3 full is Soulguard');
+      eq(FF.D3_SET_DEFS.lumen.bf.name, 'The Vessel Overflows Twice', 'Lumen D3 full is The Vessel Overflows Twice (Soulguard retired with the Overflow rework)');
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.activity=sv.act; s.knightStacks=sv.ks; }
   });
 
@@ -7626,7 +7626,9 @@
       near(baseFire - FF.elementDmgMult(s, 'fire'), 0.30, 'Emberheart folds +0.30 into elementDmgMult(fire)');
       wearD4('frostwarden', 2); near(FF.d4SetElementDmg(s, 'water'), 0.30, 'Frostheart: +30% Water (2pc)');
       wearD4('thunderfury', 2); near(FF.d4SetElementDmg(s, 'earth'), 0.30, 'Galvanic Heart: +30% Earth (2pc)');
-      wearD4('lumen', 2); near(FF.d4SetElementDmg(s, 'light'), 0.30, 'Radiant Heart: +30% Light (2pc)');
+      wearD4('lumen', 2); near(FF.d4SetElementDmg(s, 'light'), 0, 'Radiant Heart retired (Overflow rework): the Lumen D4 2pc is Blinding Radiance');
+      eq(FF.D4_SET_DEFS.lumen.b2.name, 'Blinding Radiance', 'Lumen D4 2pc is Blinding Radiance now');
+      eq(FF.D4_SET_DEFS.lumen.bf.name, 'Dawn Eternal', 'Lumen D4 full is Dawn Eternal now');
       wearD4('templar', 2); near(FF.d4SetElementDmg(s, 'light'), 0.30, 'Solar Heart: +30% Light (2pc)');
       wearD4('nightblade', 2); near(FF.d4SetElementDmg(s, 'dark'), 0.30, 'Umbral Heart: +30% Dark (2pc)');
       // 1 piece does not trip the 2pc.
@@ -7689,12 +7691,12 @@
       near(FF.d4WandElementMult(s, 'fire', waterDragon), 0.85, 'Fire is resisted 15% by a water dragon');
       near(FF.d4WandElementMult(s, 'fire', normalWater), 1.0, 'no resistance against a non-dragon');
       wearFull('pyromancer'); near(FF.d4WandElementMult(s, 'fire', waterDragon), 1.0, 'Everflame: Fire is never resisted');
-      // Lumen Radiant Judgment (full): Light never resisted + 40% vs Dark.
+      // Radiant Judgment retired (Overflow rework): the Lumen D4 full is Dawn Eternal, so Light keeps
+      // the generic dragon resistance like every non-Everflame element.
       s.bodyArmor = {}; s.uniqueItems = {};
       near(FF.d4WandElementMult(s, 'light', darkDragon), 0.85, 'Light is resisted 15% by a dark dragon');
-      wearFull('lumen'); near(FF.d4WandElementMult(s, 'light', darkDragon), 1.40, 'Radiant Judgment: Light unresisted AND +40% vs a Dark foe');
-      near(FF.d4WandElementMult(s, 'light', { element:'dark' }), 1.40, 'Radiant Judgment +40% vs any Dark foe');
-      near(FF.d4WandElementMult(s, 'fire', waterDragon), 0.85, 'Radiant Judgment does not save Fire from resistance');
+      wearFull('lumen'); near(FF.d4WandElementMult(s, 'light', darkDragon), 0.85, 'Dawn Eternal does not negate the resistance (Radiant Judgment retired)');
+      near(FF.d4WandElementMult(s, 'fire', waterDragon), 0.85, 'and Fire is untouched');
 
       // --- Spellblade echoes (Rune Heart / Prismatic Edge) ---
       s.bodyArmor = {}; s.uniqueItems = {};
@@ -8026,8 +8028,13 @@
       near(FF.knOrderMult(s), 1.0, '2 pieces -> Orders at base power');
       wearD2('knight', FF.D2_SET_DEFS.knight.full); near(FF.knOrderMult(s), 1.5, 'War Council: standing Orders 50% stronger');
       s.knightStacks = 0;
-      // Lumen Radiance (2pc): Reflected Light heals +50%.
-      wearD2('lumen', 2); near(FF.lumenReflectD2Mult(s), 1.5, 'Lumen Radiance: +50% Reflected Light heal');
+      // Lumen Radiance (2pc, Overflow rework): the spill sears +25% (the reflect-heal amplifier retired).
+      ok(typeof FF.lumenReflectD2Mult === 'undefined', 'the reflect-heal D2 amplifier is retired');
+      wearD2('lumen', 2);
+      var lmSp = { xp:{ lumen: FF.xpFloorForLevel(85) }, physique:{}, equippedMainhand:'wandLight', equippedOffhand:'wardLight',
+        bodyArmor:s.bodyArmor, uniqueItems:s.uniqueItems, lmRadiance:80, lmSpillFrac:1, activity:{type:'combat',monsterHp:100,dotHitAvg:1000}, playerHp:55 }; // radiance 80: below the cap so the Second Sun stays out of the reading
+      ['helmet','chest','gauntlets','boots'].forEach(function(sl){ if(!lmSp.bodyArmor[sl]) lmSp.bodyArmor[sl] = {}; lmSp.bodyArmor[sl].material = 'leather'; lmSp.bodyArmor[sl].tier = 5; });
+      near(FF.lmSpillDps(lmSp), 1000 * FF.LM_SPILL_PCT * 80 * FF.LM_D2_SPILL_MULT, 'Lumen Radiance: the spill sears +25%');
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.playerHp=sv.hp; s.activity=sv.act; s.heraldBarrier=sv.hg; s.knightStacks=sv.ks; s.d2CounterstanceUntil=sv.cs; }
   });
 
@@ -8508,10 +8515,11 @@
     eq(FF.templarVerseMs(setSt('templar',2)), 5000, 'Quick Verse (2pc): 5s verses');
     eq(FF.templarVerseMs(setSt('templar',1)), 6000, '1 piece -> the base 6s verse');
 
-    // Lumen Radiant Surge (2pc): Reflected Light heals 25% (up from 15%).
-    near(FF.lumenReflectPct(setSt('lumen',2)), 0.25, 'Radiant Surge (2pc): Reflected Light 25%');
-    near(FF.lumenReflectPct(setSt('lumen',1)), FF.LUMEN_REFLECT_PCT, '1 piece -> base Reflected Light');
-    // Lumen Sanctuary (full): Radiant Barrier cap 30% -> 40% max HP.
+    // Lumen Radiant Surge (2pc, Overflow rework): the gather-rate axis (the reflect-heal % retired).
+    ok(typeof FF.lumenReflectPct === 'undefined', 'Reflected Light stays retired');
+    near(FF.lmRateMult(setSt('lumen',2)), FF.LM_D1_RATE_MULT, 'Radiant Surge (2pc): the light gathers +50% faster');
+    near(FF.lmRateMult(setSt('lumen',1)), 1, '1 piece -> the base gather rate');
+    // Lumen Sanctuary (full): the Everfull Barrier cap 30% -> 40% max HP.
     near(FF.lumenSanctuaryCapPct(setSt('lumen',4)), 0.40, 'Sanctuary (full): Barrier cap 40% max HP');
     near(FF.lumenSanctuaryCapPct(setSt('lumen',2)), FF.LUMEN_SHIELD_MAX_PCT, 'no Sanctuary below the full set');
     ok(FF.lumenShieldCap(setSt('lumen',4)) > FF.lumenShieldCap(setSt('lumen',2)), 'Sanctuary raises the actual shield cap');
@@ -10529,37 +10537,81 @@
     eq(FF.activeClassId(stFor(80)), 'lumen', 'light wand + ward + full leather => Lumen Oracle');
     eq(FF.activeClassId(stFor(80,{bodyArmor:{helmet:armor('leather'),chest:armor('leather'),gauntlets:armor('leather')}})), null, 'Lumen Oracle needs Leather Boots');
     ok(FF.activeClassId(stFor(80,{equippedMainhand:'wandDark'})) !== 'lumen', 'a Dark Wand does not activate Lumen Oracle (it is the Voidshadow kit)');
-    // Reworked ladder: Flashbang / Mending Ray / Reflected Light / Everfull / Radiant Barrier.
-    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'Flashbang,Mending Ray,Reflected Light,Everfull,Radiant Barrier', 'reworked Lumen ladder (party medic)');
-    // The class no longer grants flat damage (Glare retired).
-    eq(FF.newClassDmgMult({hp:100}, stFor(80)), 1, 'Lumen no longer grants flat damage');
-    eq(FF.LUMEN_REFLECT_PCT, 0.15, 'Reflected Light returns 15% of damage as healing');
+    // The Overflow ladder: The Overflow / Everfull / Blinding Light / Brimover / The Second Sun.
+    // Reflected Light (the saturation engine -- 15% of ~1e11 damage as healing against a 4-digit HP
+    // bar) and Flashbang's RNG stun are retired.
+    eq(cd.passives.map(function(p){ return p.name; }).join(','), 'The Overflow,Everfull,Blinding Light,Brimover,The Second Sun', 'Lumen ladder is the Overflow five');
+    ok(typeof FF.lumenReflectPct === 'undefined', 'Reflected Light retired (never scale a heal off damage dealt)');
+    ok(typeof FF.lumenReflectD2Mult === 'undefined', 'its D2 amplifier went with it');
+    eq(FF.newClassDmgMult({hp:100}, stFor(80)), 1, 'Lumen grants no flat damage');
     // Solo, a heal always targets self (no living networked party).
     eq(FF.lumenHealTarget().isSelf, true, 'solo -> Lumen heals cast on self');
     // Live-state mechanics: the Lumen kit must be worn on _state so the bonuses are active.
     var S = FF._state;
-    var sv = { mh:S.equippedMainhand, oh:S.equippedOffhand, ba:S.bodyArmor, xp:S.xp.lumen, act:S.activity, hp:S.playerHp, sh:S.lumenShield };
+    var sv = { mh:S.equippedMainhand, oh:S.equippedOffhand, ba:S.bodyArmor, xp:S.xp.lumen, act:S.activity, hp:S.playerHp, sh:S.lumenShield,
+               rad:S.lmRadiance, ba2:S.lmBrimAccum, ma:S.lmMendAccum, sf:S.lmSpillFrac, cd:S.classDebuffs };
     try {
       S.equippedMainhand='wandLight'; S.equippedOffhand='wardLight';
       S.bodyArmor={helmet:armor('leather'),chest:armor('leather'),gauntlets:armor('leather'),boots:armor('leather')};
-      S.activity = { type:'combat', monsterId:null, monsterHp:100 };
-      // Reflected Light (Lv40): a Lumen heal restores HP to self; no shield yet (Everfull/Barrier locked).
-      S.xp.lumen = FF.xpFloorForLevel(40); S.lumenShield = 0; S.playerHp = 1;
-      ok(FF.lumenBonus(40), 'Lumen Lv40 active with the kit worn');
-      ok(FF.lumenApplyHeal(100) > 0 && S.playerHp > 1, 'a Lumen heal restores HP to self');
-      eq(S.lumenShield||0, 0, 'no shield before Everfull/Radiant Barrier');
-      // Everfull (Lv60): healing a full-HP target banks the overheal as a shield.
-      S.xp.lumen = FF.xpFloorForLevel(60); S.lumenShield = 0; S.playerHp = FF.maxHp(S);
+      S.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, dotHitAvg:1000 };
+      S.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
+      // Everfull (Lv20 now): healing a full-HP target banks the overheal as a Barrier.
+      S.xp.lumen = FF.xpFloorForLevel(20); S.lumenShield = 0; S.playerHp = FF.maxHp(S);
       FF.lumenApplyHeal(100);
-      ok((S.lumenShield||0) > 0, 'Everfull banks overheal as a shield');
-      // Radiant Barrier (Lv80): a normal heal also grants a shield = 30% of the HP restored.
-      S.xp.lumen = FF.xpFloorForLevel(80); S.lumenShield = 0; S.playerHp = Math.max(1, FF.maxHp(S) - 100);
-      var h2 = FF.lumenApplyHeal(50);
-      ok(h2 > 0 && Math.abs((S.lumenShield||0) - Math.round(h2 * 0.30)) <= 1, 'Radiant Barrier shields 30% of the amount healed');
-      // The shield is capped at 30% of max HP.
-      S.lumenShield = 0; FF.lumenAddShield(1e9); eq(S.lumenShield, FF.lumenShieldCap(S), 'Lumen shield caps at 30% of max HP');
+      ok((S.lumenShield||0) > 0, 'Everfull banks overheal as a Barrier at Lv20');
+      S.xp.lumen = FF.xpFloorForLevel(1); S.lumenShield = 0;
+      FF.lumenApplyHeal(100);
+      eq(S.lumenShield||0, 0, 'no Barrier below Lv20');
+      // The shield cap: 30% of max HP.
+      S.xp.lumen = FF.xpFloorForLevel(85);
+      S.lumenShield = 0; FF.lumenAddShield(1e9); eq(S.lumenShield, FF.lumenShieldCap(S), 'the Barrier caps at 30% of max HP');
+      // The pour: radiance gathers +2/s from the clock, +4 per landed hit (lmOnHit).
+      S.lmRadiance = 0; S.lmBrimAccum = 0; S.lmMendAccum = 0; S.lmSpillFrac = 1;
+      FF.applyLumenMendingTick(1000);
+      near(S.lmRadiance, 2, 'one second of combat gathers +2 Radiance', 1e-9);
+      FF.lmOnHit(S);
+      near(S.lmRadiance, 6, 'a landed swing gathers +4 more', 1e-9);
+      // The spill: dotBase x 0.8% x radiance x spillFrac per second, and on a FULL-health capped-Barrier
+      // Oracle the mend is all surplus -- spillFrac resolves to 1 (the whole pour burns).
+      S.lmRadiance = 100; S.playerHp = FF.maxHp(S); S.lumenShield = FF.lumenShieldCap(S);
+      S.activity.dotHitAvg = 1000; S.lmSpillFrac = 1; S.lmMendAccum = 0;
+      var hp0 = S.activity.monsterHp;
+      FF.applyLumenMendingTick(1000);
+      near(hp0 - S.activity.monsterHp, Math.round(1000 * FF.LM_SPILL_PCT * 100 * FF.LM_SUN_MULT), 'one second of the spill at full Radiance = dotBase x 0.8% x radiance x the burning Sun', 30); // (radiance is cap-clamped at 100; Lv85 => the Second Sun doubles the pour)
+      eq(S.lmSpillFrac, 1, 'a full-health, full-Barrier target consumes nothing -- everything spills');
+      ok((S.classDebuffs.enemyDmgUntil||0) > Date.now(), 'Blinding Light holds the shared -25% window while the spill flows');
+      // The honest coupling: a WOUNDED Oracle drinks first and the spill fraction drops.
+      S.playerHp = 1; S.lumenShield = 0; S.lmMendAccum = 999; S.lmSpillFrac = 1;
+      FF.applyLumenMendingTick(1);
+      ok(S.lmSpillFrac < 1, 'a wounded target consumes the mend -- the spill is what mercy does not claim');
+      ok(S.playerHp > 1, 'and the mend actually healed');
+      // Brimover (Lv60): while the Barrier stands full, a burst every 5s, applied raw.
+      S.playerHp = FF.maxHp(S); S.lumenShield = FF.lumenShieldCap(S);
+      S.lmRadiance = 100; S.lmBrimAccum = 0; S.lmMendAccum = 0; S.lmSpillFrac = 1; S.activity.dotHitAvg = 1000;
+      var hp1 = S.activity.monsterHp;
+      FF.applyLumenMendingTick(FF.LM_BRIM_MS);
+      var brimTotal = hp1 - S.activity.monsterHp;
+      var spillShare = 1000 * FF.LM_SPILL_PCT * 100 * FF.LM_SUN_MULT * (FF.LM_BRIM_MS/1000); // the Sun doubles the spill; the burst itself is NOT sun-scaled by design
+      near(brimTotal - spillShare, Math.round(1000 * FF.LM_BRIM_PCT), 'five seconds at a full Barrier = the sunned spill plus ONE Brimover at 150%', 60);
+      var rows = FF._combatLog(); var lastRow = rows[rows.length-1];
+      ok(lastRow && (lastRow.spName === 'Brimover' || lastRow.spName === 'Searing Light'), 'the burst and the spill are named Combat log rows');
+      S.lumenShield = 0; S.lmBrimAccum = 4999;
+      FF.applyLumenMendingTick(100);
+      eq(S.lmBrimAccum, 0, 'an unfilled Barrier holds no Brimover charge');
+      // The Second Sun (Lv80): at full Radiance the pour doubles (spill included).
+      S.lumenShield = FF.lumenShieldCap(S); S.lmRadiance = 100;
+      ok(FF.lmSunBurning(S), 'the Second Sun burns at full Radiance');
+      near(FF.lmSpillDps(S), 1000 * FF.LM_SPILL_PCT * 100 * FF.LM_SUN_MULT, 'the burning sun doubles the spill');
+      S.lmRadiance = 50;
+      ok(!FF.lmSunBurning(S), 'and gutters below it');
+      near(FF.lmSpillDps(S), 1000 * FF.LM_SPILL_PCT * 50, 'the half-gathered pour spills singly');
+      // The session reset disperses the light.
+      S.lmRadiance = 80; S.lmBrimAccum = 3000; S.lmMendAccum = 500; S.lmSpillFrac = 0.5;
+      FF.resetPersistentCombatBuffs();
+      ok(!S.lmRadiance && !S.lmBrimAccum && !S.lmMendAccum && S.lmSpillFrac === 1, 'resetPersistentCombatBuffs disperses the gathered light');
     } finally {
       S.equippedMainhand=sv.mh; S.equippedOffhand=sv.oh; S.bodyArmor=sv.ba; S.xp.lumen=sv.xp; S.activity=sv.act; S.playerHp=sv.hp; S.lumenShield=sv.sh;
+      S.lmRadiance=sv.rad; S.lmBrimAccum=sv.ba2; S.lmMendAccum=sv.ma; S.lmSpillFrac=sv.sf; S.classDebuffs=sv.cd;
     }
   });
 
