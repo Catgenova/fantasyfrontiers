@@ -186,6 +186,25 @@ const BUILDS = {
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "fire",
     offhandWard: "everburning",
   },
+  juggernaut: {
+    // Sledge (9s two-hander, the game's SLOWEST weapon) + full plate, no offhand -- 90s window like the
+    // Berserker/Knight/Samurai: 45s is five swings and badly misreads an engine whose damage lives BETWEEN
+    // them. "The Aftershock" (v0.0.81.0): every landed swing rings 50% of itself over 12s, Resonance builds
+    // while echoes overlap (cap 3, +10%/stack to swings AND echoes), and at full Resonance the next swing
+    // erupts every ringing echo (the Big One). CYCLING engine -> rate/uptime layers should lead. SATURATION
+    // CHECKS (three): (1) Cavebreaker (impacts count double toward Resonance -- the pure-rate sledge) vs
+    // Earthrender (no rate: never-miss + echo size) -- if they read level, the Resonance cycle has collapsed
+    // to per-swing; (2) Magmacore's swing-per-echo feedback (engine state -> swing -> bigger echo) -- watch
+    // for a runaway; (3) Momentum Swing (D1 full, damage grows with time since last swing) must not make
+    // deliberately-slowed swinging beat swinging on cooldown -- an inverted engine, not a bonus. NO line
+    // reads player Armor (plate class, the Herald chassis trap, kept out by design). Sim-dead: the Faultline
+    // stagger (the dummy never swings); the armour shreds read TRUE vs the Archdemon's real armour, so
+    // expect Faultline/Monolith to be worth more here than stagger-style utility usually is.
+    weapon: { typeId: "sledge", styleXp: ["sledge"] },
+    legs: ["earthshaker", "earthrender", "monolith", "magmacore"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "blunt",
+  },
   nightblade: {
     // Dark Wand + Ward, full leather. "The Doomsayer" (v0.0.80.0): the first hit stamps a 12s Doom, every
     // landed hit seals 35% of itself into the bank and winds the clock 0.3s (crits 0.6s), and the strike
