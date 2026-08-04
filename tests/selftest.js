@@ -4377,40 +4377,35 @@
     eq(FF.fwBrittleMult(stFor('frostwarden', 85)), 1, 'a foe with no rime is not brittle');
     eq(FF.frostwardenDmgMult(stFor('frostwarden',80)), 1, 'Rime Resonance neutral vs an unchilled foe');
     eq(FF.frostwardenDmgMult(stFor('frostwarden',40)), 1, 'no +25% below Lv80');
-    // Sentinel rework: Spiked Barrier (Lv1) / Iron Maiden (Lv20) / Reckoning (Lv40) / Brittle Guard (Lv60) / Bulwark's Wrath (Lv80).
+    // Sentinel "the Bramble": The Bramble (Lv1) / Thorn Lash (Lv20) / Deep Roots (Lv40) /
+    // Rending Barbs (Lv60) / The Bloom (Lv80). The incoming-damage reflect is retired wholesale --
+    // it returned shares of a ~4-digit monster hit against 1e11-scale player damage.
     var senNames = FF.CLASS_DEFS_BY_ID.sentinel.passives.map(function(p){ return p.name; });
-    eq(JSON.stringify(senNames), JSON.stringify(['Spiked Barrier','Iron Maiden','Reckoning','Brittle Guard',"Bulwark's Wrath"]), 'Sentinel ladder is the reworked five');
-    // Spiked Barrier (Lv1): reflect 25% of every incoming hit (blocked or not).
-    ok(Math.abs(FF.sentinelReflectDamage(100, 0, 999, stFor('sentinel',1)) - 25) < 1e-9, 'Spiked Barrier: reflect 25% of a 100 hit (unblocked)');
-    ok(Math.abs(FF.sentinelReflectDamage(100, 80, 999, stFor('sentinel',1)) - 25) < 1e-9, 'Spiked Barrier alone ignores the blocked share below Lv20');
-    // Iron Maiden (Lv20): + 150% of the damage a Block prevented, on top of Spiked Barrier.
-    ok(Math.abs(FF.sentinelReflectDamage(100, 80, 999, stFor('sentinel',20)) - (25 + 120)) < 1e-9, 'Iron Maiden: +150% of the 80 prevented (=120) atop Spiked Barrier 25');
-    ok(Math.abs(FF.sentinelReflectDamage(100, 0, 999, stFor('sentinel',20)) - 25) < 1e-9, 'Iron Maiden adds nothing on an unblocked hit');
-    // Reflect float LABEL (bug: a sub-Lv20 Sentinel saw "Iron Maiden" on a Block though it hadn't
-    // unlocked). The label reads "Iron Maiden" ONLY when that blocked share actually contributes --
-    // the exact same condition sentinelReflectDamage gates it on (Lv20 unlocked AND prevented > 0). [regression]
-    eq(FF.sentinelReflectSourceName(false, 80), 'Spiked Barrier', 'Iron Maiden locked -> a blocked reflect reads Spiked Barrier');
-    eq(FF.sentinelReflectSourceName(true, 80), 'Iron Maiden', 'Iron Maiden unlocked + Block prevented -> reads Iron Maiden');
-    eq(FF.sentinelReflectSourceName(true, 0), 'Spiked Barrier', 'Iron Maiden unlocked but nothing prevented -> pure Spiked Barrier');
-    eq(FF.sentinelReflectSourceName(false, 0), 'Spiked Barrier', 'unblocked and locked -> Spiked Barrier');
+    eq(JSON.stringify(senNames), JSON.stringify(['The Bramble','Thorn Lash','Deep Roots','Rending Barbs','The Bloom']), 'Sentinel ladder is the Bramble five');
+    ok(typeof FF.sentinelReflectDamage === 'undefined', 'the incoming-damage reflect retired (never scale off the FOE\'s hit)');
+    ok(typeof FF.sentinelReflectSourceName === 'undefined', 'the reflect labeler went with it');
+    ok(typeof FF.sentinelArmorMult === 'undefined', 'Bulwark\'s Wrath +40% Armor retired (Armor never a damage input)');
+    ok(typeof FF.legReflectCanCrit === 'undefined', 'Reckoning/Spinecrusher reflect-crit retired (flat at ~100% BiS crit)');
+    // Thorn Lash (Lv20): scaled by growth off the PLAYER's recent hit; a Block lashes double.
+    var senLash = stFor('sentinel',20,{ snGrowth:50, activity:{type:'combat',monsterHp:100,dotHitAvg:1000} });
+    eq(FF.snLashDamage(false, senLash), Math.round(1000 * FF.SN_LASH_PCT * 0.5), 'Thorn Lash: dotBase x 50% x growth/100');
+    eq(FF.snLashDamage(true, senLash), Math.round(1000 * FF.SN_LASH_PCT * 0.5) * 2, 'a Block lashes double');
+    eq(FF.snLashDamage(false, stFor('sentinel',1,{ snGrowth:50, activity:{type:'combat',monsterHp:100,dotHitAvg:1000} })), 0, 'no lash below Lv20');
+    // Deep Roots (Lv40): the Snare scales with growth; inert without the class or below Lv40.
+    ok(Math.abs(FF.snSnareSlow(stFor('sentinel',40,{ snGrowth:100, activity:{type:'combat',monsterHp:100} })) - FF.SN_SNARE_MAX) < 1e-9, 'a full hedge Snares at the 25% cap');
+    eq(FF.snSnareSlow(stFor('sentinel',20,{ snGrowth:100, activity:{type:'combat',monsterHp:100} })), 0, 'no Snare below Lv40');
+    // Rending Barbs / Bonecrusher share the Sunder channel; the shred fraction is the legendary's axis.
+    eq(FF.snShredFrac(stFor('sentinel',80)), FF.SENTINEL_SHRED_FRAC, 'Rending Barbs: the shared 50% Sunder');
     // Tie the "unlocked" flag to real reflect behaviour: the Block share contributes iff a blocked
     // reflect exceeds the unblocked one -- true only at Lv20+, so the label can only truthfully say
-    // Iron Maiden there.
-    ok(!(FF.sentinelReflectDamage(100,80,999,stFor('sentinel',1)) > FF.sentinelReflectDamage(100,0,999,stFor('sentinel',1))), 'below Lv20 the Block share never adds to the reflect');
-    ok(FF.sentinelReflectDamage(100,80,999,stFor('sentinel',20)) > FF.sentinelReflectDamage(100,0,999,stFor('sentinel',20)), 'at Lv20 the Block share adds to the reflect');
-    // Bulwark's Wrath (Lv80): +40% Armor, and every reflect adds your full Armor rating.
-    eq(FF.sentinelArmorMult(stFor('sentinel',80)), 1.40, "Bulwark's Wrath +40% Armor");
-    eq(FF.sentinelArmorMult(stFor('sentinel',60)), 1, 'no Armor bonus below Lv80 (Bracing removed)');
-    ok(Math.abs(FF.sentinelReflectDamage(100, 80, 50, stFor('sentinel',80)) - (25 + 120 + 50)) < 1e-9, "Bulwark's Wrath adds the 50 Armor rating to the reflect");
-    eq(FF.sentinelReflectDamage(100, 80, 50, stFor('sentinel',60)), 25 + 120, 'below Lv80 the Armor rating is not added to reflect');
-    // Sentinel is the shield-wall: a solid innate Block chance so its Block-payoff perks reliably fire.
+    // Sentinel is the shield-wall: a solid innate Block chance so its Block payoffs reliably fire.
     ok(FF.classBlockBonus(stFor('sentinel',1)) >= 0.30, 'Sentinel gains innate Block chance');
     eq(FF.classBlockBonus(stFor('spellblade',80)), 0, 'a non-Sentinel class gets no innate Block bonus');
-    // Brittle Guard (Lv60) shreds via the shared Sunder window; its constants are exported.
-    eq(FF.SENTINEL_BRITTLE_MS, 6000, 'Brittle Guard Sunder window is 6s');
-    eq(FF.SENTINEL_SHRED_FRAC, 0.5, 'Sunder ignores 50% of enemy armour');
-    // No Sentinel reflect without the class.
-    eq(FF.sentinelReflectDamage(100, 80, 999, {xp:{},physique:{},bodyArmor:{},equippedMainhand:null,equippedOffhand:null,activity:{type:'combat'},playerHp:1}), 0, 'no class -> no reflect');
+    eq(FF.SENTINEL_SHRED_FRAC, 0.5, 'the shared Sunder ignores 50% of enemy armour');
+    // The tick derives from dotBase x growth; no class or no growth means no tear.
+    eq(FF.snTickDps(stFor('sentinel',80,{ snGrowth:100, activity:{type:'combat',monsterHp:100,dotHitAvg:1000} })), 1000 * FF.SN_TICK_PCT * 100, 'the tear: dotBase x 0.8% x growth per second');
+    eq(FF.snTickDps(stFor('sentinel',80,{ activity:{type:'combat',monsterHp:100,dotHitAvg:1000} })), 0, 'an unplanted field tears nothing');
+    eq(FF.snTickDps({xp:{},physique:{},bodyArmor:{},equippedMainhand:null,equippedOffhand:null,snGrowth:100,activity:{type:'combat',monsterHp:100,dotHitAvg:1000},playerHp:1}), 0, 'no class -> no tear');
     // Spellblade rework v2, "the Afterimage Train": Afterimage (Lv1) / Runeglow (Lv20) / Deep Runes
     // (Lv40) / Runic Tempo (Lv60) / Standing Wave (Lv80). RULE (third never-scale entry): never scale a
     // line by raw ENCHANT COUNT/TOTALS. The deep engine tests live in their own suite below.
@@ -4451,7 +4446,7 @@
     // Quick Quill (D3 2pc) rate vs base: +5% per 2% inked vs +1% per 3%.
     ok(Math.abs(FF.BERSERK_LEDGER_RATE - 0.01/0.03) < 1e-9 && Math.abs(FF.BERSERK_LEDGER_RATE_D3 - 0.05/0.02) < 1e-9, 'Ledger rates: base +1%/3%, Quick Quill +5%/2%');
     eq(FF.frostwardenDmgMult(none), 1, 'no class -> Frostwarden damage neutral');
-    eq(FF.sentinelArmorMult(none), 1, 'no class -> Sentinel armor neutral');
+    eq(FF.snSnareSlow(none), 0, 'no class -> no Bramble Snare');
     eq(FF.enemyChillSlowMult(none), 0, 'no chill -> no enemy slow');
   });
 
@@ -6170,11 +6165,11 @@
     eq(FF.heraldRetortStrikes(legSt('titaniccrits')), 1, 'one Retort strike without Cave-In');
     ok(/strike twice/.test(FF.LEGENDARY_GEAR_ITEMS[FF.legGearItemId('shieldbash','normal')].desc), 'Cave-In desc: Retorts strike twice');
 
-    // Crushing Reprisal (sentinel/maul): thorns can crit, and the crit deals +100% extra crit damage.
-    eq(FF.legReflectCanCrit(legSt('crushingreprisal')), true, 'Crushing Reprisal lets a reflect crit');
-    eq(FF.legReflectCanCrit(legSt('shieldbash')), false, 'no reflect crit without Crushing Reprisal');
-    near(FF.legReflectCritMult(legSt('crushingreprisal')), FF.CRIT_DAMAGE_MULT + 1.0, 'Crushing Reprisal: reflect crit = base crit mult +100%');
-    near(FF.legReflectCritMult(legSt('shieldbash')), FF.CRIT_DAMAGE_MULT, 'the reflect crit mult is the base without the legendary');
+    // Spinecrusher (sentinel/maul, key crushingreprisal): the reflect-crit retired with the Bramble --
+    // it doubles Bloom volleys now (exercised in the engine suite).
+    ok(typeof FF.legReflectCanCrit === 'undefined', 'the reflect-crit helper is gone');
+    eq(FF.LEG_SPINECRUSHER_VOLLEY, 2.0, 'Spinecrusher: Bloom volleys land as crushing blows (+100%)');
+    eq(FF.legActive('crushingreprisal', legSt('crushingreprisal')), true, 'legActive detects the reworked Spinecrusher');
 
     // Deepquake (berserker/warhammer): +25% crit damage per 1000 max Health, capped at +250%.
     var tcSmall = legSt('titaniccrits'); // empty physique -> low max HP
@@ -6312,21 +6307,10 @@
     ok(typeof FF.heraldGuardMult === 'undefined', 'the Perfect Guard streak helper is gone');
     ok(hgear(0, true).uniqueItems.L.leg === 'perfectbulwark', 'the Deepwall fixture equips the shield');
 
-    // Thornmail Shield (sentinel/shieldMedium): while at full Health, the thorns reflect is doubled.
-    function sgear(hp, thornmail){
-      var st = { xp:{ sentinel: FF.xpFloorForLevel(85) }, physique:{}, equippedMainhand:'maul', equippedOffhand:'shieldMedium',
-        bodyArmor:{ helmet:armor('chain'), chest:armor('chain'), gauntlets:armor('chain'), boots:armor('chain') },
-        activity:{type:'combat'}, playerHp:hp, uniqueItems:{}, equippedOffhandUid:null };
-      if(thornmail){ st.uniqueItems.L = { uid:'L', leg:'thornmailshield', kind:'offhand', base:'stshield_shieldMedium_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 }; st.equippedOffhandUid = 'L'; }
-      return st;
-    }
-    var sFull = sgear(FF.maxHp(sgear(9999, false)), false); // full HP, no legendary
-    var baseRefl = FF.sentinelReflectDamage(100, 0, 0, sFull); // Spiked Barrier: 25% of 100
-    ok(baseRefl > 0, 'Sentinel Spiked Barrier reflects a positive share');
-    var sFullTm = sgear(FF.maxHp(sgear(9999, true)), true); // full HP + Thornmail
-    near(FF.sentinelReflectDamage(100, 0, 0, sFullTm), baseRefl * 2, 'Thornmail Shield doubles the reflect at full Health');
-    var sHurtTm = sgear(1, true); // 1 HP + Thornmail -> not full, no doubling
-    near(FF.sentinelReflectDamage(100, 0, 0, sHurtTm), baseRefl, 'Thornmail Shield does nothing below full Health');
+    // Bristleguard (sentinel/shieldMedium, key thornmailshield): the full-HP reflect double retired --
+    // it feeds the Bramble twice as fast per swing now (the rate probe; exercised in the engine suite).
+    ok(typeof FF.sentinelReflectDamage === 'undefined', 'the old reflect helper stays retired');
+    eq(FF.legActive('thornmailshield', legSt('thornmailshield', 'shieldMedium')), true, 'legActive detects the reworked Bristleguard');
 
     // Cold Snap (frostwarden/shieldMedium): detection + tuning constant (Freeze-on-Block is behaviour-driven).
     eq(FF.legActive('coldsnap', legSt('coldsnap', 'shieldMedium')), true, 'legActive detects Cold Snap');
@@ -6793,12 +6777,23 @@
       // C2: Soul Glut (reaper D2 2pc) deepens Rot Siphon to 75% (gated on the class; tested in the class suite).
       wearD2('reaper', 2); ok(FF.set2D2('reaper', s), 'the reaper D2 2-piece is detectable (Soul Glut)');
 
-      // C2: Spiked Retort / Retribution (sentinel D2) — reflect amplifier.
-      s.playerHp = FF.maxHp(s);
-      wearD2('sentinel', 2); near(FF.d2SentinelReflectMult(s), 1.25, 'Spiked Retort (sentinel D2 2pc): +25% reflect');
-      wearD2('sentinel', FF.D2_SET_DEFS.sentinel.full); near(FF.d2SentinelReflectMult(s), 1.25 * 1.50, 'Retribution (full) adds +50% reflect at full Health');
-      s.playerHp = 1; near(FF.d2SentinelReflectMult(s), 1.25, 'Retribution drops off below full Health (2pc remains)');
-      s.bodyArmor = {}; s.uniqueItems = {}; near(FF.d2SentinelReflectMult(s), 1.0, 'no sentinel D2 set -> no reflect bonus');
+      // C2: Spiked Retort / Overgrowth (sentinel D2) — the Bramble rework: lashes +50%, cap 150.
+      // (Retribution's full-Health condition -- near-permanent on a tank -- became the cap axis.)
+      // The class must be ACTIVE for the lash (snLashDamage gates on sentinelBonus), so the fixture
+      // wears real chain in every slot with the set uids on top.
+      ok(typeof FF.d2SentinelReflectMult === 'undefined', 'the D2 reflect amplifier is retired');
+      var svSn = { mh:s.equippedMainhand, oh:s.equippedOffhand, xp:s.xp.sentinel, sg:s.snGrowth };
+      s.xp.sentinel = FF.xpFloorForLevel(85); s.equippedMainhand = 'maul'; s.equippedOffhand = 'shieldMedium';
+      s.snGrowth = 100; s.activity = { type:'combat', monsterHp:100, dotHitAvg:1000 };
+      wearD2('sentinel', 2);
+      ['helmet','chest','gauntlets','boots'].forEach(function(sl){ if(!s.bodyArmor[sl]) s.bodyArmor[sl] = {}; s.bodyArmor[sl].material = 'chain'; s.bodyArmor[sl].tier = 5; });
+      eq(FF.activeClassId(s), 'sentinel', 'the D2 fixture activates the class');
+      eq(FF.snLashDamage(false, s), Math.round(1000 * FF.SN_LASH_PCT * 1 * FF.SN_D2_LASH_MULT), 'Spiked Retort (sentinel D2 2pc): lashes +50%');
+      eq(FF.snGrowCap(s), FF.SN_GROW_CAP, 'the 2pc alone does not raise the cap');
+      wearD2('sentinel', FF.D2_SET_DEFS.sentinel.full);
+      ['helmet','chest','gauntlets','boots'].forEach(function(sl){ if(!s.bodyArmor[sl]) s.bodyArmor[sl] = {}; s.bodyArmor[sl].material = 'chain'; s.bodyArmor[sl].tier = 5; });
+      eq(FF.snGrowCap(s), FF.SN_GROW_CAP_D2, 'Overgrowth (full): the cap rises to 150');
+      s.bodyArmor = {}; s.uniqueItems = {}; s.snGrowth = svSn.sg; s.equippedMainhand = svSn.mh; s.equippedOffhand = svSn.oh; s.xp.sentinel = svSn.xp;
     } finally { s.bodyArmor=sv.ba; s.uniqueItems=sv.ui; s.jewelrySlots=sv.js; s.playerHp=sv.hp; s.activity=sv.act; s.knightStacks=sv.ks; }
   });
 
@@ -7017,9 +7012,11 @@
     near(FF.d4LegIncomingMult(legSt('venomscale', { activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+5000, potionPoisonDps:100} }), { element:'fire' }), 0.70, 'Venomscale: -30% from a Poisoned elemental foe (beats D1 Immunize -25%)');
     near(FF.d4LegIncomingMult(legSt('venomscale', { activity:{type:'combat', monsterHp:100, potionPoisonUntil:now+5000, potionPoisonDps:100} }), { element:null }), 1.0, 'Venomscale needs the foe to carry an element');
     near(FF.d4LegIncomingMult(legSt('venomscale'), { element:'fire' }), 1.0, 'Venomscale inert vs an unpoisoned foe');
-    // Wyrmthorn Wall: reflect carries the attacker's element, +50%.
-    near(FF.d4SentinelThornsMult({ element:'fire' }, legSt('wyrmthornwall')), 1.50, 'Wyrmthorn Wall: +50% reflect carrying the element');
-    near(FF.d4SentinelThornsMult({ element:null }, legSt('wyrmthornwall')), 1.0, 'Wyrmthorn Wall needs the attacker to have an element');
+    // Wyrmthorn Wall (Bramble rework): the element carry retired -- volleys +50% and a deeper Snare
+    // while blooming (both exercised in the engine suite; never routed through elementDmgMult).
+    ok(typeof FF.d4SentinelThornsMult === 'undefined', 'the reflect element-carry helper is gone');
+    eq(FF.LEG_WYRMTHORNWALL_VOLLEY, 1.5, 'Wyrmthorn Wall: Bloom volleys +50%');
+    eq(FF.SN_SNARE_BLOOM_WWALL, 0.40, 'Wyrmthorn Wall: the Snare deepens to 40% while blooming');
     // Full forge.
     var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
     s.inventory = { metallurgy_t20: 4000 }; s.blueprints = {}; s.uniqueItems = {};
@@ -7150,9 +7147,10 @@
     wsSt.playerHp = mh; near(FF.d4LegDmgMult({}, wsSt), 2.0, 'Wrathscale: +100% at a full bar', 1e-6);
     wsSt.playerHp = Math.round(mh * 0.30); near(FF.d4LegDmgMult({}, wsSt), 1.30, 'Wrathscale: +30% at 30% Health', 0.02);
     wsSt.playerHp = 0; near(FF.d4LegDmgMult({}, wsSt), 1.0, 'Wrathscale grants nothing at empty');
-    // Wyrmthorn Maul: reflect +50%.
-    near(FF.d4SentinelThornsMult({ element:'fire' }, legSt('wyrmthornmaul','maul')), 1.50, 'Wyrmthorn Maul: +50% reflect');
-    near(FF.d4SentinelThornsMult({ element:null }, legSt('wyrmthornmaul','maul')), 1.50, 'Wyrmthorn Maul reflects regardless of the foe element');
+    // Wyrmthorn Maul (Bramble rework): the reflect +50%/Scorch retired -- own swings +25% while the
+    // hedge Blooms (d4LegDmgMult; gated on snBlooming, so a bare fixture reads flat here).
+    near(FF.d4LegDmgMult({ element:'fire' }, legSt('wyrmthornmaul','maul')), 1.0, 'Wyrmthorn Maul is inert while the hedge is not blooming');
+    eq(FF.LEG_WYRMTHORNMAUL_SWING, 1.25, 'Wyrmthorn Maul: swings +25% while the hedge Blooms');
 
     // Breathfang Bow: left the Breath pillar with the Quiverlord — it doubles the Blasthead as Fire now.
     var bf = legSt('breathfang','bowShort');
@@ -7194,11 +7192,12 @@
       uniqueItems:{ L:{ uid:'L', leg:key, kind:'offhand', base:'stshield_shieldSmall_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedOffhandUid:'L' }; }
     ['cryptguard','blightshell','boneshell','rimecrypt','tombwall','mausoleumwall'].forEach(function(k){ eq(FF.legActive(k, legSt(k)), true, 'legActive detects '+k); });
     ok(/Mausoleum Wall/.test(FF.LEGENDARY_GEAR_ITEMS_D3[FF.legGearItemIdD3('mausoleumwall','normal')].name), 'the herald D3 shield is Mausoleum Wall');
-    // Tombwall incoming reduction (folds into d3SetIncomingMult) vs a Decayed foe.
+    // Tombwall (Bramble rework, de-Decayed): -15% incoming from a foe tangled in a half-grown Bramble.
     var now = Date.now();
-    var tw = { activity:{type:'combat', monsterHp:100, decayStacks:3, decayUntil:now+4000}, uniqueItems:{ L:{ uid:'L', leg:'tombwall', kind:'offhand', base:'stshield_shieldMedium_t19_rare', tier:19, rarity:'rare' } }, equippedOffhandUid:'L' };
-    near(FF.d3SetIncomingMult(tw), 0.80, 'Tombwall: Decayed attackers deal 20% less');
-    tw.activity = { type:'combat', monsterHp:100 }; near(FF.d3SetIncomingMult(tw), 1.0, 'Tombwall inert on a clean foe');
+    var tw = { snGrowth:60, activity:{type:'combat', monsterHp:100}, uniqueItems:{ L:{ uid:'L', leg:'tombwall', kind:'offhand', base:'stshield_shieldMedium_t19_rare', tier:19, rarity:'rare' } }, equippedOffhandUid:'L' };
+    near(FF.legTombwallIncomingMult(tw), FF.LEG_TOMBWALL_INCOMING, 'Tombwall: a tangled foe deals 15% less');
+    tw.snGrowth = 10; near(FF.legTombwallIncomingMult(tw), 1.0, 'Tombwall inert below a half-grown hedge');
+    near(FF.d3SetIncomingMult(tw), 1.0, 'the old Decay-keyed reduction is out of d3SetIncomingMult');
     // Full forge.
     var s = FF._state, svInv=s.inventory, svBp=s.blueprints, svUniq=s.uniqueItems;
     s.inventory = { metallurgy_t20: 3000 }; s.blueprints = {}; s.uniqueItems = {};
@@ -7262,9 +7261,10 @@
       uniqueItems:{ L:{ uid:'L', leg:key, kind:'weapon', base:'stweapon_'+(base||'mace')+'_t19_rare', tier:19, rarity:'rare', enchants:[], enhance:0 } }, equippedMainhandUid:'L' };
       if(extra) for(var k in extra) st[k]=extra[k]; return st; }
     var now = Date.now();
-    // Bonecrusher (+50% vs Decayed) / Bonevolley (+15% vs Decayed) via d3LegDmgMult.
-    near(FF.d3LegDmgMult({}, legSt('bonecrusher','maul', { activity:{type:'combat', monsterHp:100, decayStacks:2, decayUntil:now+4000} })), 1.50, 'Bonecrusher: +50% vs a Decayed foe');
-    near(FF.d3LegDmgMult({}, legSt('bonecrusher','maul')), 1.0, 'Bonecrusher inert on a clean foe');
+    // Bonecrusher de-Decayed (Bramble rework): it deepens Rending Barbs' Sunder to 70% now.
+    near(FF.d3LegDmgMult({}, legSt('bonecrusher','maul', { activity:{type:'combat', monsterHp:100, decayStacks:2, decayUntil:now+4000} })), 1.0, 'Bonecrusher no longer keys off Decay');
+    eq(FF.snShredFrac(legSt('bonecrusher','maul')), FF.SN_SHRED_FRAC_BONECRUSHER, 'Bonecrusher: the Sunder deepens to 70%');
+    eq(FF.snShredFrac(legSt('bonevolley','bowMedium')), FF.SENTINEL_SHRED_FRAC, 'without the maul the shared Sunder stays 50%');
     near(FF.d3LegDmgMult({}, legSt('bonevolley','bowMedium', { activity:{type:'combat', monsterHp:100, decayStacks:2, decayUntil:now+4000} })), 1.15, 'Bonevolley: +15% vs a Decayed foe');
     // Cryptvenom: +25% from everything while the foe bears ALL THREE Quiverlord marks (Bleed + Venom + Shred).
     var cvAll = legSt('cryptvenom','bowShort', { classDebuffs:{ enemyArmorUntil: now+4000 },
@@ -7492,9 +7492,12 @@
       eq(FF.ASSASSIN_BLOODRUSH_MULT, 0.75, 'Bloodrush is -25% attack time');
       s.assassinBloodrushUntil = 0;
       ok(!FF.assassinBloodrushActive(s), 'Bloodrush lapses with its timer');
+      // Crypt Wall retired (Bramble rework): the Sentinel D3 is Thickened Canes / Twin Growth now, and
+      // the class left the Decay pillar entirely.
       wearFull('sentinel'); s.activity = { type:'combat', monsterHp:500, decayStacks:3, decayUntil:now+4000 };
-      near(FF.d3SetIncomingMult(s), 0.80, 'Sentinel Crypt Wall: Decayed foes deal 20% less');
-      s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetIncomingMult(s), 1.0, 'Crypt Wall inert on a clean foe');
+      near(FF.d3SetIncomingMult(s), 1.0, 'Crypt Wall retired: no Decay-keyed reduction');
+      eq(FF.D3_SET_DEFS.sentinel.b2.name, 'Thickened Canes', 'Sentinel D3 2pc is Thickened Canes now');
+      eq(FF.D3_SET_DEFS.sentinel.bf.name, 'Twin Growth', 'Sentinel D3 full is Twin Growth now');
       // Grave Chill retired: the Frostwarden's D3 dropped the Decay theme (it is the Shatter layer now), so
       // this class is no longer a Decay source at all.
       wearD3('frostwarden', 2); s.activity = { type:'combat', monsterHp:500 };
@@ -7785,12 +7788,13 @@
       eq(FF.D4_SET_DEFS.knight.bf.name, 'Dragon Standard', 'Knight D4 full is Dragon Standard');
       near(FF.KN_DECREE_D4_MULT, 1.30, 'Dragon Standard: Decrees strike +30% harder');
 
-      // Sentinel Molten Thorns (2pc) / Dragon's Retort (full): reflect amplifier.
+      // Sentinel D4 de-themed (v0.0.85.0): Molten Thorns / Dragon's Retort retired -- the layer is
+      // Iron Blossoms / Eternal Bloom now (exercised in the engine suite). The Sentinel never touches
+      // the element stack again.
       wearD4('sentinel', 2);
-      near(FF.d4SentinelThornsMult({ element:'fire' }, s), FF.elementDmgMult(s, 'fire'), 'Molten Thorns: reflect carries the attacker element (scaled by Attunement)');
-      near(FF.d4SentinelThornsMult({ element:null }, s), 1.0, 'Molten Thorns needs the attacker to have an element');
-      wearFull('sentinel');
-      near(FF.d4SentinelThornsMult({ element:'fire' }, s), FF.elementDmgMult(s, 'fire') * 1.50, "Dragon's Retort: +50% on top of Molten Thorns");
+      eq(FF.D4_SET_DEFS.sentinel.b2.name, 'Iron Blossoms', 'Sentinel D4 2pc is Iron Blossoms now');
+      eq(FF.D4_SET_DEFS.sentinel.bf.name, 'Eternal Bloom', 'Sentinel D4 full is Eternal Bloom now');
+      ok(typeof FF.d4SentinelThornsMult === 'undefined', 'the element-carrying reflect amplifier is gone');
 
       // Herald Elemental Bastion (full): a Guard reflects an elemental burst of the prevented damage.
       wearFull('herald');
@@ -8475,7 +8479,8 @@
     // Sentinel Unbreakable Will (full): +30% Armor.
     near(FF.sentinelUnbreakableArmorMult(setSt('sentinel',4)), 1.30, 'Unbreakable Will (full): +30% Armor');
     near(FF.sentinelUnbreakableArmorMult(setSt('sentinel',2)), 1, 'no Unbreakable Will below the full set');
-    // Sentinel Barbed Plating (2pc): thorns also return half your Armor rating -- needs the class active.
+    // Sentinel Barbed Plating (2pc, Bramble rework): the Armor-return retired (never a damage input) --
+    // the Bramble grows 50% faster instead, the deliberate leveling/rate layer.
     function sentSt(asSet){
       var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, equippedMainhand:'maul', equippedOffhand:'shieldMedium', activity:{type:'combat', monsterHp:100}, playerHp:55 };
       st.xp.sentinel = FF.xpFloorForLevel(80);
@@ -8487,9 +8492,8 @@
     }
     eq(FF.activeClassId(sentSt(true)), 'sentinel', 'a full Sentinel set still activates the Sentinel class');
     ok(FF.setFull('sentinel', sentSt(true)), 'four Sentinel pieces = full set');
-    var rSet = FF.sentinelReflectDamage(100, 0, 200, sentSt(true));
-    var rPlain = FF.sentinelReflectDamage(100, 0, 200, sentSt(false));
-    near(rSet - rPlain, 100, 'Barbed Plating (2pc): thorns return an extra half of Armor (200 x 0.5)');
+    near(FF.snRateMult(sentSt(true)), FF.SN_D1_RATE_MULT, 'Barbed Plating (2pc): the Bramble grows +50% faster');
+    near(FF.snRateMult(sentSt(false)), 1, 'no growth-rate bonus without the set');
 
     // Berserker Giant's Frame (2pc): +100% max HP; Titan's Fist (full): Heft 350% of max HP.
     eq(FF.berserkerGiantsFrameMult(setSt('berserker',2)), 2, "Giant's Frame (2pc): doubles max HP");
@@ -14529,6 +14533,131 @@
         s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.executioner=snap.xp;
         s.activity=snap.act; s.playerHp=snap.hp;
         s.exTally=snap.tally; s.exHone=snap.hone; s.exCarry=snap.carry;
+      }
+    })();
+  });
+
+  suite('classes: Sentinel Bramble engine', function(){
+    function C(){ return {material:'chain', tier:5, rarity:'normal'}; }
+    (function(){
+      var s = FF._state;
+      var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid,
+                   oh:s.equippedOffhand, oht:s.equippedOffhandTier, ohu:s.equippedOffhandUid, ba:s.bodyArmor, ui:s.uniqueItems,
+                   xp:s.xp.sentinel, act:s.activity, hp:s.playerHp, cd:s.classDebuffs,
+                   sg:s.snGrowth, sb:s.snBloomAccum, sa:s.snShatterAccum };
+      var svRnd = Math.random;
+      try {
+        s.equippedMainhand='maul'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null;
+        s.equippedOffhand='shieldMedium'; s.equippedOffhandTier=6; s.equippedOffhandUid=null;
+        s.bodyArmor={ helmet:C(), chest:C(), gauntlets:C(), boots:C() };
+        s.uniqueItems = {};
+        s.xp.sentinel = FF.xpFloorForLevel(85);
+        eq(FF.activeClassId(s), 'sentinel', 'maul + medium shield + full chain => Sentinel');
+        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), dotHitAvg:1000 };
+        s.playerHp = FF.maxHp(s);
+        s.snGrowth = 0; s.snBloomAccum = 0; s.snShatterAccum = 0; s.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
+        // Growth: +2/s from the roots, +4 per landed swing.
+        FF.applySnBrambleTick(1000);
+        near(s.snGrowth, 2, 'one second of combat grows the field +2', 1e-9);
+        Math.random = function(){ return 0; }; // the swing lands
+        FF.playerAttackTick(false, 1, false);
+        near(s.snGrowth, 6, 'a landed swing feeds +4 more', 1e-9);
+        Math.random = svRnd;
+        // The tear: dotBase x 0.8% x growth per second, aggregated by the applyEffectDot channel.
+        // Seeded LARGE known values (the Aftershock lesson): growth 100 + dotHitAvg 1000 -> 800/s.
+        s.snGrowth = 100; s.activity.dotHitAvg = 1000;
+        var hp0 = s.activity.monsterHp;
+        FF.applySnBrambleTick(1000);
+        near(hp0 - s.activity.monsterHp, Math.round(1000 * FF.SN_TICK_PCT * 102), 'one second of the tear = dotBase x 0.8% x growth', 30); // (the tick itself grows the field +2 first)
+        // Rending Barbs: the half-grown hedge keeps the shared Sunder window rolling.
+        ok((s.classDebuffs.enemyArmorUntil||0) > Date.now(), 'Rending Barbs holds the foe Sundered while the hedge is half-grown');
+        s.snGrowth = 10; s.classDebuffs.enemyArmorUntil = 0;
+        FF.applySnBrambleTick(100);
+        eq(s.classDebuffs.enemyArmorUntil||0, 0, 'a sparse hedge does not Sunder');
+        // The Bloom (Lv80): at full growth, a volley every 5s -- an event on a clock, applied raw.
+        s.snGrowth = FF.SN_GROW_CAP; s.snBloomAccum = 0; s.activity.dotHitAvg = 1000;
+        var hp1 = s.activity.monsterHp;
+        FF.applySnBrambleTick(FF.SN_BLOOM_MS);
+        var bloomTotal = hp1 - s.activity.monsterHp;
+        var tickShare = 1000 * FF.SN_TICK_PCT * FF.SN_GROW_CAP * (FF.SN_BLOOM_MS/1000);
+        near(bloomTotal - tickShare, Math.round(1000 * FF.SN_BLOOM_PCT), 'five seconds at full growth = the tear plus ONE volley at 150%', 60);
+        var rows = FF._combatLog(); var lastRow = rows[rows.length-1];
+        ok(lastRow && (lastRow.spName === 'Bloom' || lastRow.spName === 'Bramble'), 'the volley and the tear are named Combat log rows');
+        // Below the bloom threshold the clock idles.
+        s.snGrowth = 50; s.snBloomAccum = 4999;
+        FF.applySnBrambleTick(100);
+        eq(s.snBloomAccum, 0, 'a hedge below full growth does not hold a bloom charge');
+        // Thorn Lash fires from the foe's swing (monsterAttackTick) -- exercised via the helper, and the
+        // growth term is what makes it real (the old reflect scaled off the INCOMING hit).
+        s.snGrowth = 100; s.activity.dotHitAvg = 1000;
+        eq(FF.snLashDamage(false, s), Math.round(1000 * FF.SN_LASH_PCT), 'a full hedge lashes for dotBase x 50%');
+        eq(FF.snLashDamage(true, s), Math.round(1000 * FF.SN_LASH_PCT) * 2, 'a Block lashes double');
+        // Deep Roots: the field is STATE-scoped and survives the kill (planted in the ground, not the corpse).
+        var carryGrowth = s.snGrowth;
+        var _mon = FF.MONSTERS.filter(function(m){ return m.id === s.activity.monsterId; })[0];
+        s.activity.monsterHp = 0; FF.defeatMonster(_mon);
+        near(s.snGrowth, carryGrowth, 'the Bramble carries foe to foe', 1e-9);
+        // Fresh duel for the gear probes (the kill left the enemy-swap fade).
+        s.activity = { type:'combat', monsterId:_mon.id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), dotHitAvg:1000 };
+        // D3 -- Thickened Canes (2pc): tick +25%; Twin Growth (full): the tear strikes twice at full growth.
+        s.uniqueItems = {}; s.bodyArmor = { helmet:C(), chest:C(), gauntlets:C(), boots:C() };
+        ['helmet','chest','gauntlets','boots'].forEach(function(slot, i){
+          var uid = 'nd3'+i; s.uniqueItems[uid] = { set:'sentinel', setLayer:'d3' };
+          s.bodyArmor[slot] = { uid:uid, material:'chain', tier:5, rarity:'normal' };
+        });
+        eq(FF.activeClassId(s), 'sentinel', 'the D3 bulwark still activates the class');
+        s.snGrowth = 100;
+        near(FF.snTickDps(s), 1000 * FF.SN_TICK_PCT * 100 * FF.SN_D3_TICK_MULT * 2, 'Thickened Canes x Twin Growth: the full-growth tear ticks x1.25 x2');
+        s.snGrowth = 60;
+        near(FF.snTickDps(s), 1000 * FF.SN_TICK_PCT * 60 * FF.SN_D3_TICK_MULT, 'below full growth only the 2pc applies (Twin Growth is the at-cap axis)');
+        // D2 -- Overgrowth (full): the cap rises to 150 and the tick scales with ABSOLUTE growth.
+        ['helmet','chest','gauntlets','boots'].forEach(function(slot, i){
+          var uid = 'nd2'+i; s.uniqueItems[uid] = { set:'sentinel', setLayer:'d2' };
+          s.bodyArmor[slot] = { uid:uid, material:'chain', tier:5, rarity:'normal' };
+        });
+        eq(FF.snGrowCap(s), FF.SN_GROW_CAP_D2, 'Overgrowth: cap 150');
+        s.snGrowth = 150;
+        near(FF.snTickDps(s), 1000 * FF.SN_TICK_PCT * 150, 'an overgrown hedge tears half again harder -- the cap IS damage on a sustained engine');
+        // D4 -- Eternal Bloom (full): flowers at 80% of the cap, volleys every 4s; Iron Blossoms (2pc): volleys +50%.
+        ['helmet','chest','gauntlets','boots'].forEach(function(slot, i){
+          var uid = 'nd4'+i; s.uniqueItems[uid] = { set:'sentinel', setLayer:'d4' };
+          s.bodyArmor[slot] = { uid:uid, material:'chain', tier:5, rarity:'normal' };
+        });
+        s.snGrowth = 80; s.activity.dotHitAvg = 1000;
+        ok(FF.snBlooming(s), 'Eternal Bloom: the hedge flowers at 80 growth');
+        var hp2 = s.activity.monsterHp;
+        FF.snVolleyFire(s);
+        eq(hp2 - s.activity.monsterHp, Math.round(1000 * FF.SN_BLOOM_PCT * 0.8 * FF.SN_D4_VOLLEY_MULT), 'Iron Blossoms: the volley pays growth-scaled x1.5');
+        // Legendaries: Spinecrusher doubles volleys; Bristleguard doubles the swing feed; Thornwall feeds
+        // and tears on a Block; Spineshatter stacks its debuff off tick-seconds; Wyrmthorn Maul while blooming.
+        s.uniqueItems = { sc:{ uid:'sc', leg:'crushingreprisal' } }; s.equippedMainhandUid = 'sc';
+        s.bodyArmor = { helmet:C(), chest:C(), gauntlets:C(), boots:C() };
+        s.snGrowth = 100; var hp3 = s.activity.monsterHp;
+        FF.snVolleyFire(s);
+        eq(hp3 - s.activity.monsterHp, Math.round(1000 * FF.SN_BLOOM_PCT * FF.LEG_SPINECRUSHER_VOLLEY), 'Spinecrusher: the volley lands as a crushing blow (x2)');
+        s.uniqueItems = { bg:{ uid:'bg', leg:'thornmailshield' } }; s.equippedMainhandUid = null; s.equippedOffhandUid = 'bg';
+        s.snGrowth = 0;
+        FF.snBrambleOnHit(s);
+        near(s.snGrowth, FF.SN_GROW_PER_HIT * 2, 'Bristleguard: the swing feed is doubled', 1e-9);
+        s.uniqueItems = { sh:{ uid:'sh', leg:'spineshatter' } }; s.equippedOffhandUid = null; s.equippedMainhandUid = 'sh';
+        s.snGrowth = 100; s.snShatterAccum = 0; s.activity.spineshatterStacks = 0; s.activity.spineshatterUntil = 0;
+        FF.applySnBrambleTick(2000);
+        eq(s.activity.spineshatterStacks, 2, 'Spineshatter: two tick-seconds stack the debuff twice');
+        s.uniqueItems = { wm:{ uid:'wm', leg:'wyrmthornmaul' } }; s.equippedMainhandUid = 'wm';
+        s.snGrowth = FF.SN_GROW_CAP;
+        near(FF.d4LegDmgMult({}, s), FF.LEG_WYRMTHORNMAUL_SWING, 'Wyrmthorn Maul: swings +25% while the hedge Blooms');
+        s.snGrowth = 50;
+        near(FF.d4LegDmgMult({}, s), 1, 'and flat while it does not');
+        // The session reset withers the hedge.
+        s.snGrowth = 80; s.snBloomAccum = 3000; s.snShatterAccum = 500;
+        FF.resetPersistentCombatBuffs();
+        ok(!s.snGrowth && !s.snBloomAccum && !s.snShatterAccum, 'resetPersistentCombatBuffs withers the Bramble between sessions');
+      } finally {
+        Math.random = svRnd;
+        s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu;
+        s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.equippedOffhandUid=snap.ohu; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui;
+        s.xp.sentinel=snap.xp; s.activity=snap.act; s.playerHp=snap.hp; s.classDebuffs=snap.cd;
+        s.snGrowth=snap.sg; s.snBloomAccum=snap.sb; s.snShatterAccum=snap.sa;
       }
     })();
   });

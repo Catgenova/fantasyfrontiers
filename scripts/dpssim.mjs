@@ -330,6 +330,24 @@ const BUILDS = {
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
   },
+  sentinel: {
+    // Maul + medium shield + full chain -- 90s window (the Herald's tank comparator, ~58-60B band).
+    // "The Bramble" (v0.0.85.0): a SUSTAINED thorn field -- growth +4/hit +2/s toward its 100 cap, a
+    // dotBase x 0.8% x growth tear every second, Rending Barbs' rolling Sunder (reads TRUE vs the
+    // Archdemon's real armour), and at full growth a 150% volley every 5s. FIRST sustained tank -- per
+    // the rate/cap law expect the CAP/AT-CAP layers to lead (D3 Twin Growth tick x2, D2 Overgrowth cap
+    // 150) and the D1 rate layer to trail once the field caps ~35s in; Bristleguard (pure feed rate) is
+    // the honest floor probe -- if a rate item WINS, the window never reached cap: lengthen it, don't
+    // trust the pack. Shield slot fixed to Wyrmthorn Wall (volleys +50% -- the one measurable shield):
+    // Thornwall/Tombwall and every lash are BLOCK/being-hit-gated and the zero-offense dummy never
+    // swings, so the entire Thorn Lash channel is sim-dead here (recorded; it is the real-play
+    // accelerant). Also sim-dead: the Snare, Spineshatter's enemy-damage debuff, Unbreakable Will.
+    weapon: { typeId: "maul", styleXp: ["maul"] },
+    legs: ["crushingreprisal", "spineshatter", "bonecrusher", "wyrmthornmaul"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "blunt",
+    offhandShield: { type: "shieldMedium", leg: "wyrmthornwall" },
+  },
   berserker: {
     // Max Health IS the weapon (Titan's Heft/Deepquake/Wrathscale scale off it), so jewelry lines trade
     // lifesteal for Max HP. primeLedger holds the Blood Ledger inked at cap (owner rule: simulate the
