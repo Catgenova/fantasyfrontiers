@@ -700,6 +700,34 @@ lesson for the tests: the aftershock-tick assertion originally could not fail (t
 smaller than the 1-point tolerance floor) — engine tick tests must seed LARGE known values, never rely on
 real low-tier hits.
 
+**Sharpshooter** (45s — the Long Bow; v0.0.82.0 "the Exposure Ladder", owner target **90B**). The old kit was
+ONE stat conversion pinned at its caps: BiS Accuracy pins Eagle Eye/Pinpoint/Focus flat, Armor-Splitter was
+always-on at ~100% crit, and Sniper's Patience reset per foe — dead in farming. **RULE ESTABLISHED: never
+scale a line by raw Accuracy** — it joins Armor on the never-scale list (enchant-then-enhance pins every
+converter). Now a SUSTAINED engine, the first since the Plaguebearer: crits (and a 4s Patient Eye clock)
+**peel** layers off the foe (cap 10; +5% damage taken, −6% armour, −4% Dodge each), every peel **tears**
+(30% of the recent hit, +10%/layer), the peeled foe leaks (**Unraveling**), and at 10 layers it is **Bare** —
+no armour, no dodge, a tear on every shot. **A Bare kill teaches the SPECIES** (`state.ssSeams`, per monster
+id, session-scoped — the game's first per-species engine state): the next foe of the same kind starts 3
+layers peeled (Old Prey: 6; Gravesight adds +2 on any foe). D3/D4 dropped their dungeon themes (owner order):
+Loose Threads/Falling to Pieces are the Unraveling layer, Old Prey/Nothing Left the Bare layer — so the class
+LEFT the Decay and Dragon's Breath pillars entirely. Findings: (1) **A PRE-REGISTERED PREDICTION FAILED AS
+STATED, and the failure sharpened the law.** I predicted the D1 cap layer (Exposure 13) would win and
+Eyeshine ("the rate bow") would read mid. Measured: D4/D3 won (2.2% apart — indistinguishable; the winner
+flipped between packs, do not rank them), D1 third, and **Eyeshine won the legendary matrix in both packs**.
+The post-mortem: at the cap `ssPeelAdd` still tears, so the Patient Eye at the plateau is a free tear every
+4s — Eyeshine doubles a PLATEAU-PAYOUT CADENCE, not a fill rate. Every winning axis (tears ×2 at Bare, the
+leak, the cadence) lives AT the cap — the Plaguebearer's side of the law, confirmed once axes are classified
+**by where they pay, not what they touch**. Classify before predicting. (2) Tear-stack audit clean: Farstrike
+(tears ×1.4) read +1.5% over mean — tears are a modest share next to the Exposure-amplified swings; no rider
+cap needed. (3) D2 is the runt layer (−24%): both its halves are armour-redundant once Bare ignores armour.
+`SS_SWING_MULT` **0.328** (mean of two packs: 91.5B at 0.333 → 90B; uncorrected read 270B). Ceilings (D3 or
+D4 set, Ruin cloak, plain quiver): Eyeshine ~118B / Gravesight ~89B / Dragoneye ~84B / Farstrike ~76B — pack
+mean **~90B**, on target. Eyeshine is +24% over mean (both packs' winner — the Marrowsplitter zone, left
+alone); the mid-pack ordering shuffled between packs (noise — do not rank Farstrike/Gravesight/Dragoneye).
+Sim-dead: the species seams and Gravesight's head start (kill-gated; the harness refills) — both under-read
+their real farming value, like Cryptreaver/Gravepilfer before them.
+
 **TIER WARNING (v0.0.64.9): every recorded ceiling above was measured with a ONE-BELOW-BiS weapon.**
 Melee weapons + shields shipped with `tierCount:20` (top `t19`) while bows/wands/wards/scepter/staff had
 21 (top `t20`) — the ticket-0116 off-kilter. Melee/shields are now 21 tiers too (top `t20`, Tungsten), and
