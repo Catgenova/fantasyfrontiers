@@ -186,6 +186,27 @@ const BUILDS = {
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "fire",
     offhandWard: "everburning",
   },
+  nightblade: {
+    // Dark Wand + Ward, full leather. "The Doomsayer" (v0.0.80.0): the first hit stamps a 12s Doom, every
+    // landed hit seals 35% of itself into the bank and winds the clock 0.3s (crits 0.6s), and the strike
+    // lands the whole bank amplified +10% per woe on the foe. FOURTH wand class -- but the bank accrues from
+    // LANDED post-multiplier damage and the strike is applied raw, so the x49 element stack cannot compound
+    // through the engine; budget per-kit like the Pyromancer (820B) / Frostwarden (113B), not the Stormlord.
+    // CYCLING engine -> per the rate/cap law expect the WIND/UPTIME layers to lead (D1 Malediction double-wind,
+    // D3 Doomcurse instant re-stamp) and the value layer (D4 Duskwyrm's Maw) to trail at 45s. SATURATION CHECK
+    // (the Samurai lesson): at BiS wand speed (~1.5s swings, crits ~100%) hits wind ~0.6s each plus 1s of real
+    // time -- if the cycle collapses to near-instant with D1+Whisper stacked, the meter is decoration; compare
+    // D1 (pure rate) against Umbral Hex (no rate at all) and distrust any pack where they read level.
+    // Sim-dead: Voidveil's -10% incoming and its vuln-on-hit-taken (zero-offense dummy), Enfeeble's sap, the
+    // Voidfang shatter's armour value vs the dummy's real armour reads TRUE, and Soul Tax's lifesteal (full HP).
+    // Woe count on the dummy: Vulnerability + Enfeeble + Sunder (Umbral Hex) + Curse (Cursemark/D3) + Decay
+    // (various) -- expect 2-4 standing, so the Litany reads +20-40% (D4 full +40-80%).
+    weapon: { typeId: "wandDark", styleXp: ["wandDark", "wands", "dark"] },
+    legs: ["cursebringer", "voidfang", "soulrend", "duskwyrm"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "dark",
+    offhandWard: "voidveil",
+  },
   reaver: {
     // Half-moon axe (fast 1h) + small shield, chain helm/chest + leather gloves/boots. The Butcher's Count is
     // a RAMP: every stack-second of bleeding carves a Cut and the Cut tally is a fight-long damage multiplier,

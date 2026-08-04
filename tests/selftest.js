@@ -4602,10 +4602,11 @@
     eq(FF.juggernautArmorPierce(true, stFor('juggernaut',80)), 1, 'Pulverize: a crit ignores all armour at Lv80');
     eq(FF.juggernautArmorPierce(false, stFor('juggernaut',80)), 0, 'Pulverize only applies on a crit');
     eq(FF.juggernautArmorPierce(true, stFor('juggernaut',60)), 0, 'Pulverize inactive below Lv80');
-    // Voidshadow rework: Mark of the Void (Lv1) / Enfeeble (Lv20) / Void Resonance (Lv40) /
-    // Soul Tax (Lv60) / Doom (Lv80). Curses stack on the foe; the old flat Hex/Siphon/Shadowstep are gone.
+    // Voidshadow rework v2, "the Doomsayer": Stamp of Doom (Lv1) / Marks of the Void (Lv20) /
+    // Litany of Woes (Lv40) / Soul Tax (Lv60) / Doomsday (Lv80). The deep engine tests live in their
+    // own suite below; this block covers the always-on multiplier ladder.
     var nbNames = FF.CLASS_DEFS_BY_ID.nightblade.passives.map(function(p){ return p.name; });
-    eq(JSON.stringify(nbNames), JSON.stringify(['Mark of the Void','Enfeeble','Void Resonance','Soul Tax','Doom']), 'Voidshadow ladder is the reworked five');
+    eq(JSON.stringify(nbNames), JSON.stringify(['Stamp of Doom','Marks of the Void','Litany of Woes','Soul Tax','Doomsday']), 'Voidshadow ladder is the Doomsayer five');
     var vFuture = Date.now() + 10000;
     function nbSt(level, vuln, extraDebuffs){
       var act = { type:'combat', monsterHp:100 };
@@ -4613,31 +4614,32 @@
       if(extraDebuffs){ for(var k in extraDebuffs) act[k] = extraDebuffs[k]; }
       return stFor('nightblade', level, { activity:act, classDebuffs:{ enemyDmgUntil:0, enemyArmorUntil:0 } });
     }
-    // Mark of the Void: +2% dmg-taken per Vulnerability stack, capped at 10 (+20%).
-    ok(Math.abs(FF.voidVulnMult(nbSt(1,5)) - 1.10) < 1e-9, 'Mark of the Void: 5 stacks -> +10% damage taken');
-    ok(Math.abs(FF.voidVulnMult(nbSt(1,10)) - 1.20) < 1e-9, 'Mark of the Void: +20% at max (10) stacks');
+    // Marks of the Void: +2% dmg-taken per Vulnerability stack, capped at 10 (+20%) -- and that is the
+    // CEILING now: the old Lv80 "+40% at max stacks" flat was retired (it could not fail at BiS).
+    ok(Math.abs(FF.voidVulnMult(nbSt(1,5)) - 1.10) < 1e-9, 'Marks of the Void: 5 stacks -> +10% damage taken');
+    ok(Math.abs(FF.voidVulnMult(nbSt(1,10)) - 1.20) < 1e-9, 'Marks of the Void: +20% at max (10) stacks');
     ok(Math.abs(FF.voidVulnMult(nbSt(1,20)) - 1.20) < 1e-9, 'Vulnerability mult caps at 10 stacks');
     eq(FF.voidVulnMult(nbSt(1,0)), 1, 'no Vulnerability -> neutral mult');
-    // Doom (Lv80): at MAX Vulnerability the foe takes +40% (instead of +20%); below max it is ordinary.
-    ok(Math.abs(FF.voidVulnMult(nbSt(80,10)) - 1.40) < 1e-9, 'Doom: +40% damage at max Vulnerability with Lv80');
-    ok(Math.abs(FF.voidVulnMult(nbSt(80,9)) - 1.18) < 1e-9, 'below max Vulnerability, Doom does not apply (+18%)');
-    ok(Math.abs(FF.voidVulnMult(nbSt(1,10)) - 1.20) < 1e-9, 'without Lv80, max Vulnerability stays +20% (no Doom)');
-    // enemyDebuffCount: distinct debuffs on the foe (drives Void Resonance + Soul Tax).
+    ok(Math.abs(FF.voidVulnMult(nbSt(80,10)) - 1.20) < 1e-9, 'Lv80 no longer deepens the marks (the old flat Doom is retired -- Lv80 is Doomsday)');
+    // enemyDebuffCount ("woes"): distinct debuffs on the foe -- Curse and Decay joined the count.
     var nbCount = stFor('nightblade',80,{ activity:{type:'combat',monsterHp:100,voidVulnStacks:5,voidVulnUntil:vFuture,enemyStunUntil:vFuture}, classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0} });
     eq(FF.enemyDebuffCount(nbCount), 3, 'enemyDebuffCount tallies Vulnerability + Stun + Enfeeble = 3');
     eq(FF.enemyDebuffCount(nbSt(1,0)), 0, 'a foe with no debuffs -> count 0');
-    // Void Resonance (Lv40): +6% damage per distinct debuff. Isolate it with 0 Vulnerability (mult 1) + 2 debuffs.
+    eq(FF.enemyDebuffCount(nbSt(1,0,{curseUntil:vFuture})), 1, 'Curse counts as a woe now (Cursemark feeds the Litany)');
+    eq(FF.enemyDebuffCount(nbSt(1,0,{decayUntil:vFuture,decayStacks:3})), 1, 'Decay counts as a woe now');
+    // Litany of Woes, the always-on half (Lv40): +3% own damage per woe.
     var nbRes = stFor('nightblade',40,{ activity:{type:'combat',monsterHp:100,enemyStunUntil:vFuture}, classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0} });
-    ok(Math.abs(FF.voidDmgMult(nbRes) - 1.12) < 1e-9, 'Void Resonance: +6% x 2 debuffs = +12% (no Vulnerability)');
-    eq(FF.voidDmgMult(stFor('nightblade',20,{activity:{type:'combat',monsterHp:100,enemyStunUntil:vFuture},classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0}})), 1, 'Void Resonance inactive below Lv40');
-    // Soul Tax (Lv60): +2% lifesteal AND +2% dark damage per distinct debuff.
+    ok(Math.abs(FF.voidDmgMult(nbRes) - 1.06) < 1e-9, 'Litany (own-hit half): +3% x 2 woes = +6% (no Vulnerability)');
+    eq(FF.voidDmgMult(stFor('nightblade',20,{activity:{type:'combat',monsterHp:100,enemyStunUntil:vFuture},classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0}})), 1, 'the Litany is inactive below Lv40');
+    // Soul Tax (Lv60): +2% lifesteal AND +2% dark damage per distinct woe.
     var nbTax = stFor('nightblade',60,{ activity:{type:'combat',monsterHp:100,enemyStunUntil:vFuture}, classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0} });
-    ok(Math.abs(FF.nightbladeLifestealPct(nbTax) - 0.04) < 1e-9, 'Soul Tax: +2% lifesteal x 2 debuffs = +4%');
-    ok(Math.abs(FF.voidDmgMult(nbTax) - (1.12 * 1.04)) < 1e-9, 'Soul Tax stacks its +2%/debuff dark damage atop Void Resonance');
+    ok(Math.abs(FF.nightbladeLifestealPct(nbTax) - 0.04) < 1e-9, 'Soul Tax: +2% lifesteal x 2 woes = +4%');
+    ok(Math.abs(FF.voidDmgMult(nbTax) - (1.06 * 1.04)) < 1e-9, 'Soul Tax stacks its +2%/woe dark damage atop the Litany');
     eq(FF.nightbladeLifestealPct(stFor('nightblade',40,{activity:{type:'combat',monsterHp:100,enemyStunUntil:vFuture},classDebuffs:{enemyDmgUntil:vFuture,enemyArmorUntil:0}})), 0, 'Soul Tax lifesteal inactive below Lv60');
     // Removed helpers/perks: the old flat Hex, Shadowstep dodge, and Siphon lifesteal are gone.
     eq(FF.newClassDmgMult(monFull, stFor('nightblade',80)), FF.voidDmgMult(stFor('nightblade',80)), 'Voidshadow damage is driven entirely by voidDmgMult (no flat Hex)');
     ok(typeof FF.nightbladeDodgeBonus === 'undefined', 'Shadowstep dodge helper removed');
+    ok(typeof FF.voidMarkPerHit === 'undefined', 'voidMarkPerHit retired (Malediction winds the Doom now)');
     // Executioner rework: Reaping Vigor (Lv1) / Reap the Weak (Lv20) / Rising Guillotine (Lv40) /
     // Headsman's Tally (Lv60) / Gallows Humor (Lv80). The old crit/lifesteal/execute stats are gone.
     var exNames = FF.CLASS_DEFS_BY_ID.executioner.passives.map(function(p){ return p.name; });
@@ -7525,10 +7527,10 @@
     function wearFull(cls){ wearD3(cls, FF.D3_SET_DEFS[cls].full); }
     var now = Date.now();
     try {
-      // Full-set amplifiers vs a Cursed foe (outgoing).
+      // Full-set amplifiers vs a Cursed foe (outgoing). Doomcurse (Nightblade D3 full) left this table
+      // with the Doomsayer rework -- it re-arms the Doom inside nbDoomStrike (tested in the Doomsayer suite).
       wearFull('nightblade'); s.activity = { type:'combat', monsterHp:500, curseUntil:now+4000 };
-      near(FF.d3SetDmgMult({}, s), 1.25, 'Nightblade Doomcurse: +25% vs a Cursed foe (bumped to match D2 Eclipse)');
-      s.activity = { type:'combat', monsterHp:500 }; near(FF.d3SetDmgMult({}, s), 1.0, 'Doomcurse inert on an uncursed foe');
+      near(FF.d3SetDmgMult({}, s), 1.0, 'Doomcurse no longer adds a flat +25% vs Cursed (it pre-seals the next Doom instead)');
       wearFull('duelist'); s.activity = { type:'combat', monsterHp:500, curseUntil:now+4000 };
       near(FF.d3SetDmgMult({}, s), 1.15, 'Duelist Spectral Grace: +15% vs a Cursed foe');
       wearFull('thunderfury'); s.activity = { type:'combat', monsterHp:500, enemyStunUntil:now+4000 };
@@ -7738,11 +7740,10 @@
         for(var i=0;i<FF.D4_SET_DEFS.nightblade.full;i++){ s.uniqueItems['n'+i] = { set:'nightblade', setLayer:'d4' }; s.bodyArmor[order[i]] = { uid:'n'+i, material:'leather', tier:5 }; } }
       wearNightbladeLeather(); s.activity = { type:'combat', monsterHp:1000 };
       var weakBase = FF.incomingElementMult(s, fireMon); ok(weakBase > 1, 'leather armour is weak to a Fire foe (incoming > 1)');
+      // The old D4-full elemental-advantage strip retired with the Doomsayer rework (Duskwyrm's Maw
+      // doubles the Litany instead) -- a Vulnerable foe keeps its elemental advantage now.
       s.activity = { type:'combat', monsterHp:1000, voidVulnStacks:3, voidVulnUntil:Date.now()+5000 };
-      near(FF.incomingElementMult(s, fireMon), 1, 'Eclipse: a Vulnerable foe deals no elemental advantage against you');
-      // Without the full nightblade set, the weakness stands even against a Vulnerable foe.
-      s.bodyArmor = { chest:{ material:'leather', tier:5 } }; s.uniqueItems = {};
-      ok(FF.incomingElementMult(s, fireMon) > 1, 'no Eclipse without the Duskwyrm full set — the weakness remains');
+      near(FF.incomingElementMult(s, fireMon), weakBase, "Duskwyrm full set no longer strips a foe's elemental advantage (that line is Duskwyrm's Maw now)");
     } finally { s.bodyArmor = sv.ba; s.uniqueItems = sv.ui; s.activity = sv.act; }
   });
 
@@ -7971,10 +7972,12 @@
       s.activity.monsterHp = 300; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, 'Crushing Blows inert on a wounded foe');
       // Sharpshooter Steady Aim (2pc): +12% crit damage.
       wearD2('sharpshooter', 2); near(FF.d2SetCritDmgBonus(s), 0.12, 'Sharpshooter Steady Aim: +12% crit damage');
-      // Nightblade Creeping Doom (2pc): Vulnerability cap +4; Eclipse (full): +25% at max Vuln.
-      wearD2('nightblade', 2); eq(FF.voidVulnCap(s), 10+4, 'Nightblade Creeping Doom: Vulnerability cap +4');
+      // Nightblade Creeping Doom (2pc): a half-again larger bank share; Eclipse (full) moved inside
+      // nbDoomStrike (both tested in the Doomsayer suite). The Vulnerability cap is flat 10 again.
+      wearD2('nightblade', 2); eq(FF.voidVulnCap(s), 10, 'Creeping Doom no longer raises the Vulnerability cap (it feeds the bank now)');
+      near(FF.nbDoomBankShare(s), FF.NB_DOOM_BANK_PCT * 1.5, 'Creeping Doom (2pc): the Doom seals a half-again larger share');
       wearD2('nightblade', 4); s.activity = { type:'combat', monsterHp:800, voidVulnStacks:FF.voidVulnCap(s), voidVulnUntil:Date.now()+9999 };
-      near(FF.d2SetDmgMult({hp:1000}, s), 1.25, 'Nightblade Eclipse: +25% at max Vulnerability');
+      near(FF.d2SetDmgMult({hp:1000}, s), 1.0, 'Eclipse no longer adds a flat +25% at max Vulnerability (it consumes the marks at strike time)');
       // Reaver Savage Wounds (2pc): Bleed cap +3; Bloodfrenzy (full): faster as HP falls.
       wearD2('reaver', 2); eq(FF.reaverBleedCap(s), 5+3, 'Reaver Savage Wounds: Bleed cap 5 -> 8');
       wearD2('reaver', 4); s.playerHp = Math.round(mh*0.5);
@@ -8556,9 +8559,10 @@
     near(FF.voidVulnPerStack(setSt('nightblade', 1)), FF.VOID_VULN_PER_STACK, '1 piece -> base +2%/stack');
     var vulnSt = setSt('nightblade', 2, { activity:{ type:'combat', monsterHp:100, voidVulnStacks:5, voidVulnUntil: now+4000 } });
     near(FF.voidVulnMult(vulnSt), 1.15, 'Resistance Rot: 5 stacks -> +15% damage taken (up from +10%)');
-    // Malediction (full): each hit sinks 2 Vulnerability stacks.
-    eq(FF.voidMarkPerHit(setSt('nightblade', 4)), 2, 'Malediction (full): 2 Vulnerability stacks per hit');
-    eq(FF.voidMarkPerHit(setSt('nightblade', 2)), 1, 'no Malediction below the full set');
+    // Malediction (full): every hit winds the Doom twice (the old 2-stacks-per-hit is retired).
+    eq(FF.nbDoomWindPerHit(setSt('nightblade', 4), false), FF.NB_DOOM_WIND_MS * 2, 'Malediction (full): every hit winds the Doom twice');
+    eq(FF.nbDoomWindPerHit(setSt('nightblade', 2), false), FF.NB_DOOM_WIND_MS, 'no Malediction below the full set');
+    eq(FF.nbDoomWindPerHit(setSt('nightblade', 4), true), FF.NB_DOOM_WIND_MS * 4, 'a Critical Hit doubles the wind on top of Malediction');
 
     // Quickdraw Deft Hands (2pc) + Echo Volley (full): the D1 set drives the Quiver Cycle cadence.
     eq(FF.quickdrawCycleEvery(setSt('quickdraw', 2)), 3, 'Deft Hands (2pc): the cycle runs every 3rd shot');
@@ -13954,6 +13958,139 @@
     var fam = FF.FAMILIAR_DATA.thunderfury;
     ok(fam && fam.spells && fam.spells.length === 4, 'thunderfury familiar has 4 spells');
     ok(fam.spells.some(function(sp){ return sp.type==='hit'; }), 'thunderfury familiar has a damaging spell');
+  });
+
+  // ---- Classes: Voidshadow "the Doomsayer" (v0.0.80.0) -- the Doom engine ---------------
+  // Stamp of Doom (Lv1): the first hit stamps a 12s clock, hits seal 35% of themselves into the bank
+  // and wind the clock 0.3s (crits 0.6s); the tick fires the strike at zero, amplified per woe.
+  suite('classes: Voidshadow Doomsayer engine', function(){
+    function L(){ return {material:'leather', tier:5, rarity:'normal'}; }
+    function bare(){ return {tier:0, rarity:'normal', material:null}; }
+    function nb(level, extra){
+      var st = { xp:{nightblade: FF.xpFloorForLevel(level)}, physique:{},
+        equippedMainhand:'wandDark', equippedMainhandRarity:'normal', equippedOffhand:'wardDark',
+        bodyArmor:{ helmet:L(), chest:L(), gauntlets:L(), boots:L(), back:bare() }, uniqueItems:{},
+        activity:{ type:'combat', monsterHp:1e6 }, classDebuffs:{ enemyDmgUntil:0, enemyArmorUntil:0 } };
+      if(extra){ for(var k in extra) st[k] = extra[k]; }
+      return st;
+    }
+    eq(FF.activeClassId(nb(85)), 'nightblade', 'dark wand + ward + full leather => Voidshadow');
+    // Pure-state helpers.
+    near(FF.nbDoomBankShare(nb(85)), FF.NB_DOOM_BANK_PCT, 'base bank share: 35% of every landed hit');
+    eq(FF.nbDoomWindPerHit(nb(85), false), FF.NB_DOOM_WIND_MS, 'a hit winds the clock 0.3s');
+    eq(FF.nbDoomWindPerHit(nb(85), true), FF.NB_DOOM_WIND_MS*2, 'a Critical Hit winds it 0.6s');
+    near(FF.nbLitanyPer(nb(85)), FF.NB_LITANY_PER, 'the Litany amplifies the strike +10%/woe at Lv40');
+    eq(FF.nbLitanyPer(nb(30)), 0, 'no Litany below Lv40');
+    near(FF.nbDoomsdayMult(nb(85, {nbDoomStrikes:3})), 1.30, 'Doomsday: 3 strikes this session -> +30% amplitude');
+    near(FF.nbDoomsdayMult(nb(85, {nbDoomStrikes:99})), 2.00, 'Doomsday caps at +100%');
+    eq(FF.nbDoomsdayMult(nb(60, {nbDoomStrikes:3})), 1, 'no Doomsday below Lv80');
+    // Soulrend (D3 dark wand): 4+ woes -> the bank share rises half again.
+    var vf = Date.now() + 9999;
+    var sr = nb(85, { equippedMainhandUid:'u1', uniqueItems:{ u1:{ uid:'u1', leg:'soulrend' } } });
+    sr.activity = { type:'combat', monsterHp:1e6, voidVulnStacks:3, voidVulnUntil:vf, enemyStunUntil:vf, curseUntil:vf, decayUntil:vf, decayStacks:2 };
+    eq(FF.enemyDebuffCount(sr), 4, 'four woes stand (Vulnerability + Stun + Curse + Decay)');
+    near(FF.nbDoomBankShare(sr), FF.NB_DOOM_BANK_PCT * FF.NB_SOULREND_BANK_MULT, 'Soulrend: 4+ woes -> hits seal half again more');
+    sr.activity.curseUntil = 0; sr.activity.decayUntil = 0;
+    near(FF.nbDoomBankShare(sr), FF.NB_DOOM_BANK_PCT, 'below 4 woes Soulrend is quiet');
+    // Voidveil: 10% less incoming while a Doom runs.
+    var vv = nb(85, { equippedOffhandUid:'u2', uniqueItems:{ u2:{ uid:'u2', leg:'voidveil' } }, nbDoomLeftMs: 5000 });
+    near(FF.legVoidveilIncomingMult(vv), 0.90, 'Voidveil: -10% incoming while a Doom runs');
+    vv.nbDoomLeftMs = 0;
+    eq(FF.legVoidveilIncomingMult(vv), 1, 'Voidveil is quiet with no Doom stamped');
+    // Behavioral: the engine through the REAL playerAttackTick + tick loop (live state).
+    (function(){
+      var s = FF._state;
+      var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid,
+                   oh:s.equippedOffhand, oht:s.equippedOffhandTier, ohu:s.equippedOffhandUid, ba:s.bodyArmor, ui:s.uniqueItems, xp:s.xp.nightblade,
+                   act:s.activity, hp:s.playerHp, cd:s.classDebuffs,
+                   dl:s.nbDoomLeftMs, db:s.nbDoomBank, ds:s.nbDoomStrikes };
+      var svRnd = Math.random;
+      try {
+        s.equippedMainhand='wandDark'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null;
+        s.equippedOffhand='wardDark'; s.equippedOffhandTier=6; s.equippedOffhandUid=null;
+        s.bodyArmor={ helmet:L(), chest:L(), gauntlets:L(), boots:L(), back:bare() };
+        s.uniqueItems = {}; s.classDebuffs = { enemyDmgUntil:0, enemyArmorUntil:0 };
+        s.xp.nightblade = FF.xpFloorForLevel(85);
+        eq(FF.activeClassId(s), 'nightblade', 'behavioral setup activates the Voidshadow');
+        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.playerHp = FF.maxHp(s);
+        s.nbDoomLeftMs = 0; s.nbDoomBank = 0; s.nbDoomStrikes = 0;
+        // A landed crit stamps the Doom, seals 35% of itself, and winds the fresh clock 0.6s.
+        Math.random = function(){ return 0; }; // lands + crits
+        var hp0 = s.activity.monsterHp;
+        FF.playerAttackTick(false, 1, false);
+        var dealt = hp0 - s.activity.monsterHp;
+        ok(dealt > 0, 'the swing landed');
+        eq(s.nbDoomLeftMs, FF.NB_DOOM_BASE_MS - 2*FF.NB_DOOM_WIND_MS, 'the first hit stamped the Doom and wound it 0.6s (crit)');
+        near(s.nbDoomBank, dealt * FF.NB_DOOM_BANK_PCT, 'the hit sealed 35% of itself into the Doom', Math.max(1, dealt*0.002));
+        eq((s.activity.voidVulnStacks||0), 1, 'Marks of the Void stacked Vulnerability 1');
+        ok((s.classDebuffs.enemyDmgUntil||0) > Date.now(), 'and Enfeebled the foe');
+        // The clock runs down through the tick and the strike fires at zero: bank x (1 + 10%/woe).
+        var bank = s.nbDoomBank, woes = FF.enemyDebuffCount(s);
+        ok(woes >= 2, 'at least Vulnerability + Enfeeble stand at strike time');
+        var hp1 = s.activity.monsterHp;
+        FF.applyNbDoomTick(FF.NB_DOOM_BASE_MS); // more than remains -> strikes
+        var struck = hp1 - s.activity.monsterHp;
+        eq(struck, Math.round(bank * (1 + FF.NB_LITANY_PER * woes)), 'the strike: the whole bank, +10% per woe, no crit re-roll');
+        eq(s.nbDoomStrikes, 1, 'Doomsday tallied the strike');
+        eq(s.nbDoomLeftMs, 0, 'no Doomcurse -> the Doom waits for the next hit to re-stamp');
+        eq(s.nbDoomBank, 0, '...with an empty bank');
+        var logRows = FF._combatLog();
+        var last = logRows[logRows.length-1];
+        eq(last && last.spName, 'Doom', 'the strike is a named Combat log row');
+        eq(last && last.dmg, struck, '...carrying the real number');
+        // The contract carries: stamp again, then kill the foe -- the Doom and bank survive.
+        FF.playerAttackTick(false, 1, false);
+        ok(s.nbDoomLeftMs > 0 && s.nbDoomBank > 0, 'a fresh Doom is stamped and sealing');
+        var carryClock = s.nbDoomLeftMs, carryBank = s.nbDoomBank;
+        var _mon = FF.MONSTERS.filter(function(m){ return m.id === s.activity.monsterId; })[0];
+        s.activity.monsterHp = 0; FF.defeatMonster(_mon);
+        eq(s.nbDoomLeftMs, carryClock, 'the Doom clock outlives the foe (death does not void the contract)');
+        eq(s.nbDoomBank, carryBank, '...and the bank carries with it');
+        eq((s.activity.voidVulnStacks||0), 0, 'the Marks die with the foe, as marks should');
+        // Doomcurse (D3 full): the strike re-stamps instantly, pre-sealed with 25% of the bank.
+        s.uniqueItems = {}; s.bodyArmor = { helmet:L(), chest:L(), gauntlets:L(), boots:L(), back:bare() };
+        ['helmet','chest','gauntlets','boots'].forEach(function(slot, i){
+          var uid = 'd3x'+i; s.uniqueItems[uid] = { set:'nightblade', setLayer:'d3' };
+          s.bodyArmor[slot] = { uid:uid, material:'leather', tier:5, rarity:'normal' };
+        });
+        eq(FF.activeClassId(s), 'nightblade', 'the D3 leathers still activate the class');
+        s.activity.monsterHp = 1e9; s.nbDoomLeftMs = 1; var bank2 = s.nbDoomBank;
+        FF.applyNbDoomTick(50);
+        eq(s.nbDoomLeftMs, FF.NB_DOOM_BASE_MS, 'Doomcurse: the struck Doom re-stamped instantly');
+        near(s.nbDoomBank, bank2 * FF.NB_DOOMCURSE_PRESEAL, '...pre-sealed with 25% of the spent bank', Math.max(1, bank2*0.002));
+        // Eclipse (D2 full): the strike consumes the marks (+6% each) and re-marks 5.
+        s.uniqueItems = {}; s.bodyArmor = { helmet:L(), chest:L(), gauntlets:L(), boots:L(), back:bare() };
+        ['helmet','chest','gauntlets','boots'].forEach(function(slot, i){
+          var uid = 'd2x'+i; s.uniqueItems[uid] = { set:'nightblade', setLayer:'d2' };
+          s.bodyArmor[slot] = { uid:uid, material:'leather', tier:5, rarity:'normal' };
+        });
+        s.activity.voidVulnStacks = 10; s.activity.voidVulnUntil = Date.now() + 9999;
+        s.nbDoomLeftMs = 1; s.nbDoomBank = 1000; s.nbDoomStrikes = 0;
+        var hp2 = s.activity.monsterHp, woes2 = FF.enemyDebuffCount(s);
+        FF.applyNbDoomTick(50);
+        eq(hp2 - s.activity.monsterHp, Math.round(1000 * (1 + FF.NB_LITANY_PER*woes2) * (1 + FF.NB_ECLIPSE_PER_STACK*10)), 'Eclipse: +6% per consumed mark rides the strike');
+        eq(s.activity.voidVulnStacks, FF.NB_ECLIPSE_REMARK, '...and 5 marks are re-stamped instantly');
+        // Voidfang: a Doom striking at max Vulnerability shatters armour entirely for 4s.
+        s.uniqueItems = { vf1:{ uid:'vf1', leg:'voidfang' } }; s.equippedMainhandUid = 'vf1';
+        s.bodyArmor = { helmet:L(), chest:L(), gauntlets:L(), boots:L(), back:bare() };
+        s.activity.voidVulnStacks = FF.voidVulnCap(s); s.activity.voidVulnUntil = Date.now() + 9999; s.activity.nbShatterUntil = 0;
+        s.nbDoomLeftMs = 1; s.nbDoomBank = 1000;
+        FF.applyNbDoomTick(50);
+        ok((s.activity.nbShatterUntil||0) > Date.now(), 'Voidfang: the max-Vulnerability strike shattered the armour');
+        eq(FF.legVoidfangShred(s), 1, '...and the shred reads FULL while the shatter stands');
+        // The session reset ends the contract.
+        s.nbDoomLeftMs = 5000; s.nbDoomBank = 123; s.nbDoomStrikes = 4;
+        FF.resetPersistentCombatBuffs();
+        ok(!s.nbDoomLeftMs && !s.nbDoomBank && !s.nbDoomStrikes, 'resetPersistentCombatBuffs expires the contract between sessions');
+      } finally {
+        Math.random = svRnd;
+        s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu;
+        s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.equippedOffhandUid=snap.ohu; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.nightblade=snap.xp;
+        s.activity=snap.act; s.playerHp=snap.hp; s.classDebuffs=snap.cd;
+        s.nbDoomLeftMs=snap.dl; s.nbDoomBank=snap.db; s.nbDoomStrikes=snap.ds;
+      }
+    })();
   });
 
   // ---- Classes: Assassin (twin-claw Rhythm / bleed / Vanish killer) ---------------------
