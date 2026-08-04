@@ -728,6 +728,38 @@ alone); the mid-pack ordering shuffled between packs (noise — do not rank Fars
 Sim-dead: the species seams and Gravesight's head start (kill-gated; the harness refills) — both under-read
 their real farming value, like Cryptreaver/Gravepilfer before them.
 
+**Spellblade** (90s — the 6s greatsword, EMPTY offhand required; v0.0.83.0 "the Afterimage Train", owner
+target **100B, "rewarding the full fantastic and enchantments"** — the first band set ABOVE the 90B dps
+classes, by owner order). The old kit was the never-scale disease in the ENCHANT dimension: Runic Power was
++4% per equipped enchant line = a flat +224% at BiS (every ceiling kit carries identical maxed runes),
+Critical Runes dead at ~100% crit, Empowered Runes a hidden ×2 across seven enchant channels, and the echoes
+were coin flips. **RULE ESTABLISHED (third entry on the never-scale list): never scale a line by raw ENCHANT
+COUNT/TOTALS** — enchant-then-enhance pins them exactly like Accuracy and Armor. Now a deterministic
+GEOMETRIC ECHO TRAIN: every landed swing repeats itself 1s later at the blade's Resonance ratio, afterimages
+leave afterimages to a DEPTH set by enchant-ROLL quality (`sbEnchantQuality`, 0..1 against each line's own
+min–max), gear RARITY raises the ratio (Runeglow), Runic Tempo hastes swings while a train rings, and
+Standing Wave pays for OVERLAPPING trains. The owner-rule nuance that makes this legal: rarity/quality DO
+scale the engine — they pin at BiS (tuned in via the band knob, banded at the full-fantastic maxed-roll
+ceiling) and are the progression curve below it; what they must never be again is a bare +X%-per-count
+multiplier nobody feels. Findings: (1) **the ratio is HARD-CAPPED at 0.75 and the cap is structural, not a
+balance number** — a geometric series with r near 1 is a runaway by construction; never raise it without
+re-deriving the series sum. In the winning D4 config the ratio reads 0.48 (base 0.40 + Cavern 0.08), nowhere
+near the cap — it only binds when D1's Echo Chamber + Gilded Runes + Perfect Resonance + Cavern all stack.
+(2) **Echoes repeat a LANDED post-crit hit, applied raw — flat-crit instance seven**, written that way from
+the start. (3) **Standing Wave splice bug caught by the engine suite pre-ship**: due echoes were unqueued
+BEFORE the Wave counted live trains, so a train mid-strike stopped "ringing" and two overlapping trains paid
+as one — count `liveNow = q.length` before the splice. (4) **D4 won the set A/B in BOTH packs** (+9.4% and
++14% over D3, D2 last both times) — rare reproducible set signal, and satisfying: the enchant-quality CLASS
+is won by its quality LAYER. (5) Runegorge (damage enchant lines ×1.5) read +33% over pack mean; the
+Wyrmstalker trim to **1.25** lands it +12% — the BiS blade, left alone. `SB_SWING_MULT` **0.726** (mean of
+two packs per the v0.0.72 method: pack 2 at 0.715 read 99.2B, pack 1 rescaled to the same knob implies
+97.8B, mean 98.5B → ×100/98.5; the 1.5% nudge is inside noise — do not re-sim for it). Ceilings (D4 set,
+Ruin cloak, no offhand): Runegorge ~112B / Cavern Echo ~108B / Runegrave ~91B / Runewyrm ~89B — pack mean
+**~100B**, on target. Runewyrm/Runegrave swapped places between packs (indistinguishable — do not rank);
+Cavern Echo beat Runegrave in both (the ratio axis is real, not cap-pinned). Sim notes: BUILDS has NO
+offhand key — the class requires an empty offhand to activate; set/cloak A/B run at 45s, the legendary
+matrix at the full 90s window (compare against 90s classes only).
+
 **TIER WARNING (v0.0.64.9): every recorded ceiling above was measured with a ONE-BELOW-BiS weapon.**
 Melee weapons + shields shipped with `tierCount:20` (top `t19`) while bows/wands/wards/scepter/staff had
 21 (top `t20`) — the ticket-0116 off-kilter. Melee/shields are now 21 tiers too (top `t20`, Tungsten), and
