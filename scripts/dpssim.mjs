@@ -186,6 +186,23 @@ const BUILDS = {
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "fire",
     offhandWard: "everburning",
   },
+  spellblade: {
+    // Greatsword + EMPTY offhand (the class requires it -- no offhand key here, and never add one), chain
+    // helm/chest + leather gloves/boots -- 90s window (6s two-hander: compare Knight/Samurai/Berserker).
+    // "The Afterimage Train" (v0.0.83.0): every swing repeats 1s later at the Resonance ratio and chains
+    // to a depth set by enchant quality; the harness rolls MAX enchant lines, so quality reads 1.0 and
+    // Perfect Resonance (D4 full) is LIVE -- this measures the full-fantastic maxed-roll ceiling, which
+    // is exactly where the owner banded it (100B). DETERMINISTIC end to end -- expect Reaver-quiet runs
+    // (+-3%). THE CAP CHECK (before trusting any ceiling): the ratio hard-caps at 0.75 and a BiS D4 kit
+    // OVERFLOWS it by design (glow x2 + Echo Chamber + Cavern Echo + Perfect Resonance) -- verify the cap
+    // binds by confirming a Cavern Echo D4 cell reads LEVEL with a no-Cavern D4 cell; if it reads higher,
+    // the cap is not binding and the series math needs re-deriving. Law test: Cavern Echo (ratio) vs
+    // Runegrave (depth floor -- worthless at BiS where quality is already 1.0, the designed runt).
+    weapon: { typeId: "greatsword", styleXp: ["greatsword"] },
+    legs: ["resonantecho", "runegorge", "runegrave", "runewyrm"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "pierce",
+  },
   sharpshooter: {
     // Long Bow + quiver, leather helm/chest/boots + cloth gloves -- 45s window (bow class: compare the
     // Ranger/Quickdraw, never the 90s classes). "The Exposure Ladder" (v0.0.82.0): crits peel layers
