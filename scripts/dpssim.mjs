@@ -305,6 +305,31 @@ const BUILDS = {
     weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "pierce",
   },
+  executioner: {
+    // Full-moon axe (8s two-hander, bare head + chain/leather) -- 90s window like the Sledge/Katana: 45s
+    // is eleven swings and the Falls arrive every ~17-30s. "The Falling Axe" (v0.0.84.0): the Guillotine
+    // threshold climbs +2%/s +1%/hit toward its 85% cap; the axe falls at a foe-HP crossing OR on its own
+    // at the cap, for 200% of the recent hit x (1 + drop height + missing health). THE DUMMY PINS
+    // enemyHpFrac AT 1.0 (monsterHp 1e15 vs the Archdemon's real ~1.2M hp, clamped), so here every Fall
+    // is a CAP-fall with missing=0 -- the engine cycles deterministically off the climb clock, which is
+    // exactly why the cap-fall exists. Sim-dead and recorded as such: Reap the Weak (+30% below the
+    // blade -- frac never drops), the missing-health half of the amp, Momentum of the Cull + The Cull
+    // (kill-gated; the harness refills), First Blood after the first Fall (one foe all run), Bloodthirst,
+    // Headtaker (kill-gated), and Huskmaker (+2%/1% missing = +0% at frac 1 -- expect it to read as a
+    // PLAIN axe and place last; its real farming value is invisible here). PRE-REGISTERED PREDICTIONS:
+    // (1) D2 may top the set A/B on the dummy -- Cleave's +20% vs non-boss is a FLAT on an Archdemon that
+    // isBoss=false, honest in real play but a condition-that-cannot-fail here; judge the engine layers
+    // (D1/D3/D4) against each other. (2) Among engine layers the rate halves should lead (Double Bit's
+    // retention, The Long Drop's raised floor) per the rate/cap law -- classify: every winning axis pays
+    // in CYCLE TIME. (3) Legendary matrix: Soulharvester (climb rate) and Emberwyrm (+40% Falls) real;
+    // Huskmaker/Headtaker at the plain-axe floor. SATURATION CHECK (the Samurai clock lesson): with
+    // Keen Rise x Soulharvester honed (x1.95 on 2%/s) a cycle is still ~17s against 8s swings -- if any
+    // pack shows Falls outpacing swings, the clock is degenerate; distrust it and re-tune EX_THRESH_PER_SEC.
+    weapon: { typeId: "fullmoonaxe", styleXp: ["fullmoonaxe"] },
+    legs: ["cull", "headtaker", "soulharvester", "emberwyrm"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "slash",
+  },
   berserker: {
     // Max Health IS the weapon (Titan's Heft/Deepquake/Wrathscale scale off it), so jewelry lines trade
     // lifesteal for Max HP. primeLedger holds the Blood Ledger inked at cap (owner rule: simulate the

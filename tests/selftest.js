@@ -4649,41 +4649,28 @@
     eq(FF.newClassDmgMult(monFull, stFor('nightblade',80)), FF.voidDmgMult(stFor('nightblade',80)), 'Voidshadow damage is driven entirely by voidDmgMult (no flat Hex)');
     ok(typeof FF.nightbladeDodgeBonus === 'undefined', 'Shadowstep dodge helper removed');
     ok(typeof FF.voidMarkPerHit === 'undefined', 'voidMarkPerHit retired (Malediction winds the Doom now)');
-    // Executioner rework: Reaping Vigor (Lv1) / Reap the Weak (Lv20) / Rising Guillotine (Lv40) /
-    // Headsman's Tally (Lv60) / Gallows Humor (Lv80). The old crit/lifesteal/execute stats are gone.
+    // Executioner "the Falling Axe": The Falling Axe (Lv1) / Reap the Weak (Lv20) / Momentum of the
+    // Cull (Lv40) / Headsman's Tally (Lv60) / The Cull (Lv80). The old defensive flats are all gone.
     var exNames = FF.CLASS_DEFS_BY_ID.executioner.passives.map(function(p){ return p.name; });
-    eq(JSON.stringify(exNames), JSON.stringify(['Reaping Vigor','Reap the Weak','Rising Guillotine','Headsman\'s Tally','Gallows Humor']), 'Executioner ladder is the reworked five');
-    // Reap the Weak moved from Lv1 to Lv20.
-    eq(FF.newClassDmgMult(monLow, stFor('executioner',1,{activity:{type:'combat',monsterHp:10}})), 1, 'Lv1 no longer grants Reap (moved to Lv20)');
-    ok(Math.abs(FF.newClassDmgMult(monLow, stFor('executioner',20,{activity:{type:'combat',monsterHp:10}})) - 1.30) < 1e-9, 'Reap the Weak +30% vs a wounded foe at Lv20');
-    eq(FF.newClassDmgMult(monLow, stFor('executioner',20,{activity:{type:'combat',monsterHp:60}})), 1, 'Lv20 Reap is neutral above the flat 50% threshold');
-    // Rising Guillotine (Lv40): after 20s the threshold climbs to ~70%, so a 60%-HP foe now reaps.
-    var exRise = stFor('executioner',40,{activity:{type:'combat',monsterHp:60,duelStartedAt:Date.now()-20000}});
-    near(FF.executionerReapThreshold(exRise), 0.70, 'Rising Guillotine: +1%/s -> 70% threshold at 20s', 1e-2); // wall-clock drift (Date.now advances a few ms between setup and read) -> tolerant compare
-    ok(Math.abs(FF.newClassDmgMult(monLow, exRise) - 1.30) < 1e-9, 'Rising Guillotine lets a 60%-HP foe be reaped at 20s');
-    eq(FF.executionerReapThreshold(stFor('executioner',20)), 0.5, 'without Rising Guillotine the threshold stays 50%');
-    // Reaping Vigor (Lv1): each crit stack = +25% max HP, gated on the class.
-    FF.execVigorReset();
-    eq(FF.execVigorMaxHpBonus(stFor('executioner',80)), 0, 'no crit stacks -> no Vigor bonus');
-    FF.execVigorAddStack(); FF.execVigorAddStack();
-    ok(Math.abs(FF.execVigorMaxHpBonus(stFor('executioner',80)) - 0.50) < 1e-9, 'Reaping Vigor: 2 crit stacks -> +50% max HP');
-    eq(FF.execVigorMaxHpBonus(none), 0, 'no class -> Vigor bonus neutral even with stacks queued');
-    FF.execVigorReset();
-    // Headsman's Tally (Lv60): +5 max HP per session kill, capped at +250, gated on the class.
-    FF.headsmanTallyReset();
-    eq(FF.headsmanTallyBonusHp(stFor('executioner',80)), 0, 'no kills -> no Tally HP');
-    FF.headsmanTallyKill(); FF.headsmanTallyKill(); FF.headsmanTallyKill();
-    eq(FF.headsmanTallyBonusHp(stFor('executioner',80)), 15, 'Headsman\'s Tally: 3 kills -> +15 max HP');
-    for(var _hk=0; _hk<100; _hk++) FF.headsmanTallyKill();
-    eq(FF.headsmanTallyBonusHp(stFor('executioner',80)), 250, 'Headsman\'s Tally caps at +250 max HP');
-    eq(FF.headsmanTallyBonusHp(stFor('executioner',40)), 0, 'Tally inactive below Lv60');
-    FF.headsmanTallyReset();
-    // Gallows Humor (Lv80): +crit scaling with the foe's missing Health (up to +25%).
-    var exGMon = FF.MONSTERS[0];
-    var exGal = stFor('executioner',80); exGal.activity = { type:'combat', monsterId:exGMon.id, monsterHp: exGMon.hp*0.2 };
-    near(FF.newClassCritChance(exGal), 0.20, 'Gallows Humor: +25% * 80% missing HP = +20% crit', 1e-6);
-    eq(FF.newClassCritChance(stFor('executioner',60)), 0, 'Gallows Humor inactive below Lv80');
-    eq(FF.newClassCritDmg(stFor('executioner',80)), 0, 'Executioner no longer grants flat crit damage');
+    eq(JSON.stringify(exNames), JSON.stringify(['The Falling Axe','Reap the Weak','Momentum of the Cull','Headsman\'s Tally','The Cull']), 'Executioner ladder is the Falling Axe five');
+    // Reap the Weak reads the BLADE: +30% below the live Guillotine threshold on the activity.
+    ok(Math.abs(FF.newClassDmgMult(monLow, stFor('executioner',20,{activity:{type:'combat',monsterHp:10,exThresh:0.5}})) - 1.30) < 1e-9, 'Reap the Weak +30% vs a foe beneath the blade');
+    eq(FF.newClassDmgMult(monLow, stFor('executioner',20,{activity:{type:'combat',monsterHp:60,exThresh:0.5}})), 1, 'Reap is neutral above the blade');
+    var exBlade = stFor('executioner',40,{activity:{type:'combat',monsterHp:60,exThresh:0.70}});
+    near(FF.executionerReapThreshold(exBlade), 0.70, 'the Reap threshold IS the climbing blade (act.exThresh)', 1e-9);
+    ok(Math.abs(FF.newClassDmgMult(monLow, exBlade) - 1.30) < 1e-9, 'a raised blade widens the Reap window to a 60%-HP foe');
+    eq(FF.executionerReapThreshold(stFor('executioner',20)), FF.EX_THRESH_FLOOR, 'no blade hung yet -> the threshold reads the floor');
+    // The retired kit: Reaping Vigor, the kill Tally HP, Gallows Humor, the 2pc instant-kill and the
+    // Emberwyrm fire-execute are all gone (the Falling Axe rework).
+    ok(typeof FF.execVigorAddStack === 'undefined', 'Reaping Vigor retired (a defensive flat at ~100% BiS crit)');
+    ok(typeof FF.execVigorMaxHpBonus === 'undefined', 'Vigor max-HP bonus retired');
+    ok(typeof FF.headsmanTallyKill === 'undefined', 'the kill-count Tally retired (the Tally counts FALLS now)');
+    ok(typeof FF.headsmanTallyBonusHp === 'undefined', 'Tally max-HP bonus retired');
+    ok(typeof FF.executionerGallowsCrit === 'undefined', 'Gallows Humor retired (dead at capped crit)');
+    ok(typeof FF.EXEC_SET_EXECUTE_FRAC === 'undefined', 'the D1 2pc instant-kill retired (Keen Rise now; The Cull executes)');
+    ok(typeof FF.d4EmberwyrmExecutes === 'undefined', 'Emberwyrm\'s fire-execute retired (it amplifies Falls +40% now)');
+    eq(FF.newClassCritChance(stFor('executioner',80)), 0, 'the Executioner grants no flat crit chance');
+    eq(FF.newClassCritDmg(stFor('executioner',80)), 0, 'the Executioner grants no flat crit damage');
     // No class active -> every new-class multiplier is neutral.
     var none = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat',monsterHp:100}, playerHp:1 };
     eq(FF.newClassDmgMult(monFull, none), 1, 'no class -> new-class dmg neutral');
@@ -7108,10 +7095,9 @@
     var sfSt = legSt('soulflame','scythe');
     ok(FF.legActive('soulflame', sfSt), 'legActive detects the reworked Soulflame Scythe');
     eq(FF.d4SoulflameBurst(1000, sfSt), 0, 'Soulflame no longer bursts on the swing (its Fire rides critical Rot ticks)');
-    var ewMon = { hp:1000, isBoss:false };
-    ok(FF.d4EmberwyrmExecutes(ewMon, legSt('emberwyrm','fullmoonaxe',{ activity:{type:'combat', monsterHp:200, burnUntil:now+5000, burnStacks:2} })), 'Emberwyrm executes a Burning foe below 25% Health');
-    ok(!FF.d4EmberwyrmExecutes(ewMon, legSt('emberwyrm','fullmoonaxe',{ activity:{type:'combat', monsterHp:200} })), 'Emberwyrm needs the foe Burning or Scorched');
-    ok(!FF.d4EmberwyrmExecutes({ hp:1000, isBoss:true }, legSt('emberwyrm','fullmoonaxe',{ activity:{type:'combat', monsterHp:200, burnUntil:now+5000, burnStacks:2} })), 'Emberwyrm never executes a boss');
+    // Emberwyrm's Reaper (Falling Axe rework): the fire-execute retired -- it amplifies Falls +40% now.
+    ok(typeof FF.d4EmberwyrmExecutes === 'undefined', 'the Emberwyrm fire-execute helper is gone');
+    eq(FF.LEG_EMBERWYRM_FALL_MULT, 1.40, "Emberwyrm's Reaper: Falls strike +40% harder (checked live in the engine suite)");
 
     // --- Behavioural: Gorewyrm bleed Fire lifesteal; Blightwyrm poison Scorch ---
     var s = FF._state, sv = { ba:s.bodyArmor, ui:s.uniqueItems, act:s.activity, hp:s.playerHp, mh:s.equippedMainhandUid };
@@ -7455,10 +7441,11 @@
       s.activity = { type:'combat', monsterHp:500 };
       // The Reaper left the Souls pillar in the Rotlord rework — Souls no longer move his damage.
       wearD3('reaper', 3); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.0, 'Reaper full D3 no longer spends Souls (Lich\'s Vestments is the offensive-shield set now)');
-      // Executioner Death Toll (full): +4% per Soul.
-      wearD3('executioner', 3); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.20, 'Executioner Death Toll: +4% per Soul');
-      s.d3Souls = 0; near(FF.d3SetDmgMult({}, s), 1.0, 'Death Toll inert at 0 Souls');
-      s.d3Souls = 99; near(FF.d3SetDmgMult({}, s), 1.40, 'Soul count caps at 10 (Death Toll maxes at +40%)');
+      // Executioner D3 de-themed (v0.0.84.0): Death Toll's souls retired -- the layer is Heavier Blade /
+      // Double Bit now (tested in the Falling Axe engine suite).
+      wearD3('executioner', 3); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.0, 'Death Toll retired: no per-Soul multiplier');
+      eq(FF.D3_SET_DEFS.executioner.b2.name, 'Heavier Blade', 'Executioner D3 2pc is Heavier Blade now');
+      eq(FF.D3_SET_DEFS.executioner.bf.name, 'Double Bit', 'Executioner D3 full is Double Bit now');
       // Spellblade D3 de-themed (v0.0.83.0): Necroblade's souls retired -- the layer is Leading Edge /
       // The Caboose now (tested in the Afterimage Train suite).
       wearD3('spellblade', 4); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.0, 'Necroblade retired: no per-Soul multiplier');
@@ -7866,12 +7853,12 @@
       var baseSharp = Math.round(1000 * FF.D4_BREATH_BURST_MULT * FF.elementDmgMult(s, 'fire'));
       eq(FF.d4BreathFire(s, { element:'water' }, 1000), 0, 'the Sharpshooter left the Breath pillar entirely (no variant, no fire)');
       // (Spirit Breath retired: the Reaper's D4 is the Festerweave Shroud rot-crit set now.)
-      // Executioner Immolation Breath: executes a foe below 25% Health.
-      wearFull('executioner'); s.activity = { type:'combat', monsterHp:200, breathCharge:100 }; var exMon = { isBoss:false, hp:1000 };
-      var slain = FF.d4BreathFire(s, exMon, 10); eq(s.activity.monsterHp, 0, 'Immolation Breath executes a foe below 25% Health');
-      ok(slain >= 200, 'the execute reports the slain HP');
-      s.activity = { type:'combat', monsterHp:500, breathCharge:100 }; // 50% -> no execute, normal burst
-      var nb = FF.d4BreathFire(s, exMon, 10); ok(s.activity.monsterHp > 0 && s.activity.monsterHp < 500, 'above 25% Health, Immolation Breath just bursts');
+      // Immolation Breath retired (D4 de-themed, v0.0.84.0): a full Executioner D4 no longer owns a
+      // Breath variant at all -- The Long Drop starts the blade at 40% instead.
+      wearFull('executioner'); s.activity = { type:'combat', monsterHp:200, breathCharge:100 };
+      eq(FF.d4BreathFire(s, { isBoss:false, hp:1000 }, 10), 0, 'the Executioner left the Breath pillar entirely (no variant, no execute)');
+      eq(FF.D4_SET_DEFS.executioner.b2.name, 'Scent of Ruin', 'Executioner D4 2pc is Scent of Ruin now');
+      eq(FF.D4_SET_DEFS.executioner.bf.name, 'The Long Drop', 'Executioner D4 full is The Long Drop now');
       // Ranger Venombreath: burst + apply your ailments (Chill / Decay / Curse).
       wearFull('ranger'); s.activity = { type:'combat', monsterHp:1000000, breathCharge:100 };
       FF.d4BreathFire(s, { element:'water' }, 1000);
@@ -8584,11 +8571,10 @@
     near(FF.thGoldFindMult(setSt('treasureHunter', 2)), 1, 'no Wider Appraisal below the full set');
     near(FF.legTreasureMult(setSt('treasureHunter', 4)), 1, 'the Treasure Hunter D1 set no longer adds Treasure Find');
 
-    // Executioner Execute (2pc): a non-boss foe below 15% Health is slain instantly (threshold constant;
-    // the kill itself is exercised in the drive harness).
-    near(FF.EXEC_SET_EXECUTE_FRAC, 0.15, 'Execute (2pc): instant-kill threshold is 15% max HP');
-    ok(FF.set2('executioner', setSt('executioner', 2)), 'two Executioner pieces arm Execute');
-    ok(!FF.set2('executioner', setSt('executioner', 1)), 'one piece does not arm Execute');
+    // Executioner Keen Rise (2pc): the D1 2pc is a climb-rate axis now (the instant-kill retired).
+    ok(typeof FF.EXEC_SET_EXECUTE_FRAC === 'undefined', 'the Execute instant-kill constant is gone');
+    near(FF.exClimbRateMult(setSt('executioner', 2)), FF.EX_D1_RATE_MULT, 'Keen Rise (2pc): the threshold climbs +50% faster');
+    near(FF.exClimbRateMult(setSt('executioner', 1)), 1, 'one piece does not arm Keen Rise'); // (First Blood's +50% first Fall is exercised in the engine suite)
   });
 
   // ---- Combat card: buff/debuff stack badges -------------------------------------------
@@ -8723,7 +8709,8 @@
     S.reaperShield = 500; S.templarShield = 400; S.lumenShield = 300;
     S.heraldBarrier = 3; S.assassinVigor = { stacks:5, until:Date.now()+9999 };
     S.d2BloodthirstStacks = 4; S.d2BloodthirstUntil = Date.now()+9999;
-    FF.headsmanTallyReset(); FF.headsmanTallyKill(); FF.headsmanTallyKill();
+    var savedEx = { t:S.exTally, h:S.exHone, c:S.exCarry };
+    S.exTally = 4; S.exHone = 3; S.exCarry = 0.3; // the headsman's session ramps ride the same reset
     FF.companionCastsOnCombatEntry('combat');
     eq(S.reaperShield, 500, 'a foe-to-foe transition keeps the Reaper shield');
     FF.companionCastsOnCombatEntry(null);
@@ -8733,9 +8720,11 @@
     eq(S.heraldBarrier, 0, "...and the Bastion's Barrier");
     ok(!S.assassinVigor, '...and Assassin Vigor');
     eq(S.d2BloodthirstStacks, 0, '...and Bloodthirst stacks');
+    ok(!S.exTally && !S.exHone && !S.exCarry, "...and the headsman's Tally, hone and carried climb");
     S.reaperShield = savedBuffs.rs; S.templarShield = savedBuffs.ts; S.lumenShield = savedBuffs.ls;
     S.heraldBarrier = savedBuffs.hg; S.assassinVigor = savedBuffs.av;
     S.d2BloodthirstStacks = savedBuffs.bt; S.d2BloodthirstUntil = savedBuffs.btu;
+    S.exTally = savedEx.t; S.exHone = savedEx.h; S.exCarry = savedEx.c;
     // Killing a foe in a grind chain zeroes all three attack accumulators (yours, off-hand, the foe's).
     var savedAct = S.activity, savedInv = S.inventory, savedEarned = S.itemEarnedTotal, savedRand = Math.random;
     try {
@@ -14380,6 +14369,166 @@
         s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.juggernaut=snap.xp;
         s.activity=snap.act; s.playerHp=snap.hp;
         s.jgEchoes=snap.je; s.jgResonance=snap.jr; s.jgFury=snap.jf;
+      }
+    })();
+  });
+
+  suite('classes: Executioner Falling Axe engine', function(){
+    function C(m){ return {material:m, tier:5, rarity:'normal'}; }
+    (function(){
+      var s = FF._state;
+      var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid,
+                   oh:s.equippedOffhand, oht:s.equippedOffhandTier, ba:s.bodyArmor, ui:s.uniqueItems, xp:s.xp.executioner,
+                   act:s.activity, hp:s.playerHp,
+                   tally:s.exTally, hone:s.exHone, carry:s.exCarry };
+      var svRnd = Math.random;
+      try {
+        s.equippedMainhand='fullmoonaxe'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null;
+        s.equippedOffhand=null; s.equippedOffhandTier=0;
+        s.bodyArmor={ chest:C('chain'), gauntlets:C('chain'), boots:C('leather') }; // no helmet = bare head
+        s.uniqueItems = {};
+        s.xp.executioner = FF.xpFloorForLevel(85);
+        eq(FF.activeClassId(s), 'executioner', 'full-moon axe + bare head + chain => Executioner');
+        // A big foe so the hpFrac arithmetic is real (MONSTERS[0] is ~20 hp and a Fall would zero it).
+        var mon = FF.MONSTERS.reduce(function(a,b){ return b.hp > a.hp ? b : a; });
+        s.activity = { type:'combat', monsterId:mon.id, monsterHp:mon.hp, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.playerHp = FF.maxHp(s);
+        s.exTally = 0; s.exHone = 0; s.exCarry = 0;
+        // Seeding: the blade hangs at the floor, armed.
+        FF.applyExFallTick(0);
+        near(s.activity.exThresh, FF.EX_THRESH_FLOOR, 'a fresh foe meets the blade at its 15% floor', 1e-9);
+        ok(s.activity.exArmed === true, 'and the blade is armed');
+        // The climb: +2%/s from the clock, +1% per landed hit.
+        FF.applyExFallTick(1000);
+        near(s.activity.exThresh, 0.17, 'one second of combat raises the blade +2%', 1e-9);
+        Math.random = function(){ return 0; }; // the swing lands (and crits)
+        FF.playerAttackTick(false, 1, false);
+        near(s.activity.exThresh, 0.18, 'a landed hit raises it another +1%', 1e-9);
+        Math.random = svRnd;
+        // The cap-fall: fully raised, the axe falls ON ITS OWN (the sim-visibility half of the design).
+        // Seeded LARGE known values (the Aftershock lesson): dotHitAvg 1000 so a broken multiplier can
+        // never hide inside a tolerance floor. monsterHp is reset to FULL before every probe -- the
+        // missing-health term would otherwise smear each expectation with the previous probe's damage.
+        s.activity.monsterHp = mon.hp;
+        s.activity.dotHitAvg = 1000; s.activity.exThresh = FF.EX_THRESH_CAP; s.exTally = 0;
+        var hp0 = s.activity.monsterHp;
+        FF.applyExFallTick(0);
+        var fall1 = hp0 - s.activity.monsterHp;
+        eq(fall1, Math.round(1000 * FF.EX_FALL_PCT * (1 + FF.EX_THRESH_CAP)), 'the cap-fall pays 200% x (1 + the 85% it fell from) -- 3700 on a full-health foe');
+        near(s.activity.exThresh, FF.EX_THRESH_FLOOR, 'the blade resets to the floor after the Fall', 1e-9);
+        eq(s.activity.exFell, 1, 'the foe has met the axe once');
+        eq(s.exTally, 1, "Headsman's Tally counts the Fall");
+        var rows = FF._combatLog(); var lastRow = rows[rows.length-1];
+        eq(lastRow && lastRow.spName, 'Falling Axe', 'the Fall is a named Combat log row');
+        // The Tally makes the next Fall heavier (+8%/Fall, the Galvanize ramp).
+        s.activity.monsterHp = mon.hp;
+        s.activity.dotHitAvg = 1000; s.activity.exThresh = FF.EX_THRESH_CAP;
+        var hp1 = s.activity.monsterHp;
+        FF.applyExFallTick(0);
+        eq(hp1 - s.activity.monsterHp, Math.round(1000 * FF.EX_FALL_PCT * (1 + FF.EX_THRESH_CAP) * (1 + FF.EX_TALLY_PER)), 'the second Fall lands +8% heavier');
+        // The crossing-fall: the foe's health sinks beneath an armed blade -- and the drop pays BOTH
+        // terms (height fallen from + missing health). A SMALL hit base here: a 1000-base Fall would
+        // outright kill the wounded fixture foe (applyEffectDamage kills synchronously, and the kill
+        // path re-hangs the blade), so the probes below that need a SURVIVING foe seed dotHitAvg small.
+        s.exTally = 0; s.activity.dotHitAvg = 100;
+        s.activity.monsterHp = Math.round(mon.hp * 0.4); s.activity.exThresh = 0.5; s.activity.exArmed = true;
+        var hp2 = s.activity.monsterHp;
+        FF.applyExFallTick(0);
+        var fall3 = hp2 - s.activity.monsterHp;
+        near(fall3, Math.round(100 * FF.EX_FALL_PCT * (1 + 0.5 + 0.6)), 'a crossing at 50% on a 40%-health foe pays x2.1', 5); // hpFrac reads post-integer-rounding, so a hair of slack
+        // The armed guard: below the reset floor the crossing-trigger waits (no re-fire loop) -- only
+        // the cap can drop the axe again. Tested at Lv60, where The Cull cannot execute the fixture.
+        s.xp.executioner = FF.xpFloorForLevel(60);
+        s.exTally = 0; s.activity.dotHitAvg = 10;
+        s.activity.monsterHp = Math.round(mon.hp * 0.05); s.activity.exThresh = 0.5; s.activity.exArmed = true; s.activity.exFell = 0;
+        FF.applyExFallTick(0);
+        eq(s.activity.exFell, 1, 'the armed blade fell through the crossing');
+        ok(s.activity.exArmed === false, 'and cannot re-arm on a foe already beneath it');
+        FF.applyExFallTick(1000);
+        eq(s.activity.exFell, 1, 'no re-fire loop: the un-armed blade just climbs');
+        // The Cull (Lv80): a Fall against a non-boss foe below 25% executes it and carries the WHOLE climb.
+        s.xp.executioner = FF.xpFloorForLevel(85);
+        s.exTally = 0; s.activity.dotHitAvg = 10;
+        s.activity.monsterHp = Math.round(mon.hp * 0.2); s.activity.exThresh = 0.6; s.activity.exArmed = true; s.activity.exCulled = false;
+        FF.applyExFallTick(0);
+        eq(s.activity.monsterHp, 0, 'The Cull: the Fall executes a foe below 25%');
+        ok(s.activity.exCulled === true, 'and marks the execute');
+        near(s.exCarry, 0.6 - FF.EX_THRESH_FLOOR, 'an execute carries the ENTIRE climb (captured at fall height)', 1e-9);
+        // Momentum of the Cull: the carried climb seeds the NEXT foe's blade.
+        FF.defeatMonster(mon);
+        ok(typeof s.activity.exThresh !== 'number', 'the per-foe reset un-hangs the blade');
+        FF.applyExFallTick(0);
+        near(s.activity.exThresh, FF.EX_THRESH_FLOOR + 0.45, 'the next foe meets a blade already raised by the carry', 1e-9);
+        eq(s.exCarry, 0, 'the carry is consumed by the seeding');
+        // A plain kill (no Cull) carries HALF the climb.
+        s.activity.exThresh = 0.75; s.activity.exCulled = false;
+        s.activity.monsterHp = 0; FF.defeatMonster(mon);
+        near(s.exCarry, (0.75 - FF.EX_THRESH_FLOOR) * FF.EX_CULL_CARRY, 'Momentum of the Cull: a kill carries half the climb', 1e-9);
+        s.exCarry = 0;
+        // Fresh duel for the gear probes (the kill above left the enemy-swap fade).
+        s.activity = { type:'combat', monsterId:mon.id, monsterHp:mon.hp, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now(), dotHitAvg:1000 };
+        // D3 -- Heavier Blade (2pc): Falls +25%; Double Bit (full): the blade keeps a third of its climb.
+        s.uniqueItems = {}; s.bodyArmor = { chest:C('chain'), gauntlets:C('chain'), boots:C('leather') };
+        ['chest','gauntlets','boots'].forEach(function(slot, i){
+          var uid = 'xd3'+i; s.uniqueItems[uid] = { set:'executioner', setLayer:'d3' };
+          s.bodyArmor[slot] = { uid:uid, material:s.bodyArmor[slot].material, tier:5, rarity:'normal' };
+        });
+        eq(FF.activeClassId(s), 'executioner', 'the D3 harness still activates the class');
+        s.exTally = 0; s.activity.exThresh = FF.EX_THRESH_CAP; s.activity.dotHitAvg = 1000;
+        var hp3 = s.activity.monsterHp;
+        FF.applyExFallTick(0);
+        eq(hp3 - s.activity.monsterHp, Math.round(1000 * FF.EX_FALL_PCT * (1 + FF.EX_THRESH_CAP) * FF.EX_D3_FALL_MULT), 'Heavier Blade: the Fall lands +25%');
+        near(s.activity.exThresh, FF.EX_THRESH_FLOOR + (FF.EX_THRESH_CAP - FF.EX_THRESH_FLOOR) * FF.EX_D3_RETAIN, 'Double Bit: a third of the climb survives the Fall', 1e-9);
+        // D4 -- The Long Drop (full): the floor rises to 40%; Scent of Ruin (2pc): the amp counts half again.
+        ['chest','gauntlets','boots'].forEach(function(slot, i){
+          var uid = 'xd4'+i; s.uniqueItems[uid] = { set:'executioner', setLayer:'d4' };
+          s.bodyArmor[slot] = { uid:uid, material:s.bodyArmor[slot].material, tier:5, rarity:'normal' };
+        });
+        near(FF.exThreshFloor(s), FF.EX_THRESH_FLOOR_D4, 'The Long Drop: the blade starts already raised at 40%', 1e-9);
+        s.exTally = 0; s.activity.exThresh = FF.EX_THRESH_CAP; s.activity.dotHitAvg = 1000; s.activity.monsterHp = mon.hp;
+        var hp4 = s.activity.monsterHp;
+        FF.applyExFallTick(0);
+        eq(hp4 - s.activity.monsterHp, Math.round(1000 * FF.EX_FALL_PCT * (1 + FF.EX_THRESH_CAP * FF.EX_D4_AMP_MULT)), 'Scent of Ruin: the height+missing amp counts x1.5');
+        near(s.activity.exThresh, FF.EX_THRESH_FLOOR_D4, 'and the Fall resets to the RAISED floor', 1e-9);
+        // Legendaries: the Soulharvester hones the climb per Fall; Emberwyrm's Reaper drops Falls +40%.
+        s.uniqueItems = { sh:{ uid:'sh', leg:'soulharvester' } }; s.equippedMainhandUid = 'sh';
+        s.bodyArmor = { chest:C('chain'), gauntlets:C('chain'), boots:C('leather') };
+        s.exHone = 0; s.exTally = 0;
+        near(FF.exClimbRateMult(s), 1, 'an un-honed Soulharvester climbs at the base rate');
+        s.activity.exThresh = FF.EX_THRESH_CAP; s.activity.dotHitAvg = 1000; s.activity.monsterHp = mon.hp;
+        FF.applyExFallTick(0);
+        eq(s.exHone, 1, 'the Fall honed the blade');
+        near(FF.exClimbRateMult(s), 1 + FF.LEG_SOULHARVESTER_PER, 'Soulharvester: +3% climb rate per Fall this session', 1e-9);
+        s.uniqueItems = { ew:{ uid:'ew', leg:'emberwyrm' } }; s.equippedMainhandUid = 'ew';
+        s.exTally = 0; s.activity.exThresh = FF.EX_THRESH_CAP; s.activity.dotHitAvg = 1000; s.activity.monsterHp = mon.hp;
+        var hp5 = s.activity.monsterHp;
+        FF.applyExFallTick(0);
+        eq(hp5 - s.activity.monsterHp, Math.round(1000 * FF.EX_FALL_PCT * (1 + FF.EX_THRESH_CAP) * FF.LEG_EMBERWYRM_FALL_MULT), "Emberwyrm's Reaper: the axe falls from higher (+40%)");
+        // First Blood (D1 full): the FIRST Fall on each foe lands +50%; the second is ordinary.
+        s.uniqueItems = {}; s.equippedMainhandUid = null;
+        s.bodyArmor = { chest:C('chain'), gauntlets:C('chain'), boots:C('leather') };
+        ['chest','gauntlets','boots'].forEach(function(slot, i){
+          var uid = 'xd1'+i; s.uniqueItems[uid] = { set:'executioner', setLayer:'d1' };
+          s.bodyArmor[slot] = { uid:uid, material:s.bodyArmor[slot].material, tier:5, rarity:'normal' };
+        });
+        s.exTally = 0; s.activity.exThresh = FF.EX_THRESH_CAP; s.activity.dotHitAvg = 1000; s.activity.monsterHp = mon.hp; s.activity.exFell = 0;
+        var hp6 = s.activity.monsterHp;
+        FF.applyExFallTick(0);
+        eq(hp6 - s.activity.monsterHp, Math.round(1000 * FF.EX_FALL_PCT * (1 + FF.EX_THRESH_CAP) * FF.EX_D1_FIRSTFALL_MULT), 'First Blood: the first Fall on the foe lands +50%');
+        s.exTally = 0; s.activity.exThresh = FF.EX_THRESH_CAP; s.activity.dotHitAvg = 1000; s.activity.monsterHp = mon.hp;
+        var hp7 = s.activity.monsterHp;
+        FF.applyExFallTick(0);
+        eq(hp7 - s.activity.monsterHp, Math.round(1000 * FF.EX_FALL_PCT * (1 + FF.EX_THRESH_CAP)), 'the second Fall is ordinary (First Blood spent)');
+        // The session reset lowers everything.
+        s.exTally = 5; s.exHone = 5; s.exCarry = 0.3;
+        FF.resetPersistentCombatBuffs();
+        ok(!s.exTally && !s.exHone && !s.exCarry, 'resetPersistentCombatBuffs clears the Tally, the hone and the carried climb');
+      } finally {
+        Math.random = svRnd;
+        s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu;
+        s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.executioner=snap.xp;
+        s.activity=snap.act; s.playerHp=snap.hp;
+        s.exTally=snap.tally; s.exHone=snap.hone; s.exCarry=snap.carry;
       }
     })();
   });

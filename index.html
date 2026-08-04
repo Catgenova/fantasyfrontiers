@@ -6074,7 +6074,7 @@
     { key:'rotmaw',       name:'Rotmaw',       group:'slash', slot:'mainhand', base:'hatchet',     cls:'plaguebearer',   desc:'The Plague also applies Decay — and Decay ticks feed it back, raising its severity.' },
     { key:'bonereaver',   name:'Bonereaver',   group:'slash', slot:'mainhand', base:'halfmoonaxe', cls:'reaver',         desc:'A foe that dies Bleeding erupts — healing you 10% max Health, and its Bleed AND your Cut tally carry to the next foe.' },
     { key:'wraithclaw',   name:'Wraithclaw',   group:'slash', slot:'mainhand', base:'claw',        cls:'assassin',       desc:'Main-hand hits open +1 wound, and Flow of Blood refunds 10% per wound.' },
-    { key:'soulharvester',name:'Soulharvester',group:'slash', slot:'mainhand', base:'fullmoonaxe', cls:'executioner',    desc:'Each kill raises your Execute threshold by 2% for the rest of the fight (base 10%, cap 30%).' },
+    { key:'soulharvester',name:'Soulharvester',group:'slash', slot:'mainhand', base:'fullmoonaxe', cls:'executioner',    desc:'Each Fall this session hones the blade: the Guillotine threshold climbs 3% faster, up to +30%.' },
     { key:'deathshepherd',name:'Deathshepherd',group:'slash', slot:'mainhand', base:'scythe',      cls:'reaper',         desc:'Your Rot can stack to 15 instead of 10.' },
     // Pierce weapons (mainhand)
     { key:'phantomthrust',name:'Phantomthrust',group:'pierce', slot:'mainhand', base:'rapier',     cls:'duelist',        desc:'Your Afterimages strike at 20% weapon damage instead of 10%.' },
@@ -6137,7 +6137,7 @@
     { key:'blightwyrm', name:"Blightwyrm's Tooth",group:'slash', slot:'mainhand', base:'hatchet',     cls:'plaguebearer',   desc:'The Plague also applies Scorch, and ticks +50% on a Scorched foe.' },
     { key:'gorewyrm',   name:"Gorewyrm's Edge",   group:'slash', slot:'mainhand', base:'halfmoonaxe', cls:'reaver',         desc:'Your Bleeds gain a Fire component that lifesteals for you, and your Harvests ignite for +25%.' },
     { key:'shadowwyrm', name:"Shadowwyrm's Fang", group:'slash', slot:'mainhand', base:'claw',        cls:'assassin',       desc:'A Vanish-loaded Fang Strike is a guaranteed Critical Hit and consumes wounds at +60% each.' },
-    { key:'emberwyrm',  name:"Emberwyrm's Reaper",group:'slash', slot:'mainhand', base:'fullmoonaxe', cls:'executioner',    desc:'Execute a non-boss Burning or Scorched foe below 25% Health.' },
+    { key:'emberwyrm',  name:"Emberwyrm's Reaper",group:'slash', slot:'mainhand', base:'fullmoonaxe', cls:'executioner',    desc:'The axe falls from higher: Falls strike +40% harder.' },
     { key:'soulflame',  name:'Soulflame Scythe',  group:'slash', slot:'mainhand', base:'scythe',      cls:'reaper',         desc:'Your Rot ticks gain +10% Critical chance; a critical tick burns for +10% as Fire, scaling with your Fire Attunement.' },
     // Pierce weapons (mainhand)
     { key:'wyrmdancer', name:"Wyrmdancer's Fang", group:'pierce', slot:'mainhand', base:'rapier',     cls:'duelist',        desc:'Your Dodges also build Wrath, and you deal +2.5% per Wrath stack.' },
@@ -6773,7 +6773,7 @@
     },
     {
       id:'executioner', name:'Executioner', icon:svgIcon('axe','#7a5a2a'),
-      blurb:'A grim headsman who banks each crit into surging vitality, reaps ever-weaker foes as the fight drags on, and grows mightier with every head he takes.',
+      blurb:'A grim headsman whose guillotine blade climbs over every duel &mdash; and falls. The weak are reaped, the falling axe grows heavier with every head, and a clean execution carries the blade, fully raised, to the next neck.',
       reqText:'Full-Moon Axe + bare head, Chain Chest & Gloves, Leather Boots',
       reqParts:[
         { icon:svgIcon('axe','#7a5a2a'),                 label:'Full-Moon Axe', met:function(st){ return st.equippedMainhand==='fullmoonaxe'; } },
@@ -6783,11 +6783,11 @@
         { icon:svgIcon('boots',CLASS_LEATHER_COLOR),     label:'Leather Boots', met:function(st){ return leatherPieceEquipped(st,'boots'); } }
       ],
       passives:[
-        { level:1,  name:'Reaping Vigor',     desc:'Every Critical Hit grants +25% max Health for 30s. Stacks with each crit.' },
-        { level:20, name:'Reap the Weak',     desc:'+30% damage to enemies below half Health.' },
-        { level:40, name:'Rising Guillotine', desc:'Reap the Weak\'s Health threshold climbs the longer you fight a foe &mdash; +1% per second, up to 85%.' },
-        { level:60, name:'Headsman\'s Tally', desc:'Every enemy you slay this session permanently adds +5 max Health, up to +250.' },
-        { level:80, name:'Gallows Humor',     desc:'+Critical Hit chance scaling with the foe\'s missing Health &mdash; up to +25% against a near-dead enemy.' }
+        { level:1,  name:'The Falling Axe',   desc:'The Guillotine threshold climbs the fight &mdash; +2% per second and +1% per landed hit, from 15% toward its 85% cap. When the foe\'s Health sinks beneath the blade (or the blade tops out), <b>the Axe Falls</b>: a strike worth 200% of your recent hit, amplified by the height it fell from and the foe\'s missing Health.' },
+        { level:20, name:'Reap the Weak',     desc:'+30% damage to a foe below the blade &mdash; a window that widens as it rises.' },
+        { level:40, name:'Momentum of the Cull', desc:'A kill carries half your climb to the next foe &mdash; the blade never starts from the floor.' },
+        { level:60, name:'Headsman\'s Tally', desc:'Every Fall this session makes the axe heavier &mdash; +8% Fall damage, up to +80%.' },
+        { level:80, name:'The Cull',          desc:'A Fall against a non-boss foe below 25% Health executes it outright &mdash; and an execution carries your ENTIRE climb to the next foe.' }
       ]
     },
     {
@@ -6937,8 +6937,8 @@
       b2:{ key:'resistancerot', name:'Resistance Rot', desc:'Your Vulnerability marks bite deeper — +3% damage taken per stack.' },
       bf:{ key:'malediction',   name:'Malediction',    desc:'Every hit winds the Doom twice.' } },
     executioner:   { cls:'executioner',   bareHead:true, pieces:{ chest:'chain', gauntlets:'chain', boots:'leather' },
-      b2:{ key:'execute',       name:'Execute',        desc:'Non-boss foes below 15% Health are slain instantly.' },
-      bf:{ key:'adrenalvigor',  name:'Adrenal Vigor',  desc:'Every kill also banks a Reaping Vigor stack.' } },
+      b2:{ key:'keenrise',      name:'Keen Rise',      desc:'The Guillotine threshold climbs 50% faster.' },
+      bf:{ key:'firstblood',    name:'First Blood',    desc:'The first Fall on each foe strikes +50% harder.' } },
     ranger:        { cls:'ranger',        pieces:{ helmet:'leather', chest:'leather', gauntlets:'leather', boots:'tailoring' },
       b2:{ key:'persistentailments',name:'Persistent Ailments',desc:'Your ailments last noticeably longer.' },
       bf:{ key:'toxicfletching',name:'Toxic Fletching',desc:'Each ailment’s proc chance rises to 40%.' } },
@@ -7021,8 +7021,8 @@
     // --- Souls: bank Soul Charges (cap 10), spend/scale with the count ---
     reaper:        { name:"Lich's Vestments",      b2:{ key:'d3_spectraledge', name:'Spectral Edge', desc:'While your Siphon Shield holds, your hits lash for bonus void damage — up to +15% of the hit at a full shield.' },
                                                    bf:{ key:'d3_phylactery',   name:'Phylactery Lash',desc:'When your Siphon Shield absorbs a hit, it lashes the attacker for 100% of the damage absorbed.' } },
-    executioner:   { name:"Gravedigger's Harness", b2:{ key:'d3_harvest',      name:'Harvest',       desc:'Each kill banks 2 Soul Charges.' },
-                                                   bf:{ key:'d3_deathtoll',    name:'Death Toll',    desc:'+4% damage per Soul Charge.' } },
+    executioner:   { name:"Gravedigger's Harness", b2:{ key:'d3_heavierblade', name:'Heavier Blade', desc:'Falls strike +25% harder.' },
+                                                   bf:{ key:'d3_doublebit',    name:'Double Bit',    desc:'After a Fall, the blade keeps a third of its climb instead of resetting to the floor.' } },
     summoner:      { name:'Gravechoir Vestments',  b2:{ key:'d3_raisedead',    name:'Raise Dead',    desc:'Each familiar cast banks a Soul Charge (cap 20).' },
                                                    bf:{ key:'d3_bonecadence',  name:'Bone Cadence',  desc:'Grand Finale consumes your Souls — every 5 raise a Skeletal Wraith that fights beside you for 10s.' } },
     samurai:       { name:'Deathblossom Wrap',     b2:{ key:'d3_soulfocus',    name:'Soul Focus',    desc:'Each Draw-Cut banks 3 Soul Charges.' },
@@ -7117,8 +7117,8 @@
                                                    bf:{ key:'d4_venombreath',   name:'Venombreath',   desc:'Your Breath applies all your ailments to the foe.' } },
     sharpshooter:  { name:'Dragoneye Leathers',    b2:{ key:'d4_oldprey',       name:'Old Prey',      desc:"A Bare kill teaches 6 layers of its kind's seams (up from 3)." },
                                                    bf:{ key:'d4_nothingleft',   name:'Nothing Left',  desc:'Against a Bare foe, your tears strike twice.' } },
-    executioner:   { name:'Ashmaw Harness',        b2:{ key:'d4_cinderkills',   name:'Cinder Kills',  desc:"Each kill charges Dragon's Breath." },
-                                                   bf:{ key:'d4_immolationbreath',name:'Immolation Breath',desc:'Your Breath instantly executes a foe below 25% Health.' } },
+    executioner:   { name:'Ashmaw Harness',        b2:{ key:'d4_scentofruin',   name:'Scent of Ruin', desc:"The Fall's amplifier &mdash; drop height plus missing Health &mdash; counts half again." },
+                                                   bf:{ key:'d4_longdrop',      name:'The Long Drop', desc:'The blade starts already raised: the climb begins at 40% instead of 15%.' } },
     reaper:        { name:'Festerweave Shroud',        b2:{ key:'d4_festering',     name:'Festering Strike',desc:'Your Rot ticks can Critically Hit, using your Critical chance — a critical tick strikes for double.' },
                                                    bf:{ key:'d4_gangrene',      name:'Gangrene',      desc:'A critical Rot tick spreads — it instantly adds another Rot stack.' } },
     // --- Wrath: a stacking draconic buff that scales elemental damage ---
@@ -7219,8 +7219,9 @@
   // Outgoing-damage D3 set bonuses (folded into one PLAYER_DMG_MODS row). Souls spenders + Curse amplifiers
   // live here; Decay/Curse appliers and per-class builders are wired at their combat hooks.
   function d3SetDmgMult(monster, st){ st = st || state; var m = 1; var souls = d3SoulCount(st);
-    // --- Souls spenders (Batch M) --- (the Reaper left the Souls pillar in the Rotlord rework)
-    if(setFullD3('executioner', st)) m *= (1 + 0.04 * souls);                         // Death Toll: +4%/Soul
+    // --- Souls spenders (Batch M) --- (the Reaper left the Souls pillar in the Rotlord rework; the
+    // Executioner left it in the Falling Axe rework -- Death Toll is Double Bit now, inside exFallFire.
+    // Remaining Souls clients: the Reaver, the Summoner, the Samurai, and the Ossuary/Malediction accessories.)
     // (Necroblade retired -- the Spellblade D3 is Leading Edge / The Caboose now, inside the train.)
     if(setFullD3('reaver', st) && enemyBleeding(st)) m *= (1 + 0.05 * souls);         // Exsanguinate: +5%/Soul while bleeding
     // --- Decay amplifiers (Batch N) ---
@@ -7354,9 +7355,8 @@
   // (Shadowwyrm's Fang is now a Twin Fangs detonation payoff — see the Assassin block / playerAttackTick.)
   // Soulflame Scythe (D4 scythe): each hit exhales a Fire burst scaling with your Fire Attunement.
   function d4SoulflameBurst(hitDmg, st){ return 0; } // retired: Soulflame now rides the Rot ticks (crit chance + Fire burn), not the swing
-  // Emberwyrm's Reaper (D4 full-moon axe): a non-boss Burning/Scorched foe below 25% Health is executed.
-  function d4EmberwyrmExecutes(monster, st){ st = st || state;
-    return !!(legActive('emberwyrm', st) && monster && !monster.isBoss && (enemyBurning(st) || enemyScorched(st)) && enemyHpFrac(monster, st) < 0.25); }
+  // (d4EmberwyrmExecutes retired in the Falling Axe rework: Emberwyrm's Reaper amplifies the Fall +40%
+  // now, inside exFallFire -- the fire-execute left with the Ashmaw set's Breath lines.)
   // Sentinel thorns reflect amplifier: Molten Thorns (2pc) carries the attacker's element (scaled by your
   // Attunement to it); Dragon's Retort (full) adds +50%.
   function d4SentinelThornsMult(monster, st){ st = st || state; var m = 1;
@@ -7383,20 +7383,19 @@
   // Which full Breath set is worn (the breath weapon it fires). Only one variant fires per readiness.
   function d4BreathFullSet(st){ st = st || state;
     if(setFullD4('ranger', st)) return 'ranger';             // Venombreath: burst + apply your ailments (the Quickdraw left the pillar in the Quiverlord rework)
-    if(setFullD4('executioner', st)) return 'executioner';   // Immolation Breath: executes a foe below 25% HP
-    return null; } // (the Reaper's D4 left the Breath pillar in the Rotlord rework -- the Festerweave Shroud crits instead)
+    return null; } // (the Reaper's D4 left the Breath pillar in the Rotlord rework, the Executioner in the
+    // Falling Axe rework -- after the Sharpshooter's exit too, the Breath's clients are the RANGER and the
+    // Emberscale ward/Signet of the Breath accessories only. Flagged for a possible wholesale retirement.)
   // Venombreath (Ranger full): the Breath applies your ailments — Chill, Decay, and a Curse — to the foe.
   function d4VenombreathApply(act){ if(!act || act.type!=='combat') return;
     frostwardenApplyChill(act); frostwardenApplyChill(act); frostwardenApplyChill(act);
     decayApply(act, 3); curseApply(act); }
-  // Unleash the breath weapon: a big elemental burst that resets the meter. Returns the damage dealt (0 if it
-  // did not fire). Immolation Breath executes instead of bursting; Spirit Breath heals; Venombreath ailments.
+  // Unleash the breath weapon: a big elemental burst that resets the meter. Venombreath adds ailments.
+  // (Immolation Breath's execute retired with the Executioner's Falling Axe rework -- The Cull executes now.)
   function d4BreathFire(st, monster, hitDmg){ st = st || state; var a = st.activity;
     if(!a || a.type!=='combat' || (a.monsterHp||0) <= 0 || !d4BreathReady(st)) return 0;
     var which = d4BreathFullSet(st); if(!which) return 0;
     d4BreathReset(a);
-    if(which==='executioner' && monster && !monster.isBoss && enemyHpFrac(monster, st) < 0.25){ // Immolation Breath: execute
-      var slain = a.monsterHp; a.monsterHp = 0; return slain; }
     var burst = Math.max(1, Math.round((hitDmg||0) * D4_BREATH_BURST_MULT * elementDmgMult(st, 'fire')));
     burst = Math.round(burst * (1 + legendaryRingBonus('d4_breath', st)));          // Signet of the Breath: bigger burst
     a.monsterHp -= burst;
@@ -7492,7 +7491,8 @@
   function voidVulnPerStack(st){ return set2('nightblade', st) ? 0.03 : VOID_VULN_PER_STACK; }         // Resistance Rot (2pc): Vulnerability bites +3%/stack (up from 2%)
   // (voidMarkPerHit retired with the Doomsayer rework: Malediction winds the Doom twice per hit now --
   // see nbDoomWindPerHit -- and Vulnerability always stacks 1 per hit.)
-  var EXEC_SET_EXECUTE_FRAC = 0.15;                                                                    // Execute (2pc): a non-boss foe left below 15% Health is slain outright
+  // (EXEC_SET_EXECUTE_FRAC retired -- the D1 2pc is Keen Rise now, inside exClimbRateMult, and the
+  // instant-kill is The Cull's job at Lv80. Executes are the capstone, not the entry set.)
   // ===== D2 (Tunnel) set-bonus combat effects — Batch B: damage & tempo =====
   // Conditional OUTGOING-damage set bonuses, aggregated into one PLAYER_DMG_MODS row (below). Each gates on
   // set2D2/setFullD2 (D2 pieces worn), reads pre-hit enemy Health, and is inert without the D2 set.
@@ -9361,42 +9361,114 @@
     if(st.nbDoomLeftMs <= 0){ st.nbDoomLeftMs = 0; nbDoomStrike(st); }
   }
   function executionerBonus(reqLevel, st){ return classBonusActive('executioner', reqLevel, st); }
-  // ===== Executioner (Full-Moon Axe): reworked ladder =====
-  //  Lv1  Reaping Vigor    -- each Critical Hit adds a stacking +25% max-HP buff for 30s (real-time,
-  //                           independent per-stack timers; a transient combat buff, never saved).
-  //  Lv20 Reap the Weak    -- +30% damage to a foe below the reap threshold (base 50% of its Health).
-  //  Lv40 Rising Guillotine-- that threshold climbs +1%/s over the CURRENT duel, up to 85%.
-  //  Lv60 Headsman's Tally -- every kill this session adds flat max HP (resets on reload), capped.
-  //  Lv80 Gallows Humor    -- bonus Critical Hit chance scaling with the foe's MISSING Health.
-  var EXEC_VIGOR_PCT = 0.25, EXEC_VIGOR_MS = 30000;        // Lv1: +25% max HP per stack, 30s each
-  var execVigorStacks = [];                                 // ascending expiry timestamps (transient; not saved)
-  function execVigorPrune(){ var now = Date.now(); while(execVigorStacks.length && execVigorStacks[0] <= now) execVigorStacks.shift(); }
-  function execVigorCount(){ execVigorPrune(); return execVigorStacks.length; }
-  function execVigorAddStack(){ execVigorStacks.push(Date.now() + EXEC_VIGOR_MS); }
-  function execVigorReset(){ execVigorStacks.length = 0; }
-  function execVigorMaxHpBonus(st){ st = st || state; return executionerBonus(1, st) ? execVigorCount() * EXEC_VIGOR_PCT : 0; }
-
-  var EXEC_REAP_BASE = 0.5;                                 // Lv20 reap threshold (enemy HP fraction)
-  var EXEC_RISING_PER_SEC = 0.01, EXEC_RISING_MAX = 0.85;   // Lv40 raises it +1%/s, capped at 85%
+  // ===== Executioner (Full-Moon Axe) -- "the Falling Axe" (v0.0.84.0) =====
+  // The old kit was kill-gated end to end (Vigor/Tally defensive flats, Gallows dead at ~100% crit,
+  // Rising Guillotine a slow flat ramp) -- nothing offensive measured on a foe that doesn't die.
+  // Now a CYCLING engine around the GUILLOTINE THRESHOLD -- the blade's height on the foe's health bar:
+  //  Lv 1  The Falling Axe -- the threshold climbs +2%/s and +1% per landed hit (from 15%, cap 85%).
+  //                           The axe FALLS when the foe's health sinks beneath the blade -- or, fully
+  //                           raised at the cap, it falls ON ITS OWN. The Fall strikes for 200% of the
+  //                           recent hit x (1 + the height it fell from + the foe's missing health),
+  //                           then the blade is hauled back up and the climb begins again.
+  //  Lv 20 Reap the Weak   -- kept, now alive: +30% damage to a foe below the blade (a window that
+  //                           widens as it rises). Sim-dead on the full-HP dummy; real on real foes.
+  //  Lv 40 Momentum of the Cull -- a kill carries HALF the climb to the next foe (state.exCarry).
+  //  Lv 60 Headsman's Tally-- re-based to the Galvanize pattern: every Fall this session banks +8%
+  //                           Fall damage (cap 10) -- heads taken BY THE AXE, not kills, so it measures.
+  //  Lv 80 The Cull        -- a Fall against a non-boss foe below 25% health EXECUTES it outright, and
+  //                           an execute carries the ENTIRE climb: the kill-chain capstone.
+  // DESIGN NOTE (the premise correction): the sim harness pins enemyHpFrac at 1.0 (act.monsterHp 1e15
+  // vs the Archdemon's real ~1.2M hp, and enemyHpFrac clamps), so a pure foe-HP crossing would measure
+  // ZERO -- the approved "the dummy's HP wanders" premise was false. Hence the CAP-FALL (the Herald's
+  // Brace-clock move: the engine drives itself) and the DROP-HEIGHT term in the amplifier, which pays
+  // 1+height on the dummy and 1+height+missing in real play. Never re-roll crit on the Fall -- it
+  // repeats a post-crit average (flat-crit rule, instance eight). EX_SWING_MULT is the band knob
+  // (twelfth chassis). The threshold/armed state is per-FOE (act.*); the Tally, the Soulharvester hone
+  // and the Cull carry are session-scoped (state.*).
+  var EX_THRESH_FLOOR = 0.15;      // the blade's resting height
+  var EX_THRESH_FLOOR_D4 = 0.40;   // The Long Drop (D4 full): the blade starts already raised
+  var EX_THRESH_CAP = 0.85;        // fully raised -- the axe falls on its own
+  var EX_THRESH_PER_SEC = 0.02, EX_THRESH_PER_HIT = 0.01;
+  var EX_FALL_PCT = 2.0;           // the Fall: 200% of the recent hit, before the amp
+  var EX_CULL_CARRY = 0.5;         // Lv40: a kill carries half the climb
+  var EX_TALLY_PER = 0.08, EX_TALLY_MAX = 10; // Lv60: +8% Fall damage per Fall this session
+  var EX_CULL_EXEC_FRAC = 0.25;    // Lv80: a Fall against a non-boss foe below 25% executes
+  var EX_D1_RATE_MULT = 1.5;       // Keen Rise (D1 2pc): the threshold climbs +50% faster
+  var EX_D1_FIRSTFALL_MULT = 1.5;  // First Blood (D1 full): the first Fall on each foe +50%
+  var EX_D3_FALL_MULT = 1.25;      // Heavier Blade (D3 2pc): Falls +25%
+  var EX_D3_RETAIN = 1/3;          // Double Bit (D3 full): a Fall keeps a third of its climb
+  var EX_D4_AMP_MULT = 1.5;        // Scent of Ruin (D4 2pc): the height+missing amp counts half again
+  var LEG_SOULHARVESTER_PER = 0.03, LEG_SOULHARVESTER_MAX = 10; // Soulharvester: each Fall hones the blade (+3% climb rate, cap +30%, session)
+  var LEG_EMBERWYRM_FALL_MULT = 1.40; // Emberwyrm's Reaper: the axe falls from higher -- Falls +40%
+  var EX_SWING_MULT = 1.0;         // THE band knob (sim-tuned; placeholder until the pack runs)
+  function exThreshFloor(st){ st = st || state; return setFullD4('executioner', st) ? EX_THRESH_FLOOR_D4 : EX_THRESH_FLOOR; }
+  function exThreshCap(st){ return EX_THRESH_CAP; }
+  function exClimbRateMult(st){ st = st || state; var m = 1;
+    if(set2('executioner', st)) m *= EX_D1_RATE_MULT;                                                        // Keen Rise
+    if(legActive('soulharvester', st)) m *= 1 + Math.min(LEG_SOULHARVESTER_MAX, st.exHone||0) * LEG_SOULHARVESTER_PER; // honed by its Falls
+    return m; }
+  // Hang the blade over a fresh foe: the floor plus whatever Momentum of the Cull carried (consumed here).
+  function exThreshSeed(a, st){ st = st || state;
+    if(!a || a.type!=='combat' || typeof a.exThresh === 'number') return;
+    a.exThresh = Math.min(exThreshCap(st), exThreshFloor(st) + (executionerBonus(40, st) ? (st.exCarry||0) : 0));
+    st.exCarry = 0; a.exFell = 0; a.exCulled = false; a.exArmed = true; }
+  // Reap the Weak reads the blade: +30% below the threshold. (Rising Guillotine was promoted into the engine.)
   function executionerReapThreshold(st){ st = st || state;
-    if(!executionerBonus(40, st)) return EXEC_REAP_BASE;
-    var a = st.activity; var t0 = (a && a.type==='combat') ? a.duelStartedAt : 0;
-    var secs = t0 ? Math.max(0, (Date.now() - t0)/1000) : 0;
-    return Math.min(EXEC_RISING_MAX, EXEC_REAP_BASE + secs * EXEC_RISING_PER_SEC);
+    var a = st.activity;
+    if(a && a.type==='combat' && typeof a.exThresh === 'number') return a.exThresh;
+    return exThreshFloor(st); }
+  // The Axe Falls: a strike worth EX_FALL_PCT of the recent hit, amplified by the drop -- the height the
+  // blade fell from plus the foe's missing health -- then Tally/Heavier Blade/First Blood/Emberwyrm.
+  // Applied raw, no crit re-roll. Then the blade resets (Double Bit keeps a third of the climb) and The
+  // Cull executes a weak non-boss foe outright.
+  function exFallFire(a, mon, st){ st = st || state;
+    var height = a.exThresh, missing = 1 - enemyHpFrac(mon, st);
+    var amp = 1 + (height + missing) * (set2D4('executioner', st) ? EX_D4_AMP_MULT : 1);
+    var dmg = Math.round(dotBase(st) * EX_FALL_PCT * amp
+      * (1 + (executionerBonus(60, st) ? Math.min(EX_TALLY_MAX, st.exTally||0) * EX_TALLY_PER : 0))
+      * (set2D3('executioner', st) ? EX_D3_FALL_MULT : 1)
+      * ((setFull('executioner', st) && !(a.exFell > 0)) ? EX_D1_FIRSTFALL_MULT : 1)
+      * (legActive('emberwyrm', st) ? LEG_EMBERWYRM_FALL_MULT : 1));
+    if(dmg > 0 && (a.monsterHp||0) > 0){
+      applyEffectDamage(dmg, 'Falling Axe', { detail: 'fell from ' + Math.round(height*100) + '% (+' + Math.round(missing*100) + '% missing)' });
+      spawnCombatFloat('The Axe Falls!', 'ft-crit', true);
+    }
+    a.exFell = (a.exFell||0) + 1;
+    if(executionerBonus(60, st)) st.exTally = Math.min(EX_TALLY_MAX, (st.exTally||0) + 1);    // Headsman's Tally
+    if(legActive('soulharvester', st)) st.exHone = Math.min(LEG_SOULHARVESTER_MAX, (st.exHone||0) + 1); // the blade hones
+    var floor = exThreshFloor(st);
+    if(executionerBonus(80, st) && mon && !mon.isBoss && (a.monsterHp||0) > 0 && enemyHpFrac(mon, st) < EX_CULL_EXEC_FRAC){
+      a.exCulled = true; a.monsterHp = 0; spawnCombatFloat('CULLED!', 'ft-crit', true);       // The Cull
+      // The execute carries the ENTIRE climb -- captured HERE, from the height the blade fell at,
+      // because the reset below runs before defeatMonster ever sees the threshold.
+      st.exCarry = Math.max(0, height - floor);
+    }
+    a.exThresh = Math.min(exThreshCap(st), floor + (setFullD3('executioner', st) ? Math.max(0, height - floor) * EX_D3_RETAIN : 0));
+    a.exArmed = enemyHpFrac(mon, st) > a.exThresh; // below the blade, the crossing-trigger waits (the cap-fall still comes)
   }
-
-  var EXEC_TALLY_HP_PER_KILL = 5, EXEC_TALLY_CAP_HP = 250;  // Lv60: +5 max HP per kill this session, capped
-  var headsmanTallyKills = 0;                               // session kill count (transient; not saved)
-  function headsmanTallyKill(){ headsmanTallyKills++; }
-  function headsmanTallyReset(){ headsmanTallyKills = 0; }
-  function headsmanTallyBonusHp(st){ st = st || state; return executionerBonus(60, st) ? Math.min(EXEC_TALLY_CAP_HP, headsmanTallyKills * EXEC_TALLY_HP_PER_KILL) : 0; }
-
-  var EXEC_GALLOWS_MAX = 0.25;                              // Lv80: up to +25% crit vs a near-dead foe
-  function executionerGallowsCrit(st){ st = st || state;
-    if(!executionerBonus(80, st)) return 0;
-    var a = st.activity; if(!a || a.type!=='combat') return 0;
-    var mon = monsterById(a.monsterId); if(!mon) return 0;
-    return EXEC_GALLOWS_MAX * (1 - enemyHpFrac(mon, st)); // grows with the enemy's missing Health
+  // The trigger: fully raised (cap), or an ARMED blade with the foe's health at or beneath it. The armed
+  // flag stops a re-fire loop on a foe already below the reset height -- the blade cannot fall through a
+  // neck it is already resting on; it must be hauled to the top instead.
+  function exFallCheck(a, mon, st){ st = st || state;
+    if(enemyHpFrac(mon, st) > a.exThresh) a.exArmed = true;
+    if(a.exThresh >= exThreshCap(st) || (a.exArmed && enemyHpFrac(mon, st) <= a.exThresh)) exFallFire(a, mon, st);
+  }
+  // Every landed main-hand hit raises the blade a notch (the climb's hit half).
+  function exFallOnHit(act, monster){ var st = state;
+    if(!act || act.type!=='combat' || !executionerBonus(1, st)) return;
+    var mon = monster || monsterById(act.monsterId); if(!mon) return;
+    exThreshSeed(act, st);
+    act.exThresh = Math.min(exThreshCap(st), act.exThresh + EX_THRESH_PER_HIT * exClimbRateMult(st));
+    exFallCheck(act, mon, st);
+  }
+  // The climb's clock half (+2%/s), shared by the live loop and offline catch-up.
+  function applyExFallTick(dtMs){ var st = state, a = st.activity;
+    if(!a || a.type!=='combat' || activeClassId(st) !== 'executioner' || !executionerBonus(1, st)) return;
+    if((a.monsterHp||0) <= 0) return;
+    var mon = monsterById(a.monsterId); if(!mon) return;
+    exThreshSeed(a, st);
+    a.exThresh = Math.min(exThreshCap(st), a.exThresh + EX_THRESH_PER_SEC * exClimbRateMult(st) * dtMs / 1000);
+    exFallCheck(a, mon, st);
   }
   // --- Ranger (Medium Bow) --- Imbued arrows each have a 25% chance on hit to inflict one of the four
   // shared ailments (reusing the existing Poison / Bleed / Chill / Burn systems); Apex Predator (Lv80)
@@ -9514,7 +9586,7 @@
   function newClassDmgMult(monster, st){
     st = st || state; var m = 1;
     m *= voidDmgMult(st);                                                    // Voidshadow: Vulnerability x Void Resonance x Soul Tax
-    if(executionerBonus(20, st) && enemyHpFrac(monster, st) < executionerReapThreshold(st)) m *= 1.30; // Executioner Reap the Weak (Lv20); threshold raised by Rising Guillotine (Lv40)
+    if(executionerBonus(20, st) && enemyHpFrac(monster, st) < executionerReapThreshold(st)) m *= 1.30; // Executioner Reap the Weak (Lv20): +30% below the blade (the Guillotine threshold IS the engine now)
     m *= rvCountMult(st);                                                    // Reaver The Count (Lv20): the fight's Cut tally (Savagery's flat +25% retired into it)
     m *= rgQuarryMult(st) * rgHuntersMarkMult(st);                            // Ranger: the Quarry ramp x Hunter's Mark (Apex Predator's x3 retired)
     if(samuraiBonus(40, st) && enemyBleeding(st)) m *= (setFullD2('samurai', st) ? SM_CRIMSON_MULT_D2 : SAMURAI_CRIMSON_MULT); // Samurai Crimson Edge: +30% vs a Bleeding foe (+60% with Zanshin, D2 full)
@@ -9524,7 +9596,7 @@
   // Critical-hit-chance bonus from the new classes (added into the crit roll).
   function newClassCritChance(st){
     st = st || state; var c = 0;
-    c += executionerGallowsCrit(st);         // Executioner Gallows Humor (Lv80): scales with the foe's missing Health
+    // (Gallows Humor retired with the Falling Axe rework -- dead at ~100% BiS crit; the Lv80 is The Cull.)
     if(samuraiBonus(60, st)) c += samuraiFocusStacks(st) * SAMURAI_ZANSHIN_CRIT_PER_STACK; // Samurai Bushido: +1.5% crit per Focus stack held (absorbed the old Lv80, which is now the Cut refund)
     return c;
   }
@@ -11290,16 +11362,17 @@
   // directly, only into which fights you're allowed to enter.
   function maxHp(state){
     var base = 50 + getLevel(state.physique.fortitude||0)*5 + Math.round(((equippedEnchantTotals(state).maxHp)||0) * spellbladeEnchantBoost(state));
-    base += headsmanTallyBonusHp(state);                          // Executioner Headsman's Tally (Lv60): flat session HP
+    // (Headsman's Tally is +8% Fall damage per Fall now, and Reaping Vigor retired -- the Executioner's
+    // defensive max-HP flats left with the Falling Axe rework.)
     base += CLASS_MASTERY_HP * classMasteryLevel(state);          // Class mastery: +10 max HP per over-100 level (equipped class)
     base += PHYSIQUE_MASTERY_HP * physiqueMasteryTotal(state);    // Physique mastery: +20 max HP per over-100 level (every physique)
-    return Math.round(base * (1 + execVigorMaxHpBonus(state) + legendaryAmuletBonus('maxhealth', state)) * berserkerGlassTitanHpMult(state) * berserkerGiantsFrameMult(state)); // Executioner Reaping Vigor + Pendant of Vitality + Berserker Glass Titan (Lv80): +200% + Giant's Frame (D1 2pc): +100%
+    return Math.round(base * (1 + legendaryAmuletBonus('maxhealth', state)) * berserkerGlassTitanHpMult(state) * berserkerGiantsFrameMult(state)); // Pendant of Vitality + Berserker Glass Titan (Lv80): +200% + Giant's Frame (D1 2pc): +100%
   }
   // Effective heal ceiling: everyone heals to full. (Berserk Toll's 50% cap retired with the Blood Ledger
   // rework; the function stays because every heal site routes through it.)
   function hpHealCeil(st){ st = st || state; return maxHp(st); }
   function healRoom(st){ st = st || state; return Math.max(0, hpHealCeil(st) - st.playerHp); }
-  // Health can never sit above its CURRENT maximum. Temporary max-HP buffs (Executioner's Reaping Vigor, a
+  // Health can never sit above its CURRENT maximum. Temporary max-HP buffs (a
   // Feast, a maxHp-enchant gear swap) inflate the ceiling; when they expire the ceiling drops but playerHp
   // doesn't -- and because absorb shields soak the tiny chip hits, that stranded HP never erodes back down
   // ("311 / 295, takes no damage"). Called every frame to snap it back. Returns the clamped value.
@@ -12702,7 +12775,7 @@
     sharpshooter:  'Gloomsight',           // Deadeye accuracy + Long Shot ramp
     juggernaut:    'Boulderhusk',          // Heavy Hitter / Momentum Swing
     nightblade:    'the Umbral Coil',      // Vulnerability curses (Resistance Rot / Malediction)
-    executioner:   'the Gallowsdeep',      // instant Execute + Adrenal Vigor
+    executioner:   'the Gallowsdeep',      // Keen Rise + First Blood
     ranger:        'the Webstalker',       // long ailments + Toxic Fletching
     samurai:       'Silkedge',             // Focus that builds fast and flows faster
     lumen:         'the Glimmerhollow',    // Reflected Light + bigger Sanctuary shield
@@ -16989,7 +17062,7 @@
   // Templar / Lumen shields, Vigor, Wrath, Souls or kill-streak stacks into the new kit's fight.
   function resetPersistentCombatBuffs(){
     state.reaperShield = 0; state.lumenShield = 0; state.templarShield = 0;
-    state.d3Souls = 0; state.d3ExecStacks = 0;
+    state.d3Souls = 0; // (d3ExecStacks retired -- the Soulharvester's hone is state.exHone now)
     d4WrathReset(state);
     state.heraldBarrier = 0; state.heraldHitAvg = 0; state.heraldBraceAccum = 0; // the Bastion's wall comes down between sessions
     state.duelistRiposte = false; state.duelistDanseCount = 0; state.duelistUntouch = 0; // the Phantom Dancer starts each session cold
@@ -17006,8 +17079,7 @@
     state.assassinVigor = null; state.assassinBloodrushUntil = 0;
     state.d2BloodthirstStacks = 0; state.d2BloodthirstUntil = 0;
     state.d2HeadtakerStacks = 0; state.d2HeadtakerUntil = 0;
-    execVigorReset();       // Reaping Vigor stacks live in a module array, not on state
-    headsmanTallyReset();   // Headsman's Tally is per combat SESSION (it previously never reset)
+    state.exTally = 0; state.exHone = 0; state.exCarry = 0; // the headsman's session ramps (Tally, the Soulharvester hone) and the Cull's carried climb all reset between sessions
     state.staffDownbeats = []; state.staffLastDownbeatAt = 0; state.summonerCrescendo = 0; state.summonerWraiths = []; // the Conductor's rhythm starts over each session
   }
   // Exiting combat and re-entering starts the whole cycle fresh: every companion back at the TOP of its
@@ -17326,6 +17398,7 @@
     { name:'berserkerLedger',       label:'Blood Ledger',       fn:function(c){ return berserkerLedgerMult(state); } },
     { name:'berserkerBloodPact',    label:'Blood Pact',         fn:function(c){ return berserkerBloodPactMult(); } },
     { name:'spellbladeTrain',       label:'Afterimage Train',   fn:function(c){ return (!c.isBonus && spellbladeBonus(1)) ? SB_SWING_MULT : 1; } }, // the swing leads, the train follows (band knob)
+    { name:'executionerFall',       label:'The Falling Axe',    fn:function(c){ return (!c.isBonus && executionerBonus(1)) ? EX_SWING_MULT : 1; } }, // the axe opens the neck, the Fall takes the head (band knob)
     { name:'classMastery',          label:'Class Mastery',      fn:function(c){ return 1 + CLASS_MASTERY_DMG * classMasteryLevel(); } }, // +10% damage per over-100 level of the equipped class
     { name:'newClassPassives',      label:'Class passive',      fn:function(c){ return newClassDmgMult(c.monster); } },
     { name:'legendaryGear',         label:'Legendary weapon',   fn:function(c){ return legendaryDmgMult(c.monster); } },
@@ -17480,8 +17553,9 @@
         // same idea, but with a resource behind it instead of paying out the Bleed's remaining duration.)
         if(isCrit) rvHarvestFire(act, monster, state);
       }
-      // Executioner Reaping Vigor (Lv1): a landed Critical Hit banks a stacking +25% max-HP buff (30s).
-      if(executionerBonus(1) && isCrit){ execVigorAddStack(); spawnCombatFloat('Reaping Vigor!', 'ft-rare', false); }
+      // Executioner "The Falling Axe" (Lv1): every landed main-hand hit raises the blade a notch --
+      // and checks the crossing (the tick handles the per-second half of the climb).
+      if(!isOffhand) exFallOnHit(act, monster);
       // Thunderfury (Chain Lightning, Lv1): a Critical Hit builds a crit-stack (attack speed); a non-crit resets.
       // Thunderfury "The Stormlord" on-hit: seed the Storm (crits seed double; Charged Air D2 2pc: triple)
       // and bank the hit into the Bolt base. The Storm itself strikes from applyTfStormTick.
@@ -17772,18 +17846,11 @@
       var _se = _seCap > 0 ? Math.round(dmgToMonster * REAPER_SPECTRAL_EDGE_PCT * Math.min(1, state.reaperShield / _seCap)) : 0;
       if(_se > 0){ act.monsterHp -= _se; if(!offlineCapture) spawnCombatFloat('Spectral Edge -'+fmt(_se), 'ft-rare', true); }
     }
-    // Execute (Executioner 2pc): a non-boss foe this hit leaves below 15% Health is slain outright.
-    if(!isOffhand && set2('executioner') && monster && !monster.isBoss && act.monsterHp > 0 && act.monsterHp <= monster.hp * EXEC_SET_EXECUTE_FRAC){
-      act.monsterHp = 0; spawnCombatFloat('EXECUTE!', 'ft-crit', true);
-    }
-    // Soulharvester (D3 full-moon axe): its own Execute, whose threshold grows +2% per kill this fight (base 10%, cap 30%).
-    if(!isOffhand && legActive('soulharvester') && monster && !monster.isBoss && act.monsterHp > 0 && act.monsterHp <= monster.hp * Math.min(0.30, 0.10 + 0.02 * (state.d3ExecStacks||0))){
-      act.monsterHp = 0; spawnCombatFloat('Soul Harvest!', 'ft-crit', true);
-    }
+    // (The Executioner's on-hit instant-kills retired with the Falling Axe rework: the D1 2pc is Keen
+    // Rise, the Soulharvester hones the climb, and the only execute left is The Cull inside exFallFire.)
     // Dragon's Breath (D4 Batch Z): breath-set 2pc bonuses bank charge from this hit; at full charge the full-set
-    // bonus unleashes the breath weapon, then resets the meter. Cinder Kills banks on a kill toward the next foe.
+    // bonus unleashes the breath weapon, then resets the meter. (Cinder Kills left with the Ashmaw re-axis.)
     if(!isOffhand && act.type==='combat'){
-      if(set2D4('executioner', state) && act.monsterHp <= 0) d4BreathAdd(act, 40); // Cinder Kills: each kill banks charge
       if(act.monsterHp > 0){
         d4BreathChargeOnHit(state, isCrit);
         if(d4BreathReady(state)){ var _bw = d4BreathFire(state, monster, dmgToMonster); if(_bw > 0 && !offlineCapture) spawnCombatFloat('🐲 Breath -'+fmt(_bw), 'ft-crit', true); }
@@ -17799,9 +17866,8 @@
       if(false) scorchApply(act, 1);                          // Rimewyrm's Fang: chilling also Scorches
       if(legActive('sunwyrm', state)){ var _sw = Math.min(Math.round(dmgToMonster * 0.10), healRoom(state)); if(_sw > 0) state.playerHp += _sw; } // Sunwyrm's Verdict: your Light damage heals you
     }
-    // D4 legendary melee bursts/execute (Batch EE): Soulflame exhale, Shadowwyrm Immolation, Emberwyrm execute.
+    // D4 legendary melee bursts (Batch EE). (Emberwyrm's execute retired: the Reaper amplifies Falls now.)
     if(!isOffhand && act.type==='combat' && act.monsterHp > 0){
-      if(act.monsterHp > 0 && d4EmberwyrmExecutes(monster, state)){ act.monsterHp = 0; if(!offlineCapture) spawnCombatFloat('EXECUTE!', 'ft-crit', true); }
       // (Wyrmstalker's Scorch retired: it amplifies the companion's strikes at max Quarry now.)
       if(false) scorchApply(act, 1);                    // Wyrmstalker Bow: hits Scorch an afflicted foe
       if(isCrit && legActive('dragoneye', state) && act.monsterHp > 0){ var _de = Math.max(1, Math.round(dmgToMonster * 0.20)); act.monsterHp -= _de; if(!offlineCapture) spawnCombatFloat('Dragoneye -'+fmt(_de), 'ft-crit', true); } // Dragoneye Bow: crits strike the weakness
@@ -17973,13 +18039,15 @@
     var _pbSevCarry = (setFull('plaguebearer') && act) ? (act.pbSev||0) : 0; // Pestilence carries the Plague at its current SEVERITY
     var _pestCarry = (setFull('plaguebearer') && act && (act.potionPoisonUntil||0) > Date.now() && (act.potionPoisonDps||0) > 0) ? act.potionPoisonDps : 0;
     var _rotCarry = (setFullD3('plaguebearer') && act && enemyDecaying(state)) ? act.decayStacks : 0; // Rot Spread (Plaguebearer D3 full): carry Decay to the next foe
-    if(executionerBonus(60)) headsmanTallyKill(); // Headsman's Tally: every kill this session grows your max HP (dungeon foes included)
-    if(setFull('executioner') && executionerBonus(1)) execVigorAddStack(); // Adrenal Vigor (full): a kill also banks a Reaping Vigor stack
+    // Momentum of the Cull (Lv40): a kill carries half the climb to the next foe. (A Cull execute
+    // carries ALL of it, captured inside exFallFire at fall height -- the Fall's own reset runs before
+    // this hook, so the threshold here is already back at the floor for that path.)
+    if(executionerBonus(40) && act && typeof act.exThresh === 'number' && !act.exCulled){
+      state.exCarry = Math.max(0, act.exThresh - exThreshFloor(state)) * EX_CULL_CARRY;
+    }
     d2BloodthirstOnKill(state); // Bloodthirst (Executioner D2 full): each kill stacks a short attack-speed buff (dungeon foes included)
     d2HeadtakerOnKill(state); // Headtaker (D2 full-moon axe): each kill stacks a short damage buff
-    if(set2D3('executioner')) d3SoulsAdd(2); // Harvest (Executioner D3 2pc): each kill banks 2 Soul Charges
-    if(legRingEquipped('d3_ossuary')) d3SoulsAdd(Math.round(legendaryRingBonus('d3_ossuary', state))); // Signet of the Ossuary (D3): each kill banks Soul Charges
-    if(legActive('soulharvester')) state.d3ExecStacks = Math.min(10, (state.d3ExecStacks||0) + 1); // Soulharvester (D3 full-moon axe): each kill raises the Execute threshold (+2%/kill, cap +20%)
+    if(legRingEquipped('d3_ossuary')) d3SoulsAdd(Math.round(legendaryRingBonus('d3_ossuary', state))); // Signet of the Ossuary (D3): each kill banks Soul Charges (the Executioner's Harvest left the Souls pillar)
     if(legActive('bonereaver') && enemyBleeding(state)){ var _br = Math.min(Math.round(maxHp(state) * 0.10), healRoom(state)); if(_br > 0){ state.playerHp += _br; spawnCombatFloat('+'+_br+' HP', 'ft-success', false); } } // Bonereaver (D3 half-moon axe): a Bleeding foe's death heals you (its Bleed carry is captured below)
     if(legRingEquipped('d2_feast', state)){ var _feast = Math.min(Math.round(maxHp(state) * legendaryRingBonus('d2_feast', state)), healRoom(state)); if(_feast > 0){ state.playerHp += _feast; spawnCombatFloat('+'+_feast+' HP', 'ft-success', false); } } // Signet of the Feast (D2): Life on Kill
     // Wyrm's Greed (Treasure Hunter D4 full) / Signet of the Hoard (D4 ring): an elemental kill drops bonus gold.
@@ -18070,6 +18138,7 @@
     }
     act.voidVulnStacks = 0; act.voidVulnUntil = 0; act.nbShatterUntil = 0; // Voidshadow Marks die with the foe -- but the DOOM (state.nbDoom*) deliberately carries: death does not void the contract
     act.ssPeel = 0; act.ssSeeded = false; act.ssEyeAccum = 0; // the Exposure Ladder is per-FOE (a fresh foe is fully dressed) -- the species SEAMS live on state and re-seed it
+    act.exThresh = undefined; act.exFell = 0; act.exCulled = false; act.exArmed = true; // the guillotine is re-hung over the next foe -- exThreshSeed re-seeds it, consuming Momentum of the Cull's carried climb (state.exCarry)
     act.sbResonStacks = 0; act.sbResonUntil = 0; // Runic Detonation's stamps die with the foe -- the TRAINS (state.sbEchoes) carry, as echoes of your own swings should
     act.woundStacks = 0; act.woundUntil = 0; act.vanishLoadedDet = false; // Assassin Open Wounds die with the foe they were carved into
     act.tickAccum = 0; act.offhandTickAccum = 0; act.monsterTickAccum = 0; act._swingIvMs = 0; act._swingOffIvMs = 0; // every swing (yours, off-hand, the foe's) winds up fresh against a new enemy -- no carried mid-swing progress (interval memos too)
@@ -19510,6 +19579,7 @@
           applyJgEchoTick(_chunk);
           applySsEyeTick(_chunk);
           applySbEchoTick(_chunk);
+          applyExFallTick(_chunk);
           applyHeraldBraceTick(_chunk);
           applyLumenMendingTick(_chunk);
           if(state.playerHp>0) state.playerHp += Math.min(_passiveRegen5s*_chunk/5000, healRoom(state)); // base passive HP regen, matching the live loop's mid-fight regen
@@ -23893,6 +23963,10 @@
       out.push({key:'nbdoom', until: now + Math.round((state.nbDoomLeftMs||0) / (legActive('duskwyrm') ? NB_WHISPER_CLOCK_MULT : 1)), name:'Doom', color:'#5a3a8a'});
     }
     add('nbshatter', a.nbShatterUntil, 'Armour Shattered', '#c8b04a'); // Voidfang: a max-Vulnerability strike
+    // The headsman's blade, hung over the foe: the bar fills as the Guillotine threshold climbs its cap.
+    if(activeClassId(state) === 'executioner' && executionerBonus(1, state) && typeof a.exThresh === 'number'){
+      out.push({key:'exblade', name:'The Blade Rises', color:'#7a5a2a', stacks:Math.round(a.exThresh*100), cap:Math.round(exThreshCap(state)*100)});
+    }
     return out;
   }
   var _arenaFxPeak = {}, _arenaFxSig = '';
@@ -38670,6 +38744,8 @@
         applySsEyeTick(dt);
         // The Afterimage Train: due echoes strike, then queue their next generation.
         applySbEchoTick(dt);
+        // The Falling Axe: the Guillotine threshold's per-second climb (and the crossing check).
+        applyExFallTick(dt);
         // Regen: familiar restores a lump of HP every 5 seconds while the buff is up.
         var regenPer5s = famRegenHps();
         if(regenPer5s > 0 && state.playerHp > 0){
@@ -39400,7 +39476,7 @@
       accuracyPhysiques:accuracyPhysiques,
       ACCURACY_PHYSIQUES:ACCURACY_PHYSIQUES, ACCURACY_PHYS_SLOTS:ACCURACY_PHYS_SLOTS, PHYSIQUE_SKILL_MAP:PHYSIQUE_SKILL_MAP,
       monsterById:monsterById, addItem:addItem, applyChipDamage:applyChipDamage,
-      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, grantMasterworkDrops:grantMasterworkDrops, dungeonResultPopupHtml:dungeonResultPopupHtml, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, D2_LEG_GEAR_DEFS:D2_LEG_GEAR_DEFS, D2_LEG_GEAR_MAP:D2_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D2:LEGENDARY_GEAR_ITEMS_D2, legGearItemIdD2:legGearItemIdD2, LEG_GEAR_GROUP_KEYS_D2:LEG_GEAR_GROUP_KEYS_D2, D3_LEG_GEAR_DEFS:D3_LEG_GEAR_DEFS, D3_LEG_GEAR_MAP:D3_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D3:LEGENDARY_GEAR_ITEMS_D3, legGearItemIdD3:legGearItemIdD3, LEG_GEAR_GROUP_KEYS_D3:LEG_GEAR_GROUP_KEYS_D3, d3LegDmgMult:d3LegDmgMult, D4_LEG_GEAR_DEFS:D4_LEG_GEAR_DEFS, D4_LEG_GEAR_MAP:D4_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D4:LEGENDARY_GEAR_ITEMS_D4, legGearItemIdD4:legGearItemIdD4, LEG_GEAR_GROUP_KEYS_D4:LEG_GEAR_GROUP_KEYS_D4, d4LegDmgMult:d4LegDmgMult, d4LegIncomingMult:d4LegIncomingMult, d4SoulflameBurst:d4SoulflameBurst, d4EmberwyrmExecutes:d4EmberwyrmExecutes, enemyScorched:enemyScorched, scorchApply:scorchApply, scorchStacks:scorchStacks, scorchDmgMult:scorchDmgMult, SCORCH_MAX_STACKS:SCORCH_MAX_STACKS, D3_LEG_RING_DEFS:D3_LEG_RING_DEFS, D3_LEG_CLOAK_DEFS:D3_LEG_CLOAK_DEFS, D3_LEG_AMULET_DEFS:D3_LEG_AMULET_DEFS, legRingItemIdD3:legRingItemIdD3, legCloakItemIdD3:legCloakItemIdD3, legAmuletItemIdD3:legAmuletItemIdD3, D4_LEG_RING_DEFS:D4_LEG_RING_DEFS, D4_LEG_CLOAK_DEFS:D4_LEG_CLOAK_DEFS, D4_LEG_AMULET_DEFS:D4_LEG_AMULET_DEFS, legRingItemIdD4:legRingItemIdD4, legCloakItemIdD4:legCloakItemIdD4, legAmuletItemIdD4:legAmuletItemIdD4, d3AccessoryDmgMult:d3AccessoryDmgMult, enemyAfflicted:enemyAfflicted, legNecromancyDoTMult:legNecromancyDoTMult, d2LegDmgMult:d2LegDmgMult, legStormbrandCrit:legStormbrandCrit, legVoidfangShred:legVoidfangShred, legBarrierAdd:legBarrierAdd, legBarrierCap:legBarrierCap, d2HeadtakerOnKill:d2HeadtakerOnKill, legSpineshatterMult:legSpineshatterMult, legPoisonTickMult:legPoisonTickMult, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D2_LEG_RING_DEFS:D2_LEG_RING_DEFS, D2_LEG_CLOAK_DEFS:D2_LEG_CLOAK_DEFS, D2_LEG_AMULET_DEFS:D2_LEG_AMULET_DEFS, legRingItemIdD2:legRingItemIdD2, legCloakItemIdD2:legCloakItemIdD2, legAmuletItemIdD2:legAmuletItemIdD2, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonPartyLocksAway:dungeonPartyLocksAway, dungeonAutoRequeue:dungeonAutoRequeue, dungeonBegin:dungeonBegin, dungeonComplete:dungeonComplete, dungeonEndRun:dungeonEndRun, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
+      DUNGEON_DEFS:DUNGEON_DEFS, DUNGEON_ORDER:DUNGEON_ORDER, DUNGEON_D1_ENEMIES:DUNGEON_D1_ENEMIES, DUNGEON_D2_ENEMIES:DUNGEON_D2_ENEMIES, DUNGEON_D3_ENEMIES:DUNGEON_D3_ENEMIES, DUNGEON_D4_ENEMIES:DUNGEON_D4_ENEMIES, renderDungeonBrowse:renderDungeonBrowse, FORMULA_ITEMS:FORMULA_ITEMS, MASTERWORK_SLOTS:MASTERWORK_SLOTS, BLUEPRINT_ITEMS:BLUEPRINT_ITEMS, masterworkBlueprintId:masterworkBlueprintId, rollMasterworkDrops:rollMasterworkDrops, grantMasterworkDrops:grantMasterworkDrops, dungeonResultPopupHtml:dungeonResultPopupHtml, addBlueprint:addBlueprint, renderMasterworkTab:renderMasterworkTab, D1_LEG_GEAR_DEFS:D1_LEG_GEAR_DEFS, D1_LEG_GEAR_MAP:D1_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS:LEGENDARY_GEAR_ITEMS, D2_LEG_GEAR_DEFS:D2_LEG_GEAR_DEFS, D2_LEG_GEAR_MAP:D2_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D2:LEGENDARY_GEAR_ITEMS_D2, legGearItemIdD2:legGearItemIdD2, LEG_GEAR_GROUP_KEYS_D2:LEG_GEAR_GROUP_KEYS_D2, D3_LEG_GEAR_DEFS:D3_LEG_GEAR_DEFS, D3_LEG_GEAR_MAP:D3_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D3:LEGENDARY_GEAR_ITEMS_D3, legGearItemIdD3:legGearItemIdD3, LEG_GEAR_GROUP_KEYS_D3:LEG_GEAR_GROUP_KEYS_D3, d3LegDmgMult:d3LegDmgMult, D4_LEG_GEAR_DEFS:D4_LEG_GEAR_DEFS, D4_LEG_GEAR_MAP:D4_LEG_GEAR_MAP, LEGENDARY_GEAR_ITEMS_D4:LEGENDARY_GEAR_ITEMS_D4, legGearItemIdD4:legGearItemIdD4, LEG_GEAR_GROUP_KEYS_D4:LEG_GEAR_GROUP_KEYS_D4, d4LegDmgMult:d4LegDmgMult, d4LegIncomingMult:d4LegIncomingMult, d4SoulflameBurst:d4SoulflameBurst, enemyScorched:enemyScorched, scorchApply:scorchApply, scorchStacks:scorchStacks, scorchDmgMult:scorchDmgMult, SCORCH_MAX_STACKS:SCORCH_MAX_STACKS, D3_LEG_RING_DEFS:D3_LEG_RING_DEFS, D3_LEG_CLOAK_DEFS:D3_LEG_CLOAK_DEFS, D3_LEG_AMULET_DEFS:D3_LEG_AMULET_DEFS, legRingItemIdD3:legRingItemIdD3, legCloakItemIdD3:legCloakItemIdD3, legAmuletItemIdD3:legAmuletItemIdD3, D4_LEG_RING_DEFS:D4_LEG_RING_DEFS, D4_LEG_CLOAK_DEFS:D4_LEG_CLOAK_DEFS, D4_LEG_AMULET_DEFS:D4_LEG_AMULET_DEFS, legRingItemIdD4:legRingItemIdD4, legCloakItemIdD4:legCloakItemIdD4, legAmuletItemIdD4:legAmuletItemIdD4, d3AccessoryDmgMult:d3AccessoryDmgMult, enemyAfflicted:enemyAfflicted, legNecromancyDoTMult:legNecromancyDoTMult, d2LegDmgMult:d2LegDmgMult, legStormbrandCrit:legStormbrandCrit, legVoidfangShred:legVoidfangShred, legBarrierAdd:legBarrierAdd, legBarrierCap:legBarrierCap, d2HeadtakerOnKill:d2HeadtakerOnKill, legSpineshatterMult:legSpineshatterMult, legPoisonTickMult:legPoisonTickMult, LEG_GEAR_GROUP_KEYS:LEG_GEAR_GROUP_KEYS, legGearItemId:legGearItemId, legGearBaseTopTier:legGearBaseTopTier, legGearRareIds:legGearRareIds, legGearCountRare:legGearCountRare, craftMastercraft:craftMastercraft, legMainhandEffect:legMainhandEffect, legOffhandEffect:legOffhandEffect, legActive:legActive, LEGENDARY_RING_ITEMS:LEGENDARY_RING_ITEMS, D2_LEG_RING_DEFS:D2_LEG_RING_DEFS, D2_LEG_CLOAK_DEFS:D2_LEG_CLOAK_DEFS, D2_LEG_AMULET_DEFS:D2_LEG_AMULET_DEFS, legRingItemIdD2:legRingItemIdD2, legCloakItemIdD2:legCloakItemIdD2, legAmuletItemIdD2:legAmuletItemIdD2, D1_LEG_RING_DEFS:D1_LEG_RING_DEFS, MASTERCRAFT_RECIPES:MASTERCRAFT_RECIPES, LEGENDARY_RARITY_MULT:LEGENDARY_RARITY_MULT, mastercraftRecipeFor:mastercraftRecipeFor, legRingItemId:legRingItemId, craftMastercraft:craftMastercraft, legendaryRingBonus:legendaryRingBonus, legRingEquipped:legRingEquipped, equipLegRing:equipLegRing, countRareT20Rings:countRareT20Rings, LEGENDARY_CLOAK_ITEMS:LEGENDARY_CLOAK_ITEMS, D1_LEG_CLOAK_DEFS:D1_LEG_CLOAK_DEFS, legCloakItemId:legCloakItemId, legendaryCloakBonus:legendaryCloakBonus, legCloakEquipped:legCloakEquipped, equipLegCloak:equipLegCloak, countRareT20Cloaks:countRareT20Cloaks, D1_LEG_AMULET_DEFS:D1_LEG_AMULET_DEFS, D1_LEG_AMULET_MAP:D1_LEG_AMULET_MAP, LEGENDARY_AMULET_ITEMS:LEGENDARY_AMULET_ITEMS, legAmuletItemId:legAmuletItemId, legendaryAmuletBonus:legendaryAmuletBonus, legAmuletEquipped:legAmuletEquipped, countRareT20Amulets:countRareT20Amulets, consumeRareT20Amulets:consumeRareT20Amulets, equipLegAmulet:equipLegAmulet, unequipLegAmulet:unequipLegAmulet, equipAmulet:equipAmulet, legTreasureMult:legTreasureMult, applyMonsterCategoryLoot:applyMonsterCategoryLoot, renderAmuletEquipSection:renderAmuletEquipSection, RING_TYPES:RING_TYPES, dungeonSoloEnemy:dungeonSoloEnemy, DUNGEON_SOLO_DIFFICULTY:DUNGEON_SOLO_DIFFICULTY, DUNGEON_SOLO_DROP_MULT:DUNGEON_SOLO_DROP_MULT, monsterById:monsterById, dungeonLocksActions:dungeonLocksActions, dungeonPartyLocksAway:dungeonPartyLocksAway, dungeonAutoRequeue:dungeonAutoRequeue, dungeonBegin:dungeonBegin, dungeonComplete:dungeonComplete, dungeonEndRun:dungeonEndRun, dungeonEntryBlock:dungeonEntryBlock, dungeonJoinBlock:dungeonJoinBlock, dungeonBossCleared:dungeonBossCleared, dungeonMarkCleared:dungeonMarkCleared, dungeonPrevId:dungeonPrevId, DUNGEON_MIN_TOTAL_LEVEL:DUNGEON_MIN_TOTAL_LEVEL, playerTotalLevel:playerTotalLevel, parseDungeonCode:parseDungeonCode, ALL_SELLABLE:ALL_SELLABLE, spiderPortrait:spiderPortrait, playerThreat:playerThreat, armorThreatWeight:armorThreatWeight, dungeonPickTarget:dungeonPickTarget, dungeonPower:dungeonPower, dungeonMitPct:dungeonMitPct,
       elementAdvantage:elementAdvantage, ELEMENT_BEATS:ELEMENT_BEATS, ELEMENT_WEAKNESS:ELEMENT_WEAKNESS, ELEMENT_META:ELEMENT_META, monsterElement:monsterElement, ELEMENT_ADVANTAGE_MULT:ELEMENT_ADVANTAGE_MULT,
       playerDefenseProfile:playerDefenseProfile, enemyDamageRangeVsPlayer:enemyDamageRangeVsPlayer, deathBlowChronicle:deathBlowChronicle,
       matchesSpecialCraft:matchesSpecialCraft,
@@ -39418,7 +39494,7 @@
       SCEPTER_TYPE:SCEPTER_TYPE, isScepter:isScepter, SCEPTERS_SKILL_ID:SCEPTERS_SKILL_ID,
       CLASS_DEFS:CLASS_DEFS, CLASS_SKILL_IDS:CLASS_SKILL_IDS, CLASS_DEFS_BY_ID:CLASS_DEFS_BY_ID, D1_SET_DEFS:D1_SET_DEFS, D1_SET_CLASS_IDS:D1_SET_CLASS_IDS, D2_SET_DEFS:D2_SET_DEFS, D2_SET_CLASS_IDS:D2_SET_CLASS_IDS, D3_SET_DEFS:D3_SET_DEFS, D3_SET_CLASS_IDS:D3_SET_CLASS_IDS, set2D3:set2D3, setFullD3:setFullD3, SET_TIER_INDEX_D3:SET_TIER_INDEX_D3, D4_SET_BONUSES:D4_SET_BONUSES, D4_SET_DEFS:D4_SET_DEFS, D4_SET_CLASS_IDS:D4_SET_CLASS_IDS, set2D4:set2D4, setFullD4:setFullD4, SET_TIER_INDEX_D4:SET_TIER_INDEX_D4, D4_BREATH_MAX:D4_BREATH_MAX, d4BreathCharge:d4BreathCharge, d4BreathPct:d4BreathPct, d4BreathReady:d4BreathReady, d4BreathAdd:d4BreathAdd, d4BreathReset:d4BreathReset, D4_WRATH_CAP:D4_WRATH_CAP, d4WrathStacks:d4WrathStacks, d4WrathAdd:d4WrathAdd, d4WrathReset:d4WrathReset, d4SetElementDmg:d4SetElementDmg, d4SetElementResist:d4SetElementResist, d4WandElementMult:d4WandElementMult, d4FoeResistsElement:d4FoeResistsElement, d4FamiliarElementMult:d4FamiliarElementMult, d4TemplarAegisMult:d4TemplarAegisMult, d4SetDmgMult:d4SetDmgMult, d4DragonscaleIncoming:d4DragonscaleIncoming, d4SentinelThornsMult:d4SentinelThornsMult, d4HeraldBastionReflect:d4HeraldBastionReflect, d4BreathChargeOnHit:d4BreathChargeOnHit, d4BreathFullSet:d4BreathFullSet, d4BreathFire:d4BreathFire, d4VenombreathApply:d4VenombreathApply, D4_BREATH_BURST_MULT:D4_BREATH_BURST_MULT, d4WrathOnHit:d4WrathOnHit, d4FirestormDodge:d4FirestormDodge, enemyPoisonedFoe:enemyPoisonedFoe, d4SupremeItemCount:d4SupremeItemCount, D3_SOUL_CAP:D3_SOUL_CAP, d3SoulCount:d3SoulCount, d3SoulsAdd:d3SoulsAdd, enemyDecaying:enemyDecaying, decayApply:decayApply, applyDecayTick:applyDecayTick, decayCap:decayCap, d3DecayTickMult:d3DecayTickMult, enemyCursed:enemyCursed, curseApply:curseApply, d3SetDmgMult:d3SetDmgMult, d3SetCritDmgBonus:d3SetCritDmgBonus, d3SetIncomingMult:d3SetIncomingMult, onPlayerDodged:onPlayerDodged, setPiecesWorn:setPiecesWorn, setBonusActive:setBonusActive, set2:set2, setFull:setFull, set2D2:set2D2, setFullD2:setFullD2, d2SetDmgMult:d2SetDmgMult, d2SentinelReflectMult:d2SentinelReflectMult, d2IncomingDmgMult:d2IncomingDmgMult, d2SetCritDmgBonus:d2SetCritDmgBonus, d2SetCritChance:d2SetCritChance, d2SetDodgeBonus:d2SetDodgeBonus, lumenReflectD2Mult:lumenReflectD2Mult, enemyHasAilment:enemyHasAilment, d2PoisonTickMult:d2PoisonTickMult, d2BleedTickMult:d2BleedTickMult, d2BurnTickMult:d2BurnTickMult, d2FrostbiteTickMult:d2FrostbiteTickMult, voidVulnCap:voidVulnCap, templarAegisCapMult:templarAegisCapMult, reaverBloodfrenzyMult:reaverBloodfrenzyMult, d2FeralOnCast:d2FeralOnCast, d2BloodthirstOnKill:d2BloodthirstOnKill, d2BloodthirstSpeedMult:d2BloodthirstSpeedMult, quickdrawSnareSlow:quickdrawSnareSlow, enemyExtraSlowPct:enemyExtraSlowPct, quickdrawBonus:quickdrawBonus, quickdrawTrickPeek:quickdrawTrickPeek, quickdrawShotLanded:quickdrawShotLanded, quickdrawApplyHead:quickdrawApplyHead, quickdrawCycleEvery:quickdrawCycleEvery, quickdrawNextHead:quickdrawNextHead, quickdrawRiderMs:quickdrawRiderMs, quickdrawAnyRider:quickdrawAnyRider, quickdrawAllRiders:quickdrawAllRiders, QD_HEADS:QD_HEADS, QD_CYCLE_EVERY:QD_CYCLE_EVERY, QD_CYCLE_EVERY_D1:QD_CYCLE_EVERY_D1, QD_TRICK_MULT:QD_TRICK_MULT, QD_RIDER_MULT:QD_RIDER_MULT, QD_BARBED_PCT:QD_BARBED_PCT, QD_BLAST_PCT:QD_BLAST_PCT, QD_SERPENT_PCT:QD_SERPENT_PCT, QD_RIDER_MS:QD_RIDER_MS, QD_RUNAWAY_SHOTS:QD_RUNAWAY_SHOTS, QD_SNARE_MS:QD_SNARE_MS, QD_SNARE_SLOW:QD_SNARE_SLOW, LEG_WEBSNARE_FUSILLADE:LEG_WEBSNARE_FUSILLADE, SET_TIER_INDEX:SET_TIER_INDEX, SET_TIER_INDEX_D2:SET_TIER_INDEX_D2, SET_PIECES_BY_MATERIAL:SET_PIECES_BY_MATERIAL, setPieceBaseId:setPieceBaseId, setPieceName:setPieceName, SET_NAMES:SET_NAMES, setName:setName, mintSetPiece:mintSetPiece, setArmorRareIds:setArmorRareIds, equipUniqueBodyArmor:equipUniqueBodyArmor, getTotalArmorDefense:getTotalArmorDefense, renderSetBonusReadout:renderSetBonusReadout, combatPlayerBuffs:combatPlayerBuffs, combatEnemyDebuffs:combatEnemyDebuffs, renderFxBars:renderFxBars, captureCombatLoadout:captureCombatLoadout, applyCombatLoadout:applyCombatLoadout, loadoutsFollowUpgrade:loadoutsFollowUpgrade, convertEquippedToUnique:convertEquippedToUnique, saveLoadoutPreset:saveLoadoutPreset, equipLoadoutPreset:equipLoadoutPreset, clearLoadoutPreset:clearLoadoutPreset, renameLoadoutPreset:renameLoadoutPreset, ensureLoadouts:ensureLoadouts, loadoutSummary:loadoutSummary, LOADOUT_SLOT_COUNT:LOADOUT_SLOT_COUNT, LOADOUT_FREE_SLOTS:LOADOUT_FREE_SLOTS, loadoutUnlockCost:loadoutUnlockCost, loadoutSlotsUnlocked:loadoutSlotsUnlocked, unlockLoadoutSlot:unlockLoadoutSlot, renderLoadoutQuickBar:renderLoadoutQuickBar, _setLoadoutNestOpen:function(v){ loadoutNestOpen = !!v; }, companionCastsOnCombatEntry:companionCastsOnCombatEntry, resetPersistentCombatBuffs:resetPersistentCombatBuffs,
       staffDownbeatHit:staffDownbeatHit, staffDownbeatStacks:staffDownbeatStacks, staffDownbeatPower:staffDownbeatPower, summonerCrescendo:summonerCrescendo, summonerCrescendoCap:summonerCrescendoCap, summonerSpellEmpowered:summonerSpellEmpowered, summonerRaiseWraith:summonerRaiseWraith, summonerWraithsTick:summonerWraithsTick, STAFF_DOWNBEAT_MS:STAFF_DOWNBEAT_MS, SUMMONER_SYNCOPATION_MS:SUMMONER_SYNCOPATION_MS, SUMMONER_SYNCOPATION_MULT:SUMMONER_SYNCOPATION_MULT, SUMMONER_CRESCENDO_PER:SUMMONER_CRESCENDO_PER, playerAttackTick:playerAttackTick, SUMMONER_ACCEL_ADVANCE_MS:SUMMONER_ACCEL_ADVANCE_MS, SUMMONER_ACCEL_MAX_CAST_MULT:SUMMONER_ACCEL_MAX_CAST_MULT, ATK_SPEED_SLOW_COLOR:ATK_SPEED_SLOW_COLOR, ATK_SPEED_HASTE_COLOR:ATK_SPEED_HASTE_COLOR, MONSTER_DOT_MAX_PCT_PER_SEC:MONSTER_DOT_MAX_PCT_PER_SEC, tierChipHtml:tierChipHtml, weaponCandidate:weaponCandidate, equipCandidateRowHtml:equipCandidateRowHtml, equipStackableWeapon:equipStackableWeapon, equipOffhandClaw:equipOffhandClaw, unequipStackableWeapon:unequipStackableWeapon, unequipOffhandClaw:unequipOffhandClaw, GRAVECHOIR_SOULS_PER_WRAITH:GRAVECHOIR_SOULS_PER_WRAITH,
-      playerCombatDeath:playerCombatDeath, recordDeathReport:recordDeathReport, renderDeathReportModal:renderDeathReportModal, combatLogLineHtml:combatLogLineHtml, combatLocksGear:combatLocksGear, blockedNotice:blockedNotice, dungeonActionBlockedNotice:dungeonActionBlockedNotice, showGameToast:showGameToast, COMBAT_LOCKED_ACTIONS:COMBAT_LOCKED_ACTIONS, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, setDmgMult:setDmgMult, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, playerCritChance:playerCritChance, voidVulnPerStack:voidVulnPerStack,  EXEC_SET_EXECUTE_FRAC:EXEC_SET_EXECUTE_FRAC, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, ENEMY_SWAP_MS:ENEMY_SWAP_MS, guildBossEnter:guildBossEnter, _guildBossState:function(){ return guildBossState; }, _guildState:function(){ return guildState; }, _towerEntryError:function(){ return towerEntryError; }, _setTowerPreview:function(en){ towerPreviewEntrance = en; towerEntryError = ''; }, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
+      playerCombatDeath:playerCombatDeath, recordDeathReport:recordDeathReport, renderDeathReportModal:renderDeathReportModal, combatLogLineHtml:combatLogLineHtml, combatLocksGear:combatLocksGear, blockedNotice:blockedNotice, dungeonActionBlockedNotice:dungeonActionBlockedNotice, showGameToast:showGameToast, COMBAT_LOCKED_ACTIONS:COMBAT_LOCKED_ACTIONS, reaverBleedCap:reaverBleedCap, pyroBurnCap:pyroBurnCap, frostChillCap:frostChillCap, samuraiFocusPerHit:samuraiFocusPerHit, rangerProcChance:rangerProcChance, rangerAilmentDurMult:rangerAilmentDurMult, plagueBloomMult:plagueBloomMult, hoarfrostIncomingMult:hoarfrostIncomingMult, reaverFeedingFrenzyMult:reaverFeedingFrenzyMult, samuraiFlowingStrikesMult:samuraiFlowingStrikesMult, assassinVanishMs:assassinVanishMs, jugMomentumSwingMult:jugMomentumSwingMult, setDmgMult:setDmgMult, bastionCapHit:bastionCapHit, sentinelUnbreakableArmorMult:sentinelUnbreakableArmorMult, lumenReflectPct:lumenReflectPct, lumenSanctuaryCapPct:lumenSanctuaryCapPct, summonerPackTacticsMult:summonerPackTacticsMult, playerCritChance:playerCritChance, voidVulnPerStack:voidVulnPerStack, activeClassId:activeClassId, classReqMet:classReqMet, classLevel:classLevel, classPartSlotRank:classPartSlotRank, classPartsInSlotOrder:classPartsInSlotOrder, summonerBonus:summonerBonus, classBlockBonus:classBlockBonus, monsterPortrait:monsterPortrait, ENEMY_SWAP_MS:ENEMY_SWAP_MS, guildBossEnter:guildBossEnter, _guildBossState:function(){ return guildBossState; }, _guildState:function(){ return guildState; }, _towerEntryError:function(){ return towerEntryError; }, _setTowerPreview:function(en){ towerPreviewEntrance = en; towerEntryError = ''; }, MONSTER_PORTRAITS:MONSTER_PORTRAITS, CLASS_PORTRAITS:CLASS_PORTRAITS, playerPortrait:playerPortrait,
       pyromancerBonus:pyromancerBonus, sharpshooterBonus:sharpshooterBonus, ssPeelCap:ssPeelCap, ssBareAt:ssBareAt, ssPeel:ssPeel, ssBare:ssBare, ssExposureMult:ssExposureMult, ssArmorStrip:ssArmorStrip, ssDodgeStrip:ssDodgeStrip, ssTearMult:ssTearMult, ssPeelSeed:ssPeelSeed, ssPeelAdd:ssPeelAdd, ssTear:ssTear, applySsEyeTick:applySsEyeTick, SS_PEEL_CAP:SS_PEEL_CAP, SS_PEEL_CAP_D1:SS_PEEL_CAP_D1, SS_BARE_AT:SS_BARE_AT, SS_BARE_AT_DRAGONEYE:SS_BARE_AT_DRAGONEYE, SS_PEEL_DMG_PER:SS_PEEL_DMG_PER, SS_PEEL_ARMOR_PER:SS_PEEL_ARMOR_PER, SS_PEEL_DODGE_PER:SS_PEEL_DODGE_PER, SS_TEAR_PCT:SS_TEAR_PCT, SS_TEAR_LADDER_PER:SS_TEAR_LADDER_PER, SS_EYE_MS:SS_EYE_MS, SS_EYE_MS_EYESHINE:SS_EYE_MS_EYESHINE, SS_UNRAVEL_PCT:SS_UNRAVEL_PCT, SS_SEAMS_LEARN:SS_SEAMS_LEARN, SS_SEAMS_LEARN_D4:SS_SEAMS_LEARN_D4, LEG_GRAVESIGHT_HEADSTART:LEG_GRAVESIGHT_HEADSTART, LEG_FARSTRIKE_TEAR:LEG_FARSTRIKE_TEAR, SS_SWING_MULT:SS_SWING_MULT, _setSsSwingMult:function(v){ SS_SWING_MULT = v; }, juggernautBonus:juggernautBonus, nightbladeBonus:nightbladeBonus, executionerBonus:executionerBonus, newClassDmgMult:newClassDmgMult, enemyBurning:enemyBurning, enemyBurnStacks:enemyBurnStacks, pyromancerApplyBurn:pyromancerApplyBurn, pyBlazeCap:pyBlazeCap, pyBlazeFuel:pyBlazeFuel, pyBlazeFrac:pyBlazeFrac, pyFuelPerHit:pyFuelPerHit, pyBurnRate:pyBurnRate,
       pyBlazeSync:pyBlazeSync, pyBlazeFeed:pyBlazeFeed, pyBlazeBurnDown:pyBlazeBurnDown, pyBlazeDmgMult:pyBlazeDmgMult,
       pyCombustFire:pyCombustFire, pyFlashoverFire:pyFlashoverFire, pyromancerBonus:pyromancerBonus,
@@ -39426,7 +39502,7 @@
       PY_FUEL_CRIT_MULT:PY_FUEL_CRIT_MULT, PY_BURN_RATE:PY_BURN_RATE, PY_BURN_RATE_L40:PY_BURN_RATE_L40, PY_TICK_PCT:PY_TICK_PCT,
       PY_BLAZE_DMG_PCT:PY_BLAZE_DMG_PCT, PY_COMBUST_FRAC:PY_COMBUST_FRAC, PY_COMBUST_PCT:PY_COMBUST_PCT,
       PY_FLASHOVER_PCT:PY_FLASHOVER_PCT, PY_FLASHOVER_FLOOR:PY_FLASHOVER_FLOOR, PY_FUEL_PER_STACK:PY_FUEL_PER_STACK,
-      PY_HAZE_PER_FUEL:PY_HAZE_PER_FUEL, PY_HAZE_CAP:PY_HAZE_CAP, PY_SWING_MULT:PY_SWING_MULT, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, nbDoomRunning:nbDoomRunning, nbDoomBankShare:nbDoomBankShare, nbDoomWindPerHit:nbDoomWindPerHit, nbLitanyPer:nbLitanyPer, nbDoomsdayMult:nbDoomsdayMult, nbDoomOnHit:nbDoomOnHit, nbDoomStrike:nbDoomStrike, applyNbDoomTick:applyNbDoomTick, legVoidveilIncomingMult:legVoidveilIncomingMult, NB_DOOM_BASE_MS:NB_DOOM_BASE_MS, NB_DOOM_BANK_PCT:NB_DOOM_BANK_PCT, NB_DOOM_WIND_MS:NB_DOOM_WIND_MS, NB_LITANY_PER:NB_LITANY_PER, NB_SOULTAX_STRIKE_HEAL:NB_SOULTAX_STRIKE_HEAL, NB_DOOMSDAY_PER:NB_DOOMSDAY_PER, NB_DOOMSDAY_MAX:NB_DOOMSDAY_MAX, NB_ECLIPSE_PER_STACK:NB_ECLIPSE_PER_STACK, NB_ECLIPSE_REMARK:NB_ECLIPSE_REMARK, NB_DOOMCURSE_PRESEAL:NB_DOOMCURSE_PRESEAL, NB_SOULREND_BANK_MULT:NB_SOULREND_BANK_MULT, NB_SOULREND_MIN_WOES:NB_SOULREND_MIN_WOES, NB_WHISPER_CLOCK_MULT:NB_WHISPER_CLOCK_MULT, LEG_VOIDFANG_SHATTER_MS:LEG_VOIDFANG_SHATTER_MS, LEG_VOIDVEIL_PCT:LEG_VOIDVEIL_PCT, NB_SWING_MULT:NB_SWING_MULT, _setNbSwingMult:function(v){ NB_SWING_MULT = v; }, JG_ECHO_MS:JG_ECHO_MS, JG_ECHO_PCT:JG_ECHO_PCT, JG_RESONANCE_MAX:JG_RESONANCE_MAX, JG_RESONANCE_PER:JG_RESONANCE_PER, JG_FAULT_SHRED_PER:JG_FAULT_SHRED_PER, JG_FAULT_SHRED_CAP:JG_FAULT_SHRED_CAP, JG_STAGGER_MS:JG_STAGGER_MS, JG_FURY_PER:JG_FURY_PER, JG_FURY_MAX:JG_FURY_MAX, JG_D2_ECHO_BONUS_MS:JG_D2_ECHO_BONUS_MS, JG_EPICENTER_MULT:JG_EPICENTER_MULT, LEG_EARTHRENDER_ECHO:LEG_EARTHRENDER_ECHO, LEG_MAGMACORE_PER_ECHO:LEG_MAGMACORE_PER_ECHO, JG_SWING_MULT:JG_SWING_MULT, _setJgSwingMult:function(v){ JG_SWING_MULT = v; }, jgEchoMs:jgEchoMs, jgEchoShare:jgEchoShare, jgResonancePer:jgResonancePer, jgLiveEchoCount:jgLiveEchoCount, jgEchoRemaining:jgEchoRemaining, jgResonance:jgResonance, jgResonanceMult:jgResonanceMult, jgFuryCritDmg:jgFuryCritDmg, jgFaultShred:jgFaultShred, jgRingEcho:jgRingEcho, jgBigOne:jgBigOne, jgImpactOnHit:jgImpactOnHit, applyJgEchoTick:applyJgEchoTick, execVigorMaxHpBonus:execVigorMaxHpBonus, execVigorAddStack:execVigorAddStack, execVigorReset:execVigorReset, executionerReapThreshold:executionerReapThreshold, headsmanTallyBonusHp:headsmanTallyBonusHp, headsmanTallyKill:headsmanTallyKill, headsmanTallyReset:headsmanTallyReset, executionerGallowsCrit:executionerGallowsCrit, enemyHpFrac:enemyHpFrac, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_SHIELD_MAX_PCT:LUMEN_SHIELD_MAX_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, applyPotionPoisonTick:applyPotionPoisonTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
+      PY_HAZE_PER_FUEL:PY_HAZE_PER_FUEL, PY_HAZE_CAP:PY_HAZE_CAP, PY_SWING_MULT:PY_SWING_MULT, pyromancerKindlingCritDmg:pyromancerKindlingCritDmg, pyromancerHeatHazeDodge:pyromancerHeatHazeDodge, pyromancerFeverHaste:pyromancerFeverHaste, newClassCritChance:newClassCritChance, newClassCritDmg:newClassCritDmg, nightbladeLifestealPct:nightbladeLifestealPct, voidVulnStacks:voidVulnStacks, voidVulnMult:voidVulnMult, enemyDebuffCount:enemyDebuffCount, voidDmgMult:voidDmgMult, VOID_VULN_MAX:VOID_VULN_MAX, VOID_VULN_MS:VOID_VULN_MS, VOID_SOULTAX_PER:VOID_SOULTAX_PER, VOID_RESONANCE_PER:VOID_RESONANCE_PER, VOID_VULN_PER_STACK:VOID_VULN_PER_STACK, nbDoomRunning:nbDoomRunning, nbDoomBankShare:nbDoomBankShare, nbDoomWindPerHit:nbDoomWindPerHit, nbLitanyPer:nbLitanyPer, nbDoomsdayMult:nbDoomsdayMult, nbDoomOnHit:nbDoomOnHit, nbDoomStrike:nbDoomStrike, applyNbDoomTick:applyNbDoomTick, legVoidveilIncomingMult:legVoidveilIncomingMult, NB_DOOM_BASE_MS:NB_DOOM_BASE_MS, NB_DOOM_BANK_PCT:NB_DOOM_BANK_PCT, NB_DOOM_WIND_MS:NB_DOOM_WIND_MS, NB_LITANY_PER:NB_LITANY_PER, NB_SOULTAX_STRIKE_HEAL:NB_SOULTAX_STRIKE_HEAL, NB_DOOMSDAY_PER:NB_DOOMSDAY_PER, NB_DOOMSDAY_MAX:NB_DOOMSDAY_MAX, NB_ECLIPSE_PER_STACK:NB_ECLIPSE_PER_STACK, NB_ECLIPSE_REMARK:NB_ECLIPSE_REMARK, NB_DOOMCURSE_PRESEAL:NB_DOOMCURSE_PRESEAL, NB_SOULREND_BANK_MULT:NB_SOULREND_BANK_MULT, NB_SOULREND_MIN_WOES:NB_SOULREND_MIN_WOES, NB_WHISPER_CLOCK_MULT:NB_WHISPER_CLOCK_MULT, LEG_VOIDFANG_SHATTER_MS:LEG_VOIDFANG_SHATTER_MS, LEG_VOIDVEIL_PCT:LEG_VOIDVEIL_PCT, NB_SWING_MULT:NB_SWING_MULT, _setNbSwingMult:function(v){ NB_SWING_MULT = v; }, JG_ECHO_MS:JG_ECHO_MS, JG_ECHO_PCT:JG_ECHO_PCT, JG_RESONANCE_MAX:JG_RESONANCE_MAX, JG_RESONANCE_PER:JG_RESONANCE_PER, JG_FAULT_SHRED_PER:JG_FAULT_SHRED_PER, JG_FAULT_SHRED_CAP:JG_FAULT_SHRED_CAP, JG_STAGGER_MS:JG_STAGGER_MS, JG_FURY_PER:JG_FURY_PER, JG_FURY_MAX:JG_FURY_MAX, JG_D2_ECHO_BONUS_MS:JG_D2_ECHO_BONUS_MS, JG_EPICENTER_MULT:JG_EPICENTER_MULT, LEG_EARTHRENDER_ECHO:LEG_EARTHRENDER_ECHO, LEG_MAGMACORE_PER_ECHO:LEG_MAGMACORE_PER_ECHO, JG_SWING_MULT:JG_SWING_MULT, _setJgSwingMult:function(v){ JG_SWING_MULT = v; }, jgEchoMs:jgEchoMs, jgEchoShare:jgEchoShare, jgResonancePer:jgResonancePer, jgLiveEchoCount:jgLiveEchoCount, jgEchoRemaining:jgEchoRemaining, jgResonance:jgResonance, jgResonanceMult:jgResonanceMult, jgFuryCritDmg:jgFuryCritDmg, jgFaultShred:jgFaultShred, jgRingEcho:jgRingEcho, jgBigOne:jgBigOne, jgImpactOnHit:jgImpactOnHit, applyJgEchoTick:applyJgEchoTick, executionerReapThreshold:executionerReapThreshold, enemyHpFrac:enemyHpFrac, EX_THRESH_FLOOR:EX_THRESH_FLOOR, EX_THRESH_FLOOR_D4:EX_THRESH_FLOOR_D4, EX_THRESH_CAP:EX_THRESH_CAP, EX_THRESH_PER_SEC:EX_THRESH_PER_SEC, EX_THRESH_PER_HIT:EX_THRESH_PER_HIT, EX_FALL_PCT:EX_FALL_PCT, EX_CULL_CARRY:EX_CULL_CARRY, EX_TALLY_PER:EX_TALLY_PER, EX_TALLY_MAX:EX_TALLY_MAX, EX_CULL_EXEC_FRAC:EX_CULL_EXEC_FRAC, EX_D1_RATE_MULT:EX_D1_RATE_MULT, EX_D1_FIRSTFALL_MULT:EX_D1_FIRSTFALL_MULT, EX_D3_FALL_MULT:EX_D3_FALL_MULT, EX_D3_RETAIN:EX_D3_RETAIN, EX_D4_AMP_MULT:EX_D4_AMP_MULT, LEG_SOULHARVESTER_PER:LEG_SOULHARVESTER_PER, LEG_SOULHARVESTER_MAX:LEG_SOULHARVESTER_MAX, LEG_EMBERWYRM_FALL_MULT:LEG_EMBERWYRM_FALL_MULT, EX_SWING_MULT:EX_SWING_MULT, _setExSwingMult:function(v){ EX_SWING_MULT = v; }, exThreshFloor:exThreshFloor, exThreshCap:exThreshCap, exClimbRateMult:exClimbRateMult, exThreshSeed:exThreshSeed, exFallFire:exFallFire, exFallCheck:exFallCheck, exFallOnHit:exFallOnHit, applyExFallTick:applyExFallTick, lumenBonus:lumenBonus, lumenHealTarget:lumenHealTarget, lumenApplyHeal:lumenApplyHeal, lumenAddShield:lumenAddShield, lumenShieldCap:lumenShieldCap, applyLumenMendingTick:applyLumenMendingTick, LUMEN_REFLECT_PCT:LUMEN_REFLECT_PCT, LUMEN_SHIELD_MAX_PCT:LUMEN_SHIELD_MAX_PCT, LUMEN_MEND_HPS_PCT:LUMEN_MEND_HPS_PCT, reaverBonus:reaverBonus, applyReaverBleedTick:applyReaverBleedTick, applyPotionPoisonTick:applyPotionPoisonTick, samuraiBonus:samuraiBonus, enemyBleeding:enemyBleeding, samuraiFocusStacks:samuraiFocusStacks,
       smSheathed:smSheathed, smCutRefund:smCutRefund, smFocusAdd:smFocusAdd, smCutDamage:smCutDamage,
       smDrawCutFire:smDrawCutFire, samuraiFlowMult:samuraiFlowMult, applySamuraiFocusTick:applySamuraiFocusTick,
       SM_FOCUS_PER_SEC:SM_FOCUS_PER_SEC, SM_FOCUS_PER_HIT:SM_FOCUS_PER_HIT, SM_CUT_PCT:SM_CUT_PCT,
