@@ -4411,31 +4411,40 @@
     eq(FF.SENTINEL_SHRED_FRAC, 0.5, 'Sunder ignores 50% of enemy armour');
     // No Sentinel reflect without the class.
     eq(FF.sentinelReflectDamage(100, 80, 999, {xp:{},physique:{},bodyArmor:{},equippedMainhand:null,equippedOffhand:null,activity:{type:'combat'},playerHp:1}), 0, 'no class -> no reflect');
-    // Spellblade rework: Rune Hunger (Lv1) / Critical Runes (Lv20) / Spell Echo (Lv40) / Twin Echo (Lv60) / Empowered Runes (Lv80).
+    // Spellblade rework v2, "the Afterimage Train": Afterimage (Lv1) / Runeglow (Lv20) / Deep Runes
+    // (Lv40) / Runic Tempo (Lv60) / Standing Wave (Lv80). RULE (third never-scale entry): never scale a
+    // line by raw ENCHANT COUNT/TOTALS. The deep engine tests live in their own suite below.
     var sbNames = FF.CLASS_DEFS_BY_ID.spellblade.passives.map(function(p){ return p.name; });
-    eq(JSON.stringify(sbNames), JSON.stringify(['Rune Hunger','Critical Runes','Spell Echo','Twin Echo','Empowered Runes']), 'Spellblade ladder is the reworked five');
-    // Build a Spellblade with two equipped weapon enchants (a 20% Critical Damage + a 10% Weapon Damage).
-    function sbEnch(level){
+    eq(JSON.stringify(sbNames), JSON.stringify(['Afterimage','Runeglow','Deep Runes','Runic Tempo','Standing Wave']), 'Spellblade ladder is the Afterimage Train five');
+    // Every enchant-count converter is retired.
+    ok(typeof FF.spellbladeRuneHungerMult === 'undefined', 'Rune Hunger retired (a pinned +4%/enchant flat)');
+    ok(typeof FF.spellbladeCriticalRunesCrit === 'undefined', 'Critical Runes retired (dead at ~100% BiS crit)');
+    ok(typeof FF.spellbladeEchoChance === 'undefined', 'the echo coin flips retired (the train is deterministic)');
+    ok(typeof FF.spellbladeResonantCrit === 'undefined', 'Resonant Crit retired (afterimages never re-roll a crit)');
+    eq(FF.spellbladeEnchantBoost(stFor('spellblade',80)), 1, 'Empowered Runes retired: no hidden x2 across the enchant channels');
+    // Runeglow (Lv20): rarity raises the ratio. Two fantastic items -> +2%.
+    function sbRar(level, rarity){
       var st = stFor('spellblade', level);
-      st.uniqueItems = { w1:{ kind:'weapon', enhance:0, enchants:[{mod:'critDamage',roll:20},{mod:'weaponDamage',roll:10}] } };
+      st.equippedMainhandRarity = rarity; st.bodyArmor = st.bodyArmor || {};
+      st.bodyArmor.chest = { material:'chain', tier:5, rarity: rarity };
+      return st;
+    }
+    near(FF.sbRuneglow(sbRar(20,'fantastic')), 2 * FF.SB_GLOW_FANT, 'Runeglow: two fantastic items -> +2% ratio', 1e-9);
+    near(FF.sbRuneglow(sbRar(20,'rare')), 2 * FF.SB_GLOW_RARE, 'rare items glow a third as bright', 1e-9);
+    eq(FF.sbRuneglow(sbRar(1,'fantastic')), 0, 'no Runeglow below Lv20');
+    near(FF.sbEchoRatio(sbRar(20,'fantastic')), FF.SB_ECHO_RATIO_BASE + 2*FF.SB_GLOW_FANT, 'the ratio = base 40% + the glow', 1e-9);
+    // Deep Runes (Lv40): depth from enchant-roll QUALITY (weapon critDamage rolls 5..30; 30 = maxed).
+    function sbQ(level, roll){
+      var st = stFor('spellblade', level);
+      st.uniqueItems = { w1:{ kind:'weapon', tier:19, enhance:0, enchants:[{mod:'critDamage', roll:roll}] } };
       st.equippedMainhandUid = 'w1';
       return st;
     }
-    // Rune Hunger (Lv1): +4% damage per equipped enchant.
-    eq(FF.equippedEnchantCount(sbEnch(1)), 2, 'equippedEnchantCount tallies each equipped enchant');
-    ok(Math.abs(FF.spellbladeRuneHungerMult(sbEnch(1)) - 1.08) < 1e-9, 'Rune Hunger: +4% x 2 enchants = +8%');
-    eq(FF.spellbladeRuneHungerMult(stFor('spellblade',1)), 1, 'Rune Hunger neutral with no equipped enchants');
-    // Critical Runes (Lv20): +1% crit per 5% Critical-Damage enchant (here 20% -> +4%).
-    ok(Math.abs(FF.spellbladeCriticalRunesCrit(sbEnch(20)) - 0.04) < 1e-9, 'Critical Runes: 20% crit-dmg enchant -> +4% crit chance');
-    eq(FF.spellbladeCriticalRunesCrit(sbEnch(1)), 0, 'Critical Runes inactive below Lv20');
-    // Empowered Runes (Lv80): enchant bonuses doubled -> Critical Runes reads the doubled crit-dmg (40% -> +8%).
-    eq(FF.spellbladeEnchantBoost(stFor('spellblade',80)), 2.0, 'Empowered Runes doubles enchant bonuses');
-    eq(FF.spellbladeEnchantBoost(stFor('spellblade',60)), 1, 'no enchant amplification below Lv80');
-    ok(Math.abs(FF.spellbladeCriticalRunesCrit(sbEnch(80)) - 0.08) < 1e-9, 'Empowered Runes doubles the crit-dmg feeding Critical Runes (40% -> +8%)');
-    // Spell Echo (Lv40) 15%; Twin Echo (Lv60) 30%; nothing below Lv40.
-    ok(Math.abs(FF.spellbladeEchoChance(stFor('spellblade',40)) - 0.15) < 1e-9, 'Spell Echo: 15% at Lv40');
-    ok(Math.abs(FF.spellbladeEchoChance(stFor('spellblade',60)) - 0.30) < 1e-9, 'Twin Echo: 30% at Lv60');
-    eq(FF.spellbladeEchoChance(stFor('spellblade',20)), 0, 'no echo below Lv40');
+    near(FF.sbEnchantQuality(sbQ(40, 30)), 1, 'a maxed roll reads quality 1.0', 1e-9);
+    near(FF.sbEnchantQuality(sbQ(40, 5)), 0, 'a floor roll reads quality 0', 1e-9);
+    eq(FF.sbEchoDepth(sbQ(40, 30)), 6, 'Deep Runes: maxed rolls -> depth 6');
+    eq(FF.sbEchoDepth(sbQ(40, 5)), 2, 'floor rolls -> the base depth 2');
+    eq(FF.sbEchoDepth(sbQ(1, 30)), 1, 'below Deep Runes the train is a single afterimage');
     // No class active -> every perk multiplier is neutral.
     var none = { xp:{}, physique:{}, bodyArmor:{}, equippedMainhand:null, equippedOffhand:null, activity:{type:'combat'}, playerHp:1 };
     eq(FF.berserkerLedgerMult(none), 1, 'no class -> Blood Ledger neutral');
@@ -6153,14 +6162,10 @@
     near(FF.classAttackSpeedMult(kgear(85, { knightStacks: 6 })), 0.88, 'Banner 6: Order of Pace => -12% attack timer', 1e-9);
     near(FF.classAttackSpeedMult(kgear(85, { knightStacks: 10 })), 0.88, 'the Order of Pace is a threshold, never a per-stack ramp', 1e-9);
 
-    // Resonant Echo (spellblade/greatsword): each Spell Echo hits +10% harder per DISTINCT enchant carried.
-    var reSt = legSt('resonantecho');
-    reSt.uniqueItems.L.enchants = [ {mod:'critDamage', roll:10}, {mod:'critChance', roll:5}, {mod:'weaponDamage', roll:8} ]; // 3 distinct weapon-enchant stats
-    eq(FF.legDistinctEnchantCount(reSt), 3, 'legDistinctEnchantCount reads the distinct equipped-enchant stats');
-    near(FF.legEchoDmgMult(reSt), 1.30, 'Resonant Echo: 3 distinct enchants -> echoes hit +30%');
-    var reNone = legSt('resonantecho'); // no enchants on the item
-    near(FF.legEchoDmgMult(reNone), 1, 'Resonant Echo with no enchants is a no-op multiplier');
-    near(FF.legEchoDmgMult(legSt('engarde')), 1, 'Resonant Echo is inert without its legendary');
+    // Cavern Echo (spellblade/greatsword): the per-enchant echo mult retired -- it raises the RATIO now.
+    ok(typeof FF.legEchoDmgMult === 'undefined', 'the per-enchant echo multiplier is gone');
+    near(FF.sbEchoRatio(legSt('resonantecho')), FF.SB_ECHO_RATIO_BASE + FF.LEG_CAVERN_RATIO, 'Cavern Echo: ratio +8% (no class levels, so no glow)', 1e-9);
+    near(FF.sbEchoRatio(legSt('engarde')), FF.SB_ECHO_RATIO_BASE, 'the ratio stays base without it', 1e-9);
   });
 
   // ---- D1 legendary gear COMBAT effects, Batch 5: the four Blunt weapons ------------------------------
@@ -6531,10 +6536,12 @@
     // Bloodwaltz (duelist/rapier): Untouchable ramps to +100% and a hit taken drops only a quarter.
     near(FF.duelistUntouchCap(legSt('bloodwaltz','rapier')), 0.20, 'Bloodwaltz: Untouchable caps at +20%');
     near(FF.duelistUntouchCap(legSt('engarde','rapier')), 0.15, 'without Bloodwaltz the cap is the base +15%');
-    // Runegorge (spellblade/greatsword): +3% crit damage per equipped enchant.
-    var rg = legSt('runegorge','greatsword'); rg.uniqueItems.L.enchants = [{},{}]; // 2 enchants on the equipped weapon
-    near(FF.legRunegorgeCritDmg(rg), 0.06, 'Runegorge: +3% crit damage per equipped enchant');
-    near(FF.legRunegorgeCritDmg(legSt('marrowsplitter','halfmoonaxe')), 0, 'no Runegorge crit dmg without the greatsword');
+    // Runegorge (spellblade/greatsword): the +3%/enchant crit flat retired -- damage LINES count half again.
+    ok(typeof FF.legRunegorgeCritDmg === 'undefined', 'the per-enchant crit-damage helper is gone');
+    var rg = legSt('runegorge','greatsword'); rg.uniqueItems.L.enchants = [{mod:'weaponDamage', roll:20}];
+    near(FF.equippedEnchantTotals(rg).pctDamage, 20 * FF.LEG_RUNEGORGE_LINE, 'Runegorge: a 20% damage line counts as 30%', 1e-6);
+    var rgOff = legSt('marrowsplitter','halfmoonaxe'); rgOff.uniqueItems.L.enchants = [{mod:'weaponDamage', roll:20}];
+    near(FF.equippedEnchantTotals(rgOff).pctDamage, 20, 'without Runegorge the line reads at face value', 1e-6);
     // Detection for the behaviour-driven effects (gold/heal/crit/armour handled live).
     eq(FF.legActive('goldgorge', legSt('goldgorge','scimitar')), true, 'legActive detects Goldgorge');
     eq(FF.legActive('blightfang', legSt('blightfang','hatchet')), true, 'legActive detects Blightfang');
@@ -7082,8 +7089,17 @@
     // Drakelance (reworked): Decrees strike twice — fired at the Decree hook, no flat amplifier row.
     near(FF.d4LegDmgMult({}, legSt('drakelance','claymore',{ knightStacks:999 })), 1.0, 'Drakelance is no longer a flat amplifier (Decrees strike twice at the hook)');
     ok(/strike twice/.test(FF.LEGENDARY_GEAR_ITEMS_D4[FF.legGearItemIdD4('drakelance','normal')].desc), 'Drakelance desc: Decrees strike twice');
-    // Runewyrm Blade: echoes strike the weakness (advantage bite).
-    near(FF.d4EchoMult(legSt('runewyrm','greatsword')), FF.ELEMENT_ADVANTAGE_MULT, 'Runewyrm Blade: echoes strike the weakness');
+    // Runewyrm Blade (re-axed): the Standing Wave thresholds drop by one -- one train suffices.
+    var rwSt = legSt('runewyrm'); rwSt.xp = { spellblade: FF.xpFloorForLevel(85) };
+    // this suite's legSt mounts the legendary on the OFFHAND slot; the Spellblade needs the blade in
+    // hand and the offhand EMPTY, so remount it as the mainhand greatsword.
+    rwSt.equippedMainhand = 'greatsword'; rwSt.equippedMainhandUid = 'L'; rwSt.equippedOffhand = null; rwSt.equippedOffhandUid = null;
+    rwSt.uniqueItems.L.kind = 'weapon'; rwSt.uniqueItems.L.base = 'stweapon_greatsword_t19_rare';
+    rwSt.bodyArmor = { helmet:{material:'chain',tier:5}, chest:{material:'chain',tier:5}, gauntlets:{material:'leather',tier:5}, boots:{material:'leather',tier:5} };
+    rwSt.sbEchoes = [{at:9e15,dmg:1,gen:1,paid:0,id:1}];
+    eq(FF.activeClassId(rwSt), 'spellblade', 'the Runewyrm probe activates the class');
+    near(FF.sbWaveMult(rwSt), FF.SB_WAVE_2, 'Runewyrm Blade: the Wave hums at a single train');
+    rwSt.sbEchoes = []; near(FF.sbWaveMult(rwSt), 1, 'silence is still silence, even for the wyrm');
 
     // --- Bursts / execute helpers ---
     // Shadowwyrm's Fang is now a Twin Fangs payoff: a Vanish-loaded Fang Strike crits and detonates at +60%/wound.
@@ -7443,9 +7459,11 @@
       wearD3('executioner', 3); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.20, 'Executioner Death Toll: +4% per Soul');
       s.d3Souls = 0; near(FF.d3SetDmgMult({}, s), 1.0, 'Death Toll inert at 0 Souls');
       s.d3Souls = 99; near(FF.d3SetDmgMult({}, s), 1.40, 'Soul count caps at 10 (Death Toll maxes at +40%)');
-      // Spellblade Necroblade (full, 4pc): +4% per Soul.
-      wearD3('spellblade', 4); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.20, 'Spellblade Necroblade: +4% per Soul');
-      wearD3('spellblade', 2); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.0, 'Necroblade needs the full set');
+      // Spellblade D3 de-themed (v0.0.83.0): Necroblade's souls retired -- the layer is Leading Edge /
+      // The Caboose now (tested in the Afterimage Train suite).
+      wearD3('spellblade', 4); s.d3Souls = 5; near(FF.d3SetDmgMult({}, s), 1.0, 'Necroblade retired: no per-Soul multiplier');
+      eq(FF.D3_SET_DEFS.spellblade.b2.name, 'Leading Edge', 'Spellblade D3 2pc is Leading Edge now');
+      eq(FF.D3_SET_DEFS.spellblade.bf.name, 'The Caboose', 'Spellblade D3 full is The Caboose now');
       // Reaver Exsanguinate (full): +5% per Soul, but only vs a bleeding foe.
       wearD3('reaver', 4); s.d3Souls = 4; s.activity = { type:'combat', monsterHp:500, bleedStacks:3, bleedUntil:Date.now()+4000 };
       near(FF.d3SetDmgMult({}, s), 1.20, 'Reaver Exsanguinate: +5% per Soul vs a bleeding foe (4 -> +20%)');
@@ -7690,8 +7708,10 @@
 
       // --- Spellblade echoes (Rune Heart / Prismatic Edge) ---
       s.bodyArmor = {}; s.uniqueItems = {};
-      wearD4('spellblade', 2); near(FF.d4EchoMult(s), 1.30, 'Rune Heart (2pc): echoes +30% elemental');
-      wearFull('spellblade'); near(FF.d4EchoMult(s), 1.30 * FF.ELEMENT_ADVANTAGE_MULT, 'Prismatic Edge (full): echoes also strike the weakness (advantage)');
+      // Spellblade D4 de-themed (v0.0.83.0): the elemental echo mults retired -- Gilded Runes doubles the
+      // Runeglow and Perfect Resonance rewards 90%+ rolls (tested in the Afterimage Train suite).
+      eq(FF.D4_SET_DEFS.spellblade.b2.name, 'Gilded Runes', 'Spellblade D4 2pc is Gilded Runes now');
+      eq(FF.D4_SET_DEFS.spellblade.bf.name, 'Perfect Resonance', 'Spellblade D4 full is Perfect Resonance now');
 
       // --- Summoner familiars (Brood Heart / Wyrd Resonance) ---
       s.bodyArmor = {}; s.uniqueItems = {};
@@ -8117,14 +8137,13 @@
       // Kindred Fury is now the D2 FULL bonus (crit borrowing is exercised in the cast pipeline).
       ok(/Kindred Fury/.test(FF.D2_SET_DEFS.summoner.bf.name), 'the Summoner D2 capstone is Kindred Fury');
       s.bodyArmor = {}; s.uniqueItems = {};
-      // Spellblade Arcane Overflow (2pc): +2% per equipped enchant.
+      // Spellblade Arcane Overflow (2pc): re-axed off enchant count -- afterimages +15%, inside the tick.
       wearD2('spellblade', 2); s.uniqueItems.w0.enchants = [{},{},{}];
-      eq(FF.equippedEnchantCount(s), 3, 'the worn Spellblade piece carries 3 enchants');
-      near(FF.d2SetDmgMult(foe, s), 1 + 0.02*3, 'Spellblade Arcane Overflow: +2% per equipped enchant');
-      // Spellblade Runic Detonation (full): +5% per Echo debuff stack (no enchants -> Arcane Overflow = 1).
-      wearD2('spellblade', 4); s.activity = { type:'combat', monsterHp:800, d2RunicStacks:4, d2RunicUntil:Date.now()+9999 };
-      near(FF.d2SetDmgMult(foe, s), 1 + 0.05*4, 'Spellblade Runic Detonation: +5% per Echo stack');
-      s.activity.d2RunicUntil = Date.now()-1; near(FF.d2SetDmgMult(foe, s), 1.0, 'Runic Detonation lapses after its window');
+      near(FF.d2SetDmgMult(foe, s), 1.0, 'Arcane Overflow no longer adds a per-enchant damage row');
+      // Spellblade Runic Detonation (full): +2% per Resonance stamp the train has driven in.
+      wearD2('spellblade', 4); s.activity = { type:'combat', monsterHp:800, sbResonStacks:4, sbResonUntil:Date.now()+9999 };
+      near(FF.d2SetDmgMult(foe, s), 1 + FF.SB_RESON_PER*4, 'Runic Detonation: +2% per Resonance stamp');
+      s.activity.sbResonUntil = Date.now()-1; near(FF.d2SetDmgMult(foe, s), 1.0, 'Runic Detonation lapses after its window');
       // Executioner Cleave (2pc): +20% vs non-boss; inert vs a boss.
       wearD2('executioner', 2);
       near(FF.d2SetDmgMult({hp:1000}, s), 1.20, 'Executioner Cleave: +20% vs a non-boss foe');
@@ -8526,25 +8545,23 @@
     eq(FF.summonerCrescendoCap(packSt), 7, "Maestro's Poise: Crescendo cap 7 with the 2-piece");
     eq(FF.summonerCrescendoCap(setSt('summoner', 1, {})), 5, 'base Crescendo cap is 5');
 
-    // Spellblade Resonant Crit (full): echoes can Critically Hit.
-    ok(FF.spellbladeResonantCrit(setSt('spellblade', 4)), 'Resonant Crit (full): echoes can crit');
-    ok(!FF.spellbladeResonantCrit(setSt('spellblade', 2)), 'no Resonant Crit below the full set');
-    // Echo Chamber (2pc): +15% echo chance where an echo mechanic already exists (base 0 without the class stays 0).
-    eq(FF.spellbladeEchoChance(setSt('spellblade', 2)), 0, 'Echo Chamber does not fabricate echoes without the Spellblade echo perk');
-    // With the Spellblade class active (greatsword + chain/leather set that doubles as its gear), Echo Chamber adds 15%.
+    // Spellblade D1 re-axed (the Afterimage Train): Echo Chamber raises the RATIO; Resonant Depths
+    // (the old Resonant Crit) deepens the train -- afterimages never re-roll a crit.
     function sbSt(asSet, level){
       var st = { xp:{}, physique:{}, bodyArmor:{}, uniqueItems:{}, equippedMainhand:'greatsword', activity:{type:'combat', monsterHp:100}, playerHp:55 };
       st.xp.spellblade = FF.xpFloorForLevel(level);
       var mats = { helmet:'chain', chest:'chain', gauntlets:'leather', boots:'leather' };
       Object.keys(mats).forEach(function(slot,i){
         if(asSet){ var uid='sb'+i; st.uniqueItems[uid] = { uid:uid, set:'spellblade' }; st.bodyArmor[slot] = { uid:uid, material:mats[slot], tier:22, rarity:'rare' }; }
-        else st.bodyArmor[slot] = { material:mats[slot], tier:5 };
+        else st.bodyArmor[slot] = { material:mats[slot], tier:5, rarity:'rare' }; // rarity matched to the set pieces, so the ratio delta below isolates Echo Chamber from Runeglow
       });
       return st;
     }
     eq(FF.activeClassId(sbSt(true,40)), 'spellblade', 'a full Spellblade set doubles as its class gear');
-    near(FF.spellbladeEchoChance(sbSt(true,40)), 0.30, 'Echo Chamber (2pc): Spell Echo 15% -> 30%');
-    near(FF.spellbladeEchoChance(sbSt(false,40)), 0.15, 'plain Spellblade Lv40 -> base 15% echo chance');
+    ok(typeof FF.spellbladeResonantCrit === 'undefined', 'Resonant Crit retired (flat-crit rule)');
+    var _sbBase = FF.sbEchoRatio(sbSt(false,40)), _sbSet = FF.sbEchoRatio(sbSt(true,40));
+    near(_sbSet - _sbBase, FF.SB_D1_RATIO, 'Echo Chamber (2pc): ratio +5% over the same kit without the set', 0.002);
+    eq(FF.sbEchoDepth(sbSt(true,40)), FF.sbEchoDepth(sbSt(false,40)) + 2, 'Resonant Depths (full): the train runs 2 deeper');
 
     // Voidshadow Resistance Rot (2pc): Vulnerability bites +3%/stack.
     near(FF.voidVulnPerStack(setSt('nightblade', 2)), 0.03, 'Resistance Rot (2pc): +3%/Vulnerability stack');
@@ -14081,6 +14098,93 @@
         s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.equippedOffhandUid=snap.ohu; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.nightblade=snap.xp;
         s.activity=snap.act; s.playerHp=snap.hp; s.classDebuffs=snap.cd;
         s.nbDoomLeftMs=snap.dl; s.nbDoomBank=snap.db; s.nbDoomStrikes=snap.ds;
+      }
+    })();
+  });
+
+  // ---- Classes: Spellblade "the Afterimage Train" (v0.0.83.0) -- the echo-train engine --
+  // Afterimage (Lv1): every landed swing repeats at the Resonance ratio; Deep Runes chains generations
+  // by enchant quality; Tempo stokes; the Standing Wave pays while trains overlap; Caboose detonates.
+  suite('classes: Spellblade Afterimage Train engine', function(){
+    function CH(){ return {material:'chain', tier:5, rarity:'normal'}; }
+    function LE(){ return {material:'leather', tier:5, rarity:'normal'}; }
+    function bare(){ return {tier:0, rarity:'normal', material:null}; }
+    (function(){
+      var s = FF._state;
+      var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid,
+                   oh:s.equippedOffhand, oht:s.equippedOffhandTier, ohu:s.equippedOffhandUid, ba:s.bodyArmor, ui:s.uniqueItems, xp:s.xp.spellblade,
+                   act:s.activity, hp:s.playerHp, se:s.sbEchoes, st:s.sbTempo, sq:s.sbTrainSeq };
+      var svRnd = Math.random;
+      try {
+        s.equippedMainhand='greatsword'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null;
+        s.equippedOffhand=null; s.equippedOffhandTier=0; s.equippedOffhandUid=null;
+        s.bodyArmor={ helmet:CH(), chest:CH(), gauntlets:LE(), boots:LE(), back:bare() };
+        s.uniqueItems = {};
+        s.xp.spellblade = FF.xpFloorForLevel(85);
+        eq(FF.activeClassId(s), 'spellblade', 'greatsword + empty offhand + chain/leather => Spellblade');
+        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        s.playerHp = FF.maxHp(s);
+        s.sbEchoes = []; s.sbTempo = 0; s.sbTrainSeq = 0;
+        // A landed swing spawns a train: one pending echo at the ratio.
+        Math.random = function(){ return 0; }; // lands + crits
+        var hp0 = s.activity.monsterHp;
+        FF.playerAttackTick(false, 1, false);
+        var dealt = hp0 - s.activity.monsterHp;
+        ok(dealt > 0, 'the swing landed');
+        eq((s.sbEchoes||[]).length, 1, 'the swing left one pending afterimage');
+        near(s.sbEchoes[0].dmg, dealt * FF.sbEchoRatio(s), 'the first echo carries hit x ratio', Math.max(1, dealt*0.002));
+        eq(s.sbEchoes[0].gen, 1, 'generation one');
+        // Seeded LARGE echo (the Aftershock tolerance lesson): the tick fires it raw -- no crit re-roll --
+        // and queues the next generation at dmg x ratio.
+        s.sbEchoes = [ { at: Date.now()-1, dmg: 1000000, gen: 1, paid: 0, id: 99 } ];
+        var hp1 = s.activity.monsterHp;
+        FF.applySbEchoTick(50);
+        eq(hp1 - s.activity.monsterHp, 1000000, 'the due echo struck for exactly its carried damage (no mults, no crit re-roll)');
+        var logRows = FF._combatLog(); var last = logRows[logRows.length-1];
+        eq(last && last.spName, 'Afterimage', 'the strike is a named Combat log row');
+        eq((s.sbEchoes||[]).length, 1, 'the train queued its next generation');
+        eq(s.sbEchoes[0].gen, 2, '...generation two');
+        near(s.sbEchoes[0].dmg, 1000000 * FF.sbEchoRatio(s), '...at dmg x ratio', 1);
+        eq(s.sbTempo, 1, 'Runic Tempo stoked +1');
+        ok(Math.abs(FF.classAttackSpeedMult(s) - (1 - FF.SB_TEMPO_PER)) < 1e-9, 'the Tempo quickens the swing while the train rings');
+        // Depth ends the train (normal-rarity gear, no enchants -> quality 0 -> depth 2 at Lv40+).
+        eq(FF.sbEchoDepth(s), 2, 'bare gear reads the base depth 2');
+        s.sbEchoes = [ { at: Date.now()-1, dmg: 500000, gen: 2, paid: 800000, id: 99 } ];
+        FF.applySbEchoTick(50);
+        eq((s.sbEchoes||[]).length, 0, 'a train at full depth fades (no next generation, no D3 Caboose)');
+        FF.applySbEchoTick(50);
+        eq(s.sbTempo, 0, 'silence: the Tempo lapses with the last echo');
+        // The Standing Wave (Lv80): two live trains -> +25% on afterimage strikes.
+        s.sbEchoes = [ { at: Date.now()-1, dmg: 1000000, gen: 1, paid: 0, id: 1 }, { at: Date.now()+9999, dmg: 1, gen: 1, paid: 0, id: 2 } ];
+        var hp2 = s.activity.monsterHp;
+        FF.applySbEchoTick(50);
+        eq(hp2 - s.activity.monsterHp, Math.round(1000000 * FF.SB_WAVE_2), 'the Standing Wave: 2 live trains -> the due echo strikes +25%');
+        // The Caboose (D3 full): the final echo detonates for 25% of the train total.
+        s.sbEchoes = []; s.uniqueItems = {}; s.bodyArmor = { helmet:CH(), chest:CH(), gauntlets:LE(), boots:LE(), back:bare() };
+        ['helmet','chest','gauntlets','boots'].forEach(function(slot, i){
+          var uid = 'sd3'+i; s.uniqueItems[uid] = { set:'spellblade', setLayer:'d3' };
+          s.bodyArmor[slot] = { uid:uid, material: (slot==='helmet'||slot==='chest') ? 'chain' : 'leather', tier:5, rarity:'normal' };
+        });
+        eq(FF.activeClassId(s), 'spellblade', 'the D3 mail still activates the class');
+        s.sbEchoes = [ { at: Date.now()-1, dmg: 100000, gen: 9, paid: 900000, id: 3 } ]; // gen past depth -> final
+        var hp3 = s.activity.monsterHp;
+        FF.applySbEchoTick(50);
+        var swing3 = hp3 - s.activity.monsterHp;
+        eq(swing3, 100000 + Math.round((900000 + 100000) * FF.SB_CABOOSE_PCT), 'The Caboose: the final echo detonates for 25% of everything the train paid');
+        // Trains carry foe to foe (echoes of your own swings).
+        s.sbEchoes = [ { at: Date.now()+5000, dmg: 777, gen: 1, paid: 0, id: 4 } ];
+        var _mon = FF.MONSTERS.filter(function(m){ return m.id === s.activity.monsterId; })[0];
+        s.activity.monsterHp = 0; FF.defeatMonster(_mon);
+        eq((s.sbEchoes||[]).length, 1, 'the train outlives the foe (echoes follow your swings, not the corpse)');
+        eq(s.activity.sbResonStacks||0, 0, "Runic Detonation's stamps die with the foe");
+        // The session reset silences everything.
+        FF.resetPersistentCombatBuffs();
+        ok(!(s.sbEchoes||[]).length && !s.sbTempo, 'resetPersistentCombatBuffs lets every train fade');
+      } finally {
+        Math.random = svRnd;
+        s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu;
+        s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.equippedOffhandUid=snap.ohu; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.spellblade=snap.xp;
+        s.activity=snap.act; s.playerHp=snap.hp; s.sbEchoes=snap.se; s.sbTempo=snap.st; s.sbTrainSeq=snap.sq;
       }
     })();
   });
