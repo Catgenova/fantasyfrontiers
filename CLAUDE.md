@@ -234,8 +234,28 @@ Newly-covered keys BASELINE on their first sweep, so pre-existing injections are
 adding a `p_source` default arg creates an OVERLOAD and makes the existing 3-arg calls from market
 settlement and bank withdrawal ambiguous.
 
+**THE DEPLETION FALSE POSITIVE (2026-08-04, `20260804140000`): "sweep growth" means HELD-AT-SYNC growth,
+not crafts.** `item_sync` credits `earned_total` as `greatest(0, reported_qty − ledger_qty)` and the client
+payload only carries `qty > 0` keys — so anything crafted and spent BETWEEN two 60-second syncs is never
+witnessed. An honest mass-crafter's loop (keep the fantastics, vendor the normal chaff continuously) makes
+normal-variant growth invisible while fantastic growth records faithfully, and the zero-base rule fired on
+exactly that — SEVEN shadow rows in one sweep on Valuren, the same account the progress detector
+false-positived twice. Hardened with two suppressors on the zero rule only (ratio rule untouched): H1 the
+family evidence broadens to zero NON-FANTASTIC growth (rares/supremes survive depletion far longer), and
+H2 account-level corroboration (fires only when the whole account shows zero non-fantastic growth in the
+window — the pure-injection profile; the AndJustice4All single-Signet shape still flags on sight). H4 puts
+both corroborating figures in the signal detail + digest. Accepted evasion, stated: holding a few crafted
+normals at sync defeats the zero rule — same as before, and base growth is what the ratio rule then counts
+at volume. H3 (lifetime family history as a suppressor) was proposed and NOT taken. Old signal rows are
+identifiable by `not (detail ? 'nonfantastic_account')`. **When touching any sweep body: copy the LATEST
+migration's function verbatim, not the one you remember** — this migration nearly shipped without
+`20260803270000`'s per-layer accessory aggregation because it was drafted from `20260803230000`.
+
 Still open by design: earning is client-reported because the server does not simulate crafting. Batch-validated
-server-side crafting is the real fix and is a separate project.
+server-side crafting is the real fix and is a separate project. The durable fix for the depletion blind spot
+specifically: the client reports its monotonic `state.itemEarnedTotal` alongside inventory and the server
+accrues earned from the claimed delta under the same rate clock — a change to `item_sync`'s input contract
+(re-run the one-paste reproduction; mind the overload trap).
 
 ## "Progress" IS damage, so every class rework tightens the anti-cheat thresholds (v0.0.75, Valuren)
 
