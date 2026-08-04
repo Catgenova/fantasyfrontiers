@@ -15959,9 +15959,11 @@
   // is ever duplicated or lost. A slot whose item you no longer own is simply left empty.
   var LOADOUT_SLOT_COUNT = 25;   // total potential presets (the 1-25 quick-swap bar above the doll)
   var LOADOUT_FREE_SLOTS = 3;    // unlocked from the start; the rest are bought with gold
-  // Cost of the NEXT slot when `unlocked` are already open: 100k gold for the 4th, x10 per slot
-  // after that (1M, 10M, ...). Deliberately aspirational at the tail.
-  function loadoutUnlockCost(unlocked){ return 100000 * Math.pow(10, Math.max(0, unlocked - LOADOUT_FREE_SLOTS)); }
+  // Cost of the NEXT slot when `unlocked` are already open: LINEAR +100k per bought slot -- 100k for
+  // the 1st bought (the 4th overall), 200k for the 2nd, 300k for the 3rd, ... (owner order, 2026-08-04:
+  // the old x10-per-slot curve -- 100k, 1M, 10M -- priced the tail out of reach on purpose, and the
+  // owner un-priced it. Full 25-slot bar now totals 25.3M instead of 1.1e26.)
+  function loadoutUnlockCost(unlocked){ return 100000 * (Math.max(0, unlocked - LOADOUT_FREE_SLOTS) + 1); }
   // How many preset slots this player can use. Grandfather clause: anyone with a preset SAVED beyond
   // the unlocked window keeps access to it (the original 5 free slots predate the unlock system), so
   // no saved kit is ever stranded behind a paywall.
@@ -39458,7 +39460,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.2';
+  var GAME_VERSION = '0.0.86.3';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;

@@ -8834,9 +8834,11 @@
     try {
       // Cost ladder: 4th slot 100k, 5th 1M, 6th 10M, ...
       eq(FF.LOADOUT_FREE_SLOTS, 3, '3 loadout slots are free');
-      eq(FF.loadoutUnlockCost(3), 100000, 'the 4th slot costs 100k gold');
-      eq(FF.loadoutUnlockCost(4), 1000000, 'the 5th costs 1M');
-      eq(FF.loadoutUnlockCost(5), 10000000, 'the 6th costs 10M');
+      // Linear pricing (owner order 2026-08-04): +100k per bought slot, replacing the x10 curve.
+      eq(FF.loadoutUnlockCost(3), 100000, 'the 1st bought slot (4th overall) costs 100k gold');
+      eq(FF.loadoutUnlockCost(4), 200000, 'the 2nd bought costs 200k');
+      eq(FF.loadoutUnlockCost(5), 300000, 'the 3rd bought costs 300k');
+      eq(FF.loadoutUnlockCost(24), 2200000, 'the last slot (25th) costs 2.2M — the full bar totals 25.3M');
       // Fresh state: 3 unlocked. Grandfather: a preset saved beyond the window keeps its slot usable.
       S.loadouts = []; S.loadoutSlotsUnlocked = undefined; FF.ensureLoadouts();
       eq(FF.loadoutSlotsUnlocked(), 3, 'a fresh player has 3 unlocked slots');
@@ -8857,7 +8859,7 @@
       eq(S.gold, 1100000, '100k gold was spent');
       FF.unlockLoadoutSlot();
       eq(FF.loadoutSlotsUnlocked(), 5, 'the 5th slot unlocked');
-      eq(S.gold, 100000, '1M gold was spent');
+      eq(S.gold, 900000, '200k gold was spent (linear pricing: 2nd bought slot)');
       FF.saveLoadoutPreset(3);
       ok(!!S.loadouts[3], 'saving into a freshly unlocked slot works');
       // The loadout nest: collapsed = just the toggle; expanded = only SAVED presets, by name.
