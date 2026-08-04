@@ -676,6 +676,30 @@ vuln-on-hit-taken, Enfeeble's sap, Soul Tax lifesteal (full HP bar). Knock-ons: 
 Cursed" and D4 full elemental-advantage strip are GONE (both were flat at BiS); `voidVulnCap` is flat 10
 again; `voidMarkPerHit` retired. The Doom clock renders as a countdown bar in the foe's debuff readout.
 
+**Juggernaut** (90s — the 9s sledge, the game's SLOWEST weapon; v0.0.81.0 "the Aftershock", owner target
+**90B**). The old kit collapsed at BiS end to end: crit ~100% made Overhead Smash decoration, Concussive a
+trash-only stunlock, Building Fury an 8-swing flat, Pulverize always-on, Wind-Up a bare stat trade. Now a
+CYCLING engine where the damage lives BETWEEN the swings: every landed swing rings 50% of itself over 12s
+(`JG_ECHO_PCT`/`JG_ECHO_MS`), impacts on a ringing ground build **Resonance** (cap 3, +10%/stack to swings AND
+aftershocks, lapses on silence), **Faultline** shreds armour (cap 60%, per-FOE) and staggers, Fury is a
+Galvanize-pattern session ramp, and at full Resonance the next swing is **the Big One** — every ringing echo
+erupted at once, no crit re-roll. Ground state (echoes/Resonance/Fury) is STATE-scoped and carries foe to foe.
+D3/D4 dropped their dungeon themes by owner order (the Frostwarden precedent): Standing Stones/Sustained Note
+are the Resonance layer, Epicenter/The World Splits the Big One layer — so **the Juggernaut is no longer a
+Curse source and deals no Fire**. Findings: (1) **D1 (echo-size rate) won the set A/B by +40% in both packs**
+— rare unambiguous signal; the D4 value layer last, the law again. (2) Saturation clean: Cavebreaker (pure
+Resonance rate) led Earthrender (no rate) by only 4.5% — the cycle is rate-limited, the meter real. Momentum
+Swing inversion is structurally impossible (swings are automatic; nothing can deliberately delay them). (3)
+Magmacore's swing-per-echo feedback read +4-9% over mean, a BiS pairing, no runaway. (4) **First knob in the
+series to correct UPWARD**: at 1.0 the kit read 83.5B under the 90B target — `JG_SWING_MULT` **1.067** (mean
+of two packs: 90.9B at 1.078 → 90B). Ceilings (D1 set, Ruin cloak, no offhand): Magmacore ~99B / Earthrender
+~91B / Cavebreaker ~91B / Monolith ~82B — pack mean **~90B**, on target. Per-leg variance across packs ±3-9%;
+Earthrender/Cavebreaker swapped places between packs (indistinguishable — do not rank them), and Monolith is
+the utility sledge (permanent cracks + double stagger under-read on a dummy that never swings). A guard-proof
+lesson for the tests: the aftershock-tick assertion originally could not fail (tier-6 hits made the echo dps
+smaller than the 1-point tolerance floor) — engine tick tests must seed LARGE known values, never rely on
+real low-tier hits.
+
 **TIER WARNING (v0.0.64.9): every recorded ceiling above was measured with a ONE-BELOW-BiS weapon.**
 Melee weapons + shields shipped with `tierCount:20` (top `t19`) while bows/wands/wards/scepter/staff had
 21 (top `t20`) — the ticket-0116 off-kilter. Melee/shields are now 21 tiers too (top `t20`, Tungsten), and
