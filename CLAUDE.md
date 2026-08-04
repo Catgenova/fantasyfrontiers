@@ -799,6 +799,40 @@ alone. Sim-dead: Reap the Weak (frac never drops), the missing-health amp half, 
 The Cull (kill-gated; the harness refills), First Blood past the first Fall (one foe all run),
 Bloodthirst, Headtaker, Huskmaker.
 
+**Sentinel** (90s — the maul + medium shield; v0.0.85.0 "the Bramble", owner target **60B, thorns not armor**
+— the Herald's tank band). The old kit reflected shares of INCOMING damage, and an endgame monster hits for
+thousands against player hits of ~1e11 — the whole thorn identity was **~8 orders of magnitude under band**
+(the DoT-chassis disease in reflect form). It also sat on BOTH never-scale axes: Bulwark's Wrath added the
+pinned ~42M Armor rating per reflect, and Reckoning was "reflects can crit" at ~100% BiS crit. **RULE
+(joins the never-scale list as its incoming-side twin): never scale a damage line off the FOE's hit.** Now
+the thorns are a FIELD — the first **sustained TANK**: growth climbs +4/hit +2/s toward its 100 cap
+(state-scoped, carries foe to foe — Deep Roots), the field tears the foe each second for dotBase × 0.8% ×
+growth, being struck LASHES (Blocks double — the innate 30% Block stays), a half-grown hedge holds the
+shared Sunder (Rending Barbs, the old kit's one live line re-keyed; Bonecrusher deepens it to 70%), and at
+full growth the hedge BLOOMS: a 150% volley every 5s, applied raw (flat-crit instance ten). D3/D4
+de-themed (owner order) — **the Sentinel leaves the Decay pillar** (Bone Thorns/Tombwall/Bonecrusher all
+de-Decayed) **and never touches the element stack** (both Wyrmthorn items de-themed — the ×49 gear-stack
+trap stays out by construction). Findings: (1) **THE WINNING SET LAYER FLIPPED BETWEEN PACKS AND BROKE
+MEAN-OF-PACKS** — the legendary matrix runs on the A/B winner, so when pack 1 picked D1 and pack 2 picked
+D3 the two matrices measured DIFFERENT configs and the "28% non-linearity" was really a layer change.
+METHOD NOTE: when the A/B winner flips, settle the layer first, then band on a confirming pack — three
+packs total here (319.6B at 1.0 → 77.1B at 0.188 on D3 → 60.7B at 0.146 on D3, confirmed). (2) **The 45s
+set A/B structurally misreads this engine**: the rate layer (D1) caps ~23s in and spends twice the window
+at cap (it "won" pack 1), while Overgrowth's 150 cap cannot even FILL in 45s (D2 read last in all three
+packs — a starvation artifact, not a verdict; nobody has measured Overgrowth at a 90s A/B). Never rank
+this class's layers from 45s. At 90s the law held: **D3 Twin Growth (the at-cap tick ×2) won packs 2 and
+3** — the sustained engine's cap-side axis, as pre-registered. (3) **The dummy never swings, so there are
+NO BLOCKS AT ALL** — the entire Thorn Lash channel, Thornwall, Tombwall and Spineshatter's debuff are
+sim-dead (recorded: the lash is the real-play accelerant; Spineshatter reads at the plain-maul floor by
+construction, do not nerf it on these reads). (4) Cross-pack per-maul variance ±1-5% — the quietest class
+since the Reaver (the tear accrues deterministically off the growth clock). `SN_SWING_MULT` **0.146**
+(chassis read 319.6B uncorrected). Ceilings (D3 set, Ruin cloak, Wyrmthorn Wall shield): Wyrmthorn Maul
+~67B / Spinecrusher ~64B / Spineshatter ~56B / Bonecrusher ~54B — pack mean **~60B**, on target. Wyrmthorn
+Maul is +11% over mean (the BiS maul — its +25%-while-blooming rides the D3 at-cap engine); Spineshatter/
+Bonecrusher swapped places between packs (indistinguishable). Sim notes: BUILDS fixes the shield to
+Wyrmthorn Wall (the one measurable shield); sim-dead: every lash, the Snare, Tombwall, Spineshatter's
+debuff, Unbreakable Will's Armor.
+
 **TIER WARNING (v0.0.64.9): every recorded ceiling above was measured with a ONE-BELOW-BiS weapon.**
 Melee weapons + shields shipped with `tierCount:20` (top `t19`) while bows/wands/wards/scepter/staff had
 21 (top `t20`) — the ticket-0116 off-kilter. Melee/shields are now 21 tiers too (top `t20`, Tungsten), and
