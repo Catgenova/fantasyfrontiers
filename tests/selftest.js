@@ -1555,6 +1555,41 @@
     eq(FF.getMaxCraftSlots({ equippedBeltTier:1, equippedBeltRarity:'fantastic', physique: logic100 }), 15, 'fantastic belt + Logic Lv100 caps at 15');
   });
 
+  // ---- ticket-0141 (SteakHouse): a full queue REFUSES a new task instead of silently replacing one ----
+  suite('task slots: a start with every slot busy is refused, not a silent replace', function(){
+    var S = FF._state;
+    var sv = { act:S.activity, ex:S.extraCraftSlots, belt:S.equippedBeltTier, rar:S.equippedBeltRarity,
+               logic:S.physique.logic, qt:S.queueTargets };
+    try {
+      // A fresh player's 2 slots (base + free), both busy.
+      S.equippedBeltTier = 0; S.equippedBeltRarity = 'normal'; S.physique.logic = 0;
+      var running = { type:'gather', skill:'mining', itemId:'mining_stone', progress:0.5 };
+      var extra   = { type:'gather', skill:'forestry', itemId:'forestry_wood', progress:0.5 };
+      S.activity = running;
+      S.extraCraftSlots = [ extra, {type:null}, {type:null} ]; // slots beyond maxSlots-1 must NOT count as free
+      ok(FF.findFreeCraftSlot() === null, 'both slots busy -> no free slot (locked extras are not free)');
+      var attempted = { type:'craft', craftKind:'belt', tierIndex:0, progress:0 };
+      FF.placeNewActivity(attempted);
+      ok(S.activity === running, 'the running primary task was NOT replaced');
+      ok(S.extraCraftSlots[0] === extra, 'the running extra task was NOT replaced');
+      ok(S.activity !== attempted && S.extraCraftSlots.indexOf(attempted) === -1, 'the refused task was placed nowhere');
+      // A refused start must also consume the pending run target, so it cannot leak into the next start.
+      // (pendingQueueTarget is module-scoped; exercised via the public path: with a free slot the next
+      // start places normally, proving the refusal left no half-applied state behind.)
+      S.activity = { type:null };
+      FF.placeNewActivity(attempted);
+      ok(S.activity === attempted, 'with the primary freed, the same start places normally');
+      // With a free EXTRA slot the new task lands there and the primary is untouched.
+      S.activity = running; S.extraCraftSlots = [ {type:null}, {type:null}, {type:null} ];
+      var second = { type:'craft', craftKind:'belt', tierIndex:0, progress:0 };
+      FF.placeNewActivity(second);
+      ok(S.activity === running && S.extraCraftSlots[0] === second, 'a free extra slot is used before anything is replaced');
+    } finally {
+      S.activity = sv.act; S.extraCraftSlots = sv.ex; S.equippedBeltTier = sv.belt; S.equippedBeltRarity = sv.rar;
+      S.physique.logic = sv.logic; S.queueTargets = sv.qt;
+    }
+  });
+
   // ---- Action HUD task rows: remaining runs, success chance, and nav category ------------
   suite('describeTask reports runs remaining, success chance, and nav target', function(){
     var S = FF._state;
