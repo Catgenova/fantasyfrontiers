@@ -833,6 +833,34 @@ Bonecrusher swapped places between packs (indistinguishable). Sim notes: BUILDS 
 Wyrmthorn Wall (the one measurable shield); sim-dead: every lash, the Snare, Tombwall, Spineshatter's
 debuff, Unbreakable Will's Armor.
 
+**Lumen Oracle** (45s — the Light wand + ward; v0.0.86.0 "the Overflow", owner target **60B, all party
+healer/shielder** — the LAST class in the roster: every class has now had its rework). The old kit was the
+saturation disease as a whole class: Reflected Light returned 15% of DAMAGE DEALT as healing — ~1.5e10 per
+hit against a 4-digit HP bar — so the bar, the Everfull shield and every heal perk pinned at cap from the
+first swing and spent the whole fight doing nothing. **The rework makes the surplus the design**: RADIANCE
+gathers +4/hit +2/s (cap 100, state-scoped), each second the pour MENDS the most wounded ally (2% max HP ×
+radiance/100, through the kept healAlly party seam), banks overheal into the Everfull Barrier (Lv20 now),
+and SPILLS the rest as Searing Light — dotBase × 0.8% × radiance × **lmSpillFrac, the share last second's
+mend did NOT consume**. On the full-health dummy that is 1.0 (the ceiling the band tunes); in real play the
+party drinks first and the damage is what mercy doesn't claim — heal magnitude NEVER scales damage (maxHp
+is enchant-pinned; that would be the never-scale trap wearing a halo). Blinding Light holds the shared −25%
+window; Brimover bursts every 5s at a full Barrier (flat-crit instance eleven); The Second Sun doubles the
+pour at full Radiance. D3/D4 de-themed (owner order) — **the Lumen leaves the Decay pillar AND its
+elemental-advantage lines** (Radiant Heart/Judgment gone; Dawnwyrm's Attunement-to-damage line — the ×49
+wand-stack trap, LIVE in the old kit — excised; Dawnbrand's cross-class barrier-regen loop line removed).
+Findings: (1) **D3 (The Vessel Overflows Twice — the at-cap event layer) won the A/B in BOTH packs**, as
+pre-registered for a sustained engine; margins shrank to noise in pack 2, so do not rank D1/D2/D4. (2) **A
+cap axis that gates the at-cap payoff inverts**: Blinding Radiance's cap 130 also pushes the Second Sun's
+ignition out (sunAt is a fraction of the cap), so D4 read LAST in pack 1 — the Long Drop inversion in
+miniature; classify axes by where they pay INCLUDING thresholds they move. (3) **The wand matrix is flat
+(±5%) in both packs — do not rank the wands** (Gloompiercer +5% the nominal top; Dawnbrand, the pure-rate
+probe, at the floor: the engine sits at cap, rate is dead weight — law confirmed). (4) Sixth wand chassis
+data point: 154.1B uncorrected, the per-kit budget again. `LM_SWING_MULT` **0.402** (mean of packs: pack 2
+at 0.389 read 56.2B, pack 1 rescaled implies 59.9B, mean 58.1B → ×60/58.1). Ceilings (D3 set, Ruin cloak,
+Gleamveil ward): Gloompiercer ~63B / Dawnbrand ~59B / Gravelight ~59B / Dawnwyrm ~59B — pack mean **~60B**,
+on target. Sim-dead recorded: every heal's VALUE (full HP), Glimmerward, the Guardian Beacon wash, Blinding
+Light's −25% (the dummy never attacks). Cross-pack per-wand variance ±2-12%.
+
 **TIER WARNING (v0.0.64.9): every recorded ceiling above was measured with a ONE-BELOW-BiS weapon.**
 Melee weapons + shields shipped with `tierCount:20` (top `t19`) while bows/wands/wards/scepter/staff had
 21 (top `t20`) — the ticket-0116 off-kilter. Melee/shields are now 21 tiers too (top `t20`, Tungsten), and
