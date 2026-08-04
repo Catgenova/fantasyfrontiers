@@ -760,6 +760,45 @@ Cavern Echo beat Runegrave in both (the ratio axis is real, not cap-pinned). Sim
 offhand key — the class requires an empty offhand to activate; set/cloak A/B run at 45s, the legendary
 matrix at the full 90s window (compare against 90s classes only).
 
+**Executioner** (90s — the 8s full-moon axe, bare head; v0.0.84.0 "the Falling Axe", owner target **90B**).
+The old kit was kill-gated end to end: Vigor/Tally were defensive max-HP flats, Gallows dead at ~100% crit,
+Rising Guillotine a slow flat ramp — nothing offensive measured on a foe that doesn't die. Now a CYCLING
+engine around the GUILLOTINE THRESHOLD: it climbs +2%/s and +1%/hit from 15% toward its 85% cap, the axe
+falls at a foe-HP crossing OR on its own at the cap, and the Fall pays 200% of the recent hit ×(1 + drop
+height + missing health), flat crit (instance nine). Reap the Weak reads the blade; Momentum of the Cull
+carries half the climb between foes; The Cull (Lv80) executes a non-boss foe below 25% and carries the
+WHOLE climb; Headsman's Tally re-based to +8% Fall damage per Fall (Galvanize). D3/D4 de-themed (owner
+order) — **the Executioner leaves the Souls AND Dragon's Breath pillars** (the Breath's remaining clients:
+the Ranger, the Emberscale ward, the Signet of the Breath — flagged for wholesale retirement). Findings:
+(1) **THE APPROVED PREMISE WAS FALSE, CAUGHT BEFORE A LINE WAS WRITTEN.** The design pitch claimed "the
+dummy's HP wanders 10–100% so crossings happen all run" — but the harness pins `enemyHpFrac` at 1.0
+(monsterHp 1e15 vs the Archdemon's real ~1.2M `monster.hp`, and the frac clamps), so the crossing trigger
+alone would have measured ZERO. **Verify enemyHpFrac's actual sim behavior before designing any
+HP-fraction mechanic.** The fix is the Herald Brace-clock move: the CAP-FALL (fully raised, the blade
+falls on its own) plus the DROP-HEIGHT term in the amp — pays 1+height on the dummy, everything in play.
+Knock-on: The Long Drop re-axed ("cap 95%" INVERTS under cap-fall semantics — a higher cap is a longer
+climb — so it became "the climb starts at 40%", the intended axe-falls-sooner as an honest rate axis).
+(2) **The two RATE layers won the set A/B in both packs with the winner flipping** (pack 1: D4 38.7B >
+D1 36.0B; pack 2: D1 85.8B > D4 81.1B — 5-7% apart, indistinguishable, do not rank) and D2/D3 clearly
+behind in both. The law again, and both winners pay in CYCLE TIME (classify by where axes pay).
+(3) **FALL QUANTIZATION IS THE DOMINANT NOISE**: a 45s A/B window holds ~2 Falls on an 8s weapon, and
+pack 1's D3 read 23.1B — 40% under D2, arithmetically impossible for a pure-bonus layer — then recovered
+to mid-pack in pack 2. Never rank this class's D2/D3 from a 45s window. (4) **The largest upward knob
+correction recorded** (second after the Juggernaut's 1.067): the chassis read 43.0B at knob 1.0.
+`EX_SWING_MULT` **2.065** (mean of packs: pack 2 at 2.09 read 92.35B, pack 1 rescaled implies 89.9B, mean
+91.1B → ×90/91.1). Knob linearity verified: Soulharvester 40.0×2.09 = 83.6 predicted, 83.5 measured.
+(5) A test-design pass caught a real bug pre-ship: The Cull's full-climb carry read the threshold AFTER
+the Fall's own reset, so an execute would have carried nothing — the carry is captured at fall height
+inside exFallFire now. Ceilings (D1 or D4 set — do not rank them, Ruin cloak, no offhand): Emberwyrm's
+Reaper ~114B / Huskmaker ~86B / Soulharvester ~83B / Headtaker ~78B — pack mean **~90B**, on target.
+Emberwyrm is +27% over mean in BOTH packs — the BiS axe (the Eyeshine zone, left alone). **Huskmaker and
+Headtaker sit at the plain-axe floor BY CONSTRUCTION here** (missing-health- and kill-gated — their
+farming value is invisible to the dummy); do not nerf them on these reads. Soulharvester reads ≈floor
+because its +3%/Fall hone needs ~10 Falls to cap (3+ minutes) — the Gravewrath ramp precedent, left
+alone. Sim-dead: Reap the Weak (frac never drops), the missing-health amp half, Momentum of the Cull +
+The Cull (kill-gated; the harness refills), First Blood past the first Fall (one foe all run),
+Bloodthirst, Headtaker, Huskmaker.
+
 **TIER WARNING (v0.0.64.9): every recorded ceiling above was measured with a ONE-BELOW-BiS weapon.**
 Melee weapons + shields shipped with `tierCount:20` (top `t19`) while bows/wands/wards/scepter/staff had
 21 (top `t20`) — the ticket-0116 off-kilter. Melee/shields are now 21 tiers too (top `t20`, Tungsten), and
