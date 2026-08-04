@@ -4572,36 +4572,36 @@
     near(FF.sharpshooterPatienceMult(ssFor(80,{activity:{type:'combat',monsterId:ssMon.id,monsterHp:ssMon.hp,duelStartedAt:Date.now()-10000}})), 1.40, "Sniper's Patience: +4%/sec -> +40% at 10s", 2e-2);
     near(FF.sharpshooterPatienceMult(ssFor(80,{activity:{type:'combat',monsterId:ssMon.id,monsterHp:ssMon.hp,duelStartedAt:Date.now()-30000}})), 1.80, "Sniper's Patience caps at +80%", 1e-6);
     eq(FF.sharpshooterPatienceMult(ssFor(60,{activity:{type:'combat',monsterId:ssMon.id,monsterHp:ssMon.hp,duelStartedAt:Date.now()-10000}})), 1, "Sniper's Patience inactive below Lv80");
-    // Juggernaut rework: Wind-Up (Lv1) / Overhead Smash (Lv20) / Concussive Crits (Lv40) /
-    // Building Fury (Lv60) / Pulverize (Lv80). Slow, hard-hitting crit bruiser; the old defensive kit is gone.
+    // Juggernaut rework v2, "the Aftershock": Seismic Impact (Lv1) / Resonance (Lv20) / Faultline (Lv40)
+    // / Mounting Fury (Lv60) / The Big One (Lv80). The deep engine tests live in their own suite below;
+    // this block covers the always-on multiplier ladder and the retirements.
     var jugNames = FF.CLASS_DEFS_BY_ID.juggernaut.passives.map(function(p){ return p.name; });
-    eq(JSON.stringify(jugNames), JSON.stringify(['Wind-Up','Overhead Smash','Concussive Crits','Building Fury','Pulverize']), 'Juggernaut ladder is the reworked five');
-    // Wind-Up (Lv1): +45% damage, +25% attack timer (25% slower). The old flat Crushing Blows +30% is gone.
-    ok(Math.abs(FF.newClassDmgMult(monFull, stFor('juggernaut',80)) - 1.45) < 1e-9, 'Wind-Up: +45% damage');
-    ok(Math.abs(FF.classAttackSpeedMult(stFor('juggernaut',1)) - 1.25) < 1e-9, 'Wind-Up: swings 25% slower (attack timer x1.25)');
-    ok(Math.abs(FF.classAttackSpeedMult(stFor('pyromancer',80)) - 1) < 1e-9, 'a non-Juggernaut class does not slow its swings via Wind-Up');
+    eq(JSON.stringify(jugNames), JSON.stringify(['Seismic Impact','Resonance','Faultline','Mounting Fury','The Big One']), 'Juggernaut ladder is the Aftershock five');
+    // Wind-Up retired: no flat damage trade, no self-slow.
+    ok(Math.abs(FF.newClassDmgMult(monFull, stFor('juggernaut',80)) - 1) < 1e-9, 'Wind-Up retired: no flat class damage multiplier');
+    ok(Math.abs(FF.classAttackSpeedMult(stFor('juggernaut',1)) - 1) < 1e-9, 'Wind-Up retired: the sledge swings at its natural 9s');
     // The reworked kit drops all defensive perks: no Block, no Armor mult, no incoming reduction.
     eq(FF.classBlockBonus(stFor('juggernaut',80)), 0, 'Juggernaut no longer grants Block (Bulwark removed)');
     ok(typeof FF.juggernautArmorMult === 'undefined', 'Ironclad armor helper removed');
     ok(typeof FF.juggernautIncomingMult === 'undefined', 'Unstoppable incoming helper removed');
-    // Overhead Smash (Lv20): every 4th landed hit is a guaranteed crit -> the NEXT hit crits when the tally is at 3, 7, ...
-    eq(FF.juggernautSmashReady(stFor('juggernaut',20,{activity:{type:'combat',monsterHp:100,juggernautSwings:3}})), true, 'Overhead Smash: the 4th landed hit (tally 3 -> next) is forced-crit');
-    eq(FF.juggernautSmashReady(stFor('juggernaut',20,{activity:{type:'combat',monsterHp:100,juggernautSwings:7}})), true, 'Overhead Smash repeats every 4 hits (tally 7 -> next)');
-    eq(FF.juggernautSmashReady(stFor('juggernaut',20,{activity:{type:'combat',monsterHp:100,juggernautSwings:1}})), false, 'Overhead Smash does not fire between the 4th hits');
-    eq(FF.juggernautSmashReady(stFor('juggernaut',1,{activity:{type:'combat',monsterHp:100,juggernautSwings:3}})), false, 'Overhead Smash inactive below Lv20');
-    // Concussive Crits (Lv40): a crit stuns for 1.5s.
-    eq(FF.JUG_CONCUSS_MS, 1500, 'Concussive Crits stun window is 1.5s');
-    // Building Fury (Lv60): +12% crit dmg per banked stack (cap 8 -> +96%), read from the activity.
-    eq(FF.juggernautFuryStacks(stFor('juggernaut',60,{activity:{type:'combat',monsterHp:100,juggernautFuryStacks:3}})), 3, 'Building Fury: banked stacks read from the fight');
-    eq(FF.juggernautFuryStacks(stFor('juggernaut',60,{activity:{type:'combat',monsterHp:100,juggernautFuryStacks:20}})), 8, 'Building Fury caps at 8 stacks');
-    eq(FF.juggernautFuryStacks(stFor('juggernaut',40,{activity:{type:'combat',monsterHp:100,juggernautFuryStacks:3}})), 0, 'Building Fury inactive below Lv60');
-    ok(Math.abs(FF.newClassCritDmg(stFor('juggernaut',60,{activity:{type:'combat',monsterHp:100,juggernautFuryStacks:3}})) - 0.36) < 1e-9, 'Building Fury: 3 stacks -> +36% crit damage');
-    ok(Math.abs(FF.newClassCritDmg(stFor('juggernaut',60,{activity:{type:'combat',monsterHp:100,juggernautFuryStacks:20}})) - 0.96) < 1e-9, 'Building Fury at cap -> +96% crit damage');
-    eq(FF.newClassCritDmg(stFor('juggernaut',80)), 0, 'no banked Fury -> no crit-damage bonus (flat Devastate removed)');
-    // Pulverize (Lv80): a Critical Hit ignores 100% of the foe\'s armour; a non-crit (or below Lv80) ignores none.
-    eq(FF.juggernautArmorPierce(true, stFor('juggernaut',80)), 1, 'Pulverize: a crit ignores all armour at Lv80');
-    eq(FF.juggernautArmorPierce(false, stFor('juggernaut',80)), 0, 'Pulverize only applies on a crit');
-    eq(FF.juggernautArmorPierce(true, stFor('juggernaut',60)), 0, 'Pulverize inactive below Lv80');
+    ok(typeof FF.juggernautSmashReady === 'undefined', 'Overhead Smash retired (meaningless at ~100% BiS crit)');
+    ok(typeof FF.juggernautArmorPierce === 'undefined', 'Pulverize retired (always-on at BiS; Faultline carries the armour identity)');
+    ok(typeof FF.legEarthshakerBuild === 'undefined', "Cavebreaker's Tremor meter retired (its impacts count double toward Resonance)");
+    // Resonance (Lv20): +10%/stack (Standing Stones deepens to 15% -- set suite), read from state.
+    ok(Math.abs(FF.jgResonanceMult(stFor('juggernaut',20,{jgResonance:2})) - 1.20) < 1e-9, 'Resonance: 2 stacks -> +20%');
+    ok(Math.abs(FF.jgResonanceMult(stFor('juggernaut',20,{jgResonance:9})) - 1.30) < 1e-9, 'Resonance caps at 3 stacks (+30%)');
+    eq(FF.jgResonanceMult(stFor('juggernaut',1,{jgResonance:2})), 1, 'Resonance inactive below Lv20');
+    // Mounting Fury (Lv60): +8% crit dmg per impact per SESSION, cap 10 (was per-fight, cap 8).
+    ok(Math.abs(FF.jgFuryCritDmg(stFor('juggernaut',60,{jgFury:3})) - 0.24) < 1e-9, 'Mounting Fury: 3 impacts -> +24% crit damage');
+    ok(Math.abs(FF.jgFuryCritDmg(stFor('juggernaut',60,{jgFury:99})) - 0.80) < 1e-9, 'Mounting Fury caps at 10 (+80%)');
+    eq(FF.jgFuryCritDmg(stFor('juggernaut',40,{jgFury:3})), 0, 'Mounting Fury inactive below Lv60');
+    ok(Math.abs(FF.newClassCritDmg(stFor('juggernaut',60,{jgFury:3})) - 0.24) < 1e-9, 'the session Fury feeds newClassCritDmg');
+    // Faultline (Lv40): stacking shred, capped, lasting while the ground rings.
+    var jfSt = stFor('juggernaut',40,{activity:{type:'combat',monsterHp:100,jgFaultShred:0.30,jgFaultUntil:Date.now()+5000}});
+    ok(Math.abs(FF.jgFaultShred(jfSt) - 0.30) < 1e-9, 'Faultline: banked cracks read from the fight');
+    ok(Math.abs(FF.jgFaultShred(stFor('juggernaut',40,{activity:{type:'combat',monsterHp:100,jgFaultShred:0.9,jgFaultUntil:Date.now()+5000}})) - 0.60) < 1e-9, 'Faultline caps at 60% shred');
+    eq(FF.jgFaultShred(stFor('juggernaut',40,{activity:{type:'combat',monsterHp:100,jgFaultShred:0.3,jgFaultUntil:Date.now()-1}})), 0, 'the cracks re-knit when the ground falls silent');
+    eq(FF.jgFaultShred(stFor('juggernaut',20,{activity:{type:'combat',monsterHp:100,jgFaultShred:0.3,jgFaultUntil:Date.now()+5000}})), 0, 'Faultline inactive below Lv40');
     // Voidshadow rework v2, "the Doomsayer": Stamp of Doom (Lv1) / Marks of the Void (Lv20) /
     // Litany of Woes (Lv40) / Soul Tax (Lv60) / Doomsday (Lv80). The deep engine tests live in their
     // own suite below; this block covers the always-on multiplier ladder.
@@ -4681,8 +4681,9 @@
     eq(FF.newClassCritChance(none), 0, 'no class -> new-class crit chance neutral');
     eq(FF.newClassCritDmg(none), 0, 'no class -> new-class crit dmg neutral');
     eq(FF.nightbladeLifestealPct(none), 0, 'no class -> no siphon');
-    eq(FF.juggernautFuryStacks(none), 0, 'no class -> no Building Fury stacks');
-    eq(FF.juggernautArmorPierce(true, none), 0, 'no class -> no Pulverize armour ignore');
+    eq(FF.jgFuryCritDmg(none), 0, 'no class -> no Mounting Fury crit damage');
+    eq(FF.jgResonanceMult(none), 1, 'no class -> Resonance neutral');
+    eq(FF.jgFaultShred(none), 0, 'no class -> no Faultline shred');
     // enemyHpFrac reads current/max cleanly.
     ok(Math.abs(FF.enemyHpFrac({hp:100}, {activity:{monsterHp:40}}) - 0.4) < 1e-9, 'enemyHpFrac = current/max');
     eq(FF.enemyHpFrac({hp:0}, {activity:{monsterHp:0}}), 1, 'enemyHpFrac guards against a zero max');
@@ -6194,24 +6195,10 @@
     near(FF.legendaryCritDmg(tcBig), 2.5, 'Deepquake caps at +250% crit damage');
     near(FF.legendaryCritDmg(legSt('shieldbash')), 0, 'Deepquake is inert without its legendary');
 
-    // Earthshaker (juggernaut/sledge): crits build a 5-stack Tremor; at full, the next swing hits x4 and empties it.
-    var esSt = legSt('earthshaker');
-    var act = esSt.activity;
-    for(var i=0;i<4;i++) FF.legEarthshakerBuild(act, esSt);
-    eq(act.tremorStacks, 4, '4 crits bank 4 Tremor stacks');
-    ok(!act.tremorReady, 'the Tremor is not yet primed at 4 stacks');
-    eq(FF.legEarthshakerConsume(act, esSt), 1, 'an unprimed Tremor does not empower the swing');
-    FF.legEarthshakerBuild(act, esSt); // the 5th crit
-    eq(act.tremorStacks, 0, 'reaching the cap resets the stack counter');
-    ok(act.tremorReady, 'the 5th crit primes the Tremor');
-    eq(FF.legEarthshakerConsume(act, esSt), FF.LEG_TREMOR_MULT, 'a primed swing hits x4 (+300%)');
-    ok(!act.tremorReady, 'consuming the Tremor disarms it');
-    eq(FF.legEarthshakerConsume(act, esSt), 1, 'the Tremor only empowers one swing');
-    // Without the legendary, build/consume are no-ops.
-    var plain = legSt('shieldbash'); var pact = plain.activity;
-    for(var j=0;j<6;j++) FF.legEarthshakerBuild(pact, plain);
-    ok(!pact.tremorReady && !pact.tremorStacks, 'Earthshaker never charges without its legendary');
-    eq(FF.legEarthshakerConsume(pact, plain), 1, 'Earthshaker never empowers without its legendary');
+    // Cavebreaker (juggernaut/sledge): the Tremor meter retired with the Aftershock rework -- its
+    // impacts count DOUBLE toward Resonance now (behavioral coverage in the Aftershock engine suite).
+    ok(typeof FF.legEarthshakerBuild === 'undefined', 'the Tremor build helper is gone');
+    ok(typeof FF.legEarthshakerConsume === 'undefined', 'the Tremor consume helper is gone');
   });
 
   // ---- D1 legendary gear COMBAT effects, Batch 6: the three Ranged weapons ----------------------------
@@ -6601,8 +6588,10 @@
     var tmSt = legSt('trapmaster','bowMedium',{ xp:{ ranger: FF.xpFloorForLevel(85) }, activity:{type:'combat', monsterHp:100} });
     FF.rgQuarryAdd(1, tmSt); eq(FF.rgQuarry(tmSt), 2, 'Trapmaster: one strike stacks two Quarry');
     near(FF.d2LegDmgMult({}, legSt('trapmaster','bowMedium')), 1.0, 'Trapmaster inert on a clean foe');
-    // Earthrender (juggernaut/sledge): +30% and never miss (the +30% is the readable part).
-    near(FF.d2LegDmgMult({}, legSt('earthrender','sledge')), 1.30, 'Earthrender: Wind-Up swings hit +30%');
+    // Earthrender (juggernaut/sledge): the flat +30% retired with the Aftershock rework -- its power is
+    // the never-miss plus aftershocks paying +25% (jgEchoShare); the damage row reads neutral now.
+    near(FF.d2LegDmgMult({}, legSt('earthrender','sledge')), 1.0, 'Earthrender adds no flat damage row any more');
+    near(FF.jgEchoShare(legSt('earthrender','sledge')), FF.JG_ECHO_PCT * FF.LEG_EARTHRENDER_ECHO, 'Earthrender: aftershocks pay +25% more');
     // Spineshatter (sentinel/maul): stacking -4% enemy damage per reflect (cap -40%).
     near(FF.legSpineshatterMult(legSt('spineshatter','maul',{ activity:{type:'combat', monsterHp:100, spineshatterStacks:5, spineshatterUntil:now+4000} })), 0.80, 'Spineshatter: -4% enemy damage per reflect (5 -> -20%)');
     near(FF.legSpineshatterMult(legSt('spineshatter','maul',{ activity:{type:'combat', monsterHp:100, spineshatterStacks:99, spineshatterUntil:now+4000} })), 0.60, 'Spineshatter caps at -40%');
@@ -7777,13 +7766,14 @@
       near(FF.berserkerTransfusionLifesteal(s), 0.08, 'no D4 set -> base 8% Transfusion', 1e-9);
       s.xp.berserker = svBz.xp; s.equippedMainhand = svBz.mh; s.equippedMainhandTier = svBz.mt;
 
-      // Juggernaut Emberhide (2pc): -20% Fire + heal 25% of the avoided.
+      // Juggernaut D4 de-themed (owner order, v0.0.81.0): Emberhide's Fire mitigation retired -- the
+      // 2pc is Epicenter (the Big One +40%, tested in the Aftershock engine suite).
       wearD4('juggernaut', 2);
       var mit = FF.d4DragonscaleIncoming(s, { element:'fire' }, 1000);
-      near(mit.mult, 0.80, 'Emberhide: -20% Fire');
-      eq(mit.heal, 50, 'Emberhide heals 25% of the 200 avoided');
-      var mitW = FF.d4DragonscaleIncoming(s, { element:'water' }, 1000);
-      near(mitW.mult, 1.0, 'Emberhide only mitigates Fire');
+      near(mit.mult, 1.0, 'Emberhide retired: no Fire mitigation from the Juggernaut D4');
+      eq(mit.heal||0, 0, '...and no heal from avoided damage');
+      eq(FF.D4_SET_DEFS.juggernaut.b2.name, 'Epicenter', 'Juggernaut D4 2pc is Epicenter now');
+      eq(FF.D4_SET_DEFS.juggernaut.bf.name, 'The World Splits', 'Juggernaut D4 full is The World Splits');
       // Knight Dragon Standard (full) rides the Decree hook (KN_DECREE_D4_MULT); Unbreakable Scales retired.
       wearFull('knight');
       near(FF.d4DragonscaleIncoming(s, { element:'earth' }, mhp).mult, 1.0, 'no elemental-hit halving for the Warlord (Unbreakable Scales retired)');
@@ -7967,9 +7957,10 @@
       near(FF.d2SetDmgMult(foe, s), 1.0, 'Zealous Verse does not touch the generic D2 damage multiplier');
       // Templar Radiant Aegis (full): double bank rate and shield cap.
       wearD2('templar', 4); near(FF.templarAegisCapMult(s), 2, 'Templar Radiant Aegis: double shield bank + cap');
-      // Juggernaut Crushing Blows (2pc): +15% vs foe above 50% HP (reads pre-hit HP).
-      wearD2('juggernaut', 2); s.activity.monsterHp = 800; near(FF.d2SetDmgMult({hp:1000}, s), 1.15, 'Juggernaut Crushing Blows: +15% vs a healthy foe');
-      s.activity.monsterHp = 300; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, 'Crushing Blows inert on a wounded foe');
+      // Juggernaut Crushing Blows (2pc): rings echoes 4s longer now (the old >50%-HP conditional was
+      // dead in every long fight). The generic D2 damage row reads neutral for the Aftershock.
+      wearD2('juggernaut', 2); s.activity.monsterHp = 800; near(FF.d2SetDmgMult({hp:1000}, s), 1.0, 'Crushing Blows no longer adds a flat conditional damage row');
+      eq(FF.jgEchoMs(s), FF.JG_ECHO_MS + FF.JG_D2_ECHO_BONUS_MS, 'Crushing Blows: echoes ring 4s longer');
       // Sharpshooter Steady Aim (2pc): +12% crit damage.
       wearD2('sharpshooter', 2); near(FF.d2SetCritDmgBonus(s), 0.12, 'Sharpshooter Steady Aim: +12% crit damage');
       // Nightblade Creeping Doom (2pc): a half-again larger bank share; Eclipse (full) moved inside
@@ -8423,9 +8414,9 @@
     // The Batch 2 outgoing-damage row exists in the ordered table.
     ok(FF.PLAYER_DMG_MODS.some(function(r){ return r.name === 'setBonuses'; }), 'setBonuses is a named PLAYER_DMG_MODS row');
 
-    // Juggernaut Heavy Hitter (2pc): Wind-Up 45% -> 60%.
-    near(FF.jugWindupDmg(setSt('juggernaut',2)), 1.60, 'Heavy Hitter: Wind-Up +60%');
-    near(FF.jugWindupDmg(setSt('juggernaut',1)), FF.JUG_WINDUP_DMG, '1 piece -> base Wind-Up');
+    // Juggernaut Heavy Hitter (2pc): aftershocks pay a half-again larger share (Wind-Up retired).
+    near(FF.jgEchoShare(setSt('juggernaut',2)), FF.JG_ECHO_PCT * 1.5, 'Heavy Hitter: aftershocks pay half again more');
+    near(FF.jgEchoShare(setSt('juggernaut',1)), FF.JG_ECHO_PCT, '1 piece -> the base echo share');
     // Knight Longstandard (2pc): the Banner cap rises to 12 (Unstoppable Force retired with the Warlord).
     eq(FF.knightStackCap(setSt('knight',2)), 12, 'Longstandard: the Banner caps at 12');
     eq(FF.knightStackCap(setSt('knight',1)), 10, '1 piece -> the base Banner cap of 10');
@@ -14089,6 +14080,125 @@
         s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.equippedOffhandUid=snap.ohu; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.nightblade=snap.xp;
         s.activity=snap.act; s.playerHp=snap.hp; s.classDebuffs=snap.cd;
         s.nbDoomLeftMs=snap.dl; s.nbDoomBank=snap.db; s.nbDoomStrikes=snap.ds;
+      }
+    })();
+  });
+
+  // ---- Classes: Juggernaut "the Aftershock" (v0.0.81.0) -- the echo engine --------------
+  // Seismic Impact (Lv1): every landed swing rings 50% of itself over 12s; Resonance builds while the
+  // ground rings; Faultline cracks the guard; the Big One erupts every ringing echo at full Resonance.
+  suite('classes: Juggernaut Aftershock engine', function(){
+    function P(){ return {material:'plate', tier:5, rarity:'normal'}; }
+    function bare(){ return {tier:0, rarity:'normal', material:null}; }
+    (function(){
+      var s = FF._state;
+      var snap = { mh:s.equippedMainhand, mht:s.equippedMainhandTier, mhr:s.equippedMainhandRarity, mhu:s.equippedMainhandUid,
+                   oh:s.equippedOffhand, oht:s.equippedOffhandTier, ba:s.bodyArmor, ui:s.uniqueItems, xp:s.xp.juggernaut,
+                   act:s.activity, hp:s.playerHp,
+                   je:s.jgEchoes, jr:s.jgResonance, jf:s.jgFury };
+      var svRnd = Math.random;
+      try {
+        s.equippedMainhand='sledge'; s.equippedMainhandTier=6; s.equippedMainhandRarity='normal'; s.equippedMainhandUid=null;
+        s.equippedOffhand=null; s.equippedOffhandTier=0;
+        s.bodyArmor={ helmet:P(), chest:P(), gauntlets:P(), boots:P(), back:bare() };
+        s.uniqueItems = {};
+        s.xp.juggernaut = FF.xpFloorForLevel(85);
+        eq(FF.activeClassId(s), 'juggernaut', 'sledge + full plate => Juggernaut');
+        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:4000, duelStartedAt:Date.now() };
+        s.playerHp = FF.maxHp(s);
+        s.jgEchoes = []; s.jgResonance = 0; s.jgFury = 0;
+        // The first impact: rings an echo, no Resonance (the ground was silent), cracks + stokes.
+        Math.random = function(){ return 0; }; // lands + crits
+        var hp0 = s.activity.monsterHp, acc0 = s.activity.monsterTickAccum;
+        FF.playerAttackTick(false, 1, false);
+        var dealt = hp0 - s.activity.monsterHp;
+        ok(dealt > 0, 'the swing landed');
+        eq((s.jgEchoes||[]).length, 1, 'the impact left the ground ringing (one echo)');
+        near(s.jgEchoes[0].dps, dealt * FF.JG_ECHO_PCT / (FF.JG_ECHO_MS/1000), 'the echo pays 50% of the hit over 12s', Math.max(1, dealt*0.001));
+        eq(s.jgResonance||0, 0, 'no Resonance on a silent ground');
+        near(s.activity.jgFaultShred, FF.JG_FAULT_SHRED_PER, 'Faultline cracked the guard 15%');
+        eq(acc0 - s.activity.monsterTickAccum, FF.JG_STAGGER_MS, 'the impact staggered the foe half a second');
+        eq(s.jgFury, 1, 'Mounting Fury stoked +1');
+        // The second impact, landed while the ground rings: Resonance builds.
+        FF.playerAttackTick(false, 1, false);
+        eq((s.jgEchoes||[]).length, 2, 'two echoes now overlap');
+        eq(s.jgResonance, 1, 'Resonance x1 -- the ground was ringing');
+        // The aftershocks tick, Resonance-amplified, and log as one aggregated row. Seeded LARGE echoes:
+        // the real tier-6 test hits ring dps small enough that a broken multiplier hides inside a
+        // 1-point tolerance floor (this exact guard-proof failed to fail once -- hence the seeding).
+        s.jgEchoes = [ { until: Date.now()+9999, dps: 1000 } ];
+        var hp1 = s.activity.monsterHp;
+        var expectedDps = 1000 * FF.jgResonanceMult(s);
+        ok(FF.jgResonanceMult(s) > 1, 'Resonance stands, so the amplifier is measurably live');
+        FF.applyJgEchoTick(1000);
+        near(hp1 - s.activity.monsterHp, expectedDps, 'one second of aftershocks = summed echo dps x Resonance', 5);
+        s.jgEchoes = [ { until: Date.now()+9999, dps: 10 }, { until: Date.now()+9999, dps: 10 } ]; // restore a ringing ground for the flow below
+        // The Big One: prepped state, judged before its own impact.
+        s.jgEchoes = [ { until: Date.now()+6000, dps: 100 }, { until: Date.now()+3000, dps: 50 } ]; // 600+150 remaining
+        s.jgResonance = FF.JG_RESONANCE_MAX;
+        var remaining = FF.jgEchoRemaining(s);
+        near(remaining, 750, 'the prepped ground holds ~750 ringing', 5);
+        var hp2 = s.activity.monsterHp;
+        FF.jgBigOne(s);
+        var erupted = hp2 - s.activity.monsterHp;
+        near(erupted, Math.round(remaining * (1 + FF.JG_RESONANCE_PER*3)), 'the Big One: every ringing echo, Resonance-amplified, no crit re-roll', 6);
+        eq((s.jgEchoes||[]).length, 0, 'the eruption spends every echo');
+        eq(s.jgResonance, 0, 'and the Resonance');
+        var logRows = FF._combatLog(); var last = logRows[logRows.length-1];
+        eq(last && last.spName, 'The Big One', 'the eruption is a named Combat log row');
+        // The ground carries foe to foe; Faultline's cracks do not.
+        FF.playerAttackTick(false, 1, false);
+        ok((s.jgEchoes||[]).length === 1 && (s.activity.jgFaultShred||0) > 0, 'a fresh echo rings and the guard is cracked');
+        var carryEchoes = s.jgEchoes.length, carryFury = s.jgFury;
+        var _mon = FF.MONSTERS.filter(function(m){ return m.id === s.activity.monsterId; })[0];
+        s.activity.monsterHp = 0; FF.defeatMonster(_mon);
+        eq((s.jgEchoes||[]).length, carryEchoes, 'the ground keeps ringing past the kill (the arena floor does not change)');
+        eq(s.jgFury, carryFury, 'the session Fury carries');
+        eq(s.activity.jgFaultShred||0, 0, "Faultline's cracks die with the foe -- a fresh foe brings a fresh guard");
+        // Silence: when the last echo expires, Resonance lapses.
+        s.jgResonance = 2; s.jgEchoes = [ { until: Date.now()-1, dps: 100 } ];
+        FF.applyJgEchoTick(100);
+        eq(s.jgResonance, 0, 'the ground fell silent -> Resonance lapsed');
+        // A fresh duel for the set blocks: the kill above left the activity in the enemy-swap fade,
+        // where chip damage is suppressed -- a Big One there measures zero and proves nothing.
+        s.activity = { type:'combat', monsterId:FF.MONSTERS[0].id, monsterHp:1e9, tickAccum:0, monsterTickAccum:0, duelStartedAt:Date.now() };
+        // D3 full (Sustained Note): one Resonance stack survives the Big One; D4: Epicenter + World Splits.
+        s.uniqueItems = {}; s.bodyArmor = { helmet:P(), chest:P(), gauntlets:P(), boots:P(), back:bare() };
+        ['helmet','chest','gauntlets','boots'].forEach(function(slot, i){
+          var uid = 'jd3'+i; s.uniqueItems[uid] = { set:'juggernaut', setLayer:'d3' };
+          s.bodyArmor[slot] = { uid:uid, material:'plate', tier:5, rarity:'normal' };
+        });
+        eq(FF.activeClassId(s), 'juggernaut', 'the D3 plate still activates the class');
+        near(FF.jgResonancePer(s), 0.15, 'Standing Stones (D3 2pc): Resonance +15%/stack');
+        s.jgEchoes = [ { until: Date.now()+5000, dps: 100 } ]; s.jgResonance = 3;
+        FF.jgBigOne(s);
+        eq(s.jgResonance, 1, 'Sustained Note (D3 full): one Resonance stack survives the eruption');
+        ['helmet','chest','gauntlets','boots'].forEach(function(slot, i){
+          var uid = 'jd4'+i; s.uniqueItems[uid] = { set:'juggernaut', setLayer:'d4' };
+          s.bodyArmor[slot] = { uid:uid, material:'plate', tier:5, rarity:'normal' };
+        });
+        s.jgEchoes = [ { until: Date.now()+5000, dps: 100 } ]; s.jgResonance = 0;
+        var rem2 = FF.jgEchoRemaining(s), hp3 = s.activity.monsterHp;
+        FF.jgBigOne(s);
+        var big2 = hp3 - s.activity.monsterHp;
+        near(big2, Math.round(rem2 * FF.JG_EPICENTER_MULT), 'Epicenter (D4 2pc): the Big One erupts +40% harder', 6);
+        eq((s.jgEchoes||[]).length, 1, 'The World Splits (D4 full): the eruption rings its OWN echo');
+        near(s.jgEchoes[0].dps, big2 * FF.JG_ECHO_PCT / (FF.JG_ECHO_MS/1000), '...worth 50% of the eruption over 12s', Math.max(1, big2*0.001));
+        // Cavebreaker: impacts count double toward Resonance.
+        s.uniqueItems = { cb:{ uid:'cb', leg:'earthshaker' } }; s.equippedMainhandUid = 'cb';
+        s.bodyArmor = { helmet:P(), chest:P(), gauntlets:P(), boots:P(), back:bare() };
+        s.jgEchoes = [ { until: Date.now()+9000, dps: 10 } ]; s.jgResonance = 0;
+        FF.playerAttackTick(false, 1, false);
+        eq(s.jgResonance, 2, 'Cavebreaker: one impact on a ringing ground builds Resonance x2');
+        // The session reset silences everything.
+        FF.resetPersistentCombatBuffs();
+        ok(!(s.jgEchoes||[]).length && !s.jgResonance && !s.jgFury, 'resetPersistentCombatBuffs silences the ground between sessions');
+      } finally {
+        Math.random = svRnd;
+        s.equippedMainhand=snap.mh; s.equippedMainhandTier=snap.mht; s.equippedMainhandRarity=snap.mhr; s.equippedMainhandUid=snap.mhu;
+        s.equippedOffhand=snap.oh; s.equippedOffhandTier=snap.oht; s.bodyArmor=snap.ba; s.uniqueItems=snap.ui; s.xp.juggernaut=snap.xp;
+        s.activity=snap.act; s.playerHp=snap.hp;
+        s.jgEchoes=snap.je; s.jgResonance=snap.jr; s.jgFury=snap.jf;
       }
     })();
   });
