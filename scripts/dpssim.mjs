@@ -186,6 +186,27 @@ const BUILDS = {
     setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "fire",
     offhandWard: "everburning",
   },
+  sharpshooter: {
+    // Long Bow + quiver, leather helm/chest/boots + cloth gloves -- 45s window (bow class: compare the
+    // Ranger/Quickdraw, never the 90s classes). "The Exposure Ladder" (v0.0.82.0): crits peel layers
+    // (cap 10 -- +5% dmg taken, -6% armour each), every peel TEARS (30% of the recent hit, deepened by
+    // Threadbare), the peeled foe leaks (Unraveling), and Bare (10 layers) removes armour and dodge
+    // outright with a tear on every shot. SUSTAINED engine -- the first since the Plaguebearer -- so the
+    // LAW PREDICTS the CAP layer (D1 full: Exposure cap 13) should WIN and the rate bow (Eyeshine: the
+    // Patient Eye reads twice as fast) should read MID: at BiS crit ~100%, the ladder fills in ~10 shots
+    // and sits at its cap for ~80% of the run, so filling faster is worth little and a taller cap is
+    // permanent damage. That is a falsifiable prediction -- check it before recording ceilings.
+    // TEAR-STACK AUDIT (run before trusting BiS): Nothing Left (D4 full, x2 vs Bare) x Farstrike (x1.4)
+    // x Deadeye (D1 2pc, x1.25) x Threadbare's +10%/layer -- if the D4+Farstrike cell runs away from the
+    // pack, the tear needs a rider cap. Sim-dead: the species seams (kill-gated; the harness refills)
+    // and Gravesight's head start (worth ~2 free layers of a ladder that fills in 10s anyway -- expect
+    // it to under-read its real farming value, like Cryptreaver/Gravepilfer before it).
+    weapon: { typeId: "bowLong", styleXp: ["bowLong"] },
+    legs: ["steadyaim", "farstrike", "gravesight", "dragoneye"],
+    weaponLines: () => ["weaponDamage", "critDamage", "critChance", "flatDamage"],
+    setLayers: ["d1", "d2", "d3", "d4"], signets: ["ignorearmor", "d2_fury", "d4_wyrm"], uniqueRingType: "pierce",
+    offhandQuiver: true,
+  },
   juggernaut: {
     // Sledge (9s two-hander, the game's SLOWEST weapon) + full plate, no offhand -- 90s window like the
     // Berserker/Knight/Samurai: 45s is five swings and badly misreads an engine whose damage lives BETWEEN
