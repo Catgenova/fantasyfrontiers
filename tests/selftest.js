@@ -16071,6 +16071,31 @@
     }
   });
 
+  // ---- ticket-0151: the sub-nav tooltip is PLAIN TEXT, and the Tool line only where tools apply ----
+  // The tooltip pipeline is data-tip -> escapeHtml -> tipShowFor's textContent, so an HTML entity in
+  // subTipText double-escapes and renders literally ("Lv 82 &middot; 74%..." on the player's screen).
+  // And toolSpeedMultiplier only drives GATHER/CRAFT action times -- Faith runs on speedMultiplier
+  // alone -- so a maxed Sleight of Hand advertised "Tool −15% time" on Prayer, a discount those
+  // actions never receive.
+  suite('ticket-0151: sub-nav tips are plain text, Tool line gated to gather/craft', function(){
+    var S = FF._state;
+    var sv = { soh: S.physique.sleightOfHand, pr: S.xp.prayer, ws: S.xp.weaponsmithing };
+    try {
+      S.physique.sleightOfHand = FF.xpFloorForLevel(60);   // well past the 0.15 crafting-speed cap
+      S.xp.prayer = FF.xpFloorForLevel(82);
+      S.xp.weaponsmithing = FF.xpFloorForLevel(40);
+      var faithTip = FF.subTipText('prayer');
+      ok(!/&[a-z]+;/.test(faithTip), 'no HTML entity survives into the tip text: ' + JSON.stringify(faithTip));
+      ok(faithTip.indexOf('·') !== -1, 'the separator is the literal middot character');
+      ok(faithTip.indexOf('Tool') === -1, 'Faith skills show NO Tool line (their actions never read the tool multiplier)');
+      var craftTip = FF.subTipText('weaponsmithing');
+      ok(/Tool −\d+% time/.test(craftTip), 'a crafting skill still shows its real tool discount: ' + JSON.stringify(craftTip));
+      ok(!/&[a-z]+;/.test(craftTip), 'and stays entity-free too');
+      // The gate is the tiered-skill tables, so a gather keeps its line as well.
+      ok(/Lv /.test(FF.subTipText('mining')), 'gathering tips still render');
+    } finally { S.physique.sleightOfHand = sv.soh; S.xp.prayer = sv.pr; S.xp.weaponsmithing = sv.ws; }
+  });
+
   // ---- Card collapse (owner request, v0.0.86.17) ---------------------------------------------------
   // A fold toggle on every craft/gather/forge card, PERSISTED in state (it rides the save, so it
   // survives refresh) until retoggled. Keys are tier-stripped so the tier stepper never unfolds a

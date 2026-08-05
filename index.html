@@ -21100,9 +21100,16 @@
     var xp = (state.xp && state.xp[sk]) || 0, lvl = skillLevel(sk, xp);
     var t = 'Lv ' + lvl;
     var pct = Math.round(skillLevelProgress(sk, xp));
-    if(pct < 100) t += ' &middot; ' + pct + '% to ' + (lvl + 1);
+    // PLAIN TEXT ONLY in this string (ticket-0151): it rides data-tip through escapeHtml and the
+    // tooltip renders with textContent, so an HTML entity here double-escapes and shows LITERALLY
+    // ("Lv 82 &middot; 74%..."). Use the '·' character itself, like every other separator below.
+    if(pct < 100) t += ' · ' + pct + '% to ' + (lvl + 1);
+    // The Tool line only belongs on skills whose ACTION TIME actually reads toolSpeedMultiplier --
+    // gathers and crafts. Faith actions run on speedMultiplier alone (see processPrayActivity), so a
+    // maxed Sleight of Hand showed "Tool −15% time" on Prayer, a discount those actions never get
+    // (ticket-0151, second report in the same screenshot).
     var tsPct = Math.round((1 - toolSpeedMultiplier(state, sk)) * 100);
-    if(tsPct > 0) t += ' · Tool −' + tsPct + '% time';   // >0 after rounding, or a 0.998 mult reads "−0%"
+    if((GATHERING_SKILLS[sk] || CRAFTING_SKILLS[sk]) && tsPct > 0) t += ' · Tool −' + tsPct + '% time';   // >0 after rounding, or a 0.998 mult reads "−0%"
     var wsS = workshopSpeedBonus(state, sk), wsD = workshopDoubleChance(state, sk);
     if(wsS > 0 || wsD > 0) t += ' · Workshop +' + Math.round(wsS * 100) + '% speed / +' + Math.round(wsD * 100) + '% double';
     return t;
@@ -40469,7 +40476,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.25';
+  var GAME_VERSION = '0.0.86.26';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
