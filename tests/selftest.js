@@ -1476,6 +1476,34 @@
     }
   });
 
+  // ---- Architecture quantity setters (ticket, v0.0.86.5) ----------------------------------
+  // The workshop/cottage craft CYCLE always credited queueCreditOutput (the suite above pins it),
+  // but the cards never rendered the run-length box and the click handler's start-action test
+  // (/^(gather|craft|forge|fight)/) skipped buildWorkshop/buildCottage -- so Architecture was the
+  // one craft family a player could not "make N" of. Two halves, each pinned here: the cards carry
+  // the box INSIDE the .item-card and directly beside the Build button (the handler reads it via
+  // btn.closest('.item-card').querySelector('.card-queue')), and the eligibility test admits build*.
+  suite('architecture: workshop and cottage cards take a quantity', function(){
+    var S = FF._state;
+    ok(typeof FF.queueEligibleAction === 'function', 'the start-action eligibility test is exported');
+    ok(FF.queueEligibleAction('buildWorkshop'), 'buildWorkshop reads its card\'s run-length box');
+    ok(FF.queueEligibleAction('buildCottage'), 'buildCottage reads its card\'s run-length box');
+    ok(FF.queueEligibleAction('craft') && FF.queueEligibleAction('forgeTool') && FF.queueEligibleAction('gather') && FF.queueEligibleAction('fight'), 'the original start actions are unchanged');
+    ok(!FF.queueEligibleAction('stop') && !FF.queueEligibleAction('drinkTea') && !FF.queueEligibleAction('equipTool'), 'non-start actions never consume a run target');
+
+    var savedAct = S.activity, savedExtra = S.extraCraftSlots;
+    try {
+      S.activity = { type:null }; S.extraCraftSlots = [];   // an active build renders Stop instead of the box
+      var html = FF.renderWorkshopForge();
+      ok(/data-qkey="buildWorkshop:mining:t\d+"[^>]*><button [^>]*data-action="buildWorkshop" data-skill="mining"/.test(html),
+         'a workshop card renders its queue box directly beside its Build button');
+      ok(/data-qkey="buildCottage:t\d+"[^>]*><button [^>]*data-action="buildCottage"/.test(html),
+         'the cottage card renders its queue box directly beside its Build button');
+    } finally {
+      S.activity = savedAct; S.extraCraftSlots = savedExtra;
+    }
+  });
+
   // ---- Discord feed: the stats tail appended to fantastic-craft / enhance blasts ----------
   suite('discord feed: item stats tail', function(){
     // A fantastic relic reads its computed %dmg/armour bonus.
