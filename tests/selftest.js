@@ -18054,6 +18054,102 @@
     }
   });
 
+  // ---- Combat stage batch (owner picks 1/4/5/8/9/10, v0.0.86.24) -----------------------------------
+  suite('combat stage: float lanes, fight stats, orb readouts, chips, Auto-Eat fold, telegraph', function(){
+    var S = FF._state;
+    // 1: lane classifier -- loot/system floats leave the orb anchor, damage numbers keep it.
+    eq(FF.combatFloatLane('ft-loot'), 'stage', 'loot floats ride the stage lane');
+    eq(FF.combatFloatLane('ft-loot-none'), 'stage', '"No Loot Dropped" rides the stage lane');
+    eq(FF.combatFloatLane('ft-dmg'), 'orb', 'damage numbers keep the orb anchor');
+    eq(FF.combatFloatLane('ft-crit'), 'orb', 'crits keep the orb anchor');
+
+    // 4: the session ledger is fed at the log chokepoint, outgoing rows only.
+    var sv = { s:S.fsStart, d:S.fsDmg, h:S.fsHits, b:S.fsBest, k:S.fsKills };
+    try {
+      S.fsStart = 0; S.fsDmg = 0; S.fsHits = 0; S.fsBest = 0; S.fsKills = 0;
+      FF.fsNoteEntry({ dir:'out', dmg:100 });
+      FF.fsNoteEntry({ dir:'skill', dmg:400 });
+      FF.fsNoteEntry({ dir:'fam', dmg:50 });
+      ok(S.fsStart > 0, 'the first damage row stamps the session start');
+      eq(S.fsDmg, 550, 'out + skill + fam rows all accrue damage');
+      eq(S.fsHits, 3, 'each row is one hit');
+      eq(S.fsBest, 400, 'best hit tracks the maximum');
+      FF.fsNoteEntry({ dir:'in', dmg:9999 });
+      FF.fsNoteEntry({ dir:'dot', dmg:9999 });
+      FF.fsNoteEntry({ dir:'miss' });
+      eq(S.fsDmg, 550, 'incoming/dot/miss rows never count');
+      var html = FF.arenaFightStatsHtml();
+      ok(/ar2FsDps/.test(html) && /ar2FsBest/.test(html) && /ar2FsKills/.test(html), 'the strip carries live ids for DPS, best and kills');
+      FF.resetPersistentCombatBuffs();
+      eq(S.fsDmg, 0, 'the ledger resets with the combat session, like every class ramp');
+      eq(S.fsStart, 0, 'and the clock clears with it');
+    } finally { S.fsStart = sv.s; S.fsDmg = sv.d; S.fsHits = sv.h; S.fsBest = sv.b; S.fsKills = sv.k; }
+    // The compact formatter behind the DPS/Best readouts.
+    eq(FF.fmtCompact(82400000000), '82.4B', 'compact billions keep one decimal');
+    eq(FF.fmtCompact(1968521), '2M', 'compact millions round');
+    eq(FF.fmtCompact(725), '725', 'sub-1000 prints as-is');
+    eq(FF.fmtCompact(1500000000000), '1.5T', 'trillions supported');
+
+    // 5: orb percent readout + threshold tick + danger class.
+    var svThr = S.autoEatThreshold;
+    try {
+      S.autoEatThreshold = 0.4;
+      var orb = FF.orbHtml('me', 'health', '10 / 100', '', 10);
+      ok(/ar2Pct-me/.test(orb) && />10%</.test(orb), 'the orb carries its percentage readout');
+      ok(/class="ar2-orb me low"/.test(orb), 'at 10% the player orb takes the danger class');
+      ok(/class="aet" style="top:60%"/.test(orb), 'the Auto-Eat waterline tick sits at the threshold height');
+      S.autoEatThreshold = 0;
+      ok(!/class="aet"/.test(FF.orbHtml('me','health','x','',80)), 'Auto-Eat off means no tick');
+      ok(!/ low"/.test(FF.orbHtml('me','health','x','',80)), '80% is not the danger zone');
+    } finally { S.autoEatThreshold = svThr; }
+
+    // 8: chips compact to a grid with a corner count; the effect text lives in the tooltip only.
+    var svInv = S.inventory, svPot = S.activePotion;
+    try {
+      S.inventory = { toxin_t0: 145 }; S.activePotion = null;
+      var strip = FF.renderCombatConsumables();
+      ok(/arena-chip-grid/.test(strip), 'chips sit on the grid');
+      ok(/data-tip="Poison 0.3% combat score\/s for 3s"/.test(strip), 'the effect text rides the tooltip, with the sub-1% rate no longer rounding to a lying 0%');
+      ok(/<span class="qty">x145<\/span>/.test(strip), 'the count is the only inline metadata');
+      ok(strip.indexOf('combat score/s &bull;') === -1, 'the inline description is gone');
+      eq(FF.potionPctLabel(0.003), '0.3%', 'sub-1% keeps a decimal');
+      eq(FF.potionPctLabel(0.03), '3%', 'whole percents stay whole');
+    } finally { S.inventory = svInv; S.activePotion = svPot; }
+
+    // 9: the Auto-Eat panel folds behind the persisted chevron; the header carries live state.
+    var svCards = S.collapsedCards;
+    try {
+      S.collapsedCards = {};
+      var open = FF.renderAutoEatPanel();
+      ok(/autoEatHdStatus/.test(open) && /data-action="autoEatToggle"/.test(open), 'the header carries the live status and the fold control');
+      ok(/setAutoEatThreshold/.test(open), 'expanded, the threshold buttons are present');
+      S.collapsedCards = { 'panel:autoeat': 1 };
+      var folded = FF.renderAutoEatPanel();
+      ok(!/setAutoEatThreshold/.test(folded), 'collapsed, the body (buttons + paragraph) is gone');
+      ok(/autoEatHdStatus/.test(folded), 'collapsed, the live status still reads in the header');
+      ok(/Off|%/.test(FF.autoEatStatusText()) && /food/.test(FF.autoEatStatusText()), 'the status line carries threshold and food count');
+    } finally { S.collapsedCards = svCards; }
+
+    // 10: the special bar telegraphs and carries its real description.
+    var bar = FF.ar2Bar('ar2AtkSpec', 'spec charged', 'Chaos Bolt', 85, 'special', 'Chaos Bolt: a random curse');
+    ok(/data-tip="Chaos Bolt: a random curse"/.test(bar), 'the bar carries the special description as a tooltip');
+    ok(/class="ar2-bar spec charged"/.test(bar), 'past 80% the bar takes the charged class');
+    var wolf = FF.monsterById('wildlife_wolf');
+    ok(FF.monsterSpecialDesc(wolf.special).length > 0, 'monsterSpecialDesc supplies the tooltip text');
+    // And the arena itself seeds telegraph + stats + pct when rendered mid-charge.
+    var svAct2 = S.activity, svHp2 = S.playerHp;
+    try {
+      S.activity = { type:'combat', monsterId:'wildlife_wolf', monsterHp:wolf.hp, tickAccum:0, monsterTickAccum:0,
+                     specialAccum: wolf.special.chargeMs * 0.9, duelStartedAt: 12345 };
+      S.playerHp = FF.maxHp(S);
+      var arena = FF.renderArena();
+      ok(/ar2-stats/.test(arena), 'the stage carries the fight-stats strip');
+      ok(/spec charged/.test(arena), 'a 90%-charged special renders pre-lit');
+      ok(/spec-soon/.test(arena), 'and the foe ring flashes');
+      ok(/ar2Pct-foe/.test(arena), 'the foe orb carries its percentage');
+    } finally { S.activity = svAct2; S.playerHp = svHp2; }
+  });
+
   // ---- No em dashes in player-facing copy (owner order, v0.0.86.20) --------------------------------
   // Every player-facing description was reworked into short sentences (or comma/colon joins); this
   // guard deep-scans every string reachable from the test seam's exported def tables so a new class,

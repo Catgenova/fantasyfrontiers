@@ -1430,6 +1430,7 @@
   }
   .ar2.ivy .ar2-tops{ margin-top:0; order:1; }
   .ar2.ivy .ar2-orbs{ order:3; }
+  .ar2.ivy .ar2-stats{ order:3; } /* the session stats strip rides directly under the plinths (same order, later in DOM) */
   .ar2.ivy .ar2-low{ order:4; }
   .ar2.ivy .ar2-tray{ order:6; }
   /* Retreat lives INSIDE the player's meta column, directly after its swing bars -- so it tracks the player's
@@ -1677,6 +1678,46 @@
   .ar2.ivy .ar2-tray button[data-action="deactivatePotion"]{
     background:var(--ivy-well); background-clip:padding-box; color:#e8dcc0;
     border:1px solid #6b5a38; border-radius:3px; box-shadow:none; }
+
+  /* ==== v0.0.86.24 stage batch (owner picks 1/4/5/8/9/10) ==================================
+     4: the session fight-stats strip -- one dark rail under the plinths, mono figures in gold. */
+  .ar2-stats{ display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; margin:4px 0 2px;
+              padding:4px 10px; background:linear-gradient(180deg,#181409 0%,#100d07 100%);
+              border:1px solid #3a2f20; border-radius:2px;
+              font-family:var(--font-mono); font-size:11px; line-height:1.3; }
+  .ar2-stats .k{ color:#9a8f78; text-transform:uppercase; letter-spacing:.6px; font-size:9px; }
+  .ar2-stats b{ color:#e8dcc0; font-weight:700; font-variant-numeric:tabular-nums; }
+  .ar2-stats b#ar2FsDps, .ar2-stats b#ar2FsBest{ color:#ddbb66; }
+  /* 5: the % readout under the HP value, the Auto-Eat waterline tick, and the sub-25% danger pulse.
+     The tick lives INSIDE .liq, whose clip-path circle trims it to the glass; the pulse is a
+     drop-shadow FILTER because a box-shadow would be eaten by that same clip. */
+  .ar2-orb .num .pct{ display:block; font-size:10px; color:#c0b394; letter-spacing:.5px; }
+  .ar2-orb .num .pct:empty{ display:none; }
+  .ar2-orb .aet{ position:absolute; left:6%; right:6%; border-top:2px dashed rgba(255,235,180,.60);
+                 z-index:3; pointer-events:none; }
+  .ar2-orb.low .liq{ animation:ar2OrbLow 1.1s ease-in-out infinite; }
+  @keyframes ar2OrbLow{ 0%,100%{ filter:none; } 50%{ filter:drop-shadow(0 0 10px rgba(220,60,50,.85)); } }
+  /* 8: consumable chips on a two-column grid with a corner count badge (the effect text moved to the
+     tooltip). Active chip reads in the stage gold. */
+  .arena-chip-grid{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+  .arena-chip-grid .arena-item-chip{ position:relative; width:100%; padding-right:34px; }
+  .arena-chip-grid .arena-item-chip .qty{ position:absolute; top:3px; right:4px;
+    background:#2a2418; border:1px solid #6b5a38; border-radius:4px; padding:0 4px; font-size:9px; }
+  .ar2.ivy .ar2-tray .arena-item-chip.on{ border-color:#ddbb66; box-shadow:inset 0 0 0 1px #ddbb66; }
+  .ar2.ivy .ar2-tray .arena-item-chip.on > span:first-child{ color:#ddbb66; }
+  /* 9: the Auto-Eat header row -- title, live status, and the fold chevron (which is normally an
+     absolutely-positioned card corner button; here it sits in the flex row). */
+  .autoeat-hd{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:10px 0 4px; }
+  .autoeat-hd .autoeat-status{ font-family:var(--font-mono); font-size:11px; color:#c0b394;
+                               min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto; }
+  .autoeat-hd .card-collapse.autoeat-fold{ position:static; flex:0 0 auto; margin-left:auto; }
+  .ar2.ivy .ar2-tray .autoeat-status b{ color:#e8dcc0; }
+  /* 10: the special-attack telegraph -- past 80% charge the fill burns hot and the foe's stone ring
+     flashes, so the special reads as incoming rather than decorative. */
+  .ar2-bar.spec.charged .fil{ animation:ar2SpecHot .8s ease-in-out infinite alternate; }
+  @keyframes ar2SpecHot{ from{ filter:brightness(1) saturate(1); } to{ filter:brightness(1.65) saturate(1.4); } }
+  .ar2-port.spec-soon .pf{ animation:ar2RingFlash .9s ease-in-out infinite; }
+  @keyframes ar2RingFlash{ 0%,100%{ filter:none; } 50%{ filter:brightness(1.6) drop-shadow(0 0 7px rgba(255,120,100,.85)); } }
 
   /* ---- the feed spans the whole arena; the companions move up under Retreat ----
    .ar2-low stops being a two-column split, so the feed gets the full stage width instead of half. The
@@ -11812,6 +11853,20 @@
   // ("311 / 295, takes no damage"). Called every frame to snap it back. Returns the clamped value.
   function clampPlayerHpToMax(st){ st = st || state; var mh = maxHp(st); if(st.playerHp > mh) st.playerHp = mh; return st.playerHp; }
   function fmt(n){ return Math.floor(n).toLocaleString(); }
+  // Compact big-number readout (82.4B) for the stage's stats strip, where an endgame DPS in full
+  // comma notation (82,400,000,000) would not fit its plinth. Two significant styles: one decimal
+  // below 100 of a unit, whole numbers above. Sub-1000 values print as-is.
+  function fmtCompact(n){
+    n = Math.max(0, Math.floor(n || 0));
+    var units = [['T',1e12],['B',1e9],['M',1e6],['K',1e3]];
+    for(var i = 0; i < units.length; i++){
+      if(n >= units[i][1]){
+        var v = n / units[i][1];
+        return (v >= 100 ? Math.round(v) : Math.round(v * 10) / 10) + units[i][0];
+      }
+    }
+    return '' + n;
+  }
   var BASE_CRAFT_SUCCESS = 0.7;
   function sleightOfHandCraftSpeedBonus(state){ return Math.min(0.15, getLevel(state.physique.sleightOfHand||0)*0.003); }
   function curiosityGatherXpBonus(state){ return Math.min(0.15, getLevel(state.physique.curiosity||0)*0.003); }
@@ -17584,6 +17639,7 @@
     state.snGrowth = 0; state.snBloomAccum = 0; state.snShatterAccum = 0; // the Bramble withers between sessions (within one it carries foe to foe -- Deep Roots)
     state.lmRadiance = 0; state.lmBrimAccum = 0; state.lmMendAccum = 0; state.lmSpillFrac = 1; // the Oracle's gathered light disperses between sessions (within one it follows foe to foe)
     state.staffDownbeats = []; state.staffLastDownbeatAt = 0; state.summonerCrescendo = 0; state.summonerWraiths = []; // the Conductor's rhythm starts over each session
+    state.fsStart = 0; state.fsDmg = 0; state.fsHits = 0; state.fsBest = 0; state.fsKills = 0; // the stage's session fight-stats strip starts a fresh ledger
   }
   // Exiting combat and re-entering starts the whole cycle fresh: every companion back at the TOP of its
   // spell list AND every persistent class buff cleared (see resetPersistentCombatBuffs). Called at
@@ -17712,13 +17768,19 @@
   function activePotionEffect(){ return (state.activePotion && (state.potionCharges||0) > 0) ? potionEffect(state.activePotion) : null; }
   function elixirCritBonus(){ var e = activePotionEffect(); return (e && e.type==='elixir') ? e.crit : 0; }
   function catalystFamiliarBonus(){ var e = activePotionEffect(); return (e && e.type==='catalyst') ? e.fam : 0; }
+  // Sub-1% shares keep one decimal instead of rounding to a lying "0%": a t0 Weak Venom is 0.3%/s,
+  // and Math.round showed it as "Poison 0% combat score/s" (owner batch v0.0.86.24, pick 8).
+  function potionPctLabel(p){
+    var v = p * 100;
+    return (v >= 1 ? Math.round(v) : Math.max(0.1, Math.round(v * 10) / 10)) + '%';
+  }
   function potionEffectDesc(id){
     var e = potionEffect(id); if(!e) return '';
-    if(e.type==='toxin')    return 'Poison '+Math.round(e.pct*100)+'% combat score/s for 3s';
+    if(e.type==='toxin')    return 'Poison '+potionPctLabel(e.pct)+' combat score/s for 3s';
     if(e.type==='firebomb') return '~'+e.dmg+' fire damage per hit';
     if(e.type==='elixir')   return '+'+Math.round(e.crit*100)+'% crit damage';
     if(e.type==='catalyst') return '+'+Math.round(e.fam*100)+'% familiar spell power';
-    if(e.type==='coating')  return 'Poison '+Math.round(e.pct*100)+'% combat score/s for '+Math.round(e.durationMs/1000)+'s';
+    if(e.type==='coating')  return 'Poison '+potionPctLabel(e.pct)+' combat score/s for '+Math.round(e.durationMs/1000)+'s';
     if(e.type==='bomb')     return '~'+e.dmg+' burst damage per hit';
     if(e.type==='flash')    return Math.round(e.stun*100)+'% chance to stun per hit';
     return '';
@@ -18530,6 +18592,7 @@
       act.monsterHp = 1;
       return;
     }
+    if(!offlineCapture) state.fsKills = (state.fsKills || 0) + 1; // session stats strip: live kills only, matching its live-only damage side
     // Bonereaver (D3 half-moon axe): a Bleeding foe's Bleed -- and the fight's Cut tally -- carry to the next
     // foe. (The Arterial Spray PERK retired into this axe: as a perk it was dead against every boss, because
     // it needed a kill to do anything at all.)
@@ -23117,8 +23180,23 @@
     var next = getNextAutoEatFood();
     return next ? (next.icon+' '+next.name+' (x'+(state.inventory[next.id]||0)+')') : 'None available';
   }
+  // One-line live state for the panel HEADER, so a collapsed panel still reads at a glance:
+  // "60% · Next: Rat Meal (x22) · 1,007 food".
+  function autoEatStatusText(){
+    return (state.autoEatThreshold ? Math.round(state.autoEatThreshold*100)+'%' : 'Off')
+      + ' &middot; Next: ' + autoEatNextFoodLabel()
+      + ' &middot; ' + fmt(getTotalAutoEatFoodQty()) + ' food';
+  }
+  // The panel COLLAPSES like a crafting card (v0.0.86.24, owner pick 9): the explanation paragraph and
+  // threshold buttons fold behind the same persisted chevron (state.collapsedCards, key 'panel:autoeat',
+  // survives refresh until retoggled) while the header keeps the live status, so the always-expanded
+  // paragraph stops costing a phone screen ~150px per fight.
   function renderAutoEatPanel(){
-    var html = '<h3 style="margin-top:0">Auto-Eat</h3>';
+    var min = cardCollapsed('panel:autoeat');
+    var html = '<div class="autoeat-hd"><h3 style="margin:0">Auto-Eat</h3>'
+      + '<span class="autoeat-status" id="autoEatHdStatus">'+autoEatStatusText()+'</span>'
+      + '<button class="card-collapse autoeat-fold" data-action="autoEatToggle" data-tip="'+(min?'Expand Auto-Eat':'Collapse Auto-Eat')+'" aria-label="'+(min?'Expand Auto-Eat':'Collapse Auto-Eat')+'">'+(min?'&#9662;':'&#9652;')+'</button></div>';
+    if(min) return html;
     html += '<div class="section-intro">During combat only, automatically eats your best available Roasted Food or Cooked Meal (highest heal first) once your HP drops to or below the chosen threshold. Off by default. <b>Locked</b> food is skipped. Unlock it in your Inventory to let Auto-Eat use it.</div>';
     html += '<div class="style-row">';
     html += '<button class="style-btn'+(!state.autoEatThreshold?' active':'')+'" data-action="setAutoEatThreshold" data-value="0">'+svgIcon('noicon','currentColor')+' Off</button>';
@@ -24382,6 +24460,13 @@
     for(var t in mix){ if(mix[t] > bv){ bv=mix[t]; best=t; } }
     return best ? (TYPE_ICON[best]||'') : '';
   }
+  // Which lane a combat float rides (v0.0.86.24, owner pick 1). Loot/system announcements ('No Loot
+  // Dropped', the loot list) are WIDE text that used to share the orb anchor with damage numbers and
+  // painted straight over them and over the foe's matchup line (owner screenshot). They get the STAGE
+  // lane: centered in the gap between the two plinths, on their own stacking counter. Damage numbers
+  // keep the orb anchor -- the number rising off the orb that just sloshed is the cause-and-effect read.
+  function combatFloatLane(cls){ return /ft-loot/.test(cls || '') ? 'stage' : 'orb'; }
+  var lootFloatCount = 0;
   function spawnCombatFloat(html, cls, enemySide){
     // Combat-card damage/crit numbers float over the arena and ride the GLOBAL floating-text switch.
     // (They were once wrongly gated on the action-bar toast flag -- deleted in v0.0.77.14 -- so combat
@@ -24398,11 +24483,37 @@
     var el = document.createElement('div');
     el.className = 'floating-text ' + (cls||'ft-dmg');
     el.innerHTML = html;
-    var jitterX = Math.round(Math.random()*44 - 22);
-    var jitterY = -(floatingTextCount % 5) * 16;
-    floatingTextCount++;
-    el.style.left = floatCoord(rect.left + rect.width/2 + jitterX) + 'px';
-    el.style.top = floatCoord(rect.top - 16 + jitterY) + 'px';
+    var left, top;
+    if(combatFloatLane(cls) === 'stage'){
+      // Stage lane: the empty gap between the plinths, own stack counter so consecutive loot lines
+      // ladder upward instead of covering each other. Falls back to the orb anchor when the plinth
+      // row isn't on screen (a non-stage surface calling with a loot class).
+      var row = document.querySelector('.ar2-orbs');
+      var rowRect = row ? row.getBoundingClientRect() : null;
+      if(rowRect && rowRect.width){
+        left = rowRect.left + rowRect.width/2;
+        top = rowRect.top + rowRect.height*0.30 - (lootFloatCount % 4) * 20;
+        lootFloatCount++;
+      } else {
+        left = rect.left + rect.width/2;
+        top = rect.top - 16;
+      }
+    } else {
+      var jitterX = Math.round(Math.random()*44 - 22);
+      var jitterY = -(floatingTextCount % 5) * 16;
+      floatingTextCount++;
+      left = rect.left + rect.width/2 + jitterX;
+      top = rect.top - 16 + jitterY;
+      // Never let a damage number climb into the header/foeline: the stack offset plus the rise of the
+      // floatUpFade animation (~28px) used to park numbers on top of the matchup badges.
+      var tops = document.querySelector('.ar2-tops');
+      if(tops){
+        var minTop = tops.getBoundingClientRect().bottom + 34;
+        if(top < minTop) top = minTop;
+      }
+    }
+    el.style.left = floatCoord(left) + 'px';
+    el.style.top = floatCoord(top) + 'px';
     layer.appendChild(el);
     setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 1300);
   }
@@ -24588,19 +24699,22 @@
         +' &bull; Charges <b id="potionChargeLabel">'+(state.potionCharges||0)+'</b>/'+(POTION_MAX_CHARGES+apothecaryExtraCharges())
         +' <button class="action-btn stop" data-action="deactivatePotion" style="width:auto;flex:0 0 auto;padding:2px 10px;">Stow</button></div>';
     }
+    // Chips are COMPACT (v0.0.86.24, owner pick 8): name + a corner count badge on a two-column grid,
+    // with the effect text living in the tooltip only. Inline, the descriptions stacked the strip three
+    // rows tall on a phone and repeated what the tooltip already said.
     var chips=[];
     POTION_TYPE_IDS.forEach(function(type){
       for(var i=0;i<TIER_COUNT;i++){ var id=type+'_t'+i, qty=state.inventory[id]||0; if(qty>0){ var it=ALL_SELLABLE[id]||{};
-        chips.push('<button class="arena-item-chip'+(state.activePotion===id?' on':'')+'" data-action="activatePotion" data-item="'+id+'" title="'+escapeHtml(potionEffectDesc(id))+'"><span>'+(it.icon||'')+' '+escapeHtml(it.name||id)+'</span><span class="qty">'+escapeHtml(potionEffectDesc(id))+' &bull; x'+qty+'</span></button>');
+        chips.push('<button class="arena-item-chip'+(state.activePotion===id?' on':'')+'" data-action="activatePotion" data-item="'+id+'" data-tip="'+escapeHtml(potionEffectDesc(id))+'"><span>'+(it.icon||'')+' '+escapeHtml(it.name||id)+'</span><span class="qty">x'+qty+'</span></button>');
       } }
     });
-    if(chips.length) h += '<div style="display:flex;flex-wrap:wrap;gap:5px;">'+chips.join('')+'</div>';
+    if(chips.length) h += '<div class="arena-chip-grid">'+chips.join('')+'</div>';
     else if(!state.activePotion) h += '<div class="empty-note" style="margin:0">No combat consumables in your bag. Craft Potions, Coatings, Bombs, or Flash Bombs.</div>';
     // Gastronomy Feasts (timed heal-over-time buff) + Confectionery snacks (instant heal), usable mid-fight.
     var food = foodConsumableList();
     if(food.length){
-      h += '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;">'+food.map(function(f){
-        return '<button class="arena-item-chip'+(f.active?' on':'')+'" data-action="'+f.action+'" data-item="'+f.id+'" title="'+escapeHtml(f.name+'. '+f.desc)+'"><span>'+(f.icon||'')+' '+escapeHtml(f.name)+'</span><span class="qty">'+escapeHtml(f.desc)+' &bull; x'+f.qty+'</span></button>';
+      h += '<div class="arena-chip-grid" style="margin-top:5px;">'+food.map(function(f){
+        return '<button class="arena-item-chip'+(f.active?' on':'')+'" data-action="'+f.action+'" data-item="'+f.id+'" data-tip="'+escapeHtml(f.name+'. '+f.desc)+'"><span>'+(f.icon||'')+' '+escapeHtml(f.name)+'</span><span class="qty">x'+f.qty+'</span></button>';
       }).join('')+'</div>';
     }
     return h+'</div>';
@@ -25662,9 +25776,16 @@
   // `shield` seeds the smaller blue absorb-pool readout under the HP value ("current / cap"); pass ''
   // (or omit) for orbs without one. The span is ALWAYS emitted so updateDynamic can fill it in place
   // when a shield appears mid-fight without a rebuild; CSS hides it while empty.
-  function orbHtml(side, label, num, shield){
-    return '<div class="ar2-crop"><div class="ar2-orb '+side+'">'
-      + '<div class="liq"><canvas id="ar2Orb-'+side+'"></canvas></div>'
+  // `pct` (0..100) seeds the small percentage readout under the HP value and the sub-25% danger class
+  // (owner pick 5) -- both are live-updated by updateDynamic afterwards. The player's orb also carries
+  // the Auto-Eat threshold as a dashed waterline tick, so "where my character starts eating" is visible
+  // on the glass itself. Omit pct for orbs without the readout (older callers).
+  function orbHtml(side, label, num, shield, pct){
+    var hasPct = typeof pct === 'number' && isFinite(pct);
+    var aet = (side === 'me' && state.autoEatThreshold > 0)
+      ? '<div class="aet" style="top:' + Math.round((1 - state.autoEatThreshold) * 100) + '%"></div>' : '';
+    return '<div class="ar2-crop"><div class="ar2-orb '+side+(hasPct && pct <= 25 ? ' low' : '')+'">'
+      + '<div class="liq"><canvas id="ar2Orb-'+side+'"></canvas>'+aet+'</div>'
       // decoding="sync" on both stage images: the arena rebuilds this markup up to 10x/sec, and a re-inserted
       // <img> may decode ASYNCHRONOUSLY -- one frame of nothing where the stone should be. Black-on-black on
       // the old dark stage; a white strobe on marble. Sync decode is effectively free here (the bitmap is in
@@ -25675,12 +25796,15 @@
       // path is invisible to it -- which left the two heaviest, most load-bearing assets in the stage
       // unchecked. Keep every art path in this file a complete literal.
       + '<img class="holder" decoding="sync" src="'+(side==='me' ? 'art/ivy_plinth_LEFT.png' : 'art/ivy_plinth_RIGHT.png')+'" alt="">'
-      + '<div class="num"><b id="ar2Num-'+side+'">'+(num||'')+'</b><span class="shield" id="ar2Shield-'+side+'">'+(shield||'')+'</span><i>'+label+'</i></div>'
+      + '<div class="num"><b id="ar2Num-'+side+'">'+(num||'')+'</b>'
+      + '<span class="pct" id="ar2Pct-'+side+'">'+(hasPct ? Math.round(pct)+'%' : '')+'</span>'
+      + '<span class="shield" id="ar2Shield-'+side+'">'+(shield||'')+'</span><i>'+label+'</i></div>'
       + '</div></div>';
   }
   // One thin swing bar. `pct` seeds the fill so a fresh render lands mid-cycle instead of snapping to zero.
-  function ar2Bar(id, cls, label, pct, right){
-    return '<div class="ar2-bar'+(cls?' '+cls:'')+'">'
+  // `tip` (optional) hangs a data-tip on the whole bar -- the special bar uses it to carry its real description.
+  function ar2Bar(id, cls, label, pct, right, tip){
+    return '<div class="ar2-bar'+(cls?' '+cls:'')+'"'+(tip ? ' data-tip="'+escapeHtml(tip)+'"' : '')+'>'
       + '<div class="trk"><div class="fil" id="'+id+'" style="width:'+clamp(pct,0,100)+'%"></div></div>'
       + '<img src="art/Square_merged (2).png" alt="">'
       + '<div class="lbl"><span id="'+id+'-n">'+label+'</span>'+(right?'<span id="'+id+'-t">'+right+'</span>':'')+'</div>'
@@ -25700,6 +25824,7 @@
     var pPct = clamp(state.playerHp/maxHpVal*100,0,100);
     var monsterAtkIntervalMs = m.attackSpeed*1000*(1+enemyExtraSlowPct());
     var monsterAtkPct = clamp((act.monsterTickAccum||0)/monsterAtkIntervalMs*100,0,100);
+    var _specPct = m.special ? clamp((act.specialAccum||0)/m.special.chargeMs*100, 0, 100) : 0;
     var playerAtkIntervalMs = playerAttackIntervalMs();
     var playerAtkPct = clamp((act.tickAccum||0)/playerAtkIntervalMs*100,0,100);
     var matchup = weightedMatchupLabel(weaponStyle.attackTypes || {blunt:1}, m.armorTypes || {blunt:1/3, slashing:1/3, piercing:1/3});
@@ -25785,8 +25910,12 @@
                    _stunned ? (svgIcon('lightning','#fff3a0')+' Stunned!') : 'Attack',
                    monsterAtkPct, (+(m.attackSpeed*(1+enemyExtraSlowPct())*enemyFrenzySpeedMult(act, m)).toFixed(1))+'s');
     if(m.special){
-      html += ar2Bar('ar2AtkSpec', 'spec', svgIcon('claw','#ff8a84')+' '+escapeHtml(m.special.name),
-                     clamp((act.specialAccum||0)/m.special.chargeMs*100, 0, 100), 'special');
+      // The special bar TELEGRAPHS (owner pick 10): past 80% charge it takes the 'charged' glow and the
+      // foe's ring flashes (both classes also live-toggled in updateDynamic), and the bar carries the
+      // special's real description as a tooltip -- previously that text only existed on the Enemies tab.
+      html += ar2Bar('ar2AtkSpec', 'spec'+(_specPct >= 80 ? ' charged' : ''),
+                     svgIcon('claw','#ff8a84')+' '+escapeHtml(m.special.name),
+                     _specPct, 'special', m.special.name + ': ' + monsterSpecialDesc(m.special));
     }
     html += '</div>'; // ar2-bars
     // THE ELEMENT / MATCHUP / DODGE LINE LIVES HERE, inside the foe's own column directly after its bars --
@@ -25802,7 +25931,7 @@
           + ' <span class="ar2-sub">Dodge '+monsterDodge(m)+' &middot; your hit '+Math.round(playerHitChance(m)*100)+'%</span>'
           + incomingElementNote(m)+'</div>';
     html += '</div>'; // ar2-meta
-    html += '<div class="ar2-port" id="ar2PortFoe"><div class="pin" id="arenaMonsterPortrait">'+monsterPortrait(m)+'</div>'
+    html += '<div class="ar2-port'+(_specPct >= 80 ? ' spec-soon' : '')+'" id="ar2PortFoe"><div class="pin" id="arenaMonsterPortrait">'+monsterPortrait(m)+'</div>'
           + '<img class="pf" decoding="sync" src="art/ivy_ring_RIGHT.png" alt=""></div>';
     html += '</div>'; // ar2-side foe
     html += '</div>'; // ar2-tops
@@ -25836,9 +25965,11 @@
     // ---------- the plinth pair ----------
     html += '<div class="ar2-orbs">'
           + orbHtml('me',  'health',          fmt(state.playerHp) + ' / ' + fmt(maxHpVal),
-                    _shieldNow > 0 ? fmt(Math.round(_shieldNow)) + ' / ' + fmt(combatShieldCap(state)) : '')
-          + orbHtml('foe', escapeHtml(m.name), fmt(act.monsterHp) + ' / ' + fmt(m.hp))
+                    _shieldNow > 0 ? fmt(Math.round(_shieldNow)) + ' / ' + fmt(combatShieldCap(state)) : '', pPct)
+          + orbHtml('foe', escapeHtml(m.name), fmt(act.monsterHp) + ' / ' + fmt(m.hp), '', hpPct)
           + '</div>';
+    // ---------- session fight stats: duration, DPS, kills, hits, best hit (owner pick 4) ----------
+    html += '<div class="ar2-stats" id="ar2Stats">' + arenaFightStatsHtml() + '</div>';
     // ---------- the feed spans the stage; the effect panels follow it ----------
     html += '<div class="ar2-low">';
     html += '<div>';
@@ -34208,9 +34339,39 @@
   var combatLog = [], COMBAT_LOG_MAX = 200;
   function advCombat(){ return !!(state.settings && state.settings.advancedCombatLog); }
   function clRound(n){ return Math.round((+n || 0) * 100) / 100; }   // 2dp for the pipeline multipliers
+  // ---- Session fight stats (v0.0.86.24, owner pick 4): the ledger behind the stage's stats strip. ----
+  // Fed HERE because every damage source is REQUIRED to log (see the Combat-log rule in CLAUDE.md), so
+  // the log push is the one chokepoint that already sees them all -- counting at the ~30 damage sites
+  // would rot the first time a rework added one. Outgoing rows only ('out' swings/echoes, 'skill'
+  // procs/eruptions and 1-second DoT aggregates, 'fam' familiar hits); incoming/dodge/text rows never
+  // count. Session-scoped exactly like the class ramps: it survives foe-to-foe chains and resets with
+  // them in resetPersistentCombatBuffs. Kills are counted at defeatMonster (live only -- offline
+  // catch-up pushes no log rows, so the damage side is live-only too and the pair stays consistent).
+  function fsNoteEntry(e){
+    if(!e || !(e.dmg > 0)) return;
+    if(e.dir !== 'out' && e.dir !== 'skill' && e.dir !== 'fam') return;
+    
+    if(!state.fsStart) state.fsStart = Date.now();
+    state.fsDmg = (state.fsDmg || 0) + e.dmg;
+    state.fsHits = (state.fsHits || 0) + 1;
+    if(e.dmg > (state.fsBest || 0)) state.fsBest = e.dmg;
+  }
+  // The strip itself: session duration, running DPS, swings landed, kills, best single hit -- the
+  // numbers players screenshot. Ids are updated in place by updateDynamic; this builder only runs on
+  // a full renderArena pass.
+  function arenaFightStatsHtml(){
+    var since = state.fsStart ? (Date.now() - state.fsStart) : 0;
+    var dps = since > 1000 ? (state.fsDmg || 0) / (since / 1000) : (state.fsDmg || 0);
+    return '<span class="k">Session</span><b id="ar2FsTime">' + formatDuration(since) + '</b>'
+      + '<span class="k">DPS</span><b id="ar2FsDps">' + fmtCompact(dps) + '</b>'
+      + '<span class="k">Kills</span><b id="ar2FsKills">' + fmt(state.fsKills || 0) + '</b>'
+      + '<span class="k">Hits</span><b id="ar2FsHits">' + fmt(state.fsHits || 0) + '</b>'
+      + '<span class="k">Best</span><b id="ar2FsBest">' + fmtCompact(state.fsBest || 0) + '</b>';
+  }
   function combatLogPush(entry){
     if(offlineCapture || !entry) return;
     entry.t = Date.now();
+    fsNoteEntry(entry);
     combatLog.push(entry);
     if(combatLog.length > COMBAT_LOG_MAX) combatLog = combatLog.slice(-COMBAT_LOG_MAX);
     if(chatChannel === 'combat') combatLogRenderOnly();
@@ -38231,6 +38392,27 @@
       if(_nFoe && m) _nFoe.textContent = fmt(state.activity.monsterHp) + ' / ' + fmt(m.hp);
       var _nMe = document.getElementById('ar2Num-me');
       if(_nMe) _nMe.textContent = fmt(state.playerHp) + ' / ' + fmt(maxHpVal);
+      // Percentage readouts + the sub-25% danger pulse on the player's glass (owner pick 5).
+      var _pctFoe = document.getElementById('ar2Pct-foe');
+      if(_pctFoe && m) _pctFoe.textContent = Math.round(clamp(state.activity.monsterHp/m.hp, 0, 1)*100) + '%';
+      var _pctMe = document.getElementById('ar2Pct-me');
+      if(_pctMe){
+        var _meFrac = clamp(state.playerHp/maxHpVal, 0, 1);
+        _pctMe.textContent = Math.round(_meFrac*100) + '%';
+        var _orbMe = _pctMe.closest ? _pctMe.closest('.ar2-orb') : null;
+        if(_orbMe) _orbMe.classList.toggle('low', _meFrac <= 0.25);
+      }
+      // Session fight-stats strip (owner pick 4): live duration/DPS/kills/hits/best.
+      var _fsT = document.getElementById('ar2FsTime');
+      if(_fsT){
+        var _fsSince = state.fsStart ? (Date.now() - state.fsStart) : 0;
+        _fsT.textContent = formatDuration(_fsSince);
+        var _fsD = document.getElementById('ar2FsDps');
+        if(_fsD) _fsD.textContent = fmtCompact(_fsSince > 1000 ? (state.fsDmg||0)/(_fsSince/1000) : (state.fsDmg||0));
+        var _fsK = document.getElementById('ar2FsKills'); if(_fsK) _fsK.textContent = fmt(state.fsKills||0);
+        var _fsH = document.getElementById('ar2FsHits');  if(_fsH) _fsH.textContent = fmt(state.fsHits||0);
+        var _fsB = document.getElementById('ar2FsBest');  if(_fsB) _fsB.textContent = fmtCompact(state.fsBest||0);
+      }
       // The absorb pool is the BLUE shield fluid in the same glass (owner order; it replaced the glow
       // ring). Only the target is set -- the spring in orbTick makes it slosh like the health does.
       orbSetShield('me', maxHpVal > 0 ? clamp(_shieldLive/maxHpVal, 0, 1) : 0);
@@ -38265,7 +38447,16 @@
         }
       }
       var spf = document.getElementById('ar2AtkSpec');
-      if(spf && m && m.special){ spf.style.width = clamp((state.activity.specialAccum||0)/m.special.chargeMs*100,0,100)+'%'; }
+      if(spf && m && m.special){
+        var _spPctLive = clamp((state.activity.specialAccum||0)/m.special.chargeMs*100,0,100);
+        spf.style.width = _spPctLive+'%';
+        // Telegraph (owner pick 10): the bar takes the 'charged' glow and the foe's ring flashes from
+        // 80% charge, so the special reads as an incoming threat rather than a label.
+        var _spBar = spf.parentNode && spf.parentNode.parentNode;
+        if(_spBar && _spBar.classList) _spBar.classList.toggle('charged', _spPctLive >= 80);
+        var _pFoe = document.getElementById('ar2PortFoe');
+        if(_pFoe) _pFoe.classList.toggle('spec-soon', _spPctLive >= 80);
+      }
       var paf = document.getElementById('ar2AtkMe');
       if(paf) paf.style.width = clamp((state.activity.tickAccum||0)/playerAttackIntervalMs()*100,0,100)+'%';
       // The player's swing time is as live as the foe's (owner order, v0.0.77.42): Tempo, Haste and
@@ -38365,6 +38556,11 @@
       if(autoEatNextEl._html !== autoEatHtml){ autoEatNextEl._html = autoEatHtml; autoEatNextEl.innerHTML = autoEatHtml; }
     }
     if(autoEatTotalEl) autoEatTotalEl.textContent = getTotalAutoEatFoodQty();
+    var autoEatHdEl = document.getElementById('autoEatHdStatus');
+    if(autoEatHdEl){ // the collapsed panel's whole live state rides the header line
+      var autoEatHdHtml = autoEatStatusText();
+      if(autoEatHdEl._html !== autoEatHdHtml){ autoEatHdEl._html = autoEatHdHtml; autoEatHdEl.innerHTML = autoEatHdHtml; }
+    }
 
     var charHpFill = document.getElementById('charHpFill');
     var charHpLabel = document.getElementById('charHpLabel');
@@ -38846,6 +39042,7 @@
     gabToggleCollapse: function(btn, e){ gabCollapsed = !gabCollapsed; updateGlobalActionBarLive(); },
     // Fold/unfold a crafting card (v0.0.86.17); persisted in state, so it survives refresh.
     cardCollapse: function(btn, e){ cardCollapseToggle(btn.getAttribute('data-key')); },
+    autoEatToggle: function(){ cardCollapseToggle('panel:autoeat'); },
     plantSeed: function(btn, e){ plantSeed(btn.getAttribute('data-scope'), btn.getAttribute('data-key'), btn.getAttribute('data-seed')); farmSowArmed = null; },
     sowToggle: function(btn, e){ var k = btn.getAttribute('data-scope') + '|' + btn.getAttribute('data-key'); farmSowArmed = (farmSowArmed === k) ? null : k; farmCancelArmed = null; },
     harvestPlot: function(btn, e){ harvestPlot(btn.getAttribute('data-scope'), btn.getAttribute('data-key')); },
@@ -40232,7 +40429,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.23';
+  var GAME_VERSION = '0.0.86.24';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -40368,6 +40565,7 @@
       _state:state, getMaxCraftSlots:getMaxCraftSlots, MAX_TASK_SLOTS:MAX_TASK_SLOTS, ensureCraftSlotCapacity:ensureCraftSlotCapacity, findFreeCraftSlot:findFreeCraftSlot, placeNewActivity:placeNewActivity, queueEligibleAction:queueEligibleAction,
       cardCollapseKey:cardCollapseKey, cardCollapsed:cardCollapsed, cardCollapseToggle:cardCollapseToggle, decorateCollapsibleCards:decorateCollapsibleCards, ensureLandingStyle:ensureLandingStyle,
       landingFightActive:landingFightActive, landingFightSeed:landingFightSeed, landingFightMount:landingFightMount, landingFightScale:landingFightScale, landingFightStop:landingFightStop, LANDING_FOES:LANDING_FOES,
+      fsNoteEntry:fsNoteEntry, arenaFightStatsHtml:arenaFightStatsHtml, fmtCompact:fmtCompact, potionPctLabel:potionPctLabel, combatFloatLane:combatFloatLane, autoEatStatusText:autoEatStatusText, renderAutoEatPanel:renderAutoEatPanel, renderCombatConsumables:renderCombatConsumables,
       QUESTS:QUESTS, QUEST_CATEGORIES:QUEST_CATEGORIES, QUEST_CATEGORY_IDS:QUEST_CATEGORY_IDS, isQuestCategory:isQuestCategory, questById:questById, questProgress:questProgress, questComplete:questComplete, questClaimed:questClaimed, questCompletedLatched:questCompletedLatched, questScanCompletions:questScanCompletions, questClaimable:questClaimable, questsClaimedLast:questsClaimedLast, questsSorted:questsSorted, QUEST_ORDINAL:QUEST_ORDINAL, questClaimableInCat:questClaimableInCat, questAnyClaimable:questAnyClaimable, questRewardLabel:questRewardLabel, claimQuest:claimQuest, questToggleExpand:questToggleExpand, questTracked:questTracked, questToggleTrack:questToggleTrack, questUntrack:questUntrack, renderQuestTracker:renderQuestTracker, bumpMonsterKill:bumpMonsterKill, renderQuestsTab:renderQuestsTab, renderQuestAccordion:renderQuestAccordion, railSubFlash:railSubFlash, railAreaFlash:railAreaFlash, syncGuildPlotsForGuild:syncGuildPlotsForGuild, pruneOrphanFarmingPlots:pruneOrphanFarmingPlots, inputSnapshot:inputSnapshot, inputRestore:inputRestore,
       TITLES:TITLES, TITLE_BY_ID:TITLE_BY_ID, equipTitle:equipTitle, unequipTitle:unequipTitle, renderTitlesTab:renderTitlesTab, titleHelpToggle:titleHelpToggle, questRebuildDerived:questRebuildDerived,
       TOWER_ENTRANCES:TOWER_ENTRANCES, isTowerEntrance:isTowerEntrance, towerEntranceLabel:towerEntranceLabel, towerEntry:towerEntry, towerFloorTier:towerFloorTier, towerFloorElement:towerFloorElement, towerFloorType:towerFloorType, towerBaseMonster:towerBaseMonster, towerFloorStats:towerFloorStats, buildTowerMonster:buildTowerMonster, towerMonsterFromId:towerMonsterFromId, towerGrantFamiliar:towerGrantFamiliar, randomTowerFamiliarId:randomTowerFamiliarId, grantTowerReward:grantTowerReward, barrierShardsForFloor:barrierShardsForFloor, towerOnKill:towerOnKill, towerEnter:towerEnter, makeTowerActivity:makeTowerActivity, GUILD_BOSSES:GUILD_BOSSES, guildBossReward:guildBossReward, buildGuildBossMonster:buildGuildBossMonster, makeGuildBossActivity:makeGuildBossActivity, guildBossMonsterFromId:guildBossMonsterFromId, flushTowerFamiliarBatch:flushTowerFamiliarBatch, flushTowerShardBatch:flushTowerShardBatch, renderTowerTab:renderTowerTab, towerPreviewCardHtml:towerPreviewCardHtml, towerEntranceClassLocked:towerEntranceClassLocked, TOWER_CLASS_FAMILIAR_FLOOR_CAP:TOWER_CLASS_FAMILIAR_FLOOR_CAP,
