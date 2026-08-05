@@ -15763,6 +15763,64 @@
     } finally { probe.remove(); }
   });
 
+  // ---- Chat feed furniture (owner picks 1/4/5 of the chat proposals, v0.0.86.10) -------------------
+  // Day dividers on every calendar-day change, a gold wash on your own lines and a bright accent on
+  // word-bounded mentions, and the unread marker ("new" rule) + jump-to-latest pill. All pinned on the
+  // rendered MARKUP and the marker's synchronous mechanics -- the pill's show/hide follows real scroll
+  // events, which a suite can't drive honestly.
+  suite('chat feed: day dividers, own/mention tint, new-marker and jump pill', function(){
+    var now = new Date(), y = now.getFullYear(), mo = now.getMonth(), da = now.getDate();
+    var oldDay   = new Date(y, mo, da - 5, 12, 0, 0).toISOString();
+    var yestNoon = new Date(y, mo, da - 1, 12, 0, 0).toISOString();
+    var today    = new Date(y, mo, da, 9, 0, 0).toISOString();
+    eq(FF.chatDayLabel(today), 'Today', 'a same-day stamp reads Today');
+    eq(FF.chatDayLabel(yestNoon), 'Yesterday', 'one calendar day back reads Yesterday');
+    var _old = FF.chatDayLabel(oldDay);
+    ok(!!_old && _old !== 'Today' && _old !== 'Yesterday', 'older days read as a short date: ' + JSON.stringify(_old));
+    ok(FF.chatDayKey(today) !== FF.chatDayKey(yestNoon), 'day keys split on the calendar day');
+
+    var savedMarker = FF._chatFirstUnread();
+    FF._setChatMod({ authUser:{ username:'Cat', id:'me' }, roles:{}, mutes:{}, titles:{}, mortals:{}, gtags:{}, messages:[
+      { id:'m1', user_id:'u9', username:'Val', body:'a line from days ago', created_at: oldDay },
+      { id:'m2', user_id:'u9', username:'Val', body:'hi Cat :)', created_at: yestNoon },
+      { id:'m3', user_id:'me', username:'Cat', body:'my own line', created_at: today },
+      { id:'m4', user_id:'u9', username:'Val', body:'concatenate the scattered categories', created_at: today }
+    ]});
+    try {
+      FF._setChatFirstUnread('m4');
+      var h = FF.chatMessagesHtml();
+      eq((h.match(/<div class="chat-divider">/g) || []).length, 3, 'a date chip opens the feed and marks each day change (3 days -> 3 chips)');
+      ok(h.indexOf('>Today</span>') !== -1 && h.indexOf('>Yesterday</span>') !== -1, 'the chips are labeled Today / Yesterday');
+      var newAt = h.indexOf('chat-divider chat-new');
+      ok(newAt !== -1, 'the gold new rule renders at the unread marker');
+      ok(newAt > h.indexOf('my own line') && newAt < h.indexOf('concatenate'), 'the new rule sits directly above the first unseen message');
+      eq((h.match(/chat-msg chat-mine/g) || []).length, 1, 'your own message wears the gold wash');
+      eq((h.match(/chat-msg chat-mention/g) || []).length, 1, 'a word-bounded name match wears the mention accent');
+      ok(/chat-msg chat-mention"[^]*?hi Cat/.test(h), 'the mention accent is on the line that names you');
+      // 'concatenate ... categories' contains cat three times as a substring; the single-mention count
+      // above is the word-bound proof.
+      ok(/chat-jump/.test(h) && /chatJumpLatest/.test(h), 'the jump-to-latest pill rides inside the scroller markup');
+      FF._setChatFirstUnread(null);
+      ok(FF.chatMessagesHtml().indexOf('chat-new') === -1, 'no marker -> no new rule');
+      // Marker mechanics, synchronously: chat is off-screen in the harness, so an arrival stamps the
+      // marker at the newest message -- and later arrivals must never advance it (it marks the FIRST).
+      FF.chatNoteUnreadMarker();
+      eq(FF._chatFirstUnread(), 'm4', 'an unseen arrival stamps the marker at the newest message');
+      FF._setChatMod({ messages:[
+        { id:'m1', user_id:'u9', username:'Val', body:'a line from days ago', created_at: oldDay },
+        { id:'m2', user_id:'u9', username:'Val', body:'hi Cat :)', created_at: yestNoon },
+        { id:'m3', user_id:'me', username:'Cat', body:'my own line', created_at: today },
+        { id:'m4', user_id:'u9', username:'Val', body:'concatenate the scattered categories', created_at: today },
+        { id:'m5', user_id:'u9', username:'Val', body:'one more', created_at: today }
+      ]});
+      FF.chatNoteUnreadMarker();
+      eq(FF._chatFirstUnread(), 'm4', 'later arrivals never advance the marker');
+    } finally {
+      FF._setChatFirstUnread(savedMarker == null ? null : savedMarker);
+      FF._setChatMod({ messages: [], authUser: null });
+    }
+  });
+
   // ---- Combat bars: beveled-glass fills + energy flow on the special (owner picks B + C) -----------
   suite('combat bars: glass fill everywhere, flow on the special only', function(){
     var probe = document.createElement('div');

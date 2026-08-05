@@ -879,6 +879,21 @@
   :root[data-theme="dark"] .chat-user.mortal{color:#e06576;}
   :root[data-theme="light"] .chat-user.mortal{color:#8a1f2c;}
   .chat-guild-tag{font-weight:700;font-size:11px;color:var(--gold);margin-right:3px;letter-spacing:.3px;}
+  /* ---- Chat feed furniture (owner picks, v0.0.86.10): day dividers, own/mention tint, jump pill ----
+     All inked directly in the dark table -- these only ever render inside the dark message well. */
+  .chat-divider{display:flex;align-items:center;gap:8px;margin:8px 0 3px;}
+  .chat-divider::before,.chat-divider::after{content:'';flex:1 1 auto;height:1px;background:#48432f;}
+  .chat-divider-chip{flex:0 0 auto;font-family:var(--font-mono);font-size:10px;letter-spacing:.4px;color:#9a8f78;background:#2a2418;border:1px solid #6b5a38;border-radius:8px;padding:1px 8px;}
+  .chat-divider.chat-new::before,.chat-divider.chat-new::after{background:rgba(221,187,102,.55);}
+  .chat-divider.chat-new .chat-divider-chip{color:#0f0d08;background:linear-gradient(180deg,#e6c24a,#c9a227);border-color:#6b5a38;font-weight:700;text-transform:uppercase;}
+  /* Your own lines wear a faint gold wash; a message naming you gets the brighter left accent --
+     the same row treatment the system/rarity blasts already use, so the feed stays one vocabulary. */
+  .chat-msg.chat-mine{background:rgba(221,187,102,.06);border-left:3px solid #6b5a38;border-radius:6px;padding:3px 8px;margin:1px 0;}
+  .chat-msg.chat-mention{background:rgba(221,187,102,.13);border-left:3px solid #ddbb66;border-radius:6px;padding:3px 8px;margin:1px 0;}
+  /* The jump-to-latest pill rides INSIDE the scroller (position:sticky), so the stick-render can never
+     orphan it; .on is toggled by the scroll listener whenever the reader leaves the bottom. */
+  .chat-jump{position:sticky;bottom:2px;align-self:center;display:none;flex:0 0 auto;font-family:var(--font-body);font-size:11.5px;font-weight:700;color:#0f0d08;background:linear-gradient(180deg,#e6c24a,#c9a227);border:1px solid #6b5a38;border-radius:12px;padding:3px 12px;margin:4px auto 0;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.55);}
+  .chat-jump.on{display:inline-block;}
   .chat-time{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);margin-right:6px;}
   .log-entry .chat-time{margin-right:5px;}
   .chat-body{color:var(--text);word-break:break-word;}
@@ -33564,6 +33579,7 @@
     chatMessages.push(msg);
     if(chatMessages.length > 120) chatMessages = chatMessages.slice(-120);
     if(msg.user_id && !(msg.user_id in chatTitles)) chatFetchTitles([msg.user_id]); // pull this poster's title tag
+    chatNoteUnreadMarker(); // BEFORE the re-render, so feedAtBottom still reads the pre-append position
     if(chatChannel==='global') chatRenderMessagesOnly(); // chat lives in the rail/drawer; refresh in place
     noteChatActivity();
   }
@@ -33646,6 +33662,7 @@
     var now = Date.now();
     if(now - chatLastSentAt < 1200) return; // client-side rate limit
     clearChatUnread(); // sending is engagement -> mark chat read
+    chatFirstUnreadId = null; // ...and retire the "new" rule; the sender is by definition caught up
     input.value = '';
     chatDraft = '';
     if(!CHAT_ENABLED || !chatClient){
@@ -33673,12 +33690,45 @@
     try{ var res = await chatClient.from(CHAT_CONFIG.table).insert({ username:name, body:text }); if(res.error) throw res.error; addLog('Posted your party invite to chat.', 'important'); return true; }
     catch(e){ addLog('Couldn’t post to chat.', 'danger'); return false; }
   }
+  // ---- Chat feed furniture (owner picks 1/4/5 of the chat proposals, v0.0.86.10) -----------------
+  // The unread MARKER is the id of the first message that arrived while the reader wasn't watching the
+  // bottom of the global feed. It retires the moment a message lands while they ARE caught up live, or
+  // when they send (sending is engagement). Opening the panel must NOT clear it -- that is exactly the
+  // moment the "new" rule is needed -- which is why this is separate state from chatUnreadCount (whose
+  // job is the FAB badge, and which clears on open).
+  var chatFirstUnreadId = null;
+  function chatNoteUnreadMarker(){
+    var el = document.getElementById('chatMessages');
+    if(chatIsOnScreen() && chatChannel==='global' && el && feedAtBottom(el)){ chatFirstUnreadId = null; return; }
+    if(chatFirstUnreadId == null){ var last = chatMessages[chatMessages.length-1]; chatFirstUnreadId = last ? last.id : null; }
+  }
+  function chatDayKey(x){ var d = new Date(x); return isNaN(d.getTime()) ? '' : (d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate()); }
+  function chatDayLabel(x){
+    var d = new Date(x); if(isNaN(d.getTime())) return '';
+    var now = new Date(), todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    if(d.getTime() >= todayStart) return 'Today';
+    if(d.getTime() >= todayStart - 86400000) return 'Yesterday';
+    return d.toLocaleDateString([], { month:'short', day:'numeric' });
+  }
   function chatMessagesHtml(){
     if(chatMessages.length===0) return '<div class="chat-empty">No messages yet &mdash; say hello!</div>';
-    return chatMessages.map(function(m){
+    var _myUid = authUser && authUser.id;
+    var _myName = (authUser && authUser.username) ? String(authUser.username) : '';
+    // Word-bounded so "Cat" doesn't light up inside "catch"; case-insensitive because nobody types names carefully.
+    var _mentionRe = _myName ? new RegExp('(^|[^A-Za-z0-9_])'+_myName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'([^A-Za-z0-9_]|$)', 'i') : null;
+    var rows = chatMessages.map(function(m, i){
+      // A stone-rule date chip opens the feed and marks every calendar-day change.
+      var lead = '';
+      if(i===0 || chatDayKey(m.created_at) !== chatDayKey(chatMessages[i-1].created_at)){
+        lead += '<div class="chat-divider"><span class="chat-divider-chip">'+escapeHtml(chatDayLabel(m.created_at))+'</span></div>';
+      }
+      // The gold "new" rule sits above the first message that arrived unseen.
+      if(chatFirstUnreadId != null && m.id === chatFirstUnreadId){
+        lead += '<div class="chat-divider chat-new"><span class="chat-divider-chip">new</span></div>';
+      }
       if(m.system){
         var col = m.rarity==='fantastic' ? 'var(--rarity-fantastic)' : 'var(--rarity-superior)';
-        return '<div class="chat-msg chat-system rar-'+(m.rarity||'supreme')+'"><span class="chat-sys-ico">'+svgIcon('starburst',col)+'</span><span class="chat-body">'+escapeHtml(m.body||'')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span></div>';
+        return lead+'<div class="chat-msg chat-system rar-'+(m.rarity||'supreme')+'"><span class="chat-sys-ico">'+svgIcon('starburst',col)+'</span><span class="chat-body">'+escapeHtml(m.body||'')+'</span><span class="chat-time">'+msgTime(m.created_at)+'</span></div>';
       }
       var uid = m.user_id, role = chatRoleOf(uid);
       var badge = role ? '<span class="chat-mod-badge chat-mod-'+role+'" title="'+(role==='owner'?'Owner':'Moderator')+'">'+(role==='owner'?'★':'⚑')+'</span>' : '';
@@ -33694,8 +33744,13 @@
       var _gtag = uid ? chatGuildTags[uid] : '';
       var guildTag = _gtag ? '<span class="chat-guild-tag" title="Guild">['+escapeHtml(_gtag)+']</span>' : '';
       var _mortal = uid ? chatMortals[uid] === true : false;
-      return '<div class="chat-msg">'+badge+guildTag+'<span class="chat-user'+(_mortal?' mortal':'')+'"'+(_mortal?' title="Mortal path"':'')+'>'+escapeHtml(m.username||'anon')+'</span>'+titleTag+mutedTag+'<span class="chat-time">'+msgTime(m.created_at)+'</span>'+modBtn+'<span class="chat-body">'+chatBodyHtml(m.body||'')+'</span></div>';
+      // Your own lines wear the gold wash; a word-bounded name match wears the mention accent.
+      var _own = !!(_myUid && uid === _myUid);
+      var _mention = !_own && _mentionRe && _mentionRe.test(String(m.body||''));
+      return lead+'<div class="chat-msg'+(_own?' chat-mine':(_mention?' chat-mention':''))+'">'+badge+guildTag+'<span class="chat-user'+(_mortal?' mortal':'')+'"'+(_mortal?' title="Mortal path"':'')+'>'+escapeHtml(m.username||'anon')+'</span>'+titleTag+mutedTag+'<span class="chat-time">'+msgTime(m.created_at)+'</span>'+modBtn+'<span class="chat-body">'+chatBodyHtml(m.body||'')+'</span></div>';
     }).join('');
+    // The jump pill lives inside the scroller so every stick-render carries it along.
+    return rows + '<button class="chat-jump" data-action="chatJumpLatest" aria-label="Jump to the latest message">&darr; Latest</button>';
   }
   // Map a broadcast craft body ("Supreme Iron Sword") to its rarity, or null for rare/normal. Only the
   // top two tiers (supreme/fantastic) get echoed into global chat as a system announcement.
@@ -33736,6 +33791,7 @@
     var m = { id:'sys-'+Date.now()+'-'+Math.floor(Math.random()*1e6), username:null, body:text, rarity:rarity||'supreme', created_at:new Date().toISOString(), system:true };
     chatMessages.push(m);
     if(chatMessages.length > 120) chatMessages = chatMessages.slice(-120);
+    chatNoteUnreadMarker(); // BEFORE the re-render, so feedAtBottom still reads the pre-append position
     if(chatChannel==='global') chatRenderMessagesOnly(); // refresh in place if the global feed is showing
     noteChatActivity();
   }
@@ -33834,6 +33890,23 @@
   function chatRenderMessagesOnly(){
     invalidateContentCache();   // wrote into #content outside render()
     feedRenderStick(document.getElementById('chatMessages'), chatMessagesHtml());
+    chatJumpUpdate();
+  }
+  // Show/hide the jump-to-latest pill and keep its count honest. Counting walks back from the tail to
+  // the unread marker (the same id the "new" rule renders at), so the pill and the rule always agree.
+  function chatJumpUpdate(){
+    var el = document.getElementById('chatMessages'); if(!el) return;
+    var pill = el.querySelector('.chat-jump'); if(!pill) return;
+    var show = !feedAtBottom(el);
+    pill.classList.toggle('on', show);
+    if(!show) return;
+    var n = 0;
+    if(chatFirstUnreadId != null){
+      var i;
+      for(i = chatMessages.length - 1; i >= 0; i--){ n++; if(chatMessages[i].id === chatFirstUnreadId) break; }
+      if(i < 0) n = 0;   // marker scrolled out of the 120-message window -> no honest count to show
+    }
+    pill.innerHTML = '&darr; ' + (n > 0 ? (n > 99 ? '99+' : n) + ' new' : 'Latest');
   }
   // Chronicle now lives as a tab inside the Chat panel (read-only event feed).
   function chronicleFeedHtml(){
@@ -38670,6 +38743,10 @@
     },
     buyExpBuff: function(btn, e){ buyServerExpBuff(); },
     toggleChatDrawer: function(btn, e){ chatDrawerOpen = !chatDrawerOpen; if(chatDrawerOpen) clearChatUnread(); renderChatDrawer(); },
+    // Jump-to-latest pill: snap the feed to the newest line. Deliberately does NOT retire the "new"
+    // rule -- the reader may still want to see where the unseen run began; the rule retires on the
+    // next message that lands while they're caught up, or on their own send.
+    chatJumpLatest: function(btn, e){ var el = document.getElementById('chatMessages'); if(el) el.scrollTop = el.scrollHeight; clearChatUnread(); },
     toggleChatExpand: function(btn, e){
       chatExpanded = !chatExpanded;
       if(chatExpanded){ chatDrawerOpen = false; clearChatUnread(); } // full screen supersedes the mobile drawer
@@ -38818,6 +38895,14 @@
   document.getElementById('app').addEventListener('focusin', function(e){
     if(e.target && e.target.id === 'chatInput') clearChatUnread();
   });
+
+  // The jump-to-latest pill follows the feed's scroll position. Scroll doesn't bubble, but a capturing
+  // listener at the document sees every inner scroller -- including the drawer/expand overlays -- and
+  // programmatic scrollTop writes (feedRenderStick, feedRestore) fire scroll too, so the pill
+  // self-corrects after every rebuild without a call at each render site.
+  document.addEventListener('scroll', function(e){
+    if(e.target && e.target.id === 'chatMessages') chatJumpUpdate();
+  }, true);
 
   document.getElementById('app').addEventListener('keydown', function(e){
     if(e.key !== 'Enter' || !e.target) return;
@@ -39597,7 +39682,7 @@
   // Player-facing game version, 0.0.x.y = launch.test.bigfeature.incrementalfix (see CLAUDE.md
   // "Game version" for the bump rules). Shown on the landing page and in Settings so bug reports
   // can reference it. Bump it in the SAME commit as the change it describes.
-  var GAME_VERSION = '0.0.86.9';
+  var GAME_VERSION = '0.0.86.10';
   var FF_BUILD_ID = 'dev';            // replaced with the deploy's git SHA at build time; stays 'dev' in the readable repo copy
   var UPDATE_CHECK_MS = 60*1000;      // poll the deployed build stamp every 60s
   var updateChecksArmed = false;
@@ -39756,6 +39841,7 @@
       _setChatMod:function(o){ o=o||{}; if(o.roles) chatRoles=o.roles; if(o.mutes) chatMutes=o.mutes; if(o.names) chatUserNames=o.names; if(o.titles) chatTitles=o.titles; if(o.mortals) chatMortals=o.mortals; if(o.gtags) chatGuildTags=o.gtags; if(o.clamps) accountClamps=o.clamps; if(o.signals) clampSignals=o.signals; if('myRole' in o) myChatRole=o.myRole; if('messages' in o) chatMessages=o.messages; if('authUser' in o) authUser=o.authUser; if('target' in o) chatModTarget=o.target; if('profileTarget' in o) playerProfileTarget=o.profileTarget; if('guildMessages' in o) guildChatMessages=o.guildMessages; },
       guildChatMessagesHtml:guildChatMessagesHtml,
       noteChatActivity:noteChatActivity, clearChatUnread:clearChatUnread, chatUnreadSuffix:chatUnreadSuffix, chatOnIncoming:chatOnIncoming, getChatUnreadCount:function(){ return chatUnreadCount; },
+      chatDayLabel:chatDayLabel, chatDayKey:chatDayKey, chatNoteUnreadMarker:chatNoteUnreadMarker, chatJumpUpdate:chatJumpUpdate, _setChatFirstUnread:function(v){ chatFirstUnreadId = v; }, _chatFirstUnread:function(){ return chatFirstUnreadId; },
       GUILD_MAX_MEMBERS:GUILD_MAX_MEMBERS, guildIsFull:guildIsFull, GUILD_SUBS:GUILD_SUBS, renderGuildDirectory:renderGuildDirectory, guildDir:guildDir,
       render:render, navPickCat:navPickCat, navPickArea:navPickArea, AREAS:AREAS, currentCategoryId:function(){ return currentCategory; },
       updateGlobalActionBarLive:updateGlobalActionBarLive, gabStructSig:gabStructSig, collectTasks:collectTasks,
