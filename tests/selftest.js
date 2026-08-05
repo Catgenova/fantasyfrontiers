@@ -8910,7 +8910,7 @@
       var ovEl = document.getElementById('deathReportOverlay');
       ok(ovEl && ovEl.style.display !== 'none' && /You fell in battle/.test(ovEl.innerHTML), 'the modal shows for a pending report');
       ok(ovEl.innerHTML.indexOf(mon.name) !== -1, 'the modal names the killer');
-      ok(/120/.test(ovEl.innerHTML) && /you fell from/.test(ovEl.innerHTML), 'the modal shows the killing blow and the HP you fell from');
+      ok(/120/.test(ovEl.innerHTML) && /You fell from/.test(ovEl.innerHTML), 'the modal shows the killing blow and the HP you fell from');
       S.deathReport = null;
       FF.renderDeathReportModal();
       ok(ovEl.style.display === 'none', 'dismissing hides the modal');
@@ -15595,7 +15595,7 @@
       ok(!/data-action="equipArrow" data-item="fletching_arrow_t2"/.test(h), 'the unusable arrow is not clickable');
       // A locked usable arrow is listed but marked: selecting it would silently never fire otherwise.
       S.lockedItems = { fletching_arrow_t0: true };
-      ok(/locked &mdash; never fired/.test(FF.renderEquipArrowSection()), 'a locked usable arrow says it will never be fired');
+      ok(/locked, never fired/.test(FF.renderEquipArrowSection()), 'a locked usable arrow says it will never be fired');
       // With a bow big enough, the same Zinc arrows become ordinary clickable options.
       S.equippedMainhandTier = 21;
       ok(/data-action="equipArrow" data-item="fletching_arrow_t2"/.test(FF.renderEquipArrowSection()),
@@ -16581,7 +16581,7 @@
     ok(!FF.estateJobBusy({ ok:true, claimed:false }), 'no job payload means it is not the busy case');
     ok(!FF.estateJobBusy(null), 'null response is not busy');
     eq(FF.estateJobBusyMsg({ ok:false, error:'inprogress', remainingMs:65000 }, 'an estate task'),
-       'You already have an estate task running — ready in 1:05.', 'message carries the remaining time');
+       'You already have an estate task running. Ready in 1:05.', 'message carries the remaining time');
     eq(FF.estateJobBusyMsg({ ok:true, claimed:false, job:job }, 'a guild estate task'),
        'You already have a guild estate task running.', 'legacy shape has no remainingMs, so no ETA');
     eq(FF.estateJobBusyMsg({ ok:false, error:'inprogress', remainingMs:0 }, 'an estate task'),
@@ -17995,6 +17995,40 @@
     } finally {
       Math.random = savedRand; s.inventory = savedInv;
     }
+  });
+
+  // ---- No em dashes in player-facing copy (owner order, v0.0.86.20) --------------------------------
+  // Every player-facing description was reworked into short sentences (or comma/colon joins); this
+  // guard deep-scans every string reachable from the test seam's exported def tables so a new class,
+  // set, item, quest or tooltip can't quietly reintroduce one. Exclusions: PATCH_NOTES (historical,
+  // owner-authored blasts kept verbatim) and _state (accrues fixture data from earlier suites, not
+  // shipped copy). Both '—' literals and '&mdash;' entities are banned.
+  suite('copy: no em dashes in player-facing descriptions', function(){
+    var offenders = [], seen = (typeof WeakSet !== 'undefined') ? new WeakSet() : null;
+    function scan(v, path, depth){
+      if(depth > 8 || offenders.length >= 5) return;
+      if(typeof v === 'string'){
+        if(v.indexOf('—') !== -1 || v.indexOf('&mdash;') !== -1) offenders.push(path);
+        return;
+      }
+      if(!v || typeof v !== 'object') return;
+      if(seen){ if(seen.has(v)) return; seen.add(v); }
+      if(typeof Node !== 'undefined' && v instanceof Node) return;
+      var keys = Object.keys(v);
+      for(var i = 0; i < keys.length && offenders.length < 5; i++){
+        scan(v[keys[i]], path + '.' + keys[i], depth + 1);
+      }
+    }
+    Object.keys(FF).forEach(function(k){
+      if(k === 'PATCH_NOTES' || k === '_state') return;
+      if(typeof FF[k] === 'function') return;
+      scan(FF[k], k, 0);
+    });
+    eq(offenders.join(' | '), '', 'no exported def table carries an em dash (first offenders shown)');
+    // And the rendered landing gate copy (built from string literals, not defs) is clean too.
+    FF.ensureLandingStyle();
+    var css = (document.getElementById('ffLandStyle') || {}).textContent || '';
+    ok(css.indexOf('—') === -1, 'the landing stylesheet content carries no em dash');
   });
 
   // ---- Report ---------------------------------------------------------------------------
